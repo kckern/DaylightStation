@@ -143,18 +143,43 @@ export function ContentCombobox({
   // menu interaction for an outside dismissal.
   const moreMenuOpenRef = useRef(false);
   const moreMenuTriggerRef = useRef(null);
+  const moreMenuInternalPointerRef = useRef(false);
+  // A menu verb deliberately dismisses Mantine's portal while retaining the
+  // combobox work surface. That dismissal emits the same blur shape as an
+  // outside focus move, so it needs one synchronous action marker.
+  const moreMenuActionRef = useRef(false);
+  const moreMenuActionKindRef = useRef(null);
   const viewportRef = useRef(null);
   const prevIdxRef = useRef(-1);
   const scrollAnimRef = useRef(null);
   const paginationScrollGuardRef = useRef(false); // suppress scroll-to-highlight after load-more
   const loadCooldownRef = useRef(false);          // ignore scroll events briefly after load-more
   const [loadingMore, setLoadingMore] = useState(false);
-  const handleMoreMenuPointerDown = useCallback((trigger) => {
+  const handleMoreMenuPointerDown = useCallback((trigger, isPortaledMenu = false) => {
     moreMenuOpenRef.current = true;
+    moreMenuInternalPointerRef.current = isPortaledMenu;
     moreMenuTriggerRef.current = trigger;
   }, []);
   const handleMoreMenuChange = useCallback((opened) => {
     moreMenuOpenRef.current = opened;
+    // Menu close completes either kind of action. For pointer selection the
+    // outer mousedown already consumed the internal-pointer guard before the
+    // later click armed this marker; it must not survive into an outside click.
+    if (!opened) {
+      moreMenuActionRef.current = false;
+      moreMenuActionKindRef.current = null;
+    }
+  }, []);
+  const handleMoreMenuAction = useCallback((kind) => {
+    moreMenuActionRef.current = true;
+    moreMenuActionKindRef.current = kind;
+  }, []);
+  const handleMoreMenuTriggerFocus = useCallback(() => {
+    // Keyboard Menu restoration returns focus here after an action. That
+    // restoration completes the internal action boundary; a later Tab/outside
+    // move must be a genuine close, not consume an old action marker.
+    moreMenuActionRef.current = false;
+    moreMenuActionKindRef.current = null;
   }, []);
   const handleMoreMenuEscapeCapture = useCallback((e) => {
     if (e.key !== 'Escape' || !e.target.closest?.('[data-content-combobox-more-boundary]')) return;
@@ -173,16 +198,38 @@ export function ContentCombobox({
   modeRef.current = mode;
 
   // ── Mantine store: dropdown visibility follows the machine mode ──
+  const comboboxRef = useRef(null);
   const combobox = useCombobox({
     onDropdownClose: () => {
       combobox.resetSelectedOption();
+      // A nested More menu is portaled outside this dropdown. Mantine's outer
+      // click-outside observer therefore reports its dismissal as a dropdown
+      // close even though the user chose an in-surface action. Keep editing
+      // alive and restore the outer list; only a genuine external focus exit
+      // may take the commit('outside') branch below.
+      if (moreMenuInternalPointerRef.current || moreMenuActionRef.current) {
+        moreMenuInternalPointerRef.current = false;
+        moreMenuActionRef.current = false;
+        moreMenuActionKindRef.current = null;
+        // Mantine's openDropdown closes over dropdownOpened. Read the store
+        // after this close renders, rather than reusing its still-open closure.
+        requestAnimationFrame(() => {
+          if (modeRef.current !== Modes.DISPLAY) comboboxRef.current?.openDropdown();
+        });
+        return;
+      }
       // Mantine-initiated close (outside pointerdown). When WE initiated the
       // close (Escape/Tab/select/freeform), the machine is already back in
       // DISPLAY and commit semantics were handled — do nothing.
       if (modeRef.current !== Modes.DISPLAY) commit('outside');
     },
   });
+  comboboxRef.current = combobox;
   const handleMoreBoundaryBlur = useCallback((nextTarget) => {
+    if (moreMenuActionRef.current) {
+      moreMenuActionRef.current = false;
+      return;
+    }
     if (nextTarget?.closest?.('[data-content-combobox-more-boundary]')) return;
     moreMenuOpenRef.current = false;
     combobox.closeDropdown();
@@ -568,6 +615,8 @@ export function ContentCombobox({
               onMore={onMore ? (action) => onMore(action, item) : null}
               onMoreMenuPointerDown={handleMoreMenuPointerDown}
               onMoreMenuChange={handleMoreMenuChange}
+              onMoreMenuAction={handleMoreMenuAction}
+              onMoreMenuTriggerFocus={handleMoreMenuTriggerFocus}
               onMoreBoundaryBlur={handleMoreBoundaryBlur}
             />
           </Group>
@@ -606,6 +655,10 @@ export function ContentCombobox({
             // managed focus legitimately blurs the input, but is not an
             // outside dismissal and must not revert the typed search.
             const enteringMoreTrigger = e.relatedTarget?.closest?.('[data-content-combobox-more-trigger]');
+            if (moreMenuActionRef.current) {
+              moreMenuActionRef.current = false;
+              return;
+            }
             if (moreMenuOpenRef.current || enteringMoreTrigger) {
               moreMenuOpenRef.current = true;
               if (enteringMoreTrigger) moreMenuTriggerRef.current = enteringMoreTrigger;

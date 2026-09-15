@@ -23,6 +23,7 @@ import {
 
 // client-control:<clientId> topic prefix — delivered per connection identity.
 const CLIENT_CONTROL_PREFIX = 'client-control:';
+const CLIENT_ACK_PREFIX = 'client-ack:';
 
 // Topics deliberately broadcast for documented external consumers, whose
 // subscriber is a frontend hook that mounts/unmounts with the page rather
@@ -497,6 +498,20 @@ export class WebSocketEventBus {
       return delivered;
     }
 
+    // A client acknowledgement returns only to the identified live caller
+    // route. It is never a general subscription broadcast.
+    if (typeof topic === 'string' && topic.startsWith(CLIENT_ACK_PREFIX)) {
+      const targetClientId = topic.slice(CLIENT_ACK_PREFIX.length);
+      if (!targetClientId) return 0;
+      let delivered = 0;
+      for (const [, { ws, meta }] of this.#clients) {
+        if (meta?.clientId !== targetClientId || ws.readyState !== ws.OPEN) continue;
+        ws.send(msg);
+        delivered++;
+      }
+      return delivered;
+    }
+
     // playback_state is a full broadcast topic.
     if (topic === PLAYBACK_STATE_TOPIC) {
       let sentCount = 0;
@@ -870,6 +885,11 @@ export class WebSocketEventBus {
       this.#handleIdentify(clientId, message);
       return;
     }
+    if (message.type === 'identify_release') {
+      const client = this.#clients.get(clientId);
+      if (client?.meta.clientId === message.clientId) delete client.meta.clientId;
+      return;
+    }
 
     if (this.#messageAuthorizer) {
       const result = this.#messageAuthorizer(clientId, message);
@@ -906,6 +926,21 @@ export class WebSocketEventBus {
     const client = this.#clients.get(connectionId);
     if (!client) return;
 
+    const duplicate = [...this.#clients.entries()].some(([otherConnectionId, other]) => (
+      otherConnectionId !== connectionId
+      && other.ws.readyState === other.ws.OPEN
+      && other.meta?.clientId === identity
+    ));
+    if (duplicate) {
+      if (client.ws.readyState === client.ws.OPEN) {
+        client.ws.send(JSON.stringify({
+          type: 'identify_ack', clientId: identity, ok: false, code: 'IDENTITY_IN_USE',
+          ...(message.nonce !== undefined ? { nonce: message.nonce } : {}),
+        }));
+      }
+      return;
+    }
+
     client.meta.clientId = identity;
     this.#logger.info?.('eventbus.client_identified', {
       connectionId,
@@ -917,6 +952,7 @@ export class WebSocketEventBus {
         client.ws.send(JSON.stringify({
           type: 'identify_ack',
           clientId: identity,
+          ...(message.nonce !== undefined ? { nonce: message.nonce, ok: true } : {}),
         }));
       } catch (err) {
         this.#logger.error?.('eventbus.identify_ack_error', {

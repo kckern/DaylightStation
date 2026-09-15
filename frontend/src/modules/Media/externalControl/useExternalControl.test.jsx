@@ -10,7 +10,7 @@ vi.mock('../../../services/WebSocketService.js', () => ({
 }));
 
 vi.mock('../identity/useClientIdentity.js', () => ({
-  useClientIdentity: vi.fn(() => ({ clientId: 'c1', displayName: 'D' })),
+  useClientIdentity: vi.fn(() => ({ clientId: 'profile-1', controlClientId: 'live-1', controlReady: true, displayName: 'D' })),
 }));
 
 import { createIdleSessionSnapshot } from '@shared-contracts/media/shapes.mjs';
@@ -39,28 +39,28 @@ beforeEach(() => {
 });
 
 describe('useExternalControl', () => {
-  it('subscribes with a filter matching only client-control:<clientId>', () => {
+  it('subscribes with a filter matching only the registered live control identity', () => {
     renderHook(() => useExternalControl(controller));
     expect(typeof capturedFilter).toBe('function');
-    expect(capturedFilter({ topic: 'client-control:c1' })).toBe(true);
+    expect(capturedFilter({ topic: 'client-control:live-1' })).toBe(true);
     expect(capturedFilter({ topic: 'client-control:other' })).toBe(false);
   });
 
   it('routes transport commands and acks ok', () => {
     renderHook(() => useExternalControl(controller));
     act(() => {
-      capturedCallback({ topic: 'client-control:c1', commandId: 'cmd1', command: 'transport', params: { action: 'pause' } });
+      capturedCallback({ topic: 'client-control:live-1', replyToControlClientId: 'caller-live', commandId: 'cmd1', command: 'transport', params: { action: 'pause' } });
     });
     expect(controller.transport.pause).toHaveBeenCalled();
     expect(sendFn).toHaveBeenCalledWith(expect.objectContaining({
-      topic: 'client-ack', clientId: 'c1', commandId: 'cmd1', ok: true,
+      topic: 'client-ack', clientId: 'live-1', replyToControlClientId: 'caller-live', commandId: 'cmd1', ok: true,
     }));
   });
 
   it('routes queue play-now commands', () => {
     renderHook(() => useExternalControl(controller));
     act(() => {
-      capturedCallback({ topic: 'client-control:c1', commandId: 'cmd2', command: 'queue', params: { op: 'play-now', contentId: 'plex:1', clearRest: true } });
+      capturedCallback({ topic: 'client-control:live-1', commandId: 'cmd2', command: 'queue', params: { op: 'play-now', contentId: 'plex:1', clearRest: true } });
     });
     expect(controller.queue.playNow).toHaveBeenCalledWith({ contentId: 'plex:1' }, { clearRest: true });
   });
@@ -69,7 +69,7 @@ describe('useExternalControl', () => {
     renderHook(() => useExternalControl(controller));
     const snap = createIdleSessionSnapshot({ sessionId: 'x', ownerId: 'c9' });
     act(() => {
-      capturedCallback({ topic: 'client-control:c1', commandId: 'cmd4', command: 'adopt-snapshot', params: { snapshot: snap, autoplay: false } });
+      capturedCallback({ topic: 'client-control:live-1', commandId: 'cmd4', command: 'adopt-snapshot', params: { snapshot: snap, autoplay: false } });
     });
     expect(controller.lifecycle.adoptSnapshot).toHaveBeenCalledWith(snap, { autoplay: false });
   });
@@ -77,7 +77,7 @@ describe('useExternalControl', () => {
   it('acks not-ok with a reason for invalid envelopes', () => {
     renderHook(() => useExternalControl(controller));
     act(() => {
-      capturedCallback({ topic: 'client-control:c1', commandId: 'cmd5', command: 'transport', params: { action: 'explode' } });
+      capturedCallback({ topic: 'client-control:live-1', commandId: 'cmd5', command: 'transport', params: { action: 'explode' } });
     });
     expect(controller.transport.play).not.toHaveBeenCalled();
     expect(sendFn).toHaveBeenCalledWith(expect.objectContaining({
@@ -88,7 +88,7 @@ describe('useExternalControl', () => {
   it('ignores messages without a commandId', () => {
     renderHook(() => useExternalControl(controller));
     act(() => {
-      capturedCallback({ topic: 'client-control:c1', command: 'transport', params: { action: 'play' } });
+      capturedCallback({ topic: 'client-control:live-1', command: 'transport', params: { action: 'play' } });
     });
     expect(sendFn).not.toHaveBeenCalled();
   });

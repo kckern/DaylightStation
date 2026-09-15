@@ -8,22 +8,24 @@ import { useClientIdentity } from '../identity/useClientIdentity.js';
 import { applyCommandEnvelope } from './commandHandler.js';
 import mediaLog from '../logging/mediaLog.js';
 
+export function buildClientAck(controlClientId, message, extra) {
+  return {
+    topic: 'client-ack', clientId: controlClientId,
+    replyToControlClientId: message.replyToControlClientId,
+    commandId: message.commandId, appliedAt: new Date().toISOString(), ...extra,
+  };
+}
+
 export function useExternalControl(controller) {
-  const { clientId } = useClientIdentity();
+  const { controlClientId, controlReady } = useClientIdentity();
 
   useEffect(() => {
-    if (!clientId || !controller) return undefined;
-    const topic = topics.clientControl(clientId);
+    if (!controlClientId || !controlReady || !controller) return undefined;
+    const topic = topics.clientControl(controlClientId);
     return subscribeTopic(topic, (msg) => {
       const commandId = msg.commandId;
       if (!commandId) return;
-      const ack = (extra) => publish({
-        topic: 'client-ack',
-        clientId,
-        commandId,
-        appliedAt: new Date().toISOString(),
-        ...extra,
-      });
+      const ack = (extra) => publish(buildClientAck(controlClientId, msg, extra));
       try {
         const result = applyCommandEnvelope(controller, msg);
         if (result.ok) {
@@ -38,7 +40,7 @@ export function useExternalControl(controller) {
         ack({ ok: false, error: err?.message });
       }
     });
-  }, [clientId, controller]);
+  }, [controlClientId, controlReady, controller]);
 }
 
 export default useExternalControl;
