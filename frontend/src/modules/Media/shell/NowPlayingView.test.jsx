@@ -62,6 +62,14 @@ beforeEach(() => {
 });
 
 describe('NowPlayingView', () => {
+  it.each(['format', 'mediaType'])('keeps HLS video expansion available for %s descriptors', field => {
+    state.snapshot = makeSnapshot({ item: { contentId: 'plex:55854', title: 'Arrival', [field]: 'hls_video' } });
+    render(<NowPlayingView />);
+    expect(screen.getByRole('button', { name: 'Expand video', exact: true })).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Expand video', exact: true }));
+    expect(hostClaimSpy).toHaveBeenLastCalledWith(expect.any(Object), 2, true, { forceShader: 'focused' });
+  });
+
   it('keeps the exact "Now Playing: <title>" heading', () => {
     render(<NowPlayingView />);
     expect(screen.getByTestId('now-playing-title')).toHaveTextContent('Now Playing: Primary Song 5');

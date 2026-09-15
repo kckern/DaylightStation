@@ -54,7 +54,7 @@ describe('Plex startup phase telemetry', () => {
         Media:[{ videoCodec:'h264', audioCodec:'aac', container:'mkv', Part:[{ key:'/parts/movie.mkv' }] }] }] } } }) };
     const adapter = new PlexAdapter({ host:'http://plex.test', token:'private-token' }, { httpClient:http, logger:log });
     const result = await adapter.getMediaUrl('697368', { session:'probe-session', startOffset:370 });
-    expect(result.url).toContain('start.mpd');
+    expect(result.url).toContain('start.m3u8');
     expect(log.info.mock.calls.filter(([event]) => event === 'plex.request.phase-completed').map(([, fields]) => fields.phase)).toEqual(['metadata', 'decision']);
   });
 });

@@ -97,7 +97,7 @@ export class PlexAdapter {
    * @param {Object} config
    * @param {string} config.host - Plex server URL (e.g., http://10.0.0.10:32400)
    * @param {string} [config.token] - Plex auth token
-   * @param {string} [config.protocol] - Streaming protocol (default: 'dash')
+   * @param {string} [config.protocol] - Streaming protocol (default: 'hls')
    * @param {string} [config.platform] - Client platform (default: 'Chrome')
    * @param {string} [config.proxyPath] - Proxy path for media URLs (default: '/api/v1/proxy/plex')
    * @param {Object} [config.mediaProgressMemory] - WatchStore instance for viewing history persistence
@@ -121,7 +121,7 @@ export class PlexAdapter {
     this.client = new PlexClient(config, { httpClient: deps.httpClient, logger: config.logger || deps.logger });
     this.host = config.host.replace(/\/$/, '');
     this.token = config.token || '';
-    this.protocol = config.protocol || 'dash';
+    this.protocol = config.protocol || 'hls';
     this.platform = config.platform || 'Chrome';
     this.proxyPath = config.proxyPath || '/api/v1/proxy/plex';
     this.mediaProgressMemory = config.mediaProgressMemory || null;
@@ -924,13 +924,20 @@ export class PlexAdapter {
     const thumbPath = item.thumb || item.parentThumb || item.grandparentThumb;
     const thumbnail = thumbPath ? `${this.proxyPath}${thumbPath}` : null;
 
+    // Describe the actual transport before the Player selects its decoder.
+    // A qualified original MP4 goes straight to native video; an HLS
+    // descriptor must never receive a raw-file redirect after loading.
+    const partKey = item.Media?.[0]?.Part?.[0]?.key;
+    const directPart = isVideo && canDirectPlayH264(item)
+      && typeof partKey === 'string' && partKey.startsWith('/') && !partKey.startsWith('//')
+      ? partKey : null;
     return new PlayableItem({
       id: `plex:${item.ratingKey}`,
       source: 'plex',
       localId: String(item.ratingKey),
       title: mergedE?.title || item.title || item.titleSort || `[${item.type || 'Untitled'}]`,
-      mediaType: isVideo ? 'dash_video' : 'audio',
-      mediaUrl: `/api/v1/proxy/plex/stream/${item.ratingKey}`,
+      mediaType: directPart ? 'video' : this._determineMediaType(item.type),
+      mediaUrl: directPart ? `${this.proxyPath}${directPart}` : `/api/v1/proxy/plex/stream/${item.ratingKey}`,
       duration: item.duration ? Math.floor(item.duration / 1000) : null,
       resumable: isVideo,
       resumePosition: item.viewOffset ? Math.floor(item.viewOffset / 1000) : null,
@@ -1486,13 +1493,13 @@ export class PlexAdapter {
   /**
    * Determine media type from Plex item type
    * @param {string} type - Plex item type (movie, episode, track, etc.)
-   * @returns {string} Media type (dash_video, audio, or original type)
+   * @returns {string} Media type (hls_video, dash_video, audio, or original type)
    * @private
    */
   _determineMediaType(type) {
     const videoTypes = ['movie', 'episode', 'clip', 'short', 'trailer', 'season', 'show'];
     const audioTypes = ['track', 'album', 'artist'];
-    if (videoTypes.includes(type)) return 'dash_video';
+    if (videoTypes.includes(type)) return this.protocol === 'hls' ? 'hls_video' : 'dash_video';
     if (audioTypes.includes(type)) return 'audio';
     return type;
   }
@@ -1546,7 +1553,7 @@ export class PlexAdapter {
     const allowUnencodedVideo = allowDirectPlay || allowDirectStream;
     params.append(
       'X-Plex-Client-Profile-Extra',
-      buildClientProfileExtra({ maxFrameRate: allowUnencodedVideo ? null : caps.maxFrameRate, downmixAudio })
+      buildClientProfileExtra({ maxFrameRate: allowUnencodedVideo ? null : caps.maxFrameRate, downmixAudio, protocol: this.protocol })
     );
     params.append('autoAdjustQuality', '1');
     // directPlay/directStream default to 0 (forced transcode). Only an already
@@ -1560,7 +1567,9 @@ export class PlexAdapter {
     params.append('subtitleSize', '100');
     params.append('audioBoost', '100');
     params.append('fastSeek', '1');
-    if (startOffset > 0) {
+    // HLS must parse segment zero to establish the true source timestamp
+    // origin. The client retains/applies its saved position after metadata.
+    if (this.protocol !== 'hls' && startOffset > 0) {
       params.append('offset', String(Math.floor(startOffset)));
     }
     params.append('X-Plex-Token', this.token);
@@ -1677,10 +1686,10 @@ export class PlexAdapter {
       // stalls every client at the same timestamp (2026-06-10 Daytona
       // incident — the source was 60fps, the 30fps limitation forced libx264).
       // A remux has no encoder, so the caps protect nothing on that path.
-      `X-Plex-Client-Profile-Extra=${encodeURIComponent(buildClientProfileExtra({ maxFrameRate: allowDirectStream ? null : caps.maxFrameRate, downmixAudio }))}`
+      `X-Plex-Client-Profile-Extra=${encodeURIComponent(buildClientProfileExtra({ maxFrameRate: allowDirectStream ? null : caps.maxFrameRate, downmixAudio, protocol: this.protocol }))}`
     ];
 
-    if (startOffset > 0) {
+    if (this.protocol !== 'hls' && startOffset > 0) {
       baseParams.push(`offset=${Math.floor(startOffset)}`);
     }
     if (!allowDirectStream) {
@@ -1688,7 +1697,8 @@ export class PlexAdapter {
       baseParams.push(`maxVideoResolution=${encodeURIComponent(caps.maxResolution)}`);
     }
 
-    return `${this.proxyPath}/video/:/transcode/universal/start.mpd?${baseParams.join('&')}`;
+    const extension = this.protocol === 'hls' ? 'm3u8' : 'mpd';
+    return `${this.proxyPath}/video/:/transcode/universal/start.${extension}?${baseParams.join('&')}`;
   }
 
   /**
@@ -1766,7 +1776,8 @@ export class PlexAdapter {
         };
       }
 
-      const allowDirectPlay = canDirectPlayH264(playableItem.metadata);
+      const allowDirectPlay = canDirectPlayH264(playableItem.metadata)
+        && (this.protocol !== 'hls' || playableItem.mediaType === 'video');
       // Plex's copied DASH fragments can have source-GOP timestamps that do
       // not match its fixed-duration MPD (Arrival: advertised90s, actual154s).
       // Re-encoding gives DASH a seek-correct segment timeline. Keep original
@@ -1775,6 +1786,10 @@ export class PlexAdapter {
         && (allowDirectPlay || canDirectStreamVideo(playableItem.metadata));
       if (this.protocol === 'dash') this.logger.info?.('plex.loadMediaUrl.dash-timeline-policy', {
         ratingKey, allowDirectPlay, allowDirectStream, fallback: 'bounded-transcode'
+      });
+      if (this.protocol === 'hls') this.logger.info?.('plex.loadMediaUrl.hls-timeline-policy', {
+        ratingKey, allowDirectPlay, allowDirectStream, timeline: 'parsed-media-timestamps',
+        requestedStartOffset: startOffset, sourceStartOffset: 0
       });
       // Multichannel AAC with no standard layout cannot be appended by Chromium;
       // re-encode that audio track to stereo (independent of video policy).
@@ -1813,7 +1828,7 @@ export class PlexAdapter {
 
       const { sessionIdentifier, clientIdentifier, decision } = decisionResult;
 
-      if (decision.canDirectPlay && decision.directStreamPath) {
+      if (allowDirectPlay && decision.canDirectPlay && decision.directStreamPath) {
         const directPath = decision.directStreamPath;
         const separator = directPath.includes('?') ? '&' : '?';
         return {
