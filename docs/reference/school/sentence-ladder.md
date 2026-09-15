@@ -482,6 +482,27 @@ input constraint, the way a worksheet prints a shape to trace over, and it
 changes nothing about grading: accuracy is still recorded and still gates
 nothing, and a refused keystroke is never written down at all.
 
+**Compounds are typed in halves, and the gate accepts the halves.** In 두벌식 a
+compound vowel or final has no key of its own: 과 is ㄱ, ㅗ, ㅏ; 의 is ㅇ, ㅡ, ㅣ;
+닭 is ㄷ, ㅏ, ㄹ, ㄱ. The automaton really passes through 고, 으 and 달 on the way,
+so the first half of the target's compound counts as a viable prefix
+(`compoundHead` in `ime/hangul.js`). A final typed over a half-built compound
+vowel is still refused, because the next vowel would steal it forward instead of
+finishing the compound. Until 2026-09-14 the gate compared each half to the
+finished jamo, and every syllable with a compound vowel or final was
+untypeable.
+
+**Only what a keyboard can produce is ever asked for.** Corpus sentences carry
+Glossika's ♂/♀ speaker markers (`♂형과 (♀오빠와)`), emoji and typographic
+punctuation. `typeableText` (`shared/contracts/language/`) maps typographic
+punctuation to what the keyboard types (’ → ', — → -, full-width ？ → ?) and drops
+the rest. The typing rungs, the Review diff and the backend's accuracy all use
+it, so the strip's columns line up with what is typed and a perfect copy scores
+as perfect.
+
+A refused keystroke reaches the log store as `school.language.rung.refused`
+(info, rate-limited, with the jamo), so "it won't let me type" leaves evidence.
+
 **It is `copy` only, and that restraint is the point.** In `listen` the target
 is hidden, and the program knows it just the same — but a gate there would
 repair a child who misheard 오늘 as 온... into the right answer without anyone
