@@ -8,28 +8,90 @@ const title = process.env.MEDIA_ACCEPTANCE_TITLE || 'Disclosure Day';
 test.use({ viewport: { width: 1440, height: 900 }, trace: 'retain-on-failure', actionTimeout: 10000 });
 test.setTimeout(90000);
 
+test.afterEach(async ({ page }, testInfo) => {
+  // Closing a browser context does not run React's unmount cleanup. Stop our
+  // own local playback through the UI so each case releases its DASH session.
+  if (page.isClosed()) return;
+  const observations = await page.evaluate(() => ({
+    events: window.__mediaJourneyEvents ?? [],
+    videos: [...document.querySelectorAll('video, dash-video')].flatMap(el => {
+      const video = el.tagName === 'DASH-VIDEO' ? el.shadowRoot?.querySelector('video') : el;
+      return video ? [{ currentTime: video.currentTime, seeking: video.seeking,
+        paused: video.paused, readyState: video.readyState, networkState: video.networkState,
+        buffered: Array.from({ length: video.buffered.length }, (_, i) => [video.buffered.start(i), video.buffered.end(i)]),
+      }] : [];
+    }),
+    slider: document.querySelector('[data-testid="np-seek"]')?.getAttribute('aria-valuenow') ?? null,
+  }));
+  await testInfo.attach('native-playback-observations', {
+    body: JSON.stringify(observations, null, 2), contentType: 'application/json',
+  });
+  const stop = page.getByTestId('np-stop');
+  if (!(await stop.isVisible())) {
+    const open = page.getByTestId('mini-player-open-nowplaying');
+    if (await open.isVisible()) await open.click();
+  }
+  if (await stop.isVisible()) await stop.click();
+});
+
 async function startMovie(page) {
   await page.goto('/media');
   return playMovie(page);
 }
 
 async function playMovie(page) {
+  const mintOrigins = [];
+  const observeMint = response => {
+    if (/\/api\/v1\/proxy\/plex\/stream\//.test(response.url())) {
+      mintOrigins.push(response.headers()['x-media-acceptance-mint'] ?? 'upstream');
+    }
+  };
+  page.on('response', observeMint);
   await test.step('Find and start the movie with ordinary user input', async () => {
     const search = page.getByRole('textbox', { name: 'Search media…' });
     // Dev-module loading is separate from the interaction timeout; release
     // startup budgets are checked against the built app, not Vite transforms.
     await expect(search).toBeVisible({ timeout: 30000 });
     await search.fill(title);
-    const result = page.getByRole('option').filter({ hasText: title });
-    await expect(result).toHaveCount(1, { timeout: 15000 });
+    // Catalog titles may also name an album or track. Choose the leading
+    // matching result normally; the actual video checks below remain required.
+    const result = page.getByRole('option').filter({ hasText: title }).first();
+    await expect(result).toBeVisible({ timeout: 15000 });
     await result.click();
     await page.getByTestId('mini-player-open-nowplaying').click();
   });
   const video = page.getByTestId('now-playing-host').locator('video');
   await expect(video).toHaveCount(1, { timeout: 30000 });
-  await expect.poll(() => video.evaluate(el => !el.paused && el.currentTime > 0 && el.readyState >= 2), {
+  await video.evaluate(el => {
+    window.__mediaJourneyEvents = [];
+    for (const name of ['seeking', 'seeked', 'timeupdate', 'pause', 'playing']) {
+      el.addEventListener(name, () => {
+        window.__mediaJourneyEvents.push({ event: name, at: performance.now(),
+          currentTime: el.currentTime, seeking: el.seeking, paused: el.paused,
+          readyState: el.readyState,
+          buffered: Array.from({ length: el.buffered.length }, (_, i) => [el.buffered.start(i), el.buffered.end(i)]),
+          slider: document.querySelector('[data-testid="np-seek"]')?.getAttribute('aria-valuenow') ?? null,
+        });
+        if (window.__mediaJourneyEvents.length > 80) window.__mediaJourneyEvents.shift();
+      });
+    }
+  });
+  await expect.poll(() => video.evaluate(el => ({
+    paused: el.paused, ready: el.readyState >= 2, hasPosition: el.currentTime > 0,
+    currentTime: el.currentTime, readyState: el.readyState,
+    networkState: el.networkState, seeking: el.seeking, error: el.error?.code ?? null,
+  })), {
     timeout: 30000, message: 'The real video must advance, not merely show its title',
-  }).toBe(true);
+  }).toMatchObject({ paused: false, ready: true, hasPosition: true });
+  const observedAt = await video.evaluate(el => el.currentTime);
+  await expect.poll(() => video.evaluate(el => el.currentTime), {
+    timeout: 10000, message: 'Ready playback must actually advance beyond its first observed position',
+  }).toBeGreaterThan(observedAt + 0.25);
+  if (process.env.MEDIA_BRANCH_MINT === '1') {
+    expect(mintOrigins, 'Playback must exercise the branch mint composition').toContain('worktree');
+    expect(mintOrigins).not.toContain('upstream');
+  }
+  page.off('response', observeMint);
   return video;
 }
 
@@ -48,7 +110,7 @@ test('[PLACE.1a/AC3][PLACE.1a/AC4][STEER.1b] opening Office controls does not re
   });
   await page.goto('/media');
   await expect(page.getByRole('navigation', { name: 'Primary' })).toBeVisible({ timeout: 30000 });
-  await page.getByRole('navigation', { name: 'Primary' }).getByRole('button', { name: 'Devices', exact: true }).click();
+  await page.getByRole('navigation', { name: 'Primary' }).getByRole('button', { name: /^(?:\d+\s+)?Devices$/ }).click();
   await page.getByTestId('fleet-peek-office-tv').click();
   await expect(page.getByTestId('peek-panel')).toBeVisible();
   await playMovie(page);
@@ -87,6 +149,10 @@ test('[PLAY.1b/AC1][STEER.4a/AC1] discovered movie duration and progress reach t
   await page.mouse.up();
   await expect.poll(async () => Math.abs(await video.evaluate(el => el.currentTime) - requested), { timeout: 15000 }).toBeLessThanOrEqual(2);
   await expect.poll(async () => Math.abs(Number(await slider.getAttribute('aria-valuenow')) - await video.evaluate(el => el.currentTime))).toBeLessThanOrEqual(2);
+  await expect.poll(() => video.evaluate(el => ({
+    seeking: el.seeking, ready: el.readyState >= 2, paused: el.paused,
+  })), { timeout: 15000, message: 'The decoder must finish the seek and remain paused, not only accept a currentTime assignment' })
+    .toEqual({ seeking: false, ready: true, paused: true });
 });
 
 test('[STEER.3a/AC1][STEER.3a/AC3] pause and resume reflect the real player without a false startup stall', async ({ page }) => {

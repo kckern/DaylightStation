@@ -15,6 +15,21 @@
 - Structured logs, design-system tokens, existing local/remote controller seam, additive API compatibility.
 - Root agent owns tracking docs and end-to-end harness. Task workers own only their named implementation scope. Do not spawn subagents from workers. Commit only owned files; do not deploy from workers.
 
+## Parallel execution policy
+
+The owner requested model-appropriate parallel orchestration during implementation. Split parent tasks into independently testable slices with exclusive file ownership; a completed slice does not complete its parent story. Keep up to three worker lanes active alongside the coordinator. Use Luna for fully specified mechanical work, Sol for bounded UI behavior, Terra for multi-file integration, and Astra for architecture or difficult playback debugging. Reviews go to a worker other than the implementer.
+
+| Lane / dependency | Work | Integration gate |
+|---|---|---|
+| Playback | Task2 native ownership, stream timeline, actual pause/seek/focus/stop | Independent scoped review and serial real-decoder suite |
+| Aim | Task3a persistence/idle lifetime and observed steering activity | Real reload/idle journey; stable activity/identity contract before moves |
+| Search | Task5a keep-open/history repair using current action interfaces | Real phone search journey; Task4 one-off actions remain an explicit dependency |
+| Architecture | Task3b safe-move API/receiver transaction design, initially read-only | Failed-start/lost-ack/source-changed REDs before implementation |
+| Subsequent waves | Task4 verbs/queue/undo, remainingTask5 browse/search, Task7 registry/origin; thenTask6 controls, Task8 outcomes andTask9 recovery | Assign only disjoint files; freeze shared command/identity contracts before dependent consumers |
+| Acceptance and later priorities | Task10 parity/budgets, then exact P1/P2 slices below | Full criterion evidence; never promote component test counts to story acceptance |
+
+The coordinator owns shared reference/tracking docs, browser/API harness composition and cross-slice verification. Workers request ownership before widening scope. Serialize git staging/commits with an explicit coordinator lease and serialize media-heavy browser suites; unit work can proceed concurrently. Preserve known failing journeys until their owning slice repairs them. Record model, task, file ownership, RED/GREEN evidence, review state and unresolved dependencies in the execution ledger.
+
 ## Task 1: Four immediate defects
 
 Implement handoff P0 step 1 with test-first behavior checks. Read its Step 1 plus original AC for PLACE.2b, STEER.7a, RELY.6a, PLACE.1a/STEER.1b.
@@ -126,9 +141,22 @@ Primary navigation indicates the current area even in queue/remote controls. Re-
 
 Ownership: session persistence/restore and selective reset API; settings/reset UI; Media route/history/navigation/dialog integration; reconnect presentation; tests/reference docs. Root owns ledger/runtime. RED/GREEN covers playing and paused reload, queue/repeat/shuffle/position, expired aim, corrupted storage, restore-before-save ordering, all keep/reset combinations, cancel and remote-view isolation, actual paused media then explicit resume, brief/sustained network loss without reload, tab re-tap and nested popup/back/focus/scroll. Root verifies ordinary reload/back/reset in real browser journeys and actual media pause, not persisted JSON alone. Commit scoped changes/report, no deploy.
 
+## Task 10: Accessible parity, measurable budgets and P0 acceptance
+
+Read handoff Steps9/10, RQ-RELY-13–15, NF-TAP/TIME/DEV/A11Y/REL and taxonomy P0 persona paths. This is a repair-and-verification slice, not a report that hands known gaps back to the user. Carry every earlier P0 dependency and failing/unverified criterion from the acceptance ledger into concrete end-to-end checks. Preserve explicitly P1/P2 criteria without claiming a mixed-priority story complete before all its criteria pass. Root owns the final acceptance matrix, live journeys and release gates; implementation worker owns accessibility/layout/performance corrections and focused regression tests across already-built surfaces.
+
+Make every function usable at360px phone portrait/landscape, tablet and desktop using touch/mouse/keyboard. Minimum44×44px targets, text contrast4.5:1, controls/status3:1, large-text reflow without clipping, reduced motion and non-colour-only status. Announce confirmations/warnings/state changes; verify focus order/return/traps and meaningful names, not just automated accessibility scans. Aim, search and play/pause must remain in phone thumb reach without two-hand-only gestures. All hold/drag actions have keyboard/discrete equivalents. Remove superseded components only after confirming their callers use the shared surfaces and preserving Content/Admin compatibility.
+
+Measure NF-TAP with ordinary input from the stated initial state: typed item→playing1tap, typed collection inlinePlay1, last-sent pause1, heldqueue1, add/playnext2, local aim2, Movehere2, retry1, oneoffsend3. Pauseall2 and cross-devicePutitback1 are later P1 budgets. Count menu opening but not typing. Verify actual destination/player/outcome after the final tap; lower click count alone is not a pass.
+
+Measure release-bundle timing separately from dev-module transforms: visible tap response≤100ms, local confirmation≤500ms, remote result or pending≤2s, first remote progress≤1s, first streamed results≤1s for two-character query on home network, available local content starts≤3s, warm start usable≤1s, move position tolerance≤2s. Record setup/content/server conditions and measured values. Do not silently raise budgets or turn a request acknowledgment into actual-start timing. Fix app-caused failures; distinguish external availability failures explicitly.
+
+Verify individual offline screens/source failures/server errors leave other functions usable, reachable local media continues while search/browse fail, queues of500items remain responsive, long-lived tabs do not leak subscriptions/timers/player nodes, and concurrent controllers cannot let stale commands beat a later action. Walk Seeker, Big-Screen Sender, House Watch, Hand-Held Viewer, Room Hopper and Fixer journeys on phone/laptop with two browser devices or Office only. Root performs actual multi-context state/command/player reconciliation, including canceled/lost-ack paths, rather than accepting mocked stores.
+
+Run focused RED/GREEN before each correction and relevant full unit/contracts/flow/gates after source freezes. Record tests that did not reach preconditions as not verified, never passed/skipped acceptance. Root updates criterion evidence, technical docs and refactor status; performs whole-branch review and integration only after P0 criteria are genuinely satisfied. Build/deploy use the local gate as a separate halting step before build and again before deployment, verify served commit, exercise the current bundle and collect logs; preserve/restore Office and leave other kiosks untouched. An occupied household gate blocks deployment but not safe remaining implementation or isolated verification. Commit worker-owned changes/report only; deployment remains root-owned.
+
 ## Remaining sequence
 
-10. Accessibility, device parity, budgets, complete P0 acceptance and gated release.
 11. P1 household history/spots/favourites, shared undo/notes, timers/queue end, multiple screens, system controls, durable receivers.
 12. P2 suggestions/history, brief overlays, slideshow music, tracks, admin, screen power/alignment.
 

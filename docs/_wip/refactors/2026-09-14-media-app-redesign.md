@@ -1,6 +1,6 @@
 # Media App redesign — separation of concerns in the `/media` UX
 
-**Status:** Implementation in progress on `feat/media-redesign`. First defect repairs are under test/review; nothing from this branch is deployed. All 82 stories remain unverified until their complete acceptance criteria have end-to-end evidence.
+**Status:** Implementation in progress on `feat/media-redesign`. Immediate defect repairs have passed review; actual-player wiring repairs remain under end-to-end verification. Nothing from this branch is deployed. All 82 stories remain unverified until their complete acceptance criteria have end-to-end evidence.
 
 **Started:** 2026-09-14 · **Planning baseline:** `b2ff8a460` (the code the baseline audit describes)
 **Authorised by:** the owner, 2026-09-14. They accepted the requirements and their P0/P1/P2 phasing, chose to evolve the app in place, and gave the implementer authority to commit to `main` and deploy only when the deploy gate is clear.
@@ -10,6 +10,7 @@
 ## What this refactor is
 
 The owner reports that `/media` is largely unusable. Existing code is an inventory, not a functional baseline.
+
 - Each button decides on its own where things play.
 - Three searches behave three ways.
 - Your own playback and a TV are controlled differently.
@@ -23,12 +24,12 @@ The requirements define the target behavior. Each story must be built and verifi
 
 | | |
 |---|---|
-| Application code changed | D1–D4 repairs in progress in the isolated worktree |
+| Application code changed | D1–D4 reviewed; real duration/progress, focused hosting, playback identity, pause and seek-completion repairs in the isolated worktree |
 | Runtime behaviour changed | Development browser only; production unchanged |
 | Design | Complete: audit → ideal model → adversarial review → owner triage → requirements → handoff |
 | Owner decisions | All recorded (Q1–Q11; 47 of 50 review proposals accepted) |
 | Reference docs | Factual drift in `docs/reference/media/media-app.md` corrected; not yet rewritten for the redesign |
-| Implementation | `feat/media-redesign`; 82 stories / 288 acceptance criteria tracked; real Disclosure Day seek-bar failure reproduced |
+| Implementation | `feat/media-redesign`; 82 stories / 288 acceptance criteria tracked; browser failures preserved for playback, queue menu, search retention and idle aim; see acceptance ledger for current verdicts |
 
 ## Where everything lives
 
