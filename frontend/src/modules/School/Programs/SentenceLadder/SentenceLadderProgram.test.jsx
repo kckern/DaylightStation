@@ -2662,3 +2662,33 @@ describe('speaking the answer, from the keyboard', () => {
     expect(screen.getByRole('alert').textContent).toMatch(/too quick/i);
   });
 });
+
+// THE FIRST DAY REQUEST (found live 2026-09-14). Every Portal launch asked for
+// the day with `textInput: []` because the languages came from that same day:
+// dictation was withheld for a render, the ladder landed on a rung picked from
+// a chain without it, `rung-blocked` was logged falsely, and the day was
+// fetched again. Given the course's languages, the first request is the right
+// one and the only one.
+describe('the first day request', () => {
+  it('carries what the keyboard can type when the course languages are known, and is not repeated', async () => {
+    keyboard.present = true;
+    dayMock.mockResolvedValue(dayPayload({
+      chain: ['repetition', 'dictation'], queue: [entry(1, 'repetition', true), entry(1, 'dictation')],
+    }));
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="test-learner" corpusId="glossika-korean" languages={LANGUAGES} />);
+    await screen.findByLabelText(/Type what you hear/i);
+    await new Promise((r) => setTimeout(r, 30));
+    expect(dayMock).toHaveBeenCalledTimes(1);
+    expect(dayMock.mock.calls[0][2]).toEqual(expect.objectContaining({ textInput: ['EN', 'KR'] }));
+    expect(capabilityLogMock.mock.calls.filter(([d]) => d === 'rung-blocked')).toHaveLength(0);
+  });
+
+  it('still learns the languages from a blind first load when nobody passed them', async () => {
+    keyboard.present = true;
+    dayMock.mockResolvedValue(dayPayload({ chain: ['dictation'], queue: [entry(1, 'dictation')] }));
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="test-learner" corpusId="glossika-korean" />);
+    await screen.findByLabelText(/Type what you hear/i);
+    await waitFor(() => expect(dayMock.mock.calls.at(-1)[2]).toEqual(expect.objectContaining({ textInput: ['EN', 'KR'] })));
+    expect(dayMock.mock.calls[0][2]).toEqual(expect.objectContaining({ textInput: [] }));
+  });
+});

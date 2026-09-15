@@ -83,6 +83,10 @@ async function req(path, body, method, studyGrant = null, signal = undefined) {
     try {
       parsed = await r.json();
     } catch (err) {
+      // A request aborted while its body was still arriving is an ABORT — a
+      // newer load or an unmount asked for it — not a body that will not parse.
+      // It was logged as `unparseable` on every Portal launch until 2026-09-14.
+      if (err?.name === 'AbortError') throw err;
       parseError = err?.message || String(err);
     }
     reportSettled(path, verb, r.status, r.ok, startedAt,

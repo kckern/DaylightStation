@@ -1252,6 +1252,7 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
           <SentenceLadderProgram
             userId={studyLaunch.learnerId}
             corpusId={courseId}
+            languages={courses.find((course) => course.id === courseId)?.languages ?? null}
             studyGrant={studyLaunch.studyGrant}
             onSignIn={lock.locked ? goHome : openPicker}
             onExit={lock.locked ? goHome : null}
@@ -1261,6 +1262,7 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
         {previewCourseId && courses.some((course) => course.id === previewCourseId) && (
           <SentenceLadderProgram
             corpusId={previewCourseId}
+            languages={courses.find((course) => course.id === previewCourseId)?.languages ?? null}
             preview
             onExit={goHome}
           />

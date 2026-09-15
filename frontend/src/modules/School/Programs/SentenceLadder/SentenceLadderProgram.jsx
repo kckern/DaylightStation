@@ -163,6 +163,13 @@ function needTag(need) {
  */
 export default function SentenceLadderProgram({
   userId, corpusId, studyGrant, onSignIn, onExit = null, locked = false, preview = false,
+  /**
+   * The course's languages, when the caller already has them (SchoolApp's
+   * course list does). With them the FIRST day request carries what this
+   * device can type; without them the program has to ask once blind, learn
+   * the languages from that day, and ask again.
+   */
+  languages: courseLanguages = null,
 }) {
   // ONE ID FOR THE WHOLE RUN, minted during RENDER rather than in an effect.
   //
@@ -205,7 +212,7 @@ export default function SentenceLadderProgram({
   const loadController = useRef(null);
   const progressEmission = useRef(null);
 
-  const languages = day?.corpus?.languages;
+  const languages = day?.corpus?.languages ?? courseLanguages;
   const {
     capabilities, ready: capsReady, toggleLanguage, toggleMicrophone, hasHardwareKeyboard,
   } = useCapabilities(corpusId, languages);
@@ -268,7 +275,14 @@ export default function SentenceLadderProgram({
   }, [corpusId, userId]);
 
   useEffect(() => {
-    if (!capsReady && day === null) {
+    // THE BLIND FIRST LOAD, only when the languages are unknown. It used to run
+    // on every mount, and on the Portal every launch went out with
+    // `textInput: []`: the server withheld dictation, the ladder landed on a
+    // rung chosen from a chain without it, a false `rung-blocked` was logged,
+    // and the day was fetched again a moment later once the keyboard counted
+    // (found live 2026-09-14, every Portal launch that day). Given the
+    // course's languages the capabilities are known before anything is asked.
+    if (!capsReady && day === null && !courseLanguages) {
       // First load runs without capabilities so we can learn the corpus's
       // languages; the hook needs them to pick a sensible text-input default.
       load();

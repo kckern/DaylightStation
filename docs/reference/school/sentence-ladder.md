@@ -179,6 +179,14 @@ one predicate (`satisfiesRequirement`) — they used to hold a copy each, and th
 copies drifted into telling a child to connect a keyboard for a rung that needs
 none.
 
+**The first day request already knows the keyboard.** The capabilities need the
+corpus's languages, and those used to come from the day itself, so every launch
+asked once with `textInput: []`: dictation was withheld for a render, the ladder
+landed on a rung picked from a chain without it, a false `rung-blocked` was
+logged, and the day was fetched again. SchoolApp now passes the course's
+`languages` (from `/courses`), and the blind first load only runs when a caller
+has none to give.
+
 ---
 
 ## 3. The study day
