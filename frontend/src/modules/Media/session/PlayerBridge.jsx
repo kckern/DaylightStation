@@ -85,13 +85,24 @@ export function PlayerBridge() {
   // position, state, config, and metadata observations must not remount the
   // Player. Explicit LOAD/SET/ADOPT actions still restart same-ID content.
   useEffect(() => {
-    const check = (snap, action = null) => {
+    const check = (snap, action = null, previousSnapshot = null) => {
       const next = snap.currentItem;
       const startsPlayback = action != null
         && ['LOAD_ITEM', 'SET_CURRENT_ITEM', 'ADOPT_SNAPSHOT'].includes(action.type);
       if (startsPlayback) {
-        startSecondsRef.current = snap.position ?? 0;
+        const requestedStart = Number.isFinite(snap.position) ? snap.position : 0;
+        startSecondsRef.current = requestedStart;
         playbackGenerationRef.current += 1;
+        if (
+          next?.contentId
+          && previousSnapshot?.currentItem?.contentId === next.contentId
+        ) {
+          // Shared Player intentionally derives identity from content, so a
+          // same-content generation with the same scalar props (especially
+          // zero or a repeated offset) will not restart on object identity.
+          // Apply the explicit generation through Player's real transport.
+          playerRef.current?.seek?.(requestedStart);
+        }
         setPlaybackGeneration(playbackGenerationRef.current);
       }
       setCurrentItem((prev) => {
@@ -115,7 +126,7 @@ export function PlayerBridge() {
     };
     check(controller.getSnapshot());
     if (controller.store?.onTransition) {
-      return controller.store.onTransition((_prev, next, action) => check(next, action));
+      return controller.store.onTransition((prev, next, action) => check(next, action, prev));
     }
     return controller.subscribe(check);
   }, [controller]);
