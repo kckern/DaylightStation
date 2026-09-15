@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 
 // A real catalog → app → Player → media element → UI round trip.
-// No route mocks, synthetic clicks, forced clicks, or fabricated session state.
+// No fabricated responses, synthetic clicks, forced clicks, or fabricated session state.
 // Each test has a fresh browser context and targets only its own local player.
 const title = process.env.MEDIA_ACCEPTANCE_TITLE || 'Disclosure Day';
 
@@ -9,9 +9,17 @@ test.use({ viewport: { width: 1440, height: 900 }, trace: 'retain-on-failure', a
 test.setTimeout(90000);
 
 async function startMovie(page) {
+  await page.goto('/media');
+  return playMovie(page);
+}
+
+async function playMovie(page) {
   await test.step('Find and start the movie with ordinary user input', async () => {
-    await page.goto('/media');
-    await page.getByRole('textbox', { name: 'Search media…' }).fill(title);
+    const search = page.getByRole('textbox', { name: 'Search media…' });
+    // Dev-module loading is separate from the interaction timeout; release
+    // startup budgets are checked against the built app, not Vite transforms.
+    await expect(search).toBeVisible({ timeout: 30000 });
+    await search.fill(title);
     const result = page.getByRole('option').filter({ hasText: title });
     await expect(result).toHaveCount(1, { timeout: 15000 });
     await result.click();
@@ -24,6 +32,28 @@ async function startMovie(page) {
   }).toBe(true);
   return video;
 }
+
+test('[PLACE.1a/AC3][PLACE.1a/AC4][STEER.1b] opening Office controls does not redirect local-aim playback', async ({ page }) => {
+  const blockedCommands = [];
+  // Safety boundary: observing Office is read-only. Any attempted device
+  // mutation fails the test and is blocked before it can affect hardware.
+  await page.route('**/api/v1/device/**', async route => {
+    const request = route.request();
+    if (request.method() !== 'GET' || /\/load(?:\?|$)/.test(request.url())) {
+      blockedCommands.push({ method: request.method(), url: request.url() });
+      await route.abort('blockedbyclient');
+      return;
+    }
+    await route.continue();
+  });
+  await page.goto('/media');
+  await expect(page.getByRole('navigation', { name: 'Primary' })).toBeVisible({ timeout: 30000 });
+  await page.getByRole('navigation', { name: 'Primary' }).getByRole('button', { name: 'Devices', exact: true }).click();
+  await page.getByTestId('fleet-peek-office-tv').click();
+  await expect(page.getByTestId('peek-panel')).toBeVisible();
+  await playMovie(page);
+  expect(blockedCommands, 'Steering must not redirect playback away from the fresh local aim').toEqual([]);
+});
 
 test('[PLAY.1b/AC1][STEER.4a/AC1] discovered movie duration and progress reach the visible seek bar', async ({ page }) => {
   const video = await startMovie(page);
@@ -45,13 +75,17 @@ test('[PLAY.1b/AC1][STEER.4a/AC1] discovered movie duration and progress reach t
   await expect.poll(async () => Math.abs(Number(await slider.getAttribute('aria-valuenow')) - await video.evaluate(el => el.currentTime))).toBeLessThanOrEqual(2);
   const bounds = await slider.boundingBox();
   expect(bounds).not.toBeNull();
-  const destination = Math.min(duration * 0.1, before + 90);
+  const destination = before + 90 < duration - 5 ? before + 90 : Math.max(0, before - 90);
   const y = bounds.y + bounds.height / 2;
   await page.mouse.move(bounds.x + bounds.width * (before / duration), y);
   await page.mouse.down();
   await page.mouse.move(bounds.x + bounds.width * (destination / duration), y, { steps: 5 });
+  await expect.poll(async () => Math.abs(Number(await slider.getAttribute('aria-valuenow')) - destination))
+    .toBeLessThanOrEqual(duration / bounds.width + 1);
+  const requested = Number(await slider.getAttribute('aria-valuenow'));
+  expect(Math.abs(requested - before), 'Dragging must display the requested position before release').toBeGreaterThan(30);
   await page.mouse.up();
-  await expect.poll(async () => Math.abs(await video.evaluate(el => el.currentTime) - destination), { timeout: 15000 }).toBeLessThanOrEqual(3);
+  await expect.poll(async () => Math.abs(await video.evaluate(el => el.currentTime) - requested), { timeout: 15000 }).toBeLessThanOrEqual(2);
   await expect.poll(async () => Math.abs(Number(await slider.getAttribute('aria-valuenow')) - await video.evaluate(el => el.currentTime))).toBeLessThanOrEqual(2);
 });
 
@@ -88,17 +122,39 @@ test('[STEER.2a/AC1][STEER.2a/AC2] focused video expands and shrinks without rep
   const video = await startMovie(page);
   const original = await video.elementHandle();
   const before = await video.evaluate(el => el.currentTime);
+  const source = await video.evaluate(el => {
+    el.dataset.journeyPauseEvents = '0';
+    el.addEventListener('pause', () => {
+      el.dataset.journeyPauseEvents = String(Number(el.dataset.journeyPauseEvents) + 1);
+    });
+    return el.currentSrc;
+  });
   await expect(page.getByRole('button', { name: 'Expand video', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Expand video', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Shrink video', exact: true })).toBeVisible();
   await expect(page.locator('.video-player.focused')).toBeVisible();
-  await expect.poll(() => original.evaluate(el => el.isConnected && !el.paused && el.currentTime >= before)).toBe(true);
+  await expect.poll(() => page.getByTestId('now-playing-view').evaluate(el => {
+    const bounds = el.getBoundingClientRect();
+    return Math.abs(bounds.left) <= 1 && Math.abs(bounds.top) <= 1
+      && Math.abs(bounds.width - window.innerWidth) <= 1
+      && Math.abs(bounds.height - window.innerHeight) <= 1;
+  }), { message: 'Expanded player surface fills the viewport, not a centered content column' }).toBe(true);
+  for (const control of ['np-toggle', 'np-stop', 'np-seek']) {
+    expect(await page.getByTestId(control).evaluate(el => {
+      const bounds = el.getBoundingClientRect();
+      return bounds.width > 0 && bounds.height > 0 && bounds.left >= 0 && bounds.top >= 0
+        && bounds.right <= window.innerWidth && bounds.bottom <= window.innerHeight;
+    }), `${control} remains on-screen while expanded`).toBe(true);
+  }
+  await expect.poll(() => original.evaluate((el, position) => el.isConnected && !el.paused && el.currentTime >= position, before)).toBe(true);
   await page.getByRole('button', { name: 'Shrink video', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Expand video', exact: true })).toBeVisible();
-  await expect.poll(() => original.evaluate(el => el.isConnected && !el.paused && el.currentTime >= before)).toBe(true);
+  await expect.poll(() => original.evaluate((el, position) => el.isConnected && !el.paused && el.currentTime >= position, before)).toBe(true);
   await page.getByTestId('now-playing-back').click();
   await expect(page.getByTestId('mini-player-open-nowplaying')).toBeVisible();
-  await expect.poll(() => original.evaluate(el => el.isConnected && !el.paused && el.currentTime >= before)).toBe(true);
+  await expect.poll(() => original.evaluate((el, position) => el.isConnected && !el.paused && el.currentTime >= position, before)).toBe(true);
+  expect(await original.evaluate(el => el.currentSrc)).toBe(source);
+  expect(await original.evaluate(el => Number(el.dataset.journeyPauseEvents))).toBe(0);
 });
 
 test('[STEER.6a/AC1][STEER.6a/AC2][STEER.7a/AC2] stop ends actual playback and keeps the queue reachable', async ({ page }) => {
@@ -109,4 +165,10 @@ test('[STEER.6a/AC1][STEER.6a/AC2][STEER.7a/AC2] stop ends actual playback and k
   await page.getByTestId('now-playing-back').click();
   await page.getByTestId('mini-player-open-nowplaying').click();
   await expect(page.getByTestId('now-playing-view')).toContainText(title);
+  await page.getByTestId('mini-toggle').click();
+  const restartedVideo = page.getByTestId('now-playing-host').locator('video');
+  await expect(restartedVideo).toHaveCount(1, { timeout: 30000 });
+  await expect.poll(() => restartedVideo.evaluate(el => !el.paused && el.currentTime > 0 && el.readyState >= 2), {
+    timeout: 30000, message: 'Restarting the retained queue must actually play its item',
+  }).toBe(true);
 });

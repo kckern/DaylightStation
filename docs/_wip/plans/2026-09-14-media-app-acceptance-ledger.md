@@ -11,10 +11,17 @@
 | Run | Scope | Red / baseline | Green / acceptance |
 |---|---|---|---|
 | BASE-UNIT | Media module + MediaApp | 513 passed; worker termination warning | Not story acceptance |
-| TASK-1 | D1–D4 | In progress | Unverified end to end |
+| TASK-1 | D1–D4 | Behavioral RED for missing local choice/retained handle, wrong retry/aim, modal interception and retry collision | Reviewed repair commits be00b6a4d,40aef3558,4f1235303; focused95/95, related226/226; browser subsets below. Full associated stories not yet accepted |
 | JOURNEY-AIM | Phone search → destination sheet → Office → This device | Destination modal visible but underlying Search Mode intercepts device taps: RED | GREEN after layer fix: ordinary taps switch aim and persist deselection on reopening; no playback commands. Phone subset only; full story needs tablet/laptop and reset |
+| JOURNEY-STOP-RESTART | Actual video → Stop → reopen retained queue → Play | Missing-handle unit RED in Task 1 | GREEN real browser: stopped media, retained title/queue, then actual video advancing again; full Stop story still requires feedback/remote parity |
+| JOURNEY-PEEK-AIM | Office controls → search result with fresh local aim → actual local video | Peek destination override unit RED in Task 1 | GREEN real browser20.4s: local video advances and no device command attempted; broader all-surface aim/control criteria remain unverified |
+| JOURNEY-SEARCH | Phone query + Video narrowing → Play → continue choosing | RED on stable source: Play closes search; query/narrowing surface no longer reachable | Task5 pending |
+| JOURNEY-AIM-IDLE | Choose Office → reload retains aim → two idle hours → local aim | RED: after two idle hours label still reads Office Screen; clock advanced without fabricated session state, device mutations blocked | Task3 pending |
+| JOURNEY-FOCUS-LAYOUT | Playing video → Expand → viewport surface and reachable controls | RED: expanded surface remains a centered content column; earlier continuity test did not assert geometry | GREEN after selector repair: 1 browser test35.8s; viewport bounds, on-screen controls, same media node/source and no pause events; review pending |
+| TASK-2-REVIEW-FIXES | Known→unknown duration, stalled progress, seek capability, playback generations, actual-position relative seeks | Unit RED for each boundary; full browser rapid Forward→Back exposed stale-position overshoot | Commit dff6b8761; final6 real-browser cases GREEN3.3min; independent review pending. Persistence test cleanup also restores clean24file/247test exit; final focused124 tests reported |
+| HARNESS-SERVER | Explicit BASE_URL with unrelated default server unavailable | Config assertion RED: harness attempted to launch another dev stack | Explicit server now externally managed; default auto-start preserved;2 configuration tests pass |
 | BASE-BROWSER | Existing Media flow suite, screenshot-only tests excluded | 1 passed, 5 failed, 30 not run after failure cap; obsolete selectors prevent acceptance | Not story acceptance |
-| JOURNEY-LOCAL | Disclosure Day search → actual video → seek/pause/stop | Actual video advances; visible seek slider disabled with duration/position zero. Expand video control absent. | Real pause/resume passed after correcting harness closure; ±10-second actual seeking passed; retained-queue stop passed with Task 1 work in progress; full stories remain unverified |
+| JOURNEY-LOCAL | Disclosure Day search → actual video → seek/pause/stop | Actual video advances; visible seek slider disabled with duration/position zero. Expand video control absent. | Task 2 development GREEN: all6 browser tests pass in3.3min, including real duration/progress, keyboard/pointer seek, focus same-node/source/no-pause, normal pause/resume, ±10s and stop/restart; review and full-story parity pending |
 
 ## Criteria
 
@@ -28,7 +35,7 @@ As a **Seeker**, I want to start typing a title from anywhere in the app, so tha
 | FIND.1a/AC2 | Results begin appearing while I type, each with a picture, title, and kind. | Unverified | — |
 | FIND.1a/AC3 | The search looks and behaves the same on a phone, tablet, or laptop, and whatever I was doing before (including steering another screen). | Unverified | — |
 | FIND.1a/AC4 | Closing search returns me to exactly where I was. | Unverified | — |
-| FIND.1a/AC5 | After **Play**, **Add to queue**, or **Play on…**, search stays open with my words and narrowing, so I can keep going (R24). | Unverified | — |
+| FIND.1a/AC5 | After **Play**, **Add to queue**, or **Play on…**, search stays open with my words and narrowing, so I can keep going (R24). | Failing | JOURNEY-SEARCH: phone Play closes search; tests/live/flow/media/media-app-search-journey.runtime.test.mjs; Task5 |
 
 ### FIND.1b
 
@@ -318,8 +325,8 @@ As a **Big-Screen Sender**, I want the aim shown next to every play action, so t
 |---|---|---|---|
 | PLACE.1a/AC1 | Everywhere a play or line-up action appears, the aim is visible on the same screen, on every device size. | Unverified | — |
 | PLACE.1a/AC2 | The aim uses the screen's name and room ("Living Room TV"), or "This device (Dad's phone)", or "3 screens" (R49). | Unverified | — |
-| PLACE.1a/AC3 | What the aim says is always what happens. No control ignores it. | Unverified | — |
-| PLACE.1a/AC4 | When I'm steering another screen, the aim is still shown as its own thing and does not change unless I change it (see Tension T2). | Unverified | — |
+| PLACE.1a/AC3 | What the aim says is always what happens. No control ignores it. | Partial | JOURNEY-PEEK-AIM local playback after Office controls passes; all other surfaces/verbs pending |
+| PLACE.1a/AC4 | When I'm steering another screen, the aim is still shown as its own thing and does not change unless I change it (see Tension T2). | Partial | JOURNEY-PEEK-AIM proves no redirection; complete label visibility and other aims pending |
 
 ### PLACE.2a
 
@@ -329,7 +336,7 @@ As a **Big-Screen Sender**, I want to aim at a TV for the evening, so that every
 |---|---|---|---|
 | PLACE.2a/AC1 | I can change the aim in one step from wherever the aim is shown. | Unverified | — |
 | PLACE.2a/AC2 | The chosen aim persists as I move around the app and after a reload. | Unverified | — |
-| PLACE.2a/AC3 | After 2 hours of no use (default), the aim returns to "this device" on its own, so a phone is never left aimed at a TV for days (Q1). | Unverified | — |
+| PLACE.2a/AC3 | After 2 hours of no use (default), the aim returns to "this device" on its own, so a phone is never left aimed at a TV for days (Q1). | Failing | JOURNEY-AIM-IDLE: after two idle hours label remains Office Screen; Task3 |
 | PLACE.2a/AC4 | That clock doesn't run while the aimed screen is playing something this device sent or is steering (R4). | Unverified | — |
 | PLACE.2a/AC5 | Opening the app after that much idle starts on "this device", even though a reload otherwise restores the aim (R7). | Unverified | — |
 | PLACE.2a/AC6 | Every play and line-up action then uses it (see `PLAY.1a`). | Unverified | — |
@@ -340,8 +347,8 @@ As a **Hand-Held Viewer**, I want to aim back at this device in one step, on any
 
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
-| PLACE.2b/AC1 | "This device" is always one of the choices, on phone, tablet, and laptop alike. | Unverified | — |
-| PLACE.2b/AC2 | Choosing it immediately updates the aim everywhere it is shown. | Unverified | — |
+| PLACE.2b/AC1 | "This device" is always one of the choices, on phone, tablet, and laptop alike. | Partial | JOURNEY-AIM phone RED→GREEN; tablet/laptop pending |
+| PLACE.2b/AC2 | Choosing it immediately updates the aim everywhere it is shown. | Partial | JOURNEY-AIM search label and reopened picker update; all-surface coverage pending |
 | PLACE.2b/AC3 | Starting fresh (`RELY.8`) also offers to return the aim to this device. | Unverified | — |
 
 ### PLACE.3a
@@ -473,8 +480,8 @@ As a **Hand-Held Viewer**, I want to expand video to fill the screen and shrink 
 
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
-| STEER.2a/AC1 | Video can be expanded to fill the screen (or the whole display) in one step. | Unverified | — |
-| STEER.2a/AC2 | Shrinking it keeps playing without a pause or restart. | Unverified | — |
+| STEER.2a/AC1 | Video can be expanded to fill the screen (or the whole display) in one step. | Partial | JOURNEY-FOCUS-LAYOUT desktop geometry RED→GREEN; mobile/tablet and entry-point parity pending |
+| STEER.2a/AC2 | Shrinking it keeps playing without a pause or restart. | Partial | JOURNEY-LOCAL desktop GREEN: same node/source and zero pause events; mobile/tablet parity pending |
 | STEER.2a/AC3 | Audio-only playback shows a picture and title when expanded. | Unverified | — |
 
 ### STEER.3a
@@ -483,7 +490,7 @@ As a **House Watch**, I want to pause, resume, and skip on any screen, so that I
 
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
-| STEER.3a/AC1 | Play/pause is one control that shows whether it is playing or paused. | Unverified | — |
+| STEER.3a/AC1 | Play/pause is one control that shows whether it is playing or paused. | Partial | JOURNEY-LOCAL real local pause/resume passes; remote parity and duplicate handle pending |
 | STEER.3a/AC2 | Skip forward and back are available for any queue. | Unverified | — |
 | STEER.3a/AC3 | After a press, the control reflects the change within 2 seconds, or tells me it hasn't happened yet (R46). | Unverified | — |
 | STEER.3a/AC4 | If the screen can't be reached, the press reads "not sent" and is never carried out later (R35). | Unverified | — |
@@ -494,8 +501,8 @@ As a **Hand-Held Viewer**, I want to scrub and jump a few seconds back or forwar
 
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
-| STEER.4a/AC1 | A position bar can be dragged; the time is shown while dragging. | Unverified | — |
-| STEER.4a/AC2 | Jump back and forward buttons are present for every playback, local or on another screen. | Unverified | — |
+| STEER.4a/AC1 | A position bar can be dragged; the time is shown while dragging. | Partial | JOURNEY-LOCAL desktop RED→GREEN: real duration/progress, requested drag time and actual seek; other devices/targets pending |
+| STEER.4a/AC2 | Jump back and forward buttons are present for every playback, local or on another screen. | Partial | JOURNEY-LOCAL actual ±10-second local jumps pass; remote/other formats pending |
 | STEER.4a/AC3 | Live content shows that it's live and offers "go to live" instead of a position. | Unverified | — |
 
 ### STEER.5a
@@ -514,8 +521,8 @@ As a **Fixer**, I want to stop playback and know what stopping leaves, so that I
 
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
-| STEER.6a/AC1 | There is one "stop" control, meaning the same thing everywhere. | Unverified | — |
-| STEER.6a/AC2 | After stopping, I'm told what remains ("Queue kept: 8 items") and can reopen it. | Unverified | — |
+| STEER.6a/AC1 | There is one "stop" control, meaning the same thing everywhere. | Partial | JOURNEY-STOP-RESTART proves actual local Stop; consistent surface/remote semantics pending |
+| STEER.6a/AC2 | After stopping, I'm told what remains ("Queue kept: 8 items") and can reopen it. | Partial | JOURNEY-STOP-RESTART queue reopens; complete feedback/remote parity pending |
 | STEER.6a/AC3 | Emptying the queue is a separate, clearly named action (`STEER.8`). | Unverified | — |
 | STEER.6a/AC4 | Where the screen supports it, stop also offers **and turn the screen off** (R42). | Unverified | — |
 
@@ -556,7 +563,7 @@ As a **Queue Builder**, I want to open the queue for any playback from anywhere,
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
 | STEER.7a/AC1 | The queue is reachable in one step from the handle on my playback and from any screen's controls. | Unverified | — |
-| STEER.7a/AC2 | It's still reachable after stopping, until I clear it or start fresh. | Unverified | — |
+| STEER.7a/AC2 | It's still reachable after stopping, until I clear it or start fresh. | Partial | JOURNEY-STOP-RESTART local reopen and actual restart pass; clear/reset and remote journeys pending |
 | STEER.7a/AC3 | It shows what's playing now, what's next (including items placed "next"), and a count. | Unverified | — |
 | STEER.7a/AC4 | Photos have a queue like video and audio; a live channel or camera is a single thing with no queue or position (Q5). | Unverified | — |
 | STEER.7a/AC5 | Each queue also shows what **played earlier** (`FIND.11`). | Unverified | — |
