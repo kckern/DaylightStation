@@ -31,6 +31,9 @@ export default function useVoiceCapture({ onTake, onDenied } = {}) {
   const streamRef = useRef(null);
   const chunksRef = useRef([]);
   const startedAtRef = useRef(0);
+  // Set by `cancel`: the take being stopped is thrown away rather than handed
+  // back, so a Tab-to-hear-it-again never judges or plays a half-said answer.
+  const cancelledRef = useRef(false);
   /**
    * The callbacks, read at fire time rather than captured.
    *
@@ -59,11 +62,18 @@ export default function useVoiceCapture({ onTake, onDenied } = {}) {
       const mic = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = mic;
       chunksRef.current = [];
+      cancelledRef.current = false;
 
       const recorder = new MediaRecorder(mic);
       recorderRef.current = recorder;
       recorder.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
       recorder.onstop = () => {
+        if (cancelledRef.current) {
+          cancelledRef.current = false;
+          chunksRef.current = [];
+          release();
+          return;
+        }
         const blob = new Blob(chunksRef.current, { type: recorder.mimeType || 'audio/webm' });
         const durationMs = Date.now() - startedAtRef.current;
         // Let the mic go BEFORE the caller sees the take: whatever it does next
@@ -91,6 +101,16 @@ export default function useVoiceCapture({ onTake, onDenied } = {}) {
     if (recorderRef.current?.state === 'recording') recorderRef.current.stop();
   }, []);
 
+  /** Stop and throw the take away: the mic is released and `onTake` never fires. */
+  const cancel = useCallback(() => {
+    if (recorderRef.current?.state === 'recording') {
+      cancelledRef.current = true;
+      recorderRef.current.stop();
+    } else {
+      release();
+    }
+  }, [release]);
+
   /** Is the recorder running right now? A function, not state: callers that
    *  need to render on it already track their own phase. */
   const isRecording = useCallback(
@@ -101,5 +121,5 @@ export default function useVoiceCapture({ onTake, onDenied } = {}) {
   // A rung unmounted mid-take must not leave the mic open behind it.
   useEffect(() => () => release(), [release]);
 
-  return { start, stop, release, isRecording, stream };
+  return { start, stop, cancel, release, isRecording, stream };
 }

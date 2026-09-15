@@ -306,7 +306,9 @@ describe('Sentence Ladder UI cues', () => {
  * same thing about THIS route, which is the path that would actually leak.
  */
 describe('a spoken answer', () => {
-  const speak = (app, query = 'corpus=korean&seq=7&lang=EN', bytes = Buffer.from('spoken-answer')) => request(app)
+  // A take long enough to be one: the route answers anything tap-sized itself.
+  const SPOKEN = Buffer.concat([Buffer.from('spoken-answer'), Buffer.alloc(6000, 1)]);
+  const speak = (app, query = 'corpus=korean&seq=7&lang=EN', bytes = SPOKEN) => request(app)
     .post(`/api/v1/school/sentence-ladder/users/test-learner/transcribe?${query}`)
     .set('X-School-Study-Grant', 'signed')
     .set('Content-Type', 'audio/webm')
@@ -326,7 +328,7 @@ describe('a spoken answer', () => {
     expect(res.body).toEqual({ transcript: 'it is cold today', empty: false });
     expect(transcription.transcribe).toHaveBeenCalledTimes(1);
     const [call] = transcription.transcribe.mock.calls[0];
-    expect(call.audioBuffer).toEqual(Buffer.from('spoken-answer'));
+    expect(call.audioBuffer).toEqual(SPOKEN);
     expect(call.mimeType).toBe('audio/webm');
   });
 
@@ -441,5 +443,41 @@ describe('a spoken answer', () => {
       .set('X-School-Study-Grant', 'signed')
       .send({ corpus: 'korean', seq: 7, rung: 'interpretation', given: 'it is cold' });
     expect(service.logAttempt).toHaveBeenLastCalledWith(expect.objectContaining({ method: null }));
+  });
+});
+
+describe('a spoken answer too short to be one', () => {
+  const post = (app, bytes) => request(app)
+    .post('/api/v1/school/sentence-ladder/users/learner3/transcribe?corpus=korean&seq=1&lang=EN')
+    .set('X-School-Study-Grant', 'signed')
+    .set('Content-Type', 'audio/webm')
+    .send(Buffer.alloc(bytes, 1));
+
+  it('answers "heard nothing" for a tap-sized take, without a model call', async () => {
+    // Found live 2026-09-14: a 1,454-byte, 117ms take reached the provider and came back a 500.
+    const { app, transcription } = appWith();
+    const res = await post(app, 1454);
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ transcript: '', empty: true });
+    expect(transcription.transcribe).not.toHaveBeenCalled();
+  });
+
+  it('turns the provider refusing a too-short take into "heard nothing", not a 500', async () => {
+    const tooShort = Object.assign(new Error('Request failed with status code 400'), {
+      response: { status: 400, data: { error: { code: 'audio_too_short' } } },
+    });
+    const { app } = appWith({
+      languageTranscription: { transcribe: vi.fn(async () => { throw tooShort; }), isEmpty: () => false },
+    });
+    const res = await post(app, 9000);
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ transcript: '', empty: true });
+  });
+
+  it('still fails loudly on a real provider error', async () => {
+    const { app } = appWith({
+      languageTranscription: { transcribe: vi.fn(async () => { throw new Error('boom'); }), isEmpty: () => false },
+    });
+    expect((await post(app, 9000)).status).toBe(500);
   });
 });

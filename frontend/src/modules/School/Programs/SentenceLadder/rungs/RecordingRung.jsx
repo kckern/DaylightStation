@@ -99,7 +99,7 @@ async function decodeTake(blob) {
 }
 
 export default function RecordingRung({
-  entry, audioUrl, cueUrl = null, onComplete, saving, onDisableMicrophone,
+  entry, audioUrl, cueUrl = null, onComplete, saving, onDisableMicrophone, showShortcuts = false,
 }) {
   // idle → prompting → recording → playback → review
   const [phase, setPhase] = useState('idle');
@@ -137,6 +137,10 @@ export default function RecordingRung({
   const phaseRef = useRef(phase);
   useEffect(() => { phaseRef.current = phase; }, [phase]);
   const rootRef = useRef(null);
+  // The sentence being said, and its meaning. The meaning is shown for
+  // reinforcement and can be heard on request; it is never played on its own.
+  const targetLang = entry.prompt?.[0]?.language;
+  const sourceLang = Object.keys(entry.text || {}).find((language) => language !== targetLang) ?? null;
 
   const stopPlayback = useCallback(() => {
     const el = playbackRef.current;
@@ -232,7 +236,9 @@ export default function RecordingRung({
   // Destructured, not held as an object: `beginCapture` is what
   // `useSentenceAudio` fires at the end of the prompt sequence, so an identity
   // that changed every render would re-arm that sequence mid-play.
-  const { start: startCapture, stop: stopCapture, release: releaseMic, stream } = useVoiceCapture({
+  const {
+    start: startCapture, stop: stopCapture, cancel: cancelCapture, release: releaseMic, stream,
+  } = useVoiceCapture({
     onTake, onDenied,
   });
 
@@ -250,6 +256,10 @@ export default function RecordingRung({
   // one gesture. The learner shouldn't have to hunt for a second button
   // between hearing and speaking.
   const { playSequence, stop, blocked } = useSentenceAudio({ onSequenceEnd: beginCapture });
+  // HEARING IT AGAIN WITHOUT RECORDING. A second player, because the one above
+  // opens the microphone when it finishes: a child who only wants to hear a
+  // line once more must never find the mic live at the end of it.
+  const { playSequence: listenTo, stop: stopListening } = useSentenceAudio();
 
   useEffect(() => {
     setPhase('idle');
@@ -262,20 +272,22 @@ export default function RecordingRung({
     rootRef.current?.focus?.({ preventScroll: true });
     return () => {
       stop();
+      stopListening();
       stopPlayback();
       releaseMic();
       if (takeUrlRef.current) URL.revokeObjectURL(takeUrlRef.current);
       takeUrlRef.current = null;
     };
-  }, [entry.seq, stop, stopPlayback, releaseMic]);
+  }, [entry.seq, stop, stopListening, stopPlayback, releaseMic]);
 
   const cue = useCallback(() => (cueUrl ? [{ url: cueUrl, role: 'cue' }] : []), [cueUrl]);
 
   const start = useCallback(() => {
+    stopListening();
     dropTake();
     setPhase('prompting');
     playSequence([...clipsFor(entry, audioUrl), ...cue()]);
-  }, [entry, audioUrl, cue, playSequence, dropTake]);
+  }, [entry, audioUrl, cue, playSequence, dropTake, stopListening]);
 
   // Again means the ding and the mic — not the whole sentence over. Hearing
   // the prompt again is what the Repetition rung is for, and a retry that is
@@ -288,6 +300,39 @@ export default function RecordingRung({
     languageLog.capture('retake', { seq: entry.seq });
     playSequence(cue());
   }, [entry.seq, cue, playSequence, stopPlayback, dropTake]);
+
+  /**
+   * Hear one line — the sentence or its meaning — without recording anything.
+   * Allowed at every point except while the learner is speaking or the prompt
+   * is already sounding; a finished take is kept, because this is a listen, not
+   * a retake.
+   */
+  const hear = useCallback((language) => {
+    if (!language) return;
+    const current = phaseRef.current;
+    if (current === 'recording' || current === 'prompting') return;
+    stopPlayback();
+    if (current === 'playback') setPhase('review');
+    languageLog.rung('hear', { rung: 'recording', seq: entry.seq, language });
+    listenTo([{ url: audioUrl(entry.seq, language), language }]);
+  }, [audioUrl, entry.seq, listenTo, stopPlayback]);
+
+  /**
+   * TAB ALWAYS BRINGS THE SENTENCE BACK. Before a take it is a listen. Once the
+   * learner is recording, or has a take in hand, it starts over: the take in
+   * progress is thrown away — never judged, never played back — the sentence
+   * sounds again, and the microphone opens when it has finished, exactly as the
+   * first press did. Nobody is sent into a recording having heard it only once.
+   */
+  const replaySentence = useCallback(() => {
+    const current = phaseRef.current;
+    if (current === 'idle') { hear(targetLang); return; }
+    languageLog.capture('replay-restart', { seq: entry.seq, from: current });
+    if (current === 'recording') cancelCapture();
+    stopPlayback();
+    setTakeVerdict(null);
+    start();
+  }, [cancelCapture, entry.seq, hear, start, stopPlayback, targetLang]);
 
   useEffect(() => {
     if (!blocked || phase !== 'prompting') return;
@@ -336,6 +381,14 @@ export default function RecordingRung({
   useEffect(() => {
     const onKey = (e) => {
       if (e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey) return;
+      // Tab belongs to the rung whatever holds focus: it hears the sentence
+      // again (Shift+Tab, the meaning) and never moves focus off the stage.
+      if (e.key === 'Tab') {
+        e.preventDefault();
+        if (e.shiftKey) hear(sourceLang);
+        else replaySentence();
+        return;
+      }
       const go = e.key === ' ' || e.key === 'Enter';
       const again = e.key === 'Backspace';
       if (!go && !again) return;
@@ -352,7 +405,7 @@ export default function RecordingRung({
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [start, stopRecording, skipPlayback, accept, recordAgain]);
+  }, [start, stopRecording, skipPlayback, accept, recordAgain, hear, replaySentence, sourceLang]);
 
   const getPlayhead = useCallback(() => {
     const el = playbackRef.current;
@@ -360,11 +413,26 @@ export default function RecordingRung({
     return Math.min(1, el.currentTime / el.duration);
   }, []);
 
-  const targetLang = entry.prompt?.[0]?.language;
+  // A tapped line hands the keys straight back to the stage, so the next Space
+  // is still the rung's rather than a second press of the line.
+  const tapToHear = (language) => () => {
+    hear(language);
+    rootRef.current?.focus?.({ preventScroll: true });
+  };
 
   return (
     <div ref={rootRef} tabIndex={-1} className={`lang-rung lang-rung--recording is-${phase}`}>
-      <p className="lang-rung__target">{entry.text?.[targetLang]}</p>
+      {/* The meaning, small, above the sentence — reinforcement, never spoken
+          unless asked for. Both lines can be tapped to hear them; Tab never
+          lands on them, because Tab is "hear it again". */}
+      {sourceLang && entry.text?.[sourceLang] && (
+        <button type="button" tabIndex={-1} className="lang-rung__say lang-rung__source" onClick={tapToHear(sourceLang)}>
+          {entry.text[sourceLang]}
+        </button>
+      )}
+      <button type="button" tabIndex={-1} className="lang-rung__say lang-rung__target" onClick={tapToHear(targetLang)}>
+        {entry.text?.[targetLang]}
+      </button>
 
       {/* Always on the stage — a bare line before anything has been said, so
           the sentence does not move when the voice starts filling it. */}
@@ -460,6 +528,13 @@ export default function RecordingRung({
           </>
         )}
       </div>
+      {/* The keys, where there are keys to press. A touch panel is not told
+          about a Tab it does not have. */}
+      {showShortcuts && (
+        <p className="lang-rung__keys" aria-hidden="true">
+          Space: go · Tab: hear it again · Shift+Tab: hear the meaning · Backspace: record again
+        </p>
+      )}
     </div>
   );
 }

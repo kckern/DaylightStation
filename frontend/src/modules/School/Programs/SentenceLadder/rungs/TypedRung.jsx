@@ -169,6 +169,16 @@ const SPEAK_STOP_WORD = 'Stop speaking';
 export const MAX_SPEAK_MS = 20_000;
 
 /**
+ * The shortest take worth sending. A tap on the control and a second tap to
+ * stop it (found live 2026-09-14: 117ms) holds no answer, and the provider
+ * refuses it outright. It is answered here, on the device, as "too quick".
+ */
+export const MIN_SPEAK_MS = 700;
+
+/** Start or stop a spoken answer from the keyboard. F1 is the peek, F6 the IME. */
+const SPEAK_KEY = 'F2';
+
+/**
  * The baseline's quiet control: a glyph, the word for anything that asks, and
  * the visible caption — which is where the shortcut is written when there is a
  * keyboard to press it on. Play, Stop and Peek are the same button three
@@ -212,6 +222,8 @@ export default function TypedRung({
    * reasoning keeps Hint off this rung until glosses exist.
    */
   onTranscribe = null,
+  /** See MIN_SPEAK_MS. A prop so tests can speak in zero milliseconds. */
+  minSpeakMs = MIN_SPEAK_MS,
 }) {
   const [value, setValue] = useState('');
   /**
@@ -329,6 +341,14 @@ export default function TypedRung({
    * — which reads as the reveal being broken rather than the data being thin.
    */
   const answerText = entry.text?.[responseLang] ?? '';
+  /**
+   * THE MEANING, shown on dictation for reinforcement: the language the learner
+   * is NOT typing. Never on interpretation, where the meaning IS the answer.
+   */
+  const meaningLang = isDictation
+    ? Object.keys(entry.text || {}).find((language) => language !== responseLang) ?? null
+    : null;
+  const meaningText = meaningLang ? entry.text?.[meaningLang] ?? '' : '';
   // Dictation has the peek; interpretation has this. Never both on one rung:
   // on dictation the model is help, on interpretation it is the answer.
   const canReveal = !isDictation && answerText !== '' && !revealed;
@@ -485,6 +505,15 @@ export default function TypedRung({
     inputRef.current?.focus();
   }, [stop, entry.rung, entry.seq]);
 
+  /** Hear the meaning once, on request — Shift+Tab, or a tap on the line. */
+  const hearMeaning = useCallback(() => {
+    if (!meaningLang || speaking === 'recording') return;
+    setHushed(false);
+    languageLog.rung('hear', { rung: entry.rung, seq: entry.seq, language: meaningLang });
+    playSequence([{ url: audioUrl(entry.seq, meaningLang), language: meaningLang }], { loop: false });
+    window.setTimeout(() => inputRef.current?.focus(), 0);
+  }, [meaningLang, speaking, entry.rung, entry.seq, audioUrl, playSequence]);
+
   /**
    * Show the sentence, or put it away again.
    *
@@ -557,6 +586,16 @@ export default function TypedRung({
     languageLog.capture('speak-stop', {
       rung: entry.rung, seq: entry.seq, bytes: blob?.size ?? 0, durationMs,
     });
+    if (durationMs < minSpeakMs) {
+      // Not sent: nothing was said, and the provider would refuse it anyway.
+      setSpeaking('idle');
+      languageLog.capture('speak-too-short', { rung: entry.rung, seq: entry.seq, durationMs });
+      setSpeakNote({
+        notice: 'That was too quick — start, say the whole answer, then stop. Or type it.',
+        caption: 'Too quick',
+      });
+      return;
+    }
     setSpeaking('sending');
     const result = await onTranscribe?.(blob);
     if (!alive.current) return;
@@ -598,7 +637,7 @@ export default function TypedRung({
       el.focus({ preventScroll: true });
       el.setSelectionRange?.(transcript.length, transcript.length);
     }, 0);
-  }, [entry.rung, entry.seq, onTranscribe, value.length]);
+  }, [entry.rung, entry.seq, onTranscribe, value.length, minSpeakMs]);
 
   const onSpeakDenied = useCallback((err) => {
     languageLog.captureError('speak-denied', {
@@ -612,9 +651,17 @@ export default function TypedRung({
     setSpeakNote({ notice: 'The microphone didn’t open — have another go, or type it.', caption: 'Mic didn’t open' });
   }, [entry.rung, entry.seq]);
 
-  const { start: startSpeaking, stop: stopSpeaking } = useVoiceCapture({
+  const { start: startSpeaking, stop: stopSpeaking, cancel: cancelSpeaking } = useVoiceCapture({
     onTake, onDenied: onSpeakDenied,
   });
+
+  /** Throw a take in progress away, unsent — so nothing sounds into an open mic. */
+  const abandonSpeaking = useCallback(() => {
+    window.clearTimeout(speakTimer.current);
+    cancelSpeaking();
+    setSpeaking('idle');
+    languageLog.capture('speak-cancelled', { rung: entry.rung, seq: entry.seq });
+  }, [cancelSpeaking, entry.rung, entry.seq]);
 
   const speak = useCallback(async () => {
     setSpeakNote(null);
@@ -696,7 +743,20 @@ export default function TypedRung({
   const onKeyDown = useCallback((e) => {
     if (e.key === 'Tab') {
       e.preventDefault();
+      // Nothing may sound into an open microphone: a take in progress is thrown
+      // away first, unsent.
+      if (speaking === 'recording') abandonSpeaking();
+      if (e.shiftKey) {
+        hearMeaning();
+        return;
+      }
       play();
+      return;
+    }
+    if (canSpeak && e.key === SPEAK_KEY) {
+      e.preventDefault();
+      if (speaking === 'idle') speak();
+      else if (speaking === 'recording') stopSpeaking();
       return;
     }
     if (canPeek && e.key === PEEK_KEY) {
@@ -709,9 +769,13 @@ export default function TypedRung({
     // with a word, then a space the learner cannot type. The key is a space.
     if (e.key === 'Enter') {
       e.preventDefault();
+      // Enter while speaking finishes the take, rather than handing in whatever
+      // the field held before it; and nothing is handed in mid-transcription.
+      if (speaking === 'recording') { stopSpeaking(); return; }
+      if (speaking === 'sending') return;
       submit();
     }
-  }, [play, submit, canPeek, togglePeek]);
+  }, [play, submit, canPeek, togglePeek, canSpeak, speaking, speak, stopSpeaking, abandonSpeaking, hearMeaning]);
 
   const label = isCopying ? 'Copy the sentence' : isDictation ? 'Type what you hear' : 'Type what it means';
 
@@ -733,20 +797,35 @@ export default function TypedRung({
             character by character would only leak its length. */}
         {isDictation
           ? (
-            /* The wrapper exists for the refusal flash: the strip renders what
-               `columnsFor` decided and holds no state, so "this keystroke was
-               refused" — which is about the keyboard, not about the sentence —
-               is carried here and styled through to the live column. Keyed on
-               the refusal count so a repeat inside the window still moves; see
-               `refusals` above. */
-            <div
-              key={`strip-${refusals}`}
-              className={`lang-rung__strip${refusing ? ' is-refused' : ''}`}
-            >
-              <GlyphStrip columns={columns} caret={!saving && !submitted} />
-            </div>
+            <>
+              {/* The meaning, small, above the strip — reinforcement, heard only
+                  when asked for (a tap, or Shift+Tab). */}
+              {meaningText && (
+                <button type="button" tabIndex={-1} className="lang-rung__say lang-rung__source" onClick={hearMeaning}>
+                  {meaningText}
+                </button>
+              )}
+              {/* The wrapper exists for the refusal flash: the strip renders what
+                  `columnsFor` decided and holds no state, so "this keystroke was
+                  refused" — which is about the keyboard, not about the sentence —
+                  is carried here and styled through to the live column. Keyed on
+                  the refusal count so a repeat inside the window still moves; see
+                  `refusals` above. A tap on it hears the sentence again. */}
+              <div
+                key={`strip-${refusals}`}
+                className={`lang-rung__strip${refusing ? ' is-refused' : ''}`}
+                role="presentation"
+                onClick={play}
+              >
+                <GlyphStrip columns={columns} caret={!saving && !submitted} />
+              </div>
+            </>
           )
-          : <p className="lang-rung__target">{targetText}</p>}
+          : (
+            <button type="button" tabIndex={-1} className="lang-rung__say lang-rung__target" onClick={play}>
+              {targetText}
+            </button>
+          )}
 
         {/* THE ANSWER, IN PLACE OF THE FIELD — not above it. Rendering both put
             a dead grey input, still holding half an answer, directly under the
@@ -889,7 +968,9 @@ export default function TypedRung({
                  transcript REPLACES the field, and a child who has half an
                  answer typed should know that before they press it, not
                  after. */
-              caption={speakNote ? speakNote.caption : (value.trim() ? 'Speak instead' : 'Speak')}
+              caption={speakNote
+                ? speakNote.caption
+                : `${showShortcuts ? 'F2 speaks' : 'Speak'}${value.trim() ? ' instead' : ''}`}
               captionTone={speakNote ? 'warn' : null}
               onClick={speak}
             />
@@ -902,7 +983,7 @@ export default function TypedRung({
             >
               <Icon name="stop" className="lang-btn__glyph" />
               <span className="lang-btn__word">{SPEAK_STOP_WORD}</span>
-              <span className="lang-btn__key" aria-hidden="true">Stop</span>
+              <span className="lang-btn__key" aria-hidden="true">{showShortcuts ? 'F2 or Enter stops' : 'Stop'}</span>
             </button>
           )}
           {/* IN FLIGHT, and deliberately not a button. The round trip is a
@@ -930,6 +1011,9 @@ export default function TypedRung({
           </button>
         </div>
       </div>
+      {showShortcuts && meaningText && (
+        <p className="lang-rung__keys" aria-hidden="true">Shift+Tab: hear the meaning</p>
+      )}
     </div>
   );
 }

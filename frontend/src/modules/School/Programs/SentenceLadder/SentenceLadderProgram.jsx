@@ -534,6 +534,9 @@ export default function SentenceLadderProgram({
   const finishAction = keySummary.total > 0 && keySettled && !preview && !keyBlocked && !locked ? onRoll
     : keySettled && !keyBlocked && locked && keyExit ? keyExit
       : null;
+  // → on the complete panel is always "another round", on the kiosk too, where
+  // Enter is Done. Nothing else is on screen then, so the arrow is free.
+  const nextDayAction = keySummary.total > 0 && keySettled && !preview ? onRoll : null;
   useEffect(() => {
     const onKey = (e) => {
       if (e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey) return;
@@ -551,6 +554,11 @@ export default function SentenceLadderProgram({
         }
         return;
       }
+      if (e.key === 'ArrowRight' && tab === 'study' && nextDayAction) {
+        e.preventDefault();
+        nextDayAction();
+        return;
+      }
       if ((e.key === ' ' || e.key === 'Enter') && tab === 'study' && finishAction) {
         e.preventDefault();
         finishAction();
@@ -558,7 +566,7 @@ export default function SentenceLadderProgram({
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [stops, tab, activeRung, selectTab, finishAction]);
+  }, [stops, tab, activeRung, selectTab, finishAction, nextDayAction]);
 
 
   // A guest is stopped, but never stranded: the picker lives one level up and
@@ -791,6 +799,11 @@ export default function SentenceLadderProgram({
             {allDone && !preview && (
               <button type="button" className={locked ? 'lang-btn' : 'lang-btn lang-btn--primary'} onClick={onRoll}>Start the next day</button>
             )}
+            {allDone && !preview && hasHardwareKeyboard && (
+              <p className="lang-program__keys" aria-hidden="true">
+                {sessionFinished && locked && exitHandler ? 'Enter: done · →: start the next day' : 'Enter or →: start the next day'}
+              </p>
+            )}
           </div>
         )}
 
@@ -805,6 +818,7 @@ export default function SentenceLadderProgram({
             key={`${entry.rung}-${entry.seq}`}
             entry={entry} nextEntry={nextEntry} audioUrl={audioUrl}
             onComplete={onComplete} saving={saving}
+            showShortcuts={hasHardwareKeyboard}
             onHold={() => setHeld({ rung: entry.rung, seq: entry.seq })}
             onRelease={() => setHeld(null)}
             onAdvance={() => {
@@ -847,6 +861,7 @@ export default function SentenceLadderProgram({
             cueUrl={day?.cues?.includes('record') ? languageApi.cueUrl('record') : null}
             onComplete={onComplete} saving={saving}
             onDisableMicrophone={toggleMicrophone}
+            showShortcuts={hasHardwareKeyboard}
           />
         )}
       </main>
