@@ -125,6 +125,33 @@ describe('--write', () => {
     expect(rivalries.rivals['pokemon:level-1'].record).toEqual({ win: 2, loss: 0, draw: 0 });
   });
 
+  it('recognizes a legacy game the current archive already holds, and never files it twice', async () => {
+    const dup = game({
+      game_id: 'chess-dup', ended_at: '2026-08-20T10:00:00.000Z',
+      opponent: { level: 0, name: 'Caterpie', id: 'pokemon:level-1' },
+    });
+    // Already in the current archive, filed under its real current-style name.
+    put(data, 'household/gaming/log/chess/2026-08-20/kid_level0_0s_1ply_win_checkmate_2026-08-20T10-00-00-000Z-real.yml', dup);
+    // The same game, duplicated in the legacy directory: once under an old-style name...
+    put(data, 'household/gaming/log/pianochess/2026-08-20/kid-2026-08-20T10-00-00-000Z.yml', dup);
+    // ...and once under a name identical to the one already filed, which used to be a permanent conflict.
+    put(data, 'household/gaming/log/pianochess/2026-08-20/kid_level0_0s_1ply_win_checkmate_2026-08-20T10-00-00-000Z-real.yml', dup);
+
+    const report = await run({ data, write: true, now: NOW });
+    expect(report.consolidation.alreadyArchived).toBe(2);
+    expect(report.consolidation.conflicts).toEqual([]);
+    const currentDay = tree(data).filter((file) => file.startsWith('household/gaming/log/chess/2026-08-20/'));
+    expect(currentDay).toHaveLength(1);
+    expect(fs.existsSync(path.join(data, DELETED, 'pianochess-archive'))).toBe(true);
+  });
+
+  it('never overwrites an existing copy already in _deleteme, appending -1 to a taken destination', async () => {
+    put(data, `${DELETED}/scorecards/kid/2026-08-23-1111.yml`, { already: 'here' });
+    await run({ data, write: true, now: NOW });
+    expect(read(data, `${DELETED}/scorecards/kid/2026-08-23-1111.yml`)).toEqual({ already: 'here' });
+    expect(read(data, `${DELETED}/scorecards/kid/2026-08-23-1111-1.yml`)).toEqual({ result: 'win', duration_ms: 1_889_550, user_id: 'kid' });
+  });
+
   it('creates no chess profile for a player who never had one', async () => {
     put(data, 'users/visitor/profile.yml', { name: 'Visitor' });
     put(data, 'household/gaming/log/chess/2026-09-13/visitor_level0_1s_1ply_win_checkmate_2026-09-13T10-00-00-000Z-dddd.yml', game({

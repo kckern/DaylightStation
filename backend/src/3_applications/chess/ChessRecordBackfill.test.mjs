@@ -124,6 +124,25 @@ describe('matchScorecards', () => {
     expect(matched.map((card) => card.file)).toEqual(['one.yml', 'two.yml']);
     expect(unmatched.map((card) => card.file)).toEqual(['three.yml']);
   });
+
+  it('never falls back to duration for a card whose game id the archive does not have', () => {
+    const archive = [finished({ game_id: 'a', duration_ms: 3_499_621, result: 'loss' })];
+    const cards = [{ file: 'four.yml', record: { user_id: 'kid', game_id: 'zzz', result: 'loss', duration_ms: 3_499_621 } }];
+    const { matched, unmatched } = matchScorecards(cards, archive);
+    expect(matched).toEqual([]);
+    expect(unmatched.map((card) => card.file)).toEqual(['four.yml']);
+  });
+
+  it('lets each archived game satisfy at most one id-less duration-fallback card', () => {
+    const archive = [finished({ game_id: 'a', duration_ms: 100_000, result: 'win' })];
+    const cards = [
+      { file: 'five.yml', record: { user_id: 'kid', result: 'win', duration_ms: 100_010 } },
+      { file: 'six.yml', record: { user_id: 'kid', result: 'win', duration_ms: 100_020 } },
+    ];
+    const { matched, unmatched } = matchScorecards(cards, archive);
+    expect(matched.map((card) => card.file)).toEqual(['five.yml']);
+    expect(unmatched.map((card) => card.file)).toEqual(['six.yml']);
+  });
 });
 
 describe('summarizeLadder', () => {
