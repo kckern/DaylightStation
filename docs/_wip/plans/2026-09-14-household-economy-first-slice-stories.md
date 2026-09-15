@@ -423,7 +423,68 @@ lost-session settlement already exists in gaming and is not changed here).
 
 ---
 
-## 5. Decided before approaches (2026-09-14)
+## 5. Policy inventory — everything config-driven
+
+**Rule (owner, 2026-09-14): every policy is configuration, never a constant.** The test:
+if a parent could reasonably want it different, it is a config key with a validated
+default. Code holds mechanism only: the ledger fold, idempotency by ref, atomic pairs,
+the three-layer refusal order, and the honesty rules of the meter. A number, window,
+rate, cap, set, colour or ordering that appears in code and is not in this table is a
+defect.
+
+### `economy.yml` (household app config, per-learner overrides under `users:`)
+
+| Key | Policy | Default (placeholder) |
+|---|---|---|
+| `currencies.silver.expires` | silver lifetime | `weekly` |
+| `currencies.gold` | evergreen store | `{}` |
+| `currencies.gems.colours` | provenance colours and which rule mints which | ruby, sapphire, emerald |
+| `week.close` | when the week settles (day + local time) | `sun 23:59` |
+| `week.school_days` | the days a week bonus counts | `[mon, tue, wed, thu, fri]` |
+| `week.makeup_day` | the day that fills a slot | `sat` |
+| `convert.silver_to_gold` | conversion tariff | `1` |
+| `tickets.minutes` | minutes one ticket redeems to | `10` |
+| `tickets.price` | tariff in silver | `{ base: 5, modifiers: [] }` |
+| `tickets.weekly_minute_cap` | minutes redeemable per week | `90` |
+| `tickets.refund_at_close` | unredeemed tickets refund to silver | `true` |
+| `tickets.redeem_surfaces` | where redemption is allowed | `[fitness-wallet]` |
+| `earn.school-day-met` | `{ tariff, gem?, evidence }` | `5` |
+| `earn.school-unit` | per-unit default, overridable per unit in school config | `0` |
+| `earn.school-extra` | extra-credit tariff and daily cap | `2, cap 3` |
+| `earn.school-week-met` | tariff, gem colour | `15, ruby` |
+| `earn.fitness-ring-threshold` | `{ step, tariff, cap_per_week }` | `500, 1, cap 10` |
+| `earn.fitness-ring-contest` | `{ tariff, gem, tie: split\|all\|none, contestants }` | `10, sapphire, all` |
+| `timeliness.on-time` / `.makeup` / `.lapsed` | multipliers applied to day and week earns | `1.0 / 0.5 / 0` |
+| `award_week.start` / `.end` | ring award window, day + time | `mon 04:00 / sat 12:00` |
+| `award_week.rollover` | rings after the end count toward next week | `false` |
+| `auth.buy` / `auth.redeem` | authorization level | `identify` |
+| `caps.*` | any per-day or per-week cap on any rule | per rule |
+
+Tariff shape everywhere a rate appears: `{ base, modifiers: [{ schedule|dates, multiply|set }] }`;
+first match wins; a bare number is `{ base }`.
+
+### Where policy already lives elsewhere (not duplicated)
+
+| Policy | Home |
+|---|---|
+| game hours, per-title windows | `games.yml` play-eligibility `windows` |
+| enforcement on/off, warning rungs, stale tolerance | `games.yml → play_sessions.*` |
+| which weekdays carry assignments, Saturday as makeup, grace window (D14), per-unit reward, extra credit allowed per program | `school.yml` / program config |
+| the fitness Monday→Monday bar window | fitness config (untouched) |
+| who is an admin (unlimited play) | household users |
+
+### What stays in code, and why
+
+- The ledger fold and per-currency balances: arithmetic, not policy.
+- Idempotency by ref and atomic convert pairs: correctness, not policy.
+- The refusal order open → allowed → affordable and the `layer` field: the contract every
+  surface relies on to explain a refusal; reordering it would break the explanation.
+- The meter's honesty rules (bill only observed play, never bill silence): already gaming's,
+  already documented as invariants.
+- Validation: an invalid or missing key fails startup with its path; nothing falls back to a
+  hidden constant.
+
+## 6. Decided before approaches (2026-09-14)
 
 1. **Ticket screens:** one standalone wallet widget in the fitness menu; both launchers
    deep-link to it on a "no time" refusal. (S8, S9, S13)
