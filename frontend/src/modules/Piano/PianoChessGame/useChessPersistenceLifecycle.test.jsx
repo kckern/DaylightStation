@@ -65,10 +65,20 @@ describe('useChessPersistenceLifecycle', () => {
     // called" can therefore read `null` and report a hook that never stored the
     // ladder. That is the whole of the flake: the hook was always right, the
     // wait was one settlement short, and a machine under load lost the race.
-    await waitFor(() => expect(result.current.ladderOutcome).toEqual({ promoted: true }));
+    await waitFor(() => expect(result.current.ladderOutcome).toEqual({ promoted: true, head_to_head: null }));
     expect(api.saveGameRecord).toHaveBeenCalledOnce();
     expect(api.archiveGame).toHaveBeenCalledOnce();
     expect(result.current.finishedRecord).toMatchObject({ result: 'win', level: 2 });
+  });
+
+  it('keeps the head-to-head record with the ladder outcome', async () => {
+    api.saveGameRecord.mockImplementationOnce(async () => ({
+      ladder: { promoted: false, counted: false },
+      head_to_head: { opponent: { name: 'Weedle' }, win: 6, loss: 0, draw: 0 },
+    }));
+    const { result } = renderPlayedGame();
+    await waitFor(() => expect(result.current.ladderOutcome?.head_to_head).toMatchObject({ win: 6 }));
+    expect(result.current.ladderOutcome.counted).toBe(false);
   });
 
   it('re-arms abandoned-game archival when a new game starts', () => {
