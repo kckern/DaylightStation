@@ -14,6 +14,14 @@ export function applyCommandEnvelope(controller, envelope) {
   }
 
   const { command, params = {} } = envelope;
+  if (command === 'handoff') {
+    // F3a deliberately has wire support only. A browser receipt cannot stand
+    // in for the native owner evidence F3b will require.
+    return {
+      ok: false, reason: 'HANDOFF_UNSUPPORTED', code: 'HANDOFF_UNSUPPORTED',
+      handoff: { transferId: params.transferId, phase: 'failed', code: 'HANDOFF_UNSUPPORTED' },
+    };
+  }
   if (command === 'transport') {
     const { action, value } = params;
     const fn = controller.transport?.[action];

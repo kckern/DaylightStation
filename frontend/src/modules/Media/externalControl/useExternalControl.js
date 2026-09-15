@@ -33,7 +33,7 @@ export function useExternalControl(controller) {
           ack({ ok: true });
         } else {
           mediaLog.externalControlRejected({ commandId, reason: result.reason });
-          ack({ ok: false, error: result.reason });
+          ack({ ok: false, error: result.reason, code: result.code, handoff: result.handoff });
         }
       } catch (err) {
         mediaLog.externalControlRejected({ commandId, reason: err?.message });

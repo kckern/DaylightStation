@@ -13,7 +13,7 @@ import {
 
 describe('command enums', () => {
   it('lists every command kind', () => {
-    expect(COMMAND_KINDS).toEqual(['transport', 'queue', 'config', 'adopt-snapshot', 'system', 'display']);
+    expect(COMMAND_KINDS).toEqual(['transport', 'queue', 'config', 'adopt-snapshot', 'system', 'display', 'handoff']);
   });
   it('lists every transport action', () => {
     expect(TRANSPORT_ACTIONS).toEqual(

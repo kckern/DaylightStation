@@ -1,4 +1,5 @@
 import { validateCommandEnvelope } from './envelopes.mjs';
+import { validateHandoffResult } from './handoff.mjs';
 
 const isString = (value) => typeof value === 'string' && value.length > 0;
 const result = (errors) => ({ valid: errors.length === 0, errors });
@@ -30,7 +31,11 @@ export function validateClientAck(message) {
   for (const key of ['error', 'code', 'appliedAt']) {
     if (message[key] !== undefined && !isString(message[key])) errors.push(`${key}: must be string when present`);
   }
-  const allowed = new Set(['topic', 'clientId', 'replyToControlClientId', 'commandId', 'ok', 'error', 'code', 'appliedAt']);
+  if (message.handoff !== undefined) {
+    const handoff = validateHandoffResult(message.handoff);
+    if (!handoff.valid) errors.push(...handoff.errors.map((error) => `handoff.${error}`));
+  }
+  const allowed = new Set(['topic', 'clientId', 'replyToControlClientId', 'commandId', 'ok', 'error', 'code', 'appliedAt', 'handoff']);
   for (const key of Object.keys(message)) {
     if (!allowed.has(key)) errors.push(`unexpected field: ${key}`);
   }

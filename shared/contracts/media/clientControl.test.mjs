@@ -34,4 +34,14 @@ describe('browser client-control contracts', () => {
     expect(validateClientAck({ topic: 'client-ack', clientId: 'target-live', replyToControlClientId: 'caller-live', commandId: 'cmd-1' }).valid).toBe(false);
     expect(validateClientAck({ topic: 'client-ack', replyToControlClientId: 'caller-live', commandId: 'cmd-1', ok: true }).valid).toBe(false);
   });
+
+  it('allows only a validated typed handoff result as an additive ack projection', () => {
+    const base = {
+      topic: 'client-ack', clientId: 'target-live', replyToControlClientId: 'caller-live',
+      commandId: 'cmd-handoff', ok: false,
+      handoff: { transferId: 'transfer-1', phase: 'failed', code: 'HANDOFF_UNSUPPORTED' },
+    };
+    expect(validateClientAck(base).valid).toBe(true);
+    expect(validateClientAck({ ...base, handoff: { transferId: 'transfer-1', phase: 'started' } }).valid).toBe(false);
+  });
 });

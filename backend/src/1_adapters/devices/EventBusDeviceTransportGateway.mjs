@@ -1,4 +1,5 @@
 import { buildCommandEnvelope, buildDeviceStateBroadcast, validateCommandEnvelope } from '#shared-contracts/media/envelopes.mjs';
+import { validateHandoffCommandAck } from '#shared-contracts/media/handoff.mjs';
 import { COMMAND_HANDLER_PRESENCE_TOPIC_PREFIX, DEVICE_ACK_TOPIC, DEVICE_STATE_TOPIC, SCREEN_COMMAND_TOPIC, parseDeviceTopic } from '#shared-contracts/media/topics.mjs';
 import { ERROR_CODES } from '#shared-contracts/media/errors.mjs';
 
@@ -14,16 +15,24 @@ export class EventBusDeviceTransportGateway {
 
   sendCommand(deviceId, command, { timeoutMs = 5000 } = {}) {
     const commandId = command.commandId;
+    const validation = this.validateCommand(command);
+    if (!validation.valid) {
+      return Promise.resolve({ ok: false, commandId, code: 'INVALID_ENVELOPE', error: validation.errors[0] || 'Invalid command envelope' });
+    }
     return new Promise((resolve) => {
       let unsubscribe = null; let timer = null; let settled = false;
       const cleanup = () => { if (settled) return; settled = true; if (timer != null) this.#clearTimer(timer); try { unsubscribe?.(); } catch {} };
       const finish = (payload) => {
         if (settled || payload?.commandId !== commandId) return;
+        // A receipt proves only delivery for legacy commands. Handoff must
+        // carry a matching owner-produced typed result before it can settle.
+        if (command.command === 'handoff' && !validateHandoffCommandAck(command, payload, { target: { kind: 'device', id: deviceId } }).valid) return;
         cleanup();
         resolve({ ok: payload.ok === true, commandId,
           ...(payload.appliedAt !== undefined ? { appliedAt: payload.appliedAt } : {}),
           ...(payload.error !== undefined ? { error: payload.error } : {}),
-          ...(payload.code !== undefined ? { code: payload.code } : {}) });
+          ...(payload.code !== undefined ? { code: payload.code } : {}),
+          ...(payload.handoff !== undefined ? { handoff: payload.handoff } : {}) });
       };
       if (typeof this.#eventBus?.subscribePattern !== 'function') {
         resolve({ ok: false, code: 'BUS_MISCONFIGURED', error: 'eventBus lacks subscribePattern' }); return;

@@ -60,4 +60,17 @@ describe('ClientIngressService', () => {
     expect(publications.publishClientControl).not.toHaveBeenCalled();
     expect(publications.publishClientAck).not.toHaveBeenCalled();
   });
+
+  it('preserves only a valid typed handoff client acknowledgement on its stamped reply route', () => {
+    const { service, publications } = fixture();
+    const ack = {
+      topic: 'client-ack', clientId: 'caller-live', replyToControlClientId: 'origin-live',
+      commandId: 'handoff-1', ok: false,
+      handoff: { transferId: 'transfer-1', phase: 'failed', code: 'HANDOFF_UNSUPPORTED' },
+    };
+    service.handle('connection-1', ack);
+    expect(publications.publishClientAck).toHaveBeenCalledWith('origin-live', ack);
+    service.handle('connection-1', { ...ack, handoff: { transferId: 'transfer-1', phase: 'started' } });
+    expect(publications.publishClientAck).toHaveBeenCalledTimes(1);
+  });
 });
