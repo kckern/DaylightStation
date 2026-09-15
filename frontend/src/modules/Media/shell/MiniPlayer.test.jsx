@@ -4,17 +4,33 @@ import { render, screen, fireEvent } from '@testing-library/react';
 
 const transport = { play: vi.fn(), pause: vi.fn(), stop: vi.fn(), skipNext: vi.fn() };
 const state = { snapshot: null, position: { seconds: 30, ts: 0 } };
-vi.mock('../controller/useSessionController.js', () => ({
-  useSessionController: () => ({ controller: {}, snapshot: state.snapshot, transport }),
-}));
-vi.mock('../controller/usePlaybackPosition.js', () => ({
-  usePlaybackPosition: () => state.position,
-}));
 const push = vi.fn();
 const nav = { push, view: 'home' };
 vi.mock('./NavProvider.jsx', () => ({ useNav: () => nav }));
 
+import { LocalSessionContext } from '../session/LocalSessionContext.js';
+import { createLocalSessionController } from '../session/LocalSessionController.js';
 import { MiniPlayer } from './MiniPlayer.jsx';
+
+function stateController() {
+  return {
+    getSnapshot: () => state.snapshot,
+    subscribe: () => () => {},
+    position: {
+      get: () => state.position,
+      subscribe: () => () => {},
+    },
+    transport,
+  };
+}
+
+function renderMiniPlayer(controller = stateController()) {
+  return render(
+    <LocalSessionContext.Provider value={{ controller }}>
+      <MiniPlayer />
+    </LocalSessionContext.Provider>
+  );
+}
 
 function makeSnapshot({
   playerState = 'playing',
@@ -59,7 +75,7 @@ describe('MiniPlayer', () => {
       currentItem: null,
       queue: { items: [], currentIndex: -1, upNextCount: 0 },
     };
-    const { container } = render(<MiniPlayer />);
+    const { container } = renderMiniPlayer();
     expect(screen.queryByTestId('media-mini-player')).not.toBeInTheDocument();
     expect(screen.queryByText('Idle')).not.toBeInTheDocument();
     expect(container).toBeEmptyDOMElement();
@@ -67,27 +83,25 @@ describe('MiniPlayer', () => {
 
   it('renders nothing when there is no snapshot at all', () => {
     state.snapshot = null;
-    const { container } = render(<MiniPlayer />);
+    const { container } = renderMiniPlayer();
     expect(screen.queryByTestId('media-mini-player')).not.toBeInTheDocument();
     expect(container).toBeEmptyDOMElement();
   });
 
-  it('STEER.7a keeps a stopped queue reachable and Play restarts it', () => {
-    state.snapshot = {
-      ...makeSnapshot({ playerState: 'ready' }),
-      currentItem: null,
-      position: 0,
-      queue: {
-        items: [
-          { queueItemId: 'q0', contentId: 'plex:0', title: 'First retained item', priority: 'queue' },
-          { queueItemId: 'q1', contentId: 'plex:1', title: 'Second retained item', priority: 'queue' },
-        ],
-        currentIndex: -1,
-        upNextCount: 0,
-      },
-    };
+  it('STEER.7a keeps a stopped queue reachable and Play restarts its retained head', () => {
+    const controller = createLocalSessionController({
+      clientId: 'mini-player-test',
+      randomUuid: () => 'mini-player-session',
+      nowFn: () => new Date('2026-09-14T00:00:00.000Z'),
+    });
+    const playerHandle = { play: vi.fn(), pause: vi.fn(), seek: vi.fn() };
+    controller.setPlayerHandle(playerHandle);
+    controller.queue.add({ contentId: 'plex:0', title: 'First retained item', format: 'video' });
+    controller.queue.add({ contentId: 'plex:1', title: 'Second retained item', format: 'video' });
+    controller.transport.stop();
+    playerHandle.play.mockClear();
 
-    render(<MiniPlayer />);
+    renderMiniPlayer(controller);
 
     expect(screen.getByTestId('media-mini-player')).toBeInTheDocument();
     expect(screen.getByText('2 items ready')).toBeInTheDocument();
@@ -95,53 +109,60 @@ describe('MiniPlayer', () => {
     expect(push).toHaveBeenCalledWith('nowPlaying', {});
 
     fireEvent.click(screen.getByRole('button', { name: 'Play' }));
-    expect(transport.play).toHaveBeenCalledTimes(1);
+    expect(playerHandle.play).toHaveBeenCalledTimes(1);
+    expect(controller.getSnapshot()).toEqual(expect.objectContaining({
+      state: 'loading',
+      currentItem: expect.objectContaining({ contentId: 'plex:0', title: 'First retained item' }),
+      queue: expect.objectContaining({ currentIndex: 0 }),
+    }));
+    expect(screen.getByText('First retained item')).toBeInTheDocument();
+    expect(screen.queryByText('2 items ready')).not.toBeInTheDocument();
   });
 
   it('shows a top-edge progress bar reflecting position/duration', () => {
-    render(<MiniPlayer />);
+    renderMiniPlayer();
     // 30s of 120s → 25%.
     expect(screen.getByTestId('mini-progress').style.width).toBe('25.00%');
   });
 
   it('hides the progress bar when the item has no duration', () => {
     state.snapshot = makeSnapshot({ duration: null });
-    render(<MiniPlayer />);
+    renderMiniPlayer();
     expect(screen.queryByTestId('mini-progress')).toBeNull();
   });
 
   it('toggles play/pause from the current state', () => {
-    render(<MiniPlayer />);
+    renderMiniPlayer();
     fireEvent.click(screen.getByTestId('mini-toggle'));
     expect(transport.pause).toHaveBeenCalledTimes(1);
 
     state.snapshot = makeSnapshot({ playerState: 'paused' });
-    render(<MiniPlayer />);
+    renderMiniPlayer();
     fireEvent.click(screen.getAllByTestId('mini-toggle')[1]);
     expect(transport.play).toHaveBeenCalledTimes(1);
   });
 
   it('skips to the next item, and disables next with no neighbor', () => {
-    render(<MiniPlayer />);
+    renderMiniPlayer();
     const next = screen.getByTestId('mini-next');
     expect(next).toBeEnabled();
     fireEvent.click(next);
     expect(transport.skipNext).toHaveBeenCalledTimes(1);
 
     state.snapshot = makeSnapshot({ index: 2, count: 3 });
-    render(<MiniPlayer />);
+    renderMiniPlayer();
     expect(screen.getAllByTestId('mini-next')[1]).toBeDisabled();
   });
 
   it('keeps the title tap → Now Playing affordance and queue chip', () => {
-    render(<MiniPlayer />);
+    renderMiniPlayer();
     expect(screen.getByTestId('mini-queue-count')).toHaveTextContent('1/3');
     fireEvent.click(screen.getByTestId('mini-player-open-nowplaying'));
     expect(push).toHaveBeenCalledWith('nowPlaying', {});
   });
 
   it('keeps stop working', () => {
-    render(<MiniPlayer />);
+    renderMiniPlayer();
     fireEvent.click(screen.getByTestId('mini-stop'));
     expect(transport.stop).toHaveBeenCalledTimes(1);
   });
@@ -149,7 +170,7 @@ describe('MiniPlayer', () => {
   it('docks the live video (not the thumbnail) for video while browsing', () => {
     state.snapshot = makeSnapshot({ format: 'video' });
     nav.view = 'home';
-    render(<MiniPlayer />);
+    renderMiniPlayer();
     expect(screen.getByTestId('mini-player-video-dock')).toBeInTheDocument();
     expect(document.querySelector('.mini-player-thumb')).toBeNull();
   });
@@ -157,7 +178,7 @@ describe('MiniPlayer', () => {
   it('clicking the docked video promotes to Now Playing', () => {
     state.snapshot = makeSnapshot({ format: 'video' });
     nav.view = 'home';
-    render(<MiniPlayer />);
+    renderMiniPlayer();
     fireEvent.click(screen.getByTestId('mini-player-video-dock'));
     expect(push).toHaveBeenCalledWith('nowPlaying', {});
   });
@@ -166,7 +187,7 @@ describe('MiniPlayer', () => {
     // audio → thumbnail
     state.snapshot = makeSnapshot(); // no format
     nav.view = 'home';
-    const { unmount } = render(<MiniPlayer />);
+    const { unmount } = renderMiniPlayer();
     expect(screen.queryByTestId('mini-player-video-dock')).toBeNull();
     expect(document.querySelector('.mini-player-thumb')).not.toBeNull();
     unmount();
@@ -174,7 +195,7 @@ describe('MiniPlayer', () => {
     // video but on Now Playing → thumbnail (video is in the big pane)
     state.snapshot = makeSnapshot({ format: 'video' });
     nav.view = 'nowPlaying';
-    render(<MiniPlayer />);
+    renderMiniPlayer();
     expect(screen.queryByTestId('mini-player-video-dock')).toBeNull();
     expect(document.querySelector('.mini-player-thumb')).not.toBeNull();
   });

@@ -20,21 +20,39 @@ function uuid() {
   return `d-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function buildDedupKey({ targetIds, play, queue, mode, snapshot }) {
-  const ids = [...targetIds].sort().join(',');
-  // Adopt-mode (hand-off) keys carry the snapshot's identity — two
-  // consecutive hand-offs of DIFFERENT content/positions are different
-  // dispatches, not duplicates (C9.8 covers identical parameters only).
-  const content = play ?? queue ?? (snapshot
-    ? `adopt:${snapshot.sessionId}:${snapshot.currentItem?.contentId ?? 'none'}:${Math.round(snapshot.position ?? 0)}`
-    : 'adopt');
-  return `${ids}|${content}|${mode ?? 'transfer'}`;
-}
-
 function snapshotForRetry(snapshot) {
   // SessionSnapshot is a JSON wire contract. Capture those wire values now,
   // rather than retaining a caller-owned object that can change before Retry.
   return snapshot == null ? snapshot : JSON.parse(JSON.stringify(snapshot));
+}
+
+function buildDedupKey({ targetIds, play, queue, mode, shader, volume, shuffle, snapshot }) {
+  const common = {
+    targetIds: [...targetIds].sort(),
+    mode: mode ?? 'transfer',
+  };
+
+  if (snapshot) {
+    return JSON.stringify({
+      ...common,
+      request: { method: 'POST', mode: 'adopt', snapshot: snapshotForRetry(snapshot) },
+    });
+  }
+
+  // Match buildDispatchUrl's wire normalization, excluding only dispatchId:
+  // it is freshly generated per attempt and therefore cannot define whether
+  // two user operations are duplicates.
+  return JSON.stringify({
+    ...common,
+    request: {
+      method: 'GET',
+      verb: play ? 'play' : 'queue',
+      contentId: play || queue,
+      shader: shader || null,
+      volume: typeof volume === 'number' && Number.isFinite(volume) ? volume : null,
+      shuffle: !!shuffle,
+    },
+  });
 }
 
 export function DispatchProvider({ children }) {
@@ -70,7 +88,9 @@ export function DispatchProvider({ children }) {
   const dispatchToTarget = useCallback(async ({ targetIds, play, queue, mode, shader, volume, shuffle, snapshot, title }, { bypassDedupe = false } = {}) => {
     if (!Array.isArray(targetIds) || targetIds.length === 0) return [];
 
-    const key = buildDedupKey({ targetIds, play, queue, mode, snapshot });
+    const key = buildDedupKey({
+      targetIds, play, queue, mode, shader, volume, shuffle, snapshot,
+    });
     const inFlight = inFlightRef.current.get(key);
     const cached = dedupCacheRef.current.get(key);
     const withinWindow = cached && Date.now() - cached.ts < TIMING.DISPATCH_DEDUPE_WINDOW_MS;
