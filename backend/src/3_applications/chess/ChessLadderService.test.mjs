@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { createChessLadderService } from './ChessLadderService.mjs';
+import { DEFAULT_ROSTER, TOP_LEVEL } from '#shared/gaming/rulesets/chess/ladder.mjs';
 
 /** A service over an in-memory store, so the writes are observable. */
-function makeService({ config = {}, progress = {}, writable = true } = {}) {
+function makeService({ config = {}, progress = {}, writable = true, now = undefined } = {}) {
   const store = { ...progress };
   const service = createChessLadderService({
     readConfig: async () => config,
@@ -12,6 +13,7 @@ function makeService({ config = {}, progress = {}, writable = true } = {}) {
       store[userId] = value;
       return true;
     },
+    ...(now ? { now } : {}),
   });
   return { service, store };
 }
@@ -108,5 +110,28 @@ describe('reading the ladder', () => {
     expect(view.current.name).toBe('Magikarp');
     expect(view.current.art).toBe('/magikarp.png');
     expect(view.current.theme).toBe('#123456');
+  });
+});
+
+describe('what the result card is told', () => {
+  it('says whether the game counted, which rule decided it, and who is next', async () => {
+    const { service } = makeService({ progress: { kid: { unlocked_through: 1, results: [] } } });
+    const clean = await service.recordGame('kid', win(1, { hints: 0, best_moves: 0, takebacks: 0 }));
+    expect(clean).toMatchObject({ counted: true, not_counted: null, up_next: { level: 2, name: DEFAULT_ROSTER[2].name } });
+    const heavy = await service.recordGame('kid', win(1, { hints: 11, best_moves: 14, takebacks: 1 }));
+    expect(heavy).toMatchObject({ counted: false, not_counted: { reason: 'best_moves', used: 14, allowed: 0 } });
+  });
+
+  it('has nobody up next at the top of the ladder', async () => {
+    const { service } = makeService({ progress: { kid: { unlocked_through: TOP_LEVEL, results: [] } } });
+    expect((await service.recordGame('kid', win(TOP_LEVEL))).up_next).toBe(null);
+  });
+
+  it('stamps each result with when it was filed, unless the record says when it ended', async () => {
+    const { service, store } = makeService({ now: () => new Date('2026-09-15T20:22:02.154Z') });
+    await service.recordGame('kid', win(0));
+    expect(store.kid.results.at(-1).at).toBe('2026-09-15T20:22:02.154Z');
+    await service.recordGame('kid', { ...win(0), ended_at: '2026-09-15T20:00:00.000Z' });
+    expect(store.kid.results.at(-1).at).toBe('2026-09-15T20:00:00.000Z');
   });
 });

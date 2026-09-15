@@ -1,6 +1,6 @@
 import {
-  applyGameToProgress, availableOpponents, createLadderProgress, normalizeProgress,
-  promotionStatus, resolvePolicy, resolveRoster, rungForLevel,
+  TOP_LEVEL, applyGameToProgress, availableOpponents, createLadderProgress, normalizeProgress,
+  promotionIneligibility, promotionStatus, resolvePolicy, resolveRoster, rungForLevel,
 } from '#shared/gaming/rulesets/chess/ladder.mjs';
 
 /**
@@ -20,7 +20,7 @@ import {
  * A guest has no ladder. There is nowhere to keep it and nobody to keep it for,
  * so a guest always faces the bottom of the roster.
  */
-export function createChessLadderService({ readConfig, readProgress, writeProgress, logger = null }) {
+export function createChessLadderService({ readConfig, readProgress, writeProgress, logger = null, now = () => new Date() }) {
   const policyFor = async (userId) => resolvePolicy(await readConfig(userId));
 
   return {
@@ -47,19 +47,26 @@ export function createChessLadderService({ readConfig, readProgress, writeProgre
     },
 
     /**
-     * Fold a finished game in, and report whether it earned the next opponent.
+     * Fold a finished game in, and report where it left the player.
      *
      * Refuses to write for a guest rather than pretending: there is no file to
      * write, and a silent no-op that returns "promoted" would put a character on
      * screen that vanishes on the next load.
+     *
+     * The answer carries what the result card says: whether this game counted,
+     * which rule decided it when it did not, and who the player is climbing
+     * toward. The ladder file is the player's only per-game history outside the
+     * household archive, so every result is stamped with a real time.
      */
     async recordGame(userId, record) {
       const config = await readConfig(userId);
       const policy = resolvePolicy(config);
       if (!userId) return { promoted: false, persisted: false, status: null };
 
+      const stamped = { ...record, ended_at: record?.ended_at || now().toISOString() };
       const stored = await readProgress(userId);
-      const outcome = applyGameToProgress(stored, record, policy);
+      const notCounted = promotionIneligibility(stamped, policy, normalizeProgress(stored).unlocked_through);
+      const outcome = applyGameToProgress(stored, stamped, policy);
       const saved = await writeProgress(userId, outcome.progress);
       if (!saved) {
         logger?.warn?.('chess.ladder.write-failed', { userId, level: outcome.to });
@@ -75,6 +82,11 @@ export function createChessLadderService({ readConfig, readProgress, writeProgre
         from: outcome.from,
         to: outcome.to,
         next_opponent: outcome.promoted ? roster[outcome.to] : null,
+        counted: notCounted === null,
+        not_counted: notCounted,
+        up_next: outcome.to < TOP_LEVEL
+          ? { level: outcome.to + 1, name: roster[outcome.to + 1]?.name ?? null }
+          : null,
         status: promotionStatus(outcome.progress, policy),
       };
     },
