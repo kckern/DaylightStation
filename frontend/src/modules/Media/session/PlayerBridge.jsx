@@ -257,12 +257,20 @@ export function PlayerBridge() {
           isSeeking: false,
         });
       };
+      const observeSeeking = () => {
+        if (!isCurrentMedia()) return;
+        // The native position is already observable while the decoder seeks.
+        // Update only the hot display; completion, durable position, and
+        // playback state still require their own evidence.
+        controller.onPlayerPositionTick(bound.currentTime, contentId);
+      };
       bound.addEventListener('loadedmetadata', observeDuration);
       bound.addEventListener('durationchange', observeDuration);
       bound.addEventListener('pause', observePaused);
       bound.addEventListener('playing', observePlaying);
       bound.addEventListener('waiting', observeWaiting);
       bound.addEventListener('seeked', observeSeeked);
+      bound.addEventListener('seeking', observeSeeking);
       observeDuration();
       detach = () => {
         bound?.removeEventListener('loadedmetadata', observeDuration);
@@ -271,6 +279,7 @@ export function PlayerBridge() {
         bound?.removeEventListener('playing', observePlaying);
         bound?.removeEventListener('waiting', observeWaiting);
         bound?.removeEventListener('seeked', observeSeeked);
+        bound?.removeEventListener('seeking', observeSeeking);
       };
     };
 

@@ -354,6 +354,8 @@ Transport commands do not claim a state or position change until Player or
 native-media evidence arrives. The bridge follows Player's native media
 accessor (including the video element inside the DASH player's shadow root),
 so host changes and focused-video presentation retain the same media element.
+Native `seeking` updates the transient position display from the element's
+observed position, without persisting it or claiming decoder completion.
 Native seek completion publishes the element's actual position even while
 paused, when another progress tick may not arrive. Seek completion does not
 prove that a buffering decoder has resumed playback. Discrete native events
