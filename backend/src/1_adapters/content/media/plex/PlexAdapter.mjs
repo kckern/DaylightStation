@@ -118,7 +118,7 @@ export class PlexAdapter {
       });
     }
     this.#httpClient = deps.httpClient;
-    this.client = new PlexClient(config, { httpClient: deps.httpClient });
+    this.client = new PlexClient(config, { httpClient: deps.httpClient, logger: config.logger || deps.logger });
     this.host = config.host.replace(/\/$/, '');
     this.token = config.token || '';
     this.protocol = config.protocol || 'dash';

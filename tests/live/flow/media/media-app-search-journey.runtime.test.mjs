@@ -3,6 +3,18 @@ import { test, expect } from '@playwright/test';
 test.use({ viewport: { width: 390, height: 844 }, trace: 'retain-on-failure', actionTimeout: 10000 });
 test.setTimeout(90000);
 
+test.afterEach(async ({ page }) => {
+  if (page.isClosed()) return;
+  const closeSearch = page.getByTestId('search-mode-close');
+  if (await closeSearch.isVisible()) await closeSearch.click();
+  const stop = page.getByTestId('np-stop');
+  if (!(await stop.isVisible())) {
+    const open = page.getByTestId('mini-player-open-nowplaying');
+    if (await open.isVisible()) await open.click();
+  }
+  if (await stop.isVisible()) await stop.click();
+});
+
 test('[FIND.1a/AC5] phone Play keeps search words and narrowing while actual media starts', async ({ page }) => {
   const title = process.env.MEDIA_ACCEPTANCE_TITLE || 'Disclosure Day';
   await page.goto('/media');
@@ -23,4 +35,7 @@ test('[FIND.1a/AC5] phone Play keeps search words and narrowing while actual med
   await expect.poll(() => video.evaluate(el => !el.paused && el.readyState >= 2 && el.currentTime > 0), {
     timeout: 30000, message: 'Keeping search open must not prevent actual playback',
   }).toBe(true);
+  const firstPosition = await video.evaluate(el => el.currentTime);
+  await expect.poll(() => video.evaluate(el => el.currentTime), { timeout: 10000 })
+    .toBeGreaterThan(firstPosition + 0.25);
 });

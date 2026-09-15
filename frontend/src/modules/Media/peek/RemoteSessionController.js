@@ -14,6 +14,12 @@ function uuid() {
 }
 
 const PLAYING = 'playing';
+// A remote state change is published after the receiver's 500ms change
+// debounce, then regular state publication is covered by its 5s heartbeat.
+// Start the bounded observation at the positive device ack: command dispatch
+// itself can precede the permitted 5s ack interval, so it is not evidence that
+// the receiver has accepted the Play (media-app-technical §§4.3, 6.4).
+const PLAY_PUBLICATION_WINDOW_MS = 5_500;
 
 export function createRemoteSessionController({
   deviceId,
@@ -37,6 +43,7 @@ export function createRemoteSessionController({
   let posSubscribers = 0;
   let ticker = null;
   let pendingSteering = null;
+  let steeringGeneration = 0;
   const syncFromSnapshot = (snap) => {
     if (snap && typeof snap.position === 'number') position.set(snap.position);
   };
@@ -72,24 +79,78 @@ export function createRemoteSessionController({
 
   const reportSteering = (playback) => onSteeringActivity?.({ deviceId, playback });
 
+  const isCurrentSteeringAttempt = (attempt) => pendingSteering === attempt;
+
+  const clearPendingSteering = (attempt = pendingSteering) => {
+    if (!attempt || !isCurrentSteeringAttempt(attempt)) return;
+    if (attempt.timer) clearTimeout(attempt.timer);
+    pendingSteering = null;
+  };
+
+  const finishPendingSteering = (attempt) => {
+    if (!isCurrentSteeringAttempt(attempt)
+      || !attempt.acknowledged || !attempt.httpAccepted || !attempt.observedPlaying) return;
+    const playback = attempt.observedPlaying;
+    clearPendingSteering(attempt);
+    reportSteering(playback);
+  };
+
   const reconcilePendingSteering = (entry) => {
-    if (!pendingSteering) return;
+    const attempt = pendingSteering;
+    if (!attempt) return;
     if (entry?.offline || entry?.isStale) {
-      pendingSteering = null;
+      clearPendingSteering(attempt);
       return;
     }
     const identity = freshPlayback(entry);
     // A fresh different identity is evidence that another command or person
-    // took over; it may not inherit this acknowledged Play's steering lease.
-    if (identity && !samePlayback(pendingSteering, identity)) {
-      pendingSteering = null;
+    // took over; it invalidates this attempt even while HTTP or its ack is
+    // still in flight, so a delayed continuation cannot revive the old Play.
+    if (identity && !samePlayback(attempt.expectedPlayback, identity)) {
+      clearPendingSteering(attempt);
       return;
     }
     const playing = freshPlayback(entry, { playingOnly: true });
-    if (playing && samePlayback(pendingSteering, playing)) {
-      pendingSteering = null;
-      reportSteering(playing);
+    if (playing && samePlayback(attempt.expectedPlayback, playing)) {
+      attempt.observedPlaying = playing;
+      finishPendingSteering(attempt);
     }
+  };
+
+  const beginPlayAttempt = () => {
+    clearPendingSteering();
+    const generation = ++steeringGeneration;
+    const expectedPlayback = freshPlayback(fleetStore.getEntry(deviceId));
+    if (!expectedPlayback) return null;
+    const attempt = {
+      generation,
+      expectedPlayback,
+      acknowledged: false,
+      httpAccepted: false,
+      observedPlaying: null,
+      timer: null,
+    };
+    pendingSteering = attempt;
+    return attempt;
+  };
+
+  const acknowledgePlayAttempt = (attempt) => {
+    if (!isCurrentSteeringAttempt(attempt)) return;
+    attempt.acknowledged = true;
+    attempt.timer = setTimeout(() => {
+      // Matching paused heartbeats never renew this one-debounce-plus-one-
+      // heartbeat window, so it cannot become an idle-style long lease.
+      if (isCurrentSteeringAttempt(attempt) && attempt.generation === steeringGeneration) {
+        clearPendingSteering(attempt);
+      }
+    }, PLAY_PUBLICATION_WINDOW_MS);
+    reconcilePendingSteering(fleetStore.getEntry(deviceId));
+  };
+
+  const acceptPlayHttp = (attempt) => {
+    if (!isCurrentSteeringAttempt(attempt)) return;
+    attempt.httpAccepted = true;
+    reconcilePendingSteering(fleetStore.getEntry(deviceId));
   };
 
   const detachFleet = fleetStore.subscribeDevice(deviceId, (entry) => {
@@ -110,20 +171,39 @@ export function createRemoteSessionController({
   const observedPlayback = () => freshPlayback(fleetStore.getEntry(deviceId), { playingOnly: true });
 
   const send = (method, path, body, action) => {
-    // A later Play supersedes an earlier command that was still waiting for a
-    // debounced playing-state broadcast. Capture its known paused identity so
-    // only that exact playback can complete the lease.
-    const expectedPlayback = action === 'play' ? freshPlayback(fleetStore.getEntry(deviceId)) : null;
-    if (action === 'play') pendingSteering = null;
+    // The next remote command is newer user intent. It supersedes a pending
+    // Play before either request leg can settle, even if that newer command
+    // later fails; only a current command may earn steering activity.
+    if (action !== 'play') clearPendingSteering();
+    // Create the Play attempt before either request leg can settle. Every
+    // later Play starts a new generation and invalidates this one, including
+    // while its HTTP request or device ack remains in flight.
+    const playAttempt = action === 'play' ? beginPlayAttempt() : null;
     const commandId = randomUuid();
     const ackPromise = ackRouter.register(commandId, { action, deviceId });
     const httpPromise = http(path, { ...body, commandId }, method);
+    if (playAttempt) {
+      ackPromise.then(
+        () => acknowledgePlayAttempt(playAttempt),
+        () => clearPendingSteering(playAttempt)
+      );
+      httpPromise.then(
+        () => acceptPlayHttp(playAttempt),
+        () => clearPendingSteering(playAttempt)
+      );
+    }
     // HTTP failure rejects immediately; otherwise the ack decides.
     return Promise.all([httpPromise, ackPromise]).then(([httpRes]) => {
       const playback = observedPlayback();
       if (action === 'play') {
-        if (expectedPlayback && playback && samePlayback(expectedPlayback, playback)) reportSteering(playback);
-        else if (expectedPlayback) pendingSteering = expectedPlayback;
+        // Both continuation legs verify their generation before recording or
+        // reporting. This check also covers an old Promise completion that
+        // follows a newer Play.
+        if (playAttempt && isCurrentSteeringAttempt(playAttempt)
+          && playback && samePlayback(playAttempt.expectedPlayback, playback)) {
+          playAttempt.observedPlaying = playback;
+          finishPendingSteering(playAttempt);
+        }
       } else if (playback) reportSteering(playback);
       return { ok: true, http: httpRes, commandId };
     });
@@ -212,7 +292,7 @@ export function createRemoteSessionController({
     },
 
     destroy() {
-      pendingSteering = null;
+      clearPendingSteering();
       detachFleet();
       stopTicker();
     },

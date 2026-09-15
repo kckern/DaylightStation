@@ -39,6 +39,13 @@ async function startMovie(page) {
   return playMovie(page);
 }
 
+async function expectPausedSeekComplete(video) {
+  await expect.poll(() => video.evaluate(el => ({
+    seeking: el.seeking, ready: el.readyState >= 2, paused: el.paused,
+  })), { timeout: 15000, message: 'The decoder must finish the seek and remain paused, not only accept a currentTime assignment' })
+    .toEqual({ seeking: false, ready: true, paused: true });
+}
+
 async function playMovie(page) {
   const mintOrigins = [];
   const observeMint = response => {
@@ -133,7 +140,9 @@ test('[PLAY.1b/AC1][STEER.4a/AC1] discovered movie duration and progress reach t
   const before = await video.evaluate(el => el.currentTime);
   await slider.focus();
   await page.keyboard.press('ArrowRight');
-  await expect.poll(() => video.evaluate(el => el.currentTime), { timeout: 15000 }).toBeGreaterThan(before + 3);
+  await expect.poll(async () => Math.abs(await video.evaluate(el => el.currentTime) - Math.min(duration, before + 5)), { timeout: 15000 })
+    .toBeLessThanOrEqual(2);
+  await expectPausedSeekComplete(video);
   await expect.poll(async () => Math.abs(Number(await slider.getAttribute('aria-valuenow')) - await video.evaluate(el => el.currentTime))).toBeLessThanOrEqual(2);
   const bounds = await slider.boundingBox();
   expect(bounds).not.toBeNull();
@@ -149,10 +158,7 @@ test('[PLAY.1b/AC1][STEER.4a/AC1] discovered movie duration and progress reach t
   await page.mouse.up();
   await expect.poll(async () => Math.abs(await video.evaluate(el => el.currentTime) - requested), { timeout: 15000 }).toBeLessThanOrEqual(2);
   await expect.poll(async () => Math.abs(Number(await slider.getAttribute('aria-valuenow')) - await video.evaluate(el => el.currentTime))).toBeLessThanOrEqual(2);
-  await expect.poll(() => video.evaluate(el => ({
-    seeking: el.seeking, ready: el.readyState >= 2, paused: el.paused,
-  })), { timeout: 15000, message: 'The decoder must finish the seek and remain paused, not only accept a currentTime assignment' })
-    .toEqual({ seeking: false, ready: true, paused: true });
+  await expectPausedSeekComplete(video);
 });
 
 test('[STEER.3a/AC1][STEER.3a/AC3] pause and resume reflect the real player without a false startup stall', async ({ page }) => {
@@ -182,6 +188,7 @@ test('[STEER.4a/AC2] forward and back controls seek the real video', async ({ pa
   await expect.poll(async () => Math.abs(await video.evaluate(el => el.currentTime) - (before + 10)), { timeout: 15000 }).toBeLessThanOrEqual(2);
   await page.getByRole('button', { name: 'Back 10 seconds' }).click();
   await expect.poll(async () => Math.abs(await video.evaluate(el => el.currentTime) - before), { timeout: 15000 }).toBeLessThanOrEqual(2);
+  await expectPausedSeekComplete(video);
 });
 
 test('[STEER.2a/AC1][STEER.2a/AC2] focused video expands and shrinks without replacing or restarting media', async ({ page }) => {

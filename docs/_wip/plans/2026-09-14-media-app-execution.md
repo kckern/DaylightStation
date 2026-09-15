@@ -25,6 +25,17 @@ The owner requested model-appropriate parallel orchestration during implementati
 | Aim | Task3a persistence/idle lifetime and observed steering activity | Real reload/idle journey; stable activity/identity contract before moves |
 | Search | Task5a keep-open/history repair using current action interfaces | Real phone search journey; Task4 one-off actions remain an explicit dependency |
 | Architecture | Task3b safe-move API/receiver transaction design, initially read-only | Failed-start/lost-ack/source-changed REDs before implementation |
+
+Next-wave partition: Task2b measures and repairs the startup/stream operational
+gate; Task3a review corrections stay with their original implementer; Task4a
+repairs the shared combobox action boundary; F2 (early Task7) wires identified
+live browser control and validated command/ack round trips. F1a (early Task4)
+then establishes authoritative queue capture and owner-issued revisions,
+followed by F1b adoption/conditional Stop, F3 native-confirmed execution and the
+move coordinator. F2 is independent of Player/Plex files; F1's shared Player
+edits require an explicit lease against Task2b. Browser naming/origin, photo
+readiness and live-edge moves remain explicit later consumers, not inferred
+from successful AV or transport-only tests.
 | Subsequent waves | Task4 verbs/queue/undo, remainingTask5 browse/search, Task7 registry/origin; thenTask6 controls, Task8 outcomes andTask9 recovery | Assign only disjoint files; freeze shared command/identity contracts before dependent consumers |
 | Acceptance and later priorities | Task10 parity/budgets, then exact P1/P2 slices below | Full criterion evidence; never promote component test counts to story acceptance |
 
@@ -58,6 +69,8 @@ Provide an accessible `Expand video` control in Now Playing and `Shrink video` w
 Run focused RED/GREEN unit coverage and existing relevant session/shell tests. Root reruns real browser acceptance, including unchanged normal pause/resume and stop/retained-queue cases. Update a factual reference paragraph and write task report with exact commands, output, red evidence, changed interfaces and concerns. Commit only owned implementation/test/reference files; no deploy.
 
 ## Task 3: Shared aim, idle lifetime and safe moves
+
+Execution dependency update: Task2's reviewed native fixes are retained, but seven serial journeys still fail initial decoder readiness. Corrective Task2b owns measured stream-decision/mint/MPD/decoder/recovery diagnosis and the globalDASH sustained-capacity/quality release gate. It must close those failures before actual playback baseline is accepted; no silent sixth review round or timeout-only acceptance. Safe moves additionally require the authoritative receiver queue/owner-revision foundation (earlyTask4), native-confirmed handoff executor, and distinct live browser control registration/result relay (earlyTask7). Implement these foundations in disjoint lanes before wiring move UI; receipt acknowledgments and cached empty queues are not sufficient.
 
 Read handoff Step 2 and original PLACE.1a, PLACE.2a/2b, PLACE.5a/6a/7a/8a criteria. Deliver one shared aim model and label, not independent destination state in each surface. Preserve additive adapters for existing cast consumers until the common item-actions migration. Required model: selected target IDs, remembered stop-or-keep choice and persisted activity time; idle timeout 2 hours. Restore synchronously without first persisting a blank default. Track real interaction; pause the idle clock while the selected screen is playing an item this device sent or is actively steering. Reload after expired idle selects this device. Opening Remote alone never changes aim.
 
