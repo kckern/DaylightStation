@@ -68,7 +68,7 @@ vi.mock('../../Content/combobox/useContentCombobox.js', () => ({
 // ── Sinks the container branch never reaches; the leaf branch lands in queue ──
 const dispatchToTarget = vi.fn(() => Promise.resolve([]));
 vi.mock('../cast/useDispatch.js', () => ({
-  useDispatch: () => ({ dispatchToTarget, dispatches: new Map(), retryLast: vi.fn() }),
+  useDispatch: () => ({ dispatchToTarget, dispatches: new Map(), retry: vi.fn() }),
 }));
 const queuePlayNow = vi.fn();
 vi.mock('../controller/useSessionController.js', () => ({

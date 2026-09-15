@@ -1,7 +1,7 @@
 // frontend/src/modules/Media/cast/DispatchProvider.jsx
 // Dispatch orchestration: client-side fan-out (one /load per target,
 // independent dispatchIds), live wake-progress via homeline:* broadcasts,
-// idempotency dedupe window (C9.8), parameter-free retry of the last attempt
+// idempotency dedupe window (C9.8), and retry by exact dispatch attempt
 // (C6.4). Transfer mode stops local playback only on confirmed success.
 // Hand-off sends the full SessionSnapshot with mode:"adopt" (§4.7).
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef } from 'react';
@@ -31,9 +31,17 @@ function buildDedupKey({ targetIds, play, queue, mode, snapshot }) {
   return `${ids}|${content}|${mode ?? 'transfer'}`;
 }
 
+function snapshotForRetry(snapshot) {
+  // SessionSnapshot is a JSON wire contract. Capture those wire values now,
+  // rather than retaining a caller-owned object that can change before Retry.
+  return snapshot == null ? snapshot : JSON.parse(JSON.stringify(snapshot));
+}
+
 export function DispatchProvider({ children }) {
   const [state, dispatch] = useReducer(reduceDispatch, initialDispatchState);
-  const lastAttemptRef = useRef(null);
+  // Fan-out rows retain independent replay inputs so one failed target can
+  // be retried without replaying successful siblings.
+  const attemptsRef = useRef(new Map());
   const dedupCacheRef = useRef(new Map());
   // Identical dispatches still IN FLIGHT, keyed the same way as the dedupe
   // cache. The 5s window (C9.8) assumes a dispatch resolves quickly, but a
@@ -66,7 +74,9 @@ export function DispatchProvider({ children }) {
     const inFlight = inFlightRef.current.get(key);
     const cached = dedupCacheRef.current.get(key);
     const withinWindow = cached && Date.now() - cached.ts < TIMING.DISPATCH_DEDUPE_WINDOW_MS;
-    if (!bypassDedupe && (inFlight?.size || withinWindow)) {
+    // An explicit retry may bypass the settled-attempt window, but it must
+    // never bypass an identical retry that is already in flight.
+    if (inFlight?.size || (!bypassDedupe && withinWindow)) {
       const firstDispatchIds = inFlight?.size ? [...inFlight] : cached.dispatchIds;
       mediaLog.dispatchDeduplicated({
         targetIds,
@@ -85,8 +95,7 @@ export function DispatchProvider({ children }) {
     // one degrade to no title, never to a raw content id in the UI).
     const contentTitle = title ?? snapshot?.currentItem?.title ?? null;
     const dispatchIds = [];
-    lastAttemptRef.current = { targetIds, play, queue, mode, shader, volume, shuffle, snapshot, title };
-
+    const retrySnapshot = snapshotForRetry(snapshot);
     const settle = (dispatchId) => {
       const set = inFlightRef.current.get(key);
       if (!set) return;
@@ -99,6 +108,9 @@ export function DispatchProvider({ children }) {
       const dispatchId = uuid();
       dispatchIds.push(dispatchId);
       inFlightRef.current.get(key)?.add(dispatchId);
+      attemptsRef.current.set(dispatchId, {
+        targetIds: [deviceId], play, queue, mode, shader, volume, shuffle, snapshot: retrySnapshot, title,
+      });
       dispatch({ type: 'INITIATED', dispatchId, deviceId, contentId, title: contentTitle, mode: mode ?? 'transfer' });
       mediaLog.dispatchInitiated({ dispatchId, deviceId, contentId, mode });
 
@@ -139,19 +151,20 @@ export function DispatchProvider({ children }) {
     return dispatchIds;
   }, [localController]);
 
-  const retryLast = useCallback(() => {
-    if (!lastAttemptRef.current) return [];
-    // Explicit user retry is never a duplicate.
-    return dispatchToTarget(lastAttemptRef.current, { bypassDedupe: true });
+  const retry = useCallback((dispatchId) => {
+    const attempt = attemptsRef.current.get(dispatchId);
+    if (!attempt) return [];
+    return dispatchToTarget(attempt, { bypassDedupe: true });
   }, [dispatchToTarget]);
 
   const removeDispatch = useCallback((dispatchId) => {
+    attemptsRef.current.delete(dispatchId);
     dispatch({ type: 'REMOVED', dispatchId });
   }, []);
 
   const value = useMemo(
-    () => ({ dispatches: state.byId, dispatchToTarget, retryLast, removeDispatch }),
-    [state.byId, dispatchToTarget, retryLast, removeDispatch]
+    () => ({ dispatches: state.byId, dispatchToTarget, retry, removeDispatch }),
+    [state.byId, dispatchToTarget, retry, removeDispatch]
   );
 
   return <DispatchContext.Provider value={value}>{children}</DispatchContext.Provider>;

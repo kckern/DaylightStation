@@ -134,16 +134,25 @@ describe('DestinationLine', () => {
     });
   });
 
-  it('does NOT log destinationChanged when the pick resolves to the same destination', async () => {
+  it('PLACE.2b a This device pick clears the shared remote aim immediately', async () => {
+    localStorage.setItem(
+      'media-app.cast-target',
+      JSON.stringify({ mode: 'transfer', targetIds: ['livingroom-tv'] })
+    );
     renderLine();
     fireEvent.click(screen.getByTestId('destination-line'));
     await screen.findByTestId('destination-sheet');
 
-    // Nothing was set before (local), and picking an empty set is still local.
     lastPick = { targetIds: [], mode: 'transfer' };
     fireEvent.click(screen.getByTestId('picker-stub-pick'));
 
-    expect(mediaLog.destinationChanged).not.toHaveBeenCalled();
+    expect(screen.getByTestId('probe-targets')).toHaveTextContent('');
+    expect(screen.getByTestId('destination-line-name')).toHaveTextContent('This browser');
+    expect(mediaLog.destinationChanged).toHaveBeenCalledWith({
+      from: 'livingroom-tv',
+      to: 'local',
+      surface: null,
+    });
   });
 
   it('surface is optional and defaults to null in the log payload', async () => {

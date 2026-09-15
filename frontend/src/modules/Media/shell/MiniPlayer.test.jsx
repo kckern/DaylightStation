@@ -52,8 +52,13 @@ describe('MiniPlayer', () => {
   // "Idle" strip even with no local session — dead chrome eating screen
   // space on a 360px phone. It now renders nothing until there's an actual
   // session to show a handle for.
-  it('renders nothing when no local session exists (idle)', () => {
-    state.snapshot = { ...makeSnapshot(), currentItem: null };
+  it('STEER.7a renders nothing after clear/reset leaves no item or queue', () => {
+    state.snapshot = {
+      ...makeSnapshot({ count: 0 }),
+      state: 'idle',
+      currentItem: null,
+      queue: { items: [], currentIndex: -1, upNextCount: 0 },
+    };
     const { container } = render(<MiniPlayer />);
     expect(screen.queryByTestId('media-mini-player')).not.toBeInTheDocument();
     expect(screen.queryByText('Idle')).not.toBeInTheDocument();
@@ -65,6 +70,32 @@ describe('MiniPlayer', () => {
     const { container } = render(<MiniPlayer />);
     expect(screen.queryByTestId('media-mini-player')).not.toBeInTheDocument();
     expect(container).toBeEmptyDOMElement();
+  });
+
+  it('STEER.7a keeps a stopped queue reachable and Play restarts it', () => {
+    state.snapshot = {
+      ...makeSnapshot({ playerState: 'ready' }),
+      currentItem: null,
+      position: 0,
+      queue: {
+        items: [
+          { queueItemId: 'q0', contentId: 'plex:0', title: 'First retained item', priority: 'queue' },
+          { queueItemId: 'q1', contentId: 'plex:1', title: 'Second retained item', priority: 'queue' },
+        ],
+        currentIndex: -1,
+        upNextCount: 0,
+      },
+    };
+
+    render(<MiniPlayer />);
+
+    expect(screen.getByTestId('media-mini-player')).toBeInTheDocument();
+    expect(screen.getByText('2 items ready')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('mini-player-open-nowplaying'));
+    expect(push).toHaveBeenCalledWith('nowPlaying', {});
+
+    fireEvent.click(screen.getByRole('button', { name: 'Play' }));
+    expect(transport.play).toHaveBeenCalledTimes(1);
   });
 
   it('shows a top-edge progress bar reflecting position/duration', () => {

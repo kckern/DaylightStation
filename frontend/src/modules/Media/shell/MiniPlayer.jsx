@@ -1,9 +1,9 @@
 // frontend/src/modules/Media/shell/MiniPlayer.jsx
 // The handle on the ambient local session while one exists: a bottom bar with
 // a thin live progress strip along its top edge, the current item (tap → Now
-// Playing), queue position, play/pause, next, and stop. Renders nothing when
-// there's no session (Task 16 / spec D7) — a permanent "Idle" strip has no
-// affordance of its own and just eats screen space, especially on a phone.
+// Playing), queue position, play/pause, next, and stop. A stopped session with
+// retained queue items keeps a ready handle; an actually empty session renders
+// nothing instead of wasting phone space on dead "Idle" chrome.
 import React, { useRef } from 'react';
 import {
   IconPlayerPlayFilled,
@@ -24,20 +24,22 @@ export function MiniPlayer() {
   const live = usePlaybackPosition(controller);
   const { push, view } = useNav();
   const item = snapshot?.currentItem;
+  const queueItems = Array.isArray(snapshot?.queue?.items) ? snapshot.queue.items : [];
+  const queueCount = queueItems.length;
+  const displayItem = item ?? queueItems[0] ?? null;
 
   const dockRef = useRef(null);
   // `format` is the canonical signal (set by resultToQueueInput/formatForChild);
   // `mediaType` is a defensive fallback for items that carry only the raw type.
   const isVideo = item?.format === 'video' || item?.mediaType === 'video';
-  const showVideoDock = isVideo && view !== 'nowPlaying';
+  const showVideoDock = !!item && isVideo && view !== 'nowPlaying';
   usePlayerHost(dockRef, 1, showVideoDock);
 
-  if (!item) {
+  if (!displayItem) {
     return null;
   }
 
   const isPlaying = PLAYING_STATES.has(snapshot.state);
-  const queueCount = snapshot.queue?.items?.length ?? 0;
   const queuePos = snapshot.queue?.currentIndex ?? -1;
   const repeat = snapshot.config?.repeat ?? 'off';
   const hasNext = queuePos >= 0
@@ -46,7 +48,7 @@ export function MiniPlayer() {
   // lights up while that view is open (see PrimaryNav HIGHLIGHT note).
   const isNowPlayingOpen = view === 'nowPlaying';
 
-  const duration = item.duration ?? 0;
+  const duration = item?.duration ?? 0;
   const positionSeconds = live.seconds ?? snapshot.position ?? 0;
   const progressFraction = duration > 0
     ? Math.min(1, Math.max(0, positionSeconds / duration))
@@ -77,8 +79,8 @@ export function MiniPlayer() {
           <div ref={dockRef} className="mini-player-video-dock-host" />
         </button>
       ) : (
-        item.thumbnail && (
-          <img className="mini-player-thumb" src={item.thumbnail} alt="" loading="lazy" />
+        displayItem.thumbnail && (
+          <img className="mini-player-thumb" src={displayItem.thumbnail} alt="" loading="lazy" />
         )
       )}
       <button
@@ -87,7 +89,9 @@ export function MiniPlayer() {
         className="mini-player-title"
         onClick={() => { if (view !== 'nowPlaying') push('nowPlaying', {}); }}
       >
-        <span className="mini-player-title-text">{item.title ?? item.contentId}</span>
+        <span className="mini-player-title-text">
+          {item ? (item.title ?? item.contentId) : `${queueCount} item${queueCount === 1 ? '' : 's'} ready`}
+        </span>
         {queueCount > 1 && queuePos >= 0 && (
           <span className="mini-queue-count" data-testid="mini-queue-count">
             {queuePos + 1}/{queueCount}

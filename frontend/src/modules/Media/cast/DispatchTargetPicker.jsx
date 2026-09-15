@@ -101,6 +101,21 @@ export function DispatchTargetPicker({ source, onComplete, autoFocus = true, ver
         <div data-testid="picker-no-devices" className="cast-picker-empty">No devices available.</div>
       )}
       <div className="cast-picker-devices">
+        {isDestination && (
+          <button
+            type="button"
+            data-testid="picker-this-device"
+            className={`cast-tile ${selected.size === 0 ? 'cast-tile--selected' : ''}`}
+            aria-pressed={selected.size === 0}
+            onClick={() => onComplete?.({ targetIds: [], mode })}
+          >
+            <span className="cast-tile-icon" aria-hidden>📱</span>
+            <span className="cast-tile-main">
+              <span className="cast-tile-name">This device</span>
+            </span>
+            <span className="cast-tile-check" aria-hidden>{selected.size === 0 ? '✓' : ''}</span>
+          </button>
+        )}
         {devices.map((d) => (
           <DeviceTile key={d.id} device={d} pressed={selected.has(d.id)} onSelect={select} />
         ))}
