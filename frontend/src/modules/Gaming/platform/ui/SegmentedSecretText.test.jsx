@@ -11,6 +11,7 @@ const MASK = new Set(MASK_SEGMENT_COLORS.map(segmentColorValue));
 const colorOf = polygon => polygon.style.getPropertyValue('--segment-color');
 const inOwnFamily = polygon => (polygon.classList.contains('is-signal') ? SIGNAL : MASK).has(colorOf(polygon));
 const STATIC = { reveal: 'static' };
+const PROGRESSIVE = { reveal: 'progressive' };
 const STEP = DECODER_DEFAULTS.stepMs;
 
 // Which segments a cell has lit warm, sorted, so a frame can be compared to a letter.
@@ -66,7 +67,7 @@ describe('SegmentedSecretText', () => {
   });
 
   it('varies mask colors at the same segment position across glyphs', () => {
-    const { container } = render(<SegmentedSecretText text="AAAA" />);
+    const { container } = render(<SegmentedSecretText text="AAAA" decoder={PROGRESSIVE} />);
     const colors = [...container.querySelectorAll('[data-segment="d1"]')].map(colorOf);
     expect(new Set(colors).size).toBeGreaterThan(1);
   });
@@ -75,7 +76,7 @@ describe('SegmentedSecretText', () => {
     expect(balanceSecretLines('BLOWING UP A BALLOON')).toEqual(['BLOWING UP', 'A BALLOON']);
     expect(balanceSecretLines('LOOKING THROUGH BINOCULARS')).toEqual(['LOOKING THROUGH', 'BINOCULARS']);
     expect(balanceSecretLines('BUILDING A SAND CASTLE').every(line => line === line.trim())).toBe(true);
-    const { container } = render(<SegmentedSecretText text="Blowing up a balloon" />);
+    const { container } = render(<SegmentedSecretText text="Blowing up a balloon" decoder={PROGRESSIVE} />);
     expect(container.querySelectorAll('.segmented-secret-text__line')).toHaveLength(2);
     expect(glyphsOf(container)).toHaveLength(19);
   });
@@ -102,9 +103,47 @@ describe('SegmentedSecretText', () => {
   });
 });
 
-describe('progressive reveal (the default)', () => {
-  it('first paints only the cursor — the clue never flashes up before the typing starts', () => {
+describe('the defaults', () => {
+  it('scroll as a marquee, one step every 100ms', () => {
+    vi.useFakeTimers();
     const { container } = render(<SegmentedSecretText text="CAT" />);
+    expect(screen.getByRole('img', { name: 'Secret clue: CAT' })).toHaveAttribute('data-reveal', 'marquee');
+    expect(STEP).toBe(100);
+    const seen = [picture(container, 'CAT')];
+    for (let step = 1; step <= 3; step += 1) {
+      vi.advanceTimersByTime(STEP);
+      seen.push(picture(container, 'CAT'));
+    }
+    expect(seen).toEqual(['···', '··C', '·CA', 'CAT']);
+  });
+
+  it('hold the clue fully visible for one second before it scrolls out', () => {
+    vi.useFakeTimers();
+    const { container } = render(<SegmentedSecretText text="CAT" />);
+    vi.advanceTimersByTime(STEP * 3);
+    expect(picture(container, 'CAT')).toBe('CAT');
+    vi.advanceTimersByTime(1000);
+    expect(picture(container, 'CAT')).toBe('CAT');
+    vi.advanceTimersByTime(STEP);
+    expect(picture(container, 'CAT')).toBe('AT·');
+  });
+
+  it('jump the card on every step, in sync with the scroll', () => {
+    vi.useFakeTimers();
+    render(<SegmentedSecretText text="CAT" />);
+    const card = screen.getByRole('img', { name: 'Secret clue: CAT' });
+    const indices = [card.dataset.motionIndex];
+    for (let step = 1; step <= 4; step += 1) {
+      vi.advanceTimersByTime(STEP);
+      indices.push(card.dataset.motionIndex);
+    }
+    expect(indices).toEqual(['0', '1', '2', '3', '4']);
+  });
+});
+
+describe('progressive reveal', () => {
+  it('first paints only the cursor — the clue never flashes up before the typing starts', () => {
+    const { container } = render(<SegmentedSecretText text="CAT" decoder={PROGRESSIVE} />);
     expect(screen.getByRole('img', { name: 'Secret clue: CAT' })).toHaveAttribute('data-reveal', 'progressive');
     expect(picture(container, 'CAT')).toBe('_··');
     expect(litOf(glyphsOf(container)[0])).toEqual(CURSOR);
@@ -112,7 +151,7 @@ describe('progressive reveal (the default)', () => {
 
   it('types one character every step, then hides first-to-last, then loops', () => {
     vi.useFakeTimers();
-    const { container } = render(<SegmentedSecretText text="CAT" />);
+    const { container } = render(<SegmentedSecretText text="CAT" decoder={PROGRESSIVE} />);
     const seen = [picture(container, 'CAT')];
     for (let step = 1; step <= 7; step += 1) {
       vi.advanceTimersByTime(STEP);
@@ -123,7 +162,7 @@ describe('progressive reveal (the default)', () => {
 
   it('keeps every cell fully lit — a hidden letter is mask color, never a blank cell', () => {
     vi.useFakeTimers();
-    const { container } = render(<SegmentedSecretText text="CAT" />);
+    const { container } = render(<SegmentedSecretText text="CAT" decoder={PROGRESSIVE} />);
     for (let step = 0; step < 8; step += 1) {
       for (const glyph of glyphsOf(container)) {
         expect(glyph.querySelectorAll('polygon.is-signal').length + glyph.querySelectorAll('polygon.is-mask').length).toBe(16);
@@ -134,7 +173,7 @@ describe('progressive reveal (the default)', () => {
 
   it('reshuffles every segment each step, each within its current family', () => {
     vi.useFakeTimers();
-    const { container } = render(<SegmentedSecretText text="MOON WALK" />);
+    const { container } = render(<SegmentedSecretText text="MOON WALK" decoder={PROGRESSIVE} />);
     const polygons = [...container.querySelectorAll('polygon')];
     let previous = polygons.map(colorOf);
     vi.advanceTimersByTime(STEP - 1);
@@ -149,13 +188,13 @@ describe('progressive reveal (the default)', () => {
     }
   });
 
-  it('jumps the card once per motion interval, on every fourth step', () => {
+  it('jumps the card once per motion interval — every fourth step when a rules file says so', () => {
     vi.useFakeTimers();
-    render(<SegmentedSecretText text="CAT" />);
+    render(<SegmentedSecretText text="CAT" decoder={{ reveal: 'progressive', step_ms: 250, motion_ms: 1000 }} />);
     const card = screen.getByRole('img', { name: 'Secret clue: CAT' });
     const indices = [card.dataset.motionIndex];
     for (let step = 1; step <= 8; step += 1) {
-      vi.advanceTimersByTime(STEP);
+      vi.advanceTimersByTime(250);
       indices.push(card.dataset.motionIndex);
     }
     expect(indices).toEqual(['0', '0', '0', '0', '1', '1', '1', '1', '2']);
@@ -171,7 +210,7 @@ describe('progressive reveal (the default)', () => {
 
   it('follows the step length a rules file sets', () => {
     vi.useFakeTimers();
-    const { container } = render(<SegmentedSecretText text="CAT" decoder={{ step_ms: 500 }} />);
+    const { container } = render(<SegmentedSecretText text="CAT" decoder={{ reveal: 'progressive', step_ms: 500 }} />);
     vi.advanceTimersByTime(250);
     expect(picture(container, 'CAT')).toBe('_··');
     vi.advanceTimersByTime(250);
@@ -242,7 +281,7 @@ describe('static', () => {
 describe('position jump', () => {
   const offsets = card => card.style.transform.match(/^translate3d\((-?[\d.]+)%, (-?[\d.]+)%, 0(?:px)?\)$/)?.slice(1).map(Number);
 
-  it('moves the whole card to the opposite edge every second, inside its margin', () => {
+  it('moves the whole card to the opposite edge every motion interval, inside its margin', () => {
     vi.useFakeTimers();
     render(<SegmentedSecretText text="Moon walk" decoder={STATIC} />);
     const card = screen.getByRole('img', { name: 'Secret clue: MOON WALK' });

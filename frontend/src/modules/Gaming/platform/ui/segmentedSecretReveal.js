@@ -12,15 +12,18 @@ export const CURSOR_SEGMENTS = Object.freeze(['d1', 'd2']);
 // Every key a game's rules file may set under `decoder:`, with its default.
 // These are the ONLY defaults: the ruleset passes the block through as authored.
 export const DECODER_DEFAULTS = Object.freeze({
-  reveal: 'progressive',
+  // The marquee by default: every character keeps changing cell as well as
+  // color, so there is no fixed position to stare at.
+  reveal: 'marquee',
   // One reveal/scroll step and one color shuffle. In static mode the colors
   // shuffle with the position jump instead, once per `motionMs`.
-  stepMs: 250,
+  stepMs: 100,
   motion: true,
-  motionMs: 1000,
+  // Equal to the step, so the card jumps on every scroll step, in sync.
+  motionMs: 100,
   // Marquee: steps held fully visible, then steps of empty gap before the text
-  // comes round again. Four steps at 250ms is one second, four glyphs of gap.
-  marqueeHoldSteps: 4,
+  // comes round again. Ten steps at 100ms is a one-second hold; four glyphs of gap.
+  marqueeHoldSteps: 10,
   marqueeGapSteps: 4,
 });
 

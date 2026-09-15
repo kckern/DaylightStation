@@ -1,6 +1,7 @@
 import { seededRandom } from './imageDecoderArtifacts.js';
 
-export const SECRET_TEXT_MOTION_MS = 1000;
+// The default jump interval, one per decoder step (`DECODER_DEFAULTS.motionMs`).
+export const SECRET_TEXT_MOTION_MS = 100;
 // Offsets are percentages of the card's own box. The text card is nearly the
 // full stage width (`min(96vw, 90rem)`), so the image decoder's ±35% would
 // throw it off the TV; ±2% stays inside the card's 2vw side margin while still
