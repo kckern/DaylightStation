@@ -88,6 +88,22 @@ describe('languageApi failure reporting', () => {
     expect(events('debug').map((e) => e.event)).toContain('school.language.api.aborted');
   });
 
+  // Found live 2026-09-14: every Portal launch logged `unparseable` with
+  // "The user aborted a request." — a newer day load cancelling an older one
+  // while its body was still arriving. That is a cancel, not a broken body.
+  it('treats a request aborted mid-body as a cancel, not an unparseable response', async () => {
+    const abort = new Error('The user aborted a request.');
+    abort.name = 'AbortError';
+    globalThis.fetch.mockResolvedValue({ ok: true, status: 200, json: async () => { throw abort; } });
+
+    const result = await languageApi.previewDay('ko-basic', {}, new AbortController().signal);
+
+    expect(result.ok).toBe(false);
+    expect(events('warn').map((e) => e.event)).not.toContain('school.language.api.unparseable');
+    expect(events('error')).toHaveLength(0);
+    expect(events('debug').map((e) => e.event)).toContain('school.language.api.aborted');
+  });
+
   it('never puts a request body or a response payload in the log', async () => {
     globalThis.fetch.mockResolvedValue({ ok: true, status: 200, json: async () => ({ correct: '나는 학생입니다' }) });
 
