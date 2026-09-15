@@ -9,7 +9,8 @@ function hashSeed(value) {
   return hash >>> 0;
 }
 
-function seededRandom(seed) {
+// Exported so the segmented text decoder moves on the same generator.
+export function seededRandom(seed) {
   let state = hashSeed(seed);
   return () => {
     state += 0x6d2b79f5;

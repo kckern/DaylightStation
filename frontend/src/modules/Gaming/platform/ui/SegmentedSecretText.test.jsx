@@ -4,6 +4,7 @@ import SegmentedSecretText, { balanceSecretLines } from './SegmentedSecretText.j
 import { activeSegmentsFor, SEGMENTS } from './segmentedSecretGeometry.js';
 import { MASK_SEGMENT_COLORS, SIGNAL_SEGMENT_COLORS, segmentColorValue } from './segmentedSecretPalette.js';
 import { FLICKER_TICK_MS } from './segmentFlicker.js';
+import { SECRET_TEXT_MOTION_MS, SECRET_TEXT_MOTION_X, SECRET_TEXT_MOTION_Y } from './segmentedSecretMotion.js';
 
 const SIGNAL = new Set(SIGNAL_SEGMENT_COLORS.map(segmentColorValue));
 const MASK = new Set(MASK_SEGMENT_COLORS.map(segmentColorValue));
@@ -110,5 +111,50 @@ describe('SegmentedSecretText color flicker', () => {
     const initial = polygons.map(colorOf);
     vi.advanceTimersByTime(FLICKER_TICK_MS * 9);
     expect(polygons.map(colorOf)).toEqual(initial);
+  });
+});
+
+describe('SegmentedSecretText position jump', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+  const offsets = card => card.style.transform.match(/^translate3d\((-?[\d.]+)%, (-?[\d.]+)%, 0(?:px)?\)$/)?.slice(1).map(Number);
+
+  it('moves the whole card to the opposite edge every second, inside its margin', () => {
+    vi.useFakeTimers();
+    render(<SegmentedSecretText text="Moon walk" />);
+    const card = screen.getByRole('img', { name: 'Secret clue: MOON WALK' });
+    expect(card).toHaveAttribute('data-motion-index', '0');
+    let [x, y] = offsets(card);
+    for (let tick = 1; tick <= 9; tick += 1) {
+      vi.advanceTimersByTime(SECRET_TEXT_MOTION_MS);
+      expect(card).toHaveAttribute('data-motion-index', String(tick % 8));
+      const [nextX, nextY] = offsets(card);
+      expect(Math.sign(nextX)).toBe(-Math.sign(x));
+      expect(Math.abs(nextX)).toBeLessThanOrEqual(SECRET_TEXT_MOTION_X);
+      expect(Math.abs(nextY)).toBeLessThanOrEqual(SECRET_TEXT_MOTION_Y);
+      [x, y] = [nextX, nextY];
+    }
+  });
+
+  it('starts a new clue from its first position', () => {
+    vi.useFakeTimers();
+    const { rerender } = render(<SegmentedSecretText text="CAT" />);
+    vi.advanceTimersByTime(SECRET_TEXT_MOTION_MS * 3);
+    rerender(<SegmentedSecretText text="BOX" />);
+    expect(screen.getByRole('img', { name: 'Secret clue: BOX' })).toHaveAttribute('data-motion-index', '0');
+  });
+
+  it('holds still, centred, when the viewer prefers reduced motion', () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('matchMedia', query => ({
+      matches: query.includes('reduce'), media: query, addEventListener() {}, removeEventListener() {},
+    }));
+    render(<SegmentedSecretText text="CAT" />);
+    const card = screen.getByRole('img', { name: 'Secret clue: CAT' });
+    vi.advanceTimersByTime(SECRET_TEXT_MOTION_MS * 5);
+    expect(card.style.transform).toBe('');
+    expect(card).toHaveAttribute('data-motion-index', '0');
   });
 });
