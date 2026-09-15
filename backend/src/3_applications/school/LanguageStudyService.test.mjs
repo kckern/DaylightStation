@@ -858,6 +858,19 @@ describe('rollDay', () => {
     }
   });
 
+  it('squares an enrolled learner\'s stored pace with the enrollment', () => {
+    const ds = new FakeDatastore();
+    const svc = makeService(ds, AT, {
+      readProgramEnrollment: () => ({
+        programId: 'sentence-ladder', corpusId: 'test-korean', lessonSize: 8,
+        rungs: ['repetition', 'dictation', 'recording', 'interpretation'],
+      }),
+    });
+    ds.writeProgress('kckern', 'test-korean', { corpus: 'test-korean', day: 1, daily_limit: 5, last_activity: null });
+    expect(svc.getDay({ userId: 'kckern', corpusId: 'test-korean', capabilities: EQUIPPED }).dailyLimit).toBe(2);
+    expect(ds.readProgress('kckern', 'test-korean').daily_limit).toBe(2);
+  });
+
   it('leaves a healthy record alone — reading never rewrites it', () => {
     const ds = new FakeDatastore();
     const svc = makeService(ds);
