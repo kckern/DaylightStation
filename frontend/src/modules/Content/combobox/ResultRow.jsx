@@ -36,9 +36,13 @@ import { isContainer } from './comboboxMachine.js';
  * pickers) opt OUT simply by not passing onPlayAll/onMore, with zero visual
  * or behavioral change.
  */
-export function ResultRowActions({ item, isContainerItem, onPlayAll, onMore, testId }) {
+export function ResultRowActions({
+  item, isContainerItem, onPlayAll, onMore, testId,
+  onMoreMenuPointerDown, onMoreMenuChange, onMoreBoundaryBlur,
+}) {
   const container = isContainerItem ?? (item ? isContainer(item) : false);
   const idPart = testId ?? item?.id ?? 'row';
+  const moreTriggerRef = React.useRef(null);
 
   if (container) {
     if (!onPlayAll) return null;
@@ -49,8 +53,10 @@ export function ResultRowActions({ item, isContainerItem, onPlayAll, onMore, tes
         aria-label="Play as queue"
         data-testid={`result-play-all-${idPart}`}
         // Rows this sits inside (Combobox.Option, or a tap <button>) treat
-        // any click as a select/tap — stop it here so ▶ never ALSO fires
-        // the row's own tap handler.
+        // any click as a select/tap. Keep the combobox input focused through
+        // pointerdown too: its blur closes the portaled result list before a
+        // trailing action's click can run.
+        onMouseDown={(e) => e.preventDefault()}
         onClick={(e) => { e.preventDefault(); e.stopPropagation(); onPlayAll(); }}
       >
         <IconPlayerPlay size={16} />
@@ -60,20 +66,43 @@ export function ResultRowActions({ item, isContainerItem, onPlayAll, onMore, tes
 
   if (!onMore) return null;
   const fire = (action) => (e) => { e?.stopPropagation?.(); onMore(action); };
+  const isMoreBoundary = (element) => element?.closest?.('[data-content-combobox-more-boundary]');
   return (
-    <Menu withinPortal position="bottom-end" shadow="sm">
+    <Menu withinPortal position="bottom-end" shadow="sm" onChange={onMoreMenuChange}>
       <Menu.Target>
         <ActionIcon
+          ref={moreTriggerRef}
           size="sm"
           variant="subtle"
           aria-label="More actions"
           data-testid={`result-more-${idPart}`}
+          data-content-combobox-more-trigger
+          data-content-combobox-more-boundary
+          // `click` is too late to protect a combobox: the browser blurs its
+          // input on pointerdown, which closes the result portal before this
+          // Menu can open. Retaining input focus also lets the menu's portal
+          // coexist with the result list until an explicit verb is chosen.
+          onMouseDown={(e) => { e.preventDefault(); onMoreMenuPointerDown?.(e.currentTarget); }}
+          onBlur={(e) => {
+            if (!isMoreBoundary(e.relatedTarget)) onMoreBoundaryBlur?.(e.relatedTarget);
+          }}
           onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
         >
           <IconDotsVertical size={16} />
         </ActionIcon>
       </Menu.Target>
-      <Menu.Dropdown onClick={(e) => e.stopPropagation()} data-testid={`result-more-menu-${idPart}`}>
+      <Menu.Dropdown
+        // Menu items render in a second portal. Their pointerdown must retain
+        // the combobox's focus for the same reason as the trigger above;
+        // keyboard focus remains under Mantine's normal menu management.
+        onMouseDown={(e) => e.preventDefault()}
+        onBlur={(e) => {
+          if (!isMoreBoundary(e.relatedTarget)) onMoreBoundaryBlur?.(e.relatedTarget);
+        }}
+        onClick={(e) => e.stopPropagation()}
+        data-content-combobox-more-boundary
+        data-testid={`result-more-menu-${idPart}`}
+      >
         <Menu.Item data-testid={`result-action-playNow-${idPart}`} onClick={fire('playNow')}>Play Now</Menu.Item>
         <Menu.Item data-testid={`result-action-playNext-${idPart}`} onClick={fire('playNext')}>Play Next</Menu.Item>
         <Menu.Item data-testid={`result-action-upNext-${idPart}`} onClick={fire('upNext')}>Up Next</Menu.Item>
