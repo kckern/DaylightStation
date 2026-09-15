@@ -367,6 +367,30 @@ describe('PlayerBridge real Player contract', () => {
     expect(mountSpy).toHaveBeenCalledTimes(1);
   });
 
+  it('shows native pending seek position without claiming completion or persisting it', () => {
+    const controller = makeRealController();
+    controller.queue.playNow({ contentId: 'plex:movie-a', duration: 5400, format: 'video' });
+    mediaElement = document.createElement('video');
+    Object.defineProperties(mediaElement, {
+      currentTime: { configurable: true, writable: true, value: 257 },
+      paused: { configurable: true, value: true },
+      seeking: { configurable: true, value: true },
+    });
+    mountedContentId = 'plex:movie-a';
+    render(<Harness controller={controller} />);
+    act(() => latestPlayerProps.onProgress({ currentTime: 257, paused: true, isSeeking: false }));
+
+    act(() => controller.transport.seekAbs(342));
+    expect(controller.position.get().seconds).toBe(257);
+    // The native decoder accepts its own position before it can decode a
+    // frame. Display that evidence, not an optimistic requested target.
+    mediaElement.currentTime = 341.75;
+    act(() => mediaElement.dispatchEvent(new Event('seeking')));
+    expect(controller.position.get().seconds).toBe(341.75);
+    expect(controller.getSnapshot().position).toBe(257);
+    expect(controller.getSnapshot().state).toBe('paused');
+  });
+
   it('rejects seek completion from the previous source while its replacement is pending', () => {
     const controller = makeRealController();
     controller.queue.playNow({ contentId: 'plex:movie-a', duration: 5400, format: 'video' });
@@ -381,6 +405,7 @@ describe('PlayerBridge real Player contract', () => {
     // The new generation's effect can see A until B resolves. Requested
     // content identity alone must not attribute A's seek completion to B.
     act(() => {
+      oldVideo.dispatchEvent(new Event('seeking'));
       oldVideo.dispatchEvent(new Event('seeked'));
       oldVideo.dispatchEvent(new Event('durationchange'));
       oldVideo.dispatchEvent(new Event('playing'));
@@ -394,6 +419,7 @@ describe('PlayerBridge real Player contract', () => {
     mediaElement = document.createElement('video');
     mountedContentId = 'plex:movie-b';
     act(() => {
+      oldVideo.dispatchEvent(new Event('seeking'));
       oldVideo.dispatchEvent(new Event('seeked'));
       oldVideo.dispatchEvent(new Event('pause'));
     });
