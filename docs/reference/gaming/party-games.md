@@ -20,33 +20,33 @@ Letter segments use warm colors whose red channel is full (white, yellow, peach,
 pink, orange, magenta, hot pink, red). All other segments use cool colors whose
 red channel stays at or below `0x40` (aqua mint, cyan, green, sky, teal, forest,
 blue, jet black). Jet black gives the mask a dark member, so the greens and
-blues are not the only colours around the letters. A red filter keeps the warm segments bright and darkens the cool ones.
-The two families overlap in apparent brightness, so brightness alone does not
-mark the letters. Hex values live in `platform/ui/_tokens.scss`, the family
-lists in `segmentedSecretPalette.js`, and `segmentedSecretPalette.test.js`
-fails if a color breaks the red-channel rule.
+blues are not the only colours around the letters. A red filter keeps the warm
+segments bright and darkens the cool ones. The two families overlap in apparent
+brightness, so brightness alone does not mark the letters. Hex values live in
+`platform/ui/_tokens.scss`, the family lists in `segmentedSecretPalette.js`,
+and `segmentedSecretPalette.test.js` fails if a color breaks the red-channel
+rule.
 
-To keep a viewer from sorting the colors by eye, every segment changes to a
-different color in its own family once every three seconds (`segmentFlicker.js`).
-Segments are shuffled into three groups and one group changes every second, so
-the display never jumps all at once. Letter segments that touch — ends meeting
-at a joint, including pairs split by the middle joint such as the upper and
-lower right side (`SEGMENT_NEIGHBORS`) — never share a color: not on first
-draw, not after a change, and not when a new clue reuses a segment. A change
-picks a color no touching letter segment holds. A change never crosses families, so the
-view through the filter is constant. The colors are written straight to each
-polygon's `--segment-color` rather than re-rendering glyphs. Under
-`prefers-reduced-motion` the colors stay still.
+**Once a second, everything changes at once.** On a single tick the whole card
+jumps to its next position and every segment takes a new color in its own
+family, so a viewer who stares and squints never holds a steady image or a
+steady color map to sort by. The position follows `ImageDecoderDisplay`
+(`segmentedSecretMotion.js`): the card alternates between −2% and +2% of its
+own width, so every tick moves it most of a glyph, with a seeded vertical offset
+within ±10% of its height. The path is seeded by the clue and restarts with
+each new clue. It snaps rather than glides. The offsets are small because the
+card is nearly the full stage width: the image decoder's ±35% would push it off
+the TV.
 
-The whole card also jumps once a second, following `ImageDecoderDisplay`
-(`segmentedSecretMotion.js`). It alternates between −2% and +2% of its own
-width, so every tick moves it most of a glyph, with a seeded vertical offset
-within ±10% of its height. The path is seeded by the clue and restarts with each
-new clue. It snaps rather than glides, so staring and squinting never holds a
-steady image. The offsets are small because the card is nearly the full stage
-width: the image decoder's ±35% would push it off the TV. Like the colors, the
-position is written straight to the card, and under `prefers-reduced-motion` the
-card stays centred.
+A color change never crosses families, so the view through the filter is
+constant. Letter segments that touch — ends meeting at a joint, including pairs
+split by the middle joint such as the upper and lower right side
+(`SEGMENT_NEIGHBORS`) — never share a color: not on first draw, not after a
+tick, and not when a new clue reuses a segment. Segments are recolored in order,
+each avoiding the colors its touching neighbours hold at that moment
+(`nextColorIndex` in `segmentFlicker.js`). Position and colors are written
+straight to the DOM rather than re-rendering glyphs. Under
+`prefers-reduced-motion` the card stays centred and the colors stay still.
 
 `/dev/decoder-swatches` shows every palette color and a live sample; open it on
 the target screen and hold up the physical red card to confirm each warm bar
