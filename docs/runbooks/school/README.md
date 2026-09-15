@@ -105,6 +105,31 @@ mounting path, so the runner, its session and its grant are indistinguishable
 from the ordinary route. It does NOT dispatch to the Portal: the work opens in
 the browser that asked, not on the tablet.
 
+## A worksheet says "We could not make that sheet"
+
+The Portal's print button came back `render_failed`. Query the log store for
+the reason before touching anything — it is on the `school.issue.failed`
+event (`data.reason`) and on the session record's `failed` event:
+
+```bash
+curl -s {env.log_store_url}/select/logsql/query \
+  -d 'query="school.issue.failed" AND _time:1h' -d 'limit=10'
+```
+
+- **`Missing open brace for subscript in TeX: …___`** or any other MathJax
+  message: the bank carries TeX that does not render. Since 2026-09-15 the
+  publish step refuses such a document (`INVALID_DOCUMENT_TEX`) before any
+  card row is claimed, and the elementary-math generator's audit refuses to
+  write it, so this reaches a child only from a hand-authored bank. Fix the
+  bank (an authored `\_` in a JavaScript string must be `\\_`), restart the
+  container — banks are cached in memory for the life of the process — and
+  have the child scan again. Nothing else to clean up: cancelled allocations
+  release their rows, and the next allocation reclaims the tail.
+- **A retry always fails the same way.** Deterministic content errors do not
+  heal on retry; the "tell a grown-up" sentence is right. Each retry used to
+  burn a fresh row range on the answer card and could roll it over; it no
+  longer does.
+
 ## The single most common "it's broken" false alarm
 
 `school.yml` (`data/household/school/school.yml`) is **boot-cached**. Editing

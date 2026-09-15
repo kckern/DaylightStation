@@ -211,6 +211,20 @@ different content at an existing `<id>@<rev>` path is refused outright. Prior
 revisions are retained forever — a card printed last month still grades
 against exactly what it printed.
 
+**TeX pre-flight.** Before the write, `PublishPrintDocument` renders every
+inline `$…$` in the published document through the same MathJax the sheet
+renderer uses (`1_rendering/school/documents/texLint.mjs`, `lintTex`) and
+refuses the publish with `INVALID_DOCUMENT_TEX` if any segment fails. The
+lint recognises exactly the spans `measure.mjs` would hand to MathJax (shared
+grammar in `inlineGrammar.mjs`; a `$x$` inside bold, code or a cloze passage
+is literal to both). Publish runs before card allocation in the issue path,
+so a bank's TeX error is a refusal ahead of the ledger, not a failure at the
+printer after the learner's rows are claimed. Authoring note: in a JavaScript
+string a TeX `\_` must be written `\\_` — `'\_\_\_'` reaches the bank as
+`___` and MathJax reads a bare underscore as a subscript (the 2026-09-15
+mastery-bank incident). The elementary-math generator's bank audit runs the
+same lint, so a regenerated course cannot carry one.
+
 ### Enrollment-issued worksheet instances
 
 An agenda or result-receipt QR does not render directly from mutable lesson
@@ -615,6 +629,17 @@ Allocation invariants apply in every mode:
   permanently skipped and allocation never returns to it.
 - Never overwrite, reclaim, or renumber a range that reached the learner.
   Remediation uses the next untouched rows when they fit.
+- A range that **never reached paper is not occupied.** The issue path
+  allocates before it renders, and a render or print failure orphans the
+  record (`release`, `deliveryState: cancelled`, rows still blank on the
+  card). The card's occupied-through row is computed over records that were
+  delivered, so the next allocation lands on those rows again; a retry of the
+  identical render context re-arms the cancelled record in place (same
+  `recordId`, back to `live`/`pending`) rather than appending a second record
+  with the same id. Only the tail is reclaimed: a cancelled range below a
+  delivered one stays a gap, because allocation never returns below the
+  highest delivered row. A card whose only records were cancelled was never
+  in the learner's hands, so it is not their card and a fresh id is minted.
 - A reprint reproduces the original answer-sheet number and row range exactly.
 - Multiple outstanding (`live`) allocations may share a card only in
   `school_day` or `until_full` mode, only for the same learner, and only at

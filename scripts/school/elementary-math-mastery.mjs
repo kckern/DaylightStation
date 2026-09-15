@@ -49,7 +49,7 @@ const BLUEPRINTS = Object.freeze({
     q('In 681, what amount does the digit 6 represent?', 600, [6, 60, 6000, 681], 'The 6 is in the hundreds place, so it represents 6 hundreds, or 600.', ['place-value']),
     q('What number is shown by the base-ten blocks?', 307, [37, 370, 703, 10], 'Three hundreds, zero tens, and seven ones combine to make 307.', ['base-ten-models'], baseTenFigure(3, 0, 7)),
     q('Which number equals $700 + 40 + 2$?', 742, [724, 472, 7042, 746], 'Place 7 in hundreds, 4 in tens, and 2 in ones to form 742.', ['number-forms']),
-    q('What comes next? $230, 240, 250, \_\_\_$', 260, [251, 255, 270, 350], 'The pattern increases by 10 each time; 250 + 10 = 260.', ['skip-counting']),
+    q('What comes next? $230, 240, 250, \\_\\_\\_$', 260, [251, 255, 270, 350], 'The pattern increases by 10 each time; 250 + 10 = 260.', ['skip-counting']),
     q('Which digit is in the tens place in 904?', 0, [9, 4, 90, 900], 'The middle digit is the tens digit; zero holds that place in 904.', ['place-value']),
     q('What number is shown by the base-ten blocks?', 254, [245, 524, 11, 2054], 'Two hundreds, five tens, and four ones combine to make 254.', ['base-ten-models'], baseTenFigure(2, 5, 4)),
     q('Which expanded form names 608?', '$600 + 8$', ['$60 + 8$', '$600 + 80$', '$600 + 80 + 8$', '$6 + 8$'], 'The zero tens contribute nothing, so 608 is 600 + 8.', ['number-forms']),
@@ -57,7 +57,7 @@ const BLUEPRINTS = Object.freeze({
     q('Which number has 5 hundreds, 2 tens, and 9 ones?', 529, [592, 259, 5209, 16], 'Combine 500 + 20 + 9 to get 529.', ['place-value', 'number-forms']),
     q('What number is shown by the base-ten blocks?', 419, [491, 149, 14, 4109], 'Four hundreds, one ten, and nine ones combine to make 419.', ['base-ten-models'], baseTenFigure(4, 1, 9)),
     q('What is the standard form of $300 + 70 + 5$?', 375, [357, 735, 3075, 378], 'The parts fill the hundreds, tens, and ones places: 375.', ['number-forms']),
-    q('What comes next? $450, 550, 650, \_\_\_$', 750, [651, 700, 760, 1650], 'The pattern increases by 100; add 100 to 650.', ['skip-counting']),
+    q('What comes next? $450, 550, 650, \\_\\_\\_$', 750, [651, 700, 760, 1650], 'The pattern increases by 100; add 100 to 650.', ['skip-counting']),
   ],
 
   'compare-order-round': [

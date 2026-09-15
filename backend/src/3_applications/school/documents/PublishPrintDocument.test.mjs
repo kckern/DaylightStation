@@ -153,3 +153,37 @@ describe('execute({id}) — repository lookup', () => {
     });
   });
 });
+
+describe('texLint gate', () => {
+  it('refuses to write a document whose inline TeX fails the lint', async () => {
+    const repo = fakeRepository();
+    const seen = [];
+    const texLint = (published) => { seen.push(published); return ['blocks[0].blocks[0].md: Missing open brace for subscript in TeX: 230, 240, 250, ___']; };
+    const useCase = new PublishPrintDocument({ repository: repo, texLint });
+    const source = withBank({ blocks: [{
+      type: 'question', itemId: 'q1', number: 1,
+      blocks: [richText('What comes next? $230, 240, 250, ___$')],
+      choices: ['260', '270', '280'], answer: '260',
+    }] });
+    await expect(useCase.execute({ source })).rejects.toMatchObject({
+      code: 'INVALID_DOCUMENT_TEX',
+      details: { errors: [expect.stringMatching(/Missing open brace/)] },
+    });
+    expect(repo.store.size).toBe(0);
+    expect(seen).toHaveLength(1);
+    expect(seen[0].id).toBe('states-quiz-3');
+  });
+
+  it('publishes normally when the lint returns no errors', async () => {
+    const repo = fakeRepository();
+    const useCase = new PublishPrintDocument({ repository: repo, texLint: () => [] });
+    const result = await useCase.execute({ source: withBank() });
+    expect(result.id).toBe('states-quiz-3');
+    expect(repo.store.size).toBe(1);
+  });
+
+  it('rejects a non-function texLint at construction', () => {
+    expect(() => new PublishPrintDocument({ repository: fakeRepository(), texLint: 'nope' })).toThrow(/texLint/);
+  });
+});
+

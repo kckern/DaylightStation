@@ -8,6 +8,7 @@ import yaml from 'js-yaml';
 import { renderMathAsset } from '../cli/school/math-assets.mjs';
 import { validateQuestionBank } from '../backend/src/2_domains/school/questionBankValidation.mjs';
 import { validateUnit } from '../backend/src/2_domains/school/curriculum/unitValidation.mjs';
+import { lintTex } from '../backend/src/1_rendering/school/documents/texLint.mjs';
 import { elementaryMathMasteryBlueprint } from './school/elementary-math-mastery.mjs';
 
 const COURSE = 'elementary-math-2-3';
@@ -1108,7 +1109,7 @@ function buildItems(def, ctx) {
     ['A bin had 38 balls. Some were added, and then it held 86. How many balls were added?', 48, [124, 58, 38, 86], 'The change is unknown, so subtract the start from the end: 86 − 38 = 48.', ['change-unknown']],
     ['A school collected 128 cans Monday and 94 Tuesday, then recycled 75 cans. How many cans remained?', 147, [222, 203, 297, 109], 'Combine the two collections to get 222, then subtract the 75 recycled cans.', ['two-step-problems']],
     ['Which equation proves that $92 − 57 = 35$?', '$35 + 57 = 92$', ['$92 + 57 = 149$', '$57 − 35 = 22$', '$92 + 35 = 127$', '$35 − 57 = 22$'], 'A subtraction check adds the difference and subtrahend to return to the minuend.', ['inverse-operations']],
-    ['What comes next in the pattern $125, 150, 175, 200, \_\_\_$?', 225, [201, 210, 250, 325], 'Each term increases by 25; add 25 to 200.', ['number-patterns']],
+    ['What comes next in the pattern $125, 150, 175, 200, \\_\\_\\_$?', 225, [201, 210, 250, 325], 'Each term increases by 25; add 25 to 200.', ['number-patterns']],
     ['What is $36 + 48 + 27$?', 111, [84, 75, 101, 121], 'Add all three addends: 36 + 48 = 84, then 84 + 27 = 111.', ['add-three-numbers']],
   ]);
   if (def.kind === 'cumulative_data') {
@@ -1412,6 +1413,12 @@ export function auditElementaryMathBank(bank) {
   (bank?.items ?? []).forEach((entry, index) => {
     const at = `${bank?.id ?? 'bank'} item ${index + 1}`;
     const prompt = String(entry?.prompt ?? '').trim();
+    // Render every `$…$` the item carries through the SAME MathJax the
+    // worksheet renderer uses. Authored in JavaScript strings, a TeX `\_`
+    // is one backslash short of surviving: `'\_\_\_'` reaches the bank as
+    // `___`, and on 2026-09-15 the first thing to ever render that was a
+    // child's print at the Portal. The lint is what the printer would say.
+    lintTex(entry).forEach((error) => errors.push(`${at}: TeX does not render — ${error}`));
     const feedback = String(entry?.feedback?.incorrect ?? '').trim();
     if (!prompt) errors.push(`${at}: prompt is required`);
     AMBIGUOUS_PROMPT_PATTERNS.forEach((pattern) => {

@@ -31,6 +31,7 @@ import { answerSheetIdenticon } from '#domains/school/documents/answerSheetIdent
 import { placeFragments } from './layout.mjs';
 import { documentPdfTheme } from './documentPdfTheme.mjs';
 import { texToSvg as mathJaxTexToSvg } from './mathSvg.mjs';
+import { INLINE_SPAN_PLAIN, INLINE_SPAN_ITALIC } from './inlineGrammar.mjs';
 
 /** Bundled font assets, resolved against this module — never the process cwd. */
 const DEFAULT_FONT_DIR = fileURLToPath(new URL('../../../../assets/fonts', import.meta.url));
@@ -40,17 +41,10 @@ const HEADING = /^(#{1,6})\s+(.*)$/;
 const BULLET = /^[-*]\s+(.*)$/;
 const BULLET_PREFIX = '•  ';
 /**
- * Inline spans: **bold**, `code`, $math$ — in one pass so nesting can't reorder
- * them. `**bold**` is tried before the single-star italic alternative at every
- * position, so `**x**` can never be misread as italic-of-`*x*` (see v2 note below).
+ * Inline spans: **bold**, `code`, $math$, and (v2, opt-in) *italic* — shared
+ * with `texLint.mjs` via `inlineGrammar.mjs` so the lint renders exactly the
+ * spans this module hands to MathJax.
  */
-const INLINE_SPAN_PLAIN = /\*\*(?<bold>[^*]+)\*\*|`(?<code>[^`]+)`|\$(?<math>[^$\n]+)\$/g;
-/**
- * v2: adds `*italic*` to the grammar, gated behind `{italic: true}` so v1
- * callers (and every existing golden) parse exactly as before — this pattern
- * is never used unless a caller opts in.
- */
-const INLINE_SPAN_ITALIC = /\*\*(?<bold>[^*]+)\*\*|\*(?<italic>[^*\n]+)\*|`(?<code>[^`]+)`|\$(?<math>[^$\n]+)\$/g;
 /**
  * Cloze's own inline grammar (spec §6.3): identical bold/code/math handling to
  * `inlineRuns` (math kept LITERAL, same rationale — a cloze passage is ONE
