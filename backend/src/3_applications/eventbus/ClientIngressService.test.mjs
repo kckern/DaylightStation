@@ -5,7 +5,8 @@ function fixture(overrides = {}) {
   const publications = {
     sendAuthorizationAck: vi.fn(), publishCall: vi.fn(), publishFitness: vi.fn(),
     publishMidi: vi.fn(), publishHomeline: vi.fn(), publishDeviceState: vi.fn(),
-    publishDeviceAck: vi.fn(), publishRelay: vi.fn(), clientMetadata: vi.fn(() => ({ ip: '127.0.0.1' })),
+    publishDeviceAck: vi.fn(), publishRelay: vi.fn(), publishClientControl: vi.fn(), publishClientAck: vi.fn(),
+    clientMetadata: vi.fn(() => ({ ip: '127.0.0.1', controlClientId: 'caller-live' })),
   };
   return {
     publications,
@@ -35,5 +36,28 @@ describe('ClientIngressService', () => {
     expect(publications.publishDeviceState).toHaveBeenCalledWith('screen-1', {
       deviceId: 'screen-1', snapshot: { online: true }, reason: 'change', ts: undefined,
     });
+  });
+
+  it('relays a valid command only from an identified caller and stamps its reply route', () => {
+    const { service, publications } = fixture();
+    service.handle('connection-1', {
+      topic: 'client-control:target-live', commandId: 'cmd-1', command: 'transport', params: { action: 'pause' },
+    });
+    expect(publications.publishClientControl).toHaveBeenCalledWith('target-live', expect.objectContaining({
+      topic: 'client-control:target-live', commandId: 'cmd-1', replyToControlClientId: 'caller-live',
+    }));
+  });
+
+  it('drops client-control from an unregistered connection and spoofed acks', () => {
+    const { service, publications } = fixture();
+    publications.clientMetadata.mockReturnValueOnce({ ip: '127.0.0.1' });
+    service.handle('connection-1', {
+      topic: 'client-control:target-live', commandId: 'cmd-1', command: 'transport', params: { action: 'pause' },
+    });
+    service.handle('connection-1', {
+      topic: 'client-ack', clientId: 'other-live', replyToControlClientId: 'caller-live', commandId: 'cmd-1', ok: true,
+    });
+    expect(publications.publishClientControl).not.toHaveBeenCalled();
+    expect(publications.publishClientAck).not.toHaveBeenCalled();
   });
 });

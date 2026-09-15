@@ -25,10 +25,15 @@ export class EventBusClientIngressAdapter extends IClientIngressPublications {
   publishHomeline(topic, message) { this.bus.broadcast(topic, message); }
   publishDeviceState(deviceId, message) { this.bus.broadcast(`device-state:${deviceId}`, message); }
   publishDeviceAck(deviceId, message) { this.bus.broadcast(`device-ack:${deviceId}`, message); }
+  publishClientControl(controlClientId, message) { this.bus.broadcast(`client-control:${controlClientId}`, message); }
+  publishClientAck(controlClientId, message) {
+    const { topic: _ignored, ...payload } = message;
+    this.bus.broadcast(`client-ack:${controlClientId}`, payload);
+  }
   publishRelay(topic, message) { this.bus.broadcast(topic, message); }
   clientMetadata(clientId) {
     const metadata = this.bus.getClientMeta(clientId);
-    return { ip: metadata?.ip, userAgent: metadata?.userAgent };
+    return { ip: metadata?.ip, userAgent: metadata?.userAgent, controlClientId: metadata?.clientId };
   }
 }
 

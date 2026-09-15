@@ -38,7 +38,7 @@ import { isContainer } from './comboboxMachine.js';
  */
 export function ResultRowActions({
   item, isContainerItem, onPlayAll, onMore, testId,
-  onMoreMenuPointerDown, onMoreMenuChange, onMoreBoundaryBlur,
+  onMoreMenuPointerDown, onMoreMenuChange, onMoreMenuAction, onMoreMenuTriggerFocus, onMoreBoundaryBlur,
 }) {
   const container = isContainerItem ?? (item ? isContainer(item) : false);
   const idPart = testId ?? item?.id ?? 'row';
@@ -65,8 +65,22 @@ export function ResultRowActions({
   }
 
   if (!onMore) return null;
-  const fire = (action) => (e) => { e?.stopPropagation?.(); onMore(action); };
+  const fire = (action) => (e) => {
+    e?.stopPropagation?.();
+    // Set before onMore mutates a session and Menu dismisses its portal. The
+    // parent uses it to distinguish this intentional action dismissal from an
+    // actual move to an external focus target.
+    onMoreMenuAction?.(e?.detail === 0 ? 'keyboard' : 'pointer');
+    onMore(action);
+  };
   const isMoreBoundary = (element) => element?.closest?.('[data-content-combobox-more-boundary]');
+  const retainMenuPointerFocus = (e, isPortaledMenu) => {
+    // Mantine's outer dropdown observes native pointerdown before the React
+    // mouse phase. The nested Menu portal must mark that event handled there,
+    // or the outer click-outside handler closes and commits the combobox.
+    e.preventDefault();
+    onMoreMenuPointerDown?.(moreTriggerRef.current, isPortaledMenu);
+  };
   return (
     <Menu withinPortal position="bottom-end" shadow="sm" onChange={onMoreMenuChange}>
       <Menu.Target>
@@ -82,7 +96,9 @@ export function ResultRowActions({
           // input on pointerdown, which closes the result portal before this
           // Menu can open. Retaining input focus also lets the menu's portal
           // coexist with the result list until an explicit verb is chosen.
+          onPointerDown={(e) => retainMenuPointerFocus(e, false)}
           onMouseDown={(e) => { e.preventDefault(); onMoreMenuPointerDown?.(e.currentTarget); }}
+          onFocus={onMoreMenuTriggerFocus}
           onBlur={(e) => {
             if (!isMoreBoundary(e.relatedTarget)) onMoreBoundaryBlur?.(e.relatedTarget);
           }}
@@ -95,6 +111,7 @@ export function ResultRowActions({
         // Menu items render in a second portal. Their pointerdown must retain
         // the combobox's focus for the same reason as the trigger above;
         // keyboard focus remains under Mantine's normal menu management.
+        onPointerDown={(e) => retainMenuPointerFocus(e, true)}
         onMouseDown={(e) => e.preventDefault()}
         onBlur={(e) => {
           if (!isMoreBoundary(e.relatedTarget)) onMoreBoundaryBlur?.(e.relatedTarget);
