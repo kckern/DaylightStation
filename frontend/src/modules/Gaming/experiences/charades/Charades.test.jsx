@@ -119,13 +119,15 @@ it('registers remote Back as a rewind while the timer is running', async () => {
  sendRuleCommand.mockImplementation(()=>new Promise(resolve=>{finishRewind=resolve;}));
  render(<Charades sessionId="one" seats={seats} registerBackAction={registerBackAction}/>);
  await screen.findByRole('button',{name:'Finish turn'});
+ // Registration is a passive effect; it can land just after the button does.
+ await waitFor(() => expect(registerBackAction.handler).toBeTypeOf('function'));
  let firstBack;let secondBack;
  act(()=>{firstBack=registerBackAction.handler();secondBack=registerBackAction.handler();});
  expect(firstBack).toBe(true);expect(secondBack).toBe(false);
  expect(sendRuleCommand).toHaveBeenCalledExactlyOnceWith('one',{type:'challenge.rewind'},undefined);
  await act(async()=>finishRewind(view(state,2)));
  await screen.findByRole('button',{name:'Go'});
- expect(removeBackAction).toHaveBeenCalledTimes(1);
+ await waitFor(() => expect(removeBackAction).toHaveBeenCalledTimes(1));
  expect(registerBackAction.handler).toBeNull();
 });
 
@@ -135,9 +137,11 @@ it('registers the remote forward action for the current primary step', async () 
  sendRuleCommand.mockResolvedValueOnce(view({...state,phase:'performing',deadline:Date.now()+60000},2));
  render(<Charades sessionId="one" seats={seats} registerForwardAction={registerForwardAction}/>);
  await screen.findByRole('button',{name:'Go'});
+ await waitFor(() => expect(registerForwardAction.handler).toBeTypeOf('function'));
  let handled;act(()=>{handled=registerForwardAction.handler();});
  expect(handled).toBe(true);
  expect(sendRuleCommand).toHaveBeenCalledExactlyOnceWith('one',{type:'challenge.start'},undefined);
  await screen.findByRole('button',{name:'Finish turn'});
- expect(removeForwardAction).toHaveBeenCalledTimes(1);
+ // The release is a passive effect; it can land just after the button does.
+ await waitFor(() => expect(removeForwardAction).toHaveBeenCalledTimes(1));
 });

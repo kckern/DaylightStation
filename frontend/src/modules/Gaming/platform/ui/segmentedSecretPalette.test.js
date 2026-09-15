@@ -37,3 +37,11 @@ describe('segmented secret palette', () => {
     expect(new Set(mask).size).toBe(mask.length);
   });
 });
+
+describe('jet black mask', () => {
+  it('gives the cool family a jet black member that the red card leaves dark', () => {
+    const black = MASK_SEGMENT_COLORS.find(({ name }) => name === 'jet black');
+    expect(black).toBeTruthy();
+    expect(hexFor(black.token)).toBe('#000000');
+  });
+});

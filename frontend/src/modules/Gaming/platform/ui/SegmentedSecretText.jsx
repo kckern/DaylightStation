@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { getChildLogger } from '../../../../lib/logging/singleton.js';
-import { SEGMENTS, activeSegmentsFor, segmentNames, segmentPoints } from './segmentedSecretGeometry.js';
+import { SEGMENTS, SEGMENT_NEIGHBORS, activeSegmentsFor, segmentNames, segmentPoints } from './segmentedSecretGeometry.js';
 import { MASK_SEGMENT_COLORS, SIGNAL_SEGMENT_COLORS, segmentColorValue } from './segmentedSecretPalette.js';
 import { FLICKER_GROUP_COUNT, FLICKER_TICK_MS, assignFlickerGroups, nextColorIndex } from './segmentFlicker.js';
 import { SECRET_TEXT_MOTION_MS, generateSecretTextMotion } from './segmentedSecretMotion.js';
@@ -71,8 +71,31 @@ function useSegmentFlicker(rootRef, value) {
         index = 0;
         element.style.setProperty('--segment-color', palette[index]);
       }
-      return { element, palette, index };
+      return { element, palette, index, neighbors: [] };
     });
+    // Touching letter segments of the same glyph, so a change can steer clear
+    // of their colors. Only letters are guarded; mask segments may match.
+    const byGlyph = new Map();
+    for (const segment of segments) {
+      const glyph = segment.element.parentNode;
+      if (!byGlyph.has(glyph)) byGlyph.set(glyph, []);
+      byGlyph.get(glyph).push(segment);
+    }
+    for (const glyphSegments of byGlyph.values()) {
+      const signal = glyphSegments.filter(segment => segment.element.classList.contains('is-signal'));
+      for (const segment of signal) {
+        const touching = SEGMENT_NEIGHBORS[segment.element.dataset.segment] ?? [];
+        segment.neighbors = signal.filter(other => other !== segment && touching.includes(other.element.dataset.segment));
+      }
+    }
+    const avoidFor = segment => segment.neighbors.map(other => other.index);
+    // A polygon reused from the previous clue can keep a flickered color that
+    // now matches a touching segment; repair it before the first tick.
+    for (const segment of segments) {
+      if (!segment.neighbors.some(other => other.index === segment.index)) continue;
+      segment.index = nextColorIndex(segment.index, segment.palette.length, Math.random, avoidFor(segment));
+      segment.element.style.setProperty('--segment-color', segment.palette[segment.index]);
+    }
     const groups = assignFlickerGroups(segments.length);
     const motionQuery = window.matchMedia?.('(prefers-reduced-motion: reduce)');
     let tick = 0;
@@ -81,7 +104,7 @@ function useSegmentFlicker(rootRef, value) {
       if (document.visibilityState === 'hidden') return;
       for (const segmentIndex of groups[tick % FLICKER_GROUP_COUNT]) {
         const segment = segments[segmentIndex];
-        segment.index = nextColorIndex(segment.index, segment.palette.length);
+        segment.index = nextColorIndex(segment.index, segment.palette.length, Math.random, avoidFor(segment));
         segment.element.style.setProperty('--segment-color', segment.palette[segment.index]);
       }
       tick += 1;
@@ -153,15 +176,28 @@ function useSecretTextMotion(rootRef, value, intervalMs) {
 
 function Glyph({ character, index, seed }) {
   const active = new Set(activeSegmentsFor(character));
+  // Touching letter segments never start on the same color: each takes its
+  // hashed color, stepping past any a touching segment already holds.
+  const signalColor = {};
+  segmentNames.forEach((name, segmentIndex) => {
+    if (!active.has(name)) return;
+    const taken = new Set(SEGMENT_NEIGHBORS[name].filter(other => other in signalColor).map(other => signalColor[other]));
+    let color = colorIndex(seed, index, `signal:${name}:${segmentIndex}`, SIGNAL_COLORS.length);
+    for (let tries = 0; taken.has(color) && tries < SIGNAL_COLORS.length; tries += 1) {
+      color = (color + 1) % SIGNAL_COLORS.length;
+    }
+    signalColor[name] = color;
+  });
   return (
     <svg className="segmented-secret-text__glyph" viewBox="0 0 50 100" aria-hidden="true">
       {segmentNames.map((name, segmentIndex) => {
         const isSignal = active.has(name);
         const palette = isSignal ? SIGNAL_COLORS : MASK_COLORS;
+        const color = isSignal ? signalColor[name] : colorIndex(seed, index, `mask:${name}:${segmentIndex}`, palette.length);
         return <polygon key={name} points={segmentPoints(SEGMENTS[name])}
           className={isSignal ? 'is-signal' : 'is-mask'}
           data-segment={name}
-          style={{ '--segment-color': palette[colorIndex(seed, index, `${isSignal ? 'signal' : 'mask'}:${name}:${segmentIndex}`, palette.length)] }} />;
+          style={{ '--segment-color': palette[color] }} />;
       })}
     </svg>
   );

@@ -19,16 +19,21 @@ boundaries without truncation.
 Letter segments use warm colors whose red channel is full (white, yellow, peach,
 pink, orange, magenta, hot pink, red). All other segments use cool colors whose
 red channel stays at or below `0x40` (aqua mint, cyan, green, sky, teal, forest,
-blue). A red filter keeps the warm segments bright and darkens the cool ones.
+blue, jet black). Jet black gives the mask a dark member, so the greens and
+blues are not the only colours around the letters. A red filter keeps the warm segments bright and darkens the cool ones.
 The two families overlap in apparent brightness, so brightness alone does not
 mark the letters. Hex values live in `platform/ui/_tokens.scss`, the family
 lists in `segmentedSecretPalette.js`, and `segmentedSecretPalette.test.js`
 fails if a color breaks the red-channel rule.
 
 To keep a viewer from sorting the colors by eye, every segment changes to a
-different color in its own family about once a second (`segmentFlicker.js`).
-Segments are shuffled into three groups and one group changes every 333ms, so
-the display never jumps all at once. A change never crosses families, so the
+different color in its own family once every three seconds (`segmentFlicker.js`).
+Segments are shuffled into three groups and one group changes every second, so
+the display never jumps all at once. Letter segments that touch — ends meeting
+at a joint, including pairs split by the middle joint such as the upper and
+lower right side (`SEGMENT_NEIGHBORS`) — never share a color: not on first
+draw, not after a change, and not when a new clue reuses a segment. A change
+picks a color no touching letter segment holds. A change never crosses families, so the
 view through the filter is constant. The colors are written straight to each
 polygon's `--segment-color` rather than re-rendering glyphs. Under
 `prefers-reduced-motion` the colors stay still.
