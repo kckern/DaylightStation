@@ -579,6 +579,40 @@ between the native recording and your own. The mic is released between takes
 because a shared kiosk may need it. A denied microphone is recorded and the
 rung steps aside rather than looping on a permission it will not get.
 
+**Tab always brings the sentence back.** Before a take it is a plain listen,
+on a player of its own that never opens the mic. Once the learner is
+recording, or has a take in hand, it starts over: the take in progress is
+thrown away (never judged, never played back), the sentence sounds again, the
+ding plays, and the mic opens, just as the first press did. Nobody has to record
+having heard the sentence only once.
+
+**The meaning is on screen, small, above the sentence.** It is there for
+reinforcement and is never played unless asked for. Tapping either line plays
+that line (Shift+Tab plays the meaning), except while the learner is speaking
+or the prompt is already sounding. A finished take is kept, because hearing a
+line again is a listen, not a retake.
+
+### Hearing a line again, on every rung
+
+Each line of text on screen can be tapped to hear it. A tap never credits
+anything; repetition's credit belongs to the full source–target–target pass.
+Dictation shows the meaning above the strip, and a tap on the strip replays the
+sentence. Interpretation shows only the target sentence, because the meaning is
+the answer. The lines are buttons with `tabIndex -1`: Tab never lands on them,
+because Tab means "hear it again".
+
+### Speaking an interpretation
+
+**F2** starts and stops a spoken answer, and so does the Speak control. While
+recording, **Enter** finishes the take instead of handing in whatever the field
+already held. Nothing is handed in during transcription. **Tab** during a take
+throws it away unsent, then plays the sentence, so no audio ever plays into an
+open mic. A take shorter than `MIN_SPEAK_MS` (700ms) is never sent, and the
+learner is told it was too quick. The server treats a tap-sized upload, or the
+provider's `audio_too_short`, as "heard nothing" (`200 {transcript:'', empty:true}`),
+not a 500. Found live on 2026-09-14: a 117ms take reached the provider and the
+child was told their answer failed to save.
+
 ### Hands-free
 
 Every step answers the keyboard, so a child with the panel's keyboard in their
@@ -587,15 +621,18 @@ lap never has to reach for the glass. The keys are the same on every rung:
 keyboard focus on arrival so a key pressed straight after the tap that opened
 it acts on the rung rather than re-pressing that button.
 
-| Where | Space / Enter | Backspace | Arrows |
-|---|---|---|---|
-| repetition | play; stop while sounding; Next once held | play again | ← play again · → Next |
-| dictation, interpretation | play, until the first letter is typed (then Space is a space); Enter submits; Tab replays | edits the answer | edit the answer |
-| recording | start; stop the take; keep it | record again | — |
-| the shell | on the day-complete panel: Done, or Start the next day | — | ↑ ↓ walk the rungs and the Review shelf |
+| Where | Space / Enter | Backspace | Arrows | Tab / Shift+Tab | F-keys |
+|---|---|---|---|---|---|
+| repetition | play; stop while sounding; Next once held | play again | ← play again · → Next | hear the sentence / the meaning | — |
+| dictation | Space is a space; Enter submits | edits the answer | edit the answer | replay / hear the meaning | F1 peek (copy mode), F6 IME |
+| interpretation | Space is a space; Enter submits, or finishes a spoken take | edits the answer | edit the answer | replay (drops a take in progress) | F2 speak / stop |
+| recording | start; stop the take; keep it | record again | — | replay, restarting any take / hear the meaning | — |
+| the shell | on the day-complete panel: Done, or Start the next day | — | ↑ ↓ walk the rungs and the Review shelf · → Start the next day | — | — |
 
 None of these fire while a button or field has focus; a focused control keeps
-its own keys. Shortcut hints are shown only where a hardware keyboard is
+its own keys. Tab is the exception: on a rung it is always "hear it again",
+never focus movement. Every step of a day, including starting another one, can
+be done without touching the screen. Shortcut hints are shown only where a hardware keyboard is
 present — instructions for keys a touch panel does not have are worse than
 none.
 

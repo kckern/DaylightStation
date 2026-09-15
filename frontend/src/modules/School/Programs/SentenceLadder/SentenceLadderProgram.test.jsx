@@ -2143,6 +2143,7 @@ describe('speaking the answer', () => {
         onTranscribe={onTranscribe}
         saving={false}
         idleReplayMs={0}
+        minSpeakMs={0}
         {...props}
       />
     </HangulTypingProvider>,
@@ -2406,8 +2407,13 @@ describe('a spoken answer, end to end', () => {
 
     await screen.findByLabelText(/Type what it means/i);
     const say = await screen.findByRole('button', { name: 'Say the answer' });
+    // Speak for two seconds: a take shorter than MIN_SPEAK_MS is never sent.
+    let now = Date.now();
+    const clock = vi.spyOn(Date, 'now').mockImplementation(() => now);
     await act(async () => { fireEvent.click(say); });
+    now += 2000;
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Stop speaking' })); });
+    clock.mockRestore();
 
     await waitFor(() => expect(transcribeMock).toHaveBeenCalled());
     const [userId, corpus, seq, lang, blob] = transcribeMock.mock.calls[0];
@@ -2419,5 +2425,240 @@ describe('a spoken answer, end to end', () => {
       corpus: 'glossika-korean', seq: 1, rung: 'interpretation',
       given: 'it is cold today', method: 'spoken',
     }, expect.anything(), 'test-grant'));
+  });
+});
+
+// HEARING IT AGAIN, AND DOING IT ALL FROM THE KEYBOARD (2026-09-14).
+// Tab always brings the sentence back, Shift+Tab its meaning, a tap on either
+// line plays it, the meaning is on screen wherever it is not the answer, and
+// every step can be taken without touching the glass.
+describe('hearing it again, from any rung, by key or by tap', () => {
+  const pressKey = (key, extra = {}) => fireEvent.keyDown(document.body, { key, ...extra });
+  const path = (url) => url.replace(/^https?:\/\/[^/]+/, '');
+  const playsToEnd = () => {
+    const played = [];
+    window.HTMLMediaElement.prototype.play = vi.fn(function play() {
+      played.push(this.src);
+      setTimeout(() => this.onended?.(), 0);
+      return Promise.resolve();
+    });
+    return played;
+  };
+  const fakeMic = () => {
+    const track = { stop: vi.fn() };
+    Object.defineProperty(navigator, 'mediaDevices', {
+      configurable: true,
+      value: {
+        getUserMedia: vi.fn(async () => ({ getTracks: () => [track] })),
+        enumerateDevices: vi.fn(async () => [{ kind: 'audioinput' }]),
+      },
+    });
+    class FakeRecorder {
+      constructor() { this.state = 'inactive'; this.mimeType = 'audio/webm'; }
+      start() { this.state = 'recording'; }
+      stop() {
+        this.state = 'inactive';
+        this.ondataavailable?.({ data: new Blob(['take'], { type: 'audio/webm' }) });
+        this.onstop?.();
+      }
+    }
+    window.MediaRecorder = FakeRecorder;
+    window.URL.createObjectURL = vi.fn(() => 'blob:take');
+    window.URL.revokeObjectURL = vi.fn();
+    window.HTMLCanvasElement.prototype.getContext = vi.fn(() => null);
+  };
+  const program = () => render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+
+  describe('recording', () => {
+    const recordingDay = () => dayMock.mockResolvedValue(
+      dayPayload({ chain: ['recording'], queue: [entry(1, 'recording')], cues: ['record'] }),
+    );
+
+    it('shows the meaning above the sentence, and a tap on either line plays it without opening the mic', async () => {
+      const played = playsToEnd();
+      fakeMic();
+      recordingDay();
+      program();
+      fireEvent.click(await screen.findByText('English 1'));
+      await waitFor(() => expect(played.map(path)).toEqual(['/audio/glossika-korean/1/EN']));
+      fireEvent.click(screen.getByText('한국어 1'));
+      await waitFor(() => expect(played.map(path)).toEqual(['/audio/glossika-korean/1/EN', '/audio/glossika-korean/1/KR']));
+      expect(navigator.mediaDevices.getUserMedia).not.toHaveBeenCalled();
+      expect(screen.getByRole('button', { name: 'Listen, then record' })).toBeTruthy();
+    });
+
+    it('Tab before a take is a listen, and Shift+Tab hears the meaning', async () => {
+      const played = playsToEnd();
+      fakeMic();
+      recordingDay();
+      program();
+      await screen.findByRole('button', { name: 'Listen, then record' });
+      pressKey('Tab');
+      await waitFor(() => expect(played.map(path)).toEqual(['/audio/glossika-korean/1/KR']));
+      pressKey('Tab', { shiftKey: true });
+      await waitFor(() => expect(played.map(path).at(-1)).toBe('/audio/glossika-korean/1/EN'));
+      expect(navigator.mediaDevices.getUserMedia).not.toHaveBeenCalled();
+    });
+
+    it('Tab mid-take throws the take away, plays the sentence again, then opens the mic', async () => {
+      const played = playsToEnd();
+      fakeMic();
+      recordingDay();
+      program();
+      const { languageApi } = await import('./languageApi.js');
+      await screen.findByRole('button', { name: 'Listen, then record' });
+      pressKey(' ');
+      await screen.findByRole('button', { name: 'Stop' });
+      const before = played.length;
+
+      pressKey('Tab');
+      // Back to recording, having heard it again — and the abandoned take was never judged or played.
+      await screen.findByRole('button', { name: 'Stop' });
+      expect(played.slice(before).map(path)).toEqual(['/audio/glossika-korean/1/KR', '/cue/record']);
+      expect(played).not.toContain('blob:take');
+      expect(screen.queryByRole('button', { name: 'Keep it' })).toBeNull();
+      expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledTimes(2);
+      expect(languageApi.recording).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('repetition', () => {
+    it('Tab and Shift+Tab hear one line each and credit nothing', async () => {
+      const played = playsToEnd();
+      dayMock.mockResolvedValue(dayPayload({ queue: [entry(1, 'repetition')] }));
+      program();
+      await screen.findByRole('button', { name: 'Play' });
+      pressKey('Tab');
+      await waitFor(() => expect(played.map(path)).toEqual(['/audio/glossika-korean/1/KR']));
+      pressKey('Tab', { shiftKey: true });
+      await waitFor(() => expect(played.map(path).at(-1)).toBe('/audio/glossika-korean/1/EN'));
+      fireEvent.click(screen.getByText('English 1'));
+      await waitFor(() => expect(played).toHaveLength(3));
+      expect(logMock).not.toHaveBeenCalled();
+      expect(screen.getByRole('button', { name: 'Play' })).toBeTruthy();
+    });
+  });
+
+  describe('dictation', () => {
+    it('shows the meaning, and Shift+Tab or a tap plays it', async () => {
+      const played = playsToEnd();
+      dayMock.mockResolvedValue(dayPayload({ chain: ['dictation'], queue: [entry(1, 'dictation')] }));
+      program();
+      const input = await screen.findByLabelText(/Type what you hear/i);
+      await waitFor(() => expect(played.map(path)).toContain('/audio/glossika-korean/1/KR'));
+      expect(screen.getByText('English 1')).toBeTruthy();
+      fireEvent.keyDown(input, { key: 'Tab', shiftKey: true });
+      await waitFor(() => expect(played.map(path).at(-1)).toBe('/audio/glossika-korean/1/EN'));
+    });
+  });
+
+  describe('interpretation', () => {
+    it('never shows the meaning, because the meaning is the answer', async () => {
+      playsToEnd();
+      dayMock.mockResolvedValue(dayPayload({ chain: ['interpretation'], queue: [entry(1, 'interpretation')] }));
+      program();
+      await screen.findByLabelText(/Type what it means/i);
+      expect(screen.getByText('한국어 1')).toBeTruthy();
+      expect(screen.queryByText('English 1')).toBeNull();
+    });
+  });
+
+  describe('the day-complete panel', () => {
+    it('→ starts the next day', async () => {
+      dayMock.mockResolvedValue(dayPayload({ queue: [entry(1, 'repetition', true)] }));
+      rollMock.mockResolvedValue({ ok: true, status: 200, data: { rolled: true, day: 2 } });
+      program();
+      await screen.findByRole('button', { name: 'Start the next day' });
+      pressKey('ArrowRight');
+      await waitFor(() => expect(rollMock).toHaveBeenCalledTimes(1));
+    });
+  });
+});
+
+describe('speaking the answer, from the keyboard', () => {
+  const onComplete = vi.fn();
+  const fakeMic = () => {
+    Object.defineProperty(navigator, 'mediaDevices', {
+      configurable: true,
+      value: {
+        getUserMedia: vi.fn(async () => ({ getTracks: () => [{ stop: vi.fn() }] })),
+        enumerateDevices: vi.fn(async () => [{ kind: 'audioinput' }]),
+      },
+    });
+    class FakeRecorder {
+      constructor() { this.state = 'inactive'; this.mimeType = 'audio/webm'; }
+      start() { this.state = 'recording'; }
+      stop() {
+        this.state = 'inactive';
+        this.ondataavailable?.({ data: new Blob(['spoken'], { type: 'audio/webm' }) });
+        this.onstop?.();
+      }
+    }
+    window.MediaRecorder = FakeRecorder;
+  };
+  const rung = (props = {}) => render(
+    <HangulTypingProvider>
+      <TypedRung
+        entry={entry(1, 'interpretation', false, { text: { EN: 'It is cold today', KR: '오늘 추워요' } })}
+        audioUrl={(seq, lang) => `/audio/${seq}/${lang}`}
+        onComplete={onComplete}
+        saving={false}
+        idleReplayMs={0}
+        minSpeakMs={0}
+        {...props}
+      />
+    </HangulTypingProvider>,
+  );
+  const field = () => screen.getByLabelText('Type what it means');
+
+  beforeEach(() => {
+    onComplete.mockClear();
+    window.HTMLMediaElement.prototype.play = vi.fn(() => Promise.resolve());
+    fakeMic();
+  });
+
+  it('F2 starts a take, F2 stops it, and the transcript lands in the field', async () => {
+    const onTranscribe = vi.fn(async () => ({ ok: true, transcript: 'it is cold today', empty: false }));
+    rung({ onTranscribe });
+    await act(async () => { fireEvent.keyDown(field(), { key: 'F2' }); });
+    expect(screen.getByRole('button', { name: 'Stop speaking' })).toBeTruthy();
+    await act(async () => { fireEvent.keyDown(field(), { key: 'F2' }); });
+    await waitFor(() => expect(field().value).toBe('it is cold today'));
+    expect(onComplete).not.toHaveBeenCalled();
+  });
+
+  it('Enter while speaking finishes the take instead of handing in the field', async () => {
+    const onTranscribe = vi.fn(async () => ({ ok: true, transcript: 'it is cold today', empty: false }));
+    rung({ onTranscribe });
+    await act(async () => { fireEvent.change(field(), { target: { value: 'half' } }); });
+    await act(async () => { fireEvent.keyDown(field(), { key: 'F2' }); });
+    await act(async () => { fireEvent.keyDown(field(), { key: 'Enter' }); });
+    await waitFor(() => expect(onTranscribe).toHaveBeenCalledTimes(1));
+    expect(onComplete).not.toHaveBeenCalled();
+  });
+
+  it('Tab mid-take throws the take away unsent, then plays the sentence', async () => {
+    const onTranscribe = vi.fn();
+    rung({ onTranscribe });
+    await act(async () => { fireEvent.keyDown(field(), { key: 'F2' }); });
+    const before = window.HTMLMediaElement.prototype.play.mock.calls.length;
+    await act(async () => { fireEvent.keyDown(field(), { key: 'Tab' }); });
+    expect(onTranscribe).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Say the answer' })).toBeTruthy();
+    expect(window.HTMLMediaElement.prototype.play.mock.calls.length).toBeGreaterThan(before);
+  });
+
+  it('does not send a take too quick to hold an answer, and says so', async () => {
+    const onTranscribe = vi.fn();
+    const real = Date.now;
+    let now = real();
+    vi.spyOn(Date, 'now').mockImplementation(() => now);
+    rung({ onTranscribe, minSpeakMs: 700 });
+    await act(async () => { fireEvent.keyDown(field(), { key: 'F2' }); });
+    now += 117;
+    await act(async () => { fireEvent.keyDown(field(), { key: 'F2' }); });
+    Date.now.mockRestore();
+    expect(onTranscribe).not.toHaveBeenCalled();
+    expect(screen.getByRole('alert').textContent).toMatch(/too quick/i);
   });
 });

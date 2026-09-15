@@ -86,6 +86,20 @@ const SPOKEN_LANGUAGE_NAMES = Object.freeze({ EN: 'English', KR: 'Korean' });
  */
 const SPOKEN_REGISTER = 'everyday';
 
+/**
+ * A take smaller than this is a tap, not an answer: a bare WebM header is a few
+ * hundred bytes and half a second of real speech is several kilobytes. It is
+ * answered as "heard nothing", and costs no model call.
+ */
+const MIN_TRANSCRIBE_BYTES = 4000;
+
+/** The provider refusing a take as too short to transcribe, in whichever shape it arrives. */
+function isTooShortAudioError(err) {
+  const code = err?.response?.data?.error?.code ?? err?.apiError?.code
+    ?? err?.cause?.response?.data?.error?.code ?? err?.code;
+  return code === 'audio_too_short' || /audio_too_short/i.test(String(err?.message ?? ''));
+}
+
 export function createLanguageRouter({
   languageStudyService,
   languageAudioResource,
@@ -303,16 +317,38 @@ export function createLanguageRouter({
       return res.status(400).json({ error: 'recording is empty' });
     }
 
+    // A tap-sized take (found live 2026-09-14: 1,454 bytes, 117ms) is the same
+    // outcome as a take with no words in it — the child is told nothing was
+    // heard, never that something broke.
+    if (buffer.length < MIN_TRANSCRIBE_BYTES) {
+      logger.info?.('school.sentence-ladder.transcribe-too-short', {
+        learnerId: req.params.userId, corpus, bytes: buffer.length, by: 'size',
+      }, runCtx(runId));
+      return res.json({ transcript: '', empty: true });
+    }
+
     const startedAt = Date.now();
-    const result = await languageTranscription.transcribe({
-      audioBuffer: buffer,
-      mimeType: req.get('Content-Type') || 'audio/webm',
-      sessionId: runId,
-      context: {
-        spokenLanguage: SPOKEN_LANGUAGE_NAMES[String(lang || '').toUpperCase()],
-        register: SPOKEN_REGISTER,
-      },
-    });
+    let result;
+    try {
+      result = await languageTranscription.transcribe({
+        audioBuffer: buffer,
+        mimeType: req.get('Content-Type') || 'audio/webm',
+        sessionId: runId,
+        context: {
+          spokenLanguage: SPOKEN_LANGUAGE_NAMES[String(lang || '').toUpperCase()],
+          register: SPOKEN_REGISTER,
+        },
+      });
+    } catch (err) {
+      // The provider calling a take too short is "heard nothing" too. It used to
+      // surface as a 500 and the child was told their answer didn't get written
+      // down. Any other failure is real and still reaches the error handler.
+      if (!isTooShortAudioError(err)) throw err;
+      logger.info?.('school.sentence-ladder.transcribe-too-short', {
+        learnerId: req.params.userId, corpus, bytes: buffer.length, by: 'provider',
+      }, runCtx(runId));
+      return res.json({ transcript: '', empty: true });
+    }
 
     const text = String(result?.transcriptClean ?? '').trim();
     const empty = !text || Boolean(languageTranscription.isEmpty?.(text));

@@ -28,11 +28,13 @@ const ownsKeys = (el) => Boolean(el?.closest?.('button, input, select, textarea,
  */
 export default function RepetitionRung({
   entry, audioUrl, nextEntry, onComplete, saving,
-  onHold, onRelease, onAdvance, startOnArrival = false,
+  onHold, onRelease, onAdvance, startOnArrival = false, showShortcuts = false,
 }) {
   const [phase, setPhase] = useState('idle'); // idle | playing | done
   const [highlight, setHighlight] = useState(null);
   const rootRef = useRef(null);
+  const sourceLang = entry.prompt?.[0]?.language;
+  const targetLang = entry.prompt?.find((p) => p.role === 'target')?.language;
   // The key handler reads the phase through a ref so it is bound once per
   // sentence, not once per phase change.
   const phaseRef = useRef(phase);
@@ -72,6 +74,9 @@ export default function RepetitionRung({
   }, [entry.seq, onComplete, onHold, onRelease]);
 
   const { playSequence, preload, stop, step, blocked } = useSentenceAudio({ onSequenceEnd: handleEnd });
+  // One line on request, on a player of its own: the sequence above credits the
+  // sentence when it ends, and hearing a single line again must credit nothing.
+  const { playSequence: listenTo, stop: stopListening } = useSentenceAudio();
 
   useEffect(() => {
     setPhase('idle');
@@ -85,8 +90,16 @@ export default function RepetitionRung({
     // NOT keyed on `entry.done`: the save flips it true while the sentence is
     // still on screen, and re-running this would throw away the very choice the
     // learner just earned. Whether it is already credited is read at mount.
-    return () => stop();
+    return () => { stop(); stopListening(); };
   }, [entry.seq, stop]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /** Hear one line again — the sentence or its meaning — at any point. */
+  const hear = useCallback((language) => {
+    if (!language) return;
+    if (phaseRef.current === 'playing') { stop(); setPhase('idle'); }
+    languageLog.rung('hear', { rung: 'repetition', seq: entry.seq, language });
+    listenTo([{ url: audioUrl(entry.seq, language), language }]);
+  }, [audioUrl, entry.seq, listenTo, stop]);
 
   // Warm the next sentence while this one is on screen. Without this the gap
   // between sentences reads as the app hanging.
@@ -109,9 +122,10 @@ export default function RepetitionRung({
     // asked to hear it again. It climbs nothing, so it is not a `complete`, and
     // counting the two together would erase the distinction.
     if (phase === 'done') languageLog.rung('replayed', { rung: 'repetition', seq: entry.seq });
+    stopListening();
     setPhase('playing');
     playSequence(clipsFor(entry, audioUrl));
-  }, [entry, audioUrl, playSequence, phase]);
+  }, [entry, audioUrl, playSequence, phase, stopListening]);
 
   // The child pressed Next to get HERE, so this sentence plays without a second
   // tap. Once per mount — the component is keyed by sentence, so the ref is per
@@ -146,6 +160,12 @@ export default function RepetitionRung({
   useEffect(() => {
     const onKey = (e) => {
       if (e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey) return;
+      // Tab hears the sentence, Shift+Tab its meaning, whatever holds focus.
+      if (e.key === 'Tab') {
+        e.preventDefault();
+        hear(e.shiftKey ? sourceLang : targetLang);
+        return;
+      }
       const go = e.key === ' ' || e.key === 'Enter';
       const again = e.key === 'Backspace' || e.key === 'ArrowLeft';
       const next = e.key === 'ArrowRight';
@@ -164,19 +184,32 @@ export default function RepetitionRung({
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [start, stop, advance, saving]);
+  }, [start, stop, advance, saving, hear, sourceLang, targetLang]);
 
-  const sourceLang = entry.prompt?.[0]?.language;
-  const targetLang = entry.prompt?.find((p) => p.role === 'target')?.language;
+  // A tapped line hands the keys back to the stage, so Space is still the rung's.
+  const tapToHear = (language) => () => {
+    hear(language);
+    rootRef.current?.focus?.({ preventScroll: true });
+  };
 
   return (
     <div ref={rootRef} tabIndex={-1} className="lang-rung lang-rung--repetition">
-      <p className={`lang-rung__source${highlight === sourceLang ? ' is-sounding' : ''}`}>
+      <button
+        type="button"
+        tabIndex={-1}
+        className={`lang-rung__say lang-rung__source${highlight === sourceLang ? ' is-sounding' : ''}`}
+        onClick={tapToHear(sourceLang)}
+      >
         {entry.text?.[sourceLang]}
-      </p>
-      <p className={`lang-rung__target${highlight === targetLang ? ' is-sounding' : ''}`}>
+      </button>
+      <button
+        type="button"
+        tabIndex={-1}
+        className={`lang-rung__say lang-rung__target${highlight === targetLang ? ' is-sounding' : ''}`}
+        onClick={tapToHear(targetLang)}
+      >
         {entry.text?.[targetLang]}
-      </p>
+      </button>
 
       {blocked && (
         <p className="lang-rung__notice" role="alert">
@@ -222,6 +255,11 @@ export default function RepetitionRung({
           </>
         )}
       </div>
+      {showShortcuts && (
+        <p className="lang-rung__keys" aria-hidden="true">
+          Space: play · Backspace: again · →: next · Tab: hear the sentence · Shift+Tab: hear the meaning
+        </p>
+      )}
     </div>
   );
 }
