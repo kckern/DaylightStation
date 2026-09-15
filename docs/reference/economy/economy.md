@@ -8,9 +8,11 @@ parent deposits) and spend it as a metered drain playing the Fitness arcade
 (EmulatorGame). Coins are convertible to real money (cash-out, Phase 2), so the
 ledger is append-only and auditable.
 
-> **"coins" vs "fitness coins":** the household currency is `coins`. The Fitness
-> HR-zone earnings are a *separate* currency ("fitness coins") that does not
-> auto-convert. An explicit exchange bridges them (Phase 3, not yet wired).
+> **"coins" vs "rings":** the household currency is `coins`. The Fitness
+> HR-zone effort measure is **rings** (renamed from "fitness coins", see
+> `docs/superpowers/specs/2026-08-26-rings-and-weekly-measures-design.md`). Rings
+> are a measure, not money. They are never exchanged or debited; reaching ring
+> thresholds and winning the weekly ring contest earn coin *awards* (not yet wired).
 
 ## Currency model & source of truth
 
@@ -52,7 +54,7 @@ Household policy lives at `data/household/config/economy.yml` (auto-loaded as th
     consumed since the session opened (monotonic), and the server charges only
     newly-crossed whole coins. This makes settles idempotent (safe to retry) and
     immune to sub-coin flushing.
-- **Exchange** — fitness coins ↔ coins (Phase 3, not built).
+- **Award** — ring thresholds and the weekly ring contest → coins (not built). Rings are evidence, never exchanged.
 
 ## Policy catalog (`economy.yml`)
 
@@ -238,5 +240,5 @@ the price of ordinary responsibility.
 ## Not yet built (later phases)
 
 TV/screen-framework metered spend, cash-out + parent-mobile approval, PIN/NFC/
-biometric auth, fitness↔coins exchange, parent dashboard, deposit admin UI
+biometric auth, ring awards, parent dashboard, deposit admin UI
 (Phase 1 deposits are API-only).
