@@ -53,6 +53,13 @@ rows 43-48 of card `5278294`, the card in the learner's hands. Rows 22-27
 stay a gap: allocation never returns below a delivered range. Card `1007998`
 is an inert ledger file (no non-cancelled record, so never a learner card).
 
+**Verified 2026-09-15 08:56 PDT, after deploy of 064363d17:** the print action
+was fired with the day's math code; `laser-printer.job-outcome` reported job
+1369 `completed`, one impression; the ledger for card `5278294` gained
+`…@c3d955d8f:v0:43-48` (`delivered`, `live`) beside the two cancelled records;
+the session record's events read `created, failed ×3, issued`; the persisted
+worksheet instance carries `\_\_\_`.
+
 ## Not changed
 
 The generator's repo copy of `em23-07-90-problem-solving-challenge` carries
