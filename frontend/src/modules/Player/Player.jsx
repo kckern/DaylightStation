@@ -847,6 +847,12 @@ const Player = forwardRef(function Player(props, ref) {
   }, [singlePlayerProps, currentMediaGuid, remountState.nonce, activeSource?.mediaType, playerType, resolvedWaitKeyFields, isQueue, keyLogger]);
 
   const exposedMediaRef = useRef(null);
+  // Ownership follows the actual renderer-registered native node, not the
+  // requested `play` prop. During A -> B resolution getMediaElement() can still
+  // expose A, and treating requested B as mounted would send B's transport
+  // commands to the old element. WeakMap also lets a DASH wrapper registration
+  // remain distinct from the inner <video> returned by the real accessor.
+  const mediaElementContentIdsRef = useRef(new WeakMap());
   const controllerRef = useRef(null);
   const fallbackResilienceRef = useRef(null);
   // Mirror mediaAccess state as a ref so the imperative handle can read the
@@ -1261,9 +1267,19 @@ const Player = forwardRef(function Player(props, ref) {
   const manualAdvance = isQueue ? advance : singleAdvance;
 
   // Compose onMediaRef so we keep existing external callback semantics
-  const handleMediaRef = useCallback((el) => {
+  const handleMediaRef = useCallback((el, ownership = null) => {
     exposedMediaRef.current = el;
-    if (props.onMediaRef) props.onMediaRef(el);
+    if (el && typeof el === 'object') {
+      const contentId = ownership?.contentId;
+      if (contentId != null && String(contentId).length > 0) {
+        mediaElementContentIdsRef.current.set(el, String(contentId));
+      } else {
+        // Unknown is a real state. Never retain ownership from an earlier use
+        // of this node or fall back to the requested Player input.
+        mediaElementContentIdsRef.current.delete(el);
+      }
+    }
+    if (props.onMediaRef) props.onMediaRef(el, ownership);
     // ESLint's own message says the fix is to destructure specific props, which this already does — do not add `props`
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [props.onMediaRef]);
@@ -1354,6 +1370,11 @@ const Player = forwardRef(function Player(props, ref) {
     getVolume: () => sessionVolume,
     getPlaybackRate: () => sessionPlaybackRate,
     getMediaElement: _getMediaElFallback,
+    getMountedContentId: () => {
+      const el = _getMediaElFallback();
+      if (!el || typeof el !== 'object') return null;
+      return mediaElementContentIdsRef.current.get(el) ?? null;
+    },
     // Read-only now-playing metadata (current item meta + queue coordinates)
     // for external session bridges. Reads a render-mirrored ref — always fresh.
     getNowPlaying: () => nowPlayingRef.current,

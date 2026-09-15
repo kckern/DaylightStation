@@ -92,6 +92,18 @@ function Harness({ ctrlRef, video, assetId }) {
   return null;
 }
 
+function MediaRefHarness({ video, onMediaRef }) {
+  const api = useCommonMediaController({
+    meta: { assetId: '665667', contentId: 'plex:665667', title: 'Disclosure Day' },
+    isVideo: true,
+    onMediaRef,
+  });
+  // Set before the hook's passive effects run so registration sees the same
+  // accessor shape used by a mounted DASH renderer.
+  api.containerRef.current = video;
+  return null;
+}
+
 describe('useCommonMediaController — element re-key reporting', () => {
   beforeEach(() => {
     vi.useFakeTimers();
@@ -106,6 +118,18 @@ describe('useCommonMediaController — element re-key reporting', () => {
   });
 
   const rekeys = () => captured.sampled.filter((s) => s.event === 'playback.element-rekey-requested');
+
+  it('registers the DASH shadow media node with its resolved content identity', () => {
+    const innerVideo = makeFakeVideo();
+    const dashWrapper = {
+      shadowRoot: { querySelector: vi.fn(() => innerVideo) },
+    };
+    const onMediaRef = vi.fn();
+
+    render(<MediaRefHarness video={dashWrapper} onMediaRef={onMediaRef} />);
+
+    expect(onMediaRef).toHaveBeenCalledWith(innerVideo, { contentId: 'plex:665667' });
+  });
 
   /** Arms stall detection, then freezes the playhead past the soft threshold. */
   function renderStalled({ assetId = 'plex:1', video } = {}) {

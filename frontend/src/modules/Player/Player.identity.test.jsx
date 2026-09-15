@@ -14,17 +14,21 @@
  * Plex as the session identifier.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, waitFor, cleanup } from '@testing-library/react';
+import { createRef } from 'react';
+import { render, waitFor, cleanup, act } from '@testing-library/react';
 
 // Every mount appends its plexClientSession here; every render appends to `renders`.
 // Mount count is the assertion that matters: React only remounts when the `key` changes.
 const mounts = [];
 const renders = [];
+let latestSinglePlayerProps = null;
 
 vi.mock('./components/SinglePlayer.jsx', async () => {
   const { useEffect } = await import('react');
   return {
-    SinglePlayer: ({ plexClientSession }) => {
+    SinglePlayer: (props) => {
+      const { plexClientSession } = props;
+      latestSinglePlayerProps = props;
       renders.push(plexClientSession);
       useEffect(() => {
         mounts.push(plexClientSession);
@@ -48,6 +52,7 @@ import Player from './Player.jsx';
 beforeEach(() => {
   mounts.length = 0;
   renders.length = 0;
+  latestSinglePlayerProps = null;
 });
 
 afterEach(() => {
@@ -86,5 +91,53 @@ describe('Player — media identity is derived from content', () => {
     await waitFor(() => expect(mounts).toHaveLength(2));
 
     expect(mounts[1]).not.toBe(firstSession);
+  });
+
+  it('reports the content identity of the actually exposed media element', async () => {
+    const ref = createRef();
+    const { rerender } = render(<Player ref={ref} play={{ contentId: 'plex:694719' }} />);
+    await waitFor(() => expect(mounts).toHaveLength(1));
+    expect(ref.current.getMountedContentId()).toBeNull();
+
+    const dashWrapper = document.createElement('dash-video');
+    const mediaA = document.createElement('video');
+    act(() => {
+      latestSinglePlayerProps.onMediaRef(dashWrapper, { contentId: 'plex:694719' });
+      latestSinglePlayerProps.onController({
+        transport: { getMediaEl: () => mediaA },
+      });
+    });
+
+    // The accessor resolves DASH's inner video, so ownership registered only
+    // for its wrapper is not accepted as mounted-media evidence.
+    expect(ref.current.getMountedContentId()).toBeNull();
+    act(() => latestSinglePlayerProps.onMediaRef(mediaA, { contentId: 'plex:694719' }));
+
+    expect(ref.current.getMountedContentId()).toBe('plex:694719');
+
+    rerender(<Player ref={ref} play={{ contentId: 'plex:694720' }} />);
+    await waitFor(() => expect(mounts).toHaveLength(2));
+    const mediaBRegistration = latestSinglePlayerProps.onMediaRef;
+
+    // B is requested, but A remains the actual accessor until B registers its
+    // own element. Pending B must not make A eligible for B transport calls.
+    expect(ref.current.getMountedContentId()).toBe('plex:694719');
+
+    // Even if registration callback identity churns while an old renderer is
+    // winding down, ownership comes from that renderer's actual metadata.
+    act(() => mediaBRegistration(mediaA, { contentId: 'plex:694719' }));
+    expect(ref.current.getMountedContentId()).toBe('plex:694719');
+
+    const mediaB = document.createElement('video');
+    act(() => {
+      mediaBRegistration(mediaB, { contentId: 'plex:694720' });
+      latestSinglePlayerProps.onController({
+        transport: { getMediaEl: () => mediaB },
+      });
+    });
+    expect(ref.current.getMountedContentId()).toBe('plex:694720');
+
+    act(() => mediaBRegistration(mediaB));
+    expect(ref.current.getMountedContentId()).toBeNull();
   });
 });
