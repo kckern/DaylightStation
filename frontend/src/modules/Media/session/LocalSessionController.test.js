@@ -36,7 +36,7 @@ describe('LocalSessionController — bootstrap', () => {
       sessionId: 'old', state: 'paused', currentItem: null, position: 42,
       queue: { items: [], currentIndex: -1, upNextCount: 0 },
       config: { shuffle: false, repeat: 'off', shader: null, volume: 50, playbackRate: 1 },
-      meta: { ownerId: 'c1', updatedAt: '' },
+      meta: { ownerId: 'c1', updatedAt: '2026-09-14T00:00:00.000Z' },
     };
     const c = makeController({ persistedSnapshot });
     expect(c.getSnapshot().sessionId).toBe('old');
@@ -306,7 +306,7 @@ describe('LocalSessionController — config + lifecycle', () => {
       position: 9,
       queue: { items: [], currentIndex: -1, upNextCount: 0 },
       config: { shuffle: false, repeat: 'off', shader: null, volume: 30, playbackRate: 1 },
-      meta: { ownerId: 'c1', updatedAt: '' },
+      meta: { ownerId: 'c1', updatedAt: '2026-09-14T00:00:00.000Z' },
     };
     c.lifecycle.adoptSnapshot(adopted, { autoplay: false });
     expect(c.getSnapshot().sessionId).toBe('adopted');
@@ -517,6 +517,235 @@ describe('LocalSessionController — capabilities', () => {
 });
 
 describe('LocalSessionController — portability', () => {
+  it('adopts the actual detached queue, execution order and config without claiming native start', () => {
+    const source = createLocalSessionController({ clientId: 'source', ownerInstanceId: 'source-owner' });
+    source.queue.add({ contentId: 'plex:a', title: 'A', format: 'video' });
+    source.queue.add({ contentId: 'plex:b', title: 'B', format: 'video' });
+    source.queue.add({ contentId: 'plex:a', title: 'A again', format: 'video' });
+    const thirdId = source.getSnapshot().queue.items[2].queueItemId;
+    source.queue.jump(thirdId);
+    source.queue.playNext({ contentId: 'plex:next', title: 'Next', format: 'video' });
+    source.config.setVolume(73);
+    source.config.setRepeat('all');
+    source.config.setShuffle(false);
+    source.config.setShader('night');
+    source.store.dispatch({ type: 'SET_CONFIG', patch: { playbackRate: 1.25 } });
+    source.onPlayerPositionTick(38.5, 'plex:a');
+    const detached = source.portability.capture().snapshot;
+    detached.queue.executionOrder.push(thirdId);
+
+    const destination = createLocalSessionController({ clientId: 'destination', ownerInstanceId: 'destination-owner' });
+    const native = { play: vi.fn(), pause: vi.fn(), seek: vi.fn(), getMediaElement: () => null };
+    destination.setPlayerHandle(native);
+    const before = destination.portability.capture().identity;
+    const result = destination.portability.adopt(detached, { autoplay: false, transferId: 'transfer-1' });
+    const adopted = destination.portability.capture();
+
+    expect(result).toEqual({ ok: true });
+    expect(adopted.snapshot.queue).toEqual(detached.queue);
+    expect(adopted.snapshot.config).toEqual(detached.config);
+    expect(adopted.snapshot.position).toBe(38.5);
+    expect(adopted.snapshot.meta.ownerId).toBe('destination');
+    expect(adopted.identity.ownerInstanceId).toBe('destination-owner');
+    expect(adopted.identity.playbackRevision).toBeGreaterThan(before.playbackRevision);
+    expect(adopted.identity.queueRevision).toBeGreaterThan(before.queueRevision);
+    expect(native.play).not.toHaveBeenCalled();
+    expect(adopted.snapshot.state).not.toBe('playing');
+
+    const beforeRepeat = adopted.identity;
+    expect(destination.portability.adopt(detached, { autoplay: false, transferId: 'transfer-2' })).toEqual({ ok: true });
+    const repeated = destination.portability.capture().identity;
+    expect(repeated.playbackRevision).toBeGreaterThan(beforeRepeat.playbackRevision);
+    expect(repeated.queueRevision).toBeGreaterThan(beforeRepeat.queueRevision);
+  });
+
+  it('revokes same-content and duplicate-entry native proof synchronously on adoption', () => {
+    const c = createLocalSessionController({ clientId: 'native-revoke', ownerInstanceId: 'native-revoke-owner' });
+    c.queue.add({ contentId: 'plex:a', title: 'A first', duration: 180, format: 'video' });
+    c.queue.add({ contentId: 'plex:a', title: 'A duplicate', duration: 180, format: 'video' });
+    c.transport.play();
+    const firstId = c.getSnapshot().queue.items[0].queueItemId;
+    const secondId = c.getSnapshot().queue.items[1].queueItemId;
+    const node = { currentTime: 10, duration: 180, readyState: 3, paused: false, seeking: false, ended: false, error: null };
+    let nativeGeneration = 1;
+    c.setPlayerHandle({
+      getMediaElement: () => node,
+      getMountedContentId: () => 'plex:a',
+      getMountedMediaGeneration: () => nativeGeneration,
+    });
+    c.bindNativeObservation(node, 'plex:a', 1);
+    c.onNativeObservationEvent(node, 'playing');
+    node.currentTime = 11;
+    c.onNativeObservationEvent(node, 'timeupdate');
+    expect(c.portability.getNativeObservation()).toMatchObject({
+      identity: { queueItemId: firstId }, playingObserved: true, advancedObserved: true,
+    });
+
+    const sameEntry = c.portability.capture().snapshot;
+    sameEntry.position = 40;
+    expect(c.portability.adopt(sameEntry, { autoplay: true })).toEqual({ ok: true });
+    expect(c.portability.getNativeObservation()).toMatchObject({
+      identity: null, playingObserved: false, advancedObserved: false,
+    });
+    expect(c.portability.capture().snapshot.position).toBe(40);
+
+    // A bridge render generation is not actual renderer provenance. Rebinding
+    // the unchanged node/content/native generation must not admit the retired
+    // decoder under the newly adopted owner revision.
+    c.bindNativeObservation(node, 'plex:a', 1);
+    c.onNativeObservationEvent(node, 'playing');
+    expect(c.portability.getNativeObservation().identity).toBeNull();
+    nativeGeneration = 2;
+    c.bindNativeObservation(node, 'plex:a', nativeGeneration);
+    expect(c.portability.getNativeObservation().identity).toMatchObject({ queueItemId: firstId });
+
+    const duplicate = structuredClone(sameEntry);
+    duplicate.queue.currentIndex = 1;
+    duplicate.currentItem = { contentId: 'plex:a', title: 'A duplicate', duration: 180, format: 'video' };
+    duplicate.queue.executionOrder = [secondId, firstId];
+    duplicate.meta.playbackOwner = {
+      ...duplicate.meta.playbackOwner, contentId: 'plex:a', queueItemId: secondId,
+    };
+    expect(c.portability.adopt(duplicate, { autoplay: true })).toEqual({ ok: true });
+    expect(c.portability.getNativeObservation().identity).toBeNull();
+
+    const b = structuredClone(duplicate);
+    b.queue.items[1] = { ...b.queue.items[1], contentId: 'plex:b' };
+    b.currentItem = { ...b.currentItem, contentId: 'plex:b' };
+    b.meta.playbackOwner = { ...b.meta.playbackOwner, contentId: 'plex:b' };
+    expect(c.portability.adopt(b, { autoplay: true })).toEqual({ ok: true });
+    expect(c.portability.adopt(duplicate, { autoplay: true })).toEqual({ ok: true });
+    expect(c.portability.getNativeObservation().identity).toBeNull();
+  });
+
+  it('executes an adopted remaining visit order, including repeated entry references', () => {
+    const source = createLocalSessionController({ clientId: 'plan-source', ownerInstanceId: 'plan-source-owner' });
+    source.queue.add({ contentId: 'plex:a', format: 'video' });
+    source.queue.add({ contentId: 'plex:b', format: 'video' });
+    source.queue.add({ contentId: 'plex:c', format: 'video' });
+    source.transport.play();
+    const adopted = source.portability.capture().snapshot;
+    const [a, b, c] = adopted.queue.items.map((item) => item.queueItemId);
+    adopted.queue.executionOrder = [a, c, a, b];
+
+    const destination = createLocalSessionController({ clientId: 'plan-destination', ownerInstanceId: 'plan-destination-owner' });
+    expect(destination.portability.adopt(adopted, { autoplay: false })).toEqual({ ok: true });
+    destination.transport.skipNext();
+    expect(destination.portability.capture().snapshot.queue).toMatchObject({ currentIndex: 2, executionOrder: [c, a, b] });
+    destination.onPlayerEnded('plex:c');
+    expect(destination.portability.capture().snapshot.queue).toMatchObject({ currentIndex: 0, executionOrder: [a, b] });
+    destination.onPlayerEnded('plex:a');
+    expect(destination.portability.capture().snapshot.queue).toMatchObject({ currentIndex: 1, executionOrder: [b] });
+    destination.onPlayerEnded('plex:b');
+    expect(destination.getSnapshot().state).toBe('ended');
+  });
+
+  it('preserves an adopted remaining plan when removing its current entry', () => {
+    const source = createLocalSessionController({ clientId: 'remove-plan-source' });
+    for (const contentId of ['plex:a', 'plex:b', 'plex:c', 'plex:d']) {
+      source.queue.add({ contentId, format: 'video' });
+    }
+    source.transport.play();
+    const adopted = source.portability.capture().snapshot;
+    const [a, b, c, d] = adopted.queue.items.map((item) => item.queueItemId);
+    adopted.queue.executionOrder = [a, c, b, d];
+
+    const destination = createLocalSessionController({ clientId: 'remove-plan-destination' });
+    expect(destination.portability.adopt(adopted, { autoplay: false })).toEqual({ ok: true });
+    destination.queue.remove(a);
+    expect(destination.portability.capture().snapshot.queue).toMatchObject({
+      currentIndex: 1,
+      executionOrder: [c, b, d],
+    });
+    destination.transport.skipNext();
+    expect(destination.portability.capture().snapshot.queue.executionOrder).toEqual([b, d]);
+  });
+
+  it('preserves an adopted remaining plan across repeat-one natural completion', () => {
+    const source = createLocalSessionController({ clientId: 'repeat-plan-source' });
+    for (const contentId of ['plex:a', 'plex:b', 'plex:c', 'plex:d']) {
+      source.queue.add({ contentId, format: 'video' });
+    }
+    source.transport.play();
+    const adopted = source.portability.capture().snapshot;
+    const [a, b, c, d] = adopted.queue.items.map((item) => item.queueItemId);
+    adopted.queue.executionOrder = [a, c, b, d];
+    adopted.config.repeat = 'one';
+
+    const destination = createLocalSessionController({ clientId: 'repeat-plan-destination' });
+    expect(destination.portability.adopt(adopted, { autoplay: false })).toEqual({ ok: true });
+    destination.onPlayerEnded('plex:a');
+    expect(destination.portability.capture().snapshot.queue.executionOrder).toEqual([a, c, b, d]);
+    destination.transport.skipNext();
+    expect(destination.portability.capture().snapshot.queue.executionOrder).toEqual([c, b, d]);
+  });
+
+  it('rejects malformed new adoption fields before mutation and normalizes legacy scalar bounds', () => {
+    const c = createLocalSessionController({ clientId: 'adopt-validation', ownerInstanceId: 'adopt-validation-owner' });
+    c.queue.add({ contentId: 'plex:kept', format: 'video' });
+    c.transport.play();
+    const before = c.portability.capture().snapshot;
+    const malformed = structuredClone(before);
+    malformed.queue.executionOrder = ['missing-entry'];
+
+    expect(c.portability.adopt(malformed, { autoplay: false, transferId: 'bad' }))
+      .toMatchObject({ ok: false, code: 'INVALID_SNAPSHOT' });
+    expect(c.portability.capture().snapshot.queue.items.map((item) => item.contentId)).toEqual(['plex:kept']);
+
+    const wrongCurrent = structuredClone(before);
+    wrongCurrent.currentItem = { contentId: 'plex:wrong', format: 'video' };
+    expect(c.portability.adopt(wrongCurrent, { autoplay: false })).toMatchObject({ ok: false, code: 'INVALID_SNAPSHOT' });
+    const missingCurrent = structuredClone(before);
+    missingCurrent.currentItem = null;
+    expect(c.portability.adopt(missingCurrent, { autoplay: false })).toMatchObject({ ok: false, code: 'INVALID_SNAPSHOT' });
+    const missingSession = structuredClone(before);
+    delete missingSession.meta.playbackOwner;
+    delete missingSession.sessionId;
+    expect(c.portability.adopt(missingSession, { autoplay: false })).toMatchObject({ ok: false, code: 'INVALID_SNAPSHOT' });
+    expect(c.portability.capture().snapshot.queue.items.map((item) => item.contentId)).toEqual(['plex:kept']);
+
+    const legacy = structuredClone(before);
+    delete legacy.meta.playbackOwner;
+    delete legacy.queue.executionOrder;
+    legacy.position = -50;
+    legacy.config = { shuffle: false, repeat: 'off', shader: null, volume: 150, playbackRate: -1 };
+    expect(c.portability.adopt(legacy, { autoplay: false, transferId: 'legacy' })).toEqual({ ok: true });
+    expect(c.portability.capture().snapshot).toMatchObject({
+      position: 0,
+      config: { shuffle: false, repeat: 'off', shader: null, volume: 100, playbackRate: 1 },
+      queue: { items: [expect.objectContaining({ contentId: 'plex:kept' })] },
+    });
+  });
+
+  it('conditionally Stops only the exact current owner identity and retains its queue', () => {
+    const c = createLocalSessionController({ clientId: 'guard-client', ownerInstanceId: 'guard-owner' });
+    const handle = { play: vi.fn(), pause: vi.fn(), seek: vi.fn(), getMediaElement: () => null };
+    c.setPlayerHandle(handle);
+    c.queue.add({ contentId: 'plex:a', title: 'Same title', format: 'video' });
+    c.queue.add({ contentId: 'plex:b', title: 'B', format: 'video' });
+    const secondId = c.getSnapshot().queue.items[1].queueItemId;
+    c.transport.play();
+    const original = c.portability.capture().identity;
+
+    c.queue.playNow({ contentId: 'plex:a', title: 'Same title', format: 'video' });
+    expect(c.portability.stopIfCurrent(original)).toEqual({ ok: false, code: 'SOURCE_CHANGED' });
+    const restartedId = c.getSnapshot().queue.items[0].queueItemId;
+    c.queue.jump(secondId);
+    c.queue.jump(restartedId);
+    expect(c.portability.stopIfCurrent(original)).toEqual({ ok: false, code: 'SOURCE_CHANGED' });
+    c.queue.reorder({ items: [secondId, restartedId] });
+    c.config.setVolume(64);
+    expect(c.portability.stopIfCurrent(original)).toEqual({ ok: false, code: 'SOURCE_CHANGED' });
+    expect(handle.pause).not.toHaveBeenCalled();
+
+    const fresh = c.portability.capture().identity;
+    const retainedIds = c.getSnapshot().queue.items.map((item) => item.queueItemId);
+    expect(c.portability.stopIfCurrent(fresh)).toEqual({ ok: true });
+    expect(handle.pause).toHaveBeenCalledTimes(1);
+    expect(c.getSnapshot()).toMatchObject({ state: 'ready', currentItem: null, queue: { currentIndex: -1 } });
+    expect(c.getSnapshot().queue.items.map((item) => item.queueItemId)).toEqual(retainedIds);
+  });
+
   it('snapshotForHandoff carries the hot-tier position', () => {
     const c = makeController();
     c.queue.playNow({ contentId: 'a', format: 'video' });

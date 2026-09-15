@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
+  preparePlaybackOwnerAdoption,
+  samePlaybackOwnerIdentity,
   validatePlaybackOwnerIdentity,
   validatePlaybackOwnerSessionSnapshot,
 } from './playback-owner.mjs';
@@ -33,6 +35,67 @@ const snapshot = {
 };
 
 describe('playback owner contract', () => {
+  it('normalizes legacy adoption inputs without losing their queue', () => {
+    const legacy = structuredClone(snapshot);
+    delete legacy.meta.playbackOwner;
+    delete legacy.queue.executionOrder;
+    legacy.position = -12;
+    legacy.config = {
+      shuffle: 'no', repeat: 'invalid', shader: 42, volume: 140, playbackRate: -2,
+    };
+
+    const prepared = preparePlaybackOwnerAdoption(legacy);
+
+    expect(prepared.valid).toBe(true);
+    expect(prepared.snapshot.queue.items.map((item) => item.queueItemId))
+      .toEqual(['entry-a', 'entry-b', 'entry-a-2']);
+    expect(prepared.snapshot.queue.executionOrder).toEqual(['entry-a', 'entry-b', 'entry-a-2']);
+    expect(prepared.snapshot.position).toBe(0);
+    expect(prepared.snapshot.config).toEqual({
+      shuffle: false, repeat: 'off', shader: null, volume: 100, playbackRate: 1,
+    });
+  });
+
+  it('rejects missing base fields and current playable identity that disagrees with the queue', () => {
+    const wrongCurrent = structuredClone(snapshot);
+    wrongCurrent.currentItem = { contentId: 'plex:wrong', format: 'video' };
+    expect(preparePlaybackOwnerAdoption(wrongCurrent)).toMatchObject({ valid: false, snapshot: null });
+
+    const missingCurrent = structuredClone(snapshot);
+    missingCurrent.currentItem = null;
+    expect(preparePlaybackOwnerAdoption(missingCurrent)).toMatchObject({ valid: false, snapshot: null });
+
+    const missingSession = structuredClone(snapshot);
+    delete missingSession.meta.playbackOwner;
+    delete missingSession.sessionId;
+    expect(preparePlaybackOwnerAdoption(missingSession)).toMatchObject({ valid: false, snapshot: null });
+  });
+
+  it.each([
+    ['malformed owner identity', (value) => { value.meta.playbackOwner.playbackRevision = -1; }],
+    ['unknown execution entry', (value) => { value.queue.executionOrder = ['entry-a', 'missing']; }],
+    ['duplicate queue identity', (value) => { value.queue.items[2].queueItemId = 'entry-a'; }],
+    ['out-of-range current entry', (value) => { value.queue.currentIndex = 99; }],
+  ])('rejects %s before adoption', (_label, mutate) => {
+    const malformed = structuredClone(snapshot);
+    mutate(malformed);
+    expect(preparePlaybackOwnerAdoption(malformed).valid).toBe(false);
+  });
+
+  it('compares every guarded-stop identity field', () => {
+    expect(samePlaybackOwnerIdentity(identity, { ...identity })).toBe(true);
+    for (const [field, replacement] of [
+      ['ownerInstanceId', 'other-owner'],
+      ['playbackRevision', 8],
+      ['queueRevision', 12],
+      ['sessionId', 'other-session'],
+      ['contentId', 'plex:b'],
+      ['queueItemId', 'entry-b'],
+    ]) {
+      expect(samePlaybackOwnerIdentity(identity, { ...identity, [field]: replacement })).toBe(false);
+    }
+  });
+
   it('accepts a finite owner identity and a lossless execution order with duplicate content entries', () => {
     expect(validatePlaybackOwnerIdentity(identity)).toEqual({ valid: true, errors: [] });
     expect(validatePlaybackOwnerSessionSnapshot(snapshot)).toEqual({ valid: true, errors: [] });
@@ -64,6 +127,10 @@ describe('playback owner contract', () => {
       value.meta.playbackOwner.sessionId = 'another-session';
       value.meta.playbackOwner.contentId = null;
       value.meta.playbackOwner.queueItemId = null;
+    }],
+    ['active owner identity without a current entry', (value) => {
+      value.queue.currentIndex = -1;
+      value.queue.executionOrder = [];
     }],
     ['owner entry mismatch', (value) => { value.meta.playbackOwner.queueItemId = 'entry-b'; value.meta.playbackOwner.contentId = 'plex:b'; }],
   ])('rejects %s', (_label, mutate) => {

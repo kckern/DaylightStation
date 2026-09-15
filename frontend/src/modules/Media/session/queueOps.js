@@ -77,16 +77,36 @@ function itemFields(entry) {
  * that should be current. currentIndex is recomputed from identity;
  * currentItem follows it. `currentId: null` clears the current item.
  */
-function withQueue(snapshot, items, currentId) {
+function withQueue(snapshot, items, currentId, executionOrder = undefined) {
   const currentIndex = currentId == null
     ? -1
     : items.findIndex((i) => i.queueItemId === currentId);
   const currentItem = currentIndex >= 0 ? itemFields(items[currentIndex]) : null;
+  const queue = { ...snapshot.queue, items, currentIndex, upNextCount: countUpNext(items) };
+  if (Array.isArray(executionOrder)) queue.executionOrder = [...executionOrder];
+  else delete queue.executionOrder;
   return {
     ...snapshot,
-    queue: { items, currentIndex, upNextCount: countUpNext(items) },
+    queue,
     currentItem,
   };
+}
+
+function existingExecutionOrder(snapshot) {
+  return Array.isArray(snapshot.queue.executionOrder)
+    ? [...snapshot.queue.executionOrder]
+    : null;
+}
+
+function rebuiltExecutionOrder(snapshot, items, currentId) {
+  if (!Array.isArray(snapshot.queue.executionOrder) || currentId == null) return undefined;
+  const index = items.findIndex((item) => item.queueItemId === currentId);
+  if (index < 0) return [];
+  if (snapshot.config?.shuffle) return [currentId];
+  const forward = items.slice(index).map((item) => item.queueItemId);
+  return snapshot.config?.repeat === 'all' && index > 0
+    ? [...forward, ...items.slice(0, index).map((item) => item.queueItemId)]
+    : forward;
 }
 
 /** Length of the consecutive upNext band immediately after `index`. */
@@ -113,13 +133,19 @@ export function playNowMany(snapshot, inputs, { clearRest = false } = {}) {
   const newItems = toQueueItems(inputs);
   if (newItems.length === 0) return snapshot;
   if (clearRest) {
-    return withQueue(snapshot, newItems, newItems[0].queueItemId);
+    return withQueue(snapshot, newItems, newItems[0].queueItemId,
+      existingExecutionOrder(snapshot) ? newItems.map((item) => item.queueItemId) : undefined);
   }
   const { items, currentIndex } = snapshot.queue;
+  const currentId = currentIdOf(snapshot);
   const next = [...items];
   if (currentIndex >= 0) next.splice(currentIndex, 1, ...newItems);
   else next.unshift(...newItems);
-  return withQueue(snapshot, next, newItems[0].queueItemId);
+  const order = existingExecutionOrder(snapshot);
+  const nextOrder = order && currentId != null
+    ? [...newItems.map((item) => item.queueItemId), ...order.slice(1).filter((id) => id !== currentId)]
+    : undefined;
+  return withQueue(snapshot, next, newItems[0].queueItemId, nextOrder);
 }
 
 /**
@@ -141,7 +167,11 @@ export function playNextMany(snapshot, inputs) {
   const { items, currentIndex } = snapshot.queue;
   const next = [...items];
   next.splice(currentIndex >= 0 ? currentIndex + 1 : 0, 0, ...newItems);
-  return withQueue(snapshot, next, currentIdOf(snapshot));
+  const order = existingExecutionOrder(snapshot);
+  const nextOrder = order?.length
+    ? [order[0], ...newItems.map((item) => item.queueItemId), ...order.slice(1)]
+    : order;
+  return withQueue(snapshot, next, currentIdOf(snapshot), nextOrder ?? undefined);
 }
 
 /**
@@ -165,7 +195,17 @@ export function addUpNextMany(snapshot, inputs) {
     ? currentIndex + 1 + upNextBandLength(items, currentIndex)
     : upNextBandLength(items, -1); // no current: band starts at 0
   next.splice(insertAt, 0, ...newItems);
-  return withQueue(snapshot, next, currentIdOf(snapshot));
+  const order = existingExecutionOrder(snapshot);
+  let nextOrder = order;
+  if (order?.length) {
+    const oldById = new Map(items.map((item) => [item.queueItemId, item]));
+    let plannedInsert = 1;
+    while (plannedInsert < order.length && oldById.get(order[plannedInsert])?.priority === 'upNext') {
+      plannedInsert += 1;
+    }
+    nextOrder = [...order.slice(0, plannedInsert), ...newItems.map((item) => item.queueItemId), ...order.slice(plannedInsert)];
+  }
+  return withQueue(snapshot, next, currentIdOf(snapshot), nextOrder ?? undefined);
 }
 
 /** Add to Queue: append to the end without changing playback selection. */
@@ -179,7 +219,11 @@ export function addMany(snapshot, inputs) {
   if (newItems.length === 0) return snapshot;
   const items = [...snapshot.queue.items, ...newItems];
   const currentId = currentIdOf(snapshot);
-  const next = withQueue(snapshot, items, currentId);
+  const order = existingExecutionOrder(snapshot);
+  const nextOrder = order?.length
+    ? [...order, ...newItems.map((item) => item.queueItemId)]
+    : order;
+  const next = withQueue(snapshot, items, currentId, nextOrder ?? undefined);
 
   // Clearing a queue deliberately leaves its source playing outside the
   // queue. Appending later must not replace that actual source merely because
@@ -217,13 +261,18 @@ export function remove(snapshot, queueItemId) {
   if (idx === -1) return snapshot;
   const next = items.filter((_, i) => i !== idx);
   const currentId = currentIdOf(snapshot);
+  const order = existingExecutionOrder(snapshot);
+  const filteredOrder = order?.filter((id) => id !== queueItemId);
   if (queueItemId !== currentId) {
-    return withQueue(snapshot, next, currentId);
+    return withQueue(snapshot, next, currentId, filteredOrder ?? undefined);
   }
   // Removed the current item: the successor (same index in the new array)
   // becomes current; nothing left → no current.
-  const successor = next.length > 0 ? next[Math.min(idx, next.length - 1)] : null;
-  const result = withQueue(snapshot, next, successor?.queueItemId ?? null);
+  const plannedSuccessor = filteredOrder?.length
+    ? next.find((item) => item.queueItemId === filteredOrder[0])
+    : null;
+  const successor = plannedSuccessor ?? (next.length > 0 ? next[Math.min(idx, next.length - 1)] : null);
+  const result = withQueue(snapshot, next, successor?.queueItemId ?? null, filteredOrder ?? undefined);
   // Position belongs to the removed item, not its successor.
   return { ...result, position: 0 };
 }
@@ -233,7 +282,14 @@ export function jump(snapshot, queueItemId) {
   const { items } = snapshot.queue;
   const idx = items.findIndex((i) => i.queueItemId === queueItemId);
   if (idx === -1) return snapshot;
-  return withQueue(snapshot, items, queueItemId);
+  return withQueue(snapshot, items, queueItemId, rebuiltExecutionOrder(snapshot, items, queueItemId));
+}
+
+/** Consume exactly one remaining adopted visit, including repeated IDs. */
+export function consumeExecutionVisit(snapshot, queueItemId) {
+  const order = existingExecutionOrder(snapshot);
+  if (!order || order.length < 2 || order[1] !== queueItemId) return jump(snapshot, queueItemId);
+  return withQueue(snapshot, snapshot.queue.items, queueItemId, order.slice(1));
 }
 
 /**
@@ -251,7 +307,8 @@ export function reorder(snapshot, input) {
     const listed = input.items.map((id) => byId.get(id)).filter(Boolean);
     const listedIds = new Set(input.items);
     const unlisted = items.filter((i) => !listedIds.has(i.queueItemId));
-    return withQueue(snapshot, [...listed, ...unlisted], currentId);
+    const next = [...listed, ...unlisted];
+    return withQueue(snapshot, next, currentId, rebuiltExecutionOrder(snapshot, next, currentId));
   }
 
   const next = [...items];
@@ -260,7 +317,7 @@ export function reorder(snapshot, input) {
   if (fromIdx === -1 || toIdx === -1) return snapshot;
   const [moved] = next.splice(fromIdx, 1);
   next.splice(toIdx, 0, moved);
-  return withQueue(snapshot, next, currentId);
+  return withQueue(snapshot, next, currentId, rebuiltExecutionOrder(snapshot, next, currentId));
 }
 
 /**
@@ -273,5 +330,5 @@ export function demote(snapshot, queueItemId) {
   if (idx === -1 || items[idx].priority !== 'upNext') return snapshot;
   const next = [...items];
   next[idx] = { ...next[idx], priority: 'queue' };
-  return withQueue(snapshot, next, currentIdOf(snapshot));
+  return withQueue(snapshot, next, currentIdOf(snapshot), existingExecutionOrder(snapshot) ?? undefined);
 }

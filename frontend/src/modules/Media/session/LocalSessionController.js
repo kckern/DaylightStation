@@ -4,6 +4,10 @@
 // hot position channel, and the player handle injected by PlayerBridge.
 // It holds no state of its own.
 import { createIdleSessionSnapshot } from '@shared-contracts/media/shapes.mjs';
+import {
+  preparePlaybackOwnerAdoption,
+  samePlaybackOwnerIdentity,
+} from '@shared-contracts/media/playback-owner.mjs';
 import { createSessionStore } from './sessionStore.js';
 import { createPositionChannel } from './positionChannel.js';
 import * as qOps from './queueOps.js';
@@ -82,6 +86,12 @@ export function createLocalSessionController({
   let playbackRevision = 0;
   let queueRevision = 0;
   let observedNativeNode = null;
+  let nativeBinding = null;
+  let nativeNodeGeneration = 0;
+  let nativePlayingObserved = false;
+  let nativeAdvancedObserved = false;
+  let nativeLastTime = null;
+  const nativeListeners = new Set();
 
   const queueFingerprint = (snapshot) => JSON.stringify({
     items: snapshot.queue?.items?.map((item) => ({
@@ -90,13 +100,16 @@ export function createLocalSessionController({
       priority: item.priority,
     })) ?? [],
     currentIndex: snapshot.queue?.currentIndex ?? -1,
+    executionOrder: snapshot.queue?.executionOrder ?? null,
     config: snapshot.config,
   });
 
   // Revisions change at the owner action boundary. Metadata/position updates
   // are deliberately absent so an enrichment cannot invalidate a move guard.
   store.onTransition((prev, next, action) => {
-    if (queueFingerprint(prev) !== queueFingerprint(next)) queueRevision += 1;
+    if (action?.type === 'ADOPT_SNAPSHOT' || queueFingerprint(prev) !== queueFingerprint(next)) {
+      queueRevision += 1;
+    }
     if (['LOAD_ITEM', 'ADOPT_SNAPSHOT', 'STOP', 'RESET'].includes(action?.type)) {
       playbackRevision += 1;
     }
@@ -104,20 +117,124 @@ export function createLocalSessionController({
 
   // PlayerBridge injects the imperative player surface; until it does (or
   // when no media element exists) these are no-ops.
-  let player = { play: () => {}, pause: () => {}, seek: () => {}, getMediaElement: () => null };
+  let player = {
+    play: () => {}, pause: () => {}, seek: () => {}, setPlaybackRate: () => {}, setShader: () => {},
+    getMediaElement: () => null,
+  };
 
   const snap = () => store.getSnapshot();
 
+  const currentIdentity = (snapshot = snap()) => {
+    const items = snapshot.queue?.items ?? [];
+    const currentIndex = snapshot.queue?.currentIndex ?? -1;
+    const currentEntry = currentIndex >= 0 ? items[currentIndex] : null;
+    return {
+      ownerInstanceId,
+      playbackRevision,
+      queueRevision,
+      sessionId: snapshot.sessionId,
+      contentId: currentEntry?.contentId ?? null,
+      queueItemId: currentEntry?.queueItemId ?? null,
+    };
+  };
+
+  const nativeError = (node) => node?.error
+    ? { code: node.error.code ?? null, message: node.error.message ?? null }
+    : null;
+
+  const bindNativeObservation = (node, resolvedContentId = null, resolvedGeneration = null) => {
+    const nextNode = node && typeof node === 'object' ? node : null;
+    const nextContentId = resolvedContentId == null ? null : String(resolvedContentId);
+    if (nativeBinding
+      && nativeBinding.node === nextNode
+      && nativeBinding.resolvedContentId === nextContentId
+      && nativeBinding.resolvedGeneration === resolvedGeneration) return;
+    if (observedNativeNode !== nextNode) {
+      observedNativeNode = nextNode;
+      playbackRevision += 1;
+    }
+    nativeNodeGeneration += 1;
+    nativeBinding = nextNode ? {
+      node: nextNode,
+      resolvedContentId: nextContentId,
+      resolvedGeneration,
+      nodeGeneration: nativeNodeGeneration,
+      ownerPlaybackRevision: playbackRevision,
+    } : null;
+    nativePlayingObserved = false;
+    nativeAdvancedObserved = false;
+    nativeLastTime = Number.isFinite(nextNode?.currentTime) ? nextNode.currentTime : null;
+  };
+
+  const ensureNativeBinding = () => {
+    const node = player.getMediaElement?.() ?? null;
+    const resolved = player.getMountedContentId?.() ?? null;
+    const resolvedGeneration = player.getMountedMediaGeneration?.() ?? null;
+    bindNativeObservation(node, resolved, resolvedGeneration);
+    return node;
+  };
+
+  const getNativeObservation = () => {
+    const node = ensureNativeBinding();
+    if (!node || !nativeBinding || nativeBinding.node !== node) return null;
+    const current = snap();
+    const identity = currentIdentity(current);
+    const matchesCurrent = identity.contentId != null
+      && nativeBinding.resolvedContentId != null
+      && String(identity.contentId) === nativeBinding.resolvedContentId
+      && nativeBinding.ownerPlaybackRevision === playbackRevision;
+    return {
+      node,
+      nodeGeneration: nativeBinding.nodeGeneration,
+      resolvedContentId: nativeBinding.resolvedContentId,
+      resolvedGeneration: nativeBinding.resolvedGeneration,
+      identity: matchesCurrent ? { ...identity } : null,
+      currentTime: Number.isFinite(node.currentTime) ? node.currentTime : 0,
+      duration: Number.isFinite(node.duration) && node.duration > 0 ? node.duration : null,
+      readyState: Number.isInteger(node.readyState) ? node.readyState : 0,
+      paused: Boolean(node.paused),
+      seeking: Boolean(node.seeking),
+      ended: Boolean(node.ended),
+      error: nativeError(node),
+      playingObserved: nativePlayingObserved,
+      advancedObserved: nativeAdvancedObserved,
+    };
+  };
+
+  const emitNativeObservation = () => {
+    const observation = getNativeObservation();
+    if (!observation) return;
+    for (const listener of [...nativeListeners]) {
+      try { listener(observation); } catch { /* observer isolation */ }
+    }
+  };
+
+  const onNativeObservationEvent = (node, type) => {
+    if (!nativeBinding || nativeBinding.node !== node) return;
+    if (nativeBinding.ownerPlaybackRevision !== playbackRevision) return;
+    if (player.getMediaElement?.() !== node) return;
+    const resolved = player.getMountedContentId?.() ?? null;
+    if (String(resolved ?? '') !== String(nativeBinding.resolvedContentId ?? '')) return;
+    if (type === 'playing') nativePlayingObserved = true;
+    if (['pause', 'waiting', 'seeking', 'ended', 'error'].includes(type)) nativePlayingObserved = false;
+    if (type === 'timeupdate' || type === 'progress') {
+      const current = Number.isFinite(node.currentTime) ? node.currentTime : null;
+      if (current != null && nativeLastTime != null && current > nativeLastTime) nativeAdvancedObserved = true;
+      nativeLastTime = current;
+    }
+    emitNativeObservation();
+  };
+
   const capture = () => {
     const current = snap();
-    const native = player.getMediaElement?.() ?? null;
-    // A replacement native node invalidates stale native evidence, even when
-    // recovery retained the logical item.
-    if (native !== observedNativeNode) {
-      observedNativeNode = native;
-      if (native) playbackRevision += 1;
-    }
-    const nativePosition = native?.currentTime;
+    const native = ensureNativeBinding();
+    const currentEntry = current.queue?.items?.[current.queue?.currentIndex] ?? null;
+    const nativeMatchesCurrent = native
+      && nativeBinding?.node === native
+      && nativeBinding.resolvedContentId != null
+      && String(currentEntry?.contentId ?? '') === nativeBinding.resolvedContentId
+      && nativeBinding.ownerPlaybackRevision === playbackRevision;
+    const nativePosition = nativeMatchesCurrent ? native.currentTime : null;
     const hotPosition = Number.isFinite(nativePosition) && nativePosition >= 0
       ? nativePosition
       : position.get().seconds;
@@ -133,21 +250,18 @@ export function createLocalSessionController({
     // Shuffle advancement chooses future items at action time. Capture only
     // reports the current determined visit rather than inventing a stable
     // sequence that the owner has not selected.
-    const executionVisits = snapshot.config?.shuffle
-      ? (currentIndex >= 0 && items[currentIndex] ? [items[currentIndex]] : [])
+    const retainedOrder = Array.isArray(snapshot.queue.executionOrder)
+      && snapshot.queue.executionOrder[0] === items[currentIndex]?.queueItemId
+      && snapshot.queue.executionOrder.every((id) => items.some((item) => item.queueItemId === id))
+      ? snapshot.queue.executionOrder
+      : null;
+    const executionVisits = retainedOrder ?? (snapshot.config?.shuffle
+      ? (currentIndex >= 0 && items[currentIndex] ? [items[currentIndex].queueItemId] : [])
       : (snapshot.config?.repeat === 'all' && currentIndex > 0
-        ? [...forwardVisits, ...items.slice(0, currentIndex)]
-        : forwardVisits);
-    snapshot.queue.executionOrder = executionVisits.map((item) => item.queueItemId);
-    const currentEntry = currentIndex >= 0 ? items[currentIndex] : null;
-    const identity = {
-      ownerInstanceId,
-      playbackRevision,
-      queueRevision,
-      sessionId: snapshot.sessionId,
-      contentId: currentEntry?.contentId ?? null,
-      queueItemId: currentEntry?.queueItemId ?? null,
-    };
+        ? [...forwardVisits, ...items.slice(0, currentIndex)].map((item) => item.queueItemId)
+        : forwardVisits.map((item) => item.queueItemId)));
+    snapshot.queue.executionOrder = [...executionVisits];
+    const identity = currentIdentity(snapshot);
     snapshot.meta = { ...snapshot.meta, playbackOwner: { ...identity } };
     return {
       snapshot,
@@ -181,13 +295,20 @@ export function createLocalSessionController({
 
   // Move the current cursor to `entry` by IDENTITY (jump recomputes the
   // index), demoting the spent current's upNext priority on the way past.
-  const moveCurrentTo = (entry) => {
-    let working = snap();
+  const moveCurrentTo = (entry, { consumeExecutionOrder = false, preserveExecutionOrder = false } = {}) => {
+    const initial = snap();
+    let working = initial;
     const oldCurrent = working.queue.items[working.queue.currentIndex];
     if (oldCurrent && oldCurrent.priority === 'upNext' && oldCurrent.queueItemId !== entry.queueItemId) {
       working = qOps.demote(working, oldCurrent.queueItemId);
     }
-    store.replace(qOps.jump(working, entry.queueItemId));
+    if (preserveExecutionOrder) {
+      if (working !== initial) store.replace(working);
+    } else {
+      store.replace(consumeExecutionOrder
+        ? qOps.consumeExecutionVisit(working, entry.queueItemId)
+        : qOps.jump(working, entry.queueItemId));
+    }
     store.dispatch({ type: 'LOAD_ITEM', item: itemFromQueueEntry(entry) });
     position.set(0);
   };
@@ -203,7 +324,11 @@ export function createLocalSessionController({
       store.dispatch({ type: 'PLAYER_STATE', playerState: 'ended' });
       return;
     }
-    moveCurrentTo(next);
+    const repeatsCurrent = snap().config.repeat === 'one' && reason !== 'skip-next';
+    moveCurrentTo(next, {
+      consumeExecutionOrder: !repeatsCurrent,
+      preserveExecutionOrder: repeatsCurrent,
+    });
   };
 
   const advanceBack = () => {
@@ -215,6 +340,33 @@ export function createLocalSessionController({
   const setConfig = (patch) => {
     mediaLog.configChanged({ sessionId: snap().sessionId, patch });
     store.dispatch({ type: 'SET_CONFIG', patch });
+  };
+
+  const adopt = (incoming, { autoplay = true } = {}) => {
+    const prepared = preparePlaybackOwnerAdoption(incoming);
+    if (!prepared.valid) return { ok: false, code: 'INVALID_SNAPSHOT', errors: prepared.errors };
+    const adopted = prepared.snapshot;
+    const ownerId = snap().meta?.ownerId ?? clientId;
+    const { playbackOwner: _sourceOwner, ...sourceMeta } = adopted.meta ?? {};
+    adopted.meta = { ...sourceMeta, ownerId };
+    adopted.state = adopted.queue.currentIndex >= 0 && adopted.currentItem
+      ? 'loading'
+      : (adopted.queue.items.length > 0 ? 'ready' : 'idle');
+    store.dispatch({ type: 'ADOPT_SNAPSHOT', snapshot: adopted });
+    position.set(adopted.position);
+    // The previous node may still be mounted for the same content/entry. Its
+    // facts belong to the pre-adoption owner revision until PlayerBridge
+    // admits the adopted render generation.
+    nativePlayingObserved = false;
+    nativeAdvancedObserved = false;
+    nativeLastTime = Number.isFinite(nativeBinding?.node?.currentTime)
+      ? nativeBinding.node.currentTime
+      : null;
+    // autoplay is an owner intent consumed by the existing Player render.
+    // Calling the imperative handle here could start the retired native node
+    // before Player has resolved the adopted current item.
+    void autoplay;
+    return { ok: true };
   };
 
   // ---- Queue enqueue paths -------------------------------------------------
@@ -349,7 +501,7 @@ export function createLocalSessionController({
           // Removing the playing item: its successor takes over cleanly, or
           // playback stops when nothing is left.
           const successor = next.queue.items[next.queue.currentIndex];
-          if (successor) moveCurrentTo(successor);
+          if (successor) moveCurrentTo(successor, { preserveExecutionOrder: true });
           else { player.pause(); store.dispatch({ type: 'STOP' }); position.set(0); }
         }
       },
@@ -392,9 +544,7 @@ export function createLocalSessionController({
         position.set(0);
       },
       adoptSnapshot: (snapshot, { autoplay = true } = {}) => {
-        store.dispatch({ type: 'ADOPT_SNAPSHOT', snapshot });
-        position.set(snapshot.position ?? 0);
-        if (autoplay) controller.transport.play();
+        return adopt(snapshot, { autoplay });
       },
     },
 
@@ -403,6 +553,21 @@ export function createLocalSessionController({
       // 5s, which would blow the C7.3 hand-off tolerance.
       snapshotForHandoff: () => capture().snapshot,
       capture,
+      adopt,
+      getNativeObservation,
+      subscribeNative: (listener) => {
+        if (typeof listener !== 'function') return () => {};
+        nativeListeners.add(listener);
+        return () => nativeListeners.delete(listener);
+      },
+      stopIfCurrent: (expected) => {
+        const current = capture().identity;
+        if (!samePlaybackOwnerIdentity(expected, current)) {
+          return { ok: false, code: 'SOURCE_CHANGED' };
+        }
+        controller.transport.stop();
+        return { ok: true };
+      },
       receiveClaim: (snapshot) => controller.lifecycle.adoptSnapshot(snapshot, { autoplay: true }),
     },
 
@@ -417,10 +582,19 @@ export function createLocalSessionController({
     // ---- PlayerBridge surface (not part of the controller shape) ----
     setPlayerHandle(handle) {
       player = {
-        play: () => {}, pause: () => {}, seek: () => {}, getMediaElement: () => null, ...handle,
+        play: () => {}, pause: () => {}, seek: () => {}, setPlaybackRate: () => {}, setShader: () => {},
+        getMediaElement: () => null,
+        getMountedContentId: () => null,
+        getMountedMediaGeneration: () => null, ...handle,
       };
     },
     getMediaElement: () => player.getMediaElement?.() ?? null,
+    bindNativeObservation,
+    releaseNativeObservation: (node, resolvedGeneration) => {
+      if (!nativeBinding || nativeBinding.node !== node || nativeBinding.resolvedGeneration !== resolvedGeneration) return;
+      bindNativeObservation(null, null, resolvedGeneration);
+    },
+    onNativeObservationEvent,
     onPlayerObservation: (contentId, observation = {}) => {
       if (snap().currentItem?.contentId !== contentId) return;
       const playerState = observation.stalled === true && observation.paused === false

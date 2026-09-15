@@ -44,19 +44,31 @@ export function PlayerBridge() {
       play: () => playerRef.current?.play?.(),
       pause: () => playerRef.current?.pause?.(),
       seek: (t) => playerRef.current?.seek?.(t),
+      setPlaybackRate: (rate) => playerRef.current?.setPlaybackRate?.(rate),
+      setShader: (shader) => playerRef.current?.setShader?.(shader),
       getMediaElement: () => playerRef.current?.getMediaElement?.() ?? null,
+      getMountedContentId: () => playerRef.current?.getMountedContentId?.() ?? null,
+      getMountedMediaGeneration: () => playerRef.current?.getMountedMediaGeneration?.() ?? null,
     });
     return () => controller.setPlayerHandle({});
   }, [controller]);
 
   // Track volume so we can sync it to the media element as the user adjusts it.
   const [volume, setVolume] = useState(() => controller.getSnapshot().config?.volume ?? 100);
+  const [playbackRate, setPlaybackRate] = useState(() => controller.getSnapshot().config?.playbackRate ?? 1);
+  const [sessionShader, setSessionShader] = useState(() => controller.getSnapshot().config?.shader ?? null);
   useEffect(() => {
     return controller.subscribe((snap) => {
       const next = snap.config?.volume ?? 100;
       setVolume((prev) => (prev === next ? prev : next));
+      const nextRate = snap.config?.playbackRate ?? 1;
+      setPlaybackRate((prev) => (prev === nextRate ? prev : nextRate));
+      const nextShader = snap.config?.shader ?? null;
+      setSessionShader((prev) => (prev === nextShader ? prev : nextShader));
     });
   }, [controller]);
+  useEffect(() => { playerRef.current?.setPlaybackRate?.(playbackRate); }, [playbackRate, currentItem?.contentId]);
+  useEffect(() => { playerRef.current?.setShader?.(sessionShader); }, [sessionShader, currentItem?.contentId]);
   useEffect(() => {
     let cancelled = false;
     const target = Math.max(0, Math.min(1, volume / 100));
@@ -106,9 +118,9 @@ export function PlayerBridge() {
           // node belongs to B; requested/store identity is not media evidence.
           playerRef.current?.seek?.(requestedStart);
           // LOAD/SET represent a new local queue selection and normally rely
-          // on changed Player inputs to autoplay. ADOPT keeps its explicit
-          // autoplay option in LocalSessionController, so do not override an
-          // adoptSnapshot(..., { autoplay: false }) pause here.
+          // on changed Player inputs to autoplay. ADOPT records intent through
+          // that render path; never play an accessor that might still belong
+          // to the retired generation here.
           if (action.type === 'LOAD_ITEM' || action.type === 'SET_CURRENT_ITEM') {
             playerRef.current?.play?.();
           }
@@ -215,31 +227,53 @@ export function PlayerBridge() {
     const isActiveGeneration = () => playbackGenerationRef.current === playbackGeneration
       && controller.getSnapshot().currentItem?.contentId === contentId;
     let bound = null;
+    let boundContentId = null;
+    let boundMediaGeneration = null;
     let detach = () => {};
 
     const bind = () => {
       const next = playerRef.current?.getMediaElement?.() ?? null;
-      if (next === bound) return;
+      const resolvedContentId = playerRef.current?.getMountedContentId?.() ?? null;
+      const resolvedMediaGeneration = playerRef.current?.getMountedMediaGeneration?.() ?? null;
+      if (next === bound
+        && resolvedContentId === boundContentId
+        && resolvedMediaGeneration === boundMediaGeneration) return;
+      const retired = bound;
+      const retiredGeneration = boundMediaGeneration;
       detach();
       bound = next;
-      if (!bound) { detach = () => {}; return; }
+      boundContentId = resolvedContentId;
+      boundMediaGeneration = resolvedMediaGeneration;
+      if (!bound) {
+        if (retired) controller.releaseNativeObservation?.(retired, retiredGeneration);
+        detach = () => {};
+        return;
+      }
       const observedElement = bound;
+      controller.bindNativeObservation?.(observedElement, resolvedContentId, resolvedMediaGeneration);
       const isCurrentMedia = () => isActiveGeneration()
         && playerRef.current?.getMediaElement?.() === observedElement
         && playerRef.current?.getMountedContentId?.() === contentId;
 
+      const observeNative = (type) => {
+        if (!isCurrentMedia()) return false;
+        controller.onNativeObservationEvent?.(observedElement, type);
+        return true;
+      };
+
       const observeDuration = () => {
         if (!isCurrentMedia()) return;
+        observeNative('durationchange');
         controller.onPlayerObservation?.(contentId, { duration: bound.duration });
       };
       const observePaused = () => {
-        if (isCurrentMedia() && !bound.ended) controller.onPlayerStateChange('paused', contentId);
+        if (observeNative('pause') && !bound.ended) controller.onPlayerStateChange('paused', contentId);
       };
       const observePlaying = () => {
-        if (isCurrentMedia()) controller.onPlayerStateChange('playing', contentId);
+        if (observeNative('playing')) controller.onPlayerStateChange('playing', contentId);
       };
       const observeWaiting = () => {
-        if (isCurrentMedia() && !bound.paused) {
+        if (observeNative('waiting') && !bound.paused) {
           controller.onPlayerStateChange('buffering', contentId);
         }
       };
@@ -259,11 +293,15 @@ export function PlayerBridge() {
       };
       const observeSeeking = () => {
         if (!isCurrentMedia()) return;
+        observeNative('seeking');
         // The native position is already observable while the decoder seeks.
         // Update only the hot display; completion, durable position, and
         // playback state still require their own evidence.
         controller.onPlayerPositionTick(bound.currentTime, contentId);
       };
+      const observeTimeUpdate = () => { observeNative('timeupdate'); };
+      const observeEnded = () => { observeNative('ended'); };
+      const observeError = () => { observeNative('error'); };
       bound.addEventListener('loadedmetadata', observeDuration);
       bound.addEventListener('durationchange', observeDuration);
       bound.addEventListener('pause', observePaused);
@@ -271,6 +309,9 @@ export function PlayerBridge() {
       bound.addEventListener('waiting', observeWaiting);
       bound.addEventListener('seeked', observeSeeked);
       bound.addEventListener('seeking', observeSeeking);
+      bound.addEventListener('timeupdate', observeTimeUpdate);
+      bound.addEventListener('ended', observeEnded);
+      bound.addEventListener('error', observeError);
       observeDuration();
       detach = () => {
         bound?.removeEventListener('loadedmetadata', observeDuration);
@@ -280,12 +321,25 @@ export function PlayerBridge() {
         bound?.removeEventListener('waiting', observeWaiting);
         bound?.removeEventListener('seeked', observeSeeked);
         bound?.removeEventListener('seeking', observeSeeking);
+        bound?.removeEventListener('timeupdate', observeTimeUpdate);
+        bound?.removeEventListener('ended', observeEnded);
+        bound?.removeEventListener('error', observeError);
       };
     };
 
     bind();
     const poll = setInterval(bind, TIMING.VOLUME_APPLY_RETRY_MS);
-    return () => { clearInterval(poll); detach(); };
+    return () => {
+      clearInterval(poll);
+      const retired = bound;
+      const retiredGeneration = boundMediaGeneration;
+      detach();
+      const currentNode = playerRef.current?.getMediaElement?.() ?? null;
+      const currentGeneration = playerRef.current?.getMountedMediaGeneration?.() ?? null;
+      if (retired && (currentNode !== retired || currentGeneration !== retiredGeneration)) {
+        controller.releaseNativeObservation?.(retired, retiredGeneration);
+      }
+    };
   }, [controller, contentId, playbackGeneration, onProgress]);
 
   // Stable play prop across re-renders of the same item. The platform

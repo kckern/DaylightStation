@@ -229,8 +229,26 @@ export function createSessionSource({
     };
   }
 
+  function capture() {
+    const snapshot = getSnapshot();
+    return {
+      snapshot,
+      identity: snapshot.meta?.playbackOwner ?? null,
+      capabilities: typeof queueController?.getOwnerCapabilities === 'function'
+        ? queueController.getOwnerCapabilities()
+        : { handoffV1: false, seekable: false, liveEdge: false },
+    };
+  }
+
   return {
     getSnapshot,
+    capture,
+    adopt: (snapshot, options) => queueController?.adopt?.(snapshot, { ...options, sessionId: sid })
+      ?? { ok: false, code: 'UNSUPPORTED' },
+    getNativeObservation: () => queueController?.getNativeObservation?.(sid) ?? null,
+    subscribeNative: (listener) => queueController?.subscribeNative?.(listener, sid) ?? (() => {}),
+    stopIfCurrent: (expected) => queueController?.stopIfCurrent?.(expected, sid)
+      ?? { ok: false, code: 'SOURCE_CHANGED' },
     subscribe,
     get sessionId() { return sid; },
     get ownerId() { return ownerId; },

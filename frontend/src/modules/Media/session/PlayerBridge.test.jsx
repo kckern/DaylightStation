@@ -3,7 +3,7 @@
 // whether hidden or portal-hosted, so navigating to/from Now Playing never
 // remounts the Player (audio continues across all views)."
 import React, { useRef, useState } from 'react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, act } from '@testing-library/react';
 import { PlayerHostProvider } from './PlayerHostProvider.jsx';
 import { LocalSessionContext } from './LocalSessionContext.js';
@@ -19,6 +19,8 @@ const mountSpy = vi.fn();
 let latestPlayerProps = null;
 let mediaElement = null;
 let mountedContentId = null;
+let mountedMediaGeneration = 0;
+let appliedShader = null;
 vi.mock('../../Player/Player.jsx', () => ({
   default: React.forwardRef(function MockPlayer(props, ref) {
     latestPlayerProps = props;
@@ -26,8 +28,11 @@ vi.mock('../../Player/Player.jsx', () => ({
       play: () => mediaElement?.play?.(),
       pause: () => mediaElement?.pause?.(),
       seek: (seconds) => { if (mediaElement) mediaElement.currentTime = seconds; },
+      setPlaybackRate: (rate) => { if (mediaElement) mediaElement.playbackRate = rate; },
+      setShader: (shader) => { appliedShader = shader; },
       getMediaElement: () => mediaElement,
       getMountedContentId: () => mountedContentId,
+      getMountedMediaGeneration: () => mountedMediaGeneration,
     }));
     React.useEffect(() => { mountSpy(); }, []);
     return <audio data-testid="mock-player" />;
@@ -36,6 +41,8 @@ vi.mock('../../Player/Player.jsx', () => ({
 
 // Imported after the mock so PlayerBridge picks up the mocked Player.
 const { PlayerBridge } = await import('./PlayerBridge.jsx');
+
+afterEach(() => vi.useRealTimers());
 
 function makeController() {
   const snapshot = {
@@ -98,6 +105,8 @@ describe('PlayerBridge host transitions', () => {
     latestPlayerProps = null;
     mediaElement = null;
     mountedContentId = null;
+    mountedMediaGeneration = 0;
+    appliedShader = null;
   });
 
   it('does not remount the Player when a view claims the host', () => {
@@ -130,6 +139,8 @@ describe('PlayerBridge real Player contract', () => {
     latestPlayerProps = null;
     mediaElement = null;
     mountedContentId = null;
+    mountedMediaGeneration = 0;
+    appliedShader = null;
   });
 
   it('holds receiver Add without a Player, then explicit Play loads and mounts exactly once', () => {
@@ -383,6 +394,120 @@ describe('PlayerBridge real Player contract', () => {
     Object.defineProperty(mediaElement, 'paused', { configurable: true, value: false });
     act(() => mediaElement.dispatchEvent(new Event('playing')));
     expect(controller.getSnapshot().state).toBe('playing');
+  });
+
+  it('observes the actual Media store generation and ignores pending/retired native nodes', () => {
+    vi.useFakeTimers();
+    const adoptionSource = createLocalSessionController({
+      clientId: 'adoption-source', ownerInstanceId: 'adoption-source-owner',
+    });
+    adoptionSource.queue.playNow({ contentId: 'plex:a', title: 'A', duration: 180, format: 'video' });
+    const controller = makeRealController();
+    expect(controller.portability.adopt(adoptionSource.portability.capture().snapshot, { autoplay: false }))
+      .toEqual({ ok: true });
+    const nodeA = document.createElement('video');
+    const nodeB = document.createElement('video');
+    for (const [node, time] of [[nodeA, 10], [nodeB, 20]]) {
+      Object.defineProperties(node, {
+        currentTime: { configurable: true, writable: true, value: time },
+        duration: { configurable: true, value: 180 },
+        readyState: { configurable: true, value: 3 },
+        paused: { configurable: true, value: false },
+        seeking: { configurable: true, value: false },
+        ended: { configurable: true, value: false },
+        error: { configurable: true, value: null },
+      });
+    }
+    mediaElement = nodeA;
+    mountedContentId = 'plex:a';
+    const view = render(<Harness controller={controller} />);
+    const observations = [];
+    const unsubscribe = controller.portability.subscribeNative((observation) => observations.push(observation));
+    expect(controller.portability.getNativeObservation()).toMatchObject({
+      node: nodeA, resolvedContentId: 'plex:a', resolvedGeneration: 0,
+      identity: { contentId: 'plex:a', queueItemId: controller.getSnapshot().queue.items[0].queueItemId },
+    });
+    const stableIdentity = controller.portability.capture().identity;
+    const stableNodeGeneration = controller.portability.getNativeObservation().nodeGeneration;
+    act(() => {
+      controller.onPlayerPositionTick(11, 'plex:a');
+      controller.onPlayerObservation('plex:a', { duration: 181 });
+      view.getByTestId('toggle').click();
+    });
+    expect(controller.portability.capture().identity).toEqual(stableIdentity);
+    expect(controller.portability.getNativeObservation().nodeGeneration).toBe(stableNodeGeneration);
+    expect(mountSpy).toHaveBeenCalledTimes(1);
+
+    const sameContent = controller.portability.capture().snapshot;
+    sameContent.position = 40;
+    act(() => controller.portability.adopt(sameContent, { autoplay: false }));
+    expect(controller.portability.getNativeObservation().identity).toBeNull();
+    act(() => vi.advanceTimersByTime(200));
+    expect(controller.portability.getNativeObservation().identity).toBeNull();
+    mountedMediaGeneration += 1;
+    act(() => vi.advanceTimersByTime(200));
+    expect(controller.portability.getNativeObservation().identity).toMatchObject({ contentId: 'plex:a' });
+
+    act(() => controller.queue.playNow({ contentId: 'plex:b', title: 'B', duration: 180, format: 'video' }));
+    expect(controller.portability.getNativeObservation()).toMatchObject({
+      node: nodeA, resolvedContentId: 'plex:a', identity: null,
+    });
+    expect(controller.portability.capture().snapshot.position).toBe(0);
+
+    mediaElement = nodeB;
+    mountedContentId = 'plex:b';
+    act(() => vi.advanceTimersByTime(200));
+    const resolved = controller.portability.getNativeObservation();
+    expect(resolved).toMatchObject({
+      node: nodeB, resolvedContentId: 'plex:b', currentTime: 20, duration: 180,
+      readyState: 3, paused: false, seeking: false, ended: false,
+      playingObserved: false, advancedObserved: false,
+      identity: { contentId: 'plex:b', queueItemId: controller.getSnapshot().queue.items[0].queueItemId },
+    });
+    act(() => nodeB.dispatchEvent(new Event('playing')));
+    nodeB.currentTime = 21;
+    act(() => nodeB.dispatchEvent(new Event('timeupdate')));
+    expect(controller.portability.getNativeObservation()).toMatchObject({
+      currentTime: 21, playingObserved: true, advancedObserved: true,
+    });
+
+    const count = observations.length;
+    act(() => {
+      nodeA.dispatchEvent(new Event('playing'));
+      nodeA.dispatchEvent(new Event('timeupdate'));
+    });
+    expect(observations).toHaveLength(count);
+    view.unmount();
+    act(() => nodeB.dispatchEvent(new Event('pause')));
+    expect(observations).toHaveLength(count);
+    unsubscribe();
+  });
+
+  it('applies adopted playback rate and shader to the stable mounted Media Player', () => {
+    const controller = makeRealController();
+    controller.queue.playNow({ contentId: 'plex:a', title: 'A', duration: 180, format: 'video' });
+    mediaElement = document.createElement('video');
+    Object.defineProperties(mediaElement, {
+      currentTime: { configurable: true, writable: true, value: 9 },
+      playbackRate: { configurable: true, writable: true, value: 1 },
+    });
+    mountedContentId = 'plex:a';
+    const view = render(<Harness controller={controller} />);
+    const adopted = controller.portability.capture().snapshot;
+    adopted.config = { ...adopted.config, playbackRate: 1.25, shader: 'night' };
+
+    act(() => controller.portability.adopt(adopted, { autoplay: false }));
+    expect(mediaElement.playbackRate).toBe(1.25);
+    expect(appliedShader).toBe('night');
+    expect(mountSpy).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      controller.onPlayerObservation('plex:a', { duration: 181 });
+      view.getByTestId('toggle').click();
+    });
+    expect(mediaElement.playbackRate).toBe(1.25);
+    expect(appliedShader).toBe('night');
+    expect(mountSpy).toHaveBeenCalledTimes(1);
   });
 
   it('reconciles an actual paused seek completion without waiting for another progress tick', () => {

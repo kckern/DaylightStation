@@ -32,6 +32,14 @@ function seed(...specs) {
 
 const ids = (snap) => snap.queue.items.map((i) => i.queueItemId);
 const currentId = (snap) => snap.queue.items[snap.queue.currentIndex]?.queueItemId ?? null;
+const planned = (...specs) => {
+  const snapshot = seed(...specs);
+  snapshot.queue.executionOrder = [
+    snapshot.queue.items[snapshot.queue.currentIndex].queueItemId,
+    ...snapshot.queue.items.slice(snapshot.queue.currentIndex + 1).map((item) => item.queueItemId),
+  ];
+  return snapshot;
+};
 
 describe('playNow', () => {
   it('REPLACES the current item in place, preserving the rest (§4.4)', () => {
@@ -180,6 +188,46 @@ describe('add', () => {
     expect(next.currentItem).toEqual(active.currentItem);
     expect(next.position).toBe(37);
     expect(next.state).toBe('playing');
+  });
+});
+
+describe('adopted execution plan edits', () => {
+  it('playNext prepends, addUpNext follows the planned band, and Add appends without losing the plan', () => {
+    let snapshot = planned('a*', ['u1', 'upNext'], 'b');
+    snapshot = q.playNext(snapshot, { queueItemId: 'n', contentId: 'c:n' });
+    expect(snapshot.queue.executionOrder).toEqual(['a', 'n', 'u1', 'b']);
+    snapshot = q.addUpNext(snapshot, { queueItemId: 'u2', contentId: 'c:u2' });
+    expect(snapshot.queue.executionOrder).toEqual(['a', 'n', 'u1', 'u2', 'b']);
+    snapshot = q.add(snapshot, { queueItemId: 'z', contentId: 'c:z' });
+    expect(snapshot.queue.executionOrder).toEqual(['a', 'n', 'u1', 'u2', 'b', 'z']);
+  });
+
+  it('consumes one repeated visit and filters removed entries', () => {
+    let snapshot = planned('a*', 'b', 'c');
+    snapshot.queue.executionOrder = ['a', 'c', 'a', 'b'];
+    snapshot = q.consumeExecutionVisit(snapshot, 'c');
+    expect(currentId(snapshot)).toBe('c');
+    expect(snapshot.queue.executionOrder).toEqual(['c', 'a', 'b']);
+    snapshot = q.remove(snapshot, 'a');
+    expect(snapshot.queue.executionOrder).toEqual(['c', 'b']);
+  });
+
+  it('Play Now replaces every visit to the removed entry and Clear discards the plan', () => {
+    let snapshot = planned('a*', 'b', 'c');
+    snapshot.queue.executionOrder = ['a', 'c', 'a', 'b'];
+    snapshot = q.playNow(snapshot, { queueItemId: 'x', contentId: 'c:x' });
+    expect(snapshot.queue.executionOrder).toEqual(['x', 'c', 'b']);
+    snapshot = q.clear(snapshot);
+    expect(snapshot.queue.executionOrder).toBeUndefined();
+  });
+
+  it('explicit jump and reorder rebuild future execution from the edited array', () => {
+    let snapshot = planned('a*', 'b', 'c');
+    snapshot.queue.executionOrder = ['a', 'c', 'a', 'b'];
+    snapshot = q.jump(snapshot, 'b');
+    expect(snapshot.queue.executionOrder).toEqual(['b', 'c']);
+    snapshot = q.reorder(snapshot, { items: ['c', 'b', 'a'] });
+    expect(snapshot.queue.executionOrder).toEqual(['b', 'a']);
   });
 });
 
