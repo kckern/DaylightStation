@@ -30,6 +30,32 @@ export function summarizeGameArchive(record, rulesetId = null, notableFacts = nu
   };
 }
 
+/**
+ * A rival's lifetime record with one just-finished game folded in, written
+ * nowhere.
+ *
+ * The result card asks the moment a game ends, and that request races the
+ * archive write that records the game in memory. So the game is added unless
+ * memory already lists it among the recent games, which is where a game that
+ * won the race would be.
+ */
+export function projectHeadToHead(rival, game) {
+  const totals = {
+    win: Number(rival?.record?.win || 0),
+    loss: Number(rival?.record?.loss || 0),
+    draw: Number(rival?.record?.draw || 0),
+  };
+  const known = (rival?.recent || []).some((entry) => entry?.gameId && entry.gameId === game?.gameId);
+  if (!known && game?.completed && ['win', 'loss', 'draw'].includes(game?.result)) totals[game.result] += 1;
+  return {
+    opponent: {
+      id: clean(game?.opponent?.id, 80) || rival?.opponent?.id || null,
+      name: clean(game?.opponent?.name, 40) || rival?.opponent?.name || null,
+    },
+    ...totals,
+  };
+}
+
 function empty() { return { version: VERSION, rivals: {} }; }
 
 function migratedChessId(key, rival) {
