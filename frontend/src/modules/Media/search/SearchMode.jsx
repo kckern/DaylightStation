@@ -10,9 +10,9 @@
 // StreamStatusLine, then a results list filling the rest.
 //
 // Rendered by the shell (MediaAppShell.jsx), not a route — it overlays
-// whatever view is current and unmounting it (✕, browser back, or a
-// successful dispatch) restores that view untouched, since Canvas never
-// unmounts underneath it.
+// whatever view is current. Playback and queue actions keep it mounted so
+// the person's exact query and narrowing survive a building session; only
+// explicit dismissal/back or navigation into browse/detail unmounts it.
 //
 // Reuses the useContentCombobox HOOK for search state/transport/dedupe/D5
 // fallback, but NOT the ContentCombobox popover component — a Mantine
@@ -53,16 +53,12 @@ export function SearchMode({ onClose }) {
   // second one a no-op instead of a double-close).
   const closedRef = useRef(false);
 
-  // ALL exits — ✕, browser back, and a successful dispatch — must leave
-  // history exactly where it was before SearchMode opened. Centralizing the
-  // history.back() call here (rather than duplicating it per exit path) is
-  // what closes the CRITICAL 1 gap: handleChange used to call closeSurface
-  // directly without ever consuming the pushed entry, so the most common
-  // exit (tap a result) leaked a `mediaSearchMode: true` history entry that
-  // then propagated into every later pushState via the `{...history.state}`
-  // spread (here and in NavProvider's syncHistory) — the user's next real
-  // back press would silently no-op, compounding with every open→dispatch
-  // cycle.
+  // ALL exits — ✕, browser back, and result navigation — must leave a
+  // coherent one-step history. Playback/queue
+  // actions are deliberately absent from this helper: they retain both the
+  // mounted search state and its marker until the person dismisses Search.
+  // Centralizing actual exits here prevents a marker from leaking into later
+  // NavProvider entries through their `{...history.state}` spread.
   //
   // `opts.navigated` marks the exits where the dispatch ITSELF pushed a route
   // (a container tap, which browses; the ⋯ "Open detail" verb). Those must NOT
@@ -121,14 +117,15 @@ export function SearchMode({ onClose }) {
         title: item?.title ? `Playing ${item.title}` : 'Playing',
       });
     }
-    // 'browse' is the only route that navigates (containers always browse).
-    closeSurface('dispatch', { navigated: route === 'browse' });
+    // Playback is not navigation: keep the surface (and therefore the exact
+    // query/scope plus its marker entry) alive. A container row is the one
+    // route that navigates, so it hands the marker entry to Browse and exits.
+    if (route === 'browse') closeSurface('dispatch', { navigated: true });
   }, [dispatch, log, closeSurface]);
 
   // Trailing ▶ on a container row (Task 14, spec D6): explicitly send the
-  // whole container to the current destination, replacing the queue. Same
-  // toast/close treatment as a leaf tap — this IS a dispatch, just one the
-  // user opted into via the verb instead of the row tap.
+  // whole container to the current destination, replacing the queue. This is
+  // playback, not navigation, so SearchMode stays mounted for the next pick.
   const handlePlayAll = useCallback((item) => {
     const id = item?.id;
     if (!id) return;
@@ -143,8 +140,7 @@ export function SearchMode({ onClose }) {
         title: item?.title ? `Playing ${item.title}` : 'Playing',
       });
     }
-    closeSurface('dispatch');
-  }, [playContainerAsQueue, log, closeSurface]);
+  }, [playContainerAsQueue, log]);
 
   // Trailing ⋯ on a leaf row: Play Now / Play Next / Up Next / Add to Queue
   // / Open detail. Reuses the exact appliers BrowseView rows use (queueOps
@@ -154,8 +150,9 @@ export function SearchMode({ onClose }) {
     if (!id) return;
     log.info('row_action', { contentId: id, action });
     applyResultRowVerb(action, item, { queue, push: pushOverSurface });
-    // 'detail' is the only verb that navigates; the four queue verbs don't.
-    closeSurface('dispatch', { navigated: action === 'detail' });
+    // 'detail' is the only verb that navigates; queue mutations leave search
+    // and its marker untouched.
+    if (action === 'detail') closeSurface('dispatch', { navigated: true });
   }, [queue, pushOverSurface, log, closeSurface]);
 
   const combo = useContentCombobox({
@@ -171,7 +168,7 @@ export function SearchMode({ onClose }) {
     allowFreeform: false,
     logApp: 'media',
   });
-  const { state, handleInput, select, isSearching, pendingSources, sourceErrors, fellBackToAll } = combo;
+  const { state, handleInput, isSearching, pendingSources, sourceErrors, fellBackToAll } = combo;
   const results = state.results;
   const searchText = state.search ?? '';
 
@@ -281,7 +278,11 @@ export function SearchMode({ onClose }) {
               title={displayTitle(item)}
               subtitle={resultSubtitle(item)}
               thumbnail={item.thumbnail}
-              onTap={() => select(item)}
+              // The shared combobox select() helper commits and closes its
+              // editing machine after onChange. SearchMode is a retained work
+              // surface, so Play invokes its dispatch boundary directly and
+              // leaves the hook's query/results intact.
+              onTap={() => handleChange(item.id, item)}
               onPlayAll={() => handlePlayAll(item)}
               onMore={(action) => handleMore(action, item)}
               testId={`search-mode-result-${item.id}`}
