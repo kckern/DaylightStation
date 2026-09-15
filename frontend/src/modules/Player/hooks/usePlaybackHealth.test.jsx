@@ -30,6 +30,15 @@ describe('usePlaybackHealth', () => {
   beforeEach(() => vi.useFakeTimers({ now: 1_000_000 }));
   afterEach(() => vi.useRealTimers());
 
+  it('samples actual HLS decoded-frame progression as video health', () => {
+    let total = 10;
+    const el = makeFakeEl({ getVideoPlaybackQuality: () => ({ totalVideoFrames: total, droppedVideoFrames: 2 }) });
+    const { result } = renderHook(() => usePlaybackHealth({ seconds: 0, getMediaEl: () => el, waitKey: 'hls', mediaType: 'hls_video' }));
+    expect(result.current.frameInfo).toMatchObject({ supported: true, total: 10, dropped: 2 });
+    act(() => { total = 25; vi.advanceTimersByTime(500); });
+    expect(result.current.frameInfo).toMatchObject({ advancing: true, total: 25 });
+  });
+
   it('re-attaches listeners to a swapped-in element so a stuck "waiting" can clear', () => {
     const el1 = makeFakeEl({ currentTime: 5 });
     const el2 = makeFakeEl({ currentTime: 5 });

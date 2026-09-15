@@ -74,8 +74,10 @@ export function NowPlayingView() {
   const metaSubParts = [positionLabel, durationLabel].filter(Boolean);
   const isVideo = item?.format === 'video'
     || item?.format === 'dash_video'
+    || item?.format === 'hls_video'
     || item?.mediaType === 'video'
     || item?.mediaType === 'dash_video'
+    || item?.mediaType === 'hls_video'
     || mediaEl?.tagName === 'VIDEO';
 
   return (

@@ -182,6 +182,13 @@ describe('MiniPlayer', () => {
     expect(screen.getByTestId('mini-player-video-dock')).toBeInTheDocument();
   });
 
+  it.each(['format', 'mediaType'])('docks HLS video identified by %s', field => {
+    state.snapshot = makeSnapshot();
+    state.snapshot.currentItem[field] = 'hls_video';
+    renderMiniPlayer();
+    expect(screen.getByTestId('mini-player-video-dock')).toBeInTheDocument();
+  });
+
   it('clicking the docked video promotes to Now Playing', () => {
     state.snapshot = makeSnapshot({ format: 'video' });
     nav.view = 'home';

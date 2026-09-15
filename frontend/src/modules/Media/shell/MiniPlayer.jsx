@@ -33,8 +33,10 @@ export function MiniPlayer() {
   // `mediaType` is a defensive fallback for items that carry only the raw type.
   const isVideo = item?.format === 'video'
     || item?.format === 'dash_video'
+    || item?.format === 'hls_video'
     || item?.mediaType === 'video'
-    || item?.mediaType === 'dash_video';
+    || item?.mediaType === 'dash_video'
+    || item?.mediaType === 'hls_video';
   const showVideoDock = !!item && isVideo && view !== 'nowPlaying';
   usePlayerHost(dockRef, 1, showVideoDock);
 

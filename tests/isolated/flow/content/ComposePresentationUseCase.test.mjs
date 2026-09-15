@@ -116,6 +116,15 @@ describe('ComposePresentationUseCase', () => {
     });
 
     describe('track inference', () => {
+      it('keeps an HLS playable on a video visual track', async () => {
+        mockPlexAdapter.getItem.mockResolvedValueOnce({
+          id: 'plex:55854', title: 'Arrival', mediaType: 'hls_video',
+          mediaUrl: '/api/v1/proxy/plex/stream/55854', duration: 6983,
+        });
+        const result = await useCase.compose(['plex:55854'], {});
+        expect(result.visual.type).toBe('video');
+      });
+
       it('should infer visual track from video mediaType', async () => {
         const result = await useCase.compose(['plex:12345'], {});
 

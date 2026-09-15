@@ -8,7 +8,7 @@ function makeLogger() {
 
 function makeAdapter() {
   const adapter = new PlexAdapter(
-    { host: 'plex.local', token: 't', logger: makeLogger() },
+    { host: 'plex.local', token: 't', protocol: 'dash', logger: makeLogger() },
     { httpClient: { request: vi.fn() } },
   );
   adapter.client = { getMetadata: vi.fn() };
