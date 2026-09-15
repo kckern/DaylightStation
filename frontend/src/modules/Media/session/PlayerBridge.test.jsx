@@ -327,6 +327,7 @@ describe('PlayerBridge real Player contract', () => {
       currentTime: { configurable: true, writable: true, value: 12 },
       paused: { configurable: true, value: true },
     });
+    mountedContentId = 'plex:665667';
 
     render(<Harness controller={controller} />);
     expect(controller.getMediaElement()).toBe(mediaElement);
@@ -339,5 +340,64 @@ describe('PlayerBridge real Player contract', () => {
     Object.defineProperty(mediaElement, 'paused', { configurable: true, value: false });
     act(() => mediaElement.dispatchEvent(new Event('playing')));
     expect(controller.getSnapshot().state).toBe('playing');
+  });
+
+  it('reconciles an actual paused seek completion without waiting for another progress tick', () => {
+    const controller = makeRealController();
+    controller.queue.playNow({ contentId: 'plex:movie-a', duration: 5400, format: 'video' });
+    mediaElement = document.createElement('video');
+    Object.defineProperties(mediaElement, {
+      duration: { configurable: true, value: 5400 },
+      currentTime: { configurable: true, writable: true, value: 257 },
+      paused: { configurable: true, value: true },
+    });
+    mountedContentId = 'plex:movie-a';
+    render(<Harness controller={controller} />);
+    act(() => latestPlayerProps.onProgress({ currentTime: 257, paused: true, isSeeking: false }));
+
+    act(() => controller.transport.seekAbs(342));
+    expect(controller.position.get().seconds).toBe(257);
+
+    // Decoder settles slightly before the requested target. Publish the
+    // actual native position, never the requested value.
+    mediaElement.currentTime = 341.75;
+    act(() => mediaElement.dispatchEvent(new Event('seeked')));
+    expect(controller.position.get().seconds).toBe(341.75);
+    expect(controller.getSnapshot().state).toBe('paused');
+    expect(mountSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects seek completion from the previous source while its replacement is pending', () => {
+    const controller = makeRealController();
+    controller.queue.playNow({ contentId: 'plex:movie-a', duration: 5400, format: 'video' });
+    const oldVideo = document.createElement('video');
+    oldVideo.currentTime = 800;
+    Object.defineProperty(oldVideo, 'duration', { configurable: true, value: 5400 });
+    mediaElement = oldVideo;
+    mountedContentId = 'plex:movie-a';
+    render(<Harness controller={controller} />);
+
+    act(() => controller.queue.playNow({ contentId: 'plex:movie-b', duration: 3600, format: 'video' }));
+    // The new generation's effect can see A until B resolves. Requested
+    // content identity alone must not attribute A's seek completion to B.
+    act(() => {
+      oldVideo.dispatchEvent(new Event('seeked'));
+      oldVideo.dispatchEvent(new Event('durationchange'));
+      oldVideo.dispatchEvent(new Event('playing'));
+    });
+    expect(controller.position.get().seconds).toBe(0);
+    expect(controller.getSnapshot().currentItem.duration).toBe(3600);
+    expect(controller.getSnapshot().state).toBe('loading');
+
+    // B now owns the accessor, but the native-listener poll has not rebound
+    // yet. A late event on A must not read as evidence for B either.
+    mediaElement = document.createElement('video');
+    mountedContentId = 'plex:movie-b';
+    act(() => {
+      oldVideo.dispatchEvent(new Event('seeked'));
+      oldVideo.dispatchEvent(new Event('pause'));
+    });
+    expect(controller.position.get().seconds).toBe(0);
+    expect(controller.getSnapshot().state).toBe('loading');
   });
 });

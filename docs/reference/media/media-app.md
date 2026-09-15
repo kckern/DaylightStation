@@ -354,8 +354,19 @@ Transport commands do not claim a state or position change until Player or
 native-media evidence arrives. The bridge follows Player's native media
 accessor (including the video element inside the DASH player's shadow root),
 so host changes and focused-video presentation retain the same media element.
+Native seek completion publishes the element's actual position even while
+paused, when another progress tick may not arrive. Discrete native events
+must match the active playback generation, accessor node, and mounted content
+identity before updating the session, so a pending source replacement cannot
+attribute the previous source's events to the newly selected item.
 Host claims can request Player's existing `focused` shader without moving
 playback ownership out of the bridge.
+
+DASH's initial autoplay probe expires as soon as the native element emits
+`play` or `playing`. A successful start followed by a user pause therefore
+cannot be resumed by the delayed startup check, including a pause while the
+first frame is still buffering. A source that has never accepted playback
+keeps its startup probe so browser autoplay rejection can still be detected.
 
 ### Concurrency: nothing blocks anything
 

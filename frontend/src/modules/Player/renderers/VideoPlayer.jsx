@@ -752,15 +752,22 @@ export function VideoPlayer({
       }
     }, 3000);
 
+    // An accepted play proves autoplay is allowed, even before enough data
+    // arrives for `playing`. Retire the startup probe so a subsequent user
+    // pause cannot be mistaken for an initial browser autoplay rejection.
+    const cancelAutoplayCheck = () => clearTimeout(autoplayCheckTimer);
     const handlePlaying = () => {
+      cancelAutoplayCheck();
       handleReady();
       setAutoplayBlocked(false);
     };
 
+    el.addEventListener('play', cancelAutoplayCheck);
     el.addEventListener('canplay', handleReady);
     el.addEventListener('playing', handlePlaying);
 
     return () => {
+      el.removeEventListener('play', cancelAutoplayCheck);
       el.removeEventListener('canplay', handleReady);
       el.removeEventListener('playing', handlePlaying);
       clearTimeout(autoplayCheckTimer);
