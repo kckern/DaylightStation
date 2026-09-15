@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { DEFAULT_LADDER_POLICY } from '#shared/gaming/rulesets/chess/ladder.mjs';
 import {
   chronological, isFinishedGame, matchScorecards, planUserBackfill, recordLevel, replayLadder,
-  summarizeLadder, summarizeRivalries, withOpponentIds,
+  summarizeLadder, summarizeRivalries, withOpponentIds, withScorecardLevels,
 } from './ChessRecordBackfill.mjs';
 
 const POLICY = DEFAULT_LADDER_POLICY;
@@ -156,6 +156,40 @@ describe('matchScorecards', () => {
     const { matched, unmatched } = matchScorecards(cards, archive);
     expect(matched.map((card) => card.file)).toEqual(['five.yml']);
     expect(unmatched.map((card) => card.file)).toEqual(['six.yml']);
+  });
+
+  it('attaches the archive record it matched to each matched card', () => {
+    const archive = [finished({ game_id: 'a' })];
+    const cards = [{ file: 'one.yml', record: { user_id: 'kid', game_id: 'a', result: 'win' } }];
+    const { matched } = matchScorecards(cards, archive);
+    expect(matched[0].archived).toBe(archive[0]);
+  });
+});
+
+describe('withScorecardLevels', () => {
+  it('fills in a level for an archive record that has none, from its matching scorecard', () => {
+    const record = finished({ opponent: null, game_id: 'no-level' });
+    const cards = [{ file: 'c.yml', record: { user_id: 'kid', game_id: 'no-level', level: 2 } }];
+    const [result] = withScorecardLevels([record], cards);
+    expect(recordLevel(result)).toBe(2);
+    expect(recordLevel(record)).toBe(null);
+  });
+
+  it('leaves a record alone when no scorecard matches it', () => {
+    const record = finished({ opponent: null, game_id: 'no-level' });
+    expect(withScorecardLevels([record], [])[0]).toBe(record);
+  });
+
+  it('leaves a record alone when its matching scorecard also has no level', () => {
+    const record = finished({ opponent: null, game_id: 'no-level' });
+    const cards = [{ file: 'c.yml', record: { user_id: 'kid', game_id: 'no-level' } }];
+    expect(withScorecardLevels([record], cards)[0]).toBe(record);
+  });
+
+  it('never overwrites a level the archive record already has', () => {
+    const record = finished({ level: 3, game_id: 'has-level' });
+    const cards = [{ file: 'c.yml', record: { user_id: 'kid', game_id: 'has-level', level: 5 } }];
+    expect(withScorecardLevels([record], cards)[0]).toBe(record);
   });
 });
 

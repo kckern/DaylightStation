@@ -181,6 +181,26 @@ describe('--write', () => {
     expect(ladder.results.filter((entry) => entry.at === '2026-08-25T10:00:00.000Z')).toHaveLength(1);
   });
 
+  it('dedupes an id-less legacy duplicate even when only one copy recorded move_count', async () => {
+    const withCount = game({
+      ended_at: '2026-08-26T10:00:00.000Z',
+      moves: [{ san: 'e4' }, { san: 'e5' }],
+      move_count: 2,
+      opponent: { level: 0, name: 'Caterpie', id: 'pokemon:level-1' },
+    });
+    const withoutCount = { ...withCount };
+    delete withoutCount.move_count;
+    // Already in the current archive, under its real current-style name, with move_count set.
+    put(data, 'household/gaming/log/chess/2026-08-26/kid_level0_0s_2ply_win_checkmate_2026-08-26T10-00-00-000Z-real.yml', withCount);
+    // The identical game in the legacy directory, but its record never recorded move_count.
+    put(data, 'household/gaming/log/pianochess/2026-08-26/kid-2026-08-26T10-00-00-000Z.yml', withoutCount);
+
+    const report = await run({ data, write: true, now: NOW });
+    expect(report.consolidation.alreadyArchived).toBe(1);
+    const currentDay = tree(data).filter((file) => file.startsWith('household/gaming/log/chess/2026-08-26/'));
+    expect(currentDay).toHaveLength(1);
+  });
+
   it('derives a ply count for a renamed legacy file that never recorded move_count, without rewriting its content', async () => {
     const record = game({
       game_id: 'chess-noply', ended_at: '2026-08-22T09:00:00.000Z', archived_at: '2026-08-22T09:00:01.000Z',
@@ -240,6 +260,21 @@ describe('--write', () => {
     expect(read(data, 'users/kid/apps/chess/ladder.yml')).toEqual(beforeLadder);
   });
 
+  it('never reports a promotion as a decrease, even with fewer wins counted at the new rung', async () => {
+    put(data, 'users/kid/apps/chess/ladder.yml', {
+      unlocked_through: 1,
+      results: [1, 2, 3, 4].map((n) => ({ level: 1, result: 'win', counted: true, at: `2026-09-0${n}T00:00:00.000Z` })),
+    });
+    // One archived game proves level 2 was played, which promotes the replay
+    // past the stored level and, with it, only one counted win at the new rung.
+    put(data, 'household/gaming/log/chess/2026-09-14/kid_level2_0s_1ply_win_checkmate_2026-09-14T09-00-00-000Z-prom.yml', game({
+      game_id: 'chess-promo', ended_at: '2026-09-14T09:00:00.000Z', level: 2,
+    }));
+    const report = await run({ data, write: true, now: NOW });
+    expect(report.derived.kid.ladder.after).toMatchObject({ unlocked_through: 2, wins: 1 });
+    expect(report.decreases.kid).toBeUndefined();
+  });
+
   it('writes anyway when allowDecrease is passed', async () => {
     put(data, 'users/kid/apps/chess/ladder.yml', {
       unlocked_through: 1,
@@ -259,6 +294,43 @@ describe('--write', () => {
     const before = tree(data);
     await expect(run({ data, write: true, now: NOW })).rejects.toThrow(/household chess config/);
     expect(tree(data)).toEqual(before);
+  });
+
+  it('recovers a level from the matching scorecard for an archive record that has none, avoiding a false DECREASE', async () => {
+    // Isolate: only the level-less game under test, so the ladder replay is
+    // predictable without accounting for the shared fixture's other games.
+    fs.rmSync(path.join(data, 'household/gaming/log/pianochess'), { recursive: true, force: true });
+    fs.rmSync(path.join(data, 'household/gaming/log/chess'), { recursive: true, force: true });
+    fs.rmSync(path.join(data, 'users/kid/apps/chess/games'), { recursive: true, force: true });
+    const archiveFile = 'household/gaming/log/chess/2026-08-21/kid_levelunknown_0s_1ply_win_checkmate_2026-08-21T10-00-00-000Z-aaaa.yml';
+    // An old archive record with no `level` and no `opponent`: nothing left in
+    // the archive says what level it was played at.
+    put(data, archiveFile, game({ game_id: 'chess-noLevel', ended_at: '2026-08-21T10:00:00.000Z', opponent: null }));
+    // The retiring scorecard for the same game is the only place level 2 survives.
+    put(data, 'users/kid/apps/chess/games/2026-08-21-9999.yml', {
+      game_id: 'chess-noLevel', level: 2, user_id: 'kid', result: 'win',
+    });
+    put(data, 'users/kid/apps/chess/ladder.yml', {
+      unlocked_through: 2,
+      results: [{
+        level: 2, result: 'win', counted: true, at: '2026-08-21T10:00:00.000Z',
+      }],
+    });
+    const beforeContent = read(data, archiveFile);
+
+    const report = await run({
+      data, write: true, now: NOW,
+    });
+
+    expect(report.levelsRecovered).toBe(1);
+    expect(report.derived.kid.ladder.after).toEqual({
+      unlocked_through: 2, wins: 1, needed: 5, results: 1,
+    });
+    expect(report.decreases.kid).toBeUndefined();
+    expect(renderReport(report)).toContain('Levels recovered from scorecards: 1');
+    // Enrichment is in-memory only: the archived file itself is never rewritten.
+    expect(read(data, archiveFile)).toEqual(beforeContent);
+    expect(read(data, archiveFile).level).toBeUndefined();
   });
 
   it('is safe to run twice', async () => {

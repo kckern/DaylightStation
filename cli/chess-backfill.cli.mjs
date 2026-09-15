@@ -23,7 +23,8 @@ import { CHESS_ARCHIVE_DIR } from '../shared/gaming/rulesets/chess/archivePaths.
 import { mergeLadderConfig, resolvePolicy } from '../shared/gaming/rulesets/chess/ladder.mjs';
 import { buildChessArchiveFilename } from '../backend/src/1_adapters/persistence/chess/ChessRecordNames.mjs';
 import {
-  isFinishedGame, matchScorecards, planUserBackfill, summarizeLadder, summarizeRivalries, withOpponentIds,
+  isFinishedGame, matchScorecards, planUserBackfill, recordLevel, summarizeLadder, summarizeRivalries,
+  withOpponentIds, withScorecardLevels,
 } from '../backend/src/3_applications/chess/ChessRecordBackfill.mjs';
 
 /** Where the archive lived before the household reorganisation, under the household root. */
@@ -141,7 +142,11 @@ function ymlFilesByDay(root) {
  */
 const archiveKey = (record, name) => {
   if (record?.game_id) return `id:${record.game_id}`;
-  const fields = [record?.user_id, record?.started_at, record?.ended_at, record?.move_count];
+  // Same derivation the rename path uses (`consolidateArchive`'s `namedRecord`)
+  // — a raw `move_count` misses when one copy of an id-less game recorded it
+  // and the other only carries `moves`.
+  const moveCount = record?.move_count ?? (Array.isArray(record?.moves) ? record.moves.length : undefined);
+  const fields = [record?.user_id, record?.started_at, record?.ended_at, moveCount];
   const allMissing = fields.every((value) => value === undefined || value === null || value === '');
   return allMissing ? `name:${name}` : `key:${fields.map((value) => String(value ?? '')).join('|')}`;
 };
@@ -233,14 +238,21 @@ export function consolidateArchive({ householdDir, deleteDir, write }) {
   return report;
 }
 
+/** A player's scorecards, unread and unmoved — shared by `retireScorecards` and the level-recovery pass in `run`. */
+export function loadScorecards(dataDir, userId) {
+  const gamesDir = path.join(dataDir, 'users', userId, 'apps', 'chess', 'games');
+  if (!fs.existsSync(gamesDir)) return [];
+  return fs.readdirSync(gamesDir).filter((name) => name.endsWith('.yml')).sort()
+    .map((name) => ({ file: path.join(gamesDir, name), record: readYaml(path.join(gamesDir, name)) || {} }));
+}
+
 /** Move each player's scorecards whose games the archive holds to `_deleteme/`. */
 export function retireScorecards({ dataDir, archive, deleteDir, write, users }) {
   const report = {};
   for (const userId of users) {
     const gamesDir = path.join(dataDir, 'users', userId, 'apps', 'chess', 'games');
     if (!fs.existsSync(gamesDir)) continue;
-    const cards = fs.readdirSync(gamesDir).filter((name) => name.endsWith('.yml')).sort()
-      .map((name) => ({ file: path.join(gamesDir, name), record: readYaml(path.join(gamesDir, name)) || {} }));
+    const cards = loadScorecards(dataDir, userId);
     const { matched, unmatched } = matchScorecards(cards, archive);
     report[userId] = { matched: matched.length, unmatched: unmatched.map((card) => path.basename(card.file)) };
     if (!write || matched.length === 0) continue;
@@ -276,7 +288,12 @@ function findDecreases(entry) {
   const decreases = [];
   const beforeWins = entry.ladder.before?.wins ?? 0;
   const afterWins = entry.ladder.after?.wins ?? 0;
-  if (afterWins < beforeWins) decreases.push(`ladder wins ${beforeWins} of ${entry.ladder.before?.needed} -> ${afterWins} of ${entry.ladder.after?.needed}`);
+  const beforeLevel = entry.ladder.before?.unlocked_through ?? 0;
+  const afterLevel = entry.ladder.after?.unlocked_through ?? 0;
+  // A rung gained is never a decrease: promotion legitimately resets the
+  // counted-wins tally for the new rung, so only compare wins when the level
+  // itself did not go up.
+  if (afterWins < beforeWins && afterLevel <= beforeLevel) decreases.push(`ladder wins ${beforeWins} of ${entry.ladder.before?.needed} -> ${afterWins} of ${entry.ladder.after?.needed}`);
   const parseRecord = (value) => {
     const [win, loss, draw] = String(value || '0-0-0').split('-').map(Number);
     return { win, loss, draw };
@@ -368,11 +385,23 @@ export async function run({
   const householdConfig = readYaml(path.join(householdDir, ...HOUSEHOLD_CHESS_CONFIG.split('/')));
   if (!householdConfig) throw new Error(`No household chess config at household/${HOUSEHOLD_CHESS_CONFIG}`);
 
+  // A few archived games carry no level (and no opponent) at all — the
+  // scorecards retireScorecards is about to move to _deleteme/ are the only
+  // remaining place a handful of them survive. Recover what those scorecards
+  // know before the plan is computed, so a level recovered this way is what
+  // the decrease guard checks against — never rewrites a file, only the
+  // in-memory records used for the replay below.
+  const cards = users.flatMap((userId) => loadScorecards(data, userId));
+  const enrichedArchive = withScorecardLevels(archive, cards);
+  const levelsRecovered = enrichedArchive.reduce(
+    (count, record, index) => count + (record !== archive[index] && recordLevel(record) !== null ? 1 : 0), 0,
+  );
+
   // Plan the derived rewrite first — it only needs the in-memory archive and
   // configs, not anything consolidateArchive/retireScorecards touch — so a
   // decrease is caught before a single file moves.
   const plan = await rebuildDerived({
-    dataDir: data, archive, users, write: false, deleteDir, householdConfig,
+    dataDir: data, archive: enrichedArchive, users, write: false, deleteDir, householdConfig,
   });
   const decreases = Object.fromEntries(
     Object.entries(plan).filter(([, entry]) => entry.decreases?.length).map(([id, entry]) => [id, entry.decreases]),
@@ -387,17 +416,18 @@ export async function run({
   });
   const derived = write
     ? await rebuildDerived({
-      dataDir: data, archive, users, write: true, deleteDir, householdConfig,
+      dataDir: data, archive: enrichedArchive, users, write: true, deleteDir, householdConfig,
     })
     : plan;
   return {
-    write, archive: { games: archive.length }, consolidation, scorecards, derived, decreases,
+    write, archive: { games: archive.length }, consolidation, scorecards, derived, decreases, levelsRecovered,
   };
 }
 
 export function renderReport(report) {
   const lines = [report.write ? 'Chess record backfill: WRITTEN' : 'Chess record backfill: DRY RUN (pass --write to apply)'];
   lines.push(`Archive: ${report.archive.games} games read`);
+  lines.push(`Levels recovered from scorecards: ${report.levelsRecovered}`);
   const { consolidation } = report;
   lines.push(`Old archive directory: ${consolidation.moved} files to move, ${consolidation.renamed} renamed from old names, ${consolidation.alreadyArchived} already archived, ${consolidation.withoutGameId} without a game id, ${consolidation.conflicts.length} conflicts`);
   for (const conflict of consolidation.conflicts) lines.push(`  conflict, left in place: ${conflict}`);
