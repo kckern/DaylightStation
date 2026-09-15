@@ -97,6 +97,22 @@ describe('DestinationLine', () => {
     expect(screen.getByTestId('picker-stub-pick')).toBeInTheDocument();
   });
 
+  it('PLACE.2b stacks the destination sheet above the full-screen phone search surface', async () => {
+    renderLine();
+    fireEvent.click(screen.getByTestId('destination-line'));
+    await screen.findByTestId('destination-sheet');
+
+    const modalRoot = document.querySelector('.mantine-Modal-root');
+    const modalZIndex = Number(
+      getComputedStyle(modalRoot).getPropertyValue('--mb-z-index')
+    );
+
+    // SearchMode is the top-level phone surface at z-index 500. Because the
+    // Modal is portaled outside that surface, its own stack level must clear
+    // 500 or the visible device buttons cannot receive ordinary pointer taps.
+    expect(modalZIndex).toBeGreaterThan(500);
+  });
+
   it('a sheet pick updates the SHARED CastTargetProvider state, not a parallel state', async () => {
     renderLine();
     fireEvent.click(screen.getByTestId('destination-line'));
