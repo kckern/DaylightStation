@@ -166,6 +166,10 @@ describe('PlayerBridge real Player contract', () => {
     Object.defineProperty(mediaElement, 'currentTime', {
       configurable: true, writable: true, value: 42,
     });
+    Object.defineProperty(mediaElement, 'paused', {
+      configurable: true, value: true,
+    });
+    mediaElement.play = vi.fn();
     render(<Harness controller={controller} />);
     const adopted = {
       ...controller.getSnapshot(),
@@ -175,6 +179,8 @@ describe('PlayerBridge real Player contract', () => {
 
     act(() => controller.lifecycle.adoptSnapshot(adopted, { autoplay: false }));
     expect(mediaElement.currentTime).toBe(87);
+    expect(mediaElement.play).not.toHaveBeenCalled();
+    expect(mediaElement.paused).toBe(true);
 
     mediaElement.currentTime = 120;
     act(() => controller.lifecycle.adoptSnapshot(adopted, { autoplay: false }));
@@ -182,7 +188,7 @@ describe('PlayerBridge real Player contract', () => {
     expect(mountSpy).toHaveBeenCalledTimes(1);
   });
 
-  it('seeks actual media to zero for an intentional same-content LOAD generation', () => {
+  it('seeks actual paused media to zero and resumes it for a same-content LOAD generation', () => {
     const controller = makeRealController();
     const item = {
       contentId: 'plex:665667', title: 'Disclosure Day', duration: 5400, format: 'video',
@@ -192,11 +198,23 @@ describe('PlayerBridge real Player contract', () => {
     Object.defineProperty(mediaElement, 'currentTime', {
       configurable: true, writable: true, value: 42,
     });
+    let paused = true;
+    Object.defineProperty(mediaElement, 'paused', {
+      configurable: true, get: () => paused,
+    });
+    mediaElement.play = vi.fn(() => {
+      paused = false;
+      return Promise.resolve();
+    });
     render(<Harness controller={controller} />);
 
     act(() => controller.queue.playNow(item));
 
     expect(mediaElement.currentTime).toBe(0);
+    expect(mediaElement.play).toHaveBeenCalledTimes(1);
+    expect(mediaElement.paused).toBe(false);
+    act(() => mediaElement.dispatchEvent(new Event('playing')));
+    expect(controller.getSnapshot().state).toBe('playing');
     expect(mountSpy).toHaveBeenCalledTimes(1);
   });
 
