@@ -18,6 +18,7 @@ export function SeekBar({ target }) {
   const [scrub, setScrub] = useState(null);
   const trackRef = useRef(null);
   const draggingRef = useRef(false);
+  const dragRectRef = useRef(null);
 
   const item = snapshot?.currentItem;
   if (!item) return null;
@@ -39,8 +40,7 @@ export function SeekBar({ target }) {
 
   // Pointer x → seconds. Bails (null) when the track has no measurable width
   // (e.g. display:none) so a degenerate layout can never commit a bogus seek.
-  const secondsFromPointer = (e) => {
-    const rect = trackRef.current?.getBoundingClientRect?.();
+  const secondsFromPointer = (e, rect = trackRef.current?.getBoundingClientRect?.()) => {
     if (!rect || !(rect.width > 0) || !(duration > 0)) return null;
     if (!Number.isFinite(e.clientX)) return null;
     const frac = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
@@ -49,23 +49,29 @@ export function SeekBar({ target }) {
 
   const onPointerDown = (e) => {
     if (!canSeek) return;
-    const secs = secondsFromPointer(e);
+    const rect = trackRef.current?.getBoundingClientRect?.();
+    const secs = secondsFromPointer(e, rect);
     if (secs == null) return;
     draggingRef.current = true;
+    // Preview time can widen its label and reflow this flex track. A pointer
+    // gesture represents coordinates in the geometry where it began, so keep
+    // that rect through pointerup rather than remapping the same x afterward.
+    dragRectRef.current = rect;
     try { e.currentTarget.setPointerCapture?.(e.pointerId); } catch { /* ignore */ }
     setScrub(secs);
   };
 
   const onPointerMove = (e) => {
     if (!draggingRef.current) return;
-    const secs = secondsFromPointer(e);
+    const secs = secondsFromPointer(e, dragRectRef.current);
     if (secs != null) setScrub(secs);
   };
 
   const onPointerUp = (e) => {
     if (!draggingRef.current) return;
     draggingRef.current = false;
-    const secs = secondsFromPointer(e) ?? scrub;
+    const secs = secondsFromPointer(e, dragRectRef.current) ?? scrub;
+    dragRectRef.current = null;
     setScrub(null);
     // Remote seekAbs resolves on device-ack and can reject on ack timeout;
     // correctness comes from device-state, so never leak an unhandled
@@ -75,6 +81,7 @@ export function SeekBar({ target }) {
 
   const onPointerCancel = () => {
     draggingRef.current = false;
+    dragRectRef.current = null;
     setScrub(null);
   };
 
