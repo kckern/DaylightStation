@@ -1,9 +1,5 @@
 import crypto from 'node:crypto';
 
-export function buildGameRecordFilename(date = new Date()) {
-  return `${date.toISOString().slice(0, 10)}-${crypto.randomUUID()}`;
-}
-
 export function buildChessArchiveFilename(record, userSlug, date = new Date()) {
   const slug = String(userSlug || 'guest').replace(/[^a-zA-Z0-9_-]/g, '-');
   const rawLevel = Number(record?.opponent?.level);
@@ -21,4 +17,4 @@ export function buildChessArchiveFilename(record, userSlug, date = new Date()) {
   return `${slug}_level${level}_${duration}_${moves}ply_${result}_${outcome}_${stamp}-${crypto.randomUUID()}`;
 }
 
-export default { buildGameRecordFilename, buildChessArchiveFilename };
+export default { buildChessArchiveFilename };
