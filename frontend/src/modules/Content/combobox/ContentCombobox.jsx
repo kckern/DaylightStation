@@ -138,12 +138,35 @@ export function ContentCombobox({
   const normalizedValue = normalizeValue(value);
 
   const inputRef = useRef(null);
+  // More-actions menus have their own portal. Mark their pointer boundary
+  // before focus can leave the input, so the input's blur does not mistake a
+  // menu interaction for an outside dismissal.
+  const moreMenuOpenRef = useRef(false);
+  const moreMenuTriggerRef = useRef(null);
   const viewportRef = useRef(null);
   const prevIdxRef = useRef(-1);
   const scrollAnimRef = useRef(null);
   const paginationScrollGuardRef = useRef(false); // suppress scroll-to-highlight after load-more
   const loadCooldownRef = useRef(false);          // ignore scroll events briefly after load-more
   const [loadingMore, setLoadingMore] = useState(false);
+  const handleMoreMenuPointerDown = useCallback((trigger) => {
+    moreMenuOpenRef.current = true;
+    moreMenuTriggerRef.current = trigger;
+  }, []);
+  const handleMoreMenuChange = useCallback((opened) => {
+    moreMenuOpenRef.current = opened;
+  }, []);
+  const handleMoreMenuEscapeCapture = useCallback((e) => {
+    if (e.key !== 'Escape' || !e.target.closest?.('[data-content-combobox-more-boundary]')) return;
+    // Nested Mantine portals share this React tree. Intercept before the outer
+    // Combobox sees Escape, then close only the inner Menu and restore its
+    // trigger focus.
+    e.preventDefault();
+    e.stopPropagation();
+    const trigger = moreMenuTriggerRef.current;
+    trigger?.click();
+    requestAnimationFrame(() => trigger?.focus());
+  }, []);
 
   // Machine mode, readable from Mantine callbacks without a stale closure.
   const modeRef = useRef(mode);
@@ -159,6 +182,11 @@ export function ContentCombobox({
       if (modeRef.current !== Modes.DISPLAY) commit('outside');
     },
   });
+  const handleMoreBoundaryBlur = useCallback((nextTarget) => {
+    if (nextTarget?.closest?.('[data-content-combobox-more-boundary]')) return;
+    moreMenuOpenRef.current = false;
+    combobox.closeDropdown();
+  }, [combobox]);
 
   useEffect(() => {
     if (isEditing) combobox.openDropdown();
@@ -533,7 +561,15 @@ export function ContentCombobox({
                 prop is set by any non-media caller of this shared component
                 (admin content-id pickers), so ResultRowActions renders
                 nothing there — zero behavior change. */}
-            <ResultRowActions item={item} isContainerItem={container} onPlayAll={onPlayAll ? () => onPlayAll(item) : null} onMore={onMore ? (action) => onMore(action, item) : null} />
+            <ResultRowActions
+              item={item}
+              isContainerItem={container}
+              onPlayAll={onPlayAll ? () => onPlayAll(item) : null}
+              onMore={onMore ? (action) => onMore(action, item) : null}
+              onMoreMenuPointerDown={handleMoreMenuPointerDown}
+              onMoreMenuChange={handleMoreMenuChange}
+              onMoreBoundaryBlur={handleMoreBoundaryBlur}
+            />
           </Group>
         </Group>
       </Combobox.Option>
@@ -550,6 +586,7 @@ export function ContentCombobox({
   const showFreeform = allowFreeform && !!search && search !== value && !isBrowse && search.length >= 2;
 
   return (
+    <div onKeyDownCapture={handleMoreMenuEscapeCapture}>
     <Combobox store={combobox} onOptionSubmit={handleOptionSubmit}>
       <Combobox.Target withKeyboardNavigation={false}>
         <TextInput
@@ -564,7 +601,16 @@ export function ContentCombobox({
             else combobox.openDropdown();
           }}
           onFocus={() => startEditing()}
-          onBlur={() => {
+          onBlur={(e) => {
+            // A More-actions menu is portaled outside this Combobox. Its
+            // managed focus legitimately blurs the input, but is not an
+            // outside dismissal and must not revert the typed search.
+            const enteringMoreTrigger = e.relatedTarget?.closest?.('[data-content-combobox-more-trigger]');
+            if (moreMenuOpenRef.current || enteringMoreTrigger) {
+              moreMenuOpenRef.current = true;
+              if (enteringMoreTrigger) moreMenuTriggerRef.current = enteringMoreTrigger;
+              return;
+            }
             // Closing the dropdown routes through onDropdownClose → commit('outside')
             // (revert of typed-but-unpicked text). Escape/Tab are handled before
             // blur; this also covers programmatic focus loss.
@@ -772,6 +818,7 @@ export function ContentCombobox({
         </Combobox.Options>
       </Combobox.Dropdown>
     </Combobox>
+    </div>
   );
 }
 
