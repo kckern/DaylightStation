@@ -354,6 +354,7 @@ import { buildChessArchiveFilename, buildGameRecordFilename } from '#adapters/pe
 import { createStockfishEngine } from './1_adapters/chess/StockfishEngineAdapter.mjs';
 import { createStockfishAnalyst } from './1_adapters/chess/StockfishAnalysisAdapter.mjs';
 import { chessArchiveDayDir } from '#shared/gaming/rulesets/chess/archivePaths.mjs';
+import { mergeLadderConfig } from '#shared/gaming/rulesets/chess/ladder.mjs';
 import { createChessConfigService } from './3_applications/chess/ChessConfigService.mjs';
 import { createChessLadderService } from './3_applications/chess/ChessLadderService.mjs';
 import { createPianoGamesModule } from '#composition/modules/pianoGames.mjs';
@@ -2169,11 +2170,10 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     writeUserConfig: (userId, data) => dataService.user.write('apps/chess/config', data, userId),
     logger: rootLogger.child({ module: 'chess-config' }),
   });
-  const readChessLadderConfig = async (userId) => {
-    const household = configService.getHouseholdAppConfig(null, 'chess') || {};
-    const user = userId ? (dataService.user.read('apps/chess/config', userId) || {}) : {};
-    return { ...household, ladder: { ...(household.ladder || {}), ...(user.ladder || {}) } };
-  };
+  const readChessLadderConfig = async (userId) => mergeLadderConfig(
+    configService.getHouseholdAppConfig(null, 'chess') || {},
+    userId ? (dataService.user.read('apps/chess/config', userId) || {}) : {},
+  );
   const chessLadderService = createChessLadderService({
     readConfig: readChessLadderConfig,
     readProgress: (userId) => dataService.user.read('apps/chess/ladder', userId) || null,
