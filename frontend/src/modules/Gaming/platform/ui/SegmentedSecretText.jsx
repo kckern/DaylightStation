@@ -2,7 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import { getChildLogger } from '../../../../lib/logging/singleton.js';
 import { SEGMENTS, SEGMENT_NEIGHBORS, activeSegmentsFor, segmentNames, segmentPoints } from './segmentedSecretGeometry.js';
 import { MASK_SEGMENT_COLORS, SIGNAL_SEGMENT_COLORS, segmentColorValue } from './segmentedSecretPalette.js';
-import { FLICKER_GROUP_COUNT, FLICKER_TICK_MS, assignFlickerGroups, nextColorIndex } from './segmentFlicker.js';
+import { nextColorIndex } from './segmentFlicker.js';
 import { SECRET_TEXT_MOTION_MS, generateSecretTextMotion } from './segmentedSecretMotion.js';
 import './SegmentedSecretText.scss';
 
@@ -56,9 +56,12 @@ export function balanceSecretLines(text, targetLength = TARGET_LINE_LENGTH) {
   return lines.map(line => line.trim());
 }
 
-// Writes colors straight to the polygons' custom property: a tick restyles a
-// third of the display, which would otherwise re-render every glyph 3x/second.
-function useSegmentFlicker(rootRef, value) {
+// ONE TICK, EVERYTHING AT ONCE. Every second the card jumps to its next seeded
+// position (alternating edges, following ImageDecoderDisplay) and every segment
+// takes a new color in its own family on that same tick, so a viewer who stares
+// and squints never holds a steady image or a steady color map to sort by.
+// Written straight to the DOM, so a tick never re-renders the glyphs.
+function useDecoderShuffle(rootRef, value, intervalMs) {
   useEffect(() => {
     const root = rootRef.current;
     if (!root) return undefined;
@@ -96,74 +99,44 @@ function useSegmentFlicker(rootRef, value) {
       segment.index = nextColorIndex(segment.index, segment.palette.length, Math.random, avoidFor(segment));
       segment.element.style.setProperty('--segment-color', segment.palette[segment.index]);
     }
-    const groups = assignFlickerGroups(segments.length);
+    const frames = generateSecretTextMotion(value);
     const motionQuery = window.matchMedia?.('(prefers-reduced-motion: reduce)');
-    let tick = 0;
+    let frame = 0;
     let timer = null;
-    const step = () => {
-      if (document.visibilityState === 'hidden') return;
-      for (const segmentIndex of groups[tick % FLICKER_GROUP_COUNT]) {
-        const segment = segments[segmentIndex];
+    const place = () => {
+      const offset = frames[frame];
+      root.style.transform = `translate3d(${offset.x.toFixed(2)}%, ${offset.y.toFixed(2)}%, 0)`;
+      root.dataset.motionIndex = String(frame);
+    };
+    // In order, so each segment steers clear of the colors its touching
+    // neighbours hold at that moment — new ones for those already recolored.
+    const recolor = () => {
+      for (const segment of segments) {
         segment.index = nextColorIndex(segment.index, segment.palette.length, Math.random, avoidFor(segment));
         segment.element.style.setProperty('--segment-color', segment.palette[segment.index]);
       }
-      tick += 1;
-    };
-    const sync = () => {
-      const reducedMotion = Boolean(motionQuery?.matches);
-      if (reducedMotion && timer) {
-        clearInterval(timer);
-        timer = null;
-      } else if (!reducedMotion && !timer) {
-        timer = setInterval(step, FLICKER_TICK_MS);
-      }
-      logger().debug('gaming.segmented-secret.flicker', { running: Boolean(timer), reducedMotion, segments: segments.length });
-    };
-    sync();
-    motionQuery?.addEventListener?.('change', sync);
-    return () => {
-      if (timer) clearInterval(timer);
-      motionQuery?.removeEventListener?.('change', sync);
-    };
-  }, [rootRef, value]);
-}
-
-// Moves the whole card the way ImageDecoderDisplay does: a new seeded offset
-// every second, jumping to the opposite edge each time, so staring and
-// squinting never holds a steady image long enough to resolve the letters.
-// Written straight to the root like the flicker, so a tick never re-renders
-// the glyphs.
-function useSecretTextMotion(rootRef, value, intervalMs) {
-  useEffect(() => {
-    const root = rootRef.current;
-    if (!root) return undefined;
-    const frames = generateSecretTextMotion(value);
-    const motionQuery = window.matchMedia?.('(prefers-reduced-motion: reduce)');
-    let index = 0;
-    let timer = null;
-    const place = () => {
-      const frame = frames[index];
-      root.style.transform = `translate3d(${frame.x.toFixed(2)}%, ${frame.y.toFixed(2)}%, 0)`;
-      root.dataset.motionIndex = String(index);
     };
     const step = () => {
       if (document.visibilityState === 'hidden') return;
-      index = (index + 1) % frames.length;
+      frame = (frame + 1) % frames.length;
       place();
+      recolor();
     };
     const sync = () => {
       const still = Boolean(motionQuery?.matches) || !Number.isFinite(intervalMs) || intervalMs <= 0;
       if (still) {
         if (timer) clearInterval(timer);
         timer = null;
-        index = 0;
+        frame = 0;
         root.style.transform = '';
         root.dataset.motionIndex = '0';
       } else if (!timer) {
         place();
         timer = setInterval(step, intervalMs);
       }
-      logger().debug('gaming.segmented-secret.motion', { running: Boolean(timer), intervalMs, frames: frames.length });
+      logger().debug('gaming.segmented-secret.shuffle', {
+        running: Boolean(timer), intervalMs, segments: segments.length, frames: frames.length,
+      });
     };
     sync();
     motionQuery?.addEventListener?.('change', sync);
@@ -209,8 +182,7 @@ export default function SegmentedSecretText({
   const rootRef = useRef(null);
   const value = String(text || '').toUpperCase();
   const lines = balanceSecretLines(value);
-  useSegmentFlicker(rootRef, value);
-  useSecretTextMotion(rootRef, value, motionIntervalMs);
+  useDecoderShuffle(rootRef, value, motionIntervalMs);
   let glyphIndex = 0;
   return (
     <div ref={rootRef} className="segmented-secret-text" role="img" aria-label={accessibleText || `${label}: ${value}`}>

@@ -3,7 +3,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import SegmentedSecretText, { balanceSecretLines } from './SegmentedSecretText.jsx';
 import { activeSegmentsFor, SEGMENTS, SEGMENT_NEIGHBORS } from './segmentedSecretGeometry.js';
 import { MASK_SEGMENT_COLORS, SIGNAL_SEGMENT_COLORS, segmentColorValue } from './segmentedSecretPalette.js';
-import { FLICKER_TICK_MS } from './segmentFlicker.js';
 import { SECRET_TEXT_MOTION_MS, SECRET_TEXT_MOTION_X, SECRET_TEXT_MOTION_Y } from './segmentedSecretMotion.js';
 
 const SIGNAL = new Set(SIGNAL_SEGMENT_COLORS.map(segmentColorValue));
@@ -75,28 +74,34 @@ describe('SegmentedSecretText color flicker', () => {
     vi.unstubAllGlobals();
   });
 
-  it('changes one third of the segments per tick, each to a new color in its own family', () => {
+  it('recolors every segment on the same tick the card jumps, each within its own family', () => {
     vi.useFakeTimers();
-    const { container } = render(<SegmentedSecretText text="CAT" />);
-    const polygons = [...container.querySelectorAll('polygon')];
-    const initial = polygons.map(colorOf);
+    render(<SegmentedSecretText text="CAT" />);
+    const card = screen.getByRole('img', { name: 'Secret clue: CAT' });
+    const polygons = [...card.querySelectorAll('polygon')];
+    let previous = polygons.map(colorOf);
     expect(polygons.every(inOwnFamily)).toBe(true);
 
-    vi.advanceTimersByTime(FLICKER_TICK_MS);
-    const changed = polygons.filter((polygon, index) => colorOf(polygon) !== initial[index]);
-    expect(changed).toHaveLength(polygons.length / 3);
+    // Nothing moves and nothing recolors between ticks.
+    vi.advanceTimersByTime(SECRET_TEXT_MOTION_MS - 1);
+    expect(polygons.map(colorOf)).toEqual(previous);
+    expect(card).toHaveAttribute('data-motion-index', '0');
 
-    vi.advanceTimersByTime(FLICKER_TICK_MS * 2);
-    polygons.forEach((polygon, index) => {
-      expect(colorOf(polygon)).not.toBe(initial[index]);
-      expect(inOwnFamily(polygon)).toBe(true);
-    });
+    for (let tick = 1; tick <= 4; tick += 1) {
+      vi.advanceTimersByTime(tick === 1 ? 1 : SECRET_TEXT_MOTION_MS);
+      expect(card).toHaveAttribute('data-motion-index', String(tick));
+      polygons.forEach((polygon, index) => {
+        expect(colorOf(polygon)).not.toBe(previous[index]);
+        expect(inOwnFamily(polygon)).toBe(true);
+      });
+      previous = polygons.map(colorOf);
+    }
   });
 
   it('never leaves a segment in the wrong family when the clue changes', () => {
     vi.useFakeTimers();
     const { container, rerender } = render(<SegmentedSecretText text="CAT" />);
-    vi.advanceTimersByTime(FLICKER_TICK_MS * 7);
+    vi.advanceTimersByTime(SECRET_TEXT_MOTION_MS * 7);
     rerender(<SegmentedSecretText text="BOX" />);
     expect([...container.querySelectorAll('polygon')].every(inOwnFamily)).toBe(true);
   });
@@ -109,7 +114,7 @@ describe('SegmentedSecretText color flicker', () => {
     const { container } = render(<SegmentedSecretText text="CAT" />);
     const polygons = [...container.querySelectorAll('polygon')];
     const initial = polygons.map(colorOf);
-    vi.advanceTimersByTime(FLICKER_TICK_MS * 9);
+    vi.advanceTimersByTime(SECRET_TEXT_MOTION_MS * 9);
     expect(polygons.map(colorOf)).toEqual(initial);
   });
 });
@@ -188,13 +193,13 @@ describe('touching letter segments', () => {
     const { container, rerender } = render(<SegmentedSecretText text="B8 SPHINX OF BLACK QUARTZ JUDGE MY VOW" />);
     expect(clashes(container)).toEqual([]);
     for (let tick = 0; tick < 30; tick += 1) {
-      vi.advanceTimersByTime(FLICKER_TICK_MS);
+      vi.advanceTimersByTime(SECRET_TEXT_MOTION_MS);
       expect(clashes(container)).toEqual([]);
     }
     rerender(<SegmentedSecretText text="WAXING MOON HEIGHTS 2468" />);
     expect(clashes(container)).toEqual([]);
     for (let tick = 0; tick < 30; tick += 1) {
-      vi.advanceTimersByTime(FLICKER_TICK_MS);
+      vi.advanceTimersByTime(SECRET_TEXT_MOTION_MS);
       expect(clashes(container)).toEqual([]);
     }
   });
