@@ -7,11 +7,11 @@ const transport = {
   seekAbs: vi.fn(), seekRel: vi.fn(), skipNext: vi.fn(), skipPrev: vi.fn(),
 };
 const config = { setShuffle: vi.fn(), setRepeat: vi.fn(), setVolume: vi.fn() };
-const state = { snapshot: null, mediaElement: null };
+const state = { snapshot: null, mediaElement: null, controller: null };
 const hostClaimSpy = vi.fn();
 vi.mock('../controller/useSessionController.js', () => ({
   useSessionController: () => ({
-    controller: { getMediaElement: () => state.mediaElement },
+    controller: state.controller ?? { getMediaElement: () => state.mediaElement },
     snapshot: state.snapshot,
     transport,
     config,
@@ -59,6 +59,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   state.snapshot = makeSnapshot();
   state.mediaElement = null;
+  state.controller = null;
 });
 
 describe('NowPlayingView', () => {
@@ -68,6 +69,19 @@ describe('NowPlayingView', () => {
     expect(screen.getByRole('button', { name: 'Expand video', exact: true })).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: 'Expand video', exact: true }));
     expect(hostClaimSpy).toHaveBeenLastCalledWith(expect.any(Object), 2, true, { forceShader: 'focused' });
+  });
+
+  it('keeps video expansion available for a paused contentId-only item when the actual native node is VIDEO', () => {
+    state.snapshot = makeSnapshot({
+      item: { contentId: 'plex:arrival', title: 'Arrival' },
+    });
+    state.snapshot.state = 'paused';
+    state.mediaElement = document.createElement('video');
+
+    render(<NowPlayingView />);
+
+    expect(screen.getByRole('button', { name: 'Expand video', exact: true })).toBeVisible();
+    expect(screen.getByTestId('np-rate')).toBeDisabled();
   });
 
   it('keeps the exact "Now Playing: <title>" heading', () => {
@@ -106,9 +120,10 @@ describe('NowPlayingView', () => {
     expect(screen.getByTestId('np-ffw')).toBeInTheDocument();
   });
 
-  it('hides the speed control when the host has no media element (no pathway)', () => {
+  it('keeps speed visible but unavailable without a controller rate capability', () => {
     render(<NowPlayingView />);
-    expect(screen.queryByTestId('np-rate')).toBeNull();
+    expect(screen.getByTestId('np-rate')).toBeDisabled();
+    expect(screen.getByText('Playback speed is not available for this screen')).toBeInTheDocument();
   });
 
   it('shows the empty state when nothing is playing', () => {
@@ -139,9 +154,9 @@ describe('NowPlayingView', () => {
     expect(screen.getByRole('button', { name: 'Stop', exact: true })).toBeVisible();
   });
 
-  it('uses the controller media accessor so DASH shadow media gets the speed control', () => {
+  it('does not use the controller media accessor as a speed control pathway', () => {
     state.mediaElement = { playbackRate: 1 };
     render(<NowPlayingView />);
-    expect(screen.getByTestId('np-rate')).toBeInTheDocument();
+    expect(screen.getByTestId('np-rate')).toBeDisabled();
   });
 });

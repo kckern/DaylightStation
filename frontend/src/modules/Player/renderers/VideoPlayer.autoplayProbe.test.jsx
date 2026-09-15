@@ -14,11 +14,16 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-function mountVideo() {
+function mountVideo({ ownerOperation = false } = {}) {
   const result = render(<VideoPlayer media={{
     contentId: 'plex:movie-a', assetId: 'movie-a', mediaType: 'dash_video',
     title: 'Movie A', mediaUrl: '/movie-a.mpd',
-  }} advance={() => {}} clear={() => {}} />);
+  }} advance={() => {}} clear={() => {}} resilienceBridge={ownerOperation ? {
+    remountDiagnostics: {
+      remountClass: 'owner-operation',
+      rendererOperation: { operationId: 'probe-held', targetSeconds: 0, autoplay: true },
+    },
+  } : undefined} />);
   const dash = result.container.querySelector('dash-video');
   const video = dash.shadowRoot.querySelector('video');
   let paused = true;
@@ -67,5 +72,12 @@ describe('DASH startup autoplay probe', () => {
     });
     expect(movie.video.paused).toBe(true);
     expect(movie.play).not.toHaveBeenCalled();
+  });
+
+  it('does not bypass the owner observer barrier with the three-second autoplay probe', () => {
+    const movie = mountVideo({ ownerOperation: true });
+    act(() => { vi.advanceTimersByTime(4000); });
+    expect(movie.play).not.toHaveBeenCalled();
+    expect(movie.video.paused).toBe(true);
   });
 });

@@ -52,12 +52,18 @@ export function MiniPlayer() {
   // Now Playing has no nav tab; the mini player IS its affordance, so it
   // lights up while that view is open (see PrimaryNav HIGHLIGHT note).
   const isNowPlayingOpen = view === 'nowPlaying';
+  const hasActiveFullLocalControls = isNowPlayingOpen && !!item;
 
   const duration = item?.duration ?? 0;
   const positionSeconds = live.seconds ?? snapshot.position ?? 0;
   const progressFraction = duration > 0
     ? Math.min(1, Math.max(0, positionSeconds / duration))
     : null;
+
+  // Keep the host hook mounted (host priority/renderer lifetime stay exactly
+  // as before), but do not render a second handle over active full controls.
+  // A stopped ready queue has no active item and remains reopenable here.
+  if (hasActiveFullLocalControls) return null;
 
   return (
     <div

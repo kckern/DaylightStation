@@ -197,7 +197,7 @@ describe('MiniPlayer', () => {
     expect(push).toHaveBeenCalledWith('nowPlaying', {});
   });
 
-  it('shows the thumbnail (no video dock) for audio, and for video while on Now Playing', () => {
+  it('shows the thumbnail for audio but hides the compact handle while full local controls are open', () => {
     // audio → thumbnail
     state.snapshot = makeSnapshot(); // no format
     nav.view = 'home';
@@ -206,11 +206,10 @@ describe('MiniPlayer', () => {
     expect(document.querySelector('.mini-player-thumb')).not.toBeNull();
     unmount();
 
-    // video but on Now Playing → thumbnail (video is in the big pane)
+    // Full local controls own the surface; the compact handle must not duplicate it.
     state.snapshot = makeSnapshot({ format: 'video' });
     nav.view = 'nowPlaying';
     renderMiniPlayer();
-    expect(screen.queryByTestId('mini-player-video-dock')).toBeNull();
-    expect(document.querySelector('.mini-player-thumb')).not.toBeNull();
+    expect(screen.queryByTestId('media-mini-player')).toBeNull();
   });
 });

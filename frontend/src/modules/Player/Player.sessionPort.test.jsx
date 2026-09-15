@@ -253,17 +253,18 @@ describe('Player session port', () => {
     await waitFor(() => expect(ref.current.getQueueSnapshot().executionOrder).toEqual(['a', 'b']));
     act(() => latestSinglePlayerProps.advance());
     expect(ref.current.getQueueSnapshot().items[ref.current.getQueueSnapshot().currentIndex].queueItemId).toBe('a');
-    expect(node.currentTime).toBe(0);
-    expect(node.play).toHaveBeenCalledTimes(1);
+    expect(node.currentTime).toBe(18);
+    expect(node.play).not.toHaveBeenCalled();
+    expect(latestSinglePlayerProps.remountDiagnostics.rendererOperation).toMatchObject({ targetSeconds: 0, autoplay: true });
     act(() => latestSinglePlayerProps.advance());
-    expect(node.play).toHaveBeenCalledTimes(1);
+    expect(node.play).not.toHaveBeenCalled();
     act(() => latestSinglePlayerProps.onPlaybackMetrics({ seconds: 0, isPaused: false }));
     act(() => latestSinglePlayerProps.onPlaybackMetrics({ seconds: 1, isPaused: false }));
     act(() => latestSinglePlayerProps.advance());
     expect(ref.current.getQueueSnapshot().items[ref.current.getQueueSnapshot().currentIndex].queueItemId).toBe('a');
-    expect(node.play).toHaveBeenCalledTimes(2);
+    expect(node.play).not.toHaveBeenCalled();
     act(() => latestSinglePlayerProps.advance());
-    expect(node.play).toHaveBeenCalledTimes(2);
+    expect(node.play).not.toHaveBeenCalled();
     act(() => ref.current.advance());
     await waitFor(() => expect(ref.current.getQueueSnapshot().items[ref.current.getQueueSnapshot().currentIndex].queueItemId).toBe('b'));
   });
@@ -315,29 +316,29 @@ describe('Player session port', () => {
     });
     expect(ref.current.getQueueSnapshot()).toMatchObject({ currentIndex: 0, executionOrder: ['only'] });
     expect(clear).not.toHaveBeenCalled();
-    expect(node.currentTime).toBe(0);
-    expect(seek).toHaveBeenCalledTimes(1);
-    expect(play).toHaveBeenCalledTimes(1);
-    // A same-node restart is only requested here. Without an immutable
-    // renderer operation token it cannot become proof for the new visit.
+    expect(node.currentTime).toBe(18);
+    expect(seek).not.toHaveBeenCalled();
+    expect(play).not.toHaveBeenCalled();
+    // The retired same node is never reused as proof while the fresh renderer
+    // operation is still unresolved by this deliberately minimal fixture.
     expect(source.getNativeObservation()).toMatchObject({
       identity: null,
       playingObserved: false,
       advancedObserved: false,
     });
     act(() => latestSinglePlayerProps.advance());
-    expect(play).toHaveBeenCalledTimes(1);
+    expect(play).not.toHaveBeenCalled();
 
     act(() => latestSinglePlayerProps.onPlaybackMetrics({ seconds: 0, isPaused: false }));
     act(() => latestSinglePlayerProps.onPlaybackMetrics({ seconds: 1, isPaused: false }));
     node.currentTime = 18;
     act(() => latestSinglePlayerProps.advance());
     expect(ref.current.getQueueSnapshot()).toMatchObject({ currentIndex: 0, executionOrder: ['only'] });
-    expect(node.currentTime).toBe(0);
-    expect(seek).toHaveBeenCalledTimes(2);
-    expect(play).toHaveBeenCalledTimes(2);
+    expect(node.currentTime).toBe(18);
+    expect(seek).not.toHaveBeenCalled();
+    expect(play).not.toHaveBeenCalled();
     act(() => latestSinglePlayerProps.advance());
-    expect(play).toHaveBeenCalledTimes(2);
+    expect(play).not.toHaveBeenCalled();
     bridge.stop();
   });
 
@@ -365,19 +366,20 @@ describe('Player session port', () => {
 
     act(() => latestSinglePlayerProps.advance());
     expect(ref.current.getQueueSnapshot()).toMatchObject({ currentIndex: 0, executionOrder: ['a', 'b'] });
-    expect(node.currentTime).toBe(0);
-    expect(play).toHaveBeenCalledTimes(1);
+    expect(node.currentTime).toBe(18);
+    expect(play).not.toHaveBeenCalled();
+    expect(latestSinglePlayerProps.remountDiagnostics.rendererOperation).toMatchObject({ targetSeconds: 0, autoplay: true });
     // A second ended/watchdog delivery from visit one cannot consume visit two.
     act(() => latestSinglePlayerProps.advance());
     expect(ref.current.getQueueSnapshot()).toMatchObject({ currentIndex: 0, executionOrder: ['a', 'b'] });
-    expect(play).toHaveBeenCalledTimes(1);
+    expect(play).not.toHaveBeenCalled();
 
     act(() => latestSinglePlayerProps.onPlaybackMetrics({ seconds: 0, isPaused: false }));
     act(() => latestSinglePlayerProps.onPlaybackMetrics({ seconds: 1, isPaused: false }));
     node.currentTime = 18;
     act(() => latestSinglePlayerProps.advance());
     expect(ref.current.getQueueSnapshot()).toMatchObject({ currentIndex: 1, executionOrder: ['b'] });
-    expect(play).toHaveBeenCalledTimes(1);
+    expect(play).not.toHaveBeenCalled();
   });
 
   it('withholds legacy native proof after same-content adoption until actual registration changes', async () => {

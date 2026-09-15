@@ -128,7 +128,9 @@ describe('useCommonMediaController — element re-key reporting', () => {
 
     render(<MediaRefHarness video={dashWrapper} onMediaRef={onMediaRef} />);
 
-    expect(onMediaRef).toHaveBeenCalledWith(innerVideo, { contentId: 'plex:665667' });
+    expect(onMediaRef).toHaveBeenCalledWith(innerVideo, expect.objectContaining({
+      contentId: 'plex:665667', rendererToken: expect.objectContaining({ node: innerVideo }),
+    }));
   });
 
   it('registers resolved /play id-only metadata and follows id changes on the same node', () => {
@@ -138,13 +140,13 @@ describe('useCommonMediaController — element re-key reporting', () => {
     // Real /play responses carry id and assetId, not contentId.
     const { rerender } = render(<MediaRefHarness video={dashWrapper} onMediaRef={onMediaRef}
       meta={{ id: 'plex:55854', assetId: 'plex:55854' }} />);
-    expect(onMediaRef).toHaveBeenLastCalledWith(innerVideo, { contentId: 'plex:55854' });
+    expect(onMediaRef).toHaveBeenLastCalledWith(innerVideo, expect.objectContaining({ contentId: 'plex:55854' }));
     rerender(<MediaRefHarness video={dashWrapper} onMediaRef={onMediaRef}
       meta={{ id: 'plex:697368', assetId: 'plex:55854' }} />);
-    expect(onMediaRef).toHaveBeenLastCalledWith(innerVideo, { contentId: 'plex:697368' });
+    expect(onMediaRef).toHaveBeenLastCalledWith(innerVideo, expect.objectContaining({ contentId: 'plex:697368' }));
     rerender(<MediaRefHarness video={dashWrapper} onMediaRef={onMediaRef}
       meta={{ assetId: 'plex:55854' }} />);
-    expect(onMediaRef).toHaveBeenLastCalledWith(innerVideo, { contentId: null });
+    expect(onMediaRef).toHaveBeenLastCalledWith(innerVideo, expect.objectContaining({ contentId: null }));
   });
 
   /** Arms stall detection, then freezes the playhead past the soft threshold. */

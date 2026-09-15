@@ -4,15 +4,17 @@ import { render, screen, fireEvent } from '@testing-library/react';
 
 const transport = { seekAbs: vi.fn() };
 const state = {
+  controller: {},
+  transport,
   snapshot: null,
   capabilities: { seekable: true, acked: false },
   position: { seconds: 60, ts: 0 },
 };
 vi.mock('../controller/useSessionController.js', () => ({
   useSessionController: () => ({
-    controller: {},
+    controller: state.controller,
     snapshot: state.snapshot,
-    transport,
+    transport: state.transport,
     capabilities: state.capabilities,
   }),
 }));
@@ -52,6 +54,8 @@ beforeEach(() => {
   state.snapshot = makeSnapshot();
   state.capabilities = { seekable: true, acked: false };
   state.position = { seconds: 60, ts: 0 };
+  state.controller = {};
+  state.transport = transport;
 });
 
 describe('formatTime', () => {
@@ -162,6 +166,79 @@ describe('SeekBar', () => {
     expect(transport.seekAbs).toHaveBeenCalledWith(0);
     fireEvent.keyDown(track, { key: 'End' });
     expect(transport.seekAbs).toHaveBeenCalledWith(240);
+  });
+
+  it('cancels a remote drag when availability becomes false before pointer release', () => {
+    const target = { deviceId: 'tv-1' };
+    const { rerender } = render(<SeekBar target={target} availability={{ available: true }} />);
+    const track = screen.getByTestId('np-seek');
+    measureTrack(track);
+
+    firePointer(track, 'pointerdown', 100);
+    rerender(<SeekBar target={target} availability={{ available: false, reason: 'This device is offline' }} />);
+    firePointer(track, 'pointerup', 100);
+    fireEvent.keyDown(track, { key: 'ArrowRight' });
+
+    expect(track).toHaveAttribute('aria-disabled', 'true');
+    expect(transport.seekAbs).not.toHaveBeenCalled();
+    expect(screen.getByTestId('np-seek-elapsed')).toHaveTextContent('1:00');
+  });
+
+  it.each(['target', 'content', 'queue visit', 'controller', 'target ABA'])('cancels a drag across a changed %s', change => {
+    state.snapshot.queue = { items: [{ queueItemId: 'visit-a', contentId: 'plex:100' }], currentIndex: 0 };
+    const { rerender } = render(<SeekBar target={{ deviceId: 'screen-a' }} />);
+    const track = screen.getByTestId('np-seek');
+    measureTrack(track);
+    firePointer(track, 'pointerdown', 100);
+    expect(screen.getByTestId('np-seek-elapsed')).toHaveTextContent('2:00');
+    let deviceId = 'screen-a';
+    if (change.startsWith('target')) deviceId = 'screen-b';
+    if (change === 'content') state.snapshot = { ...state.snapshot, currentItem: { ...state.snapshot.currentItem, contentId: 'plex:200' } };
+    if (change === 'queue visit') state.snapshot = { ...state.snapshot, queue: { items: [{ queueItemId: 'visit-b', contentId: 'plex:100' }], currentIndex: 0 } };
+    if (change === 'controller') state.controller = {};
+    const replacementSeek = vi.fn();
+    state.transport = { seekAbs: replacementSeek };
+    rerender(<SeekBar target={{ deviceId }} />);
+    if (change === 'target ABA') rerender(<SeekBar target={{ deviceId: 'screen-a' }} />);
+    firePointer(track, 'pointerup', 100);
+    expect(transport.seekAbs).not.toHaveBeenCalled();
+    expect(replacementSeek).not.toHaveBeenCalled();
+    expect(screen.getByTestId('np-seek-elapsed')).toHaveTextContent('1:00');
+  });
+
+  it('preserves a drag through same-item metadata and progress updates', () => {
+    const { rerender } = render(<SeekBar target={{ deviceId: 'screen-a' }} />);
+    const track = screen.getByTestId('np-seek');
+    measureTrack(track);
+    firePointer(track, 'pointerdown', 100);
+    state.snapshot = { ...state.snapshot, currentItem: { ...state.snapshot.currentItem, title: 'Enriched title' } };
+    state.position = { seconds: 61, ts: 1 };
+    rerender(<SeekBar target={{ deviceId: 'screen-a' }} />);
+    firePointer(track, 'pointerup', 100);
+    expect(transport.seekAbs).toHaveBeenCalledExactlyOnceWith(120);
+  });
+
+  it('does not apply a held gesture to a replacement native node before React rerenders', () => {
+    let node = document.createElement('video');
+    state.controller = { getMediaElement: () => node };
+    render(<SeekBar target="local" />);
+    const track = screen.getByTestId('np-seek');
+    measureTrack(track);
+    firePointer(track, 'pointerdown', 100);
+    node = document.createElement('video');
+    firePointer(track, 'pointerup', 100);
+    expect(transport.seekAbs).not.toHaveBeenCalled();
+  });
+
+  it('cancels rather than remapping a press when the timeline duration changes', () => {
+    const { rerender } = render(<SeekBar target="local" />);
+    const track = screen.getByTestId('np-seek');
+    measureTrack(track);
+    firePointer(track, 'pointerdown', 100);
+    state.snapshot = makeSnapshot({ duration: 600 });
+    rerender(<SeekBar target="local" />);
+    firePointer(track, 'pointerup', 100);
+    expect(transport.seekAbs).not.toHaveBeenCalled();
   });
 
   it('shows a LIVE badge instead of a scrubber for live content', () => {

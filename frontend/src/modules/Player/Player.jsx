@@ -16,7 +16,7 @@ import { resolveCollectionKey } from './utils/collectionKey.js';
 import { nextPlaybackRate } from './utils/playbackRateCycle.js';
 import { guid } from './lib/helpers.js';
 import { playbackLog } from './lib/playbackLogger.js';
-import { resolveMediaIdentity, resolveSourceContentKey } from './utils/mediaIdentity.js';
+import { resolveContentId, resolveMediaIdentity, resolveSourceContentKey } from './utils/mediaIdentity.js';
 import { getLogWaitKey, describeWaitKey } from './lib/waitKeyLabel.js';
 import { useMediaTransportAdapter } from './hooks/transport/useMediaTransportAdapter.js';
 import { shouldSkipResilienceReload } from './lib/shouldSkipResilienceReload.js';
@@ -52,6 +52,31 @@ const REMOUNT_BACKOFF_MAX_MS = 45000;
 // still reset per item. The guard re-arms one window after the skipping stops.
 const REMOUNT_STORM_MAX_MOUNTS = 10;
 const REMOUNT_STORM_WINDOW_MS = 30000;
+const RENDERER_BOUNDARY_FORMATS = new Set(['video', 'hls_video', 'dash_video', 'audio']);
+
+const prepareRendererBoundaryOperation = (request = {}) => {
+  const expectedContentId = request.expectedContentId == null
+    ? null
+    : String(request.expectedContentId);
+  const targetSeconds = Number(request.targetSeconds);
+  if (!expectedContentId || !Number.isFinite(targetSeconds) || targetSeconds < 0) {
+    return { ok: false, code: 'INVALID_RENDERER_OPERATION' };
+  }
+  if (request.isLive === true) return { ok: false, code: 'LIVE_EDGE_UNSUPPORTED' };
+  if (request.format != null && !RENDERER_BOUNDARY_FORMATS.has(request.format)) {
+    return { ok: false, code: 'UNSUPPORTED_RENDERER_FORMAT' };
+  }
+  return {
+    ok: true,
+    operation: {
+      expectedContentId,
+      targetSeconds,
+      autoplay: request.autoplay !== false,
+      format: request.format ?? null,
+      requireObserver: request.requireObserver !== false,
+    },
+  };
+};
 
 // Shader aliases must match useQueueController's map. Hoisted to module scope
 // so identity is stable across renders (useEffect deps).
@@ -86,7 +111,9 @@ const ensureEntryGuid = (source) => {
 const createDefaultMediaAccess = () => ({
   getMediaEl: null,
   hardReset: null,
-  fetchVideoInfo: null
+  fetchVideoInfo: null,
+  beginMountedPlaybackOperation: null,
+  cancelMountedPlaybackOperation: null
 });
 
 const createDefaultPlaybackMetrics = () => ({
@@ -133,7 +160,8 @@ const Player = forwardRef(function Player(props, ref) {
     onPlaybackCompleted,
     onError,
     mediaLoadTimeoutMs,
-    forceShader
+    forceShader,
+    initialRendererOperation = null,
   } = props || {};
 
   const ownerInputsRef = useRef({ play, queue });
@@ -295,10 +323,31 @@ const Player = forwardRef(function Player(props, ref) {
     return cloned;
   }, [activeSource, currentMediaGuid, play, queue, maxVideoBitrate, maxResolution]);
 
+  const requestedRendererContentId = singlePlayerProps?.contentId != null
+    ? String(singlePlayerProps.contentId)
+    : resolveContentId(singlePlayerProps);
+
   const [resolvedMeta, setResolvedMeta] = useState(null);
   const [mediaAccess, setMediaAccess] = useState(() => createDefaultMediaAccess());
   const [playbackMetrics, setPlaybackMetrics] = useState(() => createDefaultPlaybackMetrics());
-  const [remountState, setRemountState] = useState(() => ({ guid: currentMediaGuid || null, nonce: 0, context: null }));
+  const [remountState, setRemountState] = useState(() => ({
+    guid: currentMediaGuid || null,
+    nonce: 0,
+    context: initialRendererOperation ? {
+      reason: 'authoritative-owner-operation',
+      source: initialRendererOperation.source ?? 'owner',
+      remountClass: 'owner-operation',
+      bypassRecoveryStormGuard: false,
+      expectedGuid: currentMediaGuid || null,
+      rendererOperation: Object.freeze({
+        operationId: initialRendererOperation.operationId,
+        expectedContentId: String(initialRendererOperation.expectedContentId),
+        targetSeconds: initialRendererOperation.targetSeconds,
+        autoplay: initialRendererOperation.autoplay !== false,
+      }),
+      wasPaused: initialRendererOperation.autoplay === false,
+    } : null,
+  }));
   const resilienceBridgeRef = useRef(null);
   const remountInfoRef = useRef(remountState);
   const remountTimerRef = useRef(null);
@@ -318,6 +367,23 @@ const Player = forwardRef(function Player(props, ref) {
   // registration. Logical adoption/restart revisions must never be sampled
   // later and retroactively attached to an unchanged native decoder.
   const mountedMediaRegistrationRef = useRef(null);
+  const mountedOperationObserversRef = useRef(new Map());
+  const mountedOperationObserverSequenceRef = useRef(0);
+  const rendererOperationSequenceRef = useRef(0);
+  const pendingRendererOperationRef = useRef(initialRendererOperation ? {
+    operationId: initialRendererOperation.operationId,
+    expectedContentId: String(initialRendererOperation.expectedContentId),
+    targetSeconds: initialRendererOperation.targetSeconds,
+    autoplay: initialRendererOperation.autoplay !== false,
+    format: initialRendererOperation.format ?? null,
+    requiredObserverIds: [],
+    requireObserver: true,
+    baselineNode: null,
+    baselineGeneration: 0,
+    cancelled: false,
+    started: false,
+    rendererToken: null,
+  } : null);
   const recordNativeNodeOwnership = useCallback((node, registrationToken) => {
     if (!node || typeof node !== 'object' || ownedNativeNodeRef.current === node) return true;
     if (retiredNativeNodesRef.current.has(node)) return false;
@@ -365,6 +431,75 @@ const Player = forwardRef(function Player(props, ref) {
     pendingRemountRef.current = null;
   }, []);
 
+  const cancelPendingRendererOperation = useCallback((reason = 'superseded') => {
+    const pending = pendingRendererOperationRef.current;
+    if (!pending) return;
+    pending.cancelled = true;
+    pendingRendererOperationRef.current = null;
+    try {
+      mediaAccessRef.current?.cancelMountedPlaybackOperation?.(pending.rendererToken ?? null, reason);
+    } catch { /* renderer cancellation is best-effort */ }
+  }, []);
+
+  const tryStartMountedRendererOperation = useCallback(() => {
+    const pending = pendingRendererOperationRef.current;
+    const registration = mountedMediaRegistrationRef.current;
+    const access = mediaAccessRef.current;
+    if (!pending || pending.cancelled || pending.started || !registration) return false;
+    if ((pending.baselineNode && registration.node === pending.baselineNode)
+      || registration.resolvedGeneration <= pending.baselineGeneration
+      || registration.resolvedContentId !== pending.expectedContentId
+      || registration.rendererToken?.operationId !== pending.operationId
+      || registration.rendererToken?.node !== registration.node
+      || registration.rendererToken?.resolvedContentId !== registration.resolvedContentId
+      || !Object.isFrozen(registration.rendererToken)) return false;
+    if (typeof access?.beginMountedPlaybackOperation !== 'function'
+      || access.getMediaEl?.() !== registration.node) return false;
+    if (pending.requireObserver && pending.requiredObserverIds.length === 0) return false;
+
+    const binding = Object.freeze({
+      operationId: pending.operationId,
+      targetSeconds: pending.targetSeconds,
+      node: registration.node,
+      resolvedGeneration: registration.resolvedGeneration,
+      rendererToken: registration.rendererToken,
+    });
+    for (const observerId of pending.requiredObserverIds) {
+      const observer = mountedOperationObserversRef.current.get(observerId);
+      if (typeof observer !== 'function') return false;
+      let ack = null;
+      try { ack = observer(binding); } catch { return false; }
+      if (!ack || ack.ready !== true
+        || ack.operationId !== binding.operationId
+        || ack.node !== binding.node
+        || ack.resolvedGeneration !== binding.resolvedGeneration
+        || ack.rendererToken !== binding.rendererToken) return false;
+    }
+
+    registration.operationProof = pending.requiredObserverIds.length > 0;
+
+    pending.started = true;
+    pending.rendererToken = registration.rendererToken;
+    try {
+      const result = access.beginMountedPlaybackOperation(registration.rendererToken);
+      if (result && typeof result.catch === 'function') {
+        result.catch((error) => {
+          playbackLog('renderer-operation-failed', {
+            operationId: pending.operationId,
+            error: error?.message ?? String(error),
+          }, { level: 'warn' });
+        });
+      }
+    } catch (error) {
+      playbackLog('renderer-operation-failed', {
+        operationId: pending.operationId,
+        error: error?.message ?? String(error),
+      }, { level: 'warn' });
+      return false;
+    }
+    return true;
+  }, []);
+
   const computeRemountDelayMs = useCallback((attempt = 1) => {
     const normalizedAttempt = Math.max(1, attempt);
     if (normalizedAttempt <= 1) return 0;
@@ -381,9 +516,32 @@ const Player = forwardRef(function Player(props, ref) {
     mediaAccessRef.current = createDefaultMediaAccess();
     setMediaAccess(mediaAccessRef.current);
     setPlaybackMetrics(createDefaultPlaybackMetrics());
-    setRemountState((prev) => (prev.guid === currentMediaGuid ? prev : { guid: currentMediaGuid || null, nonce: 0, context: null }));
+    const pending = pendingRendererOperationRef.current;
+    const pendingMatchesRequested = requestedRendererContentId != null
+      && pending?.expectedContentId === requestedRendererContentId;
+    const preservePendingOperation = pending && pendingMatchesRequested;
+    if (pending && !preservePendingOperation) cancelPendingRendererOperation('content-changed');
+    setRemountState((prev) => {
+      if (prev.guid === currentMediaGuid) return prev;
+      if (prev.context?.remountClass === 'owner-operation'
+        && preservePendingOperation) {
+        const next = {
+          ...prev,
+          guid: currentMediaGuid || null,
+          context: { ...prev.context, expectedGuid: currentMediaGuid || null },
+        };
+        remountInfoRef.current = next;
+        return next;
+      }
+      if (prev.context?.remountClass === 'owner-operation') {
+        const next = { guid: currentMediaGuid || null, nonce: prev.nonce, context: null };
+        remountInfoRef.current = next;
+        return next;
+      }
+      return { guid: currentMediaGuid || null, nonce: 0, context: null };
+    });
     clearRemountTimer();
-  }, [currentMediaGuid, clearRemountTimer]);
+  }, [currentMediaGuid, requestedRendererContentId, cancelPendingRendererOperation, clearRemountTimer]);
 
   const effectiveMeta = resolvedMeta || singlePlayerProps || null;
   const plexId = queue?.plex || play?.plex || effectiveMeta?.plex || effectiveMeta?.assetId || null;
@@ -601,7 +759,13 @@ const Player = forwardRef(function Player(props, ref) {
       hardReset: typeof access.hardReset === 'function' ? access.hardReset : null,
       fetchVideoInfo: typeof access.fetchVideoInfo === 'function' ? access.fetchVideoInfo : null,
       autoplayBlocked: !!access.autoplayBlocked,
-      onAutoplayResolved: typeof access.onAutoplayResolved === 'function' ? access.onAutoplayResolved : null
+      onAutoplayResolved: typeof access.onAutoplayResolved === 'function' ? access.onAutoplayResolved : null,
+      beginMountedPlaybackOperation: typeof access.beginMountedPlaybackOperation === 'function'
+        ? access.beginMountedPlaybackOperation
+        : null,
+      cancelMountedPlaybackOperation: typeof access.cancelMountedPlaybackOperation === 'function'
+        ? access.cancelMountedPlaybackOperation
+        : null,
     };
     try {
       if (!recordNativeNodeOwnership(newMediaAccess.getMediaEl?.(), registrationToken)) return;
@@ -618,11 +782,14 @@ const Player = forwardRef(function Player(props, ref) {
         && prev.hardReset === newMediaAccess.hardReset
         && prev.fetchVideoInfo === newMediaAccess.fetchVideoInfo
         && prev.autoplayBlocked === newMediaAccess.autoplayBlocked
-        && prev.onAutoplayResolved === newMediaAccess.onAutoplayResolved;
+        && prev.onAutoplayResolved === newMediaAccess.onAutoplayResolved
+        && prev.beginMountedPlaybackOperation === newMediaAccess.beginMountedPlaybackOperation
+        && prev.cancelMountedPlaybackOperation === newMediaAccess.cancelMountedPlaybackOperation;
 
       return unchanged ? prev : newMediaAccess;
     });
-  }, [recordNativeNodeOwnership]);
+    tryStartMountedRendererOperation();
+  }, [recordNativeNodeOwnership, tryStartMountedRendererOperation]);
 
   const handleRegisterResilienceBridge = useCallback((bridge) => {
     resilienceBridgeRef.current = bridge || null;
@@ -748,6 +915,107 @@ const Player = forwardRef(function Player(props, ref) {
     // observes the CURRENT pause state when it fires.
   }, [currentMediaGuid, isQueue, mediaIdentity, playerType, resolvedWaitKey, resolvedWaitKeyFields, setTargetTimeSeconds]);
 
+  const inspectRendererBoundaryRequest = useCallback((request = {}) => {
+    const prepared = prepareRendererBoundaryOperation(request);
+    if (!prepared.ok) return prepared;
+    const {
+      expectedContentId, targetSeconds, autoplay, format, requireObserver,
+    } = prepared.operation;
+    const operationId = typeof request.operationId === 'string' && request.operationId.length > 0
+      ? request.operationId
+      : null;
+    const requiredObserverIds = [...new Set(
+      Array.isArray(request.requiredObserverIds) ? request.requiredObserverIds.filter(Boolean) : [],
+    )];
+    const currentPending = pendingRendererOperationRef.current;
+    if (operationId && currentPending?.operationId === operationId && !currentPending.cancelled) {
+      const sameExecution = currentPending.expectedContentId === expectedContentId
+        && currentPending.targetSeconds === targetSeconds
+        && currentPending.autoplay === autoplay
+        && currentPending.format === format
+        && currentPending.requireObserver === requireObserver;
+      const addsObserverAfterStart = currentPending.started
+        && requiredObserverIds.some((observerId) => !currentPending.requiredObserverIds.includes(observerId));
+      if (!sameExecution || addsObserverAfterStart) {
+        return { ok: false, code: 'RENDERER_OPERATION_CONFLICT' };
+      }
+    }
+    return {
+      ok: true,
+      operation: prepared.operation,
+      operationId,
+      requiredObserverIds,
+      duplicate: Boolean(operationId && currentPending?.operationId === operationId && !currentPending.cancelled),
+    };
+  }, []);
+
+  const beginRendererBoundary = useCallback((request = {}) => {
+    const inspected = inspectRendererBoundaryRequest(request);
+    if (!inspected.ok) return inspected;
+    const {
+      expectedContentId, targetSeconds, autoplay, format, requireObserver,
+    } = inspected.operation;
+    const mounted = mountedMediaRegistrationRef.current;
+    const needsSameContentReplacement = mounted?.resolvedContentId === expectedContentId;
+    const operationId = inspected.operationId
+      ?? `player-operation-${++rendererOperationSequenceRef.current}`;
+    const { requiredObserverIds } = inspected;
+    const currentPending = pendingRendererOperationRef.current;
+    if (inspected.duplicate) {
+      if (!currentPending.started) {
+        currentPending.requiredObserverIds = [...new Set([
+          ...currentPending.requiredObserverIds,
+          ...requiredObserverIds,
+        ])];
+      }
+      tryStartMountedRendererOperation();
+      return { ok: true, operationId, duplicate: true };
+    }
+    cancelPendingRendererOperation('superseded');
+    clearRemountTimer();
+
+    const operation = {
+      operationId,
+      expectedContentId,
+      targetSeconds,
+      autoplay,
+    };
+    const pending = {
+      ...operation,
+      format,
+      requiredObserverIds,
+      requireObserver,
+      baselineNode: mounted?.node ?? null,
+      baselineGeneration: mounted?.resolvedGeneration ?? mountedMediaGenerationRef.current,
+      cancelled: false,
+      started: false,
+      rendererToken: null,
+    };
+    pendingRendererOperationRef.current = pending;
+    setTargetTimeSeconds(targetSeconds);
+    mediaAccessRef.current = createDefaultMediaAccess();
+    setMediaAccess(mediaAccessRef.current);
+    setPlaybackMetrics(createDefaultPlaybackMetrics());
+    setRemountState((prev) => {
+      const next = {
+        guid: currentMediaGuid || null,
+        nonce: needsSameContentReplacement && prev.guid === currentMediaGuid ? prev.nonce + 1 : prev.nonce,
+        context: {
+          reason: 'authoritative-owner-operation',
+          source: request.source ?? 'owner',
+          remountClass: 'owner-operation',
+          bypassRecoveryStormGuard: needsSameContentReplacement,
+          expectedGuid: currentMediaGuid || null,
+          rendererOperation: Object.freeze({ ...operation }),
+          wasPaused: !autoplay,
+        },
+      };
+      remountInfoRef.current = next;
+      return next;
+    });
+    return { ok: true, operationId };
+  }, [cancelPendingRendererOperation, clearRemountTimer, currentMediaGuid, inspectRendererBoundaryRequest, setTargetTimeSeconds, tryStartMountedRendererOperation]);
+
   const scheduleSinglePlayerRemount = useCallback((input = null) => {
     const attempt = (remountInfoRef.current?.nonce ?? 0) + 1;
     const backoffMs = computeRemountDelayMs(attempt);
@@ -836,6 +1104,15 @@ const Player = forwardRef(function Player(props, ref) {
   // split back apart — a compound plex guid contains the ':' separator itself.
   const lastAdmittedKeyInputsRef = useRef(null);
   const keyLogger = useMemo(() => getLogger().child({ component: 'player-key' }), []);
+  const pendingRendererOperation = pendingRendererOperationRef.current;
+  const activeRemountContext = remountState.context?.remountClass !== 'owner-operation'
+    ? remountState.context
+    : (remountState.context.expectedGuid === (currentMediaGuid || null)
+    || (pendingRendererOperation
+      && requestedRendererContentId != null
+      && pendingRendererOperation.expectedContentId === requestedRendererContentId))
+      ? remountState.context
+      : null;
 
   // StrictMode landmine, noted deliberately: this memo reads Date.now(), writes three
   // refs and logs during render. It is safe today — nothing under frontend/src mounts a
@@ -852,6 +1129,9 @@ const Player = forwardRef(function Player(props, ref) {
 
     const guard = stormGuardRef.current;
     const now = Date.now();
+    const isOwnerOperation = activeRemountContext?.remountClass === 'owner-operation'
+      && activeRemountContext?.bypassRecoveryStormGuard === true
+      && activeRemountContext?.expectedGuid === (currentMediaGuid || null);
 
     // Re-arm one window after a trip. A tripped guard is NOT re-armed by a content
     // change, tempting as that is: in the storm the guid changed on every pass, so
@@ -873,7 +1153,7 @@ const Player = forwardRef(function Player(props, ref) {
     // If key churn outruns the cap, freeze on the last admitted key. Remounting
     // faster than media can start never recovers — it only opens transcode
     // sessions and stacks overlapping audio.
-    if (!guard.admit(candidate, now)) {
+    if (!isOwnerOperation && !guard.admit(candidate, now)) {
       if (!stormLoggedRef.current) {
         stormLoggedRef.current = true;
         stormTrippedAtRef.current = now;
@@ -932,7 +1212,7 @@ const Player = forwardRef(function Player(props, ref) {
 
     lastAdmittedKeyRef.current = candidate;
     return candidate;
-  }, [singlePlayerProps, currentMediaGuid, remountState.nonce, activeSource?.mediaType, playerType, resolvedWaitKeyFields, isQueue, keyLogger]);
+  }, [singlePlayerProps, currentMediaGuid, remountState.nonce, activeRemountContext, activeSource?.mediaType, playerType, resolvedWaitKeyFields, isQueue, keyLogger]);
 
   // Match the admitted renderer lifetime, including same-content recovery.
   // A retired renderer's late registration/cleanup must not touch its successor.
@@ -1324,45 +1604,27 @@ const Player = forwardRef(function Player(props, ref) {
   const restartNativeVisit = useCallback((mediaKey) => {
     ownerStoppedRef.current = false;
     issueOwnerRevision({ playback: true });
-    setTargetTimeSeconds(0);
-    const controller = controllerRef.current;
-    const api = controller?.transport || controller;
-    const element = api?.getMediaEl?.() || exposedMediaRef.current || mediaAccessRef.current?.getMediaEl?.() || null;
+    const element = _getMediaElFallback();
     repeatRestartGateRef.current = {
       mediaKey,
       priorSeconds: Number.isFinite(element?.currentTime) ? element.currentTime : playbackMetrics.seconds,
       sawReset: false,
     };
-    const attempt = (operation, fn) => {
-      try {
-        const pending = fn();
-        if (pending && typeof pending.catch === 'function') {
-          pending.catch((error) => {
-            playbackLog('queue-visit-restart-failed', {
-              operation,
-              assetId: completionAssetId,
-              error: error?.message ?? String(error),
-            }, { level: 'warn' });
-          });
-        }
-      } catch (error) {
-        playbackLog('queue-visit-restart-failed', {
-          operation,
-          assetId: completionAssetId,
-          error: error?.message ?? String(error),
-        }, { level: 'warn' });
-      }
-    };
-    attempt('seek', () => {
-      if (typeof api?.seek === 'function') return api.seek(0);
-      if (element) element.currentTime = 0;
-      return undefined;
+    const observerIds = [...mountedOperationObserversRef.current.keys()];
+    const result = beginRendererBoundary({
+      operationId: `queue-visit-${++rendererOperationSequenceRef.current}`,
+      expectedContentId: mountedMediaRegistrationRef.current?.resolvedContentId ?? completionAssetId,
+      targetSeconds: 0,
+      autoplay: true,
+      requiredObserverIds: observerIds,
+      requireObserver: observerIds.length > 0,
+      source: 'queue-natural-completion',
+      format: effectiveMeta?.format ?? activeSource?.format ?? null,
+      isLive: effectiveMeta?.isLive === true || activeSource?.isLive === true,
     });
-    attempt('play', () => {
-      if (typeof api?.play === 'function') return api.play();
-      return element?.play?.();
-    });
-  }, [completionAssetId, issueOwnerRevision, playbackMetrics.seconds, setTargetTimeSeconds]);
+    if (!result.ok) repeatRestartGateRef.current = null;
+  }, [activeSource?.format, activeSource?.isLive, beginRendererBoundary, completionAssetId,
+    effectiveMeta?.format, effectiveMeta?.isLive, issueOwnerRevision, playbackMetrics.seconds]);
   const naturalAdvance = useCallback(() => {
     const identity = currentMediaGuid ?? completionAssetId ?? 'player-media-unknown';
     // Queue position distinguishes two adjacent entries that intentionally point
@@ -1423,7 +1685,9 @@ const Player = forwardRef(function Player(props, ref) {
   const manualAdvance = isQueue ? advance : singleAdvance;
 
   // Compose onMediaRef so we keep existing external callback semantics
-  const handleMediaRef = useCallback((el, ownership = null, registrationToken) => {
+  const handleMediaRef = useCallback((el, registration = {}) => {
+    const ownership = registration.ownership ?? null;
+    const registrationToken = registration.lifetimeToken ?? null;
     if (!recordNativeNodeOwnership(el, registrationToken)) return;
     const previousNode = exposedMediaRef.current;
     const previousContentId = el && typeof el === 'object'
@@ -1446,6 +1710,8 @@ const Player = forwardRef(function Player(props, ref) {
             node: el,
             resolvedContentId: nextContentId,
             resolvedGeneration: mountedMediaGenerationRef.current,
+            rendererToken: registration.rendererToken ?? null,
+            operationProof: false,
             ownerInstanceId: playerInstanceId,
             playbackRevision: issuedOwnerRevisionsRef.current.playbackRevision,
           };
@@ -1458,9 +1724,10 @@ const Player = forwardRef(function Player(props, ref) {
       }
     }
     if (props.onMediaRef) props.onMediaRef(el, ownership);
+    tryStartMountedRendererOperation();
     // ESLint's own message says the fix is to destructure specific props, which this already does — do not add `props`
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [props.onMediaRef, recordNativeNodeOwnership, playerInstanceId]);
+  }, [props.onMediaRef, recordNativeNodeOwnership, playerInstanceId, tryStartMountedRendererOperation]);
 
   const rendererRegistration = useMemo(() => {
     const token = { epoch: nativeRegistrationEpoch };
@@ -1469,7 +1736,11 @@ const Player = forwardRef(function Player(props, ref) {
       && token.epoch === nativeRegistrationEpochRef.current;
     return {
       onMediaRef: (node, ownership) => {
-        if (isCurrent()) handleMediaRef(node, ownership, token);
+        if (isCurrent()) handleMediaRef(node, {
+          ownership,
+          lifetimeToken: token,
+          rendererToken: ownership?.rendererToken ?? null,
+        });
       },
       onRegisterMediaAccess: (access) => {
         if (isCurrent()) handleRegisterMediaAccess(access, token);
@@ -1579,6 +1850,16 @@ const Player = forwardRef(function Player(props, ref) {
     getMountedMediaRegistration: () => (mountedMediaRegistrationRef.current
       ? { ...mountedMediaRegistrationRef.current }
       : null),
+    subscribeMountedMediaOperations: (observer) => {
+      if (typeof observer !== 'function') return { observerId: null, unsubscribe: () => {} };
+      const observerId = `player-observer-${++mountedOperationObserverSequenceRef.current}`;
+      mountedOperationObserversRef.current.set(observerId, observer);
+      return {
+        observerId,
+        unsubscribe: () => mountedOperationObserversRef.current.delete(observerId),
+      };
+    },
+    beginRendererBoundary,
     // Read-only now-playing metadata (current item meta + queue coordinates)
     // for external session bridges. Reads a render-mirrored ref — always fresh.
     getNowPlaying: () => nowPlayingRef.current,
@@ -1604,6 +1885,21 @@ const Player = forwardRef(function Player(props, ref) {
       const prepared = preparePlaybackOwnerAdoption(incoming);
       if (!prepared.valid) return { ok: false, code: 'INVALID_SNAPSHOT', errors: prepared.errors };
       const adopted = prepared.snapshot;
+      const adoptedCurrent = adopted.queue.items[adopted.queue.currentIndex] ?? null;
+      const boundaryRequest = adoptedCurrent?.contentId == null ? null : {
+        operationId: options.operationId ?? options.transferId,
+        expectedContentId: adoptedCurrent.contentId,
+        targetSeconds: adopted.position,
+        autoplay: options.autoplay !== false,
+        requiredObserverIds: options.requiredObserverIds,
+        source: 'legacy-adoption',
+        format: adoptedCurrent.format,
+        isLive: adoptedCurrent.isLive === true,
+      };
+      if (boundaryRequest) {
+        const boundaryInspected = inspectRendererBoundaryRequest(boundaryRequest);
+        if (!boundaryInspected.ok) return boundaryInspected;
+      }
       ownerStoppedRef.current = false;
       adoptQueueSnapshot(adopted);
       setQueueHasAdvanced(true);
@@ -1613,10 +1909,7 @@ const Player = forwardRef(function Player(props, ref) {
         queueItemId: adopted.queue.executionOrder[0] ?? null,
       };
       setAdoptedConfigEpoch((epoch) => epoch + 1);
-      // autoplay is an intent consumed by the existing Player render. Do not
-      // call the imperative transport here: until that render resolves, its
-      // accessor can still be the retired source generation.
-      void options.autoplay;
+      if (boundaryRequest) beginRendererBoundary(boundaryRequest);
       return { ok: true };
     },
     stopIfCurrent: (expected, sessionId) => {
@@ -1634,6 +1927,7 @@ const Player = forwardRef(function Player(props, ref) {
         return { ok: false, code: 'SOURCE_CHANGED' };
       }
       issueOwnerRevision({ playback: true });
+      cancelPendingRendererOperation('stop');
       ownerStoppedRef.current = true;
       const el = _getMediaElFallback();
       try { el?.pause?.(); } catch { /* best-effort native Stop */ }
@@ -1667,9 +1961,13 @@ const Player = forwardRef(function Player(props, ref) {
         fromContentId: effectiveMeta?.contentId ?? effectiveMeta?.assetId ?? null,
       }, { level: 'info' });
     },
-  }), [isQueue, isShuffle, repeatMode, advance, singleAdvance, rawJumpTo, sessionVolume, sessionPlaybackRate, setOwnerVolume, setOwnerPlaybackRate, effectiveMeta?.assetId, effectiveMeta?.contentId, resilienceControllerRef, withTransport, queueSnapshot, playerInstanceId, queueShader, issueOwnerRevision, adoptQueueSnapshot, setTargetTimeSeconds, setShader, setShaderUserCycled]);
+  }), [isQueue, isShuffle, repeatMode, advance, singleAdvance, rawJumpTo, sessionVolume, sessionPlaybackRate, setOwnerVolume, setOwnerPlaybackRate, effectiveMeta?.assetId, effectiveMeta?.contentId, resilienceControllerRef, withTransport, queueSnapshot, playerInstanceId, queueShader, issueOwnerRevision, adoptQueueSnapshot, setTargetTimeSeconds, setShader, setShaderUserCycled, inspectRendererBoundaryRequest, beginRendererBoundary, cancelPendingRendererOperation]);
 
-  useEffect(() => () => clearRemountTimer(), [clearRemountTimer]);
+  useEffect(() => () => {
+    clearRemountTimer();
+    cancelPendingRendererOperation('unmount');
+    mountedOperationObserversRef.current.clear();
+  }, [clearRemountTimer, cancelPendingRendererOperation]);
 
   // --- On-deck: handle the one queue op this Player owns ---
   const handleQueueOp = useCallback(async (payload = {}) => {
@@ -1808,7 +2106,7 @@ const Player = forwardRef(function Player(props, ref) {
     onRequestRecovery: handleRequestRecovery,
     seekToIntentSeconds: targetTimeSeconds,
     onSeekRequestConsumed: handleSeekRequestConsumed,
-    remountDiagnostics: remountState.context,
+    remountDiagnostics: activeRemountContext,
     // Recovery-ledger session scope: the SAME key useMediaResilience passes to
     // the ledger, so renderer-level recoveries (dash-error) share its caps.
     resilienceSessionKey: itemSessionKey,
@@ -1949,6 +2247,15 @@ Player.propTypes = {
   maxResolution: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
   /** External Plex client session ID for multi-player isolation */
   plexClientSession: PropTypes.string,
+  initialRendererOperation: PropTypes.shape({
+    operationId: PropTypes.string.isRequired,
+    expectedContentId: PropTypes.string.isRequired,
+    targetSeconds: PropTypes.number.isRequired,
+    autoplay: PropTypes.bool,
+    source: PropTypes.string,
+    format: PropTypes.string,
+    isLive: PropTypes.bool,
+  }),
   /**
    * Highest-priority shader override. Set by SurroundHost (via cloneElement)
    * while the surround frame is active for the current item — it beats an

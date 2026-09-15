@@ -434,6 +434,66 @@ describe('createPlayerSessionBridge', () => {
     expect(registry.getCurrent()).toBeNull();
     bridge.stop();
   });
+
+  it('subscribes before adoption and synchronously acks the exact fresh-node binding', () => {
+    const oldNode = document.createElement('video');
+    const freshNode = document.createElement('video');
+    const rendererToken = Object.freeze({ tokenId: 'renderer-fresh', node: freshNode });
+    let operationObserver = null;
+    const adoptSessionSnapshot = vi.fn(() => ({ ok: true }));
+    const registration = {
+      node: freshNode,
+      resolvedContentId: 'plex:a',
+      resolvedGeneration: 2,
+      rendererToken,
+      ownerInstanceId: 'legacy-owner',
+      playbackRevision: 1,
+    };
+    let activeNode = oldNode;
+    const handle = {
+      ...makeHandle({ el: oldNode, meta: { contentId: 'plex:a', format: 'video' }, queueSnapshot: {
+        items: [{ queueItemId: 'a', contentId: 'plex:a', format: 'video' }],
+        currentIndex: 0, executionOrder: ['a'],
+      } }),
+      getMediaElement: () => activeNode,
+      getMountedContentId: () => 'plex:a',
+      getMountedMediaGeneration: () => activeNode === freshNode ? 2 : 1,
+      getMountedMediaRegistration: () => activeNode === freshNode ? registration : null,
+      getPlaybackIdentity: () => ({ ownerInstanceId: 'legacy-owner', playbackRevision: 1, queueRevision: 1 }),
+      subscribeMountedMediaOperations: (observer) => {
+        operationObserver = observer;
+        return { observerId: 'legacy-operation-observer', unsubscribe: vi.fn() };
+      },
+      adoptSessionSnapshot,
+    };
+    const bridge = startBridge(() => handle);
+    expect(operationObserver).toBeTypeOf('function');
+
+    bridge.queueController.adopt({ queue: {} }, { autoplay: false, operationId: 'legacy-adopt-1' });
+    expect(adoptSessionSnapshot).toHaveBeenCalledWith({ queue: {} }, {
+      autoplay: false,
+      operationId: 'legacy-adopt-1',
+      requiredObserverIds: ['legacy-operation-observer'],
+    });
+
+    activeNode = freshNode;
+    const binding = {
+      operationId: 'legacy-adopt-1', targetSeconds: 8,
+      node: freshNode, resolvedGeneration: 2, rendererToken,
+    };
+    expect(operationObserver(binding)).toEqual({ ready: true, ...binding });
+    expect(bridge.queueController.getNativeObservation('legacy-session')).toMatchObject({
+      operationId: 'legacy-adopt-1', rendererToken, resolvedGeneration: 2,
+      targetSeekedObserved: false,
+    });
+    freshNode.currentTime = 5;
+    freshNode.dispatchEvent(new Event('seeking'));
+    freshNode.currentTime = 8;
+    freshNode.dispatchEvent(new Event('seeked'));
+    expect(bridge.queueController.getNativeObservation('legacy-session'))
+      .toMatchObject({ targetSeekedObserved: true });
+    bridge.stop();
+  });
 });
 
 describe('createRegistrySessionSource', () => {

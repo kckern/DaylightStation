@@ -90,6 +90,8 @@ export function createLocalSessionController({
   let nativeNodeGeneration = 0;
   let nativePlayingObserved = false;
   let nativeAdvancedObserved = false;
+  let nativeSawOperationSeeking = false;
+  let nativeTargetSeekedObserved = false;
   let nativeLastTime = null;
   const nativeListeners = new Set();
 
@@ -142,13 +144,20 @@ export function createLocalSessionController({
     ? { code: node.error.code ?? null, message: node.error.message ?? null }
     : null;
 
-  const bindNativeObservation = (node, resolvedContentId = null, resolvedGeneration = null) => {
+  const bindNativeObservation = (node, resolvedContentId = null, resolvedGeneration = null, operationBinding = null) => {
     const nextNode = node && typeof node === 'object' ? node : null;
     const nextContentId = resolvedContentId == null ? null : String(resolvedContentId);
     if (nativeBinding
       && nativeBinding.node === nextNode
       && nativeBinding.resolvedContentId === nextContentId
-      && nativeBinding.resolvedGeneration === resolvedGeneration) return;
+      && nativeBinding.resolvedGeneration === resolvedGeneration
+      && (!operationBinding || (
+        nativeBinding.operationId === operationBinding.operationId
+        && nativeBinding.rendererToken === operationBinding.rendererToken
+        && nativeBinding.targetSeconds === (Number.isFinite(operationBinding.targetSeconds)
+          ? operationBinding.targetSeconds
+          : null)
+      ))) return;
     if (observedNativeNode !== nextNode) {
       observedNativeNode = nextNode;
       playbackRevision += 1;
@@ -160,9 +169,16 @@ export function createLocalSessionController({
       resolvedGeneration,
       nodeGeneration: nativeNodeGeneration,
       ownerPlaybackRevision: playbackRevision,
+      operationId: operationBinding?.operationId ?? null,
+      rendererToken: operationBinding?.rendererToken ?? null,
+      targetSeconds: Number.isFinite(operationBinding?.targetSeconds)
+        ? operationBinding.targetSeconds
+        : null,
     } : null;
     nativePlayingObserved = false;
     nativeAdvancedObserved = false;
+    nativeSawOperationSeeking = false;
+    nativeTargetSeekedObserved = false;
     nativeLastTime = Number.isFinite(nextNode?.currentTime) ? nextNode.currentTime : null;
   };
 
@@ -188,6 +204,8 @@ export function createLocalSessionController({
       nodeGeneration: nativeBinding.nodeGeneration,
       resolvedContentId: nativeBinding.resolvedContentId,
       resolvedGeneration: nativeBinding.resolvedGeneration,
+      operationId: nativeBinding.operationId,
+      rendererToken: nativeBinding.rendererToken,
       identity: matchesCurrent ? { ...identity } : null,
       currentTime: Number.isFinite(node.currentTime) ? node.currentTime : 0,
       duration: Number.isFinite(node.duration) && node.duration > 0 ? node.duration : null,
@@ -198,6 +216,7 @@ export function createLocalSessionController({
       error: nativeError(node),
       playingObserved: nativePlayingObserved,
       advancedObserved: nativeAdvancedObserved,
+      targetSeekedObserved: nativeTargetSeekedObserved,
     };
   };
 
@@ -215,11 +234,32 @@ export function createLocalSessionController({
     if (player.getMediaElement?.() !== node) return;
     const resolved = player.getMountedContentId?.() ?? null;
     if (String(resolved ?? '') !== String(nativeBinding.resolvedContentId ?? '')) return;
-    if (type === 'playing') nativePlayingObserved = true;
+    if (type === 'playing') {
+      nativePlayingObserved = true;
+      nativeAdvancedObserved = false;
+      nativeLastTime = Number.isFinite(node.currentTime) ? node.currentTime : null;
+    }
+    if (type === 'seeking' && nativeBinding.operationId && nativeBinding.targetSeconds > 0) {
+      nativeSawOperationSeeking = true;
+      nativeTargetSeekedObserved = false;
+      nativeAdvancedObserved = false;
+    }
+    if (type === 'seeked' && nativeSawOperationSeeking && nativeBinding.operationId
+      && nativeBinding.targetSeconds > 0
+      && Number.isFinite(node.currentTime)
+      && Math.abs(node.currentTime - nativeBinding.targetSeconds) <= 0.75) {
+      nativeTargetSeekedObserved = true;
+      // Positive-target qualification requires a playing event after seek
+      // completion, not one delivered while the seek was still in flight.
+      nativePlayingObserved = false;
+      nativeAdvancedObserved = false;
+    }
     if (['pause', 'waiting', 'seeking', 'ended', 'error'].includes(type)) nativePlayingObserved = false;
     if (type === 'timeupdate' || type === 'progress') {
       const current = Number.isFinite(node.currentTime) ? node.currentTime : null;
-      if (current != null && nativeLastTime != null && current > nativeLastTime) nativeAdvancedObserved = true;
+      if (nativePlayingObserved && current != null && nativeLastTime != null && current > nativeLastTime) {
+        nativeAdvancedObserved = true;
+      }
       nativeLastTime = current;
     }
     emitNativeObservation();
@@ -352,7 +392,7 @@ export function createLocalSessionController({
     adopted.state = adopted.queue.currentIndex >= 0 && adopted.currentItem
       ? 'loading'
       : (adopted.queue.items.length > 0 ? 'ready' : 'idle');
-    store.dispatch({ type: 'ADOPT_SNAPSHOT', snapshot: adopted });
+    store.dispatch({ type: 'ADOPT_SNAPSHOT', snapshot: adopted, autoplay });
     position.set(adopted.position);
     // The previous node may still be mounted for the same content/entry. Its
     // facts belong to the pre-adoption owner revision until PlayerBridge
@@ -533,6 +573,10 @@ export function createLocalSessionController({
       setVolume: (level) => {
         const clamped = Math.max(0, Math.min(100, Math.round(Number(level) || 0)));
         setConfig({ volume: clamped });
+      },
+      setPlaybackRate: (rate) => {
+        if (typeof rate !== 'number' || !Number.isFinite(rate) || rate <= 0) return;
+        setConfig({ playbackRate: rate });
       },
     },
 
