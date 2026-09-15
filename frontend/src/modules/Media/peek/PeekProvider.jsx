@@ -40,7 +40,10 @@ export function PeekProvider({ children }) {
   useEffect(() => {
     return subscribeTopicKind('device-ack', (msg) => {
       if (typeof msg.commandId !== 'string') return;
-      ackRouter.resolve({ commandId: msg.commandId, ok: msg.ok, error: msg.error });
+      ackRouter.resolve({
+        deviceId: msg.deviceId, commandId: msg.commandId, ok: msg.ok,
+        error: msg.error, code: msg.code, appliedAt: msg.appliedAt, handoff: msg.handoff,
+      });
     });
   }, [ackRouter]);
 

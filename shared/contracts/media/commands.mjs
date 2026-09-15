@@ -1,5 +1,5 @@
 export const COMMAND_KINDS = Object.freeze([
-  'transport', 'queue', 'config', 'adopt-snapshot', 'system', 'display',
+  'transport', 'queue', 'config', 'adopt-snapshot', 'system', 'display', 'handoff',
 ]);
 
 export const TRANSPORT_ACTIONS = Object.freeze([

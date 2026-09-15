@@ -7,6 +7,7 @@ import {
   isRepeatMode,
 } from './commands.mjs';
 import { validateSessionSnapshot, validatePlayableItem } from './shapes.mjs';
+import { validateHandoffParams, validateHandoffResult } from './handoff.mjs';
 
 const DEVICE_STATE_REASONS = Object.freeze(['change', 'heartbeat', 'initial', 'offline']);
 const PLAYBACK_BROADCAST_STATES = Object.freeze([
@@ -168,6 +169,12 @@ function validateCommandParams(command, params, errors) {
     return;
   }
 
+  if (command === 'handoff') {
+    const checked = validateHandoffParams(p);
+    if (!checked.valid) errors.push(...checked.errors.map((error) => `params.${error}`));
+    return;
+  }
+
   if (command === 'system') {
     if (!isSystemAction(p.action)) {
       errors.push('params.action: required system action');
@@ -216,6 +223,7 @@ export function buildCommandAck({
   error,
   code,
   appliedAt,
+  handoff,
 } = {}) {
   const ack = {
     topic: 'device-ack',
@@ -226,6 +234,7 @@ export function buildCommandAck({
   };
   if (error !== undefined) ack.error = error;
   if (code !== undefined) ack.code = code;
+  if (handoff !== undefined) ack.handoff = handoff;
   return ack;
 }
 
@@ -252,6 +261,10 @@ export function validateCommandAck(ack) {
   }
   if (ack.appliedAt !== undefined && !isStr(ack.appliedAt)) {
     errors.push('appliedAt: must be ISO string when present');
+  }
+  if (ack.handoff !== undefined) {
+    const checked = validateHandoffResult(ack.handoff);
+    if (!checked.valid) errors.push(...checked.errors.map((error) => `handoff.${error}`));
   }
   return result(errors);
 }

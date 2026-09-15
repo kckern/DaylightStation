@@ -4,10 +4,13 @@ import { test, expect } from '@playwright/test';
 // No fabricated responses, synthetic clicks, forced clicks, or fabricated session state.
 // Each test has a fresh browser context and targets only its own local player.
 const title = process.env.MEDIA_ACCEPTANCE_TITLE || 'Disclosure Day';
+const device = process.env.MEDIA_ACCEPTANCE_VIEWPORT || 'desktop';
+const viewports = { desktop: { width: 1440, height: 900 }, tablet: { width: 820, height: 1180 }, phone: { width: 390, height: 844 } };
+if (!viewports[device]) throw new Error('MEDIA_ACCEPTANCE_VIEWPORT must be desktop, tablet, or phone');
 const pageEvidence = new WeakMap();
 const sessionEvidence = new WeakMap();
 
-test.use({ viewport: { width: 1440, height: 900 }, trace: 'retain-on-failure', actionTimeout: 10000 });
+test.use({ viewport: viewports[device], trace: 'retain-on-failure', actionTimeout: 10000 });
 test.setTimeout(90000);
 
 test.beforeEach(async ({ page }) => {
@@ -29,6 +32,8 @@ test.afterEach(async ({ page }, testInfo) => {
   // own local playback through the UI. For HLS, separately verify the exact
   // observed server-session stop response; native unmount alone is not proof.
   if (page.isClosed()) return;
+  const closeSearch = page.getByTestId('search-mode-close');
+  if (await closeSearch.isVisible()) await closeSearch.click();
   const observations = await page.evaluate(() => ({
     events: window.__mediaJourneyEvents ?? [],
     hls: window.__hlsAcceptance ?? [],
@@ -94,6 +99,20 @@ async function playMovie(page) {
   };
   page.on('response', observeMint);
   await test.step('Find and start the movie with ordinary user input', async () => {
+    if (device === 'phone') {
+      await expect(page.getByTestId('media-search-launcher')).toBeVisible({ timeout: 30000 });
+      await page.getByTestId('media-search-launcher').click();
+      const search = page.getByRole('dialog', { name: 'Search media', exact: true });
+      await search.getByRole('searchbox', { name: 'Search media', exact: true }).fill(title);
+      await search.getByRole('button', { name: 'Video', exact: true }).click();
+      const result = search.getByTestId('search-mode-results').getByText(title, { exact: true });
+      await expect(result).toHaveCount(1, { timeout: 15000 });
+      await result.click();
+      await expect(search).toBeVisible();
+      await page.getByTestId('search-mode-close').click();
+      await page.getByTestId('mini-player-open-nowplaying').click();
+      return;
+    }
     const search = page.getByRole('textbox', { name: 'Search media…' });
     // Dev-module loading is separate from the interaction timeout; release
     // startup budgets are checked against the built app, not Vite transforms.

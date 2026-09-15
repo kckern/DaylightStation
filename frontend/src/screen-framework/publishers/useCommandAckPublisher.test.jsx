@@ -108,6 +108,16 @@ describe('useCommandAckPublisher', () => {
     expect(ack.code).toBe('E_BAD');
   });
 
+  it('returns explicit typed unsupported for handoff receipt events, never optimistic success', () => {
+    renderHook(() => useCommandAckPublisher({ deviceId: 'tv-1', actionBus: bus }));
+    act(() => bus.emit('media:handoff', { commandId: 'handoff-1', transferId: 'transfer-1', op: 'capture' }));
+    expect(ackCalls()).toHaveLength(1);
+    expect(ackCalls()[0][0]).toMatchObject({
+      commandId: 'handoff-1', ok: false, code: 'HANDOFF_UNSUPPORTED',
+      handoff: { transferId: 'transfer-1', phase: 'failed', code: 'HANDOFF_UNSUPPORTED' },
+    });
+  });
+
   it('is a no-op when deviceId is falsy', () => {
     renderHook(() => useCommandAckPublisher({ deviceId: null, actionBus: bus }));
     act(() => bus.emit('media:playback', { command: 'play', commandId: 'c1' }));

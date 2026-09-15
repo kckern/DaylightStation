@@ -85,6 +85,18 @@ describe('useExternalControl', () => {
     }));
   });
 
+  it('returns typed unsupported for a valid handoff instead of a receipt-only success', () => {
+    renderHook(() => useExternalControl(controller));
+    act(() => {
+      capturedCallback({ topic: 'client-control:live-1', replyToControlClientId: 'caller-live', commandId: 'handoff-1', command: 'handoff', params: { version: 1, transferId: 'transfer-1', op: 'capture' } });
+    });
+    expect(sendFn).toHaveBeenCalledWith(expect.objectContaining({
+      topic: 'client-ack', commandId: 'handoff-1', ok: false, code: 'HANDOFF_UNSUPPORTED',
+      handoff: { transferId: 'transfer-1', phase: 'failed', code: 'HANDOFF_UNSUPPORTED' },
+    }));
+    expect(controller.transport.stop).not.toHaveBeenCalled();
+  });
+
   it('ignores messages without a commandId', () => {
     renderHook(() => useExternalControl(controller));
     act(() => {
