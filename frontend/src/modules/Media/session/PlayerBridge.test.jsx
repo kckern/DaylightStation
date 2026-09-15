@@ -400,4 +400,25 @@ describe('PlayerBridge real Player contract', () => {
     expect(controller.position.get().seconds).toBe(0);
     expect(controller.getSnapshot().state).toBe('loading');
   });
+
+  it('does not claim playing when an unpaused buffering video completes a seek', () => {
+    const controller = makeRealController();
+    controller.queue.playNow({ contentId: 'plex:movie-a', duration: 5400, format: 'video' });
+    mediaElement = document.createElement('video');
+    Object.defineProperties(mediaElement, {
+      currentTime: { configurable: true, writable: true, value: 257 },
+      paused: { configurable: true, value: false },
+    });
+    mountedContentId = 'plex:movie-a';
+    render(<Harness controller={controller} />);
+    act(() => mediaElement.dispatchEvent(new Event('waiting')));
+    expect(controller.getSnapshot().state).toBe('buffering');
+
+    mediaElement.currentTime = 341.75;
+    act(() => mediaElement.dispatchEvent(new Event('seeked')));
+    expect(controller.position.get().seconds).toBe(341.75);
+    expect(controller.getSnapshot().state).toBe('buffering');
+    act(() => mediaElement.dispatchEvent(new Event('playing')));
+    expect(controller.getSnapshot().state).toBe('playing');
+  });
 });
