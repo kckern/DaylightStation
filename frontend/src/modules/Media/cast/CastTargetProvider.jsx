@@ -28,7 +28,15 @@ function writePersisted(state) {
 export function CastTargetProvider({ children }) {
   // This must be an initializer, not a mount effect: a blank first render
   // would persist over a real remote aim before restoration could happen.
-  const [initial] = useState(() => readPersisted(Date.now()));
+  const [initial] = useState(() => {
+    const now = Date.now();
+    const restored = readPersisted(now);
+    // Fleet evidence is asynchronous. Only a current positive observation can
+    // pause expiry, so an already-idle persisted aim must be local before its
+    // first layout, not briefly expose a stale remote destination.
+    const expiry = advanceAimLifetime(restored.state, { now, exemption: false });
+    return { ...restored, state: expiry.state, expired: expiry.expired };
+  });
   const [aim, setAim] = useState(initial.state);
   const fleet = useContext(FleetContext);
   const peek = useContext(PeekContext);
@@ -47,6 +55,7 @@ export function CastTargetProvider({ children }) {
 
   useEffect(() => {
     if (initial.restored) mediaLog.aimRestored({ migrated: initial.migrated, targetIds: aim.targetIds });
+    if (initial.expired) mediaLog.aimExpired({ targetIds: initial.state.targetIds });
   // Intentionally mounts once: restoration itself is synchronous.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

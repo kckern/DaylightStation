@@ -36,6 +36,7 @@ export function createRemoteSessionController({
   // watching (a seek bar is subscribed).
   let posSubscribers = 0;
   let ticker = null;
+  let pendingSteering = null;
   const syncFromSnapshot = (snap) => {
     if (snap && typeof snap.position === 'number') position.set(snap.position);
   };
@@ -50,8 +51,50 @@ export function createRemoteSessionController({
     if (ticker) { clearIntervalFn(ticker); ticker = null; }
   };
 
+  const samePlayback = (left, right) => left?.sessionId === right?.sessionId
+    && left?.contentId === right?.contentId
+    && (left?.queueItemId == null || left.queueItemId === right?.queueItemId);
+
+  const freshPlayback = (entry, { playingOnly = false } = {}) => {
+    const current = entry?.snapshot?.currentItem;
+    const sessionId = entry?.snapshot?.sessionId;
+    if (entry?.isStale || entry?.offline || (playingOnly && entry?.snapshot?.state !== PLAYING)
+      || typeof sessionId !== 'string' || !sessionId
+      || typeof current?.contentId !== 'string' || !current.contentId) return null;
+    return {
+      sessionId,
+      contentId: current.contentId,
+      ...(typeof current.queueItemId === 'string' && current.queueItemId
+        ? { queueItemId: current.queueItemId }
+        : {}),
+    };
+  };
+
+  const reportSteering = (playback) => onSteeringActivity?.({ deviceId, playback });
+
+  const reconcilePendingSteering = (entry) => {
+    if (!pendingSteering) return;
+    if (entry?.offline || entry?.isStale) {
+      pendingSteering = null;
+      return;
+    }
+    const identity = freshPlayback(entry);
+    // A fresh different identity is evidence that another command or person
+    // took over; it may not inherit this acknowledged Play's steering lease.
+    if (identity && !samePlayback(pendingSteering, identity)) {
+      pendingSteering = null;
+      return;
+    }
+    const playing = freshPlayback(entry, { playingOnly: true });
+    if (playing && samePlayback(pendingSteering, playing)) {
+      pendingSteering = null;
+      reportSteering(playing);
+    }
+  };
+
   const detachFleet = fleetStore.subscribeDevice(deviceId, (entry) => {
     syncFromSnapshot(entry?.snapshot);
+    reconcilePendingSteering(entry);
   });
   syncFromSnapshot(snapshot());
 
@@ -64,30 +107,24 @@ export function createRemoteSessionController({
   // steering lease, and even then only against a fresh, currently playing
   // snapshot with a concrete playback identity. `meta.ownerId` names the
   // receiving screen, so it is deliberately not used as source provenance.
-  const observedPlayback = () => {
-    const entry = fleetStore.getEntry(deviceId);
-    const current = entry?.snapshot?.currentItem;
-    const sessionId = entry?.snapshot?.sessionId;
-    if (entry?.isStale || entry?.offline || entry?.snapshot?.state !== PLAYING
-      || typeof sessionId !== 'string' || !sessionId
-      || typeof current?.contentId !== 'string' || !current.contentId) return null;
-    return {
-      sessionId,
-      contentId: current.contentId,
-      ...(typeof current.queueItemId === 'string' && current.queueItemId
-        ? { queueItemId: current.queueItemId }
-        : {}),
-    };
-  };
+  const observedPlayback = () => freshPlayback(fleetStore.getEntry(deviceId), { playingOnly: true });
 
   const send = (method, path, body, action) => {
+    // A later Play supersedes an earlier command that was still waiting for a
+    // debounced playing-state broadcast. Capture its known paused identity so
+    // only that exact playback can complete the lease.
+    const expectedPlayback = action === 'play' ? freshPlayback(fleetStore.getEntry(deviceId)) : null;
+    if (action === 'play') pendingSteering = null;
     const commandId = randomUuid();
     const ackPromise = ackRouter.register(commandId, { action, deviceId });
     const httpPromise = http(path, { ...body, commandId }, method);
     // HTTP failure rejects immediately; otherwise the ack decides.
     return Promise.all([httpPromise, ackPromise]).then(([httpRes]) => {
       const playback = observedPlayback();
-      if (playback) onSteeringActivity?.({ deviceId, playback });
+      if (action === 'play') {
+        if (expectedPlayback && playback && samePlayback(expectedPlayback, playback)) reportSteering(playback);
+        else if (expectedPlayback) pendingSteering = expectedPlayback;
+      } else if (playback) reportSteering(playback);
       return { ok: true, http: httpRes, commandId };
     });
   };
@@ -175,6 +212,7 @@ export function createRemoteSessionController({
     },
 
     destroy() {
+      pendingSteering = null;
       detachFleet();
       stopTicker();
     },
