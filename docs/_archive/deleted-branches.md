@@ -444,3 +444,4 @@ The corollary bit twice in this sweep: `feat/teacher-workspace-ia` and `feature/
 | 2026-09-14 | feat/decoder-shuffle | 816f87949 | Segmented decoder recolors every segment on the same 1s tick as the position jump; stagger removed (merged to main) |
 | 2026-09-14 | feat/decoder-reveal | bb15e24f0 | Segmented decoder reveal modes (progressive typing, marquee, static) from config (merged to main) |
 | 2026-09-14 | fix/ladder-typing | 3995848ff | Copy-mode typing accepts compound vowels/finals; untypeable characters skipped; refusals logged (merged to main) |
+| 2026-09-14 | fix/ladder-audit | 756d1e191fa1f9dff83af2e55c86239993e94d65 | Sentence Ladder: Tab replays everywhere, tap to hear, keyboard-only speaking, too-short takes |
