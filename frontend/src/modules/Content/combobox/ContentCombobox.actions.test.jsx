@@ -24,19 +24,22 @@ function jsonResponse(items) {
 }
 
 /**
- * Mirrors a browser pointer activation closely enough for jsdom: focus moves
- * only if the target's pointer-down default was not prevented. Calling
+ * Cancelled pointerdown suppresses compatibility mousedown/mouseup (but not
+ * click). Focus moves only for an uncancelled mousedown. Calling
  * .focus() exercises the real TextInput blur handler and real hook close path.
  */
 function pointerActivate(element) {
   act(() => {
-    const pointerDown = createEvent.pointerDown(element);
+    const pointerDown = createEvent.pointerDown(element, { pointerType: 'mouse', isPrimary: true });
     fireEvent(element, pointerDown);
-    const down = createEvent.mouseDown(element);
-    fireEvent(element, down);
-    if (!pointerDown.defaultPrevented && !down.defaultPrevented
-      && element.matches('button,input,select,textarea,a[href],[tabindex]')) element.focus();
-    fireEvent.mouseUp(element);
+    if (!pointerDown.defaultPrevented) {
+      const down = createEvent.mouseDown(element);
+      fireEvent(element, down);
+      if (!down.defaultPrevented
+        && element.matches('button,input,select,textarea,a[href],[tabindex]')) element.focus();
+    }
+    fireEvent.pointerUp(element, { pointerType: 'mouse', isPrimary: true });
+    if (!pointerDown.defaultPrevented) fireEvent.mouseUp(element);
     fireEvent.click(element, { detail: 1 });
   });
 }
@@ -116,6 +119,29 @@ describe('ContentCombobox result actions — real focus ownership', () => {
 
     expect(await screen.findByTestId('result-action-add-plex:leaf-1')).toBeInTheDocument();
     expect(input).toHaveValue('bluey');
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it.each([1, 2])('dismisses on the first nonfocus outside click after %i pointer Add actions', async (count) => {
+    const { input, onChange, onMore } = await renderSearchedCombobox();
+    for (let index = 0; index < count; index += 1) {
+      pointerActivate(screen.getByTestId('result-more-plex:leaf-1'));
+      pointerActivate(await screen.findByTestId('result-action-add-plex:leaf-1'));
+      await waitFor(() => expect(screen.queryByTestId('result-action-add-plex:leaf-1')).toBeNull());
+      expect(input).toHaveValue('bluey');
+      expect(screen.getByRole('listbox')).toBeVisible();
+    }
+    expect(onMore).toHaveBeenCalledTimes(count);
+    expect(onMore).toHaveBeenLastCalledWith('add', leaf);
+
+    const outside = screen.getByTestId('outside-surface');
+    pointerActivate(outside);
+    expect(outside).not.toHaveFocus();
+    await waitFor(() => expect(input).toHaveValue(''));
+    await act(async () => {
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    });
+    expect(screen.queryByRole('listbox')).toBeNull();
     expect(onChange).not.toHaveBeenCalled();
   });
 
