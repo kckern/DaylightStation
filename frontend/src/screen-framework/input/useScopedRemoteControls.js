@@ -10,8 +10,11 @@ export function useScopedRemoteControls(rootRef, { onEscape, onLeft, onRight } =
   useEffect(() => {
     const root = rootRef.current; if (!root) return;
     const bus = getActionBus();
-    const buttons = () => [...root.querySelectorAll('button:not(:disabled), [href], input:not(:disabled)')]
-      .filter(node => !node.closest('[hidden], [aria-hidden="true"]'));
+    // HTML controls only. A bare `[href]` also matched an icon's SVG <use>,
+    // which has no click(): with nothing focused, select "clicked" it and threw
+    // `click is not a function` (17 times in Charades, 2026-09-13..14).
+    const buttons = () => [...root.querySelectorAll('button:not(:disabled), a[href], input:not(:disabled)')]
+      .filter(node => node instanceof HTMLElement && !node.closest('[hidden], [aria-hidden="true"]'));
     const focus = () => { if (!root.contains(document.activeElement)) (root.querySelector('[autofocus]:not(:disabled)') || buttons()[0])?.focus(); };
     const handle = ({ action, direction, repeat } = {}) => {
       if (action === 'escape') { if (!repeat) escapeRef.current?.(); return; }

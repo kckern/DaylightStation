@@ -50,3 +50,11 @@ it('does not emit a legacy Back after the semantic owner unmounts synchronously'
  expect(exit).toHaveBeenCalledTimes(1);expect(parent).not.toHaveBeenCalled();expect(legacy).not.toHaveBeenCalled();
  unsubscribe();remote.destroy();adapter.destroy();window.removeEventListener('keydown',legacy);
 });
+
+function SvgFirstControls({ action }) { const ref=useRef(null); useScopedRemoteControls(ref); return <div ref={ref}><svg><use href="#icon"/></svg><button onClick={action}>Go</button></div>; }
+it('never treats an SVG href as a control — select with nothing focused activates the first real button', () => {
+ // 2026-09-13..14: `[href]` matched an icon's SVG <use>, which has no click(),
+ // and Enter threw "click is not a function" 17 times in Charades.
+ const action=vi.fn(); render(<SvgFirstControls action={action}/>); document.activeElement?.blur?.();
+ fireEvent.keyDown(window,{key:'Enter'}); expect(action).toHaveBeenCalledTimes(1);
+});
