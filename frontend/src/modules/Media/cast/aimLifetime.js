@@ -44,9 +44,10 @@ export function restoreAimState(raw, { now = Date.now() } = {}) {
       mode: normalizeMode(parsed.mode),
       targetIds: normalizeTargetIds(parsed.targetIds),
       activityAt: hasActivityAt ? parsed.activityAt : now,
-      exemptionStartedAt: validTimestamp(parsed.exemptionStartedAt)
-        ? parsed.exemptionStartedAt
-        : null,
+      // A persisted exemption was true only at the last observed moment. A
+      // reload cannot credit the unobserved interval after that moment, so a
+      // fresh fleet observation must begin a new runtime exemption.
+      exemptionStartedAt: null,
     },
     migrated: !hasActivityAt,
     restored: true,
@@ -89,5 +90,11 @@ export function advanceAimLifetime(state, { now = Date.now(), exemption = null }
 }
 
 export function renewAimActivity(state, { now = Date.now() } = {}) {
-  return { ...state, activityAt: now };
+  return {
+    ...state,
+    activityAt: now,
+    // The renewed activity time becomes the new baseline for the active
+    // exemption too. Otherwise ending it would credit time before renewal.
+    exemptionStartedAt: state.exemptionStartedAt == null ? null : now,
+  };
 }

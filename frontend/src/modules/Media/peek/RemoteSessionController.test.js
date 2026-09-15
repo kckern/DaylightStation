@@ -92,6 +92,92 @@ describe('RemoteSessionController', () => {
     expect(onSteeringActivity).not.toHaveBeenCalled();
   });
 
+  it('reconciles an acknowledged Play when the matching fresh playing broadcast arrives later', async () => {
+    const onSteeringActivity = vi.fn();
+    const { fleetStore, ackRouter, ctl } = setup({ onSteeringActivity });
+    fleetStore.receive({
+      deviceId: 'tv',
+      snapshot: { sessionId: 'session-1', state: 'paused', currentItem: { contentId: 'plex:1', queueItemId: 'queue-1' } },
+    });
+
+    const pending = ctl.transport.play();
+    ackRouter.resolve({ commandId: 'cmd-1', ok: true });
+    await pending;
+    expect(onSteeringActivity).not.toHaveBeenCalled();
+
+    fleetStore.receive({
+      deviceId: 'tv',
+      snapshot: { sessionId: 'session-1', state: 'playing', currentItem: { contentId: 'plex:1', queueItemId: 'queue-1' } },
+    });
+    expect(onSteeringActivity).toHaveBeenCalledWith({
+      deviceId: 'tv',
+      playback: { sessionId: 'session-1', contentId: 'plex:1', queueItemId: 'queue-1' },
+    });
+  });
+
+  it('does not let an acknowledged Play inherit unrelated later playback', async () => {
+    const onSteeringActivity = vi.fn();
+    const { fleetStore, ackRouter, ctl } = setup({ onSteeringActivity });
+    fleetStore.receive({
+      deviceId: 'tv',
+      snapshot: { sessionId: 'session-1', state: 'paused', currentItem: { contentId: 'plex:1', queueItemId: 'queue-1' } },
+    });
+    const pending = ctl.transport.play();
+    ackRouter.resolve({ commandId: 'cmd-1', ok: true });
+    await pending;
+
+    fleetStore.receive({
+      deviceId: 'tv',
+      snapshot: { sessionId: 'session-2', state: 'playing', currentItem: { contentId: 'plex:2', queueItemId: 'queue-2' } },
+    });
+    fleetStore.receive({
+      deviceId: 'tv',
+      snapshot: { sessionId: 'session-1', state: 'playing', currentItem: { contentId: 'plex:1', queueItemId: 'queue-1' } },
+    });
+
+    expect(onSteeringActivity).not.toHaveBeenCalled();
+  });
+
+  it('clears a pending acknowledged Play when its remote controller is destroyed', async () => {
+    const onSteeringActivity = vi.fn();
+    const { fleetStore, ackRouter, ctl } = setup({ onSteeringActivity });
+    fleetStore.receive({
+      deviceId: 'tv',
+      snapshot: { sessionId: 'session-1', state: 'paused', currentItem: { contentId: 'plex:1', queueItemId: 'queue-1' } },
+    });
+    const pending = ctl.transport.play();
+    ackRouter.resolve({ commandId: 'cmd-1', ok: true });
+    await pending;
+
+    ctl.destroy();
+    fleetStore.receive({
+      deviceId: 'tv',
+      snapshot: { sessionId: 'session-1', state: 'playing', currentItem: { contentId: 'plex:1', queueItemId: 'queue-1' } },
+    });
+
+    expect(onSteeringActivity).not.toHaveBeenCalled();
+  });
+
+  it('clears a pending acknowledged Play when the target goes offline before playing', async () => {
+    const onSteeringActivity = vi.fn();
+    const { fleetStore, ackRouter, ctl } = setup({ onSteeringActivity });
+    fleetStore.receive({
+      deviceId: 'tv',
+      snapshot: { sessionId: 'session-1', state: 'paused', currentItem: { contentId: 'plex:1', queueItemId: 'queue-1' } },
+    });
+    const pending = ctl.transport.play();
+    ackRouter.resolve({ commandId: 'cmd-1', ok: true });
+    await pending;
+
+    fleetStore.receive({ deviceId: 'tv', snapshot: null, reason: 'offline' });
+    fleetStore.receive({
+      deviceId: 'tv',
+      snapshot: { sessionId: 'session-1', state: 'playing', currentItem: { contentId: 'plex:1', queueItemId: 'queue-1' } },
+    });
+
+    expect(onSteeringActivity).not.toHaveBeenCalled();
+  });
+
   it('ack arriving before HTTP settles still resolves', async () => {
     let releaseHttp;
     const { ackRouter, ctl } = setup({

@@ -76,15 +76,17 @@ describe('CastTargetProvider', () => {
     expect(screen.getByTestId('targets')).toHaveTextContent('');
   });
 
-  it('restores the persisted aim synchronously instead of first writing a blank default', () => {
+  it('shows This device on its first layout pass when the restored aim is expired', () => {
+    const now = 1_700_000_000_000;
+    vi.spyOn(Date, 'now').mockReturnValue(now);
     localStorage.setItem(CAST_TARGET_KEY, JSON.stringify({
-      mode: 'fork', targetIds: ['office'], activityAt: 1_700_000_000_000,
+      mode: 'fork', targetIds: ['office'], activityAt: now - (2 * 60 * 60 * 1000),
     }));
     const onInitial = vi.fn();
 
     render(<CastTargetProvider><InitialProbe onInitial={onInitial} /></CastTargetProvider>);
 
-    expect(onInitial.mock.calls[0]).toEqual([{ mode: 'fork', targetIds: ['office'] }]);
+    expect(onInitial.mock.calls[0]).toEqual([{ mode: 'fork', targetIds: [] }]);
   });
 
   it('renews the persisted idle lease from a real pointer interaction', () => {
@@ -127,7 +129,7 @@ describe('CastTargetProvider', () => {
     const now = 1_700_000_000_000;
     vi.spyOn(Date, 'now').mockReturnValue(now);
     localStorage.setItem(CAST_TARGET_KEY, JSON.stringify({
-      mode: 'fork', targetIds: ['office'], activityAt: now - (2 * 60 * 60 * 1000),
+      mode: 'fork', targetIds: ['office'], activityAt: now - (60 * 60 * 1000),
     }));
     const steering = { playback: { sessionId: 's-1', contentId: 'plex:1', queueItemId: 'q-1' } };
     const activeFleet = { store: { getEntry: () => ({
@@ -149,6 +151,7 @@ describe('CastTargetProvider', () => {
     const view = render(renderTree(activeFleet));
     expect(screen.getByTestId('targets')).toHaveTextContent('office');
     view.rerender(renderTree(newerFleet));
-    expect(screen.getByTestId('targets')).toBeEmptyDOMElement();
+    expect(screen.getByTestId('targets')).toHaveTextContent('office');
+    expect(JSON.parse(localStorage.getItem(CAST_TARGET_KEY))).toMatchObject({ exemptionStartedAt: null });
   });
 });
