@@ -72,7 +72,9 @@ import {
 } from './gateRepertoire.js';
 import { isConfigOnlyDecline, materialOrder } from './gateMaterial.js';
 import { failureAdvice } from './failureCoaching.js';
-import { needsDrillResolution, resolveGateDrill } from './gateDrill.js';
+import {
+  drillStanding, drillStepFor, needsDrillResolution, projectDrill, resolveGateDrill,
+} from './gateDrill.js';
 import { resolveLearnerPath } from './gateDailyEscalation.js';
 import { preloadGame } from '../../../gameRegistry.js';
 import GateCeremony, { CEREMONY_MS } from './GateCeremony.jsx';
@@ -347,12 +349,8 @@ export default function GameGate({
   const retryRef = useRef(false);
 
   /**
-   * The study day this gate session belongs to, taken ONCE.
-   *
-   * It was re-derived per log line, which is fine for a log line and wrong for
-   * the drill: the day is what scopes a learner's banked reps, and a gate open
-   * across the 4am boundary would otherwise re-read the drill as empty halfway
-   * through a set. One reading per session, shared by both.
+   * The study day this gate session belongs to, taken ONCE, so every event of
+   * one session carries the same day even when the session straddles 4am.
    */
   const studyDate = useMemo(() => clientStudyDate(), []);
 
@@ -472,12 +470,13 @@ export default function GameGate({
   /**
    * A DRILL SPEC BECOMES AN ORDINARY ONE, BEFORE THE SESSION SEES IT.
    *
-   * `{ kind: 'drill' }` is the only spec whose answer depends on the LEARNER
-   * rather than on the bank: which of the three sets is asked for is a function
-   * of how many reps they have banked today. `AskSession` resolves material and
-   * knows nothing about who is playing — correctly, it is a resolver — so the
-   * choice is made here, where the learner is, and what is handed down is the
-   * plain `{ kind: 'exercise', instanceId }` every other path already produces.
+   * A drill — `{ kind: 'drill' }`, or a scale rung carrying `sets`/`reps` — is
+   * a sequence of asks, not one: which set is on the stand is a function of
+   * the reps passed so far at this gate. `AskSession` resolves material and
+   * knows nothing about sequence — correctly, it is a resolver — so the choice
+   * is made here, and what is handed down is the plain
+   * `{ kind: 'exercise', instanceId }` every other path already produces. This
+   * effect serves the FIRST rep; `handlePassed` deals every one after it.
    *
    * The drill's coordinates ride along on the attempt so the run can draw its
    * pills. They are NOT folded into the spec: the spec is what gets resolved and
@@ -494,7 +493,7 @@ export default function GameGate({
     let alive = true;
     const servedFor = attempt.attemptId;
     const spec = attempt.spec;
-    resolveGateDrill({ spec, learnerId, studyDate, levelId: attempt.level.id }).then((resolved) => {
+    resolveGateDrill({ spec, levelId: attempt.level.id }).then((resolved) => {
       // The attempt this resolution was started for may already be gone — a
       // retry, a new round, an unmount. Landing on a stale attempt would swap
       // the material out from under a child mid-ask.
@@ -507,14 +506,8 @@ export default function GameGate({
         rung: latest.current.attempt.level.id,
         drill: resolved.programId,
         step: resolved.stepId,
-        // What the pills will show. The one number an adult reading the log
-        // wants is how far through today's nine this child is.
-        // Summed from the steps rather than assumed to be three a set: a rung
-        // drill's reps come from the YAML.
-        banked: resolved.projection.steps.reduce(
-          (sum, step) => sum + Math.min(step.pass_count ?? 0, step.requirement?.required_passes ?? 1), 0,
-        ),
-        total: resolved.projection.steps.reduce((sum, step) => sum + (step.requirement?.required_passes ?? 1), 0),
+        // What the pills will show: how far through the drill this child is.
+        ...drillStanding(resolved.projection),
         complete: resolved.complete,
       });
       setAttempt({
@@ -525,12 +518,17 @@ export default function GameGate({
           stepId: resolved.stepId,
           projection: resolved.projection,
           complete: resolved.complete,
+          program: resolved.program,
+          // The exercise ids passed at THIS gate, in order. The whole of the
+          // drill's memory: nothing is read from a ledger, so a new gate is a
+          // new nine.
+          passes: [],
         },
       });
     });
     return () => { alive = false; };
     // `attempt.spec` is the trigger: a decline swaps it, a retry re-serves it.
-  }, [attempt?.attemptId, attempt?.spec, learnerId, studyDate]);
+  }, [attempt?.attemptId, attempt?.spec]);
 
   /**
    * The gate mounted. Emitted once per mount and BEFORE anything can decline,
@@ -678,7 +676,45 @@ export default function GameGate({
 
   const handlePassed = (result) => {
     const score = typeof result?.score === 'number' ? result.score : null;
-    emit('gate.passed', { ...context, score });
+    /**
+     * A DRILL HOLDS THE GATE UNTIL ITS LAST REP.
+     *
+     * One passed scale is one rep. Unless it was the last one, nothing opens
+     * and nothing celebrates: the rep is banked, the next one is dealt from
+     * the same program, and the pills gild a ring. The game is the prize for
+     * the whole drill, not for its first fifteen notes — which is what the
+     * gate used to hand out, banking the rest across the day.
+     *
+     * The re-serve is shaped like a retry (`retry: true`, fresh attemptId, the
+     * material to be resolved again): the rotation is not spent nine times
+     * over, and the log gets one `gate.attempt` per rep, which is the truth.
+     */
+    const held = latest.current.attempt;
+    if (held?.drill?.program) {
+      const passes = [...(held.drill.passes ?? []), held.spec.instanceId];
+      const projection = projectDrill(held.drill.program, passes);
+      const standing = drillStanding(projection);
+      if (!projection.complete) {
+        const step = drillStepFor(projection);
+        emit('gate.rep-banked', {
+          ...context, score, drill: held.drill.programId, step: step.id, ...standing,
+        });
+        setAttempt({
+          ...held,
+          attemptId: makeId('gate-attempt'),
+          spec: { kind: 'exercise', instanceId: step.requirement.exercise_id },
+          material: null,
+          requirement: null,
+          skipped: [],
+          retry: true,
+          drill: { ...held.drill, stepId: step.id, projection, complete: false, passes },
+        });
+        return;
+      }
+      emit('gate.passed', { ...context, score, drill: held.drill.programId, ...standing });
+    } else {
+      emit('gate.passed', { ...context, score });
+    }
     // The curtain is the transition, not a card in front of one: the game is
     // handed control when the panels finish parting, so the reveal and the
     // navigation are the same gesture. `onPassed` is deferred to that moment.
@@ -916,10 +952,11 @@ export default function GameGate({
         // are what `ExerciseRun` has always needed to render `DrillProgress`
         // and what the gate never passed — the whole reason nine reps of a
         // three-key drill showed up as one scale, once, with no pills.
-        // `drillProjection` is today's standing, already computed above:
-        // handing it over means the chrome does not re-fetch a projection the
-        // gate just built, and — the part that matters — it is DAY-SCOPED,
-        // which the learning endpoint's own projection is not.
+        // `drillProjection` is where this gate's drill stands, already computed
+        // above: handing it over means the chrome does not re-fetch a
+        // projection the gate just built, and — the part that matters — it
+        // counts THIS gate's reps, which the learning endpoint's own projection
+        // (every attempt the learner ever made) does not.
         programId={attempt.drill?.programId ?? null}
         stepId={attempt.drill?.stepId ?? null}
         drillProjection={attempt.drill?.projection ?? null}

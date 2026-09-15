@@ -1394,21 +1394,11 @@ const DRILL_CONFIG = {
   startLevel: 'drill-rung',
 };
 
-function bankedRep(step, count) {
-  return Array.from({ length: count }, () => ({
-    status: 'completed',
-    purpose: 'challenge',
-    // Local noon today: unambiguously inside the study day in any timezone.
-    created_at: new Date(new Date().setHours(12, 0, 0, 0)).toISOString(),
-    prompt: { exercise_id: DRILL_PROGRAM.steps[step].requirement.exercise_id },
-    criteria: { completeness: 1, cleanliness: 1 },
-  }));
-}
-
 /**
  * THE SAME DRILL, WRITTEN ON A SCALE RUNG. `sets` and `reps` in the YAML turn a
- * plain scale level into three sets of three reps, banked one passed gate at a
- * time — so the run draws pills instead of the four lines of text it used to.
+ * plain scale level into three sets of three reps, and the gate holds until
+ * every one of them has been played at THIS gate — so the run draws pills, and
+ * the game opens on the ninth rep rather than the first.
  */
 const RUNG_DRILL_LEVEL = {
   id: 'scales-rung',
@@ -1418,21 +1408,23 @@ const RUNG_DRILL_LEVEL = {
 };
 const RUNG_DRILL_CONFIG = { repertoire: [REPERTOIRE[0], RUNG_DRILL_LEVEL], startLevel: 'scales-rung' };
 const scaleIdFor = (root) => `scales/modes@root=${root},mode=ionian,direction=up-then-down,span_octaves=1`;
-function gatePasses(root, count, passed = true) {
-  return Array.from({ length: count }, () => ({
-    status: 'completed',
-    purpose: 'challenge',
-    created_at: new Date(new Date().setHours(12, 0, 0, 0)).toISOString(),
-    prompt: { exercise_id: scaleIdFor(root) },
-    verdict: { passed },
-  }));
+
+/** Every `gate.attempt` so far — one per rep the session has settled on. */
+const attemptsLogged = () => events().filter(([name]) => name === 'gate.attempt').length;
+
+/**
+ * Play one rep and wait for the NEXT one to be on the stand. A rep is settled
+ * when the session has resolved it, which the gate announces as `gate.attempt`;
+ * waiting on the testid alone would race the double's own resolving frame.
+ */
+async function passRep() {
+  const before = attemptsLogged();
+  fireEvent.click(await screen.findByText('stub-pass'));
+  await waitFor(() => expect(attemptsLogged()).toBe(before + 1));
+  await screen.findByText('stub-pass');
 }
 
 describe('GameGate — a scale rung with sets and reps', () => {
-  beforeEach(() => {
-    h.attempts.mockResolvedValue({ ok: true, status: 200, data: { attempts: [] } });
-  });
-
   it('serves the rung as a drill: one key per set, the current set first, pills to draw', async () => {
     renderGate({ learnerId: 'kid1', gateConfig: RUNG_DRILL_CONFIG });
     await screen.findByTestId('ask-session');
@@ -1443,21 +1435,10 @@ describe('GameGate — a scale rung with sets and reps', () => {
     expect(props.stepId).toBe('set-1');
     expect(props.drillProjection.steps.map((step) => step.requirement.exercise_id))
       .toEqual([scaleIdFor('G'), scaleIdFor('D'), scaleIdFor('G')]);
-  });
-
-  it('counts only passed gates, dealt to the sets in order', async () => {
-    h.attempts.mockResolvedValue({
-      ok: true, status: 200, data: { attempts: [...gatePasses('G', 3), ...gatePasses('D', 1), ...gatePasses('D', 2, false)] },
-    });
-    renderGate({ learnerId: 'kid1', gateConfig: RUNG_DRILL_CONFIG });
-    await screen.findByTestId('ask-session');
-
-    const props = h.askProps.at(-1);
-    expect(props.stepId).toBe('set-2');
-    expect(props.materialSpec.instanceId).toBe(scaleIdFor('D'));
-    expect(props.drillProjection.steps[1].pass_count).toBe(1);
     const [, data] = eventNamed('gate.drill-served');
-    expect(data).toMatchObject({ drill: 'rung:scales-rung', step: 'set-2', banked: 4, total: 9, complete: false });
+    expect(data).toMatchObject({ drill: 'rung:scales-rung', step: 'set-1', banked: 0, total: 9, complete: false });
+    // Nothing about the learner's past is read: the gate is the whole drill.
+    expect(h.attempts).not.toHaveBeenCalled();
   });
 
   it('runs bare: no framing, heading or instruction text on the gate', async () => {
@@ -1465,15 +1446,84 @@ describe('GameGate — a scale rung with sets and reps', () => {
     await screen.findByTestId('ask-session');
     expect(h.askProps.at(-1).bare).toBe(true);
   });
+
+  /**
+   * THE GATE IS THE WHOLE DRILL. One passed scale banks one rep and puts the
+   * next rep on the stand; nothing opens, nothing celebrates. The three sets are
+   * dealt in order — G, D, G — and only the ninth rep parts the curtain.
+   */
+  it('holds for all nine reps: a pass banks a rep and serves the next; the ninth opens the game', async () => {
+    const { onPassed, container } = renderGate({ learnerId: 'kid1', gateConfig: RUNG_DRILL_CONFIG });
+    await screen.findByTestId('ask-session');
+
+    const expected = [
+      ['set-1', 'G'], ['set-1', 'G'], ['set-1', 'G'],
+      ['set-2', 'D'], ['set-2', 'D'], ['set-2', 'D'],
+      ['set-3', 'G'], ['set-3', 'G'], ['set-3', 'G'],
+    ];
+    for (let rep = 0; rep < 8; rep += 1) {
+      await passRep();
+      const [step, root] = expected[rep + 1];
+      const props = h.askProps.at(-1);
+      expect(props.stepId).toBe(step);
+      expect(props.materialSpec.instanceId).toBe(scaleIdFor(root));
+      expect(props.drillProjection.steps.reduce((sum, s) => sum + s.pass_count, 0)).toBe(rep + 1);
+      expect(container.querySelector('.gate-ceremony')).toBeNull();
+      expect(onPassed).not.toHaveBeenCalled();
+    }
+    const banked = events().filter(([name]) => name === 'gate.rep-banked');
+    expect(banked.map(([, data]) => data.banked)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+    expect(banked.every(([, data]) => data.total === 9)).toBe(true);
+    expect(eventNamed('gate.passed')).toBeUndefined();
+
+    // The ninth: a pass like any other gate's, curtain and all.
+    // The button is found BEFORE the fake timers go in: a `findBy` under fake
+    // timers never resolves, and the ceremony's hand-over is a timer.
+    const last = await screen.findByText('stub-pass');
+    vi.useFakeTimers();
+    try {
+      fireEvent.click(last);
+      expect(container.querySelector('.gate-ceremony')).toBeTruthy();
+      act(() => vi.advanceTimersByTime(CEREMONY_MS));
+    } finally { vi.useRealTimers(); }
+    expect(onPassed).toHaveBeenCalledTimes(1);
+    const [, passed] = eventNamed('gate.passed');
+    expect(passed).toMatchObject({ banked: 9, total: 9 });
+    // One drill is one clean pass on the ladder, not nine.
+    expect(readStored('kid1').cleanPasses).toBe(1);
+  });
+
+  it('a rep re-serve spends no rotation: nine reps, one pick', async () => {
+    renderGate({ learnerId: 'kid1', gateConfig: RUNG_DRILL_CONFIG });
+    await screen.findByTestId('ask-session');
+    await passRep();
+    await passRep();
+    expect(readStored('kid1').pickIndex).toBe(1);
+  });
+
+  it('a failed rep keeps the reps already banked: Try again is the same rep, not a fresh drill', async () => {
+    const { onPassed } = renderGate({ learnerId: 'kid1', gateConfig: RUNG_DRILL_CONFIG });
+    await screen.findByTestId('ask-session');
+    await passRep();
+    await passRep();
+
+    fireEvent.click(await screen.findByText('stub-fail'));
+    playGateKey(60);
+    await screen.findByTestId('ask-session');
+
+    const props = h.askProps.at(-1);
+    expect(props.stepId).toBe('set-1');
+    expect(props.drillProjection.steps[0].pass_count).toBe(2);
+    expect(onPassed).not.toHaveBeenCalled();
+  });
 });
 
 describe('GameGate — the three-by-three drill', () => {
   beforeEach(() => {
     h.program.mockResolvedValue({ ok: true, status: 200, data: DRILL_PROGRAM });
-    h.attempts.mockResolvedValue({ ok: true, status: 200, data: { attempts: [] } });
   });
 
-  it('serves the drill\u2019s current set as an ordinary exercise, up AND back', async () => {
+  it('serves the drill’s first set as an ordinary exercise, up AND back', async () => {
     renderGate({ learnerId: 'kid1', gateConfig: DRILL_CONFIG });
     await screen.findByTestId('ask-session');
 
@@ -1491,45 +1541,53 @@ describe('GameGate — the three-by-three drill', () => {
     expect(props.programId).toBe('scale-drill-3x3');
     expect(props.stepId).toBe('scale-set-1');
     expect(props.drillProjection.steps[0].pass_count).toBe(0);
+    // The ledger is not consulted: yesterday's nine — or this morning's — do
+    // not pay for this game.
+    expect(h.attempts).not.toHaveBeenCalled();
   });
 
-  it('picks up where the learner left off, and changes the hand with the set', async () => {
-    h.attempts.mockResolvedValue({ ok: true, status: 200, data: { attempts: bankedRep(0, 3) } });
-    renderGate({ learnerId: 'kid1', gateConfig: DRILL_CONFIG });
+  it('changes the hand with the set, and opens the game only when every set is banked', async () => {
+    const { onPassed, container } = renderGate({ learnerId: 'kid1', gateConfig: DRILL_CONFIG });
     await screen.findByTestId('ask-session');
 
-    const props = h.askProps.at(-1);
+    await passRep();
+    await passRep();
+    await passRep();
+    let props = h.askProps.at(-1);
     expect(props.stepId).toBe('scale-set-2');
     expect(props.materialSpec.instanceId).toContain('root=D');
     expect(props.materialSpec.instanceId).toContain('hand=L');
     expect(props.drillProjection.steps[0].passed).toBe(true);
+
+    await passRep();
+    await passRep();
+    props = h.askProps.at(-1);
+    expect(props.stepId).toBe('scale-set-2');
+    expect(props.drillProjection.steps[1].pass_count).toBe(2);
+    expect(onPassed).not.toHaveBeenCalled();
+
+    // The button is found BEFORE the fake timers go in: a `findBy` under fake
+    // timers never resolves, and the ceremony's hand-over is a timer.
+    const last = await screen.findByText('stub-pass');
+    vi.useFakeTimers();
+    try {
+      fireEvent.click(last);
+      expect(container.querySelector('.gate-ceremony')).toBeTruthy();
+      act(() => vi.advanceTimersByTime(CEREMONY_MS));
+    } finally { vi.useRealTimers(); }
+    expect(onPassed).toHaveBeenCalledTimes(1);
+    expect(eventNamed('gate.passed')[1]).toMatchObject({ banked: 6, total: 6 });
   });
 
   it('says where the child stands, in one line, in the log', async () => {
-    h.attempts.mockResolvedValue({ ok: true, status: 200, data: { attempts: [...bankedRep(0, 3), ...bankedRep(1, 1)] } });
     renderGate({ learnerId: 'kid1', gateConfig: DRILL_CONFIG });
     await screen.findByTestId('ask-session');
+    await passRep();
 
-    const [, data] = eventNamed('gate.drill-served');
-    expect(data).toMatchObject({
-      drill: 'scale-drill-3x3', step: 'scale-set-2', banked: 4, total: 6, complete: false,
-    });
-  });
-
-  /**
-   * Yesterday's nine do not pay for today's game. Without the day scope the
-   * ninth LIFETIME pass would retire the rung permanently.
-   */
-  it('resets with the study day', async () => {
-    const yesterday = bankedRep(0, 3).map((attempt) => ({
-      ...attempt,
-      created_at: new Date(new Date().setHours(12, 0, 0, 0) - 86_400_000).toISOString(),
-    }));
-    h.attempts.mockResolvedValue({ ok: true, status: 200, data: { attempts: yesterday } });
-    renderGate({ learnerId: 'kid1', gateConfig: DRILL_CONFIG });
-    await screen.findByTestId('ask-session');
-
-    expect(h.askProps.at(-1).stepId).toBe('scale-set-1');
+    const [, served] = eventNamed('gate.drill-served');
+    expect(served).toMatchObject({ drill: 'scale-drill-3x3', step: 'scale-set-1', banked: 0, total: 6, complete: false });
+    const [, banked] = eventNamed('gate.rep-banked');
+    expect(banked).toMatchObject({ drill: 'scale-drill-3x3', step: 'scale-set-1', banked: 1, total: 6 });
   });
 
   it('an unreachable program endpoint fails OPEN — the child earned this game', async () => {
