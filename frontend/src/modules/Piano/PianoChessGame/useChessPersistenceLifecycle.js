@@ -309,7 +309,17 @@ export function useChessPersistenceLifecycle({
         matchGateRef.current?.registerCompletion?.(request);
         request.then((saved) => {
           if (!mountedRef.current || lifecycleRef.current.gameId !== gameId) return;
-          if (saved?.ladder) setLadderState({ gameId, value: saved.ladder });
+          if (!saved?.ladder) return;
+          // The head-to-head record rides with the ladder outcome: the result
+          // card reads both, and only a saved game has either.
+          setLadderState({ gameId, value: { ...saved.ladder, head_to_head: saved.head_to_head ?? null } });
+          loggerRef.current.info?.('game-standing', {
+            gameId,
+            promoted: !!saved.ladder.promoted,
+            counted: saved.ladder.counted ?? null,
+            notCounted: saved.ladder.not_counted?.reason ?? null,
+            headToHead: saved.head_to_head ? `${saved.head_to_head.win}-${saved.head_to_head.loss}-${saved.head_to_head.draw}` : null,
+          });
         }).catch((error) => {
           loggerRef.current.warn?.('game-record-save-failed', { gameId, error: error?.message });
         });

@@ -252,6 +252,21 @@ not transcript evidence, so they are deliberately absent. `final_line` is derive
 and is the only dialogue retained in compact cross-game rivalry memory. Older archives retain their
 legacy final line but are reported as “final line only.”
 
+### Standing on the result card
+
+Under the tallies, the result card says where the game left the player, from the `POST /games`
+answer (see [piano-games.md](piano-games.md#the-game-record)):
+
+- **The head-to-head record** against this opponent, counting this game: "You vs Weedle: 6 wins,
+  0 losses". Draws appear only when there were any.
+- **Why a win did not count**, naming the first broken help ceiling in the order best moves,
+  hints, takebacks: "This win didn't count toward Kakuna: 14 best-move requests, 0 allowed."
+  A win against an opponent already beaten reads "Practice game." A loss is never explained.
+- **The climb**: "2 of 5 wins toward Kakuna". Dropped when the game promoted, because the banner
+  says so, and at the top of the ladder.
+
+Guests see none of it; they have no ladder and no rivalry memory.
+
 ## Motion, and what it costs
 
 The kiosk runs this in a WebView on a 2018 tablet, and that device sets the rules:

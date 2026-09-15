@@ -5,7 +5,7 @@ const HEADLINE = { win: 'You win', loss: 'You lose', draw: 'Draw' };
 
 export default function BoardGameResult({
   result, opponent, level, speech = null, promoted = false, message = null,
-  metrics = null, onPlayAgain, classPrefix = null, decoration = null,
+  metrics = null, notes = null, onPlayAgain, classPrefix = null, decoration = null,
 }) {
   const entries = metrics && !Array.isArray(metrics) ? Object.entries(metrics) : metrics;
   return (
@@ -16,6 +16,11 @@ export default function BoardGameResult({
         <p className={`pg-result__headline${classPrefix ? ` ${classPrefix}__headline` : ''}`}>{HEADLINE[result] || 'Game over'}</p>
         {message && <p className={`pg-result__message${classPrefix ? ` ${classPrefix}__outcome` : ''}`}>{message}</p>}
         {promoted && <p className={`pg-result__promoted${classPrefix ? ` ${classPrefix}__promoted` : ''}`}>New opponent unlocked</p>}
+        {notes?.length > 0 && (
+          <ul className={`pg-result__notes${classPrefix ? ` ${classPrefix}__notes` : ''}`}>
+            {notes.map((note) => <li key={note}>{note}</li>)}
+          </ul>
+        )}
         {entries?.length > 0 && (
           <dl className={`pg-result__metrics${classPrefix ? ` ${classPrefix}__tallies` : ''}`}>{entries.map(([label, value]) => (
             <div key={label} className={classPrefix ? `${classPrefix}__tally` : undefined}>
