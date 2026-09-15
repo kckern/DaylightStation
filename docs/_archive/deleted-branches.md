@@ -446,3 +446,4 @@ The corollary bit twice in this sweep: `feat/teacher-workspace-ia` and `feature/
 | 2026-09-14 | fix/ladder-typing | 3995848ff | Copy-mode typing accepts compound vowels/finals; untypeable characters skipped; refusals logged (merged to main) |
 | 2026-09-14 | fix/ladder-audit | 756d1e191fa1f9dff83af2e55c86239993e94d65 | Sentence Ladder: Tab replays everywhere, tap to hear, keyboard-only speaking, too-short takes |
 | 2026-09-14 | fix/ladder-first-load | fb895443d841220e775b498996864935a54e107a | Sentence Ladder: first day request carries the keyboard; aborts not unparseable |
+| 2026-09-14 | feat/decoder-marquee-default | cad83beac6d9430793ad394aa561f785f522a9c7 | Decoder: marquee default, 100ms steps, jump every step |
