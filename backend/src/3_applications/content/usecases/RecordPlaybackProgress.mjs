@@ -29,6 +29,7 @@ export class RecordPlaybackProgress {
     this.playbackPublications = playbackPublications;
     this.userVideoProgressStore = userVideoProgressStore;
     this.economyService = economyService;
+    this.reportPlaybackSession = reportPlaybackSession;
     this.createMediaProgress = createMediaProgress;
     this.nowTimestamp = nowTimestamp;
     this.nowEpoch = nowEpoch;
