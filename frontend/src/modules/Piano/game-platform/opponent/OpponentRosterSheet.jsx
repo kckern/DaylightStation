@@ -1,10 +1,14 @@
 import GameSheet from '../chrome/GameSheet.jsx';
 import { OpponentFace } from './OpponentPanel.jsx';
 
-export default function OpponentRosterSheet({ roster = [], position = 1, onClose, describe = null }) {
+// `header` is where a game puts its own standing panel — chess draws the round
+// it is in and the wins it has taken there. Optional, so checkers and Connect
+// Four render the roster exactly as before.
+export default function OpponentRosterSheet({ roster = [], position = 1, onClose, describe = null, header = null }) {
   if (!roster.length) return null;
   return (
     <GameSheet title="Opponents" onClose={onClose} className="pg-roster-sheet">
+      {header}
       <ol className="pg-roster">
         {roster.map((opponent, index) => {
           const rung = Number(opponent.position ?? opponent.level ?? index + 1);

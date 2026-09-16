@@ -1,0 +1,71 @@
+/* Where a player stands in this round.
+   Two rows that only ever grow, and one sentence that may move either way. */
+.chess-round {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ds-space-2, 0.5rem);
+
+  &__heading {
+    margin: 0;
+    font-size: var(--ds-font-size-md, 1rem);
+    font-weight: 700;
+    letter-spacing: 0.02em;
+  }
+
+  &__rows {
+    display: flex;
+    flex-direction: column;
+    gap: var(--ds-space-2, 0.5rem);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  &__row {
+    display: grid;
+    grid-template-columns: 8.5rem 1fr 2rem;
+    grid-template-areas: 'label markers count' '. note .';
+    align-items: center;
+    gap: var(--ds-space-1, 0.25rem) var(--ds-space-2, 0.5rem);
+  }
+
+  &__label { grid-area: label; font-weight: 600; }
+  &__markers { grid-area: markers; display: flex; flex-wrap: wrap; gap: 0.3rem; }
+  &__count { grid-area: count; text-align: right; font-variant-numeric: tabular-nums; }
+
+  &__note {
+    grid-area: note;
+    font-size: var(--ds-font-size-sm, 0.85rem);
+    color: var(--ds-color-text-muted, #9aa3ad);
+  }
+
+  /* A won-on-your-own marker is filled and warm; a practice marker is drawn in
+     outline. Different, deliberately not lesser — a practice win is a real win
+     a child had, and nothing here calls it a failure. */
+  &__marker {
+    width: 1.1rem;
+    height: 1.1rem;
+    border-radius: 50%;
+    background: var(--ds-color-accent-warm, #d9a441);
+    box-shadow: inset 0 -2px 0 rgb(0 0 0 / 18%);
+
+    &--none {
+      background: none;
+      border: 1px dashed var(--ds-color-border, rgba(255, 255, 255, 0.24));
+      box-shadow: none;
+    }
+  }
+
+  &__row--practice &__marker {
+    background: none;
+    border: 2px solid var(--ds-color-accent-cool, #6ea8d8);
+    box-shadow: none;
+  }
+
+  &__gate {
+    margin: 0;
+    font-size: var(--ds-font-size-sm, 0.9rem);
+    line-height: 1.4;
+    color: var(--ds-color-text, #e8eaed);
+  }
+}

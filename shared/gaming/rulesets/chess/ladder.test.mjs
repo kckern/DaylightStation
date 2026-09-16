@@ -3,7 +3,7 @@ import {
   DEFAULT_LADDER_POLICY, DEFAULT_ROSTER, LADDER_SIZE, TOP_LEVEL, describeLevel,
   applyGameToProgress, availableOpponents, countsTowardPromotion, createLadderProgress,
   normalizeProgress, promotionStatus, resolvePolicy, resolveRoster, rungForLevel,
-  promotionIneligibility, mergeLadderConfig,
+  promotionIneligibility, mergeLadderConfig, roundStanding, helpWithinCeilings,
 } from './ladder.mjs';
 
 const POLICY = DEFAULT_LADDER_POLICY;
@@ -383,5 +383,95 @@ describe('mergeLadderConfig', () => {
 
   it('tolerates a missing household or player layer', () => {
     expect(mergeLadderConfig(null, null)).toEqual({ ladder: {} });
+  });
+});
+
+describe('roundStanding — what the lobby draws', () => {
+  /**
+   * Two shapes, deliberately not one.
+   *
+   * The gate is "5 wins in your last 7 counted games", so its number FALLS
+   * after losses. A trophy is something you earned and keep, so the rows must
+   * never be drawn from it — a vanishing trophy is the lost ground the ladder
+   * exists to avoid. The cumulative counts only ever grow; the gate numbers
+   * track form and are rendered as a sentence.
+   */
+  const progressAt = (level, entries) => normalizeProgress({
+    unlocked_through: level,
+    results: entries.map((e) => ({ level, result: 'win', counted: true, ...e })),
+  });
+
+  it('counts every win at this round, split by whether it counted', () => {
+    const progress = progressAt(1, [
+      {}, {},                                     // two clean wins
+      { counted: false }, { counted: false },     // two leaned on help
+      { counted: false }, { counted: false },
+    ]);
+    expect(roundStanding(progress, POLICY)).toMatchObject({
+      round: 2, counted: 2, practice: 4, gateWins: 2, gateNeeded: 5, gateWindow: 7, remaining: 3,
+    });
+  });
+
+  it('never shrinks the rows when the gate number falls', () => {
+    const wins = [{}, {}];
+    const losses = Array.from({ length: 6 }, () => ({ result: 'loss' }));
+    const before = roundStanding(progressAt(2, wins), POLICY);
+    const after = roundStanding(progressAt(2, [...wins, ...losses]), POLICY);
+    // The gate is allowed to fall — that is recent form, and it is a sentence.
+    expect(after.gateWins).toBeLessThan(before.gateWins);
+    // The trophies are not. Nothing a child earned may leave the screen.
+    expect(after.counted).toBe(before.counted);
+    expect(after.counted).toBe(2);
+  });
+
+  it('ignores rounds that are not the one being climbed', () => {
+    const progress = normalizeProgress({
+      unlocked_through: 2,
+      results: [
+        { level: 0, result: 'win', counted: true },
+        { level: 1, result: 'win', counted: true },
+        { level: 2, result: 'win', counted: true },
+        { level: 2, result: 'win', counted: false },
+      ],
+    });
+    expect(roundStanding(progress, POLICY)).toMatchObject({ round: 3, counted: 1, practice: 1 });
+  });
+
+  it('reports a fresh round as all zeroes rather than undefined', () => {
+    expect(roundStanding(createLadderProgress(), POLICY)).toMatchObject({
+      round: 1, counted: 0, practice: 0, gateWins: 0, remaining: 5, atTop: false,
+    });
+  });
+
+  it('says nothing is remaining at the top of the ladder', () => {
+    const progress = normalizeProgress({ unlocked_through: TOP_LEVEL, results: [] });
+    expect(roundStanding(progress, POLICY)).toMatchObject({ round: LADDER_SIZE, atTop: true, remaining: 0 });
+  });
+});
+
+describe('helpWithinCeilings — one predicate for the live badge and the gate', () => {
+  it('agrees with countsTowardPromotion on the help question, always', () => {
+    for (const hints of [0, 1, 2]) {
+      for (const best_moves of [0, 1]) {
+        for (const takebacks of [0, 1, 2]) {
+          const help = { hints, best_moves, takebacks };
+          expect(helpWithinCeilings(help, POLICY, 0))
+            .toBe(countsTowardPromotion({ completed: true, level: 0, help }, POLICY, 0));
+        }
+      }
+    }
+  });
+
+  it('answers the ceilings a child actually meets', () => {
+    expect(helpWithinCeilings({ hints: 1, best_moves: 0, takebacks: 1 }, POLICY, 0)).toBe(true);
+    expect(helpWithinCeilings({ hints: 2 }, POLICY, 0)).toBe(false);
+    expect(helpWithinCeilings({ best_moves: 1 }, POLICY, 0)).toBe(false);
+    expect(helpWithinCeilings({ takebacks: 2 }, POLICY, 0)).toBe(false);
+  });
+
+  it('honours the early-round exemption', () => {
+    const forgiving = { ...POLICY, unrestricted_below_level: 3 };
+    expect(helpWithinCeilings({ best_moves: 9 }, forgiving, 1)).toBe(true);
+    expect(helpWithinCeilings({ best_moves: 9 }, forgiving, 3)).toBe(false);
   });
 });

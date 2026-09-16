@@ -43,6 +43,8 @@ import { requestBestMove, requestOpponentMove, saveGameRecord } from './chessApi
 import { OPPONENT_DELAY_MS } from './PianoChessGame.jsx';
 import { DEFAULT_CHORD_SCHEME, squareToChord } from './chordAddress.js';
 import { GESTURE_SETTLE_MS } from './useSettledGesture.js';
+import { fetchLadder } from './chessApi.js';
+import { DEFAULT_LADDER_POLICY } from '@shared-gaming/rulesets/chess/ladder.mjs';
 
 const holdNotes = (notes) => mockUsePianoMidiNotes.mockReturnValue({
   activeNotes: new Map(notes.map((n) => [n, { velocity: 80 }])),
@@ -274,5 +276,97 @@ describe('help validity: seams the per-task tests could not see', () => {
     expect(saveGameRecord).toHaveBeenCalledTimes(1);
     const { help } = saveGameRecord.mock.calls[0][1];
     expect(help).toMatchObject({ hints: 0, best_moves: 0 });
+  });
+});
+
+describe('arming: nothing may cost a child a round without telling them first', () => {
+  /**
+   * The retrospective half of this already shipped — the result card names the
+   * rule that voided a win. But it names it AFTERWARDS, once the round is
+   * already gone. These cover the half that speaks up in time.
+   */
+  const MATE_IN_ONE_FEN = '7k/8/6K1/8/8/8/8/5R2 w - - 0 1';
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    mockUsePianoMidi.mockReturnValue({ connected: true, status: 'connected' });
+    requestOpponentMove.mockReset();
+    requestOpponentMove.mockResolvedValue(null);
+    requestBestMove.mockReset();
+    requestBestMove.mockResolvedValue({ from: 'f1', to: 'f8' });
+    // A real policy: one free hint, no best moves, one takeback.
+    fetchLadder.mockResolvedValue({
+      roster: [{ level: 0, name: 'Caterpie' }, { level: 1, name: 'Weedle' }],
+      available: [{ level: 0, name: 'Caterpie' }],
+      current: { level: 0, name: 'Caterpie' },
+      unlocked_through: 0,
+      status: { level: 0, wins: 0, needed: 5, window: 7, promotes: false, at_top: false },
+      standing: { round: 1, level: 0, counted: 0, practice: 0, gateWins: 0, gateNeeded: 5, gateWindow: 7, remaining: 5, promotes: false, atTop: false },
+      policy: DEFAULT_LADDER_POLICY,
+      persisted: true,
+    });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    fetchLadder.mockResolvedValue(null);
+    mockUsePianoMidiNotes.mockReturnValue({ activeNotes: new Map(), noteHistory: [] });
+  });
+
+  const makeGame = () => (
+    <PianoChessGame fen={MATE_IN_ONE_FEN} currentUser="kckern" gameConfig={{ addressing: { shuffle: 'never' } }} />
+  );
+
+  const pressAndHold = async (notes, rerender) => {
+    holdNotes(notes);
+    rerender(makeGame());
+    await act(async () => { await vi.advanceTimersByTimeAsync(GESTURE_SETTLE_MS + 60); });
+    holdNotes([]);
+    rerender(makeGame());
+    await act(async () => { await vi.advanceTimersByTimeAsync(60); });
+  };
+
+  it('A1: the first BEST press warns instead of spending; the second goes through', async () => {
+    const { rerender } = render(makeGame());
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); }); // ladder read lands
+
+    await pressAndHold([60, 61, 62, 63], rerender);
+    // max_best_moves is 0, so this press would demote. It must ask first.
+    expect(requestBestMove).not.toHaveBeenCalled();
+
+    await pressAndHold([60, 61, 62, 63], rerender);
+    // Asked and answered: the second press is the confirmation.
+    expect(requestBestMove).toHaveBeenCalledTimes(1);
+  });
+
+  it('A2: the FIRST hint is free and must not be made to feel expensive', async () => {
+    const { container, rerender } = render(makeGame());
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+
+    await pressAndHold([60, 61, 62], rerender);
+    // max_hints is 1 — this one is inside the ceiling, so it happens at once.
+    expect(container.querySelectorAll('.chess-board__square--hint').length).toBeGreaterThan(0);
+  });
+
+  it('A3: playing on is how you decline — a move disarms the warning', async () => {
+    const notesFor = (square) => squareToChord(square, DEFAULT_CHORD_SCHEME)
+      .pitch_classes.map((pc) => 60 + pc);
+    const { rerender } = render(makeGame());
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+
+    await pressAndHold([60, 61, 62, 63], rerender);
+    expect(requestBestMove).not.toHaveBeenCalled();
+
+    // Change your mind and play chess instead: pick the rook up and mate.
+    await pressAndHold(notesFor('f1'), rerender);
+    await pressAndHold(notesFor('f1'), rerender);
+    await pressAndHold(notesFor('f8'), rerender);
+
+    // The arm did not survive the move, so nothing was ever spent.
+    expect(requestBestMove).not.toHaveBeenCalled();
+    await act(async () => { await vi.advanceTimersByTimeAsync(400); });
+    expect(saveGameRecord).toHaveBeenCalled();
+    const last = saveGameRecord.mock.calls[saveGameRecord.mock.calls.length - 1][1];
+    expect(last.help).toMatchObject({ hints: 0, best_moves: 0 });
   });
 });
