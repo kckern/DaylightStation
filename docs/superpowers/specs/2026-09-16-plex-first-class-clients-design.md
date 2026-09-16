@@ -7,8 +7,21 @@
 > stats, Continue Watching) then works for free, because our screens stop being
 > a special case.
 
-**Status:** design. Not implemented.
+**Status:** implemented (`370449f53`, `5e78b74e1`, `018ec5455`). Two sections
+below were overtaken by implementation and are corrected in place: §4 (the
+speakers are now in scope) and §6 (`playback-hub` is consumed, from composition).
 **Date:** 2026-09-16
+
+**Verified in production:** a real play on the living room TV appears on the Plex
+dashboard as "Living Room TV" and lands in Tautulli history.
+
+**NOT verified:** the speaker/hub path. The playback-hub was offline when it was
+built (`playback-hub.broadcaster.offline`), so its 13 unit tests are the only
+evidence that mapping works. Treat it as unproven until a lane is seen on the
+dashboard.
+
+**Known gap:** `ReportPlaybackSession.execute` carries no paused state, so a
+paused hub lane holds its true position but renders as *playing*.
 
 ---
 
@@ -106,8 +119,24 @@ From the existing playback-surface definition in `useDevices.js`
 | `yellow-room-tablet` | Piano Tablet | 🎹 | android-tablet |
 | `portal` | Portal | 🖼️ | android-tablet |
 
-The five musiCozy/10-SYNC **speakers are excluded**: they are audio sinks
-controlled by the playback hub, not surfaces that run our Player.
+> **Superseded.** This section originally excluded the five musiCozy/10-SYNC
+> speakers on the grounds that they are audio sinks rather than surfaces running
+> our Player. That reasoning was sound about the *Player* and wrong about the
+> *goal*: the hub plays Plex content (`QueueRef` defaults to `plex`), so a lane
+> playing `plex:675465` is a real play that belonged on the dashboard and was
+> reaching it nowhere. The speakers are **in scope**, and each now declares its
+> own `plex:` block in `devices.yml`:
+>
+> | Device id | Display name |
+> |---|---|
+> | `speaker-red` | Red musiCozy Headset |
+> | `speaker-yellow` | Yellow musiCozy Headset |
+> | `speaker-green` | Green musiCozy Headset |
+> | `speaker-blue` | Blue musiCozy Headset |
+> | `speaker-white` | 10-SYNC Speaker |
+>
+> They report as `fleet:speaker-<color>`; without that prefix all five would
+> collapse onto one shared identity and overwrite each other's sessions.
 
 ---
 
@@ -196,9 +225,17 @@ Plex HTTP knowledge.
 
 ### Not used, deliberately
 
-- **`playback-hub`** — `HubDevice` models a *physical speaker slot*
-  (identity `SlotColor`, with `mac`, `haEntityId`, `volumeBounds`). It is not a
-  screen and not a session. Wrong home.
+- **`playback-hub` as a *home* for session logic** — still correct, and observed:
+  `HubDevice` models a physical speaker slot and is neither a screen nor a
+  session. Putting the Plex call there would also have made an application layer
+  import an adapter, which the layer table forbids.
+
+  But its **status feed is consumed**, from composition, where cross-context
+  wiring belongs ("the only sanctioned cross-layer zone").
+  `5_composition/modules/plexHubSessions.mjs` subscribes to the same
+  `playback-hub:status` topic `HubFleetBridge` uses and reuses its exported pure
+  `mapLaneToSnapshot`, so the lane→session mapping is defined once. Neither
+  context learns the other exists.
 - **`ProgressSyncService` / `progressSyncSources` / `resolveProgressConflict`** —
   this is one-way. We never let Plex overwrite our state, so a phone finishing an
   episode can never mark a piano lesson or school item complete on our side.
@@ -220,6 +257,7 @@ refactor all four, the backend derives the lifecycle from the progress stream.
 | Keepalive timer (~10 s) with no new ping | `advance` (unchanged position) | `/:/timeline?state=playing` |
 | `naturalEnd: true` / `status: completed` | `stop` | `/:/timeline?state=stopped` then `/:/scrobble` |
 | `play/log` arrives for the **same surface, different content** | `stop` the prior session, then open the new one | `state=stopped` for the old, `state=playing` for the new |
+| A surface reports it stopped (a hub lane goes `idle`) | `stop` | `/:/timeline?state=stopped`, **no scrobble** |
 | No ping for > 60 s | `stop` (reaper) | `/:/timeline?state=stopped` |
 
 A surface holds **at most one open session**. Because session identity is
@@ -255,20 +293,46 @@ put 'yellow-room-tablet' on screen."*
 
 ## 9. Tasks
 
-1. **Settle registration.** Obtain one device token via the PIN flow for a single
-   surface and confirm it appears in Authorized Devices. Everything else depends
-   on this; if it cannot work headlessly, registration becomes a one-time admin
-   action per screen and the spec's §5 token storage still holds.
-2. Fix Tautulli's `pms_token` (prerequisite for Requirement 3).
-3. Add `plex:` blocks to the five surfaces; surface them via the blueprint.
-4. Domain: `PlaybackSession`, `PlexClientIdentity` + unit tests (pure).
-5. Port + `PlexSessionAdapter` + `PlexClient` write method.
-6. `ReportPlaybackSession` use case + fake-port tests.
-7. Thread `req.deviceId` through `play.mjs` → `RecordPlaybackProgress`.
-8. Keepalive + stale-session reaper.
-9. Display-name fixes (§8).
-10. Verify end to end: a real play on the living room TV appears on the Plex
-    dashboard as "Living Room TV", and lands in Tautulli history.
+1. ✅ **Settle registration.** PIN flow proven; consolidated to one authorization
+   rather than one per surface, per the instruction that re-authorizing every
+   screen was not wanted.
+2. ✅ Fix Tautulli's `pms_token` — done by the account owner; it now records.
+3. ✅ Add `plex:` blocks; surface them via the blueprint. **Ten** surfaces, not
+   five: the original five plus the five speakers (§4).
+4. ✅ Domain: `PlaybackSession`, `PlexClientIdentity` + unit tests (pure).
+5. ✅ Port + `PlexSessionAdapter` + `PlexClient` write method.
+6. ✅ `ReportPlaybackSession` use case + fake-port tests.
+7. ✅ Thread `req.deviceId` through `play.mjs` → `RecordPlaybackProgress`.
+   Shipped broken once: the dependency was destructured but never assigned, so
+   every gate passed while nothing reported. `RecordPlaybackProgress.sessionReport.test.mjs`
+   now pins the collaboration, not just the collaborator.
+8. ✅ Keepalive + stale-session reaper. Both existed and were tested from the
+   start, but **nothing called them** until `app.mjs` got the 10 s timer.
+9. ⚠️ Display-name fixes (§8) — **partly done**. `DevicesIndex.jsx` now shows
+   `device.name`; `VirtualConsole.jsx:300` still renders the raw `{d.target}`
+   kebab id.
+10. ✅ Verify end to end for the living room TV — dashboard **and** Tautulli.
+
+Added after the original plan:
+
+11. ✅ **Widen surface identity.** `identityFor` resolved only `fleet:<name>`, so
+    a video played in an ordinary browser reported progress every 10 s and
+    registered nowhere. Now every caller resolves: a declared surface gets its
+    own identity, a `browser:<token>` one derived from its persisted token,
+    anything else a shared web identity. Extracted from an inline closure in
+    `app.mjs` so it could be tested at all.
+12. ✅ **`stop()`** — end a session without marking it watched. There was no such
+    path; abandoning a story halfway would have been credited as finishing it.
+13. ✅ **The headless hub reports** (§4, §6).
+
+### Remaining
+
+- `VirtualConsole.jsx:300` — raw kebab id on screen (task 9).
+- **Emoji.** §4's icon table and §5's example enshrine emoji (`📺`, `🔊`), which
+  contradicts both the house SVG convention and the explicit instruction not to
+  use them. `devices.yml` and `DevicesIndex.jsx` still carry emoji icons.
+- **Pause fidelity** — a paused lane renders as playing (see Status).
+- **Verify the hub path** against a live speaker lane.
 
 ---
 
