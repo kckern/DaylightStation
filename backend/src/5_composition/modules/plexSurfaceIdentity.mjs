@@ -16,7 +16,15 @@
  *                    profile's localStorage, so it is STABLE and bounded by the
  *                    number of browser profiles — safe to derive an identifier
  *                    from, and it keeps two browsers from sharing one session.
- *   anything else    a User-Agent or nothing at all -> one shared web identity.
+ *   anything else    a User-Agent, an `ephemeral:` id, or nothing at all -> one
+ *                    shared web identity.
+ *
+ * `ephemeral:<token>` MUST stay in that last bucket. `lib/deviceIdentity.js`
+ * mints it fresh on every page load when localStorage is unavailable or refuses
+ * the write, and its own docs warn: "never read a count of these as a count of
+ * devices." Deriving an identifier from it would mint a permanent Plex device
+ * row per page load — the outage described below, rebuilt. Only derive from a
+ * token whose persistence has been established.
  *
  * NEVER a fresh identifier per request. Plex creates a permanent `devices` row
  * per distinct client identifier and reclaims none of them; doing that grew the

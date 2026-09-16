@@ -102,6 +102,19 @@ describe('every other caller still registers', () => {
 });
 
 describe('identifiers stay bounded', () => {
+  it('NEVER derives an identifier from an ephemeral id', () => {
+    // `lib/deviceIdentity.js` mints `ephemeral:<token>` fresh on every page load
+    // when localStorage is unavailable. Deriving from it would create a
+    // permanent Plex device row per page load — the 81,009-row outage, rebuilt.
+    const { resolve } = build();
+    const first = resolve('ephemeral:9a8b7c6d5e4f3021');
+    const second = resolve('ephemeral:0123456789abcdef');
+    expect(first.clientIdentifier).toBe(WEB_CLIENT_IDENTIFIER);
+    expect(second.clientIdentifier).toBe(WEB_CLIENT_IDENTIFIER);
+    // Two different ephemeral tokens must collapse to ONE Plex device.
+    expect(first.clientIdentifier).toBe(second.clientIdentifier);
+  });
+
   it('sanitises and caps a derived token', () => {
     const id = build().resolve(`browser:${'x'.repeat(200)}/../nasty chars`);
     expect(id.clientIdentifier.length).toBeLessThanOrEqual(WEB_CLIENT_IDENTIFIER.length + 1 + 64);
