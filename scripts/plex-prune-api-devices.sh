@@ -56,6 +56,11 @@ command -v docker >/dev/null || die "docker not found"
 [ -f "$DB" ] || die "database not found: $DB"
 docker image inspect "$IMAGE" >/dev/null 2>&1 || die "image not present locally: $IMAGE"
 docker inspect plex >/dev/null 2>&1 || die "no container named 'plex'"
+# Plex must be RUNNING when this starts: the safety check below reads the live
+# database through `docker exec`, which dies with a stopped container. The script
+# stops Plex itself once the readings are taken — do not stop it beforehand.
+[ "$(docker inspect -f '{{.State.Running}}' plex 2>/dev/null)" = "true" ] \
+  || die "the plex container is stopped. Start it first (docker start plex) — this script stops it itself once it has read the safety counts."
 
 AVAIL_KB=$(df -Pk "$BACKUP_DIR" | awk 'NR==2{print $4}')
 DB_KB=$(( $(stat -c%s "$DB") / 1024 ))
