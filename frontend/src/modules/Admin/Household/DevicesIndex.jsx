@@ -150,7 +150,14 @@ function DevicesIndex() {
             >
               <Stack gap="sm">
                 <Group justify="space-between" align="center">
-                  <Text size="md" fw={600}>{device.id}</Text>
+                  {/* A kebab id is the canonical key, never what a person reads.
+                      devices.yml has carried `name` and `icon` from the start and
+                      the API serves both; this card showed the raw slug anyway —
+                      the same defect CallApp.jsx:218 records as "the defect that
+                      put 'yellow-room-tablet' on screen". */}
+                  <Text size="md" fw={600}>
+                    {device.icon ? `${device.icon} ` : ''}{device.name || device.id}
+                  </Text>
                   <Badge
                     color={typeBadgeColor(device.type)}
                     variant="light"
