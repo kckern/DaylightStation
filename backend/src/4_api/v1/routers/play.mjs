@@ -72,7 +72,12 @@ export function createPlayRouter(config) {
         return res.status(400).json({ error: `Missing required field: ${missing}` });
       }
 
-      if (seconds < 10) {
+      // The floor filters scrubbing — a few seconds into a long item is not
+      // progress worth storing. But it is ABSOLUTE, and therefore unreachable
+      // for an item whose whole duration is under ten seconds: such an item
+      // could never be recorded, completed, or credited at any point. A
+      // near-complete watch is meaningful at any length, so it passes too.
+      if (seconds < 10 && !(Number(percent) >= 90)) {
         return res.status(400).json({ error: 'Invalid request: seconds < 10' });
       }
 
