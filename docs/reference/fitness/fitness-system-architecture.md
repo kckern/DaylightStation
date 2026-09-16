@@ -777,6 +777,36 @@ the supplied spinning ring image, configured profile avatars with initials
 fallback, and a dedicated one-shot sound that does not duck video or interrupt
 governance audio cues.
 
+### Reaching Fire
+
+Crossing into the Fire zone gets a toast of its own, and it is deliberately not
+a card. Every other toast — rider selection, challenge start/success, ring
+celebrations — is a panel with a border and a shadow, which is the shape of a
+system message. This one is frameless: avatar, name, and `ON FIRE` floating over
+the video, with `fitness/ux/fireball.gif` behind the avatar at twice its
+bounding box. That gif has no alpha channel (its background is solid black), so
+it is composited with `mix-blend-mode: screen`, which maps black to transparent
+and leaves the flame — `multiply` would knock out white and leave a black square
+instead. The avatar renders plain here, without the `zone-fire` pulse and
+sunbeams `CircularUserAvatar` applies elsewhere, so there is only one flame in
+the frame. Under `prefers-reduced-motion` the gif is hidden and the avatar keeps
+a static heat glow.
+
+Detection reads the **stabilized** `currentZoneId` from `ZoneProfileStore`, the
+same value `GovernanceEngine` agrees with, so its hysteresis (5s cooldown, 3s
+stability, 5bpm exit margin) is what prevents chatter at the 160bpm line. On top
+of that, `fireZoneTracker` seeds silently on a person's first observation — a
+reload mid-workout never congratulates someone for a zone they were already in —
+and enforces a five-minute per-person quiet period, because interval work
+legitimately re-crosses that line many times in a session.
+
+Fire waits its turn. If a challenge or ring card holds the slot, the crossing is
+queued and shown the moment it clears (`fireToastQueue`), so no moment is
+stomped and none is silently dropped; two people crossing together get a toast
+each, in order, rather than being merged into one card. The mirror screen is
+suppressed, as it is for the ring sound. Unlike ring celebrations this has no
+config block — it is always on, with the cooldown a module constant.
+
 ### Weekly rings on the Fitness home screen
 
 `FitnessMomentum` uses the exact persisted `participants[id].rings` session

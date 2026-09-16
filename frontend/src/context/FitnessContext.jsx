@@ -24,6 +24,9 @@ import { lookupUserName } from '../modules/Fitness/player/overlays/lookupUserNam
 import { createChallengeToastTracker, nextChallengeToast } from '../modules/Fitness/player/overlays/challengeToastTracker.js';
 import { buildChallengeToast } from '../modules/Fitness/player/overlays/buildChallengeToast.js';
 import { mergeRingCelebrationToast } from '../modules/Fitness/player/overlays/buildRingCelebrationToast.js';
+import { createFireZoneTracker, nextFireToasts } from '../modules/Fitness/player/overlays/fireZoneTracker.js';
+import { buildFireToast } from '../modules/Fitness/player/overlays/buildFireToast.js';
+import { planFireToasts } from '../modules/Fitness/player/overlays/fireToastQueue.js';
 import { createRingCelebrationTracker, normalizeRingCelebrationsConfig, ringCelebrationsForAward, seedRingCelebrationTracker } from '../modules/Fitness/player/overlays/ringCelebrations.js';
 import { DaylightMediaPath } from '../lib/api.mjs';
 import { playRingCelebrationCue } from '../modules/Fitness/player/overlays/ringCelebrationAudio.js';
@@ -180,6 +183,8 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   const toastIdRef = useRef(0);
   const riderToastRef = useRef(null);
   const fitnessToastRef = useRef(null);
+  const fireZoneTrackerRef = useRef(createFireZoneTracker());
+  const pendingFireEntriesRef = useRef([]);
   const ringCelebrationTrackerRef = useRef(createRingCelebrationTracker());
   const pendingRingEntriesRef = useRef([]);
   const ringFlushTimerRef = useRef(null);
@@ -2229,6 +2234,47 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     // Direct lookup - no slug transformation
     return zoneProfileLookup.get(identifier) || null;
   }, [zoneProfileLookup]);
+
+  // Reaching Fire is called out by name. Driven off the STABILIZED zone, so
+  // ZoneProfileStore's hysteresis (5s cooldown / 3s stability / 5bpm exit
+  // margin) is what keeps this from chattering at the 160bpm line; the tracker
+  // adds a per-person quiet period on top, because interval work legitimately
+  // re-crosses that line many times in a session.
+  //
+  // Must live BELOW `zoneProfiles` — a dep array referencing it from an earlier
+  // effect would read the const before initialization.
+  const flushFireToasts = useCallback(() => {
+    const { show, queue } = planFireToasts({
+      currentToast: fitnessToastRef.current,
+      queue: pendingFireEntriesRef.current,
+    });
+    pendingFireEntriesRef.current = queue;
+    if (!show) return;
+    pushFitnessToast(buildFireToast(
+      {
+        userId: show.userId,
+        name: lookupUserName(configuredUsers, show.userId, { preferGroupLabels }) || show.name,
+      },
+      { fireballUrl: DaylightMediaPath('/media/fitness/ux/fireball.gif') }
+    ));
+    getLogger().info('fitness.fire_toast.shown', { userId: show.userId });
+  }, [configuredUsers, preferGroupLabels, pushFitnessToast]);
+
+  useEffect(() => {
+    // The mirror screen shadows the real one; it must not double-celebrate.
+    if (session?._liveSessionRole === 'mirror') return;
+    const { entries, tracker } = nextFireToasts(fireZoneTrackerRef.current, zoneProfiles, { now: Date.now() });
+    fireZoneTrackerRef.current = tracker;
+    if (!entries.length) return;
+    pendingFireEntriesRef.current.push(...entries);
+    flushFireToasts();
+  }, [zoneProfiles, session, flushFireToasts]);
+
+  // Someone else's toast may have been up when they crossed. Show them the
+  // moment it clears rather than losing the moment.
+  useEffect(() => {
+    if (!fitnessToast && pendingFireEntriesRef.current.length) flushFireToasts();
+  }, [fitnessToast, flushFireToasts]);
 
   React.useMemo(() => {
     const map = new Map();

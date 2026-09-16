@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useState, useRef, useCallback } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useState, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import PropTypes from 'prop-types';
 import getLogger from '@/lib/logging/Logger.js';
 import { DEFAULT_TOAST_DURATION_MS } from './fitnessToastSlot.js';
@@ -132,6 +133,9 @@ export default function FitnessToast({ toast, onDone }) {
   const logger = useMemo(() => getLogger().child({ component: 'fitness-toast' }), []);
   const [exiting, setExiting] = useState(false);
   const [imgFailed, setImgFailed] = useState(false);
+  const [fireballFailed, setFireballFailed] = useState(false);
+  const fireAnchorRef = useRef(null);
+  const [fireBox, setFireBox] = useState(null);
   const id = toast?.id ?? null;
   const revision = toast?.revision ?? 0;
   const timerKey = `${id}:${revision}`;
@@ -141,6 +145,7 @@ export default function FitnessToast({ toast, onDone }) {
     if (id == null) return undefined;
     setExiting(false);
     setImgFailed(false);
+    setFireballFailed(false);
     const durationMs = Number.isFinite(toast?.durationMs) ? toast.durationMs : DEFAULT_TOAST_DURATION_MS;
     logger.info('fitness.toast.shown', { id, variant: toast?.variant, durationMs });
     const timers = timersRef.current;
@@ -159,6 +164,30 @@ export default function FitnessToast({ toast, onDone }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [timerKey]);
 
+  // The fireball CANNOT live inside .fitness-toast. That element is a stacking
+  // context (transform + z-index), so a blended child composites against the
+  // toast's own empty backdrop — and `screen` over transparent-black returns the
+  // source unchanged, leaving the gif's black background as an opaque square.
+  // Portalled to <body> it blends against the page and the black drops out.
+  // Confirmed visually with an A/B capture, 2026-09-15.
+  useLayoutEffect(() => {
+    if (toast?.kind !== 'fire') {
+      setFireBox(null);
+      return undefined;
+    }
+    const measure = () => {
+      const el = fireAnchorRef.current;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      const size = (r.width || 0) * 2; // twice the avatar's bounding box
+      if (size <= 0) return;
+      setFireBox({ left: r.left + r.width / 2 - size / 2, top: r.top + r.height / 2 - size / 2, size });
+    };
+    measure();
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
+  }, [toast?.kind, timerKey]);
+
   const handleDismiss = useCallback(() => {
     if (id == null) return;
     clearTimeout(timersRef.current.hide);
@@ -173,7 +202,7 @@ export default function FitnessToast({ toast, onDone }) {
 
   if (!toast) return null;
 
-  const { avatarUrl, icon, title, subtitle, contributors, zone, achievement = false, variant = 'info', durationMs = DEFAULT_TOAST_DURATION_MS, kind, ringCelebration } = toast;
+  const { avatarUrl, icon, title, subtitle, contributors, zone, achievement = false, variant = 'info', durationMs = DEFAULT_TOAST_DURATION_MS, kind, ringCelebration, name, fireballUrl, frameless = false } = toast;
   const hasContributors = Array.isArray(contributors) && contributors.length > 0;
   const className = [
     'fitness-toast',
@@ -182,8 +211,60 @@ export default function FitnessToast({ toast, onDone }) {
     // lead, their faces are the anchor, and the layout stacks rather than sits
     // in a row beside an icon.
     achievement && hasContributors ? 'fitness-toast--achievement' : '',
+    // Strips the card chrome entirely — see the fire toast below.
+    frameless ? 'fitness-toast--frameless' : '',
     exiting ? 'fitness-toast--exiting' : 'fitness-toast--entered',
   ].filter(Boolean).join(' ');
+
+  // Reaching Fire belongs to one person, and it reads as the room noticing them
+  // rather than as the system posting a notice — so no card, and no countdown
+  // bar, which is a box affordance. The fireball is screen-blended: the gif has
+  // no alpha channel, and `screen` maps its black background to transparent
+  // while leaving the flame intact (`multiply` would do the opposite).
+  if (kind === 'fire') {
+    const fireballStyle = fireBox
+      ? { position: 'fixed', left: `${fireBox.left}px`, top: `${fireBox.top}px`, width: `${fireBox.size}px`, height: `${fireBox.size}px` }
+      // Before the first measurement (and in jsdom, which has no layout), fall
+      // back to viewport-centred. No transform: keep this element's own
+      // compositing as simple as possible.
+      : { position: 'fixed', left: '50%', top: '50%', width: '13rem', height: '13rem', marginLeft: '-6.5rem', marginTop: '-6.5rem' };
+
+    return (
+      <>
+        {fireballUrl && !fireballFailed && typeof document !== 'undefined'
+          ? createPortal(
+            <img
+              className="fitness-toast__fire-ball"
+              src={fireballUrl}
+              alt=""
+              style={{ ...fireballStyle, mixBlendMode: 'screen', zIndex: 2199, pointerEvents: 'none' }}
+              onError={() => setFireballFailed(true)}
+            />,
+            document.body
+          )
+          : null}
+        <div className={className} role="status" aria-live="polite" onClick={handleDismiss}>
+          <div className="fitness-toast__fire-stage">
+            {avatarUrl && !imgFailed ? (
+              <img
+                ref={fireAnchorRef}
+                className="fitness-toast__fire-avatar"
+                src={avatarUrl}
+                alt=""
+                onError={() => setImgFailed(true)}
+              />
+            ) : (
+              <div ref={fireAnchorRef} className="fitness-toast__fire-avatar fitness-toast__fire-avatar--fallback">
+                {(name || '?').trim().slice(0, 1).toUpperCase()}
+              </div>
+            )}
+          </div>
+          <div className="fitness-toast__fire-name">{name}</div>
+          <div className="fitness-toast__fire-label">ON FIRE</div>
+        </div>
+      </>
+    );
+  }
 
   if (kind === 'ring-celebration' && ringCelebration) {
     return (
@@ -293,6 +374,9 @@ FitnessToast.propTypes = {
     revision: PropTypes.number,
     kind: PropTypes.string,
     ringCelebration: PropTypes.object,
+    name: PropTypes.string,
+    fireballUrl: PropTypes.string,
+    frameless: PropTypes.bool,
   }),
   onDone: PropTypes.func,
 };

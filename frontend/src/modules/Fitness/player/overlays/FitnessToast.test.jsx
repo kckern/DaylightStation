@@ -201,3 +201,80 @@ describe('FitnessToast achievement layout', () => {
     expect(container.querySelector('.fitness-toast--achievement')).toBeNull();
   });
 });
+
+describe('FitnessToast — fire zone', () => {
+  beforeEach(() => { vi.useFakeTimers(); });
+  afterEach(() => { vi.useRealTimers(); });
+
+  const fireToast = (overrides = {}) => ({
+    id: 7,
+    kind: 'fire',
+    variant: 'fire',
+    frameless: true,
+    durationMs: 3500,
+    name: 'Learner-One',
+    avatarUrl: '/api/v1/static/img/users/learner-one',
+    fireballUrl: '/api/v1/proxy/media/fitness/ux/fireball.gif',
+    ...overrides,
+  });
+
+  it('names the person and says they are on fire', () => {
+    render(<FitnessToast toast={fireToast()} onDone={() => {}} />);
+    expect(screen.getByText('Learner-One')).toBeTruthy();
+    expect(screen.getByText('ON FIRE')).toBeTruthy();
+  });
+
+  it('carries no card chrome', () => {
+    const { container } = render(<FitnessToast toast={fireToast()} onDone={() => {}} />);
+    expect(container.querySelector('.fitness-toast--frameless')).toBeTruthy();
+  });
+
+  it('screen-blends the fireball so the gif\'s black background drops out', () => {
+    render(<FitnessToast toast={fireToast()} onDone={() => {}} />);
+    const ball = document.body.querySelector('.fitness-toast__fire-ball');
+    expect(ball).toBeTruthy();
+    expect(ball.getAttribute('src')).toBe('/api/v1/proxy/media/fitness/ux/fireball.gif');
+    expect(ball.style.mixBlendMode).toBe('screen');
+  });
+
+  it('renders the fireball OUTSIDE the toast, or screen blending has nothing to blend against', () => {
+    // .fitness-toast is a stacking context (transform + z-index). A blended
+    // child there composites against the toast's own empty backdrop, and
+    // `screen` over transparent-black returns the source unchanged — the gif's
+    // black background stays an opaque square. Portalled to <body>, it blends
+    // against the page and the black drops out. Verified visually 2026-09-15.
+    const { container } = render(<FitnessToast toast={fireToast()} onDone={() => {}} />);
+    expect(container.querySelector('.fitness-toast__fire-ball')).toBeNull();
+    const ball = document.body.querySelector('.fitness-toast__fire-ball');
+    expect(ball).toBeTruthy();
+    expect(ball.closest('.fitness-toast')).toBeNull();
+    expect(ball.style.position).toBe('fixed');
+  });
+
+  it('renders the avatar plainly, with no zone-fire treatment to fight the gif', () => {
+    const { container } = render(<FitnessToast toast={fireToast()} onDone={() => {}} />);
+    const avatar = container.querySelector('.fitness-toast__fire-avatar');
+    expect(avatar).toBeTruthy();
+    expect(avatar.getAttribute('src')).toBe('/api/v1/static/img/users/learner-one');
+    expect(container.querySelector('.zone-fire')).toBeNull();
+  });
+
+  it('shows no countdown bar — that is a box affordance', () => {
+    const { container } = render(<FitnessToast toast={fireToast()} onDone={() => {}} />);
+    expect(container.querySelector('.fitness-toast__countdown')).toBeNull();
+  });
+
+  it('still names the person when no fireball url resolved', () => {
+    render(<FitnessToast toast={fireToast({ fireballUrl: null })} onDone={() => {}} />);
+    expect(document.body.querySelector('.fitness-toast__fire-ball')).toBeNull();
+    expect(screen.getByText('Learner-One')).toBeTruthy();
+    expect(screen.getByText('ON FIRE')).toBeTruthy();
+  });
+
+  it('self-dismisses on the celebration lifetime', () => {
+    const onDone = vi.fn();
+    render(<FitnessToast toast={fireToast()} onDone={onDone} />);
+    act(() => { vi.advanceTimersByTime(3500 + TOAST_EXIT_MS); });
+    expect(onDone).toHaveBeenCalledWith(7);
+  });
+});
