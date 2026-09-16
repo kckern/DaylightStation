@@ -208,12 +208,26 @@ const STUBS = Object.freeze([
   // The piano, as a real external store. The run subscribes through
   // useSyncExternalStore exactly as it does to the shipped context, so a press
   // pushed from the spec travels the same path a played note does.
+  // The piano's own note-on STAMP, which this double has to carry or it is not
+  // the piano. `noteStore.noteOn` publishes `{ velocity, timestamp: time }`, and
+  // that stamp is the whole input to `classifyHeldPitch`: a key that was already
+  // down when the cursor arrived is a SUSTAIN (logged, never drawn), and a key
+  // with no stamp at all is documented to fall through to `ghost`, because an
+  // unknown press time cannot be shown to be an afterglow. A double that omits
+  // it therefore draws a wrong-note accusation over every legato correct note —
+  // and any spec measuring ghosts here was measuring the double.
+  //
+  // `hold` also has to KEEP the stamp of a key that stays down. Re-stamping on
+  // every call makes a note that has been held for a second look freshly
+  // pressed, which is the same bug wearing the other hat: a sustain would be
+  // reclassified as a ghost the instant the cursor moved.
   [/PianoKiosk\/PianoMidiContext\.jsx$/, `
     import { useSyncExternalStore } from 'react';
     let notes = new Map();
     const subs = new Set();
     const subscribe = (fn) => { subs.add(fn); return () => subs.delete(fn); };
     const snapshot = () => notes;
+    export const __getNotes = () => notes;
     export function __setNotes(next) { notes = next; for (const fn of [...subs]) fn(); }
     export const usePianoMidi = () => ({ connected: true });
     export const usePianoMidiNotes = () => ({ activeNotes: useSyncExternalStore(subscribe, snapshot, snapshot) });
@@ -259,7 +273,7 @@ import ExerciseRun from './ExerciseRun.jsx';
 import ScorePassage from './ScorePassage.jsx';
 import { MusicXmlRenderer } from '../../../../MusicNotation/renderers/MusicXmlRenderer.jsx';
 import { loadAskSources } from '../../../ask/askResolution.js';
-import { __setNotes } from '../../PianoMidiContext.jsx';
+import { __setNotes, __getNotes } from '../../PianoMidiContext.jsx';
 
 const calls = [];
 let root = null;
@@ -365,7 +379,11 @@ window.__stage = {
    * SETTLE in the spec for the measurement.
    */
   async hold(midis) {
-    flushSync(() => __setNotes(new Map(midis.map((m) => [m, { velocity: 1 }]))));
+    // Keeps the stamp of any key that was already down, and stamps a new one
+    // exactly as noteStore.noteOn does. See the double above for why.
+    const held = __getNotes();
+    const at = Date.now();
+    flushSync(() => __setNotes(new Map(midis.map((m) => [m, held.get(m) ?? { velocity: 1, timestamp: at }]))));
     await new Promise((resolve) => setTimeout(resolve, ${SETTLE}));
   },
 };
@@ -1438,3 +1456,91 @@ describe('the room a run gives each block, at 1280x800', () => {
   }, 40000);
 });
 
+
+/* -------------------------------------------------------------------------- */
+
+/**
+ * WHAT THE RUN DOES WHEN A CHILD IS LOST, driven through the real input path.
+ *
+ * Both cases here come from one session in the log store: a four-year-old on
+ * `keys/lit@notes=3,arrangement=sequence,pick=15`, 2026-09-13 19:58:25–19:58:45.
+ * He cleared note one and then fired THIRTY wrong notes in twenty seconds at
+ * note two, cursor never moving, and the run answered with nothing at all.
+ *
+ * Two separate faults were behind that, and this block holds both shut.
+ */
+describe('a run that has lost its child, at 1280x800', () => {
+  const dataAttr = (name) => page.evaluate((n) => document.querySelector('.piano-exercise-run')?.getAttribute(n), name);
+
+  /**
+   * THE CURSOR MAY NOT POINT BACKWARDS.
+   *
+   * `visualCursorFor` used to roll its index back one entry while the
+   * just-completed key was still HELD — and that index is what lights the key
+   * and what numbers the badges. A child who does not lift a finger (which is
+   * most of them, at this age) was shown the key they had already played while
+   * the assessor graded the next one, so every key they tried came back wrong,
+   * the correct one included. 289 such frames in a week across four learners.
+   */
+  it('shows the note being graded, not the one still under a finger', async () => {
+    await run({ instance: SCALE, props: { tier: 2, ask: 'Play C major, right hand.', intent: 'practice', practiceMode: 'free' } }, FREE_READY);
+
+    // HELD and never released — this is the whole condition.
+    await probe.hold([60]);
+    await page.waitForFunction(() => document.querySelector('.piano-exercise-run')?.getAttribute('data-expected-cursor') === '1');
+
+    const expected = await dataAttr('data-expected-cursor');
+    const displayed = await dataAttr('data-displayed-cursor');
+    expect(displayed,
+      `the assessor is grading entry ${expected} while the child is being shown entry ${displayed} — every key they press now is wrong, including the right one`)
+      .toBe(expected);
+
+    // AND THE NOTE UNDER THE FINGER IS STILL NOT ACCUSED, which is the thing
+    // the rollback existed to prevent. That defence now comes from the layer it
+    // belongs in: `classifyHeldPitch` calls a key that was already down when the
+    // cursor arrived a SUSTAIN — logged, never drawn — so the cursor is free to
+    // tell the truth. If this ever fails, the rollback was load-bearing after
+    // all and removing it was wrong.
+    expect(await probe.count('.sequence-note-wrong-ghost'),
+      'the correct note still held under a finger was drawn as a mistake')
+      .toBe(0);
+  });
+
+  /**
+   * AND WHEN THEY ARE SIMPLY LOST, THE RUN SAYS SOMETHING.
+   *
+   * The screen state on the tenth wrong key used to be identical to the state
+   * on the first. `stuckLadder.js` climbs: re-cue the lit key, then name it.
+   */
+  it('re-cues the lit key, then names it, as the misses pile up', async () => {
+    await run({ instance: SCALE, props: { tier: 2, ask: 'Play C major, right hand.', intent: 'practice', practiceMode: 'free' } }, FREE_READY);
+
+    await probe.press(60);                       // arms the run, clears note one
+    expect(await dataAttr('data-hunting'), 'a run that is going fine owes nothing').toBeNull();
+
+    // Three wrong onsets at one target: the first rung.
+    for (const midi of [61, 63, 66]) await probe.press(midi);
+    await page.waitForFunction(() => document.querySelector('.piano-exercise-run')?.getAttribute('data-hunting') === 'recue');
+    expect(await dataAttr('data-hunting')).toBe('recue');
+    // The lit key is the thing that moves, and it is still the same lit key.
+    const lit = await probe.all('.piano-key.target');
+    expect(lit.length, 'the re-cue has no key to pulse').toBeGreaterThan(0);
+
+    // Three more: looking harder has stopped being the answer, so say it.
+    for (const midi of [67, 69, 71]) await probe.press(midi);
+    await page.waitForFunction(() => document.querySelector('.piano-exercise-run')?.getAttribute('data-hunting') === 'reveal');
+
+    const text = await probe.text();
+    expect(text, `the run reached its top rung and still never named the note. Screen text: ${text}`)
+      .toMatch(/Look for D\b/);
+    // Named WITHOUT its octave: "D", not "D4". The lit key already says which D.
+    expect(text).not.toMatch(/Look for D\d/);
+
+    // And finding the note ends the hunt — the next entry starts owed nothing.
+    await probe.press(62);
+    await page.waitForFunction(() => document.querySelector('.piano-exercise-run')?.getAttribute('data-hunting') === null);
+    expect(await dataAttr('data-hunting'),
+      'help stayed on screen after the child found the note — the ladder is about one target, not the run').toBeNull();
+    expectNoPageErrors();
+  }, 40000);
+});
