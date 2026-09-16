@@ -273,6 +273,25 @@ export function promotionIneligibility(record, policy, currentLevel) {
   return null;
 }
 
+/**
+ * Are these help tallies still inside the ceilings for this round?
+ *
+ * The same question `promotionIneligibility` answers, asked about help alone so
+ * a live screen can pose it mid-game — "does this match still count?" — and get
+ * an answer that cannot disagree with the verdict at the end of it. Anything
+ * that predicts the gate must come through here; a second copy of the ceilings
+ * is how the badge and the result card would eventually contradict each other.
+ *
+ * Help only. Whether the game finished, and whether it was played against the
+ * right opponent, are not knowable from a tally and are decided elsewhere.
+ */
+export function helpWithinCeilings(help, policy, currentLevel = 0) {
+  const verdict = promotionIneligibility(
+    { completed: true, level: currentLevel, help: help || {} }, policy, currentLevel,
+  );
+  return verdict === null;
+}
+
 /** Does this game count toward promotion? See `promotionIneligibility` for why not. */
 export function countsTowardPromotion(record, policy, currentLevel) {
   return promotionIneligibility(record, policy, currentLevel) === null;
@@ -303,6 +322,47 @@ export function promotionStatus(progress, policy) {
     played: recent.length,
     promotes: wins >= policy.wins_required,
     at_top: level >= TOP_LEVEL,
+  };
+}
+
+/**
+ * Where a player stands in this round, in the two shapes a screen needs.
+ *
+ * Deliberately not one number. The gate is "win five of your last seven
+ * counted games", so `promotionStatus` returns recent FORM — and form falls.
+ * Two wins followed by six counted losses reports one, because the earlier win
+ * has left the window.
+ *
+ * A trophy is something you earned and keep, so a row of them cannot be drawn
+ * from a number that shrinks; watching one vanish after a bad afternoon is
+ * exactly the lost ground this ladder refuses to take (see the header). So the
+ * counts here are CUMULATIVE at this round and only ever grow, and the gate
+ * numbers travel beside them for the one sentence that states the requirement.
+ * The screen draws the first and says the second.
+ *
+ * `practice` is every win at this round that did not count, whatever voided it
+ * — help leant on, or the ceilings. It is a real thing the child did and is
+ * shown as one, never as a failure.
+ *
+ * The opponent's NAME is not here: it lives in the roster, which neither
+ * argument carries. The caller supplies it.
+ */
+export function roundStanding(progress, policy) {
+  const level = progress.unlocked_through;
+  const atRound = progress.results.filter((entry) => entry.level === level);
+  const wins = atRound.filter((entry) => entry.result === 'win');
+  const gate = promotionStatus(progress, policy);
+  return {
+    round: level + 1,
+    level,
+    counted: wins.filter((entry) => entry.counted).length,
+    practice: wins.filter((entry) => !entry.counted).length,
+    gateWins: gate.wins,
+    gateNeeded: gate.needed,
+    gateWindow: gate.window,
+    remaining: gate.at_top ? 0 : Math.max(0, gate.needed - gate.wins),
+    promotes: gate.promotes,
+    atTop: gate.at_top,
   };
 }
 
@@ -433,5 +493,6 @@ export function rungForLevel(level, policy) {
 export default {
   LADDER_SIZE, TOP_LEVEL, DEFAULT_ROSTER, DEFAULT_LADDER_POLICY, DEFAULT_LEVEL_RUNGS, themeForLevel,
   resolvePolicy, resolveRoster, normalizeDialogueProfile, createLadderProgress, normalizeProgress, describeLevel,
-  countsTowardPromotion, promotionIneligibility, mergeLadderConfig, promotionStatus, applyGameToProgress, availableOpponents, rungForLevel,
+  countsTowardPromotion, promotionIneligibility, helpWithinCeilings, mergeLadderConfig, promotionStatus, roundStanding,
+  applyGameToProgress, availableOpponents, rungForLevel,
 };

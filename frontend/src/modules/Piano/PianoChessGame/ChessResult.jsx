@@ -61,6 +61,13 @@ export function ChessResult({
 }) {
   const name = opponent?.name || 'your opponent';
   const promoted = ladder?.promoted === true;
+  // Tournament words: opponents wait in the ring and a player goes through to
+  // the next round. Passed in rather than edited into BoardGameResult, which
+  // checkers and Connect Four also render.
+  const nextName = ladder?.up_next?.name || null;
+  const promotedLine = nextName
+    ? `You're through to the next round — ${nextName} is waiting.`
+    : "You're through to the next round.";
   const notes = standingLines({ result, ladder });
 
   const metrics = record ? [
@@ -75,6 +82,7 @@ export function ChessResult({
     speech={speech}
     message={outcomeLine(outcome, result, name)}
     promoted={promoted}
+    promotedLine={promotedLine}
     metrics={metrics}
     notes={notes}
     onPlayAgain={onPlayAgain}
