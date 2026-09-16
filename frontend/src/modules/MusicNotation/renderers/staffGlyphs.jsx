@@ -25,7 +25,12 @@ export const NOTEHEAD_RY = 6.5;
  * A ghost is a key the player is holding, drawn at the pitch it actually
  * landed on. It is never a verdict — the target it displaced is coloured
  * miss-red in its own right — so it is "you are here" and nothing more:
- * SEMI-OPAQUE BLACK INK, never a hue, never a dashed outline.
+ * SEMI-OPAQUE BLACK INK, never a hue, never an outline of any kind.
+ *
+ * NO STROKE. A ghost is a wash, not a drawn note: an outline around a
+ * translucent fill gives the head a hard edge that reads as a real notehead at
+ * a glance, which is exactly the one thing this mark must not be mistaken for.
+ * The fill alone carries it, and the fill alone is what every renderer draws.
  *
  * It is here rather than in either renderer's stylesheet because it drifted.
  * The ordered staff drew a 45%-black filled head (2026-08-27); the
@@ -41,8 +46,8 @@ export const NOTEHEAD_RY = 6.5;
  * these numbers that nothing keeps honest.
  */
 export const GHOST_INK = Object.freeze({
-  /** The notehead: filled, solid-stroked, no dash. */
-  head: Object.freeze({ fill: 'rgba(0, 0, 0, 0.45)', stroke: 'rgba(0, 0, 0, 0.6)', strokeWidth: 1 }),
+  /** The notehead: translucent fill and nothing else — no stroke, no dash, no stem. */
+  head: Object.freeze({ fill: 'rgba(0, 0, 0, 0.45)', stroke: 'none' }),
   /** Its ledger lines: lighter than the head, still solid — a dashed ledger reads as a different KIND of line. */
   ledger: Object.freeze({ stroke: 'rgba(0, 0, 0, 0.35)', strokeWidth: 1 }),
   /** Its accidental, drawn with `currentColor` by the glyph shapes. */
