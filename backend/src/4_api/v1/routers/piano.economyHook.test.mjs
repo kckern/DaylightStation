@@ -10,6 +10,7 @@ import request from 'supertest';
 import { YamlUserVideoProgressStore as UserVideoProgressStore } from '#adapters/persistence/yaml/YamlUserVideoProgressStore.mjs';
 import { createPlayRouter } from './play.mjs';
 import { RecordPlaybackProgress } from '#apps/content/usecases/RecordPlaybackProgress.mjs';
+import { RegistryContentCatalogGateway } from '#adapters/content/RegistryContentCatalogGateway.mjs';
 
 const USER = 'test-user';
 const USER_DIR = '/tmp/piano-econhook-test-user';
@@ -27,9 +28,13 @@ const clean = () => { try { fs.rmSync(USER_DIR, { recursive: true, force: true }
 
 const makeApp = ({ economyService }) => {
   const userVideoProgressStore = new UserVideoProgressStore({ configService, logger: silentLogger });
-  const registry = { get: () => null }; // no adapter → storagePath stays `type`, no metadata
+  // No adapter → storagePath stays `type`, no metadata. The use case reaches
+  // the catalog GATEWAY (not a bare registry), so it must be given one or every
+  // post dies in resolveSource and the route answers 500.
+  const registry = { get: () => null, adapters: { get: () => null } };
+  const contentCatalog = new RegistryContentCatalogGateway({ registry });
   const recordPlaybackProgress = new RecordPlaybackProgress({
-    registry,
+    contentCatalog,
     userVideoProgressStore,
     economyService,
     nowTimestamp: () => '2026-08-28 12:00:00',

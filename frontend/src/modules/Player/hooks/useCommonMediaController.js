@@ -1327,11 +1327,14 @@ export function useCommonMediaController({
     return () => {
       if (endedAssetRef.current === capturedAssetId) return; // onEnded already logged
       const pos = lastPlaybackPosRef.current;
-      if (pos < 10) return;
       const dur = lastDurationRef.current;
       if (!dur) return;
       const pct = getProgressPercent(pos, dur);
       if (parseFloat(pct) <= 0) return;
+      // The 10s floor filters a scrub-through, but it is unreachable on media
+      // shorter than itself — that item's position could then never be saved.
+      // A near-complete watch counts at any length.
+      if (pos < 10 && parseFloat(pct) < 90) return;
       const title = capturedMeta.title + (capturedMeta.grandparentTitle ? ` (${capturedMeta.grandparentTitle} - ${capturedMeta.parentTitle})` : '');
       mcLog().info('playback.unmount-progress-save', { assetId: capturedAssetId, pos, pct });
       DaylightAPI(`api/v1/play/log`, { title, type: capturedType, assetId: capturedAssetId, seconds: pos, percent: pct, listId: capturedMeta?.listId || null });
