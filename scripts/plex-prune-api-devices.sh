@@ -84,7 +84,8 @@ cat > "$SQL_FILE" <<'SQL'
 PRAGMA busy_timeout=60000;
 BEGIN IMMEDIATE;
 CREATE TEMP TABLE doomed AS SELECT id FROM devices
-  WHERE identifier LIKE 'api-%' OR identifier LIKE 'probe%' OR identifier LIKE 'lockprobe%';
+  WHERE identifier LIKE 'api-%' OR identifier LIKE 'probe%'
+     OR identifier LIKE 'lockprobe%' OR identifier LIKE 'verify%';
 DELETE FROM statistics_bandwidth WHERE device_id IN (SELECT id FROM doomed);
 DELETE FROM devices WHERE id IN (SELECT id FROM doomed);
 COMMIT;
