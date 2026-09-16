@@ -25,4 +25,13 @@ describe('shared board-game ceremonies', () => {
     expect(container.querySelectorAll('.pg-roster__row')).toHaveLength(21);
     expect(container.querySelectorAll('.pg-roster__row--current')).toHaveLength(1);
   });
+
+  it('lists standing notes, and renders no list without them', () => {
+    const { getByText, container, rerender } = render(
+      <BoardGameResult result="win" opponent={{ name: 'Pip' }} notes={['You vs Pip: 3 wins, 0 losses']} onPlayAgain={() => {}} />,
+    );
+    expect(getByText('You vs Pip: 3 wins, 0 losses')).toBeTruthy();
+    rerender(<BoardGameResult result="win" opponent={{ name: 'Pip' }} onPlayAgain={() => {}} />);
+    expect(container.querySelector('.pg-result__notes')).toBe(null);
+  });
 });

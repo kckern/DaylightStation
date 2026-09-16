@@ -843,10 +843,20 @@ counts moves-with-help, not presses.
 
 ### The game record
 
-Each finished game posts one record to `POST /api/v1/piano-games/chess/games?user={id}`, stored
-under the player's own data. It holds facts, never a score: result, outcome, move
-count, hints used, best moves used, the rung, and duration. Guests are not recorded —
-they never reach the per-user endpoints.
+Each finished game posts one record to `POST /api/v1/piano-games/chess/games?user={id}`. It holds
+facts, never a score: result, outcome, move count, the help block, the rung and opponent, and
+duration. The server folds it into the player's ladder (`apps/chess/ladder.yml`) and answers with
+where the game left them:
+
+- `ladder.counted` and `ladder.not_counted`, naming the rule that kept it from counting
+  (`best_moves`, `hints`, `takebacks` with `used` and `allowed`, or `other_level` for practice
+  against an opponent already beaten)
+- `ladder.up_next`, the opponent being climbed toward, and `ladder.status`, the counted wins so far
+- `head_to_head`, the lifetime record against this opponent including this game
+
+No per-game file is written by this endpoint. The household archive is the only per-game record
+(see [chess.md](chess.md#the-game-history)), and the ladder and rivalry files are derived from it.
+Guests are not recorded; they never reach the per-user endpoints.
 
 ### Refusal loudness
 

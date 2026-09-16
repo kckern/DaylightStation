@@ -240,23 +240,44 @@ export function normalizeProgress(stored) {
 }
 
 /**
- * Does this game count toward promotion?
+ * Why a finished game does not count toward promotion, or null when it does.
  *
- * Unfinished games never do — you cannot be promoted for walking away — and
- * neither do games played against anyone other than the opponent being climbed,
- * which is what "no skipping ahead" means in arithmetic.
+ * Unfinished games never count, because you cannot be promoted for walking
+ * away. Neither do games against anyone but the opponent being climbed, which
+ * is what "no skipping ahead" means in arithmetic. The help ceilings are
+ * checked in a fixed order and the first one broken is the one named, so the
+ * result card tells a child the rule that actually decided it.
  */
-export function countsTowardPromotion(record, policy, currentLevel) {
-  if (!record || !record.completed) return false;
-  if (Number(record.level) !== currentLevel) return false;
+export function promotionIneligibility(record, policy, currentLevel) {
+  if (!record || !record.completed) return { reason: 'unfinished' };
+  if (Number(record.level) !== currentLevel) {
+    return { reason: 'other_level', level: record.level ?? null };
+  }
   // The first rungs teach the game, not the discipline. Below this level a
   // game counts however much help was leant on — the ceilings resume above it.
-  if (currentLevel < Number(policy.unrestricted_below_level || 0)) return true;
+  if (currentLevel < Number(policy.unrestricted_below_level || 0)) return null;
   const help = record.help || {};
-  if (Number(help.best_moves || 0) > Number(policy.max_best_moves)) return false;
-  if (Number(help.hints || 0) > Number(policy.max_hints)) return false;
-  if (Number(help.takebacks || 0) > Number(policy.max_takebacks)) return false;
-  return true;
+  for (const [reason, limit] of [['best_moves', 'max_best_moves'], ['hints', 'max_hints'], ['takebacks', 'max_takebacks']]) {
+    const used = Number(help[reason] || 0);
+    const allowed = Number(policy[limit]);
+    if (used > allowed) return { reason, used, allowed };
+  }
+  return null;
+}
+
+/** Does this game count toward promotion? See `promotionIneligibility` for why not. */
+export function countsTowardPromotion(record, policy, currentLevel) {
+  return promotionIneligibility(record, policy, currentLevel) === null;
+}
+
+/**
+ * The ladder config one player climbs under: the household's, with that
+ * player's own `ladder` block laid over it. Only the ladder block merges,
+ * because that is the only block a player's file overrides for promotion.
+ */
+export function mergeLadderConfig(household, user) {
+  const base = household || {};
+  return { ...base, ladder: { ...(base.ladder || {}), ...(user?.ladder || {}) } };
 }
 
 /** Wins among the last `window` counted games against the current opponent. */
@@ -404,5 +425,5 @@ export function rungForLevel(level, policy) {
 export default {
   LADDER_SIZE, TOP_LEVEL, DEFAULT_ROSTER, DEFAULT_LADDER_POLICY, DEFAULT_LEVEL_RUNGS, themeForLevel,
   resolvePolicy, resolveRoster, normalizeDialogueProfile, createLadderProgress, normalizeProgress, describeLevel,
-  countsTowardPromotion, promotionStatus, applyGameToProgress, availableOpponents, rungForLevel,
+  countsTowardPromotion, promotionIneligibility, mergeLadderConfig, promotionStatus, applyGameToProgress, availableOpponents, rungForLevel,
 };

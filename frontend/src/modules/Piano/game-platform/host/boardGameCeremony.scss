@@ -7,6 +7,7 @@
 .pg-result__headline { margin:1rem 0 .35rem; font-size:clamp(1.5rem,4vw,2.5rem); font-weight:700; }
 .pg-result__message,.pg-result__hint { color:var(--piano-muted,#9a9aa6); }
 .pg-result__promoted { color:var(--piano-accent-text,#5fe39a); font-weight:700; }
+.pg-result__notes { display:grid; gap:.2rem; margin:.25rem 0 0; padding:0; list-style:none; color:var(--piano-muted,#9a9aa6); }
 .pg-result__metrics { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:.5rem; }
 .pg-result__metrics div { display:flex; justify-content:space-between; gap:.5rem; }
 .pg-result__metrics dt { color:var(--piano-muted,#9a9aa6); }

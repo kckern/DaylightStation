@@ -1,5 +1,6 @@
 import BoardGameResult from '../game-platform/host/BoardGameResult.jsx';
 import { formatThink } from './chessClock.js';
+import { standingLines } from './chessStandingLines.js';
 import './ChessResult.scss';
 
 /**
@@ -60,6 +61,7 @@ export function ChessResult({
 }) {
   const name = opponent?.name || 'your opponent';
   const promoted = ladder?.promoted === true;
+  const notes = standingLines({ result, ladder });
 
   const metrics = record ? [
     ['Moves', record.moves], ['Hints', record.help.hints],
@@ -74,6 +76,7 @@ export function ChessResult({
     message={outcomeLine(outcome, result, name)}
     promoted={promoted}
     metrics={metrics}
+    notes={notes}
     onPlayAgain={onPlayAgain}
     classPrefix="chess-result"
     decoration={result === 'win' ? <Confetti /> : null}

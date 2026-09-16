@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { GameRivalryMemoryService } from './GameRivalryMemoryService.mjs';
+import { GameRivalryMemoryService, projectHeadToHead } from './GameRivalryMemoryService.mjs';
 
 describe('GameRivalryMemoryService', () => {
   it('isolates games, keeps lifetime totals and seven recent games idempotently', async () => {
@@ -62,5 +62,31 @@ describe('GameRivalryMemoryService', () => {
     });
     expect(saved).toBe(false);
     expect(logger.warn).toHaveBeenCalledWith('piano-game.rivalry.write-failed', expect.objectContaining({ opponentId: 'nidoran-f' }));
+  });
+});
+
+describe('projectHeadToHead', () => {
+  const rival = {
+    opponent: { id: 'pokemon:level-2', name: 'Weedle' },
+    record: { win: 5, loss: 0, draw: 0 },
+    recent: [{ gameId: 'g5', result: 'win' }],
+  };
+
+  it('folds in a finished game memory has not recorded yet', () => {
+    expect(projectHeadToHead(rival, { gameId: 'g6', completed: true, result: 'win', opponent: { id: 'pokemon:level-2', name: 'Weedle' } }))
+      .toEqual({ opponent: { id: 'pokemon:level-2', name: 'Weedle' }, win: 6, loss: 0, draw: 0 });
+  });
+
+  it('does not count a game twice when the archive write already recorded it', () => {
+    expect(projectHeadToHead(rival, { gameId: 'g5', completed: true, result: 'win' })).toMatchObject({ win: 5 });
+  });
+
+  it('starts a first meeting from zero', () => {
+    expect(projectHeadToHead(null, { gameId: 'g1', completed: true, result: 'loss', opponent: { id: 'pokemon:level-3', name: 'Kakuna' } }))
+      .toEqual({ opponent: { id: 'pokemon:level-3', name: 'Kakuna' }, win: 0, loss: 1, draw: 0 });
+  });
+
+  it('ignores an unfinished game', () => {
+    expect(projectHeadToHead(rival, { gameId: 'g7', completed: false, result: 'win' })).toMatchObject({ win: 5 });
   });
 });
