@@ -9,9 +9,17 @@
  * overwrite a school or piano completion. That is why this does not go through
  * `ProgressSyncService`, whose whole job is reconciling and letting a remote win.
  *
- * A surface with no declared identity is silently skipped: most devices in the
- * registry are speakers, cameras and scanners, and only a media surface with a
- * `plex:` block is a Plex client.
+ * Whether a surface has an identity is `identityFor`'s decision, not this
+ * class's. Composition currently resolves one for every caller — a declared
+ * surface gets its own, anything else shares a web identity — because a
+ * playback that reached the media server is a real play wherever it was
+ * started. A null is still honoured (reported: false) so that policy can
+ * change without touching this.
+ *
+ * Three ways a session ends, and they are NOT interchangeable:
+ *   completed  the item played to its natural end -> closed AND marked watched
+ *   stop()     someone stopped it -> closed, NOT marked watched
+ *   sweep()    the surface went quiet without saying so -> closed, NOT watched
  */
 
 export class ReportPlaybackSession {
@@ -81,6 +89,35 @@ export class ReportPlaybackSession {
       this.#logger.info?.('plex.session.opened', { surfaceId, contentId, player: identity.displayName });
     }
     return { reported: true, opened, completed: false };
+  }
+
+  /**
+   * A surface stopped playing, without finishing.
+   *
+   * Deliberately NOT `execute({completed: true})`: that marks the item watched,
+   * and stopping a story halfway is not finishing it. A child who abandons a
+   * book must not have it written into history as read.
+   *
+   * Idempotent — stopping an already-stopped surface is a no-op, so a caller
+   * that reports `idle` on every poll can call this freely.
+   *
+   * @param {{surfaceId: string, at: number}} input
+   * @returns {Promise<{stopped: boolean}>}
+   */
+  async stop({ surfaceId, at }) {
+    if (!surfaceId) return { stopped: false };
+
+    const identity = this.#identityFor(surfaceId);
+    if (!identity) return { stopped: false };
+
+    const closed = this.#registry.close({ surfaceId, at });
+    if (!closed) return { stopped: false };
+
+    await this.#gateway.closeSession(identity, closed);
+    this.#logger.info?.('plex.session.stopped', {
+      surfaceId, contentId: closed.contentId, player: identity.displayName,
+    });
+    return { stopped: true };
   }
 
   /**

@@ -9,8 +9,9 @@
  *     briefly shows two things playing;
  *   - finishing marks watched, stopping does not — abandoning a story halfway
  *     must never credit it as watched;
- *   - a surface with no declared identity is skipped entirely, because most
- *     devices in the registry are speakers and cameras, not Plex clients.
+ *   - a surface with no identity is skipped entirely. Composition now resolves
+ *     one for every caller, so this path is policy held open rather than a case
+ *     that fires today; it is tested so the choice stays this layer's to make.
  */
 
 import { describe, it, expect, vi } from 'vitest';
@@ -110,6 +111,51 @@ describe('ReportPlaybackSession completion', () => {
     await useCase.execute(report());
     await useCase.execute(report({ positionMs: 30_000, at: T0 + 30_000 }));
     expect(gateway.markWatched).not.toHaveBeenCalled();
+  });
+});
+
+describe('ReportPlaybackSession.stop', () => {
+  it('closes the session WITHOUT marking it watched', async () => {
+    const { useCase, gateway } = build();
+    await useCase.execute(report());
+    const result = await useCase.stop({ surfaceId: 'livingroom-tv', at: T0 + 30_000 });
+
+    expect(result).toEqual({ stopped: true });
+    expect(gateway.closeSession).toHaveBeenCalledTimes(1);
+    // The whole point: stopping a story halfway is not finishing it.
+    expect(gateway.markWatched).not.toHaveBeenCalled();
+  });
+
+  it('is idempotent, so a caller polling `idle` can call it every tick', async () => {
+    const { useCase, gateway } = build();
+    await useCase.execute(report());
+    await useCase.stop({ surfaceId: 'livingroom-tv', at: T0 + 30_000 });
+    const second = await useCase.stop({ surfaceId: 'livingroom-tv', at: T0 + 33_000 });
+
+    expect(second).toEqual({ stopped: false });
+    expect(gateway.closeSession).toHaveBeenCalledTimes(1);
+  });
+
+  it('does nothing for a surface that was never playing', async () => {
+    const { useCase, gateway } = build();
+    expect(await useCase.stop({ surfaceId: 'garage-tv', at: T0 })).toEqual({ stopped: false });
+    expect(gateway.closeSession).not.toHaveBeenCalled();
+  });
+
+  it('ignores a stop with no surface, and one with no identity', async () => {
+    const { useCase } = build();
+    expect(await useCase.stop({ surfaceId: '', at: T0 })).toEqual({ stopped: false });
+    const anon = build({ identityFor: () => null });
+    expect(await anon.useCase.stop({ surfaceId: 'whatever', at: T0 })).toEqual({ stopped: false });
+  });
+
+  it('lets the surface start something new afterwards', async () => {
+    const { useCase, gateway } = build();
+    await useCase.execute(report());
+    await useCase.stop({ surfaceId: 'livingroom-tv', at: T0 + 30_000 });
+    const result = await useCase.execute(report({ contentId: 'plex:999', at: T0 + 40_000 }));
+    expect(result).toMatchObject({ opened: true });
+    expect(gateway.openSession).toHaveBeenCalledTimes(2);
   });
 });
 
