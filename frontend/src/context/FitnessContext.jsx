@@ -94,6 +94,13 @@ const getItemIdentifier = (item) => {
   return item?.contentId || item?.id || item?.ratingKey || item?.plex || null;
 };
 
+// The fire toast's sound, relative to /media exactly like the ring cue's
+// `fitness/ux/ring.mp3` default — `playRingCelebrationCue` resolves it through
+// DaylightMediaPath, so this must NOT carry a leading slash or a /media prefix.
+// The volume matches the ring so neither celebration shouts over the other.
+const FIRE_TOAST_SFX = 'fitness/ux/fireball.mp3';
+const FIRE_TOAST_SFX_VOLUME = 0.8;
+
 const VOICE_MEMO_OVERLAY_INITIAL = {
   open: false,
   mode: null,
@@ -2162,6 +2169,24 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     if (!ringToastKey || !ringCelebrationsConfig.enabled || session?._liveSessionRole === 'mirror') return;
     playRingCelebrationCue({ sound: ringCelebrationsConfig.sound, volume: ringCelebrationsConfig.volume });
   }, [ringToastKey, ringCelebrationsConfig]);
+
+  // Reaching Fire gets the same treatment as closing a ring: a sound the moment
+  // the toast appears, keyed on the toast becoming visible rather than on the
+  // flush, so it lands with the fireball rather than before it.
+  //
+  // It deliberately shares the celebration audio element. That element is the
+  // one primed by `installRingCelebrationAudioUnlock` from a real gesture — and
+  // the garage fitness display is a Firefox kiosk, where an un-primed element is
+  // silently refused by autoplay policy. A second, private element would be mute
+  // on the only screen this actually plays on.
+  const fireToastKey = fitnessToast?.kind === 'fire'
+    ? `${fitnessToast.id}:${fitnessToast.revision || 0}`
+    : null;
+  useEffect(() => {
+    // The mirror screen shadows the real one; it must not double-celebrate.
+    if (!fireToastKey || session?._liveSessionRole === 'mirror') return;
+    playRingCelebrationCue({ sound: FIRE_TOAST_SFX, volume: FIRE_TOAST_SFX_VOLUME });
+  }, [fireToastKey]);
 
   useEffect(() => () => {
     if (ringFlushTimerRef.current) clearTimeout(ringFlushTimerRef.current);
