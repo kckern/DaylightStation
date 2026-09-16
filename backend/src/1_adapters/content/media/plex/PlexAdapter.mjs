@@ -50,6 +50,23 @@ function fnv1aHex(str) {
  * @returns {string|null} null means "no usable session was supplied" — the
  *   caller then mints a random identifier per request.
  */
+/**
+ * The identity every backend-initiated (sessionless) Plex stream request uses.
+ *
+ * Plex records one `devices` row per distinct X-Plex-Client-Identifier and never
+ * prunes them. This used to be `api-${random}` per request, so cron harvests,
+ * previews and queue resolves each added a permanent row: 81,001 rows by
+ * 2026-09-16, 73,994 of them `api-*`. Plex's periodic per-device statistics pass
+ * then held a write transaction ~25s out of every ~55s grinding through them,
+ * and every request that opens a streaming session blocked behind it — a child's
+ * book took 24.7s to start, a piano lesson 14.7s.
+ *
+ * Stability is safe because isolation does not live here: `sessionIdentifier`
+ * stays unique per request (see `_generateSessionIds`), which is what Plex uses
+ * to separate concurrent streams.
+ */
+export const API_CLIENT_IDENTIFIER = 'api-daylight-station';
+
 export function sanitizePlexSessionId(raw) {
   if (typeof raw !== 'string') return null;
   const trimmed = raw.trim();
@@ -1470,11 +1487,15 @@ export class PlexAdapter {
     const clientSession = base && variant ? `${base}-${variant}` : base;
 
     // clientIdentifier: Use frontend-provided session for multi-player isolation.
-    // If no session provided, generate unique ID per request to prevent collisions.
-    // That fallback is what Plex actually saw for four minutes on 2026-08-16:
-    // nothing in the backend read `?session=`, so one tablet retrying looked
-    // like 495 separate clients.
-    const clientIdentifier = clientSession || `api-${sessionUUID}`;
+    // That mattered on 2026-08-16: nothing in the backend read `?session=`, so
+    // one tablet retrying looked like 495 separate clients.
+    //
+    // Sessionless (backend-initiated) requests share ONE stable identity rather
+    // than minting `api-${sessionUUID}` per request. The per-request form made a
+    // permanent Plex `devices` row every time and was the direct cause of the
+    // 2026-09-16 statistics-lock stalls — see API_CLIENT_IDENTIFIER. Uniqueness
+    // that actually matters lives in `sessionIdentifier`, below.
+    const clientIdentifier = clientSession || API_CLIENT_IDENTIFIER;
 
     // sessionIdentifier: Always unique per request. If we have a stable client session,
     // append the UUID so Plex can track it's from the same client but a new segment request.
