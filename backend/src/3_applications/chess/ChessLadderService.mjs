@@ -1,6 +1,6 @@
 import {
   TOP_LEVEL, applyGameToProgress, availableOpponents, createLadderProgress, normalizeProgress,
-  promotionIneligibility, promotionStatus, resolvePolicy, resolveRoster, rungForLevel,
+  promotionIneligibility, promotionStatus, resolvePolicy, resolveRoster, roundStanding, rungForLevel,
 } from '#shared/gaming/rulesets/chess/ladder.mjs';
 
 /**
@@ -39,6 +39,13 @@ export function createChessLadderService({ readConfig, readProgress, writeProgre
         current: roster[progress.unlocked_through] || roster[0],
         unlocked_through: progress.unlocked_through,
         status,
+        // Where they stand, in the two shapes the lobby needs: cumulative
+        // counts that only grow (the rows of trophies) and the windowed gate
+        // numbers (the one sentence that states the requirement). Computed
+        // here rather than shipping every archived result to the kiosk —
+        // `results` is trimmed to window * LADDER_SIZE entries and the screen
+        // needs four numbers from it.
+        standing: roundStanding(progress, policy),
         policy,
         // A guest plays the bottom of the ladder and climbs nothing, and the
         // screen has to be able to say so rather than showing a stuck bar.

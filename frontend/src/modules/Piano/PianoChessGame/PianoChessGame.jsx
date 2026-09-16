@@ -49,6 +49,7 @@ import {
   checkTakeback, playerMoveCount, takebackNote, takebackRefusalMessage, willStillCount,
 } from './takebackBudget.js';
 import { buildChessRailViewModel } from './chessRailViewModel.js';
+import { RoundStanding } from './RoundStanding.jsx';
 import { rimAxisClef, rimStaffExtent } from '../../MusicNotation/renderers/RimStaffRenderer.jsx';
 import { useChessAddressingProgress } from './useChessAddressingProgress.js';
 import { useChessOpponentTurn } from './useChessOpponentTurn.js';
@@ -371,6 +372,8 @@ export function PianoChessGame({
     helpUsedRef,
     addTakeback,
     resetHelp,
+    matchCounts,
+    demotionArmed,
   } = useChessHelpController({
     game,
     gameRef,
@@ -382,6 +385,11 @@ export function PianoChessGame({
     openingMs: OPENING_MS,
     replayHoldMs: REPLAY_HOLD_MS,
     replayMoveMs: REPLAY_MOVE_MS,
+    // The ceilings this match is played under, so the rail can say whether it
+    // still counts and warn before a press stops it counting. Absent until the
+    // ladder read answers; the controller reports "not known" rather than yes.
+    policy: ladder?.policy ?? null,
+    level: ladderLevel ?? 0,
   });
 
   // A board that silently rearranges itself is a board the player will misread.
@@ -865,6 +873,8 @@ export function PianoChessGame({
     pickupDeadline,
     turnColour,
     turnLabel,
+    matchBadge,
+    demotionWarning: demotionWarningLine,
   } = buildChessRailViewModel({
     game,
     playerColor,
@@ -878,6 +888,8 @@ export function PianoChessGame({
     introSeen: chessConfig?.seen_intro === true,
     reading,
     takebackArmed,
+    matchCounts,
+    demotionArmed,
   });
   return (
     <BoardGameFrame
@@ -1000,6 +1012,20 @@ export function PianoChessGame({
               </div>
             )}
           </GameSlot>
+
+          {/* WHERE THIS MATCH STANDS WITH THE LADDER. A child used to find out
+              only on the result card, once the round was already gone. Absent
+              entirely until the ladder read answers, and for a guest, because a
+              badge that asserts what it does not know is the defect it exists
+              to remove. */}
+          {matchBadge && (
+            <p className={`piano-chess__match-badge piano-chess__match-badge--${matchBadge.state}`}>
+              {matchBadge.label}
+            </p>
+          )}
+          {demotionWarningLine && (
+            <p className="piano-chess__demotion-warning" role="status">{demotionWarningLine}</p>
+          )}
 
           {/* WHAT ELSE YOU CAN PLAY. Drawn as keys, because no child can act on
               "a run of three adjacent semitones". */}
@@ -1268,6 +1294,16 @@ export function PianoChessGame({
           roster={opponentRoster}
           position={(ladder.unlocked_through ?? 0) + 1}
           onClose={() => setRosterOpen(false)}
+          /* Every win taken in this round, in two rows, above the list of who
+             is left. "I beat him six times and I'm still stuck" is answered
+             here or it is not answered anywhere. */
+          header={(
+            <RoundStanding
+              standing={ladder.standing ?? null}
+              opponentName={opponentProfile?.name ?? null}
+              nextName={opponentRoster[(ladder.unlocked_through ?? 0) + 1]?.name ?? null}
+            />
+          )}
         />
       )}
 

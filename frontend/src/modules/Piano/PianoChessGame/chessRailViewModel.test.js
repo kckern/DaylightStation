@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildChessRailViewModel, promptFor, safeBoardTheme } from './chessRailViewModel.js';
+import { buildChessRailViewModel, promptFor, safeBoardTheme, matchStandingBadge, demotionWarning } from './chessRailViewModel.js';
 
 const playingGame = (overrides = {}) => ({
   playerColor: 'w',
@@ -45,5 +45,44 @@ describe('chess rail view model', () => {
     expect(view.prompt).toBe('Play Em again to pick that piece up.');
     expect(view.pickupDeadline).toBe(42);
     expect(view.opponentLine).toMatch(/pawn/i);
+  });
+});
+
+describe('matchStandingBadge — the state of the match, never a guess', () => {
+  it('says which it is, in tournament words', () => {
+    expect(matchStandingBadge(true)).toEqual({ state: 'counts', label: 'This match counts' });
+    expect(matchStandingBadge(false)).toEqual({ state: 'practice', label: 'Practice match' });
+  });
+
+  it('says nothing at all when the ladder has not answered', () => {
+    // A guest has no ladder, and a slow read has not produced one yet. Neither
+    // may render as a confident "this counts" — asserting what it does not know
+    // is the exact defect the badge exists to remove.
+    expect(matchStandingBadge(null)).toBe(null);
+    expect(matchStandingBadge(undefined)).toBe(null);
+  });
+
+  it('never says unlock', () => {
+    for (const counts of [true, false]) expect(matchStandingBadge(counts).label).not.toMatch(/unlock/i);
+  });
+});
+
+describe('demotionWarning — what it costs, before it costs it', () => {
+  it('names the press, the cost, and how to go ahead anyway', () => {
+    expect(demotionWarning('best', 'Weedle'))
+      .toBe('Best move will make this a practice match — it stops counting against Weedle. Play it again to use it.');
+  });
+
+  it('warns about a second hint in the same words', () => {
+    expect(demotionWarning('hint', 'Weedle')).toMatch(/^Another hint will make this a practice match/);
+  });
+
+  it('is silent when nothing is armed', () => {
+    expect(demotionWarning(null)).toBe(null);
+    expect(demotionWarning('replay')).toBe(null);
+  });
+
+  it('still reads without an opponent name', () => {
+    expect(demotionWarning('best')).toBe('Best move will make this a practice match — it stops counting. Play it again to use it.');
   });
 });
