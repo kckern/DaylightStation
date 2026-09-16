@@ -14,14 +14,21 @@ const CONFIG = {
 };
 const silentLogger = { info() {}, warn() {}, error() {}, debug() {} };
 
-function appWith({ engine, configService, recordStore, analyst, commentaryService, boardGameDayService, logger = silentLogger }) {
+function appWith({ engine, configService, ladderService, rivalryMemory, analyst, commentaryService, boardGameDayService, logger = silentLogger }) {
   const app = express();
   app.use(express.json());
   app.use('/api/v1/piano-games/chess', createChessRouter({
-    engine, configService, recordStore, analyst, commentaryService, boardGameDayService, logger,
+    engine, configService, ladderService, rivalryMemory, analyst, commentaryService, boardGameDayService, logger,
   }));
   return app;
 }
+
+const ladderStub = (recordGame) => ({
+  recordGame: vi.fn(recordGame || (async () => ({
+    promoted: false, persisted: true, counted: true, not_counted: null,
+    up_next: { level: 2, name: 'Kakuna' }, status: { wins: 3, needed: 5, at_top: false },
+  }))),
+});
 
 const stubConfig = (overrides = {}) => ({
   read: async () => CONFIG,
@@ -190,19 +197,25 @@ describe('user id validation (path traversal)', () => {
 });
 
 describe('POST /api/v1/piano-games/chess/games', () => {
-  it('stores a record for a real user', async () => {
-    const writes = [];
+  const body = {
+    game_id: 'game-1', completed: true, result: 'win', moves: 24, level: 1,
+    help: { hints: 0, best_moves: 0, takebacks: 0 }, opponent: { id: 'pokemon:level-2', name: 'Weedle' },
+  };
+
+  it('folds a finished game into the ladder and answers with where it left the player', async () => {
+    const ladderService = ladderStub();
+    const rivalryMemory = { headToHead: vi.fn(async () => ({ opponent: { id: 'pokemon:level-2', name: 'Weedle' }, win: 6, loss: 0, draw: 0 })) };
     const recordDay = vi.fn(() => ({ studyDate: '2026-08-28', completedGames: 3, counted: true }));
-    const app = appWith({
-      engine: {}, configService: stubConfig(),
-      recordStore: { save: (u, r) => writes.push([u, r]) },
-      boardGameDayService: { record: recordDay },
-    });
-    const res = await request(app).post('/api/v1/piano-games/chess/games?user=learner4')
-      .send({ game_id: 'game-1', completed: true, result: 'win', moves: 24, hints: 3, best_moves: 1, rung: 'steady', duration_ms: 60000 });
+    const app = appWith({ engine: {}, configService: stubConfig(), ladderService, rivalryMemory, boardGameDayService: { record: recordDay } });
+    const res = await request(app).post('/api/v1/piano-games/chess/games?user=learner4').send(body);
     expect(res.status).toBe(201);
-    expect(writes[0][0]).toBe('learner4');
-    expect(writes[0][1]).toMatchObject({ result: 'win', moves: 24 });
+    expect(ladderService.recordGame).toHaveBeenCalledWith('learner4', expect.objectContaining({ game_id: 'game-1', result: 'win' }));
+    expect(rivalryMemory.headToHead).toHaveBeenCalledWith('learner4', expect.objectContaining({ game_id: 'game-1' }));
+    expect(res.body).toMatchObject({
+      saved: true,
+      ladder: { counted: true, up_next: { name: 'Kakuna' } },
+      head_to_head: { win: 6, loss: 0 },
+    });
     expect(recordDay).toHaveBeenCalledWith(expect.objectContaining({
       learnerId: 'learner4', gameId: 'chess', gameSessionId: 'game-1', completed: true, result: 'win',
     }));
@@ -210,34 +223,51 @@ describe('POST /api/v1/piano-games/chess/games', () => {
   });
 
   it('refuses without a user, so nothing is filed anonymously', async () => {
-    const writes = [];
-    const app = appWith({ engine: {}, configService: stubConfig(), recordStore: { save: (u, r) => writes.push([u, r]) } });
-    const res = await request(app).post('/api/v1/piano-games/chess/games').send({ result: 'win', moves: 24 });
+    const ladderService = ladderStub();
+    const app = appWith({ engine: {}, configService: stubConfig(), ladderService });
+    const res = await request(app).post('/api/v1/piano-games/chess/games').send(body);
     expect(res.status).toBe(400);
-    expect(writes).toHaveLength(0);
+    expect(ladderService.recordGame).not.toHaveBeenCalled();
   });
 
   it('rejects a traversal in the user segment', async () => {
-    const writes = [];
-    const app = appWith({ engine: {}, configService: stubConfig(), recordStore: { save: (u, r) => writes.push([u, r]) } });
-    const res = await request(app).post('/api/v1/piano-games/chess/games?user=../../../../tmp').send({ result: 'win' });
+    const ladderService = ladderStub();
+    const app = appWith({ engine: {}, configService: stubConfig(), ladderService });
+    const res = await request(app).post('/api/v1/piano-games/chess/games?user=../../../../tmp').send(body);
     expect(res.status).toBe(400);
-    expect(writes).toHaveLength(0);
+    expect(ladderService.recordGame).not.toHaveBeenCalled();
   });
 
-  it('answers honestly when the store fails to persist, instead of claiming success', async () => {
+  it('answers honestly when the ladder fails to persist, instead of claiming success', async () => {
     const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
     const app = appWith({
-      engine: {}, configService: stubConfig(),
-      recordStore: { save: async () => false }, // e.g. EACCES writing the .yml
-      logger,
+      engine: {}, configService: stubConfig(), logger,
+      ladderService: ladderStub(async () => ({ promoted: false, persisted: false, status: null })),
     });
-    const res = await request(app).post('/api/v1/piano-games/chess/games?user=learner4').send({ result: 'win', moves: 24 });
+    const res = await request(app).post('/api/v1/piano-games/chess/games?user=learner4').send(body);
     expect(res.status).toBeGreaterThanOrEqual(500);
     expect(res.status).toBeLessThan(600);
     expect(res.body).not.toMatchObject({ saved: true });
     expect(logger.info).not.toHaveBeenCalledWith('chess.game.recorded', expect.anything());
-    expect(logger.warn).toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalledWith('chess.game.record-failed', expect.anything());
+  });
+
+  it('still answers 201 when head-to-head memory throws, because it is cosmetic', async () => {
+    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
+    const app = appWith({
+      engine: {}, configService: stubConfig(), logger, ladderService: ladderStub(),
+      rivalryMemory: { headToHead: vi.fn(async () => { throw new Error('disk'); }) },
+    });
+    const res = await request(app).post('/api/v1/piano-games/chess/games?user=learner4').send(body);
+    expect(res.status).toBe(201);
+    expect(res.body.head_to_head).toBe(null);
+    expect(logger.warn).toHaveBeenCalledWith('chess.game.head-to-head-failed', expect.objectContaining({ reason: 'disk' }));
+  });
+
+  it('is unavailable without a ladder service', async () => {
+    const app = appWith({ engine: {}, configService: stubConfig() });
+    const res = await request(app).post('/api/v1/piano-games/chess/games?user=learner4').send(body);
+    expect(res.status).toBe(501);
   });
 });
 

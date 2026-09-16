@@ -148,8 +148,8 @@ export async function saveGameRecord(userId, record) {
 /**
  * Archive the whole game to the household history.
  *
- * Separate from `saveGameRecord`, and deliberately: that one is the player's own
- * scorecard for a finished game, this one is the replayable account of ANY game,
+ * Separate from `saveGameRecord`, and deliberately: that one folds a finished
+ * game into the player's ladder, this one is the replayable account of ANY game,
  * abandoned ones included. Guests are archived too — the household history is
  * about what happened on this piano, not about whose profile it belongs to, and
  * the record carries a null user rather than being dropped.

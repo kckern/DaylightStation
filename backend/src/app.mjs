@@ -350,12 +350,14 @@ import { PianoLearningService } from './3_applications/piano/PianoLearningServic
 import { YamlGamingExperienceManifestStore } from '#adapters/persistence/yaml/gaming/YamlGamingExperienceManifestStore.mjs';
 import { createWikipediaRouter } from './4_api/v1/routers/wikipedia.mjs';
 import { createChessRouter } from './4_api/v1/routers/chess.mjs';
-import { buildChessArchiveFilename, buildGameRecordFilename } from '#adapters/persistence/chess/ChessRecordNames.mjs';
+import { buildChessArchiveFilename } from '#adapters/persistence/chess/ChessRecordNames.mjs';
 import { createStockfishEngine } from './1_adapters/chess/StockfishEngineAdapter.mjs';
 import { createStockfishAnalyst } from './1_adapters/chess/StockfishAnalysisAdapter.mjs';
 import { chessArchiveDayDir } from '#shared/gaming/rulesets/chess/archivePaths.mjs';
+import { mergeLadderConfig } from '#shared/gaming/rulesets/chess/ladder.mjs';
 import { createChessConfigService } from './3_applications/chess/ChessConfigService.mjs';
 import { createChessLadderService } from './3_applications/chess/ChessLadderService.mjs';
+import { projectHeadToHead, rivalryOpponentId } from '#apps/piano-games/GameRivalryMemoryService.mjs';
 import { createPianoGamesModule } from '#composition/modules/pianoGames.mjs';
 import { WikipediaAdapter } from './1_adapters/reference/WikipediaAdapter.mjs';
 import { WikipediaService } from '#apps/reference/WikipediaService.mjs';
@@ -2169,11 +2171,10 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     writeUserConfig: (userId, data) => dataService.user.write('apps/chess/config', data, userId),
     logger: rootLogger.child({ module: 'chess-config' }),
   });
-  const readChessLadderConfig = async (userId) => {
-    const household = configService.getHouseholdAppConfig(null, 'chess') || {};
-    const user = userId ? (dataService.user.read('apps/chess/config', userId) || {}) : {};
-    return { ...household, ladder: { ...(household.ladder || {}), ...(user.ladder || {}) } };
-  };
+  const readChessLadderConfig = async (userId) => mergeLadderConfig(
+    configService.getHouseholdAppConfig(null, 'chess') || {},
+    userId ? (dataService.user.read('apps/chess/config', userId) || {}) : {},
+  );
   const chessLadderService = createChessLadderService({
     readConfig: readChessLadderConfig,
     readProgress: (userId) => dataService.user.read('apps/chess/ladder', userId) || null,
@@ -2203,18 +2204,21 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   };
   const sharedChessRivalry = {
     recordArchive: (record) => pianoGamesModule.container.recordRivalry('chess', record),
+    // The record against this opponent, counting the game just finished even
+    // if its archive write has not reached rivalry memory yet.
+    headToHead: async (userId, record) => {
+      const opponentId = rivalryOpponentId(record, 'chess');
+      if (!userId || !opponentId) return null;
+      const rival = await pianoGamesModule.container.rivalry('chess', userId, opponentId);
+      return projectHeadToHead(rival, {
+        gameId: record?.game_id, completed: record?.completed, result: record?.result, opponent: record?.opponent,
+      });
+    },
   };
   const pianoChessRouter = createChessRouter({
     engine: chessEngine,
     analyst: chessAnalyst,
     configService: chessConfigService,
-    recordStore: {
-      save: (userId, record) => dataService.user.write(
-        `apps/chess/games/${buildGameRecordFilename()}`,
-        { ...record, user_id: userId, created_at: new Date().toISOString() },
-        userId,
-      ),
-    },
     // The household archive: one file per game, under the day it was played,
     // named for the player. Household rather than per-user because it is the
     // instrument's history — the basis for comparing progress across the

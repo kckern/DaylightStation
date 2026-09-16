@@ -187,15 +187,16 @@ file, so the player watches the row and the column meet.
 ## The game history
 
 Every game played on this piano is archived under
-`data/household/history/gaming/pianochess/YYYY-MM-DD/`, where `YYYY-MM-DD` is the
+`data/household/gaming/log/chess/YYYY-MM-DD/`, where `YYYY-MM-DD` is the
 piano's local calendar day. One file is written per game, named
 `{user}_level{opponentLevel}_{duration}_{moveCount}ply_{result}_{outcome}_{timestamp}-{uuid}.yml`.
 The filename makes a directory listing useful without opening YAML; `levelunknown` is
 used honestly for an old/incomplete game where effective-opponent telemetry was never resolved.
 An abandoned game is named `quit_quit`; its YAML retains the event detail in `ended_by` — `left`
 for a game the player walked away from, `restarted` for one they started another game on top of.
-This is separate from the player's own scorecard (`apps/chess/games/`), which only exists for games
-that finished, and it answers a different question: *how is this child actually doing, over months?*
+It is the only per-game record. A player's ladder (`apps/chess/ladder.yml`) and rivalry memory
+(`apps/chess/rivalries.yml`) are derived from finished games, and the archive answers the question
+neither can: *how is this child actually doing, over months?*
 
 Three properties make it worth keeping.
 
@@ -217,6 +218,53 @@ teaching, and it is invisible in a PGN.
 
 Guests are archived too, with a null player: the history is about what happened on the instrument.
 
+### Rebuilding derived records
+
+`cli/chess-backfill.cli.mjs` repairs everything derived from the archive. It moves any games still
+in the pre-reorganisation directory (`gaming/log/pianochess/`) into the current one, renaming the
+oldest `user-timestamp.yml` files to the current scheme so filename filters find them. It retires
+per-player scorecards (`apps/chess/games/`, no longer written) once the archive is shown to hold
+each game; one it cannot match stays where it is and is named in the report. Before replaying,
+it recovers a level for any archived game that has none — and, with it, no `opponent` block either
+— from the scorecard about to be retired for that same game, when that scorecard still carries one;
+the archived file itself is never rewritten, only the in-memory record used for the replay, and the
+report says how many levels were recovered this way. Then it replays every finished game through the
+live ladder and rivalry rules and rewrites each player's `ladder.yml` and `rivalries.yml`. A game
+with no `opponent` block still counts toward the ladder at its recovered level, but never becomes a
+rival: nothing can say who it was, and rivalry memory's own id fallback (level-only, keyed to the
+ruleset id) would otherwise mint a nameless rival under an id that may not even match the player's
+roster pack.
+
+The replay never takes a rung away. A game played at a level proves that level was unlocked, and
+the stored level is never lowered. A player with finished games but no `apps/chess/` directory is
+reported and left alone. But the stored level is not the only counted number a replay can move: a
+stored `ladder.yml` or `rivalries.yml` can hold results the archive does not — most often a rivalry
+win nothing in the archive backs up. Rather than write over that quietly, the CLI computes the whole
+plan first and refuses `--write` outright, before moving a single file, if any player's counted
+ladder wins would fall or any rival's win, loss or draw count would fall or disappear — except a
+falling ladder-win count is not a decrease when the replay also promotes the player past their
+stored level: the counted-wins tally legitimately resets for the new rung. A rival that disappears
+is also not a decrease when a same-named rival in the rebuilt set has equal-or-higher win, loss and
+draw counts under a different id — that is a re-key (old rivalry memory keyed under an id nothing
+rebuilds under any more, most often a pre-migration `chess:level-N`), reported on its own
+`re-keyed:` line rather than as a `DECREASE`; a re-key that actually loses ground still decreases.
+The report names every player with a real decrease; `--allow-decrease` writes anyway. A dry run only
+ever reports a decrease, never refuses.
+
+It is a dry run unless given `--write`, and nothing is deleted: moved files land in
+`data/_deleteme/<date>-chess-record-consolidation/`, including a copy of each player's `ladder.yml`
+and `rivalries.yml` as they stood before the first write (`derived-before/<userId>/`) — the backup
+is never replaced on a later run, so it stays the true pre-backfill copy. Writes must be made as the
+app's user, so run it inside the container, where created paths take their parent directory's owner.
+Run the dry read first; then, immediately before the write, check that nobody is using the kiosk —
+a game recorded between the read and the write would otherwise be overwritten by the write's own
+plan, computed from the read's older archive:
+
+    sudo docker exec {env.docker_container} node cli/chess-backfill.cli.mjs --data data
+    ./scripts/piano-kiosk-idle.sh && sudo docker exec {env.docker_container} node cli/chess-backfill.cli.mjs --data data --write
+
+It is safe to run again. A second write finds nothing to move and rewrites identical files.
+
 ### Dialogue evidence
 
 `commentary.displayed` is an ordered, de-duplicated ledger of only the lines that reached the
@@ -225,6 +273,21 @@ time. Planned lines, rejected model output, and replies that arrived too late ar
 not transcript evidence, so they are deliberately absent. `final_line` is derived from the ledger
 and is the only dialogue retained in compact cross-game rivalry memory. Older archives retain their
 legacy final line but are reported as “final line only.”
+
+### Standing on the result card
+
+Under the tallies, the result card says where the game left the player, from the `POST /games`
+answer (see [piano-games.md](piano-games.md#the-game-record)):
+
+- **The head-to-head record** against this opponent, counting this game: "You vs Weedle: 6 wins,
+  0 losses". Draws appear only when there were any.
+- **Why a win did not count**, naming the first broken help ceiling in the order best moves,
+  hints, takebacks: "This win didn't count toward Kakuna: 14 best-move requests, 0 allowed."
+  A win against an opponent already beaten reads "Practice game." A loss is never explained.
+- **The climb**: "2 of 5 wins toward Kakuna". Dropped when the game promoted, because the banner
+  says so, and at the top of the ladder.
+
+Guests see none of it; they have no ladder and no rivalry memory.
 
 ## Motion, and what it costs
 
