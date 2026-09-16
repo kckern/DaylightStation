@@ -29,8 +29,18 @@ export class CycleRaceController {
     // "DNF" label (audit game-design #7 — mercy-kill must not brand an honest
     // finisher a failure).
     this.overtime = new Set();
+    // Riders whose SENSOR never reported, as distinct from riders who did not
+    // pedal. Both look like rpm 0 from here, and calling the first one a DNF
+    // told a child "Stopped pedaling for 30s" while he was pedalling — his
+    // cadence sensor had been silent for four minutes. A rider who never had a
+    // connected reading has not idled out; there is nothing to idle.
+    this.noSensor = new Set();
     this._idle = new Map();
     this._started = new Set(); // riders that have registered rpm > 0 at least once
+    // Riders that have had at least one CONNECTED sensor reading. Absent a
+    // `connected` flag the input is treated as connected, so a caller that does
+    // not report sensor state keeps exactly the behaviour it had.
+    this._sensorSeen = new Set();
     // Hot-start penalty ("penalty box"): a rider already pedalling at the green
     // light has their meter disabled (no distance). They leave the box only once
     // BOTH the configured timer has elapsed AND they have returned to RPM 0 — so
@@ -129,6 +139,10 @@ export class CycleRaceController {
         }
       }
 
+      // A reading counts as connected unless the caller explicitly says it is
+      // not — see `_sensorSeen`.
+      if (input.connected !== false) this._sensorSeen.add(userId);
+
       const moving = rpm > 0;
       if (moving) this._started.add(userId);
       const nextIdle = moving ? 0 : (this._idle.get(userId) || 0) + intervalS;
@@ -137,9 +151,17 @@ export class CycleRaceController {
       // Before a rider's first movement the (more generous) start-grace applies —
       // covering sensor lock-on lag; afterwards the normal idle clock governs.
       const dnfThreshold = this._started.has(userId) ? this.raceIdleDnfS : this.raceStartGraceS;
-      if (!finished && nextIdle >= dnfThreshold) this.dnf.add(userId);
+      if (!finished && nextIdle >= dnfThreshold) {
+        // Never a connected reading and never a revolution: the sensor did not
+        // show up, and the rider is not the one who failed. A rider who HAS
+        // ridden keeps the idle clock even if their sensor drops later — they
+        // demonstrably had one, so the honest reading of a silent bike is that
+        // they stopped.
+        if (!this._sensorSeen.has(userId) && !this._started.has(userId)) this.noSensor.add(userId);
+        else this.dnf.add(userId);
+      }
 
-      filtered[userId] = (this.dnf.has(userId) || boxed)
+      filtered[userId] = (this.dnf.has(userId) || this.noSensor.has(userId) || boxed)
         ? { rpm: 0, zoneId: input.zoneId ?? null }
         : input;
     }
@@ -196,6 +218,7 @@ export class CycleRaceController {
     if (this.config.winCondition === 'time') return s.finished;
     return Object.values(s.riders).every(
       (r) => r.finishTimeS != null || this.dnf.has(r.userId) || this.overtime.has(r.userId)
+        || this.noSensor.has(r.userId)
     );
   }
 
@@ -224,6 +247,7 @@ export class CycleRaceController {
       phase: this.phase,
       countdownRemaining: this.countdownRemaining,
       dnf: [...this.dnf],
+      noSensor: [...this.noSensor],
       overtime: [...this.overtime],
       penalized: [...this._penalty.keys()],
       penaltyInfo,

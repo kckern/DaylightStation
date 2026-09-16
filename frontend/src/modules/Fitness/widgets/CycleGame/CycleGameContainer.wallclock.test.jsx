@@ -309,12 +309,14 @@ describe('CycleGameContainer — wall-clock race ticks (audit F8)', () => {
     expect(recoveredCalls[0][1]).toMatchObject({ userId: 'user_2', equipmentId: 'tricycle' });
   });
 
-  it('never flags sensor_lost for a rider who has not pedaled a single connected reading yet (cold start, not a dropout)', () => {
-    // A rider who hasn't started pedaling at race start (still mounting the
-    // bike, clipping in) reads exactly like user_2's dropout case above from
-    // gapTicks alone — but rpmHistoryRef is empty, because there was never a
-    // real reading to begin with. raceStartGraceS (30s) already covers this
-    // gracefully at the DNF layer; SENSOR must not fire a false alarm here.
+  it('does not flag a rider whose sensor IS reporting and who simply has not started pedaling', () => {
+    // A rider who is on the bike but not yet pedalling reports a CONNECTED
+    // reading of rpm 0. Their gap clock never advances, so no SENSOR chip may
+    // ever appear for them however long they sit there — the equipment is
+    // fine, and saying otherwise is the false alarm this guards.
+    //
+    // This is NOT the same as a sensor reporting `connected: false`, which is
+    // the equipment failing to speak; that case is the test below.
     mockCtx = makeCtx({
       cycleGameConfig: {
         default_win_condition: 'distance',
@@ -330,7 +332,7 @@ describe('CycleGameContainer — wall-clock race ticks (audit F8)', () => {
         getEquipmentRider: (id) => ({ cycle_ace: 'user_1', tricycle: 'user_2' })[id] || null,
         getEquipmentCadence: (id) => {
           if (id === 'cycle_ace') return { rpm: 100, connected: true }; // user_1 rides normally
-          return { rpm: 0, connected: false }; // user_2 hasn't clipped in yet
+          return { rpm: 0, connected: true }; // user_2 is on the bike, sensor fine, not pedalling
         }
       }
     });
@@ -345,5 +347,52 @@ describe('CycleGameContainer — wall-clock race ticks (audit F8)', () => {
     act(() => { vi.advanceTimersByTime(RACE_TICK_MS); });
 
     expect(logSpy.info.mock.calls.some(([event]) => event === 'cycle_game.sensor_lost')).toBe(false);
+  });
+
+  it('DOES flag a sensor that never reports at all, before the race forfeits the rider for it', () => {
+    /**
+     * The chip used to require a rider to have been connected once, so a sensor
+     * that never appeared produced no warning ever — and the race then forfeited
+     * them with "Stopped pedaling for 30s", which was the only thing anyone saw.
+     * Verified in production: niceday's ANT+ sensor emitted no packets across
+     * three races that all forfeited the rider at the threshold with rpm 0,
+     * then woke, and his very next race registered 73 rpm. He was on the bike
+     * the whole time.
+     *
+     * The warning has to arrive while it can still be acted on — after the
+     * cold-start window, before the start-grace ends the race for them.
+     */
+    mockCtx = makeCtx({
+      cycleGameConfig: {
+        default_win_condition: 'distance',
+        distance_goal_default_m: 3000,
+        time_cap_default_s: 300,
+        hrless_multiplier: 1.0,
+        start_countdown_s: START_COUNTDOWN_S,
+        staging_buffer_ms: 0,
+        cadence_zones: [{ id: 'cruising', name: 'Cruising', min: 40, color: '#2ecc71' }],
+        race_start_grace_s: 30
+      },
+      fitnessSessionInstance: {
+        getEquipmentRider: (id) => ({ cycle_ace: 'user_1', tricycle: 'user_2' })[id] || null,
+        getEquipmentCadence: (id) => {
+          if (id === 'cycle_ace') return { rpm: 100, connected: true };
+          return { rpm: 0, connected: false }; // user_2's sensor never speaks
+        }
+      }
+    });
+    const renderApi = render(<CycleGameContainer />);
+    nowMs = 0;
+    driveToGo(renderApi);
+
+    // Short of SENSOR_ABSENT_GAP_TICKS: still quiet, they may be mounting.
+    nowMs = 10000;
+    act(() => { vi.advanceTimersByTime(RACE_TICK_MS); });
+    expect(logSpy.info.mock.calls.some(([event]) => event === 'cycle_game.sensor_lost')).toBe(false);
+
+    // Past it, and still short of the 30s start-grace that ends their race.
+    nowMs = 20000;
+    act(() => { vi.advanceTimersByTime(RACE_TICK_MS); });
+    expect(logSpy.info.mock.calls.some(([event]) => event === 'cycle_game.sensor_lost')).toBe(true);
   });
 });
