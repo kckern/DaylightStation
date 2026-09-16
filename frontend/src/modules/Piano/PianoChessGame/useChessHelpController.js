@@ -1,6 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { helpWithinCeilings } from '@shared-gaming/rulesets/chess/ladder.mjs';
 import { fenBefore, isPlayerTurn } from './chessGameState.js';
 import { useSettledGesture } from './useSettledGesture.js';
+
+/** The tally shape the ladder speaks, from the one this controller keeps. */
+const tallyOf = (used) => ({
+  hints: used?.hints || 0,
+  best_moves: used?.bestMoves || 0,
+  takebacks: used?.takebacks || 0,
+});
 
 /**
  * Own hint, analysis, replay, and opening-stage state for one chess session.
@@ -22,6 +30,8 @@ export function useChessHelpController({
   openingMs,
   replayHoldMs,
   replayMoveMs,
+  policy = null,
+  level = 0,
 }) {
   const gesture = useSettledGesture(rawGesture);
   const [opening, setOpening] = useState(true);
@@ -34,6 +44,31 @@ export function useChessHelpController({
   gameIdRef.current = gameId;
   const requestTokenRef = useRef(null);
   const mountedRef = useRef(false);
+  const policyRef = useRef(policy);
+  policyRef.current = policy;
+  const levelRef = useRef(level);
+  levelRef.current = level;
+
+  /**
+   * Does this match still count toward the round?
+   *
+   * DERIVED, never tracked. It asks `helpWithinCeilings` — the same predicate
+   * the ladder uses to decide the finished game — so the badge on screen during
+   * a match cannot disagree with the verdict at the end of it. A separate flag
+   * kept in step by hand would drift, and a badge that lies is worse than no
+   * badge at all.
+   *
+   * Only the help ceilings are knowable here. Whether the game was filed
+   * against the right round is the server's to say, so a caller that cannot
+   * offer a policy gets `null` — "not known" — rather than a confident yes.
+   */
+  const matchCounts = policy ? helpWithinCeilings(tallyOf(helpUsed), policy, level) : null;
+
+  // Armed, awaiting a second press: the kind of help that would demote this
+  // match to practice if it went through. Held in a ref for the gesture effect
+  // (which must not re-run when the arm changes) and in state for the rail.
+  const armedRef = useRef(null);
+  const [demotionArmed, setDemotionArmed] = useState(null);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -64,11 +99,50 @@ export function useChessHelpController({
     if (opening && game.history.length) setOpening(false);
   }, [game.history.length, opening]);
 
+  /**
+   * Arm before spending, but only when spending would actually cost something.
+   *
+   * Not a best-move special case: ask the ladder whether THIS press would push
+   * the tally past a ceiling. One orienting hint is free and must stay
+   * frictionless, so it passes straight through; the second one demotes, so it
+   * asks first. A match already down to practice cannot be demoted twice, so
+   * the warning stops rather than nagging.
+   *
+   * Returns true when the caller may proceed. The arm survives the release of
+   * the cluster — a player has to let go before they can press again, so
+   * clearing it on an empty hand would make confirming impossible. It is
+   * cleared by playing a move instead: backing out costs nothing but carrying
+   * on with the game.
+   */
+  const armOrProceed = useCallback((kind) => {
+    const activePolicy = policyRef.current;
+    if (!activePolicy) return true;
+    const now = tallyOf(helpUsedRef.current);
+    // Already practice — nothing left to warn about.
+    if (!helpWithinCeilings(now, activePolicy, levelRef.current)) return true;
+    const after = { ...now };
+    if (kind === 'hint') after.hints += 1;
+    else if (kind === 'best') after.best_moves += 1;
+    else return true;
+    if (helpWithinCeilings(after, activePolicy, levelRef.current)) return true;
+
+    if (armedRef.current === kind) {
+      armedRef.current = null;
+      setDemotionArmed(null);
+      logger.info('help-demotion-confirmed', { kind });
+      return true;
+    }
+    armedRef.current = kind;
+    setDemotionArmed(kind);
+    logger.info('help-demotion-armed', { kind });
+    return false;
+  }, [logger]);
+
   useEffect(() => {
     if (gesture === 'hint' && !help.legal) {
       if (!isPlayerTurn(gameRef.current)) {
         logger.info('help-ignored', { kind: 'legal', reason: 'not_player_turn' });
-      } else {
+      } else if (armOrProceed('hint')) {
         setHelp((value) => ({ ...value, legal: true }));
         setHelpUsed((value) => ({ ...value, hints: value.hints + 1 }));
         logger.info('help-requested', { kind: 'legal' });
@@ -85,7 +159,7 @@ export function useChessHelpController({
       }
     }
 
-    if (gesture === 'best' && !help.best && !requestTokenRef.current) {
+    if (gesture === 'best' && !help.best && !requestTokenRef.current && armOrProceed('best')) {
       const askedFen = gameRef.current.game.fen;
       const askedGameId = gameIdRef.current;
       const token = Symbol('best-move');
@@ -124,6 +198,9 @@ export function useChessHelpController({
   useEffect(() => {
     if (game.history.length === 0) return;
     setHelp({ legal: false, best: null });
+    // Playing on is how a player declines. The arm does not survive a move.
+    armedRef.current = null;
+    setDemotionArmed(null);
   }, [game.history.length]);
 
   const addTakeback = useCallback(() => {
@@ -132,6 +209,8 @@ export function useChessHelpController({
 
   const resetHelp = useCallback(() => {
     requestTokenRef.current = null;
+    armedRef.current = null;
+    setDemotionArmed(null);
     setOpening(true);
     setReplay(null);
     setHelp({ legal: false, best: null });
@@ -146,6 +225,11 @@ export function useChessHelpController({
     helpUsedRef,
     addTakeback,
     resetHelp,
+    // Does this match still count? null when no policy has been loaded, so a
+    // caller can say "not known" rather than asserting a confident yes.
+    matchCounts,
+    // The kind of help awaiting a second press, or null.
+    demotionArmed,
   };
 }
 

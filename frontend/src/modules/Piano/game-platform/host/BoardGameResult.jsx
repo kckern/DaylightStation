@@ -4,9 +4,13 @@ import './boardGameCeremony.scss';
 const HEADLINE = { win: 'You win', loss: 'You lose', draw: 'Draw' };
 
 export default function BoardGameResult({
-  result, opponent, level, speech = null, promoted = false, message = null,
+  result, opponent, level, speech = null, promoted = false, promotedLine = null, message = null,
   metrics = null, notes = null, onPlayAgain, classPrefix = null, decoration = null,
 }) {
+  // Each game says advancement in its own words. Chess is a tournament — you go
+  // through to the next round, nothing is unlocked — so it supplies the
+  // sentence. Checkers and Connect Four share this component and pass nothing,
+  // and keep the wording they already had.
   const entries = metrics && !Array.isArray(metrics) ? Object.entries(metrics) : metrics;
   return (
     <div className={`pg-result pg-result--${result || 'draw'}${classPrefix ? ` ${classPrefix} ${classPrefix}--${result || 'draw'}` : ''}`} role="status">
@@ -15,7 +19,11 @@ export default function BoardGameResult({
         {opponent && <OpponentPanel opponent={opponent} level={level} size="lg" speech={speech} />}
         <p className={`pg-result__headline${classPrefix ? ` ${classPrefix}__headline` : ''}`}>{HEADLINE[result] || 'Game over'}</p>
         {message && <p className={`pg-result__message${classPrefix ? ` ${classPrefix}__outcome` : ''}`}>{message}</p>}
-        {promoted && <p className={`pg-result__promoted${classPrefix ? ` ${classPrefix}__promoted` : ''}`}>New opponent unlocked</p>}
+        {promoted && (
+          <p className={`pg-result__promoted${classPrefix ? ` ${classPrefix}__promoted` : ''}`}>
+            {promotedLine || 'New opponent unlocked'}
+          </p>
+        )}
         {notes?.length > 0 && (
           <ul className={`pg-result__notes${classPrefix ? ` ${classPrefix}__notes` : ''}`}>
             {notes.map((note) => <li key={note}>{note}</li>)}
