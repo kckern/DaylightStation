@@ -525,6 +525,13 @@ export class FitnessSession {
           this._log('device_auto_assigned', { deviceId: device.id, userName: user.name, userId });
         } else if (ledgerEntry) {
           // Already assigned
+        } else if (deviceData.type === 'cadence' || device.type === 'cadence') {
+          // A cadence sensor is equipment, not a person. Riders claim equipment
+          // from the picker; the sensor is bound to the machine by the
+          // `cadence:` key in the household fitness config. So having no user
+          // here is the normal, correct state and not an anomaly — it was being
+          // reported as one 787 times in a single day for one bike's sensor,
+          // which is the kind of volume that buries the signal you need.
         } else {
           getLogger().sampled('fitness.auto_assign_skip', { deviceId: device.id, hasUser: !!user, hasUserId: !!userId, hasLedgerEntry: !!ledgerEntry }, { maxPerMinute: 6, aggregate: true });
         }
