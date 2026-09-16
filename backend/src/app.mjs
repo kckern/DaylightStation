@@ -27,7 +27,7 @@ import { HttpClient } from './0_system/services/HttpClient.mjs';
 import { PlexSessionAdapter } from '#adapters/content/media/plex/PlexSessionAdapter.mjs';
 import { PlaybackSessionRegistry } from '#apps/content/runtime/PlaybackSessionRegistry.mjs';
 import { ReportPlaybackSession } from '#apps/content/usecases/ReportPlaybackSession.mjs';
-import { PlexClientIdentity } from '#domains/media/value-objects/PlexClientIdentity.mjs';
+import { createPlexSurfaceIdentityResolver } from '#composition/modules/plexSurfaceIdentity.mjs';
 
 // Logging system
 import { getDispatcher } from './0_system/logging/dispatcher.mjs';
@@ -81,6 +81,7 @@ import { bootstrapLifeplan } from '#composition/modules/lifeplan.mjs';
 import { bootstrapNotifications } from '#composition/modules/notifications.mjs';
 import { createPlaybackStallDetector } from '#composition/modules/playbackStall.mjs';
 import { createHubFleetBridge } from '#composition/modules/hubFleetBridge.mjs';
+import { createPlexHubSessions } from '#composition/modules/plexHubSessions.mjs';
 import { createPlaySessionTracking } from '#composition/modules/playSessions.mjs';
 import { createPlaySessionsRouter } from './4_api/v1/routers/playSessions.mjs';
 import { createApiRouters } from '#composition/modules/contentApi.mjs';
@@ -1206,37 +1207,15 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         { host: mediaLibConfig.host, token: mediaLibConfig.token },
         { httpClient: new HttpClient({ logger: plexSessionLogger }), logger: plexSessionLogger },
       ),
-      /**
-       * Surface id -> declared Plex identity, or null for anything that is not
-       * a Plex client (speakers, cameras, scanners — most of the registry).
-       *
-       * `deviceResolver` stamps `fleet:<name>` when a screen signs its request,
-       * and a User-Agent or `browser:<token>` when it does not. Only the fleet
-       * form names a device in the registry, so the prefix is stripped and
-       * everything else resolves to null rather than guessing at a surface.
-       */
-      identityFor: (deviceId) => {
-        if (typeof deviceId !== 'string' || !deviceId) return null;
-        const surfaceId = deviceId.startsWith('fleet:') ? deviceId.slice('fleet:'.length) : deviceId;
-        const device = configService.getHouseholdDevices(householdId)?.devices?.[surfaceId];
-        const plex = device?.plex;
-        if (!plex?.client_identifier) return null;
-        try {
-          return new PlexClientIdentity({
-            clientIdentifier: plex.client_identifier,
-            product: plex.product,
-            version: plex.version,
-            platform: plex.platform,
-            // The name a viewer sees as the player; falls back to the device's
-            // own display name rather than ever showing a kebab id.
-            device: plex.device ?? device?.name ?? null,
-          });
-        } catch (error) {
-          // A malformed `plex:` block must not break progress logging.
-          plexSessionLogger.warn?.('plex.session.identity_invalid', { surfaceId, error: error.message });
-          return null;
-        }
-      },
+      // Surface -> Plex identity. Extracted to its own module because this
+      // logic is worth testing: as an inline closure it returned null for every
+      // non-fleet caller, so a fitness video played in a browser reported
+      // progress every 10s and appeared nowhere in Plex.
+      identityFor: createPlexSurfaceIdentityResolver({
+        configService,
+        householdId,
+        logger: plexSessionLogger,
+      }),
       logger: plexSessionLogger,
     })
     : null;
@@ -1265,6 +1244,36 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     economyService: economyApi.economyService,
     reportPlaybackSession,
     logger: rootLogger.child({ module: 'content' })
+  });
+
+  // Keep live Plex sessions alive, and end the ones whose surface went quiet.
+  //
+  // Client pings alone are not dependable enough: measured `play/log` cadence
+  // is a median of 3.7s but reaches 21.5s, past what Plex tolerates, so a
+  // session driven only by pings can lapse mid-play. And a surface that
+  // crashes never sends a stop, which would leave Plex showing a child
+  // watching something forever — the reaper is what prevents that.
+  if (reportPlaybackSession) {
+    const plexSessionTimer = setInterval(() => {
+      const now = Date.now();
+      Promise.resolve()
+        // Reap first, then ping — pinging a session one tick before ending it
+        // would tell Plex it is alive and immediately contradict that.
+        .then(() => reportPlaybackSession.sweep({ now, ttlMs: 60_000 }))
+        .then(() => reportPlaybackSession.keepAlive())
+        .catch((error) => plexSessionLogger.warn?.('plex.session.tick_failed', { error: error.message }));
+    }, 10_000);
+    plexSessionTimer.unref?.();
+  }
+
+  // The playback-hub is headless — no Player, so no `play/log` heartbeat ever
+  // arrives and music on the speakers reached no dashboard. It publishes lane
+  // status every ~3s instead, which this turns into sessions. Wired here
+  // because neither context may import the other.
+  createPlexHubSessions({
+    eventBus,
+    reportPlaybackSession,
+    logger: plexSessionLogger,
   });
 
   // Health domain
