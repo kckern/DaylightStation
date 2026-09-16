@@ -83,6 +83,18 @@ export class ConfigDeviceBlueprintFactory extends IDeviceBlueprintFactory {
         volumeBoostMax: source.volume?.boost_max ?? null,
         screenPath: source.screen_path,
         notifyService: source.notify_service ?? null,
+        // Plex client identity for this surface, DECLARED in devices.yml the
+        // same way `video_call` and `play_observation` are — never generated.
+        //
+        // A generated identifier would not rename a device on the Plex side, it
+        // would create a NEW one, and Plex never reclaims those: per-request
+        // identifiers grew the server's `devices` table to 81,009 rows and
+        // wedged its statistics pass for ~26s of every ~56s (2026-09-16).
+        //
+        // Absent on everything that is not a media surface — speakers, cameras,
+        // scanners and relays are not Plex clients and get no session.
+        // See docs/superpowers/specs/2026-09-16-plex-first-class-clients-design.md
+        plexClient: source.plex ?? null,
       },
       capabilities,
     };

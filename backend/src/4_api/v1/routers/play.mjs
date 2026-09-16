@@ -81,7 +81,11 @@ export function createPlayRouter(config) {
         return res.status(400).json({ error: 'Invalid request: seconds < 10' });
       }
 
-      res.json(await recordPlaybackProgress.execute(req.body));
+      // `deviceId` is stamped by the global deviceResolver middleware and is the
+      // ONLY thing that says which screen this progress came from — the body
+      // carries no device. Without it a playback session cannot be attributed to
+      // a surface, so it is threaded here rather than left on the request.
+      res.json(await recordPlaybackProgress.execute({ ...req.body, deviceId: req.deviceId }));
   }));
 
   /**

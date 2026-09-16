@@ -13,6 +13,9 @@ export class RecordPlaybackProgress {
     playbackPublications = null,
     userVideoProgressStore = null,
     economyService = null,
+    // Reports this surface's playback to the media server as a real client.
+    // Optional: absent in tests and wherever no media server is configured.
+    reportPlaybackSession = null,
     createMediaProgress = (props) => props,
     nowTimestamp,
     nowEpoch = () => Date.now(),
@@ -33,7 +36,13 @@ export class RecordPlaybackProgress {
     this.logger = logger;
   }
 
-  async execute({ type, assetId, percent, seconds, title, watched_duration, listId, userId, engaged }) {
+  async execute({
+    type, assetId, percent, seconds, title, watched_duration, listId, userId, engaged,
+    // `deviceId` names the surface (threaded from the request, not the body).
+    // `naturalEnd`/`status` distinguish finishing from merely stopping — only a
+    // natural end may be reported as watched.
+    deviceId = null, naturalEnd = false, status = null,
+  }) {
     let progressNamespace = type;
     let itemMetadata = null;
     const compoundId = assetId.includes(':') ? assetId : `${type}:${assetId}`;
@@ -96,6 +105,28 @@ export class RecordPlaybackProgress {
         percent: statePercent,
         watchTime: sessionWatchTime,
       });
+    }
+
+    // Present this playback to the media server as a real client session.
+    //
+    // ONE-WAY and strictly advisory: nothing it returns is read back, and a
+    // failure must never surface here. A child watching a story does not lose
+    // their progress because a dashboard missed a heartbeat.
+    if (this.reportPlaybackSession && deviceId) {
+      try {
+        await this.reportPlaybackSession.execute({
+          surfaceId: deviceId,
+          contentId: compoundId,
+          positionMs: Math.round(normalizedSeconds * 1000),
+          durationMs: Math.round(estimatedDuration * 1000),
+          completed: naturalEnd === true || status === 'completed',
+          at: this.nowEpoch(),
+        });
+      } catch (error) {
+        this.logger.warn?.('play.log.session_report_failed', {
+          assetId, deviceId, error: error.message,
+        });
+      }
     }
 
     this.logger.info?.('play.log.updated', {
