@@ -428,13 +428,53 @@
 
 /* KeysAsk — tier 0-1's own primary stage: the keyboard IS the content, not a
    footer strip. Badges and the small reinforcement staff stack above it, all
-   three within one flex column that fills the run's stage row. */
-.keys-ask { display: flex; flex-direction: column; gap: 0.5rem; width: 100%; height: 100%; min-height: 0; }
+   three within one flex column that fills the run's stage row.
+ *
+ * THE HEIGHT BUDGET, stated — because it was not, and every block in here sized
+ * itself from its own content until the column ran out. Measured at 1280x800:
+ * a two-note tier-1 ask gave the staff 399px of a 516px stage and left the
+ * keyboard 109px, into which the keyboard then drew itself 132px tall and hung
+ * 23px out of its own slot. Nobody had said who the room belonged to.
+ *
+ *   - THE KEYBOARD IS THE OBJECT and takes exactly its own proportion. Never
+ *     the leftovers, never stretched: see `.keys-ask__keys`.
+ *   - THE STAFF IS REINFORCEMENT and takes what is left, capped, and is sized
+ *     from its HEIGHT so it can never push the keyboard out of the column.
+ *   - THE GROUP IS CENTRED in whatever room the stage gives it, so a `keys/lit`
+ *     ask whose span happens not to fit a clef (`staffFitsAsk`, no staff block
+ *     rendered at all) draws the SAME keyboard in the same place as one that
+ *     does — rather than a different-shaped instrument from ask to ask. */
+.keys-ask {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  justify-content: center;
+}
 .keys-ask__staff {
-  flex: 0 0 auto;
-  max-width: min(100%, 28rem);
-  margin-inline: auto;
-  .sequence-staff { width: 100%; }
+  /* A DEFINITE basis, so the percentage height below has something to resolve
+     against — and a shrink factor well above the keyboard's, so when the column
+     is tight this is what gives way. `auto` here is what let the staff ask for
+     77% of the stage and get it. */
+  flex: 0 4 45%;
+  min-height: 0;
+  display: grid;
+  place-content: center;
+
+  .sequence-staff {
+    /* SIZED FROM HEIGHT. The component carries its own inline `aspect-ratio`
+       (it depends on the note count), so at `width: 100%` its height is
+       whatever the column happens to be WIDE — which for a one-column dyad in
+       a full-width stage is 399px of staff for two notes. Driving it from the
+       height it has been allotted inverts that; `max-width` then takes over for
+       a wide ask and the height follows the ratio back down. */
+    width: auto;
+    height: 100%;
+    max-width: 100%;
+    min-width: 0;
+  }
 }
 .keys-ask__badges { display: flex; flex: 0 0 auto; justify-content: center; gap: 0.5rem; }
 .keys-ask__badge {
@@ -452,7 +492,49 @@
   &.is-current { background: var(--ex-accent); color: var(--ex-accent-ink); }
   &.is-done { background: var(--ex-surface); color: var(--ex-muted); opacity: 0.55; }
 }
-.keys-ask__keys { flex: 1 1 auto; min-height: 0; width: 100%; }
+/* A KEY IS A PHYSICAL OBJECT, and this is the one place the drawn board is the
+ * primary stage rather than a footer strip.
+ *
+ * `PianoKeyboard` is `width: 100%; height: 100%` with no ratio of its own — it
+ * takes whatever box it is handed, and a white key is simply `100% / count`
+ * wide by `100%` tall. In this slot the box was `flex: 1 1 auto` against the
+ * run's whole stage row, so the keyboard absorbed every pixel the blocks above
+ * it did not use. On a `keys/lit` ask whose span does not fit a clef the staff
+ * above is not rendered at all (`staffFitsAsk`), and on a TOGETHER ask there
+ * are no badges either — so the keyboard became the only thing in the column
+ * and stretched to the full stage. Keys came out several times longer than a
+ * real one, which is what the child reported, and the same drill drew a
+ * different-shaped instrument from one ask to the next depending on whether
+ * the staff happened to fit.
+ *
+ * So the board is given a real proportion — a white key about 5.5 times longer
+ * than it is wide, read off the count the component already publishes — and is
+ * centred in whatever room is left. `max-height` still wins on a short stage,
+ * where a squat board is correct: that is the footer strip's shape, and a squat
+ * keyboard is still a readable picture of the instrument. A tall one is not. */
+.keys-ask__keys {
+  /* `0 1 auto`, NOT `1 1 auto`. Growing was the bug: the slot claimed every
+     pixel the blocks above it left, and the keyboard — which has no proportion
+     of its own — filled it. The board now asks for exactly its own height and
+     is allowed to shrink only as a last resort, after the staff has given way. */
+  flex: 0 1 auto;
+  min-height: 0;
+  width: 100%;
+  display: grid;
+  align-content: center;
+
+  .piano-keyboard {
+    /* `min-width: 0` because a grid item's automatic minimum size is
+       `min-content`, and the keyboard's is the sum of its keys' own minimums —
+       wider than the stage. As a plain block child `width: 100%` simply won;
+       as a grid item the track refused to go below min-content and the board
+       hung 19px off the right of its stage row. */
+    min-width: 0;
+    height: auto;
+    max-height: 100%;
+    aspect-ratio: calc(var(--white-key-count, 52) / 5.5);
+  }
+}
 
 // Brown is everything PLAYED and the note you are on; ebony is what is still
 // ahead. The boundary between the two colours is the reader's position, which
