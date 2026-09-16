@@ -49,6 +49,18 @@ const GO_HOLD_MS = 800; // hold the green light (engine already live) before the
 // disconnected, not a broadcast blip. Drives the "sensor lost" chip + edge log
 // (audit game-design #6). Matches equipmentRpm.js's decay-to-zero tick.
 const SENSOR_LOST_GAP_TICKS = 9;
+/**
+ * A sensor that has not appeared AT ALL by this many ticks is missing, not late.
+ *
+ * The chip used to require a rider to have been connected once, so a sensor
+ * that never showed up produced no warning ever — and the race then forfeited
+ * the rider with "Stopped pedaling", which was the only thing anyone saw. This
+ * is deliberately longer than SENSOR_LOST_GAP_TICKS (a rider may be mounting,
+ * clipping in, or waiting on a magnetless sensor to lock on) and deliberately
+ * shorter than the start-grace that ends the race for them, so the warning
+ * arrives while it can still be acted on.
+ */
+const SENSOR_ABSENT_GAP_TICKS = 15;
 
 /**
  * Live cycle-game lifecycle container. Composes the prop-driven screens
@@ -280,6 +292,7 @@ export default function CycleGameContainer({ onMount } = {}) {
   // (not every return-to-idle, e.g. after backToHome/onCancel).
   const recoveryCheckedRef = useRef(false);
   const prevDnfRef = useRef(new Set());
+  const prevNoSensorRef = useRef(new Set());
   // Riders whose race was cut short by the clock/operator (mercy-kill window
   // closing, or a forced finish) while still honestly riding — see
   // CycleRaceController's `overtime` set. Distinct from prevDnfRef (idle-quit).
@@ -375,9 +388,16 @@ export default function CycleGameContainer({ onMount } = {}) {
     const displayName = rider.displayName || userId;
     const id = (eventIdRef.current += 1);
     setRaceEvents((list) => [...list, { id, type, riderId: userId, displayName, seriesIndex, distanceM }]);
-    const toast = type === 'dnf'
-      ? { id, variant: 'dnf', icon: <StopSignIcon />, title: `${displayName} — Did Not Finish`, subtitle: `Stopped pedaling for ${raceIdleDnfS}s` }
-      : { id, variant: 'penalty', icon: <TimeIcon />, title: `${displayName} — False Start`, subtitle: `Pedaling before the green · ${hotStartPenaltyS}s penalty` };
+    // A rider whose sensor never reported is NOT told they stopped pedalling.
+    // That sentence was printed to a child who was pedalling the whole time,
+    // because his cadence sensor had been silent for four minutes — and the
+    // race cannot tell the difference from rpm alone. The blame goes to the
+    // equipment, which is where it belongs.
+    const toast = type === 'nosensor'
+      ? { id, variant: 'nosensor', icon: <StopSignIcon />, title: `${displayName} — no sensor`, subtitle: 'Their bike never reported. Check the sensor.' }
+      : type === 'dnf'
+        ? { id, variant: 'dnf', icon: <StopSignIcon />, title: `${displayName} — Did Not Finish`, subtitle: `Stopped pedaling for ${raceIdleDnfS}s` }
+        : { id, variant: 'penalty', icon: <TimeIcon />, title: `${displayName} — False Start`, subtitle: `Pedaling before the green · ${hotStartPenaltyS}s penalty` };
     // Show now if the slot is free, otherwise queue behind the current toast.
     setEventToast((cur) => {
       if (cur) { toastQueueRef.current.push(toast); return cur; }
@@ -1078,11 +1098,22 @@ export default function CycleGameContainer({ onMount } = {}) {
         // Otherwise every race opened with an alarming false "SENSOR" warning
         // for the first ~9s, before the rider's first pedal stroke landed.
         const everConnected = (rpmHistoryRef.current.get(userId) || []).length > 0;
-        if (gapTicks >= SENSOR_LOST_GAP_TICKS && everConnected) sensorLostNow.add(userId);
+        // Two windows, because these are two different situations. A rider who
+        // HAS been connected and drops is a mid-race loss and is flagged
+        // quickly. A rider who has never connected may simply be mounting, so
+        // they get longer — but not forever. Never flagging them is what let a
+        // forfeit arrive with no explanation attached.
+        const gapLimit = everConnected ? SENSOR_LOST_GAP_TICKS : SENSOR_ABSENT_GAP_TICKS;
+        if (rider.equipmentId && gapTicks >= gapLimit) sensorLostNow.add(userId);
         inputs[userId] = {
           rpm: clampCountedRpm(rawRpm, abuseMaxRpm),
           zoneId: vitals?.zoneId || null,
-          heartRate: Number.isFinite(vitals?.heartRate) ? vitals.heartRate : null
+          heartRate: Number.isFinite(vitals?.heartRate) ? vitals.heartRate : null,
+          // So the controller can tell a still bike from a silent one. A rider
+          // with equipment but no reading yet reports false; a rider with no
+          // equipment at all reports true, because there is no sensor to blame
+          // and the idle clock is the honest reading for them.
+          connected: rider.equipmentId ? (connected || everConnected) : true
         };
       });
       const state = controller.tick(inputs);
@@ -1156,6 +1187,24 @@ export default function CycleGameContainer({ onMount } = {}) {
         }
       });
       prevDnfRef.current = dnfSet;
+
+      // A rider whose sensor never reported. Logged under its own name so the
+      // store can answer "was this a kid not pedalling, or a dead sensor?" —
+      // a question that previously took cross-referencing race telemetry
+      // against raw bridge output by hand.
+      const noSensorSet = new Set(state.noSensor || []);
+      noSensorSet.forEach((userId) => {
+        if (!prevNoSensorRef.current.has(userId)) {
+          log.warn('cycle_game.rider_no_sensor', {
+            raceId: raceMetaRef.current?.raceId,
+            userId,
+            equipmentId: before.engineState.riders[userId]?.equipmentId ?? null,
+            elapsedS: state.engineState?.elapsedS ?? null
+          });
+          recordRaceEvent('nosensor', userId, state);
+        }
+      });
+      prevNoSensorRef.current = noSensorSet;
 
       // Overtime detection — diff the controller overtime set (mercy-kill window
       // closing / forced finish). Log each rider's edge individually (mirrors the
