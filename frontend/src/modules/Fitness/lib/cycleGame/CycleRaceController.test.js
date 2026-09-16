@@ -326,3 +326,74 @@ describe('CycleRaceController — distance-race mercy-kill (issue 2)', () => {
     expect(c.phase).toBe('racing');
   });
 });
+
+describe('CycleRaceController — a dead sensor is not a lazy child', () => {
+  /**
+   * The garage screen told a child "Did Not Finish — Stopped pedaling for 30s"
+   * while he was pedalling. His cadence sensor had sent nothing for four
+   * minutes. Verified in production: niceday's ANT+ sensor emitted no packets
+   * across three races that all forfeited him at the threshold with rpm 0,
+   * then woke, and his very next race registered 73 rpm.
+   *
+   * The controller cannot tell the difference from rpm alone — a still bike and
+   * a silent sensor both read 0 — so the rider's sensor connectivity has to
+   * reach it. A rider who never had a connected reading has not idled out.
+   */
+  const cfg = (over = {}) => ({
+    winCondition: 'distance', goalM: 10000, intervalMs: 1000, zones: HOT, hrlessMultiplier: 1,
+    startCountdownS: 0, raceIdleDnfS: 10, raceStartGraceS: 5,
+    riders: [{ userId: 'a', wheelCircumferenceM: 2.1 }, { userId: 'b', wheelCircumferenceM: 2.1 }],
+    ...over,
+  });
+  const race = (over) => { const c = new CycleRaceController(cfg(over)); c.startCountdown(); return c; };
+  const tickFor = (c, seconds, inputs) => {
+    let state;
+    for (let i = 0; i < seconds; i += 1) state = c.tick(inputs);
+    return state;
+  };
+
+  it('files a rider whose sensor never connected as no-sensor, never as DNF', () => {
+    const c = race();
+    const state = tickFor(c, 8, {
+      a: { rpm: 0, connected: false },
+      b: { rpm: 40, connected: true },
+    });
+    expect(state.noSensor).toContain('a');
+    expect(state.dnf).not.toContain('a');
+  });
+
+  it('still files a rider whose sensor WORKS and who simply did not pedal as DNF', () => {
+    // The sensor is reporting. A real zero is a real zero.
+    const c = race();
+    const state = tickFor(c, 8, {
+      a: { rpm: 0, connected: true },
+      b: { rpm: 40, connected: true },
+    });
+    expect(state.dnf).toContain('a');
+    expect(state.noSensor).not.toContain('a');
+  });
+
+  it('files a rider who rode and then stopped as DNF, not as no-sensor', () => {
+    const c = race();
+    tickFor(c, 3, { a: { rpm: 50, connected: true }, b: { rpm: 40, connected: true } });
+    const state = tickFor(c, 12, { a: { rpm: 0, connected: false }, b: { rpm: 40, connected: true } });
+    // Their sensor dropped mid-race, but they HAD one: they rode, so the idle
+    // clock is the honest reading of what happened.
+    expect(state.dnf).toContain('a');
+    expect(state.noSensor).not.toContain('a');
+  });
+
+  it('treats a missing connected flag as connected, so existing callers are unchanged', () => {
+    const c = race();
+    const state = tickFor(c, 8, { a: { rpm: 0 }, b: { rpm: 40 } });
+    expect(state.dnf).toContain('a');
+    expect(state.noSensor).toEqual([]);
+  });
+
+  it('lets the race finish even when a rider never had a sensor', () => {
+    // A no-sensor rider must still be accounted for, or the race waits forever.
+    const c = race({ goalM: 4 });
+    const state = tickFor(c, 20, { a: { rpm: 0, connected: false }, b: { rpm: 200, connected: true } });
+    expect(state.phase).toBe('finished');
+  });
+});

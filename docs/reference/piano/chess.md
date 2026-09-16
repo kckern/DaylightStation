@@ -563,6 +563,37 @@ Three rules, and each exists to protect something:
 Promotion is by recent form: win five of your last seven counted games. A lifetime tally would let
 "has beaten them nine times since March" stand in for how the child is playing today.
 
+- **The round says where you stand, while it still matters.** The result card explains a voided win
+  afterwards, once the round is already gone. Three things now speak up in time. The roster sheet
+  draws every win taken in this round in two rows — `Match wins` and `Practice wins` — so a child
+  who has beaten someone six times sees six markers and not a bare "2 of 5" contradicting what they
+  know. The rows are CUMULATIVE and only ever grow; the gate is recent form and may fall, so it is a
+  sentence beneath them ("Right now: 2 of your last 7 count. 3 more wins on your own and you're
+  through to Rattata."). Drawing the gate as markers would take one back after a bad afternoon,
+  which is the lost ground the ladder refuses. `roundStanding` returns both shapes and the screen
+  keeps them apart.
+- **Nothing costs a round without saying so first.** The rail carries a badge — `This match counts`
+  or `Practice match` — derived from `helpWithinCeilings`, the SAME predicate that decides the
+  finished game, so it cannot disagree with the verdict at the end. The badge is absent, not
+  optimistic, until the ladder read answers and for a guest. A help press that would cross a ceiling
+  arms instead of spending: "Best move will make this a practice match — it stops counting against
+  Weedle. Play it again to use it." Not a best-move special case — the ladder is asked whether THIS
+  press crosses a ceiling, so the one free hint stays frictionless and the second one asks. A match
+  already down to practice cannot be demoted twice and stops being warned. The arm survives
+  releasing the cluster (you must let go to press again) and is cleared by playing a move: playing
+  on is how a child declines.
+- **Tournament words, not video-game words.** Opponents wait in the ring and a player goes through
+  to the next round. Nothing is "unlocked". `BoardGameResult` still holds that literal as its
+  default because checkers and Connect Four render the same component; chess passes `promotedLine`
+  instead of editing it out from under them.
+- **An unknown level is not round 0.** A game filed before the ladder read answered carries
+  `level: null`, and the counting rule compares `Number(record.level)` against the round being
+  climbed. `Number(null)` is `0`, so until 2026-09-16 such a game matched round 0 by coincidence
+  and counted there — the one round where it mattered, because that is where the beginners are.
+  Two call sites asserted in comments that the ladder declined an unknown level. It declined it
+  everywhere else. `promotionIneligibility` now rejects `null`, `undefined`, `''` and `NaN`
+  explicitly, and a real round 0 game still counts.
+
 | What | Where |
 |------|-------|
 | The policy — window, wins required, help allowances, the roster | Household `config/chess.yml` under `ladder:` |
@@ -612,6 +643,19 @@ help: it shows what already happened in full view.
 The rewound position is replayed from the start of the game rather than read from a stored list of
 per-ply positions. A stored list is one more thing that can fall out of step with the move list
 after a takeback; replaying cannot.
+
+**A cluster has to hold still to count.** Three adjacent semitones are a hint, four are the best
+move and five are "show that again" — so a five-key press crosses the three- and four-key shapes on
+the way up, and a four-key press crosses the three. Until 2026-09-16 nothing debounced the held set,
+so a cluster that did not land perfectly flat was charged for the shapes the hand was only passing
+through: a best-move press also took a hint, and "show that again" — the gesture this page calls
+never charged — fired a real analysis request and voided the game for promotion. Neither appeared on
+screen; the child saw a help mark they had not asked for, and later a result card naming a rule they
+had not broken. `useSettledGesture.js` now holds a gesture for `GESTURE_SETTLE_MS` (140ms, the same
+window `advanceCursor` already used to decide a chord) before the help controller acts on it. The
+raw gesture still suppresses chord narrowing the instant a cluster is down — only the *charge*
+waits. The settle lives inside `useChessHelpController` rather than at the call site, so a future
+caller cannot forget it.
 
 ## Not yet built
 

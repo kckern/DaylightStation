@@ -35,6 +35,55 @@ export class ANTPlusManager {
     // a session. Drop ANT+ HR readings outside a physiological window.
     this._minHr = 50;
     this._maxHr = 230;
+
+    /**
+     * Which sensors are currently speaking, and when each last did.
+     *
+     * This bridge logged only data lines and HR rejections — nothing about a
+     * sensor arriving or going away. So a silent sensor was indistinguishable
+     * from a still bike at every layer above, and a child got forfeited from a
+     * race with "Stopped pedaling for 30s" while pedalling. Diagnosing that
+     * took diffing race telemetry against raw container output by hand, because
+     * the absence of a line is not something you can grep for.
+     *
+     * A wildcard scanner has no connection to lose, so presence IS recency:
+     * a device that has not broadcast within `_absentAfterMs` has gone away.
+     */
+    this._presence = new Map(); // deviceId -> { lastSeen, profile }
+    this._absentAfterMs = 10000;
+    this._presenceSweep = null;
+  }
+
+  /** First packet from a sensor we were not hearing: say so. */
+  _notePresence(deviceId, profile, now) {
+    const known = this._presence.get(deviceId);
+    this._presence.set(deviceId, { lastSeen: now, profile });
+    if (!known) {
+      console.log(`[${new Date(now).toISOString().slice(11, 19)}] ${deviceId} ${profile}: SENSOR UP (first broadcast)`);
+    }
+  }
+
+  /** Sensors that have stopped broadcasting. Runs on a timer, not on data. */
+  _sweepPresence() {
+    const now = Date.now();
+    for (const [deviceId, seen] of this._presence.entries()) {
+      if (now - seen.lastSeen < this._absentAfterMs) continue;
+      this._presence.delete(deviceId);
+      const silentFor = Math.round((now - seen.lastSeen) / 1000);
+      console.log(`[${new Date(now).toISOString().slice(11, 19)}] ${deviceId} ${seen.profile}: SENSOR DOWN (silent ${silentFor}s)`);
+    }
+  }
+
+  startPresenceSweep() {
+    if (this._presenceSweep) return;
+    this._presenceSweep = setInterval(() => this._sweepPresence(), 5000);
+    if (typeof this._presenceSweep.unref === 'function') this._presenceSweep.unref();
+  }
+
+  stopPresenceSweep() {
+    if (!this._presenceSweep) return;
+    clearInterval(this._presenceSweep);
+    this._presenceSweep = null;
   }
 
   async initialize() {
@@ -117,6 +166,7 @@ export class ANTPlusManager {
     this.scanForAllSensors();
     
     console.log('🛰️  Scanning for ANT+ devices - waiting for broadcasts...');
+    this.startPresenceSweep();
   }
 
   async scanForAllSensors() {
@@ -226,6 +276,9 @@ export class ANTPlusManager {
 
         // Update last broadcast tracking
         this._lastBroadcast.set(dedupeKey, { ts: now, hr, cadence, power });
+
+        // Presence: the arrival/departure trail this bridge never kept.
+        this._notePresence(deviceId, profile, now);
 
         // Only log meaningful changes (throttle to reduce spam)
         const lastLog = this._lastLogTime.get(dedupeKey) || 0;
