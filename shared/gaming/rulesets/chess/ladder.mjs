@@ -250,7 +250,15 @@ export function normalizeProgress(stored) {
  */
 export function promotionIneligibility(record, policy, currentLevel) {
   if (!record || !record.completed) return { reason: 'unfinished' };
-  if (Number(record.level) !== currentLevel) {
+  // An unknown level is not rung 0. `Number(null)` and `Number('')` are both
+  // `0`, so a game filed before the ladder read answered used to match rung 0
+  // by coincidence and count there — the one rung where it mattered, because
+  // that is where the beginners are. Callers assert in comments that the
+  // ladder declines an unknown level; now it declines it everywhere.
+  const recordLevel = Number(record.level);
+  if (record.level === null || record.level === undefined
+    || record.level === '' || !Number.isFinite(recordLevel)
+    || recordLevel !== currentLevel) {
     return { reason: 'other_level', level: record.level ?? null };
   }
   // The first rungs teach the game, not the discipline. Below this level a

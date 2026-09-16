@@ -1,19 +1,29 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { fenBefore, isPlayerTurn } from './chessGameState.js';
+import { useSettledGesture } from './useSettledGesture.js';
 
-/** Own hint, analysis, replay, and opening-stage state for one chess session. */
+/**
+ * Own hint, analysis, replay, and opening-stage state for one chess session.
+ *
+ * Takes the RAW gesture and settles it here rather than asking the caller to.
+ * The caller needs the raw value for its own purposes — a recognised cluster
+ * suppresses chord narrowing the instant it is physically down — but nothing
+ * may be CHARGED for a shape the hand was only passing through. Keeping the
+ * settle inside means a future caller cannot forget it.
+ */
 export function useChessHelpController({
   game,
   gameRef,
   gameId,
   userId,
-  gesture,
+  gesture: rawGesture,
   requestBestMove,
   logger,
   openingMs,
   replayHoldMs,
   replayMoveMs,
 }) {
+  const gesture = useSettledGesture(rawGesture);
   const [opening, setOpening] = useState(true);
   const [replay, setReplay] = useState(null);
   const [help, setHelp] = useState({ legal: false, best: null });

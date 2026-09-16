@@ -563,6 +563,14 @@ Three rules, and each exists to protect something:
 Promotion is by recent form: win five of your last seven counted games. A lifetime tally would let
 "has beaten them nine times since March" stand in for how the child is playing today.
 
+- **An unknown level is not round 0.** A game filed before the ladder read answered carries
+  `level: null`, and the counting rule compares `Number(record.level)` against the round being
+  climbed. `Number(null)` is `0`, so until 2026-09-16 such a game matched round 0 by coincidence
+  and counted there — the one round where it mattered, because that is where the beginners are.
+  Two call sites asserted in comments that the ladder declined an unknown level. It declined it
+  everywhere else. `promotionIneligibility` now rejects `null`, `undefined`, `''` and `NaN`
+  explicitly, and a real round 0 game still counts.
+
 | What | Where |
 |------|-------|
 | The policy — window, wins required, help allowances, the roster | Household `config/chess.yml` under `ladder:` |
@@ -612,6 +620,19 @@ help: it shows what already happened in full view.
 The rewound position is replayed from the start of the game rather than read from a stored list of
 per-ply positions. A stored list is one more thing that can fall out of step with the move list
 after a takeback; replaying cannot.
+
+**A cluster has to hold still to count.** Three adjacent semitones are a hint, four are the best
+move and five are "show that again" — so a five-key press crosses the three- and four-key shapes on
+the way up, and a four-key press crosses the three. Until 2026-09-16 nothing debounced the held set,
+so a cluster that did not land perfectly flat was charged for the shapes the hand was only passing
+through: a best-move press also took a hint, and "show that again" — the gesture this page calls
+never charged — fired a real analysis request and voided the game for promotion. Neither appeared on
+screen; the child saw a help mark they had not asked for, and later a result card naming a rule they
+had not broken. `useSettledGesture.js` now holds a gesture for `GESTURE_SETTLE_MS` (140ms, the same
+window `advanceCursor` already used to decide a chord) before the help controller acts on it. The
+raw gesture still suppresses chord narrowing the instant a cluster is down — only the *charge*
+waits. The settle lives inside `useChessHelpController` rather than at the call site, so a future
+caller cannot forget it.
 
 ## Not yet built
 
