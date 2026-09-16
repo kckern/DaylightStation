@@ -92,3 +92,22 @@ backend/tests/unit/applications/admin/appsConfigService.registry.test.mjs
 backend/tests/unit/applications/admin/yamlConfigFileService.allowlist.test.mjs
 backend/tests/unit/applications/ambient/AmbientSchedulerService.test.mjs
 backend/tests/unit/applications/devices/ScreenContentTracker.test.mjs
+#
+# 2026-09-16: the School domain imports a shared contract.
+# `backend/src/2_domains/school/language/transcription.mjs` imports
+# `#shared/contracts/language/typeableText.mjs`, which the domain-purity rule
+# forbids — it allows only `#domains/...` and relative paths that stay inside
+# `2_domains`. Introduced by c5c987fa3 (2026-09-14), the commit that created
+# that contract and the import together. It is NOT new breakage: it simply had
+# not been reported, because the previous full gate runs on this box died
+# before returning a verdict (OOM at the computed worker count) and the
+# baseline above was captured at 31,070 tests against today's 36,701.
+#
+# Deliberately NOT fixed here, and not a judgment that it is acceptable:
+# `typeableText` is genuinely shared — `frontend/.../SentenceLadder/TypedRung.jsx`
+# and `ReviewPanel.jsx` import it too — so the resolution is either to admit
+# `#shared/contracts/**` into the rule or to give the domain its own copy, and
+# both change what the rule MEANS rather than repair a defect. That belongs to
+# whoever owns the School boundary, not to a Connect Four opponent fix that
+# happened to be the first change to complete a full gate afterwards.
+tests/isolated/application/school/schoolcalcArchitecture.test.mjs

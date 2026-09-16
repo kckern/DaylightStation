@@ -209,6 +209,19 @@ export default function PianoConnectFour({ activeNotes = new Map(), currentUser 
     onReply: (plan) => {
       const { answer, column, projected: next, reaction } = plan || {};
       if (!answer?.move) noteLocalPractice();
+      // The opponent's own drop was logged NOWHERE — `connect-four.drop` below
+      // fires from the note handler, so the store held the child's columns and
+      // the rung and nothing about the reply. A report that the opponent always
+      // dropped in the far right column therefore could not be checked against
+      // the logs at all; it had to be inferred from repeated 8-ply losses.
+      logger.info('connect-four.opponent-drop', {
+        column,
+        ply: next?.moves?.length ?? null,
+        level,
+        source: answer?.move ? 'server' : 'local',
+        engine: answer?.move?.engine ?? answer?.engine ?? null,
+        rejected: next?.error ?? null,
+      });
       if (!next?.error) {
         commitColumn(column);
         if (reaction) dialogue.commitReaction(reaction);

@@ -263,6 +263,19 @@ Connect Four, Checkers, and Chess are complete vertical features on this surface
 | Checkers | addressed-board | one exact note selects a playable square; source then destination; seven-note cluster requests a suggestion | forced-capture replay, seven-opponent ladder, 3-of-5 promotion, worker move |
 | Chess | addressed-board | chord/staff source then destination | Chess application and Stockfish adapter through the native Piano Games mount |
 
+**A rung is a search depth, and nothing else is.** Connect Four's and Checkers'
+seven characters each carry `depth: index + 1`, and their `chooseColumn` /
+`chooseMove` search exactly that many plies with alpha-beta, with the immediate
+win and the immediate block taken ahead of the search so even rung 1 plays the
+two moves a child expects any opponent to see. The centre-first column order is
+*move ordering* and the tie-break between equal scores — never a difficulty
+dial. Until 2026-09-16 Connect Four's `level` rotated that order instead, so
+rung 7 (Mew) opened on column 6, stacked four discs in the far right column
+while the child read notes, and lost to rung 1; the ladder ran backwards for as
+long as it existed. `shared/gaming/rulesets/connect-four/opponent.test.mjs`
+pins both halves: every rung opens in the centre, and the deeper rung beats the
+shallower one from both seats.
+
 Both new games persist configuration, ranked records, ladder progress, and household archives through `IPianoGameRepository`. A client-side fallback is labeled local practice and recorded with `ranked: false`, so loss of Wi-Fi never turns offline engine help into ladder advancement.
 
 ## Adding a game

@@ -57,7 +57,7 @@ describe('assessEligibility — per-title policy', () => {
   const policy = {
     titles: {
       'retroarch:snes/kart': { min_players: 2 },
-      'retroarch:gb/pokemon': { requires: ['reading-done'] },
+      'retroarch:gb/story-rpg': { requires: ['reading-done'] },
     },
   };
 
@@ -76,7 +76,7 @@ describe('assessEligibility — per-title policy', () => {
   });
 
   it('applies a title-specific prerequisite', () => {
-    const r = assessEligibility({ at: tue16, policy, contentId: 'retroarch:gb/pokemon' });
+    const r = assessEligibility({ at: tue16, policy, contentId: 'retroarch:gb/story-rpg' });
     expect(r.reasons).toContain('requires:reading-done');
   });
 

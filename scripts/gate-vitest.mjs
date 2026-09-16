@@ -58,7 +58,12 @@ const BASELINE = path.join(ROOT, 'scripts/audit-baseline.vitest.txt');
 // `ReferenceError: outFile is not defined` — after the failing files had
 // printed, so the gate looked like it worked and then died reporting.
 const GATE_REPORT = path.join(ROOT, 'tests/output/results.gate-vitest.json');
-const ROOTS = ['tests/unit', 'tests/isolated', 'backend', 'frontend'];
+// `shared/` joined this list on 2026-09-16. It holds the game rulesets — the
+// Connect Four opponent among them — and was gated by NOTHING: the walk never
+// listed it, and `backend/shared` is a symlink the walk deliberately refuses to
+// follow, so the tree was unreachable from both directions. A rung-7 opponent
+// that dropped every disc in the far right column shipped through that hole.
+const ROOTS = ['tests/unit', 'tests/isolated', 'backend', 'frontend', 'shared'];
 const EXCLUDE = [/\/node_modules\//, /\/\.claude\//, /\/\.worktrees\//];
 
 /**
@@ -171,7 +176,21 @@ function runVitest(files) {
   })();
   const byCpu = Math.floor((os.cpus?.().length ?? 4) / 2);
   const byMemory = Math.floor(availableGb / 1.5);
-  const workers = Math.max(2, Math.min(byCpu, byMemory));
+  const computed = Math.max(2, Math.min(byCpu, byMemory));
+  // GATE_WORKERS may only LOWER the computed count, never raise it. 1.5 GB a
+  // worker is still optimistic on a box that is already deep in swap: on
+  // 2026-09-16 this run was killed for low memory with ~10 GB MemAvailable and
+  // 31 GB of swap in use, returning NO VERDICT — which, per the note above, is
+  // worse than a slow run. Lowering parallelism costs wall-clock and changes
+  // nothing about what has to become true, so it is safe in a way that
+  // touching the pass/fail logic never is.
+  const requested = Number(process.env.GATE_WORKERS);
+  const workers = Number.isFinite(requested) && requested >= 1
+    ? Math.min(computed, Math.max(1, Math.floor(requested)))
+    : computed;
+  if (workers < computed) {
+    console.error(`gate-vitest: ${workers} workers (GATE_WORKERS lowered it from ${computed}).`);
+  }
   if (workers < byCpu) {
     console.error(`gate-vitest: ${workers} workers (cpu allows ${byCpu}, `
       + `${availableGb.toFixed(1)} GB available caps it) — slower, but it finishes.`);
