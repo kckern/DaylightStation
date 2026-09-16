@@ -24,6 +24,10 @@ import { ConfigUserResolver as UserResolver } from '#adapters/identity/ConfigUse
 import { UserIdentityService } from './2_domains/messaging/services/UserIdentityService.mjs';
 import { TelegramIdentityAdapter } from './1_adapters/messaging/TelegramIdentityAdapter.mjs';
 import { HttpClient } from './0_system/services/HttpClient.mjs';
+import { PlexSessionAdapter } from '#adapters/content/media/plex/PlexSessionAdapter.mjs';
+import { PlaybackSessionRegistry } from '#apps/content/runtime/PlaybackSessionRegistry.mjs';
+import { ReportPlaybackSession } from '#apps/content/usecases/ReportPlaybackSession.mjs';
+import { PlexClientIdentity } from '#domains/media/value-objects/PlexClientIdentity.mjs';
 
 // Logging system
 import { getDispatcher } from './0_system/logging/dispatcher.mjs';
@@ -1187,6 +1191,56 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'economy-api' })
   });
 
+  // Present each media surface to Plex as a real client: a live session while
+  // someone is actually watching, visible on the Plex dashboard and to anything
+  // reading /status/sessions (Tautulli). Verified 2026-09-16 — a session needs
+  // only ratingKey/key/state/time/duration plus identity; NO play queue.
+  //
+  // Strictly ONE-WAY. Nothing Plex reports is read back, so it can never
+  // overwrite a school or piano completion.
+  const plexSessionLogger = rootLogger.child({ module: 'plex-session' });
+  const reportPlaybackSession = mediaLibConfig?.host
+    ? new ReportPlaybackSession({
+      sessionRegistry: new PlaybackSessionRegistry(),
+      sessionGateway: new PlexSessionAdapter(
+        { host: mediaLibConfig.host, token: mediaLibConfig.token },
+        { httpClient: new HttpClient({ logger: plexSessionLogger }), logger: plexSessionLogger },
+      ),
+      /**
+       * Surface id -> declared Plex identity, or null for anything that is not
+       * a Plex client (speakers, cameras, scanners — most of the registry).
+       *
+       * `deviceResolver` stamps `fleet:<name>` when a screen signs its request,
+       * and a User-Agent or `browser:<token>` when it does not. Only the fleet
+       * form names a device in the registry, so the prefix is stripped and
+       * everything else resolves to null rather than guessing at a surface.
+       */
+      identityFor: (deviceId) => {
+        if (typeof deviceId !== 'string' || !deviceId) return null;
+        const surfaceId = deviceId.startsWith('fleet:') ? deviceId.slice('fleet:'.length) : deviceId;
+        const device = configService.getHouseholdDevices(householdId)?.devices?.[surfaceId];
+        const plex = device?.plex;
+        if (!plex?.client_identifier) return null;
+        try {
+          return new PlexClientIdentity({
+            clientIdentifier: plex.client_identifier,
+            product: plex.product,
+            version: plex.version,
+            platform: plex.platform,
+            // The name a viewer sees as the player; falls back to the device's
+            // own display name rather than ever showing a kebab id.
+            device: plex.device ?? device?.name ?? null,
+          });
+        } catch (error) {
+          // A malformed `plex:` block must not break progress logging.
+          plexSessionLogger.warn?.('plex.session.identity_invalid', { surfaceId, error: error.message });
+          return null;
+        }
+      },
+      logger: plexSessionLogger,
+    })
+    : null;
+
   const { routers: contentRouters, services: contentServices } = createApiRouters({
     registry: contentRegistry,
     menuMemoryRepository: new YamlMenuMemoryRepository({
@@ -1209,6 +1263,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     savedQueryService,
     eventBus,
     economyService: economyApi.economyService,
+    reportPlaybackSession,
     logger: rootLogger.child({ module: 'content' })
   });
 

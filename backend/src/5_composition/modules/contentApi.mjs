@@ -89,7 +89,7 @@ import { buildBareContentNameMap, CONTENT_SEARCH_BUDGET, LEGACY_CONTENT_ALIASES 
  * @returns {Object} Router configuration
  */
 export function createApiRouters(config) {
-  const { registry, mediaProgressMemory, progressSyncService, progressSyncSources, menuMemoryRepository, cacheBasePath, dataPath, mediaBasePath, proxyService, retroarchProxy, composePresentationUseCase, configService, prefixAliases = {}, savedQueryService = null, eventBus = null, economyService = null, logger = console } = config;
+  const { registry, mediaProgressMemory, progressSyncService, progressSyncSources, menuMemoryRepository, cacheBasePath, dataPath, mediaBasePath, proxyService, retroarchProxy, composePresentationUseCase, configService, prefixAliases = {}, savedQueryService = null, eventBus = null, economyService = null, reportPlaybackSession = null, logger = console } = config;
 
   // Register prefix aliases (e.g., hymn → singalong:hymn) from config
   // This enables the content API to resolve aliased prefixes via registry.resolveFromPrefix()
@@ -204,6 +204,10 @@ export function createApiRouters(config) {
     mediaProgressMemory,
     progressSyncSources,
     progressSyncService,
+    // Presents playback to the media server as a real client. Built in app.mjs
+    // because the Plex credentials and httpClient live there, not here. Null
+    // when no media server is configured — the use case simply never fires.
+    reportPlaybackSession,
     playbackPublications: new PlaybackPublications({ eventBus }),
     userVideoProgressStore,
     economyService,
