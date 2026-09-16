@@ -29,10 +29,39 @@ not inferred. Where something is unproven it is labelled so explicitly.
 | `req.deviceId` is available for attribution | `deviceResolver` is mounted globally on `/api/v1` (`app.mjs:601`) |
 | plex.tv is reachable | 302 from both host and the app container |
 
-**Unproven, and it gates Requirement 1:** the PIN/OAuth flow that puts a device
-in **Authorized Devices**. There is no Plex auth code anywhere in this repo, and
-registration needs a human to authorize at `plex.tv/link`. Task 1 exists to
-settle it before anything is built on top.
+**Requirement 1 is now proven too** (2026-09-16 19:26Z). The PIN flow works from
+this host end to end:
+
+```
+POST https://plex.tv/api/v2/pins        -> short code (e.g. GSQR), ~15 min TTL
+   human authorizes at plex.tv/link
+GET  https://plex.tv/api/v2/pins/<id>   -> authToken (20 chars)
+```
+
+The resulting token is a valid **account** token (`/api/v2/user` → `kckern`,
+id 5423621), and the device appears in Authorized Devices:
+
+```
+name: DaylightStation  product: DaylightStation
+clientIdentifier: 9f2c1e80-3b77-4f2e-9a41-6d2b8c5e1a03
+createdAt: 2026-09-16T19:26:55Z
+```
+
+**The Authorized Devices name is per-device, and that is the shape we want.**
+Our entry registered as "DaylightStation" (the short-code PIN did not honour
+`X-Plex-Device`), but 26 of this account's 28 devices have `name` ≠ `product`:
+
+| name | product | platform |
+|---|---|---|
+| `Chrome (Tautulli)` | Tautulli | Chrome |
+| `Android` | Plexamp | Android |
+| `04003A2401003YP` | Plexamp | macOS |
+
+So the convention is `name` = the device, `product` = the app — exactly the split
+this design needs: **name `Living Room TV`, product `DaylightStation`**. Task 3
+establishes which header sets `name` at PIN creation (`X-Plex-Device` vs
+`X-Plex-Device-Name`), since sessions already prove `X-Plex-Device-Name` drives
+`<Player title>`.
 
 ---
 
