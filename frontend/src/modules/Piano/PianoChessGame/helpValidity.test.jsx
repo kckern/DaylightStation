@@ -42,6 +42,7 @@ import { PianoChessGame } from './PianoChessGame.jsx';
 import { requestBestMove, requestOpponentMove, saveGameRecord } from './chessApi.js';
 import { OPPONENT_DELAY_MS } from './PianoChessGame.jsx';
 import { DEFAULT_CHORD_SCHEME, squareToChord } from './chordAddress.js';
+import { GESTURE_SETTLE_MS } from './useSettledGesture.js';
 
 const holdNotes = (notes) => mockUsePianoMidiNotes.mockReturnValue({
   activeNotes: new Map(notes.map((n) => [n, { velocity: 80 }])),
@@ -87,9 +88,13 @@ describe('help validity: seams the per-task tests could not see', () => {
     requestBestMove.mockImplementation(() => new Promise((resolve) => { resolveBest = resolve; }));
     requestOpponentMove.mockResolvedValue({ from: 'e2', to: 'e4', san: 'e4', engine: 'stockfish' });
     const { container, rerender } = render(<PianoChessGame playerColor="b" seed={1} />);
-    // Ask for the best move immediately (opponent is thinking).
+    // Ask for the best move while the opponent is thinking. The cluster must
+    // hold still for GESTURE_SETTLE_MS before it counts as a request (see
+    // useSettledGesture.js); 140ms sits far inside the 1200ms opponent delay,
+    // so the reply cannot land while we wait for it.
     holdNotes([60, 61, 62, 63]);
     rerender(<PianoChessGame playerColor="b" seed={1} />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(GESTURE_SETTLE_MS + 10); });
     expect(requestBestMove).toHaveBeenCalledWith(expect.objectContaining({ fen: expect.any(String) }));
     holdNotes([]);
     rerender(<PianoChessGame playerColor="b" seed={1} />);
@@ -182,5 +187,92 @@ describe('help validity: seams the per-task tests could not see', () => {
     expect(labels).toContain('your time');
     // Win, loss and draw used to differ only in wording.
     expect(container.querySelector('.chess-result--win')).toBeTruthy();
+  });
+
+  /**
+   * A cluster is one request, however unevenly the fingers land.
+   *
+   * `recognizeGesture` reads 3 adjacent semitones as `hint`, 4 as `best` and 5
+   * as `replay`, and nothing debounced the held set — so a four-key best press
+   * that did not land perfectly flat passed through the three-key hint shape
+   * on the way up and was charged a hint the child never asked for. The
+   * five-key replay press was worse: it crossed BOTH the hint and the best
+   * shapes, so "show me that again" fired an analysis request and voided the
+   * game for promotion.
+   */
+  const MATE_IN_ONE_FEN = '7k/8/6K1/8/8/8/8/5R2 w - - 0 1';
+
+  const pressStaggered = async (notes, makeElement, rerender) => {
+    // Land the keys one at a time, the way hands actually do.
+    for (let i = 1; i <= notes.length; i += 1) {
+      holdNotes(notes.slice(0, i));
+      rerender(makeElement());
+      await act(async () => { await vi.advanceTimersByTimeAsync(15); });
+    }
+    // Then hold the complete cluster, well past any settle window.
+    await act(async () => { await vi.advanceTimersByTimeAsync(400); });
+    holdNotes([]);
+    rerender(makeElement());
+    await act(async () => { await vi.advanceTimersByTimeAsync(100); });
+  };
+
+  it('R5: a staggered four-key BEST press is not also charged a hint on the way up', async () => {
+    saveGameRecord.mockClear();
+    requestBestMove.mockResolvedValue(null); // the answer never arrives: no best charge either
+    const notesFor = (square) => squareToChord(square, DEFAULT_CHORD_SCHEME)
+      .pitch_classes.map((pc) => 60 + pc);
+    const makeElement = () => (
+      <PianoChessGame fen={MATE_IN_ONE_FEN} currentUser="kckern" gameConfig={{ addressing: { shuffle: 'never' } }} />
+    );
+    const { rerender } = render(makeElement());
+    const play = async (notes) => {
+      holdNotes(notes);
+      rerender(makeElement());
+      await act(async () => { await vi.advanceTimersByTimeAsync(300); });
+      holdNotes([]);
+      rerender(makeElement());
+      await act(async () => { await vi.advanceTimersByTimeAsync(100); });
+    };
+
+    await pressStaggered([60, 61, 62, 63], makeElement, rerender);
+    await play(notesFor('f1'));
+    await play(notesFor('f1'));
+    await play(notesFor('f8')); // checkmate
+
+    expect(saveGameRecord).toHaveBeenCalledTimes(1);
+    // One request was made. Exactly one may be charged, and it is not a hint.
+    expect(saveGameRecord.mock.calls[0][1].help.hints).toBe(0);
+  });
+
+  it('R6: a staggered five-key REPLAY press asks for no hint and no analysis', async () => {
+    saveGameRecord.mockClear();
+    requestBestMove.mockClear();
+    requestBestMove.mockResolvedValue({ from: 'f1', to: 'f8' });
+    const notesFor = (square) => squareToChord(square, DEFAULT_CHORD_SCHEME)
+      .pitch_classes.map((pc) => 60 + pc);
+    const makeElement = () => (
+      <PianoChessGame fen={MATE_IN_ONE_FEN} currentUser="kckern" gameConfig={{ addressing: { shuffle: 'never' } }} />
+    );
+    const { rerender } = render(makeElement());
+    const play = async (notes) => {
+      holdNotes(notes);
+      rerender(makeElement());
+      await act(async () => { await vi.advanceTimersByTimeAsync(300); });
+      holdNotes([]);
+      rerender(makeElement());
+      await act(async () => { await vi.advanceTimersByTimeAsync(100); });
+    };
+
+    await pressStaggered([60, 61, 62, 63, 64], makeElement, rerender);
+    // "Show me that again" must never reach the analysis engine.
+    expect(requestBestMove).not.toHaveBeenCalled();
+
+    await play(notesFor('f1'));
+    await play(notesFor('f1'));
+    await play(notesFor('f8')); // checkmate
+
+    expect(saveGameRecord).toHaveBeenCalledTimes(1);
+    const { help } = saveGameRecord.mock.calls[0][1];
+    expect(help).toMatchObject({ hints: 0, best_moves: 0 });
   });
 });

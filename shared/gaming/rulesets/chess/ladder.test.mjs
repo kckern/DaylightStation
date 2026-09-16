@@ -343,6 +343,24 @@ describe('promotionIneligibility', () => {
     expect(promotionIneligibility(game({ completed: false }), POLICY, 0)).toEqual({ reason: 'unfinished' });
   });
 
+  // A game filed before the ladder read answered carries `level: null`, and two
+  // call sites assert in comments that the ladder declines to count it. It did
+  // decline — everywhere except rung 0, where `Number(null)` is `0` and the
+  // unknown level matched the current one by coincidence. Rung 0 is where the
+  // beginners are, so that was the one rung it mattered on.
+  it('refuses a game whose level was never known, at EVERY rung including 0', () => {
+    for (const level of [null, undefined, '', NaN]) {
+      expect(promotionIneligibility(game({ level }), POLICY, 0))
+        .toEqual({ reason: 'other_level', level: level ?? null });
+      expect(countsTowardPromotion(game({ level }), POLICY, 0)).toBe(false);
+    }
+  });
+
+  it('still counts a real rung 0 game, which is not the same as an unknown one', () => {
+    expect(promotionIneligibility(game({ level: 0 }), POLICY, 0)).toBe(null);
+    expect(countsTowardPromotion(game({ level: 0 }), POLICY, 0)).toBe(true);
+  });
+
   it('agrees with countsTowardPromotion on every case', () => {
     const cases = [
       [game(), 0], [game({ completed: false }), 0], [game({ level: 0 }), 1],

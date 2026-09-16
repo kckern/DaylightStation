@@ -45,6 +45,7 @@ import {
 import { DEFAULT_CHORD_SCHEME, squareToChord } from './chordAddress.js';
 import { DEFAULT_STAFF_SCHEME } from './staffAddress.js';
 import { DOUBLE_WINDOW_MS } from './chordSelection.js';
+import { GESTURE_SETTLE_MS } from './useSettledGesture.js';
 
 const sourceOutlines = (container) => container.querySelectorAll('.chess-board__square--source').length;
 
@@ -578,11 +579,13 @@ describe('hint gestures', () => {
     mockUsePianoMidiNotes.mockReturnValue({ activeNotes: new Map(), noteHistory: [] });
   });
 
-  it('a held three-semitone cluster marks the movable pieces', () => {
+  it('a held three-semitone cluster marks the movable pieces', async () => {
     holdNotes(HINT_CLUSTER);
     const { container } = render(<PianoChessGame />);
-    // No piece is held yet, so "show legal moves" means "which pieces can move".
-    expect(container.querySelectorAll('.chess-board__square--hint').length).toBeGreaterThan(0);
+    // The cluster has to hold still for GESTURE_SETTLE_MS before it counts as a
+    // request — see useSettledGesture.js. No piece is held yet, so "show legal
+    // moves" means "which pieces can move".
+    await waitFor(() => expect(container.querySelectorAll('.chess-board__square--hint').length).toBeGreaterThan(0));
   });
 
   it('a four-semitone cluster asks the ANALYSIS endpoint, not the opponent, and rings the best move', async () => {
@@ -592,7 +595,8 @@ describe('hint gestures', () => {
     requestBestMove.mockResolvedValueOnce({ from: 'g1', to: 'f3' });
     holdNotes(BEST_CLUSTER);
     const { container } = render(<PianoChessGame />);
-    expect(requestBestMove).toHaveBeenCalledWith(expect.objectContaining({ fen: expect.any(String) }));
+    // Settles first (useSettledGesture.js), then asks.
+    await waitFor(() => expect(requestBestMove).toHaveBeenCalledWith(expect.objectContaining({ fen: expect.any(String) })));
     expect(requestOpponentMove).not.toHaveBeenCalled();
     await waitFor(() => expect(container.querySelectorAll('.chess-board__square--best')).toHaveLength(2));
   });
@@ -602,11 +606,16 @@ describe('hint gestures', () => {
     requestBestMove.mockImplementation(() => new Promise((resolve) => { resolveMove = resolve; }));
     holdNotes(BEST_CLUSTER);
     const { rerender } = render(<PianoChessGame />);
-    // Release and mash the cluster again before the server has answered.
+    await waitFor(() => expect(requestBestMove).toHaveBeenCalledTimes(1));
+    // Release and mash the cluster again before the server has answered, then
+    // hold it past the settle window so the second press is a real request and
+    // not merely one the debounce swallowed. The in-flight guard, not the
+    // settle, is what must keep this at one call.
     holdNotes(new Map());
     rerender(<PianoChessGame />);
     holdNotes(BEST_CLUSTER);
     rerender(<PianoChessGame />);
+    await new Promise((resolve) => { setTimeout(resolve, GESTURE_SETTLE_MS + 60); });
     expect(requestBestMove).toHaveBeenCalledTimes(1);
     await act(async () => { resolveMove({ from: 'g1', to: 'f3' }); });
   });
