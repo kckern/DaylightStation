@@ -26,6 +26,36 @@ export function promptFor(state, rejection, hoveredChord = null, reading = false
     : "Play a piece's chord twice to pick it up.";
 }
 
+/**
+ * What the rail says about this match's standing with the ladder.
+ *
+ * Two facts, in the order a player needs them. Whether the match they are in
+ * right now still counts — so the state is never a surprise at the end — and,
+ * when a press is armed, what it will cost before it costs it.
+ *
+ * `counts` is `null` until the ladder read answers, and a guest never has a
+ * ladder at all. Neither may be rendered as a confident "this counts": a badge
+ * that asserts what it does not know is the defect this exists to remove.
+ */
+const DEMOTION_WORDS = Object.freeze({
+  hint: 'Another hint',
+  best: 'Best move',
+});
+
+export function matchStandingBadge(counts) {
+  if (counts === null || counts === undefined) return null;
+  return counts
+    ? { state: 'counts', label: 'This match counts' }
+    : { state: 'practice', label: 'Practice match' };
+}
+
+export function demotionWarning(armedKind, opponentName = null) {
+  const what = DEMOTION_WORDS[armedKind];
+  if (!what) return null;
+  const against = opponentName ? ` against ${opponentName}` : '';
+  return `${what} will make this a practice match — it stops counting${against}. Play it again to use it.`;
+}
+
 export function safeBoardTheme(theme) {
   const parsed = typeof theme === 'string'
     ? theme.match(/^hsl\(\s*([\d.]+)\s+([\d.]+)%\s+([\d.]+)%\s*\)$/)
@@ -51,6 +81,8 @@ export function buildChessRailViewModel({
   introSeen,
   reading,
   takebackArmed,
+  matchCounts = null,
+  demotionArmed = null,
 }) {
   const playerTurn = isPlayerTurn(game);
   const pickupChord = !game.origin && cursor && movableSources.includes(cursor)
@@ -97,6 +129,8 @@ export function buildChessRailViewModel({
     pickupDeadline: pickupChord && armed?.square === cursor ? armed.at : null,
     turnColour,
     turnLabel: game.status?.turn === playerColor ? `Yours (${turnColour})` : `Theirs (${turnColour})`,
+    matchBadge: matchStandingBadge(matchCounts),
+    demotionWarning: demotionWarning(demotionArmed, opponent?.name ?? null),
   };
 }
 

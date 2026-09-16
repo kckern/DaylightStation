@@ -142,6 +142,52 @@ React phases in `applySnapshot()`.
 | `racing` | `racing` | `CycleRaceScreen` + `CycleEventToast` | go-hold ends | all riders finished/DNF, time cap, or operator **Finish race** |
 | `results` | `finished`→`results` | `RaceResults` | engine `finished` | manual **Exit** or auto-dwell countdown → `idle` |
 
+### A dead sensor is not a lazy child
+
+The garage screen told a child *"Did Not Finish — Stopped pedaling for 30s"* while he was
+pedalling. His cadence sensor had sent nothing for four minutes. Verified in production: the
+`niceday` bike's ANT+ sensor emitted no packets at all across three races that each forfeited him
+at the threshold with rpm 0, then woke, and his very next race registered 73 rpm. On the same day
+there were 29 `sensor_lost` events against 13 `sensor_recovered`, across all five machines.
+
+From rpm alone a still bike and a silent sensor are identical, so the rider's sensor connectivity
+now reaches the controller on its `connected` input and it keeps a third set beside `dnf` and
+`overtime`:
+
+- **`dnf`** — the rider's sensor reported and they stopped (or never started). An honest forfeit.
+- **`noSensor`** — the rider's sensor never reported at all. Not a forfeit and never captioned
+  "stopped pedaling"; the toast reads *"{name} — no sensor · Their bike never reported. Check the
+  sensor."* Logged as `cycle_game.rider_no_sensor` at warn, so the store can answer "dead sensor or
+  idle kid?" — a question that previously required diffing race telemetry against raw bridge output
+  by hand.
+
+A rider who HAS ridden keeps the idle clock even if their sensor drops later: they demonstrably had
+one, so a silent bike honestly reads as stopping. A missing `connected` flag counts as connected, so
+callers that do not report sensor state are unchanged. No-sensor riders still close the race, or it
+would wait for them forever.
+
+**The SENSOR chip has two windows now.** It was gated on a rider having been connected once, so a
+sensor that never appeared produced no warning *ever* — and the forfeit was then the only thing
+anyone saw. A rider who was connected and drops is flagged at `SENSOR_LOST_GAP_TICKS` (9); a rider
+who has never connected gets the longer `SENSOR_ABSENT_GAP_TICKS` (15), which is past the mounting
+and lock-on window but still short of the start-grace that ends their race — so the warning arrives
+while it can still be acted on. A rider sitting on a bike with a working sensor reports
+`connected: true, rpm: 0`, never advances the gap clock, and is never flagged at all.
+
+**The bridge now keeps a presence trail.** `_extensions/fitness/src/ant.mjs` logged only data lines
+and HR rejections — nothing about a sensor arriving or leaving — and the absence of a line is not
+something you can grep for. A wildcard ANT+ scanner has no connection to lose, so presence is
+recency: a first broadcast logs `SENSOR UP`, and a device silent for 10s logs `SENSOR DOWN (silent
+Ns)` from a 5s sweep. **This is inside the container image**, so it needs a native rebuild on the
+sensor host to take effect (see the fitness extension's deploy notes) — the app-side changes above
+do not.
+
+**Cadence sensors are equipment, not people.** `fitness.auto_assign_skip` fired 787 times in one day
+for a single bike's cadence sensor reporting no user. Riders claim equipment from the picker and the
+sensor is bound to the machine by the `cadence:` key in the household fitness config, so no user is
+the correct state for it. That case is no longer reported as an anomaly; heart-rate straps, which do
+identify a person, still are.
+
 - **Tick cadence:** `RACE_TICK_MS = 1000` (1 Hz). The racing interval runs across
   the `go` and `racing` phases and is **not** torn down mid-race, so ticking stays
   even. Live session/vitals are read through refs.
