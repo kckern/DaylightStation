@@ -495,8 +495,15 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
       gradingPolicyVersion: result?.rubric?.id ?? 'exercise-interrupted-v2',
       providerVersion: 'exercise-runtime-v4',
     });
+    // WHOSE ATTEMPT THIS WAS. Every other event on this surface goes through
+    // `traceEvent` and carries the learner; these two were plain `logger.info`
+    // and carried none — so the two events that hold the SCORE and the verdict
+    // were the only ones that could not be attributed to a child. Asked "how is
+    // this learner doing", the log store could answer which notes they got
+    // wrong and not one thing about how they did.
+    const who = { learnerId: traceFieldsRef.current.learnerId };
     if (!access.persistent) {
-      logger.info('piano.exercise-assessment', pianoAssessmentTelemetry(body, { outcome: 'skipped-guest' }));
+      logger.info('piano.exercise-assessment', { ...who, ...pianoAssessmentTelemetry(body, { outcome: 'skipped-guest' }) });
       return;
     }
     const response = await pianoAttemptClient.record(currentUser, body, { keepalive });
@@ -504,8 +511,8 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
     const log = pianoAssessmentTelemetry(body, {
       outcome, status: response.status, error: response.error, durationMs: response.durationMs,
     });
-    if (outcome === 'saved') logger.info('piano.exercise-assessment', log);
-    else logger.warn('piano.exercise-assessment', log);
+    if (outcome === 'saved') logger.info('piano.exercise-assessment', { ...who, ...log });
+    else logger.warn('piano.exercise-assessment', { ...who, ...log });
   }, [access.persistent, challenge, currentUser, logger, programId, selectedMode, stepId, subject]);
 
   useEffect(() => {
@@ -516,7 +523,10 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
     // judge, and a host counting failures must not count a walk-away.
     if (!JUDGED_STATUSES.has(snapshot.result.status)) return;
     const passed = runPassed(snapshot.result, { challenge, passScore: requirement?.passScore });
-    logger.info('piano.exercise-complete', {
+    // `traceEvent`, not a bare `logger.info`: this is the event that says how a
+    // run ENDED, and without the trace fields it said so about nobody. See the
+    // note in `persist`.
+    traceEvent('piano.exercise-complete', {
       id: subject?.id ?? null, purpose: challenge ? 'challenge' : 'practice', matcher: snapshot.matcher,
       status: snapshot.result.status,
       // Both are absent on a stalled attempt, which is finalized without a
@@ -536,7 +546,7 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
     // it can offer its own ways forward — and so a host counting failures
     // counts only attempts that actually happened.
     if (!passed) onFailed?.(snapshot.result);
-  }, [challenge, logger, onFailed, persist, requirement, resultReady, snapshot, subject]);
+  }, [challenge, traceEvent, onFailed, persist, requirement, resultReady, snapshot, subject]);
 
   // Completion belongs to the host whenever it supplied a callback. Every
   // host advances automatically; this piano surface has no pointer controls.
@@ -852,7 +862,15 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
   }, [activeNotes, armingPitches, exitHeld, held, heldKey, runtime, snapshot.cursor, snapshot.matcher, snapshot.mode, snapshot.status, startCountIn, traceEvent]);
 
   useEffect(() => () => {
-    const active = runtimeRef.current?.getSnapshot();
+    // NOTHING TO TEAR DOWN IS NOT A TEARDOWN. This cleanup re-runs whenever
+    // `persist` changes identity, which happens before a runtime is ever
+    // installed — and it filed a `runtime-disposed` every time, carrying no
+    // cursor and no status because there was no runtime to read them from. In
+    // the field that was two thirds of the event: one learner's 34 installed
+    // runtimes produced 66 disposals, so any count of how many runs a child
+    // abandoned was reading mostly phantoms.
+    if (!runtimeRef.current) return;
+    const active = runtimeRef.current.getSnapshot();
     if (active?.result && !persistedRef.current) {
       // A completed assessment can be waiting for the musical timeline. Exit
       // preserves that evidence without treating exit as a passed game gate.
