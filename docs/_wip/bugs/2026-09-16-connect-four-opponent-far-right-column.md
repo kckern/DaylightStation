@@ -3,7 +3,29 @@
 **Reported:** 2026-09-16, by the learner, at the piano kiosk — "the opponent always
 drops in the far right column."
 
-**Status:** fixed. Root cause was in `shared/gaming/rulesets/connect-four/opponent.mjs`.
+**Status:** fixed, deployed and verified in prod (commit `1e0475e77`, built
+2026-09-16 15:41 PDT). Root cause was in
+`shared/gaming/rulesets/connect-four/opponent.mjs`.
+
+Verified against the DEPLOYED artifact, not just the working tree — the live
+endpoint is not a useful check on its own, because the server resolves the rung
+from the player's own ladder and ignores the `level` in the request, so a call
+claiming level 7 is answered at level 1, where old and new code agree. Run
+inside the running container instead:
+
+```
+openings by rung 1..7: 3,3,3,3,3,3,3   (old code: 3,2,4,1,5,0,6)
+[3,3,2] rung 1 -> 3
+[3,3,2] rung 7 -> 4                    (depth is real)
+```
+
+The tablet was then reloaded with `scripts/reload-piano-kiosk.sh`, which gates
+on the kiosk being idle. A redeploy alone does NOT reload it: the page keeps
+running and only its WebSocket reconnects, so the kiosk stayed on the old
+bundle until the explicit reload. That mattered less than it looks — the
+opponent's moves come from the server, which was already fixed — but the stale
+bundle would still have used the OLD rotation in its offline fallback, and
+would not have emitted the new `connect-four.opponent-drop` event.
 
 ---
 

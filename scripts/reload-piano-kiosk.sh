@@ -71,4 +71,10 @@ const call = async (cmd) => {
   await call("loadStartUrl");
 })();
 '
-echo "Reloaded. Confirm with: curl -s \"$DAYLIGHT_LOGSTORE/select/logsql/query\" -d 'query=_msg:frontend-start AND _time:2m'"
+# Same default as deploy-gate.sh / piano-kiosk-idle.sh / school-portal-idle.sh.
+# Bare `$DAYLIGHT_LOGSTORE` under `set -u` meant this script ALWAYS died here —
+# after both FKB commands had already been sent — so the reload worked and the
+# one line telling you how to confirm it never printed, with a failing exit code
+# on top. Found 2026-09-16 while verifying that a deploy had reached the tablet.
+LOGS="${DAYLIGHT_LOGSTORE:-http://localhost:9428}"
+echo "Reloaded. Confirm with: curl -s \"$LOGS/select/logsql/query\" -d 'query=_msg:frontend-start AND _time:2m'"
