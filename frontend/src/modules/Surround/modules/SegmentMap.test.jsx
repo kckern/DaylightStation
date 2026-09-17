@@ -2715,3 +2715,91 @@ describe('one rail, any corpus — the hierarchy is data, not vocabulary', () =>
     expect(leaked, `the rail is naming a use case in its own markup: ${leaked.join(', ')}`).toEqual([]);
   });
 });
+
+
+/* -------------------------------------------------------------------------- */
+/* THE TIMELINE ON A VERTICAL AXIS                                             */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * `orientation: column` — the rail-carried arrangement, for a picture narrower
+ * than the screen. The list runs DOWN a rail beside the video instead of across
+ * a band beneath it.
+ *
+ * ROWS ARE EQUAL, and that is the load-bearing decision. Duration-proportional
+ * rows would give a long scene a tall block and a short one a sliver too small
+ * for its own name, which is the whole reason the horizontal rail can afford to
+ * be proportional and this one cannot: there, a narrow segment still gets a full
+ * line of height. Progress therefore lives on the SPINE, in row space — lit from
+ * the top down to the playhead, whose position is (sounding row + fraction
+ * through that scene) / row count. That is the horizontal playhead's own rule,
+ * transposed, so `playheadFraction` is reused untouched with equal shares.
+ *
+ * WHAT DOES NOT EXIST ON THIS AXIS: folds, group heading rows, the accordion and
+ * the bond's connector. The Act rides in the mark (`I.1`) instead of spending a
+ * row on a heading, and a weld between the sounding row and the register below
+ * is geometrically impossible with other rows in between.
+ */
+describe('the timeline on a vertical axis', () => {
+  const seg = (n, offset, label, ancestors) => ({
+    n, name: label, contentId: 'plex:col', start: offset, end: offset + 10,
+    offset, duration: 10, part: 0, ...(ancestors ? { ancestors } : {}),
+  });
+  const ACTS = [{ index: 0, title: 'Act I' }, { index: 1, title: 'Act II' }];
+  const COLUMN_PLAY = {
+    contentId: 'plex:col',
+    segments: [
+      seg(1, 0, 'A public place', [ACTS[0], { index: 0, title: 'Scene 1' }]),
+      seg(2, 10, "Hortensio's house", [ACTS[0], { index: 1, title: 'Scene 2' }]),
+      seg(3, 20, "Baptista's house", [ACTS[1], { index: 2, title: 'Scene 1' }]),
+      seg(4, 30, 'A room in the house', [ACTS[1], { index: 3, title: 'Scene 2' }]),
+    ],
+    timeline: { totalSounding: 40, parts: [{ contentId: 'plex:col', index: 0, sounding: 40 }] },
+  };
+  const COLUMN = { module: 'segment-map', orientation: 'column' };
+  const renderColumn = (position = 25) =>
+    renderMap({ data: COLUMN_PLAY, position, duration: 40, region: COLUMN });
+
+  const rows = (c) => [...c.querySelectorAll('[data-testid="surround-segment-row"]')];
+
+  it('renders a column, one row per placed segment', () => {
+    const { container } = renderColumn();
+    expect(container.querySelector('[data-testid="surround-segment-column"]')).not.toBeNull();
+    expect(rows(container)).toHaveLength(4);
+  });
+
+  it('carries the outer group in the mark rather than in a heading row', () => {
+    const { container } = renderColumn();
+    expect(rows(container).map((r) => r.querySelector('[data-testid="surround-row-mark"]').textContent))
+      .toEqual(['I.1', 'I.2', 'II.1', 'II.2']);
+    // No heading rows on this axis — the mark is where the Act lives.
+    expect(container.querySelectorAll('.surround-segment-map__groups')).toHaveLength(0);
+  });
+
+  it('marks exactly the sounding row', () => {
+    const { container } = renderColumn(25); // inside the third segment (20-30)
+    const sounding = rows(container).filter((r) => r.dataset.state === 'sounding');
+    expect(sounding).toHaveLength(1);
+    expect(sounding[0].querySelector('[data-testid="surround-row-mark"]').textContent).toBe('II.1');
+  });
+
+  it('draws a spine whose playhead is in row space, not clock space', () => {
+    const { container } = renderColumn(25);
+    const spine = container.querySelector('[data-testid="surround-spine"]');
+    expect(spine, 'no spine rendered').not.toBeNull();
+    // Half-way through row 3 of 4 => (2 + 0.5) / 4 = 0.625.
+    expect(Number(spine.style.getPropertyValue('--head'))).toBeCloseTo(0.625, 2);
+  });
+
+  it('renders no fold badge and no connector on this axis', () => {
+    const { container } = renderColumn();
+    expect(container.querySelector('.surround-segment-map__fold-count')).toBeNull();
+    expect(container.querySelector('[data-testid="surround-bond-connector"]')).toBeNull();
+  });
+
+  it('leaves the horizontal axis untouched when no orientation is authored', () => {
+    const { container } = renderMap({ data: COLUMN_PLAY, position: 25, duration: 40 });
+    expect(container.querySelector('[data-testid="surround-segment-column"]')).toBeNull();
+    expect(container.querySelector('[data-testid="surround-segment-map"]')).not.toBeNull();
+  });
+});

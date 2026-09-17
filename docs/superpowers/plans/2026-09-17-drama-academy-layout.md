@@ -49,6 +49,35 @@ IDENTICAL markup vocabulary, and that no emitted class or testid names a use
 case. That check would have caught `__fold-scenes`, `surround-part-group-label`
 and `__tempo`. Suite: 1012 passed / 2 expected fail.
 
+**Phase 2 is being built** (2026-09-17), to a design approved in conversation.
+It supersedes Tasks 4-8 as written below in three ways worth recording:
+
+- **It is `playhouse-rail`, not `playhouse-academy`.** "Academy" is the film
+  term for the ~4:3 frame; naming a LAYOUT after an aspect RATIO repeats the
+  mistake the vocabulary pass removed. The name says what the layout does.
+- **The rail is on the RIGHT** (the frame's default; `playhouse` is what opts
+  into `side: left`), so the video sits left and the timeline's spine — in the
+  rail's inner gutter — lies against the picture. That is the horizontal rule's
+  own law, transposed: the timeline is the picture's edge, not furniture.
+- **One timeline module, not two.** `orientation: row | column` is declared on
+  the region beside `width`/`side`/`height`, and `CueTicker` takes the same key.
+  A separate `SegmentColumn` module would have been a use case baked into the
+  module list.
+
+Settled design, as built:
+
+| | |
+|---|---|
+| rail | 40% = 384px, right |
+| picture | 576x432, exact 4:3, `mediaReserve: 0` |
+| rail stacks | play-card (~150px), timeline (`height: fill`), ticker (~130px) |
+| rows | EQUAL height; progress lives on the spine in ROW space |
+| playhead | `(sounding row + fraction through it) / row count` — `playheadFraction` reused untouched with equal shares |
+| the Act | rides in a compound mark (`I.1`), no heading rows |
+| retired on this axis | folds, the accordion, group heading rows, `nowSide`/`NOW_PANEL_SHARE`, the bond's connector |
+| the bond | shared ground colour only — rows sit between the sounding row and the register, so a weld is geometrically impossible |
+| place-carousel | not mounted: no height, and this play authors no `piece.map`, so the only place material is the playwright's birthplace against a "Padua, Italy" setting line |
+
 **Phase 2 (Tasks 4-8) is planned and not started.**
 
 ## Why this plan exists

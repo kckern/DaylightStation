@@ -1068,3 +1068,143 @@
 .surround-segment-map__fold-segments {
   font-variant-numeric: inherit;
 }
+
+
+/* ==========================================================================
+   THE VERTICAL AXIS (`orientation: column`)
+   ==========================================================================
+   The rail-carried arrangement, for a picture narrower than the screen. The
+   list runs DOWN a rail beside the video instead of across a band beneath it.
+
+   NOTHING HERE IS A NEW LANGUAGE. It is the same staff rule, the same numeral
+   gutter and the same three states the horizontal rail sets, turned ninety
+   degrees. What it does NOT have is the accordion, the folds and the bond's
+   connector: a column is short of height, not width, and folding buys width.
+
+   EVERY SIZE IS DERIVED FROM `--label-floor`, the frame's published ten-foot
+   floor, rather than set in pixels. A row is two floors tall — one line of
+   type and the air around it — so the list scales with the screen root the way
+   every other floor in the frame does, instead of being right on one screen. */
+.surround-segment-map--column {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* THE STAFF RULE, TURNED. One hairline down the gutter: lit to the playhead,
+   hairline beyond it. It sits at the rail's INNER edge — the side the picture
+   is on — so the timeline reads as the picture's own edge rather than as
+   furniture beside it. That is the horizontal rule's law (it rides tight
+   against the video's foot), transposed. */
+.surround-segment-map__spine {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 2px;
+  pointer-events: none;
+
+  /* What is still to come. */
+  &::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: var(--ink-soft, #6b6152);
+    opacity: 0.35;
+  }
+
+  /* What has elapsed, and the playhead at its foot. The cursor is the LIT
+     EDGE, not a separate mark — design wave 2's rule that progress is read
+     from the fill and the cursor has nothing left to prove. 120ms linear is
+     one transport tick, the same ramp the horizontal head rides. */
+  &::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: calc(var(--head, 0) * 100%);
+    background: var(--ink, #332b20);
+    opacity: 0.85;
+    transition: height var(--head-ms, 120ms) linear;
+  }
+}
+
+.surround-segment-map__rows {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0 calc(var(--label-floor, 11.52px) * 0.9);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
+/* ONE LINE, ALWAYS. The row is the unit the whole design rests on: eleven of
+   them have to fit, so a row that wrapped would push the last scenes off the
+   rail. The label ellipsises instead — the mark never does, because a mark
+   that cannot be read whole names nothing. */
+.surround-segment-map__row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4em;
+  min-height: calc(var(--label-floor, 11.52px) * 2);
+  padding: 0 0.3em;
+  font-family: var(--surround-body);
+  font-size: var(--label-floor, 11.52px);
+  line-height: 1.25;
+  color: var(--ink, #332b20);
+  cursor: pointer;
+  border-radius: var(--bond-radius, 3px);
+}
+
+/* THE GUTTER, sized once for the rail by the widest mark it sets — the same
+   decision the horizontal numeral track makes, so every label shares one text
+   edge. Tabular figures keep `I.1` and `IV.10` on that edge. */
+.surround-segment-map__row-mark {
+  flex: 0 0 auto;
+  min-width: 3.2em;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+  color: var(--ink-soft, #6b6152);
+  white-space: nowrap;
+}
+
+.surround-segment-map__row-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* THE THREE STATES, in value only — no borders, no second marks. The band's
+   standing rule is that nothing carries an edge; a lit ground against an unlit
+   one divides more strongly at ten feet than a hairline does. */
+.surround-segment-map__row[data-state="played"] { opacity: 0.62; }
+
+.surround-segment-map__row[data-state="ahead"] {
+  opacity: 0.78;
+  color: var(--ink-soft, #6b6152);
+}
+
+/* THE SOUNDING ROW IS THE BOND. There is no connector on this axis — rows sit
+   between the sounding one and the register below, so a weld is geometrically
+   impossible — and the shared GROUND is what binds them instead: this row and
+   the NOW register are lit the same way, which is the whole mechanism the
+   connector existed to serve. */
+.surround-segment-map__row[data-state="sounding"] {
+  background: var(--bond-ground, rgba(233, 223, 200, 0.14));
+  opacity: 1;
+  font-weight: 600;
+
+  .surround-segment-map__row-mark { color: var(--ink, #332b20); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .surround-segment-map__spine::after { transition: none; }
+}

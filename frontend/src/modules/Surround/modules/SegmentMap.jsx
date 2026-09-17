@@ -188,7 +188,6 @@ export default function SegmentMap({
   // eslint-disable-next-line no-unused-vars -- part of the fixed module contract
   seeking = false,
   data = null,
-  // eslint-disable-next-line no-unused-vars -- part of the fixed module contract
   region = null,
   logger = null,
 }) {
@@ -211,6 +210,17 @@ export default function SegmentMap({
   // with no names on the rule, the listening band is the only surface left
   // that can say what is sounding, so the NOW heading comes back on.
   const named = config.railDensity !== 'bars';
+  /**
+   * WHICH AXIS THIS RAIL RUNS ON — declared by the definition on the region,
+   * beside `width`, `side` and `height`, and defaulting to the band's own `row`.
+   *
+   * It is NOT derived from anything about the work. A picture narrower than the
+   * screen leaves width spare and no height to spare, so its frame puts the
+   * chrome beside the video and asks for a column; but that is the definition's
+   * decision to make, and a 16:9 work with a deep hierarchy may want the same
+   * thing. Nothing here reads the aspect ratio, the domain, or the corpus.
+   */
+  const orientation = region?.orientation === 'column' ? 'column' : 'row';
 
   // Memoized: the `[]` fallback would otherwise be a fresh array every render and
   // recompute `segments` on every 10 Hz tick.
@@ -398,9 +408,17 @@ export default function SegmentMap({
    * rail is past the threshold anyway; putting the gate on both paths would
    * change a behaviour nobody has reported against for no measured gain.
    */
+  // A COLUMN NEVER FOLDS. Folding buys horizontal room by elidinger outer groups
+  // into one marker, and a column has no shortage of width — it has a shortage of
+  // height, which a fold does not help. It also costs the thing the column is
+  // for: the whole work legible at once, in order. So the drawn rail is the
+  // placed rail there, and `segments`, `activeIndex` and the marks below all
+  // stay derived from one list rather than three that could disagree.
   const drawnRail = useMemo(
-    () => (nested ? collapseInactiveGroups(placedRail, { activeGroupIndex, depth: 0 }) : placedRail),
-    [nested, placedRail, activeGroupIndex],
+    () => (nested && orientation !== 'column'
+      ? collapseInactiveGroups(placedRail, { activeGroupIndex, depth: 0 })
+      : placedRail),
+    [nested, orientation, placedRail, activeGroupIndex],
   );
 
   const groups = useMemo(
@@ -1261,6 +1279,87 @@ export default function SegmentMap({
   const numeralChars = segments.reduce(
     (max, seg, i) => Math.max(max, numeral(seg.n, i, style).length), 1,
   );
+
+  /* ------------------------------------------------------------------------ */
+  /* THE VERTICAL AXIS                                                         */
+  /* ------------------------------------------------------------------------ */
+  /**
+   * Everything below this point is the horizontal rail: a numeral gutter sized
+   * once per rail, an eased share vector, the accordion, and a bond that welds
+   * the sounding segment to the register beneath it. None of it exists on a
+   * column, so the column RETURNS HERE rather than threading an orientation
+   * through five hundred lines of geometry that would each have to grow a
+   * branch. The horizontal path below is byte-identical to what it was.
+   */
+  if (orientation === 'column') {
+    // EQUAL ROWS, and that is the load-bearing decision. Duration-proportional
+    // rows would give a long scene a tall block and a short one a sliver too
+    // small to set its own name in — the horizontal rail can afford proportion
+    // precisely because a narrow segment still gets a full line of HEIGHT.
+    // Progress therefore lives on the spine, in ROW space.
+    const rowShares = segments.map(() => 1 / segments.length);
+    // The same function the horizontal playhead uses, with the same meaning:
+    // every elapsed row's share, plus the fraction through the sounding one.
+    const head = playheadFraction({ segments, shares: rowShares, position: railPosition, end });
+
+    // THE OUTER GROUP RIDES IN THE MARK. A heading row per group costs ~100px of
+    // a ~260px rail — the difference between eleven legible rows and thirteen-
+    // pixel ones — and `I.1` says the same thing inside the gutter the numeral
+    // already owns. This COUNTS the levels; the corpus names them, and no name
+    // is read here.
+    const outerAt = (i) => drawnRail[i]?.segment?.ancestors?.[0] ?? null;
+    const marks = segments.map((seg, i) => {
+      const outer = outerAt(i);
+      // A flat work (no groups) keeps the rail's own notation, unchanged.
+      if (!outer) return numeral(seg.n, i, style);
+      const seen = new Set();
+      let within = 0;
+      for (let j = 0; j <= i; j += 1) {
+        const at = outerAt(j);
+        if (at?.index == null) continue;
+        seen.add(at.index);
+        within = at.index === outer.index ? within + 1 : within;
+      }
+      const rank = seen.size;
+      return `${ROMAN[rank] ?? String(rank)}.${within}`;
+    });
+
+    return (
+      <div
+        ref={ruleClickRef}
+        className="surround-segment-map surround-segment-map--column"
+        data-testid="surround-segment-column"
+        data-density="rows"
+        data-rows={segments.length}
+      >
+        {/* The staff rule, turned ninety degrees: one hairline down the gutter,
+            lit to the playhead and hairline beyond it. It sits on the side the
+            picture is on, so the timeline reads as the picture's own edge rather
+            than as furniture beside it — the same law that puts the horizontal
+            rule tight against the video's foot. */}
+        <span
+          className="surround-segment-map__spine"
+          data-testid="surround-spine"
+          style={{ '--head': String(head) }}
+          aria-hidden="true"
+        />
+        <ol className="surround-segment-map__rows">
+          {segments.map((seg, i) => (
+            <li
+              key={`${seg.contentId ?? 'row'}:${i}`}
+              className="surround-segment-map__row"
+              data-testid="surround-segment-row"
+              data-state={i === activeIndex ? 'sounding' : (activeIndex >= 0 && i < activeIndex ? 'played' : 'ahead')}
+              onClick={() => seekTo(seg.mediaStart ?? seg.start ?? 0, seg.contentId)}
+            >
+              <span className="surround-segment-map__row-mark" data-testid="surround-row-mark">{marks[i]}</span>
+              <span className="surround-segment-map__row-label">{seg.label}</span>
+            </li>
+          ))}
+        </ol>
+      </div>
+    );
+  }
 
   const headPct = playheadFraction({ segments, shares, position: railPosition, end }) * 100;
 

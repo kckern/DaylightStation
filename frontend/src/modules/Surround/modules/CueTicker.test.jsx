@@ -53,10 +53,18 @@ const tick = (ms) => act(() => { vi.advanceTimersByTime(ms); });
 /** Out, a beat of empty ground, then in — the swap commits after out+hold. */
 const settle = () => { tick(CUE_FADE_MS + CUE_HOLD_MS); tick(CUE_FADE_MS); };
 
-function renderTicker({ position = 0, data = DATA, logger = makeLogger() } = {}) {
+function renderTicker({
+  position = 0,
+  data = DATA,
+  logger = makeLogger(),
+  // The region the definition placed this module in. Defaulted to the band's
+  // own so every existing spec renders exactly what it always did; overridden
+  // by the specs that exercise a rail-carried arrangement.
+  region = { module: 'cue-ticker', height: 156 },
+} = {}) {
   const props = (p) => ({
     position: p, duration: 3223, playing: true, seeking: false,
-    data, region: { module: 'cue-ticker', height: 156 }, logger,
+    data, region, logger,
   });
   const view = render(<CueTicker {...props(position)} />);
   return {
@@ -2041,5 +2049,40 @@ describe('CueTicker — a pool swap does not resize the band', () => {
       `the band is set at ${first} while the first polonaise plays and ${sixth} while the `
       + 'sixth does — the type resizes at a part boundary',
     ).toBe(first);
+  });
+});
+
+
+/* -------------------------------------------------------------------------- */
+/* THE STACKED VARIANT                                                         */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * `orientation: column` — the listening band as a COLUMN, for a frame that puts
+ * its chrome beside the picture rather than under it.
+ *
+ * IT IS THE SAME KEY THE TIMELINE TAKES, on the same region, declared by the
+ * definition. Deliberately NOT inferred from which slot the module landed in: a
+ * module should not change shape because of where it was placed, and a frame
+ * that wanted stacked registers in the bottom band is entitled to ask for them.
+ *
+ * The variant is additive by construction. The base `__ground` rule is pinned
+ * by a stylesheet assertion elsewhere in this file, and the two registers keep
+ * publishing `--now-left`; the column block adds its own axis beside them
+ * rather than editing what the row arrangement already reads.
+ */
+describe('CueTicker — stacked for a rail', () => {
+  const COLUMN = { module: 'cue-ticker', orientation: 'column' };
+
+  it('wears the column modifier when the definition asks for one', () => {
+    const view = renderTicker({ region: COLUMN });
+    expect(view.container.querySelector('[data-testid="surround-cue-ticker"]').className)
+      .toContain('surround-cue-ticker--column');
+  });
+
+  it('does not wear it in the band, which is every shipped definition today', () => {
+    const view = renderTicker();
+    expect(view.container.querySelector('[data-testid="surround-cue-ticker"]').className)
+      .not.toContain('surround-cue-ticker--column');
   });
 });
