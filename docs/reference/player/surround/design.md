@@ -505,6 +505,17 @@ Borrow ArtMode's physical realism, but one plate, not a gallery:
 - The corpus's declared aspect ratio is inviolable — letterbox or
   pillarbox, never distort. 16:9 is the default when a work authors none
   (`piece.aspectRatio`).
+- **The band is never crushed to make room for the picture.** A picture taller
+  than 16:9 at the column's width would push the band off the bottom of the
+  screen — measured at 0.4px on the living-room root before the cap existed,
+  with the collapse rule then dropping the ticker outright, so both registers
+  vanished while every module went on working and logging healthily. The frame
+  measures its column and publishes `--surround-media-cap-w`: the widest the
+  picture may be while the band keeps its reserve, and the media box takes
+  `min(100%, cap)`. WIDTH is capped, never height — clamping height while width
+  stays at 100% is exactly how a picture gets stretched. The reserve defaults to
+  `collapse.footerFloor`; a definition may author more, or none, as
+  `collapse.mediaReserve`.
 - Legible at 10 feet: nothing below `0.72rem`, no thin weights on the dark ground.
 - Everything degrades to an empty slot: a missing portrait, a piece with no
   segments, a sidecar with no facts. The frame must still look composed.
@@ -533,3 +544,65 @@ band:
 The corpus field the band consumes is `piece.short_title` — the work's alternate
 name, authored on the work in the library tree, used as the piece register's
 standing label. Unauthored is a supported state and renders no header.
+
+## Which way the band runs
+
+The work-in-time modules — the segment rail and the listening band — take an
+`orientation` on their region, beside `width`, `side` and `height`. It is `row`
+(the default, and every shipped classical definition) or `column`.
+
+**Nothing in the frame derives it.** A picture narrower than the screen wastes
+WIDTH and has no height to spare, so its definition asks for a column — but that
+is the definition's decision, and a 16:9 work with a deep hierarchy may ask for
+the same thing. No code branches on aspect ratio, domain or corpus.
+
+### The rail-carried layout
+
+`_surrounds/playhouse-rail.yml`: identity, the timeline and both registers
+stacked in one wide rail, nothing under the picture, and
+`collapse.mediaReserve: 0` so the picture takes the whole column. Measured at the
+living-room root — picture **576x432**, an exact 4:3 filling its column, 27% more
+picture than the band-under arrangement, beside a rail 67px wider.
+
+The rail sits on the **right** — the frame's default; it is `playhouse` that opts
+into `side: left`. That puts the video flush left and the timeline's spine
+directly against the picture, honouring the same law that keeps the horizontal
+rule tight against the video's foot: the timeline is the picture's own edge, not
+furniture beside it.
+
+**Rows are equal.** Duration-proportional rows would give a long segment a tall
+block and a short one a sliver too small to set its own name in; the horizontal
+rail can afford proportion precisely because a narrow segment still gets a full
+line of HEIGHT. Progress lives on the **spine**, in row space: lit from the top
+down to the playhead at `(sounding row + fraction through it) / row count`. That
+is the horizontal playhead's own rule, transposed — the same `playheadFraction`
+called with equal shares, so `band.js` needed no change.
+
+**The outer group rides in the mark.** A heading row per group costs ~100px of a
+~260px rail, so the mark reads `I.1`, `II.1` and no heading rows are printed. It
+COUNTS the levels; the corpus names them, and no name is read.
+
+**Heights must be authored.** `PlayCard` and `CueTicker` are both
+`container-type: size`: their contents do not contribute to their height, by
+design, because they are built to be STRETCHED by their region. A region left
+unauthored asks them for a height they deliberately do not have, and they
+collapse to their floors. The bottom band has always known this — it authors
+`segment-map: height 64` so the ticker's `fill` has something to claim. The rail
+authors **card 130 + ticker 220**, leaving 190px for the list: eleven rows at the
+living-room root's 17.28px floor.
+
+**`facts: false`** turns the card's rotating fact off. It and the band's LEFT
+register draw from the same work-level pool, so a rail carrying both prints the
+same material twice — and the card is 220px with its fact against 130px without,
+which is the height the column was short of.
+
+**What does not exist on this axis:** folds (folding buys width; a column is
+short of height), the accordion, group heading rows, and `nowSide` — with the
+registers stacked the NOW one is simply the lower, so the bond's ground is a
+fixed half that does not travel. The bond's connector goes too: rows sit between
+the sounding row and the register below, so a weld is geometrically impossible.
+The shared GROUND binds them instead, which is what the connector existed to do.
+
+Enforced by "the timeline on a vertical axis" and "one rail, any corpus"
+(`SegmentMap.test.jsx`) and "the rail-carried layout, measured"
+(`band.measure.test.jsx`), at all three fleet roots.

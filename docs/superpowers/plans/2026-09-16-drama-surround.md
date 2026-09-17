@@ -1,5 +1,22 @@
 # Drama Surround Implementation Plan
 
+> **Status (recorded 2026-09-17): this plan was EXECUTED — its checkboxes were
+> never ticked.** All ten tasks' commits are in git history (`e42bf5d9a`,
+> `4f1f56707`, `5744641a4`, `0b15a346f`, `4736fe774`, `39c0714c4`, `4376a95ff`).
+> They are left unticked rather than back-filled, because what was verified
+> afterwards is that the commits exist — not that each step ran.
+>
+> **Task 4 shipped a defect.** It generalized the media box to
+> `piece.aspectRatio` and verified only that the inline style string read
+> `"4 / 3"`, which was true. Nothing measured a layout, so a 4:3 picture pushed
+> the band off the bottom of the screen — 0.4px on the living-room root — and the
+> collapse rule then deleted the listening ticker. The spec had flagged exactly
+> this ("must be confirmed against a real 4:3 render, not assumed") and it never
+> became a task; the only check that would have caught it was Task 10 Step 6, an
+> optional manual eyeball. Fixed and measured in
+> `docs/superpowers/plans/2026-09-17-drama-academy-layout.md`.
+
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add a `drama` surround domain (parallel to `classical`) so a stage
