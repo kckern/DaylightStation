@@ -59,10 +59,18 @@ const GROUPED_DATA = {
   ],
 };
 
-const renderCard = ({ data = FLAT_DATA, position = 0, logger = makeLogger() } = {}) => {
+const renderCard = ({
+  data = FLAT_DATA,
+  position = 0,
+  logger = makeLogger(),
+  // The region the definition placed this card in. Defaulted to the rail it
+  // has always rendered in, so every existing spec is unchanged; overridden
+  // by the specs that exercise a definition asking for identity only.
+  region = { module: 'play-card', width: '33%' },
+} = {}) => {
   const props = (p) => ({
     position: p, duration: 7567, playing: true, seeking: false,
-    data, region: { module: 'play-card', width: '33%' }, logger,
+    data, region, logger,
   });
   const view = render(<PlayCard {...props(position)} />);
   return { ...view, logger, at: (p) => view.rerender(<PlayCard {...props(p)} />) };
@@ -75,8 +83,39 @@ describe('PlayCard', () => {
   it('is registered under play-card, for the right rail', () => {
     expect(getSurroundRegistry().has('play-card')).toBe(true);
     expect(SURROUND_BUILTIN_MODULES).toContain('play-card');
-    expect(getSurroundRegistry().getMeta('play-card')).toEqual({ regions: ['right'] });
+    // THE RAIL IS WHAT THIS SPEC IS ABOUT, and that is all it should pin. The
+    // full slot declaration is asserted once, in `registry.test.js`, which owns
+    // it; restating the whole list here meant that every legitimate new
+    // placement — the card as a strip above or below the picture, say — broke a
+    // test about something else, in a file that has no opinion on the matter.
+    expect(getSurroundRegistry().getMeta('play-card').regions).toContain('right');
   });
+
+  /**
+   * IDENTITY ONLY - `facts: false` on the region.
+   *
+   * The card's rotating fact and the listening band's LEFT register draw from
+   * the same work-level pool, so a frame carrying both prints the same material
+   * twice. In a rail that must also hold a timeline and both registers, that
+   * duplication is what pushes the column over its height: the card measures
+   * 220px with its fact and about 130px without.
+   *
+   * The DEFINITION decides, exactly as it decides `orientation`. The card is
+   * told; it does not inspect its siblings to work out whether a ticker is
+   * showing facts elsewhere - a module that changes shape based on what else is
+   * mounted is the coupling this frame has spent its design avoiding.
+   */
+  it('renders identity only when the definition turns its facts off', () => {
+    const { container } = renderCard({ region: { module: 'play-card', facts: false } });
+    expect(container.querySelector('[data-testid="surround-play-header"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="surround-play-fact-zone"]')).toBeNull();
+  });
+
+  it('still shows the fact when the definition says nothing - every shipped rail today', () => {
+    const { container } = renderCard();
+    expect(container.querySelector('[data-testid="surround-play-fact-zone"]')).not.toBeNull();
+  });
+
 
   it('renders the play’s own identity — title, genre, setting', () => {
     const { container } = renderCard();

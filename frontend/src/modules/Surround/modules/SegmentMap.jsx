@@ -6,7 +6,7 @@
 // This is NOT a progress bar. It is set as the barline grammar of engraved music:
 // one hairline staff rule, one quiet separator between segments, each segment
 // proportional to that segment's real duration, names above the rule with the
-// tempo term in italic.
+// term term in italic.
 //
 // WHERE THE RULE SITS (design wave 4)
 // -----------------------------------
@@ -72,44 +72,49 @@ import './SegmentMap.scss';
 const EMPTY_GROUPS = Object.freeze([]);
 
 /**
- * A tempo marking is WORDS. Figures in a heading mean it is a title — a
+ * A TERM is WORDS. Figures in a heading mean it is a title — a
  * catalogue number, an opus, a key — and a title is set roman.
  *
  * The rule exists because the divider below is a heuristic and a heuristic needs
  * a guard. On a movement rail the last period genuinely divides a character
- * title from its tempo term; on a rail of WORKS it lands inside the catalogue
+ * title from its term term; on a rail of WORKS it lands inside the catalogue
  * number, and "No. 5 in F-sharp major, Op. 15 No. 2" was being set as the title
  * "No. 5 in F-sharp major, Op. 15 No." followed by an italic "2" — visible on
  * the office screen as a stray leaning figure at the end of every nocturne.
  */
-const tempoLike = (s) => /^[^0-9]+$/.test(s);
+const termLike = (s) => /^[^0-9]+$/.test(s);
 
 /**
- * Split an engraved segment heading into its title and its tempo marking.
- * "Marcia funebre. Adagio assai" -> { title: 'Marcia funebre.', tempo: 'Adagio assai' }
- * "Allegro con brio"            -> { title: null,               tempo: 'Allegro con brio' }
- * "No. 5 in F-sharp major, Op. 15 No. 2" -> { title: <the whole name>, tempo: null }
- * Scores set the tempo term in italic and any character title in roman; the last
- * period is the divider that convention uses, and `tempoLike` is what stops that
+ * Split a segment heading into its title and its TERM — the descriptive half,
+ * set in italic. In the classical corpus that term is a tempo marking ("Adagio
+ * assai") and this module was named after it; it is equally a stage direction
+ * or any other descriptor a corpus cares to author. The convention below is
+ * from engraved scores, which is where the italic comes from — the RULE is
+ * kept, the assumption that every corpus is music is not.
+ * "Marcia funebre. Adagio assai" -> { title: 'Marcia funebre.', term: 'Adagio assai' }
+ * "Allegro con brio"            -> { title: null,               term: 'Allegro con brio' }
+ * "No. 5 in F-sharp major, Op. 15 No. 2" -> { title: <the whole name>, term: null }
+ * Scores set the term term in italic and any character title in roman; the last
+ * period is the divider that convention uses, and `termLike` is what stops that
  * convention being applied to a string it was never about.
  */
 function splitHeading(name) {
   const text = String(name ?? '').trim();
-  if (!text) return { title: null, tempo: '' };
+  if (!text) return { title: null, term: '' };
   const cut = text.lastIndexOf('.');
   if (cut > 0 && cut < text.length - 1) {
     const head = text.slice(0, cut + 1).trim();
     const tail = text.slice(cut + 1).trim();
-    if (tempoLike(tail)) return { title: head, tempo: tail };
+    if (termLike(tail)) return { title: head, term: tail };
   }
   // No divider the convention covers: the whole heading is one thing, and which
   // thing it is decides the face it is set in.
-  return tempoLike(text) ? { title: null, tempo: text } : { title: text, tempo: null };
+  return termLike(text) ? { title: null, term: text } : { title: text, term: null };
 }
 
 const clamp01 = (n) => (n < 0 ? 0 : n > 1 ? 1 : n);
 
-const partDesignation = (title) => (title ?? '').split(/\s*[—–]\s*/)[0];
+const groupDesignation = (title) => (title ?? '').split(/\s*[—–]\s*/)[0];
 
 /**
  * THE FOUR FIELDS A SEGMENT AUTHORS, and what each one is FOR.
@@ -172,7 +177,7 @@ const RAIL_UNMEASURED = 0;
  */
 const UNMEASURED_RAIL = Object.freeze({
   chromePx: 0, needs: [], shortNeeds: [], labels: Object.freeze({}),
-  pillPx: 0, foldMinPx: 0, sceneTiers: Object.freeze({}),
+  pillPx: 0, foldMinPx: 0, innerTiers: Object.freeze({}),
 });
 
 export default function SegmentMap({
@@ -183,7 +188,6 @@ export default function SegmentMap({
   // eslint-disable-next-line no-unused-vars -- part of the fixed module contract
   seeking = false,
   data = null,
-  // eslint-disable-next-line no-unused-vars -- part of the fixed module contract
   region = null,
   logger = null,
 }) {
@@ -206,6 +210,17 @@ export default function SegmentMap({
   // with no names on the rule, the listening band is the only surface left
   // that can say what is sounding, so the NOW heading comes back on.
   const named = config.railDensity !== 'bars';
+  /**
+   * WHICH AXIS THIS RAIL RUNS ON — declared by the definition on the region,
+   * beside `width`, `side` and `height`, and defaulting to the band's own `row`.
+   *
+   * It is NOT derived from anything about the work. A picture narrower than the
+   * screen leaves width spare and no height to spare, so its frame puts the
+   * chrome beside the video and asks for a column; but that is the definition's
+   * decision to make, and a 16:9 work with a deep hierarchy may want the same
+   * thing. Nothing here reads the aspect ratio, the domain, or the corpus.
+   */
+  const orientation = region?.orientation === 'column' ? 'column' : 'row';
 
   // Memoized: the `[]` fallback would otherwise be a fresh array every render and
   // recompute `segments` on every 10 Hz tick.
@@ -393,9 +408,17 @@ export default function SegmentMap({
    * rail is past the threshold anyway; putting the gate on both paths would
    * change a behaviour nobody has reported against for no measured gain.
    */
+  // A COLUMN NEVER FOLDS. Folding buys horizontal room by elidinger outer groups
+  // into one marker, and a column has no shortage of width — it has a shortage of
+  // height, which a fold does not help. It also costs the thing the column is
+  // for: the whole work legible at once, in order. So the drawn rail is the
+  // placed rail there, and `segments`, `activeIndex` and the marks below all
+  // stay derived from one list rather than three that could disagree.
   const drawnRail = useMemo(
-    () => (nested ? collapseInactiveGroups(placedRail, { activeGroupIndex, depth: 0 }) : placedRail),
-    [nested, placedRail, activeGroupIndex],
+    () => (nested && orientation !== 'column'
+      ? collapseInactiveGroups(placedRail, { activeGroupIndex, depth: 0 })
+      : placedRail),
+    [nested, orientation, placedRail, activeGroupIndex],
   );
 
   const groups = useMemo(
@@ -587,7 +610,7 @@ export default function SegmentMap({
   // actually occupies — always 1 for an already-collapsed Part, never more.
   // Feeding the true count where an array bound is expected walks off the
   // fold's own position into whichever segments happen to sit after it.
-  const drawnPartGroups = useMemo(() => {
+  const drawnOuterGroups = useMemo(() => {
     if (!composed || groupLevels.length === 0) return EMPTY_GROUPS;
     if (!nested) return groupLevels[0];
     const runs = [];
@@ -624,32 +647,32 @@ export default function SegmentMap({
   // stamped back onto `count` for `folded`, below).
   const folds = useMemo(() => {
     if (nested) {
-      return drawnPartGroups.filter((run) => run.title && run.count > 1
+      return drawnOuterGroups.filter((run) => run.title && run.count > 1
         && drawnRail[run.from]?.segment?.collapsed);
     }
     if (!foldsForRoom) return EMPTY_GROUPS;
-    return railFolds({ groups: drawnPartGroups, activeIndex })
+    return railFolds({ groups: drawnOuterGroups, activeIndex })
       .map((f) => ({ ...f, slots: f.count }));
-  }, [nested, drawnPartGroups, drawnRail, activeIndex, foldsForRoom]);
+  }, [nested, drawnOuterGroups, drawnRail, activeIndex, foldsForRoom]);
 
   // ---- WHICH SCENE IS SOUNDING (for the inner heading row) ------------------
   // The scene level is groupLevels[1] when there are two+ levels. The active
   // scene is the run whose segment range contains the active segment index —
   // within the DRAWN rail, not the full rail, because collapsed parts have been
   // replaced by one-segment folds.
-  const drawnSceneGroups = useMemo(() => {
+  const drawnInnerGroups = useMemo(() => {
     if (groupLevels.length < 2 || !nested) return EMPTY_GROUPS;
     return railGroups(drawnRail, (segment) => segment?.ancestors?.[1] ?? null);
   }, [groupLevels.length, nested, drawnRail]);
-  const activeSceneIndex = useMemo(() => {
-    if (!drawnSceneGroups.length || activeIndex < 0) return -1;
-    for (const run of drawnSceneGroups) {
+  const activeInnerIndex = useMemo(() => {
+    if (!drawnInnerGroups.length || activeIndex < 0) return -1;
+    for (const run of drawnInnerGroups) {
       if (activeIndex >= run.from && activeIndex < run.from + run.count) {
         return run.index ?? -1;
       }
     }
     return -1;
-  }, [drawnSceneGroups, activeIndex]);
+  }, [drawnInnerGroups, activeIndex]);
 
   // HOW MANY SCENES EACH FOLD COVERS. On a flat (non-nested) rail this walks
   // the drawn rail across the fold's own slots, because every scene is still
@@ -661,17 +684,17 @@ export default function SegmentMap({
   // `groupLevels`, which are both anchored to `placedRail`'s OWN coordinate
   // space and so never mismatch each other — matched to this fold by its
   // stable semantic `index`, not by any position.
-  const foldSceneCounts = useMemo(() => {
+  const foldInnerCounts = useMemo(() => {
     if (!folds.length || groupLevels.length < 2) return new Map();
     const counts = new Map();
     if (nested) {
-      const fullParts = groupLevels[0];
-      const fullScenes = groupLevels[1];
+      const fullOuter = groupLevels[0];
+      const fullInner = groupLevels[1];
       folds.forEach((fold) => {
-        const part = fullParts.find((p) => p.index === fold.index);
+        const part = fullOuter.find((p) => p.index === fold.index);
         if (!part) { counts.set(fold.index, 0); return; }
         let n = 0;
-        for (const scene of fullScenes) {
+        for (const scene of fullInner) {
           if (scene.from >= part.from && scene.from < part.from + part.count) n += 1;
         }
         counts.set(fold.index, n);
@@ -681,8 +704,8 @@ export default function SegmentMap({
     folds.forEach((fold) => {
       const scenes = new Set();
       for (let i = fold.from; i < fold.from + fold.slots; i += 1) {
-        const sceneIdx = drawnRail[i]?.segment?.ancestors?.[1]?.index;
-        if (sceneIdx != null) scenes.add(sceneIdx);
+        const innerIdx = drawnRail[i]?.segment?.ancestors?.[1]?.index;
+        if (innerIdx != null) scenes.add(innerIdx);
       }
       counts.set(fold.index, scenes.size);
     });
@@ -770,7 +793,7 @@ export default function SegmentMap({
       return heading.getBoundingClientRect().width;
     });
     const needs = segments.map((seg) => {
-      const { title, tempo } = splitHeading(seg.label);
+      const { title, term } = splitHeading(seg.label);
       // The heading is two spans with a margin between them, exactly as the
       // segment sets it — a probe holding one concatenated string would measure
       // a narrower line than the rail paints.
@@ -781,10 +804,10 @@ export default function SegmentMap({
         t.textContent = title;
         heading.appendChild(t);
       }
-      if (tempo) {
+      if (term) {
         const t = document.createElement('span');
-        t.className = 'surround-segment-map__tempo';
-        t.textContent = tempo;
+        t.className = 'surround-segment-map__term';
+        t.textContent = term;
         heading.appendChild(t);
       }
       gloss.textContent = seg.annotation ?? '';
@@ -806,8 +829,8 @@ export default function SegmentMap({
     const labelProbe = probe.querySelector('.surround-segment-map__group');
     const pillProbe = probe.querySelector('.surround-segment-map__fold-count');
     // The most scenes any one Part of this work holds — the second number the
-    // badge can ever set. Same pre-collapse source `foldSceneCounts` reads.
-    const widestSceneCount = (nested && groupLevels.length > 1)
+    // badge can ever set. Same pre-collapse source `foldInnerCounts` reads.
+    const widestInnerCount = (nested && groupLevels.length > 1)
       ? groupLevels[0].reduce((max, part) => {
         let n = 0;
         for (const scene of groupLevels[1]) {
@@ -820,8 +843,8 @@ export default function SegmentMap({
     let pillPx = 0;
     let foldMinPx = 0;
     if (labelProbe && pillProbe) {
-      drawnPartGroups.forEach((run) => {
-        const short = partDesignation(run.title);
+      drawnOuterGroups.forEach((run) => {
+        const short = groupDesignation(run.title);
         if (short && labels[short] === undefined) {
           labelProbe.textContent = short;
           labels[short] = labelProbe.getBoundingClientRect().width;
@@ -832,7 +855,7 @@ export default function SegmentMap({
         }
       });
       labelProbe.textContent = '';
-      const widest = drawnPartGroups.reduce((max, run) => Math.max(max, run.count), 0);
+      const widest = drawnOuterGroups.reduce((max, run) => Math.max(max, run.count), 0);
       // THE BADGE IS MEASURED AS THE RAIL PAINTS IT — BOTH numbers and the rule
       // between them. The probe used to set only the segment count, so every
       // fold on a nested work was sized for a badge narrower than its own, and
@@ -846,10 +869,10 @@ export default function SegmentMap({
       segs.className = 'surround-segment-map__fold-segments';
       segs.textContent = String(widest || 0);
       pillProbe.appendChild(segs);
-      if (widestSceneCount > 0) {
+      if (widestInnerCount > 0) {
         const scenes = document.createElement('span');
-        scenes.className = 'surround-segment-map__fold-scenes';
-        scenes.textContent = String(widestSceneCount);
+        scenes.className = 'surround-segment-map__fold-groups';
+        scenes.textContent = String(widestInnerCount);
         pillProbe.appendChild(scenes);
       }
       pillPx = pillProbe.getBoundingClientRect().width;
@@ -857,8 +880,8 @@ export default function SegmentMap({
       // The fold needs enough width for whichever is wider: its Part label
       // or its badge pill. This is the measured minimum — no fold may be
       // narrower than this, and no fold needs to be wider.
-      const designationWidths = drawnPartGroups
-        .map((run) => labels[run.mini ?? partDesignation(run.title)] ?? 0);
+      const designationWidths = drawnOuterGroups
+        .map((run) => labels[run.mini ?? groupDesignation(run.title)] ?? 0);
       const widestDesignation = Math.max(0, ...designationWidths);
       const groupPad = labelProbe ? parseFloat(getComputedStyle(labelProbe).paddingLeft) + parseFloat(getComputedStyle(labelProbe).paddingRight) : 16;
       foldMinPx = foldWidthPx({ labelPx: widestDesignation + groupPad, pillPx });
@@ -866,10 +889,10 @@ export default function SegmentMap({
 
     // SCENE LABEL WIDTHS — measured so the render can decide full-title vs
     // numeral-only without ever showing an ellipsis.
-    const sceneTiers = {};
+    const innerTiers = {};
     if (labelProbe) {
-      drawnSceneGroups.forEach((run) => {
-        if (sceneTiers[run.index] !== undefined) return;
+      drawnInnerGroups.forEach((run) => {
+        if (innerTiers[run.index] !== undefined) return;
         const measure = (text) => {
           labelProbe.textContent = text;
           return labelProbe.getBoundingClientRect().width;
@@ -878,13 +901,13 @@ export default function SegmentMap({
         const markW = measure(markText);
         const miniW = run.mini ? measure(`${markText} ${run.mini}`) : 0;
         const fullW = run.title ? measure(`${markText} ${run.title}`) : 0;
-        sceneTiers[run.index] = { markW, miniW, fullW };
+        innerTiers[run.index] = { markW, miniW, fullW };
       });
       labelProbe.textContent = '';
     }
 
-    setMetrics({ chromePx, needs, shortNeeds, labels, pillPx, foldMinPx, sceneTiers });
-  }, [named, segments, drawnPartGroups, drawnSceneGroups, nested, groupLevels]);
+    setMetrics({ chromePx, needs, shortNeeds, labels, pillPx, foldMinPx, innerTiers });
+  }, [named, segments, drawnOuterGroups, drawnInnerGroups, nested, groupLevels]);
 
   useLayoutEffect(() => { measureRail(); }, [measureRail, fontsTick]);
 
@@ -923,7 +946,7 @@ export default function SegmentMap({
     const hidden = new Set();
     folds.forEach((fold) => {
       const width = foldWidthPx({
-        labelPx: metrics.labels?.[partDesignation(fold.title)] ?? 0,
+        labelPx: metrics.labels?.[groupDesignation(fold.title)] ?? 0,
         pillPx: metrics.pillPx ?? 0,
       });
       // NOT MEASURED IS NOT FOLDED. Before the faces land there is no honest
@@ -977,7 +1000,7 @@ export default function SegmentMap({
       widths: [...folded.blocks.values()].map((f) => ({
         title: f.title,
         count: f.count,
-        labelPx: Math.round(metrics.labels?.[partDesignation(f.title)] ?? 0),
+        labelPx: Math.round(metrics.labels?.[groupDesignation(f.title)] ?? 0),
       })),
     });
   }, [folds, folded, segments.length, metrics, contentId, log]);
@@ -1257,6 +1280,87 @@ export default function SegmentMap({
     (max, seg, i) => Math.max(max, numeral(seg.n, i, style).length), 1,
   );
 
+  /* ------------------------------------------------------------------------ */
+  /* THE VERTICAL AXIS                                                         */
+  /* ------------------------------------------------------------------------ */
+  /**
+   * Everything below this point is the horizontal rail: a numeral gutter sized
+   * once per rail, an eased share vector, the accordion, and a bond that welds
+   * the sounding segment to the register beneath it. None of it exists on a
+   * column, so the column RETURNS HERE rather than threading an orientation
+   * through five hundred lines of geometry that would each have to grow a
+   * branch. The horizontal path below is byte-identical to what it was.
+   */
+  if (orientation === 'column') {
+    // EQUAL ROWS, and that is the load-bearing decision. Duration-proportional
+    // rows would give a long scene a tall block and a short one a sliver too
+    // small to set its own name in — the horizontal rail can afford proportion
+    // precisely because a narrow segment still gets a full line of HEIGHT.
+    // Progress therefore lives on the spine, in ROW space.
+    const rowShares = segments.map(() => 1 / segments.length);
+    // The same function the horizontal playhead uses, with the same meaning:
+    // every elapsed row's share, plus the fraction through the sounding one.
+    const head = playheadFraction({ segments, shares: rowShares, position: railPosition, end });
+
+    // THE OUTER GROUP RIDES IN THE MARK. A heading row per group costs ~100px of
+    // a ~260px rail — the difference between eleven legible rows and thirteen-
+    // pixel ones — and `I.1` says the same thing inside the gutter the numeral
+    // already owns. This COUNTS the levels; the corpus names them, and no name
+    // is read here.
+    const outerAt = (i) => drawnRail[i]?.segment?.ancestors?.[0] ?? null;
+    const marks = segments.map((seg, i) => {
+      const outer = outerAt(i);
+      // A flat work (no groups) keeps the rail's own notation, unchanged.
+      if (!outer) return numeral(seg.n, i, style);
+      const seen = new Set();
+      let within = 0;
+      for (let j = 0; j <= i; j += 1) {
+        const at = outerAt(j);
+        if (at?.index == null) continue;
+        seen.add(at.index);
+        within = at.index === outer.index ? within + 1 : within;
+      }
+      const rank = seen.size;
+      return `${ROMAN[rank] ?? String(rank)}.${within}`;
+    });
+
+    return (
+      <div
+        ref={ruleClickRef}
+        className="surround-segment-map surround-segment-map--column"
+        data-testid="surround-segment-column"
+        data-density="rows"
+        data-rows={segments.length}
+      >
+        {/* The staff rule, turned ninety degrees: one hairline down the gutter,
+            lit to the playhead and hairline beyond it. It sits on the side the
+            picture is on, so the timeline reads as the picture's own edge rather
+            than as furniture beside it — the same law that puts the horizontal
+            rule tight against the video's foot. */}
+        <span
+          className="surround-segment-map__spine"
+          data-testid="surround-spine"
+          style={{ '--head': String(head) }}
+          aria-hidden="true"
+        />
+        <ol className="surround-segment-map__rows">
+          {segments.map((seg, i) => (
+            <li
+              key={`${seg.contentId ?? 'row'}:${i}`}
+              className="surround-segment-map__row"
+              data-testid="surround-segment-row"
+              data-state={i === activeIndex ? 'sounding' : (activeIndex >= 0 && i < activeIndex ? 'played' : 'ahead')}
+              onClick={() => seekTo(seg.mediaStart ?? seg.start ?? 0, seg.contentId)}
+            >
+              <span className="surround-segment-map__row-mark" data-testid="surround-row-mark">{marks[i]}</span>
+              <span className="surround-segment-map__row-label">{seg.label}</span>
+            </li>
+          ))}
+        </ol>
+      </div>
+    );
+  }
+
   const headPct = playheadFraction({ segments, shares, position: railPosition, end }) * 100;
 
   return (
@@ -1269,7 +1373,7 @@ export default function SegmentMap({
       data-grouped={grouped ? 'true' : 'false'}
       style={{
         '--numeral-chars': String(numeralChars),
-        ...(grouped ? { '--group-rows': `calc(var(--group-row) * ${(drawnPartGroups.length > 0 ? 1 : 0) + (drawnSceneGroups.length > 0 ? 1 : 0)})` } : {}),
+        ...(grouped ? { '--group-rows': `calc(var(--group-row) * ${(drawnOuterGroups.length > 0 ? 1 : 0) + (drawnInnerGroups.length > 0 ? 1 : 0)})` } : {}),
         '--accordion-ms': `${ACCORDION_MS}ms`,
         // The cursor's own smoothing. 120ms of linear ramp is one transport
         // tick and is what turns the 10 Hz position steps into a glide — but
@@ -1294,71 +1398,75 @@ export default function SegmentMap({
           The labels are `aria-hidden` for the same reason the rest of the rail's
           chrome is: this is a decorative restatement of the placard above, and a
           screen reader walking it would read every set title twice. */}
-      {/* LEVEL 0: Part headings — designation only ("Part One"). */}
-      {drawnPartGroups.length > 0 && (
+      {/* LEVEL 0: the OUTERMOST authored group, designation only. What that
+          level is CALLED is the corpus's business — "Part One" in an oratorio,
+          "Act I" in a play, an opus in a recital. This row only knows it is
+          level 0, and never reads the name. */}
+      {drawnOuterGroups.length > 0 && (
         <div
           className="surround-segment-map__groups"
-          data-testid={groupLevels.length > 1 ? 'surround-part-groups' : 'surround-segment-groups'}
+          data-testid={groupLevels.length > 1 ? 'surround-outer-groups' : 'surround-segment-groups'}
           data-level={0}
           aria-hidden="true"
         >
-          {drawnPartGroups.map((group) => {
-            let partLabel = group.title ?? '';
+          {drawnOuterGroups.map((group) => {
+            let groupLabel = group.title ?? '';
             if (groupLevels.length > 1) {
               const availPx = groupBasis(group) * railPx;
               const fullText = group.title ?? '';
-              const miniText = group.mini ?? partDesignation(group.title);
+              const miniText = group.mini ?? groupDesignation(group.title);
               const fullLabelPx = metrics.labels?.[fullText] ?? Infinity;
               const miniLabelPx = metrics.labels?.[miniText] ?? 0;
               const pad = 8;
-              partLabel = fullLabelPx + pad <= availPx ? fullText
+              groupLabel = fullLabelPx + pad <= availPx ? fullText
                 : miniLabelPx + pad <= availPx ? miniText : '';
             }
             return (
             <span
               key={`${group.index ?? 'none'}:${group.from}`}
-              className={`surround-segment-map__group surround-segment-map__group--clickable${groupLevels.length > 1 ? ' surround-segment-map__group--part' : ''}`}
-              data-testid={groupLevels.length > 1 ? 'surround-part-group-label' : 'surround-group-label'}
+              className={`surround-segment-map__group surround-segment-map__group--clickable${groupLevels.length > 1 ? ' surround-segment-map__group--outer' : ''}`}
+              data-testid={groupLevels.length > 1 ? 'surround-outer-group-label' : 'surround-group-label'}
               data-span={group.count}
               onClick={() => seekTo(segments[group.from]?.mediaStart ?? segments[group.from]?.start ?? 0, segments[group.from]?.contentId)}
               style={{ flexBasis: `${groupBasis(group) * 100}%` }}
             >
-              {partLabel}
+              {groupLabel}
             </span>
             );
           })}
         </div>
       )}
-      {/* LEVEL 1+: Scene headings on the DRAWN rail. The active scene shows
-          its full title; other scenes in the active part show a Roman numeral;
-          scenes inside collapsed parts are empty (the fold badge carries the
-          scene count instead). */}
-      {drawnSceneGroups.length > 0 && (
+      {/* LEVEL 1+: the next authored group down, on the DRAWN rail. The active
+          one shows its full title; its siblings under the same outer group show
+          a Roman numeral; those inside a collapsed outer group are empty (the
+          fold badge carries their count instead). The corpus names these —
+          Scene, Dance, Number — and nothing here reads that name. */}
+      {drawnInnerGroups.length > 0 && (
         <div
           className="surround-segment-map__groups"
           data-testid="surround-segment-groups"
           data-level={1}
           aria-hidden="true"
         >
-          {drawnSceneGroups.map((group) => {
-            const isActive = group.index === activeSceneIndex;
+          {drawnInnerGroups.map((group) => {
+            const isActive = group.index === activeInnerIndex;
             const isCollapsed = segments[group.from]?.collapsed;
-            // The ordinal is the scene's position within its Part, not its
-            // position in the drawn run array (which shifts when Parts fold).
-            // Find the scene's Part, then count which scene within that Part.
-            const partIdx = drawnRail[group.from]?.segment?.ancestors?.[0]?.index;
-            const partScenes = groupLevels.length > 1
+            // The ordinal is this group's position within its OUTER group, not
+            // its position in the drawn run array (which shifts when outer groups
+            // fold). Find the outer group, then count position within it.
+            const outerIdx = drawnRail[group.from]?.segment?.ancestors?.[0]?.index;
+            const siblingInnerGroups = groupLevels.length > 1
               ? groupLevels[1].filter((s) => {
                   const si = placedRail[s.from]?.segment?.ancestors?.[0]?.index;
-                  return si === partIdx;
+                  return si === outerIdx;
                 })
               : [];
-            const ordinal = partScenes.findIndex((s) => s.index === group.index) + 1;
+            const ordinal = siblingInnerGroups.findIndex((s) => s.index === group.index) + 1;
             const mark = ROMAN[ordinal] ?? String(ordinal);
             let label = '';
             if (!isCollapsed) {
               const availPx = groupBasis(group) * railPx;
-              const tier = metrics.sceneTiers?.[group.index];
+              const tier = metrics.innerTiers?.[group.index];
               const pad = 8;
               if (group.title && tier?.fullW && tier.fullW + pad <= availPx) {
                 label = `${mark} ${group.title}`;
@@ -1387,7 +1495,7 @@ export default function SegmentMap({
         {/* THE RULER (the same idiom `CueTicker` measures its prose with). One
             element per rail, out of flow and invisible, carrying the segment
             row's real structure — the numeral's gutter, the text column, the
-            heading with its title/tempo spans, the gloss in the annotation face
+            heading with its title/term spans, the gloss in the annotation face
             — so what it reports is what the rail paints and not an arithmetic
             model of it.
             IT IS A RULER, NOT HIDDEN TEXT. It holds one segment's strings at a
@@ -1410,7 +1518,7 @@ export default function SegmentMap({
                 <span className="surround-segment-map__translation" />
               </span>
             </span>
-            {/* THE FOLD'S TWO RULERS (design wave 10). A part label as the
+            {/* THE FOLD'S TWO RULERS (design wave 10). A group label as the
                 groups row actually sets it — its own face, size and inline
                 padding — and the count badge as the fold actually sets it. A
                 fold is exactly as wide as the wider of them, so both have to be
@@ -1490,8 +1598,8 @@ export default function SegmentMap({
 
           // ---- THE FOLD'S BLOCK (design wave 10) ---------------------------
           // One elided run, drawn as one box: the rule and its fill above (a
-          // folded part is wholly elapsed or wholly future, never split — it is
-          // by definition not the part the playhead is in), a hatched lane on
+          // folded group is wholly elapsed or wholly future, never split — it is
+          // by definition not the group the playhead is in), a hatched lane on
           // the numerals' own line, and the count as a BADGE.
           //
           // THE BADGE IS NOT A NUMERAL, and the two signals that say so are
@@ -1535,9 +1643,9 @@ export default function SegmentMap({
                     data-testid="surround-fold-count"
                   >
                     <span className="surround-segment-map__fold-segments">{fold.count}</span>
-                    {foldSceneCounts.get(fold.index) > 0 && (
-                      <span className="surround-segment-map__fold-scenes">
-                        {foldSceneCounts.get(fold.index)}
+                    {foldInnerCounts.get(fold.index) > 0 && (
+                      <span className="surround-segment-map__fold-groups">
+                        {foldInnerCounts.get(fold.index)}
                       </span>
                     )}
                   </span>
@@ -1546,7 +1654,7 @@ export default function SegmentMap({
             );
           }
 
-          const { title, tempo } = splitHeading(seg.label);
+          const { title, term } = splitHeading(seg.label);
           // How much of THIS segment has sounded. Elapsed segments read full,
           // future ones empty, and the sounding one sweeps — that sweep is where
           // the viewer reads progress now. It is a fraction of the SEGMENT, so
@@ -1608,7 +1716,7 @@ export default function SegmentMap({
                   named one and buy nothing.
                   A CHIPPED rail omits it for every segment but the sounding one,
                   for the same reason and one step further — see the chip. */}
-              {/* A FOLD IS NOT A CHIP. It was given its Part title's width
+              {/* A FOLD IS NOT A CHIP. It was given its outer group title's width
                   (`densityShares`), so it sets that title — the whole reason a
                   fold is wider than its neighbours. A numeral here was the old
                   bug in a new place: a chip reading "1" over twenty-one
@@ -1616,14 +1724,14 @@ export default function SegmentMap({
                   the one thing the title alone cannot say.
 
                   TWO NUMBERS, ONE PILL, A DRAWN DIVIDER. The pair used to be a
-                  count, a slash glyph and a scene count inside a `display: grid`
+                  count, a slash glyph and an inner-group count inside a `display: grid`
                   chip — and a grid puts each of its children in its OWN ROW, so
                   what the band actually painted was "23" stacked over "/17" in a
                   fold two lines tall. Each number is its own element now, in an
                   inline row, separated by a rule the stylesheet draws rather
                   than by a character that has to be laid out. */}
               {named && chips && state !== 'active' && seg.collapsed && (() => {
-                const sc = foldSceneCounts.get(drawnRail[i]?.segment?.ancestors?.[0]?.index);
+                const sc = foldInnerCounts.get(drawnRail[i]?.segment?.ancestors?.[0]?.index);
                 return (
                   <span
                     className="surround-segment-map__chip surround-segment-map__chip--fold"
@@ -1631,7 +1739,7 @@ export default function SegmentMap({
                     aria-hidden="true"
                   >
                     <span className="surround-segment-map__fold-segments">{seg.count > 0 ? seg.count : ''}</span>
-                    {sc > 0 && <span className="surround-segment-map__fold-scenes">{sc}</span>}
+                    {sc > 0 && <span className="surround-segment-map__fold-groups">{sc}</span>}
                   </span>
                 );
               })()}
@@ -1668,7 +1776,7 @@ export default function SegmentMap({
                   <>
                   <span className="surround-segment-map__heading">
                     {title && <span className="surround-segment-map__title">{title}</span>}
-                    {tempo && <span className="surround-segment-map__tempo">{tempo}</span>}
+                    {term && <span className="surround-segment-map__term">{term}</span>}
                   </span>
                   {/* THE ANNOTATION (design wave 6). A recessive sub-line under
                       the heading, in the annotation face — sans, not Garamond —

@@ -46,13 +46,28 @@ export default function PlayCard({
   // eslint-disable-next-line no-unused-vars
   seeking = false,
   data = null,
-  // eslint-disable-next-line no-unused-vars
   region = null,
   logger = null,
 }) {
   const log = useMemo(() => surroundLogger(logger, 'play-card'), [logger]);
   const contentId = data?.contentId ?? null;
   const piece = data?.piece ?? null;
+  /**
+   * DOES THIS CARD CARRY ITS ROTATING FACT?
+   *
+   * Declared by the definition on the region, exactly as `orientation` is. The
+   * card's fact and the listening band's LEFT register draw from the same
+   * work-level pool, so a frame mounting both prints the same material twice —
+   * and in a rail that must also hold a timeline and both registers, that
+   * duplication is what puts the column over its height: measured, the card is
+   * 220px with its fact and about 130px without.
+   *
+   * The card is TOLD. It does not inspect what else is mounted to work out
+   * whether a ticker is showing facts elsewhere — a module that changes shape
+   * because of its siblings is the coupling this frame has spent its whole
+   * design avoiding, and I made exactly that mistake once in this rail already.
+   */
+  const showFacts = region?.facts !== false;
 
   // Same gate CueTicker's LEFT zone uses: scope by the sounding segment only
   // when the rail actually carries hierarchy (a group-authored work), so a
@@ -100,7 +115,7 @@ export default function PlayCard({
 
   // NULL DISCIPLINE, same law every sibling module keeps: nothing worth
   // showing renders nothing, not an empty panel the viewer has to look at.
-  if (!hasIdentity && !shownFact.text) return null;
+  if (!hasIdentity && !(showFacts && shownFact.text)) return null;
 
   return (
     <div className="surround-play-card" data-testid="surround-play-card">
@@ -111,7 +126,7 @@ export default function PlayCard({
           {setting && <p className="surround-play-card__setting">{setting}</p>}
         </div>
       )}
-      {shownFact.text && (
+      {showFacts && shownFact.text && (
         <div className="surround-play-card__fact-zone" data-testid="surround-play-fact-zone">
           <hr className="surround-play-card__fact-rule" />
           <p
