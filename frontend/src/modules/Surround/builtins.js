@@ -25,6 +25,7 @@ import CueTicker from './modules/CueTicker.jsx';
 import ComposerCard from './modules/ComposerCard.jsx';
 import CountryMapModule from './modules/CountryMapModule.jsx';
 import PlaceCarousel from './modules/PlaceCarousel.jsx';
+import PlayCard from './modules/PlayCard.jsx';
 import WorkPlacard from './modules/WorkPlacard.jsx';
 import ScriptRail from './modules/ScriptRail.jsx';
 
@@ -40,6 +41,7 @@ const BUILTIN_MODULES = [
   ['composer-card', ComposerCard, { regions: ['right'] }],
   ['country-map', CountryMapModule, { regions: ['right', 'bottom'] }],
   ['place-carousel', PlaceCarousel, { regions: ['right'] }],
+  ['play-card', PlayCard, { regions: ['right'] }],
   ['work-placard', WorkPlacard, { regions: ['top'] }],
   // The lyric rail. `lyric` is its OWN slot, not `right`: the frame renders
   // exactly one of the two, and declaring it as a right-hand module would
