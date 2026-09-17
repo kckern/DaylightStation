@@ -747,11 +747,16 @@ async function layout(page, css, { width, height, data = EROICA, position = POSI
       }
     }
   }, {
-    footerFloor: DEFINITION.collapse.footerFloor,
-    // The reserve defaults to the collapse floor, exactly as `SurroundFrame`
-    // resolves it — so the harness and the component cannot disagree about how
-    // much of the column the band is owed.
-    mediaReserve: DEFINITION.collapse.mediaReserve ?? DEFINITION.collapse.footerFloor,
+    // THE PAYLOAD'S OWN DEFINITION, never the module-level constant. `layout()`
+    // renders whatever definition the data carries, so reading the fixture's
+    // concert-hall shape here would emulate a frame this page is not showing —
+    // and a definition that reserves nothing under its picture (a rail-carried
+    // layout) would be measured as though it reserved ninety pixels, which is
+    // geometry the real frame would never draw.
+    footerFloor: data.definition?.collapse?.footerFloor ?? DEFINITION.collapse.footerFloor,
+    mediaReserve: data.definition?.collapse?.mediaReserve
+      ?? data.definition?.collapse?.footerFloor
+      ?? DEFINITION.collapse.footerFloor,
     labelFloorCss: labelFloor,
   });
 
@@ -3224,5 +3229,108 @@ describe('a corpus-declared 4:3 picture, measured', () => {
       b.stage.h,
       `the stage is ${b.stage.h}px inside a ${b.main.h}px column — it has overflowed, and the band is what falls off the bottom`,
     ).toBeLessThanOrEqual(b.main.h);
+  }, 120000);
+});
+
+
+/* -------------------------------------------------------------------------- */
+/* THE RAIL-CARRIED LAYOUT                                                     */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * `playhouse-rail`: the chrome beside the picture rather than under it.
+ *
+ * A 4:3 picture in a 16:9 frame wastes WIDTH and has no height to spare, so its
+ * definition moves identity, the timeline and both registers into one wide rail
+ * and reserves nothing under the video. These are the properties that layout
+ * claims, measured against the compiled stylesheet at every root in the fleet —
+ * not the numbers I expect, which is why each assertion is a relation (the
+ * picture fills its column, the rail is on the right) rather than a pixel count
+ * that would only be true on one screen.
+ */
+describe('the rail-carried layout, measured', () => {
+  let browser;
+  let css;
+
+  beforeAll(async () => {
+    css = await compileSheet();
+    const { chromium } = await import('playwright');
+    browser = await chromium.launch();
+  }, 120000);
+
+  afterAll(async () => { await browser?.close(); });
+
+  const RAIL_DEFINITION = Object.freeze({
+    regions: {
+      top: { module: 'work-placard' },
+      right: [
+        { module: 'play-card', width: '40%' },
+        { module: 'segment-map', orientation: 'column', height: 'fill' },
+        { module: 'cue-ticker', orientation: 'column' },
+      ],
+    },
+    collapse: { footerFloor: 90, mediaReserve: 0 },
+  });
+
+  /** The Eroica in Academy ratio, wearing the rail-carried definition. */
+  const RAIL = Object.freeze({
+    ...EROICA_FULL,
+    definition: RAIL_DEFINITION,
+    piece: { ...EROICA_FULL.piece, aspectRatio: '4 / 3' },
+  });
+
+  const geometry = async (page) => page.evaluate(() => {
+    const box = (sel) => {
+      const el = document.querySelector(sel);
+      if (!el) return null;
+      const b = el.getBoundingClientRect();
+      return { w: +b.width.toFixed(1), h: +b.height.toFixed(1), x: +b.x.toFixed(1) };
+    };
+    return {
+      frame: box('[data-testid="surround-frame"]'),
+      main: box('.surround-frame__main'),
+      media: box('[data-testid="surround-media"]'),
+      rail: box('[data-testid="surround-rail"]'),
+      footer: box('[data-testid="surround-footer"]'),
+      regions: [...document.querySelectorAll('.surround-frame__region--right')]
+        .map((el) => ({ module: el.dataset.module, h: Math.round(el.getBoundingClientRect().height) })),
+    };
+  });
+
+  it.each(FLEET)('$name — the picture keeps 4:3 and takes the whole column', async ({ width, height }) => {
+    const page = await browser.newPage({ deviceScaleFactor: 1 });
+    await layout(page, css, { width, height, data: RAIL });
+    const g = await geometry(page);
+    await page.close();
+
+    expect(g.media.w / g.media.h, 'the picture is not 4:3').toBeCloseTo(4 / 3, 2);
+    // Nothing is reserved under it, so the cap resolves past the column and the
+    // media box takes min(100%, cap) = the column.
+    expect(g.media.w, `picture ${g.media.w} in a ${g.main.w} column`).toBeGreaterThanOrEqual(g.main.w - 2);
+    expect(g.main.h, 'the stage overflowed its column').toBeGreaterThanOrEqual(g.media.h);
+  }, 120000);
+
+  it.each(FLEET)('$name — there is no band under the picture', async ({ width, height }) => {
+    const page = await browser.newPage({ deviceScaleFactor: 1 });
+    await layout(page, css, { width, height, data: RAIL });
+    const g = await geometry(page);
+    await page.close();
+    expect(g.footer, 'a band rendered in a layout that authors no bottom region').toBeNull();
+  }, 120000);
+
+  it.each(FLEET)('$name — the rail sits on the right and carries three live regions', async ({ width, height }) => {
+    const page = await browser.newPage({ deviceScaleFactor: 1 });
+    await layout(page, css, { width, height, data: RAIL });
+    const g = await geometry(page);
+    await page.close();
+
+    expect(g.rail, 'no rail rendered').not.toBeNull();
+    // `side` is unauthored, and the frame's default is right — so the video is
+    // flush left and the timeline's spine lies against the picture.
+    expect(g.rail.x, 'the rail is not on the right').toBeGreaterThan(g.frame.w / 2);
+    expect(g.regions).toHaveLength(3);
+    g.regions.forEach(({ module, h }) => {
+      expect(h, `${module} collapsed to ${h}px in the rail`).toBeGreaterThan(30);
+    });
   }, 120000);
 });
