@@ -234,7 +234,8 @@ function LocationProbe() {
 }
 
 function renderGate({
-  learnerId = 'kid1', gateConfig = CONFIG, gameLabel = 'Tetris', onPassed = vi.fn(), onLeave = vi.fn(),
+  learnerId = 'kid1', gateConfig = CONFIG, gameLabel = 'Tetris', gameId = null,
+  onPassed = vi.fn(), onLeave = vi.fn(),
 } = {}) {
   const utils = render(
     <MemoryRouter initialEntries={['/piano/games/tetris']}>
@@ -247,6 +248,7 @@ function renderGate({
               learnerId={learnerId}
               gateConfig={gateConfig}
               gameLabel={gameLabel}
+              gameId={gameId}
               onPassed={onPassed}
               onLeave={onLeave}
             />
@@ -332,6 +334,7 @@ describe('GameGate — contract 1: the level persists per learner', () => {
     ];
     const fresh = {
       levelId: startLevelFor(LEVELS, CONFIG).id, failuresAtLevel: 0, cleanPasses: 0, lastMaterialId: null, pickIndex: 0,
+      earnedGame: null,
     };
     for (const value of corrupt) {
       seedGateState('kid1', value);
@@ -341,7 +344,9 @@ describe('GameGate — contract 1: the level persists per learner', () => {
     // …and a well-formed value survives untouched.
     const stored = { levelId: 'L2', failuresAtLevel: 2, cleanPasses: 1, lastMaterialId: 'exercise|scales|G|right|', pickIndex: 5 };
     seedGateState('kid1', stored);
-    expect(stateFor('kid1')).toEqual(stored);
+    // An unspent match is part of the stored shape now; a value written without
+    // one simply has none.
+    expect(stateFor('kid1')).toEqual({ ...stored, earnedGame: null });
   });
 
   it('zeroes a damaged pickIndex but KEEPS the level the child earned', () => {
@@ -354,6 +359,7 @@ describe('GameGate — contract 1: the level persists per learner', () => {
       });
       expect(stateFor('kid1'), String(pickIndex)).toEqual({
         levelId: 'L2', failuresAtLevel: 2, cleanPasses: 1, lastMaterialId: null, pickIndex: 0,
+        earnedGame: null,
       });
     }
   });
@@ -371,6 +377,7 @@ describe('GameGate — contract 1: the level persists per learner', () => {
 
     expect(stateFor('user_4', config)).toEqual({
       levelId: 'L1', failuresAtLevel: 0, cleanPasses: 0, lastMaterialId: null, pickIndex: 0,
+      earnedGame: null,
       stateVersion: 'piano-challenge-sp4',
     });
   });
@@ -1641,5 +1648,66 @@ describe('GameGate — the three-by-three drill', () => {
     expect(eventNamed('gate.material-config-invalid')).toBeTruthy();
     // The rung a child stands on does not move for a config typo.
     expect(h.askProps.at(-1).ask.id).toBe('drill-rung');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// THE MATCH IS BANKED BEFORE THE CURTAIN, NOT AFTER IT.
+//
+// `onPassed` is deferred to the end of the 3.4s ceremony on purpose — the
+// reveal and the navigation are one gesture — but the thing the child just
+// PAID FOR lived only in React state for those 3.4 seconds. The ladder was
+// persisted; the match was not. Production, office TV, 2026-09-16 19:09:10:
+// `gate.passed` banked 9/9 at score 1.0, `gate.ceremony-start` in the same
+// millisecond, and 3.63 seconds later the page reloaded. No `gate.ceremony-done`,
+// no `game.mount` — and the next launch served a fresh nine scales. 24h counts
+// said the same thing: 23 ceremony-starts, 22 ceremony-dones.
+describe('GameGate — a match already paid for survives a reload', () => {
+  it('banks the earned match at gate.passed, before the curtain can be interrupted', async () => {
+    renderGate({ learnerId: 'kid1', gameId: 'chess' });
+    fireEvent.click(await screen.findByText('stub-pass'));
+    expect(readStored('kid1').earnedGame).toMatchObject({ gameId: 'chess' });
+  });
+
+  it('re-opens it on the next mount instead of charging for the drill twice', async () => {
+    const first = renderGate({ learnerId: 'kid1', gameId: 'chess' });
+    fireEvent.click(await screen.findByText('stub-pass'));
+    // The page dies mid-curtain: onPassed never ran.
+    expect(first.onPassed).not.toHaveBeenCalled();
+    first.unmount();
+
+    const again = renderGate({ learnerId: 'kid1', gameId: 'chess' });
+    await waitFor(() => expect(again.onPassed).toHaveBeenCalled());
+    expect(eventNamed('gate.match-restored')).toBeTruthy();
+    // Spent exactly once: a restored match must not be restorable again.
+    expect(readStored('kid1').earnedGame).toBeNull();
+  });
+
+  it('hands back only the game that was earned, never a different one', async () => {
+    const first = renderGate({ learnerId: 'kid1', gameId: 'chess' });
+    fireEvent.click(await screen.findByText('stub-pass'));
+    first.unmount();
+
+    const other = renderGate({ learnerId: 'kid1', gameId: 'tetris' });
+    await screen.findByTestId('ask-session');
+    expect(other.onPassed).not.toHaveBeenCalled();
+  });
+
+  it('spends the credit when the curtain finishes normally, so it cannot be replayed', async () => {
+    const gate = renderGate({ learnerId: 'kid1', gameId: 'chess' });
+    fireEvent.click(await screen.findByText('stub-pass'));
+    await act(async () => { await new Promise((r) => setTimeout(r, CEREMONY_MS + 50)); });
+    expect(gate.onPassed).toHaveBeenCalled();
+    expect(readStored('kid1').earnedGame).toBeNull();
+  });
+
+  it('lets a stale credit expire rather than opening a game earned long ago', async () => {
+    seedGateState('kid1', {
+      levelId: 'L1', failuresAtLevel: 0, cleanPasses: 0, lastMaterialId: null, pickIndex: 0,
+      earnedGame: { gameId: 'chess', at: Date.now() - (60 * 60 * 1000) },
+    });
+    const gate = renderGate({ learnerId: 'kid1', gameId: 'chess' });
+    await screen.findByTestId('ask-session');
+    expect(gate.onPassed).not.toHaveBeenCalled();
   });
 });

@@ -317,6 +317,14 @@ finishing this one, so the child who walks away would meet the same ask forever.
 Roots rotate the same way: a level naming `roots: [G, D, F]` is three different scales,
 not one scale with two spares.
 
+**The rung drill rotates too, and did not until 2026-09-16.** A scale rung that names
+`sets`/`reps` builds its own program (below), and that builder dealt `roots[0..n]` from
+index 0 on *every* launch — it never saw `pickIndex`. So while a plain `roots` level
+served a different scale each gate, the drill form of the same level served the same keys
+in the same order forever: a child on `roots: ['A','E']` met A, E, A at every gate they
+ever played, and said so. The rung program now takes the same rotation counter, so set one
+starts on a different root each gate and the sets walk on from there.
+
 **"Try again" holds the material.** It is a second go at the same thing, so a retry
 reuses the attempt already on screen rather than re-picking — otherwise a child who
 missed G major and pressed the button promising another go would be handed D major. The
@@ -391,6 +399,25 @@ The score is still computed and still logged on `gate.passed`/`gate.failed`, whe
 adult tuning the ladder reads it. It does not reach the child: the failure panel carries
 words, never a percentage, because a percentage with no bar beside it invites comparison
 against a target that does not exist.
+
+### A match that was paid for is not charged for twice
+
+`onPassed` is deferred to the end of the 3.4s curtain on purpose — the reveal and the
+navigation are one gesture — but that leaves a window in which the child has passed and
+the game has not yet been handed over. **The earned match is therefore banked to the
+gate's own stored state (`earnedGame`) in the same commit as `gate.passed`**, not held in
+component state until the curtain finishes.
+
+It used to be held in component state, and a reload inside those 3.4 seconds voided nine
+reps in silence: the ladder was persisted the whole time, the thing the child actually
+bought was not. The signature in the log store is `gate.passed` with **no**
+`gate.ceremony-done` and **no** `game.mount`, followed by a fresh `gate.drill-served` at
+`banked=0` under a new `sessionId`. Comparing the day's `gate.ceremony-start` count
+against `gate.ceremony-done` finds it directly.
+
+A credit names the game it was earned for and will not open a different one, expires by
+itself after ten minutes, and is spent before the hand-over so it can open exactly one
+match. Redeeming it logs `gate.match-restored` with how long it waited.
 
 ### Automatic advance and piano recovery
 
@@ -532,10 +559,19 @@ The gate asks for material through a provider seam that names four kinds:
   two are left out of the repertoire rather than shown wrong. The path back is an
   enharmonic axis on the bank, not a spelling table in the gate.
 
-  **A `roots` level names no other axis.** `scaleInstanceId` composes the whole id —
-  `mode=ionian,direction=up,span_octaves=1` — so a `hands`, `octaves` or `cued` key
-  written beside `roots` reaches nothing and is dropped in silence. (`hands` IS read on
-  a `collection`-only level, where the catalog walk uses it as a preference.)
+  **A `roots` level names `mode`, `direction`, `span_octaves` — and, since 2026-09-16,
+  `hands`.** `scaleInstanceId` composes the whole id, so anything else written beside
+  `roots` (`octaves`, `cued`) still reaches nothing and is dropped in silence.
+
+  `hands: [R, L, RL]` on a rung that is a drill makes the HAND advance with the set, the
+  way `scale-drill-3x3` always has: right, left, both, so three sets are never three takes
+  of one ask. The bank publishes the axis on every instance (`hand=R|L|RL`, and `L` reads
+  bass an octave down — a left-hand scale is not the right-hand notes in another clef).
+  **The axis is omitted entirely unless a level asks for it**, deliberately: every scale
+  id in the ladder predates it and the attempt ledger is keyed by those ids, so appending
+  a hand silently would re-identify every rung at once and orphan the evidence behind it.
+  (`hands` is also read on a `collection`-only level, where the catalog walk uses it as a
+  preference rather than a filter.)
 - **`score`** — a passage of real sheet music: a MusicXML document off the media tree,
   plus the bars of it the child is asked for. It resolves to no bank instance at all —
   the ask is whatever the engraver finds in the document, so the run engraves the score,
@@ -586,7 +622,8 @@ The gate asks for material through a provider seam that names four kinds:
   that carries `sets` and `reps` —
   `{ kind: exercise, collection: scales, roots: [G, D, F], direction: up-then-down, sets: 3, reps: 3 }`
   — is resolved exactly like `kind: drill`: `sets` sets, one key each taken from the roots in
-  order (cycling when the level names fewer), each needing `reps` reps, all of them at the gate.
+  order from this gate's rotation offset (cycling when the level names fewer), each needing
+  `reps` reps, all of them at the gate. A level naming `hands` advances the hand per set too.
   Only the counts come from the level; which set is asked, how a rep banks and the pills are the
   drill's. Because a short root list repeats a key, passes are dealt to the sets in order — the
   fourth C major is the first rep of the second set, never a second set banked at once. Every
