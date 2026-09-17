@@ -38,6 +38,17 @@
   is a floor the footer grows past, plus `--band-overlap: 10px` — the band rides up
   over the picture's foot, so its box is 10px taller than its share of the column.
 
+**A vocabulary pass landed alongside Phase 1** (2026-09-17). The rail's hierarchy
+machinery was generic and recursive but had been NAMED after two corpora: level 0
+was "part" and level 1 "scene", so a ballet's level 1 was called a Scene in code.
+Renamed to depth-relative names, with `tempo` -> `term` following for the same
+reason. `SegmentMap.test.jsx` now carries "one rail, any corpus": a symphony
+(flat), a play (Act > Scene) and a ballet (Act > Scene > Dance) through the
+identical component, asserting that a two-level and a three-level corpus emit
+IDENTICAL markup vocabulary, and that no emitted class or testid names a use
+case. That check would have caught `__fold-scenes`, `surround-part-group-label`
+and `__tempo`. Suite: 1012 passed / 2 expected fail.
+
 **Phase 2 (Tasks 4-8) is planned and not started.**
 
 ## Why this plan exists
@@ -96,7 +107,7 @@ Inherited verbatim from the predecessor plan; every task's requirements implicit
 
 - `frontend/src/modules/Surround/builtins.js` — **modified.** Slot meta widened so rail-borne band modules and a strip-borne identity card are declared rather than merely tolerated.
 - `frontend/src/modules/Surround/modules/CueTicker.scss` — **modified.** A stacked variant for when the ticker is a column rather than a strip.
-- `frontend/src/modules/Surround/modules/SegmentColumn.jsx` — **created.** The vertical Act/Scene timeline. Reuses `band.js`'s share solvers unchanged (they are axis-agnostic: `railPx` is "axis length", `floorPx`/`desiredPx` are "axis units a segment needs"); replaces only the probe, because `needs[i]` today is "how wide does this heading set on one line" and its vertical equivalent is "how tall does it set wrapped at the rail's width."
+- `frontend/src/modules/Surround/modules/SegmentMap.jsx` — **modified** (revised; was "create `SegmentColumn.jsx`"). The vertical Act/Scene timeline. Reuses `band.js`'s share solvers unchanged (they are axis-agnostic: `railPx` is "axis length", `floorPx`/`desiredPx` are "axis units a segment needs"); replaces only the probe, because `needs[i]` today is "how wide does this heading set on one line" and its vertical equivalent is "how tall does it set wrapped at the rail's width."
 - `frontend/src/modules/Surround/modules/SegmentColumn.scss` — **created.**
 - `data/content/surround/_surrounds/playhouse-academy.yml` — **created** (data volume).
 - `data/content/surround/drama/shakespeare/taming-of-the-shrew.bbc1980.yml` — **modified** (data volume): `surround: playhouse-academy`.
@@ -497,7 +508,23 @@ git commit -m "feat(surround): a stacked column variant of the listening band"
 
 ---
 
-### Task 6: `SegmentColumn` — the Act/Scene timeline as a vertical rail
+### Task 6: the timeline on a vertical axis
+
+> **REVISED 2026-09-17 — read this before the steps below.** This task was
+> written as "create a new `SegmentColumn` module". That is wrong, and for the
+> same reason the vocabulary pass above exists: two modules for *the timeline*,
+> differing only in axis, is a use case baked into the module list. It should be
+> ONE timeline module with `orientation: row | column` declared on the region in
+> the definition, defaulting to `row` — exactly as `nowSide`, `railDensity`,
+> `width` and `side` already are. The internals differ (the probe measures a
+> line's width in a row and its wrapped height in a column) but that is a branch
+> on a declared prop, not on a domain. One module then serves the symphony, the
+> play, the ballet, and both aspect ratios.
+>
+> **The steps below still describe the superseded new-module approach.** They are
+> left rather than rewritten because Step 1 already routes this task's visual
+> grammar through brainstorming, where they will be re-derived; rewriting them
+> now would be precision this task has not earned yet.
 
 The one genuinely new module. `SegmentMap` is horizontal to the bone — but the split is favourable and worth stating precisely, because it decides the size of this task:
 
