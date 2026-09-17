@@ -78,6 +78,15 @@ Settled design, as built:
 | the bond | shared ground colour only — rows sit between the sounding row and the register, so a weld is geometrically impossible |
 | place-carousel | not mounted: no height, and this play authors no `piece.map`, so the only place material is the playwright's birthplace against a "Padua, Italy" setting line |
 
+**`design.md` could not be updated.** It is root-owned (`-rw-r--r-- root:codedev`)
+and this repo is worked as `ds`; sudo here is docker-scoped and chowning repo
+files is against standing practice. The directory IS writable, so deleting and
+recreating the file would have worked — and was deliberately not done, because
+that is a permission end-run on a protected document rather than a docs update.
+The material lives at `docs/reference/player/surround/orientation.md` instead and
+should be folded in when someone can write the original:
+`sudo chown ds docs/reference/player/surround/design.md`.
+
 **Phase 2 (Tasks 4-8) is planned and not started.**
 
 ## Why this plan exists
