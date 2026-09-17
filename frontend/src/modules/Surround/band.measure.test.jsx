@@ -3263,10 +3263,18 @@ describe('the rail-carried layout, measured', () => {
   const RAIL_DEFINITION = Object.freeze({
     regions: {
       top: { module: 'work-placard' },
+      // HEIGHTS ARE AUTHORED, and they have to be. Both the identity card and
+      // the listening band are `container-type: size` — their own contents do
+      // not contribute to their height, by design, because they are built to be
+      // STRETCHED by their region. A region left unauthored therefore asks them
+      // for a height they deliberately do not have, and they collapse to their
+      // floors (measured live: 34px and 43px against a 463px timeline). The
+      // band has always known this: it authors `segment-map: height 64` so the
+      // ticker's `fill` has something to claim.
       right: [
-        { module: 'play-card', width: '40%' },
+        { module: 'play-card', width: '40%', height: 150 },
         { module: 'segment-map', orientation: 'column', height: 'fill' },
-        { module: 'cue-ticker', orientation: 'column' },
+        { module: 'cue-ticker', orientation: 'column', height: 130 },
       ],
     },
     collapse: { footerFloor: 90, mediaReserve: 0 },

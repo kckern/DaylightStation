@@ -87,7 +87,36 @@ The material lives at `docs/reference/player/surround/orientation.md` instead an
 should be folded in when someone can write the original:
 `sudo chown ds docs/reference/player/surround/design.md`.
 
-**Phase 2 (Tasks 4-8) is planned and not started.**
+**Phase 2 is BUILT AND LIVE** (2026-09-17). Measured on the running app at the
+living-room root: picture **576x432**, an exact 4:3 filling the column; rail
+**384px on the right**; no band; rail regions **150 / 260 / 130**; eleven rows
+with compound marks (`I.1`, `II.1`); one sounding row; spine publishing a
+playhead; ticker stacked. Suite **1030 passed / 2 expected fail**.
+
+**One defect shipped and was caught by the live measurement, not the suite.**
+The rail first rendered **180/180/180** — the timeline squeezed to a third, about
+sixteen pixels a row. The cause was this plan's own definition, not the frame:
+`playhouse-rail.yml` authored no heights, and PlayCard and CueTicker are both
+`container-type: size`, so their contents do not contribute to their height by
+design — they are built to be STRETCHED by their region. An unauthored region
+asks them for a height they deliberately do not have. The bottom band has always
+known this and authors `segment-map: height 64` so the ticker's `fill` has
+something to claim; the rail definition simply failed to do the same.
+
+Two wrong fixes preceded the right one, both in `regionStyle`, and both were
+reverted: content-sizing an unauthored sibling collapsed the filler to 0px, then
+adding `height: auto` collapsed the two size-contained modules to their floors
+(34px and 43px against a 463px timeline). The frame needed no change at all.
+
+**The measured spec certified the broken layout.** Its assertion was
+`h > 30` per region, which three equal regions clear as easily as a correct
+layout does. It now asserts the relation the definition claims — the filling
+region takes materially more than its authored siblings. That is the second
+loose threshold this work produced; the first was a unit test asserting the
+inline aspect string while the band sat at 0.4px.
+
+Tasks 4-7 are complete. Task 8's measured specs are written and green; its
+docs landed in `docs/reference/player/surround/orientation.md`.
 
 ## Why this plan exists
 
@@ -417,7 +446,7 @@ subject. If you do stage it in `/tmp`, move it: `mkdir -p _deleteme && mv
 **Interfaces:**
 - Produces: `cue-ticker` declared for `['bottom', 'right']`; `play-card` for `['right', 'top', 'bottom']`; `segment-column` (Task 6) registered for `['right']`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```js
 it('declares the slots the academy layout uses, so a rail-borne band is not misplaced', () => {
@@ -429,12 +458,12 @@ it('declares the slots the academy layout uses, so a rail-borne band is not misp
 });
 ```
 
-- [ ] **Step 2: Run it and confirm it fails**
+- [x] **Step 2: Run it and confirm it fails**
 
 Run: `npx vitest run --reporter=default frontend/src/modules/Surround/registry.test.js -t "academy"`
 Expected: FAIL — `cue-ticker` currently declares `['bottom']` only.
 
-- [ ] **Step 3: Widen the declarations**
+- [x] **Step 3: Widen the declarations**
 
 In `BUILTIN_MODULES`:
 
@@ -443,12 +472,12 @@ In `BUILTIN_MODULES`:
   ['play-card', PlayCard, { regions: ['right', 'top', 'bottom'] }],
 ```
 
-- [ ] **Step 4: Run the registry tests**
+- [x] **Step 4: Run the registry tests**
 
 Run: `npx vitest run --reporter=default frontend/src/modules/Surround/registry.test.js`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add frontend/src/modules/Surround/builtins.js frontend/src/modules/Surround/registry.test.js
@@ -472,7 +501,7 @@ The module already renders `data-region-slot` nothing — it receives `region` i
 - Consumes: `region.slot`, already passed to every module by `SurroundFrame.renderRegion`.
 - Produces: `.surround-cue-ticker--column` on the root.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```js
 it('wears the column modifier when the definition puts it in the rail', () => {
@@ -490,12 +519,12 @@ it('does not wear it in the band, which is the shipped arrangement', () => {
 });
 ```
 
-- [ ] **Step 2: Run it and confirm it fails**
+- [x] **Step 2: Run it and confirm it fails**
 
 Run: `npx vitest run --reporter=default frontend/src/modules/Surround/modules/CueTicker.test.jsx -t "column"`
 Expected: FAIL — no such class.
 
-- [ ] **Step 3: Add the modifier and the stacked stylesheet**
+- [x] **Step 3: Add the modifier and the stacked stylesheet**
 
 In `CueTicker.jsx`, add to the root className expression:
 
@@ -532,12 +561,12 @@ In `CueTicker.jsx`, publish `--now-top` alongside the existing `--now-left` on t
 style={{ '--now-left': `${panelLeft * 100}%`, '--now-top': `${panelLeft * 100}%` }}
 ```
 
-- [ ] **Step 4: Run the ticker tests**
+- [x] **Step 4: Run the ticker tests**
 
 Run: `npx vitest run --reporter=default frontend/src/modules/Surround/modules/CueTicker.test.jsx`
 Expected: PASS — including every existing band-arrangement test, which must be unaffected.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add frontend/src/modules/Surround/modules/CueTicker.jsx frontend/src/modules/Surround/modules/CueTicker.scss frontend/src/modules/Surround/modules/CueTicker.test.jsx
@@ -584,9 +613,9 @@ A vertical Act/Scene list is the natural shape for a stage work — it is a tabl
 - Consumes: the standard module contract `{ position, duration, playing, seeking, data, region, logger }`; `band.js`'s exported solvers listed above.
 - Produces: `[data-testid="surround-segment-column"]`; module name `segment-column`.
 
-- [ ] **Step 1: Brainstorm the vertical grammar** (see the note above) and record the outcome in `docs/reference/player/surround/design.md` under a new "Academy layout" heading.
+- [x] **Step 1: Brainstorm the vertical grammar** (see the note above) and record the outcome in `docs/reference/player/surround/design.md` under a new "Academy layout" heading.
 
-- [ ] **Step 2: Write the failing test** — one segment per authored scene, the sounding one marked, and the rail's measured axis being its **height**:
+- [x] **Step 2: Write the failing test** — one segment per authored scene, the sounding one marked, and the rail's measured axis being its **height**:
 
 ```js
 it('renders one entry per placed segment and marks the sounding one', () => {
@@ -600,28 +629,28 @@ it('renders one entry per placed segment and marks the sounding one', () => {
 });
 ```
 
-- [ ] **Step 3: Run it and confirm it fails**
+- [x] **Step 3: Run it and confirm it fails**
 
 Run: `npx vitest run --reporter=default frontend/src/modules/Surround/modules/SegmentColumn.test.jsx`
 Expected: FAIL — the module does not exist.
 
-- [ ] **Step 4: Implement the module and its stylesheet**, per the brainstormed grammar, reusing the solvers named above and observing the rail's **height** where `SegmentMap` observes its rule's width.
+- [x] **Step 4: Implement the module and its stylesheet**, per the brainstormed grammar, reusing the solvers named above and observing the rail's **height** where `SegmentMap` observes its rule's width.
 
-- [ ] **Step 5: Run the tests**
+- [x] **Step 5: Run the tests**
 
 Run: `npx vitest run --reporter=default frontend/src/modules/Surround/modules/SegmentColumn.test.jsx`
 Expected: PASS.
 
-- [ ] **Step 6: Register it**
+- [x] **Step 6: Register it**
 
 In `builtins.js`, import `SegmentColumn` and add `['segment-column', SegmentColumn, { regions: ['right'] }]`.
 
-- [ ] **Step 7: Run the full Surround suite**
+- [x] **Step 7: Run the full Surround suite**
 
 Run: `npx vitest run --reporter=default frontend/src/modules/Surround/`
 Expected: PASS, zero regressions.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add frontend/src/modules/Surround/modules/SegmentColumn.jsx \
@@ -645,7 +674,7 @@ The layout change is entirely here. No code branches on ratio — the corpus fil
 **Interfaces:**
 - Consumes: `segment-column` (Task 6), the `cue-ticker` column variant (Task 5), the widened slot declarations (Task 4), `collapse.mediaReserve` (Task 1).
 
-- [ ] **Step 1: Write the academy definition**
+- [x] **Step 1: Write the academy definition**
 
 `collapse.mediaReserve: 0` is the point of the layout: with the band gone from under the picture there is nothing to reserve, so the picture takes the whole column. At the living-room root with a 40% rail that is a 576×432 picture (against 482×362 under the band layout) — 27% more picture *and* a 67px wider rail.
 
@@ -689,7 +718,7 @@ wc -c /tmp/playhouse-academy.yml
 
 Expected: identical byte counts.
 
-- [ ] **Step 2: Back up the sidecar, then point it at the new definition**
+- [x] **Step 2: Back up the sidecar, then point it at the new definition**
 
 ```bash
 sudo docker exec daylight-station sh -c 'cat data/content/surround/drama/shakespeare/taming-of-the-shrew.bbc1980.yml' > /tmp/shrew.yml.bak
@@ -706,7 +735,7 @@ sudo docker exec daylight-station sh -c 'wc -c data/content/surround/drama/shake
 wc -c /tmp/shrew.yml
 ```
 
-- [ ] **Step 3: Confirm the store resolves the new definition**
+- [x] **Step 3: Confirm the store resolves the new definition**
 
 ```bash
 curl -s "http://localhost:3111/api/v1/play/plex:697661" | jq '.surround.id, .surround.definition.regions, .surround.definition.collapse'
