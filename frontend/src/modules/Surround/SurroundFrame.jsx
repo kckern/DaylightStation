@@ -89,35 +89,10 @@ function ratioOf(value) {
  *                   rail whose regions are `height: 100%`; a floor there would
  *                   let that percentage win and swallow the whole rail.
  */
-function regionStyle(region, siblings) {
+function regionStyle(region) {
   if (region?.height === 'fill') return { flex: '1 1 auto', minHeight: 0 };
   const h = Number(region?.height);
-  if (!Number.isFinite(h) || h <= 0) {
-    /**
-     * NO HEIGHT AUTHORED, AND A SIBLING CLAIMS THE SLACK.
-     *
-     * A rail region with nothing authored used to return `undefined` and fall
-     * through to the stylesheet, which gives every `--right` region
-     * `flex: 1 1 auto` — the same thing `height: fill` produces. With two
-     * regions that is correct and is what the concert-hall rail wants: both
-     * share evenly. With THREE, one of which asked to fill, it means `fill`
-     * buys nothing, because everything was already filling. Measured on the
-     * shipped rail-carried layout: 180/180/180, so an eleven-row timeline got
-     * 180px — about sixteen pixels a row, under the ten-foot floor.
-     *
-     * So an unauthored region is content-sized ONLY when something else in its
-     * slot is filling. Nothing in a rail of two unauthored regions changes.
-     */
-    const someoneFills = Array.isArray(siblings)
-      && siblings.some((s) => s !== region && s?.height === 'fill');
-    // `height: auto` IS THE LOAD-BEARING HALF. `flex: 0 0 auto` alone does not
-    // mean "as tall as your content": the basis falls back to the `height`
-    // property, and the rail's stylesheet sets `height: 100%`. Measured: both
-    // unauthored regions resolved to the FULL rail height with shrink 0, so the
-    // filler was the only box able to give anything back and absorbed the whole
-    // overflow at 0px. Neutralising the height is what makes the basis content.
-    return someoneFills ? { flex: '0 0 auto', height: 'auto' } : undefined;
-  }
+  if (!Number.isFinite(h) || h <= 0) return undefined;
   if (region.slot === 'bottom') return { minHeight: `${h}px`, flex: '0 0 auto' };
   return { height: `${h}px`, flex: `0 0 ${h}px` };
 }
@@ -499,11 +474,9 @@ export default function SurroundFrame({
     ? footerRegions.filter((r) => r.collapse !== 'first')
     : footerRegions;
 
-  // `.map` hands the sibling list through for free, which is what lets a region
-  // be sized against what the rest of its slot asked for rather than in isolation.
-  const renderRegion = (region, _index, siblings) => {
+  const renderRegion = (region) => {
     const Module = resolved.get(region.key);
-    const style = regionStyle(region, siblings);
+    const style = regionStyle(region);
     return (
       <div
         key={region.key}
