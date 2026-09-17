@@ -4,7 +4,7 @@
 
 **Goal:** Make a 4:3 stage production readable — first by guaranteeing no declared aspect ratio can crush the band off the screen, then by giving Academy-ratio works a transposed layout that spends the screen's spare width on a wide rail instead of on empty drape.
 
-**Architecture:** Two movements. **(A) The floor**, already written and unverified in the working tree: the frame measures its own column and publishes `--surround-media-cap-w`, the widest the picture may be while the band keeps a reserve; the media box becomes `width: min(100%, var(--surround-media-cap-w, 100%))`, so 16:9 resolves to `100%` and every classical frame is untouched. **(B) The layout**, which exploits the fact that `YamlSurroundStore` selects a presentation definition by the corpus file's own `surround:` key (`YamlSurroundStore.mjs:1253`) — so a 4:3 work can point at a *different* `_surrounds/` definition and get a completely different region arrangement with **zero frontend or backend branching on aspect ratio**. The transposed definition puts identity, the Act/Scene timeline and both listening registers in one wide rail, and gives the picture the whole column.
+**Architecture:** Two phases. **(A) The floor**, already written and unverified in the working tree: the frame measures its own column and publishes `--surround-media-cap-w`, the widest the picture may be while the band keeps a reserve; the media box becomes `width: min(100%, var(--surround-media-cap-w, 100%))`, so 16:9 resolves to `100%` and every classical frame is untouched. **(B) The layout**, which exploits the fact that `YamlSurroundStore` selects a presentation definition by the corpus file's own `surround:` key (`YamlSurroundStore.mjs:1253`) — so a 4:3 work can point at a *different* `_surrounds/` definition and get a completely different region arrangement with **zero frontend or backend branching on aspect ratio**. The transposed definition puts identity, the Act/Scene timeline and both listening registers in one wide rail, and gives the picture the whole column.
 
 **Tech Stack:** React 18, SCSS (sass-embedded), Vitest + Playwright (`band.measure.test.jsx` renders the real frame in a real browser against the compiled shipped stylesheet), YAML corpus in the Docker data volume.
 
@@ -13,7 +13,13 @@
 
 ## Status
 
-**Movement A is complete and deployed** (2026-09-17). Tasks 1-3 are ticked below.
+> Phase 1 / Phase 2 are deliberately neutral names. They were "Movement A/B"
+> — the *classical* structure word, in a plan about a play. "Act" would be no
+> better: this document discusses the play's own Acts throughout, so the two
+> would collide. Plan scaffolding borrows no domain's structure vocabulary,
+> for the same reason the code does not (see Global Constraints).
+
+**Phase 1 is complete and deployed** (2026-09-17). Tasks 1-3 are ticked below.
 
 - Cap proven: full Surround suite **27 files, 1003 passed / 2 expected fail**, zero
   regressions; all nine 4:3 assertions green at every fleet root.
@@ -32,7 +38,7 @@
   is a floor the footer grows past, plus `--band-overlap: 10px` — the band rides up
   over the picture's foot, so its box is 10px taller than its share of the column.
 
-**Movement B (Tasks 4-8) is planned and not started.**
+**Phase 2 (Tasks 4-8) is planned and not started.**
 
 ## Why this plan exists
 
@@ -80,13 +86,13 @@ Inherited verbatim from the predecessor plan; every task's requirements implicit
 
 ## File Structure
 
-**Movement A — the floor (uncommitted work already in the tree):**
+**Phase 1 — the floor (uncommitted work already in the tree):**
 
 - `frontend/src/modules/Surround/SurroundFrame.jsx` — **modified.** `ratioOf()` helper; `mediaReserve` read from `definition.collapse.mediaReserve ?? footerFloor`; `mainRef`/`stageRef`; the ResizeObserver gains a `mainRef` branch computing the cap; `--surround-media-cap-w` published in `rootStyle`.
 - `frontend/src/modules/Surround/SurroundFrame.scss` — **modified.** `.surround-frame__media` width becomes `min(100%, var(--surround-media-cap-w, 100%))`.
 - `frontend/src/modules/Surround/band.measure.test.jsx` — **modified.** New `describe('a corpus-declared 4:3 picture, measured')` with three assertions; `layout()`'s effect emulation still needs the cap publish (Task 1).
 
-**Movement B — the transposed layout:**
+**Phase 2 — the transposed layout:**
 
 - `frontend/src/modules/Surround/builtins.js` — **modified.** Slot meta widened so rail-borne band modules and a strip-borne identity card are declared rather than merely tolerated.
 - `frontend/src/modules/Surround/modules/CueTicker.scss` — **modified.** A stacked variant for when the ticker is a column rather than a strip.
