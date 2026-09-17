@@ -55,6 +55,26 @@ const NO_BOX = Object.freeze({ display: 'contents' });
 const DEFAULT_FOOTER_FLOOR = 90;
 
 /**
+ * A CSS `aspect-ratio` string as a NUMBER, for the one place that has to do
+ * arithmetic with it (the media cap below). `"4 / 3"` is what the corpus
+ * authors and what the stylesheet wants, so the string stays the published
+ * form and this is the only thing that ever parses it.
+ *
+ * Returns null on anything it does not understand — a typo'd ratio must leave
+ * the frame exactly as it would have been without a cap, never size the picture
+ * from NaN.
+ */
+function ratioOf(value) {
+  if (typeof value === 'number') return Number.isFinite(value) && value > 0 ? value : null;
+  if (typeof value !== 'string') return null;
+  const [w, h = '1'] = value.split('/');
+  const n = Number(w.trim());
+  const d = Number(h.trim());
+  if (!Number.isFinite(n) || !Number.isFinite(d) || n <= 0 || d <= 0) return null;
+  return n / d;
+}
+
+/**
  * A region's declared `height`, turned into flex sizing.
  *
  *  * `fill`       — claim the band's slack. The footer now GROWS into the space
@@ -160,6 +180,23 @@ export default function SurroundFrame({
   const footerFloor = Number.isFinite(definition?.collapse?.footerFloor)
     ? definition.collapse.footerFloor
     : DEFAULT_FOOTER_FLOOR;
+  /**
+   * THE BAND'S RESERVE — how much of the column the picture may NOT take.
+   *
+   * `footerFloor` is the height below which the frame starts dropping the
+   * band's regions; this is the height the band is GUARANTEED before the
+   * picture is sized at all, and defaulting one to the other is the honest
+   * relation between them: never leave the band less than the amount at which
+   * the frame would already consider it broken.
+   *
+   * A definition may author more (`collapse.mediaReserve`). That is the knob a
+   * corpus reaches for when its pictures are tall — a taller reserve is a
+   * narrower picture and a deeper band, and which of those a domain wants is
+   * exactly the sort of decision a definition exists to make.
+   */
+  const mediaReserve = Number.isFinite(definition?.collapse?.mediaReserve)
+    ? definition.collapse.mediaReserve
+    : footerFloor;
 
   const topRegions = useMemo(
     () => normalizeRegions(definition?.regions?.top, 'top'), [definition]);
@@ -188,10 +225,34 @@ export default function SurroundFrame({
     return data.contentId === contentId ? data : { ...data, contentId };
   }, [data, contentId]);
 
+  /** The declared ratio, as a number, for the cap's arithmetic only. */
+  const aspect = ratioOf(payload?.piece?.aspectRatio ?? '16 / 9');
+
   const rootRef = useRef(null);
+  const mainRef = useRef(null);
+  const stageRef = useRef(null);
   const mediaRef = useRef(null);
   const footerRef = useRef(null);
   const [mediaWidth, setMediaWidth] = useState(null);
+  /**
+   * THE WIDEST THIS PICTURE MAY BE — measured, and published to the SCSS.
+   *
+   * The media box is `width: 100%` + `aspect-ratio`, which is only safe while
+   * the ratio is as wide as 16:9. A 4:3 picture at the full column width is a
+   * third taller than the box this frame's geometry was tuned against, so the
+   * stage outgrows the screen root and the band, which absorbs the column's
+   * slack, is crushed to nothing — measured at 0.4px on the living-room root,
+   * with the collapse rule then dropping the ticker outright.
+   *
+   * Capping the WIDTH rather than the height is the whole point: `max-height`
+   * on a `width: 100%` box clamps the height while the width stays put, which
+   * is how a picture gets stretched. Width follows the ratio, so the box
+   * pillarboxes into the velvet the stage already wears and never distorts.
+   *
+   * null until measured — the stylesheet's fallback is `100%`, so an
+   * unmeasured frame lays out exactly as it did before this existed.
+   */
+  const [mediaCapW, setMediaCapW] = useState(null);
   const [collapsed, setCollapsed] = useState(false);
   const footerHeightRef = useRef(0);
   /**
@@ -238,6 +299,23 @@ export default function SurroundFrame({
           // display has, so the window is the wrong number on the office PC and
           // a config value is a number nobody re-reads.
           setLabelFloor(labelFloorPx(Number(rect.width) || 0));
+        } else if (entry.target === mainRef.current) {
+          // THE MEDIA CAP. The column's height, less the strip of hall the
+          // placard hangs on and the band's reserve, is the tallest the
+          // picture may be; the declared ratio turns that into the widest it
+          // may be, which is what the stylesheet can actually use.
+          //
+          // The inset is READ from the stage rather than restated here: it is
+          // `--placard-inset`, a token this file does not own, and a second
+          // copy of it in JS is a number that goes stale the next time the
+          // plate is re-tuned.
+          const mainH = Number(rect.height) || 0;
+          const stage = stageRef.current;
+          const padTop = stage && typeof window !== 'undefined' && typeof window.getComputedStyle === 'function'
+            ? parseFloat(window.getComputedStyle(stage).paddingTop) || 0
+            : 0;
+          const capH = mainH - padTop - mediaReserve;
+          setMediaCapW(aspect && capH > 0 ? capH * aspect : null);
         } else if (entry.target === footerRef.current) {
           const h = Number(rect.height) || 0;
           footerHeightRef.current = h;
@@ -250,8 +328,9 @@ export default function SurroundFrame({
     if (mediaRef.current) observer.observe(mediaRef.current);
     if (footerRef.current) observer.observe(footerRef.current);
     if (rootRef.current) observer.observe(rootRef.current);
+    if (mainRef.current) observer.observe(mainRef.current);
     return () => observer.disconnect();
-  }, [enabled, footerFloor, footerRegions.length]);
+  }, [enabled, footerFloor, footerRegions.length, mediaReserve, aspect]);
 
   // Report collapse transitions only — not the steady state on every render.
   const prevCollapsed = useRef(collapsed);
@@ -483,6 +562,10 @@ export default function SurroundFrame({
       ...entranceVars(),
       '--surround-aspect-ratio': payload?.piece?.aspectRatio ?? '16 / 9',
       ...(mediaWidth ? { '--surround-media-w': `${mediaWidth}px` } : null),
+      // The widest the picture may be while the band keeps its reserve. On a
+      // 16:9 work this resolves past the column and the `min()` in the SCSS
+      // picks `100%`, so the classical frame is untouched.
+      ...(mediaCapW ? { '--surround-media-cap-w': `${Math.round(mediaCapW)}px` } : null),
       // The band's measured height, so the lyric rail's corner plate can be the
       // square level with it. Absent until the footer lays out; the stylesheet
       // carries a fallback rather than collapsing to zero in that first beat.
@@ -514,7 +597,7 @@ export default function SurroundFrame({
       ref={rootRef}
       style={rootStyle}
     >
-      <div className={enabled ? 'surround-frame__main' : undefined} style={enabled ? undefined : NO_BOX}>
+      <div className={enabled ? 'surround-frame__main' : undefined} ref={mainRef} style={enabled ? undefined : NO_BOX}>
         {/* The placard is FLOATING: still the first child of the main column, but
             out of flow and centred on the video's top edge (see the SCSS). It
             carries no inline width any more — a museum plate is content-width,
@@ -524,7 +607,7 @@ export default function SurroundFrame({
             {topRegions.map(renderRegion)}
           </div>
         )}
-        <div className={enabled ? 'surround-frame__stage' : undefined} style={enabled ? undefined : NO_BOX}>
+        <div className={enabled ? 'surround-frame__stage' : undefined} ref={stageRef} style={enabled ? undefined : NO_BOX}>
           {/* 16:9 lock lives inline so no outer cascade can stretch the video. */}
           <div
             className={enabled ? 'surround-frame__media' : undefined}

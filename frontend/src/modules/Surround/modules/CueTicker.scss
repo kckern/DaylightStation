@@ -455,3 +455,46 @@
     transition: none !important;
   }
 }
+
+/* ==========================================================================
+   THE STACKED VARIANT (`orientation: column`)
+   ==========================================================================
+   The listening band as a COLUMN, for a frame that puts its chrome beside the
+   picture rather than under it.
+
+   IT IS ADDITIVE, AND THAT IS LOAD-BEARING. The base `__ground` rule is pinned
+   by a stylesheet assertion in `CueTicker.test.jsx` (`left: var(--now-left,
+   50%)`), and the row arrangement's own specs read the properties it
+   publishes. Nothing above is edited; this block only overrides, and only
+   under its own modifier.
+
+   NO SIDE, SO NO TRAVEL. `nowSide` retires on this axis: with the registers
+   stacked, the NOW one is the lower, always. The bond's ground is therefore a
+   fixed half — it does not slide, so it needs no interpolated offset and no
+   transition on position. The division between the registers stays what wave 7
+   settled it as: this panel's own silhouette, a lit ground against an unlit
+   one, and NOT a border. */
+.surround-cue-ticker--column {
+  .surround-cue-ticker__zones {
+    flex-direction: column;
+  }
+
+  /* Half each, down instead of across. */
+  .surround-cue-ticker__zone {
+    flex: 1 1 50%;
+    min-height: 0;
+  }
+
+  .surround-cue-ticker__ground {
+    /* Full width of the rail, lower half of the band. */
+    left: 0;
+    right: 0;
+    width: auto;
+    top: 50%;
+    bottom: calc(var(--ticker-pad-y) * -1);
+    /* SQUARE AT THE TOP, ROUNDED AT THE FOOT — the band's one corner rule,
+       unchanged. The top edge is where this panel meets the register above it,
+       and a radius there would draw a seam across the middle of one shape. */
+    border-radius: 0 0 var(--bond-radius, 3px) var(--bond-radius, 3px);
+  }
+}

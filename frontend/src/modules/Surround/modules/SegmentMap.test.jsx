@@ -201,10 +201,10 @@ describe('SegmentMap', () => {
     const segs = [...container.querySelectorAll('[data-testid="surround-segment"]')];
     // "Marcia funebre. Adagio assai" → title roman, tempo italic.
     expect(segs[1].querySelector('.surround-segment-map__title')).toHaveTextContent('Marcia funebre.');
-    expect(segs[1].querySelector('.surround-segment-map__tempo')).toHaveTextContent('Adagio assai');
+    expect(segs[1].querySelector('.surround-segment-map__term')).toHaveTextContent('Adagio assai');
     // A bare tempo marking is all italic — there is no title half.
     expect(segs[0].querySelector('.surround-segment-map__title')).toBeNull();
-    expect(segs[0].querySelector('.surround-segment-map__tempo')).toHaveTextContent('Allegro con brio');
+    expect(segs[0].querySelector('.surround-segment-map__term')).toHaveTextContent('Allegro con brio');
   });
 
   it('numbers segments with roman numerals from `n`', () => {
@@ -1789,7 +1789,7 @@ describe('SegmentMap — the composed rail', () => {
       'surround-segment-map__text': 149,
       'surround-segment-map__group': 60,
     }, () => renderMap({ data: hierarchy, position: 5, duration: 40 }));
-    expect([...container.querySelectorAll('[data-testid="surround-part-group-label"]')].map((e) => e.textContent))
+    expect([...container.querySelectorAll('[data-testid="surround-outer-group-label"]')].map((e) => e.textContent))
       .toEqual(['Part One', 'Part Two']);
     // The legacy `hierarchy.part` transport draws the PART row only. The scene
     // row is the nested (`groupPath`/`ancestors`) rail's — the compat comment in
@@ -2380,7 +2380,7 @@ describe('SegmentMap — the fold', () => {
      `count` has to agree on which of the two numbers it means. --------------
   */
   const MESSIAH_ANCESTORS = (() => {
-    // Part One and Part Three each carry two Scenes, so `foldSceneCounts` has
+    // Part One and Part Three each carry two Scenes, so `foldInnerCounts` has
     // something to count; Part Two (the one left sounding) is single-scene,
     // which keeps its own segments unaffected by any of this.
     const parts = [
@@ -2455,7 +2455,7 @@ describe('SegmentMap — the fold', () => {
   it('badges a collapsed ancestors Part with its true segment count and scene count', () => {
     // A narrow rail with wide names — the geometry `railWearsChips` needs to
     // pick chip density, which is the ONLY place a nested fold's scene-count
-    // suffix (`foldSceneCounts`) is drawn today: the named-mode text row has
+    // suffix (`foldInnerCounts`) is drawn today: the named-mode text row has
     // no badge at all for a collapsed segment, and the wave-10 box (above)
     // structurally never takes here.
     withRailGeometry({
@@ -2480,7 +2480,7 @@ describe('SegmentMap — the fold', () => {
       // CSS: a concatenated `textContent` would read '42' and say nothing.
       expect(chips.map((c) => c.querySelector('.surround-segment-map__fold-segments').textContent))
         .toEqual(['4', '4']);
-      expect(chips.map((c) => c.querySelector('.surround-segment-map__fold-scenes').textContent))
+      expect(chips.map((c) => c.querySelector('.surround-segment-map__fold-groups').textContent))
         .toEqual(['2', '2']);
     });
   });
@@ -2502,7 +2502,7 @@ describe('SegmentMap — the fold', () => {
       // it — `groupBasis` walking a fold's inflated true count past its own
       // one drawn-rail slot would double-count Part Two's shares into Part
       // One's or Part Three's heading width.
-      const bases = [...container.querySelectorAll('[data-testid="surround-part-group-label"]')]
+      const bases = [...container.querySelectorAll('[data-testid="surround-outer-group-label"]')]
         .map((e) => parseFloat(e.style.flexBasis));
       expect(bases.reduce((a, b) => a + b, 0)).toBeCloseTo(100, 3);
     });
@@ -2572,5 +2572,234 @@ describe('SegmentMap — label / heading / subheading', () => {
       duration: 10,
     });
     expect(container.textContent).not.toContain('let Him deliver Him');
+  });
+});
+
+
+/* -------------------------------------------------------------------------- */
+/* ONE RAIL, ANY CORPUS                                                        */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * THE CLAIM THIS FILE OTHERWISE ONLY ASSERTS IN PROSE: the rail's hierarchy is
+ * DATA, and its depth and its vocabulary both belong to the corpus.
+ *
+ * Three corpora go through the identical component, with the authored depth as
+ * the only variable between them: a symphony (flat, no groups), a play
+ * (Act > Scene), and a ballet (Act > Scene > Dance). Nothing in the module is
+ * told which is which, and nothing may behave differently because of it.
+ *
+ * The last spec below is the one that earns its keep. It reads the vocabulary
+ * the DOM actually emits and fails if any of it names a use case. That check
+ * would have caught `__fold-scenes`, `surround-part-group-label` and
+ * `__tempo` -- three abstractions that had been named after whichever corpus
+ * their author happened to be looking at -- and it is what stops the next one
+ * landing. Tokens are split on the separators BEM uses, so a match is a whole
+ * word: `--active` contains "act" and is not a hit.
+ */
+describe('one rail, any corpus — the hierarchy is data, not vocabulary', () => {
+  const seg = (contentId, n, offset, label, ancestors) => ({
+    n,
+    name: label,
+    contentId,
+    start: offset,
+    end: offset + 10,
+    offset,
+    duration: 10,
+    part: 0,
+    ...(ancestors ? { ancestors } : {}),
+  });
+
+  const railOf = (contentId, segments) => ({
+    contentId,
+    segments,
+    timeline: {
+      totalSounding: segments.length * 10,
+      parts: [{ contentId, index: 0, sounding: segments.length * 10 }],
+    },
+  });
+
+  // A symphony: four movements, no authored groups at all.
+  const SYMPHONY = railOf('plex:symphony', [
+    seg('plex:symphony', 1, 0, 'Allegro con brio'),
+    seg('plex:symphony', 2, 10, 'Marcia funebre'),
+    seg('plex:symphony', 3, 20, 'Scherzo'),
+    seg('plex:symphony', 4, 30, 'Finale'),
+  ]);
+
+  // A play: two Acts, two Scenes each. The words are the corpus's.
+  const ACTS = [{ index: 0, title: 'Act I' }, { index: 1, title: 'Act II' }];
+  const PLAY = railOf('plex:play', [
+    seg('plex:play', 1, 0, 'Padua, a public place', [ACTS[0], { index: 0, title: 'Scene 1' }]),
+    seg('plex:play', 2, 10, 'Before Hortensio’s house', [ACTS[0], { index: 1, title: 'Scene 2' }]),
+    seg('plex:play', 3, 20, 'Baptista’s house', [ACTS[1], { index: 2, title: 'Scene 1' }]),
+    seg('plex:play', 4, 30, 'A room in the house', [ACTS[1], { index: 3, title: 'Scene 2' }]),
+  ]);
+
+  // A ballet: the SAME two levels, plus a third the corpus calls a Dance.
+  const BALLET = railOf('plex:ballet', [
+    seg('plex:ballet', 1, 0, 'Entrance', [ACTS[0], { index: 0, title: 'Scene 1' }, { index: 0, title: 'Pas de deux' }]),
+    seg('plex:ballet', 2, 10, 'Variation', [ACTS[0], { index: 1, title: 'Scene 2' }, { index: 1, title: 'Coda' }]),
+    seg('plex:ballet', 3, 20, 'Adage', [ACTS[1], { index: 2, title: 'Scene 1' }, { index: 2, title: 'Pas de trois' }]),
+    seg('plex:ballet', 4, 30, 'Finale', [ACTS[1], { index: 3, title: 'Scene 2' }, { index: 3, title: 'Galop' }]),
+  ]);
+
+  const drawnSegments = (container) =>
+    [...container.querySelectorAll('[data-testid="surround-segment"]')];
+
+  /** Every class token and testid token the rendered rail emits. */
+  const vocabularyOf = (container) => {
+    const tokens = new Set();
+    container.querySelectorAll('*').forEach((el) => {
+      el.classList.forEach((c) => c.split(/[-_]+/).filter(Boolean).forEach((x) => tokens.add(x)));
+      const tid = el.getAttribute('data-testid');
+      if (tid) tid.split(/[-_]+/).filter(Boolean).forEach((x) => tokens.add(x));
+    });
+    return tokens;
+  };
+
+  it.each([
+    ['a symphony (no groups)', SYMPHONY],
+    ['a play (Act > Scene)', PLAY],
+    ['a ballet (Act > Scene > Dance)', BALLET],
+  ])('renders %s through the same component', (_name, data) => {
+    const { container } = renderMap({ data, position: 5, duration: 40 });
+    expect(container.querySelector('[data-testid="surround-segment-map"]')).not.toBeNull();
+    expect(drawnSegments(container).length).toBeGreaterThan(0);
+  });
+
+  it('draws no group row for a corpus that authored no groups', () => {
+    const { container } = renderMap({ data: SYMPHONY, position: 5, duration: 40 });
+    expect(container.querySelectorAll('.surround-segment-map__groups').length).toBe(0);
+    expect(drawnSegments(container).length).toBe(4);
+  });
+
+  it('draws group rows for a corpus that authored them', () => {
+    const { container } = renderMap({ data: PLAY, position: 5, duration: 40 });
+    expect(container.querySelectorAll('.surround-segment-map__groups').length).toBeGreaterThan(0);
+  });
+
+  /**
+   * DEPTH IS NOT A DIFFERENT CODE PATH. A play and a ballet differ only in that
+   * the ballet authors a third level; if anything branched on what the levels
+   * are CALLED, or on how many there are, the emitted vocabulary would diverge.
+   */
+  it('emits the same vocabulary for a two-level play and a three-level ballet', () => {
+    const play = renderMap({ data: PLAY, position: 5, duration: 40 });
+    const ballet = renderMap({ data: BALLET, position: 5, duration: 40 });
+    const playVocab = vocabularyOf(play.container);
+    // NOT VACUOUS. Two empty sets are equal, and an equality that would hold on
+    // a rail that rendered nothing proves nothing. These name what the rail is
+    // actually expected to have emitted before the comparison is allowed to
+    // count for anything.
+    expect(playVocab.size, 'the vocabulary check measured almost nothing').toBeGreaterThan(10);
+    expect(playVocab.has('segment'), 'no segment in the emitted vocabulary').toBe(true);
+    expect(playVocab.has('group'), 'no group in the emitted vocabulary').toBe(true);
+    expect([...vocabularyOf(ballet.container)].sort()).toEqual([...playVocab].sort());
+  });
+
+  it.each([
+    ['a symphony', SYMPHONY],
+    ['a play', PLAY],
+    ['a ballet', BALLET],
+  ])('names no use case in the DOM it emits for %s', (_name, data) => {
+    const DOMAIN_WORDS = [
+      'act', 'scene', 'movement', 'dance', 'tempo', 'opus',
+      'piece', 'composer', 'part', 'symphony', 'libretto', 'play',
+    ];
+    const { container } = renderMap({ data, position: 5, duration: 40 });
+    const vocab = vocabularyOf(container);
+    // Same guard as above: "nothing leaked" is worthless if nothing was read.
+    expect(vocab.size, 'the leak check read an empty DOM').toBeGreaterThan(8);
+    const leaked = [...vocab].filter((x) => DOMAIN_WORDS.includes(x.toLowerCase()));
+    expect(leaked, `the rail is naming a use case in its own markup: ${leaked.join(', ')}`).toEqual([]);
+  });
+});
+
+
+/* -------------------------------------------------------------------------- */
+/* THE TIMELINE ON A VERTICAL AXIS                                             */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * `orientation: column` — the rail-carried arrangement, for a picture narrower
+ * than the screen. The list runs DOWN a rail beside the video instead of across
+ * a band beneath it.
+ *
+ * ROWS ARE EQUAL, and that is the load-bearing decision. Duration-proportional
+ * rows would give a long scene a tall block and a short one a sliver too small
+ * for its own name, which is the whole reason the horizontal rail can afford to
+ * be proportional and this one cannot: there, a narrow segment still gets a full
+ * line of height. Progress therefore lives on the SPINE, in row space — lit from
+ * the top down to the playhead, whose position is (sounding row + fraction
+ * through that scene) / row count. That is the horizontal playhead's own rule,
+ * transposed, so `playheadFraction` is reused untouched with equal shares.
+ *
+ * WHAT DOES NOT EXIST ON THIS AXIS: folds, group heading rows, the accordion and
+ * the bond's connector. The Act rides in the mark (`I.1`) instead of spending a
+ * row on a heading, and a weld between the sounding row and the register below
+ * is geometrically impossible with other rows in between.
+ */
+describe('the timeline on a vertical axis', () => {
+  const seg = (n, offset, label, ancestors) => ({
+    n, name: label, contentId: 'plex:col', start: offset, end: offset + 10,
+    offset, duration: 10, part: 0, ...(ancestors ? { ancestors } : {}),
+  });
+  const ACTS = [{ index: 0, title: 'Act I' }, { index: 1, title: 'Act II' }];
+  const COLUMN_PLAY = {
+    contentId: 'plex:col',
+    segments: [
+      seg(1, 0, 'A public place', [ACTS[0], { index: 0, title: 'Scene 1' }]),
+      seg(2, 10, "Hortensio's house", [ACTS[0], { index: 1, title: 'Scene 2' }]),
+      seg(3, 20, "Baptista's house", [ACTS[1], { index: 2, title: 'Scene 1' }]),
+      seg(4, 30, 'A room in the house', [ACTS[1], { index: 3, title: 'Scene 2' }]),
+    ],
+    timeline: { totalSounding: 40, parts: [{ contentId: 'plex:col', index: 0, sounding: 40 }] },
+  };
+  const COLUMN = { module: 'segment-map', orientation: 'column' };
+  const renderColumn = (position = 25) =>
+    renderMap({ data: COLUMN_PLAY, position, duration: 40, region: COLUMN });
+
+  const rows = (c) => [...c.querySelectorAll('[data-testid="surround-segment-row"]')];
+
+  it('renders a column, one row per placed segment', () => {
+    const { container } = renderColumn();
+    expect(container.querySelector('[data-testid="surround-segment-column"]')).not.toBeNull();
+    expect(rows(container)).toHaveLength(4);
+  });
+
+  it('carries the outer group in the mark rather than in a heading row', () => {
+    const { container } = renderColumn();
+    expect(rows(container).map((r) => r.querySelector('[data-testid="surround-row-mark"]').textContent))
+      .toEqual(['I.1', 'I.2', 'II.1', 'II.2']);
+    // No heading rows on this axis — the mark is where the Act lives.
+    expect(container.querySelectorAll('.surround-segment-map__groups')).toHaveLength(0);
+  });
+
+  it('marks exactly the sounding row', () => {
+    const { container } = renderColumn(25); // inside the third segment (20-30)
+    const sounding = rows(container).filter((r) => r.dataset.state === 'sounding');
+    expect(sounding).toHaveLength(1);
+    expect(sounding[0].querySelector('[data-testid="surround-row-mark"]').textContent).toBe('II.1');
+  });
+
+  it('draws a spine whose playhead is in row space, not clock space', () => {
+    const { container } = renderColumn(25);
+    const spine = container.querySelector('[data-testid="surround-spine"]');
+    expect(spine, 'no spine rendered').not.toBeNull();
+    // Half-way through row 3 of 4 => (2 + 0.5) / 4 = 0.625.
+    expect(Number(spine.style.getPropertyValue('--head'))).toBeCloseTo(0.625, 2);
+  });
+
+  it('renders no fold badge and no connector on this axis', () => {
+    const { container } = renderColumn();
+    expect(container.querySelector('.surround-segment-map__fold-count')).toBeNull();
+    expect(container.querySelector('[data-testid="surround-bond-connector"]')).toBeNull();
+  });
+
+  it('leaves the horizontal axis untouched when no orientation is authored', () => {
+    const { container } = renderMap({ data: COLUMN_PLAY, position: 25, duration: 40 });
+    expect(container.querySelector('[data-testid="surround-segment-column"]')).toBeNull();
+    expect(container.querySelector('[data-testid="surround-segment-map"]')).not.toBeNull();
   });
 });
