@@ -19,7 +19,7 @@ import {
   pianoAttemptClient,
   pianoPersistenceOutcome,
 } from '../../../performance/attemptEvidence.js';
-import DrillProgress from './DrillProgress.jsx';
+import DrillProgress, { DrillPlacard } from './DrillProgress.jsx';
 import { deckSets, deckProjection, deckWindow } from './deckProgress.js';
 import ExerciseNotation from './ExerciseNotation.jsx';
 import { timedRunPresentation } from './timedRunPresentation.js';
@@ -279,6 +279,19 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
   const [clockNow, setClockNow] = useState(() => Date.now());
   const countdownHeldRef = useRef(new Set());
   const [unrunnable, setUnrunnable] = useState(false);
+  /**
+   * WHAT THE DRILL IS CALLED — the run's title, when there is a drill to name.
+   *
+   * `DrillProgress` owns the projection this comes from (it may fetch its own),
+   * so it is the only thing that can answer; it reports up and this holds the
+   * answer for the header. Idempotent on purpose: the reporter re-fires on
+   * every projection change, and a header that re-rendered on every note would
+   * take the staff down with it.
+   */
+  const [placard, setPlacard] = useState({ key: null, hand: null });
+  const takePlacard = useCallback((key, hand) => {
+    setPlacard((prev) => (prev.key === key && prev.hand === hand ? prev : { key: key ?? null, hand: hand ?? null }));
+  }, []);
   // The stall clock's reset signal. Bumped by every note-on the run sees, and
   // read as a dependency by the stall effect below — which is the whole of "the
   // clock resets on every note-on", expressed where React can see it rather
@@ -1025,7 +1038,6 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
   // side by side never cost a child the staff they each fit on alone.
   const keysWindow = deckWindow(instance, visualCursor.index);
   const askStaff = !score && runTier >= 1 && staffFitsAsk(keysWindow.events);
-  const staffShown = stage === 'keys' ? askStaff : true;
   // The bank splits a key across `key` (the root) and an axis (the quality);
   // `instanceKeySignature` re-joins them, so a minor instance is not spelled
   // with the sharps of its relative major.
@@ -1140,9 +1152,10 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
       noteProgress={noteProgress}
       fallback={standingInstruction}
       labels={!bare}
+      onPlacard={takePlacard}
     />
   ) : deckProgram ? (
-    <DrillProgress program={deckProgram} phase={phase} fallback={standingInstruction} labels={!bare} />
+    <DrillProgress program={deckProgram} phase={phase} fallback={standingInstruction} labels={!bare} onPlacard={takePlacard} />
   ) : null;
   /**
    * WHETHER PILLS WILL ACTUALLY BE DRAWN — which `runProgress` cannot answer.
@@ -1190,14 +1203,26 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
         {/* A BARE RUN (the game gate) says nothing here at all. The header
             element stays, empty and zero-height, because it is the grid's first
             row: dropping it would slide the stage up into that row. */}
-        {!bare && <div><span>{framing ?? (challenge ? 'Pass challenge' : 'Practice')}</span>{!chromeDrawn && <h1>{ask ?? subject.title}</h1>}</div>}
+        {/* THE NAME OF THE MATERIAL IS THE TITLE, AND IT IS THE ONLY ONE.
+            A drill spent this row on a framing sentence ("Pass this to finish A
+            major — both hands") over a section heading ("Modes"), and then said
+            the same thing a third time on a placard UNDER the staff — three
+            lines of standing text for one fact, with the pills squeezed out of
+            the rail's height to make room for the third. The placard is now the
+            heading, at the top, where a title goes. A run with no drill behind
+            it keeps the eyebrow-and-heading it had: nothing else on that screen
+            says why it is there. */}
+        {!bare && (placard.key
+          ? <h1 className="piano-exercise-run__placard"><DrillPlacard label={placard.key} hand={placard.hand} /></h1>
+          : <div><span>{framing ?? (challenge ? 'Pass challenge' : 'Practice')}</span>{!chromeDrawn && <h1>{ask ?? subject.title}</h1>}</div>)}
         <div className="piano-exercise-run__context">
-          {/* Each chip only where it means something: a key names how a STAFF is
-              spelled, so it is silent when there is no staff; a meter is what a
-              cued ask is counted in, and nothing at all in a free one. A score
-              carries neither: both are printed on the page the child is reading,
-              and a chip repeating them would be the kiosk talking over the music. */}
-          {!bare && staffShown && instance?.key && <span>Key of {instance.key}</span>}
+          {/* Each chip only where it means something: a meter is what a cued ask
+              is counted in, and nothing at all in a free one. A score carries
+              none of them: they are printed on the page the child is reading,
+              and a chip repeating them would be the kiosk talking over the music.
+              The KEY chip went with the framing line — the staff stands its own
+              signature, the placard names the key, and a third copy in the
+              corner was the same fact charging rent on the title row. */}
           {!bare && cued && instance?.meter && <span>{instance.meter}</span>}
           {!bare && challenge && requirement.gates?.pace?.target_bpm && <strong>{requirement.gates.pace.target_bpm} BPM</strong>}
         </div>

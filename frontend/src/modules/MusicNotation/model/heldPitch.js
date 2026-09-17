@@ -67,6 +67,40 @@ export function classifyHeldPitch(midi, { pressedAt, cursorArrivedAt, cursorTarg
 }
 
 /**
+ * Is an attempt UNDER WAY at this cursor entry — as opposed to a finger left on
+ * a key from an earlier one?
+ *
+ * The same rule as `classifyHeldPitch`, asked of the whole held set: judging
+ * starts on a key that is a target of this entry, or on one pressed here and
+ * wrong (a real ghost), and never on the tail of the note before.
+ *
+ * It exists because the renderers armed their verdict off `activeNotes.size` —
+ * "is any key down anywhere" — which on legato material is true the instant the
+ * cursor advances, before the child has played anything at all. The new entry
+ * then had no held target, so its notehead was painted as a miss: every correct
+ * note flashed the NEXT one red before a finger reached it, once per note, all
+ * the way up a scale. Pitch-level classification could not save that, because
+ * the accusation was aimed at the target notehead — a note nothing had been
+ * played against yet — rather than at anything the child did.
+ *
+ * `SvgSequenceStaff` carried this loop inline (2026-09-11) while the abc stage
+ * kept the `.size` test; it lives here so the two staves cannot drift again.
+ *
+ * @param {Map<number, {timestamp?:number}>|null} activeNotes
+ * @param {{cursorArrivedAt:number, cursorTargets:Set<number>}} at
+ * @returns {boolean}
+ */
+export function attemptUnderWay(activeNotes, { cursorArrivedAt, cursorTargets } = {}) {
+  for (const [midi, held] of activeNotes ?? []) {
+    const verdict = classifyHeldPitch(midi, {
+      pressedAt: held?.timestamp, cursorArrivedAt, cursorTargets,
+    });
+    if (verdict !== 'sustain') return true;
+  }
+  return false;
+}
+
+/**
  * Split a held-note Map into what to DRAW and what to stay quiet about.
  *
  * @param {Map<number, {timestamp?:number}>|null} activeNotes

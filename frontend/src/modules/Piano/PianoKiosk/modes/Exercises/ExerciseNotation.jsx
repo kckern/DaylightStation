@@ -2,9 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { AbcRenderer } from '../../../../MusicNotation/renderers/AbcRenderer.jsx';
 import { SvgSequenceStaff, sequenceStaffViewBox } from '../../../../MusicNotation/renderers/SvgSequenceStaff.jsx';
-import { instanceToAbc } from './exerciseAbc.js';
+import { handForPitch, instanceToAbc } from './exerciseAbc.js';
 import { getStaffPositionOnClef } from '../../../../MusicNotation/model/pitch.js';
-import { partitionHeldPitches } from '../../../../MusicNotation/model/heldPitch.js';
+import { attemptUnderWay, partitionHeldPitches } from '../../../../MusicNotation/model/heldPitch.js';
 import {
   SharpShape, FlatShape, ledgerLineYs,
   ACCIDENTAL_WIDTH, ACCIDENTAL_GAP, NOTEHEAD_RX, NOTEHEAD_RY,
@@ -85,7 +85,18 @@ export default function ExerciseNotation({ instance, eventIndex = 0, activeNotes
               && (pitches[0].midi < 60 ? 'left' : 'right') === hand ? pitches[0] : null);
         const target = note.midi ?? renderedPitch?.midi;
         const current = !complete && index === eventIndex;
-        const attempting = current && Boolean(activeNotes?.size);
+        const targets = new Set(pitches.map(p => p.midi));
+        // AN ATTEMPT AT THIS NOTE NEEDS A KEY PLAYED AT THIS NOTE.
+        // This read `Boolean(activeNotes?.size)` — any key down anywhere — which
+        // on legato material is true the instant the cursor advances, while the
+        // only thing under a finger is the note just played correctly. The new
+        // target was not held yet, so it went straight to `exercise-note-wrong`:
+        // the next note of a scale turned red before the child had touched it,
+        // once per note, all the way up. The ghost layer below already refused
+        // that signal; the notehead colour never did, and `SvgSequenceStaff` had
+        // been carrying the fix alone since 2026-09-11. One rule, both staves:
+        // MusicNotation/model/heldPitch.js.
+        const attempting = current && attemptUnderWay(activeNotes, { cursorArrivedAt, cursorTargets: targets });
         note.els.forEach((element) => {
           element.classList.remove(...FEEDBACK);
           if (preview) return;
@@ -123,16 +134,24 @@ export default function ExerciseNotation({ instance, eventIndex = 0, activeNotes
         const accidental = accidentalForKey(instanceKeySignature(instance));
         const x = box.x + box.width / 2;
         const bottom = lines.at(-1) + 0.35;
-        const targets = new Set(pitches.map(p => p.midi));
         // A HELD KEY IS NOT AUTOMATICALLY A WRONG ONE. This filtered on
         // membership alone, which on a legato scale draws the note you have
         // just played correctly — and not yet let go of — as a mistake beside
         // the note you are playing now. `partitionHeldPitches` is the shared
         // rule: a ghost needs an ONSET at this entry, which is the same thing
         // the assessor grades on. See MusicNotation/model/heldPitch.js.
+        // ONE WRONG NOTE, ONE GHOST, IN ONE PLACE. Both staves of a grand staff
+        // are lanes, and each lane was drawing the WHOLE ghost set at its own
+        // clef — so a single wrong key appeared twice, once in the treble and
+        // once in the bass, at two unrelated heights. MIDI cannot say which
+        // hand pressed it, so the ghost goes to the staff whose register holds
+        // it: the same middle-C split `exerciseAbc.notesFor` uses to decide
+        // which staff a hand-less note is engraved on.
         const ghosts = attempting
           ? partitionHeldPitches(activeNotes, { cursorArrivedAt, cursorTargets: targets })
-            .ghosts.map(({ midi }) => ({ midi, ...getStaffPositionOnClef(midi, clef, accidental) }))
+            .ghosts.filter(({ midi }) => staffRef.current.length < 2
+              || staffIndex === (handForPitch(midi) === 'left' ? 1 : 0))
+            .map(({ midi }) => ({ midi, ...getStaffPositionOnClef(midi, clef, accidental) }))
           : [];
         const y = Math.min(lines[0] - spacing, box.y - 4 * scale);
         // Keep ledger-line notes inside the same lane, including abcjs's

@@ -795,17 +795,69 @@ describe('ExerciseRun tier-driven presentation', () => {
     expect(screen.getByRole('heading', { name: 'C major fragment' })).toBeInTheDocument();
   });
 
-  it('labels the key chip, and drops it entirely where there is no staff to read', async () => {
+  /**
+   * THE DRILL'S NAME IS THE TITLE.
+   *
+   * It used to sit on a placard UNDER the staff, in the rail's fixed row, while
+   * the title row above the music spent two lines on a framing sentence ("Pass
+   * this to finish A major — both hands") over a section heading ("Modes") that
+   * said the same thing twice more. Three lines of standing text for one fact,
+   * and the pills squeezed out of their own height to make room for the third.
+   */
+  const drill = (display) => ({
+    id: 'scale-drill',
+    steps: [
+      { id: 'set-1', state: 'current', display, requirement: { required_passes: 3 }, pass_count: 0 },
+      { id: 'set-2', state: 'todo', requirement: { required_passes: 3 }, pass_count: 0 },
+    ],
+  });
+
+  it('titles the screen with the drill placard, and says it exactly once', async () => {
+    render(<ExerciseRun {...practice({
+      programId: 'scale-drill',
+      stepId: 'set-1',
+      drillProjection: drill({ key: 'A major', hand: 'RL', hand_label: 'both hands' }),
+      framing: 'Pass this to finish A major — both hands',
+    })} />);
+    // "A major" legitimately appears twice — the title names the material and
+    // the cluster under it maps which set is which — so this waits on the
+    // placard itself rather than on a string that matches both.
+    await waitFor(() => expect(document.querySelector('.drill-placard__key')).not.toBeNull());
+
+    const heading = screen.getByRole('heading');
+    expect(heading).toHaveTextContent('A major');
+    expect(heading).toHaveTextContent('both hands');
+    // The placard is IN the heading, not under the staff.
+    expect(document.querySelector('.piano-exercise-run__head .drill-placard')).not.toBeNull();
+    expect(document.querySelector('.piano-exercise-run__rail .drill-placard')).toBeNull();
+    // And the two lines it replaces are gone: no framing sentence, no section
+    // heading repeating what the placard already says.
+    expect(screen.queryByText('Pass this to finish A major — both hands')).not.toBeInTheDocument();
+    expect(screen.queryByText('C major fragment')).not.toBeInTheDocument();
+  });
+
+  it('keeps the framing and the exercise title where there is no drill to name', async () => {
+    render(<ExerciseRun {...practice({ framing: 'Pass this to finish Warm-up' })} />);
+    await ready();
+    expect(screen.getByText('Pass this to finish Warm-up')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'C major fragment' })).toBeInTheDocument();
+  });
+
+  it('names the key nowhere in the chrome — the staff stands its own signature', async () => {
+    // The chip said "Key of C" in the corner of the title row while the staff
+    // below it was already standing the signature and, on a drill, the placard
+    // was already naming the key. Three copies of one fact, one of them charging
+    // rent on the run's title line.
     const view = render(<ExerciseRun {...practice({ tier: 2 })} />);
     await ready();
-    expect(screen.getByText('Key of C')).toBeInTheDocument();
+    expect(screen.queryByText(/Key of/)).not.toBeInTheDocument();
 
     view.unmount();
     render(<ExerciseRun {...practice({ tier: 0 })} />);
     await ready();
     expect(screen.queryByText(/Key of/)).not.toBeInTheDocument();
-    // …and the bare letter that used to stand there is gone with it: an
-    // unlabeled "C" on a screen with no staff names nothing a child can use.
+    // …and no bare letter standing in for it either: an unlabeled "C" on a
+    // screen with no staff names nothing a child can use.
     expect(screen.queryByText('C')).not.toBeInTheDocument();
   });
 

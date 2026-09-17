@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef } from 'react';
 import getLogger from '../../../lib/logging/Logger.js';
-import { classifyHeldPitch, partitionHeldPitches } from '../model/heldPitch.js';
+import { attemptUnderWay, classifyHeldPitch, partitionHeldPitches } from '../model/heldPitch.js';
 import { getStaffPositionOnClef } from '../model/pitch.js';
 import { inkForHead, keySignatureMarks, keySignatureSpec } from '../model/keySignatureLayout.js';
 
@@ -233,21 +233,18 @@ export function SvgSequenceStaff({
    * reached it.
    *
    * `classifyHeldPitch` already draws exactly the line this needs, and the
-   * ghost layer below has always used it: a key held from BEFORE the cursor
+   * ghost layer below has always used it — `attemptUnderWay` is that loop,
+   * shared now with the abc stage, which kept the `.size` test until today: a
+   * key held from BEFORE the cursor
    * arrived is a SUSTAIN — the afterglow of a note the engine already judged,
    * and no answer to this one. Judging therefore starts on a key that is a
    * target of this entry, or on one pressed here and wrong (a real ghost), and
    * never on the tail of the note before.
    */
-  const attemptInProgress = useMemo(() => {
-    for (const [midi, held] of activeNotes ?? []) {
-      const verdict = classifyHeldPitch(midi, {
-        pressedAt: held?.timestamp, cursorArrivedAt, cursorTargets: cursorTargetMidis,
-      });
-      if (verdict !== 'sustain') return true;
-    }
-    return false;
-  }, [activeNotes, cursorArrivedAt, cursorTargetMidis]);
+  const attemptInProgress = useMemo(
+    () => attemptUnderWay(activeNotes, { cursorArrivedAt, cursorTargets: cursorTargetMidis }),
+    [activeNotes, cursorArrivedAt, cursorTargetMidis],
+  );
 
   // Which clef each pitch would pick for itself; the majority of those decides
   // the one staff, unless the caller named it.

@@ -106,9 +106,12 @@
     stroke-width: 0.5;
   }
 
+  // Darker and less orange than it was (rgba(120, 66, 22, 1)): a banked note
+  // should recede behind the one being read, not glow beside it. Kept in step
+  // with the abc stage's `.exercise-note-done` — one brown on every staff.
   .sequence-note-done {
-    fill: rgba(120, 66, 22, 1);
-    stroke: rgba(120, 66, 22, 1);
+    fill: rgba(92, 56, 28, 1);
+    stroke: rgba(92, 56, 28, 1);
   }
 
   .sequence-note-current {

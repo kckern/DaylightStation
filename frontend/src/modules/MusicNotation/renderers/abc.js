@@ -154,6 +154,66 @@ V:LH clef=bass
 };
 
 /**
+ * Authored note values → the ABC length suffix they get under `L:1/4`.
+ *
+ * `L:1/4` is the unit length every generator in this file writes, so an
+ * undeclared value engraves as a plain quarter notehead: no flag, no beam, no
+ * rhythm claimed. Untimed material is most of the exercise bank ("omit for
+ * untimed material", exercise-bank.md), and it should look like a method book's
+ * pattern line rather than like a rhythm it was never given.
+ */
+export const ABC_DURATIONS = Object.freeze({
+  whole: '4', half: '2', quarter: '', eighth: '/2', '8th': '/2', sixteenth: '/4', '16th': '/4',
+});
+
+/** The values that carry a flag, and therefore want a beam over a run of them. */
+const BEAMABLE = new Set(['eighth', '8th', 'sixteenth', '16th']);
+
+/** How many flagged notes share one beam. Four is the reading unit an engraver uses. */
+const BEAM_GROUP = 4;
+
+/** One note, with its fingering decoration and its length. */
+export const abcNoteToken = (note, keySignature = 'C') => {
+  if (!note || note.rest) return 'x';
+  const finger = note.finger != null ? `!${note.finger}!` : '';
+  return `${finger}${midiToAbc(note.midi, keySignature)}${ABC_DURATIONS[note.value] ?? ''}`;
+};
+
+/**
+ * A run of notes as ONE ENGRAVED LINE — the difference between a published
+ * exercise and a wall of flags.
+ *
+ * abcjs beams notes written ADJACENT and breaks the beam wherever there is a
+ * space, so beaming is a joining rule and nothing more. Both generators used to
+ * join with a space unconditionally, which meant every flagged note carried its
+ * own flag stack: sixteen individually-flagged sixteenths in a row, which is
+ * what a scale looked like on the grand staff and reads as noise rather than as
+ * music.
+ *
+ * Only flagged values beam (a quarter has nothing to beam), a rest breaks the
+ * group, and a group never runs past four.
+ */
+export const abcNoteLine = (notes, keySignature = 'C') => {
+  const entries = (notes || []).map((note) => ({
+    abc: abcNoteToken(note, keySignature),
+    beamable: Boolean(note) && !note.rest && BEAMABLE.has(note.value),
+  }));
+  let line = '';
+  let run = 0;
+  entries.forEach((entry, index) => {
+    if (index === 0) {
+      line = entry.abc;
+      run = entry.beamable ? 1 : 0;
+      return;
+    }
+    const joinsBeam = entry.beamable && entries[index - 1].beamable && run < BEAM_GROUP;
+    line += joinsBeam ? entry.abc : ` ${entry.abc}`;
+    run = joinsBeam ? run + 1 : (entry.beamable ? 1 : 0);
+  });
+  return line;
+};
+
+/**
  * Generate ABC for a melodic drill — a played figure (not a chord) on a grand
  * staff, with fingering numbers. Content-agnostic: drives any lesson drill whose
  * data shape is { meter, hands: { right:[cell], left:[cell] } }.
@@ -169,13 +229,8 @@ V:LH clef=bass
  */
 export const generateMelodyAbc = (drill, keySignature = 'C') => {
   const meter = drill?.meter || '4/4';
-  const noteToken = (n) => {
-    if (!n || n.rest) return 'x';
-    const finger = n.finger != null ? `!${n.finger}!` : '';
-    return finger + midiToAbc(n.midi, keySignature);
-  };
-  // One cell → one measure of space-separated note tokens.
-  const cellToMeasure = (cell) => (cell?.notes || []).map(noteToken).join(' ') || 'x';
+  // One cell → one measure, engraved and beamed by the shared rule.
+  const cellToMeasure = (cell) => abcNoteLine(cell?.notes, keySignature) || 'x';
   // Join a hand's cells (ascending | descending) into a barred voice line.
   const handLine = (hand) => {
     const cells = Array.isArray(hand) ? hand : [];
@@ -186,8 +241,14 @@ export const generateMelodyAbc = (drill, keySignature = 'C') => {
   const rh = handLine(drill?.hands?.right);
   const lh = handLine(drill?.hands?.left);
 
+  // L:1/4, NOT L:1/16 — the unit length the other two generators in this file
+  // already write, and the one the note values above are expressed against.
+  // Under `L:1/16` the tokens carried no length at all, so every note in every
+  // two-hand exercise engraved as a SIXTEENTH whatever it was: a scale the bank
+  // declares no rhythm for came out as sixteen double-flagged notes, while the
+  // single-staff sibling of the same exercise drew the same notes as quarters.
   return `X:1
-L:1/16
+L:1/4
 M:${meter}
 K:${keySignature}
 %%staffsep 70
