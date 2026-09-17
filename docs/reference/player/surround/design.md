@@ -502,7 +502,9 @@ Borrow ArtMode's physical realism, but one plate, not a gallery:
 
 ## Quality floor
 
-- 16:9 is inviolable — letterbox, never distort.
+- The corpus's declared aspect ratio is inviolable — letterbox or
+  pillarbox, never distort. 16:9 is the default when a work authors none
+  (`piece.aspectRatio`).
 - Legible at 10 feet: nothing below `0.72rem`, no thin weights on the dark ground.
 - Everything degrades to an empty slot: a missing portrait, a piece with no
   segments, a sidecar with no facts. The frame must still look composed.
