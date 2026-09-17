@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import {
   readPersistedSession,
   writePersistedSession,
@@ -24,6 +24,16 @@ describe('persistence', () => {
     localStorage.clear();
     vi.useFakeTimers();
   });
+
+  // FAKE TIMERS MUST BE HANDED BACK. Installed in a `beforeEach` and never
+  // restored, they stay installed for the rest of this worker's life — including
+  // Vitest's own teardown, which needs real timers to shut the pool down. The
+  // file's tests all passed; the WORKER then refused to terminate
+  // ("Tests closed successfully but something prevents Vite server from
+  // exiting"), which failed the whole-suite run while passing in isolation.
+  // Every other fake-timer test under Media/ already restores; this was the one
+  // that did not.
+  afterEach(() => { vi.useRealTimers(); });
 
   it('round-trips a SessionSnapshot under PERSIST_KEY with schemaVersion', () => {
     writePersistedSession(makeSnapshot(), { wasPlayingOnUnload: true });
