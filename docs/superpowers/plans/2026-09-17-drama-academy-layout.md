@@ -11,6 +11,29 @@
 **Spec:** `docs/superpowers/specs/2026-09-16-drama-surround-design.md`
 **Predecessor plan:** `docs/superpowers/plans/2026-09-16-drama-surround.md` (Tasks 1–10, all shipped — their commits are in git history even though the file's checkboxes were never ticked). **Do not redo those tasks.** This plan starts where Task 4 stopped.
 
+## Status
+
+**Movement A is complete and deployed** (2026-09-17). Tasks 1-3 are ticked below.
+
+- Cap proven: full Surround suite **27 files, 1003 passed / 2 expected fail**, zero
+  regressions; all nine 4:3 assertions green at every fleet root.
+- Shipped as `70cb090f4`, deployed as `ecc18b668` (verified against `/build.txt`,
+  which read `4376a95ff` before the deploy).
+- Measured on the live app at the living-room root, 33% rail:
+
+  | | before | after |
+  |---|---|---|
+  | stage | 549.6px in a 540px column | 428.7px |
+  | picture | 643.2x482.4 | 482x361.5, ratio 1.333 |
+  | band | **0.4px** | **121.3px** |
+  | band regions | segment-map only (ticker deleted) | segment-map 82px + cue-ticker 40px |
+
+  The band measures 121.3 rather than the authored 111 reserve because the reserve
+  is a floor the footer grows past, plus `--band-overlap: 10px` — the band rides up
+  over the picture's foot, so its box is 10px taller than its share of the column.
+
+**Movement B (Tasks 4-8) is planned and not started.**
+
 ## Why this plan exists
 
 Predecessor Task 4 generalized the media box to `piece.aspectRatio` and verified it with a unit assertion — that the inline style string reads `"4 / 3"`. Nothing in it measured a layout. The spec had explicitly flagged the gap:
@@ -87,12 +110,12 @@ The frame code and the stylesheet are already written and sitting uncommitted. T
 - Consumes: `DEFINITION.collapse.footerFloor` (90), `DEFINITION.collapse.mediaReserve` (absent in the harness fixture → falls back to `footerFloor`)
 - Produces: `--surround-media-cap-w` on `.surround-frame`, read by `.surround-frame__media`'s `width: min(100%, …)`. Task 7's academy definition sets `collapse.mediaReserve: 0` to opt out of the reserve entirely.
 
-- [ ] **Step 1: Confirm the spec is red, and red for the stated reason**
+- [x] **Step 1: Confirm the spec is red, and red for the stated reason**
 
 Run: `npx vitest run --reporter=default frontend/src/modules/Surround/band.measure.test.jsx -t "4:3"`
 Expected: FAIL — `4 failed | 5 passed`. Specifically: all three `the band keeps at least its collapse floor` cases fail (`the band is 0.4px` at 960×540, `58px` at 1920×1080), and `'960x540' — the stage never outgrows the column it sits in` fails with `the stage is 549.6px inside a 540px column`. The three `keeps the ratio the corpus declared` cases PASS — the picture is not distorted, the band is crushed.
 
-- [ ] **Step 2: Teach the harness's effect emulation to publish the cap**
+- [x] **Step 2: Teach the harness's effect emulation to publish the cap**
 
 In `layout()`, replace the `page.evaluate` block so the cap is computed **before** the footer's height is read — the cap is what changes that height, so emulating it afterwards measures the old layout:
 
@@ -141,19 +164,19 @@ In `layout()`, replace the `page.evaluate` block so the cap is computed **before
   });
 ```
 
-- [ ] **Step 3: Run the 4:3 spec and confirm it is green**
+- [x] **Step 3: Run the 4:3 spec and confirm it is green**
 
 Run: `npx vitest run --reporter=default frontend/src/modules/Surround/band.measure.test.jsx -t "4:3"`
 Expected: PASS, 9 passed. The derived geometry at 960×540 with a 33% rail and the default reserve of 90: `capH = 540 − 67.2 − 90 = 382.8`, `capW = 382.8 × 4/3 = 510.4`, so the picture is 510×383, the stage is 450 (≤ 540), and the band is exactly 90. At 1280×720 the picture is 750×563; at 1920×1080, 1230×923. The band is 90 at all three.
 
-- [ ] **Step 4: Run the whole Surround suite for regressions**
+- [x] **Step 4: Run the whole Surround suite for regressions**
 
 Run: `npx vitest run --reporter=default frontend/src/modules/Surround/`
 Expected: PASS with **zero** regressions against the recorded baseline for `band.measure.test.jsx` of **100 passed | 2 expected fail (102)**. The two `it.fails` entries are pre-existing recorded gaps (the corner-plate harness gap and the lyric-rail panel sizing) and must remain *expected* failures — if either flips to passing, promote it rather than ignoring it. Total for the file becomes 109 passed | 2 expected fail (111).
 
 The 16:9 path must be provably untouched: on a 16:9 payload the cap resolves past the column (at 960×540, `382.8 × 16/9 = 680px` against a 643px column), so `min(100%, 680px)` picks `100%` — literally the declared value before this change.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add frontend/src/modules/Surround/SurroundFrame.jsx \
@@ -190,14 +213,14 @@ Task 1's default reserve (`footerFloor`, 90) yields a 510×383 picture and a 90p
 **Interfaces:**
 - Consumes: `collapse.mediaReserve`, read by `SurroundFrame.jsx` from Task 1.
 
-- [ ] **Step 1: Back up the current definition**
+- [x] **Step 1: Back up the current definition**
 
 ```bash
 sudo docker exec daylight-station sh -c 'cat data/content/surround/_surrounds/playhouse.yml' > /tmp/playhouse.yml.bak
 wc -c /tmp/playhouse.yml.bak
 ```
 
-- [ ] **Step 2: Write the definition with the reserve authored**
+- [x] **Step 2: Write the definition with the reserve authored**
 
 ```bash
 cat > /tmp/playhouse.yml <<'YAML'
@@ -240,7 +263,7 @@ wc -c /tmp/playhouse.yml
 
 Expected: the two `wc -c` byte counts are identical.
 
-- [ ] **Step 3: Confirm the store serves it**
+- [x] **Step 3: Confirm the store serves it**
 
 ```bash
 curl -s "http://localhost:3111/api/v1/play/plex:697661" | jq '.surround.definition.collapse'
@@ -256,20 +279,20 @@ Task 1's proof is a harness. The defect was *visible on a television and invisib
 
 **Files:** none (build and deploy only)
 
-- [ ] **Step 1: Run the deploy gate as its own step — it must be able to halt the sequence**
+- [x] **Step 1: Run the deploy gate as its own step — it must be able to halt the sequence**
 
 ```bash
 ./scripts/deploy-gate.sh
 ```
 Expected: exit 0. On exit 1 **stop**: someone is using the system (a fitness session, a playing video, a child at the school Portal or the piano kiosk, or a garage lockdown). The gate fails closed on an unreachable log store, which is correct and not overridable.
 
-- [ ] **Step 2: Build**
+- [x] **Step 2: Build**
 
 ```bash
 ./scripts/build-daylight.sh
 ```
 
-- [ ] **Step 3: Re-run the gate, then deploy**
+- [x] **Step 3: Re-run the gate, then deploy**
 
 A build takes minutes and someone can walk up in that time.
 
@@ -278,7 +301,7 @@ A build takes minutes and someone can walk up in that time.
   sudo docker stop daylight-station && sudo docker rm daylight-station && sudo deploy-daylight
 ```
 
-- [ ] **Step 4: Measure the live frame headless — do not trust the eye alone**
+- [x] **Step 4: Measure the live frame headless — do not trust the eye alone**
 
 ```bash
 cat > /tmp/measure-shrew.mjs <<'EOF'
@@ -305,7 +328,7 @@ node /tmp/measure-shrew.mjs
 
 Expected: `footer.h` ≈ 111 (not 0.4), `stage.h` ≤ `main.h`, `media` ≈ 482×362 with ratio 1.333, and `regions` contains **both** `segment-map` and `cue-ticker` — the ticker's presence is the proof the collapse rule did not fire.
 
-- [ ] **Step 5: Reload the living-room kiosk so the Shield picks up the new bundle**
+- [x] **Step 5: Reload the living-room kiosk so the Shield picks up the new bundle**
 
 ```bash
 sudo docker exec daylight-station sh -c "node -e \"
@@ -318,11 +341,13 @@ fetch('http://10.0.0.12:2323/?' + qs).then(r=>r.text()).then(console.log);
 
 Expected: a JSON response. `type=json` is required — without it FKB returns the HTML dashboard, which looks like an auth failure and is not one.
 
-- [ ] **Step 6: Move the scratch script out of the way**
+- [x] **Step 6: Leave no scratch file behind**
 
-```bash
-mkdir -p /opt/Code/DaylightStation/_deleteme && mv /tmp/measure-shrew.mjs /opt/Code/DaylightStation/_deleteme/
-```
+Write the measurement script into the session scratchpad rather than `/tmp`, and
+there is nothing to sweep up afterwards. (On the run of record it lived in the
+scratchpad, so the `_deleteme/` move this step originally prescribed had no
+subject. If you do stage it in `/tmp`, move it: `mkdir -p _deleteme && mv
+/tmp/measure-shrew.mjs _deleteme/` — `rm` is permission-blocked here.)
 
 ---
 
