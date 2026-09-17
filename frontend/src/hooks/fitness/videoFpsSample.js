@@ -57,3 +57,36 @@ export function computeVideoFpsSample(prev, now) {
     seeked: false
   };
 }
+
+/**
+ * What the profiler should CALL the video's state.
+ *
+ * `paused` and `readyState` alone cannot tell PLAYING from "not paused, fully
+ * buffered, and decoding nothing". A `<video>` left in the DOM by a module that
+ * has finished — or one that is never composited — sits at `paused === false`,
+ * `readyState === 4`, and produces no frames at all, and the profiler reported
+ * that as `playing` forever.
+ *
+ * That is not cosmetic. It is what `fitness.video_fps_degraded` keys off
+ * (`fps < 20 && videoState === 'playing'`), so an idle kiosk logged a warning
+ * every 30 seconds; and the deploy gate blocks on `"videoState":"playing"` in
+ * the container log, so an empty garage held a deploy shut indefinitely — the
+ * failure its own comments call "a gate that is never clear gets bypassed".
+ * Observed 2026-09-16: an idle page reporting `videoFps: 0, videoState:
+ * "playing"` for an hour with `sessionActive:false, rosterSize:0`, and doing it
+ * again 30s after a reload.
+ *
+ * ZERO FRAMES ACROSS A MEASURED WINDOW IS STALLED. A null fps is deliberately
+ * NOT stalled: that is "no measurement" (the first sample, a sub-second window,
+ * a seek), and calling it stalled would report a stall for the first 30s of
+ * every genuine playback.
+ *
+ * @param {{paused:boolean, readyState:number, fps:number|null}} sample
+ * @returns {'paused'|'stalled'|'playing'}
+ */
+export function deriveVideoState({ paused, readyState, fps } = {}) {
+  if (paused) return 'paused';
+  if (readyState < 3) return 'stalled';
+  if (fps === 0) return 'stalled';
+  return 'playing';
+}
