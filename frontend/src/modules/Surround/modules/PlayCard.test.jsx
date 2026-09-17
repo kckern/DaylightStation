@@ -75,7 +75,12 @@ describe('PlayCard', () => {
   it('is registered under play-card, for the right rail', () => {
     expect(getSurroundRegistry().has('play-card')).toBe(true);
     expect(SURROUND_BUILTIN_MODULES).toContain('play-card');
-    expect(getSurroundRegistry().getMeta('play-card')).toEqual({ regions: ['right'] });
+    // THE RAIL IS WHAT THIS SPEC IS ABOUT, and that is all it should pin. The
+    // full slot declaration is asserted once, in `registry.test.js`, which owns
+    // it; restating the whole list here meant that every legitimate new
+    // placement — the card as a strip above or below the picture, say — broke a
+    // test about something else, in a file that has no opinion on the matter.
+    expect(getSurroundRegistry().getMeta('play-card').regions).toContain('right');
   });
 
   it('renders the play’s own identity — title, genre, setting', () => {

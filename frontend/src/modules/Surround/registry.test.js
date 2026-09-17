@@ -92,6 +92,31 @@ describe('surround builtins', () => {
     });
   });
 
+  /**
+   * THE SLOTS A RAIL-CARRIED LAYOUT NEEDS.
+   *
+   * The sweep above only asserts that every builtin declares SOME region, which
+   * cannot catch a set that is present and wrong. A definition that puts the
+   * timeline or the listening band in the rail — the arrangement a picture
+   * narrower than the screen wants, where the chrome goes beside the video
+   * rather than under it — is a legitimate authoring choice, and the meta has
+   * to say so or `SurroundFrame` logs `surround.module.misplaced` on every
+   * render of it. It renders either way; it just tells the log it was a
+   * mistake, which is the sort of false alarm that trains people to ignore
+   * warnings.
+   */
+  it('declares the slots a rail-carried layout places its modules in', async () => {
+    const builtins = await import('./builtins.js');
+    builtins.registerSurroundBuiltins();
+    const registry = getSurroundRegistry();
+    expect(registry.getMeta('segment-map').regions, 'the timeline cannot be placed in the rail')
+      .toEqual(expect.arrayContaining(['bottom', 'right']));
+    expect(registry.getMeta('cue-ticker').regions, 'the listening band cannot be placed in the rail')
+      .toEqual(expect.arrayContaining(['bottom', 'right']));
+    expect(registry.getMeta('play-card').regions, 'the identity card cannot be placed as a strip')
+      .toEqual(expect.arrayContaining(['right', 'top']));
+  });
+
   // Asserts the exact SET, not a count: a count tolerates a module being
   // registered under a wrong name as long as the total is right, which is the
   // one failure a definition's `module:` reference cannot survive.
