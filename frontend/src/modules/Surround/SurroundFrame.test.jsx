@@ -192,6 +192,18 @@ describe('SurroundFrame', () => {
     expect(media.contains(getByTestId('the-player'))).toBe(true);
   });
 
+  it('locks the media box to a corpus-declared aspect ratio when the piece authors one', () => {
+    const data = { ...DATA, piece: { ...DATA.piece, aspectRatio: '4 / 3' } };
+    const { getByTestId } = renderFrame({ data });
+    expect(getByTestId('surround-media').style.aspectRatio).toBe('4 / 3');
+  });
+
+  it('publishes the resolved aspect ratio as a custom property, for the SCSS fallback', () => {
+    const data = { ...DATA, piece: { ...DATA.piece, aspectRatio: '4 / 3' } };
+    const { getByTestId } = renderFrame({ data });
+    expect(getByTestId('surround-frame').style.getPropertyValue('--surround-aspect-ratio')).toBe('4 / 3');
+  });
+
   it('sizes the footer to exactly the measured media-box width', () => {
     const { getByTestId } = renderFrame();
     resize(getByTestId('surround-media'), { width: 800, height: 450 });
@@ -583,7 +595,10 @@ describe('SurroundFrame — the shipped composition', () => {
     expect(getByTestId('surround-media').style.aspectRatio).toBe('16 / 9');
     const mediaRule = css.match(/\.surround-frame__media \{[^}]*\}/)[0];
     expect(mediaRule).not.toContain('margin');
-    expect(mediaRule).toMatch(/aspect-ratio: 16\s*\/\s*9/);   // sass prints it unspaced
+    // The corpus-declared aspect ratio, with 16/9 as its fallback — see
+    // "locks the media box to a corpus-declared aspect ratio" above for the
+    // inline-style half of this same lock.
+    expect(mediaRule).toMatch(/aspect-ratio: var\(--surround-aspect-ratio, 16\s*\/\s*9\)/);
   });
 
   it('joins band to video with a gradient rather than a hard edge', () => {
@@ -924,10 +939,11 @@ describe('SurroundFrame — the curtain’s bleed', () => {
     const css = sheet();
     const veil = css.match(/\.surround-frame__stage::after \{[^}]*\}/)[0];
     expect(veil, 'the veil eats taps on the top of the picture').toContain('pointer-events: none');
-    // The 16:9 lock is untouched: the media box's own rule still carries it,
-    // and the veil is a positioned pseudo-element with no bearing on layout.
+    // The aspect-ratio lock is untouched: the media box's own rule still
+    // carries it, and the veil is a positioned pseudo-element with no
+    // bearing on layout.
     const media = css.match(/\.surround-frame__media \{[^}]*\}/)[0];
-    expect(media).toContain('aspect-ratio: 16/9');
+    expect(media).toContain('aspect-ratio: var(--surround-aspect-ratio, 16/9)');
     expect(veil).toContain('position: absolute');
     // It exists only when the frame is active — the inactive shell has no
     // class, so this selector matches nothing there.

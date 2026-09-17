@@ -227,9 +227,13 @@
   z-index: 1;
 }
 
-/* 16:9 is inviolable. aspect-ratio / max-width / max-height are ALSO set inline
-   by the component so no cascade can override the lock; these are the fallbacks
-   for a browser that drops the inline style. Children fill the box exactly. */
+/* The corpus's declared aspect ratio is inviolable — letterbox or pillarbox,
+   never distort. 16:9 is the default when a work authors none.
+   aspect-ratio / max-width / max-height are ALSO set inline by the component
+   so no cascade can override the lock; these are the fallbacks for a browser
+   that drops the inline style, reading the same value the component
+   publishes as `--surround-aspect-ratio` so the two cannot disagree.
+   Children fill the box exactly. */
 .surround-frame__media {
   position: relative;
   /* Fix round 1 (review finding, user-reported): SEALS the player's own
@@ -244,7 +248,7 @@
      of them now resolve against each other inside the media box and can never
      out-rank a sibling of this element, whatever z-index the Player picks. */
   isolation: isolate;
-  aspect-ratio: 16 / 9;
+  aspect-ratio: var(--surround-aspect-ratio, 16 / 9);
   max-width: 100%;
   max-height: 100%;
   width: 100%;
