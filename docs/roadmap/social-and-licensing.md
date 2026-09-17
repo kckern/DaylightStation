@@ -125,6 +125,10 @@ Purchased by the primary owner. Proves the DaylightStation instance is paid. The
 
 ### Tiers & Pricing
 
+> **Superseded.** The six-tier badge model below is retained for the badge/identity
+> mechanics it describes. Pricing and packaging are now a single tier — see
+> [Business Model](../marketing/business-model.md).
+
 | Tier | Monthly | Annual | Lifetime | Badge |
 |------|---------|--------|----------|-------|
 | **Freeloader** | Free | Free | Free | - |
@@ -710,6 +714,7 @@ aws secretsmanager create-secret \
 
 | Date | Change |
 |------|--------|
+| 2026-09-16 | Tier/pricing table superseded by marketing/business-model.md |
 | 2026-02-03 | Merged licensing + social; added protocol abstraction for Nostr + Polycentric |
 | 2026-02-02 | Initial licensing roadmap |
 | 2026-02-02 | Initial social features design |
