@@ -32,6 +32,17 @@ const normalizeTitle = (v) =>
 const asArray = (v) => (Array.isArray(v) ? v : []);
 const isPlainObject = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
 const textList = (v) => asArray(v).filter((text) => typeof text === 'string' && text.trim()).map((text) => text.trim());
+// A character card, `{ name, role, description }` — `name` is the only
+// required field. Unlike `textList`, this keeps objects, not strings: the
+// frontend's `characterPool()` merges these by name, not by exact-string
+// dedupe, so the shape has to survive the store intact.
+const characterList = (v) => asArray(v)
+  .filter((c) => isPlainObject(c) && typeof c.name === 'string' && c.name.trim())
+  .map((c) => ({
+    name: c.name.trim(),
+    ...(typeof c.role === 'string' && c.role.trim() ? { role: c.role.trim() } : {}),
+    ...(typeof c.description === 'string' && c.description.trim() ? { description: c.description.trim() } : {}),
+  }));
 // One relation, used by both the lookup-time rebind and the index-time
 // pre-warning, so the warning can never disagree with the behavior it predicts.
 // The shorter side must carry at least two tokens. A lone word such as `Spring`
@@ -92,6 +103,7 @@ const nestedGroupSegments = (work) => {
         ...(typeof group.mini === 'string' && group.mini.trim() ? { mini: group.mini.trim() } : {}),
         ...(typeof group.kind === 'string' && group.kind.trim() ? { kind: group.kind.trim() } : {}),
         ...(textList(group.facts).length ? { facts: textList(group.facts) } : {}),
+        ...(characterList(group.characters).length ? { characters: characterList(group.characters) } : {}),
       };
       indexAtDepth[depth] = (indexAtDepth[depth] ?? 0) + 1;
       const path = [...ancestors, ancestor];
@@ -148,7 +160,7 @@ const authoredSegments = (work) => {
 // `short_title` is the work's own alternate name — "Beethoven's Third Symphony"
 // beside a `title` of `Symphony No. 3 in E-flat major, "Eroica"`. It is optional:
 // the band renders no standing label when it is absent.
-const PIECE_FIELDS = ['title', 'short_title', 'opus', 'composed', 'year', 'period', 'period_note', 'city', 'premiered'];
+const PIECE_FIELDS = ['title', 'short_title', 'opus', 'composed', 'year', 'period', 'period_note', 'city', 'premiered', 'aspectRatio', 'genre', 'setting'];
 // A part that NAMES another sidecar rather than restating its timing. The
 // authored form is a bare contentId string; a mapping is accepted too, but only
 // while it says nothing a reference cannot say — the moment it carries `work` or
@@ -1419,6 +1431,7 @@ export class YamlSurroundStore extends ISurroundStore {
         timeline: { totalSounding: segments.reduce((n, c) => n + c.duration, 0), parts: timelineParts },
         cues,
         facts: asArray(work.facts),
+        characters: characterList(work.characters),
         // Empty unless this piece is a container that composes — #composeOne
         // replaces it with each part work's own facts. Present on every payload
         // so the shape does not change under the frontend when a container
