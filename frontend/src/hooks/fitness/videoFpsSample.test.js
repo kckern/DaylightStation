@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeVideoFpsSample, SEEK_SLACK_SECONDS } from './videoFpsSample.js';
+import { computeVideoFpsSample, deriveVideoState, SEEK_SLACK_SECONDS } from './videoFpsSample.js';
 
 // 2026-09-01 17:01:55: video had played 18.2s of a 30s sampling window.
 // 18.2/30 × 23.976 = 14.5 "fps" → a false video_fps_degraded warning.
@@ -119,5 +119,37 @@ describe('computeVideoFpsSample', () => {
     const longWindow = computeVideoFpsSample(prev, { totalFrames: 240, droppedFrames: 0, currentTime: 10, timestamp: 60000 });
     expect(longWindow.fps).toBe(shortWindow.fps);
     expect(shortWindow.fps).toBe(24);
+  });
+});
+
+// 2026-09-16: an idle garage kiosk reported `videoFps: 0, videoState: "playing"`
+// every 30s for an hour with no session, no roster and no devices — a leftover
+// <video> that was neither paused nor decoding. It spammed
+// fitness.video_fps_degraded and held the deploy gate shut indefinitely.
+describe('deriveVideoState', () => {
+  it('calls a decoding element playing', () => {
+    expect(deriveVideoState({ paused: false, readyState: 4, fps: 24 })).toBe('playing');
+  });
+
+  it('calls ZERO frames across a measured window stalled, not playing', () => {
+    expect(deriveVideoState({ paused: false, readyState: 4, fps: 0 })).toBe('stalled');
+  });
+
+  it('leaves an unmeasured window alone — a null fps is no measurement, not a stall', () => {
+    // The first sample of every genuine playback looks like this.
+    expect(deriveVideoState({ paused: false, readyState: 4, fps: null })).toBe('playing');
+  });
+
+  it('a paused element is paused whatever the frames say', () => {
+    expect(deriveVideoState({ paused: true, readyState: 4, fps: 0 })).toBe('paused');
+    expect(deriveVideoState({ paused: true, readyState: 4, fps: 24 })).toBe('paused');
+  });
+
+  it('an element that has not buffered enough is stalled', () => {
+    expect(deriveVideoState({ paused: false, readyState: 1, fps: null })).toBe('stalled');
+  });
+
+  it('survives a missing element description rather than throwing at the profiler', () => {
+    expect(deriveVideoState()).toBe('playing');
   });
 });

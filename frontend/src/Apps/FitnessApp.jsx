@@ -27,7 +27,7 @@ import { useFitnessContext } from '../context/FitnessContext.jsx';
 import { FitnessFrame } from '../modules/Fitness/player/frames';
 import { useFitnessUrlParams } from '../hooks/fitness/useFitnessUrlParams.js';
 import { useFitnessLaunch } from '../hooks/fitness/useFitnessLaunch.js';
-import { computeVideoFpsSample } from '../hooks/fitness/videoFpsSample.js';
+import { computeVideoFpsSample, deriveVideoState } from '../hooks/fitness/videoFpsSample.js';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { ScreenDataProvider } from '../screen-framework/data/ScreenDataProvider.jsx';
 import { ScreenProvider } from '../screen-framework/providers/ScreenProvider.jsx';
@@ -226,7 +226,8 @@ const FitnessApp = () => {
         droppedFrames: quality.droppedVideoFrames,
         corruptedFrames: quality.corruptedVideoFrames || 0,
         dropRate,
-        videoState: video.paused ? 'paused' : (video.readyState < 3 ? 'stalled' : 'playing')
+        // Derived from the FRAMES as well as the flags — see deriveVideoState.
+        videoState: deriveVideoState({ paused: video.paused, readyState: video.readyState, fps })
       };
     };
 
