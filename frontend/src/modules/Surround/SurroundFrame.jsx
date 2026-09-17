@@ -481,6 +481,7 @@ export default function SurroundFrame({
   const rootStyle = enabled
     ? {
       ...entranceVars(),
+      '--surround-aspect-ratio': payload?.piece?.aspectRatio ?? '16 / 9',
       ...(mediaWidth ? { '--surround-media-w': `${mediaWidth}px` } : null),
       // The band's measured height, so the lyric rail's corner plate can be the
       // square level with it. Absent until the footer lays out; the stylesheet
@@ -530,7 +531,7 @@ export default function SurroundFrame({
             data-testid={enabled ? 'surround-media' : undefined}
             ref={mediaRef}
             style={enabled
-              ? { aspectRatio: '16 / 9', maxWidth: '100%', maxHeight: '100%' }
+              ? { aspectRatio: payload?.piece?.aspectRatio ?? '16 / 9', maxWidth: '100%', maxHeight: '100%' }
               : NO_BOX}
           >
             {children}
