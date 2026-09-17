@@ -3272,9 +3272,17 @@ describe('the rail-carried layout, measured', () => {
       // band has always known this: it authors `segment-map: height 64` so the
       // ticker's `fill` has something to claim.
       right: [
-        { module: 'play-card', width: '40%', height: 150 },
+        // IDENTITY ONLY, 130px. With its rotating fact the card measures 220px
+        // and overflowed a 150px region, clipping mid-word with the timeline's
+        // rows overlaying it. The fact duplicates the ticker's left register
+        // anyway, so turning it off here removes a repetition and returns the
+        // height the rail was short of.
+        { module: 'play-card', width: '40%', height: 130, facts: false },
         { module: 'segment-map', orientation: 'column', height: 'fill' },
-        { module: 'cue-ticker', orientation: 'column', height: 130 },
+        // 220px. Below roughly 180 the ticker withholds every note rather than
+        // set type under the ten-foot floor (by design — see CueTicker.scss),
+        // so a 130px band rendered blank.
+        { module: 'cue-ticker', orientation: 'column', height: 220 },
       ],
     },
     collapse: { footerFloor: 90, mediaReserve: 0 },
@@ -3341,20 +3349,29 @@ describe('the rail-carried layout, measured', () => {
       expect(h, `${module} collapsed to ${h}px in the rail`).toBeGreaterThan(30);
     });
 
-    // AND THE FILLER ACTUALLY FILLS. The floor above is not enough on its own:
-    // three regions splitting the rail evenly clear it as comfortably as a
-    // correct layout does, which is exactly how a dead 180/180/180 split
-    // shipped and measured healthy. `height: fill` has to MEAN something, so
-    // the assertion is the relation the definition claims — the timeline takes
-    // materially more than the two regions that authored no height at all.
-    const timeline = g.regions.find((r) => r.module === 'segment-map');
-    const others = g.regions.filter((r) => r.module !== 'segment-map');
-    others.forEach(({ module, h }) => {
+    // EVERY AUTHORED HEIGHT IS HONOURED, AND THE FILLER TAKES THE REMAINDER.
+    //
+    // A bare floor per region is not enough — three regions splitting the rail
+    // evenly clear one as comfortably as a correct layout does, which is how a
+    // dead 180/180/180 split shipped and measured healthy. Nor is "the filler
+    // is the biggest": `fill` claims the SLACK, and slack can be small. Here
+    // the ticker is deliberately larger than the timeline, so an assertion
+    // written that way would fail on a correct rail.
+    //
+    // The authored numbers are fixed px, so they hold at every root while the
+    // remainder grows with the rail: 190 / 370 / 730 across the fleet.
+    const by = Object.fromEntries(g.regions.map((r) => [r.module, r.h]));
+    const AUTHORED = { 'play-card': 130, 'cue-ticker': 220 };
+    Object.entries(AUTHORED).forEach(([module, want]) => {
       expect(
-        timeline.h,
-        `the timeline is ${timeline.h}px against ${module}'s ${h}px — `
-        + 'height: fill claimed no slack, so the rail split evenly',
-      ).toBeGreaterThan(h * 1.25);
+        Math.abs(by[module] - want),
+        `${module} is ${by[module]}px, not the ${want}px its region authored`,
+      ).toBeLessThanOrEqual(2);
     });
+    const remainder = g.rail.h - AUTHORED['play-card'] - AUTHORED['cue-ticker'];
+    expect(
+      Math.abs(by['segment-map'] - remainder),
+      `the timeline is ${by['segment-map']}px; the slack left for it is ${remainder}px`,
+    ).toBeLessThanOrEqual(2);
   }, 120000);
 });
