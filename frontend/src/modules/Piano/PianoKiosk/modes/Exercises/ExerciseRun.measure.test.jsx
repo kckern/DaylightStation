@@ -208,12 +208,26 @@ const STUBS = Object.freeze([
   // The piano, as a real external store. The run subscribes through
   // useSyncExternalStore exactly as it does to the shipped context, so a press
   // pushed from the spec travels the same path a played note does.
+  // The piano's own note-on STAMP, which this double has to carry or it is not
+  // the piano. `noteStore.noteOn` publishes `{ velocity, timestamp: time }`, and
+  // that stamp is the whole input to `classifyHeldPitch`: a key that was already
+  // down when the cursor arrived is a SUSTAIN (logged, never drawn), and a key
+  // with no stamp at all is documented to fall through to `ghost`, because an
+  // unknown press time cannot be shown to be an afterglow. A double that omits
+  // it therefore draws a wrong-note accusation over every legato correct note —
+  // and any spec measuring ghosts here was measuring the double.
+  //
+  // `hold` also has to KEEP the stamp of a key that stays down. Re-stamping on
+  // every call makes a note that has been held for a second look freshly
+  // pressed, which is the same bug wearing the other hat: a sustain would be
+  // reclassified as a ghost the instant the cursor moved.
   [/PianoKiosk\/PianoMidiContext\.jsx$/, `
     import { useSyncExternalStore } from 'react';
     let notes = new Map();
     const subs = new Set();
     const subscribe = (fn) => { subs.add(fn); return () => subs.delete(fn); };
     const snapshot = () => notes;
+    export const __getNotes = () => notes;
     export function __setNotes(next) { notes = next; for (const fn of [...subs]) fn(); }
     export const usePianoMidi = () => ({ connected: true });
     export const usePianoMidiNotes = () => ({ activeNotes: useSyncExternalStore(subscribe, snapshot, snapshot) });
@@ -259,7 +273,7 @@ import ExerciseRun from './ExerciseRun.jsx';
 import ScorePassage from './ScorePassage.jsx';
 import { MusicXmlRenderer } from '../../../../MusicNotation/renderers/MusicXmlRenderer.jsx';
 import { loadAskSources } from '../../../ask/askResolution.js';
-import { __setNotes } from '../../PianoMidiContext.jsx';
+import { __setNotes, __getNotes } from '../../PianoMidiContext.jsx';
 
 const calls = [];
 let root = null;
@@ -365,7 +379,11 @@ window.__stage = {
    * SETTLE in the spec for the measurement.
    */
   async hold(midis) {
-    flushSync(() => __setNotes(new Map(midis.map((m) => [m, { velocity: 1 }]))));
+    // Keeps the stamp of any key that was already down, and stamps a new one
+    // exactly as noteStore.noteOn does. See the double above for why.
+    const held = __getNotes();
+    const at = Date.now();
+    flushSync(() => __setNotes(new Map(midis.map((m) => [m, held.get(m) ?? { velocity: 1, timestamp: at }]))));
     await new Promise((resolve) => setTimeout(resolve, ${SETTLE}));
   },
 };
@@ -1339,4 +1357,190 @@ describe('timed exercise display in real Chromium', () => {
       expectNoPageErrors();
     }, 30000);
   }
+});
+
+/* -------------------------------------------------------------------------- */
+
+/**
+ * THE HEIGHT BUDGET OF A RUN, measured.
+ *
+ * Every case above asserts what a given tier DRAWS. These assert who the room
+ * belongs to — the thing no stylesheet on this surface had ever said, so each
+ * block sized itself from its own content until the column ran out and the
+ * loser drew outside its box.
+ *
+ * What that cost, measured at 1280x800 before this block existed:
+ *
+ *   - A two-note tier-1 ask gave the reinforcement staff 399px of a 516px
+ *     stage — it is `width: 100%` over an inline aspect-ratio, so a one-column
+ *     dyad's height was simply however wide the stage happened to be.
+ *   - The keyboard had no proportion of its own at all (`width/height: 100%`,
+ *     white keys `100% / count` by `100%`), and its slot was `flex: 1 1 auto`.
+ *     So the board was exactly whatever the blocks above it did not use. In
+ *     this harness that measured **4.4:1** on the tier-1 ask above, against
+ *     **21.3:1** at tier 0 where no staff is drawn at all — a white key 514px
+ *     long and 24px wide. A child reported exactly this: the keys are too
+ *     tall, especially when there is no staff. And `staffFitsAsk` decides
+ *     PER ASK whether a staff is drawn, so one deck drew a differently-shaped
+ *     instrument from one ask to the next.
+ *
+ * So: the keyboard is the object and holds a real proportion, the staff is
+ * reinforcement and yields first, and neither may leave its slot.
+ */
+describe('the room a run gives each block, at 1280x800', () => {
+  /** A white key is a physical object: roughly 6x longer than it is wide. */
+  const KEY_RATIO = [4.5, 7];
+
+  const whiteKeyRatio = async () => {
+    const keys = await probe.all('.piano-key.white');
+    expect(keys.length, 'no white keys drawn').toBeGreaterThan(0);
+    return keys[0].height / keys[0].width;
+  };
+
+  it('keeps the lit-keys board in a real keyboard proportion, with a staff and without', async () => {
+    await run({ instance: TREBLE_DYAD, props: { tier: 1, ask: 'Play both lit keys together.', intent: 'practice', practiceMode: 'free' } }, FREE_READY);
+    expect(await probe.count(STAFF_SELECTOR), 'tier 1 is the WITH-staff half of this comparison').toBe(1);
+    const withStaff = await probe.one('.keys-ask__keys .piano-keyboard');
+    const withRatio = await whiteKeyRatio();
+
+    await run({ instance: ONE_KEY, props: { tier: 0, ask: 'Press the lit key.', intent: 'practice', practiceMode: 'free' } }, FREE_READY);
+    expect(await probe.count(STAFF_SELECTOR), 'tier 0 is the WITHOUT-staff half').toBe(0);
+    const noStaff = await probe.one('.keys-ask__keys .piano-keyboard');
+    const noRatio = await whiteKeyRatio();
+
+    for (const [label, ratio] of [['with a staff', withRatio], ['with no staff', noRatio]]) {
+      expect(ratio, `white keys ${label} are ${ratio.toFixed(1)}:1, outside ${KEY_RATIO.join('..')}:1 — that is not a picture of a piano`)
+        .toBeGreaterThanOrEqual(KEY_RATIO[0]);
+      expect(ratio, `white keys ${label} are ${ratio.toFixed(1)}:1, outside ${KEY_RATIO.join('..')}:1 — that is not a picture of a piano`)
+        .toBeLessThanOrEqual(KEY_RATIO[1]);
+    }
+
+    // THE SAME INSTRUMENT EITHER WAY. `staffFitsAsk` turns the staff block on
+    // and off per ask, and the board must not resize under the child when it
+    // does — that is the shape-changing keyboard, stated as a number.
+    expect(Math.abs(noStaff.height - withStaff.height),
+      `the board is ${withStaff.height.toFixed(0)}px tall with a staff and ${noStaff.height.toFixed(0)}px without`)
+      .toBeLessThanOrEqual(1);
+  });
+
+  it('keeps every block inside the slot it was given, at every tier', async () => {
+    const cases = [
+      ['tier 0 lit key', { instance: ONE_KEY, props: { tier: 0, ask: 'Press the lit key.', intent: 'practice', practiceMode: 'free' } }],
+      ['tier 1 dyad + staff', { instance: TREBLE_DYAD, props: { tier: 1, ask: 'Play both lit keys.', intent: 'practice', practiceMode: 'free' } }],
+      ['tier 2 scale', { instance: SCALE, props: { tier: 2, ask: 'Play C major, right hand.', intent: 'practice', practiceMode: 'free' } }],
+      ['tier 2 short ask', { instance: SHORT_ASK, props: { tier: 2, ask: 'Play two notes.', intent: 'practice', practiceMode: 'free' } }],
+    ];
+    for (const [label, arg] of cases) {
+      await run(arg, FREE_READY);
+      const stage = await probe.one('.piano-exercise-run__stage');
+      expect(stage, `${label}: no stage`).not.toBeNull();
+      // Whatever this tier actually mounted — lit keys, sequence staff, the
+      // reinforcement card, the footer strip — none of it may draw outside the
+      // row it was handed.
+      for (const sel of ['.keys-ask', '.keys-ask__staff', '.keys-ask__keys', '.piano-exercise-run__sequence']) {
+        const box = await probe.one(sel);
+        if (!box) continue;
+        expect(inside(box, stage), `${label}: ${sel} ${say(box)} is outside its stage row ${say(stage)}`).toBe(true);
+      }
+      // And the board may not leave the slot the column gave it. Giving the
+      // keyboard a proportion is exactly what makes this failable: a board that
+      // simply fills its slot can never overhang, and can never be a keyboard
+      // either.
+      const slot = await probe.one('.keys-ask__keys');
+      const board = await probe.one('.keys-ask__keys .piano-keyboard');
+      if (slot && board) {
+        expect(inside(board, slot), `${label}: the board ${say(board)} hangs out of its slot ${say(slot)}`).toBe(true);
+      }
+    }
+    expectNoPageErrors();
+  }, 40000);
+});
+
+
+/* -------------------------------------------------------------------------- */
+
+/**
+ * WHAT THE RUN DOES WHEN A CHILD IS LOST, driven through the real input path.
+ *
+ * Both cases here come from one session in the log store: a four-year-old on
+ * `keys/lit@notes=3,arrangement=sequence,pick=15`, 2026-09-13 19:58:25–19:58:45.
+ * He cleared note one and then fired THIRTY wrong notes in twenty seconds at
+ * note two, cursor never moving, and the run answered with nothing at all.
+ *
+ * Two separate faults were behind that, and this block holds both shut.
+ */
+describe('a run that has lost its child, at 1280x800', () => {
+  const dataAttr = (name) => page.evaluate((n) => document.querySelector('.piano-exercise-run')?.getAttribute(n), name);
+
+  /**
+   * THE CURSOR MAY NOT POINT BACKWARDS.
+   *
+   * `visualCursorFor` used to roll its index back one entry while the
+   * just-completed key was still HELD — and that index is what lights the key
+   * and what numbers the badges. A child who does not lift a finger (which is
+   * most of them, at this age) was shown the key they had already played while
+   * the assessor graded the next one, so every key they tried came back wrong,
+   * the correct one included. 289 such frames in a week across four learners.
+   */
+  it('shows the note being graded, not the one still under a finger', async () => {
+    await run({ instance: SCALE, props: { tier: 2, ask: 'Play C major, right hand.', intent: 'practice', practiceMode: 'free' } }, FREE_READY);
+
+    // HELD and never released — this is the whole condition.
+    await probe.hold([60]);
+    await page.waitForFunction(() => document.querySelector('.piano-exercise-run')?.getAttribute('data-expected-cursor') === '1');
+
+    const expected = await dataAttr('data-expected-cursor');
+    const displayed = await dataAttr('data-displayed-cursor');
+    expect(displayed,
+      `the assessor is grading entry ${expected} while the child is being shown entry ${displayed} — every key they press now is wrong, including the right one`)
+      .toBe(expected);
+
+    // AND THE NOTE UNDER THE FINGER IS STILL NOT ACCUSED, which is the thing
+    // the rollback existed to prevent. That defence now comes from the layer it
+    // belongs in: `classifyHeldPitch` calls a key that was already down when the
+    // cursor arrived a SUSTAIN — logged, never drawn — so the cursor is free to
+    // tell the truth. If this ever fails, the rollback was load-bearing after
+    // all and removing it was wrong.
+    expect(await probe.count('.sequence-note-wrong-ghost'),
+      'the correct note still held under a finger was drawn as a mistake')
+      .toBe(0);
+  });
+
+  /**
+   * AND WHEN THEY ARE SIMPLY LOST, THE RUN SAYS SOMETHING.
+   *
+   * The screen state on the tenth wrong key used to be identical to the state
+   * on the first. `stuckLadder.js` climbs: re-cue the lit key, then name it.
+   */
+  it('re-cues the lit key, then names it, as the misses pile up', async () => {
+    await run({ instance: SCALE, props: { tier: 2, ask: 'Play C major, right hand.', intent: 'practice', practiceMode: 'free' } }, FREE_READY);
+
+    await probe.press(60);                       // arms the run, clears note one
+    expect(await dataAttr('data-hunting'), 'a run that is going fine owes nothing').toBeNull();
+
+    // Three wrong onsets at one target: the first rung.
+    for (const midi of [61, 63, 66]) await probe.press(midi);
+    await page.waitForFunction(() => document.querySelector('.piano-exercise-run')?.getAttribute('data-hunting') === 'recue');
+    expect(await dataAttr('data-hunting')).toBe('recue');
+    // The lit key is the thing that moves, and it is still the same lit key.
+    const lit = await probe.all('.piano-key.target');
+    expect(lit.length, 'the re-cue has no key to pulse').toBeGreaterThan(0);
+
+    // Three more: looking harder has stopped being the answer, so say it.
+    for (const midi of [67, 69, 71]) await probe.press(midi);
+    await page.waitForFunction(() => document.querySelector('.piano-exercise-run')?.getAttribute('data-hunting') === 'reveal');
+
+    const text = await probe.text();
+    expect(text, `the run reached its top rung and still never named the note. Screen text: ${text}`)
+      .toMatch(/Look for D\b/);
+    // Named WITHOUT its octave: "D", not "D4". The lit key already says which D.
+    expect(text).not.toMatch(/Look for D\d/);
+
+    // And finding the note ends the hunt — the next entry starts owed nothing.
+    await probe.press(62);
+    await page.waitForFunction(() => document.querySelector('.piano-exercise-run')?.getAttribute('data-hunting') === null);
+    expect(await dataAttr('data-hunting'),
+      'help stayed on screen after the child found the note — the ladder is about one target, not the run').toBeNull();
+    expectNoPageErrors();
+  }, 40000);
 });

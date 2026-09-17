@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import getLogger from '../../../../../lib/logging/Logger.js';
 import { PianoKeyboard } from '../../../components/PianoKeyboard.jsx';
-import { resolveBoardRange } from '../../../noteUtils.js';
+import { resolveBoardRange, getNoteName } from '../../../noteUtils.js';
 import { usePianoMidi, usePianoMidiNotes } from '../../PianoMidiContext.jsx';
 import { usePianoUser } from '../../PianoUserContext.jsx';
 import PianoEmpty from '../../PianoEmpty.jsx';
@@ -38,6 +38,7 @@ import {
   staffFitsAsk,
 } from './runPresentation.js';
 import { askTupleFor, deriveStage } from '../../../ask/askSchema.js';
+import { nextHuntState, huntingArmed, NO_HUNT } from './stuckLadder.js';
 import { useMetronomeClick } from '../SheetMusic/useMetronomeClick.js';
 import CountInOverlay from '../SheetMusic/CountInOverlay.jsx';
 import { countInPlan, askPace, countInSentence } from '../SheetMusic/countIn.js';
@@ -117,21 +118,41 @@ export function wrongEventState(event) {
 }
 
 /**
- * The assessor may advance as soon as a correct key goes down.  The child still
- * has that key held, though, so drawing the assessor's NEXT event immediately
- * makes the cursor look one note ahead and turns the note under their finger
- * into a ghost.  Keep the just-completed event visible until its key is lifted.
+ * THE CURSOR A CHILD IS SHOWN, WHICH IS NEVER BEHIND THE ONE BEING GRADED.
+ *
+ * This used to roll the index back one entry whenever the just-completed key
+ * was still held. The reason was real at the time: the assessor advances the
+ * moment a correct key goes DOWN, the child still has that key under a finger,
+ * and the renderers drew any held pitch that was not a target of the current
+ * entry as a wrong note — so moving on turned the note they were still playing
+ * into an accusation.
+ *
+ * That defence now lives a layer down, and lives there correctly.
+ * `classifyHeldPitch` (MusicNotation/model/heldPitch.js, 2026-09-11) calls a key
+ * that was already down when the cursor ARRIVED a sustain: logged, never drawn.
+ * The note under the finger is safe whether or not the cursor moves on, and has
+ * been for as long as that rule has existed. Nobody came back here.
+ *
+ * By then the rollback was doing nothing but harm, because this index is not
+ * only the staff's. THE LIT KEY IS THIS INDEX (`KeysAsk` reads
+ * `events[cursorIndex]` for what to light) and so are the numbered badges. A
+ * child who does not lift a finger — which is most four-year-olds — was shown
+ * the key they had just played while the engine graded the next one, so every
+ * key they then pressed came back wrong, including the right one.
+ *
+ * Measured in the field before this changed: 289 rolled-back frames across four
+ * learners in a week, every one of them exactly one entry behind the assessor,
+ * and one four-year-old firing thirty wrong notes in twenty seconds at a target
+ * that was never on screen (2026-09-13 19:58, `keys/lit` pick=15).
+ *
+ * `reason` survives as the log's own tell: `held-completed` must never appear
+ * in the store again.
  */
-export function visualCursorFor(events = [], assessmentCursor = 0, activeNotes = null, status = 'prepared') {
+export function visualCursorFor(events = [], assessmentCursor = 0, status = 'prepared') {
   const cursor = Math.min(Math.max(Number.isInteger(assessmentCursor) ? assessmentCursor : 0, 0), events.length);
   if (status === 'completed' || status === 'aborted' || status === 'timeout' || cursor >= events.length) {
     return { index: cursor, reason: 'complete' };
   }
-  const held = new Set(activeNotes ? activeNotes.keys() : []);
-  const current = events[cursor]?.notes?.map((note) => note.midi) ?? [];
-  if (current.some((midi) => held.has(midi))) return { index: cursor, reason: 'engine-current' };
-  const previous = events[cursor - 1]?.notes?.map((note) => note.midi) ?? [];
-  if (previous.some((midi) => held.has(midi))) return { index: cursor - 1, reason: 'held-completed' };
   return { index: cursor, reason: 'engine-current' };
 }
 
@@ -273,6 +294,11 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
   const activeNotesRef = useRef(activeNotes);
   activeNotesRef.current = activeNotes;
   const persistedRef = useRef(false);
+  // THE HUNT. Counted in a ref because every wrong note folds into it and only
+  // a change of RUNG is worth a render; `help` is the only part the screen
+  // reads. See stuckLadder.js for what the rungs are and why.
+  const huntRef = useRef(NO_HUNT);
+  const [huntHelp, setHuntHelp] = useState(null);
   // One durable assessment identity per installed runtime. Hosts that grant a
   // stake after a real pass use this same id; retries get a fresh one, while a
   // repeated host delivery remains idempotent server-side.
@@ -418,6 +444,24 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
       tickMs: 50,
       onEvent: (event, state, previous) => {
         setLastWrong(wrongEventState(event));
+        // Fold this observation into the hunt BEFORE tracing it, so a rung and
+        // the observation that earned it carry the same cursor.
+        if (huntingArmed(state?.matcher)) {
+          const hunt = nextHuntState(huntRef.current, { type: event.type, cursor: state?.cursor ?? null });
+          huntRef.current = hunt;
+          if (hunt.changed) {
+            setHuntHelp(hunt.help);
+            // The event this whole ladder exists to make answerable. Without it,
+            // "is this child stuck?" could only be reconstructed by hand from a
+            // pile of `wrong` observations — which is how it was found.
+            traceEvent('piano.exercise-hunting', {
+              help: hunt.help,
+              wrongs: hunt.wrongs,
+              cursor: hunt.cursor,
+              targets: (state?.expectation?.events ?? [])[hunt.cursor]?.notes?.map((note) => note.midi) ?? null,
+            });
+          }
+        }
         traceEvent('piano.exercise-observation', {
           eventType: event.type,
           eventId: event.eventId ?? null,
@@ -435,6 +479,10 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
     previousNotesRef.current = [...activeNotesRef.current.keys()];
     lastHeldObservedRef.current = null;
     persistedRef.current = false;
+    // A retry starts owed nothing: the help a child earned on the last attempt
+    // is not still on screen when they begin a fresh one.
+    huntRef.current = NO_HUNT;
+    setHuntHelp(null);
     traceEvent('piano.exercise-runtime-installed', {
       matcher: next.getSnapshot().matcher,
       mode: next.getSnapshot().mode,
@@ -495,8 +543,15 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
       gradingPolicyVersion: result?.rubric?.id ?? 'exercise-interrupted-v2',
       providerVersion: 'exercise-runtime-v4',
     });
+    // WHOSE ATTEMPT THIS WAS. Every other event on this surface goes through
+    // `traceEvent` and carries the learner; these two were plain `logger.info`
+    // and carried none — so the two events that hold the SCORE and the verdict
+    // were the only ones that could not be attributed to a child. Asked "how is
+    // this learner doing", the log store could answer which notes they got
+    // wrong and not one thing about how they did.
+    const who = { learnerId: traceFieldsRef.current.learnerId };
     if (!access.persistent) {
-      logger.info('piano.exercise-assessment', pianoAssessmentTelemetry(body, { outcome: 'skipped-guest' }));
+      logger.info('piano.exercise-assessment', { ...who, ...pianoAssessmentTelemetry(body, { outcome: 'skipped-guest' }) });
       return;
     }
     const response = await pianoAttemptClient.record(currentUser, body, { keepalive });
@@ -504,8 +559,8 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
     const log = pianoAssessmentTelemetry(body, {
       outcome, status: response.status, error: response.error, durationMs: response.durationMs,
     });
-    if (outcome === 'saved') logger.info('piano.exercise-assessment', log);
-    else logger.warn('piano.exercise-assessment', log);
+    if (outcome === 'saved') logger.info('piano.exercise-assessment', { ...who, ...log });
+    else logger.warn('piano.exercise-assessment', { ...who, ...log });
   }, [access.persistent, challenge, currentUser, logger, programId, selectedMode, stepId, subject]);
 
   useEffect(() => {
@@ -516,7 +571,10 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
     // judge, and a host counting failures must not count a walk-away.
     if (!JUDGED_STATUSES.has(snapshot.result.status)) return;
     const passed = runPassed(snapshot.result, { challenge, passScore: requirement?.passScore });
-    logger.info('piano.exercise-complete', {
+    // `traceEvent`, not a bare `logger.info`: this is the event that says how a
+    // run ENDED, and without the trace fields it said so about nobody. See the
+    // note in `persist`.
+    traceEvent('piano.exercise-complete', {
       id: subject?.id ?? null, purpose: challenge ? 'challenge' : 'practice', matcher: snapshot.matcher,
       status: snapshot.result.status,
       // Both are absent on a stalled attempt, which is finalized without a
@@ -536,7 +594,7 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
     // it can offer its own ways forward — and so a host counting failures
     // counts only attempts that actually happened.
     if (!passed) onFailed?.(snapshot.result);
-  }, [challenge, logger, onFailed, persist, requirement, resultReady, snapshot, subject]);
+  }, [challenge, traceEvent, onFailed, persist, requirement, resultReady, snapshot, subject]);
 
   // Completion belongs to the host whenever it supplied a callback. Every
   // host advances automatically; this piano surface has no pointer controls.
@@ -852,7 +910,15 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
   }, [activeNotes, armingPitches, exitHeld, held, heldKey, runtime, snapshot.cursor, snapshot.matcher, snapshot.mode, snapshot.status, startCountIn, traceEvent]);
 
   useEffect(() => () => {
-    const active = runtimeRef.current?.getSnapshot();
+    // NOTHING TO TEAR DOWN IS NOT A TEARDOWN. This cleanup re-runs whenever
+    // `persist` changes identity, which happens before a runtime is ever
+    // installed — and it filed a `runtime-disposed` every time, carrying no
+    // cursor and no status because there was no runtime to read them from. In
+    // the field that was two thirds of the event: one learner's 34 installed
+    // runtimes produced 66 disposals, so any count of how many runs a child
+    // abandoned was reading mostly phantoms.
+    if (!runtimeRef.current) return;
+    const active = runtimeRef.current.getSnapshot();
     if (active?.result && !persistedRef.current) {
       // A completed assessment can be waiting for the musical timeline. Exit
       // preserves that evidence without treating exit as a passed game gate.
@@ -879,7 +945,7 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
   const eventIndex = Math.min(progress.eventIndex, askEvents.length);
   const visualCursor = timed
     ? { index: timeline.phase === 'countdown' || timeline.phase === 'prepared' ? -1 : timeline.expectedCursor, reason: 'clock' }
-    : visualCursorFor(askEvents, eventIndex, activeNotes, snapshot.status);
+    : visualCursorFor(askEvents, eventIndex, snapshot.status);
   const visualCursorSignature = `${assessmentIdRef.current ?? 'none'}:${eventIndex}:${visualCursor.index}:${visualCursor.reason}:${heldKey}:${snapshot.status}:${timeline?.phase}:${timeline?.beat}:${countInBeat}`;
   useEffect(() => {
     if (lastVisualCursorRef.current === visualCursorSignature) return;
@@ -964,6 +1030,25 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
   // `instanceKeySignature` re-joins them, so a minor instance is not spelled
   // with the sharps of its relative major.
   const accidental = accidentalForKey(instanceKeySignature(instance));
+  /**
+   * THE TOP RUNG OF THE STUCK LADDER, IN WORDS.
+   *
+   * Named in the spelling the ask is already using (`accidental`), and WITHOUT
+   * its octave: "D", not "D4". The octave is not the thing a child who has
+   * pressed six wrong keys is missing — the lit key already says which D — and
+   * a four-year-old reads "D4" as two facts, one of them noise.
+   *
+   * It goes in the status line rather than anywhere near the keyboard on
+   * purpose: that row is a fixed height that is already on screen saying
+   * something less useful, so the help costs no layout and moves nothing under
+   * the child's hands at the moment they are struggling.
+   */
+  const huntNames = huntHelp === 'reveal'
+    ? (currentEvent?.notes ?? []).map((note) => getNoteName(note.midi, accidental).replace(/-?\d+$/, ''))
+    : [];
+  const huntSentence = huntNames.length
+    ? `Look for ${huntNames.length > 1 ? `${huntNames.slice(0, -1).join(', ')} and ${huntNames.at(-1)}` : huntNames[0]} — the key that is lit up.`
+    : null;
   // The signature the staff stands after its clef. Same key the spelling reads,
   // so a D major scale is spelled in sharps AND shows the two it is in.
   const keySignature = showKeySignature ? instanceKeySignature(instance) : null;
@@ -1026,7 +1111,7 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
   const standingInstruction = bare ? null : (
     <>
       {phase === 'ready' && <div className="piano-exercise-run__ready"><p>{!runtime ? 'Getting the music ready…' : snapshot.mode === 'cued' ? countInSentence(countIn?.clicks ?? beatsPerMeasure, cuedPace) : 'Play the first note to begin.'}</p>{!connected && <span>Waiting for the piano…</span>}</div>}
-      {['countdown', 'running'].includes(phase) && <p className={`piano-exercise-run__status${isWrong ? ' is-wrong' : ''}`} role="status">{phase === 'countdown' ? 'Listen to the count-in.' : isWrong ? 'That note was not expected — keep going.' : stage === 'recall' ? 'Play the named music from memory.' : snapshot.matcher === 'held' ? 'Play the complete chord.' : 'Follow the highlighted notes.'}{onExit && ' Hold the lowest and highest keys for two seconds to leave.'}</p>}
+      {['countdown', 'running'].includes(phase) && <p className={`piano-exercise-run__status${isWrong ? ' is-wrong' : ''}`} role="status">{phase === 'countdown' ? 'Listen to the count-in.' : huntSentence ?? (isWrong ? 'That note was not expected — keep going.' : stage === 'recall' ? 'Play the named music from memory.' : snapshot.matcher === 'held' ? 'Play the complete chord.' : 'Follow the highlighted notes.')}{onExit && ' Hold the lowest and highest keys for two seconds to leave.'}</p>}
     </>
   );
   /**
@@ -1093,7 +1178,7 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
     && Number.isFinite(result?.score);
 
   return (
-    <section className={`piano-exercise-run is-${intent} is-${phase} is-tier-${runTier}`} data-tier={runTier} data-stage={stage} data-phase={phase} data-armed={runtime ? 'true' : undefined} data-expected-cursor={timeline?.expectedCursor ?? eventIndex} data-displayed-cursor={visualCursor.index}>
+    <section className={`piano-exercise-run is-${intent} is-${phase} is-tier-${runTier}`} data-tier={runTier} data-stage={stage} data-phase={phase} data-armed={runtime ? 'true' : undefined} data-expected-cursor={timeline?.expectedCursor ?? eventIndex} data-displayed-cursor={visualCursor.index} data-hunting={countingDown ? undefined : huntHelp ?? undefined}>
       <header className="piano-exercise-run__head">
         {/* WHY YOU ARE HERE, AND NOTHING ELSE, WHEN THERE IS CHROME.
             The sentence under the eyebrow is the run's second line of standing

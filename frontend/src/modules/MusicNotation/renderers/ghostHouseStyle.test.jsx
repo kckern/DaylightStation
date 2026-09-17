@@ -43,14 +43,33 @@ describe('the house ghost', () => {
     expect(ghost).toBeTruthy();
     expect(paint(ghost)).toEqual({
       fill: GHOST_INK.head.fill,
-      stroke: GHOST_INK.head.stroke,
-      strokeWidth: String(GHOST_INK.head.strokeWidth),
+      stroke: 'none',
+      strokeWidth: null,
       dash: null,
     });
   });
 
-  it('is never an outline: the shared ink declares a fill and no dash', () => {
+  /**
+   * A WASH, NOT A DRAWN NOTE. The head carried a 60%-black outline around its
+   * translucent fill, which at a card's size is a hard edge — the picture of a
+   * real notehead, for a mark whose entire job is to be read as "not that".
+   * Fill only. Nothing here may give a ghost an edge back.
+   */
+  it.each(surfaces)('carries no border and no stem on %s', (_label, mount) => {
+    const { container } = mount();
+    const ghost = ghostOf(container);
+    expect(ghost.getAttribute('stroke')).toBe('none');
+    expect(ghost.getAttribute('stroke-width')).toBeNull();
+    // A ghost group draws its head and its ledgers; a stem would be a line
+    // running off the head, which is the other half of "not a drawn note".
+    const group = ghost.closest('g');
+    expect(group.querySelectorAll('line[class*="stem"]')).toHaveLength(0);
+  });
+
+  it('is never an outline: the shared ink declares a fill and no stroke of any kind', () => {
     expect(GHOST_INK.head.fill).not.toBe('none');
+    expect(GHOST_INK.head.stroke).toBe('none');
+    expect(GHOST_INK.head).not.toHaveProperty('strokeWidth');
     expect(GHOST_INK.head).not.toHaveProperty('strokeDasharray');
     expect(GHOST_INK.ledger).not.toHaveProperty('strokeDasharray');
   });

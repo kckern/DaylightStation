@@ -42,8 +42,15 @@
   display: grid;
   /* Two zones: the game (stage), then the instrument. There is no header row:
      the kiosk breadcrumb rail above already names where we are, and the
-     context rail carries the way out. */
-  grid-template-rows: 1fr auto auto;
+     context rail carries the way out.
+   *
+   * TWO tracks, not three. The third `auto` was reserved for the host's overlay
+   * layer, which is `position: absolute` and so never in flow here — but an
+   * explicit track exists whether or not anything lands in it, and a grid draws
+   * its gap between every pair of adjacent tracks. The empty third row was
+   * therefore charging the stage 0.75rem of height, every frame, for a row that
+   * could not be occupied. */
+  grid-template-rows: 1fr auto;
   gap: 0.75rem;
   padding: 1rem 1.25rem 0;
   /* A size container so every descendant measures the DESIGN box in cq units,
@@ -88,27 +95,31 @@
 
 .piano-chess__stage > * { min-width: 0; }
 
-/* Board frame is content-sized (see --cb-size below); centre it within its
-   flexible column rather than letting default grid stretch pin it to the
-   column's left edge. */
-/* THE BOARD is centred, not the frame. The frame is the board plus its rim
-   strips, and the rank strip hangs off the left — so centring the frame puts
-   the board half a strip to the right of centre, which is exactly the drift
-   that reads as broken. An equal margin on the other side makes the frame's
-   outer box symmetric about the board, so the thing the player looks at is the
-   thing that is centred. */
+/* THE ASSEMBLY is centred: the rim strips are part of the board, not furniture
+   beside it.
+ *
+ * This used to centre the BOARD alone, by hanging an empty strip-wide margin off
+ * the frame's right to mirror the rank strip on its left. It cost twice over: a
+ * whole strip of the width budget (`--cb-size` subtracted `2 *` the strip), and
+ * a strip-wide band of bare charcoal between the board and the right rail that
+ * had nothing in it. On the 1280×800 canvas that band measured 92px while the
+ * gap on the left measured 12 — so the composition the mirror was defending
+ * against asymmetry was itself visibly lopsided, and the board was 80px smaller
+ * than the column could carry.
+ *
+ * The rim cards are cream paper in the board's own rhythm, one per rank: a
+ * player reads them as the board's edge, the way they read the file cards along
+ * the bottom. Centring strip-plus-board therefore centres what is actually
+ * looked at, fills the column, and buys the board the strip back. */
 .piano-chess .chess-board-frame {
   justify-self: center;
-  /* Exactly the strip, so the frame's margin box is symmetric about the board.
-     The frame's own column gap is zeroed rather than added into the sum: one
-     number to keep in step instead of two, and the strip already carries its
-     breathing room as inside padding. */
+  /* One number to keep in step instead of two: the strips carry their breathing
+     room as inside padding, so the frame's own gap stays out of the sum. */
   gap: 0;
-  margin-inline-end: var(--pc-axis-w);
 }
 
-/* The compensation above is only exact if the strip really is that wide, so the
-   strip is TOLD its width rather than being left to size itself off its labels.
+/* The width budget is only exact if the strip really is that wide, so the strip
+   is TOLD its width rather than being left to size itself off its labels.
    Otherwise the board drifts by whatever the longest rank label happens to
    measure — 'maj7' and a staff card are not the same width. */
 .piano-chess .chess-board__rank-axis {
@@ -201,10 +212,13 @@
    School board and this one stay the same component with different clothes. */
 .piano-chess .chess-board-frame {
   /* The shared primary slot is the nearest size container: its tracks already
-     reserve both rails. Fit inside its measured width and height, allowing
-     room for the rank strip and the file strip on their respective axes. */
+     reserve both rails. Fit inside its measured width and height, allowing room
+     for the rank strip on one axis and the file strip on the other — ONE of
+     each, because that is how many there are. The width term used to subtract
+     `2 *` the rank strip, the second one paying for the empty mirror margin
+     described above; with the assembly centred instead, the board keeps it. */
   --cb-size: min(
-    calc(100cqw - 2 * var(--pc-axis-w)),
+    calc(100cqw - var(--pc-axis-w)),
     calc(100cqh - var(--pc-axis))
   );
 
@@ -448,9 +462,19 @@
 .piano-chess--reading {
   /* A staff card needs to be taller than it is wide before a notehead and its
      ledger line both fit — the side-scroller's staves run about 2:3, and
-     anything squarer clips the note against the card edge. */
-  --pc-axis: 6.5rem;
-  --pc-axis-w: 5rem;
+     anything squarer clips the note against the card edge.
+   *
+   * `--pc-axis` is EXACTLY the file strip's height, and the strip is given this
+   * number directly below. It used to reserve 6.5rem and then draw a 6rem strip,
+   * so 8px of the board's height budget was spent on nothing every frame.
+   *
+   * `--pc-axis-w` is wider than the 5rem it was: the rank cards carry their own
+   * bass clef where the file cards draw theirs once in the corner, so the same
+   * staff has to share its card with a glyph. It is affordable because the board
+   * is HEIGHT-bound here (see `--cb-size`) — width spent on the strip comes out
+   * of slack, not out of the board. */
+  --pc-axis: 6rem;
+  --pc-axis-w: 5.5rem;
 }
 
 /* Each rim cell is a card, so the strips get a definite size instead of being
@@ -459,17 +483,33 @@
    cards' own content min-size wins and eight of them grow the strip past the
    board it is supposed to line up with — the bottom rank ends up below the
    board's last rank and clipped by the stage. */
+/* THE SEAM BETWEEN RANK CARDS IS THE STAFF'S OWN SIZE.
+ *
+ * RimStaffRenderer stretches its viewBox WIDTH to whatever box it is given and
+ * lets the height bind (see `useBoxAspect`), so a rim staff is exactly as big as
+ * its card is TALL and a wider strip buys air, never ink. A rank card is one
+ * square tall less its share of the seven seams — which makes every 16th of a
+ * rem here a direct tax on how big a child sees the note. Halved to 0.1rem: the
+ * cards still read as eight separate pieces of paper (each has its own border
+ * and its own shadow), and each one gets 1.4px of staff back. */
 .piano-chess--reading .chess-board__rank-axis {
   width: var(--pc-axis-w);
   grid-template-rows: repeat(8, minmax(0, 1fr));
   padding-inline-end: 0.35rem;
-  gap: 0.2rem;
+  gap: 0.1rem;
 }
 
 .piano-chess--reading .chess-board__file-axis {
-  height: calc(var(--pc-axis) - 0.5rem);
+  /* The strip IS the reservation now (`--pc-axis`), not the reservation less
+     half a rem. The old subtraction was height the board budgeted for and the
+     strip then declined to use — 8px of dead canvas between the two. */
+  height: var(--pc-axis);
   grid-template-columns: repeat(8, minmax(0, 1fr));
-  padding-block-start: 0.35rem;
+  /* The seam to the board. Vertical here, so it comes out of the file card's
+     staff for the same reason the rank seam does; trimmed to match. The column
+     gap below is horizontal and costs a file card nothing, so it is left alone
+     and the cards keep their separation. */
+  padding-block-start: 0.25rem;
   gap: 0.2rem;
 }
 
@@ -478,7 +518,11 @@
    continue theirs; the same end inset as the rank strip, so it lines up under
    the rank column. */
 .piano-chess--reading .chess-board__corner {
-  padding-block-start: 0.35rem;
+  /* Must track the file strip's top inset exactly — it is what makes the head
+     clef's card the same height as a file card, and so its staff lines the
+     continuation of theirs rather than a second staff at a second size. The
+     rim harness measures that agreement as `clef-line drift`. */
+  padding-block-start: 0.25rem;
   padding-inline-end: 0.35rem;
 }
 
