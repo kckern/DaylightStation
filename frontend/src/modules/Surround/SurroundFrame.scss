@@ -251,7 +251,24 @@
   aspect-ratio: var(--surround-aspect-ratio, 16 / 9);
   max-width: 100%;
   max-height: 100%;
-  width: 100%;
+  /* THE CAP IS WHAT KEEPS THE BAND ALIVE UNDER A TALL PICTURE.
+     `width: 100%` alone is only safe while the box's own ratio is as wide as
+     16:9. A 4:3 picture at the full column width is a third TALLER than the
+     16:9 box every number in this frame was tuned against, so the stage grows
+     past the screen root and the band — which absorbs the column's slack —
+     is squeezed to nothing. Measured before this line existed, at a 960x540
+     root with a 33% rail: stage 549.6px inside a 540px column, band 0.4px,
+     and the collapse rule then dropped the ticker outright.
+     `--surround-media-cap-w` is published by the component from the MEASURED
+     column: the widest this picture can be while the band still keeps its
+     reserve. Width, not height, is what is capped — clamping the height while
+     the width stays at 100% is precisely how a picture gets stretched, and the
+     quality floor above says never distort.
+     THE FALLBACK IS `100%`, so a frame that has not measured yet — or a
+     browser that drops the custom property — lays out exactly as it did
+     before this existed. And on a 16:9 picture the cap resolves to the full
+     column anyway, so every classical frame in the fleet is untouched. */
+  width: min(100%, var(--surround-media-cap-w, 100%));
   overflow: hidden;
   background: #000;
 

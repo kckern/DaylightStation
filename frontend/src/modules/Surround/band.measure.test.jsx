@@ -704,12 +704,35 @@ async function layout(page, css, { width, height, data = EROICA, position = POSI
   // the anchor root's 0.72rem on all three screens, and the floors this spec
   // asserts would be measured against labels no screen actually shows.
   const labelFloor = labelFloorPx(width);
-  await page.evaluate(({ footerFloor, labelFloorCss }) => {
+  await page.evaluate(({ footerFloor, mediaReserve, labelFloorCss }) => {
     const root = document.querySelector('.surround-frame');
     root.style.setProperty('--label-floor', `${labelFloorCss}px`);
     root.classList.remove('surround-frame--entering', 'surround-frame--arriving');
     const media = document.querySelector('[data-testid="surround-media"]');
     const footer = document.querySelector('[data-testid="surround-footer"]');
+
+    // EFFECT 2b — THE MEDIA CAP, reproduced. The component measures the main
+    // column and publishes the widest the picture may be while the band keeps
+    // its reserve; a page rendered by `renderToStaticMarkup` has run no
+    // effects, so without this every non-16:9 payload here lays out UNCAPPED —
+    // which is the defect the cap exists to prevent rather than a measurement
+    // of the shipped frame.
+    //
+    // IT RUNS BEFORE THE FOOTER IS MEASURED BELOW, and the order is the whole
+    // point: the cap is precisely what decides the picture's height, and
+    // therefore what the band has left. Emulating it afterwards would measure
+    // the uncapped layout and then collapse the band on that reading.
+    const main = document.querySelector('.surround-frame__main');
+    const stage = document.querySelector('.surround-frame__stage');
+    const ratioText = root.style.getPropertyValue('--surround-aspect-ratio').trim() || '16 / 9';
+    const [rw, rh = '1'] = ratioText.split('/');
+    const ratio = Number(rw.trim()) / Number(rh.trim());
+    if (main && stage && Number.isFinite(ratio) && ratio > 0) {
+      const padTop = parseFloat(getComputedStyle(stage).paddingTop) || 0;
+      const capH = main.getBoundingClientRect().height - padTop - mediaReserve;
+      if (capH > 0) root.style.setProperty('--surround-media-cap-w', `${Math.round(capH * ratio)}px`);
+    }
+
     const w = media.getBoundingClientRect().width;
     root.style.setProperty('--surround-media-w', `${w}px`);
     if (footer) {
@@ -723,7 +746,14 @@ async function layout(page, css, { width, height, data = EROICA, position = POSI
         if (first) first.remove();
       }
     }
-  }, { footerFloor: DEFINITION.collapse.footerFloor, labelFloorCss: labelFloor });
+  }, {
+    footerFloor: DEFINITION.collapse.footerFloor,
+    // The reserve defaults to the collapse floor, exactly as `SurroundFrame`
+    // resolves it — so the harness and the component cannot disagree about how
+    // much of the column the band is owed.
+    mediaReserve: DEFINITION.collapse.mediaReserve ?? DEFINITION.collapse.footerFloor,
+    labelFloorCss: labelFloor,
+  });
 
   // EFFECT 3 — `CueTicker`'s fit, reproduced by calling it. The component runs
   // `fitBand(root, pools)` in a layout effect and publishes what it returns as
@@ -3075,5 +3105,124 @@ describe('the lyric rail, measured', () => {
     expect(b.rail.x).toBeGreaterThan(width / 2);
     // The lyric rail rests flush against the right edge, not past it.
     expect(b.rail.x + b.rail.w).toBe(width);
+  }, 120000);
+});
+
+/* -------------------------------------------------------------------------- */
+/* A NON-16:9 PICTURE                                                          */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * THE BAND SURVIVES A CORPUS-DECLARED 4:3 PICTURE.
+ *
+ * `piece.aspectRatio` generalized the media box to whatever ratio a work
+ * authors, and the drama domain's first corpus (the BBC Television Shakespeare
+ * films, all of them 4:3) is the first to author one. Nothing generalized the
+ * COLUMN the box sits in, and that is the whole defect: a 4:3 box at the full
+ * column width is a third taller than the 16:9 box the geometry was tuned
+ * against, so the stage alone wants more height than the screen root has and
+ * the band — which absorbs the column's slack — is squeezed to nothing.
+ *
+ * Measured on the live frame before this spec existed (960x540 root, 33% rail):
+ * main 643.2x540, stage 643.2x549.6 (9.6px MORE than the column it sits in),
+ * media 643.2x482.4, footer 643.2x**0.4**. The band's modules were mounted and
+ * working the whole time — the cue ticker had fitted all 24 of its notes and
+ * the segment rail had measured its 11 scenes — they were simply laid out in
+ * four tenths of a pixel, one pixel above the bottom edge of the screen. And
+ * because 0.4 is under `collapse.footerFloor`, the collapse rule then deleted
+ * the ticker outright, taking both of the band's registers with it.
+ *
+ * THE PAYLOAD IS THE SHIPPED EROICA WITH ONE FIELD CHANGED. Same segments, same
+ * notes, same definition, same rail — only `piece.aspectRatio`. So a failure
+ * here can only be the ratio, and the three assertions below are the quality
+ * floor design.md states for it: "letterbox or pillarbox, never distort."
+ */
+describe('a corpus-declared 4:3 picture, measured', () => {
+  let browser;
+  let css;
+
+  beforeAll(async () => {
+    css = await compileSheet();
+    const { chromium } = await import('playwright');
+    browser = await chromium.launch();
+  }, 120000);
+
+  afterAll(async () => { await browser?.close(); });
+
+  /** The Eroica in Academy ratio — the one-field change described above. */
+  const ACADEMY = Object.freeze({
+    ...EROICA_FULL,
+    piece: { ...EROICA_FULL.piece, aspectRatio: '4 / 3' },
+  });
+
+  const frameBoxes = async (page) => page.evaluate(() => {
+    const pick = (sel) => {
+      const el = document.querySelector(sel);
+      return el ? el.getBoundingClientRect() : null;
+    };
+    const r = (b) => (b ? { w: +b.width.toFixed(1), h: +b.height.toFixed(1) } : null);
+    return {
+      main: r(pick('.surround-frame__main')),
+      stage: r(pick('.surround-frame__stage')),
+      media: r(pick('[data-testid="surround-media"]')),
+      footer: r(pick('[data-testid="surround-footer"]')),
+    };
+  });
+
+  /**
+   * THE REGRESSION ITSELF. The band is not "a bit short" at 0.4px — it is gone,
+   * and with it the Act/Scene rail and both of the listening band's registers.
+   * The floor asserted is the definition's own `collapse.footerFloor`: below it
+   * the frame starts dropping regions, so a band that cannot clear it is a band
+   * the design has already given up on.
+   */
+  it.each(FLEET)('$name — the band keeps at least its collapse floor', async ({ width, height }) => {
+    const page = await browser.newPage({ deviceScaleFactor: 1 });
+    await layout(page, css, { width, height, data: ACADEMY });
+    const b = await frameBoxes(page);
+    await page.close();
+
+    expect(b.footer, 'the band did not render at all').not.toBeNull();
+    expect(
+      b.footer.h,
+      `the band is ${b.footer.h}px — under the ${DEFINITION.collapse.footerFloor}px floor, so the frame drops its regions and the Act/Scene rail and both registers go with them`,
+    ).toBeGreaterThanOrEqual(DEFINITION.collapse.footerFloor);
+  }, 120000);
+
+  /**
+   * NEVER DISTORT — the other half of the quality floor. A box clamped by
+   * `max-height` while its width stays at 100% is exactly how a picture gets
+   * stretched, so this measures the rendered box rather than trusting the
+   * declared `aspect-ratio`.
+   */
+  it.each(FLEET)('$name — the picture keeps the ratio the corpus declared', async ({ width, height }) => {
+    const page = await browser.newPage({ deviceScaleFactor: 1 });
+    await layout(page, css, { width, height, data: ACADEMY });
+    const b = await frameBoxes(page);
+    await page.close();
+
+    expect(b.media, 'the media box did not render').not.toBeNull();
+    expect(
+      b.media.w / b.media.h,
+      `the picture rendered at ${b.media.w}x${b.media.h} (ratio ${(b.media.w / b.media.h).toFixed(3)}), not the declared 4:3`,
+    ).toBeCloseTo(4 / 3, 2);
+  }, 120000);
+
+  /**
+   * THE COLUMN IS THE COLUMN. The stage is `flex: 0 0 auto` so that a band which
+   * cannot fit shrinks itself rather than squeezing the picture out of its
+   * aspect box — but nothing stopped the stage itself from growing past the
+   * screen root, which is what pushes the band off the bottom edge.
+   */
+  it.each(FLEET)('$name — the stage never outgrows the column it sits in', async ({ width, height }) => {
+    const page = await browser.newPage({ deviceScaleFactor: 1 });
+    await layout(page, css, { width, height, data: ACADEMY });
+    const b = await frameBoxes(page);
+    await page.close();
+
+    expect(
+      b.stage.h,
+      `the stage is ${b.stage.h}px inside a ${b.main.h}px column — it has overflowed, and the band is what falls off the bottom`,
+    ).toBeLessThanOrEqual(b.main.h);
   }, 120000);
 });
