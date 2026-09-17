@@ -3332,5 +3332,21 @@ describe('the rail-carried layout, measured', () => {
     g.regions.forEach(({ module, h }) => {
       expect(h, `${module} collapsed to ${h}px in the rail`).toBeGreaterThan(30);
     });
+
+    // AND THE FILLER ACTUALLY FILLS. The floor above is not enough on its own:
+    // three regions splitting the rail evenly clear it as comfortably as a
+    // correct layout does, which is exactly how a dead 180/180/180 split
+    // shipped and measured healthy. `height: fill` has to MEAN something, so
+    // the assertion is the relation the definition claims — the timeline takes
+    // materially more than the two regions that authored no height at all.
+    const timeline = g.regions.find((r) => r.module === 'segment-map');
+    const others = g.regions.filter((r) => r.module !== 'segment-map');
+    others.forEach(({ module, h }) => {
+      expect(
+        timeline.h,
+        `the timeline is ${timeline.h}px against ${module}'s ${h}px — `
+        + 'height: fill claimed no slack, so the rail split evenly',
+      ).toBeGreaterThan(h * 1.25);
+    });
   }, 120000);
 });
