@@ -110,13 +110,27 @@ export default function CueTicker({
   // eslint-disable-next-line no-unused-vars -- part of the fixed module contract
   seeking = false,
   data = null,
-  // eslint-disable-next-line no-unused-vars -- part of the fixed module contract
   region = null,
   logger = null,
 }) {
   const log = useMemo(() => surroundLogger(logger, 'cue-ticker'), [logger]);
   const contentId = data?.contentId ?? null;
   const config = useMemo(() => resolveBandConfig(data), [data]);
+  /**
+   * WHICH AXIS THIS BAND RUNS ON — declared by the definition on the region,
+   * the same key and the same values the timeline takes.
+   *
+   * Deliberately NOT inferred from which slot the module landed in. A module
+   * should not change shape because of where it was placed, and a frame that
+   * wanted its two registers stacked in the bottom band is entitled to ask for
+   * that without being overruled by a slot name.
+   *
+   * On this axis `nowSide` retires: the NOW register is simply the lower of the
+   * two stacked zones, always, so the bond's ground is a fixed half rather than
+   * a panel that travels. That is why nothing new is published here — a custom
+   * property that could only ever hold one value is ceremony, not geometry.
+   */
+  const orientation = region?.orientation === 'column' ? 'column' : 'row';
 
   const cues = useMemo(() => (Array.isArray(data?.cues) ? data.cues : [])
     .filter((c) => c && typeof c === 'object' && c.text)
@@ -843,7 +857,7 @@ export default function CueTicker({
   return (
     <div
       ref={rootRef}
-      className={`surround-cue-ticker surround-cue-ticker--${rootKind}${split ? ' surround-cue-ticker--split' : ''}${split && renderedSide === 'left' ? ' surround-cue-ticker--now-left' : ''}${split && !nowHeading ? ' surround-cue-ticker--no-now-heading' : ''}`}
+      className={`surround-cue-ticker surround-cue-ticker--${rootKind}${split ? ' surround-cue-ticker--split' : ''}${split && renderedSide === 'left' ? ' surround-cue-ticker--now-left' : ''}${split && !nowHeading ? ' surround-cue-ticker--no-now-heading' : ''}${orientation === 'column' ? ' surround-cue-ticker--column' : ''}`}
       data-testid="surround-cue-ticker"
       data-kind={rootKind}
       data-split={split ? 'true' : 'false'}
