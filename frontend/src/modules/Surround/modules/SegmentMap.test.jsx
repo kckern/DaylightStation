@@ -1789,7 +1789,7 @@ describe('SegmentMap — the composed rail', () => {
       'surround-segment-map__text': 149,
       'surround-segment-map__group': 60,
     }, () => renderMap({ data: hierarchy, position: 5, duration: 40 }));
-    expect([...container.querySelectorAll('[data-testid="surround-part-group-label"]')].map((e) => e.textContent))
+    expect([...container.querySelectorAll('[data-testid="surround-outer-group-label"]')].map((e) => e.textContent))
       .toEqual(['Part One', 'Part Two']);
     // The legacy `hierarchy.part` transport draws the PART row only. The scene
     // row is the nested (`groupPath`/`ancestors`) rail's — the compat comment in
@@ -2380,7 +2380,7 @@ describe('SegmentMap — the fold', () => {
      `count` has to agree on which of the two numbers it means. --------------
   */
   const MESSIAH_ANCESTORS = (() => {
-    // Part One and Part Three each carry two Scenes, so `foldSceneCounts` has
+    // Part One and Part Three each carry two Scenes, so `foldInnerCounts` has
     // something to count; Part Two (the one left sounding) is single-scene,
     // which keeps its own segments unaffected by any of this.
     const parts = [
@@ -2455,7 +2455,7 @@ describe('SegmentMap — the fold', () => {
   it('badges a collapsed ancestors Part with its true segment count and scene count', () => {
     // A narrow rail with wide names — the geometry `railWearsChips` needs to
     // pick chip density, which is the ONLY place a nested fold's scene-count
-    // suffix (`foldSceneCounts`) is drawn today: the named-mode text row has
+    // suffix (`foldInnerCounts`) is drawn today: the named-mode text row has
     // no badge at all for a collapsed segment, and the wave-10 box (above)
     // structurally never takes here.
     withRailGeometry({
@@ -2480,7 +2480,7 @@ describe('SegmentMap — the fold', () => {
       // CSS: a concatenated `textContent` would read '42' and say nothing.
       expect(chips.map((c) => c.querySelector('.surround-segment-map__fold-segments').textContent))
         .toEqual(['4', '4']);
-      expect(chips.map((c) => c.querySelector('.surround-segment-map__fold-scenes').textContent))
+      expect(chips.map((c) => c.querySelector('.surround-segment-map__fold-groups').textContent))
         .toEqual(['2', '2']);
     });
   });
@@ -2502,7 +2502,7 @@ describe('SegmentMap — the fold', () => {
       // it — `groupBasis` walking a fold's inflated true count past its own
       // one drawn-rail slot would double-count Part Two's shares into Part
       // One's or Part Three's heading width.
-      const bases = [...container.querySelectorAll('[data-testid="surround-part-group-label"]')]
+      const bases = [...container.querySelectorAll('[data-testid="surround-outer-group-label"]')]
         .map((e) => parseFloat(e.style.flexBasis));
       expect(bases.reduce((a, b) => a + b, 0)).toBeCloseTo(100, 3);
     });

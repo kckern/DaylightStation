@@ -130,13 +130,6 @@
   min-height: calc(3.9rem + var(--group-rows));
 }
 
-/* A long-form work may have two authored hierarchy levels: Parts span scenes,
-   then scenes span individual numbers. They are distinct rows so neither title
-   is silently discarded when the corpus is kept in one work file. */
-.surround-segment-map--part-grouped.surround-segment-map--scene-grouped {
-  --group-rows: calc(var(--group-row) * 2);
-}
-
 .surround-segment-map--grouped .surround-segment-map__groups {
   flex: 0 0 var(--group-row);
   height: var(--group-row);
@@ -207,7 +200,7 @@
   overflow: hidden;
 }
 
-.surround-segment-map__group--part {
+.surround-segment-map__group--outer {
   color: var(--ink, #332b20);
   font-weight: 600;
   opacity: 1;
@@ -468,7 +461,7 @@
     width: max-content;
   }
 
-  /* THE FOLD'S TWO RULERS (design wave 10) — the part label and the count
+  /* THE FOLD'S TWO RULERS (design wave 10) — the group label and the count
      badge, each at its own content width. Both are laid out as flex items where
      they really live, so they are blockified there; `inline-block` is what gives
      them the same box here without a flex parent, and `max-width: none` keeps a
@@ -568,7 +561,7 @@
      future is the brighter quiet state, the elapsed the dimmer one.
      DIMMER SINCE DESIGN WAVE 10 (0.78 -> 0.55, ~9.4:1 -> ~4.9:1). A bare
      ordinal is the least informative mark on this rail — "35" names nothing on
-     its own — and at 0.78 it was outshouting the part label that names the
+     its own — and at 0.78 it was outshouting the group label that names the
      stretch of music it belongs to. See `__group` for the other half. */
   opacity: 0.55;
 }
@@ -588,23 +581,23 @@
    `__segment`) — came back as a dashed line, one dash per segment.
    THE FOLD IS THE FIX. The reason the chips were at the floor at all is that 53
    movements were competing for the rule; with the two parts that are not
-   sounding folded, Messiah's sounding part gets ~61px a segment instead of 32,
+   sounding folded, Messiah's sounding group gets ~61px a segment instead of 32,
    which puts ~23px between the digits and the edge without a rule for it. If a
    rail ever crowds this way again the answer is the floor, not padding. */
 
 /* ---------------------------------------------------------------------------
-   THE FOLD (design wave 10) — a whole part, elided into one block.
+   THE FOLD (design wave 10) — a whole outer group, elided into one block.
 
    WHY IT EXISTS. Messiah is 53 numbered movements. Chip mode already gave up on
    names for it, and what was left was a rail spending three quarters of its
    width setting bare integers for the two parts nobody is listening to, at 32px
    each, unreadable at ten feet and meaningless up close ("35" names nothing).
-   Every part but the sounding one now collapses to one block, and the width that
-   frees goes to the part that is actually playing.
+   Every outer group but the sounding one now collapses to one block, and the width that
+   frees goes to the group that is actually playing.
 
    IT IS SIZED BY ITS LABEL, NOT BY ITS DURATION (`foldWidthPx`, `../band.js`).
    A fold is an elision: the music it stands for is off the axis, so it has no
-   share of the axis to claim. It is exactly as wide as the wider of the part
+   share of the axis to claim. It is exactly as wide as the wider of the group
    label sitting above it and the count badge sitting inside it — which is also
    what makes the label and the block read as one object rather than as a
    heading floating over 231px of texture.
@@ -619,7 +612,7 @@
    fold lost. Two folds drawn in one texture put 28% of the rail beyond the
    elapsed/future ladder that is the rail's whole job. The rule and its fill
    above the block carry the state as they do everywhere else, and the hatch
-   itself is denser for a part already heard than for one still to come.
+   itself is denser for a group already heard than for one still to come.
    --------------------------------------------------------------------------- */
 .surround-segment-map__segment--fold {
   /* NO `opacity` ON THE BLOCK. The first fold dimmed the whole segment to .82,
@@ -718,7 +711,7 @@
  * The `padding-left` matches the flex `gap` on the pill, so the divider sits at
  * the optical centre of the pair rather than tight against the second number.
  */
-.surround-segment-map__fold-scenes {
+.surround-segment-map__fold-groups {
   padding-left: 0.34em;
   border-left: 1px solid currentColor;
   font-weight: 400;
@@ -1040,7 +1033,7 @@
  * THE FOLD'S BADGE — a PILL holding two numbers, not a stack holding two rows.
  *
  * It was `display: grid; place-items: center` with a bare count, a slash and a
- * scene-count span inside it. A grid auto-places each child in its OWN ROW, so
+ * inner-group-count span inside it. A grid auto-places each child in its OWN ROW, so
  * the band painted "23" over "/17": two lines of numerals in a mark that is
  * supposed to be one glyph-sized token. `inline-flex` puts them on one line
  * where they belong, and the enclosure is what makes the pair read as a single
