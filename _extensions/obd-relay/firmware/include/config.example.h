@@ -17,6 +17,7 @@
 #define TRIP_CHUNK_SAMPLES  300    // max samples per `trip` WS message
 
 #define STANDBY_ENGINE_OFF_V     13.0f
+#define STANDBY_ENGINE_RESUME_V  13.3f
 #define STANDBY_WAKE_SLEEP_V     13.2f
 #define STANDBY_WAKE_GRACE_S     8
 #define STANDBY_CONFIRM_S        120
