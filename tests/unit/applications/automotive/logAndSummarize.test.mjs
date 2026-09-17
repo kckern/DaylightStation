@@ -163,4 +163,33 @@ describe('GetVehicleOverview', () => {
     const result = await directOverview.execute({ vehicleId: VEHICLE, now: new Date('2026-08-13') });
     expect(result.odometer).toMatchObject({ km: 72359.1, source: 'pid_a6', confidence: 'exact' });
   });
+
+  it('takes a newer A6 reading from the latest snapshot over an older trip anchor', async () => {
+    await records.saveVehicle(VEHICLE, { label: 'Test car', odometer: { pid_a6_verified: true } });
+    const history = {
+      ...emptyHistory,
+      listTripDescriptors: async () => [{
+        odometerStartKm: 73029.3,
+        startedAt: new Date('2026-09-13T11:46:00-07:00'),
+        distanceKm: 5,
+      }],
+      readLatestSnapshot: async () => ({
+        kind: 'snapshot', ts: '2026-09-14T16:11:26-07:00', diag: { odometer: 73055.5 },
+      }),
+    };
+    const direct = new GetVehicleOverview({ historyRepository: history, recordRepository: records, logger: silent });
+    const result = await direct.execute({ vehicleId: VEHICLE, now: new Date('2026-09-15') });
+    expect(result.odometer).toMatchObject({ km: 73055.5, source: 'pid_a6', anchored_at: '2026-09-14T23:11:26.000Z' });
+  });
+
+  it('ignores snapshot A6 until the vehicle is dashboard-verified', async () => {
+    await records.saveVehicle(VEHICLE, { label: 'Test car' });
+    const history = {
+      ...emptyHistory,
+      readLatestSnapshot: async () => ({ kind: 'snapshot', ts: '2026-09-14T16:11:26-07:00', diag: { odometer: 73055.5 } }),
+    };
+    const gated = new GetVehicleOverview({ historyRepository: history, recordRepository: records, logger: silent });
+    const result = await gated.execute({ vehicleId: VEHICLE, now: new Date('2026-09-15') });
+    expect(result.odometer.km).toBeNull();
+  });
 });

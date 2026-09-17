@@ -54,7 +54,7 @@ export class GetVehicleOverview {
     // and scaling. It becomes authoritative only after a one-time comparison
     // against the dashboard is recorded in vehicle.yml.
     if (vehicle?.odometer?.pid_a6_verified === true) {
-      const direct = latestDirectOdometer(descriptors, now);
+      const direct = latestDirectOdometer(descriptors, now, snapshot);
       if (direct) {
         odometer = {
           km: direct.km, source: 'pid_a6', confidence: 'exact', anchor: null,
@@ -113,8 +113,19 @@ export class GetVehicleOverview {
   }
 }
 
-function latestDirectOdometer(descriptors, asOf) {
+/**
+ * The newest A6 reading from either source. Trip anchors are sparse — the
+ * firmware only stamps one when the ECU had already answered at trip open or
+ * close (60 starts and 23 ends across 169 live trips, 2026-09-14) — while
+ * snapshots carry A6 in `diag.odometer` on most minutes of a drive.
+ */
+function latestDirectOdometer(descriptors, asOf, snapshot = null) {
   const readings = [];
+  const snapshotKm = Number(snapshot?.odometer_km ?? snapshot?.diag?.odometer);
+  const snapshotAt = snapshot?.ts ? new Date(snapshot.ts) : null;
+  if (snapshot && Number.isFinite(snapshotKm) && snapshotKm > 0 && !Number.isNaN(snapshotAt?.getTime())) {
+    readings.push({ km: snapshotKm, at: snapshotAt });
+  }
   for (const d of descriptors) {
     if (Number.isFinite(d.odometerStartKm) && d.startedAt instanceof Date) {
       readings.push({ km: d.odometerStartKm, at: d.startedAt });

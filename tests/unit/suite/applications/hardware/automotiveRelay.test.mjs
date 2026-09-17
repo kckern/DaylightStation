@@ -139,6 +139,19 @@ describe('automotiveRelay', () => {
     expect(record.battery_v).toBe(14.7);  // real reading survives
   });
 
+  it('drops a saturated 0x31 counter from diag but keeps the rest of the set', async () => {
+    relay = make();
+    bus.ingest('c1', {
+      source: SRC, type: 'snapshot', id: VEHICLE, telemetry_schema: 2,
+      battery_v: 14.7, fuel_pct: 85, coolant_c: 89, rpm: 971, speed_kph: 2, dtc: [], gps: { lat: 47.4, lon: -122.2 },
+      diag: { distance_since_cleared: 65535, distance_with_mil: 0, odometer: 73045.3, engine_load: 18 },
+    });
+    await relay.flush();
+
+    const [record] = await readDayLog();
+    expect(record.diag).toEqual({ distance_with_mil: 0, odometer: 73045.3, engine_load: 18 });
+  });
+
   it('persists events and honors per-vehicle topic override', async () => {
     relay = make({ vehicles: { [VEHICLE]: { topic: 'car-events' } } });
     bus.ingest('c1', { source: SRC, type: 'event', id: VEHICLE, event: 'wifi-joined' });
