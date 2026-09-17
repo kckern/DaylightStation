@@ -291,7 +291,12 @@ export function ClefGlyph({ clef, lineSpacing, bottomLineY, className = 'action-
       className={className}
       data-clef={clef === 'bass' ? 'bass' : 'treble'}
       d={spec.d}
-      fill="rgba(0,0,0,0.5)"
+      // FULL-STRENGTH INK. This was rgba(0,0,0,0.5) — the only mark on the staff
+      // drawn at half strength, where every other one (ledgers, stems,
+      // accidentals, noteheads) is rgba(0,0,0,1). On the kiosk that reads as a
+      // grey clef against black music. Nothing overrides it in CSS, so the
+      // attribute was the whole of it.
+      fill="rgba(0,0,0,1)"
       transform={`translate(${x}, ${anchorY}) scale(${lineSpacing})`}
     />
   );

@@ -179,12 +179,6 @@ export function SvgSequenceStaff({
   accidental = 'sharp',
   keySignature = null,
 }) {
-  // The one gate for every per-note colour below (rule 5): with nothing held,
-  // there is no attempt to judge, so the cursor entry reads as plain "not yet
-  // played" like everything after it. The instant a key goes down, judging
-  // starts; the instant every key comes back up, it stops — colour is a pure
-  // function of what is CURRENTLY held, never of what was held a moment ago.
-  const attemptInProgress = Boolean(activeNotes && activeNotes.size > 0);
   // Black keys are spelled deterministically — spellAccidental's no-argument
   // default is a coin flip, which on a kiosk means the same note flickering
   // between C# and Db between renders. Callers that know the key pass
@@ -199,6 +193,61 @@ export function SvgSequenceStaff({
     return built;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [JSON.stringify(notes ?? []), accidental]);
+
+  // Rule 3's "the target" is the CURSOR ENTRY's targets, not the whole
+  // sequence — a held pitch that matches some OTHER entry (already played, or
+  // still to come) is exactly as off-target right now as one that matches
+  // nothing at all, because it is not what this entry is asking for.
+  const cursorTargetMidis = useMemo(
+    () => new Set(entries[cursorIndex]?.midis ?? []),
+    [entries, cursorIndex]
+  );
+
+  /**
+   * WHEN THE CURSOR ARRIVED HERE — the other half of `classifyHeldPitch`.
+   *
+   * Kept in a ref and stamped during render rather than from an effect: the
+   * verdicts and the ghosts below are computed in the same pass, and an effect
+   * would stamp the arrival one commit LATE, which is exactly one frame of
+   * every key still being classified against the previous entry's arrival. The
+   * ref is written only when the index actually changes, so a re-render for any
+   * other reason (a key going down, a parent tick) does not move the clock and
+   * silently turn a real ghost into a sustain.
+   */
+  const cursorArrivalRef = useRef({ index: null, at: 0 });
+  if (cursorArrivalRef.current.index !== cursorIndex) {
+    cursorArrivalRef.current = { index: cursorIndex, at: Date.now() };
+  }
+  const cursorArrivedAt = cursorArrivalRef.current.at;
+
+  /**
+   * IS ANYONE ACTUALLY PLAYING *THIS* ENTRY? — the one gate for every per-note
+   * colour below (rule 5).
+   *
+   * This used to be `activeNotes.size > 0`, which asked a different and wrong
+   * question: "is any key down anywhere". A scale is played legato, so at the
+   * instant the assessor advances the cursor the PREVIOUS key is still under a
+   * finger — and that was enough to declare an attempt under way at the new
+   * entry, whose targets had not been touched yet and were therefore painted
+   * `miss`. Every correct note flashed the next one red before the child
+   * reached it.
+   *
+   * `classifyHeldPitch` already draws exactly the line this needs, and the
+   * ghost layer below has always used it: a key held from BEFORE the cursor
+   * arrived is a SUSTAIN — the afterglow of a note the engine already judged,
+   * and no answer to this one. Judging therefore starts on a key that is a
+   * target of this entry, or on one pressed here and wrong (a real ghost), and
+   * never on the tail of the note before.
+   */
+  const attemptInProgress = useMemo(() => {
+    for (const [midi, held] of activeNotes ?? []) {
+      const verdict = classifyHeldPitch(midi, {
+        pressedAt: held?.timestamp, cursorArrivedAt, cursorTargets: cursorTargetMidis,
+      });
+      if (verdict !== 'sustain') return true;
+    }
+    return false;
+  }, [activeNotes, cursorArrivedAt, cursorTargetMidis]);
 
   // Which clef each pitch would pick for itself; the majority of those decides
   // the one staff, unless the caller named it.
@@ -305,14 +354,6 @@ export function SvgSequenceStaff({
     [entries, activeClef, cursorIndex, activeNotes, attemptInProgress, keySignature, firstColumnX]
   );
 
-  // Rule 3's "the target" is the CURSOR ENTRY's targets, not the whole
-  // sequence — a held pitch that matches some OTHER entry (already played, or
-  // still to come) is exactly as off-target right now as one that matches
-  // nothing at all, because it is not what this entry is asking for.
-  const cursorTargetMidis = useMemo(
-    () => new Set(entries[cursorIndex]?.midis ?? []),
-    [entries, cursorIndex]
-  );
 
   const cursorColumn = columns.length
     ? Math.min(Math.max(cursorIndex, 0), columns.length - 1)
@@ -338,11 +379,6 @@ export function SvgSequenceStaff({
    * re-render for any other reason (a key going down, a parent tick) does not
    * move the clock and silently turn a real ghost into a sustain.
    */
-  const cursorArrivalRef = useRef({ index: null, at: 0 });
-  if (cursorArrivalRef.current.index !== cursorIndex) {
-    cursorArrivalRef.current = { index: cursorIndex, at: Date.now() };
-  }
-  const cursorArrivedAt = cursorArrivalRef.current.at;
 
   /**
    * Ghosts are DRAWN; sustains are only logged. Keeping both is what lets the
