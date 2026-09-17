@@ -19,39 +19,52 @@ describes exists.
 
 ## Seed case
 
-- `TV Shows/Shakespeare/Season 1/30 The Taming Of The Shrew.mp4` — 640×480
-  (4:3), 7567.5s (~2h6m). **Plex contentId is `plex:68071`, not the ratingKey
-  Plex titles "The Taming of the Shrew" (`68054`).** Verified against fresh
-  `plex.cli.mjs info` output plus `ffprobe` duration cross-checks: every
-  episode in this Plex season (`BBC Television Shakespeare`, show `68040`,
-  all 37 children of season `68041`) has its metadata title mismatched to
-  the wrong file — apparently two different orderings (an index/broadcast
-  order the Plex agent matched by, versus the files' own alphabetical
-  numbering) scrambled against each other. `68054`'s file is actually
-  `13 Henry VI Part 3.mp4` (12637.6s, duration-confirmed); `68071`'s file is
-  the real Shrew video and is currently mislabeled "The Comedy of Errors" in
-  Plex. **This means the classical domain's `match.title` rebind fallback
-  (README: "Why `match` has two keys") is unsafe for this domain until the
-  season's Plex metadata is corrected** — Plex's own title field is the
-  thing that's wrong, so a title-based rebind would confidently attach a
-  sidecar to the wrong video. Match on `contentId` only for this domain
-  until a separate task re-matches the season in Plex; treat any
-  `surround.match.rebound` log event on a shakespeare sidecar as a signal to
-  re-verify by duration, not to trust the new title.
+- `TV Shows/Shakespeare/Season 1/Shakespeare - S01E13 - The Taming Of The
+  Shrew.mp4` — 640×480 (4:3), 7567.5s (~2h6m). **Plex contentId is
+  `plex:697661`.**
 
-  **The files themselves are trustworthy** — this is a Plex-database-only
-  bug, not a filesystem problem. Confirmed two ways, independent of Plex:
-  each file's own embedded container metadata (written at rip time, e.g.
-  `TAG:title=The Taming Of The Shrew`, `TAG:episode_sort=30` on file 30 vs.
-  `TAG:title=Henry VI Part 3` on file 13) agrees with its filename; and the
-  SRT's dialogue is unmistakably Shrew (Petruchio's wooing speech — "Good
-  morning, Kate... Kate of Kate Hall... My super dainty Kate," Act 2 Scene
-  1 — appears verbatim in substance near its midpoint), with its last cue
-  ending at 02:04:45, just before the file's 7567.5s runtime.
-- A sibling `The Taming Of The Shrew.srt` — an ASR transcript with no
-  speaker names and no Act/Scene markers, textually noisy ("Trollio" for
-  "Tranio"), opening directly on Act I Scene 1 (this production cuts the
-  Induction).
+  **Resolved during this design pass: the whole season's Plex metadata was
+  scrambled, and it's now fixed at the root.** All 37 files were originally
+  named alphabetically (`01 All's Well...` .. `37 The Winter's Tale.mp4`)
+  with no season/episode markers, so Plex's TVDB agent assigned real
+  broadcast-order episode numbers (1–37) to whatever position each file
+  happened to occupy during a scan — two unrelated orderings glued together.
+  Confirmed independent of Plex two ways before touching anything: each
+  file's own embedded container metadata (written at rip time — e.g.
+  `TAG:title=The Taming Of The Shrew`, `TAG:episode_sort=30` on the old file
+  30) agreed with its filename, and the SRT's dialogue is unmistakably Shrew
+  (Petruchio's wooing speech — "Good morning, Kate... Kate of Kate Hall...
+  My super dainty Kate," Act 2 Scene 1 — appears verbatim in substance near
+  its midpoint, with its last cue ending at 02:04:45, just before the file's
+  7567.5s runtime) — so the fix was to rename files, not to fix data
+  elsewhere.
+
+  All 37 files were renamed to proper Plex convention,
+  `Shakespeare - S##E## - <title>.mp4` (using each file's own existing short
+  title and the TVDB-canonical episode number derived from
+  `plex.cli.mjs`'s season-children listing, cross-referenced by play
+  identity since TVDB's titles differ substantially in wording from the
+  files' short titles — e.g. "Henry IV Part 1" vs. TVDB's "The First Part of
+  King Henry the Fourth with the Life and Death of Henry Surnamed
+  Hotspur"). The mapping was a clean 37-to-37 bijection with zero
+  collisions, a strong correctness signal. The companion SRT was renamed to
+  match.
+
+  Triggering a library refresh after the rename had one side effect worth
+  recording: Plex re-matched the **show** itself (not just the episodes),
+  and briefly landed on the wrong show, "Shakespeare: Rise of a Genius" (a
+  2023 documentary), discarding the previously-correct manual match to
+  "BBC Television Shakespeare" (`tvdb://73009`). Fixed immediately via
+  Plex's match API (`PUT .../match?guid=plex://show/5d9c...&name=...`,
+  using the GUID captured before the rename). After that fix, all 37
+  episode indices now correctly correspond to their files (verified
+  programmatically, zero mismatches) and Shrew resolved to `plex:697661`.
+  **`match.title` is safe again for this domain** — Plex's title metadata
+  is now correct.
+- A sibling `Shakespeare - S01E13 - The Taming Of The Shrew.srt` — an ASR
+  transcript with no speaker names and no Act/Scene markers, textually
+  noisy ("Trollio" for "Tranio"), opening directly on Act I Scene 1 (this
+  production cuts the Induction).
 - `The Taming of the Shrew (Cliffs Complete).pdf` — 218 pages: intro to
   Shakespeare, intro to the play, a full Act/Scene table of contents with
   each scene's setting ("Padua. A public place"), the complete text
@@ -237,8 +250,8 @@ Sidecar shape (abridged):
 work: shakespeare/taming-of-the-shrew
 surround: playhouse
 match:
-  contentId: plex:68071   # NOT 68054 — see "Seed case" above
-  title: "The Taming Of The Shrew"   # soft fallback only; unsafe to rely on for this domain until the season's Plex metadata is fixed
+  contentId: plex:697661
+  title: "The Taming of the Shrew"   # safe to rely on — Plex's season metadata was fixed, see "Seed case" above
 performance: "BBC Television Shakespeare, 1980"
 starts: [null, null, 42, 1180, ...]   # Induction scenes null — this production cuts them
 ```
@@ -264,11 +277,10 @@ skill), not part of this implementation.
 
 ## Out of scope for this spec
 
-- **Fixing the season's Plex metadata mismatch.** Every one of the 37
-  episodes is currently mismatched (see "Seed case"). Re-matching the whole
-  season in Plex is a separate, unrelated task; this spec works around it by
-  using `contentId`-only matching for the pilot.
-- Authoring the other 36 plays.
+- Authoring the other 36 plays. (Their files are now correctly renamed and
+  matched too, as a side effect of fixing the whole season — see "Seed
+  case" — so a future authoring pass for any of them starts from a clean
+  Plex state, not a scrambled one.)
 - Any change to the classical domain's existing modules beyond the two
   generalizations named above (`SurroundFrame`'s aspect ratio, `PlaceCarousel`'s
   fallback chain) — both are additive and backward-compatible (default to
