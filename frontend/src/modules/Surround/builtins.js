@@ -36,12 +36,26 @@ import ScriptRail from './modules/ScriptRail.jsx';
  * under a name nothing declares.
  */
 const BUILTIN_MODULES = [
-  ['segment-map', SegmentMap, { regions: ['bottom'] }],
-  ['cue-ticker', CueTicker, { regions: ['bottom'] }],
+  // THE WORK IN TIME, AND THE BAND THAT READS IT, BELONG TO EITHER ARRANGEMENT.
+  //
+  // A frame can put these two under the picture (a strip the width of the
+  // video) or beside it (a column down the rail). Which one a work wants is a
+  // question about the SHAPE OF ITS PICTURE, not about what kind of work it is:
+  // a picture narrower than the screen leaves width spare and no height to
+  // spare, so its chrome goes beside it. That decision belongs to the
+  // definition, and these declarations are what let a definition make it
+  // without `SurroundFrame` logging `surround.module.misplaced` at every
+  // render. A warning that fires on a correct, deliberate layout is worse than
+  // no warning at all — it is what teaches people to stop reading them.
+  ['segment-map', SegmentMap, { regions: ['bottom', 'right'] }],
+  ['cue-ticker', CueTicker, { regions: ['bottom', 'right'] }],
   ['composer-card', ComposerCard, { regions: ['right'] }],
   ['country-map', CountryMapModule, { regions: ['right', 'bottom'] }],
   ['place-carousel', PlaceCarousel, { regions: ['right'] }],
-  ['play-card', PlayCard, { regions: ['right'] }],
+  // The play's identity reads as a rail card or as a full-width strip above or
+  // below the picture, and which of those a frame wants is again the
+  // definition's call.
+  ['play-card', PlayCard, { regions: ['right', 'top', 'bottom'] }],
   ['work-placard', WorkPlacard, { regions: ['top'] }],
   // The lyric rail. `lyric` is its OWN slot, not `right`: the frame renders
   // exactly one of the two, and declaring it as a right-hand module would
