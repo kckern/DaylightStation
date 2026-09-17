@@ -636,6 +636,49 @@ Rules:
   • Cooldown after commit: 5s before next transition allowed
 ```
 
+### Ladder validation (ZoneProfileStore)
+
+Hysteresis stabilizes *which* rung a rider is on. Validation decides whether the
+ladder itself may be trusted at all. `ZoneProfileStore.#buildProfileFromUser` is
+the only place a ladder becomes a rider's committed reality — the fire toast,
+the zone LEDs, TreasureBox rings and coins and the GovernanceEngine all read the
+profile it produces — so it is the only place the ladder is validated.
+
+`validateZoneLadder` (`types.js`) is the sole definition of a trustworthy ladder:
+
+| Rule | Why |
+|---|---|
+| Thresholds increase in canonical id order (`cool < active < warm < hot < fire`) | Sortability is not enough. `[cool:60, warm:0, hot:160]` sorts into `[0, 60, 160]` and looks fine, while leaving a warm rung every rider clears |
+| Every **earned** rung at or above `MIN_COOL_BASELINE` | A low rung above the bottom is the defect. The bottom rung is exempt: everyone is at least cool, and the shipped global config genuinely has `cool: 0` |
+| At least two rungs | A one-rung ladder cannot express a transition |
+
+`buildZoneConfig` holds the matching producer-side contract: every rung it
+returns has a real threshold, or it is not a rung. It never fabricates one.
+
+**On rejection** the rider keeps their last known-good ladder. With no
+known-good yet (bootstrap), they get **no committed zone** — blank LED, no
+rings, no celebration — rather than a guessed one. A profile built on a fallback
+ladder is never memoized into `_profileCache`, or a cache hit would replay the
+fallback without re-validating.
+
+```
+fitness.zone_ladder.rejected    warn   userId, reason, thresholds, fellBackTo
+fitness.zone_ladder.recovered   info   userId, rejectedForMs, rejectedTicks
+```
+
+Both are **unsampled**, logged on entering and leaving the rejected state rather
+than per tick, so a persistently broken config costs two lines per session.
+`reason` is one of `below-baseline`, `not-increasing`, `missing-threshold`,
+`too-few-rungs`.
+
+> **Why this exists.** `buildZoneConfig` used to resolve an unresolvable
+> threshold to `0`. Zero is finite, so every `Number.isFinite` guard downstream
+> accepted it, and a rung at 0 is enterable by any rider with a pulse — the zone
+> climb then ran to the top rung. On 2026-09-16 a rider holding a steady 134bpm
+> against a warm threshold of 140 was celebrated for reaching Fire, and the same
+> committed zone pays rings and coins.
+> Design: `docs/_wip/plans/2026-09-16-zone-ladder-validation-design.md`
+
 ---
 
 ## Participant Sort Order
