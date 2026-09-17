@@ -223,6 +223,36 @@ export function factPool(data, index) {
 }
 
 /**
+ * Every character card in scope at `index`, nearest-name-wins.
+ *
+ * Unlike `factPool`, which ACCUMULATES every distinct fact string across the
+ * hierarchy, this OVERRIDES by name: a nearer level's card for "Petruchio"
+ * replaces a farther one rather than both rotating through — two
+ * descriptions of one character are never both current, unlike two true
+ * facts about a work, which are both worth rotating through.
+ *
+ * @param {object|null} data the surround payload.
+ * @param {number} index into `data.segments`, -1 for none.
+ * @returns {{name: string, role?: string, description?: string}[]}
+ */
+export function characterPool(data, index) {
+  const list = Array.isArray(data?.segments) ? data.segments : [];
+  const segment = Number.isInteger(index) && index >= 0 ? list[index] : null;
+  const byName = new Map();
+  const add = (items) => (Array.isArray(items) ? items : []).forEach((c) => {
+    const name = typeof c?.name === 'string' ? c.name.trim() : '';
+    if (!name || byName.has(name)) return;
+    byName.set(name, c);
+  });
+
+  add(segment?.characters);
+  [...(Array.isArray(segment?.ancestors) ? segment.ancestors : [])]
+    .reverse().forEach((ancestor) => add(ancestor?.characters));
+  add(data?.characters);
+  return [...byName.values()];
+}
+
+/**
  * Every pool `factPool` can ever return for this container, in rail order.
  *
  * THE FIT IS A CONSTANT OF THE PIECE (`fit.js`, `bandPools`), and this is what

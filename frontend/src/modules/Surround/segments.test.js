@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  segmentAt, factPool, factPools, isComposedContainer,
+  segmentAt, factPool, factPools, isComposedContainer, characterPool,
 } from './segments.js';
 
 const CH = [
@@ -316,5 +316,39 @@ describe('isComposedContainer — several media items, one rail', () => {
   it('is false for a payload with no rail at all', () => {
     expect(isComposedContainer({ timeline: { parts: [{}, {}] }, segments: [] })).toBe(false);
     expect(isComposedContainer(null)).toBe(false);
+  });
+});
+
+describe('characterPool — nearest name wins', () => {
+  const petruchioBaseline = { name: 'Petruchio', role: 'a gentleman of Verona', description: 'A fortune-hunter.' };
+  const petruchioActFour = { name: 'Petruchio', role: 'a gentleman of Verona', description: 'Deep into the taming.' };
+  const katherina = { name: 'Katherina', role: 'the shrew' };
+
+  it('returns the work-level roster when no segment or group re-describes anyone', () => {
+    const data = { characters: [petruchioBaseline, katherina], segments: [{ ancestors: [] }] };
+    expect(characterPool(data, 0)).toEqual([petruchioBaseline, katherina]);
+  });
+
+  it('lets a nearer group entry replace one name without duplicating it', () => {
+    const data = {
+      characters: [petruchioBaseline, katherina],
+      segments: [{ ancestors: [{ characters: [petruchioActFour] }] }],
+    };
+    expect(characterPool(data, 0)).toEqual([petruchioActFour, katherina]);
+  });
+
+  it('prefers the segment’s own characters over its ancestors’ and the work’s', () => {
+    const onSegment = { name: 'Petruchio', role: 'a gentleman of Verona', description: 'Right this instant.' };
+    const data = {
+      characters: [petruchioBaseline],
+      segments: [{ characters: [onSegment], ancestors: [{ characters: [petruchioActFour] }] }],
+    };
+    expect(characterPool(data, 0)).toEqual([onSegment]);
+  });
+
+  it('returns an empty list for an unplaced index or no authored characters', () => {
+    const data = { segments: [{}] };
+    expect(characterPool(data, -1)).toEqual([]);
+    expect(characterPool(data, 0)).toEqual([]);
   });
 });
