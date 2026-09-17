@@ -100,7 +100,7 @@ describe('surround builtins', () => {
     expect([...SURROUND_BUILTIN_MODULES].sort())
       .toEqual([
         'composer-card', 'country-map', 'cue-ticker', 'libretto', 'movement-map',
-        'place-carousel', 'script-rail', 'segment-map', 'work-placard',
+        'place-carousel', 'play-card', 'script-rail', 'segment-map', 'work-placard',
       ]);
   });
 
