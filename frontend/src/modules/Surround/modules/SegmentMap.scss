@@ -788,7 +788,7 @@
      is. */
   font-size: calc(var(--label-floor, #{$label-floor}) * 74 / 72);
   font-weight: 400;
-  font-style: normal;              /* it is NOT the tempo term — see __tempo */
+  font-style: normal;              /* it is NOT the term — see __term */
   line-height: 1.2;
   letter-spacing: 0.01em;
   color: var(--ink, #2a1d07);
@@ -802,8 +802,10 @@
   margin-right: 0.3em;
 }
 
-/* Engraved scores set tempo markings in italic. */
-.surround-segment-map__tempo {
+/* The descriptive half of a heading, set in italic — the convention
+   engraved scores use for a tempo marking, applied to whatever term a
+   corpus authors there. */
+.surround-segment-map__term {
   font-style: italic;
 }
 

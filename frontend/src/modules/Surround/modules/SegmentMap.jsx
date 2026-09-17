@@ -6,7 +6,7 @@
 // This is NOT a progress bar. It is set as the barline grammar of engraved music:
 // one hairline staff rule, one quiet separator between segments, each segment
 // proportional to that segment's real duration, names above the rule with the
-// tempo term in italic.
+// term term in italic.
 //
 // WHERE THE RULE SITS (design wave 4)
 // -----------------------------------
@@ -72,39 +72,44 @@ import './SegmentMap.scss';
 const EMPTY_GROUPS = Object.freeze([]);
 
 /**
- * A tempo marking is WORDS. Figures in a heading mean it is a title — a
+ * A TERM is WORDS. Figures in a heading mean it is a title — a
  * catalogue number, an opus, a key — and a title is set roman.
  *
  * The rule exists because the divider below is a heuristic and a heuristic needs
  * a guard. On a movement rail the last period genuinely divides a character
- * title from its tempo term; on a rail of WORKS it lands inside the catalogue
+ * title from its term term; on a rail of WORKS it lands inside the catalogue
  * number, and "No. 5 in F-sharp major, Op. 15 No. 2" was being set as the title
  * "No. 5 in F-sharp major, Op. 15 No." followed by an italic "2" — visible on
  * the office screen as a stray leaning figure at the end of every nocturne.
  */
-const tempoLike = (s) => /^[^0-9]+$/.test(s);
+const termLike = (s) => /^[^0-9]+$/.test(s);
 
 /**
- * Split an engraved segment heading into its title and its tempo marking.
- * "Marcia funebre. Adagio assai" -> { title: 'Marcia funebre.', tempo: 'Adagio assai' }
- * "Allegro con brio"            -> { title: null,               tempo: 'Allegro con brio' }
- * "No. 5 in F-sharp major, Op. 15 No. 2" -> { title: <the whole name>, tempo: null }
- * Scores set the tempo term in italic and any character title in roman; the last
- * period is the divider that convention uses, and `tempoLike` is what stops that
+ * Split a segment heading into its title and its TERM — the descriptive half,
+ * set in italic. In the classical corpus that term is a tempo marking ("Adagio
+ * assai") and this module was named after it; it is equally a stage direction
+ * or any other descriptor a corpus cares to author. The convention below is
+ * from engraved scores, which is where the italic comes from — the RULE is
+ * kept, the assumption that every corpus is music is not.
+ * "Marcia funebre. Adagio assai" -> { title: 'Marcia funebre.', term: 'Adagio assai' }
+ * "Allegro con brio"            -> { title: null,               term: 'Allegro con brio' }
+ * "No. 5 in F-sharp major, Op. 15 No. 2" -> { title: <the whole name>, term: null }
+ * Scores set the term term in italic and any character title in roman; the last
+ * period is the divider that convention uses, and `termLike` is what stops that
  * convention being applied to a string it was never about.
  */
 function splitHeading(name) {
   const text = String(name ?? '').trim();
-  if (!text) return { title: null, tempo: '' };
+  if (!text) return { title: null, term: '' };
   const cut = text.lastIndexOf('.');
   if (cut > 0 && cut < text.length - 1) {
     const head = text.slice(0, cut + 1).trim();
     const tail = text.slice(cut + 1).trim();
-    if (tempoLike(tail)) return { title: head, tempo: tail };
+    if (termLike(tail)) return { title: head, term: tail };
   }
   // No divider the convention covers: the whole heading is one thing, and which
   // thing it is decides the face it is set in.
-  return tempoLike(text) ? { title: null, tempo: text } : { title: text, tempo: null };
+  return termLike(text) ? { title: null, term: text } : { title: text, term: null };
 }
 
 const clamp01 = (n) => (n < 0 ? 0 : n > 1 ? 1 : n);
@@ -770,7 +775,7 @@ export default function SegmentMap({
       return heading.getBoundingClientRect().width;
     });
     const needs = segments.map((seg) => {
-      const { title, tempo } = splitHeading(seg.label);
+      const { title, term } = splitHeading(seg.label);
       // The heading is two spans with a margin between them, exactly as the
       // segment sets it — a probe holding one concatenated string would measure
       // a narrower line than the rail paints.
@@ -781,10 +786,10 @@ export default function SegmentMap({
         t.textContent = title;
         heading.appendChild(t);
       }
-      if (tempo) {
+      if (term) {
         const t = document.createElement('span');
-        t.className = 'surround-segment-map__tempo';
-        t.textContent = tempo;
+        t.className = 'surround-segment-map__term';
+        t.textContent = term;
         heading.appendChild(t);
       }
       gloss.textContent = seg.annotation ?? '';
@@ -1391,7 +1396,7 @@ export default function SegmentMap({
         {/* THE RULER (the same idiom `CueTicker` measures its prose with). One
             element per rail, out of flow and invisible, carrying the segment
             row's real structure — the numeral's gutter, the text column, the
-            heading with its title/tempo spans, the gloss in the annotation face
+            heading with its title/term spans, the gloss in the annotation face
             — so what it reports is what the rail paints and not an arithmetic
             model of it.
             IT IS A RULER, NOT HIDDEN TEXT. It holds one segment's strings at a
@@ -1550,7 +1555,7 @@ export default function SegmentMap({
             );
           }
 
-          const { title, tempo } = splitHeading(seg.label);
+          const { title, term } = splitHeading(seg.label);
           // How much of THIS segment has sounded. Elapsed segments read full,
           // future ones empty, and the sounding one sweeps — that sweep is where
           // the viewer reads progress now. It is a fraction of the SEGMENT, so
@@ -1672,7 +1677,7 @@ export default function SegmentMap({
                   <>
                   <span className="surround-segment-map__heading">
                     {title && <span className="surround-segment-map__title">{title}</span>}
-                    {tempo && <span className="surround-segment-map__tempo">{tempo}</span>}
+                    {term && <span className="surround-segment-map__term">{term}</span>}
                   </span>
                   {/* THE ANNOTATION (design wave 6). A recessive sub-line under
                       the heading, in the annotation face — sans, not Garamond —
