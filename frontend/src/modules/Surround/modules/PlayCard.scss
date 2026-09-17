@@ -1,0 +1,110 @@
+/**
+ * PlayCard — the identity panel in the rail, for a STAGE WORK rather than a
+ * composer. Two zones, the same anatomy ComposerCard.scss establishes:
+ *
+ *   HEADER   title, genre, setting — centred, no portrait (a play has none
+ *            of its own; the playwright's face belongs to ComposerCard, not
+ *            here — see PlayCard.jsx's header comment).
+ *   FACT     the dissolving rotation — work-level facts and hierarchy-scoped
+ *            character cards, mixed into one pool — centred in whatever
+ *            height the header leaves.
+ *
+ * Same tokens, same rail ground (dark oxblood, `SurroundFrame` re-maps the
+ * ink tokens for `--right`) as every other rail module.
+ */
+
+@use "../tokens" as *;
+
+.surround-play-card {
+  height: 100%;
+  container-type: size;
+  padding: 1rem 1rem 1.1rem;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  font-family: var(--surround-display, "Cormorant Garamond", Georgia, serif);
+  color: var(--ink, #2a1d07);
+}
+
+.surround-play-card__header {
+  flex: 0 0 auto;
+  text-align: center;
+}
+
+.surround-play-card__title {
+  margin: 0;
+  font-size: 1.55rem;
+  font-weight: 600;
+  line-height: 1.2;
+  overflow-wrap: break-word;
+  text-wrap: balance;
+}
+
+.surround-play-card__genre {
+  margin: 0.35rem 0 0;
+  font-size: var(--label-floor, #{$label-floor});
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-soft, #6b6152);
+}
+
+.surround-play-card__setting {
+  margin: 0.3rem 0 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--ink-soft, #6b6152);
+}
+
+/* Same reserved-height law as ComposerCard's fact zone: at most three
+   lines, centred in whatever the header leaves over, ellipsized rather
+   than cut mid-glyph. */
+.surround-play-card__fact-zone {
+  flex: 0 0 auto;
+  margin: auto 0;
+  width: 100%;
+}
+
+.surround-play-card__fact-rule {
+  width: 100%;
+  height: 1px;
+  margin: 0 0 0.6rem;
+  border: 0;
+  background: var(--programme-edge, #ddd0b4);
+}
+
+.surround-play-card__fact {
+  margin: 0;
+  flex: 0 0 auto;
+  font-size: clamp(0.85rem, 5.4cqh, 1.35rem);
+  line-height: 1.35;
+  min-height: 4.05em;              /* 3 lines at line-height 1.35 */
+  max-height: 4.05em;
+  display: grid;
+  align-content: center;
+  overflow: hidden;
+  text-align: center;
+  text-wrap: balance;
+  font-family: var(--surround-body, "EB Garamond", Georgia, serif);
+  font-weight: 500;
+  color: var(--ink-soft, #6b6152);
+  opacity: 1;
+}
+
+.surround-play-card__fact--hidden {
+  opacity: 0;
+}
+
+.surround-play-card__fact-line {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .surround-play-card__fact {
+    transition: none !important;
+  }
+}
