@@ -1,21 +1,63 @@
-# Shakespeare surround — design
+# Drama surround — design
 
 Status: approved by user (2026-09-16), ready for implementation planning.
+Revised 2026-09-16: generalized from a Shakespeare-specific domain to a
+`drama` domain, per user feedback — other stage productions (a different
+playwright, a company, a non-Shakespeare play) should be able to reuse this
+without a new domain or new code.
 
 ## Goal
 
-Add a `shakespeare` domain to the Slow-TV surround system — same idea as
+Add a `drama` domain to the Slow-TV surround system — same idea as
 `classical` (see `docs/reference/player/surround/design.md` and
-`docs/reference/player/surround/classical/README.md`): when a play from the
-BBC Television Shakespeare collection (`TV Shows/Shakespeare/Season 1/`, 37
-films) plays, the video locks into a box and the reclaimed screen fills with
-chrome synchronized to the playhead — but a "playhouse programme" instead of a
-"concert programme."
+`docs/reference/player/surround/classical/README.md`): when a stage
+production plays, the video locks into a box and the reclaimed screen fills
+with chrome synchronized to the playhead — a "playhouse programme" instead
+of a "concert programme."
 
-End state: a repeatable authoring skill (`shakespeare-surround`, modeled on
-`classical-music-surround`) that a future session can run per-play without
-touching any frontend or backend code, once the presentation this spec
-describes exists.
+**`drama` is a domain for stage works in general, not a Shakespeare
+feature.** The pilot content is the BBC Television Shakespeare collection
+(`TV Shows/Shakespeare/Season 1/`, 37 films), and Shakespeare is the first
+playwright shelved in the corpus — but nothing in the schema, the
+presentation definition, or the frontend/backend code names Shakespeare,
+a play, an act, or a scene. Those are corpus-authored labels an individual
+work chooses, exactly the way `classical` never hardcodes "movement" (see
+"No hardcoded structure vocabulary" below). A future non-Shakespeare
+production — a different playwright, a filmed opera, a devised-theatre
+piece with no acts at all — should drop into this same domain with zero
+code changes.
+
+End state: a repeatable authoring skill (`drama-surround`, modeled on
+`classical-music-surround`) that a future session can run per-production
+without touching any frontend or backend code, once the presentation this
+spec describes exists.
+
+## No hardcoded structure vocabulary
+
+This was flagged explicitly and is worth stating as a standing design rule,
+not just a property of the pilot: **"Act" and "Scene" must never appear in
+frontend/backend code, only in corpus YAML, as free-text `kind:`/`title:`
+values an individual work chooses.** This already holds for every piece of
+existing machinery this design reuses:
+
+- `groups:`/`segments:` (`segments.js`, `SegmentMap.jsx`) take an optional
+  `kind:` per group — Messiah authors `kind: part` and `kind: scene`; a
+  Shakespeare play authors `kind: act` for its outer groups and needs no
+  `kind:` at all on its `segments:` (a segment is a segment; "Scene" is
+  just what its `label:`/`heading:` says). `kind` is never read by any
+  conditional in the rendering code — it is display data only.
+- The band's LEFT/RIGHT split reads `facts:` and `listen:` by position in
+  the hierarchy (segment → nearest group → work), never by a group's
+  `kind:` string.
+- Nothing proposed in "What needs real engineering" below reads or branches
+  on "act" or "scene" as a string. `PlayCard` reads `genre`/`setting`/
+  `cast` — fields about a stage work in general, not about Shakespeare or
+  about acts.
+
+So a future drama with no acts (a one-act play), or a different structure
+word (a "movement" in a devised piece, a "part" in a trilogy), needs no
+code change — only a corpus author's choice of `kind:`/`title:`, exactly
+as Messiah already demonstrates for the classical domain.
 
 ## Seed case
 
@@ -75,13 +117,16 @@ describes exists.
 ## What already generalizes — no code needed
 
 Reading `frontend/src/modules/Surround/` confirmed the existing generic
-machinery already does most of what a play needs, because it was built for
-Handel's *Messiah* (Part → Scene → Number nesting):
+machinery already does most of what a stage work needs, because it was
+built for Handel's *Messiah* (Part → Scene → Number nesting) with no
+domain-specific vocabulary baked in (see "No hardcoded structure
+vocabulary" above):
 
 - **`groups:` / `segments:` with folding** (`SegmentMap.jsx`, `segments.js`,
   README's "A long work may author an optional recursive `groups:` tree")
-  map directly onto Act (`groups:`) → Scene (`segments:`), current-Act-expanded
-  / other-Acts-folded, with zero changes.
+  map directly onto Act (`groups:`) → Scene (`segments:`) for Shakespeare —
+  or onto whatever structure a future drama chooses — current-group-expanded
+  / other-groups-folded, with zero changes.
 - **The band's two-register split already does Act-vs-Scene**, not by
   content but by construction: `factPool()` in `segments.js` accumulates a
   segment's own `note`/`facts`, then every ancestor group's `facts:`
@@ -92,12 +137,15 @@ Handel's *Messiah* (Part → Scene → Number nesting):
   segment's `listen:`, leave segment-level `facts:`/`note` and the work's own
   top-level `facts:` sparse, and the LEFT register reads (in practice)
   as Act commentary and the RIGHT as Scene commentary — the split the user
-  asked for, for free.
+  asked for, for free, for any grouping depth a future drama chooses.
 - **`work-placard`** (top plate) is already generic over `piece.opus` /
   `piece.composed` / `piece.premiered`, filtering absent fields — no changes
   needed; a play simply omits `opus`.
 
 ## What needs real engineering
+
+Kept to the minimum that classical's existing, already-generic components
+cannot already do — reuse was maximized deliberately, per feedback.
 
 ### 1. 4:3 aspect ratio
 
@@ -116,7 +164,9 @@ Generalize to `data?.piece?.aspectRatio ?? '16 / 9'`, sourced from a new
 added to the backend's `PIECE_FIELDS` allowlist
 (`backend/src/1_adapters/content/surround/YamlSurroundStore.mjs:151`).
 Store the value as a CSS `aspect-ratio` string (`"4 / 3"`), not a bare
-fraction, so it drops into the same inline style with no parsing.
+fraction, so it drops into the same inline style with no parsing. This is a
+domain-agnostic field — any `classical` work with a non-16:9 recording
+benefits too, not just `drama`.
 
 design.md's "16:9 is inviolable" quality-floor line needs updating to "the
 corpus's declared aspect ratio is inviolable — letterbox or pillarbox,
@@ -135,21 +185,29 @@ but must be confirmed against a real 4:3 render, not assumed.
 
 `ComposerCard` (`frontend/src/modules/Surround/modules/ComposerCard.jsx`) is
 built around a portrait + name + dates + birthplace + rotating person-facts —
-right for a composer, wrong for "what is this play." New module, same file
-shape as the existing six (`.jsx` + `.scss`, registered in `builtins.js`
-under `right`):
+right for a composer, wrong for "what is this stage work." Reuse was
+considered and rejected here specifically: `ComposerCard` answers "who wrote
+this," and the ask was for the rail to answer "what is this" (a play's own
+identity — genre, setting, cast), which classical's schema has no
+equivalent of (a symphony has no cast). New module, same file shape as the
+existing six (`.jsx` + `.scss`, registered in `builtins.js` under `right`),
+reusing `ComposerCard`'s dissolve/timing pattern rather than its content:
 
-- Title, genre (Comedy / History / Tragedy / Romance), one-line setting
-  ("Padua, Italy"), a cast list (top-billed characters), and a rotating
-  play-level fact pool (reusing the same dissolve/timing pattern
-  `ComposerCard` already uses — `COMPOSER_FACT_INTERVAL_MS`-equivalent).
+- Title, genre (Comedy / History / Tragedy / Romance — a stage work's own
+  classification, not Shakespeare-specific), one-line setting ("Padua,
+  Italy"), a cast list (top-billed characters), and a rotating work-level
+  fact pool (reusing the same dissolve/timing pattern `ComposerCard`
+  already uses — `COMPOSER_FACT_INTERVAL_MS`-equivalent).
 - New corpus fields needed on the allowlist: `genre`, `setting`, `cast`
   (array of `{ name, role }` or similar — shape TBD in the implementation
-  plan, not this spec).
-- Shakespeare's own bio (`_composer.yml`, reused literally — the loader
-  hardcodes that filename) still resolves into `data.composer` and can
-  supply a small byline if useful, but `PlayCard`'s primary content is the
-  play, not the playwright.
+  plan, not this spec). All domain-agnostic — usable by any `drama` work,
+  and by `classical` too if a future work wants a cast list (a staged
+  opera, say).
+- The playwright's own bio (`_composer.yml`, reused literally — the loader
+  hardcodes that filename, and is itself already domain-agnostic — it
+  works for a composer, a playwright, or any future "who made this")
+  still resolves into `data.composer` and can supply a small byline if
+  useful, but `PlayCard`'s primary content is the work, not its author.
 
 ### 3. `PlaceCarousel` generalization
 
@@ -158,16 +216,18 @@ One existing precedent already does a piece-first fallback:
 `piece.period ?? composer.period` (see design.md's era-timeline section).
 Extend the same pattern to `map` and `city_image`:
 `data.piece?.map ?? data.composer?.map`,
-`data.piece?.city_image ?? data.composer?.city_image` — so a play can author
+`data.piece?.city_image ?? data.composer?.city_image` — so a work can author
 its own setting (Padua, Italy) via a `piece.map` override in its work file
-or sidecar, falling back to Shakespeare's own Stratford/London geography
-when a play authors none. No new module needed here, just the fallback
-chain.
+or sidecar, falling back to its author's own geography (Shakespeare's
+Stratford/London) when a work authors none. No new module needed here,
+just the fallback chain — and it benefits `classical` too (a work composed
+somewhere other than the composer's home city).
 
 ### 4. New presentation definition
 
 `data/content/surround/_surrounds/playhouse.yml` (working name — confirm in
-implementation):
+implementation; "playhouse" already reads as generic to any stage work, not
+Shakespeare-specific):
 
 ```yaml
 id: playhouse
@@ -191,18 +251,23 @@ Everything except `play-card` is an existing, unmodified builtin.
 ## Corpus structure
 
 Mirrors the classical split (knowledge tree / performance sidecar /
-presentation definition), flattened because there is exactly one playwright
-across 37 plays (no period-shelving needed at this scale):
+presentation definition) exactly, including its shelving pattern: `drama`
+is the domain (parallel to `classical`), and each playwright/company gets
+its own folder (parallel to each composer's) — Shakespeare is simply the
+first one shelved. No period-shelving needed yet at 37-plays-one-playwright
+scale, same as classical's early state; the pattern (shelf folders are
+cosmetic, keyed by folder name at any depth) is already built to grow into
+it.
 
 ```text
-data/content/library/shakespeare/
+data/content/library/drama/
   shakespeare/
     _composer.yml                     # Shakespeare's bio (reuses the loader's reserved filename)
-    taming-of-the-shrew.yml           # the WORK: groups (Acts) > segments (Scenes)
+    taming-of-the-shrew.yml           # the WORK: groups > segments
 
-data/content/surround/shakespeare/
+data/content/surround/drama/
   shakespeare/
-    taming-of-the-shrew.bbc1980.yml   # work ref + match + scene starts
+    taming-of-the-shrew.bbc1980.yml   # work ref + match + segment starts
 
 data/content/surround/_surrounds/
   playhouse.yml
@@ -226,8 +291,11 @@ cast:
   - { name: "Baptista", role: "her father" }
   # ...
 facts:
-  - "..."   # work-level, sparse — most commentary lives at Act/Scene level
+  - "..."   # work-level, sparse — most commentary lives at group level
 groups:
+  # `kind:` and `title:` are this WORK's own choice, never read by code —
+  # a different drama could use `kind: movement`, `kind: part`, or omit
+  # groups entirely for a one-act piece.
   - kind: act
     title: "Act I"
     facts:
@@ -271,9 +339,10 @@ placed (expected for the cut Induction), never a guessed number.
 
 Pilot end-to-end on *The Taming of the Shrew* only. The corpus schema,
 timing method, and the four engineering pieces above are written generally
-enough to extend to the other 36 plays without further code changes — that
-extension is future authoring work (the eventual `shakespeare-surround`
-skill), not part of this implementation.
+enough to extend to the other 36 Shakespeare plays, and to a future
+non-Shakespeare stage work, without further code changes — that extension
+is future authoring work (the eventual `drama-surround` skill), not part of
+this implementation.
 
 ## Out of scope for this spec
 
@@ -284,8 +353,8 @@ skill), not part of this implementation.
 - Any change to the classical domain's existing modules beyond the two
   generalizations named above (`SurroundFrame`'s aspect ratio, `PlaceCarousel`'s
   fallback chain) — both are additive and backward-compatible (default to
-  today's behavior when the new fields are absent).
-- The `shakespeare-surround` skill file itself — written after this
-  presentation exists and has been validated against the pilot play, so the
-  skill can be checked against a working example rather than written
-  speculatively.
+  today's behavior when the new fields are absent), and both are usable by
+  `classical` too, not `drama`-exclusive.
+- The `drama-surround` skill file itself — written after this presentation
+  exists and has been validated against the pilot play, so the skill can be
+  checked against a working example rather than written speculatively.
