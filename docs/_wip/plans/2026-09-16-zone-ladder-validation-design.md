@@ -1,7 +1,7 @@
 # Zone Ladder Validation — Design
 
 **Date:** 2026-09-16
-**Status:** Designed, not implemented
+**Status:** Implemented on `fitness/zone-ladder-validation`, merged to `main`
 **Origin:** A false "ON FIRE" celebration during a live cycle race
 
 ---
@@ -71,7 +71,7 @@ config healthy. See *Field verification*.
 |---|---|
 | Scope | Fix the zone ladder itself, at producer and consumer |
 | Degenerate ladder mid-session | Keep the rider's last known-good ladder |
-| Validity rule | Increasing in canonical zone order, every rung at or above the cool baseline |
+| Validity rule | Increasing in canonical zone order, every EARNED rung at or above the cool baseline |
 | First ladder already invalid | No committed zone until one validates |
 
 Rejected: guarding only the celebration (rings and coins would keep paying out
@@ -93,8 +93,13 @@ returns has a real threshold, or it is not a rung.
 definition of a trustworthy ladder:
 
 - thresholds increase following canonical id order (`cool < active < warm < hot < fire`), not merely sortable into increasing order
-- every rung at or above the 60bpm cool baseline
+- every EARNED rung at or above the 60bpm cool baseline
 - at least two rungs
+
+The floor applies to the rungs a rider has to earn, not to the bottom rung.
+Everyone is at least cool, the classifier already anchors the first rung at
+`MIN_COOL_BASELINE`, and the shipped global config genuinely has `cool: 0`. A
+low rung anywhere *above* the bottom is the defect itself.
 
 It returns a verdict and a reason.
 
@@ -192,6 +197,22 @@ Use generic rider ids in fixtures, never household member names.
 3. Full fitness suite against its current baseline (111 files, 769 tests).
 4. Deploy. Local `main` is frequently behind the deployed tree; sync against the
    deploy source before building.
+
+Two existing fixtures asserted behavior the new contract forbids and were
+corrected rather than accommodated:
+
+- the legacy hysteresis test exercised the exit-margin clamp with an *earned*
+  rung at 2bpm. That ladder can no longer commit, and the clamp is now
+  unreachable for any committed ladder, since every earned rung is at least 60
+  and `min - EXIT_MARGIN_BPM` can never go negative. The test now asserts the
+  rejection.
+- the zone-profile memoization fixture had `warm: 100` sitting below
+  `active: 120`, an inverted ladder. Ordering was incidental to what that file
+  tests, so the fixture was put in canonical order.
+
+**Every real config was checked against the shipped rule before merge** — the
+global ladder and all five per-user overrides build and validate, so no rider
+is left zone-less by this change.
 
 ## Field verification
 
