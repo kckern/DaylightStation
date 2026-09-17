@@ -8,7 +8,7 @@
 // link has to win over the ones below it, not merely agree with them, or a
 // dropped link would pass silently.
 import { describe, expect, it } from 'vitest';
-import { instanceToAbc } from './exerciseAbc.js';
+import { instanceToAbc, handForPitch } from './exerciseAbc.js';
 import { midiToAbc } from '../../../../MusicNotation/renderers/abc.js';
 
 const base = {
@@ -193,5 +193,20 @@ describe('instanceToAbc clef chain', () => {
       expect(abc.match(/^V:.*/gm)).toEqual(['V:MAIN clef=treble']);
       expect(abc).not.toContain('V:LH');
     });
+  });
+});
+
+/**
+ * Which staff of a grand staff a pitch belongs to when nothing says. Exported
+ * because the live-feedback layer needs the SAME answer the engraving used: a
+ * ghost was being drawn on both staves at once, so one wrong key appeared twice
+ * at two unrelated heights.
+ */
+describe('handForPitch', () => {
+  it('splits at middle C, which takes the right hand', () => {
+    expect(handForPitch(60)).toBe('right');
+    expect(handForPitch(59)).toBe('left');
+    expect(handForPitch(72)).toBe('right');
+    expect(handForPitch(36)).toBe('left');
   });
 });

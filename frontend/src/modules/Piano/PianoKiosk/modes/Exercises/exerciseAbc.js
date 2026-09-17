@@ -13,17 +13,25 @@
 // surface, which is also staff-first. `ordering:'any'` material never reaches
 // this module — Task 6 renders it through KeysAsk/SvgSequenceStaff, so ABC is
 // cued-only.
-import { generateMelodyAbc, midiToAbc } from '../../../../MusicNotation/renderers/abc.js';
+import { abcNoteLine, generateMelodyAbc } from '../../../../MusicNotation/renderers/abc.js';
 
 const MIDDLE_C = 60;
-const ABC_DURATIONS = Object.freeze({ whole: '4', half: '2', quarter: '', eighth: '/2', '8th': '/2', sixteenth: '/4', '16th': '/4' });
+
+/**
+ * Which hand's staff a pitch belongs to when nothing says. MIDI carries no hand,
+ * so register decides — the split this module already used to engrave a
+ * hand-less note onto exactly one staff, exported so the live-feedback layer
+ * places a ghost by the same rule the notes were engraved by.
+ */
+export function handForPitch(midi) {
+  return midi < MIDDLE_C ? 'left' : 'right';
+}
 
 function singleVoiceAbc(notes, clef, instance) {
-  const tokens = notes.map((note) => {
-    if (!note || note.rest) return 'x';
-    const finger = note.finger != null ? `!${note.finger}!` : '';
-    return `${finger}${midiToAbc(note.midi, instance.key ?? 'C')}${ABC_DURATIONS[note.value] ?? ''}`;
-  }).join(' ');
+  // Note values and beaming are the renderer's shared rule (`abcNoteLine`), so
+  // the one-hand engraving of an exercise and the two-hand engraving of the
+  // same exercise cannot disagree about what its notes are worth.
+  const tokens = abcNoteLine(notes, instance.key ?? 'C');
   // `M:none` draws no meter. A time signature is a promise about tempo, and
   // nothing in this surface is scored on tempo — the engine matches note
   // ORDER, not placement. Printing 4/4 over a scale therefore says something
@@ -69,8 +77,7 @@ export function instanceToAbc(instance) {
       if (explicit) return { ...explicit, value: event.value };
       if (event.notes.length === 1 && !event.notes[0].hand) {
         const note = event.notes[0];
-        const side = note.midi < MIDDLE_C ? 'left' : 'right';
-        if (side === hand) return { ...note, value: event.value };
+        if (handForPitch(note.midi) === hand) return { ...note, value: event.value };
       }
       return { rest: true };
     });

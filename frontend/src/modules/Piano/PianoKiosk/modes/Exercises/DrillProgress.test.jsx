@@ -78,22 +78,47 @@ describe('DrillProgress', () => {
     expect(pills()[3]).toBe('current');
   });
 
-  it('names the key and the hand of the set being played', async () => {
+  it('reports the key and the hand of the set being played, for the host to title with', async () => {
     learning.mockResolvedValue(drill([
       step(1, { state: 'passed', passed: true, pass_count: 3 }),
       step(2, { state: 'current', display: { key: 'D major', hand: 'L', hand_label: 'left hand' } }),
       step(3),
     ]));
+    const onPlacard = vi.fn();
 
-    render(<DrillProgress programId="scale-drill-3x3" stepId="scale-set-2" userId="kckern" />);
+    render(<DrillProgress programId="scale-drill-3x3" stepId="scale-set-2" userId="kckern" onPlacard={onPlacard} />);
 
-    expect(await screen.findByText('left hand')).toBeInTheDocument();
-    // The key is deliberately in two places — the placard announces the set and
-    // the cluster maps it — so this asserts on the placard rather than on a
-    // bare string that legitimately matches twice.
-    expect(document.querySelector('.drill-placard__key').textContent).toBe('D major');
+    // The placard is the RUN'S TITLE and is drawn by the host at the top of the
+    // screen, so what this owes is the name, not the markup.
+    await waitFor(() => expect(onPlacard).toHaveBeenCalledWith('D major', 'left hand'));
+    expect(document.querySelector('.drill-placard')).toBeNull();
     // Hands are labelled, not drawn as clef glyphs — U+1D11E tofus on the kiosk.
     expect(screen.getByText('LH')).toBeInTheDocument();
+  });
+
+  it('reports no title where there is no drill to name — a single-set program', async () => {
+    learning.mockResolvedValue(drill([step(1, { state: 'current', display: { key: 'D major' } })]));
+    const onPlacard = vi.fn();
+
+    render(<DrillProgress programId="scale-drill-3x3" stepId="scale-set-1" userId="kckern" onPlacard={onPlacard} />);
+
+    await waitFor(() => expect(learning).toHaveBeenCalled());
+    expect(onPlacard).toHaveBeenCalledWith(null, null);
+    expect(onPlacard).not.toHaveBeenCalledWith('D major', expect.anything());
+  });
+
+  it('takes its title back when it unmounts — a heading cannot outlive its drill', async () => {
+    learning.mockResolvedValue(drill([
+      step(1, { state: 'current', display: { key: 'D major', hand_label: 'left hand' } }),
+      step(2),
+    ]));
+    const onPlacard = vi.fn();
+
+    const view = render(<DrillProgress programId="scale-drill-3x3" stepId="scale-set-1" userId="kckern" onPlacard={onPlacard} />);
+    await waitFor(() => expect(onPlacard).toHaveBeenCalledWith('D major', 'left hand'));
+
+    view.unmount();
+    expect(onPlacard).toHaveBeenLastCalledWith(null, null);
   });
 
   it('draws nothing for a single-set program — one pill says nothing', async () => {

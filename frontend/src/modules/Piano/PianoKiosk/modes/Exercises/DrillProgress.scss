@@ -9,7 +9,12 @@
 // this codebase — low fps, zero long tasks, invisible to every profiler — so
 // the gilding is a pre-baked box-shadow that toggles, never an animated blur.
 
-.drill-progress {
+// The palette is declared on BOTH surfaces rather than only on `.drill-progress`
+// because the placard is no longer inside it — the run mounts it as the page's
+// heading. A custom property that resolves nowhere is not a fallback: the whole
+// declaration is dropped, so `color: var(--drill-fg)` would have left the
+// placard inheriting whatever the header happened to be.
+%drill-palette {
   --drill-gold: #c9a227;
   --drill-gold-bright: #e8cf7a;
   --drill-socket: #1c130f;
@@ -17,6 +22,10 @@
   --drill-fg: #f2e9dc;
   --drill-muted: #b8a493;
   --drill-dim: #8a7565;
+}
+
+.drill-progress {
+  @extend %drill-palette;
 
   display: flex;
   flex-direction: column;
@@ -29,6 +38,8 @@
 // Score directions are traditionally set in italic serif; that convention is
 // what this borrows, and it is the only characterful type on the stage.
 .drill-placard {
+  @extend %drill-palette;
+
   display: flex;
   align-items: baseline;
   justify-content: center;
@@ -44,13 +55,19 @@
 }
 
 // Once the run is under way the staff carries the clef and key signature
-// itself, so the placard is a reminder rather than a readout.
-.drill-progress[data-phase='running'] .drill-placard,
-.drill-progress[data-phase='countdown'] .drill-placard { opacity: 0.35; }
+// itself, so the placard is a reminder rather than a readout. Not as faint as
+// it was (0.35) now that it is the screen's only title rather than a heading
+// with a framing sentence above it.
+//
+// Keyed off whatever ANCESTOR carries the phase, because the placard no longer
+// lives inside `.drill-progress` — the run mounts it as its heading, and the
+// run element is the one that stamps `data-phase`.
+[data-phase='running'] .drill-placard,
+[data-phase='countdown'] .drill-placard { opacity: 0.55; }
 
 // The opening flourish: the placard IS the ceremony. It arrives large and
 // centred, holds, then settles into its resting place.
-.drill-progress[data-phase='opening'] .drill-placard {
+[data-phase='opening'] .drill-placard {
   animation: drill-placard-arrive 1150ms cubic-bezier(0.22, 0.9, 0.28, 1) both;
 }
 @keyframes drill-placard-arrive {
@@ -177,7 +194,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .drill-progress[data-phase='opening'] .drill-placard,
+  [data-phase='opening'] .drill-placard,
   .drill-pill[data-state='current'] .drill-pill__core {
     animation-duration: 1ms !important;
     animation-iteration-count: 1 !important;

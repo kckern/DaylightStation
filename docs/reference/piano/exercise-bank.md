@@ -300,10 +300,31 @@ to the Exercises workspace.
 
 Exercise notation uses the original sequence cursor from commit `39cf60b81`:
 a rounded yellow overlay behind the current note (30% fill, 50% border).
-Upcoming notes are brown; past and idle current notes are black. While keys
-are held, correct targets are green and missed targets are red; an unexpected
-held pitch appears as a semi-transparent ghost at its actual staff position.
-The engraved exercise renderer follows the same contract, without blue.
+
+**Past is brown, the music is black.** A note already played recedes into the
+instrument's banked brown; everything from the cursor forward — *including the
+note under the cursor* — carries the page's strongest ink, because the note you
+are being asked to play is the note you read. One direction, on every staff the
+kiosk draws.
+
+While an attempt is under way at the cursor, correct targets are green and
+missed targets are red, and an unexpected pitch pressed there appears as a
+semi-transparent ghost at its actual staff position — on the one staff whose
+register holds it, never on both staves of a grand staff at once.
+
+**An attempt needs a key played AT the cursor.** A key still held from an
+earlier entry is a *sustain*: logged, never drawn, and it arms no verdict. This
+is what keeps legato playing — which is how a scale is played — from turning a
+correctly-played note into an accusation one entry later. The rule is
+`attemptUnderWay` / `classifyHeldPitch` in `MusicNotation/model/heldPitch.js`,
+shared by both the sequence staff and the engraved (abc) staff. The engraved
+renderer follows the same contract, without blue.
+
+**Note values.** Every generator in `MusicNotation/renderers/abc.js` writes
+`L:1/4`, so material the bank declares no `value` for engraves as plain quarter
+noteheads — no flag, no beam, no rhythm claimed — identically on the single
+staff and the grand staff. Declared eighths and shorter are beamed four to a
+group (`abcNoteLine`) rather than carrying a flag each.
 
 ### Timed exercise contract
 
@@ -325,6 +346,21 @@ phase, beat, or held-note changes. `piano.exercise-input-ignored` records
 countdown note-on events and their reason; the arming key is recorded on
 `piano.exercise-countdown-started`. Cursor telemetry describes the presentation
 state; browser geometry tests separately verify the visible yellow overlay.
+
+### Run chrome
+
+The run is four rows: **title, stage, rail, keyboard**.
+
+Inside a multi-set drill the **placard is the title** — the set's key and hand
+(`A major · both hands`), at the top, and the only standing text on the screen.
+`DrillProgress` owns the projection it comes from, so it reports the name up
+through `onPlacard` and the run draws it; the rail below the staff is then pills
+and nothing else. A run with **no** drill behind it keeps the host's framing
+sentence over the exercise's own title, having nothing else to say why it is
+there.
+
+Nothing in the chrome names the key: the staff stands its own signature and, on
+a drill, the placard already says it.
 
 Exercise runs have no touch controls. Hold the physical keyboard's lowest and
 highest keys together for two seconds to exit. After a failure, release all

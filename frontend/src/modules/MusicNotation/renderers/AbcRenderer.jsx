@@ -5,6 +5,13 @@ import { generateAbc } from './abc.js';
 import { collectStaffNotes } from './abcStaffNotes.js';
 
 /**
+ * abcjs's staff-line spacing, in the svg's own user space at `scale: 1`. The
+ * same constant `ExerciseNotation` falls back to when it cannot measure the
+ * stave it is decorating.
+ */
+const ABC_STAFF_SPACING = 7.75;
+
+/**
  * AbcRenderer — renders a set of notes (or a pre-built ABC tune) as a grand-staff
  * snippet via abcjs.
  *
@@ -94,7 +101,23 @@ export function AbcRenderer({ notes, abc, keySignature = 'C', scale = 1.5, class
           const bounds = svg.getBBox();
           if (bounds.width > 0 && bounds.height > 0) {
             const padX = Math.max(10, bounds.width * 0.025);
-            const padY = Math.max(12, bounds.height * 0.28);
+            // THE VERTICAL RESERVE BELONGS TO ONE STAFF, NOT TO THE PAGE.
+            //
+            // What this air is for is the follow-cursor lane and its ghost,
+            // which callers portal in AFTER this measurement and which hang
+            // about a staff-space clear of the stave. That is a fixed distance,
+            // set by the staff-line spacing — and abcjs engraves at a known
+            // spacing (~7.75 user units) times this render's `scale`.
+            //
+            // It used to be `bounds.height * 0.28`, i.e. 56% of the content
+            // height added as blank. On a single staff that is roughly the
+            // right amount by coincidence, and the floor below is what actually
+            // applied. On a GRAND staff the content is five times taller, so
+            // the reserve grew with it: the padded viewport went taller than
+            // the stage was wide, `xMidYMid meet` fitted it by HEIGHT, and a
+            // two-hand exercise was engraved at two thirds of the width it had
+            // with a third of the stage left empty down each side.
+            const padY = Math.max(12, ABC_STAFF_SPACING * scale * 1.5);
             svg.setAttribute('viewBox', [
               bounds.x - padX,
               bounds.y - padY,

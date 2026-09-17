@@ -289,11 +289,18 @@
 .piano-exercises__detail-actions { display: flex; gap: 0.45rem; }
 
 /* Runner */
-.piano-exercise-run { display: grid; grid-template-rows: auto minmax(0, 1fr) clamp(5.25rem, 12vh, 6.5rem) clamp(5.25rem, 12vh, 6.5rem); gap: 0.55rem; height: 100%; padding: 0.65rem var(--sp-5, 1.5rem) 0; background: var(--ex-bg); overflow: hidden; }
+/* The inline padding is a margin on the PAPER, and the paper is where the music
+   is read. It was 1.5rem a side on a screen whose stage is already letterboxed
+   by the engraving's own aspect ratio, so the two insets compounded and a
+   two-hand exercise was engraved across two thirds of the glass. */
+.piano-exercise-run { display: grid; grid-template-rows: auto minmax(0, 1fr) clamp(5.25rem, 12vh, 6.5rem) clamp(5.25rem, 12vh, 6.5rem); gap: 0.55rem; height: 100%; padding: 0.65rem var(--sp-3, 0.75rem) 0; background: var(--ex-bg); overflow: hidden; }
 .piano-exercise-run__head { display: flex; align-items: center; gap: 0.8rem; }
 .piano-exercise-run__head > div:nth-child(2) { display: grid; gap: 0.05rem; }
 .piano-exercise-run__head > div:nth-child(2) > span { color: var(--ex-accent-text); font-size: 0.68rem; letter-spacing: 0.1em; text-transform: uppercase; }
 .piano-exercise-run__head h1 { margin: 0; font-size: 1.3rem; }
+/* The drill's name, promoted from the rail to the title row. The placard brings
+   its own type (DrillProgress.scss); this only hands it the heading's box. */
+.piano-exercise-run__placard { margin: 0; font-weight: 400; }
 .piano-exercise-run__back { min-height: 2.25rem !important; padding: 0.3rem 0.65rem !important; border-color: transparent !important; background: transparent !important; color: var(--ex-muted) !important; }
 .piano-exercise-run__context { display: flex !important; flex-direction: row; gap: 0.6rem !important; margin-inline-start: auto; align-items: center; color: var(--ex-muted); }
 .piano-exercise-run__context span { padding-inline-end: 0.6rem; border-inline-end: 1px solid var(--ex-border); }
@@ -393,7 +400,11 @@
    strip under it (KeysAsk brings the only keyboard on screen). */
 .piano-exercise-run__ask { display: grid; }
 .piano-exercise-run[data-stage='keys'] { grid-template-rows: auto minmax(0, 1fr) clamp(5.25rem, 12vh, 6.5rem); padding-block-end: 0.65rem; }
-.piano-exercise-run__rail { min-height: 0; overflow: hidden; }
+/* A fixed row, so its content is CENTRED in it rather than hung from the top:
+   with the placard gone the pills are shorter than the row, and hanging them
+   from the top put their roll-up underlines hard against the keyboard — which
+   is how they were being clipped. */
+.piano-exercise-run__rail { display: grid; align-content: center; min-height: 0; overflow: hidden; }
 .piano-exercise-run__ready { display: flex; align-items: center; gap: 1rem; min-height: 3.25rem; }
 .piano-exercise-run__ready p { max-width: 48rem; margin: 0; color: var(--ex-muted); }
 .piano-exercise-run__ready span { color: var(--ex-danger); }
@@ -565,11 +576,21 @@
   }
 }
 
-// Brown is everything PLAYED and the note you are on; ebony is what is still
-// ahead. The boundary between the two colours is the reader's position, which
-// is why `done` and `next` share one colour: the cursor lane marks the note
-// itself, and a third colour there only competed with it.
-.exercise-note-done, .exercise-note-next { fill: rgb(120, 66, 22) !important; color: rgb(120, 66, 22) !important; }
+// PAST IS BROWN, THE MUSIC IS BLACK — the same one direction `SvgSequenceStaff`
+// draws in, and now literally the same two inks.
+//
+// `next` — the note under a resting cursor — used to share the brown, on the
+// reasoning that the lane already marks the reader's position and a third
+// colour would compete with it. In the field it read the other way round: the
+// note you are being asked to play sat in the "already done" ink, so the only
+// black on the staff was the music you had not reached, and a finished run
+// looked like it had been played backwards. The note at the cursor is the note
+// you READ, so it carries the page's strongest ink; the lane does the finding.
+//
+// The brown is darker and less orange than it was (was rgb(120, 66, 22)) so
+// banked notes recede behind the one being read instead of glowing beside it.
+.exercise-note-done { fill: rgb(92, 56, 28) !important; color: rgb(92, 56, 28) !important; }
+.exercise-note-next,
 .exercise-note-todo { fill: #171210 !important; color: #171210 !important; }
 .exercise-note-hit { fill: rgb(0, 150, 70) !important; color: rgb(0, 150, 70) !important; }
 .exercise-note-wrong { fill: rgb(200, 40, 40) !important; color: rgb(200, 40, 40) !important; }

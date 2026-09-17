@@ -24,6 +24,26 @@ import './DrillProgress.scss';
 
 const HAND_BADGE = { R: 'RH', L: 'LH', RL: 'RH+LH' };
 
+/**
+ * The placard — what this drill is CALLED. Markup and classes unchanged from
+ * when it lived above the pills; only where it is mounted has moved, and it is
+ * exported so the run can mount it as the screen's title.
+ */
+export function DrillPlacard({ label, hand = null }) {
+  if (!label) return null;
+  return (
+    <span className="drill-placard">
+      <span className="drill-placard__key">{label}</span>
+      {hand && (
+        <>
+          <span className="drill-placard__sep">·</span>
+          <span className="drill-placard__hand">{hand}</span>
+        </>
+      )}
+    </span>
+  );
+}
+
 /** The circumference the pill ring's dash array is cut from. r = 14. */
 const RING_LENGTH = 88;
 
@@ -89,10 +109,14 @@ function Cluster({ step, isCurrent, noteProgress, labels }) {
  *   return below for why this cannot be `null`.
  * @param {boolean} labels whether sets are named — the placard and the cluster
  *   labels. The game gate turns them off: its run is pills and nothing else.
+ * @param {(key: string|null, hand: string|null) => void} [onPlacard] told what
+ *   this drill is called, so the HOST can title the screen with it. See the
+ *   note above the effect below for why it is reported rather than drawn.
  */
 export default function DrillProgress({
   programId, stepId, userId, program: suppliedProgram = null,
   noteProgress = 0, phase = 'playing', reloadKey = 0, fallback = null, labels = true,
+  onPlacard = null,
 }) {
   const [fetched, setFetched] = useState(null);
   // A host that supplies a projection OWNS it — including when it changes. The
@@ -134,6 +158,29 @@ export default function DrillProgress({
       ?? null;
   }, [program, stepId]);
 
+  const drawsPills = (program?.steps?.length ?? 0) >= 2;
+
+  /**
+   * THE PLACARD IS THE RUN'S TITLE, AND A TITLE BELONGS AT THE TOP.
+   *
+   * It used to be drawn here, above the pills, which put the name of the
+   * material UNDER the staff in the rail's fixed row — a heading read last,
+   * competing for height with the pills, and duplicating the framing sentence
+   * the header was already spending two lines on. The host now titles the
+   * screen with it; this only says what it is.
+   *
+   * Reported as PRIMITIVES, and that is not a style choice. A host that
+   * recomputes its projection every render (a deck's standing moves with the
+   * cursor) would hand an object a fresh identity at MIDI rates, and an effect
+   * that calls `setState` with it would re-fire on every note.
+   */
+  const placardKey = labels && drawsPills ? (current?.display?.key ?? current?.title ?? null) : null;
+  const placardHand = placardKey ? (current?.display?.hand_label ?? null) : null;
+  useEffect(() => { onPlacard?.(placardKey, placardHand); }, [onPlacard, placardKey, placardHand]);
+  // The title cannot outlive the drill it names. Stable deps, so this cleanup
+  // runs on unmount and at no other time.
+  useEffect(() => () => onPlacard?.(null, null), [onPlacard]);
+
   // A single-set program is not a drill, and a row of one pill says nothing a
   // learner needs. There are no pills to read, so whatever the host would have
   // shown INSTEAD of them is what belongs here.
@@ -147,26 +194,10 @@ export default function DrillProgress({
   // told nothing at all about how to start. Returning the fallback from here is
   // the only place that can know, and it needs no hook in the host — which is
   // what the original attempt cost (a hook below an early return, 114 tests).
-  if (!program || (program.steps?.length ?? 0) < 2) return fallback;
-
-  const placard = labels ? (current?.display?.key ?? current?.title ?? null) : null;
+  if (!drawsPills) return fallback;
 
   return (
     <div className="drill-progress" data-phase={phase}>
-      {/* The placard names the MATERIAL, so it draws only when the host declared
-          one to name. A deck's sets are positions, not subjects; the stage is
-          already showing the card. */}
-      {placard && (
-        <div className="drill-placard">
-          <span className="drill-placard__key">{placard}</span>
-          {current.display?.hand_label && (
-            <>
-              <span className="drill-placard__sep">·</span>
-              <span className="drill-placard__hand">{current.display.hand_label}</span>
-            </>
-          )}
-        </div>
-      )}
       <div className="drill-progress__rail">
         {program.steps.map((step) => (
           <Cluster
