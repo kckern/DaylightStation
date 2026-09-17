@@ -307,11 +307,32 @@ const SCALE_DEFAULTS = Object.freeze({ mode: 'ionian', direction: 'up', span_oct
 
 const onScale = (allowed, value, fallback) => (allowed.includes(value) ? value : fallback);
 
-export const scaleInstanceId = (root, spec = {}) => {
+/**
+ * The hands the bank publishes: right, left, both. Verified live — every one of
+ * the 2,000 instances `scales/modes` expands to carries a `hand` axis, and the
+ * seed's own comment is the reason it matters: "a left-hand scale is not the
+ * right hand notes in another clef, it is the octave a left hand actually
+ * plays". L reads bass.
+ */
+export const SCALE_HANDS = Object.freeze(['R', 'L', 'RL']);
+
+/** The hands a level names, filtered to the ones the bank can address. */
+export const handsOf = (spec) => (Array.isArray(spec?.hands) ? spec.hands : [])
+  .filter((hand) => SCALE_HANDS.includes(hand));
+
+/**
+ * `hand` is OMITTED unless a level asks for one, and that is deliberate rather
+ * than lazy: every scale rung in the live config resolves to an id with no hand
+ * axis on it today, and those ids are what the attempt ledger is keyed by. A
+ * hand silently appended here would rewrite the identity of every rung at once
+ * and orphan the evidence behind it. A rung opts in by naming `hands`.
+ */
+export const scaleInstanceId = (root, spec = {}, hand = null) => {
   const mode = onScale(SCALE_MODES, spec.mode, SCALE_DEFAULTS.mode);
   const direction = onScale(SCALE_DIRECTIONS, spec.direction, SCALE_DEFAULTS.direction);
   const span = onScale(SCALE_SPANS, Math.floor(Number(spec.span_octaves)), SCALE_DEFAULTS.span_octaves);
-  return `${SCALES_SEED}@root=${root},mode=${mode},direction=${direction},span_octaves=${span}`;
+  const handAxis = SCALE_HANDS.includes(hand) ? `,hand=${hand}` : '';
+  return `${SCALES_SEED}@root=${root},mode=${mode},direction=${direction},span_octaves=${span}${handAxis}`;
 };
 
 /**

@@ -33,7 +33,7 @@
  */
 import { SCALE_DRILL_PROGRAM_ID } from '../../../../../../../shared/music/learningPrograms.mjs';
 import { pianoLearningApi } from '../Exercises/pianoLearningApi.js';
-import { rootsOf, scaleInstanceId } from './gateMaterial.js';
+import { handsOf, rootsOf, scaleInstanceId } from './gateMaterial.js';
 
 /** The material kind a level writes to ask for a drill. */
 export const DRILL_MATERIAL_KIND = 'drill';
@@ -103,21 +103,42 @@ export function needsDrillResolution(spec) {
  * The program a rung's `sets` × `reps` describes. Steps carry no `display.key`
  * on purpose: the run at the gate draws pills and never a name.
  */
-export function rungDrillProgram(spec, levelId = null) {
+const HAND_LABEL = Object.freeze({ R: 'right hand', L: 'left hand', RL: 'both hands' });
+
+export function rungDrillProgram(spec, levelId = null, pickIndex = 0) {
   const roots = rootsOf(spec);
   if (!roots.length) return null;
   const sets = rungCount(spec.sets) ?? 1;
   const reps = rungCount(spec.reps) ?? 1;
+  const hands = handsOf(spec);
+  /**
+   * THE ROTATION REACHES THE DRILL.
+   *
+   * `resolveSpec` rotates a level's roots by the gate's own `pickIndex` — which
+   * is what makes two consecutive gates at a three-root level two different
+   * scales — and this was built without it, dealing `roots[0..n]` from index 0
+   * on every single launch. A child on `roots: ['A','E']` therefore met A, E, A
+   * at every gate they ever played, for as long as they stayed on the rung, and
+   * said so (2026-09-16, "always the same 3 scales"). The offset is the same
+   * counter the rest of the gate rotates on, so the drill and the plain path
+   * now agree about what "a different one next time" means.
+   */
+  const offset = Math.abs(Math.trunc(Number(pickIndex)) || 0);
   return {
     id: `rung:${levelId ?? 'level'}`,
     ordered: true,
     steps: Array.from({ length: sets }, (_, index) => {
-      const root = roots[index % roots.length];
+      const root = roots[(index + offset) % roots.length];
+      // A rung that names hands advances the HAND across its sets as well as
+      // the key, which is what `scale-drill-3x3` has always done: one set per
+      // hand, so three sets are never three takes of the same ask. A rung that
+      // names none keeps today's id exactly.
+      const hand = hands.length ? hands[(index + offset) % hands.length] : null;
       return {
         id: `set-${index + 1}`,
         order: index + 1,
-        requirement: { exercise_id: scaleInstanceId(root, spec), required_passes: reps },
-        display: { root, reps },
+        requirement: { exercise_id: scaleInstanceId(root, spec, hand), required_passes: reps },
+        display: { root, reps, ...(hand ? { hand, hand_label: HAND_LABEL[hand] } : {}) },
       };
     }),
   };
@@ -253,12 +274,14 @@ function serveDrill(program) {
  * @param {object} args
  * @param {object} args.spec The level's drill spec.
  * @param {string|null} [args.levelId] Names a rung drill's program.
+ * @param {number} [args.pickIndex] The gate's rotation counter, so consecutive
+ *   gates at the same rung open on a different key.
  * @returns {Promise<{ok:true, spec:object, programId:string, stepId:string,
  *                     projection:object, complete:boolean, program:object}
  *                  | {ok:false, error:string}>}
  */
-export async function resolveGateDrill({ spec, levelId = null }) {
-  if (isRungDrillSpec(spec)) return serveDrill(rungDrillProgram(spec, levelId));
+export async function resolveGateDrill({ spec, levelId = null, pickIndex = 0 }) {
+  if (isRungDrillSpec(spec)) return serveDrill(rungDrillProgram(spec, levelId, pickIndex));
   const programId = drillIdOf(spec);
   let programResponse;
   try {

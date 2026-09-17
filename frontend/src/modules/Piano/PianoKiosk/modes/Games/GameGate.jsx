@@ -158,6 +158,31 @@ export const gateStateKey = (learnerId) => `piano.game-gate.rung.${learnerId ?? 
 const isCount = (value) => Number.isInteger(value) && value >= 0;
 
 /**
+ * HOW LONG A MATCH THAT WAS PAID FOR BUT NOT OPENED STANDS.
+ *
+ * Long enough to survive a reload and the walk back to the launcher; short
+ * enough that it can never read as "you cleared a gate an hour ago, here is a
+ * free game". It is spent the moment it opens one, so this bound only governs
+ * the case where nobody came back.
+ */
+export const EARNED_MATCH_TTL_MS = 10 * 60 * 1000;
+
+/**
+ * A match the child earned and has not been handed yet.
+ *
+ * Same posture as every other field read out of `localStorage`: a shape that is
+ * not exactly right is no credit at all, never a guess. A clock that runs
+ * backwards (`at` in the future) is treated as damage rather than as a very
+ * fresh credit, so a device with a wrong time cannot mint a standing one.
+ */
+function readEarnedGame(value, now = Date.now()) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  if (typeof value.gameId !== 'string' || !value.gameId) return null;
+  if (!Number.isFinite(value.at) || value.at > now || now - value.at > EARNED_MATCH_TTL_MS) return null;
+  return { gameId: value.gameId, at: value.at };
+}
+
+/**
  * Read the stored ladder position (state v2).
  *
  * `localStorage` is a corruptible input — a half-written value, a hand edit, a
@@ -188,6 +213,7 @@ export function readGateState(
     cleanPasses: 0,
     lastMaterialId: null,
     pickIndex: 0,
+    earnedGame: null,
     ...(config.stateVersion ? { stateVersion: config.stateVersion } : {}),
   });
   try {
@@ -202,6 +228,7 @@ export function readGateState(
       cleanPasses: parsed.cleanPasses,
       lastMaterialId: typeof parsed.lastMaterialId === 'string' ? parsed.lastMaterialId : null,
       pickIndex: isCount(parsed.pickIndex) ? parsed.pickIndex : 0,
+      earnedGame: readEarnedGame(parsed.earnedGame),
       ...(config.stateVersion ? { stateVersion: config.stateVersion } : {}),
     };
   } catch {
@@ -415,6 +442,37 @@ export default function GameGate({
   useEffect(() => {
     setPhase('resolving');
     const { config: current, levels: repertoire, state: stored } = latest.current;
+    /**
+     * A MATCH ALREADY PAID FOR IS NOT CHARGED FOR TWICE.
+     *
+     * `onPassed` is deferred to the end of the curtain, so between `gate.passed`
+     * and the hand-over there are 3.4 seconds in which the earned match exists
+     * ONLY in this component's state. A reload in that window used to void it
+     * silently and serve a fresh nine reps — which is exactly what happened on
+     * the office screen on 2026-09-16 (passed 9/9 at 19:09:10, the page reloaded
+     * at 19:09:14, and the next launch opened at banked=0). The ladder was
+     * persisted the whole time; the thing the child actually bought was not.
+     *
+     * So the credit is banked at the pass and redeemed here. It names the game
+     * it was earned for, expires on its own, and is spent before the hand-over
+     * so it can open exactly one match.
+     */
+    if (!openedRef.current && gameId && stored.earnedGame?.gameId === gameId) {
+      openedRef.current = true;
+      commitState({ ...stored, earnedGame: null });
+      latest.current.emit('gate.match-restored', {
+        material: null,
+        rung: stored.levelId,
+        tier: levelById(repertoire, stored.levelId)?.tier ?? null,
+        mode: null,
+        attemptId: null,
+        game: gameId,
+        waitedMs: Date.now() - stored.earnedGame.at,
+      });
+      setPhase('opened');
+      latest.current.onPassed?.();
+      return;
+    }
     const level = levelById(repertoire, stored.levelId) ?? startLevelFor(repertoire, current);
     /**
      * "Try again" is a SECOND GO AT THE SAME THING, and re-picking here would
@@ -496,7 +554,7 @@ export default function GameGate({
     let alive = true;
     const servedFor = attempt.attemptId;
     const spec = attempt.spec;
-    resolveGateDrill({ spec, levelId: attempt.level.id }).then((resolved) => {
+    resolveGateDrill({ spec, levelId: attempt.level.id, pickIndex: attempt.pickIndex }).then((resolved) => {
       // The attempt this resolution was started for may already be gone — a
       // retry, a new round, an unmount. Landing on a stale attempt would swap
       // the material out from under a child mid-ask.
@@ -671,6 +729,17 @@ export default function GameGate({
   } : { rung: state.levelId, tier: levelById(levels, state.levelId)?.tier ?? null };
 
   /** Write and remember in one step, through the ref so the effect can use it too. */
+  /**
+   * The credit is consumed by the hand-over, whichever hand-over happens: the
+   * curtain finishing normally, or a later mount redeeming it. Spending it
+   * before `onPassed` rather than after is deliberate — a match that opens is
+   * spent even if whatever it opened onto then throws.
+   */
+  function spendEarnedMatch() {
+    if (!latest.current.state.earnedGame) return;
+    commitState({ ...latest.current.state, earnedGame: null });
+  }
+
   function commitState(next) {
     writeGateState(latest.current.learnerId, next);
     latest.current.state = next;
@@ -755,6 +824,10 @@ export default function GameGate({
         });
       }
     }
+    // WRITTEN IN THE SAME COMMIT AS THE PASS. The curtain is the only part of
+    // this flow with no other witness, and a page that dies behind it must not
+    // take the match with it.
+    if (gameId) next = { ...next, earnedGame: { gameId, at: Date.now() } };
     commitState(next);
   };
 
@@ -1025,6 +1098,7 @@ export default function GameGate({
               ...context, plannedMs: CEREMONY_MS, actualMs, overranMs,
             }, overranMs > 1000 ? 'warn' : 'info');
             setCeremony(null);
+            spendEarnedMatch();
             onPassed?.(ceremony.result);
           }}
         />

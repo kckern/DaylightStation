@@ -232,3 +232,44 @@ describe('describeDrillStep — what the coach calls the next rep', () => {
     expect(describeDrillStep({ requirement: {} })).toEqual({ key: null, hand: null });
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// THE ROTATION REACHES THE DRILL.
+//
+// `resolveSpec` rotates a level's roots by the gate's own `pickIndex`, so two
+// consecutive gates at a three-root level are two different scales. The rung
+// drill was built before that and never consulted it: it dealt `roots[0..n]`
+// from index 0 on every launch, so a child on a two-root rung met the same two
+// keys, in the same order, for as long as they stayed on it. Reported by the
+// learner on 2026-09-16 ("always the same 3 scales").
+describe('a scale rung deals a different key at consecutive gates', () => {
+  const spec = {
+    kind: 'exercise', collection: 'scales', roots: ['G', 'D', 'F'],
+    direction: 'up-then-down', sets: 3, reps: 3,
+  };
+
+  it('walks the starting root forward as the rotation advances', () => {
+    expect(rungDrillProgram(spec, 'L2', 0).steps.map((s) => s.display.root)).toEqual(['G', 'D', 'F']);
+    expect(rungDrillProgram(spec, 'L2', 1).steps.map((s) => s.display.root)).toEqual(['D', 'F', 'G']);
+    expect(rungDrillProgram(spec, 'L2', 2).steps.map((s) => s.display.root)).toEqual(['F', 'G', 'D']);
+    expect(rungDrillProgram(spec, 'L2', 3).steps.map((s) => s.display.root)).toEqual(['G', 'D', 'F']);
+  });
+
+  it('keeps the authored order when no rotation is given, so every existing caller is unmoved', () => {
+    expect(rungDrillProgram(spec, 'L2').steps.map((s) => s.display.root)).toEqual(['G', 'D', 'F']);
+  });
+
+  it('advances the HAND across sets when the rung names hands, exactly as the 3x3 drill does', () => {
+    const handed = { ...spec, hands: ['R', 'L', 'RL'] };
+    const steps = rungDrillProgram(handed, 'L2', 0).steps;
+    expect(steps.map((s) => s.display.hand)).toEqual(['R', 'L', 'RL']);
+    expect(steps[1].requirement.exercise_id).toContain(',hand=L');
+    expect(describeDrillStep(steps[1]).hand).toBe('left hand');
+  });
+
+  it('names NO hand axis when the rung does not ask for one — every id in the live config is unchanged', () => {
+    const id = rungDrillProgram(spec, 'L2', 0).steps[0].requirement.exercise_id;
+    expect(id).not.toContain('hand=');
+    expect(id).toBe('scales/modes@root=G,mode=ionian,direction=up-then-down,span_octaves=1');
+  });
+});
