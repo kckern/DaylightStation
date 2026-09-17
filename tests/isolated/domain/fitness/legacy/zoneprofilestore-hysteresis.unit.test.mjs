@@ -236,30 +236,27 @@ describe('ZoneProfileStore hysteresis', () => {
     expect(store.getProfile('user-1').currentZoneId).toBe('active');
   });
 
-  test('exit margin clamps to zero (does not push below raw zone threshold)', () => {
-    // Use a zone config where active min is 2 (below EXIT_MARGIN_BPM of 5)
-    // Exit threshold = max(0, 2 - 5) = 0 (clamped, would be -3 without clamp)
+  test('a ladder with an earned rung below the cool baseline is never committed', () => {
+    // This used to assert the exit-margin clamp using an active rung at 2bpm.
+    // As of 2026-09-16 that ladder cannot be committed at all: an EARNED rung
+    // below MIN_COOL_BASELINE is exactly the defect that reported Fire at a
+    // resting heart rate, so validateZoneLadder rejects it and the rider gets
+    // no zone rather than a zone they did not earn. The clamp itself is now
+    // unreachable for any committed ladder — every earned rung is >= 60, so
+    // `min - EXIT_MARGIN_BPM` can never go negative.
+    // See docs/_wip/plans/2026-09-16-zone-ladder-validation-design.md
     const tightConfig = [
       { id: 'cool', name: 'Cool', min: 0, color: 'gray', rings: 0 },
       { id: 'active', name: 'Active', min: 2, color: 'green', rings: 1 }
     ];
     store.setBaseZoneConfig(tightConfig);
 
-    // Commit to active zone at HR 65 (above MIN_COOL_BASELINE=60 and active min=2)
     store.syncFromUsers([makeUser('user-1', 65)]);
-    expect(store.getProfile('user-1').currentZoneId).toBe('active');
+    expect(store.getProfile('user-1').currentZoneId).toBeNull();
 
-    // Advance past cooldown
+    // And it stays rejected rather than drifting into a zone as HR moves.
     mockTime += 6000;
-
-    // HR drops to 1 — raw zone is cool, but exit threshold is clamped to 0
-    // HR 1 >= 0 → exit margin suppresses downgrade
     store.syncFromUsers([makeUser('user-1', 1)]);
-    expect(store.getProfile('user-1').currentZoneId).toBe('active');
-
-    // HR drops to 0 — still >= clamped exit threshold (0) → stays in active
-    mockTime += 6000;
-    store.syncFromUsers([makeUser('user-1', 0)]);
-    expect(store.getProfile('user-1').currentZoneId).toBe('active');
+    expect(store.getProfile('user-1').currentZoneId).toBeNull();
   });
 });

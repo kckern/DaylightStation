@@ -15,7 +15,7 @@ describe('nextFireToasts', () => {
     let t = createFireZoneTracker();
     t = nextFireToasts(t, [profile('learner-one', 'hot')], { now: 1000 }).tracker;
     const r = nextFireToasts(t, [profile('learner-one', 'fire')], { now: 2000 });
-    expect(r.entries).toEqual([{ userId: 'learner-one', name: 'learner-one' }]);
+    expect(r.entries).toEqual([{ userId: 'learner-one', name: 'learner-one', heartRate: null, fireThreshold: null }]);
   });
 
   it('suppresses a second crossing inside the cooldown', () => {
@@ -34,7 +34,7 @@ describe('nextFireToasts', () => {
     t = nextFireToasts(t, [profile('learner-one', 'hot')], { now: 3000 }).tracker;
     const later = 2000 + FIRE_TOAST_COOLDOWN_MS + 1;
     const r = nextFireToasts(t, [profile('learner-one', 'fire')], { now: later });
-    expect(r.entries).toEqual([{ userId: 'learner-one', name: 'learner-one' }]);
+    expect(r.entries).toEqual([{ userId: 'learner-one', name: 'learner-one', heartRate: null, fireThreshold: null }]);
   });
 
   it('does not re-emit while a user simply stays in fire', () => {
@@ -50,8 +50,8 @@ describe('nextFireToasts', () => {
     t = nextFireToasts(t, [profile('learner-one', 'hot'), profile('learner-two', 'warm')], { now: 1000 }).tracker;
     const r = nextFireToasts(t, [profile('learner-one', 'fire'), profile('learner-two', 'fire')], { now: 2000 });
     expect(r.entries).toEqual([
-      { userId: 'learner-one', name: 'learner-one' },
-      { userId: 'learner-two', name: 'learner-two' },
+      { userId: 'learner-one', name: 'learner-one', heartRate: null, fireThreshold: null },
+      { userId: 'learner-two', name: 'learner-two', heartRate: null, fireThreshold: null },
     ]);
   });
 
@@ -69,7 +69,24 @@ describe('nextFireToasts', () => {
     let t = createFireZoneTracker();
     t = nextFireToasts(t, [profile('learner-one', 'hot', 'Learner-Two')], { now: 1000 }).tracker;
     const r = nextFireToasts(t, [profile('learner-one', 'fire', 'Learner-Two')], { now: 2000 });
-    expect(r.entries).toEqual([{ userId: 'learner-one', name: 'Learner-Two' }]);
+    expect(r.entries).toEqual([{ userId: 'learner-one', name: 'Learner-Two', heartRate: null, fireThreshold: null }]);
+  });
+
+  it('carries the HR and the fire threshold that justified the celebration', () => {
+    // Without these the toast cannot be audited: the 2026-09-16 false toast
+    // logged only a userId, so disproving it meant correlating against
+    // governance.user_zone_change, which reads a different HR source entirely.
+    const zoneConfig = [
+      { id: 'cool', min: 60 }, { id: 'active', min: 100 },
+      { id: 'warm', min: 140 }, { id: 'hot', min: 160 }, { id: 'fire', min: 175 }
+    ];
+    const rider = (zone) => ({ id: 'learner-one', name: 'Learner-One', currentZoneId: zone, heartRate: 181, zoneConfig });
+    let t = createFireZoneTracker();
+    t = nextFireToasts(t, [rider('hot')], { now: 1000 }).tracker;
+    const r = nextFireToasts(t, [rider('fire')], { now: 2000 });
+    expect(r.entries).toEqual([
+      { userId: 'learner-one', name: 'Learner-One', heartRate: 181, fireThreshold: 175 }
+    ]);
   });
 
   it('never mutates the tracker it was given', () => {

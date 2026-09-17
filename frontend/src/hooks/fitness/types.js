@@ -193,6 +193,9 @@ const DEFAULT_ZONE_LOOKUP = DEFAULT_ZONE_CONFIG.reduce((acc, zone) => {
   return acc;
 }, {});
 
+/** Thresholdless rungs sort last, so they can never occupy the cool anchor. */
+const zoneSortKey = (zone) => (Number.isFinite(zone?.min) ? zone.min : Number.POSITIVE_INFINITY);
+
 const normalizeZoneOverrides = (overrides = {}) => {
   if (!overrides || typeof overrides !== 'object') return {};
   // Ledger metadata.zones uses the array shape ([{ id, min }, ...], required
@@ -230,7 +233,12 @@ export const buildZoneConfig = (globalZones, overrides) => {
     const lookupId = zoneId.toLowerCase();
     const defaultZone = DEFAULT_ZONE_LOOKUP[lookupId] || DEFAULT_ZONE_CONFIG[index] || {};
     const fallbackColor = defaultZone?.color || null;
-    const fallbackMin = Number.isFinite(defaultZone?.min) ? defaultZone.min : 0;
+    // NEVER fabricate a threshold. This used to fall back to 0, and 0 is finite,
+    // so every downstream Number.isFinite guard accepted it while a rung at 0 was
+    // enterable by any rider with a pulse — the zone climb then ran to the TOP
+    // rung and reported Fire at a resting heart rate (2026-09-16). An
+    // unresolvable threshold becomes null here and the rung is dropped below.
+    const fallbackMin = Number.isFinite(defaultZone?.min) ? defaultZone.min : null;
     const overrideMin = normalizedOverrides[lookupId];
     return {
       id: zoneId,
@@ -240,7 +248,10 @@ export const buildZoneConfig = (globalZones, overrides) => {
         ? overrideMin
         : (Number.isFinite(zone?.min) ? zone.min : fallbackMin)
     };
-  }).sort((a, b) => (a?.min ?? 0) - (b?.min ?? 0));
+    // A rung with no resolvable threshold sorts to the END, never to the front:
+    // sorting it low would hand it the cool anchor below and put a
+    // universally-enterable rung at the bottom of the ladder.
+  }).sort((a, b) => zoneSortKey(a) - zoneSortKey(b));
 
   if (normalized.length === 0) {
     return DEFAULT_ZONE_CONFIG.map((zone) => ({ ...zone }));
@@ -255,7 +266,66 @@ export const buildZoneConfig = (globalZones, overrides) => {
     normalized[0] = { ...normalized[0], min: inferredMin };
   }
 
-  return normalized;
+  // Contract: every rung this returns has a real threshold, or it is not a rung.
+  const usable = normalized.filter((zone) => Number.isFinite(zone?.min));
+  if (usable.length === 0) {
+    return DEFAULT_ZONE_CONFIG.map((zone) => ({ ...zone }));
+  }
+
+  return usable;
+};
+
+/**
+ * Canonical intensity order. A ladder must climb in THIS order, not merely be
+ * sortable into an increasing list: `[cool:60, warm:0, hot:160]` sorts into
+ * [0, 60, 160] and looks fine, while leaving a warm rung that every rider
+ * clears. Zones outside this list sort after it, in config order.
+ */
+export const CANONICAL_ZONE_ORDER = ['cool', 'active', 'warm', 'hot', 'fire'];
+
+const canonicalRank = (zone) => {
+  const rank = CANONICAL_ZONE_ORDER.indexOf(normalizeZoneId(zone?.id || zone?.name) || '');
+  return rank === -1 ? CANONICAL_ZONE_ORDER.length : rank;
+};
+
+/**
+ * The sole definition of a zone ladder we are willing to commit to a rider.
+ *
+ * @param {Array} zones - candidate ladder
+ * @returns {{ valid: boolean, reason: string|null, detail: Object|null }}
+ */
+export const validateZoneLadder = (zones) => {
+  if (!Array.isArray(zones) || zones.length < 2) {
+    return { valid: false, reason: 'too-few-rungs', detail: { rungs: Array.isArray(zones) ? zones.length : 0 } };
+  }
+
+  const ranked = zones.slice().sort((a, b) => canonicalRank(a) - canonicalRank(b));
+
+  let previous = null;
+  for (const zone of ranked) {
+    const id = normalizeZoneId(zone?.id || zone?.name) || null;
+    const min = Number(zone?.min);
+    if (!Number.isFinite(min)) {
+      return { valid: false, reason: 'missing-threshold', detail: { zone: id } };
+    }
+    // The floor applies to every rung ABOVE the bottom one. A low bottom rung is
+    // harmless — everyone is at least cool, and the classifier already anchors
+    // the first rung at MIN_COOL_BASELINE. A low rung anywhere higher is the
+    // whole defect: it makes that zone enterable by any rider with a pulse.
+    if (previous && min < MIN_COOL_BASELINE) {
+      return { valid: false, reason: 'below-baseline', detail: { zone: id, min, baseline: MIN_COOL_BASELINE } };
+    }
+    if (previous && min <= previous.min) {
+      return {
+        valid: false,
+        reason: 'not-increasing',
+        detail: { zone: id, min, after: previous.id, afterMin: previous.min }
+      };
+    }
+    previous = { id, min };
+  }
+
+  return { valid: true, reason: null, detail: null };
 };
 
 export const ensureZoneList = (zoneConfig) => {
