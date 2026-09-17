@@ -55,7 +55,18 @@ export function nextFireToasts(tracker, profiles, { now = Date.now() } = {}) {
     if (Number.isFinite(lastFiredAt) && now - lastFiredAt < FIRE_TOAST_COOLDOWN_MS) return;
 
     next.lastFiredAt.set(userId, now);
-    entries.push({ userId, name: profile.name || userId });
+    // Carry the justification with the entry. A celebration that cannot say
+    // WHY it fired is one nobody can audit: the 2026-09-16 false toast took a
+    // cross-log correlation to disprove, because `fire_toast.shown` recorded
+    // only a userId and the nearest HR came from a different source.
+    const fireThreshold = (Array.isArray(profile.zoneConfig) ? profile.zoneConfig : [])
+      .find((zone) => zone?.id === FIRE_ZONE_ID)?.min;
+    entries.push({
+      userId,
+      name: profile.name || userId,
+      heartRate: Number.isFinite(profile.heartRate) ? profile.heartRate : null,
+      fireThreshold: Number.isFinite(fireThreshold) ? fireThreshold : null
+    });
   });
 
   return { entries, tracker: next };
