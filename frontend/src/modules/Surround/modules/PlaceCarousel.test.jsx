@@ -154,6 +154,30 @@ describe('PlaceCarousel — the slides', () => {
     expect(view.caption()).toBeNull();
   });
 
+  it('prefers the piece’s own city photo and caption over the composer’s', () => {
+    const data = {
+      ...DATA,
+      piece: { city_image: 'shrew/padua.jpg', map: { country: 'Italy', city: 'Padua', caption: 'Padua — where the play is set' } },
+    };
+    const view = renderCarousel({ data });
+    expect(view.kind()).toBe('photo');
+    expect(view.getByTestId('surround-place-photo').getAttribute('src'))
+      .toBe(`${window.location.origin}/api/v1/static/img/surround/classical/shrew/padua.jpg`);
+    expect(view.caption().textContent).toBe('Padua — where the play is set');
+  });
+
+  it('captions a piece-sourced country map with the bare label, never a biographical sentence', () => {
+    // No city_image on the piece OR the composer, so the map is the FIRST
+    // slide — no timer advance needed to reach it.
+    const data = { ...DATA, piece: { map: { country: 'Italy' } }, composer: { ...DATA.composer, city_image: undefined } };
+    const view = renderCarousel({ data });
+    expect(view.kind()).toBe('map');
+    // Not "Born in Stratford; worked in Italy" — that sentence would be a
+    // false claim about a play's fictional setting.
+    expect(view.caption().textContent).toBe('Italy');
+    expect(view.caption().className).toContain('surround-place-carousel__caption--label');
+  });
+
   it('shows the map as its second slide, captioned by the country alone', () => {
     // Drive to the map slide the way the dwell would, without waiting 12s.
     vi.useFakeTimers();

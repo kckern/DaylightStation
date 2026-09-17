@@ -88,10 +88,18 @@ export default function PlaceCarousel({
 
   const slides = useMemo(() => {
     const built = [];
-    const map = composer?.map ?? null;
+    // PIECE-FIRST, same precedent as `piece.period ?? composer.period`: a
+    // play's own setting (Padua) wins over its playwright's own geography
+    // (Stratford) when authored. `pin.source` says which one won, and gates
+    // the biographical caption sentences below — "Born in Stratford; worked
+    // in Italy" is true of the composer's own geography and simply false of
+    // a play's fictional setting.
+    const pin = mapPinFrom(data);
+    const map = pin?.source === 'piece' ? (data?.piece?.map ?? null) : (composer?.map ?? null);
     const city = trimmed(map?.city);
 
-    const photoSrc = assetUrl(data?.assetBase, composer?.city_image);
+    const cityImageRef = data?.piece?.city_image ?? composer?.city_image;
+    const photoSrc = assetUrl(data?.assetBase, cityImageRef);
     // Does the PHOTOGRAPH take the authored `map.caption`? It is the better
     // plate for a sentence about the place, so where a photograph exists it
     // keeps it and the city map falls back to the bare name — one line under
@@ -111,14 +119,13 @@ export default function PlaceCarousel({
         key: 'photo',
         kind: 'photo',
         src: photoSrc,
-        ref: composer.city_image,
+        ref: cityImageRef,
         alt: city ? `View of ${city}` : 'The composer\'s city',
         caption: authored ?? city,
         captionKind: authored ? 'sentence' : 'label',
       });
     }
 
-    const pin = mapPinFrom(data);
     if (pin) {
       // COUNTRY-SCOPED, because the slide is. At regional zoom the map draws no
       // star and no city name (`ZOOM_PRESETS.region.showCity`), so a caption
@@ -132,7 +139,16 @@ export default function PlaceCarousel({
       // Polish — so that is what `countryCaptionFor` derives, from the
       // nationality and birthplace every composer file carries. The bare label
       // survives inside it as the floor.
-      const countryCaption = countryCaptionFor(composer);
+      //
+      // GATED TO A COMPOSER-SOURCED PIN. `countryCaptionFor` derives a
+      // biographical sentence — "Born in X; worked in Y" — which is true of
+      // the person's own geography and simply false of a play's fictional
+      // setting (Padua is not where Shakespeare "worked"). A piece-sourced
+      // pin therefore falls straight to the bare label, the same floor a
+      // composer with no biography at all already gets.
+      const countryCaption = pin.source === 'composer'
+        ? countryCaptionFor(composer)
+        : { text: pin.country, kind: 'label' };
       built.push({
         key: 'map',
         kind: 'map',
@@ -153,7 +169,11 @@ export default function PlaceCarousel({
         // sentence about the place, present on 349 of 354 composers, and until
         // now it could only appear under a city photograph that exists for
         // seven of them. This is the plate that shows it.
-        const cityCaption = cityCaptionFor(composer, { photoTookCaption });
+        //
+        // Same gate as the country caption above, and for the same reason.
+        const cityCaption = pin.source === 'composer'
+          ? cityCaptionFor(composer, { photoTookCaption })
+          : { text: pin.city, kind: 'label' };
         built.push({
           key: 'city-map',
           kind: 'city-map',
