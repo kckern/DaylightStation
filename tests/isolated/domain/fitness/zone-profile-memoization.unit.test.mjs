@@ -15,11 +15,15 @@ vi.mock('../../../../frontend/src/lib/logging/Logger.js', () => ({
 describe('ZoneProfileStore.syncFromUsers memoization', () => {
   let ZoneProfileStore;
   let store;
+  // Canonical intensity order: cool < active < warm < hot. This fixture used to
+  // have warm(100) sitting BELOW active(120) — an inverted ladder, which
+  // validateZoneLadder now rejects, leaving the rider with no committed zone
+  // and nothing to memoize. The ordering is incidental to what this file tests.
   const baseZoneConfig = [
     { id: 'cool', name: 'Cool', color: 'blue', min: 0 },
-    { id: 'warm', name: 'Warm', color: 'yellow', min: 100 },
-    { id: 'active', name: 'Active', color: 'orange', min: 120 },
-    { id: 'hot', name: 'Hot', color: 'red', min: 150 },
+    { id: 'active', name: 'Active', color: 'green', min: 100 },
+    { id: 'warm', name: 'Warm', color: 'yellow', min: 120 },
+    { id: 'hot', name: 'Hot', color: 'orange', min: 150 },
   ];
 
   const makeUser = (id, hr) => ({

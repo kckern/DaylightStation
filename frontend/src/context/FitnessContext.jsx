@@ -2282,7 +2282,11 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
       },
       { fireballUrl: DaylightMediaPath('/media/fitness/ux/fireball.gif') }
     ));
-    getLogger().info('fitness.fire_toast.shown', { userId: show.userId });
+    getLogger().info('fitness.fire_toast.shown', {
+      userId: show.userId,
+      hr: show.heartRate ?? null,
+      fireThreshold: show.fireThreshold ?? null
+    });
   }, [configuredUsers, preferGroupLabels, pushFitnessToast]);
 
   useEffect(() => {

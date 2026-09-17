@@ -1,4 +1,4 @@
-import { deriveZoneProgressSnapshot, getZoneMin } from './types.js';
+import { deriveZoneProgressSnapshot, getZoneMin, validateZoneLadder } from './types.js';
 import getLogger from '../../lib/logging/Logger.js';
 
 const cloneZoneConfig = (config = []) => {
@@ -56,6 +56,14 @@ export class ZoneProfileStore {
     // Per-user hysteresis state: Map<userId, { committedZoneId, lastCommitTs, rawZoneId, rawZoneStableSince }>
     this._hysteresis = new Map();
     this._profileCache = new Map();
+    // The last ladder that PASSED validation, per rider. A rebuild that fails
+    // validation is rejected and this stays in force, so a transient bad
+    // rebuild is invisible: no phantom zone, no wrong demotion, no lost rings.
+    this._lastGoodLadder = new Map();
+    // Riders currently running on a fallback ladder: Map<userId, { since, ticks }>.
+    // Presence IS the rejected state — used to log the transition in and out
+    // rather than one line per tick.
+    this._ladderRejected = new Map();
     // Bumped only when the per-user zone THRESHOLDS change. Consumers that
     // cache anything derived from zoneConfig (TreasureBox's override maps) poll
     // this instead of being told to invalidate — a push model needs every call
@@ -97,6 +105,9 @@ export class ZoneProfileStore {
     this._signature = null;
     this._hysteresis.clear();
     this._profileCache.clear();
+    // A rider's ladder from one session must never authorize the next.
+    this._lastGoodLadder.clear();
+    this._ladderRejected.clear();
     this.#bumpZoneConfigRevisionIfChanged(this._profiles);
   }
 
@@ -114,7 +125,12 @@ export class ZoneProfileStore {
         const profile = this.#buildProfileFromUser(user);
         if (profile) {
           nextMap.set(profile.id, profile);
-          if (inputSig) this._profileCache.set(inputSig, profile);
+          // Never memoize a profile built on a fallback ladder. Its inputs are
+          // the REJECTED config, so a cache hit would replay the fallback
+          // without re-validating, turning one bad tick into a permanent one.
+          if (inputSig && !this._ladderRejected.has(profile.id)) {
+            this._profileCache.set(inputSig, profile);
+          }
         }
       }
     }
@@ -205,15 +221,22 @@ export class ZoneProfileStore {
       ? Math.max(0, user.currentData.heartRate)
       : 0; // No fallback — UserManager.currentData.heartRate is the SSoT for HR
 
-    const snapshot = Array.isArray(sourceZoneConfig)
-      ? deriveZoneProgressSnapshot({ zoneConfig: sourceZoneConfig, heartRate })
+    // THE enforcement point. Every consumer — fire toast, zone LEDs, TreasureBox
+    // rings and coins, GovernanceEngine — reads the profile built here, so this
+    // is the only place a ladder becomes a rider's committed reality, and the
+    // only place the ladder is validated.
+    const committedLadder = this.#committedLadder(userId, normalizedZoneConfig);
+
+    const snapshot = committedLadder
+      ? deriveZoneProgressSnapshot({ zoneConfig: committedLadder, heartRate })
       : null;
     const normalizedSnapshot = cloneSnapshot(snapshot);
-    const zoneSequence = normalizedSnapshot?.zoneSequence || this.#buildZoneSequence(normalizedZoneConfig);
+    const zoneSequence = normalizedSnapshot?.zoneSequence
+      || this.#buildZoneSequence(committedLadder || []);
 
     // Apply zone hysteresis: instant first transition, debounce rapid toggling
     const rawZoneId = normalizedSnapshot?.currentZoneId ?? null;
-    const stabilized = this.#applyHysteresis(userId, rawZoneId, normalizedZoneConfig, heartRate);
+    const stabilized = this.#applyHysteresis(userId, rawZoneId, committedLadder || [], heartRate);
 
     return {
       id: userId,
@@ -222,7 +245,7 @@ export class ZoneProfileStore {
       displayName: user.displayName || user.name,
       groupLabel: user.groupLabel || null,
       profileId: userId,
-      zoneConfig: normalizedZoneConfig,
+      zoneConfig: committedLadder || [],
       zoneSequence,
       zoneSnapshot: normalizedSnapshot,
       currentZoneId: stabilized.zoneId,
@@ -243,6 +266,62 @@ export class ZoneProfileStore {
       source: user.source || null,
       updatedAt: now()
     };
+  }
+
+  /**
+   * Validate a candidate ladder and decide what the rider actually runs on.
+   *
+   * Valid   -> the candidate, and it becomes this rider's last known-good.
+   * Invalid -> the last known-good ladder, or NULL when there isn't one yet
+   *            (bootstrap: no committed zone, blank LED, no rings, no
+   *            celebration, rather than a guessed zone).
+   *
+   * An absent config is "not configured yet", not a rejection — it produced a
+   * zone-less rider before this existed and still does, without a warn.
+   *
+   * @param {string} userId
+   * @param {Array} candidate - normalized zone config for this rebuild
+   * @returns {Array|null} the ladder to commit, or null for no zone
+   */
+  #committedLadder(userId, candidate) {
+    if (!Array.isArray(candidate) || candidate.length === 0) {
+      return this._lastGoodLadder.get(userId) || null;
+    }
+
+    const verdict = validateZoneLadder(candidate);
+
+    if (verdict.valid) {
+      this._lastGoodLadder.set(userId, candidate);
+      const wasRejected = this._ladderRejected.get(userId);
+      if (wasRejected) {
+        this._ladderRejected.delete(userId);
+        getLogger().info('fitness.zone_ladder.recovered', {
+          userId,
+          rejectedForMs: now() - wasRejected.since,
+          rejectedTicks: wasRejected.ticks
+        });
+      }
+      return candidate;
+    }
+
+    const lastGood = this._lastGoodLadder.get(userId) || null;
+    const state = this._ladderRejected.get(userId);
+    if (state) {
+      state.ticks += 1;
+    } else {
+      // Unsampled: a rejection is rare by definition. Logged on ENTERING the
+      // rejected state only, so a persistently broken config costs two lines
+      // for the session rather than one per tick.
+      this._ladderRejected.set(userId, { since: now(), ticks: 1 });
+      getLogger().warn('fitness.zone_ladder.rejected', {
+        userId,
+        reason: verdict.reason,
+        detail: verdict.detail || null,
+        thresholds: candidate.map((zone) => `${zone?.id}:${zone?.min ?? ''}`).join('|'),
+        fellBackTo: lastGood ? 'last-good' : 'none'
+      });
+    }
+    return lastGood;
   }
 
   /**
