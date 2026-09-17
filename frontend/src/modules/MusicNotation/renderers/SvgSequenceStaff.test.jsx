@@ -776,3 +776,58 @@ describe('SvgSequenceStaff — key signature', () => {
     expect(sequenceStaffViewBox(2, { keySignature: 'C' }).width).toBe(sequenceStaffViewBox(2).width);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// THE AFTERGLOW OF A CORRECT NOTE IS NOT AN ATTEMPT AT THE NEXT ONE.
+//
+// `attemptInProgress` was `activeNotes.size > 0`, so the instant the assessor
+// advanced the cursor the still-held previous key counted as "an attempt is
+// under way here" and every target of the new entry — untouched, unplayed —
+// was painted `miss`. On a legato scale that fires on EVERY note: the child
+// plays correctly, sees green, and watches the next note flash red before
+// they have reached it. Reported 2026-09-16 ("flash green then red, even when
+// it's right").
+//
+// `classifyHeldPitch` has always encoded the rule this needs — a key held from
+// before the cursor arrived is a SUSTAIN, not an answer to this entry — and
+// the ghost layer already used it. The verdict now uses it too.
+describe('a held key from the previous note does not judge the next one', () => {
+  it('leaves the note the cursor moved to plain, not red, while the last key is still down', () => {
+    const active = new Map([[60, { velocity: 80, timestamp: Date.now() - 1200 }]]);
+    const { container } = render(
+      <SvgSequenceStaff notes={notes(60, 62, 64)} cursorIndex={1} activeNotes={active} />
+    );
+    expect(container.querySelectorAll('.sequence-note-miss')).toHaveLength(0);
+    expect(container.querySelectorAll('.sequence-note-hit')).toHaveLength(0);
+    expect(container.querySelector('[data-sequence-index="1"] .action-staff__note').getAttribute('class'))
+      .toContain('sequence-note-current');
+  });
+
+  it('still reds the target the moment a WRONG key actually goes down here', () => {
+    const active = new Map([[61, { velocity: 80, timestamp: Date.now() + 5000 }]]);
+    const { container } = render(
+      <SvgSequenceStaff notes={notes(60, 62, 64)} cursorIndex={1} activeNotes={active} />
+    );
+    const miss = container.querySelector('.sequence-note-miss');
+    expect(miss).toBeTruthy();
+    expect(miss.getAttribute('data-midi')).toBe('62');
+  });
+
+  it('still greens a target that is genuinely held, however long it has been down', () => {
+    const active = new Map([[62, { velocity: 80, timestamp: Date.now() - 1200 }]]);
+    const { container } = render(
+      <SvgSequenceStaff notes={notes(60, 62, 64)} cursorIndex={1} activeNotes={active} />
+    );
+    expect(container.querySelector('.sequence-note-hit').getAttribute('data-midi')).toBe('62');
+  });
+});
+
+// The staff draws ledgers, stems, accidentals and noteheads in rgba(0,0,0,1).
+// The clef was the one mark at half strength, which on the kiosk reads as a
+// grey clef on a black staff. Asked for directly on 2026-09-16.
+describe('the clef is full-strength ink', () => {
+  it('draws the clef in the same black as every other mark', () => {
+    const { container } = render(<SvgSequenceStaff notes={notes(60, 62, 64)} />);
+    expect(container.querySelector('.action-staff__clef').getAttribute('fill')).toBe('rgba(0,0,0,1)');
+  });
+});
