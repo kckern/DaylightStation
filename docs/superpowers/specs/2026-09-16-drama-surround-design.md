@@ -188,42 +188,139 @@ built around a portrait + name + dates + birthplace + rotating person-facts —
 right for a composer, wrong for "what is this stage work." Reuse was
 considered and rejected here specifically: `ComposerCard` answers "who wrote
 this," and the ask was for the rail to answer "what is this" (a play's own
-identity — genre, setting, cast), which classical's schema has no
-equivalent of (a symphony has no cast). New module, same file shape as the
-existing six (`.jsx` + `.scss`, registered in `builtins.js` under `right`),
-reusing `ComposerCard`'s dissolve/timing pattern rather than its content:
+identity — genre, setting, who's on stage), which classical's schema has no
+equivalent of (a symphony has no characters). New module, same file shape as
+the existing six (`.jsx` + `.scss`, registered in `builtins.js` under
+`right`), reusing `ComposerCard`'s dissolve/timing pattern rather than its
+content:
 
 - Title, genre (Comedy / History / Tragedy / Romance — a stage work's own
   classification, not Shakespeare-specific), one-line setting ("Padua,
-  Italy"), a cast list (top-billed characters), and a rotating work-level
-  fact pool (reusing the same dissolve/timing pattern `ComposerCard`
-  already uses — `COMPOSER_FACT_INTERVAL_MS`-equivalent).
-- New corpus fields needed on the allowlist: `genre`, `setting`, `cast`
-  (array of `{ name, role }` or similar — shape TBD in the implementation
-  plan, not this spec). All domain-agnostic — usable by any `drama` work,
-  and by `classical` too if a future work wants a cast list (a staged
-  opera, say).
+  Italy"), and ONE rotating pool that mixes work-level facts with
+  hierarchy-scoped character cards (see "Character cards" below) — reusing
+  the same dissolve/timing pattern `ComposerCard` already uses
+  (`COMPOSER_FACT_INTERVAL_MS`-equivalent).
+- **`PlayCard` is clock-aware; `ComposerCard` is not — a deliberate,
+  documented deviation.** `ComposerCard` ignores `position`/`duration`
+  because a composer's bio is true at 0:00 and at 53:00. A play's character
+  roster is not: which characters are "in scope" and how their description
+  reads both change with the Act that is playing, so `PlayCard` reads
+  `position`/`contentId` and resolves the current segment the same way
+  `CueTicker` does (`segmentAt`, `../segments.js`) to pick the right
+  hierarchy level for `characterPool()`.
+- New corpus fields needed on the allowlist: `genre`, `setting` (both
+  domain-agnostic scalars). `characters:` is its own field, not
+  allowlist-scoped the same way — see "Character cards" below.
 - The playwright's own bio (`_composer.yml`, reused literally — the loader
   hardcodes that filename, and is itself already domain-agnostic — it
   works for a composer, a playwright, or any future "who made this")
   still resolves into `data.composer` and can supply a small byline if
   useful, but `PlayCard`'s primary content is the work, not its author.
 
+### Character cards — hierarchy-scoped, shown on both surfaces
+
+Added per feedback: "it is often hard to keep track of who's who," and a
+character's description can need to change as the play progresses (Act 1's
+Petruchio is "a fortune-hunter, freshly arrived to wive it wealthily";
+Act 4's is sharper). This reuses the exact mechanism already justified for
+Act/Scene commentary — no new hierarchy, no new merge concept beyond one
+change of merge rule:
+
+- **`characters:` is a list of `{ name, role, description }`**, authorable
+  at the work level (the baseline roster) and, optionally, again on any
+  `groups:` entry (or a `segments:` entry, for a change mid-Act) — the same
+  three places `facts:` can already live.
+- **`characterPool(data, index)`** (new, `segments.js`, parallel to the
+  existing `factPool`) walks the identical segment → nearest-group-outward
+  → work path `factPool` already walks, but merges by **name, nearest wins**
+  — an Act 4 override of "Petruchio" REPLACES the work-level entry for
+  Petruchio, rather than both showing up as two cards for one character (the
+  behavior plain `facts:` correctly has instead — a fact list accumulates,
+  because two true facts about a symphony are both worth rotating through;
+  two descriptions of one character are not both current). Characters no
+  Act has re-described keep their work-level baseline.
+- **No new rendering machinery.** Both consuming surfaces already exist as
+  rotating string pools with a house dissolve — `CueTicker`'s LEFT ("piece")
+  zone (`factPool`'s existing consumer) and `PlayCard`'s rotating pool
+  (above). Each surface formats a `characterPool()` entry into one string
+  for its own rotation (name emphasized, then role, then description) and
+  merges it into the same pool `facts:` already feeds — the fit/measurement
+  system (`fit.js`) that governs both zones already treats "the pool" as an
+  opaque list of strings to size against, so it does not care whether a
+  string originated from `facts:` or from a formatted character card.
+- **Both homes are legitimate and not exclusive** — per feedback, character
+  info can suit the band's left zone, the sidebar, or both; a corpus author
+  decides implicitly by what's in `characters:` at each level, since both
+  `CueTicker` and `PlayCard` draw from the same `characterPool()`. Nothing
+  needs authoring twice.
+
 ### 3. `PlaceCarousel` generalization
 
-`PlaceCarousel.jsx` reads `composer.map` / `composer.city_image` directly.
-One existing precedent already does a piece-first fallback:
-`piece.period ?? composer.period` (see design.md's era-timeline section).
-Extend the same pattern to `map` and `city_image`:
-`data.piece?.map ?? data.composer?.map`,
+`PlaceCarousel.jsx` reads `composer.map` / `composer.city_image` directly, via
+the shared `mapPinFrom(data)` (`countryMapPayload.js`). One existing
+precedent already does a piece-first fallback: `piece.period ?? composer.period`
+(see design.md's era-timeline section). Extend the same pattern:
+`mapPinFrom` becomes `data.piece?.map ?? data.composer?.map` (returning which
+source won, as a `source: 'piece' | 'composer'` field on the pin), and the
+photo slide's `map`/`city_image` resolution becomes
+`data.piece?.map ?? data.composer?.map` /
 `data.piece?.city_image ?? data.composer?.city_image` — so a work can author
-its own setting (Padua, Italy) via a `piece.map` override in its work file
-or sidecar, falling back to its author's own geography (Shakespeare's
-Stratford/London) when a work authors none. No new module needed here,
-just the fallback chain — and it benefits `classical` too (a work composed
-somewhere other than the composer's home city).
+its own setting (Padua, Italy) via a `piece.map` override, falling back to
+its author's own geography (Shakespeare's Stratford/London) when a work
+authors none.
 
-### 4. New presentation definition
+**One caption fix rides along, and it is required, not optional.**
+`countryCaptionFor`/`cityCaptionFor` (`placeCaption.js`) derive sentences
+like "Born in Stratford; worked in Italy" from the COMPOSER's own
+nationality/birthplace compared against the drawn map — a claim that is true
+when the map is the composer's own geography, and simply **false** when the
+map is a play's fictional setting (Padua is not where Shakespeare "worked").
+So: call those two caption functions only when the resolved pin's
+`source === 'composer'`; when it is `'piece'`, caption with the bare
+label (`pin.country` / `pin.city`) — exactly the wave-3 floor these
+functions already fall back to for a composer with no biography, reused
+here for the opposite reason (a location that isn't biographical at all).
+`eraCaptionFor` needs no change — it already compares `piece.city` against
+`composer.map.city` as "home" to decide whether to say "written at
+elsewhere," which stays correct regardless of where the drawn pin comes
+from.
+
+No new module needed for any of this, just the fallback chain and the one
+caption gate — and both benefit `classical` too (a work composed somewhere
+other than the composer's home city already exists as a real case; the
+caption fix only changes behavior when a `piece.map` is actually authored,
+which no shipped classical work does today).
+
+### 4. Character-pool plumbing (backend + a new frontend pure function)
+
+The one piece of the character-cards design (above) that is genuinely new
+code, because `facts:` and `characters:` need different merge rules and the
+backend has to carry both through the same hierarchy walk:
+
+- **Backend** (`backend/src/1_adapters/content/surround/YamlSurroundStore.mjs`):
+  `nestedGroupSegments`'s `ancestor` object (~line 90-95) already carries
+  `facts` via `textList(group.facts)`; add a parallel
+  `characters: characterList(group.characters)` (new helper, filters to
+  objects with a non-empty `name`, alongside `asArray`/`isPlainObject`/
+  `textList`). The top-level payload (~line 1421, beside
+  `facts: asArray(work.facts)`) gets `characters: characterList(work.characters)`.
+  Both are additive keys; a work with no `characters:` produces empty
+  arrays, changing nothing for `classical`.
+- **Frontend** (`frontend/src/modules/Surround/segments.js`): a new
+  `characterPool(data, index)`, structurally parallel to the existing
+  `factPool` right beside it — same segment → reversed-ancestors → work
+  walk — but merging into a `Map` keyed by `name` where the FIRST (most
+  specific) entry for a name wins and later, broader ones are skipped,
+  rather than `factPool`'s "skip exact duplicate strings, keep every
+  distinct one."
+- **Consumption, no new UI**: `CueTicker.jsx`'s existing `facts` derivation
+  and `PlayCard`'s rotating pool (both already string-pool consumers) each
+  format `characterPool()`'s output into one line — name, then role, then
+  description — and merge those lines into the same pool `factPool()`
+  already feeds. `fit.js`'s measurement treats the pool as opaque strings,
+  so it needs no changes.
+
+### 5. New presentation definition
 
 `data/content/surround/_surrounds/playhouse.yml` (working name — confirm in
 implementation; "playhouse" already reads as generic to any stage work, not
@@ -285,10 +382,11 @@ aspectRatio: "4 / 3"
 summary: >
   A comedy of wit and cruelty in which a fortune-hunter tames a fiercely
   independent woman into an obedient wife — or performs having done so.
-cast:
-  - { name: "Petruchio", role: "a gentleman of Verona" }
-  - { name: "Katherina", role: "the shrew" }
-  - { name: "Baptista", role: "her father" }
+# The baseline roster — shown whenever no nearer Act/Scene re-describes a name.
+characters:
+  - { name: "Petruchio", role: "a gentleman of Verona", description: "A fortune-hunter, freshly arrived in Padua to wive it wealthily." }
+  - { name: "Katherina", role: "the shrew, Baptista's elder daughter", description: "Sharp-tongued and unwilling to be bartered into marriage." }
+  - { name: "Baptista", role: "a rich gentleman of Padua", description: "Father to Katherina and Bianca; will not marry off the younger before the elder." }
   # ...
 facts:
   - "..."   # work-level, sparse — most commentary lives at group level
@@ -309,7 +407,18 @@ groups:
       - n: 2
         label: "Scene 2"
         heading: "Padua. Before Hortensio's house."
-  # Act II - V ...
+  - kind: act
+    title: "Act IV"
+    # Re-describing ONE name is enough — this REPLACES the work-level
+    # Petruchio card from this Act on; every other character keeps their
+    # baseline description untouched.
+    characters:
+      - { name: "Petruchio", role: "a gentleman of Verona", description: "Deep into the taming — starving and sleep-depriving Katherina under the banner of 'kindness'." }
+    segments:
+      - n: 1
+        label: "Scene 1"
+        heading: "A hall in Petruchio's country house."
+  # Act II, III, V ...
 ```
 
 Sidecar shape (abridged):
@@ -338,7 +447,7 @@ placed (expected for the cut Induction), never a guessed number.
 ## Scope
 
 Pilot end-to-end on *The Taming of the Shrew* only. The corpus schema,
-timing method, and the four engineering pieces above are written generally
+timing method, and the five engineering pieces above are written generally
 enough to extend to the other 36 Shakespeare plays, and to a future
 non-Shakespeare stage work, without further code changes — that extension
 is future authoring work (the eventual `drama-surround` skill), not part of
