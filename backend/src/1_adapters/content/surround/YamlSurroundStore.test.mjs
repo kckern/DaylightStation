@@ -1493,6 +1493,25 @@ describe('YamlSurroundStore — the band’s fields (design wave 7)', () => {
     expect(store.lookup('plex:663134', '').piece.short_title).toBeUndefined();
   });
 
+  it('carries aspectRatio, genre and setting through the whitelist (drama domain)', () => {
+    writeLib('classical/beethoven/symphony-3-eroica.yml',
+      'title: Symphony No. 3\nopus: Op. 55\naspectRatio: "4 / 3"\ngenre: Comedy\nsetting: "Padua, Italy"\n'
+      + 'segments:\n  - { n: 1, name: Allegro con brio }\n');
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: makeLogger() });
+    const r = store.lookup('plex:663134', '');
+    expect(r.piece.aspectRatio).toBe('4 / 3');
+    expect(r.piece.genre).toBe('Comedy');
+    expect(r.piece.setting).toBe('Padua, Italy');
+  });
+
+  it('leaves aspectRatio/genre/setting undefined when the corpus has not authored them', () => {
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: makeLogger() });
+    const r = store.lookup('plex:663134', '');
+    expect(r.piece.aspectRatio).toBeUndefined();
+    expect(r.piece.genre).toBeUndefined();
+    expect(r.piece.setting).toBeUndefined();
+  });
+
   it('carries definition.band alongside regions and collapse', () => {
     write('_surrounds/concert-hall.yml',
       'id: concert-hall\nregions:\n  right: { width: 20%, module: composer-card }\n'
@@ -2553,5 +2572,41 @@ describe('YamlSurroundStore — untimed segments', () => {
     new YamlSurroundStore({ rootDir: root, libraryDir: library, logger });
     expect(logger.warn).toHaveBeenCalledWith('surround.segments.untimed',
       expect.objectContaining({ file: 'classical/beethoven/symphony-3-eroica.yml', untimed: 3, segments: 3 }));
+  });
+});
+
+describe('YamlSurroundStore — characters (drama)', () => {
+  it('carries work-level characters on the payload', () => {
+    writeLib('drama/shakespeare/taming-of-the-shrew.yml',
+      'title: The Taming of the Shrew\n'
+      + 'characters:\n  - { name: Petruchio, role: "a gentleman of Verona", description: "A fortune-hunter." }\n'
+      + 'groups:\n  - kind: act\n    title: "Act I"\n    segments:\n      - { n: 1, label: "Scene 1" }\n');
+    write('drama/shakespeare/taming-of-the-shrew.bbc1980.yml',
+      'work: shakespeare/taming-of-the-shrew\nsurround: concert-hall\nmatch:\n  contentId: plex:697661\n  title: "The Taming of the Shrew"\n');
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: makeLogger() });
+    const r = store.lookup('plex:697661', '');
+    expect(r.characters).toEqual([
+      { name: 'Petruchio', role: 'a gentleman of Verona', description: 'A fortune-hunter.' },
+    ]);
+  });
+
+  it('carries group-level characters on each flattened segment’s ancestors', () => {
+    writeLib('drama/shakespeare/taming-of-the-shrew.yml',
+      'title: The Taming of the Shrew\n'
+      + 'groups:\n  - kind: act\n    title: "Act IV"\n'
+      + '    characters:\n      - { name: Petruchio, role: "a gentleman of Verona", description: "Deep into the taming." }\n'
+      + '    segments:\n      - { n: 1, label: "Scene 1" }\n');
+    write('drama/shakespeare/taming-of-the-shrew.bbc1980.yml',
+      'work: shakespeare/taming-of-the-shrew\nsurround: concert-hall\nmatch:\n  contentId: plex:697661\n  title: "The Taming of the Shrew"\n');
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: makeLogger() });
+    const r = store.lookup('plex:697661', '');
+    expect(r.pieceSegments[0].ancestors[0].characters).toEqual([
+      { name: 'Petruchio', role: 'a gentleman of Verona', description: 'Deep into the taming.' },
+    ]);
+  });
+
+  it('produces an empty characters array when the work authors none', () => {
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: makeLogger() });
+    expect(store.lookup('plex:663134', '').characters).toEqual([]);
   });
 });
