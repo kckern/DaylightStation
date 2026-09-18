@@ -719,16 +719,26 @@ describe('SurroundFrame — the shipped composition', () => {
   });
 
   /**
-   * Design wave 5 — the plate is hung two thirds on the hall, a third on the
-   * picture. Half and half cut too deep into the video. One token carries it, so
-   * the base straddle and the entrance's settle cannot drift apart.
+   * Design wave 5 hung the plate two thirds on the hall and a third on the
+   * picture, having judged half-and-half to cut too deep into the video.
+   *
+   * OVERRIDDEN 2026-09-17, on the owner's explicit instruction ("the title
+   * placard should be above the picture, 50% overlap allowed"). The token is
+   * now -50%, and this upper bound was raised from 45 to 55 to admit it.
+   *
+   * Wave 5's judgement is recorded rather than erased: if a future reader
+   * finds the plate cuts too deep, wave 5 said so first. It was overruled by
+   * the owner, not by a build that would not go green.
+   *
+   * One token still carries it, so the base straddle and the entrance's
+   * settle cannot drift apart.
    */
-  it('hangs the plate a third over the picture, from one token', () => {
+  it('straddles the picture from one token, within the permitted band', () => {
     const css = withStyles().replace(/\s+/g, ' ');
     const declared = css.match(/--placard-straddle: (-[\d.]+)%/);
     expect(declared, 'no --placard-straddle token').not.toBeNull();
-    const overlapPct = 100 + Number(declared[1]);        // -66.67% -> 33.33% below the edge
-    expect(overlapPct, 'the plate cuts too deep into the video').toBeLessThan(45);
+    const overlapPct = 100 + Number(declared[1]);        // -50% -> 50% below the edge
+    expect(overlapPct, 'the plate cuts too deep into the video').toBeLessThan(55);
     expect(overlapPct, 'the plate barely touches the video — it is not straddling').toBeGreaterThan(20);
     // Both the resting transform and the entrance's settle read the token.
     expect(css).toMatch(/\.surround-frame__header \{[^}]*transform: translate\(-50%, var\(--placard-straddle\)\)/);
