@@ -44,7 +44,9 @@ export function navReduce(state, action, world) {
     const gi = Number.isFinite(world?.soundingGroupIndex) && world.soundingGroupIndex !== null
       ? world.soundingGroupIndex : groups[0].index;
     const group = groupAt(world, gi) ?? groups[0];
-    const row = world?.soundingRowIndex >= 0 ? world.soundingRowIndex : firstRowOf(group);
+    let row = world?.soundingRowIndex >= 0 ? world.soundingRowIndex : firstRowOf(group);
+    // FINDING 1: Clamp soundingRowIndex to the resolved group's span.
+    row = Math.max(firstRowOf(group), Math.min(row, lastRowOf(group)));
     return { groupIndex: group.index, rowIndex: row };
   }
 
@@ -58,18 +60,25 @@ export function navReduce(state, action, world) {
     // Held at the group's last row rather than leaking into the next group:
     // moving between groups is what left/right is for, and a Down that silently
     // changed act would make the chip row lie about what is selected.
-    return { ...state, rowIndex: Math.min(state.rowIndex + 1, lastRowOf(here)) };
+    // FINDING 3: Heal groupIndex to the actual group.
+    return { groupIndex: here.index, rowIndex: Math.min(state.rowIndex + 1, lastRowOf(here)) };
   }
 
   if (action === 'up') {
     // THE EXIT. Past the first row there is nowhere above to go, so nav mode
     // ends and the arrows go back to the Player.
     if (state.rowIndex <= firstRowOf(here)) return null;
-    return { ...state, rowIndex: state.rowIndex - 1 };
+    // FINDING 3: Heal groupIndex to the actual group.
+    return { groupIndex: here.index, rowIndex: state.rowIndex - 1 };
   }
 
   if (action === 'left' || action === 'right') {
-    const next = groups[Math.max(0, Math.min(groups.length - 1, at + (action === 'right' ? 1 : -1)))];
+    const nextAt = Math.max(0, Math.min(groups.length - 1, at + (action === 'right' ? 1 : -1)));
+    const next = groups[nextAt];
+    // FINDING 2: Only reset rowIndex if the group actually changed.
+    if (next.index === state.groupIndex) {
+      return state;
+    }
     // Previewing only. The playhead does not move until OK.
     return { groupIndex: next.index, rowIndex: firstRowOf(next) };
   }
