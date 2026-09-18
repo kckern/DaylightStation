@@ -313,7 +313,8 @@ gets no chip. Gated on `region.groups === 'header'` so nothing else changes.
 - Test: `frontend/src/modules/Surround/modules/SegmentMap.test.jsx`
 
 **Interfaces:**
-- Consumes: `railGroups(placed, selectGroup)` from `../band.js` → `Array<{title, mini, index, from, count, span}>`; `placedRail` (`Array<{index, segment}>`); `activeGroupIndex` (number|null).
+- Consumes: `railGroups(placed, selectGroup)` from `../band.js` → `Array<{title, mini, index, from, count, span}>`; `placedRail` (`Array<{index, segment}>`); `activeIndex` (number, `-1` when nothing sounds); `outerAt(i)` (the column branch's existing helper).
+- Produces (later tasks depend on this name): `const soundingGroupIndex = outerAt(activeIndex)?.index ?? null;` — **do not** use the module's `activeGroupIndex` here. It is gated on `nested`, which requires two or more ancestor levels (the horizontal fold's threshold), so it is permanently `null` for a work grouped at one tier and no chip would ever light.
 - Produces: DOM `[data-testid="surround-nav-chips"]` containing `[data-testid="surround-nav-chip"]` elements, each with `data-group-index` and `data-state` of `sounding | selected | idle`.
 
 - [ ] **Step 1: Write the failing test**
@@ -387,6 +388,12 @@ the `const marks = ...` block, insert:
       ? railGroups(placedRail, (segment) => segment?.ancestors?.[0] ?? null)
         .filter((run) => run.index !== null)
       : [];
+    // WHICH CHIP IS SOUNDING. Read from the same source the row marks use, so
+    // it is correct at one ancestor level AND at two. The module's
+    // `activeGroupIndex` is NOT usable here: it is gated on `nested` (two levels
+    // or more — the horizontal fold's own threshold), so on a work grouped at a
+    // single tier it is permanently null and no chip ever lights.
+    const soundingGroupIndex = outerAt(activeIndex)?.index ?? null;
 ```
 
 Then, inside the returned `<div className="surround-segment-map surround-segment-map--column" …>`,
@@ -402,7 +409,7 @@ as the **first** child (before the `__spine` span):
                 className="surround-segment-map__chip"
                 data-testid="surround-nav-chip"
                 data-group-index={String(run.index)}
-                data-state={run.index === activeGroupIndex ? 'sounding' : 'idle'}
+                data-state={run.index === soundingGroupIndex ? 'sounding' : 'idle'}
                 onClick={() => {
                   const first = placedRail[run.from]?.segment;
                   if (first) seekTo(first.mediaStart ?? first.start ?? 0, first.contentId);
@@ -479,7 +486,7 @@ five legible ones.
 - Test: `frontend/src/modules/Surround/modules/SegmentMap.test.jsx`
 
 **Interfaces:**
-- Consumes: `chipRuns` and `activeGroupIndex` from Task 2.
+- Consumes: `chipRuns` and `soundingGroupIndex` from Task 2.
 - Produces: the column's `<ol>` renders only rows whose `ancestors[0].index` matches the shown group. Row `data-testid` stays `surround-segment-row`; a new `data-row-index` carries the row's index in the **full** rail so seeking is unambiguous.
 
 - [ ] **Step 1: Write the failing test**
@@ -521,8 +528,14 @@ In the column branch, after the `chipRuns` block from Task 2, add:
     // WHICH GROUP THE LIST IS SHOWING. The sounding one by default; nav mode
     // overrides it to preview another (Task 5). Scoping is what buys the rows
     // their height: five scenes at 32px read, fourteen at 17px do not.
+    //
+    // USE `soundingGroupIndex` (defined in Task 2), NOT the module's
+    // `activeGroupIndex`. The latter is gated on `nested`, which demands two or
+    // more ancestor levels — the horizontal fold's threshold — so it is
+    // permanently `null` for a work grouped at a single tier, and scoping
+    // against it would show an EMPTY list rather than the sounding group's rows.
     const scopeToGroup = region?.scope === 'group' && chipRuns.length > 0;
-    const shownGroupIndex = activeGroupIndex;
+    const shownGroupIndex = soundingGroupIndex;
     const rowIndices = segments.map((_, i) => i).filter((i) => (
       !scopeToGroup || (drawnRail[i]?.segment?.ancestors?.[0]?.index ?? null) === shownGroupIndex
     ));
@@ -730,7 +743,7 @@ group's rows, the selected row outlined, the sounding chip still lit.
 - Test: `frontend/src/modules/Surround/modules/SegmentMap.test.jsx`
 
 **Interfaces:**
-- Consumes: `navReduce`, `navInitial`, `SURROUND_NAV_EVENT` from `../navMode.js`; `chipRuns`, `activeGroupIndex`, `activeIndex` from Tasks 2–3.
+- Consumes: `navReduce`, `navInitial`, `SURROUND_NAV_EVENT` from `../navMode.js`; `chipRuns`, `soundingGroupIndex`, `activeIndex` from Tasks 2–3.
 - Produces: rows carry `data-selected="true"` when selected; chips carry `data-state="selected"` for a previewed (non-sounding) group. The rail dispatches `surround-seek` on `'select'`.
 
 - [ ] **Step 1: Write the failing test**
@@ -843,12 +856,18 @@ Still above the branch, add the listener:
 In the column branch, after `chipRuns`, build the world and publish it to the ref:
 
 ```jsx
-    const navWorld = { groups: chipRuns, soundingGroupIndex: activeGroupIndex, soundingRowIndex: activeIndex };
+    const navWorld = { groups: chipRuns, soundingGroupIndex, soundingRowIndex: activeIndex };
     navRef.current = { world: navWorld, segments };
-    const shownGroupIndex = nav ? nav.groupIndex : activeGroupIndex;
+    const shownGroupIndex = nav ? nav.groupIndex : soundingGroupIndex;
 ```
 
 (Replace the `shownGroupIndex` line from Task 3 with these three.)
+
+> `soundingGroupIndex` is the value Task 2 derives (`outerAt(activeIndex)?.index ?? null`),
+> **not** the module's `activeGroupIndex`. `activeGroupIndex` is gated on `nested`
+> (two ancestor levels or more) and is permanently `null` for a work grouped at one
+> tier, which would feed the reducer a null sounding group — so `enter` would land on
+> the first group every time instead of where the viewer actually is.
 
 On the row `<li>`, add:
 
@@ -859,7 +878,7 @@ On the row `<li>`, add:
 On the chip `<button>`, change `data-state` to:
 
 ```jsx
-                data-state={run.index === activeGroupIndex ? 'sounding'
+                data-state={run.index === soundingGroupIndex ? 'sounding'
                   : (nav && nav.groupIndex === run.index ? 'selected' : 'idle')}
 ```
 
