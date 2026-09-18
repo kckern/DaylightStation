@@ -1151,6 +1151,17 @@
   display: flex;
   align-items: baseline;
   gap: 0.4em;
+  /* THE ROWS BREATHE INTO THE RAIL THEY WERE GIVEN.
+     Stacked at their floor, eleven rows filled 190px of a 320px region and the
+     rest was dead ground — a contents page crammed into the top third of the
+     column. They grow to share the region instead, which is what makes the
+     list read as the whole play rather than a list that ran out.
+     THE CAP IS WHAT STOPS A SHORT WORK LOOKING ABSURD: a three-scene play
+     would otherwise take a hundred pixels a row. Four floors is roomy for one
+     line of type and its air, and it is expressed in floors rather than pixels
+     because every size in this frame is an angular claim, not a pixel one. */
+  flex: 1 1 auto;
+  max-height: calc(var(--label-floor, 11.52px) * 4);
   min-height: calc(var(--label-floor, 11.52px) * 2);
   padding: 0 0.3em;
   font-family: var(--surround-body);
