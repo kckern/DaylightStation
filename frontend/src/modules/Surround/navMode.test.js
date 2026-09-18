@@ -64,4 +64,50 @@ describe('navMode reducer', () => {
     const gap = { ...WORLD, soundingGroupIndex: null, soundingRowIndex: -1 };
     expect(navReduce(null, 'enter', gap)).toEqual({ groupIndex: 0, rowIndex: 0 });
   });
+
+  // --- REGRESSION TESTS (Fix Round 1) ---
+
+  it('enter with soundingRowIndex outside the resolved group\'s span clamps into that group', () => {
+    // soundingGroupIndex is null so it falls back to groups[0] (rows 0-1),
+    // but soundingRowIndex is 4 which is outside that group.
+    // Should clamp to the group's last row (1).
+    const gap = { ...WORLD, soundingGroupIndex: null, soundingRowIndex: 4 };
+    expect(navReduce(null, 'enter', gap)).toEqual({ groupIndex: 0, rowIndex: 1 });
+  });
+
+  it('right at the LAST group starting from its LAST row is a no-op', () => {
+    // Group 2 spans rows 3-4. Starting from {groupIndex: 2, rowIndex: 4},
+    // pressing right should NOT move or reset rowIndex — it should be a no-op.
+    const lastGroupLastRow = { groupIndex: 2, rowIndex: 4 };
+    expect(navReduce(lastGroupLastRow, 'right', WORLD)).toEqual(lastGroupLastRow);
+  });
+
+  it('left at the FIRST group starting from a non-first row is a no-op', () => {
+    // Group 0 spans rows 0-1. Starting from {groupIndex: 0, rowIndex: 1},
+    // pressing left should NOT move or reset rowIndex — it should be a no-op.
+    const firstGroupNonFirstRow = { groupIndex: 0, rowIndex: 1 };
+    expect(navReduce(firstGroupNonFirstRow, 'left', WORLD)).toEqual(firstGroupNonFirstRow);
+  });
+
+  it('down and up on a state whose groupIndex is absent from world.groups return a state whose groupIndex names a group that actually exists', () => {
+    // Create a world missing group 2, and a state pointing to group 2 (stale).
+    const worldWithoutGroup2 = {
+      groups: [
+        { index: 0, from: 0, count: 2 },
+        { index: 1, from: 2, count: 1 },
+      ],
+      soundingGroupIndex: 0,
+      soundingRowIndex: 0,
+    };
+    const staleState = { groupIndex: 2, rowIndex: 4 };
+    // down should heal groupIndex to an existing group
+    const afterDown = navReduce(staleState, 'down', worldWithoutGroup2);
+    expect(afterDown).toBeDefined();
+    const existingGroupIndices = worldWithoutGroup2.groups.map((g) => g.index);
+    expect(existingGroupIndices).toContain(afterDown.groupIndex);
+    // up should also heal groupIndex to an existing group
+    const afterUp = navReduce(staleState, 'up', worldWithoutGroup2);
+    expect(afterUp).toBeDefined();
+    expect(existingGroupIndices).toContain(afterUp.groupIndex);
+  });
 });
