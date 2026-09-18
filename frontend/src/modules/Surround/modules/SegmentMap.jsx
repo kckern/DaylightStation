@@ -1392,20 +1392,54 @@ export default function SegmentMap({
     // permanently `null` for a work grouped at a single tier, and scoping
     // against it would show an EMPTY list rather than the sounding group's rows.
     const scopeToGroup = region?.scope === 'group' && chipRuns.length > 0;
-    // SCOPE BY THE DEEPEST GROUP, not the outermost. `ancestors[0]` is the act;
-    // once a work authors a third level the rows are beats, and `[0]` would
-    // list every beat of every scene in the act, flat, with scene names never
-    // appearing. `ancestors.at(-1)` is "this scene's beats" at any depth, and
-    // on a two-level work it IS `ancestors[0]`, so nothing shipped changes.
-    const leafAt = (i) => drawnRail[i]?.segment?.ancestors?.at(-1) ?? null;
+    // SCOPE BY THE DEEPEST GROUP'S FULL ANCESTOR PATH, NOT A BARE INDEX.
+    //
+    // The store assigns `ancestors[n].index` with a per-depth global counter
+    // (`indexAtDepth[depth]`), so depth-0 indices and depth-1 indices are two
+    // INDEPENDENT small-integer namespaces — index 0 at depth 0 and index 0 at
+    // depth 1 name two unrelated groups. `ancestors.at(-1)?.index` used to be
+    // the scoping key, and that is fine on a rail where every group sits at the
+    // same depth, but the moment a corpus is MIXED DEPTH (some groups two
+    // levels, one group three) a bare leaf index from a depth-1 ancestor
+    // collides with a bare leaf index from an unrelated depth-0 ancestor. A
+    // live measurement caught this: leaf index 0 matched rows from two
+    // different top-level groups, and the rail showed a stray row.
+    //
+    // The fix is the PATH — every ancestor's index, joined ("4/0", "4/1") —
+    // which partitions cleanly because two segments share a path only when
+    // they share the same chain of groups at every depth.
+    //
+    // `railGroups` CANNOT build this run list: it coerces group identity
+    // through `Number(group?.index)` (`../band.js`), which is exactly the
+    // bare-index collision this scoping is trying to avoid. The runs are built
+    // directly here instead, one run per consecutive stretch of rows sharing a
+    // path, `index` set to the run's ORDINAL POSITION — not a semantic path —
+    // which is all `navMode.js` ever needed (`world.groups[].index`, matched
+    // back with `===`), so the reducer needs no change.
+    const leafKeyAt = (i) => ((drawnRail[i]?.segment?.ancestors ?? []).map((a) => a.index).join('/'));
+    const leafRuns = [];
+    segments.forEach((_, i) => {
+      const key = leafKeyAt(i);
+      const last = leafRuns[leafRuns.length - 1];
+      if (last && last.key === key) { last.count += 1; return; }
+      leafRuns.push({
+        key,
+        index: leafRuns.length,
+        from: i,
+        count: 1,
+        title: (drawnRail[i]?.segment?.ancestors ?? []).at(-1)?.title ?? null,
+      });
+    });
+
     // NOTHING SOUNDING IS AN ORDINARY STATE, NOT AN ERROR. `activeIndex` is -1
     // before the first segment starts, after the last ends, and in any gap —
-    // which includes a paused screen before playback begins. Scoping against a
-    // null group would keep only rows whose group index IS null, i.e. none, and
-    // the rail would render EMPTY at exactly the moment a viewer is most likely
-    // to be looking at it. Fall back to the first group instead.
-    const soundingLeafIndex = leafAt(activeIndex)?.index ?? null;
-    const firstLeafIndex = leafAt(0)?.index ?? null;
+    // which includes a paused screen before playback begins. Falling back to
+    // the FIRST run instead of an empty match keeps the rail non-empty at
+    // exactly the moment a viewer is most likely to be looking at it.
+    const soundingLeafKey = activeIndex >= 0 ? leafKeyAt(activeIndex) : null;
+    const soundingLeafRun = soundingLeafKey !== null
+      ? leafRuns.find((run) => run.key === soundingLeafKey) ?? null
+      : null;
 
     // NAV MOVES AT THE LEVEL THE LIST SHOWS. `chipRuns` are outermost-level and
     // name the chips. The list shows the DEEPEST group's rows. Feeding the
@@ -1414,20 +1448,24 @@ export default function SegmentMap({
     // the moment a work authors three levels — and makes `nav.rowIndex` range
     // over rows the list is not displaying. On a two-level work the deepest runs
     // ARE the chip runs, so this changes nothing already shipped.
-    const leafRuns = railGroups(placedRail, (segment) => segment?.ancestors?.at(-1) ?? null)
-      .filter((run) => run.index !== null);
     const navWorld = {
       groups: leafRuns,
-      soundingGroupIndex: soundingLeafIndex,
+      soundingGroupIndex: soundingLeafRun ? soundingLeafRun.index : null,
       soundingRowIndex: activeIndex,
     };
     navRef.current = { world: navWorld, segments };
 
-    const shownLeafIndex = nav
-      ? nav.groupIndex
-      : (soundingLeafIndex ?? firstLeafIndex);
+    // WHICH RUN THE LIST IS SHOWING — nav mode's own ordinal when active
+    // (`nav.groupIndex` is one of `leafRuns[].index`, set above), else the
+    // sounding run, else the first run: `leafRuns` is never empty once
+    // `segments.length` is checked above, so this can never fall through to
+    // an empty rail.
+    const shownRun = nav
+      ? leafRuns.find((run) => run.index === nav.groupIndex) ?? leafRuns[0]
+      : (soundingLeafRun ?? leafRuns[0]);
+    const shownLeafKey = shownRun ? shownRun.key : null;
     const rowIndices = segments.map((_, i) => i).filter((i) => (
-      !scopeToGroup || (leafAt(i)?.index ?? null) === shownLeafIndex
+      !scopeToGroup || leafKeyAt(i) === shownLeafKey
     ));
 
     // THE FILL IS A FRACTION OF THIS ROW, which is what makes it immune to the
@@ -1456,7 +1494,24 @@ export default function SegmentMap({
       >
         {chipRuns.length > 0 && (
           <div className="surround-segment-map__chips" data-testid="surround-nav-chips">
-            {chipRuns.map((run) => (
+            {/* THE CHIP LABEL IS A NUMERAL, DERIVED FROM POSITION — NOT AUTHORED
+                DATA. `mini` means "a shorter form of the title" ("Act I"'s mini
+                is still a title, when a corpus authors one at all), and most of
+                this corpus authors none — which read as "Act I", "Act II",
+                "Act III", "IV", "Act V" once one group happened to carry a
+                `mini` and four didn't. The horizontal rail already solves this
+                exact problem at its own group label (line ~940 above) by
+                deriving a roman numeral from the run's own position rather than
+                from anything the corpus wrote; the column chips now do the same.
+
+                THE ORDINAL IS THE CHIP'S POSITION IN THIS FILTERED LIST, NOT
+                `run.index`. `run.index` is the store's own group index and can
+                skip values — an unplaceable group (the Induction, cut from this
+                corpus) never reaches `placedRail` and so never becomes a run,
+                leaving the first surviving run's `index` at 1, not 0. Labelling
+                from `run.index` would read II, III, IV, V, VI; the ordinal
+                always starts the numerals at I. */}
+            {chipRuns.map((run, ordinal) => (
               <button
                 type="button"
                 key={run.index}
@@ -1470,7 +1525,7 @@ export default function SegmentMap({
                   if (first) seekTo(first.mediaStart ?? first.start ?? 0, first.contentId);
                 }}
               >
-                {run.mini || run.title}
+                {ROMAN[ordinal + 1] ?? String(ordinal + 1)}
               </button>
             ))}
           </div>

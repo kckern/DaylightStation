@@ -1182,12 +1182,19 @@
   display: flex;
   align-items: baseline;
   gap: 0.4em;
-  /* THE ROWS BREATHE INTO THE RAIL THEY WERE GIVEN, with no cap. The cap
-     existed to stop a three-scene play taking a hundred pixels a row; scoping
-     the list to one group (region `scope: group`) is what solves that now, and
-     a capped row in a scoped list leaves dead ground under five scenes. */
+  /* THE ROWS BREATHE INTO THE RAIL THEY WERE GIVEN, UP TO A CEILING. Scoping
+     the list to one group (region `scope: group`) is what stops a
+     three-scene play taking a hundred pixels a row in the common case — but
+     scoping is a region author's choice, not a guarantee, and a live
+     measurement caught an unscoped rail of three rows stretching to fill a
+     540px column: 118.4px a row, the label stranded in open space with the
+     progress bar (`position: absolute; bottom: 0`) floating far below it. A
+     row may still grow past its floor to use the room it is given — that is
+     what keeps five scenes in a scoped list from being crushed to their
+     floor — it just stops short of absurd. */
   flex: 1 1 auto;
   min-height: calc(var(--label-floor, 11.52px) * 2);
+  max-height: calc(var(--label-floor, 11.52px) * 4);
   padding: 0 0.3em;
   font-family: var(--surround-body);
   font-size: var(--label-floor, 11.52px);
