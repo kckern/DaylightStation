@@ -870,6 +870,52 @@ In the column branch, after `chipRuns`, build the world and publish it to the re
 
 (Replace the `shownGroupIndex` line from Task 3 with these three.)
 
+**Also change the row filter to scope by the DEEPEST group, not the outermost.**
+Task 3 wrote `ancestors?.[0]`, which is the act. Once a work authors a third
+level, the rows are beats and `[0]` would list *every beat of every scene in the
+act*, flat, with scene names never appearing. Scoping by the deepest ancestor is
+what makes the list "this scene's beats":
+
+```jsx
+    const leafAt = (i) => drawnRail[i]?.segment?.ancestors?.at(-1) ?? null;
+    // NOTHING SOUNDING IS AN ORDINARY STATE, NOT AN ERROR. `activeIndex` is -1
+    // before the first segment starts, after the last ends, and in any gap —
+    // which includes a paused screen before playback begins. Scoping against a
+    // null group would keep only rows whose group index IS null, i.e. none, and
+    // the rail would render EMPTY at exactly the moment a viewer is most likely
+    // to be looking at it. Fall back to the first group instead.
+    const soundingLeafIndex = leafAt(activeIndex)?.index ?? null;
+    const firstLeafIndex = leafAt(0)?.index ?? null;
+    const shownLeafIndex = nav
+      ? nav.groupIndex
+      : (soundingLeafIndex ?? firstLeafIndex);
+    const rowIndices = segments.map((_, i) => i).filter((i) => (
+      !scopeToGroup || (leafAt(i)?.index ?? null) === shownLeafIndex
+    ));
+```
+
+**Add a spec for this** — it is a Task 3 review finding carried forward, and it
+ships uncovered otherwise:
+
+```jsx
+  it('falls back to the first group’s rows when nothing is sounding', () => {
+    // position 0 with a rail whose first segment starts later: activeIndex is -1.
+    const region = { module: 'segment-map', orientation: 'column', groups: 'header', scope: 'group' };
+    const { container } = render(
+      <SegmentMap position={0} duration={300} data={GROUPED} region={region} />,
+    );
+    const rows = container.querySelectorAll('[data-testid="surround-segment-row"]');
+    expect(rows.length).toBeGreaterThan(0);
+    expect(rows[0]).toHaveAttribute('data-row-index', '0');
+  });
+```
+
+> On a two-level work `ancestors.at(-1)` **is** `ancestors[0]`, so every existing
+> spec and the shipped behaviour are unchanged — this only bites once a third
+> level exists. `indexAtDepth` in the store counts globally per depth, so a
+> deepest-group index is unique across the whole work and cannot collide between
+> two acts. Chips keep using `ancestors[0]`: they name acts, not scenes.
+
 > `soundingGroupIndex` is the value Task 2 derives (`outerAt(activeIndex)?.index ?? null`),
 > **not** the module's `activeGroupIndex`. `activeGroupIndex` is gated on `nested`
 > (two ancestor levels or more) and is permanently `null` for a work grouped at one
@@ -1234,7 +1280,38 @@ Act IV scene 1 begins at 3913s; the five beats below sit inside it.
           - { n: 3, name: "The meal is thrown out", start: 4395 }
           - { n: 4, name: "The bride is denied her bed", start: 4516 }
           - { n: 5, name: "The falconry soliloquy", start: 4613 }
+      - kind: scene
+        title: "The Tutor Unmasked"
+        heading: "Padua. Before Baptista's house."
+        segments:
+          - { n: 1, name: "Hortensio gives up on Bianca", start: 4695 }
+      - kind: scene
+        title: "The Gown Torn Up"
+        heading: "A room in Petruchio's house."
+        segments:
+          - { n: 1, name: "The cap and gown refused", start: 5067 }
+      - kind: scene
+        title: "A Father Counterfeited"
+        heading: "Padua. Before Baptista's house."
+        segments:
+          - { n: 1, name: "The Pedant bargains as Vincentio", start: 5687 }
+      - kind: scene
+        title: "The Sun and the Moon"
+        heading: "A public road."
+        segments:
+          - { n: 1, name: "Kate agrees the sun is the moon", start: 5962 }
 ```
+
+**EVERY scene of the Act is a group — no mixed children.** `nestedGroupSegments`
+(`YamlSurroundStore.mjs:95-118`) pushes a group's own `segments` **before** it
+recurses into its `groups`. So an Act holding four loose scene-segments *and* one
+scene-group would flatten to `IV.2, IV.3, IV.4, IV.5, <beats of IV.1>` — out of
+chronological order — and `starts:` pairs **positionally** with that flattened
+list, so the sidecar would have to be authored in that scrambled order to match.
+Giving scenes 2–5 a one-segment group each costs four lines and keeps the
+flattened order chronological.
+
+Scenes 2–5 reuse their existing scene starts, so no new timings are needed.
 
 **These five are SNAPPED, not estimated.** Each sits on a real subtitle cue in
 `Shakespeare - S01E13 - The Taming Of The Shrew.srt`, verified 2026-09-17:
@@ -1260,9 +1337,41 @@ the line it claimed to mark**. Do not re-estimate these; they are measured.
 
 - [ ] **Step 4: Extend `starts:` in the sidecar**
 
-Beats are the segments, so `$S/taming-of-the-shrew.bbc1980.yml`'s `starts:` must
-carry one entry per beat in flattened order. Act IV scene 1's single entry (3913)
-becomes five: `3913, 4010, 4120, 4230, 4330`. Leave every other entry as it is.
+`starts:` pairs **positionally** with the store's flattened walk, so one wrong
+entry silently misaligns every scene after it. Act IV goes from one entry to
+nine — five beats for scene 1, then one for each of scenes 2–5 — and nothing
+else moves. Write the whole list, do not hand-edit around it:
+
+```yaml
+starts:
+  - null   # Induction, Scene 1 — cut in this production
+  - null   # Induction, Scene 2 — cut in this production
+  - 41     # Act I, Scene 1
+  - 653    # Act I, Scene 2
+  - 1384   # Act II, Scene 1
+  - 2859   # Act III, Scene 1
+  - 3216   # Act III, Scene 2
+  # --- Act IV, Scene 1 — five beats, each snapped to a subtitle cue ---
+  - 3913   # IV.1 beat 1 — "And all mad masters and all foul ways."
+  - 4091   # IV.1 beat 2 — "I call forth Nathaniel, Joseph, Nicholas, Philip…"
+  - 4395   # IV.1 beat 3 — "What dogs are these?"
+  - 4516   # IV.1 beat 4 — "Where is he?" / "In her chamber…"
+  - 4613   # IV.1 beat 5 — "She eat no meat today, nor none shall eat."
+  # --- Act IV, Scenes 2-5 — one segment each, at their existing starts ---
+  - 4695   # Act IV, Scene 2
+  - 5067   # Act IV, Scene 3
+  - 5687   # Act IV, Scene 4
+  - 5962   # Act IV, Scene 5
+  - 6208   # Act V, Scene 1
+  - 6660   # Act V, Scene 2
+```
+
+That is **18 entries**: 2 nulls + 5 scenes before Act IV + 9 for Act IV + 2 for
+Act V. Count them after writing — and count the flattened segments the work body
+produces too, because the two must be equal or every scene after the mismatch is
+stamped with the wrong time. The store keeps a refused entry in place rather
+than dropping it, so the two leading nulls must stay — removing them would shift
+every Act by two.
 
 - [ ] **Step 5: Write all three back and verify**
 
@@ -1336,6 +1445,8 @@ const m = o.media;
 console.log(JSON.stringify(o, null, 2), '\n---');
 console.log(ok(m && Math.abs(m.w / m.h - 4 / 3) < 0.01), 'picture holds an exact 4:3');
 console.log(ok(o.chips === 5), 'five chips — Acts I-V, no Induction');
+// Scoping is by the DEEPEST group (Task 5), so while Act IV scene 1 sounds the
+// list is that scene's five beats — not the whole Act's nine rows.
 console.log(ok(o.rows === 5), 'five rows — Act IV scene 1 scoped to its beats');
 console.log(ok(o.bars === o.rows), 'every row carries a progress bar');
 console.log(ok(o.rowH >= 17.28), 'rows sit at or above the label floor');
