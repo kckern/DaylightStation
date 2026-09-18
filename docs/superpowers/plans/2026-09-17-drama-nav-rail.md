@@ -1230,11 +1230,27 @@ Act IV scene 1 begins at 3913s; the five beats below sit inside it.
         heading: "A hall in Petruchio's country house."
         segments:
           - { n: 1, name: "Grumio arrives frozen", start: 3913 }
-          - { n: 2, name: "The servants are dressed down", start: 4010 }
-          - { n: 3, name: "The meat is sent back", start: 4120 }
-          - { n: 4, name: "Kate goes hungry to bed", start: 4230 }
-          - { n: 5, name: "The falconry speech", start: 4330 }
+          - { n: 2, name: "The servants are dressed down", start: 4091 }
+          - { n: 3, name: "The meal is thrown out", start: 4395 }
+          - { n: 4, name: "The bride is denied her bed", start: 4516 }
+          - { n: 5, name: "The falconry soliloquy", start: 4613 }
 ```
+
+**These five are SNAPPED, not estimated.** Each sits on a real subtitle cue in
+`Shakespeare - S01E13 - The Taming Of The Shrew.srt`, verified 2026-09-17:
+
+| start | the cue it lands on |
+|---|---|
+| 3913 | "And all mad masters and all foul ways." |
+| 4091 | "I call forth Nathaniel, Joseph, Nicholas, Philip, Walter Sugarsop…" |
+| 4395 | "What dogs are these?" |
+| 4516 | "Where is he?" — answered "In her chamber, making a sermon of continency" |
+| 4613 | "She eat no meat today, nor none shall eat." (the falconry soliloquy) |
+
+Scene 2 begins at 4695.9s ("Mistress Bianca doth fancy any other but Lucentio"),
+so the last beat sits ~82s clear of the boundary. The earlier draft of this plan
+carried invented round numbers — its final beat was at 4330, **283 seconds before
+the line it claimed to mark**. Do not re-estimate these; they are measured.
 
 > `mini: "IV"` is what the chip prints — `railGroups` carries `mini` already, and
 > a chip has room for a numeral, not for "Act IV".
