@@ -138,6 +138,36 @@ describe('navMode reducer', () => {
     const gap = { ...WORLD, soundingGroupIndex: null, soundingRowIndex: -1 };
     expect(navReduce(null, 'enter', gap)).toEqual({ groupIndex: 0, rowIndex: 0 });
   });
+
+  // THE FOUR BELOW ARE NOT OPTIONAL. Each one failed against the first draft of
+  // this reducer, and the bugs they catch are not hypothetical — they were
+  // shipped, reviewed, and fixed. Dropping them re-opens all three.
+
+  it('enter with soundingRowIndex outside the resolved group’s span clamps into that group', () => {
+    // soundingGroupIndex null -> falls back to groups[0] (rows 0-1), but the
+    // stale row is 4. Unclamped, navSeekTarget would seek row 4.
+    const stale = { ...WORLD, soundingGroupIndex: null, soundingRowIndex: 4 };
+    expect(navReduce(null, 'enter', stale)).toEqual({ groupIndex: 0, rowIndex: 1 });
+  });
+
+  it('right at the LAST group starting from its LAST row is a no-op', () => {
+    // MUST start from the last row. Starting from the group's FIRST row hides
+    // the bug, because the erroneous reset lands on the row you started from.
+    const at = { groupIndex: 2, rowIndex: 4 };
+    expect(navReduce(at, 'right', WORLD)).toEqual({ groupIndex: 2, rowIndex: 4 });
+  });
+
+  it('left at the FIRST group starting from a non-first row is a no-op', () => {
+    const at = { groupIndex: 0, rowIndex: 1 };
+    expect(navReduce(at, 'left', WORLD)).toEqual({ groupIndex: 0, rowIndex: 1 });
+  });
+
+  it('down and up heal a groupIndex that is absent from world.groups', () => {
+    const shrunk = { ...WORLD, groups: [WORLD.groups[0], WORLD.groups[1]] };
+    const orphan = { groupIndex: 2, rowIndex: 3 };
+    expect([0, 1]).toContain(navReduce(orphan, 'down', shrunk).groupIndex);
+    expect([0, 1]).toContain(navReduce(orphan, 'up', shrunk).groupIndex);
+  });
 });
 ```
 
@@ -197,7 +227,12 @@ export function navReduce(state, action, world) {
     const gi = Number.isFinite(world?.soundingGroupIndex) && world.soundingGroupIndex !== null
       ? world.soundingGroupIndex : groups[0].index;
     const group = groupAt(world, gi) ?? groups[0];
-    const row = world?.soundingRowIndex >= 0 ? world.soundingRowIndex : firstRowOf(group);
+    let row = world?.soundingRowIndex >= 0 ? world.soundingRowIndex : firstRowOf(group);
+    // CLAMP INTO THE RESOLVED GROUP. When `gi` falls back to groups[0] — a stale
+    // or null soundingGroupIndex beside a stale soundingRowIndex — the row must
+    // not survive from the group we did NOT enter. `navSeekTarget` forwards this
+    // row unchanged, so an unclamped value seeks the wrong place.
+    row = Math.max(firstRowOf(group), Math.min(row, lastRowOf(group)));
     return { groupIndex: group.index, rowIndex: row };
   }
 
@@ -211,18 +246,28 @@ export function navReduce(state, action, world) {
     // Held at the group's last row rather than leaking into the next group:
     // moving between groups is what left/right is for, and a Down that silently
     // changed act would make the chip row lie about what is selected.
-    return { ...state, rowIndex: Math.min(state.rowIndex + 1, lastRowOf(here)) };
+    // HEAL the group: `here` may have fallen back to groups[0] because
+    // state.groupIndex names a group that is no longer in world.groups, and
+    // spreading `...state` would keep that dead index alive forever.
+    return { groupIndex: here.index, rowIndex: Math.min(state.rowIndex + 1, lastRowOf(here)) };
   }
 
   if (action === 'up') {
     // THE EXIT. Past the first row there is nowhere above to go, so nav mode
-    // ends and the arrows go back to the Player.
+    // ends and the arrows go back to the Player. This is the escape hatch: the
+    // Shield remote has only a D-pad and OK, and FKB swallows Esc.
     if (state.rowIndex <= firstRowOf(here)) return null;
-    return { ...state, rowIndex: state.rowIndex - 1 };
+    return { groupIndex: here.index, rowIndex: state.rowIndex - 1 };
   }
 
   if (action === 'left' || action === 'right') {
-    const next = groups[Math.max(0, Math.min(groups.length - 1, at + (action === 'right' ? 1 : -1)))];
+    const nextAt = Math.max(0, Math.min(groups.length - 1, at + (action === 'right' ? 1 : -1)));
+    const next = groups[nextAt];
+    // CLAMPED AT A BOUNDARY MEANS NO-OP, not "move inside the group we are
+    // already in". Without this guard, `right` on the last row of the last
+    // group returned firstRowOf(that same group) — the selection jumped
+    // BACKWARD on a press that should have done nothing.
+    if (next.index === state.groupIndex) return state;
     // Previewing only. The playhead does not move until OK.
     return { groupIndex: next.index, rowIndex: firstRowOf(next) };
   }
