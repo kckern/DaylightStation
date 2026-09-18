@@ -3057,11 +3057,16 @@ describe('SegmentMap — column row progress', () => {
     bars.forEach((bar) => expect(Number(bar.dataset.fill)).toBe(1));
   });
 
-  it('rows may grow past four floors so a short list fills the rail', () => {
+  // A live measurement caught this row stretching to 118.4px with only three
+  // in the rail — the label stranded in a sea of empty space and the
+  // absolutely-positioned progress bar floating far below it. Rows still grow
+  // past their floor (a short scoped list should fill the rail it is given),
+  // they just stop before "absurd".
+  it('rows grow past their floor but stop at a ceiling', () => {
     const css = compileSheetOnce(path.join(__dirname, 'SegmentMap.scss')).css;
     const rule = css.match(/\.surround-segment-map__row\s*\{[^}]*\}/)[0];
     expect(rule).toContain('min-height: calc(var(--label-floor, 11.52px) * 2)');
-    expect(rule).not.toContain('max-height');
+    expect(rule).toContain('max-height: calc(var(--label-floor, 11.52px) * 4)');
   });
 
   // Finding 5: `#332b20` matches no token in the sheet — the base `--ink` is
@@ -3124,5 +3129,90 @@ describe('SegmentMap — nav world is scoped to the level the list shows', () =>
     shown = [...container.querySelectorAll('[data-testid="surround-segment-row"]')]
       .map((row) => row.dataset.rowIndex);
     expect(shown).toEqual(['3']);
+  });
+});
+
+describe('SegmentMap — scoping is keyed on the full ancestor PATH, not a bare index', () => {
+  // MIXED DEPTH, the crux this whole fix is about. Every group in
+  // `THREE_LEVEL` above is three levels deep, which is exactly why that
+  // fixture cannot catch this: a rail where every row's `ancestors.at(-1)` is
+  // drawn from the SAME depth never exposes a cross-depth collision. Here Act
+  // I is two levels (a row's own ancestors = `[Act I]`) and Act II is THREE
+  // (a row's ancestors = `[Act II, Scene 1]`). The store assigns
+  // `ancestors[n].index` with a per-depth global counter, so Act I's leaf
+  // ancestor (`ancestors[0]`, index 0) and Act II > Scene 1's leaf ancestor
+  // (`ancestors[1]`, index 0) carry the SAME bare index while naming two
+  // completely unrelated groups — the exact collision a live measurement
+  // caught (bare leaf index 0 matched rows from two different top-level
+  // groups). A scoping key built from `ancestors.at(-1)?.index` alone cannot
+  // tell them apart; the full path ("0" vs "1/0") can.
+  const MIXED = {
+    contentId: 'plex:mixed',
+    timeline: { totalSounding: 100 },
+    segments: [
+      { n: 1, label: 'Scene 1', contentId: 'plex:mixed', start: 0, offset: 0, duration: 25, end: 25,
+        ancestors: [{ index: 0, title: 'Act I' }] },
+      { n: 2, label: 'Scene 2', contentId: 'plex:mixed', start: 25, offset: 25, duration: 25, end: 50,
+        ancestors: [{ index: 0, title: 'Act I' }] },
+      { n: 1, label: 'Beat A', contentId: 'plex:mixed', start: 50, offset: 50, duration: 25, end: 75,
+        ancestors: [{ index: 1, title: 'Act II' }, { index: 0, title: 'Scene 1' }] },
+      { n: 2, label: 'Beat B', contentId: 'plex:mixed', start: 75, offset: 75, duration: 25, end: 100,
+        ancestors: [{ index: 1, title: 'Act II' }, { index: 0, title: 'Scene 1' }] },
+    ],
+  };
+  const region = { module: 'segment-map', orientation: 'column', groups: 'header', scope: 'group' };
+  const rowIndicesOf = (container) => [...container.querySelectorAll('[data-testid="surround-segment-row"]')]
+    .map((row) => row.dataset.rowIndex);
+
+  it('scopes Act I to its own two rows, not Act II’s colliding leaf index', () => {
+    const { container } = render(
+      <SegmentMap position={10} duration={100} data={MIXED} region={region} />,
+    );
+    expect(rowIndicesOf(container)).toEqual(['0', '1']);
+  });
+
+  it('scopes Act II > Scene 1 to its own two rows, not Act I’s colliding leaf index', () => {
+    const { container } = render(
+      <SegmentMap position={60} duration={100} data={MIXED} region={region} />,
+    );
+    expect(rowIndicesOf(container)).toEqual(['2', '3']);
+  });
+});
+
+describe('SegmentMap — column chip numerals are positional, not authored', () => {
+  // Induction is CUT — duration 0, so `placedRailSegments` drops it before it
+  // ever becomes a chip run (`../band.js`). The five Acts that remain carry
+  // the store's own group index starting at 1, not 0 — the off-by-one this
+  // spec exists to pin down.
+  const ACTS_WITH_CUT_INDUCTION = {
+    contentId: 'plex:cut',
+    timeline: { totalSounding: 50 },
+    segments: [
+      { n: 1, label: 'Induction', contentId: 'plex:cut', start: 0, offset: 0, duration: 0, end: 0,
+        ancestors: [{ index: 0, title: 'Induction' }] },
+      { n: 1, label: 'Scene 1', contentId: 'plex:cut', start: 0, offset: 0, duration: 10, end: 10,
+        ancestors: [{ index: 1, title: 'Act I' }] },
+      { n: 1, label: 'Scene 1', contentId: 'plex:cut', start: 10, offset: 10, duration: 10, end: 20,
+        ancestors: [{ index: 2, title: 'Act II' }] },
+      { n: 1, label: 'Scene 1', contentId: 'plex:cut', start: 20, offset: 20, duration: 10, end: 30,
+        ancestors: [{ index: 3, title: 'Act III' }] },
+      { n: 1, label: 'Scene 1', contentId: 'plex:cut', start: 30, offset: 30, duration: 10, end: 40,
+        ancestors: [{ index: 4, title: 'Act IV' }] },
+      { n: 1, label: 'Scene 1', contentId: 'plex:cut', start: 40, offset: 40, duration: 10, end: 50,
+        ancestors: [{ index: 5, title: 'Act V' }] },
+    ],
+  };
+  const region = { module: 'segment-map', orientation: 'column', groups: 'header' };
+
+  it('reads I, II, III, IV, V — from position, not the store’s (gapped) group index', () => {
+    const { container } = render(
+      <SegmentMap position={5} duration={50} data={ACTS_WITH_CUT_INDUCTION} region={region} />,
+    );
+    const chips = [...container.querySelectorAll('[data-testid="surround-nav-chip"]')];
+    expect(chips.map((c) => c.textContent)).toEqual(['I', 'II', 'III', 'IV', 'V']);
+    // The store's own index for the first surviving chip is 1 (Induction, 0,
+    // was cut) — confirming the numeral came from ordinal position, not from
+    // this attribute.
+    expect(chips[0]).toHaveAttribute('data-group-index', '1');
   });
 });
