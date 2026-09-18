@@ -315,7 +315,7 @@ gets no chip. Gated on `region.groups === 'header'` so nothing else changes.
 **Interfaces:**
 - Consumes: `railGroups(placed, selectGroup)` from `../band.js` → `Array<{title, mini, index, from, count, span}>`; `placedRail` (`Array<{index, segment}>`); `activeIndex` (number, `-1` when nothing sounds); `outerAt(i)` (the column branch's existing helper).
 - Produces (later tasks depend on this name): `const soundingGroupIndex = outerAt(activeIndex)?.index ?? null;` — **do not** use the module's `activeGroupIndex` here. It is gated on `nested`, which requires two or more ancestor levels (the horizontal fold's threshold), so it is permanently `null` for a work grouped at one tier and no chip would ever light.
-- Produces: DOM `[data-testid="surround-nav-chips"]` containing `[data-testid="surround-nav-chip"]` elements, each with `data-group-index` and `data-state` of `sounding | selected | idle`.
+- Produces: DOM `[data-testid="surround-nav-chips"]` containing `[data-testid="surround-nav-chip"]` elements, each with `data-group-index` and `data-state` of **`sounding | idle`**. (`selected` is added later, by Task 5, when nav mode can preview a group that is not the sounding one — do not implement it here.)
 
 - [ ] **Step 1: Write the failing test**
 
@@ -439,13 +439,20 @@ In `SegmentMap.scss`, append to the column block (after the `--column` rule):
   padding: 0 0 0.4em;
 }
 
+/* FALLBACKS ARE THE BASE VALUES, NOT THE REMAPPED ONES. `SurroundFrame.scss:26`
+   and `:31` define `--programme-edge: #ddd0b4` and `--ink-soft: #6b6152`; the
+   band and rail then REMAP them to their dark equivalents at `:430-432` and
+   `:489-491`. A SCSS fallback therefore carries the base value — the remap
+   already happens at runtime whenever the frame is present. Writing the dark
+   value here is only ever visible when the module renders OUTSIDE the frame,
+   which is exactly where a wrong colour hides longest. */
 .surround-segment-map__chip {
   flex: 1 1 0;
   min-width: 0;
   appearance: none;
-  border: 1px solid var(--programme-edge, rgba(233, 223, 200, 0.28));
+  border: 1px solid var(--programme-edge, #ddd0b4);
   background: transparent;
-  color: var(--ink-soft, #a89a80);
+  color: var(--ink-soft, #6b6152);
   font-family: var(--surround-body);
   font-size: var(--label-floor, 11.52px);
   line-height: 1.25;
