@@ -2830,3 +2830,50 @@ describe('the timeline on a vertical axis', () => {
     expect(container.querySelector('[data-testid="surround-segment-map"]')).not.toBeNull();
   });
 });
+
+// MODULE SCOPE: a later task's second describe block reuses this exact
+// fixture, so it must not be nested inside this one's describe.
+const GROUPED = {
+  contentId: 'plex:1',
+  timeline: { totalSounding: 300 },
+  segments: [
+    { n: 1, label: 'Scene 1', contentId: 'plex:1', start: 0, offset: 0, duration: 100, end: 100,
+      ancestors: [{ index: 0, title: 'Act I', kind: 'act' }] },
+    { n: 2, label: 'Scene 2', contentId: 'plex:1', start: 100, offset: 100, duration: 100, end: 200,
+      ancestors: [{ index: 0, title: 'Act I', kind: 'act' }] },
+    { n: 1, label: 'Scene 1', contentId: 'plex:1', start: 200, offset: 200, duration: 100, end: 300,
+      ancestors: [{ index: 1, title: 'Act II', kind: 'act' }] },
+  ],
+};
+
+describe('SegmentMap — column chip header', () => {
+  // Two placed groups; a third authored group has no placeable segment and
+  // must NOT get a chip (the Shrew's Induction is cut in this production).
+  const region = { module: 'segment-map', orientation: 'column', groups: 'header' };
+
+  it('renders one chip per placed group', () => {
+    const { container } = render(
+      <SegmentMap position={10} duration={300} data={GROUPED} region={region} />,
+    );
+    const chips = container.querySelectorAll('[data-testid="surround-nav-chip"]');
+    expect(chips.length).toBe(2);
+    expect(chips[0]).toHaveAttribute('data-group-index', '0');
+    expect(chips[1]).toHaveAttribute('data-group-index', '1');
+  });
+
+  it('lights the chip whose group is sounding', () => {
+    const { container } = render(
+      <SegmentMap position={250} duration={300} data={GROUPED} region={region} />,
+    );
+    const chips = [...container.querySelectorAll('[data-testid="surround-nav-chip"]')];
+    expect(chips.find((c) => c.dataset.state === 'sounding')).toHaveAttribute('data-group-index', '1');
+  });
+
+  it('renders NO chip header when the definition does not ask for one', () => {
+    const { container } = render(
+      <SegmentMap position={10} duration={300} data={GROUPED}
+        region={{ module: 'segment-map', orientation: 'column' }} />,
+    );
+    expect(container.querySelector('[data-testid="surround-nav-chips"]')).toBeNull();
+  });
+});
