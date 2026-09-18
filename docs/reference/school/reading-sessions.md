@@ -8,6 +8,17 @@
 > inside a grace window (§9), `POST /session/end` gained an allowlist and the
 > `end()` it had always been missing, and the launch card was rebuilt around the
 > empty slot the next book goes into.
+> On 2026-09-18 two ways to lose a credited read were observed in one morning,
+> neither of them a bug in this machine. A redeploy landed mid-session: the TV's
+> socket died with the restart and its replacement re-subscribed to
+> `reading:livingroom` 0.79 s after the child's book tap, so the tap logged
+> `bus.topic.unknown` and reached nobody. And earlier the same morning a book
+> tag was tapped ~7 s BEFORE the card's session existed, so it dispatched as an
+> ordinary `play-next`: the story played start to finish with no pick and no
+> credit. The grace-window reopen (§9) covers the book that arrives just after a
+> teardown, NOT the one that arrives before the session. The deploy half is
+> fixed outside this document — `scripts/deploy-gate.sh` §5 now refuses to
+> restart over an open session.
 > Implementation plans: `docs/_wip/plans/2026-08-26-preschool-reading-03-livingroom-session-screen.md`,
 > `docs/_archive/2026-09-11-reading-launch-card-and-timeout-race.md`.
 > This document is the authority on *behaviour*; the plan is the authority on *how*.
