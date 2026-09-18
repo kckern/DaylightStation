@@ -1,4 +1,4 @@
-import { useMemo, useRef, useEffect } from 'react';
+import { useMemo, useRef, useEffect, useCallback } from 'react';
 import { DaylightAPI } from '../api.mjs';
 import { usePlayerKeyboard } from '../keyboard/keyboardManager.js';
 import { acquirePlayerKeyboard } from './playerKeyboardOwnership.js';
@@ -10,6 +10,7 @@ import { resolveContentId } from '../../modules/Surround/segments.js';
 // lives in segmentNav now, as the one rule it always was — `previousSegmentAction`
 // applies it, so there is nothing left to compare against here.
 import { nextSegmentAction, previousSegmentAction } from '../../modules/Surround/segmentNav.js';
+import { SURROUND_NAV_EVENT, NAV_IDLE_MS } from '../../modules/Surround/navMode.js';
 
 /**
  * Custom hook for handling media playback keyboard shortcuts
@@ -297,6 +298,39 @@ export function useMediaKeyboardHandler(config) {
     }
   };
 
+  /**
+   * DOES THIS WORK HAVE A RAIL WORTH NAVIGATING?
+   *
+   * Read off the SAME `meta.surround` the transport already reads for
+   * `segmentInput`, so the keys can never be bound for a frame that is not on
+   * screen. A definition that asks for a chip header is asking to be navigated;
+   * nothing else in the corpus is affected, which is what keeps `ArrowUp`/
+   * `ArrowDown` on the shaders for every classical work.
+   */
+  const navRailRegions = meta?.surround?.definition?.regions ?? null;
+  const hasNavRail = Boolean(navRailRegions && Object.values(navRailRegions)
+    .flatMap((slot) => (Array.isArray(slot) ? slot : [slot]))
+    .some((r) => r?.module === 'segment-map' && r?.groups === 'header'));
+
+  const navActiveRef = useRef(false);
+  const navIdleRef = useRef(null);
+  const sendNav = useCallback((action) => {
+    if (navIdleRef.current) clearTimeout(navIdleRef.current);
+    document.dispatchEvent(new CustomEvent(SURROUND_NAV_EVENT, { detail: { action } }));
+    if (action === 'select') {
+      navActiveRef.current = false;
+      return;
+    }
+    navActiveRef.current = true;
+    // THE GRACE. Nav mode must not hold the arrows for the rest of the film
+    // because somebody brushed the remote. Idling out hands seeking back.
+    navIdleRef.current = setTimeout(() => {
+      navActiveRef.current = false;
+      document.dispatchEvent(new CustomEvent(SURROUND_NAV_EVENT, { detail: { action: 'exit' } }));
+    }, NAV_IDLE_MS);
+  }, []);
+  useEffect(() => () => { if (navIdleRef.current) clearTimeout(navIdleRef.current); }, []);
+
   // Custom key mappings for when paused (skip up/down arrow handling)
   const conditionalOverrides = { ...keyboardOverrides };
   const hasExplicitPaused = Object.prototype.hasOwnProperty.call(config, 'isPaused');
@@ -315,6 +349,17 @@ export function useMediaKeyboardHandler(config) {
       logger.debug('ui.key.ignored-when-paused', { keys: ['ArrowUp', 'ArrowDown'], queuePosition });
       pausedNoticeLogged.current = true;
     }
+  }
+
+  if (hasNavRail) {
+    // `componentOverrides` is consulted BEFORE playbackKeys and the default map
+    // (keyboardManager.js `handleKeyDown`), so these four fully replace their
+    // bindings while a nav rail is mounted — and only then.
+    conditionalOverrides.ArrowDown = () => sendNav(navActiveRef.current ? 'down' : 'enter');
+    conditionalOverrides.ArrowUp = () => { if (navActiveRef.current) sendNav('up'); };
+    conditionalOverrides.ArrowLeft = () => { if (navActiveRef.current) sendNav('left'); };
+    conditionalOverrides.ArrowRight = () => { if (navActiveRef.current) sendNav('right'); };
+    conditionalOverrides.Enter = () => { if (navActiveRef.current) sendNav('select'); };
   }
 
   return usePlayerKeyboard({
