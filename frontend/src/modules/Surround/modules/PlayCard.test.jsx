@@ -155,4 +155,18 @@ describe('PlayCard', () => {
     expect(late.container.querySelector('.surround-play-card__fact-line'))
       .toHaveTextContent('Deep into the taming.');
   });
+
+  it('renders facts only when the definition turns its identity off', () => {
+    const { container } = renderCard({ region: { module: 'play-card', identity: false } });
+    expect(container.querySelector('[data-testid="surround-play-header"]')).toBeNull();
+    expect(container.querySelector('[data-testid="surround-play-fact-zone"]')).not.toBeNull();
+  });
+
+  it('renders nothing when identity is off and there is no fact to carry', () => {
+    const { container } = renderCard({
+      data: { contentId: 'plex:1', assetBase: 'surround/drama', piece: { title: 'X' }, segments: [] },
+      region: { module: 'play-card', identity: false, facts: false },
+    });
+    expect(container.querySelector('.surround-play-card')).toBeNull();
+  });
 });

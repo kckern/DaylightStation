@@ -69,6 +69,13 @@ export default function PlayCard({
    */
   const showFacts = region?.facts !== false;
 
+  /**
+   * DOES THIS CARD CARRY ITS IDENTITY BLOCK? The mirror of `facts`, and for the
+   * same reason: in a rail under a placard that already sets the work's title,
+   * the header prints it a second time. The definition decides; the card is told.
+   */
+  const showIdentity = region?.identity !== false;
+
   // Same gate CueTicker's LEFT zone uses: scope by the sounding segment only
   // when the rail actually carries hierarchy (a group-authored work), so a
   // flat work's pool stays static rather than narrowing to a movement.
@@ -115,11 +122,11 @@ export default function PlayCard({
 
   // NULL DISCIPLINE, same law every sibling module keeps: nothing worth
   // showing renders nothing, not an empty panel the viewer has to look at.
-  if (!hasIdentity && !(showFacts && shownFact.text)) return null;
+  if (!(showIdentity && hasIdentity) && !(showFacts && shownFact.text)) return null;
 
   return (
     <div className="surround-play-card" data-testid="surround-play-card">
-      {hasIdentity && (
+      {showIdentity && hasIdentity && (
         <div className="surround-play-card__header" data-testid="surround-play-header">
           {title && <h2 className="surround-play-card__title">{title}</h2>}
           {genre && <p className="surround-play-card__genre">{genre}</p>}
