@@ -658,7 +658,12 @@ In the column branch, before the `return (`, add:
     const rowFill = (i) => {
       const seg = segments[i];
       const length = (seg?.stop ?? 0) - (seg?.start ?? 0);
-      if (activeIndex >= 0 && i < activeIndex) return 1;
+      // NOTHING SOUNDING HAS TWO CAUSES AND THEY ARE OPPOSITES. `activeIndex`
+      // is -1 both before the first segment starts and after the last one ends
+      // (`band.js` `activeSegmentIndex`). Collapsing both to 0 empties every bar
+      // in the rail at the final curtain, which reads as "none of this played".
+      if (activeIndex < 0) return railPosition >= end ? 1 : 0;
+      if (i < activeIndex) return 1;
       if (i > activeIndex) return 0;
       return length > 0 ? clamp01((railPosition - seg.start) / length) : 0;
     };
@@ -709,7 +714,11 @@ Append the bar rules:
     inset: 0;
     transform: scaleX(var(--fill, 0));
     transform-origin: left center;
-    background: var(--ink, #332b20);
+    /* `#2a1d07` is the BASE `--ink` (`SurroundFrame.scss:30`). Several older
+       rules in this sheet carry `#332b20`, which matches no token at all — a
+       literal that drifted. Do not copy it forward for consistency's sake;
+       consistency with a wrong neighbour is not a virtue. */
+    background: var(--ink, #2a1d07);
     transition: transform var(--head-ms, 120ms) linear;
   }
 }
