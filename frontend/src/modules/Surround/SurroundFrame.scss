@@ -56,12 +56,14 @@
 
   /* How far the video's top edge sits below the top of the main column — i.e.
      the strip of hall the plate hangs on.
-     Wave 5 raised it 3.4rem -> 4.2rem, and the reason is `--placard-straddle`
-     below: the plate no longer sits half on the picture, it sits a THIRD on it,
-     so two thirds of its ~82px height (55px) now have to fit above the video's
-     top edge instead of 41px. 4.2rem (67px) leaves ~12px of dark hall above the
-     plate, the same breathing room wave 2 tuned for — without it the plate would
-     read as cropped by the frame's own edge. The video is nudged down; it is not
+     Wave 5 raised it 3.4rem -> 4.2rem for a straddle that put the plate a
+     THIRD on the picture (two thirds — ~55px of an ~82px plate — needing room
+     above the video's top edge). `--placard-straddle` is now -50% (Task 7,
+     half and half): only ~40px of the plate's ~80px height sits above the
+     line today, not ~55px, so 4.2rem (67px) leaves ~27px of dark hall above
+     the plate rather than the ~12px wave 2 tuned for — generous now, not
+     tight. The value has not been re-tuned down for the new ratio; it simply
+     still clears it with room to spare. The video is nudged down; it is not
      made smaller (it is width-limited at every kiosk size in the fleet). */
   --placard-inset: 4.2rem;
   /* HOW FAR THE PLATE SITS OVER THE PICTURE. Half on the hall, half on the
@@ -77,14 +79,18 @@
      (`__footer::before`, 22px); the velvet at the top met it on a hard line,
      so the picture read as a rectangle cut out of a drape rather than as
      something the drape hangs in front of.
-     THE DEPTH IS DERIVED, not chosen. The settled figure at the top of the
-     frame is the placard's straddle: the plate overlaps the video by one third
-     of its own height (`--placard-straddle`, wave 5 §2, not to be changed).
-     The placard measures 80.3px at every screen in the fleet (it is rem-typed;
-     measured in the harness at 960x540 / 1280x720 / 1920x1080 — 80.3 at all
-     three), so that overlap is 26.77px, and the brief's "half to 60% of that
-     overlap" is 13.4..16.1px. 15px sits in that window with room either side —
-     the shallow end reads as a smudge at ten feet rather than as a dissolve.
+     THE DEPTH WAS DERIVED FROM THE PLACARD'S OVERLAP, not chosen outright —
+     but that overlap has since moved. This 15px was picked against
+     `--placard-straddle` at -66.67% (one third of the plate's own height
+     overlapping the video: ~26.77px of a measured 80.3px plate), landing in
+     the brief's "half to 60% of that overlap" window (13.4..16.1px).
+     `--placard-straddle` is now -50% (Task 7, half and half), which puts the
+     overlap at ~40.15px and the same window at ~20.1..24.1px — 15px no
+     longer falls inside it. THE VALUE IS RETAINED, NOT RE-DERIVED: nobody has
+     re-judged what the veil should look like against the new overlap, so
+     this number is inherited from a ratio that no longer holds, not a figure
+     chosen for today's geometry. Revisit it against the new overlap before
+     leaning on the "half to 60%" framing again.
      It is a VEIL over the media, never a change to the media box: the video
      keeps its width, its height, its 16:9 lock and every pixel of its picture
      below this depth. */
@@ -318,9 +324,9 @@
 }
 
 /* The work placard: a museum plate, not a band. Out of the column's flow,
-   content-width, hung on the video's TOP EDGE — two thirds on the dark hall,
-   one third over the picture (`--placard-straddle`). The translate is what makes
-   that ratio exact whatever the plate's own height turns out to be, which is why
+   content-width, hung on the video's TOP EDGE — half on the dark hall, half
+   over the picture (`--placard-straddle`). The translate is what makes that
+   split exact whatever the plate's own height turns out to be, which is why
    the straddle is expressed as a fraction of the plate rather than as a pixel
    offset from the edge.
    The cap is 86% of the MEASURED video width (published by the frame as
