@@ -299,3 +299,70 @@ while this design is built — restoring a working 121.3px band with an 11-segme
 Act/Scene map and a rail carrying identity and rotating character cards. Its ticker
 region (40px) renders empty for the reason above; the dead strip is **known and
 deliberately accepted** for the interim rather than papered over.
+
+---
+
+## 16. Outcome (2026-09-18)
+
+**Built, reviewed, merged and deployed — and deliberately left switched off.**
+
+`main` carries the work at `cd529a38b`; the running image is that commit. The
+rail ships **dormant**: no corpus names `playhouse-rail`, so nothing reaches a
+screen. The Shrew's sidecar reads `surround: playhouse`, the band layout that
+works.
+
+### Why it is off
+
+It was turned on twice, measured, and looked at. Both times the numbers passed
+and the screen did not.
+
+| | assertions | what the screenshot showed |
+|---|---|---|
+| first | 9/9 passed | two Act I scenes **plus a stray Act IV beat**, rows stretched to 118px, progress bars stranded far below their labels |
+| second | 14/14 passed | scoping correct and chips numbered I–V, but ~400px of **empty rail** under two small rows, chips reduced to illegible marks |
+
+The first render exposed a real defect — scoping compared group indices across
+incompatible depth namespaces — which is fixed and proven (§16.1). The second
+render exposed something the code cannot fix: **with only two scenes in an Act, a
+540px rail has nothing to fill itself with.** Removing the row-height cap made
+rows absurd; restoring it made the rail empty. Row height was never the variable.
+
+### The open question, for the owner
+
+This needs a layout decision, not a patch:
+
+- **(a)** show the whole play's scenes and mark the current one, rather than
+  scoping to one act — fills the rail, loses the "one act at a time" focus;
+- **(b)** let the rail shrink to its content and give the slack back to the
+  picture or the band;
+- **(c)** put something deliberate in the space — the who's-who card is already
+  there but small.
+
+Turning it on is one word in the sidecar and needs no redeploy. Turning it off
+again is the same word. That is why the flip is the last step of a deploy.
+
+### 16.1 What the live runs proved
+
+- **Fixed and verified:** group scoping now keys on the full ancestor path
+  (`ancestors.map(a => a.index).join('/')`). The store assigns `index` from a
+  per-depth **global** counter, so bare indices collide across depths — measured
+  live, index `0` matched rows from two different acts. Collision on the joined
+  path is structurally impossible.
+- **Fixed:** chips number themselves from position in the filtered runs, not from
+  `run.index` (which skips a cut Induction) and not from `mini:` (which the
+  *horizontal band* also reads — authoring it would have changed a layout already
+  on screen).
+- **Confirmed safe:** borrowed remote keys cannot stick. `Player.jsx:1608` keys
+  the player subtree on the media GUID, so any content change remounts and
+  resets nav state.
+
+### 16.2 Left for the owner, untouched
+
+- Two **pre-existing** failures on `main` — `Health/today/viewedDate` and
+  `SentenceLadder`. Proven not from this work: `main`'s own full sweep fails the
+  same two files. The gate baseline (`scripts/audit-baseline.vitest.txt`) is
+  stale; **not** regenerated, because that would launder a real break into
+  "expected".
+- The **band silently refuses this corpus's longest notes** on the layout live
+  today — `surround.note.unfittable`, budget ~122–128 chars against notes of
+  195–331. Pre-existing, not introduced here.
