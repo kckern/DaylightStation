@@ -2830,3 +2830,299 @@ describe('the timeline on a vertical axis', () => {
     expect(container.querySelector('[data-testid="surround-segment-map"]')).not.toBeNull();
   });
 });
+
+// MODULE SCOPE: a later task's second describe block reuses this exact
+// fixture, so it must not be nested inside this one's describe.
+const GROUPED = {
+  contentId: 'plex:1',
+  timeline: { totalSounding: 300 },
+  segments: [
+    { n: 1, label: 'Scene 1', contentId: 'plex:1', start: 0, offset: 0, duration: 100, end: 100,
+      ancestors: [{ index: 0, title: 'Act I', kind: 'act' }] },
+    { n: 2, label: 'Scene 2', contentId: 'plex:1', start: 100, offset: 100, duration: 100, end: 200,
+      ancestors: [{ index: 0, title: 'Act I', kind: 'act' }] },
+    { n: 1, label: 'Scene 1', contentId: 'plex:1', start: 200, offset: 200, duration: 100, end: 300,
+      ancestors: [{ index: 1, title: 'Act II', kind: 'act' }] },
+  ],
+};
+
+describe('SegmentMap — column chip header', () => {
+  // GROUPED (module scope, above) carries two placed groups, Act I and Act
+  // II, each with a placeable segment — an unplaceable group never reaches
+  // `placedRail` and so never becomes a run, which is what keeps a cut group
+  // like the Shrew's Induction chip-less; this fixture just isn't that case.
+  const region = { module: 'segment-map', orientation: 'column', groups: 'header' };
+
+  it('renders one chip per placed group', () => {
+    const { container } = render(
+      <SegmentMap position={10} duration={300} data={GROUPED} region={region} />,
+    );
+    const chips = container.querySelectorAll('[data-testid="surround-nav-chip"]');
+    expect(chips.length).toBe(2);
+    expect(chips[0]).toHaveAttribute('data-group-index', '0');
+    expect(chips[1]).toHaveAttribute('data-group-index', '1');
+  });
+
+  it('lights the chip whose group is sounding', () => {
+    const { container } = render(
+      <SegmentMap position={250} duration={300} data={GROUPED} region={region} />,
+    );
+    const chips = [...container.querySelectorAll('[data-testid="surround-nav-chip"]')];
+    expect(chips.find((c) => c.dataset.state === 'sounding')).toHaveAttribute('data-group-index', '1');
+  });
+
+  it('renders NO chip header when the definition does not ask for one', () => {
+    const { container } = render(
+      <SegmentMap position={10} duration={300} data={GROUPED}
+        region={{ module: 'segment-map', orientation: 'column' }} />,
+    );
+    expect(container.querySelector('[data-testid="surround-nav-chips"]')).toBeNull();
+  });
+
+  it('lists only the sounding group’s rows when the definition scopes to a group', () => {
+    const scoped = { module: 'segment-map', orientation: 'column', groups: 'header', scope: 'group' };
+    // position 250 is inside Act II, which has exactly one scene.
+    const { container } = render(
+      <SegmentMap position={250} duration={300} data={GROUPED} region={scoped} />,
+    );
+    const rows = container.querySelectorAll('[data-testid="surround-segment-row"]');
+    expect(rows.length).toBe(1);
+    expect(rows[0]).toHaveAttribute('data-row-index', '2');
+  });
+
+  it('lists every row when the definition does not scope', () => {
+    const { container } = render(
+      <SegmentMap position={250} duration={300} data={GROUPED}
+        region={{ module: 'segment-map', orientation: 'column', groups: 'header' }} />,
+    );
+    expect(container.querySelectorAll('[data-testid="surround-segment-row"]').length).toBe(3);
+  });
+
+  it('falls back to the first group’s rows when nothing is sounding', () => {
+    // position 0 with a rail whose first segment starts later: activeIndex is -1.
+    const region = { module: 'segment-map', orientation: 'column', groups: 'header', scope: 'group' };
+    const { container } = render(
+      <SegmentMap position={0} duration={300} data={GROUPED} region={region} />,
+    );
+    const rows = container.querySelectorAll('[data-testid="surround-segment-row"]');
+    expect(rows.length).toBeGreaterThan(0);
+    expect(rows[0]).toHaveAttribute('data-row-index', '0');
+  });
+
+  // NOT PART OF THE BRIEF'S SPEC — added because the spec above, as written,
+  // does not actually force `activeIndex` to -1: GROUPED's first segment
+  // starts at offset 0, so position 0 already matches it (`activeIndex` is 0,
+  // and the fixture's own Act I is also the first group), which is why the
+  // spec above passes even against the OLD, un-fixed filter. This fixture
+  // gives `data.contentId` no match in `segments[]`, which is the one honest
+  // way to force `segmentAt` to report nothing sounding
+  // (`activeIndex === -1`) regardless of position, so the `?? firstLeafIndex`
+  // fallback is the thing actually being exercised.
+  it('falls back to the first group’s rows when activeIndex is genuinely -1', () => {
+    const UNMAPPED = {
+      contentId: 'plex:unmapped',
+      timeline: { totalSounding: 300 },
+      segments: GROUPED.segments,
+    };
+    const region = { module: 'segment-map', orientation: 'column', groups: 'header', scope: 'group' };
+    const { container } = render(
+      <SegmentMap position={0} duration={300} data={UNMAPPED} region={region} />,
+    );
+    const sounding = container.querySelectorAll('[data-testid="surround-segment-row"][data-state="sounding"]');
+    expect(sounding).toHaveLength(0);
+    const rows = container.querySelectorAll('[data-testid="surround-segment-row"]');
+    expect(rows.length).toBeGreaterThan(0);
+    expect(rows[0]).toHaveAttribute('data-row-index', '0');
+  });
+
+  // The column chip header reuses `.surround-segment-map__chip` — a class the
+  // HORIZONTAL band already owned (SegmentMap.scss:538, the measured ten-foot
+  // label floor at `* 1.35`). An unscoped column rule with the same class and
+  // equal specificity, declared LATER in the sheet, wins for both layouts —
+  // shrinking the band's chip type on every corpus that chips its rail, which
+  // is most of the classical corpus, for a header built for one piece. Every
+  // chip rule this header owns must live under `.surround-segment-map--column`
+  // so it cannot leak onto the band.
+  it('scopes the column chip rules to the column layout, not the horizontal band', () => {
+    const css = compileSheetOnce(path.join(__dirname, 'SegmentMap.scss')).css;
+    const ruleRe = /([^{}]+)\{([^{}]*)\}/g;
+    let match;
+    let checked = 0;
+    while ((match = ruleRe.exec(css))) {
+      const [, selector, body] = match;
+      // `__chip` itself, not `__chips` (the row container) and not the
+      // horizontal band's `__chip--fold` variant.
+      if (!/\.surround-segment-map__chip(?![\w-])/.test(selector)) continue;
+      // The column header sets the label floor directly; the pre-existing
+      // horizontal rule at :538 wraps it in `calc(... * 1.35)` instead, so
+      // this pattern only ever matches the column's own declaration.
+      if (!/font-size:\s*var\(--label-floor/.test(body)) continue;
+      checked += 1;
+      expect(selector, `unscoped chip rule leaks the column header's font-size onto the horizontal band: ${selector.trim()}`)
+        .toMatch(/--column/);
+    }
+    // Guards the guard: if the column rule stopped setting font-size via
+    // `--label-floor` at all, the loop above would find nothing to check.
+    expect(checked).toBeGreaterThan(0);
+  });
+});
+
+describe('SegmentMap — nav mode', () => {
+  const region = { module: 'segment-map', orientation: 'column', groups: 'header', scope: 'group' };
+  const fire = (action) => act(() => {
+    document.dispatchEvent(new CustomEvent('surround-nav', { detail: { action } }));
+  });
+
+  it('enter selects the sounding row; right previews the next group without seeking', () => {
+    const seeks = [];
+    document.addEventListener('surround-seek', (e) => seeks.push(e.detail));
+    const { container } = render(
+      <SegmentMap position={10} duration={300} data={GROUPED} region={region} />,
+    );
+    fire('enter');
+    expect(container.querySelector('[data-selected="true"]')).toHaveAttribute('data-row-index', '0');
+    fire('right');
+    // Previewing Act II: its row is listed, and NOTHING has been sought.
+    expect(container.querySelector('[data-selected="true"]')).toHaveAttribute('data-row-index', '2');
+    expect(seeks).toHaveLength(0);
+    // The sounding chip is still Act I; Act II is merely selected.
+    const chips = [...container.querySelectorAll('[data-testid="surround-nav-chip"]')];
+    expect(chips[0].dataset.state).toBe('sounding');
+    expect(chips[1].dataset.state).toBe('selected');
+  });
+
+  it('OK seeks to the selected row and leaves nav mode', () => {
+    const seeks = [];
+    document.addEventListener('surround-seek', (e) => seeks.push(e.detail));
+    const { container } = render(
+      <SegmentMap position={10} duration={300} data={GROUPED} region={region} />,
+    );
+    fire('enter'); fire('right'); fire('select');
+    expect(seeks).toHaveLength(1);
+    expect(seeks[0].seconds).toBe(200);
+    expect(container.querySelector('[data-selected="true"]')).toBeNull();
+  });
+
+  it('up past the first row exits without seeking — the no-Esc escape', () => {
+    const seeks = [];
+    document.addEventListener('surround-seek', (e) => seeks.push(e.detail));
+    const { container } = render(
+      <SegmentMap position={10} duration={300} data={GROUPED} region={region} />,
+    );
+    fire('enter'); fire('up');
+    expect(container.querySelector('[data-selected="true"]')).toBeNull();
+    expect(seeks).toHaveLength(0);
+  });
+});
+
+describe('SegmentMap — column row progress', () => {
+  const FLAT = {
+    contentId: 'plex:2',
+    timeline: { totalSounding: 200 },
+    segments: [
+      { n: 1, label: 'One', contentId: 'plex:2', start: 0, offset: 0, duration: 100, end: 100 },
+      { n: 2, label: 'Two', contentId: 'plex:2', start: 100, offset: 100, duration: 100, end: 200 },
+    ],
+  };
+  const region = { module: 'segment-map', orientation: 'column' };
+
+  it('fills each row by its OWN fraction: elapsed 1, sounding partial, future 0', () => {
+    const { container } = render(
+      <SegmentMap position={150} duration={200} data={FLAT} region={region} />,
+    );
+    const bars = container.querySelectorAll('[data-testid="surround-row-bar"]');
+    expect(bars.length).toBe(2);
+    expect(Number(bars[0].dataset.fill)).toBe(1);
+    expect(Number(bars[1].dataset.fill)).toBeCloseTo(0.5, 2);
+  });
+
+  it('a future row is empty', () => {
+    const { container } = render(
+      <SegmentMap position={10} duration={200} data={FLAT} region={region} />,
+    );
+    const bars = container.querySelectorAll('[data-testid="surround-row-bar"]');
+    expect(Number(bars[1].dataset.fill)).toBe(0);
+  });
+
+  // Finding 4: `activeIndex` is -1 both before the first segment starts AND
+  // after the last one ends — the applause. Collapsing both to 0 used to empty
+  // every bar in the rail at the final curtain, which reads as "none of this
+  // played" at the exact moment everything did.
+  it('every row reads full once nothing is sounding because the piece has ended', () => {
+    const { container } = render(
+      <SegmentMap position={220} duration={260} data={FLAT} region={region} />,
+    );
+    const bars = container.querySelectorAll('[data-testid="surround-row-bar"]');
+    expect(bars.length).toBe(2);
+    bars.forEach((bar) => expect(Number(bar.dataset.fill)).toBe(1));
+  });
+
+  it('rows may grow past four floors so a short list fills the rail', () => {
+    const css = compileSheetOnce(path.join(__dirname, 'SegmentMap.scss')).css;
+    const rule = css.match(/\.surround-segment-map__row\s*\{[^}]*\}/)[0];
+    expect(rule).toContain('min-height: calc(var(--label-floor, 11.52px) * 2)');
+    expect(rule).not.toContain('max-height');
+  });
+
+  // Finding 5: `#332b20` matches no token in the sheet — the base `--ink` is
+  // `#2a1d07` (`SurroundFrame.scss:30`). Four older rules in this sheet still
+  // carry the drifted literal and are out of scope here; this checks only the
+  // rule this task owns.
+  it('the row fill falls back to the BASE --ink token, not the drifted literal', () => {
+    const css = compileSheetOnce(path.join(__dirname, 'SegmentMap.scss')).css;
+    const rule = css.match(/\.surround-segment-map__row-bar::after\s*\{[^}]*\}/)[0];
+    expect(rule).toContain('background: var(--ink, #2a1d07);');
+    expect(rule).not.toContain('background: var(--ink, #332b20)');
+  });
+});
+
+describe('SegmentMap — nav world is scoped to the level the list shows', () => {
+  // Group > subgroup > row. `chipRuns` (Act I / Act II) are outermost; the
+  // list shows each SCENE's own beats. Feeding the reducer chip runs instead
+  // of scene runs compares an outer index against deepest indices — Finding 3.
+  const THREE_LEVEL = {
+    contentId: 'plex:3',
+    timeline: { totalSounding: 200 },
+    segments: [
+      { n: 1, label: 'Beat A', contentId: 'plex:3', start: 0, offset: 0, duration: 50, end: 50,
+        ancestors: [{ index: 0, title: 'Act I' }, { index: 0, title: 'Scene 1' }] },
+      { n: 2, label: 'Beat B', contentId: 'plex:3', start: 50, offset: 50, duration: 50, end: 100,
+        ancestors: [{ index: 0, title: 'Act I' }, { index: 0, title: 'Scene 1' }] },
+      { n: 1, label: 'Beat C', contentId: 'plex:3', start: 100, offset: 100, duration: 50, end: 150,
+        ancestors: [{ index: 0, title: 'Act I' }, { index: 1, title: 'Scene 2' }] },
+      { n: 1, label: 'Beat D', contentId: 'plex:3', start: 150, offset: 150, duration: 50, end: 200,
+        ancestors: [{ index: 1, title: 'Act II' }, { index: 2, title: 'Scene 3' }] },
+    ],
+  };
+  const region = { module: 'segment-map', orientation: 'column', groups: 'header', scope: 'group' };
+  const fire = (action) => act(() => {
+    document.dispatchEvent(new CustomEvent('surround-nav', { detail: { action } }));
+  });
+
+  it('previewing moves scene by scene, and every previewed selection is among the rows actually shown', () => {
+    const { container } = render(
+      <SegmentMap position={10} duration={200} data={THREE_LEVEL} region={region} />,
+    );
+    fire('enter');
+    expect(container.querySelector('[data-selected="true"]')).toHaveAttribute('data-row-index', '0');
+
+    // Scene 1 -> Scene 2, BOTH still inside Act I. An outer-level world would
+    // jump straight to Act II (Beat D) here instead.
+    fire('right');
+    let selected = container.querySelector('[data-selected="true"]');
+    expect(selected).not.toBeNull();
+    expect(selected).toHaveAttribute('data-row-index', '2');
+    let shown = [...container.querySelectorAll('[data-testid="surround-segment-row"]')]
+      .map((row) => row.dataset.rowIndex);
+    expect(shown).toEqual(['2']);
+
+    // Scene 2 -> Scene 3, which IS the first row of Act II.
+    fire('right');
+    selected = container.querySelector('[data-selected="true"]');
+    expect(selected).not.toBeNull();
+    expect(selected).toHaveAttribute('data-row-index', '3');
+    shown = [...container.querySelectorAll('[data-testid="surround-segment-row"]')]
+      .map((row) => row.dataset.rowIndex);
+    expect(shown).toEqual(['3']);
+  });
+});
