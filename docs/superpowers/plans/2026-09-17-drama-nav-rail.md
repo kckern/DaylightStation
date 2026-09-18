@@ -197,6 +197,18 @@ Create `frontend/src/modules/Surround/navMode.js`:
 /** The DOM event the Player dispatches and the rail listens for. */
 export const SURROUND_NAV_EVENT = 'surround-nav';
 
+/**
+ * THE REPLY CHANNEL, and it has to exist.
+ *
+ * The rail owns the selection; the Player owns the keys. When the reducer
+ * leaves nav mode — `up` past the first row, `select`, or `exit` — the Player
+ * MUST hear about it, because it is the Player that decides whether Up/Left/
+ * Right/Enter are borrowed or handed back. Without this the rail silently goes
+ * idle while the Player still believes it is navigating, and every one of those
+ * keys stays swallowed until an idle timer rescues the viewer.
+ */
+export const SURROUND_NAV_STATE_EVENT = 'surround-nav-state';
+
 /** Leave nav mode after this long without a key. Matches the footer-zoom grace. */
 export const NAV_IDLE_MS = 12000;
 
@@ -825,7 +837,7 @@ Add to the `../navMode.js` import at the top of `SegmentMap.jsx` (a new import
 line; `useState`, `useRef` and `useEffect` are already imported at `:62`):
 
 ```js
-import { navReduce, navInitial, SURROUND_NAV_EVENT } from '../navMode.js';
+import { navReduce, navInitial, SURROUND_NAV_EVENT, SURROUND_NAV_STATE_EVENT } from '../navMode.js';
 ```
 
 Add these three lines near the other hooks, **above** the `orientation === 'column'`
@@ -857,7 +869,18 @@ Still above the branch, add the listener:
           const seg = rows?.[prev.rowIndex];
           if (seg) seekTo(seg.mediaStart ?? seg.start ?? 0, seg.contentId);
         }
-        return navReduce(prev, action, world);
+        const next = navReduce(prev, action, world);
+        // TELL THE PLAYER. It owns the keys and decides whether the four are
+        // borrowed or handed back, and it cannot see this reducer. Every
+        // transition in or out of nav mode is reported — `up` past the first
+        // row and `exit` included, not just `select` — because those are
+        // exactly the exits the Player would otherwise never hear about.
+        if (Boolean(next) !== Boolean(prev)) {
+          document.dispatchEvent(new CustomEvent(SURROUND_NAV_STATE_EVENT, {
+            detail: { active: Boolean(next) },
+          }));
+        }
+        return next;
       });
     };
     document.addEventListener(SURROUND_NAV_EVENT, onNav);
@@ -872,9 +895,21 @@ Still above the branch, add the listener:
 In the column branch, after `chipRuns`, build the world and publish it to the ref:
 
 ```jsx
-    const navWorld = { groups: chipRuns, soundingGroupIndex, soundingRowIndex: activeIndex };
+    // NAV MOVES AT THE LEVEL THE LIST SHOWS. `chipRuns` are outermost-level and
+    // name the chips. The list shows the DEEPEST group's rows. Feeding the
+    // reducer chip runs makes `nav.groupIndex` an outermost index that gets
+    // compared against deepest-level indices — a comparison that matches nothing
+    // the moment a work authors three levels — and makes `nav.rowIndex` range
+    // over rows the list is not displaying. On a two-level work the deepest runs
+    // ARE the chip runs, so this changes nothing already shipped.
+    const leafRuns = railGroups(placedRail, (segment) => segment?.ancestors?.at(-1) ?? null)
+      .filter((run) => run.index !== null);
+    const navWorld = {
+      groups: leafRuns,
+      soundingGroupIndex: soundingLeafIndex,
+      soundingRowIndex: activeIndex,
+    };
     navRef.current = { world: navWorld, segments };
-    const shownGroupIndex = nav ? nav.groupIndex : soundingGroupIndex;
 ```
 
 (Replace the `shownGroupIndex` line from Task 3 with these three.)
@@ -1075,20 +1110,41 @@ Immediately **before** `const conditionalOverrides = { ...keyboardOverrides };`:
     .flatMap((slot) => (Array.isArray(slot) ? slot : [slot]))
     .some((r) => r?.module === 'segment-map' && r?.groups === 'header'));
 
-  const navActiveRef = useRef(false);
+  // STATE, NOT A REF. `componentOverrides` is an identity-compared dependency of
+  // keyboardManager's listener effect, and which keys are PRESENT in it has to
+  // change when nav mode opens and closes. A ref mutates without re-rendering,
+  // so the map would be rebuilt with the same key set forever.
+  const [navActive, setNavActive] = useState(false);
   const navIdleRef = useRef(null);
+
+  // THE RAIL'S REPLY. The reducer lives in the rail and the Player cannot see
+  // it, so the rail reports every entry into and exit from nav mode — including
+  // `up` past the first row, which is an exit the Player would otherwise never
+  // hear about, leaving it holding four keys the viewer can no longer use.
+  useEffect(() => {
+    const onState = (e) => {
+      const active = e?.detail?.active;
+      if (typeof active !== 'boolean') return;
+      if (!active && navIdleRef.current) {
+        clearTimeout(navIdleRef.current);
+        navIdleRef.current = null;
+      }
+      setNavActive(active);
+    };
+    document.addEventListener(SURROUND_NAV_STATE_EVENT, onState);
+    return () => document.removeEventListener(SURROUND_NAV_STATE_EVENT, onState);
+  }, []);
+
   const sendNav = useCallback((action) => {
     if (navIdleRef.current) clearTimeout(navIdleRef.current);
     document.dispatchEvent(new CustomEvent(SURROUND_NAV_EVENT, { detail: { action } }));
-    if (action === 'select') {
-      navActiveRef.current = false;
-      return;
-    }
-    navActiveRef.current = true;
+    // `navActive` is NOT set here. The rail is the authority on whether a
+    // selection exists — it may refuse an action, and `up` at the first row
+    // exits — so the Player waits to be told rather than guessing.
+    if (action === 'select') return;
     // THE GRACE. Nav mode must not hold the arrows for the rest of the film
     // because somebody brushed the remote. Idling out hands seeking back.
     navIdleRef.current = setTimeout(() => {
-      navActiveRef.current = false;
       document.dispatchEvent(new CustomEvent(SURROUND_NAV_EVENT, { detail: { action: 'exit' } }));
     }, NAV_IDLE_MS);
   }, []);
@@ -1099,14 +1155,23 @@ Then, after the existing `conditionalOverrides` / `isPaused` block, append:
 
 ```js
   if (hasNavRail) {
-    // `componentOverrides` is consulted BEFORE playbackKeys and the default map
-    // (keyboardManager.js `handleKeyDown`), so these four fully replace their
-    // bindings while a nav rail is mounted — and only then.
-    conditionalOverrides.ArrowDown = () => sendNav(navActiveRef.current ? 'down' : 'enter');
-    conditionalOverrides.ArrowUp = () => { if (navActiveRef.current) sendNav('up'); };
-    conditionalOverrides.ArrowLeft = () => { if (navActiveRef.current) sendNav('left'); };
-    conditionalOverrides.ArrowRight = () => { if (navActiveRef.current) sendNav('right'); };
-    conditionalOverrides.Enter = () => { if (navActiveRef.current) sendNav('select'); };
+    // PRESENCE IS THE SWITCH, NOT THE HANDLER'S BODY. `keyboardManager`'s
+    // `handleKeyDown` does `if (componentOverrides[event.key]) { preventDefault();
+    // override(event); return; }` — it never inspects what the override did. So a
+    // key that is PRESENT but whose handler no-ops is a key that is SWALLOWED:
+    // it never reaches seekBackward/seekForward/cycleShaders/togglePlayPause.
+    //
+    // Registering all five up front therefore kills play/pause and seeking for
+    // the whole runtime of any work with a nav rail. The four borrowed keys must
+    // be ABSENT from the map whenever nav mode is idle, so they fall through to
+    // their ordinary bindings. Only ArrowDown is always present — it is the way in.
+    conditionalOverrides.ArrowDown = () => sendNav(navActive ? 'down' : 'enter');
+    if (navActive) {
+      conditionalOverrides.ArrowUp = () => sendNav('up');
+      conditionalOverrides.ArrowLeft = () => sendNav('left');
+      conditionalOverrides.ArrowRight = () => sendNav('right');
+      conditionalOverrides.Enter = () => sendNav('select');
+    }
   }
 ```
 
