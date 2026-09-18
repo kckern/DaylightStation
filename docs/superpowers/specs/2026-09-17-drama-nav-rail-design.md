@@ -183,10 +183,12 @@ lifted so rows can also *grow* into a short list.
 Past the floor, the beat list scrolls itself to keep the sounding beat visible (or, in
 nav mode, the selected one). This needs no new input — it follows the playhead.
 
-> **To measure, not assume:** `--label-floor` is published per screen root by
-> `labelFloorPx()` (`SurroundFrame.jsx:577`, anchor `LABEL_FLOOR_ANCHOR_PX = 11.52` at
-> `fit.js:109`). The resulting visible-beat count at the living-room root — estimated
-> 5–6 — must be measured before the beat-count authoring guideline is fixed.
+> **Measured 2026-09-17, live at the 960 root:** `--label-floor` resolves to **8.64px**
+> (inline and computed agree), so a beat row floors at `2 × 8.64 = 17.28px`. Against the
+> 262px accordion that is **~15 rows** to share between the scene rows and the open
+> scene's beats: **6 beats** with 32px scene rows, **~8** at 24px, **~10** with
+> everything at the floor. Seven beats per scene fits without scrolling — auto-scroll is
+> the safety valve, not the normal case.
 
 ## 10. Input
 
@@ -243,6 +245,11 @@ To author: **5 act titles**, **12 scene names**, **~60–85 beats** (name + star
    region, logger }`. Both seek and nav travel as DOM events.
 4. **Nothing below `--label-floor`.**
 5. **No new glow, gradient, or radius.**
+6. **A band holding a nested `segment-map` is structurally ≥82px.**
+   `SegmentMap.scss:130` sets `min-height: calc(3.9rem + var(--group-rows))`, which
+   overrides any authored `height` — an authored height is only a flex basis. The
+   nav-rail band therefore carries the **ticker alone**; the Act/Scene map lives in the
+   rail. Ignoring this is what leaves a ticker too short to set anything.
 
 ## 13. Testing
 
@@ -258,7 +265,37 @@ To author: **5 act titles**, **12 scene names**, **~60–85 beats** (name + star
 
 | Risk | Handling |
 |---|---|
-| **Band prose may not fit.** Two 288px registers; the fit ladder already refused every note in this corpus at 384px. | Measure first. Fallback: one register at a time across the full 576px. |
+| ~~Band prose may not fit~~ — **measured, resolved** (§15) | **Single register at full width.** Two registers are abandoned: at 288px the two longest act facts overflow. |
 | Authoring ~60–85 beats is the bulk of the effort | Bounded and mechanical; sources identified. |
 | Reclaiming `ArrowDown` surprises a keyboard user | Scoped to nav-rail definitions only. |
-| Visible-beat count is estimated, not measured | Measure before fixing the authoring guideline (§9). |
+| ~~Visible-beat count estimated~~ — **measured, resolved** (§9, §15) | Floor confirmed live at 8.64px. |
+
+---
+
+## 15. Measurements (2026-09-17, live at the 960 root)
+
+Taken against the running app, not derived. Recorded so they are not re-derived — and
+so their limits are known.
+
+| Quantity | Value | How |
+|---|---|---|
+| `--label-floor` | **8.64px** | published inline by the frame; inline and computed agree |
+| beat row floor | **17.28px** | `2 × --label-floor` (`SegmentMap.scss:1165`) |
+| current column row height | 28.58px, 11 rows in a 320px region | live render |
+| `segment-map` min-height, nested | **82px** | `3.9rem + --group-rows` (`SegmentMap.scss:130`) |
+| ticker band needed @482px wide | 62px for 351 chars (4 lines); 49px for 320 (3); 36px for ≤203 (2) | injected probe at the prose floor |
+| ticker band @576 × 86, sole occupant | **every corpus note fits** — worst case 3 lines / 39px of 76px usable | same probe |
+
+**The probe is a lower bound, not the ladder.** It measures plain text reflow at the
+10.56px prose floor (`14.08 × 0.75`). The real `fitBand()` also honours leading and
+ceiling constraints and refuses more readily. Evidence: at the interim `482 × 40` the
+probe predicted three of six notes would set, yet the live ticker rendered **empty**.
+Treat these as "no smaller than", and measure the real ladder before trusting a tight fit.
+
+### Interim live state
+
+The Shrew's sidecar was switched from `playhouse-rail` to **`playhouse`** on 2026-09-17
+while this design is built — restoring a working 121.3px band with an 11-segment
+Act/Scene map and a rail carrying identity and rotating character cards. Its ticker
+region (40px) renders empty for the reason above; the dead strip is **known and
+deliberately accepted** for the interim rather than papered over.
