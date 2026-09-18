@@ -2898,24 +2898,8 @@ describe('SegmentMap — column chip header', () => {
     expect(container.querySelectorAll('[data-testid="surround-segment-row"]').length).toBe(3);
   });
 
-  it('falls back to the first group’s rows when nothing is sounding', () => {
-    // position 0 with a rail whose first segment starts later: activeIndex is -1.
-    const region = { module: 'segment-map', orientation: 'column', groups: 'header', scope: 'group' };
-    const { container } = render(
-      <SegmentMap position={0} duration={300} data={GROUPED} region={region} />,
-    );
-    const rows = container.querySelectorAll('[data-testid="surround-segment-row"]');
-    expect(rows.length).toBeGreaterThan(0);
-    expect(rows[0]).toHaveAttribute('data-row-index', '0');
-  });
-
-  // NOT PART OF THE BRIEF'S SPEC — added because the spec above, as written,
-  // does not actually force `activeIndex` to -1: GROUPED's first segment
-  // starts at offset 0, so position 0 already matches it (`activeIndex` is 0,
-  // and the fixture's own Act I is also the first group), which is why the
-  // spec above passes even against the OLD, un-fixed filter. This fixture
-  // gives `data.contentId` no match in `segments[]`, which is the one honest
-  // way to force `segmentAt` to report nothing sounding
+  // This fixture gives `data.contentId` no match in `segments[]`, which is
+  // the one honest way to force `segmentAt` to report nothing sounding
   // (`activeIndex === -1`) regardless of position, so the `?? firstLeafIndex`
   // fallback is the thing actually being exercised.
   it('falls back to the first group’s rows when activeIndex is genuinely -1', () => {
