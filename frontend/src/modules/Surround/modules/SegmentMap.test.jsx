@@ -2898,3 +2898,40 @@ describe('SegmentMap — column chip header', () => {
     expect(container.querySelectorAll('[data-testid="surround-segment-row"]').length).toBe(3);
   });
 });
+
+describe('SegmentMap — column row progress', () => {
+  const FLAT = {
+    contentId: 'plex:2',
+    timeline: { totalSounding: 200 },
+    segments: [
+      { n: 1, label: 'One', contentId: 'plex:2', start: 0, offset: 0, duration: 100, end: 100 },
+      { n: 2, label: 'Two', contentId: 'plex:2', start: 100, offset: 100, duration: 100, end: 200 },
+    ],
+  };
+  const region = { module: 'segment-map', orientation: 'column' };
+
+  it('fills each row by its OWN fraction: elapsed 1, sounding partial, future 0', () => {
+    const { container } = render(
+      <SegmentMap position={150} duration={200} data={FLAT} region={region} />,
+    );
+    const bars = container.querySelectorAll('[data-testid="surround-row-bar"]');
+    expect(bars.length).toBe(2);
+    expect(Number(bars[0].dataset.fill)).toBe(1);
+    expect(Number(bars[1].dataset.fill)).toBeCloseTo(0.5, 2);
+  });
+
+  it('a future row is empty', () => {
+    const { container } = render(
+      <SegmentMap position={10} duration={200} data={FLAT} region={region} />,
+    );
+    const bars = container.querySelectorAll('[data-testid="surround-row-bar"]');
+    expect(Number(bars[1].dataset.fill)).toBe(0);
+  });
+
+  it('rows may grow past four floors so a short list fills the rail', () => {
+    const css = compileSheetOnce(path.join(__dirname, 'SegmentMap.scss')).css;
+    const rule = css.match(/\.surround-segment-map__row\s*\{[^}]*\}/)[0];
+    expect(rule).toContain('min-height: calc(var(--label-floor, 11.52px) * 2)');
+    expect(rule).not.toContain('max-height');
+  });
+});
