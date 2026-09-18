@@ -1357,6 +1357,17 @@ export default function SegmentMap({
       !scopeToGroup || (drawnRail[i]?.segment?.ancestors?.[0]?.index ?? null) === shownGroupIndex
     ));
 
+    // THE FILL IS A FRACTION OF THIS ROW, which is what makes it immune to the
+    // accordion: whatever height the row is drawn at, the bar reaches its edge
+    // exactly at the boundary. Same derivation as the horizontal rail's.
+    const rowFill = (i) => {
+      const seg = segments[i];
+      const length = (seg?.stop ?? 0) - (seg?.start ?? 0);
+      if (activeIndex >= 0 && i < activeIndex) return 1;
+      if (i > activeIndex) return 0;
+      return length > 0 ? clamp01((railPosition - seg.start) / length) : 0;
+    };
+
     return (
       <div
         ref={ruleClickRef}
@@ -1418,6 +1429,13 @@ export default function SegmentMap({
                     public place."). `label` stays as the fallback for a corpus
                     that authors no heading at all, so nothing renders blank. */}
                 <span className="surround-segment-map__row-label">{seg.annotation || seg.label}</span>
+                <span
+                  className="surround-segment-map__row-bar"
+                  data-testid="surround-row-bar"
+                  data-fill={rowFill(i).toFixed(4)}
+                  style={{ '--fill': String(rowFill(i)) }}
+                  aria-hidden="true"
+                />
               </li>
             );
           })}
