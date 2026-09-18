@@ -1324,6 +1324,24 @@ export default function SegmentMap({
       return `${ROMAN[rank] ?? String(rank)}.${within}`;
     });
 
+    // ONE CHIP PER PLACED GROUP. `railGroups` is the horizontal rail's own
+    // run-builder, reused unchanged: a group whose every segment was refused a
+    // start (this production cuts the Induction) never appears in `placedRail`,
+    // so it never becomes a run, so it never gets a chip you cannot seek to.
+    const wantsChips = region?.groups === 'header';
+    const chipRuns = wantsChips
+      ? railGroups(placedRail, (segment) => segment?.ancestors?.[0] ?? null)
+        .filter((run) => run.index !== null)
+      : [];
+    // WHICH CHIP IS SOUNDING. The module-level `activeGroupIndex` is gated on
+    // `nested` (two ancestor levels or more — the fold's own threshold) and is
+    // `null` for a work grouped at a single tier, such as this fixture's Act >
+    // Scene. `outerAt` already answers this correctly for the row marks above
+    // at any depth, so the chip head reads the SAME row this rail already
+    // considers sounding rather than re-deriving it from a stricter gate that
+    // was built for a different feature (the horizontal fold).
+    const soundingGroupIndex = outerAt(activeIndex)?.index ?? null;
+
     return (
       <div
         ref={ruleClickRef}
@@ -1332,6 +1350,26 @@ export default function SegmentMap({
         data-density="rows"
         data-rows={segments.length}
       >
+        {chipRuns.length > 0 && (
+          <div className="surround-segment-map__chips" data-testid="surround-nav-chips">
+            {chipRuns.map((run) => (
+              <button
+                type="button"
+                key={run.index}
+                className="surround-segment-map__chip"
+                data-testid="surround-nav-chip"
+                data-group-index={String(run.index)}
+                data-state={run.index === soundingGroupIndex ? 'sounding' : 'idle'}
+                onClick={() => {
+                  const first = placedRail[run.from]?.segment;
+                  if (first) seekTo(first.mediaStart ?? first.start ?? 0, first.contentId);
+                }}
+              >
+                {run.mini || run.title}
+              </button>
+            ))}
+          </div>
+        )}
         {/* The staff rule, turned ninety degrees: one hairline down the gutter,
             lit to the playhead and hairline beyond it. It sits on the side the
             picture is on, so the timeline reads as the picture's own edge rather

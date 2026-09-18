@@ -1094,6 +1094,37 @@
   overflow: hidden;
 }
 
+/* THE CHIP HEADER. One mark per group, in a row, at the rail's head. No radius
+   and no glow — the band's standing rule — so a chip is distinguished by ground
+   and weight alone, exactly as the sounding row is. */
+.surround-segment-map__chips {
+  display: flex;
+  gap: 0.25em;
+  flex: 0 0 auto;
+  padding: 0 0 0.4em;
+}
+
+.surround-segment-map__chip {
+  flex: 1 1 0;
+  min-width: 0;
+  appearance: none;
+  border: 1px solid var(--programme-edge, rgba(233, 223, 200, 0.28));
+  background: transparent;
+  color: var(--ink-soft, #a89a80);
+  font-family: var(--surround-body);
+  font-size: var(--label-floor, 11.52px);
+  line-height: 1.25;
+  padding: 0.3em 0;
+  cursor: pointer;
+  text-align: center;
+
+  &[data-state="sounding"] {
+    background: var(--bond-ground, rgba(233, 223, 200, 0.14));
+    color: var(--ink, #332b20);
+    font-weight: 600;
+  }
+}
+
 /* THE STAFF RULE, TURNED. One hairline down the gutter: lit to the playhead,
    hairline beyond it. It sits at the rail's INNER edge — the side the picture
    is on — so the timeline reads as the picture's own edge rather than as
