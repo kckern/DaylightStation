@@ -66,6 +66,7 @@ import PropTypes from 'prop-types';
 import { smartQuotes } from '../typography.js';
 import { surroundLogger } from '../moduleKit.js';
 import { segmentAt } from '../segments.js';
+import { navReduce, navInitial, SURROUND_NAV_EVENT, SURROUND_NAV_STATE_EVENT } from '../navMode.js';
 import { resolveBandConfig, useNowSide, useEasedVector, accordionShares, playheadFraction, bondConnector, elapsedFraction, activeSegmentIndex, placedSegments, numeral, numeralText, numeralStyle, ROMAN, placedRailSegments, railGroups, railFolds, foldWidthPx, railIsFlat, collapseInactiveGroups, foldedShares, densityShares, soundingWidth, idealWidth, railFloorPx, railWearsChips, ACCORDION_MS, SEGMENT_CHIP_FLOOR_PX, NOW_PANEL_SHARE }  from '../band.js';
 import './SegmentMap.scss';
 
@@ -201,6 +202,45 @@ export default function SegmentMap({
     if (targetContentId) detail.contentId = String(targetContentId);
     root.dispatchEvent(new CustomEvent('surround-seek', { bubbles: true, detail }));
   }, []);
+
+  const [nav, setNav] = useState(navInitial);
+  // Assigned during render, read inside the listener. This is what lets the
+  // subscription be registered ONCE instead of re-subscribing on every 10 Hz
+  // tick — the same device `SurroundHost` uses for `getHandleRef`.
+  const navRef = useRef({ world: null, segments: null });
+
+  // THE RAIL IS TOLD, it does not listen to the keyboard. The Player owns the
+  // keys and dispatches intent; this turns intent into selection, and a
+  // selection into a seek through the same `surround-seek` the click path uses.
+  useEffect(() => {
+    const onNav = (e) => {
+      const action = e?.detail?.action;
+      if (!action) return;
+      setNav((prev) => {
+        const { world, segments: rows } = navRef.current;
+        if (!world) return prev;
+        if (action === 'select' && prev) {
+          const seg = rows?.[prev.rowIndex];
+          if (seg) seekTo(seg.mediaStart ?? seg.start ?? 0, seg.contentId);
+        }
+        const next = navReduce(prev, action, world);
+        // TELL THE PLAYER. It owns the keys and decides whether the four are
+        // borrowed or handed back, and it cannot see this reducer. Every
+        // transition in or out of nav mode is reported — `up` past the first
+        // row and `exit` included, not just `select` — because those are
+        // exactly the exits the Player would otherwise never hear about.
+        if (Boolean(next) !== Boolean(prev)) {
+          document.dispatchEvent(new CustomEvent(SURROUND_NAV_STATE_EVENT, {
+            detail: { active: Boolean(next) },
+          }));
+        }
+        return next;
+      });
+    };
+    document.addEventListener(SURROUND_NAV_EVENT, onNav);
+    return () => document.removeEventListener(SURROUND_NAV_EVENT, onNav);
+  }, [seekTo]);
+
   const contentId = data?.contentId ?? null;
   const config = useMemo(() => resolveBandConfig(data), [data]);
   // THE COMPACT RAIL (`band.railDensity: 'bars'`). The rule, its barlines and
@@ -1324,6 +1364,88 @@ export default function SegmentMap({
       return `${ROMAN[rank] ?? String(rank)}.${within}`;
     });
 
+    // ONE CHIP PER PLACED GROUP. `railGroups` is the horizontal rail's own
+    // run-builder, reused unchanged: a group whose every segment was refused a
+    // start (this production cuts the Induction) never appears in `placedRail`,
+    // so it never becomes a run, so it never gets a chip you cannot seek to.
+    const wantsChips = region?.groups === 'header';
+    const chipRuns = wantsChips
+      ? railGroups(placedRail, (segment) => segment?.ancestors?.[0] ?? null)
+        .filter((run) => run.index !== null)
+      : [];
+    // WHICH CHIP IS SOUNDING. The module-level `activeGroupIndex` is gated on
+    // `nested` (two ancestor levels or more — the fold's own threshold) and is
+    // `null` for a work grouped at a single tier, such as this fixture's Act >
+    // Scene. `outerAt` already answers this correctly for the row marks above
+    // at any depth, so the chip head reads the SAME row this rail already
+    // considers sounding rather than re-deriving it from a stricter gate that
+    // was built for a different feature (the horizontal fold).
+    const soundingGroupIndex = outerAt(activeIndex)?.index ?? null;
+
+    // WHICH GROUP THE LIST IS SHOWING. The sounding one by default; nav mode
+    // overrides it to preview another. Scoping is what buys the rows their
+    // height: five scenes at 32px read, fourteen at 17px do not.
+    //
+    // USE `soundingGroupIndex` (defined above), NOT the module's
+    // `activeGroupIndex`. The latter is gated on `nested`, which demands two or
+    // more ancestor levels — the horizontal fold's threshold — so it is
+    // permanently `null` for a work grouped at a single tier, and scoping
+    // against it would show an EMPTY list rather than the sounding group's rows.
+    const scopeToGroup = region?.scope === 'group' && chipRuns.length > 0;
+    // SCOPE BY THE DEEPEST GROUP, not the outermost. `ancestors[0]` is the act;
+    // once a work authors a third level the rows are beats, and `[0]` would
+    // list every beat of every scene in the act, flat, with scene names never
+    // appearing. `ancestors.at(-1)` is "this scene's beats" at any depth, and
+    // on a two-level work it IS `ancestors[0]`, so nothing shipped changes.
+    const leafAt = (i) => drawnRail[i]?.segment?.ancestors?.at(-1) ?? null;
+    // NOTHING SOUNDING IS AN ORDINARY STATE, NOT AN ERROR. `activeIndex` is -1
+    // before the first segment starts, after the last ends, and in any gap —
+    // which includes a paused screen before playback begins. Scoping against a
+    // null group would keep only rows whose group index IS null, i.e. none, and
+    // the rail would render EMPTY at exactly the moment a viewer is most likely
+    // to be looking at it. Fall back to the first group instead.
+    const soundingLeafIndex = leafAt(activeIndex)?.index ?? null;
+    const firstLeafIndex = leafAt(0)?.index ?? null;
+
+    // NAV MOVES AT THE LEVEL THE LIST SHOWS. `chipRuns` are outermost-level and
+    // name the chips. The list shows the DEEPEST group's rows. Feeding the
+    // reducer chip runs makes `nav.groupIndex` an outermost index that gets
+    // compared against deepest-level indices — a comparison that matches nothing
+    // the moment a work authors three levels — and makes `nav.rowIndex` range
+    // over rows the list is not displaying. On a two-level work the deepest runs
+    // ARE the chip runs, so this changes nothing already shipped.
+    const leafRuns = railGroups(placedRail, (segment) => segment?.ancestors?.at(-1) ?? null)
+      .filter((run) => run.index !== null);
+    const navWorld = {
+      groups: leafRuns,
+      soundingGroupIndex: soundingLeafIndex,
+      soundingRowIndex: activeIndex,
+    };
+    navRef.current = { world: navWorld, segments };
+
+    const shownLeafIndex = nav
+      ? nav.groupIndex
+      : (soundingLeafIndex ?? firstLeafIndex);
+    const rowIndices = segments.map((_, i) => i).filter((i) => (
+      !scopeToGroup || (leafAt(i)?.index ?? null) === shownLeafIndex
+    ));
+
+    // THE FILL IS A FRACTION OF THIS ROW, which is what makes it immune to the
+    // accordion: whatever height the row is drawn at, the bar reaches its edge
+    // exactly at the boundary. Same derivation as the horizontal rail's.
+    const rowFill = (i) => {
+      const seg = segments[i];
+      const length = (seg?.stop ?? 0) - (seg?.start ?? 0);
+      // NOTHING SOUNDING HAS TWO CAUSES AND THEY ARE OPPOSITES. `activeIndex`
+      // is -1 both before the first segment starts and after the last one ends
+      // (`band.js` `activeSegmentIndex`). Collapsing both to 0 empties every bar
+      // in the rail at the final curtain, which reads as "none of this played".
+      if (activeIndex < 0) return railPosition >= end ? 1 : 0;
+      if (i < activeIndex) return 1;
+      if (i > activeIndex) return 0;
+      return length > 0 ? clamp01((railPosition - seg.start) / length) : 0;
+    };
+
     return (
       <div
         ref={ruleClickRef}
@@ -1332,6 +1454,27 @@ export default function SegmentMap({
         data-density="rows"
         data-rows={segments.length}
       >
+        {chipRuns.length > 0 && (
+          <div className="surround-segment-map__chips" data-testid="surround-nav-chips">
+            {chipRuns.map((run) => (
+              <button
+                type="button"
+                key={run.index}
+                className="surround-segment-map__chip"
+                data-testid="surround-nav-chip"
+                data-group-index={String(run.index)}
+                data-state={run.index === soundingGroupIndex ? 'sounding'
+                  : (nav && nav.groupIndex === run.index ? 'selected' : 'idle')}
+                onClick={() => {
+                  const first = placedRail[run.from]?.segment;
+                  if (first) seekTo(first.mediaStart ?? first.start ?? 0, first.contentId);
+                }}
+              >
+                {run.mini || run.title}
+              </button>
+            ))}
+          </div>
+        )}
         {/* The staff rule, turned ninety degrees: one hairline down the gutter,
             lit to the playhead and hairline beyond it. It sits on the side the
             picture is on, so the timeline reads as the picture's own edge rather
@@ -1344,26 +1487,38 @@ export default function SegmentMap({
           aria-hidden="true"
         />
         <ol className="surround-segment-map__rows">
-          {segments.map((seg, i) => (
-            <li
-              key={`${seg.contentId ?? 'row'}:${i}`}
-              className="surround-segment-map__row"
-              data-testid="surround-segment-row"
-              data-state={i === activeIndex ? 'sounding' : (activeIndex >= 0 && i < activeIndex ? 'played' : 'ahead')}
-              onClick={() => seekTo(seg.mediaStart ?? seg.start ?? 0, seg.contentId)}
-            >
-              <span className="surround-segment-map__row-mark" data-testid="surround-row-mark">{marks[i]}</span>
-              {/* WHAT THE SCENE IS, not what it is numbered. The mark beside it
-                  already carries Act and scene; printing the corpus's `label:`
-                  here too rendered "I.1 Scene 1" — the same fact twice, in the
-                  one place this layout has no width to spare. `annotation` is
-                  what `engrave()` already assembles from `heading`/`subheading`/
-                  `translation`, which for a play is its setting ("Padua. A
-                  public place."). `label` stays as the fallback for a corpus
-                  that authors no heading at all, so nothing renders blank. */}
-              <span className="surround-segment-map__row-label">{seg.annotation || seg.label}</span>
-            </li>
-          ))}
+          {rowIndices.map((i) => {
+            const seg = segments[i];
+            return (
+              <li
+                key={`${seg.contentId ?? 'row'}:${i}`}
+                className="surround-segment-map__row"
+                data-testid="surround-segment-row"
+                data-row-index={String(i)}
+                data-state={i === activeIndex ? 'sounding' : (activeIndex >= 0 && i < activeIndex ? 'played' : 'ahead')}
+                data-selected={nav && nav.rowIndex === i ? 'true' : undefined}
+                onClick={() => seekTo(seg.mediaStart ?? seg.start ?? 0, seg.contentId)}
+              >
+                <span className="surround-segment-map__row-mark" data-testid="surround-row-mark">{marks[i]}</span>
+                {/* WHAT THE SCENE IS, not what it is numbered. The mark beside it
+                    already carries Act and scene; printing the corpus's `label:`
+                    here too rendered "I.1 Scene 1" — the same fact twice, in the
+                    one place this layout has no width to spare. `annotation` is
+                    what `engrave()` already assembles from `heading`/`subheading`/
+                    `translation`, which for a play is its setting ("Padua. A
+                    public place."). `label` stays as the fallback for a corpus
+                    that authors no heading at all, so nothing renders blank. */}
+                <span className="surround-segment-map__row-label">{seg.annotation || seg.label}</span>
+                <span
+                  className="surround-segment-map__row-bar"
+                  data-testid="surround-row-bar"
+                  data-fill={rowFill(i).toFixed(4)}
+                  style={{ '--fill': String(rowFill(i)) }}
+                  aria-hidden="true"
+                />
+              </li>
+            );
+          })}
         </ol>
       </div>
     );
