@@ -2847,8 +2847,10 @@ const GROUPED = {
 };
 
 describe('SegmentMap — column chip header', () => {
-  // Two placed groups; a third authored group has no placeable segment and
-  // must NOT get a chip (the Shrew's Induction is cut in this production).
+  // GROUPED (module scope, above) carries two placed groups, Act I and Act
+  // II, each with a placeable segment — an unplaceable group never reaches
+  // `placedRail` and so never becomes a run, which is what keeps a cut group
+  // like the Shrew's Induction chip-less; this fixture just isn't that case.
   const region = { module: 'segment-map', orientation: 'column', groups: 'header' };
 
   it('renders one chip per placed group', () => {
