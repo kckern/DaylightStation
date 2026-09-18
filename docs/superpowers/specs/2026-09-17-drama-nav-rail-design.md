@@ -1,7 +1,7 @@
 # Drama Nav Rail — Act / Scene / Beat Navigation
 
 **Date:** 2026-09-17
-**Status:** design, awaiting review
+**Status:** BUILT, MERGED, DEPLOYED — and deliberately switched off. See [§16 Outcome](#16-outcome-2026-09-18) before reading the rest: this document describes the design that was *intended*, and two of its intentions did not survive contact with a real screen. The Scene→Beat accordion (§1, §3.4, §6) was **not built** — what shipped is group scoping with a row-height cap. §16 says what is true today.
 **Supersedes the rail half of:** [2026-09-16-drama-surround-design.md](./2026-09-16-drama-surround-design.md)
 **Surround definition affected:** `playhouse-rail` (4:3 works). `concert-hall` and `playhouse` are untouched.
 
