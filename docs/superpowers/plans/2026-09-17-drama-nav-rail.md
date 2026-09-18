@@ -1342,12 +1342,19 @@ Act IV scene 1 begins at 3913s; the five beats below sit inside it.
   - kind: act
     title: "Act IV"
     mini: "IV"
+    # BOTH facts are carried across unchanged. The Act authors two, and the
+    # second is the longest and most substantive in the work — dropping it
+    # while "restructuring" would be a silent content loss disguised as a
+    # shape change.
     facts:
       - "Petruchio's taming escalates methodically across all five scenes of this Act: denying Kate food, sleep, and even her wedding gown, all under what he repeatedly calls the name of perfect kindness."
+      - "Scholars are sharply divided on how to read this Act. Some (following Emily Detmer's 1997 Shakespeare Quarterly article) compare Petruchio's methods directly to the psychology of hostage-taking; others read Kate as recognizing Petruchio's behavior as a mirror of her own and choosing to out-maneuver him at his own game."
     groups:
       - kind: scene
         title: "Starved at Her Own Table"
         heading: "A hall in Petruchio's country house."
+        listen:
+          - "Petruchio's falconry speech — \"my falcon now is sharp and passing empty\" — is the moment he tells the audience outright what he is doing: starving Kate into obedience exactly as a trainer starves a hawk."
         segments:
           - { n: 1, name: "Grumio arrives frozen", start: 3913 }
           - { n: 2, name: "The servants are dressed down", start: 4091 }
@@ -1357,24 +1364,47 @@ Act IV scene 1 begins at 3913s; the five beats below sit inside it.
       - kind: scene
         title: "The Tutor Unmasked"
         heading: "Padua. Before Baptista's house."
+        listen:
+          - "Hortensio abandons his pursuit of Bianca the instant he sees her flirt with \"Cambio\" — played for comedy here, but it is the same taming logic Petruchio is applying to Kate in the very next scene."
         segments:
           - { n: 1, name: "Hortensio gives up on Bianca", start: 4695 }
       - kind: scene
         title: "The Gown Torn Up"
         heading: "A room in Petruchio's house."
+        listen:
+          - "Petruchio rejects the tailor's gown and the haberdasher's cap on principle, not because either is actually wrong — \"this doth fit the time,\" he insists of a cap he has already decided to hate."
         segments:
           - { n: 1, name: "The cap and gown refused", start: 5067 }
       - kind: scene
         title: "A Father Counterfeited"
         heading: "Padua. Before Baptista's house."
+        listen:
+          - "The Pedant, dressed as Vincentio, negotiates Bianca's dowry with Baptista while the real Vincentio is still on the road to Padua — the disguise plot's riskiest bluff yet."
         segments:
           - { n: 1, name: "The Pedant bargains as Vincentio", start: 5687 }
       - kind: scene
         title: "The Sun and the Moon"
         heading: "A public road."
+        # CARRIED FROM THE OLD SEGMENT, NOT INVENTED. This scene re-describes
+        # ONE name, which replaces the work-level Petruchio card from here on
+        # while every other character keeps its baseline. Losing it would quietly
+        # revert the card to the generic description at the play's hinge —
+        # precisely where the sharper one earns its place.
+        characters:
+          - { name: "Petruchio", role: "a gentleman of Verona, suitor to Kate", description: "Deep into the taming — has spent this Act starving and sleep-depriving Kate under the banner of \"kindness,\" and now tests how far her compliance goes by insisting the sun is the moon." }
+        listen:
+          - "The \"sun or moon\" exchange is the hinge of the whole play — Kate agrees the sun is the moon the instant Petruchio insists on it, and by the scene's end she is playing his same game, unprompted, on a total stranger."
         segments:
           - { n: 1, name: "Kate agrees the sun is the moon", start: 5962 }
 ```
+
+**Nothing authored may be lost in the restructure.** Act IV's five old segments
+carry a `listen:` note each, `heading:`s, and (on scene 5) a `characters:`
+override. The scene-groups above take over the `heading:`s and the character
+override; every `listen:` note moves onto the scene-group that replaces its
+segment. Before writing the file, diff the old Act IV block against the new one
+and account for every authored line — a restructure that drops teaching material
+is a regression wearing a refactor's clothes.
 
 **EVERY scene of the Act is a group — no mixed children.** `nestedGroupSegments`
 (`YamlSurroundStore.mjs:95-118`) pushes a group's own `segments` **before** it
