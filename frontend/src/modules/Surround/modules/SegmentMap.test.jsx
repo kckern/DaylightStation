@@ -2934,6 +2934,37 @@ describe('SegmentMap — column chip header', () => {
     expect(rows.length).toBeGreaterThan(0);
     expect(rows[0]).toHaveAttribute('data-row-index', '0');
   });
+
+  // The column chip header reuses `.surround-segment-map__chip` — a class the
+  // HORIZONTAL band already owned (SegmentMap.scss:538, the measured ten-foot
+  // label floor at `* 1.35`). An unscoped column rule with the same class and
+  // equal specificity, declared LATER in the sheet, wins for both layouts —
+  // shrinking the band's chip type on every corpus that chips its rail, which
+  // is most of the classical corpus, for a header built for one piece. Every
+  // chip rule this header owns must live under `.surround-segment-map--column`
+  // so it cannot leak onto the band.
+  it('scopes the column chip rules to the column layout, not the horizontal band', () => {
+    const css = compileSheetOnce(path.join(__dirname, 'SegmentMap.scss')).css;
+    const ruleRe = /([^{}]+)\{([^{}]*)\}/g;
+    let match;
+    let checked = 0;
+    while ((match = ruleRe.exec(css))) {
+      const [, selector, body] = match;
+      // `__chip` itself, not `__chips` (the row container) and not the
+      // horizontal band's `__chip--fold` variant.
+      if (!/\.surround-segment-map__chip(?![\w-])/.test(selector)) continue;
+      // The column header sets the label floor directly; the pre-existing
+      // horizontal rule at :538 wraps it in `calc(... * 1.35)` instead, so
+      // this pattern only ever matches the column's own declaration.
+      if (!/font-size:\s*var\(--label-floor/.test(body)) continue;
+      checked += 1;
+      expect(selector, `unscoped chip rule leaks the column header's font-size onto the horizontal band: ${selector.trim()}`)
+        .toMatch(/--column/);
+    }
+    // Guards the guard: if the column rule stopped setting font-size via
+    // `--label-floor` at all, the loop above would find nothing to check.
+    expect(checked).toBeGreaterThan(0);
+  });
 });
 
 describe('SegmentMap — nav mode', () => {
