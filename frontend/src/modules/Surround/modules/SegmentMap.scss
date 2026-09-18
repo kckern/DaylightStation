@@ -1241,6 +1241,18 @@
   .surround-segment-map__row-mark { color: var(--ink, #332b20); }
 }
 
+/* THE SELECTION OUTLINE — the one place on this rail an edge is allowed,
+   because it has to read against both the lit (sounding) and unlit grounds a
+   nav selection can land on. */
+.surround-segment-map__row[data-selected="true"] {
+  box-shadow: inset 0 0 0 2px var(--brass-lit, #f6e3a0);
+}
+
+.surround-segment-map__chip[data-state="selected"] {
+  box-shadow: inset 0 0 0 2px var(--brass-lit, #f6e3a0);
+  color: var(--ink, #332b20);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .surround-segment-map__spine::after { transition: none; }
 }

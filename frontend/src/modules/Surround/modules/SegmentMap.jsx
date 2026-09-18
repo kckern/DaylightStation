@@ -66,6 +66,7 @@ import PropTypes from 'prop-types';
 import { smartQuotes } from '../typography.js';
 import { surroundLogger } from '../moduleKit.js';
 import { segmentAt } from '../segments.js';
+import { navReduce, navInitial, SURROUND_NAV_EVENT } from '../navMode.js';
 import { resolveBandConfig, useNowSide, useEasedVector, accordionShares, playheadFraction, bondConnector, elapsedFraction, activeSegmentIndex, placedSegments, numeral, numeralText, numeralStyle, ROMAN, placedRailSegments, railGroups, railFolds, foldWidthPx, railIsFlat, collapseInactiveGroups, foldedShares, densityShares, soundingWidth, idealWidth, railFloorPx, railWearsChips, ACCORDION_MS, SEGMENT_CHIP_FLOOR_PX, NOW_PANEL_SHARE }  from '../band.js';
 import './SegmentMap.scss';
 
@@ -201,6 +202,34 @@ export default function SegmentMap({
     if (targetContentId) detail.contentId = String(targetContentId);
     root.dispatchEvent(new CustomEvent('surround-seek', { bubbles: true, detail }));
   }, []);
+
+  const [nav, setNav] = useState(navInitial);
+  // Assigned during render, read inside the listener. This is what lets the
+  // subscription be registered ONCE instead of re-subscribing on every 10 Hz
+  // tick — the same device `SurroundHost` uses for `getHandleRef`.
+  const navRef = useRef({ world: null, segments: null });
+
+  // THE RAIL IS TOLD, it does not listen to the keyboard. The Player owns the
+  // keys and dispatches intent; this turns intent into selection, and a
+  // selection into a seek through the same `surround-seek` the click path uses.
+  useEffect(() => {
+    const onNav = (e) => {
+      const action = e?.detail?.action;
+      if (!action) return;
+      setNav((prev) => {
+        const { world, segments: rows } = navRef.current;
+        if (!world) return prev;
+        if (action === 'select' && prev) {
+          const seg = rows?.[prev.rowIndex];
+          if (seg) seekTo(seg.mediaStart ?? seg.start ?? 0, seg.contentId);
+        }
+        return navReduce(prev, action, world);
+      });
+    };
+    document.addEventListener(SURROUND_NAV_EVENT, onNav);
+    return () => document.removeEventListener(SURROUND_NAV_EVENT, onNav);
+  }, [seekTo]);
+
   const contentId = data?.contentId ?? null;
   const config = useMemo(() => resolveBandConfig(data), [data]);
   // THE COMPACT RAIL (`band.railDensity: 'bars'`). The rule, its barlines and
@@ -1342,9 +1371,12 @@ export default function SegmentMap({
     // was built for a different feature (the horizontal fold).
     const soundingGroupIndex = outerAt(activeIndex)?.index ?? null;
 
+    const navWorld = { groups: chipRuns, soundingGroupIndex, soundingRowIndex: activeIndex };
+    navRef.current = { world: navWorld, segments };
+
     // WHICH GROUP THE LIST IS SHOWING. The sounding one by default; nav mode
-    // overrides it to preview another (Task 5). Scoping is what buys the rows
-    // their height: five scenes at 32px read, fourteen at 17px do not.
+    // overrides it to preview another. Scoping is what buys the rows their
+    // height: five scenes at 32px read, fourteen at 17px do not.
     //
     // USE `soundingGroupIndex` (defined above), NOT the module's
     // `activeGroupIndex`. The latter is gated on `nested`, which demands two or
@@ -1352,9 +1384,25 @@ export default function SegmentMap({
     // permanently `null` for a work grouped at a single tier, and scoping
     // against it would show an EMPTY list rather than the sounding group's rows.
     const scopeToGroup = region?.scope === 'group' && chipRuns.length > 0;
-    const shownGroupIndex = soundingGroupIndex;
+    // SCOPE BY THE DEEPEST GROUP, not the outermost. `ancestors[0]` is the act;
+    // once a work authors a third level the rows are beats, and `[0]` would
+    // list every beat of every scene in the act, flat, with scene names never
+    // appearing. `ancestors.at(-1)` is "this scene's beats" at any depth, and
+    // on a two-level work it IS `ancestors[0]`, so nothing shipped changes.
+    const leafAt = (i) => drawnRail[i]?.segment?.ancestors?.at(-1) ?? null;
+    // NOTHING SOUNDING IS AN ORDINARY STATE, NOT AN ERROR. `activeIndex` is -1
+    // before the first segment starts, after the last ends, and in any gap —
+    // which includes a paused screen before playback begins. Scoping against a
+    // null group would keep only rows whose group index IS null, i.e. none, and
+    // the rail would render EMPTY at exactly the moment a viewer is most likely
+    // to be looking at it. Fall back to the first group instead.
+    const soundingLeafIndex = leafAt(activeIndex)?.index ?? null;
+    const firstLeafIndex = leafAt(0)?.index ?? null;
+    const shownLeafIndex = nav
+      ? nav.groupIndex
+      : (soundingLeafIndex ?? firstLeafIndex);
     const rowIndices = segments.map((_, i) => i).filter((i) => (
-      !scopeToGroup || (drawnRail[i]?.segment?.ancestors?.[0]?.index ?? null) === shownGroupIndex
+      !scopeToGroup || (leafAt(i)?.index ?? null) === shownLeafIndex
     ));
 
     // THE FILL IS A FRACTION OF THIS ROW, which is what makes it immune to the
@@ -1385,7 +1433,8 @@ export default function SegmentMap({
                 className="surround-segment-map__chip"
                 data-testid="surround-nav-chip"
                 data-group-index={String(run.index)}
-                data-state={run.index === soundingGroupIndex ? 'sounding' : 'idle'}
+                data-state={run.index === soundingGroupIndex ? 'sounding'
+                  : (nav && nav.groupIndex === run.index ? 'selected' : 'idle')}
                 onClick={() => {
                   const first = placedRail[run.from]?.segment;
                   if (first) seekTo(first.mediaStart ?? first.start ?? 0, first.contentId);
@@ -1417,6 +1466,7 @@ export default function SegmentMap({
                 data-testid="surround-segment-row"
                 data-row-index={String(i)}
                 data-state={i === activeIndex ? 'sounding' : (activeIndex >= 0 && i < activeIndex ? 'played' : 'ahead')}
+                data-selected={nav && nav.rowIndex === i ? 'true' : undefined}
                 onClick={() => seekTo(seg.mediaStart ?? seg.start ?? 0, seg.contentId)}
               >
                 <span className="surround-segment-map__row-mark" data-testid="surround-row-mark">{marks[i]}</span>

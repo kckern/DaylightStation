@@ -2897,6 +2897,91 @@ describe('SegmentMap — column chip header', () => {
     );
     expect(container.querySelectorAll('[data-testid="surround-segment-row"]').length).toBe(3);
   });
+
+  it('falls back to the first group’s rows when nothing is sounding', () => {
+    // position 0 with a rail whose first segment starts later: activeIndex is -1.
+    const region = { module: 'segment-map', orientation: 'column', groups: 'header', scope: 'group' };
+    const { container } = render(
+      <SegmentMap position={0} duration={300} data={GROUPED} region={region} />,
+    );
+    const rows = container.querySelectorAll('[data-testid="surround-segment-row"]');
+    expect(rows.length).toBeGreaterThan(0);
+    expect(rows[0]).toHaveAttribute('data-row-index', '0');
+  });
+
+  // NOT PART OF THE BRIEF'S SPEC — added because the spec above, as written,
+  // does not actually force `activeIndex` to -1: GROUPED's first segment
+  // starts at offset 0, so position 0 already matches it (`activeIndex` is 0,
+  // and the fixture's own Act I is also the first group), which is why the
+  // spec above passes even against the OLD, un-fixed filter. This fixture
+  // gives `data.contentId` no match in `segments[]`, which is the one honest
+  // way to force `segmentAt` to report nothing sounding
+  // (`activeIndex === -1`) regardless of position, so the `?? firstLeafIndex`
+  // fallback is the thing actually being exercised.
+  it('falls back to the first group’s rows when activeIndex is genuinely -1', () => {
+    const UNMAPPED = {
+      contentId: 'plex:unmapped',
+      timeline: { totalSounding: 300 },
+      segments: GROUPED.segments,
+    };
+    const region = { module: 'segment-map', orientation: 'column', groups: 'header', scope: 'group' };
+    const { container } = render(
+      <SegmentMap position={0} duration={300} data={UNMAPPED} region={region} />,
+    );
+    const sounding = container.querySelectorAll('[data-testid="surround-segment-row"][data-state="sounding"]');
+    expect(sounding).toHaveLength(0);
+    const rows = container.querySelectorAll('[data-testid="surround-segment-row"]');
+    expect(rows.length).toBeGreaterThan(0);
+    expect(rows[0]).toHaveAttribute('data-row-index', '0');
+  });
+});
+
+describe('SegmentMap — nav mode', () => {
+  const region = { module: 'segment-map', orientation: 'column', groups: 'header', scope: 'group' };
+  const fire = (action) => act(() => {
+    document.dispatchEvent(new CustomEvent('surround-nav', { detail: { action } }));
+  });
+
+  it('enter selects the sounding row; right previews the next group without seeking', () => {
+    const seeks = [];
+    document.addEventListener('surround-seek', (e) => seeks.push(e.detail));
+    const { container } = render(
+      <SegmentMap position={10} duration={300} data={GROUPED} region={region} />,
+    );
+    fire('enter');
+    expect(container.querySelector('[data-selected="true"]')).toHaveAttribute('data-row-index', '0');
+    fire('right');
+    // Previewing Act II: its row is listed, and NOTHING has been sought.
+    expect(container.querySelector('[data-selected="true"]')).toHaveAttribute('data-row-index', '2');
+    expect(seeks).toHaveLength(0);
+    // The sounding chip is still Act I; Act II is merely selected.
+    const chips = [...container.querySelectorAll('[data-testid="surround-nav-chip"]')];
+    expect(chips[0].dataset.state).toBe('sounding');
+    expect(chips[1].dataset.state).toBe('selected');
+  });
+
+  it('OK seeks to the selected row and leaves nav mode', () => {
+    const seeks = [];
+    document.addEventListener('surround-seek', (e) => seeks.push(e.detail));
+    const { container } = render(
+      <SegmentMap position={10} duration={300} data={GROUPED} region={region} />,
+    );
+    fire('enter'); fire('right'); fire('select');
+    expect(seeks).toHaveLength(1);
+    expect(seeks[0].seconds).toBe(200);
+    expect(container.querySelector('[data-selected="true"]')).toBeNull();
+  });
+
+  it('up past the first row exits without seeking — the no-Esc escape', () => {
+    const seeks = [];
+    document.addEventListener('surround-seek', (e) => seeks.push(e.detail));
+    const { container } = render(
+      <SegmentMap position={10} duration={300} data={GROUPED} region={region} />,
+    );
+    fire('enter'); fire('up');
+    expect(container.querySelector('[data-selected="true"]')).toBeNull();
+    expect(seeks).toHaveLength(0);
+  });
 });
 
 describe('SegmentMap — column row progress', () => {
