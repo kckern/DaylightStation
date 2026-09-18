@@ -1120,7 +1120,7 @@
 
   &[data-state="sounding"] {
     background: var(--bond-ground, rgba(233, 223, 200, 0.14));
-    color: var(--ink, #332b20);
+    color: var(--ink, #2a1d07);
     font-weight: 600;
   }
 }
@@ -1257,7 +1257,7 @@
 
 .surround-segment-map--column .surround-segment-map__chip[data-state="selected"] {
   box-shadow: inset 0 0 0 2px var(--brass-lit, #f6e3a0);
-  color: var(--ink, #332b20);
+  color: var(--ink, #2a1d07);
 }
 
 @media (prefers-reduced-motion: reduce) {
