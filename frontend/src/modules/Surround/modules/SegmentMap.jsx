@@ -1342,6 +1342,21 @@ export default function SegmentMap({
     // was built for a different feature (the horizontal fold).
     const soundingGroupIndex = outerAt(activeIndex)?.index ?? null;
 
+    // WHICH GROUP THE LIST IS SHOWING. The sounding one by default; nav mode
+    // overrides it to preview another (Task 5). Scoping is what buys the rows
+    // their height: five scenes at 32px read, fourteen at 17px do not.
+    //
+    // USE `soundingGroupIndex` (defined above), NOT the module's
+    // `activeGroupIndex`. The latter is gated on `nested`, which demands two or
+    // more ancestor levels — the horizontal fold's threshold — so it is
+    // permanently `null` for a work grouped at a single tier, and scoping
+    // against it would show an EMPTY list rather than the sounding group's rows.
+    const scopeToGroup = region?.scope === 'group' && chipRuns.length > 0;
+    const shownGroupIndex = soundingGroupIndex;
+    const rowIndices = segments.map((_, i) => i).filter((i) => (
+      !scopeToGroup || (drawnRail[i]?.segment?.ancestors?.[0]?.index ?? null) === shownGroupIndex
+    ));
+
     return (
       <div
         ref={ruleClickRef}
@@ -1382,26 +1397,30 @@ export default function SegmentMap({
           aria-hidden="true"
         />
         <ol className="surround-segment-map__rows">
-          {segments.map((seg, i) => (
-            <li
-              key={`${seg.contentId ?? 'row'}:${i}`}
-              className="surround-segment-map__row"
-              data-testid="surround-segment-row"
-              data-state={i === activeIndex ? 'sounding' : (activeIndex >= 0 && i < activeIndex ? 'played' : 'ahead')}
-              onClick={() => seekTo(seg.mediaStart ?? seg.start ?? 0, seg.contentId)}
-            >
-              <span className="surround-segment-map__row-mark" data-testid="surround-row-mark">{marks[i]}</span>
-              {/* WHAT THE SCENE IS, not what it is numbered. The mark beside it
-                  already carries Act and scene; printing the corpus's `label:`
-                  here too rendered "I.1 Scene 1" — the same fact twice, in the
-                  one place this layout has no width to spare. `annotation` is
-                  what `engrave()` already assembles from `heading`/`subheading`/
-                  `translation`, which for a play is its setting ("Padua. A
-                  public place."). `label` stays as the fallback for a corpus
-                  that authors no heading at all, so nothing renders blank. */}
-              <span className="surround-segment-map__row-label">{seg.annotation || seg.label}</span>
-            </li>
-          ))}
+          {rowIndices.map((i) => {
+            const seg = segments[i];
+            return (
+              <li
+                key={`${seg.contentId ?? 'row'}:${i}`}
+                className="surround-segment-map__row"
+                data-testid="surround-segment-row"
+                data-row-index={String(i)}
+                data-state={i === activeIndex ? 'sounding' : (activeIndex >= 0 && i < activeIndex ? 'played' : 'ahead')}
+                onClick={() => seekTo(seg.mediaStart ?? seg.start ?? 0, seg.contentId)}
+              >
+                <span className="surround-segment-map__row-mark" data-testid="surround-row-mark">{marks[i]}</span>
+                {/* WHAT THE SCENE IS, not what it is numbered. The mark beside it
+                    already carries Act and scene; printing the corpus's `label:`
+                    here too rendered "I.1 Scene 1" — the same fact twice, in the
+                    one place this layout has no width to spare. `annotation` is
+                    what `engrave()` already assembles from `heading`/`subheading`/
+                    `translation`, which for a play is its setting ("Padua. A
+                    public place."). `label` stays as the fallback for a corpus
+                    that authors no heading at all, so nothing renders blank. */}
+                <span className="surround-segment-map__row-label">{seg.annotation || seg.label}</span>
+              </li>
+            );
+          })}
         </ol>
       </div>
     );

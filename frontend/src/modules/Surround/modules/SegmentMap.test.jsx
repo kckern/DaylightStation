@@ -2878,4 +2878,23 @@ describe('SegmentMap — column chip header', () => {
     );
     expect(container.querySelector('[data-testid="surround-nav-chips"]')).toBeNull();
   });
+
+  it('lists only the sounding group’s rows when the definition scopes to a group', () => {
+    const scoped = { module: 'segment-map', orientation: 'column', groups: 'header', scope: 'group' };
+    // position 250 is inside Act II, which has exactly one scene.
+    const { container } = render(
+      <SegmentMap position={250} duration={300} data={GROUPED} region={scoped} />,
+    );
+    const rows = container.querySelectorAll('[data-testid="surround-segment-row"]');
+    expect(rows.length).toBe(1);
+    expect(rows[0]).toHaveAttribute('data-row-index', '2');
+  });
+
+  it('lists every row when the definition does not scope', () => {
+    const { container } = render(
+      <SegmentMap position={250} duration={300} data={GROUPED}
+        region={{ module: 'segment-map', orientation: 'column', groups: 'header' }} />,
+    );
+    expect(container.querySelectorAll('[data-testid="surround-segment-row"]').length).toBe(3);
+  });
 });
