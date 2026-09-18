@@ -66,7 +66,7 @@ import PropTypes from 'prop-types';
 import { smartQuotes } from '../typography.js';
 import { surroundLogger } from '../moduleKit.js';
 import { segmentAt } from '../segments.js';
-import { navReduce, navInitial, SURROUND_NAV_EVENT } from '../navMode.js';
+import { navReduce, navInitial, SURROUND_NAV_EVENT, SURROUND_NAV_STATE_EVENT } from '../navMode.js';
 import { resolveBandConfig, useNowSide, useEasedVector, accordionShares, playheadFraction, bondConnector, elapsedFraction, activeSegmentIndex, placedSegments, numeral, numeralText, numeralStyle, ROMAN, placedRailSegments, railGroups, railFolds, foldWidthPx, railIsFlat, collapseInactiveGroups, foldedShares, densityShares, soundingWidth, idealWidth, railFloorPx, railWearsChips, ACCORDION_MS, SEGMENT_CHIP_FLOOR_PX, NOW_PANEL_SHARE }  from '../band.js';
 import './SegmentMap.scss';
 
@@ -223,7 +223,18 @@ export default function SegmentMap({
           const seg = rows?.[prev.rowIndex];
           if (seg) seekTo(seg.mediaStart ?? seg.start ?? 0, seg.contentId);
         }
-        return navReduce(prev, action, world);
+        const next = navReduce(prev, action, world);
+        // TELL THE PLAYER. It owns the keys and decides whether the four are
+        // borrowed or handed back, and it cannot see this reducer. Every
+        // transition in or out of nav mode is reported — `up` past the first
+        // row and `exit` included, not just `select` — because those are
+        // exactly the exits the Player would otherwise never hear about.
+        if (Boolean(next) !== Boolean(prev)) {
+          document.dispatchEvent(new CustomEvent(SURROUND_NAV_STATE_EVENT, {
+            detail: { active: Boolean(next) },
+          }));
+        }
+        return next;
       });
     };
     document.addEventListener(SURROUND_NAV_EVENT, onNav);
@@ -1371,9 +1382,6 @@ export default function SegmentMap({
     // was built for a different feature (the horizontal fold).
     const soundingGroupIndex = outerAt(activeIndex)?.index ?? null;
 
-    const navWorld = { groups: chipRuns, soundingGroupIndex, soundingRowIndex: activeIndex };
-    navRef.current = { world: navWorld, segments };
-
     // WHICH GROUP THE LIST IS SHOWING. The sounding one by default; nav mode
     // overrides it to preview another. Scoping is what buys the rows their
     // height: five scenes at 32px read, fourteen at 17px do not.
@@ -1398,6 +1406,23 @@ export default function SegmentMap({
     // to be looking at it. Fall back to the first group instead.
     const soundingLeafIndex = leafAt(activeIndex)?.index ?? null;
     const firstLeafIndex = leafAt(0)?.index ?? null;
+
+    // NAV MOVES AT THE LEVEL THE LIST SHOWS. `chipRuns` are outermost-level and
+    // name the chips. The list shows the DEEPEST group's rows. Feeding the
+    // reducer chip runs makes `nav.groupIndex` an outermost index that gets
+    // compared against deepest-level indices — a comparison that matches nothing
+    // the moment a work authors three levels — and makes `nav.rowIndex` range
+    // over rows the list is not displaying. On a two-level work the deepest runs
+    // ARE the chip runs, so this changes nothing already shipped.
+    const leafRuns = railGroups(placedRail, (segment) => segment?.ancestors?.at(-1) ?? null)
+      .filter((run) => run.index !== null);
+    const navWorld = {
+      groups: leafRuns,
+      soundingGroupIndex: soundingLeafIndex,
+      soundingRowIndex: activeIndex,
+    };
+    navRef.current = { world: navWorld, segments };
+
     const shownLeafIndex = nav
       ? nav.groupIndex
       : (soundingLeafIndex ?? firstLeafIndex);
@@ -1411,7 +1436,12 @@ export default function SegmentMap({
     const rowFill = (i) => {
       const seg = segments[i];
       const length = (seg?.stop ?? 0) - (seg?.start ?? 0);
-      if (activeIndex >= 0 && i < activeIndex) return 1;
+      // NOTHING SOUNDING HAS TWO CAUSES AND THEY ARE OPPOSITES. `activeIndex`
+      // is -1 both before the first segment starts and after the last one ends
+      // (`band.js` `activeSegmentIndex`). Collapsing both to 0 empties every bar
+      // in the rail at the final curtain, which reads as "none of this played".
+      if (activeIndex < 0) return railPosition >= end ? 1 : 0;
+      if (i < activeIndex) return 1;
       if (i > activeIndex) return 0;
       return length > 0 ? clamp01((railPosition - seg.start) / length) : 0;
     };

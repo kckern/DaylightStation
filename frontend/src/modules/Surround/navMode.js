@@ -14,6 +14,16 @@
 /** The DOM event the Player dispatches and the rail listens for. */
 export const SURROUND_NAV_EVENT = 'surround-nav';
 
+/**
+ * The rail's reply. The reducer lives in the rail, not the Player, so the
+ * Player cannot see the transition it just caused — including the one it
+ * cannot predict, `up` past the first row, which exits with no `select` and
+ * no timeout. Every transition into or out of nav mode is reported on this
+ * event (`detail: { active: boolean }`), which is what lets the Player hold
+ * `navActive` as real state instead of guessing from the action it sent.
+ */
+export const SURROUND_NAV_STATE_EVENT = 'surround-nav-state';
+
 /** Leave nav mode after this long without a key. Matches the footer-zoom grace. */
 export const NAV_IDLE_MS = 12000;
 
