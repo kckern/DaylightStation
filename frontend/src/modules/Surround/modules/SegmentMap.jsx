@@ -1353,7 +1353,15 @@ export default function SegmentMap({
               onClick={() => seekTo(seg.mediaStart ?? seg.start ?? 0, seg.contentId)}
             >
               <span className="surround-segment-map__row-mark" data-testid="surround-row-mark">{marks[i]}</span>
-              <span className="surround-segment-map__row-label">{seg.label}</span>
+              {/* WHAT THE SCENE IS, not what it is numbered. The mark beside it
+                  already carries Act and scene; printing the corpus's `label:`
+                  here too rendered "I.1 Scene 1" — the same fact twice, in the
+                  one place this layout has no width to spare. `annotation` is
+                  what `engrave()` already assembles from `heading`/`subheading`/
+                  `translation`, which for a play is its setting ("Padua. A
+                  public place."). `label` stays as the fallback for a corpus
+                  that authors no heading at all, so nothing renders blank. */}
+              <span className="surround-segment-map__row-label">{seg.annotation || seg.label}</span>
             </li>
           ))}
         </ol>

@@ -2768,6 +2768,33 @@ describe('the timeline on a vertical axis', () => {
     expect(rows(container)).toHaveLength(4);
   });
 
+  it('names the scene by what the corpus says it IS, not by repeating the mark', () => {
+    // The mark already carries Act and scene (`I.1`). Printing the corpus's
+    // `label:` beside it renders "I.1 Scene 1" — the same fact twice, in a rail
+    // where every pixel of width is spent. The descriptive string is `heading:`
+    // ("Padua. A public place."), which `engrave()` already carries through as
+    // `annotation`, so the row has it without any new plumbing.
+    const { container } = renderMap({
+      data: {
+        contentId: 'plex:col2',
+        segments: [{
+          n: 1, label: 'Scene 1', heading: 'Padua. A public place.',
+          contentId: 'plex:col2', start: 0, end: 10, offset: 0, duration: 10, part: 0,
+          ancestors: [{ index: 0, title: 'Act I' }, { index: 0, title: 'Scene 1' }],
+        }],
+        timeline: { totalSounding: 10, parts: [{ contentId: 'plex:col2', index: 0, sounding: 10 }] },
+      },
+      position: 5,
+      duration: 10,
+      region: { module: 'segment-map', orientation: 'column' },
+    });
+    const row = container.querySelector('[data-testid="surround-segment-row"]');
+    expect(row.querySelector('[data-testid="surround-row-mark"]').textContent).toBe('I.1');
+    expect(row.querySelector('.surround-segment-map__row-label').textContent)
+      .toBe('Padua. A public place.');
+  });
+
+
   it('carries the outer group in the mark rather than in a heading row', () => {
     const { container } = renderColumn();
     expect(rows(container).map((r) => r.querySelector('[data-testid="surround-row-mark"]').textContent))
