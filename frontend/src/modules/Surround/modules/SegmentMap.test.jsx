@@ -3013,10 +3013,85 @@ describe('SegmentMap — column row progress', () => {
     expect(Number(bars[1].dataset.fill)).toBe(0);
   });
 
+  // Finding 4: `activeIndex` is -1 both before the first segment starts AND
+  // after the last one ends — the applause. Collapsing both to 0 used to empty
+  // every bar in the rail at the final curtain, which reads as "none of this
+  // played" at the exact moment everything did.
+  it('every row reads full once nothing is sounding because the piece has ended', () => {
+    const { container } = render(
+      <SegmentMap position={220} duration={260} data={FLAT} region={region} />,
+    );
+    const bars = container.querySelectorAll('[data-testid="surround-row-bar"]');
+    expect(bars.length).toBe(2);
+    bars.forEach((bar) => expect(Number(bar.dataset.fill)).toBe(1));
+  });
+
   it('rows may grow past four floors so a short list fills the rail', () => {
     const css = compileSheetOnce(path.join(__dirname, 'SegmentMap.scss')).css;
     const rule = css.match(/\.surround-segment-map__row\s*\{[^}]*\}/)[0];
     expect(rule).toContain('min-height: calc(var(--label-floor, 11.52px) * 2)');
     expect(rule).not.toContain('max-height');
+  });
+
+  // Finding 5: `#332b20` matches no token in the sheet — the base `--ink` is
+  // `#2a1d07` (`SurroundFrame.scss:30`). Four older rules in this sheet still
+  // carry the drifted literal and are out of scope here; this checks only the
+  // rule this task owns.
+  it('the row fill falls back to the BASE --ink token, not the drifted literal', () => {
+    const css = compileSheetOnce(path.join(__dirname, 'SegmentMap.scss')).css;
+    const rule = css.match(/\.surround-segment-map__row-bar::after\s*\{[^}]*\}/)[0];
+    expect(rule).toContain('background: var(--ink, #2a1d07);');
+    expect(rule).not.toContain('background: var(--ink, #332b20)');
+  });
+});
+
+describe('SegmentMap — nav world is scoped to the level the list shows', () => {
+  // Group > subgroup > row. `chipRuns` (Act I / Act II) are outermost; the
+  // list shows each SCENE's own beats. Feeding the reducer chip runs instead
+  // of scene runs compares an outer index against deepest indices — Finding 3.
+  const THREE_LEVEL = {
+    contentId: 'plex:3',
+    timeline: { totalSounding: 200 },
+    segments: [
+      { n: 1, label: 'Beat A', contentId: 'plex:3', start: 0, offset: 0, duration: 50, end: 50,
+        ancestors: [{ index: 0, title: 'Act I' }, { index: 0, title: 'Scene 1' }] },
+      { n: 2, label: 'Beat B', contentId: 'plex:3', start: 50, offset: 50, duration: 50, end: 100,
+        ancestors: [{ index: 0, title: 'Act I' }, { index: 0, title: 'Scene 1' }] },
+      { n: 1, label: 'Beat C', contentId: 'plex:3', start: 100, offset: 100, duration: 50, end: 150,
+        ancestors: [{ index: 0, title: 'Act I' }, { index: 1, title: 'Scene 2' }] },
+      { n: 1, label: 'Beat D', contentId: 'plex:3', start: 150, offset: 150, duration: 50, end: 200,
+        ancestors: [{ index: 1, title: 'Act II' }, { index: 2, title: 'Scene 3' }] },
+    ],
+  };
+  const region = { module: 'segment-map', orientation: 'column', groups: 'header', scope: 'group' };
+  const fire = (action) => act(() => {
+    document.dispatchEvent(new CustomEvent('surround-nav', { detail: { action } }));
+  });
+
+  it('previewing moves scene by scene, and every previewed selection is among the rows actually shown', () => {
+    const { container } = render(
+      <SegmentMap position={10} duration={200} data={THREE_LEVEL} region={region} />,
+    );
+    fire('enter');
+    expect(container.querySelector('[data-selected="true"]')).toHaveAttribute('data-row-index', '0');
+
+    // Scene 1 -> Scene 2, BOTH still inside Act I. An outer-level world would
+    // jump straight to Act II (Beat D) here instead.
+    fire('right');
+    let selected = container.querySelector('[data-selected="true"]');
+    expect(selected).not.toBeNull();
+    expect(selected).toHaveAttribute('data-row-index', '2');
+    let shown = [...container.querySelectorAll('[data-testid="surround-segment-row"]')]
+      .map((row) => row.dataset.rowIndex);
+    expect(shown).toEqual(['2']);
+
+    // Scene 2 -> Scene 3, which IS the first row of Act II.
+    fire('right');
+    selected = container.querySelector('[data-selected="true"]');
+    expect(selected).not.toBeNull();
+    expect(selected).toHaveAttribute('data-row-index', '3');
+    shown = [...container.querySelectorAll('[data-testid="surround-segment-row"]')]
+      .map((row) => row.dataset.rowIndex);
+    expect(shown).toEqual(['3']);
   });
 });

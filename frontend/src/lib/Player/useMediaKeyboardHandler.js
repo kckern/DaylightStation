@@ -1,4 +1,4 @@
-import { useMemo, useRef, useEffect, useCallback } from 'react';
+import { useMemo, useRef, useEffect, useCallback, useState } from 'react';
 import { DaylightAPI } from '../api.mjs';
 import { usePlayerKeyboard } from '../keyboard/keyboardManager.js';
 import { acquirePlayerKeyboard } from './playerKeyboardOwnership.js';
@@ -10,7 +10,7 @@ import { resolveContentId } from '../../modules/Surround/segments.js';
 // lives in segmentNav now, as the one rule it always was — `previousSegmentAction`
 // applies it, so there is nothing left to compare against here.
 import { nextSegmentAction, previousSegmentAction } from '../../modules/Surround/segmentNav.js';
-import { SURROUND_NAV_EVENT, NAV_IDLE_MS } from '../../modules/Surround/navMode.js';
+import { SURROUND_NAV_EVENT, SURROUND_NAV_STATE_EVENT, NAV_IDLE_MS } from '../../modules/Surround/navMode.js';
 
 /**
  * Custom hook for handling media playback keyboard shortcuts
@@ -312,20 +312,41 @@ export function useMediaKeyboardHandler(config) {
     .flatMap((slot) => (Array.isArray(slot) ? slot : [slot]))
     .some((r) => r?.module === 'segment-map' && r?.groups === 'header'));
 
-  const navActiveRef = useRef(false);
+  // STATE, NOT A REF. `componentOverrides` is an identity-compared dependency of
+  // keyboardManager's listener effect, and which keys are PRESENT in it has to
+  // change when nav mode opens and closes. A ref mutates without re-rendering,
+  // so the map would be rebuilt with the same key set forever.
+  const [navActive, setNavActive] = useState(false);
   const navIdleRef = useRef(null);
+
+  // THE RAIL'S REPLY. The reducer lives in the rail and the Player cannot see
+  // it, so the rail reports every entry into and exit from nav mode — including
+  // `up` past the first row, which is an exit the Player would otherwise never
+  // hear about, leaving it holding four keys the viewer can no longer use.
+  useEffect(() => {
+    const onState = (e) => {
+      const active = e?.detail?.active;
+      if (typeof active !== 'boolean') return;
+      if (!active && navIdleRef.current) {
+        clearTimeout(navIdleRef.current);
+        navIdleRef.current = null;
+      }
+      setNavActive(active);
+    };
+    document.addEventListener(SURROUND_NAV_STATE_EVENT, onState);
+    return () => document.removeEventListener(SURROUND_NAV_STATE_EVENT, onState);
+  }, []);
+
   const sendNav = useCallback((action) => {
     if (navIdleRef.current) clearTimeout(navIdleRef.current);
     document.dispatchEvent(new CustomEvent(SURROUND_NAV_EVENT, { detail: { action } }));
-    if (action === 'select') {
-      navActiveRef.current = false;
-      return;
-    }
-    navActiveRef.current = true;
+    // `navActive` is NOT set here. The rail is the authority on whether a
+    // selection exists — it may refuse an action, and `up` at the first row
+    // exits — so the Player waits to be told rather than guessing.
+    if (action === 'select') return;
     // THE GRACE. Nav mode must not hold the arrows for the rest of the film
     // because somebody brushed the remote. Idling out hands seeking back.
     navIdleRef.current = setTimeout(() => {
-      navActiveRef.current = false;
       document.dispatchEvent(new CustomEvent(SURROUND_NAV_EVENT, { detail: { action: 'exit' } }));
     }, NAV_IDLE_MS);
   }, []);
@@ -352,14 +373,23 @@ export function useMediaKeyboardHandler(config) {
   }
 
   if (hasNavRail) {
-    // `componentOverrides` is consulted BEFORE playbackKeys and the default map
-    // (keyboardManager.js `handleKeyDown`), so these four fully replace their
-    // bindings while a nav rail is mounted — and only then.
-    conditionalOverrides.ArrowDown = () => sendNav(navActiveRef.current ? 'down' : 'enter');
-    conditionalOverrides.ArrowUp = () => { if (navActiveRef.current) sendNav('up'); };
-    conditionalOverrides.ArrowLeft = () => { if (navActiveRef.current) sendNav('left'); };
-    conditionalOverrides.ArrowRight = () => { if (navActiveRef.current) sendNav('right'); };
-    conditionalOverrides.Enter = () => { if (navActiveRef.current) sendNav('select'); };
+    // PRESENCE IS THE SWITCH, NOT THE HANDLER'S BODY. `keyboardManager`'s
+    // `handleKeyDown` does `if (componentOverrides[event.key]) { preventDefault();
+    // override(event); return; }` — it never inspects what the override did. So a
+    // key that is PRESENT but whose handler no-ops is a key that is SWALLOWED:
+    // it never reaches seekBackward/seekForward/cycleShaders/togglePlayPause.
+    //
+    // Registering all five up front therefore kills play/pause and seeking for
+    // the whole runtime of any work with a nav rail. The four borrowed keys must
+    // be ABSENT from the map whenever nav mode is idle, so they fall through to
+    // their ordinary bindings. Only ArrowDown is always present — it is the way in.
+    conditionalOverrides.ArrowDown = () => sendNav(navActive ? 'down' : 'enter');
+    if (navActive) {
+      conditionalOverrides.ArrowUp = () => sendNav('up');
+      conditionalOverrides.ArrowLeft = () => sendNav('left');
+      conditionalOverrides.ArrowRight = () => sendNav('right');
+      conditionalOverrides.Enter = () => sendNav('select');
+    }
   }
 
   return usePlayerKeyboard({
