@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { chooseMove } from '@shared-gaming/rulesets/chess/opponent.mjs';
 import { LADDER_SIZE } from '@shared-gaming/rulesets/chess/ladder.mjs';
 import { fallbackCommentary } from '@shared-gaming/rulesets/chess/commentary.mjs';
@@ -6,6 +6,25 @@ import { describeGame, legalMoves } from '@shared-gaming/rulesets/chess/engine.m
 import { thinkTimeFor, useOpponentReply } from '../game-platform/opponent/opponentPacing.js';
 import { useOpponentDialogue } from '../game-platform/opponent/useOpponentDialogue.js';
 import { commitMove } from './chessGameState.js';
+
+/**
+ * How long a board may sit on the opponent's turn before we stop believing the
+ * rail's "Your opponent is thinking."
+ *
+ * Longer than the two waits it must not pre-empt: the think ceiling (4s) and
+ * `OPPONENT_STALL_MS` (15s), which together are the longest an HONEST turn can
+ * take. Past that the turn is not slow, it is gone.
+ *
+ * On 2026-09-18 a reply was computed, logged (`opponent-replied`, san Qxd4) and
+ * then lost between `setGame` and the next render. `useOpponentReply`'s effect
+ * keys on `[enabled, resetKey]`, and neither changes when a reply is consumed
+ * without advancing the board — so the turn was never asked for again. The
+ * child pressed the same square for ten minutes against "not_your_turn", tried
+ * every setting on the screen, and finally abandoned a game he was winning.
+ * Nothing logged an error, and the Retry button is gated on `opponentError`,
+ * which that path never sets.
+ */
+export const OPPONENT_WAKE_MS = 20000;
 
 /** Request, pace, validate, and commit the opponent's turn. */
 export function useChessOpponentTurn({
@@ -29,7 +48,9 @@ export function useChessOpponentTurn({
   requestQuip = null,
   commitAuthorityMove = null,
   recordMoveTiming = null,
+  stallWakeMs = OPPONENT_WAKE_MS,
 }) {
+  const wakeMs = Number.isFinite(stallWakeMs) && stallWakeMs > 0 ? stallWakeMs : OPPONENT_WAKE_MS;
   const requestedFenRef = useRef(null);
   const effectiveOpponentRef = useRef(null);
   if (opponent && effectiveOpponentRef.current?.id !== opponent.id) {
@@ -38,6 +59,7 @@ export function useChessOpponentTurn({
   const ladderLevelRef = useRef(ladderLevel);
   const [replyNonce, setReplyNonce] = useState(0);
   const [opponentError, setOpponentError] = useState(null);
+  const [stalled, setStalled] = useState(false);
   const {
     prepareReaction, commitReaction, showTerminalReaction,
     speech, dialogueRef, reset: resetDialogue,
@@ -186,6 +208,41 @@ export function useChessOpponentTurn({
 
   const retryOpponent = useCallback(() => setReplyNonce((value) => value + 1), []);
 
+  /**
+   * Ask again, out loud. The same nonce bump `retryOpponent` does — a changed
+   * `resetKey` re-runs the reply effect and issues a fresh request — but named
+   * and logged, because this one is a CHILD deciding the game is stuck.
+   */
+  const wakeOpponent = useCallback(() => {
+    logger.info?.('opponent-woken', { gameId, by: 'player' });
+    setStalled(false);
+    setReplyNonce((value) => value + 1);
+  }, [gameId, logger]);
+
+  /**
+   * THE BOARD'S OWN WATCHDOG, not the request's.
+   *
+   * `useOpponentReply` already guards a request that never settles. This guards
+   * the case that guard cannot see: a request that settled, was committed, and
+   * still left the board on the opponent's turn. It re-arms once on its own —
+   * most stalls end there, before a child notices — and then says so, which is
+   * what puts the wake control on screen.
+   *
+   * Keyed on the ply the opponent owes, so a turn that lands clears it and the
+   * next turn gets its own full budget.
+   */
+  const owedPly = enabled ? game.history.length : null;
+  useEffect(() => {
+    setStalled(false);
+    if (owedPly === null) return undefined;
+    const timer = globalThis.setTimeout(() => {
+      logger.warn?.('opponent-board-stalled', { gameId, ply: owedPly, afterMs: wakeMs });
+      setStalled(true);
+      setReplyNonce((value) => value + 1);
+    }, wakeMs);
+    return () => globalThis.clearTimeout(timer);
+  }, [owedPly, gameId, logger, wakeMs]);
+
   return {
     thinking,
     thinkMs: enabled ? scheduledThinkMs : null,
@@ -196,6 +253,11 @@ export function useChessOpponentTurn({
     opponentError,
     retryOpponent,
     resetOpponent,
+    /** The opponent owes a move right now — whether or not it is late. */
+    opponentOwesMove: enabled,
+    /** It is late, the board has already re-asked once, and nobody answered. */
+    opponentStalled: stalled,
+    wakeOpponent,
   };
 }
 
