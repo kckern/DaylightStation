@@ -623,6 +623,41 @@ describe('ExerciseRun shared assessment wiring', () => {
     expect(h.metronome.mock.calls.at(-1)[0]).toMatchObject({ enabled: true, bpm: 90 });
   });
 
+  /**
+   * THE CLICK IS THE NOTE, on the material the BANK actually ships.
+   *
+   * Every other cued fixture in this file is written in QUARTERS, where the
+   * count-in's quarter pulse happens to equal the ask's own — so all of them
+   * passed while the rung a child actually meets was counted in at half the
+   * speed it was graded at. Every published scale is `value: '8th'`. This is
+   * that ask.
+   */
+  it('counts an eighth-note scale in at the speed it will be graded, one click per note', async () => {
+    h.instanceData = {
+      ...h.instance,
+      tempo: { start_bpm: 60 },
+      events: [60, 62, 64, 65, 67, 69, 71, 72].map((midi, i) => ({
+        id: `e${i}`, value: '8th', notes: [{ midi, hand: 'right' }],
+      })),
+    };
+    const requirement = cuedRequirement({ passScore: 0.8 });
+    const props = { instance: subject(), score: null, intent: 'challenge', requirement, onExit: vi.fn(), onPassed: vi.fn() };
+    const view = render(<ExerciseRun {...props} />);
+
+    // ONE note per click, and the sentence says so. Counted in quarters this
+    // read "4 clicks, then play two notes on every click" — a true sentence
+    // about a grid no child can act on at sight.
+    await screen.findByText("Press any key to start. You'll hear 8 clicks, then play one note on every click.");
+
+    press(view, props, 63);
+
+    // The count-in is still exactly ONE MEASURE of the music. Only the number
+    // of clicks inside it changed, never its length.
+    expect(h.start).toHaveBeenCalledWith({ leadInMs: 4 * 60000 / 60, clock: 'date-now' });
+    // 60bpm in quarters IS 120 in eighths, and 120 is what the child hears.
+    expect(h.metronome.mock.calls.at(-1)[0]).toMatchObject({ enabled: true, bpm: 120 });
+  });
+
   it('gives metronome practice its pulse BEFORE the first note, not after it', async () => {
     // The mode's whole promise is a grid to settle into, and the first note is
     // now what starts the run — a click that waits for `running` arrives after
@@ -1681,6 +1716,20 @@ describe('timed exercise clock and input boundary', () => {
     pressKey(view,props,60);
     expect(h.observe).toHaveBeenCalledTimes(1);
   });
+  it('keeps the eighth-note pulse through the downbeat, not just the count-in', async () => {
+    // A click that counts eighths and then reverts to quarters when the music
+    // starts hands the child a different grid at the exact moment they begin
+    // playing on it.
+    h.instanceData = { ...h.instance, tempo: { start_bpm: 60 }, events: [60,62,64,65].map((midi,i) => ({ id:`e${i}`, value:'8th', notes:[{midi,hand:'right'}] })) };
+    const props = { instance:subject(), score:null, intent:'challenge', requirement:cuedRequirement({passScore:0.8}), onPassed:vi.fn() };
+    const view = render(<ExerciseRun {...props} />);
+    await screen.findByText(/Press any key to start/);
+    pressKey(view, props, 55);
+    expect(h.metronome.mock.calls.at(-1)[0]).toMatchObject({ enabled: true, bpm: 120 });
+    act(() => vi.advanceTimersByTime(4050));
+    expect(h.metronome.mock.calls.at(-1)[0]).toMatchObject({ enabled: true, bpm: 120 });
+  });
+
   it('moves on the beat in silence and cannot be pulled backward by held notes', async () => {
     const {view,props} = await mountTimed();
     act(() => vi.advanceTimersByTime(4050));

@@ -91,6 +91,27 @@ export function countInPlan({ beats, bpm, tempoMult = 1 }) {
 }
 
 /**
+ * THE ASK'S OWN PULSE, in quarter notes — the spacing every onset shares, or
+ * `null` when the ask has no single spacing (one note, or an uneven rhythm,
+ * where there is no one pulse to count).
+ *
+ * This is what a cued count-in must click at. Counting quarters at a scale
+ * written in eighths tells a child the wrong grid and then grades them on the
+ * other one; see `askPace` below for what that cost, twice.
+ */
+export function askPulseQuarters(onsetQuarters = []) {
+  if (!Array.isArray(onsetQuarters) || onsetQuarters.length < 2) return null;
+  const steps = [];
+  for (let i = 1; i < onsetQuarters.length; i += 1) {
+    const step = Number(onsetQuarters[i]) - Number(onsetQuarters[i - 1]);
+    if (!Number.isFinite(step) || step <= 0) return null;
+    steps.push(step);
+  }
+  const first = steps[0];
+  return steps.every((step) => Math.abs(step - first) < 1e-6) ? first : null;
+}
+
+/**
  * HOW FAST THE ASK ACTUALLY IS, relative to the clicks the child is about to
  * hear — because "play at that speed" is not always true and, when it is not,
  * it is the only instruction they get.
@@ -142,4 +163,4 @@ export function countInSentence(clicks, pace) {
   return `${lead}, then play at that speed.`;
 }
 
-export default { countInPlan, askPace, countInSentence };
+export default { countInPlan, askPulseQuarters, askPace, countInSentence };

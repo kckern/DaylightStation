@@ -355,6 +355,19 @@ that arrives before the musical duration ends waits for that duration before
 the host advances. The metronome continues with this display and follows tempo
 changes. Free and metronome practice retain their player-driven cursor.
 
+**The click is the note.** The count-in pulses at the ASK'S OWN onset spacing,
+not at the quarter: a scale written in eighths at 60bpm is counted in at 120,
+eight clicks to the measure, so one click is one note and the grid a child is
+counted in on is the grid they are graded on. It used to pulse in quarters
+against eighths — half the speed of the ask — which produced a correct, evenly
+played scale scored as every note `wrong` with a `miss` beside it, on
+2026-09-13 and again on 2026-09-18. The count-in's LENGTH is unchanged, always
+exactly one measure of the music; only how many clicks fill it changed. An ask
+with no single spacing (one note, or a dotted rhythm) has no pulse to borrow
+and keeps the quarter. `askPulseQuarters` is the rule, and the running
+metronome carries the same pulse through the downbeat rather than reverting to
+quarters as the music starts.
+
 During the count-in, the staff remains visible in gray, the cursor is hidden,
 and played notes reach neither assessment nor visual feedback. Notes held
 through the boundary stay excluded until released and pressed again.

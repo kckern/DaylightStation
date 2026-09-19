@@ -114,7 +114,7 @@ and encloses the notehead it points at. Both cases fail on the old code.
 
 ---
 
-## Still open — the count-in pulse is half the speed of the ask
+## Fixed alongside — the count-in pulse was half the speed of the ask
 
 Not fixed here, and it is the other half of why the run gave no credit.
 
@@ -134,12 +134,19 @@ and appears *on* beat one, so a child who reacts rather than anticipates is
 late by their reaction time — which at this tempo is more than one note value,
 which is precisely the 559 ms observed.
 
-Two candidate fixes, both small, neither taken without a decision:
+**Taken:** the count-in now pulses at the ask's own onset spacing
+(`askPulseQuarters`). A scale in eighths at 60bpm is counted in at 120, eight
+clicks to the measure — one click, one note — and the running metronome carries
+that same pulse through the downbeat instead of reverting to quarters exactly
+as the child starts playing. The count-in's length is unchanged: still one
+measure of the music. An ask with no single spacing keeps the quarter.
 
-- **Show the lane on the first note during the count-in.** It is the ask, not
-  input feedback; nothing about it reveals a graded result. This contradicts an
-  explicit existing assertion (`displayedCursor === '-1'` during countdown) and
-  the documented "the cursor is hidden" contract, so it is a deliberate change
-  of behaviour rather than a bug fix.
-- **Subdivide the count-in to the ask's own pulse**, so the clicks and the notes
-  are one grid and the sentence becomes unnecessary.
+The sentence follows for free: `askPace` against the new pulse reports one note
+per click, so the ready line reads "You'll hear 8 clicks, then play one note on
+every click." It is now a description of the grid rather than a warning about
+a mismatch.
+
+Every existing cued fixture in the suite is written in QUARTERS, where the old
+quarter pulse happened to equal the ask's own — which is why 100 green tests
+never saw this. Both new tests mount `value: '8th'` material, the shape every
+published scale rung actually has.
