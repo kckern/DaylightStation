@@ -17,6 +17,19 @@ export function useChessAddressingProgress({ game, gameId, playerColor, userId, 
   useEffect(() => {
     const cursor = historyCursorRef.current;
     if (cursor.gameId !== gameId || game.history.length < cursor.length) {
+      // A SHORTER HISTORY IN THE SAME GAME IS NEWS. A new game legitimately
+      // resets the cursor, but a board that goes 7 -> 8 -> 7 has thrown a move
+      // away, and this branch used to swallow that in silence — which is why
+      // the 2026-09-18 stall left no trace at all: `chess.move` is the only
+      // record of a ply landing, and a ply that lands and is then rewound logs
+      // nothing on the way in OR on the way out. A takeback rewinds too, and
+      // says so through its own event; anything else reaching here is a bug
+      // that should never have to be reconstructed by hand again.
+      if (cursor.gameId === gameId && game.history.length < cursor.length) {
+        logger.warn('chess.history-rewound', {
+          from: cursor.length, to: game.history.length, gameId,
+        });
+      }
       historyCursorRef.current = { gameId, length: game.history.length, playerTurn: isPlayerTurn };
       if (isPlayerTurn) startTurn();
       return;

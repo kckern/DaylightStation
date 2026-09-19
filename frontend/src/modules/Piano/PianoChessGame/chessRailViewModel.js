@@ -4,7 +4,7 @@ import { REJECTION_MESSAGES, isPlayerTurn } from './chessGameState.js';
 
 const PIECE_NAMES = { p: 'pawn', n: 'knight', b: 'bishop', r: 'rook', q: 'queen', k: 'king' };
 
-export function promptFor(state, rejection, hoveredChord = null, reading = false, takebackArmed = false) {
+export function promptFor(state, rejection, hoveredChord = null, reading = false, takebackArmed = false, opponentStalled = false) {
   if (state.status?.game_over) {
     if (state.status.outcome === 'checkmate') {
       return state.status.winner === state.playerColor ? 'Checkmate. You win.' : 'Checkmate. Your opponent wins.';
@@ -13,7 +13,14 @@ export function promptFor(state, rejection, hoveredChord = null, reading = false
   }
   if (rejection) return REJECTION_MESSAGES[rejection.reason] ?? 'Try another chord.';
   if (takebackArmed) return 'Play the octave again to take your move back.';
-  if (!isPlayerTurn(state)) return 'Your opponent is thinking.';
+  // "Thinking" stops being true at some point, and a screen that keeps saying
+  // it is why a dead game looks alive. A child read this line for ten minutes
+  // on 2026-09-18 while pressing a square that could never be accepted.
+  if (!isPlayerTurn(state)) {
+    return opponentStalled
+      ? 'Your opponent has gone quiet. Wake them up to carry on.'
+      : 'Your opponent is thinking.';
+  }
   if (state.status?.check) return 'You are in check. Play a chord to answer it.';
   if (state.origin) {
     return reading
@@ -73,6 +80,7 @@ export function buildChessRailViewModel({
   playerColor,
   opponent,
   opponentThinking,
+  opponentStalled = false,
   finishedResult,
   cursor,
   cursorChord,
@@ -125,7 +133,7 @@ export function buildChessRailViewModel({
     pickupChord,
     onboardStep: step,
     onboardCopy: showOnboarding ? onboardingCopy(step, { reading }) : null,
-    prompt: promptFor(game, game.rejection, pickupChord, reading, takebackArmed),
+    prompt: promptFor(game, game.rejection, pickupChord, reading, takebackArmed, opponentStalled),
     pickupDeadline: pickupChord && armed?.square === cursor ? armed.at : null,
     turnColour,
     turnLabel: game.status?.turn === playerColor ? `Yours (${turnColour})` : `Theirs (${turnColour})`,

@@ -162,6 +162,48 @@ describe('useChessOpponentTurn', () => {
     );
   });
 
+  /**
+   * THE TURN THAT NEVER LANDS. `useOpponentReply` guards a request that never
+   * settles; this guards the case it cannot see — one that settled, committed,
+   * and still left the board on the opponent's turn. Its effect keys on
+   * `[enabled, resetKey]`, neither of which changes then, so without this the
+   * turn is never asked for again and the game is dead with no error anywhere.
+   */
+  it('re-asks once and says so when a turn never lands', () => {
+    vi.useFakeTimers();
+    try {
+      const game = opponentState();
+      const props = hookProps(game, { stallWakeMs: 20000 });
+      const { result } = renderHook(() => useChessOpponentTurn(props));
+
+      expect(result.current.opponentOwesMove).toBe(true);
+      expect(result.current.opponentStalled).toBe(false);
+      const before = pacing.useOpponentReply.mock.calls.at(-1)[0].resetKey;
+
+      act(() => { vi.advanceTimersByTime(20001); });
+
+      expect(result.current.opponentStalled).toBe(true);
+      expect(props.logger.warn).toHaveBeenCalledWith(
+        'opponent-board-stalled', expect.objectContaining({ ply: game.history.length }),
+      );
+      // A CHANGED resetKey is the re-ask: it is what re-runs the reply effect.
+      expect(pacing.useOpponentReply.mock.calls.at(-1)[0].resetKey).not.toBe(before);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('wakes the opponent when a player asks, and records that they had to', () => {
+    const props = hookProps(opponentState());
+    const { result } = renderHook(() => useChessOpponentTurn(props));
+    const before = pacing.useOpponentReply.mock.calls.at(-1)[0].resetKey;
+
+    act(() => { result.current.wakeOpponent(); });
+
+    expect(props.logger.info).toHaveBeenCalledWith('opponent-woken', { gameId: 'game-1', by: 'player' });
+    expect(pacing.useOpponentReply.mock.calls.at(-1)[0].resetKey).not.toBe(before);
+  });
+
   it('drops a reply when the live position no longer matches the requested FEN', async () => {
     const game = opponentState();
     const gameRef = { current: game };
