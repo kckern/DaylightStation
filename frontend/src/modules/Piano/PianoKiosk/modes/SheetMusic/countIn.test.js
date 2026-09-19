@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { countInPlan, askPace, countInSentence } from './countIn.js';
+import { countInPlan, askPulseQuarters, askPace, countInSentence } from './countIn.js';
 
 describe('countInPlan', () => {
   it('one measure of beats at the scaled tempo', () => {
@@ -124,6 +124,42 @@ describe('what the clicks mean for the ask', () => {
   it('refuses events that go backwards or sit on top of each other', () => {
     expect(askPace([0, 0, 1], 1)).toBeNull();
     expect(askPace([0, 2, 1], 1)).toBeNull();
+  });
+});
+
+describe("the ask's own pulse", () => {
+  const onsets = (step, count) => Array.from({ length: count }, (_, i) => i * step);
+
+  it('reads a scale written in eighths as an eighth-note pulse', () => {
+    expect(askPulseQuarters(onsets(0.5, 8))).toBe(0.5);
+  });
+
+  it('reads quarters as a quarter pulse, and half notes as a half', () => {
+    expect(askPulseQuarters(onsets(1, 4))).toBe(1);
+    expect(askPulseQuarters(onsets(2, 4))).toBe(2);
+  });
+
+  it('has no pulse to offer for an uneven ask, or one with no interval at all', () => {
+    expect(askPulseQuarters([0, 1, 1.5, 3])).toBeNull();
+    expect(askPulseQuarters([0])).toBeNull();
+    expect(askPulseQuarters([])).toBeNull();
+  });
+
+  it('refuses events that go backwards or sit on top of each other', () => {
+    expect(askPulseQuarters([0, 0, 1])).toBeNull();
+    expect(askPulseQuarters([0, 2, 1])).toBeNull();
+  });
+
+  /**
+   * THE WHOLE POINT, in one line: count at the ask's own pulse and the child is
+   * asked for exactly one note per click. Clicking quarters at this same ask is
+   * what `askPace` reports as "two per click" above — the grid that cost two
+   * real runs, on 2026-09-13 and again on 2026-09-18.
+   */
+  it('makes one click mean one note, which counting in quarters did not', () => {
+    const ask = onsets(0.5, 8);
+    expect(askPace(ask, askPulseQuarters(ask))).toEqual({ notesPerClick: 1, even: true });
+    expect(askPace(ask, 1)).toEqual({ notesPerClick: 2, even: true });
   });
 });
 

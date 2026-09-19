@@ -41,7 +41,7 @@ import { askTupleFor, deriveStage } from '../../../ask/askSchema.js';
 import { nextHuntState, huntingArmed, NO_HUNT } from './stuckLadder.js';
 import { useMetronomeClick } from '../SheetMusic/useMetronomeClick.js';
 import CountInOverlay from '../SheetMusic/CountInOverlay.jsx';
-import { countInPlan, askPace, countInSentence } from '../SheetMusic/countIn.js';
+import { countInPlan, askPulseQuarters, askPace, countInSentence } from '../SheetMusic/countIn.js';
 import './Exercises.scss';
 
 const NO_FEEDBACK_NOTES = new Map();
@@ -753,9 +753,20 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
     const graded = Number(snapshot.expectation?.tempoMap?.[0]?.bpm);
     const bpm = graded > 0 ? graded : clickBpm;
     if (!(bpm > 0)) return null;
+    // THE CLICK IS THE NOTE. This pulsed in QUARTERS while the bank writes its
+    // scales in EIGHTHS, so a child was counted in on one grid and then graded
+    // on another at twice the speed — told "play at that speed" about a speed
+    // that was not the ask. Twice now that has cost a real run: see `askPace`.
+    // The pulse is the ask's OWN onset spacing, so one click is one note. An
+    // ask with no single spacing (one note, or a dotted rhythm) has no pulse to
+    // borrow and keeps the quarter it always had.
+    const pulse = askPulseQuarters((snapshot.expectation?.events ?? []).map((event) => event.onsetQuarter));
+    const pulseBpm = pulse > 0 ? bpm / pulse : bpm;
+    // The count-in's LENGTH is still exactly one measure of the music — only
+    // how many clicks fill it changes.
     const leadInMs = beatsPerMeasure * 60000 / bpm;
-    const { periodMs } = countInPlan({ beats: beatsPerMeasure, bpm });
-    return { bpm, leadInMs, periodMs, clicks: Math.max(1, Math.round(leadInMs / periodMs)) };
+    const { periodMs } = countInPlan({ beats: beatsPerMeasure, bpm: pulseBpm });
+    return { bpm: pulseBpm, gradedBpm: bpm, leadInMs, periodMs, clicks: Math.max(1, Math.round(leadInMs / periodMs)) };
   }, [beatsPerMeasure, clickBpm, snapshot.expectation]);
 
   /**
@@ -771,7 +782,9 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
   const cuedPace = useMemo(() => {
     const events = snapshot.expectation?.events;
     if (!Array.isArray(events) || !countIn) return null;
-    const clickQuarters = countIn.periodMs * countIn.bpm / 60000;
+    // `gradedBpm`, not `bpm`: the latter is now the CLICK rate, and this is
+    // asking how many score quarters sit between two clicks.
+    const clickQuarters = countIn.periodMs * countIn.gradedBpm / 60000;
     return askPace(events.map((event) => event.onsetQuarter), clickQuarters);
   }, [snapshot.expectation, countIn]);
 
@@ -837,7 +850,13 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
     // cued rung carries no `gates.pace`, so a tempo-less single-event instance
     // (graded at the engine's default) would leave this NaN — the hook then
     // creates no scheduler at all and the count-in counts in silence.
-    bpm: timeline?.phase === 'running' ? timeline.bpm : countIn?.bpm ?? clickBpm,
+    // The running click keeps the count-in's grid: the child was counted in one
+    // click per note and the music must not silently revert to quarters on the
+    // downbeat. `timeline.bpm` is the score's quarter tempo, scaled here by the
+    // same pulse the count-in used.
+    bpm: timeline?.phase === 'running'
+      ? (countIn?.gradedBpm > 0 ? timeline.bpm * (countIn.bpm / countIn.gradedBpm) : timeline.bpm)
+      : countIn?.bpm ?? clickBpm,
   });
   const heldKey = held.join(',');
   useEffect(() => {
