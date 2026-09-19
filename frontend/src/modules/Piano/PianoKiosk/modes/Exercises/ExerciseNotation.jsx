@@ -32,14 +32,33 @@ const LANE_HALF_WIDTH = 18;
 const GHOST_GUTTER = 4;
 
 /**
- * An element's bounding box mapped into the nearest viewport's user space —
- * the space the portalled feedback group is drawn in. Falls back to the raw
- * box when there is no CTM (jsdom, or a detached node), which is also the
- * pre-existing behaviour, so nothing regresses where transforms are absent.
+ * An element's bounding box mapped into THE SVG ROOT'S OWN USER SPACE — the
+ * space the portalled feedback group draws in. Falls back to the raw box when
+ * there is no CTM (jsdom, or a detached node), where there is no transform to
+ * correct for anyway.
+ *
+ * THIS IS NOT `getCTM()`. That returns the element -> VIEWPORT matrix, which
+ * INCLUDES the viewBox transform — CSS-pixel-like coordinates — while the lane
+ * rect below is a child of the `<svg>` whose `x`/`y` are in user units that the
+ * viewBox then scales. `AbcRenderer`'s `fitContent` rewrites the viewBox to hug
+ * the engraving, so the two spaces differ by exactly that scale. Measured on
+ * the material the bank actually ships: 4.1x on a one-hand scale, which wrote
+ * the lane at x=406 inside a viewBox 302 wide — off the page entirely, so a
+ * timed run told a child to follow a cursor that was not on screen; and 2.1x on
+ * a grand staff, which put the treble lane over the bass stave and the bass
+ * lane off the bottom edge.
+ *
+ * Composing the root's screen matrix inverse with the element's cancels the
+ * viewBox and leaves only the transforms BETWEEN them — the correction this was
+ * reaching for, and the mapping `ScorePassage` already uses for the one cursor
+ * surface that was never wrong.
  */
 function rootBox(element) {
   const box = element.getBBox();
-  const m = typeof element.getCTM === 'function' ? element.getCTM() : null;
+  const svg = element.ownerSVGElement;
+  const root = svg && typeof svg.getScreenCTM === 'function' ? svg.getScreenCTM() : null;
+  const own = typeof element.getScreenCTM === 'function' ? element.getScreenCTM() : null;
+  const m = root && own ? root.inverse().multiply(own) : null;
   if (!m) return box;
   // Axis-aligned in practice (abcjs only ever translates and scales), so the
   // two corners are enough; a rotation would need all four.
