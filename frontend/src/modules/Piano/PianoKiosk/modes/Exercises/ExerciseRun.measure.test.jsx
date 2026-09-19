@@ -1362,6 +1362,87 @@ describe('timed exercise display in real Chromium', () => {
 /* -------------------------------------------------------------------------- */
 
 /**
+ * THE CURSOR MUST BE ON THE NOTE, on the material the BANK actually ships.
+ *
+ * The timed block above asserts the notation cursor EXISTS and MOVES RIGHT, and
+ * both were true on a screen with no cursor visible anywhere: an SVG child's
+ * `getBoundingClientRect()` reports its geometry whether or not it lies inside
+ * the viewBox, so a lane drawn four times off-scale and entirely outside the
+ * engraving still measured `painted: true` with a rising `cx`. Only the SCORE
+ * surface was ever asked the one question that matters — does the lane enclose
+ * the note it is pointing at — and `ScorePassage` is the surface that maps
+ * coordinates correctly. The ABC surface was never asked.
+ *
+ * These fixtures are shaped like the bank's own output rather than like the
+ * harness's older `SCALE`: every published scale rung is `value: '8th'` (which
+ * BEAMS) and half of them are `staff: 'grand'` (which draws TWO lanes). No
+ * measurement in this file had ever mounted either.
+ */
+const EIGHTH_SCALE = Object.freeze({
+  ...SCALE,
+  id: 'scales/modes@root=C,mode=ionian,direction=up,span_octaves=1,hand=R',
+  tempo: { unit: 'quarter', start_bpm: 60, target_bpm: 120 },
+  events: SCALE_MIDIS.map((midi, i) => ({ id: `n${i + 1}`, value: '8th', notes: [{ midi, hand: 'right' }] })),
+});
+const GRAND_SCALE = Object.freeze({
+  ...SCALE,
+  id: 'scales/modes@root=B,mode=ionian,direction=up-then-down,span_octaves=1,hand=RL',
+  key: 'B', staff: 'grand',
+  tempo: { unit: 'quarter', start_bpm: 60, target_bpm: 120 },
+  events: [71, 73, 75, 76, 78, 80, 82, 83].map((midi, i) => ({
+    id: `n${i + 1}`, value: '8th', notes: [{ midi, hand: 'right' }, { midi: midi - 12, hand: 'left' }],
+  })),
+});
+
+describe('the engraved cursor, on the material the bank ships', () => {
+  it('a cued eighth-note scale draws its lane ON the note it is asking for', async () => {
+    await run({ instance: EIGHTH_SCALE,
+      props: { tier: 3, intent: 'challenge', requirementOverride: CUED_REQUIREMENT } }, CUED_READY);
+    await probe.hold([60]); await probe.hold([]);
+    await page.waitForSelector('.piano-exercise-run.is-running');
+    await page.waitForFunction(() => !document.querySelector('.piano-exercise-run.is-countdown'));
+    await page.waitForSelector('.exercise-notation__cursor');
+    const stage = await probe.one('.piano-exercise-run__stage');
+    const cursor = await probe.one('.exercise-notation__cursor');
+    expect(inside(cursor, stage),
+      `the cursor ${say(cursor)} is drawn outside the engraving ${say(stage)} — a child sees no cursor at all`).toBe(true);
+    // The NOTEHEAD, not the whole abcjs note group. The lane is centred on the
+    // head — that is its stated job — and a beamed eighth's stem and beam run
+    // well past it, so demanding the lane swallow those would pin a cosmetic
+    // choice instead of the thing that broke: WHICH head the lane sits on.
+    const target = await probe.one('.exercise-note-next .abcjs-notehead');
+    expect(inside(target, cursor),
+      `the cursor ${say(cursor)} does not enclose the notehead it points at ${say(target)}`).toBe(true);
+    await page.screenshot({ path: '/tmp/cursor-cued-eighths.png' });
+    expectNoPageErrors();
+  }, 60000);
+
+  it('a grand staff puts one lane on each stave, each around its own note', async () => {
+    await run({ instance: GRAND_SCALE,
+      props: { tier: 2, intent: 'challenge', requirementOverride: FREE_REQUIREMENT } }, FREE_READY);
+    await page.waitForSelector('.exercise-notation__cursor');
+    expect(await probe.count('.abcjs-staff'), 'a two-hand exercise did not engrave two staves').toBe(2);
+    const stage = await probe.one('.piano-exercise-run__stage');
+    const cursors = await probe.all('.exercise-notation__cursor');
+    expect(cursors.length, 'a grand staff needs a lane on each stave').toBe(2);
+    for (const cursor of cursors) {
+      expect(inside(cursor, stage),
+        `a grand-staff lane ${say(cursor)} is drawn outside the engraving ${say(stage)}`).toBe(true);
+    }
+    const targets = await probe.all('.exercise-note-next .abcjs-notehead');
+    expect(targets.length, 'both hands should be asked for at once').toBeGreaterThanOrEqual(2);
+    for (const target of targets) {
+      expect(cursors.some((cursor) => inside(target, cursor)),
+        `the notehead ${say(target)} has no lane around it — lanes at ${cursors.map(say).join(' and ')}`).toBe(true);
+    }
+    await page.screenshot({ path: '/tmp/cursor-grand-staff.png' });
+    expectNoPageErrors();
+  }, 60000);
+});
+
+/* -------------------------------------------------------------------------- */
+
+/**
  * THE HEIGHT BUDGET OF A RUN, measured.
  *
  * Every case above asserts what a given tier DRAWS. These assert who the room
