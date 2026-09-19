@@ -366,6 +366,53 @@ describe('ExerciseRun shared assessment wiring', () => {
     expect(props.onPassed.mock.calls[0][0]).toMatchObject({ status: 'completed', score: 1 });
   });
 
+  /**
+   * A gate rung drills the SAME material rep after rep, but re-derives its
+   * `requirement` object fresh for every rep — same content, new identity.
+   * That single rerender changes BOTH `installRuntime`'s effect deps and the
+   * completion effect's deps in the same commit, so both effects fire
+   * together: the earlier-declared install effect swaps in a new runtime and
+   * resets the "already persisted" guard, and the later-declared completion
+   * effect — still holding the snapshot from the run that JUST passed —
+   * finds that guard open and re-files the SAME result a second time, now
+   * under the new attempt's id. That both double-counts a rep that was only
+   * played once and burns the guard the new attempt needed for its own real
+   * result, leaving it unable to ever report in (reproduces the piano-kiosk
+   * incident where a passed rep's next attempt sat "done" forever).
+   */
+  it('a same-commit requirement swap after a pass does not re-file that pass under the new attempt', async () => {
+    const requirementRep1 = withPassScore({ passScore: 0.8 });
+    const props = { instance: subject(), score: null, intent: 'challenge', requirement: requirementRep1, onExit: vi.fn(), onPassed: vi.fn() };
+    const view = render(<ExerciseRun {...props} />);
+    await armFree(view, props);
+    press(view, props, 62); // clean run -> score 1, passes
+
+    expect(await screen.findByText('Passed')).toBeInTheDocument();
+    expect(props.onPassed).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(h.record).toHaveBeenCalledTimes(1));
+    const firstAttemptId = h.record.mock.calls[0][1].attempt_id;
+
+    // The host hands back the same drill material for the next rep, with a
+    // freshly-built (deeply-equal, differently-identified) requirement.
+    const requirementRep2 = withPassScore({ passScore: 0.8 });
+    const nextProps = { ...props, requirement: requirementRep2 };
+    act(() => { view.rerender(<ExerciseRun {...nextProps} />); });
+
+    // The rep-1 result must not be re-persisted or re-reported as a second
+    // pass — it was played once.
+    expect(h.record).toHaveBeenCalledTimes(1);
+    expect(props.onPassed).toHaveBeenCalledTimes(1);
+
+    // And the fresh attempt must still be able to report its OWN result once
+    // actually played — not left stuck with a spent guard.
+    await armFree(view, nextProps);
+    press(view, nextProps, 62);
+    expect(await screen.findAllByText('Passed')).toHaveLength(1);
+    expect(props.onPassed).toHaveBeenCalledTimes(2);
+    await waitFor(() => expect(h.record).toHaveBeenCalledTimes(2));
+    expect(h.record.mock.calls[1][1].attempt_id).not.toBe(firstAttemptId);
+  });
+
   it('a cued requirement on a tempo-less instance degrades instead of blanking the kiosk', async () => {
     h.instanceData = { ...h.instance, tempo: undefined };
     const requirement = cuedRequirement({ passScore: 0.8 });

@@ -128,7 +128,7 @@ export function EmulatorConsole({
   // emulator-consumed) and emit the matching diagnostic logs. Default on — it's
   // subtle and host-agnostic; a host can disable it.
   showInputActivity = true,
-  onPlayStateChange = null,
+  onArcadeGameSessionStateChange = null,
   fetchImpl = () => globalThis.fetch,
 }) {
   const fns = useMemo(() => ({ ...DEFAULT_FACTORIES, ...(factories || {}) }), [factories]);
@@ -185,12 +185,12 @@ export function EmulatorConsole({
       ? governanceGate.isPlayable()
       : governancePlaying;
   } catch { governancePlaying = false; }
-  const effectivePlayState = playReady && governancePlaying && !hotspotState.paused
+  const effectiveArcadeGameSessionState = playReady && governancePlaying && !hotspotState.paused
     ? 'playing'
     : 'paused';
   useEffect(() => {
-    onPlayStateChange?.(effectivePlayState);
-  }, [effectivePlayState, onPlayStateChange]);
+    onArcadeGameSessionStateChange?.(effectiveArcadeGameSessionState);
+  }, [effectiveArcadeGameSessionState, onArcadeGameSessionStateChange]);
 
   // Count-up play timer (seconds since launch), ticked every 1s.
   const [elapsedSec, setElapsedSec] = useState(0);

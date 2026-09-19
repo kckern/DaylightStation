@@ -34,17 +34,17 @@ export class RunRemoteAuthorization {
         );
         raised = result?.ok === true;
         if (!raised) {
-          this.#logger.warn?.('play.authorize.room_not_ready', { error: result?.error });
+          this.#logger.warn?.('arcade.authorize.room_not_ready', { error: result?.error });
         }
       }
       return await this.#authorize.execute(request);
     } catch (error) {
-      this.#logger.warn?.('play.authorize.ceremony_failed', { error: error.message });
+      this.#logger.warn?.('arcade.authorize.ceremony_failed', { error: error.message });
       return { authorized: false, userId: null, reason: 'unavailable', intent: null };
     } finally {
       // Always put the room back, even if we never woke it.
       try { await this.#presence?.release?.(); } catch (error) {
-        this.#logger.warn?.('play.authorize.room_release_failed', { error: error.message });
+        this.#logger.warn?.('arcade.authorize.room_release_failed', { error: error.message });
       }
     }
   }

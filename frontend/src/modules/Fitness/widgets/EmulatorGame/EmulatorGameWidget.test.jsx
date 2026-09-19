@@ -31,8 +31,8 @@ vi.mock('../../../Emulator/EmulatorConsole.jsx', () => ({
         data-coins={props.overlayData?.['session.coins'] ?? ''}
       />
       <button data-testid="exit" onClick={() => props.onExit?.()}>exit</button>
-      <button data-testid="play-signal" onClick={() => props.onPlayStateChange?.('playing')}>playing</button>
-      <button data-testid="pause-signal" onClick={() => props.onPlayStateChange?.('paused')}>paused</button>
+      <button data-testid="play-signal" onClick={() => props.onArcadeGameSessionStateChange?.('playing')}>playing</button>
+      <button data-testid="pause-signal" onClick={() => props.onArcadeGameSessionStateChange?.('paused')}>paused</button>
     </>
   ),
 }));
@@ -120,7 +120,7 @@ describe('EmulatorGameWidget arcade shell', () => {
     fireEvent.pointerDown(screen.getByLabelText('Example Quest'));
     await screen.findByTestId('console');
     await waitFor(() => {
-      const [, body] = api.mock.calls.find(([path]) => path === 'api/v1/play-sessions/observations') || [];
+      const [, body] = api.mock.calls.find(([path]) => path === 'api/v1/arcade-game-sessions/observations') || [];
       expect(body).toMatchObject({
         deviceId: 'garage-tv',
         observation: {
@@ -135,7 +135,7 @@ describe('EmulatorGameWidget arcade shell', () => {
 
     fireEvent.click(screen.getByTestId('play-signal'));
     await waitFor(() => expect(api.mock.calls.some(([path, body]) => (
-      path === 'api/v1/play-sessions/observations' && body?.observation?.state === 'playing'
+      path === 'api/v1/arcade-game-sessions/observations' && body?.observation?.state === 'playing'
     ))).toBe(true));
   });
 
@@ -143,13 +143,13 @@ describe('EmulatorGameWidget arcade shell', () => {
     api.mockResolvedValue(libraryWith('none'));
     render(<EmulatorGameWidget fitnessContext={fitnessContext} deviceId="garage-tv" onClose={() => {}} config={{}} onMount={() => {}} />);
     await waitFor(() => expect(bus.subscribe).toHaveBeenCalledWith(
-      'play-session:garage-tv', expect.any(Function),
+      'arcade-session:garage-tv', expect.any(Function),
     ));
     await waitFor(() => expect(screen.getByLabelText('Example Quest')).toBeTruthy());
     fireEvent.pointerDown(screen.getByLabelText('Example Quest'));
     await screen.findByTestId('console');
 
-    const subscription = bus.subscriptions.find((entry) => entry.topic === 'play-session:garage-tv');
+    const subscription = bus.subscriptions.find((entry) => entry.topic === 'arcade-session:garage-tv');
     subscription.handler({ event: 'play.session.progress', state: 'playing', playedMs: 95_000 });
 
     expect(await screen.findByTestId('play-budget')).toHaveTextContent('01:35');

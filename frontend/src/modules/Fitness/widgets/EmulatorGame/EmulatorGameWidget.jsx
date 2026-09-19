@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { createPlaySessionReporter } from './playSessionReporter.js';
+import { createArcadeGameSessionReporter } from './arcadeGameSessionReporter.js';
 import { createPortal } from 'react-dom';
 import { DaylightAPI, DaylightMediaPath } from '../../../../lib/api.mjs';
 import getLogger from '../../../../lib/logging/Logger.js';
@@ -16,7 +16,7 @@ import { useIdentity } from '../../identity/useIdentity.js';
 import UnlockPrompt from '../../player/overlays/UnlockPrompt.jsx';
 import { fullscreenClass } from './emulatorGameWidgetLayout.js';
 import { wsService } from '../../../../services/WebSocketService.js';
-import { formatClock, usePlayBudget } from './usePlayBudget.js';
+import { formatClock, useArcadeGameBudget } from './useArcadeGameBudget.js';
 
 const ENGINE_PATH = '/api/v1/emulator/engine/';
 const DEFAULT_AUTOSAVE_SECONDS = 15;
@@ -119,13 +119,13 @@ export default function EmulatorGameWidget({ fitnessContext, deviceId = null, on
     (topic, handler) => wsService.subscribe(topic, handler),
     [],
   );
-  const playBudget = usePlayBudget({ deviceId: meterDeviceId, subscribe: subscribeToPlay });
+  const arcadeGameBudget = useArcadeGameBudget({ deviceId: meterDeviceId, subscribe: subscribeToPlay });
   const reporterRef = useRef(null);
   useEffect(() => {
     if (!meterDeviceId) return undefined;
-    const reporter = createPlaySessionReporter({
+    const reporter = createArcadeGameSessionReporter({
       deviceId: meterDeviceId,
-      post: (body) => DaylightAPI('api/v1/play-sessions/observations', body),
+      post: (body) => DaylightAPI('api/v1/arcade-game-sessions/observations', body),
       getControllers: () => {
         try {
           return typeof navigator !== 'undefined' && typeof navigator.getGamepads === 'function'
@@ -168,7 +168,7 @@ export default function EmulatorGameWidget({ fitnessContext, deviceId = null, on
     if (launchKey && launch?.userId) reporterRef.current?.updateIdentity(launch.userId);
   }, [launchKey, launch?.userId]);
 
-  const handlePlayStateChange = useCallback((state) => {
+  const handleArcadeGameSessionStateChange = useCallback((state) => {
     if (state === 'playing') reporterRef.current?.resumed();
     else reporterRef.current?.paused();
   }, []);
@@ -458,19 +458,19 @@ export default function EmulatorGameWidget({ fitnessContext, deviceId = null, on
             playStartedAt={launch.startedAt}
             resolveMediaUrl={(p) => DaylightMediaPath(p)}
             showInputActivity={settings.inputActivityLed !== false}
-            onPlayStateChange={handlePlayStateChange}
+            onArcadeGameSessionStateChange={handleArcadeGameSessionStateChange}
             onExit={handleExitGame}
           />
-          {playBudget.visible && (
+          {arcadeGameBudget.visible && (
             <div
-              className={`fitness-emulator-play-budget${playBudget.urgency ? ` is-${playBudget.urgency}` : ''}${playBudget.stale ? ' is-stale' : ''}`}
+              className={`fitness-emulator-play-budget${arcadeGameBudget.urgency ? ` is-${arcadeGameBudget.urgency}` : ''}${arcadeGameBudget.stale ? ' is-stale' : ''}`}
               data-testid="play-budget"
               role="status"
               aria-live="polite"
             >
-              <strong>{formatClock(playBudget.ms)}</strong>
-              <span>{playBudget.stale ? 'meter offline' : playBudget.label}</span>
-              {playBudget.warning && <small>{playBudget.warning}</small>}
+              <strong>{formatClock(arcadeGameBudget.ms)}</strong>
+              <span>{arcadeGameBudget.stale ? 'meter offline' : arcadeGameBudget.label}</span>
+              {arcadeGameBudget.warning && <small>{arcadeGameBudget.warning}</small>}
             </div>
           )}
           {anonymousSaveGame && (

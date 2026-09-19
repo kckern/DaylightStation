@@ -1,8 +1,8 @@
 export const PLAYBACK_STATE_TOPIC = 'playback_state';
-export const PLAY_SESSIONS_TOPIC = 'play-sessions';
+export const ARCADE_SESSIONS_TOPIC = 'arcade-game-sessions';
 
 export const DEVICE_STATE_TOPIC   = (deviceId) => `device-state:${deviceId}`;
-export const PLAY_SESSION_TOPIC   = (deviceId) => `play-session:${deviceId}`;
+export const ARCADE_SESSION_TOPIC = (deviceId) => `arcade-session:${deviceId}`;
 export const DEVICE_ACK_TOPIC     = (deviceId) => `device-ack:${deviceId}`;
 export const HOMELINE_TOPIC       = (deviceId) => `homeline:${deviceId}`;
 export const SCREEN_COMMAND_TOPIC = (deviceId) => `screen:${deviceId}`;
@@ -10,7 +10,7 @@ export const CLIENT_CONTROL_TOPIC = (clientId) => `client-control:${clientId}`;
 export const COMMAND_HANDLER_PRESENCE_TOPIC_PREFIX = 'command-handler-presence:';
 export const COMMAND_HANDLER_PRESENCE_TOPIC = (deviceId) => `${COMMAND_HANDLER_PRESENCE_TOPIC_PREFIX}${deviceId}`;
 
-const DEVICE_TOPIC_KINDS = ['device-state', 'device-ack', 'homeline', 'screen', 'command-handler-presence', 'play-session'];
+const DEVICE_TOPIC_KINDS = ['device-state', 'device-ack', 'homeline', 'screen', 'command-handler-presence', 'arcade-session'];
 
 export function parseDeviceTopic(topic) {
   if (typeof topic !== 'string') return null;

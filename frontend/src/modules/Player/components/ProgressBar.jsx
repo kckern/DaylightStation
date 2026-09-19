@@ -49,7 +49,7 @@ export function ProgressBar({ percent, onClick, durationSeconds = 0, offsetSecon
         animationTimingFunction: 'linear',
         animationDuration: `${durationSeconds / seed.rate}s`,
         animationDelay: `-${seed.offset / seed.rate}s`,
-        animationPlayState: seed.running ? 'running' : 'paused',
+        animationArcadeGameSessionState: seed.running ? 'running' : 'paused',
         animationFillMode: 'both',
       }
     : { width: `${percent}%` };

@@ -1,0 +1,106 @@
+import { describe, it, expect, beforeEach } from 'vitest';
+import { FleetArcadeGameSessionAnnouncer } from './FleetArcadeGameSessionAnnouncer.mjs';
+import { CompositeArcadeGameSessionAnnouncer } from './CompositeArcadeGameSessionAnnouncer.mjs';
+import { validateSessionSnapshot } from '#shared-contracts/media/shapes.mjs';
+import { ArcadeGameSession } from '#domains/gaming/entities/ArcadeGameSession.mjs';
+import { ArcadeGameSessionState } from '#domains/gaming/value-objects/ArcadeGameSessionState.mjs';
+
+const T0 = Date.parse('2026-09-11T20:00:00.000Z');
+const at = (s) => new Date(T0 + s * 1000).toISOString();
+
+function playing(playedSec = 0) {
+  const s = ArcadeGameSession.open({
+    id: 'ps_1', deviceId: 'livingroom-tv', surface: 'console-emulator', userId: 'test-learner',
+    content: { contentId: 'retroarch:gb/test', title: 'Test Game' }, trustedGapMs: 25_000,
+  });
+  s.observe({ state: ArcadeGameSessionState.PLAYING, observedAt: at(0) });
+  if (playedSec) s.observe({ state: ArcadeGameSessionState.PLAYING, observedAt: at(playedSec) });
+  return s;
+}
+
+let published;
+const bus = { broadcast: (topic, payload) => published.push([topic, payload]) };
+const announcer = () => new FleetArcadeGameSessionAnnouncer({ eventBus: bus, logger: { warn() {} } });
+beforeEach(() => { published = []; });
+
+describe('FleetArcadeGameSessionAnnouncer', () => {
+  it('publishes on the same device-state topic the fleet already renders', async () => {
+    await announcer().started(playing());
+    expect(published[0][0]).toBe('device-state:livingroom-tv');
+  });
+
+  it('emits a snapshot the shared media contract accepts', async () => {
+    await announcer().started(playing(30));
+    // Asserted unconditionally: a hedged check here would pass even if the
+    // projection stopped being renderable, which is the one thing it is for.
+    expect(typeof validateSessionSnapshot).toBe('function');
+    expect(validateSessionSnapshot(published[0][1].snapshot)).toEqual({ valid: true, errors: [] });
+    expect(published[0][1]).toMatchObject({
+      deviceId: 'livingroom-tv', reason: 'heartbeat',
+      snapshot: {
+        sessionId: 'ps_1', state: 'playing',
+        currentItem: { contentId: 'retroarch:gb/test', format: 'game', title: 'Test Game' },
+        meta: { authority: 'arcade-session' },
+      },
+    });
+  });
+
+  it('reports position as seconds of ACTUAL play, not wall clock', async () => {
+    const session = playing(0);
+    session.observe({ state: ArcadeGameSessionState.PAUSED, observedAt: at(10) });
+    session.observe({ state: ArcadeGameSessionState.PLAYING, observedAt: at(600) });
+    session.observe({ state: ArcadeGameSessionState.PLAYING, observedAt: at(615) });
+    await announcer().progress(session, { state: 'playing' });
+    // 615s of wall clock, 15s actually played.
+    expect(published[0][1].snapshot.position).toBe(15);
+  });
+
+  it('maps a paused observation to paused', async () => {
+    await announcer().progress(playing(10), { state: 'paused' });
+    expect(published[0][1].snapshot.state).toBe('paused');
+  });
+
+  it('validates in every state the fleet will see, not just the first', async () => {
+    const a = announcer();
+    const s = playing(10);
+    await a.progress(s, { state: 'paused' });
+    s.end({ endedAt: at(20), reason: 'quit' });
+    await a.ended(s);
+    for (const [, snapshot] of published) {
+      expect(validateSessionSnapshot(snapshot.snapshot)).toEqual({ valid: true, errors: [] });
+    }
+  });
+
+  it('goes idle with no current item when the session ends', async () => {
+    const s = playing(10);
+    s.end({ endedAt: at(20), reason: 'quit' });
+    await announcer().ended(s);
+    expect(published[0][1]).toMatchObject({
+      reason: 'change', snapshot: { state: 'idle', currentItem: null, meta: { authority: 'arcade-session' } },
+    });
+  });
+
+  it('never throws when the bus rejects a broadcast', async () => {
+    const a = new FleetArcadeGameSessionAnnouncer({
+      eventBus: { broadcast: () => { throw new Error('bus down'); } }, logger: { warn() {} },
+    });
+    await expect(a.started(playing())).resolves.toBeUndefined();
+  });
+});
+
+describe('CompositeArcadeGameSessionAnnouncer', () => {
+  it('fans one fact out to every announcer', async () => {
+    const calls = [];
+    const mk = (n) => ({ started: async () => calls.push(n), progress: async () => {}, ended: async () => {} });
+    await new CompositeArcadeGameSessionAnnouncer({ announcers: [mk('a'), mk('b')] }).started(playing());
+    expect(calls).toEqual(['a', 'b']);
+  });
+
+  it('one failing announcer does not stop the others', async () => {
+    const calls = [];
+    const broken = { started: async () => { throw new Error('down'); } };
+    const good = { started: async () => calls.push('good') };
+    await new CompositeArcadeGameSessionAnnouncer({ announcers: [broken, good], logger: { warn() {} } }).started(playing());
+    expect(calls).toEqual(['good']);
+  });
+});
