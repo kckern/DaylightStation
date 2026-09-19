@@ -129,7 +129,7 @@ failed operation: it logs at debug, and a successful retry emits
 
 ### Play-session observation
 
-The console play-session observer uses Fully Kiosk's `foregroundApp` as its
+The console arcade-game-session observer uses Fully Kiosk's `foregroundApp` as its
 primary presence signal and ADB as an independent confirmer. While the emulator
 is foregrounded, `pidof` plus `/proc/<pid>/stat` CPU deltas distinguish actual
 emulation from a paused or failed core. If Fully Kiosk REST is unavailable, the

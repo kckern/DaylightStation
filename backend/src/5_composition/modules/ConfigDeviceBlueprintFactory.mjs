@@ -73,8 +73,8 @@ export class ConfigDeviceBlueprintFactory extends IDeviceBlueprintFactory {
         // put a countdown on a wall panel showing artwork. A device opts in;
         // silence means no meter and no overlay, with no code path that can
         // create one.
-        playObservation: source.play_observation === true,
-        playOverlay: source.play_overlay === true,
+        playObservation: source.arcade_session_observation === true,
+        playOverlay: source.arcade_session_overlay === true,
         defaultVolume: source.default_volume,
         // Volume governance. `cap` is the everyday ceiling; `boost_max` is the
         // highest a temporary override may ever reach. Absent `volume:` block =
@@ -84,7 +84,7 @@ export class ConfigDeviceBlueprintFactory extends IDeviceBlueprintFactory {
         screenPath: source.screen_path,
         notifyService: source.notify_service ?? null,
         // Plex client identity for this surface, DECLARED in devices.yml the
-        // same way `video_call` and `play_observation` are — never generated.
+        // same way `video_call` and `arcade_session_observation` are — never generated.
         //
         // A generated identifier would not rename a device on the Plex side, it
         // would create a NEW one, and Plex never reclaims those: per-request

@@ -225,7 +225,7 @@ git rev-parse HEAD > docs/docs-last-updated.txt
 | Exercise library (shared corpus: Fitness workouts + School anatomy) | `docs/reference/fitness/exercise-library.md` |
 | Arcade emulator (EmulatorJS boot contract, picture shaders, gamepad routing, fault handling) | `docs/reference/gaming/emulator-resilience.md` |
 | Arcade consoles (adding a system: manifest, core, bezel geometry) | `docs/reference/gaming/arcade-consoles.md` |
-| Play sessions (metered arcade time: observation, budget, overlay) | `docs/reference/gaming/play-sessions.md` |
+| Arcade game sessions (metered arcade time: observation, budget, overlay) | `docs/reference/gaming/arcade-game-sessions.md` |
 | Household economy (coins) | `docs/reference/economy/economy.md` |
 | State Gates (assertions, gate policy, entitlements, replay) | `docs/reference/state-gates/README.md` |
 | DoNow (household "start this, there, now" dispatch) | `docs/reference/donow/README.md` |

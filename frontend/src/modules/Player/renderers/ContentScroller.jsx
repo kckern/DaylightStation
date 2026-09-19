@@ -554,7 +554,7 @@ import { useScreenVolume } from '../../../lib/volume/ScreenVolumeContext.js';
                 animationTimingFunction: 'linear',
                 animationDuration: `${duration / seekFill.rate}s`,
                 animationDelay: `-${seekFill.offset / seekFill.rate}s`,
-                animationPlayState: seekFill.running ? 'running' : 'paused',
+                animationArcadeGameSessionState: seekFill.running ? 'running' : 'paused',
                 animationFillMode: 'both',
               } : { width: "0%" }}
             >

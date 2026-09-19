@@ -578,6 +578,18 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
 
   useEffect(() => {
     if (!snapshot.result || !resultReady || persistedRef.current) return;
+    // installRuntime's effect is declared earlier than this one, so a commit
+    // that both replaces the runtime AND re-runs this effect (its deps —
+    // `requirement`, `persist` — change on every host-driven advance, even to
+    // the SAME material) runs installRuntime first. That resets persistedRef
+    // to false and repoints `runtimeRef`/`assessmentIdRef` at the NEW attempt
+    // before this effect body executes — but `snapshot` here is still the OLD
+    // runtime's just-completed result, captured before the swap. Persisting
+    // it now would report a second, unplayed "completion" of the same result
+    // under the NEW attempt's id, and spend the guard that attempt needed for
+    // its own real one — leaving a genuinely-played run with nowhere to go.
+    // Bail out whenever the runtime has already moved on from this snapshot.
+    if (runtimeRef.current?.getStoreSnapshot?.() !== snapshot) return;
     persist(snapshot.result);
     // A JUDGED attempt: completed, or stalled after real input. An `aborted`
     // one is persisted above and reported nowhere — there is nothing in it to
