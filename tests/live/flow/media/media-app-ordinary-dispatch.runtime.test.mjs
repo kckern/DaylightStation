@@ -50,21 +50,29 @@ test('ordinary aimed Play then Queue reaches the virtual screen receiver and tru
   await expect(sender.getByTestId('dispatch-tray')).toContainText('Playing on Acceptance receiver', { timeout: 60000 });
 
   const played = await sender.evaluate(async () => (await fetch('/api/v1/device/acceptance-media/receiver-state')).json());
-  await mediaSearch.fill('tuttle twins');
-  const container = sender.getByTestId('combobox-option-plex:663508');
-  await expect(container).toBeVisible({ timeout: 30000 });
-  await container.click();
-  await expect(sender.getByTestId('browse-dispatch-header')).toBeVisible({ timeout: 30000 });
-  await sender.getByTestId('browse-dispatch-queue').click();
-  await expect.poll(async () => sender.evaluate(async () => {
+  const playedOwner = played.snapshot?.meta?.playbackOwner;
+  expect(played.snapshot?.meta?.ownerId).toBe('acceptance-media');
+  expect(playedOwner).toMatchObject({
+    ownerInstanceId: expect.any(String), playbackRevision: expect.any(Number), queueRevision: expect.any(Number),
+  });
+  await mediaSearch.fill('disclosure day');
+  const more = sender.getByTestId('result-more-plex:697368');
+  await expect(more).toBeVisible({ timeout: 30000 });
+  await more.click();
+  const add = sender.getByTestId('result-action-add-plex:697368');
+  await expect(add).toBeVisible({ timeout: 30000 });
+  await add.click();
+  await expect.poll(async () => sender.evaluate(async (played) => {
     const after = await (await fetch('/api/v1/device/acceptance-media/receiver-state')).json();
+    const beforeOwner = played.snapshot.meta.playbackOwner;
+    const afterOwner = after.snapshot?.meta?.playbackOwner;
     return after.snapshot.sessionId === played.snapshot.sessionId
-      && after.snapshot.ownerId === played.snapshot.ownerId
-      && after.snapshot.ownerInstanceId === played.snapshot.ownerInstanceId
+      && after.snapshot.meta?.ownerId === played.snapshot.meta.ownerId
+      && afterOwner?.ownerInstanceId === beforeOwner.ownerInstanceId
       && after.snapshot.currentItem?.contentId === played.snapshot.currentItem?.contentId
-      && after.snapshot.playbackRevision === played.snapshot.playbackRevision
-      && after.snapshot.queueRevision > played.snapshot.queueRevision
-      && after.snapshot.queue?.items?.some(item => item.contentId === 'plex:663508');
+      && afterOwner?.playbackRevision === beforeOwner.playbackRevision
+      && afterOwner?.queueRevision > beforeOwner.queueRevision
+      && after.snapshot.queue?.items?.some(item => item.contentId === 'plex:697368');
   }, played), { timeout: 60000 }).toBe(true);
   expect(await native.evaluate(element => element === window.__ordinaryNativeReceiver)).toBe(true);
   await expect.poll(() => native.evaluate(element => element.currentTime), { timeout: 30000 }).toBeGreaterThan(before.currentTime);
