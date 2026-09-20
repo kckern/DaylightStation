@@ -153,6 +153,7 @@ export function MediaContentSearch() {
             logApp="media"
             appResults
             allowFreeform={false}
+            retainQueryOnEscape
             onClose={resetScope}
             destinationInteractionActive={destinationInteractionActive}
           />

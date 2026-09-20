@@ -132,7 +132,7 @@ export function decideCommit({ reason, search, value, results, highlightIdx, use
 export function reducer(state, event) {
   switch (event.type) {
     case 'OPEN':
-      return { ...state, mode: Modes.SEARCH, search: state.value || '', highlight: { idx: -1, userNavigated: false } };
+      return { ...state, mode: Modes.SEARCH, search: state.search ?? state.value ?? '', highlight: { idx: -1, userNavigated: false } };
     case 'INPUT':
       return { ...state, mode: Modes.SEARCH, search: event.text, browse: emptyBrowse(), highlight: { idx: -1, userNavigated: false } };
     case 'RESULTS':
@@ -180,7 +180,7 @@ export function reducer(state, event) {
     case 'VALUE_CHANGED':
       return { ...initialState(event.value), results: state.results };
     case 'CLOSE':
-      return { ...initialState(state.value) };
+      return { ...initialState(state.value), search: event.retainSearch ?? null };
     default:
       return state;
   }

@@ -8,6 +8,7 @@ import { MantineProvider } from '@mantine/core';
 
 const dispatchContent = vi.fn();
 const dispatchLeafVerb = vi.fn();
+const resetScope = vi.fn();
 vi.mock('./useContentDispatch.js', () => ({
   useContentDispatch: () => ({ dispatch: dispatchContent, dispatchLeafVerb, playContainerAsQueue: vi.fn() }),
 }));
@@ -18,7 +19,7 @@ vi.mock('../shell/NavProvider.jsx', () => ({ useNav: () => ({ push: vi.fn() }) }
 vi.mock('./useSearchContext.js', () => ({
   useSearchContext: () => ({
     scopes: [{ key: 'all', label: 'All', params: '' }],
-    currentScopeKey: 'all', currentScope: { key: 'all', label: 'All', params: '' }, scopeError: null,
+    currentScopeKey: 'all', currentScope: { key: 'all', label: 'All', params: '' }, scopeError: null, resetScope,
   }),
 }));
 vi.mock('./ScopeChips.jsx', () => ({ ScopeChips: () => <div data-testid="scope-chips" /> }));
@@ -97,6 +98,7 @@ describe('MediaContentSearch action-menu retention', () => {
   beforeEach(() => {
     dispatchContent.mockReset();
     dispatchLeafVerb.mockReset();
+    resetScope.mockReset();
     vi.stubGlobal('EventSource', undefined);
     vi.stubGlobal('fetch', vi.fn(() => jsonResponse([leaf])));
   });
@@ -106,7 +108,7 @@ describe('MediaContentSearch action-menu retention', () => {
   it('keeps the query after pointer More → Add finishes portal dismissal', async () => {
     const { controller, play } = renderSearch();
     const input = screen.getByRole('textbox', { name: 'Search media…' });
-    act(() => input.focus());
+    fireEvent.focus(input);
     fireEvent.change(input, { target: { value: 'Disclosure Day' } });
 
     pointerActivate(await screen.findByTestId('result-more-plex:697368'));
@@ -146,6 +148,24 @@ describe('MediaContentSearch action-menu retention', () => {
 
     fireEvent.keyDown(document.body, { key: 'Escape', code: 'Escape' });
     expect(onBaseDismiss).toHaveBeenCalledTimes(1);
+  });
+
+  it('[RELY.10a] retains the desktop draft across Escape but not base dismissal', async () => {
+    const { onBaseDismiss } = renderSearch();
+    const input = screen.getByRole('textbox', { name: 'Search media…' });
+    act(() => input.focus());
+    fireEvent.change(input, { target: { value: 'Frozen' } });
+    await screen.findByTestId('combobox-option-plex:697368');
+
+    fireEvent.keyDown(input, { key: 'Escape', code: 'Escape' });
+
+    await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull());
+    expect(input).toHaveValue('Frozen');
+    expect(resetScope).toHaveBeenCalledTimes(1);
+    expect(onBaseDismiss).not.toHaveBeenCalled();
+    fireEvent.focus(input);
+    expect(input).toHaveValue('Frozen');
+    await expect(screen.getByRole('listbox')).toBeVisible();
   });
 
   it.each([

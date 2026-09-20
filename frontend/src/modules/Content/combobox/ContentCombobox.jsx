@@ -117,6 +117,7 @@ export function ContentCombobox({
   onPlayAll = null,
   onMore = null,
   destinationInteractionActive = false,
+  retainQueryOnEscape = false,
 }) {
   const log = useMemo(() => getChildLogger({ component: 'ContentCombobox', app: logApp, sessionLog: true }), [logApp]);
   const {
@@ -127,7 +128,7 @@ export function ContentCombobox({
     resolvedTitle, isSearching, pendingSources, sourceErrors, streamError, retrySource, truncatedAt, fellBackToAll,
   } = useContentCombobox({
     value, onChange, searchParams, fallbackSearchParams, scopeKey, scopeLabel,
-    appResults, selectContainers, allowFreeform, logApp,
+    appResults, selectContainers, allowFreeform, logApp, retainQueryOnEscape,
   });
 
   const mode = state.mode;
