@@ -53,6 +53,20 @@ beforeEach(() => {
 });
 
 describe('FleetView Play… affordance', () => {
+  it('identifies the browser session that owns this Fleet view as This device', () => {
+    fleet.devices = [{ id: 'browser:browser-a', name: 'Browser A', type: 'browser', isLocal: true }];
+    fleet.entries = {
+      'browser:browser-a': {
+        snapshot: { state: 'playing', currentItem: { title: 'Arrival', contentId: 'plex:55854' } },
+      },
+    };
+
+    renderFleet();
+
+    expect(screen.getByTestId('fleet-card-browser:browser-a')).toHaveTextContent('Browser A');
+    expect(screen.getByTestId('fleet-this-device-browser:browser-a')).toHaveTextContent('This device');
+  });
+
   it('disables Play here with a truthful Move-unavailable explanation for an active remote session', () => {
     fleet.entries = { 'livingroom-tv': { snapshot: { state: 'playing', currentItem: { title: 'Bluey' } } } };
     renderFleet();

@@ -48,6 +48,9 @@ function FleetCard({ deviceId }) {
         <span className="fleet-card-icon" aria-hidden>{deviceIcon(device)}</span>
         <span className="fleet-card-titles">
           <span className="fleet-card-name">{deviceName(device, deviceId)}</span>
+          {device?.isLocal && (
+            <span data-testid={`fleet-this-device-${deviceId}`} className="fleet-card-this-device">This device</span>
+          )}
           {location && <span className="fleet-card-location">{location}</span>}
         </span>
         <span className="fleet-card-state" data-testid={`fleet-state-${deviceId}`}>
