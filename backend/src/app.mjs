@@ -30,6 +30,7 @@ import { getDispatcher } from './0_system/logging/dispatcher.mjs';
 import { createLogger } from './0_system/logging/logger.mjs';
 import { ingestFrontendLogs } from '#adapters/logging/FrontendLogIngestion.mjs';
 import { shouldRelayBtTopic, shouldRelayKioskLaunchTopic } from '#apps/eventbus/ClientRelayPolicy.mjs';
+import { EventBusPlaybackStateRelay } from '#adapters/eventbus/EventBusMediaClientIngress.mjs';
 import { loadLoggingConfig, resolveLoggerLevel } from './0_system/logging/config.mjs';
 
 // Bootstrap functions
@@ -1419,15 +1420,9 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     })();
   });
 
-  // Playback state broadcast relay — routes playback_state from any client
-  // to playback:{deviceId|clientId} topic for device monitoring (4.2.8)
-  eventBus.onClientMessage((clientId, message) => {
-    if (message.topic !== 'playback_state') return;
-    const broadcastId = message.deviceId || message.clientId;
-    if (!broadcastId) return;
-    rootLogger.debug?.('eventbus.playback_state.relay', { from: clientId, broadcastId, state: message.state });
-    eventBus.broadcast(`playback:${broadcastId}`, message);
-  });
+  // Playback state is one shared Fleet feed. The relay owns its topic contract
+  // so browser sessions and configured devices receive the same envelope.
+  new EventBusPlaybackStateRelay({ eventBus, logger: rootLogger }).attach();
 
   // Pose frame logging — streams raw keypoints to JSONL files
   const poseLogHandler = createPoseLogHandler(configService, rootLogger.child({ module: 'pose-log' }));
