@@ -181,6 +181,19 @@ observation remains: `CastTargetProvider` reads/writes
 
 ## AC4 disposition
 
+The compiled AC4 attempt observed real receiver video advancing by more than
+20 seconds after the sender clock jump, but the persisted aim expired instead
+of remaining aimed; this is not accepted AC4 evidence. The raw
+`homeline:acceptance-media` progress event omits payload `deviceId`, while
+`DispatchProvider` had required that field before recording confirmed
+provenance. It now derives the device from `parseDeviceTopic(msg.topic)` and
+requires the topic, dispatch attempt, and owner to agree; a conflicting
+payload ID is rejected. The realistic missing-ID/wrong-topic/conflict tests
+pass in `DispatchProvider.test.jsx` (17 passed). The runtime test now waits for
+confirmed exemption state both before and after the clock jump, alongside
+native playback advancement; that strengthened compiled-runtime run is
+pending, so AC4 remains unverified.
+
 `media-app-browser-control.runtime.test.mjs` does use two real browser pages,
 the branch WebSocket ingress, receiver `useExternalControl`, a queue-command
 ack and target-side queue mutation. Its target command is `queue:add`, and it
