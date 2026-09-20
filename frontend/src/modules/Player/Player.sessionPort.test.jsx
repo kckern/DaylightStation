@@ -54,6 +54,61 @@ describe('Player session port', () => {
     meta: { ownerId: 'source', updatedAt: '2026-09-14T00:00:00.000Z' },
   });
 
+  it('admits a direct play into the owner before native playback is observed', async () => {
+    const ref = createRef();
+    const native = document.createElement('video');
+    Object.defineProperty(native, 'paused', { configurable: true, value: false });
+    Object.defineProperty(native, 'currentTime', { configurable: true, value: 1 });
+    mockMediaElement = native;
+    let resolveQueue;
+    DaylightAPI.mockImplementation((path) => {
+      if (String(path).startsWith('api/v1/queue/plex:direct')) {
+        return new Promise((resolve) => { resolveQueue = resolve; });
+      }
+      return Promise.resolve({ contentId: 'plex:direct', title: 'Direct', mediaUrl: '/stream/direct', format: 'video' });
+    });
+
+    const view = render(<Player ref={ref} play={{ contentId: 'plex:direct', title: 'Direct', format: 'video' }} />);
+    await waitFor(() => expect(latestSinglePlayerProps).toBeTruthy());
+    await waitFor(() => expect(ref.current?.getQueueSnapshot().items).toHaveLength(1));
+    expect(ref.current.getQueueSnapshot().items[0]).toMatchObject({ contentId: 'plex:direct' });
+    const admittedIdentity = ref.current.getPlaybackIdentity();
+    expect(admittedIdentity.playbackRevision).toBeGreaterThan(0);
+    view.rerender(<Player ref={ref} play={{ contentId: 'plex:direct', title: 'Direct', format: 'video' }} />);
+    expect(ref.current.getPlaybackIdentity()).toEqual(admittedIdentity);
+
+    let tick = null;
+    const registry = createPlayerSessionRegistry();
+    const bridge = createPlayerSessionBridge({
+      getPlayerHandle: () => ref.current,
+      registry,
+      setIntervalFn: (fn) => { tick = fn; return 1; },
+      clearIntervalFn: () => {},
+    });
+    bridge.start();
+    act(() => {
+      latestSinglePlayerProps.onMediaRef(native, { contentId: 'plex:direct' });
+      tick();
+      native.dispatchEvent(new Event('playing'));
+      tick();
+    });
+    const source = createRegistrySessionSource({ registry, ownerId: 'screen', sessionId: 'direct-session' });
+    expect(source.getSnapshot()).toMatchObject({
+      state: 'playing',
+      currentItem: { contentId: 'plex:direct' },
+      queue: { currentIndex: 0 },
+    });
+    expect(source.capture().identity.playbackRevision).toBeGreaterThan(0);
+    bridge.stop();
+    await act(async () => resolveQueue({ items: [{ contentId: 'plex:direct', title: 'Canonical', format: 'hls_video' }], audio: null }));
+    await waitFor(() => expect(ref.current.getQueueSnapshot().items).toHaveLength(1));
+    await waitFor(() => expect(ref.current.getQueueSnapshot().items[0]).toMatchObject({
+      contentId: 'plex:direct', title: 'Canonical', format: 'hls_video',
+    }));
+    expect(ref.current.getMediaElement()).toBe(native);
+    expect(ref.current.getPlaybackIdentity().playbackRevision).toBeGreaterThanOrEqual(admittedIdentity.playbackRevision);
+  });
+
   it('adopts an exact [A,B,A] owner capture into the existing destination Player', async () => {
     const sourceRef = createRef();
     const destinationRef = createRef();

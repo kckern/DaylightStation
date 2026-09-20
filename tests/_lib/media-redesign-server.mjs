@@ -33,6 +33,7 @@ const ORDINARY_READ_PATHS = [
   /^\/api\/v1\/(?:list|info|siblings)\//, /^\/api\/v1\/screens\/living-room$/,
   /^\/api\/v1\/config\/player$/, /^\/api\/v1\/queue\/(?:plex:|plex\/)\d+$/,
   /^\/api\/v1\/play\//, /^\/api\/v1\/proxy\/plex\/stream\/\d+$/,
+  /^\/api\/v1\/proxy\/plex\/library\/parts\/\d+\/\d+\/file\.(?:mp4|mkv|m4v|mp3|flac|m4a|aac|ogg|wav)$/,
   // Plex start manifests and their session-scoped playlists/fragments are
   // browser media reads. Keep control endpoints (notably `stop`) outside this
   // allowlist even when callers use GET for them.

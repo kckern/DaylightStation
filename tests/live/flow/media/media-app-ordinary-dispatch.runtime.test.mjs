@@ -32,7 +32,7 @@ test('ordinary aimed Play then Queue reaches the virtual screen receiver and tru
   const arrival = sender.getByTestId('combobox-option-plex:55854');
   await expect(arrival).toBeVisible({ timeout: 30000 });
   await arrival.click();
-  const native = receiver.locator('dash-video video');
+  const native = receiver.locator('.video-player video');
   await expect(native).toBeVisible({ timeout: 60000 });
   await expect.poll(() => native.evaluate(element => element.readyState >= 2 && element.currentTime > 0), { timeout: 30000 })
     .toBe(true);
@@ -41,9 +41,9 @@ test('ordinary aimed Play then Queue reaches the virtual screen receiver and tru
     return { src: element.currentSrc || element.src, paused: element.paused, currentTime: element.currentTime };
   });
   expect(before.src).toBeTruthy();
-  await expect.poll(() => native.evaluate(element => !element.paused && element.currentTime > before.currentTime), { timeout: 60000 })
+  await expect.poll(() => native.evaluate((element, startTime) => !element.paused && element.currentTime > startTime, before.currentTime), { timeout: 60000 })
     .toBe(true);
-  await expect.poll(async () => sender.evaluate(async () => {
+  await expect.poll(async () => sender.evaluate(async played => {
     const response = await fetch('/api/v1/device/acceptance-media/receiver-state');
     return response.ok ? response.json() : null;
   }), { timeout: 60000 }).toMatchObject({ snapshot: { currentItem: { contentId: 'plex:55854' } } });
@@ -65,7 +65,7 @@ test('ordinary aimed Play then Queue reaches the virtual screen receiver and tru
       && after.snapshot.playbackRevision === played.snapshot.playbackRevision
       && after.snapshot.queueRevision > played.snapshot.queueRevision
       && after.snapshot.queue?.items?.some(item => item.contentId === 'plex:663508');
-  }), { timeout: 60000 }).toBe(true);
+  }, played), { timeout: 60000 }).toBe(true);
   expect(await native.evaluate(element => element === window.__ordinaryNativeReceiver)).toBe(true);
   await expect.poll(() => native.evaluate(element => element.currentTime), { timeout: 30000 }).toBeGreaterThan(before.currentTime);
   await expect(sender.getByTestId('dispatch-tray')).toContainText('Added', { timeout: 60000 });

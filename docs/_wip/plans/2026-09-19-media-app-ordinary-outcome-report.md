@@ -33,3 +33,11 @@ Focused cycle-2 verification: real `DeviceContentDispatchService` → `WakeAndLo
 ## Transport follow-up
 
 `SinglePlayer` now resolves a canonical content ID through `/play` before selecting a renderer, so an opaque Plex stream with stale `dash_video` metadata uses the authoritative HLS descriptor. Identity-less direct embeds retain the direct-media bypass. Focused verification: `SinglePlayer.transport`, `api.streamId`, and `api.mintLog` — **3 files, 12 tests passed**. The ordinary two-page native playback journey remains unproven: its bounded probe found the visible video did not reach `readyState >= 2` and `currentTime > 0` within 30 seconds.
+
+### Compiled ordinary receiver probe
+
+Source SHA `d7e32de18262e4db1691803219a91574e8801081` (compiled preview) was exercised from `/tmp/daylight-transport-build-d7e32de18` with `BASE_URL=http://127.0.0.1:44815 npx playwright test tests/live/flow/media/media-app-ordinary-dispatch.runtime.test.mjs --workers=1 --reporter=line`. The actual receiver native video became ready and advanced, and receiver state reported `currentItem.contentId: plex:55854`. The tray remained “Sent to Acceptance receiver” rather than “Playing on Acceptance receiver”; the test failed there, so Add was not reached and the full story is not accepted. Trace: `/tmp/daylight-transport-build-d7e32de18/test-results/live-flow-media-media-app--8dd2f-er-and-truthful-sender-tray/trace.zip`. The preview fixture exception and runtime-test harness corrections are test-only and remain uncommitted; no product files were changed for this probe.
+
+### Direct Player owner follow-up
+
+`Player` now admits a single direct `play` into its session owner before asynchronous queue hydration finishes, while continuing to render the original direct input so admission does not replace its transport or remount the native element. Regression coverage verifies immediate owner identity/revision, same-identity rerender, registry publication of the advancing native video, and later canonical queue hydration without replacing that element. Terra reports **29 focused tests passed** and root reviewed the change. This is follow-up unit evidence only: it does not change the ordinary-story acceptance counts above, which still require a new compiled browser journey confirming the “Playing” tray and Add path.
