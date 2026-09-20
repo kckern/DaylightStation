@@ -54,6 +54,7 @@ export const HOUSEHOLD_APP_CONFIGS = Object.freeze({
   finance:          'finance/config',
   fitness:          'fitness/config',
   games:            'gaming/games',
+  'arcade-overlay': 'gaming/arcade-overlay',
   'party-games':     'gaming/party-games/config',
   gratitude:        'gratitude/config',
   harvest:          'harvest/config',
