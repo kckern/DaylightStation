@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {
   ACCEPTED_SOURCE_SHA,
+  BRANCH_ALLOWED_TITLES,
   createAcceptancePreviewPlugin,
   requireExpectedSha,
   resolveAcceptanceBuildOutput,
@@ -31,6 +32,10 @@ async function request(middleware, { url, method = 'GET' }) {
 }
 
 describe('media redesign bundled-preview middleware', () => {
+  it('authorizes the reviewed audio fixture alongside the existing virtual video fixtures', () => {
+    expect(BRANCH_ALLOWED_TITLES).toContain('584614');
+  });
+
   it('requires the caller to pin the accepted SHA rather than trusting a source constant', () => {
     expect(() => requireExpectedSha()).toThrow('MEDIA_ACCEPTANCE_EXPECTED_SHA');
     expect(requireExpectedSha(ACCEPTED_SOURCE_SHA)).toBe(ACCEPTED_SOURCE_SHA);

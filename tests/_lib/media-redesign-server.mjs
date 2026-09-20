@@ -162,7 +162,10 @@ app.use('/api/v1/play', createPlayRouter({
 }));
 // The 60fps benchmark is a verified Game Cycling catalog asset, exercised
 // only in a virtual browser, never on the configured garage screen.
-const allowedTitles = new Set(policy === 'branch' ? ['55854', '697368', '675677']
+// Read-only virtual-browser fixtures. The audio track is pinned by rating key
+// as well as its runtime test selector; titles alone are not stable identity.
+export const BRANCH_ALLOWED_TITLES = ['55854', '697368', '675677', '584614'];
+const allowedTitles = new Set(policy === 'branch' ? BRANCH_ALLOWED_TITLES
   : policy === 'hls-copy-55854' ? ['55854'] : ['675677']);
 
 /**
