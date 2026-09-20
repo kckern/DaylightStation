@@ -1,4 +1,4 @@
-import { validateRecoveryLedger } from './contracts.mjs';
+import { validateObservation, validateRecoveryLedger, validateRendition } from './contracts.mjs';
 
 const INCIDENT_DEADLINE_MS = 30_000;
 const ROLLING_REPLACEMENT_MS = 600_000;
@@ -9,25 +9,35 @@ const finite = value => Number.isFinite(value);
 function normalizedObservations(observations) {
   if (observations == null) return [];
   if (!Array.isArray(observations)) throw new TypeError('observations must be an array');
-  return observations.slice().sort((a, b) => (a?.sequence ?? 0) - (b?.sequence ?? 0));
+  return observations.map(validateObservation)
+    .sort((a, b) => a.observedAt - b.observedAt || a.sequence - b.sequence);
 }
 
-function nextCandidate(candidates, rejectedId) {
-  return (candidates || [])
-    .filter(candidate => candidate?.renditionId && candidate.renditionId !== rejectedId && candidate.ready !== false)
+function nextCandidate(candidates) {
+  if (!Array.isArray(candidates)) throw new TypeError('candidates must be an array');
+  return candidates.map(validateRendition)
+    .filter(candidate => candidate.ready)
     .sort((left, right) => (left.estimatedUnits ?? 0) - (right.estimatedUnits ?? 0) || String(left.renditionId).localeCompare(String(right.renditionId)))[0];
 }
 
 function deadlineExceeded(observations, now) {
-  return observations.some(observation => finite(observation?.incidentStartedAt) && now - observation.incidentStartedAt >= INCIDENT_DEADLINE_MS);
+  const firstIncident = observations.find(observation => observation.failure !== null) || observations[0];
+  return firstIncident !== undefined && now - firstIncident.observedAt >= INCIDENT_DEADLINE_MS;
 }
 
-function productionBehind(observation) {
-  const bufferFalling = finite(observation?.bufferSeconds) && finite(observation?.previousBufferSeconds)
-    && observation.bufferSeconds < observation.previousBufferSeconds;
-  const production = observation?.productionRate ?? observation?.conversionProductionRate;
-  const consumption = observation?.deliveryRate ?? observation?.playbackRate ?? 1;
+function productionBehind(observations) {
+  if (observations.length < 2) return false;
+  const previous = observations.at(-2);
+  const latest = observations.at(-1);
+  const bufferFalling = finite(previous.bufferSeconds) && finite(latest.bufferSeconds)
+    && latest.bufferSeconds < previous.bufferSeconds;
+  const production = latest.productionRate;
+  const consumption = latest.deliveryRate;
   return bufferFalling && finite(production) && finite(consumption) && production < consumption;
+}
+
+function recoveredIncidentCount(ledger, now) {
+  return ledger.healthySince !== null && now - ledger.healthySince >= RECOVERY_MS ? 0 : ledger.incidentCount;
 }
 
 /**
@@ -61,24 +71,23 @@ export function decideRecovery({ observations = [], ledger, candidates = [], now
   if (deadlineExceeded(facts, now)) return { action: 'fail', reason: 'incident-deadline-exceeded' };
 
   const recent = current.replacementTimes.filter(at => now - at < ROLLING_REPLACEMENT_MS);
-  const exhausted = current.incidentCount >= 3 || recent.length >= 6;
+  const exhausted = recoveredIncidentCount(current, now) >= 3 || recent.length >= 6;
   const failure = latest.failure || {};
-  if (failure.kind === 'access-expired' || (finite(latest.expiresAt) && latest.expiresAt <= now) || (finite(latest.delivery?.expiresAt) && latest.delivery.expiresAt <= now)) {
+  if (failure.kind === 'access-expired') {
     return exhausted ? { action: 'fail', reason: 'replacement-budget-exhausted' } : { action: 'renew', reason: 'access-expired' };
   }
   if (exhausted) return { action: 'fail', reason: 'replacement-budget-exhausted' };
   if (failure.kind === 'decoder') {
-    const replacement = nextCandidate(candidates, latest.renditionId);
+    const replacement = nextCandidate(candidates);
     return replacement ? { action: 'replace', reason: 'decoder-rejected', renditionId: replacement.renditionId } : { action: 'prepare', reason: 'no-compatible-replacement' };
   }
-  if (productionBehind(latest)) {
-    const replacement = nextCandidate(candidates, latest.renditionId);
+  if (productionBehind(facts)) {
+    const replacement = nextCandidate(candidates);
     return replacement ? { action: 'replace', reason: 'production-behind', renditionId: replacement.renditionId } : { action: 'prepare', reason: 'production-behind' };
   }
   if (['network', 'provider', 'unknown'].includes(failure.kind)) {
-    const observedAt = latest.observedAt ?? latest.incidentStartedAt ?? now;
-    if (now - observedAt < backoffFor(current.incidentCount)) return { action: 'wait', reason: 'transient-backoff' };
-    const replacement = nextCandidate(candidates, latest.renditionId);
+    if (now - latest.observedAt < backoffFor(recoveredIncidentCount(current, now))) return { action: 'wait', reason: 'transient-backoff' };
+    const replacement = nextCandidate(candidates);
     return replacement ? { action: 'replace', reason: 'transient-recovery', renditionId: replacement.renditionId } : { action: 'prepare', reason: 'no-supported-recovery' };
   }
   return { action: 'wait', reason: 'cause-unknown' };
