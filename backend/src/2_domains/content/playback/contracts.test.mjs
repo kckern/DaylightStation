@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest';
-import { validateCapacity, validateClient, validateEvidence, validateObservation, validateRendition, validateRecoveryLedger } from './contracts.mjs';
+import { normalizeActiveRenditionId, validateCapacity, validateClient, validateEvidence, validateObservation, validateRendition, validateRecoveryLedger } from './contracts.mjs';
 import { client, observation, original } from '../../../../../tests/fixtures/adaptive-playback/policyCases.mjs';
 
 describe('playback contracts', () => {
@@ -27,5 +27,11 @@ describe('playback contracts', () => {
     expect(() => validateEvidence({ readiness: [{ renditionId: 'original-h264', sourceRevision: 'revision-1', profileKey: 'living-room-browser', status: 'validated', observedAt: 'now' }] })).toThrow('observedAt');
     expect(() => validateCapacity({ availableUnits: 1, probeAvailable: true, providerQuota: 1 })).toThrow('unsupported field');
     expect(() => validateObservation({ ...observation(), cpuPercent: 100 })).toThrow('unsupported field');
+  });
+
+  it('normalizes only a non-empty provider-neutral active rendition identity', () => {
+    expect(normalizeActiveRenditionId('active-h264')).toBe('active-h264');
+    expect(normalizeActiveRenditionId('')).toBeNull();
+    expect(normalizeActiveRenditionId({ renditionId: 'active-h264' })).toBeNull();
   });
 });

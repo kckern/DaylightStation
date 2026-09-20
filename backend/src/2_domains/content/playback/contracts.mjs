@@ -118,6 +118,11 @@ export function validateCapacity(capacity) {
   return copy(capacity);
 }
 
+/** A missing or malformed active rendition is deliberately not replacement-safe. */
+export function normalizeActiveRenditionId(activeRenditionId) {
+  return typeof activeRenditionId === 'string' && activeRenditionId.trim() ? activeRenditionId : null;
+}
+
 export function validateObservation(observation) {
   required(observation, ['intentId', 'attemptId', 'generation', 'sequence', 'observedAt', 'positionMs', 'paused', 'seeking', 'visible', 'decodedFrames', 'bufferSeconds', 'productionRate', 'deliveryRate', 'failure'], 'observation');
   for (const field of ['intentId', 'attemptId']) requireText(observation[field], field);
