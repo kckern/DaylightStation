@@ -23,9 +23,9 @@ player and updated session state.
 | AC1 — change aim in one step wherever shown | `JOURNEY-AIM-PERSISTENCE-MATRIX` covers phone SearchMode, tablet/laptop Browse header and dock; combined with the existing ordinary dock chooser and accepted `PLACE.2b` phone Browse chooser, all actual shared aim-change surfaces use the same visible target state. | Accepted. |
 | AC2 — persist across navigation/reload | `JOURNEY-AIM-PERSISTENCE-MATRIX` verifies visible aim through navigation and reload on phone, tablet, and laptop. | Accepted. |
 | AC3 — return local after two idle hours | The matrix advances two idle hours and observes This device on all three viewport flows, with no device commands. | Accepted. |
-| AC4 — clock stops for sent/steered playback | `aimLifetime.test.js` proves the pure `exemption:true` calculation; `RemoteSessionController.test.js` proves a remote controller reports a verified steering identity after HTTP, ack, and matching playing state. | Unverified browser journey joining real receiver state to the aim clock. |
+| AC4 — clock stops for sent/steered playback | `JOURNEY-AIM-ACTIVE-SENT` on compiled `f2cf4d6fa89dd8a86994d7f644419402c0e9938d` passes: actual aimed receiver video stayed unpaused and advanced >20s across a ≥2h sender-clock jump; finite exemption timestamps remained before and after, and the selected aim stayed visible. | Partial: ordinary sent playback is verified; the separate actual-steering path is not. |
 | AC5 — reopen after enough idle is local | `JOURNEY-AIM-IDLE` reloads after observed expiry and sees local; provider initializer rejects an expired persisted aim before first layout. | Partial: it is reload, not the specified closed-app/reopen proof. |
-| AC6 — every play/line-up uses aim with remote actual outcome | `useContentDispatch.js` routes current aim to `DispatchProvider`'s `/device/:id/load`; its result is currently HTTP `res.ok`, and the existing runtime cast tests stub that response. | Unverified. This is not a Move/handoff dependency. It needs an ordinary-send, receiver-state-correlated outcome journey for each applicable play/line-up surface. |
+| AC6 — every play/line-up uses aim with remote actual outcome | Existing `JOURNEY-ORDINARY-REMOTE-PLAY-ADD` verifies Search Play and result-More Add with an actual receiver; root independently reran that regression on compiled `f2cf4d6fa89dd8a86994d7f644419402c0e9938d` / preview port 43877 (1 passed, 14.3s), preserving the native/queue/tray flow. | Partial: these ordinary Search Play/Add cases do not cover every verb or surface. |
 
 ## Actual junctions and uncertainty
 
@@ -88,9 +88,9 @@ its provenance remains valid. One independent reviewer checks that the
 receiver state, not an HTTP/ack alone, causes the AC4 exemption and that the
 reopen path is not merely reload. At most two repair cycles; then reassess.
 
-The compiled-browser matrix below supports acceptance of AC1–3 only; AC4 and
-AC6 remain unverified, and the full story remains open. AC5 is recorded
-separately below.
+The compiled-browser matrix below supports acceptance of AC1–3 only; later
+ordinary-send evidence partially supports AC4 and AC6, as recorded below. The
+full story remains open, and AC5 is recorded separately.
 
 ## Execution record — AC1–AC3 persistence matrix
 
@@ -181,24 +181,27 @@ observation remains: `CastTargetProvider` reads/writes
 
 ## AC4 disposition
 
-The compiled AC4 attempt observed real receiver video advancing by more than
-20 seconds after the sender clock jump, but the persisted aim expired instead
-of remaining aimed; this is not accepted AC4 evidence. The raw
-`homeline:acceptance-media` progress event omits payload `deviceId`, while
-`DispatchProvider` had required that field before recording confirmed
-provenance. It now derives the device from `parseDeviceTopic(msg.topic)` and
-requires the topic, dispatch attempt, and owner to agree; a conflicting
-payload ID is rejected. The realistic missing-ID/wrong-topic/conflict tests
-pass in `DispatchProvider.test.jsx` (17 passed). The runtime test now waits for
-confirmed exemption state both before and after the clock jump, alongside
-native playback advancement; that strengthened compiled-runtime run is
-pending, so AC4 remains unverified.
+The earlier compiled AC4 attempt observed real receiver video advancing but
+expired the persisted aim: raw `homeline:acceptance-media` progress omitted
+payload `deviceId`, while `DispatchProvider` had required it before recording
+confirmed provenance. The provider now derives identity from
+`parseDeviceTopic(msg.topic)` and requires topic, dispatch attempt, and owner
+to agree; conflicting payload IDs are rejected. The realistic missing-ID,
+wrong-topic, and conflicting-ID unit cases pass (17 passed).
+
+The strengthened compiled runtime `JOURNEY-AIM-ACTIVE-SENT` passed on source
+`f2cf4d6fa89dd8a86994d7f644419402c0e9938d`, preview `http://127.0.0.1:43877`:
+`BASE_URL=http://127.0.0.1:43877 npx playwright test tests/live/flow/media/media-app-active-aim.runtime.test.mjs --workers=1 --reporter=line` — 1 passed (29.0s). It asserted finite exemption timestamps before/after, at least two hours of sender-clock advance, the actual native video unpaused and advancing >20s, and the target still selected in the visible picker. This is partial AC4 evidence for ordinary sent playback only; the separate actual-steering path remains unverified.
+
+Root independently reran the ordinary Search Play/Add regression against the
+same compiled source/preview; it passed (1 passed, 14.3s), preserving the
+previously observed native video, queue, and tray flow. AC6 remains partial:
+other play/line-up verbs and surfaces are not yet covered.
 
 `media-app-browser-control.runtime.test.mjs` does use two real browser pages,
 the branch WebSocket ingress, receiver `useExternalControl`, a queue-command
 ack and target-side queue mutation. Its target command is `queue:add`, and it
 explicitly asserts `target.locator('video')` has count zero. It therefore does
 not mount or observe an actual playing Player for the existing F2 journey.
-That cannot establish the R4 premise that the aimed screen is playing content
-this device sent or is steering. AC4 is parked at this concrete host-integration
-gap; no speculative receiver harness or production change was made.
+That cannot establish the R4 premise for the separate actual-steering path;
+the ordinary sent-play path is now covered by `JOURNEY-AIM-ACTIVE-SENT` above.
