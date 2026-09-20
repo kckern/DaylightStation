@@ -39,9 +39,10 @@ async function setDestination(page, targetId) {
 const receiverState = page => page.evaluate(async () =>
   (await fetch('/api/v1/device/acceptance-media/receiver-state')).json());
 
-async function assertSearchIdentity(page, input, id) {
+async function assertSearchIdentity(page, input, isPhone, id) {
   await expect(input).toHaveValue('arrival');
-  await expect(page.getByTestId('scope-chip-all')).toHaveAttribute('aria-pressed', 'true');
+  const surface = isPhone ? page.getByTestId('search-mode') : page.getByTestId('media-search-bar');
+  await expect(surface.getByTestId('scope-chip-all')).toHaveAttribute('aria-pressed', 'true');
   await expect(page.getByTestId(`result-more-${id}`)).toBeVisible();
 }
 
@@ -255,11 +256,11 @@ for (const [surface, viewport, isPhone] of surfaces) {
     const addId = 'plex:697368';
     await input.fill('arrival');
     await expect(sender.getByTestId(`result-more-${id}`)).toBeVisible({ timeout: 30000 });
-    await assertSearchIdentity(sender, input, id);
+    await assertSearchIdentity(sender, input, isPhone, id);
 
     await setDestination(sender, 'acceptance-media');
     await expect(sender.getByTestId('destination-line-name')).toHaveText('Acceptance receiver');
-    await assertSearchIdentity(sender, input, id);
+    await assertSearchIdentity(sender, input, isPhone, id);
     await sender.getByTestId(`result-more-${id}`).click();
     await sender.getByTestId(`result-action-playNow-${id}`).click();
     await expect.poll(() => loads.length).toBe(1);
@@ -271,7 +272,7 @@ for (const [surface, viewport, isPhone] of surfaces) {
       snapshot: { currentItem: { contentId: id }, meta: { ownerId: 'acceptance-media' } },
     });
     await expect(sender.getByTestId('dispatch-tray')).toContainText('Playing on Acceptance receiver', { timeout: 60000 });
-    await assertSearchIdentity(sender, input, id);
+    await assertSearchIdentity(sender, input, isPhone, id);
 
     await input.fill('disclosure day');
     await expect(sender.getByTestId(`result-more-${addId}`)).toBeVisible({ timeout: 30000 });
@@ -291,10 +292,10 @@ for (const [surface, viewport, isPhone] of surfaces) {
     await expect(sender.getByTestId('dispatch-tray')).toContainText('Acceptance receiver');
 
     await input.fill('arrival');
-    await assertSearchIdentity(sender, input, id);
+    await assertSearchIdentity(sender, input, isPhone, id);
     await setDestination(sender, null);
     await expect(sender.getByTestId('destination-line-name')).toHaveText('This device');
-    await assertSearchIdentity(sender, input, id);
+    await assertSearchIdentity(sender, input, isPhone, id);
     await sender.getByTestId(`result-more-${id}`).click();
     await sender.getByTestId(`result-action-playNow-${id}`).click();
     const localVideo = sender.locator('.video-player video');
@@ -315,7 +316,7 @@ for (const [surface, viewport, isPhone] of surfaces) {
         },
       },
     });
-    await assertSearchIdentity(sender, input, id);
+    await assertSearchIdentity(sender, input, isPhone, id);
     await receiver.close();
   });
 }
