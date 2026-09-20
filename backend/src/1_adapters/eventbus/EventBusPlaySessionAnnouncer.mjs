@@ -22,21 +22,27 @@ import {
  * twice lands on the same number.
  */
 export class EventBusPlaySessionAnnouncer extends IPlaySessionAnnouncer {
-  #bus; #placementFor; #identify; #sessions; #logger;
+  #bus; #placementFor; #overlayConfigFor; #identify; #sessions; #logger;
 
   /**
    * @param {Object} config
    * @param {(content: Object) => Object|null} [config.placementFor] Content →
    *   overlay placement. Absent, messages simply carry no placement and the
    *   film falls back to its own default position.
+   * @param {(systemId: string|null) => Object|null} [config.overlayConfigFor]
+   *   System id → resolved overlay config. Absent, messages carry no overlay
+   *   config and the film falls back to its own default.
    * @param {(userId: string) => Promise<{displayName: string|null}|null>} [config.identify]
    *   User id → how to address them. A slug is an identifier, not a name.
    */
-  constructor({ eventBus, placementFor = null, identify = null, sessions = null, logger = console }) {
+  constructor({
+    eventBus, placementFor = null, overlayConfigFor = null, identify = null, sessions = null, logger = console,
+  }) {
     super();
     if (!eventBus?.broadcast) throw new Error('EventBusPlaySessionAnnouncer requires an eventBus with broadcast()');
     this.#bus = eventBus;
     this.#placementFor = placementFor;
+    this.#overlayConfigFor = overlayConfigFor;
     this.#identify = identify;
     this.#sessions = sessions;
     this.#logger = logger;
@@ -92,10 +98,19 @@ export class EventBusPlaySessionAnnouncer extends IPlaySessionAnnouncer {
         sessionId: session.id, error: error.message,
       });
     }
+    let overlay = null;
+    try {
+      overlay = this.#overlayConfigFor ? this.#overlayConfigFor(content?.console) : null;
+    } catch (error) {
+      this.#logger.warn?.('play.overlay_config.failed', {
+        sessionId: session.id, error: error.message,
+      });
+    }
     return {
       system: content?.console ?? null,
       systemLabel: content?.consoleLabel ?? null,
       placement,
+      overlay,
     };
   }
 
