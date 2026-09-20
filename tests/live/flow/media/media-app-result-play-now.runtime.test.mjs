@@ -25,8 +25,12 @@ async function openSearch(page, isPhone) {
   return input;
 }
 
-async function setDestination(page, targetId) {
-  await page.getByTestId('destination-line').click();
+function searchSurface(page, isPhone) {
+  return isPhone ? page.getByTestId('search-mode') : page.getByTestId('media-search-bar');
+}
+
+async function setDestination(page, isPhone, targetId) {
+  await searchSurface(page, isPhone).getByTestId('destination-line').click();
   await expect(page.getByTestId('destination-sheet')).toBeVisible();
   if (!targetId) {
     await page.getByTestId('picker-this-device').click();
@@ -41,8 +45,7 @@ const receiverState = page => page.evaluate(async () =>
 
 async function assertSearchIdentity(page, input, isPhone, id) {
   await expect(input).toHaveValue('arrival');
-  const surface = isPhone ? page.getByTestId('search-mode') : page.getByTestId('media-search-bar');
-  await expect(surface.getByTestId('scope-chip-all')).toHaveAttribute('aria-pressed', 'true');
+  await expect(searchSurface(page, isPhone).getByTestId('scope-chip-all')).toHaveAttribute('aria-pressed', 'true');
   await expect(page.getByTestId(`result-more-${id}`)).toBeVisible();
 }
 
@@ -258,8 +261,8 @@ for (const [surface, viewport, isPhone] of surfaces) {
     await expect(sender.getByTestId(`result-more-${id}`)).toBeVisible({ timeout: 30000 });
     await assertSearchIdentity(sender, input, isPhone, id);
 
-    await setDestination(sender, 'acceptance-media');
-    await expect(sender.getByTestId('destination-line-name')).toHaveText('Acceptance receiver');
+    await setDestination(sender, isPhone, 'acceptance-media');
+    await expect(searchSurface(sender, isPhone).getByTestId('destination-line-name')).toHaveText('Acceptance receiver');
     await assertSearchIdentity(sender, input, isPhone, id);
     await sender.getByTestId(`result-more-${id}`).click();
     await sender.getByTestId(`result-action-playNow-${id}`).click();
@@ -293,8 +296,8 @@ for (const [surface, viewport, isPhone] of surfaces) {
 
     await input.fill('arrival');
     await assertSearchIdentity(sender, input, isPhone, id);
-    await setDestination(sender, null);
-    await expect(sender.getByTestId('destination-line-name')).toHaveText('This device');
+    await setDestination(sender, isPhone, null);
+    await expect(searchSurface(sender, isPhone).getByTestId('destination-line-name')).toHaveText('This device');
     await assertSearchIdentity(sender, input, isPhone, id);
     await sender.getByTestId(`result-more-${id}`).click();
     await sender.getByTestId(`result-action-playNow-${id}`).click();

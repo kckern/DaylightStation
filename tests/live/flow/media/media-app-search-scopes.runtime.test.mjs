@@ -81,8 +81,12 @@ async function actionSnapshot(page, id) {
   return snapshot;
 }
 
-async function setDestination(page, targetId) {
-  await page.getByTestId('destination-line').click();
+function searchSurface(page, isPhone) {
+  return isPhone ? page.getByTestId('search-mode') : page.getByTestId('media-search-bar');
+}
+
+async function setDestination(page, isPhone, targetId) {
+  await searchSurface(page, isPhone).getByTestId('destination-line').click();
   await expect(page.getByTestId('destination-sheet')).toBeVisible();
   if (!targetId) {
     await page.getByTestId('picker-this-device').click();
@@ -155,10 +159,10 @@ for (const [surface, viewport, isPhone] of surfaces) {
       actions: await actionSnapshot(page, id),
     };
     expect(baseline.scope).toBe('true');
-    await expect(page.getByTestId('destination-line-name')).toHaveText('This device');
+    await expect(searchSurface(page, isPhone).getByTestId('destination-line-name')).toHaveText('This device');
 
-    await setDestination(page, 'acceptance-media');
-    await expect(page.getByTestId('destination-line-name')).toHaveText('Acceptance receiver');
+    await setDestination(page, isPhone, 'acceptance-media');
+    await expect(searchSurface(page, isPhone).getByTestId('destination-line-name')).toHaveText('Acceptance receiver');
     expect({
       query: await input.inputValue(),
       scope: await scopeChip(page, isPhone, selectable.key).getAttribute('aria-pressed'),
@@ -166,8 +170,8 @@ for (const [surface, viewport, isPhone] of surfaces) {
       actions: await actionSnapshot(page, id),
     }).toEqual(baseline);
 
-    await setDestination(page, null);
-    await expect(page.getByTestId('destination-line-name')).toHaveText('This device');
+    await setDestination(page, isPhone, null);
+    await expect(searchSurface(page, isPhone).getByTestId('destination-line-name')).toHaveText('This device');
     expect({
       query: await input.inputValue(),
       scope: await scopeChip(page, isPhone, selectable.key).getAttribute('aria-pressed'),
