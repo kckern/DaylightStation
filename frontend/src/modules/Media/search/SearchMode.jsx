@@ -43,7 +43,7 @@ import './Search.scss';
 
 export function SearchMode({ onClose }) {
   const { scopes, currentScopeKey, currentScope, scopeError, resetScope } = useSearchContext();
-  const { dispatch, playContainerAsQueue } = useContentDispatch();
+  const { dispatch, dispatchLeafVerb, playContainerAsQueue } = useContentDispatch();
   const { queue } = useSessionController('local');
   const { push } = useNav();
   const log = useMemo(() => getLogger().child({ component: 'search-mode' }), []);
@@ -150,11 +150,15 @@ export function SearchMode({ onClose }) {
     const id = item?.id;
     if (!id) return;
     log.info('row_action', { contentId: id, action });
+    if (action === 'playNow' || action === 'add') {
+      dispatchLeafVerb(action, id, item);
+      return;
+    }
     applyResultRowVerb(action, item, { queue, push: pushOverSurface });
     // 'detail' is the only verb that navigates; queue mutations leave search
     // and its marker untouched.
     if (action === 'detail') closeSurface('dispatch', { navigated: true });
-  }, [queue, pushOverSurface, log, closeSurface]);
+  }, [queue, pushOverSurface, log, closeSurface, dispatchLeafVerb]);
 
   const combo = useContentCombobox({
     value: '',
