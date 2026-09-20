@@ -58,10 +58,8 @@ export function Dock({ onOpenSearch }) {
           directly by its own class (mobile-only rule below), not via a
           wrapper. */}
       <MediaContentSearch />
-      <div className="media-dock-cluster">
-        <FleetIndicator />
-        <CastTargetChip />
-      </div>
+      <FleetIndicator />
+      <div className="media-dock-cluster"><CastTargetChip /></div>
       <SettingsMenu onResetSession={openStartFresh} />
       <ConfirmDialog
         open={confirmOpen}
