@@ -12,8 +12,11 @@
  * several named fields (player/system_label/timer/...) in one composite
  * badge, each resolved independently through `resolveField(fieldName)`.
  *
- * Empty descriptors still render a positioned (but valueless) box so the
- * dashboard layout stays stable as data comes and goes.
+ * Empty *region* descriptors still render a positioned (but valueless) box
+ * so the dashboard layout stays stable as data comes and goes. The `session`
+ * composite has no such placeholder: a `fields: []` overlay renders nothing,
+ * and an individual field that resolves empty is dropped rather than shown
+ * as a blank slot — there is no stable box for the badge itself.
  */
 
 import React from 'react';
