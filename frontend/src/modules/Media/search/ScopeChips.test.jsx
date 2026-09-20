@@ -93,6 +93,19 @@ describe('ScopeChips', () => {
     expect(setScopeKey).not.toHaveBeenCalled();
   });
 
+  it('keeps the search input focus boundary while a pointer selects a parent or child scope', () => {
+    render(<ScopeChips />);
+
+    const parentDown = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
+    screen.getByTestId('scope-chip-music').dispatchEvent(parentDown);
+    expect(parentDown.defaultPrevented).toBe(true);
+
+    fireEvent.click(screen.getByTestId('scope-chip-music'));
+    const childDown = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
+    screen.getByTestId('scope-chip-music-hymns').dispatchEvent(childDown);
+    expect(childDown.defaultPrevented).toBe(true);
+  });
+
   it('tapping a chip calls setScopeKey with its key and logs the selection', () => {
     render(<ScopeChips />);
 

@@ -288,7 +288,20 @@ export function createPlayerSessionBridge({
     const markEnded = () => update(() => { observedPlaying = false; });
     const markAdvanced = () => update(() => {
       const current = Number.isFinite(el.currentTime) ? el.currentTime : null;
-      if (observedPlaying && current != null && observedLastTime != null && current > observedLastTime) observedAdvance = true;
+      const hasCurrentNativeAdvance = current != null
+        && observedLastTime != null
+        && current > observedLastTime
+        && !el.paused
+        && !el.seeking
+        && !el.ended
+        && !nativeError(el);
+      if (hasCurrentNativeAdvance) {
+        // `waiting` clears an earlier playing observation. A current admitted
+        // node that is visibly advancing is equally authoritative evidence,
+        // including decoders that never re-emit `playing` after a seek.
+        observedPlaying = true;
+        observedAdvance = true;
+      }
       observedLastTime = current;
     });
     try {
