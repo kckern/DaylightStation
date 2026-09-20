@@ -30,11 +30,13 @@ async function startArrival(context, sender, phone) {
   let result;
   if (phone) {
     await sender.getByTestId('media-search-launcher').click();
-    await sender.getByTestId('destination-line').click();
+    const searchMode = sender.getByTestId('search-mode');
+    await searchMode.getByTestId('destination-line').click();
     await sender.getByTestId('picker-device-acceptance-media').click();
     await sender.getByTestId('picker-submit').click();
-    input = sender.getByTestId('search-mode-input');
-    result = sender.getByTestId('search-mode-result-plex:55854');
+    await expect(searchMode.getByTestId('destination-line-name')).toHaveText('Acceptance receiver');
+    input = searchMode.getByTestId('search-mode-input');
+    result = searchMode.getByTestId('search-mode-result-plex:55854');
   } else {
     await sender.getByTestId('cast-target-chip').click();
     await sender.getByTestId('cast-mode-fork').check();
