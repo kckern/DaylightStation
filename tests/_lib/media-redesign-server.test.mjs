@@ -100,6 +100,7 @@ describe('media redesign bundled-preview middleware', () => {
       '/api/v1/queue/plex:55854',
       '/api/v1/config/player',
       '/api/v1/proxy/plex/stream/55854',
+      '/api/v1/proxy/plex/library/parts/58864/1609801730/file.mp4',
       '/api/v1/proxy/plex/video/:/transcode/universal/start.m3u8',
       '/api/v1/proxy/plex/video/:/transcode/universal/session/84cc0c4c-8160-4e89-a240-26a165440d1e/base/index.m3u8',
       '/api/v1/proxy/plex/video/:/transcode/universal/session/84cc0c4c-8160-4e89-a240-26a165440d1e/base/00000.ts',
@@ -114,6 +115,8 @@ describe('media redesign bundled-preview middleware', () => {
       { url: '/api/v1/queue/plex:55854', method: 'POST' },
       { url: '/api/v1/proxy/plex/video/:/transcode/universal/stop?session=84cc0c4c-8160-4e89-a240-26a165440d1e' },
       { url: '/api/v1/proxy/plex/video/:/transcode/universal/start.m3u8', method: 'POST' },
+      { url: '/api/v1/proxy/plex/library/parts/58864/1609801730/file.mp4', method: 'POST' },
+      { url: '/api/v1/proxy/plex/library/parts/58864/1609801730/stop' },
     ]) {
       const result = await request(middleware, { url, method });
       expect(result.response.statusCode, `${method} ${url}`).toBe(403);

@@ -237,6 +237,27 @@ const Player = forwardRef(function Player(props, ref) {
     || (play && (play.playlist || play.queue))
     || Array.isArray(play);
 
+  // A single direct `play` renders immediately, before its asynchronous queue
+  // read resolves. It is still a real playback owner: admit it through the
+  // same queue mutation used by an in-session play-now so screen session
+  // publishers have an item and a revision to report while native media starts.
+  // Keep rendering the direct input below; admission must not remount embeds
+  // or replace their transport/metadata with a provisional queue entry.
+  const directOwnerAdmissionRef = useRef(null);
+  const directContentId = !inputIsExplicitQueue && play && !Array.isArray(play)
+    ? (play.contentId || resolveContentId(play))
+    : null;
+  useEffect(() => {
+    if (!directContentId) {
+      directOwnerAdmissionRef.current = null;
+      return;
+    }
+    const contentId = String(directContentId);
+    if (directOwnerAdmissionRef.current === contentId) return;
+    directOwnerAdmissionRef.current = contentId;
+    playNow({ ...play, contentId });
+  }, [directContentId, play, playNow]);
+
   const activeSource = useMemo(() => {
     const playQueueHead = Array.isArray(playQueue) && playQueue.length > 0 ? playQueue[0] : null;
     if (playQueueHead?.mediaType === 'trigger/side-effect') return null;
