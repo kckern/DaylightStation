@@ -1,6 +1,6 @@
 # Media redesign — acceptance ledger
 
-**Status:** In progress. **3 accepted stories / 14 accepted AC; 11 partial stories / 21 partial AC; 68 unverified stories / 253 unverified AC**. No component, test count or API response earns acceptance by itself.
+**Status:** In progress. **3 accepted stories / 14 accepted AC; 11 partial stories / 20 partial AC; 68 unverified stories / 254 unverified AC**. No component, test count or API response earns acceptance by itself.
 
 **Contract:** taxonomy §3 and accepted requirements. P0 first, then P1/P2. Each criterion must have evidence of the complete applicable path: user input → target → command → actual player/result → state → displayed feedback. Office is the only physical test screen authorized.
 
@@ -542,7 +542,7 @@ As a **House Watch**, I want to pause, resume, and skip on any screen, so that I
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
 | STEER.3a/AC1 | Play/pause is one control that shows whether it is playing or paused. | Partial | `JOURNEY-LOCAL` verifies local pause/resume. `JOURNEY-REMOTE-CONTROLS-C21` verifies the visible fleet Peek toggle changes actual receiver native pause/play state and exposes the corresponding Play/Pause action; parity across duplicate controls/surfaces remains unverified. |
-| STEER.3a/AC2 | Skip forward and back are available for any queue. | Partial | `JOURNEY-REMOTE-CONTROLS-C21` verifies enabled remote ±10 controls on the actual Acceptance receiver changed paused Arrival's native position in both directions. Only one remote queue/item and the fleet Peek surface were exercised; “any queue” coverage remains incomplete. |
+| STEER.3a/AC2 | Skip forward and back are available for any queue. | Unverified | The `np-prev`/`np-next` queue-skip controls call `skipPrev`/`skipNext`; existing ±10 evidence is `seekRel` and belongs to STEER.4a/AC2, not this criterion. No queue-skip runtime evidence exists. The ordinary virtual-device fixture allowlist permits only `pause`, `play`, `seekAbs`, `seekRel`, and `stop`, so it blocks these skip actions. |
 | STEER.3a/AC3 | After a press, the control reflects the change within 2 seconds, or tells me it hasn't happened yet (R46). | Partial | `JOURNEY-REMOTE-CONTROLS-B63` and `JOURNEY-REMOTE-CONTROLS-RESPONSIVE-B63`: one Pause press showed paused UI or visible pending feedback within 2 seconds, then correlated ack, receiver paused state and native pause were verified on desktop, phone and tablet. This timing/feedback assertion was not applied to every control or surface. |
 | STEER.3a/AC4 | If the screen can't be reached, the press reads "not sent" and is never carried out later (R35). | Partial | `JOURNEY-REMOTE-CONTROLS-B63`: after real receiver disconnect, Offline/disabled control was visibly tappable; tapping caused zero transport POSTs for 5 seconds, and actual receiver reconnect caused no deferred POST for the next 5 seconds. Runtime verified disabled offline UI (“This device is offline”), not a `DEVICE_OFFLINE` rejection or “Not sent” copy. `TransportBar.test.jsx` covers that explicit rejection copy at unit level only. Uncommitted `SessionControlService.offline.characterization.test.mjs` passed 1/1 for the existing service's `DEVICE_OFFLINE` zero-send and no-replay behavior; it is characterization, not a RED product test. |
 

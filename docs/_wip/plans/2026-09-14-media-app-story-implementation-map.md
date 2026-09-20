@@ -1,7 +1,7 @@
 # Media redesign — story-to-JSX/API implementation map
 
 **Date:** 2026-09-14  
-**Status:** Proposed implementation ownership; no application changes.  
+**Status:** Design-time implementation ownership, not current completion status. See the [acceptance ledger](./2026-09-14-media-app-acceptance-ledger.md) for criterion-level runtime evidence.  
 **Contract:** [Accepted requirements](./2026-09-14-media-app-redesign-requirements.md).  
 **Stories:** [Taxonomy §3](./2026-09-14-media-app-ideal-jtbd-taxonomy.md#3-user-stories-by-job-group).  
 **Sequence:** [Implementation handoff](./2026-09-14-media-app-redesign-handoff.md).  
@@ -139,7 +139,7 @@ Phase refers to accepted requirement delivery. A mixed phase means the story has
 | STEER.1b | PlaybackControls screen selector, unavailable reasons; Add to this queue; recipient note | Common SESSION controls P0; one-off SearchSurface add mode and ORIGIN/UNDO note P1 | P0/P1 |
 | STEER.1c | OutcomeTray Steer it; FleetView controls link | LOCAL navigation to same PlaybackControls target | P0 |
 | STEER.2a | MiniPlayer/PlaybackControls expand and shrink | LOCAL PlayerHostProvider/usePlayerHost; same bridge-owned node | P0 |
-| STEER.3a | TransportBar play/pause and skip buttons | SESSION transport; ack/state feedback within 2 seconds; no replay of undeliverable commands | P0 |
+| STEER.3a | TransportBar play/pause and queue Previous/Next (`np-prev`/`np-next`) | SESSION `play`/`pause`/`skipPrev`/`skipNext`; ack/state feedback within 2 seconds; no replay of undeliverable commands. ±10-second seek evidence does not verify queue navigation. | P0 |
 | STEER.4a | SeekBar scrub, ±10-second buttons, Live/Go to live | SESSION `seekAbs`/`seekRel`; capability-aware live-edge action may need receiver extension | P0 |
 | STEER.5a | PlaybackControls volume steps/slider and speed selector | CONFIG; local speed; remote unsupported reason until protocol/renderer supports speed | P0 |
 | STEER.6a | TransportBar Stop; Queue kept outcome; optional screen-off action | SESSION stop retains queue P0; device off capability/API P2 | P0/P2 |
