@@ -82,8 +82,8 @@ import { bootstrapNotifications } from '#composition/modules/notifications.mjs';
 import { createPlaybackStallDetector } from '#composition/modules/playbackStall.mjs';
 import { createHubFleetBridge } from '#composition/modules/hubFleetBridge.mjs';
 import { createPlexHubSessions } from '#composition/modules/plexHubSessions.mjs';
-import { createPlaySessionTracking } from '#composition/modules/playSessions.mjs';
-import { createPlaySessionsRouter } from './4_api/v1/routers/playSessions.mjs';
+import { createArcadeGameSessionTracking } from '#composition/modules/arcadeGameSessions.mjs';
+import { createArcadeGameSessionsRouter } from './4_api/v1/routers/arcadeGameSessions.mjs';
 import { createApiRouters } from '#composition/modules/contentApi.mjs';
 import { createFitnessApiRouter, createFitnessPlayableModule } from '#composition/modules/fitnessApi.mjs';
 import { createBooksApiRouter, createBooksModule } from '#composition/modules/booksApi.mjs';
@@ -3807,14 +3807,14 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'screen-presence' }),
   });
 
-  // Play-time observation for devices declaring `play_observation: true`, plus
+  // Play-time observation for devices declaring `arcade_session_observation: true`, plus
   // the always-available HTTP ingress used by self-reporting browser emulators.
   // Observation is the default; warning/termination behavior exists only when
-  // games.yml explicitly selects `play_sessions.mode: enabled`. While no game
+  // games.yml explicitly selects `arcade_sessions.mode: enabled`. While no game
   // is in the foreground, each polled device costs one kiosk
   // REST call per device per interval — ADB is only consulted once the emulator
   // is actually in front, so an idle house is nearly free.
-  const playSessionTracking = createPlaySessionTracking({
+  const arcadeGameSessionTracking = createArcadeGameSessionTracking({
     devicesConfig: devicesConfig.devices || {},
     gamesConfig: configService.getHouseholdAppConfig(householdId, 'games'),
     gamesCatalog: dataService.household.read('gaming/retroarch/catalog'),
@@ -3824,26 +3824,26 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     daylightHost,
     haGateway: homeAutomationAdapters.haGateway,
     profileFor: (username) => userService.getProfile(username),
-    logger: rootLogger.child({ module: 'play-sessions' }),
+    logger: rootLogger.child({ module: 'arcade-game-sessions' }),
   });
-  await playSessionTracking.start();
-  server?.once?.('close', () => playSessionTracking.stop());
+  await arcadeGameSessionTracking.start();
+  server?.once?.('close', () => arcadeGameSessionTracking.stop());
 
   // HTTP surface: push ingress for surfaces that report their own lifecycle,
   // plus session and health reads. Present even when nothing is metered, so a
   // caller gets an explicit 503 rather than a 404 that looks like a typo.
-  v1Routers['play-sessions'] = createPlaySessionsRouter({
-    recordObservation: playSessionTracking.recordObservation,
-    sessions: playSessionTracking.sessions,
-    trackers: playSessionTracking.trackers,
-    watchdog: playSessionTracking.watchdog,
-    sessionMonitor: playSessionTracking.sessionMonitor,
-    grantLedger: playSessionTracking.grantLedger,
-    grantPlayTime: playSessionTracking.grantPlayTime,
-    checkEligibility: playSessionTracking.checkEligibility,
-    summarisePlayUsage: playSessionTracking.summarisePlayUsage,
-    logger: rootLogger.child({ module: 'play-sessions-api' }),
-    placements: playSessionTracking.placements,
+  v1Routers['arcade-game-sessions'] = createArcadeGameSessionsRouter({
+    recordObservation: arcadeGameSessionTracking.recordObservation,
+    sessions: arcadeGameSessionTracking.sessions,
+    trackers: arcadeGameSessionTracking.trackers,
+    watchdog: arcadeGameSessionTracking.watchdog,
+    sessionMonitor: arcadeGameSessionTracking.sessionMonitor,
+    grantLedger: arcadeGameSessionTracking.grantLedger,
+    grantArcadeGameTime: arcadeGameSessionTracking.grantArcadeGameTime,
+    checkEligibility: arcadeGameSessionTracking.checkEligibility,
+    summariseArcadeGameUsage: arcadeGameSessionTracking.summariseArcadeGameUsage,
+    logger: rootLogger.child({ module: 'arcade-game-sessions-api' }),
+    placements: arcadeGameSessionTracking.placements,
   });
 
   // Piano-power → tablet-screen authority. DS becomes the single writer for the

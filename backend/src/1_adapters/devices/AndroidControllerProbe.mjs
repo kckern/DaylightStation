@@ -113,12 +113,12 @@ export class AndroidControllerProbe {
     try {
       const result = await this.#adb.shell(command);
       if (!result?.ok) {
-        this.#logger.debug?.('play.controllers.shell_failed', { error: result?.error });
+        this.#logger.debug?.('arcade.controllers.shell_failed', { error: result?.error });
         return null;
       }
       return result.output || '';
     } catch (error) {
-      this.#logger.debug?.('play.controllers.shell_threw', { error: error.message });
+      this.#logger.debug?.('arcade.controllers.shell_threw', { error: error.message });
       return null;
     }
   }

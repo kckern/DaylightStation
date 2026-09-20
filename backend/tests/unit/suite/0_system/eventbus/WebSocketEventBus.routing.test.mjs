@@ -20,7 +20,7 @@ import {
   SCREEN_COMMAND_TOPIC,
   CLIENT_CONTROL_TOPIC,
   PLAYBACK_STATE_TOPIC,
-  PLAY_SESSIONS_TOPIC,
+  ARCADE_SESSIONS_TOPIC,
 } from '#shared-contracts/media/topics.mjs';
 
 /** Simulated open WebSocket ready-state value. */
@@ -152,27 +152,27 @@ describe('WebSocketEventBus routing — per-device topics', () => {
     expect(clientTv1.ws.send).not.toHaveBeenCalled();
   });
 
-  it('play-sessions is a quiet high-frequency broadcast topic', () => {
-    const sessions = makeClient([PLAY_SESSIONS_TOPIC]);
+  it('arcade-game-sessions is a quiet high-frequency broadcast topic', () => {
+    const sessions = makeClient([ARCADE_SESSIONS_TOPIC]);
     bus._testSetClientPool(makePool({ sessions }));
 
-    bus.broadcast(PLAY_SESSIONS_TOPIC, { event: 'play.session.progress' });
+    bus.broadcast(ARCADE_SESSIONS_TOPIC, { event: 'arcade.session.progress' });
 
     expect(sessions.ws.send).toHaveBeenCalledTimes(1);
     expect(logger.info).not.toHaveBeenCalledWith('eventbus.broadcast', expect.anything());
     expect(logger.debug).toHaveBeenCalledWith(
-      'eventbus.broadcast.play_sessions',
-      expect.objectContaining({ topic: PLAY_SESSIONS_TOPIC, sentCount: 1 }),
+      'eventbus.broadcast.arcade_sessions',
+      expect.objectContaining({ topic: ARCADE_SESSIONS_TOPIC, sentCount: 1 }),
     );
   });
 
-  it('lets the durable play-session projection own device state until it ends', () => {
+  it('lets the durable arcade-game-session projection own device state until it ends', () => {
     const observed = [];
     bus.subscribe(DEVICE_STATE_TOPIC('tv-1'), (payload) => observed.push(payload));
 
     bus.broadcast(DEVICE_STATE_TOPIC('tv-1'), {
       deviceId: 'tv-1', reason: 'heartbeat',
-      snapshot: { state: 'playing', meta: { authority: 'play-session' } },
+      snapshot: { state: 'playing', meta: { authority: 'arcade-session' } },
     });
     bus.broadcast(DEVICE_STATE_TOPIC('tv-1'), {
       deviceId: 'tv-1', reason: 'heartbeat', snapshot: { state: 'idle', meta: {} },
@@ -186,7 +186,7 @@ describe('WebSocketEventBus routing — per-device topics', () => {
 
     bus.broadcast(DEVICE_STATE_TOPIC('tv-1'), {
       deviceId: 'tv-1', reason: 'change',
-      snapshot: { state: 'idle', meta: { authority: 'play-session' } },
+      snapshot: { state: 'idle', meta: { authority: 'arcade-session' } },
     });
     bus.broadcast(DEVICE_STATE_TOPIC('tv-1'), {
       deviceId: 'tv-1', reason: 'heartbeat', snapshot: { state: 'idle', meta: {} },

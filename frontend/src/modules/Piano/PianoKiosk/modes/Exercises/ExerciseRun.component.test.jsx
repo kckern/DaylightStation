@@ -366,6 +366,53 @@ describe('ExerciseRun shared assessment wiring', () => {
     expect(props.onPassed.mock.calls[0][0]).toMatchObject({ status: 'completed', score: 1 });
   });
 
+  /**
+   * A gate rung drills the SAME material rep after rep, but re-derives its
+   * `requirement` object fresh for every rep — same content, new identity.
+   * That single rerender changes BOTH `installRuntime`'s effect deps and the
+   * completion effect's deps in the same commit, so both effects fire
+   * together: the earlier-declared install effect swaps in a new runtime and
+   * resets the "already persisted" guard, and the later-declared completion
+   * effect — still holding the snapshot from the run that JUST passed —
+   * finds that guard open and re-files the SAME result a second time, now
+   * under the new attempt's id. That both double-counts a rep that was only
+   * played once and burns the guard the new attempt needed for its own real
+   * result, leaving it unable to ever report in (reproduces the piano-kiosk
+   * incident where a passed rep's next attempt sat "done" forever).
+   */
+  it('a same-commit requirement swap after a pass does not re-file that pass under the new attempt', async () => {
+    const requirementRep1 = withPassScore({ passScore: 0.8 });
+    const props = { instance: subject(), score: null, intent: 'challenge', requirement: requirementRep1, onExit: vi.fn(), onPassed: vi.fn() };
+    const view = render(<ExerciseRun {...props} />);
+    await armFree(view, props);
+    press(view, props, 62); // clean run -> score 1, passes
+
+    expect(await screen.findByText('Passed')).toBeInTheDocument();
+    expect(props.onPassed).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(h.record).toHaveBeenCalledTimes(1));
+    const firstAttemptId = h.record.mock.calls[0][1].attempt_id;
+
+    // The host hands back the same drill material for the next rep, with a
+    // freshly-built (deeply-equal, differently-identified) requirement.
+    const requirementRep2 = withPassScore({ passScore: 0.8 });
+    const nextProps = { ...props, requirement: requirementRep2 };
+    act(() => { view.rerender(<ExerciseRun {...nextProps} />); });
+
+    // The rep-1 result must not be re-persisted or re-reported as a second
+    // pass — it was played once.
+    expect(h.record).toHaveBeenCalledTimes(1);
+    expect(props.onPassed).toHaveBeenCalledTimes(1);
+
+    // And the fresh attempt must still be able to report its OWN result once
+    // actually played — not left stuck with a spent guard.
+    await armFree(view, nextProps);
+    press(view, nextProps, 62);
+    expect(await screen.findAllByText('Passed')).toHaveLength(1);
+    expect(props.onPassed).toHaveBeenCalledTimes(2);
+    await waitFor(() => expect(h.record).toHaveBeenCalledTimes(2));
+    expect(h.record.mock.calls[1][1].attempt_id).not.toBe(firstAttemptId);
+  });
+
   it('a cued requirement on a tempo-less instance degrades instead of blanking the kiosk', async () => {
     h.instanceData = { ...h.instance, tempo: undefined };
     const requirement = cuedRequirement({ passScore: 0.8 });
@@ -621,6 +668,41 @@ describe('ExerciseRun shared assessment wiring', () => {
     // would have watched a silent count-in and then been graded on placement
     // against a grid they were never given.
     expect(h.metronome.mock.calls.at(-1)[0]).toMatchObject({ enabled: true, bpm: 90 });
+  });
+
+  /**
+   * THE CLICK IS THE NOTE, on the material the BANK actually ships.
+   *
+   * Every other cued fixture in this file is written in QUARTERS, where the
+   * count-in's quarter pulse happens to equal the ask's own — so all of them
+   * passed while the rung a child actually meets was counted in at half the
+   * speed it was graded at. Every published scale is `value: '8th'`. This is
+   * that ask.
+   */
+  it('counts an eighth-note scale in at the speed it will be graded, one click per note', async () => {
+    h.instanceData = {
+      ...h.instance,
+      tempo: { start_bpm: 60 },
+      events: [60, 62, 64, 65, 67, 69, 71, 72].map((midi, i) => ({
+        id: `e${i}`, value: '8th', notes: [{ midi, hand: 'right' }],
+      })),
+    };
+    const requirement = cuedRequirement({ passScore: 0.8 });
+    const props = { instance: subject(), score: null, intent: 'challenge', requirement, onExit: vi.fn(), onPassed: vi.fn() };
+    const view = render(<ExerciseRun {...props} />);
+
+    // ONE note per click, and the sentence says so. Counted in quarters this
+    // read "4 clicks, then play two notes on every click" — a true sentence
+    // about a grid no child can act on at sight.
+    await screen.findByText("Press any key to start. You'll hear 8 clicks, then play one note on every click.");
+
+    press(view, props, 63);
+
+    // The count-in is still exactly ONE MEASURE of the music. Only the number
+    // of clicks inside it changed, never its length.
+    expect(h.start).toHaveBeenCalledWith({ leadInMs: 4 * 60000 / 60, clock: 'date-now' });
+    // 60bpm in quarters IS 120 in eighths, and 120 is what the child hears.
+    expect(h.metronome.mock.calls.at(-1)[0]).toMatchObject({ enabled: true, bpm: 120 });
   });
 
   it('gives metronome practice its pulse BEFORE the first note, not after it', async () => {
@@ -1681,6 +1763,20 @@ describe('timed exercise clock and input boundary', () => {
     pressKey(view,props,60);
     expect(h.observe).toHaveBeenCalledTimes(1);
   });
+  it('keeps the eighth-note pulse through the downbeat, not just the count-in', async () => {
+    // A click that counts eighths and then reverts to quarters when the music
+    // starts hands the child a different grid at the exact moment they begin
+    // playing on it.
+    h.instanceData = { ...h.instance, tempo: { start_bpm: 60 }, events: [60,62,64,65].map((midi,i) => ({ id:`e${i}`, value:'8th', notes:[{midi,hand:'right'}] })) };
+    const props = { instance:subject(), score:null, intent:'challenge', requirement:cuedRequirement({passScore:0.8}), onPassed:vi.fn() };
+    const view = render(<ExerciseRun {...props} />);
+    await screen.findByText(/Press any key to start/);
+    pressKey(view, props, 55);
+    expect(h.metronome.mock.calls.at(-1)[0]).toMatchObject({ enabled: true, bpm: 120 });
+    act(() => vi.advanceTimersByTime(4050));
+    expect(h.metronome.mock.calls.at(-1)[0]).toMatchObject({ enabled: true, bpm: 120 });
+  });
+
   it('moves on the beat in silence and cannot be pulled backward by held notes', async () => {
     const {view,props} = await mountTimed();
     act(() => vi.advanceTimersByTime(4050));

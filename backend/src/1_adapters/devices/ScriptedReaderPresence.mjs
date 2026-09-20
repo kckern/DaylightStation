@@ -51,7 +51,7 @@ export class ScriptedReaderPresence extends IReaderPresence {
       await this.#gateway.callService(domain, service, {});
       return { ok: true };
     } catch (error) {
-      this.#logger.warn?.(`play.reader.${what}_failed`, { script, error: error.message });
+      this.#logger.warn?.(`arcade.reader.${what}_failed`, { script, error: error.message });
       return { ok: false, error: error.message };
     }
   }

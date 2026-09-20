@@ -1094,6 +1094,37 @@
   overflow: hidden;
 }
 
+/* THE CHIP HEADER. One mark per group, in a row, at the rail's head. No radius
+   and no glow — the band's standing rule — so a chip is distinguished by ground
+   and weight alone, exactly as the sounding row is. */
+.surround-segment-map--column .surround-segment-map__chips {
+  display: flex;
+  gap: 0.25em;
+  flex: 0 0 auto;
+  padding: 0 0 0.4em;
+}
+
+.surround-segment-map--column .surround-segment-map__chip {
+  flex: 1 1 0;
+  min-width: 0;
+  appearance: none;
+  border: 1px solid var(--programme-edge, #ddd0b4);
+  background: transparent;
+  color: var(--ink-soft, #6b6152);
+  font-family: var(--surround-body);
+  font-size: var(--label-floor, 11.52px);
+  line-height: 1.25;
+  padding: 0.3em 0;
+  cursor: pointer;
+  text-align: center;
+
+  &[data-state="sounding"] {
+    background: var(--bond-ground, rgba(233, 223, 200, 0.14));
+    color: var(--ink, #2a1d07);
+    font-weight: 600;
+  }
+}
+
 /* THE STAFF RULE, TURNED. One hairline down the gutter: lit to the playhead,
    hairline beyond it. It sits at the rail's INNER edge — the side the picture
    is on — so the timeline reads as the picture's own edge rather than as
@@ -1151,7 +1182,19 @@
   display: flex;
   align-items: baseline;
   gap: 0.4em;
+  /* THE ROWS BREATHE INTO THE RAIL THEY WERE GIVEN, UP TO A CEILING. Scoping
+     the list to one group (region `scope: group`) is what stops a
+     three-scene play taking a hundred pixels a row in the common case — but
+     scoping is a region author's choice, not a guarantee, and a live
+     measurement caught an unscoped rail of three rows stretching to fill a
+     540px column: 118.4px a row, the label stranded in open space with the
+     progress bar (`position: absolute; bottom: 0`) floating far below it. A
+     row may still grow past its floor to use the room it is given — that is
+     what keeps five scenes in a scoped list from being crushed to their
+     floor — it just stops short of absurd. */
+  flex: 1 1 auto;
   min-height: calc(var(--label-floor, 11.52px) * 2);
+  max-height: calc(var(--label-floor, 11.52px) * 4);
   padding: 0 0.3em;
   font-family: var(--surround-body);
   font-size: var(--label-floor, 11.52px);
@@ -1205,6 +1248,51 @@
   .surround-segment-map__row-mark { color: var(--ink, #332b20); }
 }
 
+/* THE SELECTION OUTLINE — the one place on this rail an edge is allowed,
+   because it has to read against both the lit (sounding) and unlit grounds a
+   nav selection can land on. */
+.surround-segment-map__row[data-selected="true"] {
+  box-shadow: inset 0 0 0 2px var(--brass-lit, #f6e3a0);
+}
+
+.surround-segment-map--column .surround-segment-map__chip[data-state="selected"] {
+  box-shadow: inset 0 0 0 2px var(--brass-lit, #f6e3a0);
+  color: var(--ink, #2a1d07);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .surround-segment-map__spine::after { transition: none; }
+}
+
+/* THE ROW'S OWN PROGRESS, in the band's one progress language: a 2px rule that
+   fills. No glow, no gradient — `SegmentMap.jsx` records why the lit tip was
+   removed, and a row is not a licence to reintroduce it. */
+.surround-segment-map__row-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  background: var(--ink-soft, #6b6152);
+  opacity: 0.35;
+
+  &::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    transform: scaleX(var(--fill, 0));
+    transform-origin: left center;
+    /* `#2a1d07` is the BASE `--ink` (`SurroundFrame.scss:30`). Several older
+       rules in this sheet carry `#332b20`, which matches no token at all — a
+       literal that drifted. Do not copy it forward for consistency's sake;
+       consistency with a wrong neighbour is not a virtue. */
+    background: var(--ink, #2a1d07);
+    transition: transform var(--head-ms, 120ms) linear;
+  }
+}
+
+.surround-segment-map__row { position: relative; }
+
+@media (prefers-reduced-motion: reduce) {
+  .surround-segment-map__row-bar::after { transition: none; }
 }

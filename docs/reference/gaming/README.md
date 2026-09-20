@@ -27,7 +27,7 @@ See [taxonomy](taxonomy.md), [kernel and runtime](kernel-and-runtime.md), [autho
 
 **Emulated arcade play is a separate concern from the Party Games platform
 above.** For how the house observes that a game is being played, meters the time,
-and ends a session when it runs out, see [play sessions](play-sessions.md); for
+and ends a session when it runs out, see [arcade game sessions](arcade-game-sessions.md); for
 the emulator's boot contract, picture shaders and fault handling, see
 [emulator resilience](emulator-resilience.md); for what a console is made of and
 how to add one, see [arcade consoles](arcade-consoles.md).

@@ -301,6 +301,26 @@ to the Exercises workspace.
 Exercise notation uses the original sequence cursor from commit `39cf60b81`:
 a rounded yellow overlay behind the current note (30% fill, 50% border).
 
+**The lane is measured and drawn in the SVG ROOT'S USER SPACE.** The rect is
+portalled into a group at the root, so its `x`/`y` are user units that the
+viewBox scales — and `AbcRenderer`'s `fitContent` rewrites the viewBox to hug
+the engraving, so that scale is never 1. `element.getCTM()` is therefore the
+WRONG matrix: it maps to the *viewport* and includes the viewBox, inflating
+every lane coordinate by that factor. Between 2026-09-07 and 2026-09-18 this
+put the single-staff lane entirely off the page (4.1x on a one-hand eighth-note
+scale) and both grand-staff lanes onto the wrong stave or past the bottom edge
+(2.1x) — a timed run asking a child to follow a cursor that was not on screen.
+The correct mapping, which `ScorePassage` already used, composes
+`svg.getScreenCTM().inverse()` with the element's own screen matrix: the
+viewBox cancels and only the transforms *between* element and root survive.
+
+Geometry this specific cannot be asserted in jsdom, and is not asserted by a
+cursor that merely EXISTS and moves rightward — an SVG child reports its
+bounding box whether or not it lies inside the viewBox. The browser test must
+assert the lane is inside the engraving and encloses the notehead it points at,
+on material shaped like the bank's own output (`value: '8th'`, which beams, and
+`staff: 'grand'`, which draws two lanes).
+
 **Past is brown, the music is black.** A note already played recedes into the
 instrument's banked brown; everything from the cursor forward — *including the
 note under the cursor* — carries the page's strongest ink, because the note you
@@ -334,6 +354,19 @@ misses, early notes, and held notes cannot change its position. A scored result
 that arrives before the musical duration ends waits for that duration before
 the host advances. The metronome continues with this display and follows tempo
 changes. Free and metronome practice retain their player-driven cursor.
+
+**The click is the note.** The count-in pulses at the ASK'S OWN onset spacing,
+not at the quarter: a scale written in eighths at 60bpm is counted in at 120,
+eight clicks to the measure, so one click is one note and the grid a child is
+counted in on is the grid they are graded on. It used to pulse in quarters
+against eighths — half the speed of the ask — which produced a correct, evenly
+played scale scored as every note `wrong` with a `miss` beside it, on
+2026-09-13 and again on 2026-09-18. The count-in's LENGTH is unchanged, always
+exactly one measure of the music; only how many clicks fill it changed. An ask
+with no single spacing (one note, or a dotted rhythm) has no pulse to borrow
+and keeps the quarter. `askPulseQuarters` is the rule, and the running
+metronome carries the same pulse through the downbeat rather than reverting to
+quarters as the music starts.
 
 During the count-in, the staff remains visible in gray, the cursor is hidden,
 and played notes reach neither assessment nor visual feedback. Notes held

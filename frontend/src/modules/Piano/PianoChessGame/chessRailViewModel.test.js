@@ -17,6 +17,16 @@ describe('chess rail view model', () => {
       .toBe('Play the octave again to take your move back.');
   });
 
+  it('stops claiming the opponent is thinking once the board has given up on them', () => {
+    // "Your opponent is thinking" is what a child read for ten minutes on
+    // 2026-09-18 while the turn it described was already gone. A screen that
+    // keeps asserting it is why a dead game looks alive.
+    const waiting = { playerColor: 'w', status: { turn: 'b', game_over: false }, history: [] };
+    expect(promptFor(waiting, null)).toBe('Your opponent is thinking.');
+    expect(promptFor(waiting, null, null, false, false, true))
+      .toBe('Your opponent has gone quiet. Wake them up to carry on.');
+  });
+
   it('clamps generated HSL themes without rewriting hand-authored colors', () => {
     expect(safeBoardTheme('hsl(120 90% 80%)')).toBe('hsl(120 46% 52%)');
     expect(safeBoardTheme('#123456')).toBe('#123456');

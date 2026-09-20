@@ -51,6 +51,16 @@ describe('directUPCHandler', () => {
     expect(res.status).toHaveBeenCalledWith(200);
   });
 
+  it('strips a literal %s template placeholder concatenated onto the code (upc=%sCODE)', async () => {
+    // A URL template with a leftover `upc=%s` gets the scanned code appended
+    // with no separator, e.g. upc=%s0049000000450 — not a bare key.
+    const res = mockRes();
+    await handler({ query: { upc: '%s0049000000450' }, body: {} }, res);
+
+    expect(executeMock).toHaveBeenCalledWith(expect.objectContaining({ upc: '0049000000450' }));
+    expect(res.status).toHaveBeenCalledWith(200);
+  });
+
   it('ignores non-numeric bare keys (member=... stays a param, not a upc)', async () => {
     const res = mockRes();
     await handler({ query: { upc: '', member: 'popeye' }, body: {} }, res);
