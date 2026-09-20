@@ -120,12 +120,12 @@ describe('useContentDispatch', () => {
       expect(dispatchToTarget).not.toHaveBeenCalled();
     });
 
-    it('routes More Add to the aimed device and still appends locally without an aim', () => {
+    it('routes More Add with the default transfer aim as non-destructive fork and still appends locally without an aim', () => {
       castTargetState = { targetIds: ['livingroom-tv'], mode: 'transfer' };
       const remote = setup();
       act(() => { remote.dispatchLeafVerb('add', 'plex:685088', { title: 'Episode 3', type: 'episode' }); });
       expect(dispatchToTarget).toHaveBeenCalledWith({
-        targetIds: ['livingroom-tv'], queue: 'plex:685088', mode: 'transfer', title: 'Episode 3',
+        targetIds: ['livingroom-tv'], queue: 'plex:685088', mode: 'fork', title: 'Episode 3',
       });
       expect(queueAdd).not.toHaveBeenCalled();
 
@@ -187,7 +187,7 @@ describe('useContentDispatch', () => {
     );
   });
 
-  it('a configured cast target routes a selection to that device', () => {
+  it('routes ordinary Play with the default transfer aim as non-destructive fork', () => {
     castTargetState = { targetIds: ['livingroom-tv'], mode: 'transfer' };
     const { dispatch } = setup();
     act(() => {
@@ -196,7 +196,7 @@ describe('useContentDispatch', () => {
     expect(dispatchToTarget).toHaveBeenCalledWith({
       targetIds: ['livingroom-tv'],
       play: 'plex:685088',
-      mode: 'transfer',
+      mode: 'fork',
       title: 'Episode 3',
     });
     expect(playNow).not.toHaveBeenCalled();
@@ -234,7 +234,7 @@ describe('useContentDispatch', () => {
     expect(dispatchToTarget).toHaveBeenCalledWith({
       targetIds: ['livingroom-tv'],
       play: 'plex:99',
-      mode: 'transfer',
+      mode: 'fork',
       title: 'Lonesome Dove',
     });
   });
@@ -389,7 +389,7 @@ describe('useContentDispatch', () => {
       });
       expect(route).toBe('cast');
       expect(dispatchToTarget).toHaveBeenCalledWith(
-        expect.objectContaining({ targetIds: ['speaker-red'], play: 'plex:5150', mode: 'transfer' })
+        expect.objectContaining({ targetIds: ['speaker-red'], play: 'plex:5150', mode: 'fork' })
       );
       expect(playNow).not.toHaveBeenCalled();
     });
@@ -508,7 +508,7 @@ describe('useContentDispatch', () => {
       });
       expect(route).toBe('cast');
       expect(dispatchToTarget).toHaveBeenCalledWith(
-        expect.objectContaining({ targetIds: ['livingroom-tv'], queue: 'plex:5150', mode: 'transfer' })
+        expect.objectContaining({ targetIds: ['livingroom-tv'], queue: 'plex:5150', mode: 'fork' })
       );
       expect(dispatchToTarget.mock.calls[0][0].play).toBeUndefined();
       expect(notificationsShow).toHaveBeenCalledWith(
