@@ -1321,6 +1321,30 @@ export function useCommonMediaController({
           duration: el.duration
         }, { maxPerMinute: 30 });
       }
+      // A paused decoder is allowed not to emit another `timeupdate` after a
+      // completed seek. Do not leave Player's resilience metrics reporting the
+      // earlier seeking state until playback happens to resume: that stale
+      // state is interpreted as an in-flight user seek and can arm recovery.
+      if (el && onProgress) {
+        const currentTime = segDuration
+          ? Math.max(0, el.currentTime - segStart)
+          : (el.currentTime || 0);
+        const duration = segDuration || (el.duration || 0);
+        const stallSnapshot = readStallState();
+        onProgress({
+          currentTime,
+          duration,
+          paused: el.paused,
+          media: meta,
+          percent: getProgressPercent(currentTime, duration),
+          stalled: isStalled,
+          isSeeking: false,
+          playing: false,
+          seekIntent: lastSeekIntentRef.current,
+          lastStrategy: stallSnapshot.strategy,
+          stallState: stallSnapshot,
+        });
+      }
       requestAnimationFrame(() => setIsSeeking(false));
     };
 
