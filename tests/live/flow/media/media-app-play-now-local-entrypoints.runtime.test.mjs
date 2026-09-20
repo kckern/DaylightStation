@@ -116,10 +116,15 @@ async function prepare({ context, sender, phone }) {
   const receiver = await context.newPage();
   const loads = [];
   const transports = [];
+  const localPlays = [];
   sender.on('request', request => {
-    const path = new URL(request.url()).pathname;
+    const url = new URL(request.url());
+    const path = url.pathname;
     if (path.endsWith('/api/v1/device/acceptance-media/load')) loads.push(request);
     if (path.endsWith('/api/v1/device/acceptance-media/session/transport')) transports.push(request);
+    if (path === '/api/v1/play/plex:55854') {
+      localPlays.push({ request, session: url.searchParams.get('session') });
+    }
   });
   await sender.goto('/media', { waitUntil: 'domcontentloaded' });
   await receiver.goto('/screen/living-room', { waitUntil: 'domcontentloaded' });
@@ -152,7 +157,7 @@ async function prepare({ context, sender, phone }) {
     return queue?.items?.at(-1)?.contentId === 'plex:697368' && Boolean(queue.items.at(-1)?.queueItemId);
   }, { timeout: 30000 }).toBe(true);
   await closeSearch(sender, phone);
-  return { receiver, loads, transports, localVideo };
+  return { receiver, loads, transports, localPlays, localVideo };
 }
 
 for (const [name, viewport, phone] of viewports) {
@@ -160,7 +165,7 @@ for (const [name, viewport, phone] of viewports) {
     test(`[PLAY.1b/AC1,AC2] ${name} ${entryName}: This device stays local and retains route`, async ({ context, page: sender }) => {
       test.setTimeout(180000);
       await sender.setViewportSize(viewport);
-      const { receiver, loads, transports, localVideo } = await prepare({ context, sender, phone });
+      const { receiver, loads, transports, localPlays, localVideo } = await prepare({ context, sender, phone });
       try {
         const { action, content } = await open(sender, area => `${phone ? 'app-tab' : 'app-nav'}-${area}`);
         await setLocalAim(sender, phone);
@@ -169,14 +174,25 @@ for (const [name, viewport, phone] of viewports) {
         const before = receiverSnapshot(await receiverState(sender));
         const loadCount = loads.length;
         const transportCount = transports.length;
-        const localTime = await localVideo.evaluate(v => v.currentTime);
+        const localPlayCount = localPlays.length;
+        const oldLocalSession = localPlays.at(-1)?.session;
+        expect(oldLocalSession).toBeTruthy();
+        const oldLocalTime = await localVideo.evaluate(v => v.currentTime);
         await sender.waitForTimeout(750); // baseline must be settled before the action
         expect(receiverSnapshot(await receiverState(sender))).toEqual(before);
         expect(loads).toHaveLength(loadCount);
         expect(transports).toHaveLength(transportCount);
 
         await action.click();
-        await expect.poll(() => localVideo.evaluate((v, start) => v.readyState >= 2 && !v.paused && v.currentTime > start, localTime), { timeout: 30000 }).toBe(true);
+        await expect.poll(() => localPlays.length, { timeout: 30000 }).toBe(localPlayCount + 1);
+        const newLocalPlay = localPlays.at(-1);
+        expect(newLocalPlay?.session).toBeTruthy();
+        expect(newLocalPlay?.session).not.toBe(oldLocalSession);
+        await expect.poll(() => localVideo.evaluate((v, oldTime) => v.currentTime < oldTime, oldLocalTime), { timeout: 30000 }).toBe(true);
+        const newVisitTime = await localVideo.evaluate(v => v.currentTime);
+        await expect.poll(() => localVideo.evaluate((v, start) => (
+          v.readyState >= 2 && !v.paused && v.currentTime > start
+        ), newVisitTime), { timeout: 30000 }).toBe(true);
         await expect(sender.getByTestId('media-mini-player')).toContainText('Arrival');
         await expect(sender.getByTestId('mini-player-video-dock')).toBeVisible();
         expect(sender.url()).toBe(route);
