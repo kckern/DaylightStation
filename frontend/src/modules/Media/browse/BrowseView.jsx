@@ -42,7 +42,7 @@ function splitPath(path) {
 export function BrowseView({ path, label, modifiers, containerItem = null, take = 50 }) {
   const { items, total, loading, error, loadMore } = useListBrowse(path, { modifiers, take });
   const { queue } = useSessionController('local');
-  const { push, replace, pop, depth } = useNav();
+  const { push, replace, pop, depth, backDestination } = useNav();
   const { dispatchLeafVerb, playContainerAsQueue, addContainerToQueue } = useContentDispatch();
   const log = useMemo(() => getLogger().child({ component: 'browse-view' }), []);
 
@@ -73,7 +73,7 @@ export function BrowseView({ path, label, modifiers, containerItem = null, take 
         </button>
         {depth > 1 && (
           <button data-testid="browse-crumb-back" className="browse-crumb" onClick={() => pop()}>
-            ← Back
+            ← {backDestination ?? 'Home'}
           </button>
         )}
         <span className="browse-crumb-sep" aria-hidden="true">/</span>

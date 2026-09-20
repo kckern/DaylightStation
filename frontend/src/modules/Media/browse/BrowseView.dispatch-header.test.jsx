@@ -38,7 +38,7 @@ const navPush = vi.fn();
 const navPop = vi.fn();
 const navReplace = vi.fn();
 vi.mock('../shell/NavProvider.jsx', () => ({
-  useNav: () => ({ push: navPush, pop: navPop, replace: navReplace, depth: 2 }),
+  useNav: () => ({ push: navPush, pop: navPop, replace: navReplace, depth: 2, backDestination: 'Home' }),
 }));
 
 // ── useContentDispatch: the header's ▶/🔀/+ verbs — this suite asserts
@@ -100,6 +100,12 @@ beforeEach(() => {
 });
 
 describe('BrowseView — container dispatch header (Task 15)', () => {
+  it('names the actual prior area on its breadcrumb Back control', () => {
+    renderBrowse();
+    expect(screen.getByTestId('browse-crumb-back')).toHaveTextContent('← Home');
+    fireEvent.click(screen.getByTestId('browse-crumb-back'));
+    expect(navPop).toHaveBeenCalledTimes(1);
+  });
   const containerItem = { id: 'plex:663508', title: 'Tuttle Twins', type: 'show' };
 
   it('does not render the header for a root/category browse level (no containerItem)', () => {

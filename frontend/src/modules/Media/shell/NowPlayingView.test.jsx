@@ -24,7 +24,8 @@ vi.mock('../controller/usePlaybackPosition.js', () => ({
 }));
 vi.mock('../session/usePlayerHost.js', () => ({ usePlayerHost: (...args) => hostClaimSpy(...args) }));
 const pop = vi.fn();
-vi.mock('./NavProvider.jsx', () => ({ useNav: () => ({ pop, push: vi.fn(), view: 'nowPlaying' }) }));
+let backDestination = 'Browse';
+vi.mock('./NavProvider.jsx', () => ({ useNav: () => ({ pop, push: vi.fn(), view: 'nowPlaying', backDestination }) }));
 vi.mock('./QueuePanel.jsx', () => ({ QueuePanel: () => <div data-testid="queue-stub" /> }));
 vi.mock('../cast/DispatchTargetPicker.jsx', () => ({
   DispatchTargetPicker: () => <div data-testid="picker-stub" />,
@@ -158,6 +159,12 @@ describe('NowPlayingView', () => {
     render(<NowPlayingView />);
     fireEvent.click(screen.getByTestId('now-playing-back'));
     expect(pop).toHaveBeenCalledTimes(1);
+  });
+
+  it('names the actual prior area on its visible Back control', () => {
+    backDestination = 'Devices';
+    render(<NowPlayingView />);
+    expect(screen.getByTestId('now-playing-back')).toHaveTextContent('← Devices');
   });
 
   it('expands with the exact accessible control, requests focused rendering, and keeps Stop reachable', () => {

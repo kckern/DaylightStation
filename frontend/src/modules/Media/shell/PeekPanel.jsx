@@ -26,7 +26,7 @@ export function PeekPanel({ deviceId }) {
   const ctl = useSessionController({ deviceId });
   const realSnap = ctl.snapshot;
   const { device, entry } = useDevice(deviceId);
-  const { pop } = useNav();
+  const { pop, backDestination } = useNav();
   const queueRef = useRef(null);
   const { queueKeptCount, noteStop } = useRemoteStopFeedback(deviceId, realSnap, entry);
 
@@ -84,7 +84,7 @@ export function PeekPanel({ deviceId }) {
     <Stack data-testid="peek-panel" className="peek-panel" gap="md">
       <Group justify="space-between">
         <Button data-testid="peek-back" variant="subtle" color="gray" onClick={() => pop()}>
-          ← Devices
+          ← {backDestination ?? 'Home'}
         </Button>
         {entry?.isStale && <Badge color="yellow" variant="light">Out of date</Badge>}
         {entry?.offline && <Badge color="gray" variant="light">Offline</Badge>}
