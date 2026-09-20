@@ -128,7 +128,7 @@ export function EmulatorConsole({
   // emulator-consumed) and emit the matching diagnostic logs. Default on — it's
   // subtle and host-agnostic; a host can disable it.
   showInputActivity = true,
-  onPlayStateChange = null,
+  onArcadeGameSessionStateChange = null,
   fetchImpl = () => globalThis.fetch,
 }) {
   const fns = useMemo(() => ({ ...DEFAULT_FACTORIES, ...(factories || {}) }), [factories]);
@@ -185,12 +185,12 @@ export function EmulatorConsole({
       ? governanceGate.isPlayable()
       : governancePlaying;
   } catch { governancePlaying = false; }
-  const effectivePlayState = playReady && governancePlaying && !hotspotState.paused
+  const effectiveArcadeGameSessionState = playReady && governancePlaying && !hotspotState.paused
     ? 'playing'
     : 'paused';
   useEffect(() => {
-    onPlayStateChange?.(effectivePlayState);
-  }, [effectivePlayState, onPlayStateChange]);
+    onArcadeGameSessionStateChange?.(effectiveArcadeGameSessionState);
+  }, [effectiveArcadeGameSessionState, onArcadeGameSessionStateChange]);
 
   // Count-up play timer (seconds since launch), ticked every 1s.
   const [elapsedSec, setElapsedSec] = useState(0);
@@ -279,6 +279,11 @@ export function EmulatorConsole({
   // fractional left/top re-blurs the 1px lines). The pure math lives in
   // computeScreenBox (exported, unit-tested); this effect only measures + sets.
   const [screenBox, setScreenBox] = useState(null);
+  // The bezel's own aperture, unscaled — the clip boundary. Independent of
+  // screenBox so a picture-shader console can render OVERSCANNED (screenBox
+  // bigger than this) and have the excess cropped away by this box's
+  // `overflow:hidden`, rather than shown as the shader's own inset artifact.
+  const [windowBox, setWindowBox] = useState(null);
 
   // Which pixel-grid treatment this console asks for.
   //   dotmatrix — the DMG: grid PLUS the olive wash of a reflective LCD.
@@ -303,10 +308,23 @@ export function EmulatorConsole({
         width: hasCut ? (sc.width / 100) * rect.width : rect.width,
         height: hasCut ? (sc.height / 100) * rect.height : rect.height,
       };
-      const next = computeScreenBox({ cut, dpr, native: game?.native, scaling: presentation?.screen_scaling });
+      const next = computeScreenBox({
+        cut, dpr, native: game?.native, scaling: presentation?.screen_scaling,
+        overscan: presentation?.screen_overscan || 0,
+      });
       setScreenBox((prev) => (prev && prev.scale === next.scale && prev.left === next.left
         && prev.top === next.top && prev.width === next.width && prev.height === next.height
         ? prev : next));
+      // The clip boundary is always the raw, un-overscanned aperture — snapped
+      // to device pixels the same way, but never grown.
+      const win = {
+        left: Math.round(cut.left * dpr) / dpr,
+        top: Math.round(cut.top * dpr) / dpr,
+        width: Math.round(cut.width * dpr) / dpr,
+        height: Math.round(cut.height * dpr) / dpr,
+      };
+      setWindowBox((prev) => (prev && prev.left === win.left && prev.top === win.top
+        && prev.width === win.width && prev.height === win.height ? prev : win));
     };
     compute();
     const ro = new ResizeObserver(compute);
@@ -917,6 +935,25 @@ export function EmulatorConsole({
     ...(isDotmatrix ? { ...pixelBox, backgroundColor: shade.color } : pixelBox),
   };
 
+  // The window is the CROP boundary (the bezel's raw aperture, never grown);
+  // the mount is positioned inside it, offset from the window's own origin.
+  // Ordinarily these coincide (mount fills the window exactly, as before) —
+  // they diverge only when `screen_overscan` renders the mount larger than the
+  // window, so a picture-shader's own inset (crt-geom's curvature margin) lands
+  // outside the visible cutout instead of inside it as a bright gap.
+  const windowPixelBox = windowBox
+    ? { inset: 'auto', left: `${windowBox.left}px`, top: `${windowBox.top}px`, width: `${windowBox.width}px`, height: `${windowBox.height}px` }
+    : screenStyle;
+  const mountStyle = (screenBox && windowBox)
+    ? {
+      inset: 'auto',
+      left: `${screenBox.left - windowBox.left}px`,
+      top: `${screenBox.top - windowBox.top}px`,
+      width: `${screenBox.width}px`,
+      height: `${screenBox.height}px`,
+    }
+    : undefined; // before measurement: CSS inset:0/100% fills the window, as before
+
   // On-screen controls (native EmulatorJS menu/virtual-gamepad + our controller
   // panel) are config-gated and OFF by default — driven by hooks/api instead.
   const osd = !!presentation?.onscreen_controls;
@@ -944,10 +981,21 @@ export function EmulatorConsole({
         className={`emulator-chrome chrome-${game?.chrome || 'none'}`}
         style={game?.bezelUrl ? { backgroundImage: `url("${game.bezelUrl}")` } : undefined}
       />
-      {/* The cutout is positioned on this WRAPPER, not the mount — EmulatorJS owns
-          the mount element's inline styles, so it must fill an already-positioned box. */}
-      <div className="emulator-screen-window" style={pixelBox}>
-        <div className="emulator-mount" ref={mountRef} />
+      {/* The cutout is positioned on this WRAPPER, and the integer-lock box on
+          emulator-mount-box — never on .emulator-mount itself. EmulatorJS takes
+          ownership of the element it's handed as EJS_player and overwrites its
+          `style` attribute wholesale (observed: our left/top/width/height are
+          replaced by nothing but its own `--ejs-primary-color` custom property),
+          which silently discarded the integer-lock size and let the mount (and
+          its canvas, pinned to 100%/100% by CSS) fill the full aperture instead
+          of the smaller centred box the LCD grid canvas was drawn for. Moving
+          the box one level up, to a wrapper EmulatorJS never sees, keeps the
+          picture and the grid at the same size regardless of what EJS does to
+          its own container. */}
+      <div className="emulator-screen-window" style={windowPixelBox}>
+        <div className="emulator-mount-box" style={mountStyle}>
+          <div className="emulator-mount" ref={mountRef} />
+        </div>
       </div>
       <div
         className={`emulator-shader shader-${game?.shader || 'none'} ${animClass}`.trim()}

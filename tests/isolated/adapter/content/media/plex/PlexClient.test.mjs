@@ -128,6 +128,20 @@ describe('PlexClient', () => {
       // Production catches the underlying error and wraps as 'Media API request failed'
       await expect(client.request('/library/sections')).rejects.toThrow('Media API request failed');
     });
+
+    it('turns an application deadline into an aborted transport timeout without relabeling caller cancellation', async () => {
+      const { PlexClient } = await import('#adapters/content/media/plex/PlexClient.mjs');
+      const pendingHttp = { get: vi.fn((_url, { signal }) => new Promise((_, reject) => {
+        signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+      })) };
+      const client = new PlexClient({ host: 'http://localhost:32400' }, { httpClient: pendingHttp, logger: { error: vi.fn() } });
+      await expect(client.request('/x', { deadline: { timeoutMs: 1 } })).rejects.toMatchObject({ code: 'TIMEOUT' });
+
+      const controller = new AbortController();
+      const cancelled = client.request('/x', { signal: controller.signal, deadline: { timeoutMs: 100 } });
+      controller.abort(new DOMException('cancelled', 'AbortError'));
+      await expect(cancelled).rejects.toMatchObject({ code: 'ABORTED' });
+    });
   });
 
   describe('hubSearch', () => {

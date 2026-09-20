@@ -4,7 +4,7 @@ The in-browser arcade (the Video Games widget on the fitness display) is a
 different system from the Shield's RetroArch. This page is about the browser
 one. For the boot contract and fault handling see
 [emulator resilience](emulator-resilience.md); for how play is metered see
-[play sessions](play-sessions.md).
+[arcade game sessions](arcade-game-sessions.md).
 
 Everything about a console is data. A system exists because a manifest exists,
 and nothing in the code names a console.

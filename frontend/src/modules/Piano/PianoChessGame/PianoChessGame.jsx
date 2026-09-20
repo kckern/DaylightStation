@@ -511,6 +511,8 @@ export function PianoChessGame({
     effectiveOpponentRef,
     opponentError,
     retryOpponent,
+    opponentStalled,
+    wakeOpponent,
     resetOpponent,
     speech: opponentSpeech,
     dialogueRef,
@@ -880,6 +882,7 @@ export function PianoChessGame({
     playerColor,
     opponent: opponentProfile,
     opponentThinking,
+    opponentStalled,
     finishedResult: finishedRecord?.result ?? null,
     cursor,
     cursorChord,
@@ -1237,6 +1240,17 @@ export function PianoChessGame({
             </span>
             {opponentError && (
               <GameButton variant="ghost" onClick={retryOpponent}>Retry</GameButton>
+            )}
+            {/* A WAY OUT OF A TURN THAT NEVER COMES. The board re-asks once on
+                its own first, so most stalls end before anyone reads this; when
+                one does not, the control is already on screen rather than
+                waiting behind an `opponentError` that this failure never sets.
+                A child sat pressing the same square for ten minutes because the
+                only button that could have helped him was invisible. */}
+            {!opponentError && opponentStalled && (
+              <GameButton variant="ghost" onClick={wakeOpponent}>
+                {opponentProfile?.name ? `Wake ${opponentProfile.name} up` : 'Wake opponent up'}
+              </GameButton>
             )}
           </GameStatusBar>
           {/* Hangs from the status band's lower edge. It used to be pinned to

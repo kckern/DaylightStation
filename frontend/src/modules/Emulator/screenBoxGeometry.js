@@ -27,18 +27,28 @@
  * @param {number} args.dpr device pixel ratio
  * @param {{width:number,height:number}} [args.native] framebuffer size
  * @param {'integer'|'fill'} [args.scaling]
+ * @param {number} [args.overscan] `fill` only: fraction to grow the box beyond
+ *   `cut`, centred, before the parent's `overflow:hidden` crops it back down.
+ *   Exists for a picture-shader (crt-geom) that renders its own curvature inset
+ *   a few percent in from whatever box it's given — see the call site comment
+ *   in EmulatorConsole.jsx. Zero (the default) is a plain, uncropped fill.
  * @returns {{left:number,top:number,width:number,height:number,cell:number,scale:number}}
  */
-export function computeScreenBox({ cut, dpr, native, scaling = 'integer' }) {
+export function computeScreenBox({ cut, dpr, native, scaling = 'integer', overscan = 0 }) {
   const nw = native && Number.isFinite(native.width) ? native.width : 160;
   const nh = native && Number.isFinite(native.height) ? native.height : 144;
 
   if (scaling === 'fill') {
+    const factor = 1 + (Number.isFinite(overscan) && overscan > 0 ? overscan : 0);
+    const grownWidth = cut.width * factor;
+    const grownHeight = cut.height * factor;
+    const grownLeft = cut.left - (grownWidth - cut.width) / 2;
+    const grownTop = cut.top - (grownHeight - cut.height) / 2;
     // Snap to whole device pixels so the edges stay crisp against the bezel.
-    const left = Math.round(cut.left * dpr) / dpr;
-    const top = Math.round(cut.top * dpr) / dpr;
-    const width = Math.round(cut.width * dpr) / dpr;
-    const height = Math.round(cut.height * dpr) / dpr;
+    const left = Math.round(grownLeft * dpr) / dpr;
+    const top = Math.round(grownTop * dpr) / dpr;
+    const width = Math.round(grownWidth * dpr) / dpr;
+    const height = Math.round(grownHeight * dpr) / dpr;
     // Reported for telemetry only — fractional here by definition, and no grid
     // is drawn in this mode, so nothing consumes it as a step size.
     const scale = (width * dpr) / nw;

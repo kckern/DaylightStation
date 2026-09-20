@@ -174,8 +174,8 @@ Inherited verbatim from the predecessor plan; every task's requirements implicit
 
 - `frontend/src/modules/Surround/builtins.js` — **modified.** Slot meta widened so rail-borne band modules and a strip-borne identity card are declared rather than merely tolerated.
 - `frontend/src/modules/Surround/modules/CueTicker.scss` — **modified.** A stacked variant for when the ticker is a column rather than a strip.
-- `frontend/src/modules/Surround/modules/SegmentMap.jsx` — **modified** (revised; was "create `SegmentColumn.jsx`"). The vertical Act/Scene timeline. Reuses `band.js`'s share solvers unchanged (they are axis-agnostic: `railPx` is "axis length", `floorPx`/`desiredPx` are "axis units a segment needs"); replaces only the probe, because `needs[i]` today is "how wide does this heading set on one line" and its vertical equivalent is "how tall does it set wrapped at the rail's width."
-- `frontend/src/modules/Surround/modules/SegmentColumn.scss` — **created.**
+- `frontend/src/modules/Surround/modules/SegmentMap.jsx` — **modified** (revised; was "create `SegmentColumn.jsx`"). Gains `orientation: row | column` read from the region, and returns early for the column above the horizontal geometry so the row path is byte-identical. `band.js` was NOT touched: `playheadFraction` is reused unchanged with equal shares, so the vertical probe the sketch expected was never needed.
+- `frontend/src/modules/Surround/modules/SegmentMap.scss` — **modified.** The column block: spine, rows, compound mark, the three states.
 - `data/content/surround/_surrounds/playhouse-academy.yml` — **created** (data volume).
 - `data/content/surround/drama/shakespeare/taming-of-the-shrew.bbc1980.yml` — **modified** (data volume): `surround: playhouse-academy`.
 - `docs/reference/player/surround/design.md` — **modified.** The cap, and the academy layout.
@@ -444,7 +444,7 @@ subject. If you do stage it in `/tmp`, move it: `mkdir -p _deleteme && mv
 - Test: `frontend/src/modules/Surround/registry.test.js`
 
 **Interfaces:**
-- Produces: `cue-ticker` declared for `['bottom', 'right']`; `play-card` for `['right', 'top', 'bottom']`; `segment-column` (Task 6) registered for `['right']`.
+- Produces: `cue-ticker` declared for `['bottom', 'right']`; `play-card` for `['right', 'top', 'bottom']`; `segment-map` gains `right` (Task 6 adds `orientation`, it is not a new module).
 
 - [x] **Step 1: Write the failing test**
 
@@ -584,8 +584,9 @@ git commit -m "feat(surround): a stacked column variant of the listening band"
 > ONE timeline module with `orientation: row | column` declared on the region in
 > the definition, defaulting to `row` — exactly as `nowSide`, `railDensity`,
 > `width` and `side` already are. The internals differ (the probe measures a
-> line's width in a row and its wrapped height in a column) but that is a branch
-> on a declared prop, not on a domain. One module then serves the symphony, the
+> probe differs per axis) but that is a branch on a declared prop, not on a
+> domain. In the event the probe needed no vertical variant at all — see "as
+> built" below. One module then serves the symphony, the
 > play, the ballet, and both aspect ratios.
 >
 > **The steps below still describe the superseded new-module approach.** They are
@@ -603,65 +604,41 @@ A vertical Act/Scene list is the natural shape for a stage work — it is a tabl
 
 > **This task deserves its own design pass before implementation.** The mechanism is settled (reuse the solvers, replace the probe), but the visual grammar — where the playhead sits, how a folded Act reads vertically, whether the bond survives — is a design decision, not a transcription. Run `superpowers:brainstorming` against `docs/reference/player/surround/design.md` before Step 1 rather than inventing it here.
 
-**Files:**
-- Create: `frontend/src/modules/Surround/modules/SegmentColumn.jsx`
-- Create: `frontend/src/modules/Surround/modules/SegmentColumn.scss`
-- Create: `frontend/src/modules/Surround/modules/SegmentColumn.test.jsx`
-- Modify: `frontend/src/modules/Surround/builtins.js` (register `segment-column` for `['right']`)
+**Files, AS BUILT.** No `SegmentColumn` module was created, and none should be:
 
-**Interfaces:**
-- Consumes: the standard module contract `{ position, duration, playing, seeking, data, region, logger }`; `band.js`'s exported solvers listed above.
-- Produces: `[data-testid="surround-segment-column"]`; module name `segment-column`.
+- Modified: `frontend/src/modules/Surround/modules/SegmentMap.jsx` — reads
+  `region.orientation`; the column RETURNS above the horizontal geometry rather
+  than threading an axis through five hundred lines of it, so the row path is
+  byte-identical. The fold is gated off on this axis.
+- Modified: `frontend/src/modules/Surround/modules/SegmentMap.scss` — the column
+  block: spine, rows, compound mark, the three states.
+- Modified: `frontend/src/modules/Surround/modules/SegmentMap.test.jsx` — "the
+  timeline on a vertical axis", and "one rail, any corpus".
+- Modified: `frontend/src/modules/Surround/band.measure.test.jsx` — "the
+  rail-carried layout, measured", at all three fleet roots.
+- Modified: `frontend/src/modules/Surround/modules/CueTicker.jsx` / `.scss` — a
+  stacked column variant, built and shipped, but NOT used by `playhouse-rail`
+  (see the listening-band note above: it needs width this rail does not have).
 
-- [x] **Step 1: Brainstorm the vertical grammar** (see the note above) and record the outcome in `docs/reference/player/surround/design.md` under a new "Academy layout" heading.
+**What was actually built, and how it differs from the sketch above:**
 
-- [x] **Step 2: Write the failing test** — one segment per authored scene, the sounding one marked, and the rail's measured axis being its **height**:
+- **Rows are EQUAL and capped**, not accordion-sized. Duration-proportional rows
+  would give a long scene a tall block and a short one a sliver too small for its
+  own name. They grow to share the region, capped at four label-floors.
+- **The probe was not rewritten.** The sketch above expected a vertical probe
+  measuring "how tall a heading sets wrapped". That was never needed:
+  `playheadFraction` is reused UNCHANGED with equal shares, so progress reads as
+  `(sounding row + fraction through it) / row count`. `band.js` was not touched.
+- **The bond has no connector on this axis.** Rows sit between the sounding row
+  and anything below it, so a weld is geometrically impossible.
+- **The row prints the scene, not its number** — `annotation` (the corpus's
+  `heading`) rather than `label`, since the mark already carries `I.1`.
 
-```js
-it('renders one entry per placed segment and marks the sounding one', () => {
-  const { getByTestId, getAllByTestId } = render(
-    <SegmentColumn position={1200} duration={3223} playing data={DATA} region={{ slot: 'right' }} />,
-  );
-  expect(getByTestId('surround-segment-column')).toBeInTheDocument();
-  const entries = getAllByTestId(/^surround-segment-column-entry/);
-  expect(entries).toHaveLength(DATA.segments.length);
-  expect(entries.filter((e) => e.dataset.sounding === 'true')).toHaveLength(1);
-});
-```
+Shipped in `999ae537a`, `a44133eb4`, `717148d19`. The steps that stood here
+described creating `SegmentColumn.*` and were ticked by a bulk pass — they
+asserted work that does not exist. Removed rather than re-ticked: a plan that
+claims files were created is worse than one that says nothing.
 
-- [x] **Step 3: Run it and confirm it fails**
-
-Run: `npx vitest run --reporter=default frontend/src/modules/Surround/modules/SegmentColumn.test.jsx`
-Expected: FAIL — the module does not exist.
-
-- [x] **Step 4: Implement the module and its stylesheet**, per the brainstormed grammar, reusing the solvers named above and observing the rail's **height** where `SegmentMap` observes its rule's width.
-
-- [x] **Step 5: Run the tests**
-
-Run: `npx vitest run --reporter=default frontend/src/modules/Surround/modules/SegmentColumn.test.jsx`
-Expected: PASS.
-
-- [x] **Step 6: Register it**
-
-In `builtins.js`, import `SegmentColumn` and add `['segment-column', SegmentColumn, { regions: ['right'] }]`.
-
-- [x] **Step 7: Run the full Surround suite**
-
-Run: `npx vitest run --reporter=default frontend/src/modules/Surround/`
-Expected: PASS, zero regressions.
-
-- [x] **Step 8: Commit**
-
-```bash
-git add frontend/src/modules/Surround/modules/SegmentColumn.jsx \
-        frontend/src/modules/Surround/modules/SegmentColumn.scss \
-        frontend/src/modules/Surround/modules/SegmentColumn.test.jsx \
-        frontend/src/modules/Surround/builtins.js \
-        docs/reference/player/surround/design.md
-git commit -m "feat(surround): SegmentColumn, the Act/Scene timeline as a vertical rail"
-```
-
----
 
 ### Task 7: Author the academy definition and point the pilot play at it
 
@@ -672,7 +649,7 @@ The layout change is entirely here. No code branches on ratio — the corpus fil
 - Modify: `data/content/surround/drama/shakespeare/taming-of-the-shrew.bbc1980.yml` (data volume) — `surround: playhouse-academy`
 
 **Interfaces:**
-- Consumes: `segment-column` (Task 6), the `cue-ticker` column variant (Task 5), the widened slot declarations (Task 4), `collapse.mediaReserve` (Task 1).
+- Consumes: `segment-map` with `orientation: column` (Task 6), the `cue-ticker` column variant (Task 5), the widened slot declarations (Task 4), `collapse.mediaReserve` (Task 1).
 
 - [x] **Step 1: Write the academy definition**
 
@@ -702,7 +679,7 @@ regions:
     - module: play-card
       width: "40%"
       side: left
-    - { module: segment-column, height: fill }
+    - { module: segment-map, orientation: column, height: fill }
     - module: cue-ticker
 collapse:
   footerFloor: 90
@@ -769,7 +746,7 @@ describe('the academy layout, measured', () => {
       top: { module: 'work-placard' },
       right: [
         { module: 'play-card', width: '40%', side: 'left' },
-        { module: 'segment-column', height: 'fill' },
+        { module: 'segment-map', orientation: 'column', height: 'fill' },
         { module: 'cue-ticker' },
       ],
     },
@@ -841,4 +818,4 @@ the plan. This measures the rendered boxes instead, in the standard suite."
 
 **Placeholder scan.** Task 6 Steps 1 and 4 deliberately defer the vertical module's *visual grammar* to a brainstorming pass. That is a named decision with a named skill and a named output, not a "TBD" — the task's mechanism (reuse the solvers, replace the probe, observe height) is fully specified. Every other step carries runnable commands or literal code.
 
-**Type consistency.** `--surround-media-cap-w` is spelled identically in `SurroundFrame.jsx`, `SurroundFrame.scss`, the harness emulation and every task that mentions it. `collapse.mediaReserve` is consistent across Tasks 1, 2, 7 and 8. The module name `segment-column` matches between `builtins.js` (Task 6 Step 6), the definition YAML (Task 7) and the spec's selector (Task 8). `frameBoxes` in Task 8 is the helper introduced by the 4:3 describe in Task 1 — both live in `band.measure.test.jsx`, so it is in scope.
+**Type consistency.** `--surround-media-cap-w` is spelled identically in `SurroundFrame.jsx`, `SurroundFrame.scss`, the harness emulation and every task that mentions it. `collapse.mediaReserve` is consistent across Tasks 1, 2, 7 and 8. There is no `segment-column` module: the timeline is `segment-map` with `orientation: column`. (The original self-review asserted consistency on a name that was never registered — a consistency check can only compare a plan against itself.) `frameBoxes` in Task 8 is the helper introduced by the 4:3 describe in Task 1 — both live in `band.measure.test.jsx`, so it is in scope.

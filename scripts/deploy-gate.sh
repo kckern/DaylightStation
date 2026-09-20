@@ -26,6 +26,16 @@
 # one. "No session" had been standing in for "nobody there", and a lockdown is
 # exactly the state where those two come apart. Hence section 4.
 #
+# On 2026-09-18 it was the fifth place, and the quietest. A child tapped his
+# card in the living room at 11:04:32; the reading session opened and the TV
+# acknowledged the launch card. The container restarted at 11:05:01. He tapped
+# his book at 11:06:01 and the broadcast hit `bus.topic.unknown:
+# reading:livingroom` — the TV's socket had died with the restart and its
+# replacement subscribed 0.79 s too late. Nothing played, his session idled out,
+# and story time went uncredited. All four sections above passed honestly: a
+# living-room reading session touches neither the garage, the Portal, nor the
+# piano. Hence section 5.
+#
 # Exit 0 = clear to deploy. Exit 1 = someone is using it; WAIT.
 #
 #   ./scripts/deploy-gate.sh && ./scripts/build-daylight.sh && sudo deploy-daylight
@@ -107,9 +117,18 @@ fi
 release="$(printf '%s' "$garage" | grep -cE 'emergency\.release_(requested|hold|scan_start|denied)')"
 [ "$release" -gt 0 ] && { echo "BLOCKED: someone is working the emergency release ($release events in $GARAGE_WINDOW)"; blocked=1; }
 
+# ── 5. Living room: a child mid-story ──────────────────────────────────────
+# Shared with any future living-room reload, and asked of the SERVER rather
+# than the log alone: a story that is playing is silent for minutes at a time,
+# so "no recent events" is not "no child". See that script for what counts.
+if ! "$(dirname "$0")/livingroom-reading-idle.sh"; then
+  echo "BLOCKED: a living-room reading session is in progress"
+  blocked=1
+fi
+
 if [ "$blocked" -ne 0 ]; then
   echo "GATE BLOCKED — do not deploy. Wait and re-run."
   exit 1
 fi
-echo "GATE CLEAR (garage idle; Portal idle; piano kiosk idle; no emergency lock)"
+echo "GATE CLEAR (garage idle; Portal idle; piano kiosk idle; no emergency lock; living room idle)"
 exit 0

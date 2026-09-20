@@ -27,12 +27,32 @@
     inset: 0;
     z-index: 0;
     overflow: hidden;
+    // Backstop behind the mount: EmulatorJS's own game div defaults to a dark
+    // grey (`rgb(51,51,51)`, unset by us), but on a CRT-shaded core (crt-geom
+    // insets the tube face from the viewport, simulating curvature) whatever the
+    // canvas itself leaves unpainted at its edges shows through as the raw
+    // <canvas> background instead — measured pure white (254-255) on the live
+    // Genesis bezel, not EJS's grey. Black matches the bezel art's own console
+    // body so the shader's inset reads as an intentional CRT gap, not a
+    // misaligned screen.
+    background: #000;
+  }
+  // Carries the integer-lock box (config cutout inline style). Deliberately a
+  // SEPARATE element from .emulator-mount: EmulatorJS takes ownership of the
+  // element it's handed as EJS_player and overwrites its `style` attribute
+  // wholesale, which silently discards any inline left/top/width/height we set
+  // there. Sizing lives here instead, one level up, where EmulatorJS never
+  // reaches — see the render-site comment in EmulatorConsole.jsx.
+  .emulator-mount-box {
+    position: absolute;
+    inset: 0;
   }
   .emulator-mount {
     position: absolute;
     inset: 0;
     width: 100%;
     height: 100%;
+    background: #000;
     transition: filter 0.25s ease;
   }
 

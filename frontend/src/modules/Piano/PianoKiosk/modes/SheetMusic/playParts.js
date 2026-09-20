@@ -18,10 +18,10 @@ export function partsOf(notes) {
  * for audible parts. Steps sort before notes at the same instant so the cursor
  * lands before its notes sound.
  */
-export function buildPlayTimeline(events, notes, tempoMap, roles) {
+export function buildArcadeGameTimeline(events, notes, tempoMap, roles) {
   const steps = buildStepTimeline(events, tempoMap).map((s) => ({ ...s, kind: 'step' }));
   const noteEvts = buildNoteTimeline(notes, tempoMap, { isAudible: (n) => (roles[n.staff] || 'play') === 'play' });
   return [...steps, ...noteEvts].sort((a, b) => a.t - b.t || (a.kind === 'step' ? -1 : b.kind === 'step' ? 1 : 0));
 }
 
-export default { partsOf, buildPlayTimeline };
+export default { partsOf, buildArcadeGameTimeline };

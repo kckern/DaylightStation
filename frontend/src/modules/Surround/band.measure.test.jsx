@@ -3272,17 +3272,12 @@ describe('the rail-carried layout, measured', () => {
       // band has always known this: it authors `segment-map: height 64` so the
       // ticker's `fill` has something to claim.
       right: [
-        // IDENTITY ONLY, 130px. With its rotating fact the card measures 220px
-        // and overflowed a 150px region, clipping mid-word with the timeline's
-        // rows overlaying it. The fact duplicates the ticker's left register
-        // anyway, so turning it off here removes a repetition and returns the
-        // height the rail was short of.
-        { module: 'play-card', width: '40%', height: 130, facts: false },
+        // The card carries the rail's only prose now that the listening band
+        // has gone: at this width every note in this corpus was refused by the
+        // fit ladder (a 71-78 character budget against notes of 195-351), so
+        // the band rendered blank. PlayCard wraps where CueTicker refuses.
+        { module: 'play-card', width: '40%', height: 220 },
         { module: 'segment-map', orientation: 'column', height: 'fill' },
-        // 220px. Below roughly 180 the ticker withholds every note rather than
-        // set type under the ten-foot floor (by design — see CueTicker.scss),
-        // so a 130px band rendered blank.
-        { module: 'cue-ticker', orientation: 'column', height: 220 },
       ],
     },
     collapse: { footerFloor: 90, mediaReserve: 0 },
@@ -3310,6 +3305,8 @@ describe('the rail-carried layout, measured', () => {
       footer: box('[data-testid="surround-footer"]'),
       regions: [...document.querySelectorAll('.surround-frame__region--right')]
         .map((el) => ({ module: el.dataset.module, h: Math.round(el.getBoundingClientRect().height) })),
+      rows: [...document.querySelectorAll('[data-testid="surround-segment-row"]')]
+        .map((r) => r.getBoundingClientRect().height),
     };
   });
 
@@ -3344,7 +3341,7 @@ describe('the rail-carried layout, measured', () => {
     // `side` is unauthored, and the frame's default is right — so the video is
     // flush left and the timeline's spine lies against the picture.
     expect(g.rail.x, 'the rail is not on the right').toBeGreaterThan(g.frame.w / 2);
-    expect(g.regions).toHaveLength(3);
+    expect(g.regions).toHaveLength(2);
     g.regions.forEach(({ module, h }) => {
       expect(h, `${module} collapsed to ${h}px in the rail`).toBeGreaterThan(30);
     });
@@ -3361,17 +3358,46 @@ describe('the rail-carried layout, measured', () => {
     // The authored numbers are fixed px, so they hold at every root while the
     // remainder grows with the rail: 190 / 370 / 730 across the fleet.
     const by = Object.fromEntries(g.regions.map((r) => [r.module, r.h]));
-    const AUTHORED = { 'play-card': 130, 'cue-ticker': 220 };
+    const AUTHORED = { 'play-card': 220 };
     Object.entries(AUTHORED).forEach(([module, want]) => {
       expect(
         Math.abs(by[module] - want),
         `${module} is ${by[module]}px, not the ${want}px its region authored`,
       ).toBeLessThanOrEqual(2);
     });
-    const remainder = g.rail.h - AUTHORED['play-card'] - AUTHORED['cue-ticker'];
+    const remainder = g.rail.h - AUTHORED['play-card'];
     expect(
       Math.abs(by['segment-map'] - remainder),
       `the timeline is ${by['segment-map']}px; the slack left for it is ${remainder}px`,
     ).toBeLessThanOrEqual(2);
+
+    // AND THE ROWS BREATHE INTO IT. A region of the right height proves nothing
+    // if the list stacks at its floor in the top third and leaves the rest dead
+    // — which is exactly what shipped. The rows must have grown past their
+    // minimum, and must not have run past the region that holds them.
+    expect(g.rows.length, 'no rows rendered').toBeGreaterThan(0);
+    const total = g.rows.reduce((a, b) => a + b, 0);
+    const floorPx = 8.64 * 2; // --label-floor x 2: the row's own minimum
+
+    // THE ROWS GREW PAST THEIR FLOOR. That is the whole claim, and it is all
+    // that can honestly be claimed. Whether they FILL the region depends on how
+    // many segments the work has — four capped rows cannot fill 320px, and a
+    // short play is exactly what the cap exists to stop looking absurd. An
+    // assertion demanding the region be filled would fail on a three-scene play
+    // while passing on an eleven-scene one: a claim about the fixture wearing
+    // the costume of a claim about the layout. That is the same mistake that
+    // once let a dead 180/180/180 split measure green.
+    g.rows.forEach((h, i) => {
+      expect(
+        h,
+        `row ${i} is ${h.toFixed(1)}px — it never grew past its ${floorPx}px floor`,
+      ).toBeGreaterThan(floorPx + 0.5);
+    });
+
+    // ...AND NEVER RAN PAST THE REGION THAT HOLDS THEM.
+    expect(
+      total,
+      `the rows total ${Math.round(total)}px in a ${by['segment-map']}px region`,
+    ).toBeLessThanOrEqual(by['segment-map'] + 2);
   }, 120000);
 });

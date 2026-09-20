@@ -280,17 +280,17 @@ describe('EmulatorConsole', () => {
   });
 
   it('reports confirmed play only after a frame and follows governance pauses', async () => {
-    const onPlayStateChange = vi.fn();
+    const onArcadeGameSessionStateChange = vi.fn();
     const gate = makeGate();
-    renderConsole({ gate, props: { onPlayStateChange } });
-    expect(onPlayStateChange).not.toHaveBeenCalledWith('playing');
+    renderConsole({ gate, props: { onArcadeGameSessionStateChange } });
+    expect(onArcadeGameSessionStateChange).not.toHaveBeenCalledWith('playing');
     await act(async () => {});
-    expect(onPlayStateChange).toHaveBeenLastCalledWith('playing');
+    expect(onArcadeGameSessionStateChange).toHaveBeenLastCalledWith('playing');
 
     act(() => gate._set({ state: 'paused' }));
-    expect(onPlayStateChange).toHaveBeenLastCalledWith('paused');
+    expect(onArcadeGameSessionStateChange).toHaveBeenLastCalledWith('paused');
     act(() => gate._set({ state: 'playing' }));
-    expect(onPlayStateChange).toHaveBeenLastCalledWith('playing');
+    expect(onArcadeGameSessionStateChange).toHaveBeenLastCalledWith('playing');
   });
 
   it('the merged animation handler adds a transient class that clears', async () => {
