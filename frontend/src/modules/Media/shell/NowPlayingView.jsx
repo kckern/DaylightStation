@@ -77,6 +77,8 @@ export function NowPlayingView() {
     || item?.mediaType === 'dash_video'
     || item?.mediaType === 'hls_video'
     || hasActualVideoNode;
+  const isAudio = item?.format === 'audio' || item?.mediaType === 'audio';
+  const expandableKind = isVideo ? 'video' : (isAudio ? 'audio' : null);
 
   return (
     <div
@@ -96,15 +98,15 @@ export function NowPlayingView() {
           <span className="np-state" data-testid="np-state" data-state={snapshot?.state ?? ''}>
             {playbackStateLabel(snapshot?.state)}
           </span>
-          {item && isVideo && (
+          {item && expandableKind && (
             <button
               type="button"
               className="np-expand-btn"
-              aria-label={expanded ? 'Shrink video' : 'Expand video'}
+              aria-label={expanded ? `Shrink ${expandableKind}` : `Expand ${expandableKind}`}
               onClick={() => setExpanded((value) => !value)}
             >
               {expanded ? <IconArrowsMinimize size={20} /> : <IconMaximize size={20} />}
-              <span>{expanded ? 'Shrink video' : 'Expand video'}</span>
+              <span>{expanded ? `Shrink ${expandableKind}` : `Expand ${expandableKind}`}</span>
             </button>
           )}
         </div>
@@ -122,7 +124,7 @@ export function NowPlayingView() {
 
       {item && (
         <>
-          {!expanded && <div className="np-meta" data-testid="np-meta">
+          {(!expanded || isAudio) && <div className="np-meta" data-testid="np-meta">
             {item.thumbnail ? (
               <img className="np-art" data-testid="np-meta-art" src={item.thumbnail} alt="" loading="lazy" />
             ) : (

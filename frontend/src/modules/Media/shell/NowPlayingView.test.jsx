@@ -84,6 +84,25 @@ describe('NowPlayingView', () => {
     expect(screen.getByTestId('np-rate')).toBeDisabled();
   });
 
+  it('shows artwork and title when expanded audio is opened', () => {
+    state.snapshot = makeSnapshot({
+      item: {
+        contentId: 'plex:audio-1',
+        title: 'Audio Arrival',
+        format: 'audio',
+        thumbnail: '/api/v1/thumb/audio-1.jpg',
+      },
+    });
+
+    render(<NowPlayingView />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Expand audio', exact: true }));
+
+    expect(screen.getByRole('button', { name: 'Shrink audio', exact: true })).toBeVisible();
+    expect(screen.getByTestId('np-meta-art')).toHaveAttribute('src', '/api/v1/thumb/audio-1.jpg');
+    expect(screen.getByTestId('np-meta-title')).toHaveTextContent('Audio Arrival');
+  });
+
   it('keeps the exact "Now Playing: <title>" heading', () => {
     render(<NowPlayingView />);
     expect(screen.getByTestId('now-playing-title')).toHaveTextContent('Now Playing: Primary Song 5');

@@ -340,6 +340,51 @@ test('[STEER.2a/AC1][STEER.2a/AC2] focused video expands and shrinks without rep
   expect(await original.evaluate(el => Number(el.dataset.journeyPauseEvents))).toBe(0);
 });
 
+test('[STEER.2a/AC3] expanded audio keeps its actual node while showing artwork and title', async ({ page }) => {
+  const audioId = 'plex:584614';
+  const audioTitle = 'Faith';
+  const playbackReads = [];
+  page.on('response', response => {
+    const url = new URL(response.url());
+    if (url.pathname === '/api/v1/play/plex:584614') playbackReads.push(response.status());
+  });
+  await page.goto('/media');
+  if (device === 'phone') {
+    await page.getByTestId('media-search-launcher').click();
+    const search = page.getByRole('dialog', { name: 'Search media', exact: true });
+    await search.getByRole('searchbox', { name: 'Search media', exact: true }).fill(audioTitle);
+    const result = search.getByTestId(`search-mode-result-${audioId}`);
+    await expect(result).toBeVisible({ timeout: 15000 });
+    await result.click();
+    await page.getByTestId('search-mode-close').click();
+  } else {
+    const search = page.getByRole('textbox', { name: 'Search media…' });
+    await expect(search).toBeVisible({ timeout: 30000 });
+    await search.fill(audioTitle);
+    const result = page.getByRole('option').filter({ has: page.getByTestId(`result-more-${audioId}`) });
+    await expect(result).toHaveCount(1, { timeout: 15000 });
+    await result.click();
+  }
+  await page.getByTestId('mini-player-open-nowplaying').click();
+
+  const audioNodes = page.getByTestId('now-playing-host').locator('audio');
+  await expect.poll(() => audioNodes.evaluateAll(els => els.findIndex(el => !el.paused && el.readyState >= 2 && el.currentTime > 0)), {
+    timeout: 30000, message: 'One rendered audio node must be actual local playback',
+  }).toBeGreaterThanOrEqual(0);
+  const audio = audioNodes.nth(await audioNodes.evaluateAll(els => els.findIndex(el => !el.paused && el.readyState >= 2 && el.currentTime > 0)));
+  await expect(page.getByTestId('now-playing-title')).toHaveAttribute('data-content-id', audioId);
+  expect(playbackReads).toContain(200);
+  const original = await audio.elementHandle();
+  const before = await audio.evaluate(el => el.currentTime);
+
+  await page.getByRole('button', { name: 'Expand audio', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Shrink audio', exact: true })).toBeVisible();
+  await expect(page.getByTestId('np-meta-art')).toBeVisible();
+  await expect(page.getByTestId('np-meta-title')).toHaveText(audioTitle);
+  await page.getByRole('button', { name: 'Shrink audio', exact: true }).click();
+  await expect.poll(() => original.evaluate((el, position) => el.isConnected && !el.paused && el.currentTime > position, before)).toBe(true);
+});
+
 test('[STEER.6a/AC1][STEER.6a/AC2][STEER.7a/AC2] stop ends actual playback and keeps the queue reachable', async ({ page }) => {
   await startMovie(page);
   await page.getByTestId('np-stop').click();
