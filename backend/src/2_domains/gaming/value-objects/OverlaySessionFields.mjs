@@ -13,13 +13,14 @@
 export function resolveOverlayConfig(config, systemId) {
   const defaults = config?.defaults || {};
   const override = (systemId && config?.systems?.[systemId]) || {};
-  return {
+  const fields = override.fields !== undefined ? override.fields : (defaults.fields ?? []);
+  return Object.freeze({
     anchor: override.anchor ?? defaults.anchor ?? 'top-left',
     offsetX: override.offset_x ?? defaults.offset_x ?? '2%',
     offsetY: override.offset_y ?? defaults.offset_y ?? '2%',
     scale: override.scale ?? defaults.scale ?? 0.5,
-    fields: override.fields !== undefined ? override.fields : (defaults.fields ?? []),
-  };
+    fields: Object.freeze([...fields]),
+  });
 }
 
 export default resolveOverlayConfig;
