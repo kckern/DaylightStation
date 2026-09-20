@@ -2,7 +2,7 @@
 // Remote control for one device. The shared TransportBar remains target-bound;
 // this panel supplies only the remote overlay policy (predicted state and
 // pending fields) rather than a second set of transport controls.
-import React, { useCallback, useEffect, useMemo } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import { Button, Title, Text, Group, Stack, Badge } from '@mantine/core';
 import { useSessionController } from '../controller/useSessionController.js';
 import { usePeek } from '../peek/usePeek.js';
@@ -14,6 +14,7 @@ import { QueuePanel } from './QueuePanel.jsx';
 import { SeekBar } from './SeekBar.jsx';
 import { TransportBar } from './TransportBar.jsx';
 import { remoteStatusLine } from './stateCopy.js';
+import { useRemoteStopFeedback } from './useRemoteStopFeedback.js';
 
 export function PeekPanel({ deviceId }) {
   const { enterPeek, exitPeek } = usePeek();
@@ -26,6 +27,8 @@ export function PeekPanel({ deviceId }) {
   const realSnap = ctl.snapshot;
   const { device, entry } = useDevice(deviceId);
   const { pop } = useNav();
+  const queueRef = useRef(null);
+  const { queueKeptCount, noteStop } = useRemoteStopFeedback(deviceId, realSnap, entry);
 
   // useStatusOverlay is map-based (it can serve multi-device admins); wrap
   // the single device in a one-entry Map.
@@ -55,14 +58,18 @@ export function PeekPanel({ deviceId }) {
   const handleCommand = useCallback((action, invoke, value = null) => {
     if (action === 'play') predict(deviceId, { state: 'playing' });
     if (action === 'pause') predict(deviceId, { state: 'paused' });
-    if (action === 'stop') predict(deviceId, { state: 'stopped' });
+    if (action === 'stop') {
+      const result = invoke();
+      noteStop(result);
+      return result;
+    }
     if (action === 'seekAbs') {
       pendingMatch(deviceId, 'position', (position) => Number.isFinite(position)
         && Number.isFinite(value) && Math.abs(position - value) <= 2);
     }
     if (action === 'skipNext' || action === 'skipPrev') pending(deviceId, ['currentItem']);
     return invoke();
-  }, [deviceId, pending, pendingMatch, predict]);
+  }, [deviceId, noteStop, pending, pendingMatch, predict]);
 
   const pendingActions = useMemo(() => ({
     play: statePending,
@@ -112,7 +119,26 @@ export function PeekPanel({ deviceId }) {
         availability={availability}
       />
 
-      <QueuePanel target={{ deviceId }} availability={availability} />
+      {queueKeptCount != null && (
+        <Group data-testid="peek-queue-kept" role="status" gap="xs">
+          <Text>Queue kept: {queueKeptCount} item{queueKeptCount === 1 ? '' : 's'}</Text>
+          <Button
+            data-testid="peek-open-queue"
+            size="compact-sm"
+            variant="subtle"
+            onClick={() => {
+              queueRef.current?.scrollIntoView?.({ block: 'start' });
+              queueRef.current?.focus?.();
+            }}
+          >
+            Open queue
+          </Button>
+        </Group>
+      )}
+
+      <div ref={queueRef} tabIndex={-1}>
+        <QueuePanel target={{ deviceId }} availability={availability} />
+      </div>
     </Stack>
   );
 }

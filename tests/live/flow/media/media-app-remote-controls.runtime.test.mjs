@@ -27,6 +27,21 @@ async function issueThroughControl(sender, action, clickControl) {
   return { ...body, acknowledgement };
 }
 
+async function expectSeekState(video, slider, target, paused) {
+  await expect.poll(() => video.evaluate((element, expected) => !element.seeking
+    && element.paused === expected.paused
+    && Math.abs(element.currentTime - expected.target) <= 2, { target, paused }), { timeout: 20000 }).toBe(true);
+  await expect.poll(async () => {
+    const shown = Number(await slider.getAttribute('aria-valuenow'));
+    const actual = await video.evaluate(element => element.currentTime);
+    return Number.isFinite(shown) && Math.abs(shown - actual) <= 2;
+  }, { timeout: 15000 }).toBe(true);
+}
+
+function parseTimecode(value) {
+  return value.trim().split(':').reduce((total, part) => total * 60 + Number(part), 0);
+}
+
 test('Peek Pause, Resume, Seek, and Stop control the actual receiver video and retain its queue', async ({ context, page: sender }) => {
   test.setTimeout(150000);
   const receiver = await context.newPage();
@@ -78,6 +93,53 @@ test('Peek Pause, Resume, Seek, and Stop control the actual receiver video and r
     .toBe('paused');
   await expect.poll(() => video.evaluate(element => element.paused), { timeout: 15000 }).toBe(true);
 
+  const slider = sender.getByRole('slider', { name: 'Seek', exact: true });
+  await expect(slider).toBeVisible();
+  const fixedPausedPosition = await video.evaluate(element => element.currentTime);
+  const backTen = sender.getByTestId('np-rew');
+  await expect(backTen).toBeEnabled();
+  const forward = await issueThroughControl(sender, 'seekRel', () => sender.getByTestId('np-ffw').click());
+  expect(forward.value).toBe(10);
+  await expectSeekState(video, slider, fixedPausedPosition + 10, true);
+
+  const backward = await issueThroughControl(sender, 'seekRel', () => backTen.click());
+  expect(backward.value).toBe(-10);
+  await expectSeekState(video, slider, fixedPausedPosition, true);
+
+  await expect(slider).not.toHaveAttribute('aria-disabled', 'true');
+  const absoluteFraction = 0.35;
+  const absoluteTarget = Math.round(Number(await slider.getAttribute('aria-valuemax')) * absoluteFraction);
+  expect(Math.abs(absoluteTarget - fixedPausedPosition)).toBeGreaterThan(60);
+  const absoluteBounds = await slider.boundingBox();
+  expect(absoluteBounds).not.toBeNull();
+  const absolute = await issueThroughControl(sender, 'seekAbs', () => slider.click({
+    position: { x: absoluteBounds.width * absoluteFraction, y: absoluteBounds.height / 2 },
+  }));
+  expect(Math.abs(absolute.value - Number(await slider.getAttribute('aria-valuenow')))).toBeLessThanOrEqual(1);
+  expect(absolute.value).toBeGreaterThan(fixedPausedPosition + 60);
+  await expectSeekState(video, slider, absolute.value, true);
+
+  const sliderBounds = await slider.boundingBox();
+  expect(sliderBounds).not.toBeNull();
+  const dragFraction = 0.12;
+  const dragTarget = Math.round(Number(await slider.getAttribute('aria-valuemax')) * dragFraction);
+  expect(Math.abs(dragTarget - absolute.value)).toBeGreaterThan(60);
+  const dragX = sliderBounds.x + sliderBounds.width * dragFraction;
+  const dragY = sliderBounds.y + sliderBounds.height / 2;
+  const elapsed = sender.getByTestId('np-seek-elapsed');
+  const drag = await issueThroughControl(sender, 'seekAbs', async () => {
+    await sender.mouse.move(sliderBounds.x + sliderBounds.width * 0.01, dragY);
+    await sender.mouse.down();
+    await sender.mouse.move(dragX, dragY, { steps: 5 });
+    await expect.poll(async () => Number(await slider.getAttribute('aria-valuenow')), { timeout: 5000 })
+      .toBe(dragTarget);
+    expect(Math.abs(parseTimecode(await elapsed.innerText()) - dragTarget)).toBeLessThanOrEqual(1);
+    await sender.mouse.up();
+  });
+  expect(Math.abs(drag.value - dragTarget)).toBeLessThanOrEqual(1);
+  expect(Math.abs(drag.value - fixedPausedPosition)).toBeGreaterThan(60);
+  await expectSeekState(video, slider, drag.value, true);
+
   const beforeResumeTime = await video.evaluate(element => element.currentTime);
   await expect(toggle).toHaveAttribute('aria-label', 'Play');
   await issueThroughControl(sender, 'play', () => toggle.click());
@@ -86,26 +148,12 @@ test('Peek Pause, Resume, Seek, and Stop control the actual receiver video and r
   await expect.poll(() => video.evaluate((element, time) => !element.paused
     && element.currentTime > time + 1, beforeResumeTime), { timeout: 15000 }).toBe(true);
 
-  const slider = sender.getByRole('slider', { name: 'Seek', exact: true });
-  await expect(slider).toBeVisible();
-  await expect(slider).not.toHaveAttribute('aria-disabled', 'true');
-  const sliderBefore = Number(await slider.getAttribute('aria-valuenow'));
-  const seek = await issueThroughControl(sender, 'seekAbs', () => slider.press('ArrowRight'));
-  expect(Number.isFinite(seek.value)).toBe(true);
-  expect(Math.abs(seek.value - (sliderBefore + 5))).toBeLessThanOrEqual(1);
-  await expect.poll(() => video.evaluate((element, target) => !element.paused && !element.seeking
-    && Math.abs(element.currentTime - target) <= 2, seek.value), { timeout: 20000 }).toBe(true);
-  await expect.poll(async () => {
-    const shown = Number(await slider.getAttribute('aria-valuenow'));
-    const actual = await video.evaluate(element => element.currentTime);
-    return Number.isFinite(shown) && Math.abs(shown - actual) <= 2;
-  }, { timeout: 15000 }).toBe(true);
-
   const beforeStop = await readReceiverState(sender);
   expect(beforeStop.snapshot.state).toBe('playing');
   const queueBeforeStop = beforeStop.snapshot.queue.items.map(item => ({
     queueItemId: item.queueItemId,
     contentId: item.contentId,
+    title: item.title ?? item.contentId,
   }));
   expect(queueBeforeStop.length).toBeGreaterThan(0);
   const videoHandle = await video.elementHandle();
@@ -126,7 +174,33 @@ test('Peek Pause, Resume, Seek, and Stop control the actual receiver video and r
   expect(stopped.snapshot.queue.items.map(item => ({
     queueItemId: item.queueItemId,
     contentId: item.contentId,
+    title: item.title ?? item.contentId,
   }))).toEqual(queueBeforeStop);
+
+  const queueKept = sender.getByTestId('peek-queue-kept');
+  await expect(queueKept).toHaveText(new RegExp(`^Queue kept: ${queueBeforeStop.length} item${queueBeforeStop.length === 1 ? '' : 's'}$`));
+  const openQueue = sender.getByTestId('peek-open-queue');
+  const queuePanel = sender.getByTestId('queue-panel');
+  await expect(openQueue).toBeVisible();
+  await openQueue.click();
+  await expect(queuePanel).toBeVisible();
+  await expect.poll(() => sender.evaluate(() => {
+    const focused = document.activeElement;
+    const panel = document.querySelector('[data-testid="queue-panel"]');
+    return focused?.getAttribute('tabindex') === '-1' && !!panel && focused.contains(panel);
+  })).toBe(true);
+  for (const item of queueBeforeStop) {
+    const queueRow = sender.getByTestId(`queue-item-${item.queueItemId}`);
+    await expect(queueRow).toBeVisible();
+    await expect(sender.getByTestId(`queue-jump-${item.queueItemId}`)).toContainText(item.title);
+  }
+  await openQueue.click();
+  await expect(queuePanel).toBeVisible();
+  await expect.poll(() => sender.evaluate(() => {
+    const focused = document.activeElement;
+    const panel = document.querySelector('[data-testid="queue-panel"]');
+    return focused?.getAttribute('tabindex') === '-1' && !!panel && focused.contains(panel);
+  })).toBe(true);
 
   expect(loads).toHaveLength(1);
   await receiver.close();

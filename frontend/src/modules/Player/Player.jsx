@@ -1813,13 +1813,31 @@ const Player = forwardRef(function Player(props, ref) {
     return { ok: true };
   }, [cancelPendingRendererOperation, issueOwnerRevision]);
 
+  const seekOwner = useCallback((seconds) => {
+    if (!Number.isFinite(seconds)) return false;
+    withTransport(
+      (api) => api.seek?.(seconds),
+      () => { const el = _getMediaElFallback(); if (el) el.currentTime = seconds; },
+    );
+    return true;
+  }, [withTransport]);
+
+  const seekOwnerRelative = useCallback((delta) => {
+    if (!Number.isFinite(delta)) return false;
+    const el = _getMediaElFallback();
+    const current = Number.isFinite(el?.currentTime)
+      ? el.currentTime
+      : withTransport((api) => api.getCurrentTime?.(), () => 0);
+    const duration = Number.isFinite(el?.duration)
+      ? el.duration
+      : withTransport((api) => api.getDuration?.(), () => null);
+    const target = Math.max(0, Number(current || 0) + delta);
+    return seekOwner(Number.isFinite(duration) && duration > 0 ? Math.min(target, duration) : target);
+  }, [seekOwner, withTransport]);
+
   useImperativeHandle(isValidImperativeRef ? ref : null, () => ({
     seek: (t) => {
-      if (!Number.isFinite(t)) return;
-      withTransport(
-        (api) => api.seek?.(t),
-        () => { const el = _getMediaElFallback(); if (el) el.currentTime = t; }
-      );
+      seekOwner(t);
     },
     play: () => {
       ownerStoppedRef.current = false;
@@ -1990,7 +2008,7 @@ const Player = forwardRef(function Player(props, ref) {
         fromContentId: effectiveMeta?.contentId ?? effectiveMeta?.assetId ?? null,
       }, { level: 'info' });
     },
-  }), [isQueue, isShuffle, repeatMode, advance, singleAdvance, rawJumpTo, sessionVolume, sessionPlaybackRate, setOwnerVolume, setOwnerPlaybackRate, effectiveMeta?.assetId, effectiveMeta?.contentId, resilienceControllerRef, withTransport, queueSnapshot, playerInstanceId, queueShader, issueOwnerRevision, adoptQueueSnapshot, setTargetTimeSeconds, setShader, setShaderUserCycled, inspectRendererBoundaryRequest, beginRendererBoundary, stopOwner]);
+  }), [isQueue, isShuffle, repeatMode, advance, singleAdvance, rawJumpTo, sessionVolume, sessionPlaybackRate, setOwnerVolume, setOwnerPlaybackRate, effectiveMeta?.assetId, effectiveMeta?.contentId, resilienceControllerRef, withTransport, queueSnapshot, playerInstanceId, queueShader, issueOwnerRevision, adoptQueueSnapshot, setTargetTimeSeconds, setShader, setShaderUserCycled, inspectRendererBoundaryRequest, beginRendererBoundary, stopOwner, seekOwner]);
 
   useEffect(() => () => {
     clearRemountTimer();
@@ -2003,6 +2021,14 @@ const Player = forwardRef(function Player(props, ref) {
     const { op, contentId, shader: requestedShader } = payload;
     if (op === 'stop') {
       stopOwner();
+      return;
+    }
+    if (op === 'seek-abs') {
+      seekOwner(payload.value);
+      return;
+    }
+    if (op === 'seek-rel') {
+      seekOwnerRelative(payload.value);
       return;
     }
     if (!contentId) return;
@@ -2089,7 +2115,7 @@ const Player = forwardRef(function Player(props, ref) {
     }
 
     pushOnDeck(item, { displaceToQueue: !!onDeckCfg?.displace_to_queue });
-  }, [playQueue, onDeck, onDeckCfg, pushOnDeck, flashOnDeck, playNow, append, playerInstanceId, queueShader, classes, setShader, setShaderUserCycled, stopOwner]);
+  }, [playQueue, onDeck, onDeckCfg, pushOnDeck, flashOnDeck, playNow, append, playerInstanceId, queueShader, classes, setShader, setShaderUserCycled, stopOwner, seekOwner, seekOwnerRelative]);
 
   // Register once in mount order while the ref supplies the latest stateful
   // callback. Re-registering on every queue change would let a background

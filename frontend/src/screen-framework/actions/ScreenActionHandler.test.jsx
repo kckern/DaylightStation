@@ -653,6 +653,23 @@ describe('ScreenActionHandler', () => {
         .toBe(false);
       dispatchSpy.mockRestore();
     });
+
+    it('routes a value-bearing remote relative seek to the active Player owner', () => {
+      const owner = vi.fn();
+      getPlayerQueueOpRegistry().register(owner);
+      const dispatchSpy = vi.spyOn(window, 'dispatchEvent');
+      render(
+        <ScreenOverlayProvider>
+          <ScreenActionHandler />
+        </ScreenOverlayProvider>
+      );
+
+      act(() => getActionBus().emit('media:seek-rel', { value: 10, commandId: 'seek-1' }));
+
+      expect(owner).toHaveBeenCalledWith(expect.objectContaining({ op: 'seek-rel', value: 10, commandId: 'seek-1' }));
+      expect(dispatchSpy.mock.calls.some(([event]) => event instanceof KeyboardEvent)).toBe(false);
+      dispatchSpy.mockRestore();
+    });
   });
 
   describe('playback secondary fallback', () => {
