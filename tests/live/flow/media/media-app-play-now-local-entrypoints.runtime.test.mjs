@@ -77,6 +77,9 @@ async function closeSearch(page, phone) {
   await page.getByTestId('search-mode-close').click();
   await expect(page.getByTestId('search-mode')).toBeHidden();
 }
+function arrivalResult(page, phone) {
+  return page.getByTestId(phone ? 'search-mode-result-plex:55854' : 'combobox-option-plex:55854');
+}
 async function setReceiverAim(page, phone) {
   if (phone) {
     await page.getByTestId('destination-line').click();
@@ -123,7 +126,7 @@ async function prepare({ context, sender, phone }) {
   // A native local play records the actual Recents source; no localStorage seed.
   const search = await openSearch(sender, phone);
   await search.fill('arrival');
-  await sender.getByTestId('combobox-option-plex:55854').click();
+  await arrivalResult(sender, phone).click();
   const localVideo = sender.locator('.video-player video');
   await expect(localVideo).toBeVisible({ timeout: 60000 });
   await expect.poll(() => localVideo.evaluate(v => v.readyState >= 2 && !v.paused && v.currentTime > 0), { timeout: 30000 }).toBe(true);
@@ -131,7 +134,7 @@ async function prepare({ context, sender, phone }) {
     .some(item => item.contentId === 'plex:55854')), { timeout: 10000 }).toBe(true);
   await setReceiverAim(sender, phone);
   await search.fill('arrival');
-  await sender.getByTestId('combobox-option-plex:55854').click();
+  await arrivalResult(sender, phone).click();
   await expect.poll(() => loads.length, { timeout: 10000 }).toBe(1);
   const native = receiver.locator('.video-player video');
   await expect(native).toBeVisible({ timeout: 60000 });
