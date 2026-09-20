@@ -5,7 +5,14 @@ import { renderHook, act } from '@testing-library/react';
 const DaylightAPI = vi.fn();
 let homelineCallback = null;
 vi.mock('../../../lib/api.mjs', () => ({ DaylightAPI: (...a) => DaylightAPI(...a) }));
-vi.mock('../net/ws.js', () => ({ subscribeTopicKind: (_kind, callback) => { homelineCallback = callback; return () => {}; } }));
+vi.mock('../net/ws.js', () => ({
+  subscribeTopicKind: (_kind, callback) => { homelineCallback = callback; return () => {}; },
+  parseDeviceTopic: (topic) => {
+    if (typeof topic !== 'string') return null;
+    const separator = topic.indexOf(':');
+    return separator < 0 ? null : { kind: topic.slice(0, separator), deviceId: topic.slice(separator + 1) };
+  },
+}));
 vi.mock('../logging/mediaLog.js', () => {
   const stub = new Proxy({}, { get: (t, k) => (t[k] ??= vi.fn()) });
   return { default: stub, mediaLog: stub };
@@ -50,11 +57,39 @@ describe('DispatchProvider — duplicate suppression', () => {
 
     expect(recordConfirmedDispatch).not.toHaveBeenCalled();
     act(() => homelineCallback({
-      dispatchId: ids[0], deviceId: 'livingroom-tv', step: 'playback', status: 'confirmed',
+      dispatchId: ids[0], topic: 'homeline:livingroom-tv', deviceId: 'livingroom-tv', step: 'playback', status: 'confirmed',
       sessionId: 'session-1', ownerId: 'livingroom-tv', ownerInstanceId: 'owner-1', playbackRevision: 2,
     }));
     expect(recordConfirmedDispatch).toHaveBeenCalledWith({
       deviceId: 'livingroom-tv', ownerId: 'livingroom-tv',
+      playback: { sessionId: 'session-1', contentId: 'plex:665668', ownerInstanceId: 'owner-1', playbackRevision: 2 },
+    });
+  });
+
+  it('uses the homeline topic as the authoritative device id when progress omits it', async () => {
+    const recordConfirmedDispatch = vi.fn();
+    const withProvenance = ({ children }) => (
+      <PeekContext.Provider value={{ recordConfirmedDispatch }}><DispatchProvider>{children}</DispatchProvider></PeekContext.Provider>
+    );
+    DaylightAPI.mockResolvedValue({ ok: true });
+    const { result } = renderHook(() => useDispatch(), { wrapper: withProvenance });
+    let ids;
+    await act(async () => {
+      ids = await result.current.dispatchToTarget({ ...CAST, targetIds: ['acceptance-media'] });
+      await Promise.resolve();
+    });
+
+    const confirmed = {
+      dispatchId: ids[0], step: 'playback', status: 'confirmed',
+      sessionId: 'session-1', ownerId: 'acceptance-media', ownerInstanceId: 'owner-1', playbackRevision: 2,
+    };
+    act(() => homelineCallback({ topic: 'homeline:other-tv', ...confirmed }));
+    act(() => homelineCallback({ topic: 'homeline:acceptance-media', deviceId: 'other-tv', ...confirmed }));
+    expect(recordConfirmedDispatch).not.toHaveBeenCalled();
+
+    act(() => homelineCallback({ topic: 'homeline:acceptance-media', ...confirmed }));
+    expect(recordConfirmedDispatch).toHaveBeenCalledWith({
+      deviceId: 'acceptance-media', ownerId: 'acceptance-media',
       playback: { sessionId: 'session-1', contentId: 'plex:665668', ownerInstanceId: 'owner-1', playbackRevision: 2 },
     });
   });

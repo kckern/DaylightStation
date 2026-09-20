@@ -7,7 +7,7 @@
 // Hand-off sends the full SessionSnapshot with mode:"adopt" (§4.7).
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef } from 'react';
 import { DaylightAPI } from '../../../lib/api.mjs';
-import { subscribeTopicKind } from '../net/ws.js';
+import { parseDeviceTopic, subscribeTopicKind } from '../net/ws.js';
 import { reduceDispatch, initialDispatchState } from './dispatchReducer.js';
 import { buildDispatchUrl } from './dispatchUrl.js';
 import { TIMING } from '../constants.js';
@@ -76,15 +76,18 @@ export function DispatchProvider({ children }) {
     return subscribeTopicKind('homeline', (msg) => {
       const { dispatchId, step, status, elapsedMs, error, operation, queueLength,
         sessionId, ownerId, ownerInstanceId, playbackRevision, queueRevision } = msg;
+      const parsedTopic = parseDeviceTopic(msg.topic);
+      const topicDeviceId = parsedTopic?.kind === 'homeline' ? parsedTopic.deviceId : null;
       if (typeof dispatchId !== 'string' || !dispatchId) return;
       if (!step || !status) return;
       const attempt = attemptsRef.current.get(dispatchId);
       if (step === 'playback' && status === 'confirmed'
-        && attempt?.play && attempt.targetIds?.[0] === msg.deviceId
-        && ownerId === msg.deviceId
+        && attempt?.play && topicDeviceId && attempt.targetIds?.[0] === topicDeviceId
+        && (msg.deviceId == null || msg.deviceId === topicDeviceId)
+        && ownerId === topicDeviceId
         && typeof sessionId === 'string' && sessionId) {
         peek?.recordConfirmedDispatch?.({
-          deviceId: msg.deviceId,
+          deviceId: topicDeviceId,
           ownerId,
           playback: {
             sessionId,

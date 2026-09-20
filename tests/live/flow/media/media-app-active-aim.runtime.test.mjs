@@ -28,23 +28,35 @@ test('[PLACE.2a/AC4] sender aim survives two idle hours only while its receiver 
     .toBe(true);
   await expect(sender.getByTestId('dispatch-tray')).toContainText('Playing on Acceptance receiver', { timeout: 60000 });
 
-  const before = await sender.evaluate(() => ({
+  const readAim = () => sender.evaluate(() => ({
     now: Date.now(),
     aim: JSON.parse(localStorage.getItem('media-app.cast-target')),
   }));
+  await expect.poll(async () => {
+    const { aim } = await readAim();
+    return Number.isFinite(aim?.exemptionStartedAt);
+  }, { timeout: 30000 }).toBe(true);
+  const before = await readAim();
   expect(before.aim?.targetIds).toEqual(['acceptance-media']);
+  expect(before.aim?.exemptionStartedAt).toEqual(expect.any(Number));
   const receiverTime = await native.evaluate(element => element.currentTime);
 
-  await sender.clock.setFixedTime(before.now + (2 * 60 * 60 * 1000) + 1000);
+  const jumpedNow = before.now + (2 * 60 * 60 * 1000) + 1000;
+  // This changes only sender Date; real receiver playback/heartbeats continue.
+  // A reconnect during the jump is transport fallout, so require fresh positive
+  // receiver proof rather than treating the jump itself as steering evidence.
+  await sender.clock.setFixedTime(jumpedNow);
   await expect.poll(() => native.evaluate((element, start) => !element.paused && element.currentTime > start + 20, receiverTime), { timeout: 35000 })
     .toBe(true);
 
-  const after = await sender.evaluate(() => ({
-    now: Date.now(),
-    aim: JSON.parse(localStorage.getItem('media-app.cast-target')),
-  }));
+  await expect.poll(async () => {
+    const { aim } = await readAim();
+    return Number.isFinite(aim?.exemptionStartedAt);
+  }, { timeout: 30000 }).toBe(true);
+  const after = await readAim();
   expect(after.now - before.now).toBeGreaterThanOrEqual(2 * 60 * 60 * 1000);
   expect(after.aim?.targetIds).toEqual(['acceptance-media']);
+  expect(after.aim?.exemptionStartedAt).toEqual(expect.any(Number));
   await sender.getByTestId('cast-target-chip').click();
   await expect(sender.getByTestId('cast-target-checkbox-acceptance-media')).toBeChecked();
   await sender.getByTestId('cast-target-chip').click();
