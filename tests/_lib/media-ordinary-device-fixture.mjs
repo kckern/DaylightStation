@@ -15,7 +15,7 @@ import { DeviceSessionApiService } from '../../backend/src/3_applications/device
 import { createDeviceRouter } from '../../backend/src/4_api/v1/routers/device.mjs';
 
 export const ORDINARY_DEVICE_ID = 'acceptance-media';
-const VIRTUAL_TRANSPORT_ACTIONS = new Set(['pause', 'play', 'seekAbs', 'seekRel', 'stop']);
+const VIRTUAL_TRANSPORT_ACTIONS = new Set(['pause', 'play', 'seekAbs', 'seekRel', 'skipNext', 'skipPrev', 'stop']);
 const quiet = { info() {}, warn() {}, error() {}, debug() {} };
 const scheduler = {
   wait: (ms) => new Promise(resolve => setTimeout(resolve, ms)),

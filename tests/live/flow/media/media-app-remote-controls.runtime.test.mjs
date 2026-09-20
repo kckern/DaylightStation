@@ -298,6 +298,104 @@ for (const { label, viewport, navTestId, mobile } of [
   });
 }
 
+test('Peek Next and Previous advance the real ordinary receiver queue', async ({ context, page: sender }) => {
+  test.setTimeout(150000);
+  const { receiver, native } = await startArrivalJourney(context, sender);
+  const search = sender.getByRole('textbox', { name: 'Search media…' });
+  await search.fill('disclosure day');
+  const more = sender.getByTestId('result-more-plex:697368');
+  await expect(more).toBeVisible({ timeout: 30000 });
+  await more.click();
+  const add = sender.getByTestId('result-action-add-plex:697368');
+  await expect(add).toBeVisible({ timeout: 30000 });
+  await add.click();
+  await expect.poll(async () => {
+    const state = await readReceiverState(sender);
+    return state?.snapshot?.currentItem?.contentId === ARRIVAL_VIDEO.contentId
+      && state.snapshot.queue?.currentIndex === 0
+      && state.snapshot.queue?.items?.some(item => item.contentId === 'plex:697368');
+  }, { timeout: 30000 }).toBe(true);
+  const toggle = await openPeekControls(sender);
+  const panel = sender.getByTestId('peek-panel');
+  const next = sender.getByTestId('np-next');
+  const previous = sender.getByTestId('np-prev');
+  await expect(next).toBeEnabled();
+  await expect(previous).toBeDisabled();
+
+  const beforeNext = await readReceiverState(sender);
+  const queueBeforeNext = beforeNext.snapshot.queue.items.map(item => item.queueItemId);
+  const beforeNextOwner = beforeNext.snapshot.meta.playbackOwner;
+  const beforeNextNative = await native.evaluate(element => ({
+    source: element.currentSrc || element.src,
+    duration: element.duration,
+    currentTime: element.currentTime,
+  }));
+  const nextCommand = await issueThroughControl(sender, 'skipNext', () => next.click());
+  expect(nextCommand.value).toBeUndefined();
+  await expect.poll(async () => {
+    const state = await readReceiverState(sender);
+    const owner = state?.snapshot?.meta?.playbackOwner;
+    const nativeState = await native.evaluate(element => ({
+      source: element.currentSrc || element.src,
+      duration: element.duration,
+      paused: element.paused,
+      currentTime: element.currentTime,
+      readyState: element.readyState,
+    }));
+    return state?.snapshot?.currentItem?.contentId === 'plex:697368'
+      && state.snapshot.queue?.currentIndex === 1
+      && state.snapshot.queue?.items?.map(item => item.queueItemId).join(',') === queueBeforeNext.join(',')
+      && owner?.ownerInstanceId === beforeNextOwner.ownerInstanceId
+      && owner?.playbackRevision > beforeNextOwner.playbackRevision
+      && (nativeState.source !== beforeNextNative.source || nativeState.duration !== beforeNextNative.duration)
+      && nativeState.readyState >= 2
+      && !nativeState.paused;
+  }, { timeout: 30000 }).toBe(true);
+  const nextNativeBaseline = await native.evaluate(element => element.currentTime);
+  await expect.poll(() => native.evaluate((element, baseline) => !element.paused
+    && element.currentTime > baseline + 1, nextNativeBaseline), { timeout: 30000 }).toBe(true);
+  await expect(panel).toContainText('Disclosure');
+  await expect(previous).toBeEnabled();
+  await expect(next).toBeDisabled();
+
+  const beforePrevious = await readReceiverState(sender);
+  const beforePreviousOwner = beforePrevious.snapshot.meta.playbackOwner;
+  const beforePreviousNative = await native.evaluate(element => ({
+    source: element.currentSrc || element.src,
+    duration: element.duration,
+    currentTime: element.currentTime,
+  }));
+  const previousCommand = await issueThroughControl(sender, 'skipPrev', () => previous.click());
+  expect(previousCommand.value).toBeUndefined();
+  await expect.poll(async () => {
+    const state = await readReceiverState(sender);
+    const owner = state?.snapshot?.meta?.playbackOwner;
+    const nativeState = await native.evaluate(element => ({
+      source: element.currentSrc || element.src,
+      duration: element.duration,
+      paused: element.paused,
+      currentTime: element.currentTime,
+      readyState: element.readyState,
+    }));
+    return state?.snapshot?.currentItem?.contentId === ARRIVAL_VIDEO.contentId
+      && state.snapshot.queue?.currentIndex === 0
+      && state.snapshot.queue?.items?.map(item => item.queueItemId).join(',') === queueBeforeNext.join(',')
+      && owner?.ownerInstanceId === beforePreviousOwner.ownerInstanceId
+      && owner?.playbackRevision > beforePreviousOwner.playbackRevision
+      && (nativeState.source !== beforePreviousNative.source || nativeState.duration !== beforePreviousNative.duration)
+      && nativeState.readyState >= 2
+      && !nativeState.paused;
+  }, { timeout: 30000 }).toBe(true);
+  const previousNativeBaseline = await native.evaluate(element => element.currentTime);
+  await expect.poll(() => native.evaluate((element, baseline) => !element.paused
+    && element.currentTime > baseline + 1, previousNativeBaseline), { timeout: 30000 }).toBe(true);
+  await expect(panel).toContainText(/Arrival/i);
+  await expect(toggle).toHaveAttribute('aria-label', 'Pause');
+  await expect(previous).toBeDisabled();
+  await expect(next).toBeEnabled();
+  await receiver.close();
+});
+
 test('[STEER.3a/AC4] disconnected virtual receiver becomes unavailable and reconnect does not replay a command', async ({ context, page: sender }) => {
   // The fixture deliberately uses production-like 60 s state liveness. Do not
   // replace it with a fabricated offline event: this waits for the actual
