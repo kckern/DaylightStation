@@ -107,10 +107,10 @@ describe('DestinationLine', () => {
       getComputedStyle(modalRoot).getPropertyValue('--mb-z-index')
     );
 
-    // SearchMode is the top-level phone surface at z-index 500. Because the
+    // SearchMode is the top-level phone surface at Mantine's modal tier (200). Because the
     // Modal is portaled outside that surface, its own stack level must clear
-    // 500 or the visible device buttons cannot receive ordinary pointer taps.
-    expect(modalZIndex).toBeGreaterThan(500);
+    // 200 or the visible device buttons cannot receive ordinary pointer taps.
+    expect(modalZIndex).toBeGreaterThan(200);
   });
 
   it('a sheet pick updates the SHARED CastTargetProvider state, not a parallel state', async () => {

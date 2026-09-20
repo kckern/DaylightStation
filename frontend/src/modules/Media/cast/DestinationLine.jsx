@@ -23,7 +23,7 @@ import { useDismissLayer } from '../shell/useDismissLayer.js';
 import mediaLog from '../logging/mediaLog.js';
 import './Cast.scss';
 
-// SearchMode is a fixed phone surface at z-index 500. Mantine portals Modal
+// SearchMode is a fixed phone surface at Mantine's modal tier (z-index 200). Mantine portals Modal
 // at the document root, so its default modal layer (200) would sit behind the
 // search surface and leave the visible picker unable to receive pointer taps.
 const DESTINATION_MODAL_Z_INDEX = 600;
