@@ -62,6 +62,9 @@ function DestinationSearchHarness({ comboboxProps }) {
         onInteractionStart={() => setDestinationInteractionActive(true)}
         onInteractionEnd={() => setDestinationInteractionActive(false)}
       />
+      <output data-testid="destination-interaction-state">
+        {destinationInteractionActive ? 'active' : 'inactive'}
+      </output>
     </>
   );
 }
@@ -194,6 +197,66 @@ describe('ContentCombobox result actions — real focus ownership', () => {
     pointerActivate(screen.getByTestId('outside-surface'));
     await waitFor(() => expect(input).toHaveValue(''));
   });
+
+  it.each(['pointer cancel', 'press-drag release without click'])(
+    'ends an orphaned destination %s before the next genuine outside interaction and leaves no stale owner',
+    async (interruption) => {
+      const { input } = await renderSearchedCombobox();
+      const trigger = screen.getByTestId('destination-line');
+      const outside = screen.getByTestId('outside-surface');
+
+      act(() => {
+        fireEvent.pointerDown(trigger, { pointerId: 41, pointerType: 'mouse', isPrimary: true });
+      });
+      act(() => {
+        fireEvent.mouseDown(trigger);
+        trigger.focus();
+      });
+      expect(screen.getByTestId('destination-interaction-state')).toHaveTextContent('active');
+      act(() => {
+        if (interruption === 'pointer cancel') {
+          fireEvent.pointerCancel(trigger, { pointerId: 41, pointerType: 'mouse', isPrimary: true });
+        } else {
+          fireEvent.pointerUp(outside, { pointerId: 41, pointerType: 'mouse', isPrimary: true });
+          fireEvent.mouseUp(outside);
+        }
+      });
+      expect(screen.queryByTestId('destination-sheet')).toBeNull();
+      expect(screen.getByTestId('destination-interaction-state')).toHaveTextContent('inactive');
+      expect(input).toHaveValue('bluey');
+
+      let outsidePointerDown;
+      act(() => {
+        outsidePointerDown = createEvent.pointerDown(outside, {
+          pointerId: 42, pointerType: 'mouse', isPrimary: true,
+        });
+        fireEvent(outside, outsidePointerDown);
+      });
+      expect(outsidePointerDown.defaultPrevented).toBe(false);
+      act(() => {
+        fireEvent.mouseDown(outside);
+        fireEvent.pointerUp(outside, { pointerId: 42, pointerType: 'mouse', isPrimary: true });
+        fireEvent.mouseUp(outside);
+        fireEvent.click(outside, { detail: 1 });
+      });
+      await waitFor(() => expect(input).toHaveValue(''));
+
+      act(() => input.focus());
+      fireEvent.change(input, { target: { value: 'bluey' } });
+      await screen.findByTestId('result-more-plex:leaf-1');
+      keyboardActivate(trigger);
+      expect(await screen.findByTestId('destination-sheet')).toBeInTheDocument();
+      expect(screen.getByTestId('destination-interaction-state')).toHaveTextContent('active');
+      expect(input).toHaveValue('bluey');
+      fireEvent.keyDown(trigger, { key: 'Escape' });
+      await waitFor(() => expect(screen.queryByTestId('destination-sheet')).toBeNull());
+      expect(screen.getByTestId('destination-interaction-state')).toHaveTextContent('inactive');
+      expect(input).toHaveValue('bluey');
+
+      pointerActivate(outside);
+      await waitFor(() => expect(input).toHaveValue(''));
+    }
+  );
 
   it('treats keyboard focus on More actions as internal before the portaled menu opens', async () => {
     const { input, onChange } = await renderSearchedCombobox();

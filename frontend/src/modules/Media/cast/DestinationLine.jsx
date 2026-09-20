@@ -50,6 +50,7 @@ function DestinationInteractionSurface({ onUnmount, children }) {
 export function DestinationLine({ surface, onInteractionStart, onInteractionEnd } = {}) {
   const [open, setOpen] = useState(false);
   const interactionStartedRef = useRef(false);
+  const provisionalCleanupRef = useRef(null);
   const wasOpenRef = useRef(false);
   const interactionEndRef = useRef(onInteractionEnd);
   interactionEndRef.current = onInteractionEnd;
@@ -64,18 +65,65 @@ export function DestinationLine({ surface, onInteractionStart, onInteractionEnd 
     interactionStartedRef.current = true;
     onInteractionStart?.();
   }, [onInteractionStart]);
+  const clearProvisionalInteraction = useCallback(() => {
+    provisionalCleanupRef.current?.();
+    provisionalCleanupRef.current = null;
+  }, []);
   const finishInteraction = useCallback(() => {
+    clearProvisionalInteraction();
     if (!interactionStartedRef.current) return;
     interactionStartedRef.current = false;
     interactionEndRef.current?.();
-  }, []);
+  }, [clearProvisionalInteraction]);
   useEffect(() => () => finishInteraction(), [finishInteraction]);
 
   const openPicker = useCallback(() => {
     startInteraction();
+    // A click (including native Enter/Space activation) transfers the
+    // provisional trigger lifetime to the Modal. Keep the outer search held,
+    // but remove trigger-only cancellation listeners before opening the sheet.
+    clearProvisionalInteraction();
     wasOpenRef.current = true;
     setOpen(true);
-  }, [startInteraction]);
+  }, [startInteraction, clearProvisionalInteraction]);
+  const handleTriggerPointerDown = useCallback((event) => {
+    startInteraction();
+    clearProvisionalInteraction();
+
+    const trigger = event.currentTarget;
+    const ownerDocument = trigger.ownerDocument;
+    const pointerId = event.pointerId;
+    const matchesPointer = (nextEvent) => (
+      pointerId == null || nextEvent.pointerId == null || nextEvent.pointerId === pointerId
+    );
+    const cancelProvisional = (nextEvent) => {
+      if (!matchesPointer(nextEvent)) return;
+      finishInteraction();
+    };
+    const cancelReleasedOutside = (nextEvent) => {
+      if (!matchesPointer(nextEvent) || trigger.contains(nextEvent.target)) return;
+      finishInteraction();
+    };
+    const cancelBeforeOutsidePointer = (nextEvent) => {
+      if (trigger.contains(nextEvent.target)) return;
+      finishInteraction();
+    };
+    const cancelAfterOutsideClick = (nextEvent) => {
+      if (trigger.contains(nextEvent.target)) return;
+      finishInteraction();
+    };
+
+    ownerDocument.addEventListener('pointercancel', cancelProvisional, true);
+    ownerDocument.addEventListener('pointerup', cancelReleasedOutside, true);
+    ownerDocument.addEventListener('pointerdown', cancelBeforeOutsidePointer, true);
+    ownerDocument.addEventListener('click', cancelAfterOutsideClick, true);
+    provisionalCleanupRef.current = () => {
+      ownerDocument.removeEventListener('pointercancel', cancelProvisional, true);
+      ownerDocument.removeEventListener('pointerup', cancelReleasedOutside, true);
+      ownerDocument.removeEventListener('pointerdown', cancelBeforeOutsidePointer, true);
+      ownerDocument.removeEventListener('click', cancelAfterOutsideClick, true);
+    };
+  }, [startInteraction, clearProvisionalInteraction, finishInteraction]);
   const handleTriggerFocus = useCallback(() => {
     if (open || !wasOpenRef.current) return;
     wasOpenRef.current = false;
@@ -108,7 +156,7 @@ export function DestinationLine({ surface, onInteractionStart, onInteractionEnd 
         data-testid="destination-line"
         data-ignore-outside-clicks
         className="cast-destination-line"
-        onPointerDown={startInteraction}
+        onPointerDown={handleTriggerPointerDown}
         onFocus={handleTriggerFocus}
         onClick={openPicker}
       >
