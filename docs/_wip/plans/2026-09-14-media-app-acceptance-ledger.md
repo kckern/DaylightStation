@@ -10,6 +10,7 @@
 
 | Run | Scope | Red / baseline | Green / acceptance |
 |---|---|---|---|
+| JOURNEY-ORDINARY-REMOTE-PLAY-ADD | Ordinary aimed Search Play → real receiver native video → aimed Add from result More menu | Earlier compiled runs exposed a stale receiver selector, missing GET direct-part allowlist, test-side browser serialization errors, and an obsolete disclosure ID. Corrected the harness/fixture boundary and actual approved item `plex:697368`. | Compiled source `d5b64d93e937ac0070cafa19b952ff2ec0e93778`, preview `http://127.0.0.1:35415`. Initial ordinary run: 1 passed (14.5s); strengthened run `BASE_URL=http://127.0.0.1:35415 npx playwright test tests/live/flow/media/media-app-ordinary-dispatch.runtime.test.mjs --workers=1 --reporter=line`: 1 passed (14.6s). Native video ready/advancing; receiver current item `plex:55854`; “Playing on Acceptance receiver” tray; Add preserved receiver session/owner/instance and playback revision while queue revision increased with `plex:697368`; the same native node continued advancing after Add with `paused === false` and no `pause`, `emptied`, or `loadstart` events; “Added” tray appeared. Partial only: this is one search entry point and one target. It does not verify Add position, full item-and-screen wording for every control/surface, all devices, or whole-story acceptance. |
 | JOURNEY-AIM-CLOSED-APP-EXPIRY | PLACE.2a/AC5 closed-app/reopen before and after two idle hours | Earlier harness runs read storage before app mount or had clock/setup defects; inconclusive, not product evidence | Accepted source `1bc54a7d9f05732ecc25c1a047f900b4b8f6d6fd`; preview header matched on port 44769. Focused command `BASE_URL=http://127.0.0.1:44769 npx playwright test tests/live/flow/media/media-app-aim-journey.runtime.test.mjs --grep 'a closed app restores' --workers=1 --reporter=line`: 1 passed (7.9s). Ordinary Search open and visible This device asserted before storage diagnostic; no device commands. |
 | JOURNEY-AIM-RETURN-DEVICE | PLACE.2b phone, tablet and laptop return-to-local-aim journeys plus Start fresh | Prior browser attempts exposed a wide-layout selector mismatch and an assertion after Search unmounted its destination line; reassessment traced both to test routing | Accepted source `1bc54a7d9f05732ecc25c1a047f900b4b8f6d6fd`; preview header matched. Serial five-case runtime command `BASE_URL=http://127.0.0.1:42167 npx playwright test tests/live/flow/media/media-app-aim-journey.runtime.test.mjs --workers=1 --reporter=line`: 5 passed (21.2s), raw log `/tmp/media-aim-reassessment-fixed-matrix.log`. AC1 phone/tablet/laptop choices; AC2 immediate aim display and picker state; AC3 Start fresh default returns aim locally, with no device commands. |
 | FOUNDATION-NATIVE-UI | Fresh physical renderer operations and shared local/remote controls | Native REDs for stale operation leakage, conflicting/unsupported partial adoption; UI REDs for missing Stop receipt/volume steps, duplicate controls, unavailable dispatch and cross-target drag | Native original2 independently214 GREEN; UI original3 plus root fresh4 independently105 GREEN. Root combined155files1389 GREEN29.61s. Actual compiled six RED gates remain pending; no full-story acceptance |
@@ -241,9 +242,9 @@ As a **Seeker**, I want "play now" to play at my aim, whichever control I use, s
 
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
-| PLAY.1a/AC1 | "Play now" on a search result, a browsed item, an item's details, a suggestion, or a recent item all play at the aim shown on screen. | Unverified | — |
+| PLAY.1a/AC1 | "Play now" on a search result, a browsed item, an item's details, a suggestion, or a recent item all play at the aim shown on screen. | Partial | `JOURNEY-ORDINARY-REMOTE-PLAY-ADD`: ordinary aimed Search Play reached the selected receiver and its native video advanced; browse/details/suggestion/recent parity remains unverified. |
 | PLAY.1a/AC2 | The item starts now on that screen; whatever was queued after the old item stays queued (R1). | Unverified | — |
-| PLAY.1a/AC3 | A confirmation names the item and the screen (see `RELY.1`). | Unverified | — |
+| PLAY.1a/AC3 | A confirmation names the item and the screen (see `RELY.1`). | Partial | `JOURNEY-ORDINARY-REMOTE-PLAY-ADD`: the tray showed “Playing on Acceptance receiver” after matching receiver state; item wording and other surfaces remain unverified. |
 | PLAY.1a/AC4 | If the aim is busy with someone else's playback, the aim label says so before I tap (`PLACE.5`); the tap itself never stops to ask (R2). | Unverified | — |
 | PLAY.1a/AC5 | Tapping the same item again while it is still starting doesn't start it twice; the item reads "Starting on Living Room TV…" (R34). | Unverified | — |
 
@@ -331,8 +332,8 @@ As a **Seeker**, I want to add something to the end without interrupting, so tha
 
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
-| PLAY.6a/AC1 | "Add to queue" is available on every item wherever it appears and uses the aim. | Partial | Desktop keyboard/pointer Add→held queue→explicit Play and actual receiver route pass; all-surface/aim/device parity remains open |
-| PLAY.6a/AC2 | What's playing continues without a pause or skip. | Partial | Paused video remains paused through Add (26262). Bundled accepted0c0c37e77 browser3846 GREEN9.3s: Arrival advances through Add, exact native node/currentSrc retained, no pause/emptied/loadstart events; queue grows to2 and query stays. Remote/device parity remains open |
+| PLAY.6a/AC1 | "Add to queue" is available on every item wherever it appears and uses the aim. | Partial | Desktop keyboard/pointer Add→held queue→explicit Play and actual receiver route pass. `JOURNEY-ORDINARY-REMOTE-PLAY-ADD` additionally exercises aimed result-menu Add into the receiver; all-surface and device parity remain open. |
+| PLAY.6a/AC2 | What's playing continues without a pause or skip. | Partial | Paused video remains paused through Add (26262). Bundled accepted0c0c37e77 browser3846 GREEN9.3s: Arrival advances through Add, exact native node/currentSrc retained, no pause/emptied/loadstart events; queue grows to2 and query stays. `JOURNEY-ORDINARY-REMOTE-PLAY-ADD` also proves same native node advances beyond a fresh pre-Add timestamp, stays unpaused, emits no pause/emptied/loadstart events, and receiver queue revision advances without changing playback revision. Other targets/devices remain open. |
 | PLAY.6a/AC3 | The confirmation names the item, its position ("7th"), and the screen. | Unverified | — |
 
 ### PLAY.7a
@@ -519,9 +520,9 @@ As a **Hand-Held Viewer**, I want to expand video to fill the screen and shrink 
 
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
-| STEER.2a/AC1 | Video can be expanded to fill the screen (or the whole display) in one step. | Partial | Desktop geometry RED→GREEN; JOURNEY-RESPONSIVE-CONTROLS phone/tablet actual viewport fill and controls-in-bounds GREEN. Other entry-point parity pending |
-| STEER.2a/AC2 | Shrinking it keeps playing without a pause or restart. | Partial | Desktop and JOURNEY-RESPONSIVE-CONTROLS phone/tablet GREEN: same node/source and zero pause events across expand/shrink/Back. Other entry-point/format parity pending |
-| STEER.2a/AC3 | Audio-only playback shows a picture and title when expanded. | Unverified | — |
+| STEER.2a/AC1 | Video can be expanded to fill the screen (or the whole display) in one step. | Accepted | Historical `JOURNEY-STEER-2A-CLEAN`, source `e14e78a2c69a8b9753179e6640af05c173af15df`: desktop/phone/tablet video matrix GREEN, viewport fill and controls in bounds. Synchronized from original media-redesign ledger and batch-1 clean-candidate report; not a new acceptance. |
+| STEER.2a/AC2 | Shrinking it keeps playing without a pause or restart. | Accepted | Historical `JOURNEY-STEER-2A-CLEAN`: desktop/phone/tablet exact attached video node/source continues advancing with zero pause events across shrink/Back. |
+| STEER.2a/AC3 | Audio-only playback shows a picture and title when expanded. | Accepted | Historical `JOURNEY-STEER-2A-CLEAN`: exact audio `plex:584614`, ordinary expand/shrink, artwork/title and retained advancing node on desktop/phone/tablet. Six focused cases GREEN (desktop 14.9s, phone 19.9s, tablet passed), source `e14e78a2c69a8b9753179e6640af05c173af15df`. |
 
 ### STEER.3a
 
@@ -728,7 +729,7 @@ As a **Seeker**, I want every play, add, and send to confirm in the same way, so
 
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
-| RELY.1a/AC1 | Every action that changes what's playing or lined up gives a short confirmation naming the item and the screen. | Unverified | — |
+| RELY.1a/AC1 | Every action that changes what's playing or lined up gives a short confirmation naming the item and the screen. | Partial | `JOURNEY-ORDINARY-REMOTE-PLAY-ADD`: the aimed search Play showed “Playing on Acceptance receiver” and aimed Add showed its Added tray after receiver queue mutation. Broader controls/sizes and complete wording parity remain unverified. |
 | RELY.1a/AC2 | The same outcome confirms the same way, whichever control started it, on every device size. | Unverified | — |
 | RELY.1a/AC3 | When the result is already obvious on this device (it visibly starts playing here), the confirmation is brief and unobtrusive. | Unverified | — |
 | RELY.1a/AC4 | Confirmations don't pile up; a newer one replaces an older one of the same kind. | Unverified | — |

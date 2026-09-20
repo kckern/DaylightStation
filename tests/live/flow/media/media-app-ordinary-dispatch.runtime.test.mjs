@@ -61,6 +61,14 @@ test('ordinary aimed Play then Queue reaches the virtual screen receiver and tru
   await more.click();
   const add = sender.getByTestId('result-action-add-plex:697368');
   await expect(add).toBeVisible({ timeout: 30000 });
+  const addStartTime = await native.evaluate(element => {
+    const events = ['pause', 'emptied', 'loadstart'];
+    window.__ordinaryNativePostAddEvents = [];
+    for (const type of events) {
+      element.addEventListener(type, () => window.__ordinaryNativePostAddEvents.push(type));
+    }
+    return element.currentTime;
+  });
   await add.click();
   await expect.poll(async () => sender.evaluate(async (played) => {
     const after = await (await fetch('/api/v1/device/acceptance-media/receiver-state')).json();
@@ -75,7 +83,14 @@ test('ordinary aimed Play then Queue reaches the virtual screen receiver and tru
       && after.snapshot.queue?.items?.some(item => item.contentId === 'plex:697368');
   }, played), { timeout: 60000 }).toBe(true);
   expect(await native.evaluate(element => element === window.__ordinaryNativeReceiver)).toBe(true);
-  await expect.poll(() => native.evaluate(element => element.currentTime), { timeout: 30000 }).toBeGreaterThan(before.currentTime);
+  const afterAddNative = await native.evaluate(element => ({
+    paused: element.paused,
+    currentTime: element.currentTime,
+    events: [...window.__ordinaryNativePostAddEvents],
+  }));
+  expect(afterAddNative.paused).toBe(false);
+  expect(afterAddNative.currentTime).toBeGreaterThan(addStartTime);
+  expect(afterAddNative.events).toEqual([]);
   await expect(sender.getByTestId('dispatch-tray')).toContainText('Added', { timeout: 60000 });
 
   expect(loads).toHaveLength(2);
