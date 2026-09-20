@@ -55,7 +55,7 @@ function parseTimecode(value) {
   return value.trim().split(':').reduce((total, part) => total * 60 + Number(part), 0);
 }
 
-async function startArrivalJourney(context, sender) {
+async function startArrivalJourney(context, sender, { mobile = false } = {}) {
   const receiver = await context.newPage();
   const loads = [];
   sender.on('request', request => {
@@ -69,16 +69,36 @@ async function startArrivalJourney(context, sender) {
     return response.ok && (await response.json()).ready;
   }), { timeout: 30000 }).toBe(true);
 
-  await expect(sender.getByTestId('cast-target-chip')).toBeVisible({ timeout: 30000 });
-  await sender.getByTestId('cast-target-chip').click();
-  await expect(sender.getByTestId('cast-target-checkbox-acceptance-media')).toBeVisible();
-  await sender.getByTestId('cast-mode-fork').check();
-  await sender.getByTestId('cast-target-checkbox-acceptance-media').check();
-  await sender.getByTestId('cast-target-chip').click();
-  await expect(sender.getByTestId('cast-popover')).toBeHidden();
+  let searchInput;
+  let arrivalResult;
+  if (mobile) {
+    // On phones the dock intentionally exposes only a Search launcher; the
+    // ordinary mobile destination control lives inside SearchMode.
+    await expect(sender.getByTestId('media-search-launcher')).toBeVisible();
+    await sender.getByTestId('media-search-launcher').click();
+    await expect(sender.getByTestId('search-mode')).toBeVisible();
+    await sender.getByTestId('destination-line').click();
+    await expect(sender.getByTestId('destination-sheet')).toBeVisible();
+    await sender.getByTestId('picker-device-acceptance-media').click();
+    await sender.getByTestId('picker-submit').click();
+    await expect(sender.getByTestId('destination-line-name')).toHaveText('Acceptance receiver');
+    searchInput = sender.getByTestId('search-mode-input');
+    arrivalResult = sender.getByTestId('search-mode-result-plex:55854');
+  } else {
+    await expect(sender.getByTestId('cast-target-chip')).toBeVisible({ timeout: 30000 });
+    await sender.getByTestId('cast-target-chip').click();
+    await expect(sender.getByTestId('cast-target-checkbox-acceptance-media')).toBeVisible();
+    await sender.getByTestId('cast-mode-fork').check();
+    await sender.getByTestId('cast-target-checkbox-acceptance-media').check();
+    await sender.getByTestId('cast-target-chip').click();
+    await expect(sender.getByTestId('cast-popover')).toBeHidden();
+    searchInput = sender.getByRole('textbox', { name: 'Search media…' });
+    arrivalResult = sender.getByTestId('combobox-option-plex:55854');
+  }
 
-  await sender.getByRole('textbox', { name: 'Search media…' }).fill('arrival');
-  await sender.getByTestId('combobox-option-plex:55854').click();
+  await searchInput.fill('arrival');
+  await expect(arrivalResult).toBeVisible({ timeout: 30000 });
+  await arrivalResult.click();
   await expect.poll(() => loads.length, { timeout: 10000 }).toBe(1);
 
   const video = receiver.locator('.video-player video');
@@ -103,23 +123,29 @@ async function startArrivalJourney(context, sender) {
     nativeAdvancing: true,
     receiverState: 'playing',
   });
+  if (mobile) {
+    // SearchMode intentionally remains open after a Play action. Dismiss it
+    // through its visible close control before navigating to phone Devices.
+    await sender.getByTestId('search-mode-close').click();
+    await expect(sender.getByTestId('search-mode')).toBeHidden();
+  }
   return { receiver, video, loads };
 }
 
-async function openPeekControls(sender) {
+async function openPeekControls(sender, navTestId = 'app-nav-fleet') {
   // Open the real device-control surface; every transport call below comes
   // from its visible controls, never from a direct API request in the test.
-  await sender.getByTestId('app-nav-fleet').click();
+  await sender.getByTestId(navTestId).click();
   await expect(sender.getByTestId('fleet-peek-acceptance-media')).toBeVisible({ timeout: 30000 });
   await sender.getByTestId('fleet-peek-acceptance-media').click();
   await expect(sender.getByTestId('peek-panel')).toBeVisible();
   return sender.getByTestId('np-toggle');
 }
 
-test('Peek Pause, Resume, and Seek control the actual receiver video while paused', async ({ context, page: sender }) => {
+async function runPausedControlsJourney(context, sender, navTestId, mobile = false) {
   test.setTimeout(150000);
-  const { receiver, video, loads } = await startArrivalJourney(context, sender);
-  const toggle = await openPeekControls(sender);
+  const { receiver, video, loads } = await startArrivalJourney(context, sender, { mobile });
+  const toggle = await openPeekControls(sender, navTestId);
   await expect(toggle).toHaveAttribute('aria-label', 'Pause');
   await expect(toggle).toBeEnabled();
 
@@ -222,7 +248,23 @@ test('Peek Pause, Resume, and Seek control the actual receiver video while pause
 
   expect(loads).toHaveLength(1);
   await receiver.close();
+}
+
+test('Peek Pause, Resume, and Seek control the actual receiver video while paused', async ({ context, page: sender }) => {
+  await runPausedControlsJourney(context, sender, 'app-nav-fleet');
 });
+
+for (const { label, viewport, navTestId, mobile } of [
+  { label: 'phone', viewport: { width: 390, height: 844 }, navTestId: 'app-tab-fleet', mobile: true },
+  { label: 'tablet', viewport: { width: 820, height: 1180 }, navTestId: 'app-nav-fleet', mobile: false },
+]) {
+  test.describe(label, () => {
+    test.use({ viewport });
+    test('Pause/Resume/Seek control the actual receiver video while paused', async ({ context, page: sender }) => {
+      await runPausedControlsJourney(context, sender, navTestId, mobile);
+    });
+  });
+}
 
 test('[STEER.3a/AC4] disconnected virtual receiver becomes unavailable and reconnect does not replay a command', async ({ context, page: sender }) => {
   // The fixture deliberately uses production-like 60 s state liveness. Do not
