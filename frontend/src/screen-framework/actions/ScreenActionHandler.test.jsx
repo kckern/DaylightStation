@@ -654,6 +654,27 @@ describe('ScreenActionHandler', () => {
       dispatchSpy.mockRestore();
     });
 
+    it('routes explicit remote transport commands to the active Player owner without toggling by keydown', () => {
+      const owner = vi.fn();
+      getPlayerQueueOpRegistry().register(owner);
+      const dispatchSpy = vi.spyOn(window, 'dispatchEvent');
+      render(
+        <ScreenOverlayProvider>
+          <ScreenActionHandler actions={{ playback: { when_idle: 'dispatch' } }} />
+        </ScreenOverlayProvider>
+      );
+
+      act(() => getActionBus().emit('media:playback', { command: 'play', commandId: 'play-1' }));
+      act(() => getActionBus().emit('media:playback', { command: 'pause', commandId: 'pause-1' }));
+      act(() => getActionBus().emit('media:playback', { command: 'toggle', commandId: 'toggle-1' }));
+
+      expect(owner).toHaveBeenNthCalledWith(1, expect.objectContaining({ op: 'play', commandId: 'play-1' }));
+      expect(owner).toHaveBeenNthCalledWith(2, expect.objectContaining({ op: 'pause', commandId: 'pause-1' }));
+      expect(owner).toHaveBeenNthCalledWith(3, expect.objectContaining({ op: 'toggle', commandId: 'toggle-1' }));
+      expect(dispatchSpy.mock.calls.some(([event]) => event instanceof KeyboardEvent)).toBe(false);
+      dispatchSpy.mockRestore();
+    });
+
     it('routes a value-bearing remote relative seek to the active Player owner', () => {
       const owner = vi.fn();
       getPlayerQueueOpRegistry().register(owner);

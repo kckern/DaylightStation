@@ -295,6 +295,15 @@ export function ScreenActionHandler({ actions = {}, inputType = null }) {
       return;
     }
 
+    // Explicit remote transport commands must use the active owner's imperative
+    // lifecycle. A synthetic Enter only toggles the renderer, which can resume
+    // native media after Stop while leaving the owner's published state `ready`.
+    const transportOp = payload?.command?.toLowerCase();
+    if ((transportOp === 'play' || transportOp === 'pause' || transportOp === 'toggle')
+      && getPlayerQueueOpRegistry().dispatch({ op: transportOp, commandId: payload?.commandId })) {
+      return;
+    }
+
     // Default: dispatch synthetic keydown
     // Keyed on the LOWERCASED command, so every spelling a caller might send
     // has to appear in lower case here. `skipNext`/`skipPrev` are the transport

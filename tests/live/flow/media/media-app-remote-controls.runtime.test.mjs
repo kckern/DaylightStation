@@ -73,10 +73,24 @@ test('Peek Pause, Resume, Seek, and Stop control the actual receiver video and r
   await expect(video).toBeVisible({ timeout: 60000 });
   await expect.poll(() => video.evaluate(element => element.readyState >= 2
     && !element.paused && element.currentTime > 0), { timeout: 30000 }).toBe(true);
+  const startupNativeTime = await video.evaluate(element => element.currentTime);
   await expect.poll(async () => (await readReceiverState(sender))?.snapshot?.currentItem?.contentId)
     .toBe('plex:55854');
-  await expect.poll(async () => (await readReceiverState(sender))?.snapshot?.state)
-    .toBe('playing');
+  await expect.poll(async () => {
+    const native = await video.evaluate(element => ({ paused: element.paused, currentTime: element.currentTime }));
+    const receiverState = await readReceiverState(sender);
+    return {
+      nativePaused: native.paused,
+      nativeTime: native.currentTime,
+      nativeAdvancing: !native.paused && native.currentTime > startupNativeTime + 1,
+      receiverState: receiverState?.snapshot?.state ?? null,
+      receiverPosition: receiverState?.snapshot?.position ?? null,
+    };
+  }, { timeout: 30000 }).toMatchObject({
+    nativePaused: false,
+    nativeAdvancing: true,
+    receiverState: 'playing',
+  });
 
   // Open the real device-control surface; every transport call below comes
   // from its visible controls, never from a direct API request in the test.
@@ -115,7 +129,7 @@ test('Peek Pause, Resume, Seek, and Stop control the actual receiver video and r
   const absolute = await issueThroughControl(sender, 'seekAbs', () => slider.click({
     position: { x: absoluteBounds.width * absoluteFraction, y: absoluteBounds.height / 2 },
   }));
-  expect(Math.abs(absolute.value - Number(await slider.getAttribute('aria-valuenow')))).toBeLessThanOrEqual(1);
+  expect(Math.abs(absolute.value - absoluteTarget)).toBeLessThanOrEqual(1);
   expect(absolute.value).toBeGreaterThan(fixedPausedPosition + 60);
   await expectSeekState(video, slider, absolute.value, true);
 
@@ -201,6 +215,24 @@ test('Peek Pause, Resume, Seek, and Stop control the actual receiver video and r
     const panel = document.querySelector('[data-testid="queue-panel"]');
     return focused?.getAttribute('tabindex') === '-1' && !!panel && focused.contains(panel);
   })).toBe(true);
+
+  const stoppedNativeTime = await videoHandle.evaluate(element => element.currentTime);
+  await expect(toggle).toHaveAttribute('aria-label', 'Play');
+  await issueThroughControl(sender, 'play', () => toggle.click());
+  await expect.poll(async () => {
+    const state = await readReceiverState(sender);
+    return state?.snapshot?.state === 'playing'
+      && state.snapshot.currentItem?.contentId === beforeStop.snapshot.currentItem.contentId;
+  }, { timeout: 20000 }).toBe(true);
+  await expect.poll(() => videoHandle.evaluate((element, time) => !element.paused
+    && element.currentTime > time + 1, stoppedNativeTime), { timeout: 20000 }).toBe(true);
+  const resumedAfterStop = await readReceiverState(sender);
+  expect(resumedAfterStop.snapshot.queue.items.map(item => ({
+    queueItemId: item.queueItemId,
+    contentId: item.contentId,
+    title: item.title ?? item.contentId,
+  }))).toEqual(queueBeforeStop);
+  await expect(sender.getByTestId('peek-queue-kept')).toBeHidden();
 
   expect(loads).toHaveLength(1);
   await receiver.close();

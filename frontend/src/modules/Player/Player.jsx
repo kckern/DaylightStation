@@ -1813,6 +1813,36 @@ const Player = forwardRef(function Player(props, ref) {
     return { ok: true };
   }, [cancelPendingRendererOperation, issueOwnerRevision]);
 
+  const playOwner = useCallback(() => {
+    ownerStoppedRef.current = false;
+    issueOwnerRevision({ playback: true });
+    return withTransport(
+      (api) => api.play?.(),
+      () => _getMediaElFallback()?.play?.(),
+    );
+  }, [issueOwnerRevision, withTransport]);
+
+  const pauseOwner = useCallback(() => {
+    issueOwnerRevision({ playback: true });
+    return withTransport(
+      (api) => api.pause?.(),
+      () => _getMediaElFallback()?.pause?.(),
+    );
+  }, [issueOwnerRevision, withTransport]);
+
+  const toggleOwner = useCallback(() => {
+    ownerStoppedRef.current = false;
+    issueOwnerRevision({ playback: true });
+    return withTransport(
+      (api) => api.toggle?.(),
+      () => {
+        const el = _getMediaElFallback();
+        if (el) return el.paused ? el.play() : el.pause();
+        return null;
+      },
+    );
+  }, [issueOwnerRevision, withTransport]);
+
   const seekOwner = useCallback((seconds) => {
     if (!Number.isFinite(seconds)) return false;
     withTransport(
@@ -1839,33 +1869,10 @@ const Player = forwardRef(function Player(props, ref) {
     seek: (t) => {
       seekOwner(t);
     },
-    play: () => {
-      ownerStoppedRef.current = false;
-      issueOwnerRevision({ playback: true });
-      withTransport(
-        (api) => api.play?.(),
-        () => _getMediaElFallback()?.play?.()
-      );
-    },
-    pause: () => {
-      issueOwnerRevision({ playback: true });
-      withTransport(
-        (api) => api.pause?.(),
-        () => _getMediaElFallback()?.pause?.()
-      );
-    },
+    play: playOwner,
+    pause: pauseOwner,
     stop: stopOwner,
-    toggle: () => {
-      ownerStoppedRef.current = false;
-      issueOwnerRevision({ playback: true });
-      withTransport(
-        (api) => api.toggle?.(),
-        () => {
-          const el = _getMediaElFallback();
-          if (el) el.paused ? el.play() : el.pause();
-        }
-      );
-    },
+    toggle: toggleOwner,
     // Fix 1 (bugbash 3A): Expose advance() for external track skip control
     advance: (count = 1) => {
       ownerStoppedRef.current = false;
@@ -2008,7 +2015,7 @@ const Player = forwardRef(function Player(props, ref) {
         fromContentId: effectiveMeta?.contentId ?? effectiveMeta?.assetId ?? null,
       }, { level: 'info' });
     },
-  }), [isQueue, isShuffle, repeatMode, advance, singleAdvance, rawJumpTo, sessionVolume, sessionPlaybackRate, setOwnerVolume, setOwnerPlaybackRate, effectiveMeta?.assetId, effectiveMeta?.contentId, resilienceControllerRef, withTransport, queueSnapshot, playerInstanceId, queueShader, issueOwnerRevision, adoptQueueSnapshot, setTargetTimeSeconds, setShader, setShaderUserCycled, inspectRendererBoundaryRequest, beginRendererBoundary, stopOwner, seekOwner]);
+  }), [isQueue, isShuffle, repeatMode, advance, singleAdvance, rawJumpTo, sessionVolume, sessionPlaybackRate, setOwnerVolume, setOwnerPlaybackRate, effectiveMeta?.assetId, effectiveMeta?.contentId, resilienceControllerRef, withTransport, queueSnapshot, playerInstanceId, queueShader, issueOwnerRevision, adoptQueueSnapshot, setTargetTimeSeconds, setShader, setShaderUserCycled, inspectRendererBoundaryRequest, beginRendererBoundary, stopOwner, playOwner, pauseOwner, toggleOwner, seekOwner]);
 
   useEffect(() => () => {
     clearRemountTimer();
@@ -2022,6 +2029,16 @@ const Player = forwardRef(function Player(props, ref) {
     if (op === 'stop') {
       stopOwner();
       return;
+    }
+    if (op === 'play') {
+      return playOwner();
+    }
+    if (op === 'pause') {
+      pauseOwner();
+      return;
+    }
+    if (op === 'toggle') {
+      return toggleOwner();
     }
     if (op === 'seek-abs') {
       seekOwner(payload.value);
@@ -2115,7 +2132,7 @@ const Player = forwardRef(function Player(props, ref) {
     }
 
     pushOnDeck(item, { displaceToQueue: !!onDeckCfg?.displace_to_queue });
-  }, [playQueue, onDeck, onDeckCfg, pushOnDeck, flashOnDeck, playNow, append, playerInstanceId, queueShader, classes, setShader, setShaderUserCycled, stopOwner, seekOwner, seekOwnerRelative]);
+  }, [playQueue, onDeck, onDeckCfg, pushOnDeck, flashOnDeck, playNow, append, playerInstanceId, queueShader, classes, setShader, setShaderUserCycled, stopOwner, playOwner, pauseOwner, toggleOwner, seekOwner, seekOwnerRelative]);
 
   // Register once in mount order while the ref supplies the latest stateful
   // callback. Re-registering on every queue change would let a background

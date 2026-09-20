@@ -6,8 +6,14 @@ import {
   getPlayerQueueOpRegistry,
 } from './lib/queueOpRegistry.js';
 
+let transport;
 vi.mock('./components/SinglePlayer.jsx', () => ({
-  SinglePlayer: ({ contentId }) => <div data-testid="single-player" data-content-id={contentId} />,
+  SinglePlayer: ({ contentId, onController }) => {
+    React.useEffect(() => {
+      onController?.(transport);
+    }, [onController]);
+    return <div data-testid="single-player" data-content-id={contentId} />;
+  },
 }));
 
 vi.mock('../../lib/api.mjs', () => ({
@@ -20,7 +26,10 @@ vi.mock('../../lib/api.mjs', () => ({
 import Player from './Player.jsx';
 
 describe('Player queue-op ownership integration', () => {
-  beforeEach(() => __resetPlayerQueueOpRegistryForTests());
+  beforeEach(() => {
+    __resetPlayerQueueOpRegistryForTests();
+    transport = { play: vi.fn(), pause: vi.fn(), toggle: vi.fn() };
+  });
   afterEach(() => cleanup());
 
   it('mutates only the foreground Player when two Players are mounted', async () => {
@@ -144,5 +153,72 @@ describe('Player queue-op ownership integration', () => {
       playbackRevision: before.playbackRevision + 1,
       queueRevision: before.queueRevision,
     });
+  });
+
+  it('restores a stopped owner on explicit play without replacing its retained queue', async () => {
+    const ref = createRef();
+    render(<Player ref={ref} play={[
+      { contentId: 'plex:current' },
+      { contentId: 'plex:next' },
+    ]} />);
+    await waitFor(() => expect(ref.current?.getQueueSnapshot().items).toHaveLength(2));
+    const retained = ref.current.getQueueSnapshot().items.map((item) => item.queueItemId);
+
+    await act(async () => {
+      getPlayerQueueOpRegistry().dispatch({ op: 'stop', commandId: 'stop-1' });
+      await Promise.resolve();
+    });
+    const stoppedIdentity = ref.current.getPlaybackIdentity();
+    expect(ref.current.getNowPlaying()).toMatchObject({ item: null, stopped: true });
+
+    await act(async () => {
+      getPlayerQueueOpRegistry().dispatch({ op: 'play', commandId: 'play-1' });
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      getPlayerQueueOpRegistry().dispatch({ op: 'play', commandId: 'play-2' });
+      await Promise.resolve();
+    });
+
+    expect(ref.current.getOwnerState()).toBeNull();
+    expect(ref.current.getNowPlaying()).toMatchObject({
+      item: expect.objectContaining({ contentId: 'plex:current' }),
+    });
+    expect(ref.current.getQueueSnapshot().items.map((item) => item.queueItemId)).toEqual(retained);
+    expect(ref.current.getPlaybackIdentity()).toMatchObject({
+      playbackRevision: stoppedIdentity.playbackRevision + 2,
+      queueRevision: stoppedIdentity.queueRevision,
+    });
+    expect(transport.play).toHaveBeenCalledTimes(2);
+    expect(transport.toggle).not.toHaveBeenCalled();
+  });
+
+  it('keeps a stopped owner stopped on duplicate explicit pause', async () => {
+    const ref = createRef();
+    render(<Player ref={ref} play={[{ contentId: 'plex:current' }]} />);
+    await waitFor(() => expect(ref.current?.getQueueSnapshot().items).toHaveLength(1));
+    await act(async () => {
+      getPlayerQueueOpRegistry().dispatch({ op: 'stop' });
+      await Promise.resolve();
+    });
+    const stoppedIdentity = ref.current.getPlaybackIdentity();
+
+    await act(async () => {
+      getPlayerQueueOpRegistry().dispatch({ op: 'pause' });
+      await Promise.resolve();
+    });
+    await act(async () => {
+      getPlayerQueueOpRegistry().dispatch({ op: 'pause' });
+      await Promise.resolve();
+    });
+
+    expect(ref.current.getOwnerState()).toBe('ready');
+    expect(ref.current.getNowPlaying()).toMatchObject({ item: null, stopped: true });
+    expect(ref.current.getPlaybackIdentity()).toMatchObject({
+      playbackRevision: stoppedIdentity.playbackRevision + 2,
+    });
+    expect(transport.pause).toHaveBeenCalledTimes(2);
+    expect(transport.toggle).not.toHaveBeenCalled();
   });
 });
