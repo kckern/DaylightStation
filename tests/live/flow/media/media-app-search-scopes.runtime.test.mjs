@@ -21,7 +21,7 @@ async function openSearch(page, isPhone) {
 
   await expect(page.getByTestId('media-search-bar')).toBeVisible({ timeout: 30000 });
   const input = page.getByRole('textbox', { name: 'Search media…', exact: true });
-  await input.focus();
+  await input.click();
   return input;
 }
 
@@ -61,6 +61,11 @@ function resultRows(page, isPhone) {
     : page.locator('[data-testid^="combobox-option-"]');
 }
 
+function scopeChip(page, isPhone, key) {
+  const surface = isPhone ? page.getByTestId('search-mode') : page.getByTestId('media-search-bar');
+  return surface.getByTestId(`scope-chip-${key}`);
+}
+
 async function visibleResultIds(page, isPhone) {
   const rows = resultRows(page, isPhone);
   return rows.evaluateAll((elements) => elements.map((element) => (
@@ -70,6 +75,15 @@ async function visibleResultIds(page, isPhone) {
 
 async function visibleResultText(page, isPhone) {
   return resultRows(page, isPhone).evaluateAll((elements) => elements.map((element) => element.innerText));
+}
+
+async function visibleResultKinds(page, isPhone) {
+  return resultRows(page, isPhone).evaluateAll((elements, phoneSurface) => elements.map((element) => {
+    const subtitle = phoneSurface
+      ? element.querySelector('.media-result-subtitle')
+      : element.querySelectorAll('.mantine-Text-root')[1];
+    return subtitle?.textContent?.trim() ?? '';
+  }), isPhone);
 }
 
 async function closeSearch(page, input, isPhone) {
@@ -90,12 +104,12 @@ for (const [surface, viewport, isPhone] of surfaces) {
     const scopes = await readLiveScopes(page);
 
     expect(scopes[0].key).toBe('all');
-    await expect(page.getByTestId('scope-chip-all')).toBeVisible();
-    await expect(page.getByTestId('scope-chip-all')).toHaveText(scopes[0].label);
-    await expect(page.getByTestId('scope-chip-all')).toHaveAttribute('aria-pressed', 'true');
+    await expect(scopeChip(page, isPhone, 'all')).toBeVisible();
+    await expect(scopeChip(page, isPhone, 'all')).toHaveText(scopes[0].label);
+    await expect(scopeChip(page, isPhone, 'all')).toHaveAttribute('aria-pressed', 'true');
     for (const scope of scopes) {
-      await expect(page.getByTestId(`scope-chip-${scope.key}`)).toBeVisible();
-      await expect(page.getByTestId(`scope-chip-${scope.key}`)).toHaveText(scope.label);
+      await expect(scopeChip(page, isPhone, scope.key)).toBeVisible();
+      await expect(scopeChip(page, isPhone, scope.key)).toHaveText(scope.label);
     }
     await expect(input).toBeVisible();
   });
@@ -109,7 +123,7 @@ for (const [surface, viewport, isPhone] of surfaces) {
     test.skip(!video, 'Live GET /api/v1/media/config does not expose scope key "video"; configured-scope result filtering cannot be assessed here.');
     test.skip(video.params == null, 'Live Video scope is grouping-only; its configured child scope is assessed separately under AC3.');
 
-    await expect(page.getByTestId('scope-chip-all')).toHaveAttribute('aria-pressed', 'true');
+    await expect(scopeChip(page, isPhone, 'all')).toHaveAttribute('aria-pressed', 'true');
     const allRequest = streamRequestFor(page, query, all);
     await input.fill(query);
     await allRequest;
@@ -120,18 +134,19 @@ for (const [surface, viewport, isPhone] of surfaces) {
     expect(allResultIds.length, `the real All search for ${query} should return results`).toBeGreaterThan(0);
 
     const scopedRequest = streamRequestFor(page, query, video);
-    await page.getByTestId('scope-chip-video').click();
+    await scopeChip(page, isPhone, 'video').click();
     await scopedRequest;
     await expect(input).toHaveValue(query);
-    await expect(page.getByTestId('scope-chip-video')).toHaveAttribute('aria-pressed', 'true');
+    await expect(scopeChip(page, isPhone, 'video')).toHaveAttribute('aria-pressed', 'true');
     await waitForSearchSettled(page);
     await expect.poll(() => resultRows(page, isPhone).count(), { timeout: 20000 })
       .toBeGreaterThan(0);
     const videoResultIds = await visibleResultIds(page, isPhone);
     expect(videoResultIds.length, 'the configured Video query should render its actual results').toBeGreaterThan(0);
-    const videoKinds = await visibleResultText(page, isPhone);
-    expect(videoKinds.every((text) => /\b(movie|tv show|series|season|episode|video)\b/i.test(text)),
-      'results returned by the actual Video scope should display video kinds').toBe(true);
+    const videoKinds = await visibleResultKinds(page, isPhone);
+    expect(videoKinds.length, 'each result exposes its dedicated kind subtitle').toBe(videoResultIds.length);
+    expect(videoKinds.every((kind) => /^(movie|tv show|series|season|episode|video)(?:\s|$)/i.test(kind)),
+      'the dedicated result-kind subtitles returned by Video scope should identify video kinds').toBe(true);
 
     await closeSearch(page, input, isPhone);
     if (isPhone) {
@@ -140,8 +155,8 @@ for (const [surface, viewport, isPhone] of surfaces) {
     } else {
       await input.click();
     }
-    await expect(page.getByTestId('scope-chip-all')).toHaveAttribute('aria-pressed', 'true');
-    await expect(page.getByTestId('scope-chip-video')).toHaveAttribute('aria-pressed', 'false');
+    await expect(scopeChip(page, isPhone, 'all')).toHaveAttribute('aria-pressed', 'true');
+    await expect(scopeChip(page, isPhone, 'video')).toHaveAttribute('aria-pressed', 'false');
   });
 
   test(`[FIND.2a/AC3] ${surface}: configured parent and child scopes are both selectable`, async ({ page }) => {
@@ -155,8 +170,8 @@ for (const [surface, viewport, isPhone] of surfaces) {
     const child = parent.children.find((scope) => scope.params != null);
     test.skip(!child, `Live parent scope "${parent.key}" exposes children but no searchable child scope; FIND.2a AC3 cannot be verified from this config.`);
 
-    const parentChip = page.getByTestId(`scope-chip-${parent.key}`);
-    const childChip = page.getByTestId(`scope-chip-${child.key}`);
+    const parentChip = scopeChip(page, isPhone, parent.key);
+    const childChip = scopeChip(page, isPhone, child.key);
     const parentRequest = streamRequestFor(page, query, parent);
     await input.fill(query);
     await parentChip.click();

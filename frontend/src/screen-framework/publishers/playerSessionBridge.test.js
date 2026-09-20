@@ -154,6 +154,60 @@ describe('createPlayerSessionBridge', () => {
     bridge.stop();
   });
 
+  it('rearms playing only when the current admitted node advances after waiting', () => {
+    const el = document.createElement('video');
+    Object.defineProperties(el, {
+      currentTime: { configurable: true, writable: true, value: 10 },
+      duration: { configurable: true, value: 180 },
+      paused: { configurable: true, writable: true, value: false },
+      seeking: { configurable: true, writable: true, value: false },
+      ended: { configurable: true, writable: true, value: false },
+      error: { configurable: true, writable: true, value: null },
+    });
+    const acceptedRegistration = {
+      node: el,
+      resolvedContentId: 'plex:advance',
+      resolvedGeneration: 1,
+      ownerInstanceId: 'advance-owner',
+      playbackRevision: 1,
+    };
+    const handle = {
+      ...makeHandle({ el }),
+      getMountedContentId: () => 'plex:advance',
+      getMountedMediaGeneration: () => 1,
+      getMountedMediaRegistration: () => acceptedRegistration,
+      getPlaybackIdentity: () => ({ ownerInstanceId: 'advance-owner', playbackRevision: 1, queueRevision: 1 }),
+    };
+    const bridge = startBridge(() => handle);
+    vi.advanceTimersByTime(1000);
+
+    // No `playing` event: real forward motion is affirmative evidence after
+    // a waiting event cleared the earlier observation.
+    el.dispatchEvent(new Event('waiting'));
+    el.currentTime = 11;
+    el.dispatchEvent(new Event('timeupdate'));
+    expect(bridge.player.getState()).toBe('playing');
+
+    el.dispatchEvent(new Event('waiting'));
+    el.paused = true;
+    el.currentTime = 12;
+    el.dispatchEvent(new Event('timeupdate'));
+    expect(bridge.player.getState()).toBe('paused');
+
+    el.paused = false;
+    el.seeking = true;
+    el.dispatchEvent(new Event('waiting'));
+    el.currentTime = 13;
+    el.dispatchEvent(new Event('timeupdate'));
+    expect(bridge.player.getState()).toBe('buffering');
+
+    el.seeking = false;
+    el.dispatchEvent(new Event('waiting'));
+    el.dispatchEvent(new Event('timeupdate'));
+    expect(bridge.player.getState()).toBe('buffering');
+    bridge.stop();
+  });
+
   it('binds native observations to the resolved node/generation and ignores retired events', () => {
     const nodeA = document.createElement('video');
     const nodeB = document.createElement('video');
