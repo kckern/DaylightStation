@@ -9,16 +9,16 @@ test.describe('MediaApp — P3 fleet observation', () => {
 
   test('fleet indicator renders in the dock and opens the fleet view', async ({ page }) => {
     await page.goto('/media');
-    await expect(page.getByTestId('fleet-indicator')).toBeVisible({ timeout: 10000 });
-    await expect(page.getByTestId('fleet-indicator')).toHaveText(/Fleet \d+\/\d+/);
+    await expect(page.getByTestId('house-indicator')).toBeVisible({ timeout: 10000 });
+    await expect(page.getByTestId('house-indicator')).toHaveText(/\d+ playing/);
 
-    await page.getByTestId('fleet-indicator').click();
+    await page.getByTestId('house-indicator').click();
     await expect(page.getByTestId('fleet-view')).toBeVisible({ timeout: 5000 });
   });
 
   test('fleet view shows cards for known playback devices', async ({ page }) => {
     await page.goto('/media');
-    await page.getByTestId('fleet-indicator').click();
+    await page.getByTestId('house-indicator').click();
     await expect(page.getByTestId('fleet-view')).toBeVisible({ timeout: 5000 });
 
     const anyCard = page.locator('[data-testid^="fleet-card-"]').first();

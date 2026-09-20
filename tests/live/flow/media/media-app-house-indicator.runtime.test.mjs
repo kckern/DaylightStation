@@ -9,8 +9,12 @@ const sizes = [
 ];
 
 const views = [
-  ['home', ''], ['browse', '?view=browse'], ['detail', '?view=detail&contentId=plex%3A55854'],
-  ['nowPlaying', '?view=nowPlaying'], ['fleet', '?view=fleet'], ['peek', '?view=peek&deviceId=acceptance-media'],
+  { query: '', root: 'home-view' },
+  { query: '?view=browse', root: 'browse-view' },
+  { query: '?view=detail&contentId=plex%3A55854', root: 'detail-view', title: /Arrival/i },
+  { query: '?view=nowPlaying', root: 'now-playing-view', nowPlaying: 'Nothing playing' },
+  { query: '?view=fleet', root: 'fleet-view' },
+  { query: '?view=peek&deviceId=acceptance-media', root: 'peek-panel', title: 'Acceptance receiver' },
 ];
 
 async function receiverState(page) {
@@ -83,8 +87,11 @@ for (const [label, viewport, phone] of sizes) {
       await pauseThroughPeek(page, native, phone);
       await expect(page.getByTestId('house-indicator')).toHaveAccessibleName('0 playing · 1 paused');
 
-      for (const [, query] of views) {
-        await page.goto(`/media${query}`, { waitUntil: 'domcontentloaded' });
+      for (const view of views) {
+        await page.goto(`/media${view.query}`, { waitUntil: 'domcontentloaded' });
+        await expect(page.getByTestId(view.root)).toBeVisible();
+        if (view.title) await expect(page.getByRole('heading', { name: view.title })).toBeVisible();
+        if (view.nowPlaying) await expect(page.getByTestId('now-playing-title')).toHaveText(view.nowPlaying);
         const indicator = page.getByTestId('house-indicator');
         await expect(indicator).toHaveCount(1);
         await expect(indicator).toBeVisible();
