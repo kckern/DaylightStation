@@ -296,10 +296,34 @@ for (const [surface, viewport, isPhone] of surfaces) {
     const receiverVideo = receiver.locator('.video-player video');
     await expect(receiverVideo).toBeVisible({ timeout: 60000 });
     await expect.poll(() => receiverVideo.evaluate(el => el.readyState >= 2 && !el.paused && el.currentTime > 0), { timeout: 60000 }).toBe(true);
-    const remoteAfterPlay = await receiverState(sender);
-    expect(remoteAfterPlay).toMatchObject({
-      snapshot: { currentItem: { contentId: id }, meta: { ownerId: 'acceptance-media' } },
-    });
+    const remotePlayStartTime = await receiverVideo.evaluate(el => el.currentTime);
+    let remoteAfterPlay = null;
+    await expect.poll(async () => {
+      const [state, nativeAdvancing] = await Promise.all([
+        receiverState(sender),
+        receiverVideo.evaluate((el, startTime) => (
+          el.readyState >= 2 && !el.paused && el.currentTime > startTime
+        ), remotePlayStartTime),
+      ]);
+      const snapshot = state.snapshot;
+      const owner = snapshot?.meta?.playbackOwner;
+      const currentVisit = snapshot?.queue?.items?.[snapshot.queue.currentIndex];
+      const settled = nativeAdvancing
+        && snapshot?.state === 'playing'
+        && snapshot?.currentItem?.contentId === id
+        && snapshot?.meta?.ownerId === 'acceptance-media'
+        && typeof snapshot?.sessionId === 'string' && snapshot.sessionId.length > 0
+        && owner?.sessionId === snapshot.sessionId
+        && typeof owner?.ownerInstanceId === 'string' && owner.ownerInstanceId.length > 0
+        && Number.isInteger(owner?.playbackRevision) && owner.playbackRevision > 0
+        && Number.isInteger(owner?.queueRevision) && owner.queueRevision > 0
+        && owner?.contentId === id
+        && typeof owner?.queueItemId === 'string' && owner.queueItemId.length > 0
+        && currentVisit?.contentId === id
+        && currentVisit?.queueItemId === owner.queueItemId;
+      if (settled) remoteAfterPlay = state;
+      return settled;
+    }, { timeout: 60000 }).toBe(true);
     await expect(sender.getByTestId('dispatch-tray')).toContainText('Playing on Acceptance receiver', { timeout: 60000 });
     await assertSearchIdentity(sender, input, isPhone, id);
 
@@ -311,7 +335,14 @@ for (const [surface, viewport, isPhone] of surfaces) {
       const state = await receiverState(sender);
       const before = remoteAfterPlay.snapshot.meta.playbackOwner;
       const after = state.snapshot?.meta?.playbackOwner;
-      return state.snapshot?.currentItem?.contentId === id
+      const beforeVisit = remoteAfterPlay.snapshot.queue.items[remoteAfterPlay.snapshot.queue.currentIndex];
+      const afterVisit = state.snapshot?.queue?.items?.[state.snapshot.queue.currentIndex];
+      return state.snapshot?.sessionId === remoteAfterPlay.snapshot.sessionId
+        && state.snapshot?.meta?.ownerId === remoteAfterPlay.snapshot.meta.ownerId
+        && after?.ownerInstanceId === before.ownerInstanceId
+        && state.snapshot?.currentItem?.contentId === remoteAfterPlay.snapshot.currentItem.contentId
+        && afterVisit?.contentId === beforeVisit.contentId
+        && afterVisit?.queueItemId === beforeVisit.queueItemId
         && after?.playbackRevision === before?.playbackRevision
         && after?.queueRevision > before?.queueRevision
         && state.snapshot?.queue?.items?.some(item => item.contentId === addId);
