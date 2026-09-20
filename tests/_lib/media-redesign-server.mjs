@@ -31,7 +31,13 @@ const PROVENANCE_FILE = 'acceptance-preview-provenance.json';
 const ORDINARY_READ_PATHS = [
   /^\/api\/v1\/media\/config$/, /^\/api\/v1\/content\/query\/search(?:\/stream)?$/,
   /^\/api\/v1\/(?:list|info|siblings)\//, /^\/api\/v1\/screens\/living-room$/,
-  /^\/api\/v1\/(?:play|proxy\/plex\/stream)\//,
+  /^\/api\/v1\/config\/player$/, /^\/api\/v1\/queue\/(?:plex:|plex\/)\d+$/,
+  /^\/api\/v1\/play\//, /^\/api\/v1\/proxy\/plex\/stream\/\d+$/,
+  // Plex start manifests and their session-scoped playlists/fragments are
+  // browser media reads. Keep control endpoints (notably `stop`) outside this
+  // allowlist even when callers use GET for them.
+  /^\/api\/v1\/proxy\/plex\/video\/:\/transcode\/universal\/start\.(?:mpd|m3u8)$/,
+  /^\/api\/v1\/proxy\/plex\/video\/:\/transcode\/universal\/session\/[0-9a-f-]{36}\/base\/[^/]+\.(?:m3u8|m4s|mp4|ts)$/,
 ];
 
 export function requireExpectedSha(expectedSha = process.env.MEDIA_ACCEPTANCE_EXPECTED_SHA) {

@@ -24,17 +24,21 @@ test('ordinary aimed Play then Queue reaches the virtual screen receiver and tru
   await expect(sender.getByTestId('cast-target-checkbox-acceptance-media')).toBeVisible();
   await sender.getByTestId('cast-mode-fork').check();
   await sender.getByTestId('cast-target-checkbox-acceptance-media').check();
+  await sender.getByTestId('cast-target-chip').click();
+  await expect(sender.getByTestId('cast-popover')).toBeHidden();
 
-  await sender.getByTestId('media-search-input').fill('arrival');
+  const mediaSearch = sender.getByRole('textbox', { name: 'Search media…' });
+  await mediaSearch.fill('arrival');
   const arrival = sender.getByTestId('combobox-option-plex:55854');
   await expect(arrival).toBeVisible({ timeout: 30000 });
   await arrival.click();
-  const native = receiver.locator('video, audio').first();
+  const native = receiver.locator('dash-video video');
   await expect(native).toBeVisible({ timeout: 60000 });
-  const before = await receiver.evaluate(() => {
-    const element = document.querySelector('video, audio');
+  await expect.poll(() => native.evaluate(element => element.readyState >= 2 && element.currentTime > 0), { timeout: 30000 })
+    .toBe(true);
+  const before = await native.evaluate(element => {
     window.__ordinaryNativeReceiver = element;
-    return { src: element?.currentSrc || element?.src || null, paused: element?.paused, currentTime: element?.currentTime };
+    return { src: element.currentSrc || element.src, paused: element.paused, currentTime: element.currentTime };
   });
   expect(before.src).toBeTruthy();
   await expect.poll(() => native.evaluate(element => !element.paused && element.currentTime > before.currentTime), { timeout: 60000 })
@@ -46,7 +50,7 @@ test('ordinary aimed Play then Queue reaches the virtual screen receiver and tru
   await expect(sender.getByTestId('dispatch-tray')).toContainText('Playing on Acceptance receiver', { timeout: 60000 });
 
   const played = await sender.evaluate(async () => (await fetch('/api/v1/device/acceptance-media/receiver-state')).json());
-  await sender.getByTestId('media-search-input').fill('tuttle twins');
+  await mediaSearch.fill('tuttle twins');
   const container = sender.getByTestId('combobox-option-plex:663508');
   await expect(container).toBeVisible({ timeout: 30000 });
   await container.click();
@@ -62,7 +66,7 @@ test('ordinary aimed Play then Queue reaches the virtual screen receiver and tru
       && after.snapshot.queueRevision > played.snapshot.queueRevision
       && after.snapshot.queue?.items?.some(item => item.contentId === 'plex:663508');
   }), { timeout: 60000 }).toBe(true);
-  expect(await receiver.evaluate(() => document.querySelector('video, audio') === window.__ordinaryNativeReceiver)).toBe(true);
+  expect(await native.evaluate(element => element === window.__ordinaryNativeReceiver)).toBe(true);
   await expect.poll(() => native.evaluate(element => element.currentTime), { timeout: 30000 }).toBeGreaterThan(before.currentTime);
   await expect(sender.getByTestId('dispatch-tray')).toContainText('Added', { timeout: 60000 });
 

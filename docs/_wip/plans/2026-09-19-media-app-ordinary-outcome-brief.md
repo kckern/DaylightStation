@@ -22,3 +22,7 @@ Two real outcome bugs remain. First, remote Add loses its verb: `buildDispatchUr
 - Missing matching receiver state ends as the persistent RELY.3a “may not have started”/retry outcome; no fabricated ack or injected state counts as native proof.
 
 This packet unlocks `PLACE.2a/AC6`, `PLAY.1a/AC1–AC3`, remote parity for `PLAY.6a/AC1–AC3`, and `RELY.1a/AC1`, `RELY.2a/AC1–AC2`, `RELY.3a/AC1–AC4` (with R46’s observable timing/copy discipline). It supplies the actual-send premise needed by `PLACE.2a/AC4`; the two-hour clock behavior still needs its separate receiver-backed journey.
+
+## Transport follow-up evidence
+
+`SinglePlayer` now uses canonical content identity to resolve `/play` transport metadata before renderer selection, while identity-less direct embeds retain the direct-media path. `SinglePlayer.transport`, `api.streamId`, and `api.mintLog` passed: **3 files, 12 tests**. The live native readiness probe still fails: the visible video did not reach `readyState >= 2` and `currentTime > 0` within 30 seconds, so the ordinary UI/native journey is not yet accepted.

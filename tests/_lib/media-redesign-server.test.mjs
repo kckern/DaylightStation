@@ -88,6 +88,39 @@ describe('media redesign bundled-preview middleware', () => {
     expect(result).toBeUndefined();
   });
 
+  it('allows only virtual receiver media reads and rejects commands or writes', async () => {
+    let composedReads = 0;
+    const middleware = attach(createAcceptancePreviewPlugin({
+      app: (_request, response) => { composedReads += 1; response.end('composed read'); }, allowedTitles: new Set(['55854']), policy: 'branch',
+      sourceSha: '0c0c37e77e66837efc4bd4d620f60e4d26194965', upstream: 'http://127.0.0.1:3111',
+      ordinaryDeviceFixture: { middleware: async () => false },
+    }));
+
+    const acceptedReads = [
+      '/api/v1/queue/plex:55854',
+      '/api/v1/config/player',
+      '/api/v1/proxy/plex/stream/55854',
+      '/api/v1/proxy/plex/video/:/transcode/universal/start.m3u8',
+      '/api/v1/proxy/plex/video/:/transcode/universal/session/84cc0c4c-8160-4e89-a240-26a165440d1e/base/index.m3u8',
+      '/api/v1/proxy/plex/video/:/transcode/universal/session/84cc0c4c-8160-4e89-a240-26a165440d1e/base/00000.ts',
+    ];
+    for (const url of acceptedReads) {
+      const result = await request(middleware, { url });
+      expect(result.response.statusCode, url).not.toBe(403);
+      expect(result.nextCalled || result.body === 'composed read', url).toBe(true);
+    }
+    expect(composedReads).toBe(1); // `/stream/:ratingKey` uses the established mint router.
+    for (const { url, method = 'GET' } of [
+      { url: '/api/v1/queue/plex:55854', method: 'POST' },
+      { url: '/api/v1/proxy/plex/video/:/transcode/universal/stop?session=84cc0c4c-8160-4e89-a240-26a165440d1e' },
+      { url: '/api/v1/proxy/plex/video/:/transcode/universal/start.m3u8', method: 'POST' },
+    ]) {
+      const result = await request(middleware, { url, method });
+      expect(result.response.statusCode, `${method} ${url}`).toBe(403);
+      expect(result.body).toBe('Acceptance blocks upstream API command or unlisted read');
+    }
+  });
+
   it('rejects an unapproved stream before it can reach an upstream proxy', async () => {
     let composedRoutesCalled = false;
     const middleware = attach(createAcceptancePreviewPlugin({
