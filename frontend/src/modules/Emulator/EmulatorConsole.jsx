@@ -981,10 +981,21 @@ export function EmulatorConsole({
         className={`emulator-chrome chrome-${game?.chrome || 'none'}`}
         style={game?.bezelUrl ? { backgroundImage: `url("${game.bezelUrl}")` } : undefined}
       />
-      {/* The cutout is positioned on this WRAPPER, not the mount — EmulatorJS owns
-          the mount element's inline styles, so it must fill an already-positioned box. */}
+      {/* The cutout is positioned on this WRAPPER, and the integer-lock box on
+          emulator-mount-box — never on .emulator-mount itself. EmulatorJS takes
+          ownership of the element it's handed as EJS_player and overwrites its
+          `style` attribute wholesale (observed: our left/top/width/height are
+          replaced by nothing but its own `--ejs-primary-color` custom property),
+          which silently discarded the integer-lock size and let the mount (and
+          its canvas, pinned to 100%/100% by CSS) fill the full aperture instead
+          of the smaller centred box the LCD grid canvas was drawn for. Moving
+          the box one level up, to a wrapper EmulatorJS never sees, keeps the
+          picture and the grid at the same size regardless of what EJS does to
+          its own container. */}
       <div className="emulator-screen-window" style={windowPixelBox}>
-        <div className="emulator-mount" ref={mountRef} style={mountStyle} />
+        <div className="emulator-mount-box" style={mountStyle}>
+          <div className="emulator-mount" ref={mountRef} />
+        </div>
       </div>
       <div
         className={`emulator-shader shader-${game?.shader || 'none'} ${animClass}`.trim()}
