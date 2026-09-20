@@ -12,7 +12,7 @@ import './NowPlaying.scss';
 
 const KEYBOARD_STEP_S = 5;
 
-export function SeekBar({ target, availability = null }) {
+export function SeekBar({ target, availability = null, onCommand = null, pendingAction = false }) {
   const { controller, snapshot, transport, capabilities } = useSessionController(target);
   const live = usePlaybackPosition(controller);
   const [scrub, setScrub] = useState(null);
@@ -36,6 +36,7 @@ export function SeekBar({ target, availability = null }) {
     contextRef.current = { key: contextKey, controller };
   }
   const context = contextRef.current;
+  const [commandFeedback, setCommandFeedback] = useState(null);
   if (!item) return null;
 
   if (item.isLive) {
@@ -47,7 +48,7 @@ export function SeekBar({ target, availability = null }) {
   }
 
   const duration = Number.isFinite(item.duration) && item.duration > 0 ? item.duration : 0;
-  const canSeek = availability?.available !== false && capabilities.seekable && duration > 0;
+  const canSeek = availability?.available !== false && capabilities.seekable && duration > 0 && !pendingAction;
   const position = (scrub?.context === context ? scrub.seconds : null) ?? live.seconds ?? snapshot.position ?? 0;
   const clamped = Math.min(Math.max(0, position), duration || 0);
   const fraction = duration > 0 ? clamped / duration : 0;
@@ -63,6 +64,25 @@ export function SeekBar({ target, availability = null }) {
     if (!Number.isFinite(e.clientX)) return null;
     const frac = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
     return Math.round(frac * duration);
+  };
+
+  const commitSeek = (seconds) => {
+    setCommandFeedback(null);
+    const operation = () => transport.seekAbs?.(seconds);
+    const commandContext = context;
+    const reportFailure = () => {
+      if (contextRef.current === commandContext) {
+        setCommandFeedback({ message: 'Could not confirm change', context: commandContext });
+      }
+    };
+    let result;
+    try {
+      result = onCommand ? onCommand('seekAbs', operation, seconds) : operation();
+    } catch {
+      reportFailure();
+      return;
+    }
+    Promise.resolve(result).catch(reportFailure);
   };
 
   const onPointerDown = (e) => {
@@ -105,7 +125,7 @@ export function SeekBar({ target, availability = null }) {
     // Remote seekAbs resolves on device-ack and can reject on ack timeout;
     // correctness comes from device-state, so never leak an unhandled
     // rejection. (Local seekAbs returns undefined — Promise.resolve is safe.)
-    if (secs != null) Promise.resolve(transport.seekAbs?.(secs)).catch(() => {});
+    if (secs != null) commitSeek(secs);
   };
 
   const onPointerCancel = () => {
@@ -124,7 +144,7 @@ export function SeekBar({ target, availability = null }) {
     else if (e.key === 'End') next = duration;
     if (next == null) return;
     e.preventDefault();
-    Promise.resolve(transport.seekAbs?.(next)).catch(() => {});
+    commitSeek(next);
   };
 
   return (
@@ -155,6 +175,9 @@ export function SeekBar({ target, availability = null }) {
       <span className="np-seek-time" data-testid="np-seek-remaining">
         {duration ? `-${formatTime(Math.max(0, duration - clamped))}` : '–:––'}
       </span>
+      {commandFeedback?.context === context && (
+        <div className="np-command-feedback" data-testid="np-seek-command-feedback" role="status">{commandFeedback.message}</div>
+      )}
     </div>
   );
 }

@@ -33,7 +33,7 @@ export function PeekPanel({ deviceId }) {
     () => new Map([[deviceId, realSnap ?? {}]]),
     [deviceId, realSnap],
   );
-  const { statusView, predict, pending } = useStatusOverlay(realMap);
+  const { statusView, predict, pending, pendingMatch } = useStatusOverlay(realMap);
   const snap = statusView.get(deviceId);
 
   const itemTitle = snap?.currentItem?.title ?? snap?.currentItem?.contentId ?? null;
@@ -52,13 +52,17 @@ export function PeekPanel({ deviceId }) {
   // Return the actual ack promise to TransportBar. It displays a plain failure
   // when an optimistic remote command cannot be confirmed; swallowing it here
   // would make a rejected command look like success.
-  const handleCommand = useCallback((action, invoke) => {
+  const handleCommand = useCallback((action, invoke, value = null) => {
     if (action === 'play') predict(deviceId, { state: 'playing' });
     if (action === 'pause') predict(deviceId, { state: 'paused' });
     if (action === 'stop') predict(deviceId, { state: 'stopped' });
+    if (action === 'seekAbs') {
+      pendingMatch(deviceId, 'position', (position) => Number.isFinite(position)
+        && Number.isFinite(value) && Math.abs(position - value) <= 2);
+    }
     if (action === 'skipNext' || action === 'skipPrev') pending(deviceId, ['currentItem']);
     return invoke();
-  }, [deviceId, pending, predict]);
+  }, [deviceId, pending, pendingMatch, predict]);
 
   const pendingActions = useMemo(() => ({
     play: statePending,
@@ -66,7 +70,8 @@ export function PeekPanel({ deviceId }) {
     stop: statePending,
     skipNext: currentItemPending,
     skipPrev: currentItemPending,
-  }), [currentItemPending, statePending]);
+    seekAbs: pendingFields?.has('position') === true,
+  }), [currentItemPending, pendingFields, statePending]);
 
   return (
     <Stack data-testid="peek-panel" className="peek-panel" gap="md">
@@ -91,7 +96,12 @@ export function PeekPanel({ deviceId }) {
         {statusLine}
       </Text>
 
-      {snap?.currentItem && <SeekBar target={{ deviceId }} availability={availability} />}
+      {snap?.currentItem && <SeekBar
+        target={{ deviceId }}
+        availability={availability}
+        onCommand={handleCommand}
+        pendingAction={pendingActions.seekAbs}
+      />}
 
       <TransportBar
         target={{ deviceId }}

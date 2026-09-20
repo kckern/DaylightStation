@@ -55,11 +55,12 @@ function makeFakeVideo({ currentTime = 100, duration = 1000 } = {}) {
   return el;
 }
 
-function Harness({ ctrlRef, apiRef, video, recoverySessionKey }) {
+function Harness({ ctrlRef, apiRef, video, recoverySessionKey, onProgress = null }) {
   const api = useCommonMediaController({
     meta: { assetId: 'plex:1', title: 'T' },
     isVideo: true,
     recoverySessionKey,
+    onProgress,
     onController: (c) => { ctrlRef.current = c; }
   });
   apiRef.current = api;
@@ -94,6 +95,20 @@ describe('useCommonMediaController stall detection + ledger-gated nudge', () => 
     requestSpy = vi.spyOn(ledger, 'request');
     successSpy = vi.spyOn(ledger, 'recordSuccess');
     _setSharedLedgerForTests(ledger);
+  });
+
+  it('reports healthy advancing playback as playing after a buffering episode', () => {
+    const ctrlRef = { current: null };
+    const apiRef = { current: null };
+    const onProgress = vi.fn();
+    const video = makeFakeVideo({ currentTime: 10 });
+    render(<Harness ctrlRef={ctrlRef} apiRef={apiRef} video={video} onProgress={onProgress} />);
+
+    act(() => { video._ct = 10.5; video.fire('timeupdate'); });
+
+    expect(onProgress).toHaveBeenLastCalledWith(expect.objectContaining({
+      currentTime: 10.5, paused: false, isSeeking: false, stalled: false, playing: true,
+    }));
   });
 
   afterEach(() => {

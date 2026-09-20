@@ -592,7 +592,7 @@ describe('Player session port', () => {
     expect(source.stopIfCurrent(fresh)).toEqual({ ok: true });
     expect(pause).toHaveBeenCalledTimes(1);
     expect(ref.current.getQueueSnapshot().items.map((item) => item.queueItemId)).toEqual(retained);
-    expect(source.capture().snapshot.state).toBe('ready');
+    expect(source.capture().snapshot).toMatchObject({ state: 'ready', currentItem: null });
     bridge.stop();
   });
 

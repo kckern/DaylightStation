@@ -122,4 +122,27 @@ describe('Player queue-op ownership integration', () => {
       queueRevision: before.queueRevision + 1,
     });
   });
+
+  it('stops the foreground owner while retaining its queue', async () => {
+    const ref = createRef();
+    render(<Player ref={ref} play={[
+      { contentId: 'plex:current' },
+      { contentId: 'plex:next' },
+    ]} />);
+    await waitFor(() => expect(ref.current?.getQueueSnapshot().items).toHaveLength(2));
+    const before = ref.current.getPlaybackIdentity();
+    const retained = ref.current.getQueueSnapshot().items.map((item) => item.queueItemId);
+
+    await act(async () => {
+      expect(getPlayerQueueOpRegistry().dispatch({ op: 'stop', commandId: 'stop-1' })).toBe(true);
+      await Promise.resolve();
+    });
+
+    expect(ref.current.getOwnerState()).toBe('ready');
+    expect(ref.current.getQueueSnapshot().items.map((item) => item.queueItemId)).toEqual(retained);
+    expect(ref.current.getPlaybackIdentity()).toMatchObject({
+      playbackRevision: before.playbackRevision + 1,
+      queueRevision: before.queueRevision,
+    });
+  });
 });

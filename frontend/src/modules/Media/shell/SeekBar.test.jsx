@@ -1,6 +1,6 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { act, render, screen, fireEvent } from '@testing-library/react';
 
 const transport = { seekAbs: vi.fn() };
 const state = {
@@ -239,6 +239,39 @@ describe('SeekBar', () => {
     rerender(<SeekBar target="local" />);
     firePointer(track, 'pointerup', 100);
     expect(transport.seekAbs).not.toHaveBeenCalled();
+  });
+
+  it('does not show a rejected seek from an old playback context', async () => {
+    let reject;
+    state.transport = { seekAbs: vi.fn(() => new Promise((_, fail) => { reject = fail; })) };
+    const { rerender } = render(<SeekBar target={{ deviceId: 'screen-a' }} />);
+    const track = screen.getByTestId('np-seek');
+    measureTrack(track);
+    firePointer(track, 'pointerdown', 100);
+    firePointer(track, 'pointerup', 100);
+
+    state.snapshot = { ...state.snapshot, currentItem: { ...state.snapshot.currentItem, contentId: 'plex:replacement' } };
+    rerender(<SeekBar target={{ deviceId: 'screen-a' }} />);
+    await act(async () => {
+      reject(new Error('old ack timeout'));
+      await Promise.resolve();
+    });
+    expect(screen.queryByTestId('np-seek-command-feedback')).toBeNull();
+  });
+
+  it('clears an already-visible seek failure when playback context changes', async () => {
+    state.transport = { seekAbs: vi.fn(() => Promise.reject(new Error('ack timeout'))) };
+    const { rerender } = render(<SeekBar target={{ deviceId: 'screen-a' }} />);
+    const track = screen.getByTestId('np-seek');
+    measureTrack(track);
+    firePointer(track, 'pointerdown', 100);
+    firePointer(track, 'pointerup', 100);
+    await act(async () => { await Promise.resolve(); });
+    expect(screen.getByTestId('np-seek-command-feedback')).toHaveTextContent('Could not confirm change');
+
+    state.snapshot = { ...state.snapshot, currentItem: { ...state.snapshot.currentItem, contentId: 'plex:replacement' } };
+    rerender(<SeekBar target={{ deviceId: 'screen-a' }} />);
+    expect(screen.queryByTestId('np-seek-command-feedback')).toBeNull();
   });
 
   it('shows a LIVE badge instead of a scrubber for live content', () => {

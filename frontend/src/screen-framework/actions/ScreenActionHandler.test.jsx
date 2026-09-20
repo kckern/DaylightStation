@@ -635,6 +635,24 @@ describe('ScreenActionHandler', () => {
       expect(pressKeysFor('skipPrev')).toEqual(pressKeysFor('prev'));
       expect(pressKeysFor('skipPrev')).toEqual(['Backspace']);
     });
+
+    it('routes remote Stop to the active Player owner without synthesizing Escape', () => {
+      const owner = vi.fn();
+      getPlayerQueueOpRegistry().register(owner);
+      const dispatchSpy = vi.spyOn(window, 'dispatchEvent');
+      render(
+        <ScreenOverlayProvider>
+          <ScreenActionHandler actions={{ playback: { when_idle: 'dispatch' } }} />
+        </ScreenOverlayProvider>
+      );
+
+      act(() => getActionBus().emit('media:playback', { command: 'stop', commandId: 'stop-1' }));
+
+      expect(owner).toHaveBeenCalledWith(expect.objectContaining({ op: 'stop', commandId: 'stop-1' }));
+      expect(dispatchSpy.mock.calls.some(([event]) => event instanceof KeyboardEvent && event.key === 'Escape'))
+        .toBe(false);
+      dispatchSpy.mockRestore();
+    });
   });
 
   describe('playback secondary fallback', () => {

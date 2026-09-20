@@ -1803,6 +1803,16 @@ const Player = forwardRef(function Player(props, ref) {
     || mediaAccessRef.current?.getMediaEl?.()
     || null;
 
+  const stopOwner = useCallback(() => {
+    issueOwnerRevision({ playback: true });
+    cancelPendingRendererOperation('stop');
+    ownerStoppedRef.current = true;
+    const el = _getMediaElFallback();
+    try { el?.pause?.(); } catch { /* best-effort native Stop */ }
+    try { if (el) el.currentTime = 0; } catch { /* non-seekable source */ }
+    return { ok: true };
+  }, [cancelPendingRendererOperation, issueOwnerRevision]);
+
   useImperativeHandle(isValidImperativeRef ? ref : null, () => ({
     seek: (t) => {
       if (!Number.isFinite(t)) return;
@@ -1826,6 +1836,7 @@ const Player = forwardRef(function Player(props, ref) {
         () => _getMediaElFallback()?.pause?.()
       );
     },
+    stop: stopOwner,
     toggle: () => {
       ownerStoppedRef.current = false;
       issueOwnerRevision({ playback: true });
@@ -1884,7 +1895,9 @@ const Player = forwardRef(function Player(props, ref) {
     beginRendererBoundary,
     // Read-only now-playing metadata (current item meta + queue coordinates)
     // for external session bridges. Reads a render-mirrored ref — always fresh.
-    getNowPlaying: () => nowPlayingRef.current,
+    getNowPlaying: () => (ownerStoppedRef.current
+      ? { ...nowPlayingRef.current, item: null, queuePosition: null }
+      : nowPlayingRef.current),
     // A bridge consumer must never be able to mutate the live queue owner.
     getQueueSnapshot: () => JSON.parse(JSON.stringify(queueSnapshot)),
     getQueueConfig: () => ({ shuffle: isShuffle, repeat: repeatMode }),
@@ -1948,13 +1961,7 @@ const Player = forwardRef(function Player(props, ref) {
       if (!samePlaybackOwnerIdentity(expected, actual)) {
         return { ok: false, code: 'SOURCE_CHANGED' };
       }
-      issueOwnerRevision({ playback: true });
-      cancelPendingRendererOperation('stop');
-      ownerStoppedRef.current = true;
-      const el = _getMediaElFallback();
-      try { el?.pause?.(); } catch { /* best-effort native Stop */ }
-      try { if (el) el.currentTime = 0; } catch { /* non-seekable source */ }
-      return { ok: true };
+      return stopOwner();
     },
     getShader: () => queueShader,
     getMediaController: () => controllerRef.current,
@@ -1983,7 +1990,7 @@ const Player = forwardRef(function Player(props, ref) {
         fromContentId: effectiveMeta?.contentId ?? effectiveMeta?.assetId ?? null,
       }, { level: 'info' });
     },
-  }), [isQueue, isShuffle, repeatMode, advance, singleAdvance, rawJumpTo, sessionVolume, sessionPlaybackRate, setOwnerVolume, setOwnerPlaybackRate, effectiveMeta?.assetId, effectiveMeta?.contentId, resilienceControllerRef, withTransport, queueSnapshot, playerInstanceId, queueShader, issueOwnerRevision, adoptQueueSnapshot, setTargetTimeSeconds, setShader, setShaderUserCycled, inspectRendererBoundaryRequest, beginRendererBoundary, cancelPendingRendererOperation]);
+  }), [isQueue, isShuffle, repeatMode, advance, singleAdvance, rawJumpTo, sessionVolume, sessionPlaybackRate, setOwnerVolume, setOwnerPlaybackRate, effectiveMeta?.assetId, effectiveMeta?.contentId, resilienceControllerRef, withTransport, queueSnapshot, playerInstanceId, queueShader, issueOwnerRevision, adoptQueueSnapshot, setTargetTimeSeconds, setShader, setShaderUserCycled, inspectRendererBoundaryRequest, beginRendererBoundary, stopOwner]);
 
   useEffect(() => () => {
     clearRemountTimer();
@@ -1994,6 +2001,10 @@ const Player = forwardRef(function Player(props, ref) {
   // --- On-deck: handle the one queue op this Player owns ---
   const handleQueueOp = useCallback(async (payload = {}) => {
     const { op, contentId, shader: requestedShader } = payload;
+    if (op === 'stop') {
+      stopOwner();
+      return;
+    }
     if (!contentId) return;
     if (op !== 'play-now' && op !== 'play-next' && op !== 'add') return;
 
@@ -2078,7 +2089,7 @@ const Player = forwardRef(function Player(props, ref) {
     }
 
     pushOnDeck(item, { displaceToQueue: !!onDeckCfg?.displace_to_queue });
-  }, [playQueue, onDeck, onDeckCfg, pushOnDeck, flashOnDeck, playNow, append, playerInstanceId, queueShader, classes, setShader, setShaderUserCycled]);
+  }, [playQueue, onDeck, onDeckCfg, pushOnDeck, flashOnDeck, playNow, append, playerInstanceId, queueShader, classes, setShader, setShaderUserCycled, stopOwner]);
 
   // Register once in mount order while the ref supplies the latest stateful
   // callback. Re-registering on every queue change would let a background
