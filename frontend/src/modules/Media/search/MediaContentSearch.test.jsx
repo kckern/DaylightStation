@@ -8,10 +8,11 @@ import { render, screen, fireEvent } from '@testing-library/react';
 // Mutable holders — factories close over these but only read at render time.
 const dispatch = vi.fn();
 const playContainerAsQueue = vi.fn();
+const addContainerToQueue = vi.fn();
 const info = vi.fn();
 
 vi.mock('./useContentDispatch.js', () => ({
-  useContentDispatch: () => ({ dispatch, playContainerAsQueue }),
+  useContentDispatch: () => ({ dispatch, playContainerAsQueue, addContainerToQueue }),
 }));
 
 // ── useSessionController: the ⋯ verb menu's four queue actions ──
@@ -70,6 +71,7 @@ vi.mock('../../Content/combobox/ContentCombobox.jsx', () => ({
         <button data-testid="pick-container" onClick={() => props.onChange(container.id, container)}>pick container</button>
         <button data-testid="play-all-container" onClick={() => props.onPlayAll?.(container)}>play all</button>
         <button data-testid="more-play-next" onClick={() => props.onMore?.('playNext', leaf)}>play next</button>
+        <button data-testid="more-add" onClick={() => props.onMore?.('add', leaf)}>add</button>
         <button data-testid="more-detail" onClick={() => props.onMore?.('detail', leaf)}>open detail</button>
       </>
     );
@@ -85,6 +87,7 @@ import { MediaContentSearch } from './MediaContentSearch.jsx';
 beforeEach(() => {
   dispatch.mockReset();
   playContainerAsQueue.mockReset();
+  addContainerToQueue.mockReset();
   info.mockReset();
   queuePlayNow.mockReset();
   queuePlayNext.mockReset();
@@ -202,6 +205,28 @@ describe('MediaContentSearch', () => {
       fireEvent.click(screen.getByTestId('more-play-next'));
 
       expect(queuePlayNext).toHaveBeenCalledWith(expect.objectContaining({ contentId: 'plex:685088' }));
+    });
+
+    it('⋯ Add dispatches the leaf to an aimed target instead of mutating the local queue', () => {
+      addContainerToQueue.mockReturnValue('cast');
+      render(<MediaContentSearch />);
+      fireEvent.click(screen.getByTestId('more-add'));
+
+      expect(addContainerToQueue).toHaveBeenCalledWith(
+        'plex:685088',
+        { id: 'plex:685088', title: 'Episode 3', type: 'episode' }
+      );
+      expect(queueAdd).not.toHaveBeenCalled();
+    });
+
+    it('⋯ Add retains the existing local append route when no target is aimed', () => {
+      addContainerToQueue.mockReturnValue('local');
+      render(<MediaContentSearch />);
+      fireEvent.click(screen.getByTestId('more-add'));
+
+      expect(addContainerToQueue).toHaveBeenCalledWith('plex:685088', expect.objectContaining({ id: 'plex:685088' }));
+      expect(queueAdd).not.toHaveBeenCalled();
+      expect(queuePlayNow).not.toHaveBeenCalled();
     });
 
     it('⋯ Open detail pushes the detail view, touching no queue applier', () => {

@@ -41,3 +41,7 @@ Source SHA `d7e32de18262e4db1691803219a91574e8801081` (compiled preview) was exe
 ### Direct Player owner follow-up
 
 `Player` now admits a single direct `play` into its session owner before asynchronous queue hydration finishes, while continuing to render the original direct input so admission does not replace its transport or remount the native element. Regression coverage verifies immediate owner identity/revision, same-identity rerender, registry publication of the advancing native video, and later canonical queue hydration without replacing that element. Terra reports **29 focused tests passed** and root reviewed the change. This is follow-up unit evidence only: it does not change the ordinary-story acceptance counts above, which still require a new compiled browser journey confirming the “Playing” tray and Add path.
+
+### Aimed search Add follow-up
+
+The runtime trace showed the ordinary receiver accepted the previous Add path without the expected target-owned queue mutation. `MediaContentSearch` now routes the row’s Add action through `addContainerToQueue`, preserving the existing local append behavior when no target is aimed and using the existing target-aware dispatch path when one is selected. The change has **52 focused tests passing** per Terra. This is not yet end-to-end acceptance: the browser journey has not been rerun against a build containing this fix, so Play+Add completion and truthful post-Add tray/native preservation remain unproven.
