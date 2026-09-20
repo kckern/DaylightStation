@@ -52,3 +52,11 @@
 - Repair: `DestinationLine` disables Mantine `closeOnEscape` and registers as an unmanaged shell layer, giving the shell exactly one Escape owner.
 - Browser RED is the detached runtime failure above. A real-component DestinationLine + Mantine Modal + DismissStack integration test validates sheet-first then base-second Escape ownership; Happy DOM does not reproduce Mantine's production capture/bubble flush timing pre-fix, so that test passes on both sides while the browser result remains the causal RED.
 - Focused GREEN: DestinationLine integration/component, ContentCombobox, and DismissStack suites — 44 tests passed. Scoped ESLint and `git diff --check` passed. Ledger unchanged; detached runtime re-run remains required.
+
+## Final detached runtime acceptance
+
+- Exact detached source SHA: `3cb5103a691e3836798230c3c0b9fa654c4bdfa2`; clean build artifact: `/tmp/daylight-media-preview-s3oM44`; preview server: `http://127.0.0.1:39825` (stopped after the run).
+- Build command: `MEDIA_ACCEPTANCE_EXPECTED_SHA=3cb5103a691e3836798230c3c0b9fa654c4bdfa2 node tests/_lib/media-redesign-server.mjs --build` — passed. Existing Sass/static-asset/chunk warnings did not fail the build.
+- Runtime command: `BASE_URL=http://127.0.0.1:39825 npx playwright test tests/live/flow/media/media-app-navigation-history.runtime.test.mjs --workers=1 --reporter=line` — **7 passed (1.0m)**.
+- The serial proof covers phone/tablet/laptop primary ownership, truthful actual-origin Back, canonical reselect plus one real browser Back, phone SearchMode/Destination Sheet Escape ownership, and valid depth-one plus unknown direct-link fallback.
+- Earlier RED artifacts remain preserved under `/tmp/daylight-media-navigation-acceptance/test-results/`; the repaired run produced no test failure. The acceptance ledger remains unchanged pending review.
