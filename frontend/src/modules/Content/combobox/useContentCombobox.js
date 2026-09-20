@@ -179,7 +179,7 @@ async function fetchSiblingsData(contentId) {
  */
 export function useContentCombobox({
   value, onChange, searchParams = '', fallbackSearchParams, scopeKey, scopeLabel,
-  appResults = false, selectContainers = false, allowFreeform = true, logApp = 'admin',
+  appResults = false, selectContainers = false, allowFreeform = true, logApp = 'admin', retainQueryOnEscape = false,
 }) {
   const log = useMemo(() => getChildLogger({ component: 'useContentCombobox', app: logApp, sessionLog: true }), [logApp]);
   const [state, dispatch] = useReducer(reducer, value ?? '', initialState);
@@ -687,9 +687,9 @@ export function useContentCombobox({
       log.info('freeform.revert_on_close', { discarded: current.search, kept: current.value, reason });
     }
     invalidateBrowseLoads();
-    dispatch({ type: 'CLOSE', reason });
+    dispatch({ type: 'CLOSE', reason, retainSearch: reason === 'escape' && retainQueryOnEscape ? current.search : null });
     cancelPendingSearch();
-  }, [cancelPendingSearch, log, allowFreeform]);
+  }, [cancelPendingSearch, log, allowFreeform, retainQueryOnEscape]);
 
   const select = useCallback((item) => {
     log.info('item_select', { contentId: item.id, title: item.title, prevValue: stateRef.current.value });
@@ -868,7 +868,7 @@ export function useContentCombobox({
       case 'revert':
       case 'dismiss':
         log.info(`commit.${decision.action}`, { discarded: s.search, kept: s.value, reason });
-        invalidateBrowseLoads(); dispatch({ type: 'CLOSE' }); cancelPendingSearch();
+        invalidateBrowseLoads(); dispatch({ type: 'CLOSE', retainSearch: reason === 'escape' && retainQueryOnEscape ? s.search : null }); cancelPendingSearch();
         break;
       case 'none':
       default:
@@ -876,7 +876,7 @@ export function useContentCombobox({
         break;
     }
     return decision;
-  }, [selectContainers, select, drill, cancelPendingSearch, log, allowFreeform]);
+  }, [selectContainers, select, drill, cancelPendingSearch, log, allowFreeform, retainQueryOnEscape]);
 
   // ── 6. Title resolution for the committed value ──
   const [resolvedTitle, setResolvedTitle] = useState(() => (
