@@ -14,6 +14,7 @@ import { getModuleManifest } from '../modules/Fitness/index.js';
 import { VolumeProvider } from '../modules/Fitness/nav/VolumeProvider.jsx';
 import { FitnessProvider } from '../context/FitnessContext.jsx';
 import getLogger, { configure as configureLogger } from '../lib/logging/Logger.js';
+import { guardedReload } from '../lib/reloadGuard.js';
 import { readHeap, heapFields, heapSnapshotFields, reportMemoryMonitoringAvailability } from '../lib/perf/memoryProbe.js';
 import { sortNavItems, filterNavItemsByDay, isNavItemActive } from '../modules/Fitness/lib/navigationUtils.js';
 import useDayOfWeek from '../hooks/useDayOfWeek.js';
@@ -1549,7 +1550,7 @@ const FitnessApp = () => {
                     onPointerDown={(e) => {
                       try {
                         e.preventDefault();
-                        window.location.reload();
+                        guardedReload({ reason: 'fitness-loading-stuck' });
                       } catch (err) {
                         logger.warn('fitness-reload-fallback', { message: err?.message });
                         window.location.replace(window.location.href);
@@ -1559,7 +1560,7 @@ const FitnessApp = () => {
                       // Fallback for browsers that don't support pointerdown properly
                       try {
                         e.preventDefault();
-                        window.location.reload();
+                        guardedReload({ reason: 'fitness-loading-stuck' });
                       } catch (err) {
                         logger.warn('fitness-reload-fallback', { message: err?.message });
                         window.location.replace(window.location.href);
@@ -1569,7 +1570,7 @@ const FitnessApp = () => {
                     if (e.key === 'Enter' || e.key === ' ') {
                       try {
                         e.preventDefault();
-                        window.location.reload();
+                        guardedReload({ reason: 'fitness-loading-stuck' });
                       } catch (err) {
                         logger.warn('fitness-reload-fallback', { message: err?.message });
                         window.location.replace(window.location.href);
@@ -1607,9 +1608,9 @@ const FitnessApp = () => {
                   }}
                   onClick={() => {
                     try {
-                      window.location.reload();
+                      guardedReload({ reason: 'fitness-fetch-error' });
                     } catch (err) {
-                      window.location.replace(window.location.href);
+                      logger.warn('fitness-reload-fallback', { message: err?.message });
                     }
                   }}
                 >
