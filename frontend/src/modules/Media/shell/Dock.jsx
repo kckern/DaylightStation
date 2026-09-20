@@ -18,16 +18,25 @@ import { FleetIndicator } from './FleetIndicator.jsx';
 import { SettingsMenu } from './SettingsMenu.jsx';
 import { ConfirmDialog } from './ConfirmDialog.jsx';
 import { CastTargetChip } from '../cast/CastTargetChip.jsx';
+import { useCastTarget } from '../cast/useCastTarget.js';
 import { useSessionController } from '../controller/useSessionController.js';
 
 export function Dock({ onOpenSearch }) {
   const { lifecycle } = useSessionController('local');
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [returnAimLocal, setReturnAimLocal] = useState(true);
+  const { clearTargets } = useCastTarget();
 
   const doReset = useCallback(() => {
     setConfirmOpen(false);
     lifecycle.reset?.();
-  }, [lifecycle]);
+    if (returnAimLocal) clearTargets();
+  }, [clearTargets, lifecycle, returnAimLocal]);
+
+  const openStartFresh = useCallback(() => {
+    setReturnAimLocal(true);
+    setConfirmOpen(true);
+  }, []);
 
   return (
     <header className="media-dock" data-testid="media-dock">
@@ -53,16 +62,25 @@ export function Dock({ onOpenSearch }) {
         <FleetIndicator />
         <CastTargetChip />
       </div>
-      <SettingsMenu onResetSession={() => setConfirmOpen(true)} />
+      <SettingsMenu onResetSession={openStartFresh} />
       <ConfirmDialog
         open={confirmOpen}
-        title="Reset local session?"
-        message="This clears the current queue and playback position. This cannot be undone."
-        confirmLabel="Reset"
+        title="Start fresh on this device?"
+        message="This clears this device’s current queue and playback position. It does not stop anything playing on other screens."
+        confirmLabel="Start fresh"
         cancelLabel="Cancel"
         onConfirm={doReset}
         onCancel={() => setConfirmOpen(false)}
-      />
+      >
+        <label>
+          <input
+            type="checkbox"
+            checked={returnAimLocal}
+            onChange={(event) => setReturnAimLocal(event.target.checked)}
+          />
+          Return aim to this device
+        </label>
+      </ConfirmDialog>
     </header>
   );
 }
