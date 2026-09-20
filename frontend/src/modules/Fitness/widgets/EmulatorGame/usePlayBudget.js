@@ -23,7 +23,9 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 export const STALE_AFTER_MS = 45_000;
 
 export function derivePlayBudget({ message, receivedAt, now }) {
-  if (!message) return { visible: false, stale: false, mode: 'idle', label: '--:--', ms: 0 };
+  const systemLabel = message?.systemLabel ?? null;
+  const overlayConfig = message?.overlay ?? null;
+  if (!message) return { visible: false, stale: false, mode: 'idle', label: '--:--', ms: 0, systemLabel, overlayConfig };
 
   const age = now - receivedAt;
   const stale = age > STALE_AFTER_MS;
@@ -35,6 +37,7 @@ export function derivePlayBudget({ message, receivedAt, now }) {
       visible: true, stale, mode: 'elapsed',
       ms: Math.max(0, (message.playedMs ?? 0) + drift),
       label: 'played', warning: message.warning ?? null,
+      systemLabel, overlayConfig,
     };
   }
   const left = Math.max(0, message.remainingMs - drift);
@@ -43,6 +46,7 @@ export function derivePlayBudget({ message, receivedAt, now }) {
     label: left <= 0 ? "time's up" : 'remaining',
     urgency: left <= 60_000 ? 'crit' : (left <= 180_000 ? 'warn' : null),
     warning: message.warning ?? null,
+    systemLabel, overlayConfig,
   };
 }
 
