@@ -82,10 +82,12 @@ function arrivalResult(page, phone) {
 }
 async function setReceiverAim(page, phone) {
   if (phone) {
-    await page.getByTestId('destination-line').click();
+    const searchSurface = page.getByTestId('search-mode');
+    await searchSurface.getByTestId('destination-line').click();
+    await expect(page.getByTestId('destination-sheet')).toBeVisible();
     await page.getByTestId('picker-device-acceptance-media').click();
     await page.getByTestId('picker-submit').click();
-    await expect(page.getByTestId('destination-line-name')).toHaveText('Acceptance receiver');
+    await expect(searchSurface.getByTestId('destination-line-name')).toHaveText('Acceptance receiver');
     return;
   }
   await page.getByTestId('cast-target-chip').click();
@@ -96,9 +98,12 @@ async function setReceiverAim(page, phone) {
 async function setLocalAim(page, phone) {
   if (phone) {
     await page.getByTestId('media-search-launcher').click();
-    await page.getByTestId('destination-line').click();
+    const searchSurface = page.getByTestId('search-mode');
+    await expect(searchSurface).toBeVisible();
+    await searchSurface.getByTestId('destination-line').click();
+    await expect(page.getByTestId('destination-sheet')).toBeVisible();
     await page.getByTestId('picker-this-device').click();
-    await expect(page.getByTestId('destination-line-name')).toHaveText('This device');
+    await expect(searchSurface.getByTestId('destination-line-name')).toHaveText('This device');
     return closeSearch(page, true);
   }
   await page.getByTestId('cast-target-chip').click();
