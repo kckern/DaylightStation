@@ -3,8 +3,9 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 
 const DaylightAPI = vi.fn();
+let homelineCallback = null;
 vi.mock('../../../lib/api.mjs', () => ({ DaylightAPI: (...a) => DaylightAPI(...a) }));
-vi.mock('../net/ws.js', () => ({ subscribeTopicKind: () => () => {} }));
+vi.mock('../net/ws.js', () => ({ subscribeTopicKind: (_kind, callback) => { homelineCallback = callback; return () => {}; } }));
 vi.mock('../logging/mediaLog.js', () => {
   const stub = new Proxy({}, { get: (t, k) => (t[k] ??= vi.fn()) });
   return { default: stub, mediaLog: stub };
@@ -14,6 +15,7 @@ import mediaLog from '../logging/mediaLog.js';
 import { DispatchProvider } from './DispatchProvider.jsx';
 import { useDispatch } from './useDispatch.js';
 import { LocalSessionContext } from '../session/LocalSessionContext.js';
+import { PeekContext } from '../peek/PeekContext.js';
 
 const TIMING_WINDOW = 6_000; // > DISPATCH_DEDUPE_WINDOW_MS (5s)
 
@@ -36,6 +38,44 @@ afterEach(() => vi.useRealTimers());
 const CAST = { targetIds: ['livingroom-tv'], play: 'plex:665668', mode: 'fork', title: 'Wrestling with Socialism' };
 
 describe('DispatchProvider — duplicate suppression', () => {
+  it('records this sender\'s provenance only after its matching playback confirmation', async () => {
+    const recordConfirmedDispatch = vi.fn();
+    const withProvenance = ({ children }) => (
+      <PeekContext.Provider value={{ recordConfirmedDispatch }}><DispatchProvider>{children}</DispatchProvider></PeekContext.Provider>
+    );
+    DaylightAPI.mockResolvedValue({ ok: true });
+    const { result } = renderHook(() => useDispatch(), { wrapper: withProvenance });
+    let ids;
+    await act(async () => { ids = await result.current.dispatchToTarget(CAST); await Promise.resolve(); });
+
+    expect(recordConfirmedDispatch).not.toHaveBeenCalled();
+    act(() => homelineCallback({
+      dispatchId: ids[0], deviceId: 'livingroom-tv', step: 'playback', status: 'confirmed',
+      sessionId: 'session-1', ownerId: 'livingroom-tv', ownerInstanceId: 'owner-1', playbackRevision: 2,
+    }));
+    expect(recordConfirmedDispatch).toHaveBeenCalledWith({
+      deviceId: 'livingroom-tv', ownerId: 'livingroom-tv',
+      playback: { sessionId: 'session-1', contentId: 'plex:665668', ownerInstanceId: 'owner-1', playbackRevision: 2 },
+    });
+  });
+
+  it('does not record provenance for a wrong target, owner, or non-confirmed receipt', async () => {
+    const recordConfirmedDispatch = vi.fn();
+    const withProvenance = ({ children }) => (
+      <PeekContext.Provider value={{ recordConfirmedDispatch }}><DispatchProvider>{children}</DispatchProvider></PeekContext.Provider>
+    );
+    DaylightAPI.mockResolvedValue({ ok: true });
+    const { result } = renderHook(() => useDispatch(), { wrapper: withProvenance });
+    let ids;
+    await act(async () => { ids = await result.current.dispatchToTarget(CAST); await Promise.resolve(); });
+    for (const message of [
+      { deviceId: 'other-tv', ownerId: 'livingroom-tv', step: 'playback', status: 'confirmed' },
+      { deviceId: 'livingroom-tv', ownerId: 'other-tv', step: 'playback', status: 'confirmed' },
+      { deviceId: 'livingroom-tv', ownerId: 'livingroom-tv', step: 'load', status: 'done' },
+    ]) act(() => homelineCallback({ dispatchId: ids[0], sessionId: 'session-1', ...message }));
+    expect(recordConfirmedDispatch).not.toHaveBeenCalled();
+  });
+
   it('fails a direct transfer before dispatch and never stops the local source', async () => {
     const stop = vi.fn();
     const withLocalSource = ({ children }) => (

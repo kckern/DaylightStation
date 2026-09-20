@@ -131,12 +131,12 @@ describe('CastTargetProvider', () => {
     localStorage.setItem(CAST_TARGET_KEY, JSON.stringify({
       mode: 'fork', targetIds: ['office'], activityAt: now - (60 * 60 * 1000),
     }));
-    const steering = { playback: { sessionId: 's-1', contentId: 'plex:1', queueItemId: 'q-1' } };
+    const steering = { ownerId: 'office', playback: { sessionId: 's-1', contentId: 'plex:1', queueItemId: 'q-1', ownerInstanceId: 'owner-1', playbackRevision: 2 } };
     const activeFleet = { store: { getEntry: () => ({
-      snapshot: { sessionId: 's-1', state: 'playing', currentItem: { contentId: 'plex:1', queueItemId: 'q-1' } },
+      snapshot: { sessionId: 's-1', state: 'playing', currentItem: { contentId: 'plex:1', queueItemId: 'q-1' }, meta: { ownerId: 'office', playbackOwner: { ownerInstanceId: 'owner-1', playbackRevision: 2 } } },
     }), subscribeAll: () => () => {} } };
     const newerFleet = { store: { getEntry: () => ({
-      snapshot: { sessionId: 's-1', state: 'playing', currentItem: { contentId: 'plex:1', queueItemId: 'q-2' } },
+      snapshot: { sessionId: 's-1', state: 'playing', currentItem: { contentId: 'plex:1', queueItemId: 'q-1' }, meta: { ownerId: 'other', playbackOwner: { ownerInstanceId: 'owner-1', playbackRevision: 2 } } },
     }), subscribeAll: () => () => {} } };
     const renderTree = (fleet) => (
       <ClientIdentityContext.Provider value={{ clientId: 'phone' }}>

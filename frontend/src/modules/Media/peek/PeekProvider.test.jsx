@@ -31,7 +31,80 @@ function Probe() {
   );
 }
 
+function DispatchProvenanceProbe({ receipt = {
+  deviceId: 'office', ownerId: 'office',
+  playback: { sessionId: 's-1', contentId: 'plex:1', queueItemId: 'q-1' },
+} }) {
+  const { getSteeringActivity, recordConfirmedDispatch } = usePeek();
+  const activity = getSteeringActivity?.('office');
+  return (
+    <>
+      <button type="button" onClick={() => recordConfirmedDispatch(receipt)}>record confirmed dispatch</button>
+      <output data-testid="dispatch-provenance">{activity ? `${activity.playback.sessionId}:${activity.playback.contentId}` : 'none'}</output>
+    </>
+  );
+}
+
 describe('PeekProvider steering activity bridge', () => {
+  it.each([
+    ['stopped receiver', { snapshot: { sessionId: 's-1', state: 'idle', currentItem: { contentId: 'plex:1' }, meta: { ownerId: 'office' } } }],
+    ['stale receiver', { isStale: true, snapshot: { sessionId: 's-1', state: 'playing', currentItem: { contentId: 'plex:1' }, meta: { ownerId: 'office' } } }],
+    ['wrong content', { snapshot: { sessionId: 's-1', state: 'playing', currentItem: { contentId: 'plex:2' }, meta: { ownerId: 'office' } } }],
+    ['wrong owner', { snapshot: { sessionId: 's-1', state: 'playing', currentItem: { contentId: 'plex:1' }, meta: { ownerId: 'other' } } }],
+  ])('retains a confirmed owned receipt despite a currently $0 receiver', (_name, entry) => {
+    const fleet = { store: { getEntry: () => entry } };
+    render(<FleetContext.Provider value={fleet}><PeekProvider><DispatchProvenanceProbe /></PeekProvider></FleetContext.Provider>);
+    fireEvent.click(screen.getByRole('button', { name: 'record confirmed dispatch' }));
+    expect(screen.getByTestId('dispatch-provenance')).toHaveTextContent('s-1:plex:1');
+  });
+
+  it('records a confirmed dispatch only when fresh receiver playback matches its owner and content', () => {
+    const fleet = { store: { getEntry: () => ({
+      snapshot: { sessionId: 's-1', state: 'playing', currentItem: { contentId: 'plex:1' }, meta: { ownerId: 'office' } },
+    }) } };
+    render(<FleetContext.Provider value={fleet}><PeekProvider><DispatchProvenanceProbe /></PeekProvider></FleetContext.Provider>);
+    fireEvent.click(screen.getByRole('button', { name: 'record confirmed dispatch' }));
+    expect(screen.getByTestId('dispatch-provenance')).toHaveTextContent('s-1:plex:1');
+  });
+
+  it('retains a confirmed owned dispatch before its matching fresh state arrives', () => {
+    let entry = null;
+    let notify = () => {};
+    let entries = new Map();
+    const fleet = { store: {
+      getEntry: () => entry,
+      getAll: () => entries,
+      subscribeAll: (listener) => { notify = listener; return () => {}; },
+    } };
+    render(<FleetContext.Provider value={fleet}><PeekProvider><DispatchProvenanceProbe receipt={{
+      deviceId: 'office', ownerId: 'office',
+      playback: { sessionId: 's-1', contentId: 'plex:1', ownerInstanceId: 'owner-1', playbackRevision: 2 },
+    }} /></PeekProvider></FleetContext.Provider>);
+    fireEvent.click(screen.getByRole('button', { name: 'record confirmed dispatch' }));
+    expect(screen.getByTestId('dispatch-provenance')).toHaveTextContent('s-1:plex:1');
+
+    entry = { snapshot: {
+      sessionId: 's-1', state: 'playing', currentItem: { contentId: 'plex:1' },
+      meta: { ownerId: 'office', playbackOwner: { ownerInstanceId: 'owner-1', playbackRevision: 2 } },
+    } };
+    entries = new Map([['office', entry]]);
+    act(() => notify());
+    expect(screen.getByTestId('dispatch-provenance')).toHaveTextContent('s-1:plex:1');
+  });
+
+  it('retains a receipt even when the current same-content owner identity differs', () => {
+    const fleet = { store: { getEntry: () => ({ snapshot: {
+      sessionId: 's-1', state: 'playing', currentItem: { contentId: 'plex:1' },
+      meta: { ownerId: 'office', playbackOwner: { ownerInstanceId: 'owner-2', playbackRevision: 3 } },
+    } }) } };
+    render(<FleetContext.Provider value={fleet}><PeekProvider><DispatchProvenanceProbe receipt={{
+      deviceId: 'office', ownerId: 'office',
+      playback: { sessionId: 's-1', contentId: 'plex:1', ownerInstanceId: 'owner-1', playbackRevision: 2 },
+    }} /></PeekProvider></FleetContext.Provider>);
+    fireEvent.click(screen.getByRole('button', { name: 'record confirmed dispatch' }));
+    expect(screen.getByTestId('dispatch-provenance')).toHaveTextContent('s-1:plex:1');
+  });
+
   it('does not mark opening Remote as steering, but exposes a verified command activity record', () => {
     const fleet = { store: {} };
     render(
