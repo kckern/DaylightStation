@@ -129,6 +129,10 @@ export function useContentDispatch() {
   // didn't take.
   const castTo = useCallback((castTargetIds, castMode, id, title, opts = {}) => {
     const { shuffle = false, verb = 'play' } = opts;
+    // An aimed content pick starts new playback; it is not an ownership
+    // transfer. Keep the transfer guard reserved for snapshot handoff while
+    // allowing a fresh/default destination aim to dispatch normally.
+    const mode = castMode === 'transfer' ? 'fork' : castMode;
     const name = namesFor(castTargetIds, devices);
     const label = verb === 'queue'
       ? (title ? `Adding ${title} to queue` : 'Adding to queue')
@@ -144,7 +148,7 @@ export function useContentDispatch() {
     Promise.resolve(dispatchToTarget({
       targetIds: castTargetIds,
       ...targetPayload,
-      mode: castMode,
+      mode,
       title,
       ...(shuffle ? { shuffle: true } : {}),
     })).then((dispatchIds) => {
