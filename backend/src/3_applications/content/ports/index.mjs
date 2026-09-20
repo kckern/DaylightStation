@@ -10,3 +10,4 @@ export { ISyncSource, isSyncSource, assertSyncSource, createNoOpSyncSource } fro
 export { IStreamResolver, isStreamResolver } from './IStreamResolver.mjs';
 export { ISurroundStore, isSurroundStore } from './ISurroundStore.mjs';
 export { IContentSource, ContentSourceBase, validateAdapter } from './IContentSource.mjs';
+export { IPlaybackSourceGateway, assertPlaybackSourceGateway } from './IPlaybackSourceGateway.mjs';
