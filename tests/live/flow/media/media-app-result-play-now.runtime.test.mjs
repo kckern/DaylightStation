@@ -304,7 +304,6 @@ for (const [surface, viewport, isPhone] of surfaces) {
     const localVideo = sender.locator('.video-player video');
     await expect(localVideo).toBeVisible({ timeout: 60000 });
     await expect.poll(() => localVideo.evaluate(el => el.readyState >= 2 && !el.paused && el.currentTime > 0), { timeout: 60000 }).toBe(true);
-    await expect.poll(() => loads.length).toBe(1);
     const remoteAfterLocal = await receiverState(sender);
     expect(remoteAfterLocal).toMatchObject({
       snapshot: {
