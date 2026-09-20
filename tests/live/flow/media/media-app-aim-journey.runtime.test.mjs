@@ -81,10 +81,10 @@ for (const [device, viewport] of [
       await route.continue();
     });
     await page.goto('/media');
-    const search = page.getByTestId('media-search-input');
+    const search = page.getByRole('textbox', { name: 'Search media…' });
     await expect(search).toBeVisible({ timeout: 30000 });
     await search.fill('tuttle twins');
-    const collection = page.getByTestId('result-row-plex:663508');
+    const collection = page.getByTestId('combobox-option-plex:663508');
     await expect(collection).toBeVisible({ timeout: 15000 });
     await collection.click();
     await expect(page.getByTestId('browse-dispatch-header')).toBeVisible();
@@ -119,11 +119,13 @@ test('[PLACE.2b/AC3] Start fresh defaults to returning the aim to This device wi
   await page.getByRole('button', { name: /^Office Screen Office/ }).click();
   await page.getByTestId('picker-submit').click();
   await expect(page.getByTestId('destination-line-name')).toContainText('Office');
+  await page.getByRole('button', { name: 'Close search' }).click();
   await page.getByTestId('settings-menu-trigger').click();
   await page.getByRole('menuitem', { name: 'Start fresh' }).click();
   await expect(page.getByLabel('Return aim to this device')).toBeChecked();
   await expect(page.getByText('It does not stop anything playing on other screens.')).toBeVisible();
   await page.getByTestId('confirm-ok').click();
+  await page.getByTestId('media-search-launcher').click();
   await expect(page.getByTestId('destination-line-name')).toHaveText(/This browser|This device/);
   expect(commands, 'Starting fresh must not issue a command to another screen').toEqual([]);
 });
