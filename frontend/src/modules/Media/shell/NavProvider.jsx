@@ -101,7 +101,10 @@ export function NavProvider({ children }) {
       }
       if (intent.kind === 'pop') {
         setStack(next);
-        if (next.length > 1) window.history.back();
+        if (next.length > 1) {
+          traversalPendingRef.current = true;
+          window.history.back();
+        }
         else {
           const fallback = [{ view: 'home', params: {} }];
           syncHistory(fallback, 'replace');
@@ -196,6 +199,7 @@ export function NavProvider({ children }) {
       return;
     }
     if (typeof window !== 'undefined' && window.history.state?.mediaNavStack?.length > 1) {
+      traversalPendingRef.current = true;
       window.history.back();
       return;
     }
