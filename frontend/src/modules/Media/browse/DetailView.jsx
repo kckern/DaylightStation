@@ -9,12 +9,14 @@ import { useSessionController } from '../controller/useSessionController.js';
 import { useContentDispatch } from '../search/useContentDispatch.js';
 import { resultToQueueInput } from '../search/resultToQueueInput.js';
 import { CastButton } from '../cast/CastButton.jsx';
+import { useNav } from '../shell/NavProvider.jsx';
 import Skeleton from '@/lib/ui/Skeleton.jsx';
 
 export function DetailView({ contentId }) {
   const { info, loading, error } = useContentInfo(contentId);
   const { queue } = useSessionController('local');
   const { dispatchLeafVerb } = useContentDispatch();
+  const { pop, backDestination } = useNav();
 
   if (loading) {
     return (
@@ -43,6 +45,9 @@ export function DetailView({ contentId }) {
 
   return (
     <Stack data-testid="detail-view" className="detail-view" gap="md">
+      <Button variant="subtle" color="gray" data-testid="detail-back" className="detail-back" onClick={() => pop()}>
+        ← {backDestination ?? 'Home'}
+      </Button>
       {info.thumbnail && (
         <Image src={info.thumbnail} alt={info.title ?? contentId} className="detail-poster" radius="md" />
       )}

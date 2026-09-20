@@ -17,3 +17,10 @@
 
 - The three-viewport Playwright history matrix was intentionally not started before the close 29% checkpoint. RELY acceptance remains unchanged.
 - Happy DOM drops the forward entry after `history.go(-1)`. The unit test therefore records history length at the synchronous traversal seam and separately proves the route landing plus the following Back to Home; real-browser runtime proof remains required.
+
+## Review round 1/5
+
+- Addressed the rejected Detail gap: Detail now has `detail-back`, labels its actual provider destination, and invokes `pop`; a focused component test covers the Home depth-one fallback label.
+- Addressed the async traversal race: `goToArea` leaves React state unchanged while `history.go` is pending; only `popstate` restores the traversed stack. The provider test holds `history.go` pending to prove state/URL/history remain Detail, then the real-history case waits for Browse URL/state coherence before its next Back reaches Home.
+- Added Home/Browse/Devices origin-label matrix and Rail ownership assertions.
+- GREEN: focused navigation suite — 7 files, 55 tests passed. Scoped ESLint and `git diff --check` passed. Full Playwright remains intentionally deferred.

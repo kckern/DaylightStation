@@ -5,6 +5,8 @@ import { MantineProvider } from '@mantine/core';
 
 const dispatchLeafVerb = vi.fn();
 const queuePlayNow = vi.fn();
+const pop = vi.fn();
+let backDestination = 'Browse';
 vi.mock('./useContentInfo.js', () => ({
   useContentInfo: () => ({ info: { title: 'Episode 3', type: 'episode', thumbnail: 'episode.jpg' }, loading: false, error: null }),
 }));
@@ -13,10 +15,20 @@ vi.mock('../controller/useSessionController.js', () => ({
   useSessionController: () => ({ queue: { playNow: queuePlayNow, playNext: vi.fn(), addUpNext: vi.fn(), add: vi.fn() } }),
 }));
 vi.mock('../cast/CastButton.jsx', () => ({ CastButton: () => null }));
+vi.mock('../shell/NavProvider.jsx', () => ({ useNav: () => ({ pop, backDestination }) }));
 
 import { DetailView } from './DetailView.jsx';
 
 describe('DetailView Play Now', () => {
+  it('shows a Back destination and uses the route pop seam', () => {
+    backDestination = 'Home';
+    render(<MantineProvider><DetailView contentId="plex:685088" /></MantineProvider>);
+
+    expect(screen.getByTestId('detail-back')).toHaveTextContent('← Home');
+    fireEvent.click(screen.getByTestId('detail-back'));
+    expect(pop).toHaveBeenCalledTimes(1);
+  });
+
   it('routes the loaded detail item through the current destination dispatcher', () => {
     render(<MantineProvider><DetailView contentId="plex:685088" /></MantineProvider>);
     fireEvent.click(screen.getByTestId('detail-play-now'));

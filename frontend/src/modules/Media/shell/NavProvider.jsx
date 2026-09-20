@@ -4,7 +4,7 @@
 // and shared URLs all restore correctly. The stack itself is serialized into
 // each history entry (mediaNavStack) — popstate restores the full stack, not
 // a flattened single entry.
-import React, { createContext, useContext, useState, useCallback, useMemo, useEffect } from 'react';
+import React, { createContext, useContext, useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { readNavFromSearch, writeNavToSearch } from '../lib/urlParams.js';
 import mediaLog from '../logging/mediaLog.js';
 
@@ -63,6 +63,7 @@ function syncHistory(stack, method) {
 
 export function NavProvider({ children }) {
   const [stack, setStack] = useState(initialStack);
+  const traversalPendingRef = useRef(false);
 
   // Make sure the initial entry carries the stack so a reload restores it.
   useEffect(() => {
@@ -72,6 +73,7 @@ export function NavProvider({ children }) {
 
   useEffect(() => {
     const onPop = (e) => {
+      traversalPendingRef.current = false;
       const s = e.state?.mediaNavStack;
       const next = Array.isArray(s) && s.length > 0
         ? normalizeStack(s)
@@ -121,8 +123,13 @@ export function NavProvider({ children }) {
       const targetIndex = prev.findLastIndex((entry) => entry.view === top.view
         && JSON.stringify(entry.params ?? {}) === JSON.stringify(top.params));
       if (targetIndex >= 0 && targetIndex < prev.length - 1) {
+        if (traversalPendingRef.current) return prev;
+        traversalPendingRef.current = true;
         window.history.go(targetIndex - (prev.length - 1));
-        return prev.slice(0, targetIndex + 1);
+        // Browser history is authoritative during traversal. Updating React
+        // here would briefly render the destination against the old URL and
+        // lets a second Back race the first traversal.
+        return prev;
       }
       if (targetIndex === prev.length - 1) return prev;
 
