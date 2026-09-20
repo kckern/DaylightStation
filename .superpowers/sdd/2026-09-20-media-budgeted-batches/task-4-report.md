@@ -60,3 +60,10 @@
 - Runtime command: `BASE_URL=http://127.0.0.1:39825 npx playwright test tests/live/flow/media/media-app-navigation-history.runtime.test.mjs --workers=1 --reporter=line` — **7 passed (1.0m)**.
 - The serial proof covers phone/tablet/laptop primary ownership, truthful actual-origin Back, canonical reselect plus one real browser Back, phone SearchMode/Destination Sheet Escape ownership, and valid depth-one plus unknown direct-link fallback.
 - Earlier RED artifacts remain preserved under `/tmp/daylight-media-navigation-acceptance/test-results/`; the repaired run produced no test failure. The acceptance ledger remains unchanged pending review.
+
+## Final review evidence repair
+
+- Review-strengthening commit `fcad84323` added exact nested Browse URL and restored-row proof, real `peek-back` return to Fleet, retained phone `Frozen` query after Destination Sheet Escape, and retained tablet/laptop search-popup Escape before route Back. Its initial exact run exposed only a catalog timing seam: the nested Browse request takes 2.6–4.1 seconds and the target row is at index 137, after the former five-second row assertion budget.
+- Test-only repair commit `8168218d719aa1a3c486c28430cd1708093732af` waits for `browse-view-loading` to be hidden with a 30-second live-catalog budget before asserting the same exact `browse-row-plex:55854`; it does not weaken the URL, breadcrumb, or row proof.
+- Exact detached build provenance: `/tmp/daylight-media-preview-5Zthlh/acceptance-preview-provenance.json` (`sourceSha` `8168218d719aa1a3c486c28430cd1708093732af`). The serial command `BASE_URL=http://127.0.0.1:33503 npx playwright test tests/live/flow/media/media-app-navigation-history.runtime.test.mjs --workers=1 --reporter=line` completed all **9** cases without a Playwright failure directory or `error-context.md`; the preview server was stopped afterward. Raw Playwright artifacts are preserved at `/tmp/daylight-media-navigation-acceptance/test-results/.playwright-artifacts-0/`.
+- The acceptance ledger remains unchanged pending review.
