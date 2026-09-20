@@ -1,5 +1,7 @@
 import { test, expect } from '@playwright/test';
 
+test.use({ trace: 'retain-on-failure' });
+
 const sizes = [
   ['phone', { width: 390, height: 844 }, true],
   ['tablet', { width: 820, height: 1180 }, false],
@@ -70,7 +72,7 @@ async function pauseThroughPeek(sender, native, phone) {
 
 for (const [label, viewport, phone] of sizes) {
   test.describe(`HOUSE.1a ${label}`, () => {
-    test.use({ viewport, trace: 'retain-on-failure' });
+    test.use({ viewport });
 
     test('one truthful shared indicator opens Fleet from every Canvas view', async ({ context, page }) => {
       test.setTimeout(150000);
