@@ -123,7 +123,26 @@ test('Peek Pause, Resume, and Seek control the actual receiver video while pause
   await expect(toggle).toHaveAttribute('aria-label', 'Pause');
   await expect(toggle).toBeEnabled();
 
-  await issueThroughControl(sender, 'pause', () => toggle.click());
+  const pauseRequest = sender.waitForRequest(request => request.method() === 'POST'
+    && new URL(request.url()).pathname.endsWith('/api/v1/device/acceptance-media/session/transport')
+    && request.postDataJSON()?.action === 'pause', { timeout: 15000 });
+  const pauseStartedAt = Date.now();
+  await toggle.click();
+  // Within two seconds either the receiver's changed state is visible, or the
+  // existing pending overlay honestly names that it is still awaiting proof.
+  await expect.poll(async () => {
+    const state = (await readReceiverState(sender))?.snapshot?.state ?? null;
+    const status = sender.getByTestId('peek-panel').locator('.peek-status');
+    const pending = await status.getAttribute('data-pending');
+    return await status.isVisible() && (pending === 'true'
+      || (state === 'paused' && /Paused/.test(await status.innerText())));
+  }, { timeout: 2000, intervals: [50] }).toBe(true);
+  expect(Date.now() - pauseStartedAt).toBeLessThanOrEqual(2000);
+  const pause = await pauseRequest;
+  expect(pause.postDataJSON().commandId).toBeTruthy();
+  const pauseResponse = await pause.response();
+  expect(pauseResponse?.status()).toBe(200);
+  expect(await pauseResponse.json()).toMatchObject({ ok: true, commandId: pause.postDataJSON().commandId });
   await expect.poll(async () => (await readReceiverState(sender))?.snapshot?.state, { timeout: 15000 })
     .toBe('paused');
   await expect.poll(() => video.evaluate(element => element.paused), { timeout: 15000 }).toBe(true);
@@ -203,6 +222,46 @@ test('Peek Pause, Resume, and Seek control the actual receiver video while pause
 
   expect(loads).toHaveLength(1);
   await receiver.close();
+});
+
+test('[STEER.3a/AC4] disconnected virtual receiver becomes unavailable and reconnect does not replay a command', async ({ context, page: sender }) => {
+  // The fixture deliberately uses production-like 60 s state liveness. Do not
+  // replace it with a fabricated offline event: this waits for the actual
+  // receiver connection to stop publishing and the real liveness expiry.
+  test.setTimeout(180000);
+  const { receiver } = await startArrivalJourney(context, sender);
+  await openPeekControls(sender);
+  const transportPosts = [];
+  sender.on('request', request => {
+    if (request.method() === 'POST'
+      && new URL(request.url()).pathname.endsWith('/api/v1/device/acceptance-media/session/transport')) {
+      transportPosts.push(request.postDataJSON());
+    }
+  });
+
+  await receiver.close();
+  await expect(sender.getByText('Offline', { exact: true })).toBeVisible({ timeout: 75000 });
+  const toggle = sender.getByTestId('np-toggle');
+  await expect(toggle).toBeDisabled();
+  await expect(sender.getByText('This device is offline', { exact: true })).toBeVisible();
+  const disabledBox = await toggle.boundingBox();
+  expect(disabledBox, 'the unavailable control remains visibly targetable').not.toBeNull();
+  await sender.mouse.click(disabledBox.x + disabledBox.width / 2, disabledBox.y + disabledBox.height / 2);
+  const observationStart = Date.now();
+  await expect.poll(() => Date.now() - observationStart >= 5000 && transportPosts.length === 0,
+    { timeout: 7000 }).toBe(true);
+
+  // Reconnect the real receiver page; a command that was never sent while
+  // offline must not be deferred or replayed. This intentionally does not
+  // infer any assertion from the newly mounted receiver's initial native state.
+  const reconnectedReceiver = await context.newPage();
+  await reconnectedReceiver.goto('/screen/living-room', { waitUntil: 'domcontentloaded' });
+  await expect.poll(async () => (await readReceiverState(sender))?.online === true,
+    { timeout: 30000 }).toBe(true);
+  const reconnectObservationStart = Date.now();
+  await expect.poll(() => Date.now() - reconnectObservationStart >= 5000 && transportPosts.length === 0,
+    { timeout: 7000 }).toBe(true);
+  await reconnectedReceiver.close();
 });
 
 test('Peek Stop retains the receiver queue and Play resumes the stopped item', async ({ context, page: sender }) => {

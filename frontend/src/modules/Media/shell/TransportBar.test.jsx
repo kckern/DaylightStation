@@ -181,6 +181,14 @@ describe('TransportBar', () => {
     expect(screen.queryByText('Not sent')).toBeNull();
   });
 
+  it('labels an explicit DEVICE_OFFLINE rejection as not sent, without treating an ack timeout as delivery failure', async () => {
+    const onCommand = vi.fn(() => Promise.reject(new Error('HTTP 409: Conflict - {"code":"DEVICE_OFFLINE"}')));
+    render(<TransportBar target={{ deviceId: 'tv-1' }} onCommand={onCommand} />);
+
+    fireEvent.click(screen.getByTestId('np-toggle'));
+    expect(await screen.findByTestId('np-command-feedback')).toHaveTextContent('Not sent');
+  });
+
   it('keeps a target-labelled Play and volume surface for a ready retained queue', () => {
     state.snapshot = {
       ...makeSnapshot({ playerState: 'ready', index: -1, count: 1 }),
