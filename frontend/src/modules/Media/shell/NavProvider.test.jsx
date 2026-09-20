@@ -83,6 +83,28 @@ describe('NavProvider area and browser-history contract', () => {
     historyGo.mockRestore();
   });
 
+  it('replays the latest competing area selection after the pending traversal arrives', () => {
+    render(<NavProvider><Probe /></NavProvider>);
+    act(() => nav().push('browse', { path: '' }));
+    const browseState = window.history.state;
+    act(() => nav().push('detail', { contentId: 'plex:arrival' }));
+    const historyGo = vi.spyOn(window.history, 'go').mockImplementation(() => {});
+
+    act(() => nav().goToArea('browse'));
+    act(() => nav().goToArea('fleet'));
+    expect(probe()).toHaveAttribute('data-view', 'detail');
+
+    act(() => {
+      window.history.replaceState(browseState, '', '/media?view=browse');
+      window.dispatchEvent(new PopStateEvent('popstate', { state: browseState }));
+    });
+
+    expect(probe()).toHaveAttribute('data-view', 'fleet');
+    expect(location.search).toBe('?view=fleet');
+    expect(window.history.state.mediaNavStack.map((entry) => entry.view)).toEqual(['home', 'browse', 'fleet']);
+    historyGo.mockRestore();
+  });
+
   it.each([
     ['Home', 'browse', { path: '' }, 'Home'],
     ['Browse', 'detail', { contentId: 'plex:arrival' }, 'Browse'],

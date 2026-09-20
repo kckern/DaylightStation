@@ -24,3 +24,10 @@
 - Addressed the async traversal race: `goToArea` leaves React state unchanged while `history.go` is pending; only `popstate` restores the traversed stack. The provider test holds `history.go` pending to prove state/URL/history remain Detail, then the real-history case waits for Browse URL/state coherence before its next Back reaches Home.
 - Added Home/Browse/Devices origin-label matrix and Rail ownership assertions.
 - GREEN: focused navigation suite — 7 files, 55 tests passed. Scoped ESLint and `git diff --check` passed. Full Playwright remains intentionally deferred.
+
+## Review round 2/5
+
+- Addressed competing commands during a same-area traversal: `push`, `replace`, `pop`, and `goToArea` now retain only the latest intent while browser traversal is pending, then replay it from the authoritative `popstate` stack. This prevents an old traversal from overwriting the user's later navigation.
+- Added a provider RED/GREEN that holds `history.go` pending, selects Devices, delivers the Browse popstate, and proves the final Fleet URL/state stack is `Home → Browse → Fleet`.
+- Detail Back now appears in loaded, loading, error, and empty Detail states; tests assert its label and `pop` seam in every state.
+- RED: 4 focused failures. GREEN: focused navigation suite — 7 files, 59 tests passed. Scoped ESLint and `git diff --check` passed. Full Playwright remains intentionally deferred.

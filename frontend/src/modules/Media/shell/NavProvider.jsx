@@ -64,6 +64,7 @@ function syncHistory(stack, method) {
 export function NavProvider({ children }) {
   const [stack, setStack] = useState(initialStack);
   const traversalPendingRef = useRef(false);
+  const latestIntentRef = useRef(null);
 
   // Make sure the initial entry carries the stack so a reload restores it.
   useEffect(() => {
@@ -78,8 +79,46 @@ export function NavProvider({ children }) {
       const next = Array.isArray(s) && s.length > 0
         ? normalizeStack(s)
         : [normalizeEntry(readNavFromSearch(window.location.search))];
-      setStack(next);
       syncHistory(next, 'replace');
+      const intent = latestIntentRef.current;
+      latestIntentRef.current = null;
+      if (!intent) {
+        setStack(next);
+        return;
+      }
+
+      if (intent.kind === 'push') {
+        const replayed = [...next, normalizeEntry({ view: intent.view, params: intent.params })];
+        syncHistory(replayed, intent.opts.replaceEntry ? 'replace' : 'push');
+        setStack(replayed);
+        return;
+      }
+      if (intent.kind === 'replace') {
+        const replayed = [...next.slice(0, -1), normalizeEntry({ view: intent.view, params: intent.params })];
+        syncHistory(replayed, 'replace');
+        setStack(replayed);
+        return;
+      }
+      if (intent.kind === 'pop') {
+        setStack(next);
+        if (next.length > 1) window.history.back();
+        else {
+          const fallback = [{ view: 'home', params: {} }];
+          syncHistory(fallback, 'replace');
+          setStack(fallback);
+        }
+        return;
+      }
+
+      const top = AREA_TOP[intent.area];
+      const currentArea = AREA_FOR_VIEW[next.at(-1)?.view] ?? 'home';
+      if (!top || currentArea === intent.area) {
+        setStack(next);
+        return;
+      }
+      const replayed = [...next, { view: top.view, params: { ...top.params } }];
+      syncHistory(replayed, 'push');
+      setStack(replayed);
     };
     window.addEventListener('popstate', onPop);
     return () => window.removeEventListener('popstate', onPop);
@@ -97,6 +136,10 @@ export function NavProvider({ children }) {
   // marker's place: one entry, and Back from browse goes where it did before
   // the search started.
   const push = useCallback((view, params = {}, opts = {}) => {
+    if (traversalPendingRef.current) {
+      latestIntentRef.current = { kind: 'push', view, params, opts };
+      return;
+    }
     const replaceEntry = opts.replaceEntry === true;
     setStack((prev) => {
       const next = [...prev, normalizeEntry({ view, params })];
@@ -109,6 +152,10 @@ export function NavProvider({ children }) {
   const goToArea = useCallback((area) => {
     const top = AREA_TOP[area];
     if (!top) return;
+    if (traversalPendingRef.current) {
+      latestIntentRef.current = { kind: 'area', area };
+      return;
+    }
     setStack((prev) => {
       const currentArea = AREA_FOR_VIEW[prev.at(-1)?.view] ?? 'home';
       if (currentArea !== area) {
@@ -144,6 +191,10 @@ export function NavProvider({ children }) {
   // pop() drives the browser history so in-app Back and browser Back are the
   // same operation; the popstate handler restores the previous stack.
   const pop = useCallback(() => {
+    if (traversalPendingRef.current) {
+      latestIntentRef.current = { kind: 'pop' };
+      return;
+    }
     if (typeof window !== 'undefined' && window.history.state?.mediaNavStack?.length > 1) {
       window.history.back();
       return;
@@ -158,6 +209,10 @@ export function NavProvider({ children }) {
   }, []);
 
   const replace = useCallback((view, params = {}) => {
+    if (traversalPendingRef.current) {
+      latestIntentRef.current = { kind: 'replace', view, params };
+      return;
+    }
     setStack((prev) => {
       const next = [...prev.slice(0, -1), normalizeEntry({ view, params })];
       syncHistory(next, 'replace');
