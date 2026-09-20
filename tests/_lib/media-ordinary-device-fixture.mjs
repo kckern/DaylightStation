@@ -10,9 +10,12 @@ import { DeviceContentDispatchService } from '../../backend/src/3_applications/d
 import { DeviceLivenessService } from '../../backend/src/3_applications/devices/services/DeviceLivenessService.mjs';
 import { CommandHandlerLivenessService } from '../../backend/src/3_applications/devices/services/CommandHandlerLivenessService.mjs';
 import { DispatchIdempotencyService } from '../../backend/src/3_applications/devices/services/DispatchIdempotencyService.mjs';
+import { SessionControlService } from '../../backend/src/3_applications/devices/services/SessionControlService.mjs';
+import { DeviceSessionApiService } from '../../backend/src/3_applications/devices/services/DeviceSessionApiService.mjs';
 import { createDeviceRouter } from '../../backend/src/4_api/v1/routers/device.mjs';
 
 export const ORDINARY_DEVICE_ID = 'acceptance-media';
+const VIRTUAL_TRANSPORT_ACTIONS = new Set(['pause', 'play', 'seekAbs', 'seekRel', 'stop']);
 const quiet = { info() {}, warn() {}, error() {}, debug() {} };
 const scheduler = {
   wait: (ms) => new Promise(resolve => setTimeout(resolve, ms)),
@@ -85,8 +88,14 @@ export function createMediaOrdinaryDeviceFixture({ upstream, logger = quiet } = 
     list: () => [{ id: ORDINARY_DEVICE_ID, name: 'Acceptance receiver', fleet: true }],
   };
   const unavailable = { configured: () => false };
+  const sessionControl = new SessionControlService({
+    transportGateway: presenceGateway,
+    livenessService: deviceLiveness,
+    logger,
+  });
+  const sessionService = new DeviceSessionApiService({ sessionControl, logger });
   const router = createDeviceRouter({
-    fleetService, dispatchService, presenceService: unavailable, sessionService: unavailable,
+    fleetService, dispatchService, presenceService: unavailable, sessionService,
     screenService: unavailable, recoveryService: unavailable,
   });
   const app = express();
@@ -100,7 +109,16 @@ export function createMediaOrdinaryDeviceFixture({ upstream, logger = quiet } = 
     return state ? res.json(state) : res.status(404).json({ error: 'receiver has not published state' });
   });
   app.use((req, res, next) => {
-    if (req.path === '/config' || req.path.startsWith(`/${ORDINARY_DEVICE_ID}`)) return next();
+    const path = req.path;
+    if (req.method === 'GET' && path === '/config') return next();
+    if (req.method === 'GET' && path === `/${ORDINARY_DEVICE_ID}/load`) return next();
+    if (req.method === 'GET' && [
+      `/${ORDINARY_DEVICE_ID}/receiver-ready`,
+      `/${ORDINARY_DEVICE_ID}/receiver-state`,
+    ].includes(path)) return next();
+    if (req.method === 'POST'
+      && path === `/${ORDINARY_DEVICE_ID}/session/transport`
+      && VIRTUAL_TRANSPORT_ACTIONS.has(req.body?.action)) return next();
     return res.status(403).json({ ok: false, error: 'ordinary acceptance blocks physical device routes' });
   });
   app.use(router);

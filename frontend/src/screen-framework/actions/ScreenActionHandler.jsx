@@ -239,6 +239,17 @@ export function ScreenActionHandler({ actions = {}, inputType = null }) {
 
   // --- Media playback controls ---
   const handleMediaPlayback = useCallback((payload) => {
+    if (payload?.command?.toLowerCase() === 'stop') {
+      if (!getPlayerQueueOpRegistry().dispatch({ op: 'stop', commandId: payload?.commandId })) {
+        getActionBus().emit('command-handler-error', {
+          commandId: payload?.commandId,
+          code: 'PLAYBACK_OWNER_UNAVAILABLE',
+          error: 'No playback owner is available to stop',
+        });
+      }
+      return;
+    }
+
     const idleMode = actions?.playback?.when_idle || 'dispatch';
 
     // Check if media is currently active
@@ -277,7 +288,7 @@ export function ScreenActionHandler({ actions = {}, inputType = null }) {
       prev: 'Backspace', previous: 'Backspace', back: 'Backspace', skipprev: 'Backspace',
       fwd: 'ArrowRight', forward: 'ArrowRight', ff: 'ArrowRight',
       rew: 'ArrowLeft', rewind: 'ArrowLeft', rw: 'ArrowLeft',
-      stop: 'Escape', clear: 'Escape',
+      clear: 'Escape',
     };
     const key = keyMapping[payload.command?.toLowerCase()];
     if (!key) {

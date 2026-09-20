@@ -891,7 +891,7 @@ export function useCommonMediaController({
   const markProgress = useCallback(() => {
     const s = stallStateRef.current;
     if (s.hasEnded) {
-      return;
+      return false;
     }
 
     const mediaEl = getMediaEl();
@@ -904,7 +904,7 @@ export function useCommonMediaController({
     const { advanced, nextPos } = evaluatePlayheadProgress(pos, s.lastAdvancePos);
     s.lastAdvancePos = nextPos;
     if (!advanced) {
-      return;
+      return false;
     }
 
     const wasStalled = s.isStalled;
@@ -938,6 +938,7 @@ export function useCommonMediaController({
       scheduleStallDetection();
     }
     // Continuous polling in scheduleStallDetection handles rescheduling
+    return true;
   }, [getMediaEl, dismissStallSuspicion, assetId, recoveryScopeKey, publishStallSnapshot, clearTimers, scheduleStallDetection]);
 
   useEffect(() => {
@@ -967,7 +968,7 @@ export function useCommonMediaController({
       // Persist last position per assetId across remounts
       try { useCommonMediaController.__lastPosByKey[assetId] = lastPlaybackPosRef.current; } catch {}
       logProgress();
-      markProgress();
+      const advanced = markProgress();
       if (onProgress) {
         const stallSnapshot = readStallState();
         onProgress({
@@ -980,6 +981,10 @@ export function useCommonMediaController({
             : getProgressPercent(mediaEl.currentTime, mediaEl.duration),
           stalled: isStalled,
           isSeeking,
+          // A fresh native `playing` event can be lost across a renderer
+          // recovery. Forward, unpaused, non-seeking progress is the remaining
+          // positive native evidence that the decoder has actually recovered.
+          playing: advanced === true && !mediaEl.paused && !isSeeking && !isStalled,
           seekIntent: lastSeekIntentRef.current,
           lastStrategy: stallSnapshot.strategy,
           stallState: stallSnapshot

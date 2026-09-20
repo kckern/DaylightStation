@@ -184,6 +184,25 @@ describe('useStatusOverlay', () => {
     });
   });
 
+  describe('pending match', () => {
+    it('does not clear a seek lock for an old advancing position', () => {
+      let real = mapOf([{ color: 'red', position: 60 }]);
+      const { result, rerender } = renderHook(({ s }) => useStatusOverlay(s), {
+        initialProps: { s: real },
+      });
+      act(() => {
+        result.current.pendingMatch('red', 'position', (value) => Math.abs(value - 5400) <= 2);
+      });
+      real = mapOf([{ color: 'red', position: 61 }]);
+      rerender({ s: real });
+      expect(result.current.statusView.get('red')._pending.has('position')).toBe(true);
+
+      real = mapOf([{ color: 'red', position: 5400 }]);
+      rerender({ s: real });
+      expect(result.current.statusView.get('red')._pending.has('position')).toBe(false);
+    });
+  });
+
   describe('multi-device', () => {
     it('predictions are scoped to the device color', () => {
       const real = mapOf([

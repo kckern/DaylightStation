@@ -23,6 +23,7 @@ const enterPeek = vi.fn();
 const exitPeek = vi.fn();
 const predict = vi.fn();
 const pending = vi.fn();
+const pendingMatch = vi.fn();
 
 vi.mock('../controller/useSessionController.js', () => ({
   useSessionController: () => ({
@@ -42,7 +43,7 @@ vi.mock('../fleet/deviceDisplay.js', () => ({
   deviceName: () => 'Living Room TV', deviceIcon: () => 'TV', deviceLocation: () => 'Living room',
 }));
 vi.mock('../../../hooks/useStatusOverlay', () => ({
-  useStatusOverlay: () => ({ statusView: new Map([['tv-1', state.snapshot]]), predict, pending }),
+  useStatusOverlay: () => ({ statusView: new Map([['tv-1', state.snapshot]]), predict, pending, pendingMatch }),
 }));
 vi.mock('./NavProvider.jsx', () => ({ useNav: () => ({ pop: vi.fn() }) }));
 import { PeekPanel } from './PeekPanel.jsx';
@@ -51,9 +52,20 @@ function renderPeekPanel() {
   return render(<MantineProvider><PeekPanel deviceId="tv-1" /></MantineProvider>);
 }
 
+function measureSeekTrack(track, { left = 0, width = 200 } = {}) {
+  track.getBoundingClientRect = () => ({
+    left, width, right: left + width, top: 0, bottom: 8, height: 8, x: left, y: 0,
+  });
+}
+
+function fireSeekPointer(track, type, clientX) {
+  fireEvent(track, new window.MouseEvent(type, { bubbles: true, cancelable: true, clientX }));
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   transport.pause.mockResolvedValue({ ok: true });
+  transport.seekAbs.mockResolvedValue({ ok: true });
   state.entry = {};
 });
 
@@ -79,6 +91,24 @@ describe('PeekPanel shared target controls', () => {
     expect(transport.pause).toHaveBeenCalledTimes(1);
     expect(await screen.findByTestId('np-command-feedback')).toHaveTextContent('Could not confirm change');
     expect(screen.queryByText('Not sent')).toBeNull();
+  });
+
+  it('keeps remote seek at receiver position until confirmation and shows a rejected seek', async () => {
+    transport.seekAbs.mockRejectedValueOnce(new Error('ack timeout'));
+    renderPeekPanel();
+    const seek = screen.getByTestId('np-seek');
+    measureSeekTrack(seek);
+
+    fireSeekPointer(seek, 'pointerdown', 150);
+    fireSeekPointer(seek, 'pointerup', 150);
+
+    expect(transport.seekAbs).toHaveBeenCalledWith(5400);
+    expect(pendingMatch).toHaveBeenCalledWith('tv-1', 'position', expect.any(Function));
+    expect(pendingMatch.mock.calls[0][2](5400)).toBe(true);
+    expect(pendingMatch.mock.calls[0][2](61)).toBe(false);
+    // The requested 1:30:00 must not become an optimistic remote position.
+    expect(seek).toHaveAttribute('aria-valuenow', '60');
+    expect(await screen.findByTestId('np-seek-command-feedback')).toHaveTextContent('Could not confirm change');
   });
 
   it('keeps target identity and ready-queue controls when the remote has no current item', () => {

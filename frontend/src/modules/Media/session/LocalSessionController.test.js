@@ -379,6 +379,35 @@ describe('LocalSessionController — player events', () => {
     expect(c.getSnapshot().state).toBe('playing');
   });
 
+  it.each([
+    ['paused', { currentTime: 16, paused: true, stalled: false, playing: false }],
+    ['seeking', { currentTime: 16, paused: false, stalled: false, isSeeking: true, playing: false }],
+    ['stalled', { currentTime: 16, paused: false, stalled: true, playing: false }],
+    ['not advanced', { currentTime: 16, paused: false, stalled: false, playing: false }],
+  ])('does not promote buffering on %s progress', (_case, observation) => {
+    const c = makeController();
+    c.queue.playNow({ contentId: 'plex:1', format: 'video', duration: 120 });
+    c.onPlayerStateChange('playing', 'plex:1');
+    c.onPlayerObservation('plex:1', { currentTime: 15, paused: false, stalled: true });
+
+    c.onPlayerObservation('plex:1', observation);
+
+    expect(c.getSnapshot().state).not.toBe('playing');
+  });
+
+  it('promotes buffering only on healthy advancing progress marked playing by Player', () => {
+    const c = makeController();
+    c.queue.playNow({ contentId: 'plex:1', format: 'video', duration: 120 });
+    c.onPlayerStateChange('playing', 'plex:1');
+    c.onPlayerObservation('plex:1', { currentTime: 15, paused: false, stalled: true });
+
+    c.onPlayerObservation('plex:1', {
+      currentTime: 16, paused: false, isSeeking: false, stalled: false, playing: true,
+    });
+
+    expect(c.getSnapshot().state).toBe('playing');
+  });
+
   it('rejects observations and terminal callbacks from stale content identity', () => {
     const c = makeController();
     c.queue.add({ contentId: 'a', format: 'video' });
