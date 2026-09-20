@@ -93,12 +93,28 @@ describe('DestinationLine', () => {
     renderLine();
     expect(screen.queryByTestId('destination-sheet')).toBeNull();
     const line = screen.getByTestId('destination-line');
-    expect(line).toHaveAttribute('data-content-combobox-retained-boundary');
     expect(line).toHaveAttribute('data-ignore-outside-clicks');
     fireEvent.click(line);
     expect(await screen.findByTestId('destination-sheet')).toBeInTheDocument();
-    expect(screen.getByTestId('destination-sheet')).toHaveAttribute('data-content-combobox-retained-boundary');
     expect(screen.getByTestId('picker-stub-pick')).toBeInTheDocument();
+  });
+
+  it('announces one interaction lifetime from trigger pointerdown through sheet unmount', async () => {
+    const onInteractionStart = vi.fn();
+    const onInteractionEnd = vi.fn();
+    renderLine({ onInteractionStart, onInteractionEnd });
+    const line = screen.getByTestId('destination-line');
+
+    fireEvent.pointerDown(line);
+    expect(onInteractionStart).toHaveBeenCalledTimes(1);
+    expect(onInteractionEnd).not.toHaveBeenCalled();
+
+    fireEvent.click(line);
+    await screen.findByTestId('destination-sheet');
+    fireEvent.click(screen.getByTestId('picker-stub-pick'));
+
+    expect(screen.queryByTestId('destination-sheet')).toBeNull();
+    expect(onInteractionEnd).toHaveBeenCalledTimes(1);
   });
 
   it('PLACE.2b stacks the destination sheet above the full-screen phone search surface', async () => {

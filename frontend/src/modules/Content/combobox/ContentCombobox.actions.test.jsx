@@ -5,8 +5,13 @@
 import React, { useState } from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { act, createEvent, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { MantineProvider, Modal } from '@mantine/core';
+import { MantineProvider } from '@mantine/core';
 import { ContentCombobox } from './ContentCombobox.jsx';
+import { DestinationLine } from '../../Media/cast/DestinationLine.jsx';
+import { CastTargetProvider } from '../../Media/cast/CastTargetProvider.jsx';
+import { DispatchContext } from '../../Media/cast/DispatchProvider.jsx';
+import { FleetContext } from '../../Media/fleet/FleetProvider.jsx';
+import { createFleetStore } from '../../Media/fleet/fleetStore.js';
 
 vi.mock('../../../lib/logging/singleton.js', () => {
   const logger = {
@@ -16,32 +21,47 @@ vi.mock('../../../lib/logging/singleton.js', () => {
   return { getChildLogger: () => logger, getDaylightLogger: () => logger, default: () => logger };
 });
 
+vi.mock('../../Media/logging/mediaLog.js', () => ({
+  default: new Proxy({}, { get: () => vi.fn() }),
+}));
+
 const leaf = { id: 'plex:leaf-1', title: 'Bluey', source: 'plex', type: 'episode' };
 const collection = { id: 'plex:collection-1', title: 'Bluey collection', source: 'plex', type: 'collection', isContainer: true };
 
-function DestinationBoundary() {
-  const [open, setOpen] = useState(false);
+const fleetDevices = [
+  {
+    id: 'playroom-tablet',
+    type: 'android-tablet',
+    name: 'Playroom Tablet',
+    location: 'Playroom',
+    icon: '📱',
+    fleet: true,
+    content_control: { provider: 'fully-kiosk' },
+  },
+  {
+    id: 'livingroom-tv',
+    type: 'shield-tv',
+    name: 'Living Room TV',
+    location: 'Living Room',
+    icon: '📺',
+    fleet: true,
+    content_control: { provider: 'fully-kiosk' },
+  },
+];
+
+function DestinationSearchHarness({ comboboxProps }) {
+  const [destinationInteractionActive, setDestinationInteractionActive] = useState(false);
   return (
     <>
-      <button
-        type="button"
-        data-testid="destination-boundary"
-        data-content-combobox-retained-boundary
-        data-ignore-outside-clicks
-        onClick={() => setOpen(true)}
-      >
-        Destination
-      </button>
-      <Modal opened={open} onClose={() => setOpen(false)} transitionProps={{ duration: 0 }}>
-        <button
-          type="button"
-          data-testid="destination-boundary-sheet"
-          data-content-combobox-retained-boundary
-          onClick={() => setOpen(false)}
-        >
-          Destination sheet
-        </button>
-      </Modal>
+      <ContentCombobox
+        {...comboboxProps}
+        destinationInteractionActive={destinationInteractionActive}
+      />
+      <DestinationLine
+        surface="content-combobox-integration"
+        onInteractionStart={() => setDestinationInteractionActive(true)}
+        onInteractionEnd={() => setDestinationInteractionActive(false)}
+      />
     </>
   );
 }
@@ -56,17 +76,23 @@ function jsonResponse(items) {
  * .focus() exercises the real TextInput blur handler and real hook close path.
  */
 function pointerActivate(element) {
+  const focusTarget = element.closest?.('button,input,select,textarea,a[href],[tabindex]');
+  let pointerDown;
   act(() => {
-    const pointerDown = createEvent.pointerDown(element, { pointerType: 'mouse', isPrimary: true });
+    pointerDown = createEvent.pointerDown(element, { pointerType: 'mouse', isPrimary: true });
     fireEvent(element, pointerDown);
+  });
+  let down;
+  act(() => {
     if (!pointerDown.defaultPrevented) {
-      const down = createEvent.mouseDown(element);
+      down = createEvent.mouseDown(element);
       fireEvent(element, down);
-      if (!down.defaultPrevented
-        && element.matches('button,input,select,textarea,a[href],[tabindex]')) element.focus();
+      if (!down.defaultPrevented && focusTarget) focusTarget.focus();
     }
+  });
+  act(() => {
     fireEvent.pointerUp(element, { pointerType: 'mouse', isPrimary: true });
-    if (!pointerDown.defaultPrevented) fireEvent.mouseUp(element);
+    if (!pointerDown.defaultPrevented && !down?.defaultPrevented) fireEvent.mouseUp(element);
     fireEvent.click(element, { detail: 1 });
   });
 }
@@ -91,23 +117,32 @@ async function renderSearchedCombobox(props = {}) {
   const onPlayAll = vi.fn();
   render(
     <MantineProvider>
-      <>
-        <ContentCombobox
-          value=""
-          onChange={onChange}
-          onMore={onMore}
-          onPlayAll={onPlayAll}
-          selectContainers
-          {...props}
-        />
-        <DestinationBoundary />
-        <button type="button" data-testid="outside-focus">Outside</button>
-        <div data-testid="outside-surface" />
-      </>
+      <FleetContext.Provider value={{
+        devices: fleetDevices,
+        store: createFleetStore(),
+        loading: false,
+        error: null,
+        refresh: vi.fn(),
+      }}>
+        <DispatchContext.Provider value={{ dispatchToTarget: vi.fn() }}>
+          <CastTargetProvider>
+            <DestinationSearchHarness comboboxProps={{
+              value: '',
+              onChange,
+              onMore,
+              onPlayAll,
+              selectContainers: true,
+              ...props,
+            }} />
+            <button type="button" data-testid="outside-focus">Outside</button>
+            <div data-testid="outside-surface" />
+          </CastTargetProvider>
+        </DispatchContext.Provider>
+      </FleetContext.Provider>
     </MantineProvider>
   );
   const input = screen.getByRole('textbox');
-  input.focus();
+  act(() => input.focus());
   fireEvent.change(input, { target: { value: 'bluey' } });
   expect(await screen.findByTestId('result-more-plex:leaf-1')).toBeInTheDocument();
   return { input, onChange, onMore, onPlayAll };
@@ -138,13 +173,20 @@ describe('ContentCombobox result actions — real focus ownership', () => {
     expect(onChange).not.toHaveBeenCalled();
   });
 
-  it('retains query/results through two destination-boundary pointer cycles but closes on ordinary outside pointer', async () => {
+  it('retains query/results through nested device and submit actions across two destination picker cycles but closes on ordinary outside pointer', async () => {
     const { input } = await renderSearchedCombobox();
-    const destination = screen.getByTestId('destination-boundary');
 
-    for (let count = 0; count < 2; count += 1) {
-      pointerActivate(destination);
-      pointerActivate(await screen.findByTestId('destination-boundary-sheet'));
+    for (const location of ['Playroom', 'Living Room']) {
+      pointerActivate(screen.getByTestId('destination-line'));
+      const nestedDeviceChild = await screen.findByText(location);
+      expect(input).toHaveValue('bluey');
+      expect(nestedDeviceChild).toHaveClass('cast-tile-location');
+      pointerActivate(nestedDeviceChild);
+      await waitFor(() => expect(input).toHaveValue('bluey'));
+      await waitFor(() => expect(screen.getByTestId('result-more-plex:leaf-1')).toBeInTheDocument());
+
+      pointerActivate(screen.getByTestId('picker-submit'));
+      await waitFor(() => expect(screen.queryByTestId('destination-sheet')).toBeNull());
       expect(input).toHaveValue('bluey');
       expect(screen.getByTestId('result-more-plex:leaf-1')).toBeInTheDocument();
     }

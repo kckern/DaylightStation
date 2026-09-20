@@ -12,7 +12,7 @@
 // ScopeChips. `surface` is optional and used only to tag the
 // dispatch.destination_changed log line; mounted unchanged by SearchMode's
 // full-screen surface (Task 13) and the container browse header (Task 15).
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Modal } from '@mantine/core';
 import { IconPlayerPlayFilled } from '@tabler/icons-react';
 import { useCastTarget } from './useCastTarget.js';
@@ -42,13 +42,45 @@ function targetsKey(ids) {
   return ids.length === 0 ? 'local' : [...ids].sort().join(',');
 }
 
-export function DestinationLine({ surface } = {}) {
+function DestinationInteractionSurface({ onUnmount, children }) {
+  useEffect(() => () => onUnmount(), [onUnmount]);
+  return <div data-testid="destination-sheet">{children}</div>;
+}
+
+export function DestinationLine({ surface, onInteractionStart, onInteractionEnd } = {}) {
   const [open, setOpen] = useState(false);
+  const interactionStartedRef = useRef(false);
+  const wasOpenRef = useRef(false);
+  const interactionEndRef = useRef(onInteractionEnd);
+  interactionEndRef.current = onInteractionEnd;
   const { targetIds, clearTargets, toggleTarget, setMode } = useCastTarget();
   const { devices } = useFleetContext();
 
   const close = useCallback(() => setOpen(false), []);
   useDismissLayer(open, close, { managed: true });
+
+  const startInteraction = useCallback(() => {
+    if (interactionStartedRef.current) return;
+    interactionStartedRef.current = true;
+    onInteractionStart?.();
+  }, [onInteractionStart]);
+  const finishInteraction = useCallback(() => {
+    if (!interactionStartedRef.current) return;
+    interactionStartedRef.current = false;
+    interactionEndRef.current?.();
+  }, []);
+  useEffect(() => () => finishInteraction(), [finishInteraction]);
+
+  const openPicker = useCallback(() => {
+    startInteraction();
+    wasOpenRef.current = true;
+    setOpen(true);
+  }, [startInteraction]);
+  const handleTriggerFocus = useCallback(() => {
+    if (open || !wasOpenRef.current) return;
+    wasOpenRef.current = false;
+    finishInteraction();
+  }, [open, finishInteraction]);
 
   const name = destinationLabel(targetIds, devices);
 
@@ -66,18 +98,19 @@ export function DestinationLine({ surface } = {}) {
     clearTargets();
     nextIds.forEach((id) => toggleTarget(id));
     setMode(nextMode);
-    setOpen(false);
-  }, [targetIds, clearTargets, toggleTarget, setMode, surface]);
+    close();
+  }, [targetIds, clearTargets, toggleTarget, setMode, surface, close]);
 
   return (
     <>
       <button
         type="button"
         data-testid="destination-line"
-        data-content-combobox-retained-boundary
         data-ignore-outside-clicks
         className="cast-destination-line"
-        onClick={() => setOpen(true)}
+        onPointerDown={startInteraction}
+        onFocus={handleTriggerFocus}
+        onClick={openPicker}
       >
         <IconPlayerPlayFilled size={14} aria-hidden="true" /> Playing to: <strong data-testid="destination-line-name">{name}</strong>
       </button>
@@ -90,13 +123,13 @@ export function DestinationLine({ surface } = {}) {
         zIndex={DESTINATION_MODAL_Z_INDEX}
         transitionProps={{ duration: 0 }}
       >
-        <div data-testid="destination-sheet" data-content-combobox-retained-boundary>
+        <DestinationInteractionSurface onUnmount={finishInteraction}>
           {/* intent="destination": this pick only changes the preferred
               target (submit() is a no-op dispatch here per the hasContent
               guard) — the chrome must say "Set destination", never "Cast",
               or the CTA would claim an action it doesn't perform. */}
           <DispatchTargetPicker onComplete={handlePicked} intent="destination" />
-        </div>
+        </DestinationInteractionSurface>
       </Modal>
     </>
   );

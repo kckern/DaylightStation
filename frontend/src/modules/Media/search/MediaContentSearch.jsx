@@ -23,7 +23,7 @@
 // behavior change) that light up ResultRowActions on the container ▶ and
 // leaf ⋯ respectively, wired to the exact same playContainerAsQueue /
 // applyResultRowVerb plumbing SearchMode uses.
-import React, { useCallback, useMemo, useRef } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { IconAlertTriangle } from '@tabler/icons-react';
 import { ContentCombobox } from '../../Content/combobox/ContentCombobox.jsx';
 import { useSearchContext } from './useSearchContext.js';
@@ -45,6 +45,9 @@ export function MediaContentSearch() {
   const { push } = useNav();
   const log = useMemo(() => getLogger().child({ component: 'media-content-search' }), []);
   const searchBarRef = useRef(null);
+  const [destinationInteractionActive, setDestinationInteractionActive] = useState(false);
+  const beginDestinationInteraction = useCallback(() => setDestinationInteractionActive(true), []);
+  const endDestinationInteraction = useCallback(() => setDestinationInteractionActive(false), []);
 
   // ContentCombobox owns its editing state. Its input handles Escape when it
   // has focus, but a pointer action in the portaled More menu can leave focus
@@ -119,7 +122,11 @@ export function MediaContentSearch() {
   return (
     <div ref={searchBarRef} data-testid="media-search-bar" className="media-search-bar">
       <div className="media-search-controls">
-        <DestinationLine surface="media-content-search" />
+        <DestinationLine
+          surface="media-content-search"
+          onInteractionStart={beginDestinationInteraction}
+          onInteractionEnd={endDestinationInteraction}
+        />
         <ScopeChips />
         {scopeError && (
           <span data-testid="scope-error" className="scope-error" title={scopeError.message}>
@@ -147,6 +154,7 @@ export function MediaContentSearch() {
             appResults
             allowFreeform={false}
             onClose={resetScope}
+            destinationInteractionActive={destinationInteractionActive}
           />
         </div>
       </div>
