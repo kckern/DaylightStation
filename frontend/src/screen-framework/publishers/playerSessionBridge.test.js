@@ -261,6 +261,26 @@ describe('createPlayerSessionBridge', () => {
     bridge.stop();
   });
 
+  it('does not resurrect a static hint after an owner explicitly detaches its item', () => {
+    let stopped = false;
+    const handle = {
+      ...makeHandle({ meta: null }),
+      getNowPlaying: () => (stopped
+        ? { item: null, stopped: true, queuePosition: null }
+        : { item: null, queuePosition: null }),
+      getOwnerState: () => (stopped ? 'ready' : 'loading'),
+    };
+    const bridge = startBridge(
+      () => handle,
+      { getItemHint: () => ({ contentId: 'plex:mount-hint', title: 'Mount hint' }) },
+    );
+
+    expect(bridge.queueController.getCurrentItem()).toMatchObject({ contentId: 'plex:mount-hint' });
+    stopped = true;
+    expect(bridge.queueController.getCurrentItem()).toBeNull();
+    bridge.stop();
+  });
+
   it('reads the legacy owner’s complete duplicate queue and current execution order', () => {
     const queueSnapshot = {
       items: [

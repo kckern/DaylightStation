@@ -1896,7 +1896,7 @@ const Player = forwardRef(function Player(props, ref) {
     // Read-only now-playing metadata (current item meta + queue coordinates)
     // for external session bridges. Reads a render-mirrored ref — always fresh.
     getNowPlaying: () => (ownerStoppedRef.current
-      ? { ...nowPlayingRef.current, item: null, queuePosition: null }
+      ? { ...nowPlayingRef.current, item: null, queuePosition: null, stopped: true }
       : nowPlayingRef.current),
     // A bridge consumer must never be able to mutate the live queue owner.
     getQueueSnapshot: () => JSON.parse(JSON.stringify(queueSnapshot)),
