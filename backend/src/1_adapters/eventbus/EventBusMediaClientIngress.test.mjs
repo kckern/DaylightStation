@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { EventBusMediaCommandIngress, EventBusPlaybackStateRelay } from './EventBusMediaClientIngress.mjs';
+import { PLAYBACK_STATE_TOPIC } from '../../../shared/contracts/media/topics.mjs';
 
 function bus() {
   let handler;
@@ -20,11 +21,11 @@ describe('event-bus media ingress', () => {
     expect(commands.execute).toHaveBeenCalledWith({ action: 'enqueue', contentId: 'x', householdId: 'h' });
   });
 
-  it('relays playback state to the established device topic', () => {
+  it('relays playback state on the shared Fleet topic so every subscribed browser receives it', () => {
     const eventBus = bus();
     new EventBusPlaybackStateRelay({ eventBus }).attach();
-    const message = { topic: 'playback_state', deviceId: 'tv-1', state: 'playing' };
+    const message = { topic: PLAYBACK_STATE_TOPIC, clientId: 'browser-a', state: 'playing' };
     eventBus.message('client-1', message);
-    expect(eventBus.broadcast).toHaveBeenCalledWith('playback:tv-1', message);
+    expect(eventBus.broadcast).toHaveBeenCalledWith(PLAYBACK_STATE_TOPIC, message);
   });
 });

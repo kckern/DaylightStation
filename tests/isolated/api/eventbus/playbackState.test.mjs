@@ -44,7 +44,7 @@ function createMockLogger() {
 
 /**
  * Registers the playback_state relay handler on the given eventBus.
- * This mirrors the handler in app.mjs exactly.
+ * This mirrors the shared Fleet topic contract in app.mjs exactly.
  */
 function registerPlaybackStateHandler(eventBus, rootLogger) {
   eventBus.onClientMessage((clientId, message) => {
@@ -52,7 +52,7 @@ function registerPlaybackStateHandler(eventBus, rootLogger) {
     const broadcastId = message.deviceId || message.clientId;
     if (!broadcastId) return;
     rootLogger.debug?.('eventbus.playback_state.relay', { from: clientId, broadcastId, state: message.state });
-    eventBus.broadcast(`playback:${broadcastId}`, message);
+    eventBus.broadcast('playback_state', message);
   });
 }
 
@@ -79,7 +79,7 @@ describe('playback_state WebSocket relay handler (4.2.8)', () => {
 
     const broadcasts = eventBus.getBroadcasts();
     expect(broadcasts).toHaveLength(1);
-    expect(broadcasts[0].topic).toBe('playback:shield-tv-01');
+    expect(broadcasts[0].topic).toBe('playback_state');
     expect(broadcasts[0].payload).toBe(message);
   });
 
@@ -94,7 +94,7 @@ describe('playback_state WebSocket relay handler (4.2.8)', () => {
 
     const broadcasts = eventBus.getBroadcasts();
     expect(broadcasts).toHaveLength(1);
-    expect(broadcasts[0].topic).toBe('playback:ws-client-xyz');
+    expect(broadcasts[0].topic).toBe('playback_state');
     expect(broadcasts[0].payload).toBe(message);
   });
 
@@ -158,6 +158,6 @@ describe('playback_state WebSocket relay handler (4.2.8)', () => {
 
     const broadcasts = eventBus.getBroadcasts();
     expect(broadcasts).toHaveLength(1);
-    expect(broadcasts[0].topic).toBe('playback:device-A');
+    expect(broadcasts[0].topic).toBe('playback_state');
   });
 });
