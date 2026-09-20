@@ -164,15 +164,18 @@ describe('createPlayerSessionBridge', () => {
       error: { configurable: true, writable: true, value: null },
     });
     let playbackRevision = 1;
+    let logicalOwnerInstanceId = 'resume-owner';
     const handle = {
       ...makeHandle({ el }),
       getMountedContentId: () => 'plex:resume',
       getMountedMediaGeneration: () => 7,
       getMountedMediaRegistration: () => ({
         node: el, resolvedContentId: 'plex:resume', resolvedGeneration: 7,
-        ownerInstanceId: 'resume-owner', playbackRevision,
+        // Mount registration is immutable for this admitted native node.
+        // Stop → Play only changes the logical owner transport revision.
+        ownerInstanceId: 'resume-owner', playbackRevision: 1,
       }),
-      getPlaybackIdentity: () => ({ ownerInstanceId: 'resume-owner', playbackRevision, queueRevision: 3 }),
+      getPlaybackIdentity: () => ({ ownerInstanceId: logicalOwnerInstanceId, playbackRevision, queueRevision: 3 }),
     };
     const bridge = startBridge(() => handle);
     vi.advanceTimersByTime(1000);
@@ -185,6 +188,14 @@ describe('createPlayerSessionBridge', () => {
     expect(bridge.player.getState()).toBe('buffering');
     el.dispatchEvent(new Event('playing'));
     expect(bridge.player.getState()).toBe('playing');
+
+    // A different logical owner cannot inherit an older node's admission,
+    // even when its element/content/generation have not yet changed.
+    logicalOwnerInstanceId = 'replacement-owner';
+    playbackRevision = 3;
+    expect(bridge.player.getState()).toBe('buffering');
+    el.dispatchEvent(new Event('playing'));
+    expect(bridge.player.getState()).toBe('buffering');
     bridge.stop();
   });
 
