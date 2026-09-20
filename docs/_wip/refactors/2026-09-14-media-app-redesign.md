@@ -1,6 +1,6 @@
 # Media App redesign — separation of concerns in the `/media` UX
 
-**Status:** Implementation in progress on `feat/media-redesign`. Immediate defect repairs have passed review; actual-player wiring repairs remain under end-to-end verification. Nothing from this branch is deployed. All 82 stories remain unverified until their complete acceptance criteria have end-to-end evidence.
+**Status:** Stable-core release candidate is isolated on `release/media-stable-core` at product/test source `bf9edf3d2`. Production is unchanged. 11/82 stories and 32 acceptance criteria are accepted on the candidate; 71 stories remain in the active redesign objective. The dirty implementation worktree remains separate and is not part of this candidate.
 
 **Started:** 2026-09-14 · **Planning baseline:** `b2ff8a460` (the code the baseline audit describes)
 **Authorised by:** the owner, 2026-09-14. They accepted the requirements and their P0/P1/P2 phasing, chose to evolve the app in place, and gave the implementer authority to commit to `main` and deploy only when the deploy gate is clear.
@@ -45,6 +45,9 @@ The requirements define the target behavior. Each story must be built and verifi
 | [Story implementation map](../plans/2026-09-14-media-app-story-implementation-map.md) | — | Each story mapped to JSX/controller/API ownership. |
 | [Execution plan](../plans/2026-09-14-media-app-execution.md) | — | Current slices and binding verification/safety constraints. |
 | [Acceptance ledger](../plans/2026-09-14-media-app-acceptance-ledger.md) | — | Every criterion and its evidence; passing unit counts are not story acceptance. |
+| [Stable-core release design](../plans/2026-09-20-media-stable-core-release-design.md) | — | Approved release boundary and verification gates for the accepted core. |
+| [Stable-core release plan](../../superpowers/plans/2026-09-20-media-stable-core-release.md) | — | Task-by-task isolation, gate, verification, and activity-check sequence. |
+| [Stable-core release evidence](../plans/2026-09-20-media-stable-core-release-evidence.md) | — | Candidate provenance and verification evidence for the isolated release branch. |
 | [Disclosure Day session evidence](../bugs/2026-09-14-media-disclosure-day-playback.md) | — | Today's logs, real-player browser reproduction, and demonstrated wiring failures. |
 
 ### The decision record
