@@ -7,7 +7,7 @@ Recorded 2026-09-20. The full 82-story objective is **not complete**.
 - Candidate worktree: `/tmp/daylight-media-steer2a-candidate`, branch `feat/media-redesign-batch-1`.
 - Latest product commit: `b63df3597a5c88b4c8dfe14ebef011ca8222b25a`.
 - Criterion evidence: [acceptance ledger](2026-09-14-media-app-acceptance-ledger.md).
-- Inventory: 3 accepted stories / 14 accepted criteria; 11 partial stories / 21 partial criteria; 68 unverified stories / 253 unverified criteria. Total: 82 stories, 288 criteria.
+- Inventory: 3 accepted stories / 14 accepted criteria; 11 partial stories / 20 partial criteria; 68 unverified stories / 254 unverified criteria. Total: 82 stories, 288 criteria.
 - Accepted stories: STEER.2a, PLACE.2b, FIND.2a. Do not infer acceptance from component existence or unit counts.
 - Preserve unrelated parked work in `/opt/Code/DaylightStation/.worktrees/media-redesign`.
 
@@ -28,7 +28,7 @@ Latest reusable build: detached worktree `/tmp/daylight-transport-feedback-build
 ## Budget and execution constraints
 
 - Authenticated meter command: `/home/ds/.local/bin/codex-usage check --json`.
-- Last checked 2026-09-20 10:18 UTC: **23% weekly used**. User hard cap: **25% total weekly usage**, not 25 percentage points from this checkpoint. Unknown meter fails closed.
+- Last checked 2026-09-20 10:25 UTC: **24% weekly used**. User hard cap: **25% total weekly usage**, not 25 percentage points from this checkpoint. Unknown meter fails closed.
 - The 23% reserve stops new story work while finishing the current batch and preserving evidence. It is not the user's 25% hard cap and does not establish completion.
 - Cumulative goal tokens are not the weekly denominator. Never report them as weekly usage.
 - Luna: bounded test/build/ledger work. Terra: bounded product fixes. Sol: difficult source-grounded diagnosis only. Root: concise integration review. No full-history forks or duplicate independent investigations.
@@ -37,6 +37,6 @@ Latest reusable build: detached worktree `/tmp/daylight-transport-feedback-build
 
 ## Remaining work
 
-All non-accepted ledger rows remain obligations. Pause/Resume/Seek now has video and one approved audio item on desktop, phone and tablet, but other content kinds/surfaces remain unverified; offline/reconnect and Stop/queue evidence remains limited to the desktop virtual-receiver journey. Do not generalize these results to live playback, every control/surface, or offline race/error-copy paths. P0 remains the priority. In particular, explicit nondelivery feedback still needs its actual user-interaction-to-backend-rejection runtime journey; the disabled-control test is not a substitute.
+All non-accepted ledger rows remain obligations. STEER.3a/AC2 is unverified: the verified ±10 controls are relative seeks, while queue skip uses distinct `skipPrev`/`skipNext` actions. The virtual-device fixture allowlist currently excludes those actions (`pause`, `play`, `seekAbs`, `seekRel`, `stop` only), so no queue-skip runtime journey can pass through it yet. Pause/Resume/Seek has video and one approved audio item on desktop, phone and tablet, but other content kinds/surfaces remain unverified; offline/reconnect and Stop/queue evidence remains limited to the desktop virtual-receiver journey. Do not generalize these results to live playback, every control/surface, or offline race/error-copy paths. P0 remains the priority. In particular, explicit nondelivery feedback still needs its actual user-interaction-to-backend-rejection runtime journey; the disabled-control test is not a substitute.
 
 Do not restart broad inventory or rebuild already verified artifacts. Select the next P0 gap directly from the ledger only when budget policy permits, add a causal failing journey, repair the actual boundary, and record criterion-scoped evidence.
