@@ -1,4 +1,4 @@
-import { validateObservation, validateRecoveryLedger, validateRendition } from './contracts.mjs';
+import { normalizeActiveRenditionId, validateObservation, validateRecoveryLedger, validateRendition } from './contracts.mjs';
 
 const INCIDENT_DEADLINE_MS = 30_000;
 const ROLLING_REPLACEMENT_MS = 600_000;
@@ -13,11 +13,16 @@ function normalizedObservations(observations) {
     .sort((a, b) => a.observedAt - b.observedAt || a.sequence - b.sequence);
 }
 
-function nextCandidate(candidates) {
+function nextCandidate(candidates, activeRenditionId) {
   if (!Array.isArray(candidates)) throw new TypeError('candidates must be an array');
+  if (activeRenditionId === null) return null;
   return candidates.map(validateRendition)
-    .filter(candidate => candidate.ready)
+    .filter(candidate => candidate.ready && candidate.renditionId !== activeRenditionId)
     .sort((left, right) => (left.estimatedUnits ?? 0) - (right.estimatedUnits ?? 0) || String(left.renditionId).localeCompare(String(right.renditionId)))[0];
+}
+
+function prepareInsteadOfReplacement(reason) {
+  return { action: 'prepare', reason };
 }
 
 function deadlineExceeded(observations, now) {
@@ -60,8 +65,9 @@ export function advanceRecoveryLedger({ ledger, now, healthy, replaced }) {
 }
 
 /** Makes a deterministic recovery decision from normalized, correlated facts. */
-export function decideRecovery({ observations = [], ledger, candidates = [], now }) {
+export function decideRecovery({ observations = [], ledger, candidates = [], now, activeRenditionId }) {
   const current = validateRecoveryLedger(ledger);
+  const active = normalizeActiveRenditionId(activeRenditionId);
   if (!finite(now)) throw new TypeError('now must be a finite timestamp');
   const facts = normalizedObservations(observations);
   if (!facts.length) return { action: 'wait', reason: 'await-observation' };
@@ -78,17 +84,17 @@ export function decideRecovery({ observations = [], ledger, candidates = [], now
   }
   if (exhausted) return { action: 'fail', reason: 'replacement-budget-exhausted' };
   if (failure.kind === 'decoder') {
-    const replacement = nextCandidate(candidates);
-    return replacement ? { action: 'replace', reason: 'decoder-rejected', renditionId: replacement.renditionId } : { action: 'prepare', reason: 'no-compatible-replacement' };
+    const replacement = nextCandidate(candidates, active);
+    return replacement ? { action: 'replace', reason: 'decoder-rejected', renditionId: replacement.renditionId } : prepareInsteadOfReplacement('no-compatible-replacement');
   }
   if (productionBehind(facts)) {
-    const replacement = nextCandidate(candidates);
-    return replacement ? { action: 'replace', reason: 'production-behind', renditionId: replacement.renditionId } : { action: 'prepare', reason: 'production-behind' };
+    const replacement = nextCandidate(candidates, active);
+    return replacement ? { action: 'replace', reason: 'production-behind', renditionId: replacement.renditionId } : prepareInsteadOfReplacement('production-behind');
   }
   if (['network', 'provider', 'unknown'].includes(failure.kind)) {
     if (now - latest.observedAt < backoffFor(recoveredIncidentCount(current, now))) return { action: 'wait', reason: 'transient-backoff' };
-    const replacement = nextCandidate(candidates);
-    return replacement ? { action: 'replace', reason: 'transient-recovery', renditionId: replacement.renditionId } : { action: 'prepare', reason: 'no-supported-recovery' };
+    const replacement = nextCandidate(candidates, active);
+    return replacement ? { action: 'replace', reason: 'transient-recovery', renditionId: replacement.renditionId } : prepareInsteadOfReplacement('no-supported-recovery');
   }
   return { action: 'wait', reason: 'cause-unknown' };
 }
