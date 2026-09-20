@@ -190,6 +190,24 @@ export function useContentDispatch() {
     return 'local';
   }, [push, targetIds, mode, queue, castTo]);
 
+  // Explicit leaf actions from the ResultRow ⋯ menu share the aimed-target
+  // route without inheriting selection's clearRest policy: More → Play Now
+  // starts this item while retaining the local queue tail. Only these two
+  // verbs are centralized here; Play Next/Up Next remain local queue edits.
+  const dispatchLeafVerb = useCallback((verb, id, item) => {
+    if (verb !== 'playNow' && verb !== 'add') return undefined;
+    const title = item?.title ?? null;
+    if (targetIds.length > 0) {
+      castTo(targetIds, mode, id, title, { verb: verb === 'add' ? 'queue' : 'play' });
+      return 'cast';
+    }
+    const input = (item && resultToQueueInput({ ...item, id: item.id ?? id }))
+      ?? { contentId: id, title, thumbnail: item?.thumbnail ?? null };
+    if (verb === 'playNow') queue.playNow(input);
+    else queue.add(input);
+    return 'local';
+  }, [targetIds, mode, queue, castTo]);
+
   // The ▶ verb on a container row: explicitly send the WHOLE container to
   // the current destination, replacing the queue. Same destination
   // precedence as leaves (the displayed aim, then local) — there's just no
@@ -233,8 +251,8 @@ export function useContentDispatch() {
   }, [targetIds, mode, queue, castTo]);
 
   return useMemo(
-    () => ({ dispatch, playContainerAsQueue, addContainerToQueue }),
-    [dispatch, playContainerAsQueue, addContainerToQueue]
+    () => ({ dispatch, dispatchLeafVerb, playContainerAsQueue, addContainerToQueue }),
+    [dispatch, dispatchLeafVerb, playContainerAsQueue, addContainerToQueue]
   );
 }
 

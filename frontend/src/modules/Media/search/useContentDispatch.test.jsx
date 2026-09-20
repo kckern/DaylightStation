@@ -23,10 +23,11 @@ const queueAdd = vi.fn();
 // queue is a stable reference in production (controller.queue), so the mock
 // returns the SAME object every render — otherwise useCallback would rebuild.
 const stableQueue = { playNow, add: queueAdd };
+let sessionQueue = stableQueue;
 const setShuffle = vi.fn();
 const stableConfig = { setShuffle };
 vi.mock('../controller/useSessionController.js', () => ({
-  useSessionController: () => ({ queue: stableQueue, config: stableConfig }),
+  useSessionController: () => ({ queue: sessionQueue, config: stableConfig }),
 }));
 
 // Mutable holder — the factory closes over it but only reads at render time.
@@ -48,6 +49,7 @@ vi.mock('@mantine/notifications', () => ({
 }));
 
 import { useContentDispatch } from './useContentDispatch.js';
+import { createLocalSessionController } from '../session/LocalSessionController.js';
 
 // Helper: render the hook and return bound dispatch/playContainerAsQueue
 // functions (call-through, so `act` around the caller's own call still works).
@@ -56,6 +58,7 @@ function setup() {
   return {
     rerender,
     dispatch: (...args) => result.current.dispatch(...args),
+    dispatchLeafVerb: (...args) => result.current.dispatchLeafVerb(...args),
     playContainerAsQueue: (...args) => result.current.playContainerAsQueue(...args),
     addContainerToQueue: (...args) => result.current.addContainerToQueue(...args),
     getCurrent: () => result.current,
@@ -67,6 +70,7 @@ beforeEach(() => {
   retry.mockClear();
   playNow.mockClear();
   queueAdd.mockClear();
+  sessionQueue = stableQueue;
   setShuffle.mockClear();
   push.mockClear();
   notificationsShow.mockClear();
@@ -84,6 +88,52 @@ describe('useContentDispatch', () => {
     expect(result.current.dispatch).toBe(first.dispatch);
     expect(result.current.playContainerAsQueue).toBe(first.playContainerAsQueue);
     expect(result.current.addContainerToQueue).toBe(first.addContainerToQueue);
+  });
+
+  describe('leaf More verbs', () => {
+    it('routes More Play Now to the aimed device without changing the local queue', () => {
+      castTargetState = { targetIds: ['livingroom-tv'], mode: 'fork' };
+      const { dispatchLeafVerb } = setup();
+      let route;
+      act(() => { route = dispatchLeafVerb('playNow', 'plex:685088', { title: 'Episode 3', type: 'episode' }); });
+
+      expect(route).toBe('cast');
+      expect(dispatchToTarget).toHaveBeenCalledWith({
+        targetIds: ['livingroom-tv'], play: 'plex:685088', mode: 'fork', title: 'Episode 3',
+      });
+      expect(playNow).not.toHaveBeenCalled();
+      expect(queueAdd).not.toHaveBeenCalled();
+    });
+
+    it('keeps a local More Play Now queue tail instead of applying selection clearRest semantics', () => {
+      const controller = createLocalSessionController({ clientId: 'more-play-now-tail' });
+      controller.queue.playNow({ contentId: 'plex:current', title: 'Current', format: 'video' }, { clearRest: true });
+      controller.queue.add({ contentId: 'plex:tail', title: 'Tail', format: 'video' });
+      sessionQueue = controller.queue;
+      const { dispatchLeafVerb } = setup();
+      let route;
+      act(() => { route = dispatchLeafVerb('playNow', 'plex:685088', { title: 'Episode 3', type: 'episode' }); });
+
+      expect(route).toBe('local');
+      expect(controller.getSnapshot().queue.items.map(item => item.contentId)).toEqual(['plex:685088', 'plex:tail']);
+      expect(controller.getSnapshot().currentItem?.contentId).toBe('plex:685088');
+      expect(dispatchToTarget).not.toHaveBeenCalled();
+    });
+
+    it('routes More Add to the aimed device and still appends locally without an aim', () => {
+      castTargetState = { targetIds: ['livingroom-tv'], mode: 'transfer' };
+      const remote = setup();
+      act(() => { remote.dispatchLeafVerb('add', 'plex:685088', { title: 'Episode 3', type: 'episode' }); });
+      expect(dispatchToTarget).toHaveBeenCalledWith({
+        targetIds: ['livingroom-tv'], queue: 'plex:685088', mode: 'transfer', title: 'Episode 3',
+      });
+      expect(queueAdd).not.toHaveBeenCalled();
+
+      castTargetState = { targetIds: [], mode: 'transfer' };
+      const local = setup();
+      act(() => { local.dispatchLeafVerb('add', 'plex:685088', { title: 'Episode 3', type: 'episode' }); });
+      expect(queueAdd).toHaveBeenCalledWith(expect.objectContaining({ contentId: 'plex:685088' }));
+    });
   });
 
   it('non-peek view routes to local queue.playNow with clearRest', () => {

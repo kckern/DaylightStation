@@ -39,7 +39,7 @@ import './Search.scss';
 
 export function MediaContentSearch() {
   const { scopes, currentScopeKey, currentScope, scopeError } = useSearchContext();
-  const { dispatch, playContainerAsQueue, addContainerToQueue } = useContentDispatch();
+  const { dispatch, dispatchLeafVerb, playContainerAsQueue } = useContentDispatch();
   const { queue } = useSessionController('local');
   const { push } = useNav();
   const log = useMemo(() => getLogger().child({ component: 'media-content-search' }), []);
@@ -108,12 +108,12 @@ export function MediaContentSearch() {
     const id = item?.id;
     if (!id) return;
     log.info('row_action', { contentId: id, action });
-    if (action === 'add') {
-      addContainerToQueue(id, item);
+    if (action === 'playNow' || action === 'add') {
+      dispatchLeafVerb(action, id, item);
       return;
     }
     applyResultRowVerb(action, item, { queue, push });
-  }, [queue, push, log, addContainerToQueue]);
+  }, [queue, push, log, dispatchLeafVerb]);
 
   return (
     <div ref={searchBarRef} data-testid="media-search-bar" className="media-search-bar">

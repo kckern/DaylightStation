@@ -7,8 +7,9 @@ import { act, createEvent, fireEvent, render, screen, waitFor } from '@testing-l
 import { MantineProvider } from '@mantine/core';
 
 const dispatchContent = vi.fn();
+const dispatchLeafVerb = vi.fn();
 vi.mock('./useContentDispatch.js', () => ({
-  useContentDispatch: () => ({ dispatch: dispatchContent, playContainerAsQueue: vi.fn() }),
+  useContentDispatch: () => ({ dispatch: dispatchContent, dispatchLeafVerb, playContainerAsQueue: vi.fn() }),
 }));
 vi.mock('../logging/mediaLog.js', () => ({
   default: new Proxy({}, { get: () => vi.fn() }),
@@ -69,6 +70,12 @@ function renderSearch({ onBaseDismiss = vi.fn() } = {}) {
   controller.transport.play();
   controller.onPlayerStateChange('paused', 'plex:existing');
   play.mockClear();
+  dispatchLeafVerb.mockImplementation((verb, contentId, item) => {
+    const input = { contentId, title: item?.title ?? null, thumbnail: item?.thumbnail ?? null };
+    if (verb === 'playNow') controller.queue.playNow(input);
+    else if (verb === 'add') controller.queue.add(input);
+    return 'local';
+  });
   render(
     <MantineProvider>
       <DismissStackProvider onBaseDismiss={onBaseDismiss}>
@@ -86,6 +93,7 @@ function renderSearch({ onBaseDismiss = vi.fn() } = {}) {
 describe('MediaContentSearch action-menu retention', () => {
   beforeEach(() => {
     dispatchContent.mockReset();
+    dispatchLeafVerb.mockReset();
     vi.stubGlobal('EventSource', undefined);
     vi.stubGlobal('fetch', vi.fn(() => jsonResponse([leaf])));
   });

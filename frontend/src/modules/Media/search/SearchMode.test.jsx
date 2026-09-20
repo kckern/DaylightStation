@@ -19,9 +19,10 @@ import { MantineProvider } from '@mantine/core';
 
 // ── useContentDispatch: capture what SearchMode hands off, control the route ──
 const dispatchMock = vi.fn();
+const dispatchLeafVerbMock = vi.fn();
 const playContainerAsQueueMock = vi.fn();
 vi.mock('./useContentDispatch.js', () => ({
-  useContentDispatch: () => ({ dispatch: dispatchMock, playContainerAsQueue: playContainerAsQueueMock }),
+  useContentDispatch: () => ({ dispatch: dispatchMock, dispatchLeafVerb: dispatchLeafVerbMock, playContainerAsQueue: playContainerAsQueueMock }),
 }));
 
 // ── useSessionController: the ⋯ verb menu's four queue actions ──
@@ -122,6 +123,7 @@ function Harness({ initialOpen = true }) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  dispatchLeafVerbMock.mockReset();
   playContainerAsQueueMock.mockReset();
   navPush.mockReset();
   localStorage.clear();
@@ -441,7 +443,23 @@ describe('SearchMode', () => {
       expect(screen.getByTestId('search-mode')).toBeInTheDocument();
     });
 
-    it('⋯ Add to Queue calls queue.add and preserves the query and narrowing', async () => {
+    it('⋯ Play Now routes the leaf through the current aim and keeps search open', async () => {
+      comboState = {
+        search: 'bluey',
+        results: [{ id: 'plex:685088', title: 'Bluey', type: 'episode', thumbnail: null }],
+      };
+      dispatchLeafVerbMock.mockReturnValue('cast');
+      render(<Harness />);
+      await screen.findByTestId('result-more-plex:685088');
+      fireEvent.click(screen.getByTestId('result-more-plex:685088'));
+      fireEvent.click(await screen.findByTestId('result-action-playNow-plex:685088'));
+
+      expect(dispatchLeafVerbMock).toHaveBeenCalledWith('playNow', 'plex:685088', expect.objectContaining({ id: 'plex:685088' }));
+      expect(queuePlayNow).not.toHaveBeenCalled();
+      expect(screen.getByTestId('search-mode')).toBeInTheDocument();
+    });
+
+    it('⋯ Add to Queue uses the same destination router and preserves the query and narrowing', async () => {
       comboState = {
         search: 'bluey',
         results: [{ id: 'plex:685088', title: 'Bluey', type: 'episode', thumbnail: null }],
@@ -452,7 +470,8 @@ describe('SearchMode', () => {
       fireEvent.click(screen.getByTestId('result-more-plex:685088'));
       fireEvent.click(await screen.findByTestId('result-action-add-plex:685088'));
 
-      expect(queueAdd).toHaveBeenCalledWith(expect.objectContaining({ contentId: 'plex:685088' }));
+      expect(dispatchLeafVerbMock).toHaveBeenCalledWith('add', 'plex:685088', expect.objectContaining({ id: 'plex:685088' }));
+      expect(queueAdd).not.toHaveBeenCalled();
       expect(screen.getByTestId('search-mode')).toBeInTheDocument();
       expect(screen.getByTestId('search-mode-input')).toHaveValue('bluey');
       expect(screen.getByTestId('scope-chip-ambient')).toHaveAttribute('aria-pressed', 'true');
