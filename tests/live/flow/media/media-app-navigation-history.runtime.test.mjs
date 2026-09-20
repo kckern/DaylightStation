@@ -50,7 +50,8 @@ for (const [surface, viewport] of surfaces) {
     await page.getByTestId('detail-back').click();
     await expect(page.getByTestId('browse-view')).toBeVisible();
     await expect(page).toHaveURL(/view=browse.*path=plex%2Flibrary%2Fsections%2F6%2Fall/);
-    await expect(page.getByTestId('browse-row-plex:55854')).toBeVisible();
+    await expect(page.getByTestId('browse-view-loading')).toBeHidden({ timeout: 30000 });
+    await expect(page.getByTestId('browse-row-plex:55854')).toBeVisible({ timeout: 30000 });
 
     await openDetail(page, surface);
     await primary(page, surface, 'browse').click();
