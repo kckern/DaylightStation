@@ -47,6 +47,7 @@ let searchContext = {
   currentScope: { key: 'all', label: 'All', params: '' },
   scopeError: null,
   setScopeKey: vi.fn(),
+  resetScope: vi.fn(),
 };
 
 vi.mock('./useSearchContext.js', () => ({
@@ -75,6 +76,7 @@ vi.mock('../../Content/combobox/ContentCombobox.jsx', () => ({
         <button data-testid="more-play-now" onClick={() => props.onMore?.('playNow', leaf)}>play now</button>
         <button data-testid="more-add" onClick={() => props.onMore?.('add', leaf)}>add</button>
         <button data-testid="more-detail" onClick={() => props.onMore?.('detail', leaf)}>open detail</button>
+        <button data-testid="close-search" onClick={() => props.onClose?.('escape')}>close</button>
       </>
     );
   },
@@ -105,6 +107,7 @@ beforeEach(() => {
     currentScope: { key: 'all', label: 'All', params: '' },
     scopeError: null,
     setScopeKey: vi.fn(),
+    resetScope: vi.fn(),
   };
 });
 
@@ -168,6 +171,22 @@ describe('MediaContentSearch', () => {
     render(<MediaContentSearch />);
 
     expect(comboboxProps.fallbackSearchParams).toBe('');
+  });
+
+  it('resets the desktop scope when the transient search closes', () => {
+    const resetScope = vi.fn();
+    searchContext = {
+      scopes: [{ key: 'all', label: 'All', params: '' }, { key: 'video', label: 'Video', params: 'mediaType=video' }],
+      currentScopeKey: 'video',
+      currentScope: { key: 'video', label: 'Video', params: 'mediaType=video' },
+      scopeError: null,
+      setScopeKey: vi.fn(),
+      resetScope,
+    };
+    render(<MediaContentSearch />);
+
+    fireEvent.click(screen.getByTestId('close-search'));
+    expect(resetScope).toHaveBeenCalledWith('escape');
   });
 
   // ── Task 14 (spec D6): the desktop half of the same tap grammar — a

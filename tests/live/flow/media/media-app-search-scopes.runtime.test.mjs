@@ -87,7 +87,7 @@ async function visibleResultKinds(page, isPhone) {
 }
 
 function hasVideoKindSubtitle(subtitle) {
-  return subtitle.split(' · ').some((token) => /^(movie|tv show|series|season|episode|video)$/i.test(token.trim()));
+  return subtitle.split(/\s+[·•]\s+/u).some((token) => /^(movie|tv show|series|season|episode|video)$/i.test(token.trim()));
 }
 
 async function closeSearch(page, input, isPhone) {

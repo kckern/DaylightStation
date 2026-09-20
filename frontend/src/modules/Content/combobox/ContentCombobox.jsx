@@ -110,6 +110,7 @@ export function ContentCombobox({
   appResults = false,
   renderValue = null,
   allowFreeform = true,
+  onClose = null,
   logApp = 'admin',
   onPlayAll = null,
   onMore = null,
@@ -197,6 +198,13 @@ export function ContentCombobox({
   // Machine mode, readable from Mantine callbacks without a stale closure.
   const modeRef = useRef(mode);
   modeRef.current = mode;
+  // Search-session owners (MediaContentSearch) reset session-local scope only
+  // after a real close gesture. Keep the callback beside every close commit so
+  // Escape, Tab and genuine outside dismissal have identical lifecycle.
+  const commitClose = useCallback((reason) => {
+    commit(reason);
+    onClose?.(reason);
+  }, [commit, onClose]);
 
   // ── Mantine store: dropdown visibility follows the machine mode ──
   const comboboxRef = useRef(null);
@@ -222,7 +230,9 @@ export function ContentCombobox({
       // Mantine-initiated close (outside pointerdown). When WE initiated the
       // close (Escape/Tab/select/freeform), the machine is already back in
       // DISPLAY and commit semantics were handled — do nothing.
-      if (modeRef.current !== Modes.DISPLAY) commit('outside');
+      if (modeRef.current !== Modes.DISPLAY) {
+        commitClose('outside');
+      }
     },
   });
   comboboxRef.current = combobox;
@@ -327,11 +337,11 @@ export function ContentCombobox({
     }
     if (e.key === 'Escape') {
       e.preventDefault();
-      commit('escape');
+      commitClose('escape');
       return;
     }
     if (e.key === 'Tab') {
-      commit('tab'); // no preventDefault — focus moves naturally
+      commitClose('tab'); // no preventDefault — focus moves naturally
     }
   };
 

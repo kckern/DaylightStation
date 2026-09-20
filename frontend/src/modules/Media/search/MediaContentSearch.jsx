@@ -38,7 +38,7 @@ import getLogger from '../../../lib/logging/Logger.js';
 import './Search.scss';
 
 export function MediaContentSearch() {
-  const { scopes, currentScopeKey, currentScope, scopeError } = useSearchContext();
+  const { scopes, currentScopeKey, currentScope, scopeError, resetScope } = useSearchContext();
   const { dispatch, dispatchLeafVerb, playContainerAsQueue } = useContentDispatch();
   const { queue } = useSessionController('local');
   const { push } = useNav();
@@ -144,6 +144,7 @@ export function MediaContentSearch() {
             logApp="media"
             appResults
             allowFreeform={false}
+            onClose={resetScope}
           />
         </div>
       </div>
