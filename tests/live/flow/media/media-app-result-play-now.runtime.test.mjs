@@ -296,8 +296,12 @@ for (const [surface, viewport, isPhone] of surfaces) {
     await sender.setViewportSize(viewport);
     const receiver = await context.newPage();
     const loads = [];
+    const transportCommands = [];
     sender.on('request', request => {
       if (request.url().includes('/api/v1/device/acceptance-media/load')) loads.push(request);
+      if (new URL(request.url()).pathname.endsWith('/api/v1/device/acceptance-media/session/transport')) {
+        transportCommands.push(request);
+      }
     });
     await receiver.goto('/screen/living-room', { waitUntil: 'domcontentloaded' });
     const input = await openSearch(sender, isPhone);
@@ -415,6 +419,47 @@ for (const [surface, viewport, isPhone] of surfaces) {
     await assertSearchIdentity(sender, input, isPhone, id);
     expect(await resultActionIdentity(sender, id)).toEqual(localPlayActions);
     await assertSearchIdentity(sender, input, isPhone, id);
+
+    const aimedTargetBeforePeek = JSON.parse(await sender.evaluate(() => localStorage.getItem('media-app.cast-target')));
+    const loadsBeforePeek = loads.length;
+    const transportCommandsBeforePeek = transportCommands.length;
+    expect(aimedTargetBeforePeek).toBeTruthy();
+    if (isPhone) {
+      await expect(sender.getByTestId('search-mode')).toBeVisible();
+      await sender.getByTestId('search-mode-close').click();
+      await expect(sender.getByTestId('search-mode')).toBeHidden();
+    }
+    await sender.getByTestId(isPhone ? 'app-tab-fleet' : 'app-nav-fleet').click();
+    await expect(sender.getByTestId('fleet-peek-acceptance-media')).toBeVisible({ timeout: 30000 });
+    await sender.getByTestId('fleet-peek-acceptance-media').click();
+    const peekPanel = sender.getByTestId('peek-panel');
+    await expect(peekPanel).toBeVisible();
+    const disclosureVisits = remoteAfterAdd.snapshot.queue.items.filter(item => item.contentId === addId);
+    expect(disclosureVisits).toHaveLength(1);
+    const disclosureVisit = disclosureVisits[0];
+    const disclosureRow = sender.getByTestId(`queue-item-${disclosureVisit.queueItemId}`);
+    await expect(disclosureRow).toBeVisible();
+    await expect(disclosureRow).toContainText('Disclosure Day');
+    expect(loads).toHaveLength(loadsBeforePeek);
+    expect(transportCommands).toHaveLength(transportCommandsBeforePeek);
+    const aimedTargetAfterPeek = JSON.parse(await sender.evaluate(() => localStorage.getItem('media-app.cast-target')));
+    expect(aimedTargetAfterPeek).toMatchObject({
+      mode: aimedTargetBeforePeek.mode,
+      targetIds: aimedTargetBeforePeek.targetIds,
+    });
+    const remoteAfterPeek = await receiverState(sender);
+    expect(remoteAfterPeek.snapshot).toMatchObject({
+      sessionId: remoteAfterAdd.snapshot.sessionId,
+      currentItem: remoteAfterAdd.snapshot.currentItem,
+      meta: {
+        ownerId: remoteAfterAdd.snapshot.meta.ownerId,
+        playbackOwner: {
+          ownerInstanceId: remoteAfterAdd.snapshot.meta.playbackOwner.ownerInstanceId,
+          playbackRevision: remoteAfterAdd.snapshot.meta.playbackOwner.playbackRevision,
+          queueRevision: remoteAfterAdd.snapshot.meta.playbackOwner.queueRevision,
+        },
+      },
+    });
     await receiver.close();
   });
 }
