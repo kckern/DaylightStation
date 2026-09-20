@@ -57,13 +57,15 @@ describe('PrimaryNav', () => {
   });
 
   it.each([
-    ['nowPlaying', 'home', 'app-tab-home'],
-    ['detail', 'browse', 'app-tab-browse'],
-    ['peek', 'fleet', 'app-tab-fleet'],
-  ])('keeps %s owned by %s in the phone tab bar', (view, area, selector) => {
+    ['nowPlaying', 'home', 'app-tab-home', 'app-nav-home'],
+    ['detail', 'browse', 'app-tab-browse', 'app-nav-browse'],
+    ['peek', 'fleet', 'app-tab-fleet', 'app-nav-fleet'],
+  ])('keeps %s owned by %s on both primary controls', (view, area, tabSelector, railSelector) => {
     navState = { view, area };
     renderWithMantine(<TabBar />);
-    expect(screen.getByTestId(selector)).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByTestId(tabSelector)).toHaveAttribute('aria-current', 'page');
+    renderWithMantine(<NavRail />);
+    expect(screen.getByTestId(railSelector)).toHaveAttribute('aria-current', 'page');
   });
 
   it('uses goToArea for primary selection on the tablet rail', () => {

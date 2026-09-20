@@ -1,5 +1,5 @@
 import React from 'react';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, render, screen, waitFor } from '@testing-library/react';
 import { NavProvider, useNav } from './NavProvider.jsx';
 
@@ -54,14 +54,11 @@ describe('NavProvider area and browser-history contract', () => {
       return nativeGo(delta);
     };
 
-    try {
-      act(() => nav().goToArea('browse'));
-    } finally {
-      window.history.go = nativeGo;
-    }
+    try { act(() => nav().goToArea('browse')); } finally { window.history.go = nativeGo; }
 
-    expect(probe()).toHaveAttribute('data-view', 'browse');
-    expect(probe()).toHaveAttribute('data-depth', '2');
+    await waitFor(() => expect(probe()).toHaveAttribute('data-view', 'browse'));
+    expect(location.search).toBe('?view=browse');
+    expect(window.history.state.mediaNavStack.at(-1)).toMatchObject({ view: 'browse', params: { path: '' } });
     // Happy DOM discards the forward entry after traversal; real browsers do
     // not. Capture the value at the synchronous browser traversal seam, then
     // prove the ensuing route transition separately below.
@@ -71,19 +68,31 @@ describe('NavProvider area and browser-history contract', () => {
     await waitFor(() => expect(probe()).toHaveAttribute('data-view', 'home'));
   });
 
-  it('names the actual prior primary area as the back destination', () => {
+  it('keeps the rendered route coherent with the current history entry until traversal pops', () => {
     render(<NavProvider><Probe /></NavProvider>);
     act(() => nav().push('browse', { path: '' }));
-    expect(probe()).toHaveAttribute('data-back-destination', 'Home');
-
     act(() => nav().push('detail', { contentId: 'plex:arrival' }));
-    expect(probe()).toHaveAttribute('data-back-destination', 'Browse');
+    const historyGo = vi.spyOn(window.history, 'go').mockImplementation(() => {});
 
-    act(() => nav().push('nowPlaying'));
-    expect(probe()).toHaveAttribute('data-back-destination', 'Browse');
+    act(() => nav().goToArea('browse'));
 
-    act(() => nav().push('peek', { deviceId: 'tv-1' }));
-    expect(probe()).toHaveAttribute('data-back-destination', 'Home');
+    expect(historyGo).toHaveBeenCalledWith(-1);
+    expect(probe()).toHaveAttribute('data-view', 'detail');
+    expect(location.search).toContain('view=detail');
+    expect(window.history.state.mediaNavStack.at(-1)).toMatchObject({ view: 'detail' });
+    historyGo.mockRestore();
+  });
+
+  it.each([
+    ['Home', 'browse', { path: '' }, 'Home'],
+    ['Browse', 'detail', { contentId: 'plex:arrival' }, 'Browse'],
+    ['Devices', 'nowPlaying', {}, 'Devices'],
+  ])('names %s as the actual prior area', (origin, destination, params, label) => {
+    render(<NavProvider><Probe /></NavProvider>);
+    if (origin === 'Browse') act(() => nav().push('browse', { path: '' }));
+    if (origin === 'Devices') act(() => nav().push('fleet'));
+    act(() => nav().push(destination, params));
+    expect(probe()).toHaveAttribute('data-back-destination', label);
   });
 
   it('falls back from a depth-one detail link to Home without leaving media', () => {
