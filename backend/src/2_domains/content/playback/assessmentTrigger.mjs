@@ -14,10 +14,15 @@ function isSeedRisk(media) {
   return Number(media.width) >= 1920 || Number(media.height) >= 1080;
 }
 
-function matchesRule(rule, media, clientProfileKey) {
+function hasRiskPredicate(predicates) {
+  return Object.values(predicates || {}).some(value => Array.isArray(value) ? value.length > 0 : value !== undefined && value !== null && value !== '');
+}
+
+function matchesRule(rule, media, clientProfileKey, now) {
   if (rule?.status !== 'active' || rule.scope?.profileKey !== clientProfileKey) return false;
-  if (media?.environmentVersion && rule.scope?.environmentVersion !== media.environmentVersion) return false;
+  if (!Number.isFinite(rule.expiresAt) || rule.expiresAt <= now || rule.scope?.environmentVersion !== media?.environmentVersion) return false;
   const predicates = rule.predicates || rule.featurePredicates || {};
+  if (!hasRiskPredicate(predicates)) return false;
   const codecs = predicates.codec || predicates.codecs;
   if (codecs && ![].concat(codecs).map(codec => String(codec).toLowerCase()).includes(String(media?.codec || '').toLowerCase())) return false;
   if (predicates.sourceRevision && predicates.sourceRevision !== media?.sourceRevision) return false;
@@ -28,15 +33,18 @@ function matchesRule(rule, media, clientProfileKey) {
 }
 
 function hasCompatibleEvidence(entries, media, clientProfileKey) {
-  return entries.some(entry => entry?.outcome === 'success'
+  return entries.some(entry => entry?.attributedCause == null
+    && Boolean(entry?.correction)
     && entry.profileKey === clientProfileKey
-    && (!media?.environmentVersion || entry.environmentVersion === media.environmentVersion)
+    && entry.environmentVersion === media?.environmentVersion
     && entry.sourceRevision === media?.sourceRevision
     && Number(entry.healthyDurationMs) > 0);
 }
 
 function hasRepeatedEpisodes(episodes, now) {
-  return (episodes || []).filter(episode => Number(episode?.startedAt) >= now - TWO_MINUTES && Number(episode?.startedAt) <= now).length >= 2;
+  return (episodes || []).filter(episode => episode?.assessmentConsumedAt == null
+    && Number(episode?.startedAt) >= now - TWO_MINUTES
+    && Number(episode?.startedAt) <= now).length >= 2;
 }
 
 /**
@@ -51,7 +59,7 @@ export function decideAssessment({ media, clientProfileKey, cachedRisk = [], epi
   if (hasRepeatedEpisodes(episodes, now)) return assess('repeated-interruptions');
 
   const entries = cachedEntries(cachedRisk);
-  if (entries.some(rule => matchesRule(rule, media, clientProfileKey))) return assess('learned-risk');
+  if (entries.some(rule => matchesRule(rule, media, clientProfileKey, now))) return assess('learned-risk');
   if (isSeedRisk(media) && hasCompatibleEvidence(entries, media, clientProfileKey)) return play('known-compatible');
   if (isSeedRisk(media)) return assess('seed-risk');
   return play('optimistic-default');

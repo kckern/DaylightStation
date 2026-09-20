@@ -9,6 +9,9 @@ const failed = (incidentId, sourceRevision, titleId, correction = 'transcode') =
 const succeeded = (incidentId, sourceRevision, titleId, correction = 'transcode') => ({
   ...failed(incidentId, sourceRevision, titleId, correction), attributedCause: null, healthyDurationMs: 30_000,
 });
+const originalSuccess = (incidentId, sourceRevision, titleId, observedAt = 2_000) => ({
+  ...succeeded(incidentId, sourceRevision, titleId, null), correction: null, observedAt,
+});
 
 describe('learnPlaybackRisk', () => {
   it('quarantines an exact item without promoting a one-item incident', () => {
@@ -54,18 +57,44 @@ describe('learnPlaybackRisk', () => {
   });
 
   it('demotes an active rule after three matching healthy successes', () => {
-    const rule = { status: 'active', scope, predicates: { codec: ['hevc'], minWidth: 1920 }, supportingIncidentIds: ['i-1'], failureCount: 3, successCount: 2, expiresAt: 99_999 };
-    const next = learnPlaybackRisk({ rule, outcomes: [succeeded('s-1', 'r-4', 't-4'), succeeded('s-2', 'r-5', 't-5'), succeeded('s-3', 'r-6', 't-6')], now: 10_000 });
+    const rule = { status: 'active', scope, predicates: { codec: ['hevc'], minWidth: 1920 }, supportingIncidentIds: ['i-1'], supportingSuccessIds: ['prior-1', 'prior-2'], failureCount: 3, successCount: 2, activatedAt: 1_000, expiresAt: 99_999 };
+    const next = learnPlaybackRisk({ rule, outcomes: [originalSuccess('s-1', 'r-4', 't-4'), originalSuccess('s-2', 'r-5', 't-5'), originalSuccess('s-3', 'r-6', 't-6')], now: 10_000 });
     expect(next).toMatchObject({ status: 'demoted', successCount: 5 });
   });
 
+  it('does not demote for pre-activation, corrected, or nonmatching healthy outcomes', () => {
+    const rule = { status: 'active', scope, predicates: { codec: ['hevc'], minWidth: 1920 }, supportingIncidentIds: ['i-1'], supportingSuccessIds: [], failureCount: 3, successCount: 0, activatedAt: 1_000, expiresAt: 99_999 };
+    const nonmatching = { ...originalSuccess('s-1', 'r-1', 't-1'), media: { kind: 'video', codec: 'h264', width: 1920 } };
+    const corrected = succeeded('s-2', 'r-2', 't-2');
+    const beforeActivation = originalSuccess('s-3', 'r-3', 't-3', 1_000);
+    expect(learnPlaybackRisk({ rule, outcomes: [nonmatching, corrected, beforeActivation], now: 10_000 }).status).toBe('active');
+  });
+
   it('keeps an unexpired active rule active when a later attributable observation arrives', () => {
-    const rule = { status: 'active', scope, predicates: { codec: ['hevc'], minWidth: 1920 }, supportingIncidentIds: ['i-1'], failureCount: 3, successCount: 2, expiresAt: 99_999 };
+    const rule = { status: 'active', scope, predicates: { codec: ['hevc'], minWidth: 1920 }, supportingIncidentIds: ['i-1'], supportingSuccessIds: ['prior-1', 'prior-2'], failureCount: 3, successCount: 2, activatedAt: 1_000, expiresAt: 99_999 };
     const next = learnPlaybackRisk({ rule, outcomes: [failed('i-4', 'r-4', 't-3')], now: 10_000 });
-    expect(next).toMatchObject({ status: 'active', supportingIncidentIds: ['i-4'], failureCount: 1, expiresAt: 99_999 });
+    expect(next).toMatchObject({ status: 'active', supportingIncidentIds: ['i-1', 'i-4'], failureCount: 2, expiresAt: 99_999 });
   });
 
   it('leaves a rule inactive when there is no attributable evidence', () => {
     expect(learnPlaybackRisk({ rule: null, outcomes: [], now: 10_000 })).toMatchObject({ status: 'inactive', supportingIncidentIds: [], failureCount: 0, successCount: 0 });
+  });
+
+  it('does not promote metadata-free failures into a catch-all rule', () => {
+    const outcomes = [
+      { ...failed('i-1', 'r-1', 't-1'), media: {} }, { ...failed('i-2', 'r-2', 't-1'), media: {} }, { ...failed('i-3', 'r-3', 't-2'), media: {} },
+      succeeded('s-1', 'r-1', 't-1'), succeeded('s-2', 'r-2', 't-1'),
+    ];
+    expect(learnPlaybackRisk({ rule: null, outcomes, now: 10_000 }).status).toBe('quarantined');
+  });
+
+  it('is idempotent when called repeatedly with the same cumulative outcome snapshot', () => {
+    const outcomes = [
+      failed('i-1', 'r-1', 't-1'), failed('i-2', 'r-2', 't-1'), failed('i-3', 'r-3', 't-2'),
+      succeeded('s-1', 'r-1', 't-1'), succeeded('s-2', 'r-2', 't-1'),
+    ];
+    const first = learnPlaybackRisk({ rule: null, outcomes, now: 10_000 });
+    const second = learnPlaybackRisk({ rule: first, outcomes, now: 10_001 });
+    expect(second).toMatchObject({ supportingIncidentIds: ['i-1', 'i-2', 'i-3'], supportingSuccessIds: ['s-1', 's-2'], failureCount: 3, successCount: 2 });
   });
 });

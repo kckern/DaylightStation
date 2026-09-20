@@ -2,13 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { PlaybackRiskRepository } from './PlaybackRiskRepository.mjs';
 
 describe('PlaybackRiskRepository', () => {
-  it('records observations and retrieves only rules in the exact profile/environment scope', async () => {
+  it('retrieves rules and recorded outcomes in the exact profile/environment scope', async () => {
     const repository = new PlaybackRiskRepository({ state: {} });
     const scoped = { scope: { profileKey: 'browser-a', environmentVersion: 'env-1' }, status: 'active' };
     await repository.record({ incidentId: 'incident-1', profileKey: 'browser-a', environmentVersion: 'env-1' });
     await repository.save(scoped);
     await repository.save({ scope: { profileKey: 'browser-a', environmentVersion: 'env-2' }, status: 'active' });
-    expect(await repository.find({ profileKey: 'browser-a', environmentVersion: 'env-1' })).toEqual([scoped]);
+    expect(await repository.find({ profileKey: 'browser-a', environmentVersion: 'env-1' })).toEqual([scoped, { incidentId: 'incident-1', profileKey: 'browser-a', environmentVersion: 'env-1' }]);
     expect(await repository.find({ profileKey: 'browser-a', environmentVersion: 'env-3' })).toEqual([]);
   });
 

@@ -14,6 +14,14 @@ export function updateEpisodes({ state = [], observation = {}, now }) {
   const episodes = copy(state);
   const openIndex = episodes.findLastIndex(episode => episode.endedAt == null);
 
+  if (observation.kind === 'assessment-consumed') {
+    const latestUnconsumed = episodes.reduce((latest, episode, index) => (
+      episode.assessmentConsumedAt == null && (latest < 0 || episode.startedAt > episodes[latest].startedAt) ? index : latest
+    ), -1);
+    if (latestUnconsumed >= 0) episodes[latestUnconsumed] = { ...episodes[latestUnconsumed], assessmentConsumedAt: now };
+    return episodes;
+  }
+
   if (observation.kind === 'progress' && Number(observation.healthyDurationMs) >= HEALTHY_CLOSE_MS && openIndex >= 0) {
     episodes[openIndex] = { ...episodes[openIndex], endedAt: now };
     return episodes;
