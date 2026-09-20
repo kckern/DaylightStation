@@ -71,7 +71,11 @@ const FAITH_AUDIO = {
   nativeSelector: '.audio-player audio',
 };
 
-async function startArrivalJourney(context, sender, { mobile = false, media = ARRIVAL_VIDEO } = {}) {
+async function startArrivalJourney(context, sender, {
+  mobile = false,
+  media = ARRIVAL_VIDEO,
+  afterDispatch = async () => ({}),
+} = {}) {
   const receiver = await context.newPage();
   const loads = [];
   sender.on('request', request => {
@@ -116,6 +120,7 @@ async function startArrivalJourney(context, sender, { mobile = false, media = AR
   await expect(result).toBeVisible({ timeout: 30000 });
   await result.click();
   await expect.poll(() => loads.length, { timeout: 10000 }).toBe(1);
+  const { searchModeDismissed = false } = await afterDispatch();
 
   const surface = receiver.locator(media.surfaceSelector);
   const native = receiver.locator(media.nativeSelector);
@@ -141,9 +146,12 @@ async function startArrivalJourney(context, sender, { mobile = false, media = AR
     nativeAdvancing: true,
     receiverState: 'playing',
   });
-  if (mobile) {
+  if (mobile && !searchModeDismissed) {
     // SearchMode intentionally remains open after a Play action. Dismiss it
     // through its visible close control before navigating to phone Devices.
+    // Default callers must exercise this visible cleanup. A callback may skip
+    // it only after it has explicitly dismissed SearchMode itself.
+    await expect(sender.getByTestId('search-mode')).toBeVisible();
     await sender.getByTestId('search-mode-close').click();
     await expect(sender.getByTestId('search-mode')).toBeHidden();
   }
@@ -274,6 +282,65 @@ async function runPausedControlsJourney(context, sender, navTestId, mobile = fal
   await receiver.close();
 }
 
+async function runSteerConfirmationJourney(context, sender, {
+  mobile = false,
+  navTestId = 'app-nav-fleet',
+  homeTestId = 'app-nav-home',
+} = {}) {
+  test.setTimeout(150000);
+  const changeAimToThisDevice = async () => {
+    if (mobile) {
+      await sender.getByTestId('destination-line').click();
+      await expect(sender.getByTestId('destination-sheet')).toBeVisible();
+      await sender.getByTestId('picker-this-device').click();
+      await expect(sender.getByTestId('destination-line-name')).toHaveText('This device');
+      return;
+    }
+    await sender.getByTestId('cast-target-chip').click();
+    const acceptanceTarget = sender.getByTestId('cast-target-checkbox-acceptance-media');
+    await expect(acceptanceTarget).toBeChecked();
+    await acceptanceTarget.uncheck();
+    await expect(acceptanceTarget).not.toBeChecked();
+    await sender.getByTestId('cast-target-chip').click();
+    await expect(sender.getByTestId('cast-popover')).toBeHidden();
+  };
+  const { receiver, native } = await startArrivalJourney(context, sender, {
+    mobile,
+    afterDispatch: async () => {
+      await changeAimToThisDevice();
+      if (mobile) {
+        await sender.getByTestId('search-mode-close').click();
+        await expect(sender.getByTestId('search-mode')).toBeHidden();
+      }
+      const steer = sender.getByRole('button', { name: 'Steer it', exact: true });
+      await expect(steer).toBeVisible();
+      await steer.click();
+      await expect(sender.getByTestId('peek-panel')).toBeVisible();
+      await expect(sender.getByTestId('peek-panel').getByRole('heading', { name: 'Acceptance receiver' })).toBeVisible();
+      return { searchModeDismissed: mobile };
+    },
+  });
+  await expect(sender.locator('[data-testid^="dispatch-remote-"]')).toHaveCount(0);
+  const confirmationToggle = sender.getByTestId('np-toggle');
+  await expect(confirmationToggle).toHaveAttribute('aria-label', 'Pause');
+  await issueThroughControl(sender, 'pause', () => confirmationToggle.click());
+  await expect.poll(() => native.evaluate(element => element.paused)).toBe(true);
+  await expect(confirmationToggle).toHaveAttribute('aria-label', 'Play');
+  await expect.poll(async () => (await readReceiverState(sender))?.snapshot?.state, { timeout: 15000 })
+    .toBe('paused');
+  await sender.getByTestId(homeTestId).click();
+  const toggle = await openPeekControls(sender, navTestId);
+  await expect(toggle).toHaveAttribute('aria-label', 'Play');
+  await issueThroughControl(sender, 'play', () => toggle.click());
+  await expect.poll(() => native.evaluate(element => !element.paused)).toBe(true);
+  await expect(toggle).toHaveAttribute('aria-label', 'Pause');
+  await receiver.close();
+}
+
+test('STEER.1c confirmation and later Devices reach the same receiver', async ({ context, page: sender }) => {
+  await runSteerConfirmationJourney(context, sender);
+});
+
 test('Peek Pause, Resume, and Seek control the actual receiver video while paused', async ({ context, page: sender }) => {
   await runPausedControlsJourney(context, sender, 'app-nav-fleet');
 });
@@ -294,6 +361,14 @@ for (const { label, viewport, navTestId, mobile } of [
 
     test('Pause/Resume/Seek control the actual Faith audio while paused', async ({ context, page: sender }) => {
       await runPausedControlsJourney(context, sender, navTestId, mobile, FAITH_AUDIO);
+    });
+
+    test('STEER.1c confirmation and later Devices reach the same receiver', async ({ context, page: sender }) => {
+      await runSteerConfirmationJourney(context, sender, {
+        mobile,
+        navTestId,
+        homeTestId: mobile ? 'app-tab-home' : 'app-nav-home',
+      });
     });
   });
 }

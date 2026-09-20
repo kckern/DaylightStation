@@ -5,7 +5,7 @@
 // for the backend playback watchdog's trailing `playback` step so the user
 // gets honest confirmation (or an honest "the TV may not have started
 // playing"). Failures and unconfirmed playback never auto-clear; confirmed
-// playback lingers briefly with a Remote shortcut. Never modal (N1.3).
+// playback lingers briefly with a Steer it shortcut. Never modal (N1.3).
 import React, { useEffect } from 'react';
 import { IconAlertCircle, IconRefresh, IconX, IconDeviceRemote, IconPlayerPlayFilled } from '@tabler/icons-react';
 import { useDispatch } from './useDispatch.js';
@@ -120,7 +120,7 @@ function TrayRow({ d, retry, removeDispatch }) {
           onClick={openRemote}
           className="cast-tray-action"
         >
-          <IconDeviceRemote size={14} /> Remote
+          <IconDeviceRemote size={14} /> Steer it
         </button>
       )}
       {phase === 'failed' && (
