@@ -5,12 +5,13 @@
 // mobile's dock is a launcher, no room for it there).
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
 
-const pushMock = vi.fn();
+const goToAreaMock = vi.fn();
+let navState = { view: 'home', area: 'home' };
 vi.mock('./NavProvider.jsx', () => ({
-  useNav: () => ({ view: 'home', push: pushMock }),
+  useNav: () => ({ ...navState, goToArea: goToAreaMock }),
 }));
 
 let fleetSummary = { active: 0, total: 0 };
@@ -26,6 +27,7 @@ function renderWithMantine(ui) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  navState = { view: 'home', area: 'home' };
   fleetSummary = { active: 0, total: 0 };
 });
 
@@ -52,5 +54,21 @@ describe('PrimaryNav', () => {
     fleetSummary = { active: 1, total: 3 };
     renderWithMantine(<NavRail />);
     expect(screen.getByTestId('app-nav-fleet-badge')).toHaveTextContent('1');
+  });
+
+  it.each([
+    ['nowPlaying', 'home', 'app-tab-home'],
+    ['detail', 'browse', 'app-tab-browse'],
+    ['peek', 'fleet', 'app-tab-fleet'],
+  ])('keeps %s owned by %s in the phone tab bar', (view, area, selector) => {
+    navState = { view, area };
+    renderWithMantine(<TabBar />);
+    expect(screen.getByTestId(selector)).toHaveAttribute('aria-current', 'page');
+  });
+
+  it('uses goToArea for primary selection on the tablet rail', () => {
+    renderWithMantine(<NavRail />);
+    fireEvent.click(screen.getByTestId('app-nav-browse'));
+    expect(goToAreaMock).toHaveBeenCalledWith('browse');
   });
 });

@@ -45,7 +45,9 @@ vi.mock('../fleet/deviceDisplay.js', () => ({
 vi.mock('../../../hooks/useStatusOverlay', () => ({
   useStatusOverlay: () => ({ statusView: new Map([['tv-1', state.snapshot]]), predict, pending, pendingMatch }),
 }));
-vi.mock('./NavProvider.jsx', () => ({ useNav: () => ({ pop: vi.fn() }) }));
+const peekPop = vi.fn();
+let backDestination = 'Devices';
+vi.mock('./NavProvider.jsx', () => ({ useNav: () => ({ pop: peekPop, backDestination }) }));
 import { PeekPanel } from './PeekPanel.jsx';
 
 function renderPeekPanel() {
@@ -77,6 +79,13 @@ beforeEach(() => {
 });
 
 describe('PeekPanel shared target controls', () => {
+  it('names the actual prior area on its visible Back control', () => {
+    backDestination = 'Browse';
+    renderPeekPanel();
+    expect(screen.getByTestId('peek-back')).toHaveTextContent('← Browse');
+    fireEvent.click(screen.getByTestId('peek-back'));
+    expect(peekPop).toHaveBeenCalledTimes(1);
+  });
   it('shows the kept queue only after Stop is acknowledged and the receiver reports ready with no item', async () => {
     const view = renderPeekPanel();
     fireEvent.click(screen.getByTestId('np-stop'));

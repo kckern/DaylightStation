@@ -48,7 +48,7 @@ export function NowPlayingView() {
   const [expanded, setExpanded] = useState(false);
   usePlayerHost(hostRef, 2, true, { forceShader: expanded ? 'focused' : null });
   const hasActualVideoNode = useActualVideoNode(controller, hostRef, item?.contentId ?? null);
-  const { pop } = useNav();
+  const { pop, backDestination } = useNav();
 
   useEffect(() => setExpanded(false), [item?.contentId]);
 
@@ -92,7 +92,7 @@ export function NowPlayingView() {
           className="np-back-btn"
           onClick={() => pop()}
         >
-          ← Back
+          ← {backDestination ?? 'Home'}
         </button>
         <div className="np-toolbar-status">
           <span className="np-state" data-testid="np-state" data-state={snapshot?.state ?? ''}>
