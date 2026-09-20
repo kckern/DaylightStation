@@ -105,7 +105,16 @@ export function useCommandAckPublisher({ deviceId, actionBus } = {}) {
     const successHandler = (payload) => {
       const commandId = payload?.commandId;
       if (!commandId) return;
+      // Add requires a durable queue-owner mutation. Its receipt event is not
+      // success; ScreenActionHandler emits media:queue-op-applied only after the
+      // owning Player exposes the appended item in its post-mutation snapshot.
+      if (payload?.op === 'add') return;
       publishAck({ commandId, ok: true });
+    };
+
+    const queueOpAppliedHandler = (payload) => {
+      if (payload?.op !== 'add') return;
+      publishAck({ commandId: payload?.commandId, ok: true });
     };
 
     const errorHandler = (payload) => {
@@ -136,6 +145,7 @@ export function useCommandAckPublisher({ deviceId, actionBus } = {}) {
     for (const evt of ACKED_COMMAND_EVENTS) {
       unsubs.push(bus.subscribe(evt, successHandler));
     }
+    unsubs.push(bus.subscribe('media:queue-op-applied', queueOpAppliedHandler));
     unsubs.push(bus.subscribe('media:handoff', handoffUnsupportedHandler));
     unsubs.push(bus.subscribe(ERROR_EVENT, errorHandler));
 

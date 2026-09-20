@@ -14,6 +14,7 @@ import { getWidgetRegistry } from '../widgets/registry.js';
 import { useScreenVolume } from '../../lib/volume/ScreenVolumeContext.js';
 import getLogger from '../../lib/logging/Logger.js';
 import { dispatchCyclePlaybackRate } from './cyclePlaybackRate.js';
+import { getActionBus } from '../input/ActionBus.js';
 
 let _logger;
 function logger() {
@@ -192,9 +193,26 @@ export function ScreenActionHandler({ actions = {}, inputType = null }) {
   const handleMediaQueueOp = useCallback((payload) => {
     const op = payload?.op;
 
-    if (op === 'play-now' || op === 'play-next') {
-      if (getPlayerQueueOpRegistry().dispatch({ op, ...payload })) {
+    if (op === 'play-now' || op === 'play-next' || op === 'add') {
+      const resultCallbacks = op === 'add' ? {
+        onApplied: (result) => getActionBus().emit('media:queue-op-applied', {
+          ...payload, ...result,
+        }),
+        onError: (failure) => getActionBus().emit('command-handler-error', {
+          commandId: payload?.commandId,
+          ...failure,
+        }),
+      } : {};
+      if (getPlayerQueueOpRegistry().dispatch({ op, ...payload, ...resultCallbacks })) {
         logger().info('media.queue-op.dispatched', { op, contentId: payload.contentId });
+        return;
+      }
+      if (op === 'add') {
+        getActionBus().emit('command-handler-error', {
+          commandId: payload?.commandId,
+          code: 'QUEUE_OWNER_UNAVAILABLE',
+          error: 'No queue owner is available to hold this item',
+        });
         return;
       }
       // A media element with no registered owner is a short mount/unmount race

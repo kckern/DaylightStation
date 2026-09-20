@@ -26,6 +26,15 @@ vi.mock('../shell/NavProvider.jsx', () => ({ useNav: () => ({ push: vi.fn() }) }
 import { DispatchProgressTray } from './DispatchProgressTray.jsx';
 
 describe('DispatchProgressTray', () => {
+  it('renders a confirmed Add as added, never playing', () => {
+    dispatches.set('add-1', {
+      dispatchId: 'add-1', deviceId: 'office', contentId: 'plex:1', title: 'Arrival',
+      operation: 'add', status: 'success', outcome: 'confirmed', steps: [],
+    });
+    render(<DispatchProgressTray />);
+    expect(screen.getByText(/Added Arrival to/i)).toBeTruthy();
+    expect(screen.queryByText(/Playing on/i)).toBeNull();
+  });
   it('RELY.6a each failed tray row retries its own dispatchId', () => {
     render(<DispatchProgressTray />);
 

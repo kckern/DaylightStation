@@ -72,11 +72,15 @@ export function DispatchProvider({ children }) {
   const inFlightRef = useRef(new Map());
   useEffect(() => {
     return subscribeTopicKind('homeline', (msg) => {
-      const { dispatchId, step, status, elapsedMs, error } = msg;
+      const { dispatchId, step, status, elapsedMs, error, operation, queueLength,
+        sessionId, ownerId, ownerInstanceId, playbackRevision, queueRevision } = msg;
       if (typeof dispatchId !== 'string' || !dispatchId) return;
       if (!step || !status) return;
       mediaLog.dispatchStep({ dispatchId, step, status, elapsedMs });
-      dispatch({ type: 'STEP', dispatchId, step, status, elapsedMs, error });
+      dispatch({
+        type: 'STEP', dispatchId, step, status, elapsedMs, error, operation, queueLength,
+        sessionId, ownerId, ownerInstanceId, playbackRevision, queueRevision,
+      });
     });
   }, []);
 
@@ -134,7 +138,10 @@ export function DispatchProvider({ children }) {
       attemptsRef.current.set(dispatchId, {
         targetIds: [deviceId], play, queue, mode, shader, volume, shuffle, snapshot: retrySnapshot, title,
       });
-      dispatch({ type: 'INITIATED', dispatchId, deviceId, contentId, title: contentTitle, mode: mode ?? 'transfer' });
+      dispatch({
+        type: 'INITIATED', dispatchId, deviceId, contentId, title: contentTitle,
+        mode: mode ?? 'transfer', operation: queue ? 'add' : 'play-now',
+      });
       mediaLog.dispatchInitiated({ dispatchId, deviceId, contentId, mode });
 
       const httpPromise = isAdopt

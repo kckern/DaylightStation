@@ -20,6 +20,7 @@ import { MintPlaybackStream } from '../../backend/src/3_applications/proxy/MintP
 import { createProxyRouter } from '../../backend/src/4_api/v1/routers/proxy.mjs';
 import { createPlayRouter } from '../../backend/src/4_api/v1/routers/play.mjs';
 import { createAcceptancePlaybackRead } from './media-redesign-playback-read.mjs';
+import { createMediaOrdinaryDeviceFixture } from './media-ordinary-device-fixture.mjs';
 
 const upstream = `http://127.0.0.1:${getAppPort()}`;
 const logger = createLogger({ app: 'media-redesign-acceptance' });
@@ -27,6 +28,11 @@ const policy = process.env.MEDIA_ACCEPTANCE_POLICY || 'branch';
 if (!['branch', 'copy-675677', 'dash-720p-4mbps-675677', 'hls-copy-55854'].includes(policy)) throw new Error('Unknown acceptance policy');
 export const ACCEPTED_SOURCE_SHA = '0c0c37e77e66837efc4bd4d620f60e4d26194965';
 const PROVENANCE_FILE = 'acceptance-preview-provenance.json';
+const ORDINARY_READ_PATHS = [
+  /^\/api\/v1\/media\/config$/, /^\/api\/v1\/content\/query\/search(?:\/stream)?$/,
+  /^\/api\/v1\/(?:list|info|siblings)\//, /^\/api\/v1\/screens\/living-room$/,
+  /^\/api\/v1\/(?:play|proxy\/plex\/stream)\//,
+];
 
 export function requireExpectedSha(expectedSha = process.env.MEDIA_ACCEPTANCE_EXPECTED_SHA) {
   if (!/^[0-9a-f]{40}$/.test(expectedSha || '')) throw new Error('MEDIA_ACCEPTANCE_EXPECTED_SHA must be an explicit full SHA');
@@ -172,13 +178,22 @@ const allowedTitles = new Set(policy === 'branch' ? BRANCH_ALLOWED_TITLES
  * Shared by Vite dev and Vite preview: production-built assets retain the
  * exact branch mint/read composition rather than introducing another proxy.
  */
-export function createAcceptancePreviewPlugin({ app, allowedTitles, policy, sourceSha, upstream }) {
+export function createAcceptancePreviewPlugin({ app, allowedTitles, policy, sourceSha, upstream, ordinaryDeviceFixture = null }) {
   if (!/^[0-9a-f]{40}$/.test(sourceSha || '')) throw new Error('Bundled preview source must be a full SHA');
   const acceptanceSource = `accepted-${sourceSha}`;
   const install = vite => {
     vite.middlewares.use(async (req, res, next) => {
     res.setHeader('X-Media-Acceptance-Source', acceptanceSource);
+    if (ordinaryDeviceFixture && await ordinaryDeviceFixture.middleware(req, res)) return;
     const path = new URL(req.url, upstream).pathname;
+    // The ordinary journey gets only catalog/config/media reads. This also
+    // blocks GET-shaped command routes outside `/device` (which the fixture
+    // consumes separately) rather than trusting HTTP method alone.
+    if (ordinaryDeviceFixture && path.startsWith('/api/')
+      && (req.method !== 'GET' || !ORDINARY_READ_PATHS.some(pattern => pattern.test(path)))) {
+      res.statusCode = 403;
+      return res.end('Acceptance blocks upstream API command or unlisted read');
+    }
     const playMatch = /^\/api\/v1\/play\/(?:plex:|plex\/)\d+$/.test(path);
     if (policy === 'branch' && playMatch) {
       const ratingKey = path.split(/[:/]/).at(-1);
@@ -272,25 +287,31 @@ export async function runAcceptanceServer() {
     validateArtifactProvenance(dist, sourceSha);
   }
   process.env.COMMIT_HASH = sourceSha;
-  const plugin = createAcceptancePreviewPlugin({ app, allowedTitles, policy, sourceSha, upstream });
+  const ordinaryDeviceFixture = createMediaOrdinaryDeviceFixture({ upstream, logger });
+  const plugin = createAcceptancePreviewPlugin({ app, allowedTitles, policy, sourceSha, upstream, ordinaryDeviceFixture });
   const shared = {
     root: 'frontend', configFile: 'frontend/vite.config.js', plugins: [plugin],
   };
   const server = dist ? await preview({ ...shared, build: { outDir: dist }, preview: {
     host: '127.0.0.1', port: 0, strictPort: false, headers: {
       'X-Media-Acceptance-Source': `accepted-${sourceSha}`,
-    }, proxy: viteProxy,
+    }, proxy: { '/api': upstream },
   } }) : await createServer({ ...shared, server: {
     // Parallel workers may save unrelated files during a journey. Tests load
     // current source on navigation, but an HMR remount must not masquerade as
     // a user-visible state-loss defect in the middle of ordinary interaction.
     host: '127.0.0.1', port: 0, strictPort: false, hmr: false,
-    proxy: viteProxy,
+    // /ws belongs to the fixture-local EventBus below. Do not proxy it to
+    // the household server: that would make the virtual screen claim a real
+    // device route and defeat the acceptance boundary.
+    proxy: { '/api': upstream },
   } });
+  await ordinaryDeviceFixture.attach(server.httpServer);
   if (!dist) await server.listen();
   logger.info('acceptance.server.ready', { urls: server.resolvedUrls?.local, policy, sourceSha, mode: dist ? 'preview' : 'dev' });
   for (const signal of ['SIGINT', 'SIGTERM']) {
     process.once(signal, async () => {
+      await ordinaryDeviceFixture.stop();
       await server.close();
       process.exit(0);
     });

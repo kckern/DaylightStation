@@ -84,11 +84,19 @@ describe('useCommandAckPublisher', () => {
     expect(ackCalls().length).toBe(2);
   });
 
-  it('emits separate acks for distinct commandIds', () => {
+  it('does not claim a queue op succeeded on receipt, then acks its applied result', () => {
     renderHook(() => useCommandAckPublisher({ deviceId: 'tv-1', actionBus: bus }));
 
     act(() => bus.emit('media:playback', { command: 'play', commandId: 'c1' }));
-    act(() => bus.emit('media:queue-op', { op: 'clear', commandId: 'c2' }));
+    act(() => bus.emit('media:queue-op', { op: 'add', contentId: 'plex:1', commandId: 'c2' }));
+
+    expect(ackCalls()).toHaveLength(1);
+    expect(ackCalls()[0][0].commandId).toBe('c1');
+
+    act(() => bus.emit('media:queue-op-applied', {
+      op: 'add', contentId: 'plex:1', commandId: 'c2',
+      ownerInstanceId: 'owner-1', queueRevision: 4,
+    }));
 
     expect(ackCalls().length).toBe(2);
     const ids = ackCalls().map(([ack]) => ack.commandId).sort();

@@ -1734,7 +1734,7 @@ export async function createDeviceServices(config) {
 export function createWakeAndLoadService(config) {
   const {
     deviceService, haGateway, devicesConfig, broadcast, eventBus,
-    prewarmService, sessionControlService, commandHandlerLivenessService,
+    prewarmService, sessionControlService, commandHandlerLivenessService, deviceLivenessService,
     logger = console,
   } = config;
 
@@ -1772,6 +1772,7 @@ export function createWakeAndLoadService(config) {
     sessionControlService,
     haGateway: haGateway ?? null,
     commandHandlerLivenessService,
+    deviceLivenessService,
     clock: { now: () => Date.now() },
     createDispatchId: crypto.randomUUID,
     scheduler: new NodeApplicationScheduler(),

@@ -920,6 +920,48 @@ describe('ScreenActionHandler', () => {
     expect(background).not.toHaveBeenCalled();
   });
 
+  it('media:queue-op op=add dispatches only to the registered Player owner', () => {
+    const background = vi.fn();
+    const foreground = vi.fn();
+    getPlayerQueueOpRegistry().register(background);
+    getPlayerQueueOpRegistry().register(foreground);
+
+    const { queryByTestId } = render(
+      <ScreenOverlayProvider>
+        <ScreenActionHandler />
+      </ScreenOverlayProvider>
+    );
+    act(() => getActionBus().emit('media:queue-op', {
+      op: 'add', contentId: 'plex:added', commandId: 'cmd-add',
+    }));
+
+    expect(foreground).toHaveBeenCalledTimes(1);
+    expect(foreground).toHaveBeenCalledWith(expect.objectContaining({
+      op: 'add', contentId: 'plex:added', commandId: 'cmd-add',
+    }));
+    expect(background).not.toHaveBeenCalled();
+    expect(queryByTestId('player')).toBeNull();
+  });
+
+  it('reports idle op=add unsupported instead of mounting an autoplaying Player', () => {
+    const failure = vi.fn();
+    getActionBus().subscribe('command-handler-error', failure);
+    const { queryByTestId } = render(
+      <ScreenOverlayProvider>
+        <ScreenActionHandler />
+      </ScreenOverlayProvider>
+    );
+
+    act(() => getActionBus().emit('media:queue-op', {
+      op: 'add', contentId: 'plex:held', commandId: 'cmd-idle-add',
+    }));
+
+    expect(queryByTestId('player')).toBeNull();
+    expect(failure).toHaveBeenCalledWith(expect.objectContaining({
+      commandId: 'cmd-idle-add', code: 'QUEUE_OWNER_UNAVAILABLE',
+    }));
+  });
+
   it('media:queue-op op=play-now with no active player mounts a fresh Player', () => {
     const { getByTestId, queryByTestId } = render(
       <ScreenOverlayProvider>
