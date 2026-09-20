@@ -97,6 +97,8 @@ function optionTopIn(viewport, option) {
  *   provided, a LEAF row renders a ⋯ menu (Play Now/Play Next/Up Next/Add to
  *   Queue/Open detail); action is one of those five verb strings. Omit and
  *   nothing renders.
+ * @param {boolean} [props.destinationInteractionActive] - keeps this editing
+ *   session open for the desktop media destination picker's explicit lifetime
  */
 export function ContentCombobox({
   value,
@@ -114,6 +116,7 @@ export function ContentCombobox({
   logApp = 'admin',
   onPlayAll = null,
   onMore = null,
+  destinationInteractionActive = false,
 }) {
   const log = useMemo(() => getChildLogger({ component: 'ContentCombobox', app: logApp, sessionLog: true }), [logApp]);
   const {
@@ -150,7 +153,6 @@ export function ContentCombobox({
   // outside focus move, so it needs one synchronous action marker.
   const moreMenuActionRef = useRef(false);
   const moreMenuActionKindRef = useRef(null);
-  const retainedBoundaryRef = useRef(false);
   const viewportRef = useRef(null);
   const prevIdxRef = useRef(-1);
   const scrollAnimRef = useRef(null);
@@ -208,8 +210,8 @@ export function ContentCombobox({
   }, [commit, onClose]);
 
   // ── Mantine store: dropdown visibility follows the machine mode ──
-  const comboboxRef = useRef(null);
   const combobox = useCombobox({
+    opened: isEditing,
     onDropdownClose: () => {
       combobox.resetSelectedOption();
       // A nested More menu is portaled outside this dropdown. Mantine's outer
@@ -217,16 +219,10 @@ export function ContentCombobox({
       // close even though the user chose an in-surface action. Keep editing
       // alive and restore the outer list; only a genuine external focus exit
       // may take the commit('outside') branch below.
-      if (moreMenuInternalPointerRef.current || moreMenuActionRef.current || retainedBoundaryRef.current) {
+      if (moreMenuInternalPointerRef.current || moreMenuActionRef.current || destinationInteractionActive) {
         moreMenuInternalPointerRef.current = false;
         moreMenuActionRef.current = false;
         moreMenuActionKindRef.current = null;
-        retainedBoundaryRef.current = false;
-        // Mantine's openDropdown closes over dropdownOpened. Read the store
-        // after this close renders, rather than reusing its still-open closure.
-        requestAnimationFrame(() => {
-          if (modeRef.current !== Modes.DISPLAY) comboboxRef.current?.openDropdown();
-        });
         return;
       }
       // Mantine-initiated close (outside pointerdown). When WE initiated the
@@ -237,7 +233,6 @@ export function ContentCombobox({
       }
     },
   });
-  comboboxRef.current = combobox;
   const handleMoreBoundaryBlur = useCallback((nextTarget) => {
     if (moreMenuActionRef.current) {
       moreMenuActionRef.current = false;
@@ -247,11 +242,6 @@ export function ContentCombobox({
     moreMenuOpenRef.current = false;
     combobox.closeDropdown();
   }, [combobox]);
-
-  useEffect(() => {
-    if (isEditing) combobox.openDropdown();
-    else combobox.closeDropdown();
-  }, [isEditing]); // eslint-disable-line react-hooks/exhaustive-deps -- combobox store is stable
 
   // ── Open behavior (twin): seed input from value + select-after-colon ──
   const startEditing = useCallback(() => {
@@ -666,7 +656,6 @@ export function ContentCombobox({
             // managed focus legitimately blurs the input, but is not an
             // outside dismissal and must not revert the typed search.
             const enteringMoreTrigger = e.relatedTarget?.closest?.('[data-content-combobox-more-trigger]');
-            const enteringRetainedBoundary = e.relatedTarget?.closest?.('[data-content-combobox-retained-boundary]');
             if (moreMenuActionRef.current) {
               moreMenuActionRef.current = false;
               return;
@@ -676,10 +665,7 @@ export function ContentCombobox({
               if (enteringMoreTrigger) moreMenuTriggerRef.current = enteringMoreTrigger;
               return;
             }
-            if (enteringRetainedBoundary) {
-              retainedBoundaryRef.current = true;
-              return;
-            }
+            if (destinationInteractionActive) return;
             // Closing the dropdown routes through onDropdownClose → commit('outside')
             // (revert of typed-but-unpicked text). Escape/Tab are handled before
             // blur; this also covers programmatic focus loss.
