@@ -1,6 +1,6 @@
 # Media redesign — acceptance ledger
 
-**Status:** In progress. All 82 stories begin unverified. No component, test count or API response earns acceptance by itself.
+**Status:** In progress. **2 accepted stories / 6 accepted AC; 11 partial stories / 18 partial AC; 69 unverified stories / 264 unverified AC**. No component, test count or API response earns acceptance by itself.
 
 **Contract:** taxonomy §3 and accepted requirements. P0 first, then P1/P2. Each criterion must have evidence of the complete applicable path: user input → target → command → actual player/result → state → displayed feedback. Office is the only physical test screen authorized.
 
@@ -10,6 +10,7 @@
 
 | Run | Scope | Red / baseline | Green / acceptance |
 |---|---|---|---|
+| JOURNEY-AIM-RETURN-DEVICE | PLACE.2b phone, tablet and laptop return-to-local-aim journeys plus Start fresh | Prior browser attempts exposed a wide-layout selector mismatch and an assertion after Search unmounted its destination line; reassessment traced both to test routing | Accepted source `1bc54a7d9f05732ecc25c1a047f900b4b8f6d6fd`; preview header matched. Serial five-case runtime command `BASE_URL=http://127.0.0.1:42167 npx playwright test tests/live/flow/media/media-app-aim-journey.runtime.test.mjs --workers=1 --reporter=line`: 5 passed (21.2s), raw log `/tmp/media-aim-reassessment-fixed-matrix.log`. AC1 phone/tablet/laptop choices; AC2 immediate aim display and picker state; AC3 Start fresh default returns aim locally, with no device commands. |
 | FOUNDATION-NATIVE-UI | Fresh physical renderer operations and shared local/remote controls | Native REDs for stale operation leakage, conflicting/unsupported partial adoption; UI REDs for missing Stop receipt/volume steps, duplicate controls, unavailable dispatch and cross-target drag | Native original2 independently214 GREEN; UI original3 plus root fresh4 independently105 GREEN. Root combined155files1389 GREEN29.61s. Actual compiled six RED gates remain pending; no full-story acceptance |
 | FOUNDATION-HANDOFF-EXECUTOR | Isolated generic owner executor: capture/start/align/status/cancel/guarded source Stop | Behavioral REDs for stale native binding, mutable inputs, synchronous callbacks, align cancellation, false cancellation and cancelled late source Stop | Three original repair rounds independently reviewed; fresh root and peer5files82 GREEN. Core is not wired to actual owners/receivers; capabilities remain false. Task8 delivery expiry and actual native/browser integration remain mandatory; not Move/Undo or story acceptance |
 | JOURNEY-OFFLINE-CONTROLS | Isolated fleet broadcast → actual compiled Peek/remote controller → retained offline session → keyboard timeline input | Compiled323df31816 RED: offline ArrowRight attempts POST to virtual target session/transport; blocked before leaving browser | Pending Task6a repair3. Real production UI/controller with incoming fleet fixture, all WebSockets isolated and device mutations blocked; no physical receiver or decoder. Queue/transport disabled-state assertions follow the dispatch gate |
@@ -384,9 +385,9 @@ As a **Hand-Held Viewer**, I want to aim back at this device in one step, on any
 
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
-| PLACE.2b/AC1 | "This device" is always one of the choices, on phone, tablet, and laptop alike. | Partial | JOURNEY-AIM phone RED→GREEN; tablet/laptop pending |
-| PLACE.2b/AC2 | Choosing it immediately updates the aim everywhere it is shown. | Partial | JOURNEY-AIM search label and reopened picker update; all-surface coverage pending |
-| PLACE.2b/AC3 | Starting fresh (`RELY.8`) also offers to return the aim to this device. | Unverified | — |
+| PLACE.2b/AC1 | "This device" is always one of the choices, on phone, tablet, and laptop alike. | Accepted | JOURNEY-AIM-RETURN-DEVICE, source `1bc54a7d9f05732ecc25c1a047f900b4b8f6d6fd`: serial five-case browser matrix GREEN; phone picker and tablet/laptop browse-header picker expose the choice. Log `/tmp/media-aim-reassessment-fixed-matrix.log` |
+| PLACE.2b/AC2 | Choosing it immediately updates the aim everywhere it is shown. | Accepted | JOURNEY-AIM-RETURN-DEVICE, source `1bc54a7d9f05732ecc25c1a047f900b4b8f6d6fd`: immediate destination-line update and reopened picker selection verified on phone, tablet, and laptop; no device commands. Log `/tmp/media-aim-reassessment-fixed-matrix.log` |
+| PLACE.2b/AC3 | Starting fresh (`RELY.8`) also offers to return the aim to this device. | Accepted | JOURNEY-AIM-RETURN-DEVICE, source `1bc54a7d9f05732ecc25c1a047f900b4b8f6d6fd`: checked default and local-only copy verified; after confirmation Search was reopened and the destination line showed This device; no device commands. Log `/tmp/media-aim-reassessment-fixed-matrix.log` |
 
 ### PLACE.3a
 
