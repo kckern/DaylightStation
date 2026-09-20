@@ -43,7 +43,7 @@ describe('decideAssessment', () => {
   it('does not reassess a seeded source with compatible evidence in this profile scope', () => {
     const compatible = {
       profileKey: 'browser-a', environmentVersion: 'env-1', sourceRevision: 'source-a',
-      correction: 'transcode', attributedCause: null, healthyDurationMs: 30_000,
+      correction: 'video', attributedCause: null, healthyDurationMs: 30_000,
     };
     expect(decideAssessment({ media: { ...seededVideo, environmentVersion: 'env-1' }, clientProfileKey: 'browser-a', cachedRisk: [compatible], episodes: [], failure: null, now: 1000 }))
       .toEqual({ action: 'play', reason: 'known-compatible' });
@@ -52,7 +52,7 @@ describe('decideAssessment', () => {
   it('does not let compatible evidence from another environment suppress a seed match', () => {
     const compatibleElsewhere = {
       profileKey: 'browser-a', environmentVersion: 'env-2', sourceRevision: 'source-a',
-      correction: 'transcode', attributedCause: null, healthyDurationMs: 30_000,
+      correction: 'video', attributedCause: null, healthyDurationMs: 30_000,
     };
     expect(decideAssessment({ media: { ...seededVideo, environmentVersion: 'env-1' }, clientProfileKey: 'browser-a', cachedRisk: [compatibleElsewhere], episodes: [], failure: null, now: 1000 }))
       .toEqual({ action: 'assess', reason: 'seed-risk' });

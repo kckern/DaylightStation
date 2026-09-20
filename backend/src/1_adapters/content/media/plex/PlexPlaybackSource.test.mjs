@@ -34,21 +34,21 @@ describe('PlexPlaybackSource', () => {
     const client = { getMetadata: vi.fn(async () => metadata), request: vi.fn(async () => transcodeDecision) };
     const source = new PlexPlaybackSource({ provider: { client, proxyPath: '/api/v1/proxy/plex', protocol: 'dash', platform: 'Chrome', token: 'secret' } });
     await expect(source.describe({ contentId: 'plex:42', client: {}, tracks })).resolves.toMatchObject({
-      kind: 'available', candidates: [expect.objectContaining({ conversion: 'transcode' })],
+      kind: 'available', candidates: [expect.objectContaining({ conversion: 'video' })],
     });
     expect(client.request.mock.calls[0][0]).toContain('/video/:/transcode/universal/decision?');
   });
 
-  it('describes metadata without starting a conversion and records an expected video encode as transcode', async () => {
-    const fake = provider();
-    const source = new PlexPlaybackSource({ provider: fake, proxyPath: '/api/v1/proxy/plex' });
+  it('describes through only metadata and universal-decision inspection, never a transcode start URL', async () => {
+    const client = { getMetadata: vi.fn(async () => metadata), request: vi.fn(async () => transcodeDecision) };
+    const source = new PlexPlaybackSource({ provider: { client }, proxyPath: '/api/v1/proxy/plex' });
 
     await expect(source.describe({ contentId: 'plex:42', client: {}, tracks })).resolves.toMatchObject({
-      kind: 'available', candidates: expect.arrayContaining([expect.objectContaining({ conversion: 'transcode' })]),
+      kind: 'available', candidates: expect.arrayContaining([expect.objectContaining({ conversion: 'video' })]),
     });
-    expect(fake.metadata).toHaveBeenCalledTimes(1);
-    expect(fake.decide).toHaveBeenCalledTimes(1);
-    expect(fake.start).toBeUndefined();
+    expect(client.getMetadata).toHaveBeenCalledTimes(1);
+    expect(client.request.mock.calls.map(([path]) => path)).toEqual([expect.stringContaining('/video/:/transcode/universal/decision?')]);
+    expect(client.request.mock.calls.map(([path]) => path).join()).not.toContain('/start.mpd');
   });
 
   it('refuses opening when the described source revision is stale', async () => {
@@ -66,7 +66,7 @@ describe('PlexPlaybackSource', () => {
     const description = await source.describe({ contentId: 'plex:42', client: {}, tracks });
 
     await expect(source.open({ contentId: 'plex:42', renditionId: 'plex:42:original', sourceRevision: description.sourceRevision, attemptId: 'a', generation: 0, positionMs: 1_500, tracks, client: {} }))
-      .resolves.toMatchObject({ kind: 'opened', conversion: 'transcode', actualRendition: expect.objectContaining({ conversion: 'transcode' }) });
+      .resolves.toMatchObject({ kind: 'opened', conversion: 'video', actualRendition: expect.objectContaining({ conversion: 'video' }) });
   });
 
   it('opens normally with one ordinary provider negotiation, not a describe pass', async () => {
@@ -75,5 +75,37 @@ describe('PlexPlaybackSource', () => {
     await source.openDefault({ contentId: 'plex:42', attemptId: 'a', generation: 0, positionMs: 0, tracks, client: {} });
     expect(fake.decide).toHaveBeenCalledTimes(1);
     expect(fake.decide).toHaveBeenCalledWith(expect.objectContaining({ start: true }));
+  });
+
+  it('normalizes the actual decision-selected tracks rather than requested original tracks', async () => {
+    const decision = structuredClone(transcodeDecision);
+    decision.MediaContainer.Video[0].Media[0].videoDecision = 'copy';
+    decision.MediaContainer.Video[0].Media[0].audioDecision = 'transcode';
+    decision.MediaContainer.Video[0].Media[0].Part[0].Stream = [
+      { id: '11', streamType: 1, codec: 'h264', profile: 'high', bitDepth: 8, width: 1280, height: 720, frameRate: 24 },
+      { id: '22', streamType: 2, codec: 'aac', channels: 2, audioChannelLayout: 'stereo', language: 'French', selected: true },
+      { id: '33', streamType: 3, codec: 'webvtt', language: 'French', selected: true },
+    ];
+    const source = new PlexPlaybackSource({ provider: provider(decision), proxyPath: '/api/v1/proxy/plex' });
+    const description = await source.describe({ contentId: 'plex:42', client: {}, tracks });
+    const result = await source.open({ contentId: 'plex:42', renditionId: 'plex:42:original', sourceRevision: description.sourceRevision, attemptId: 'actual', generation: 0, positionMs: 0, tracks, client: {} });
+    expect(result).toMatchObject({ conversion: 'audio', actualRendition: {
+      video: expect.objectContaining({ codec: 'h264', width: 1280 }), audio: expect.objectContaining({ codec: 'aac', language: 'French' }),
+      trackSelection: { audioId: '22', subtitleId: '33', subtitlesRequired: false },
+    } });
+  });
+
+  it('serializes concurrent direct opens for one attempt', async () => {
+    let release;
+    const blocked = new Promise(resolve => { release = resolve; });
+    const fake = { metadata: vi.fn(async () => { await blocked; return metadata; }), decide: vi.fn(async () => transcodeDecision) };
+    const source = new PlexPlaybackSource({ provider: fake });
+    const request = { contentId: 'plex:42', attemptId: 'same', generation: 0, positionMs: 0, tracks, client: {} };
+    const first = source.openDefault(request);
+    const second = source.openDefault(request);
+    release();
+    await first;
+    await expect(second).resolves.toMatchObject({ kind: 'failed', reason: 'attempt-already-open' });
+    expect(fake.metadata).toHaveBeenCalledTimes(1);
   });
 });

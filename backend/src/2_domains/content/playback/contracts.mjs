@@ -87,7 +87,7 @@ export function validateRendition(rendition) {
     for (const field of ['id', 'language', 'format']) requireText(subtitle[field], `subtitles[].${field}`);
   });
   validateTrackSelection(rendition.trackSelection);
-  if (rendition.conversion !== null && !['remux', 'transcode'].includes(rendition.conversion)) throw new TypeError('conversion must be null, remux, or transcode');
+  if (!['none', 'remux', 'audio', 'video', 'unknown'].includes(rendition.conversion)) throw new TypeError('conversion must be none, remux, audio, video, or unknown');
   if (typeof rendition.ready !== 'boolean') throw new TypeError('ready must be boolean');
   if (!Number.isFinite(rendition.estimatedUnits) || rendition.estimatedUnits < 0) throw new TypeError('estimatedUnits must be a non-negative finite number');
   return copy(rendition);

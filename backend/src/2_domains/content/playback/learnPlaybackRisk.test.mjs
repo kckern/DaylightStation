@@ -2,11 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { learnPlaybackRisk } from './learnPlaybackRisk.mjs';
 
 const scope = { profileKey: 'browser-a', environmentVersion: 'env-1' };
-const failed = (incidentId, sourceRevision, titleId, correction = 'transcode') => ({
+const failed = (incidentId, sourceRevision, titleId, correction = 'video') => ({
   incidentId, sourceRevision, titleId, profileKey: scope.profileKey, environmentVersion: scope.environmentVersion,
   media: { kind: 'video', codec: 'hevc', width: 1920, height: 804 }, attributedCause: 'decoder-incompatibility', correction, healthyDurationMs: 0, observedAt: 1_000,
 });
-const succeeded = (incidentId, sourceRevision, titleId, correction = 'transcode') => ({
+const succeeded = (incidentId, sourceRevision, titleId, correction = 'video') => ({
   ...failed(incidentId, sourceRevision, titleId, correction), attributedCause: null, healthyDurationMs: 30_000,
 });
 const originalSuccess = (incidentId, sourceRevision, titleId, observedAt = 2_000) => ({
@@ -21,8 +21,8 @@ describe('learnPlaybackRisk', () => {
 
   it('promotes only decoder evidence across three revisions, two titles, and two proven corrections', () => {
     const outcomes = [
-      failed('i-1', 'r-1', 't-1', 'transcode'), failed('i-2', 'r-2', 't-1', 'direct-play'), failed('i-3', 'r-3', 't-2', 'transcode'),
-      succeeded('s-1', 'r-1', 't-1', 'transcode'), succeeded('s-2', 'r-2', 't-1', 'direct-play'),
+      failed('i-1', 'r-1', 't-1', 'video'), failed('i-2', 'r-2', 't-1', 'none'), failed('i-3', 'r-3', 't-2', 'video'),
+      succeeded('s-1', 'r-1', 't-1', 'video'), succeeded('s-2', 'r-2', 't-1', 'none'),
     ];
     const next = learnPlaybackRisk({ rule: null, outcomes, now: 10_000 });
     expect(next).toMatchObject({ status: 'active', scope, supportingIncidentIds: ['i-1', 'i-2', 'i-3'], failureCount: 3, successCount: 2, expiresAt: 604_810_000 });

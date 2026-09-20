@@ -19,7 +19,7 @@ describe('selectRendition', () => {
   });
 
   it('ranks a compatible original ahead of an equally compatible conversion', () => {
-    const conversion = { ...original, renditionId: 'converted-h264', conversion: 'transcode', resourceClass: 'encoder', estimatedUnits: 1 };
+    const conversion = { ...original, renditionId: 'converted-h264', conversion: 'video', resourceClass: 'encoder', estimatedUnits: 1 };
     expect(selectRendition({ candidates: [conversion, original], client, tracks, evidence: {}, capacity: admittedCapacity }))
       .toEqual({ kind: 'selected', renditionId: 'original-h264' });
   });

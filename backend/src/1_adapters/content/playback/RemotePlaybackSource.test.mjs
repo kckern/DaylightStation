@@ -43,4 +43,24 @@ describe('RemotePlaybackSource', () => {
     await expect(source.openDefault(request)).resolves.toMatchObject({ kind: 'failed', reason: 'attempt-already-open' });
     expect(open).toHaveBeenCalledTimes(1);
   });
+
+  it('drops provider-only rendition and delivery fields', async () => {
+    const source = new RemotePlaybackSource({ provider: { open: async () => ({ url: 'https://media.example/stream.m3u8', format: 'hls', providerCookie: 'secret', actualRendition: { providerPath: '/private' } }) } });
+    const result = await source.openDefault({ contentId: 'remote:lesson', attemptId: 'a', generation: 0, positionMs: 0, tracks: {}, client: {} });
+    expect(JSON.stringify(result)).not.toContain('providerCookie');
+    expect(result.actualRendition).toBeNull();
+  });
+
+  it('serializes concurrent direct opens for one attempt', async () => {
+    let release;
+    const open = vi.fn(() => new Promise(resolve => { release = () => resolve({ url: 'https://media.example/stream.m3u8', format: 'hls' }); }));
+    const source = new RemotePlaybackSource({ provider: { open } });
+    const request = { contentId: 'remote:lesson', attemptId: 'same', generation: 0, positionMs: 0, tracks: {}, client: {} };
+    const first = source.openDefault(request);
+    const second = source.openDefault(request);
+    release();
+    await first;
+    await expect(second).resolves.toMatchObject({ kind: 'failed', reason: 'attempt-already-open' });
+    expect(open).toHaveBeenCalledTimes(1);
+  });
 });

@@ -19,6 +19,14 @@ describe('playback contracts', () => {
     expect(() => validateRecoveryLedger({ incidentCount: -1, replacementTimes: [], healthySince: null, lastReplacementAt: null })).toThrow('incidentCount');
   });
 
+  it('uses the binding provider-neutral conversion modes', () => {
+    for (const conversion of ['none', 'remux', 'audio', 'video', 'unknown']) {
+      expect(validateRendition({ ...original, conversion }).conversion).toBe(conversion);
+    }
+    expect(() => validateRendition({ ...original, conversion: 'transcode' })).toThrow('conversion');
+    expect(() => validateRendition({ ...original, conversion: null })).toThrow('conversion');
+  });
+
   it('rejects missing contract fields and provider-shaped extras at every boundary', () => {
     expect(() => validateClient({ ...client, renderer: undefined })).toThrow('renderer');
     expect(() => validateClient({ ...client, supportedProfiles: { h264: ['high'] } })).toThrow('unsupported field');

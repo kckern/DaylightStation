@@ -16,7 +16,7 @@ export const original = Object.freeze({
   audio: { codec: 'aac', channels: 2, layout: 'stereo', language: 'en' },
   subtitles: [{ id: 'english-subtitles', language: 'en', format: 'webvtt' }],
   trackSelection: { audioId: 'english-aac', subtitleId: null, subtitlesRequired: false },
-  conversion: null, ready: true, resourceClass: 'none', estimatedUnits: 0,
+  conversion: 'none', ready: true, resourceClass: 'none', estimatedUnits: 0,
 });
 
 export const admittedCapacity = Object.freeze({ availableUnits: 2, probeAvailable: true });
