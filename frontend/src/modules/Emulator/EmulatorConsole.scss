@@ -37,6 +37,16 @@
     // misaligned screen.
     background: #000;
   }
+  // Carries the integer-lock box (config cutout inline style). Deliberately a
+  // SEPARATE element from .emulator-mount: EmulatorJS takes ownership of the
+  // element it's handed as EJS_player and overwrites its `style` attribute
+  // wholesale, which silently discards any inline left/top/width/height we set
+  // there. Sizing lives here instead, one level up, where EmulatorJS never
+  // reaches — see the render-site comment in EmulatorConsole.jsx.
+  .emulator-mount-box {
+    position: absolute;
+    inset: 0;
+  }
   .emulator-mount {
     position: absolute;
     inset: 0;
