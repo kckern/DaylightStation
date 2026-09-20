@@ -370,7 +370,7 @@ export function createPlayerSessionBridge({
     if (!handle) return null;
     try {
       const np = handle.getNowPlaying?.();
-      return np?.item ?? null;
+      return np && typeof np === 'object' ? np : null;
     } catch {
       return null;
     }
@@ -512,7 +512,9 @@ export function createPlayerSessionBridge({
   };
 
   const getCurrentItem = () => {
-    const item = normalizePlayableItem(readNowPlayingMeta(), readHint());
+    const nowPlaying = readNowPlayingMeta();
+    if (nowPlaying?.stopped === true && nowPlaying.item === null) return null;
+    const item = normalizePlayableItem(nowPlaying?.item ?? null, readHint());
     if (!item) return null;
     if (item.duration == null) {
       const d = getDuration();
