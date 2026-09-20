@@ -11,6 +11,31 @@ const surfaces = [
   ['laptop dock search', { width: 1440, height: 900 }, false],
 ];
 
+async function assertDockInputGeometry(page, input) {
+  const geometry = await input.evaluate((element) => {
+    const wrapper = element.closest('.media-search-input-wrap');
+    const section = element.parentElement?.querySelector('.mantine-Input-section');
+    const inputBox = element.getBoundingClientRect();
+    const wrapperBox = wrapper?.getBoundingClientRect();
+    const sectionBox = section?.getBoundingClientRect();
+    const centerX = inputBox.left + inputBox.width / 2;
+    const centerY = inputBox.top + inputBox.height / 2;
+    const hit = document.elementFromPoint(centerX, centerY);
+    return {
+      wrapperWidth: wrapperBox?.width ?? 0,
+      inputWidth: inputBox.width,
+      centerX,
+      sectionRight: sectionBox?.right ?? 0,
+      centerHitsInput: hit === element || element.contains(hit),
+    };
+  });
+  expect(geometry.wrapperWidth, `dock input wrapper width: ${JSON.stringify(geometry)}`).toBeGreaterThan(48);
+  expect(
+    geometry.centerHitsInput || geometry.centerX > geometry.sectionRight,
+    `dock input center is covered by its left section: ${JSON.stringify(geometry)}`
+  ).toBe(true);
+}
+
 async function openSearch(page, isPhone) {
   await page.goto('/media', { waitUntil: 'domcontentloaded' });
   if (isPhone) {
@@ -21,6 +46,7 @@ async function openSearch(page, isPhone) {
   }
   await expect(page.getByTestId('media-search-bar')).toBeVisible({ timeout: 30000 });
   const input = page.getByRole('textbox', { name: 'Search media…', exact: true });
+  await assertDockInputGeometry(page, input);
   await input.click();
   return input;
 }
