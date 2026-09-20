@@ -54,6 +54,10 @@ vi.mock('./useSearchContext.js', () => ({
   useSearchContext: () => searchContext,
 }));
 
+vi.mock('../cast/DestinationLine.jsx', () => ({
+  DestinationLine: ({ surface }) => <div data-testid="destination-line" data-surface={surface} />,
+}));
+
 // Stand-in for the real combobox: buttons that fire the same onChange/
 // onPlayAll/onMore contracts the real ContentCombobox uses (Task 14 wires
 // these through to ResultRowActions — that wiring itself is covered by
@@ -112,6 +116,12 @@ beforeEach(() => {
 });
 
 describe('MediaContentSearch', () => {
+  it('keeps the same shared destination control beside desktop/tablet search', () => {
+    render(<MediaContentSearch />);
+
+    expect(screen.getByTestId('destination-line')).toHaveAttribute('data-surface', 'media-content-search');
+  });
+
   it('logs the destination a selection was routed to', () => {
     dispatch.mockReturnValue('cast');
     render(<MediaContentSearch />);
