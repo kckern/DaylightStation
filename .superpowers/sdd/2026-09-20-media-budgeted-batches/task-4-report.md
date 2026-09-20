@@ -31,3 +31,9 @@
 - Added a provider RED/GREEN that holds `history.go` pending, selects Devices, delivers the Browse popstate, and proves the final Fleet URL/state stack is `Home → Browse → Fleet`.
 - Detail Back now appears in loaded, loading, error, and empty Detail states; tests assert its label and `pop` seam in every state.
 - RED: 4 focused failures. GREEN: focused navigation suite — 7 files, 59 tests passed. Scoped ESLint and `git diff --check` passed. Full Playwright remains intentionally deferred.
+
+## Review round 3/5
+
+- Addressed the remaining programmatic-Back race: direct `pop()` and queued-pop replay now mark traversal pending before every `history.back()`. Latest `push`/`replace`/area intent is therefore held until that specific authoritative popstate arrives.
+- Added RED/GREEN coverage for direct Back followed by a latest push and for a queued second Back followed by a latest push; both prove the later intent wins only after the correct popstate. The depth-one replace-to-Home case remains synchronous and covered by its existing provider test.
+- RED: 2 focused failures. GREEN: focused navigation suite — 7 files, 61 tests passed. Scoped ESLint and `git diff --check` passed. Full Playwright remains intentionally deferred.
