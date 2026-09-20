@@ -17,9 +17,11 @@ export class PlaybackRiskRepository extends IPlaybackRiskRepository {
   }
 
   async find({ profileKey, environmentVersion }) {
-    return this.#state.rules
-      .filter(rule => rule?.scope?.profileKey === profileKey && rule?.scope?.environmentVersion === environmentVersion)
-      .map(clone);
+    const rules = this.#state.rules
+      .filter(rule => rule?.scope?.profileKey === profileKey && rule?.scope?.environmentVersion === environmentVersion);
+    const outcomes = this.#state.outcomes
+      .filter(outcome => outcome?.profileKey === profileKey && outcome?.environmentVersion === environmentVersion);
+    return [...rules, ...outcomes].map(clone);
   }
 
   async record(outcome) {
