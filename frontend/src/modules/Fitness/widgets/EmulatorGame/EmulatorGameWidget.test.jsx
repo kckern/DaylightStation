@@ -29,6 +29,8 @@ vi.mock('../../../Emulator/EmulatorConsole.jsx', () => ({
         data-user={props.persistence?.userId || ''}
         data-player={props.nowPlaying?.name || ''}
         data-coins={props.overlayData?.['session.coins'] ?? ''}
+        data-system-label={props.systemLabel || ''}
+        data-timer={props.sessionTimer?.text || ''}
       />
       <button data-testid="exit" onClick={() => props.onExit?.()}>exit</button>
       <button data-testid="play-signal" onClick={() => props.onPlayStateChange?.('playing')}>playing</button>
@@ -139,7 +141,7 @@ describe('EmulatorGameWidget arcade shell', () => {
     ))).toBe(true));
   });
 
-  it('subscribes to the device play feed and renders the server play clock', async () => {
+  it('subscribes to the device play feed and feeds the server clock to the console', async () => {
     api.mockResolvedValue(libraryWith('none'));
     render(<EmulatorGameWidget fitnessContext={fitnessContext} deviceId="garage-tv" onClose={() => {}} config={{}} onMount={() => {}} />);
     await waitFor(() => expect(bus.subscribe).toHaveBeenCalledWith(
@@ -150,10 +152,10 @@ describe('EmulatorGameWidget arcade shell', () => {
     await screen.findByTestId('console');
 
     const subscription = bus.subscriptions.find((entry) => entry.topic === 'play-session:garage-tv');
-    subscription.handler({ event: 'play.session.progress', state: 'playing', playedMs: 95_000 });
+    subscription.handler({ event: 'play.session.progress', state: 'playing', playedMs: 95_000, systemLabel: 'Game Boy' });
 
-    expect(await screen.findByTestId('play-budget')).toHaveTextContent('01:35');
-    expect(screen.getByTestId('play-budget')).toHaveTextContent('played');
+    await waitFor(() => expect(screen.getByTestId('console')).toHaveAttribute('data-timer', '01:35'));
+    expect(screen.getByTestId('console')).toHaveAttribute('data-system-label', 'Game Boy');
   });
 
   it('shows the arcade grid first (no console until a game is picked)', async () => {
