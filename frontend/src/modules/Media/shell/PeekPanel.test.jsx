@@ -1,6 +1,6 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
 
 const transport = {
@@ -65,11 +65,62 @@ function fireSeekPointer(track, type, clientX) {
 beforeEach(() => {
   vi.clearAllMocks();
   transport.pause.mockResolvedValue({ ok: true });
+  transport.stop.mockResolvedValue({ ok: true });
   transport.seekAbs.mockResolvedValue({ ok: true });
   state.entry = {};
+  state.snapshot = {
+    state: 'playing',
+    currentItem: { contentId: 'plex:arrival', title: 'Arrival', duration: 7200 },
+    queue: { items: [{ queueItemId: 'q1', contentId: 'plex:arrival', title: 'Arrival' }], currentIndex: 0, upNextCount: 0 },
+    config: { shuffle: false, repeat: 'off', volume: 70 },
+  };
 });
 
 describe('PeekPanel shared target controls', () => {
+  it('shows the kept queue only after Stop is acknowledged and the receiver reports ready with no item', async () => {
+    const view = renderPeekPanel();
+    fireEvent.click(screen.getByTestId('np-stop'));
+    expect(screen.queryByTestId('peek-queue-kept')).toBeNull();
+
+    state.snapshot = {
+      ...state.snapshot,
+      state: 'ready',
+      currentItem: null,
+      queue: { ...state.snapshot.queue, currentIndex: 0 },
+    };
+    view.rerender(<MantineProvider><PeekPanel deviceId="tv-1" /></MantineProvider>);
+
+    expect(await screen.findByTestId('peek-queue-kept')).toHaveTextContent('Queue kept: 1 item');
+    expect(screen.getByTestId('peek-open-queue')).toBeVisible();
+  });
+
+  it('does not show a kept-queue receipt after Stop is rejected', async () => {
+    transport.stop.mockRejectedValueOnce(new Error('ack timeout'));
+    const view = renderPeekPanel();
+    fireEvent.click(screen.getByTestId('np-stop'));
+    await screen.findByTestId('np-command-feedback');
+
+    state.snapshot = { ...state.snapshot, state: 'ready', currentItem: null };
+    view.rerender(<MantineProvider><PeekPanel deviceId="tv-1" /></MantineProvider>);
+    await waitFor(() => expect(screen.queryByTestId('peek-queue-kept')).toBeNull());
+  });
+
+  it('does not retain a Stop receipt when its receiver becomes stale or the target switches', async () => {
+    const view = renderPeekPanel();
+    fireEvent.click(screen.getByTestId('np-stop'));
+    state.snapshot = { ...state.snapshot, state: 'ready', currentItem: null };
+    await act(async () => { await Promise.resolve(); });
+    view.rerender(<MantineProvider><PeekPanel deviceId="tv-1" /></MantineProvider>);
+    await screen.findByTestId('peek-queue-kept');
+
+    state.entry = { isStale: true };
+    view.rerender(<MantineProvider><PeekPanel deviceId="tv-1" /></MantineProvider>);
+    await waitFor(() => expect(screen.queryByTestId('peek-queue-kept')).toBeNull());
+
+    view.rerender(<MantineProvider><PeekPanel deviceId="tv-2" /></MantineProvider>);
+    expect(screen.queryByTestId('peek-queue-kept')).toBeNull();
+  });
+
   it('uses the shared target-bound transport instead of duplicate remote controls', () => {
     renderPeekPanel();
 

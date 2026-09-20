@@ -238,6 +238,27 @@ export function ScreenActionHandler({ actions = {}, inputType = null }) {
   }, [showOverlay, dismissOverlay, isMediaDuplicate]);
 
   // --- Media playback controls ---
+  const handleMediaSeek = useCallback((op, payload) => {
+    if (!Number.isFinite(payload?.value)) {
+      getActionBus().emit('command-handler-error', {
+        commandId: payload?.commandId,
+        code: 'INVALID_SEEK_VALUE',
+        error: 'Seek value must be finite',
+      });
+      return;
+    }
+    if (!getPlayerQueueOpRegistry().dispatch({ op, value: payload.value, commandId: payload?.commandId })) {
+      getActionBus().emit('command-handler-error', {
+        commandId: payload?.commandId,
+        code: 'PLAYBACK_OWNER_UNAVAILABLE',
+        error: 'No playback owner is available to seek',
+      });
+    }
+  }, []);
+
+  const handleMediaSeekAbs = useCallback((payload) => handleMediaSeek('seek-abs', payload), [handleMediaSeek]);
+  const handleMediaSeekRel = useCallback((payload) => handleMediaSeek('seek-rel', payload), [handleMediaSeek]);
+
   const handleMediaPlayback = useCallback((payload) => {
     if (payload?.command?.toLowerCase() === 'stop') {
       if (!getPlayerQueueOpRegistry().dispatch({ op: 'stop', commandId: payload?.commandId })) {
@@ -540,6 +561,8 @@ export function ScreenActionHandler({ actions = {}, inputType = null }) {
   useScreenAction('media:play', handleMediaPlay);
   useScreenAction('media:queue', handleMediaQueue);
   useScreenAction('media:queue-op', handleMediaQueueOp);
+  useScreenAction('media:seek-abs', handleMediaSeekAbs);
+  useScreenAction('media:seek-rel', handleMediaSeekRel);
   useScreenAction('media:playback', handleMediaPlayback);
   useScreenAction('media:rate', handleMediaRate);
   useScreenAction('display:volume', handleVolume);

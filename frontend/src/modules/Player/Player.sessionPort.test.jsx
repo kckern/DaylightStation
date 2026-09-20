@@ -109,6 +109,30 @@ describe('Player session port', () => {
     expect(ref.current.getPlaybackIdentity().playbackRevision).toBeGreaterThanOrEqual(admittedIdentity.playbackRevision);
   });
 
+  it('applies a remote relative seek against the native owner clock', async () => {
+    const ref = createRef();
+    const native = document.createElement('video');
+    Object.defineProperties(native, {
+      currentTime: { configurable: true, writable: true, value: 40 },
+      duration: { configurable: true, value: 300 },
+    });
+    mockMediaElement = native;
+    render(<Player ref={ref} play={{ contentId: 'plex:seek', title: 'Seek', format: 'video' }} />);
+    await waitFor(() => expect(ref.current?.getQueueSnapshot().items).toHaveLength(1));
+
+    await act(async () => {
+      expect(getPlayerQueueOpRegistry().dispatch({ op: 'seek-rel', value: 10, commandId: 'seek-1' })).toBe(true);
+      await Promise.resolve();
+    });
+
+    expect(native.currentTime).toBe(50);
+    await act(async () => {
+      getPlayerQueueOpRegistry().dispatch({ op: 'seek-rel', value: -10, commandId: 'seek-2' });
+      await Promise.resolve();
+    });
+    expect(native.currentTime).toBe(40);
+  });
+
   it('adopts an exact [A,B,A] owner capture into the existing destination Player', async () => {
     const sourceRef = createRef();
     const destinationRef = createRef();
