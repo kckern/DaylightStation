@@ -49,6 +49,8 @@ for (const [surface, viewport] of surfaces) {
     await expect(page.getByTestId('detail-back')).toHaveText('← Browse');
     await page.getByTestId('detail-back').click();
     await expect(page.getByTestId('browse-view')).toBeVisible();
+    await expect(page).toHaveURL(/view=browse.*path=plex%2Flibrary%2Fsections%2F6%2Fall/);
+    await expect(page.getByTestId('browse-row-plex:55854')).toBeVisible();
 
     await openDetail(page, surface);
     await primary(page, surface, 'browse').click();
@@ -71,6 +73,9 @@ for (const [surface, viewport] of surfaces) {
     await expect(page.getByTestId('peek-panel')).toBeVisible();
     await expect(primary(page, surface, 'fleet')).toHaveAttribute('aria-current', 'page');
     await expect(page.getByTestId('peek-back')).toHaveText('← Devices');
+    await page.getByTestId('peek-back').click();
+    await expect(page.getByTestId('fleet-view')).toBeVisible();
+    await expect(page).toHaveURL(/view=fleet/);
   });
 }
 
@@ -88,12 +93,33 @@ test('[RELY.10a] phone: SearchMode consumes one browser Back and sheet Escape ke
   await page.keyboard.press('Escape');
   await expect(page.getByTestId('destination-sheet')).toBeHidden();
   await expect(page.getByTestId('search-mode')).toBeVisible();
+  await expect(page.getByTestId('search-mode-input')).toHaveValue('Frozen');
   await page.goBack();
   await expect(page.getByTestId('search-mode')).toBeHidden();
   await expect(page.getByTestId('browse-view')).toBeVisible();
   await page.goBack();
   await expect(page.getByTestId('home-view')).toBeVisible();
 });
+
+for (const [surface, viewport] of surfaces.filter(([surface]) => surface !== 'phone')) {
+  test(`[RELY.10a] ${surface}: search popup consumes one Escape before route Back`, async ({ page }) => {
+    await page.addInitScript(() => { try { localStorage.clear(); } catch {} });
+    await page.setViewportSize(viewport);
+    await page.goto('/media');
+    await primary(page, surface, 'browse').click();
+    await expect(page.getByTestId('browse-view')).toBeVisible();
+
+    const input = page.getByTestId('media-search-input');
+    await input.fill('Frozen');
+    await expect(page.locator('ul[data-testid="media-search-results"]')).toBeVisible({ timeout: 30000 });
+    await page.keyboard.press('Escape');
+    await expect(page.locator('ul[data-testid="media-search-results"]')).toBeHidden();
+    await expect(input).toHaveValue('Frozen');
+    await expect(page).toHaveURL(/view=browse/);
+    await page.goBack();
+    await expect(page.getByTestId('home-view')).toBeVisible();
+  });
+}
 
 for (const [surface, viewport] of surfaces) {
   test(`[RELY.10a] ${surface}: depth-one and unknown URLs normalize to Home`, async ({ page }) => {
