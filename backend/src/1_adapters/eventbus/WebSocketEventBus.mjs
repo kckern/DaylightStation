@@ -400,9 +400,12 @@ export class WebSocketEventBus {
     this.#metrics.messagesBroadcast++;
 
     const message = {
-      topic,
       timestamp: nowTs(),
-      ...payload
+      ...payload,
+      // The broadcast route is authoritative. Inbound envelopes can retain
+      // their bare ingress topic (for example `device-ack`), but cannot
+      // rewrite a routed wire topic such as `device-ack:<deviceId>`.
+      topic,
     };
     const msg = JSON.stringify(message);
 

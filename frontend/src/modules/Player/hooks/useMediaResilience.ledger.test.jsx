@@ -130,6 +130,25 @@ describe('useMediaResilience × ledger — jolt ladder respects the cooldown (au
     expect(args.onExhausted).not.toHaveBeenCalled();
   });
 
+  it('does not arm a grace jolt after a paused seek completion clears seeking', () => {
+    installLedger({ cooldownMs: 0 });
+    const initial = baseArgs({ externalStalled: true, isPaused: false, isSeeking: true });
+    const hook = renderHook((props) => useMediaResilience(props), { initialProps: initial });
+
+    // Establish that this is a post-startup item, then model the discrete
+    // native seeked metric: no timeupdate is required for a paused decoder.
+    act(() => hook.rerender({ ...initial, seconds: 5 }));
+    act(() => hook.rerender({
+      ...initial,
+      seconds: 5,
+      isPaused: true,
+      isSeeking: false,
+    }));
+
+    advance(STALL_JOLT_GRACE_MS + 1);
+    expect(initial.onReload).not.toHaveBeenCalled();
+  });
+
   it('ladder exhaustion fires onExhausted once with the ledger attempt count', () => {
     installLedger({ cooldownMs: 0 }); // no cooldown — pure ladder pacing
     const { args } = renderStuckHook();

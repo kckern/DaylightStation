@@ -110,6 +110,27 @@ describe('WebSocketEventBus routing — per-device topics', () => {
     expect(clientTv2.ws.send).not.toHaveBeenCalled();
   });
 
+  it('keeps the broadcast device-ack topic authoritative on the wire', () => {
+    // Inbound receiver acknowledgements deliberately carry their bare ingress
+    // topic. Once routed to a device-scoped broadcast, that payload field must
+    // not overwrite the subscription topic consumed by sender-side receipt
+    // listeners.
+    bus.broadcast(DEVICE_ACK_TOPIC('tv-1'), {
+      topic: 'device-ack',
+      deviceId: 'tv-1',
+      commandId: 'cmd-1',
+      ok: true,
+    });
+
+    const wire = JSON.parse(clientTv1.ws.send.mock.calls[0][0]);
+    expect(wire).toMatchObject({
+      topic: DEVICE_ACK_TOPIC('tv-1'),
+      deviceId: 'tv-1',
+      commandId: 'cmd-1',
+      ok: true,
+    });
+  });
+
   it('routes screen:<id> only to that device subscribers (Task 4.1 will tighten to connection identity)', () => {
     // Note: full per-connection identity routing is Task 4.1. For now we
     // deliver to subscribers of the exact topic. See WebSocketEventBus.

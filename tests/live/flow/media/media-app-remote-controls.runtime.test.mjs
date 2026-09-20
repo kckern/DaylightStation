@@ -28,9 +28,22 @@ async function issueThroughControl(sender, action, clickControl) {
 }
 
 async function expectSeekState(video, slider, target, paused) {
-  await expect.poll(() => video.evaluate((element, expected) => !element.seeking
-    && element.paused === expected.paused
-    && Math.abs(element.currentTime - expected.target) <= 2, { target, paused }), { timeout: 20000 }).toBe(true);
+  await expect.poll(() => video.evaluate((element, expected) => ({
+    settled: !element.seeking
+      && element.paused === expected.paused
+      && Math.abs(element.currentTime - expected.target) <= 2,
+    nativeTime: element.currentTime,
+    target: expected.target,
+    delta: Math.abs(element.currentTime - expected.target),
+    paused: element.paused,
+    seeking: element.seeking,
+    readyState: element.readyState,
+  }), { target, paused }), { timeout: 20000 }).toMatchObject({
+    settled: true,
+    target,
+    paused,
+    seeking: false,
+  });
   await expect.poll(async () => {
     const shown = Number(await slider.getAttribute('aria-valuenow'));
     const actual = await video.evaluate(element => element.currentTime);
@@ -42,8 +55,7 @@ function parseTimecode(value) {
   return value.trim().split(':').reduce((total, part) => total * 60 + Number(part), 0);
 }
 
-test('Peek Pause, Resume, Seek, and Stop control the actual receiver video and retain its queue', async ({ context, page: sender }) => {
-  test.setTimeout(150000);
+async function startArrivalJourney(context, sender) {
   const receiver = await context.newPage();
   const loads = [];
   sender.on('request', request => {
@@ -91,14 +103,23 @@ test('Peek Pause, Resume, Seek, and Stop control the actual receiver video and r
     nativeAdvancing: true,
     receiverState: 'playing',
   });
+  return { receiver, video, loads };
+}
 
+async function openPeekControls(sender) {
   // Open the real device-control surface; every transport call below comes
   // from its visible controls, never from a direct API request in the test.
   await sender.getByTestId('app-nav-fleet').click();
   await expect(sender.getByTestId('fleet-peek-acceptance-media')).toBeVisible({ timeout: 30000 });
   await sender.getByTestId('fleet-peek-acceptance-media').click();
   await expect(sender.getByTestId('peek-panel')).toBeVisible();
-  const toggle = sender.getByTestId('np-toggle');
+  return sender.getByTestId('np-toggle');
+}
+
+test('Peek Pause, Resume, and Seek control the actual receiver video while paused', async ({ context, page: sender }) => {
+  test.setTimeout(150000);
+  const { receiver, video, loads } = await startArrivalJourney(context, sender);
+  const toggle = await openPeekControls(sender);
   await expect(toggle).toHaveAttribute('aria-label', 'Pause');
   await expect(toggle).toBeEnabled();
 
@@ -161,6 +182,15 @@ test('Peek Pause, Resume, Seek, and Stop control the actual receiver video and r
     .toBe('playing');
   await expect.poll(() => video.evaluate((element, time) => !element.paused
     && element.currentTime > time + 1, beforeResumeTime), { timeout: 15000 }).toBe(true);
+
+  expect(loads).toHaveLength(1);
+  await receiver.close();
+});
+
+test('Peek Stop retains the receiver queue and Play resumes the stopped item', async ({ context, page: sender }) => {
+  test.setTimeout(150000);
+  const { receiver, video, loads } = await startArrivalJourney(context, sender);
+  const toggle = await openPeekControls(sender);
 
   const beforeStop = await readReceiverState(sender);
   expect(beforeStop.snapshot.state).toBe('playing');

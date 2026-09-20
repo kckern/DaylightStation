@@ -1,0 +1,179 @@
+import { test, expect } from '@playwright/test';
+
+test.setTimeout(90000);
+
+const surfaces = [
+  ['phone SearchMode', { width: 390, height: 844 }, true],
+  ['tablet dock search', { width: 768, height: 1024 }, false],
+  ['laptop dock search', { width: 1440, height: 900 }, false],
+];
+
+const query = process.env.MEDIA_ACCEPTANCE_SCOPE_QUERY || 'Frozen';
+
+async function openSearch(page, isPhone) {
+  await page.goto('/media');
+  if (isPhone) {
+    await expect(page.getByTestId('media-search-launcher')).toBeVisible({ timeout: 30000 });
+    await page.getByTestId('media-search-launcher').click();
+    await expect(page.getByTestId('search-mode')).toBeVisible();
+    return page.getByTestId('search-mode-input');
+  }
+
+  await expect(page.getByTestId('media-search-bar')).toBeVisible({ timeout: 30000 });
+  const input = page.getByRole('textbox', { name: 'Search media…', exact: true });
+  await input.focus();
+  return input;
+}
+
+async function readLiveScopes(page) {
+  const response = await page.request.get('/api/v1/media/config');
+  expect(response.ok(), 'the real media config endpoint must load').toBe(true);
+  const config = await response.json();
+  const scopes = config?.searchScopes;
+  expect(Array.isArray(scopes) && scopes.length > 0, 'real config must expose search choices').toBe(true);
+  return scopes;
+}
+
+function streamRequestFor(page, text, scope) {
+  const expected = new URLSearchParams(scope.params || '');
+  return page.waitForRequest((request) => {
+    const url = new URL(request.url());
+    if (!url.pathname.endsWith('/api/v1/content/query/search/stream')
+      || url.searchParams.get('text') !== text) return false;
+    for (const [key, value] of expected) {
+      if (!url.searchParams.getAll(key).includes(value)) return false;
+    }
+    return true;
+  }, { timeout: 20000 });
+}
+
+async function waitForSearchSettled(page) {
+  await expect.poll(async () => {
+    const status = page.getByTestId('stream-status-line');
+    if (await status.count() === 0) return true;
+    return !(await status.first().getAttribute('class') || '').includes('--pending');
+  }, { timeout: 30000, message: 'the real scoped result stream should settle' }).toBe(true);
+}
+
+function resultRows(page, isPhone) {
+  return isPhone
+    ? page.getByTestId('search-mode-results').locator('[data-testid^="search-mode-result-"]')
+    : page.locator('[data-testid^="combobox-option-"]');
+}
+
+async function visibleResultIds(page, isPhone) {
+  const rows = resultRows(page, isPhone);
+  return rows.evaluateAll((elements) => elements.map((element) => (
+    element.getAttribute('data-value') || element.getAttribute('data-testid')
+  )));
+}
+
+async function visibleResultText(page, isPhone) {
+  return resultRows(page, isPhone).evaluateAll((elements) => elements.map((element) => element.innerText));
+}
+
+async function closeSearch(page, input, isPhone) {
+  if (isPhone) {
+    await page.getByTestId('search-mode-close').click();
+    await expect(page.getByTestId('search-mode')).toBeHidden();
+    await expect(page.getByTestId('media-search-launcher')).toBeVisible();
+  } else {
+    await input.press('Escape');
+    await expect(page.locator('[data-testid^="combobox-option-"]').first()).toBeHidden();
+  }
+}
+
+for (const [surface, viewport, isPhone] of surfaces) {
+  test(`[FIND.2a/AC1] ${surface}: every scope choice is visible beside search and All is current`, async ({ page }) => {
+    await page.setViewportSize(viewport);
+    const input = await openSearch(page, isPhone);
+    const scopes = await readLiveScopes(page);
+
+    expect(scopes[0].key).toBe('all');
+    await expect(page.getByTestId('scope-chip-all')).toBeVisible();
+    await expect(page.getByTestId('scope-chip-all')).toHaveText(scopes[0].label);
+    await expect(page.getByTestId('scope-chip-all')).toHaveAttribute('aria-pressed', 'true');
+    for (const scope of scopes) {
+      await expect(page.getByTestId(`scope-chip-${scope.key}`)).toBeVisible();
+      await expect(page.getByTestId(`scope-chip-${scope.key}`)).toHaveText(scope.label);
+    }
+    await expect(input).toBeVisible();
+  });
+
+  test(`[FIND.2a/AC2,AC4] ${surface}: selecting a configured kind reruns the same query and reopening resets to All`, async ({ page }) => {
+    await page.setViewportSize(viewport);
+    const input = await openSearch(page, isPhone);
+    const scopes = await readLiveScopes(page);
+    const all = scopes[0];
+    const video = scopes.find((scope) => scope.key === 'video');
+    test.skip(!video, 'Live GET /api/v1/media/config does not expose scope key "video"; configured-scope result filtering cannot be assessed here.');
+    test.skip(video.params == null, 'Live Video scope is grouping-only; its configured child scope is assessed separately under AC3.');
+
+    await expect(page.getByTestId('scope-chip-all')).toHaveAttribute('aria-pressed', 'true');
+    const allRequest = streamRequestFor(page, query, all);
+    await input.fill(query);
+    await allRequest;
+    await waitForSearchSettled(page);
+    await expect.poll(() => resultRows(page, isPhone).count(), { timeout: 20000 })
+      .toBeGreaterThan(0);
+    const allResultIds = await visibleResultIds(page, isPhone);
+    expect(allResultIds.length, `the real All search for ${query} should return results`).toBeGreaterThan(0);
+
+    const scopedRequest = streamRequestFor(page, query, video);
+    await page.getByTestId('scope-chip-video').click();
+    await scopedRequest;
+    await expect(input).toHaveValue(query);
+    await expect(page.getByTestId('scope-chip-video')).toHaveAttribute('aria-pressed', 'true');
+    await waitForSearchSettled(page);
+    await expect.poll(() => resultRows(page, isPhone).count(), { timeout: 20000 })
+      .toBeGreaterThan(0);
+    const videoResultIds = await visibleResultIds(page, isPhone);
+    expect(videoResultIds.length, 'the configured Video query should render its actual results').toBeGreaterThan(0);
+    const videoKinds = await visibleResultText(page, isPhone);
+    expect(videoKinds.every((text) => /\b(movie|tv show|series|season|episode|video)\b/i.test(text)),
+      'results returned by the actual Video scope should display video kinds').toBe(true);
+
+    await closeSearch(page, input, isPhone);
+    if (isPhone) {
+      await page.getByTestId('media-search-launcher').click();
+      await expect(page.getByTestId('search-mode')).toBeVisible();
+    } else {
+      await input.click();
+    }
+    await expect(page.getByTestId('scope-chip-all')).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByTestId('scope-chip-video')).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  test(`[FIND.2a/AC3] ${surface}: configured parent and child scopes are both selectable`, async ({ page }) => {
+    await page.setViewportSize(viewport);
+    const input = await openSearch(page, isPhone);
+    const scopes = await readLiveScopes(page);
+    const parent = scopes.find((scope) => Array.isArray(scope.children) && scope.children.length > 0);
+    test.skip(!parent, 'Live GET /api/v1/media/config exposes no parent with child scopes; FIND.2a AC3 is unverified for this household config.');
+    test.skip(parent.params == null, `Live parent scope "${parent.key}" is grouping-only (no params), so it has no independently selectable parent-level search to compare with its child.`);
+
+    const child = parent.children.find((scope) => scope.params != null);
+    test.skip(!child, `Live parent scope "${parent.key}" exposes children but no searchable child scope; FIND.2a AC3 cannot be verified from this config.`);
+
+    const parentChip = page.getByTestId(`scope-chip-${parent.key}`);
+    const childChip = page.getByTestId(`scope-chip-${child.key}`);
+    const parentRequest = streamRequestFor(page, query, parent);
+    await input.fill(query);
+    await parentChip.click();
+    await parentRequest;
+    await expect(parentChip).toHaveAttribute('aria-pressed', 'true');
+    await waitForSearchSettled(page);
+
+    await expect(childChip).toBeVisible();
+    const childRequest = streamRequestFor(page, query, child);
+    await childChip.click();
+    await childRequest;
+    await expect(input).toHaveValue(query);
+    await expect(childChip).toHaveAttribute('aria-pressed', 'true');
+    await expect(parentChip).toHaveAttribute('aria-pressed', 'false');
+    await waitForSearchSettled(page);
+    await expect.poll(() => resultRows(page, isPhone).count(), { timeout: 20000 })
+      .toBeGreaterThan(0);
+    expect(await visibleResultIds(page, isPhone).then((ids) => ids.length)).toBeGreaterThan(0);
+  });
+}

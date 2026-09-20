@@ -35,6 +35,7 @@ function makeFakeVideo({ currentTime = 100, duration = 1000 } = {}) {
     _ct: currentTime,
     duration,
     paused: false,
+    seeking: false,
     ended: false,
     readyState: 4,
     networkState: 2,
@@ -108,6 +109,28 @@ describe('useCommonMediaController stall detection + ledger-gated nudge', () => 
 
     expect(onProgress).toHaveBeenLastCalledWith(expect.objectContaining({
       currentTime: 10.5, paused: false, isSeeking: false, stalled: false, playing: true,
+    }));
+  });
+
+  it('publishes the native paused, non-seeking state on seeked without waiting for timeupdate', () => {
+    const ctrlRef = { current: null };
+    const apiRef = { current: null };
+    const onProgress = vi.fn();
+    const video = makeFakeVideo({ currentTime: 838 });
+    video.paused = true;
+    video.seeking = true;
+    render(<Harness ctrlRef={ctrlRef} apiRef={apiRef} video={video} onProgress={onProgress} />);
+
+    act(() => {
+      video.seeking = false;
+      video.fire('seeked');
+    });
+
+    expect(onProgress).toHaveBeenLastCalledWith(expect.objectContaining({
+      currentTime: 838,
+      paused: true,
+      isSeeking: false,
+      playing: false,
     }));
   });
 
