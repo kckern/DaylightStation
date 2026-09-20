@@ -58,7 +58,10 @@ export function DestinationLine({ surface, onInteractionStart, onInteractionEnd 
   const { devices } = useFleetContext();
 
   const close = useCallback(() => setOpen(false), []);
-  useDismissLayer(open, close, { managed: true });
+  // Mantine's own window-capture Escape can close and unregister the Modal
+  // before the shell's document-bubble handler observes the same event.
+  // Let the shell own this layer instead so one Escape has one owner.
+  useDismissLayer(open, close);
 
   const startInteraction = useCallback(() => {
     if (interactionStartedRef.current) return;
@@ -169,6 +172,7 @@ export function DestinationLine({ surface, onInteractionStart, onInteractionEnd 
         centered
         size="sm"
         zIndex={DESTINATION_MODAL_Z_INDEX}
+        closeOnEscape={false}
         transitionProps={{ duration: 0 }}
       >
         <DestinationInteractionSurface onUnmount={finishInteraction}>
