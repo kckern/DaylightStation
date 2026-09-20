@@ -54,6 +54,15 @@ const ANIM_DURATION_MS = 1000;
 const PAIR_DURATION_MS = 30000;
 const PAIR_ENDPOINT = '/api/v1/emulator/bt/pair';
 
+// Session badge field → format + overlayData source. `player` reuses the
+// existing player_card rendering and reads from the pre-existing
+// `session.current_player` key; `timer` is the new countdown format;
+// `system_label` needs no format at all (resolveOverlayValue's generic
+// overlayData branch already returns a plain string, which formatOverlayValue's
+// default branch renders as text) and reads its own `session.system_label` key.
+const SESSION_FORMATS = { player: 'player_card', timer: 'countdown' };
+const SESSION_SOURCES = { player: 'current_player' };
+
 const DEFAULT_FACTORIES = {
   createEngine: createEmulatorEngine,
   createMixer: createAudioMixer,
@@ -936,16 +945,10 @@ export function EmulatorConsole({
     ? [...overlays, { id: 'session', kind: 'session', ...sessionOverlayConfig }]
     : overlays;
 
-  // Each session field maps to a fixed source+format — `player` reuses the
-  // existing player_card rendering, `timer` is the new countdown format,
-  // `system_label` needs no format at all (resolveOverlayValue's generic
-  // overlayData branch already returns a plain string, which formatOverlayValue's
-  // default branch renders as text).
-  const SESSION_FORMATS = { player: 'player_card', timer: 'countdown' };
   const resolveSessionField = useCallback(
     (field) => formatOverlayValue(
       SESSION_FORMATS[field],
-      resolveOverlayValue(`session.${field === 'player' ? 'current_player' : field}`, { gameState, governance: status, overlayData }),
+      resolveOverlayValue(`session.${SESSION_SOURCES[field] ?? field}`, { gameState, governance: status, overlayData }),
     ),
     [gameState, status, overlayData],
   );
