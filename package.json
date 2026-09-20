@@ -163,6 +163,7 @@
     "test:slot-machine": "npx playwright test tests/live/flow/admin/content-search-combobox/11-slot-machine.runtime.test.mjs --reporter=line",
     "ingest:health-archive": "node cli/ingest-health-archive.cli.mjs",
     "test:unit:vitest": "node scripts/gate-vitest.mjs",
+    "test:media-stable-core": "node scripts/media-stable-core-gate.mjs",
     "sheet": "node scripts/gen-sheet.mjs",
     "audit:paths": "node scripts/audit-household-paths.mjs",
     "test:backend": "node tests/_infrastructure/harnesses/isolated.harness.mjs --only=domain,adapter,flow,contract,assembly,application,api,nutribot,modules,adapters,agents,applications,composition,e2e,hardware,hooks,lifeplan,notification,observability,rendering,screen-framework,services,system,tooling,ui",
