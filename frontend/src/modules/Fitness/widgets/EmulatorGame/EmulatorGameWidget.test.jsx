@@ -31,6 +31,7 @@ vi.mock('../../../Emulator/EmulatorConsole.jsx', () => ({
         data-coins={props.overlayData?.['session.coins'] ?? ''}
         data-system-label={props.systemLabel || ''}
         data-timer={props.sessionTimer?.text || ''}
+        data-overlay-anchor={props.sessionOverlayConfig?.anchor || ''}
       />
       <button data-testid="exit" onClick={() => props.onExit?.()}>exit</button>
       <button data-testid="play-signal" onClick={() => props.onPlayStateChange?.('playing')}>playing</button>
@@ -152,10 +153,14 @@ describe('EmulatorGameWidget arcade shell', () => {
     await screen.findByTestId('console');
 
     const subscription = bus.subscriptions.find((entry) => entry.topic === 'play-session:garage-tv');
-    subscription.handler({ event: 'play.session.progress', state: 'playing', playedMs: 95_000, systemLabel: 'Game Boy' });
+    subscription.handler({
+      event: 'play.session.progress', state: 'playing', playedMs: 95_000, systemLabel: 'Game Boy',
+      overlay: { anchor: 'top-left', offsetX: '2%', offsetY: '2%', scale: 0.5, fields: ['player', 'timer'] },
+    });
 
     await waitFor(() => expect(screen.getByTestId('console')).toHaveAttribute('data-timer', '01:35'));
     expect(screen.getByTestId('console')).toHaveAttribute('data-system-label', 'Game Boy');
+    expect(screen.getByTestId('console')).toHaveAttribute('data-overlay-anchor', 'top-left');
   });
 
   it('shows the arcade grid first (no console until a game is picked)', async () => {
