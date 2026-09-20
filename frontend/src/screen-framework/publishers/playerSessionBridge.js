@@ -249,7 +249,6 @@ export function createPlayerSessionBridge({
       try { currentGeneration = currentHandle?.getMountedMediaGeneration?.() ?? null; } catch { /* ignore */ }
       const ownerStillAdmitted = thisBinding.registrationAdmitted
         && currentIdentity?.ownerInstanceId === thisBinding.ownerInstanceId
-        && currentIdentity?.playbackRevision === thisBinding.ownerPlaybackRevision
         && currentIdentity?.ownerInstanceId === thisBinding.logicalOwnerInstanceId
         && currentIdentity?.playbackRevision === thisBinding.logicalOwnerPlaybackRevision;
       return ownerStillAdmitted && currentGeneration === thisBinding.resolvedGeneration;
