@@ -69,6 +69,9 @@ export class RegistryContentCatalogGateway extends IContentCatalogGateway {
 
   resolve(contentId) { return publicResolution(this.registry.resolve?.(contentId)); }
 
+  /** Provider-neutral playback routing reference; never leaks the adapter itself. */
+  playbackSourceReference(contentId) { return publicResolution(this.registry.resolve?.(contentId)); }
+
   resolveSource(source, localId = '') {
     const exact = this.registry.get(source);
     if (exact) return { source, localId };

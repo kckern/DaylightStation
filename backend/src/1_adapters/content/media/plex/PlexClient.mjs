@@ -65,7 +65,8 @@ export class PlexClient {
         headers: {
           'Accept': 'application/json',
           ...(this.#token ? { 'X-Plex-Token': this.#token } : {})
-        }
+        },
+        ...(options.signal ? { signal: options.signal } : {})
       });
 
       return response.data;
@@ -116,8 +117,8 @@ export class PlexClient {
    * @param {string} ratingKey - Plex item rating key
    * @returns {Promise<Object>}
    */
-  async getMetadata(ratingKey) {
-    return this.request(`/library/metadata/${ratingKey}`);
+  async getMetadata(ratingKey, options = {}) {
+    return this.request(`/library/metadata/${ratingKey}`, options);
   }
 
   /**
