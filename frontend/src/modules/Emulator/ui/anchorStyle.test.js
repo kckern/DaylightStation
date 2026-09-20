@@ -31,4 +31,20 @@ describe('anchorStyle', () => {
     expect(s.top).toBe('1%');
     expect(s.left).toBe('1%');
   });
+
+  it('defaults an omitted offset to 2%', () => {
+    const s = anchorStyle({ anchor: 'top-left', scale: 1 });
+    expect(s.top).toBe('2%');
+    expect(s.left).toBe('2%');
+  });
+
+  it('coerces a numeric-string scale', () => {
+    const s = anchorStyle({ anchor: 'top-left', offsetX: '2%', offsetY: '2%', scale: '0.5' });
+    expect(s.transform).toBe('scale(0.5)');
+  });
+
+  it('omits the transform for a non-positive scale', () => {
+    expect(anchorStyle({ anchor: 'top-left', offsetX: '2%', offsetY: '2%', scale: 0 }).transform).toBeUndefined();
+    expect(anchorStyle({ anchor: 'top-left', offsetX: '2%', offsetY: '2%', scale: -1 }).transform).toBeUndefined();
+  });
 });
