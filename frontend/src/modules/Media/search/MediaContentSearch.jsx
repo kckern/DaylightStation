@@ -28,6 +28,7 @@ import { IconAlertTriangle } from '@tabler/icons-react';
 import { ContentCombobox } from '../../Content/combobox/ContentCombobox.jsx';
 import { useSearchContext } from './useSearchContext.js';
 import { ScopeChips } from './ScopeChips.jsx';
+import { DestinationLine } from '../cast/DestinationLine.jsx';
 import { useContentDispatch } from './useContentDispatch.js';
 import { useSessionController } from '../controller/useSessionController.js';
 import { useNav } from '../shell/NavProvider.jsx';
@@ -118,6 +119,7 @@ export function MediaContentSearch() {
   return (
     <div ref={searchBarRef} data-testid="media-search-bar" className="media-search-bar">
       <div className="media-search-controls">
+        <DestinationLine surface="media-content-search" />
         <ScopeChips />
         {scopeError && (
           <span data-testid="scope-error" className="scope-error" title={scopeError.message}>

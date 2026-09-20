@@ -66,6 +66,38 @@ function scopeChip(page, isPhone, key) {
   return surface.getByTestId(`scope-chip-${key}`);
 }
 
+async function actionSnapshot(page, id) {
+  const more = page.getByTestId(`result-more-${id}`);
+  await expect(more).toBeVisible();
+  await more.click();
+  const menu = page.getByTestId(`result-more-menu-${id}`);
+  await expect(menu).toBeVisible();
+  const ids = ['playNow', 'playNext', 'upNext', 'add', 'detail'];
+  const snapshot = await Promise.all(ids.map(async (action) => {
+    const item = page.getByTestId(`result-action-${action}-${id}`);
+    return { action, text: await item.textContent(), disabled: await item.isDisabled() };
+  }));
+  await page.keyboard.press('Escape');
+  return snapshot;
+}
+
+async function setDestination(page, targetId) {
+  await page.getByTestId('destination-line').click();
+  await expect(page.getByTestId('destination-sheet')).toBeVisible();
+  if (!targetId) {
+    await page.getByTestId('picker-this-device').click();
+    return;
+  }
+  await page.getByTestId(`picker-device-${targetId}`).click();
+  await page.getByTestId('picker-submit').click();
+}
+
+async function firstLeafId(page) {
+  const more = page.locator('[data-testid^="result-more-"]').first();
+  if (await more.count() === 0) return null;
+  return (await more.getAttribute('data-testid'))?.replace('result-more-', '') ?? null;
+}
+
 async function visibleResultIds(page, isPhone) {
   const rows = resultRows(page, isPhone);
   return rows.evaluateAll((elements) => elements.map((element) => (
@@ -102,6 +134,48 @@ async function closeSearch(page, input, isPhone) {
 }
 
 for (const [surface, viewport, isPhone] of surfaces) {
+  test(`[FIND.1b/AC1,AC2] ${surface}: one search and identical result verbs survive destination switches`, async ({ page }) => {
+    await page.setViewportSize(viewport);
+    const input = await openSearch(page, isPhone);
+    const scopes = await readLiveScopes(page);
+    const selectable = scopes.find((scope) => scope.params != null) ?? scopes[0];
+    test.skip(!selectable, 'Live media config exposes no selectable scope; FIND.1b cannot select a real configured scope.');
+
+    await input.fill(query);
+    if (selectable.key !== 'all') await scopeChip(page, isPhone, selectable.key).click();
+    await waitForSearchSettled(page);
+    await expect.poll(() => resultRows(page, isPhone).count(), { timeout: 20000 }).toBeGreaterThan(0);
+    const id = await firstLeafId(page);
+    test.skip(!id, `Live ${selectable.label} search for ${query} returned no leaf result; FIND.1b action parity requires a selectable leaf.`);
+
+    const baseline = {
+      query: await input.inputValue(),
+      scope: await scopeChip(page, isPhone, selectable.key).getAttribute('aria-pressed'),
+      id,
+      actions: await actionSnapshot(page, id),
+    };
+    expect(baseline.scope).toBe('true');
+    await expect(page.getByTestId('destination-line-name')).toHaveText('This device');
+
+    await setDestination(page, 'acceptance-media');
+    await expect(page.getByTestId('destination-line-name')).toHaveText('Acceptance receiver');
+    expect({
+      query: await input.inputValue(),
+      scope: await scopeChip(page, isPhone, selectable.key).getAttribute('aria-pressed'),
+      id: await firstLeafId(page),
+      actions: await actionSnapshot(page, id),
+    }).toEqual(baseline);
+
+    await setDestination(page, null);
+    await expect(page.getByTestId('destination-line-name')).toHaveText('This device');
+    expect({
+      query: await input.inputValue(),
+      scope: await scopeChip(page, isPhone, selectable.key).getAttribute('aria-pressed'),
+      id: await firstLeafId(page),
+      actions: await actionSnapshot(page, id),
+    }).toEqual(baseline);
+  });
+
   test(`[FIND.2a/AC1] ${surface}: every scope choice is visible beside search and All is current`, async ({ page }) => {
     await page.setViewportSize(viewport);
     const input = await openSearch(page, isPhone);

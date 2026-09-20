@@ -22,6 +22,9 @@ vi.mock('./useSearchContext.js', () => ({
   }),
 }));
 vi.mock('./ScopeChips.jsx', () => ({ ScopeChips: () => <div data-testid="scope-chips" /> }));
+vi.mock('../cast/DestinationLine.jsx', () => ({
+  DestinationLine: () => <div data-testid="destination-line" />,
+}));
 vi.mock('@mantine/notifications', () => ({ notifications: { show: vi.fn() } }));
 vi.mock('../../../lib/logging/Logger.js', () => ({
   default: () => ({ child: () => ({ info: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn() }) }),

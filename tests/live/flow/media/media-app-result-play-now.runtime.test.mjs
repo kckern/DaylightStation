@@ -5,6 +5,46 @@ import { test, expect } from '@playwright/test';
 // synthetic acknowledgement/state; the screen must publish its own result.
 test.use({ viewport: { width: 1440, height: 900 }, trace: 'retain-on-failure' });
 
+const surfaces = [
+  ['phone SearchMode', { width: 390, height: 844 }, true],
+  ['tablet dock search', { width: 768, height: 1024 }, false],
+  ['laptop dock search', { width: 1440, height: 900 }, false],
+];
+
+async function openSearch(page, isPhone) {
+  await page.goto('/media', { waitUntil: 'domcontentloaded' });
+  if (isPhone) {
+    await expect(page.getByTestId('media-search-launcher')).toBeVisible({ timeout: 30000 });
+    await page.getByTestId('media-search-launcher').click();
+    await expect(page.getByTestId('search-mode')).toBeVisible();
+    return page.getByTestId('search-mode-input');
+  }
+  await expect(page.getByTestId('media-search-bar')).toBeVisible({ timeout: 30000 });
+  const input = page.getByRole('textbox', { name: 'Search media…', exact: true });
+  await input.click();
+  return input;
+}
+
+async function setDestination(page, targetId) {
+  await page.getByTestId('destination-line').click();
+  await expect(page.getByTestId('destination-sheet')).toBeVisible();
+  if (!targetId) {
+    await page.getByTestId('picker-this-device').click();
+    return;
+  }
+  await page.getByTestId(`picker-device-${targetId}`).click();
+  await page.getByTestId('picker-submit').click();
+}
+
+const receiverState = page => page.evaluate(async () =>
+  (await fetch('/api/v1/device/acceptance-media/receiver-state')).json());
+
+async function assertSearchIdentity(page, input, id) {
+  await expect(input).toHaveValue('arrival');
+  await expect(page.getByTestId('scope-chip-all')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByTestId(`result-more-${id}`)).toBeVisible();
+}
+
 async function runResultPlayNowJourney({ context, page: sender }, chooseExplicitFork) {
   test.setTimeout(chooseExplicitFork ? 120000 : 60000);
   const receiver = await context.newPage();
@@ -194,3 +234,88 @@ test('explicit fork: aimed More → Play Now starts a new receiver visit and pre
 test('fresh/default mode: aimed More → Play Now starts a new receiver visit and preserves the queued tail', async ({ context, page }) => {
   await runResultPlayNowJourney({ context, page }, false);
 });
+
+for (const [surface, viewport, isPhone] of surfaces) {
+  test(`[FIND.1b/AC1,AC2] ${surface}: remote Play/Add and local Play keep search and receiver state isolated`, async ({ context, page: sender }) => {
+    test.setTimeout(120000);
+    await sender.setViewportSize(viewport);
+    const receiver = await context.newPage();
+    const loads = [];
+    sender.on('request', request => {
+      if (request.url().includes('/api/v1/device/acceptance-media/load')) loads.push(request);
+    });
+    await receiver.goto('/screen/living-room', { waitUntil: 'domcontentloaded' });
+    const input = await openSearch(sender, isPhone);
+    await expect.poll(async () => sender.evaluate(async () => {
+      const response = await fetch('/api/v1/device/acceptance-media/receiver-ready');
+      return response.ok && (await response.json()).ready;
+    }), { timeout: 30000 }).toBe(true);
+
+    const id = 'plex:55854';
+    const addId = 'plex:697368';
+    await input.fill('arrival');
+    await expect(sender.getByTestId(`result-more-${id}`)).toBeVisible({ timeout: 30000 });
+    await assertSearchIdentity(sender, input, id);
+
+    await setDestination(sender, 'acceptance-media');
+    await expect(sender.getByTestId('destination-line-name')).toHaveText('Acceptance receiver');
+    await assertSearchIdentity(sender, input, id);
+    await sender.getByTestId(`result-more-${id}`).click();
+    await sender.getByTestId(`result-action-playNow-${id}`).click();
+    await expect.poll(() => loads.length).toBe(1);
+    const receiverVideo = receiver.locator('.video-player video');
+    await expect(receiverVideo).toBeVisible({ timeout: 60000 });
+    await expect.poll(() => receiverVideo.evaluate(el => el.readyState >= 2 && !el.paused && el.currentTime > 0), { timeout: 60000 }).toBe(true);
+    const remoteAfterPlay = await receiverState(sender);
+    expect(remoteAfterPlay).toMatchObject({
+      snapshot: { currentItem: { contentId: id }, meta: { ownerId: 'acceptance-media' } },
+    });
+    await expect(sender.getByTestId('dispatch-tray')).toContainText('Playing on Acceptance receiver', { timeout: 60000 });
+    await assertSearchIdentity(sender, input, id);
+
+    await input.fill('disclosure day');
+    await expect(sender.getByTestId(`result-more-${addId}`)).toBeVisible({ timeout: 30000 });
+    await sender.getByTestId(`result-more-${addId}`).click();
+    await sender.getByTestId(`result-action-add-${addId}`).click();
+    await expect.poll(async () => {
+      const state = await receiverState(sender);
+      const before = remoteAfterPlay.snapshot.meta.playbackOwner;
+      const after = state.snapshot?.meta?.playbackOwner;
+      return state.snapshot?.currentItem?.contentId === id
+        && after?.playbackRevision === before?.playbackRevision
+        && after?.queueRevision > before?.queueRevision
+        && state.snapshot?.queue?.items?.some(item => item.contentId === addId);
+    }, { timeout: 60000 }).toBe(true);
+    const remoteAfterAdd = await receiverState(sender);
+    await expect(sender.getByTestId('dispatch-tray')).toContainText('Added', { timeout: 60000 });
+    await expect(sender.getByTestId('dispatch-tray')).toContainText('Acceptance receiver');
+
+    await input.fill('arrival');
+    await assertSearchIdentity(sender, input, id);
+    await setDestination(sender, null);
+    await expect(sender.getByTestId('destination-line-name')).toHaveText('This device');
+    await assertSearchIdentity(sender, input, id);
+    await sender.getByTestId(`result-more-${id}`).click();
+    await sender.getByTestId(`result-action-playNow-${id}`).click();
+    const localVideo = sender.locator('.video-player video');
+    await expect(localVideo).toBeVisible({ timeout: 60000 });
+    await expect.poll(() => localVideo.evaluate(el => el.readyState >= 2 && !el.paused && el.currentTime > 0), { timeout: 60000 }).toBe(true);
+    await expect.poll(() => loads.length).toBe(1);
+    const remoteAfterLocal = await receiverState(sender);
+    expect(remoteAfterLocal).toMatchObject({
+      snapshot: {
+        currentItem: remoteAfterAdd.snapshot.currentItem,
+        meta: {
+          ownerId: remoteAfterAdd.snapshot.meta.ownerId,
+          playbackOwner: {
+            ownerInstanceId: remoteAfterAdd.snapshot.meta.playbackOwner.ownerInstanceId,
+            playbackRevision: remoteAfterAdd.snapshot.meta.playbackOwner.playbackRevision,
+            queueRevision: remoteAfterAdd.snapshot.meta.playbackOwner.queueRevision,
+          },
+        },
+      },
+    });
+    await assertSearchIdentity(sender, input, id);
+    await receiver.close();
+  });
+}
