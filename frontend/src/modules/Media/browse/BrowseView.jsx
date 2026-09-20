@@ -43,7 +43,7 @@ export function BrowseView({ path, label, modifiers, containerItem = null, take 
   const { items, total, loading, error, loadMore } = useListBrowse(path, { modifiers, take });
   const { queue } = useSessionController('local');
   const { push, replace, pop, depth } = useNav();
-  const { playContainerAsQueue, addContainerToQueue } = useContentDispatch();
+  const { dispatchLeafVerb, playContainerAsQueue, addContainerToQueue } = useContentDispatch();
   const log = useMemo(() => getLogger().child({ component: 'browse-view' }), []);
 
   const crumbLabel = label ?? (splitPath(path).join(' / ') || 'All');
@@ -165,7 +165,7 @@ export function BrowseView({ path, label, modifiers, containerItem = null, take 
                       <button
                         data-testid={`result-play-now-${id}`}
                         className="result-action result-action--primary"
-                        onClick={() => { const input = resultToQueueInput(row); if (input) queue.playNow(input, { clearRest: true }); }}
+                        onClick={() => dispatchLeafVerb('playNow', id, row)}
                       >
                         Play Now
                       </button>

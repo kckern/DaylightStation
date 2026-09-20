@@ -45,10 +45,12 @@ vi.mock('../shell/NavProvider.jsx', () => ({
 // BrowseView calls these correctly, not what they do internally. ──
 const playContainerAsQueueMock = vi.fn();
 const addContainerToQueueMock = vi.fn();
+const dispatchLeafVerbMock = vi.fn();
 vi.mock('../search/useContentDispatch.js', () => ({
   useContentDispatch: () => ({
     playContainerAsQueue: playContainerAsQueueMock,
     addContainerToQueue: addContainerToQueueMock,
+    dispatchLeafVerb: dispatchLeafVerbMock,
   }),
 }));
 
@@ -92,6 +94,7 @@ beforeEach(() => {
   navReplace.mockClear();
   playContainerAsQueueMock.mockClear();
   addContainerToQueueMock.mockClear();
+  dispatchLeafVerbMock.mockClear();
   fleetDevices = [];
   localStorage.clear();
 });
@@ -170,5 +173,22 @@ describe('BrowseView — nested drill carries containerItem forward', () => {
       label: 'Season 1',
       containerItem: expect.objectContaining({ id: 'plex:9999', title: 'Season 1', itemType: 'container' }),
     }));
+  });
+});
+
+describe('BrowseView — leaf Play Now', () => {
+  it('routes the exact browse row through the current destination dispatcher', () => {
+    browseState = {
+      items: [{ id: 'plex:685088', title: 'Episode 3', type: 'episode', thumbnail: 'episode.jpg' }],
+      total: 1, loading: false, error: null,
+    };
+    renderBrowse();
+    fireEvent.click(screen.getByTestId('result-play-now-plex:685088'));
+
+    expect(dispatchLeafVerbMock).toHaveBeenCalledWith('playNow', 'plex:685088', expect.objectContaining({
+      id: 'plex:685088', title: 'Episode 3', thumbnail: 'episode.jpg',
+    }));
+    expect(queuePlayNow).not.toHaveBeenCalled();
+    expect(navPush).not.toHaveBeenCalled();
   });
 });
