@@ -154,6 +154,40 @@ describe('createPlayerSessionBridge', () => {
     bridge.stop();
   });
 
+  it('refreshes native observation when only the admitted owner revision changes', () => {
+    const el = document.createElement('video');
+    Object.defineProperties(el, {
+      currentTime: { configurable: true, writable: true, value: 10 },
+      paused: { configurable: true, writable: true, value: false },
+      seeking: { configurable: true, writable: true, value: false },
+      ended: { configurable: true, writable: true, value: false },
+      error: { configurable: true, writable: true, value: null },
+    });
+    let playbackRevision = 1;
+    const handle = {
+      ...makeHandle({ el }),
+      getMountedContentId: () => 'plex:resume',
+      getMountedMediaGeneration: () => 7,
+      getMountedMediaRegistration: () => ({
+        node: el, resolvedContentId: 'plex:resume', resolvedGeneration: 7,
+        ownerInstanceId: 'resume-owner', playbackRevision,
+      }),
+      getPlaybackIdentity: () => ({ ownerInstanceId: 'resume-owner', playbackRevision, queueRevision: 3 }),
+    };
+    const bridge = startBridge(() => handle);
+    vi.advanceTimersByTime(1000);
+    el.dispatchEvent(new Event('playing'));
+    expect(bridge.player.getState()).toBe('playing');
+
+    // Stop → Play changes the transport revision without remounting its
+    // admitted media element or renderer generation.
+    playbackRevision = 2;
+    expect(bridge.player.getState()).toBe('buffering');
+    el.dispatchEvent(new Event('playing'));
+    expect(bridge.player.getState()).toBe('playing');
+    bridge.stop();
+  });
+
   it('rearms playing only when the current admitted node advances after waiting', () => {
     const el = document.createElement('video');
     Object.defineProperties(el, {

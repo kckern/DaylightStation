@@ -218,17 +218,14 @@ export function createPlayerSessionBridge({
         && bindingKey.rendererToken === observedBindingKey.rendererToken
         && bindingKey.targetSeconds === observedBindingKey.targetSeconds
       ))) {
-      if (bindingKey.ownerInstanceId !== observedBindingKey.ownerInstanceId
+      const ownerBindingChanged = bindingKey.ownerInstanceId !== observedBindingKey.ownerInstanceId
         || bindingKey.ownerPlaybackRevision !== observedBindingKey.ownerPlaybackRevision
         || bindingKey.logicalOwnerInstanceId !== observedBindingKey.logicalOwnerInstanceId
-        || bindingKey.logicalOwnerPlaybackRevision !== observedBindingKey.logicalOwnerPlaybackRevision) {
-        observedPlaying = false;
-        observedAdvance = false;
-        observedOperationSeeking = false;
-        observedTargetSeeked = false;
-        observedLastTime = Number.isFinite(el?.currentTime) ? el.currentTime : null;
-      }
-      return;
+        || bindingKey.logicalOwnerPlaybackRevision !== observedBindingKey.logicalOwnerPlaybackRevision;
+      // A Stop → Play can advance the owner revision without remounting the
+      // same admitted node. Rebind its listeners so their captured identity
+      // is authoritative for the new transport revision.
+      if (!ownerBindingChanged) return;
     }
     if (!bindingKey && !observedBindingKey) return;
     try { detachNativeObservation(); } catch { /* ignore */ }

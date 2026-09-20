@@ -178,8 +178,26 @@ test('Peek Pause, Resume, and Seek control the actual receiver video while pause
   const beforeResumeTime = await video.evaluate(element => element.currentTime);
   await expect(toggle).toHaveAttribute('aria-label', 'Play');
   await issueThroughControl(sender, 'play', () => toggle.click());
-  await expect.poll(async () => (await readReceiverState(sender))?.snapshot?.state, { timeout: 15000 })
-    .toBe('playing');
+  await expect.poll(async () => {
+    const receiverState = await readReceiverState(sender);
+    const native = await video.evaluate(element => ({
+      paused: element.paused,
+      currentTime: element.currentTime,
+      seeking: element.seeking,
+      readyState: element.readyState,
+    }));
+    return {
+      receiverState: receiverState?.snapshot?.state ?? null,
+      receiverPosition: receiverState?.snapshot?.position ?? null,
+      nativePaused: native.paused,
+      nativeTime: native.currentTime,
+      nativeSeeking: native.seeking,
+      nativeReadyState: native.readyState,
+    };
+  }, { timeout: 15000 }).toMatchObject({
+    receiverState: 'playing',
+    nativePaused: false,
+  });
   await expect.poll(() => video.evaluate((element, time) => !element.paused
     && element.currentTime > time + 1, beforeResumeTime), { timeout: 15000 }).toBe(true);
 
@@ -222,7 +240,10 @@ test('Peek Stop retains the receiver queue and Play resumes the stopped item', a
   }))).toEqual(queueBeforeStop);
 
   const queueKept = sender.getByTestId('peek-queue-kept');
-  await expect(queueKept).toHaveText(new RegExp(`^Queue kept: ${queueBeforeStop.length} item${queueBeforeStop.length === 1 ? '' : 's'}$`));
+  await expect(queueKept.getByText(
+    `Queue kept: ${queueBeforeStop.length} item${queueBeforeStop.length === 1 ? '' : 's'}`,
+    { exact: true },
+  )).toBeVisible();
   const openQueue = sender.getByTestId('peek-open-queue');
   const queuePanel = sender.getByTestId('queue-panel');
   await expect(openQueue).toBeVisible();
