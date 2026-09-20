@@ -46,6 +46,22 @@ export function directUPCHandler(nutribotApi, options = {}) {
       }
     }
 
+    // Fallback: a URL template with a leftover literal `%s` (or other
+    // non-digit prefix) placed directly against `upc=` gets the scanned
+    // code appended with no separator, e.g. upc=%s0049000000450. Pull the
+    // trailing 8-14 digit run rather than reject it outright.
+    if (!isValidUPC(cleanUPC) && cleanUPC) {
+      const trailingDigits = cleanUPC.match(/\d{8,14}$/)?.[0];
+      if (trailingDigits) {
+        logger.info?.('direct.upc.prefixStripped', {
+          traceId,
+          upcParam: upc ?? null,
+          upc: trailingDigits,
+        });
+        cleanUPC = trailingDigits;
+      }
+    }
+
     if (!cleanUPC) {
       logger.warn?.('direct.upc.rejected', { traceId, reason: 'missing', queryKeys: Object.keys(req.query || {}) });
       return res.status(400).json({
