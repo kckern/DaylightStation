@@ -34,6 +34,75 @@ test('[PLACE.2a/AC2][PLACE.2a/AC3][PLACE.2a/AC5] remembered aim expires after tw
   expect(commands, 'Aim expiry must not issue playback commands').toEqual([]);
 });
 
+test('[PLACE.2a/AC5] a closed app restores a remote aim before two idle hours and starts locally after two', async ({ context, page }) => {
+  const startedAt = new Date('2026-09-19T12:00:00.000Z');
+  const beforeExpiryAt = new Date(startedAt.getTime() + (2 * 60 * 60 * 1000) - 1);
+  const officeTargetId = 'office-tv';
+  const commands = [];
+  const readClockAndAim = browserPage => browserPage.evaluate(() => {
+    const raw = localStorage.getItem('media-app.cast-target');
+    return { now: Date.now(), aim: raw ? JSON.parse(raw) : null };
+  });
+  await context.route('**/api/v1/device/**', async route => {
+    const request = route.request();
+    if (request.method() !== 'GET' || /\/load(?:\?|$)/.test(request.url())) {
+      commands.push({ method: request.method(), url: request.url() });
+      await route.abort('blockedbyclient');
+      return;
+    }
+    await route.continue();
+  });
+  await context.clock.install({ time: startedAt });
+  await context.clock.setFixedTime(startedAt);
+  await page.goto('/media');
+  await expect(page.getByTestId('media-search-launcher')).toBeVisible({ timeout: 30000 });
+  await page.getByTestId('media-search-launcher').click();
+  await page.getByTestId('destination-line').click();
+  await page.getByRole('button', { name: /^Office Screen Office/ }).click();
+  await page.getByTestId('picker-submit').click();
+  await expect(page.getByTestId('destination-line-name')).toContainText('Office');
+  const beforeClose = await readClockAndAim(page);
+  expect(beforeClose).toMatchObject({ now: startedAt.getTime(), aim: { targetIds: [officeTargetId], activityAt: startedAt.getTime() } });
+  await page.close();
+
+  const beforeExpiry = await context.newPage();
+  await context.clock.setFixedTime(beforeExpiryAt);
+  await beforeExpiry.goto('/media');
+  const beforeExpiryFirstLayout = await readClockAndAim(beforeExpiry);
+  expect(beforeExpiryFirstLayout).toMatchObject({ now: beforeExpiryAt.getTime(), aim: { targetIds: [officeTargetId], activityAt: startedAt.getTime() } });
+  await expect(beforeExpiry.getByTestId('media-search-launcher')).toBeVisible({ timeout: 30000 });
+  await beforeExpiry.getByTestId('media-search-launcher').click();
+  await expect(beforeExpiry.getByTestId('destination-line-name')).toContainText('Office');
+  // Opening Search is user activity. Make the resulting lease explicit with
+  // the ordinary picker so the final closed interval has a known baseline.
+  await beforeExpiry.getByTestId('destination-line').click();
+  await beforeExpiry.getByRole('button', { name: 'This device', exact: true }).click();
+  await beforeExpiry.getByTestId('destination-line').click();
+  await beforeExpiry.getByRole('button', { name: /^Office Screen Office/ }).click();
+  await beforeExpiry.getByTestId('picker-submit').click();
+  await expect(beforeExpiry.getByTestId('destination-line-name')).toContainText('Office');
+  const afterKnownRenewal = await readClockAndAim(beforeExpiry);
+  expect(afterKnownRenewal).toMatchObject({ now: beforeExpiryAt.getTime(), aim: { targetIds: [officeTargetId], activityAt: beforeExpiryAt.getTime() } });
+  await beforeExpiry.close();
+
+  const afterExpiry = await context.newPage();
+  const afterExpiryAt = new Date(beforeExpiryAt.getTime() + (2 * 60 * 60 * 1000) + 1);
+  await context.clock.setFixedTime(afterExpiryAt);
+  await afterExpiry.goto('/media');
+  await expect(afterExpiry.getByTestId('media-search-launcher')).toBeVisible({ timeout: 30000 });
+  await afterExpiry.getByTestId('media-search-launcher').click();
+  await expect(afterExpiry.getByTestId('destination-line-name')).toHaveText(/This device/);
+  // The provider expires persisted aims during initialization, while its
+  // effect writes the cleared state after mount. Read storage only as evidence
+  // after the ordinary UI has established the user-visible contract.
+  const afterExpiryAfterOpen = await readClockAndAim(afterExpiry);
+  expect(commands, 'Aim persistence must not issue playback commands').toEqual([]);
+  await test.info().attach('ac5-clock-evidence.json', {
+    body: JSON.stringify({ beforeClose, beforeExpiryFirstLayout, afterKnownRenewal, afterExpiryAfterOpen }),
+    contentType: 'application/json',
+  });
+});
+
 test('[PLACE.2b/AC1][PLACE.2b/AC2] phone switches office aim back to this device without sending playback', async ({ page }) => {
   const commands = [];
   await page.route('**/api/v1/device/**', async route => {
