@@ -21,6 +21,8 @@ describe('media ordinary device fixture', () => {
     ['play', undefined],
     ['seekAbs', 42],
     ['seekRel', -10],
+    ['skipNext', undefined],
+    ['skipPrev', undefined],
     ['stop', undefined],
   ])('sends virtual %s through screen command and correlated device ack', async (action, value) => {
     const fixture = createMediaOrdinaryDeviceFixture({ upstream: 'http://127.0.0.1:3111' });
@@ -51,7 +53,7 @@ describe('media ordinary device fixture', () => {
 
   it.each([
     ['GET', '/acceptance-media/session/transport', null],
-    ['POST', '/acceptance-media/session/transport', { action: 'skipNext', commandId: 'skip' }],
+    ['POST', '/acceptance-media/session/transport', { action: 'unknownAction', commandId: 'skip' }],
     ['POST', '/acceptance-media/session/queue/play-now', { contentId: 'plex:1', commandId: 'queue' }],
     ['GET', '/acceptance-media-extra/load', null],
   ])('blocks non-allowlisted device request %s %s before command dispatch', async (method, path, body) => {
