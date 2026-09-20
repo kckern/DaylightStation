@@ -50,7 +50,7 @@ function incompatible(rendition, client, tracks, evidence) {
 function compare(left, right) {
   const rank = rendition => [
     readinessFor(left.evidence, rendition, left.client) === 'validated' ? 0 : 1,
-    rendition.conversion ? 1 : 0,
+    rendition.conversion === 'none' ? 0 : 1,
     rendition.estimatedUnits,
     rendition.renditionId,
   ];

@@ -1,10 +1,19 @@
-const failed = (error) => ({ kind: 'failed', reason: error?.name === 'AbortError' ? 'cancelled' : /timeout|ETIMEDOUT/i.test(String(error?.code || error?.message)) ? 'timeout' : 'provider' });
-const operations = { inspect: 'unsupported', renew: 'unsupported', close: 'unsupported', findOwned: 'unsupported' };
+import { validateRendition } from '#domains/content/playback/contracts.mjs';
+
+const failed = (error) => ({ kind: 'failed', reason: error?.name === 'AbortError' || error?.code === 'ABORTED' ? 'cancelled' : /timeout|ETIMEDOUT/i.test(String(error?.code || error?.message)) ? 'timeout' : 'provider' });
+const operations = { inspect: 'unsupported', renew: 'unsupported', close: 'unsupported', findOwned: 'supported' };
+const conversion = value => ['none', 'remux', 'audio', 'video', 'unknown'].includes(value) ? value : 'unknown';
+const normalizedRendition = value => { try { return validateRendition(value); } catch { return null; } };
+function delivery(value, positionMs) {
+  if (typeof value?.url !== 'string' || !(/^\/api\//.test(value.url) || /^https?:\/\//.test(value.url))) return null;
+  return { format: typeof value.format === 'string' && value.format ? value.format : 'file', url: value.url, contentOriginMs: Number.isFinite(value.contentOriginMs) ? value.contentOriginMs : Number(positionMs) || 0, seekWindow: null, expiresAt: Number.isFinite(value.expiresAt) ? value.expiresAt : null, segmentDurationMs: Number.isFinite(value.segmentDurationMs) ? value.segmentDurationMs : null };
+}
 
 /** Translation for local/file providers. Provider references are never returned. */
 export class FilePlaybackSource {
   #provider;
   #opened = new Map();
+  #opening = new Map();
   #revisions = new Map();
 
   constructor({ provider } = {}) { this.#provider = provider || {}; }
@@ -17,25 +26,32 @@ export class FilePlaybackSource {
       this.#revisions.set(contentId, revision);
       return {
         kind: 'available', sourceRevision: revision,
-        candidates: described.candidates || [], operations,
+        candidates: (described.candidates || []).map(normalizedRendition).filter(Boolean), operations,
       };
     } catch (error) { return failed(error); }
   }
 
   async openDefault(request) { return this.open({ ...request, renditionId: 'original' }); }
 
-  async open({ contentId, sourceRevision, attemptId, generation, positionMs, tracks, client, signal, deadline } = {}) {
-    if (this.#opened.has(attemptId)) return { kind: 'failed', reason: 'attempt-already-open' };
+  async open({ attemptId, ...request } = {}) {
+    if (this.#opened.has(attemptId) || this.#opening.has(attemptId)) return { kind: 'failed', reason: 'attempt-already-open' };
+    const opening = this.#open({ attemptId, ...request });
+    this.#opening.set(attemptId, opening);
+    try { return await opening; } finally { this.#opening.delete(attemptId); }
+  }
+
+  async #open({ contentId, sourceRevision, attemptId, generation, positionMs, tracks, client, signal, deadline } = {}) {
     if (sourceRevision != null && this.#revisions.has(contentId) && this.#revisions.get(contentId) !== sourceRevision) {
       return { kind: 'failed', reason: 'source-revision-mismatch' };
     }
     try {
       const result = await this.#provider.open?.({ contentId, sourceRevision, attemptId, generation, positionMs, tracks, client, signal, deadline });
-      if (!result?.url) return { kind: 'failed', reason: result?.reason || 'absent' };
+      const normalizedDelivery = delivery(result, positionMs);
+      if (!normalizedDelivery) return { kind: 'failed', reason: result?.reason || 'absent' };
+      const actualRendition = normalizedRendition(result.actualRendition);
       const opened = {
-        kind: 'opened', handle: result.handle || `file:${attemptId}`,
-        delivery: { format: result.format || 'file', url: result.url, contentOriginMs: positionMs || 0, seekWindow: null, expiresAt: null, segmentDurationMs: null },
-        actualRendition: result.actualRendition || null, conversion: result.conversion || null,
+        kind: 'opened', handle: `file:${attemptId}`, delivery: normalizedDelivery,
+        actualRendition, conversion: actualRendition?.conversion || conversion(result.conversion),
       };
       this.#opened.set(attemptId, opened.handle);
       return opened;

@@ -2,6 +2,35 @@
 
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
+function timeoutMs(deadline) {
+  if (Number.isFinite(deadline)) return Math.max(0, deadline);
+  if (!deadline || typeof deadline !== 'object') return null;
+  if (Number.isFinite(deadline.timeoutMs)) return Math.max(0, deadline.timeoutMs);
+  const at = deadline.expiresAt ?? deadline.at;
+  return Number.isFinite(at) ? Math.max(0, at - Date.now()) : null;
+}
+
+function boundedSignal(signal, deadline) {
+  const ms = timeoutMs(deadline);
+  if (ms === null) return { signal, cleanup: () => {}, timedOut: () => false };
+  const controller = new AbortController();
+  let timeoutFired = false;
+  const abortFromCaller = () => controller.abort(signal.reason);
+  if (signal?.aborted) abortFromCaller();
+  else signal?.addEventListener('abort', abortFromCaller, { once: true });
+  const timer = setTimeout(() => {
+    timeoutFired = true;
+    const error = new Error('Plex request deadline exceeded');
+    error.code = 'TIMEOUT';
+    controller.abort(error);
+  }, ms);
+  return {
+    signal: controller.signal,
+    timedOut: () => timeoutFired,
+    cleanup: () => { clearTimeout(timer); signal?.removeEventListener('abort', abortFromCaller); },
+  };
+}
+
 /**
  * Low-level Plex API client for making authenticated requests to Plex Media Server.
  */
@@ -60,13 +89,14 @@ export class PlexClient {
       url = `${url}${separator}X-Plex-Token=${this.#token}`;
     }
 
+    const bounded = boundedSignal(options.signal, options.deadline);
     try {
       const response = await this.#httpClient.get(url, {
         headers: {
           'Accept': 'application/json',
           ...(this.#token ? { 'X-Plex-Token': this.#token } : {})
         },
-        ...(options.signal ? { signal: options.signal } : {})
+        ...(bounded.signal ? { signal: bounded.signal } : {})
       });
 
       return response.data;
@@ -77,11 +107,15 @@ export class PlexClient {
         code: error.code
       });
       const wrapped = new Error('Media API request failed');
-      wrapped.code = error.code || 'MEDIA_API_ERROR';
+      wrapped.code = bounded.timedOut() ? 'TIMEOUT' : (error?.name === 'AbortError' || options.signal?.aborted ? 'ABORTED' : error.code || 'MEDIA_API_ERROR');
+      if (wrapped.code === 'TIMEOUT') wrapped.name = 'TimeoutError';
+      if (wrapped.code === 'ABORTED') wrapped.name = 'AbortError';
       wrapped.status = error.response?.status ?? error.status ?? null;
       wrapped.isTransient = error.isTransient || false;
       wrapped.cause = error;
       throw wrapped;
+    } finally {
+      bounded.cleanup();
     }
   }
 

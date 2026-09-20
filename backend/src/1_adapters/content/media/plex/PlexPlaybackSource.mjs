@@ -11,9 +11,12 @@ function trackSelection(tracks = {}) {
 }
 
 function firstMedia(item) { return Array.isArray(item?.Media) ? item.Media[0] : item?.Media; }
+function streams(media) {
+  return (Array.isArray(media?.Part) ? media.Part : [media?.Part]).flatMap(part => Array.isArray(part?.Stream) ? part.Stream : []);
+}
 function stream(media, type, selectedId) {
-  const streams = (Array.isArray(media?.Part) ? media.Part : [media?.Part]).flatMap(part => Array.isArray(part?.Stream) ? part.Stream : []);
-  return streams.find(value => String(value?.id) === String(selectedId)) || streams.find(value => Number(value?.streamType) === type) || null;
+  const all = streams(media);
+  return (selectedId != null && all.find(value => String(value?.id) === String(selectedId))) || all.find(value => Number(value?.streamType) === type && value?.selected) || all.find(value => Number(value?.streamType) === type) || null;
 }
 function sourceRevision(item, id) {
   const media = firstMedia(item);
@@ -32,17 +35,26 @@ function audio(media, tracks) {
   return { codec, channels: Number(value?.channels ?? media?.audioChannels) || null, layout: value?.audioChannelLayout ?? media?.audioChannelLayout ?? null, language: value?.language ?? null };
 }
 function subtitles(media) {
-  const streams = (Array.isArray(media?.Part) ? media.Part : [media?.Part]).flatMap(part => Array.isArray(part?.Stream) ? part.Stream : []);
-  return streams.filter(value => Number(value?.streamType) === 3 && value?.id != null && value?.codec && value?.language)
+  return streams(media).filter(value => Number(value?.streamType) === 3 && value?.id != null && value?.codec && value?.language)
     .map(value => ({ id: String(value.id), language: String(value.language), format: String(value.codec) }));
 }
 function conversionFrom(decision) {
-  const container = decision?.MediaContainer || decision?.container || decision;
+  const { container, media } = decisionMedia(decision);
+  if (!decision) return 'none';
+  const videoDecision = String(media?.videoDecision ?? container?.videoDecision ?? '').toLowerCase();
+  const audioDecision = String(media?.audioDecision ?? container?.audioDecision ?? '').toLowerCase();
+  if (videoDecision === 'transcode') return 'video';
+  if (audioDecision === 'transcode') return 'audio';
+  if (videoDecision === 'copy' || audioDecision === 'copy') {
+    return Number(container?.generalDecisionCode) === 2000 ? 'none' : 'remux';
+  }
   const transcodeCode = Number(container?.transcodeDecisionCode);
   const text = `${container?.generalDecisionText || ''} ${container?.transcodeDecisionText || ''}`.toLowerCase();
-  if (transcodeCode === 1000 || text.includes('transcode')) return 'transcode';
+  if (text.includes('transcode audio')) return 'audio';
+  if (transcodeCode === 1000 || text.includes('transcode')) return 'video';
   if (text.includes('direct stream') || text.includes('remux')) return 'remux';
-  return null;
+  if (Number(container?.generalDecisionCode) === 2000) return 'none';
+  return 'unknown';
 }
 function decisionMedia(decision) {
   const container = decision?.MediaContainer || decision?.container || decision;
@@ -60,6 +72,7 @@ export class PlexPlaybackSource {
   #platform;
   #token;
   #opened = new Map();
+  #opening = new Map();
 
   constructor({ provider, proxyPath = null, protocol = null, platform = null, token = null } = {}) {
     if (!provider) throw new Error('PlexPlaybackSource requires provider');
@@ -100,12 +113,18 @@ export class PlexPlaybackSource {
     throw new Error('Plex provider does not expose a raw decision operation');
   }
 
-  #candidate(item, id, tracks, decision = null) {
-    const media = firstMedia(item);
+  #candidate(item, id, tracks, decision = null, actual = false) {
+    const media = actual ? (decisionMedia(decision).media || firstMedia(item)) : firstMedia(item);
+    const actualAudio = actual ? stream(media, 2) : null;
+    const actualSubtitle = actual ? stream(media, 3) : null;
+    const conversion = conversionFrom(decision);
     return {
       renditionId: `plex:${id}:original`, sourceRevision: sourceRevision(item, id), format: String(media?.container || 'dash'),
-      video: video(media, tracks), audio: audio(media, tracks), subtitles: subtitles(media), trackSelection: trackSelection(tracks),
-      conversion: conversionFrom(decision), ready: true, resourceClass: item?.type === 'track' ? 'audio' : 'video', estimatedUnits: conversionFrom(decision) === 'transcode' ? 1 : 0,
+      video: video(media, actual ? {} : tracks), audio: audio(media, actual ? {} : tracks), subtitles: subtitles(media),
+      trackSelection: actual
+        ? { audioId: actualAudio?.id != null ? String(actualAudio.id) : null, subtitleId: actualSubtitle?.id != null ? String(actualSubtitle.id) : null, subtitlesRequired: Boolean(tracks?.subtitlesRequired) }
+        : trackSelection(tracks),
+      conversion, ready: true, resourceClass: conversion === 'video' ? 'video' : conversion === 'audio' || item?.type === 'track' ? 'audio' : 'none', estimatedUnits: conversion === 'video' ? 1 : conversion === 'audio' ? 0.25 : 0,
     };
   }
 
@@ -135,7 +154,7 @@ export class PlexPlaybackSource {
     const { container, part } = decisionMedia(decision);
     const actualConversion = conversionFrom(decision);
     const { clientIdentifier, sessionIdentifier } = this.#session(attemptId, generation);
-    if (actualConversion === null && Number(container?.generalDecisionCode) === 2000 && part?.key) {
+    if (actualConversion === 'none' && Number(container?.generalDecisionCode) === 2000 && part?.key) {
       const params = new URLSearchParams({ 'X-Plex-Client-Identifier': clientIdentifier, 'X-Plex-Session-Identifier': sessionIdentifier });
       if (this.#token) params.set('X-Plex-Token', this.#token);
       return `${this.#proxyPath}${part.key}${part.key.includes('?') ? '&' : '?'}${params}`;
@@ -154,8 +173,14 @@ export class PlexPlaybackSource {
     return `${this.#proxyPath}/video/:/transcode/universal/start.mpd?${params}`;
   }
 
-  async open({ contentId, renditionId, sourceRevision: expectedRevision, attemptId, generation, positionMs = 0, tracks, client, signal, deadline } = {}) {
-    if (this.#opened.has(attemptId)) return { kind: 'failed', reason: 'attempt-already-open' };
+  async open({ attemptId, ...request } = {}) {
+    if (this.#opened.has(attemptId) || this.#opening.has(attemptId)) return { kind: 'failed', reason: 'attempt-already-open' };
+    const opening = this.#open({ attemptId, ...request });
+    this.#opening.set(attemptId, opening);
+    try { return await opening; } finally { this.#opening.delete(attemptId); }
+  }
+
+  async #open({ contentId, renditionId, sourceRevision: expectedRevision, attemptId, generation, positionMs = 0, tracks, client, signal, deadline } = {}) {
     try {
       const id = sourceId(contentId);
       const response = await this.#metadata(id, signal, deadline);
@@ -164,7 +189,7 @@ export class PlexPlaybackSource {
       if (expectedRevision != null && sourceRevision(item, id) !== expectedRevision) return { kind: 'failed', reason: 'source-revision-mismatch' };
       if (renditionId != null && renditionId !== `plex:${id}:original`) return { kind: 'failed', reason: 'unsupported-rendition' };
       const decision = item.type === 'track' ? null : await this.#decide({ contentId: id, item, client, tracks, signal, deadline, attemptId, generation, startOffset: Math.floor(Number(positionMs) / 1000), start: true });
-      const actualRendition = this.#candidate(item, id, tracks, decision);
+      const actualRendition = this.#candidate(item, id, tracks, decision, true);
       const handle = `plex:${attemptId}`;
       const result = { kind: 'opened', handle, delivery: { format: item.type === 'track' ? 'audio' : 'dash', url: this.#url({ id, item, decision, attemptId, generation, positionMs }), contentOriginMs: Number(positionMs) || 0, seekWindow: null, expiresAt: null, segmentDurationMs: null }, actualRendition, conversion: actualRendition.conversion };
       this.#opened.set(attemptId, handle);
