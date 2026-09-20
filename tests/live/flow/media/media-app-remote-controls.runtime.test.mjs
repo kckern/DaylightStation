@@ -27,8 +27,8 @@ async function issueThroughControl(sender, action, clickControl) {
   return { ...body, acknowledgement };
 }
 
-async function expectSeekState(video, slider, target, paused) {
-  await expect.poll(() => video.evaluate((element, expected) => ({
+async function expectSeekState(native, slider, target, paused) {
+  await expect.poll(() => native.evaluate((element, expected) => ({
     settled: !element.seeking
       && element.paused === expected.paused
       && Math.abs(element.currentTime - expected.target) <= 2,
@@ -46,7 +46,7 @@ async function expectSeekState(video, slider, target, paused) {
   });
   await expect.poll(async () => {
     const shown = Number(await slider.getAttribute('aria-valuenow'));
-    const actual = await video.evaluate(element => element.currentTime);
+    const actual = await native.evaluate(element => element.currentTime);
     return Number.isFinite(shown) && Math.abs(shown - actual) <= 2;
   }, { timeout: 15000 }).toBe(true);
 }
@@ -55,7 +55,23 @@ function parseTimecode(value) {
   return value.trim().split(':').reduce((total, part) => total * 60 + Number(part), 0);
 }
 
-async function startArrivalJourney(context, sender, { mobile = false } = {}) {
+const ARRIVAL_VIDEO = {
+  contentId: 'plex:55854',
+  query: 'arrival',
+  surfaceSelector: '.video-player',
+  nativeSelector: '.video-player video',
+};
+
+const FAITH_AUDIO = {
+  contentId: 'plex:584614',
+  query: 'Faith',
+  // AudioPlayer's production renderer owns this scoped native node; do not
+  // infer playback from ambient audio elements elsewhere on the screen.
+  surfaceSelector: '.audio-player',
+  nativeSelector: '.audio-player audio',
+};
+
+async function startArrivalJourney(context, sender, { mobile = false, media = ARRIVAL_VIDEO } = {}) {
   const receiver = await context.newPage();
   const loads = [];
   sender.on('request', request => {
@@ -70,7 +86,7 @@ async function startArrivalJourney(context, sender, { mobile = false } = {}) {
   }), { timeout: 30000 }).toBe(true);
 
   let searchInput;
-  let arrivalResult;
+  let result;
   if (mobile) {
     // On phones the dock intentionally exposes only a Search launcher; the
     // ordinary mobile destination control lives inside SearchMode.
@@ -83,7 +99,7 @@ async function startArrivalJourney(context, sender, { mobile = false } = {}) {
     await sender.getByTestId('picker-submit').click();
     await expect(sender.getByTestId('destination-line-name')).toHaveText('Acceptance receiver');
     searchInput = sender.getByTestId('search-mode-input');
-    arrivalResult = sender.getByTestId('search-mode-result-plex:55854');
+    result = sender.getByTestId(`search-mode-result-${media.contentId}`);
   } else {
     await expect(sender.getByTestId('cast-target-chip')).toBeVisible({ timeout: 30000 });
     await sender.getByTestId('cast-target-chip').click();
@@ -93,28 +109,30 @@ async function startArrivalJourney(context, sender, { mobile = false } = {}) {
     await sender.getByTestId('cast-target-chip').click();
     await expect(sender.getByTestId('cast-popover')).toBeHidden();
     searchInput = sender.getByRole('textbox', { name: 'Search media…' });
-    arrivalResult = sender.getByTestId('combobox-option-plex:55854');
+    result = sender.getByTestId(`combobox-option-${media.contentId}`);
   }
 
-  await searchInput.fill('arrival');
-  await expect(arrivalResult).toBeVisible({ timeout: 30000 });
-  await arrivalResult.click();
+  await searchInput.fill(media.query);
+  await expect(result).toBeVisible({ timeout: 30000 });
+  await result.click();
   await expect.poll(() => loads.length, { timeout: 10000 }).toBe(1);
 
-  const video = receiver.locator('.video-player video');
-  await expect(video).toBeVisible({ timeout: 60000 });
-  await expect.poll(() => video.evaluate(element => element.readyState >= 2
+  const surface = receiver.locator(media.surfaceSelector);
+  const native = receiver.locator(media.nativeSelector);
+  await expect(surface).toBeVisible({ timeout: 60000 });
+  await expect(native).toHaveCount(1);
+  await expect.poll(() => native.evaluate(element => element.readyState >= 2
     && !element.paused && element.currentTime > 0), { timeout: 30000 }).toBe(true);
-  const startupNativeTime = await video.evaluate(element => element.currentTime);
+  const startupNativeTime = await native.evaluate(element => element.currentTime);
   await expect.poll(async () => (await readReceiverState(sender))?.snapshot?.currentItem?.contentId)
-    .toBe('plex:55854');
+    .toBe(media.contentId);
   await expect.poll(async () => {
-    const native = await video.evaluate(element => ({ paused: element.paused, currentTime: element.currentTime }));
+    const nativeState = await native.evaluate(element => ({ paused: element.paused, currentTime: element.currentTime }));
     const receiverState = await readReceiverState(sender);
     return {
-      nativePaused: native.paused,
-      nativeTime: native.currentTime,
-      nativeAdvancing: !native.paused && native.currentTime > startupNativeTime + 1,
+      nativePaused: nativeState.paused,
+      nativeTime: nativeState.currentTime,
+      nativeAdvancing: !nativeState.paused && nativeState.currentTime > startupNativeTime + 1,
       receiverState: receiverState?.snapshot?.state ?? null,
       receiverPosition: receiverState?.snapshot?.position ?? null,
     };
@@ -129,7 +147,7 @@ async function startArrivalJourney(context, sender, { mobile = false } = {}) {
     await sender.getByTestId('search-mode-close').click();
     await expect(sender.getByTestId('search-mode')).toBeHidden();
   }
-  return { receiver, video, loads };
+  return { receiver, video: native, native, loads };
 }
 
 async function openPeekControls(sender, navTestId = 'app-nav-fleet') {
@@ -142,9 +160,9 @@ async function openPeekControls(sender, navTestId = 'app-nav-fleet') {
   return sender.getByTestId('np-toggle');
 }
 
-async function runPausedControlsJourney(context, sender, navTestId, mobile = false) {
+async function runPausedControlsJourney(context, sender, navTestId, mobile = false, media = ARRIVAL_VIDEO) {
   test.setTimeout(150000);
-  const { receiver, video, loads } = await startArrivalJourney(context, sender, { mobile });
+  const { receiver, native, loads } = await startArrivalJourney(context, sender, { mobile, media });
   const toggle = await openPeekControls(sender, navTestId);
   await expect(toggle).toHaveAttribute('aria-label', 'Pause');
   await expect(toggle).toBeEnabled();
@@ -171,39 +189,45 @@ async function runPausedControlsJourney(context, sender, navTestId, mobile = fal
   expect(await pauseResponse.json()).toMatchObject({ ok: true, commandId: pause.postDataJSON().commandId });
   await expect.poll(async () => (await readReceiverState(sender))?.snapshot?.state, { timeout: 15000 })
     .toBe('paused');
-  await expect.poll(() => video.evaluate(element => element.paused), { timeout: 15000 }).toBe(true);
+  await expect.poll(() => native.evaluate(element => element.paused), { timeout: 15000 }).toBe(true);
 
   const slider = sender.getByRole('slider', { name: 'Seek', exact: true });
   await expect(slider).toBeVisible();
-  const fixedPausedPosition = await video.evaluate(element => element.currentTime);
+  const fixedPausedPosition = await native.evaluate(element => element.currentTime);
   const backTen = sender.getByTestId('np-rew');
   await expect(backTen).toBeEnabled();
   const forward = await issueThroughControl(sender, 'seekRel', () => sender.getByTestId('np-ffw').click());
   expect(forward.value).toBe(10);
-  await expectSeekState(video, slider, fixedPausedPosition + 10, true);
+  await expectSeekState(native, slider, fixedPausedPosition + 10, true);
 
   const backward = await issueThroughControl(sender, 'seekRel', () => backTen.click());
   expect(backward.value).toBe(-10);
-  await expectSeekState(video, slider, fixedPausedPosition, true);
+  await expectSeekState(native, slider, fixedPausedPosition, true);
 
   await expect(slider).not.toHaveAttribute('aria-disabled', 'true');
   const absoluteFraction = 0.35;
-  const absoluteTarget = Math.round(Number(await slider.getAttribute('aria-valuemax')) * absoluteFraction);
-  expect(Math.abs(absoluteTarget - fixedPausedPosition)).toBeGreaterThan(60);
+  const sliderDuration = Number(await slider.getAttribute('aria-valuemax'));
+  // These are causal-distance checks, not movie-length requirements: keep a
+  // substantial fraction for the two deliberately distinct targets, and a
+  // smaller but still observable distance from the original paused position.
+  const farSeekDistance = Math.min(60, sliderDuration * 0.15);
+  const postDragMovementDistance = Math.min(60, sliderDuration * 0.05);
+  const absoluteTarget = Math.round(sliderDuration * absoluteFraction);
+  expect(Math.abs(absoluteTarget - fixedPausedPosition)).toBeGreaterThan(farSeekDistance);
   const absoluteBounds = await slider.boundingBox();
   expect(absoluteBounds).not.toBeNull();
   const absolute = await issueThroughControl(sender, 'seekAbs', () => slider.click({
     position: { x: absoluteBounds.width * absoluteFraction, y: absoluteBounds.height / 2 },
   }));
   expect(Math.abs(absolute.value - absoluteTarget)).toBeLessThanOrEqual(1);
-  expect(absolute.value).toBeGreaterThan(fixedPausedPosition + 60);
-  await expectSeekState(video, slider, absolute.value, true);
+  expect(absolute.value).toBeGreaterThan(fixedPausedPosition + farSeekDistance);
+  await expectSeekState(native, slider, absolute.value, true);
 
   const sliderBounds = await slider.boundingBox();
   expect(sliderBounds).not.toBeNull();
   const dragFraction = 0.12;
-  const dragTarget = Math.round(Number(await slider.getAttribute('aria-valuemax')) * dragFraction);
-  expect(Math.abs(dragTarget - absolute.value)).toBeGreaterThan(60);
+  const dragTarget = Math.round(sliderDuration * dragFraction);
+  expect(Math.abs(dragTarget - absolute.value)).toBeGreaterThan(farSeekDistance);
   const dragX = sliderBounds.x + sliderBounds.width * dragFraction;
   const dragY = sliderBounds.y + sliderBounds.height / 2;
   const elapsed = sender.getByTestId('np-seek-elapsed');
@@ -217,15 +241,15 @@ async function runPausedControlsJourney(context, sender, navTestId, mobile = fal
     await sender.mouse.up();
   });
   expect(Math.abs(drag.value - dragTarget)).toBeLessThanOrEqual(1);
-  expect(Math.abs(drag.value - fixedPausedPosition)).toBeGreaterThan(60);
-  await expectSeekState(video, slider, drag.value, true);
+  expect(Math.abs(drag.value - fixedPausedPosition)).toBeGreaterThan(postDragMovementDistance);
+  await expectSeekState(native, slider, drag.value, true);
 
-  const beforeResumeTime = await video.evaluate(element => element.currentTime);
+  const beforeResumeTime = await native.evaluate(element => element.currentTime);
   await expect(toggle).toHaveAttribute('aria-label', 'Play');
   await issueThroughControl(sender, 'play', () => toggle.click());
   await expect.poll(async () => {
     const receiverState = await readReceiverState(sender);
-    const native = await video.evaluate(element => ({
+    const nativeState = await native.evaluate(element => ({
       paused: element.paused,
       currentTime: element.currentTime,
       seeking: element.seeking,
@@ -234,16 +258,16 @@ async function runPausedControlsJourney(context, sender, navTestId, mobile = fal
     return {
       receiverState: receiverState?.snapshot?.state ?? null,
       receiverPosition: receiverState?.snapshot?.position ?? null,
-      nativePaused: native.paused,
-      nativeTime: native.currentTime,
-      nativeSeeking: native.seeking,
-      nativeReadyState: native.readyState,
+      nativePaused: nativeState.paused,
+      nativeTime: nativeState.currentTime,
+      nativeSeeking: nativeState.seeking,
+      nativeReadyState: nativeState.readyState,
     };
   }, { timeout: 15000 }).toMatchObject({
     receiverState: 'playing',
     nativePaused: false,
   });
-  await expect.poll(() => video.evaluate((element, time) => !element.paused
+  await expect.poll(() => native.evaluate((element, time) => !element.paused
     && element.currentTime > time + 1, beforeResumeTime), { timeout: 15000 }).toBe(true);
 
   expect(loads).toHaveLength(1);
@@ -254,6 +278,10 @@ test('Peek Pause, Resume, and Seek control the actual receiver video while pause
   await runPausedControlsJourney(context, sender, 'app-nav-fleet');
 });
 
+test('Peek Pause, Resume, and Seek control the actual Faith audio while paused', async ({ context, page: sender }) => {
+  await runPausedControlsJourney(context, sender, 'app-nav-fleet', false, FAITH_AUDIO);
+});
+
 for (const { label, viewport, navTestId, mobile } of [
   { label: 'phone', viewport: { width: 390, height: 844 }, navTestId: 'app-tab-fleet', mobile: true },
   { label: 'tablet', viewport: { width: 820, height: 1180 }, navTestId: 'app-nav-fleet', mobile: false },
@@ -262,6 +290,10 @@ for (const { label, viewport, navTestId, mobile } of [
     test.use({ viewport });
     test('Pause/Resume/Seek control the actual receiver video while paused', async ({ context, page: sender }) => {
       await runPausedControlsJourney(context, sender, navTestId, mobile);
+    });
+
+    test('Pause/Resume/Seek control the actual Faith audio while paused', async ({ context, page: sender }) => {
+      await runPausedControlsJourney(context, sender, navTestId, mobile, FAITH_AUDIO);
     });
   });
 }
