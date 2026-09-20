@@ -37,3 +37,18 @@
 - Addressed the remaining programmatic-Back race: direct `pop()` and queued-pop replay now mark traversal pending before every `history.back()`. Latest `push`/`replace`/area intent is therefore held until that specific authoritative popstate arrives.
 - Added RED/GREEN coverage for direct Back followed by a latest push and for a queued second Back followed by a latest push; both prove the later intent wins only after the correct popstate. The depth-one replace-to-Home case remains synchronous and covered by its existing provider test.
 - RED: 2 focused failures. GREEN: focused navigation suite — 7 files, 61 tests passed. Scoped ESLint and `git diff --check` passed. Full Playwright remains intentionally deferred.
+
+## Detached runtime acceptance — blocked
+
+- Runtime spec commit: `d33153933a5adb234557816db19f533c8c254669` (`test(media): cover navigation history acceptance`). Detached clean source: `/tmp/daylight-media-navigation-acceptance` at that SHA. Build passed; preview artifact: `/tmp/daylight-media-preview-CAHkv9`; server: `http://127.0.0.1:40479`.
+- Command: `BASE_URL=http://127.0.0.1:40479 npx playwright test tests/live/flow/media/media-app-navigation-history.runtime.test.mjs --workers=1 --reporter=line`.
+- Result: 6 passed, 1 failed in 1.3m. The phone/tablet/laptop primary ownership, actual-origin Back, reselect, and direct-link cases passed before the failure; the phone SearchMode overlay case failed at `media-app-navigation-history.runtime.test.mjs:90`.
+- Defect: after opening phone SearchMode, opening Destination Sheet, then pressing Escape, `destination-sheet` closes **and `search-mode` is absent**. Required behavior is that Escape closes only the sheet while SearchMode remains mounted; this blocks RELY.10a/AC3 acceptance. No product patch was attempted.
+- Raw artifacts retained: `/tmp/daylight-media-navigation-acceptance/test-results/live-flow-media-media-app--266b1--sheet-Escape-keeps-it-open/error-context.md` and `test-failed-1.png`; build provenance is in `/tmp/daylight-media-preview-CAHkv9/acceptance-preview-provenance.json`.
+
+## Runtime defect repair RED/GREEN
+
+- Root cause: Mantine Modal's capture-phase Escape closed/unregistered DestinationLine's managed layer before `DismissStackProvider` saw the same event at document bubble, allowing base route Back to fire and unmount SearchMode.
+- Repair: `DestinationLine` disables Mantine `closeOnEscape` and registers as an unmanaged shell layer, giving the shell exactly one Escape owner.
+- Browser RED is the detached runtime failure above. A real-component DestinationLine + Mantine Modal + DismissStack integration test validates sheet-first then base-second Escape ownership; Happy DOM does not reproduce Mantine's production capture/bubble flush timing pre-fix, so that test passes on both sides while the browser result remains the causal RED.
+- Focused GREEN: DestinationLine integration/component, ContentCombobox, and DismissStack suites — 44 tests passed. Scoped ESLint and `git diff --check` passed. Ledger unchanged; detached runtime re-run remains required.
