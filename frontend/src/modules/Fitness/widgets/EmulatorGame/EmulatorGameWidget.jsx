@@ -398,13 +398,24 @@ export default function EmulatorGameWidget({ fitnessContext, deviceId = null, on
     };
   }, [activeGate, logger]);
 
-  // Overlay data bag for the console's `session.coins` slot. Only supplied for a
-  // live coin gate; undefined otherwise so EmulatorConsole keeps its '—' fallback.
+  // Session overlay data: the coin placeholder (only while a coin gate is
+  // live) plus nothing else here — player/system_label/timer are passed as
+  // their own props below so EmulatorConsole can merge them consistently
+  // whether they come from this widget or a future non-Fitness host.
   const overlayData = useMemo(() => (
     activeGate?.mode === 'coin-metered' && coins != null
       ? { 'session.coins': coins }
       : undefined
   ), [activeGate, coins]);
+
+  // Pre-formatted for the session badge — clock TEXT plus urgency/staleness,
+  // computed once here from the same usePlayBudget derivation the deleted
+  // box used, never recomputed inside EmulatorConsole.
+  const sessionTimer = useMemo(() => (
+    playBudget.visible
+      ? { text: formatClock(playBudget.ms), urgency: playBudget.urgency ?? null, stale: playBudget.stale }
+      : null
+  ), [playBudget.visible, playBudget.ms, playBudget.urgency, playBudget.stale]);
 
   if (error) return <div className="fitness-emulator__error">Video games unavailable: {error}</div>;
   if (!library) return <div className="fitness-emulator__loading">Loading…</div>;
@@ -455,24 +466,14 @@ export default function EmulatorGameWidget({ fitnessContext, deviceId = null, on
             overlayData={overlayData}
             autosaveSeconds={autosaveSeconds}
             nowPlaying={launch.person}
-            playStartedAt={launch.startedAt}
+            systemLabel={playBudget.systemLabel}
+            sessionTimer={sessionTimer}
+            sessionOverlayConfig={playBudget.overlayConfig}
             resolveMediaUrl={(p) => DaylightMediaPath(p)}
             showInputActivity={settings.inputActivityLed !== false}
             onPlayStateChange={handlePlayStateChange}
             onExit={handleExitGame}
           />
-          {playBudget.visible && (
-            <div
-              className={`fitness-emulator-play-budget${playBudget.urgency ? ` is-${playBudget.urgency}` : ''}${playBudget.stale ? ' is-stale' : ''}`}
-              data-testid="play-budget"
-              role="status"
-              aria-live="polite"
-            >
-              <strong>{formatClock(playBudget.ms)}</strong>
-              <span>{playBudget.stale ? 'meter offline' : playBudget.label}</span>
-              {playBudget.warning && <small>{playBudget.warning}</small>}
-            </div>
-          )}
           {anonymousSaveGame && (
             <PlayerSelect
               visible={playerSelectOpen}
