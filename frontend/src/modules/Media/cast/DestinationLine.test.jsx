@@ -92,8 +92,12 @@ describe('DestinationLine', () => {
   it('tapping the line opens the device sheet', async () => {
     renderLine();
     expect(screen.queryByTestId('destination-sheet')).toBeNull();
-    fireEvent.click(screen.getByTestId('destination-line'));
+    const line = screen.getByTestId('destination-line');
+    expect(line).toHaveAttribute('data-content-combobox-retained-boundary');
+    expect(line).toHaveAttribute('data-ignore-outside-clicks');
+    fireEvent.click(line);
     expect(await screen.findByTestId('destination-sheet')).toBeInTheDocument();
+    expect(screen.getByTestId('destination-sheet')).toHaveAttribute('data-content-combobox-retained-boundary');
     expect(screen.getByTestId('picker-stub-pick')).toBeInTheDocument();
   });
 

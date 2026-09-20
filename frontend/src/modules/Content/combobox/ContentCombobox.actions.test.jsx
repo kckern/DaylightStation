@@ -2,10 +2,10 @@
 // The regression here is browser event order: pointerdown moves focus before
 // click, so an action trigger must retain the typed combobox session until its
 // explicit menu action runs.
-import React from 'react';
+import React, { useState } from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { act, createEvent, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { MantineProvider } from '@mantine/core';
+import { MantineProvider, Modal } from '@mantine/core';
 import { ContentCombobox } from './ContentCombobox.jsx';
 
 vi.mock('../../../lib/logging/singleton.js', () => {
@@ -18,6 +18,33 @@ vi.mock('../../../lib/logging/singleton.js', () => {
 
 const leaf = { id: 'plex:leaf-1', title: 'Bluey', source: 'plex', type: 'episode' };
 const collection = { id: 'plex:collection-1', title: 'Bluey collection', source: 'plex', type: 'collection', isContainer: true };
+
+function DestinationBoundary() {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button
+        type="button"
+        data-testid="destination-boundary"
+        data-content-combobox-retained-boundary
+        data-ignore-outside-clicks
+        onClick={() => setOpen(true)}
+      >
+        Destination
+      </button>
+      <Modal opened={open} onClose={() => setOpen(false)} transitionProps={{ duration: 0 }}>
+        <button
+          type="button"
+          data-testid="destination-boundary-sheet"
+          data-content-combobox-retained-boundary
+          onClick={() => setOpen(false)}
+        >
+          Destination sheet
+        </button>
+      </Modal>
+    </>
+  );
+}
 
 function jsonResponse(items) {
   return Promise.resolve({ ok: true, json: () => Promise.resolve({ items }) });
@@ -73,6 +100,7 @@ async function renderSearchedCombobox(props = {}) {
           selectContainers
           {...props}
         />
+        <DestinationBoundary />
         <button type="button" data-testid="outside-focus">Outside</button>
         <div data-testid="outside-surface" />
       </>
@@ -108,6 +136,21 @@ describe('ContentCombobox result actions — real focus ownership', () => {
     expect(onMore).toHaveBeenCalledWith('add', leaf);
     await waitFor(() => expect(input).toHaveValue('bluey'));
     expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it('retains query/results through two destination-boundary pointer cycles but closes on ordinary outside pointer', async () => {
+    const { input } = await renderSearchedCombobox();
+    const destination = screen.getByTestId('destination-boundary');
+
+    for (let count = 0; count < 2; count += 1) {
+      pointerActivate(destination);
+      pointerActivate(await screen.findByTestId('destination-boundary-sheet'));
+      expect(input).toHaveValue('bluey');
+      expect(screen.getByTestId('result-more-plex:leaf-1')).toBeInTheDocument();
+    }
+
+    pointerActivate(screen.getByTestId('outside-surface'));
+    await waitFor(() => expect(input).toHaveValue(''));
   });
 
   it('treats keyboard focus on More actions as internal before the portaled menu opens', async () => {

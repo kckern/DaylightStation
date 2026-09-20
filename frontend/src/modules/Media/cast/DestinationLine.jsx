@@ -74,6 +74,8 @@ export function DestinationLine({ surface } = {}) {
       <button
         type="button"
         data-testid="destination-line"
+        data-content-combobox-retained-boundary
+        data-ignore-outside-clicks
         className="cast-destination-line"
         onClick={() => setOpen(true)}
       >
@@ -88,7 +90,7 @@ export function DestinationLine({ surface } = {}) {
         zIndex={DESTINATION_MODAL_Z_INDEX}
         transitionProps={{ duration: 0 }}
       >
-        <div data-testid="destination-sheet">
+        <div data-testid="destination-sheet" data-content-combobox-retained-boundary>
           {/* intent="destination": this pick only changes the preferred
               target (submit() is a no-op dispatch here per the hasContent
               guard) — the chrome must say "Set destination", never "Cast",

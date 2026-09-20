@@ -150,6 +150,7 @@ export function ContentCombobox({
   // outside focus move, so it needs one synchronous action marker.
   const moreMenuActionRef = useRef(false);
   const moreMenuActionKindRef = useRef(null);
+  const retainedBoundaryRef = useRef(false);
   const viewportRef = useRef(null);
   const prevIdxRef = useRef(-1);
   const scrollAnimRef = useRef(null);
@@ -216,10 +217,11 @@ export function ContentCombobox({
       // close even though the user chose an in-surface action. Keep editing
       // alive and restore the outer list; only a genuine external focus exit
       // may take the commit('outside') branch below.
-      if (moreMenuInternalPointerRef.current || moreMenuActionRef.current) {
+      if (moreMenuInternalPointerRef.current || moreMenuActionRef.current || retainedBoundaryRef.current) {
         moreMenuInternalPointerRef.current = false;
         moreMenuActionRef.current = false;
         moreMenuActionKindRef.current = null;
+        retainedBoundaryRef.current = false;
         // Mantine's openDropdown closes over dropdownOpened. Read the store
         // after this close renders, rather than reusing its still-open closure.
         requestAnimationFrame(() => {
@@ -664,6 +666,7 @@ export function ContentCombobox({
             // managed focus legitimately blurs the input, but is not an
             // outside dismissal and must not revert the typed search.
             const enteringMoreTrigger = e.relatedTarget?.closest?.('[data-content-combobox-more-trigger]');
+            const enteringRetainedBoundary = e.relatedTarget?.closest?.('[data-content-combobox-retained-boundary]');
             if (moreMenuActionRef.current) {
               moreMenuActionRef.current = false;
               return;
@@ -671,6 +674,10 @@ export function ContentCombobox({
             if (moreMenuOpenRef.current || enteringMoreTrigger) {
               moreMenuOpenRef.current = true;
               if (enteringMoreTrigger) moreMenuTriggerRef.current = enteringMoreTrigger;
+              return;
+            }
+            if (enteringRetainedBoundary) {
+              retainedBoundaryRef.current = true;
               return;
             }
             // Closing the dropdown routes through onDropdownClose → commit('outside')
