@@ -78,4 +78,16 @@ describe('formatOverlayValue', () => {
     expect(formatOverlayValue('countdown', { text: '--:--', urgency: null, stale: true }))
       .toEqual({ kind: 'stat', text: '--:--', unit: '', urgency: null, stale: true });
   });
+
+  it('defaults missing countdown fields rather than rendering undefined', () => {
+    expect(formatOverlayValue('countdown', {}))
+      .toEqual({ kind: 'stat', text: '--:--', unit: '', urgency: null, stale: false });
+    expect(formatOverlayValue('countdown', { text: '5:00' }))
+      .toEqual({ kind: 'stat', text: '5:00', unit: '', urgency: null, stale: false });
+  });
+
+  it('stringifies a non-object countdown value rather than crashing', () => {
+    expect(formatOverlayValue('countdown', '5:00'))
+      .toEqual({ kind: 'stat', text: '5:00', unit: '', urgency: null, stale: false });
+  });
 });
