@@ -5,6 +5,7 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { useClickOutside } from '@mantine/hooks';
 
 const setScopeKey = vi.fn();
 const info = vi.fn();
@@ -54,6 +55,25 @@ vi.mock('../../../lib/logging/Logger.js', () => ({
 
 import { ScopeChips } from './ScopeChips.jsx';
 
+// ContentCombobox registers Mantine's document-level outside listener for
+// the input and dropdown only. Keep the chips deliberately outside those
+// nodes here: this is the desktop pointer path that previously committed the
+// typed query as an outside dismissal before the scope click could rerun it.
+function DesktopScopeBoundary({ onOutside }) {
+  const [inputNode, setInputNode] = React.useState(null);
+  const [dropdownNode, setDropdownNode] = React.useState(null);
+  useClickOutside(onOutside, ['mousedown'], [inputNode, dropdownNode]);
+
+  return (
+    <>
+      <input ref={setInputNode} data-testid="desktop-query" defaultValue="Frozen" />
+      <div ref={setDropdownNode} data-testid="desktop-dropdown" />
+      <ScopeChips />
+      <button type="button" data-testid="true-outside">Outside</button>
+    </>
+  );
+}
+
 beforeEach(() => {
   scopes = baseScopes;
   currentScopeKey = 'all';
@@ -93,17 +113,29 @@ describe('ScopeChips', () => {
     expect(setScopeKey).not.toHaveBeenCalled();
   });
 
-  it('keeps the search input focus boundary while a pointer selects a parent or child scope', () => {
-    render(<ScopeChips />);
+  it('keeps Frozen query open through Mantine outside-click handling for parent and child scopes', () => {
+    const onOutside = vi.fn();
+    render(<DesktopScopeBoundary onOutside={onOutside} />);
 
     const parentDown = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
-    screen.getByTestId('scope-chip-music').dispatchEvent(parentDown);
+    const parent = screen.getByTestId('scope-chip-music');
+    parent.dispatchEvent(parentDown);
     expect(parentDown.defaultPrevented).toBe(true);
+    expect(onOutside).not.toHaveBeenCalled();
+    expect(screen.getByTestId('desktop-query')).toHaveValue('Frozen');
 
     fireEvent.click(screen.getByTestId('scope-chip-music'));
     const childDown = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
-    screen.getByTestId('scope-chip-music-hymns').dispatchEvent(childDown);
+    const child = screen.getByTestId('scope-chip-music-hymns');
+    child.dispatchEvent(childDown);
     expect(childDown.defaultPrevented).toBe(true);
+    expect(onOutside).not.toHaveBeenCalled();
+    expect(screen.getByTestId('desktop-query')).toHaveValue('Frozen');
+
+    // A real outside click must continue to close; scope chips are the only
+    // additional in-surface targets.
+    fireEvent.mouseDown(screen.getByTestId('true-outside'));
+    expect(onOutside).toHaveBeenCalledTimes(1);
   });
 
   it('tapping a chip calls setScopeKey with its key and logs the selection', () => {

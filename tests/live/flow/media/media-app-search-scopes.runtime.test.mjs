@@ -86,6 +86,10 @@ async function visibleResultKinds(page, isPhone) {
   }), isPhone);
 }
 
+function hasVideoKindSubtitle(subtitle) {
+  return subtitle.split(' · ').some((token) => /^(movie|tv show|series|season|episode|video)$/i.test(token.trim()));
+}
+
 async function closeSearch(page, input, isPhone) {
   if (isPhone) {
     await page.getByTestId('search-mode-close').click();
@@ -145,7 +149,7 @@ for (const [surface, viewport, isPhone] of surfaces) {
     expect(videoResultIds.length, 'the configured Video query should render its actual results').toBeGreaterThan(0);
     const videoKinds = await visibleResultKinds(page, isPhone);
     expect(videoKinds.length, 'each result exposes its dedicated kind subtitle').toBe(videoResultIds.length);
-    expect(videoKinds.every((kind) => /^(movie|tv show|series|season|episode|video)(?:\s|$)/i.test(kind)),
+    expect(videoKinds.every(hasVideoKindSubtitle),
       'the dedicated result-kind subtitles returned by Video scope should identify video kinds').toBe(true);
 
     await closeSearch(page, input, isPhone);
