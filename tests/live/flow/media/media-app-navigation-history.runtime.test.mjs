@@ -110,11 +110,12 @@ for (const [surface, viewport] of surfaces.filter(([surface]) => surface !== 'ph
     await primary(page, surface, 'browse').click();
     await expect(page.getByTestId('browse-view')).toBeVisible();
 
-    const input = page.getByTestId('media-search-input');
+    const input = page.getByRole('textbox', { name: 'Search media…', exact: true });
     await input.fill('Frozen');
-    await expect(page.locator('ul[data-testid="media-search-results"]')).toBeVisible({ timeout: 30000 });
+    const resultOptions = page.locator('[data-testid^="combobox-option-"]');
+    await expect(resultOptions.first()).toBeVisible({ timeout: 30000 });
     await page.keyboard.press('Escape');
-    await expect(page.locator('ul[data-testid="media-search-results"]')).toBeHidden();
+    await expect(resultOptions).toHaveCount(0);
     await expect(input).toHaveValue('Frozen');
     await expect(page).toHaveURL(/view=browse/);
     await page.goBack();
