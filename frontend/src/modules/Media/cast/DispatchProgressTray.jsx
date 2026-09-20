@@ -49,8 +49,22 @@ function rowCopy(d, phase, name) {
     case 'sent':
       return { primary: `Sent to ${name}`, secondary: d.title ?? null };
     case 'confirmed':
+      if (d.operation === 'add') {
+        return {
+          primary: d.title ? `Added ${d.title} to ${name}` : `Added to ${name}`,
+          secondary: Number.isInteger(d.outcomeIdentity?.queueLength)
+            ? `${d.outcomeIdentity.queueLength} items queued`
+            : null,
+        };
+      }
       return { primary: `▶ Playing on ${name}`, secondary: d.title ?? null };
     case 'unconfirmed':
+      if (d.operation === 'add') {
+        return {
+          primary: `The item may not have been added to ${name}`,
+          secondary: d.title ?? null,
+        };
+      }
       return {
         primary: 'The TV may not have started playing — check it or open the remote',
         secondary: d.title ? `Sent to ${name} · ${d.title}` : `Sent to ${name}`,

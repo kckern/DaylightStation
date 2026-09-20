@@ -3836,6 +3836,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     prewarmService,
     sessionControlService,
     commandHandlerLivenessService,
+    deviceLivenessService,
     logger: rootLogger.child({ module: 'wake-and-load' })
   });
 

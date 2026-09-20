@@ -199,6 +199,7 @@ const Player = forwardRef(function Player(props, ref) {
     pushOnDeck,
     flashOnDeck,
     playNow,
+    append,
     adoptQueueSnapshot,
     setShaderUserCycled,
     isShuffle,
@@ -1973,7 +1974,7 @@ const Player = forwardRef(function Player(props, ref) {
   const handleQueueOp = useCallback(async (payload = {}) => {
     const { op, contentId, shader: requestedShader } = payload;
     if (!contentId) return;
-    if (op !== 'play-now' && op !== 'play-next') return;
+    if (op !== 'play-now' && op !== 'play-next' && op !== 'add') return;
 
     let info;
     try {
@@ -1981,6 +1982,7 @@ const Player = forwardRef(function Player(props, ref) {
     } catch {
       // Without a mediaUrl we can't safely play. Bail out rather than push
       // a half-built item that will fail at the renderer.
+      payload.onError?.({ code: 'CONTENT_RESOLVE_FAILED', error: 'Content could not be resolved' });
       return;
     }
     const item = {
@@ -1990,6 +1992,23 @@ const Player = forwardRef(function Player(props, ref) {
       thumbnail: info.thumbnail || `/api/v1/display/${contentId}`,
       title: info.title || contentId,
     };
+
+    // Add mutates only the queue tail. In particular, it must not run the
+    // external play/play-next shader reset below: that changes the active
+    // playback owner's presentation and issues an unrelated queue revision.
+    if (op === 'add') {
+      append(item, {
+        onApplied: ({ item: appliedItem, queue: appliedQueue }) => payload.onApplied?.({
+          ownerInstanceId: playerInstanceId,
+          playbackRevision: issuedOwnerRevisionsRef.current.playbackRevision,
+          queueRevision: issuedOwnerRevisionsRef.current.queueRevision,
+          contentId: appliedItem.contentId,
+          queueItemId: appliedItem.queueItemId,
+          queueLength: appliedQueue.items.length,
+        }),
+      });
+      return;
+    }
 
     // External queue ops (NFC, voice, button) reset the shader to either the
     // request's override or 'default'. Without this, the shader sticks to
@@ -2038,7 +2057,7 @@ const Player = forwardRef(function Player(props, ref) {
     }
 
     pushOnDeck(item, { displaceToQueue: !!onDeckCfg?.displace_to_queue });
-  }, [playQueue, onDeck, onDeckCfg, pushOnDeck, flashOnDeck, playNow, queueShader, classes, setShader, setShaderUserCycled]);
+  }, [playQueue, onDeck, onDeckCfg, pushOnDeck, flashOnDeck, playNow, append, playerInstanceId, queueShader, classes, setShader, setShaderUserCycled]);
 
   // Register once in mount order while the ref supplies the latest stateful
   // callback. Re-registering on every queue change would let a background

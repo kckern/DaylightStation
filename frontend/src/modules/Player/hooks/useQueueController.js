@@ -75,6 +75,7 @@ export function useQueueController({ play, queue, clear, shuffle, onError, conte
   const [onDeckFlashKey, setOnDeckFlashKey] = useState(0);
   const adoptedInputsRef = useRef(null);
   const queueInitEpochRef = useRef(0);
+  const pendingAppendResultsRef = useRef(new Map());
 
   // The Player is the owner of these actions.  Issue counters before React
   // queues its state update so a completed action burst remains visible even
@@ -114,6 +115,20 @@ export function useQueueController({ play, queue, clear, shuffle, onError, conte
     issueOwnerRevision({ playback: true, queue: true });
     setQueue((prev) => prev.length > 0 ? [ownedItem, ...prev.slice(1)] : [ownedItem]);
     setOriginalQueue((prev) => prev.length > 0 ? [ownedItem, ...prev.slice(1)] : [ownedItem]);
+  }, [issueOwnerRevision]);
+
+  // Append without changing the selected/current visit. The completion callback
+  // is deferred until queueSnapshot contains the newly owned item, so callers
+  // can distinguish an issued React update from a genuine post-mutation result.
+  const append = useCallback((item, { onApplied } = {}) => {
+    const ownedItem = { ...item, guid: guid() };
+    if (typeof onApplied === 'function') {
+      pendingAppendResultsRef.current.set(ownedItem.guid, onApplied);
+    }
+    issueOwnerRevision({ queue: true });
+    setQueue((prev) => [...prev, ownedItem]);
+    setOriginalQueue((prev) => [...prev, ownedItem]);
+    return ownedItem.guid;
   }, [issueOwnerRevision]);
 
   const adoptQueueSnapshot = useCallback((snapshot) => {
@@ -542,6 +557,15 @@ export function useQueueController({ play, queue, clear, shuffle, onError, conte
       upNextCount: items.filter((item) => item.priority === 'upNext').length, executionOrder: order };
   }, [originalQueue, playQueue, onDeck]);
 
+  useEffect(() => {
+    for (const [queueItemId, onApplied] of pendingAppendResultsRef.current) {
+      const item = queueSnapshot.items.find((candidate) => candidate.queueItemId === queueItemId);
+      if (!item) continue;
+      pendingAppendResultsRef.current.delete(queueItemId);
+      try { onApplied({ item, queue: queueSnapshot }); } catch { /* result observers are advisory */ }
+    }
+  }, [queueSnapshot]);
+
   // Trigger end-behavior side-effect dispatcher.
   // When the queue advances onto a virtual side-effect tail item, POST to the
   // backend (fire-and-forget) and advance past it. Skips media mount entirely.
@@ -621,6 +645,7 @@ export function useQueueController({ play, queue, clear, shuffle, onError, conte
     clearOnDeck,
     flashOnDeck,
     playNow,
+    append,
     adoptQueueSnapshot,
   };
 }
