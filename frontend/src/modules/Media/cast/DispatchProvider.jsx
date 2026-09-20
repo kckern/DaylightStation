@@ -5,13 +5,14 @@
 // (C6.4). M0 blocks destructive transfer until an owner-qualified handoff
 // exists; explicit fork/keep dispatch remains available.
 // Hand-off sends the full SessionSnapshot with mode:"adopt" (§4.7).
-import React, { createContext, useCallback, useEffect, useMemo, useReducer, useRef } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef } from 'react';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import { subscribeTopicKind } from '../net/ws.js';
 import { reduceDispatch, initialDispatchState } from './dispatchReducer.js';
 import { buildDispatchUrl } from './dispatchUrl.js';
 import { TIMING } from '../constants.js';
 import mediaLog from '../logging/mediaLog.js';
+import { PeekContext } from '../peek/PeekContext.js';
 
 export const DispatchContext = createContext(null);
 
@@ -57,6 +58,7 @@ function buildDedupKey({ targetIds, play, queue, mode, shader, volume, shuffle, 
 
 export function DispatchProvider({ children }) {
   const [state, dispatch] = useReducer(reduceDispatch, initialDispatchState);
+  const peek = useContext(PeekContext);
   // Fan-out rows retain independent replay inputs so one failed target can
   // be retried without replaying successful siblings.
   const attemptsRef = useRef(new Map());
@@ -76,13 +78,29 @@ export function DispatchProvider({ children }) {
         sessionId, ownerId, ownerInstanceId, playbackRevision, queueRevision } = msg;
       if (typeof dispatchId !== 'string' || !dispatchId) return;
       if (!step || !status) return;
+      const attempt = attemptsRef.current.get(dispatchId);
+      if (step === 'playback' && status === 'confirmed'
+        && attempt?.play && attempt.targetIds?.[0] === msg.deviceId
+        && ownerId === msg.deviceId
+        && typeof sessionId === 'string' && sessionId) {
+        peek?.recordConfirmedDispatch?.({
+          deviceId: msg.deviceId,
+          ownerId,
+          playback: {
+            sessionId,
+            contentId: attempt.play,
+            ...(typeof ownerInstanceId === 'string' && ownerInstanceId ? { ownerInstanceId } : {}),
+            ...(Number.isInteger(playbackRevision) ? { playbackRevision } : {}),
+          },
+        });
+      }
       mediaLog.dispatchStep({ dispatchId, step, status, elapsedMs });
       dispatch({
         type: 'STEP', dispatchId, step, status, elapsedMs, error, operation, queueLength,
         sessionId, ownerId, ownerInstanceId, playbackRevision, queueRevision,
       });
     });
-  }, []);
+  }, [peek]);
 
   const dispatchToTarget = useCallback(async ({ targetIds, play, queue, mode, shader, volume, shuffle, snapshot, title }, { bypassDedupe = false } = {}) => {
     if (!Array.isArray(targetIds) || targetIds.length === 0) return [];

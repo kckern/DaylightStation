@@ -138,15 +138,20 @@ const EMPTY_FLEET = new Map();
 
 function matchesSteeringPlayback(entry, activity) {
   const playback = activity?.playback;
+  const provenanceOwner = activity?.ownerId;
   const snapshot = entry?.snapshot;
+  const owner = snapshot?.meta?.playbackOwner;
   return !entry?.offline
     && !entry?.isStale
     && snapshot?.state === 'playing'
+    && (provenanceOwner == null || provenanceOwner === snapshot?.meta?.ownerId)
     && typeof playback?.sessionId === 'string'
     && playback.sessionId === snapshot.sessionId
     && typeof playback?.contentId === 'string'
     && playback.contentId === snapshot.currentItem?.contentId
-    && (playback.queueItemId == null || playback.queueItemId === snapshot.currentItem?.queueItemId);
+    && (playback.queueItemId == null || playback.queueItemId === snapshot.currentItem?.queueItemId)
+    && (playback.ownerInstanceId == null || playback.ownerInstanceId === owner?.ownerInstanceId)
+    && (playback.playbackRevision == null || playback.playbackRevision === owner?.playbackRevision);
 }
 
 // Unknown fleet state is not receiver-idle, but it is not a positive reason
