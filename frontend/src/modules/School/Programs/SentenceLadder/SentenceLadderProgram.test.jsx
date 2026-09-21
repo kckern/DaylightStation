@@ -207,7 +207,7 @@ describe('identity', () => {
     expect(dayMock).not.toHaveBeenCalled();
     expect(screen.queryByRole('button', { name: 'Review' })).toBeNull();
 
-    fireEvent.change(screen.getByLabelText(/Type what you hear/i), { target: { value: '한국어 1' } });
+    fireEvent.change(await screen.findByLabelText(/Type what you hear/i), { target: { value: '한국어 1' } });
     fireEvent.click(screen.getByRole('button', { name: 'Submit' }));
     await screen.findByText(/Preview complete/i);
     expect(logMock).not.toHaveBeenCalled();
@@ -975,6 +975,7 @@ describe('repetition, one sentence at a time', () => {
   });
 
   it('Stop actually stops', async () => {
+    window.HTMLMediaElement.prototype.play = vi.fn(() => Promise.resolve());
     dayMock.mockResolvedValue(dayPayload({ queue: [entry(1, 'repetition')] }));
     render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
     fireEvent.click(await screen.findByText('Play'));
