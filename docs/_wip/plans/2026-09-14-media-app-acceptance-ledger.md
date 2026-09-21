@@ -4,6 +4,8 @@
 
 **Contract:** taxonomy §3 and accepted requirements. P0 first, then P1/P2. Each criterion must have evidence of the complete applicable path: user input → target → command → actual player/result → state → displayed feedback. Office is the only physical test screen authorized.
 
+**Stable-core extension gate:** `npm run test:media-p0` composes the deployed accepted and supporting criteria with `P0_EXTENSION_ENTRIES`, then requires the complete manifest to retain every stable-core criterion and its existing journey. Extensions require a journey (`file` and `grep`); duplicate criteria and skipped or empty Playwright reports fail closed. Playwright runs serially with JSON output, saved under `MEDIA_P0_EVIDENCE_DIR`. The initial extension list is empty, so the first run exercises the stable core unchanged.
+
 **Baseline (2026-09-14, 25d5f671c):** Vitest reported 513/513 passing, zero skipped; process exit 0 with worker shutdown timeout warning in persistence.test.js. This is unit evidence only. Browser test inspection found synthetic JavaScript clicks bypassing overlays and title-only playback assertions; these do not prove user journeys. Target-safe runtime baseline stopped after five failures; results are recorded below, with tests not run distinguished from passes.
 
 ## Evidence runs
