@@ -6,17 +6,27 @@ import { Alert, Stack, Title, Text, Button, Group, Image } from '@mantine/core';
 import { IconPlayerPlayFilled, IconPlayerTrackNext, IconRowInsertTop, IconPlaylistAdd, IconAlertCircle } from '@tabler/icons-react';
 import { useContentInfo } from './useContentInfo.js';
 import { useSessionController } from '../controller/useSessionController.js';
+import { useContentDispatch } from '../search/useContentDispatch.js';
 import { resultToQueueInput } from '../search/resultToQueueInput.js';
 import { CastButton } from '../cast/CastButton.jsx';
+import { useNav } from '../shell/NavProvider.jsx';
 import Skeleton from '@/lib/ui/Skeleton.jsx';
 
 export function DetailView({ contentId }) {
   const { info, loading, error } = useContentInfo(contentId);
   const { queue } = useSessionController('local');
+  const { dispatchLeafVerb } = useContentDispatch();
+  const { pop, backDestination } = useNav();
+  const back = (
+    <Button variant="subtle" color="gray" data-testid="detail-back" className="detail-back" onClick={() => pop()}>
+      ← {backDestination ?? 'Home'}
+    </Button>
+  );
 
   if (loading) {
     return (
       <Stack data-testid="detail-loading" gap="md" maw={520}>
+        {back}
         <Skeleton height={280} radius="md" />
         <Skeleton height={28} width="60%" radius="sm" />
         <Skeleton height={44} radius="sm" />
@@ -24,7 +34,8 @@ export function DetailView({ contentId }) {
     );
   }
   if (error) {
-    return (
+    return <Stack data-testid="detail-error-state" gap="md">
+      {back}
       <Alert data-testid="detail-error" color="red" variant="light" icon={<IconAlertCircle size={18} />}>
         Couldn&rsquo;t load this item. Check the connection and try again.
         <details className="error-detail">
@@ -32,14 +43,16 @@ export function DetailView({ contentId }) {
           {error.message}
         </details>
       </Alert>
-    );
+    </Stack>;
   }
-  if (!info) return null;
+  if (!info) return <Stack data-testid="detail-empty" gap="md">{back}</Stack>;
 
-  const input = resultToQueueInput({ id: contentId, ...info }) ?? { contentId };
+  const detailItem = { id: contentId, ...info };
+  const input = resultToQueueInput(detailItem) ?? { contentId };
 
   return (
     <Stack data-testid="detail-view" className="detail-view" gap="md">
+      {back}
       {info.thumbnail && (
         <Image src={info.thumbnail} alt={info.title ?? contentId} className="detail-poster" radius="md" />
       )}
@@ -49,7 +62,7 @@ export function DetailView({ contentId }) {
         <Button
           data-testid="detail-play-now"
           leftSection={<IconPlayerPlayFilled size={18} />}
-          onClick={() => queue.playNow(input, { clearRest: true })}
+          onClick={() => dispatchLeafVerb('playNow', contentId, detailItem)}
         >
           Play Now
         </Button>

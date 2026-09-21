@@ -7,6 +7,8 @@ export class IClientIngressPublications {
   publishHomeline() { throw new Error('publishHomeline must be implemented'); }
   publishDeviceState() { throw new Error('publishDeviceState must be implemented'); }
   publishDeviceAck() { throw new Error('publishDeviceAck must be implemented'); }
+  publishClientControl() { throw new Error('publishClientControl must be implemented'); }
+  publishClientAck() { throw new Error('publishClientAck must be implemented'); }
   publishRelay() { throw new Error('publishRelay must be implemented'); }
   clientMetadata() { throw new Error('clientMetadata must be implemented'); }
 }

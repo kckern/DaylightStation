@@ -100,7 +100,7 @@
 .search-mode {
   position: fixed;
   inset: 0;
-  z-index: 500;
+  z-index: 200;
   display: flex;
   flex-direction: column;
   background: var(--mantine-color-dark-7);

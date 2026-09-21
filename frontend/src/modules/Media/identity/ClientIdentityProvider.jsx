@@ -3,6 +3,7 @@
 // Logs, broadcasts, and external control address this browser by these.
 import React, { createContext, useMemo } from 'react';
 import { STORAGE_KEYS } from '../constants.js';
+import { useControlRegistration } from '../externalControl/useControlRegistration.js';
 
 export const ClientIdentityContext = createContext(null);
 
@@ -18,7 +19,7 @@ function uuidV4() {
 }
 
 export function ClientIdentityProvider({ children }) {
-  const value = useMemo(() => {
+  const identity = useMemo(() => {
     let clientId = localStorage.getItem(STORAGE_KEYS.CLIENT_ID);
     if (!clientId) {
       clientId = uuidV4();
@@ -26,8 +27,16 @@ export function ClientIdentityProvider({ children }) {
     }
     const stored = localStorage.getItem(STORAGE_KEYS.DISPLAY_NAME);
     const displayName = stored || `Client ${clientId.slice(0, 8)}`;
-    return { clientId, displayName };
+    // This is intentionally never persisted: it names the current provider
+    // lifetime on the tab-global socket, while clientId remains the profile
+    // identity shared by same-profile tabs.
+    return { clientId, displayName, controlClientId: uuidV4() };
   }, []);
+  const registration = useControlRegistration(identity.controlClientId);
+  const value = useMemo(() => ({
+    ...identity,
+    controlReady: registration.ready,
+  }), [identity, registration.ready]);
 
   return (
     <ClientIdentityContext.Provider value={value}>

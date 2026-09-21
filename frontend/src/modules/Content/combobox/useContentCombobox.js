@@ -179,7 +179,7 @@ async function fetchSiblingsData(contentId) {
  */
 export function useContentCombobox({
   value, onChange, searchParams = '', fallbackSearchParams, scopeKey, scopeLabel,
-  appResults = false, selectContainers = false, allowFreeform = true, logApp = 'admin',
+  appResults = false, selectContainers = false, allowFreeform = true, logApp = 'admin', retainQueryOnEscape = false,
 }) {
   const log = useMemo(() => getChildLogger({ component: 'useContentCombobox', app: logApp, sessionLog: true }), [logApp]);
   const [state, dispatch] = useReducer(reducer, value ?? '', initialState);
@@ -227,12 +227,20 @@ export function useContentCombobox({
     results: streamResults,
     pending: pendingSources,
     isSearching: streamSearching,
+    error: streamError,
     sourceErrors,
     search: streamSearch,
+    retry: retryStream,
+    cancel: cancelStream = () => {},
   } = useStreamingSearch(SEARCH_STREAM_ENDPOINT, searchParams);
 
   const [batchResults, setBatchResults] = useState([]);
   const [batchLoading, setBatchLoading] = useState(false);
+  // `cancelStream()` deliberately drops the previous request synchronously,
+  // before its 300ms replacement debounce opens. Keep that visible intent
+  // distinct from transport activity: otherwise both consumers briefly claim
+  // a completed empty search during that hand-off.
+  const [debouncePending, setDebouncePending] = useState(false);
   // Pre-cap count of the results last dispatched to the machine (which caps at
   // RENDER_CAP). Lets the UI surface a "showing first N" hint on ANY transport
   // — the SSE stream is uncapped and can blow past the cap, unlike the batch
@@ -291,6 +299,7 @@ export function useContentCombobox({
     // "singalong:" across all sources (junk). Route it as an empty query —
     // same as clearing the box. Scoped "source:term" is left untouched.
     const q = isBareSourcePrefix(text) ? '' : text;
+    setDebouncePending(false);
     log.info('search.dispatch', { text: q, mode, scopeKey: scopeKey ?? null });
     queryRef.current = q;
     // Stamp the scope this dispatch runs under. `searchParams` is read fresh
@@ -304,11 +313,16 @@ export function useContentCombobox({
   }, SEARCH_DEBOUNCE_MS);
 
   const handleInput = useCallback((text) => {
+    // The debounced transport cannot be the boundary of intent ownership: a
+    // previous stream must be retired before its late callback can land under
+    // the newly visible text.
+    cancelStream();
     invalidateBrowseLoads();
     setFellBackToAll(false); // new text invalidates any prior D5 fallback flag
+    setDebouncePending(!isBareSourcePrefix(text) && text.trim().length >= 2);
     dispatch({ type: 'INPUT', text });
     debouncedSearch(text);
-  }, [debouncedSearch]);
+  }, [cancelStream, debouncedSearch]);
 
   // Scope chips change `searchParams`, and nothing re-ran the search: the chip
   // lit up (aria-pressed) directly above a result list that was still whatever
@@ -335,10 +349,14 @@ export function useContentCombobox({
     // Nothing meaningful in the box (closed, cleared, too short, or a bare
     // `source:` prefix) — there is no search to re-run.
     if (isBareSourcePrefix(text) || text.trim().length < 2) return;
+    // Scope changed now; the scoped replacement still debounces, but the old
+    // scope must stop owning callbacks immediately.
+    cancelStream();
     setFellBackToAll(false); // a different scope invalidates the previous widening
+    setDebouncePending(true);
     log.info('search.rerun_for_scope', { textLength: text.length, scopeKey: scopeKey ?? null });
     debouncedSearch(text);
-  }, [searchParams, scopeKey, debouncedSearch, log]);
+  }, [searchParams, scopeKey, cancelStream, debouncedSearch, log]);
 
   // F14: while searching, a `source:term` query scopes the backend search to
   // that one source. Surface the scope so the UI can show a removable chip.
@@ -397,6 +415,7 @@ export function useContentCombobox({
   // timer surviving close would repopulate results while closed.
   const cancelPendingSearch = useCallback(() => {
     queryRef.current = '';
+    setDebouncePending(false);
     debouncedSearch('');
     if (supportsSSE()) streamSearch(''); // hook clears results/pending for short queries
     else setBatchResults([]);
@@ -668,9 +687,9 @@ export function useContentCombobox({
       log.info('freeform.revert_on_close', { discarded: current.search, kept: current.value, reason });
     }
     invalidateBrowseLoads();
-    dispatch({ type: 'CLOSE', reason });
+    dispatch({ type: 'CLOSE', reason, retainSearch: reason === 'escape' && retainQueryOnEscape ? current.search : null });
     cancelPendingSearch();
-  }, [cancelPendingSearch, log, allowFreeform]);
+  }, [cancelPendingSearch, log, allowFreeform, retainQueryOnEscape]);
 
   const select = useCallback((item) => {
     log.info('item_select', { contentId: item.id, title: item.title, prevValue: stateRef.current.value });
@@ -685,7 +704,7 @@ export function useContentCombobox({
   // the CURRENT editing text: queryRef.current is set inside debouncedSearch,
   // so right after handleInput it is stale → searchSettled stays false until the
   // debounce fires AND the transport returns (streamSearching/batchLoading clear).
-  const searchSettled = !streamSearching && !batchLoading
+  const searchSettled = !streamSearching && !batchLoading && !streamError
     && queryRef.current === (state.search ?? '')
     && (state.search ?? '').trim().length >= 2;
   // Mirror into a ref so `commit` reads the latest value without re-creating on
@@ -774,14 +793,14 @@ export function useContentCombobox({
       recoveryRef.current = { key, retried: false, widened: false };
     }
     const recovery = recoveryRef.current;
-    if (stateRef.current.results.length > 0) return; // not empty — nothing to recover from
+    if (rawResults.length > 0 || rawResultCount > 0 || stateRef.current.results.length > 0) return; // not empty — nothing to recover from
 
     // Rung 1: same text, same scope, one more time.
     const erroredSources = (sourceErrors || []).map((e) => e.source);
     if (erroredSources.length > 0 && !recovery.retried) {
       recovery.retried = true;
       log.info('search.retry_after_source_error', { textLength: text.length, sourceErrors: erroredSources });
-      if (supportsSSE()) streamSearch(text);
+      if (supportsSSE()) erroredSources.forEach((source) => retryStream(source));
       else doBatchSearch(text);
       return;
     }
@@ -805,8 +824,8 @@ export function useContentCombobox({
     if (supportsSSE()) streamSearch(text, fallbackSearchParams);
     else doBatchSearch(text, fallbackSearchParams);
   }, [
-    searchSettled, settleBelongsToScope, sourceErrors, searchParams, fallbackSearchParams,
-    scopeKey, scopeLabel, streamSearch, doBatchSearch, log,
+    searchSettled, settleBelongsToScope, sourceErrors, rawResults, rawResultCount, searchParams, fallbackSearchParams,
+    scopeKey, scopeLabel, streamSearch, retryStream, doBatchSearch, log,
   ]);
 
   const commit = useCallback((reason) => {
@@ -849,7 +868,7 @@ export function useContentCombobox({
       case 'revert':
       case 'dismiss':
         log.info(`commit.${decision.action}`, { discarded: s.search, kept: s.value, reason });
-        invalidateBrowseLoads(); dispatch({ type: 'CLOSE' }); cancelPendingSearch();
+        invalidateBrowseLoads(); dispatch({ type: 'CLOSE', retainSearch: reason === 'escape' && retainQueryOnEscape ? s.search : null }); cancelPendingSearch();
         break;
       case 'none':
       default:
@@ -857,7 +876,7 @@ export function useContentCombobox({
         break;
     }
     return decision;
-  }, [selectContainers, select, drill, cancelPendingSearch, log, allowFreeform]);
+  }, [selectContainers, select, drill, cancelPendingSearch, log, allowFreeform, retainQueryOnEscape]);
 
   // ── 6. Title resolution for the committed value ──
   const [resolvedTitle, setResolvedTitle] = useState(() => (
@@ -907,9 +926,11 @@ export function useContentCombobox({
     // meta
     searchSettled,
     resolvedTitle,
-    isSearching: streamSearching || batchLoading,
+    isSearching: streamSearching || batchLoading || debouncePending,
     pendingSources,
     sourceErrors,
+    streamError,
+    retrySource: retryStream,
     // D5: true once this query text has widened from `searchParams` to
     // `fallbackSearchParams` after a clean empty settle. Surfaces use this to
     // render "Nothing in ‹scope› — showing N results from everywhere."

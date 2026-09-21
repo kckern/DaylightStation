@@ -30,6 +30,7 @@ import { contentRequiresCamera } from './contentRequiresCamera.mjs';
 // treat it as an out-of-band event.
 const STEPS = ['power', 'verify', 'volume', 'prepare', 'prewarm', 'load', 'playback'];
 const VOLUME_TIMEOUT_MS = 3000;
+const URL_RECEIVER_ACK_TIMEOUT_MS = 15_000;
 
 export class WakeAndLoadService {
   #deviceService;
@@ -40,6 +41,7 @@ export class WakeAndLoadService {
   #sessionControlService;
   #haGateway;
   #commandHandlerLivenessService;
+  #deviceLivenessService;
   #logger;
   #clock;
   #createDispatchId;
@@ -73,6 +75,7 @@ export class WakeAndLoadService {
     this.#sessionControlService = deps.sessionControlService || null;
     this.#haGateway = deps.haGateway || null;
     this.#commandHandlerLivenessService = deps.commandHandlerLivenessService || null;
+    this.#deviceLivenessService = deps.deviceLivenessService || null;
     this.#logger = deps.logger || console;
     this.#clock = deps.clock;
     this.#createDispatchId = deps.createDispatchId;
@@ -514,6 +517,7 @@ export class WakeAndLoadService {
 
     const screenName = screenPath.replace(/^\/screen\//, '');
     const hasContentQuery = Object.keys(contentQuery).length > 0;
+    const hasAcknowledgedContent = !!resolveContentId(contentQuery);
 
     // --- WS-first delivery ---
     // Gate on TWO signals:
@@ -527,6 +531,8 @@ export class WakeAndLoadService {
     const handlerFresh = liveness ? liveness.isFresh(deviceId) : false;
     let wsDelivered = false;
     let wsSkipReason = null;
+    let outcomeCommandAcknowledged = false;
+    const outcomeBaseline = this.#deviceLivenessService?.getLastSnapshot?.(deviceId)?.snapshot ?? null;
 
     if (warmPrepare) {
       this.#logger.info?.('wake-and-load.load.ws-check', {
@@ -569,13 +575,17 @@ export class WakeAndLoadService {
           // Wait for device-ack from useCommandAckPublisher (frontend emits
           // this once the command reaches a handler).
           const ackStart = this.#clock.now();
-          await this.#eventBus.waitForMessage(
+          const ack = await this.#eventBus.waitForMessage(
             (msg) =>
               msg?.topic === 'device-ack' &&
               msg?.deviceId === deviceId &&
               msg?.commandId === dispatchId,
             4000
           );
+          if (ack?.ok !== true) {
+            throw new Error(ack?.error || ack?.code || 'receiver rejected command');
+          }
+          outcomeCommandAcknowledged = true;
 
           const ackMs = this.#clock.now() - ackStart;
           this.#logger.info?.('wake-and-load.load.ws-ack', { deviceId, dispatchId, ackMs });
@@ -603,12 +613,38 @@ export class WakeAndLoadService {
     // --- FKB loadURL (primary or fallback) ---
     if (!wsDelivered) {
       // verifyAsync: don't block on FKB currentUrl polling. The playback
-      // watchdog (#armPlaybackWatchdog) is the authoritative "user is seeing
-      // media" signal — strictly more useful than currentUrl. The verify
+      // receiver outcome state is the authoritative "user is seeing media"
+      // signal — strictly more useful than currentUrl. The verify
       // poll runs in the background and just logs the outcome.
-      const loadResult = await device.loadContent(screenPath, contentQuery, { verifyAsync: true });
+      // Arm before loadURL: the page can parse the URL and publish its applied
+      // ack before the device adapter's HTTP call returns.
+      const urlAckPromise = hasAcknowledgedContent && this.#eventBus?.waitForMessage
+        ? this.#eventBus.waitForMessage(
+          (msg) => msg?.topic === 'device-ack'
+            && msg?.deviceId === deviceId
+            && msg?.commandId === dispatchId,
+          URL_RECEIVER_ACK_TIMEOUT_MS,
+        ).catch((error) => ({ ok: false, error: error?.message ?? String(error) }))
+        : null;
+      // DeviceContentDispatchService correctly lifts dispatchId out of the
+      // content query into execute options. Put it back only at the receiver
+      // delivery boundary so URL parsers/adapters can publish the same
+      // commandId without contaminating content resolution.
+      const receiverContentQuery = hasAcknowledgedContent
+        ? { ...contentQuery, dispatchId }
+        : contentQuery;
+      const loadResult = await device.loadContent(screenPath, receiverContentQuery, { verifyAsync: true });
 
       if (loadResult.ok) {
+        if (urlAckPromise) {
+          const ack = await urlAckPromise;
+          outcomeCommandAcknowledged = ack?.ok === true;
+          if (!outcomeCommandAcknowledged) {
+            this.#logger.warn?.('wake-and-load.load.url-ack-missing', {
+              deviceId, dispatchId, error: ack?.error,
+            });
+          }
+        }
         const isFkbFallback = !!wsSkipReason;
         result.steps.load = {
           ...loadResult,
@@ -665,6 +701,15 @@ export class WakeAndLoadService {
           this.#logger.info?.('wake-and-load.load.wsFallbackSent', {
             deviceId, dispatchId, contentId: fbContentId,
           });
+          if (urlAckPromise) {
+            const ack = await urlAckPromise;
+            outcomeCommandAcknowledged = ack?.ok === true;
+            if (!outcomeCommandAcknowledged) {
+              this.#logger.warn?.('wake-and-load.load.wsFallback-ack-missing', {
+                deviceId, dispatchId, error: ack?.error,
+              });
+            }
+          }
         }
 
         result.steps.load = {
@@ -696,15 +741,13 @@ export class WakeAndLoadService {
       deviceId, dispatchId, totalElapsedMs: result.totalElapsedMs
     });
 
-    // Arm the playback watchdog — non-blocking. The response returns now;
-    // the watchdog fires asynchronously if playback never starts.
-    // Armed for ANY resolvable content query (queue, play, play-next, …) —
-    // gating on `queue` alone let play-next dispatches fail silently
-    // (2026-07-07 NFC bug: trigger.fired ok:true, nothing played, no alarm).
-    // #armPlaybackWatchdog no-ops when no content id resolves.
+    // Arm the receiver-outcome watchdog — non-blocking. A matching command
+    // acknowledgement is only receipt/application evidence; the user-facing
+    // result waits for a later state from this exact target and owner.
     if (result.ok && !isAdopt) {
-      this.#armPlaybackWatchdog({
-        deviceId, dispatchId, topic, contentQuery
+      this.#armReceiverOutcomeWatchdog({
+        deviceId, dispatchId, topic, contentQuery, outcomeBaseline,
+        commandAcknowledged: outcomeCommandAcknowledged,
       });
     }
 
@@ -772,16 +815,19 @@ export class WakeAndLoadService {
   }
 
   /**
-   * After a successful load, subscribe to playback.log events for N seconds.
-   * If none arrive for the loaded content, log + broadcast a timeout so the
-   * phone UI (or an ops dashboard) can surface the silent failure.
+   * After a successful load, subscribe to the exact target's device-state for
+   * N seconds. A matching command ack gates the observation; Play then needs
+   * target playing state and Add needs a same-owner queue-only revision.
    *
    * Non-blocking: the load() response has already been returned to the caller;
    * this runs asynchronously in the background.
    *
    * @private
    */
-  #armPlaybackWatchdog({ deviceId, dispatchId, topic, contentQuery, timeoutMs = 90_000 }) {
+  #armReceiverOutcomeWatchdog({
+    deviceId, dispatchId, topic, contentQuery, outcomeBaseline,
+    commandAcknowledged, timeoutMs = 90_000,
+  }) {
     if (!this.#eventBus || typeof this.#eventBus.subscribe !== 'function') return;
 
     // Extract content identifiers for watchdog matching. We accept a match
@@ -800,7 +846,9 @@ export class WakeAndLoadService {
       resolveContentId(contentQuery)?.contentId,
     ].filter(Boolean))];
     if (!expectedContentIds.length) return;
-    const expectedContentId = expectedContentIds[0]; // primary, for logging
+    const expectedContentId = expectedContentIds[0];
+    const operation = contentQuery.op === 'add' ? 'add' : 'play-now';
+    const resultStep = operation === 'add' ? 'queue' : 'playback';
 
     let resolved = false;
     let timer = null;
@@ -812,29 +860,61 @@ export class WakeAndLoadService {
       if (unsubscribe) unsubscribe();
     };
 
-    unsubscribe = this.#eventBus.subscribe('playback.log', (payload) => {
+    const ownerIdentity = (snapshot) => snapshot?.meta?.playbackOwner ?? null;
+    const currentIdentity = (snapshot) => ({
+      contentId: snapshot?.currentItem?.contentId ?? null,
+      queueItemId: snapshot?.currentItem?.queueItemId ?? null,
+    });
+    const contentMatches = (incoming) => expectedContentIds.some((expected) =>
+      incoming === expected || incoming?.startsWith?.(`${expected}:`) || expected.startsWith(`${incoming}:`));
+
+    unsubscribe = this.#eventBus.subscribe(`device-state:${deviceId}`, (payload) => {
       if (resolved) return;
-      const incoming = payload?.contentId;
-      if (!incoming) return;
-      // Match if the incoming contentId equals, or is a hierarchical
-      // descendant/ancestor of, ANY expected candidate. Using `:` as a
-      // boundary prevents false positives with numeric Plex IDs (e.g.
-      // `plex:1` vs `plex:12`), while preserving matches like `plex:1` vs
-      // `plex:1:episode`.
-      const matches = expectedContentIds.some((expected) =>
-        incoming === expected ||
-        incoming.startsWith(`${expected}:`) ||
-        expected.startsWith(`${incoming}:`));
+      if (!commandAcknowledged || payload?.deviceId !== deviceId) return;
+      const snapshot = payload?.snapshot;
+      const owner = ownerIdentity(snapshot);
+      if (!snapshot?.sessionId || !snapshot?.meta?.ownerId || !owner?.ownerInstanceId
+        || !Number.isInteger(owner.playbackRevision) || !Number.isInteger(owner.queueRevision)) return;
+
+      let matches = false;
+      if (operation === 'add') {
+        const beforeOwner = ownerIdentity(outcomeBaseline);
+        const beforeCurrent = currentIdentity(outcomeBaseline);
+        const afterCurrent = currentIdentity(snapshot);
+        const appended = snapshot.queue?.items?.some((item) => contentMatches(item?.contentId));
+        matches = !!outcomeBaseline
+          && snapshot.sessionId === outcomeBaseline.sessionId
+          && snapshot.meta.ownerId === outcomeBaseline.meta?.ownerId
+          && owner.ownerInstanceId === beforeOwner?.ownerInstanceId
+          && owner.playbackRevision === beforeOwner?.playbackRevision
+          && owner.queueRevision > beforeOwner?.queueRevision
+          && afterCurrent.contentId === beforeCurrent.contentId
+          && afterCurrent.queueItemId === beforeCurrent.queueItemId
+          && appended;
+      } else {
+        const incoming = snapshot.currentItem?.contentId;
+        const beforeOwner = ownerIdentity(outcomeBaseline);
+        const ownerAdvanced = !beforeOwner
+          || snapshot.sessionId !== outcomeBaseline?.sessionId
+          || owner.ownerInstanceId !== beforeOwner.ownerInstanceId
+          || owner.playbackRevision > beforeOwner.playbackRevision;
+        matches = snapshot.state === 'playing' && contentMatches(incoming) && ownerAdvanced;
+      }
+
       if (matches) {
         cleanup();
-        this.#logger.info?.('wake-and-load.playback.confirmed', {
-          deviceId, dispatchId, contentId: incoming
+        this.#logger.info?.(`wake-and-load.${resultStep}.confirmed`, {
+          deviceId, dispatchId, contentId: expectedContentId,
         });
-        // Positive confirmation for the sender's UI ("▶ Playing on …") —
-        // without this broadcast the tray can only ever show "sent" or the
-        // negative timeout.
-        this.#emitProgress(topic, dispatchId, 'playback', 'confirmed', {
-          contentId: incoming
+        this.#emitProgress(topic, dispatchId, resultStep, 'confirmed', {
+          operation,
+          contentId: expectedContentId,
+          sessionId: snapshot.sessionId,
+          ownerId: snapshot.meta.ownerId,
+          ownerInstanceId: owner.ownerInstanceId,
+          playbackRevision: owner.playbackRevision,
+          queueRevision: owner.queueRevision,
+          ...(operation === 'add' ? { queueLength: snapshot.queue.items.length } : {}),
         });
       }
     });
@@ -842,11 +922,11 @@ export class WakeAndLoadService {
     timer = this.#scheduler.after(timeoutMs, () => {
       if (resolved) return;
       cleanup();
-      this.#logger.warn?.('wake-and-load.playback.timeout', {
-        deviceId, dispatchId, expectedContentId, timeoutMs
+      this.#logger.warn?.(`wake-and-load.${resultStep}.timeout`, {
+        deviceId, dispatchId, expectedContentId, timeoutMs,
       });
-      this.#emitProgress(topic, dispatchId, 'playback', 'timeout', {
-        expectedContentId, timeoutMs
+      this.#emitProgress(topic, dispatchId, resultStep, 'timeout', {
+        operation, expectedContentId, timeoutMs,
       });
     });
   }

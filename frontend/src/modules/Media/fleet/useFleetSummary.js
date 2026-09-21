@@ -12,10 +12,16 @@ export function useFleetSummary() {
   const byDevice = useSyncExternalStore(subscribe, get, get);
 
   let active = 0;
+  let playing = 0;
+  let paused = 0;
   for (const [, entry] of byDevice) {
-    if (!entry.offline && ACTIVE_STATES.has(entry.snapshot?.state)) active += 1;
+    if (entry.offline) continue;
+    const state = entry.snapshot?.state;
+    if (ACTIVE_STATES.has(state)) active += 1;
+    if (state === 'playing') playing += 1;
+    if (state === 'paused') paused += 1;
   }
-  return { active, total: devices.length, byDevice };
+  return { active, playing, paused, total: devices.length, byDevice };
 }
 
 export default useFleetSummary;

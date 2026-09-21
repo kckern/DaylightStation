@@ -519,6 +519,26 @@ $amber-ink: #1a1300;
     display: flex;
     align-items: center;
     gap: var(--mantine-spacing-xs);
+    min-width: 0;
+
+    // DestinationLine is full width when it owns a row (SearchMode and
+    // browse). In this three-control dock row it must share space with the
+    // scope scroller and the actual query field instead of consuming the
+    // field's flex share.
+    .cast-destination-line {
+      flex: 0 1 180px;
+      width: auto;
+      min-width: 0;
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+
+    .media-scope-chips {
+      flex: 0 1 150px;
+      min-width: 0;
+      overflow: hidden;
+    }
   }
 
   // Base chip styling (.media-scope-chips / .media-scope-chip) is co-located
@@ -526,7 +546,7 @@ $amber-ink: #1a1300;
   // covers dock-row placement.
   .scope-error { color: var(--mantine-color-red-5); display: inline-flex; }
 
-  .media-search-input-wrap { flex: 1; min-width: 0; }
+  .media-search-input-wrap { flex: 1 1 160px; min-width: 120px; }
 }
 
 // Portrait/mobile note (spec D1-D2, Task 13): the old fix-in-place here was

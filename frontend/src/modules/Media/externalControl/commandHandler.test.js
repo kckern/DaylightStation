@@ -19,6 +19,14 @@ function env(command, params) {
 }
 
 describe('applyCommandEnvelope', () => {
+  it('returns typed unsupported for valid handoff envelopes without touching the local owner', () => {
+    const c = makeController();
+    expect(applyCommandEnvelope(c, env('handoff', { version: 1, transferId: 'transfer-1', op: 'capture' }))).toEqual({
+      ok: false, reason: 'HANDOFF_UNSUPPORTED', code: 'HANDOFF_UNSUPPORTED',
+      handoff: { transferId: 'transfer-1', phase: 'failed', code: 'HANDOFF_UNSUPPORTED' },
+    });
+    expect(c.transport.stop).not.toHaveBeenCalled();
+  });
   it('rejects envelopes that fail shared-contract validation', () => {
     const result = applyCommandEnvelope(c, { command: 'transport', params: { action: 'play' } }); // no commandId
     expect(result.ok).toBe(false);

@@ -5,7 +5,8 @@
 export function rowPhase(d) {
   if (d.status === 'failed') return 'failed';
   if (d.status !== 'success') return 'running';
-  if (d.playback === 'confirmed') return 'confirmed';
-  if (d.playback === 'timeout') return 'unconfirmed';
+  const outcome = d.outcome ?? d.playback;
+  if (outcome === 'confirmed') return 'confirmed';
+  if (outcome === 'timeout') return 'unconfirmed';
   return 'sent';
 }

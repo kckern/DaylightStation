@@ -1,12 +1,15 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { ClientIdentityProvider } from './ClientIdentityProvider.jsx';
 import { useClientIdentity } from './useClientIdentity.js';
 import { STORAGE_KEYS } from '../constants.js';
 
+const useControlRegistration = vi.fn(() => ({ ready: false }));
+vi.mock('../externalControl/useControlRegistration.js', () => ({ useControlRegistration: (...args) => useControlRegistration(...args) }));
+
 function Probe() {
-  const { clientId, displayName } = useClientIdentity();
-  return <div>cid={clientId};dn={displayName}</div>;
+  const { clientId, displayName, controlClientId, controlReady } = useClientIdentity();
+  return <div>cid={clientId};dn={displayName};control={controlClientId};ready={String(controlReady)}</div>;
 }
 
 describe('ClientIdentityProvider', () => {
@@ -37,5 +40,17 @@ describe('ClientIdentityProvider', () => {
     localStorage.setItem(STORAGE_KEYS.DISPLAY_NAME, 'My Phone');
     render(<ClientIdentityProvider><Probe /></ClientIdentityProvider>);
     expect(screen.getByText(/dn=My Phone/)).toBeInTheDocument();
+  });
+
+  it('keeps the stored profile identity distinct from an ephemeral live control route', () => {
+    localStorage.setItem(STORAGE_KEYS.CLIENT_ID, 'profile-persisted');
+    useControlRegistration.mockReturnValueOnce({ ready: true });
+    render(<ClientIdentityProvider><Probe /></ClientIdentityProvider>);
+
+    const text = screen.getByText(/cid=profile-persisted;/).textContent;
+    expect(text).toMatch(/control=.+;ready=true/);
+    expect(text).not.toContain('control=profile-persisted;');
+    expect(useControlRegistration).toHaveBeenCalledWith(expect.any(String));
+    expect(localStorage.getItem(STORAGE_KEYS.CLIENT_ID)).toBe('profile-persisted');
   });
 });

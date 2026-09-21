@@ -17,7 +17,7 @@ export function SettingsMenu({ onResetSession }) {
           leftSection={<IconRestore size={16} />}
           onClick={onResetSession}
         >
-          Reset session
+          Start fresh
         </Menu.Item>
       </Menu.Dropdown>
     </Menu>

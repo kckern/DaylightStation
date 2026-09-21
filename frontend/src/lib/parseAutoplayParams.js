@@ -129,6 +129,32 @@ export function parseAutoplayParams(searchString, supportedActions) {
     config.trackModifiers = trackModifiers;
   }
 
+  // Correlated aimed Play/Add URLs must reach the acknowledged owner-routed
+  // queue-op handler. Uncorrelated legacy ?play / plain ?queue keep their
+  // original media:play/media:queue behavior.
+  if (supportedActions.includes('play') && queryEntries.play && queryEntries.dispatchId) {
+    return {
+      queueOp: {
+        op: 'play-now', contentId: toContentId(queryEntries.play),
+        commandId: queryEntries.dispatchId, ...config,
+      },
+    };
+  }
+
+  // Aimed Add reaches cold/FKB receivers as ?queue=<id>&op=add. Plain
+  // ?queue remains the legacy autoplay route, but this explicit operation must
+  // reach the same owner-routed queue-op handler as its warm WS equivalent.
+  if (supportedActions.includes('queue') && queryEntries.queue && queryEntries.op === 'add') {
+    return {
+      queueOp: {
+        op: 'add',
+        contentId: toContentId(queryEntries.queue),
+        ...(queryEntries.dispatchId ? { commandId: queryEntries.dispatchId } : {}),
+        ...config,
+      },
+    };
+  }
+
   // Match first supported action key
   for (const [key, value] of Object.entries(queryEntries)) {
     if (supportedActions.includes(key) && ACTION_MAPPINGS[key]) {

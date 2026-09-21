@@ -43,6 +43,7 @@ describe('useStreamingSearch', () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
+    vi.useRealTimers();
   });
 
   it('starts with empty state', () => {
@@ -225,6 +226,297 @@ describe('useStreamingSearch', () => {
     expect(result.current.sourceErrors).toHaveLength(1);
     act(() => { result.current.search('world'); });
     expect(result.current.sourceErrors).toEqual([]);
+  });
+
+  it('ends a stream that never opens at its bounded deadline as a retryable failure', () => {
+    // Break caught: removing the client deadline leaves the consumer spinner
+    // active forever when the SSE handshake never produces an event.
+    vi.useFakeTimers();
+    const { result } = renderHook(() => useStreamingSearch('/api/search/stream', '', { streamDeadlineMs: 30 }));
+
+    act(() => { result.current.search('arrival'); });
+    const es = MockEventSource.instances[0];
+    act(() => { vi.advanceTimersByTime(30); });
+
+    expect(es.readyState).toBe(2);
+    expect(result.current.isSearching).toBe(false);
+    expect(result.current.error).toMatchObject({ kind: 'timeout' });
+    expect(result.current.sourceErrors).toEqual([]);
+  });
+
+  it('keeps partial results and identifies only known unanswered sources when the stream expires', () => {
+    // Break caught: timeout cleanup that clears results, or guesses adapters
+    // before a pending event has named them.
+    vi.useFakeTimers();
+    const { result } = renderHook(() => useStreamingSearch('/api/search/stream', '', { streamDeadlineMs: 30 }));
+
+    act(() => { result.current.search('arrival'); });
+    const es = MockEventSource.instances[0];
+    act(() => {
+      es.simulateMessage({ event: 'pending', sources: ['plex', 'abs'] });
+      es.simulateMessage({ event: 'results', source: 'plex', items: [{ id: 'plex:arrival', title: 'Arrival' }], pending: ['abs'] });
+      vi.advanceTimersByTime(30);
+    });
+
+    expect(result.current.results.map((item) => item.id)).toEqual(['plex:arrival']);
+    expect(result.current.pending).toEqual([]);
+    expect(result.current.sourceErrors).toEqual([{ source: 'abs', error: 'Search stream timed out.' }]);
+    expect(result.current.error).toMatchObject({ kind: 'timeout' });
+  });
+
+  it('consumes the answered-empty service frame so only the still-pending source is blamed', () => {
+    // This is the client half of ContentQueryService's results/items:[]
+    // protocol: an answered-empty source is removed before its sibling hits
+    // the bounded deadline.
+    vi.useFakeTimers();
+    const { result } = renderHook(() => useStreamingSearch('/api/search/stream', '', { streamDeadlineMs: 30 }));
+    act(() => { result.current.search('arrival'); });
+    const es = MockEventSource.instances[0];
+    act(() => {
+      es.simulateMessage({ event: 'pending', sources: ['empty', 'slow'] });
+      es.simulateMessage({ event: 'results', source: 'empty', items: [], pending: ['slow'] });
+      vi.advanceTimersByTime(30);
+    });
+
+    expect(result.current.sourceErrors).toEqual([{ source: 'slow', error: 'Search stream timed out.' }]);
+  });
+
+  it('revokes a superseded request timer and ignores its late callbacks', () => {
+    // Break caught: an old EventSource or deadline changing the newer query's
+    // loading/error/results state after a user types again.
+    vi.useFakeTimers();
+    const { result } = renderHook(() => useStreamingSearch('/api/search/stream', '', { streamDeadlineMs: 30 }));
+
+    act(() => { result.current.search('first'); });
+    const first = MockEventSource.instances[0];
+    act(() => {
+      vi.advanceTimersByTime(20);
+      result.current.search('second');
+      vi.advanceTimersByTime(11);
+      first.simulateMessage({ event: 'results', source: 'plex', items: [{ id: 'plex:stale' }], pending: [] });
+      first.simulateError();
+    });
+
+    expect(first.readyState).toBe(2);
+    expect(result.current.isSearching).toBe(true);
+    expect(result.current.error).toBeNull();
+    expect(result.current.results).toEqual([]);
+  });
+
+  it('does not let late terminal callbacks revive a completed request', () => {
+    // Break caught: retaining the completed EventSource as current lets a late
+    // browser error replace the successful terminal state.
+    vi.useFakeTimers();
+    const { result } = renderHook(() => useStreamingSearch('/api/search/stream', '', { streamDeadlineMs: 30 }));
+
+    act(() => { result.current.search('arrival'); });
+    const es = MockEventSource.instances[0];
+    act(() => {
+      es.simulateMessage({ event: 'complete' });
+      es.simulateError();
+      vi.advanceTimersByTime(30);
+    });
+
+    expect(result.current.isSearching).toBe(false);
+    expect(result.current.error).toBeNull();
+  });
+
+  it('retries only a failed source without discarding successful results', () => {
+    // Break caught: a per-source Retry reopening the catalog-wide request and
+    // clearing the already-successful source's result set.
+    const { result } = renderHook(() => useStreamingSearch('/api/search/stream', 'capability=listable'));
+
+    act(() => { result.current.search('arrival'); });
+    const first = MockEventSource.instances[0];
+    act(() => {
+      first.simulateMessage({ event: 'pending', sources: ['plex', 'abs'] });
+      first.simulateMessage({ event: 'results', source: 'plex', items: [{ id: 'plex:arrival', title: 'Arrival' }], pending: ['abs'] });
+      first.simulateMessage({ event: 'source_error', source: 'abs', error: 'offline', pending: [] });
+      first.simulateMessage({ event: 'complete' });
+      result.current.retry('abs');
+    });
+
+    const retry = MockEventSource.instances[1];
+    expect(retry.url).toContain('text=arrival');
+    expect(retry.url).toContain('capability=listable');
+    expect(retry.url).toContain('source=abs');
+    expect(result.current.results.map((item) => item.id)).toEqual(['plex:arrival']);
+    expect(result.current.sourceErrors).toEqual([]);
+
+    act(() => {
+      retry.simulateMessage({ event: 'results', source: 'abs', items: [{ id: 'abs:arrival', title: 'Arrival audiobook' }], pending: [] });
+      retry.simulateMessage({ event: 'complete' });
+    });
+    expect(result.current.results.map((item) => item.id)).toEqual(['plex:arrival', 'abs:arrival']);
+  });
+
+  it('keeps an ongoing primary source alive while its failed sibling retries', () => {
+    // Break caught: implementing source retry by calling search() retires the
+    // still-pending primary stream, losing its later valid batch.
+    const { result } = renderHook(() => useStreamingSearch('/api/search/stream', 'capability=listable&scope=kids'));
+
+    act(() => { result.current.search('arrival'); });
+    const primary = MockEventSource.instances[0];
+    act(() => {
+      primary.simulateMessage({ event: 'pending', sources: ['plex', 'abs'] });
+      primary.simulateMessage({ event: 'source_error', source: 'abs', error: 'offline', pending: ['plex'] });
+      result.current.retry('abs');
+    });
+    const retry = MockEventSource.instances[1];
+
+    expect(primary.readyState).toBe(0);
+    expect(retry.url).toContain('scope=kids');
+    expect(retry.url).toContain('source=abs');
+    expect(result.current.pending).toEqual(expect.arrayContaining(['plex', 'abs']));
+
+    act(() => {
+      primary.simulateMessage({ event: 'results', source: 'plex', items: [{ id: 'plex:arrival', title: 'Arrival' }], pending: [] });
+      primary.simulateMessage({ event: 'complete' });
+      retry.simulateMessage({ event: 'results', source: 'abs', items: [{ id: 'abs:arrival', title: 'Arrival audiobook' }], pending: [] });
+      retry.simulateMessage({ event: 'complete' });
+    });
+
+    expect(result.current.results.map((item) => item.id)).toEqual(['plex:arrival', 'abs:arrival']);
+    expect(result.current.isSearching).toBe(false);
+  });
+
+  it('does not open a duplicate source retry or accept its callbacks after a newer search', () => {
+    // Break caught: repeated taps create competing retries, and an old retry
+    // can still add results after the query has moved on.
+    const { result } = renderHook(() => useStreamingSearch('/api/search/stream'));
+
+    act(() => { result.current.search('arrival'); });
+    const first = MockEventSource.instances[0];
+    act(() => {
+      first.simulateMessage({ event: 'source_error', source: 'abs', error: 'offline', pending: [] });
+      first.simulateMessage({ event: 'complete' });
+      result.current.retry('abs');
+      result.current.retry('abs');
+    });
+
+    expect(MockEventSource.instances).toHaveLength(2);
+    const oldRetry = MockEventSource.instances[1];
+    act(() => {
+      result.current.search('bluey');
+      oldRetry.simulateMessage({ event: 'results', source: 'abs', items: [{ id: 'abs:stale', title: 'Stale' }], pending: [] });
+      oldRetry.simulateError();
+    });
+
+    expect(oldRetry.readyState).toBe(2);
+    expect(result.current.results).toEqual([]);
+    expect(result.current.error).toBeNull();
+    expect(result.current.isSearching).toBe(true);
+  });
+
+  it('keeps known unanswered primary sources retryable when the connection ends', () => {
+    // Break caught: terminal connection cleanup clears the pending identities
+    // before sourceErrors can name the adapters that did not answer.
+    const { result } = renderHook(() => useStreamingSearch('/api/search/stream', 'scope=kids'));
+    act(() => { result.current.search('arrival'); });
+    const primary = MockEventSource.instances[0];
+    act(() => {
+      primary.simulateMessage({ event: 'pending', sources: ['plex', 'abs'] });
+      primary.simulateMessage({ event: 'results', source: 'plex', items: [{ id: 'plex:arrival', title: 'Arrival' }], pending: ['abs'] });
+      primary.simulateError();
+    });
+
+    expect(result.current.results.map((item) => item.id)).toEqual(['plex:arrival']);
+    expect(result.current.sourceErrors).toEqual([{ source: 'abs', error: 'Lost connection to the search service.' }]);
+    act(() => { result.current.retry('abs'); });
+    expect(MockEventSource.instances[1].url).toContain('scope=kids');
+    expect(MockEventSource.instances[1].url).toContain('source=abs');
+  });
+
+  it('keeps known unanswered primary sources retryable when an SSE error event ends the stream', () => {
+    // Break caught: `{ event: "error" }` used a separate terminal path from
+    // onerror and discarded the named pending source before it reached UI.
+    const { result } = renderHook(() => useStreamingSearch('/api/search/stream'));
+    act(() => { result.current.search('arrival'); });
+    const primary = MockEventSource.instances[0];
+    act(() => {
+      primary.simulateMessage({ event: 'pending', sources: ['abs'] });
+      primary.simulateMessage({ event: 'error', message: 'stream closed' });
+    });
+
+    expect(result.current.sourceErrors).toEqual([{ source: 'abs', error: 'stream closed' }]);
+    expect(result.current.error).toMatchObject({ kind: 'stream', message: 'stream closed' });
+  });
+
+  it('restores a targeted retry source as failed when that retry connection ends', () => {
+    // Break caught: starting a retry removes its old source error, then an
+    // onerror loses that identity and leaves only a misleading global retry.
+    const { result } = renderHook(() => useStreamingSearch('/api/search/stream'));
+    act(() => { result.current.search('arrival'); });
+    const primary = MockEventSource.instances[0];
+    act(() => {
+      primary.simulateMessage({ event: 'source_error', source: 'abs', error: 'offline', pending: [] });
+      primary.simulateMessage({ event: 'complete' });
+      result.current.retry('abs');
+      MockEventSource.instances[1].simulateError();
+    });
+
+    expect(result.current.sourceErrors).toEqual([{ source: 'abs', error: 'Lost connection to the search service.' }]);
+    expect(result.current.error).toMatchObject({ kind: 'connection' });
+  });
+
+  it('does not blame a retry source that returned results when only completion is missing', () => {
+    // Break caught: retry timeout always re-adds its source error even after
+    // that source has delivered a valid result batch.
+    vi.useFakeTimers();
+    const { result } = renderHook(() => useStreamingSearch('/api/search/stream', '', { streamDeadlineMs: 30 }));
+    act(() => { result.current.search('arrival'); });
+    const primary = MockEventSource.instances[0];
+    act(() => {
+      primary.simulateMessage({ event: 'source_error', source: 'abs', error: 'offline', pending: [] });
+      primary.simulateMessage({ event: 'complete' });
+      result.current.retry('abs');
+      MockEventSource.instances[1].simulateMessage({ event: 'results', source: 'abs', items: [{ id: 'abs:arrival', title: 'Arrival audiobook' }], pending: [] });
+      vi.advanceTimersByTime(30);
+    });
+
+    expect(result.current.results.map((item) => item.id)).toEqual(['abs:arrival']);
+    expect(result.current.sourceErrors).toEqual([]);
+    expect(result.current.error).toMatchObject({ kind: 'timeout' });
+  });
+
+  it('keeps the primary unanswered source exactly once when onerror races its deadline', () => {
+    // Break caught: backend's 30s close can surface as onerror at the client
+    // deadline; either terminal order must retain one truthful source error.
+    vi.useFakeTimers();
+    const { result } = renderHook(() => useStreamingSearch('/api/search/stream', '', { streamDeadlineMs: 30 }));
+    act(() => { result.current.search('arrival'); });
+    const primary = MockEventSource.instances[0];
+    act(() => {
+      primary.simulateMessage({ event: 'pending', sources: ['abs'] });
+      vi.advanceTimersByTime(29);
+      primary.simulateError();
+      vi.advanceTimersByTime(1);
+    });
+
+    expect(result.current.sourceErrors).toEqual([{ source: 'abs', error: 'Lost connection to the search service.' }]);
+    expect(result.current.error).toMatchObject({ kind: 'connection' });
+  });
+
+  it('keeps a targeted retry source exactly once when onerror races its deadline', () => {
+    // Break caught: targeted retries had a separate terminal path that could
+    // erase the source identity as the server deadline closed the SSE stream.
+    vi.useFakeTimers();
+    const { result } = renderHook(() => useStreamingSearch('/api/search/stream', '', { streamDeadlineMs: 30 }));
+    act(() => { result.current.search('arrival'); });
+    const primary = MockEventSource.instances[0];
+    act(() => {
+      primary.simulateMessage({ event: 'source_error', source: 'abs', error: 'offline', pending: [] });
+      primary.simulateMessage({ event: 'complete' });
+      result.current.retry('abs');
+      const retry = MockEventSource.instances[1];
+      retry.simulateMessage({ event: 'pending', sources: ['abs'] });
+      vi.advanceTimersByTime(29);
+      retry.simulateError();
+      vi.advanceTimersByTime(1);
+    });
+
+    expect(result.current.sourceErrors).toEqual([{ source: 'abs', error: 'Lost connection to the search service.' }]);
+    expect(result.current.error).toMatchObject({ kind: 'connection' });
   });
 
   describe('relevance ordering', () => {

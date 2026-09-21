@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { DaylightAPI } from '../../../lib/api.mjs';
 
 import { guid } from '../lib/helpers.js';
@@ -28,11 +28,22 @@ function withTimeout(promise, timeoutMs, kind, ctx) {
   return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
 
+function prewarmTransportFormat(url, fallbackFormat) {
+  try {
+    const pathname = new URL(url, globalThis.location?.origin ?? 'http://localhost').pathname.toLowerCase();
+    if (pathname.endsWith('.m3u8')) return 'hls_video';
+    if (pathname.endsWith('.mpd')) return 'dash_video';
+  } catch {
+    // A malformed redemption must retain its resolved descriptor, never guess DASH.
+  }
+  return ['video', 'hls_video', 'dash_video'].includes(fallbackFormat) ? fallbackFormat : null;
+}
+
 /**
  * Queue controller hook for managing playlist/queue playback
  * Handles queue initialization, advancement, and shader management
  */
-export function useQueueController({ play, queue, clear, shuffle, onError, contentRef: contentRefArg, queueFetchTimeoutMs = null }) {
+export function useQueueController({ play, queue, clear, shuffle, onError, contentRef: contentRefArg, queueFetchTimeoutMs = null, onOwnerRevision = null }) {
   // Legacy aliases: multiple old names can map to the same canonical shader
   const shaderAliases = {
     dark: 'blackout',
@@ -42,35 +53,56 @@ export function useQueueController({ play, queue, clear, shuffle, onError, conte
   };
   const rawShader = play?.shader || queue?.shader || 'default';
   const resolvedShader = shaderAliases[rawShader] ?? rawShader;
-  const [shader, setShader] = useState(classes.includes(resolvedShader) ? resolvedShader : 'default');
-  const [volume] = useState(play?.volume || queue?.volume || 1);
+  const [shader, setShaderState] = useState(classes.includes(resolvedShader) ? resolvedShader : 'default');
+  const [volume, setVolume] = useState(play?.volume || queue?.volume || 1);
   // Trigger end-behavior queues must not loop — the marker would re-fire each cycle.
   const hasEndBehavior = !!(play?.endBehavior || queue?.endBehavior);
-  const [isContinuous] = useState(
+  const [isContinuous, setIsContinuous] = useState(
     !hasEndBehavior && (!!queue?.continuous || !!play?.continuous || false)
+  );
+  const [repeatMode, setRepeatMode] = useState(
+    !hasEndBehavior && (!!queue?.continuous || !!play?.continuous) ? 'all' : 'off'
+  );
+  const [playbackRate, setPlaybackRate] = useState(
+    play?.playbackRate || play?.playbackrate || queue?.playbackRate || queue?.playbackrate || 1
   );
   const [playQueue, setQueue] = useState([]);
   const [originalQueue, setOriginalQueue] = useState([]);
-  const [isShuffle] = useState(!!play?.shuffle || !!queue?.shuffle || !!shuffle || false);
+  const [isShuffle, setIsShuffle] = useState(!!play?.shuffle || !!queue?.shuffle || !!shuffle || false);
   const [shaderUserCycled, setShaderUserCycled] = useState(false);
   const [queueAudio, setQueueAudio] = useState(null);
   const [onDeck, setOnDeckState] = useState(null);
   const [onDeckFlashKey, setOnDeckFlashKey] = useState(0);
+  const adoptedInputsRef = useRef(null);
+  const queueInitEpochRef = useRef(0);
+  const pendingAppendResultsRef = useRef(new Map());
+
+  // The Player is the owner of these actions.  Issue counters before React
+  // queues its state update so a completed action burst remains visible even
+  // when no bridge poll observes its intermediate renders.
+  const issueOwnerRevision = useCallback((change) => {
+    try { onOwnerRevision?.(change); } catch { /* owner provenance is advisory */ }
+  }, [onOwnerRevision]);
 
   const pushOnDeck = useCallback((item, opts = {}) => {
+    // This is an insertion boundary: caller guids are untrusted provenance and
+    // must never alias an entry already owned by this queue.
+    const ownedItem = { ...item, guid: guid() };
+    issueOwnerRevision({ queue: true });
     setOnDeckState((prev) => {
       if (prev && opts.displaceToQueue) {
         // Prepend the displaced item to the queue head
         setQueue((q) => [prev, ...q]);
         setOriginalQueue((q) => [prev, ...q]);
       }
-      return item;
+      return ownedItem;
     });
-  }, []);
+  }, [issueOwnerRevision]);
 
   const clearOnDeck = useCallback(() => {
+    issueOwnerRevision({ queue: true });
     setOnDeckState(null);
-  }, []);
+  }, [issueOwnerRevision]);
 
   const flashOnDeck = useCallback(() => {
     setOnDeckFlashKey((k) => k + 1);
@@ -79,9 +111,56 @@ export function useQueueController({ play, queue, clear, shuffle, onError, conte
   // In-place head replacement for op: 'play-now' from an active Player.
   // Replaces currently playing; queue tail and on-deck are untouched.
   const playNow = useCallback((item) => {
-    setQueue((prev) => prev.length > 0 ? [item, ...prev.slice(1)] : [item]);
-    setOriginalQueue((prev) => prev.length > 0 ? [item, ...prev.slice(1)] : [item]);
-  }, []);
+    const ownedItem = { ...item, guid: guid() };
+    issueOwnerRevision({ playback: true, queue: true });
+    setQueue((prev) => prev.length > 0 ? [ownedItem, ...prev.slice(1)] : [ownedItem]);
+    setOriginalQueue((prev) => prev.length > 0 ? [ownedItem, ...prev.slice(1)] : [ownedItem]);
+  }, [issueOwnerRevision]);
+
+  // Append without changing the selected/current visit. The completion callback
+  // is deferred until queueSnapshot contains the newly owned item, so callers
+  // can distinguish an issued React update from a genuine post-mutation result.
+  const append = useCallback((item, { onApplied } = {}) => {
+    const ownedItem = { ...item, guid: guid() };
+    if (typeof onApplied === 'function') {
+      pendingAppendResultsRef.current.set(ownedItem.guid, onApplied);
+    }
+    issueOwnerRevision({ queue: true });
+    setQueue((prev) => [...prev, ownedItem]);
+    setOriginalQueue((prev) => [...prev, ownedItem]);
+    return ownedItem.guid;
+  }, [issueOwnerRevision]);
+
+  const adoptQueueSnapshot = useCallback((snapshot) => {
+    // Revoke an already-running source resolve synchronously. Its effect may
+    // not clean up when the caller's play/queue references stay unchanged.
+    queueInitEpochRef.current += 1;
+    adoptedInputsRef.current = { play, queue };
+    const detachedItems = snapshot.queue.items.map((item) => ({
+      ...item,
+      guid: item.queueItemId,
+    }));
+    const byId = new Map(detachedItems.map((item) => [item.guid, item]));
+    const order = snapshot.queue.executionOrder ?? [];
+    const orderedVisits = order.map((id) => byId.get(id)).filter(Boolean);
+    const onDeckIndex = orderedVisits[1]?.priority === 'upNext' ? 1 : -1;
+    const nextOnDeck = onDeckIndex >= 0 ? orderedVisits[onDeckIndex] : null;
+    const nextPlayQueue = onDeckIndex >= 0
+      ? orderedVisits.filter((_item, index) => index !== onDeckIndex)
+      : orderedVisits;
+    issueOwnerRevision({ playback: true, queue: true });
+    setOriginalQueue(detachedItems);
+    setQueue(nextPlayQueue);
+    setOnDeckState(nextOnDeck);
+    setIsShuffle(snapshot.config.shuffle);
+    setIsContinuous(snapshot.config.repeat === 'all');
+    setRepeatMode(snapshot.config.repeat);
+    setVolume(snapshot.config.volume / 100);
+    setPlaybackRate(snapshot.config.playbackRate);
+    setShaderUserCycled(true);
+    setShaderState(snapshot.config.shader ?? 'default');
+    return true;
+  }, [issueOwnerRevision, play, queue]);
 
   // Single-item input (e.g. play: { contentId: 'watchlist:...' }) can resolve to a
   // multi-item playlist via the /api/v1/queue fetch. Reflect that here so consumers
@@ -105,17 +184,27 @@ export function useQueueController({ play, queue, clear, shuffle, onError, conte
 
   const cycleThroughClasses = useCallback((upOrDownInt) => {
     upOrDownInt = parseInt(upOrDownInt) || 1;
+    issueOwnerRevision({ queue: true });
     setShaderUserCycled(true);
-    setShader((prevClass) => {
+    setShaderState((prevClass) => {
       const currentIndex = classes.indexOf(prevClass);
       const newIndex = (currentIndex + upOrDownInt + classes.length) % classes.length;
       const nextClass = classes[newIndex];
       playbackLog('shader-changed', { from: prevClass, to: nextClass });
       return nextClass;
     });
-  }, []);
+  }, [issueOwnerRevision]);
+
+  const setShader = useCallback((nextShader) => {
+    issueOwnerRevision({ queue: true });
+    setShaderState(nextShader);
+  }, [issueOwnerRevision]);
 
   useEffect(() => {
+    if (adoptedInputsRef.current?.play === play && adoptedInputsRef.current?.queue === queue) {
+      return undefined;
+    }
+    adoptedInputsRef.current = null;
     const signatureParts = [];
 
     if (contentRef) signatureParts.push(`ref:${contentRef}`);
@@ -123,12 +212,12 @@ export function useQueueController({ play, queue, clear, shuffle, onError, conte
 
     if (Array.isArray(play)) {
       const playArraySignature = play
-        .map((item) => item?.guid || item?.media || item?.assetId || item?.id || '')
+        .map((item) => item?.guid || item?.media || item?.assetId || item?.id || item?.contentId || '')
         .join('|');
       signatureParts.push(`play:${play.length}:${playArraySignature}`);
     } else if (Array.isArray(queue)) {
       const queueArraySignature = queue
-        .map((item) => item?.guid || item?.media || item?.assetId || item?.id || '')
+        .map((item) => item?.guid || item?.media || item?.assetId || item?.id || item?.contentId || '')
         .join('|');
       signatureParts.push(`queue:${queue.length}:${queueArraySignature}`);
     }
@@ -150,6 +239,8 @@ export function useQueueController({ play, queue, clear, shuffle, onError, conte
 
     let isCancelled = false;
     let isCompleted = false;
+    const initEpoch = ++queueInitEpochRef.current;
+    const isAuthorized = () => !isCancelled && queueInitEpochRef.current === initEpoch;
     sourceSignatureRef.current = nextSignature;
     // Cache write deferred to after successful API completion (see below)
 
@@ -187,6 +278,7 @@ export function useQueueController({ play, queue, clear, shuffle, onError, conte
             'fetch-timeout',
             { contentRef }
           );
+          if (!isAuthorized()) return;
           fetchedFromApi = true;
           newQueue = response.items.map(item => ({ ...item, ...itemOverrides, guid: guid() }));
           fetchedAudio = response.audio || null;
@@ -199,8 +291,11 @@ export function useQueueController({ play, queue, clear, shuffle, onError, conte
                 const resp = await DaylightAPI(`api/v1/prewarm/${prewarmToken}`);
                 if (resp?.url) {
                   firstItem.mediaUrl = resp.url;
-                  firstItem.format = 'dash_video';
-                  firstItem.mediaType = 'dash_video';
+                  const transportFormat = prewarmTransportFormat(resp.url, firstItem.format ?? firstItem.mediaType);
+                  if (transportFormat) {
+                    firstItem.format = transportFormat;
+                    firstItem.mediaType = transportFormat;
+                  }
                   playbackLog('prewarm-applied', {
                     contentId: prewarmContentId,
                     token: prewarmToken
@@ -230,6 +325,7 @@ export function useQueueController({ play, queue, clear, shuffle, onError, conte
         item.contentId || item.play || item.media || item.mediaUrl || item.media_url
         || item.key || item.id || item.plex || item.assetId
       );
+      if (!isAuthorized()) return;
 
       // Trigger end-behavior tail marker — append a synthetic side-effect item
       // so the player fires the configured behavior (tv-off, clear) when the
@@ -252,10 +348,10 @@ export function useQueueController({ play, queue, clear, shuffle, onError, conte
       // preserve pre-existing consumer behavior.
       if (fetchedFromApi && validQueue.length === 0 && newQueue.length === 0 && contentRef) {
         playbackLog('queue-init-empty', { contentRef }, { level: 'error' });
-        if (typeof onError === 'function' && !isCancelled) {
+        if (typeof onError === 'function' && isAuthorized()) {
           onError({ kind: 'empty-queue', contentRef });
         }
-        if (!isCancelled && clear) clear();
+        if (isAuthorized() && clear) clear();
         return;
       }
 
@@ -265,18 +361,22 @@ export function useQueueController({ play, queue, clear, shuffle, onError, conte
           itemCount: newQueue.length,
           sampleKeys: Object.keys(newQueue[0] || {}).slice(0, 5),
         }, { level: 'error' });
-        if (typeof onError === 'function' && !isCancelled) {
+        if (typeof onError === 'function' && isAuthorized()) {
           onError({
             kind: 'invalid-queue',
             contentRef,
             itemCount: newQueue.length,
           });
         }
-        if (!isCancelled && clear) clear();
+        if (isAuthorized() && clear) clear();
         return;
       }
 
-      if (!isCancelled) {
+      if (isAuthorized()) {
+        // A committed resolve is an owner load transition, including a new
+        // source on the same mounted Player. Issue before scheduling React
+        // state so a later capture cannot miss it between polls.
+        issueOwnerRevision({ playback: true, queue: true });
         if (contentRef) _signatureCache.set(contentRef, nextSignature);
         setQueue(validQueue);
         setOriginalQueue(validQueue);
@@ -285,12 +385,13 @@ export function useQueueController({ play, queue, clear, shuffle, onError, conte
       }
     }
     initQueue().catch((error) => {
+      if (!isAuthorized()) return;
       if (error?.isTimeout) {
         playbackLog('queue-init-timeout', { contentRef, timeoutMs: error.timeoutMs }, { level: 'error' });
-        if (typeof onError === 'function' && !isCancelled) {
+        if (typeof onError === 'function' && isAuthorized()) {
           onError({ kind: 'fetch-timeout', contentRef, timeoutMs: error.timeoutMs });
         }
-        if (!isCancelled) {
+        if (isAuthorized()) {
           sourceSignatureRef.current = previousSignature;
           if (contentRef) _signatureCache.set(contentRef, previousSignature);
         }
@@ -310,7 +411,7 @@ export function useQueueController({ play, queue, clear, shuffle, onError, conte
         apiDetail: apiError?.error,
         httpStatus: error?.message?.match(/^HTTP (\d+)/)?.[1],
       }, { level: 'error' });
-      if (typeof onError === 'function' && !isCancelled) {
+      if (typeof onError === 'function' && isAuthorized()) {
         onError({
           kind: 'fetch-failed',
           contentRef,
@@ -319,15 +420,16 @@ export function useQueueController({ play, queue, clear, shuffle, onError, conte
           apiDetail: apiError?.error || null,
         });
       }
-      if (!isCancelled) {
+      if (isAuthorized()) {
         sourceSignatureRef.current = previousSignature;
         if (contentRef) _signatureCache.set(contentRef, previousSignature);
       }
     });
 
     return () => {
+      const ownsEpoch = queueInitEpochRef.current === initEpoch;
       isCancelled = true;
-      if (!isCompleted) {
+      if (!isCompleted && ownsEpoch) {
         // Only clear cache if the API call didn't complete successfully.
         // If it did complete, the cache entry is valid and should persist.
         if (contentRef) _signatureCache.delete(contentRef);
@@ -337,9 +439,10 @@ export function useQueueController({ play, queue, clear, shuffle, onError, conte
     // core queue-init network-fetch effect; onError is an unmemoized parent prop —
     // adding it risks a fetch storm on unrelated parent re-renders.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [play, queue, isShuffle, contentRef]);
+  }, [play, queue, isShuffle, contentRef, issueOwnerRevision]);
 
   const advance = useCallback((step = 1) => {
+    issueOwnerRevision({ playback: true, queue: true });
     // On-deck has priority when advancing forward.
     if (step > 0 && onDeck) {
       setQueue((prev) => {
@@ -388,9 +491,10 @@ export function useQueueController({ play, queue, clear, shuffle, onError, conte
           });
           return prevQueue.slice(currentIndex);
         }
-      } else if (prevQueue.length === 1 && isContinuous && originalQueue.length > 1) {
-        // When last item finishes in continuous mode with multi-item original queue,
-        // reset to full original queue to loop playback
+      } else if (prevQueue.length === 1 && isContinuous && originalQueue.length > 0) {
+        // A continuous plan loops even when it contains one entry. Player owns
+        // the native replay boundary when the next visit resolves to this same
+        // entry; this owner mutation only preserves the authoritative plan.
         playbackLog('queue-advance', {
           action: 'reset-continuous',
           originalQueueLength: originalQueue.length,
@@ -408,7 +512,7 @@ export function useQueueController({ play, queue, clear, shuffle, onError, conte
       clear();
       return [];
     });
-  }, [clear, isContinuous, originalQueue, onDeck]);
+  }, [clear, isContinuous, originalQueue, onDeck, issueOwnerRevision]);
 
   const jumpTo = useCallback((targetContentId, seekSeconds) => {
     const id = String(targetContentId ?? '');
@@ -418,6 +522,7 @@ export function useQueueController({ play, queue, clear, shuffle, onError, conte
       return String(cid) === id;
     });
     if (origIdx < 0) return false;
+    issueOwnerRevision({ playback: true, queue: true });
     playbackLog('queue-advance', {
       action: 'jump-to-item',
       targetContentId: id,
@@ -431,9 +536,35 @@ export function useQueueController({ play, queue, clear, shuffle, onError, conte
     }
     setQueue(sliced);
     return true;
-  }, [originalQueue]);
+  }, [originalQueue, issueOwnerRevision]);
 
   const queuePosition = originalQueue.findIndex(item => item.guid === playQueue[0]?.guid);
+
+  // Read-only owner capture: retain historical entries and the exact active
+  // visit order separately, since legacy slicing/rotation can make them diverge.
+  const queueSnapshot = useMemo(() => {
+    const byId = new Map();
+    for (const item of [...originalQueue, ...playQueue, ...(onDeck ? [onDeck] : [])]) {
+      if (item?.guid && !byId.has(item.guid)) byId.set(item.guid, { ...item, queueItemId: item.guid,
+        contentId: item.contentId ?? item.assetId ?? item.id ?? item.plex,
+        format: item.format ?? 'video',
+        priority: item.guid === onDeck?.guid ? 'upNext' : (item.priority ?? 'queue') });
+    }
+    const items = [...byId.values()].filter((item) => item.contentId);
+    const order = [playQueue[0], ...(onDeck ? [onDeck] : []), ...playQueue.slice(1)]
+      .map((item) => item?.guid).filter(Boolean);
+    return { items, currentIndex: items.findIndex((item) => item.queueItemId === playQueue[0]?.guid),
+      upNextCount: items.filter((item) => item.priority === 'upNext').length, executionOrder: order };
+  }, [originalQueue, playQueue, onDeck]);
+
+  useEffect(() => {
+    for (const [queueItemId, onApplied] of pendingAppendResultsRef.current) {
+      const item = queueSnapshot.items.find((candidate) => candidate.queueItemId === queueItemId);
+      if (!item) continue;
+      pendingAppendResultsRef.current.delete(queueItemId);
+      try { onApplied({ item, queue: queueSnapshot }); } catch { /* result observers are advisory */ }
+    }
+  }, [queueSnapshot]);
 
   // Trigger end-behavior side-effect dispatcher.
   // When the queue advances onto a virtual side-effect tail item, POST to the
@@ -493,10 +624,12 @@ export function useQueueController({ play, queue, clear, shuffle, onError, conte
     setShader,
     setShaderUserCycled,
     isQueue,
+    isShuffle,
     volume,
     isContinuous,
+    repeatMode,
     playQueue,
-    playbackRate: play?.playbackRate || play?.playbackrate || queue?.playbackRate || queue?.playbackrate || 1,
+    playbackRate,
     setQueue,
     advance,
     jumpTo,
@@ -505,11 +638,14 @@ export function useQueueController({ play, queue, clear, shuffle, onError, conte
     // Stable identity for the whole queue (volume/rate/etc. persist across item swaps).
     // Null for inline-array inputs that have no canonical id.
     queueSessionId: contentRef || null,
+    queueSnapshot,
     onDeck,
     onDeckFlashKey,
     pushOnDeck,
     clearOnDeck,
     flashOnDeck,
     playNow,
+    append,
+    adoptQueueSnapshot,
   };
 }

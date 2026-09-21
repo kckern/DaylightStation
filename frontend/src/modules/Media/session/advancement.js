@@ -23,6 +23,17 @@ export function pickNextQueueItem(snapshot, { reason = 'item-ended', randomFn = 
     return items[currentIndex];
   }
 
+  const order = snapshot.queue.executionOrder;
+  const currentId = items[currentIndex]?.queueItemId;
+  if (Array.isArray(order) && order[0] === currentId) {
+    if (order.length > 1) {
+      const planned = items.find((item) => item.queueItemId === order[1]);
+      if (planned) return planned;
+    } else if (repeat !== 'all') {
+      return null;
+    }
+  }
+
   // Up Next band: the item directly after current, if it carries upNext.
   const bandHead = items[currentIndex + 1];
   if (bandHead && bandHead.priority === 'upNext') return bandHead;

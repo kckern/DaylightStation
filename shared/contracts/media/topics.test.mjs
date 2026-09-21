@@ -5,6 +5,7 @@ import {
   HOMELINE_TOPIC,
   SCREEN_COMMAND_TOPIC,
   CLIENT_CONTROL_TOPIC,
+  CLIENT_ACK_TOPIC,
   PLAYBACK_STATE_TOPIC,
   ARCADE_SESSION_TOPIC,
   ARCADE_SESSIONS_TOPIC,
@@ -21,6 +22,7 @@ describe('topic builders', () => {
   });
   it('builds per-client topics with the clientId suffix', () => {
     expect(CLIENT_CONTROL_TOPIC('c1')).toBe('client-control:c1');
+    expect(CLIENT_ACK_TOPIC('c1')).toBe('client-ack:c1');
   });
   it('exposes the broadcast topic as a constant', () => {
     expect(PLAYBACK_STATE_TOPIC).toBe('playback_state');

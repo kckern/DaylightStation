@@ -5,14 +5,12 @@
 // actually active (portability phase wires the action).
 import React, { useCallback, useState } from 'react';
 import { Title, Text, Badge, Button, Progress, Group, Alert, Stack } from '@mantine/core';
-import { notifications } from '@mantine/notifications';
 import { IconDeviceRemote, IconAlertCircle, IconPlayerPlay } from '@tabler/icons-react';
 import { useFleetContext } from '../fleet/useFleetContext.js';
 import { useDevice } from '../fleet/useDevice.js';
 import { FleetPlayPicker } from '../fleet/FleetPlayPicker.jsx';
 import { deviceName, deviceIcon, deviceLocation } from '../fleet/deviceDisplay.js';
 import { useNav } from './NavProvider.jsx';
-import { useTakeOver } from '../peek/useTakeOver.js';
 import { stateColor } from '../theme/mediaTheme.js';
 import { deviceStateLabel } from './stateCopy.js';
 import Skeleton from '@/lib/ui/Skeleton.jsx';
@@ -28,7 +26,6 @@ function fmt(s) {
 function FleetCard({ deviceId }) {
   const { device, entry } = useDevice(deviceId);
   const { push } = useNav();
-  const takeOver = useTakeOver();
   // Inline "play something on this device" panel (FleetPlayPicker).
   const [playOpen, setPlayOpen] = useState(false);
   const closePlay = useCallback(() => setPlayOpen(false), []);
@@ -51,6 +48,9 @@ function FleetCard({ deviceId }) {
         <span className="fleet-card-icon" aria-hidden>{deviceIcon(device)}</span>
         <span className="fleet-card-titles">
           <span className="fleet-card-name">{deviceName(device, deviceId)}</span>
+          {device?.isLocal && (
+            <span data-testid={`fleet-this-device-${deviceId}`} className="fleet-card-this-device">This device</span>
+          )}
           {location && <span className="fleet-card-location">{location}</span>}
         </span>
         <span className="fleet-card-state" data-testid={`fleet-state-${deviceId}`}>
@@ -106,24 +106,20 @@ function FleetCard({ deviceId }) {
           Play…
         </Button>
         {isActive && (
-          <Button
-            data-testid={`fleet-takeover-${deviceId}`}
-            size="compact-sm"
-            variant="light"
-            onClick={async () => {
-              const result = await takeOver(deviceId);
-              if (!result?.ok) {
-                // C7.4: the user MUST be informed when a take-over fails.
-                notifications.show({
-                  color: 'red',
-                  title: "Couldn't move playback here",
-                  message: result?.error ?? "The other device didn't let go. Try again.",
-                });
-              }
-            }}
-          >
-            Play here
-          </Button>
+          <>
+            <Button
+              data-testid={`fleet-takeover-${deviceId}`}
+              size="compact-sm"
+              variant="light"
+              disabled
+              title="Move playback is not available yet."
+            >
+              Play here
+            </Button>
+            <Text data-testid={`fleet-takeover-unavailable-${deviceId}`} size="xs" c="dimmed">
+              Move playback is not available yet.
+            </Text>
+          </>
         )}
       </Group>
       {playOpen && <FleetPlayPicker deviceId={deviceId} onClose={closePlay} />}

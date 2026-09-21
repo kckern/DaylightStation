@@ -68,7 +68,12 @@ export function ScopeChips() {
             type="button"
             className="media-scope-chip"
             data-testid={`scope-chip-${scope.key}`}
+            data-ignore-outside-clicks
             aria-pressed={scope.key === currentScopeKey}
+            // Desktop scope chips live beside the active Combobox input. Keep
+            // its focus through a pointer click so Mantine does not interpret
+            // this in-surface narrowing action as an outside dismissal.
+            onMouseDown={(event) => event.preventDefault()}
             onClick={() => handleTopLevelClick(scope)}
           >
             {scope.label}
@@ -87,7 +92,9 @@ export function ScopeChips() {
               type="button"
               className="media-scope-chip"
               data-testid={`scope-chip-${child.key}`}
+              data-ignore-outside-clicks
               aria-pressed={child.key === currentScopeKey}
+              onMouseDown={(event) => event.preventDefault()}
               onClick={() => selectScope(child)}
             >
               {child.label}

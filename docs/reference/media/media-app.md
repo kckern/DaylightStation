@@ -194,7 +194,7 @@ and a **canvas** that shows exactly one view at a time:
 │ Devs │                                                     │
 ├──────┴─────────────────────────────────────────────────────┤
 │ dispatch progress tray (while casting)                     │
-│ ♪ mini player (while a session has a current item)         │
+│ ♪ mini player (while playing, paused, or queue is retained)│
 └────────────────────────────────────────────────────────────┘
 ```
 
@@ -210,20 +210,23 @@ and a **canvas** that shows exactly one view at a time:
   house, linking to the fleet view,
 - the **cast target chip** — the currently-preferred dispatch target. It
   governs the search bar too: with a target configured, picking a search
-  result casts there in the chip's mode rather than playing locally. Peek
-  view is the one exception — while remote-controlling a device, selections
-  always go to that device (forked, never transferred),
+  result casts there in the chip's mode rather than playing locally. The
+  destination sheet always includes **This device**, which clears remote
+  targets immediately. Opening or leaving Peek never overrides or changes
+  that destination; a one-off picker still affects only its explicit action,
 - the **settings menu** — session reset (confirmed). The per-browser display
   name is read from storage but has no UI to set it.
 
 Below the canvas, at every width, the shell stacks:
 
 - the **dispatch progress tray** — live step-by-step progress of in-flight
-  casts, with retry on failure,
+  casts, with each failure row retrying only its original target, content,
+  options, and hand-off snapshot,
 - the **mini player** — current local item, live progress strip, queue
   position counter, play/pause/next/stop (a small live picture for video);
-  tapping the title opens Now Playing. It renders nothing without a current
-  item.
+  tapping the title opens Now Playing. Stop retains a ready handle while the
+  queue has items so the queue can be opened or restarted; clear/reset removes
+  the handle once both the current item and queue are empty.
 
 **On phones the dock cannot hold all of that at once — so it doesn't try.**
 At 360px there is ~336px to spend; splitting that between a scope selector, a
@@ -241,7 +244,7 @@ shared row:
 ```
 ┌────────────────────────────────────────┐
 │ ✕  [ search…                        ]   │
-│ ▶ Playing to: This browser              │
+│ ▶ Playing to: This device               │
 │ [All] [Video] [Music] [Books]           │
 │ results…                                │
 └────────────────────────────────────────┘
@@ -254,10 +257,15 @@ rather than mounting the Mantine `Combobox` popover, which doesn't fit a
 full-screen surface. It mounts `ScopeChips` and `DestinationLine` unchanged —
 the same components the desktop dock and Now Playing use — so "where does a
 tap go" reads identically everywhere. A row tap dispatches through the same
-`useContentDispatch` path as the desktop search bar and closes the surface
-(with a toast) on success; browser Back closes it too (a history entry is
-pushed on open, consumed on close either way, so the user is never left
-needing two backs). The fleet indicator and cast target chip are desktop/
+`useContentDispatch` path as the desktop search bar. Ordinary Play, explicit
+container playback and existing queue actions retain the search surface,
+query and narrowing; leaf Play deliberately avoids the combobox's selecting
+close transition. Container/detail navigation closes search and replaces its
+history marker. Browser Back or explicit close consumes the one marker pushed
+on open, so repeated playback actions do not add extra Back presses. The
+redesign's explicit **Play on…** action still needs its separate integration;
+this retention repair does not establish that missing path. The fleet
+indicator and cast target chip are desktop/
 tablet-only now — on mobile the fleet-active signal moved to a small badge on
 the Devices tab (`PrimaryNav.jsx`, sourced from `useFleetSummary`) instead of
 occupying dock space that search now owns outright.
@@ -343,6 +351,42 @@ is video-only), so an audio track dispatched from search mounted in the
 off-screen park and was then remounted by the arriving claim; recovery fell to
 the 15s stall watchdog, 19s after the tap. Guarded by
 `PlayerBridge.test.jsx`.
+
+`contentId` is the bridge's playback identity. Resolved metadata, duration,
+position, and native paused/playing state are reconciled into the current
+session and matching queue entry without replacing the active Player item.
+Transport commands do not claim a state or position change until Player or
+native-media evidence arrives. The bridge follows Player's native media
+accessor (including the video element inside the DASH player's shadow root),
+so host changes and focused-video presentation retain the same media element.
+Native `seeking` updates the transient position display from the element's
+observed position, without persisting it or claiming decoder completion.
+Native seek completion publishes the element's actual position even while
+paused, when another progress tick may not arrive. Seek completion does not
+prove that a buffering decoder has resumed playback. Discrete native events
+must match the active playback generation, accessor node, and mounted content
+identity before updating the session, so a pending source replacement cannot
+attribute the previous source's events to the newly selected item.
+Mounted identity comes from resolved renderer metadata (`contentId`, or the
+`id` field returned by `/play`), never from an unresolved playback request.
+Host claims can request Player's existing `focused` shader without moving
+playback ownership out of the bridge.
+
+DASH's initial autoplay probe expires as soon as the native element emits
+`play` or `playing`. A successful start followed by a user pause therefore
+cannot be resumed by the delayed startup check, including a pause while the
+first frame is still buffering. A source that has never accepted playback
+keeps its startup probe so browser autoplay rejection can still be detected.
+
+Plex DASH fallback streams explicitly disable stream-copy at both decision
+and start. Copied source GOPs were observed at timestamps different from the
+fixed-duration MPD, leaving a seek permanently without a decoded frame.
+Re-encoding restores the advertised segment timeline; eligible original MP4
+direct play, audio URLs, and non-DASH copy remain available. This is a global
+DASH policy, not a Media-only setting: it adds encoder load and may reduce
+quality/frame rate (existing defaults: 8 Mbps, 1080 resolution, 30 fps).
+The historical garage 60 fps software-transcode/throttle stall remains a
+regression risk; passing two movie seeks does not verify those other clients.
 
 ### Concurrency: nothing blocks anything
 

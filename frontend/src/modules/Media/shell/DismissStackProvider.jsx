@@ -12,12 +12,15 @@ import React, { createContext, useRef, useEffect, useCallback } from 'react';
 export const DismissContext = createContext(null);
 
 export function DismissStackProvider({ children, onBaseDismiss }) {
-  const layersRef = useRef([]); // [{ id, onDismiss, managed }]
+  const layersRef = useRef([]); // [{ id, onDismiss, managed, isActive }]
   const baseRef = useRef(onBaseDismiss);
   baseRef.current = onBaseDismiss;
 
-  const register = useCallback((id, onDismiss, managed) => {
-    layersRef.current = [...layersRef.current.filter((l) => l.id !== id), { id, onDismiss, managed }];
+  const register = useCallback((id, onDismiss, managed, isActive) => {
+    layersRef.current = [
+      ...layersRef.current.filter((l) => l.id !== id),
+      { id, onDismiss, managed, isActive },
+    ];
     return () => {
       layersRef.current = layersRef.current.filter((l) => l.id !== id);
     };
@@ -27,11 +30,17 @@ export function DismissStackProvider({ children, onBaseDismiss }) {
     const onKey = (e) => {
       if (e.key !== 'Escape' || e.defaultPrevented) return;
       const layers = layersRef.current;
-      if (layers.length > 0) {
-        const top = layers[layers.length - 1];
+      let top = null;
+      for (let index = layers.length - 1; index >= 0; index -= 1) {
+        if (layers[index].isActive?.(e) !== false) {
+          top = layers[index];
+          break;
+        }
+      }
+      if (top) {
         if (!top.managed) {
           e.stopPropagation();
-          top.onDismiss?.();
+          top.onDismiss?.(e);
         }
         // managed layers dismiss themselves; either way the base action is suppressed
         return;

@@ -635,6 +635,62 @@ describe('ScreenActionHandler', () => {
       expect(pressKeysFor('skipPrev')).toEqual(pressKeysFor('prev'));
       expect(pressKeysFor('skipPrev')).toEqual(['Backspace']);
     });
+
+    it('routes remote Stop to the active Player owner without synthesizing Escape', () => {
+      const owner = vi.fn();
+      getPlayerQueueOpRegistry().register(owner);
+      const dispatchSpy = vi.spyOn(window, 'dispatchEvent');
+      render(
+        <ScreenOverlayProvider>
+          <ScreenActionHandler actions={{ playback: { when_idle: 'dispatch' } }} />
+        </ScreenOverlayProvider>
+      );
+
+      act(() => getActionBus().emit('media:playback', { command: 'stop', commandId: 'stop-1' }));
+
+      expect(owner).toHaveBeenCalledWith(expect.objectContaining({ op: 'stop', commandId: 'stop-1' }));
+      expect(dispatchSpy.mock.calls.some(([event]) => event instanceof KeyboardEvent && event.key === 'Escape'))
+        .toBe(false);
+      dispatchSpy.mockRestore();
+    });
+
+    it('routes explicit remote transport commands to the active Player owner without toggling by keydown', () => {
+      const owner = vi.fn();
+      getPlayerQueueOpRegistry().register(owner);
+      const dispatchSpy = vi.spyOn(window, 'dispatchEvent');
+      render(
+        <ScreenOverlayProvider>
+          <ScreenActionHandler actions={{ playback: { when_idle: 'dispatch' } }} />
+        </ScreenOverlayProvider>
+      );
+
+      act(() => getActionBus().emit('media:playback', { command: 'play', commandId: 'play-1' }));
+      act(() => getActionBus().emit('media:playback', { command: 'pause', commandId: 'pause-1' }));
+      act(() => getActionBus().emit('media:playback', { command: 'toggle', commandId: 'toggle-1' }));
+
+      expect(owner).toHaveBeenNthCalledWith(1, expect.objectContaining({ op: 'play', commandId: 'play-1' }));
+      expect(owner).toHaveBeenNthCalledWith(2, expect.objectContaining({ op: 'pause', commandId: 'pause-1' }));
+      expect(owner).toHaveBeenNthCalledWith(3, expect.objectContaining({ op: 'toggle', commandId: 'toggle-1' }));
+      expect(dispatchSpy.mock.calls.some(([event]) => event instanceof KeyboardEvent)).toBe(false);
+      dispatchSpy.mockRestore();
+    });
+
+    it('routes a value-bearing remote relative seek to the active Player owner', () => {
+      const owner = vi.fn();
+      getPlayerQueueOpRegistry().register(owner);
+      const dispatchSpy = vi.spyOn(window, 'dispatchEvent');
+      render(
+        <ScreenOverlayProvider>
+          <ScreenActionHandler />
+        </ScreenOverlayProvider>
+      );
+
+      act(() => getActionBus().emit('media:seek-rel', { value: 10, commandId: 'seek-1' }));
+
+      expect(owner).toHaveBeenCalledWith(expect.objectContaining({ op: 'seek-rel', value: 10, commandId: 'seek-1' }));
+      expect(dispatchSpy.mock.calls.some(([event]) => event instanceof KeyboardEvent)).toBe(false);
+      dispatchSpy.mockRestore();
+    });
   });
 
   describe('playback secondary fallback', () => {
@@ -918,6 +974,48 @@ describe('ScreenActionHandler', () => {
     expect(foreground).toHaveBeenCalledTimes(1);
     expect(foreground).toHaveBeenCalledWith(expect.objectContaining({ op: 'play-next', contentId: 'plex:1' }));
     expect(background).not.toHaveBeenCalled();
+  });
+
+  it('media:queue-op op=add dispatches only to the registered Player owner', () => {
+    const background = vi.fn();
+    const foreground = vi.fn();
+    getPlayerQueueOpRegistry().register(background);
+    getPlayerQueueOpRegistry().register(foreground);
+
+    const { queryByTestId } = render(
+      <ScreenOverlayProvider>
+        <ScreenActionHandler />
+      </ScreenOverlayProvider>
+    );
+    act(() => getActionBus().emit('media:queue-op', {
+      op: 'add', contentId: 'plex:added', commandId: 'cmd-add',
+    }));
+
+    expect(foreground).toHaveBeenCalledTimes(1);
+    expect(foreground).toHaveBeenCalledWith(expect.objectContaining({
+      op: 'add', contentId: 'plex:added', commandId: 'cmd-add',
+    }));
+    expect(background).not.toHaveBeenCalled();
+    expect(queryByTestId('player')).toBeNull();
+  });
+
+  it('reports idle op=add unsupported instead of mounting an autoplaying Player', () => {
+    const failure = vi.fn();
+    getActionBus().subscribe('command-handler-error', failure);
+    const { queryByTestId } = render(
+      <ScreenOverlayProvider>
+        <ScreenActionHandler />
+      </ScreenOverlayProvider>
+    );
+
+    act(() => getActionBus().emit('media:queue-op', {
+      op: 'add', contentId: 'plex:held', commandId: 'cmd-idle-add',
+    }));
+
+    expect(queryByTestId('player')).toBeNull();
+    expect(failure).toHaveBeenCalledWith(expect.objectContaining({
+      commandId: 'cmd-idle-add', code: 'QUEUE_OWNER_UNAVAILABLE',
+    }));
   });
 
   it('media:queue-op op=play-now with no active player mounts a fresh Player', () => {

@@ -25,6 +25,9 @@ vi.mock('../controller/useSessionController.js', () => ({
 vi.mock('../controller/usePlaybackPosition.js', () => ({
   usePlaybackPosition: () => ({ seconds: 0 }),
 }));
+vi.mock('../search/useContentDispatch.js', () => ({
+  useContentDispatch: () => ({ dispatchLeafVerb: vi.fn() }),
+}));
 
 import { HomeView } from './HomeView.jsx';
 

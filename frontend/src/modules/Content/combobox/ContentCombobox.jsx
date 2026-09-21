@@ -97,6 +97,8 @@ function optionTopIn(viewport, option) {
  *   provided, a LEAF row renders a ⋯ menu (Play Now/Play Next/Up Next/Add to
  *   Queue/Open detail); action is one of those five verb strings. Omit and
  *   nothing renders.
+ * @param {boolean} [props.destinationInteractionActive] - keeps this editing
+ *   session open for the desktop media destination picker's explicit lifetime
  */
 export function ContentCombobox({
   value,
@@ -110,9 +112,12 @@ export function ContentCombobox({
   appResults = false,
   renderValue = null,
   allowFreeform = true,
+  onClose = null,
   logApp = 'admin',
   onPlayAll = null,
   onMore = null,
+  destinationInteractionActive = false,
+  retainQueryOnEscape = false,
 }) {
   const log = useMemo(() => getChildLogger({ component: 'ContentCombobox', app: logApp, sessionLog: true }), [logApp]);
   const {
@@ -120,10 +125,10 @@ export function ContentCombobox({
     handleInput, activeScope, clearScope,
     openWithSiblings, drill, goUp, goToCrumb, paginate,
     handleClose, select, commit,
-    resolvedTitle, isSearching, pendingSources, sourceErrors, truncatedAt, fellBackToAll,
+    resolvedTitle, isSearching, pendingSources, sourceErrors, streamError, retrySource, truncatedAt, fellBackToAll,
   } = useContentCombobox({
     value, onChange, searchParams, fallbackSearchParams, scopeKey, scopeLabel,
-    appResults, selectContainers, allowFreeform, logApp,
+    appResults, selectContainers, allowFreeform, logApp, retainQueryOnEscape,
   });
 
   const mode = state.mode;
@@ -138,32 +143,106 @@ export function ContentCombobox({
   const normalizedValue = normalizeValue(value);
 
   const inputRef = useRef(null);
+  // More-actions menus have their own portal. Mark their pointer boundary
+  // before focus can leave the input, so the input's blur does not mistake a
+  // menu interaction for an outside dismissal.
+  const moreMenuOpenRef = useRef(false);
+  const moreMenuTriggerRef = useRef(null);
+  const moreMenuInternalPointerRef = useRef(false);
+  // A menu verb deliberately dismisses Mantine's portal while retaining the
+  // combobox work surface. That dismissal emits the same blur shape as an
+  // outside focus move, so it needs one synchronous action marker.
+  const moreMenuActionRef = useRef(false);
+  const moreMenuActionKindRef = useRef(null);
   const viewportRef = useRef(null);
   const prevIdxRef = useRef(-1);
   const scrollAnimRef = useRef(null);
   const paginationScrollGuardRef = useRef(false); // suppress scroll-to-highlight after load-more
   const loadCooldownRef = useRef(false);          // ignore scroll events briefly after load-more
   const [loadingMore, setLoadingMore] = useState(false);
+  const handleMoreMenuPointerDown = useCallback((trigger, isPortaledMenu = false) => {
+    moreMenuOpenRef.current = true;
+    moreMenuInternalPointerRef.current = isPortaledMenu;
+    moreMenuTriggerRef.current = trigger;
+  }, []);
+  const handleMoreMenuChange = useCallback((opened) => {
+    moreMenuOpenRef.current = opened;
+    // Menu close completes either kind of action. A cancelled pointerdown can
+    // suppress mousedown entirely, leaving its guard unconsumed. Neither that
+    // guard nor the click action marker may survive into the next outside click.
+    if (!opened) {
+      moreMenuInternalPointerRef.current = false;
+      moreMenuActionRef.current = false;
+      moreMenuActionKindRef.current = null;
+    }
+  }, []);
+  const handleMoreMenuAction = useCallback((kind) => {
+    moreMenuActionRef.current = true;
+    moreMenuActionKindRef.current = kind;
+  }, []);
+  const handleMoreMenuTriggerFocus = useCallback(() => {
+    // Keyboard Menu restoration returns focus here after an action. That
+    // restoration completes the internal action boundary; a later Tab/outside
+    // move must be a genuine close, not consume an old action marker.
+    moreMenuActionRef.current = false;
+    moreMenuActionKindRef.current = null;
+  }, []);
+  const handleMoreMenuEscapeCapture = useCallback((e) => {
+    if (e.key !== 'Escape' || !e.target.closest?.('[data-content-combobox-more-boundary]')) return;
+    // Nested Mantine portals share this React tree. Intercept before the outer
+    // Combobox sees Escape, then close only the inner Menu and restore its
+    // trigger focus.
+    e.preventDefault();
+    e.stopPropagation();
+    const trigger = moreMenuTriggerRef.current;
+    trigger?.click();
+    requestAnimationFrame(() => trigger?.focus());
+  }, []);
 
   // Machine mode, readable from Mantine callbacks without a stale closure.
   const modeRef = useRef(mode);
   modeRef.current = mode;
+  // Search-session owners (MediaContentSearch) reset session-local scope only
+  // after a real close gesture. Keep the callback beside every close commit so
+  // Escape, Tab and genuine outside dismissal have identical lifecycle.
+  const commitClose = useCallback((reason) => {
+    commit(reason);
+    onClose?.(reason);
+  }, [commit, onClose]);
 
   // ── Mantine store: dropdown visibility follows the machine mode ──
   const combobox = useCombobox({
+    opened: isEditing,
     onDropdownClose: () => {
       combobox.resetSelectedOption();
+      // A nested More menu is portaled outside this dropdown. Mantine's outer
+      // click-outside observer therefore reports its dismissal as a dropdown
+      // close even though the user chose an in-surface action. Keep editing
+      // alive and restore the outer list; only a genuine external focus exit
+      // may take the commit('outside') branch below.
+      if (moreMenuInternalPointerRef.current || moreMenuActionRef.current || destinationInteractionActive) {
+        moreMenuInternalPointerRef.current = false;
+        moreMenuActionRef.current = false;
+        moreMenuActionKindRef.current = null;
+        return;
+      }
       // Mantine-initiated close (outside pointerdown). When WE initiated the
       // close (Escape/Tab/select/freeform), the machine is already back in
       // DISPLAY and commit semantics were handled — do nothing.
-      if (modeRef.current !== Modes.DISPLAY) commit('outside');
+      if (modeRef.current !== Modes.DISPLAY) {
+        commitClose('outside');
+      }
     },
   });
-
-  useEffect(() => {
-    if (isEditing) combobox.openDropdown();
-    else combobox.closeDropdown();
-  }, [isEditing]); // eslint-disable-line react-hooks/exhaustive-deps -- combobox store is stable
+  const handleMoreBoundaryBlur = useCallback((nextTarget) => {
+    if (moreMenuActionRef.current) {
+      moreMenuActionRef.current = false;
+      return;
+    }
+    if (nextTarget?.closest?.('[data-content-combobox-more-boundary]')) return;
+    moreMenuOpenRef.current = false;
+    combobox.closeDropdown();
+  }, [combobox]);
 
   // ── Open behavior (twin): seed input from value + select-after-colon ──
   const startEditing = useCallback(() => {
@@ -202,16 +281,10 @@ export function ContentCombobox({
   }, [search, value, onChange, handleClose, log]);
 
   // ── Stream status retry (Task 10) ──
-  // No dedicated per-source retry transport exists — the streaming search
-  // hook only exposes a whole-query dispatch (handleInput, which feeds
-  // debouncedSearch). Re-running the currently-typed text is the same
-  // recovery useContentCombobox already performs automatically once after a
-  // settled-empty result (search.retry_after_source_error); this just lets
-  // the user trigger it manually without editing the box.
   const handleStreamRetry = useCallback((source) => {
     log.info('stream_status.retry', { source, text: search });
-    handleInput(search ?? '');
-  }, [handleInput, search, log]);
+    retrySource(source);
+  }, [retrySource, search, log]);
 
   // ── Option submit (mouse path; keyboard is fully component-owned) ──
   const handleOptionSubmit = (val) => {
@@ -257,11 +330,11 @@ export function ContentCombobox({
     }
     if (e.key === 'Escape') {
       e.preventDefault();
-      commit('escape');
+      commitClose('escape');
       return;
     }
     if (e.key === 'Tab') {
-      commit('tab'); // no preventDefault — focus moves naturally
+      commitClose('tab'); // no preventDefault — focus moves naturally
     }
   };
 
@@ -533,7 +606,17 @@ export function ContentCombobox({
                 prop is set by any non-media caller of this shared component
                 (admin content-id pickers), so ResultRowActions renders
                 nothing there — zero behavior change. */}
-            <ResultRowActions item={item} isContainerItem={container} onPlayAll={onPlayAll ? () => onPlayAll(item) : null} onMore={onMore ? (action) => onMore(action, item) : null} />
+            <ResultRowActions
+              item={item}
+              isContainerItem={container}
+              onPlayAll={onPlayAll ? () => onPlayAll(item) : null}
+              onMore={onMore ? (action) => onMore(action, item) : null}
+              onMoreMenuPointerDown={handleMoreMenuPointerDown}
+              onMoreMenuChange={handleMoreMenuChange}
+              onMoreMenuAction={handleMoreMenuAction}
+              onMoreMenuTriggerFocus={handleMoreMenuTriggerFocus}
+              onMoreBoundaryBlur={handleMoreBoundaryBlur}
+            />
           </Group>
         </Group>
       </Combobox.Option>
@@ -547,9 +630,14 @@ export function ContentCombobox({
   }
 
   const displayValue = search !== null ? search : (value || '');
-  const showFreeform = allowFreeform && !!search && search !== value && !isBrowse && search.length >= 2;
+  // A named source error means this query has not completed successfully,
+  // even when its transport emitted `complete` and no global error remains.
+  // Do not turn that recoverable state into an empty-success/freeform claim.
+  const hasUnresolvedSourceFailures = sourceErrors.length > 0;
+  const showFreeform = allowFreeform && !!search && search !== value && !isBrowse && !streamError && !hasUnresolvedSourceFailures && search.length >= 2;
 
   return (
+    <div onKeyDownCapture={handleMoreMenuEscapeCapture}>
     <Combobox store={combobox} onOptionSubmit={handleOptionSubmit}>
       <Combobox.Target withKeyboardNavigation={false}>
         <TextInput
@@ -564,7 +652,21 @@ export function ContentCombobox({
             else combobox.openDropdown();
           }}
           onFocus={() => startEditing()}
-          onBlur={() => {
+          onBlur={(e) => {
+            // A More-actions menu is portaled outside this Combobox. Its
+            // managed focus legitimately blurs the input, but is not an
+            // outside dismissal and must not revert the typed search.
+            const enteringMoreTrigger = e.relatedTarget?.closest?.('[data-content-combobox-more-trigger]');
+            if (moreMenuActionRef.current) {
+              moreMenuActionRef.current = false;
+              return;
+            }
+            if (moreMenuOpenRef.current || enteringMoreTrigger) {
+              moreMenuOpenRef.current = true;
+              if (enteringMoreTrigger) moreMenuTriggerRef.current = enteringMoreTrigger;
+              return;
+            }
+            if (destinationInteractionActive) return;
             // Closing the dropdown routes through onDropdownClose → commit('outside')
             // (revert of typed-but-unpicked text). Escape/Tab are handled before
             // blur; this also covers programmatic focus loss.
@@ -699,6 +801,18 @@ export function ContentCombobox({
           <StreamStatusLine pending={pendingSources} sourceErrors={sourceErrors} onRetry={handleStreamRetry} />
         )}
 
+        {!isBrowse && streamError && (
+          <Group gap="xs" p="xs" data-testid="stream-global-error" aria-live="polite">
+            <Text size="xs" c="red">{streamError.message}</Text>
+            <button type="button" className="stream-status-retry-btn" data-testid="stream-global-retry"
+              // Keep the input's editing session alive until Retry runs.
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => retrySource()}>
+              Retry
+            </button>
+          </Group>
+        )}
+
         {/* D5 widening notice (Task 11 fix round): a search scoped to a narrow
             library (activeScope's parent — e.g. Music›Ambient) that settled
             empty was silently re-run catalog-wide by the hook. Say so, above
@@ -707,7 +821,7 @@ export function ContentCombobox({
             anymore, so a message gated on the empty branch would never be
             seen. Hidden while the widened search is still in flight
             (isSearching) so it doesn't flash "0 results" before they arrive. */}
-        {!isBrowse && fellBackToAll && !isSearching && (
+        {!isBrowse && fellBackToAll && !isSearching && !streamError && !hasUnresolvedSourceFailures && (
           <Box p="xs" data-testid="combobox-fallback-notice" style={{ borderBottom: '1px solid var(--mantine-color-dark-4)' }}>
             <Text size="xs" c="dimmed">
               {items.length > 0
@@ -736,7 +850,7 @@ export function ContentCombobox({
                   <Text size="sm" c="dimmed">{browseLoading ? 'Loading...' : 'Searching...'}</Text>
                 </Group>
               </Combobox.Empty>
-            ) : items.length === 0 ? (
+            ) : items.length === 0 && !streamError && !hasUnresolvedSourceFailures ? (
               <Combobox.Empty>
                 {isBrowse
                   ? 'No items in this container'
@@ -750,9 +864,9 @@ export function ContentCombobox({
                           ? 'No results — select “Use as raw value” or press Enter'
                           : 'No results')}
               </Combobox.Empty>
-            ) : (
+            ) : items.length > 0 ? (
               items.map(renderOption)
-            )}
+            ) : null}
             {showFreeform && (
               <Combobox.Option value="__freeform__" key="__freeform__" data-testid="freeform-commit-option">
                 <Group gap="xs"><IconPencil size={14} /><Text size="sm">Use “{search}” as raw value</Text></Group>
@@ -772,6 +886,7 @@ export function ContentCombobox({
         </Combobox.Options>
       </Combobox.Dropdown>
     </Combobox>
+    </div>
   );
 }
 

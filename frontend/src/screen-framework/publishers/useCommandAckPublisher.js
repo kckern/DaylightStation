@@ -73,7 +73,7 @@ export function useCommandAckPublisher({ deviceId, actionBus } = {}) {
       }
     };
 
-    const publishAck = ({ commandId, ok, error, code }) => {
+    const publishAck = ({ commandId, ok, error, code, handoff }) => {
       if (typeof commandId !== 'string' || commandId.length === 0) {
         logger().debug('ack-skipped-no-commandId', { ok });
         return;
@@ -92,6 +92,7 @@ export function useCommandAckPublisher({ deviceId, actionBus } = {}) {
           ok,
           error,
           code,
+          handoff,
           appliedAt: new Date().toISOString(),
         });
         wsService.send(ack);
@@ -104,7 +105,16 @@ export function useCommandAckPublisher({ deviceId, actionBus } = {}) {
     const successHandler = (payload) => {
       const commandId = payload?.commandId;
       if (!commandId) return;
+      // Add requires a durable queue-owner mutation. Its receipt event is not
+      // success; ScreenActionHandler emits media:queue-op-applied only after the
+      // owning Player exposes the appended item in its post-mutation snapshot.
+      if (payload?.op === 'add') return;
       publishAck({ commandId, ok: true });
+    };
+
+    const queueOpAppliedHandler = (payload) => {
+      if (payload?.op !== 'add') return;
+      publishAck({ commandId: payload?.commandId, ok: true });
     };
 
     const errorHandler = (payload) => {
@@ -118,10 +128,25 @@ export function useCommandAckPublisher({ deviceId, actionBus } = {}) {
       });
     };
 
+    // Receipt-time success is specifically unsafe for handoff: no F3a owner
+    // executor exists to prove capture/start/stop. Return an explicit typed
+    // terminal failure and leave every owner untouched.
+    const handoffUnsupportedHandler = (payload) => {
+      const commandId = payload?.commandId;
+      const transferId = payload?.transferId;
+      if (!commandId || !transferId) return;
+      publishAck({
+        commandId, ok: false, code: 'HANDOFF_UNSUPPORTED', error: 'Handoff executor unavailable',
+        handoff: { transferId, phase: 'failed', code: 'HANDOFF_UNSUPPORTED' },
+      });
+    };
+
     const unsubs = [];
     for (const evt of ACKED_COMMAND_EVENTS) {
       unsubs.push(bus.subscribe(evt, successHandler));
     }
+    unsubs.push(bus.subscribe('media:queue-op-applied', queueOpAppliedHandler));
+    unsubs.push(bus.subscribe('media:handoff', handoffUnsupportedHandler));
     unsubs.push(bus.subscribe(ERROR_EVENT, errorHandler));
 
     const presenceTopic = COMMAND_HANDLER_PRESENCE_TOPIC(deviceId);

@@ -14,6 +14,7 @@ import { getWidgetRegistry } from '../widgets/registry.js';
 import { useScreenVolume } from '../../lib/volume/ScreenVolumeContext.js';
 import getLogger from '../../lib/logging/Logger.js';
 import { dispatchCyclePlaybackRate } from './cyclePlaybackRate.js';
+import { getActionBus } from '../input/ActionBus.js';
 
 let _logger;
 function logger() {
@@ -192,9 +193,26 @@ export function ScreenActionHandler({ actions = {}, inputType = null }) {
   const handleMediaQueueOp = useCallback((payload) => {
     const op = payload?.op;
 
-    if (op === 'play-now' || op === 'play-next') {
-      if (getPlayerQueueOpRegistry().dispatch({ op, ...payload })) {
+    if (op === 'play-now' || op === 'play-next' || op === 'add') {
+      const resultCallbacks = op === 'add' ? {
+        onApplied: (result) => getActionBus().emit('media:queue-op-applied', {
+          ...payload, ...result,
+        }),
+        onError: (failure) => getActionBus().emit('command-handler-error', {
+          commandId: payload?.commandId,
+          ...failure,
+        }),
+      } : {};
+      if (getPlayerQueueOpRegistry().dispatch({ op, ...payload, ...resultCallbacks })) {
         logger().info('media.queue-op.dispatched', { op, contentId: payload.contentId });
+        return;
+      }
+      if (op === 'add') {
+        getActionBus().emit('command-handler-error', {
+          commandId: payload?.commandId,
+          code: 'QUEUE_OWNER_UNAVAILABLE',
+          error: 'No queue owner is available to hold this item',
+        });
         return;
       }
       // A media element with no registered owner is a short mount/unmount race
@@ -220,7 +238,39 @@ export function ScreenActionHandler({ actions = {}, inputType = null }) {
   }, [showOverlay, dismissOverlay, isMediaDuplicate]);
 
   // --- Media playback controls ---
+  const handleMediaSeek = useCallback((op, payload) => {
+    if (!Number.isFinite(payload?.value)) {
+      getActionBus().emit('command-handler-error', {
+        commandId: payload?.commandId,
+        code: 'INVALID_SEEK_VALUE',
+        error: 'Seek value must be finite',
+      });
+      return;
+    }
+    if (!getPlayerQueueOpRegistry().dispatch({ op, value: payload.value, commandId: payload?.commandId })) {
+      getActionBus().emit('command-handler-error', {
+        commandId: payload?.commandId,
+        code: 'PLAYBACK_OWNER_UNAVAILABLE',
+        error: 'No playback owner is available to seek',
+      });
+    }
+  }, []);
+
+  const handleMediaSeekAbs = useCallback((payload) => handleMediaSeek('seek-abs', payload), [handleMediaSeek]);
+  const handleMediaSeekRel = useCallback((payload) => handleMediaSeek('seek-rel', payload), [handleMediaSeek]);
+
   const handleMediaPlayback = useCallback((payload) => {
+    if (payload?.command?.toLowerCase() === 'stop') {
+      if (!getPlayerQueueOpRegistry().dispatch({ op: 'stop', commandId: payload?.commandId })) {
+        getActionBus().emit('command-handler-error', {
+          commandId: payload?.commandId,
+          code: 'PLAYBACK_OWNER_UNAVAILABLE',
+          error: 'No playback owner is available to stop',
+        });
+      }
+      return;
+    }
+
     const idleMode = actions?.playback?.when_idle || 'dispatch';
 
     // Check if media is currently active
@@ -245,6 +295,15 @@ export function ScreenActionHandler({ actions = {}, inputType = null }) {
       return;
     }
 
+    // Explicit remote transport commands must use the active owner's imperative
+    // lifecycle. A synthetic Enter only toggles the renderer, which can resume
+    // native media after Stop while leaving the owner's published state `ready`.
+    const transportOp = payload?.command?.toLowerCase();
+    if ((transportOp === 'play' || transportOp === 'pause' || transportOp === 'toggle')
+      && getPlayerQueueOpRegistry().dispatch({ op: transportOp, commandId: payload?.commandId })) {
+      return;
+    }
+
     // Default: dispatch synthetic keydown
     // Keyed on the LOWERCASED command, so every spelling a caller might send
     // has to appear in lower case here. `skipNext`/`skipPrev` are the transport
@@ -259,7 +318,7 @@ export function ScreenActionHandler({ actions = {}, inputType = null }) {
       prev: 'Backspace', previous: 'Backspace', back: 'Backspace', skipprev: 'Backspace',
       fwd: 'ArrowRight', forward: 'ArrowRight', ff: 'ArrowRight',
       rew: 'ArrowLeft', rewind: 'ArrowLeft', rw: 'ArrowLeft',
-      stop: 'Escape', clear: 'Escape',
+      clear: 'Escape',
     };
     const key = keyMapping[payload.command?.toLowerCase()];
     if (!key) {
@@ -511,6 +570,8 @@ export function ScreenActionHandler({ actions = {}, inputType = null }) {
   useScreenAction('media:play', handleMediaPlay);
   useScreenAction('media:queue', handleMediaQueue);
   useScreenAction('media:queue-op', handleMediaQueueOp);
+  useScreenAction('media:seek-abs', handleMediaSeekAbs);
+  useScreenAction('media:seek-rel', handleMediaSeekRel);
   useScreenAction('media:playback', handleMediaPlayback);
   useScreenAction('media:rate', handleMediaRate);
   useScreenAction('display:volume', handleVolume);

@@ -2,7 +2,7 @@
 // Owns the ack router (ONE device-ack:* subscription) and a cache of remote
 // session controllers. Multiple peeks may be active at once (C5.5); the
 // local session is never touched by anything here (C5.6).
-import React, { useContext, useEffect, useMemo, useRef, useCallback } from 'react';
+import React, { useContext, useEffect, useMemo, useRef, useCallback, useState } from 'react';
 import { PeekContext } from './PeekContext.js';
 import { createAckRouter } from './ackRouter.js';
 import { createRemoteSessionController } from './RemoteSessionController.js';
@@ -20,11 +20,39 @@ export function PeekProvider({ children }) {
   const ackRouter = ackRouterRef.current;
 
   const controllersRef = useRef(new Map()); // deviceId -> controller
+  const [steeringByDevice, setSteeringByDevice] = useState(() => new Map());
+
+  // RemoteSessionController calls this only after a command is acknowledged
+  // against fresh, currently playing playback. Merely opening a Remote never
+  // reaches this callback. CastTargetProvider re-checks this identity against
+  // the latest fleet snapshot before it uses the record as an idle exemption.
+  const recordSteeringActivity = useCallback(({ deviceId, playback, ownerId = null }) => {
+    if (typeof deviceId !== 'string' || !deviceId
+      || typeof playback?.sessionId !== 'string' || !playback.sessionId
+      || typeof playback?.contentId !== 'string' || !playback.contentId) return;
+    setSteeringByDevice((previous) => {
+      const next = new Map(previous);
+      next.set(deviceId, { playback, ownerId });
+      return next;
+    });
+  }, []);
+
+  // DispatchProvider has already correlated this backend playback confirmation
+  // to an attempt created by this browser. This records provenance only; the
+  // CastTargetProvider remains the sole gate and requires fresh matching
+  // receiver state before it grants any inactivity exemption.
+  const recordConfirmedDispatch = useCallback((receipt) => {
+    if (receipt?.ownerId !== receipt?.deviceId) return;
+    recordSteeringActivity(receipt);
+  }, [recordSteeringActivity]);
 
   useEffect(() => {
     return subscribeTopicKind('device-ack', (msg) => {
       if (typeof msg.commandId !== 'string') return;
-      ackRouter.resolve({ commandId: msg.commandId, ok: msg.ok, error: msg.error });
+      ackRouter.resolve({
+        deviceId: msg.deviceId, commandId: msg.commandId, ok: msg.ok,
+        error: msg.error, code: msg.code, appliedAt: msg.appliedAt, handoff: msg.handoff,
+      });
     });
   }, [ackRouter]);
 
@@ -37,11 +65,13 @@ export function PeekProvider({ children }) {
     if (typeof deviceId !== 'string' || !deviceId) return null;
     let ctl = controllersRef.current.get(deviceId);
     if (!ctl) {
-      ctl = createRemoteSessionController({ deviceId, fleetStore, ackRouter });
+      ctl = createRemoteSessionController({
+        deviceId, fleetStore, ackRouter, onSteeringActivity: recordSteeringActivity,
+      });
       controllersRef.current.set(deviceId, ctl);
     }
     return ctl;
-  }, [fleetStore, ackRouter]);
+  }, [fleetStore, ackRouter, recordSteeringActivity]);
 
   const enterPeek = useCallback((deviceId) => {
     mediaLog.peekEntered({ deviceId });
@@ -52,9 +82,14 @@ export function PeekProvider({ children }) {
     mediaLog.peekExited({ deviceId });
   }, []);
 
+  const getSteeringActivity = useCallback(
+    (deviceId) => steeringByDevice.get(deviceId) ?? null,
+    [steeringByDevice]
+  );
+
   const value = useMemo(
-    () => ({ getController, enterPeek, exitPeek }),
-    [getController, enterPeek, exitPeek]
+    () => ({ getController, enterPeek, exitPeek, getSteeringActivity, recordConfirmedDispatch }),
+    [getController, enterPeek, exitPeek, getSteeringActivity, recordConfirmedDispatch]
   );
 
   return <PeekContext.Provider value={value}>{children}</PeekContext.Provider>;

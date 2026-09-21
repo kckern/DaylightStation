@@ -5,7 +5,7 @@
 // for the backend playback watchdog's trailing `playback` step so the user
 // gets honest confirmation (or an honest "the TV may not have started
 // playing"). Failures and unconfirmed playback never auto-clear; confirmed
-// playback lingers briefly with a Remote shortcut. Never modal (N1.3).
+// playback lingers briefly with a Steer it shortcut. Never modal (N1.3).
 import React, { useEffect } from 'react';
 import { IconAlertCircle, IconRefresh, IconX, IconDeviceRemote, IconPlayerPlayFilled } from '@tabler/icons-react';
 import { useDispatch } from './useDispatch.js';
@@ -49,8 +49,22 @@ function rowCopy(d, phase, name) {
     case 'sent':
       return { primary: `Sent to ${name}`, secondary: d.title ?? null };
     case 'confirmed':
+      if (d.operation === 'add') {
+        return {
+          primary: d.title ? `Added ${d.title} to ${name}` : `Added to ${name}`,
+          secondary: Number.isInteger(d.outcomeIdentity?.queueLength)
+            ? `${d.outcomeIdentity.queueLength} items queued`
+            : null,
+        };
+      }
       return { primary: `▶ Playing on ${name}`, secondary: d.title ?? null };
     case 'unconfirmed':
+      if (d.operation === 'add') {
+        return {
+          primary: `The item may not have been added to ${name}`,
+          secondary: d.title ?? null,
+        };
+      }
       return {
         primary: 'The TV may not have started playing — check it or open the remote',
         secondary: d.title ? `Sent to ${name} · ${d.title}` : `Sent to ${name}`,
@@ -67,7 +81,7 @@ function rowCopy(d, phase, name) {
   }
 }
 
-function TrayRow({ d, retryLast, removeDispatch }) {
+function TrayRow({ d, retry, removeDispatch }) {
   const { device } = useDevice(d.deviceId);
   const name = deviceName(device, d.deviceId);
   const { push } = useNav();
@@ -106,14 +120,14 @@ function TrayRow({ d, retryLast, removeDispatch }) {
           onClick={openRemote}
           className="cast-tray-action"
         >
-          <IconDeviceRemote size={14} /> Remote
+          <IconDeviceRemote size={14} /> Steer it
         </button>
       )}
       {phase === 'failed' && (
         <button
           type="button"
           data-testid={`dispatch-retry-${d.dispatchId}`}
-          onClick={retryLast}
+          onClick={() => retry(d.dispatchId)}
           className="cast-tray-action"
         >
           <IconRefresh size={14} /> Retry
@@ -135,12 +149,12 @@ function TrayRow({ d, retryLast, removeDispatch }) {
 }
 
 export function DispatchProgressTray() {
-  const { dispatches, retryLast, removeDispatch } = useDispatch();
+  const { dispatches, retry, removeDispatch } = useDispatch();
   if (dispatches.size === 0) return null;
   return (
     <div data-testid="dispatch-tray" className="cast-tray">
       {[...dispatches.values()].map((d) => (
-        <TrayRow key={d.dispatchId} d={d} retryLast={retryLast} removeDispatch={removeDispatch} />
+        <TrayRow key={d.dispatchId} d={d} retry={retry} removeDispatch={removeDispatch} />
       ))}
     </div>
   );

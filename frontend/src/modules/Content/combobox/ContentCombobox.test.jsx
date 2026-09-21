@@ -532,36 +532,42 @@ describe('ContentCombobox (hook wiring)', () => {
     expect(screen.getByTestId('combobox-option-plex:1')).toBeInTheDocument();
   });
 
-  it('Escape routes through commit(\'escape\')', () => {
+  it('notifies the transient owner when Escape closes the search', () => {
     currentHook = makeHook({
       state: { ...initialState(''), mode: Modes.SEARCH, search: 'abc' },
     });
-    renderCombobox();
+    const onClose = vi.fn();
+    renderCombobox({ onClose });
 
     fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Escape' });
     expect(currentHook.commit).toHaveBeenCalledWith('escape');
+    expect(onClose).toHaveBeenCalledWith('escape');
   });
 
-  it('Tab routes through commit(\'tab\')', () => {
+  it('notifies the transient owner when Tab closes the search', () => {
     currentHook = makeHook({
       state: { ...initialState(''), mode: Modes.SEARCH, search: 'abc' },
     });
-    renderCombobox();
+    const onClose = vi.fn();
+    renderCombobox({ onClose });
 
     fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Tab' });
     expect(currentHook.commit).toHaveBeenCalledWith('tab');
+    expect(onClose).toHaveBeenCalledWith('tab');
   });
 
   it('Blur (outside close) routes through commit(\'outside\') — no junk-commit of typed text', () => {
     currentHook = makeHook({
       state: { ...initialState(''), mode: Modes.SEARCH, search: 'unpicked typed query' },
     });
-    renderCombobox();
+    const onClose = vi.fn();
+    renderCombobox({ onClose });
 
     // onBlur closes the Mantine dropdown → onDropdownClose fires while the
     // machine is still editing (mode !== DISPLAY) → commit('outside') → revert.
     fireEvent.blur(screen.getByRole('textbox'));
     expect(currentHook.commit).toHaveBeenCalledWith('outside');
+    expect(onClose).toHaveBeenCalledWith('outside');
   });
 
   it('Freeform row commits the raw text via its own explicit path (onChange + handleClose), NOT via commit(\'enter\')', () => {
