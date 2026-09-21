@@ -77,8 +77,11 @@ describe('FitnessSessionDetailWidget — delete flow', () => {
       expect(global.fetch).toHaveBeenCalledWith('/api/v1/fitness/sessions/20260422193014');
     });
 
-    const deleteBtn = findDeleteButton(container);
-    expect(deleteBtn).toBeTruthy();
+    let deleteBtn;
+    await waitFor(() => {
+      deleteBtn = findDeleteButton(container);
+      expect(deleteBtn).toBeTruthy();
+    });
 
     await act(async () => { deleteBtn.click(); });
 
