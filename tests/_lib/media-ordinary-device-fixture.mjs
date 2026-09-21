@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { WebSocketEventBus } from '../../backend/src/1_adapters/eventbus/WebSocketEventBus.mjs';
 import { WebSocketContentAdapter } from '../../backend/src/1_adapters/devices/WebSocketContentAdapter.mjs';
 import { EventBusClientIngressAdapter } from '../../backend/src/1_adapters/eventbus/EventBusClientIngressAdapter.mjs';
+import { EventBusPlaybackStateRelay } from '../../backend/src/1_adapters/eventbus/EventBusMediaClientIngress.mjs';
 import { EventBusDeviceTransportGateway } from '../../backend/src/1_adapters/devices/EventBusDeviceTransportGateway.mjs';
 import { ClientIngressService } from '../../backend/src/3_applications/eventbus/ClientIngressService.mjs';
 import { WakeAndLoadService } from '../../backend/src/3_applications/devices/services/WakeAndLoadService.mjs';
@@ -49,6 +50,7 @@ export function createMediaOrdinaryDeviceFixture({ upstream, logger = quiet } = 
   const eventBus = new WebSocketEventBus({ logger });
   const publications = new EventBusClientIngressAdapter({ eventBus });
   publications.attach(new ClientIngressService({ publications, logger }));
+  new EventBusPlaybackStateRelay({ eventBus, logger }).attach();
   const presenceGateway = new EventBusDeviceTransportGateway({ eventBus });
   const deviceLiveness = new DeviceLivenessService({
     presenceGateway, logger, scheduler, offlineTimeoutMs: 60_000,
