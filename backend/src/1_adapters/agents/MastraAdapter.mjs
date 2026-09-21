@@ -200,7 +200,7 @@ export class MastraAdapter extends IAgentRuntime {
       const agentOpts = {
         id: name,
         name,
-        instructions: systemPrompt,
+        instructions: systemPrompt ?? '',
         model: this.#model,
         tools: mastraTools,
         // Workaround for Mastra issue #16179 — autoResumeSuspendedTools
