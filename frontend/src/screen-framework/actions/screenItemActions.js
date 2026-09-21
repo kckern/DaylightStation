@@ -8,6 +8,7 @@ export function createScreenItemActions({ source, targetId }) {
   let pendingCommit = null;
   const owner = createItemActionOwner({
     targetId,
+    getPendingCommit: () => pendingCommit,
     capture: () => source.capture().snapshot,
     revision: () => {
       const identity = source.getActionOwner?.() ?? source.capture()?.identity;

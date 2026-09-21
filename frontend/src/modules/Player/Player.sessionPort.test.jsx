@@ -56,6 +56,52 @@ afterEach(() => {
 });
 
 describe('Player session port', () => {
+  it.each(['add', 'playNext', 'playFirst'])('rebases an expanded %s onto a newer Play after its delayed screen commit', async (kind) => {
+    const ref = createRef();
+    const native = document.createElement('video');
+    Object.defineProperty(native, 'paused', { configurable: true, value: false });
+    mockMediaElement = native;
+    render(<Player ref={ref} play={{ contentId: 'plex:a', format: 'video' }} />);
+    await waitFor(() => expect(ref.current?.getQueueSnapshot().items[0]?.contentId).toBe('plex:a'));
+    const registry = createPlayerSessionRegistry();
+    const bridge = createPlayerSessionBridge({ getPlayerHandle: () => ref.current, registry,
+      setIntervalFn: () => 1, clearIntervalFn: () => {} });
+    bridge.start();
+    const source = createRegistrySessionSource({ registry, ownerId: 'screen', sessionId: 'overlap-session' });
+    let resolveExpansion;
+    const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation(() => new Promise(resolve => { resolveExpansion = resolve; }));
+    try {
+      let commitPlay;
+      const queueCommits = [];
+      // Defer the write boundaries, but commit through the actual registry
+      // and mounted Player rather than substituting a local session owner.
+      const actions = createScreenItemActions({ targetId: 'screen', source: { ...source,
+        adopt: (snapshot, options) => { commitPlay = () => source.adopt(snapshot, options); return { ok: true }; },
+        applyQueue: queue => { queueCommits.push(() => source.applyQueue(queue)); return { ok: true }; },
+      } });
+      const insert = actions.execute({ kind, item: { contentId: 'plex:album', type: 'album' },
+        operationId: 'older-insert', tappedAt: Date.now() });
+      const play = actions.execute({ kind: 'playNow', item: { contentId: 'plex:b', format: 'video' },
+        clearRest: true, operationId: 'newer-play', tappedAt: Date.now() });
+      await act(async () => {
+        resolveExpansion({ ok: true, json: async () => ({ items: [{ id: 'plex:child', type: 'movie' }] }) });
+        await new Promise(resolve => setTimeout(resolve, 0));
+      });
+      const insertsIssuedBeforePlayCommit = queueCommits.length;
+      expect(source.capture().snapshot.queue.items.map(item => item.contentId)).toEqual(['plex:a']);
+      act(() => commitPlay());
+      expect((await play).ok).toBe(true);
+      await waitFor(() => expect(queueCommits).toHaveLength(1));
+      act(() => queueCommits[0]());
+      expect((await insert).ok).toBe(true);
+      expect(source.capture().snapshot.queue.items.map(item => item.contentId)).toEqual(['plex:b', 'plex:child']);
+      expect(source.capture().snapshot.currentItem.contentId).toBe('plex:b');
+      expect(insertsIssuedBeforePlayCommit).toBe(0);
+    } finally {
+      fetch.mockRestore();
+      bridge.stop();
+    }
+  });
   it('removing the final direct-play item stops native playback and cannot revive the original play prop', async () => {
     const ref = createRef();
     const native = document.createElement('video');
