@@ -4,7 +4,7 @@ import {
   SUPPORTING_ACCEPTED_CRITERIA,
   validateReport,
 } from '../../../scripts/media-stable-core-gate.mjs';
-import { validateP0Manifest } from '../../../scripts/media-p0-gate.mjs';
+import { P0_EXTENSION_ENTRIES, validateP0Manifest } from '../../../scripts/media-p0-gate.mjs';
 
 const BASE = [...ACCEPTED_STORIES, ...SUPPORTING_ACCEPTED_CRITERIA];
 
@@ -19,6 +19,16 @@ describe('Media P0 gate manifest', () => {
       ...BASE,
       { story: 'FIND.1a', criteria: ['FIND.1a/AC1'], file: 'media-app-search-entry.runtime.test.mjs', grep: 'FIND.1a' },
     ])).toEqual({ stories: 13, criteria: 33 });
+  });
+
+  it('pins PLAY.6a/AC3 to the exact authoritative Add and queue traversal journey', () => {
+    expect(P0_EXTENSION_ENTRIES).toEqual([{
+      story: 'PLAY.6a',
+      criteria: ['PLAY.6a/AC3'],
+      file: 'media-app-remote-controls.runtime.test.mjs',
+      grep: 'Add preserves playback and reports its position before Peek Next and Previous traverse the receiver queue',
+    }]);
+    expect(validateP0Manifest([...BASE, ...P0_EXTENSION_ENTRIES])).toEqual({ stories: 13, criteria: 33 });
   });
 
   it('rejects skipped, duplicated, weakened, or unjourneyed criteria', () => {

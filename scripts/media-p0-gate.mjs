@@ -12,7 +12,14 @@ import {
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const MEDIA_JOURNEY_DIRECTORY = 'tests/live/flow/media';
 
-export const P0_EXTENSION_ENTRIES = Object.freeze([]);
+export const P0_EXTENSION_ENTRIES = Object.freeze([
+  {
+    story: 'PLAY.6a',
+    criteria: ['PLAY.6a/AC3'],
+    file: 'media-app-remote-controls.runtime.test.mjs',
+    grep: 'Add preserves playback and reports its position before Peek Next and Previous traverse the receiver queue',
+  },
+]);
 
 const STABLE_ENTRIES = [...ACCEPTED_STORIES, ...SUPPORTING_ACCEPTED_CRITERIA];
 
