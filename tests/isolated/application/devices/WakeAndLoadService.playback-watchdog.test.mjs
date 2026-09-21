@@ -48,6 +48,10 @@ describe('WakeAndLoadService — playback watchdog on container dispatches', () 
     broadcast = vi.fn();
     device = makeDevice();
     eventBus = makeEventBus();
+    eventBus.getTopicSubscriberCount.mockReturnValue(1);
+    eventBus.waitForMessage = vi.fn().mockResolvedValue({
+      topic: 'device-ack', deviceId: 'tv', commandId: 'test-dispatch-2', ok: true,
+    });
     prewarmService = {
       // play=plex:59493 (show container) resolves to first playable episode
       prewarm: vi.fn().mockResolvedValue({ status: 'ok', token: 't0k3n', contentId: 'plex:347695' }),
@@ -71,5 +75,33 @@ describe('WakeAndLoadService — playback watchdog on container dispatches', () 
   it('runs prewarm for play= dispatches (not just queue=)', async () => {
     await svc.execute('tv', { play: 'plex:59493' });
     expect(prewarmService.prewarm).toHaveBeenCalledWith('plex:59493', expect.any(Object));
+  });
+
+  it('confirms the resolved child only from the target device state', async () => {
+    await svc.execute('tv', { play: 'plex:59493' });
+
+    eventBus.emit('device-state:tv', {
+      deviceId: 'tv', reason: 'change',
+      snapshot: {
+        sessionId: 'child-session', state: 'playing',
+        currentItem: { contentId: 'plex:347695', queueItemId: 'child', format: 'video' },
+        queue: {
+          items: [{ contentId: 'plex:347695', queueItemId: 'child', format: 'video' }],
+          currentIndex: 0, upNextCount: 0, executionOrder: ['child'],
+        },
+        config: { shuffle: false, repeat: 'off', shader: null, volume: 50, playbackRate: 1 },
+        meta: {
+          ownerId: 'screen-owner', updatedAt: '2026-09-20T00:00:00.000Z',
+          playbackOwner: {
+            ownerInstanceId: 'player-child', playbackRevision: 1, queueRevision: 1,
+            contentId: 'plex:347695', queueItemId: 'child',
+          },
+        },
+      },
+    });
+
+    expect(broadcast).toHaveBeenCalledWith(expect.objectContaining({
+      topic: 'homeline:tv', step: 'playback', status: 'confirmed', sessionId: 'child-session',
+    }));
   });
 });
