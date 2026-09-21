@@ -193,7 +193,7 @@
     box-shadow: none;
   }
   .segmented-secret-text__line { gap: clamp(6px, 0.8vw, 12px); }
-  .segmented-secret-text__glyph { width: clamp(2.25rem, 4vw, 4.75rem); }
+  .segmented-secret-text__glyph { width: var(--secret-glyph-width, clamp(2.25rem, 4vw, 4.75rem)); }
 }
 .charades__notice { z-index: 5; display: flex; align-items: center; justify-content: center; gap: 12px; padding: 8px; background: var(--gp-stage); color: var(--gp-paper); }
 

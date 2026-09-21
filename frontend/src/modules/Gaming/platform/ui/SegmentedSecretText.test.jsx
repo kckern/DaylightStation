@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import SegmentedSecretText, { balanceSecretLines } from './SegmentedSecretText.jsx';
+import SegmentedSecretText, { balanceSecretLines, fitSecretTextLayout } from './SegmentedSecretText.jsx';
 import { activeSegmentsFor, SEGMENTS, SEGMENT_NEIGHBORS } from './segmentedSecretGeometry.js';
 import { MASK_SEGMENT_COLORS, SIGNAL_SEGMENT_COLORS, segmentColorValue } from './segmentedSecretPalette.js';
 import { SECRET_TEXT_MOTION_MS, SECRET_TEXT_MOTION_X, SECRET_TEXT_MOTION_Y } from './segmentedSecretMotion.js';
@@ -58,10 +58,10 @@ describe('SegmentedSecretText', () => {
     expect(container.querySelectorAll('.segmented-secret-text__space, .segmented-secret-text__word-gap')).toHaveLength(0);
   });
 
-  it('wraps a sixteen-cell clue before it overwhelms the charades stage', () => {
-    const { container } = render(<SegmentedSecretText text="Washing a window" decoder={STATIC} />);
-    expect(balanceSecretLines('WASHING A WINDOW')).toEqual(['WASHING', 'A WINDOW']);
-    expect(container.querySelectorAll('.segmented-secret-text__line')).toHaveLength(2);
+  it('measures candidate lines against the available container instead of a fixed character target', () => {
+    expect(fitSecretTextLayout('WASHING A WINDOW', { width: 1600, height: 600 }).lines).toEqual(['WASHING', 'A WINDOW']);
+    expect(fitSecretTextLayout('MOON WALK', { width: 1600, height: 600 }).lines).toEqual(['MOON WALK']);
+    expect(fitSecretTextLayout('WASHING A WINDOW', { width: 700, height: 300 }).glyphWidth).toBeLessThanOrEqual(92);
   });
 
   it('keeps the original per-glyph signal and mask interference', () => {

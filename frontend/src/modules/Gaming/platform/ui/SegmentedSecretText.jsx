@@ -1,4 +1,4 @@
-import React, { memo, useLayoutEffect, useRef } from 'react';
+import React, { memo, useLayoutEffect, useRef, useState } from 'react';
 import { getChildLogger } from '../../../../lib/logging/singleton.js';
 import { SEGMENTS, SEGMENT_NEIGHBORS, activeSegmentsFor, segmentNames, segmentPoints } from './segmentedSecretGeometry.js';
 import { MASK_SEGMENT_COLORS, SIGNAL_SEGMENT_COLORS, segmentColorValue } from './segmentedSecretPalette.js';
@@ -14,7 +14,11 @@ import './SegmentedSecretText.scss';
 // a change never moves a segment across families, so the filtered view holds.
 const SIGNAL_COLORS = Object.freeze(SIGNAL_SEGMENT_COLORS.map(segmentColorValue));
 const MASK_COLORS = Object.freeze(MASK_SEGMENT_COLORS.map(segmentColorValue));
-const TARGET_LINE_LENGTH = 14;
+const TARGET_LINE_LENGTH = 18;
+const MAX_LAYOUT_LINES = 3;
+const MAX_GLYPH_WIDTH = 92;
+const GLYPH_ASPECT_RATIO = 0.5;
+const LINE_WIDTH_RATIO = 0.82;
 const CURSOR = new Set(CURSOR_SEGMENTS);
 const NOTHING = new Set();
 const STATIC = decoderSettings({ reveal: 'static' });
@@ -37,6 +41,11 @@ function colorIndex(seed, glyphIndex, segmentName, paletteLength) {
 export function balanceSecretLines(text, targetLength = TARGET_LINE_LENGTH) {
   const value = String(text || '');
   const lineCount = Math.max(1, Math.ceil(value.length / targetLength));
+  return balanceSecretLinesForCount(value, lineCount);
+}
+
+function balanceSecretLinesForCount(value, requestedLineCount) {
+  const lineCount = Math.max(1, Math.min(requestedLineCount, (value.match(/ /g)?.length || 0) + 1));
   if (lineCount === 1) return [value];
 
   const lines = [];
@@ -60,6 +69,47 @@ export function balanceSecretLines(text, targetLength = TARGET_LINE_LENGTH) {
   return lines.map(line => line.trim());
 }
 
+export function fitSecretTextLayout(text, { width, height, columnGap = 12, rowGap = 10 } = {}) {
+  const value = String(text || '');
+  const availableWidth = Math.max(1, Number(width) || 1) * LINE_WIDTH_RATIO;
+  const availableHeight = Math.max(1, Number(height) || 1);
+  const maxLines = Math.min(MAX_LAYOUT_LINES, (value.match(/ /g)?.length || 0) + 1);
+  let best = null;
+
+  for (let lineCount = 1; lineCount <= maxLines; lineCount += 1) {
+    const lines = balanceSecretLinesForCount(value, lineCount);
+    const columns = Math.max(...lines.map(line => [...line].length), 1);
+    const widthFit = (availableWidth - columnGap * (columns - 1)) / columns;
+    const heightFit = ((availableHeight - rowGap * (lines.length - 1)) / lines.length) * GLYPH_ASPECT_RATIO;
+    const glyphWidth = Math.max(1, Math.min(MAX_GLYPH_WIDTH, widthFit, heightFit));
+    if (!best || glyphWidth > best.glyphWidth + 0.5) best = { lines, glyphWidth };
+  }
+  return best || { lines: [value], glyphWidth: 1 };
+}
+
+function useMeasuredLayout(rootRef, value) {
+  const [layout, setLayout] = useState(() => ({ lines: balanceSecretLines(value), glyphWidth: null }));
+  useLayoutEffect(() => {
+    const root = rootRef.current;
+    const container = root?.parentElement;
+    if (!container) return undefined;
+    const update = () => {
+      const next = container.clientWidth > 0 && container.clientHeight > 0
+        ? fitSecretTextLayout(value, { width: container.clientWidth, height: container.clientHeight })
+        : { lines: balanceSecretLines(value), glyphWidth: null };
+      setLayout(current => (
+        current.glyphWidth === next.glyphWidth && current.lines.join('\n') === next.lines.join('\n') ? current : next
+      ));
+    };
+    update();
+    if (typeof ResizeObserver === 'undefined') return undefined;
+    const observer = new ResizeObserver(update);
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [rootRef, value]);
+  return layout;
+}
+
 // THE DECODER ENGINE. One clock, `stepMs` per step. Each step it works out
 // which letters show (`revealFrame`: progressive typing, a marquee, or all of
 // it), lights those letters' segments warm and everything else cool, and gives
@@ -70,12 +120,12 @@ export function balanceSecretLines(text, targetLength = TARGET_LINE_LENGTH) {
 // cursor — must be on screen before the browser paints, or the whole clue
 // flashes up for a frame. Everything is written straight to the DOM, so a step
 // never re-renders the glyphs.
-function useDecoderEngine(rootRef, value, settings) {
+function useDecoderEngine(rootRef, value, settings, lines) {
   const settingsKey = JSON.stringify(settings);
+  const linesKey = lines.join('\n');
   useLayoutEffect(() => {
     const root = rootRef.current;
     if (!root) return undefined;
-    const lines = balanceSecretLines(value);
     const cells = [...root.querySelectorAll('.segmented-secret-text__glyph')].map((glyph) => {
       const polygons = [...glyph.querySelectorAll('polygon')].map((element) => {
         const signal = element.classList.contains('is-signal');
@@ -182,7 +232,7 @@ function useDecoderEngine(rootRef, value, settings) {
       if (timer) clearInterval(timer);
       motionQuery?.removeEventListener?.('change', sync);
     };
-  }, [rootRef, value, settingsKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [rootRef, value, settingsKey, linesKey]); // eslint-disable-line react-hooks/exhaustive-deps
 }
 
 // Drawn as the true letter; the engine takes over before the first paint.
@@ -226,12 +276,13 @@ const Glyph = memo(function Glyph({ character, index, seed }) {
 export default function SegmentedSecretText({ text, label = 'Secret clue', accessibleText = null, decoder = null }) {
   const rootRef = useRef(null);
   const value = String(text || '').toUpperCase();
-  const lines = balanceSecretLines(value);
+  const { lines, glyphWidth } = useMeasuredLayout(rootRef, value);
   const settings = decoderSettings(decoder);
-  useDecoderEngine(rootRef, value, settings);
+  useDecoderEngine(rootRef, value, settings, lines);
   let glyphIndex = 0;
   return (
-    <div ref={rootRef} className="segmented-secret-text" role="img" aria-label={accessibleText || `${label}: ${value}`} data-reveal={settings.reveal}>
+    <div ref={rootRef} className="segmented-secret-text" role="img" aria-label={accessibleText || `${label}: ${value}`} data-reveal={settings.reveal}
+      style={glyphWidth ? { '--secret-glyph-width': `${glyphWidth}px` } : undefined}>
       {lines.map((line, lineIndex) => (
         <span className="segmented-secret-text__line" key={`${lineIndex}:${line}`}>
           {[...line].map(character => {
