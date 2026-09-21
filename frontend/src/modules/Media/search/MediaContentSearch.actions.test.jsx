@@ -147,7 +147,7 @@ describe('MediaContentSearch action-menu retention', () => {
     expect(play).not.toHaveBeenCalled();
 
     fireEvent.keyDown(document.body, { key: 'Escape', code: 'Escape' });
-    expect(onBaseDismiss).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(onBaseDismiss).toHaveBeenCalledTimes(1));
   });
 
   it('[RELY.10a] retains the desktop draft across Escape but not base dismissal', async () => {

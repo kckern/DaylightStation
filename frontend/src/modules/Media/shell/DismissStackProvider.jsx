@@ -27,6 +27,11 @@ export function DismissStackProvider({ children, onBaseDismiss }) {
   }, []);
 
   useEffect(() => {
+    // A target/portal handler can close its layer before document bubble.
+    // Keep ownership for this native event so that Escape cannot also Back.
+    // Capture only observes; the deferred action honors later preventDefault
+    // and lets managed menus finish handling the key themselves.
+    let disposed = false;
     const onKey = (e) => {
       if (e.key !== 'Escape' || e.defaultPrevented) return;
       const layers = layersRef.current;
@@ -37,18 +42,22 @@ export function DismissStackProvider({ children, onBaseDismiss }) {
           break;
         }
       }
-      if (top) {
-        if (!top.managed) {
-          e.stopPropagation();
-          top.onDismiss?.(e);
+      queueMicrotask(() => {
+        if (disposed || e.defaultPrevented) return;
+        if (top) {
+          // A child may already have dismissed/unregistered this owner.
+          if (!top.managed && layersRef.current.includes(top) && top.isActive?.(e) !== false) top.onDismiss?.(e);
+          // The original owner consumes this event even if it has closed.
+          return;
         }
-        // managed layers dismiss themselves; either way the base action is suppressed
-        return;
-      }
-      baseRef.current?.();
+        baseRef.current?.();
+      });
     };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
+    document.addEventListener('keydown', onKey, true);
+    return () => {
+      disposed = true;
+      document.removeEventListener('keydown', onKey, true);
+    };
   }, []);
 
   return <DismissContext.Provider value={register}>{children}</DismissContext.Provider>;
