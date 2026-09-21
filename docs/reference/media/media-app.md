@@ -16,6 +16,8 @@ shuffled order with shuffle on; Play Next appends to the FIFO next band; Play Fi
 inserts at its front; Add appends. Play on / Add on choose one-shot destinations
 without changing the persistent aim. Content components expose additive action
 callbacks and do not import Media implementation code.
+Escape dismisses an open More menu first. After a menu action closes it,
+Escape follows the outer search dismissal lifecycle instead of reopening More.
 
 Each operation has a tap identity and a ten-second Undo deadline. The selected
 playback owner captures the prior native position and queue generations before

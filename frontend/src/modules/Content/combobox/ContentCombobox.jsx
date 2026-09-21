@@ -189,7 +189,8 @@ export function ContentCombobox({
     moreMenuActionKindRef.current = null;
   }, []);
   const handleMoreMenuEscapeCapture = useCallback((e) => {
-    if (e.key !== 'Escape' || !e.target.closest?.('[data-content-combobox-more-boundary]')) return;
+    if (e.key !== 'Escape' || !moreMenuOpenRef.current
+      || !e.target.closest?.('[data-content-combobox-more-boundary]')) return;
     // Nested Mantine portals share this React tree. Intercept before the outer
     // Combobox sees Escape, then close only the inner Menu and restore its
     // trigger focus.
