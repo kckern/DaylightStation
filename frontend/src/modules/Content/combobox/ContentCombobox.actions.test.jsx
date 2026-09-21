@@ -12,6 +12,7 @@ import { CastTargetProvider } from '../../Media/cast/CastTargetProvider.jsx';
 import { DispatchContext } from '../../Media/cast/DispatchProvider.jsx';
 import { FleetContext } from '../../Media/fleet/FleetProvider.jsx';
 import { createFleetStore } from '../../Media/fleet/fleetStore.js';
+import { DismissStackProvider } from '../../Media/shell/DismissStackProvider.jsx';
 
 vi.mock('../../../lib/logging/singleton.js', () => {
   const logger = {
@@ -120,28 +121,30 @@ async function renderSearchedCombobox(props = {}) {
   const onPlayAll = vi.fn();
   render(
     <MantineProvider>
-      <FleetContext.Provider value={{
-        devices: fleetDevices,
-        store: createFleetStore(),
-        loading: false,
-        error: null,
-        refresh: vi.fn(),
-      }}>
-        <DispatchContext.Provider value={{ dispatchToTarget: vi.fn() }}>
-          <CastTargetProvider>
-            <DestinationSearchHarness comboboxProps={{
-              value: '',
-              onChange,
-              onMore,
-              onPlayAll,
-              selectContainers: true,
-              ...props,
-            }} />
-            <button type="button" data-testid="outside-focus">Outside</button>
-            <div data-testid="outside-surface" />
-          </CastTargetProvider>
-        </DispatchContext.Provider>
-      </FleetContext.Provider>
+      <DismissStackProvider>
+        <FleetContext.Provider value={{
+          devices: fleetDevices,
+          store: createFleetStore(),
+          loading: false,
+          error: null,
+          refresh: vi.fn(),
+        }}>
+          <DispatchContext.Provider value={{ dispatchToTarget: vi.fn() }}>
+            <CastTargetProvider>
+              <DestinationSearchHarness comboboxProps={{
+                value: '',
+                onChange,
+                onMore,
+                onPlayAll,
+                selectContainers: true,
+                ...props,
+              }} />
+              <button type="button" data-testid="outside-focus">Outside</button>
+              <div data-testid="outside-surface" />
+            </CastTargetProvider>
+          </DispatchContext.Provider>
+        </FleetContext.Provider>
+      </DismissStackProvider>
     </MantineProvider>
   );
   const input = screen.getByRole('textbox');

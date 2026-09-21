@@ -313,7 +313,7 @@ describe('SearchMode history × dispatch', () => {
     await waitFor(() => expect(dispatchToTarget).toHaveBeenCalledWith(expect.objectContaining({
       targetIds: ['livingroom-tv'],
       play: 'plex:685088',
-      mode: 'transfer',
+      mode: 'fork',
     })));
     await act(async () => { await dispatchResult; });
     dispatches.set('dispatch-1', { status: 'succeeded' });
