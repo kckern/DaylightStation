@@ -83,6 +83,18 @@ function validateCommandParams(command, params, errors) {
       return;
     }
     switch (p.op) {
+      case 'item-action':
+        if (!['playNow', 'shuffle', 'playNext', 'playFirst', 'add', 'remove', 'clear'].includes(p.kind)) errors.push('params.kind: invalid item action');
+        if (!['remove', 'clear'].includes(p.kind) && !isStr(p.item?.contentId)) errors.push('params.item.contentId: required');
+        if (p.kind === 'remove' && !isStr(p.queueItemId)) errors.push('params.queueItemId: required');
+        if (!isNum(p.tappedAt)) errors.push('params.tappedAt: required finite tap timestamp');
+        if (!isStr(p.operationId)) errors.push('params.operationId: required');
+        if (p.collectionItems !== undefined && (!Array.isArray(p.collectionItems) || !p.collectionItems.length || !p.collectionItems.every(item => isStr(item?.contentId)))) errors.push('params.collectionItems: invalid items');
+        if (p.clearRest !== undefined && !isBool(p.clearRest)) errors.push('params.clearRest: optional boolean');
+        break;
+      case 'undo':
+        if (!isStr(p.operationId)) errors.push('params.operationId: required');
+        break;
       case 'play-now':
       case 'play-next':
       case 'add-up-next':

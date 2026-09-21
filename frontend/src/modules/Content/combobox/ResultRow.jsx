@@ -37,14 +37,14 @@ import { isContainer } from './comboboxMachine.js';
  * or behavioral change.
  */
 export function ResultRowActions({
-  item, isContainerItem, onPlayAll, onMore, testId,
+  item, isContainerItem, onPlayAll, onMore, onAction, testId,
   onMoreMenuPointerDown, onMoreMenuChange, onMoreMenuAction, onMoreMenuTriggerFocus, onMoreBoundaryBlur,
 }) {
   const container = isContainerItem ?? (item ? isContainer(item) : false);
   const idPart = testId ?? item?.id ?? 'row';
   const moreTriggerRef = React.useRef(null);
 
-  if (container) {
+  if (container && !onAction) {
     if (!onPlayAll) return null;
     return (
       <ActionIcon
@@ -64,14 +64,15 @@ export function ResultRowActions({
     );
   }
 
-  if (!onMore) return null;
+  if (!onMore && !onAction) return null;
   const fire = (action) => (e) => {
     e?.stopPropagation?.();
     // Set before onMore mutates a session and Menu dismisses its portal. The
     // parent uses it to distinguish this intentional action dismissal from an
     // actual move to an external focus target.
     onMoreMenuAction?.(e?.detail === 0 ? 'keyboard' : 'pointer');
-    onMore(action);
+    if (onAction) onAction({ kind: ({ upNext: 'playFirst', detail: 'details' })[action] ?? action, item });
+    else onMore(action);
   };
   const isMoreBoundary = (element) => element?.closest?.('[data-content-combobox-more-boundary]');
   const retainMenuPointerFocus = (e, isPortaledMenu) => {
@@ -82,6 +83,9 @@ export function ResultRowActions({
     onMoreMenuPointerDown?.(moreTriggerRef.current, isPortaledMenu);
   };
   return (
+    <>
+    {container && onAction && onPlayAll && <ActionIcon size="sm" variant="subtle" aria-label="Play as queue" data-testid={`result-play-all-${idPart}`}
+      onMouseDown={event => event.preventDefault()} onClick={event => { event.preventDefault(); event.stopPropagation(); onPlayAll(); }}><IconPlayerPlay size={16} /></ActionIcon>}
     <Menu withinPortal position="bottom-end" shadow="sm" onChange={onMoreMenuChange}>
       <Menu.Target>
         <ActionIcon
@@ -121,13 +125,17 @@ export function ResultRowActions({
         data-testid={`result-more-menu-${idPart}`}
       >
         <Menu.Item data-testid={`result-action-playNow-${idPart}`} onClick={fire('playNow')}>Play Now</Menu.Item>
+        {container && onAction && <Menu.Item onClick={fire('shuffle')}>Shuffle</Menu.Item>}
         <Menu.Item data-testid={`result-action-playNext-${idPart}`} onClick={fire('playNext')}>Play Next</Menu.Item>
-        <Menu.Item data-testid={`result-action-upNext-${idPart}`} onClick={fire('upNext')}>Up Next</Menu.Item>
+        <Menu.Item data-testid={`result-action-upNext-${idPart}`} onClick={fire('upNext')}>{onAction ? 'Play First' : 'Up Next'}</Menu.Item>
         <Menu.Item data-testid={`result-action-add-${idPart}`} onClick={fire('add')}>Add to Queue</Menu.Item>
+        {onAction && <Menu.Item onClick={fire('playOn')}>Play on…</Menu.Item>}
+        {onAction && <Menu.Item onClick={fire('addOn')}>Add on…</Menu.Item>}
         <Menu.Divider />
         <Menu.Item data-testid={`result-action-detail-${idPart}`} onClick={fire('detail')}>Open detail</Menu.Item>
       </Menu.Dropdown>
     </Menu>
+    </>
   );
 }
 
@@ -149,7 +157,7 @@ export function ResultRowActions({
  * @param {(action: string) => void} [props.onMore] - leaf-only: the ⋯ verb
  * @param {string} [props.testId] - testid for the tap button (defaults to `result-row-${item.id}`)
  */
-export function ResultRow({ item, title, subtitle, thumbnail, onTap, onPlayAll, onMore, testId }) {
+export function ResultRow({ item, title, subtitle, thumbnail, onTap, onPlayAll, onMore, onAction, testId }) {
   const container = item ? isContainer(item) : false;
   const idPart = item?.id ?? 'row';
   const rowTestId = testId ?? `result-row-${idPart}`;
@@ -173,7 +181,7 @@ export function ResultRow({ item, title, subtitle, thumbnail, onTap, onPlayAll, 
           (flex, gap 4px, flex-shrink 0) — reused here rather than inventing a
           new one, mirroring .browse-row-actions' role in BrowseView.jsx. */}
       <span className="media-result-actions">
-        <ResultRowActions item={item} isContainerItem={container} onPlayAll={onPlayAll} onMore={onMore} testId={idPart} />
+        <ResultRowActions item={item} isContainerItem={container} onPlayAll={onPlayAll} onMore={onMore} onAction={onAction} testId={idPart} />
       </span>
     </>
   );

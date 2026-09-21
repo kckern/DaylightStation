@@ -14,6 +14,12 @@ const MEDIA_JOURNEY_DIRECTORY = 'tests/live/flow/media';
 
 export const P0_EXTENSION_ENTRIES = Object.freeze([
   {
+    story: 'RELY.4a',
+    criteria: ['RELY.4a/AC1', 'RELY.4a/AC2'],
+    file: 'media-app-queue-journey.runtime.test.mjs',
+    grep: 'Undo restores the previous paused native position and queue generation',
+  },
+  {
     story: 'PLAY.6a',
     criteria: ['PLAY.6a/AC3'],
     file: 'media-app-remote-controls.runtime.test.mjs',

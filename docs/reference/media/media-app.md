@@ -8,6 +8,27 @@ wire-level contracts live in [`media-app-technical.md`](./media-app-technical.md
 
 ---
 
+## Item actions and minimum Undo
+
+Item action owners share `executeItemAction`: leaf Play Now preserves the tail;
+collection Play replaces in natural order with shuffle off; Shuffle replaces in
+shuffled order with shuffle on; Play Next appends to the FIFO next band; Play First
+inserts at its front; Add appends. Play on / Add on choose one-shot destinations
+without changing the persistent aim. Content components expose additive action
+callbacks and do not import Media implementation code.
+
+Each operation has a tap identity and a ten-second Undo deadline. The selected
+playback owner captures the prior native position and queue generations before
+mutation, guards restoration by its applied revision, and rejects late delivery
+after cancellation. Queue-only Undo preserves current native playback; playback
+replacement Undo restores the prior position (live streams return to live edge).
+Remote content operations retain WakeAndLoad readiness and progress handling;
+cold-wake cancellation is coordinated before receiver claim. A claim/ACK alone
+does not confirm playback: progress still requires authoritative owner state.
+
+The ordinary-input queue journey covers the minimum Undo path; exact-build runtime
+verification remains required before claiming acceptance.
+
 ## What This App Is
 
 The Media App is the household's **universal content front door and universal

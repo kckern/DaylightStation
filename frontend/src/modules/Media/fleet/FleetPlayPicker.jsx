@@ -19,6 +19,7 @@ import { describeBusy } from '../cast/castCopy.js';
 import { useDispatch } from '../cast/useDispatch.js';
 import { useDismissable } from '../../../hooks/useDismissable.js';
 import './Fleet.scss';
+import { isContainer } from '../../Content/combobox/comboboxMachine.js';
 
 // Thumbnail for a result row: explicit thumbnail wins, else the display
 // endpoint derived from the id (the id only ever appears in the img src
@@ -62,7 +63,8 @@ export function FleetPlayPicker({ deviceId, onClose }) {
     const id = row.id ?? row.itemId;
     if (!id) return;
     // fork: never touches the local session — see header comment.
-    dispatchToTarget({ targetIds: [deviceId], play: id, title: displayTitle(row), mode: 'fork' });
+    dispatchToTarget({ targetIds: [deviceId], play: id, title: displayTitle(row), mode: 'fork',
+      itemAction: { kind: 'playNow', item: { ...row, contentId: id }, clearRest: isContainer(row) } });
     onClose?.();
   }, [dispatchToTarget, deviceId, onClose]);
 

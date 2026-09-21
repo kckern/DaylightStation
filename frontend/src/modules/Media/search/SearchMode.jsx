@@ -22,7 +22,7 @@
 // explicit verbs (play-as-queue for containers; Play Now/Play Next/Up Next/
 // Add to Queue/Open detail for leaves). Tapping a row dispatches via the
 // same useContentDispatch path MediaContentSearch already uses.
-import React, { useCallback, useEffect, useMemo, useRef } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { IconX, IconAlertTriangle } from '@tabler/icons-react';
 import { Button } from '@mantine/core';
 import { useContentCombobox } from '../../Content/combobox/useContentCombobox.js';
@@ -39,9 +39,11 @@ import { displayTitle, resultSubtitle } from './resultPresentation.js';
 import { notifications } from '@mantine/notifications';
 import getLogger from '../../../lib/logging/Logger.js';
 import mediaLog from '../logging/mediaLog.js';
+import { ItemDestinationPicker } from '../actions/ItemDestinationPicker.jsx';
 import './Search.scss';
 
 export function SearchMode({ onClose }) {
+  const [oneShotAction, setOneShotAction] = useState(null);
   const { scopes, currentScopeKey, currentScope, scopeError, resetScope } = useSearchContext();
   const { dispatch, dispatchLeafVerb, playContainerAsQueue } = useContentDispatch();
   const { queue } = useSessionController('local');
@@ -150,14 +152,15 @@ export function SearchMode({ onClose }) {
     const id = item?.id;
     if (!id) return;
     log.info('row_action', { contentId: id, action });
-    if (action === 'playNow' || action === 'add') {
-      dispatchLeafVerb(action, id, item);
+    if (action === 'playOn' || action === 'addOn') { setOneShotAction({ kind: action, item }); return; }
+    if (action !== 'detail' && action !== 'details') {
+      dispatchLeafVerb(action === 'upNext' ? 'playFirst' : action, id, item);
       return;
     }
-    applyResultRowVerb(action, item, { queue, push: pushOverSurface });
+    applyResultRowVerb('detail', item, { queue, push: pushOverSurface });
     // 'detail' is the only verb that navigates; queue mutations leave search
     // and its marker untouched.
-    if (action === 'detail') closeSurface('dispatch', { navigated: true });
+    if (action === 'detail' || action === 'details') closeSurface('dispatch', { navigated: true });
   }, [queue, pushOverSurface, log, closeSurface, dispatchLeafVerb]);
 
   const combo = useContentCombobox({
@@ -308,11 +311,13 @@ export function SearchMode({ onClose }) {
               onTap={() => handleChange(item.id, item)}
               onPlayAll={() => handlePlayAll(item)}
               onMore={(action) => handleMore(action, item)}
+              onAction={({ kind }) => handleMore(kind, item)}
               testId={`search-mode-result-${item.id}`}
             />
           </li>
         ))}
       </ul>
+      <ItemDestinationPicker action={oneShotAction} onClose={() => setOneShotAction(null)} />
     </div>
   );
 }

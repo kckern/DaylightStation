@@ -42,7 +42,7 @@ export function useDispatchTargetPicker({ source, onComplete } = {}) {
   const { targetIds: defaultTargets, mode: defaultMode } = useCastTarget();
   const [selected, setSelected] = useState(() => new Set(defaultTargets));
   const [multi, setMulti] = useState(() => defaultTargets.length > 1);
-  const [mode, setMode] = useState(defaultMode ?? 'transfer');
+  const [mode, setMode] = useState(source?.itemAction ? 'fork' : (defaultMode ?? 'transfer'));
   const [dispatchError, setDispatchError] = useState(null);
   const localPlaying = useLocalPlaybackActive(source);
   // This only controls whether the picker can offer playback choices. A
@@ -108,6 +108,7 @@ export function useDispatchTargetPicker({ source, onComplete } = {}) {
     // Human title for the progress tray (never the raw content id).
     const title = source?.title ?? snapshot?.currentItem?.title ?? null;
     if (title) params.title = title;
+    if (source?.itemAction) params.itemAction = source.itemAction;
     // The UI can expose a source before it resolves. Re-check the payload at
     // submit time so stopped playback cannot become an invalid dispatch.
     const hasDispatchContent = !!(params.snapshot || params.play || params.queue);

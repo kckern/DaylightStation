@@ -62,7 +62,7 @@ function rowCopy(d, phase, name) {
         return {
           primary: d.title ? `Added ${d.title} to ${name}` : `Added to ${name}`,
           secondary: Number.isInteger(d.outcomeIdentity?.queueLength)
-            ? `${ordinal(d.outcomeIdentity.queueLength)} in queue`
+            ? `${ordinal(d.outcomeIdentity.ordinal ?? d.outcomeIdentity.queueLength)} in queue`
             : null,
         };
       }

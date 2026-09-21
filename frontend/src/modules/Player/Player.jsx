@@ -135,6 +135,7 @@ const createDefaultPlaybackMetrics = () => ({
 const Player = forwardRef(function Player(props, ref) {
   const noop = useMemo(() => () => {}, []);
   const issuedOwnerRevisionsRef = useRef({ playbackRevision: 0, queueRevision: 0 });
+  const itemActionStopRevisionRef = useRef(0);
   const ownerStoppedRef = useRef(false);
   const issueOwnerRevision = useCallback(({ playback = false, queue = false } = {}) => {
     if (playback) issuedOwnerRevisionsRef.current.playbackRevision += 1;
@@ -201,6 +202,7 @@ const Player = forwardRef(function Player(props, ref) {
     playNow,
     append,
     adoptQueueSnapshot,
+    applyQueueSnapshot,
     setShaderUserCycled,
     isShuffle,
     repeatMode,
@@ -282,7 +284,7 @@ const Player = forwardRef(function Player(props, ref) {
   // Auto-dismiss if no playable source materializes within 30s
   // Catches garbage queues, failed resolutions, and missing content
   useEffect(() => {
-    if (activeSource) return;
+    if (activeSource || queueSnapshot.items.length > 0) return;
     const timeout = setTimeout(() => {
       playbackLog('player-no-source-timeout', {
         isQueue,
@@ -292,7 +294,7 @@ const Player = forwardRef(function Player(props, ref) {
       clear?.();
     }, 30000);
     return () => clearTimeout(timeout);
-  }, [activeSource, isQueue, playQueue, play, clear]);
+  }, [activeSource, isQueue, playQueue, play, clear, queueSnapshot.items.length]);
 
   const currentMediaGuid = useMemo(() => {
     if (!activeSource) return null;
@@ -1804,6 +1806,7 @@ const Player = forwardRef(function Player(props, ref) {
     || null;
 
   const stopOwner = useCallback(() => {
+    itemActionStopRevisionRef.current += 1;
     issueOwnerRevision({ playback: true });
     cancelPendingRendererOperation('stop');
     ownerStoppedRef.current = true;
@@ -1816,11 +1819,17 @@ const Player = forwardRef(function Player(props, ref) {
   const playOwner = useCallback(() => {
     ownerStoppedRef.current = false;
     issueOwnerRevision({ playback: true });
+    if (playQueue.length === 0 && queueSnapshot.items.length > 0) {
+      applyQueueSnapshot({ ...queueSnapshot, currentIndex: 0, executionOrder: queueSnapshot.items.map(item => item.queueItemId) });
+      setQueueHasAdvanced(true);
+      setTargetTimeSeconds(0);
+      return { ok: true };
+    }
     return withTransport(
       (api) => api.play?.(),
       () => _getMediaElFallback()?.play?.(),
     );
-  }, [issueOwnerRevision, withTransport]);
+  }, [issueOwnerRevision, withTransport, playQueue, queueSnapshot, applyQueueSnapshot, setTargetTimeSeconds]);
 
   const pauseOwner = useCallback(() => {
     issueOwnerRevision({ playback: true });
@@ -1925,12 +1934,14 @@ const Player = forwardRef(function Player(props, ref) {
       : nowPlayingRef.current),
     // A bridge consumer must never be able to mutate the live queue owner.
     getQueueSnapshot: () => JSON.parse(JSON.stringify(queueSnapshot)),
+    applyQueueSnapshot,
     getQueueConfig: () => ({ shuffle: isShuffle, repeat: repeatMode }),
     setShader: (value) => {
       setShaderUserCycled(true);
       setShader(value ?? 'default');
     },
     getPlayerInstanceId: () => playerInstanceId,
+    getItemActionStopRevision: () => itemActionStopRevisionRef.current,
     getPlaybackIdentity: () => ({
       ownerInstanceId: playerInstanceId,
       playbackRevision: issuedOwnerRevisionsRef.current.playbackRevision,
@@ -1938,7 +1949,8 @@ const Player = forwardRef(function Player(props, ref) {
     }),
     getOwnerState: () => {
       if (ownerStoppedRef.current) return queueSnapshot.items.length > 0 ? 'ready' : 'idle';
-      if (queueSnapshot.items.length === 0) return 'idle';
+      if (playQueue.length === 0 && queueSnapshot.items.length > 0) return 'ready';
+      if (queueSnapshot.items.length === 0 && playQueue.length === 0) return 'idle';
       return null;
     },
     adoptSessionSnapshot: (incoming, options = {}) => {
@@ -2015,7 +2027,7 @@ const Player = forwardRef(function Player(props, ref) {
         fromContentId: effectiveMeta?.contentId ?? effectiveMeta?.assetId ?? null,
       }, { level: 'info' });
     },
-  }), [isQueue, isShuffle, repeatMode, advance, singleAdvance, rawJumpTo, sessionVolume, sessionPlaybackRate, setOwnerVolume, setOwnerPlaybackRate, effectiveMeta?.assetId, effectiveMeta?.contentId, resilienceControllerRef, withTransport, queueSnapshot, playerInstanceId, queueShader, issueOwnerRevision, adoptQueueSnapshot, setTargetTimeSeconds, setShader, setShaderUserCycled, inspectRendererBoundaryRequest, beginRendererBoundary, stopOwner, playOwner, pauseOwner, toggleOwner, seekOwner]);
+  }), [isQueue, isShuffle, repeatMode, advance, singleAdvance, rawJumpTo, sessionVolume, sessionPlaybackRate, setOwnerVolume, setOwnerPlaybackRate, effectiveMeta?.assetId, effectiveMeta?.contentId, resilienceControllerRef, withTransport, queueSnapshot, playerInstanceId, queueShader, issueOwnerRevision, adoptQueueSnapshot, applyQueueSnapshot, setTargetTimeSeconds, setShader, setShaderUserCycled, inspectRendererBoundaryRequest, beginRendererBoundary, stopOwner, playOwner, pauseOwner, toggleOwner, seekOwner]);
 
   useEffect(() => () => {
     clearRemountTimer();

@@ -15,6 +15,15 @@ function renderWithProvider(ui) {
 const leafItem = { id: 'plex:1', title: 'Bluey', type: 'episode' };
 const containerItem = { id: 'plex:663508', title: 'Tuttle Twins', type: 'show' };
 
+it('the additive action prop gives collection rows Next and Shuffle without selecting the row', async () => {
+  const onAction = vi.fn(), onTap = vi.fn();
+  renderWithProvider(<ResultRow item={containerItem} onAction={onAction} onTap={onTap} />);
+  fireEvent.click(screen.getByRole('button', { name: 'More actions' }));
+  fireEvent.click(await screen.findByRole('menuitem', { name: 'Play Next', exact: true }));
+  expect(onAction).toHaveBeenCalledWith({ kind: 'playNext', item: containerItem });
+  expect(onTap).not.toHaveBeenCalled();
+});
+
 describe('ResultRow — leaf', () => {
   it('tapping the row calls onTap', () => {
     const onTap = vi.fn();

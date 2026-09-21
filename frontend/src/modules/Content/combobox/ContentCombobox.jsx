@@ -116,6 +116,7 @@ export function ContentCombobox({
   logApp = 'admin',
   onPlayAll = null,
   onMore = null,
+  onAction = null,
   destinationInteractionActive = false,
   retainQueryOnEscape = false,
 }) {
@@ -611,6 +612,7 @@ export function ContentCombobox({
               isContainerItem={container}
               onPlayAll={onPlayAll ? () => onPlayAll(item) : null}
               onMore={onMore ? (action) => onMore(action, item) : null}
+              onAction={onAction}
               onMoreMenuPointerDown={handleMoreMenuPointerDown}
               onMoreMenuChange={handleMoreMenuChange}
               onMoreMenuAction={handleMoreMenuAction}

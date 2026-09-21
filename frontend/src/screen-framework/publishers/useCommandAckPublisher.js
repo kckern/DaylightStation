@@ -108,12 +108,12 @@ export function useCommandAckPublisher({ deviceId, actionBus } = {}) {
       // Add requires a durable queue-owner mutation. Its receipt event is not
       // success; ScreenActionHandler emits media:queue-op-applied only after the
       // owning Player exposes the appended item in its post-mutation snapshot.
-      if (payload?.op === 'add') return;
+      if (['add', 'item-action', 'undo'].includes(payload?.op)) return;
       publishAck({ commandId, ok: true });
     };
 
     const queueOpAppliedHandler = (payload) => {
-      if (payload?.op !== 'add') return;
+      if (!['add', 'item-action', 'undo'].includes(payload?.op)) return;
       publishAck({ commandId: payload?.commandId, ok: true });
     };
 

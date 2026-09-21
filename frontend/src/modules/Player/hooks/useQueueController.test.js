@@ -7,6 +7,30 @@ vi.mock('../../../lib/api.mjs', () => ({
 }));
 
 describe('useQueueController on-deck slot', () => {
+  it('holds an idle Add until Play and clears a playing queue without dropping the native visit', async () => {
+    const { result } = renderHook(() => useQueueController({ play: null }));
+    const queued = { queueItemId: 'q-one', contentId: 'one', format: 'video' };
+    act(() => result.current.applyQueueSnapshot({ items: [queued], currentIndex: -1, executionOrder: [] }));
+    expect(result.current.playQueue).toEqual([]);
+    expect(result.current.queueSnapshot.items).toHaveLength(1);
+    act(() => result.current.applyQueueSnapshot({ items: [queued], currentIndex: 0, executionOrder: ['q-one'] }));
+    const playing = result.current.playQueue[0];
+    act(() => result.current.applyQueueSnapshot({ items: [], currentIndex: -1, executionOrder: [] }));
+    expect(result.current.playQueue[0].guid).toBe(playing.guid);
+    expect(result.current.queueSnapshot.items).toEqual([]);
+  });
+  it('applies an ordered queue edit without replacing the current native visit', async () => {
+    const items = [{ contentId: 'a', title: 'A' }, { contentId: 'tail', title: 'Tail' }];
+    const { result } = renderHook(() => useQueueController({ play: items }));
+    await act(async () => {});
+    const before = result.current.queueSnapshot;
+    const current = result.current.playQueue[0];
+    const next = { queueItemId: 'next', contentId: 'next', title: 'Next', priority: 'upNext' };
+    await act(async () => result.current.applyQueueSnapshot({ items: [before.items[0], next, before.items[1]], currentIndex: 0, executionOrder: [before.items[0].queueItemId, 'next', before.items[1].queueItemId] }));
+    expect(result.current.playQueue[0].guid).toBe(current.guid);
+    expect(result.current.queueSnapshot.executionOrder).toEqual([current.guid, 'next', before.items[1].queueItemId]);
+    expect(result.current.queueSnapshot.items.map(x => x.contentId)).toEqual(['a', 'next', 'tail']);
+  });
   it('pushOnDeck sets the slot', () => {
     const { result } = renderHook(() => useQueueController({ play: null, queue: null, clear: vi.fn() }));
     expect(result.current.onDeck).toBeNull();

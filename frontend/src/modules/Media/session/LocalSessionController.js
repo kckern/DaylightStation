@@ -14,6 +14,7 @@ import * as qOps from './queueOps.js';
 import { pickNextQueueItem } from './advancement.js';
 import { isContainerInput, expandContainerInput } from './containerExpansion.js';
 import mediaLog from '../logging/mediaLog.js';
+import { createItemActionOwner } from '../actions/itemActionOwner.js';
 
 function defaultUuid() {
   try {
@@ -85,6 +86,7 @@ export function createLocalSessionController({
   position.set(initial.position ?? 0);
   let playbackRevision = 0;
   let queueRevision = 0;
+  let stopRevision = 0;
   let observedNativeNode = null;
   let nativeBinding = null;
   let nativeNodeGeneration = 0;
@@ -109,6 +111,7 @@ export function createLocalSessionController({
   // Revisions change at the owner action boundary. Metadata/position updates
   // are deliberately absent so an enrichment cannot invalidate a move guard.
   store.onTransition((prev, next, action) => {
+    if (['STOP', 'RESET'].includes(action?.type)) stopRevision += 1;
     if (action?.type === 'ADOPT_SNAPSHOT' || queueFingerprint(prev) !== queueFingerprint(next)) {
       queueRevision += 1;
     }
@@ -712,6 +715,28 @@ export function createLocalSessionController({
     },
   };
 
+  Object.assign(controller, createItemActionOwner({
+    targetId: clientId,
+    capture: () => capture().snapshot,
+    revision: () => ({ ownerInstanceId, queueRevision, stopRevision }),
+    fetchImpl,
+    apply: (snapshot, { playbackChanged, restore } = {}) => {
+      if (restore) {
+        // This is this owner's detached capture, including unresolved format
+        // metadata; the stricter network-handoff validator is not applicable.
+        const autoplay = snapshot.state !== 'paused';
+        store.dispatch({ type: 'ADOPT_SNAPSHOT', snapshot, autoplay });
+        position.set(snapshot.position);
+        return { ok: true };
+      }
+      store.replace(snapshot);
+      if (playbackChanged) {
+        if (snapshot.queue.currentIndex >= 0) loadCurrent(snapshot);
+        else { player.pause(); store.dispatch({ type: 'STOP' }); position.set(0); }
+      }
+      return { ok: true };
+    },
+  }));
   return controller;
 }
 

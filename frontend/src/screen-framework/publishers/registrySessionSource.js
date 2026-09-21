@@ -178,6 +178,8 @@ export function createRegistrySessionSource({ registry, ownerId, sessionId } = {
 
   return {
     getSnapshot,
+    getActionOwner: () => invokeCurrent('getActionOwner', null),
+    applyQueue: (snapshot) => invokeCurrent('applyQueue', { ok: false, code: 'ITEM_ACTION_UNSUPPORTED' }, snapshot),
     capture: () => {
       try {
         const source = currentSource();
