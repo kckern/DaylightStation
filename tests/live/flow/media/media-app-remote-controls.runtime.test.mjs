@@ -96,12 +96,13 @@ async function startArrivalJourney(context, sender, {
     // ordinary mobile destination control lives inside SearchMode.
     await expect(sender.getByTestId('media-search-launcher')).toBeVisible();
     await sender.getByTestId('media-search-launcher').click();
-    await expect(sender.getByTestId('search-mode')).toBeVisible();
-    await sender.getByTestId('destination-line').click();
+    const searchMode = sender.getByTestId('search-mode');
+    await expect(searchMode).toBeVisible();
+    await searchMode.getByTestId('destination-line').click();
     await expect(sender.getByTestId('destination-sheet')).toBeVisible();
     await sender.getByTestId('picker-device-acceptance-media').click();
     await sender.getByTestId('picker-submit').click();
-    await expect(sender.getByTestId('destination-line-name')).toHaveText('Acceptance receiver');
+    await expect(searchMode.getByTestId('destination-line-name')).toHaveText('Acceptance receiver');
     searchInput = sender.getByTestId('search-mode-input');
     result = sender.getByTestId(`search-mode-result-${media.contentId}`);
   } else {
@@ -290,10 +291,11 @@ async function runSteerConfirmationJourney(context, sender, {
   test.setTimeout(150000);
   const changeAimToThisDevice = async () => {
     if (mobile) {
-      await sender.getByTestId('destination-line').click();
+      const searchMode = sender.getByTestId('search-mode');
+      await searchMode.getByTestId('destination-line').click();
       await expect(sender.getByTestId('destination-sheet')).toBeVisible();
       await sender.getByTestId('picker-this-device').click();
-      await expect(sender.getByTestId('destination-line-name')).toHaveText('This device');
+      await expect(searchMode.getByTestId('destination-line-name')).toHaveText('This device');
       return;
     }
     await sender.getByTestId('cast-target-chip').click();
