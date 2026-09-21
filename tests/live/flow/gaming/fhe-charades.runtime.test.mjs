@@ -135,7 +135,18 @@ test('FHE Charades completes all eighteen remote-controlled casual turns', async
   expect(creations).toHaveLength(1);
   const initial = await read();
   const definition = initial.definition;
+  const canonicalHistoryIds = new Set([
+    'rabbit', 'climbing-a-ladder', 'elephant', 'catching-a-butterfly',
+    'driving-a-car', 'carrying-a-heavy-box', 'making-pizza',
+    'blowing-out-birthday-candles', 'turtle', 'picking-apples', 'koala',
+    'washing-your-hair', 'duck', 'shooting-a-basketball', 'vacuuming-a-rug',
+    'alligator', 'peeling-a-banana', 'catching-popcorn-in-your-mouth',
+  ]);
+  const selectedClueIds = initial.state.challenge_order.map(index => definition.challenges[index].id);
+  expect(selectedClueIds.filter(id => canonicalHistoryIds.has(id))).toEqual([]);
+  expect(initial.state).not.toHaveProperty('setup.charades_history_ids');
   expect(definition).toMatchObject({rounds:3,timer_ms:60_000,clues_per_turn:1,competition:false});
+  expect(definition.decoder).toEqual({reveal:'static',motion:false,color_animation:false});
   expect(definition.guessing_music.source).toMatch(/^plex:/);
   expect(definition.guessing_music).toMatchObject({
     volume: 0.18,
@@ -294,9 +305,26 @@ test('FHE Charades completes all eighteen remote-controlled casual turns', async
         el.style.removeProperty('filter'); document.getElementById('fhe-optics-probe').remove();
       });
     } else {
+      const firstTextTurn = textIds.length === 0;
       textIds.push(ready.state.challenge.id);
       await expect(stage.locator('.image-decoder-display')).toHaveCount(0);
       await expect(stage.locator('svg').first()).toBeVisible();
+      if (firstTextTurn) {
+        const decoderCard = stage.locator('.segmented-secret-text');
+        const decoderFrame = () => decoderCard.evaluate(card => ({
+          revealStep: card.dataset.revealStep,
+          motionIndex: card.dataset.motionIndex,
+          transform: card.style.transform,
+          segments: [...card.querySelectorAll('polygon')].map(segment => ({
+            className: segment.getAttribute('class'),
+            color: segment.style.getPropertyValue('--segment-color'),
+          })),
+        }));
+        const before = await decoderFrame();
+        await page.waitForTimeout(600);
+        expect(await decoderFrame()).toEqual(before);
+        expect(before).toMatchObject({revealStep:'0',motionIndex:'0',transform:''});
+      }
     }
     expect((await musicState()).some(a => !a.paused)).toBe(false);
     await expectActionRail(/^(Go|Start acting)/i);

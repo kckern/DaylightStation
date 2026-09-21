@@ -33,6 +33,17 @@ describe('Charades deterministic selection', () => {
     expect(textClues.every((clue) => !clue.decoder?.image)).toBe(true);
   });
 
+  it('preserves the legacy lazy pool shuffle when captured history is absent', () => {
+    const result = createCharadesChallengeOrder({
+      challenges,
+      turnOrder: ['text-player', 'image-player', 'text-player', 'image-player'],
+      cluesPerTurn: 1,
+      imageParticipantIds: ['image-player'],
+      seed: 42,
+    });
+    expect(result.order).toEqual([8, 2, 6, 4]);
+  });
+
   it('reshuffles an exhausted pool without an immediate repeat', () => {
     const twoTextChallenges = challenges.filter(({ decoder }) => !decoder).slice(0, 2);
     const result = createCharadesChallengeOrder({
@@ -42,6 +53,32 @@ describe('Charades deterministic selection', () => {
     for (let index = 1; index < result.order.length; index += 1) {
       expect(result.order[index]).not.toBe(result.order[index - 1]);
     }
+  });
+
+  it('uses every currently-unused clue before recycling an exhausted pool', () => {
+    const result = createCharadesChallengeOrder({
+      challenges: challenges.slice(0, 3),
+      turnOrder: ['a', 'a', 'a'], cluesPerTurn: 1, imageParticipantIds: ['a'],
+      historyIds: ['image-0', 'image-1'], seed: 7,
+    });
+    expect(challenges[result.order[0]].id).toBe('image-2');
+    expect(new Set(result.order.slice(1)).size).toBe(2);
+  });
+
+  it('derives the current cycle after complete historical exhaustion', () => {
+    const result = createCharadesChallengeOrder({
+      challenges: challenges.slice(0, 3), turnOrder: ['a'], cluesPerTurn: 1,
+      imageParticipantIds: ['a'], historyIds: ['image-0', 'image-1', 'image-2', 'image-1'], seed: 4,
+    });
+    expect(challenges[result.order[0]].id).not.toBe('image-1');
+  });
+
+  it('ignores historical ids absent from the current eligible bank', () => {
+    const result = createCharadesChallengeOrder({
+      challenges: challenges.slice(0, 2), turnOrder: ['a'], cluesPerTurn: 1,
+      imageParticipantIds: ['a'], historyIds: ['retired-clue'], seed: 2,
+    });
+    expect(result.order).toHaveLength(1);
   });
 
   it('rejects a missing pool instead of changing the configured presentation', () => {

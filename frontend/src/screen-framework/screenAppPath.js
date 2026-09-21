@@ -8,6 +8,15 @@ export function resolveScreenAppPath(pathname, hasApp, routes = {}) {
   if (!match) return null;
 
   const segments = match[1].split('/').filter(Boolean);
+  const exactRoute = routes?.[segments.join('/')];
+  if (exactRoute?.app && hasApp(exactRoute.app)) {
+    const appPath = exactRoute.appPath || null;
+    return {
+      appId: exactRoute.app,
+      appPath,
+      menuId: appPath ? `${exactRoute.app}/${appPath}` : exactRoute.app,
+    };
+  }
   const routeName = segments[0];
   const configuredApp = routes?.[routeName]?.app;
   // Preserve legacy one-segment app links. Nested app-owned paths are a

@@ -103,7 +103,7 @@ function useDecoderEngine(rootRef, value, settings) {
     // Light each cell for the frame, then recolor every segment in order: in its
     // own family, never the color it just held, and never a color a touching lit
     // letter segment holds right now (later segments see earlier ones' new colors).
-    const paint = (frame) => {
+    const paint = (frame, recolor = settings.colorAnimation) => {
       const flat = frame.flat();
       cells.forEach((cell, cellIndex) => {
         const shown = flat[cellIndex] ?? { char: null, cursor: false };
@@ -123,8 +123,10 @@ function useDecoderEngine(rootRef, value, settings) {
             ? SEGMENT_NEIGHBORS[polygon.name].map(name => cell.byName[name])
               .filter(other => other?.signal && other.index >= 0).map(other => other.index)
             : [];
-          polygon.index = nextColorIndex(polygon.index, palette.length, Math.random, avoid);
-          polygon.element.style.setProperty('--segment-color', palette[polygon.index]);
+          if (recolor || polygon.index < 0) {
+            polygon.index = nextColorIndex(polygon.index, palette.length, Math.random, avoid);
+            polygon.element.style.setProperty('--segment-color', palette[polygon.index]);
+          }
         }
       });
     };
@@ -156,16 +158,22 @@ function useDecoderEngine(rootRef, value, settings) {
         timer = null;
         step = 0;
         root.dataset.revealStep = '0';
-        paint(revealFrame(lines, 0, STATIC));
+        paint(revealFrame(lines, 0, STATIC), false);
         root.style.transform = '';
         root.dataset.motionIndex = '0';
+      } else if (settings.reveal === 'static' && !settings.motion && !settings.colorAnimation) {
+        if (timer) clearInterval(timer);
+        timer = null;
+        step = 0;
+        show();
       } else if (!timer) {
         show();
         timer = setInterval(tick, settings.stepMs);
       }
       logger().debug('gaming.segmented-secret.engine', {
         running: Boolean(timer), reveal: settings.reveal, stepMs: settings.stepMs,
-        motion: settings.motion, motionMs: settings.motionMs, cells: cells.length,
+        motion: settings.motion, motionMs: settings.motionMs,
+        colorAnimation: settings.colorAnimation, cells: cells.length,
       });
     };
     sync();
@@ -211,7 +219,7 @@ const Glyph = memo(function Glyph({ character, index, seed }) {
  * @param {object} props
  * @param {string} props.text
  * @param {object|null} [props.decoder] a game's `decoder:` settings block
- *   (`reveal`, `step_ms`, `motion`, `motion_ms`, `marquee_hold_steps`,
+ *   (`reveal`, `step_ms`, `motion`, `motion_ms`, `color_animation`, `marquee_hold_steps`,
  *   `marquee_gap_steps`); anything missing takes its default — see
  *   `DECODER_DEFAULTS` in segmentedSecretReveal.js.
  */

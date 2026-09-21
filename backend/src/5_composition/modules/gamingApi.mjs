@@ -1,3 +1,4 @@
+import path from 'node:path';
 import { GameRuntime, GameSessionCoordinator, SessionActorAuthorization } from '#shared/gaming/kernel/index.mjs';
 import { activityPartyRuleModule } from '#shared/gaming/rulesets/activity-party/index.mjs';
 import { cardBattleRuleModule } from '#shared/gaming/rulesets/card-battle/index.mjs';
@@ -20,9 +21,10 @@ import { OncePerSessionPrintPolicy } from '#apps/gaming/effects/OncePerSessionPr
 import { GamingEffectService } from '#apps/gaming/effects/GamingEffectService.mjs';
 import { GamingObservability } from '#apps/gaming/effects/GamingObservability.mjs';
 import { YamlDrawingCheckpointRepository } from '#adapters/persistence/yaml/gaming/YamlDrawingCheckpointRepository.mjs';
+import { YamlCharadesClueHistory } from '#adapters/persistence/yaml/gaming/YamlCharadesClueHistory.mjs';
 import { createGamingIdentitySource } from '#apps/gaming/GamingIdentityPolicy.mjs';
 
-export function createGamingApiModule({ definitionStore, manifestStore, snapshotsDir, journalsDir, effectsDir, drawingCheckpointsDir, partyGamesCatalog = null, aiGateway = null, aiConfig = {}, printer = null, broadcastEvent = null, logger = null, autoPrint = false, clock = { now: () => new Date() } }) {
+export function createGamingApiModule({ definitionStore, manifestStore, snapshotsDir, journalsDir, effectsDir, drawingCheckpointsDir, historyDir, partyGamesCatalog = null, aiGateway = null, aiConfig = {}, printer = null, broadcastEvent = null, logger = null, autoPrint = false, clock = { now: () => new Date() } }) {
   const snapshots = new YamlGamingSnapshotRepository({ snapshotsDir });
   const journal = new YamlGamingSessionJournal({ journalsDir });
   const runtime = new GameRuntime({ rulesets: [cardBattleRuleModule, jeopardyRuleModule, activityPartyRuleModule, diceRuleModule, selectorRuleModule, checkersRuleModule, chessRuleModule, connectFourRuleModule] });
@@ -30,6 +32,7 @@ export function createGamingApiModule({ definitionStore, manifestStore, snapshot
   const coordinator = new GameSessionCoordinator({ runtime, snapshots, journal, definitions: definitionStore, ids, clock, authorization: new SessionActorAuthorization() });
   const effectStore = effectsDir ? new YamlGamingEffectStore({ effectsDir }) : null;
   const drawingCheckpoints = drawingCheckpointsDir ? new YamlDrawingCheckpointRepository({ checkpointsDir: drawingCheckpointsDir }) : null;
+  const clueHistory = historyDir ? new YamlCharadesClueHistory({ file: path.join(historyDir, 'charades.yml') }) : null;
   const observability = new GamingObservability({ logger, auditStore: effectStore });
   const effects = new GamingEffectService({
     aiPolicy: aiGateway ? new NewestWinsAiPolicy({
@@ -44,7 +47,7 @@ export function createGamingApiModule({ definitionStore, manifestStore, snapshot
     printPolicy: effectStore ? new OncePerSessionPrintPolicy({ renderer: new HostPacketRenderer(), printer, receipts: effectStore }) : null,
     store: effectStore, observability, broadcast: broadcastEvent, autoPrint, drawingCheckpoints,
   });
-  const gamingApplication = new GamingApplication({ coordinator, definitions: definitionStore, partyGamesCatalog, effects, manifestStore, drawingCheckpoints });
+  const gamingApplication = new GamingApplication({ coordinator, definitions: definitionStore, partyGamesCatalog, effects, manifestStore, drawingCheckpoints, clueHistory });
   const gamingDiagnostics = new GamingDiagnosticSessions({
     runtime,
     definitions: definitionStore,
@@ -54,5 +57,5 @@ export function createGamingApiModule({ definitionStore, manifestStore, snapshot
     authorization: new SessionActorAuthorization(),
     clock,
   });
-  return { gamingApplication, gamingDiagnostics, coordinator, runtime, snapshots, journal, effects, observability, drawingCheckpoints };
+  return { gamingApplication, gamingDiagnostics, coordinator, runtime, snapshots, journal, effects, observability, drawingCheckpoints, clueHistory };
 }

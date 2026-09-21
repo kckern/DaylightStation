@@ -27,6 +27,12 @@ describe('party-games session client', () => {
     }, 'POST');
   });
 
+  it('marks test sessions as history-disabled in captured setup', async () => {
+    DaylightAPI.mockResolvedValueOnce({ header: { session_id: 'game:test' } });
+    await createSession({ definitionId: 'charades:fhe', historyPolicy: 'disabled' });
+    expect(DaylightAPI.mock.calls[0][1].setup).toMatchObject({ charades_history_policy: 'disabled' });
+  });
+
   it('loads only diagnostic-prefixed sessions for a non-persistent attach', async () => {
     DaylightAPI.mockResolvedValueOnce({ defaults: {} }).mockResolvedValueOnce({ entries: [] }).mockResolvedValueOnce({ header: { session_id: 'diagnostic:one' } });
     await expect(fetchBoot({ diagnosticSessionId: 'diagnostic:one' })).resolves.toMatchObject({ diagnosticSession: { header: { session_id: 'diagnostic:one' } } });

@@ -68,14 +68,19 @@ export default function PartyGamesApp({ dismiss, clear, definitionId, param, app
       definition: queryIndex < 0 ? raw : raw.slice(0, queryIndex),
       ...(query.has('autostart') ? { autostart: query.get('autostart') === 'true' } : {}),
       ...(query.has('participants') ? { participants: query.get('participants').split(',').map(id => id.trim()).filter(Boolean) } : {}),
+      ...(query.get('history') === 'disabled' ? { historyPolicy: 'disabled' } : {}),
     };
   });
   const requested = launch.definition;
+  const activeSessionKey = (id) => `party-games:${id}:${launch.historyPolicy === 'disabled' ? 'test:' : ''}active-session`;
   const requestedDefinition = requested.includes(':') ? requested : null;
   const requestedGame = requestedDefinition ? null : requested;
   // A direct-route mount has no originating menu stack beneath its overlay.
   // Capture that fact before the durable URL effect changes menu launches too.
-  const [needsDocumentReturn] = useState(() => /^\/screens?\/[^/]+\/party-games(?:\/|$)/.test(window.location.pathname));
+  const [friendlyPath] = useState(() => /^\/screens?\/[^/]+\/fhe\/charades(?:\/test)?$/.test(window.location.pathname)
+    ? window.location.pathname : null);
+  const [needsDocumentReturn] = useState(() => Boolean(friendlyPath)
+    || /^\/screens?\/[^/]+\/party-games(?:\/|$)/.test(window.location.pathname));
   const [returnTo] = useState(() => {
     const params = new URLSearchParams(window.location.search);
     const saved = params.get('return_to');
@@ -85,6 +90,7 @@ export default function PartyGamesApp({ dismiss, clear, definitionId, param, app
         if (target.origin === window.location.origin) return `${target.pathname}${target.search}${target.hash}`;
       } catch { /* An invalid return target falls back to the screen root. */ }
     }
+    if (friendlyPath) return friendlyPath.replace(/\/charades(?:\/test)?$/, '');
     return window.location.pathname.replace(/\/party-games(?:\/.*)?$/, '') || '/';
   });
   const restoreLocation = useCallback(() => {
@@ -103,7 +109,7 @@ export default function PartyGamesApp({ dismiss, clear, definitionId, param, app
     const explicitSessionId = params.get('session');
     let savedSessionId = null;
     if (!diagnosticSessionId && !explicitSessionId && requestedDefinition) {
-      try { savedSessionId = window.localStorage.getItem(`party-games:${requestedDefinition}:active-session`); }
+      try { savedSessionId = window.localStorage.getItem(activeSessionKey(requestedDefinition)); }
       catch { savedSessionId = null; }
     }
     return { diagnosticSessionId, sessionId: explicitSessionId || savedSessionId, savedSession: Boolean(savedSessionId) };
@@ -153,6 +159,14 @@ export default function PartyGamesApp({ dismiss, clear, definitionId, param, app
     fetchBoot({ diagnosticSessionId: attachment.diagnosticSessionId, sessionId: attachment.sessionId })
       .then(({ config, sets, attachedSession }) => {
         if (!cancelled) {
+          if (attachedSession) {
+            const expectedPolicy = launch.historyPolicy === 'disabled' ? 'disabled' : 'recorded';
+            const actualPolicy = attachedSession.state?.charades_history_policy;
+            const mismatch = expectedPolicy === 'disabled' ? actualPolicy !== 'disabled' : actualPolicy === 'disabled';
+            if (mismatch) {
+              throw new Error(`Attached session history policy does not match the ${expectedPolicy} route`);
+            }
+          }
           if (attachedSession) logger.info('party-games.session-attached', {
             sessionId: attachedSession.header?.session_id,
             resumed: true,
@@ -165,7 +179,7 @@ export default function PartyGamesApp({ dismiss, clear, definitionId, param, app
         if (cancelled) return;
         if (attachment.savedSession && requestedDefinition) {
           logger.warn('party-games.session-resume-missed', { sessionId: attachment.sessionId, definitionId: requestedDefinition, error: err.message });
-          try { window.localStorage.removeItem(`party-games:${requestedDefinition}:active-session`); } catch { /* retry without persistence */ }
+          try { window.localStorage.removeItem(activeSessionKey(requestedDefinition)); } catch { /* retry without persistence */ }
           setAttachment((value) => ({ ...value, sessionId: null, savedSession: false }));
           return;
         }
@@ -176,20 +190,20 @@ export default function PartyGamesApp({ dismiss, clear, definitionId, param, app
 
   useEffect(() => {
     if (!flow.definitionId) return;
-    const key = `party-games:${flow.definitionId}:active-session`;
+    const key = activeSessionKey(flow.definitionId);
     try {
       if (flow.phase === 'playing' && flow.sessionId) window.localStorage.setItem(key, flow.sessionId);
       else if (flow.phase === 'results') window.localStorage.removeItem(key);
     } catch { /* URL attachment still preserves refresh recovery when storage is unavailable. */ }
-  }, [flow.definitionId, flow.phase, flow.sessionId]);
+  }, [flow.definitionId, flow.phase, flow.sessionId, launch.historyPolicy]);
 
   // Reuse the pending creation during StrictMode effect replay; obsolete flows
   // cancel their attachment even if the HTTP response arrives later.
   useEffect(() => {
     if (flow.phase !== 'playing' || flow.sessionId) return;
-    const key = JSON.stringify([flow.definitionId, flow.seats, flow.hostMode, flow.setupProfile]);
+    const key = JSON.stringify([flow.definitionId, flow.seats, flow.hostMode, flow.setupProfile, launch.historyPolicy]);
     if (!creation.current || creation.current.key !== key) {
-      creation.current = { key, promise: createSession({ definitionId: flow.definitionId, seats: flow.seats, hostMode: flow.hostMode, setupProfile: flow.setupProfile }) };
+      creation.current = { key, promise: createSession({ definitionId: flow.definitionId, seats: flow.seats, hostMode: flow.hostMode, setupProfile: flow.setupProfile, historyPolicy: launch.historyPolicy }) };
     }
     let cancelled = false;
     creation.current.promise.then(session => {
@@ -199,23 +213,23 @@ export default function PartyGamesApp({ dismiss, clear, definitionId, param, app
       }
     }).catch(error => { if (!cancelled) { creation.current = null; dispatchFlow({ type:'BOOT_FAILED', error:error.message }); } });
     return () => { cancelled = true; };
-  }, [flow.phase, flow.sessionId, flow.definitionId, flow.seats, flow.hostMode, flow.setupProfile, logger]);
+  }, [flow.phase, flow.sessionId, flow.definitionId, flow.seats, flow.hostMode, flow.setupProfile, launch.historyPolicy, logger]);
 
   useLayoutEffect(() => {
     if (!flow.definitionId || !['team-setup', 'buzzer-bind', 'playing', 'results'].includes(flow.phase)) return;
     const screenBase = window.location.pathname.match(/^(\/screens?\/[^/]+)/)?.[1];
     const location = new URL(window.location.href);
-    if (screenBase) location.pathname = `${screenBase}/party-games/${flow.definitionId}`;
+    if (screenBase) location.pathname = friendlyPath || `${screenBase}/party-games/${flow.definitionId}`;
     location.searchParams.set('return_to', returnTo);
     if (launch.autostart !== undefined) location.searchParams.set('autostart', String(launch.autostart));
     if (launch.participants) location.searchParams.set('participants', launch.participants.join(','));
     location.searchParams.delete('session'); location.searchParams.delete('diagnostic_session');
     if (flow.sessionId) location.searchParams.set(flow.sessionId.startsWith('diagnostic:') ? 'diagnostic_session' : 'session', flow.sessionId);
     window.history.replaceState({}, '', `${location.pathname}${location.search}`);
-  }, [flow.definitionId, flow.phase, flow.sessionId, returnTo, launch]);
+  }, [flow.definitionId, flow.phase, flow.sessionId, returnTo, launch, friendlyPath]);
   const playAgain = () => {
     creation.current = null;
-    try { if (flow.definitionId) window.localStorage.removeItem(`party-games:${flow.definitionId}:active-session`); } catch { /* continue */ }
+    try { if (flow.definitionId) window.localStorage.removeItem(activeSessionKey(flow.definitionId)); } catch { /* continue */ }
     restoreLocation(); dispatchFlow({ type:'PLAY_AGAIN' });
   };
 

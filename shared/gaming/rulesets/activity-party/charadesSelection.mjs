@@ -38,7 +38,28 @@ function nextFromPool(pool, cursors, poolName, rngState) {
   return { selected, rngState };
 }
 
-export function createCharadesChallengeOrder({ challenges, turnOrder, cluesPerTurn, imageParticipantIds = [], seed = 1 }) {
+function usedInCurrentCycle(pool, challenges, historyIds) {
+  const eligible = new Set(pool.map(index => String(challenges[index].id)));
+  const used = new Set();
+  for (const id of historyIds || []) {
+    const key = String(id);
+    if (!eligible.has(key)) continue;
+    used.add(key);
+    if (used.size === eligible.size) used.clear();
+  }
+  return used;
+}
+
+function startUnusedCycle(pool, challenges, historyIds, cursors, poolName, rngState) {
+  const used = usedInCurrentCycle(pool, challenges, historyIds);
+  const unused = pool.filter(index => !used.has(String(challenges[index].id)));
+  if (unused.length === 0) return rngState;
+  const shuffled = shuffle(unused, rngState);
+  cursors[poolName] = { order: shuffled.items, position: 0, last: null };
+  return shuffled.rngState;
+}
+
+export function createCharadesChallengeOrder({ challenges, turnOrder, cluesPerTurn, imageParticipantIds = [], historyIds = null, seed = 1 }) {
   const imagePool = [];
   const textPool = [];
   for (const [index, challenge] of (challenges || []).entries()) {
@@ -55,6 +76,9 @@ export function createCharadesChallengeOrder({ challenges, turnOrder, cluesPerTu
     const pool = presentation === 'image' ? imagePool : textPool;
     if (pool.length === 0) throw new Error(`Charades ${presentation} challenge pool is required for participant ${participantId}`);
     for (let clue = 0; clue < cluesPerTurn; clue += 1) {
+      if (!cursors[presentation] && Array.isArray(historyIds)) {
+        rngState = startUnusedCycle(pool, challenges, historyIds, cursors, presentation, rngState);
+      }
       const next = nextFromPool(pool, cursors, presentation, rngState);
       order.push(next.selected);
       presentations.push(presentation);

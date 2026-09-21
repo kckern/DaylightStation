@@ -2181,6 +2181,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     journalsDir: configService.getHouseholdPath('gaming/journals'),
     effectsDir: configService.getHouseholdPath('gaming/effects'),
     drawingCheckpointsDir: configService.getHouseholdPath('gaming/drawing-checkpoints'),
+    historyDir: configService.getHouseholdPath('gaming/history'),
     partyGamesCatalog,
     aiGateway: partyGamesProfile.ai.commentary || partyGamesProfile.ai.advisory_judgment ? sharedAiGateway : null,
     aiConfig: partyGamesProfile.ai,

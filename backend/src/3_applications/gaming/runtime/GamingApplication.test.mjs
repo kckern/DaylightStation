@@ -15,20 +15,20 @@ const manifest = {
   theme: { id: 'mounted-theme' }, result_schema: 'gaming-result/v1',
 };
 
-function fixture({ resumedState = {}, resumedView = null, closedState = null, manifestOverride = {}, partyGamesCatalog = null } = {}) {
+function fixture({ resumedState = {}, resumedView = null, dispatchedView = null, closedState = null, manifestOverride = {}, definitionOverride = {}, partyGamesCatalog = null, clueHistory = null } = {}) {
   const coordinator = {
     create: vi.fn(async (request) => ({ header: { session_id: 'session:1', ruleset: request.ruleset }, definition: {} })),
     resume: vi.fn(async () => resumedView || ({ state: resumedState })),
-    dispatch: vi.fn(), close: vi.fn(async () => ({
+    dispatch: vi.fn(async () => dispatchedView), close: vi.fn(async () => ({
       header: { session_id: 'session:1', status: 'complete', revision: 3, experience: { id: 'experience' } },
       state: closedState || { winner_id: 'red', scores: { red: 10, blue: 5 } },
     })),
   };
-  const definitions = { getCurrent: vi.fn(async () => structuredClone(mounted)) };
+  const definitions = { getCurrent: vi.fn(async () => structuredClone({ ...mounted, ...definitionOverride })) };
   const resolvedManifest = { ...manifest, ...manifestOverride };
   const manifestStore = { get: vi.fn((id, version) => id === resolvedManifest.id && version === resolvedManifest.version ? resolvedManifest : null), list: () => [resolvedManifest] };
   const drawingCheckpoints = { get: vi.fn(async () => ({ strokes: [] })), put: vi.fn(async (_id, value) => value), delete: vi.fn(async () => true) };
-  return { application: new GamingApplication({ coordinator, definitions, manifestStore, drawingCheckpoints, partyGamesCatalog }), coordinator, drawingCheckpoints };
+  return { application: new GamingApplication({ coordinator, definitions, manifestStore, drawingCheckpoints, partyGamesCatalog, clueHistory }), coordinator, drawingCheckpoints };
 }
 
 describe('GamingApplication mounted launch authority', () => {
@@ -54,6 +54,106 @@ describe('GamingApplication mounted launch authority', () => {
       experience: { id: 'experience', version: 2, manifest_hash: manifest.hash },
       launch: { surface_id: 'piano', authority_mode: 'remote' },
     }));
+  });
+
+  it('captures Charades clue history in deterministic session setup', async () => {
+    const clueHistory = { list: vi.fn(async () => [{ clue_id: 'rabbit' }, { clue_id: 'duck' }]) };
+    const { application, coordinator } = fixture({
+      clueHistory,
+      manifestOverride: { id: 'charades' },
+      definitionOverride: { definition: { ...mounted.definition, experience: { id: 'charades', version: 2 } } },
+    });
+    await application.createSession({
+      definitionId: 'charades:fhe', participants: [], viewer: { role: 'host' }, surfaceId: 'piano',
+    });
+    expect(clueHistory.list).toHaveBeenCalledWith('charades:fhe');
+    expect(coordinator.create).toHaveBeenCalledWith(expect.objectContaining({
+      setup: expect.objectContaining({ charades_history_ids: ['rabbit', 'duck'] }),
+    }));
+  });
+
+  it('does not read history for an explicitly history-disabled Charades session', async () => {
+    const clueHistory = { list: vi.fn(async () => [{ clue_id: 'rabbit' }]) };
+    const { application, coordinator } = fixture({
+      clueHistory,
+      manifestOverride: { id: 'charades' },
+      definitionOverride: { definition: { ...mounted.definition, experience: { id: 'charades', version: 2 } } },
+    });
+    await application.createSession({
+      definitionId: 'charades:fhe', participants: [], viewer: { role: 'host' }, surfaceId: 'piano',
+      setup: { charades_history_policy: 'disabled', charades_history_ids: ['spoofed'] },
+    });
+    expect(clueHistory.list).not.toHaveBeenCalled();
+    expect(coordinator.create.mock.calls[0][0].setup).toEqual({ charades_history_policy: 'disabled' });
+  });
+
+  it('does not query Charades history for another experience', async () => {
+    const clueHistory = { list: vi.fn(async () => [{ clue_id: 'rabbit' }]) };
+    const { application, coordinator } = fixture({ clueHistory });
+    await application.createSession({
+      definitionId: 'definition:one', participants: [], viewer: { role: 'host' }, surfaceId: 'piano',
+    });
+    expect(clueHistory.list).not.toHaveBeenCalled();
+    expect(coordinator.create.mock.calls[0][0].setup).not.toHaveProperty('charades_history_ids');
+  });
+
+  it('records a committed casual Charades turn exactly once through an idempotent key', async () => {
+    const clueHistory = { list: vi.fn(), append: vi.fn(async (_definitionId, entry) => entry) };
+    const dispatchedView = {
+      header: {
+        session_id: 'session:1', revision: 3, status: 'active', experience: { id: 'charades' },
+        ruleset: { id: 'activity-party' }, artifacts: { rules_definition: { id: 'charades:fhe' } },
+      },
+      state: {
+        competition: false, challenge_index: 0, clue_index: 0, clue_presentation: 'image',
+        challenge: { id: 'rabbit' },
+      },
+      events: [{ recorded_at: '2026-09-20T12:00:00.000Z', event: { type: 'challenge.finished', clue_id: 'rabbit', challenge_index: 0, clue_index: 0, presentation: 'image' } }],
+    };
+    const { application } = fixture({ clueHistory, dispatchedView });
+    const envelope = { command: { type: 'challenge.finish' } };
+    await application.dispatch('session:1', envelope, { role: 'host' });
+    await application.dispatch('session:1', envelope, { role: 'host' });
+    expect(clueHistory.append).toHaveBeenCalledTimes(2);
+    expect(clueHistory.append).toHaveBeenLastCalledWith('charades:fhe', {
+      key: 'session:1:0:0', clue_id: 'rabbit', session_id: 'session:1',
+      challenge_index: 0, clue_index: 0, presentation: 'image',
+      played_at: '2026-09-20T12:00:00.000Z',
+    });
+  });
+
+  it('uses committed event identity when a delayed duplicate returns later state', async () => {
+    const clueHistory = { append: vi.fn(async (_definitionId, entry) => entry) };
+    const dispatchedView = {
+      header: { session_id: 'session:1', revision: 8, status: 'active', experience: { id: 'charades' }, artifacts: { rules_definition: { id: 'charades:fhe' } } },
+      state: { competition: false, challenge_index: 1, clue_index: 0, clue_presentation: 'text', challenge: { id: 'unplayed-next-clue' } },
+      events: [{ recorded_at: '2026-09-20T12:00:00.000Z', event: {
+        type: 'challenge.finished', clue_id: 'rabbit', challenge_index: 0, clue_index: 0, presentation: 'image',
+      } }],
+    };
+    const { application } = fixture({ clueHistory, dispatchedView });
+    await application.dispatch('session:1', { command: { type: 'challenge.finish' } }, { role: 'host' });
+    expect(clueHistory.append).toHaveBeenCalledWith('charades:fhe', {
+      key: 'session:1:0:0', clue_id: 'rabbit', session_id: 'session:1',
+      challenge_index: 0, clue_index: 0, presentation: 'image',
+      played_at: '2026-09-20T12:00:00.000Z',
+    });
+  });
+
+  it('does not record rewind, non-casual, or non-Charades commits', async () => {
+    const clueHistory = { append: vi.fn() };
+    const dispatchedView = {
+      header: { session_id: 'session:1', revision: 2, status: 'active', experience: { id: 'charades' }, ruleset: { id: 'activity-party' }, artifacts: { rules_definition: { id: 'charades:fhe' } } },
+      state: { competition: false, challenge_index: 0, clue_index: 0, challenge: { id: 'rabbit' } },
+      events: [{ recorded_at: '2026-09-20T12:00:00.000Z', event: { type: 'challenge.rewound' } }],
+    };
+    const { application, coordinator } = fixture({ clueHistory, dispatchedView });
+    await application.dispatch('session:1', { command: { type: 'challenge.rewind' } }, { role: 'host' });
+    coordinator.dispatch.mockResolvedValueOnce({ ...dispatchedView, state: { ...dispatchedView.state, competition: true }, events: [{ recorded_at: '2026-09-20T12:01:00.000Z', event: { type: 'challenge.finished' } }] });
+    await application.dispatch('session:1', { command: { type: 'challenge.finish' } }, { role: 'host' });
+    coordinator.dispatch.mockResolvedValueOnce({ ...dispatchedView, header: { ...dispatchedView.header, experience: { id: 'dice' } }, events: [{ recorded_at: '2026-09-20T12:02:00.000Z', event: { type: 'challenge.finished' } }] });
+    await application.dispatch('session:1', { command: { type: 'challenge.finish' } }, { role: 'host' });
+    expect(clueHistory.append).not.toHaveBeenCalled();
   });
 
   it('requires a surface for portable experiences and enforces its authority policy', async () => {

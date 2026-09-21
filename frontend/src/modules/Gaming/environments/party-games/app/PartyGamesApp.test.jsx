@@ -26,6 +26,31 @@ it('propagates AppContainer definition into casual setup and creates only one se
  expect(window.location.pathname).toBe('/screens/living-room/party-games/charades:family'); expect(new URLSearchParams(window.location.search).get('session')).toBe('session-one');
  expect(screen.queryByText('Effect rail')).toBeNull();
 });
+it('keeps the scoped FHE test route and creates a history-disabled session', async()=>{
+ window.history.replaceState({},'','/screens/living-room/fhe/charades/test');
+ fetchBoot.mockResolvedValue({config,sets:[{...sets[0],id:'charades:fhe',definitionId:'charades:fhe',setId:'fhe',launch:{autostart:true,participants:['a','b']}}]});
+ render(<PartyGamesApp appPath="charades:fhe?history=disabled"/>);
+ await screen.findByRole('button',{name:'Complete session-one'});
+ expect(createSession.mock.calls[0][0]).toMatchObject({definitionId:'charades:fhe',historyPolicy:'disabled'});
+ expect(window.location.pathname).toBe('/screens/living-room/fhe/charades/test');
+});
+it('rejects a recorded session attached through the history-disabled route', async()=>{
+ window.history.replaceState({},'','/screens/living-room/fhe/charades/test?session=real-session');
+ fetchBoot.mockResolvedValue({config,sets:[{...sets[0],id:'charades:fhe',definitionId:'charades:fhe',setId:'fhe'}],attachedSession:{header:{session_id:'real-session'},state:{charades_history_policy:'recorded'}}});
+ render(<PartyGamesApp appPath="charades:fhe?history=disabled"/>);
+ expect(await screen.findByRole('alert')).toHaveTextContent('history policy');
+ expect(createSession).not.toHaveBeenCalled();
+});
+it('clears only the test resume slot when test-session recovery fails', async()=>{
+ window.history.replaceState({},'','/screens/living-room/fhe/charades/test');
+ window.localStorage.setItem('party-games:charades:fhe:active-session','real-session');
+ window.localStorage.setItem('party-games:charades:fhe:test:active-session','missing-test-session');
+ fetchBoot.mockRejectedValueOnce(new Error('missing')).mockResolvedValueOnce({config,sets:[]});
+ render(<PartyGamesApp appPath="charades:fhe?history=disabled"/>);
+ await waitFor(()=>expect(fetchBoot).toHaveBeenCalledTimes(2));
+ expect(window.localStorage.getItem('party-games:charades:fhe:active-session')).toBe('real-session');
+ expect(window.localStorage.getItem('party-games:charades:fhe:test:active-session')).toBeNull();
+});
 it('traverses setup and neutral results using only remote controls and clears session on exit', async()=>{
  const exit=vi.fn(); render(<PartyGamesApp definitionId="charades:family" dismiss={exit}/>);
  await screen.findByRole('button',{name:'Start with 2 players'});
