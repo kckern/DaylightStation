@@ -74,6 +74,23 @@ describe('LocalSessionController — transport', () => {
     expect(c.position.get().seconds).toBe(0);
   });
 
+  it('keeps queue Previous separate from restart-current', () => {
+    const c = makeController();
+    const handle = { play: vi.fn(), pause: vi.fn(), seek: vi.fn() };
+    c.setPlayerHandle(handle);
+    c.queue.add({ contentId: 'plex:a', format: 'video' });
+    c.queue.add({ contentId: 'plex:b', format: 'video' });
+    c.transport.play();
+    c.transport.skipNext();
+
+    c.transport.restartCurrent();
+    expect(handle.seek).toHaveBeenCalledWith(0);
+    expect(c.getSnapshot().currentItem.contentId).toBe('plex:b');
+
+    c.transport.skipPrev();
+    expect(c.getSnapshot().currentItem.contentId).toBe('plex:a');
+  });
+
   // 2026-08-12: play() claimed 'playing' the instant it was called, so the app
   // reported playback (and emitted playback.started) 51s before a frame
   // rendered while the server sat on a transcode decision.
@@ -536,10 +553,24 @@ describe('LocalSessionController — logging parity', () => {
 });
 
 describe('LocalSessionController — capabilities', () => {
+  it('returns the resulting Add ordinal and authoritative queue revision', () => {
+    const c = makeController();
+    const first = c.queue.add({ contentId: 'plex:a', format: 'video' });
+    const second = c.queue.add({ contentId: 'plex:b', format: 'video' });
+
+    expect(first).toEqual({ queueRevision: 1, ordinal: 1 });
+    expect(second).toEqual({ queueRevision: 2, ordinal: 2 });
+  });
+
   it('does not invent seekability before a finite positive duration is observed', () => {
     const c = makeController();
+    expect(c.capabilities).toEqual({
+      seekable: false, live: false, reason: 'Nothing is playing', acked: false,
+    });
     c.queue.playNow({ contentId: 'vod:1', format: 'video', duration: null });
-    expect(c.capabilities.seekable).toBe(false);
+    expect(c.capabilities).toEqual({
+      seekable: false, live: false, reason: 'Playback duration is unavailable', acked: false,
+    });
     c.onPlayerObservation('vod:1', { duration: 0 });
     expect(c.capabilities.seekable).toBe(false);
     c.onPlayerObservation('vod:1', { duration: Number.POSITIVE_INFINITY });
@@ -552,7 +583,9 @@ describe('LocalSessionController — capabilities', () => {
     const c = makeController();
     expect(c.capabilities.seekable).toBe(false);
     c.store.dispatch({ type: 'LOAD_ITEM', item: { contentId: 'cam:1', format: 'video', isLive: true, duration: 120 } });
-    expect(c.capabilities.seekable).toBe(false);
+    expect(c.capabilities).toEqual({
+      seekable: false, live: true, reason: 'Live playback has no seekable position', acked: false,
+    });
   });
 });
 

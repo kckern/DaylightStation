@@ -64,6 +64,11 @@ export function createMockController({ kind = 'local', id = `mock-${++mockIdCoun
           set({ currentItem: itemFor(q.items[idx]), position: 0, state: 'playing', queue: { ...q, currentIndex: idx } });
         }
       },
+      restartCurrent: () => {
+        position = { seconds: 0, ts: Date.now() };
+        posSubs.forEach((fn) => fn(position));
+        set({ position: 0 });
+      },
     },
     queue: {
       playNow: (input, { clearRest = false } = {}) => {
@@ -129,7 +134,7 @@ export function createMockController({ kind = 'local', id = `mock-${++mockIdCoun
       snapshotForHandoff: () => snapshot,
       receiveClaim: (snap) => { snapshot = snap; notify(); },
     },
-    capabilities: { seekable: true, acked: kind === 'remote' },
+    capabilities: { seekable: true, live: false, reason: null, acked: kind === 'remote' },
   };
 }
 

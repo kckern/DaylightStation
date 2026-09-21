@@ -6,6 +6,7 @@
 // state of its own. Returned promises resolve on device ack.
 import { DaylightAPI } from '../../../lib/api.mjs';
 import { createPositionChannel } from '../session/positionChannel.js';
+import { addResultFromSnapshot } from '../session/queueOps.js';
 import mediaLog from '../logging/mediaLog.js';
 
 function uuid() {
@@ -20,6 +21,7 @@ const PLAYING = 'playing';
 // itself can precede the permitted 5s ack interval, so it is not evidence that
 // the receiver has accepted the Play (media-app-technical §§4.3, 6.4).
 const PLAY_PUBLICATION_WINDOW_MS = 5_500;
+const QUEUE_PUBLICATION_WINDOW_MS = 5_500;
 
 export function createRemoteSessionController({
   deviceId,
@@ -214,6 +216,70 @@ export function createRemoteSessionController({
     return send('POST', `${base}/transport`, value !== undefined ? { action, value } : { action }, action);
   };
 
+  const observeQueueAdd = (input) => {
+    const before = snapshot();
+    const beforeLength = before?.queue?.items?.length ?? 0;
+    const beforeCurrent = before?.currentItem ?? null;
+    const beforeIndex = before?.queue?.currentIndex;
+    const beforeSessionId = before?.sessionId;
+    const beforeOwner = before?.meta?.playbackOwner;
+    const beforeRevision = before?.meta?.playbackOwner?.queueRevision;
+    let detach = null;
+    let timer = null;
+    let settled = false;
+    let finish = () => {};
+    const promise = new Promise((resolve, reject) => {
+      finish = (result, error = null) => {
+        if (settled) return;
+        settled = true;
+        detach?.();
+        if (timer) clearTimeout(timer);
+        if (error) reject(error);
+        else resolve(result);
+      };
+      const reconcile = (entry = fleetStore.getEntry(deviceId)) => {
+        if (entry?.offline || entry?.isStale) {
+          finish(null, new Error('queue-state-unavailable'));
+          return;
+        }
+        const next = entry?.snapshot;
+        const items = next?.queue?.items;
+        const result = addResultFromSnapshot(next);
+        const current = next?.currentItem ?? null;
+        const playbackPreserved = next?.sessionId === beforeSessionId
+          && next?.queue?.currentIndex === beforeIndex
+          && (beforeCurrent == null
+            ? current == null
+            : current?.contentId === beforeCurrent.contentId
+              && current?.queueItemId === beforeCurrent.queueItemId)
+          && (beforeOwner?.ownerInstanceId == null
+            || next?.meta?.playbackOwner?.ownerInstanceId === beforeOwner.ownerInstanceId)
+          && (beforeOwner?.playbackRevision == null
+            || next?.meta?.playbackOwner?.playbackRevision === beforeOwner.playbackRevision);
+        if (!result || !Array.isArray(items) || items.length <= beforeLength
+          || !playbackPreserved
+          || items.at(-1)?.contentId !== input.contentId
+          || (Number.isInteger(beforeRevision) && result.queueRevision <= beforeRevision)) return;
+        finish(result);
+      };
+      detach = fleetStore.subscribeDevice(deviceId, reconcile);
+      if (settled) {
+        detach?.();
+        detach = null;
+        return;
+      }
+      timer = setTimeout(
+        () => finish(null, new Error('queue-state-timeout')),
+        QUEUE_PUBLICATION_WINDOW_MS
+      );
+      reconcile();
+    });
+    return {
+      promise,
+      cancel: () => finish(null, new Error('queue-observation-cancelled')),
+    };
+  };
+
   return {
     kind: 'remote',
     id: deviceId,
@@ -243,6 +309,7 @@ export function createRemoteSessionController({
       seekRel: (delta) => transportPost('seekRel', delta),
       skipNext: () => transportPost('skipNext'),
       skipPrev: () => transportPost('skipPrev'),
+      restartCurrent: () => transportPost('seekAbs', 0),
     },
 
     queue: {
@@ -250,7 +317,14 @@ export function createRemoteSessionController({
         send('POST', `${base}/queue/play-now`, { contentId: input.contentId, clearRest: !!opts.clearRest }, 'queue.playNow'),
       playNext: (input) => send('POST', `${base}/queue/play-next`, { contentId: input.contentId }, 'queue.playNext'),
       addUpNext: (input) => send('POST', `${base}/queue/add-up-next`, { contentId: input.contentId }, 'queue.addUpNext'),
-      add: (input) => send('POST', `${base}/queue/add`, { contentId: input.contentId }, 'queue.add'),
+      add: (input) => {
+        const observation = observeQueueAdd(input);
+        const request = send('POST', `${base}/queue/add`, { contentId: input.contentId }, 'queue.add');
+        return Promise.all([request, observation.promise]).then(([, result]) => result, (error) => {
+          observation.cancel();
+          throw error;
+        });
+      },
       reorder: (input) => send('POST', `${base}/queue/reorder`, input, 'queue.reorder'),
       remove: (queueItemId) => send('POST', `${base}/queue/remove`, { queueItemId }, 'queue.remove'),
       jump: (queueItemId) => send('POST', `${base}/queue/jump`, { queueItemId }, 'queue.jump'),
@@ -288,7 +362,21 @@ export function createRemoteSessionController({
     },
 
     get capabilities() {
-      return { seekable: !snapshot()?.currentItem?.isLive, acked: true };
+      const item = snapshot()?.currentItem;
+      if (!item) return { seekable: false, live: false, reason: 'Nothing is playing', acked: true };
+      if (item.isLive === true) {
+        return {
+          seekable: false, live: true,
+          reason: 'Live playback has no seekable position', acked: true,
+        };
+      }
+      if (!Number.isFinite(item.duration) || item.duration <= 0) {
+        return {
+          seekable: false, live: false,
+          reason: 'Playback duration is unavailable', acked: true,
+        };
+      }
+      return { seekable: true, live: false, reason: null, acked: true };
     },
 
     destroy() {

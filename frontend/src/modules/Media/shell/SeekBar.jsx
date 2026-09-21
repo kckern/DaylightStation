@@ -39,10 +39,13 @@ export function SeekBar({ target, availability = null, onCommand = null, pending
   const [commandFeedback, setCommandFeedback] = useState(null);
   if (!item) return null;
 
-  if (item.isLive) {
+  if (capabilities.live === true || item.isLive) {
     return (
       <div className="np-seekbar np-seekbar--live">
         <span className="np-live-badge">LIVE</span>
+        {capabilities.reason && (
+          <span className="np-control-unavailable" role="status">{capabilities.reason}</span>
+        )}
       </div>
     );
   }
@@ -175,6 +178,9 @@ export function SeekBar({ target, availability = null, onCommand = null, pending
       <span className="np-seek-time" data-testid="np-seek-remaining">
         {duration ? `-${formatTime(Math.max(0, duration - clamped))}` : '–:––'}
       </span>
+      {!canSeek && capabilities.reason && (
+        <div className="np-control-unavailable" role="status">{capabilities.reason}</div>
+      )}
       {commandFeedback?.context === context && (
         <div className="np-command-feedback" data-testid="np-seek-command-feedback" role="status">{commandFeedback.message}</div>
       )}

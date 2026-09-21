@@ -214,6 +214,10 @@ and a **canvas** that shows exactly one view at a time:
   destination sheet always includes **This device**, which clears remote
   targets immediately. Opening or leaving Peek never overrides or changes
   that destination; a one-off picker still affects only its explicit action,
+  and a remote aim has a two-hour inactivity lease. Verified matching playback
+  that this browser sent or is steering suspends that lease; stale or unknown
+  receiver state does not. Restoration resolves expiry before first layout so
+  an expired screen never flashes as the active destination,
 - the **settings menu** — session reset (confirmed). The per-browser display
   name is read from storage but has no UI to set it.
 
@@ -405,6 +409,16 @@ arrives or a short timeout expires. Conflicts between concurrent controllers
 resolve by last-writer-wins at the device; the device's broadcast state is
 always ground truth and the app always converges to it.
 
+Previous and restart-current are separate transport meanings: Previous moves
+to the preceding queue entry, while restart-current is an explicitly named
+seek to zero. Seeking exposes `seekable`, `live`, and an unavailable `reason`
+for both local and remote sessions, so live or duration-unknown playback shows
+why a position control is unavailable instead of silently doing nothing.
+Queue Add likewise resolves only after authoritative session state reports
+the increased queue revision and appended ordinal; a transport HTTP ACK alone
+is not an Add outcome. Confirmed Add receipts name the item and screen and show
+that ordinal (for example, “2nd in queue”).
+
 ### Config-driven surfaces
 
 What scopes search exposes is household configuration, not code: it comes
@@ -437,7 +451,9 @@ The local session and each peeked remote session present the **same
 controller interface** (snapshot + transport + queue + config) to the UI;
 panels like the queue and transport are written once against that interface
 and bound to either side. This symmetry is what makes J2/J5 "identical
-semantics" cheap, and it should survive any rebuild.
+semantics" cheap, and it should survive any rebuild. A stopped session keeps
+that same queue reachable through the mini-player's explicitly named queue
+handle until clear/reset removes it.
 
 ### Platform relationships
 

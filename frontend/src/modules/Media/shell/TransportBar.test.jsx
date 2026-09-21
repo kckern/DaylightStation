@@ -12,7 +12,10 @@ const transport = {
   skipPrev: vi.fn(),
 };
 const config = { setShuffle: vi.fn(), setRepeat: vi.fn(), setVolume: vi.fn(), setPlaybackRate: vi.fn() };
-const state = { snapshot: null, capabilities: { seekable: true, acked: false } };
+const state = {
+  snapshot: null,
+  capabilities: { seekable: true, live: false, reason: null, acked: false },
+};
 vi.mock('../controller/useSessionController.js', () => ({
   useSessionController: () => ({
     snapshot: state.snapshot,
@@ -53,7 +56,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   config.setPlaybackRate = vi.fn();
   state.snapshot = makeSnapshot();
-  state.capabilities = { seekable: true, acked: false };
+  state.capabilities = { seekable: true, live: false, reason: null, acked: false };
 });
 
 describe('TransportBar', () => {
@@ -112,10 +115,14 @@ describe('TransportBar', () => {
     state.snapshot = makeSnapshot({
       item: { contentId: 'tv:5', title: 'Live Feed', isLive: true },
     });
+    state.capabilities = {
+      seekable: false, live: true, reason: 'Live playback has no seekable position', acked: false,
+    };
     render(<TransportBar target="local" />);
     expect(screen.queryByTestId('np-rew')).toBeNull();
     expect(screen.queryByTestId('np-ffw')).toBeNull();
     expect(screen.getByTestId('np-toggle')).toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent('Live playback has no seekable position');
   });
 
   it('disables rew/ffw and suppresses commands when duration is not seekable', () => {

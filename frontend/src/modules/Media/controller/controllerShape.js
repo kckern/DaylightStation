@@ -19,15 +19,17 @@
  * @property {() => Object|null} getSnapshot  current SessionSnapshot
  * @property {(fn: Function) => Function} subscribe  snapshot changes → unsubscribe
  * @property {{ get: () => {seconds: number, ts: number}, subscribe: (fn: Function) => Function }} position
- * @property {{ play, pause, stop, seekAbs, seekRel, skipNext, skipPrev }} transport
+ * @property {{ play, pause, stop, seekAbs, seekRel, skipNext, skipPrev, restartCurrent }} transport
  * @property {{ playNow, playNext, addUpNext, add, remove, reorder, jump, clear }} queue
  * @property {{ setShuffle, setRepeat, setShader, setVolume }} config
  * @property {{ reset, adoptSnapshot }} lifecycle
  * @property {{ snapshotForHandoff, receiveClaim }} portability   (local only)
- * @property {{ seekable: boolean, acked: boolean }} capabilities
+ * @property {{ seekable: boolean, live: boolean, reason: string|null, acked: boolean }} capabilities
  */
 
-const TRANSPORT_METHODS = ['play', 'pause', 'stop', 'seekAbs', 'seekRel', 'skipNext', 'skipPrev'];
+const TRANSPORT_METHODS = [
+  'play', 'pause', 'stop', 'seekAbs', 'seekRel', 'skipNext', 'skipPrev', 'restartCurrent',
+];
 const QUEUE_METHODS = ['playNow', 'playNext', 'addUpNext', 'add', 'remove', 'reorder', 'jump', 'clear'];
 const CONFIG_METHODS = ['setShuffle', 'setRepeat', 'setShader', 'setVolume'];
 const LIFECYCLE_METHODS = ['reset', 'adoptSnapshot'];
