@@ -978,9 +978,9 @@ describe('repetition, one sentence at a time', () => {
     window.HTMLMediaElement.prototype.play = vi.fn(() => Promise.resolve());
     dayMock.mockResolvedValue(dayPayload({ queue: [entry(1, 'repetition')] }));
     render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
-    fireEvent.click(await screen.findByText('Play'));
-    fireEvent.click(await screen.findByText('Stop'));
-    expect(await screen.findByText('Play')).toBeTruthy();
+    fireEvent.click(await screen.findByRole('button', { name: 'Play' }, SEQUENCE));
+    fireEvent.click(await screen.findByRole('button', { name: 'Stop' }, SEQUENCE));
+    expect(await screen.findByRole('button', { name: 'Play' }, SEQUENCE)).toBeTruthy();
   });
 });
 
@@ -2067,7 +2067,7 @@ describe('hands-free', () => {
     render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
     await screen.findByRole('button', { name: 'Play' });
     pressKey(' ');
-    await screen.findByRole('button', { name: 'Stop' });
+    await screen.findByRole('button', { name: 'Stop' }, SEQUENCE);
     pressKey(' ');
     expect(await screen.findByRole('button', { name: 'Play' })).toBeTruthy();
   });
