@@ -164,6 +164,15 @@ describe('clear', () => {
 });
 
 describe('add', () => {
+  it('reports the appended ordinal and authoritative queue revision', () => {
+    const snapshot = {
+      ...seed('a*', 'b'),
+      meta: { playbackOwner: { queueRevision: 12 } },
+    };
+
+    expect(q.addResultFromSnapshot(snapshot)).toEqual({ queueRevision: 12, ordinal: 2 });
+  });
+
   it('appends into an empty queue without selecting a current item', () => {
     const first = q.add(seed(), { contentId: 'c:a' });
     expect(first.queue.currentIndex).toBe(-1);

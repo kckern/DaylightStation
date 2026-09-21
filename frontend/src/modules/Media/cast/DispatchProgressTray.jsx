@@ -24,6 +24,15 @@ export const CONFIRMED_LINGER_MS = 8_000;
 // Generous, not 3 seconds.
 export const SENT_RESOLUTION_TIMEOUT_MS = 100_000;
 
+function ordinal(value) {
+  const tens = value % 100;
+  if (tens >= 11 && tens <= 13) return `${value}th`;
+  if (value % 10 === 1) return `${value}st`;
+  if (value % 10 === 2) return `${value}nd`;
+  if (value % 10 === 3) return `${value}rd`;
+  return `${value}th`;
+}
+
 function StatusIcon({ phase }) {
   if (phase === 'running' || phase === 'sent') {
     return <span className="cast-tray-spinner" aria-hidden />;
@@ -53,7 +62,7 @@ function rowCopy(d, phase, name) {
         return {
           primary: d.title ? `Added ${d.title} to ${name}` : `Added to ${name}`,
           secondary: Number.isInteger(d.outcomeIdentity?.queueLength)
-            ? `${d.outcomeIdentity.queueLength} items queued`
+            ? `${ordinal(d.outcomeIdentity.queueLength)} in queue`
             : null,
         };
       }

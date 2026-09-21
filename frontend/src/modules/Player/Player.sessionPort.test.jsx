@@ -147,6 +147,32 @@ describe('Player session port', () => {
     expect(native.currentTime).toBe(40);
   });
 
+  it('remote Previous walks the real owner queue beyond the five-second restart threshold', async () => {
+    const ref = createRef();
+    const native = document.createElement('video');
+    Object.defineProperty(native, 'currentTime', { configurable: true, writable: true, value: 27 });
+    mockMediaElement = native;
+    render(<Player ref={ref} play={[
+      { contentId: 'plex:a', title: 'A', format: 'video' },
+      { contentId: 'plex:b', title: 'B', format: 'video' },
+    ]} />);
+    await waitFor(() => expect(ref.current?.getQueueSnapshot().items).toHaveLength(2));
+    act(() => ref.current.advance());
+    await waitFor(() => expect(
+      ref.current.getQueueSnapshot().items[ref.current.getQueueSnapshot().currentIndex]?.contentId,
+    ).toBe('plex:b'));
+    native.currentTime = 27;
+
+    act(() => {
+      expect(getPlayerQueueOpRegistry().dispatch({ op: 'skip-prev', commandId: 'prev-1' })).toBe(true);
+    });
+
+    await waitFor(() => expect(
+      ref.current.getQueueSnapshot().items[ref.current.getQueueSnapshot().currentIndex]?.contentId,
+    ).toBe('plex:a'));
+    expect(native.currentTime).toBe(27);
+  });
+
   it('adopts an exact [A,B,A] owner capture into the existing destination Player', async () => {
     const sourceRef = createRef();
     const destinationRef = createRef();

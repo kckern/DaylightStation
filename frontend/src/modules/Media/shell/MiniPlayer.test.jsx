@@ -105,7 +105,8 @@ describe('MiniPlayer', () => {
 
     expect(screen.getByTestId('media-mini-player')).toBeInTheDocument();
     expect(screen.getByText('2 items ready')).toBeInTheDocument();
-    fireEvent.click(screen.getByTestId('mini-player-open-nowplaying'));
+    const openQueue = screen.getByRole('button', { name: 'Open queue, 2 items ready' });
+    fireEvent.click(openQueue);
     expect(push).toHaveBeenCalledWith('nowPlaying', {});
 
     fireEvent.click(screen.getByRole('button', { name: 'Play' }));

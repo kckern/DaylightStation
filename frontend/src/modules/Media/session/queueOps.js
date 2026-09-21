@@ -213,6 +213,15 @@ export function add(snapshot, input) {
   return addMany(snapshot, [input]);
 }
 
+/** Result copy for a completed Add, derived only from an owner snapshot. */
+export function addResultFromSnapshot(snapshot) {
+  const queueRevision = snapshot?.meta?.playbackOwner?.queueRevision;
+  const ordinal = snapshot?.queue?.items?.length;
+  if (!Number.isInteger(queueRevision) || queueRevision < 0
+    || !Number.isInteger(ordinal) || ordinal < 1) return null;
+  return { queueRevision, ordinal };
+}
+
 /** Batch Add to Queue: append in order without changing playback selection. */
 export function addMany(snapshot, inputs) {
   const newItems = toQueueItems(inputs);

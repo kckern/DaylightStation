@@ -42,7 +42,9 @@ export function useSessionController(target) {
     config: controller?.config ?? noopGroup,
     lifecycle: controller?.lifecycle ?? noopGroup,
     portability: controller?.portability ?? noopGroup,
-    capabilities: controller?.capabilities ?? { seekable: false, acked: false },
+    capabilities: controller?.capabilities ?? {
+      seekable: false, live: false, reason: 'Playback controls are unavailable', acked: false,
+    },
   };
 }
 

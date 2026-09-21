@@ -41,9 +41,11 @@ describe('DispatchProgressTray', () => {
     dispatches.set('add-1', {
       dispatchId: 'add-1', deviceId: 'office', contentId: 'plex:1', title: 'Arrival',
       operation: 'add', status: 'success', outcome: 'confirmed', steps: [],
+      outcomeIdentity: { queueLength: 2, queueRevision: 7 },
     });
     render(<DispatchProgressTray />);
     expect(screen.getByText(/Added Arrival to/i)).toBeTruthy();
+    expect(screen.getByText('2nd in queue')).toBeTruthy();
     expect(screen.queryByText(/Playing on/i)).toBeNull();
   });
   it('RELY.6a each failed tray row retries its own dispatchId', () => {

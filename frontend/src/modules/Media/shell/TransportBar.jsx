@@ -86,8 +86,10 @@ export function TransportBar({ target, snapshot: snapshotOverride = null, onComm
   const hasNext = currentIndex >= 0
     && (currentIndex < items.length - 1 || (repeat === 'all' && items.length > 1));
 
-  const showSeek = !!currentItem && !currentItem.isLive;
+  const isLive = capabilities?.live === true || currentItem?.isLive === true;
+  const showSeek = !!currentItem && !isLive;
   const canSeek = !!capabilities?.seekable;
+  const seekUnavailableReason = capabilities?.reason ?? 'Seeking is not available for this playback';
 
   const runCommand = (action, operation) => {
     // Disabled controls are the normal UI boundary; retain this guard for
@@ -178,8 +180,8 @@ export function TransportBar({ target, snapshot: snapshotOverride = null, onComm
         </button>
       </div>
 
-      {showSeek && !canSeek && (
-        <div className="np-control-unavailable" role="status">Seeking is not available for this playback</div>
+      {!!currentItem && !canSeek && (
+        <div className="np-control-unavailable" role="status">{seekUnavailableReason}</div>
       )}
 
       <div className="np-transport-secondary">
