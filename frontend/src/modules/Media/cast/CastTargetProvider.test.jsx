@@ -125,6 +125,50 @@ describe('CastTargetProvider', () => {
     expect(JSON.parse(localStorage.getItem(CAST_TARGET_KEY))).toMatchObject({ targetIds: [] });
   });
 
+  it('retains an otherwise-expired aim on first layout when matching sent playback is active', () => {
+    const now = 1_700_000_000_000;
+    vi.spyOn(Date, 'now').mockReturnValue(now);
+    localStorage.setItem(CAST_TARGET_KEY, JSON.stringify({
+      mode: 'fork', targetIds: ['office'], activityAt: now - (2 * 60 * 60 * 1000) - 1,
+    }));
+    const sent = {
+      ownerId: 'office',
+      playback: {
+        sessionId: 'sent-session', contentId: 'plex:arrival',
+        queueItemId: 'arrival-visit', ownerInstanceId: 'owner-office', playbackRevision: 7,
+      },
+    };
+    const fleet = { store: {
+      getEntry: () => ({
+        snapshot: {
+          sessionId: 'sent-session', state: 'playing',
+          currentItem: { contentId: 'plex:arrival', queueItemId: 'arrival-visit' },
+          meta: {
+            ownerId: 'office',
+            playbackOwner: { ownerInstanceId: 'owner-office', playbackRevision: 7 },
+          },
+        },
+      }),
+      subscribeAll: () => () => {},
+    } };
+    const onInitial = vi.fn();
+
+    render(
+      <ClientIdentityContext.Provider value={{ clientId: 'phone' }}>
+        <FleetContext.Provider value={fleet}>
+          <PeekContext.Provider value={{ getSteeringActivity: () => sent }}>
+            <CastTargetProvider><InitialProbe onInitial={onInitial} /></CastTargetProvider>
+          </PeekContext.Provider>
+        </FleetContext.Provider>
+      </ClientIdentityContext.Provider>
+    );
+
+    expect(onInitial.mock.calls[0]).toEqual([{ mode: 'fork', targetIds: ['office'] }]);
+    expect(JSON.parse(localStorage.getItem(CAST_TARGET_KEY))).toMatchObject({
+      targetIds: ['office'], exemptionStartedAt: now,
+    });
+  });
+
   it('ends a steering exemption when a fresh fleet update names newer playback', () => {
     const now = 1_700_000_000_000;
     vi.spyOn(Date, 'now').mockReturnValue(now);

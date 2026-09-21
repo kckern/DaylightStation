@@ -437,6 +437,7 @@ export function createLocalSessionController({
       const next = qOps.addMany(snap(), inputs);
       logQueueMutation('add', next, context);
       store.replace(next);
+      return qOps.addResultFromSnapshot(capture().snapshot);
     },
   };
 
@@ -450,20 +451,18 @@ export function createLocalSessionController({
     const apply = enqueueAppliers[op];
     const context = { contentId: input?.contentId };
     if (!isContainerInput(input)) {
-      apply([input], opts, context);
-      return;
+      return apply([input], opts, context);
     }
-    expandContainerInput(input, { fetchImpl })
+    return expandContainerInput(input, { fetchImpl })
       .then((children) => {
         if (children && children.length > 0) {
-          apply(children, opts, {
+          return apply(children, opts, {
             ...context,
             expandedFrom: input.contentId,
             expandedCount: children.length,
           });
-        } else {
-          apply([input], opts, context);
         }
+        return apply([input], opts, context);
       })
       .catch(() => apply([input], opts, context));
   };
@@ -524,6 +523,10 @@ export function createLocalSessionController({
       skipPrev: () => {
         mediaLog.transportCommand({ action: 'skipPrev', target: 'local' });
         advanceBack();
+      },
+      restartCurrent: () => {
+        mediaLog.transportCommand({ action: 'restartCurrent', target: 'local' });
+        controller.transport.seekAbs(0);
       },
     },
 
@@ -617,9 +620,21 @@ export function createLocalSessionController({
 
     get capabilities() {
       const item = snap().currentItem;
+      if (!item) return { seekable: false, live: false, reason: 'Nothing is playing', acked: false };
+      if (item.isLive === true) {
+        return {
+          seekable: false, live: true,
+          reason: 'Live playback has no seekable position', acked: false,
+        };
+      }
+      if (!Number.isFinite(item.duration) || item.duration <= 0) {
+        return {
+          seekable: false, live: false,
+          reason: 'Playback duration is unavailable', acked: false,
+        };
+      }
       return {
-        seekable: !!item && item.isLive !== true && Number.isFinite(item.duration) && item.duration > 0,
-        acked: false,
+        seekable: true, live: false, reason: null, acked: false,
       };
     },
 

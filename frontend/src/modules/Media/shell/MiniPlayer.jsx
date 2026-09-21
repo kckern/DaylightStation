@@ -98,6 +98,7 @@ export function MiniPlayer() {
         type="button"
         data-testid="mini-player-open-nowplaying"
         className="mini-player-title"
+        aria-label={item ? `Open now playing, ${item.title ?? item.contentId}` : `Open queue, ${queueCount} item${queueCount === 1 ? '' : 's'} ready`}
         onClick={() => { if (view !== 'nowPlaying') push('nowPlaying', {}); }}
       >
         <span className="mini-player-title-text">

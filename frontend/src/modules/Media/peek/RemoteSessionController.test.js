@@ -60,6 +60,37 @@ describe('RemoteSessionController', () => {
     await expect(p).resolves.toMatchObject({ ok: true, commandId: 'cmd-1' });
   });
 
+  it('STEER.3a Previous selects the prior queue item rather than restarting current', async () => {
+    const { ackRouter, http, ctl } = setup();
+    const pending = ctl.transport.skipPrev();
+
+    expect(http).toHaveBeenCalledWith(
+      'api/v1/device/tv/session/transport',
+      expect.objectContaining({ action: 'skipPrev', commandId: 'cmd-1' }),
+      'POST'
+    );
+    expect(http).not.toHaveBeenCalledWith(
+      'api/v1/device/tv/session/transport',
+      expect.objectContaining({ action: 'seekAbs', value: 0 }),
+      'POST'
+    );
+    ackRouter.resolve({ commandId: 'cmd-1', ok: true });
+    await pending;
+  });
+
+  it('exposes restart-current as a separately named seek-to-zero command', async () => {
+    const { ackRouter, http, ctl } = setup();
+    const pending = ctl.transport.restartCurrent();
+
+    expect(http).toHaveBeenCalledWith(
+      'api/v1/device/tv/session/transport',
+      expect.objectContaining({ action: 'seekAbs', value: 0, commandId: 'cmd-1' }),
+      'POST'
+    );
+    ackRouter.resolve({ commandId: 'cmd-1', ok: true });
+    await pending;
+  });
+
   it('reports a successfully acknowledged command only for fresh observed playback identity', async () => {
     const onSteeringActivity = vi.fn();
     const { fleetStore, ackRouter, ctl } = setup({ onSteeringActivity });
@@ -269,7 +300,12 @@ describe('RemoteSessionController', () => {
     const onSteeringActivity = vi.fn();
     const { fleetStore, ackRouter, ctl } = setup({ onSteeringActivity });
     const paused = {
-      sessionId: 'session-1', state: 'paused', currentItem: { contentId: 'plex:1', queueItemId: 'queue-1' },
+      sessionId: 'session-1', state: 'paused',
+      currentItem: { contentId: 'plex:1', queueItemId: 'queue-1' },
+      queue: {
+        items: [{ queueItemId: 'queue-1', contentId: 'plex:1' }], currentIndex: 0,
+      },
+      meta: { playbackOwner: { queueRevision: 1 } },
     };
     fleetStore.receive({ deviceId: 'tv', snapshot: paused });
     const play = ctl.transport.play();
@@ -278,6 +314,19 @@ describe('RemoteSessionController', () => {
 
     const newerCommand = issueCommand(ctl);
     ackRouter.resolve({ commandId: 'cmd-2', ok: true });
+    if (_label === 'queue add') {
+      fleetStore.receive({ deviceId: 'tv', snapshot: {
+        ...paused,
+        queue: {
+          items: [
+            ...paused.queue.items,
+            { queueItemId: 'queue-2', contentId: 'plex:next' },
+          ],
+          currentIndex: 0,
+        },
+        meta: { playbackOwner: { queueRevision: 2 } },
+      } });
+    }
     await newerCommand;
     fleetStore.receive({ deviceId: 'tv', snapshot: { ...paused, state: 'playing' } });
 
@@ -398,6 +447,123 @@ describe('RemoteSessionController', () => {
     await p;
   });
 
+  it('resolves Add only after authoritative queue state reports its ordinal and revision', async () => {
+    const { fleetStore, ackRouter, ctl } = setup();
+    fleetStore.receive({
+      deviceId: 'tv',
+      snapshot: {
+        sessionId: 'session-1', state: 'playing',
+        currentItem: { contentId: 'plex:arrival', queueItemId: 'arrival-visit' },
+        queue: {
+          items: [{ queueItemId: 'arrival-visit', contentId: 'plex:arrival' }],
+          currentIndex: 0,
+        },
+        meta: { playbackOwner: { queueRevision: 4 } },
+      },
+    });
+
+    let settled = false;
+    const pending = ctl.queue.add({ contentId: 'plex:disclosure' }).then((result) => {
+      settled = true;
+      return result;
+    });
+    ackRouter.resolve({ commandId: 'cmd-1', ok: true });
+    await Promise.resolve();
+    expect(settled).toBe(false);
+
+    fleetStore.receive({
+      deviceId: 'tv',
+      snapshot: {
+        sessionId: 'session-1', state: 'playing',
+        currentItem: { contentId: 'plex:disclosure', queueItemId: 'disclosure-visit' },
+        queue: {
+          items: [
+            { queueItemId: 'arrival-visit', contentId: 'plex:arrival' },
+            { queueItemId: 'disclosure-visit', contentId: 'plex:disclosure' },
+          ],
+          currentIndex: 1,
+        },
+        meta: { playbackOwner: { ownerInstanceId: 'owner-tv', playbackRevision: 2, queueRevision: 5 } },
+      },
+    });
+    await Promise.resolve();
+    expect(settled, 'an Add outcome must not accept interrupted playback').toBe(false);
+
+    fleetStore.receive({
+      deviceId: 'tv',
+      snapshot: {
+        sessionId: 'session-1', state: 'playing',
+        currentItem: { contentId: 'plex:arrival', queueItemId: 'arrival-visit' },
+        queue: {
+          items: [
+            { queueItemId: 'arrival-visit', contentId: 'plex:arrival' },
+            { queueItemId: 'disclosure-visit', contentId: 'plex:disclosure' },
+          ],
+          currentIndex: 0,
+        },
+        meta: { playbackOwner: { queueRevision: 6 } },
+      },
+    });
+
+    await expect(pending).resolves.toEqual({ queueRevision: 6, ordinal: 2 });
+  });
+
+  it('gives Add a full publication window after a delayed positive ack', async () => {
+    vi.useFakeTimers();
+    try {
+      const { fleetStore, ackRouter, ctl } = setup();
+      fleetStore.receive({
+        deviceId: 'tv',
+        snapshot: {
+          sessionId: 'session-1', state: 'playing',
+          currentItem: { contentId: 'plex:arrival', queueItemId: 'arrival-visit' },
+          queue: {
+            items: [{ queueItemId: 'arrival-visit', contentId: 'plex:arrival' }],
+            currentIndex: 0,
+          },
+          meta: { playbackOwner: { ownerInstanceId: 'owner-tv', playbackRevision: 2, queueRevision: 4 } },
+        },
+      });
+
+      let outcome = null;
+      const observed = ctl.queue.add({ contentId: 'plex:disclosure' }).then(
+        (value) => { outcome = { status: 'resolved', value }; },
+        (error) => { outcome = { status: 'rejected', error }; },
+      );
+      await vi.advanceTimersByTimeAsync(4_900);
+      ackRouter.resolve({ commandId: 'cmd-1', ok: true });
+      await vi.advanceTimersByTimeAsync(700);
+
+      expect(outcome, 'the queue deadline must start at positive ack, not request dispatch').toBeNull();
+      fleetStore.receive({
+        deviceId: 'tv',
+        snapshot: {
+          sessionId: 'session-1', state: 'playing',
+          currentItem: { contentId: 'plex:arrival', queueItemId: 'arrival-visit' },
+          queue: {
+            items: [
+              { queueItemId: 'arrival-visit', contentId: 'plex:arrival' },
+              { queueItemId: 'disclosure-visit', contentId: 'plex:disclosure' },
+            ],
+            currentIndex: 0,
+          },
+          meta: { playbackOwner: { ownerInstanceId: 'owner-tv', playbackRevision: 2, queueRevision: 5 } },
+        },
+      });
+      await observed;
+      expect(outcome).toEqual({ status: 'resolved', value: { queueRevision: 5, ordinal: 2 } });
+      ctl.destroy();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('rejects Add immediately when HTTP fails instead of leaving a queue observation pending', async () => {
+    const { ctl } = setup({ httpImpl: async () => { throw new Error('DEVICE_OFFLINE'); } });
+
+    await expect(ctl.queue.add({ contentId: 'plex:disclosure' })).rejects.toThrow('DEVICE_OFFLINE');
+  });
+
   it('config setters PUT with clamped values', async () => {
     const { ackRouter, http, ctl } = setup();
     const p = ctl.config.setVolume(150);
@@ -425,10 +591,24 @@ describe('RemoteSessionController', () => {
     }
   });
 
-  it('capabilities reflect live content', () => {
+  it('capabilities distinguish on-demand, live, and unavailable seeking with a reason', () => {
     const { fleetStore, ctl } = setup();
-    expect(ctl.capabilities.seekable).toBe(true);
+    expect(ctl.capabilities).toEqual({
+      seekable: false, live: false, reason: 'Nothing is playing', acked: true,
+    });
+    fleetStore.receive({ deviceId: 'tv', snapshot: {
+      state: 'playing', currentItem: { contentId: 'plex:1', duration: 120, isLive: false },
+    } });
+    expect(ctl.capabilities).toEqual({
+      seekable: true, live: false, reason: null, acked: true,
+    });
     fleetStore.receive({ deviceId: 'tv', snapshot: { state: 'playing', currentItem: { contentId: 'cam:1', isLive: true } } });
-    expect(ctl.capabilities.seekable).toBe(false);
+    expect(ctl.capabilities).toEqual({
+      seekable: false, live: true, reason: 'Live playback has no seekable position', acked: true,
+    });
+    fleetStore.receive({ deviceId: 'tv', snapshot: { state: 'playing', currentItem: { contentId: 'plex:2', duration: null } } });
+    expect(ctl.capabilities).toEqual({
+      seekable: false, live: false, reason: 'Playback duration is unavailable', acked: true,
+    });
   });
 });

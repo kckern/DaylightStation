@@ -24,6 +24,11 @@ function defaultState(now) {
   };
 }
 
+export function resolveAimExpiry({ idleMs, matchingPlaybackActive = false }) {
+  if (matchingPlaybackActive) return false;
+  return Number.isFinite(idleMs) && idleMs >= AIM_IDLE_MS;
+}
+
 /**
  * Reads the persisted aim shape without assigning meaning to unavailable
  * fleet state. Legacy records did not include activityAt; give each one a
@@ -79,7 +84,10 @@ export function advanceAimLifetime(state, { now = Date.now(), exemption = null }
       activityAt: state.activityAt + Math.max(0, now - state.exemptionStartedAt),
       exemptionStartedAt: null,
     };
-  const expired = now - resumed.activityAt >= AIM_IDLE_MS;
+  const expired = resolveAimExpiry({
+    idleMs: now - resumed.activityAt,
+    matchingPlaybackActive: false,
+  });
   return {
     state: expired
       ? { ...resumed, targetIds: [], activityAt: now, exemptionStartedAt: null }

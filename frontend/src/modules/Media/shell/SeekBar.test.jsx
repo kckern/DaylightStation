@@ -7,7 +7,7 @@ const state = {
   controller: {},
   transport,
   snapshot: null,
-  capabilities: { seekable: true, acked: false },
+  capabilities: { seekable: true, live: false, reason: null, acked: false },
   position: { seconds: 60, ts: 0 },
 };
 vi.mock('../controller/useSessionController.js', () => ({
@@ -52,7 +52,7 @@ function firePointer(el, type, clientX) {
 beforeEach(() => {
   vi.clearAllMocks();
   state.snapshot = makeSnapshot();
-  state.capabilities = { seekable: true, acked: false };
+  state.capabilities = { seekable: true, live: false, reason: null, acked: false };
   state.position = { seconds: 60, ts: 0 };
   state.controller = {};
   state.transport = transport;
@@ -276,10 +276,13 @@ describe('SeekBar', () => {
 
   it('shows a LIVE badge instead of a scrubber for live content', () => {
     state.snapshot = makeSnapshot({ isLive: true });
-    state.capabilities = { seekable: false, acked: false };
+    state.capabilities = {
+      seekable: false, live: true, reason: 'Live playback has no seekable position', acked: false,
+    };
     render(<SeekBar target="local" />);
     expect(screen.getByText('LIVE')).toBeInTheDocument();
     expect(screen.queryByTestId('np-seek')).toBeNull();
+    expect(screen.getByRole('status')).toHaveTextContent('Live playback has no seekable position');
   });
 
   it('renders nothing without a current item', () => {
@@ -303,7 +306,9 @@ describe('SeekBar', () => {
 
   it('renders an unknown-duration slider as disabled, not as LIVE', () => {
     state.snapshot = makeSnapshot({ duration: null, isLive: false });
-    state.capabilities = { seekable: false, acked: false };
+    state.capabilities = {
+      seekable: false, live: false, reason: 'Playback duration is unavailable', acked: false,
+    };
     render(<SeekBar target="local" />);
     expect(screen.getByTestId('np-seek')).toHaveAttribute('aria-disabled', 'true');
     expect(screen.queryByText('LIVE')).toBeNull();
@@ -311,7 +316,9 @@ describe('SeekBar', () => {
 
   it('normalizes a non-finite duration to an unknown disabled range', () => {
     state.snapshot = makeSnapshot({ duration: Number.POSITIVE_INFINITY, isLive: false });
-    state.capabilities = { seekable: false, acked: false };
+    state.capabilities = {
+      seekable: false, live: false, reason: 'Playback duration is unavailable', acked: false,
+    };
     render(<SeekBar target="local" />);
     expect(screen.getByTestId('np-seek')).toHaveAttribute('aria-valuemax', '0');
     expect(screen.getByTestId('np-seek')).toHaveAttribute('aria-disabled', 'true');

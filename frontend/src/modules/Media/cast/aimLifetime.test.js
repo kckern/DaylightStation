@@ -3,6 +3,7 @@ import {
   AIM_IDLE_MS,
   advanceAimLifetime,
   renewAimActivity,
+  resolveAimExpiry,
   restoreAimState,
 } from './aimLifetime.js';
 
@@ -18,6 +19,13 @@ function stored(overrides = {}) {
 }
 
 describe('aim lifetime — PLACE.2a/RQ-PLACE-03', () => {
+  it('PLACE.2a does not expire an aim while matching sent playback remains active', () => {
+    expect(resolveAimExpiry({
+      idleMs: AIM_IDLE_MS + 1,
+      matchingPlaybackActive: true,
+    })).toBe(false);
+  });
+
   it('expires a remote aim at the exact two-hour idle boundary', () => {
     const restored = restoreAimState(stored(), { now: START });
 
