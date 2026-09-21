@@ -20,7 +20,7 @@ export async function fetchBoot({ diagnosticSessionId = null, sessionId = null }
   return { config, sets, attachedSession, diagnosticSession: diagnosticSessionId ? attachedSession : null };
 }
 
-export function createSession({ definitionId, seats = [], teams = null, hostMode = 'human', setupProfile = {} }) {
+export function createSession({ definitionId, seats = [], teams = null, hostMode = 'human', setupProfile = {}, historyPolicy = null }) {
   const resolvedSeats = teams || seats;
   const participants = resolvedSeats.flatMap((seat) => seat.members || []);
   const setup = {
@@ -30,6 +30,7 @@ export function createSession({ definitionId, seats = [], teams = null, hostMode
     ...(setupProfile.verifier === 'opponent'
       ? { verifier_id: resolvedSeats[1]?.members?.[0]?.id || resolvedSeats[1]?.members?.[0]?.user_id || null }
       : {}),
+    ...(historyPolicy === 'disabled' ? { charades_history_policy: 'disabled' } : {}),
   };
   return DaylightAPI('api/v1/gaming/sessions', {
     definition_id: definitionId,

@@ -8,12 +8,18 @@ const picture = frame => frame.map(line => line.map(({ char, cursor }) => (curso
 describe('decoderSettings', () => {
   it('fills every key with its default', () => {
     expect(decoderSettings()).toEqual(DECODER_DEFAULTS);
-    expect(DECODER_DEFAULTS).toMatchObject({ reveal: 'marquee', stepMs: 100, motion: true, motionMs: 100, marqueeHoldSteps: 10, marqueeGapSteps: 4 });
+    expect(DECODER_DEFAULTS).toMatchObject({ reveal: 'marquee', stepMs: 100, motion: true, motionMs: 100, colorAnimation: true, marqueeHoldSteps: 10, marqueeGapSteps: 4 });
+  });
+
+  it('normalizes snake-case and camel-case color animation settings', () => {
+    expect(decoderSettings({ color_animation: false }).colorAnimation).toBe(false);
+    expect(decoderSettings({ colorAnimation: false }).colorAnimation).toBe(false);
+    expect(decoderSettings({ color_animation: 'no' }).colorAnimation).toBe(true);
   });
 
   it('reads the snake_case keys a rules file authors', () => {
     expect(decoderSettings({ reveal: 'marquee', step_ms: 200, motion: false, motion_ms: 800, marquee_hold_steps: 6, marquee_gap_steps: 2 }))
-      .toEqual({ reveal: 'marquee', stepMs: 200, motion: false, motionMs: 800, marqueeHoldSteps: 6, marqueeGapSteps: 2 });
+      .toEqual({ reveal: 'marquee', stepMs: 200, motion: false, motionMs: 800, colorAnimation: true, marqueeHoldSteps: 6, marqueeGapSteps: 2 });
   });
 
   it('ignores invalid values rather than breaking the display', () => {

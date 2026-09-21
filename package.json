@@ -128,6 +128,7 @@
     "gaming:assets": "node cli/gaming-assets.cli.mjs",
     "gaming:artifacts": "node cli/gaming-artifacts.cli.mjs",
     "gaming:party": "node cli/party-games.cli.mjs",
+    "gaming:charades-history": "node cli/charades-history.cli.mjs",
     "school:certify": "node cli/school.mjs certify",
     "school": "node cli/school.mjs",
     "school:docs": "node cli/school.mjs docs",

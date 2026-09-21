@@ -20,9 +20,9 @@ function completedResult(view, { abandoned = false } = {}) {
 }
 
 export class GamingApplication {
-  constructor({ coordinator, definitions, partyGamesCatalog = null, effects = null, manifestStore, drawingCheckpoints = null }) {
+  constructor({ coordinator, definitions, partyGamesCatalog = null, effects = null, manifestStore, drawingCheckpoints = null, clueHistory = null }) {
     if (!manifestStore) throw new Error('GamingApplication manifestStore is required');
-    Object.assign(this, { coordinator, definitions, partyGamesCatalog, effects, manifestStore, drawingCheckpoints });
+    Object.assign(this, { coordinator, definitions, partyGamesCatalog, effects, manifestStore, drawingCheckpoints, clueHistory });
   }
 
   async getDefinition(definitionId) {
@@ -71,6 +71,15 @@ export class GamingApplication {
     const launch = await this.getLaunchDescriptor(request.definitionId, { surfaceId: request.surfaceId, authorityMode: 'remote' });
     const manifest = this.manifestStore.get(launch.experience.id, launch.experience.version);
     const { setup } = prepareGamingSessionSetup({ manifest, request, partyGamesCatalog: this.partyGamesCatalog });
+    const historyDisabled = setup.charades_history_policy === 'disabled';
+    if (setup.charades_history_policy != null && (!historyDisabled || manifest.id !== 'charades')) {
+      throw new GamingKernelError('invalid_session_setup', 'Charades history policy is invalid');
+    }
+    if (historyDisabled) delete setup.charades_history_ids;
+    else if (manifest.id === 'charades' && this.clueHistory) {
+      const history = await this.clueHistory.list(request.definitionId);
+      setup.charades_history_ids = history.map(entry => String(entry.clue_id));
+    }
     const result = await this.coordinator.create({
       ...request,
       setup,
@@ -92,6 +101,22 @@ export class GamingApplication {
   }
   async dispatch(sessionId, envelope, viewer) {
     const result = await this.coordinator.dispatch(sessionId, envelope, viewer);
+    const finished = (result.events || []).find(entry => entry.event?.type === 'challenge.finished');
+    const definitionId = result.header?.artifacts?.rules_definition?.id;
+    if (this.clueHistory && finished && result.header?.experience?.id === 'charades'
+      && result.state?.competition === false && definitionId && finished.event.clue_id) {
+      const challengeIndex = Number(finished.event.challenge_index);
+      const clueIndex = Number(finished.event.clue_index);
+      await this.clueHistory.append(definitionId, {
+        key: `${sessionId}:${challengeIndex}:${clueIndex}`,
+        clue_id: String(finished.event.clue_id),
+        session_id: sessionId,
+        challenge_index: challengeIndex,
+        clue_index: clueIndex,
+        presentation: finished.event.presentation || 'text',
+        played_at: finished.recorded_at,
+      });
+    }
     this.#launchEffect('after-commit', this.effects?.afterCommit({ sessionId, result, command: envelope, viewer }), { sessionId, revision: result.header.revision });
     const normalized = completedResult(result);
     return normalized ? { ...result, result: normalized } : result;

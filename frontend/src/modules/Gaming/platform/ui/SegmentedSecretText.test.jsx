@@ -248,6 +248,31 @@ describe('marquee', () => {
 });
 
 describe('static', () => {
+  it('is completely inert when reveal, motion, and color animation are disabled', () => {
+    vi.useFakeTimers();
+    const decoder = { reveal: 'static', motion: false, color_animation: false };
+    const { container, rerender } = render(<SegmentedSecretText text="CAT" decoder={decoder} />);
+    const card = screen.getByRole('img', { name: 'Secret clue: CAT' });
+    const polygons = [...container.querySelectorAll('polygon')];
+    const colors = polygons.map(colorOf);
+    expect(picture(container, 'CAT')).toBe('CAT');
+    expect(card.style.transform).toBe('');
+    expect(card).toHaveAttribute('data-reveal-step', '0');
+    expect(card).toHaveAttribute('data-motion-index', '0');
+    vi.advanceTimersByTime(60_000);
+    expect(polygons.map(colorOf)).toEqual(colors);
+    expect(card.style.transform).toBe('');
+    expect(card).toHaveAttribute('data-reveal-step', '0');
+    expect(card).toHaveAttribute('data-motion-index', '0');
+
+    rerender(<SegmentedSecretText text="BOX" decoder={decoder} />);
+    const changed = screen.getByRole('img', { name: 'Secret clue: BOX' });
+    const changedColors = [...changed.querySelectorAll('polygon')].map(colorOf);
+    expect(picture(container, 'BOX')).toBe('BOX');
+    vi.advanceTimersByTime(60_000);
+    expect([...changed.querySelectorAll('polygon')].map(colorOf)).toEqual(changedColors);
+  });
+
   it('recolors every segment on the same tick the card jumps, each within its own family', () => {
     vi.useFakeTimers();
     render(<SegmentedSecretText text="CAT" decoder={STATIC} />);

@@ -44,6 +44,7 @@ export function validateActivityPartyDefinition(definition) {
         if (decoder[key] != null && (!Number.isFinite(decoder[key]) || decoder[key] <= 0)) errors.push(`decoder.${key} must be positive`);
       }
       if (decoder.motion != null && typeof decoder.motion !== 'boolean') errors.push('decoder.motion must be boolean');
+      if (decoder.color_animation != null && typeof decoder.color_animation !== 'boolean') errors.push('decoder.color_animation must be boolean');
       for (const key of ['marquee_hold_steps', 'marquee_gap_steps']) {
         if (decoder[key] != null && (!Number.isInteger(decoder[key]) || decoder[key] < 0)) errors.push(`decoder.${key} must be a whole number of steps`);
       }
@@ -83,12 +84,15 @@ export const activityPartyRuleModule = defineRuleModule({
   createInitialState(definition, { seed, participants = [], seats = [], setup = {} }) {
     const performers = seats.length ? seats : participants.map((participant) => ({ id: participant.id || participant.user_id, participant_id: participant.id || participant.user_id }));
     if (definition.competition === false) {
+      const historyPolicy = Object.hasOwn(setup, 'charades_history_ids')
+        ? 'recorded' : setup.charades_history_policy === 'disabled' ? 'disabled' : null;
       const turns = createSeededRoundOrder(performers, definition.rounds, seed);
       const challenges = createCharadesChallengeOrder({
         challenges: definition.challenges,
         turnOrder: turns.order,
         cluesPerTurn: definition.clues_per_turn,
         imageParticipantIds: definition.presentation.image_participants,
+        historyIds: setup.charades_history_ids,
         seed: turns.rngState,
       });
       const firstChallenge = structuredClone(definition.challenges[challenges.order[0]]);
@@ -101,6 +105,8 @@ export const activityPartyRuleModule = defineRuleModule({
         verifier_id: null, pending_outcome: null, deadline: null,
         remaining_ms: definition.timer_ms, scores: {},
         host: setup.host || { mode: 'human' }, revealed_hints: 0,
+        ...(historyPolicy ? { charades_history_policy: historyPolicy } : {}),
+        ...(historyPolicy === 'recorded' ? { clue_history_events: true } : {}),
       };
     }
     const authoredOrder = authoredChallengeOrder(definition);
@@ -143,7 +149,11 @@ export const activityPartyRuleModule = defineRuleModule({
           : Math.max(0, state.deadline - Number(context.logicalTime ?? state.deadline));
         next.phase = 'challenge-complete';
       } else next.phase = 'adjudication';
-      events.push({ type: 'challenge.finished' });
+      events.push(state.clue_history_events ? {
+        type: 'challenge.finished', clue_id: state.challenge?.id,
+        challenge_index: state.challenge_index, clue_index: state.clue_index,
+        presentation: state.clue_presentation || 'text',
+      } : { type: 'challenge.finished' });
     } else if (casual && ['outcome.correct', 'outcome.incorrect', 'outcome.pass', 'outcome.confirm', 'score.adjust'].includes(command.type)) {
       return { error: { code: 'illegal_command', message: `${command.type} is not available in casual play` } };
     } else if (['outcome.correct', 'outcome.incorrect', 'outcome.pass'].includes(command.type) && requirePhase('performing', 'adjudication')) {
@@ -208,6 +218,7 @@ export const activityPartyRuleModule = defineRuleModule({
   },
   project(state, definition, viewer) {
     const projected = structuredClone(state);
+    delete projected.clue_history_events;
     const performer = state.performers.find((entry) => entry.id === state.performer_id);
     const performerMemberIds = new Set((performer?.members || []).map((member) => String(member.id || member.user_id || member.participant_id || member)));
     const maySeeSecret = viewer?.role === 'host'

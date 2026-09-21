@@ -27,10 +27,11 @@ brightness, so brightness alone does not mark the letters. Hex values live in
 and `segmentedSecretPalette.test.js` fails if a color breaks the red-channel
 rule.
 
-**The clue is never shown steadily.** One engine in `SegmentedSecretText` runs
-on a single clock. Each step it decides which letters show, lights those
-letters' segments warm and everything else cool, and gives every segment a new
-color. Every `motion_ms` it also jumps the card. Three reveal modes
+By default, the clue is animated continuously. One engine in
+`SegmentedSecretText` runs on a single clock. Each step it decides which letters
+show, lights those letters' segments warm and everything else cool, and—when
+`color_animation` is enabled—gives every segment a new color. Every `motion_ms`
+it also jumps the card when `motion` is enabled. Three reveal modes
 (`segmentedSecretReveal.js`):
 
 - **progressive** — a typewriter loop. It starts with a cursor, the
@@ -40,7 +41,8 @@ color. Every `motion_ms` it also jumps the card. Three reveal modes
 - **marquee** (default) — each line scrolls right to left through its own cells: in from
   the right, held fully visible, out to the left, then an empty gap before it
   comes round again. Lines share one schedule sized to the longest.
-- **static** — the whole clue, always. Colors shuffle with the position jump.
+- **static** — the whole clue, always. With the animated defaults, colors
+  shuffle with the position jump.
 
 A hidden letter is never a blank cell: its cell stays fully lit in mask colors,
 so the clue's length and word gaps never show. The cursor is warm, so it also
@@ -58,6 +60,7 @@ defaults in `DECODER_DEFAULTS`:
 | `step_ms` | `100` | one reveal or scroll step and one color shuffle (static mode shuffles every `motion_ms`) |
 | `motion` | `true` | jump the card's position |
 | `motion_ms` | `100` | time between position jumps (every step at the defaults, so the card jumps in sync with the scroll) |
+| `color_animation` | `true` | recolor segments within their signal/mask family on decoder steps |
 | `marquee_hold_steps` | `10` | steps held fully visible (1s at the defaults) |
 | `marquee_gap_steps` | `4` | empty steps before the text comes round again (a four-glyph gap) |
 
@@ -65,6 +68,19 @@ The Activity Party ruleset validates the block (`validateActivityPartyDefinition
 fails closed on a bad value) and projects it to the screen as authored. Charades
 and Activity Party pass it to the decoder. `/dev/decoder-swatches?mode=marquee`
 (or `progressive`, `static`) tries a mode on the live sample.
+
+For text that is fully revealed and entirely inert, configure all three axes:
+
+```yaml
+decoder:
+  reveal: static
+  motion: false
+  color_animation: false
+```
+
+This disables the text decoder's reveal, position, and color clocks. It does
+not change `ImageDecoderDisplay`; image clue animation is configured and tested
+separately.
 
 The position follows `ImageDecoderDisplay` (`segmentedSecretMotion.js`): the
 card alternates between −2% and +2% of its own width, so every jump moves it
@@ -147,6 +163,16 @@ the preset reference:
   action: Open
 ```
 
+The living-room FHE screen also exposes stable direct routes:
+
+- `/screens/living-room/fhe/charades` launches the recorded game.
+- `/screens/living-room/fhe/charades/test` launches the same preset with clue
+  history disabled. Test sessions neither read exclusions nor emit history
+  entries, and use a separate browser resume slot from recorded sessions.
+
+Both routes retain their friendly path while the session is active. Back exits
+to `/screens/living-room/fhe`.
+
 The preset directory is `household/gaming/games/charades:fhe/`. Its `rules.yml`
 owns rounds, timing, clue count, competition, decoder participants and music,
 plus launch defaults:
@@ -221,8 +247,27 @@ root is distinct from the legacy Party Games sound/media directory.
 The corresponding rules use `rounds`, `timer_ms`, `clues_per_turn`,
 `turn_selection: seeded-rounds`, and `presentation.image_participants` for the
 household's image-player IDs. Image and text-only pools are separate, so word
-turns cannot consume picture clues needed by young players. For two image
-players over three rounds, provide at least six images to avoid repeats.
+turns cannot consume picture clues needed by young players.
+
+Completed casual Charades turns are recorded in
+`household/gaming/history/charades.yml`. New sessions consume the unused clues
+in each presentation pool before beginning a fresh cycle; the image and text
+pools exhaust independently, and a clue is not repeated merely because old
+session snapshots or replay journals still exist. The session captures the
+history it selected against, so replay remains deterministic when the ledger
+later grows.
+
+To replace only the FHE ledger with one reviewed completed session, first run a
+dry-run and inspect its ordered IDs, then apply it:
+
+```bash
+npm run gaming:charades-history -- reset-fhe --from-session '<session-id>'
+npm run gaming:charades-history -- reset-fhe --from-session '<session-id>' --apply
+```
+
+The apply form creates a timestamped sibling backup when a ledger already
+exists and preserves sections for other definition IDs. This command is a
+narrow migration tool; ordinary completed turns append automatically.
 
 Casual play requires a `guessing_music` rule setting containing a
 `source` content reference and local `volume`. The Party Games environment

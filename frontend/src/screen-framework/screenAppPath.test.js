@@ -36,6 +36,19 @@ describe('resolveScreenAppPath', () => {
     });
   });
 
+  it('maps an exact scoped route to a fixed app path', () => {
+    const routes = {
+      'fhe/charades': { app: 'party-games', appPath: 'charades:fhe' },
+      'fhe/charades/test': { app: 'party-games', appPath: 'charades:fhe?history=disabled' },
+    };
+    expect(resolveScreenAppPath('/screens/living-room/fhe/charades', hasApp, routes)).toMatchObject({
+      appId: 'party-games', appPath: 'charades:fhe', menuId: 'party-games/charades:fhe',
+    });
+    expect(resolveScreenAppPath('/screens/living-room/fhe/charades/test', hasApp, routes)).toMatchObject({
+      appId: 'party-games', appPath: 'charades:fhe?history=disabled', menuId: 'party-games/charades:fhe?history=disabled',
+    });
+  });
+
   it('does not claim an unregistered menu suffix', () => {
     expect(resolveScreenAppPath('/screens/living-room/fhe', hasApp)).toBeNull();
   });

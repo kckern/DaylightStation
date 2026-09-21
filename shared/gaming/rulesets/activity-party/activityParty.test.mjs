@@ -53,7 +53,22 @@ describe('Activity Party rules', () => {
     state = activityPartyRuleModule.handleCommand(state, { type: 'host.reveal' }, drawDefinition, { actorId: 'host' }).state;
     expect(state.revealed_hints).toBe(1);
     const finished = activityPartyRuleModule.handleCommand(state, { type: 'challenge.finish' }, drawDefinition, { actorId: 'a' });
-    expect(finished.events.map((event) => event.type)).toContain('challenge.finished');
+    expect(finished.events).toContainEqual({ type: 'challenge.finished' });
+  });
+
+  it('adds clue identity to finish events only for history-enabled sessions', () => {
+    let state = activityPartyRuleModule.createInitialState(casualDefinition, {
+      seed: 2, seats: [{ id: 'a' }, { id: 'c' }], setup: { charades_history_ids: [] },
+    });
+    state.phase = 'performing';
+    state.deadline = 10_000;
+    const finished = activityPartyRuleModule.handleCommand(state, { type: 'challenge.finish' }, casualDefinition, { actorId: state.performer_id, logicalTime: 1_000 });
+    expect(finished.events).toContainEqual({
+      type: 'challenge.finished', clue_id: state.challenge.id,
+      challenge_index: 0, clue_index: 0, presentation: state.clue_presentation,
+    });
+    expect(activityPartyRuleModule.project(state, casualDefinition, { role: 'host' }).state).not.toHaveProperty('clue_history_events');
+    expect(activityPartyRuleModule.project(state, casualDefinition, { role: 'host' }).state.charades_history_policy).toBe('recorded');
   });
   it('fails closed for performer, host, and verifier authority', () => {
     let state = activityPartyRuleModule.createInitialState(definition, {
@@ -142,6 +157,17 @@ describe('Activity Party rules', () => {
     expect(state.phase).toBe('complete');
   });
 
+  it('uses only history captured in setup and replays the same order', () => {
+    const seats = ['a', 'b', 'c', 'd', 'e', 'f'].map((id) => ({ id }));
+    const setup = { host: { mode: 'human' }, charades_history_ids: ['image-0', 'text-0'] };
+    const first = activityPartyRuleModule.createInitialState(casualDefinition, { seed: 42, seats, setup });
+    const replay = activityPartyRuleModule.createInitialState(casualDefinition, { seed: 42, seats, setup: structuredClone(setup) });
+    const selectedIds = first.challenge_order.map(index => casualDefinition.challenges[index].id);
+    expect(first.challenge_order).toEqual(replay.challenge_order);
+    expect(selectedIds).not.toContain('image-0');
+    expect(selectedIds).not.toContain('text-0');
+  });
+
   it('rejects duplicate commands and early casual expiry without advancing state', () => {
     const seats = [{ id: 'a' }, { id: 'b' }];
     let state = activityPartyRuleModule.createInitialState(casualDefinition, { seed: 7, seats });
@@ -202,7 +228,7 @@ describe('Activity Party rules', () => {
   });
 
   it('projects the decoder display block as authored, and null when absent', () => {
-    const decoder = { reveal: 'marquee', step_ms: 250, motion: true, motion_ms: 1000, marquee_hold_steps: 4, marquee_gap_steps: 4 };
+    const decoder = { reveal: 'marquee', step_ms: 250, motion: true, motion_ms: 1000, color_animation: false, marquee_hold_steps: 4, marquee_gap_steps: 4 };
     const withDecoder = { ...casualDefinition, decoder };
     expect(activityPartyRuleModule.validateDefinition(withDecoder)).toMatchObject({ valid: true });
     const state = activityPartyRuleModule.createInitialState(withDecoder, { seed: 2, seats: [{ id: 'a' }, { id: 'c' }] });
@@ -213,7 +239,7 @@ describe('Activity Party rules', () => {
 
   it('rejects an invalid decoder display block', () => {
     for (const decoder of [
-      'marquee', { reveal: 'sideways' }, { step_ms: 0 }, { motion_ms: -5 }, { motion: 'yes' },
+      'marquee', { reveal: 'sideways' }, { step_ms: 0 }, { motion_ms: -5 }, { motion: 'yes' }, { color_animation: 'no' },
       { marquee_hold_steps: 1.5 }, { marquee_gap_steps: -1 },
     ]) {
       expect(activityPartyRuleModule.validateDefinition({ ...casualDefinition, decoder }), JSON.stringify(decoder)).toMatchObject({ valid: false });

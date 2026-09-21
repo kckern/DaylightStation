@@ -19,6 +19,8 @@ export const DECODER_DEFAULTS = Object.freeze({
   // shuffle with the position jump instead, once per `motionMs`.
   stepMs: 100,
   motion: true,
+  // Reassign colors within the signal/mask families on each decoder step.
+  colorAnimation: true,
   // Equal to the step, so the card jumps on every scroll step, in sync.
   motionMs: 100,
   // Marquee: steps held fully visible, then steps of empty gap before the text
@@ -41,6 +43,8 @@ export function decoderSettings(raw = null) {
     reveal,
     stepMs: reveal === 'static' ? motionMs : (positive(authoredStep) ? authoredStep : DECODER_DEFAULTS.stepMs),
     motion: typeof source.motion === 'boolean' ? source.motion : DECODER_DEFAULTS.motion,
+    colorAnimation: typeof pick('color_animation', 'colorAnimation') === 'boolean'
+      ? pick('color_animation', 'colorAnimation') : DECODER_DEFAULTS.colorAnimation,
     motionMs,
     marqueeHoldSteps: count(pick('marquee_hold_steps', 'marqueeHoldSteps'))
       ? pick('marquee_hold_steps', 'marqueeHoldSteps') : DECODER_DEFAULTS.marqueeHoldSteps,
