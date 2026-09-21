@@ -508,6 +508,56 @@ describe('RemoteSessionController', () => {
     await expect(pending).resolves.toEqual({ queueRevision: 6, ordinal: 2 });
   });
 
+  it('gives Add a full publication window after a delayed positive ack', async () => {
+    vi.useFakeTimers();
+    try {
+      const { fleetStore, ackRouter, ctl } = setup();
+      fleetStore.receive({
+        deviceId: 'tv',
+        snapshot: {
+          sessionId: 'session-1', state: 'playing',
+          currentItem: { contentId: 'plex:arrival', queueItemId: 'arrival-visit' },
+          queue: {
+            items: [{ queueItemId: 'arrival-visit', contentId: 'plex:arrival' }],
+            currentIndex: 0,
+          },
+          meta: { playbackOwner: { ownerInstanceId: 'owner-tv', playbackRevision: 2, queueRevision: 4 } },
+        },
+      });
+
+      let outcome = null;
+      const observed = ctl.queue.add({ contentId: 'plex:disclosure' }).then(
+        (value) => { outcome = { status: 'resolved', value }; },
+        (error) => { outcome = { status: 'rejected', error }; },
+      );
+      await vi.advanceTimersByTimeAsync(4_900);
+      ackRouter.resolve({ commandId: 'cmd-1', ok: true });
+      await vi.advanceTimersByTimeAsync(700);
+
+      expect(outcome, 'the queue deadline must start at positive ack, not request dispatch').toBeNull();
+      fleetStore.receive({
+        deviceId: 'tv',
+        snapshot: {
+          sessionId: 'session-1', state: 'playing',
+          currentItem: { contentId: 'plex:arrival', queueItemId: 'arrival-visit' },
+          queue: {
+            items: [
+              { queueItemId: 'arrival-visit', contentId: 'plex:arrival' },
+              { queueItemId: 'disclosure-visit', contentId: 'plex:disclosure' },
+            ],
+            currentIndex: 0,
+          },
+          meta: { playbackOwner: { ownerInstanceId: 'owner-tv', playbackRevision: 2, queueRevision: 5 } },
+        },
+      });
+      await observed;
+      expect(outcome).toEqual({ status: 'resolved', value: { queueRevision: 5, ordinal: 2 } });
+      ctl.destroy();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('rejects Add immediately when HTTP fails instead of leaving a queue observation pending', async () => {
     const { ctl } = setup({ httpImpl: async () => { throw new Error('DEVICE_OFFLINE'); } });
 

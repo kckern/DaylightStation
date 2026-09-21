@@ -2048,6 +2048,11 @@ const Player = forwardRef(function Player(props, ref) {
       seekOwnerRelative(payload.value);
       return;
     }
+    if (op === 'skip-prev') {
+      ownerStoppedRef.current = false;
+      advance(-1);
+      return;
+    }
     if (!contentId) return;
     if (op !== 'play-now' && op !== 'play-next' && op !== 'add') return;
 
@@ -2132,7 +2137,7 @@ const Player = forwardRef(function Player(props, ref) {
     }
 
     pushOnDeck(item, { displaceToQueue: !!onDeckCfg?.displace_to_queue });
-  }, [playQueue, onDeck, onDeckCfg, pushOnDeck, flashOnDeck, playNow, append, playerInstanceId, queueShader, classes, setShader, setShaderUserCycled, stopOwner, playOwner, pauseOwner, toggleOwner, seekOwner, seekOwnerRelative]);
+  }, [playQueue, onDeck, onDeckCfg, pushOnDeck, flashOnDeck, playNow, append, playerInstanceId, queueShader, classes, setShader, setShaderUserCycled, stopOwner, playOwner, pauseOwner, toggleOwner, seekOwner, seekOwnerRelative, advance]);
 
   // Register once in mount order while the ref supplies the latest stateful
   // callback. Re-registering on every queue change would let a background
