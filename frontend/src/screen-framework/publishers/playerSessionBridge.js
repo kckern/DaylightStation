@@ -250,6 +250,7 @@ export function createPlayerSessionBridge({
       const ownerStillAdmitted = thisBinding.registrationAdmitted
         && currentIdentity?.ownerInstanceId === thisBinding.ownerInstanceId
         && currentIdentity?.ownerInstanceId === thisBinding.logicalOwnerInstanceId
+        && currentIdentity?.playbackRevision === thisBinding.ownerPlaybackRevision
         && currentIdentity?.playbackRevision === thisBinding.logicalOwnerPlaybackRevision;
       return ownerStillAdmitted && currentGeneration === thisBinding.resolvedGeneration;
     };

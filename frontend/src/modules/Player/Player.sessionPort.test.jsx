@@ -1,5 +1,5 @@
 import React, { createRef } from 'react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, render, waitFor } from '@testing-library/react';
 
 vi.mock('../../lib/api.mjs', () => ({
@@ -34,6 +34,13 @@ import { createPlayerSessionRegistry } from '../../screen-framework/publishers/p
 import { createRegistrySessionSource } from '../../screen-framework/publishers/registrySessionSource.js';
 import { __resetPlayerQueueOpRegistryForTests, getPlayerQueueOpRegistry } from './lib/queueOpRegistry.js';
 import { DaylightAPI } from '../../lib/api.mjs';
+
+beforeEach(() => {
+  DaylightAPI.mockReset();
+  DaylightAPI.mockResolvedValue({
+    contentId: 'plex:direct', title: 'Direct', mediaUrl: '/stream/direct', format: 'video',
+  });
+});
 
 afterEach(() => {
   cleanup();
@@ -608,7 +615,7 @@ describe('Player session port', () => {
     const source = createRegistrySessionSource({ registry, ownerId: 'screen', sessionId: 'guard-session' });
     const stale = source.capture().identity;
 
-    act(() => ref.current.play());
+    await act(async () => { await ref.current.play(); });
     expect(source.stopIfCurrent(stale)).toEqual({ ok: false, code: 'SOURCE_CHANGED' });
     expect(pause).not.toHaveBeenCalled();
     const fresh = source.capture().identity;
