@@ -22,6 +22,8 @@ playback owner captures the prior native position and queue generations before
 mutation, guards restoration by its applied revision, and rejects late delivery
 after cancellation. Queue-only Undo preserves current native playback; playback
 replacement Undo restores the prior position (live streams return to live edge).
+Action notices appear at the top, keeping the bottom mini-player controls
+clickable throughout the immediate ten-second Undo window.
 Remote content operations retain WakeAndLoad readiness and progress handling;
 cold-wake cancellation is coordinated before receiver claim. A claim/ACK alone
 does not confirm playback: progress still requires authoritative owner state.
