@@ -36,9 +36,11 @@ import { useDismissLayer } from '../shell/useDismissLayer.js';
 import { applyResultRowVerb } from './resultRowVerbs.js';
 import { notifications } from '@mantine/notifications';
 import getLogger from '../../../lib/logging/Logger.js';
+import { ItemDestinationPicker } from '../actions/ItemDestinationPicker.jsx';
 import './Search.scss';
 
 export function MediaContentSearch() {
+  const [oneShotAction, setOneShotAction] = useState(null);
   const { scopes, currentScopeKey, currentScope, scopeError, resetScope } = useSearchContext();
   const { dispatch, dispatchLeafVerb, playContainerAsQueue } = useContentDispatch();
   const { queue } = useSessionController('local');
@@ -112,15 +114,17 @@ export function MediaContentSearch() {
     const id = item?.id;
     if (!id) return;
     log.info('row_action', { contentId: id, action });
-    if (action === 'playNow' || action === 'add') {
-      dispatchLeafVerb(action, id, item);
+    if (action === 'playOn' || action === 'addOn') { setOneShotAction({ kind: action, item }); return; }
+    if (action !== 'detail' && action !== 'details') {
+      dispatchLeafVerb(action === 'upNext' ? 'playFirst' : action, id, item);
       return;
     }
-    applyResultRowVerb(action, item, { queue, push });
+    applyResultRowVerb('detail', item, { queue, push });
   }, [queue, push, log, dispatchLeafVerb]);
 
   return (
     <div ref={searchBarRef} data-testid="media-search-bar" className="media-search-bar">
+      <ItemDestinationPicker action={oneShotAction} onClose={() => setOneShotAction(null)} />
       <div className="media-search-controls">
         <DestinationLine
           surface="media-content-search"
@@ -139,6 +143,7 @@ export function MediaContentSearch() {
             onChange={handleChange}
             onPlayAll={handlePlayAll}
             onMore={handleMore}
+            onAction={({ kind, item }) => handleMore(kind, item)}
             placeholder="Search media…"
             selectContainers
             searchParams={currentScope?.params ?? ''}

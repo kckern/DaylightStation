@@ -301,6 +301,16 @@ export function createRemoteSessionController({
     getSnapshot: snapshot,
     subscribe: (fn) => fleetStore.subscribeDevice(deviceId, (entry) => fn(entry?.snapshot ?? null)),
 
+    execute: (command) => send('POST', `${base}/queue/item-action`, {
+      kind: command.kind, item: command.item, collectionItems: command.collectionItems,
+      operationId: command.operationId, tappedAt: command.tappedAt, clearRest: command.clearRest, queueItemId: command.queueItemId,
+    }, 'item-action').then(result => ({ ...result, operationId: command.operationId, expiresAt: command.tappedAt + 10000 })),
+    undo: async (operationId) => {
+      const cancelled = await http(`${base}/item-action/${encodeURIComponent(operationId)}/cancel`, {}, 'POST');
+      if (cancelled?.ok === false || cancelled?.pending) return cancelled;
+      return send('POST', `${base}/queue/undo`, { operationId }, 'undo');
+    },
+
     position: {
       get: position.get,
       subscribe: (fn) => {

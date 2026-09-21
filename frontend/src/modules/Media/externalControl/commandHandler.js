@@ -30,6 +30,8 @@ export function applyCommandEnvelope(controller, envelope) {
     return { ok: true };
   }
   if (command === 'queue') {
+    if (params.op === 'item-action') return controller.execute?.(params) ?? { ok: false, reason: 'Item actions are unavailable', code: 'ITEM_ACTION_UNSUPPORTED' };
+    if (params.op === 'undo') return controller.undo?.(params.operationId) ?? { ok: false, reason: 'Undo is unavailable', code: 'ITEM_ACTION_UNSUPPORTED' };
     const { op, contentId, queueItemId, clearRest, from, to, items } = params;
     const q = controller.queue;
     if (op === 'play-now') q.playNow({ contentId }, { clearRest });

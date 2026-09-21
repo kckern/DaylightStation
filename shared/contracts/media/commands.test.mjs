@@ -22,7 +22,7 @@ describe('command enums', () => {
   });
   it('lists every queue op', () => {
     expect(QUEUE_OPS).toEqual(
-      ['play-now', 'play-next', 'add-up-next', 'add', 'reorder', 'remove', 'jump', 'clear']
+      ['play-now', 'play-next', 'add-up-next', 'add', 'reorder', 'remove', 'jump', 'clear', 'item-action', 'undo']
     );
   });
   it('lists every config setting', () => {

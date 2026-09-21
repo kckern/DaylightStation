@@ -1,5 +1,13 @@
 # Media redesign — acceptance ledger
 
+Task 3 implementation note (2026-09-21): common item-action/owner/Undo contracts,
+one-shot dispatch, warm/cold envelope delivery, and cancellation have focused
+unit/contract evidence. `media-app-queue-journey.runtime.test.mjs` now contains
+`Undo restores the previous paused native position and queue generation` and the
+P0 extension manifest requires its `RELY.4a/AC1` and `RELY.4a/AC2` checks. This is
+pending exact-commit owned-server execution, not new Accepted evidence. Existing
+Task 2 and stable-core receipt evidence below remains unchanged.
+
 **Status:** In progress. **11 accepted stories / 33 accepted AC; 10 partial stories / 20 partial AC; 61 unverified stories / 235 unverified AC**. No component, test count or API response earns acceptance by itself.
 
 **Contract:** taxonomy §3 and accepted requirements. P0 first, then P1/P2. Each criterion must have evidence of the complete applicable path: user input → target → command → actual player/result → state → displayed feedback. Office is the only physical test screen authorized.

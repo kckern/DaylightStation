@@ -91,6 +91,7 @@ describe('FleetPlayPicker', () => {
       play: 'plex:12345',
       title: 'Bluey (2018)',
       mode: 'fork',
+      itemAction: { kind: 'playNow', item: { ...BLUEY, contentId: 'plex:12345' }, clearRest: true },
     });
     expect(onClose).toHaveBeenCalled();
   });

@@ -8,6 +8,7 @@ import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { DispatchTargetPicker } from './DispatchTargetPicker.jsx';
 import { useDismissable } from '../../../hooks/useDismissable.js';
+import { isContainer } from '../../Content/combobox/comboboxMachine.js';
 
 const PICKER_WIDTH = 280; // mirrors .cast-picker min-width (Cast.scss)
 const VIEWPORT_MARGIN = 8;
@@ -17,7 +18,7 @@ const POPOVER_GAP = 6;
 // below the trigger, prefer the larger space above it.
 const PICKER_MIN_USABLE_HEIGHT = 240;
 
-export function CastButton({ contentId, queue, title, onAction }) {
+export function CastButton({ contentId, queue, title, item, onAction }) {
   const [open, setOpen] = useState(false);
   const [coords, setCoords] = useState(null);
   const buttonRef = useRef(null);
@@ -30,6 +31,8 @@ export function CastButton({ contentId, queue, title, onAction }) {
   // `title` (optional, additive) is the human content name the progress
   // tray shows instead of the raw content id.
   const source = contentId ? { play: contentId, title } : { queue, title };
+  source.itemAction = { kind: contentId ? 'playNow' : 'add', item: { ...item, contentId: id, title },
+    clearRest: !!contentId && isContainer(item ?? {}) };
 
   // Fixed position from the trigger's rect each open, clamped to viewport.
   // A tall device list must not push the mode controls and CTA outside the

@@ -182,6 +182,7 @@ export function createSessionSource({
         ownerId,
         updatedAt: new Date().toISOString(),
         ...(playbackOwner ? { playbackOwner } : {}),
+        ...(ownerCapture?.issuedIdentity ? { queueOwner: ownerCapture.issuedIdentity } : {}),
       },
     };
   }
@@ -243,6 +244,8 @@ export function createSessionSource({
   return {
     getSnapshot,
     capture,
+    getActionOwner: () => queueController?.getActionOwner?.() ?? null,
+    applyQueue: (snapshot) => queueController?.applyQueue?.(snapshot) ?? { ok: false, code: 'ITEM_ACTION_UNSUPPORTED' },
     adopt: (snapshot, options) => queueController?.adopt?.(snapshot, { ...options, sessionId: sid })
       ?? { ok: false, code: 'UNSUPPORTED' },
     getNativeObservation: () => queueController?.getNativeObservation?.(sid) ?? null,

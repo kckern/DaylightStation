@@ -6,6 +6,7 @@ export function buildDispatchUrl({
   shader,
   volume,
   shuffle,
+  itemAction,
 }) {
   if (!deviceId) throw new Error('buildDispatchUrl: deviceId is required');
   if (!dispatchId) throw new Error('buildDispatchUrl: dispatchId is required');
@@ -21,6 +22,7 @@ export function buildDispatchUrl({
   if (shader) params.set('shader', shader);
   if (typeof volume === 'number' && Number.isFinite(volume)) params.set('volume', String(volume));
   if (shuffle) params.set('shuffle', '1');
+  if (itemAction) params.set('itemAction', JSON.stringify(itemAction));
   return `api/v1/device/${deviceId}/load?${params.toString()}`;
 }
 

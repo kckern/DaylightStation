@@ -395,14 +395,14 @@ describe('SearchMode', () => {
       expect(screen.getByTestId('search-mode')).toBeInTheDocument();
     });
 
-    it('a container row never shows the ⋯ leaf menu', async () => {
+    it('a container row also offers the common queue action menu', async () => {
       comboState = {
         search: 'tuttle',
         results: [{ id: 'plex:663508', title: 'Tuttle Twins', type: 'show', thumbnail: null }],
       };
       render(<Harness />);
       await screen.findByTestId('search-mode-result-plex:663508');
-      expect(screen.queryByTestId('result-more-plex:663508')).toBeNull();
+      expect(screen.getByTestId('result-more-plex:663508')).toBeInTheDocument();
     });
 
     it('a leaf row never shows the container ▶', async () => {
@@ -415,7 +415,7 @@ describe('SearchMode', () => {
       expect(screen.queryByTestId('result-play-all-plex:685088')).toBeNull();
     });
 
-    it('⋯ on a leaf: Play Next calls queue.playNext and keeps the surface open', async () => {
+    it('⋯ on a leaf: Play Next follows the aim and keeps the surface open', async () => {
       comboState = {
         search: 'bluey',
         results: [{ id: 'plex:685088', title: 'Bluey', type: 'episode', thumbnail: null }],
@@ -425,11 +425,11 @@ describe('SearchMode', () => {
       fireEvent.click(screen.getByTestId('result-more-plex:685088'));
       fireEvent.click(await screen.findByTestId('result-action-playNext-plex:685088'));
 
-      expect(queuePlayNext).toHaveBeenCalledWith(expect.objectContaining({ contentId: 'plex:685088' }));
+      expect(dispatchLeafVerbMock).toHaveBeenCalledWith('playNext', 'plex:685088', expect.objectContaining({ id: 'plex:685088' }));
       expect(screen.getByTestId('search-mode')).toBeInTheDocument();
     });
 
-    it('⋯ Up Next calls queue.addUpNext', async () => {
+    it('⋯ Play First follows the aim', async () => {
       comboState = {
         search: 'bluey',
         results: [{ id: 'plex:685088', title: 'Bluey', type: 'episode', thumbnail: null }],
@@ -439,7 +439,7 @@ describe('SearchMode', () => {
       fireEvent.click(screen.getByTestId('result-more-plex:685088'));
       fireEvent.click(await screen.findByTestId('result-action-upNext-plex:685088'));
 
-      expect(queueAddUpNext).toHaveBeenCalledWith(expect.objectContaining({ contentId: 'plex:685088' }));
+      expect(dispatchLeafVerbMock).toHaveBeenCalledWith('playFirst', 'plex:685088', expect.objectContaining({ id: 'plex:685088' }));
       expect(screen.getByTestId('search-mode')).toBeInTheDocument();
     });
 

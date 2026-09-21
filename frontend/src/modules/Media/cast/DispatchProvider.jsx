@@ -13,6 +13,7 @@ import { buildDispatchUrl } from './dispatchUrl.js';
 import { TIMING } from '../constants.js';
 import mediaLog from '../logging/mediaLog.js';
 import { PeekContext } from '../peek/PeekContext.js';
+import { offerActionUndo } from '../actions/actionNotice.jsx';
 
 export const DispatchContext = createContext(null);
 
@@ -27,7 +28,7 @@ function snapshotForRetry(snapshot) {
   return snapshot == null ? snapshot : JSON.parse(JSON.stringify(snapshot));
 }
 
-function buildDedupKey({ targetIds, play, queue, mode, shader, volume, shuffle, snapshot }) {
+function buildDedupKey({ targetIds, play, queue, mode, shader, volume, shuffle, snapshot, itemAction }) {
   const common = {
     targetIds: [...targetIds].sort(),
     mode: mode ?? 'transfer',
@@ -52,6 +53,8 @@ function buildDedupKey({ targetIds, play, queue, mode, shader, volume, shuffle, 
       shader: shader || null,
       volume: typeof volume === 'number' && Number.isFinite(volume) ? volume : null,
       shuffle: !!shuffle,
+      ...(itemAction ? { itemAction: { kind: itemAction.kind, item: itemAction.item, collectionItems: itemAction.collectionItems, clearRest: itemAction.clearRest } } : {}),
+      ...(itemAction && !['playNow', 'shuffle'].includes(itemAction.kind) ? { operationId: itemAction.operationId } : {}),
     },
   });
 }
@@ -74,7 +77,7 @@ export function DispatchProvider({ children }) {
   const inFlightRef = useRef(new Map());
   useEffect(() => {
     return subscribeTopicKind('homeline', (msg) => {
-      const { dispatchId, step, status, elapsedMs, error, operation, queueLength,
+      const { dispatchId, step, status, elapsedMs, error, operation, queueLength, ordinal, count,
         sessionId, ownerId, ownerInstanceId, playbackRevision, queueRevision } = msg;
       const parsedTopic = parseDeviceTopic(msg.topic);
       const topicDeviceId = parsedTopic?.kind === 'homeline' ? parsedTopic.deviceId : null;
@@ -91,7 +94,7 @@ export function DispatchProvider({ children }) {
           ownerId,
           playback: {
             sessionId,
-            contentId: attempt.play,
+            contentId: msg.contentId ?? attempt.play,
             ...(typeof ownerInstanceId === 'string' && ownerInstanceId ? { ownerInstanceId } : {}),
             ...(Number.isInteger(playbackRevision) ? { playbackRevision } : {}),
           },
@@ -99,14 +102,17 @@ export function DispatchProvider({ children }) {
       }
       mediaLog.dispatchStep({ dispatchId, step, status, elapsedMs });
       dispatch({
-        type: 'STEP', dispatchId, step, status, elapsedMs, error, operation, queueLength,
+        type: 'STEP', dispatchId, step, status, elapsedMs, error, operation, queueLength, ordinal, count,
         sessionId, ownerId, ownerInstanceId, playbackRevision, queueRevision,
       });
     });
   }, [peek]);
 
-  const dispatchToTarget = useCallback(async ({ targetIds, play, queue, mode, shader, volume, shuffle, snapshot, title }, { bypassDedupe = false } = {}) => {
+  const dispatchToTarget = useCallback(async ({ targetIds, play, queue, mode, shader, volume, shuffle, snapshot, title, itemAction }, { bypassDedupe = false } = {}) => {
     if (!Array.isArray(targetIds) || targetIds.length === 0) return [];
+    if (itemAction && !itemAction.operationId) {
+      itemAction = { ...itemAction, operationId: uuid(), tappedAt: Date.now() };
+    }
     if (mode === 'transfer') {
       mediaLog.dispatchFailed({
         deviceId: targetIds[0] ?? null,
@@ -117,7 +123,7 @@ export function DispatchProvider({ children }) {
     }
 
     const key = buildDedupKey({
-      targetIds, play, queue, mode, shader, volume, shuffle, snapshot,
+      targetIds, play, queue, mode, shader, volume, shuffle, snapshot, itemAction,
     });
     const inFlight = inFlightRef.current.get(key);
     const cached = dedupCacheRef.current.get(key);
@@ -136,6 +142,11 @@ export function DispatchProvider({ children }) {
       });
       return firstDispatchIds;
     }
+
+    if (itemAction) offerActionUndo({ operationId: itemAction.operationId, title, targetName: 'Selected screen', expiresAt: itemAction.tappedAt + 10000, undo: async operationId => {
+      const results = await Promise.all(targetIds.map(id => peek?.getController?.(id)?.undo(operationId) ?? { ok: false, code: 'ITEM_ACTION_UNSUPPORTED' }));
+      return results.find(result => !result?.ok) ?? { ok: true };
+    } });
 
     const isAdopt = !!snapshot;
     const contentId = play ?? queue ?? (isAdopt ? (snapshot?.currentItem?.contentId ?? 'adopt-snapshot') : null);
@@ -157,7 +168,7 @@ export function DispatchProvider({ children }) {
       dispatchIds.push(dispatchId);
       inFlightRef.current.get(key)?.add(dispatchId);
       attemptsRef.current.set(dispatchId, {
-        targetIds: [deviceId], play, queue, mode, shader, volume, shuffle, snapshot: retrySnapshot, title,
+        targetIds: [deviceId], play, queue, mode, shader, volume, shuffle, snapshot: retrySnapshot, title, itemAction,
       });
       dispatch({
         type: 'INITIATED', dispatchId, deviceId, contentId, title: contentTitle,
@@ -167,7 +178,7 @@ export function DispatchProvider({ children }) {
 
       const httpPromise = isAdopt
         ? DaylightAPI(`api/v1/device/${deviceId}/load`, { dispatchId, snapshot, mode: 'adopt' }, 'POST')
-        : DaylightAPI(buildDispatchUrl({ deviceId, play, queue, dispatchId, shader, volume, shuffle }));
+        : DaylightAPI(buildDispatchUrl({ deviceId, play, queue, dispatchId, shader, volume, shuffle, itemAction }));
       httpPromise
         .then((res) => {
           settle(dispatchId);
@@ -196,7 +207,7 @@ export function DispatchProvider({ children }) {
 
     dedupCacheRef.current.set(key, { ts: Date.now(), dispatchIds });
     return dispatchIds;
-  }, []);
+  }, [peek]);
 
   const retry = useCallback((dispatchId) => {
     const attempt = attemptsRef.current.get(dispatchId);

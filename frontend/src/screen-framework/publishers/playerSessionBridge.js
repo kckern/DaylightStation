@@ -559,6 +559,13 @@ export function createPlayerSessionBridge({
   };
 
   const queueController = {
+    // Mutation identity remains available for an idle held queue. This is
+    // deliberately separate from native playback evidence.
+    getActionOwner: () => {
+      const handle = readHandle();
+      const identity = handle?.getPlaybackIdentity?.();
+      return identity ? { ...identity, stopRevision: handle.getItemActionStopRevision?.() ?? 0 } : null;
+    },
     getCurrentItem,
     getQueue: () => {
       const items = readQueueSnapshot()?.items;
@@ -608,6 +615,9 @@ export function createPlayerSessionBridge({
         ? [mountedOperationSubscription.observerId]
         : [];
       return handle.adoptSessionSnapshot(snapshot, { ...options, requiredObserverIds });
+    },
+    applyQueue(snapshot) {
+      return readHandle()?.applyQueueSnapshot?.(snapshot) ?? { ok: false, code: 'ITEM_ACTION_UNSUPPORTED' };
     },
     stopIfCurrent(expected, sessionId) {
       const handle = readHandle();

@@ -21,6 +21,7 @@
  */
 
 import { buildCommandEnvelope } from '#shared-contracts/media/envelopes.mjs';
+import { decodeItemAction } from '#shared-contracts/media/item-action.mjs';
 import { isLoadContentQueueOp } from '#shared-contracts/media/commands.mjs';
 import { resolveContentId } from '../ports/contentControlQuery.mjs';
 import { contentRequiresCamera } from './contentRequiresCamera.mjs';
@@ -104,6 +105,12 @@ export class WakeAndLoadService {
    */
   async execute(deviceId, query = {}, options = {}) {
     if (this.#inflight.has(deviceId)) {
+      // Distinct queue intents must not be mistaken for a repeated wake tap.
+      // Serialize operation envelopes through the existing per-screen wake.
+      if (query.itemAction) {
+        await this.#inflight.get(deviceId).catch(() => {});
+        return this.execute(deviceId, query, options);
+      }
       this.#logger.info?.('wake-and-load.deduplicated', { deviceId });
       return this.#inflight.get(deviceId);
     }
@@ -568,7 +575,7 @@ export class WakeAndLoadService {
             targetDevice: deviceId,
             command: 'queue',
             commandId: dispatchId,
-            params: { ...passThroughOpts, op: requestedOp, contentId: resolvedContentId },
+            params: decodeItemAction(contentQuery.itemAction) ?? { ...passThroughOpts, op: requestedOp, contentId: resolvedContentId },
           });
           this.#broadcast({ topic, ...envelope });
 
@@ -695,7 +702,7 @@ export class WakeAndLoadService {
             targetDevice: deviceId,
             command: 'queue',
             commandId: dispatchId,
-            params: { ...fbPassThrough, op: fbOp, contentId: fbContentId },
+            params: decodeItemAction(contentQuery.itemAction) ?? { ...fbPassThrough, op: fbOp, contentId: fbContentId },
           });
           this.#broadcast({ topic, ...fbEnvelope });
           this.#logger.info?.('wake-and-load.load.wsFallbackSent', {
@@ -847,6 +854,7 @@ export class WakeAndLoadService {
     ].filter(Boolean))];
     if (!expectedContentIds.length) return;
     const expectedContentId = expectedContentIds[0];
+    const itemAction = decodeItemAction(contentQuery.itemAction);
     const operation = contentQuery.op === 'add' ? 'add' : 'play-now';
     const resultStep = operation === 'add' ? 'queue' : 'playback';
 
@@ -872,16 +880,18 @@ export class WakeAndLoadService {
       if (resolved) return;
       if (!commandAcknowledged || payload?.deviceId !== deviceId) return;
       const snapshot = payload?.snapshot;
-      const owner = ownerIdentity(snapshot);
+      const owner = ownerIdentity(snapshot) ?? (itemAction ? snapshot?.meta?.queueOwner : null);
       if (!snapshot?.sessionId || !snapshot?.meta?.ownerId || !owner?.ownerInstanceId
         || !Number.isInteger(owner.playbackRevision) || !Number.isInteger(owner.queueRevision)) return;
 
       let matches = false;
+      const actionEntries = itemAction ? snapshot.queue?.items?.filter(item => item.itemActionId === itemAction.operationId) ?? [] : [];
+      const actionCurrent = itemAction && snapshot.queue?.items?.[snapshot.queue.currentIndex]?.itemActionId === itemAction.operationId;
       if (operation === 'add') {
-        const beforeOwner = ownerIdentity(outcomeBaseline);
+        const beforeOwner = ownerIdentity(outcomeBaseline) ?? (itemAction ? outcomeBaseline?.meta?.queueOwner : null);
         const beforeCurrent = currentIdentity(outcomeBaseline);
         const afterCurrent = currentIdentity(snapshot);
-        const appended = snapshot.queue?.items?.some((item) => contentMatches(item?.contentId));
+        const appended = itemAction ? actionEntries.length > 0 : snapshot.queue?.items?.some((item) => contentMatches(item?.contentId));
         matches = !!outcomeBaseline
           && snapshot.sessionId === outcomeBaseline.sessionId
           && snapshot.meta.ownerId === outcomeBaseline.meta?.ownerId
@@ -891,6 +901,10 @@ export class WakeAndLoadService {
           && afterCurrent.contentId === beforeCurrent.contentId
           && afterCurrent.queueItemId === beforeCurrent.queueItemId
           && appended;
+        // Cold Add may register its first idle owner. Correlated held queue
+        // state proves insertion, but cannot claim playback started.
+        if (itemAction && !beforeOwner && !beforeCurrent.contentId) matches = appended && !afterCurrent.contentId
+          && ['idle', 'ready'].includes(snapshot.state);
       } else {
         const incoming = snapshot.currentItem?.contentId;
         const beforeOwner = ownerIdentity(outcomeBaseline);
@@ -898,7 +912,7 @@ export class WakeAndLoadService {
           || snapshot.sessionId !== outcomeBaseline?.sessionId
           || owner.ownerInstanceId !== beforeOwner.ownerInstanceId
           || owner.playbackRevision > beforeOwner.playbackRevision;
-        matches = snapshot.state === 'playing' && contentMatches(incoming) && ownerAdvanced;
+        matches = snapshot.state === 'playing' && (itemAction ? actionCurrent : contentMatches(incoming)) && ownerAdvanced;
       }
 
       if (matches) {
@@ -908,13 +922,14 @@ export class WakeAndLoadService {
         });
         this.#emitProgress(topic, dispatchId, resultStep, 'confirmed', {
           operation,
-          contentId: expectedContentId,
+          contentId: operation === 'add' ? expectedContentId : snapshot.currentItem?.contentId ?? expectedContentId,
           sessionId: snapshot.sessionId,
           ownerId: snapshot.meta.ownerId,
           ownerInstanceId: owner.ownerInstanceId,
           playbackRevision: owner.playbackRevision,
           queueRevision: owner.queueRevision,
-          ...(operation === 'add' ? { queueLength: snapshot.queue.items.length } : {}),
+          ...(operation === 'add' ? { queueLength: snapshot.queue.items.length,
+            ...(itemAction ? { ordinal: snapshot.queue.items.findIndex(item => item.itemActionId === itemAction.operationId) + 1, count: actionEntries.length } : {}) } : {}),
         });
       }
     });

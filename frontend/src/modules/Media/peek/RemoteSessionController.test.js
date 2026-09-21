@@ -26,6 +26,20 @@ function setup({ httpImpl, onSteeringActivity } = {}) {
 }
 
 describe('RemoteSessionController', () => {
+  it('sends canonical item actions without substituting a legacy queue verb', async () => {
+    const { ackRouter, http, ctl } = setup();
+    const command = { kind: 'playNext', item: { contentId: 'new' }, operationId: 'operation', tappedAt: 1000, clearRest: false };
+    const pending = ctl.execute(command);
+    expect(http).toHaveBeenCalledWith('api/v1/device/tv/session/queue/item-action', expect.objectContaining({ ...command, commandId: 'cmd-1' }), 'POST');
+    ackRouter.resolve({ commandId: 'cmd-1', ok: true });
+    expect(await pending).toMatchObject({ ok: true, operationId: 'operation', expiresAt: 11000 });
+  });
+  it('Undo cancels a pending cold wake without requiring an offline receiver ACK', async () => {
+    const { http, ctl } = setup({ httpImpl: async () => ({ ok: true, pending: true }) });
+    expect(await ctl.undo('operation')).toMatchObject({ ok: true, pending: true });
+    expect(http).toHaveBeenCalledTimes(1);
+    expect(http).toHaveBeenCalledWith('api/v1/device/tv/session/item-action/operation/cancel', {}, 'POST');
+  });
   it('conforms to the controller shape', () => {
     const { ctl } = setup();
     expect(() => assertController(ctl)).not.toThrow();

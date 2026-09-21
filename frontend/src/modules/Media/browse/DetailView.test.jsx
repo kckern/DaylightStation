@@ -27,6 +27,19 @@ beforeEach(() => {
 });
 
 describe('DetailView Play Now', () => {
+  it('offers explicit Shuffle beside collection Play', () => {
+    contentState.info = { title: 'Album', type: 'album' };
+    render(<MantineProvider><DetailView contentId="plex:album" /></MantineProvider>);
+    fireEvent.click(screen.getByRole('button', { name: 'Shuffle', exact: true }));
+    expect(dispatchLeafVerb).toHaveBeenLastCalledWith('shuffle', 'plex:album', expect.objectContaining({ type: 'album' }));
+  });
+  it('routes Next, First and Add through the displayed destination', () => {
+    render(<MantineProvider><DetailView contentId="plex:685088" /></MantineProvider>);
+    for (const [testId, verb] of [['detail-play-next', 'playNext'], ['detail-up-next', 'playFirst'], ['detail-add', 'add']]) {
+      fireEvent.click(screen.getByTestId(testId));
+      expect(dispatchLeafVerb).toHaveBeenLastCalledWith(verb, 'plex:685088', expect.objectContaining({ title: 'Episode 3' }));
+    }
+  });
   it('shows a Back destination and uses the route pop seam', () => {
     backDestination = 'Home';
     render(<MantineProvider><DetailView contentId="plex:685088" /></MantineProvider>);

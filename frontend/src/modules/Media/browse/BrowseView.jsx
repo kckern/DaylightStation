@@ -15,7 +15,7 @@
 // browse levels (Home's source/mediaType cards, the plain "Browse" nav item)
 // never pass a containerItem, so the header stays absent there — nothing
 // single to play.
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Alert, Text, Stack, Button } from '@mantine/core';
 import {
   IconChevronRight,
@@ -25,14 +25,14 @@ import {
   IconPlus,
 } from '@tabler/icons-react';
 import { useListBrowse } from './useListBrowse.js';
-import { useSessionController } from '../controller/useSessionController.js';
 import { useNav } from '../shell/NavProvider.jsx';
 import { useContentDispatch } from '../search/useContentDispatch.js';
-import { resultToQueueInput } from '../search/resultToQueueInput.js';
 import { isContainer } from '../../Content/combobox/comboboxMachine.js';
 import { DestinationLine } from '../cast/DestinationLine.jsx';
 import getLogger from '../../../lib/logging/Logger.js';
 import Skeleton from '@/lib/ui/Skeleton.jsx';
+import { ResultRowActions } from '../../Content/combobox/ResultRow.jsx';
+import { ItemDestinationPicker } from '../actions/ItemDestinationPicker.jsx';
 
 function splitPath(path) {
   if (!path) return [];
@@ -41,7 +41,7 @@ function splitPath(path) {
 
 export function BrowseView({ path, label, modifiers, containerItem = null, take = 50 }) {
   const { items, total, loading, error, loadMore } = useListBrowse(path, { modifiers, take });
-  const { queue } = useSessionController('local');
+  const [oneShot, setOneShot] = useState(null);
   const { push, replace, pop, depth, backDestination } = useNav();
   const { dispatchLeafVerb, playContainerAsQueue, addContainerToQueue } = useContentDispatch();
   const log = useMemo(() => getLogger().child({ component: 'browse-view' }), []);
@@ -172,13 +172,18 @@ export function BrowseView({ path, label, modifiers, containerItem = null, take 
                       <button
                         data-testid={`result-add-${id}`}
                         className="result-action"
-                        onClick={() => { const input = resultToQueueInput(row); if (input) queue.add(input); }}
+                        onClick={() => dispatchLeafVerb('add', id, row)}
                       >
                         Add
                       </button>
                     </span>
                   </>
                 )}
+                <ResultRowActions item={{ ...row, id }} onAction={action => {
+                  if (['playOn', 'addOn'].includes(action.kind)) setOneShot(action);
+                  else if (action.kind === 'details') push('detail', { contentId: id });
+                  else dispatchLeafVerb(action.kind, id, row);
+                }} />
               </li>
             );
           })}
@@ -189,6 +194,7 @@ export function BrowseView({ path, label, modifiers, containerItem = null, take 
           Load more ({total - items.length} remaining)
         </Button>
       )}
+      <ItemDestinationPicker action={oneShot} onClose={() => setOneShot(null)} />
     </Stack>
   );
 }
