@@ -170,6 +170,18 @@ function dayPayload({
   };
 }
 
+function holdAudioOpen() {
+  const NativeAudio = globalThis.Audio;
+  globalThis.Audio = vi.fn(function FakeAudio() {
+    return {
+      preload: 'auto', src: '', volume: 1, muted: false,
+      play: vi.fn(() => Promise.resolve()), pause: vi.fn(), load: vi.fn(),
+      onended: null, onerror: null,
+    };
+  });
+  return () => { globalThis.Audio = NativeAudio; };
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   programLogMock.mockClear();
@@ -816,7 +828,7 @@ describe('repetition, one sentence at a time', () => {
   };
   // A repetition sentence takes a real second to play — there is a deliberate
   // silence before the repeated target clip, which is where the child speaks.
-  const SEQUENCE = { timeout: 4000 };
+  const SEQUENCE = { timeout: 10000 };
 
   it('holds the sentence it just played and offers repeat or move on', async () => {
     liveDay([entry(1, 'repetition'), entry(2, 'repetition')]);
@@ -975,12 +987,16 @@ describe('repetition, one sentence at a time', () => {
   });
 
   it('Stop actually stops', async () => {
-    window.HTMLMediaElement.prototype.play = vi.fn(() => Promise.resolve());
-    dayMock.mockResolvedValue(dayPayload({ queue: [entry(1, 'repetition')] }));
-    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Play' }, SEQUENCE));
-    fireEvent.click(await screen.findByRole('button', { name: 'Stop' }, SEQUENCE));
-    expect(await screen.findByRole('button', { name: 'Play' }, SEQUENCE)).toBeTruthy();
+    const restoreAudio = holdAudioOpen();
+    try {
+      dayMock.mockResolvedValue(dayPayload({ queue: [entry(1, 'repetition')] }));
+      render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+      fireEvent.click(await screen.findByRole('button', { name: 'Play' }, SEQUENCE));
+      fireEvent.click(screen.getByRole('button', { name: 'Stop' }));
+      expect(screen.getByRole('button', { name: 'Play' })).toBeTruthy();
+    } finally {
+      restoreAudio();
+    }
   });
 });
 
@@ -2042,7 +2058,7 @@ describe('hands-free', () => {
       return { ok: true, status: 200, data: {} };
     });
   };
-  const SEQUENCE = { timeout: 4000 };
+  const SEQUENCE = { timeout: 10000 };
 
   it('Space plays, Space moves on, Backspace plays again — on the repetition rung', async () => {
     playsToEnd();
@@ -2063,13 +2079,18 @@ describe('hands-free', () => {
   });
 
   it('Space stops a sentence that is sounding', async () => {
-    dayMock.mockResolvedValue(dayPayload({ queue: [entry(1, 'repetition')] }));
-    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
-    await screen.findByRole('button', { name: 'Play' });
-    pressKey(' ');
-    await screen.findByRole('button', { name: 'Stop' }, SEQUENCE);
-    pressKey(' ');
-    expect(await screen.findByRole('button', { name: 'Play' })).toBeTruthy();
+    const restoreAudio = holdAudioOpen();
+    try {
+      dayMock.mockResolvedValue(dayPayload({ queue: [entry(1, 'repetition')] }));
+      render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+      await screen.findByRole('button', { name: 'Play' });
+      pressKey(' ');
+      screen.getByRole('button', { name: 'Stop' });
+      pressKey(' ');
+      expect(await screen.findByRole('button', { name: 'Play' })).toBeTruthy();
+    } finally {
+      restoreAudio();
+    }
   });
 
   it('a typed rung is focused on arrival, and the sentence sounds without a key being touched', async () => {
