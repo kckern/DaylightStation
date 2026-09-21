@@ -375,7 +375,7 @@ for (const { label, viewport, navTestId, mobile } of [
   });
 }
 
-test('Peek Next and Previous advance the real ordinary receiver queue', async ({ context, page: sender }) => {
+test('Add preserves playback and reports its position before Peek Next and Previous traverse the receiver queue', async ({ context, page: sender }) => {
   test.setTimeout(150000);
   const { receiver, native } = await startArrivalJourney(context, sender);
   const search = sender.getByRole('textbox', { name: 'Search media…' });
@@ -385,13 +385,49 @@ test('Peek Next and Previous advance the real ordinary receiver queue', async ({
   await more.click();
   const add = sender.getByTestId('result-action-add-plex:697368');
   await expect(add).toBeVisible({ timeout: 30000 });
+  const beforeAdd = await readReceiverState(sender);
+  const beforeAddOwner = beforeAdd.snapshot.meta.playbackOwner;
+  const beforeAddLength = beforeAdd.snapshot.queue.items.length;
+  const addStartNative = await native.evaluate(element => {
+    window.__remoteQueueNative = element;
+    window.__remoteQueueAddEvents = [];
+    for (const type of ['pause', 'emptied', 'loadstart']) {
+      element.addEventListener(type, () => window.__remoteQueueAddEvents.push(type));
+    }
+    return { source: element.currentSrc || element.src, currentTime: element.currentTime };
+  });
   await add.click();
   await expect.poll(async () => {
     const state = await readReceiverState(sender);
+    const owner = state?.snapshot?.meta?.playbackOwner;
+    const items = state?.snapshot?.queue?.items;
     return state?.snapshot?.currentItem?.contentId === ARRIVAL_VIDEO.contentId
       && state.snapshot.queue?.currentIndex === 0
-      && state.snapshot.queue?.items?.some(item => item.contentId === 'plex:697368');
+      && items?.length === beforeAddLength + 1
+      && items.at(-1)?.contentId === 'plex:697368'
+      && owner?.ownerInstanceId === beforeAddOwner.ownerInstanceId
+      && owner?.playbackRevision === beforeAddOwner.playbackRevision
+      && owner?.queueRevision > beforeAddOwner.queueRevision;
   }, { timeout: 30000 }).toBe(true);
+  const afterAdd = await readReceiverState(sender);
+  expect(afterAdd.snapshot.queue.items.at(-1)?.contentId).toBe('plex:697368');
+  expect(afterAdd.snapshot.queue.items.length).toBe(2);
+  expect(await native.evaluate(element => element === window.__remoteQueueNative)).toBe(true);
+  const afterAddNative = await native.evaluate(element => ({
+    source: element.currentSrc || element.src,
+    paused: element.paused,
+    currentTime: element.currentTime,
+    events: [...window.__remoteQueueAddEvents],
+  }));
+  expect(afterAddNative).toMatchObject({
+    source: addStartNative.source,
+    paused: false,
+    events: [],
+  });
+  expect(afterAddNative.currentTime).toBeGreaterThan(addStartNative.currentTime);
+  const tray = sender.getByTestId('dispatch-tray');
+  await expect(tray).toContainText('Added Disclosure Day to Acceptance receiver', { timeout: 60000 });
+  await expect(tray).toContainText('2nd in queue');
   const toggle = await openPeekControls(sender);
   const panel = sender.getByTestId('peek-panel');
   const next = sender.getByTestId('np-next');
