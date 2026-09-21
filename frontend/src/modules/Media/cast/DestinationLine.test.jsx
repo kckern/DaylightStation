@@ -72,9 +72,9 @@ beforeEach(() => {
 });
 
 describe('DestinationLine', () => {
-  it('reads "This browser" when no remote target is set', () => {
+  it('reads "This device" when no remote target is set', () => {
     renderLine();
-    expect(screen.getByTestId('destination-line-name')).toHaveTextContent('This browser');
+    expect(screen.getByTestId('destination-line-name')).toHaveTextContent('This device');
   });
 
   it('resolves a configured target id to its device name via the fleet', () => {
@@ -92,9 +92,45 @@ describe('DestinationLine', () => {
   it('tapping the line opens the device sheet', async () => {
     renderLine();
     expect(screen.queryByTestId('destination-sheet')).toBeNull();
-    fireEvent.click(screen.getByTestId('destination-line'));
+    const line = screen.getByTestId('destination-line');
+    expect(line).toHaveAttribute('data-ignore-outside-clicks');
+    fireEvent.click(line);
     expect(await screen.findByTestId('destination-sheet')).toBeInTheDocument();
     expect(screen.getByTestId('picker-stub-pick')).toBeInTheDocument();
+  });
+
+  it('announces one interaction lifetime from trigger pointerdown through sheet unmount', async () => {
+    const onInteractionStart = vi.fn();
+    const onInteractionEnd = vi.fn();
+    renderLine({ onInteractionStart, onInteractionEnd });
+    const line = screen.getByTestId('destination-line');
+
+    fireEvent.pointerDown(line);
+    expect(onInteractionStart).toHaveBeenCalledTimes(1);
+    expect(onInteractionEnd).not.toHaveBeenCalled();
+
+    fireEvent.click(line);
+    await screen.findByTestId('destination-sheet');
+    fireEvent.click(screen.getByTestId('picker-stub-pick'));
+
+    expect(screen.queryByTestId('destination-sheet')).toBeNull();
+    expect(onInteractionEnd).toHaveBeenCalledTimes(1);
+  });
+
+  it('PLACE.2b stacks the destination sheet above the full-screen phone search surface', async () => {
+    renderLine();
+    fireEvent.click(screen.getByTestId('destination-line'));
+    await screen.findByTestId('destination-sheet');
+
+    const modalRoot = document.querySelector('.mantine-Modal-root');
+    const modalZIndex = Number(
+      getComputedStyle(modalRoot).getPropertyValue('--mb-z-index')
+    );
+
+    // SearchMode is the top-level phone surface at Mantine's modal tier (200). Because the
+    // Modal is portaled outside that surface, its own stack level must clear
+    // 200 or the visible device buttons cannot receive ordinary pointer taps.
+    expect(modalZIndex).toBeGreaterThan(200);
   });
 
   it('a sheet pick updates the SHARED CastTargetProvider state, not a parallel state', async () => {
@@ -134,16 +170,25 @@ describe('DestinationLine', () => {
     });
   });
 
-  it('does NOT log destinationChanged when the pick resolves to the same destination', async () => {
+  it('PLACE.2b a This device pick clears the shared remote aim immediately', async () => {
+    localStorage.setItem(
+      'media-app.cast-target',
+      JSON.stringify({ mode: 'transfer', targetIds: ['livingroom-tv'] })
+    );
     renderLine();
     fireEvent.click(screen.getByTestId('destination-line'));
     await screen.findByTestId('destination-sheet');
 
-    // Nothing was set before (local), and picking an empty set is still local.
     lastPick = { targetIds: [], mode: 'transfer' };
     fireEvent.click(screen.getByTestId('picker-stub-pick'));
 
-    expect(mediaLog.destinationChanged).not.toHaveBeenCalled();
+    expect(screen.getByTestId('probe-targets')).toHaveTextContent('');
+    expect(screen.getByTestId('destination-line-name')).toHaveTextContent('This device');
+    expect(mediaLog.destinationChanged).toHaveBeenCalledWith({
+      from: 'livingroom-tv',
+      to: 'local',
+      surface: null,
+    });
   });
 
   it('surface is optional and defaults to null in the log payload', async () => {

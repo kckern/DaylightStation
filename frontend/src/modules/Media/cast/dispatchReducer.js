@@ -24,7 +24,7 @@ export function normalizePlaybackStatus(status) {
 export function reduceDispatch(state, action) {
   switch (action.type) {
     case 'INITIATED': {
-      const { dispatchId, deviceId, contentId, mode, title } = action;
+      const { dispatchId, deviceId, contentId, mode, title, operation } = action;
       const next = new Map(state.byId);
       next.set(dispatchId, {
         dispatchId,
@@ -32,9 +32,11 @@ export function reduceDispatch(state, action) {
         contentId,
         title: title ?? null,        // human content title for the tray
         mode,
+        operation: operation ?? 'play-now',
         status: 'running',
         steps: [],
         playback: null,              // trailing watchdog: 'confirmed' | 'timeout' | null
+        outcome: null,
         error: null,
         failedStep: null,
         totalElapsedMs: null,
@@ -51,10 +53,24 @@ export function reduceDispatch(state, action) {
       // does) arrive AFTER the dispatch already SUCCEEDED. Record it as a
       // resolution field, not just a step append, so the tray can react.
       const resolution = step === 'playback' ? normalizePlaybackStatus(status) : null;
+      const outcomeResolution = (step === 'playback' || step === 'queue')
+        ? normalizePlaybackStatus(status)
+        : null;
       next.set(dispatchId, {
         ...prev,
         steps: [...prev.steps, { step, status, elapsedMs, error: error ?? null, ts: new Date().toISOString() }],
         ...(resolution ? { playback: resolution } : {}),
+        ...(outcomeResolution ? {
+          outcome: outcomeResolution,
+          outcomeIdentity: {
+            sessionId: action.sessionId ?? null,
+            ownerId: action.ownerId ?? null,
+            ownerInstanceId: action.ownerInstanceId ?? null,
+            playbackRevision: action.playbackRevision ?? null,
+            queueRevision: action.queueRevision ?? null,
+            queueLength: action.queueLength ?? null,
+          },
+        } : {}),
       });
       return { ...state, byId: next };
     }

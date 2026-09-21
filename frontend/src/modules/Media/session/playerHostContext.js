@@ -6,6 +6,7 @@
 import { createContext } from 'react';
 
 export const PlayerHostContext = createContext(null);
+export const PlayerHostPresentationContext = createContext({ forceShader: null });
 export const PlayerHostRegistryContext = createContext({
   claim: () => {},
   release: () => {},

@@ -3,7 +3,8 @@
  *
  * The June 8 incident was a forced 1080p60 / 20 Mbit/s software libx264
  * transcode of an already-h264 source that fell behind realtime. These caps
- * keep the encoder ahead of realtime. The codec advertisement (h264,hevc) and
+ * bound encoder work; they do not guarantee realtime throughput under the
+ * server's available CPU quota. The codec advertisement (h264,hevc) and
  * directPlay=0 default from the May 18 mitigation are preserved by the caller.
  *
  * directStream vs directPlay distinction (June 13):
@@ -59,10 +60,11 @@ const AUDIO_DOWNMIX_LIMITATION = 'add-limitation(scope=videoAudioCodec&scopeName
 /**
  * Build the X-Plex-Client-Profile-Extra value: the existing codec advertisement
  * plus optional limitations, '+'-joined.
- * @param {{maxFrameRate?:number, downmixAudio?:boolean}} opts
+ * @param {{maxFrameRate?:number, downmixAudio?:boolean, protocol?:'dash'|'hls'}} opts
  */
 export function buildClientProfileExtra(opts = {}) {
-  const clauses = [CODEC_ADVERT];
+  const clauses = [opts.protocol === 'hls'
+    ? CODEC_ADVERT.replace('protocol=dash', 'protocol=hls') : CODEC_ADVERT];
   const fps = Number(opts.maxFrameRate);
   if (Number.isFinite(fps) && fps > 0) {
     clauses.push(`add-limitation(scope=videoCodec&scopeName=*&type=upperBound&name=video.frameRate&value=${fps})`);
@@ -112,7 +114,9 @@ export function canDirectPlayH264(metadata) {
   return norm(media.videoCodec) === 'h264'
     && norm(media.audioCodec) === 'aac'
     && norm(media.container) === 'mp4'
-    && norm(part?.container || media.container) === 'mp4';
+    && norm(part?.container || media.container) === 'mp4'
+    && !isHighBitDepthVideo(media)
+    && !needsAudioDownmix(metadata);
 }
 
 /**

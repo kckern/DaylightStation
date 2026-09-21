@@ -208,6 +208,21 @@ describe('useScreenCommands (structured envelope)', () => {
     });
   });
 
+  describe('handoff', () => {
+    it('forwards every validated versioned handoff field without reinterpreting it as a legacy command', () => {
+      mountOk();
+      const params = { version: 1, transferId: 'transfer-1', op: 'capture' };
+      act(() => capturedCallback(env('handoff', params)));
+      expect(actionBus.emit).toHaveBeenCalledWith('media:handoff', { ...params, commandId: 'c1' });
+    });
+
+    it('filters malformed handoff versions before they reach an action handler', () => {
+      mountOk();
+      act(() => capturedCallback(env('handoff', { version: 2, transferId: 'transfer-1', op: 'capture' })));
+      expect(actionBus.emit).not.toHaveBeenCalled();
+    });
+  });
+
   // ------------------------------------------------------------------
   // System
   // ------------------------------------------------------------------

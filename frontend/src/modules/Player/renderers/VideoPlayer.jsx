@@ -10,6 +10,7 @@ import { useEndOfContentWatchdog } from '../hooks/useEndOfContentWatchdog.js';
 import { getLogger } from '../../../lib/logging/Logger.js';
 import { playbackLog } from '../lib/playbackLogger.js';
 import { cleanupDashElement } from '../lib/dashCleanup.js';
+import { createPlexHlsSessionCleanup } from '../lib/plexHlsSessionCleanup.js';
 import { changedKeyComponent } from '../lib/keyChange.js';
 import { createStaleSessionWatchdog } from '../lib/staleSessionWatchdog.js';
 import { buildFpsStatsPayload } from '../lib/fpsStatsPayload.js';
@@ -71,12 +72,15 @@ export function VideoPlayer({
   resilienceBridge
 }) {
   // console.log('[VideoPlayer] Received keyboardOverrides:', keyboardOverrides ? Object.keys(keyboardOverrides) : 'undefined');
-  const isPlex = ['dash_video'].includes(media.mediaType);
+  const isPlex = media.mediaType === 'dash_video' || media.plex != null
+    || [media.id, media.assetId, media.contentId].some(id => typeof id === 'string' && id.startsWith('plex:'));
   // HLS streams (m3u8) play via hls.js (or native HLS on Safari). They use the
   // native <video> branch but WITHOUT a static src — the attach effect below
   // assigns the source.
   const isHls = media?.mediaType === 'hls_video';
+  const isOwnerOperationMount = resilienceBridge?.remountDiagnostics?.remountClass === 'owner-operation';
   const hlsLogger = useMemo(() => getLogger().child({ component: 'video-player-hls' }), []);
+  const hlsOwnerRef = useRef(null);
   const [displayReady, setDisplayReady] = useState(false);
   const displayReadyLoggedRef = useRef(false);
 
@@ -140,7 +144,9 @@ export function VideoPlayer({
     handleProgressClick,
     elementKey,
     getMediaEl,
-    getContainerEl
+    getContainerEl,
+    beginMountedPlaybackOperation,
+    cancelMountedPlaybackOperation
   } = useCommonMediaController({
     // ?goto overrides the start position so the transcode mints AT the target
     // (stall-free) and the saved resume can't fight it. Normal playback is unchanged.
@@ -298,6 +304,44 @@ export function VideoPlayer({
     if (!target) return;
     const normalized = Number.isFinite(seekToSeconds) ? Math.max(0, seekToSeconds) : 0;
 
+    // A MediaSource blob belongs to hls.js, not to the stream-mint endpoint.
+    // Reloading or adding query parameters to it detaches the active source
+    // while its valid manifest/fragment requests continue in the engine.
+    if (isHls) {
+      const owner = hlsOwnerRef.current;
+      if (!owner || owner.video !== target) return;
+      const errorType = owner.fatalType || (target.error ? 'mediaError' : null);
+      if (!owner.native && (!owner.hls || !errorType)) {
+        hlsLogger.info('video.hls.recovery-deferred', { reason: 'engine-loading-or-retrying' });
+        return;
+      }
+      if (!owner.native && !['mediaError', 'networkError'].includes(errorType)) {
+        // Let the existing resilience caller escalate an unrecoverable engine
+        // failure rather than reporting a successful in-place operation.
+        throw new Error('Unsupported fatal HLS recovery');
+      }
+      owner.restoreCleanup?.();
+      const restore = () => {
+        owner.restoreCleanup?.();
+        if (hlsOwnerRef.current !== owner || containerRef.current !== target) return;
+        target.currentTime = normalized;
+      };
+      owner.restoreCleanup = () => {
+        target.removeEventListener('loadedmetadata', restore);
+        owner.restoreCleanup = null;
+      };
+      target.addEventListener('loadedmetadata', restore, { once: true });
+      owner.fatalType = null;
+      if (owner.native) target.load?.();
+      else if (errorType === 'mediaError') owner.hls.recoverMediaError();
+      else owner.hls.loadSource(owner.source);
+      hlsLogger.info('video.hls.recovery-requested', {
+        strategy: owner.native ? 'native-manifest-reload' : errorType === 'mediaError' ? 'engine-media-recovery' : 'engine-manifest-retry',
+        seekSeconds: normalized,
+      });
+      return;
+    }
+
     // When the resilience state machine signals the URL may be stale
     // (Plex transcode session likely dead), mutate the <dash-video>
     // container's src BEFORE load(). The attribute change triggers
@@ -359,7 +403,7 @@ export function VideoPlayer({
         }
       });
     }
-  }, [containerRef, getMediaEl]);
+  }, [containerRef, getMediaEl, isHls, hlsLogger]);
 
   // Register accessors with resilience bridge
   useEffect(() => {
@@ -373,10 +417,12 @@ export function VideoPlayer({
         hardReset,
         fetchVideoInfo: fetchVideoInfo || null,
         autoplayBlocked,
-        onAutoplayResolved: handleAutoplayResolved
+        onAutoplayResolved: handleAutoplayResolved,
+        beginMountedPlaybackOperation,
+        cancelMountedPlaybackOperation
       });
     }
-  }, [resilienceBridge, getMediaEl, getContainerEl, hardReset, fetchVideoInfo, autoplayBlocked, handleAutoplayResolved]);
+  }, [resilienceBridge, getMediaEl, getContainerEl, hardReset, fetchVideoInfo, autoplayBlocked, handleAutoplayResolved, beginMountedPlaybackOperation, cancelMountedPlaybackOperation]);
 
   useEffect(() => {
     return () => {
@@ -459,35 +505,64 @@ export function VideoPlayer({
     displayReadyLoggedRef.current = false;
   }, [mediaUrl, media?.maxVideoBitrate]);
 
-  // HLS attach: load the m3u8 via hls.js (or native HLS where supported).
+  // Prefer hls.js: Plex's copied segments can drift from nominal EXTINF
+  // durations. Its parsed-PTS reconciliation keeps out-of-buffer seeks on
+  // the source timeline. Native HLS remains a compatibility fallback only.
   // Lazy dynamic import so the (large) hls.js bundle only loads when an HLS
   // source is actually played, and never for dash/native video.
   useEffect(() => {
     if (media?.mediaType !== 'hls_video') return undefined;
     const video = containerRef.current;
     if (!video || !mediaUrl) return undefined;
-    // Safari & co. play HLS natively:
-    if (video.canPlayType('application/vnd.apple.mpegurl')) {
-      video.src = mediaUrl;
-      hlsLogger.info('video.hls.native', { mediaUrl });
-      return undefined;
-    }
     let hls;
     let cancelled = false;
+    const sessions = createPlexHlsSessionCleanup({
+      isPlex, origin: window.location.origin, logger: hlsLogger,
+    });
+    const owner = { video, source: mediaUrl, hls: null, native: false, fatalType: null, restoreCleanup: null };
+    hlsOwnerRef.current = owner;
     import('hls.js').then(({ default: Hls }) => {
-      if (cancelled || !containerRef.current) return;
+      if (cancelled || containerRef.current !== video) return;
       if (!Hls.isSupported()) {
-        hlsLogger.warn('video.hls.unsupported', { mediaUrl });
+        if (video.canPlayType('application/vnd.apple.mpegurl')) {
+          owner.native = true;
+          video.src = mediaUrl;
+          hlsLogger.info('video.hls.native', { reason: 'mse-unavailable' });
+        } else {
+          hlsLogger.warn('video.hls.unsupported', { reason: 'no-supported-engine' });
+        }
         return;
       }
-      hls = new Hls({ enableWorker: true });
-      hls.on(Hls.Events.ERROR, (_e, data) => hlsLogger.warn('video.hls.error', { fatal: data?.fatal, type: data?.type }));
+      // Establish Plex's full-content PTS origin before loadedmetadata applies
+      // the saved native resume position. Do not alter live/non-Plex starts.
+      hls = new Hls({ enableWorker: true, ...(isPlex ? { startPosition: 0 } : {}) });
+      owner.hls = hls;
+      hls.on(Hls.Events.ERROR, (_e, data) => {
+        if (cancelled || hlsOwnerRef.current !== owner || containerRef.current !== video) return;
+        if (data?.fatal) owner.fatalType = data.type;
+        hlsLogger.warn('video.hls.error', { fatal: data?.fatal, type: data?.type });
+      });
+      const observeSession = (_event, data) => {
+        if (cancelled || hlsOwnerRef.current !== owner || containerRef.current !== video) return;
+        // Only native XHR/Fetch response URLs prove resolved ownership.
+        // hls.js details.url can fall back to the requested context URL when
+        // response metadata is unavailable, so it cannot authorize a stop.
+        sessions.observe(data?.networkDetails?.responseURL || data?.networkDetails?.url);
+      };
+      hls.on(Hls.Events.LEVEL_LOADED, observeSession);
+      hls.on(Hls.Events.FRAG_LOADED, observeSession);
       hls.loadSource(mediaUrl);
-      hls.attachMedia(containerRef.current);
-      hlsLogger.info('video.hls.attached', { mediaUrl });
+      hls.attachMedia(video);
+      hlsLogger.info('video.hls.attached', { timeline: 'parsed-media-timestamps' });
     }).catch((e) => hlsLogger.error('video.hls.load_failed', { error: e?.message }));
-    return () => { cancelled = true; if (hls) hls.destroy(); };
-  }, [media?.mediaType, mediaUrl, hlsLogger, containerRef]);
+    return () => {
+      cancelled = true;
+      owner.restoreCleanup?.();
+      if (hlsOwnerRef.current === owner) hlsOwnerRef.current = null;
+      try { if (hls) hls.destroy(); }
+      finally { void sessions.destroy(); }
+    };
+  }, [media?.mediaType, mediaUrl, hlsLogger, containerRef, isPlex, dashElementKey]);
 
   // Handle dash-video custom element events (web components don't support React synthetic events)
   useEffect(() => {
@@ -737,7 +812,7 @@ export function VideoPlayer({
     // Detect autoplay block: Firefox won't fire canplay when autoplay is blocked
     // (readyState stays at 1). Poll the inner <video> after 3s — if it's still
     // paused, try play() to surface NotAllowedError.
-    const autoplayCheckTimer = setTimeout(() => {
+    const autoplayCheckTimer = isOwnerOperationMount ? null : setTimeout(() => {
       const inner = el.shadowRoot?.querySelector('video, audio') || el;
       if (inner.paused) {
         const p = inner.play?.();
@@ -752,15 +827,22 @@ export function VideoPlayer({
       }
     }, 3000);
 
+    // An accepted play proves autoplay is allowed, even before enough data
+    // arrives for `playing`. Retire the startup probe so a subsequent user
+    // pause cannot be mistaken for an initial browser autoplay rejection.
+    const cancelAutoplayCheck = () => clearTimeout(autoplayCheckTimer);
     const handlePlaying = () => {
+      cancelAutoplayCheck();
       handleReady();
       setAutoplayBlocked(false);
     };
 
+    el.addEventListener('play', cancelAutoplayCheck);
     el.addEventListener('canplay', handleReady);
     el.addEventListener('playing', handlePlaying);
 
     return () => {
+      el.removeEventListener('play', cancelAutoplayCheck);
       el.removeEventListener('canplay', handleReady);
       el.removeEventListener('playing', handlePlaying);
       clearTimeout(autoplayCheckTimer);
@@ -876,13 +958,13 @@ export function VideoPlayer({
           ref={containerRef}
           class={`video-element ${displayReady ? 'show' : ''} ${crtShaderActive ? 'crt-source' : ''}`}
           src={mediaUrl}
-          autoplay=""
+          autoplay={isOwnerOperationMount ? undefined : ''}
           style={crtShaderActive ? undefined : effectStyles}
         />
       ) : (
         <video
           key={dashElementKey}
-          autoPlay
+          autoPlay={!isOwnerOperationMount}
           ref={containerRef}
           className={`video-element ${displayReady ? 'show' : ''} ${crtShaderActive ? 'crt-source' : ''}`}
           src={isHls ? undefined : mediaUrl}

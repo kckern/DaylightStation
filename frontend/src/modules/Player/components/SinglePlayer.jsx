@@ -234,7 +234,14 @@ export function SinglePlayer(props = {}) {
     const isRecoveryRemount = !!remountDiagnostics;
     // Title cards are self-contained (no mediaUrl needed) — always use direct-play bypass
     const isSelfContainedFormat = directFormat === 'titlecard';
-    if (isSelfContainedFormat || ((directMediaUrl && directFormat && !getRenderer(directFormat)) && !isRecoveryRemount)) {
+    // A queue item may carry an opaque transport URL plus a stale format. When
+    // it has a canonical content id, `/play` is the transport authority (and
+    // may correctly describe that same opaque Plex stream as HLS). Reserve the
+    // direct-media bypass for identity-less embeds, which have no descriptor to
+    // resolve; otherwise a stale queue `dash_video` makes dash.js parse HLS.
+    const hasResolvableContent = Boolean(effectiveContentId);
+    if (isSelfContainedFormat || ((directMediaUrl && directFormat && !getRenderer(directFormat)
+      && !hasResolvableContent) && !isRecoveryRemount)) {
       const directInfo = {
         ...play,
         id: play.id || play.contentId || effectiveContentId,

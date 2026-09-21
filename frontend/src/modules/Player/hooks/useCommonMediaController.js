@@ -41,6 +41,7 @@ const SOFT_REINIT_SEEKBACK_SECONDS = 2;
 // Ledger mount-scope ids (same module-counter pattern as VideoPlayer's
 // dash-error mount id). One id per controller mount instance.
 let _controllerMountSeq = 0;
+let _rendererTokenSeq = 0;
 
 /**
  * Common media controller hook for both audio and video players
@@ -127,6 +128,11 @@ export function useCommonMediaController({
 
   // Unique identity for this mount instance (used to scope the start-time guard)
   const mountIdRef = useRef(Symbol('mount'));
+  const rendererOperation = remountDiagnostics?.remountClass === 'owner-operation'
+    ? remountDiagnostics.rendererOperation ?? null
+    : null;
+  const rendererTokenRef = useRef(null);
+  const mountedPlaybackOperationRef = useRef(null);
 
   // Track if playback.started has been logged for this media (one-time per track)
   const playbackStartedRef = useRef(false);
@@ -247,6 +253,97 @@ export function useCommonMediaController({
     // Otherwise container IS the media element
     return container;
   }, []);
+
+  const finishMountedPlaybackOperation = useCallback((state) => {
+    const mediaEl = getMediaEl();
+    if (!state || mountedPlaybackOperationRef.current !== state || !mediaEl) return false;
+    state.awaitingSeek = false;
+    if (!state.autoplay) {
+      try { mediaEl.pause?.(); } catch { /* remain fail-closed and paused */ }
+      return true;
+    }
+    try {
+      const pending = mediaEl.play?.();
+      if (pending && typeof pending.catch === 'function') {
+        pending.catch((error) => {
+          mcLog().warn('playback.renderer-operation-play-failed', {
+            operationId: state.operationId,
+            error: error?.message ?? String(error),
+          });
+        });
+      }
+      return true;
+    } catch (error) {
+      mcLog().warn('playback.renderer-operation-play-failed', {
+        operationId: state.operationId,
+        error: error?.message ?? String(error),
+      });
+      return false;
+    }
+  }, [getMediaEl]);
+
+  const applyMountedPlaybackOperation = useCallback(() => {
+    const state = mountedPlaybackOperationRef.current;
+    const mediaEl = getMediaEl();
+    if (!state || state.cancelled || state.applied || !mediaEl || mediaEl.readyState < 1) return false;
+    const duration = Number(mediaEl.duration);
+    if (!Number.isFinite(duration) || duration <= 0 || state.targetSeconds >= duration) return false;
+    state.applied = true;
+    state.sawSeeking = false;
+    if (state.targetSeconds > 0) {
+      state.awaitingSeek = true;
+      try {
+        const container = containerRef.current;
+        if (meta.mediaType === 'dash_video' && typeof container?.api?.seek === 'function') {
+          container.api.seek(state.targetSeconds);
+        } else {
+          mediaEl.currentTime = state.targetSeconds;
+        }
+      } catch (error) {
+        state.cancelled = true;
+        mcLog().warn('playback.renderer-operation-seek-failed', {
+          operationId: state.operationId,
+          error: error?.message ?? String(error),
+        });
+        return false;
+      }
+      return true;
+    }
+    // Zero is an explicit target. Assign it even on a fresh node so a custom
+    // element's sticky/default position cannot win merely because zero is falsy.
+    try { mediaEl.currentTime = 0; } catch { return false; }
+    return finishMountedPlaybackOperation(state);
+  }, [finishMountedPlaybackOperation, getMediaEl, meta.mediaType]);
+
+  const beginMountedPlaybackOperation = useCallback((rendererToken) => {
+    const expected = rendererTokenRef.current;
+    if (!rendererOperation || !rendererToken || rendererToken !== expected
+      || rendererToken.node !== getMediaEl()
+      || rendererToken.operationId !== rendererOperation.operationId) {
+      return { ok: false, code: 'STALE_RENDERER_TOKEN' };
+    }
+    const state = {
+      operationId: rendererOperation.operationId,
+      targetSeconds: rendererOperation.targetSeconds,
+      autoplay: rendererOperation.autoplay !== false,
+      applied: false,
+      awaitingSeek: false,
+      sawSeeking: false,
+      cancelled: false,
+    };
+    mountedPlaybackOperationRef.current = state;
+    applyMountedPlaybackOperation();
+    return { ok: true };
+  }, [applyMountedPlaybackOperation, getMediaEl, rendererOperation]);
+
+  const cancelMountedPlaybackOperation = useCallback((rendererToken = null) => {
+    const state = mountedPlaybackOperationRef.current;
+    if (!state || (rendererToken && rendererToken !== rendererTokenRef.current)) return false;
+    state.cancelled = true;
+    mountedPlaybackOperationRef.current = null;
+    try { getMediaEl()?.pause?.(); } catch { /* cancellation remains synchronous */ }
+    return true;
+  }, [getMediaEl]);
 
   // Apply the controlled playbackRate to the live element the instant it changes.
   // The element-setup effect only (re)applies rate on play/seeked, so without this a
@@ -794,7 +891,7 @@ export function useCommonMediaController({
   const markProgress = useCallback(() => {
     const s = stallStateRef.current;
     if (s.hasEnded) {
-      return;
+      return false;
     }
 
     const mediaEl = getMediaEl();
@@ -807,7 +904,7 @@ export function useCommonMediaController({
     const { advanced, nextPos } = evaluatePlayheadProgress(pos, s.lastAdvancePos);
     s.lastAdvancePos = nextPos;
     if (!advanced) {
-      return;
+      return false;
     }
 
     const wasStalled = s.isStalled;
@@ -841,6 +938,7 @@ export function useCommonMediaController({
       scheduleStallDetection();
     }
     // Continuous polling in scheduleStallDetection handles rescheduling
+    return true;
   }, [getMediaEl, dismissStallSuspicion, assetId, recoveryScopeKey, publishStallSnapshot, clearTimers, scheduleStallDetection]);
 
   useEffect(() => {
@@ -870,7 +968,7 @@ export function useCommonMediaController({
       // Persist last position per assetId across remounts
       try { useCommonMediaController.__lastPosByKey[assetId] = lastPlaybackPosRef.current; } catch {}
       logProgress();
-      markProgress();
+      const advanced = markProgress();
       if (onProgress) {
         const stallSnapshot = readStallState();
         onProgress({
@@ -883,6 +981,10 @@ export function useCommonMediaController({
             : getProgressPercent(mediaEl.currentTime, mediaEl.duration),
           stalled: isStalled,
           isSeeking,
+          // A fresh native `playing` event can be lost across a renderer
+          // recovery. Forward, unpaused, non-seeking progress is the remaining
+          // positive native evidence that the decoder has actually recovered.
+          playing: advanced === true && !mediaEl.paused && !isSeeking && !isStalled,
           seekIntent: lastSeekIntentRef.current,
           lastStrategy: stallSnapshot.strategy,
           stallState: stallSnapshot
@@ -967,7 +1069,11 @@ export function useCommonMediaController({
       const appliedByMount = useCommonMediaController.__appliedStartByKey[assetId];
       const hasAppliedThisMount = appliedByMount === mountIdRef.current;
       const isEffectiveInitial = isInitialLoadRef.current && !isRecoveringRef.current && !hasAppliedThisMount;
-      if (isEffectiveInitial) {
+      if (rendererOperation) {
+        // The operation method below owns this mount's exact absolute target.
+        // Do not consult or mutate process-wide resume/sticky caches here.
+        startTime = null;
+      } else if (isEffectiveInitial) {
         const shouldApplyStart = (duration > (12 * 60) || isVideo);
         startTime = shouldApplyStart ? start : 0;
 
@@ -991,7 +1097,7 @@ export function useCommonMediaController({
 
       // If an unexpected loadedmetadata occurs and we're not in recovery,
       // avoid snapping to 0 if we have a recent seek intent or a last known good position.
-      if (!isRecoveringRef.current) {
+      if (!rendererOperation && !isRecoveringRef.current) {
         const candidates = [
           lastSeekIntentRef.current,
           useCommonMediaController.__lastSeekByKey[assetId],
@@ -1039,7 +1145,7 @@ export function useCommonMediaController({
       const urlOffset = urlOffsetMatch ? Number(urlOffsetMatch[1]) : 0;
       const dashSeekTarget = (Number.isFinite(startTime) && startTime > 0) ? startTime : urlOffset;
 
-      if (isDash && dashSeekTarget > 0) {
+      if (!rendererOperation && isDash && dashSeekTarget > 0) {
         {
           const container = containerRef.current;
           let seekApplied = false;
@@ -1095,7 +1201,7 @@ export function useCommonMediaController({
       // A resilience remount that was deliberately paused must come back paused —
       // see shouldArmAutoplay for the failure chain (jolt-ladder remount unconditionally
       // resumed a paused-during-seek player ~10s later).
-      mediaEl.autoplay = shouldArmAutoplay(remountDiagnostics);
+      mediaEl.autoplay = rendererOperation ? false : shouldArmAutoplay(remountDiagnostics);
       mediaEl.volume = adjustedVolume * masterVolume;
       
       // Loop logic — set the native HTMLMediaElement.loop attribute when the
@@ -1156,6 +1262,7 @@ export function useCommonMediaController({
       // triggering needless nudge/reload recovery on audio that just needs time
       // to buffer from a remote server.
       scheduleStallDetection();
+      if (rendererOperation) applyMountedPlaybackOperation();
 
       if (snapshot) {
         recoverySnapshotRef.current = null;
@@ -1171,7 +1278,9 @@ export function useCommonMediaController({
       const mediaEl = getMediaEl();
       if (mediaEl && Number.isFinite(mediaEl.currentTime)) {
         lastSeekIntentRef.current = mediaEl.currentTime;
-        try { useCommonMediaController.__lastSeekByKey[assetId] = mediaEl.currentTime; } catch {}
+        const operationState = mountedPlaybackOperationRef.current;
+        if (operationState?.awaitingSeek) operationState.sawSeeking = true;
+        else try { useCommonMediaController.__lastSeekByKey[assetId] = mediaEl.currentTime; } catch {}
         mcLog().sampled('playback.seek', {
           mediaKey: assetId,
           phase: 'seeking',
@@ -1195,6 +1304,11 @@ export function useCommonMediaController({
     };
     const clearSeeking = () => {
       const el = getMediaEl();
+      const operationState = mountedPlaybackOperationRef.current;
+      if (el && operationState?.awaitingSeek && operationState.sawSeeking
+        && Math.abs(el.currentTime - operationState.targetSeconds) <= 0.75) {
+        finishMountedPlaybackOperation(operationState);
+      }
       const now = Date.now();
       if (el && now - lastSeekedLogTsRef.current > 200) {
         lastSeekedLogTsRef.current = now;
@@ -1206,6 +1320,30 @@ export function useCommonMediaController({
           drift: lastSeekIntentRef.current != null ? Math.abs(el.currentTime - lastSeekIntentRef.current) : null,
           duration: el.duration
         }, { maxPerMinute: 30 });
+      }
+      // A paused decoder is allowed not to emit another `timeupdate` after a
+      // completed seek. Do not leave Player's resilience metrics reporting the
+      // earlier seeking state until playback happens to resume: that stale
+      // state is interpreted as an in-flight user seek and can arm recovery.
+      if (el && onProgress) {
+        const currentTime = segDuration
+          ? Math.max(0, el.currentTime - segStart)
+          : (el.currentTime || 0);
+        const duration = segDuration || (el.duration || 0);
+        const stallSnapshot = readStallState();
+        onProgress({
+          currentTime,
+          duration,
+          paused: el.paused,
+          media: meta,
+          percent: getProgressPercent(currentTime, duration),
+          stalled: isStalled,
+          isSeeking: false,
+          playing: false,
+          seekIntent: lastSeekIntentRef.current,
+          lastStrategy: stallSnapshot.strategy,
+          stallState: stallSnapshot,
+        });
       }
       requestAnimationFrame(() => setIsSeeking(false));
     };
@@ -1310,12 +1448,39 @@ export function useCommonMediaController({
     // 9-dependency media-listener effect in a file with hard-won "generation churn / storm"
     // caution comments elsewhere — already reviewed this session as too risky for a lint pass.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [onEnd, playbackRate, start, isVideo, meta, type, assetId, onProgress, isStalled, volume, getMediaEl, markProgress, scheduleStallDetection, clearTimers, readStallState, elementKey, remountDiagnostics]);
+  }, [onEnd, playbackRate, start, isVideo, meta, type, assetId, onProgress, isStalled, volume, getMediaEl, markProgress, scheduleStallDetection, clearTimers, readStallState, elementKey, remountDiagnostics, rendererOperation, applyMountedPlaybackOperation, finishMountedPlaybackOperation]);
 
   useEffect(() => {
     const mediaEl = getMediaEl();
-    if (mediaEl && onMediaRef) onMediaRef(mediaEl);
-  }, [meta.assetId, onMediaRef, getMediaEl, elementKey]);
+    if (mediaEl && onMediaRef) {
+      // The second argument describes the renderer that actually owns this
+      // native node. Player uses it for read-only mounted-media identity; a
+      // requested prop is deliberately not a substitute during async swaps.
+      // /play metadata uses `id`; pre-resolved queue entries may use
+      // `contentId`. Both identify this resolved renderer, not its request.
+      const resolvedContentId = meta?.contentId ?? meta?.id ?? null;
+      const existing = rendererTokenRef.current;
+      const rendererToken = existing
+        && existing.node === mediaEl
+        && existing.operationId === (rendererOperation?.operationId ?? null)
+        && existing.resolvedContentId === resolvedContentId
+        ? existing
+        : Object.freeze({
+          tokenId: `renderer-node-${++_rendererTokenSeq}`,
+          operationId: rendererOperation?.operationId ?? null,
+          rendererMountId: recoveryMountIdRef.current,
+          node: mediaEl,
+          resolvedContentId,
+        });
+      rendererTokenRef.current = rendererToken;
+      onMediaRef(mediaEl, { contentId: resolvedContentId, rendererToken });
+    }
+  }, [meta.assetId, meta?.contentId, meta?.id, onMediaRef, getMediaEl, elementKey, rendererOperation]);
+
+  useEffect(() => () => {
+    cancelMountedPlaybackOperation();
+    rendererTokenRef.current = null;
+  }, [cancelMountedPlaybackOperation]);
 
   // On asset change or unmount: save final position if playback was interrupted
   // (onEnded handles natural completion; this captures manual navigation away)
@@ -1407,6 +1572,8 @@ export function useCommonMediaController({
     stallState,
     elementKey,
     getMediaEl,
-    getContainerEl
+    getContainerEl,
+    beginMountedPlaybackOperation,
+    cancelMountedPlaybackOperation
   };
 }

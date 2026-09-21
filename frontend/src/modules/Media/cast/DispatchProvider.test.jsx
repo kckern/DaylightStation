@@ -3,8 +3,16 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 
 const DaylightAPI = vi.fn();
+let homelineCallback = null;
 vi.mock('../../../lib/api.mjs', () => ({ DaylightAPI: (...a) => DaylightAPI(...a) }));
-vi.mock('../net/ws.js', () => ({ subscribeTopicKind: () => () => {} }));
+vi.mock('../net/ws.js', () => ({
+  subscribeTopicKind: (_kind, callback) => { homelineCallback = callback; return () => {}; },
+  parseDeviceTopic: (topic) => {
+    if (typeof topic !== 'string') return null;
+    const separator = topic.indexOf(':');
+    return separator < 0 ? null : { kind: topic.slice(0, separator), deviceId: topic.slice(separator + 1) };
+  },
+}));
 vi.mock('../logging/mediaLog.js', () => {
   const stub = new Proxy({}, { get: (t, k) => (t[k] ??= vi.fn()) });
   return { default: stub, mediaLog: stub };
@@ -13,6 +21,8 @@ vi.mock('../logging/mediaLog.js', () => {
 import mediaLog from '../logging/mediaLog.js';
 import { DispatchProvider } from './DispatchProvider.jsx';
 import { useDispatch } from './useDispatch.js';
+import { LocalSessionContext } from '../session/LocalSessionContext.js';
+import { PeekContext } from '../peek/PeekContext.js';
 
 const TIMING_WINDOW = 6_000; // > DISPATCH_DEDUPE_WINDOW_MS (5s)
 
@@ -32,9 +42,96 @@ beforeEach(() => {
 });
 afterEach(() => vi.useRealTimers());
 
-const CAST = { targetIds: ['livingroom-tv'], play: 'plex:665668', mode: 'transfer', title: 'Wrestling with Socialism' };
+const CAST = { targetIds: ['livingroom-tv'], play: 'plex:665668', mode: 'fork', title: 'Wrestling with Socialism' };
 
 describe('DispatchProvider — duplicate suppression', () => {
+  it('records this sender\'s provenance only after its matching playback confirmation', async () => {
+    const recordConfirmedDispatch = vi.fn();
+    const withProvenance = ({ children }) => (
+      <PeekContext.Provider value={{ recordConfirmedDispatch }}><DispatchProvider>{children}</DispatchProvider></PeekContext.Provider>
+    );
+    DaylightAPI.mockResolvedValue({ ok: true });
+    const { result } = renderHook(() => useDispatch(), { wrapper: withProvenance });
+    let ids;
+    await act(async () => { ids = await result.current.dispatchToTarget(CAST); await Promise.resolve(); });
+
+    expect(recordConfirmedDispatch).not.toHaveBeenCalled();
+    act(() => homelineCallback({
+      dispatchId: ids[0], topic: 'homeline:livingroom-tv', deviceId: 'livingroom-tv', step: 'playback', status: 'confirmed',
+      sessionId: 'session-1', ownerId: 'livingroom-tv', ownerInstanceId: 'owner-1', playbackRevision: 2,
+    }));
+    expect(recordConfirmedDispatch).toHaveBeenCalledWith({
+      deviceId: 'livingroom-tv', ownerId: 'livingroom-tv',
+      playback: { sessionId: 'session-1', contentId: 'plex:665668', ownerInstanceId: 'owner-1', playbackRevision: 2 },
+    });
+  });
+
+  it('uses the homeline topic as the authoritative device id when progress omits it', async () => {
+    const recordConfirmedDispatch = vi.fn();
+    const withProvenance = ({ children }) => (
+      <PeekContext.Provider value={{ recordConfirmedDispatch }}><DispatchProvider>{children}</DispatchProvider></PeekContext.Provider>
+    );
+    DaylightAPI.mockResolvedValue({ ok: true });
+    const { result } = renderHook(() => useDispatch(), { wrapper: withProvenance });
+    let ids;
+    await act(async () => {
+      ids = await result.current.dispatchToTarget({ ...CAST, targetIds: ['acceptance-media'] });
+      await Promise.resolve();
+    });
+
+    const confirmed = {
+      dispatchId: ids[0], step: 'playback', status: 'confirmed',
+      sessionId: 'session-1', ownerId: 'acceptance-media', ownerInstanceId: 'owner-1', playbackRevision: 2,
+    };
+    act(() => homelineCallback({ topic: 'homeline:other-tv', ...confirmed }));
+    act(() => homelineCallback({ topic: 'homeline:acceptance-media', deviceId: 'other-tv', ...confirmed }));
+    expect(recordConfirmedDispatch).not.toHaveBeenCalled();
+
+    act(() => homelineCallback({ topic: 'homeline:acceptance-media', ...confirmed }));
+    expect(recordConfirmedDispatch).toHaveBeenCalledWith({
+      deviceId: 'acceptance-media', ownerId: 'acceptance-media',
+      playback: { sessionId: 'session-1', contentId: 'plex:665668', ownerInstanceId: 'owner-1', playbackRevision: 2 },
+    });
+  });
+
+  it('does not record provenance for a wrong target, owner, or non-confirmed receipt', async () => {
+    const recordConfirmedDispatch = vi.fn();
+    const withProvenance = ({ children }) => (
+      <PeekContext.Provider value={{ recordConfirmedDispatch }}><DispatchProvider>{children}</DispatchProvider></PeekContext.Provider>
+    );
+    DaylightAPI.mockResolvedValue({ ok: true });
+    const { result } = renderHook(() => useDispatch(), { wrapper: withProvenance });
+    let ids;
+    await act(async () => { ids = await result.current.dispatchToTarget(CAST); await Promise.resolve(); });
+    for (const message of [
+      { deviceId: 'other-tv', ownerId: 'livingroom-tv', step: 'playback', status: 'confirmed' },
+      { deviceId: 'livingroom-tv', ownerId: 'other-tv', step: 'playback', status: 'confirmed' },
+      { deviceId: 'livingroom-tv', ownerId: 'livingroom-tv', step: 'load', status: 'done' },
+    ]) act(() => homelineCallback({ dispatchId: ids[0], sessionId: 'session-1', ...message }));
+    expect(recordConfirmedDispatch).not.toHaveBeenCalled();
+  });
+
+  it('fails a direct transfer before dispatch and never stops the local source', async () => {
+    const stop = vi.fn();
+    const withLocalSource = ({ children }) => (
+      <LocalSessionContext.Provider value={{ controller: { transport: { stop } } }}>
+        <DispatchProvider>{children}</DispatchProvider>
+      </LocalSessionContext.Provider>
+    );
+    const { result } = renderHook(() => useDispatch(), { wrapper: withLocalSource });
+
+    let outcome;
+    await act(async () => {
+      outcome = await result.current.dispatchToTarget({
+        ...CAST, mode: 'transfer', capabilities: { handoffV1: true },
+      });
+    });
+
+    expect(outcome).toEqual([]);
+    expect(DaylightAPI).not.toHaveBeenCalled();
+    expect(stop).not.toHaveBeenCalled();
+  });
+
   // 2026-08-12: the LG's power step held for 80s. The 5s dedupe window had
   // lapsed, so a second identical cast went to the backend and only the
   // BACKEND deduplicated the third.
@@ -92,11 +189,169 @@ describe('DispatchProvider — duplicate suppression', () => {
     expect(DaylightAPI).toHaveBeenCalledTimes(2);
   });
 
-  it('an explicit Retry bypasses the in-flight guard', () => {
-    pendingLoad();
+  it('RELY.6a retries only the failed multi-target row with its exact content and options', async () => {
+    const pending = [];
+    DaylightAPI.mockImplementation(() => new Promise((resolve) => pending.push(resolve)));
     const { result } = renderHook(() => useDispatch(), { wrapper });
-    act(() => { result.current.dispatchToTarget(CAST); });
-    act(() => { result.current.retryLast(); });
+    const attempt = {
+      targetIds: ['livingroom-tv', 'office-tv'],
+      play: 'plex:665668',
+      mode: 'fork',
+      shader: 'dark',
+      volume: 17,
+      shuffle: true,
+      title: 'Wrestling with Socialism',
+    };
+
+    let dispatchIds;
+    await act(async () => { dispatchIds = await result.current.dispatchToTarget(attempt); });
+    await act(async () => {
+      pending[0]({ ok: false, error: 'display_off', failedStep: 'verify' });
+      pending[1]({ ok: true });
+      await Promise.resolve();
+    });
+
+    DaylightAPI.mockClear();
+    pendingLoad();
+    let retryIds;
+    await act(async () => { retryIds = await result.current.retry(dispatchIds[0]); });
+
+    expect(DaylightAPI).toHaveBeenCalledTimes(1);
+    const retried = new URL(DaylightAPI.mock.calls[0][0], 'http://daylight.test');
+    expect(retried.pathname).toBe('/api/v1/device/livingroom-tv/load');
+    expect(Object.fromEntries(retried.searchParams)).toEqual(expect.objectContaining({
+      play: 'plex:665668',
+      shader: 'dark',
+      volume: '17',
+      shuffle: '1',
+    }));
+    expect(result.current.dispatches.get(retryIds[0])).toEqual(expect.objectContaining({
+      deviceId: 'livingroom-tv',
+      contentId: 'plex:665668',
+      title: 'Wrestling with Socialism',
+      mode: 'fork',
+    }));
+  });
+
+  it('RELY.6a retains an adopt snapshot exactly for retry', async () => {
+    const expectedSnapshot = {
+      sessionId: 'session-1',
+      state: 'paused',
+      currentItem: { contentId: 'plex:42', title: 'Bluey' },
+      position: 47,
+      queue: { items: [], currentIndex: -1, upNextCount: 0 },
+      config: { shuffle: false, repeat: 'off', volume: 31, shader: null },
+      meta: { ownerId: 'phone', updatedAt: '2026-09-14T00:00:00.000Z' },
+    };
+    const snapshot = structuredClone(expectedSnapshot);
+    DaylightAPI.mockResolvedValueOnce({ ok: false, error: 'offline' });
+    const { result } = renderHook(() => useDispatch(), { wrapper });
+
+    let dispatchIds;
+    await act(async () => {
+      dispatchIds = await result.current.dispatchToTarget({
+        targetIds: ['livingroom-tv'], snapshot, mode: 'fork', title: 'Bluey',
+      });
+      await Promise.resolve();
+    });
+
+    DaylightAPI.mockClear();
+    snapshot.position = 99;
+    snapshot.currentItem.title = 'Mutated after dispatch';
+    pendingLoad();
+    await act(async () => { await result.current.retry(dispatchIds[0]); });
+    expect(DaylightAPI).toHaveBeenCalledWith(
+      'api/v1/device/livingroom-tv/load',
+      { dispatchId: expect.any(String), snapshot: expectedSnapshot, mode: 'adopt' },
+      'POST'
+    );
+  });
+
+  it('RELY.6a repeated taps do not duplicate an in-flight retry', async () => {
+    DaylightAPI.mockResolvedValueOnce({ ok: false, error: 'offline' });
+    const { result } = renderHook(() => useDispatch(), { wrapper });
+
+    let dispatchIds;
+    await act(async () => {
+      dispatchIds = await result.current.dispatchToTarget(CAST);
+      await Promise.resolve();
+    });
+
+    pendingLoad();
+    await act(async () => { await result.current.retry(dispatchIds[0]); });
+    await act(async () => { await result.current.retry(dispatchIds[0]); });
+    expect(DaylightAPI).toHaveBeenCalledTimes(2);
+    expect(mediaLog.dispatchDeduplicated).toHaveBeenCalledWith(
+      expect.objectContaining({ reason: 'in-flight' })
+    );
+  });
+
+  it.each([
+    {
+      difference: 'play versus queue verb',
+      first: { play: 'plex:665668' },
+      second: { queue: 'plex:665668' },
+    },
+    {
+      difference: 'shader',
+      first: { play: 'plex:665668', shader: 'dark' },
+      second: { play: 'plex:665668', shader: 'bright' },
+    },
+    {
+      difference: 'volume',
+      first: { play: 'plex:665668', volume: 17 },
+      second: { play: 'plex:665668', volume: 18 },
+    },
+    {
+      difference: 'shuffle',
+      first: { play: 'plex:665668', shuffle: false },
+      second: { play: 'plex:665668', shuffle: true },
+    },
+    {
+      difference: 'full adopt snapshot',
+      first: {
+        snapshot: {
+          sessionId: 'session-1', state: 'paused', position: 47,
+          currentItem: { contentId: 'plex:665668', title: 'Episode one' },
+          queue: { items: [], currentIndex: -1, upNextCount: 0 },
+          config: { shuffle: false, repeat: 'off', volume: 17, shader: null },
+          meta: { ownerId: 'phone', updatedAt: '2026-09-14T00:00:00.000Z' },
+        },
+      },
+      second: {
+        snapshot: {
+          sessionId: 'session-1', state: 'paused', position: 47,
+          currentItem: { contentId: 'plex:665668', title: 'Episode two' },
+          queue: { items: [], currentIndex: -1, upNextCount: 0 },
+          config: { shuffle: false, repeat: 'off', volume: 18, shader: null },
+          meta: { ownerId: 'phone', updatedAt: '2026-09-14T00:00:01.000Z' },
+        },
+      },
+    },
+  ])('RELY.6a retries distinct rows that differ by $difference while both are in flight', async ({ first, second }) => {
+    DaylightAPI.mockResolvedValue({ ok: false, error: 'offline' });
+    const { result } = renderHook(() => useDispatch(), { wrapper });
+    let firstIds;
+    let secondIds;
+
+    await act(async () => {
+      firstIds = await result.current.dispatchToTarget({
+        targetIds: ['livingroom-tv'], mode: 'fork', ...first,
+      });
+      await Promise.resolve();
+      secondIds = await result.current.dispatchToTarget({
+        targetIds: ['livingroom-tv'], mode: 'fork', ...second,
+      });
+      await Promise.resolve();
+    });
+
+    DaylightAPI.mockClear();
+    pendingLoad();
+    await act(async () => {
+      await result.current.retry(firstIds[0]);
+      await result.current.retry(secondIds[0]);
+    });
+
     expect(DaylightAPI).toHaveBeenCalledTimes(2);
   });
 

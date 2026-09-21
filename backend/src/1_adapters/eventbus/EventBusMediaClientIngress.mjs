@@ -1,3 +1,5 @@
+import { PLAYBACK_STATE_TOPIC } from '#shared/contracts/media/topics.mjs';
+
 /** Translates media command frames into MediaQueueCommandService calls. */
 export class EventBusMediaCommandIngress {
   constructor({ eventBus, commands, logger = console }) {
@@ -22,7 +24,7 @@ export class EventBusMediaCommandIngress {
   }
 }
 
-/** Relays playback-state transport frames to the device-specific monitor topic. */
+/** Relays playback-state transport frames to every Fleet subscriber. */
 export class EventBusPlaybackStateRelay {
   constructor({ eventBus, logger = console }) {
     Object.assign(this, { eventBus, logger });
@@ -34,7 +36,7 @@ export class EventBusPlaybackStateRelay {
       const broadcastId = message.deviceId || message.clientId;
       if (!broadcastId) return;
       this.logger.debug?.('eventbus.playback_state.relay', { from: clientId, broadcastId, state: message.state });
-      this.eventBus.broadcast(`playback:${broadcastId}`, message);
+      this.eventBus.broadcast(PLAYBACK_STATE_TOPIC, message);
     });
   }
 }

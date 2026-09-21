@@ -38,17 +38,19 @@ const navPush = vi.fn();
 const navPop = vi.fn();
 const navReplace = vi.fn();
 vi.mock('../shell/NavProvider.jsx', () => ({
-  useNav: () => ({ push: navPush, pop: navPop, replace: navReplace, depth: 2 }),
+  useNav: () => ({ push: navPush, pop: navPop, replace: navReplace, depth: 2, backDestination: 'Home' }),
 }));
 
 // ── useContentDispatch: the header's ▶/🔀/+ verbs — this suite asserts
 // BrowseView calls these correctly, not what they do internally. ──
 const playContainerAsQueueMock = vi.fn();
 const addContainerToQueueMock = vi.fn();
+const dispatchLeafVerbMock = vi.fn();
 vi.mock('../search/useContentDispatch.js', () => ({
   useContentDispatch: () => ({
     playContainerAsQueue: playContainerAsQueueMock,
     addContainerToQueue: addContainerToQueueMock,
+    dispatchLeafVerb: dispatchLeafVerbMock,
   }),
 }));
 
@@ -92,11 +94,18 @@ beforeEach(() => {
   navReplace.mockClear();
   playContainerAsQueueMock.mockClear();
   addContainerToQueueMock.mockClear();
+  dispatchLeafVerbMock.mockClear();
   fleetDevices = [];
   localStorage.clear();
 });
 
 describe('BrowseView — container dispatch header (Task 15)', () => {
+  it('names the actual prior area on its breadcrumb Back control', () => {
+    renderBrowse();
+    expect(screen.getByTestId('browse-crumb-back')).toHaveTextContent('← Home');
+    fireEvent.click(screen.getByTestId('browse-crumb-back'));
+    expect(navPop).toHaveBeenCalledTimes(1);
+  });
   const containerItem = { id: 'plex:663508', title: 'Tuttle Twins', type: 'show' };
 
   it('does not render the header for a root/category browse level (no containerItem)', () => {
@@ -116,7 +125,7 @@ describe('BrowseView — container dispatch header (Task 15)', () => {
     expect(screen.getByTestId('browse-dispatch-shuffle')).toHaveTextContent('Shuffle');
     expect(screen.getByTestId('browse-dispatch-queue')).toHaveTextContent('Queue');
     expect(screen.getByTestId('destination-line')).toBeInTheDocument();
-    expect(screen.getByTestId('destination-line-name')).toHaveTextContent('This browser');
+    expect(screen.getByTestId('destination-line-name')).toHaveTextContent('This device');
   });
 
   it('renders the header directly under the breadcrumb, above the row list', () => {
@@ -170,5 +179,22 @@ describe('BrowseView — nested drill carries containerItem forward', () => {
       label: 'Season 1',
       containerItem: expect.objectContaining({ id: 'plex:9999', title: 'Season 1', itemType: 'container' }),
     }));
+  });
+});
+
+describe('BrowseView — leaf Play Now', () => {
+  it('routes the exact browse row through the current destination dispatcher', () => {
+    browseState = {
+      items: [{ id: 'plex:685088', title: 'Episode 3', type: 'episode', thumbnail: 'episode.jpg' }],
+      total: 1, loading: false, error: null,
+    };
+    renderBrowse();
+    fireEvent.click(screen.getByTestId('result-play-now-plex:685088'));
+
+    expect(dispatchLeafVerbMock).toHaveBeenCalledWith('playNow', 'plex:685088', expect.objectContaining({
+      id: 'plex:685088', title: 'Episode 3', thumbnail: 'episode.jpg',
+    }));
+    expect(queuePlayNow).not.toHaveBeenCalled();
+    expect(navPush).not.toHaveBeenCalled();
   });
 });

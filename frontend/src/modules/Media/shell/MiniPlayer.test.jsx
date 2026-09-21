@@ -4,17 +4,33 @@ import { render, screen, fireEvent } from '@testing-library/react';
 
 const transport = { play: vi.fn(), pause: vi.fn(), stop: vi.fn(), skipNext: vi.fn() };
 const state = { snapshot: null, position: { seconds: 30, ts: 0 } };
-vi.mock('../controller/useSessionController.js', () => ({
-  useSessionController: () => ({ controller: {}, snapshot: state.snapshot, transport }),
-}));
-vi.mock('../controller/usePlaybackPosition.js', () => ({
-  usePlaybackPosition: () => state.position,
-}));
 const push = vi.fn();
 const nav = { push, view: 'home' };
 vi.mock('./NavProvider.jsx', () => ({ useNav: () => nav }));
 
+import { LocalSessionContext } from '../session/LocalSessionContext.js';
+import { createLocalSessionController } from '../session/LocalSessionController.js';
 import { MiniPlayer } from './MiniPlayer.jsx';
+
+function stateController() {
+  return {
+    getSnapshot: () => state.snapshot,
+    subscribe: () => () => {},
+    position: {
+      get: () => state.position,
+      subscribe: () => () => {},
+    },
+    transport,
+  };
+}
+
+function renderMiniPlayer(controller = stateController()) {
+  return render(
+    <LocalSessionContext.Provider value={{ controller }}>
+      <MiniPlayer />
+    </LocalSessionContext.Provider>
+  );
+}
 
 function makeSnapshot({
   playerState = 'playing',
@@ -52,9 +68,14 @@ describe('MiniPlayer', () => {
   // "Idle" strip even with no local session — dead chrome eating screen
   // space on a 360px phone. It now renders nothing until there's an actual
   // session to show a handle for.
-  it('renders nothing when no local session exists (idle)', () => {
-    state.snapshot = { ...makeSnapshot(), currentItem: null };
-    const { container } = render(<MiniPlayer />);
+  it('STEER.7a renders nothing after clear/reset leaves no item or queue', () => {
+    state.snapshot = {
+      ...makeSnapshot({ count: 0 }),
+      state: 'idle',
+      currentItem: null,
+      queue: { items: [], currentIndex: -1, upNextCount: 0 },
+    };
+    const { container } = renderMiniPlayer();
     expect(screen.queryByTestId('media-mini-player')).not.toBeInTheDocument();
     expect(screen.queryByText('Idle')).not.toBeInTheDocument();
     expect(container).toBeEmptyDOMElement();
@@ -62,55 +83,86 @@ describe('MiniPlayer', () => {
 
   it('renders nothing when there is no snapshot at all', () => {
     state.snapshot = null;
-    const { container } = render(<MiniPlayer />);
+    const { container } = renderMiniPlayer();
     expect(screen.queryByTestId('media-mini-player')).not.toBeInTheDocument();
     expect(container).toBeEmptyDOMElement();
   });
 
+  it('STEER.7a keeps a stopped queue reachable and Play restarts its retained head', () => {
+    const controller = createLocalSessionController({
+      clientId: 'mini-player-test',
+      randomUuid: () => 'mini-player-session',
+      nowFn: () => new Date('2026-09-14T00:00:00.000Z'),
+    });
+    const playerHandle = { play: vi.fn(), pause: vi.fn(), seek: vi.fn() };
+    controller.setPlayerHandle(playerHandle);
+    controller.queue.add({ contentId: 'plex:0', title: 'First retained item', format: 'video' });
+    controller.queue.add({ contentId: 'plex:1', title: 'Second retained item', format: 'video' });
+    controller.transport.stop();
+    playerHandle.play.mockClear();
+
+    renderMiniPlayer(controller);
+
+    expect(screen.getByTestId('media-mini-player')).toBeInTheDocument();
+    expect(screen.getByText('2 items ready')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('mini-player-open-nowplaying'));
+    expect(push).toHaveBeenCalledWith('nowPlaying', {});
+
+    fireEvent.click(screen.getByRole('button', { name: 'Play' }));
+    expect(playerHandle.play).toHaveBeenCalledTimes(1);
+    expect(controller.getSnapshot()).toEqual(expect.objectContaining({
+      state: 'loading',
+      currentItem: expect.objectContaining({ contentId: 'plex:0', title: 'First retained item' }),
+      queue: expect.objectContaining({ currentIndex: 0 }),
+    }));
+    expect(screen.getByText('First retained item')).toBeInTheDocument();
+    expect(screen.queryByText('2 items ready')).not.toBeInTheDocument();
+  });
+
   it('shows a top-edge progress bar reflecting position/duration', () => {
-    render(<MiniPlayer />);
+    renderMiniPlayer();
     // 30s of 120s → 25%.
     expect(screen.getByTestId('mini-progress').style.width).toBe('25.00%');
   });
 
   it('hides the progress bar when the item has no duration', () => {
     state.snapshot = makeSnapshot({ duration: null });
-    render(<MiniPlayer />);
+    renderMiniPlayer();
     expect(screen.queryByTestId('mini-progress')).toBeNull();
   });
 
   it('toggles play/pause from the current state', () => {
-    render(<MiniPlayer />);
+    renderMiniPlayer();
     fireEvent.click(screen.getByTestId('mini-toggle'));
     expect(transport.pause).toHaveBeenCalledTimes(1);
 
     state.snapshot = makeSnapshot({ playerState: 'paused' });
-    render(<MiniPlayer />);
+    renderMiniPlayer();
     fireEvent.click(screen.getAllByTestId('mini-toggle')[1]);
     expect(transport.play).toHaveBeenCalledTimes(1);
   });
 
   it('skips to the next item, and disables next with no neighbor', () => {
-    render(<MiniPlayer />);
+    renderMiniPlayer();
     const next = screen.getByTestId('mini-next');
     expect(next).toBeEnabled();
     fireEvent.click(next);
     expect(transport.skipNext).toHaveBeenCalledTimes(1);
 
     state.snapshot = makeSnapshot({ index: 2, count: 3 });
-    render(<MiniPlayer />);
+    renderMiniPlayer();
     expect(screen.getAllByTestId('mini-next')[1]).toBeDisabled();
   });
 
   it('keeps the title tap → Now Playing affordance and queue chip', () => {
-    render(<MiniPlayer />);
+    renderMiniPlayer();
     expect(screen.getByTestId('mini-queue-count')).toHaveTextContent('1/3');
     fireEvent.click(screen.getByTestId('mini-player-open-nowplaying'));
     expect(push).toHaveBeenCalledWith('nowPlaying', {});
   });
 
   it('keeps stop working', () => {
-    render(<MiniPlayer />);
+    renderMiniPlayer();
     fireEvent.click(screen.getByTestId('mini-stop'));
     expect(transport.stop).toHaveBeenCalledTimes(1);
   });
@@ -118,33 +170,46 @@ describe('MiniPlayer', () => {
   it('docks the live video (not the thumbnail) for video while browsing', () => {
     state.snapshot = makeSnapshot({ format: 'video' });
     nav.view = 'home';
-    render(<MiniPlayer />);
+    renderMiniPlayer();
     expect(screen.getByTestId('mini-player-video-dock')).toBeInTheDocument();
     expect(document.querySelector('.mini-player-thumb')).toBeNull();
+  });
+
+  it('docks a resolved DASH video while browsing', () => {
+    state.snapshot = makeSnapshot({ format: 'dash_video' });
+    nav.view = 'home';
+    renderMiniPlayer();
+    expect(screen.getByTestId('mini-player-video-dock')).toBeInTheDocument();
+  });
+
+  it.each(['format', 'mediaType'])('docks HLS video identified by %s', field => {
+    state.snapshot = makeSnapshot();
+    state.snapshot.currentItem[field] = 'hls_video';
+    renderMiniPlayer();
+    expect(screen.getByTestId('mini-player-video-dock')).toBeInTheDocument();
   });
 
   it('clicking the docked video promotes to Now Playing', () => {
     state.snapshot = makeSnapshot({ format: 'video' });
     nav.view = 'home';
-    render(<MiniPlayer />);
+    renderMiniPlayer();
     fireEvent.click(screen.getByTestId('mini-player-video-dock'));
     expect(push).toHaveBeenCalledWith('nowPlaying', {});
   });
 
-  it('shows the thumbnail (no video dock) for audio, and for video while on Now Playing', () => {
+  it('shows the thumbnail for audio but hides the compact handle while full local controls are open', () => {
     // audio → thumbnail
     state.snapshot = makeSnapshot(); // no format
     nav.view = 'home';
-    const { unmount } = render(<MiniPlayer />);
+    const { unmount } = renderMiniPlayer();
     expect(screen.queryByTestId('mini-player-video-dock')).toBeNull();
     expect(document.querySelector('.mini-player-thumb')).not.toBeNull();
     unmount();
 
-    // video but on Now Playing → thumbnail (video is in the big pane)
+    // Full local controls own the surface; the compact handle must not duplicate it.
     state.snapshot = makeSnapshot({ format: 'video' });
     nav.view = 'nowPlaying';
-    render(<MiniPlayer />);
-    expect(screen.queryByTestId('mini-player-video-dock')).toBeNull();
-    expect(document.querySelector('.mini-player-thumb')).not.toBeNull();
+    renderMiniPlayer();
+    expect(screen.queryByTestId('media-mini-player')).toBeNull();
   });
 });

@@ -17,6 +17,19 @@ function snap({ items = [], currentIndex = -1, repeat = 'off', shuffle = false }
 }
 
 describe('sequential advancement', () => {
+  it('uses an explicit adopted remaining visit order before positional policy', () => {
+    const s = snap({ items: [item('a'), item('b'), item('c')], currentIndex: 0 });
+    s.queue.executionOrder = ['a', 'c', 'a', 'b'];
+    expect(pickNextQueueItem(s, { reason: 'skip-next' }).queueItemId).toBe('c');
+  });
+
+  it('enters repeat-all policy only after the finite adopted plan is consumed', () => {
+    const s = snap({ items: [item('a'), item('b'), item('c')], currentIndex: 2, repeat: 'all' });
+    s.queue.executionOrder = ['c'];
+    expect(pickNextQueueItem(s, { reason: 'item-ended' }).queueItemId).toBe('a');
+    s.config.repeat = 'off';
+    expect(pickNextQueueItem(s, { reason: 'item-ended' })).toBeNull();
+  });
   it('advances to the next item; null at the end with repeat=off', () => {
     const s = snap({ items: [item('a'), item('b')], currentIndex: 0 });
     expect(pickNextQueueItem(s).queueItemId).toBe('b');

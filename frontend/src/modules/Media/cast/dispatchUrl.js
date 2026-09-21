@@ -13,7 +13,10 @@ export function buildDispatchUrl({
 
   const params = new URLSearchParams();
   if (play) params.set('play', play);
-  else params.set('queue', queue);
+  else {
+    params.set('queue', queue);
+    params.set('op', 'add');
+  }
   params.set('dispatchId', dispatchId);
   if (shader) params.set('shader', shader);
   if (typeof volume === 'number' && Number.isFinite(volume)) params.set('volume', String(volume));

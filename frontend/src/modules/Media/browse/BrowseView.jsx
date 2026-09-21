@@ -42,8 +42,8 @@ function splitPath(path) {
 export function BrowseView({ path, label, modifiers, containerItem = null, take = 50 }) {
   const { items, total, loading, error, loadMore } = useListBrowse(path, { modifiers, take });
   const { queue } = useSessionController('local');
-  const { push, replace, pop, depth } = useNav();
-  const { playContainerAsQueue, addContainerToQueue } = useContentDispatch();
+  const { push, replace, pop, depth, backDestination } = useNav();
+  const { dispatchLeafVerb, playContainerAsQueue, addContainerToQueue } = useContentDispatch();
   const log = useMemo(() => getLogger().child({ component: 'browse-view' }), []);
 
   const crumbLabel = label ?? (splitPath(path).join(' / ') || 'All');
@@ -73,7 +73,7 @@ export function BrowseView({ path, label, modifiers, containerItem = null, take 
         </button>
         {depth > 1 && (
           <button data-testid="browse-crumb-back" className="browse-crumb" onClick={() => pop()}>
-            ← Back
+            ← {backDestination ?? 'Home'}
           </button>
         )}
         <span className="browse-crumb-sep" aria-hidden="true">/</span>
@@ -165,7 +165,7 @@ export function BrowseView({ path, label, modifiers, containerItem = null, take 
                       <button
                         data-testid={`result-play-now-${id}`}
                         className="result-action result-action--primary"
-                        onClick={() => { const input = resultToQueueInput(row); if (input) queue.playNow(input, { clearRest: true }); }}
+                        onClick={() => dispatchLeafVerb('playNow', id, row)}
                       >
                         Play Now
                       </button>

@@ -102,9 +102,12 @@ export class WebSocketContentAdapter extends IContentControl {
     const options = { ...query };
     delete options[resolvedKey];
     delete options.op; // strip — we set canonical op below
+    delete options.dispatchId; // routing correlator becomes commandId, never a queue param
 
     try {
-      const commandId = randomUUID();
+      const commandId = typeof query.dispatchId === 'string' && query.dispatchId.length > 0
+        ? query.dispatchId
+        : randomUUID();
       const envelope = buildCommandEnvelope({
         targetDevice: this.#deviceId,
         command: 'queue',

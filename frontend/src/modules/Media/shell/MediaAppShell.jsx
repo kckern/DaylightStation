@@ -11,11 +11,13 @@ import { Canvas } from './Canvas.jsx';
 import { MiniPlayer } from './MiniPlayer.jsx';
 import { DispatchProgressTray } from '../cast/DispatchProgressTray.jsx';
 import { SearchMode } from '../search/SearchMode.jsx';
+import { LocalStopFeedbackProvider, useLocalStopFeedbackCount } from './LocalStopFeedbackContext.jsx';
 import './MediaShell.scss';
 
 function ShellInner() {
   const { pop, depth } = useNav();
   const [searchOpen, setSearchOpen] = useState(false);
+  const queueKeptCount = useLocalStopFeedbackCount();
   const baseDismiss = useCallback(() => {
     if (depth > 1) pop();
   }, [depth, pop]);
@@ -43,6 +45,11 @@ function ShellInner() {
         </div>
         <DispatchProgressTray />
         <MiniPlayer />
+        {queueKeptCount != null && (
+          <div className="np-queue-kept" data-testid="np-queue-kept" role="status">
+            Queue kept: {queueKeptCount} item{queueKeptCount === 1 ? '' : 's'}
+          </div>
+        )}
         <TabBar />
         {searchOpen && <SearchMode onClose={() => setSearchOpen(false)} />}
       </div>
@@ -53,7 +60,9 @@ function ShellInner() {
 export function MediaAppShell() {
   return (
     <NavProvider>
-      <ShellInner />
+      <LocalStopFeedbackProvider>
+        <ShellInner />
+      </LocalStopFeedbackProvider>
     </NavProvider>
   );
 }

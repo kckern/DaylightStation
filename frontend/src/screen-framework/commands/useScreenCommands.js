@@ -137,6 +137,15 @@ export function useScreenCommands(wsConfig, actionBus, screenId) {
       return;
     }
 
+    if (command === 'handoff') {
+      // The receiving owner/executor is intentionally not installed in F3a.
+      // Forward the complete validated envelope so its explicit terminal
+      // unsupported result can be correlated without an optimistic receipt.
+      logger().info('commands.handoff', { commandId, transferId: params.transferId, op: params.op });
+      bus.emit('media:handoff', { ...params, commandId });
+      return;
+    }
+
     if (command === 'system') {
       const { action } = params;
       logger().info('commands.system', { commandId, params });

@@ -1,4 +1,9 @@
 import { shouldRelayBtTopic, shouldRelayKioskLaunchTopic } from './ClientRelayPolicy.mjs';
+import {
+  controlTargetFromTopic,
+  validateClientAck,
+  validateClientControlMessage,
+} from '#shared-contracts/media/clientControl.mjs';
 
 /** Cross-context policy for messages accepted from connected household clients. */
 export class ClientIngressService {
@@ -37,6 +42,26 @@ export class ClientIngressService {
   }
 
   handle(clientId, message) {
+    const targetControlClientId = controlTargetFromTopic(message?.topic);
+    if (targetControlClientId) {
+      const sourceControlClientId = this.publications.clientMetadata(clientId)?.controlClientId;
+      const relay = { ...message, replyToControlClientId: sourceControlClientId };
+      if (!sourceControlClientId || !validateClientControlMessage(relay).valid) {
+        this.logger.warn?.('eventbus.client-control.invalid', { clientId, targetControlClientId });
+        return;
+      }
+      this.publications.publishClientControl(targetControlClientId, relay);
+      return;
+    }
+    if (message?.topic === 'client-ack') {
+      const sourceControlClientId = this.publications.clientMetadata(clientId)?.controlClientId;
+      if (sourceControlClientId !== message.clientId || !validateClientAck(message).valid) {
+        this.logger.warn?.('eventbus.client-ack.invalid', { clientId });
+        return;
+      }
+      this.publications.publishClientAck(message.replyToControlClientId, message);
+      return;
+    }
     if (message.type === 'homeline-authorize') {
       const result = this.getCallLeaseService()?.authorize({ ...message, clientId })
         || { ok: false, code: 'LEASES_NOT_READY' };

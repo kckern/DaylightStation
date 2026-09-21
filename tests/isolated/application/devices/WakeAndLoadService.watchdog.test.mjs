@@ -43,6 +43,176 @@ function makeDevice(overrides = {}) {
 }
 
 describe('WakeAndLoadService playback watchdog', () => {
+  test('ignores foreign playback logs and confirms Play only from the target owner state', async () => {
+    vi.useFakeTimers();
+    const logger = makeLogger();
+    const broadcast = vi.fn();
+    const eventBus = makeEventBus();
+    eventBus.getTopicSubscriberCount = () => 1;
+    eventBus.waitForMessage = async () => ({
+      topic: 'device-ack', deviceId: 'living-room', commandId: 'test-dispatch-1', ok: true,
+    });
+    const baseline = {
+      sessionId: 'session-1', state: 'paused',
+      currentItem: { contentId: 'plex:old', format: 'video' },
+      queue: { items: [{ contentId: 'plex:old', queueItemId: 'old', format: 'video' }], currentIndex: 0, upNextCount: 0, executionOrder: ['old'] },
+      config: { shuffle: false, repeat: 'off', shader: null, volume: 50, playbackRate: 1 },
+      meta: { ownerId: 'screen-owner', updatedAt: new Date().toISOString(), playbackOwner: { ownerInstanceId: 'player-1', playbackRevision: 2, queueRevision: 3, contentId: 'plex:old', queueItemId: 'old' } },
+    };
+    const svc = new WakeAndLoadService({
+      ...testApplicationRuntime(), deviceService: { get: () => makeDevice() },
+      readinessPolicy: { isReady: async () => ({ ready: true }) }, broadcast, eventBus,
+      screenGateway: new EventBusDeviceTransportGateway({ eventBus, broadcastEvent: broadcast }),
+      deviceLivenessService: { getLastSnapshot: () => ({ snapshot: baseline }) }, logger,
+    });
+
+    await svc.execute('living-room', { play: 'plex:1' });
+    eventBus.publish('playback.log', { contentId: 'plex:1', playhead: 5 });
+    expect(broadcast).not.toHaveBeenCalledWith(expect.objectContaining({ step: 'playback', status: 'confirmed' }));
+
+    eventBus.publish('device-state:living-room', {
+      deviceId: 'living-room', reason: 'change',
+      snapshot: {
+        ...baseline, state: 'playing',
+        currentItem: { contentId: 'plex:1', format: 'video' },
+        meta: { ...baseline.meta, playbackOwner: { ownerInstanceId: 'player-1', playbackRevision: 3, queueRevision: 4, contentId: 'plex:1', queueItemId: 'new' } },
+      },
+    });
+
+    expect(broadcast).toHaveBeenCalledWith(expect.objectContaining({
+      topic: 'homeline:living-room', dispatchId: expect.any(String),
+      step: 'playback', status: 'confirmed', sessionId: 'session-1', ownerInstanceId: 'player-1',
+    }));
+    vi.useRealTimers();
+  });
+
+  test('confirms Add from a matching owner queue revision without calling it playback', async () => {
+    vi.useFakeTimers();
+    const broadcast = vi.fn();
+    const eventBus = makeEventBus();
+    eventBus.getTopicSubscriberCount = () => 1;
+    eventBus.waitForMessage = async () => ({
+      topic: 'device-ack', deviceId: 'living-room', commandId: 'test-dispatch-2', ok: true,
+    });
+    const current = { contentId: 'plex:old', queueItemId: 'old', format: 'video' };
+    const baseline = {
+      sessionId: 'session-add', state: 'playing', currentItem: current,
+      queue: { items: [current], currentIndex: 0, upNextCount: 0, executionOrder: ['old'] },
+      config: { shuffle: false, repeat: 'off', shader: null, volume: 50, playbackRate: 1 },
+      meta: { ownerId: 'screen-owner', updatedAt: new Date().toISOString(), playbackOwner: { ownerInstanceId: 'player-add', playbackRevision: 7, queueRevision: 8, contentId: 'plex:old', queueItemId: 'old' } },
+    };
+    const svc = new WakeAndLoadService({
+      ...testApplicationRuntime(), deviceService: { get: () => makeDevice() },
+      readinessPolicy: { isReady: async () => ({ ready: true }) }, broadcast, eventBus,
+      screenGateway: new EventBusDeviceTransportGateway({ eventBus, broadcastEvent: broadcast }),
+      deviceLivenessService: { getLastSnapshot: () => ({ snapshot: baseline }) }, logger: makeLogger(),
+    });
+
+    await svc.execute('living-room', { queue: 'plex:added', op: 'add' });
+    eventBus.publish('device-state:living-room', {
+      deviceId: 'living-room', reason: 'change',
+      snapshot: {
+        ...baseline,
+        queue: { ...baseline.queue, items: [current, { contentId: 'plex:added', queueItemId: 'added', format: 'video' }], executionOrder: ['old', 'added'] },
+        meta: { ...baseline.meta, playbackOwner: { ...baseline.meta.playbackOwner, queueRevision: 9 } },
+      },
+    });
+
+    expect(broadcast).toHaveBeenCalledWith(expect.objectContaining({
+      topic: 'homeline:living-room', step: 'queue', status: 'confirmed',
+      operation: 'add', sessionId: 'session-add', ownerInstanceId: 'player-add', queueLength: 2,
+    }));
+    expect(broadcast).not.toHaveBeenCalledWith(expect.objectContaining({ step: 'playback', status: 'confirmed' }));
+    vi.useRealTimers();
+  });
+
+  test('cold URL Add can confirm through its dispatchId ack and target owner state', async () => {
+    vi.useFakeTimers();
+    const broadcast = vi.fn();
+    const eventBus = makeEventBus();
+    eventBus.waitForMessage = vi.fn().mockResolvedValue({
+      topic: 'device-ack', deviceId: 'living-room', commandId: 'cold-add-1', ok: true,
+    });
+    const current = { contentId: 'plex:old', queueItemId: 'old', format: 'video' };
+    const baseline = {
+      sessionId: 'session-cold', state: 'playing', currentItem: current,
+      queue: { items: [current], currentIndex: 0, upNextCount: 0, executionOrder: ['old'] },
+      config: { shuffle: false, repeat: 'off', shader: 'dark', volume: 50, playbackRate: 1 },
+      meta: { ownerId: 'screen-owner', updatedAt: new Date().toISOString(), playbackOwner: { ownerInstanceId: 'player-cold', playbackRevision: 4, queueRevision: 5, contentId: 'plex:old', queueItemId: 'old' } },
+    };
+    const device = makeDevice({
+      prepareForContent: async () => ({ ok: true, coldRestart: true, cameraAvailable: true }),
+      loadContent: vi.fn().mockResolvedValue({ ok: true, verified: true }),
+    });
+    const svc = new WakeAndLoadService({
+      ...testApplicationRuntime(), deviceService: { get: () => device },
+      readinessPolicy: { isReady: async () => ({ ready: true }) }, broadcast, eventBus,
+      screenGateway: new EventBusDeviceTransportGateway({ eventBus, broadcastEvent: broadcast }),
+      deviceLivenessService: { getLastSnapshot: () => ({ snapshot: baseline }) }, logger: makeLogger(),
+    });
+
+    await svc.execute('living-room', { queue: 'plex:added', op: 'add' }, { dispatchId: 'cold-add-1' });
+    expect(device.loadContent).toHaveBeenCalledWith(
+      expect.any(String), expect.objectContaining({ dispatchId: 'cold-add-1' }), expect.any(Object),
+    );
+    expect(eventBus.waitForMessage).toHaveBeenCalledWith(expect.any(Function), 15_000);
+    eventBus.publish('device-state:living-room', {
+      deviceId: 'living-room', reason: 'change', snapshot: {
+        ...baseline,
+        queue: { ...baseline.queue, items: [current, { contentId: 'plex:added', queueItemId: 'added', format: 'video' }], executionOrder: ['old', 'added'] },
+        meta: { ...baseline.meta, playbackOwner: { ...baseline.meta.playbackOwner, queueRevision: 6 } },
+      },
+    });
+    expect(broadcast).toHaveBeenCalledWith(expect.objectContaining({ step: 'queue', status: 'confirmed' }));
+    vi.useRealTimers();
+  });
+
+  test('URL failure keeps the correlated ack listener alive through delayed WS fallback', async () => {
+    vi.useFakeTimers();
+    const broadcast = vi.fn();
+    const eventBus = makeEventBus();
+    eventBus.getTopicSubscriberCount = () => 0;
+    eventBus.waitForMessage = vi.fn().mockResolvedValue({
+      topic: 'device-ack', deviceId: 'living-room', commandId: 'fallback-add-1', ok: true,
+    });
+    const current = { contentId: 'plex:old', queueItemId: 'old', format: 'video' };
+    const baseline = {
+      sessionId: 'session-fallback', state: 'playing', currentItem: current,
+      queue: { items: [current], currentIndex: 0, upNextCount: 0, executionOrder: ['old'] },
+      config: { shuffle: false, repeat: 'off', shader: null, volume: 50, playbackRate: 1 },
+      meta: { ownerId: 'screen-owner', updatedAt: new Date().toISOString(), playbackOwner: { ownerInstanceId: 'player-fallback', playbackRevision: 2, queueRevision: 2, contentId: 'plex:old', queueItemId: 'old' } },
+    };
+    const device = makeDevice({
+      loadContent: vi.fn()
+        .mockResolvedValueOnce({ ok: false, error: 'url failed' })
+        .mockResolvedValueOnce({ ok: true }),
+    });
+    const runtime = testApplicationRuntime();
+    runtime.scheduler.wait = vi.fn().mockResolvedValue(undefined);
+    const svc = new WakeAndLoadService({
+      ...runtime, deviceService: { get: () => device },
+      readinessPolicy: { isReady: async () => ({ ready: true }) }, broadcast, eventBus,
+      screenGateway: new EventBusDeviceTransportGateway({ eventBus, broadcastEvent: broadcast }),
+      deviceLivenessService: { getLastSnapshot: () => ({ snapshot: baseline }) }, logger: makeLogger(),
+    });
+
+    const result = await svc.execute(
+      'living-room', { queue: 'plex:added', op: 'add' }, { dispatchId: 'fallback-add-1' },
+    );
+    expect(result.steps.load.method).toBe('websocket-fallback');
+    expect(eventBus.waitForMessage).toHaveBeenCalledTimes(1);
+    expect(eventBus.waitForMessage).toHaveBeenCalledWith(expect.any(Function), 15_000);
+    eventBus.publish('device-state:living-room', {
+      deviceId: 'living-room', reason: 'change', snapshot: {
+        ...baseline,
+        queue: { ...baseline.queue, items: [current, { contentId: 'plex:added', queueItemId: 'added', format: 'video' }], executionOrder: ['old', 'added'] },
+        meta: { ...baseline.meta, playbackOwner: { ...baseline.meta.playbackOwner, queueRevision: 3 } },
+      },
+    });
+    expect(broadcast).toHaveBeenCalledWith(expect.objectContaining({ step: 'queue', status: 'confirmed' }));
+    vi.useRealTimers();
+  });
+
   test('broadcasts timeout event when no playback.log arrives within 90s', async () => {
     vi.useFakeTimers();
     const logger = makeLogger();
@@ -81,7 +251,7 @@ describe('WakeAndLoadService playback watchdog', () => {
     vi.useRealTimers();
   });
 
-  test('cancels watchdog when playback.log arrives for the loaded content', async () => {
+  test('does not accept an unowned global playback.log as target playback proof', async () => {
     vi.useFakeTimers();
     const logger = makeLogger();
     const broadcast = vi.fn();
@@ -107,19 +277,18 @@ describe('WakeAndLoadService playback watchdog', () => {
     await vi.advanceTimersByTimeAsync(70_000);
     await Promise.resolve();
 
-    // timeout log should NOT have been emitted
-    expect(logger.warn).not.toHaveBeenCalledWith(
+    expect(logger.warn).toHaveBeenCalledWith(
       'wake-and-load.playback.timeout',
-      expect.any(Object)
+      expect.objectContaining({ expectedContentId: 'plex:1' })
     );
-    expect(logger.info).toHaveBeenCalledWith(
+    expect(logger.info).not.toHaveBeenCalledWith(
       'wake-and-load.playback.confirmed',
-      expect.objectContaining({ deviceId: 'living-room', contentId: 'plex:1' })
+      expect.any(Object)
     );
     vi.useRealTimers();
   });
 
-  test('uses prewarmContentId when queue is a playlist name', async () => {
+  test('uses prewarmContentId for the correlated timeout when queue is a playlist name', async () => {
     vi.useFakeTimers();
     const logger = makeLogger();
     const broadcast = vi.fn();
@@ -156,13 +325,13 @@ describe('WakeAndLoadService playback watchdog', () => {
     eventBus.publish('playback.log', { contentId: 'plex:12345', playhead: 3 });
     await vi.advanceTimersByTimeAsync(100_000);
 
-    expect(logger.warn).not.toHaveBeenCalledWith(
+    expect(logger.warn).toHaveBeenCalledWith(
       'wake-and-load.playback.timeout',
-      expect.any(Object)
+      expect.objectContaining({ expectedContentId: 'plex:12345' })
     );
-    expect(logger.info).toHaveBeenCalledWith(
+    expect(logger.info).not.toHaveBeenCalledWith(
       'wake-and-load.playback.confirmed',
-      expect.objectContaining({ contentId: 'plex:12345' })
+      expect.any(Object)
     );
     vi.useRealTimers();
   });
@@ -286,7 +455,7 @@ describe('WakeAndLoadService playback watchdog', () => {
     vi.useRealTimers();
   });
 
-  test('play-next watchdog resolves when matching playback.log arrives', async () => {
+  test('play-next also rejects global playback.log without target owner state', async () => {
     vi.useFakeTimers();
     const logger = makeLogger();
     const eventBus = makeEventBus();
@@ -306,13 +475,13 @@ describe('WakeAndLoadService playback watchdog', () => {
     eventBus.publish('playback.log', { contentId: 'plex:621568' });
     await vi.advanceTimersByTimeAsync(90_000);
 
-    expect(logger.warn).not.toHaveBeenCalledWith(
+    expect(logger.warn).toHaveBeenCalledWith(
       'wake-and-load.playback.timeout',
-      expect.anything()
+      expect.objectContaining({ expectedContentId: 'plex:621568' })
     );
-    expect(logger.info).toHaveBeenCalledWith(
+    expect(logger.info).not.toHaveBeenCalledWith(
       'wake-and-load.playback.confirmed',
-      expect.objectContaining({ contentId: 'plex:621568' })
+      expect.anything()
     );
     vi.useRealTimers();
   });

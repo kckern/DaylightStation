@@ -23,25 +23,55 @@
 // behavior change) that light up ResultRowActions on the container ▶ and
 // leaf ⋯ respectively, wired to the exact same playContainerAsQueue /
 // applyResultRowVerb plumbing SearchMode uses.
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { IconAlertTriangle } from '@tabler/icons-react';
 import { ContentCombobox } from '../../Content/combobox/ContentCombobox.jsx';
 import { useSearchContext } from './useSearchContext.js';
 import { ScopeChips } from './ScopeChips.jsx';
+import { DestinationLine } from '../cast/DestinationLine.jsx';
 import { useContentDispatch } from './useContentDispatch.js';
 import { useSessionController } from '../controller/useSessionController.js';
 import { useNav } from '../shell/NavProvider.jsx';
+import { useDismissLayer } from '../shell/useDismissLayer.js';
 import { applyResultRowVerb } from './resultRowVerbs.js';
 import { notifications } from '@mantine/notifications';
 import getLogger from '../../../lib/logging/Logger.js';
 import './Search.scss';
 
 export function MediaContentSearch() {
-  const { scopes, currentScopeKey, currentScope, scopeError } = useSearchContext();
-  const { dispatch, playContainerAsQueue } = useContentDispatch();
+  const { scopes, currentScopeKey, currentScope, scopeError, resetScope } = useSearchContext();
+  const { dispatch, dispatchLeafVerb, playContainerAsQueue } = useContentDispatch();
   const { queue } = useSessionController('local');
   const { push } = useNav();
   const log = useMemo(() => getLogger().child({ component: 'media-content-search' }), []);
+  const searchBarRef = useRef(null);
+  const [destinationInteractionActive, setDestinationInteractionActive] = useState(false);
+  const beginDestinationInteraction = useCallback(() => setDestinationInteractionActive(true), []);
+  const endDestinationInteraction = useCallback(() => setDestinationInteractionActive(false), []);
+
+  // ContentCombobox owns its editing state. Its input handles Escape when it
+  // has focus, but a pointer action in the portaled More menu can leave focus
+  // on document.body while the results remain open. Register that actual open
+  // portal in the shell stack so Escape cannot fall through to view Back.
+  const activeSearchInput = useCallback(
+    () => searchBarRef.current?.querySelector('input[data-expanded="true"]') ?? null,
+    []
+  );
+  const isSearchOpen = useCallback(() => activeSearchInput() !== null, [activeSearchInput]);
+  const dismissSearch = useCallback(() => {
+    const input = activeSearchInput();
+    if (!input) return;
+    input.focus({ preventScroll: true });
+    input.dispatchEvent(new KeyboardEvent('keydown', {
+      key: 'Escape',
+      code: 'Escape',
+      bubbles: true,
+      cancelable: true,
+    }));
+  }, [activeSearchInput]);
+  useDismissLayer(true, dismissSearch, {
+    isActive: isSearchOpen,
+  });
 
   // Transient: ContentCombobox reverts to value="" on close, so a selection is
   // a one-shot dispatch, never a committed/persisted value.
@@ -82,12 +112,21 @@ export function MediaContentSearch() {
     const id = item?.id;
     if (!id) return;
     log.info('row_action', { contentId: id, action });
+    if (action === 'playNow' || action === 'add') {
+      dispatchLeafVerb(action, id, item);
+      return;
+    }
     applyResultRowVerb(action, item, { queue, push });
-  }, [queue, push, log]);
+  }, [queue, push, log, dispatchLeafVerb]);
 
   return (
-    <div data-testid="media-search-bar" className="media-search-bar">
+    <div ref={searchBarRef} data-testid="media-search-bar" className="media-search-bar">
       <div className="media-search-controls">
+        <DestinationLine
+          surface="media-content-search"
+          onInteractionStart={beginDestinationInteraction}
+          onInteractionEnd={endDestinationInteraction}
+        />
         <ScopeChips />
         {scopeError && (
           <span data-testid="scope-error" className="scope-error" title={scopeError.message}>
@@ -114,6 +153,9 @@ export function MediaContentSearch() {
             logApp="media"
             appResults
             allowFreeform={false}
+            retainQueryOnEscape
+            onClose={resetScope}
+            destinationInteractionActive={destinationInteractionActive}
           />
         </div>
       </div>

@@ -1,6 +1,6 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { act, render, screen, fireEvent } from '@testing-library/react';
 
 const transport = {
   play: vi.fn(),
@@ -11,10 +11,15 @@ const transport = {
   skipNext: vi.fn(),
   skipPrev: vi.fn(),
 };
-const config = { setShuffle: vi.fn(), setRepeat: vi.fn(), setVolume: vi.fn() };
-const state = { snapshot: null };
+const config = { setShuffle: vi.fn(), setRepeat: vi.fn(), setVolume: vi.fn(), setPlaybackRate: vi.fn() };
+const state = { snapshot: null, capabilities: { seekable: true, acked: false } };
 vi.mock('../controller/useSessionController.js', () => ({
-  useSessionController: () => ({ snapshot: state.snapshot, transport, config }),
+  useSessionController: () => ({
+    snapshot: state.snapshot,
+    transport,
+    config,
+    capabilities: state.capabilities,
+  }),
 }));
 
 import { TransportBar } from './TransportBar.jsx';
@@ -26,6 +31,7 @@ function makeSnapshot({
   repeat = 'off',
   shuffle = false,
   volume = 80,
+  playbackRate = 1,
   item,
 } = {}) {
   return {
@@ -39,13 +45,15 @@ function makeSnapshot({
       currentIndex: index,
       upNextCount: 0,
     },
-    config: { shuffle, repeat, volume, shader: null },
+    config: { shuffle, repeat, volume, playbackRate, shader: null },
   };
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
+  config.setPlaybackRate = vi.fn();
   state.snapshot = makeSnapshot();
+  state.capabilities = { seekable: true, acked: false };
 });
 
 describe('TransportBar', () => {
@@ -110,6 +118,20 @@ describe('TransportBar', () => {
     expect(screen.getByTestId('np-toggle')).toBeInTheDocument();
   });
 
+  it('disables rew/ffw and suppresses commands when duration is not seekable', () => {
+    state.snapshot = makeSnapshot({
+      item: { contentId: 'plex:100', title: 'Unknown length', duration: null, isLive: false },
+    });
+    state.capabilities = { seekable: false, acked: false };
+    render(<TransportBar target="local" />);
+
+    expect(screen.getByTestId('np-rew')).toBeDisabled();
+    expect(screen.getByTestId('np-ffw')).toBeDisabled();
+    fireEvent.click(screen.getByTestId('np-rew'));
+    fireEvent.click(screen.getByTestId('np-ffw'));
+    expect(transport.seekRel).not.toHaveBeenCalled();
+  });
+
   it('toggles shuffle and cycles repeat through the session config', () => {
     render(<TransportBar target="local" />);
     fireEvent.click(screen.getByTestId('np-shuffle'));
@@ -125,41 +147,103 @@ describe('TransportBar', () => {
     expect(config.setVolume).toHaveBeenCalledWith(55);
   });
 
-  it('renders no speed control without a media element (no rate pathway)', () => {
+  it('shows the volume level and changes the selected target by large steps', () => {
     render(<TransportBar target="local" />);
-    expect(screen.queryByTestId('np-rate')).toBeNull();
+
+    expect(screen.getByTestId('np-volume-level')).toHaveTextContent('80%');
+    fireEvent.click(screen.getByRole('button', { name: 'Decrease volume' }));
+    expect(config.setVolume).toHaveBeenCalledWith(70);
+    fireEvent.click(screen.getByRole('button', { name: 'Increase volume' }));
+    expect(config.setVolume).toHaveBeenCalledWith(90);
   });
 
-  it('cycles playback speed on the media element: 1 → 1.25 → 1.5 → 2 → 0.75 → 1', () => {
-    const el = { playbackRate: 1 };
-    render(<TransportBar target="local" mediaEl={el} />);
-    const rate = screen.getByTestId('np-rate');
-    expect(rate).toHaveTextContent('1×');
+  it('changes rate through selected controller config, never a media element', () => {
+    render(<TransportBar target="local" />);
+    fireEvent.click(screen.getByTestId('np-rate'));
+    expect(config.setPlaybackRate).toHaveBeenCalledWith(1.25);
+  });
 
-    const expected = [1.25, 1.5, 2, 0.75, 1];
-    for (const r of expected) {
-      fireEvent.click(rate);
-      expect(el.playbackRate).toBe(r);
+  it('keeps speed visible but disabled with a plain reason when target has no rate method', () => {
+    config.setPlaybackRate = undefined;
+    render(<TransportBar target={{ deviceId: 'tv-1' }} />);
+
+    expect(screen.getByTestId('np-rate')).toBeDisabled();
+    expect(screen.getByText('Playback speed is not available for this screen')).toBeInTheDocument();
+  });
+
+  it('reports ambiguous remote command rejection without claiming it was not sent', async () => {
+    const onCommand = vi.fn(() => Promise.reject(new Error('ack timeout')));
+    render(<TransportBar target={{ deviceId: 'tv-1' }} onCommand={onCommand} />);
+
+    fireEvent.click(screen.getByTestId('np-toggle'));
+    expect(onCommand).toHaveBeenCalledWith('pause', expect.any(Function));
+    expect(await screen.findByTestId('np-command-feedback')).toHaveTextContent('Could not confirm change');
+    expect(screen.queryByText('Not sent')).toBeNull();
+  });
+
+  it('labels an explicit DEVICE_OFFLINE rejection as not sent, without treating an ack timeout as delivery failure', async () => {
+    const onCommand = vi.fn(() => Promise.reject(new Error('HTTP 409: Conflict - {"code":"DEVICE_OFFLINE"}')));
+    render(<TransportBar target={{ deviceId: 'tv-1' }} onCommand={onCommand} />);
+
+    fireEvent.click(screen.getByTestId('np-toggle'));
+    expect(await screen.findByTestId('np-command-feedback')).toHaveTextContent('Not sent');
+  });
+
+  it('keeps a target-labelled Play and volume surface for a ready retained queue', () => {
+    state.snapshot = {
+      ...makeSnapshot({ playerState: 'ready', index: -1, count: 1 }),
+      currentItem: null,
+    };
+    render(<TransportBar target={{ deviceId: 'tv-1' }} targetLabel="Living Room TV" />);
+
+    expect(screen.getByTestId('np-target-label')).toHaveTextContent('Living Room TV');
+    expect(screen.getByTestId('np-toggle')).toBeEnabled();
+    expect(screen.getByTestId('np-volume')).toBeEnabled();
+  });
+
+  it('does not show an old rejected target command after the target changes', async () => {
+    let rejectOld;
+    const onCommand = vi.fn(() => new Promise((_, reject) => { rejectOld = reject; }));
+    const { rerender } = render(<TransportBar target={{ deviceId: 'tv-1' }} onCommand={onCommand} />);
+    fireEvent.click(screen.getByTestId('np-toggle'));
+    rerender(<TransportBar target={{ deviceId: 'tv-2' }} onCommand={onCommand} />);
+    await act(async () => { rejectOld(new Error('late ack timeout')); });
+    expect(screen.queryByTestId('np-command-feedback')).toBeNull();
+  });
+
+  it('does not let an older rejection overwrite a newer command result', async () => {
+    let rejectOld;
+    const onCommand = vi.fn()
+      .mockImplementationOnce(() => new Promise((_, reject) => { rejectOld = reject; }))
+      .mockResolvedValueOnce({ ok: true });
+    render(<TransportBar target={{ deviceId: 'tv-1' }} onCommand={onCommand} />);
+    fireEvent.click(screen.getByTestId('np-toggle'));
+    fireEvent.click(screen.getByTestId('np-toggle'));
+    await act(async () => { rejectOld(new Error('late ack timeout')); });
+    expect(screen.queryByTestId('np-command-feedback')).toBeNull();
+  });
+
+  it('reports a synchronous current-target command failure', () => {
+    render(<TransportBar target={{ deviceId: 'tv-1' }} onCommand={() => { throw new Error('offline'); }} />);
+    fireEvent.click(screen.getByTestId('np-toggle'));
+    expect(screen.getByTestId('np-command-feedback')).toHaveTextContent('Could not confirm change');
+  });
+
+  it('keeps identity but disables unsupported controls for an offline target', () => {
+    state.snapshot = null;
+    const original = { ...config };
+    Object.keys(config).forEach((key) => { config[key] = undefined; });
+    transport.play = undefined;
+    try {
+      render(<TransportBar target={{ deviceId: 'tv-1' }} targetLabel="Living Room TV" />);
+      expect(screen.getByTestId('np-target-label')).toHaveTextContent('Living Room TV');
+      expect(screen.getByTestId('np-toggle')).toBeDisabled();
+      expect(screen.getByTestId('np-volume')).toBeDisabled();
+      expect(screen.getByText('Playback controls are unavailable for this screen')).toBeInTheDocument();
+    } finally {
+      Object.assign(config, original);
+      transport.play = vi.fn();
     }
-    expect(rate).toHaveTextContent('1×');
-  });
-
-  it('re-asserts the chosen speed when the media element changes (new item)', () => {
-    const first = { playbackRate: 1 };
-    const { rerender } = render(<TransportBar target="local" mediaEl={first} />);
-    fireEvent.click(screen.getByTestId('np-rate')); // → 1.25
-    expect(first.playbackRate).toBe(1.25);
-
-    const second = { playbackRate: 1 }; // fresh element defaults to 1×
-    rerender(<TransportBar target="local" mediaEl={second} />);
-    expect(second.playbackRate).toBe(1.25);
-    expect(screen.getByTestId('np-rate')).toHaveTextContent('1.25×');
-  });
-
-  it('renders nothing without a current item', () => {
-    state.snapshot = { ...makeSnapshot(), currentItem: null };
-    const { container } = render(<TransportBar target="local" />);
-    expect(container.firstChild).toBeNull();
   });
 
   it('labels every control for assistive tech', () => {
@@ -167,5 +251,15 @@ describe('TransportBar', () => {
     for (const label of ['Previous', 'Next', 'Pause', 'Back 10 seconds', 'Forward 10 seconds', 'Shuffle', 'Stop', 'Volume']) {
       expect(screen.getByLabelText(label)).toBeInTheDocument();
     }
+  });
+
+  it('explains unavailable seek rather than issuing a command', () => {
+    state.snapshot = makeSnapshot({
+      item: { contentId: 'plex:100', title: 'Unknown length', duration: null, isLive: false },
+    });
+    state.capabilities = { seekable: false, acked: false };
+    render(<TransportBar target="local" />);
+
+    expect(screen.getByText('Seeking is not available for this playback')).toBeInTheDocument();
   });
 });

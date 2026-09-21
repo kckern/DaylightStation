@@ -24,7 +24,10 @@ export default defineConfig({
       ],
     },
   },
-  webServer: {
+  // BASE_URL selects an already-managed server (for example an isolated
+  // worktree). Do not start a different stack on the default port when that
+  // unrelated server is unavailable.
+  webServer: process.env.BASE_URL ? undefined : {
     command: 'npm run dev',
     url: `http://localhost:${appPort}`,
     reuseExistingServer: true,

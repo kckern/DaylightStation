@@ -41,6 +41,16 @@
   margin-bottom: var(--mantine-spacing-xs);
 }
 
+// The detail-result Cast button portals this picker near the viewport edge.
+// Scroll the whole floating instance: reserving fixed mode/CTA space can
+// otherwise shrink a long device list to zero in a short viewport. The inline
+// Now Playing picker retains its existing natural-height layout.
+.cast-button-popover-portal .cast-picker {
+  box-sizing: border-box;
+  max-height: var(--cast-picker-max-height);
+  overflow-y: auto;
+}
+
 // A tile is a real button that reads as one: full-width, 44px+ target,
 // hover lift, amber ring when selected.
 .cast-tile {

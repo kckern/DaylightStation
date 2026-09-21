@@ -22,6 +22,11 @@ const DEFAULT_TIMEOUT_MS = 5000;
  *     visible value, but mark the fields as in-flight. The lock clears when
  *     the real WS snapshot reports a different value for ANY locked field.
  *
+ *   pendingMatch(color, field, matcher)
+ *     For a command with a concrete receiver result (for example a seek
+ *     target), keep the visible state real and unlock only when that result
+ *     matches the received WS value.
+ *
  * Both modes timeout after `timeoutMs` (default 5s — two missed broadcaster
  * ticks). On timeout the prediction/lock lifts silently; reality shows
  * through. The failure-toast path in `runWithFeedback` is the operator's
@@ -118,6 +123,19 @@ export function useStatusOverlay(realStatus) {
     }
   }, [realStatus, armTimer]);
 
+  const pendingMatch = useCallback((color, field, matcher, opts = {}) => {
+    if (typeof matcher !== 'function') return;
+    const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    setOverlay((prev) => {
+      const entry = prev.get(color) ?? { predictions: {}, locks: {} };
+      const locks = { ...entry.locks, [field]: { matcher } };
+      const next = new Map(prev);
+      next.set(color, { predictions: entry.predictions ?? {}, locks });
+      return next;
+    });
+    armTimer(color, field, timeoutMs);
+  }, [armTimer]);
+
   // When real status updates, resolve any predictions that match, and any
   // locks whose baseline value has changed.
   useEffect(() => {
@@ -131,8 +149,9 @@ export function useStatusOverlay(realStatus) {
           toClear.push([color, field]);
         }
       }
-      for (const [field, { baseline }] of Object.entries(locks)) {
-        if (!deepEqual(real[field], baseline)) {
+      for (const [field, { baseline, matcher }] of Object.entries(locks)) {
+        if ((typeof matcher === 'function' && matcher(real[field]))
+          || (typeof matcher !== 'function' && !deepEqual(real[field], baseline))) {
           toClear.push([color, field]);
         }
       }
@@ -187,7 +206,7 @@ export function useStatusOverlay(realStatus) {
     return merged;
   }, [realStatus, overlay]);
 
-  return { statusView, predict, pending };
+  return { statusView, predict, pending, pendingMatch };
 }
 
 const EMPTY_SET = new Set();

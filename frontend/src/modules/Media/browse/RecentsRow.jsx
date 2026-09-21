@@ -4,11 +4,11 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { UnstyledButton, Text, Title } from '@mantine/core';
 import { readRecents } from '../session/recents.js';
-import { useSessionController } from '../controller/useSessionController.js';
+import { useContentDispatch } from '../search/useContentDispatch.js';
 
 export function RecentsRow() {
   const [recents, setRecents] = useState(() => readRecents());
-  const { queue } = useSessionController('local');
+  const { dispatchLeafVerb } = useContentDispatch();
 
   const refresh = useCallback(() => setRecents(readRecents()), []);
   useEffect(() => {
@@ -40,7 +40,9 @@ export function RecentsRow() {
             key={r.contentId}
             data-testid={`recent-${r.contentId}`}
             className="recent-tile"
-            onClick={() => queue.playNow?.({ contentId: r.contentId, title: r.title, format: r.format, thumbnail: r.thumbnail }, { clearRest: true })}
+            onClick={() => dispatchLeafVerb('playNow', r.contentId, {
+              id: r.contentId, title: r.title, format: r.format, thumbnail: r.thumbnail,
+            })}
           >
             {r.thumbnail
               ? <img className="recent-tile-thumb" src={r.thumbnail} alt="" loading="lazy" />

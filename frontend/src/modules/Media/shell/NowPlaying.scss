@@ -34,6 +34,64 @@ $np-amber-ink: #1a1300;
     color: var(--mantine-color-dark-1);
   }
 
+  .np-toolbar-status {
+    display: flex;
+    align-items: center;
+    gap: var(--mantine-spacing-sm);
+  }
+
+  .np-expand-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-height: 44px;
+    padding: 0 12px;
+    background: var(--mantine-color-dark-5);
+    border: 1px solid var(--mantine-color-dark-4);
+    border-radius: var(--mantine-radius-sm);
+    color: var(--mantine-color-dark-0);
+    font: inherit;
+    font-size: 14px;
+    cursor: pointer;
+
+    &:hover { background: var(--mantine-color-dark-4); }
+    @include np-focus-ring;
+  }
+
+  &.now-playing-view--expanded {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    max-width: none;
+    height: 100dvh;
+    padding: var(--mantine-spacing-md);
+    background: var(--mantine-color-dark-8);
+    overflow: auto;
+
+    .now-playing-title,
+    .np-back-btn {
+      display: none;
+    }
+
+    .now-playing-toolbar {
+      justify-content: flex-end;
+      flex-shrink: 0;
+    }
+
+    .now-playing-host {
+      flex: 1 1 auto;
+      min-height: 0;
+      aspect-ratio: auto;
+      border-radius: 0;
+    }
+
+    .np-seekbar,
+    .np-transport {
+      flex-shrink: 0;
+    }
+  }
+
   .np-back-btn {
     display: inline-flex;
     align-items: center;
@@ -217,7 +275,25 @@ $np-amber-ink: #1a1300;
     gap: var(--mantine-spacing-sm);
     flex-wrap: wrap;
   }
+
+  .np-target-label {
+    align-self: center;
+    color: var(--mantine-color-dark-2);
+    font-size: 13px;
+    font-weight: 600;
+  }
 }
+
+.np-control-unavailable,
+.np-command-feedback,
+.np-queue-kept {
+  color: var(--mantine-color-dark-1);
+  font-size: 13px;
+  text-align: center;
+}
+
+.np-command-feedback { color: var(--mantine-color-amber-3); }
+.np-queue-kept { color: var(--mantine-color-amber-4); }
 
 // Round icon button — the shared control chrome for transport + mini player.
 .np-icon-btn {
@@ -302,6 +378,32 @@ $np-amber-ink: #1a1300;
     margin: 0;
     cursor: pointer;
     @include np-focus-ring;
+  }
+
+  .np-volume-step {
+    min-width: 44px;
+    min-height: 44px;
+    border: 1px solid var(--mantine-color-dark-4);
+    border-radius: var(--mantine-radius-sm);
+    background: var(--mantine-color-dark-5);
+    color: var(--mantine-color-dark-0);
+    font: inherit;
+    font-size: 20px;
+    cursor: pointer;
+    @include np-focus-ring;
+
+    &:disabled {
+      color: var(--mantine-color-dark-3);
+      cursor: default;
+    }
+  }
+
+  .np-volume-level {
+    min-width: 36px;
+    color: var(--mantine-color-dark-1);
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+    text-align: center;
   }
 }
 

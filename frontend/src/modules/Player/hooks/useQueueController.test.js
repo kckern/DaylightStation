@@ -66,6 +66,17 @@ describe('useQueueController on-deck slot', () => {
     expect(result.current.onDeck?.id).toBe('od');
   });
 
+  it('mints a queue entry ID for an external play-now item so capture never drops it', () => {
+    const { result } = renderHook(() => useQueueController({ play: null, queue: null, clear: vi.fn() }));
+    act(() => result.current.playNow({ id: 'x', contentId: 'plex:x', title: 'X' }));
+    expect(result.current.queueSnapshot.items).toEqual([
+      expect.objectContaining({ queueItemId: expect.any(String), contentId: 'plex:x' }),
+    ]);
+    expect(result.current.queueSnapshot.executionOrder).toEqual([
+      result.current.queueSnapshot.items[0].queueItemId,
+    ]);
+  });
+
   it('playNow on empty queue seeds it with the new head', () => {
     const { result } = renderHook(() => useQueueController({ play: null, queue: null, clear: vi.fn() }));
     expect(result.current.playQueue.length).toBe(0);
@@ -99,6 +110,43 @@ describe('useQueueController.advance with on-deck', () => {
     expect(result.current.onDeck).toBeNull();
     act(() => result.current.advance());
     expect(result.current.playQueue[0]?.id).toBe('b');
+  });
+
+  it('captures the complete original duplicate queue and places pending on-deck at actual next priority', async () => {
+    const items = [
+      { id: 'a-1', contentId: 'plex:a', title: 'A', format: 'video' },
+      { id: 'b-1', contentId: 'plex:b', title: 'B', format: 'video' },
+      { id: 'a-2', contentId: 'plex:a', title: 'A again', format: 'video' },
+    ];
+    const { result } = renderHook(() => useQueueController({ play: items, queue: null, clear: vi.fn() }));
+    await act(async () => {});
+    act(() => result.current.advance(2));
+    const currentId = result.current.playQueue[0].guid;
+    act(() => result.current.pushOnDeck({ id: 'next', contentId: 'plex:next', title: 'Next', format: 'video' }));
+
+    const snapshot = result.current.queueSnapshot;
+    expect(snapshot.items.map((item) => item.contentId)).toEqual(['plex:a', 'plex:b', 'plex:a', 'plex:next']);
+    expect(new Set(snapshot.items.map((item) => item.queueItemId)).size).toBe(4);
+    expect(snapshot.currentIndex).toBe(2);
+    expect(snapshot.items[snapshot.currentIndex].queueItemId).toBe(currentId);
+    expect(snapshot.executionOrder).toEqual([currentId, snapshot.items[3].queueItemId]);
+    expect(snapshot.items[3].priority).toBe('upNext');
+  });
+
+  it.each([
+    ['on-deck', 3, (controller, existingGuid) => controller.pushOnDeck({ guid: existingGuid, contentId: 'plex:a', title: 'new A' })],
+    ['play-now', 2, (controller, existingGuid) => controller.playNow({ guid: existingGuid, contentId: 'plex:a', title: 'new A' })],
+  ])('mints a distinct owner entry ID when %s receives a colliding caller guid', async (_path, expectedLength, insert) => {
+    const { result } = renderHook(() => useQueueController({
+      play: [{ contentId: 'plex:a', title: 'A' }, { contentId: 'plex:b', title: 'B' }], queue: null, clear: vi.fn(),
+    }));
+    await act(async () => {});
+    const originalId = result.current.playQueue[0].guid;
+    act(() => insert(result.current, originalId));
+
+    const snapshot = result.current.queueSnapshot;
+    expect(snapshot.items).toHaveLength(expectedLength);
+    expect(new Set(snapshot.items.map((item) => item.queueItemId)).size).toBe(expectedLength);
   });
 });
 
@@ -187,6 +235,34 @@ describe('useQueueController error propagation', () => {
     expect(onError).toHaveBeenCalled();
     expect(onError.mock.calls[0][0]).toMatchObject({ kind: 'fetch-timeout', contentRef: 'plex:5', timeoutMs: 10_000 });
     vi.useRealTimers();
+  });
+});
+
+describe('useQueueController prewarm transport preservation', () => {
+  it.each([
+    ['HLS URL with query', '/transcode/stream.m3u8?token=abc', 'hls_video', 'hls_video'],
+    ['DASH MPD URL', '/transcode/stream.mpd', 'video', 'dash_video'],
+    ['native MP4 URL', '/library/part.mp4', 'video', 'video'],
+    ['extensionless URL', '/transcode/stream', 'video', 'video'],
+  ])('uses the redeemed %s transport without changing the owner queue entry', async (_label, redeemedUrl, originalFormat, expectedFormat) => {
+    const { DaylightAPI } = await import('../../../lib/api.mjs');
+    DaylightAPI.mockImplementation((path) => {
+      if (path === 'api/v1/queue/plex:prewarm') {
+        return Promise.resolve({ items: [{ id: 'plex:movie', contentId: 'plex:movie', title: 'Movie', format: originalFormat }], audio: null });
+      }
+      if (path === 'api/v1/prewarm/token-1') return Promise.resolve({ url: redeemedUrl });
+      return Promise.resolve({ items: [], audio: null });
+    });
+    const { result } = renderHook(() => useQueueController({
+      play: { contentId: 'plex:prewarm', prewarmToken: 'token-1', prewarmContentId: 'plex:movie' },
+      queue: null,
+      clear: vi.fn(),
+    }));
+
+    await vi.waitFor(() => expect(result.current.playQueue[0]?.mediaUrl).toBe(redeemedUrl));
+    expect(result.current.playQueue[0]).toMatchObject({ format: expectedFormat, mediaType: expectedFormat });
+    expect(result.current.queueSnapshot.items).toHaveLength(1);
+    expect(result.current.queueSnapshot.items[0].queueItemId).toBe(result.current.playQueue[0].guid);
   });
 });
 

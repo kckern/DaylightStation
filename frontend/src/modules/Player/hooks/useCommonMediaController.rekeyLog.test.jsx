@@ -92,6 +92,18 @@ function Harness({ ctrlRef, video, assetId }) {
   return null;
 }
 
+function MediaRefHarness({ video, onMediaRef, meta = { assetId: '665667', contentId: 'plex:665667', title: 'Disclosure Day' } }) {
+  const api = useCommonMediaController({
+    meta,
+    isVideo: true,
+    onMediaRef,
+  });
+  // Set before the hook's passive effects run so registration sees the same
+  // accessor shape used by a mounted DASH renderer.
+  api.containerRef.current = video;
+  return null;
+}
+
 describe('useCommonMediaController — element re-key reporting', () => {
   beforeEach(() => {
     vi.useFakeTimers();
@@ -106,6 +118,36 @@ describe('useCommonMediaController — element re-key reporting', () => {
   });
 
   const rekeys = () => captured.sampled.filter((s) => s.event === 'playback.element-rekey-requested');
+
+  it('registers the DASH shadow media node with its resolved content identity', () => {
+    const innerVideo = makeFakeVideo();
+    const dashWrapper = {
+      shadowRoot: { querySelector: vi.fn(() => innerVideo) },
+    };
+    const onMediaRef = vi.fn();
+
+    render(<MediaRefHarness video={dashWrapper} onMediaRef={onMediaRef} />);
+
+    expect(onMediaRef).toHaveBeenCalledWith(innerVideo, expect.objectContaining({
+      contentId: 'plex:665667', rendererToken: expect.objectContaining({ node: innerVideo }),
+    }));
+  });
+
+  it('registers resolved /play id-only metadata and follows id changes on the same node', () => {
+    const innerVideo = makeFakeVideo();
+    const dashWrapper = { shadowRoot: { querySelector: () => innerVideo } };
+    const onMediaRef = vi.fn();
+    // Real /play responses carry id and assetId, not contentId.
+    const { rerender } = render(<MediaRefHarness video={dashWrapper} onMediaRef={onMediaRef}
+      meta={{ id: 'plex:55854', assetId: 'plex:55854' }} />);
+    expect(onMediaRef).toHaveBeenLastCalledWith(innerVideo, expect.objectContaining({ contentId: 'plex:55854' }));
+    rerender(<MediaRefHarness video={dashWrapper} onMediaRef={onMediaRef}
+      meta={{ id: 'plex:697368', assetId: 'plex:55854' }} />);
+    expect(onMediaRef).toHaveBeenLastCalledWith(innerVideo, expect.objectContaining({ contentId: 'plex:697368' }));
+    rerender(<MediaRefHarness video={dashWrapper} onMediaRef={onMediaRef}
+      meta={{ assetId: 'plex:55854' }} />);
+    expect(onMediaRef).toHaveBeenLastCalledWith(innerVideo, expect.objectContaining({ contentId: null }));
+  });
 
   /** Arms stall detection, then freezes the playhead past the soft threshold. */
   function renderStalled({ assetId = 'plex:1', video } = {}) {

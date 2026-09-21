@@ -11,6 +11,10 @@ export function useHandOff() {
   const local = useSessionController('local');
   const { dispatchToTarget } = useDispatch();
   return useCallback(async (deviceId, { mode = 'transfer' } = {}) => {
+    if (mode === 'transfer') {
+      mediaLog.handoffFailed?.({ deviceId, mode, error: 'move-unsupported' });
+      return { ok: false, error: 'move-unsupported' };
+    }
     const snapshot = local.portability?.snapshotForHandoff?.();
     if (!snapshot) return { ok: false, error: 'no-snapshot' };
     mediaLog.handoffInitiated({ deviceId, mode });
