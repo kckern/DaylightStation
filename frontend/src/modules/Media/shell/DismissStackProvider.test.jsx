@@ -9,6 +9,8 @@ function Layer({ onDismiss, managed = false, isActive = () => true, children }) 
   return children ?? null;
 }
 
+const afterNativeEventDispatch = () => new Promise(resolve => setTimeout(resolve, 0));
+
 describe('DismissStackProvider', () => {
   it.each([false, true])('consumes the Escape that closes an active layer before document bubble (managed=%s)', async (managed) => {
     let active = true;
@@ -24,13 +26,13 @@ describe('DismissStackProvider', () => {
     // Target-phase overlay handling closes it before the document bubble
     // listener runs, just as Mantine can do during a real browser keydown.
     fireEvent.keyDown(target, { key: 'Escape', code: 'Escape' });
-    await Promise.resolve();
+    await afterNativeEventDispatch();
     expect(active).toBe(false);
     expect(onBaseDismiss).not.toHaveBeenCalled();
     expect(dismissLayer).not.toHaveBeenCalled();
 
     fireEvent.keyDown(target, { key: 'Escape', code: 'Escape' });
-    await Promise.resolve();
+    await afterNativeEventDispatch();
     expect(onBaseDismiss).toHaveBeenCalledTimes(1);
   });
 
@@ -41,7 +43,7 @@ describe('DismissStackProvider', () => {
 
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(dismissLayer).not.toHaveBeenCalled();
-    await Promise.resolve();
+    await afterNativeEventDispatch();
     expect(dismissLayer).toHaveBeenCalledTimes(1);
     expect(onBaseDismiss).not.toHaveBeenCalled();
   });
@@ -62,7 +64,7 @@ describe('DismissStackProvider', () => {
 
     fireEvent.keyDown(screen.getByRole('button', { name: 'Search action' }), { key: 'Escape' });
     expect(onBaseDismiss).not.toHaveBeenCalled();
-    await Promise.resolve();
+    await afterNativeEventDispatch();
     // Only the nested event began without a layer. The original Escape
     // remains owned by search even though nested dispatch changed the stack.
     expect(onBaseDismiss).toHaveBeenCalledTimes(1);
@@ -78,7 +80,7 @@ describe('DismissStackProvider', () => {
       </Layer>
     </DismissStackProvider>);
     fireEvent.keyDown(screen.getByRole('button', { name: 'Managed menu action' }), { key: 'Escape' });
-    await Promise.resolve();
+    await afterNativeEventDispatch();
     expect(dismissLayer).not.toHaveBeenCalled();
     expect(onBaseDismiss).not.toHaveBeenCalled();
   });
@@ -88,7 +90,7 @@ describe('DismissStackProvider', () => {
     const view = render(<DismissStackProvider onBaseDismiss={onBaseDismiss} />);
     fireEvent.keyDown(document, { key: 'Escape' });
     view.unmount();
-    await Promise.resolve();
+    await afterNativeEventDispatch();
     expect(onBaseDismiss).not.toHaveBeenCalled();
   });
 
@@ -98,14 +100,14 @@ describe('DismissStackProvider', () => {
     const view = render(<DismissStackProvider onBaseDismiss={onBaseDismiss}><Layer onDismiss={dismissLayer} /></DismissStackProvider>);
 
     fireEvent.keyDown(document, { key: 'Escape' });
-    await Promise.resolve();
+    await afterNativeEventDispatch();
     expect(dismissLayer).toHaveBeenCalledTimes(1);
     expect(onBaseDismiss).not.toHaveBeenCalled();
 
     // The overlay unregisters when it closes; the next Escape is route Back.
     view.rerender(<DismissStackProvider onBaseDismiss={onBaseDismiss} />);
     fireEvent.keyDown(document, { key: 'Escape' });
-    await Promise.resolve();
+    await afterNativeEventDispatch();
     expect(onBaseDismiss).toHaveBeenCalledTimes(1);
   });
 });

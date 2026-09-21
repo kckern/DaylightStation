@@ -29,9 +29,11 @@ export function DismissStackProvider({ children, onBaseDismiss }) {
   useEffect(() => {
     // A target/portal handler can close its layer before document bubble.
     // Keep ownership for this native event so that Escape cannot also Back.
-    // Capture only observes; the deferred action honors later preventDefault
-    // and lets managed menus finish handling the key themselves.
+    // Capture only observes. A task, rather than a microtask, runs after the
+    // browser has completed trusted native key dispatch, so target handlers
+    // can prevent default or finish their own managed-menu handling first.
     let disposed = false;
+    const pendingTasks = new Set();
     const onKey = (e) => {
       if (e.key !== 'Escape' || e.defaultPrevented) return;
       const layers = layersRef.current;
@@ -42,7 +44,8 @@ export function DismissStackProvider({ children, onBaseDismiss }) {
           break;
         }
       }
-      queueMicrotask(() => {
+      const task = setTimeout(() => {
+        pendingTasks.delete(task);
         if (disposed || e.defaultPrevented) return;
         if (top) {
           // A child may already have dismissed/unregistered this owner.
@@ -51,11 +54,14 @@ export function DismissStackProvider({ children, onBaseDismiss }) {
           return;
         }
         baseRef.current?.();
-      });
+      }, 0);
+      pendingTasks.add(task);
     };
     document.addEventListener('keydown', onKey, true);
     return () => {
       disposed = true;
+      pendingTasks.forEach(task => clearTimeout(task));
+      pendingTasks.clear();
       document.removeEventListener('keydown', onKey, true);
     };
   }, []);
