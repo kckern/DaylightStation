@@ -631,9 +631,24 @@ describe('ScreenActionHandler', () => {
       expect(pressKeysFor('skipNext')).toEqual(['Tab']);
     });
 
-    it('a WS skipPrev produces the same keydown as the numpad\'s prev', () => {
-      expect(pressKeysFor('skipPrev')).toEqual(pressKeysFor('prev'));
-      expect(pressKeysFor('skipPrev')).toEqual(['Backspace']);
+    it('routes WS skipPrev to the queue owner while hardware prev retains Backspace semantics', () => {
+      const owner = vi.fn();
+      getPlayerQueueOpRegistry().register(owner);
+      const dispatchSpy = vi.spyOn(window, 'dispatchEvent');
+      const { unmount } = render(
+        <ScreenOverlayProvider>
+          <ScreenActionHandler actions={{ playback: { when_idle: 'dispatch' } }} />
+        </ScreenOverlayProvider>
+      );
+
+      act(() => getActionBus().emit('media:playback', { command: 'skipPrev', commandId: 'prev-1' }));
+
+      expect(owner).toHaveBeenCalledWith(expect.objectContaining({ op: 'skip-prev', commandId: 'prev-1' }));
+      expect(dispatchSpy.mock.calls.some(([event]) => event instanceof KeyboardEvent && event.key === 'Backspace'))
+        .toBe(false);
+      dispatchSpy.mockRestore();
+      unmount();
+      expect(pressKeysFor('prev')).toEqual(['Backspace']);
     });
 
     it('routes remote Stop to the active Player owner without synthesizing Escape', () => {

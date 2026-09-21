@@ -172,7 +172,7 @@ export function createRemoteSessionController({
   // receiving screen, so it is deliberately not used as source provenance.
   const observedPlayback = () => freshPlayback(fleetStore.getEntry(deviceId), { playingOnly: true });
 
-  const send = (method, path, body, action) => {
+  const send = (method, path, body, action, { onPositiveAck = null } = {}) => {
     // The next remote command is newer user intent. It supersedes a pending
     // Play before either request leg can settle, even if that newer command
     // later fails; only a current command may earn steering activity.
@@ -184,6 +184,12 @@ export function createRemoteSessionController({
     const commandId = randomUuid();
     const ackPromise = ackRouter.register(commandId, { action, deviceId });
     const httpPromise = http(path, { ...body, commandId }, method);
+    if (typeof onPositiveAck === 'function') {
+      ackPromise.then(
+        () => onPositiveAck(),
+        () => {},
+      );
+    }
     if (playAttempt) {
       ackPromise.then(
         () => acknowledgePlayAttempt(playAttempt),
@@ -227,7 +233,9 @@ export function createRemoteSessionController({
     let detach = null;
     let timer = null;
     let settled = false;
+    let deadlineStarted = false;
     let finish = () => {};
+    let reconcile = () => {};
     const promise = new Promise((resolve, reject) => {
       finish = (result, error = null) => {
         if (settled) return;
@@ -237,7 +245,7 @@ export function createRemoteSessionController({
         if (error) reject(error);
         else resolve(result);
       };
-      const reconcile = (entry = fleetStore.getEntry(deviceId)) => {
+      reconcile = (entry = fleetStore.getEntry(deviceId)) => {
         if (entry?.offline || entry?.isStale) {
           finish(null, new Error('queue-state-unavailable'));
           return;
@@ -268,14 +276,20 @@ export function createRemoteSessionController({
         detach = null;
         return;
       }
-      timer = setTimeout(
-        () => finish(null, new Error('queue-state-timeout')),
-        QUEUE_PUBLICATION_WINDOW_MS
-      );
       reconcile();
     });
+    const startDeadline = () => {
+      if (settled || deadlineStarted) return;
+      deadlineStarted = true;
+      timer = setTimeout(
+        () => finish(null, new Error('queue-state-timeout')),
+        QUEUE_PUBLICATION_WINDOW_MS,
+      );
+      reconcile();
+    };
     return {
       promise,
+      startDeadline,
       cancel: () => finish(null, new Error('queue-observation-cancelled')),
     };
   };
@@ -319,7 +333,13 @@ export function createRemoteSessionController({
       addUpNext: (input) => send('POST', `${base}/queue/add-up-next`, { contentId: input.contentId }, 'queue.addUpNext'),
       add: (input) => {
         const observation = observeQueueAdd(input);
-        const request = send('POST', `${base}/queue/add`, { contentId: input.contentId }, 'queue.add');
+        const request = send(
+          'POST',
+          `${base}/queue/add`,
+          { contentId: input.contentId },
+          'queue.add',
+          { onPositiveAck: observation.startDeadline },
+        );
         return Promise.all([request, observation.promise]).then(([, result]) => result, (error) => {
           observation.cancel();
           throw error;

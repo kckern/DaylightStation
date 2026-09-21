@@ -299,6 +299,16 @@ export function ScreenActionHandler({ actions = {}, inputType = null }) {
     // lifecycle. A synthetic Enter only toggles the renderer, which can resume
     // native media after Stop while leaving the owner's published state `ready`.
     const transportOp = payload?.command?.toLowerCase();
+    if (transportOp === 'skipprev') {
+      if (!getPlayerQueueOpRegistry().dispatch({ op: 'skip-prev', commandId: payload?.commandId })) {
+        getActionBus().emit('command-handler-error', {
+          commandId: payload?.commandId,
+          code: 'PLAYBACK_OWNER_UNAVAILABLE',
+          error: 'No playback owner is available to select the previous queue item',
+        });
+      }
+      return;
+    }
     if ((transportOp === 'play' || transportOp === 'pause' || transportOp === 'toggle')
       && getPlayerQueueOpRegistry().dispatch({ op: transportOp, commandId: payload?.commandId })) {
       return;
@@ -315,7 +325,7 @@ export function ScreenActionHandler({ actions = {}, inputType = null }) {
     const keyMapping = {
       play: 'Enter', pause: 'Enter', toggle: 'Enter',
       next: 'Tab', skip: 'Tab', skipnext: 'Tab',
-      prev: 'Backspace', previous: 'Backspace', back: 'Backspace', skipprev: 'Backspace',
+      prev: 'Backspace', previous: 'Backspace', back: 'Backspace',
       fwd: 'ArrowRight', forward: 'ArrowRight', ff: 'ArrowRight',
       rew: 'ArrowLeft', rewind: 'ArrowLeft', rw: 'ArrowLeft',
       clear: 'Escape',

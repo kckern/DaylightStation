@@ -453,44 +453,44 @@ export function useQueueController({ play, queue, clear, shuffle, onError, conte
       return;
     }
     setQueue((prevQueue) => {
+      if (step < 0) {
+        const currentIndex = originalQueue.findIndex(item => item.guid === prevQueue[0]?.guid);
+        if (currentIndex <= 0) return prevQueue;
+        const backtrackIndex = Math.max(0, currentIndex + step);
+        const restored = originalQueue.slice(backtrackIndex, currentIndex);
+        playbackLog('queue-advance', {
+          action: 'backtrack',
+          step,
+          fromPosition: currentIndex,
+          toPosition: backtrackIndex,
+          queueLength: restored.length + prevQueue.length,
+        });
+        return [...restored, ...prevQueue];
+      }
       if (prevQueue.length > 1) {
-        if (step < 0) {
-          const currentIndex = originalQueue.findIndex(item => item.guid === prevQueue[0]?.guid);
-          const backtrackIndex = (currentIndex + step + originalQueue.length) % originalQueue.length;
-          const backtrackItem = originalQueue[backtrackIndex];
+        const currentIndex = isContinuous
+          ? (prevQueue.length + step) % prevQueue.length
+          : Math.min(Math.max(0, step), prevQueue.length - 1);
+        if (isContinuous) {
+          const rotatedQueue = [
+            ...prevQueue.slice(currentIndex),
+            ...prevQueue.slice(0, currentIndex),
+          ];
           playbackLog('queue-advance', {
-            action: 'backtrack',
+            action: 'rotate',
             step,
-            fromPosition: currentIndex,
-            toPosition: backtrackIndex,
-            queueLength: prevQueue.length + 1
+            queueLength: rotatedQueue.length,
+            isContinuous: true,
           });
-          return [backtrackItem, ...prevQueue];
-        } else {
-          const currentIndex = isContinuous
-            ? (prevQueue.length + step) % prevQueue.length
-            : Math.min(Math.max(0, step), prevQueue.length - 1);
-          if (isContinuous) {
-            const rotatedQueue = [
-              ...prevQueue.slice(currentIndex),
-              ...prevQueue.slice(0, currentIndex),
-            ];
-            playbackLog('queue-advance', {
-              action: 'rotate',
-              step,
-              queueLength: rotatedQueue.length,
-              isContinuous: true
-            });
-            return rotatedQueue;
-          }
-          playbackLog('queue-advance', {
-            action: 'slice',
-            step,
-            prevLength: prevQueue.length,
-            newLength: prevQueue.length - currentIndex
-          });
-          return prevQueue.slice(currentIndex);
+          return rotatedQueue;
         }
+        playbackLog('queue-advance', {
+          action: 'slice',
+          step,
+          prevLength: prevQueue.length,
+          newLength: prevQueue.length - currentIndex,
+        });
+        return prevQueue.slice(currentIndex);
       } else if (prevQueue.length === 1 && isContinuous && originalQueue.length > 0) {
         // A continuous plan loops even when it contains one entry. Player owns
         // the native replay boundary when the next visit resolves to this same
