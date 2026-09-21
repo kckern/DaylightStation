@@ -41,6 +41,6 @@ describe('DestinationLine Escape ownership', () => {
     expect(onBaseDismiss).not.toHaveBeenCalled();
 
     fireEvent.keyDown(screen.getByTestId('search-sentinel'), { key: 'Escape' });
-    expect(onBaseDismiss).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(onBaseDismiss).toHaveBeenCalledTimes(1));
   });
 });

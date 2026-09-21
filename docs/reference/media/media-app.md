@@ -18,6 +18,8 @@ without changing the persistent aim. Content components expose additive action
 callbacks and do not import Media implementation code.
 Escape dismisses an open More menu first. After a menu action closes it,
 Escape follows the outer search dismissal lifecycle instead of reopening More.
+The dismiss stack preserves layer ownership for the entire key event: a layer
+that closes before document bubbling cannot send that same Escape to view Back.
 
 Each operation has a tap identity and a ten-second Undo deadline. The selected
 playback owner captures the prior native position and queue generations before
