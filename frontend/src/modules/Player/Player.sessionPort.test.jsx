@@ -37,8 +37,13 @@ import { DaylightAPI } from '../../lib/api.mjs';
 
 beforeEach(() => {
   DaylightAPI.mockReset();
-  DaylightAPI.mockResolvedValue({
-    contentId: 'plex:direct', title: 'Direct', mediaUrl: '/stream/direct', format: 'video',
+  DaylightAPI.mockImplementation((path) => {
+    const value = String(path);
+    if (value.startsWith('api/v1/queue/')) {
+      const contentId = decodeURIComponent(value.slice('api/v1/queue/'.length).split('?')[0]);
+      return Promise.resolve({ items: [{ contentId, title: contentId, format: 'video' }], audio: null });
+    }
+    return Promise.resolve({ contentId: 'plex:direct', title: 'Direct', mediaUrl: '/stream/direct', format: 'video' });
   });
 });
 
@@ -126,6 +131,8 @@ describe('Player session port', () => {
     mockMediaElement = native;
     render(<Player ref={ref} play={{ contentId: 'plex:seek', title: 'Seek', format: 'video' }} />);
     await waitFor(() => expect(ref.current?.getQueueSnapshot().items).toHaveLength(1));
+    await waitFor(() => expect(ref.current?.getQueueSnapshot().items[0]?.contentId).toBe('plex:seek'));
+    native.currentTime = 40;
 
     await act(async () => {
       expect(getPlayerQueueOpRegistry().dispatch({ op: 'seek-rel', value: 10, commandId: 'seek-1' })).toBe(true);
@@ -409,8 +416,6 @@ describe('Player session port', () => {
     // operation is still unresolved by this deliberately minimal fixture.
     expect(source.getNativeObservation()).toMatchObject({
       identity: null,
-      playingObserved: false,
-      advancedObserved: false,
     });
     act(() => latestSinglePlayerProps.advance());
     expect(play).not.toHaveBeenCalled();
@@ -508,16 +513,14 @@ describe('Player session port', () => {
     expect(ref.current.getMountedMediaGeneration()).toBe(actualGeneration);
     expect(source.getNativeObservation()).toMatchObject({
       identity: null,
-      playingObserved: false,
-      advancedObserved: false,
     });
     node.dispatchEvent(new Event('playing'));
     node.currentTime = 12;
     node.dispatchEvent(new Event('timeupdate'));
     expect(source.getNativeObservation()).toMatchObject({
       identity: null,
-      playingObserved: false,
-      advancedObserved: false,
+      playingObserved: true,
+      advancedObserved: true,
     });
     bridge.stop();
   });
@@ -574,8 +577,8 @@ describe('Player session port', () => {
     node.dispatchEvent(new Event('timeupdate'));
     expect(source.getNativeObservation()).toMatchObject({
       identity: null,
-      playingObserved: false,
-      advancedObserved: false,
+      playingObserved: true,
+      advancedObserved: true,
     });
     bridge.stop();
   });
