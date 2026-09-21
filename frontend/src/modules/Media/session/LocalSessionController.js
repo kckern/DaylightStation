@@ -717,7 +717,13 @@ export function createLocalSessionController({
 
   Object.assign(controller, createItemActionOwner({
     targetId: clientId,
-    capture: () => capture().snapshot,
+    capture: () => {
+      // Portability exposes only determined shuffle visits. Mutating or
+      // undoing this live owner must retain its complete advancement state,
+      // while still capturing the actual native clock before replacement.
+      const nativePosition = capture().snapshot.position;
+      return { ...structuredClone(snap()), position: nativePosition };
+    },
     revision: () => ({ ownerInstanceId, queueRevision, stopRevision }),
     fetchImpl,
     apply: (snapshot, { playbackChanged, restore } = {}) => {
