@@ -15,7 +15,10 @@ let tmp, registry;
 
 beforeEach(() => {
   tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'school-tokens-'));
-  registry = new YamlTokenRegistry({ configService: { getDataDir: () => tmp, getHouseholdPath: (rel) => `${tmp}/${rel}` } });
+  registry = new YamlTokenRegistry({
+    configService: { getDataDir: () => tmp, getHouseholdPath: (rel) => `${tmp}/${rel}` },
+    now: () => Date.parse('2026-09-06T18:00:00.000Z'),
+  });
 });
 
 // getHouseholdPath('school/tokens') resolves to <household>/school/tokens —
