@@ -12,6 +12,77 @@ function seeded(options) {
 }
 
 describe('item actions at the owner boundary', () => {
+  it.each(['add', 'playNext', 'playFirst', 'playNow'])('shuffled %s retains all unplayed visits through actual advancement and Undo', async kind => {
+    const random = vi.spyOn(Math, 'random').mockReturnValue(0);
+    try {
+      const destination = seeded();
+      destination.queue.add(item('last'));
+      destination.config.setShuffle(true);
+      await executeItemAction({ kind, item: item('new'), destination, operationId: 'edit' });
+      const visited = [];
+      for (let i = 0; i < 5 && destination.getSnapshot().state !== 'ended'; i++) {
+        visited.push(destination.getSnapshot().currentItem.contentId);
+        destination.transport.skipNext();
+      }
+      const expected = kind === 'add' ? ['old', 'tail', 'last', 'new']
+        : kind === 'playNow' ? ['new', 'tail', 'last'] : ['old', 'new', 'tail', 'last'];
+      expect(visited).toEqual(expected);
+      const restored = seeded();
+      restored.queue.add(item('last'));
+      restored.config.setShuffle(true);
+      await executeItemAction({ kind, item: item('new'), destination: restored, operationId: 'undo-edit' });
+      expect((await restored.undo('undo-edit')).ok).toBe(true);
+      const afterUndo = [];
+      for (let i = 0; i < 4 && restored.getSnapshot().state !== 'ended'; i++) {
+        afterUndo.push(restored.getSnapshot().currentItem.contentId);
+        restored.transport.skipNext();
+      }
+      expect(afterUndo).toEqual(['old', 'tail', 'last']);
+    } finally { random.mockRestore(); }
+  });
+
+  it.each(['add', 'playNext', 'playFirst'])('serializes overlapping collection %s intents in invocation order', async kind => {
+    const resolvers = new Map();
+    const destination = seeded({ fetchImpl: url => new Promise(resolve => resolvers.set(url, resolve)) });
+    const args = id => ({ kind, item: { contentId: `plex:${id}`, type: 'album' }, destination, operationId: id });
+    const first = executeItemAction(args('first'));
+    const second = executeItemAction(args('second'));
+    const resolveCollection = id => resolvers.get([...resolvers.keys()].find(key => key.endsWith(`/${id}`)))({ ok: true, json: async () => ({ items: [{ id: `plex:${id}-child`, type: 'track' }] }) });
+    resolveCollection('second');
+    await Promise.resolve(); await Promise.resolve();
+    resolveCollection('first');
+    expect((await first).ok).toBe(true);
+    expect((await second).ok).toBe(true);
+    expect(ids(destination)).toEqual(kind === 'add' ? ['old', 'tail', 'plex:first-child', 'plex:second-child']
+      : kind === 'playFirst' ? ['old', 'plex:second-child', 'plex:first-child', 'tail']
+        : ['old', 'plex:first-child', 'plex:second-child', 'tail']);
+  });
+  it('cancels only the undone queued intent and preserves subsequent FIFO edits', async () => {
+    let resolve;
+    const destination = seeded({ fetchImpl: () => new Promise(done => { resolve = done; }) });
+    const first = executeItemAction({ kind: 'add', item: { contentId: 'plex:album', type: 'album' }, destination, operationId: 'first' });
+    const cancelled = executeItemAction({ kind: 'add', item: item('cancelled'), destination, operationId: 'cancelled' });
+    const last = executeItemAction({ kind: 'add', item: item('last'), destination, operationId: 'last' });
+    expect((await destination.undo('cancelled')).ok).toBe(true);
+    resolve({ ok: true, json: async () => ({ items: [{ id: 'plex:child', type: 'track' }] }) });
+    expect((await first).ok).toBe(true);
+    expect(await cancelled).toMatchObject({ ok: false, code: 'ITEM_ACTION_CANCELLED' });
+    expect((await last).ok).toBe(true);
+    expect(ids(destination)).toEqual(['old', 'tail', 'plex:child', 'last']);
+  });
+  it('a newer Play supersedes an older collection even if the older expansion resolves first', async () => {
+    const resolves = [];
+    const destination = seeded({ fetchImpl: () => new Promise(resolve => resolves.push(resolve)) });
+    const command = id => ({ kind: 'playNow', item: { contentId: `plex:${id}`, type: 'album' }, destination, operationId: id });
+    const old = executeItemAction(command('old-request'));
+    const newer = executeItemAction(command('newer-request'));
+    resolves[0]({ ok: true, json: async () => ({ items: [{ id: 'plex:old-child', type: 'track' }] }) });
+    expect(await old).toMatchObject({ ok: false, code: 'ITEM_ACTION_CANCELLED' });
+    expect(ids(destination)).toEqual(['old', 'tail']);
+    resolves[1]({ ok: true, json: async () => ({ items: [{ id: 'plex:new-child', type: 'track' }] }) });
+    expect((await newer).ok).toBe(true);
+    expect(ids(destination)).toEqual(['plex:new-child']);
+  });
   it('repeated same-title additions mint distinct queue generations', async () => {
     const destination = seeded();
     const existing = destination.getSnapshot().queue.items[0];

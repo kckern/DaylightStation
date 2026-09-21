@@ -34,6 +34,7 @@ import { createPlayerSessionRegistry } from '../../screen-framework/publishers/p
 import { createRegistrySessionSource } from '../../screen-framework/publishers/registrySessionSource.js';
 import { __resetPlayerQueueOpRegistryForTests, getPlayerQueueOpRegistry } from './lib/queueOpRegistry.js';
 import { DaylightAPI } from '../../lib/api.mjs';
+import { createScreenItemActions } from '../../screen-framework/actions/screenItemActions.js';
 
 beforeEach(() => {
   DaylightAPI.mockReset();
@@ -55,6 +56,49 @@ afterEach(() => {
 });
 
 describe('Player session port', () => {
+  it('removing the final direct-play item stops native playback and cannot revive the original play prop', async () => {
+    const ref = createRef();
+    const native = document.createElement('video');
+    Object.defineProperties(native, {
+      paused: { configurable: true, writable: true, value: false },
+      currentTime: { configurable: true, writable: true, value: 23 },
+      pause: { configurable: true, value: () => { native.paused = true; } },
+    });
+    mockMediaElement = native;
+    let resolveQueue;
+    DaylightAPI.mockImplementation(path => String(path).startsWith('api/v1/queue/')
+      ? new Promise(resolve => { resolveQueue = resolve; })
+      : Promise.resolve({ contentId: 'plex:direct-final', title: 'Final', mediaUrl: '/stream/final', format: 'video' }));
+    const direct = { contentId: 'plex:direct-final', title: 'Final', format: 'video' };
+    const view = render(<Player ref={ref} play={direct} />);
+    await waitFor(() => expect(ref.current?.getQueueSnapshot().items).toHaveLength(1));
+    let tick;
+    const registry = createPlayerSessionRegistry();
+    const bridge = createPlayerSessionBridge({ getPlayerHandle: () => ref.current, registry,
+      setIntervalFn: fn => { tick = fn; return 1; }, clearIntervalFn: () => {} });
+    bridge.start();
+    act(() => {
+      latestSinglePlayerProps.onMediaRef(native, { contentId: direct.contentId });
+      tick(); native.dispatchEvent(new Event('playing')); tick();
+    });
+    const source = createRegistrySessionSource({ registry, ownerId: 'screen', sessionId: 'final-session' });
+    expect(source.getSnapshot().state).toBe('playing');
+    const actions = createScreenItemActions({ source, targetId: 'screen' });
+    const queueItemId = source.capture().snapshot.queue.items[0].queueItemId;
+    let pending;
+    act(() => { pending = actions.execute({ kind: 'remove', queueItemId, operationId: 'remove-final', tappedAt: Date.now() }); });
+    await waitFor(() => expect(source.capture().snapshot.queue.items).toHaveLength(0));
+    expect((await pending).ok).toBe(true);
+    expect(native.paused).toBe(true);
+    expect(source.getSnapshot()).toMatchObject({ state: 'idle', currentItem: null });
+    expect(view.queryByTestId('single-player')).toBeNull();
+    await act(async () => resolveQueue({ items: [direct], audio: null }));
+    view.rerender(<Player ref={ref} play={direct} />);
+    act(() => tick());
+    expect(source.getSnapshot()).toMatchObject({ state: 'idle', currentItem: null, queue: { items: [] } });
+    expect(view.queryByTestId('single-player')).toBeNull();
+    bridge.stop();
+  });
   const adoptionSnapshot = ({
     items, executionOrder, repeat = 'off', playbackRate = 1, shader = null,
   }) => ({

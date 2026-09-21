@@ -29,6 +29,14 @@ export function createUndoLedger({ targetId, capture, revision, restore, now = D
       if (record.priorRevision !== currentRevision()) { record.status = 'superseded'; return false; }
       return true;
     },
+    rebasePending(operationId) {
+      const record = records.get(operationId);
+      if (record?.status !== 'pending') return;
+      // Queued insertion intents capture their predecessor after the earlier
+      // intent commits. Their tap deadline and cancellation are unchanged.
+      record.priorSnapshot = capture();
+      record.priorRevision = currentRevision();
+    },
     applying(operationId, { playbackChanged = true } = {}) {
       const record = records.get(operationId);
       if (record?.status === 'pending') { record.status = 'applying'; record.playbackChanged = playbackChanged; }

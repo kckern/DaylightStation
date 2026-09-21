@@ -267,7 +267,9 @@ const Player = forwardRef(function Player(props, ref) {
     if (inputIsExplicitQueue) {
       return playQueueHead;
     }
-    if (queueHasAdvanced && playQueueHead) {
+    if (queueHasAdvanced) {
+      // Once the queue owner takes over, an empty queue is authoritative.
+      // Falling back to the original direct-play prop resurrects removed media.
       return playQueueHead;
     }
     if (play && !Array.isArray(play)) {
@@ -1972,7 +1974,8 @@ const Player = forwardRef(function Player(props, ref) {
         const boundaryInspected = inspectRendererBoundaryRequest(boundaryRequest);
         if (!boundaryInspected.ok) return boundaryInspected;
       }
-      ownerStoppedRef.current = false;
+      if (!adoptedCurrent) stopOwner();
+      else ownerStoppedRef.current = false;
       adoptQueueSnapshot(adopted);
       setQueueHasAdvanced(true);
       setTargetTimeSeconds(adopted.position);

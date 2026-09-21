@@ -13,11 +13,17 @@ export function createItemActionOwner({ targetId, capture, revision, apply, fetc
     return apply(snapshot, { restore: record.playbackChanged, playbackChanged: record.playbackChanged });
   }, now });
   const operations = new Map();
+  let pendingQueueIntent = null;
+  let playbackIntent = 0;
   function execute(command) {
     const { kind, item, collectionItems, operationId, tappedAt, clearRest } = command;
     if (operations.has(operationId)) return operations.get(operationId);
+    const replacesPlayback = kind === 'playNow' || kind === 'shuffle';
+    const intent = replacesPlayback ? ++playbackIntent : null;
     ledger.begin({ operationId, tappedAt });
     const mutate = (inputs) => {
+      if (replacesPlayback && intent !== playbackIntent) return { ok: false, code: 'ITEM_ACTION_CANCELLED', operationId };
+      if (!replacesPlayback) ledger.rebasePending(operationId);
       if (!ledger.canApply(operationId)) return { ok: false, code: 'ITEM_ACTION_CANCELLED', operationId };
       if (!Array.isArray(inputs) || !inputs.length) return { ok: false, code: 'EMPTY_COLLECTION', operationId };
       // An insertion is always a new queue generation, even when the caller
@@ -62,10 +68,21 @@ export function createItemActionOwner({ targetId, capture, revision, apply, fetc
       ledger.issued(operationId);
       return applied?.then ? applied.then(complete) : complete(applied);
     };
-    let result;
-    if (collectionItems) result = mutate(collectionItems);
-    else if (isContainerInput(item)) result = expandContainerInput(item, { fetchImpl }).then(mutate);
-    else result = mutate([item]);
+    // Fetch eagerly, but apply queue edits in invocation order. Resolve errors
+    // into a value immediately so an out-of-order failure cannot become an
+    // unhandled rejection while it waits behind another expansion.
+    const expansion = !collectionItems && isContainerInput(item)
+      ? expandContainerInput(item, { fetchImpl }).then(items => ({ items }), error => ({ error }))
+      : null;
+    const run = () => expansion
+      ? expansion.then(value => { if (value.error) throw value.error; return mutate(value.items); })
+      : mutate(collectionItems ?? [item]);
+    const result = !replacesPlayback && pendingQueueIntent ? pendingQueueIntent.then(run) : run();
+    if (!replacesPlayback && result?.then) {
+      const boundary = result.then(() => {}, () => {});
+      pendingQueueIntent = boundary;
+      boundary.then(() => { if (pendingQueueIntent === boundary) pendingQueueIntent = null; });
+    }
     operations.set(operationId, result);
     return result;
   }
