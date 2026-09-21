@@ -3,7 +3,7 @@ import { createUndoLedger } from '../session/undoLedger.js';
 import { expandContainerInput, isContainerInput } from '../session/containerExpansion.js';
 
 /** Shared owner algorithm, used by the local controller and screen owner. */
-export function createItemActionOwner({ targetId, capture, revision, apply, fetchImpl, now = Date.now }) {
+export function createItemActionOwner({ targetId, capture, revision, apply, getPendingCommit, fetchImpl, now = Date.now }) {
   const ledger = createUndoLedger({ targetId, capture, revision, restore: (snapshot, record) => {
     if (!record.playbackChanged) {
       const current = capture();
@@ -23,6 +23,11 @@ export function createItemActionOwner({ targetId, capture, revision, apply, fetc
     ledger.begin({ operationId, tappedAt });
     const mutate = (inputs) => {
       if (replacesPlayback && intent !== playbackIntent) return { ok: false, code: 'ITEM_ACTION_CANCELLED', operationId };
+      // Expansion can finish while a newer Play has issued its owner write
+      // but React still exposes the old queue. Wait at the mutation boundary,
+      // then re-check before rebasing/capturing the committed owner state.
+      const pendingCommit = getPendingCommit?.();
+      if (pendingCommit) return pendingCommit.then(() => mutate(inputs));
       if (!replacesPlayback) ledger.rebasePending(operationId);
       if (!ledger.canApply(operationId)) return { ok: false, code: 'ITEM_ACTION_CANCELLED', operationId };
       if (!Array.isArray(inputs) || !inputs.length) return { ok: false, code: 'EMPTY_COLLECTION', operationId };
