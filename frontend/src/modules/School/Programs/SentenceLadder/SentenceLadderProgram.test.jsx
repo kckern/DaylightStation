@@ -819,18 +819,45 @@ describe('repetition, one sentence at a time', () => {
   const SEQUENCE = { timeout: 4000 };
 
   it('holds the sentence it just played and offers repeat or move on', async () => {
-    playsToEnd();
     liveDay([entry(1, 'repetition'), entry(2, 'repetition')]);
     render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
 
+    const playing = [];
+    window.HTMLMediaElement.prototype.play = vi.fn(function play() {
+      playing.push(this);
+      return Promise.resolve();
+    });
     fireEvent.click(await screen.findByRole('button', { name: 'Play' }));
-    const again = await screen.findByRole('button', { name: 'Play again' }, SEQUENCE);
-    // Its word is for screen readers; a child sees the glyph, so there must be one.
-    expect(again.querySelector('svg')).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Next' })).toBeTruthy();
-    // The sentence they just heard is still the one on screen.
-    expect(screen.getByText('English 1')).toBeTruthy();
-    expect(screen.queryByText('English 2')).toBeNull();
+    expect(playing).toHaveLength(1);
+
+    // The source and first target clip end through their real browser callback.
+    // Only the repeated target gets the learner's deliberate one-second gap.
+    act(() => playing.at(-1).onended?.());
+    expect(playing).toHaveLength(2);
+    vi.useFakeTimers();
+    try {
+      act(() => playing.at(-1).onended?.());
+      await act(async () => { await vi.advanceTimersByTimeAsync(999); });
+      expect(playing).toHaveLength(2);
+      await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+      expect(playing).toHaveLength(3);
+
+      await act(async () => {
+        playing.at(-1).onended?.();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      vi.useRealTimers();
+      const again = await screen.findByRole('button', { name: 'Play again' }, SEQUENCE);
+      // Its word is for screen readers; a child sees the glyph, so there must be one.
+      expect(again.querySelector('svg')).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Next' })).toBeTruthy();
+      // The sentence they just heard is still the one on screen.
+      expect(screen.getByText('English 1')).toBeTruthy();
+      expect(screen.queryByText('English 2')).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('moves on only when the child says so — and Next means what it says', async () => {
