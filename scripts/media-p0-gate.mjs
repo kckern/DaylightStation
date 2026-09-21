@@ -125,12 +125,15 @@ export function runP0Gate({ env = process.env } = {}) {
 
 function main() {
   const { manifest, reports } = runP0Gate();
-  console.log(`media-p0: ${manifest.stories} stories / ${manifest.criteria} criteria`);
+  const output = [`media-p0: ${manifest.stories} stories / ${manifest.criteria} criteria`];
   for (const { journey, tests, paths } of reports) {
     const supported = journey.stories.map(({ story, criteria }) => `${story} (${criteria.join(', ')})`).join(', ');
-    console.log(`PASS ${journey.file} --grep ${journey.grep}: ${tests} tests; ${supported}`);
-    console.log(`  json=${paths.jsonPath} text=${paths.textPath}`);
+    output.push(
+      `PASS ${journey.file} --grep ${journey.grep}: ${tests} tests; ${supported}`,
+      `  json=${paths.jsonPath} text=${paths.textPath}`,
+    );
   }
+  process.stdout.write(`${output.join('\n')}\n`);
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
