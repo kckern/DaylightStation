@@ -25,11 +25,14 @@ async function openDestinationSurface(page, surface) {
   await expect(page.getByTestId('browse-dispatch-header')).toBeVisible();
 }
 
-async function chooseAcceptanceTarget(page) {
-  await page.getByTestId('destination-line').click();
+async function chooseAcceptanceTarget(page, surface) {
+  const destinationSurface = surface === 'phone'
+    ? page.getByTestId('search-mode')
+    : page.getByTestId('browse-dispatch-header');
+  await destinationSurface.getByTestId('destination-line').click();
   await page.getByTestId('picker-device-acceptance-media').click();
   await page.getByTestId('picker-submit').click();
-  await expect(page.getByTestId('destination-line-name')).toContainText('Acceptance');
+  await expect(destinationSurface.getByTestId('destination-line-name')).toContainText('Acceptance');
 }
 
 for (const [label, viewport, surface] of surfaces) {
@@ -53,7 +56,7 @@ for (const [label, viewport, surface] of surfaces) {
       await expect(page.getByTestId('media-search-launcher')).toBeVisible({ timeout: 30000 });
       await openDestinationSurface(page, surface);
     }
-    await chooseAcceptanceTarget(page);
+    await chooseAcceptanceTarget(page, surface);
 
     if (surface === 'phone') {
       // A real container selection leaves SearchMode and opens BrowseView.
@@ -61,8 +64,9 @@ for (const [label, viewport, surface] of surfaces) {
       const collection = page.getByTestId('search-mode-results').getByTestId('search-mode-result-plex:663508');
       await expect(collection).toBeVisible({ timeout: 30000 });
       await collection.click();
-      await expect(page.getByTestId('browse-dispatch-header')).toBeVisible();
-      await expect(page.getByTestId('destination-line-name')).toContainText('Acceptance');
+      const browseHeader = page.getByTestId('browse-dispatch-header');
+      await expect(browseHeader).toBeVisible();
+      await expect(browseHeader.getByTestId('destination-line-name')).toContainText('Acceptance');
       await page.getByTestId('browse-crumb-home').click();
     } else {
       // The dock chip is another live view of the same shared target state.
@@ -83,10 +87,13 @@ for (const [label, viewport, surface] of surfaces) {
       await page.keyboard.press('Escape');
       await openDestinationSurface(page, surface);
     }
-    await expect(page.getByTestId('destination-line-name')).toContainText('Acceptance');
+    const reopenedSurface = surface === 'phone'
+      ? page.getByTestId('search-mode')
+      : page.getByTestId('browse-dispatch-header');
+    await expect(reopenedSurface.getByTestId('destination-line-name')).toContainText('Acceptance');
 
     await page.clock.fastForward(2 * 60 * 60 * 1000 + 1000);
-    await expect(page.getByTestId('destination-line-name')).toHaveText(/This device/);
+    await expect(reopenedSurface.getByTestId('destination-line-name')).toHaveText(/This device/);
     await page.reload();
     if (surface === 'phone') {
       await expect(page.getByTestId('media-search-launcher')).toBeVisible({ timeout: 30000 });
@@ -97,7 +104,10 @@ for (const [label, viewport, surface] of surfaces) {
       await page.keyboard.press('Escape');
       await openDestinationSurface(page, surface);
     }
-    await expect(page.getByTestId('destination-line-name')).toHaveText(/This device/);
+    const expiredSurface = surface === 'phone'
+      ? page.getByTestId('search-mode')
+      : page.getByTestId('browse-dispatch-header');
+    await expect(expiredSurface.getByTestId('destination-line-name')).toHaveText(/This device/);
     expect(deviceCommands, 'Changing, persisting, and expiring aim must not issue device commands').toEqual([]);
   });
 }
