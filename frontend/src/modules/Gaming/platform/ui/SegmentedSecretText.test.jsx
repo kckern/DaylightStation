@@ -58,6 +58,12 @@ describe('SegmentedSecretText', () => {
     expect(container.querySelectorAll('.segmented-secret-text__space, .segmented-secret-text__word-gap')).toHaveLength(0);
   });
 
+  it('wraps a sixteen-cell clue before it overwhelms the charades stage', () => {
+    const { container } = render(<SegmentedSecretText text="Washing a window" decoder={STATIC} />);
+    expect(balanceSecretLines('WASHING A WINDOW')).toEqual(['WASHING', 'A WINDOW']);
+    expect(container.querySelectorAll('.segmented-secret-text__line')).toHaveLength(2);
+  });
+
   it('keeps the original per-glyph signal and mask interference', () => {
     const { container } = render(<SegmentedSecretText text="CAT" decoder={STATIC} />);
     expect(glyphsOf(container)).toHaveLength(3);

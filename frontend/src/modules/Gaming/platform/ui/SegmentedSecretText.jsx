@@ -14,7 +14,7 @@ import './SegmentedSecretText.scss';
 // a change never moves a segment across families, so the filtered view holds.
 const SIGNAL_COLORS = Object.freeze(SIGNAL_SEGMENT_COLORS.map(segmentColorValue));
 const MASK_COLORS = Object.freeze(MASK_SEGMENT_COLORS.map(segmentColorValue));
-const TARGET_LINE_LENGTH = 18;
+const TARGET_LINE_LENGTH = 14;
 const CURSOR = new Set(CURSOR_SEGMENTS);
 const NOTHING = new Set();
 const STATIC = decoderSettings({ reveal: 'static' });
