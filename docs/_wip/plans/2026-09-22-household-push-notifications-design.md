@@ -1,7 +1,7 @@
 # Household push notifications — design
 
 **Date:** 2026-09-22
-**Status:** design agreed, not implemented
+**Status:** implemented on `feat/household-push-notifications` (2026-09-22). The composer replay test was replaced by table and consumer tests; see the plan.
 **Evidence:** [`_wip/audits/2026-09-22-ha-push-notification-audit.md`](../audits/2026-09-22-ha-push-notification-audit.md)
 (305 real pushes over 30 days, with every defect traced to its cause)
 

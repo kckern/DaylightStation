@@ -579,7 +579,7 @@ git commit -m "feat(school): settled outcome reports retake parent and study day
 5. **Unmarked record alone:** `results: []` with the same `silentLiveRecords`. The fire has title `'⚠️ Learner4 — School card'` and a message containing `(rows 34–39)`.
 6. **Unresolved:** `resolveCardScan` returns `{ error: { code: 'CARD_ID_UNREADABLE' } }`. The notification message is `"The card number couldn't be read — rescan the card"`.
 7. **Missing deps degrade:** with no `curriculum`/`studentName`/`today`, a graded fire still has a notification whose title and message pass `findPushTextDefects(...) → []`.
-8. **Compose failure:** make `studentName` throw. The hook still fires with a notification (generic "Card couldn't be graded" copy) and `logger.warn` receives `school.push.compose-failed`.
+8. **Compose failure:** make `studentName` throw. The hook still fires with the SAME outcome's copy without labels: a passed sheet reads `✅ School card` / `5 of 6 correct`, and never "couldn't be graded". `logger.warn` receives `school.push.compose-failed`. Unmarked-with-graded-work stays `null` even when a lookup throws. *(Changed after code review. The first version fell back to generic "unresolved" copy, which paged a parent that a passed sheet had failed, and broke suppression.)*
 
 **Step 2: Run them to confirm they fail.**
 `frontend/node_modules/.bin/vitest run --config vitest.config.mjs backend/src/3_applications/school/workflows/SchoolPrintScanConsumer.push.test.mjs`
@@ -621,7 +621,8 @@ b) Inside `onPayload`, next to `titleFor`, add:
         return notification;
       } catch (err) {
         logger.warn?.('school.push.compose-failed', { testId, kind: event.kind, error: err.message });
-        return composeSchoolPush({ kind: 'unresolved', testId, learnerId: event.learnerId ?? card?.learnerId ?? null });
+        // Same outcome, no labels; generic copy only if even that throws.
+        return fallbackPush(event, card);
       }
     };
 ```
@@ -732,6 +733,9 @@ Add `import { personDisplayName } from '#domains/notification/push/pushText.mjs'
         curriculum: schoolLifecycle.stores.curriculum ?? null,
         studentName: (learnerId) => personDisplayName(configService.getUserProfile?.(learnerId), learnerId),
         today: () => studyDayForInstant(Date.now(), { timezone: configService.getHouseholdTimezone?.() ?? null }),
+        // Bounds the label lookups (default 2s) so a hung catalog/name read can
+        // never withhold the hook and, with it, the room siren.
+        scheduler: new NodeAsyncScheduler(),
 ```
 
 Import `studyDayForInstant` from `#domains/school/studyDay.mjs`. Before relying on it, confirm that `schoolLifecycle.stores.curriculum` exists (`grep -n "curriculum," backend/src/5_composition/modules/schoolLifecycle.mjs` near its `return`/`stores` spread) and that `getHouseholdTimezone()` accepts no argument (`backend/src/0_system/config/ConfigService.mjs:65`).
