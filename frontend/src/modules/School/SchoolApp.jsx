@@ -30,6 +30,7 @@ import SentenceLadderProgram from './Programs/SentenceLadder/SentenceLadderProgr
 import LanguageReelsProgram from './Programs/LanguageReels/LanguageReelsProgram.jsx';
 import FlashcardProgram from './Programs/Flashcards/FlashcardProgram.jsx';
 import FlashcardDeckBrowser from './Programs/Flashcards/FlashcardDeckBrowser.jsx';
+import WordLadderProgram from './Programs/Flashcards/WordLadder/WordLadderProgram.jsx';
 import RubiksCubeProgram from './Programs/RubiksCube/RubiksCubeProgram.jsx';
 import BookShelf from './books/BookShelf.jsx';
 import BookScanEntry from './books/BookScanEntry.jsx';
@@ -515,6 +516,16 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
       setBookLaunch({ learnerId, bookGrant: target.bookGrant, bookEntry: target.bookEntry ?? null, openAdd: target.openAdd === true });
       schoolLog.bookShelf('launch', { learnerId });
       openSection('book-shelf');
+      return true;
+    }
+    // A word-ladder enrollment is still program `flashcards`; its mode rides
+    // the launch target's policy. The ladder loads its own day from the
+    // server, so there is no deck or assessment to fetch here.
+    if (target?.kind === 'program' && target.program === 'flashcards' && target.policy?.mode === 'word-ladder') {
+      const learnerId = launchedLearnerId ?? target.learnerId ?? null;
+      if (!target.deckId || !learnerId) return false;
+      setActive({ mode: 'word_ladder', descriptor: { deckId: target.deckId, userId: learnerId } });
+      openSection('flashcards');
       return true;
     }
     if (target?.kind === 'program' && target.program === 'flashcards') {
@@ -1164,6 +1175,13 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
               return { ok: true };
             }}
             studyApi={{ open: schoolApi.flashcardOpen, review: schoolApi.flashcardReview, heartbeat: schoolApi.flashcardHeartbeat, summary: schoolApi.flashcardSummary }}
+            resolveAssetUrl={schoolApi.flashcardAssetUrl ?? ((assetId) => assetId)}
+            onExit={() => setActive(null)}
+          />
+        )}
+        {active?.mode === 'word_ladder' && (
+          <WordLadderProgram
+            descriptor={active.descriptor}
             resolveAssetUrl={schoolApi.flashcardAssetUrl ?? ((assetId) => assetId)}
             onExit={() => setActive(null)}
           />
