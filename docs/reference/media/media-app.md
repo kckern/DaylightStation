@@ -278,8 +278,11 @@ unchanged source; **Keep playing here too** never stops it.
 Aim labels always read the one persisted global aim, including while a person
 is steering a different screen in Peek. A busy origin is shown only when a
 fresh receiver snapshot carries explicit `meta.origin` provenance: either a
-known `{ kind: 'device', id }` or a named `{ kind: 'routine', name }`. Receiver
-ownership metadata is not sender provenance and is never presented as such.
+known `{ kind: 'device', id }` belonging to a different client/device, or a
+named `{ kind: 'routine', name }`. The current browser client and configured
+fleet-device identities are compared by their canonical IDs, never by display
+name. Receiver ownership metadata is not sender provenance and is never
+presented as such.
 
 **On phones the dock cannot hold all of that at once — so it doesn't try.**
 At 360px there is ~336px to spend; splitting that between a scope selector, a

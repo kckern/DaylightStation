@@ -5,6 +5,7 @@ import { MantineProvider } from '@mantine/core';
 import { CastTargetProvider } from './CastTargetProvider.jsx';
 import { useCastTarget } from './useCastTarget.js';
 import { LocalSessionContext } from '../session/LocalSessionContext.js';
+import { ClientIdentityContext } from '../identity/ClientIdentityProvider.jsx';
 
 // ── Mocks ────────────────────────────────────────────────────────────────
 let fleetDevices = [
@@ -57,15 +58,17 @@ function Probe() {
   );
 }
 
-function renderLine(props, controller = null) {
+function renderLine(props, controller = null, identity = { clientId: 'current-client', displayName: 'Current browser' }) {
   return render(
     <MantineProvider>
-      <LocalSessionContext.Provider value={controller ? { controller } : null}>
-        <CastTargetProvider>
-          <DestinationLine {...props} />
-          <Probe />
-        </CastTargetProvider>
-      </LocalSessionContext.Provider>
+      <ClientIdentityContext.Provider value={identity}>
+        <LocalSessionContext.Provider value={controller ? { controller } : null}>
+          <CastTargetProvider>
+            <DestinationLine {...props} />
+            <Probe />
+          </CastTargetProvider>
+        </LocalSessionContext.Provider>
+      </ClientIdentityContext.Provider>
     </MantineProvider>
   );
 }
@@ -73,6 +76,7 @@ function renderLine(props, controller = null) {
 beforeEach(() => {
   vi.clearAllMocks();
   localStorage.clear();
+  delete window.__DAYLIGHT_DEVICE_ID;
   fleetDevices = [
     { id: 'livingroom-tv', name: 'Living Room TV' },
     { id: 'yellow-room-tablet', name: 'Yellow Room Tablet' },
@@ -111,6 +115,49 @@ describe('DestinationLine', () => {
     }]]);
     renderLine();
     expect(screen.getByTestId('aim-busy-origin')).toHaveTextContent('Busy — started from Kitchen Tablet');
+  });
+
+  it('does not call a busy aimed screen foreign when this browser client started it', () => {
+    localStorage.setItem(
+      'media-app.cast-target',
+      JSON.stringify({ mode: 'transfer', targetIds: ['livingroom-tv'], activityAt: Date.now(), exemptionStartedAt: null })
+    );
+    fleetDevices.push({ id: 'browser:current-client', name: 'Current browser' });
+    fleetEntries = new Map([['livingroom-tv', {
+      snapshot: { state: 'playing', meta: { origin: { kind: 'device', id: 'browser:current-client' } } },
+      offline: false, isStale: false,
+    }]]);
+    renderLine();
+    expect(screen.queryByTestId('aim-busy-origin')).toBeNull();
+  });
+
+  it('does not call a busy aimed screen foreign when this fleet device started it', () => {
+    window.__DAYLIGHT_DEVICE_ID = 'kitchen-tablet';
+    localStorage.setItem(
+      'media-app.cast-target',
+      JSON.stringify({ mode: 'transfer', targetIds: ['livingroom-tv'], activityAt: Date.now(), exemptionStartedAt: null })
+    );
+    fleetDevices.push({ id: 'kitchen-tablet', name: 'Kitchen Tablet' });
+    fleetEntries = new Map([['livingroom-tv', {
+      snapshot: { state: 'paused', meta: { origin: { kind: 'device', id: 'kitchen-tablet' } } },
+      offline: false, isStale: false,
+    }]]);
+    renderLine();
+    expect(screen.queryByTestId('aim-busy-origin')).toBeNull();
+    delete window.__DAYLIGHT_DEVICE_ID;
+  });
+
+  it('still shows explicit routine provenance as another busy origin', () => {
+    localStorage.setItem(
+      'media-app.cast-target',
+      JSON.stringify({ mode: 'transfer', targetIds: ['livingroom-tv'], activityAt: Date.now(), exemptionStartedAt: null })
+    );
+    fleetEntries = new Map([['livingroom-tv', {
+      snapshot: { state: 'buffering', meta: { origin: { kind: 'routine', name: 'Morning music' } } },
+      offline: false, isStale: false,
+    }]]);
+    renderLine();
+    expect(screen.getByTestId('aim-busy-origin')).toHaveTextContent('Busy — started from Morning music routine');
   });
 
   it('does not invent a busy origin from the receiver owner id', () => {

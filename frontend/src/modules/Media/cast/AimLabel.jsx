@@ -4,16 +4,30 @@ import { useCastTarget } from './useCastTarget.js';
 import { useFleetContext } from '../fleet/useFleetContext.js';
 import { ClientIdentityContext } from '../identity/ClientIdentityProvider.jsx';
 import { useLocalPlaybackActive } from './useDispatchTargetPicker.js';
+import { getDeviceId } from '../../../lib/deviceIdentity.js';
 
 const EMPTY_FLEET = new Map();
 
-export function busyOriginName(targetIds = [], devices = [], entries = EMPTY_FLEET) {
+function isCurrentDeviceOrigin(originId, { clientId = null, deviceId = null } = {}) {
+  if (typeof originId !== 'string' || !originId) return false;
+
+  // Browser playback is represented in the fleet by the canonical id built
+  // from ClientIdentityContext.clientId. The HTTP/device identity carries its
+  // own provenance; named screens use their configured fleet id in snapshots.
+  if (typeof clientId === 'string' && clientId && originId === `browser:${clientId}`) return true;
+  if (typeof deviceId !== 'string' || !deviceId) return false;
+  if (originId === deviceId) return true;
+  return deviceId.startsWith('fleet:') && originId === deviceId.slice('fleet:'.length);
+}
+
+export function busyOriginName(targetIds = [], devices = [], entries = EMPTY_FLEET, currentIdentity = {}) {
   if (targetIds.length !== 1) return null;
   const entry = entries.get?.(targetIds[0]);
   if (!entry || entry.offline || entry.isStale
     || !['playing', 'paused', 'buffering', 'stalled'].includes(entry.snapshot?.state)) return null;
   const origin = entry.snapshot?.meta?.origin;
   if (origin?.kind === 'device' && typeof origin.id === 'string' && origin.id) {
+    if (isCurrentDeviceOrigin(origin.id, currentIdentity)) return null;
     const device = devices.find((candidate) => candidate.id === origin.id);
     // An unrecognised id is not human provenance; never leak or humanise it.
     return device ? deviceName(device, origin.id) : null;
@@ -58,7 +72,9 @@ export function AimLabel({
 export function GlobalAimLabel({ compact = false }) {
   const { targetIds, mode } = useCastTarget();
   const { devices, store } = useFleetContext();
-  const localName = useContext(ClientIdentityContext)?.displayName ?? null;
+  const identity = useContext(ClientIdentityContext);
+  const localName = identity?.displayName ?? null;
+  const currentIdentity = { clientId: identity?.clientId ?? null, deviceId: getDeviceId() };
   const localPlaying = useLocalPlaybackActive();
   const subscribe = useCallback((notify) => store?.subscribeAll?.(notify) ?? (() => {}), [store]);
   const getSnapshot = useCallback(() => store?.getAll?.() ?? EMPTY_FLEET, [store]);
@@ -68,7 +84,7 @@ export function GlobalAimLabel({ compact = false }) {
       targetIds={targetIds}
       devices={devices}
       localName={localName}
-      busyOrigin={busyOriginName(targetIds, devices, entries)}
+      busyOrigin={busyOriginName(targetIds, devices, entries, currentIdentity)}
       localPlaying={localPlaying}
       mode={mode}
       compact={compact}

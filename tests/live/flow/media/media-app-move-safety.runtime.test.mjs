@@ -195,13 +195,22 @@ test.describe('Media M0 Move safety', () => {
 
       const receiverNative = receiver.locator('.video-player video');
       await expect(receiverNative).toHaveCount(1, { timeout: 30000 });
-      await expect.poll(() => receiverNative.evaluate((node, expected) => ({
-        paused: node.paused,
-        ready: node.readyState >= 2,
-        seeking: node.seeking,
-        delta: Math.abs(node.currentTime - expected),
-      }), pausedAt), { timeout: 30000 }).toMatchObject({ paused: true, ready: true, seeking: false, delta: expect.any(Number) });
-      expect(await receiverNative.evaluate((node, expected) => Math.abs(node.currentTime - expected), pausedAt)).toBeLessThanOrEqual(2);
+      await expect.poll(() => receiverNative.evaluate((node, expected) => {
+        const delta = Math.abs(node.currentTime - expected);
+        return {
+          paused: node.paused,
+          ready: node.readyState >= 2,
+          seeking: node.seeking,
+          delta,
+          withinPositionTolerance: delta <= 2,
+        };
+      }, pausedAt), { timeout: 30000 }).toMatchObject({
+        paused: true,
+        ready: true,
+        seeking: false,
+        delta: expect.any(Number),
+        withinPositionTolerance: true,
+      });
 
       await expect(page.getByTestId('now-playing-title')).toHaveText('Nothing playing', { timeout: 30000 });
       await expect.poll(() => page.locator('video, audio')
