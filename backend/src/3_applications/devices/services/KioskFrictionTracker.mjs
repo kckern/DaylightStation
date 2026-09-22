@@ -53,8 +53,9 @@ function utcDayWindow(at) {
  * — the count is never allowed to drift from reality. Only the expensive
  * `ingress.observe` publish is debounced, per device, and only skipped when
  * none of the following hold:
- *   - this is the first ping ever seen for this device (or since it last
- *     went idle long enough to age out of `#windowMs`), or
+ *   - this is the first ping ever seen for this device (a long-idle device
+ *     falls under the elapsed-time bullet below instead — its last publish
+ *     attempt is always further back than `#debounceMs`), or
  *   - this ping crosses the denial threshold in EITHER direction (a real
  *     cooldown must start/end promptly, not sit delayed by debounce), or
  *   - at least `#debounceMs` has elapsed since the last publish attempt.
