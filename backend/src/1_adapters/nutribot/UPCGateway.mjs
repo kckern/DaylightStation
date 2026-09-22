@@ -20,6 +20,16 @@ export const PLACEHOLDER_IMAGE_SHA256 = Object.freeze([
   'ab815c08e2dae4cfb52c02471fdbcf5169c853dcfe8b0a05bc87dc877e3af055',
 ]);
 
+/**
+ * @param {Buffer} buffer
+ * @param {Iterable<string>} [digests] SHA-256 hex digests of stock "no image" files
+ * @returns {boolean} true when the bytes are one of those placeholders
+ */
+export function isPlaceholderImage(buffer, digests = PLACEHOLDER_IMAGE_SHA256) {
+  const known = digests instanceof Set ? digests : new Set(digests);
+  return known.has(createHash('sha256').update(buffer).digest('hex'));
+}
+
 // Open Food Facts API
 const OPEN_FOOD_FACTS_API = 'https://world.openfoodfacts.org/api/v0/product';
 
@@ -133,8 +143,7 @@ export class UPCGateway {
         this.#logger.debug?.('upc.image.notAnImage', { url, bytes: buffer.length });
         return null;
       }
-      const digest = createHash('sha256').update(buffer).digest('hex');
-      if (this.#placeholderDigests.has(digest)) {
+      if (isPlaceholderImage(buffer, this.#placeholderDigests)) {
         this.#logger.info?.('upc.image.placeholder', { url, bytes: buffer.length });
         return null;
       }

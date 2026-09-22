@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createHash } from 'node:crypto';
-import { UPCGateway, PLACEHOLDER_IMAGE_SHA256 } from './UPCGateway.mjs';
+import { UPCGateway, PLACEHOLDER_IMAGE_SHA256, isPlaceholderImage } from './UPCGateway.mjs';
 
 const jpeg = (tail) => Buffer.concat([Buffer.from([0xFF, 0xD8, 0xFF]), Buffer.from(tail)]);
 const sha = b => createHash('sha256').update(b).digest('hex');
@@ -22,5 +22,14 @@ describe('UPCGateway.fetchImage', () => {
   });
   it('refuses the barcodespider "image coming soon" file by default', () => {
     expect(PLACEHOLDER_IMAGE_SHA256).toContain('ab815c08e2dae4cfb52c02471fdbcf5169c853dcfe8b0a05bc87dc877e3af055');
+  });
+});
+
+describe('isPlaceholderImage', () => {
+  it('matches a buffer whose digest is in the list', () => {
+    const buffer = jpeg('stock');
+    expect(isPlaceholderImage(buffer, [sha(buffer)])).toBe(true);
+    expect(isPlaceholderImage(buffer, new Set([sha(buffer)]))).toBe(true);
+    expect(isPlaceholderImage(jpeg('other'), [sha(buffer)])).toBe(false);
   });
 });
