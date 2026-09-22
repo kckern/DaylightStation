@@ -94,7 +94,7 @@ function optionTopIn(viewport, option) {
  *   beside its existing badges/chevron. Omit (the default, every non-media
  *   caller) and nothing changes — no button renders.
  * @param {(action: string, item: object) => void} [props.onMore] - Task 14: when
- *   provided, a LEAF row renders a ⋯ menu (Play Now/Play Next/Up Next/Add to
+ *   provided, a LEAF row renders a ⋯ menu (Play Now/Play Next/Play First/Add to
  *   Queue/Open detail); action is one of those five verb strings. Omit and
  *   nothing renders.
  * @param {boolean} [props.destinationInteractionActive] - keeps this editing

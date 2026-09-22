@@ -24,6 +24,15 @@ it('the additive action prop gives collection rows Next and Shuffle without sele
   expect(onTap).not.toHaveBeenCalled();
 });
 
+it('the additive action prop names and dispatches the front-insertion verb as Play First', async () => {
+  const onAction = vi.fn();
+  renderWithProvider(<ResultRow item={leafItem} onAction={onAction} onTap={() => {}} />);
+  fireEvent.click(screen.getByRole('button', { name: 'More actions' }));
+  expect(screen.queryByRole('menuitem', { name: 'Up Next', exact: true })).toBeNull();
+  fireEvent.click(await screen.findByRole('menuitem', { name: 'Play First', exact: true }));
+  expect(onAction).toHaveBeenCalledWith({ kind: 'playFirst', item: leafItem });
+});
+
 describe('ResultRow — leaf', () => {
   it('tapping the row calls onTap', () => {
     const onTap = vi.fn();

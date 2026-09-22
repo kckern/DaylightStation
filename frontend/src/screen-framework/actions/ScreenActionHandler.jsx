@@ -204,6 +204,12 @@ export function ScreenActionHandler({ actions = {}, inputType = null }) {
         if (sessionSource && !hasOwner()) {
           // Register an idle playback owner first. It holds Add without
           // starting media and lets Play adopt exactly once after readiness.
+          // Screensavers and other idle fullscreen content must yield first:
+          // ScreenOverlayProvider intentionally refuses a normal-priority
+          // overlay while one is already mounted. Notify the screensaver
+          // controller before replacing its overlay so it rearms its timer.
+          getActionBus().emit('screen:screensaver-dismiss', { reason: 'item-action-owner-bootstrap' });
+          dismissOverlay();
           showOverlay(Player, { play: [], clear: () => dismissOverlay() }, { chrome: 'media', suspendsNavStack: true });
           const deadline = Date.now() + 3000;
           while (!hasOwner() && Date.now() < deadline) {

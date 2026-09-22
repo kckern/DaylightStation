@@ -79,7 +79,7 @@ async function resultActionIdentity(page, id) {
   const expected = [
     { id: `result-action-playNow-${id}`, text: 'Play Now', enabled: true },
     { id: `result-action-playNext-${id}`, text: 'Play Next', enabled: true },
-    { id: `result-action-upNext-${id}`, text: 'Up Next', enabled: true },
+    { id: `result-action-upNext-${id}`, text: 'Play First', enabled: true },
     { id: `result-action-add-${id}`, text: 'Add to Queue', enabled: true },
     { id: `result-action-detail-${id}`, text: 'Open detail', enabled: true },
   ];
