@@ -6,11 +6,18 @@
  * with Nutritionix fallback.
  */
 
+import { createHash } from 'node:crypto';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 import { normalizeProductNutrition, normalizeNutritionixNutrition } from './normalizeProductNutrition.mjs';
 
 // Default barcode image fallback
 const BARCODE_IMAGE_FALLBACK = (upc) => `https://images.barcodespider.com/upcimage/${upc}.jpg`;
+
+// barcodespider answers an unknown code with one fixed "image coming soon"
+// JPEG (4,944 bytes). It passes the magic-byte check, so it is refused by content.
+export const PLACEHOLDER_IMAGE_SHA256 = Object.freeze([
+  'ab815c08e2dae4cfb52c02471fdbcf5169c853dcfe8b0a05bc87dc877e3af055',
+]);
 
 // Open Food Facts API
 const OPEN_FOOD_FACTS_API = 'https://world.openfoodfacts.org/api/v0/product';
@@ -26,6 +33,7 @@ export class UPCGateway {
   #calorieColorService;
   #nutritionix;
   #logger;
+  #placeholderDigests;
 
   /**
    * @param {Object} deps
@@ -33,6 +41,7 @@ export class UPCGateway {
    * @param {import('#domains/nutrition/services/CalorieColorService.mjs').CalorieColorService} [deps.calorieColorService]
    * @param {{ appId: string, appKey: string }} [deps.nutritionix] - Nutritionix credentials for fallback lookups
    * @param {Object} [deps.logger]
+   * @param {string[]} [deps.placeholderDigests] - SHA-256 hex digests of stock "no image" files to refuse (default: PLACEHOLDER_IMAGE_SHA256)
    */
   constructor(deps = {}) {
     if (!deps.httpClient) {
@@ -45,6 +54,7 @@ export class UPCGateway {
     this.#calorieColorService = deps.calorieColorService;
     this.#nutritionix = (deps.nutritionix?.appId && deps.nutritionix?.appKey) ? deps.nutritionix : null;
     this.#logger = deps.logger || console;
+    this.#placeholderDigests = new Set(deps.placeholderDigests ?? PLACEHOLDER_IMAGE_SHA256);
   }
 
   /**
@@ -101,7 +111,8 @@ export class UPCGateway {
    * NEVER THROWS. A product picture is decoration; a dead CDN link, a timeout,
    * or an HTML error page dressed as a JPEG must cost the food log nothing.
    * A non-image content type is refused rather than stored, because the
-   * barcodespider fallback answers a miss with a page, not a 404.
+   * barcodespider fallback answers a miss with a page, not a 404 — or with
+   * its stock "image coming soon" JPEG, which is refused by digest.
    *
    * @param {string} url Absolute http(s) URL, normally `product.imageUrl`.
    * @returns {Promise<Buffer|null>} Image bytes, or null if unusable.
@@ -119,6 +130,11 @@ export class UPCGateway {
         && buffer.subarray(8, 12).toString('latin1') === 'WEBP';
       if (!jpeg && !png && !gif && !webp) {
         this.#logger.debug?.('upc.image.notAnImage', { url, bytes: buffer.length });
+        return null;
+      }
+      const digest = createHash('sha256').update(buffer).digest('hex');
+      if (this.#placeholderDigests.has(digest)) {
+        this.#logger.info?.('upc.image.placeholder', { url, bytes: buffer.length });
         return null;
       }
       this.#logger.debug?.('upc.image.fetched', { url, bytes: buffer.length });
