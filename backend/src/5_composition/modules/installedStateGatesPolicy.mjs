@@ -116,6 +116,7 @@ export const INSTALLED_STATE_GATES_POLICY = Object.freeze({
         },
       },
       reason_labels: {
+        CLAIM_MISSING: 'No friction has been reported for this device yet.',
         THRESHOLD_NOT_MET: 'This device is in a cooldown.',
       },
     },

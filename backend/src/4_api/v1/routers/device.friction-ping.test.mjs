@@ -46,4 +46,13 @@ describe('POST /api/v1/device/:deviceId/friction-ping', () => {
     expect(response.status).toBe(400);
     expect(kioskFrictionTracker.recordFriction).not.toHaveBeenCalled();
   });
+
+  it('responds 503 (not an unhandled TypeError) when kioskFrictionTracker is not wired', async () => {
+    const response = await request(appWith(undefined))
+      .post('/api/v1/device/portal/friction-ping')
+      .send({ kind: 'stray-press' });
+
+    expect(response.status).toBe(503);
+    expect(response.body).toMatchObject({ ok: false, code: 'KIOSK_FRICTION_TRACKER_NOT_CONFIGURED' });
+  });
 });

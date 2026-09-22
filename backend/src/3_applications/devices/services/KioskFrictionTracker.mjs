@@ -6,7 +6,16 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 /** UTC calendar-day boundary — friction cooldown does not need household-
  * timezone precision (unlike School's study-day semantics); this is purely
  * for assertion-id/period stability, not curriculum logic, so importing a
- * School domain util here would be the wrong layer dependency anyway. */
+ * School domain util here would be the wrong layer dependency anyway.
+ *
+ * Both the period's `endsAt` (this function) and the published claim's
+ * `validUntil` (in #publish, derived from `endsAt`) are UTC-midnight
+ * boundaries, NOT the household's local study-day boundary. This is a
+ * deliberate, harmless simplification (see the kiosk-friction-detection
+ * plan) — a cooldown can therefore end up to a few hours earlier or later
+ * than "midnight local time" would suggest. Do not "fix" this by importing
+ * School's study-day helpers; that reintroduces the wrong-layer dependency
+ * this function's comment above exists to avoid. */
 function utcDayWindow(at) {
   const dayStart = Math.floor(at / DAY_MS) * DAY_MS;
   return { day: new Date(dayStart).toISOString().slice(0, 10), startsAt: dayStart, endsAt: dayStart + DAY_MS };
@@ -57,6 +66,10 @@ function utcDayWindow(at) {
  */
 export class KioskFrictionTracker {
   #ingress; #householdId; #principal; #windowMs; #clock; #logger; #debounceMs; #denialThreshold; #scheduler;
+  // These Maps are never pruned, but growth is bounded by device count ×
+  // ~1 entry/day (#revisions keys on the per-device-per-day assertionId) —
+  // negligible in absolute terms for a household's kiosk fleet, not truly
+  // unbounded.
   #eventsByDevice = new Map(); #revisions = new Map();
   #lastPublishedAt = new Map(); #lastScoreByDevice = new Map();
   #lastKindByDevice = new Map(); #trailingCancels = new Map();

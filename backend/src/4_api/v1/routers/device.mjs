@@ -132,6 +132,13 @@ export function createDeviceRouter({ fleetService, presenceService, sessionServi
   // (fail_open) reads. Fire-and-forget by design — recordFriction never
   // throws, so this route only validates the request shape.
   router.post('/:deviceId/friction-ping', asyncHandler(async (req, res) => {
+    // Same-pattern guard as requireSessions/presenceService.configured()
+    // above: not a live bug today (always wired in production), but an
+    // absent optional collaborator should be a clear 503, not an
+    // unhandled TypeError.
+    if (!kioskFrictionTracker) {
+      return res.status(503).json(buildErrorBody({ error: 'Kiosk friction tracking not configured', code: 'KIOSK_FRICTION_TRACKER_NOT_CONFIGURED' }));
+    }
     const { deviceId } = req.params;
     const { kind } = req.body ?? {};
     if (typeof kind !== 'string' || !kind) {
