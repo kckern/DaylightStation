@@ -9,6 +9,7 @@
 import { createHash } from 'node:crypto';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 import { normalizeProductNutrition, normalizeNutritionixNutrition } from './normalizeProductNutrition.mjs';
+import { normalizeProductName } from '#shared/contracts/health/productName.mjs';
 
 // Default barcode image fallback
 const BARCODE_IMAGE_FALLBACK = (upc) => `https://images.barcodespider.com/upcimage/${upc}.jpg`;
@@ -174,7 +175,8 @@ export class UPCGateway {
 
       return {
         upc,
-        name: p.product_name || p.product_name_en || 'Unknown Product',
+        // Names arrive as printed on the pack, often in capitals; normalize once here.
+        name: normalizeProductName(p.product_name || p.product_name_en) || 'Unknown Product',
         brand: p.brands || null,
         imageUrl: p.image_url || p.image_front_url || BARCODE_IMAGE_FALLBACK(upc),
         noomColor: serving.unit === 'g' ? this.#inferNoomColor(nutrition, p.categories_tags || [], serving.size) : 'yellow',
@@ -213,7 +215,7 @@ export class UPCGateway {
 
       return {
         upc,
-        name: food.food_name || 'Unknown Product',
+        name: normalizeProductName(food.food_name) || 'Unknown Product',
         brand: food.brand_name || null,
         imageUrl: food.photo?.thumb || BARCODE_IMAGE_FALLBACK(upc),
         noomColor: serving.unit === 'g' ? this.#inferNoomColor(nutrition, [], serving.size) : 'yellow',
