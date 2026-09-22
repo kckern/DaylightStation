@@ -10,9 +10,18 @@ const withSchedule = (validator) => async (raw) => {
   if (errors.length) {
     return { errors: errors.map((message) => (message.startsWith('schedule ') ? message : `schedule.${message}`)) };
   }
+  // `elective: true` marks an optional program: offered on the agenda, never
+  // obligating the day. Kept here so every program's validator honours it.
+  if (raw?.elective !== undefined && typeof raw.elective !== 'boolean') {
+    return { errors: ['elective must be true or false'] };
+  }
   return {
     errors: [],
-    enrollment: { ...result.enrollment, ...(schedule ? { schedule } : {}) },
+    enrollment: {
+      ...result.enrollment,
+      ...(schedule ? { schedule } : {}),
+      ...(raw?.elective === true ? { elective: true } : {}),
+    },
   };
 };
 

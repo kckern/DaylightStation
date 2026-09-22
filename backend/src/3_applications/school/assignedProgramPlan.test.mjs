@@ -45,3 +45,16 @@ describe('appendAssignedProgramEntries — the sentence ladder', () => {
     expect(out.entries).toHaveLength(0);
   });
 });
+
+describe('appendAssignedProgramEntries — optional programs', () => {
+  it('marks an elective program entry elective and leaves others required', () => {
+    const plan = appendAssignedProgramEntries({ entries: [] }, { programs: [
+      { programId: 'flashcards', deckId: 'language/x/week-01', title: 'Words', elective: true },
+      { programId: 'piano-course', courseId: 'plex:1' },
+    ] });
+    expect(plan.entries.map((e) => [e.unitId, e.elective])).toEqual([
+      ['flashcards:language/x/week-01', true],
+      ['piano-course:plex:1', false],
+    ]);
+  });
+});
