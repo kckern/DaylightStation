@@ -60,6 +60,7 @@ export default function MediaApp() {
       <Notifications
         position="top-center"
         autoClose={3000}
+        style={{ pointerEvents: 'none' }}
         classNames={{ notification: 'media-app-notification' }}
         styles={{ notification: { pointerEvents: 'none' } }}
       />

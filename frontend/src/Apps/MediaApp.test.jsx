@@ -53,6 +53,7 @@ describe('MediaApp', () => {
     // overlay's anchoring contract; browser coverage checks ordinary clicks.
     expect(noticeRegion.style.getPropertyValue('--notifications-bottom')).toBe('');
     expect(noticeRegion.style.getPropertyValue('--notifications-top')).not.toBe('');
+    expect(getComputedStyle(noticeRegion).pointerEvents).toBe('none');
     expect(getComputedStyle(notice).pointerEvents).toBe('none');
     expect(getComputedStyle(undo).pointerEvents).toBe('auto');
     fireEvent.click(screen.getByTestId('mini-player-open-nowplaying'));
