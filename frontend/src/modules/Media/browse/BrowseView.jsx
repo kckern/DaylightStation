@@ -1,6 +1,7 @@
 // frontend/src/modules/Media/browse/BrowseView.jsx
 // Hierarchical catalog browse over the List API. Containers drill (whole row
-// navigates); playables open Detail with inline Play Now / Add. List-API
+// navigates); a playable row plays at the current aim and exposes Detail as
+// a distinct trailing action. List-API
 // containers are addressed by id, not accumulated path, so the breadcrumb is
 // Home / [Back] / current label — never a raw id.
 //
@@ -230,7 +231,7 @@ export function BrowseView({
             if (!id) return null;
             const rowIsContainer = row.itemType === 'container';
             return (
-              <li key={id} data-testid={`browse-row-${id}`} className="browse-row">
+              <li key={id} data-testid={`browse-row-${id}`} className="browse-row result-row">
                 <ResultRow
                   item={{ ...row, id }}
                   title={displayTitle(row)}

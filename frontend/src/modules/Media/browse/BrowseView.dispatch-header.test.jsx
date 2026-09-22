@@ -193,6 +193,7 @@ describe('BrowseView — leaf Detail and Play Now entrypoints', () => {
     renderBrowse();
     const row = screen.getByRole('button', { name: /Arrival artwork\s+Arrival/ });
     expect(row).toHaveAttribute('data-testid', 'result-play-now-plex:55854');
+    expect(row.closest('li')).toHaveClass('result-row');
     fireEvent.click(row);
 
     expect(dispatchLeafVerbMock).toHaveBeenCalledWith('playNow', 'plex:55854', expect.objectContaining({
