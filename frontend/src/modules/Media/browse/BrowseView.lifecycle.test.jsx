@@ -157,6 +157,6 @@ describe('BrowseView lifecycle', () => {
     ];
     renderBrowse({ scrollTop: 137, focusedId: 'plex:e2' });
     expect(screen.getByTestId('scroll-host').scrollTop).toBe(137);
-    expect(screen.getByTestId('result-play-now-plex:e2')).toHaveFocus();
+    expect(screen.getByTestId('browse-detail-plex:e2')).toHaveFocus();
   });
 });

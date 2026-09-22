@@ -184,7 +184,19 @@ describe('BrowseView — nested drill carries containerItem forward', () => {
   });
 });
 
-describe('BrowseView — leaf Play Now', () => {
+describe('BrowseView — leaf Detail and Play Now entrypoints', () => {
+  it('keeps the row title as a Detail entrypoint without dispatching playback', () => {
+    browseState = {
+      items: [{ id: 'plex:55854', title: 'Arrival', type: 'movie', thumbnail: 'arrival.jpg' }],
+      total: 1, loading: false, error: null,
+    };
+    renderBrowse();
+    fireEvent.click(screen.getByTestId('browse-detail-plex:55854'));
+
+    expect(navPush).toHaveBeenCalledWith('detail', { contentId: 'plex:55854' });
+    expect(dispatchLeafVerbMock).not.toHaveBeenCalled();
+  });
+
   it('routes the exact browse row through the current destination dispatcher', () => {
     browseState = {
       items: [{ id: 'plex:685088', title: 'Episode 3', type: 'episode', thumbnail: 'episode.jpg' }],
