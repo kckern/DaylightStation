@@ -27,6 +27,15 @@ describe('School program enrollment schedules', () => {
     expect(result.errors[0]).toMatch(/^schedule\.daysOfWeek/);
     expect(result.enrollment).toBeUndefined();
   });
+
+  it('keeps elective: true on any program, drops elective: false, refuses a non-boolean', async () => {
+    const optional = await validators().get('story-time')({ programId: 'story-time', elective: true });
+    const required = await validators().get('story-time')({ programId: 'story-time', elective: false });
+    const bad = await validators().get('story-time')({ programId: 'story-time', elective: 'yes' });
+    expect(optional).toMatchObject({ errors: [], enrollment: { elective: true } });
+    expect(required.enrollment).not.toHaveProperty('elective');
+    expect(bad.errors).toEqual(['elective must be true or false']);
+  });
 });
 
 describe('Piano course daily video cap', () => {

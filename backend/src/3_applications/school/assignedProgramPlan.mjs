@@ -11,7 +11,7 @@ import {
 } from '#domains/school/bookLog.mjs';
 
 const baseEntry = ({
-  unitId, title, subject, program, programInstance, schedule = null, cadence = 'daily',
+  unitId, title, subject, program, programInstance, schedule = null, cadence = 'daily', elective = false,
 }) => ({
   unitId,
   title,
@@ -29,7 +29,9 @@ const baseEntry = ({
   timingPriority: 3,
   timingRank: 0,
   timingReasons: ['program_assignment'],
-  elective: false,
+  // An optional enrollment (`elective: true` on the program assignment) is
+  // offered on the agenda but never obligates the day — same as an elective course.
+  elective: elective === true,
   program,
   programInstance,
   cadence,
@@ -60,7 +62,7 @@ const baseEntry = ({
  *   cadence?: string}} [args]
  */
 export function bookLogShelfEntry({
-  title = null, subject = null, schedule = null, cadence = 'daily',
+  title = null, subject = null, schedule = null, cadence = 'daily', elective = false,
 } = {}) {
   return baseEntry({
     unitId: BOOK_LOG_SHELF_UNIT_ID,
@@ -70,6 +72,7 @@ export function bookLogShelfEntry({
     programInstance: 'shelf',
     schedule,
     cadence,
+    elective,
   });
 }
 
@@ -106,6 +109,7 @@ export function appendAssignedProgramEntries(plan, assignment) {
         programInstance: deckId,
         schedule: enrollment.schedule,
         cadence: cadenceOf(enrollment),
+        elective: enrollment.elective === true,
       }));
     }
     if (enrollment?.programId === STORY_TIME_PROGRAM_ID) {
@@ -119,6 +123,7 @@ export function appendAssignedProgramEntries(plan, assignment) {
         programInstance: 'daily',
         schedule: enrollment.schedule,
         cadence: cadenceOf(enrollment),
+        elective: enrollment.elective === true,
       }));
     }
     if (enrollment?.programId === BOOK_LOG_PROGRAM_ID) {
@@ -142,6 +147,7 @@ export function appendAssignedProgramEntries(plan, assignment) {
         // different obligations and this line must not quietly turn one into
         // the other. Recorded, not fixed — plan 2026-09-09 school board.
         cadence: enrollment.obligation?.per === 'once' ? 'once' : 'daily',
+        elective: enrollment.elective === true,
       }));
     }
     if (enrollment?.programId === 'piano-course') {
@@ -155,6 +161,7 @@ export function appendAssignedProgramEntries(plan, assignment) {
         programInstance: courseId,
         schedule: enrollment.schedule,
         cadence: cadenceOf(enrollment),
+        elective: enrollment.elective === true,
       }));
     }
     // THE SENTENCE LADDER. Missing from this list until 2026-09-09, which is
@@ -176,6 +183,7 @@ export function appendAssignedProgramEntries(plan, assignment) {
         programInstance: corpusId,
         schedule: enrollment.schedule,
         cadence: cadenceOf(enrollment),
+        elective: enrollment.elective === true,
       }));
     }
   }
