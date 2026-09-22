@@ -45,6 +45,8 @@ function fakeApi(plan) {
     uploadRecording: vi.fn(async () => { current = studied(current); return { ok: true, status: 200, data: { take: 1, plan: current } }; }),
     mark: vi.fn(async (sessionId, { recording }) => { current = finished(recording ? studied(current, 'unavailable') : current); return { ok: true, status: 200, data: { plan: current } }; }),
     viewReview: vi.fn(async () => ({ ok: true, status: 200, data: { logged: true } })),
+    plan: vi.fn(async () => ({ ok: true, status: 200, data: { plan: current } })),
+    advance: (fn) => { current = fn(current); },
   };
 }
 
@@ -160,6 +162,60 @@ describe('WordLadderProgram', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Flip' }));
     fireEvent.click(screen.getByRole('button', { name: 'Next card' }));
     expect(await screen.findByText('풀')).toBeInTheDocument();
+  });
+
+  it('a lost answer response heals: says so, refetches the plan and moves on', async () => {
+    const api = fakeApi(basePlan());
+    // The server saved the answer; the response never made it back.
+    api.answer = vi.fn(async () => { api.advance(checked); return { ok: false, status: 400, data: { error: 'no open check today' } }; });
+    render(<WordLadderProgram descriptor={{ deckId: 'd', userId: 'kid' }} api={api} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Scissors' }));
+    expect(await screen.findByText("That didn't save — try again")).toBeInTheDocument();
+    expect(api.plan).toHaveBeenCalledWith('s1', 'kid');
+    expect(await screen.findByText('풀')).toBeInTheDocument();
+  });
+
+  it('two failed uploads fall back to flip-and-mark with reason upload-failed', async () => {
+    const api = fakeApi(checked(basePlan()));
+    api.uploadRecording = vi.fn(async () => ({ ok: false, status: 400, data: null }));
+    render(<WordLadderProgram descriptor={{ deckId: 'd', userId: 'kid' }} api={api} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Record' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Stop' }));
+    await waitFor(() => expect(api.uploadRecording).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText("That didn't save — try again")).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Flip' })).toBeNull();
+    fireEvent.click(await screen.findByRole('button', { name: 'Record' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Stop' }));
+    await waitFor(() => expect(api.uploadRecording).toHaveBeenCalledTimes(2));
+    fireEvent.click(await screen.findByRole('button', { name: 'Flip' }));
+    fireEvent.click(screen.getByRole('button', { name: 'I know it' }));
+    await waitFor(() => expect(api.mark).toHaveBeenCalledWith('s1', { userId: 'kid', wordId: 'pul', mark: 'know', recording: { status: 'unavailable', reason: 'upload-failed' } }));
+  });
+
+  it('one server error on upload falls back at once', async () => {
+    const api = fakeApi(checked(basePlan()));
+    api.uploadRecording = vi.fn(async () => ({ ok: false, status: 503, data: null }));
+    render(<WordLadderProgram descriptor={{ deckId: 'd', userId: 'kid' }} api={api} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Record' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Stop' }));
+    expect(await screen.findByRole('button', { name: 'Flip' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Record' })).toBeNull();
+  });
+
+  it('"Leave for now" exits mid-session', async () => {
+    const onExit = vi.fn();
+    render(<WordLadderProgram descriptor={{ deckId: 'd', userId: 'kid' }} api={fakeApi(basePlan())} onExit={onExit} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Leave for now' }));
+    expect(onExit).toHaveBeenCalled();
+  });
+
+  it('a picture that fails to load is removed, not drawn broken', async () => {
+    const withMedia = { ...PUL, media: { image: 'media:x/image.jpg', audio: null } };
+    const api = fakeApi(checked(basePlan({ study: [{ wordId: 'pul', studied: false, recording: null, marked: null, done: false, card: withMedia }] })));
+    render(<WordLadderProgram descriptor={{ deckId: 'd', userId: 'kid' }} api={api} />);
+    const img = await screen.findByRole('img', { name: 'Glue' });
+    fireEvent.error(img);
+    expect(screen.queryByRole('img', { name: 'Glue' })).toBeNull();
   });
 
   it('says so when the list cannot open', async () => {
