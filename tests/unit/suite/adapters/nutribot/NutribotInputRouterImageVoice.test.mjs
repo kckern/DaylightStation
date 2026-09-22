@@ -63,7 +63,7 @@ describe('NutribotInputRouter image/voice wiring (web)', () => {
 
     expect(spies.logVoice).toHaveBeenCalledTimes(1);
     const [input] = spies.logVoice.mock.calls[0];
-    expect(input.voiceData).toEqual({ fileId: decoded });
+    expect(input.voiceData).toEqual({ fileId: decoded, audioRef: null });
   });
 
   it('still passes a plain Telegram fileId string through for voice (regression)', async () => {
@@ -71,7 +71,7 @@ describe('NutribotInputRouter image/voice wiring (web)', () => {
 
     expect(spies.logVoice).toHaveBeenCalledTimes(1);
     const [input] = spies.logVoice.mock.calls[0];
-    expect(input.voiceData).toEqual({ fileId: 'tg-voice-1' });
+    expect(input.voiceData).toEqual({ fileId: 'tg-voice-1', audioRef: null });
   });
 
   it('text input is unaffected by the image/voice wiring (regression)', async () => {
