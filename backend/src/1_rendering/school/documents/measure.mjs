@@ -37,15 +37,26 @@ import { INLINE_SPAN_PLAIN, INLINE_SPAN_ITALIC } from './inlineGrammar.mjs';
 const DEFAULT_FONT_DIR = fileURLToPath(new URL('../../../../assets/fonts', import.meta.url));
 
 /**
- * Hangul (Jamo, Compatibility Jamo, Syllables). The house fonts have no
- * Hangul glyphs — a Korean word would print as `.notdef` boxes — so any run
- * containing Hangul is set in the theme's `hangul` face (Noto Sans KR, OFL).
+ * Script fallback faces, by script COVERAGE (not by language label). The house
+ * fonts carry Latin only — a word in another script would print as `.notdef`
+ * boxes — so any run containing a listed script is set in that script's theme
+ * face (`theme.fonts[fontKey]`, keyed by script). First match wins.
  * Per run, not per glyph: the inline grammar already splits bold/italic/code
  * into runs, and a run is the unit both measurement and drawing agree on.
+ *
+ * Adding a script = one row here + a font entry under the same key in each
+ * theme (`workbookTheme`, `documentPdfTheme`) + the font file in assets/fonts.
+ * pdfkit registers fonts lazily, so a document with no such text embeds
+ * nothing and stays byte-identical.
  */
-export const HANGUL_PATTERN = /[ᄀ-ᇿ㄰-㆏가-힯]/;
+export const SCRIPT_FALLBACKS = Object.freeze([
+  // Hangul Jamo, Compatibility Jamo, Syllables → Noto Sans KR (OFL).
+  Object.freeze({ script: 'hangul', pattern: /[ᄀ-ᇿ㄰-㆏가-힯]/, fontKey: 'hangul' }),
+]);
 export function withScriptFont(run) {
-  return run && typeof run.text === 'string' && HANGUL_PATTERN.test(run.text) ? { ...run, font: 'hangul' } : run;
+  if (!run || typeof run.text !== 'string') return run;
+  const fallback = SCRIPT_FALLBACKS.find(({ pattern }) => pattern.test(run.text));
+  return fallback ? { ...run, font: fallback.fontKey } : run;
 }
 
 /** Markdown subset: ATX headings, blank-line paragraphs, `-`/`*` bullets. */
