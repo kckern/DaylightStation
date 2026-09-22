@@ -14,7 +14,7 @@ function setup() {
  Object.defineProperty(navigator,'mediaDevices',{configurable:true,value:{getUserMedia:vi.fn(async()=>({getTracks:()=>[{stop:stopTrack}]}))}});
  vi.stubGlobal('FileReader',class {readAsDataURL(){this.result='data:audio/webm;base64,YQ==';this.onload?.();}});
 }
-const ui=(voice,date='2026-09-06')=><MantineProvider><LogTable date={date} byBucket={new Map()} onAddTo={()=>{}} onVoiceCapture={voice}/></MantineProvider>;
+const ui=(voice,date='2026-09-06')=><MantineProvider><LogTable date={date} byBucket={new Map()} onVoiceCapture={voice}/></MantineProvider>;
 afterEach(()=>{cleanup();vi.useRealTimers();vi.unstubAllGlobals();});
 it('keeps a recording empty meal visible across its automatic retirement',async()=>{
  setup();const voice=vi.fn(async()=>({committed:true}));render(ui(voice));
