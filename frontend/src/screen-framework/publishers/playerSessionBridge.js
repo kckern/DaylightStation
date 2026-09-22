@@ -144,6 +144,18 @@ export function createPlayerSessionBridge({
     }
   };
 
+  const samePlayerInstance = (left, right) => {
+    if (left === right) return true;
+    if (!left || !right) return false;
+    try {
+      const leftId = left.getPlayerInstanceId?.();
+      const rightId = right.getPlayerInstanceId?.();
+      return typeof leftId === 'string' && leftId.length > 0 && leftId === rightId;
+    } catch {
+      return false;
+    }
+  };
+
   const readHint = () => {
     if (typeof getItemHint !== 'function') return null;
     try {
@@ -610,7 +622,7 @@ export function createPlayerSessionBridge({
       if (!handle || typeof handle.adoptSessionSnapshot !== 'function') {
         return { ok: false, code: 'UNSUPPORTED' };
       }
-      const requiredObserverIds = mountedOperationHandle === handle
+      const requiredObserverIds = samePlayerInstance(mountedOperationHandle, handle)
         && mountedOperationSubscription?.observerId
         ? [mountedOperationSubscription.observerId]
         : [];
@@ -661,11 +673,8 @@ export function createPlayerSessionBridge({
     try {
       const handle = readHandle();
 
-      if (handle && !unregister) {
-        unregister = registry.registerPlayerSession({ player, queueController });
-        lastState = null;
-        lastItemKey = null;
-      } else if (!handle && unregister) {
+      if (!handle) {
+        if (!unregister) return;
         try { unregister(); } catch { /* ignore */ }
         unregister = null;
         try { mountedOperationSubscription?.unsubscribe?.(); } catch { /* ignore */ }
@@ -676,24 +685,33 @@ export function createPlayerSessionBridge({
         return;
       }
 
-      if (!handle) return;
-
-      if (mountedOperationHandle !== handle) {
+      // Fully initialize the mounted-operation seam before publishing the
+      // queue controller. Registry listeners may synchronously dispatch a
+      // waiting item action as soon as an owner appears; exposing the owner
+      // first lets that adoption escape without its required decoder observer.
+      if (!samePlayerInstance(mountedOperationHandle, handle)) {
         try { mountedOperationSubscription?.unsubscribe?.(); } catch { /* ignore */ }
         mountedOperationSubscription = null;
         mountedOperationHandle = handle;
         if (typeof handle.subscribeMountedMediaOperations === 'function') {
           mountedOperationSubscription = handle.subscribeMountedMediaOperations((binding) => {
-            if (!binding || readHandle() !== handle) return { ready: false };
-            observeNativeNode(binding.node, handle, binding);
+            const currentHandle = readHandle();
+            if (!binding || !samePlayerInstance(currentHandle, handle)) return { ready: false };
+            observeNativeNode(binding.node, currentHandle, binding);
             let accepted = null;
-            try { accepted = handle.getMountedMediaRegistration?.() ?? null; } catch { /* ignore */ }
+            try { accepted = currentHandle.getMountedMediaRegistration?.() ?? null; } catch { /* ignore */ }
             const ready = observedBindingKey?.node === binding.node
               && observedBindingKey?.resolvedGeneration === binding.resolvedGeneration
               && accepted?.rendererToken === binding.rendererToken;
             return ready ? { ready: true, ...binding } : { ready: false };
           });
         }
+      }
+
+      if (!unregister) {
+        unregister = registry.registerPlayerSession({ player, queueController });
+        lastState = null;
+        lastItemKey = null;
       }
 
       const state = getState();
