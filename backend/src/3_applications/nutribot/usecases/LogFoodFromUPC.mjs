@@ -290,6 +290,22 @@ export class LogFoodFromUPC {
         }
       }
 
+      // 4b. A per-100 fallback is honest but rarely the portion eaten. The
+      // classifier already running for the icon also estimates the label's
+      // serving ("2 tbsp") in grams; the row stays unconfirmed, so the estimate is
+      // reviewed like any other. Grams only: a millilitre fallback is never
+      // turned into mass.
+      const estimate = Number(classification?.servingGrams);
+      if (product.nutritionLookup?.servingFallback === 'per100' && product.serving?.unit === 'g'
+        && Number.isFinite(estimate) && estimate > 0 && estimate < 2000) {
+        const factor = estimate / 100;
+        product = { ...product, serving: { size: estimate, unit: 'g' },
+          nutrition: Object.fromEntries(Object.entries(product.nutrition || {})
+            .map(([key, value]) => [key, value == null ? null : Math.round(value * factor * 1000) / 1000])),
+          nutritionLookup: { ...product.nutritionLookup, servingEstimate: { source: 'ai', grams: estimate } } };
+        this.#logger.info?.('upc.serving.estimated', { upc, name: product.name, servingText: product.nutritionLookup.servingText || null, grams: estimate });
+      }
+
       // 5. Create food item from product
       const grams = ['g', 'gram', 'grams'].includes(String(product.serving?.unit).toLowerCase())
         && Number(product.serving?.size) > 0 ? Number(product.serving.size) : null;
@@ -298,7 +314,10 @@ export class LogFoodFromUPC {
       // nine times, classify cleanly every time (the Noom colour proves the model
       // answered), and land on the neutral dot without a single log line saying
       // the model's guess was not a slug we own. Name the miss.
-      const proposedIcon = product.icon && product.icon !== 'default' ? product.icon : classification.icon;
+      // Only a slug we own can outrank the classifier; the gateway used to stamp
+      // every product with an emoji that won this contest and then failed it.
+      const proposedIcon = product.icon && product.icon !== 'default' && this.#iconVocabulary.has(product.icon)
+        ? product.icon : classification.icon;
       const resolvedIcon = catalogEntry?.iconOverride
         || confineIcon(proposedIcon, this.#iconVocabulary, product.name);
       if (resolvedIcon === 'default') {
@@ -502,6 +521,13 @@ Calories: ${product.nutrition?.calories ?? 'unknown'}`,
    */
   async #classifyProduct(product) {
     const availableIcons = this.#foodIconsString.split(' ');
+    // Only a per-100 fallback asks for a serving estimate; every other product
+    // keeps the original { icon, noomColor } contract.
+    const askServing = !!product.nutritionLookup?.servingFallback;
+    const servingRule = askServing
+      ? '\nIf a label serving is given, also estimate its mass in grams as "servingGrams" (number, or null if unknowable).'
+      : '';
+    const servingLine = askServing ? `\nLabel serving: ${product.nutritionLookup.servingText || 'unknown'}` : '';
 
     const prompt = [
       {
@@ -514,11 +540,11 @@ Choose the MOST relevant icon filename for the product and assign a Noom color:
 - yellow: lean proteins, whole grains, legumes
 - orange: processed foods, high-calorie items
 
-Respond ONLY in JSON: { "icon": "apple", "noomColor": "green" }`,
+Respond ONLY in JSON: { "icon": "apple", "noomColor": "green" }${servingRule}`,
       },
       {
         role: 'user',
-        content: `Product: ${product.name}${product.brand ? ` by ${product.brand}` : ''}\nCalories: ${product.nutrition?.calories || 'unknown'}`,
+        content: `Product: ${product.name}${product.brand ? ` by ${product.brand}` : ''}\nCalories: ${product.nutrition?.calories ?? 'unknown'}${servingLine}`,
       },
     ];
 

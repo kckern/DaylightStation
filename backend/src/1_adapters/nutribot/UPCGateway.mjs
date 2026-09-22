@@ -161,7 +161,6 @@ export class UPCGateway {
         name: p.product_name || p.product_name_en || 'Unknown Product',
         brand: p.brands || null,
         imageUrl: p.image_url || p.image_front_url || BARCODE_IMAGE_FALLBACK(upc),
-        icon: '🍽️',
         noomColor: serving.unit === 'g' ? this.#inferNoomColor(nutrition, p.categories_tags || [], serving.size) : 'yellow',
         serving,
         nutritionLookup,
@@ -201,7 +200,6 @@ export class UPCGateway {
         name: food.food_name || 'Unknown Product',
         brand: food.brand_name || null,
         imageUrl: food.photo?.thumb || BARCODE_IMAGE_FALLBACK(upc),
-        icon: '🍽️',
         noomColor: serving.unit === 'g' ? this.#inferNoomColor(nutrition, [], serving.size) : 'yellow',
         ...normalized,
       };
