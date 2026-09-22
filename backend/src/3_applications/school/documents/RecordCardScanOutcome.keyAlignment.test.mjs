@@ -131,3 +131,53 @@ describe('RecordCardScanOutcome key-alignment routing', () => {
     expect(reviewQueue.items.some((item) => item.reason === 'key-alignment-suspected')).toBe(false);
   });
 });
+
+/**
+ * Whole-branch review finding #2: `ResolveCardScan` now computes
+ * `keyAlignmentSuspect` PER SECTION on a composed card (one physical card,
+ * several independently gradeable lessons); this bridge must route each
+ * section's OWN value to that section's OWN session only, never lean on the
+ * `...card` spread that used to carry the whole-record value onto every
+ * section regardless of which lesson it actually concerned.
+ */
+describe('RecordCardScanOutcome key-alignment routing — composed sections', () => {
+  it('holds only the flagged section, never leaking a stale whole-card value onto the unflagged one', async () => {
+    const sessions = fakeSessions([
+      ...seededSession('ses_a', { unitId: 'lesson-a' }),
+      ...seededSession('ses_b', { unitId: 'lesson-b' }),
+    ]);
+    const reviewQueue = fakeReviewQueue();
+    const datastore = fakeDatastore();
+    const recorder = new RecordCardScanOutcome({
+      datastore, sessions, reviewQueue, clock: () => new Date('2026-09-21T00:05:00.000Z'), logger: quietLogger,
+    });
+    const sectionRows = (prefix, startRow) => [0, 1, 2].map((i) => ({
+      row: startRow + i, itemId: `${prefix}${i + 1}`, itemType: 'multiple_choice', prompt: `${prefix}${i + 1}`,
+      status: 'correct', given: 'A', points: 1, earned: 1, concepts: [],
+    }));
+    const sectionA = { id: 'lesson-a', rowRange: { start: 1, end: 3 }, sessionId: 'ses_a',
+      results: sectionRows('a', 1), totalPoints: 3, earnedPoints: 3,
+      keyAlignmentSuspect: { offset: -1, literalMatches: 0, shiftedMatches: 3, itemCount: 3 } };
+    const sectionB = { id: 'lesson-b', rowRange: { start: 4, end: 6 }, sessionId: 'ses_b',
+      results: sectionRows('b', 4), totalPoints: 3, earnedPoints: 3 };
+    // A defensive stale value on the OUTER card — exactly what a pre-fix
+    // `ResolveCardScan` used to leave at the whole-record level regardless
+    // of sections. If this bridge ever falls back to reading it (instead of
+    // each section's own), lesson B would wrongly hold too.
+    const card = gradedCard({
+      recordId: 'civilization/test/composed@rev1:v0:1-6',
+      keyAlignmentSuspect: { offset: -1, literalMatches: 0, shiftedMatches: 5, itemCount: 6 },
+      results: [...sectionA.results, ...sectionB.results],
+      totalPoints: 6, earnedPoints: 6,
+      sections: [sectionA, sectionB],
+    });
+    const outcome = await recorder.execute({ testId: '1234567', card });
+    const [outcomeA, outcomeB] = outcome.sectionOutcomes;
+    expect(outcomeA.session.reason).toBe('awaiting-review');
+    expect(outcomeB.session.reason).not.toBe('awaiting-review');
+    const aQueueItems = reviewQueue.items.filter((item) => item.sessionId === 'ses_a');
+    const bQueueItems = reviewQueue.items.filter((item) => item.sessionId === 'ses_b');
+    expect(aQueueItems.some((item) => item.reason === 'key-alignment-suspected')).toBe(true);
+    expect(bQueueItems.some((item) => item.reason === 'key-alignment-suspected')).toBe(false);
+  });
+});

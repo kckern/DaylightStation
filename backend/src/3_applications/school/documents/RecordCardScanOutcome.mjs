@@ -221,6 +221,15 @@ export class RecordCardScanOutcome {
               && card.companionGate.row >= section.rowRange.start
               && card.companionGate.row <= section.rowRange.end)
               ? card.companionGate : undefined,
+            // Same reasoning as `companionGate` just above: `ResolveCardScan`
+            // now computes `keyAlignmentSuspect` PER SECTION (each section is
+            // its own worksheet's own row range), so this section's own value
+            // — never the outer `card`'s, which no longer even carries one
+            // once sections exist — is what belongs here. Without this
+            // explicit override, `...card` above would otherwise leak
+            // whichever section happened to be flagged onto every OTHER
+            // section on the same physical card.
+            keyAlignmentSuspect: section.keyAlignmentSuspect ?? undefined,
             sessionId: section.sessionId ?? null,
             subjectId: section.subjectId ?? null,
             courseId: section.courseId ?? null,
