@@ -73,7 +73,7 @@ export class LogFoodFromUPC {
     this.#config = deps.config;
     this.#logger = deps.logger || console;
     this.#encodeCallback = deps.encodeCallback || ((cmd, data) => JSON.stringify({ cmd, ...data }));
-    this.#foodIconsString = deps.foodIconsString || 'apple banana bread cheese chicken default';
+    this.#foodIconsString = deps.foodIconsString || 'default';
     this.#iconVocabulary = iconVocabulary(this.#foodIconsString, deps.foodIconNames);
     this.#barcodeGenerator = deps.barcodeGenerator; // Optional: for generating barcode images
     this.#catalogService = deps.catalogService || null;

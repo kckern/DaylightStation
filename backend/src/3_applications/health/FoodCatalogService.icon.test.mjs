@@ -228,3 +228,11 @@ describe('setIcon refuses a slug the manifest does not offer', () => {
     expect(map.get('e1').iconOverride).toBeNull();
   });
 });
+
+describe('setIcon not-found carries a 404 status', () => {
+  it('by id and by name', async () => {
+    const h = harness([entry()]);
+    await expect(h.svc.setIcon('nope', 'u', 'fried-eggs')).rejects.toMatchObject({ status: 404 });
+    await expect(h.svc.setIconByName('Pterodactyl', 'u', 'fried-eggs')).rejects.toMatchObject({ status: 404 });
+  });
+});

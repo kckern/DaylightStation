@@ -472,7 +472,7 @@ export class FoodCatalogService {
       throw Object.assign(new Error(`Icon not offered: ${icon}`), { status: 400, code: 'ICON_NOT_OFFERED' });
     }
     const entry = await this.#catalogStore.getById(id, userId);
-    if (!entry) throw new Error(`Catalog entry not found: ${id}`);
+    if (!entry) throw Object.assign(new Error(`Catalog entry not found: ${id}`), { status: 404, code: 'NOT_FOUND' });
     entry.icon = isRealIcon(icon) ? icon : null;
     entry.iconOverride = entry.icon;
     await this.#catalogStore.save(entry, userId);
@@ -483,7 +483,7 @@ export class FoodCatalogService {
   /** Same, addressed by food name — what a log row can actually supply. */
   async setIconByName(name, userId, icon) {
     const existing = await this.#catalogStore.findByNormalizedName(name, userId);
-    if (!existing) throw new Error(`Catalog entry not found by name: ${name}`);
+    if (!existing) throw Object.assign(new Error(`Catalog entry not found by name: ${name}`), { status: 404, code: 'NOT_FOUND' });
     return this.setIcon(existing.id, userId, icon);
   }
 
