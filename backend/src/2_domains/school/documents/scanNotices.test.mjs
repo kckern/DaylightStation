@@ -85,6 +85,27 @@ describe('scanNoticeDocument', () => {
     expect(text).toContain('Ask a grown-up to check it.');
     expect(text).not.toMatch(/double-checking/i);
   });
+
+  /**
+   * A sheet CAN legitimately carry `key-alignment-suspected` alongside
+   * another reason: Task 2's guard against a still-mid-fill sheet is
+   * blank-rows-only, and an ambiguous/multi-mark row is excluded from the
+   * row SET the check compares (its raw scanned answer is an array, not a
+   * string) rather than suppressing the whole check — so a genuinely
+   * possible mix like `['key-alignment-suspected', 'free_response']` must
+   * still fall through to the generic copy, never the key-alignment-only
+   * one-liner (whole-branch review finding #5).
+   */
+  it('falls through to the generic "two answers filled in" copy for a mixed key-alignment + free_response hold', () => {
+    const doc = scanNoticeDocument({
+      kind: 'scan-review', testId: '5252427', title: 'New York',
+      reasons: ['key-alignment-suspected', 'free_response'], pendingReview: 2,
+    });
+    const text = md(doc);
+    expect(text).toContain('2 questions had two answers filled in.');
+    expect(text).toContain('Ask a grown-up to check it.');
+    expect(text).not.toMatch(/double-checking/i);
+  });
 });
 
 describe('rowList', () => {

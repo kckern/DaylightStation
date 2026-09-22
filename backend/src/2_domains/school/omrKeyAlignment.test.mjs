@@ -51,11 +51,16 @@ describe('omrKeyAlignmentSuspect', () => {
   });
 
   it('never lets a shift reach outside the worksheet\'s own row range', () => {
-    // 4-row sheet, whose key repeats a pattern such that a NAIVE (unbounded)
-    // +1 shift would look clean if row 4 were allowed to "match" a row 5
-    // that does not exist. The boundary rule means row 4 contributes no
-    // shifted match at offset +1 at all — verified below by checking the
-    // exact shiftedMatches count, not just null/non-null.
+    // 4-row sheet, whose key repeats a pattern such that a shift crediting
+    // row 4 a match against a row 5 that does not exist on this worksheet
+    // would look clean. It does not: row 4 contributes no shifted match at
+    // offset +1 at all — verified below by checking the exact shiftedMatches
+    // count, not just null/non-null. (This demonstrates the OUTCOME, not a
+    // specific mechanism — a shifted target that is not one of THIS
+    // worksheet's own rows is never credited, however that is implemented;
+    // `byRow.get(shiftedRow)` already misses on row 5 for the same reason an
+    // explicit min/max range check would, since `byRow` is built from
+    // exactly the rows passed in and can hold no key beyond them.)
     const rows = [
       { row: 1, given: 'B', correctLetter: 'A' },
       { row: 2, given: 'C', correctLetter: 'B' },
@@ -64,9 +69,9 @@ describe('omrKeyAlignmentSuspect', () => {
     ];
     // At offset +1: row1->row2(correct B, given B: match), row2->row3(correct
     // C, given C: match), row3->row4(correct D, given D: match), row4->row5
-    // (out of range: excluded). shiftedMatches must be 3, not 4 — if the
-    // boundary guard were missing and row 4 wrapped to a phantom row 5 that
-    // happened to be treated as matching, this would be 4 instead.
+    // (no row 5 on this worksheet: excluded). shiftedMatches must be 3, not
+    // 4 — a version that credited row 4 a match against a phantom row 5
+    // would report 4 instead.
     const result = omrKeyAlignmentSuspect(rows, { minItems: 4 });
     expect(result).toEqual({ offset: 1, literalMatches: 0, shiftedMatches: 3, itemCount: 4 });
   });
@@ -86,6 +91,12 @@ describe('omrKeyAlignmentSuspect', () => {
     const rows = correctKey.map((correctLetter, index) => ({
       row: index + 1, given: givenMarks[index], correctLetter,
     }));
+    const literalMatches = rows.filter((row) => row.given === row.correctLetter).length;
+    // The comment above hand-computes shiftedMatches (11) - literalMatches
+    // (9) as exactly MARGIN — assert that against the real exported
+    // constant, not a hardcoded 2, so this fixture can never silently drift
+    // out of alignment with the value it's built to sit exactly at.
+    expect(11 - literalMatches).toBe(MARGIN);
     expect(omrKeyAlignmentSuspect(rows)).toBeNull();
   });
 });
