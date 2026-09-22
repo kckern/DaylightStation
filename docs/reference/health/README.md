@@ -212,8 +212,10 @@ not the current hour. The resolved bucket is stored on each entry.
 
 ## Loading and refresh
 
-Today's structure is permanent. `LogTable`'s four meal-bucket headings, their
-kcal subtotals, and each bucket's "+ Add food…" row render regardless of
+Today's structure is permanent. Lunch and Dinner always render (Lunch heads
+the left column, Dinner the right); Breakfast joins above Lunch and Snacks
+below Dinner when they hold food. Every visible meal's heading, kcal subtotal
+and add row render regardless of
 whether the day's data has arrived, is mid-refresh, or failed to load; only a
 bucket's entry list can be swapped for a loading placeholder, and only on a
 genuine cold start — the first time a date is opened in the tab, before
@@ -250,7 +252,8 @@ default, meal and row whitespace is compact, and the 44 px capture controls keep
 their touch-target floor even though the surrounding chrome is tighter. The
 inline Add food surface is a bordered, height-capped panel rather than loose
 text; suggestions use one column on the narrowest screens and two from 480 px,
-with a real catalog icon or a reserved Noom-dot fallback on every row.
+with a real catalog icon or a reserved Noom-dot fallback on every row. It opens
+under a meal's add row only while that row has focus or text.
 
 Food rows use the shared `foodPortion` contract: known mass first, otherwise the
 current amount/unit, never stale `originalQuantity`. Millilitres and servings
