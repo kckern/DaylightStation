@@ -660,8 +660,17 @@ fully-resolved spec.
 | `ready` | — | on client connect |
 | `status` | `engine` (`running`\|`stopped`), `preset` (id\|null), `cpu`, `xruns` | ~1 s heartbeat |
 | `error` | `code`, `msg` | on any failure |
-| `note.on` | `note`, `velocity` | live MIDI fan-out (for browser visualizers) |
-| `note.off` | `note` | live MIDI fan-out |
+| `note.on` | `note`, `velocity`, `t` | live MIDI fan-out (for browser visualizers and grading) |
+| `note.off` | `note`, `t` | live MIDI fan-out |
+
+`t` (payload **p20+**) is the epoch ms of the MIDI event, converted from the
+`MidiReceiver.onSend` timestamp (`System.nanoTime()` base) as
+`currentTimeMillis() - (nanoTime() - ts)/1e6`; a zero timestamp yields receipt
+time. The kiosk stores a note under `t` when it is within 1 s of receipt, else
+under receipt time with a sampled `piano.input.untimed` warn
+(`frontend/src/modules/Piano/PianoKiosk/noteTime.js`). Payloads before p20 omit
+`t` and behave as before. Delivery lag (receipt - `t`) is logged as sampled
+`piano.input.bridge-lag`.
 
 Rich transport logging at every transition uses `Log` tag **`PianoBridge-WS`**
 (client connect/disconnect, each inbound message type, parse errors). Core
