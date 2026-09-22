@@ -172,13 +172,12 @@ export default function RecordingRung({
    *  started the sentence over, must not land a take on the new state. */
   const joinRef = useRef(null);
   /**
-   * Whether the sequence now sounding has a cuttable sentence in it — the
-   * whole sentence, or the open-ended rest of it. Rendered state (it shows the
-   * Pause tile), and deliberately not derived from `phase`: a retake's ding or
-   * a redo of a bounded piece is also "prompting", and a Pause tile there
-   * would be a control that does nothing.
+   * The clip the prompting player is sounding now, or null. The Pause tile
+   * follows THIS, not `phase`: the ding after the sentence, a retake's ding
+   * and a redo of a bounded piece are all "prompting" too, and a Pause tile
+   * there would be a control that does nothing.
    */
-  const [cutOffered, setCutOffered] = useState(false);
+  const [sounding, setSounding] = useState(null);
   /** The last join failed. Its own notice rather than `error`, because the
    *  error notice offers to switch the microphone off, and the mic is fine. */
   const [joinFailed, setJoinFailed] = useState(false);
@@ -340,7 +339,6 @@ export default function RecordingRung({
     // Pieces said so far go too: the sentence cannot be finished without the
     // mic, and a later start begins it whole.
     abandonPieces();
-    setCutOffered(false);
     setPhase('idle');
   }, [abandonPieces, entry.seq]);
 
@@ -368,7 +366,7 @@ export default function RecordingRung({
   // between hearing and speaking.
   const {
     playSequence, stop, blocked, position,
-  } = useSentenceAudio({ onSequenceEnd: beginCapture });
+  } = useSentenceAudio({ onSequenceEnd: beginCapture, onClip: setSounding });
   // HEARING IT AGAIN WITHOUT RECORDING. A second player, because the one above
   // opens the microphone when it finishes: a child who only wants to hear a
   // line once more must never find the mic live at the end of it.
@@ -382,7 +380,6 @@ export default function RecordingRung({
     joinedRef.current = false;
     pieceRef.current = null;
     setPiece(null);
-    setCutOffered(false);
     setJoinFailed(false);
     languageLog.rung('enter', { rung: 'recording', seq: entry.seq });
     // Take the keyboard on arrival. The tap that brought the child here — the
@@ -423,7 +420,6 @@ export default function RecordingRung({
     abandonPieces();
     joinedRef.current = false;
     setJoinFailed(false);
-    setCutOffered(!noPiecesRef.current);
     setPhase('prompting');
     playSequence([...clipsFor(entry, audioUrl), ...cue()]);
   }, [entry, audioUrl, cue, playSequence, dropTake, abandonPieces, stopListening]);
@@ -450,7 +446,6 @@ export default function RecordingRung({
     stopPlayback();
     dropTake();
     setTakeVerdict(null);
-    setCutOffered(false);
     setPhase('prompting');
     languageLog.capture('retake', { seq: entry.seq });
     playSequence(cue());
@@ -471,8 +466,6 @@ export default function RecordingRung({
     stopListening();
     dropTake();
     setTakeVerdict(null);
-    // Only the open-ended rest of the sentence can be cut again.
-    setCutOffered(!noPiecesRef.current && isLast(piecesRef.current, i));
     setPhase('prompting');
     playSequence([spanClip(i), ...cue()]);
   }, [cue, dropTake, playSequence, spanClip, stopListening, stopPlayback]);
@@ -507,7 +500,6 @@ export default function RecordingRung({
     // Synchronously: the ding can end, and the take arrive, before an effect.
     pieceRef.current = i;
     setPiece(i);
-    setCutOffered(false);
     languageLog.capture('cut', {
       seq: entry.seq, piece: i, rawMs: at.ms, cutMs, snapped: cutMs !== at.ms,
     });
@@ -751,6 +743,10 @@ export default function RecordingRung({
     rootRef.current?.focus?.({ preventScroll: true });
   };
   const inPieces = piece != null;
+  // Mirrors what `cut` accepts: the sentence itself, open-ended (the whole of
+  // it, or the rest after the last cut), on a sentence that may still be cut.
+  const cutOffered = phase === 'prompting' && !noPiecesRef.current
+    && sounding?.language === targetLang && sounding?.endMs == null;
   const lastPiece = inPieces && isLast(piecesRef.current, piece);
   const hasTake = phase === 'playback' || phase === 'review';
   const keysHint = inPieces && hasTake
@@ -758,7 +754,7 @@ export default function RecordingRung({
     : hasTake
       ? 'Space: go · Tab: compare with the sentence · Shift+Tab: hear the meaning · Backspace: record again'
       : `Space: go · Tab: hear it again · Shift+Tab: hear the meaning · Backspace: record again${
-        phase === 'prompting' && cutOffered ? ' · →: pause here' : ''}`;
+        cutOffered ? ' · →: pause here' : ''}`;
 
   return (
     <div ref={rootRef} tabIndex={-1} className={`lang-rung lang-rung--recording is-${phase}`}>
@@ -841,7 +837,7 @@ export default function RecordingRung({
         )}
         {/* RECORDING IN PIECES: "that's enough — let me say this much". Only
             while a cuttable part of the sentence is sounding. */}
-        {phase === 'prompting' && cutOffered && (
+        {cutOffered && (
           <button type="button" className="lang-tile" onClick={tapToCut} aria-label="Pause here">
             <Icon name="stop" className="lang-tile__glyph" />
             <span className="lang-tile__word" aria-hidden="true">Pause</span>
