@@ -169,3 +169,16 @@ The app does not require a pointing device for any operation. A user with a keyb
 
 - `frontend/src/Apps/HealthApp.scss` — page-level layout, hub grid, detail shell.
 - `frontend/src/modules/Health/Nutrition.scss` and `Weight.scss` — nutrition and weight surface styling shared with related modules.
+
+## Observability — artwork and day data quality
+
+Food artwork falls back to the bowl glyph, and unknown nutrients render as "—".
+Neither case is silent any more:
+
+| Event | Level | Emitted by | When |
+|---|---|---|---|
+| `artwork.icon-failed` | warn | `today/FoodIcon.jsx` via `today/artworkLog.js` | an icon slug fails to load or decode (e.g. a slug the manifest does not carry → 404). Once per slug per page session. |
+| `artwork.photo-failed` | warn | `today/EntryRow.jsx` via `today/artworkLog.js` | a row's `photoRef` thumbnail fails. Once per photoRef per page session. |
+| `day.quality` | info | `today/useHealthDay.js` (`today/dayQuality.js`) | once per date + ledger revision, only when the day has gaps: `noArtwork`, `unknownCalories`, `noGrams`, `allCaps`, `duplicates`, each `{count, samples}`. |
+
+All carry `context.app: health`.
