@@ -172,3 +172,59 @@ describe('FoodCatalogService.backfill donates icons from stored rows', () => {
     expect((await h.catalogStore.getAll('u'))).toHaveLength(1);
   });
 });
+
+// B8. The hi-res manifest is the exclusive icon set. A catalog icon from the
+// retired 20 px vocabulary, learned or pinned, must never displace the
+// capture's own hi-res icon on a new row.
+describe('resolveIdentity icon precedence', () => {
+  const offered = new Set(['feta-cubes', 'pita-bread']);
+  const svc = (e) => new FoodCatalogService({
+    catalogStore: { findByNormalizedName: async () => e, getById: async () => e },
+    clock: { now: () => 0 }, createId: () => 'id', logger: silent,
+    iconOffered: slug => offered.has(slug),
+  });
+  it('a retired catalog icon does not override the capture\'s icon', async () => {
+    const out = await svc({ id: 'f', icon: 'cheese' }).resolveIdentity({ name: 'Feta Cheese', icon: 'feta-cubes' }, 'u');
+    expect(out.icon).toBe('feta-cubes');
+  });
+  it('an offered catalog icon still wins', async () => {
+    const out = await svc({ id: 'f', icon: 'pita-bread' }).resolveIdentity({ name: 'Pita Bread', icon: 'default' }, 'u');
+    expect(out.icon).toBe('pita-bread');
+  });
+  it('an offered pin wins over the learned icon; a retired pin does not', async () => {
+    expect((await svc({ id: 'f', icon: 'feta-cubes', iconOverride: 'pita-bread' })
+      .resolveIdentity({ name: 'Pita', icon: 'default' }, 'u')).icon).toBe('pita-bread');
+    expect((await svc({ id: 'f', icon: 'x', iconOverride: 'pitasandwich' })
+      .resolveIdentity({ name: 'Pita', icon: 'pita-bread' }, 'u')).icon).toBe('pita-bread');
+  });
+  it('without a predicate every icon is accepted (existing constructions unchanged)', async () => {
+    const plain = new FoodCatalogService({
+      catalogStore: { findByNormalizedName: async () => ({ id: 'f', icon: 'cheese' }), getById: async () => null },
+      clock: { now: () => 0 }, createId: () => 'id', logger: silent,
+    });
+    expect((await plain.resolveIdentity({ name: 'Feta', icon: 'feta-cubes' }, 'u')).icon).toBe('cheese');
+  });
+});
+
+describe('setIcon refuses a slug the manifest does not offer', () => {
+  function offeredHarness() {
+    const map = new Map([['e1', entry({ icon: 'fried-eggs' })]]);
+    const svc = new FoodCatalogService({
+      catalogStore: { getById: async (id) => map.get(id) || null, save: async (e) => { map.set(e.id, e); } },
+      clock: { now: () => NOW }, createId: () => 'id', logger: silent,
+      iconOffered: slug => slug === 'boiled-egg',
+    });
+    return { map, svc };
+  }
+  it('a retired slug is refused with ICON_NOT_OFFERED and the entry is untouched', async () => {
+    const { map, svc } = offeredHarness();
+    await expect(svc.setIcon('e1', 'u', 'egg')).rejects.toMatchObject({ code: 'ICON_NOT_OFFERED', status: 400 });
+    expect(map.get('e1').icon).toBe('fried-eggs');
+  });
+  it('an offered slug and a clear (null) are both accepted', async () => {
+    const { map, svc } = offeredHarness();
+    expect((await svc.setIcon('e1', 'u', 'boiled-egg')).icon).toBe('boiled-egg');
+    expect((await svc.setIcon('e1', 'u', null)).icon).toBeNull();
+    expect(map.get('e1').iconOverride).toBeNull();
+  });
+});

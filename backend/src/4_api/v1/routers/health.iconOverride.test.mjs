@@ -29,6 +29,7 @@ function makeApp({ withManifest = true, catalog = {}, operations = {} } = {}) {
     setIconByName: async (name, userId, icon) => {
       calls.setIconByName.push({ name, userId, icon });
       if (catalog.missing) throw new Error(`Catalog entry not found by name: ${name}`);
+      if (catalog.notOffered) throw Object.assign(new Error(`Icon not offered: ${icon}`), { status: 400, code: 'ICON_NOT_OFFERED' });
       return { id: 'e1', name, normalizedName: name.toLowerCase(), nutrients: {}, useCount: 1, icon, iconOverride: icon };
     },
   };
@@ -147,6 +148,15 @@ describe('PUT /api/v1/health/nutrition/catalog/icon — "always for this food"',
       .put('/api/v1/health/nutrition/catalog/icon')
       .send({ name: 'Pterodactyl', icon: 'fried-eggs' });
     expect(res.status).toBe(404);
+  });
+
+  it('passes the catalog\'s ICON_NOT_OFFERED refusal through as a 400', async () => {
+    const { app } = makeApp({ catalog: { notOffered: true } });
+    const res = await request(app)
+      .put('/api/v1/health/nutrition/catalog/icon')
+      .send({ name: 'Eggs', icon: 'fried-eggs' });
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('ICON_NOT_OFFERED');
   });
 });
 

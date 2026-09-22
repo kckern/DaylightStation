@@ -887,8 +887,8 @@ export function createHealthRouter(config) {
           : await catalogService.setIconByName(name, userId, verdict.icon);
         return res.json({ entry: presentFoodCatalogEntry(entry) });
       } catch (err) {
-        logger.warn?.('health.catalog.icon.error', { id, name, error: err.message });
-        return res.status(404).json({ error: err.message });
+        logger.warn?.('health.catalog.icon.error', { id, name, error: err.message, code: err.code });
+        return res.status(err.status || 404).json({ error: err.message, ...(err.code ? { code: err.code } : {}) });
       }
     }));
 

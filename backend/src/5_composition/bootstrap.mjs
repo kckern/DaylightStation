@@ -2421,12 +2421,19 @@ export function createHealthServices(config) {
 
   // Food catalog persistence + service
   const catalogStore = new YamlFoodCatalogDatastore({ dataService, logger });
+  // The catalog needs the manifest's offered (hi-res) vocabulary. Built fail-soft
+  // like nutribot's own store: no media root, no filtering.
+  const catalogMediaRoot = configService?.getMediaDir?.() ?? null;
+  const catalogIcons = catalogMediaRoot
+    ? new IconManifestStore({ dataService, mediaRoot: catalogMediaRoot, logger })
+    : null;
   const catalogService = new FoodCatalogService({
     catalogStore,
     nutriListStore,
     clock: { now: () => Date.now() },
     createId: crypto.randomUUID,
     logger,
+    iconOffered: catalogIcons ? slug => catalogIcons.list().includes(slug) : null,
   });
 
   return {
