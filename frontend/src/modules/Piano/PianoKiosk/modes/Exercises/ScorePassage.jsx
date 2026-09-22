@@ -57,10 +57,21 @@ function logger() {
  * @param {number|null} [props.wrongMidi] A note that was played but not asked
  *   for. The note that WAS asked for flashes — the same thing the ABC stage
  *   says with `exercise-note-wrong`.
+ * @param {Map<number, Map<number, object>>|null} [props.verdicts] A timed run's
+ *   RECORDED verdicts (`performance/timedVerdicts.js`), keyed by expectation
+ *   event index (this passage's own compiled events) and then midi. When
+ *   present they are the only colour on the ink: hit green, early/late amber
+ *   with a ◂/▸ tick, lapsed/miss grey, and a recorded wrong pitch marks the
+ *   notes still owed at its event with `piano-note-wrong` (an engraved score
+ *   has no line to draw an unwritten pitch on). `wrongMidi` is then ignored.
+ * @param {boolean} [props.windowOpen] Timed runs: the cursor is lit while the
+ *   current event's window is open and dimmed between windows.
  */
 export default function ScorePassage({
   musicXml, sourceId, measures = null, onExpectation, onUnrunnable, cursorIndex = 0, wrongMidi = null, showCursor = false,
+  verdicts = null, windowOpen = undefined,
 }) {
+  const judged = verdicts instanceof Map;
   const [layout, setLayout] = useState(null);
   const publishedRef = useRef(null);
   /**
@@ -226,7 +237,7 @@ export default function ScorePassage({
       point.x = bounds.right; point.y = bounds.bottom;
       const end = point.matrixTransform(inverse);
       const rectangle = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-      rectangle.setAttribute('class', 'piano-score-passage__cursor');
+      rectangle.setAttribute('class', `piano-score-passage__cursor${windowOpen === true ? ' is-window-open' : windowOpen === false ? ' is-window-closed' : ''}`);
       rectangle.setAttribute('x', start.x - 6);
       rectangle.setAttribute('y', start.y - 12);
       rectangle.setAttribute('width', end.x - start.x + 12);
@@ -237,7 +248,7 @@ export default function ScorePassage({
       rectangles.push(rectangle);
     }
     return () => { for (const rectangle of rectangles) rectangle.remove(); };
-  }, [currentStep, showCursor]);
+  }, [currentStep, showCursor, windowOpen]);
 
   // Every staff the engraving has is lit; a gate passage has no hands control.
   const activeParts = useMemo(() => {
@@ -263,7 +274,7 @@ export default function ScorePassage({
 
   /** The wrong flash, on the note that was owed. Same pattern as the lit layer. */
   useLayoutEffect(() => {
-    if (wrongMidi == null) return undefined;
+    if (judged || wrongMidi == null) return undefined;
     const flashed = [];
     for (const note of currentStep?.notes ?? []) {
       if (!note.el) continue;
@@ -271,7 +282,42 @@ export default function ScorePassage({
       flashed.push(note.el);
     }
     return () => { for (const el of flashed) el.classList.remove(WRONG); };
-  }, [currentStep, wrongMidi]);
+  }, [currentStep, judged, wrongMidi]);
+
+  /**
+   * The RECORD, painted onto the engraved notes of a timed run. Found by
+   * onset, like the cursor, so ties and measure ranges stay aligned with the
+   * expectation's event index.
+   */
+  useLayoutEffect(() => {
+    if (!judged || !expectation) return undefined;
+    const classed = [];
+    const ticks = [];
+    verdicts.forEach((byMidi, index) => {
+      const event = expectation.events[index];
+      if (!event) return;
+      const notes = elsByOnset.get(onsetKey(event.onsetQuarter)) ?? [];
+      const wrong = [...byMidi.values()].some((verdict) => verdict.state === 'wrong');
+      for (const note of notes) {
+        if (!note.el) continue;
+        const verdict = byMidi.get(note.midi);
+        const kind = verdict ? VERDICT_KIND[verdict.state] : null;
+        const name = kind ? `piano-note-verdict-${kind}` : wrong ? WRONG : null;
+        if (!name) continue;
+        note.el.classList.add(name);
+        note.el.setAttribute('data-verdict', verdict?.state ?? 'owed');
+        classed.push([note.el, name]);
+        if (kind === 'early' || kind === 'late') {
+          const tick = driftTick(note.el, kind);
+          if (tick) ticks.push(tick);
+        }
+      }
+    });
+    return () => {
+      for (const [el, name] of classed) { el.classList.remove(name); el.removeAttribute('data-verdict'); }
+      for (const tick of ticks) tick.remove();
+    };
+  }, [elsByOnset, expectation, judged, verdicts]);
 
   return (
     <div className="piano-score-passage">
@@ -286,6 +332,36 @@ export default function ScorePassage({
 const DEFAULT_BPM = 90;
 /** Out of the passage: engraved, readable, and plainly not what is being asked for. */
 const DIM = 'piano-score-passage__dim';
+/** A recorded verdict state → the class suffix painted on its engraved note. */
+const VERDICT_KIND = Object.freeze({ hit: 'hit', early: 'early', late: 'late', lapsed: 'unplayed', miss: 'unplayed' });
+const DRIFT_TICK = Object.freeze({ early: '\u25C2', late: '\u25B8' });
+
+/**
+ * A ◂/▸ tick under an engraved note, in its SVG's own coordinates (the same
+ * screen-to-user mapping the cursor uses). Returns the inserted element, or
+ * null where there is no geometry (happy-dom, a detached note).
+ */
+function driftTick(el, side) {
+  const svg = el?.ownerSVGElement;
+  const matrix = svg?.getScreenCTM?.();
+  if (!matrix) return null;
+  const bounds = el.getBoundingClientRect();
+  if (!bounds.width || !bounds.height) return null;
+  const point = svg.createSVGPoint();
+  point.x = bounds.left + bounds.width / 2; point.y = bounds.bottom;
+  const at = point.matrixTransform(matrix.inverse());
+  const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+  text.setAttribute('class', `piano-score-passage__drift piano-score-passage__drift--${side}`);
+  text.setAttribute('x', at.x);
+  text.setAttribute('y', at.y + 12);
+  text.setAttribute('text-anchor', 'middle');
+  text.setAttribute('font-size', 12);
+  text.setAttribute('aria-hidden', 'true');
+  text.textContent = DRIFT_TICK[side];
+  svg.appendChild(text);
+  return text;
+}
+
 /** The owed note, when something else was played. */
 const WRONG = 'piano-note-wrong';
 /** Onsets are floats; compare them the way the score compiler groups them. */
