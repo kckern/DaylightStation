@@ -1,6 +1,7 @@
 /**
- * `/word-ladder/…` — the Korean word ladder (word-ladder design "Recording"
- * and "Daily session"). A thin shell: authorization (the learner's actual
+ * `/word-ladder/…` — the word ladder for any word package (word-ladder design
+ * "Recording" and "Daily session"). Session ids are opaque here (they carry
+ * their package: `<package>.<id>`). A thin shell: authorization (the learner's actual
  * word-ladder assignment, the open session, today's plan) and every grading
  * rule live in `WordLadderStudyService`. Responses are `private, no-store`:
  * a child's plan must not sit in a shared browser cache on a household screen.

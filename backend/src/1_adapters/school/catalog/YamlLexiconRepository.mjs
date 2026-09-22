@@ -2,7 +2,10 @@ import path from 'node:path';
 import { readYamlFromPath } from '#system/utils/FileIO.mjs';
 import { parseMediaRef, validateLexicon } from '#domains/school/wordLadder/index.mjs';
 
-/** Reads `media:<dir>/lexicon.yml` word lexicons from the School media root. */
+/**
+ * Reads `media:<dir>/lexicon.yml` word lexicons from the School media root and
+ * returns the validated lexicon: `{ package, language, gloss, program, quiz, entries }`.
+ */
 export class YamlLexiconRepository {
   #root; #load;
   constructor({ mediaRoot, io = {} } = {}) {
@@ -20,9 +23,9 @@ export class YamlLexiconRepository {
     try { raw = this.#load(file); } catch (error) {
       throw new Error(`lexicon '${ref}': ${error?.code === 'ENOENT' ? 'not found' : error.message}`);
     }
-    const { errors, entries } = validateLexicon(raw);
+    const { errors, lexicon } = validateLexicon(raw);
     if (errors.length) throw new Error(`lexicon '${ref}': ${errors.join('; ')}`);
-    return entries;
+    return lexicon;
   }
 }
 export default YamlLexiconRepository;

@@ -4,45 +4,81 @@ import {
   LEXICON_SCHEMA, expandLexiconDeck, isLexiconDeck, parseMediaRef, validateLexicon, wordAssetIds, wordPackageDir,
 } from './index.mjs';
 
+// Korean is the worked example; the Spanish case below proves nothing is Korean-specific.
 const REF = 'media:language/korean-vocab/lexicon.yml';
+const GROUP = 'week-01-classroom';
 const entry = (over = {}) => ({
-  id: 'gawi', kind: 'word', korean: '가위', english: 'Scissors', pronunciation: null,
-  decoys: { korean: ['가지', '바위', '가방'], english: ['Knife', 'Tape', 'Ruler'] }, ...over,
+  id: 'gawi', kind: 'word', group: GROUP, term: '가위', gloss: 'Scissors', pronunciation: null,
+  decoys: { term: ['가지', '바위', '가방'], gloss: ['Knife', 'Tape', 'Ruler'] }, ...over,
 });
 const phrase = (over = {}) => entry({
-  id: 'annyeong', kind: 'phrase', korean: '안녕', english: 'Hi (casual)', pronunciation: 'an-nyeong',
-  decoys: { korean: ['안녕하세요', '안녕히계세요', '안경'], english: ['Hello (polite)', 'Thank you', 'Excuse me'] }, ...over,
+  id: 'annyeong', kind: 'phrase', term: '안녕', gloss: 'Hi (casual)', pronunciation: 'an-nyeong',
+  decoys: { term: ['안녕하세요', '안녕히계세요', '안경'], gloss: ['Hello (polite)', 'Thank you', 'Excuse me'] }, ...over,
 });
 const hello = () => entry({
-  id: 'annyeong-haseyo', kind: 'phrase', korean: '안녕하세요', english: 'Hello (polite)', pronunciation: 'an-nyeong-ha-se-yo',
-  decoys: { korean: ['안녕히계세요', '안녕', '안녕히가세요'], english: ['Hi (casual)', 'Goodbye', 'Thank you'] },
+  id: 'annyeong-haseyo', kind: 'phrase', term: '안녕하세요', gloss: 'Hello (polite)', pronunciation: 'an-nyeong-ha-se-yo',
+  decoys: { term: ['안녕히계세요', '안녕', '안녕히가세요'], gloss: ['Hi (casual)', 'Goodbye', 'Thank you'] },
 });
-const lexicon = (entries) => ({ schema: LEXICON_SCHEMA, entries });
+const HEADER = {
+  package: 'korean-vocab',
+  language: { code: 'ko', name: 'Korean' },
+  gloss: { code: 'en', name: 'English' },
+  program: { title: 'Korean words' },
+};
+const lexicon = (entries, over = {}) => ({ schema: LEXICON_SCHEMA, ...HEADER, entries, ...over });
 
 describe('validateLexicon', () => {
-  it('accepts a well-formed lexicon and indexes it by id', () => {
-    const { errors, entries } = validateLexicon(lexicon([entry(), phrase(), hello()]));
+  it('accepts a well-formed lexicon, carries its language identity and indexes entries by id', () => {
+    const { errors, lexicon: lex } = validateLexicon(lexicon([entry(), phrase(), hello()]));
     expect(errors).toEqual([]);
-    expect([...entries.keys()]).toEqual(['gawi', 'annyeong', 'annyeong-haseyo']);
-    expect(entries.get('annyeong').pronunciation).toBe('an-nyeong');
+    expect(lex).toMatchObject({
+      package: 'korean-vocab', language: { code: 'ko', name: 'Korean' }, gloss: { code: 'en', name: 'English' },
+      program: { title: 'Korean words' },
+    });
+    expect([...lex.entries.keys()]).toEqual(['gawi', 'annyeong', 'annyeong-haseyo']);
+    expect(lex.entries.get('annyeong')).toMatchObject({ term: '안녕', gloss: 'Hi (casual)', pronunciation: 'an-nyeong', group: GROUP });
+  });
+  it('defaults quiz topics and instructions from the language and program title', () => {
+    const { lexicon: lex } = validateLexicon(lexicon([entry()]));
+    expect(lex.quiz.topics).toEqual(['korean', 'vocabulary']);
+    expect(lex.quiz.instructions).toBe('Not sure of a word? Open Korean words on the Portal and review the cards, then come back.');
+    const custom = validateLexicon(lexicon([entry()], { quiz: { topics: ['k'], instructions: 'Ask a grown-up.' } })).lexicon;
+    expect(custom.quiz).toEqual({ topics: ['k'], instructions: 'Ask a grown-up.' });
+  });
+  it('requires package, both languages and a program title', () => {
+    const { errors } = validateLexicon({ schema: LEXICON_SCHEMA, entries: [entry()] });
+    const all = errors.join('\n');
+    for (const field of ['package', 'language', 'gloss', 'program.title']) expect(all).toContain(field);
+    expect(validateLexicon(lexicon([entry()], { language: { code: 'Korean', name: 'Korean' } })).errors.join('\n'))
+      .toMatch(/language.code: must be a BCP-47/);
+  });
+  it('rejects a v1 lexicon with a clear migration error', () => {
+    const { errors } = validateLexicon({ schema: 'school.word-lexicon/v1', entries: [{ id: 'gawi' }] });
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toMatch(/school.word-lexicon\/v1 is no longer read: migrate to school.word-lexicon\/v2/);
+  });
+  it('requires a slug group per entry and refuses traversal in it', () => {
+    expect(validateLexicon(lexicon([entry({ group: undefined })])).errors.join('\n')).toMatch(/entries\[0\].group: must be a lowercase slug/);
+    expect(validateLexicon(lexicon([entry({ group: '../escape' })])).errors.join('\n')).toMatch(/group: must be a lowercase slug/);
+    expect(validateLexicon(lexicon([entry({ group: 'Week 1' })])).errors.join('\n')).toMatch(/group: must be a lowercase slug/);
   });
   it('requires a pronunciation for every phrase', () => {
     expect(validateLexicon(lexicon([phrase({ pronunciation: null })])).errors.join('\n')).toMatch(/pronunciation: is required for a phrase/);
   });
   it('needs at least three decoys on each side, none equal to the answer', () => {
-    const few = validateLexicon(lexicon([entry({ decoys: { korean: ['가지'], english: ['Knife', 'Tape', 'Ruler'] } })]));
-    expect(few.errors.join('\n')).toMatch(/decoys.korean: needs at least 3/);
-    const self = validateLexicon(lexicon([entry({ decoys: { korean: ['가지', '바위', '가방'], english: ['scissors', 'Tape', 'Ruler'] } })]));
+    const few = validateLexicon(lexicon([entry({ decoys: { term: ['가지'], gloss: ['Knife', 'Tape', 'Ruler'] } })]));
+    expect(few.errors.join('\n')).toMatch(/decoys.term: needs at least 3/);
+    const self = validateLexicon(lexicon([entry({ decoys: { term: ['가지', '바위', '가방'], gloss: ['scissors', 'Tape', 'Ruler'] } })]));
     expect(self.errors.join('\n')).toMatch(/must not contain the answer 'Scissors'/);
   });
   it('rejects a decoy that is an in-set entry of the other kind', () => {
-    const bad = phrase({ decoys: { korean: ['가위', '안녕히계세요', '안경'], english: ['Hello (polite)', 'Thank you', 'Excuse me'] } });
+    const bad = phrase({ decoys: { term: ['가위', '안녕히계세요', '안경'], gloss: ['Hello (polite)', 'Thank you', 'Excuse me'] } });
     expect(validateLexicon(lexicon([entry(), bad])).errors.join('\n'))
       .toMatch(/decoy '가위' is the word 'gawi' — decoys must be the same kind/);
   });
   it('rejects duplicate ids and a wrong schema', () => {
-    const { errors } = validateLexicon({ schema: 'x', entries: [entry(), entry()] });
-    expect(errors.join('\n')).toMatch(/schema must be school.word-lexicon\/v1/);
+    const { errors } = validateLexicon({ ...lexicon([entry(), entry()]), schema: 'x' });
+    expect(errors.join('\n')).toMatch(/schema must be school.word-lexicon\/v2/);
     expect(errors.join('\n')).toMatch(/duplicates 'gawi'/);
   });
 });
@@ -54,19 +90,23 @@ describe('media refs', () => {
     expect(parseMediaRef('media:/abs').ok).toBe(false);
     expect(parseMediaRef('language/x.yml').ok).toBe(false);
   });
-  it('derives the word package directory and per-word asset ids', () => {
+  it('derives the word package directory and grouped, language-neutral per-word asset ids', () => {
     expect(wordPackageDir(REF)).toBe('language/korean-vocab');
     expect(wordPackageDir('media:language/korean-vocab/other.yml')).toBeNull();
-    expect(wordAssetIds(REF, 'gawi')).toEqual({
-      image: 'media:language/korean-vocab/words/gawi/image.jpg',
-      audio: 'media:language/korean-vocab/words/gawi/ko.mp3',
-      englishAudio: 'media:language/korean-vocab/words/gawi/en.mp3',
+    expect(wordAssetIds(REF, { id: 'gawi', group: GROUP })).toEqual({
+      image: 'media:language/korean-vocab/words/week-01-classroom/gawi/image.jpg',
+      audio: 'media:language/korean-vocab/words/week-01-classroom/gawi/term.mp3',
+      glossAudio: 'media:language/korean-vocab/words/week-01-classroom/gawi/gloss.mp3',
     });
+  });
+  it('refuses an asset path for an invalid group', () => {
+    expect(() => wordAssetIds(REF, { id: 'gawi', group: '..' })).toThrow(/no asset path/);
+    expect(() => wordAssetIds(REF, { id: 'gawi' })).toThrow(/no asset path/);
   });
 });
 
 describe('expandLexiconDeck', () => {
-  const { entries } = validateLexicon(lexicon([entry(), phrase(), hello()]));
+  const { lexicon: lex } = validateLexicon(lexicon([entry(), phrase(), hello()]));
   const raw = {
     schema: 'school.flashcard-deck/v1', id: 'language/korean/week-01-classroom', title: 'Korean — Classroom',
     revision: 1, lexicon: REF, words: ['annyeong', 'gawi'],
@@ -76,22 +116,22 @@ describe('expandLexiconDeck', () => {
     expect(isLexiconDeck({ cards: [] })).toBe(false);
   });
   it('turns words into ordinary cards that pass validateFlashcardDeck', () => {
-    const { errors, deck } = expandLexiconDeck(raw, entries);
+    const { errors, deck } = expandLexiconDeck(raw, lex);
     expect(errors).toEqual([]);
     expect(deck.words).toEqual(['annyeong', 'gawi']);
     expect(deck.cards.map((card) => card.cardId)).toEqual(['annyeong', 'gawi']);
     expect(deck.cards[1].front.blocks).toEqual([
-      { type: 'image', assetId: 'media:language/korean-vocab/words/gawi/image.jpg', alt: 'Scissors' },
+      { type: 'image', assetId: 'media:language/korean-vocab/words/week-01-classroom/gawi/image.jpg', alt: 'Scissors' },
       { type: 'text', text: '가위' },
-      { type: 'audio', assetId: 'media:language/korean-vocab/words/gawi/ko.mp3', transcript: '가위' },
+      { type: 'audio', assetId: 'media:language/korean-vocab/words/week-01-classroom/gawi/term.mp3', transcript: '가위' },
     ]);
     expect(deck.cards[1].back.blocks).toEqual([{ type: 'text', text: 'Scissors' }]);
     expect(deck.cards[0].back.blocks).toEqual([{ type: 'text', text: 'Hi (casual)' }, { type: 'text', text: 'an-nyeong' }]);
     expect(validateFlashcardDeck(deck).errors).toEqual([]);
   });
   it('refuses unknown or duplicate words and authored cards', () => {
-    expect(expandLexiconDeck({ ...raw, words: ['nope'] }, entries).errors.join('\n')).toMatch(/'nope' is not in the lexicon/);
-    expect(expandLexiconDeck({ ...raw, words: ['gawi', 'gawi'] }, entries).errors.join('\n')).toMatch(/duplicates 'gawi'/);
-    expect(expandLexiconDeck({ ...raw, cards: [] }, entries).errors.join('\n')).toMatch(/must not also author cards/);
+    expect(expandLexiconDeck({ ...raw, words: ['nope'] }, lex).errors.join('\n')).toMatch(/'nope' is not in the lexicon/);
+    expect(expandLexiconDeck({ ...raw, words: ['gawi', 'gawi'] }, lex).errors.join('\n')).toMatch(/duplicates 'gawi'/);
+    expect(expandLexiconDeck({ ...raw, cards: [] }, lex).errors.join('\n')).toMatch(/must not also author cards/);
   });
 });

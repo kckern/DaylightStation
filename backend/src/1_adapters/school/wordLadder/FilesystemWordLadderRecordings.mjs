@@ -8,8 +8,9 @@ const EXT = /^(webm|ogg|m4a|mp4|wav)$/;
 const MIME = Object.freeze({ webm: 'audio/webm', ogg: 'audio/ogg', m4a: 'audio/mp4', mp4: 'audio/mp4', wav: 'audio/wav' });
 
 /**
- * `{rootDir}/{learnerId}/{studyDay}/{wordId}-{n}.{ext}` — a learner's spoken
- * takes. Presentation and review only: the credit is the status history.
+ * `{rootDir}/{package}/{learnerId}/{studyDay}/{wordId}-{n}.{ext}` — a
+ * learner's spoken takes, per word package (word ids are unique only within a
+ * package). Presentation and review only: the credit is the status history.
  */
 export class FilesystemWordLadderRecordings {
   #root;
@@ -17,9 +18,9 @@ export class FilesystemWordLadderRecordings {
     if (typeof rootDir !== 'string' || !rootDir.trim()) throw new Error('FilesystemWordLadderRecordings requires rootDir');
     this.#root = path.resolve(rootDir);
   }
-  #dir(learnerId, day, wordId) {
-    if (!ID.test(String(learnerId)) || !DAY.test(String(day)) || !ID.test(String(wordId))) return null;
-    return path.join(this.#root, learnerId, day);
+  #dir(pkg, learnerId, day, wordId) {
+    if (typeof pkg !== 'string' || !ID.test(pkg) || !ID.test(String(learnerId)) || !DAY.test(String(day)) || !ID.test(String(wordId))) return null;
+    return path.join(this.#root, pkg, learnerId, day);
   }
   #takes(dir, wordId) {
     if (!dirExists(dir)) return [];
@@ -30,17 +31,17 @@ export class FilesystemWordLadderRecordings {
       .sort((a, b) => a.n - b.n);
   }
   save({
-    learnerId, day, wordId, buffer, ext = 'webm',
+    package: pkg, learnerId, day, wordId, buffer, ext = 'webm',
   }) {
-    const dir = this.#dir(learnerId, day, wordId);
+    const dir = this.#dir(pkg, learnerId, day, wordId);
     if (!dir || !EXT.test(String(ext))) throw new Error('invalid recording address');
     const take = (this.#takes(dir, wordId).at(-1)?.n ?? 0) + 1;
     const file = path.join(dir, `${wordId}-${take}.${ext}`);
     writeBinary(file, buffer);
     return { take, file };
   }
-  latest({ learnerId, day, wordId }) {
-    const dir = this.#dir(learnerId, day, wordId);
+  latest({ package: pkg, learnerId, day, wordId }) {
+    const dir = this.#dir(pkg, learnerId, day, wordId);
     if (!dir) return null;
     const last = this.#takes(dir, wordId).at(-1);
     if (!last || !MIME[last.ext]) return null;
