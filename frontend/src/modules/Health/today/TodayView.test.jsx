@@ -7,6 +7,8 @@ const departureState = vi.hoisted(()=>({departed:false}));
 // The latest props the QuickCaptureBar stub received, so a test can drive its
 // callbacks (e.g. the + that reveals a meal) without rendering the real bar.
 const quickBarProps = vi.hoisted(() => ({ current: null }));
+// The latest props the BarcodeCapture stub received, so a test can drive a decode.
+const barcodeProps = vi.hoisted(() => ({ current: null }));
 vi.mock('../../../lib/api.mjs', () => ({ DaylightAPI: (...a) => apiMock(...a) }));
 
 // Bypass the real file-picker/FileReader and MediaRecorder plumbing — the
@@ -43,7 +45,7 @@ vi.mock('../capture/VoiceCapture.jsx', () => ({
     </button></>
   ),
 }));
-vi.mock('../capture/BarcodeCapture.jsx', () => ({ BarcodeCapture: () => null }));
+vi.mock('../capture/BarcodeCapture.jsx', () => ({ BarcodeCapture: (props) => { barcodeProps.current = props; return null; } }));
 vi.mock('../capture/CustomFoodSheet.jsx', () => ({ CustomFoodSheet: () => null }));
 // QuickCaptureBar (Task 4.3) has its own dedicated test file
 // (QuickCaptureBar.test.jsx) covering its four affordances, the clock-derived
@@ -728,3 +730,29 @@ it('offers the same recording Retry when navigation happens during an upload tha
   expect(inputs[0][1]).toMatchObject({content:'data:audio/webm;base64,zzz',selectedIds:['broth'],bucket:'evening',operationId:expect.any(String)});
   expect(inputs[1][1]).toEqual(inputs[0][1]);
 });
+
+describe('TodayView — a barcode the person must hear about', () => {
+  beforeEach(() => { apiMock.mockReset(); resetApiResourceCache(); barcodeProps.current = null; });
+
+  it('a refused barcode shows its sentence', async () => {
+    apiMock.mockImplementation(baseApi({ nutritionInput: { committed: false, outcome: 'rejected-barcode', rejected: 'isbn',
+      message: "That's a book (ISBN), not a food.", messages: [{ text: "That's a book (ISBN), not a food." }] } }));
+    r(<TodayView onSetupGoals={() => {}} onCoachTap={() => {}} />);
+    await waitFor(() => expect(barcodeProps.current).toBeTruthy());
+    await act(async () => { await barcodeProps.current.onDecode('9780306406157', 'afternoon'); });
+    expect(await screen.findByText("That's a book (ISBN), not a food.")).toBeTruthy();
+  });
+
+  it('a capture held for review says so and refreshes Needs Review', async () => {
+    apiMock.mockImplementation(baseApi({ nutritionInput: { committed: false, outcome: 'needs-review', quarantined: true,
+      logId: 'L1', message: 'Needs review — no calories found', messages: [] } }));
+    r(<TodayView onSetupGoals={() => {}} onCoachTap={() => {}} />);
+    await waitFor(() => expect(barcodeProps.current).toBeTruthy());
+    const pendingCalls = () => apiMock.mock.calls.filter(([path]) => String(path).includes('nutrition/pending')).length;
+    const before = pendingCalls();
+    await act(async () => { await barcodeProps.current.onDecode('037000338369', 'afternoon'); });
+    expect(await screen.findByText('Needs review — no calories found')).toBeTruthy();
+    await waitFor(() => expect(pendingCalls()).toBeGreaterThan(before));
+  });
+});
+

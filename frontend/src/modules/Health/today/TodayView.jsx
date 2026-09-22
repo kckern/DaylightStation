@@ -469,6 +469,21 @@ export function TodayView({ active = true, sidebarTarget, onSetupGoals, onCoachT
           const result = await submitWithPending('barcode', upc, { bucket, date: barcodeDate });
           if (result?.unknownUpc) { setCaptureMode(null); setUnknownUpc(result.upc); return; }
           setCaptureMode(null);
+          // Not a food barcode (bad check digit, an ISBN): nothing was logged,
+          // and the server sends the one sentence that says why.
+          if (result?.outcome === 'rejected-barcode') {
+            logger.info('barcode.rejected', { reason: result.rejected ?? null });
+            setCaptureNotice(result.message || "That isn't a food barcode.");
+            return;
+          }
+          // Saved, but no calories were found: it waits in Needs Review
+          // instead of adding an unknown to the day's totals.
+          if (result?.outcome === 'needs-review') {
+            logger.info('barcode.needs-review', { logId: result.logId ?? null, quarantined: result.quarantined === true });
+            setCaptureNotice(result.message || 'Needs review — no calories found');
+            pendingReview.reload();
+            return;
+          }
           if (result?.moved) setCaptureNotice(`Moved to ${bucketLabel(result.mealTime)}`);
           day.reload();
         }} />

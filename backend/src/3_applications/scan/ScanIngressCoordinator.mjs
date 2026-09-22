@@ -94,6 +94,7 @@ import { KNOWN_COMMANDS } from '#domains/barcode/BarcodeCommandMap.mjs';
 import { TriggerEvent } from '#domains/trigger/TriggerEvent.mjs';
 import { routeNutribotScan, nutriscanRefusalNotice, swallowNotice } from '#apps/nutribot/lib/routeNutribotScan.mjs';
 import { parseGtin } from '#domains/nutrition/services/gtin.mjs';
+import { UPC_REJECTED } from '#apps/nutribot/usecases/LogFoodFromUPC.mjs';
 
 /**
  * Reader route -> namespace, for the dispatcher's step 5.
@@ -631,10 +632,18 @@ export function createScanDispatch(deps = {}) {
       return { status: 'refused', ok: false, message: 'no nutribot user' };
     }
 
+    // A code that is not a food barcode is refused here, where the reader is
+    // known, and never arms the repeat window: a misread must not shadow the
+    // good read that follows it.
+    const parsed = parseGtin(body);
+    if (!parsed.ok) {
+      emit(barcodeLogger, 'info', 'barcode.nutribot.rejected', { device, code: raw, reason: parsed.reason });
+      return { status: 'refused', ok: false, message: parsed.reason };
+    }
+
     const at = now();
     for (const [key, seen] of lastProductScan) if (at - seen >= PRODUCT_REPEAT_MS) lastProductScan.delete(key);
-    const parsed = parseGtin(body);
-    const repeatKey = `${device}|${parsed.ok ? parsed.code : String(body)}`;
+    const repeatKey = `${device}|${parsed.code}`;
     if (lastProductScan.has(repeatKey)) {
       emit(barcodeLogger, 'info', 'barcode.nutribot.repeat', { device, code: raw, sinceMs: at - lastProductScan.get(repeatKey) });
       return { status: 'swallowed', ok: false, message: 'repeat scan' };
@@ -656,6 +665,13 @@ export function createScanDispatch(deps = {}) {
       headless: true,
       ...(operationId ? { operationId } : {}),
     }).catch((err) => {
+      // A failed capture logged nothing, so rescanning the same can is a retry,
+      // not a repeat. Release the window this scan armed (and only that one).
+      if (lastProductScan.get(repeatKey) === at) lastProductScan.delete(repeatKey);
+      if (err?.code === UPC_REJECTED) {
+        emit(barcodeLogger, 'info', 'barcode.nutribot.rejected', { device, code: raw, reason: err.context?.reason ?? null });
+        return;
+      }
       emit(barcodeLogger, 'warn', 'barcode_relay.nutribot.dispatch.failed', { device, error: errText(err) });
     });
     return { status: 'logged', effect: { upc: body, conversationId } };
