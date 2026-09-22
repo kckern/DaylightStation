@@ -147,3 +147,89 @@ describe('ResolveCardScan key-alignment wiring', () => {
     expect(result.results[0].keyAlignmentSuspect).toBeUndefined();
   });
 });
+
+/**
+ * A single physical OMR card routinely composes several worksheets (math,
+ * scripture, civilization, …) as `sections`, each an independently gradeable
+ * lesson with its own `rowRange` — an everyday shape in this household, not
+ * an edge case. The row-shift check must never let a shift suspected on one
+ * lesson's rows hold an unrelated lesson on the same card, and a blank row
+ * in one lesson must never suppress detection in another (whole-branch
+ * review finding #2: the check used to run record-wide and land on every
+ * section via a `...card` spread).
+ */
+describe('ResolveCardScan key-alignment wiring — composed sections', () => {
+  const sectionSource = (id) => sourceDoc(id, [
+    ...correctChoiceByRow.map((answer, index) => mcQuestion(`a${index + 1}`, index + 1, { choices: CHOICES, answer })),
+    ...correctChoiceByRow.map((answer, index) => mcQuestion(`b${index + 1}`, index + 7, { choices: CHOICES, answer })),
+  ]);
+
+  it('flags only the shifted section on a composed card, leaving the unshifted section unaffected', async () => {
+    const repository = fakeRepository();
+    const allocationStore = fakeAllocationStore();
+    const logger = { info: () => {}, warn: () => {} };
+    const source = sectionSource('test/key-alignment-composed-1');
+    const { allocation } = await publishAndAllocate({
+      repository, allocationStore, source,
+      context: {
+        freshCard: true, learnerId: 'test-learner',
+        sectionAttribution: [
+          { id: 'lesson-a', itemIds: ['a1', 'a2', 'a3', 'a4', 'a5', 'a6'], sessionId: 'session-a', lessonId: 'lesson-a' },
+          { id: 'lesson-b', itemIds: ['b1', 'b2', 'b3', 'b4', 'b5', 'b6'], sessionId: 'session-b', lessonId: 'lesson-b' },
+        ],
+      },
+    });
+    const resolver = new ResolveCardScan({ repository, allocationStore, logger });
+    const answers = {
+      // Section A (rows 1-6): answers written one row-number late — the
+      // exact shift pattern the first test in this file proves triggers.
+      1: 'E', 2: 'A', 3: 'B', 4: 'C', 5: 'D', 6: 'A',
+      // Section B (rows 7-12): the literal, un-shifted correct letters.
+      7: 'A', 8: 'B', 9: 'C', 10: 'D', 11: 'A', 12: 'B',
+    };
+    const result = await resolver.execute({ testId: allocation.cardId, answers });
+    const [record] = result.results;
+    expect(record.keyAlignmentSuspect).toBeUndefined();
+    const [sectionA, sectionB] = record.sections;
+    expect(sectionA).toMatchObject({
+      id: 'lesson-a',
+      keyAlignmentSuspect: { offset: -1, literalMatches: 0, shiftedMatches: 5, itemCount: 6 },
+    });
+    expect(sectionB.keyAlignmentSuspect).toBeUndefined();
+    // Section B graded normally: 6 of 6, untouched by section A's hold.
+    expect(sectionB.earnedPoints).toBe(sectionB.totalPoints);
+    expect(sectionB.results.every((row) => row.status === 'correct')).toBe(true);
+  });
+
+  it('does not let a blank row in one section suppress detection in another', async () => {
+    const repository = fakeRepository();
+    const allocationStore = fakeAllocationStore();
+    const logger = { info: () => {}, warn: () => {} };
+    const source = sectionSource('test/key-alignment-composed-2');
+    const { allocation } = await publishAndAllocate({
+      repository, allocationStore, source,
+      context: {
+        freshCard: true, learnerId: 'test-learner',
+        sectionAttribution: [
+          { id: 'lesson-a', itemIds: ['a1', 'a2', 'a3', 'a4', 'a5', 'a6'], sessionId: 'session-a', lessonId: 'lesson-a' },
+          { id: 'lesson-b', itemIds: ['b1', 'b2', 'b3', 'b4', 'b5', 'b6'], sessionId: 'session-b', lessonId: 'lesson-b' },
+        ],
+      },
+    });
+    const resolver = new ResolveCardScan({ repository, allocationStore, logger });
+    const answers = {
+      // Section A: same shifted-by-one pattern — still fully marked.
+      1: 'E', 2: 'A', 3: 'B', 4: 'C', 5: 'D', 6: 'A',
+      // Section B: correct except row 12, left blank — the sheet is still
+      // mid-fill for this lesson only. Section A's own detection must not
+      // be affected by lesson B's own, unrelated, still-open row.
+      7: 'A', 8: 'B', 9: 'C', 10: 'D', 11: 'A',
+    };
+    const result = await resolver.execute({ testId: allocation.cardId, answers });
+    const [sectionA, sectionB] = result.results[0].sections;
+    expect(sectionA.keyAlignmentSuspect).toEqual({
+      offset: -1, literalMatches: 0, shiftedMatches: 5, itemCount: 6,
+    });
+    expect(sectionB.keyAlignmentSuspect).toBeUndefined();
+  });
+});

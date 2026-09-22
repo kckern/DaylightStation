@@ -1197,22 +1197,26 @@ export class ResolveCardScan {
     // bubble letter, so comparing that against a letter would silently
     // never match on any worksheet whose choices aren't themselves the
     // literal strings 'A'-'E'.
-    const keyAlignmentRows = questionRows
-      .filter((row) => row.itemType === 'multiple_choice' && typeof answers[row.row] === 'string')
-      .map((row) => ({
-        row: row.row,
-        given: answers[row.row],
-        correctLetter: correctLetterFor(bankItemsById.get(row.itemId)),
-      }))
-      .filter((row) => row.correctLetter != null);
-    const hasBlankRow = questionRows.some((row) => row.status === 'blank');
-    const keyAlignmentSuspect = hasBlankRow ? null : omrKeyAlignmentSuspect(keyAlignmentRows);
-    if (keyAlignmentSuspect) {
-      this.#logger.warn?.('school.scan.key-alignment-suspected', {
-        cardId: record.cardId, recordId: record.recordId,
-        learnerId: record.learnerId ?? null, ...keyAlignmentSuspect,
-      });
-    }
+    //
+    // SCOPED TO THE ROWS PASSED IN, never the whole record directly — a
+    // composed card's sections are each an independently gradeable lesson
+    // (see the `sections` block below), and a shift suspected on lesson A's
+    // rows must never hold lesson B's unrelated session, nor may a blank row
+    // in an unstarted lesson B suppress detection on a completed lesson A.
+    // `hasBlankRow` is therefore computed over the SAME scoped row set, not
+    // `questionRows` at large.
+    const keyAlignmentSuspectFor = (rowsInScope) => {
+      const rows = rowsInScope
+        .filter((row) => row.itemType === 'multiple_choice' && typeof answers[row.row] === 'string')
+        .map((row) => ({
+          row: row.row,
+          given: answers[row.row],
+          correctLetter: correctLetterFor(bankItemsById.get(row.itemId)),
+        }))
+        .filter((row) => row.correctLetter != null);
+      const hasBlankRow = rowsInScope.some((row) => row.status === 'blank');
+      return hasBlankRow ? null : omrKeyAlignmentSuspect(rows);
+    };
 
     const totalPoints = rowResults.reduce((sum, row) => sum + row.points, 0);
     const earnedPoints = rowResults.reduce((sum, row) => sum + row.earned, 0);
@@ -1228,13 +1232,24 @@ export class ResolveCardScan {
     // record-level result for card lifecycle decisions and attach immutable
     // section slices for the evidence/session bridge. Older allocations lack
     // `sections` and therefore retain their exact old result shape.
-    const sections = Array.isArray(record.sections)
+    const hasSections = Array.isArray(record.sections) && record.sections.length > 0;
+    const sections = hasSections
       ? record.sections.map((section) => {
         const results = rowResults.filter((row) => (
           row.row >= section.rowRange.start && row.row <= section.rowRange.end
         ));
+        const sectionQuestionRows = questionRows.filter((row) => (
+          row.row >= section.rowRange.start && row.row <= section.rowRange.end
+        ));
         const totalPoints = results.reduce((sum, row) => sum + row.points, 0);
         const earnedPoints = results.reduce((sum, row) => sum + row.earned, 0);
+        const sectionKeyAlignmentSuspect = keyAlignmentSuspectFor(sectionQuestionRows);
+        if (sectionKeyAlignmentSuspect) {
+          this.#logger.warn?.('school.scan.key-alignment-suspected', {
+            cardId: record.cardId, recordId: record.recordId, sectionId: section.id,
+            learnerId: record.learnerId ?? null, ...sectionKeyAlignmentSuspect,
+          });
+        }
         return {
           id: section.id,
           rowRange: { ...section.rowRange },
@@ -1244,9 +1259,24 @@ export class ResolveCardScan {
           ...(section.subjectId ? { subjectId: section.subjectId } : {}),
           ...(section.courseId ? { courseId: section.courseId } : {}),
           results, totalPoints, earnedPoints,
+          ...(sectionKeyAlignmentSuspect ? { keyAlignmentSuspect: sectionKeyAlignmentSuspect } : {}),
         };
       }).filter((section) => section.results.length > 0)
       : [];
+
+    // The plain, uncomposed case (most worksheets): no sections, so the
+    // whole-record computation IS the one worksheet's own computation —
+    // never run again once a composed card has already scoped it per
+    // section above, or a record whose sections were entirely empty this
+    // scan (nothing owned in any section) would fall through here with a
+    // stale whole-record judgment that answers for no particular lesson.
+    const keyAlignmentSuspect = hasSections ? null : keyAlignmentSuspectFor(questionRows);
+    if (keyAlignmentSuspect) {
+      this.#logger.warn?.('school.scan.key-alignment-suspected', {
+        cardId: record.cardId, recordId: record.recordId,
+        learnerId: record.learnerId ?? null, ...keyAlignmentSuspect,
+      });
+    }
 
     return {
       cardId: record.cardId,
