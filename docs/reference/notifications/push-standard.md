@@ -21,7 +21,10 @@ producer, UTC timestamps, and the same event ringing two to six times.
    the earlier card instead of stacking. If the repeat is the *same* state (a
    second tap, a re-sent approval), also set `alert_once` so it updates without
    ringing.
-4. **Every push has a channel chosen by how loud it should be.** `alarm_stream`
+4. **Choose the channel deliberately.** A family of pushes that someone may want
+   to hear or silence separately gets its own named channel: School progress,
+   School needs you, Household alerts, DoNow approvals. One-off device notices
+   (NFC tag, TV, story time) stay on the default channel. `alarm_stream`
    (bypasses Do Not Disturb) is reserved for real safety events.
 5. **The text is composed in code and unit-tested.** HA scripts relay it; they
    don't format it. Every composer test runs its output through
@@ -58,7 +61,8 @@ clause; it never renders an id.
 | Unmarked old record on a card whose other work graded | none (logged `school.push.suppressed`) | — |
 
 - `tag` is `school-{learnerId}-{sessionId ?? testId}`, so a rescan, or a Partial
-  followed by the Pass for the same session, replaces one card.
+  followed by the Pass for the same session, replaces one card. With no learner
+  it is `school-card-{sessionId ?? testId}`.
 - `group` is `school-{learnerId}`: one stack per child.
 - A piano lesson is tagged `school-{learnerId}-piano-{studyDay}`.
 - The piano body shows **unit** progress (`Folk Songs: 3 of 8 lessons`). The
@@ -84,9 +88,29 @@ Android fixes that channel's importance from then on. Changing `importance` in
 code later has no effect on an existing channel. Rename the channel, or retune it
 in the phone's notification settings.
 
+## Composition can never withhold a cue
+
+A push is optional; the siren, chime and lockdown cue are not.
+
+- In the scan consumer, the notification is composed on its own promise chain.
+  Label lookups (catalog, name, sheet title) are capped at 2 s by the injected
+  scheduler (`pushLabelTimeoutMs`).
+- A failure or timeout recomposes the **same outcome without labels**, so a pass
+  still reads as a pass and a suppressed push stays `null`. Generic "couldn't be
+  graded" copy is only the last resort.
+- The piano bridge, the shutdown service and the story-time alert compose inside
+  their own guards, so a composer throw falls back to `notification: null` or to
+  unlabelled copy and the cue still fires.
+- Hook fires on one card can reach HA in either order, because each waits on its
+  own lookups.
+
 ## Log events
 
 - `school.push.composed` (debug: `testId`, `kind`, `tag`)
 - `school.push.suppressed` (info: `reason`)
-- `school.push.compose-failed` (warn). Generic copy was sent instead; grading is
-  unaffected.
+- `school.push.compose-failed` (warn): a lookup threw; the unlabelled copy of the
+  same outcome was sent.
+- `school.push.compose-timeout` (warn): a lookup exceeded the deadline; same
+  fallback.
+- `trigger.notify.label_failed` (warn): the NFC room-label lookup threw; the
+  title uses the title-cased location id.
