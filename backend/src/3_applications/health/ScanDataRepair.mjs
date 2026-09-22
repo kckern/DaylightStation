@@ -113,7 +113,7 @@ export function planScanDataRepair(rows, {
   // ── Per-row updates ──────────────────────────────────────────────────────
   const updates = [];
   const report = { rows: unique.length, duplicates, explicitDeletes: [...chosen], placeholderPhotos: [], renames: [],
-    manualNamesKept: [], mlToGrams: [], icons: [], emptyUpc: [] };
+    manualNamesKept: [], mlToGrams: [], mlUnresolved: [], icons: [], emptyUpc: [] };
   for (const row of unique) {
     const id = identity(row);
     if (deleting.has(id)) continue;
@@ -141,8 +141,13 @@ export function planScanDataRepair(rows, {
 
     const perServing = labelGrams[name] ?? labelGrams[finalName];
     const servingAmount = Number(row.originalQuantity?.amount);
+    const servingUnit = row.originalQuantity?.unit ?? null;
     const amount = Number(row.amount);
-    if (row.unit === 'ml' && Number.isFinite(perServing) && servingAmount > 0 && Number.isFinite(amount)) {
+    // The ratio is only meaningful when the serving it divides by is the same
+    // ml serving the label gram figure describes.
+    if (row.unit === 'ml' && Number.isFinite(perServing) && servingUnit !== 'ml') {
+      report.mlUnresolved.push({ id, name, reason: `serving basis is ${servingUnit ?? 'missing'}, not ml` });
+    } else if (row.unit === 'ml' && Number.isFinite(perServing) && servingAmount > 0 && Number.isFinite(amount)) {
       const grams = round1(amount * perServing / servingAmount);
       Object.assign(changes, { grams, unit: 'g', amount: grams });
       reasons.push('ml-to-grams');
@@ -154,7 +159,7 @@ export function planScanDataRepair(rows, {
     if (icon !== NEUTRAL_ICON && !offeredSet.has(icon)) {
       changes.icon = reviewed ?? NEUTRAL_ICON;
       reasons.push('retired-icon');
-    } else if (reviewed && reviewed !== icon) {
+    } else if (reviewed && reviewed !== icon && !(row.manualFields || []).includes('icon')) {
       changes.icon = reviewed;
       reasons.push('reviewed-icon');
     }
