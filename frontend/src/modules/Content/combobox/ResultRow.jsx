@@ -39,7 +39,7 @@ import { isContainer } from './comboboxMachine.js';
  * or behavioral change.
  */
 export function ResultRowActions({
-  item, isContainerItem, onPlayAll, onMore, onAction, testId,
+  item, isContainerItem, onPlayAll, onPlayNow, onMore, onAction, testId,
   onMoreMenuPointerDown, onMoreMenuChange, onMoreMenuAction, onMoreMenuTriggerFocus, onMoreBoundaryBlur,
 }) {
   const container = isContainerItem ?? (item ? isContainer(item) : false);
@@ -66,7 +66,7 @@ export function ResultRowActions({
     );
   }
 
-  if (!onMore && !onAction) return null;
+  if (!onPlayNow && !onMore && !onAction) return null;
   const fire = (action) => (e) => {
     e?.stopPropagation?.();
     // Set before onMore mutates a session and Menu dismisses its portal. The
@@ -86,8 +86,19 @@ export function ResultRowActions({
   };
   return (
     <>
+    {!container && onPlayNow && (
+      <button
+        type="button"
+        className="result-action result-action--primary"
+        data-testid={`result-play-now-${idPart}`}
+        onClick={(event) => { event.stopPropagation(); onPlayNow(); }}
+      >
+        Play Now
+      </button>
+    )}
     {container && onAction && onPlayAll && <ActionIcon size="sm" variant="subtle" aria-label="Play as queue" data-testid={`result-play-all-${idPart}`}
       onMouseDown={event => event.preventDefault()} onClick={event => { event.preventDefault(); event.stopPropagation(); onPlayAll(); }}><IconPlayerPlay size={16} /></ActionIcon>}
+    {(onMore || onAction) && (
     <Menu withinPortal position="bottom-end" shadow="sm" onChange={onMoreMenuChange}>
       <Menu.Target>
         <ActionIcon
@@ -137,6 +148,7 @@ export function ResultRowActions({
         <Menu.Item data-testid={`result-action-detail-${idPart}`} onClick={fire('detail')}>Open detail</Menu.Item>
       </Menu.Dropdown>
     </Menu>
+    )}
     </>
   );
 }
@@ -156,10 +168,11 @@ export function ResultRowActions({
  * @param {string} [props.thumbnail]
  * @param {() => void} props.onTap
  * @param {() => void} [props.onPlayAll] - container-only: the ▶ verb
+ * @param {() => void} [props.onPlayNow] - leaf-only: an explicit inline Play Now verb
  * @param {(action: string) => void} [props.onMore] - leaf-only: the ⋯ verb
  * @param {string} [props.testId] - testid for the tap button (defaults to `result-row-${item.id}`)
  */
-export function ResultRow({ item, title, subtitle, thumbnail, onTap, onPlayAll, onMore, onAction, testId, focusId }) {
+export function ResultRow({ item, title, subtitle, thumbnail, onTap, onPlayAll, onPlayNow, onMore, onAction, testId, focusId }) {
   const container = item ? isContainer(item) : false;
   const idPart = item?.id ?? 'row';
   const rowTestId = testId ?? `result-row-${idPart}`;
@@ -190,7 +203,7 @@ export function ResultRow({ item, title, subtitle, thumbnail, onTap, onPlayAll, 
           (flex, gap 4px, flex-shrink 0) — reused here rather than inventing a
           new one, mirroring .browse-row-actions' role in BrowseView.jsx. */}
       <span className="media-result-actions">
-        <ResultRowActions item={item} isContainerItem={container} onPlayAll={onPlayAll} onMore={onMore} onAction={onAction} testId={idPart} />
+        <ResultRowActions item={item} isContainerItem={container} onPlayAll={onPlayAll} onPlayNow={onPlayNow} onMore={onMore} onAction={onAction} testId={idPart} />
       </span>
     </>
   );
