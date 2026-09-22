@@ -3198,9 +3198,33 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       id: shortId,
     })
     : null;
+  // `media:` ids (generated word packages) resolve under <mediaDir>/school.
+  const schoolMediaRoot = path.join(configService.getMediaDir(), 'school');
   const flashcardAssets = new SchoolFlashcardAssetRepository({
     rootDir: schoolFullConfig.flashcards?.assets?.dir ?? path.join(dataDir, 'content', 'assets'),
+    mediaRootDir: schoolMediaRoot,
   });
+  const { WordLadderStudyService } = await import('#apps/school/WordLadderStudyService.mjs');
+  const { YamlWordLadderStore } = await import('#adapters/school/wordLadder/YamlWordLadderStore.mjs');
+  const { FilesystemWordLadderRecordings } = await import('#adapters/school/wordLadder/FilesystemWordLadderRecordings.mjs');
+  const { YamlLexiconRepository } = await import('#adapters/school/catalog/YamlLexiconRepository.mjs');
+  const wordLadderLogger = rootLogger.child({ module: 'school-word-ladder' });
+  const wordLadderStudy = schoolCatalog.content
+    ? new WordLadderStudyService({
+      store: new YamlWordLadderStore({ configService, logger: wordLadderLogger }),
+      decks: schoolCatalog.content,
+      lexicons: new YamlLexiconRepository({ mediaRoot: schoolMediaRoot }),
+      assignments: flashcardAssignments,
+      attempts: schoolDatastore,
+      recordings: new FilesystemWordLadderRecordings({ rootDir: path.join(schoolMediaRoot, 'recordings', 'korean-vocab') }),
+      assets: flashcardAssets,
+      teacherGate: schoolTeacherGate,
+      timezone: configService.getTimezone?.() || null,
+      now: Date.now,
+      id: shortId,
+      logger: wordLadderLogger,
+    })
+    : null;
   const openCatalogLearningSession = schoolCatalog.query
     ? new OpenCatalogLearningSession({ catalog: schoolCatalog.query, grader: schoolService })
     : null;
@@ -4117,6 +4141,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       // only the chime is absent.
       pianoLessonHook,
       flashcardStudyService: flashcardStudy,
+      wordLadderStudyService: wordLadderStudy,
       rubiksCubeService,
       rubiksCubeGrants: schoolCubeGrants,
       // The reading shelf (book-log program): grants for the panel's /act
@@ -4610,6 +4635,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     schoolErrors,
     schoolService,
     flashcardStudy,
+    wordLadderStudy,
     flashcardAssets,
     getMaterialCatalog,
     getMaterialUnits,

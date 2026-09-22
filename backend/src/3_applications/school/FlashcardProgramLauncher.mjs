@@ -1,13 +1,22 @@
+import { UNKNOWABLE_STATUS } from './programStatusCollection.mjs';
+
 /** Portal lifecycle adapter for a standalone assigned flashcard deck. */
 export class FlashcardProgramLauncher {
-  #study; #assignments; #donow;
-  constructor({ studyService, assignments, donow = null } = {}) {
+  #study; #assignments; #donow; #wordLadder;
+  constructor({ studyService, assignments, donow = null, wordLadder = null } = {}) {
     if (!studyService || !assignments) throw new Error('FlashcardProgramLauncher requires studyService and assignments');
-    this.#study = studyService; this.#assignments = assignments; this.#donow = donow;
+    this.#study = studyService; this.#assignments = assignments; this.#donow = donow; this.#wordLadder = wordLadder;
   }
   get id() { return 'flashcards'; }
   get surface() { return 'portal'; }
   get locationHint() { return 'on the Portal'; }
+  /**
+   * One launcher, two engines. A word ladder keeps a dated history (frozen day
+   * plans + dated events), so it can answer for a past day; an FSRS deck keeps
+   * only current state and answers UNKNOWABLE_STATUS for any `day` — exactly
+   * what a non-replayable launcher got before.
+   */
+  get replayable() { return true; }
   async #enrollment(userId, deckId) {
     const assignment = await this.#assignments.get(userId);
     return (assignment?.programs ?? []).find((row) => row?.programId === 'flashcards' && (row.deckId ?? row.corpusId) === deckId) ?? null;
@@ -24,12 +33,13 @@ export class FlashcardProgramLauncher {
    * The row names the WORK only; `planDailyAgenda` stamps `assignmentUnitId`
    * onto it from the program entry that owns this program.
    */
-  async status({ userId, programInstance = null }) {
+  async status({ userId, programInstance = null, day = null }) {
     if (!programInstance) return { doneToday: false, progressLabel: 'Choose a flashcard deck', score: null, servedWork: [] };
-    const [summary, enrollment] = await Promise.all([
-      this.#study.summary({ userId, deckId: programInstance }), this.#enrollment(userId, programInstance),
-    ]);
+    const enrollment = await this.#enrollment(userId, programInstance);
     const policy = enrollment?.policy ?? {};
+    if (policy.mode === 'word-ladder') return this.#wordLadderStatus({ userId, deckId: programInstance, day });
+    if (day != null) return { ...UNKNOWABLE_STATUS };
+    const summary = await this.#study.summary({ userId, deckId: programInstance });
     const assessment = await this.#study.assessmentStatus?.({ userId, deckId: programInstance, policy }) ?? { passed: policy.quizRequired !== true };
     const today = summary.today ?? summary.counts;
     const total = summary.counts.new + summary.counts.learning + summary.counts.mastered;
@@ -47,6 +57,21 @@ export class FlashcardProgramLauncher {
       // badge counting its own cards. The deck id is not child-facing, so the
       // title names the program the way `story-time:daily` names story time.
       servedWork: doneToday ? [{ unitId: `flashcards:${programInstance}`, title: 'Flashcards' }] : [] };
+  }
+  /**
+   * THE WORD-LADDER TILE NEVER CLOSES (design rev 3). `doneToday` marks the
+   * subject served; `reopenable` keeps its button (`findReopenableProgramEntry`)
+   * so a child stuck on the printed quiz can go back to the cards, where the
+   * program lands on the review run.
+   */
+  async #wordLadderStatus({ userId, deckId, day }) {
+    if (!this.#wordLadder) throw new Error('word-ladder study is not configured');
+    const status = await this.#wordLadder.dayStatus({ userId, deckId, day });
+    return {
+      doneToday: status.doneToday === true, progressLabel: status.progressLabel, score: null,
+      reopenable: true, remaining: status.remaining ?? null,
+      servedWork: status.doneToday === true ? [{ unitId: `flashcards:${deckId}`, title: 'Flashcards' }] : [],
+    };
   }
   async issueLaunchTarget({ userId, programInstance, unitId }) {
     if (!userId || !programInstance) throw new Error('Flashcard launch requires learner and deck');

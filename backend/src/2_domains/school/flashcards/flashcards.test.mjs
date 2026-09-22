@@ -54,7 +54,7 @@ describe('flashcard program enrollment', () => {
       policy: { activeMinutes: 20, minimumReviews: 30, masteryPercent: 80 },
     })).toEqual({ errors: [], enrollment: {
       programId: 'flashcards', corpusId: 'science/cells/organelles', deckId: 'science/cells/organelles',
-      policy: { activeMinutes: 20, minimumReviews: 30, masteryPercent: 80 },
+      policy: { mode: 'fsrs', activeMinutes: 20, minimumReviews: 30, masteryPercent: 80 },
     } });
   });
   it('allows a required deck assessment without repeating the bank on the assignment', () => {

@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { FlashcardProgramLauncher } from './FlashcardProgramLauncher.mjs';
+import { findReopenableProgramEntry } from './usecases/continuationEntry.mjs';
 
 function make({ policy = { activeMinutes: 1, minimumReviews: 2, masteryPercent: 50 } } = {}) {
   const dispatches = [];
@@ -57,5 +58,51 @@ describe('FlashcardProgramLauncher', () => {
     const { launcher, dispatches } = make();
     await launcher.launch({ userId: 'kid', programInstance: 'biology/cells', unitId: 'flashcards:biology/cells' });
     expect(dispatches[0].action.target).toMatchObject({ kind: 'program', program: 'flashcards', deckId: 'biology/cells', policy: { minimumReviews: 2 } });
+  });
+});
+
+describe('FlashcardProgramLauncher — word ladder', () => {
+  const DECK = 'language/korean/week-01-classroom';
+  function makeLadder(dayStatus) {
+    const wordLadder = { dayStatus: vi.fn(dayStatus) };
+    const studyService = { summary: vi.fn(), getDeck: async () => ({ id: DECK }) };
+    const launcher = new FlashcardProgramLauncher({
+      studyService, wordLadder,
+      assignments: { get: async () => ({ programs: [{ programId: 'flashcards', deckId: DECK, policy: { mode: 'word-ladder' } }] }) },
+    });
+    return { launcher, wordLadder, studyService };
+  }
+
+  it('is replayable', () => {
+    expect(makeLadder(async () => ({})).launcher.replayable).toBe(true);
+  });
+  it('answers from the word ladder, never the FSRS summary, and names the served deck when done', async () => {
+    const { launcher, wordLadder, studyService } = makeLadder(async () => ({ doneToday: true, progressLabel: 'Done for today', remaining: { checks: 0, study: 0, review: 0 } }));
+    const status = await launcher.status({ userId: 'kid', programInstance: DECK });
+    expect(status).toMatchObject({ doneToday: true, progressLabel: 'Done for today', reopenable: true, servedWork: [{ unitId: `flashcards:${DECK}`, title: 'Flashcards' }] });
+    expect(wordLadder.dayStatus).toHaveBeenCalledWith({ userId: 'kid', deckId: DECK, day: null });
+    expect(studyService.summary).not.toHaveBeenCalled();
+  });
+  it('replays a past day through the word ladder', async () => {
+    const { launcher, wordLadder } = makeLadder(async () => ({ doneToday: false, progressLabel: 'Not opened', remaining: null }));
+    await expect(launcher.status({ userId: 'kid', programInstance: DECK, day: '2026-09-21' })).resolves.toMatchObject({ doneToday: false, servedWork: [] });
+    expect(wordLadder.dayStatus).toHaveBeenCalledWith({ userId: 'kid', deckId: DECK, day: '2026-09-21' });
+  });
+  it('keeps the tile openable after completion: a served subject reopens to the word ladder', async () => {
+    const { launcher } = makeLadder(async () => ({ doneToday: true, progressLabel: 'Done for today', remaining: null }));
+    const status = await launcher.status({ userId: 'kid', programInstance: DECK });
+    const entry = { program: 'flashcards', programInstance: DECK, subject: 'flashcards', unitId: `flashcards:${DECK}` };
+    expect(findReopenableProgramEntry({ entries: [entry] }, { subject: 'flashcards', statusOf: () => status })).toEqual({ entry, status });
+  });
+  it('an FSRS deck still cannot answer for a past day', async () => {
+    const { launcher } = make();
+    await expect(launcher.status({ userId: 'kid', programInstance: 'biology/cells', day: '2026-09-21' })).resolves.toMatchObject({ doneToday: null, unknowable: true, reason: 'no_history' });
+  });
+  it('fails loudly when a word-ladder enrollment has no word-ladder service', async () => {
+    const launcher = new FlashcardProgramLauncher({
+      studyService: { summary: vi.fn() },
+      assignments: { get: async () => ({ programs: [{ programId: 'flashcards', deckId: DECK, policy: { mode: 'word-ladder' } }] }) },
+    });
+    await expect(launcher.status({ userId: 'kid', programInstance: DECK })).rejects.toThrow(/word-ladder study is not configured/);
   });
 });

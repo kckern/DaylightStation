@@ -261,6 +261,7 @@ export async function createSchoolLifecycle({
   // `SchoolGradingHookAdapter` bound to `piano_lesson_hook`; null with no HA.
   pianoLessonHook = null,
   flashcardStudyService = null,
+  wordLadderStudyService = null,
   rubiksCubeService = null,
   rubiksCubeGrants = null,
   // The reading shelf. `bookGrants` signs the panel's launch target; the
@@ -596,6 +597,7 @@ export async function createSchoolLifecycle({
   if (flashcardStudyService) {
     launchers.set('flashcards', new FlashcardProgramLauncher({
       studyService: flashcardStudyService, assignments: stores.assignments, donow,
+      wordLadder: wordLadderStudyService,
     }));
   }
   // RUBIKS_CUBE_COURSE_ID is null when course.yml hasn't been authored yet
