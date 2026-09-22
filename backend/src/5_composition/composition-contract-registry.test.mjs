@@ -20,6 +20,7 @@ import { createSchoolApiServices } from './modules/schoolApi.mjs';
 import { createLanguageStudyService } from './modules/schoolLanguage.mjs';
 import { GratitudePrintPresentationService } from '#apps/gratitude/services/GratitudePrintPresentationService.mjs';
 import { ProviderFitnessContentCatalog } from '#adapters/fitness/ProviderFitnessContentCatalog.mjs';
+import { INSTALLED_STATE_GATES_POLICY } from './modules/installedStateGatesPolicy.mjs';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -173,6 +174,103 @@ const contracts = [
         expect(gates.items[0].evaluation.progress).toMatchObject({ current: 42, target: 1, unit: 'rings' });
       } finally {
         module.dispose();
+        fs.rmSync(directory, { recursive: true, force: true });
+      }
+    },
+  },
+  {
+    // Regression coverage for the 2026-09-21 whole-branch review finding: a
+    // future content change to INSTALLED_STATE_GATES_POLICY (a new claim
+    // type, gate, or entitlement) that is NOT accompanied by a
+    // policy_revision bump deploys completely INERT. The case above
+    // ("installed-school-fitness-contracts") only ever activates into a
+    // fresh empty store, which trivially succeeds at any revision number —
+    // it never exercises the revision-conflict path, which is exactly what
+    // shipped broken (production's real store already held an active
+    // policy_revision:1 candidate; this branch changed content but left
+    // policy_revision at 1, so activatePolicyGraph would have rejected the
+    // new candidate and createStateGatesModule's startup `reconcile()`
+    // swallows that rejection into a log line, silently keeping the old
+    // graph forever).
+    //
+    // This exercises the SAME startup path (createStateGatesModule ->
+    // container.reconcile()) three times against the same on-disk store,
+    // simulating: (1) today's production state — the current installed
+    // policy activates into a fresh store; (2) a future edit that changes
+    // content but forgets to bump policy_revision — must NOT be adopted;
+    // (3) the same content change WITH the revision bumped — must be
+    // adopted. This is the guard that would have caught the shipped bug.
+    id: 'state-gates.installed-policy-revision-guard',
+    async verify() {
+      const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'state-gates-installed-revision-'));
+      const now = Date.parse('2026-08-30T12:00:00-07:00');
+      const configService = () => ({
+        getHouseholdPath: () => path.join(directory, 'state-gates/current'),
+        reloadHouseholdAppConfig: () => null,
+        getHouseholdAppConfig: () => null,
+        getHouseholdUsers: () => ['user_4'],
+        getHouseholdDevices: () => ({ devices: {} }),
+        getHouseholdTimezone: () => 'America/Los_Angeles',
+        getAllHouseholdIds: () => [],
+      });
+      const producerPrincipals = {
+        school: Object.freeze({ service: 'school' }),
+        fitness: Object.freeze({ service: 'fitness' }),
+        'kiosk-friction-tracker': Object.freeze({ service: 'kiosk-friction-tracker' }),
+      };
+      const boot = installedPolicy => createStateGatesModule({
+        householdId: 'home', eventBus: { publish: vi.fn() }, producerPrincipals,
+        clock: { now: () => now }, configService: configService(), logger: logger(),
+        ...(installedPolicy ? { installedPolicy } : {}),
+      });
+
+      // (1) Today's production state: the real installed policy activates
+      // into a fresh store via the normal startup reconcile.
+      const first = await boot();
+      let activeDigest;
+      try {
+        const diagnostics = await first.container.getDiagnostics('home', { id: 'test-admin', roles: ['admin'] });
+        activeDigest = diagnostics.policy.active?.digest;
+        expect(activeDigest).toEqual(expect.any(String));
+        expect(diagnostics.policy.active.policyRevision).toBe(INSTALLED_STATE_GATES_POLICY.policy_revision);
+      } finally {
+        first.dispose();
+      }
+
+      // (2) A future edit changes content (adds a claim type) but forgets to
+      // bump policy_revision — the exact mistake this branch shipped.
+      // Startup must NOT silently adopt it; the store must keep serving the
+      // old, already-active graph.
+      const sameRevisionMutation = structuredClone(INSTALLED_STATE_GATES_POLICY);
+      sameRevisionMutation.claim_types['kiosk.friction-score-v2'] =
+        structuredClone(sameRevisionMutation.claim_types['kiosk.friction-score']);
+      const second = await boot(sameRevisionMutation);
+      try {
+        const diagnostics = await second.container.getDiagnostics('home', { id: 'test-admin', roles: ['admin'] });
+        expect(diagnostics.policy.active).toMatchObject({
+          digest: activeDigest,
+          policyRevision: INSTALLED_STATE_GATES_POLICY.policy_revision,
+        });
+        expect(diagnostics.policy.candidateValidation).toMatchObject({
+          valid: false,
+          errors: [{ code: 'POLICY_REVISION_CONFLICT' }],
+        });
+      } finally {
+        second.dispose();
+      }
+
+      // (3) The same content change WITH policy_revision bumped is the
+      // actual fix — startup must adopt it.
+      sameRevisionMutation.policy_revision = INSTALLED_STATE_GATES_POLICY.policy_revision + 1;
+      const third = await boot(sameRevisionMutation);
+      try {
+        const diagnostics = await third.container.getDiagnostics('home', { id: 'test-admin', roles: ['admin'] });
+        expect(diagnostics.policy.active).toMatchObject({
+          policyRevision: INSTALLED_STATE_GATES_POLICY.policy_revision + 1,
+        });
+        expect(diagnostics.policy.active.digest).not.toBe(activeDigest);
+      } finally {
+        third.dispose();
         fs.rmSync(directory, { recursive: true, force: true });
       }
     },
