@@ -10,13 +10,18 @@ import { findPauses } from './pauses.js';
  * of the key press. Empty until decoded, and empty for good on a browser
  * without Web Audio or when the fetch fails — then a cut simply lands where
  * the learner pressed, which is still a working cut.
+ *
+ * LAZY: nothing is fetched or decoded until `enabled` — the rung turns it on
+ * when the learner first starts the sentence. Most sentences are never cut,
+ * and the Portal has a V8 memory ceiling; decoding every model on arrival
+ * spent it for nothing. A cut made before the decode lands is simply raw.
  */
-export default function useModelPauses(url) {
+export default function useModelPauses(url, enabled = false) {
   const pauses = useRef([]);
   useEffect(() => {
     pauses.current = [];
     const Ctx = typeof window !== 'undefined' && (window.AudioContext || window.webkitAudioContext);
-    if (!Ctx || !url) return undefined;
+    if (!enabled || !Ctx || !url) return undefined;
     let live = true;
     (async () => {
       let ctx;
@@ -37,6 +42,6 @@ export default function useModelPauses(url) {
       }
     })();
     return () => { live = false; };
-  }, [url]);
+  }, [url, enabled]);
   return pauses;
 }

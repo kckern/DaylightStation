@@ -2965,6 +2965,27 @@ describe('recording in pieces', () => {
     await screen.findByRole('button', { name: 'Stop' });
   });
 
+  it('decodes the model for cut snapping only once the sentence is started', async () => {
+    const model = modelPlayer(); fakeMic(); recordingDay();
+    window.AudioContext = class {
+      decodeAudioData() { return Promise.resolve({ sampleRate: 1000, getChannelData: () => new Float32Array(10) }); }
+      close() { return Promise.resolve(); }
+    };
+    const fetch = vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: true, arrayBuffer: async () => new ArrayBuffer(8) });
+    const modelFetches = () => fetch.mock.calls.filter(([url]) => String(url).endsWith('/audio/glossika-korean/1/KR'));
+    try {
+      program();
+      await screen.findByRole('button', { name: 'Listen, then record' });
+      expect(modelFetches()).toHaveLength(0);
+      pressKey(' ');
+      await waitFor(() => expect(model.played).toHaveLength(1));
+      await waitFor(() => expect(modelFetches()).toHaveLength(1));
+    } finally {
+      delete window.AudioContext;
+      fetch.mockRestore();
+    }
+  });
+
   /** Cut at 1.5s and say part one; leaves the rung in part-one review. */
   const firstPiece = async (model, ms = 800) => {
     await screen.findByRole('button', { name: 'Listen, then record' });
