@@ -76,6 +76,10 @@ const NAMESPACES = {
     module: './school/flashcards.mjs',
     blurb: 'install tracked rich-flashcard example decks',
   },
+  'korean-vocab': {
+    module: './school/koreanVocab.mjs',
+    blurb: 'word ladder: printed quiz source, enrollment plan',
+  },
   certify: {
     module: './school/certify.mjs',
     blurb: 'certify published content against every surface profile',

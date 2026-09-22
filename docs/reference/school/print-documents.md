@@ -419,6 +419,16 @@ name/date lines, a score box for point-bearing documents, page furniture
 gutters), and vector QR codes
 for any action block whose token was minted at issue time.
 
+**Korean text.** The house fonts carry no Hangul. Any inline text run that
+contains Hangul (U+1100–11FF, U+3130–318F, U+AC00–D7AF) is set in Noto Sans KR
+(`backend/assets/fonts/noto-sans-kr/`, OFL) — the theme's `hangul` face —
+while Latin runs keep the house font. The swap happens where runs are built
+(`measure.mjs#withScriptFont`), so measurement and drawing agree. Bold and
+italic Hangul print in the regular weight. Header text (title, subtitle,
+instructions) is drawn outside the run grammar and must stay Latin.
+`hangulFallback.render.test.mjs` asserts the glyphs exist and the font is
+embedded, so a Korean worksheet cannot silently print `.notdef` boxes.
+
 **Which archetypes get alternating gutters — and what actually prints.** The
 3-hole-punch gutter alternates side by page parity (mirror margins) for the
 `worksheet` archetype only (`DUPLEX_ARCHETYPES` in `RenderPrintDocument.mjs`).
@@ -1042,6 +1052,18 @@ course's `source.reader` display title, then `provenance.source` as a
 bibliographic fallback. The course's pacing `source.title` is never a worksheet
 reading source. Single and composed worksheets share that rule. Already-issued
 artifacts remain immutable and exact reprints retain their original wording.
+
+### Word-ladder quizzes
+
+`node cli/school.mjs korean-vocab quiz --deck <deckId|slug>` writes a
+`school.document-source/v1` quiz for a lexicon deck at
+`content/school/learning-catalog/documents/<deckId>-quiz.yml`: one `question`
+per word with `itemId: <wordId>`, answer + three authored decoys, alternating
+Korean→English / English→Korean, `fit.typeScale: young`, and the header
+instruction `Not sure of a word? Open Korean words on the Portal and review
+the cards, then come back.` Publish it with `school docs publish`, then
+render per learner with `variety=omr`. A scanned row's attempt carries the
+word id, and the word ladder folds it (see `word-ladder.md`).
 
 ## 8. Scan-back: grading and the lifecycle
 
