@@ -28,21 +28,73 @@ function utcDayWindow(at) {
  *
  * Never throws back to a caller: a failed publish is logged and swallowed,
  * matching the friction-ping HTTP endpoint's fire-and-forget posture.
+ *
+ * Publish debouncing: this is the first State Gates publisher driven by raw
+ * human-input frequency rather than a daily rollup, and by construction it
+ * fires HARDEST during exactly the burst-of-rejected-codes scenario this
+ * feature exists to detect — a full State Gates commit (load + parse the
+ * whole current-state file, re-derive gate instances, atomic full-file
+ * rewrite) on every single ping would mean a 20-wrong-code burst is 20
+ * read-parse-dump cycles on a synced data volume, and churns the shared
+ * transition journal (capped at 500 entries/7 days, shared with School and
+ * Fitness) fastest during exactly the moments other subscribers most need
+ * it intact.
+ *
+ * The in-memory rolling window (`#eventsByDevice`) is updated on EVERY call
+ * — the count is never allowed to drift from reality. Only the expensive
+ * `ingress.observe` publish is debounced, per device, and only skipped when
+ * none of the following hold:
+ *   - this is the first ping ever seen for this device (or since it last
+ *     went idle long enough to age out of `#windowMs`), or
+ *   - this ping crosses the denial threshold in EITHER direction (a real
+ *     cooldown must start/end promptly, not sit delayed by debounce), or
+ *   - at least `#debounceMs` has elapsed since the last publish attempt.
+ * A suppressed ping schedules a single trailing-edge flush (if one isn't
+ * already pending) that fires `#debounceMs` after the last publish and
+ * re-reads the rolling window AT FIRE TIME — so even if more pings arrive
+ * while it waits, the eventual publish still reflects the true, current
+ * count, not a stale snapshot from when the timer was set.
  */
 export class KioskFrictionTracker {
-  #ingress; #householdId; #principal; #windowMs; #clock; #logger;
+  #ingress; #householdId; #principal; #windowMs; #clock; #logger; #debounceMs; #denialThreshold; #scheduler;
   #eventsByDevice = new Map(); #revisions = new Map();
+  #lastPublishedAt = new Map(); #lastScoreByDevice = new Map();
+  #lastKindByDevice = new Map(); #trailingCancels = new Map();
 
-  constructor({ ingress, householdId, principal, windowMs, clock = () => Date.now(), logger = console }) {
+  constructor({
+    ingress, householdId, principal, windowMs, clock = () => Date.now(), logger = console,
+    // Application-layer code may not call global setTimeout directly
+    // (apps-no-global-timers) — the trailing-edge debounce flush goes
+    // through this injected IApplicationScheduler port instead (composition
+    // wires the real NodeApplicationScheduler; tests inject a fake).
+    scheduler,
+    // A few seconds: friction pings are gated on a physical human action
+    // (a stray tap, a mistyped code), so even a fast, deliberate burst is
+    // unlikely to exceed roughly one per second — a 3s debounce collapses
+    // a tight burst to about one publish every 3s while staying far below
+    // the multi-minute windowMs, so the cooldown boundary itself is never
+    // meaningfully delayed by it.
+    debounceMs = 3_000,
+    // Mirrors the installed policy's `kiosk.friction-ok` gate comparison
+    // value (installedStateGatesPolicy.mjs, currently PROVISIONAL) — keep
+    // the two in sync if either changes. Only used to decide whether a ping
+    // crosses the denial boundary and therefore must publish immediately;
+    // it does not otherwise affect the published value.
+    denialThreshold = 5,
+  } = {}) {
     if (!ingress?.observe) throw new Error('KioskFrictionTracker requires ingress.observe');
     if (!householdId) throw new Error('KioskFrictionTracker requires householdId');
     if (!principal) throw new Error('KioskFrictionTracker requires principal');
+    if (!scheduler?.after) throw new Error('KioskFrictionTracker requires scheduler');
     this.#ingress = ingress;
     this.#householdId = householdId;
     this.#principal = principal;
     this.#windowMs = windowMs;
     this.#clock = clock;
     this.#logger = logger;
+    this.#scheduler = scheduler;
+    this.#debounceMs = debounceMs;
+    this.#denialThreshold = denialThreshold;
   }
 
   #nextRevision(assertionId, observedAt) {
@@ -53,13 +105,68 @@ export class KioskFrictionTracker {
   }
 
   async recordFriction({ deviceId, kind }) {
+    // The School selfservice API's deviceId resolution returns null for
+    // non-panel browser surfaces (confirmed real, not hypothetical) — a
+    // reject path can call this with a null/empty deviceId in normal
+    // operation. State Gates' SubjectRef rejects a null id, so this would
+    // otherwise throw inside the try/catch below (swallowed as a warn) AND
+    // pollute #eventsByDevice/#revisions with a shared `null` key across
+    // every such caller, corrupting the rolling window for a device
+    // identity that was never real. "We don't know which device" is not an
+    // error to surface — just drop it.
+    if (typeof deviceId !== 'string' || !deviceId.trim()) return;
+
     const at = this.#clock();
     const events = recordFrictionPing(this.#eventsByDevice.get(deviceId) ?? [], { at, windowMs: this.#windowMs });
     this.#eventsByDevice.set(deviceId, events);
     const value = frictionScore(events, { at, windowMs: this.#windowMs });
+    this.#lastKindByDevice.set(deviceId, kind);
 
+    const previousScore = this.#lastScoreByDevice.get(deviceId);
+    this.#lastScoreByDevice.set(deviceId, value);
+    const crossedThreshold = previousScore !== undefined
+      && (previousScore < this.#denialThreshold) !== (value < this.#denialThreshold);
+
+    const lastPublishedAt = this.#lastPublishedAt.get(deviceId);
+    const isFirstEver = lastPublishedAt === undefined;
+    const dueForPublish = isFirstEver || crossedThreshold || (at - lastPublishedAt) >= this.#debounceMs;
+
+    if (!dueForPublish) {
+      this.#scheduleTrailingFlush(deviceId);
+      return;
+    }
+
+    this.#clearTrailingTimer(deviceId);
+    await this.#publish(deviceId, kind, at, value);
+  }
+
+  #scheduleTrailingFlush(deviceId) {
+    if (this.#trailingCancels.has(deviceId)) return; // already scheduled — it will pick up the freshest value
+    const cancel = this.#scheduler.after(this.#debounceMs, () => {
+      this.#trailingCancels.delete(deviceId);
+      const at = this.#clock();
+      const value = frictionScore(this.#eventsByDevice.get(deviceId) ?? [], { at, windowMs: this.#windowMs });
+      this.#lastScoreByDevice.set(deviceId, value);
+      this.#publish(deviceId, this.#lastKindByDevice.get(deviceId), at, value).catch(() => {});
+    });
+    this.#trailingCancels.set(deviceId, cancel);
+  }
+
+  #clearTrailingTimer(deviceId) {
+    const cancel = this.#trailingCancels.get(deviceId);
+    if (!cancel) return;
+    cancel();
+    this.#trailingCancels.delete(deviceId);
+  }
+
+  async #publish(deviceId, kind, at, value) {
     const { day, startsAt, endsAt } = utcDayWindow(at);
     const assertionId = `kiosk:friction-score:${deviceId}:${day}`;
+    // Recorded before the await, not after success: a failing publish
+    // still "counts" as an attempt for debounce purposes, so a State Gates
+    // outage doesn't turn every ping into a hot retry loop — first-ping and
+    // threshold-crossing triggers still get through immediately regardless.
+    this.#lastPublishedAt.set(deviceId, at);
     try {
       await this.#ingress.observe(this.#householdId, this.#principal, {
         assertionId,

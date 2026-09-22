@@ -3878,15 +3878,20 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // claim (corrected in place, strictly increasing sourceRevision) that the
   // installed `kiosk.friction-ok` gate/`kiosk.access` entitlement (fail_open)
   // read. `stateGatesModule`/`kioskFrictionStateGatesPrincipal` are wired
-  // above alongside `producerPrincipals`. windowMs mirrors the rolling
-  // window the installed policy's `kiosk.friction-ok` gate was tuned
-  // against — see the "PROVISIONAL threshold" comment on that gate in
-  // installedStateGatesPolicy.mjs; keep the two in sync if either changes.
+  // above alongside `producerPrincipals`. windowMs AND denialThreshold both
+  // mirror the installed policy's `kiosk.friction-ok` gate — see the
+  // "PROVISIONAL threshold" comment on that gate in
+  // installedStateGatesPolicy.mjs (currently `lt 5`); keep all three in
+  // sync if any changes. denialThreshold only affects the tracker's publish
+  // debounce (a ping that crosses it always publishes immediately, so a
+  // cooldown starts/ends promptly) — left at the class default otherwise.
   const kioskFrictionTracker = new KioskFrictionTracker({
     ingress: stateGatesModule.ingress,
     householdId,
     principal: kioskFrictionStateGatesPrincipal,
     windowMs: 5 * 60 * 1000,
+    denialThreshold: 5,
+    scheduler: new NodeApplicationScheduler(),
     logger: rootLogger.child({ module: 'kiosk-friction-tracker' }),
   });
 
