@@ -2603,6 +2603,49 @@ describe('hearing it again, from any rung, by key or by tap', () => {
       const keep = screen.getByRole('button', { name: 'Keep it' });
       expect(keep.disabled).toBe(false);
     });
+
+    // Review 2026-09-22: Backspace during a compare opened the mic while the
+    // compare was still sounding — the speaker recorded into the new take, and
+    // its level passed the too-quiet gate for a take the child never said.
+    it('Backspace during a compare silences the compare before the mic opens', async () => {
+      const played = [];
+      let hang = false;
+      const paused = new Set();
+      window.HTMLMediaElement.prototype.pause = vi.fn(function pause() { paused.add(this); });
+      window.HTMLMediaElement.prototype.play = vi.fn(function play() {
+        played.push({ el: this, src: path(this.src) });
+        if (!hang || this.src.includes('/cue/')) setTimeout(() => this.onended?.(), 0);
+        return Promise.resolve();
+      });
+      fakeMic();
+      recordingDay();
+      program();
+      await screen.findByRole('button', { name: 'Listen, then record' });
+      let now = Date.now();
+      const clock = vi.spyOn(Date, 'now').mockImplementation(() => now);
+      pressKey(' ');
+      await screen.findByRole('button', { name: 'Stop' });
+      now += 2000;
+      pressKey(' ');
+      clock.mockRestore();
+      await screen.findByRole('button', { name: 'Keep it' });
+
+      hang = true;                                   // the compare keeps sounding
+      pressKey('Tab');
+      await waitFor(() => expect(played.at(-1).src).toBe('/audio/glossika-korean/1/KR'));
+      const compareAt = played.length - 1;
+      const compare = played[compareAt].el;
+      paused.clear();
+      pressKey('Backspace');
+      await screen.findByRole('button', { name: 'Stop' });
+      const ding = played.findIndex((p, i) => i > compareAt && p.src === '/cue/record');
+      expect(ding).toBeGreaterThan(-1);
+      expect(paused.has(compare)).toBe(true);
+      // The model clip finishing now must not move the compare on to the take.
+      act(() => compare.onended?.());
+      await new Promise((r) => setTimeout(r, 450));
+      expect(played.slice(ding + 1).map((p) => p.src)).not.toContain('blob:take');
+    });
   });
 
   describe('repetition', () => {
