@@ -5,7 +5,7 @@
 @keyframes health-analysis-stripes { // --ds-motion-base controls this animation
  to { background-position: 17px 0; } }
 @media (prefers-reduced-motion: reduce) { .health-capture-progress__track > span { animation: none; transition: none; } }
-.health-meal-tools, .health-meal-add-options, .health-meal-command-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; padding: 4px 0; }
+.health-meal-tools, .health-meal-command-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; padding: 4px 0; }
 .health-meal-selection-row { display: flex; align-items: center; gap: 4px; }
 .health-meal-selection-row > .health-row-line { flex: 1; min-width: 0; }
 .health-meal-selection-row > input { flex: 0 0 auto; accent-color: var(--ds-info); }
