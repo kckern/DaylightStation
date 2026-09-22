@@ -1,0 +1,44 @@
+# Production overlay contract. Merge with a base Compose file whose backend
+# service is named `daylightstation` (the identity documented by the production
+# runbook). This file contains no instance paths or credentials.
+services:
+  daylightstation:
+    environment:
+      DAYLIGHT_BROWSER_URL: http://daylight-browser:3000
+    networks:
+      - default
+      - daylight-private
+
+  daylight-browser:
+    image: daylight-browser:1.63.0
+    user: pwuser
+    read_only: true
+    tmpfs:
+      - /tmp:size=256m,mode=1777
+      - /home/pwuser/.cache:size=64m,uid=1000,gid=1000
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    init: true
+    shm_size: 128m
+    mem_limit: 1g
+    cpus: 1.0
+    pids_limit: 256
+    restart: unless-stopped
+    networks:
+      - daylight-private
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:3000/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    logging:
+      driver: json-file
+      options:
+        max-size: 1m
+        max-file: '2'
+
+networks:
+  daylight-private:
+    name: daylight-private
+    driver: bridge

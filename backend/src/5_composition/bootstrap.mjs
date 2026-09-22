@@ -26,6 +26,7 @@ import { isContainerRuntime } from '#system/runtime/runtimeEnvironment.mjs';
 import { ContentSourceRegistry } from '#adapters/content/ContentSourceRegistry.mjs';
 import { FileAdapter } from '#adapters/content/media/files/FileAdapter.mjs';
 import { PlexAdapter } from '#adapters/content/media/plex/PlexAdapter.mjs';
+import { LibbyAdapter } from '#adapters/content/media/libby/LibbyAdapter.mjs';
 import { PlexPosterProvider } from '#adapters/content/media/plex/PlexPosterProvider.mjs';
 import { MediaKeyResolver } from '#domains/media/MediaKeyResolver.mjs';
 import { LocalContentAdapter } from '#adapters/content/local-content/LocalContentAdapter.mjs';
@@ -59,6 +60,7 @@ import { MediaQueueService } from '#apps/media/MediaQueueService.mjs';
 // Content adapter manifests (for category/provider metadata)
 import mediaManifest from '#adapters/content/media/files/manifest.mjs';
 import plexManifest from '#adapters/content/media/plex/manifest.mjs';
+import libbyManifest from '#adapters/content/media/libby/manifest.mjs';
 import immichManifest from '#adapters/content/gallery/immich/manifest.mjs';
 import listManifest from '#adapters/content/list/manifest.mjs';
 import singalongManifest from '#adapters/content/singalong/manifest.mjs';
@@ -574,6 +576,13 @@ export function getMessagingAdapter(householdId, appName) {
 export function createContentRegistry(config, deps = {}) {
   const { httpClient, mediaProgressMemory, mediaKeyResolver, app } = deps;
   const registry = new ContentSourceRegistry();
+
+  if (config.libby?.username && deps.libbyClient && deps.libbyLeaseService) {
+    registry.register(
+      new LibbyAdapter({ client: deps.libbyClient, leases: deps.libbyLeaseService }),
+      { category: libbyManifest.capability, provider: libbyManifest.provider },
+    );
+  }
 
   // Register media adapter (also handles local media browsing/roots)
   if (config.mediaBasePath) {
