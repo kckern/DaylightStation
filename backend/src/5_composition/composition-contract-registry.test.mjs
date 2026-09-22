@@ -21,6 +21,7 @@ import { createLanguageStudyService } from './modules/schoolLanguage.mjs';
 import { GratitudePrintPresentationService } from '#apps/gratitude/services/GratitudePrintPresentationService.mjs';
 import { ProviderFitnessContentCatalog } from '#adapters/fitness/ProviderFitnessContentCatalog.mjs';
 import { INSTALLED_STATE_GATES_POLICY } from './modules/installedStateGatesPolicy.mjs';
+import { YamlStateGatesPolicySource } from '#adapters/state-gates/index.mjs';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -273,6 +274,24 @@ const contracts = [
         third.dispose();
         fs.rmSync(directory, { recursive: true, force: true });
       }
+    },
+  },
+  {
+    // The kiosk.friction-ok gate declared a reason_labels entry for
+    // THRESHOLD_NOT_MET but not for CLAIM_MISSING — the indeterminate path
+    // (no friction claim observed yet for this device/period) produced an
+    // unlabeled reason code. Verified through the real
+    // YamlStateGatesPolicySource normalizer, matching the style of
+    // fitness.weekly-rings' own CLAIM_MISSING label in the same file.
+    id: 'state-gates.kiosk-friction-ok-has-claim-missing-label',
+    async verify() {
+      const policySource = new YamlStateGatesPolicySource({ load: async () => INSTALLED_STATE_GATES_POLICY });
+      const candidate = await policySource.loadCandidate('home');
+      expect(candidate.gates['kiosk.friction-ok'].reasonLabels).toMatchObject({
+        CLAIM_MISSING: expect.any(String),
+        THRESHOLD_NOT_MET: expect.any(String),
+      });
+      expect(candidate.gates['kiosk.friction-ok'].reasonLabels.CLAIM_MISSING.length).toBeGreaterThan(0);
     },
   },
   {
