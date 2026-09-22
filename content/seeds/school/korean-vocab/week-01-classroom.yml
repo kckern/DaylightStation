@@ -1,0 +1,27 @@
+# Installed to data/content/school/learning-catalog/flashcard-decks/language/korean/week-01-classroom.yml.
+# A weekly deck never changes its words once in use; next week is a new file.
+schema: school.flashcard-deck/v1
+id: language/korean/week-01-classroom
+title: Korean — Classroom
+revision: 1
+lexicon: media:language/korean-vocab/lexicon.yml
+words:
+  - annyeong
+  - annyeong-haseyo
+  - annyeonghi-gyeseyo
+  - seonsaengnim
+  - chingu-deul
+  - ireumi-mwoyeyo
+  - ireum
+  - gawi
+  - pul
+  - chaek
+  - jiugae
+  - baindeo
+  - jongi
+  - saek-jongi
+  - yeonpil
+  - saek-yeonpil
+  - gansik
+  - hanguk
+  - hakgyo
