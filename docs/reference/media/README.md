@@ -11,6 +11,7 @@ source-of-truth: sufficient to rebuild the app from scratch.
 | [`media-app-technical.md`](./media-app-technical.md) | **Contracts** | Every wire-level contract: HTTP endpoints, WebSocket topics & envelopes, URL contract, canonical data shapes, log event taxonomy, localStorage schema, error envelopes. |
 | [`search-scopes.md`](./search-scopes.md) | **Feature reference** | Config-driven search scope system: YAML structure, params, app behavior. |
 | [`dash-video-resilience.md`](./dash-video-resilience.md) | **Troubleshooting** | DASH/Plex transcode stall & seek failure modes and debugging checklist (player-layer, shared with other apps). |
+| [`integration.md`](./integration.md) | **Integrations** | Provider-specific media boundaries, including Libby audiobook fulfillment and authentication/expiry behavior. |
 
 Related: the content paradigm (`docs/reference/content/`) defines content IDs,
 formats, the Playable Contract, and the Play/Queue/Info/Display/List APIs the
