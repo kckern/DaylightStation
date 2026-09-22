@@ -46,6 +46,24 @@ function makeApp({ reply }) {
   return { app, timers, published };
 }
 
+function expectPublishedHandoff(published, { commandId, params }) {
+  expect(published).toHaveLength(1);
+  expect(published[0]).toEqual({
+    topic: 'screen:tv-a',
+    command: {
+      type: 'command',
+      targetDevice: 'tv-a',
+      command: 'handoff',
+      commandId,
+      params,
+      ts: expect.any(String),
+    },
+  });
+  const publishedAt = Date.parse(published[0].command.ts);
+  expect(Number.isFinite(publishedAt)).toBe(true);
+  expect(new Date(publishedAt).toISOString()).toBe(published[0].command.ts);
+}
+
 describe('device handoff HTTP to transport correlation', () => {
   it('relays a typed unsupported terminal result through the actual services and gateway', async () => {
     const { app, timers, published } = makeApp({ reply: 'unsupported' });
@@ -55,17 +73,18 @@ describe('device handoff HTTP to transport correlation', () => {
     expect(response.body).toEqual({ ok: false, commandId: 'handoff-1', code: 'HANDOFF_UNSUPPORTED', handoff: { transferId: 'transfer-1', phase: 'failed', code: 'HANDOFF_UNSUPPORTED' } });
     expect(timers).toHaveLength(1);
     expect(timers[0].ms).toBe(5000);
-    expect(published).toEqual([{ topic: 'screen:tv-a', command: { targetDevice: 'tv-a', command: 'handoff', commandId: 'handoff-1', params: capture } }]);
+    expectPublishedHandoff(published, { commandId: 'handoff-1', params: capture });
   });
 
   it('keeps the unchanged gateway timeout distinct from a terminal handoff result', async () => {
-    const { app, timers } = makeApp({ reply: false });
+    const { app, timers, published } = makeApp({ reply: false });
 
     const response = await request(app).post('/api/v1/device/tv-a/session/handoff').send({ commandId: 'handoff-timeout', params: capture });
     expect(response.status).toBe(502);
     expect(response.body.code).toBe('DEVICE_REFUSED');
     expect(response.body).not.toHaveProperty('handoff');
     expect(timers[0].ms).toBe(5000);
+    expectPublishedHandoff(published, { commandId: 'handoff-timeout', params: capture });
   });
 
   it('returns a real correlated status starting observation at 202 with one handoff publish', async () => {
@@ -75,6 +94,6 @@ describe('device handoff HTTP to transport correlation', () => {
     const response = await request(app).post('/api/v1/device/tv-a/session/handoff').send({ commandId: 'handoff-status', params });
     expect(response.status).toBe(202);
     expect(response.body).toEqual({ ok: true, commandId: 'handoff-status', handoff: { transferId: 'transfer-1', phase: 'starting' } });
-    expect(published).toEqual([{ topic: 'screen:tv-a', command: { targetDevice: 'tv-a', command: 'handoff', commandId: 'handoff-status', params } }]);
+    expectPublishedHandoff(published, { commandId: 'handoff-status', params });
   });
 });
