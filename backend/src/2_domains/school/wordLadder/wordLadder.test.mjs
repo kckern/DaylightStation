@@ -26,9 +26,9 @@ describe('word ladder transitions', () => {
     expect(isScheduledCheck(claimed, '2026-09-23')).toBe(true);
   });
   it('a scheduled pass on CLAIMED becomes KNOWN at step 0, next check +3', () => {
-    const known = applyCheck(claimedOn('2026-09-22'), { at: at('2026-09-23'), day: '2026-09-23', correct: true, phase: 'check', direction: 'korean_to_english' });
+    const known = applyCheck(claimedOn('2026-09-22'), { at: at('2026-09-23'), day: '2026-09-23', correct: true, phase: 'check', direction: 'term_to_gloss' });
     expect(known).toMatchObject({ state: 'known', step: 0, nextCheckDay: '2026-09-26', claimedDay: null });
-    expect(known.history.at(-1)).toMatchObject({ event: 'check-pass', phase: 'check', direction: 'korean_to_english' });
+    expect(known.history.at(-1)).toMatchObject({ event: 'check-pass', phase: 'check', direction: 'term_to_gloss' });
   });
   it('scheduled KNOWN passes widen through 3 / 7 / 14 / 30 and cap at step 3', () => {
     let word = applyCheck(claimedOn('2026-09-01'), { at: at('2026-09-02'), day: '2026-09-02', correct: true, phase: 'check' });

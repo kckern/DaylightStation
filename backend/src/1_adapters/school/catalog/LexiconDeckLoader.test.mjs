@@ -8,8 +8,12 @@ import { YamlLexiconRepository } from './YamlLexiconRepository.mjs';
 import { LexiconDeckLoader } from './LexiconDeckLoader.mjs';
 
 const LEXICON = {
-  schema: 'school.word-lexicon/v1',
-  entries: [{ id: 'gawi', kind: 'word', korean: '가위', english: 'Scissors', pronunciation: null, decoys: { korean: ['가지', '바위', '가방'], english: ['Knife', 'Tape', 'Ruler'] } }],
+  schema: 'school.word-lexicon/v2',
+  package: 'korean-vocab',
+  language: { code: 'ko', name: 'Korean' },
+  gloss: { code: 'en', name: 'English' },
+  program: { title: 'Korean words' },
+  entries: [{ id: 'gawi', kind: 'word', group: 'week-01-classroom', term: '가위', gloss: 'Scissors', pronunciation: null, decoys: { term: ['가지', '바위', '가방'], gloss: ['Knife', 'Tape', 'Ruler'] } }],
 };
 const WORD_DECK = { schema: 'school.flashcard-deck/v1', id: 'language/korean/week-01-classroom', title: 'Korean — Classroom', revision: 1, lexicon: 'media:language/korean-vocab/lexicon.yml', words: ['gawi'] };
 const PLAIN_DECK = { schema: 'school.flashcard-deck/v1', id: 'biology/cells', title: 'Cells', cards: [{ cardId: 'cell', front: { blocks: [{ type: 'text', text: 'Cell' }] }, back: { blocks: [{ type: 'text', text: 'Unit of life' }] } }] };

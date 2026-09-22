@@ -1,5 +1,7 @@
 # Installed to data/content/school/learning-catalog/flashcard-decks/language/korean/week-01-classroom.yml.
-# A weekly deck never changes its words once in use; next week is a new file.
+# A weekly deck never changes its words once in use; next week is a new file
+# (and its new words get a new lexicon group). Installed by
+# scripts/school/seed-word-package.sh content/seeds/school/korean-vocab.
 schema: school.flashcard-deck/v1
 id: language/korean/week-01-classroom
 title: Korean — Classroom

@@ -3216,7 +3216,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       lexicons: new YamlLexiconRepository({ mediaRoot: schoolMediaRoot }),
       assignments: flashcardAssignments,
       attempts: schoolDatastore,
-      recordings: new FilesystemWordLadderRecordings({ rootDir: path.join(schoolMediaRoot, 'recordings', 'korean-vocab') }),
+      // Per word package: <rootDir>/<package>/<learner>/<day>/… (the package comes from each deck's lexicon).
+      recordings: new FilesystemWordLadderRecordings({ rootDir: path.join(schoolMediaRoot, 'recordings', 'word-ladder') }),
       assets: flashcardAssets,
       teacherGate: schoolTeacherGate,
       timezone: configService.getTimezone?.() || null,

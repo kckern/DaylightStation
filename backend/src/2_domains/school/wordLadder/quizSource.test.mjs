@@ -7,16 +7,58 @@ import { createMeasurementDocument, measureDocumentFragments } from '#rendering/
 import { createWorkbookTheme } from '#rendering/school/documents/workbookTheme.mjs';
 import { texToSvg } from '#rendering/school/documents/mathSvg.mjs';
 import {
-  QUIZ_INSTRUCTIONS, buildWordQuizSource, emptyStatus, foldPaperAttempts, quizDocumentIdFor, validateLexicon,
+  buildWordQuizSource, emptyStatus, expandLexiconDeck, foldPaperAttempts, planDay, quizDocumentIdFor, validateLexicon,
 } from './index.mjs';
 
-const { entries: LEXICON } = validateLexicon({ schema: 'school.word-lexicon/v1', entries: [
-  { id: 'annyeong', kind: 'phrase', korean: '안녕', english: 'Hi (casual)', pronunciation: 'an-nyeong', decoys: { korean: ['안녕하세요', '안녕히계세요', '안경'], english: ['Hello (polite)', 'Thank you', 'Excuse me'] } },
-  { id: 'annyeong-haseyo', kind: 'phrase', korean: '안녕하세요', english: 'Hello (polite)', pronunciation: 'an-nyeong-ha-se-yo', decoys: { korean: ['안녕히계세요', '안녕', '안녕히가세요'], english: ['Hi (casual)', 'Goodbye (to someone staying)', 'Thank you'] } },
-  { id: 'gawi', kind: 'word', korean: '가위', english: 'Scissors', pronunciation: null, decoys: { korean: ['가지', '바위', '가방'], english: ['Knife', 'Tape', 'Ruler'] } },
-] });
+const G = 'week-01-classroom';
+const { lexicon: LEXICON } = validateLexicon({
+  schema: 'school.word-lexicon/v2',
+  package: 'korean-vocab',
+  language: { code: 'ko', name: 'Korean' },
+  gloss: { code: 'en', name: 'English' },
+  program: { title: 'Korean words' },
+  entries: [
+    { id: 'annyeong', kind: 'phrase', group: G, term: '안녕', gloss: 'Hi (casual)', pronunciation: 'an-nyeong', decoys: { term: ['안녕하세요', '안녕히계세요', '안경'], gloss: ['Hello (polite)', 'Thank you', 'Excuse me'] } },
+    { id: 'annyeong-haseyo', kind: 'phrase', group: G, term: '안녕하세요', gloss: 'Hello (polite)', pronunciation: 'an-nyeong-ha-se-yo', decoys: { term: ['안녕히계세요', '안녕', '안녕히가세요'], gloss: ['Hi (casual)', 'Goodbye (to someone staying)', 'Thank you'] } },
+    { id: 'gawi', kind: 'word', group: G, term: '가위', gloss: 'Scissors', pronunciation: null, decoys: { term: ['가지', '바위', '가방'], gloss: ['Knife', 'Tape', 'Ruler'] } },
+  ],
+});
+const QUIZ_INSTRUCTIONS = LEXICON.quiz.instructions;
 // annyeong-haseyo's decoy 'Goodbye (to someone staying)' is not an entry in THIS three-word fixture, so validation passes.
 const DECK = { id: 'language/korean/week-01-classroom', title: 'Korean — Classroom', words: ['annyeong', 'annyeong-haseyo', 'gawi'] };
+
+describe('a second language needs only YAML', () => {
+  const { errors, lexicon: spanish } = validateLexicon({
+    schema: 'school.word-lexicon/v2',
+    package: 'spanish-vocab',
+    language: { code: 'es', name: 'Spanish' },
+    gloss: { code: 'en', name: 'English' },
+    program: { title: 'Spanish words' },
+    quiz: { instructions: 'Stuck? Open Spanish words on the Portal first.' },
+    entries: [
+      { id: 'gato', kind: 'word', group: 'unit-01-animals', term: 'gato', gloss: 'Cat', decoys: { term: ['pato', 'perro', 'gallo'], gloss: ['Dog', 'Duck', 'Rooster'] } },
+      { id: 'perro', kind: 'word', group: 'unit-01-animals', term: 'perro', gloss: 'Dog', decoys: { term: ['gato', 'pero', 'pato'], gloss: ['Cat', 'Pig', 'Duck'] } },
+      { id: 'hola', kind: 'phrase', group: 'unit-02-greetings', term: 'hola', gloss: 'Hello', pronunciation: 'OH-lah', decoys: { term: ['adiós', 'gracias', 'buenas noches'], gloss: ['Goodbye', 'Thank you', 'Good night'] } },
+    ],
+  });
+  const raw = { schema: 'school.flashcard-deck/v1', id: 'language/spanish/unit-01', title: 'Spanish — Unit 1', revision: 1, lexicon: 'media:language/spanish-vocab/lexicon.yml', words: ['gato', 'perro', 'hola'] };
+  it('validates, expands into grouped media paths, plans and prints a quiz in Spanish', () => {
+    expect(errors).toEqual([]);
+    expect(spanish.quiz.topics).toEqual(['spanish', 'vocabulary']);
+    const { errors: deckErrors, deck } = expandLexiconDeck(raw, spanish);
+    expect(deckErrors).toEqual([]);
+    expect(deck.cards[2].front.blocks[2].assetId).toBe('media:language/spanish-vocab/words/unit-02-greetings/hola/term.mp3');
+    const day = planDay({ status: emptyStatus(), deckId: raw.id, deckWordIds: raw.words, lexiconIds: [...spanish.entries.keys()], today: '2026-09-22' });
+    expect([...day.study].sort()).toEqual(['gato', 'hola', 'perro']);
+    const quiz = buildWordQuizSource({ deck, lexicon: spanish, seed: 7 });
+    expect(validateDocumentSource(quiz).errors).toEqual([]);
+    expect(quiz.blocks[0].blocks[0].md).toBe('What does **gato** mean?');
+    expect(quiz.blocks[1].blocks[0].md).toBe('Which is **Dog** in Spanish?');
+    expect(quiz.topics).toEqual(['spanish', 'vocabulary']);
+    expect(quiz.header.instructions).toBe('Stuck? Open Spanish words on the Portal first.');
+    expect(JSON.stringify(quiz)).not.toMatch(/korean/i);
+  });
+});
 
 describe('buildWordQuizSource', () => {
   const source = buildWordQuizSource({ deck: DECK, lexicon: LEXICON, seed: 4242 });
@@ -27,6 +69,7 @@ describe('buildWordQuizSource', () => {
       archetype: 'quiz', target: ['letter'], fit: { typeScale: 'young' }, header: { instructions: QUIZ_INSTRUCTIONS },
     });
     expect(QUIZ_INSTRUCTIONS).toBe('Not sure of a word? Open Korean words on the Portal and review the cards, then come back.');
+    expect(source.topics).toEqual(['korean', 'vocabulary']);
     expect(quizDocumentIdFor(DECK.id)).toBe(source.id);
   });
   it('one question per word, itemId = word id, answer + 3 authored decoys, alternating directions', () => {

@@ -504,19 +504,23 @@ describe('school-certify CLI', () => {
 
 describe('school-certify — word-ladder lexicon decks', () => {
   const LEXICON = {
-    schema: 'school.word-lexicon/v1',
-    entries: [{ id: 'gawi', kind: 'word', korean: '가위', english: 'Scissors', pronunciation: null, decoys: { korean: ['가지', '바위', '가방'], english: ['Knife', 'Tape', 'Ruler'] } }],
+    schema: 'school.word-lexicon/v2',
+    package: 'korean-vocab',
+    language: { code: 'ko', name: 'Korean' },
+    gloss: { code: 'en', name: 'English' },
+    program: { title: 'Korean words' },
+    entries: [{ id: 'gawi', kind: 'word', group: 'week-01-classroom', term: '가위', gloss: 'Scissors', pronunciation: null, decoys: { term: ['가지', '바위', '가방'], gloss: ['Knife', 'Tape', 'Ruler'] } }],
   };
   const DECK = { schema: 'school.flashcard-deck/v1', id: 'language/korean/week-01-classroom', title: 'Korean — Classroom', revision: 1, lexicon: 'media:language/korean-vocab/lexicon.yml', words: ['gawi'] };
 
   async function wordFixture(root, { image = 'JPEGDATA', audio = 'ID3DATA', lexicon = LEXICON } = {}) {
     const dirs = await buildFixture(root);
     const media = path.join(root, 'media');
-    const words = path.join(media, 'school/language/korean-vocab/words/gawi');
+    const words = path.join(media, 'school/language/korean-vocab/words/week-01-classroom/gawi');
     await mkdir(words, { recursive: true });
     await writeFile(path.join(media, 'school/language/korean-vocab/lexicon.yml'), dump(lexicon));
     if (image !== null) await writeFile(path.join(words, 'image.jpg'), image);
-    if (audio !== null) await writeFile(path.join(words, 'ko.mp3'), audio);
+    if (audio !== null) await writeFile(path.join(words, 'term.mp3'), audio);
     await mkdir(path.join(dirs.decks, 'language/korean'), { recursive: true });
     await writeFile(path.join(dirs.decks, 'language/korean/week-01-classroom.yml'), dump(DECK));
     return { dirs, media };
@@ -536,10 +540,10 @@ describe('school-certify — word-ladder lexicon decks', () => {
       const { media } = await wordFixture(root, { image: '', audio: '' });
       const lenient = await runCertify(flagsToArgv(certifyFlags(root, { 'media-dir': media })));
       expect(lenient.exitCode).toBe(0);
-      expect(lenient.report.warnings.join('\n')).toMatch(/card 'gawi' front\.blocks\[0\] asset 'media:language\/korean-vocab\/words\/gawi\/image\.jpg' is a 0-byte placeholder/);
+      expect(lenient.report.warnings.join('\n')).toMatch(/card 'gawi' front\.blocks\[0\] asset 'media:language\/korean-vocab\/words\/week-01-classroom\/gawi\/image\.jpg' is a 0-byte placeholder/);
       const strict = await runCertify(flagsToArgv(certifyFlags(root, { 'media-dir': media, 'strict-media': true })));
       expect(strict.exitCode).toBe(1);
-      expect(strict.report.errors.join('\n')).toMatch(/ko\.mp3' is a 0-byte placeholder/);
+      expect(strict.report.errors.join('\n')).toMatch(/term\.mp3' is a 0-byte placeholder/);
     });
   });
 
@@ -548,13 +552,13 @@ describe('school-certify — word-ladder lexicon decks', () => {
       const { media } = await wordFixture(root, { audio: null });
       const { exitCode, report } = await runCertify(flagsToArgv(certifyFlags(root, { 'media-dir': media })));
       expect(exitCode).toBe(1);
-      expect(report.errors.join('\n')).toMatch(/references missing asset 'media:language\/korean-vocab\/words\/gawi\/ko\.mp3'/);
+      expect(report.errors.join('\n')).toMatch(/references missing asset 'media:language\/korean-vocab\/words\/week-01-classroom\/gawi\/term\.mp3'/);
     });
   });
 
   it('fails on an invalid lexicon instead of reporting "no cards"', async () => {
     await withTmpDir(async (root) => {
-      const bad = { ...LEXICON, entries: [{ ...LEXICON.entries[0], decoys: { korean: ['가위', '바위', '가방'], english: ['Knife', 'Tape', 'Ruler'] } }] };
+      const bad = { ...LEXICON, entries: [{ ...LEXICON.entries[0], decoys: { term: ['가위', '바위', '가방'], gloss: ['Knife', 'Tape', 'Ruler'] } }] };
       const { media } = await wordFixture(root, { lexicon: bad });
       const { exitCode, report } = await runCertify(flagsToArgv(certifyFlags(root, { 'media-dir': media })));
       expect(exitCode).toBe(1);

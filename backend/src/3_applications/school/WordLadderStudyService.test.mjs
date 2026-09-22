@@ -6,20 +6,40 @@ import { answerFor, emptyStatus, validateLexicon } from '#domains/school/wordLad
 const DECK_ID = 'language/korean/week-01-classroom';
 const DECK_B = 'language/korean/week-02-names';
 const REF = 'media:language/korean-vocab/lexicon.yml';
-const { entries: LEXICON } = validateLexicon({ schema: 'school.word-lexicon/v1', entries: [
-  { id: 'gawi', kind: 'word', korean: '가위', english: 'Scissors', pronunciation: null, decoys: { korean: ['가지', '바위', '가방'], english: ['Knife', 'Tape', 'Ruler'] } },
-  { id: 'pul', kind: 'word', korean: '풀', english: 'Glue', pronunciation: null, decoys: { korean: ['불', '뿔', '발'], english: ['Tape', 'Paint', 'Stapler'] } },
-  { id: 'ireum', kind: 'word', korean: '이름', english: 'Name', pronunciation: null, decoys: { korean: ['여름', '아름', '이불'], english: ['Age', 'Face', 'Home'] } },
-] });
+const G = 'week-01-classroom';
+const { lexicon: LEX } = validateLexicon({
+  schema: 'school.word-lexicon/v2',
+  package: 'korean-vocab',
+  language: { code: 'ko', name: 'Korean' },
+  gloss: { code: 'en', name: 'English' },
+  program: { title: 'Korean words' },
+  entries: [
+    { id: 'gawi', kind: 'word', group: G, term: '가위', gloss: 'Scissors', pronunciation: null, decoys: { term: ['가지', '바위', '가방'], gloss: ['Knife', 'Tape', 'Ruler'] } },
+    { id: 'pul', kind: 'word', group: G, term: '풀', gloss: 'Glue', pronunciation: null, decoys: { term: ['불', '뿔', '발'], gloss: ['Tape', 'Paint', 'Stapler'] } },
+    { id: 'ireum', kind: 'word', group: 'week-02-names', term: '이름', gloss: 'Name', pronunciation: null, decoys: { term: ['여름', '아름', '이불'], gloss: ['Age', 'Face', 'Home'] } },
+  ],
+});
+const LEXICON = LEX.entries;
 const DAY1_MS = Date.parse('2026-09-22T23:00:00.000Z'); // 16:00 PDT, study day 2026-09-22
 const DAY_MS = 86_400_000;
 
+/** `packages[pkg][userId]`; `data` is the korean-vocab package the fixtures use. */
 function memoryStore() {
-  const data = {};
+  const packages = {};
+  const of = (pkg) => {
+    if (typeof pkg !== 'string' || !pkg) throw new Error(`store called without a package (${pkg})`);
+    packages[pkg] ??= {};
+    return packages[pkg];
+  };
   return {
-    data,
-    read: (userId) => structuredClone(data[userId] ?? emptyStatus()),
-    update: (userId, fn) => { const next = fn(structuredClone(data[userId] ?? emptyStatus())); data[userId] = structuredClone(next); return structuredClone(next); },
+    packages,
+    get data() { return of('korean-vocab'); },
+    read: (userId, pkg) => structuredClone(of(pkg)[userId] ?? emptyStatus()),
+    update: (userId, pkg, fn) => {
+      const next = fn(structuredClone(of(pkg)[userId] ?? emptyStatus()));
+      of(pkg)[userId] = structuredClone(next);
+      return structuredClone(next);
+    },
   };
 }
 
@@ -35,7 +55,7 @@ function make({ policy = { mode: 'word-ladder' }, attempts = [], media = false, 
         : id === DECK_B ? { id: DECK_B, lexicon: REF, words: ['ireum'], cards: [] } : null),
       listFlashcardDecks: async () => [{ id: DECK_ID, lexicon: REF, words: ['gawi', 'pul'] }, { id: 'biology/cells', cards: [] }],
     },
-    lexicons: { getLexicon: () => LEXICON },
+    lexicons: { getLexicon: () => LEX },
     assignments: { get: async () => ({ programs: [
       { programId: 'flashcards', deckId: DECK_ID, policy },
       { programId: 'flashcards', deckId: DECK_B, policy },
@@ -112,7 +132,7 @@ describe('WordLadderStudyService', () => {
     advanceDays(1);
     const { sessionId, plan } = await service.open({ userId: 'kid', deckId: DECK_ID });
     expect(plan.checks.map((c) => c.wordId).sort()).toEqual(['gawi', 'pul']);
-    expect(plan.checks.every((c) => c.direction === 'korean_to_english' && c.prompt.type === 'text' && c.choices.length === 4)).toBe(true);
+    expect(plan.checks.every((c) => c.direction === 'term_to_gloss' && c.prompt.type === 'text' && c.choices.length === 4)).toBe(true);
     const after = await answerAll(service, sessionId, plan.checks);
     expect(after.doneToday).toBe(true);
     expect(store.data.kid.words.gawi).toMatchObject({ state: 'known', step: 0, nextCheckDay: '2026-09-26' });
@@ -299,14 +319,70 @@ describe('WordLadderStudyService', () => {
   it('uses available media for prompts and card faces', async () => {
     const { service, advanceDays } = make({ media: true });
     const d1 = await service.open({ userId: 'kid', deckId: DECK_ID });
-    expect(d1.plan.study[0].card.media.image).toMatch(/^media:language\/korean-vocab\/words\/.+\/image\.jpg$/);
+    expect(d1.plan.study[0].card.media.image).toMatch(/^media:language\/korean-vocab\/words\/week-01-classroom\/.+\/image\.jpg$/);
     await studyAll(service, d1.sessionId, d1.plan);
     advanceDays(1);
     const d2 = await service.open({ userId: 'kid', deckId: DECK_ID });
     for (const item of d2.plan.checks) {
-      if (item.direction === 'picture_to_korean') expect(item.prompt).toEqual({ type: 'image', assetId: `media:language/korean-vocab/words/${item.wordId}/image.jpg` });
-      if (item.direction === 'audio_to_korean') expect(item.prompt).toEqual({ type: 'audio', assetId: `media:language/korean-vocab/words/${item.wordId}/ko.mp3` });
-      if (item.direction === 'korean_to_english') expect(item.prompt).toEqual({ type: 'text', text: LEXICON.get(item.wordId).korean });
+      if (item.direction === 'picture_to_term') expect(item.prompt).toEqual({ type: 'image', assetId: `media:language/korean-vocab/words/${G}/${item.wordId}/image.jpg` });
+      if (item.direction === 'audio_to_term') expect(item.prompt).toEqual({ type: 'audio', assetId: `media:language/korean-vocab/words/${G}/${item.wordId}/term.mp3` });
+      if (item.direction === 'term_to_gloss') expect(item.prompt).toEqual({ type: 'text', text: LEXICON.get(item.wordId).term });
     }
+  });
+  it('carries the package\'s language identity in the plan and keys every write by package', async () => {
+    const { service, store, saved } = make();
+    const { sessionId, plan } = await service.open({ userId: 'kid', deckId: DECK_ID });
+    expect(sessionId).toMatch(/^korean-vocab\./);
+    expect(plan).toMatchObject({
+      package: 'korean-vocab', title: 'Korean words',
+      language: { code: 'ko', name: 'Korean' }, gloss: { code: 'en', name: 'English' },
+    });
+    expect(plan.study[0].card).toEqual(expect.objectContaining({ term: expect.any(String), gloss: expect.any(String) }));
+    expect(plan.study[0].card).not.toHaveProperty('korean');
+    await service.saveRecording({ userId: 'kid', sessionId, wordId: plan.study[0].wordId, buffer: Buffer.from('a') });
+    expect(saved[0]).toMatchObject({ package: 'korean-vocab', learnerId: 'kid' });
+    expect(Object.keys(store.packages)).toEqual(['korean-vocab']);
+    await expect(service.plan({ userId: 'kid', sessionId: 'ses_1' })).rejects.toThrow(/word-ladder session not found/);
+  });
+
+  it('a second language is its own package: separate status, and its paper quizzes never fold into the first', async () => {
+    const ES_REF = 'media:language/spanish-vocab/lexicon.yml';
+    const ES_DECK = 'language/spanish/unit-01';
+    const { lexicon: ES } = validateLexicon({
+      schema: 'school.word-lexicon/v2', package: 'spanish-vocab',
+      language: { code: 'es', name: 'Spanish' }, gloss: { code: 'en', name: 'English' }, program: { title: 'Spanish words' },
+      entries: [
+        // Same id as a Korean word on purpose: ids are unique only within a package.
+        { id: 'gawi', kind: 'word', group: 'unit-01', term: 'tijeras', gloss: 'Scissors', decoys: { term: ['tiza', 'tela', 'tapa'], gloss: ['Knife', 'Tape', 'Ruler'] } },
+      ],
+    });
+    const store = memoryStore();
+    const attempts = [{ id: 'att_es', transport: 'paper', bankId: `${ES_DECK}-quiz@1`, itemId: 'gawi', correct: false, at: '2026-09-22T20:00:00.000Z' }];
+    const service = new WordLadderStudyService({
+      store,
+      decks: {
+        getFlashcardDeck: async (id) => (id === DECK_ID ? { id: DECK_ID, lexicon: REF, words: ['gawi', 'pul'], cards: [] }
+          : id === ES_DECK ? { id: ES_DECK, lexicon: ES_REF, words: ['gawi'], cards: [] } : null),
+        listFlashcardDecks: async () => [{ id: DECK_ID, lexicon: REF, words: ['gawi', 'pul'] }, { id: ES_DECK, lexicon: ES_REF, words: ['gawi'] }],
+      },
+      lexicons: { getLexicon: (ref) => (ref === ES_REF ? ES : LEX) },
+      assignments: { get: async () => ({ programs: [
+        { programId: 'flashcards', deckId: DECK_ID, policy: { mode: 'word-ladder' } },
+        { programId: 'flashcards', deckId: ES_DECK, policy: { mode: 'word-ladder' } },
+      ] }) },
+      attempts: { readAttemptsInRange: () => attempts },
+      recordings: { save: () => ({ take: 1 }), latest: () => null },
+      timezone: 'America/Los_Angeles', now: () => DAY1_MS, id: () => 'x1',
+      logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
+    });
+    const ko = await service.open({ userId: 'kid', deckId: DECK_ID });
+    expect(ko.folded).toBe(0);
+    expect(store.packages['korean-vocab'].kid.words?.gawi).toBeUndefined();
+    const es = await service.open({ userId: 'kid', deckId: ES_DECK });
+    expect(es.sessionId).toBe('spanish-vocab.x1');
+    expect(es.folded).toBe(1);
+    expect(es.plan).toMatchObject({ language: { code: 'es', name: 'Spanish' }, title: 'Spanish words' });
+    expect(store.packages['spanish-vocab'].kid.words.gawi.history.at(-1)).toMatchObject({ event: 'quiz-miss', attemptId: 'att_es' });
+    expect(store.packages['korean-vocab'].kid.paperAttemptsFolded).toEqual([]);
   });
 });
