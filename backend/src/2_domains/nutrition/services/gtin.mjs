@@ -14,7 +14,26 @@ export function gtinCheckDigitValid(digits) {
   return (10 - (sum % 10)) % 10 === Number(digits.at(-1));
 }
 
-/** @returns {{ok:true, code:string, collapsed:boolean} | {ok:false, reason:string, code?:string}} */
+/**
+ * UPC-E (8 digits: number system 0/1, six data digits, check) is a
+ * zero-suppressed UPC-A. The last data digit says where the zeros went.
+ * @returns {string|null} the 12-digit UPC-A, or null when not UPC-E shaped
+ */
+export function expandUpcE(digits) {
+  if (!/^[01]\d{7}$/.test(digits)) return null;
+  const [ns, d1, d2, d3, d4, d5, d6, check] = digits;
+  let body;
+  if (d6 <= '2') body = `${d1}${d2}${d6}0000${d3}${d4}${d5}`;
+  else if (d6 === '3') body = `${d1}${d2}${d3}00000${d4}${d5}`;
+  else if (d6 === '4') body = `${d1}${d2}${d3}${d4}00000${d5}`;
+  else body = `${d1}${d2}${d3}${d4}${d5}0000${d6}`;
+  return `${ns}${body}${check}`;
+}
+
+/**
+ * @returns {{ok:true, code:string, collapsed:boolean, expanded?:true, padded?:true}
+ *         | {ok:false, reason:string, code?:string}}
+ */
 export function parseGtin(raw) {
   const digits = String(raw ?? '').replace(/\D/g, '');
   if (!digits) return { ok: false, reason: 'empty' };
@@ -23,8 +42,17 @@ export function parseGtin(raw) {
     const single = parseGtin(digits.slice(0, half));
     return single.ok ? { ...single, collapsed: true } : single;
   }
+  // Manual entry of a UPC-A often drops the leading zero. Pad only when the
+  // padded code then proves itself by its check digit.
+  if (digits.length === 11 && gtinCheckDigitValid(`0${digits}`)) {
+    return { ok: true, code: `0${digits}`, collapsed: false, padded: true };
+  }
   if (!GTIN_LENGTHS.has(digits.length)) return { ok: false, reason: 'length', code: digits };
   if (digits.length === 13 && ISBN13.test(digits)) return { ok: false, reason: 'isbn', code: digits };
-  if (!gtinCheckDigitValid(digits)) return { ok: false, reason: 'check-digit', code: digits };
+  if (!gtinCheckDigitValid(digits)) {
+    const upcA = digits.length === 8 ? expandUpcE(digits) : null;
+    if (upcA && gtinCheckDigitValid(upcA)) return { ok: true, code: upcA, collapsed: false, expanded: true };
+    return { ok: false, reason: 'check-digit', code: digits };
+  }
   return { ok: true, code: digits, collapsed: false };
 }
