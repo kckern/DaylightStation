@@ -73,7 +73,7 @@ capture has an estimated progress bar which switches to moving diagonal stripes
 after its estimate expires. Only the request outcome completes it. Obsolete bot
 status messages are not shown after committed success.
 
-Food-row density displays actual kcal/g to one decimal (including 0.0); the nearest
+Food-row density displays actual kcal/g to one decimal (including 0.0). Mass is the known grams, else a stored volume (ml, cl, L, fl oz) at 1 g/ml via `foodMass`; the row still shows its volume. A row with no calories, or only a count/serving, shows —. The nearest
 of nine configured anchors chooses its color, with midpoint ties toward the higher
 anchor. Default identity order is density, artwork, name; the existing after-name
 preference remains available. Daily cards round numbers only for display and keep

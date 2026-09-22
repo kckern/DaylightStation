@@ -6,7 +6,11 @@ import { normalizeScaleNutribotConfig } from '../../../backend/src/3_application
 describe('food density', () => {
   it('requires actual mass and counts children once', () => {
     expect(foodDensity({ grams: 100, calories: 250 })).toBe(2.5);
-    expect(foodDensity({ grams: null, amount: 100, unit: 'ml', calories: 250 })).toBeNull();
+    expect(foodDensity({ grams: null, amount: 100, unit: 'ml', calories: 250 })).toBe(2.5);
+    expect(foodDensity({ grams: null, amount: 414, unit: 'ml', calories: 230 })).toBeCloseTo(0.556, 3);
+    expect(foodDensity({ grams: null, amount: 1, unit: 'l', calories: 400 })).toBe(0.4);
+    expect(foodDensity({ grams: null, amount: 1, unit: 'serving', calories: 0 })).toBeNull();
+    expect(foodDensity({ grams: null, amount: 355, unit: 'ml', calories: null })).toBeNull();
     expect(foodDensity({ grams: 100, calories: 0 })).toBe(0);
     expect(foodDensity({
       kind: 'group',
@@ -71,5 +75,18 @@ describe('food density', () => {
     density_levels[1] = { ...density_levels[1], kcal_per_g: 'not-a-number' };
     expect(() => normalizeScaleNutribotConfig({ nutribot: { density_levels } }))
       .toThrow(/finite/);
+  });
+});
+
+import { numericFoodPatches, numericFoodValue } from './foodNumericEdit.mjs';
+describe('density on a volume row', () => {
+  const shake = { uuid: 's', unit: 'ml', amount: 325, grams: null, calories: 140, protein: 30, carbs: 5, fat: 1 };
+  it('reads kcal per ml as kcal per g', () => {
+    expect(numericFoodValue(shake, 'density')).toBeCloseTo(140 / 325, 6);
+  });
+  it('a density edit scales calories and macros, keeping the volume', () => {
+    const s = numericFoodPatches(shake, { field: 'density', value: 0.86 }).get('s');
+    expect(s.calories).toBeCloseTo(279.5, 0);
+    expect(s.amount).toBeUndefined();
   });
 });
