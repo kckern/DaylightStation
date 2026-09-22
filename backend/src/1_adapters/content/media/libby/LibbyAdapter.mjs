@@ -12,20 +12,37 @@ export class LibbyAdapter {
   #client;
   #leases;
   #proxyPath;
+  #now;
+  #loanReuseMs;
+  #loanWindows = new Map();
 
-  constructor({ client, leases, proxyPath = '/api/v1/proxy/libby/stream' } = {}) {
+  constructor({ client, leases, proxyPath = '/api/v1/proxy/libby/stream', now = Date.now, loanReuseMs = 60_000 } = {}) {
     if (!client?.openLoan) throw new Error('LibbyAdapter requires client');
     if (!leases?.issue) throw new Error('LibbyAdapter requires leases');
+    if (typeof now !== 'function') throw new Error('LibbyAdapter requires clock');
+    if (!Number.isFinite(loanReuseMs) || loanReuseMs < 0) throw new Error('LibbyAdapter requires non-negative loan reuse window');
     this.#client = client;
     this.#leases = leases;
     this.#proxyPath = proxyPath.replace(/\/$/, '');
+    this.#now = now;
+    this.#loanReuseMs = loanReuseMs;
   }
 
   get source() { return 'libby'; }
   get prefixes() { return [{ prefix: 'libby' }]; }
 
   async #loan(parsed) {
-    return this.#client.openLoan({ cardId: parsed.cardId, titleId: parsed.titleId });
+    const key = `${parsed.cardId}/${parsed.titleId}`;
+    const now = this.#now();
+    const cached = this.#loanWindows.get(key);
+    if (cached && now < cached.reuseUntil && now < cached.loanExpiresAt) return cached.loan;
+
+    this.#loanWindows.delete(key);
+    const loan = await this.#client.openLoan({ cardId: parsed.cardId, titleId: parsed.titleId });
+    const loanExpiresAt = Number.isFinite(loan?.expiresAt) ? loan.expiresAt : Infinity;
+    const reuseUntil = Math.min(now + this.#loanReuseMs, loanExpiresAt);
+    if (now < reuseUntil) this.#loanWindows.set(key, { loan, reuseUntil, loanExpiresAt });
+    return loan;
   }
 
   #coverPath(parsed) {
