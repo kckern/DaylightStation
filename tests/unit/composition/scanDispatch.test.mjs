@@ -1128,6 +1128,42 @@ describe('product repeat suppression', () => {
     expect(h.execute).toHaveBeenCalledTimes(2);
   });
 
+  it('refuses a malformed code before the lookup and before arming the repeat window', async () => {
+    const t = 1_000_000;
+    const h = harness({ now: () => t });
+    const out = await h.scanDispatch.handleScan(productScan('037000338368'));
+    expect(out).toMatchObject({ ok: false });
+    expect(h.execute).not.toHaveBeenCalled();
+    expect(h.barcodeLogger.info).toHaveBeenCalledWith('barcode.nutribot.rejected',
+      { device: 'nutribot-upc', code: '037000338368', reason: 'check-digit' });
+    // Not armed: a second bad read is rejected again, never reported as a repeat.
+    await h.scanDispatch.handleScan(productScan('037000338368'));
+    expect(eventNames(h.barcodeLogger, 'info').filter(name => name === 'barcode.nutribot.rejected')).toHaveLength(2);
+    expect(eventNames(h.barcodeLogger, 'info')).not.toContain('barcode.nutribot.repeat');
+  });
+
+  it('a coded refusal from the use case is logged at info, not as a dispatch failure', async () => {
+    const refusal = Object.assign(new Error("That isn't a food barcode."), { code: 'NUTRIBOT_UPC_REJECTED', context: { reason: 'check-digit' } });
+    const h = harness({ now: () => 1_000_000 });
+    h.execute.mockRejectedValueOnce(refusal);
+    await h.scanDispatch.handleScan(productScan('037000338369'));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(h.barcodeLogger.info).toHaveBeenCalledWith('barcode.nutribot.rejected', expect.objectContaining({ reason: 'check-digit' }));
+    expect(eventNames(h.barcodeLogger, 'warn')).not.toContain('barcode_relay.nutribot.dispatch.failed');
+  });
+
+  it('a failed lookup releases the repeat window, so rescanning the can is not swallowed', async () => {
+    let t = 1_000_000;
+    const h = harness({ now: () => t });
+    h.execute.mockRejectedValueOnce(new Error('OFF timeout'));
+    await h.scanDispatch.handleScan(productScan('037000338369'));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(eventNames(h.barcodeLogger, 'warn')).toContain('barcode_relay.nutribot.dispatch.failed');
+    t += 5_000;
+    await h.scanDispatch.handleScan(productScan('037000338369'));
+    expect(h.execute).toHaveBeenCalledTimes(2);
+  });
+
   it('refuses a `now` that is not a clock', () => {
     expect(() => harness({ now: 123 })).toThrow(/now/);
   });

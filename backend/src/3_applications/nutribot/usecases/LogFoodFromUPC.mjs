@@ -14,6 +14,7 @@ import { sha256Text } from '#system/utils/sha256.mjs';
 import { confineIcon, iconVocabulary } from '#domains/nutrition/services/icons.mjs';
 import { parseGtin } from '#domains/nutrition/services/gtin.mjs';
 import { isQuarantined, quarantineMarker } from '#domains/nutrition/services/quarantine.mjs';
+import { InvalidInputError } from '#apps/common/errors/SemanticErrors.mjs';
 
 const NUTRIENTS = ['calories', 'protein', 'carbs', 'fat', 'fiber', 'sugar', 'sodium', 'cholesterol'];
 // '' is unknown, not zero (`Number('')` is 0) — the same guard normalizeProductNutrition applies.
@@ -21,9 +22,18 @@ const finiteNutrient = value => value != null && value !== '' && Number.isFinite
 // The code a capture is stored under: the collapsed GTIN when the raw read
 // parses, else the raw input (which #execute will refuse).
 const storedUpc = raw => { const gtin = parseGtin(raw); return gtin.ok ? gtin.code : raw; };
-// The one unsuccessful exit (refused barcode, product not found). Kept as one
-// shape so the two refusals cannot drift apart for callers that read `success`.
-const notLogged = fields => ({ success: false, ...fields });
+
+/** Code on the error a malformed barcode raises; every entry point translates it. */
+export const UPC_REJECTED = 'NUTRIBOT_UPC_REJECTED';
+// The message IS the sentence the person sees, on every transport.
+const REFUSALS = {
+  'check-digit': "That isn't a food barcode (check digit).",
+  isbn: "That's a book (ISBN), not a food.",
+  length: "That isn't a food barcode (wrong length).",
+  empty: 'No barcode was read.',
+};
+const upcRejected = (reason, upc) => new InvalidInputError(REFUSALS[reason] || "That isn't a food barcode.",
+  { code: UPC_REJECTED, context: { reason, upc } });
 
 /**
  * Log food from UPC use case
@@ -159,7 +169,7 @@ export class LogFoodFromUPC {
     const gtin = parseGtin(rawUpc);
     if (!gtin.ok) {
       this.#logger.info?.('upc.rejected', { upc: rawUpc, reason: gtin.reason });
-      return notLogged({ error: 'Invalid barcode', rejected: gtin.reason, upc: rawUpc });
+      throw upcRejected(gtin.reason, rawUpc);
     }
     const upc = gtin.code;
     if (gtin.collapsed) this.#logger.info?.('upc.collapsed', { raw: rawUpc, upc });
@@ -267,7 +277,7 @@ export class LogFoodFromUPC {
             text: `❓ Product not found for barcode: ${upc}\n\nYou can describe the food instead.`,
           });
         }
-        return notLogged({ error: 'Product not found', unknownUpc: true, upc });
+        return { success: false, error: 'Product not found', unknownUpc: true, upc };
       }
 
       // 4. Classify product if AI available

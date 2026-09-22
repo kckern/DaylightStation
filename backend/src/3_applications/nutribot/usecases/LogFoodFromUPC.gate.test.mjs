@@ -17,18 +17,34 @@ const make = (gatewayHit, { ai, icons } = {}) => {
 };
 
 describe('LogFoodFromUPC intake gate', () => {
-  it('refuses a code with a bad check digit before any lookup', async () => {
+  // A refusal is a coded error, not a result: each entry point (relay, Telegram,
+  // web, HTTP) translates NUTRIBOT_UPC_REJECTED into something its user sees.
+  it('refuses a code with a bad check digit before any lookup, with a coded error', async () => {
     const { uc, upcGateway } = make(null);
-    const out = await uc.execute({ userId: 'u', conversationId: 'c', upc: '037000338368', headless: true });
-    expect(out).toMatchObject({ success: false, rejected: 'check-digit' });
+    await expect(uc.execute({ userId: 'u', conversationId: 'c', upc: '037000338368', headless: true }))
+      .rejects.toMatchObject({ code: 'NUTRIBOT_UPC_REJECTED', name: 'ValidationError',
+        context: { reason: 'check-digit', upc: '037000338368' }, message: "That isn't a food barcode (check digit)." });
     expect(upcGateway.lookup).not.toHaveBeenCalled();
   });
 
   it('refuses an ISBN', async () => {
     const { uc, upcGateway } = make(null);
-    const out = await uc.execute({ userId: 'u', conversationId: 'c', upc: '9780306406157', headless: true });
-    expect(out).toMatchObject({ success: false, rejected: 'isbn' });
+    await expect(uc.execute({ userId: 'u', conversationId: 'c', upc: '9780306406157', headless: true }))
+      .rejects.toMatchObject({ code: 'NUTRIBOT_UPC_REJECTED', context: { reason: 'isbn' }, message: "That's a book (ISBN), not a food." });
     expect(upcGateway.lookup).not.toHaveBeenCalled();
+  });
+
+  it('refuses under an operation id too, without saving anything', async () => {
+    const { uc, foodLogStore } = make(null);
+    await expect(uc.execute({ userId: 'u', conversationId: 'c', upc: '12345', operationId: 'bad', headless: true }))
+      .rejects.toMatchObject({ code: 'NUTRIBOT_UPC_REJECTED', context: { reason: 'length' } });
+    expect(foodLogStore.save).not.toHaveBeenCalled();
+  });
+
+  it('a product that is not found is still a plain result the web reads as unknownUpc', async () => {
+    const { uc } = make(null);
+    const out = await uc.execute({ userId: 'u', conversationId: 'c', upc: '037000338369', headless: true });
+    expect(out).toEqual({ success: false, error: 'Product not found', unknownUpc: true, upc: '037000338369' });
   });
 
   it('looks up the collapsed code for a doubled read', async () => {
