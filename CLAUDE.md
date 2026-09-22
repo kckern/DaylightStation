@@ -240,6 +240,7 @@ git rev-parse HEAD > docs/docs-last-updated.txt
 | School term grid (per-day verdicts, past-day replay, weekly cadence, household calendar) | `docs/reference/school/term-grid.md` |
 | School media lessons (living-room video/audio with hard comprehension checkpoints) | `docs/reference/school/media-lessons.md` |
 | School day-to-day operations (troubleshooting, logs, hardware, HA grading hook) | `docs/runbooks/school/README.md` |
+| Push notifications (text standard, school push copy, HA relay contract) | `docs/reference/notifications/push-standard.md` |
 | NewsReporter framework (scheduled reports) | `docs/reference/newsreporter/newsreporter-framework.md` |
 | Webapp design system (tokens, primitives, packs) | `docs/reference/frontend/design-system.md` |
 

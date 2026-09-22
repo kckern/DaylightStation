@@ -40,10 +40,16 @@ sound doesn't, the fault could be anywhere along this chain, and each
 segment needs a different fix. This repo can only tell you it *asked* HA to
 do something and whether HA's *service call* succeeded — it has no visibility
 into what the HA script itself does with that request, because that logic
-does not exist anywhere in this codebase or its data tree. (Confirmed: no
-copy of any `school_worksheet_scan_notification`-named script exists in this
-repo or the household data tree — it lives only inside Home Assistant's own
-configuration.)
+does not exist anywhere in this codebase or its data tree. The script lives in
+Home Assistant's own configuration, at
+`_includes/scripts/school_worksheet_scan_notification.yaml` under HA's config
+directory on `{env.prod_host}`.
+
+**Since 2026-09-22 the phone text is not written by HA.** The backend composes
+it (`2_domains/school/notifications/schoolPush.mjs`) and sends it as the
+`notification` variable. The HA script plays the siren from `result` and
+relays `notification` verbatim. See
+[`reference/notifications/push-standard.md`](../../reference/notifications/push-standard.md).
 
 ## 2. Configuration — two independent hook instances
 
@@ -52,8 +58,8 @@ adapter class, `SchoolGradingHookAdapter`, with a different `configKey`:
 
 | Config key | Fires when | Variables |
 |---|---|---|
-| `grading_hook` | Every terminal OMR paper-scan outcome (see §3) | 11 keys, see §3 table |
-| `piano_lesson_hook` | Once per learner per study day, the moment the assigned daily piano lesson (the `piano-course` program) crosses completion | `result: 'satisfied'`, `learner_id`, `student`, `subject: 'arts'`, `course`, `lesson`, `percent` |
+| `grading_hook` | Every terminal OMR paper-scan outcome (see §3) | the §3 key set |
+| `piano_lesson_hook` | Once per learner per study day, the moment the assigned daily piano lesson (the `piano-course` program) crosses completion | `result: 'satisfied'`, `learner_id`, `student`, `subject: 'arts'`, `course`, `lesson`, `percent` (course completion, not a lesson score), `notification` |
 
 ```yaml
 grading_hook:
@@ -76,17 +82,26 @@ in this codebase.
 `school.yml` is boot-cached — changing which script a hook points at needs a
 container restart before it takes effect.
 
-## 3. The four terminal outcomes and their variables
+## 3. The terminal outcomes and their variables
 
-Every call carries the **same 11 keys**, snake_case (to match Home Assistant
+Every call carries the **same key set**, snake_case (to match Home Assistant
 convention, not this codebase's camelCase). A key that doesn't apply to a
 given outcome rides along as `null` (or `[]` for list-valued keys) rather
-than being omitted, specifically so an HA template can write `{{ percent }}`
-without an `is defined` guard:
+than being omitted. Beware: Jinja's `default('x')` does **not** replace a
+`null`, so a template must write `default('x', true)`. The original script
+missed this and rendered `None` in 60% of school pushes.
 
-| variable | `graded` | `review` | `unresolved` | `refused` |
+**Real `result` values**, as sent:
+
+- A graded scan settles to `passed` or `needs_remediation`. It stays `graded`
+  only when settling isn't wired or fails.
+- A scan that did not finish grading sends `partial` (with `code: partial_scan`
+  or `live_record_unmarked`), `review`, `unresolved` or `refused`.
+- The piano hook sends `satisfied`.
+
+| variable | graded (`passed` / `needs_remediation`) | `review` | `unresolved` | `refused` |
 |---|---|---|---|---|
-| `result` | `graded` | `review` | `unresolved` | `refused` |
+| `result` | as settled | `review` | `unresolved` | `refused` |
 | `learner_id` | ✓ or `null` | ✓ or `null` | `null` | ✓ or `null` |
 | `test_id` | ✓ | ✓ | ✓ | ✓ |
 | `session_id` | ✓ | ✓ | `null` | `null` |
@@ -97,6 +112,14 @@ without an `is defined` guard:
 | `reasons` | `[]` | ✓ | `[]` | `[]` |
 | `items` | `[]` | ✓ | `[]` | `[]` |
 | `code` | `null` | `null` | ✓ | ✓ |
+| `subject` / `course` / `unit` / `lesson` | ids, not labels | ids | `null` | `null` |
+| `notification` | composed push | composed push | composed push | composed push |
+
+`notification` is `{title, message, data}` (the finished phone copy), or `null`
+when the phone should hear nothing. For example, an unmarked old record on a
+card whose other work graded is sent as `null`. The HA script relays an object
+verbatim, sends nothing for `null`, and falls back to minimal legacy text only
+when the key is missing, which means an older backend.
 
 \* `percent`/`earned`/`total` are the **gradebook's own row-count numbers**
 (the same ones that drive pass/fail and the report card) — deliberately not
@@ -149,7 +172,7 @@ a School defect. It self-heals once HA answers again.
 
 ```bash
 # 1. Confirm the hook actually fired (repo-side) — grep the log store
-curl -s https://logs.kckern.net/select/logsql/query \
+curl -s {env.log_store_url}/select/logsql/query \
   -d 'query=_msg:school.grading_hook AND _time:1h'
 
 # 2. If it fired, confirm HA received and can run the script at all,
@@ -157,11 +180,16 @@ curl -s https://logs.kckern.net/select/logsql/query \
 node cli/dscli.mjs ha state script.school_worksheet_scan_notification
 
 # 3. Manually trigger the exact same call this repo makes, with fabricated
-#    variables, to test the HA script in isolation:
+#    variables, to test the HA script in isolation. "notification": null
+#    plays the siren without pushing a fake result to the phone:
 node cli/dscli.mjs ha call-service script school_worksheet_scan_notification \
-  --data '{"result":"graded","learner_id":"learner3","test_id":"9251793","session_id":"ses_test","percent":92,"earned":23,"total":25,"pending_review":null,"reasons":[],"items":[],"code":null}' \
+  --data '{"result":"passed","learner_id":"learner3","test_id":"9251793","session_id":"ses_test","percent":92,"earned":23,"total":25,"pending_review":null,"reasons":[],"items":[],"code":null,"notification":null}' \
   --allow-write
 ```
+
+Leaving `notification` out of a manual test takes the legacy branch and does
+push. Before 2026-09-22 that is how a siren test sent a real "Worksheet
+Passed" to the phone.
 
 If step 1 shows `.fired` but nothing happens in the room, **the defect is
 inside the Home Assistant script**, not in this repo — step 3 proves it by
@@ -185,4 +213,5 @@ backward through the OMR pipeline trace in
 | Caller (piano lesson completion → hook) | `backend/src/3_applications/school/PianoLessonCeremonyBridge.mjs` |
 | Generic HA CLI (state/list/resolve/toggle/call-service) | `cli/commands/ha.mjs`, invoked as `node cli/dscli.mjs ha ...` |
 | Config | `data/household/school/school.yml` → `grading_hook:` / `piano_lesson_hook:` |
-| The actual sound/scene/announcement logic | **Home Assistant's own configuration — not in this repository** |
+| Phone copy (title, body, tag, channel) | `backend/src/2_domains/school/notifications/schoolPush.mjs`, composed by the two callers above |
+| The actual sound/scene/announcement logic | **Home Assistant's own configuration — not in this repository** (`_includes/scripts/school_worksheet_scan_notification.yaml`) |
