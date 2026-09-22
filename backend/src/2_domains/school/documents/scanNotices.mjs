@@ -102,6 +102,21 @@ export function scanNoticeDocument(announcement = {}) {
       });
     }
     case 'scan-review': {
+      // Key-alignment is its own reason, not a double-marked bubble — the
+      // stock "two answers filled in" copy would lie about why the sheet is
+      // held. Only reached for the sole-reason case: Task 2's row-shift
+      // check refuses to fire on a sheet with any blank/ambiguous row, so a
+      // sheet that also carries `ambiguous`/`free_response` alongside it
+      // falls through to the generic copy below, which is at least never
+      // wrong about the fact that a grown-up is needed.
+      const reasons = Array.isArray(announcement.reasons) ? announcement.reasons : [];
+      if (reasons.length === 1 && reasons[0] === 'key-alignment-suspected') {
+        return noticeDocument({
+          id,
+          headline: headlineFor(announcement.title, 'NEEDS A GROWN-UP'),
+          lines: ['A grown-up is double-checking one of your answers.', 'Ask them to take a look.'],
+        });
+      }
       const count = isNumber(announcement.pendingReview) ? announcement.pendingReview : null;
       const what = count === null ? 'Some questions' : count === 1 ? '1 question' : `${count} questions`;
       return noticeDocument({
