@@ -16,12 +16,15 @@
  * day queue is derived from.
  */
 import path from 'path';
-import { dirExists, listEntries, loadYamlSafe, saveYaml, ensureDir, listYamlFiles, writeBinary } from '#system/utils/FileIO.mjs';
+import { dirExists, listEntries, loadYamlSafe, saveYaml, ensureDir, listYamlFiles, writeBinary, deleteFile } from '#system/utils/FileIO.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
 const ID_RE = /^[a-z0-9][a-z0-9_-]*$/i;
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 const LANG_RE = /^[A-Za-z]{2,8}$/;
+
+/** Every format a recording can be stored in — the same list the reader tries. */
+const RECORDING_FORMATS = Object.freeze(['webm', 'mp3', 'ogg', 'm4a', 'wav']);
 
 /** Sequence numbers are zero-padded to 4 on disk, matching the source assets. */
 export function padSeq(seq) {
@@ -164,11 +167,23 @@ export class YamlLanguageStudyDatastore {
     );
   }
 
+  /**
+   * ONE RECORDING PER SENTENCE. A take joined from pieces is a WAV while a
+   * one-go take is WebM, and the reader tries formats in a fixed order — so a
+   * surviving sibling in another format would be served instead of the take
+   * the learner just kept. The new file is written first, then the siblings go,
+   * so a failed write never costs the old recording.
+   */
   writeRecording(corpusId, userId, seq, language, buffer, ext = 'webm') {
     const target = this.resolveRecordingPath(corpusId, userId, seq, language, ext);
     if (!target) return null;
     ensureDir(path.dirname(target));
     writeBinary(target, buffer);
+    const base = target.slice(0, -path.extname(target).length);
+    for (const format of RECORDING_FORMATS) {
+      const sibling = `${base}.${format}`;
+      if (sibling !== target) deleteFile(sibling);
+    }
     return target;
   }
 
