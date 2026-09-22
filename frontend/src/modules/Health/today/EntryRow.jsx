@@ -13,7 +13,7 @@ import { usePortionControl } from './usePortionDraft.js';
 
 const logger = createAppLogger('health').child('entry-row');
 
-export function EntryRow({ row, densityRow = row, onTap, onConfirm, onRequestDelete, isGroup = false, expanded = false, onToggle, rollupKcal, child = false, lastChild = false, measured = null }) {
+export function EntryRow({ row, densityRow = row, onTap, onConfirm, onRequestDelete, isGroup = false, expanded = false, onToggle, rollupKcal, child = false, lastChild = false, measured = null, kcalShare = null }) {
   const [error, setError] = useState(null);
   const [confirmation, setConfirmation] = useState(null);
   const pending = useRef(false);
@@ -57,7 +57,8 @@ export function EntryRow({ row, densityRow = row, onTap, onConfirm, onRequestDel
     </div>
     <MacroBadges rows={isGroup ? row.children : [row]} editRow={row} className="health-row__macros health-row__visual" />
     <span className="health-row__portion-cell health-row__visual"><PortionControl row={row} /></span>
-    <PortionControl row={row} field="calories" className="health-row__kcal health-row__visual">{displayKcal == null ? '—' : Math.round(displayKcal)}<small> kcal</small></PortionControl>
+    <PortionControl row={row} field="calories" className="health-row__kcal health-row__visual">{displayKcal == null ? '—' : Math.round(displayKcal)}<small> kcal</small>
+      {kcalShare == null ? null : <span className="health-row__kcal-bar" aria-hidden="true" style={{ '--kcal-share': kcalShare }} />}</PortionControl>
     <div className="health-row__action health-row__visual">
       {confirmation === 'saved' ? <span role="status" aria-label={`${name} confirmed`} title="Confirmed">✓</span> : unsettled ?
         <UnstyledButton className="health-row__confirm" aria-label={`Confirm entry: ${name}`} title="Confirm this estimate"

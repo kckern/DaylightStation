@@ -120,3 +120,29 @@ export function groupRows(rows) {
 }
 
 export default groupRows;
+
+const knownKcal = value => (typeof value === 'number' && Number.isFinite(value) ? value : null);
+const byCaloriesDesc = kcal => (a, b) => {
+  const x = kcal(a), y = kcal(b);
+  if (x === null && y === null) return 0;
+  if (x === null) return 1;
+  if (y === null) return -1;
+  return y - x;
+};
+
+/**
+ * Heaviest first: top-level entries by calories (a dish by its rollup), and
+ * each dish's ingredients by their own. Unknown calories sink to the bottom;
+ * ties keep logged order (Array.prototype.sort is stable).
+ */
+export function sortEntriesByCalories(entries) {
+  const entryKcal = ({ row, children, rollup }) => knownKcal(children.length ? rollup.calories : row.calories);
+  return [...entries].sort(byCaloriesDesc(entryKcal))
+    .map(entry => ({ ...entry, children: [...entry.children].sort(byCaloriesDesc(child => knownKcal(child.calories))) }));
+}
+
+/** Each calorie's share of the largest one in its list, 0–1 (null when unknown). */
+export function calorieShares(values) {
+  const max = Math.max(0, ...values.map(value => knownKcal(value) ?? 0));
+  return values.map(value => (knownKcal(value) === null || max <= 0 ? null : Math.max(0, value) / max));
+}
