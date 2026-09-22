@@ -154,6 +154,7 @@ export class ResolveAccessCode {
   // step this resolver deliberately does differently from the scan path.
   #tokens; #curriculum; #sessions; #assignments; #attemptLimiter;
   #issueDocument; #companions; #roster; #mediaSurface; #timezone; #clock; #logger; #planProjection; #launchPreviewTokens;
+  #kioskFrictionTracker;
 
   /**
    * @param {object} deps
@@ -173,6 +174,10 @@ export class ResolveAccessCode {
    * @param {string|null} [deps.timezone]
    * @param {() => Date} [deps.clock]
    * @param {object} [deps.logger]
+   * @param {{recordFriction: (args: {deviceId: string|null, kind: string}) => Promise<void>}} [deps.kioskFrictionTracker]
+   *   optional-degrading, same as `attemptLimiter`: absent, a rejected code is
+   *   simply not counted toward the household's kiosk-friction signal and the
+   *   panel behaves exactly as it did before.
    */
   constructor({
     tokens, curriculum, assignments, sessions, launchers = new Map(),
@@ -181,6 +186,7 @@ export class ResolveAccessCode {
     // digits printed beside the QR must mean what the QR means.
     planProjection = null, launchPreviewTokens = null,
     attemptLimiter = null,
+    kioskFrictionTracker = null,
     timezone = null, clock = () => new Date(), logger = console,
   } = {}) {
     if (!tokens || !curriculum || !assignments || !sessions) {
@@ -191,6 +197,7 @@ export class ResolveAccessCode {
     // behaves exactly as it did before. A limiter is a blunting device, not a
     // correctness guarantee, so a deployment without one must still work.
     this.#attemptLimiter = attemptLimiter;
+    this.#kioskFrictionTracker = kioskFrictionTracker;
     this.#curriculum = curriculum;
     this.#assignments = assignments;
     this.#sessions = sessions;
@@ -296,6 +303,10 @@ export class ResolveAccessCode {
         useCount: record?.useCount ?? null,
         maxUses: record?.maxUses ?? null,
       });
+      // Unconditional — see the constructor doc: the friction tracker is a
+      // general, cross-signal counter, not gated behind any narrower,
+      // code-specific mechanism (that is what `#strikeAttempt` below is for).
+      this.#kioskFrictionTracker?.recordFriction({ deviceId, kind: 'code-rejected' }).catch(() => {});
       return { card: USED_UP, resolution: null };
     }
 
@@ -315,6 +326,10 @@ export class ResolveAccessCode {
         reason: record ? 'unscoped-record' : 'no-live-record',
         ...(overBudget ? { throttled: true } : {}),
       });
+      // Unconditional, not gated behind `overBudget` — `#strikeAttempt`
+      // above is a narrower, code-specific burst throttle; this covers BOTH
+      // the `unscoped-record` and `no-live-record` reasons this branch logs.
+      this.#kioskFrictionTracker?.recordFriction({ deviceId, kind: 'code-rejected' }).catch(() => {});
       return { card: overBudget ? SLOW_DOWN : TRY_AGAIN, resolution: null };
     }
 

@@ -34,6 +34,7 @@ export function createDeviceApiRouter(config) {
     configService,
     loadFile,
     pianoMidiWakeService,
+    kioskFrictionTracker,
     callControl,
     logger = console
   } = config;
@@ -78,5 +79,6 @@ export function createDeviceApiRouter(config) {
       devices, contentRequiresCamera, screenAddressResolver: new ScreenAddressResolver(),
       scheduler: new NodeApplicationScheduler(), logger,
     }),
+    kioskFrictionTracker,
   });
 }

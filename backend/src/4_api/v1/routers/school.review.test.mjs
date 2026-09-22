@@ -57,6 +57,30 @@ describe('GET /api/v1/school/review/learner/:learnerId', () => {
     expect(res.status).toBe(200);
     expect(res.body).toEqual([]);
   });
+
+  /**
+   * Whole-branch review finding #8: a resolved `key-alignment-suspected`
+   * entry is not a question a grown-up marked — it is the OMR key-alignment
+   * check's synthetic whole-sheet hold. If a teacher resolves it with a
+   * truth-value verdict (the natural, wrong gesture) instead of `void`, it
+   * must never reach this child-facing feedback feed as a fabricated graded
+   * item.
+   */
+  it('never surfaces a resolved key-alignment-suspected entry in the child feedback feed', async () => {
+    const keyAlignmentItem = {
+      itemId: 'key-alignment', sessionId: 'ses_1', learnerId: 'kid1', unitId: 'math-fractions.02',
+      verdict: 'correct', note: null, gradedBy: 'parent', gradedAt: '2026-07-27T10:00:00.000Z',
+      prompt: 'Row alignment check', questionNumber: null, reason: 'key-alignment-suspected',
+      given: null, rubric: 'Shifting the answers up 1 row would score 5/6 instead of 2/6.',
+      enqueuedAt: '2026-07-27T08:00:00.000Z',
+    };
+    const reviewQueue = { listForLearner: vi.fn(async () => [keyAlignmentItem, ITEM]) };
+    const res = await request(appWith({ reviewQueue })).get('/api/v1/school/review/learner/kid1');
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveLength(1);
+    expect(res.body[0].itemId).toBe('q1');
+    expect(res.body.some((item) => item.itemId === 'key-alignment')).toBe(false);
+  });
 });
 
 describe('GET /api/v1/school/periods', () => {
