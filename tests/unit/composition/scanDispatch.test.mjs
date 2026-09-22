@@ -1102,3 +1102,33 @@ describe('publisher book scan entry', () => {
     expect(h.execute).not.toHaveBeenCalled();
   });
 });
+
+describe('product repeat suppression', () => {
+  const productScan = (code, device = 'nutribot-upc') => relayScan({ device, route: 'nutribot', code });
+  it('drops the same code from the same reader within 30 s, and a doubled read of it', async () => {
+    let t = 1_000_000;
+    const h = harness({ now: () => t });
+    await h.scanDispatch.handleScan(productScan('037000338369'));
+    t += 15_000;
+    const repeat = await h.scanDispatch.handleScan(productScan('037000338369'));
+    await h.scanDispatch.handleScan(productScan('037000338369037000338369'));
+    expect(h.execute).toHaveBeenCalledTimes(1);
+    expect(repeat).toMatchObject({ ok: false });
+    expect(h.barcodeLogger.info).toHaveBeenCalledWith('barcode.nutribot.repeat', expect.objectContaining({ sinceMs: 15_000 }));
+    t += 31_000;
+    await h.scanDispatch.handleScan(productScan('037000338369'));
+    expect(h.execute).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not suppress the same code from a different reader', async () => {
+    const t = 1_000_000;
+    const h = harness({ now: () => t });
+    await h.scanDispatch.handleScan(productScan('037000338369'));
+    await h.scanDispatch.handleScan(productScan('037000338369', 'nutribot-noscale'));
+    expect(h.execute).toHaveBeenCalledTimes(2);
+  });
+
+  it('refuses a `now` that is not a clock', () => {
+    expect(() => harness({ now: 123 })).toThrow(/now/);
+  });
+});

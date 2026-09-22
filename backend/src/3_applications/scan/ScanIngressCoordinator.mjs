@@ -93,6 +93,7 @@ import { PREFIX_REGISTRY, LEGACY_NUTRITION_TAGS } from '#domains/scan/ScanCode.m
 import { KNOWN_COMMANDS } from '#domains/barcode/BarcodeCommandMap.mjs';
 import { TriggerEvent } from '#domains/trigger/TriggerEvent.mjs';
 import { routeNutribotScan, nutriscanRefusalNotice, swallowNotice } from '#apps/nutribot/lib/routeNutribotScan.mjs';
+import { parseGtin } from '#domains/nutrition/services/gtin.mjs';
 
 /**
  * Reader route -> namespace, for the dispatcher's step 5.
@@ -297,6 +298,7 @@ const OPTIONAL_DEPS = Object.freeze({
   book: { ok: v => v === null || typeof v?.receive === 'function', want: 'null or a book scan service with receive()' },
   commandNames:  { ok: Array.isArray, want: 'an array of command names' },
   routeFallback: { ok: isObject, want: 'an object mapping reader route -> namespace' },
+  now: { ok: v => typeof v === 'function', want: 'a () => epoch-ms clock' },
 });
 
 /**
@@ -431,6 +433,8 @@ function reportLeadingSegmentCollisions(screenNames, commandNames, logger) {
  *   it is what keeps every existing event name and payload byte-identical
  * @param {string[]} [deps.commandNames]  OPTIONAL, defaults to the live command map
  * @param {Record<string,string>} [deps.routeFallback]  OPTIONAL, defaults to SCAN_ROUTE_FALLBACK
+ * @param {() => number} [deps.now]      OPTIONAL epoch-ms clock for product repeat suppression,
+ *   defaults to `Date.now`; a parameter so the 30 s window can be driven in tests
  * @returns {{handleScan: (relay: object) => Promise<object>, namespaces: string[],
  *            screenCollisions: string[]}}
  */
@@ -459,6 +463,7 @@ export function createScanDispatch(deps = {}) {
     logger,
     barcodeLogger,
     routeFallback = SCAN_ROUTE_FALLBACK,
+    now = () => Date.now(),
   } = deps;
 
   const relayCfgFor = (device) => relayInstances[device] || {};
@@ -607,6 +612,13 @@ export function createScanDispatch(deps = {}) {
   };
 
   // ---- product (a bare UPC, claimed by the reader's route) ------------------
+  // A held trigger re-fires: 2026-09-21 logged the same can six times in 15 s,
+  // some reads glued into one 24-digit code. Each relay scan carries its own
+  // operation id, so nothing downstream can tell a re-fire from a second can.
+  // A deliberate second serving is a portion edit, not a rescan.
+  const PRODUCT_REPEAT_MS = 30_000;
+  const lastProductScan = new Map(); // `${device}|${gtin}` -> epoch ms of the accepted scan
+
   const handleProduct = ({ body, raw, device, operationId }) => {
     const relayCfg = relayCfgFor(device);
     const userId = relayCfg.nutribot?.user_id
@@ -618,6 +630,16 @@ export function createScanDispatch(deps = {}) {
       emit(barcodeLogger, 'warn', 'barcode_relay.nutribot.no_user', { device, code: raw });
       return { status: 'refused', ok: false, message: 'no nutribot user' };
     }
+
+    const at = now();
+    for (const [key, seen] of lastProductScan) if (at - seen >= PRODUCT_REPEAT_MS) lastProductScan.delete(key);
+    const parsed = parseGtin(body);
+    const repeatKey = `${device}|${parsed.ok ? parsed.code : String(body)}`;
+    if (lastProductScan.has(repeatKey)) {
+      emit(barcodeLogger, 'info', 'barcode.nutribot.repeat', { device, code: raw, sinceMs: at - lastProductScan.get(repeatKey) });
+      return { status: 'swallowed', ok: false, message: 'repeat scan' };
+    }
+    lastProductScan.set(repeatKey, at);
 
     // Derive the Telegram address the same way the scale->nutribot path does:
     // telegram:b<botId>_c<chatId>. The old fallback built "nutribot-upc:<userId>",
