@@ -98,17 +98,32 @@ export default function WordLadderProgram({ descriptor, api = wordLadderApi, res
    * A write that did not come back ok may still have landed (a lost
    * response). Re-reading the plan heals that: the step the server already
    * recorded disappears instead of 400-ing on every retap forever.
+   *
+   * A 404 is different: the session itself is gone (the study day rolled
+   * over underneath it), so re-reading THAT plan 404s too — a loop where
+   * every retap just re-shows "That didn't save". Reopen instead, adopt the
+   * fresh session + plan, and let the child carry straight on.
    */
   const notSaved = useCallback(async (what, details) => {
-    setNotice(NOT_SAVED);
     wordLadderLog.writeFailed({ userId, what, ...details });
+    if (details?.status === 404 && userId && deckId) {
+      const { ok, data } = await api.open({ userId, deckId });
+      if (ok && data?.plan) {
+        setSessionId(data.sessionId);
+        setPlan(data.plan);
+        setNotice(null);
+        wordLadderLog.sessionReopened({ userId, deckId, what, sessionId: data.sessionId });
+        return;
+      }
+    }
+    setNotice(NOT_SAVED);
     if (!sessionId) return;
     const { ok, data } = await api.plan(sessionId, userId);
     if (ok && data?.plan) {
       setPlan(data.plan);
       wordLadderLog.planRefetched({ userId, what });
     }
-  }, [api, sessionId, userId]);
+  }, [api, sessionId, userId, deckId]);
 
   const onMicUnavailable = useCallback((reason) => {
     setMicReason(reason);

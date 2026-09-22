@@ -175,6 +175,29 @@ describe('WordLadderProgram', () => {
     expect(await screen.findByText('풀')).toBeInTheDocument();
   });
 
+  it('a 404 (session gone after the study-day boundary) reopens instead of looping "didn\'t save"', async () => {
+    const plan1 = basePlan();
+    const plan2 = checked(basePlan()); // the fresh session's plan already has the check resolved
+    const api = {
+      open: vi.fn()
+        .mockResolvedValueOnce({ ok: true, status: 200, data: { sessionId: 's1', day: '2026-09-22', folded: 0, plan: plan1 } })
+        .mockResolvedValueOnce({ ok: true, status: 200, data: { sessionId: 's2', day: '2026-09-23', folded: 0, plan: plan2 } }),
+      answer: vi.fn(async () => ({ ok: false, status: 404, data: null })),
+      plan: vi.fn(async () => ({ ok: true, status: 200, data: { plan: plan1 } })),
+      uploadRecording: vi.fn(async () => ({ ok: true, status: 200, data: { take: 1, plan: plan2 } })),
+      mark: vi.fn(async () => ({ ok: true, status: 200, data: { plan: plan2 } })),
+      viewReview: vi.fn(async () => ({ ok: true, status: 200, data: { logged: true } })),
+    };
+    render(<WordLadderProgram descriptor={{ deckId: 'd', userId: 'kid' }} api={api} />);
+    expect(await screen.findByText('가위')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Scissors' }));
+    await waitFor(() => expect(api.open).toHaveBeenCalledTimes(2));
+    expect(api.open).toHaveBeenLastCalledWith({ userId: 'kid', deckId: 'd' });
+    expect(api.plan).not.toHaveBeenCalled();
+    expect(screen.queryByText("That didn't save — try again")).toBeNull();
+    expect(await screen.findByText('풀')).toBeInTheDocument();
+  });
+
   it('two failed uploads fall back to flip-and-mark with reason upload-failed', async () => {
     const api = fakeApi(checked(basePlan()));
     api.uploadRecording = vi.fn(async () => ({ ok: false, status: 400, data: null }));

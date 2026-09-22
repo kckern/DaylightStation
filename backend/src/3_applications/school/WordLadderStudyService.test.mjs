@@ -23,10 +23,11 @@ function memoryStore() {
   };
 }
 
-function make({ policy = { mode: 'word-ladder' }, attempts = [], media = false } = {}) {
+function make({ policy = { mode: 'word-ladder' }, attempts = [], media = false, attemptsReader = null } = {}) {
   let now = DAY1_MS; let n = 0;
   const store = memoryStore();
   const saved = [];
+  const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
   const service = new WordLadderStudyService({
     store,
     decks: {
@@ -39,16 +40,16 @@ function make({ policy = { mode: 'word-ladder' }, attempts = [], media = false }
       { programId: 'flashcards', deckId: DECK_ID, policy },
       { programId: 'flashcards', deckId: DECK_B, policy },
     ] }) },
-    attempts: { readAttemptsInRange: vi.fn(() => attempts) },
+    attempts: { readAttemptsInRange: attemptsReader ?? vi.fn(() => attempts) },
     recordings: { save: (args) => { saved.push(args); return { take: saved.length, file: 'f' }; }, latest: () => ({ resource: { body: 'x' }, contentType: 'audio/webm' }) },
     assets: { exists: () => media },
     teacherGate: { assert: vi.fn() },
     timezone: 'America/Los_Angeles',
     now: () => now,
     id: () => `ses_${++n}`,
-    logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
+    logger,
   });
-  return { service, store, saved, advanceDays: (days) => { now += days * DAY_MS; } };
+  return { service, store, saved, logger, advanceDays: (days) => { now += days * DAY_MS; } };
 }
 
 async function studyAll(service, sessionId, plan, mark = 'know') {
@@ -212,6 +213,28 @@ describe('WordLadderStudyService', () => {
     const attempts = [{ id: 'att_2', at: '2026-09-22T20:00:00.000Z', bankId: `${DECK_ID}-quiz@abcdef123`, itemId: 'pul', correct: false, transport: 'paper' }];
     const { service } = make({ attempts });
     await expect(service.fold({ learnerId: 'kid', actorId: 'parent', pin: null })).resolves.toEqual({ learnerId: 'kid', folded: 1, demoted: ['pul'] });
+  });
+
+  it('a failed attempts read folds nothing and does not advance lastFoldedDay; the next successful read still folds the earlier attempt', async () => {
+    const attempt = { id: 'att_9', at: '2026-09-23T03:00:00.000Z', bankId: `${DECK_ID}-quiz@abcdef123`, itemId: 'gawi', correct: false, transport: 'paper' };
+    let calls = 0;
+    const attemptsReader = vi.fn(() => {
+      calls += 1;
+      if (calls === 1) throw new Error('store unreachable');
+      return [attempt];
+    });
+    const { service, store, logger } = make({ attemptsReader });
+
+    const first = await service.open({ userId: 'kid', deckId: DECK_ID });
+    expect(first.folded).toBe(0);
+    expect(store.data.kid.lastFoldedDay ?? null).toBeNull();
+    expect(store.data.kid.words.gawi).toBeUndefined();
+    expect(logger.warn).toHaveBeenCalledWith('school.word-ladder.attempts-unreadable', expect.objectContaining({ learnerId: 'kid' }));
+
+    const second = await service.open({ userId: 'kid', deckId: DECK_ID });
+    expect(second.folded).toBe(1);
+    expect(store.data.kid.lastFoldedDay).toBe('2026-09-22');
+    expect(store.data.kid.words.gawi.history.at(-1)).toMatchObject({ event: 'quiz-miss', attemptId: 'att_9', day: '2026-09-22' });
   });
 
   it('replays a past day from its frozen plan', async () => {
