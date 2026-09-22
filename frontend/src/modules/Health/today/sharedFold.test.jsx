@@ -40,12 +40,12 @@ describe('one fold for the whole day', () => {
   });
 
   it('the per-meal kcal subtotal drops every uncounted row', () => {
-    render(<LogTable byBucket={byBucket} sessions={[]} onAddTo={() => {}} onRowTap={() => {}} />, { wrapper });
+    render(<LogTable byBucket={byBucket} sessions={[]} onRowTap={() => {}} />, { wrapper });
     expect(screen.getByText('230 kcal')).toBeTruthy();
   });
 
   it('the per-meal macro subtotal drops every uncounted row', () => {
-    render(<LogTable byBucket={byBucket} sessions={[]} onAddTo={() => {}} onRowTap={() => {}} />, { wrapper });
+    render(<LogTable byBucket={byBucket} sessions={[]} onRowTap={() => {}} />, { wrapper });
     expect(screen.getByRole('img', { name: 'Protein: 15 grams' })).toHaveTextContent('15');
     expect(screen.getByRole('img', { name: 'Carbs: 18 grams' })).toHaveTextContent('18');
     expect(screen.getByRole('img', { name: 'Fat: 11 grams' })).toHaveTextContent('11');

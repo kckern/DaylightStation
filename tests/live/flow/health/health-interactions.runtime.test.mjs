@@ -28,7 +28,7 @@ test('mobile picker is bounded and weeks can be paged without moving selection',
   await page.setViewportSize({ width: 390, height: 844 });
   const state = await installHealthFixtures(page, { foods: [{ id: 'oats', name: 'Oatmeal', grams: 80, calories: 300 }] });
   await page.goto('/health');
-  await page.getByRole('button', { name: /Add food to/ }).first().click();
+  await page.getByRole('combobox', { name: 'Add to Lunch' }).click();
   const option = page.getByRole('option', { name: /Oatmeal/ });
   await expect(option).toBeVisible();
   await expect(option).toContainText('80 g');
@@ -36,7 +36,7 @@ test('mobile picker is bounded and weeks can be paged without moving selection',
   const bounds = await page.locator('.health-suggest__list').boundingBox();
   expect(bounds.x).toBeGreaterThanOrEqual(0);
   expect(bounds.x + bounds.width).toBeLessThanOrEqual(390);
-  await page.getByRole('combobox').press('Escape');
+  await page.getByRole('combobox', { name: 'Add to Lunch' }).press('Escape');
   const selected = await page.locator('[aria-current="date"]').getAttribute('data-date');
   const initialRange = await page.locator('.health-weekstrip__range').textContent();
   if (await page.getByText('Week & weight history', { exact: true }).isVisible()) await page.getByText('Week & weight history', { exact: true }).click();

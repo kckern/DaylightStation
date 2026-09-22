@@ -7,6 +7,7 @@
 
 import { deriveLogDate } from '../lib/deriveLogDate.mjs';
 import { serializeFoodItem, serializeNutriLog } from '../nutriLogRecords.mjs';
+import { withoutQuarantined } from '#domains/nutrition/services/quarantine.mjs';
 
 /**
  * Accept food log use case
@@ -148,7 +149,9 @@ export class AcceptFoodLog {
         this.#logger.debug?.('acceptLog.autoreport.suppressed', { userId, logUuid });
       } else if (this.#foodLogStore?.findPending && this.#generateDailyReport?.execute) {
         try {
-          const pending = await this.#foodLogStore.findPending(userId);
+          // A quarantined capture never clears on its own; waiting on it would
+          // block every auto-report.
+          const pending = withoutQuarantined(await this.#foodLogStore.findPending(userId));
           this.#logger.debug?.('acceptLog.autoreport.pendingCheck', { userId, pendingCount: pending.length });
           if (pending.length === 0) {
             await this.#pause(300);

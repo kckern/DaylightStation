@@ -6,6 +6,7 @@
  */
 
 import { serializeFoodItem } from '../nutriLogRecords.mjs';
+import { withoutQuarantined } from '#domains/nutrition/services/quarantine.mjs';
 
 /**
  * Select UPC portion use case (stateless - UUID in callback data)
@@ -126,7 +127,7 @@ export class SelectUPCPortion {
 
       if (this.#generateDailyReport && this.#foodLogStore) {
         try {
-          const pending = await this.#foodLogStore.findPending(userId);
+          const pending = withoutQuarantined(await this.#foodLogStore.findPending(userId));
           this.#logger.debug?.('selectPortion.autoreport.pendingCheck', {
             pendingCount: pending.length,
             userId,

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { normalizeProductNutrition, normalizeNutritionixNutrition } from './normalizeProductNutrition.mjs';
+import { normalizeProductNutrition, normalizeNutritionixNutrition, labelGrams } from './normalizeProductNutrition.mjs';
 describe('barcode nutrition basis', () => {
   it('does not label Nutritionix serving mass as a count of bottles or invent missing nutrients', () => {
     expect(normalizeNutritionixNutrition({ serving_weight_grams: 325, serving_unit: 'bottle', nf_calories: 160, nf_sugars: 0 }))
@@ -27,5 +27,77 @@ describe('barcode nutrition basis', () => {
     const value = normalizeProductNutrition({ nutriments: { 'energy-kcal': 140 } });
     expect(value.nutrition.calories).toBeNull();
     expect(value.serving).toEqual({ size: 1, unit: 'serving' });
+  });
+});
+
+// Real Open Food Facts payloads from the 2026-09 scan audit, trimmed to the fields used.
+const OIKOS = { serving_size: '0.75 cup (170 g)', serving_quantity: 170, serving_quantity_unit: 'ml',
+  nutriments: { 'energy-kcal_serving': 160, 'energy-kcal_100g': 94.1 } };
+const CHEESE = { serving_size: '1/4 cup (28 g)', serving_quantity: 28, serving_quantity_unit: 'ml',
+  nutriments: { 'energy-kcal_100g': 392.86 } };
+const DIET_COKE = { serving_size: null, serving_quantity: null, serving_quantity_unit: null, quantity: '12 fl oz',
+  nutriments: { 'energy-kcal_100g': 0, proteins_100g: 0, carbohydrates_100g: 0, fat_100g: 0 } };
+const PEANUT_BUTTER = { serving_size: '2 tbsp (2 tbsp)', serving_quantity: null, serving_quantity_unit: 'g',
+  nutriments: { 'energy-kcal_100g': 656.25 } };
+const SHAKE = { serving_size: '11 fl oz (325 mL)', serving_quantity: 325, serving_quantity_unit: 'ml',
+  nutriments: { 'energy-kcal_serving': 160 } };
+
+describe('label grams and per-100 fallback', () => {
+  it('prefers the gram figure printed on the label over OFF\'s ml guess', () => {
+    expect(normalizeProductNutrition(OIKOS).serving).toEqual({ size: 170, unit: 'g' });
+    const cheese = normalizeProductNutrition(CHEESE);
+    expect(cheese.serving).toEqual({ size: 28, unit: 'g' });
+    expect(cheese.nutrition.calories).toBeCloseTo(110, 0);
+  });
+  it('keeps a real volume as ml', () => {
+    expect(normalizeProductNutrition(SHAKE).serving).toEqual({ size: 325, unit: 'ml' });
+  });
+  it('falls back to the per-100 basis instead of discarding known values', () => {
+    const coke = normalizeProductNutrition(DIET_COKE);
+    expect(coke.serving).toEqual({ size: 100, unit: 'ml' });
+    expect(coke.nutrition.calories).toBe(0);
+    expect(coke.nutritionLookup.servingFallback).toBe('per100');
+    const pb = normalizeProductNutrition(PEANUT_BUTTER);
+    expect(pb.serving).toEqual({ size: 100, unit: 'g' });
+    expect(pb.nutrition.calories).toBeCloseTo(656.25, 2);
+    expect(pb.nutritionLookup.servingText).toBe('2 tbsp (2 tbsp)');
+  });
+});
+
+describe('label gram figure', () => {
+  it.each([
+    ['1/4 cup (28 g)', 28],
+    ['1 bar (40 g) 2 g protein', 40],
+    ['2 g protein', null],
+    ['30 gr', 30],
+    ['1 portion (28,5 g)', 28.5],
+    ['1 tray (1,000 g)', 1000],
+    ['1,000 g', 1000],
+    ['1 cup (240 mL)', null],
+    ['2 gal', null],
+  ])('%s → %s', (text, grams) => {
+    expect(labelGrams(text)).toBe(grams);
+  });
+});
+
+describe('volume fallback', () => {
+  const per100 = { 'energy-kcal_100g': 42 };
+  it.each([
+    [{ quantity: '1 gallon' }],
+    [{ quantity: '33 cl' }],
+    [{ quantity: '1 qt' }],
+    [{ quantity: '2 L' }],
+    [{ serving_size: '1 cup (240 mL)' }],
+  ])('%j falls back to 100 ml, never grams', extra => {
+    const value = normalizeProductNutrition({ nutriments: per100, ...extra });
+    expect(value.serving).toEqual({ size: 100, unit: 'ml' });
+    expect(value.nutritionLookup.servingFallback).toBe('per100');
+  });
+});
+
+describe('package mass', () => {
+  it('reports the package mass in grams when the pack size prints it, else null', () => {
+    expect(normalizeProductNutrition({ quantity: '16 oz (454 g)', nutriments: {} }).nutritionLookup.packageGrams).toBe(454);
+    expect(normalizeProductNutrition({ quantity: '12 fl oz', nutriments: {} }).nutritionLookup.packageGrams).toBeNull();
   });
 });

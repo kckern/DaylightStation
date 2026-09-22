@@ -260,7 +260,6 @@ import { YamlNutriListDatastore } from '#adapters/persistence/yaml/YamlNutriList
 import { FetchImageDownloader } from '#adapters/nutribot/FetchImageDownloader.mjs';
 import { PhotoStore } from '#adapters/persistence/PhotoStore.mjs';
 import { IconManifestStore } from '#adapters/persistence/IconManifestStore.mjs';
-import { FilesystemFoodIconCatalog } from '#adapters/nutribot/FilesystemFoodIconCatalog.mjs';
 import { LatestReconciliationReader } from '#apps/health/LatestReconciliationReader.mjs';
 import { NodePromiseDeadline } from '#adapters/scheduling/NodePromiseDeadline.mjs';
 import { NodeApplicationScheduler } from '#adapters/scheduling/NodeApplicationScheduler.mjs';
@@ -2293,29 +2292,22 @@ export async function createNutribotServices(config) {
   // (2_domains/nutrition/services/icons.mjs), so a slug that is not here can
   // never reach a stored row.
   //
-  // `getMediaDir` is called through an optional-call: a configService double
-  // without it (the composition contract registry supplies one) must degrade to
-  // the legacy directory, not take the whole nutribot container down over
-  // decoration. Same fail-soft posture as healthApi.mjs's store.
-  let foodIconsString = 'apple banana bread cheese chicken default';
-  const mediaRoot = configService.getMediaDir?.() ?? null;
+  // The hi-res manifest is the EXCLUSIVE icon set. With no manifest (or no
+  // media root) the vocabulary is just the neutral fallback: the retired 20 px
+  // flat directory is never read. Fail-soft: a configService double without
+  // `getMediaDir` (the composition contract registry supplies one), or one
+  // that throws, must not take the nutribot container down over decoration.
+  let foodIconsString = 'default';
+  let mediaRoot = null;
+  try { mediaRoot = configService.getMediaDir?.() ?? null; }
+  catch (e) { logger.warn?.('nutribot.icons.mediaRootUnavailable', { error: e.message }); }
   const iconManifest = mediaRoot ? new IconManifestStore({ dataService, mediaRoot, logger }) : null;
   const manifestSlugs = iconManifest?.list() || [];
   if (manifestSlugs.length > 0) {
     foodIconsString = manifestSlugs.join(' ');
     logger.info?.('nutribot.icons.loaded', { count: manifestSlugs.length, source: 'manifest' });
   } else {
-    const foodIconDir = configService.getPath('icons') + '/food';
-    const foodIconCatalog = new FilesystemFoodIconCatalog({ iconDir: foodIconDir });
-    try {
-      const iconFiles = foodIconCatalog.list();
-      if (iconFiles.length > 0) {
-        foodIconsString = iconFiles.join(' ');
-        logger.info?.('nutribot.icons.loaded', { count: iconFiles.length, dir: foodIconDir, source: 'legacy-directory' });
-      }
-    } catch (e) {
-      logger.warn?.('nutribot.icons.readFailed', { dir: foodIconDir, error: e.message });
-    }
+    logger.warn?.('nutribot.icons.manifestEmpty', { source: 'none', vocabulary: foodIconsString });
   }
 
   // Create nutribot container with all dependencies
@@ -2421,12 +2413,21 @@ export function createHealthServices(config) {
 
   // Food catalog persistence + service
   const catalogStore = new YamlFoodCatalogDatastore({ dataService, logger });
+  // The catalog needs the manifest's offered (hi-res) vocabulary. Built fail-soft
+  // like nutribot's own store: no media root, no filtering.
+  let catalogMediaRoot = null;
+  try { catalogMediaRoot = configService?.getMediaDir?.() ?? null; }
+  catch (e) { logger.warn?.('health.catalog.icons.mediaRootUnavailable', { error: e.message }); }
+  const catalogIcons = catalogMediaRoot
+    ? new IconManifestStore({ dataService, mediaRoot: catalogMediaRoot, logger })
+    : null;
   const catalogService = new FoodCatalogService({
     catalogStore,
     nutriListStore,
     clock: { now: () => Date.now() },
     createId: crypto.randomUUID,
     logger,
+    iconOffered: catalogIcons ? slug => catalogIcons.list().includes(slug) : null,
   });
 
   return {

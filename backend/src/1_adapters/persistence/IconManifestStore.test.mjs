@@ -33,7 +33,7 @@ function fixture(manifest, { files = ['img/nutrition/icons/vegetables/carrot.png
 
 const BASE_MANIFEST = {
   icons: { carrot: { path: 'img/nutrition/icons/vegetables/carrot.png' } },
-  aliases: { apple_sauce: { path: 'img/icons/food/apple_sauce.png' } },
+  aliases: { apple_sauce: { path: 'img/nutrition/icons/fruits/apple-sauce.png' } },
 };
 
 describe('IconManifestStore', () => {
@@ -45,12 +45,12 @@ describe('IconManifestStore', () => {
     expect(hit.contentType).toBe('image/png');
   });
 
-  it('resolves a legacy alias slug, because a stored FoodItem.icon must never stop working', () => {
+  it('resolves a legacy alias slug that points at hi-res art', () => {
     const { mediaRoot, store } = fixture(BASE_MANIFEST, {
-      files: ['img/nutrition/icons/vegetables/carrot.png', 'img/icons/food/apple_sauce.png'],
+      files: ['img/nutrition/icons/vegetables/carrot.png', 'img/nutrition/icons/fruits/apple-sauce.png'],
     });
     const hit = store.resolve('apple_sauce');
-    expect(hit.absolutePath).toBe(path.join(mediaRoot, 'img/icons/food/apple_sauce.png'));
+    expect(hit.absolutePath).toBe(path.join(mediaRoot, 'img/nutrition/icons/fruits/apple-sauce.png'));
   });
 
   it('list() offers PRIMARY slugs only: an alias resolves but is never offered', () => {
@@ -655,5 +655,33 @@ describe('IconManifestStore refuses to ship an unrendered multi-megabyte source'
     expect(hit).not.toBeNull();
     expect(hit.absolutePath).toBe(path.join(f.mediaRoot, 'img/nutrition/icons/vegetables/big.png'));
     expect(f.errors).toEqual([]);
+  });
+});
+
+// B9b. The hi-res manifest is the exclusive icon set. A hand-edited manifest
+// must not be able to bring the retired 20 px flat set back.
+describe('IconManifestStore refuses flat-art entries', () => {
+  it('drops icons and aliases whose path is under img/icons/food/, and warns once', () => {
+    const warn = vi.fn();
+    const manifest = {
+      icons: {
+        carrot: { path: 'img/nutrition/icons/vegetables/carrot.png' },
+        cheese: { path: 'img/icons/food/cheese.png' },
+      },
+      aliases: {
+        carrots: { path: 'img/nutrition/icons/vegetables/carrot.png' },
+        pitasandwich: { path: 'img/icons/food/pitasandwich.png' },
+      },
+    };
+    const dataService = { household: { read: () => manifest } };
+    const store = new IconManifestStore({ dataService, mediaRoot: os.tmpdir(), logger: { ...silent, warn } });
+    expect(store.list()).toEqual(['carrot']);
+    expect(store.has('pitasandwich')).toBe(false);
+    expect(store.resolve('pitasandwich')).toBeNull();
+    expect(store.has('cheese')).toBe(false);
+    expect(store.has('carrots')).toBe(true);
+    const dropped = warn.mock.calls.filter(([event]) => event === 'health.icons.manifest.retired_art_dropped');
+    expect(dropped).toHaveLength(1);
+    expect(dropped[0][1]).toEqual({ count: 2, slugs: ['cheese', 'pitasandwich'] });
   });
 });

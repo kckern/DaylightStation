@@ -28,7 +28,7 @@ function makeApp({ iconManifestStore = null } = {}) {
 function realStore({ extraIcons = {}, files = [], absoluteEscape = false } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'health-icons-route-'));
   const mediaRoot = path.join(root, 'media');
-  const all = ['img/nutrition/icons/vegetables/carrot.png', 'img/icons/food/apple_sauce.png', ...files];
+  const all = ['img/nutrition/icons/vegetables/carrot.png', 'img/nutrition/icons/fruits/apple-sauce.png', ...files];
   for (const rel of all) {
     const full = path.join(mediaRoot, rel);
     fs.mkdirSync(path.dirname(full), { recursive: true });
@@ -47,7 +47,7 @@ function realStore({ extraIcons = {}, files = [], absoluteEscape = false } = {})
       ...(absoluteEscape ? { escape: { path: path.join(root, 'secret.png') } } : {}),
       ...extraIcons,
     },
-    aliases: { apple_sauce: { path: 'img/icons/food/apple_sauce.png' } },
+    aliases: { apple_sauce: { path: 'img/nutrition/icons/fruits/apple-sauce.png' } },
   };
   const store = new IconManifestStore({
     dataService: { household: { read: () => doc } }, mediaRoot, logger: silent,

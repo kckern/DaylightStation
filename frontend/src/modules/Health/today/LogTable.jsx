@@ -1,16 +1,15 @@
-import { useEffect, useState } from 'react';
-import { Button, UnstyledButton } from '@mantine/core';
+import { useState } from 'react';
+import { Button } from '@mantine/core';
 import { LoadingState } from '@/lib/ui';
 import { sumCounted } from '@shared-contracts/nutrition/countedRows.mjs';
 import { MacroBadges } from './MacroBadges.jsx';
 import { ExerciseSection } from './ExerciseSection.jsx';
-import { BUCKETS, UNGROUPED } from './mealBuckets.js';
+import { BUCKETS, UNGROUPED, EARLY_COLUMN, LATE_COLUMN, PRIMARY_BUCKETS } from './mealBuckets.js';
 import { EntryRow } from './EntryRow.jsx';
 import { groupRows } from './groupRows.js';
 import { VoiceCapture } from '../capture/VoiceCapture.jsx';
 import { MealFoodControls } from './MealFoodControls.jsx';
 import { CaptureProgress } from './CaptureProgress.jsx';
-import { currentMealBucketId, localTodayISO } from './mealBuckets.js';
 import './mealWorkflow.scss';
 
 // Bucket totals fold through the SHARED counted-rows contract — the same file
@@ -21,7 +20,7 @@ import './mealWorkflow.scss';
 const kcal = (rows) => Math.round(sumCounted(rows, 'calories'));
 
 function Section({
-  label, rows, onAdd, onRowTap, onConfirm, onRequestDelete, headerAction, coldLoading, pending,
+  label, rows, addRow = null, onRowTap, onConfirm, onRequestDelete, headerAction, coldLoading, pending,
   measuredByUuid, date, bucket, active, onVoiceCapture, onTextCapture, onChanged, captureTasks = [], onHoldChange, externalClarification, onClearClarification,
 }) {
   const [selecting, setSelecting] = useState(false);
@@ -79,7 +78,6 @@ function Section({
           <span className="health-meal__kcal">{rows.length ? `${kcal(rows)} kcal` : '—'}</span>
           {onVoiceCapture ? <VoiceCapture active={active} bucket={bucket} mealLabel={label} onHoldChange={onHoldChange}
             onCapture={async (content,target,metadata)=>captured(await onVoiceCapture(content,target,{selectedIds,date,...metadata}))}/> : null}
-          {onAdd ? <UnstyledButton className="health-meal__add" aria-label={`Add food to ${label}`} onClick={onAdd}>+</UnstyledButton> : null}
         </span>
       </header>
       {bucket && rows.length && onChanged ? <MealFoodControls date={date} bucket={bucket} rows={rows} selectedIds={selectedIds} selecting={selecting}
@@ -143,16 +141,19 @@ function Section({
           stay fully interactive while a capture is in flight. */}
       {captureTasks.length ? captureTasks.map(task=><CaptureProgress key={task.id} startedAt={task.startedAt} label={`${label} food analysis`}/>) : pending ?
         <CaptureProgress startedAt={Date.now()} label={`${label} food analysis`}/> : null}
+      {/* The meal's add input is its last child, so a new food is typed right
+          under the foods it joins. */}
+      {addRow}
     </section>
   );
 }
 
 export function LogTable({
-  byBucket, date, sessions = [], exerciseAvailable = false, onAddTo, onRowTap, onConfirm, onRequestDelete,
-  addSlot, addingTo, bucketHeaderAction, coldLoading = false, capturePendingBucket = null, capturePendingBuckets = [],
+  byBucket, date, sessions = [], exerciseAvailable = false, onRowTap, onConfirm, onRequestDelete,
+  bucketHeaderAction, coldLoading = false, capturePendingBucket = null, capturePendingBuckets = [],
   measuredByUuid = null, active = true, onVoiceCapture, onTextCapture, onMealChanged, captureTasks = [], clarifications, onClearClarification,
+  revealedBucket = null, renderAddRow = null,
 }) {
-  const [, refreshClock] = useState(0);
   const [heldSections, setHeldSections] = useState(new Set());
   const holdSection = (key, held) => setHeldSections(previous => {
     if (previous.has(key) === held) return previous;
@@ -160,48 +161,52 @@ export function LogTable({
     if (held) next.add(key); else next.delete(key);
     return next;
   });
-  useEffect(()=>{
-    const refresh=()=>refreshClock(value=>value+1);
-    const timer=setInterval(refresh,15000);
-    window.addEventListener('focus',refresh);
-    return ()=>{clearInterval(timer);window.removeEventListener('focus',refresh);};
-  },[]);
-  const anticipated = date === localTodayISO() ? currentMealBucketId() : null;
-  const visible = b => heldSections.has(`${date}:${b.id}`) || clarifications?.has(`${date}:${b.id}`) || coldLoading || byBucket.get(b.id)?.length || addingTo === b.id || anticipated === b.id || capturePendingBucket === b.id || capturePendingBuckets.includes(b.id);
+  // Lunch and Dinner always show. Breakfast and Snacks show only while they
+  // hold food, have a capture or clarification in flight, or were asked for
+  // (the quick bar's +). The clock no longer opens an empty meal, and a cold
+  // start no longer forces every section open — the primaries already give
+  // the page its frame.
+  const visible = b => PRIMARY_BUCKETS.includes(b.id) || revealedBucket === b.id
+    || byBucket.get(b.id)?.length || heldSections.has(`${date}:${b.id}`) || clarifications?.has(`${date}:${b.id}`)
+    || capturePendingBucket === b.id || capturePendingBuckets.includes(b.id);
   const orphans = byBucket.get(null) || [];
+  const renderBucket = (b) => {
+    const rows = byBucket.get(b.id) || [];
+    return (
+      <div key={`${date}:${b.id}`}>
+        <Section label={b.label} rows={rows} date={date} bucket={b.id} active={active}
+          onVoiceCapture={onVoiceCapture} onTextCapture={onTextCapture} onChanged={onMealChanged}
+          onHoldChange={held=>holdSection(`${date}:${b.id}`,held)}
+          externalClarification={clarifications === undefined ? undefined : clarifications.get(`${date}:${b.id}`) || null}
+          onClearClarification={()=>onClearClarification?.(`${date}:${b.id}`)}
+          captureTasks={captureTasks.filter(task=>task.date===date && task.bucket===b.id)}
+          onRowTap={onRowTap} onConfirm={onConfirm} onRequestDelete={onRequestDelete}
+          headerAction={bucketHeaderAction ? bucketHeaderAction(b.id, rows, b.label) : null}
+          coldLoading={coldLoading} pending={capturePendingBucket === b.id || capturePendingBuckets.includes(b.id)}
+          measuredByUuid={measuredByUuid} addRow={renderAddRow ? renderAddRow(b.id, b.label) : null} />
+      </div>
+    );
+  };
   return (
     <div className="health-log">
-      {BUCKETS.filter(visible).map((b) => {
-        const rows = byBucket.get(b.id) || [];
-        return (
-          <div key={`${date}:${b.id}`}>
-            <Section label={b.label} rows={rows} date={date} bucket={b.id} active={active}
-              onVoiceCapture={onVoiceCapture} onTextCapture={onTextCapture} onChanged={onMealChanged}
-              onHoldChange={held=>holdSection(`${date}:${b.id}`,held)}
-              externalClarification={clarifications === undefined ? undefined : clarifications.get(`${date}:${b.id}`) || null}
-              onClearClarification={()=>onClearClarification?.(`${date}:${b.id}`)}
-              captureTasks={captureTasks.filter(task=>task.date===date && task.bucket===b.id)}
-              onAdd={() => onAddTo(b.id)} onRowTap={onRowTap} onConfirm={onConfirm} onRequestDelete={onRequestDelete}
-              headerAction={bucketHeaderAction ? bucketHeaderAction(b.id, rows, b.label) : null}
-              coldLoading={coldLoading} pending={capturePendingBucket === b.id || capturePendingBuckets.includes(b.id)}
-              measuredByUuid={measuredByUuid} />
-            {addingTo === b.id && addSlot ? addSlot : null}
-          </div>
-        );
-      })}
-      {!coldLoading ? <div className="health-log__empty-meals">{BUCKETS.filter(b => !visible(b)).map(b =>
-        <UnstyledButton key={b.id} className="health-log__empty-add" aria-label={`Add food to ${b.label}`} onClick={() => onAddTo(b.id)}>+ {b.label}</UnstyledButton>)}</div> : null}
+      {[EARLY_COLUMN, LATE_COLUMN].map((ids, index) => (
+        <div key={index} className="health-log__column">
+          {ids.map(id => BUCKETS.find(b => b.id === id)).filter(visible).map(renderBucket)}
+        </div>
+      ))}
       {/* Gated on `exerciseAvailable` (budget data has arrived), NOT on
           `sessions.length` — a zero-session day is a real, stable answer
           ("no workout yet today"), not an absence of data. Gating on length
           alone made the header pop in and out as sessions changed, which is
           exactly the "chrome dissolves" problem this task exists to fix. */}
       {exerciseAvailable || sessions.length ? (
-        <ExerciseSection date={date} sessions={sessions} />
+        <div className="health-log__wide"><ExerciseSection date={date} sessions={sessions} /></div>
       ) : null}
       {orphans.length ? (
-        <Section label={UNGROUPED.label} rows={orphans} onRowTap={onRowTap} onConfirm={onConfirm} onRequestDelete={onRequestDelete}
-          measuredByUuid={measuredByUuid} />
+        <div className="health-log__wide">
+          <Section label={UNGROUPED.label} rows={orphans} onRowTap={onRowTap} onConfirm={onConfirm} onRequestDelete={onRequestDelete}
+            measuredByUuid={measuredByUuid} />
+        </div>
       ) : null}
     </div>
   );

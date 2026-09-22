@@ -60,13 +60,15 @@ and a new operation ID. Smart grouping is always a preview; selected IDs limit i
 otherwise all meal foods are eligible. The preview supports naming and membership
 adjustments, then applies all groups atomically.
 
-The current local meal has a temporary empty section on today's page. Past dates
-do not anticipate empty meals. The section retires when its window passes unless
-it contains food or owns ongoing interaction, including an active recording,
-retryable task, or clarification. Date navigation finishes a recording against its
+Lunch and Dinner are always shown, in the left and right columns. Breakfast and
+Snacks appear when they hold food, when a recording, retryable task or
+clarification is in flight for them, or when chosen in the quick bar; the clock
+no longer opens an empty meal. Date navigation finishes a recording against its
 original date and selected foods. Saved-audio retries preserve that context and
-can return the same selectable clarification flow. Plus opens explicit capture choices;
-text catalog suggestions appear only after choosing Type food. Each in-flight
+can return the same selectable clarification flow. Every visible meal ends in an add row: type
+to search saved foods or to have a sentence parsed, or use its photo, barcode and
+saved-meal buttons. A successful add clears the row and keeps focus for the next
+food. Each in-flight
 capture has an estimated progress bar which switches to moving diagonal stripes
 after its estimate expires. Only the request outcome completes it. Obsolete bot
 status messages are not shown after committed success.

@@ -887,8 +887,12 @@ export function createHealthRouter(config) {
           : await catalogService.setIconByName(name, userId, verdict.icon);
         return res.json({ entry: presentFoodCatalogEntry(entry) });
       } catch (err) {
-        logger.warn?.('health.catalog.icon.error', { id, name, error: err.message });
-        return res.status(404).json({ error: err.message });
+        logger.warn?.('health.catalog.icon.error', { id, name, error: err.message, code: err.code });
+        // Only a status the service set is passed through (404 not found, 400
+        // ICON_NOT_OFFERED). Anything else is an unexpected failure whose
+        // message may carry a path or username, so the body stays generic.
+        if (!err.status) return sendInternalError(res, { error: 'Could not update the icon' });
+        return res.status(err.status).json({ error: err.message, ...(err.code ? { code: err.code } : {}) });
       }
     }));
 

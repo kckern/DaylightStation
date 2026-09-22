@@ -1,0 +1,202 @@
+# Word ladder lexicon — the korean-vocab word package (Korean words, English meanings).
+# Installed to media/school/language/korean-vocab/lexicon.yml.
+# This file is the package's whole language identity: nothing in code names Korean.
+# Ids are permanent once studied (status is keyed by them); `group` is the course
+# unit that FIRST introduced the word and names its media folder
+# (words/<group>/<id>/{image.jpg, term.mp3, gloss.mp3}). A later deck may reuse
+# words from any group.
+# Decoys: at least 3 per side, confusable, never the answer; an in-set decoy
+# must be the same kind (phrase decoys only from phrases).
+schema: school.word-lexicon/v2
+package: korean-vocab
+language:
+  code: ko
+  name: Korean
+gloss:
+  code: en
+  name: English
+program:
+  title: Korean words
+quiz:
+  topics: [korean, vocabulary]
+  instructions: Not sure of a word? Open Korean words on the Portal and review the cards, then come back.
+entries:
+  - id: annyeong
+    kind: phrase
+    group: week-01-classroom
+    term: 안녕
+    gloss: Hi (casual)
+    pronunciation: an-nyeong
+    decoys:
+      term: [안녕하세요, 안녕히계세요, 안경]
+      gloss: [Hello (polite), Thank you, Excuse me]
+  - id: annyeong-haseyo
+    kind: phrase
+    group: week-01-classroom
+    term: 안녕하세요
+    gloss: Hello (polite)
+    pronunciation: an-nyeong-ha-se-yo
+    decoys:
+      term: [안녕히계세요, 안녕, 안녕히가세요]
+      gloss: [Hi (casual), Goodbye (to someone staying), Thank you]
+  - id: annyeonghi-gyeseyo
+    kind: phrase
+    group: week-01-classroom
+    term: 안녕히계세요
+    gloss: Goodbye (to someone staying)
+    pronunciation: an-nyeong-hi gye-se-yo
+    decoys:
+      term: [안녕히가세요, 안녕하세요, 안녕]
+      gloss: [Goodbye (to someone leaving), Hello (polite), Good night]
+  - id: seonsaengnim
+    kind: phrase
+    group: week-01-classroom
+    term: 선생님
+    gloss: Teacher
+    pronunciation: seon-saeng-nim
+    decoys:
+      term: [선생, 학생, 친구들]
+      gloss: [Student, Friends, Principal]
+  - id: chingu-deul
+    kind: phrase
+    group: week-01-classroom
+    term: 친구들
+    gloss: Friends
+    pronunciation: chin-gu-deul
+    decoys:
+      term: [친구, 가족들, 선생님]
+      gloss: [Friend, Family, Teacher]
+  - id: ireumi-mwoyeyo
+    kind: phrase
+    group: week-01-classroom
+    term: 이름이 뭐예요?
+    gloss: What is your name?
+    pronunciation: i-reu-mi mwo-ye-yo
+    decoys:
+      term: [이게 뭐예요?, 어디예요?, 몇 살이에요?]
+      gloss: [What is this?, Where is it?, How old are you?]
+  - id: ireum
+    kind: word
+    group: week-01-classroom
+    term: 이름
+    gloss: Name
+    pronunciation: null
+    decoys:
+      term: [이마, 여름, 얼음]
+      gloss: [Number, Age, Nickname]
+  - id: gawi
+    kind: word
+    group: week-01-classroom
+    term: 가위
+    gloss: Scissors
+    pronunciation: null
+    decoys:
+      term: [가지, 바위, 가방]
+      gloss: [Knife, Tape, Ruler]
+  - id: pul
+    kind: word
+    group: week-01-classroom
+    term: 풀
+    gloss: Glue
+    pronunciation: null
+    decoys:
+      term: [불, 뿔, 발]
+      gloss: [Tape, Paint, Stapler]
+  - id: chaek
+    kind: word
+    group: week-01-classroom
+    term: 책
+    gloss: Book
+    pronunciation: null
+    decoys:
+      term: [책상, 채소, 창]
+      gloss: [Notebook, Desk, Magazine]
+  - id: jiugae
+    kind: word
+    group: week-01-classroom
+    term: 지우개
+    gloss: Eraser
+    pronunciation: null
+    decoys:
+      term: [지구, 지도, 지갑]
+      gloss: [Pencil sharpener, Ruler, Crayon]
+  - id: baindeo
+    kind: word
+    group: week-01-classroom
+    term: 바인더
+    gloss: Binder
+    pronunciation: null
+    decoys:
+      term: [바나나, 파일, 바구니]
+      gloss: [Folder, Notebook, Clipboard]
+  - id: jongi
+    kind: word
+    group: week-01-classroom
+    term: 종이
+    gloss: Paper
+    pronunciation: null
+    decoys:
+      term: [색종이, 종, 종이컵]
+      gloss: [Colored paper, Cardboard, Envelope]
+  - id: saek-jongi
+    kind: word
+    group: week-01-classroom
+    term: 색종이
+    gloss: Colored paper
+    pronunciation: null
+    decoys:
+      term: [종이, 색연필, 색깔]
+      gloss: [Paper, Colored pencil, Sticker]
+  - id: yeonpil
+    kind: word
+    group: week-01-classroom
+    term: 연필
+    gloss: Pencil
+    pronunciation: null
+    decoys:
+      term: [색연필, 연기, 연못]
+      gloss: [Colored pencil, Pen, Crayon]
+  - id: saek-yeonpil
+    kind: word
+    group: week-01-classroom
+    term: 색연필
+    gloss: Colored pencil
+    pronunciation: null
+    decoys:
+      term: [연필, 색종이, 사인펜]
+      gloss: [Pencil, Colored paper, Marker]
+  - id: gansik
+    kind: word
+    group: week-01-classroom
+    term: 간식
+    gloss: Snack
+    pronunciation: null
+    decoys:
+      term: [간장, 감자, 점심]
+      gloss: [Lunch, Dessert, Drink]
+  - id: hanguk
+    kind: word
+    group: week-01-classroom
+    term: 한국
+    gloss: Korea
+    pronunciation: null
+    decoys:
+      term: [한글, 미국, 학교]
+      gloss: [Japan, China, Korean alphabet]
+  - id: hakgyo
+    kind: word
+    group: week-01-classroom
+    term: 학교
+    gloss: School
+    pronunciation: null
+    decoys:
+      term: [학생, 한국, 학원]
+      gloss: [Student, Classroom, Library]
+
+# Decoy audit (why each list is honest): 풀 also means grass, so "Grass" is
+# deliberately absent from its English decoys; 간식's Korean decoys avoid
+# 과자 (a snack itself); 안녕 also means bye, so no plain "Goodbye" decoy is
+# offered for it. In-set decoys are same-kind only: phrases 안녕하세요 /
+# 안녕히계세요 / 안녕 / 선생님 / 친구들 and their English appear only under
+# phrases; words 색종이 / 종이 / 색연필 / 연필 / 학교 / 한국 and their
+# English only under words.

@@ -89,12 +89,22 @@ export function directUPCHandler(nutribotApi, options = {}) {
     });
 
     // Call use case
-    const result = await nutribotApi.logUpc({
-      userId,
-      conversationId,
-      upc: cleanUPC,
-      messageId: null, // No Telegram message
-    });
+    let result;
+    try {
+      result = await nutribotApi.logUpc({
+        userId,
+        conversationId,
+        upc: cleanUPC,
+        messageId: null, // No Telegram message
+      });
+    } catch (error) {
+      // Not a food barcode (bad check digit, an ISBN): the caller sent a bad
+      // code, and the message is the sentence to show them.
+      if (error?.code !== 'NUTRIBOT_UPC_REJECTED') throw error;
+      const reason = error.context?.reason ?? null;
+      logger.info?.('direct.upc.rejected', { traceId, reason, upc: cleanUPC });
+      return res.status(400).json({ ok: false, error: error.message, rejected: reason });
+    }
 
     const duration = Date.now() - startTime;
     logger.info?.('direct.upc.processed', { traceId, durationMs: duration, success: result?.success });
