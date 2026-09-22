@@ -180,8 +180,15 @@ export function NavProvider({ children }) {
       // Re-selection must land on an existing canonical top entry when one
       // exists. Traversing the browser entry (instead of replaceState) means
       // one Back reaches the actual prior area, with no duplicate area stop.
-      const targetIndex = prev.findLastIndex((entry) => entry.view === top.view
-        && JSON.stringify(entry.params ?? {}) === JSON.stringify(top.params));
+      const targetIndex = prev.findLastIndex((entry) => {
+        // Browse viewport snapshots belong to the entry, not its route
+        // identity. Preserve them while recognizing the original area root.
+        const routeParams = { ...(entry.params ?? {}) };
+        delete routeParams.scrollTop;
+        delete routeParams.focusedId;
+        return entry.view === top.view
+          && JSON.stringify(routeParams) === JSON.stringify(top.params);
+      });
       if (targetIndex >= 0 && targetIndex < prev.length - 1) {
         if (traversalPendingRef.current) return prev;
         traversalPendingRef.current = true;

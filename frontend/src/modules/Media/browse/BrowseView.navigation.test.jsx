@@ -1,5 +1,8 @@
+// @vitest-environment jsdom
+// JSDOM dispatches history traversal asynchronously like a browser. Happy DOM
+// dispatches popstate inside history.go(), re-entering NavProvider's updater.
 import React from 'react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
 import { BrowseView } from './BrowseView.jsx';
@@ -18,15 +21,21 @@ vi.mock('../shell/useDismissLayer.js', () => ({ useDismissLayer: () => {} }));
 vi.mock('../cast/DispatchTargetPicker.jsx', () => ({ DispatchTargetPicker: () => null }));
 
 function NavigationSurface() {
-  const { view, params } = useNav();
+  const { view, params, goToArea, pop } = useNav();
   return <div data-testid="scroll-host">
+    <button onClick={() => goToArea('browse')}>Browse area</button>
     {view === 'browse'
       ? <BrowseView {...params} />
-      : <output data-testid="detail-route">{params.contentId}</output>}
+      : view === 'detail'
+        ? <><button onClick={pop}>Detail Back</button><output data-testid="detail-route">{params.contentId}</output></>
+        : <output data-testid="home-route">Home</output>}
   </div>;
 }
 
 beforeEach(() => {
+  vi.stubGlobal('matchMedia', query => Object.assign(new EventTarget(), {
+    matches: false, media: query, addListener() {}, removeListener() {},
+  }));
   localStorage.clear();
   window.history.replaceState({ mediaNavStack: [{
     view: 'browse',
@@ -38,7 +47,51 @@ beforeEach(() => {
   ], total: 2 });
 });
 
+afterEach(() => vi.unstubAllGlobals());
+
 describe('Browse Detail browser history', () => {
+  it('reselects the original Browse root after repeated Detail visits so one browser Back reaches Home', async () => {
+    window.history.replaceState(null, '', '/media');
+    DaylightAPI.mockImplementation(async (url) => {
+      const items = url.startsWith('api/v1/list/?')
+        ? [{ id: 'plex:', title: 'Plex', itemType: 'container' }]
+        : url.startsWith('api/v1/list/plex?')
+          ? [{ id: 'plex:movies', title: 'Movies', itemType: 'container' }]
+          : [{ id: 'plex:e2', title: 'Episode 2', type: 'episode', itemType: 'item' }];
+      return { items, total: items.length };
+    });
+    render(<MantineProvider><CastTargetProvider><NavProvider>
+      <NavigationSurface />
+    </NavProvider></CastTargetProvider></MantineProvider>);
+    const openDetail = async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Browse area' }));
+      const source = await screen.findByTestId('browse-open-plex:');
+      screen.getByTestId('scroll-host').scrollTop = 137;
+      fireEvent.click(source);
+      fireEvent.click(await screen.findByTestId('browse-open-plex:movies'));
+      fireEvent.click(await screen.findByTestId('browse-detail-plex:e2'));
+      expect(screen.getByTestId('detail-route')).toHaveTextContent('plex:e2');
+    };
+
+    await openDetail();
+    fireEvent.click(screen.getByRole('button', { name: 'Detail Back' }));
+    await screen.findByTestId('browse-detail-plex:e2');
+    await openDetail();
+    fireEvent.click(screen.getByRole('button', { name: 'Browse area' }));
+    await screen.findByTestId('browse-open-plex:');
+    expect(screen.getByTestId('scroll-host').scrollTop).toBe(137);
+    expect(screen.getByTestId('browse-open-plex:')).toHaveFocus();
+    expect(window.history.state.mediaNavStack.at(-1).params).toEqual({
+      path: '', scrollTop: 137, focusedId: 'plex:',
+    });
+
+    act(() => window.history.back());
+
+    await screen.findByTestId('home-route');
+    expect(location.search).toBe('');
+    expect(window.history.state.mediaNavStack).toEqual([{ view: 'home', params: {} }]);
+  });
+
   // Omitting currentPatch from either Detail entrypoint must lose the live
   // viewport on Back, even when this browse entry already has an old snapshot.
   it.each(['Details', 'More → Open detail'])('%s restores the exact path, scroll, and triggering leaf on browser Back', async (entrypoint) => {
