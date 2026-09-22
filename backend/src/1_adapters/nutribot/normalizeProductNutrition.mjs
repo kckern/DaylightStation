@@ -1,18 +1,40 @@
 const fields = { calories: 'energy-kcal', protein: 'proteins', carbs: 'carbohydrates',
   fat: 'fat', fiber: 'fiber', sugar: 'sugars', sodium: 'sodium', cholesterol: 'cholesterol' };
 const numeric = value => value !== '' && value != null && Number.isFinite(Number(value)) && Number(value) >= 0 ? Number(value) : null;
+// OFF sets serving_quantity_unit to `ml` whenever the label says "cup", even
+// when the same label prints the mass: "1/4 cup (28 g)". A printed gram figure
+// is the better fact. A real volume ("325 mL") has no gram figure and stays ml.
+const labelGrams = text => {
+  const match = String(text || '').match(/(\d+(?:[.,]\d+)?)\s*(?:g|grams?)\b/i);
+  return match ? Number(match[1].replace(',', '.')) : null;
+};
 
 /** OFF's suffixed values are explicit bases. Bare values require nutrition_data_per.
  * No mass is inferred for liquid servings; the returned serving remains ml.
+ * A gram figure printed in serving_size beats OFF's unit guess. With no usable
+ * serving but known per-100 values, the serving becomes 100 g/ml
+ * (nutritionLookup.servingFallback = 'per100', servingText = the label's words).
  */
 export function normalizeProductNutrition(product) {
   const n = product.nutriments || {};
-  const quantity = numeric(product.serving_quantity);
-  const unit = product.serving_quantity_unit || null;
-  const servingKnown = quantity > 0 && ['g', 'ml'].includes(unit);
+  const printedGrams = labelGrams(product.serving_size);
+  let quantity = numeric(product.serving_quantity);
+  let unit = product.serving_quantity_unit || null;
+  if (printedGrams > 0) { quantity = printedGrams; unit = 'g'; }
+  let servingKnown = quantity > 0 && ['g', 'ml'].includes(unit);
+  // No usable serving, but per-100 values exist: log 100 g/ml of it rather than
+  // nulls. A known zero (diet soda) must stay a zero. The caller may replace the
+  // 100 with an estimate of the label's own serving (servingText).
+  let servingFallback = null;
+  const declaredPer100 = ['100g', '100ml'].includes(product.nutrition_data_per);
+  if (!servingKnown && Object.values(fields).some(source => numeric(n[`${source}_100g`]) !== null
+    || (declaredPer100 && numeric(n[source]) !== null))) {
+    const liquid = product.nutrition_data_per === '100ml' || /\b(ml|l|fl\.? ?oz)\b/i.test(String(product.quantity || ''));
+    quantity = 100; unit = liquid ? 'ml' : 'g'; servingKnown = true; servingFallback = 'per100';
+  }
   const warnings = [];
   const conflicts = [];
-  if (!servingKnown) warnings.push('Serving size or unit is missing. Check the product label.');
+  if (!servingKnown || servingFallback) warnings.push('Serving size or unit is missing. Check the product label.');
   const serving = { size: servingKnown ? quantity : 1, unit: servingKnown ? unit : 'serving' };
   const nutrition = {}, basis = {}, missing = [];
   for (const [key, source] of Object.entries(fields)) {
@@ -42,7 +64,8 @@ export function normalizeProductNutrition(product) {
     basis[key] = value === null ? null : selectedBasis;
   }
   if (missing.length) warnings.push(`Nutrition unavailable: ${missing.join(', ')}.`);
-  return { serving, nutrition, nutritionLookup: { source: 'openfoodfacts', basis, missing, warnings, conflicts, servingVerified: servingKnown } };
+  return { serving, nutrition, nutritionLookup: { source: 'openfoodfacts', basis, missing, warnings, conflicts,
+    servingVerified: servingKnown && !servingFallback, servingFallback, servingText: product.serving_size || null } };
 }
 
 /** Nutritionix nf_* fields describe one serving; serving_weight_grams is mass,
