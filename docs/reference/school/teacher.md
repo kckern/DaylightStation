@@ -415,7 +415,7 @@ flowchart TD
     SUB["Work submitted — paper scanned or screen answered"] --> AUTO["The one grading engine marks what it can"]
     AUTO --> AMB{"Anything it could not mark?"}
     AMB -->|no| GRADED["graded event · percent + the passing bar in effect"]
-    AMB -->|"ambiguous · blank · free_response"| Q["Review queue — one item per question"]
+    AMB -->|"ambiguous · blank · free_response · key-alignment-suspected"| Q["Review queue — one item per question (or one whole-sheet check)"]
 
     Q --> RES["Teacher marks it Correct or Incorrect<br/>plus an optional note the child receives"]
     Q --> VOID["Teacher marks it Can't mark this<br/>note REQUIRED — the child is told why"]
@@ -440,6 +440,16 @@ flowchart TD
 authored one, the child's given answer, and how long they have been waiting. A
 verdict plus an optional ≤120-character note — the same cap receipts and
 agendas enforce, because the note is delivered to the child.
+
+A fourth reason, `key-alignment-suspected`, is not a question at all: the OMR
+key-alignment check flags a whole printed answer sheet whose marks would
+score meaningfully better under a small row shift than they do literally, and
+holds the session at `submitted` for a teacher's sign-off the same way an
+ambiguous bubble does. Its synthetic queue entry carries the evidence
+sentence on `rubric` (grown-up-only) rather than `prompt`, and is excluded
+from every roster/denominator a review-queue reader builds — resolving it,
+even with a truth-value verdict instead of `void`, never changes the child's
+score.
 
 **Three verdicts, not two.** A teacher who genuinely cannot mark something —
 an unreadable scan, a question that needs the child in the room — chooses
@@ -469,7 +479,12 @@ grading time stays out of the score when a later correction leaves it
 `unchanged` — it is not re-scored as wrong — and re-enters the moment a
 grown-up marks it `correct` or `incorrect`, which un-voids it exactly as the
 grading lane does. The correction form offers no `void` option: `unchanged` is
-how a still-unmarkable question is left alone.
+how a still-unmarkable question is left alone. The same synthetic
+`key-alignment-suspected` entry that never joins the score at grading time
+never joins it at correction time either — **Fix a marked answer**'s own
+question roster, when a session has no worksheet instance snapshot to read
+(the usual case for a printed answer sheet), falls back to the review
+queue's own items, so this entry is excluded there too.
 
 With both finishers wired, resolving the **last** pending item of a session
 grades and closes it in the same act. Without them, resolve-only.
