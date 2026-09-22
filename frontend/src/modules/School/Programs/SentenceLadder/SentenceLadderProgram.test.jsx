@@ -3096,6 +3096,27 @@ describe('recording in pieces', () => {
     expect(languageLog.capture).toHaveBeenCalledWith('pieces-abandoned', { seq: 1, pieces: 1 });
   });
 
+  it('a join that never settles gives up and falls back to saying it in one go', async () => {
+    joinTakeMock.mockImplementationOnce(() => new Promise(() => {}));
+    const model = modelPlayer(); fakeMic(); recordingDay(); program();
+    const { languageLog } = await import('./languageLog.js');
+    await firstPiece(model);
+    await screen.findByRole('button', { name: 'Next part' });
+    pressKey(' ');
+    await sayPiece(900);
+    await screen.findByRole('button', { name: 'Finish' });
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      pressKey(' ');
+      expect(screen.getByRole('status', { name: 'Putting it together' })).toBeTruthy();
+      await act(async () => { vi.advanceTimersByTime(10_000); });
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(await screen.findByText(/say it in one go/i)).toBeInTheDocument();
+    expect(languageLog.capture).toHaveBeenCalledWith('stitch-failed', { seq: 1, pieces: 2, error: 'timeout' });
+  });
+
   it('a join that fails falls back to saying it in one go', async () => {
     joinTakeMock.mockRejectedValueOnce(new Error('no-web-audio'));
     const model = modelPlayer(); fakeMic(); recordingDay(); program();

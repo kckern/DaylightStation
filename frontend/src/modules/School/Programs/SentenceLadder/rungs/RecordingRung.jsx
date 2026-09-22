@@ -81,6 +81,22 @@ const MIN_TAKE_MS = 1200;
 /** The take is kept as this many mono samples — plenty for a band a few
  *  hundred bars wide, cheap enough to bin every resize. */
 const TAKE_SAMPLES = 4096;
+/**
+ * How long joining the pieces may take before it is given up as failed. The
+ * join is a few decodes and one encode of a sentence — well under a second on
+ * the Portal — so ten seconds is only reached when a decode has hung, and a
+ * learner left on "Joining" forever has no way on.
+ */
+const JOIN_TIMEOUT_MS = 10000;
+
+/** `promise`, or a rejection with Error('timeout') after `ms`. */
+function withTimeout(promise, ms) {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error('timeout')), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
 
 /** A control that owns its own keys — a focused button's Enter, a text field's
  *  Backspace. The rung's keys never fire over one of these. */
@@ -538,9 +554,10 @@ export default function RecordingRung({
    * in one go. Loudness was judged per piece, so the joined take is judged on
    * length alone (`measurable: false`).
    *
-   * A JOIN THAT FAILS (no Web Audio, a piece that will not decode) falls back
-   * to the one-go rung for this sentence: the pieces cannot become a
-   * recording, and offering the cut again would fail the same way.
+   * A JOIN THAT FAILS (no Web Audio, a piece that will not decode, or no
+   * answer within JOIN_TIMEOUT_MS) falls back to the one-go rung for this
+   * sentence: the pieces cannot become a recording, and offering the cut
+   * again would fail the same way.
    */
   const finishPieces = useCallback(async () => {
     const state = piecesRef.current;
@@ -549,7 +566,7 @@ export default function RecordingRung({
     setPhase('joining');
     let blob;
     try {
-      blob = await joinTake(state.takes.map((t) => t.blob));
+      blob = await withTimeout(joinTake(state.takes.map((t) => t.blob)), JOIN_TIMEOUT_MS);
     } catch (err) {
       if (joinRef.current !== token) return;
       languageLog.capture('stitch-failed', { seq: entry.seq, pieces: state.takes.length, error: err?.message });
