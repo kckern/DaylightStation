@@ -10,10 +10,10 @@ const make = (gatewayHit, { ai, icons } = {}) => {
   const foodLogStore = { save: vi.fn(async log => { saved.push(log); }), findById: vi.fn(async () => saved.at(-1)) };
   const reviewService = { capture: vi.fn(async () => {}) };
   const upcGateway = { lookup: vi.fn(async () => gatewayHit) };
+  const logger = { debug() {}, info: vi.fn(), warn() {}, error() {} };
   const uc = new LogFoodFromUPC({ messagingGateway: messaging(), upcGateway, foodLogStore, reviewService,
-    aiGateway: ai, foodIconsString: icons,
-    logger: { debug() {}, info: vi.fn(), warn() {}, error() {} } });
-  return { uc, upcGateway, foodLogStore, reviewService, saved };
+    aiGateway: ai, foodIconsString: icons, logger });
+  return { uc, upcGateway, foodLogStore, reviewService, saved, logger };
 };
 
 describe('LogFoodFromUPC intake gate', () => {
@@ -156,6 +156,61 @@ describe('LogFoodFromUPC icon and serving', () => {
     const item = foodLogStore.save.mock.calls[0][0].items[0];
     expect(item.grams).toBe(32);
     expect(item.calories).toBeCloseTo(210, 0);
+  });
+
+  const withEstimate = servingGrams => ({ chat: vi.fn(async () => JSON.stringify({ icon: 'peanut-butter', noomColor: 'orange', servingGrams })) });
+
+  it('accepts a numeric string estimate', async () => {
+    const { uc, foodLogStore } = make(pb, { ai: withEstimate('32'), icons: 'peanut-butter' });
+    await uc.execute({ userId: 'u', conversationId: 'c', upc: '037600225250', headless: true });
+    const item = foodLogStore.save.mock.calls[0][0].items[0];
+    expect(item.grams).toBe(32);
+    expect(item.captureEvidence.assumption).toBe('ai-serving-estimate');
+  });
+
+  it.each([[1500], [0], [-5], ['abc'], [null]])('rejects an estimate of %j and keeps the per-100 serving', async servingGrams => {
+    const { uc, foodLogStore, logger } = make(pb, { ai: withEstimate(servingGrams), icons: 'peanut-butter' });
+    await uc.execute({ userId: 'u', conversationId: 'c', upc: '037600225250', headless: true });
+    const item = foodLogStore.save.mock.calls[0][0].items[0];
+    expect(item.grams).toBe(100);
+    expect(item.calories).toBeCloseTo(656.25, 2);
+    expect(item.captureEvidence.assumption).toBe('per100');
+    if (servingGrams !== null) expect(logger.info).toHaveBeenCalledWith('upc.serving.estimateRejected', expect.objectContaining({ upc: '037600225250' }));
+  });
+
+  it('rejects an estimate larger than the whole package', async () => {
+    const small = { ...pb, nutritionLookup: { ...pb.nutritionLookup, packageGrams: 25 } };
+    const { uc, foodLogStore, logger } = make(small, { ai: withEstimate(32), icons: 'peanut-butter' });
+    await uc.execute({ userId: 'u', conversationId: 'c', upc: '037600225250', headless: true });
+    expect(foodLogStore.save.mock.calls[0][0].items[0].grams).toBe(100);
+    expect(logger.info).toHaveBeenCalledWith('upc.serving.estimateRejected', expect.objectContaining({ grams: 32, maxGrams: 25 }));
+  });
+
+  it('the estimate prompt names the per-100 g basis and shows servingGrams in the example', async () => {
+    const chat = vi.fn(async () => '{"icon":"peanut-butter","noomColor":"orange","servingGrams":32}');
+    const { uc } = make(pb, { ai: { chat }, icons: 'peanut-butter' });
+    await uc.execute({ userId: 'u', conversationId: 'c', upc: '037600225250', headless: true });
+    const [system, user] = chat.mock.calls[0][0].map(m => m.content);
+    expect(system).toContain('"servingGrams"');
+    expect(user).toContain('Calories per 100 g: 656.25');
+    expect(user).toContain('Label serving: 2 tbsp');
+  });
+
+  it('a millilitre fallback never asks for servingGrams', async () => {
+    const chat = vi.fn(async () => '{"icon":"peanut-butter","noomColor":"orange"}');
+    const coke = { ...pb, serving: { size: 100, unit: 'ml' } };
+    const { uc } = make(coke, { ai: { chat }, icons: 'peanut-butter' });
+    await uc.execute({ userId: 'u', conversationId: 'c', upc: '037600225250', headless: true });
+    expect(chat.mock.calls[0][0].map(m => m.content).join('\n')).not.toContain('servingGrams');
+  });
+
+  it('a per-100 fallback with unknown calories (only sodium known) is quarantined, not committed', async () => {
+    const sodiumOnly = { ...pb, nutrition: { calories: null, protein: null, carbs: null, fat: null, sodium: 120 } };
+    const { uc, reviewService, foodLogStore } = make(sodiumOnly, { ai: withEstimate(32), icons: 'peanut-butter' });
+    const out = await uc.execute({ userId: 'u', conversationId: 'c', upc: '037600225250', headless: true });
+    expect(out).toMatchObject({ success: true, quarantined: true, committed: false });
+    expect(reviewService.capture).not.toHaveBeenCalled();
+    expect(foodLogStore.save.mock.calls[0][0].metadata.quarantined).toBe(true);
   });
 
   it('asks for servingGrams only when the serving is a per-100 fallback', async () => {

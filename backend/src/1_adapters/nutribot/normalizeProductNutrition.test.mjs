@@ -94,3 +94,10 @@ describe('volume fallback', () => {
     expect(value.nutritionLookup.servingFallback).toBe('per100');
   });
 });
+
+describe('package mass', () => {
+  it('reports the package mass in grams when the pack size prints it, else null', () => {
+    expect(normalizeProductNutrition({ quantity: '16 oz (454 g)', nutriments: {} }).nutritionLookup.packageGrams).toBe(454);
+    expect(normalizeProductNutrition({ quantity: '12 fl oz', nutriments: {} }).nutritionLookup.packageGrams).toBeNull();
+  });
+});
