@@ -118,6 +118,7 @@ import { createScreenPresenceService } from '#composition/modules/screenPresence
 import { createPianoScreenPowerSync } from '#composition/modules/pianoScreenPowerSync.mjs';
 import { createPianoMidiWake } from '#composition/modules/pianoMidiWake.mjs';
 import { createStateGatesModule } from '#composition/modules/stateGates.mjs';
+import { KioskFrictionTracker } from '#apps/devices/services/KioskFrictionTracker.mjs';
 
 // AI router import
 import { createAIRouter } from './4_api/v1/routers/ai.mjs';
@@ -1536,6 +1537,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // nor a generic event-bus message can impersonate these publishers.
   const schoolStateGatesPrincipal = Object.freeze({ service: 'school-state-gates-producer' });
   const fitnessStateGatesPrincipal = Object.freeze({ service: 'fitness-state-gates-producer' });
+  // Threaded to KioskFrictionTracker in a later task — see kiosk-friction-detection Task 3.
+  const kioskFrictionStateGatesPrincipal = Object.freeze({ service: 'kiosk-friction-tracker' });
   const stateGatesProducerScheduler = Object.freeze({
     schedule(delayMs, task) {
       const timer = setTimeout(task, delayMs);
@@ -1552,6 +1555,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     producerPrincipals: {
       school: schoolStateGatesPrincipal,
       fitness: fitnessStateGatesPrincipal,
+      'kiosk-friction-tracker': kioskFrictionStateGatesPrincipal,
     },
     logger: rootLogger,
   });
@@ -3869,6 +3873,28 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'piano-midi-wake' }),
   });
 
+  // Kiosk unsupervised-input friction (Portal, yellow-room tablet, …) →
+  // State Gates. Republishes a per-device-per-day `kiosk.friction-score`
+  // claim (corrected in place, strictly increasing sourceRevision) that the
+  // installed `kiosk.friction-ok` gate/`kiosk.access` entitlement (fail_open)
+  // read. `stateGatesModule`/`kioskFrictionStateGatesPrincipal` are wired
+  // above alongside `producerPrincipals`. windowMs AND denialThreshold both
+  // mirror the installed policy's `kiosk.friction-ok` gate — see the
+  // "PROVISIONAL threshold" comment on that gate in
+  // installedStateGatesPolicy.mjs (currently `lt 5`); keep all three in
+  // sync if any changes. denialThreshold only affects the tracker's publish
+  // debounce (a ping that crosses it always publishes immediately, so a
+  // cooldown starts/ends promptly) — left at the class default otherwise.
+  const kioskFrictionTracker = new KioskFrictionTracker({
+    ingress: stateGatesModule.ingress,
+    householdId,
+    principal: kioskFrictionStateGatesPrincipal,
+    windowMs: 5 * 60 * 1000,
+    denialThreshold: 5,
+    scheduler: new NodeApplicationScheduler(),
+    logger: rootLogger.child({ module: 'kiosk-friction-tracker' }),
+  });
+
   // Per-device "is a video playing" registry (excludes ArtMode scenes), fed by
   // the same `screen.presence` heartbeat. Read by the ambient scheduler.
   const screenContentTracker = new ScreenContentTracker({
@@ -4084,6 +4110,10 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       tokenRegistry: schoolCalc.tokenRegistry ?? null,
       schoolCalcActionResolver: schoolCalc.actionResolver ?? null,
       schoolCalcStudies: schoolCalc.wired ? schoolCalc.studySessions : null,
+      // Same instance Task 3's router reads — a rejected panel code is the
+      // first real friction signal source (see the `kioskFrictionTracker`
+      // construction above, alongside `kioskFrictionStateGatesPrincipal`).
+      kioskFrictionTracker,
       logger: schoolLifecycleLogger
     });
   } catch (err) {
@@ -4822,6 +4852,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     configService,
     loadFile,
     pianoMidiWakeService,
+    kioskFrictionTracker,
     logger: rootLogger.child({ module: 'device-api' })
   });
 
