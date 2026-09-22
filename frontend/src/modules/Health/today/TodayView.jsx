@@ -1,4 +1,4 @@
-import { lazy, Suspense, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { PortionContext, usePortionDraft } from './usePortionDraft.js';
 import { nutrientSummary } from '@shared-contracts/nutrition/countedRows.mjs';
@@ -47,12 +47,15 @@ export function TodayView({ active = true, sidebarTarget, onSetupGoals, onCoachT
   const preview = usePortionDraft(day, date);
   // The quick bar's + names a meal; that meal is shown (even if empty) and its
   // add row takes focus. `n` makes a repeat tap on the same meal refocus.
-  // The request is pinned to the day it was made on: sections remount per
-  // date, and a remounted add row with a live request would grab focus (and
-  // the phone keyboard) on every date change.
+  // A request is spent once the user leaves its day. Sections remount per
+  // date, so a live request would refocus its add row (and pop the phone
+  // keyboard) on every visit back; leaving also drops the reveal of an empty
+  // meal. The render-time date check covers the one render before the
+  // effect clears it.
   const [focusRequestState, setFocusRequest] = useState(null);
   const focusRequest = focusRequestState?.date === date ? focusRequestState : null;
   const revealMeal = bucket => setFocusRequest(prev => ({ bucket, date, n: (prev?.n || 0) + 1 }));
+  useEffect(() => { setFocusRequest(prev => (prev && prev.date !== date ? null : prev)); }, [date]);
   const [mealUndo, setMealUndo] = useState(null);
   const mealUndoOperation = useRef(null);   // bucketId | null — F5 renders the combobox here
   const [editingRow, setEditingRow] = useState(null); // row | null — F6 renders the edit sheet
