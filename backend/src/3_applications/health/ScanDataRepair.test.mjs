@@ -86,6 +86,21 @@ describe('planScanDataRepair', () => {
     expect(plan.updates[0].changes).toEqual({ grams: 85, unit: 'g', amount: 85 });
   });
 
+  it('leaves an ml row alone when its serving basis is not ml, and reports it', () => {
+    const plan = planScanDataRepair([row({ id: 'odd', item: 'OIKOS PRO PLAIN', unit: 'ml', amount: 170, grams: null,
+      originalQuantity: { amount: 1, unit: 'g', grams: null }, manualFields: ['name'] })], options({ deleteIds: [] }));
+    expect(plan.updates).toEqual([]);
+    expect(plan.report.mlUnresolved).toEqual([{ id: 'odd', name: 'OIKOS PRO PLAIN', reason: 'serving basis is g, not ml' }]);
+  });
+
+  it('a person\'s icon choice is kept against the reviewed table, but a retired one is still replaced', () => {
+    const plan = planScanDataRepair([
+      row({ id: 'kept', item: 'Pita Bread', icon: 'salad', manualFields: ['icon'], source: 'text' }),
+      row({ id: 'flat', item: 'Pita Bread', icon: 'pitasandwich', manualFields: ['icon'], source: 'text' }),
+    ], options({ deleteIds: [] }));
+    expect(plan.updates.map(u => [u.id, u.changes])).toEqual([['flat', { icon: 'pita-bread' }]]);
+  });
+
   it('counts a row stored in both the hot file and an archive once', () => {
     const plan = planScanDataRepair([...rows(), row({ id: 'feta', item: 'Feta Cheese', icon: 'cheese', source: 'text' })], options());
     expect(plan.updates.filter(u => u.id === 'feta')).toHaveLength(1);
