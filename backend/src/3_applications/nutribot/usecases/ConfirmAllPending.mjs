@@ -5,6 +5,8 @@
  * Confirms all pending food logs for a user.
  */
 
+import { withoutQuarantined } from '#domains/nutrition/services/quarantine.mjs';
+
 /**
  * Confirm all pending logs use case
  */
@@ -41,7 +43,9 @@ export class ConfirmAllPending {
 
     try {
       // 1. Get all pending logs
-      const pendingLogs = await this.#foodLogStore.findPending(userId);
+      // A quarantined capture (calories unknown) is confirmed only by a person
+      // supplying its calories in Needs Review, never in bulk.
+      const pendingLogs = withoutQuarantined(await this.#foodLogStore.findPending(userId));
 
       if (pendingLogs.length === 0) {
         this.#logger.info?.('confirmAllPending.noPending', { userId });
