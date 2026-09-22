@@ -469,3 +469,4 @@ The corollary bit twice in this sweep: `feat/teacher-workspace-ia` and `feature/
 | 2026-09-22 | fix/timed-grading-display | 99842696d | Timed runs paint the judge's recorded verdicts on every renderer; timing-aware result copy. Merged via fix/timed-grading. |
 | 2026-09-22 | fix/timed-grading-click | 2d18c7062 | Metronome click anchored to the grading clock with a calibrated lead; grown-up click-timing calibration. Merged via fix/timed-grading. |
 | 2026-09-22 | fix/timed-grading | b1b55259c | Integration branch for the timed-grading fix (design, voided attempts, click wiring); fast-forwarded into main. |
+| 2026-09-22 | feat/korean-word-ladder | 4ab20df3da | Korean vocab word ladder (lexicon decks, per-word ladder, review run, printed OMR quiz fold); merged to main as b5b9957dc3, quiz-choices fix e792921397 |
