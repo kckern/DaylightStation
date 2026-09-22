@@ -518,6 +518,74 @@ but ships nothing unless `inputTelemetry.enabled` or
 raw MIDI input is intentionally retained; ordinary telemetry logs counts,
 timings, classifications, and persistence evidence without pitches.
 
+## Metronome click: anchored grid and click lead
+
+`clickScheduler.js` schedules every click on the AudioContext clock ahead of
+time, so main-thread jank cannot move it. It has two ways to place beat 0:
+
+- **Free (default, every existing caller).** `start(bpm)` puts the first beat
+  80 ms after "now" (or `firstBeatDelayS`) and counts from there. Nothing ties
+  it to any other clock.
+- **Anchored.** `start(bpm, { anchorEpochMs, leadMs })` puts beat *n* at the
+  epoch time `anchorEpochMs + n·period − leadMs`. The anchor is the grading
+  clock's beat 0 on the `Date.now()` clock, so the click and the judge share one
+  grid. Beats already in the past are skipped but *n* keeps counting, so phase
+  and the bar accent stay on the grid; `setBpm` retunes from the next beat as
+  before. `useMetronomeClick` exposes this as the optional `anchorMs` / `leadMs`
+  props; changing either restarts the grid, and `startDelayMs` is ignored.
+
+**Epoch → audio clock.** Taken once at start (`epochToContextMap`):
+`ac.getOutputTimestamp()` when it returns a sane pair (the sample leaving the
+speaker, and when) — this already includes the browser's own output latency;
+else `ac.currentTime` paired with `Date.now()`, minus `outputLatency +
+baseLatency` when the context has `getOutputTimestamp` but has not rendered yet
+(so both paths mean "audible, as far as the browser knows"). `start` returns
+`{ anchored, mapping, skipped, leadMs, firstBeatContextTime }` for diagnostics.
+
+**Click lead** (`clickLead.js` → `resolveClickLead(pianoConfig, audioContext)`)
+is the latency the browser does not know about — on the piano tablet the click
+goes out over Bluetooth A2DP (~190–320 ms measured), and the key presses come
+back over BLE-MIDI:
+
+| Source | When | leadMs |
+|---|---|---|
+| `config` | `timing.clickLeadMs` is set (per piano `pianos.{id}.timing.clickLeadMs` over shared `timing.clickLeadMs`; resolved by `resolvePianoConfig`, default `null`) | the configured value (0 counts) |
+| `browser` | no config, and the context has **no** `getOutputTimestamp` (the mapping could not fold latency in) | `(outputLatency + baseLatency) × 1000`, when > 0 |
+| `none` | otherwise | 0 |
+
+The browser figure is deliberately not added on a context that has
+`getOutputTimestamp`: the mapping already applied it, and adding it again would
+play the click early by twice the browser latency. A run that anchors its click
+calls `logClickAnchored(lead, { anchorMs, ... })`, which emits
+`piano.click.anchored` with `leadMs`, `source`, `outputLatencyMs`,
+`baseLatencyMs`, `anchorMs`.
+
+**Calibration** (grown-up): Piano maintenance (long-press the sound chip) →
+**Click timing**. It plays 24 anchored clicks at 60 BPM with `leadMs: 0`; the
+grown-up plays any key on each click they hear. Each note-on timestamp from the
+live-note store is matched to its nearest click (presses more than half a
+period from every click are dropped; two presses on one click keep the closer).
+The screen shows the **median offset** (press − click) and the **spread as the
+interquartile range** (Q3 − Q1). Save is offered only with **≥ 16 matched
+presses and IQR ≤ 60 ms**; it writes the rounded median to
+`timing.clickLeadMs` — under `pianos.{id}` when the file has that piano's
+block, else on the shared top level — by editing the raw YAML (comments kept)
+and `PUT api/v1/admin/apps/piano/config`, then reloads the kiosk's config.
+Because the press timestamps travel the same input path the grader reads, the
+measured value covers output latency and input lag together. Math:
+`PianoKiosk/clickCalibrationMath.js`; screen: `PianoKiosk/ClickCalibration.jsx`;
+write: `PianoKiosk/pianoConfigWrite.js`. Logs:
+`piano.click.calibration.start` / `.result` (matched, presses, medianMs,
+spreadMs, spreadKind, canSave, reason) / `.save` / `.save-failed`.
+
+```yaml
+# data/household/piano/config.yml
+pianos:
+  {pianoId}:
+    timing:
+      clickLeadMs: 280   # written by Click timing; null/absent = not measured
+```
+
 ## Config (`piano.yml` → `sheetmusic:`)
 
 Resolved (with defaults) by `sheetMusicConfig.resolveSheetMusicConfig`:
@@ -625,13 +693,14 @@ during an active run so the judge and falling highway cannot jump timelines.
 | `NoteHighlightLayer.jsx` / `MeasureGradeLayer.jsx` | per-notehead chips / per-measure R/Y/G washes |
 | `FocusRangeLayer.jsx` | loop range's per-system tint band |
 | `countIn.js` / `useCountIn.js` | count-in beats before a run |
-| `clickScheduler.js` | look-ahead scheduling for the metronome click |
+| `clickScheduler.js` | look-ahead scheduling for the metronome click; anchored grid (`anchorEpochMs`/`leadMs`) + `epochToContextMap` |
+| `clickLead.js` | `resolveClickLead` (config › browser › none) and the `piano.click.anchored` log helper |
 | `RunSummary.jsx` | Polish end-of-run summary, extended with run score/tier + tier-best strip |
 | `activeParts.js` / `focusRange.js` | staff-responsibility model / practice-range math, including the next step the active hands actually play |
 | `useLearnAssessmentProjection.js` | Binds Learn MIDI to the canonical runtime and projects classified events into range-aware cursor movement; owns no matcher state |
 | `useScoreEvaluator.js` | Polish timed-attempt lifecycle and canonical measure-span closure |
 | `assessmentProjections.js` | Sheet-only Polish tally and worst-range projections |
-| `useMetronomeClick.js` / `click.js` | click scheduler / WebAudio blip |
+| `useMetronomeClick.js` / `click.js` | click scheduler hook (optional `anchorMs`/`leadMs`) / WebAudio blip |
 | `pedalEdge.js` | Perform pedal rising-edge |
 | `sheetMusicConfig.js` | `sheetmusic:` config resolver (modes, pedals, scoring, hand preference) |
 | `useScoreTransport.js` | rAF playback engine (+ `onFire` jitter) |

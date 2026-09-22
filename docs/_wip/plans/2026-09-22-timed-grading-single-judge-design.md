@@ -129,6 +129,12 @@ Plus `timedRunSummary(snapshot.result, snapshot)` → `{ kind: 'passed' |
   timestamp) and spread; writes `timing.clickLeadMs` when spread ≤ 60 ms.
 - Log `piano.click.anchored` per run with `leadMs`, `source`, `outputLatency`,
   `baseLatency`.
+- Implemented 2026-09-22 (see `docs/reference/piano/sheet-music-player.md`,
+  "Metronome click"). Refinement: `browser` applies only when the context lacks
+  `getOutputTimestamp()` — that mapping already includes the browser's output
+  latency, so adding it again would double it. Spread is the IQR. Entry point:
+  Piano maintenance → Click timing. Log helper: `logClickAnchored(lead, { anchorMs })`
+  in `modes/SheetMusic/clickLead.js`.
 
 ## Voiding today's runs
 

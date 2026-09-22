@@ -18,6 +18,7 @@ vi.mock('./usePianoScreenOff.js', () => ({ usePianoScreenOff: () => screenOff })
 vi.mock('./useScreenControl.js', () => ({ screenOffFailureMessage: () => 'Couldn’t turn off display.' }));
 vi.mock('../../../lib/fkb.js', () => ({ launchAndroidTarget }));
 vi.mock('../../../lib/api.mjs', () => ({ DaylightAPI: daylightAPI }));
+vi.mock('./ClickCalibration.jsx', () => ({ default: ({ onBack }) => <div data-testid="click-calibration"><button type="button" onClick={onBack}>Back</button></div> }));
 vi.mock('./PianoMidiMonitor.jsx', () => ({ default: () => <div data-testid="midi-monitor">MIDI log</div> }));
 vi.mock('@/modules/Feedback/FeedbackOverlay.jsx', () => ({ default: ({ open, context }) => open ? <div data-testid="feedback">{JSON.stringify(context)}</div> : null }));
 
@@ -141,6 +142,17 @@ describe('Piano maintenance', () => {
     await act(async () => { fireEvent.click(armed); });
     expect(screenOff).toHaveBeenCalledTimes(1);
     expect(screen.getByRole('status')).toHaveTextContent('Display turned off.');
+  });
+
+  it('opens Click timing (the calibration) in place of the tiles, and Back returns', () => {
+    renderDrawer();
+    expect(screen.queryByTestId('click-calibration')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Click timing' }));
+    expect(screen.getByTestId('click-calibration')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Diagnostics' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+    expect(screen.queryByTestId('click-calibration')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Click timing' })).toBeTruthy();
   });
 
   it('mounts the read-only MIDI log only while Diagnostics is shown, with a Back tile', () => {
