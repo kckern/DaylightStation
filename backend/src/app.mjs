@@ -5308,12 +5308,13 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     };
   };
   const shutdownCue = homeAutomationAdapters.haGateway?.callService ? {
-    announce: ({ lockedUntil, source }) => {
+    announce: ({ lockedUntil, source, notification }) => {
       const script = readShutdownConfig().home_assistant?.script;
       if (!script) return undefined;
+      // `notification` is the composed phone push; the HA script relays it.
       return homeAutomationAdapters.haGateway.callService('script', 'turn_on', {
         entity_id: script,
-        variables: { locked_until: lockedUntil, source },
+        variables: { locked_until: lockedUntil, source, notification: notification ?? null },
       });
     },
   } : null;
@@ -5323,6 +5324,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     getPolicy: getShutdownPolicy,
     cue: shutdownCue,
     portal,
+    timezone: configService.getTimezone?.() || null,
     scheduleEvery: (intervalMs, task) => {
       const timer = setInterval(task, intervalMs);
       timer.unref?.();
