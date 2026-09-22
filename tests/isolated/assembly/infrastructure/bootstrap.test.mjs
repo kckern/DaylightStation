@@ -35,6 +35,18 @@ describe('bootstrap', () => {
       expect(adapter.source).toBe('plex');
     });
 
+    it('registers LibbyAdapter only when its shared runtime dependencies are supplied', () => {
+      const client = { openLoan: () => Promise.resolve({}) };
+      const leases = { issue: () => ({ handle: 'opaque' }) };
+      const { registry } = createContentRegistry({ libby: { username: 'reader' } }, {
+        libbyClient: client,
+        libbyLeaseService: leases,
+      });
+
+      expect(registry.get('libby')).toMatchObject({ source: 'libby' });
+      expect(createContentRegistry({}).registry.get('libby')).toBeUndefined();
+    });
+
     it('registers LocalContentAdapter when dataPath provided', () => {
       const { registry } = createContentRegistry({
         mediaBasePath: '/media',

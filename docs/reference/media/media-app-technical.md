@@ -90,6 +90,160 @@ Resolves composite (visual + audio) content.
 
 **Response (200):** `{ visual: ...; audio: ... }`
 
+#### Libby active-loan playback
+
+An explicitly addressed audiobook loan uses these content IDs:
+
+- Book container: `libby:loan/<card-id>/<title-id>`
+- Stable part: `libby:loan/<card-id>/<title-id>/part/<part-key>`
+
+`GET /api/v1/play/libby/loan/<card-id>/<title-id>` verifies that the exact card
+and title pair occurs in the authenticated account's active loans. It returns
+the first audiobook part as a normal audio `PlayableItem`.
+`GET /api/v1/queue/libby/loan/<card-id>/<title-id>` returns the available parts
+in spine order, including the first. Legacy OpenBook may provide the full spine;
+modern browser fulfillment currently provides a bounded contiguous playback
+window at the official player's saved position. Each item has `mediaType: audio`, a part title,
+duration in seconds, and a same-origin cover `thumbnail`. Its public `metadata`
+retains `parentTitle` (book title), `subtitle`, `author`, `narrator`, and the
+zero-based `partIndex`. Book containers also expose subtitle, author, narrator,
+and loan expiry; part playables retain loan expiry internally.
+
+The provider open request derives `website_id` from the matched active loan's
+`websiteId` returned by synchronization. Callers supply only card/title identity;
+missing provider website identity fails closed before opening the audiobook.
+When the response supplies `openbook`, the client uses that legacy path and
+rejects malformed values. When `openbook` is absent, the backend sends exactly
+`{ webUrl, message, operationId }` to DaylightBrowser's private
+`POST /v1/operations/libby.bootstrap-loan` operation. The web URL and message
+come from the authenticated open response; no account token or credential path
+crosses this boundary. A missing/invalid web capability fails closed.
+
+The extension runs the official player bootstrap in a fresh Chromium context
+and returns only normalized book metadata and ordered unencrypted MP3 parts.
+Navigation and possession traffic stay on the authorized shell origin. Three
+version-pinned official static paths bind one exact Libby-controlled static
+origin for that operation. The operation starts official playback once, allows
+normal buffering for a fixed 20-second observation window beginning with the
+first exact capability, and enforces a hard 30-second capture deadline. The
+deadline returns a collected nonempty set and remains a timeout if none arrived.
+The context-wide route remains installed: after original-page CDP Fetch is
+enabled at the Request stage, it atomically flips from bootstrap rules to media
+rules. Only original-page/main-frame GET Media requests to the exact shell or
+exact HTTPS/default-port `audioclips.cdn.overdrive.com` origin continue.
+Before navigation, a context init script replaces `Worker` and `SharedWorker`
+with non-configurable throwing constructors in every page and frame realm;
+this closes target types that Playwright routing and page-scoped CDP do not
+intercept. It also replaces the shared `BaseAudioContext.prototype.audioWorklet`
+getter with a non-configurable facade whose `addModule` always throws, blocking
+both direct and Blob static-import AudioWorklet escapes while leaving
+`HTMLAudioElement` playback intact. Every exposed page worklet loader
+(`CSS.paintWorklet`, `CSS.layoutWorklet`, and `CSS.animationWorklet`, plus
+equivalent global surfaces when present) receives the same sealed facade;
+ordinary CSS/layout APIs remain intact. Service workers remain context-blocked.
+Popup/extra-page initial
+navigation, routable worker traffic, navigation, foreign, malformed,
+non-GET, and non-media requests abort at the context route before egress. CDP
+remains authoritative for every original-page redirect hop and captures each
+CDN capability from its paused request before continuation.
+Each distinct capability is
+checked with a credential-free one-byte range request whose body is canceled
+unread. Its declared total length must uniquely map to the BIF spine, and all
+matches must form a nonempty ordered contiguous window with no gaps. Because
+the official player can resume a saved position, that window may begin after
+original spine index zero. Returned indexes are normalized to zero-based array
+order while the original stable key, title, duration, and length are retained.
+Only that observed window and empty media headers are returned; no browser credential,
+header value, storage value, or media body is read or returned. Authorized
+media bytes may be buffered only by Chromium inside the bounded ephemeral
+context; they are never persisted or retained after teardown. Reporting,
+activity mutations, and browsing are blocked. Cleanup flips the context route
+to block-all, then the media page is closed while
+CDP enforcement remains active. Only after confirmed closure is interception
+disabled/detached and range probing begun. A close failure leaves enforcement
+installed while the pool closes/poisons the context or browser. The context is
+closed on completion, cancellation, and failure.
+The pool's combined operation signal aborts probes on caller disconnect or hard
+deadline, and slot ownership is retained through bounded settlement/cleanup;
+ignored cancellation poisons the pool. Provider URLs remain inside the adapter
+and its process-local leases. Browser metadata fills missing synchronized author and
+subtitle fields, while populated synchronized values retain precedence.
+
+The browser-backed result is an initial playback window at the official player's
+current saved position, not a full-book availability guarantee. Earlier parts
+and later-part continuation are not guaranteed, and no
+uncaptured capability is synthesized or inferred.
+
+Composition wires the application-owned bootstrap port to
+`DaylightBrowserLibbyGateway`. Its base URL is supplied by `browserBaseUrl`, then
+`DAYLIGHT_BROWSER_URL`, defaulting to `http://daylight-browser:3000`. Only HTTP
+root URLs using the fixed service name, localhost, or private/loopback IP
+literals are accepted. The gateway bounds requests to 64 KiB, streamed replies
+to 1 MiB, and the full operation to 75 seconds. Replies reject unknown fields,
+nonempty media headers, and parts outside the exact approved audio CDN origin.
+Sidecar outages, policy changes, timeout, or unsupported DRM fail closed. See the
+[DaylightBrowser runbook](../../runbooks/daylight-browser.md) for deployment
+and the sanitized live probe.
+
+Remote playback uses the standard Media screen: dispatch the book container via
+`GET /api/v1/device/<device-id>/load?queue=libby:loan/<card-id>/<title-id>`.
+The target resolves the queue and plays it through the browser AudioPlayer.
+This device endpoint changes playback state. Libby has no Playback Hub
+dependency and is not published to its catalog.
+
+The returned `mediaUrl` has the form
+`/api/v1/proxy/libby/stream/<opaque-handle>`. The handle is a short-lived,
+process-local bearer capability scoped to one loan part. The server stores only
+its digest as the lookup key. Clients MUST treat the URL as opaque and request
+it with ordinary single-byte-range audio semantics.
+
+The stream endpoint supports `GET`, `HEAD`, and one `Range: bytes=...` value.
+Successful responses preserve upstream `200`/`206`, range validators, and media
+length headers and always include `Cache-Control: private, no-store`. Expired or
+returned loans answer `410`; malformed or unsatisfiable ranges answer `416`;
+missing credentials answer `401`; provider failures answer `502`.
+
+Artwork uses `GET /api/v1/proxy/libby/cover/<card-id>/<title-id>`. Each request
+checks the active loan before relaying an image with `Cache-Control: private,
+no-store` and `X-Content-Type-Options: nosniff`. Returned or expired loans answer
+`410`, unavailable credentials `401`, provider failures `502`, and an unwired
+cover service `503`. The adapter owns artwork URL validation and permits only
+configured HTTPS cover hosts on the default port, at most three redirects,
+and `image/*` responses. Its dedicated cover allowlist does not authorize audio
+hosts. Account authorization and provider cookies never enter artwork requests.
+The application maps neutral outcomes; the API streams bytes with backpressure
+and cancels upstream work on disconnect. Provider artwork URLs remain internal.
+
+Libby is disabled unless the normal household app configuration explicitly
+opts in and names the user who owns the credential:
+
+`data/household/media/libby.yml` (or the corresponding selected household
+folder) contains:
+
+```yaml
+enabled: true
+credential_owner: <username>
+```
+
+The same validated owner is injected into both runtime composition and the
+content registry; disabled environments construct neither provider clients nor
+proxy services. Authentication is supplied externally at
+`data/users/{username}/auth/libby.yml`:
+
+```yaml
+token: <current-libby-jwt>
+```
+
+The backend reloads atomic file replacements and retains a previously valid
+token only until its JWT expiry. Tokens, provider cookies, signed media URLs,
+lease handles, and audio bytes are never persisted or logged. Redirects are
+restricted to configured Libby/OverDrive HTTPS origins, and credentials are
+stripped when an allowed redirect changes origin. Browser-derived signed CDN
+capabilities enter the relay with empty headers; the relay adds only the client
+Range request and never replays browser cookies or authorization. Encrypted or
+licensed spine formats fail closed; the integration performs no borrow, renew, return,
+account-browse, or remote-progress operations.
+
 ### 2.2 Search
 
 #### `GET /api/v1/content/query/search`

@@ -22,6 +22,8 @@ import { GratitudePrintPresentationService } from '#apps/gratitude/services/Grat
 import { ProviderFitnessContentCatalog } from '#adapters/fitness/ProviderFitnessContentCatalog.mjs';
 import { INSTALLED_STATE_GATES_POLICY } from './modules/installedStateGatesPolicy.mjs';
 import { YamlStateGatesPolicySource } from '#adapters/state-gates/index.mjs';
+import { createLibbyRuntime } from './modules/libby.mjs';
+import { LibbyStreamGateway } from '#adapters/content/media/libby/LibbyStreamGateway.mjs';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -438,6 +440,17 @@ const contracts = [
       expect(eventBus.publish).toHaveBeenCalledWith('school.language.day-complete', expect.objectContaining({
         learnerId: 'test-learner', corpusId: corpus.id, programId: 'sentence-ladder',
       }));
+    },
+  },
+  {
+    id: 'libby.stream-http-policy-stays-in-adapter',
+    verify() {
+      const runtime = createLibbyRuntime({ dataPath: '/fixture', username: 'reader', fetch: vi.fn() });
+      expect(runtime.streamGateway).toBeInstanceOf(LibbyStreamGateway);
+      expect(runtime.streamService).toEqual(expect.any(Object));
+      const applicationSource = fs.readFileSync(new URL('../3_applications/proxy/LibbyStreamService.mjs', import.meta.url), 'utf8');
+      expect(applicationSource).not.toMatch(/\bfetch\b|new URL|listen\.libbyapp|overdrive\.com|redirect:\s*['"]manual/);
+      runtime.leases.dispose();
     },
   },
   {

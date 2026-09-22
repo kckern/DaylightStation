@@ -7,6 +7,21 @@ import { splatPath } from '#api/utils/wildcard.mjs';
 const LONG_CACHE = 'public, max-age=31536000';
 const IMMUTABLE_CACHE = 'public, max-age=31536000, immutable';
 
+function waitForDrainOrClose(res) {
+  if (res.destroyed) return Promise.resolve('close');
+  return new Promise((resolve) => {
+    const finish = (event) => {
+      res.off('drain', onDrain);
+      res.off('close', onClose);
+      resolve(event);
+    };
+    const onDrain = () => finish('drain');
+    const onClose = () => finish('close');
+    res.once('drain', onDrain);
+    res.once('close', onClose);
+  });
+}
+
 /** Build HTTP passthrough handlers at composition time; these are not ports. */
 export function createProxyPassthroughHandlers(proxyService) {
   const bind = (service) => proxyService?.isConfigured?.(service)
@@ -30,9 +45,128 @@ export function createProxyRouter(config = {}) {
     compositeHeroService,
     remoteThumbnailService = null,
     dynamicStreamService,
+    libbyStreamService = null,
+    libbyCoverService = null,
     passthroughHandlers = {},
     logger = console,
   } = config;
+
+  router.get('/libby/cover/:cardId/:titleId', asyncHandler(async (req, res) => {
+    if (!libbyCoverService) return res.status(503).json({ error: 'Libby cover proxy not configured' });
+    const controller = new AbortController();
+    let result;
+    let reader;
+    let cancellation;
+    let bodyComplete = false;
+    const cancelReader = () => {
+      if (reader && !cancellation) cancellation = reader.cancel().catch(() => {});
+      return cancellation;
+    };
+    const abort = () => { controller.abort(); void cancelReader(); };
+    req.once('aborted', abort);
+    res.once('close', abort);
+    try {
+      result = await libbyCoverService.open({ cardId: req.params.cardId, titleId: req.params.titleId, signal: controller.signal });
+      if (controller.signal.aborted || res.destroyed) return;
+      if (result.kind === 'gone') return res.status(410).json({ error: 'Libby loan is no longer available' });
+      if (result.kind === 'credential_unavailable') return res.status(401).json({ error: 'Libby authentication unavailable' });
+      if (result.kind !== 'opened') return res.status(502).json({ error: 'Libby cover upstream unavailable' });
+      res.status(200).set({
+        'Content-Type': result.contentType,
+        'Cache-Control': 'private, no-store',
+        'X-Content-Type-Options': 'nosniff',
+      });
+      if (result.contentLength != null) res.set('Content-Length', result.contentLength);
+      reader = result.body.getReader();
+      while (!controller.signal.aborted) {
+        const { done, value } = await reader.read();
+        if (done) { bodyComplete = true; break; }
+        if (controller.signal.aborted) break;
+        if (!res.write(Buffer.from(value)) && await waitForDrainOrClose(res) === 'close') break;
+      }
+      if (!res.destroyed) res.end();
+    } catch {
+      logger.warn?.('libby.cover.relay_failed', { reason: 'stream_unavailable' });
+      if (!res.destroyed) {
+        if (res.headersSent) res.destroy();
+        else res.status(502).json({ error: 'Libby cover upstream unavailable' });
+      }
+    } finally {
+      req.off('aborted', abort);
+      res.off('close', abort);
+      if (reader) {
+        if (!bodyComplete) await cancelReader();
+        else await cancellation;
+        reader.releaseLock();
+      } else if (result?.body) await result.body.cancel().catch(() => {});
+      await result?.cleanup?.();
+    }
+  }));
+
+  router.get('/libby/stream/:handle', asyncHandler(async (req, res) => {
+    if (!libbyStreamService) {
+      return res.status(503).json({ error: 'Libby stream proxy not configured' });
+    }
+
+    const controller = new AbortController();
+    const abort = () => controller.abort();
+    req.once('aborted', abort);
+    res.once('close', abort);
+    let result;
+    let reader;
+    let bodyComplete = false;
+    try {
+      result = await libbyStreamService.open({
+        handle: req.params.handle,
+        method: req.method,
+        range: req.headers.range ?? null,
+        signal: controller.signal,
+      });
+
+      if (result.kind === 'gone') {
+        return res.status(410).json({ error: 'Libby loan or stream lease is no longer available' });
+      }
+      if (result.kind === 'invalid_range') {
+        return res.status(416).json({ error: 'Invalid byte range' });
+      }
+      if (result.kind === 'range_not_satisfiable') {
+        if (result.contentRange) res.set('Content-Range', result.contentRange);
+        return res.status(416).json({ error: 'Byte range not satisfiable' });
+      }
+      if (result.kind === 'credential_unavailable') {
+        return res.status(401).json({ error: 'Libby authentication unavailable' });
+      }
+      if (result.kind !== 'opened') {
+        return res.status(502).json({ error: 'Libby audio upstream unavailable' });
+      }
+
+      res.status(result.status);
+      res.set({
+        'Content-Type': result.contentType,
+        'Cache-Control': 'private, no-store',
+        'X-Content-Type-Options': 'nosniff',
+      });
+      if (result.contentLength) res.set('Content-Length', result.contentLength);
+      if (result.contentRange) res.set('Content-Range', result.contentRange);
+      if (result.acceptRanges) res.set('Accept-Ranges', result.acceptRanges);
+      if (result.etag) res.set('ETag', result.etag);
+      if (result.lastModified) res.set('Last-Modified', result.lastModified);
+      if (!result.body) return res.end();
+
+      reader = result.body.getReader();
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) { bodyComplete = true; break; }
+        if (!res.write(Buffer.from(value)) && await waitForDrainOrClose(res) === 'close') break;
+      }
+      if (!res.destroyed) return res.end();
+    } finally {
+      req.off('aborted', abort);
+      res.off('close', abort);
+      if (reader && !bodyComplete) await reader.cancel().catch(() => {});
+      result?.cleanup?.();
+    }
+  }));
 
   router.get('/media/stream/*splat', asyncHandler(async (req, res) => {
     const result = await proxyMediaService.getContentMedia(splatPath(req));

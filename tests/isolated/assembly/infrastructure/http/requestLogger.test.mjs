@@ -156,6 +156,20 @@ describe('requestLoggerMiddleware', () => {
     expect(serialized).not.toContain('hunter2');
     expect(serialized).not.toContain('password');
   });
+
+  test('redacts Libby stream bearer handles from every response log', async () => {
+    await request(h.app).get('/proxy/libby/stream/opaque-capability-secret');
+    const serialized = JSON.stringify(responses(h.logger));
+    expect(serialized).not.toContain('opaque-capability-secret');
+    expect(responses(h.logger)[0].path).toBe('/proxy/libby/stream/:handle');
+  });
+
+  test('redacts Libby handles when Express has trimmed the proxy mount path', async () => {
+    await request(h.app).get('/LIBBY/STREAM/trimmed-capability-secret');
+    const serialized = JSON.stringify(responses(h.logger));
+    expect(serialized).not.toContain('trimmed-capability-secret');
+    expect(responses(h.logger)[0].path).toBe('/LIBBY/STREAM/:handle');
+  });
 });
 
 /**
