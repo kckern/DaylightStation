@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { foodDensity, foodDensityOfRows, densityBracket, densityRevision } from './foodDensity.mjs';
 import { DEFAULT_DENSITY_LEVELS } from './densityLevels.mjs';
+import { foodMass } from './foodQuantity.mjs';
 import { normalizeScaleNutribotConfig } from '../../../backend/src/3_applications/nutribot/lib/scaleNutribotConfig.mjs';
 
 describe('food density', () => {
@@ -23,6 +24,40 @@ describe('food density', () => {
       { grams: 100, calories: 250 }, { grams: 50, calories: 50 },
     ])).toBe(2);
     expect(foodDensityOfRows([{ grams: 100, calories: null }])).toBeNull();
+  });
+
+  it('derives mass from household volumes and weights, never from counts', () => {
+    const mass = (amount, unit) => foodMass({ grams: null, amount, unit, calories: 100 });
+    expect(mass(1, 'cup')).toBe(240);
+    expect(mass(2, 'cups')).toBe(480);
+    expect(mass(1, 'tbsp')).toBeCloseTo(14.787, 3);
+    expect(mass(2, 'Tablespoons')).toBeCloseTo(29.574, 3);
+    expect(mass(1, 'tablespoon')).toBeCloseTo(14.787, 3);
+    expect(mass(1, 'tsp')).toBeCloseTo(4.929, 3);
+    expect(mass(3, 'teaspoons')).toBeCloseTo(14.787, 3);
+    expect(mass(1, 'teaspoon')).toBeCloseTo(4.929, 3);
+    expect(mass(250, 'ml')).toBe(250);
+    expect(mass(33, 'cl')).toBe(330);
+    expect(mass(2, 'dl')).toBe(200);
+    expect(mass(1, 'litre')).toBe(1000);
+    expect(mass(2, 'litres')).toBe(2000);
+    expect(mass(12, 'fl oz')).toBeCloseTo(354.88, 2);
+    expect(mass(0.5, 'kg')).toBe(500);
+    expect(mass(1, 'oz')).toBeCloseTo(28.3495, 4);
+    expect(mass(2, 'ounces')).toBeCloseTo(56.699, 3);
+    expect(mass(1, 'ounce')).toBeCloseTo(28.3495, 4);
+    expect(mass(1, 'lb')).toBeCloseTo(453.592, 3);
+    expect(mass(2, 'lbs')).toBeCloseTo(907.184, 3);
+    expect(mass(1, 'pound')).toBeCloseTo(453.592, 3);
+    expect(mass(1, 'pounds')).toBeCloseTo(453.592, 3);
+    for (const unit of ['serving', 'servings', 'piece', 'pieces', 'bowl', 'slice', 'can', 'bottle', 'cube', 'cubes', 'bunch', 'item']) {
+      expect(mass(1, unit)).toBeNull();
+    }
+    expect(mass(0, 'cup')).toBeNull();
+    expect(mass(null, 'cup')).toBeNull();
+    expect(foodMass({ grams: 80, amount: 1, unit: 'cup' })).toBe(80);
+    expect(foodDensity({ grams: null, amount: 1, unit: 'cup', calories: 120 })).toBe(0.5);
+    expect(foodDensity({ grams: null, amount: 1, unit: 'lb', calories: 453.592 })).toBeCloseTo(1, 6);
   });
 
   it('requires complete counted food coverage', () => {

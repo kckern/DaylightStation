@@ -87,3 +87,17 @@ describe('YamlNutriListDatastore lifecycle/taxonomy fields', () => {
     expect(rows[0].settled).toBeUndefined();
   });
 });
+
+describe('YamlNutriListDatastore quantityProvenance (scan repair legacy-quantity)', () => {
+  it('survives mutateEntries, a later edit and the read path', async () => {
+    await store.saveMany([{ uuid: 'kale-1', userId: 'u1', label: 'Kale', calories: 45, unit: 'g', amount: null, grams: null,
+      originalQuantity: { amount: 134, unit: 'cup' }, date: '2020-01-01' }]);
+    const quantityProvenance = { source: 'legacy-amount', label: 'cup' };
+    await store.mutateEntries('u1', { updates: [{ id: 'kale-1', expectedVersion: 1,
+      changes: { grams: 134, amount: 134, unit: 'g', quantityProvenance } }] });
+    await store.update('u1', 'kale-1', { mealTime: 'evening' });
+    const row = await store.findByUuid('u1', 'kale-1');
+    expect(row).toMatchObject({ grams: 134, amount: 134, unit: 'g', mealTime: 'evening', quantityProvenance,
+      originalQuantity: { amount: 134, unit: 'cup' }, calories: 45 });
+  });
+});
