@@ -554,7 +554,7 @@ describe('createPlayerSessionBridge', () => {
     bridge.stop();
   });
 
-  it('subscribes before adoption and synchronously acks the exact fresh-node binding', () => {
+  it('retains the decoder observer when React recreates the same Player public handle', () => {
     const oldNode = document.createElement('video');
     const freshNode = document.createElement('video');
     const rendererToken = Object.freeze({ tokenId: 'renderer-fresh', node: freshNode });
@@ -569,11 +569,12 @@ describe('createPlayerSessionBridge', () => {
       playbackRevision: 1,
     };
     let activeNode = oldNode;
-    const handle = {
+    let handle = {
       ...makeHandle({ el: oldNode, meta: { contentId: 'plex:a', format: 'video' }, queueSnapshot: {
         items: [{ queueItemId: 'a', contentId: 'plex:a', format: 'video' }],
         currentIndex: 0, executionOrder: ['a'],
       } }),
+      getPlayerInstanceId: () => 'stable-player-instance',
       getMediaElement: () => activeNode,
       getMountedContentId: () => 'plex:a',
       getMountedMediaGeneration: () => activeNode === freshNode ? 2 : 1,
@@ -588,6 +589,9 @@ describe('createPlayerSessionBridge', () => {
     const bridge = startBridge(() => handle);
     expect(operationObserver).toBeTypeOf('function');
 
+    // Player's useImperativeHandle publishes a fresh object after owner state
+    // changes even though the physical Player instance and observer map remain.
+    handle = { ...handle };
     bridge.queueController.adopt({ queue: {} }, { autoplay: false, operationId: 'legacy-adopt-1' });
     expect(adoptSessionSnapshot).toHaveBeenCalledWith({ queue: {} }, {
       autoplay: false,
