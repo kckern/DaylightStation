@@ -42,6 +42,8 @@ import {
 import { askTupleFor, deriveStage } from '../../../ask/askSchema.js';
 import { nextHuntState, huntingArmed, NO_HUNT } from './stuckLadder.js';
 import { useMetronomeClick } from '../SheetMusic/useMetronomeClick.js';
+import { resolveClickLead, logClickAnchored } from '../SheetMusic/clickLead.js';
+import { audioContext } from '../SheetMusic/click.js';
 import CountInOverlay from '../SheetMusic/CountInOverlay.jsx';
 import { countInPlan, askPulseQuarters, askPace, countInSentence } from '../SheetMusic/countIn.js';
 import './Exercises.scss';
@@ -61,6 +63,8 @@ const EMPTY_SNAPSHOT = Object.freeze({ status: 'prepared', result: null, musical
  * stay for any requirement that turns the fraction off, and the untimed
  * matchers ignore all of these.
  */
+/** Scheduler headroom before the first anchored click (tick 100 ms + margin). */
+export const CLICK_PREROLL_MS = 150;
 const DEFAULT_POLICY = Object.freeze({
   matchWindowMs: 220, missWindowMs: 420, timingToleranceMs: 80, timingWindowMs: 320,
   windowFraction: 0.4, windowMinMs: 80, windowMaxMs: 400,
@@ -138,10 +142,15 @@ function firstWindowOpensAt(attempt) {
  * rest): renderers then draw their cursor exactly as they always have.
  */
 export function timedWindowOpen(attempt, cursorIndex, nowMs) {
-  const event = attempt?.expectation?.events?.[cursorIndex];
+  const events = attempt?.expectation?.events ?? [];
+  const event = events[cursorIndex];
   if (!event || !event.notes.length || !Number.isFinite(attempt?.startedAt)) return undefined;
-  const drift = nowMs - timedTarget(attempt, event);
-  return Math.abs(drift) <= timedWindowMs(attempt, cursorIndex);
+  // ANY beat's window, not only the cursor's. The clock cursor moves on at the
+  // next onset, but that note's window opens before it — asking only about the
+  // cursor's event dimmed the lane during the early half of every window, i.e.
+  // told the child "not now" at a moment an on-time note would have counted.
+  return events.some((candidate, index) => candidate.notes.length
+    && Math.abs(nowMs - timedTarget(attempt, candidate)) <= timedWindowMs(attempt, index));
 }
 
 /** One decimal of a second, as a child is told it: 450 ms → "0.5". */
@@ -906,9 +915,14 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
     return askPace(events.map((event) => event.onsetQuarter), clickQuarters);
   }, [snapshot.expectation, countIn]);
 
-  const countInBeat = countingDown && countIn
-    ? Math.min(countIn.clicks, Math.floor(((snapshot.leadInMs ?? 0) - timeline.countdownRemainingMs) / countIn.periodMs) + 1)
+  // Null during the pre-roll (the count has not reached its first click yet).
+  const countInPosition = countingDown && countIn
+    ? Math.floor(((snapshot.leadInMs ?? 0) - timeline.countdownRemainingMs) / countIn.periodMs) + 1
     : null;
+  const countInBeat = countInPosition != null && countInPosition >= 1 ? Math.min(countIn.clicks, countInPosition) : null;
+
+  // Resolved once per config: see the anchored click below.
+  const clickLead = useMemo(() => resolveClickLead(kioskConfig, audioContext()), [kioskConfig]);
 
   /**
    * A cued ask arms on ANY key — the child is saying "I am here", not playing
@@ -921,14 +935,20 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
     if (!runtime) return;
     // No usable tempo to count at — start anyway. A key that does nothing is a
     // dead surface, and a child cannot tell that apart from a broken piano.
-    runtime.start({ leadInMs: countIn?.leadInMs ?? 0, clock: 'date-now' });
+    // THE FIRST CLICK MUST STILL BE SCHEDULABLE. Clicks are anchored to
+    // `startedAt` and played `leadMs` early; anchored at the key press itself,
+    // the first click would already be in the past and be skipped, and a child
+    // counting "one" would hear the count begin on "two". So the grading clock
+    // starts a pre-roll later: the lead plus room for the scheduler's tick.
+    const prerollMs = Math.max(0, clickLead.leadMs) + CLICK_PREROLL_MS;
+    runtime.start({ time: Date.now() + prerollMs, leadInMs: countIn?.leadInMs ?? 0, clock: 'date-now' });
     countdownHeldRef.current = new Set(activeNotesRef.current.keys());
     setClockNow(Date.now());
     traceEvent('piano.exercise-countdown-started', {
       ...timedRunPresentation(runtime.getSnapshot(), Date.now()),
       ignored: [...activeNotesRef.current.keys()], reason: 'arming-key',
     });
-  }, [countIn, runtime, traceEvent]);
+  }, [clickLead, countIn, runtime, traceEvent]);
 
   /**
    * The notes that can arm a free ask: the pitches of the event the cursor is
@@ -961,7 +981,23 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
     return () => globalThis.clearTimeout(timer);
   }, [prePulse, prePulseStopped]);
 
+  /**
+   * THE CLICK IS ON THE GRADING CLOCK. A cued run's clicks are anchored to the
+   * attempt's own `startedAt` (the first count-in click) and played `leadMs`
+   * early, so the beat the child HEARS — out of the piano, over Bluetooth — is
+   * the beat they are graded on. Unanchored, the grid started whenever this
+   * effect ran plus 80 ms and then reached the ear ~0.2-0.3 s later still: a
+   * child playing exactly on the click was graded one eighth late.
+   */
+  const clickAnchorMs = snapshot.mode === 'cued' && Number.isFinite(snapshot.startedAt) ? snapshot.startedAt : undefined;
+  useEffect(() => {
+    if (clickAnchorMs === undefined) return;
+    logClickAnchored(clickLead, { anchorMs: clickAnchorMs, assessmentId: assessmentIdRef.current ?? null });
+  }, [clickAnchorMs, clickLead]);
+
   useMetronomeClick({
+    anchorMs: clickAnchorMs,
+    leadMs: clickLead.leadMs,
     enabled: ((snapshot.status === 'running' || awaitingTimeline) && ['metronome', 'cued'].includes(snapshot.mode))
       || (prePulse && !prePulseStopped),
     // The tempo the attempt is GRADED at, which is not always `clickBpm`: a
@@ -1496,7 +1532,7 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
             {...(verdicts ? { verdicts, windowOpen } : {})}
           />
         )}
-        <CountInOverlay active={countingDown} beat={countInBeat} />
+        <CountInOverlay active={countingDown && countInBeat != null} beat={countInBeat} />
       </div>
       {/* No button: the piano starts the run. A cued ask arms on any key and
           counts a measure; every other ask arms on the note it is asking for. */}
