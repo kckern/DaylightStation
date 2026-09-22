@@ -57,7 +57,7 @@ test('[FIND.1a/AC5] keyboard opens row actions and adds without clearing search 
   await more.focus();
   await page.keyboard.press('Enter');
   await expect(page.getByRole('menuitem', { name: 'Add to Queue', exact: true })).toBeVisible();
-  for (const action of ['Play Now', 'Play Next', 'Up Next', 'Add to Queue']) {
+  for (const action of ['Play Now', 'Play Next', 'Play First', 'Add to Queue']) {
     await page.keyboard.press('ArrowDown');
     await expect(page.getByRole('menuitem', { name: action, exact: true })).toBeFocused();
   }
@@ -69,6 +69,60 @@ test('[FIND.1a/AC5] keyboard opens row actions and adds without clearing search 
   // QueuePanel's title button includes its visible one-based index.
   await expect(page.getByTestId('queue-panel').locator('.queue-item-title')).toHaveText([`1.${title}`]);
   await expectHeldQueueThenPlay(page, requests);
+});
+
+test('[RELY.4a/AC1][RELY.4a/AC2] Undo restores the previous paused native position and queue generation', async ({ page }) => {
+  await page.goto('/media');
+  const search = page.getByRole('textbox', { name: 'Search media…' });
+  await expect(search).toBeVisible({ timeout: 30000 });
+  await search.fill(title);
+  const result = page.getByRole('option').filter({ hasText: title }).filter({ hasText: 'Movie' });
+  await expect(result).toHaveCount(1, { timeout: 15000 });
+  await result.click();
+  await page.getByTestId('mini-player-open-nowplaying').click();
+  const video = page.getByTestId('now-playing-host').locator('video');
+  await expect.poll(() => video.evaluate(el => !el.paused && el.readyState >= 2), { timeout: 30000 }).toBe(true);
+  await page.getByTestId('np-toggle').click();
+  await page.getByRole('button', { name: 'Forward 10 seconds' }).click();
+  await expect.poll(() => video.evaluate(el => el.paused && !el.seeking && el.currentTime > 5), { timeout: 15000 }).toBe(true);
+  const priorPosition = await video.evaluate(el => el.currentTime);
+  const priorVisit = await page.getByTestId('queue-panel').locator('.queue-item').first().getAttribute('data-testid');
+  const other = title === 'Arrival' ? 'Disclosure Day' : 'Arrival';
+  await search.fill(other);
+  const next = page.getByRole('option').filter({ hasText: other }).filter({ hasText: 'Movie' });
+  await expect(next).toHaveCount(1, { timeout: 15000 });
+  await next.getByRole('button', { name: 'More actions' }).click();
+  await page.getByRole('menuitem', { name: 'Add to Queue', exact: true }).click();
+  await page.keyboard.press('Escape');
+  const rows = page.getByTestId('queue-panel').locator('.queue-item');
+  await expect(rows).toHaveCount(2);
+  const tailVisit = await rows.nth(1).getAttribute('data-testid');
+
+  // Both queue edits must offer ordinary Undo, preserve entry identities,
+  // and retain the paused physical playback node.
+  const native = await video.elementHandle();
+  await rows.nth(1).getByRole('button', { name: 'Remove from queue' }).click();
+  await expect(rows).toHaveCount(1);
+  await page.getByTestId('item-action-undo').last().click();
+  await expect(page.getByTestId(tailVisit)).toBeVisible();
+  expect(await native.evaluate(el => el.isConnected && el.paused)).toBe(true);
+  await page.getByTestId('queue-clear').click();
+  await expect(page.getByTestId('queue-empty')).toBeVisible();
+  await page.getByTestId('item-action-undo').last().click();
+  await expect(page.getByTestId(priorVisit)).toBeVisible();
+  await expect(page.getByTestId(tailVisit)).toBeVisible();
+
+  await search.fill(other);
+  await expect(next).toHaveCount(1, { timeout: 15000 });
+  await next.click();
+  await expect(page.getByTestId(priorVisit)).toHaveCount(0);
+  await expect(page.getByTestId(tailVisit)).toBeVisible();
+  // Undo is offered at tap time: do not wait out its window for a decoder.
+  await page.getByTestId('item-action-undo').last().click();
+  await expect(page.getByTestId(priorVisit)).toBeVisible();
+  await expect(page.getByTestId(tailVisit)).toBeVisible();
+  await expect.poll(() => video.evaluate((el, seconds) => el.paused && !el.seeking && el.readyState >= 2
+    && Math.abs(el.currentTime - seconds) < 1, priorPosition), { timeout: 30000 }).toBe(true);
 });
 
 test('[FIND.1a/AC5] pointer Add retains search, then the first nonfocus outside click dismisses results', async ({ page }) => {

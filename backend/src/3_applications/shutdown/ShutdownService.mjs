@@ -1,11 +1,12 @@
 import { ShutdownState } from '#domains/shutdown/ShutdownState.mjs';
+import { composeKioskShutdownPush } from '#domains/shutdown/shutdownPush.mjs';
 
 /** Owns activation plus periodic disk→websocket→Portal reconciliation. */
 export class ShutdownService {
-  #repo; #notifier; #policy; #cue; #portal; #logger; #scheduleEvery; #cancelSchedule = null; #signature = null; #portalSignature = null;
-  constructor({ repo, notifier, getPolicy, cue = null, portal = null, scheduleEvery = null, logger = console } = {}) {
+  #repo; #notifier; #policy; #cue; #portal; #timezone; #logger; #scheduleEvery; #cancelSchedule = null; #signature = null; #portalSignature = null;
+  constructor({ repo, notifier, getPolicy, cue = null, portal = null, timezone = null, scheduleEvery = null, logger = console } = {}) {
     if (!repo || !notifier?.publishState || !getPolicy) throw new Error('ShutdownService: repo, notifier, getPolicy required');
-    this.#repo = repo; this.#notifier = notifier; this.#policy = getPolicy; this.#cue = cue; this.#portal = portal;
+    this.#repo = repo; this.#notifier = notifier; this.#policy = getPolicy; this.#cue = cue; this.#portal = portal; this.#timezone = timezone;
     this.#scheduleEvery = scheduleEvery; this.#logger = logger;
   }
   async activate({ readerId, tagUid, now = Date.now() }) {
@@ -18,7 +19,19 @@ export class ShutdownService {
       source: { reader_id: readerId ?? null, tag_uid: tagUid },
     });
     await this.#repo.save(state); await this.#publish(state, 'locked');
-    if (this.#cue?.announce) Promise.resolve(this.#cue.announce({ lockedUntil: state.lockedUntil, source: 'nfc-shutdown' })).catch((error) => this.#logger.warn?.('shutdown.cue_failed', { error: error.message }));
+    if (this.#cue?.announce) {
+      // The push is a courtesy; the cue (the siren) is not. A compose failure
+      // sends the cue without a notification rather than rejecting activate().
+      let notification = null;
+      try {
+        notification = composeKioskShutdownPush({ lockedAt: state.lockedAt, lockedUntil: state.lockedUntil, timezone: this.#timezone });
+      } catch (error) {
+        this.#logger.warn?.('shutdown.push_compose_failed', { error: error.message });
+      }
+      Promise.resolve()
+        .then(() => this.#cue.announce({ lockedUntil: state.lockedUntil, source: 'nfc-shutdown', notification }))
+        .catch((error) => this.#logger.warn?.('shutdown.cue_failed', { error: error.message }));
+    }
     return state;
   }
   async status(target, now = Date.now()) { const { state, invalid } = await this.#repo.read(); return { locked: invalid || (!!state && state.isActive(now) && state.includes(target)), lockedUntil: state?.lockedUntil ?? null, invalid }; }

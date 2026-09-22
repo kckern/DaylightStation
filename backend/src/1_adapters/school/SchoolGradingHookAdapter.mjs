@@ -32,7 +32,8 @@ const MAX_BACKOFF_MS = 60000;
 /**
  * Every call carries this key set; inapplicable values are null / [].
  * A null/undefined outcome is treated as an empty grade — the same uniform
- * 11-key shape still comes out, just all-null (plus [] for the array keys).
+ * key shape still comes out, just all-null (plus [] for the array keys).
+ * The set includes `notification`: the composed phone copy, or null.
  */
 function toVariables(outcome) {
   const o = outcome ?? {};
@@ -53,6 +54,10 @@ function toVariables(outcome) {
     course: o.course ?? null,
     unit: o.unit ?? null,
     lesson: o.lesson ?? null,
+    // The finished phone copy (`2_domains/school/notifications/schoolPush.mjs`).
+    // Forwarded untouched: the HA script relays it and never templates it.
+    // null = "no push for this event"; the siren still branches on `result`.
+    notification: o.notification ?? null,
   };
 }
 

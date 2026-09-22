@@ -1,10 +1,18 @@
 # Media redesign — acceptance ledger
 
-**Status:** In progress. **11 accepted stories / 33 accepted AC; 10 partial stories / 20 partial AC; 61 unverified stories / 235 unverified AC**. No component, test count or API response earns acceptance by itself.
+Task 3 implementation note (2026-09-21): common item-action/owner/Undo contracts,
+one-shot dispatch, warm/cold envelope delivery, and cancellation have focused
+unit/contract evidence. `media-app-queue-journey.runtime.test.mjs` now contains
+`Undo restores the previous paused native position and queue generation` and the
+P0 extension manifest requires its `RELY.4a/AC1` and `RELY.4a/AC2` checks. This is
+pending exact-commit owned-server execution, not new Accepted evidence. Existing
+Task 2 and stable-core receipt evidence below remains unchanged.
+
+**Status:** In progress. **11 accepted stories / 41 accepted AC; 14 partial stories / 20 partial AC; 57 unverified stories / 227 unverified AC**. No component, test count or API response earns acceptance by itself.
 
 **Contract:** taxonomy §3 and accepted requirements. P0 first, then P1/P2. Each criterion must have evidence of the complete applicable path: user input → target → command → actual player/result → state → displayed feedback. Office is the only physical test screen authorized.
 
-**Stable-core extension gate:** `npm run test:media-p0` composes the deployed accepted and supporting criteria with `P0_EXTENSION_ENTRIES`, then requires the complete manifest to retain every stable-core criterion and its existing journey. Extensions require a journey (`file` and `grep`); duplicate criteria and skipped or empty Playwright reports fail closed. Playwright runs serially with JSON output, saved under `MEDIA_P0_EVIDENCE_DIR`. The extension list adds only `PLAY.6a/AC3`, pinned to the exact combined Add/Next/Previous journey; the deployed stable-core entries and journeys remain unchanged.
+**Stable-core extension gate:** `npm run test:media-p0` composes the deployed accepted and supporting criteria with `P0_EXTENSION_ENTRIES`, then requires the complete manifest to retain every stable-core criterion and its existing journey. Extensions require a journey (`file` and `grep`); duplicate criteria and skipped or empty Playwright reports fail closed. Playwright runs serially with JSON output, saved under `MEDIA_P0_EVIDENCE_DIR`. The extension list retains the Task 2/3 queue criteria and adds only the exact Task 4 search-failure/widening and browse criteria proven by the pinned journeys; the deployed stable-core entries and journeys remain unchanged.
 
 **Baseline (2026-09-14, 25d5f671c):** Vitest reported 513/513 passing, zero skipped; process exit 0 with worker shutdown timeout warning in persistence.test.js. This is unit evidence only. Browser test inspection found synthetic JavaScript clicks bypassing overlays and title-only playback assertions; these do not prove user journeys. Target-safe runtime baseline stopped after five failures; results are recorded below, with tests not run distinguished from passes.
 
@@ -121,7 +129,7 @@ As a **Seeker**, I want to know whether the results are complete, so that I can 
 |---|---|---|---|
 | FIND.3a/AC1 | While sources are still answering, I see that results are still arriving. | Unverified | — |
 | FIND.3a/AC2 | When all are in, the "still arriving" sign disappears. | Unverified | — |
-| FIND.3a/AC3 | If a source didn't answer, I'm told which, in plain words, with a way to try it again. | Unverified | — |
+| FIND.3a/AC3 | If a source didn't answer, I'm told which, in plain words, with a way to try it again. | Accepted | Task 4 exact five-file browser matrix: `media-app-search-states.runtime.test.mjs` names Plex in plain words and exposes its Retry action before widening. Artifact provenance and command are recorded in the Task 4 report. |
 | FIND.3a/AC4 | These signs look and read identically wherever search appears. | Unverified | — |
 
 ### FIND.4a
@@ -131,7 +139,7 @@ As a **Seeker**, I want a helpful next step when nothing matches, so that I'm no
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
 | FIND.4a/AC1 | If nothing matches in the chosen kind, matches from all kinds appear under a divider ("Not in Audiobooks — from everything:"), with the kind in words on every row (R25). | Unverified | — |
-| FIND.4a/AC2 | If a source didn't answer, I'm told that before any widening, so a failure never looks like "not there" (R25). | Unverified | — |
+| FIND.4a/AC2 | If a source didn't answer, I'm told that before any widening, so a failure never looks like "not there" (R25). | Accepted | Task 4 exact five-file browser matrix: the failed-source notice precedes the `From everything` notice, retains incomplete-result wording, and removes the still-searching claim. Artifact provenance and command are recorded in the Task 4 report. |
 | FIND.4a/AC3 | If nothing matches anywhere, I'm told so plainly and offered to check spelling or browse the nearest kind. | Unverified | — |
 | FIND.4a/AC4 | An empty result never looks like a result still loading. | Unverified | — |
 
@@ -142,9 +150,9 @@ As a **Wanderer**, I want to explore the catalog by kind with pictures, so that 
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
 | FIND.5a/AC1 | I can reach every kind of content without typing. | Unverified | — |
-| FIND.5a/AC2 | Every title shows a picture (or a recognisable placeholder), title, and kind. | Unverified | — |
-| FIND.5a/AC3 | Long collections load more as I scroll, without a separate button hunt. | Unverified | — |
-| FIND.5a/AC4 | Backing out returns me to the same scroll position. | Unverified | — |
+| FIND.5a/AC2 | Every title shows a picture (or a recognisable placeholder), title, and kind. | Accepted | Task 4 exact five-file browser matrix: deterministic browse rows render supplied artwork or a labelled placeholder alongside title and kind. Artifact provenance and command are recorded in the Task 4 report. |
+| FIND.5a/AC3 | Long collections load more as I scroll, without a separate button hunt. | Accepted | Task 4 exact five-file browser matrix: reaching the page sentinel automatically fetched and displayed item 51 while no load-more button existed. Artifact provenance and command are recorded in the Task 4 report. |
+| FIND.5a/AC4 | Backing out returns me to the same scroll position. | Accepted | Task 4 exact five-file browser matrix: browser Back restored the exact captured scrollTop and the collection row that launched the child. Artifact provenance and command are recorded in the Task 4 report. |
 
 ### FIND.6a
 
@@ -152,9 +160,9 @@ As a **Wanderer**, I want to open a show, album, or folder and see its parts in 
 
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
-| FIND.6a/AC1 | Parts appear in their natural order (episodes by season, tracks by number). | Unverified | — |
-| FIND.6a/AC2 | I can see where I am as a trail (for example: TV → Bluey → Season 2) and jump to any level. | Unverified | — |
-| FIND.6a/AC3 | The whole-collection actions (play, shuffle, add) are available at the top and name the screen they will use. | Unverified | — |
+| FIND.6a/AC1 | Parts appear in their natural order (episodes by season, tracks by number). | Accepted | Task 4 exact five-file browser matrix: out-of-order seasons and episodes rendered as Season 1/2 and Episode 1/2/10. Artifact provenance and command are recorded in the Task 4 report. |
+| FIND.6a/AC2 | I can see where I am as a trail (for example: TV → Bluey → Season 2) and jump to any level. | Accepted | Task 4 exact five-file browser matrix: All → Example Show → Season 2 rendered every parent and jumping to Example Show restored its child list. Artifact provenance and command are recorded in the Task 4 report. |
+| FIND.6a/AC3 | The whole-collection actions (play, shuffle, add) are available at the top and name the screen they will use. | Accepted | Task 4 exact five-file browser matrix: collection header exposed Play, Shuffle and Add with `This device` as the destination. Artifact provenance and command are recorded in the Task 4 report. |
 
 ### FIND.7a
 
@@ -458,7 +466,7 @@ As a **Room Hopper**, I want to decide, when I send, whether this device stops o
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
 | PLACE.6a/AC1 | Whenever this device is playing and the aim is another screen, the aim label shows what will happen here ("move it" or "keep playing here too"), and I can change it there before tapping, on every device size (R2). | Unverified | — |
-| PLACE.6a/AC2 | A one-off **Play on…** or **Move to…** asks at that moment, pre-set to my usual choice. | Unverified | — |
+| PLACE.6a/AC2 | A one-off **Play on…** or **Move to…** asks at that moment, pre-set to my usual choice. | Partial | Now Playing's **Move to…** hand-off picker asks Move/Keep, but the item-level **Play on…** path uses item-action/fork, has no movable session snapshot, disables Move, and does not show a remembered stop/keep choice. The prior Task 5 Now Playing evidence therefore did not prove this whole criterion. |
 | PLACE.6a/AC3 | My usual choice is remembered and pre-selected, and visible before I confirm. | Unverified | — |
 | PLACE.6a/AC4 | Afterwards, this device does exactly what the choice said. | Unverified | — |
 
@@ -480,7 +488,7 @@ As a **Room Hopper**, I want to send what's playing here to a TV at the same mom
 
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
-| PLACE.8a/AC1 | From the handle on my own playback, "move to…" is offered, wherever I am in the app. | Unverified | — |
+| PLACE.8a/AC1 | From the handle on my own playback, "move to…" is offered, wherever I am in the app. | Accepted | `TASK-5-EXACT-RUNTIME`: after an ordinary Search play, the persistent handle opened full controls and the shared hand-off picker offered **Move playback to Living Room TV**. The exact journey uses ordinary pointer input and no store/controller mutation. `JOURNEY-TASK5-HANDOFF-PICKER`. |
 | PLACE.8a/AC2 | The chosen screen starts at the same moment with the same queue. | Unverified | — |
 | PLACE.8a/AC3 | This device stops or keeps playing according to `PLACE.6`. | Unverified | — |
 | PLACE.8a/AC4 | Progress and confirmation follow `RELY.2` and `RELY.3`. | Unverified | — |
@@ -502,8 +510,8 @@ As a **Hand-Held Viewer**, I want a persistent handle on what's playing here, so
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
 | STEER.1a/AC1 | While anything is playing or paused on this device, a compact handle is visible in every part of the app with title, picture, progress, and play/pause. | Unverified | — |
-| STEER.1a/AC2 | Tapping it opens full controls and the queue. | Unverified | — |
-| STEER.1a/AC3 | When full controls are open, the compact handle doesn't duplicate them. | Unverified | — |
+| STEER.1a/AC2 | Tapping it opens full controls and the queue. | Accepted | `TASK-5-EXACT-RUNTIME`: ordinary local playback exposed the compact handle; tapping its accessible title opened Now Playing with the shared transport and visible queue panel. `JOURNEY-TASK5-HANDOFF-PICKER`. |
+| STEER.1a/AC3 | When full controls are open, the compact handle doesn't duplicate them. | Accepted | `TASK-5-EXACT-RUNTIME`: after opening full controls from the compact handle, the journey asserted that `media-mini-player` had count zero while full transport and queue remained visible. `JOURNEY-TASK5-HANDOFF-PICKER`. |
 | STEER.1a/AC4 | The handle also covers the screen I most recently sent to or steered, so pausing the TV when the phone rings is one tap (R21). | Unverified | — |
 | STEER.1a/AC5 | The same controls are available from the lock screen and notifications (R21). | Unverified | — |
 
@@ -579,7 +587,7 @@ As a **Fixer**, I want to stop playback and know what stopping leaves, so that I
 |---|---|---|---|
 | STEER.6a/AC1 | There is one "stop" control, meaning the same thing everywhere. | Partial | `JOURNEY-STOP-RESTART` verifies local Stop; `JOURNEY-REMOTE-STOP-PLAY` verifies remote Stop via correlated ack, ready/null-current receiver state, native pause/reset and successful same-item Play resume. Consistent semantics across all surfaces remain unverified. |
 | STEER.6a/AC2 | After stopping, I'm told what remains ("Queue kept: 8 items") and can reopen it. | Partial | `JOURNEY-STOP-RESTART` verifies local queue reopen. `JOURNEY-REMOTE-STOP-PLAY` on c21 verifies remote queue-retained feedback, exact queue identity, Open queue and Play resume. Broader device/surface parity remains unverified. |
-| STEER.6a/AC3 | Emptying the queue is a separate, clearly named action (`STEER.8`). | Unverified | — |
+| STEER.6a/AC3 | Emptying the queue is a separate, clearly named action (`STEER.8`). | Accepted | `TASK-5-EXACT-RUNTIME`: ordinary Stop left a visible `1 item ready` handle; reopening it showed an enabled, separately named **Clear queue** action. `JOURNEY-TASK5-STOP-FLOW`. |
 | STEER.6a/AC4 | Where the screen supports it, stop also offers **and turn the screen off** (R42). | Unverified | — |
 
 ### STEER.10a

@@ -145,7 +145,17 @@ export function NavProvider({ children }) {
     }
     const replaceEntry = opts.replaceEntry === true;
     setStack((prev) => {
-      const next = [...prev, normalizeEntry({ view, params })];
+      const base = opts.currentPatch
+        ? [...prev.slice(0, -1), {
+            ...prev.at(-1),
+            params: { ...(prev.at(-1)?.params ?? {}), ...opts.currentPatch },
+          }]
+        : prev;
+      const next = [...base, normalizeEntry({ view, params })];
+      // A normal push creates a new browser entry. Persist the patched
+      // current entry first so browser Back restores the exact browse
+      // viewport and focus that launched the child route.
+      if (opts.currentPatch && !replaceEntry) syncHistory(base, 'replace');
       syncHistory(next, replaceEntry ? 'replace' : 'push');
       mediaLog.navPushed({ view, depth: next.length, replaceEntry });
       return next;
@@ -170,8 +180,15 @@ export function NavProvider({ children }) {
       // Re-selection must land on an existing canonical top entry when one
       // exists. Traversing the browser entry (instead of replaceState) means
       // one Back reaches the actual prior area, with no duplicate area stop.
-      const targetIndex = prev.findLastIndex((entry) => entry.view === top.view
-        && JSON.stringify(entry.params ?? {}) === JSON.stringify(top.params));
+      const targetIndex = prev.findLastIndex((entry) => {
+        // Browse viewport snapshots belong to the entry, not its route
+        // identity. Preserve them while recognizing the original area root.
+        const routeParams = { ...(entry.params ?? {}) };
+        delete routeParams.scrollTop;
+        delete routeParams.focusedId;
+        return entry.view === top.view
+          && JSON.stringify(routeParams) === JSON.stringify(top.params);
+      });
       if (targetIndex >= 0 && targetIndex < prev.length - 1) {
         if (traversalPendingRef.current) return prev;
         traversalPendingRef.current = true;

@@ -180,6 +180,7 @@ async function fetchSiblingsData(contentId) {
 export function useContentCombobox({
   value, onChange, searchParams = '', fallbackSearchParams, scopeKey, scopeLabel,
   appResults = false, selectContainers = false, allowFreeform = true, logApp = 'admin', retainQueryOnEscape = false,
+  retainPlayableSelection = false,
 }) {
   const log = useMemo(() => getChildLogger({ component: 'useContentCombobox', app: logApp, sessionLog: true }), [logApp]);
   const [state, dispatch] = useReducer(reducer, value ?? '', initialState);
@@ -224,6 +225,7 @@ export function useContentCombobox({
 
   // ── 2. Search transport: SSE stream with batch fallback ──
   const {
+    state: streamState,
     results: streamResults,
     pending: pendingSources,
     isSearching: streamSearching,
@@ -695,8 +697,9 @@ export function useContentCombobox({
     log.info('item_select', { contentId: item.id, title: item.title, prevValue: stateRef.current.value });
     rememberTitle(item.id, item.title);
     onChangeRef.current?.(item.id, item);
+    if (retainPlayableSelection && !isContainer(item)) return;
     handleClose('select'); // closeDecision('select') → no double-commit
-  }, [handleClose, log]);
+  }, [handleClose, log, retainPlayableSelection]);
 
   // ── Commit executor: run the pure decision and perform its side effect ──
   // `searchSettled` distinguishes "still loading/debouncing" from "settled, no
@@ -821,7 +824,7 @@ export function useContentCombobox({
       scopeKey: scopeKey ?? null,
       scopeLabel: scopeLabel ?? null,
     });
-    if (supportsSSE()) streamSearch(text, fallbackSearchParams);
+    if (supportsSSE()) streamSearch(text, fallbackSearchParams, { preserveFailures: true });
     else doBatchSearch(text, fallbackSearchParams);
   }, [
     searchSettled, settleBelongsToScope, sourceErrors, rawResults, rawResultCount, searchParams, fallbackSearchParams,
@@ -906,8 +909,40 @@ export function useContentCombobox({
     return () => { cancelled = true; };
   }, [value]);
 
+  const normalizedStreamState = streamState ?? {
+    query: queryRef.current,
+    scope: searchParams,
+    sources: Object.fromEntries([
+      ...pendingSources.map((source) => [source, 'pending']),
+      ...sourceErrors.map(({ source }) => [source, 'failed']),
+    ]),
+    results: streamResults,
+    phase: streamSearching ? (streamResults.length > 0 ? 'partial' : 'loading')
+      : sourceErrors.length > 0 ? 'partial' : 'complete',
+    failedSources: sourceErrors.map(({ source }) => source),
+  };
+  const searchState = supportsSSE()
+    ? {
+        ...normalizedStreamState,
+        query: state.search ?? '',
+        scope: searchParams,
+        results: state.results,
+        phase: debouncePending ? 'loading' : normalizedStreamState.phase,
+      }
+    : {
+        query: state.search ?? '',
+        scope: searchParams,
+        sources: batchLoading ? { batch: 'pending' } : { batch: streamError ? 'failed' : 'complete' },
+        results: state.results,
+        phase: debouncePending || batchLoading
+          ? 'loading'
+          : streamError ? 'failed' : (state.search ?? '').trim().length < 2 ? 'idle' : 'complete',
+        failedSources: streamError ? ['batch'] : [],
+      };
+
   return {
     state,
+    searchState,
     dispatch,
     // input/search
     handleInput,

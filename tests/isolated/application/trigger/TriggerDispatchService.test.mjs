@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, test } from 'vitest';
 import { TriggerDispatchService } from '../../../../backend/src/3_applications/trigger/TriggerDispatchService.mjs';
 import { TriggerActuationGateway } from '../../../../backend/src/1_adapters/trigger/TriggerActuationGateway.mjs';
+import { findPushTextDefects } from '../../../../backend/src/2_domains/notification/push/pushText.mjs';
 
 const TEST_RUNTIME = {
   createDispatchId: () => 'dispatch-test-id',
@@ -392,7 +393,7 @@ describe('TriggerDispatchService.handleTrigger — unknown NFC branch', () => {
     };
   }
 
-  function makeService(config) {
+  function makeService(config, { locationLabel } = {}) {
     return new TriggerDispatchService({
     ...TEST_RUNTIME,
       config,
@@ -403,8 +404,56 @@ describe('TriggerDispatchService.handleTrigger — unknown NFC branch', () => {
       broadcast,
       logger,
       clock: () => now,
+      ...(locationLabel ? { locationLabel } : {}),
     });
   }
+
+  it('the unknown-tag push names the room, keeps the uid out of the text, and collapses repeats', async () => {
+    const locationLabel = vi.fn((location, cfg) => (cfg?.target === 'livingroom-tv' ? 'Living Room' : null));
+    const service = makeService(makeRegistry(), { locationLabel });
+    await service.handleTrigger('livingroom', 'nfc', '04a1b2c3');
+
+    expect(locationLabel).toHaveBeenCalledWith('livingroom', expect.objectContaining({ target: 'livingroom-tv' }));
+    const [, , payload] = haGateway.callService.mock.calls[0];
+    expect(payload.title).toBe('🏷️ New tag tapped — Living Room');
+    expect(payload.message).toBe('Tap "Add note" to name it');
+    expect(findPushTextDefects(payload.title)).toEqual([]);
+    expect(findPushTextDefects(payload.message)).toEqual([]);
+    expect(payload.title).not.toContain('04a1b2c3');
+    expect(payload.message).not.toContain('04a1b2c3');
+    expect(payload.data.tag).toBe('nfc-04a1b2c3');
+    expect(payload.data.alert_once).toBe(true);
+    // The reply handler parses this string: it must not change.
+    expect(payload.data.actions).toEqual([{
+      action: 'NFC_REPLY|livingroom|04a1b2c3',
+      title: 'Add note',
+      behavior: 'textInput',
+      textInputButtonTitle: 'Save',
+      textInputPlaceholder: 'Tag name',
+    }]);
+  });
+
+  it('a throwing locationLabel is logged and the push still names the location', async () => {
+    const locationLabel = vi.fn(() => { throw new Error('device lookup failed'); });
+    const service = makeService(makeRegistry(), { locationLabel });
+    await service.handleTrigger('livingroom', 'nfc', '04a1b2c3');
+
+    expect(logger.warn).toHaveBeenCalledWith('trigger.notify.label_failed', expect.objectContaining({
+      location: 'livingroom', error: 'device lookup failed',
+    }));
+    const [, , payload] = haGateway.callService.mock.calls[0];
+    expect(payload.title).toBe('🏷️ New tag tapped — Livingroom');
+    expect(findPushTextDefects(payload.title)).toEqual([]);
+    expect(findPushTextDefects(payload.message)).toEqual([]);
+  });
+
+  it('the unknown-tag push falls back to a title-cased location without a label', async () => {
+    const service = makeService(makeRegistry());
+    await service.handleTrigger('livingroom', 'nfc', '04a1b2c3');
+    const [, , payload] = haGateway.callService.mock.calls[0];
+    expect(payload.title).toBe('🏷️ New tag tapped — Livingroom');
+    expect(findPushTextDefects(payload.title)).toEqual([]);
+  });
 
   it('state 0 — first scan: writes placeholder, notifies, returns 404', async () => {
     const service = makeService(makeRegistry());
@@ -423,7 +472,7 @@ describe('TriggerDispatchService.handleTrigger — unknown NFC branch', () => {
       'mobile_app_kc_phone',
       expect.objectContaining({
         title: expect.stringMatching(/livingroom/i),
-        message: expect.stringContaining('04a1b2c3'),
+        message: expect.not.stringContaining('04a1b2c3'),
         data: expect.objectContaining({
           actions: [expect.objectContaining({
             action: 'NFC_REPLY|livingroom|04a1b2c3',

@@ -266,3 +266,34 @@ describe('ScorePassage cursor feedback', () => {
     expect(dimmed()).toEqual([60, 62, 71, 72]);
   });
 });
+
+describe('ScorePassage recorded verdicts (timed runs)', () => {
+  const verdictMap = (entries) => new Map(entries.map(([index, byMidi]) => [index, new Map(byMidi)]));
+  const verdictOf = (midi) => document.querySelector(`.mock-notehead[data-midi="${midi}"]`).getAttribute('data-verdict');
+  const classed = (name) => [...document.querySelectorAll(`.mock-notehead.${name}`)].map((el) => Number(el.dataset.midi));
+
+  it('paints each engraved note from its verdict, keyed by expectation event index', async () => {
+    const verdicts = verdictMap([
+      [0, [[64, { state: 'hit', driftMs: 5 }]]],
+      [1, [[65, { state: 'late', driftMs: 450 }]]],
+      [2, [[67, { state: 'lapsed' }]]],
+    ]);
+    const onExpectation = vi.fn();
+    renderPassage({ onExpectation, verdicts, cursorIndex: 2 });
+    await waitFor(() => expect(onExpectation).toHaveBeenCalled());
+    await waitFor(() => expect(classed('piano-note-verdict-hit')).toEqual([64]));
+    expect(classed('piano-note-verdict-late')).toEqual([65]);
+    expect(classed('piano-note-verdict-unplayed')).toEqual([67]);
+    expect(verdictOf(65)).toBe('late');
+    // No green anywhere the record does not say so.
+    expect(classed('piano-note-verdict-hit')).not.toContain(65);
+  });
+
+  it('marks the note still owed at a recorded wrong, and ignores the live wrongMidi flash', async () => {
+    const verdicts = verdictMap([[1, [[70, { state: 'wrong', midi: 70 }]]]]);
+    const onExpectation = vi.fn();
+    renderPassage({ onExpectation, verdicts, cursorIndex: 0, wrongMidi: 61 });
+    await waitFor(() => expect(onExpectation).toHaveBeenCalled());
+    await waitFor(() => expect(wrong()).toEqual([65]));
+  });
+});

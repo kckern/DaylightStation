@@ -15,6 +15,24 @@ function renderWithProvider(ui) {
 const leafItem = { id: 'plex:1', title: 'Bluey', type: 'episode' };
 const containerItem = { id: 'plex:663508', title: 'Tuttle Twins', type: 'show' };
 
+it('the additive action prop gives collection rows Next and Shuffle without selecting the row', async () => {
+  const onAction = vi.fn(), onTap = vi.fn();
+  renderWithProvider(<ResultRow item={containerItem} onAction={onAction} onTap={onTap} />);
+  fireEvent.click(screen.getByRole('button', { name: 'More actions' }));
+  fireEvent.click(await screen.findByRole('menuitem', { name: 'Play Next', exact: true }));
+  expect(onAction).toHaveBeenCalledWith({ kind: 'playNext', item: containerItem });
+  expect(onTap).not.toHaveBeenCalled();
+});
+
+it('the additive action prop names and dispatches the front-insertion verb as Play First', async () => {
+  const onAction = vi.fn();
+  renderWithProvider(<ResultRow item={leafItem} onAction={onAction} onTap={() => {}} />);
+  fireEvent.click(screen.getByRole('button', { name: 'More actions' }));
+  expect(screen.queryByRole('menuitem', { name: 'Up Next', exact: true })).toBeNull();
+  fireEvent.click(await screen.findByRole('menuitem', { name: 'Play First', exact: true }));
+  expect(onAction).toHaveBeenCalledWith({ kind: 'playFirst', item: leafItem });
+});
+
 describe('ResultRow — leaf', () => {
   it('tapping the row calls onTap', () => {
     const onTap = vi.fn();

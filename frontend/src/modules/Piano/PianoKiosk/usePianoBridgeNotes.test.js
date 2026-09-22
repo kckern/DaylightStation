@@ -136,7 +136,7 @@ describe('usePianoBridgeNotes', () => {
       ws.onopen?.();
       ws.onmessage?.({ data: JSON.stringify({ type: 'note.on', note: 60, velocity: 100 }) });
     });
-    expect(onNote).toHaveBeenCalledWith('note_on', 60, 100);
+    expect(onNote).toHaveBeenCalledWith('note_on', 60, 100, undefined);
   });
 
   it('calls onNote with note_off for a note.off frame', async () => {
@@ -147,7 +147,31 @@ describe('usePianoBridgeNotes', () => {
       ws.onopen?.();
       ws.onmessage?.({ data: JSON.stringify({ type: 'note.off', note: 60 }) });
     });
-    expect(onNote).toHaveBeenCalledWith('note_off', 60, 0);
+    expect(onNote).toHaveBeenCalledWith('note_off', 60, 0, undefined);
+  });
+
+  it('passes the payload event time `t` through to onNote (payload p20+)', async () => {
+    const onNote = vi.fn();
+    renderHook(() => usePianoBridgeNotes({ onNote }));
+    const ws = instances[0];
+    await act(async () => {
+      ws.onopen?.();
+      ws.onmessage?.({ data: JSON.stringify({ type: 'note.on', note: 60, velocity: 100, t: 1800000000123 }) });
+      ws.onmessage?.({ data: JSON.stringify({ type: 'note.off', note: 60, t: 1800000000456 }) });
+    });
+    expect(onNote).toHaveBeenNthCalledWith(1, 'note_on', 60, 100, 1800000000123);
+    expect(onNote).toHaveBeenNthCalledWith(2, 'note_off', 60, 0, 1800000000456);
+  });
+
+  it('an old payload without `t` passes undefined as the event time', async () => {
+    const onNote = vi.fn();
+    renderHook(() => usePianoBridgeNotes({ onNote }));
+    const ws = instances[0];
+    await act(async () => {
+      ws.onopen?.();
+      ws.onmessage?.({ data: JSON.stringify({ type: 'note.on', note: 60, velocity: 100 }) });
+    });
+    expect(onNote.mock.calls[0][3]).toBeUndefined();
   });
 
   it('does not throw on malformed JSON', async () => {

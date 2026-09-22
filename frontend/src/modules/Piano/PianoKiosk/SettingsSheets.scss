@@ -48,11 +48,27 @@
     &.is-off { background: var(--piano-danger, #e05a4f); }
   }
   &__big { grid-column: 2; display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; align-content: start; .piano-tbtn--tile { min-height: 7rem; font-size: 1.1rem; } }
-  &__everyday { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(5, 1fr); gap: 0.6rem; align-content: start; }
+  &__everyday { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(6, 1fr); gap: 0.6rem; align-content: start; }
   &__danger {
     grid-column: 1 / -1; display: grid; grid-template-columns: minmax(12rem, auto) 1fr 1fr; gap: 0.6rem; align-items: start;
     padding-top: 0.75rem; border-top: 2px solid var(--piano-danger, #e05a4f);
     p { margin: 0; align-self: center; color: var(--piano-muted, #9a9aa6); }
   }
+  // ---- Maintenance › Click timing (tap-along calibration) ----
+  &__calib {
+    grid-column: 1 / -1; grid-row: 2 / span 2; display: flex; gap: 1rem; min-height: 0; overflow: hidden;
+    > .piano-settings__tile { flex: 0 0 10rem; align-self: flex-start; }
+  }
+  &__calibbody {
+    flex: 1 1 auto; display: flex; flex-direction: column; gap: 0.6rem; min-width: 0; padding: 1rem;
+    border: 1px solid var(--piano-border, #34343f); border-radius: 12px; background: var(--piano-surface-2, #2a2a33);
+    p { margin: 0; }
+    strong { font-size: 1.05rem; }
+  }
+  &__calibresult {
+    display: flex; flex-direction: column; gap: 0.3rem; font-size: 1.05rem;
+    .is-failed { color: var(--piano-danger, #e05a4f); }
+  }
+  &__calibactions { display: grid; grid-template-columns: repeat(2, 12rem); gap: 0.6rem; margin-top: auto; }
   &__diag { grid-column: 1 / -1; grid-row: 2 / span 2; display: flex; flex-direction: column; gap: 0.5rem; min-height: 0; overflow: hidden; > .piano-settings__tile { align-self: flex-start; width: 10rem; } }
 }

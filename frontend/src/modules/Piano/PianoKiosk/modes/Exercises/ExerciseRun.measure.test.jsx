@@ -271,6 +271,7 @@ import { createRoot } from 'react-dom/client';
 import { flushSync } from 'react-dom';
 import ExerciseRun from './ExerciseRun.jsx';
 import ScorePassage from './ScorePassage.jsx';
+import ExerciseNotation from './ExerciseNotation.jsx';
 import { MusicXmlRenderer } from '../../../../MusicNotation/renderers/MusicXmlRenderer.jsx';
 import { loadAskSources } from '../../../ask/askResolution.js';
 import { __setNotes, __getNotes } from '../../PianoMidiContext.jsx';
@@ -356,6 +357,16 @@ window.__stage = {
       onExpectation: (e) => push('expectation', projectExpectation(e)),
       onUnrunnable: (reason) => push('unrunnable', reason),
     })));
+  },
+  /**
+   * The engraved exercise stage alone, painted from a RECORD: what a timed run
+   * hands it. The verdicts cross the page boundary as [index, [[midi, v]]] pairs.
+   */
+  mountNotation({ instance, eventIndex = 0, verdicts = [] }) {
+    root = createRoot(host());
+    const map = new Map(verdicts.map(([index, byMidi]) => [index, new Map(byMidi)]));
+    flushSync(() => root.render(h('div', { className: 'piano-exercise-run__stage piano-exercise-run__score' },
+      h(ExerciseNotation, { instance, eventIndex, verdicts: map, windowOpen: false }))));
   },
   /** The engraver alone: the geometry every score assertion above rests on. */
   mountEngraver({ musicXml }) {
@@ -1394,6 +1405,41 @@ const GRAND_SCALE = Object.freeze({
   })),
 });
 
+describe('the engraved stage paints a timed run\'s record, in real abcjs', () => {
+  it('a late note is amber with a ▸ under it, a wrong pitch is a red ghost beside its beat, and nothing is green', async () => {
+    await openStage(css, js);
+    await page.evaluate(PROBE);
+    await page.evaluate((arg) => window.__stage.mountNotation(arg), {
+      instance: EIGHTH_SCALE,
+      eventIndex: 2,
+      verdicts: [
+        [0, [[60, { state: 'late', driftMs: 450 }]]],
+        [1, [[62, { state: 'lapsed' }], [66, { state: 'wrong', midi: 66, driftMs: 40 }]]],
+      ],
+    });
+    await page.waitForSelector('.exercise-note-late');
+    expect(await probe.count('.exercise-note-hit'), 'a timed record with no hit must draw no green').toBe(0);
+    const late = await probe.one('.exercise-note-late .abcjs-notehead');
+    expect(await probe.prop('.exercise-note-late', 'fill')).toBe('rgb(222, 140, 0)');
+    const tick = await probe.one('.exercise-notation__drift--late');
+    expect(tick?.painted, 'the late tick is not on screen').toBe(true);
+    expect(tick.text).toBe('\u25B8');
+    expect(Math.abs(tick.cx - late.cx), `the tick ${say(tick)} is not under its note ${say(late)}`).toBeLessThan(late.width);
+    expect(tick.top).toBeGreaterThanOrEqual(late.top);
+    const lapsed = await probe.one('.exercise-note-unplayed .abcjs-notehead');
+    expect(lapsed, 'the lapsed note is not grey').not.toBeNull();
+    const ghost = await probe.one('.exercise-notation__ghost.is-wrong ellipse');
+    expect(ghost?.painted, 'the recorded wrong pitch has no red ghost').toBe(true);
+    expect(ghost.midi).toBe('66');
+    expect(ghost.left, `the ghost ${say(ghost)} is not beside its beat ${say(lapsed)}`).toBeGreaterThan(lapsed.right);
+    expect(await probe.prop('.exercise-notation__ghost.is-wrong ellipse', 'fill')).toBe('rgba(200, 40, 40, 0.8)');
+    // The lane at the cursor is dimmed: this beat's window is shut.
+    expect(await probe.count('.exercise-notation__cursor.is-window-closed')).toBe(1);
+    await page.screenshot({ path: '/tmp/timed-record-notation.png' });
+    expectNoPageErrors();
+  }, 60000);
+});
+
 describe('the engraved cursor, on the material the bank ships', () => {
   it('a cued eighth-note scale draws its lane ON the note it is asking for', async () => {
     await run({ instance: EIGHTH_SCALE,
@@ -1410,7 +1456,10 @@ describe('the engraved cursor, on the material the bank ships', () => {
     // head — that is its stated job — and a beamed eighth's stem and beam run
     // well past it, so demanding the lane swallow those would pin a cosmetic
     // choice instead of the thing that broke: WHICH head the lane sits on.
-    const target = await probe.one('.exercise-note-next .abcjs-notehead');
+    // A timed run paints the RECORD, so the note under the lane may already be
+    // grey (its window closed unplayed) rather than `next`; the lane's own
+    // hook says which note it is on either way.
+    const target = await probe.one('.exercise-note-at-cursor .abcjs-notehead');
     expect(inside(target, cursor),
       `the cursor ${say(cursor)} does not enclose the notehead it points at ${say(target)}`).toBe(true);
     await page.screenshot({ path: '/tmp/cursor-cued-eighths.png' });

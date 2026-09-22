@@ -51,7 +51,7 @@ const PRESENCE_INTERVAL_MS = 10_000;
  * @param {string} opts.deviceId   - Required; hook is a no-op when falsy.
  * @param {object} opts.actionBus  - ActionBus with `.subscribe(action, handler)`.
  */
-export function useCommandAckPublisher({ deviceId, actionBus } = {}) {
+export function useCommandAckPublisher({ deviceId, actionBus, handoffExecutor = null } = {}) {
   const deviceIdRef = useRef(deviceId);
   deviceIdRef.current = deviceId;
   const busRef = useRef(actionBus);
@@ -108,12 +108,12 @@ export function useCommandAckPublisher({ deviceId, actionBus } = {}) {
       // Add requires a durable queue-owner mutation. Its receipt event is not
       // success; ScreenActionHandler emits media:queue-op-applied only after the
       // owning Player exposes the appended item in its post-mutation snapshot.
-      if (payload?.op === 'add') return;
+      if (['add', 'item-action', 'undo'].includes(payload?.op)) return;
       publishAck({ commandId, ok: true });
     };
 
     const queueOpAppliedHandler = (payload) => {
-      if (payload?.op !== 'add') return;
+      if (!['add', 'item-action', 'undo'].includes(payload?.op)) return;
       publishAck({ commandId: payload?.commandId, ok: true });
     };
 
@@ -131,10 +131,26 @@ export function useCommandAckPublisher({ deviceId, actionBus } = {}) {
     // Receipt-time success is specifically unsafe for handoff: no F3a owner
     // executor exists to prove capture/start/stop. Return an explicit typed
     // terminal failure and leave every owner untouched.
-    const handoffUnsupportedHandler = (payload) => {
+    const handoffUnsupportedHandler = async (payload) => {
       const commandId = payload?.commandId;
       const transferId = payload?.transferId;
       if (!commandId || !transferId) return;
+      if (handoffExecutor?.execute) {
+        const { commandId: _commandId, ...params } = payload;
+        try {
+          const result = await handoffExecutor.execute({ commandId, params });
+          publishAck({
+            commandId,
+            ok: result?.ok === true,
+            error: result?.error,
+            code: result?.code ?? result?.handoff?.code,
+            handoff: result?.handoff,
+          });
+        } catch (err) {
+          publishAck({ commandId, ok: false, error: String(err?.message ?? err) });
+        }
+        return;
+      }
       publishAck({
         commandId, ok: false, code: 'HANDOFF_UNSUPPORTED', error: 'Handoff executor unavailable',
         handoff: { transferId, phase: 'failed', code: 'HANDOFF_UNSUPPORTED' },
@@ -179,7 +195,7 @@ export function useCommandAckPublisher({ deviceId, actionBus } = {}) {
       recent.clear();
       logger().info('unmounted', { deviceId });
     };
-  }, [deviceId]);
+  }, [deviceId, handoffExecutor]);
 }
 
 export default useCommandAckPublisher;

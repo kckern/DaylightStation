@@ -26,6 +26,16 @@ test('[FIND.1a/AC5] phone Play keeps search words and narrowing while actual med
   await search.getByRole('button', { name: 'Video', exact: true }).click();
   const result = search.getByTestId('search-mode-results').getByText(title, { exact: true });
   await expect(result).toHaveCount(1, { timeout: 15000 });
+  const row = result.locator('xpath=ancestor::li');
+  await expect(row.getByText('Movie', { exact: true })).toBeVisible();
+  expect(await row.locator('img, [data-testid="result-artwork-placeholder"]').count()).toBeGreaterThan(0);
+
+  await row.getByRole('button', { name: 'More actions' }).click();
+  await page.getByRole('menuitem', { name: 'Add to Queue', exact: true }).click();
+  await expect(search, 'Add must retain the same search work surface').toBeVisible();
+  await expect(input).toHaveValue(title);
+  await expect(search.getByRole('button', { name: 'Video', exact: true })).toHaveAttribute('aria-pressed', 'true');
+
   await result.click();
   await expect(search, 'Play must leave search open so the next item can be chosen').toBeVisible();
   await expect(input).toHaveValue(title);

@@ -27,6 +27,13 @@ export function DismissStackProvider({ children, onBaseDismiss }) {
   }, []);
 
   useEffect(() => {
+    // A target/portal handler can close its layer before document bubble.
+    // Keep ownership for this native event so that Escape cannot also Back.
+    // Capture only observes. A task, rather than a microtask, runs after the
+    // browser has completed trusted native key dispatch, so target handlers
+    // can prevent default or finish their own managed-menu handling first.
+    let disposed = false;
+    const pendingTasks = new Set();
     const onKey = (e) => {
       if (e.key !== 'Escape' || e.defaultPrevented) return;
       const layers = layersRef.current;
@@ -37,18 +44,26 @@ export function DismissStackProvider({ children, onBaseDismiss }) {
           break;
         }
       }
-      if (top) {
-        if (!top.managed) {
-          e.stopPropagation();
-          top.onDismiss?.(e);
+      const task = setTimeout(() => {
+        pendingTasks.delete(task);
+        if (disposed || e.defaultPrevented) return;
+        if (top) {
+          // A child may already have dismissed/unregistered this owner.
+          if (!top.managed && layersRef.current.includes(top) && top.isActive?.(e) !== false) top.onDismiss?.(e);
+          // The original owner consumes this event even if it has closed.
+          return;
         }
-        // managed layers dismiss themselves; either way the base action is suppressed
-        return;
-      }
-      baseRef.current?.();
+        baseRef.current?.();
+      }, 0);
+      pendingTasks.add(task);
     };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
+    document.addEventListener('keydown', onKey, true);
+    return () => {
+      disposed = true;
+      pendingTasks.forEach(task => clearTimeout(task));
+      pendingTasks.clear();
+      document.removeEventListener('keydown', onKey, true);
+    };
   }, []);
 
   return <DismissContext.Provider value={register}>{children}</DismissContext.Provider>;

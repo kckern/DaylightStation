@@ -1,6 +1,8 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, within } from '@testing-library/react';
+import { FleetContext } from '../fleet/FleetProvider.jsx';
+import { CastTargetProvider } from '../cast/CastTargetProvider.jsx';
 
 const transport = {
   play: vi.fn(), pause: vi.fn(), stop: vi.fn(),
@@ -33,6 +35,21 @@ vi.mock('../cast/DispatchTargetPicker.jsx', () => ({
 
 import { NowPlayingView } from './NowPlayingView.jsx';
 
+const emptyFleetEntries = new Map();
+const fleetStore = {
+  subscribeAll: () => () => {},
+  getAll: () => emptyFleetEntries,
+  getEntry: () => null,
+};
+
+function renderNowPlaying({ devices = [] } = {}) {
+  return render(
+    <FleetContext.Provider value={{ devices, store: fleetStore }}>
+      <CastTargetProvider><NowPlayingView /></CastTargetProvider>
+    </FleetContext.Provider>,
+  );
+}
+
 function makeSnapshot({ item, index = 1, containerTitle = 'Primary Songs' } = {}) {
   const items = [0, 1, 2].map((i) => ({
     queueItemId: `q${i}`,
@@ -58,15 +75,24 @@ function makeSnapshot({ item, index = 1, containerTitle = 'Primary Songs' } = {}
 
 beforeEach(() => {
   vi.clearAllMocks();
+  localStorage.clear();
   state.snapshot = makeSnapshot();
   state.mediaElement = null;
   state.controller = null;
 });
 
 describe('NowPlayingView', () => {
+  it('shows the persisted remote aim while the local Now Playing surface is open', () => {
+    localStorage.setItem('media-app.cast-target', JSON.stringify({
+      mode: 'transfer', targetIds: ['office-tv'], activityAt: Date.now(), exemptionStartedAt: null,
+    }));
+    renderNowPlaying({ devices: [{ id: 'office-tv', name: 'Office TV', location: 'Office' }] });
+    expect(screen.getByTestId('aim-label')).toHaveTextContent('Aim: Office TV · Office');
+  });
+
   it.each(['format', 'mediaType'])('keeps HLS video expansion available for %s descriptors', field => {
     state.snapshot = makeSnapshot({ item: { contentId: 'plex:55854', title: 'Arrival', [field]: 'hls_video' } });
-    render(<NowPlayingView />);
+    renderNowPlaying();
     expect(screen.getByRole('button', { name: 'Expand video', exact: true })).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: 'Expand video', exact: true }));
     expect(hostClaimSpy).toHaveBeenLastCalledWith(expect.any(Object), 2, true, { forceShader: 'focused' });
@@ -79,7 +105,7 @@ describe('NowPlayingView', () => {
     state.snapshot.state = 'paused';
     state.mediaElement = document.createElement('video');
 
-    render(<NowPlayingView />);
+    renderNowPlaying();
 
     expect(screen.getByRole('button', { name: 'Expand video', exact: true })).toBeVisible();
     expect(screen.getByTestId('np-rate')).toBeDisabled();
@@ -95,7 +121,7 @@ describe('NowPlayingView', () => {
       },
     });
 
-    render(<NowPlayingView />);
+    renderNowPlaying();
 
     fireEvent.click(screen.getByRole('button', { name: 'Expand audio', exact: true }));
 
@@ -105,12 +131,12 @@ describe('NowPlayingView', () => {
   });
 
   it('keeps the exact "Now Playing: <title>" heading', () => {
-    render(<NowPlayingView />);
+    renderNowPlaying();
     expect(screen.getByTestId('now-playing-title')).toHaveTextContent('Now Playing: Primary Song 5');
   });
 
   it('renders artwork + metadata from the current item without raw ids', () => {
-    render(<NowPlayingView />);
+    renderNowPlaying();
     const meta = screen.getByTestId('np-meta');
     expect(screen.getByTestId('np-meta-art')).toHaveAttribute('src', '/api/v1/thumb/5.jpg');
     expect(within(meta).getByTestId('np-meta-title')).toHaveTextContent('Primary Song 5');
@@ -125,7 +151,7 @@ describe('NowPlayingView', () => {
       item: { contentId: 'plex:999', title: null, duration: null },
       containerTitle: null,
     });
-    render(<NowPlayingView />);
+    renderNowPlaying();
     const meta = screen.getByTestId('np-meta');
     expect(within(meta).queryByTestId('np-meta-title')).toBeNull();
     expect(within(meta).queryByTestId('np-meta-context')).toBeNull();
@@ -133,7 +159,7 @@ describe('NowPlayingView', () => {
   });
 
   it('mounts the seek row and full transport for the current item', () => {
-    render(<NowPlayingView />);
+    renderNowPlaying();
     expect(screen.getByTestId('np-seek')).toBeInTheDocument();
     expect(screen.getByTestId('np-transport')).toBeInTheDocument();
     expect(screen.getByTestId('np-rew')).toBeInTheDocument();
@@ -141,14 +167,14 @@ describe('NowPlayingView', () => {
   });
 
   it('keeps speed visible but unavailable without a controller rate capability', () => {
-    render(<NowPlayingView />);
+    renderNowPlaying();
     expect(screen.getByTestId('np-rate')).toBeDisabled();
     expect(screen.getByText('Playback speed is not available for this screen')).toBeInTheDocument();
   });
 
   it('shows the empty state when nothing is playing', () => {
     state.snapshot = makeSnapshot({ item: null, index: -1 });
-    render(<NowPlayingView />);
+    renderNowPlaying();
     expect(screen.getByTestId('now-playing-title')).toHaveTextContent('Nothing playing');
     expect(screen.queryByTestId('np-meta')).toBeNull();
     expect(screen.queryByTestId('np-transport')).toBeNull();
@@ -156,19 +182,19 @@ describe('NowPlayingView', () => {
   });
 
   it('keeps the back button wired to nav pop', () => {
-    render(<NowPlayingView />);
+    renderNowPlaying();
     fireEvent.click(screen.getByTestId('now-playing-back'));
     expect(pop).toHaveBeenCalledTimes(1);
   });
 
   it('names the actual prior area on its visible Back control', () => {
     backDestination = 'Devices';
-    render(<NowPlayingView />);
+    renderNowPlaying();
     expect(screen.getByTestId('now-playing-back')).toHaveTextContent('← Devices');
   });
 
   it('expands with the exact accessible control, requests focused rendering, and keeps Stop reachable', () => {
-    render(<NowPlayingView />);
+    renderNowPlaying();
     expect(screen.getByRole('button', { name: 'Expand video', exact: true })).toBeVisible();
     expect(hostClaimSpy).toHaveBeenLastCalledWith(expect.any(Object), 2, true, { forceShader: null });
 
@@ -182,7 +208,7 @@ describe('NowPlayingView', () => {
 
   it('does not use the controller media accessor as a speed control pathway', () => {
     state.mediaElement = { playbackRate: 1 };
-    render(<NowPlayingView />);
+    renderNowPlaying();
     expect(screen.getByTestId('np-rate')).toBeDisabled();
   });
 });

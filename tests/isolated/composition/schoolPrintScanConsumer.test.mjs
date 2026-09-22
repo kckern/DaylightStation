@@ -299,6 +299,8 @@ describe('resolution outcomes', () => {
       testId: '0123456',
       code: 'live_record_unmarked',
       silentLiveRecords: [{ recordId: 'r9', rowRange: '1-5' }],
+      // Other work on this card graded, so the phone hears nothing either.
+      notification: null,
     });
     // Nothing about the blank rows reaches the child's panel — that is the
     // point. The resolved record still runs its own ceremony.
@@ -320,7 +322,10 @@ describe('resolution outcomes', () => {
       });
       bus.broadcast('omr', sheetPayload());
       await flush();
-      expect(gradingHook.fire).toHaveBeenCalledWith({ result: 'unresolved', testId: '0123456', code });
+      expect(gradingHook.fire).toHaveBeenCalledWith({
+        result: 'unresolved', testId: '0123456', code,
+        notification: expect.objectContaining({ title: '⚠️ Unknown card — School card' }),
+      });
     }
   });
 

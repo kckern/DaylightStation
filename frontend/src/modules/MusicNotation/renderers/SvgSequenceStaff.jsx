@@ -76,7 +76,27 @@ import './SvgSequenceStaff.scss';
  *   its note again; a natural on a letter the signature alters gets a natural
  *   sign. Null — the default — draws every accidental beside its note, which is
  *   what a child who has not met key signatures yet should see.
+ * @param {Map<number, Map<number, object>>|null} verdicts - RECORDED verdicts
+ *   for a timed run (`performance/timedVerdicts.js`), keyed by the index into
+ *   `notes` (not by drawn column: an entry with no pitch draws no column but
+ *   keeps its index) and then by midi. When present this staff judges nothing
+ *   itself: every notehead is painted from its verdict (hit green, early/late
+ *   amber with a ◂/▸ tick, lapsed/missed grey), a `wrong` verdict draws a red
+ *   ghost at the pitch played beside its entry, and `activeNotes` no longer
+ *   colours anything — a held key matching the clock cursor is not a verdict.
+ *   Absent (the default), the real-time `activeNotes` rules above apply
+ *   unchanged.
+ * @param {boolean|undefined} windowOpen - timed runs only: whether the current
+ *   entry's hit window is open now. `true` lights the cursor lane, `false` dims
+ *   it; omitted, the lane is drawn as it always was.
  */
+
+/** A recorded verdict state → the notehead state this staff paints. */
+const VERDICT_NOTE_STATE = Object.freeze({
+  hit: 'hit', early: 'early', late: 'late', lapsed: 'unplayed', miss: 'unplayed',
+});
+/** The tick beside an off-beat notehead: which side of the beat it landed. */
+const DRIFT_TICK = Object.freeze({ early: '\u25C2', late: '\u25B8' });
 
 // ── Geometry (viewBox units) ─────────────────────────────────────────────────
 // Note SIZE matches SvgStaffRenderer exactly — same line spacing, same notehead
@@ -178,18 +198,21 @@ export function SvgSequenceStaff({
   clef = null,
   accidental = 'sharp',
   keySignature = null,
+  verdicts = null,
+  windowOpen = undefined,
 }) {
+  const judged = verdicts instanceof Map;
   // Black keys are spelled deterministically — spellAccidental's no-argument
   // default is a coin flip, which on a kiosk means the same note flickering
   // between C# and Db between renders. Callers that know the key pass
   // `accidental` (or set it per note); everything else reads as sharps.
   const entries = useMemo(() => {
     const built = [];
-    for (const entry of notes ?? []) {
+    (notes ?? []).forEach((entry, sourceIndex) => {
       const midis = entryMidis(entry);
-      if (!midis.length) continue;
-      built.push({ midis, accidental: entry?.accidental ?? accidental });
-    }
+      if (!midis.length) return;
+      built.push({ midis, accidental: entry?.accidental ?? accidental, sourceIndex });
+    });
     return built;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [JSON.stringify(notes ?? []), accidental]);
@@ -241,9 +264,11 @@ export function SvgSequenceStaff({
    * target of this entry, or on one pressed here and wrong (a real ghost), and
    * never on the tail of the note before.
    */
+  // A judged (timed) staff never reads held keys for colour: the recorded
+  // verdicts are the only judge, so no attempt is ever "under way" here.
   const attemptInProgress = useMemo(
-    () => attemptUnderWay(activeNotes, { cursorArrivedAt, cursorTargets: cursorTargetMidis }),
-    [activeNotes, cursorArrivedAt, cursorTargetMidis],
+    () => !judged && attemptUnderWay(activeNotes, { cursorArrivedAt, cursorTargets: cursorTargetMidis }),
+    [judged, activeNotes, cursorArrivedAt, cursorTargetMidis],
   );
 
   // Which clef each pitch would pick for itself; the majority of those decides
@@ -306,6 +331,7 @@ export function SvgSequenceStaff({
           )),
           ACCIDENTAL_HEIGHT / STEP_SIZE,
         );
+        const recorded = judged ? verdicts.get(entry.sourceIndex) : null;
         const drawn = heads.map((head, i) => {
           // Under a signature a covered sharp or flat is not drawn again, and a
           // natural on an altered letter gets a natural sign; without one this
@@ -315,7 +341,14 @@ export function SvgSequenceStaff({
           // Per-notehead hit/miss (rule 2), meaningful only while this entry
           // is under an active attempt; done/todo entries carry no verdict.
           const hit = active ? Boolean(activeNotes && activeNotes.has(head.midi)) : null;
-          const noteState = state === 'active' ? (hit ? 'hit' : 'miss') : state;
+          // Judged: the recorded verdict, or — for a note nothing has been
+          // decided about yet — plain unplayed ink (black), never brown: brown
+          // says "banked", and an undecided note has banked nothing.
+          const verdict = judged ? recorded?.get(head.midi) : null;
+          const judgedState = verdict && verdict.state !== 'wrong' ? VERDICT_NOTE_STATE[verdict.state] : null;
+          const noteState = judged
+            ? judgedState ?? (isCursor ? 'current' : 'todo')
+            : state === 'active' ? (hit ? 'hit' : 'miss') : state;
           return {
             ...head,
             ink,
@@ -323,6 +356,7 @@ export function SvgSequenceStaff({
             hasAccidental,
             accStagger: hasAccidental ? accidentalColumn.get(i) : 0,
             noteState,
+            verdict: judgedState ? verdict.state : null,
           };
         });
 
@@ -337,8 +371,12 @@ export function SvgSequenceStaff({
         // `current` gets its own value rather than folding into `done`: since
         // `done` is the brown "already played" ink, a resting cursor sharing it
         // would hang a brown stem under a black notehead.
-        const stemState =
-          state === 'todo' || state === 'current' ? state
+        const judgedStem = () => {
+          const kinds = new Set(drawn.map((h) => (h.noteState === 'early' || h.noteState === 'late' ? 'offbeat' : h.noteState)));
+          return kinds.size === 1 ? [...kinds][0] : 'mixed';
+        };
+        const stemState = judged ? judgedStem()
+          : state === 'todo' || state === 'current' ? state
           : state === 'active'
             ? (drawn.every((h) => h.noteState === 'hit') ? 'hit'
               : drawn.every((h) => h.noteState === 'miss') ? 'miss'
@@ -346,9 +384,18 @@ export function SvgSequenceStaff({
             : 'done';
 
         const colX = firstColumnX + index * COLUMN_W;
-        return { index, heads: drawn, colX, state, stemState, stemUp, stemLen: LINE_SPACING * stemLengthUnits(outerPos, dir) };
+        // A wrong verdict recorded against this entry: the pitch that was
+        // played, drawn red beside the column it was charged to.
+        const wrongs = judged
+          ? [...(recorded?.values() ?? [])].filter((v) => v.state === 'wrong' && Number.isFinite(v.midi))
+            .map((v) => {
+              const head = getStaffPositionOnClef(v.midi, activeClef, entry.accidental);
+              return { midi: v.midi, ...head, ink: inkForHead(head, keySignature, activeClef) };
+            })
+          : [];
+        return { index, heads: drawn, colX, state, stemState, stemUp, stemLen: LINE_SPACING * stemLengthUnits(outerPos, dir), wrongs };
       }),
-    [entries, activeClef, cursorIndex, activeNotes, attemptInProgress, keySignature, firstColumnX]
+    [entries, activeClef, cursorIndex, activeNotes, attemptInProgress, keySignature, firstColumnX, judged, verdicts]
   );
 
 
@@ -545,7 +592,7 @@ export function SvgSequenceStaff({
               (see INK_PAD). */}
           {showCursor && (
             <rect
-              className="sequence-staff__cursor"
+              className={`sequence-staff__cursor${windowOpen === true ? ' is-window-open' : windowOpen === false ? ' is-window-closed' : ''}`}
               data-cursor-index={cursorIndex}
               x={firstColumnX + cursorIndex * COLUMN_W - COLUMN_W / 2}
               y={cursorBand.y}
@@ -623,6 +670,20 @@ export function SvgSequenceStaff({
                         {head.ink === 'sharp' ? <SharpShape /> : head.ink === 'flat' ? <FlatShape /> : <NaturalShape />}
                       </g>
                     )}
+                    {/* Off the beat: a small tick on the side away from the
+                        stem, pointing the way the note missed the beat. */}
+                    {(head.noteState === 'early' || head.noteState === 'late') && (
+                      <text
+                        className={`sequence-staff__drift sequence-staff__drift--${head.noteState}`}
+                        data-midi={head.midi}
+                        x={noteX}
+                        y={col.stemUp ? noteY + NOTEHEAD_RY + 13 : noteY - NOTEHEAD_RY - 4}
+                        textAnchor="middle"
+                        fontSize="14"
+                      >
+                        {DRIFT_TICK[head.noteState]}
+                      </text>
+                    )}
                   </g>
                 );
               })}
@@ -637,35 +698,53 @@ export function SvgSequenceStaff({
               of `activeNotes`, so it is gone the instant the key is released —
               nothing here remembers a past mistake (rule 4). */}
           {heldGhosts.map((ghost) => (
-            <g key={`ghost-${ghost.midi}`} className="sequence-staff__ghost">
-              {ledgerLineYs(ghost.position, BOTTOM_LINE_Y, STEP_SIZE).map((ly, li) => (
-                <line key={`ghost-ledger-${li}`} className="sequence-staff__ghost-ledger"
-                  x1={ghostX - 14} y1={ly} x2={ghostX + 14} y2={ly}
-                  {...GHOST_INK.ledger} />
-              ))}
-              <ellipse
-                className="sequence-note-wrong-ghost"
-                data-midi={ghost.midi}
-                data-line-offset={ghost.position}
-                cx={ghostX} cy={yOf(ghost.position)} rx={NOTEHEAD_RX} ry={NOTEHEAD_RY}
-                transform={`rotate(-12, ${ghostX}, ${yOf(ghost.position)})`}
-                {...GHOST_INK.head}
-              />
-              {ghost.ink && (
-                <g
-                  className="sequence-staff__ghost-accidental"
-                  color={GHOST_INK.accidental}
-                  data-kind={ghost.ink}
-                  transform={`translate(${ghostX - NOTEHEAD_RX - ACCIDENTAL_GAP - ACCIDENTAL_WIDTH / 2}, ${yOf(ghost.position)})`}
-                >
-                  {ghost.ink === 'sharp' ? <SharpShape /> : ghost.ink === 'flat' ? <FlatShape /> : <NaturalShape />}
-                </g>
-              )}
-            </g>
+            <Ghost key={`ghost-${ghost.midi}`} ghost={ghost} x={ghostX} />
           ))}
+          {/* Judged runs: a RECORDED wrong note, red, at the pitch played and
+              beside the entry it was charged to. Same geometry as the live
+              ghost; the colour is the verdict. */}
+          {columns.flatMap((col) => col.wrongs.map((ghost) => (
+            <Ghost key={`wrong-${col.index}-${ghost.midi}`} ghost={ghost} x={col.colX + GHOST_DX} wrong entryIndex={col.index} />
+          )))}
         </svg>
       </div>
     </div>
+  );
+}
+
+/**
+ * One ghost notehead at the pitch actually played, with its ledger lines and
+ * accidental. `wrong` is a recorded verdict (red, painted by class); without it
+ * this is the live "you are here" ghost in GHOST_INK.
+ */
+function Ghost({ ghost, x, wrong = false, entryIndex }) {
+  const y = yOf(ghost.position);
+  return (
+    <g className={`sequence-staff__ghost${wrong ? ' sequence-staff__ghost--wrong' : ''}`} data-entry-index={entryIndex}>
+      {ledgerLineYs(ghost.position, BOTTOM_LINE_Y, STEP_SIZE).map((ly, li) => (
+        <line key={`ghost-ledger-${li}`} className="sequence-staff__ghost-ledger"
+          x1={x - 14} y1={ly} x2={x + 14} y2={ly}
+          {...GHOST_INK.ledger} />
+      ))}
+      <ellipse
+        className={wrong ? 'sequence-note-wrong-verdict' : 'sequence-note-wrong-ghost'}
+        data-midi={ghost.midi}
+        data-line-offset={ghost.position}
+        cx={x} cy={y} rx={NOTEHEAD_RX} ry={NOTEHEAD_RY}
+        transform={`rotate(-12, ${x}, ${y})`}
+        {...GHOST_INK.head}
+      />
+      {ghost.ink && (
+        <g
+          className="sequence-staff__ghost-accidental"
+          color={GHOST_INK.accidental}
+          data-kind={ghost.ink}
+          transform={`translate(${x - NOTEHEAD_RX - ACCIDENTAL_GAP - ACCIDENTAL_WIDTH / 2}, ${y})`}
+        >
+          {ghost.ink === 'sharp' ? <SharpShape /> : ghost.ink === 'flat' ? <FlatShape /> : <NaturalShape />}
+        </g>
+      )}
+    </g>
   );
 }
 

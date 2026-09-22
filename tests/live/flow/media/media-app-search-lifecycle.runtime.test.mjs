@@ -1,6 +1,11 @@
 import { test, expect } from '@playwright/test';
 
+test.use({ viewport: { width: 1280, height: 800 }, trace: 'retain-on-failure', actionTimeout: 10000 });
+test.setTimeout(90000);
+
 test.describe('MediaApp — search dropdown lifecycle', () => {
+  const searchInput = page => page.getByRole('textbox', { name: 'Search media…' });
+
   test.beforeEach(async ({ page }) => {
     await page.goto('/media');
     await page.evaluate(() => localStorage.clear());
@@ -8,31 +13,27 @@ test.describe('MediaApp — search dropdown lifecycle', () => {
 
   test('Escape closes the search results dropdown', async ({ page }) => {
     await page.goto('/media');
-    await page.getByTestId('media-search-input').fill('lonesome');
-    await expect(page.locator('ul[data-testid="media-search-results"]')).toBeVisible({ timeout: 15000 });
+    await searchInput(page).fill('lonesome');
+    await expect(page.getByRole('listbox')).toBeVisible({ timeout: 15000 });
     await page.keyboard.press('Escape');
-    await expect(page.locator('ul[data-testid="media-search-results"]')).toBeHidden({ timeout: 2000 });
+    await expect(page.getByRole('listbox')).toBeHidden({ timeout: 2000 });
   });
 
   test('outside click closes the search results dropdown', async ({ page }) => {
     await page.goto('/media');
-    await page.getByTestId('media-search-input').fill('lonesome');
-    await expect(page.locator('ul[data-testid="media-search-results"]')).toBeVisible({ timeout: 15000 });
-    // Click clearly outside the dropdown (search bar max-width is 560px; click far right).
-    await page.mouse.click(1000, 600);
-    await expect(page.locator('ul[data-testid="media-search-results"]')).toBeHidden({ timeout: 2000 });
+    await searchInput(page).fill('lonesome');
+    await expect(page.getByRole('listbox')).toBeVisible({ timeout: 15000 });
+    await page.getByTestId('home-view').click({ position: { x: 8, y: 8 } });
+    await expect(page.getByRole('listbox')).toBeHidden({ timeout: 2000 });
   });
 
-  test('Play Now from search auto-closes the dropdown and clears the query', async ({ page }) => {
+  test('[FIND.1a/AC5] playable-row Play keeps the desktop search open with its exact query', async ({ page }) => {
     await page.goto('/media');
-    await page.getByTestId('media-search-input').fill('lonesome');
-    const firstRow = page.locator('[data-testid^="result-row-"]').first();
+    await searchInput(page).fill('lonesome');
+    const firstRow = page.locator('[data-testid^="combobox-option-"]').first();
     await expect(firstRow).toBeVisible({ timeout: 15000 });
-    const rowId = await firstRow.getAttribute('data-testid');
-    const contentId = rowId?.replace(/^result-row-/, '');
-    // JS click bypasses search-overlay pointer-event interception.
-    await page.getByTestId(`result-play-now-${contentId}`).evaluate((el) => el.click());
-    await expect(page.locator('ul[data-testid="media-search-results"]')).toBeHidden({ timeout: 2000 });
-    await expect(page.getByTestId('media-search-input')).toHaveValue('');
+    await firstRow.click();
+    await expect(page.locator('[role="listbox"]')).toBeVisible();
+    await expect(searchInput(page)).toHaveValue('lonesome');
   });
 });

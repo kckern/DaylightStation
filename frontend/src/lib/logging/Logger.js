@@ -159,11 +159,12 @@ const accumulateData = (aggregated, data) => {
  * Emit a sampled log event with rate limiting
  * @param {string} eventName
  * @param {object} data
- * @param {object} options - { maxPerMinute, aggregate }
+ * @param {object} options - { maxPerMinute, aggregate, level } (level defaults to 'info';
+ *   the per-window `.aggregated` summary is always info)
  * @param {object} [emitContext] - merged context to forward to emit() (used by child loggers)
  */
 const emitSampled = (eventName, data = {}, options = {}, emitContext) => {
-  const { maxPerMinute = 20, aggregate = true } = options;
+  const { maxPerMinute = 20, aggregate = true, level = 'info' } = options;
   const emitOpts = emitContext ? { context: emitContext } : {};
   const now = Date.now();
 
@@ -187,7 +188,7 @@ const emitSampled = (eventName, data = {}, options = {}, emitContext) => {
   // Within budget: log normally
   if (state.count < maxPerMinute) {
     state.count++;
-    emit('info', eventName, data, emitOpts);
+    emit(level, eventName, data, emitOpts);
     return;
   }
 

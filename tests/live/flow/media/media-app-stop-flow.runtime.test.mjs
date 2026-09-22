@@ -5,22 +5,23 @@ test.describe('MediaApp — Stop flow', () => {
     await page.addInitScript(() => { try { localStorage.clear(); } catch {} });
   });
 
-  test('Stop returns the session to idle', async ({ page }) => {
+  test('Stop keeps the queue reachable and separates Clear', async ({ page }) => {
     await page.goto('/media');
-    await page.getByTestId('media-search-input').fill('lonesome');
-    const firstRow = page.locator('[data-testid^="result-row-"]').first();
-    await expect(firstRow).toBeVisible({ timeout: 15000 });
-    const id = (await firstRow.getAttribute('data-testid')).replace(/^result-row-/, '');
-    // Use JS click to bypass overlay pointer-event interception.
-    const btn = page.getByTestId(`result-play-now-${id}`);
-    await expect(btn).toBeAttached();
-    await btn.evaluate((el) => el.click());
+    const search = page.getByRole('textbox', { name: 'Search media…' });
+    await expect(search).toBeVisible({ timeout: 30000 });
+    await search.fill('lonesome');
+    const option = page.getByRole('option').filter({ hasText: 'Lonesome' }).first();
+    await expect(option).toBeVisible({ timeout: 15000 });
+    await option.click();
     await expect(page.getByTestId('mini-toggle')).toBeVisible({ timeout: 15000 });
 
     // Stop
     await page.getByTestId('mini-stop').click();
 
-    // MiniPlayer back to idle
-    await expect(page.getByTestId('media-mini-player')).toHaveText(/idle/i);
+    await expect(page.getByTestId('media-mini-player')).toHaveText(/1 item ready/i);
+    await expect(page.getByTestId('mini-player-open-nowplaying')).toBeVisible();
+    await page.getByTestId('mini-player-open-nowplaying').click();
+    await expect(page.getByTestId('queue-clear')).toBeVisible();
+    await expect(page.getByTestId('queue-clear')).toBeEnabled();
   });
 });

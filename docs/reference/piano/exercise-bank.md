@@ -370,14 +370,63 @@ quarters as the music starts.
 
 During the count-in, the staff remains visible in gray, the cursor is hidden,
 and played notes reach neither assessment nor visual feedback. Notes held
-through the boundary stay excluded until released and pressed again.
+through the boundary stay excluded until released and pressed again. Whether a
+note belongs to the count-in is decided by the note's OWN time: one stamped
+before the first beat's hit window opens is a gesture (logged as
+`piano.exercise-input-ignored`, reason `countdown`); one inside that window is
+the first note even if the count-in is still on screen.
+
+**One judge; the staff paints the record.** Every exercise timed run (cued
+exercise or cued score passage, practice or challenge) is judged on the
+gap-relative window policy — `windowFraction: 0.4, windowMinMs: 80,
+windowMaxMs: 400` in `ExerciseRun`'s `DEFAULT_POLICY`, overridable by a
+requirement's `policy` (see performance-assessment.md, "Timed judge and window
+policies"). Each onset is observed at its MIDI timestamp from `activeNotes`,
+not at render time. `ExerciseRun` projects the attempt with
+`timedVerdicts(snapshot)` and hands the map as `verdicts` to
+`SvgSequenceStaff`, `ExerciseNotation`, `KeysAsk` (its staff) and
+`ScorePassage`. With `verdicts` present a renderer judges nothing and ignores
+held keys for colour:
+
+| Recorded state | Drawn as |
+|---|---|
+| `hit` | green |
+| `early` / `late` | amber, with a ◂ / ▸ tick at the notehead |
+| `lapsed` / `miss` | grey |
+| `wrong` | red ghost at the played pitch beside its event (score passage: the owed note takes `piano-note-wrong`) |
+| no entry yet | unplayed black ink |
+
+The map is keyed by expectation event index, which is the index into
+`instance.events` (and into the `notes` handed to `SvgSequenceStaff` — an
+entry with no pitch draws no column but keeps its index). A stage showing a
+window of a deck re-keys it with `windowOfVerdicts`. Without `verdicts` (free,
+metronome and held runs) every renderer behaves as described above.
+
+This replaced the staff's own judging, which painted green whenever the held
+key matched the clock cursor's note. The cursor sits on a note from its onset
+to the next one, so a child up to one beat late saw green while the grader
+charged the note to the next beat (2026-09-22: every note ~450 ms late, green
+on screen, scored 0).
+
+The cursor lane is lit while the current event's window is open
+(`timedWindowOpen`) and dimmed between windows (`is-window-open` /
+`is-window-closed`).
+
+A timed run that fails on timing says so: `timedRunSummary` kind `timing` gives
+"Every note was right, but 6 of 8 came late — about 0.4 s behind the click."
+("ahead of the click" when early, "off the beat" when mixed). A run failing
+on notes keeps the missing-notes copy.
 
 `piano.exercise-visual-cursor` records phase, BPM, musical elapsed milliseconds,
 countdown remaining, count-in beat, musical beat, expected cursor, displayed
 cursor, matcher cursor, held notes, and attempt identity. It emits on cursor,
 phase, beat, or held-note changes. `piano.exercise-input-ignored` records
 countdown note-on events and their reason; the arming key is recorded on
-`piano.exercise-countdown-started`. Cursor telemetry describes the presentation
+`piano.exercise-countdown-started`. `piano.exercise-observation` carries the
+judge's `driftMs`, `side` (early/late) and `noteIds` for hits, off-beat claims
+and lapses, and `piano.exercise-timing-summary` closes every timed run with
+`kind`, `late`, `early`, `offbeat`, `medianDriftMs` and the first event's
+`windowMs`. Cursor telemetry describes the presentation
 state; browser geometry tests separately verify the visible yellow overlay.
 
 ### Run chrome

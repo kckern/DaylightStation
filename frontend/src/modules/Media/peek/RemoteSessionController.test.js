@@ -26,6 +26,20 @@ function setup({ httpImpl, onSteeringActivity } = {}) {
 }
 
 describe('RemoteSessionController', () => {
+  it('sends canonical item actions without substituting a legacy queue verb', async () => {
+    const { ackRouter, http, ctl } = setup();
+    const command = { kind: 'playNext', item: { contentId: 'new' }, operationId: 'operation', tappedAt: 1000, clearRest: false };
+    const pending = ctl.execute(command);
+    expect(http).toHaveBeenCalledWith('api/v1/device/tv/session/queue/item-action', expect.objectContaining({ ...command, commandId: 'cmd-1' }), 'POST');
+    ackRouter.resolve({ commandId: 'cmd-1', ok: true });
+    expect(await pending).toMatchObject({ ok: true, operationId: 'operation', expiresAt: 11000 });
+  });
+  it('Undo cancels a pending cold wake without requiring an offline receiver ACK', async () => {
+    const { http, ctl } = setup({ httpImpl: async () => ({ ok: true, pending: true }) });
+    expect(await ctl.undo('operation')).toMatchObject({ ok: true, pending: true });
+    expect(http).toHaveBeenCalledTimes(1);
+    expect(http).toHaveBeenCalledWith('api/v1/device/tv/session/item-action/operation/cancel', {}, 'POST');
+  });
   it('conforms to the controller shape', () => {
     const { ctl } = setup();
     expect(() => assertController(ctl)).not.toThrow();
@@ -593,22 +607,23 @@ describe('RemoteSessionController', () => {
 
   it('capabilities distinguish on-demand, live, and unavailable seeking with a reason', () => {
     const { fleetStore, ctl } = setup();
+    const speed = { available: false, reason: 'Playback speed is not supported by tv' };
     expect(ctl.capabilities).toEqual({
-      seekable: false, live: false, reason: 'Nothing is playing', acked: true,
+      seekable: false, live: false, reason: 'Nothing is playing', acked: true, speed,
     });
     fleetStore.receive({ deviceId: 'tv', snapshot: {
       state: 'playing', currentItem: { contentId: 'plex:1', duration: 120, isLive: false },
     } });
     expect(ctl.capabilities).toEqual({
-      seekable: true, live: false, reason: null, acked: true,
+      seekable: true, live: false, reason: null, acked: true, speed,
     });
     fleetStore.receive({ deviceId: 'tv', snapshot: { state: 'playing', currentItem: { contentId: 'cam:1', isLive: true } } });
     expect(ctl.capabilities).toEqual({
-      seekable: false, live: true, reason: 'Live playback has no seekable position', acked: true,
+      seekable: false, live: true, reason: 'Live playback has no seekable position', acked: true, speed,
     });
     fleetStore.receive({ deviceId: 'tv', snapshot: { state: 'playing', currentItem: { contentId: 'plex:2', duration: null } } });
     expect(ctl.capabilities).toEqual({
-      seekable: false, live: false, reason: 'Playback duration is unavailable', acked: true,
+      seekable: false, live: false, reason: 'Playback duration is unavailable', acked: true, speed,
     });
   });
 });

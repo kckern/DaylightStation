@@ -179,6 +179,34 @@ describe('ContentCombobox result actions — real focus ownership', () => {
     expect(onChange).not.toHaveBeenCalled();
   });
 
+  it('lets Escape dismiss the outer search after pointer Add restores focus to a closed More trigger', async () => {
+    const onClose = vi.fn();
+    const { input, onMore } = await renderSearchedCombobox({ onClose });
+    const more = screen.getByTestId('result-more-plex:leaf-1');
+    pointerActivate(more);
+    const add = await screen.findByTestId('result-action-add-plex:leaf-1');
+    const menu = screen.getByTestId('result-more-menu-plex:leaf-1');
+    await waitFor(() => expect(menu.contains(document.activeElement)).toBe(true));
+    pointerActivate(add);
+    await waitFor(() => expect(screen.queryByTestId('result-more-menu-plex:leaf-1')).toBeNull());
+    // Happy-dom leaves focus on body when the portal disappears. Recreate
+    // the restored-trigger focus observed in the browser runtime trace.
+    act(() => more.focus());
+    expect(more).toHaveFocus();
+    expect(input).toHaveValue('bluey');
+    expect(onMore).toHaveBeenCalledExactlyOnceWith('add', leaf);
+    expect(onClose).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(document.activeElement, { key: 'Escape', code: 'Escape' });
+
+    expect(more).not.toHaveAttribute('data-expanded');
+    expect(screen.queryByTestId('result-more-menu-plex:leaf-1')).toBeNull();
+    await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull());
+    expect(input).toHaveValue('');
+    expect(onClose).toHaveBeenCalledWith('outside');
+    expect(screen.getByRole('button', { name: 'Outside', exact: true })).toBeVisible();
+  });
+
   it('retains query/results through nested device and submit actions across two destination picker cycles but closes on ordinary outside pointer', async () => {
     const { input } = await renderSearchedCombobox();
 

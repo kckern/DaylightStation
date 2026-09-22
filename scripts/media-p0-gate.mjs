@@ -14,10 +14,70 @@ const MEDIA_JOURNEY_DIRECTORY = 'tests/live/flow/media';
 
 export const P0_EXTENSION_ENTRIES = Object.freeze([
   {
+    story: 'PLACE.8a',
+    criteria: ['PLACE.8a/AC1'],
+    file: 'media-app-handoff-picker.runtime.test.mjs',
+    grep: 'NowPlaying hand-off shows truthful aim plus explicit move/keep choices',
+  },
+  {
+    story: 'STEER.1a',
+    criteria: ['STEER.1a/AC2', 'STEER.1a/AC3'],
+    file: 'media-app-handoff-picker.runtime.test.mjs',
+    grep: 'NowPlaying hand-off shows truthful aim plus explicit move/keep choices',
+  },
+  {
+    story: 'STEER.6a',
+    criteria: ['STEER.6a/AC3'],
+    file: 'media-app-stop-flow.runtime.test.mjs',
+    grep: 'Stop keeps the queue reachable and separates Clear',
+  },
+  {
+    story: 'RELY.4a',
+    criteria: ['RELY.4a/AC1', 'RELY.4a/AC2'],
+    file: 'media-app-queue-journey.runtime.test.mjs',
+    grep: 'Undo restores the previous paused native position and queue generation',
+  },
+  {
     story: 'PLAY.6a',
     criteria: ['PLAY.6a/AC3'],
     file: 'media-app-remote-controls.runtime.test.mjs',
     grep: 'Add preserves playback and reports its position before Peek Next and Previous traverse the receiver queue',
+  },
+  {
+    story: 'FIND.3a',
+    criteria: ['FIND.3a/AC3'],
+    file: 'media-app-search-states.runtime.test.mjs',
+    grep: 'a failed source is named before a truthful widened result',
+  },
+  {
+    story: 'FIND.4a',
+    criteria: ['FIND.4a/AC2'],
+    file: 'media-app-search-states.runtime.test.mjs',
+    grep: 'a failed source is named before a truthful widened result',
+  },
+  {
+    story: 'FIND.5a',
+    criteria: ['FIND.5a/AC2'],
+    file: 'media-app-browse-breadcrumb.runtime.test.mjs',
+    grep: 'browse shows pictures, natural order, every parent, and collection actions',
+  },
+  {
+    story: 'FIND.5a',
+    criteria: ['FIND.5a/AC3'],
+    file: 'media-app-browse-breadcrumb.runtime.test.mjs',
+    grep: 'scrolling to the end loads the next page without a button hunt',
+  },
+  {
+    story: 'FIND.5a',
+    criteria: ['FIND.5a/AC4'],
+    file: 'media-app-browse-breadcrumb.runtime.test.mjs',
+    grep: 'browser Back restores the exact browse scroll and focused collection',
+  },
+  {
+    story: 'FIND.6a',
+    criteria: ['FIND.6a/AC1', 'FIND.6a/AC2', 'FIND.6a/AC3'],
+    file: 'media-app-browse-breadcrumb.runtime.test.mjs',
+    grep: 'browse shows pictures, natural order, every parent, and collection actions',
   },
 ]);
 

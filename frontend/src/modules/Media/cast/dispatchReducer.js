@@ -69,6 +69,8 @@ export function reduceDispatch(state, action) {
             playbackRevision: action.playbackRevision ?? null,
             queueRevision: action.queueRevision ?? null,
             queueLength: action.queueLength ?? null,
+            ordinal: action.ordinal ?? null,
+            count: action.count ?? null,
           },
         } : {}),
       });

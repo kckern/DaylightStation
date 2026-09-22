@@ -135,12 +135,26 @@ export function createPlayerSessionBridge({
   let mountedOperationSubscription = null;
   let mountedOperationHandle = null;
   const nativeSubs = new Set();
+  const handoffBoundarySubs = new Set();
+  const handoffBindings = new Map();
 
   const readHandle = () => {
     try {
       return getPlayerHandle() ?? null;
     } catch {
       return null;
+    }
+  };
+
+  const samePlayerInstance = (left, right) => {
+    if (left === right) return true;
+    if (!left || !right) return false;
+    try {
+      const leftId = left.getPlayerInstanceId?.();
+      const rightId = right.getPlayerInstanceId?.();
+      return typeof leftId === 'string' && leftId.length > 0 && leftId === rightId;
+    } catch {
+      return false;
     }
   };
 
@@ -559,6 +573,13 @@ export function createPlayerSessionBridge({
   };
 
   const queueController = {
+    // Mutation identity remains available for an idle held queue. This is
+    // deliberately separate from native playback evidence.
+    getActionOwner: () => {
+      const handle = readHandle();
+      const identity = handle?.getPlaybackIdentity?.();
+      return identity ? { ...identity, stopRevision: handle.getItemActionStopRevision?.() ?? 0 } : null;
+    },
     getCurrentItem,
     getQueue: () => {
       const items = readQueueSnapshot()?.items;
@@ -592,8 +613,11 @@ export function createPlayerSessionBridge({
     getOwnerCapabilities() {
       const current = readOwnerCapture();
       const item = current?.currentItem;
+      const handle = readHandle();
       return {
-        handoffV1: false,
+        handoffV1: Boolean(handle
+          && typeof handle.adoptSessionSnapshot === 'function'
+          && typeof handle.subscribeMountedMediaOperations === 'function'),
         seekable: Boolean(item && Number.isFinite(current?.position) && getDuration() != null),
         liveEdge: false,
       };
@@ -603,11 +627,29 @@ export function createPlayerSessionBridge({
       if (!handle || typeof handle.adoptSessionSnapshot !== 'function') {
         return { ok: false, code: 'UNSUPPORTED' };
       }
-      const requiredObserverIds = mountedOperationHandle === handle
+      const requiredObserverIds = samePlayerInstance(mountedOperationHandle, handle)
         && mountedOperationSubscription?.observerId
         ? [mountedOperationSubscription.observerId]
         : [];
       return handle.adoptSessionSnapshot(snapshot, { ...options, requiredObserverIds });
+    },
+    adoptAndBeginHandoffStart({ operationId, snapshot, targetSeconds }) {
+      const adopted = this.adopt({ ...snapshot, position: targetSeconds }, {
+        operationId,
+        autoplay: snapshot.state !== 'paused',
+      });
+      return adopted?.ok ? { ok: true, operationId } : adopted;
+    },
+    getHandoffBoundaryBinding(operationId) {
+      return handoffBindings.get(operationId) ?? null;
+    },
+    subscribeHandoffBoundaryBinding(listener) {
+      if (typeof listener !== 'function') return () => {};
+      handoffBoundarySubs.add(listener);
+      return () => handoffBoundarySubs.delete(listener);
+    },
+    applyQueue(snapshot) {
+      return readHandle()?.applyQueueSnapshot?.(snapshot) ?? { ok: false, code: 'ITEM_ACTION_UNSUPPORTED' };
     },
     stopIfCurrent(expected, sessionId) {
       const handle = readHandle();
@@ -651,11 +693,8 @@ export function createPlayerSessionBridge({
     try {
       const handle = readHandle();
 
-      if (handle && !unregister) {
-        unregister = registry.registerPlayerSession({ player, queueController });
-        lastState = null;
-        lastItemKey = null;
-      } else if (!handle && unregister) {
+      if (!handle) {
+        if (!unregister) return;
         try { unregister(); } catch { /* ignore */ }
         unregister = null;
         try { mountedOperationSubscription?.unsubscribe?.(); } catch { /* ignore */ }
@@ -666,24 +705,40 @@ export function createPlayerSessionBridge({
         return;
       }
 
-      if (!handle) return;
-
-      if (mountedOperationHandle !== handle) {
+      // Fully initialize the mounted-operation seam before publishing the
+      // queue controller. Registry listeners may synchronously dispatch a
+      // waiting item action as soon as an owner appears; exposing the owner
+      // first lets that adoption escape without its required decoder observer.
+      if (!samePlayerInstance(mountedOperationHandle, handle)) {
         try { mountedOperationSubscription?.unsubscribe?.(); } catch { /* ignore */ }
         mountedOperationSubscription = null;
         mountedOperationHandle = handle;
         if (typeof handle.subscribeMountedMediaOperations === 'function') {
           mountedOperationSubscription = handle.subscribeMountedMediaOperations((binding) => {
-            if (!binding || readHandle() !== handle) return { ready: false };
-            observeNativeNode(binding.node, handle, binding);
+            const currentHandle = readHandle();
+            if (!binding || !samePlayerInstance(currentHandle, handle)) return { ready: false };
+            observeNativeNode(binding.node, currentHandle, binding);
             let accepted = null;
-            try { accepted = handle.getMountedMediaRegistration?.() ?? null; } catch { /* ignore */ }
+            try { accepted = currentHandle.getMountedMediaRegistration?.() ?? null; } catch { /* ignore */ }
             const ready = observedBindingKey?.node === binding.node
               && observedBindingKey?.resolvedGeneration === binding.resolvedGeneration
               && accepted?.rendererToken === binding.rendererToken;
+            if (ready && binding.operationId) {
+              const admitted = Object.freeze({ ...binding });
+              handoffBindings.set(binding.operationId, admitted);
+              for (const listener of [...handoffBoundarySubs]) {
+                try { listener(admitted); } catch { /* observer isolation */ }
+              }
+            }
             return ready ? { ready: true, ...binding } : { ready: false };
           });
         }
+      }
+
+      if (!unregister) {
+        unregister = registry.registerPlayerSession({ player, queueController });
+        lastState = null;
+        lastItemKey = null;
       }
 
       const state = getState();
@@ -721,6 +776,8 @@ export function createPlayerSessionBridge({
       try { mountedOperationSubscription?.unsubscribe?.(); } catch { /* ignore */ }
       mountedOperationSubscription = null;
       mountedOperationHandle = null;
+      handoffBindings.clear();
+      handoffBoundarySubs.clear();
       lastState = null;
       lastItemKey = null;
       try { detachNativeObservation(); } catch { /* ignore */ }

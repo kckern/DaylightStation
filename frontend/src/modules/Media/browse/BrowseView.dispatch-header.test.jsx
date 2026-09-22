@@ -178,11 +178,46 @@ describe('BrowseView — nested drill carries containerItem forward', () => {
       path: 'plex/9999',
       label: 'Season 1',
       containerItem: expect.objectContaining({ id: 'plex:9999', title: 'Season 1', itemType: 'container' }),
+    }), expect.objectContaining({
+      currentPatch: expect.objectContaining({ path: 'plex/663508', focusedId: 'plex:9999' }),
     }));
   });
 });
 
-describe('BrowseView — leaf Play Now', () => {
+describe('BrowseView — leaf Detail and Play Now entrypoints', () => {
+  it('keeps the playable row itself as one-tap Play Now at the current aim', () => {
+    browseState = {
+      items: [{ id: 'plex:55854', title: 'Arrival', type: 'movie', thumbnail: 'arrival.jpg' }],
+      total: 1, loading: false, error: null,
+    };
+    renderBrowse();
+    const row = screen.getByRole('button', { name: /Arrival artwork\s+Arrival/ });
+    expect(row).toHaveAttribute('data-testid', 'result-play-now-plex:55854');
+    expect(row.closest('li')).toHaveClass('result-row');
+    fireEvent.click(row);
+
+    expect(dispatchLeafVerbMock).toHaveBeenCalledWith('playNow', 'plex:55854', expect.objectContaining({
+      id: 'plex:55854', title: 'Arrival', thumbnail: 'arrival.jpg',
+    }));
+    expect(navPush).not.toHaveBeenCalled();
+  });
+
+  it('opens the exact item from a separate Detail action without dispatching playback', () => {
+    browseState = {
+      items: [{ id: 'plex:55854', title: 'Arrival', type: 'movie', thumbnail: 'arrival.jpg' }],
+      total: 1, loading: false, error: null,
+    };
+    renderBrowse();
+    const detail = screen.getByRole('button', { name: 'Details', exact: true });
+    expect(detail).toHaveAttribute('data-testid', 'browse-detail-plex:55854');
+    fireEvent.click(detail);
+
+    expect(navPush).toHaveBeenCalledWith('detail', { contentId: 'plex:55854' }, {
+      currentPatch: { path: 'plex/663508', scrollTop: 0, focusedId: 'plex:55854' },
+    });
+    expect(dispatchLeafVerbMock).not.toHaveBeenCalled();
+  });
+
   it('routes the exact browse row through the current destination dispatcher', () => {
     browseState = {
       items: [{ id: 'plex:685088', title: 'Episode 3', type: 'episode', thumbnail: 'episode.jpg' }],

@@ -73,4 +73,36 @@ describe('useMetronomeClick', () => {
     expect(sched.start).toHaveBeenCalledTimes(1); // NOT restarted
     expect(sched.stop).not.toHaveBeenCalled();
   });
+
+  it('passes an anchored grid (anchorEpochMs, leadMs) and ignores startDelayMs', () => {
+    const { sched, createScheduler } = makeHarness();
+    renderHook(() => useMetronomeClick({
+      enabled: true, bpm: 100, startDelayMs: 240, beatsPerBar: 4, firstBeatIndex: 1,
+      anchorMs: 1_700_000_000_000, leadMs: 250, createScheduler,
+    }));
+    expect(sched.start).toHaveBeenCalledWith(100, {
+      anchorEpochMs: 1_700_000_000_000, leadMs: 250, beatsPerBar: 4, firstBeatIndex: 1,
+    });
+  });
+
+  it('defaults leadMs to 0 on an anchored grid', () => {
+    const { sched, createScheduler } = makeHarness();
+    renderHook(() => useMetronomeClick({ enabled: true, bpm: 60, anchorMs: 5000, createScheduler }));
+    expect(sched.start).toHaveBeenCalledWith(60, { anchorEpochMs: 5000, leadMs: 0 });
+  });
+
+  it('restarts the grid when anchorMs changes (and not on a same-anchor rerender)', () => {
+    const { sched, createScheduler } = makeHarness();
+    const { rerender } = renderHook(
+      ({ anchorMs }) => useMetronomeClick({ enabled: true, bpm: 120, anchorMs, leadMs: 100, createScheduler }),
+      { initialProps: { anchorMs: 1000 } },
+    );
+    rerender({ anchorMs: 1000 });
+    expect(sched.start).toHaveBeenCalledTimes(1);
+    rerender({ anchorMs: 9000 });
+    expect(sched.stop).toHaveBeenCalledTimes(1);
+    expect(sched.start).toHaveBeenCalledTimes(2);
+    expect(sched.start).toHaveBeenLastCalledWith(120, { anchorEpochMs: 9000, leadMs: 100 });
+  });
 });
+

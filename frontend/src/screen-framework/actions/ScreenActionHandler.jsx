@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useScreenAction } from '../input/useScreenAction.js';
 import { useScreenOverlay } from '../overlays/ScreenOverlayProvider.jsx';
 import { useHasMenuNavigationContext, useMenuNavigationContext } from '../../context/useMenuNavigationContext.js';
@@ -15,6 +15,8 @@ import { useScreenVolume } from '../../lib/volume/ScreenVolumeContext.js';
 import getLogger from '../../lib/logging/Logger.js';
 import { dispatchCyclePlaybackRate } from './cyclePlaybackRate.js';
 import { getActionBus } from '../input/ActionBus.js';
+import { useSessionSourceContext } from '../publishers/useSessionSourceContext.js';
+import { createScreenItemActions } from './screenItemActions.js';
 
 let _logger;
 function logger() {
@@ -79,6 +81,8 @@ const toMenuRoot = (menuId) => (
 );
 
 export function ScreenActionHandler({ actions = {}, inputType = null }) {
+  const sessionSource = useSessionSourceContext();
+  const itemActions = useMemo(() => createScreenItemActions({ source: sessionSource, targetId: sessionSource?.ownerId }), [sessionSource]);
   const { showOverlay, dismissOverlay, hasOverlay, escapeInterceptorRef } = useScreenOverlay();
   const pip = usePip();
   const hasMenuNav = useHasMenuNavigationContext();
@@ -193,6 +197,39 @@ export function ScreenActionHandler({ actions = {}, inputType = null }) {
   const handleMediaQueueOp = useCallback((payload) => {
     const op = payload?.op;
 
+    if (op === 'item-action' || op === 'undo') {
+      const execute = async () => {
+        if (op === 'undo') return itemActions.undo(payload.operationId);
+        const hasOwner = () => !!(sessionSource?.getActionOwner?.() ?? sessionSource?.capture()?.identity);
+        if (sessionSource && !hasOwner()) {
+          // Register an idle playback owner first. It holds Add without
+          // starting media and lets Play adopt exactly once after readiness.
+          // Screensavers and other idle fullscreen content must yield first:
+          // ScreenOverlayProvider intentionally refuses a normal-priority
+          // overlay while one is already mounted. Notify the screensaver
+          // controller before replacing its overlay so it rearms its timer.
+          getActionBus().emit('screen:screensaver-dismiss', { reason: 'item-action-owner-bootstrap' });
+          dismissOverlay();
+          showOverlay(Player, { play: [], clear: () => dismissOverlay() }, { chrome: 'media', suspendsNavStack: true });
+          const deadline = Date.now() + 3000;
+          while (!hasOwner() && Date.now() < deadline) {
+            await new Promise(resolve => setTimeout(resolve, 20));
+          }
+          if (!hasOwner()) return { ok: false, code: 'ITEM_ACTION_UNSUPPORTED', reason: 'The screen playback owner did not become ready.' };
+        }
+        if (sessionSource?.ownerId) {
+          const claimed = await DaylightAPI(`api/v1/device/${encodeURIComponent(sessionSource.ownerId)}/session/item-action/${encodeURIComponent(payload.operationId)}/claim`, {}, 'POST');
+          if (claimed?.ok === false) return claimed;
+        }
+        return itemActions.execute(payload);
+      };
+      execute().then(result => {
+        if (result?.ok) getActionBus().emit('media:queue-op-applied', { ...payload, ...result });
+        else getActionBus().emit('command-handler-error', { commandId: payload.commandId, code: result?.code, error: result?.reason ?? result?.code ?? 'Item action failed' });
+      }).catch(error => getActionBus().emit('command-handler-error', { commandId: payload.commandId, error: error.message }));
+      return;
+    }
+
     if (op === 'play-now' || op === 'play-next' || op === 'add') {
       const resultCallbacks = op === 'add' ? {
         onApplied: (result) => getActionBus().emit('media:queue-op-applied', {
@@ -235,7 +272,7 @@ export function ScreenActionHandler({ actions = {}, inputType = null }) {
     }
 
     logger().debug('media.queue-op.unhandled', { op, contentId: payload?.contentId });
-  }, [showOverlay, dismissOverlay, isMediaDuplicate]);
+  }, [showOverlay, dismissOverlay, isMediaDuplicate, itemActions, sessionSource]);
 
   // --- Media playback controls ---
   const handleMediaSeek = useCallback((op, payload) => {
