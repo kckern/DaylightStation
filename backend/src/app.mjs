@@ -5199,6 +5199,13 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // is still the right answer for a household with no story-time launcher.
   if (readingSessions) {
     const { makeReadingSessionHandler } = await import('#composition/modules/learnerCardActions.mjs');
+    const { NotifyReadingSessionFailure } = await import('#apps/school/workflows/NotifyReadingSessionFailure.mjs');
+    const notifyReadingSessionFailure = new NotifyReadingSessionFailure({
+      notificationTargetForDevice: (id) => deviceServices.deviceService.get(id)?.notifyService ?? null,
+      notifier: homeAutomationAdapters.haGateway?.callService ? homeAutomationAdapters.haGateway : null,
+      studentName: (learnerId) => personDisplayName(configService.getUserProfile?.(learnerId), learnerId),
+      deviceLabel: (id) => deviceServices.deviceService.get(id)?.name ?? null,
+    });
     const readingSessionHandler = makeReadingSessionHandler({
       sessions: readingSessions,
       // D2 — the one question that can refuse a tap: is unrelated content
@@ -5212,14 +5219,9 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       // the media-lesson dispatch, which needs it for the same reason — see
       // `wakeScreenForBroadcast` above.
       wakeScreen: wakeScreenForBroadcast,
-      alertAdult: async ({ target, location, learnerId }) => {
-        const device = target ? deviceServices.deviceService.get(target) : null;
-        if (!device?.notifyService || !homeAutomationAdapters.haGateway?.callService) return;
-        await homeAutomationAdapters.haGateway.callService('notify', device.notifyService, {
-          title: 'Story time screen needs help',
-          message: `${learnerId ?? 'A learner'} started story time at ${location}, but the screen did not respond.`,
-        });
-      },
+      // The one story-time failure push. With no HA gateway `notifier` is
+      // null and the use case sends nothing, as the inline copy it replaced did.
+      alertAdult: (args) => notifyReadingSessionFailure.execute(args),
       eventBus,
       logger: rootLogger.child({ module: 'trigger-learner' }),
     });
