@@ -87,6 +87,7 @@ export function MediaContentSearch() {
     // logs route:'cast'. Outcome lives in dispatch.succeeded/failed/deduplicated.
     const route = dispatch(id, item);
     log.info('dispatch', { contentId: id, route });
+    return route;
   }, [dispatch, log]);
 
   // Trailing ▶ on a container row: send the whole thing to the current
@@ -159,6 +160,7 @@ export function MediaContentSearch() {
             appResults
             allowFreeform={false}
             retainQueryOnEscape
+            retainPlayableSelection
             onClose={resetScope}
             destinationInteractionActive={destinationInteractionActive}
           />

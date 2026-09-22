@@ -210,7 +210,8 @@ describe('ContentCombobox streaming-search lifecycle', () => {
     });
 
     expect(await screen.findByTestId('stream-status-retry-plex')).toBeInTheDocument();
-    expect(screen.queryByTestId('combobox-fallback-notice')).toBeNull();
+    expect(screen.getByTestId('combobox-fallback-notice'))
+      .toHaveTextContent('Not in this scope — From everything: results may be incomplete. Retry the source above.');
     expect(screen.queryByText(/nothing found anywhere else either/i)).toBeNull();
     expect(screen.queryByText(/No results/)).toBeNull();
     expect(screen.queryByTestId('freeform-commit-option')).toBeNull();

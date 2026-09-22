@@ -28,6 +28,29 @@ beforeEach(() => {
 });
 
 describe('NavProvider area and browser-history contract', () => {
+  it('stores browse scroll and focus on the exact history entry before pushing its child', () => {
+    render(<NavProvider><Probe /></NavProvider>);
+    act(() => nav().push('browse', { path: 'plex/bluey', label: 'Bluey' }));
+    const replaceHistory = vi.spyOn(window.history, 'replaceState');
+    act(() => nav().push(
+      'browse',
+      { path: 'plex/season-2', label: 'Season 2' },
+      { currentPatch: { path: 'plex/bluey', scrollTop: 420, focusedId: 'plex:season-2' } },
+    ));
+
+    expect(replaceHistory).toHaveBeenCalledTimes(1);
+    expect(replaceHistory.mock.calls[0][0].mediaNavStack).toEqual([
+      { view: 'home', params: {} },
+      { view: 'browse', params: { path: 'plex/bluey', label: 'Bluey', scrollTop: 420, focusedId: 'plex:season-2' } },
+    ]);
+    expect(window.history.state.mediaNavStack).toEqual([
+      { view: 'home', params: {} },
+      { view: 'browse', params: { path: 'plex/bluey', label: 'Bluey', scrollTop: 420, focusedId: 'plex:season-2' } },
+      { view: 'browse', params: { path: 'plex/season-2', label: 'Season 2' } },
+    ]);
+    replaceHistory.mockRestore();
+  });
+
   it('maps every nested media surface to its primary area', () => {
     render(<NavProvider><Probe /></NavProvider>);
     expect(probe()).toHaveAttribute('data-area', 'home');
