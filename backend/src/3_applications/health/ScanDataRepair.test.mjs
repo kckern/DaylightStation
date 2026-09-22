@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { planScanDataRepair, planCatalogIconRepair } from './ScanDataRepair.mjs';
+import { planScanDataRepair, planCatalogIconRepair, manifestVocabulary } from './ScanDataRepair.mjs';
 
 // Fixtures mirror the 2026-09-22 data-quality audit
 // (docs/_wip/audits/2026-09-22-health-app-data-quality-audit.md).
@@ -68,6 +68,54 @@ describe('planScanDataRepair', () => {
       { id: 'pita', expectedVersion: 1, changes: { icon: 'pita-bread' } },
     ]);
     expect(plan.updates.find(u => u.id === 'cheddar').reasons).toEqual(['rename', 'retired-icon']);
+  });
+
+  it('reports each re-fire against the row that survives, with its delay', () => {
+    const plan = planScanDataRepair(rows(), options());
+    expect(plan.report.duplicates.slice(0, 2)).toEqual([
+      { id: 'mag-2', keptId: 'mag-1', name: 'Magazine', date: '2026-09-21', secondsAfter: 1.5 },
+      { id: 'mag-3', keptId: 'mag-1', name: 'Magazine', date: '2026-09-21', secondsAfter: 3 },
+    ]);
+  });
+
+  it('counts retired slugs that fell through to default with no table hit', () => {
+    const plan = planScanDataRepair(rows(), options());
+    expect(plan.report.fellThroughToDefault).toEqual({ string_cheese: 1, '🍽️': 1 });
+  });
+
+  it('an alias with an offered twin becomes the twin; an alias without one is kept', () => {
+    const plan = planScanDataRepair([
+      row({ id: 'pb', item: 'Peanut Butter', icon: 'peanut_butter', source: 'text' }),
+      row({ id: 'chick', item: 'Chickpeas', icon: 'chickpea', source: 'text' }),
+    ], options({ deleteIds: [], aliases: { peanut_butter: 'peanut-butter', chickpea: 'chickpea' },
+      offered: new Set(['peanut-butter']), iconByName: {} }));
+    expect(plan.updates.map(u => [u.id, u.changes, u.reasons])).toEqual([['pb', { icon: 'peanut-butter' }, ['alias-icon']]]);
+    expect(plan.report.fellThroughToDefault).toEqual({});
+  });
+
+  it('never converts ml a person set, and keeps full precision to the ledger\'s two decimals', () => {
+    const plan = planScanDataRepair([
+      row({ id: 'set', item: 'OIKOS PRO PLAIN', unit: 'ml', amount: 170, grams: null, source: 'text',
+        originalQuantity: { amount: 170, unit: 'ml' }, manualFields: ['amount'] }),
+      row({ id: 'odd', item: 'Mexican Style 4 Cheese Blend', unit: 'ml', amount: 28.25, grams: null, source: 'text',
+        originalQuantity: { amount: 30, unit: 'ml' } }),
+    ], options({ deleteIds: [], labelGrams: { 'OIKOS PRO PLAIN': 170, 'Mexican Style 4 Cheese Blend': 28 } }));
+    expect(plan.report.mlUnresolved).toEqual([{ id: 'set', name: 'OIKOS PRO PLAIN', reason: 'portion set by a person (amount)' }]);
+    expect(plan.updates).toEqual([{ id: 'odd', expectedVersion: 1, changes: { grams: 26.37, unit: 'g', amount: 26.37 }, reasons: ['ml-to-grams'] }]);
+  });
+
+  it('records the label ml serving seen on the ledger for the catalog', () => {
+    expect(planScanDataRepair(rows(), options()).report.labelServingMl).toEqual({ 'OIKOS PRO PLAIN': 170 });
+  });
+
+  it('takes the most common ml serving, and leaves a tie ambiguous', () => {
+    const oikos = (id, serving) => row({ id, item: 'OIKOS PRO PLAIN', unit: 'ml', amount: serving, grams: null, source: 'text',
+      startedAt: `2026-09-2${id.length}T00:00:00Z`, originalQuantity: { amount: serving, unit: 'ml' } });
+    const majority = planScanDataRepair([oikos('a', 170), oikos('bb', 170), oikos('ccc', 1)], options({ deleteIds: [] })).report;
+    expect(majority.labelServingMl).toEqual({ 'OIKOS PRO PLAIN': 170 });
+    const tie = planScanDataRepair([oikos('a', 170), oikos('ccc', 1)], options({ deleteIds: [] })).report;
+    expect(tie.labelServingMl).toEqual({});
+    expect(tie.labelServingAmbiguous).toEqual({ 'OIKOS PRO PLAIN': { 170: 1, 1: 1 } });
   });
 
   it('never renames a name a person set', () => {
@@ -159,6 +207,37 @@ describe('planCatalogIconRepair', () => {
     ]);
   });
 
+  it('maps an alias icon or pin to its offered twin and keeps a twinless alias', () => {
+    const plan = planCatalogIconRepair([
+      entry({ id: 'a', name: 'Peanut Butter', icon: 'peanut_butter', iconOverride: 'peanut_butter' }),
+      entry({ id: 'b', name: 'Chickpeas', icon: 'chickpea' }),
+    ], { ...opts, aliases: { peanut_butter: 'peanut-butter', chickpea: 'chickpea' }, offered: new Set(['peanut-butter', 'feta-cubes']) });
+    expect(plan.iconUpdates).toEqual([
+      { id: 'a', name: 'Peanut Butter', from: { icon: 'peanut_butter', iconOverride: 'peanut_butter' }, icon: 'peanut-butter', iconOverride: 'peanut-butter' },
+    ]);
+  });
+
+  it('counts retired icons that fell through to null, and cleared pins', () => {
+    const plan = planCatalogIconRepair(catalog(), opts);
+    expect(plan.fellThroughToNull).toEqual({ string_cheese: 1 });
+    expect(plan.pinsCleared).toEqual({ pitasandwich: 1 });
+  });
+
+  it('converts remembered ml portions to grams from the label, and reports what it cannot', () => {
+    const plan = planCatalogIconRepair([
+      entry({ id: 'o', name: 'OIKOS PRO PLAIN', icon: 'yogurt', usageByBucket: {
+        afternoon: { count: 4, lastUsed: '2026-09-11', quantity: { grams: 0, unit: 'ml', amount: 170 } },
+        morning: { count: 1, lastUsed: '2026-09-01', quantity: { grams: 170, unit: 'g', amount: 170 } } } }),
+      entry({ id: 's', name: 'Spring Mix', icon: 'garden-salad', usageByBucket: {
+        afternoon: { count: 1, lastUsed: '2026-09-11', quantity: { grams: 0, unit: 'ml', amount: 85 } } } }),
+      entry({ id: 'r', name: 'Ranch', usageByBucket: { afternoon: { count: 1, quantity: { grams: 0, unit: 'ml', amount: 30 } } } }),
+    ], { ...opts, labelGrams: { 'OIKOS PRO PLAIN': 170, 'Spring Mix': 85 }, labelServingMl: { 'OIKOS PRO PLAIN': 170 } });
+    expect(plan.quantityUpdates).toEqual([
+      { id: 'o', name: 'OIKOS PRO PLAIN', bucket: 'afternoon', from: { grams: 0, unit: 'ml', amount: 170 }, to: { grams: 170, unit: 'g', amount: 170 } },
+    ]);
+    expect(plan.quantityUnresolved).toEqual([{ id: 's', name: 'Spring Mix', bucket: 'afternoon', reason: 'no ml serving seen on the ledger' }]);
+  });
+
   it('plans name normalization and skips a rename that would collide', () => {
     const plan = planCatalogIconRepair(catalog(), opts);
     expect(plan.renames).toEqual([
@@ -170,5 +249,18 @@ describe('planCatalogIconRepair', () => {
     expect(plan.skippedRenames).toEqual([{ id: 'c-oikos', from: 'OIKOS PRO PLAIN', to: 'Oikos Pro Plain', conflictId: 'c-oikos-2' }]);
     const clash = planCatalogIconRepair([...catalog(), entry({ id: 'c-x', name: 'Sharp Cheddar Cheese' })], opts);
     expect(clash.skippedRenames).toContainEqual({ id: 'c-cheddar', from: 'Sharp Cheddar Cheddar Cheese', to: 'Sharp Cheddar Cheese', conflictId: 'c-x' });
+  });
+});
+
+describe('manifestVocabulary', () => {
+  it('offers hi-res icons, twins aliases by path, keeps twinless aliases, drops flat art', () => {
+    expect(manifestVocabulary({
+      icons: { 'peanut-butter': { path: 'img/nutrition/icons/vegan-food/peanut-butter.png' }, cheese: { path: 'img/icons/food/cheese.png' } },
+      aliases: {
+        peanut_butter: { path: 'img/nutrition/icons/vegan-food/peanut-butter.png' },
+        chickpea: { path: 'img/nutrition/icons/healthy-food/chickpeas.png' },
+        pitasandwich: { path: 'img/icons/food/pitasandwich.png' },
+      },
+    })).toEqual({ offered: ['peanut-butter'], aliases: { peanut_butter: 'peanut-butter', chickpea: 'chickpea' } });
   });
 });

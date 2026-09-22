@@ -732,8 +732,11 @@ set.** Every entry points under `img/nutrition/icons/`; the retired 20 px flat s
 (`img/icons/food/`) is never served: `IconManifestStore` drops any entry pointing there
 at load (`health.icons.manifest.retired_art_dropped`), and `curate-nutrition-icons.mjs`
 never proposes one. A legacy basename survives only as an alias to an honest hi-res
-equivalent. Rows and catalog entries that still held retired names were re-iconed by
-food name (reviewed table → offered slug or `default`) with `cli/health-scan-repair.cli.mjs`.
+equivalent. With no manifest installed the capture vocabulary is just `default`; the flat
+directory is never read as a fallback. Rows and catalog entries that still held retired
+names are re-iconed by food name (reviewed table → offered slug or `default`) with
+`cli/health-scan-repair.cli.mjs`; a stored alias becomes the offered slug that shares its
+file, or stays as it is.
 
 `foodNames:` maps a normalized food name to an offered slug and is consulted before any
 model answer (`confineIcon`). It is merged, reviewed, with
