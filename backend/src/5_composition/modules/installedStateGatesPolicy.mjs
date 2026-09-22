@@ -8,7 +8,17 @@
  */
 export const INSTALLED_STATE_GATES_POLICY = Object.freeze({
   schema: 'daylight.state-gates-policy/v1',
-  policy_revision: 1,
+  // Bump this on ANY content change to this policy object (a claim type, a
+  // gate expression, a reason label, an entitlement — anything that changes
+  // the candidate's digest). `activatePolicyGraph` refuses to activate a
+  // candidate whose digest differs from what's already active unless
+  // policy_revision strictly increases (POLICY_REVISION_CONFLICT) — nothing
+  // else in this file enforces that, and a missed bump fails SILENTLY: the
+  // engine just keeps serving the old graph forever, so new claim
+  // types/gates/entitlements never exist at runtime. See
+  // tests/isolated/composition/installedStateGatesPolicy.test.mjs for the
+  // regression test covering this exact failure mode.
+  policy_revision: 2,
   publishers: {
     school: { description: 'School learner-day completion authority' },
     fitness: { description: 'Fitness weekly movement authority' },
