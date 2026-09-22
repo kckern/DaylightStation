@@ -1536,6 +1536,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // nor a generic event-bus message can impersonate these publishers.
   const schoolStateGatesPrincipal = Object.freeze({ service: 'school-state-gates-producer' });
   const fitnessStateGatesPrincipal = Object.freeze({ service: 'fitness-state-gates-producer' });
+  // Threaded to KioskFrictionTracker in a later task — see kiosk-friction-detection Task 3.
+  const kioskFrictionStateGatesPrincipal = Object.freeze({ service: 'kiosk-friction-tracker' });
   const stateGatesProducerScheduler = Object.freeze({
     schedule(delayMs, task) {
       const timer = setTimeout(task, delayMs);
@@ -1552,6 +1554,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     producerPrincipals: {
       school: schoolStateGatesPrincipal,
       fitness: fitnessStateGatesPrincipal,
+      'kiosk-friction-tracker': kioskFrictionStateGatesPrincipal,
     },
     logger: rootLogger,
   });

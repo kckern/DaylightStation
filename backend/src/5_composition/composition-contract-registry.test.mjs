@@ -100,10 +100,15 @@ const contracts = [
       const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'state-gates-installed-'));
       const schoolPrincipal = Object.freeze({ service: 'school' });
       const fitnessPrincipal = Object.freeze({ service: 'fitness' });
+      const kioskFrictionPrincipal = Object.freeze({ service: 'kiosk-friction-tracker' });
       const now = Date.parse('2026-08-30T12:00:00-07:00');
       const module = await createStateGatesModule({
         householdId: 'home', eventBus: { publish: vi.fn() },
-        producerPrincipals: { school: schoolPrincipal, fitness: fitnessPrincipal },
+        // Every publisher the installed policy declares (school, fitness,
+        // kiosk-friction-tracker) needs authenticated authority here, or
+        // PolicyGraph.create rejects the whole graph as UNKNOWN_PUBLISHER_AUTHORITY
+        // — this fixture mirrors app.mjs's real producerPrincipals wiring.
+        producerPrincipals: { school: schoolPrincipal, fitness: fitnessPrincipal, 'kiosk-friction-tracker': kioskFrictionPrincipal },
         clock: { now: () => now },
         configService: {
           getHouseholdPath: () => path.join(directory, 'state-gates/current'),
