@@ -292,3 +292,73 @@ describe('AddCombobox — meal-level suggestions (PRD F8.2 / F6.4)', () => {
     expect(onMeals).toHaveBeenCalled();
   });
 })
+
+describe('AddCombobox inline', () => {
+  beforeEach(() => { apiMock.mockReset(); });
+  const inline = (props = {}) => r(<AddCombobox inline bucketId="evening" label="Dinner" date="2026-09-21"
+    onDone={() => {}} {...props} />);
+
+  it('is labelled for its meal and fetches nothing until focused', async () => {
+    apiMock.mockResolvedValue(SUGGEST);
+    inline();
+    const input = screen.getByRole('combobox', { name: 'Add to Dinner' });
+    expect(input.getAttribute('placeholder')).toBe('Add to Dinner…');
+    expect(apiMock).not.toHaveBeenCalled();
+    expect(screen.queryByRole('listbox')).toBeNull();
+    fireEvent.focus(input);
+    await waitFor(() => expect(apiMock).toHaveBeenCalledWith(expect.stringContaining('bucket=evening&limit=8')));
+    expect(await screen.findByText('Chicken breast')).toBeTruthy();
+  });
+
+  it('Enter on free text parses into this meal and day, then clears and stays focused', async () => {
+    apiMock.mockImplementation(async (path) => path.includes('suggest') ? { items: [] } : { committed: true });
+    const onDone = vi.fn();
+    inline({ onDone });
+    const input = screen.getByRole('combobox', { name: 'Add to Dinner' });
+    input.focus();
+    fireEvent.change(input, { target: { value: 'two eggs' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    await waitFor(() => expect(onDone).toHaveBeenCalled());
+    expect(apiMock).toHaveBeenCalledWith('api/v1/health/nutrition/input',
+      expect.objectContaining({ type: 'text', content: 'two eggs', bucket: 'evening', date: '2026-09-21' }), 'POST');
+    expect(input.value).toBe('');
+    await waitFor(() => expect(document.activeElement).toBe(input));
+  });
+
+  it('logging the same food twice sends two distinct operation ids', async () => {
+    const ids = [];
+    apiMock.mockImplementation(async (path, body) => {
+      if (path.includes('suggest')) return SUGGEST;
+      ids.push(body.operationId); return { logged: true, item: { uuid: `r${ids.length}` } };
+    });
+    inline();
+    const input = screen.getByRole('combobox', { name: 'Add to Dinner' });
+    fireEvent.focus(input);
+    fireEvent.click(await screen.findByText('Chicken breast'));
+    await waitFor(() => expect(ids).toHaveLength(1));
+    fireEvent.focus(input);
+    fireEvent.click(await screen.findByText('Chicken breast'));
+    await waitFor(() => expect(ids).toHaveLength(2));
+    expect(ids[0]).not.toBe(ids[1]);
+  });
+
+  it('Escape clears the text first, then blurs', () => {
+    apiMock.mockResolvedValue({ items: [] });
+    inline();
+    const input = screen.getByRole('combobox', { name: 'Add to Dinner' });
+    input.focus();
+    fireEvent.change(input, { target: { value: 'oat' } });
+    fireEvent.keyDown(input, { key: 'Escape' });
+    expect(input.value).toBe('');
+    expect(document.activeElement).toBe(input);
+    fireEvent.keyDown(input, { key: 'Escape' });
+    expect(document.activeElement).not.toBe(input);
+  });
+
+  it('a focusRequest change focuses the input', () => {
+    apiMock.mockResolvedValue({ items: [] });
+    const { rerender } = inline({ focusRequest: 0 });
+    rerender(<MantineProvider><AddCombobox inline bucketId="evening" label="Dinner" onDone={() => {}} focusRequest={1} /></MantineProvider>);
+    expect(document.activeElement).toBe(screen.getByRole('combobox', { name: 'Add to Dinner' }));
+  });
+});
