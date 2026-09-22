@@ -1253,7 +1253,13 @@ and the real attempt ids. Two things hold it back on purpose:
   pending items through the existing review flow, and the ordinary grading
   path finishes the session from the queue roster — print units derive their
   expected-item set from that same queue, which is the only roster that
-  matches a bank-selected sheet's actual questions.
+  matches a bank-selected sheet's actual questions, **with one exclusion**:
+  the OMR key-alignment check's synthetic `key-alignment-suspected` entry
+  (a whole-sheet plausibility hold, not a printed question — see §8.1) holds
+  the session the same way an ambiguous row does, but is explicitly filtered
+  out of that expected-item set — `GradeSubmission`'s and
+  `AdjustSessionGrade`'s roster derivations both exclude it — so resolving
+  it never changes what the sheet's real questions score.
 
 From `graded`, the ordinary session machinery takes over (outcome, rewards,
 remediation), exactly as for on-screen work. The graded event retains the exact
@@ -1267,7 +1273,8 @@ same physical answer sheet when rows remain.
 A scan has two messengers, and since 2026-09-15 both always speak:
 
 - **The panel** (`useScanCeremony.js`) shows a short-lived toast per outcome
-  (`scan-graded`, `scan-rows-incomplete`, `scan-not-recorded`, …).
+  (`scan-graded`, `scan-rows-incomplete`, `scan-not-recorded`, `scan-review`,
+  …).
 - **The thermal printer** prints a receipt for a graded sheet
   (`resultDocument`, via `CloseSessionOutcome`) — and, for every other
   outcome, a **notice slip** (`scanNotices.mjs`, `scanNoticeDocument`)
@@ -1276,6 +1283,15 @@ A scan has two messengers, and since 2026-09-15 both always speak:
   does not disappear: the sheet's published title, how many rows are
   answered, the exact rows still empty or double-marked (numbered as the
   sheet prints them), and one action sentence.
+- **`scan-review` is reason-aware, not one fixed sentence.** The review
+  queue holds sessions for more than one reason now (§5 in `teacher.md`),
+  and a slip that always said "two answers filled in" would lie on a sheet
+  held for a suspected row shift instead. `scanNoticeDocument` reads
+  `announcement.reasons`: held for `key-alignment-suspected` alone, the slip
+  says a grown-up is double-checking an answer; held for anything else (or a
+  mix), it falls back to the original "N questions had two answers filled
+  in" copy, which is never wrong about a grown-up being needed even when
+  it isn't the most precise reason available.
 
 The rule came from a morning where a card carrying three sheets produced two
 receipts and one toast. The unfinished sheet (five of six, one row blank)

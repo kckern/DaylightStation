@@ -1,6 +1,7 @@
 import { EntityNotFoundError, ValidationError } from '#domains/core/errors/index.mjs';
 import { reduceSession } from '#domains/school/sessions/sessionEvents.mjs';
 import { curriculumPosterRef, schoolArtifactRef } from '#apps/common/resources/publicResourceRefs.mjs';
+import { isSyntheticReviewItem } from '#apps/school/ports/IReviewQueue.mjs';
 
 /** Read models for the teacher history and session inspector surfaces. */
 export class GetTeacherSession {
@@ -128,7 +129,13 @@ export class GetTeacherSession {
           percent: state.gradedPercent, correctCount: state.gradedCorrectCount,
           totalCount: state.gradedTotalCount, missedItemIds: state.missedItemIds,
         },
-        items: reviewEvidence.map((item, index) => ({
+        // A `key-alignment-suspected` entry is not a printed question — it
+        // has no `questionNumber` of its own, so the `index + 1` fallback
+        // below would otherwise fabricate a phantom "Question N" for it in
+        // the teacher's "printed questions" list. It still surfaces to a
+        // teacher through `reviewEvidence`/the review queue itself — this
+        // read model just never numbers it as one of the sheet's questions.
+        items: reviewEvidence.filter((item) => !isSyntheticReviewItem(item)).map((item, index) => ({
           itemId: item.itemId ?? null, questionNumber: item.questionNumber ?? index + 1,
           prompt: item.prompt ?? item.question ?? null, given: item.given ?? null,
           expected: (worksheet?.questions ?? []).find((question) => question.itemId === item.itemId)?.options
