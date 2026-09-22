@@ -6,7 +6,7 @@ import { MacroBadges } from './MacroBadges.jsx';
 import { ExerciseSection } from './ExerciseSection.jsx';
 import { BUCKETS, UNGROUPED, EARLY_COLUMN, LATE_COLUMN, PRIMARY_BUCKETS } from './mealBuckets.js';
 import { EntryRow } from './EntryRow.jsx';
-import { groupRows } from './groupRows.js';
+import { groupRows, sortEntriesByCalories, calorieShares } from './groupRows.js';
 import { VoiceCapture } from '../capture/VoiceCapture.jsx';
 import { MealFoodControls } from './MealFoodControls.jsx';
 import { CaptureProgress } from './CaptureProgress.jsx';
@@ -47,7 +47,10 @@ function Section({
     try { return new Set(JSON.parse(sessionStorage.getItem('health:collapsed-dishes') || '[]')); }
     catch { return new Set(); }
   });
-  const entries = groupRows(rows);
+  // Heaviest first, and each calorie cell carries its share of the meal's
+  // largest entry (an ingredient: of its dish) for the inline bar.
+  const entries = sortEntriesByCalories(groupRows(rows));
+  const entryShares = calorieShares(entries.map(({ row, children, rollup }) => (children.length ? rollup.calories : row.calories)));
   // The section frame (heading + kcal + add row) is PERMANENT structure —
   // it never depends on whether data has arrived yet. Only the entry list
   // itself swaps for a shimmer, and only on a true cold start (this bucket
@@ -93,7 +96,7 @@ function Section({
         }}>{choice.label}</Button>)}<Button size="compact-xs" variant="subtle" disabled={clarifying} onClick={()=>{setClarification(null);onClearClarification?.();}}>Cancel</Button></div>
         {clarifyError ? <span role="alert">{clarifyError}</span> : null}</div> : null}
       {showShimmer ? <LoadingState label={`${label} entries`} rows={2} /> : null}
-      {!showShimmer && entries.map(({ row, children, rollup }) => {
+      {!showShimmer && entries.map(({ row, children, rollup }, entryIndex) => {
         const key = row.uuid ?? row.id;
         // Render as a group whenever groupRows() actually attached
         // children — NEVER gate this on row.kind. groupRows() attaches a
@@ -118,9 +121,10 @@ function Section({
         // `id` for the same reason `key` does: not every row shape carries both.
         const measured = measuredByUuid?.get(row.uuid) ?? measuredByUuid?.get(row.id) ?? null;
         if (!isGroup) {
-          return renderRow({row,onTap:onRowTap,onConfirm,onRequestDelete,measured});
+          return renderRow({row,onTap:onRowTap,onConfirm,onRequestDelete,measured,kcalShare:entryShares[entryIndex]});
         }
         const isOpen = !collapsed.has(key);
+        const childShares = calorieShares(children.map(child => child.calories));
         return (
           <div key={key} className="health-group">
             {/* `children` is attached to the row object here — not read
@@ -128,9 +132,9 @@ function Section({
                 for display) — purely so the tap handler forwards them to
                 whatever opens next (EntryEditSheet's group mode needs the
                 full child list to scale/move/delete them together). */}
-            {renderRow({ row:{...row,children},densityRow:{kind:'group',children},onTap:onRowTap,onConfirm,onRequestDelete,measured,
+            {renderRow({ row:{...row,children},densityRow:{kind:'group',children},onTap:onRowTap,onConfirm,onRequestDelete,measured,kcalShare:entryShares[entryIndex],
               isGroup:true,expanded:isOpen,onToggle:()=>toggle(key),rollupKcal:rollup.calories })}
-            {isOpen ? children.map((c,index)=>renderRow({row:c,onTap:onRowTap,onConfirm,onRequestDelete,child:true,lastChild:index===children.length-1,
+            {isOpen ? children.map((c,index)=>renderRow({row:c,onTap:onRowTap,onConfirm,onRequestDelete,child:true,lastChild:index===children.length-1,kcalShare:childShares[index],
               measured:measuredByUuid?.get(c.uuid) ?? measuredByUuid?.get(c.id) ?? null})) : null}
           </div>
         );
