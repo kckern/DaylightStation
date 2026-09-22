@@ -182,7 +182,14 @@ export default function RecordingRung({
    *  error notice offers to switch the microphone off, and the mic is fine. */
   const [joinFailed, setJoinFailed] = useState(false);
   const modelUrl = targetLang ? audioUrl(entry.seq, targetLang) : null;
-  const pauses = useModelPauses(modelUrl);
+  /**
+   * The model whose pauses are wanted, set by the first start of a sentence —
+   * see `useModelPauses`. Keyed by URL rather than a boolean reset on arrival:
+   * a boolean still true for the render that brings the NEXT sentence would
+   * decode that sentence before any effect could turn it off.
+   */
+  const [pausesFor, setPausesFor] = useState(null);
+  const pauses = useModelPauses(modelUrl, pausesFor === modelUrl);
 
   const stopPlayback = useCallback(() => {
     const el = playbackRef.current;
@@ -420,9 +427,10 @@ export default function RecordingRung({
     abandonPieces();
     joinedRef.current = false;
     setJoinFailed(false);
+    setPausesFor(modelUrl);
     setPhase('prompting');
     playSequence([...clipsFor(entry, audioUrl), ...cue()]);
-  }, [entry, audioUrl, cue, playSequence, dropTake, abandonPieces, stopListening]);
+  }, [entry, audioUrl, modelUrl, cue, playSequence, dropTake, abandonPieces, stopListening]);
 
   // Again means the ding and the mic — not the whole sentence over. Hearing
   // the prompt again is what the Repetition rung is for, and a retry that is

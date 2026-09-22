@@ -7,7 +7,7 @@ afterEach(() => { delete window.AudioContext; vi.restoreAllMocks(); });
 describe('useModelPauses', () => {
   it('is empty without Web Audio — cuts fall back to where the learner pressed', () => {
     delete window.AudioContext;
-    const { result } = renderHook(() => useModelPauses('/audio/1/KR'));
+    const { result } = renderHook(() => useModelPauses('/audio/1/KR', true));
     expect(result.current.current).toEqual([]);
   });
 
@@ -21,7 +21,24 @@ describe('useModelPauses', () => {
       close() { return Promise.resolve(); }
     };
     vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: true, arrayBuffer: async () => new ArrayBuffer(8) });
-    const { result } = renderHook(() => useModelPauses('/audio/1/KR'));
+    const { result } = renderHook(() => useModelPauses('/audio/1/KR', true));
     await waitFor(() => expect(result.current.current).toEqual([1100]));
+  });
+
+  // The Portal has a V8 memory ceiling, and most sentences are never cut:
+  // decoding every model on arrival spent it for nothing.
+  it('decodes nothing until enabled, then decodes once', async () => {
+    window.AudioContext = class {
+      decodeAudioData() { return Promise.resolve({ sampleRate: 1000, getChannelData: () => new Float32Array(10) }); }
+      close() { return Promise.resolve(); }
+    };
+    const fetch = vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: true, arrayBuffer: async () => new ArrayBuffer(8) });
+    const { rerender } = renderHook(({ on }) => useModelPauses('/audio/1/KR', on), { initialProps: { on: false } });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(fetch).not.toHaveBeenCalled();
+    rerender({ on: true });
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
+    rerender({ on: true });
+    expect(fetch).toHaveBeenCalledTimes(1);
   });
 });
