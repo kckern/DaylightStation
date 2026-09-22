@@ -16,6 +16,14 @@ describe('derivePianos', () => {
 });
 
 describe('resolvePianoConfig', () => {
+  it('resolves timing.clickLeadMs: null by default, shared, per-piano override', () => {
+    expect(resolvePianoConfig({}, 'default').timing).toEqual({ clickLeadMs: null });
+    const raw = { timing: { clickLeadMs: 120 }, pianos: { p1: { timing: { clickLeadMs: 280 } }, p2: {} } };
+    expect(resolvePianoConfig(raw, 'p1').timing.clickLeadMs).toBe(280);
+    expect(resolvePianoConfig(raw, 'p2').timing.clickLeadMs).toBe(120);
+    expect(resolvePianoConfig({ timing: { clickLeadMs: 90 } }, 'default').timing.clickLeadMs).toBe(90);
+  });
+
   it('overlays per-piano values over shared defaults', () => {
     const raw = {
       effects: { dialect: 'gs', resend: 5 },
