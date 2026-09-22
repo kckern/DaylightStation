@@ -473,3 +473,5 @@ The corollary bit twice in this sweep: `feat/teacher-workspace-ia` and `feature/
 | 2026-09-22 | feat/health-inline-add | acb6a843d | Health inline add rows + fixed Lunch/Dinner columns, barcode intake gate/quarantine, hi-res-only icons, scan repair tooling; merged to main as 33df39b26 |
 | 2026-09-22 | refactor/word-ladder-language-neutral | 52481b0046 | Word ladder language-neutral (lexicon v2: term/gloss, language+labels from YAML, package-keyed state, media grouped words/<group>/<id>); merged as 65543bab18 |
 | 2026-09-22 | feat/recording-in-pieces | 863b518544 | Sentence Ladder recording in pieces (→ cut, per-piece redo/compare, joined WAV) + Tab-after-take compares; merged to main as 3f1ff3104 |
+| 2026-09-22 | fix/density-units | 52ead8b9b | Density for volume/cup/spoon/imperial units; scan repair restores legacy quantities (grams from mislabeled legacy amounts, volumes restored) |
+| 2026-09-22 | feat/health-day-prefetch | 0bac5d2a9 | Health ±7-day prefetch, instant shortlists, no cached-day flicker, add-row mic, calorie sort + inline bar, exercise memos/descriptions |
