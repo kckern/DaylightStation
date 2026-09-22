@@ -495,6 +495,18 @@ export default function RecordingRung({
   }, [entry.seq, playPiece]);
 
   /**
+   * GO FROM IDLE. Normally the sentence from the top — but idle with a piece
+   * in hand means the piece's sound was blocked, and starting over would
+   * throw away the parts already said. So it resumes that piece instead.
+   */
+  const begin = useCallback(() => {
+    const i = pieceRef.current;
+    if (i == null) { start(); return; }
+    languageLog.capture('piece-resume', { seq: entry.seq, piece: i });
+    playPiece(i);
+  }, [entry.seq, playPiece, start]);
+
+  /**
    * → WHILE THE SENTENCE PLAYS: "that's enough — let me say this much". Only
    * the target clip can be cut (not the meaning, not the ding), only an
    * open-ended span, and the cut snaps back to the pause the learner meant
@@ -717,7 +729,7 @@ export default function RecordingRung({
       const again = e.key === 'Backspace';
       if (!go && !again) return;
       if (go) {
-        if (current === 'idle') { e.preventDefault(); start(); }
+        if (current === 'idle') { e.preventDefault(); begin(); }
         else if (current === 'recording') { e.preventDefault(); stopRecording(); }
         else if (current === 'playback') { e.preventDefault(); skipPlayback(); }
         else if (current === 'review') {
@@ -736,7 +748,7 @@ export default function RecordingRung({
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [
-    start, stopRecording, skipPlayback, accept, recordAgain, hear, replaySentence, sourceLang, cut, nextPiece, redoPiece,
+    begin, stopRecording, skipPlayback, accept, recordAgain, hear, replaySentence, sourceLang, cut, nextPiece, redoPiece,
   ]);
 
   const getPlayhead = useCallback(() => {
@@ -836,7 +848,7 @@ export default function RecordingRung({
       )}
       <div className="lang-rung__controls">
         {phase === 'idle' && (
-          <button type="button" className="lang-tile lang-tile--primary" onClick={start} aria-label="Listen, then record">
+          <button type="button" className="lang-tile lang-tile--primary" onClick={begin} aria-label="Listen, then record">
             <Icon name="record" className="lang-tile__glyph" />
             <span className="lang-tile__word" aria-hidden="true">Record</span>
           </button>

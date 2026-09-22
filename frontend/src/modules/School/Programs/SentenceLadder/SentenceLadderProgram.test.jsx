@@ -3056,6 +3056,34 @@ describe('recording in pieces', () => {
     expect(model.played).toHaveLength(before);
   });
 
+  /** The next play() is refused, as a browser's autoplay gate would. */
+  const refuseNextPlay = () => {
+    const proto = window.HTMLMediaElement.prototype;
+    const play = proto.play;
+    proto.play = vi.fn(() => { proto.play = play; return Promise.reject(new Error('NotAllowedError')); });
+  };
+
+  it.each([
+    ['Space', () => pressKey(' ')],
+    ['the Record tile', () => fireEvent.click(screen.getByRole('button', { name: 'Listen, then record' }))],
+  ])('a blocked part resumes that part from %s, keeping the parts before it', async (_, resume) => {
+    const model = modelPlayer(); fakeMic(); recordingDay(); program();
+    await firstPiece(model);
+    await screen.findByRole('button', { name: 'Next part' });
+    refuseNextPlay();
+    pressKey(' ');
+    expect(await screen.findByText(/sound didn’t start/i)).toBeTruthy();
+    await screen.findByRole('button', { name: 'Listen, then record' });
+    const before = model.played.length;
+    resume();
+    await sayPiece(900);
+    expect(model.played.slice(before)[0]).toEqual({ src: '/audio/glossika-korean/1/KR', atMs: 1500 });
+    await screen.findByRole('button', { name: 'Finish' });
+    pressKey(' ');
+    await waitFor(() => expect(joinTakeMock).toHaveBeenCalled());
+    expect(await Promise.all(joinTakeMock.mock.calls[0][0].map((b) => b.text()))).toEqual(['take1', 'take2']);
+  });
+
   it('leaving partway uploads nothing and says how far it got', async () => {
     const model = modelPlayer(); fakeMic(); recordingDay();
     const { unmount } = program();
