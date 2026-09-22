@@ -4,10 +4,24 @@ const numeric = value => value !== '' && value != null && Number.isFinite(Number
 // OFF sets serving_quantity_unit to `ml` whenever the label says "cup", even
 // when the same label prints the mass: "1/4 cup (28 g)". A printed gram figure
 // is the better fact. A real volume ("325 mL") has no gram figure and stays ml.
-const labelGrams = text => {
-  const match = String(text || '').match(/(\d+(?:[.,]\d+)?)\s*(?:g|grams?)\b/i);
-  return match ? Number(match[1].replace(',', '.')) : null;
+// The parenthesised figure is the serving's mass; a bare one is a fallback.
+// "gr" counts as grams.
+// A comma is a decimal point only before one or two digits ("28,5 g");
+// "1,000 g" is a thousands separator.
+const NUMBER = String.raw`(?<![\d.,])(\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+|,\d{1,2}(?!\d))?)`;
+const GRAMS = String.raw`\s*(?:g|gr|grams?)\b`;
+const PAREN_GRAMS = new RegExp(String.raw`\(\s*${NUMBER}${GRAMS}`, 'i');
+// A bare figure naming a nutrient ("2 g protein") is not the serving's mass.
+const ANY_GRAMS = new RegExp(String.raw`${NUMBER}${GRAMS}(?!\s*(?:of\s+)?(?:protein|fat|carb|sugar|fib(?:er|re)|sodium|salt))`, 'i');
+const parseNumber = text => Number(/,\d{3}(?!\d)/.test(text) ? text.replaceAll(',', '') : text.replace(',', '.'));
+export const labelGrams = text => {
+  const source = String(text || '');
+  const match = source.match(PAREN_GRAMS) || source.match(ANY_GRAMS);
+  return match ? parseNumber(match[1]) : null;
 };
+// A volume anywhere in the pack size or the label serving means the per-100
+// basis is 100 ml. Volumes are never turned into grams.
+const VOLUME = /\b(ml|cl|dl|l|liters?|litres?|fl\.? ?oz|gal(?:lons?)?|qt|quarts?|pints?|pt)\b/i;
 
 /** OFF's suffixed values are explicit bases. Bare values require nutrition_data_per.
  * No mass is inferred for liquid servings; the returned serving remains ml.
@@ -29,7 +43,8 @@ export function normalizeProductNutrition(product) {
   const declaredPer100 = ['100g', '100ml'].includes(product.nutrition_data_per);
   if (!servingKnown && Object.values(fields).some(source => numeric(n[`${source}_100g`]) !== null
     || (declaredPer100 && numeric(n[source]) !== null))) {
-    const liquid = product.nutrition_data_per === '100ml' || /\b(ml|l|fl\.? ?oz)\b/i.test(String(product.quantity || ''));
+    const liquid = product.nutrition_data_per === '100ml'
+      || VOLUME.test(String(product.quantity || '')) || VOLUME.test(String(product.serving_size || ''));
     quantity = 100; unit = liquid ? 'ml' : 'g'; servingKnown = true; servingFallback = 'per100';
   }
   const warnings = [];

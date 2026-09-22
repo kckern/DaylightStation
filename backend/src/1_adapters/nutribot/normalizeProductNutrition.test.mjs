@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { normalizeProductNutrition, normalizeNutritionixNutrition } from './normalizeProductNutrition.mjs';
+import { normalizeProductNutrition, normalizeNutritionixNutrition, labelGrams } from './normalizeProductNutrition.mjs';
 describe('barcode nutrition basis', () => {
   it('does not label Nutritionix serving mass as a count of bottles or invent missing nutrients', () => {
     expect(normalizeNutritionixNutrition({ serving_weight_grams: 325, serving_unit: 'bottle', nf_calories: 160, nf_sugars: 0 }))
@@ -61,5 +61,36 @@ describe('label grams and per-100 fallback', () => {
     expect(pb.serving).toEqual({ size: 100, unit: 'g' });
     expect(pb.nutrition.calories).toBeCloseTo(656.25, 2);
     expect(pb.nutritionLookup.servingText).toBe('2 tbsp (2 tbsp)');
+  });
+});
+
+describe('label gram figure', () => {
+  it.each([
+    ['1/4 cup (28 g)', 28],
+    ['1 bar (40 g) 2 g protein', 40],
+    ['2 g protein', null],
+    ['30 gr', 30],
+    ['1 portion (28,5 g)', 28.5],
+    ['1 tray (1,000 g)', 1000],
+    ['1,000 g', 1000],
+    ['1 cup (240 mL)', null],
+    ['2 gal', null],
+  ])('%s → %s', (text, grams) => {
+    expect(labelGrams(text)).toBe(grams);
+  });
+});
+
+describe('volume fallback', () => {
+  const per100 = { 'energy-kcal_100g': 42 };
+  it.each([
+    [{ quantity: '1 gallon' }],
+    [{ quantity: '33 cl' }],
+    [{ quantity: '1 qt' }],
+    [{ quantity: '2 L' }],
+    [{ serving_size: '1 cup (240 mL)' }],
+  ])('%j falls back to 100 ml, never grams', extra => {
+    const value = normalizeProductNutrition({ nutriments: per100, ...extra });
+    expect(value.serving).toEqual({ size: 100, unit: 'ml' });
+    expect(value.nutritionLookup.servingFallback).toBe('per100');
   });
 });
