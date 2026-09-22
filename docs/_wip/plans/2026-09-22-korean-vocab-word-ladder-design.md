@@ -362,7 +362,7 @@ ladder is on it every scheduled day.
   A child can run it as many times as he wants.
 - **The sheet says so.** The quiz document's instruction line (rendered under
   the title, above the first block) reads:
-  `Not sure of a word? Open Korean on the Portal and review the cards, then come back.`
+  `Not sure of a word? Open Korean words on the Portal and review the cards, then come back.`
   Nothing on the sheet is a code or a gate; the line only tells him where to go.
 - Reaching the review run is one tap from the agenda tile. If the tile is
   already open on a finished day, the "Done" screen offers **Review the cards**
