@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, useMemo } from 'react';
+import { createContext, useContext, useState, useEffect, useMemo, useCallback } from 'react';
 import getLogger from '../../../lib/logging/Logger.js';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import { derivePianos, resolvePianoConfig } from './pianoConfigModel.js';
@@ -16,6 +16,7 @@ const ActivePianoContext = createContext(null);
  */
 export function PianoConfigProvider({ children }) {
   const [raw, setRaw] = useState(null); // null = loading
+  const [generation, setGeneration] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -24,18 +25,24 @@ export function PianoConfigProvider({ children }) {
       .then((res) => { if (!cancelled) setRaw(res?.parsed ?? {}); })
       .catch((err) => { logger.warn('piano.config-failed', { error: err.message }); if (!cancelled) setRaw({}); });
     return () => { cancelled = true; };
-  }, []);
+  }, [generation]);
+
+  // Re-read the file after a kiosk-side write (e.g. click calibration) so the
+  // new value reaches resolvePianoConfig without a page reload. The previous
+  // raw stays in place until the fresh one lands — no loading flash.
+  const reload = useCallback(() => setGeneration((g) => g + 1), []);
 
   const value = useMemo(() => ({
     loading: raw === null,
     raw: raw ?? {},
     pianos: derivePianos(raw),
-  }), [raw]);
+    reload,
+  }), [raw, reload]);
 
   return <RosterContext.Provider value={value}>{children}</RosterContext.Provider>;
 }
 
-/** Household roster: { loading, raw, pianos:[{id,label}] }. */
+/** Household roster: { loading, raw, pianos:[{id,label}], reload() }. */
 // eslint-disable-next-line react-refresh/only-export-components -- usePianoRoster is co-located with its Context/Provider (standard pattern); 3 consumers, splitting out of scope for a lint pass
 export function usePianoRoster() {
   const ctx = useContext(RosterContext);
@@ -82,6 +89,12 @@ export function usePianoKioskConfig() {
 // eslint-disable-next-line react-refresh/only-export-components -- usePianoKioskConfigOptional is co-located with its Context/Provider (standard pattern); 4 consumers, splitting out of scope for a lint pass
 export function usePianoKioskConfigOptional() {
   return useContext(ActivePianoContext) ?? null;
+}
+
+/** Roster or null outside a PianoConfigProvider. Never throws. */
+// eslint-disable-next-line react-refresh/only-export-components -- co-located with its Context/Provider (standard pattern)
+export function usePianoRosterOptional() {
+  return useContext(RosterContext) ?? null;
 }
 
 export default ActivePianoContext;
