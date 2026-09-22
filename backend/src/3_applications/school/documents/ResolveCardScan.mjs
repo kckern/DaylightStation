@@ -38,6 +38,7 @@ import { sha256Text } from '#system/utils/CanonicalFingerprint.mjs';
 import { planRows, resolveAmbiguousCardId } from '#domains/school/documents/allocation.mjs';
 import { gradeAnswer } from '#domains/school/grading.mjs';
 import { omrAlignmentError } from '#domains/school/omrAlignment.mjs';
+import { omrKeyAlignmentSuspect } from '#domains/school/omrKeyAlignment.mjs';
 import { reduceSession } from '#domains/school/sessions/sessionEvents.mjs';
 import { creditsAsEraser, leniencyCap } from '#domains/school/documents/ambiguityLeniency.mjs';
 import {
@@ -1182,6 +1183,37 @@ export class ResolveCardScan {
       results: questionRows, archetype: prepared.archetype, rowContext, logger: this.#logger,
     });
 
+    // Content-aware row-shift check (never a prior scan — that is
+    // omrAlignmentError's job). Runs over fully-marked, multiple_choice rows
+    // only: a blank row means the sheet is still mid-fill (a later scan pass
+    // will re-run this once complete); a companion_code row is already
+    // partitioned out of `questionRows`; a multi_select row's mark is a set
+    // and cannot be compared to a single correctLetter.
+    //
+    // Compares the RAW SCANNED LETTER (`answers[row.row]`, the bubble
+    // position actually marked) against `correctLetterFor`'s letter — NOT
+    // `row.given`. A standard multiple_choice row's graded `given` already
+    // holds the resolved CHOICE VALUE (`letterToChoice`, above), not the
+    // bubble letter, so comparing that against a letter would silently
+    // never match on any worksheet whose choices aren't themselves the
+    // literal strings 'A'-'E'.
+    const keyAlignmentRows = questionRows
+      .filter((row) => row.itemType === 'multiple_choice' && typeof answers[row.row] === 'string')
+      .map((row) => ({
+        row: row.row,
+        given: answers[row.row],
+        correctLetter: correctLetterFor(bankItemsById.get(row.itemId)),
+      }))
+      .filter((row) => row.correctLetter != null);
+    const hasBlankRow = questionRows.some((row) => row.status === 'blank');
+    const keyAlignmentSuspect = hasBlankRow ? null : omrKeyAlignmentSuspect(keyAlignmentRows);
+    if (keyAlignmentSuspect) {
+      this.#logger.warn?.('school.scan.key-alignment-suspected', {
+        cardId: record.cardId, recordId: record.recordId,
+        learnerId: record.learnerId ?? null, ...keyAlignmentSuspect,
+      });
+    }
+
     const totalPoints = rowResults.reduce((sum, row) => sum + row.points, 0);
     const earnedPoints = rowResults.reduce((sum, row) => sum + row.earned, 0);
 
@@ -1243,6 +1275,7 @@ export class ResolveCardScan {
       // regression that matters most: every worksheet in the house is ungated.
       ...(companionGate ? { companionGate } : {}),
       ...(sections.length ? { sections } : {}),
+      ...(keyAlignmentSuspect ? { keyAlignmentSuspect } : {}),
     };
   }
 
