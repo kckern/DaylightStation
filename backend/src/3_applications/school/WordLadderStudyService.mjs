@@ -105,13 +105,27 @@ export class WordLadderStudyService {
     };
   }
 
+  /**
+   * Frozen plans are keyed by study day AND deck (`days[day][deckId]`): credit
+   * is per deck, and a second deck opened the same day must never overwrite
+   * the first deck's plan (and with it the credit already earned).
+   */
+  static #frozenPlan(status, day, deckId) {
+    const plan = status?.days?.[day]?.[deckId];
+    return plan && typeof plan === 'object' ? plan : null;
+  }
+
+  #progress(status, day, deckId) {
+    return dayProgress({ dayPlan: WordLadderStudyService.#frozenPlan(status, day, deckId), words: status.words, day });
+  }
+
   #publicPlan(status, day, deck, lexicon, media) {
-    const dayPlan = status.days?.[day] ?? null;
+    const dayPlan = WordLadderStudyService.#frozenPlan(status, day, deck.id);
     const progress = dayProgress({ dayPlan, words: status.words, day });
     const known = (item) => lexicon.has(item.wordId);
     return {
       day,
-      deckId: dayPlan?.deckId ?? deck.id,
+      deckId: deck.id,
       checks: progress.checks.filter(known).map((item) => this.#check(item, lexicon.get(item.wordId), media, day)),
       study: progress.study.filter(known).map((item) => ({ ...item, card: this.#card(lexicon.get(item.wordId), media) })),
       review: progress.review.filter(known).map((item) => this.#check(item, lexicon.get(item.wordId), media, day)),
@@ -186,10 +200,13 @@ export class WordLadderStudyService {
     const status = this.#store.update(userId, (current) => {
       const { next, folded: applied } = this.#foldInto(current, attempts, quizDocumentIds, today);
       folded = applied;
-      if (next.days?.[today]?.deckId !== deckId) {
+      if (!WordLadderStudyService.#frozenPlan(next, today, deckId)) {
         next.days = {
           ...(next.days ?? {}),
-          [today]: planDay({ status: next, deckId, deckWordIds: deck.words, lexiconIds: [...lexicon.keys()], today, media }),
+          [today]: {
+            ...(next.days?.[today] ?? {}),
+            [deckId]: planDay({ status: next, deckId, deckWordIds: deck.words, lexiconIds: [...lexicon.keys()], today, media }),
+          },
         };
         frozen = true;
       }
@@ -221,7 +238,7 @@ export class WordLadderStudyService {
     const at = this.#at();
     let outcome = null;
     const status = this.#store.update(userId, (current) => {
-      const progress = dayProgress({ dayPlan: current.days?.[today], words: current.words, day: today });
+      const progress = this.#progress(current, today, session.deckId);
       const item = [...progress.checks, ...progress.review].find((row) => row.wordId === wordId && !row.done);
       if (!item) throw new ValidationError(`'${wordId}' has no open check today`);
       const { choices, answer } = buildChoices(entry, item.direction, today);
@@ -244,8 +261,8 @@ export class WordLadderStudyService {
     };
   }
 
-  #openStudyItem(status, today, wordId) {
-    const progress = dayProgress({ dayPlan: status.days?.[today], words: status.words, day: today });
+  #openStudyItem(status, today, deckId, wordId) {
+    const progress = this.#progress(status, today, deckId);
     const item = progress.study.find((row) => row.wordId === wordId && !row.done);
     if (!item) throw new ValidationError(`'${wordId}' is not in today's study pass`);
     return item;
@@ -254,7 +271,7 @@ export class WordLadderStudyService {
   async saveRecording({ userId, sessionId, wordId, buffer, ext = 'webm' } = {}) {
     const { status: before, session, today } = this.#session(userId, sessionId);
     if (!buffer || buffer.length === 0) throw new ValidationError('recording is empty');
-    this.#openStudyItem(before, today, wordId);
+    this.#openStudyItem(before, today, session.deckId, wordId);
     const { deck, lexicon } = await this.#load(session.deckId);
     // File first: an orphan file is recoverable, an event pointing at nothing is not.
     let saved;
@@ -266,7 +283,7 @@ export class WordLadderStudyService {
     }
     const at = this.#at();
     const status = this.#store.update(userId, (current) => {
-      this.#openStudyItem(current, today, wordId);
+      this.#openStudyItem(current, today, session.deckId, wordId);
       current.words = { ...current.words, [wordId]: applyStudy(readWord(current, wordId), { at, day: today, recording: 'taken', take: saved.take }) };
       return current;
     });
@@ -288,7 +305,7 @@ export class WordLadderStudyService {
     const at = this.#at();
     const unavailable = recording?.status === 'unavailable';
     const status = this.#store.update(userId, (current) => {
-      const item = this.#openStudyItem(current, today, wordId);
+      const item = this.#openStudyItem(current, today, session.deckId, wordId);
       let word = readWord(current, wordId);
       if (!item.studied) {
         if (!unavailable) throw new ValidationError('record the word first');
@@ -305,9 +322,12 @@ export class WordLadderStudyService {
 
   /** Review run (rev 3): no marks, no recording, no state change; the view is logged. */
   async viewReviewCard({ userId, sessionId, wordId } = {}) {
-    const { session, today } = this.#session(userId, sessionId);
+    const { status: before, session, today } = this.#session(userId, sessionId);
     const { deck } = await this.#load(session.deckId);
     if (!deck.words.includes(wordId)) throw new ValidationError(`'${wordId}' is not in this deck`);
+    if (!this.#progress(before, today, session.deckId).complete) {
+      throw new ValidationError('the review run opens after today\'s words are done');
+    }
     const at = this.#at();
     this.#store.update(userId, (current) => {
       current.words = { ...current.words, [wordId]: applyReviewView(readWord(current, wordId), { at, day: today }) };
@@ -342,8 +362,7 @@ export class WordLadderStudyService {
     const today = this.#today();
     const target = day ?? today;
     const status = this.#store.read(userId);
-    let dayPlan = status.days?.[target] ?? null;
-    if (target === today && dayPlan && dayPlan.deckId !== deckId) dayPlan = null;
+    let dayPlan = WordLadderStudyService.#frozenPlan(status, target, deckId);
     if (!dayPlan && target === today) {
       const { deck, lexicon } = await this.#load(deckId);
       dayPlan = planDay({

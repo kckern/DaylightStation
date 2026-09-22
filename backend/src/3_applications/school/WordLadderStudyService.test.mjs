@@ -4,6 +4,7 @@ import { GuestForbiddenError } from '#domains/school/errors.mjs';
 import { answerFor, emptyStatus, validateLexicon } from '#domains/school/wordLadder/index.mjs';
 
 const DECK_ID = 'language/korean/week-01-classroom';
+const DECK_B = 'language/korean/week-02-names';
 const REF = 'media:language/korean-vocab/lexicon.yml';
 const { entries: LEXICON } = validateLexicon({ schema: 'school.word-lexicon/v1', entries: [
   { id: 'gawi', kind: 'word', korean: '가위', english: 'Scissors', pronunciation: null, decoys: { korean: ['가지', '바위', '가방'], english: ['Knife', 'Tape', 'Ruler'] } },
@@ -29,11 +30,15 @@ function make({ policy = { mode: 'word-ladder' }, attempts = [], media = false }
   const service = new WordLadderStudyService({
     store,
     decks: {
-      getFlashcardDeck: async (id) => (id === DECK_ID ? { id: DECK_ID, lexicon: REF, words: ['gawi', 'pul'], cards: [] } : null),
+      getFlashcardDeck: async (id) => (id === DECK_ID ? { id: DECK_ID, lexicon: REF, words: ['gawi', 'pul'], cards: [] }
+        : id === DECK_B ? { id: DECK_B, lexicon: REF, words: ['ireum'], cards: [] } : null),
       listFlashcardDecks: async () => [{ id: DECK_ID, lexicon: REF, words: ['gawi', 'pul'] }, { id: 'biology/cells', cards: [] }],
     },
     lexicons: { getLexicon: () => LEXICON },
-    assignments: { get: async () => ({ programs: [{ programId: 'flashcards', deckId: DECK_ID, policy }] }) },
+    assignments: { get: async () => ({ programs: [
+      { programId: 'flashcards', deckId: DECK_ID, policy },
+      { programId: 'flashcards', deckId: DECK_B, policy },
+    ] }) },
     attempts: { readAttemptsInRange: vi.fn(() => attempts) },
     recordings: { save: (args) => { saved.push(args); return { take: saved.length, file: 'f' }; }, latest: () => ({ resource: { body: 'x' }, contentType: 'audio/webm' }) },
     assets: { exists: () => media },
@@ -229,6 +234,36 @@ describe('WordLadderStudyService', () => {
     expect(store.data.kid.words.pul.history.at(-1)).toMatchObject({ event: 'review', day: '2026-09-22' });
     await expect(service.dayStatus({ userId: 'kid', deckId: DECK_ID })).resolves.toMatchObject({ doneToday: true });
     await expect(service.viewReviewCard({ userId: 'kid', sessionId, wordId: 'ireum' })).rejects.toThrow(/not in this deck/);
+  });
+
+  it('a second deck opened the same day freezes its own plan and never overwrites the first deck\'s', async () => {
+    const { service, store } = make();
+    const a = await service.open({ userId: 'kid', deckId: DECK_ID });
+    const doneA = await studyAll(service, a.sessionId, a.plan);
+    expect(doneA.doneToday).toBe(true);
+    const frozenA = structuredClone(store.data.kid.days['2026-09-22'][DECK_ID]);
+    const b = await service.open({ userId: 'kid', deckId: DECK_B });
+    expect(b.plan.deckId).toBe(DECK_B);
+    expect(b.plan.checks).toEqual([]);
+    expect(b.plan.study.map((s) => s.wordId)).toEqual(['ireum']);
+    expect(b.plan.doneToday).toBe(false);
+    await expect(service.dayStatus({ userId: 'kid', deckId: DECK_B })).resolves.toMatchObject({ doneToday: false });
+    const again = await service.open({ userId: 'kid', deckId: DECK_ID });
+    expect(store.data.kid.days['2026-09-22'][DECK_ID]).toEqual(frozenA);
+    expect(again.plan.checks).toEqual([]);
+    expect(again.plan.study.map((s) => s.wordId).sort()).toEqual(['gawi', 'pul']);
+    expect(again.plan.doneToday).toBe(true);
+    await expect(service.dayStatus({ userId: 'kid', deckId: DECK_ID })).resolves.toMatchObject({ doneToday: true });
+    await expect(service.dayStatus({ userId: 'kid', deckId: DECK_ID, day: '2026-09-22' })).resolves.toMatchObject({ doneToday: true });
+  });
+
+  it('the review run is refused until the day\'s plan for the deck is done', async () => {
+    const { service, store } = make();
+    const { sessionId, plan } = await service.open({ userId: 'kid', deckId: DECK_ID });
+    await expect(service.viewReviewCard({ userId: 'kid', sessionId, wordId: 'gawi' })).rejects.toThrow(/review run opens after/);
+    expect(store.data.kid.words.gawi).toBeUndefined();
+    await studyAll(service, sessionId, plan);
+    await expect(service.viewReviewCard({ userId: 'kid', sessionId, wordId: 'gawi' })).resolves.toEqual({ wordId: 'gawi', logged: true });
   });
 
   it('sessions expire at the study-day boundary', async () => {
