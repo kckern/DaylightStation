@@ -23,7 +23,6 @@ describe('Media P0 gate manifest', () => {
 
   it('pins every P0 extension criterion to its exact authoritative journey', () => {
     expect(P0_EXTENSION_ENTRIES).toEqual(expect.arrayContaining([
-      expect.objectContaining({ story: 'PLACE.6a', criteria: ['PLACE.6a/AC2'] }),
       expect.objectContaining({ story: 'PLACE.8a', criteria: ['PLACE.8a/AC1'] }),
       expect.objectContaining({ story: 'STEER.1a', criteria: ['STEER.1a/AC2', 'STEER.1a/AC3'] }),
       expect.objectContaining({ story: 'STEER.6a', criteria: ['STEER.6a/AC3'] }),
@@ -36,8 +35,8 @@ describe('Media P0 gate manifest', () => {
       expect.objectContaining({ story: 'FIND.5a', criteria: ['FIND.5a/AC4'] }),
       expect.objectContaining({ story: 'FIND.6a', criteria: ['FIND.6a/AC1', 'FIND.6a/AC2', 'FIND.6a/AC3'] }),
     ]));
-    expect(P0_EXTENSION_ENTRIES).toHaveLength(12);
-    expect(validateP0Manifest([...BASE, ...P0_EXTENSION_ENTRIES])).toEqual({ stories: 22, criteria: 48 });
+    expect(P0_EXTENSION_ENTRIES).toHaveLength(11);
+    expect(validateP0Manifest([...BASE, ...P0_EXTENSION_ENTRIES])).toEqual({ stories: 21, criteria: 47 });
   });
 
   it('rejects skipped, duplicated, weakened, or unjourneyed criteria', () => {

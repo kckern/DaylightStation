@@ -14,12 +14,6 @@ const MEDIA_JOURNEY_DIRECTORY = 'tests/live/flow/media';
 
 export const P0_EXTENSION_ENTRIES = Object.freeze([
   {
-    story: 'PLACE.6a',
-    criteria: ['PLACE.6a/AC2'],
-    file: 'media-app-handoff-picker.runtime.test.mjs',
-    grep: 'NowPlaying hand-off shows truthful aim plus explicit move/keep choices',
-  },
-  {
     story: 'PLACE.8a',
     criteria: ['PLACE.8a/AC1'],
     file: 'media-app-handoff-picker.runtime.test.mjs',

@@ -617,6 +617,27 @@ describe('createPlayerSessionBridge', () => {
       .toMatchObject({ targetSeekedObserved: true });
     bridge.stop();
   });
+
+  it('adopts paused handoff snapshots without autoplaying them', () => {
+    const adoptSessionSnapshot = vi.fn(() => ({ ok: true }));
+    const handle = {
+      ...makeHandle({ el: makeMediaEl({ paused: true }), meta: { contentId: 'plex:a', format: 'video' } }),
+      getPlayerInstanceId: () => 'paused-player',
+      getPlaybackIdentity: () => ({ ownerInstanceId: 'owner', playbackRevision: 1, queueRevision: 1 }),
+      subscribeMountedMediaOperations: () => ({ observerId: 'observer', unsubscribe: vi.fn() }),
+      adoptSessionSnapshot,
+    };
+    const bridge = startBridge(() => handle);
+
+    expect(bridge.queueController.adoptAndBeginHandoffStart({
+      operationId: 'paused-start', snapshot: { state: 'paused', position: 17 }, targetSeconds: 17,
+    })).toEqual({ ok: true, operationId: 'paused-start' });
+    expect(adoptSessionSnapshot).toHaveBeenCalledWith(
+      { state: 'paused', position: 17 },
+      expect.objectContaining({ operationId: 'paused-start', autoplay: false }),
+    );
+    bridge.stop();
+  });
 });
 
 describe('createRegistrySessionSource', () => {

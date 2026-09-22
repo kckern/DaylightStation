@@ -269,9 +269,17 @@ A destructive Move is a two-owner transaction. Its request binds an
 HTTP or command receipt is never adoption proof. The destination must return a
 typed started receipt bound to that operation, queue/current-item identity,
 destination revision, and an admitted native renderer that is ready and
-advancing. Rejection, timeout/uncertainty, or any newer source revision keeps
+advancing for a playing source, or ready and still paused at the captured
+position for a paused source. Paused adoption is issued without autoplay.
+Rejection, timeout/uncertainty, or any newer source revision keeps
 the source playing. Only confirmed adoption may conditionally stop the exact
 unchanged source; **Keep playing here too** never stops it.
+
+Aim labels always read the one persisted global aim, including while a person
+is steering a different screen in Peek. A busy origin is shown only when a
+fresh receiver snapshot carries explicit `meta.origin` provenance: either a
+known `{ kind: 'device', id }` or a named `{ kind: 'routine', name }`. Receiver
+ownership metadata is not sender provenance and is never presented as such.
 
 **On phones the dock cannot hold all of that at once — so it doesn't try.**
 At 360px there is ~336px to spend; splitting that between a scope selector, a
