@@ -3084,6 +3084,104 @@ describe('recording in pieces', () => {
     expect(await Promise.all(joinTakeMock.mock.calls[0][0].map((b) => b.text()))).toEqual(['take1', 'take2']);
   });
 
+  const cuts = (languageLog) => languageLog.capture.mock.calls.filter(([event]) => event === 'cut').map(([, d]) => d);
+  /** Two parts of `a` and `b` ms, joined; leaves the rung in joined review. */
+  const joinedTake = async (model, a = 800, b = 900) => {
+    await firstPiece(model, a);
+    await screen.findByRole('button', { name: 'Next part' });
+    pressKey(' ');
+    await sayPiece(b);
+    await screen.findByRole('button', { name: 'Finish' });
+    pressKey(' ');
+    await waitFor(() => expect(joinTakeMock).toHaveBeenCalled());
+  };
+
+  it('Backspace on a joined take starts the whole sentence over, and it can be cut again', async () => {
+    const model = modelPlayer(); fakeMic(); recordingDay(); program();
+    const { languageLog } = await import('./languageLog.js');
+    await joinedTake(model);
+    await screen.findByRole('button', { name: 'Keep it' });
+    const before = model.played.length;
+    model.holdNext();
+    pressKey('Backspace');
+    // The sentence, not a bare ding: it was too long to say in one go.
+    await waitFor(() => expect(model.played.slice(before).map((p) => p.src)).toEqual(['/audio/glossika-korean/1/KR']));
+    expect(await screen.findByRole('button', { name: 'Pause here' })).toBeTruthy();
+    model.at(1200);
+    pressKey('ArrowRight');
+    // Piece 0 again, from an empty set of cuts — the old cut at 1500 is gone.
+    await waitFor(() => expect(cuts(languageLog)).toHaveLength(2));
+    expect(cuts(languageLog)[1]).toEqual(expect.objectContaining({ piece: 0, cutMs: 1200 }));
+    await sayPiece(700);
+    expect(await screen.findByRole('button', { name: 'Next part' })).toBeTruthy();
+  });
+
+  it('a joined take shorter than a sentence is refused and cannot be kept', async () => {
+    const model = modelPlayer(); fakeMic(); recordingDay(); program();
+    const { languageApi } = await import('./languageApi.js');
+    await joinedTake(model, 600, 550);                  // each part a phrase; 1150ms in all
+    expect(await screen.findByText(/too quick/i)).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Keep it' })).toBeDisabled();
+    pressKey(' ');
+    await new Promise((r) => setTimeout(r, 0));
+    expect(languageApi.recording).not.toHaveBeenCalled();
+  });
+
+  it('after a join fails, → no longer cuts that sentence', async () => {
+    joinTakeMock.mockRejectedValueOnce(new Error('no-web-audio'));
+    const model = modelPlayer(); fakeMic(); recordingDay(); program();
+    const { languageLog } = await import('./languageLog.js');
+    await joinedTake(model);
+    await screen.findByText(/say it in one go/i);
+    const before = model.played.length;
+    model.holdNext();
+    pressKey(' ');
+    await waitFor(() => expect(model.played.slice(before).map((p) => p.src)).toEqual(['/audio/glossika-korean/1/KR']));
+    expect(screen.queryByRole('button', { name: 'Pause here' })).toBeNull();
+    model.at(1500);
+    pressKey('ArrowRight');
+    await new Promise((r) => setTimeout(r, 0));
+    expect(cuts(languageLog)).toHaveLength(1);
+    expect(model.played.slice(before).map((p) => p.src)).toEqual(['/audio/glossika-korean/1/KR']);
+  });
+
+  it('→ is ignored in the first 300ms of a span and during the ding', async () => {
+    const model = modelPlayer(); fakeMic(); recordingDay(); program();
+    const { languageLog } = await import('./languageLog.js');
+    await screen.findByRole('button', { name: 'Listen, then record' });
+    pressKey(' ');
+    await waitFor(() => expect(model.played).toHaveLength(1));
+    model.at(200);
+    pressKey('ArrowRight');                             // too soon: an empty piece
+    await new Promise((r) => setTimeout(r, 0));
+    expect(cuts(languageLog)).toHaveLength(0);
+    expect(model.played).toHaveLength(1);
+
+    model.at(1500);
+    model.holdNext((src) => src.startsWith('/cue/'));
+    pressKey('ArrowRight');
+    await waitFor(() => expect(model.played.at(-1).src).toBe('/cue/record'));
+    pressKey('ArrowRight');                             // the ding cannot be cut
+    await new Promise((r) => setTimeout(r, 0));
+    expect(cuts(languageLog)).toHaveLength(1);
+    model.end();
+
+    // The rest of the sentence starts at the cut: 200ms into it is too soon.
+    await sayPiece(800);
+    await screen.findByRole('button', { name: 'Next part' });
+    model.holdNext();
+    pressKey(' ');
+    await waitFor(() => expect(model.played.at(-1)).toEqual({ src: '/audio/glossika-korean/1/KR', atMs: 1500 }));
+    model.at(1700);
+    pressKey('ArrowRight');
+    await new Promise((r) => setTimeout(r, 0));
+    expect(cuts(languageLog)).toHaveLength(1);
+    model.at(2600);
+    pressKey('ArrowRight');
+    await waitFor(() => expect(cuts(languageLog)).toHaveLength(2));
+    expect(cuts(languageLog)[1]).toEqual(expect.objectContaining({ piece: 1, cutMs: 2600 }));
+  });
+
   it('leaving partway uploads nothing and says how far it got', async () => {
     const model = modelPlayer(); fakeMic(); recordingDay();
     const { unmount } = program();
