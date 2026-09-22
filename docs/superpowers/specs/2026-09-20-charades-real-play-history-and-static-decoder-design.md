@@ -2,16 +2,17 @@
 
 ## Intent
 
-Prepare FHE Charades for a real game on 2026-09-20. Only the final completed
-2026-09-13 certification game counts as prior play. Its 18 clues become the
-canonical starting history; all other diagnostic and test sessions are ignored
-for clue selection. Future completed turns extend that history.
+Prepare FHE Charades for a real game on 2026-09-20. Every completed turn from
+an identified real family game counts as prior play. Diagnostic and test sessions
+remain excluded, but importing another real session must merge its completed
+turns into existing history rather than replacing it. Future completed turns
+extend that history automatically.
 
 For today's preset, text decoder clues must remain visually fixed: no marquee,
 progressive reveal, position movement, color reshuffling, flicker, or flipping.
 The existing animated decoder capabilities remain available to other presets.
 
-## Canonical Starting History
+## Initially Imported History
 
 The canonical source session is
 `game:4978457a-e9f0-4bee-b941-765d5daa33a6`. In played order its clue IDs are:
@@ -78,12 +79,13 @@ decoder engine paints once and installs no interval. The DOM must retain the
 same reveal step, transform, segment classes, and segment colors over time.
 Reduced-motion behavior remains unchanged.
 
-## Data Reset
+## Historical Import
 
-Provide a repository-owned reset command that writes exactly the 18 canonical
-entries after displaying the target file and proposed clue list. It makes a
-timestamped backup before replacement. The reset changes only the Charades
-ledger; it does not delete deterministic session journals or snapshots.
+Provide a repository-owned import command that reconstructs completed turns from
+an identified real session and merges them chronologically into the Charades
+ledger. It displays the target and proposed additions, makes a timestamped backup,
+and is idempotent. It never discards existing history and does not delete
+deterministic session journals or snapshots.
 
 ## Verification
 
