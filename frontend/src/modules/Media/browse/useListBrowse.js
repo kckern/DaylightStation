@@ -14,9 +14,11 @@ export function useListBrowse(path, { modifiers = {}, take = 50 } = {}) {
   const [items, setItems] = useState([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState(null);
   const skipRef = useRef(0);
   const baseRef = useRef('');
+  const loadMoreInFlightRef = useRef(false);
 
   useEffect(() => {
     const base = buildPath(path, { modifiers });
@@ -45,17 +47,23 @@ export function useListBrowse(path, { modifiers = {}, take = 50 } = {}) {
   }, [path, take, modifiers.playable, modifiers.shuffle, modifiers.recent_on_top]);
 
   const loadMore = useCallback(async () => {
+    if (loadMoreInFlightRef.current || skipRef.current >= total) return;
     const url = `${baseRef.current}?take=${take}&skip=${skipRef.current}`;
+    loadMoreInFlightRef.current = true;
+    setLoadingMore(true);
     try {
       const res = await DaylightAPI(url);
       setItems((prev) => prev.concat(Array.isArray(res?.items) ? res.items : []));
       skipRef.current += Array.isArray(res?.items) ? res.items.length : 0;
     } catch (err) {
       setError(err);
+    } finally {
+      loadMoreInFlightRef.current = false;
+      setLoadingMore(false);
     }
-  }, [take]);
+  }, [take, total]);
 
-  return { items, total, loading, error, loadMore };
+  return { items, total, loading, loadingMore, error, loadMore };
 }
 
 export default useListBrowse;

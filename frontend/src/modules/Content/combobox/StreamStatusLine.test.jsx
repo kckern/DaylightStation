@@ -73,4 +73,41 @@ describe('StreamStatusLine', () => {
     expect(screen.getByTestId('stream-status-line')).toBeInTheDocument();
     expect(screen.queryByTestId('stream-status-retry-plex')).not.toBeInTheDocument();
   });
+
+  it('reports failed sources before widening a zero-result scoped search', () => {
+    render(
+      <StreamStatusLine
+        state={{
+          query: 'holes',
+          scope: 'audiobook',
+          sources: { plex: 'failed', files: 'complete' },
+          results: [],
+          phase: 'partial',
+          failedSources: ['plex'],
+        }}
+        widening={{ from: 'Audiobooks', active: true }}
+        onRetry={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText('Plex did not answer')).toBeVisible();
+    expect(screen.getByText(/From everything/)).toBeVisible();
+    expect(screen.queryByText(/Still searching/)).toBeNull();
+  });
+
+  it('shows failures and the still-arriving signal together while another source is pending', () => {
+    render(
+      <StreamStatusLine
+        state={{
+          query: 'bluey', scope: '',
+          sources: { plex: 'failed', files: 'pending' },
+          results: [], phase: 'partial', failedSources: ['plex'],
+        }}
+        onRetry={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText('Plex did not answer')).toBeVisible();
+    expect(screen.getByText(/Still searching/)).toBeVisible();
+  });
 });

@@ -301,6 +301,15 @@ tablet-only now — on mobile the fleet-active signal moved to a small badge on
 the Devices tab (`PrimaryNav.jsx`, sourced from `useFleetSummary`) instead of
 occupying dock space that search now owns outright.
 
+Every search surface consumes one lifecycle value:
+`SearchState = { query, scope, sources, results, phase, failedSources }`, where
+`phase` is exactly `idle | loading | partial | complete | failed`. A new query
+generation retires older callbacks, while widening may retain already observed
+source failures. Pending, partial, failed and widened states therefore use the
+same wording and ordering on the dock, Search Mode and destination picker: a
+named source failure and its Retry action appear before any wider result claim,
+and a settled empty result cannot still present as loading.
+
 At tablet-up widths the dock is unchanged: the persistent search bar (with
 inline scope chips), fleet indicator, and cast target chip all still render
 exactly as before. The left search icon remains `pointer-events: none` — it
@@ -311,7 +320,7 @@ is decoration, never a tap target.
 | View | Purpose | Reached from |
 |---|---|---|
 | **Home** | Landing surface: resume card (current session) and recents row. (Config-driven category cards were removed; the Browse tab covers them.) | Default; nav; breadcrumb. |
-| **Browse** | Hierarchical catalog listing with breadcrumb, container drill-down, inline Play Now/Add per playable row, paging ("load more"). A view opened for a specific container adds a Play / Shuffle / Queue header acting on the whole container at the current destination. | Nav; container rows; container taps in search. |
+| **Browse** | Hierarchical catalog listing with artwork or a recognisable placeholder, kind labels, natural part ordering, and a breadcrumb containing every parent. Long collections page automatically as the end approaches; there is no separate load-more hunt. Each history entry owns `{ path, scrollTop, focusedId }`, so Back restores the exact prior collection viewport and focus. A specific container adds Play / Shuffle / Add at the top and names the current destination. | Nav; container rows; container taps in search. |
 | **Detail** | One item: artwork, description, full action row (Play Now / Play Next / Play First / Add / Cast). | Browse rows; search results. |
 | **Now Playing** | Full local transport: seek bar, prev/play-pause/next/stop, volume, the queue panel, and the hand-off picker. Hosts the visual output of the player. | Mini player; Escape/Back returns. |
 | **Fleet** | All devices, live state cards. Each card offers **Remote** (Peek), **Play…** (inline search that plays straight to that device), and **Play here** (Take Over) when a session is active. | Nav; fleet indicator. |

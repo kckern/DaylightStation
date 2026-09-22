@@ -119,6 +119,7 @@ export function ContentCombobox({
   onAction = null,
   destinationInteractionActive = false,
   retainQueryOnEscape = false,
+  retainPlayableSelection = false,
 }) {
   const log = useMemo(() => getChildLogger({ component: 'ContentCombobox', app: logApp, sessionLog: true }), [logApp]);
   const {
@@ -126,10 +127,10 @@ export function ContentCombobox({
     handleInput, activeScope, clearScope,
     openWithSiblings, drill, goUp, goToCrumb, paginate,
     handleClose, select, commit,
-    resolvedTitle, isSearching, pendingSources, sourceErrors, streamError, retrySource, truncatedAt, fellBackToAll,
+    resolvedTitle, isSearching, pendingSources, sourceErrors, streamError, retrySource, truncatedAt, fellBackToAll, searchState,
   } = useContentCombobox({
     value, onChange, searchParams, fallbackSearchParams, scopeKey, scopeLabel,
-    appResults, selectContainers, allowFreeform, logApp, retainQueryOnEscape,
+    appResults, selectContainers, allowFreeform, logApp, retainQueryOnEscape, retainPlayableSelection,
   });
 
   const mode = state.mode;
@@ -801,7 +802,13 @@ export function ContentCombobox({
             them — used to fill the whole above-the-fold area on a 360px
             phone). Renders nothing once settled with no errors. */}
         {!isBrowse && (
-          <StreamStatusLine pending={pendingSources} sourceErrors={sourceErrors} onRetry={handleStreamRetry} />
+          <StreamStatusLine
+            state={searchState}
+            widening={fellBackToAll && !isSearching && !streamError
+              ? { active: true, from: scopeLabel || 'this scope', resultCount: items.length, testId: 'combobox-fallback-notice' }
+              : null}
+            onRetry={handleStreamRetry}
+          />
         )}
 
         {!isBrowse && streamError && (
@@ -824,16 +831,6 @@ export function ContentCombobox({
             anymore, so a message gated on the empty branch would never be
             seen. Hidden while the widened search is still in flight
             (isSearching) so it doesn't flash "0 results" before they arrive. */}
-        {!isBrowse && fellBackToAll && !isSearching && !streamError && !hasUnresolvedSourceFailures && (
-          <Box p="xs" data-testid="combobox-fallback-notice" style={{ borderBottom: '1px solid var(--mantine-color-dark-4)' }}>
-            <Text size="xs" c="dimmed">
-              {items.length > 0
-                ? `Nothing in ${scopeLabel || 'this scope'} — showing ${items.length} result${items.length === 1 ? '' : 's'} from everywhere.`
-                : `Nothing in ${scopeLabel || 'this scope'} — and nothing found anywhere else either.`}
-            </Text>
-          </Box>
-        )}
-
         <Combobox.Options>
           <ScrollArea.Autosize
             mah={300}

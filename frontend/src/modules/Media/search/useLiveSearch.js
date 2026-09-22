@@ -39,7 +39,29 @@ export function useLiveSearch({ scopeParams = '' } = {}) {
     if (q) setQuery(q);
   }, [setQuery]);
 
+  const state = {
+    ...(inner.state ?? {
+      query: lastQueryRef.current,
+      scope: scopeParams,
+      sources: Object.fromEntries([
+        ...(inner.pending ?? []).map((source) => [source, 'pending']),
+        ...(inner.sourceErrors ?? []).map(({ source }) => [source, 'failed']),
+      ]),
+      results: inner.results,
+      phase: inner.error ? 'failed'
+        : inner.isSearching ? (inner.results.length ? 'partial' : 'loading')
+          : lastQueryRef.current.trim().length < 2 ? 'idle' : 'complete',
+      failedSources: (inner.sourceErrors ?? []).map(({ source }) => source),
+    }),
+    query: lastQueryRef.current,
+    scope: scopeParams,
+    phase: waiting ? 'loading' : (inner.state?.phase ?? (inner.error ? 'failed'
+      : inner.isSearching ? (inner.results.length ? 'partial' : 'loading')
+        : lastQueryRef.current.trim().length < 2 ? 'idle' : 'complete')),
+  };
+
   return {
+    state,
     results: inner.results,
     pending: inner.pending,
     isSearching: waiting || inner.isSearching,

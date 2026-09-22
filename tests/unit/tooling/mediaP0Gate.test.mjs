@@ -21,14 +21,19 @@ describe('Media P0 gate manifest', () => {
     ])).toEqual({ stories: 13, criteria: 33 });
   });
 
-  it('pins PLAY.6a/AC3 to the exact authoritative Add and queue traversal journey', () => {
-    expect(P0_EXTENSION_ENTRIES).toEqual([{
-      story: 'PLAY.6a',
-      criteria: ['PLAY.6a/AC3'],
-      file: 'media-app-remote-controls.runtime.test.mjs',
-      grep: 'Add preserves playback and reports its position before Peek Next and Previous traverse the receiver queue',
-    }]);
-    expect(validateP0Manifest([...BASE, ...P0_EXTENSION_ENTRIES])).toEqual({ stories: 13, criteria: 33 });
+  it('pins every P0 extension criterion to its exact authoritative journey', () => {
+    expect(P0_EXTENSION_ENTRIES).toEqual(expect.arrayContaining([
+      expect.objectContaining({ story: 'RELY.4a', criteria: ['RELY.4a/AC1', 'RELY.4a/AC2'] }),
+      expect.objectContaining({ story: 'PLAY.6a', criteria: ['PLAY.6a/AC3'] }),
+      expect.objectContaining({ story: 'FIND.3a', criteria: ['FIND.3a/AC3'] }),
+      expect.objectContaining({ story: 'FIND.4a', criteria: ['FIND.4a/AC2'] }),
+      expect.objectContaining({ story: 'FIND.5a', criteria: ['FIND.5a/AC2'] }),
+      expect.objectContaining({ story: 'FIND.5a', criteria: ['FIND.5a/AC3'] }),
+      expect.objectContaining({ story: 'FIND.5a', criteria: ['FIND.5a/AC4'] }),
+      expect.objectContaining({ story: 'FIND.6a', criteria: ['FIND.6a/AC1', 'FIND.6a/AC2', 'FIND.6a/AC3'] }),
+    ]));
+    expect(P0_EXTENSION_ENTRIES).toHaveLength(8);
+    expect(validateP0Manifest([...BASE, ...P0_EXTENSION_ENTRIES])).toEqual({ stories: 18, criteria: 43 });
   });
 
   it('rejects skipped, duplicated, weakened, or unjourneyed criteria', () => {

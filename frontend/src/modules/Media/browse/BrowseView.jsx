@@ -15,8 +15,8 @@
 // browse levels (Home's source/mediaType cards, the plain "Browse" nav item)
 // never pass a containerItem, so the header stays absent there — nothing
 // single to play.
-import React, { useMemo, useState } from 'react';
-import { Alert, Text, Stack, Button } from '@mantine/core';
+import React, { useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { Alert, Text, Stack } from '@mantine/core';
 import {
   IconChevronRight,
   IconAlertCircle,
@@ -31,20 +31,56 @@ import { isContainer } from '../../Content/combobox/comboboxMachine.js';
 import { DestinationLine } from '../cast/DestinationLine.jsx';
 import getLogger from '../../../lib/logging/Logger.js';
 import Skeleton from '@/lib/ui/Skeleton.jsx';
-import { ResultRowActions } from '../../Content/combobox/ResultRow.jsx';
+import { ResultRow } from '../../Content/combobox/ResultRow.jsx';
 import { ItemDestinationPicker } from '../actions/ItemDestinationPicker.jsx';
+import { displayTitle, resultSubtitle } from '../search/resultPresentation.js';
 
 function splitPath(path) {
   if (!path) return [];
   return String(path).split('/').filter(Boolean);
 }
 
-export function BrowseView({ path, label, modifiers, containerItem = null, take = 50 }) {
-  const { items, total, loading, error, loadMore } = useListBrowse(path, { modifiers, take });
+export function naturalBrowseOrder(items) {
+  const numeric = (item, names) => {
+    for (const name of names) {
+      const value = item?.[name] ?? item?.metadata?.[name];
+      if (Number.isFinite(Number(value))) return Number(value);
+    }
+    return null;
+  };
+  return (items ?? []).map((item, arrival) => ({ item, arrival })).sort((a, b) => {
+    const aSeason = numeric(a.item, ['seasonNumber', 'parentIndex', 'season']) ?? 0;
+    const bSeason = numeric(b.item, ['seasonNumber', 'parentIndex', 'season']) ?? 0;
+    if (aSeason !== bSeason) return aSeason - bSeason;
+    const aPart = numeric(a.item, ['episodeNumber', 'trackNumber', 'index', 'itemIndex', 'number']);
+    const bPart = numeric(b.item, ['episodeNumber', 'trackNumber', 'index', 'itemIndex', 'number']);
+    if (aPart != null && bPart != null && aPart !== bPart) return aPart - bPart;
+    return a.arrival - b.arrival;
+  }).map(({ item }) => item);
+}
+
+function findScrollHost(node) {
+  let current = node?.parentElement ?? null;
+  while (current) {
+    if (current.matches?.('.media-canvas, [data-media-scroll-host], [data-testid="scroll-host"]')) return current;
+    current = current.parentElement;
+  }
+  return null;
+}
+
+export function BrowseView({
+  path, label, modifiers, containerItem = null, take = 50,
+  breadcrumbs = [], scrollTop = 0, focusedId = null,
+}) {
+  const { items: rawItems, total, loading, loadingMore = false, error, loadMore } = useListBrowse(path, { modifiers, take });
+  const items = useMemo(() => naturalBrowseOrder(rawItems), [rawItems]);
   const [oneShot, setOneShot] = useState(null);
   const { push, replace, pop, depth, backDestination } = useNav();
   const { dispatchLeafVerb, playContainerAsQueue, addContainerToQueue } = useContentDispatch();
   const log = useMemo(() => getLogger().child({ component: 'browse-view' }), []);
+  const rootRef = useRef(null);
+  const sentinelRef = useRef(null);
+  const restoredEntryRef = useRef(null);
 
   const crumbLabel = label ?? (splitPath(path).join(' / ') || 'All');
 
@@ -54,6 +90,47 @@ export function BrowseView({ path, label, modifiers, containerItem = null, take 
   const isContainerView = !!containerItem && isContainer(containerItem);
   const containerId = containerItem?.id ?? null;
 
+  useLayoutEffect(() => {
+    if (loading || !rootRef.current) return;
+    const entryKey = `${path ?? ''}\u001f${scrollTop ?? 0}\u001f${focusedId ?? ''}`;
+    if (restoredEntryRef.current === entryKey) return;
+    const focusTarget = focusedId
+      ? [...rootRef.current.querySelectorAll('[data-browse-focus-id]')]
+          .find((node) => node.dataset.browseFocusId === String(focusedId))
+      : null;
+    // NavProvider can change the path one render before useListBrowse clears
+    // the preceding path's rows. Do not spend this history entry's one-shot
+    // restoration against that stale DOM; the real row arrival below will
+    // change items.length and retry the layout restoration.
+    if (focusedId && !focusTarget) return;
+    restoredEntryRef.current = entryKey;
+    const host = findScrollHost(rootRef.current);
+    if (host) host.scrollTop = scrollTop || 0;
+    focusTarget?.focus({ preventScroll: true });
+  }, [focusedId, items, loading, path, scrollTop]);
+
+  React.useEffect(() => {
+    const node = sentinelRef.current;
+    if (!node || loading || loadingMore || items.length >= total || typeof IntersectionObserver === 'undefined') return undefined;
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) loadMore();
+    }, { root: findScrollHost(rootRef.current), rootMargin: '160px' });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [items.length, loadMore, loading, loadingMore, total]);
+
+  const openContainer = (row, id) => {
+    const host = findScrollHost(rootRef.current);
+    const currentPatch = { path, scrollTop: host?.scrollTop ?? 0, focusedId: id };
+    push('browse', {
+      path: String(id).replace(':', '/'),
+      label: row.title ?? id,
+      modifiers,
+      containerItem: { ...row, id },
+      breadcrumbs: [...breadcrumbs, { path, label: crumbLabel, containerItem }],
+    }, { currentPatch });
+  };
+
   const runHeaderVerb = (action, fn) => {
     if (!containerId) return;
     log.info('dispatch_header_action', { action, contentId: containerId });
@@ -62,7 +139,7 @@ export function BrowseView({ path, label, modifiers, containerItem = null, take 
   };
 
   return (
-    <Stack data-testid="browse-view" className="browse-view" gap="md">
+    <Stack ref={rootRef} data-testid="browse-view" className="browse-view" gap="md">
       <nav className="browse-breadcrumb" aria-label="Breadcrumb">
         <button
           data-testid="browse-crumb-home"
@@ -71,11 +148,27 @@ export function BrowseView({ path, label, modifiers, containerItem = null, take 
         >
           Home
         </button>
-        {depth > 1 && (
+        {depth > 1 && breadcrumbs.length === 0 && (
           <button data-testid="browse-crumb-back" className="browse-crumb" onClick={() => pop()}>
             ← {backDestination ?? 'Home'}
           </button>
         )}
+        {breadcrumbs.map((crumb, index) => (
+          <React.Fragment key={`${crumb.path}-${index}`}>
+            <span className="browse-crumb-sep" aria-hidden="true">/</span>
+            <button
+              type="button"
+              className="browse-crumb"
+              data-testid={`browse-crumb-parent-${index}`}
+              onClick={() => replace('browse', {
+                ...crumb,
+                breadcrumbs: breadcrumbs.slice(0, index),
+              })}
+            >
+              {crumb.label}
+            </button>
+          </React.Fragment>
+        ))}
         <span className="browse-crumb-sep" aria-hidden="true">/</span>
         <span className="browse-crumb browse-crumb--current" aria-current="page">{crumbLabel}</span>
       </nav>
@@ -138,61 +231,31 @@ export function BrowseView({ path, label, modifiers, containerItem = null, take 
             const rowIsContainer = row.itemType === 'container';
             return (
               <li key={id} data-testid={`browse-row-${id}`} className="browse-row">
-                {rowIsContainer ? (
-                  <button
-                    data-testid={`browse-open-${id}`}
-                    className="browse-row-open"
-                    onClick={() => push('browse', {
-                      path: String(id).replace(':', '/'),
-                      label: row.title ?? id,
-                      modifiers,
-                      containerItem: { ...row, id },
-                    })}
-                  >
-                    <span className="browse-row-title">{row.title ?? id}</span>
-                    <IconChevronRight size={18} aria-hidden />
-                  </button>
-                ) : (
-                  <>
-                    <button
-                      data-testid={`browse-detail-${id}`}
-                      className="browse-row-open"
-                      onClick={() => push('detail', { contentId: id })}
-                    >
-                      <span className="browse-row-title">{row.title ?? id}</span>
-                    </button>
-                    <span className="browse-row-actions">
-                      <button
-                        data-testid={`result-play-now-${id}`}
-                        className="result-action result-action--primary"
-                        onClick={() => dispatchLeafVerb('playNow', id, row)}
-                      >
-                        Play Now
-                      </button>
-                      <button
-                        data-testid={`result-add-${id}`}
-                        className="result-action"
-                        onClick={() => dispatchLeafVerb('add', id, row)}
-                      >
-                        Add
-                      </button>
-                    </span>
-                  </>
-                )}
-                <ResultRowActions item={{ ...row, id }} onAction={action => {
+                <ResultRow
+                  item={{ ...row, id }}
+                  title={displayTitle(row)}
+                  subtitle={resultSubtitle(row)}
+                  thumbnail={row.thumbnail}
+                  testId={rowIsContainer ? `browse-open-${id}` : `result-play-now-${id}`}
+                  focusId={id}
+                  onTap={() => rowIsContainer ? openContainer(row, id) : dispatchLeafVerb('playNow', id, row)}
+                  onPlayAll={rowIsContainer ? () => playContainerAsQueue(id, row) : null}
+                  onAction={action => {
                   if (['playOn', 'addOn'].includes(action.kind)) setOneShot(action);
                   else if (action.kind === 'details') push('detail', { contentId: id });
                   else dispatchLeafVerb(action.kind, id, row);
-                }} />
+                  }}
+                />
+                {rowIsContainer && <IconChevronRight size={18} aria-hidden />}
               </li>
             );
           })}
         </ul>
       )}
       {!loading && !error && items.length < total && (
-        <Button data-testid="browse-load-more" variant="default" onClick={loadMore}>
-          Load more ({total - items.length} remaining)
-        </Button>
+        <div ref={sentinelRef} data-testid="browse-page-sentinel" role="status" aria-label="Loading more titles" style={{ minHeight: 1 }}>
+          {loadingMore ? 'Loading more…' : ''}
+        </div>
       )}
       <ItemDestinationPicker action={oneShot} onClose={() => setOneShot(null)} />
     </Stack>

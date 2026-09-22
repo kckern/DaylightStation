@@ -8,11 +8,11 @@ P0 extension manifest requires its `RELY.4a/AC1` and `RELY.4a/AC2` checks. This 
 pending exact-commit owned-server execution, not new Accepted evidence. Existing
 Task 2 and stable-core receipt evidence below remains unchanged.
 
-**Status:** In progress. **11 accepted stories / 33 accepted AC; 10 partial stories / 20 partial AC; 61 unverified stories / 235 unverified AC**. No component, test count or API response earns acceptance by itself.
+**Status:** In progress. **11 accepted stories / 41 accepted AC; 14 partial stories / 20 partial AC; 57 unverified stories / 227 unverified AC**. No component, test count or API response earns acceptance by itself.
 
 **Contract:** taxonomy §3 and accepted requirements. P0 first, then P1/P2. Each criterion must have evidence of the complete applicable path: user input → target → command → actual player/result → state → displayed feedback. Office is the only physical test screen authorized.
 
-**Stable-core extension gate:** `npm run test:media-p0` composes the deployed accepted and supporting criteria with `P0_EXTENSION_ENTRIES`, then requires the complete manifest to retain every stable-core criterion and its existing journey. Extensions require a journey (`file` and `grep`); duplicate criteria and skipped or empty Playwright reports fail closed. Playwright runs serially with JSON output, saved under `MEDIA_P0_EVIDENCE_DIR`. The extension list adds only `PLAY.6a/AC3`, pinned to the exact combined Add/Next/Previous journey; the deployed stable-core entries and journeys remain unchanged.
+**Stable-core extension gate:** `npm run test:media-p0` composes the deployed accepted and supporting criteria with `P0_EXTENSION_ENTRIES`, then requires the complete manifest to retain every stable-core criterion and its existing journey. Extensions require a journey (`file` and `grep`); duplicate criteria and skipped or empty Playwright reports fail closed. Playwright runs serially with JSON output, saved under `MEDIA_P0_EVIDENCE_DIR`. The extension list retains the Task 2/3 queue criteria and adds only the exact Task 4 search-failure/widening and browse criteria proven by the pinned journeys; the deployed stable-core entries and journeys remain unchanged.
 
 **Baseline (2026-09-14, 25d5f671c):** Vitest reported 513/513 passing, zero skipped; process exit 0 with worker shutdown timeout warning in persistence.test.js. This is unit evidence only. Browser test inspection found synthetic JavaScript clicks bypassing overlays and title-only playback assertions; these do not prove user journeys. Target-safe runtime baseline stopped after five failures; results are recorded below, with tests not run distinguished from passes.
 
@@ -129,7 +129,7 @@ As a **Seeker**, I want to know whether the results are complete, so that I can 
 |---|---|---|---|
 | FIND.3a/AC1 | While sources are still answering, I see that results are still arriving. | Unverified | — |
 | FIND.3a/AC2 | When all are in, the "still arriving" sign disappears. | Unverified | — |
-| FIND.3a/AC3 | If a source didn't answer, I'm told which, in plain words, with a way to try it again. | Unverified | — |
+| FIND.3a/AC3 | If a source didn't answer, I'm told which, in plain words, with a way to try it again. | Accepted | Task 4 exact five-file browser matrix: `media-app-search-states.runtime.test.mjs` names Plex in plain words and exposes its Retry action before widening. Artifact provenance and command are recorded in the Task 4 report. |
 | FIND.3a/AC4 | These signs look and read identically wherever search appears. | Unverified | — |
 
 ### FIND.4a
@@ -139,7 +139,7 @@ As a **Seeker**, I want a helpful next step when nothing matches, so that I'm no
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
 | FIND.4a/AC1 | If nothing matches in the chosen kind, matches from all kinds appear under a divider ("Not in Audiobooks — from everything:"), with the kind in words on every row (R25). | Unverified | — |
-| FIND.4a/AC2 | If a source didn't answer, I'm told that before any widening, so a failure never looks like "not there" (R25). | Unverified | — |
+| FIND.4a/AC2 | If a source didn't answer, I'm told that before any widening, so a failure never looks like "not there" (R25). | Accepted | Task 4 exact five-file browser matrix: the failed-source notice precedes the `From everything` notice, retains incomplete-result wording, and removes the still-searching claim. Artifact provenance and command are recorded in the Task 4 report. |
 | FIND.4a/AC3 | If nothing matches anywhere, I'm told so plainly and offered to check spelling or browse the nearest kind. | Unverified | — |
 | FIND.4a/AC4 | An empty result never looks like a result still loading. | Unverified | — |
 
@@ -150,9 +150,9 @@ As a **Wanderer**, I want to explore the catalog by kind with pictures, so that 
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
 | FIND.5a/AC1 | I can reach every kind of content without typing. | Unverified | — |
-| FIND.5a/AC2 | Every title shows a picture (or a recognisable placeholder), title, and kind. | Unverified | — |
-| FIND.5a/AC3 | Long collections load more as I scroll, without a separate button hunt. | Unverified | — |
-| FIND.5a/AC4 | Backing out returns me to the same scroll position. | Unverified | — |
+| FIND.5a/AC2 | Every title shows a picture (or a recognisable placeholder), title, and kind. | Accepted | Task 4 exact five-file browser matrix: deterministic browse rows render supplied artwork or a labelled placeholder alongside title and kind. Artifact provenance and command are recorded in the Task 4 report. |
+| FIND.5a/AC3 | Long collections load more as I scroll, without a separate button hunt. | Accepted | Task 4 exact five-file browser matrix: reaching the page sentinel automatically fetched and displayed item 51 while no load-more button existed. Artifact provenance and command are recorded in the Task 4 report. |
+| FIND.5a/AC4 | Backing out returns me to the same scroll position. | Accepted | Task 4 exact five-file browser matrix: browser Back restored the exact captured scrollTop and the collection row that launched the child. Artifact provenance and command are recorded in the Task 4 report. |
 
 ### FIND.6a
 
@@ -160,9 +160,9 @@ As a **Wanderer**, I want to open a show, album, or folder and see its parts in 
 
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
-| FIND.6a/AC1 | Parts appear in their natural order (episodes by season, tracks by number). | Unverified | — |
-| FIND.6a/AC2 | I can see where I am as a trail (for example: TV → Bluey → Season 2) and jump to any level. | Unverified | — |
-| FIND.6a/AC3 | The whole-collection actions (play, shuffle, add) are available at the top and name the screen they will use. | Unverified | — |
+| FIND.6a/AC1 | Parts appear in their natural order (episodes by season, tracks by number). | Accepted | Task 4 exact five-file browser matrix: out-of-order seasons and episodes rendered as Season 1/2 and Episode 1/2/10. Artifact provenance and command are recorded in the Task 4 report. |
+| FIND.6a/AC2 | I can see where I am as a trail (for example: TV → Bluey → Season 2) and jump to any level. | Accepted | Task 4 exact five-file browser matrix: All → Example Show → Season 2 rendered every parent and jumping to Example Show restored its child list. Artifact provenance and command are recorded in the Task 4 report. |
+| FIND.6a/AC3 | The whole-collection actions (play, shuffle, add) are available at the top and name the screen they will use. | Accepted | Task 4 exact five-file browser matrix: collection header exposed Play, Shuffle and Add with `This device` as the destination. Artifact provenance and command are recorded in the Task 4 report. |
 
 ### FIND.7a
 

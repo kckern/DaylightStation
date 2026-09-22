@@ -614,7 +614,7 @@ describe('ContentCombobox (hook wiring)', () => {
     renderCombobox({ scopeLabel: 'Ambient' });
 
     expect(screen.getByTestId('combobox-fallback-notice'))
-      .toHaveTextContent('Nothing in Ambient — showing 2 results from everywhere.');
+      .toHaveTextContent('Not in Ambient — From everything: 2 results');
     expect(screen.getByTestId('combobox-option-plex:1')).toBeInTheDocument();
   });
 
@@ -627,7 +627,7 @@ describe('ContentCombobox (hook wiring)', () => {
     renderCombobox({ scopeLabel: 'Ambient' });
 
     expect(screen.getByTestId('combobox-fallback-notice'))
-      .toHaveTextContent('Nothing in Ambient — and nothing found anywhere else either.');
+      .toHaveTextContent('Not in Ambient — From everything: no matches. Check the spelling or browse Ambient.');
     // The empty-state line itself stays plain — the notice above already
     // named the scope and said the wider search came up empty too.
     expect(screen.getByText('No results')).toBeInTheDocument();
@@ -642,7 +642,7 @@ describe('ContentCombobox (hook wiring)', () => {
     renderCombobox(); // no scopeLabel
 
     expect(screen.getByTestId('combobox-fallback-notice'))
-      .toHaveTextContent('Nothing in this scope — showing 1 result from everywhere.');
+      .toHaveTextContent('Not in this scope — From everything: 1 result');
   });
 
   it('D5: the notice is hidden while the widened search is still in flight (no premature "0 results" flash)', () => {

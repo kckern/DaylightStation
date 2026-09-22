@@ -178,6 +178,8 @@ describe('BrowseView — nested drill carries containerItem forward', () => {
       path: 'plex/9999',
       label: 'Season 1',
       containerItem: expect.objectContaining({ id: 'plex:9999', title: 'Season 1', itemType: 'container' }),
+    }), expect.objectContaining({
+      currentPatch: expect.objectContaining({ path: 'plex/663508', focusedId: 'plex:9999' }),
     }));
   });
 });

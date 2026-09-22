@@ -111,7 +111,7 @@ describe('FleetPlayPicker', () => {
     search.value = baseSearch({ results: [BLUEY], pending: ['abs'], isSearching: true });
     renderPicker();
     typeQuery('bluey');
-    expect(screen.getByTestId('fleet-play-pending')).toHaveTextContent('Still searching…');
+    expect(screen.getByTestId('fleet-play-pending')).toHaveTextContent('Still searching');
   });
 
   it('warns in one quiet line when the device is playing something', () => {

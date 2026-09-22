@@ -159,7 +159,7 @@ export function ResultRowActions({
  * @param {(action: string) => void} [props.onMore] - leaf-only: the ⋯ verb
  * @param {string} [props.testId] - testid for the tap button (defaults to `result-row-${item.id}`)
  */
-export function ResultRow({ item, title, subtitle, thumbnail, onTap, onPlayAll, onMore, onAction, testId }) {
+export function ResultRow({ item, title, subtitle, thumbnail, onTap, onPlayAll, onMore, onAction, testId, focusId }) {
   const container = item ? isContainer(item) : false;
   const idPart = item?.id ?? 'row';
   const rowTestId = testId ?? `result-row-${idPart}`;
@@ -171,9 +171,16 @@ export function ResultRow({ item, title, subtitle, thumbnail, onTap, onPlayAll, 
         type="button"
         className="result-row-main"
         data-testid={rowTestId}
+        data-browse-focus-id={focusId}
         onClick={onTap}
       >
-        {thumbnail && <img className="media-result-thumb" src={thumbnail} alt="" />}
+        {thumbnail ? (
+          <img className="media-result-thumb" src={thumbnail} alt={`${displayTitle} artwork`} />
+        ) : (
+          <span className="media-result-thumb media-result-thumb--placeholder" data-testid="result-artwork-placeholder" aria-label={`${displayTitle} artwork unavailable`}>
+            {displayTitle.slice(0, 1).toUpperCase() || '?'}
+          </span>
+        )}
         <span className="media-result-text">
           <span className="media-result-title">{displayTitle}</span>
           {subtitle && <span className="media-result-subtitle">{subtitle}</span>}

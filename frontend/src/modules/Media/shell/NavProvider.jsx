@@ -145,7 +145,17 @@ export function NavProvider({ children }) {
     }
     const replaceEntry = opts.replaceEntry === true;
     setStack((prev) => {
-      const next = [...prev, normalizeEntry({ view, params })];
+      const base = opts.currentPatch
+        ? [...prev.slice(0, -1), {
+            ...prev.at(-1),
+            params: { ...(prev.at(-1)?.params ?? {}), ...opts.currentPatch },
+          }]
+        : prev;
+      const next = [...base, normalizeEntry({ view, params })];
+      // A normal push creates a new browser entry. Persist the patched
+      // current entry first so browser Back restores the exact browse
+      // viewport and focus that launched the child route.
+      if (opts.currentPatch && !replaceEntry) syncHistory(base, 'replace');
       syncHistory(next, replaceEntry ? 'replace' : 'push');
       mediaLog.navPushed({ view, depth: next.length, replaceEntry });
       return next;
