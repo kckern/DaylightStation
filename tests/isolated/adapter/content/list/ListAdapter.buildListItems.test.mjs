@@ -85,3 +85,39 @@ describe('ListAdapter._buildListItems progress enrichment', () => {
     expect(ch1.metadata.lastPlayed).toBeNull();
   });
 });
+
+describe('ListAdapter._buildListItems display labels', () => {
+  it.each(['menu', 'program', 'watchlist'])(
+    'preserves an admin-authored label instead of replacing it with the stale title for %s items',
+    async (listType) => {
+      const adapter = makeAdapter();
+
+      const [item] = await adapter._buildListItems(
+        [{
+          title: 'sticks',
+          label: 'Lesson',
+          input: 'files:clips/isaiah.mp4',
+        }],
+        listType,
+        'fhe',
+        {}
+      );
+
+      expect(item.title).toBe('sticks');
+      expect(item.label).toBe('Lesson');
+    }
+  );
+
+  it('falls back to the title when an item has no custom label', async () => {
+    const adapter = makeAdapter();
+
+    const [item] = await adapter._buildListItems(
+      [{ title: 'Opening Hymn', input: 'singalong:hymn/1020' }],
+      'menu',
+      'fhe',
+      {}
+    );
+
+    expect(item.label).toBe('Opening Hymn');
+  });
+});
