@@ -36,6 +36,7 @@ describe('householdConfig registry', () => {
     // `media-app` is the SURFACE (browse menu, searchScopes).
     expect(appConfigRelPath('media')).toBe('media/config');
     expect(appConfigRelPath('media-app')).toBe('media/app');
+    expect(appConfigRelPath('libby')).toBe('media/libby');
   });
 
   it('names school explicitly rather than by convention', () => {

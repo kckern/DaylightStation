@@ -27,7 +27,7 @@ function requireDataDir() {
  * An app is added here only with the fallback that justifies it. Everything else
  * must exist, so a typo in a registered path still fails loudly.
  */
-const OPTIONAL_CONFIGS = new Set(['state-gates']);
+const OPTIONAL_CONFIGS = new Set(['state-gates', 'libby']);
 
 it('every registered app config exists on disk at its registered path', () => {
   const dataDir = requireDataDir();

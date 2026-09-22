@@ -62,11 +62,16 @@ export function toQueueItem(item) {
   if (item.surround) qi.surround = item.surround;
   if (item.surroundPart !== undefined) qi.surroundPart = item.surroundPart;
 
-  // Rich metadata for image rendering (people/faces, dimensions)
+  // Explicit public display metadata; provider transport details stay internal.
   if (item.metadata) {
     qi.metadata = {
       width: item.metadata.width,
       height: item.metadata.height,
+      parentTitle: item.metadata.parentTitle,
+      subtitle: item.metadata.subtitle,
+      author: item.metadata.author,
+      narrator: item.metadata.narrator,
+      partIndex: item.metadata.partIndex,
       ...(item.metadata.people?.length > 0 && { people: item.metadata.people }),
       ...(item.metadata.capturedAt && { capturedAt: item.metadata.capturedAt }),
       ...(item.metadata.location && { location: item.metadata.location }),
