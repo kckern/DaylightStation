@@ -206,6 +206,12 @@ test.describe('Media M0 Move safety', () => {
       await expect(page.getByTestId('now-playing-title')).toHaveText('Nothing playing', { timeout: 30000 });
       await expect.poll(() => page.locator('video, audio')
         .evaluateAll(nodes => nodes.every(node => node.paused || node.ended))).toBe(true);
+      await expect.poll(() => page.evaluate(async (expected) => {
+        const response = await fetch('/api/v1/device/acceptance-media/receiver-state');
+        const reported = await response.json();
+        return reported.snapshot?.state === 'paused'
+          && Math.abs(reported.snapshot?.position - expected) <= 2;
+      }, pausedAt), { timeout: 30000 }).toBe(true);
       const reported = await page.evaluate(async () => {
         const response = await fetch('/api/v1/device/acceptance-media/receiver-state');
         return response.json();
