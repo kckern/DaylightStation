@@ -60,7 +60,7 @@ test('double-tapping a pending quick-add creates only one request and one row', 
   let requests = 0;
   await page.route('**/api/v1/health/nutrition/catalog/quickadd', async route => { requests++; await wait; await route.fallback(); });
   await page.goto('/health');
-  await page.getByRole('button', { name: /Add food to/ }).first().click();
+  await page.getByRole('combobox', { name: 'Add to Lunch' }).click();
   await page.getByRole('option', { name: /Fixture oats/ }).evaluate(element => { element.click(); element.click(); });
   await expect.poll(() => requests).toBe(1);
   release();
