@@ -163,6 +163,19 @@ describe('PianoLessonCeremonyBridge', () => {
       expect(fired.notification.message).toBe('Piano lesson done');
     });
 
+    it('a push composition that throws never withholds the chime: the hook fires with no notification', async () => {
+      const logger = { warn: vi.fn(), info() {} };
+      const hostileRow = { get scope() { throw new Error('malformed progress row'); } };
+      const c = build({ status: pianoStatus([hostileRow]), resolveStudent: async () => 'Learner4', logger });
+      await c.bus.emit('piano.lesson.completed', { userId: 'user_4', plexId: 'plex:9001', title: LESSON });
+      expect(c.fired).toHaveLength(1);
+      expect(c.fired[0]).toMatchObject({ result: 'satisfied', learnerId: 'user_4', student: 'Learner4', notification: null });
+      expect(logger.warn).toHaveBeenCalledWith('school.piano-ceremony.push-compose-failed', expect.objectContaining({
+        learnerId: 'user_4', error: 'malformed progress row',
+      }));
+      expect(logger.warn).not.toHaveBeenCalledWith('school.piano-ceremony.hook-failed', expect.anything());
+    });
+
     it('never shows the internal PianoChallenge token as a lesson title', async () => {
       const c = build({
         status: { doneToday: true, challengeCompleted: true, score: 37, servedWork: [] },

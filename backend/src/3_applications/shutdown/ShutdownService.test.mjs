@@ -87,3 +87,17 @@ test('the lockdown cue carries a composed push in household local time', async (
   assert.deepEqual(findPushTextDefects(notification.message), []);
   assert.equal(f.haCalls[0].lockedUntil, '2026-08-28T01:13:29.185Z', 'the raw ISO stays for the script, not the text');
 });
+
+test('a bad timezone never withholds the cue: announce still runs', async () => {
+  const f = fakes();
+  const service = new ShutdownService({
+    repo: f.repo, notifier: f.notifier, getPolicy: policy, cue: f.cue, portal: f.portal,
+    timezone: 'America/LosAngeles', logger: { warn() {} },
+  });
+  const state = await service.activate({ readerId: 'study-omr', tagUid: '04aa660fcb2a81', now: Date.parse('2026-08-28T00:43:29.185Z') });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(f.haCalls.length, 1, 'the siren cue fires');
+  assert.equal(f.haCalls[0].lockedUntil, state.lockedUntil);
+  // formatClockTime degrades to null, so the push still composes, without the clock time.
+  assert.equal(f.haCalls[0].notification.title, '🔒 Kiosks locked — 30 min');
+});

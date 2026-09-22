@@ -30,12 +30,14 @@ export class NotifyReadingSessionFailure {
   async execute({ target, location, learnerId }) {
     const notificationTarget = target ? this.notificationTargetForDevice(target) : null;
     if (!notificationTarget || !this.notifier?.callService) return;
-    // A label lookup that fails must not cost the adult the alert.
+    // A label lookup that fails, synchronously or not, must not cost the
+    // adult the alert: each falls back to the plain copy.
     const child = learnerId
-      ? ((await Promise.resolve(this.studentName?.(learnerId)).catch(() => null)) ?? titleCaseId(learnerId))
+      ? ((await Promise.resolve().then(() => this.studentName?.(learnerId)).catch(() => null)) ?? titleCaseId(learnerId))
       : null;
-    let screen = null;
-    try { screen = target ? this.deviceLabel?.(target) ?? null : null; } catch { screen = null; }
+    const screen = target
+      ? await Promise.resolve().then(() => this.deviceLabel?.(target)).catch(() => null)
+      : null;
     await this.notifier.callService('notify', notificationTarget, {
       title: child ? `📖 ${child}'s story time didn't start` : "📖 Story time didn't start",
       message: `The ${screen || 'screen'} didn't respond`,

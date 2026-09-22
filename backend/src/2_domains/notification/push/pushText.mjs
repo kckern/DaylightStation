@@ -26,13 +26,21 @@ export function personDisplayName(profile, id) {
   return text(profile?.display_name) ?? text(profile?.name) ?? titleCaseId(id);
 }
 
-/** '2026-08-28T01:13:29Z' → '6:13 PM' in the household's zone. */
+/**
+ * '2026-08-28T01:13:29Z' → '6:13 PM' in the household's zone. A misconfigured
+ * zone ('America/LosAngeles') makes Intl throw a RangeError; that returns null
+ * so the push omits the time rather than withholding the cue it rides with.
+ */
 export function formatClockTime(iso, timezone) {
   const ms = Date.parse(iso ?? '');
   if (!Number.isFinite(ms)) return null;
-  return new Intl.DateTimeFormat('en-US', {
-    hour: 'numeric', minute: '2-digit', timeZone: timezone || undefined,
-  }).format(ms).replace(/ /g, ' ');
+  try {
+    return new Intl.DateTimeFormat('en-US', {
+      hour: 'numeric', minute: '2-digit', timeZone: timezone || undefined,
+    }).format(ms).replace(/ /g, ' ');
+  } catch {
+    return null;
+  }
 }
 
 /** 1_800_000 → '30 min'; 5_400_000 → '1 hr 30 min'. */

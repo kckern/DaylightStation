@@ -159,7 +159,7 @@ import { YamlTermVerdictCache } from '#adapters/persistence/yaml/YamlTermVerdict
 import { TermVerdictService } from '#apps/school/TermVerdictService.mjs';
 import { GetLearnerTerm } from '#apps/school/usecases/GetLearnerTerm.mjs';
 import { RebuildLearnerTerm } from '#apps/school/usecases/RebuildLearnerTerm.mjs';
-import { personDisplayName } from '#domains/notification/push/pushText.mjs';
+import { studentDisplayName } from './studentNames.mjs';
 
 /**
  * Tokens are printed and carried around a house; a predictable stream would let
@@ -1202,7 +1202,7 @@ export async function createSchoolLifecycle({
         launcher: pianoCourseLauncher,
         evidenceRepository: learningEvidenceRepository,
         hook: pianoLessonHook,
-        resolveStudent: (learnerId) => personDisplayName(configService.getUserProfile?.(learnerId), learnerId) ?? learnerId,
+        resolveStudent: studentDisplayName(configService),
         timezone, clock, logger,
       });
       pianoLessonCeremonyBridge.start();

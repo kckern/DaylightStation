@@ -39,6 +39,20 @@ describe('NotifyReadingSessionFailure', () => {
     expect(findPushTextDefects(payload.message)).toEqual([]);
   });
 
+  it('a label lookup that throws synchronously never withholds the alert', async () => {
+    const { notifier, operation } = make({
+      studentName: () => { throw new Error('profile read failed'); },
+      deviceLabel: () => { throw new Error('device read failed'); },
+    });
+    await operation.execute({ target: 'livingroom-tv', location: 'livingroom', learnerId: 'user_4' });
+    expect(notifier.callService).toHaveBeenCalledTimes(1);
+    const [, , payload] = notifier.callService.mock.calls[0];
+    expect(payload.title).toBe("📖 User 4's story time didn't start");
+    expect(payload.message).toBe("The screen didn't respond");
+    expect(findPushTextDefects(payload.title)).toEqual([]);
+    expect(findPushTextDefects(payload.message)).toEqual([]);
+  });
+
   it('reads without a learner', async () => {
     const { notifier, operation } = make();
     await operation.execute({ target: 'livingroom-tv', location: 'livingroom', learnerId: null });

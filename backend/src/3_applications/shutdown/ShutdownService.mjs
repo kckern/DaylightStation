@@ -19,10 +19,19 @@ export class ShutdownService {
       source: { reader_id: readerId ?? null, tag_uid: tagUid },
     });
     await this.#repo.save(state); await this.#publish(state, 'locked');
-    if (this.#cue?.announce) Promise.resolve(this.#cue.announce({
-      lockedUntil: state.lockedUntil, source: 'nfc-shutdown',
-      notification: composeKioskShutdownPush({ lockedAt: state.lockedAt, lockedUntil: state.lockedUntil, timezone: this.#timezone }),
-    })).catch((error) => this.#logger.warn?.('shutdown.cue_failed', { error: error.message }));
+    if (this.#cue?.announce) {
+      // The push is a courtesy; the cue (the siren) is not. A compose failure
+      // sends the cue without a notification rather than rejecting activate().
+      let notification = null;
+      try {
+        notification = composeKioskShutdownPush({ lockedAt: state.lockedAt, lockedUntil: state.lockedUntil, timezone: this.#timezone });
+      } catch (error) {
+        this.#logger.warn?.('shutdown.push_compose_failed', { error: error.message });
+      }
+      Promise.resolve()
+        .then(() => this.#cue.announce({ lockedUntil: state.lockedUntil, source: 'nfc-shutdown', notification }))
+        .catch((error) => this.#logger.warn?.('shutdown.cue_failed', { error: error.message }));
+    }
     return state;
   }
   async status(target, now = Date.now()) { const { state, invalid } = await this.#repo.read(); return { locked: invalid || (!!state && state.isActive(now) && state.includes(target)), lockedUntil: state?.lockedUntil ?? null, invalid }; }
