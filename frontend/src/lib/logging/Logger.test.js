@@ -20,3 +20,15 @@ describe('Logger.child — session-log.start emission', () => {
     expect(countStarts() - before).toBe(1);
   });
 });
+
+describe('Logger.sampled — level option', () => {
+  it('emits at the requested level (default info)', () => {
+    const log = getLogger().child({ component: 'sampled-level-test' });
+    const name = `sampled-level-${Date.now()}`;
+    log.sampled(`${name}.warn`, { a: 1 }, { maxPerMinute: 5, level: 'warn' });
+    log.sampled(`${name}.info`, { a: 1 }, { maxPerMinute: 5 });
+    const recent = getRecentEvents(300);
+    expect(recent.find((e) => e.event === `${name}.warn`)?.level).toBe('warn');
+    expect(recent.find((e) => e.event === `${name}.info`)?.level).toBe('info');
+  });
+});
