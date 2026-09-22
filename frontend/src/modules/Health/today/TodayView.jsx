@@ -10,6 +10,8 @@ import { DaylightAPI } from '../../../lib/api.mjs';
 import { createAppLogger } from '../../../lib/ui/createAppLogger.js';
 import { useApiResource } from '../../../lib/hooks/useApiResource.js';
 import { useHealthDay } from './useHealthDay.js';
+import { pendingReviewPath, observationsPath } from '../healthResources.js';
+import { useHealthDayPrefetch } from './useHealthDayPrefetch.js';
 import { EquationStrip } from './EquationStrip.jsx';
 import { WeekStrip, addDays, weekEnd } from './WeekStrip.jsx';
 import { MacroBarRow } from './MacroBarRow.jsx';
@@ -45,6 +47,8 @@ export function TodayView({ active = true, sidebarTarget, onSetupGoals, onCoachT
   const viewportEnd = isISODate(weekParam) && weekParam <= weekEnd(todayISO()) ? weekEnd(weekParam) : weekEnd(date);
   const day = useHealthDay(date, { enabled: active });
   const preview = usePortionDraft(day, date);
+  // Warm ±7 days and each meal's shortlist once the viewed day is on screen.
+  useHealthDayPrefetch(date, { enabled: active, ready: !day.loading });
   // The quick bar's + names a meal; that meal is shown (even if empty) and its
   // add row takes focus. `n` makes a repeat tap on the same meal refocus.
   // A request is spent once the user leaves its day. Sections remount per
@@ -129,7 +133,7 @@ export function TodayView({ active = true, sidebarTarget, onSetupGoals, onCoachT
   // Review belongs to the shared food log, regardless of capture surface.
   // In particular, scanner/Telegram UPC captures can remain pending until
   // a portion is confirmed. Health must offer confirmation for those too.
-  const pendingReview = useApiResource(`api/v1/health/nutrition/pending?date=${date}`,
+  const pendingReview = useApiResource(pendingReviewPath(date),
     { deps: [date], enabled: active, label: 'pending-review', logger, swr: true });
   const pendingLogs = pendingReview.data?.pending || [];
   // The DURABLE kitchen-scale ledger for this date (Task 5.4). Distinct from
@@ -138,7 +142,7 @@ export function TodayView({ active = true, sidebarTarget, onSetupGoals, onCoachT
   // density/tare — which exist whether or not any log was ever created from
   // them. `swr:true` for the same reason the day itself uses it: a reload
   // after a dismiss/pair revalidates quietly instead of blanking the section.
-  const observations = useApiResource(`api/v1/health/nutrition/observations?date=${date}`,
+  const observations = useApiResource(observationsPath(date),
     { deps: [date], enabled: active, label: 'observations', logger, swr: true });
   const observationRows = useMemo(() => observations.data?.observations || [], [observations.data]);
   // Signals nobody has attached to anything — rendered at the top of the day
@@ -455,7 +459,7 @@ export function TodayView({ active = true, sidebarTarget, onSetupGoals, onCoachT
         onMealChanged={result=>handleCaptureResult(result)} captureTasks={[...capturePending.values()]}
         measuredByUuid={measuredByUuid}
         revealedBucket={focusRequest?.bucket ?? null}
-        renderAddRow={(bucket, label) => <MealAddRow bucket={bucket} label={label} date={date}
+        renderAddRow={(bucket, label) => <MealAddRow bucket={bucket} label={label} date={date} active={active} onVoiceCapture={onVoiceCapture}
           focusRequest={focusRequest?.bucket === bucket ? focusRequest.n : 0} busy={nutrition.busy}
           onAdded={() => day.reload()} onPhotoCapture={onPhotoCapture} onOpenBarcode={openBarcode}
           onOpenTemplates={(target, templateId) => { setFocusTemplateId(templateId); setTemplatesFor(target); }}

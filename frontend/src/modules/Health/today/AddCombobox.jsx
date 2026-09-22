@@ -4,16 +4,11 @@ import { DaylightAPI } from '../../../lib/api.mjs';
 import { createAppLogger } from '../../../lib/ui/createAppLogger.js';
 import { operationRequest } from '../capture/operationRequest.js';
 import { FoodIcon } from './FoodIcon.jsx';
+import { peekApiResource, primeApiResource } from '../../../lib/hooks/useApiResource.js';
+import { shortlistPath } from '../healthResources.js';
 
 const logger = createAppLogger('health').child('add-combobox');
 
-// The zero-keystroke list is a SHORTLIST of this bucket's regulars, not a
-// browse surface: it opens with no user intent behind it, and every row it
-// draws fires an icon request. Eight fits a phone screen without scrolling and
-// keeps that burst nowhere near the render-herd shape Phase 7 had to bound.
-// The TYPED list keeps the server default — there the user is steering, and a
-// filtered list is already short.
-const OPEN_SUGGEST_LIMIT = 8;
 
 export function AddCombobox({ bucketId, date = null, onDone, onCancel, onMeals, onTemplate, onManageFoods,
   inline = false, label = null, focusRequest = 0, actions = null }) {
@@ -73,16 +68,21 @@ export function AddCombobox({ bucketId, date = null, onDone, onCancel, onMeals, 
     const q = text.trim();
     const path = q
       ? `api/v1/health/nutrition/catalog/suggest?q=${encodeURIComponent(q)}${bucketId ? `&bucket=${encodeURIComponent(bucketId)}` : ''}`
-      : `api/v1/health/nutrition/catalog/suggest?${bucketId ? `bucket=${encodeURIComponent(bucketId)}&` : ''}limit=${OPEN_SUGGEST_LIMIT}`;
+      : shortlistPath(bucketId);
+    // The shortlist is prefetched once the day is on screen, so opening a row
+    // paints it at once; the request below still refreshes it quietly.
+    const cached = q ? undefined : peekApiResource(path);
+    if (cached) { setItems(cached.items || []); setHighlight(-1); }
     const fetchSuggestions = async () => {
       const rid = ++ridRef.current;
       try {
         const res = await DaylightAPI(path);
+        if (!q) primeApiResource(path, res);
         if (ridRef.current !== rid) return; // a newer keystroke's request already landed
         const next = res?.items || [];
         setItems(next);
         setHighlight(-1);
-        if (!q) logger.debug('suggest.opened', { bucket: bucketId ?? null, count: next.length });
+        if (!q) logger.debug('suggest.opened', { bucket: bucketId ?? null, count: next.length, fromCache: Boolean(cached) });
       } catch (err) {
         if (ridRef.current !== rid) return;
         logger.warn('suggest.failed', { error: err?.message, typed: q.length > 0 });

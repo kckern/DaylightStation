@@ -3,7 +3,7 @@ import { summarizeDayQuality } from './dayQuality.js';
 import { useApiResource } from '../../../lib/hooks/useApiResource.js';
 import { createAppLogger } from '../../../lib/ui/createAppLogger.js';
 import { BUCKETS } from './mealBuckets.js';
-import { refreshHealthResources } from '../healthResources.js';
+import { refreshHealthResources, healthDayPath } from '../healthResources.js';
 
 const logger = createAppLogger('health').child('use-health-day');
 
@@ -14,7 +14,7 @@ export function useHealthDay(date, { enabled = true } = {}) {
   // This is what lets TodayView keep its headings/section frames mounted
   // permanently: `loading` only goes true on a genuine cold start (no cache
   // for this date yet), never on a refetch of a date already seen.
-  const list = useApiResource(`api/v1/health/day?date=${date}`, { deps: [date], enabled, label: 'health-day', logger, swr: true });
+  const list = useApiResource(healthDayPath(date), { deps: [date], enabled, label: 'health-day', logger, swr: true });
 
   // The day's rows: the endpoint serves {message, data:[...], date, count};
   // also tolerate bare array or {items} for backward compatibility.
