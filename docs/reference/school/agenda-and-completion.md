@@ -38,6 +38,15 @@ and `not_a_school_day` — a weekend, holiday or vacation declared by the
 enrollment's [school-day calendar](./timing-and-priority.md#7-the-school-day-calendar).
 Catch-up remains excused even when its worksheet is already open.
 
+**Optional enrollments.** Both courses and programs can be made optional with
+`elective: true` on the assignment entry (`courses[]` or `programs[]`). An
+optional entry is still offered on the agenda, but it never obligates the day:
+a section holding only optional work is `excused · elective_only`, and it does
+not hold back day completion or anything gated on it (piano games). Programs
+honour the flag for every program type — the shared program-enrollment
+validator keeps `elective: true` (and refuses a non-boolean), and
+`assignedProgramPlan.mjs` carries it onto the program's agenda entry.
+
 A day the whole household is off is excused for the same reason but under its
 own name, `household_calendar`, so a surface can tell a family vacation apart
 from a course that simply does not meet on Thursdays. It comes from
