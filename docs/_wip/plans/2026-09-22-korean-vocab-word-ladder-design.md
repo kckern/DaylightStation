@@ -345,6 +345,29 @@ next fold applies them.
 
 The printed quiz is not required for Friday's daily credit.
 
+### Stuck on the paper quiz → back to the cards (rev 3)
+
+A child sitting with the printed sheet who does not know a word must be able
+to go back to the flashcards, at any time, without a grown-up. No code is
+needed: the learner already opens his own agenda at the Portal, and the word
+ladder is on it every scheduled day.
+
+- **The agenda tile never closes.** After today's plan is complete
+  (`doneToday: true`), the word-ladder tile stays openable and lands on a
+  **review run**: every current-deck word as a study card (picture, Korean,
+  `ko.mp3`, flip to English), in deck order, no checks, no "I know it / Still
+  learning" marks, no recording required, no state or step change. Each card
+  viewed logs a `review` history event (`{ event: review, at, day }`). The day's
+  credit is unaffected either way — a review run can neither earn nor lose it.
+  A child can run it as many times as he wants.
+- **The sheet says so.** The quiz document's instruction line (rendered under
+  the title, above the first block) reads:
+  `Not sure of a word? Open Korean on the Portal and review the cards, then come back.`
+  Nothing on the sheet is a code or a gate; the line only tells him where to go.
+- Reaching the review run is one tap from the agenda tile. If the tile is
+  already open on a finished day, the "Done" screen offers **Review the cards**
+  which starts the same run.
+
 ## Components
 
 **Backend**
