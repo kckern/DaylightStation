@@ -16,6 +16,17 @@
  * were one field once, holding the rubric, and a parent grading six questions
  * read the same line six times with nothing to tell them apart.
  *
+ * ONE NAMED EXCEPTION to "the same sentence for every item on a sheet":
+ * a `'key-alignment-suspected'` entry's `rubric` is not a marking guide at
+ * all — it is a per-entry, PER-SCAN computed evidence sentence naming the
+ * literal and shifted score (e.g. "would score 5/6 instead of 2/6"), built
+ * once by `keyAlignmentRubric` (`RecordCardScanOutcome.mjs`) from that
+ * scan's own `offset`/`literalMatches`/`shiftedMatches`/`itemCount`. It
+ * reuses this field rather than adding a new one because it is exactly as
+ * grown-up-only and non-child-facing as an ordinary rubric is — never
+ * because it repeats across a sheet the way a real rubric does; every other
+ * item this queue enqueues for a print unit still leaves `rubric: null`.
+ *
  * TWO NOTE FIELDS, NOT ONE (Slice H, 2026-08-22). `note` is what the child
  * reads; `internalNote` is what the record keeps. They are separate fields
  * on purpose, not a convention layered on one shared string: a sign-off
@@ -37,6 +48,28 @@
  *             gradedAt: string|null, note: string|null,
  *             internalNote: string|null }} ReviewItem
  */
+
+/**
+ * A `'key-alignment-suspected'` item (the OMR key-alignment check) is NOT a
+ * printed question — nothing was asked, nothing was answered, there is no
+ * bank item behind it. It rides this same queue only because the queue is
+ * also the session's "hold before the outcome is final" mechanism. Every
+ * reader that turns queue/evidence items into a question roster, a
+ * denominator, or a numbered "printed questions" list must exclude it, or
+ * resolving it (with a truth-value verdict instead of `void`) changes a
+ * child's actual score, or shows a teacher/child a fabricated question.
+ *
+ * Import `isSyntheticReviewItem` rather than comparing a `reason` field to
+ * the literal string at each call site — one shared predicate is how every
+ * site is guaranteed to agree; a second hand-written string comparison is
+ * exactly how the `AdjustSessionGrade.mjs` instance of this bug (whole-
+ * branch review finding #1) was missed when `GradeSubmission.mjs` was fixed.
+ */
+export const KEY_ALIGNMENT_SUSPECTED_REASON = 'key-alignment-suspected';
+
+/** @param {{ reason?: string }|null|undefined} item @returns {boolean} */
+export const isSyntheticReviewItem = (item) => item?.reason === KEY_ALIGNMENT_SUSPECTED_REASON;
+
 export class IReviewQueue {
   /**
    * Add (or refresh) items awaiting a person. Already-resolved items are left

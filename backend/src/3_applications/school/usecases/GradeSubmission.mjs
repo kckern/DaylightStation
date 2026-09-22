@@ -30,6 +30,7 @@ import { reduceSession, createEvent } from '#domains/school/sessions/sessionEven
 import { questionItemIds, questionPrompts } from '#domains/school/documents/documentValidation.mjs';
 import { PRINT_DOCUMENT_REF_PATTERN } from '#domains/school/curriculum/unitValidation.mjs';
 import { worksheetInstanceRoster } from '#domains/school/questionBankV2.mjs';
+import { isSyntheticReviewItem } from '#apps/school/ports/IReviewQueue.mjs';
 
 /**
  * The three things a PERSON (never the engine) can say about one question.
@@ -249,10 +250,13 @@ export class GradeSubmission {
       // synthetic queue row, not a question — nothing was printed for it,
       // nothing was answered — so it must never join the score's
       // denominator, even once a teacher resolves it with a truth-value
-      // verdict instead of `void`.
+      // verdict instead of `void`. `isSyntheticReviewItem` — imported from
+      // `IReviewQueue.mjs` rather than compared inline — so this and every
+      // other roster/denominator reader of the review queue can never drift
+      // apart on what counts as "not really a question".
       ? [...new Set(
         queueItemsForSession
-          .filter((item) => item.reason !== 'key-alignment-suspected')
+          .filter((item) => !isSyntheticReviewItem(item))
           .map((item) => item.itemId),
       )]
       : (document ? questionItemIds(document) : (roster ?? (bank?.items ?? []).map((i) => i.id)));
