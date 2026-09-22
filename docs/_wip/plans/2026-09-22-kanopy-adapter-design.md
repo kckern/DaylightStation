@@ -170,6 +170,39 @@ and a set of `*FilterOptions` for faceting. Each result is a thin card —
 no duration, year, description, or protection status, so a detail view needs
 `/kapi/videos/{id}`.
 
+## Filtering search to playable titles
+
+**The provider cannot do this.** Search exposes facets for subject, language,
+public-performance rights, captions, audio description, caption language and
+tickets — and nothing for protection. Invented parameters (`drmType=none`,
+`isPlayable=true`, `hasDrm=false`, `drm=none`) are **silently ignored**: the
+result count is identical with and without them, which is worse than a
+rejection because it invites a false conclusion that the filter worked.
+
+We can derive the filter ourselves, because the manifest endpoint costs
+nothing: probe `GET /kapi/manifests/hls/{videoId}.m3u8` unauthenticated and
+classify.
+
+| Verdict | Signal |
+|---|---|
+| playable | `200`, no `EXT-X-KEY`, no `schemeIdUri` |
+| refuse | `200` with either marker |
+| unknown | non-`200` — videoId is not a manifest id (multi-part title) |
+
+Measured over one 40-result page: **8 playable, 28 protected, 4 unknown.** The
+filter is sound but incomplete — the unknowns may be playable, and they are
+excluded for lack of proof rather than evidence of DRM.
+
+At a ~20% yield, filtering at query time would mean roughly five upstream pages
+and 200 probes to fill one grid. So the probe belongs in a **cached playability
+index** keyed by videoId, not on the search path: a title's protection status is
+a property of the catalogue, not of the request, so it is worth storing once and
+reusing. Warm it in the background and search stays a single call.
+
+Note the ordering risk: because the verdict is derived, a cache miss must render
+as *unknown*, never as *playable*. Optimistic defaults here mean offering a
+title the proxy will then refuse.
+
 ## Open questions
 
 - **How is a title's manifest/stream id resolved without spending a play?**
@@ -179,6 +212,12 @@ no duration, year, description, or protection status, so a detail view needs
   yet confirmed.
 - Does `isFree` or `supplier` correlate with plaintext delivery? Suspected from
   a sample of two, which is not evidence.
+- **What is the real query parameter behind `ticketFilterOptions`?** The facet is
+  returned (values `0`–`5`, plausibly play-credit cost) but the parameter name is
+  unknown, and guessing was abandoned deliberately — silently-ignored params make
+  brute force actively misleading. Capture it from the web app's own network
+  traffic by applying the facet in the UI. If tickets correlate with protection,
+  it would replace the derived index with a server-side filter.
 - `/kapi/memberships?userId=` returns `400 invalid` for this account, so the
   entitlement and play-credit model is still unknown. It may not be needed:
   `plays` succeeded without consulting it.
