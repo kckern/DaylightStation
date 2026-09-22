@@ -134,6 +134,40 @@
     stroke: rgba(160, 20, 20, 1);
   }
 
+  // ── Recorded verdicts (timed runs, `verdicts` prop) ──────────────────────
+  // A timed run's staff paints what the judge RECORDED, never what is held:
+  //   hit      — green, the same green as the live hit above.
+  //   early/late — amber, with a small ◂/▸ tick (`.sequence-staff__drift`):
+  //           the right pitch, off the beat. Not green, because it was not on
+  //           the beat; not red, because it was the right note.
+  //   unplayed — grey. The window closed unclaimed (lapsed) or the note was
+  //           finally missed. Grey, not red: nothing wrong was played.
+  // A recorded wrong pitch is the red ghost below (`--wrong`).
+  .sequence-note-early,
+  .sequence-note-late {
+    fill: rgba(222, 140, 0, 1);
+    stroke: rgba(180, 110, 0, 1);
+  }
+
+  .sequence-note-unplayed {
+    fill: rgba(150, 150, 150, 1);
+    stroke: rgba(120, 120, 120, 1);
+  }
+
+  .sequence-staff__drift {
+    fill: rgba(180, 110, 0, 1);
+    stroke: none;
+    font-weight: 700;
+  }
+
+  .action-staff__accidental {
+    &--early, &--late { color: rgba(180, 110, 0, 1); }
+    &--unplayed { color: rgba(120, 120, 120, 1); }
+  }
+
+  [data-stem-state='offbeat'] .action-staff__stem { stroke: rgba(180, 110, 0, 1); }
+  [data-stem-state='unplayed'] .action-staff__stem { stroke: rgba(120, 120, 120, 1); }
+
   .action-staff__accidental {
     &--done { color: rgba(120, 66, 22, 1); }
     &--hit { color: rgba(0, 150, 70, 1); }
@@ -165,6 +199,14 @@
     stroke-width: 1;
   }
 
+  // Timed runs: the lane is lit only while the current entry's hit window is
+  // open, and dim between windows — the beat you can still hit, not merely the
+  // note the clock is sitting on.
+  .sequence-staff__cursor.is-window-closed {
+    fill: rgba(255, 200, 60, 0.1);
+    stroke: rgba(200, 150, 0, 0.2);
+  }
+
   // ── The ghost: a held pitch that is not one of the cursor entry's targets ──
   // Semi-opaque BLACK — never a hue, never the miss-red above — because a
   // ghost is not a verdict at all: it is "you are here", the distance between
@@ -177,4 +219,12 @@
   // same ghost and a stylesheet cannot be shared with it — which is exactly how
   // the two surfaces came to show a filled head and a dashed outline for the
   // same fact. The classes below stay as hooks for querying, and carry no paint.
+
+  // A RECORDED wrong note (timed runs): the live ghost's geometry, in red —
+  // this one is a verdict. Class paint beats the GHOST_INK attributes.
+  .sequence-staff__ghost--wrong {
+    .sequence-note-wrong-verdict { fill: rgba(200, 40, 40, 0.8); stroke: none; }
+    .sequence-staff__ghost-ledger { stroke: rgba(200, 40, 40, 0.5); }
+    .sequence-staff__ghost-accidental { color: rgba(200, 40, 40, 0.85); }
+  }
 }

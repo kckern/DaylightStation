@@ -194,3 +194,27 @@ describe('KeysAsk', () => {
     expect(screen.getByTestId('keyboard')).toHaveAttribute('data-dim', 'false');
   });
 });
+
+describe('KeysAsk — a timed run', () => {
+  it('hands the recorded verdicts and the window flag to its staff, which paints them', () => {
+    h.realStaff = true;
+    try {
+      const verdicts = new Map([[0, new Map([[60, { state: 'late', driftMs: 450 }]])]]);
+      const { container } = render(
+        <KeysAsk events={[event(60), event(62)]} cursorIndex={0} showStaff verdicts={verdicts} windowOpen={false}
+          activeNotes={new Map([[60, { velocity: 1, timestamp: Date.now() + 10 }]])} />,
+      );
+      expect(container.querySelector('.action-staff__note[data-midi="60"]').classList.contains('sequence-note-late')).toBe(true);
+      expect(container.querySelector('.sequence-note-hit')).toBeNull();
+      expect(container.querySelector('.sequence-staff__cursor').classList.contains('is-window-closed')).toBe(true);
+    } finally {
+      h.realStaff = false;
+      cleanup();
+    }
+  });
+
+  it('keeps the keyboard red key on the judge\'s own wrong note', () => {
+    render(<KeysAsk events={[event(60), event(62)]} cursorIndex={0} wrongMidi={61} verdicts={new Map()} />);
+    expect(screen.getByTestId('keyboard')).toHaveAttribute('data-wrong', '61');
+  });
+});
