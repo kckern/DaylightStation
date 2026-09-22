@@ -320,8 +320,14 @@ export default function RecordingRung({
     if (pieceUrlRef.current) URL.revokeObjectURL(pieceUrlRef.current);
     pieceUrlRef.current = URL.createObjectURL(blob);
     playBack(pieceUrlRef.current);
+    // The decode is slow and the learner may already have moved on — to the
+    // next piece, or a redo — so the picture lands only if this piece's take
+    // is still the one being heard or reviewed.
     decodeTake(blob).then((samples) => {
-      if (piecesRef.current.takes[i]?.blob === blob) setTake(samples);
+      const phaseNow = phaseRef.current;
+      if (pieceRef.current !== i || piecesRef.current.takes[i]?.blob !== blob) return;
+      if (phaseNow !== 'playback' && phaseNow !== 'review') return;
+      setTake(samples);
     });
   }, [entry.seq, playBack]);
 
