@@ -2849,19 +2849,27 @@ describe('recording in pieces', () => {
   });
 
   /** The FIRST full sentence hangs so the test can cut into it; every other
-   *  clip ends at once. `played` records the src and the seek point. */
+   *  clip ends at once. `played` records the src and the seek point.
+   *  `holdNext(match)` hangs the next clip whose path matches, instead — the
+   *  sentence again, or the ding — and `end()` lets the held clip finish. */
   const modelPlayer = () => {
     const played = [];
     let held = null;
+    let hold = (src) => src.endsWith('/KR');
     window.HTMLMediaElement.prototype.pause = vi.fn();
     window.HTMLMediaElement.prototype.play = vi.fn(function play() {
       const src = path(this.src);
       played.push({ src, atMs: Math.round((this._t ?? 0) * 1000) });
-      if (!held && src.endsWith('/KR')) { held = this; return Promise.resolve(); }
+      if (hold?.(src)) { held = this; hold = null; return Promise.resolve(); }
       setTimeout(() => this.onended?.(), 0);
       return Promise.resolve();
     });
-    return { played, at: (ms) => { held._t = ms / 1000; } };
+    return {
+      played,
+      at: (ms) => { held._t = ms / 1000; },
+      holdNext: (match = (src) => src.endsWith('/KR')) => { hold = match; },
+      end: () => act(() => { held.onended?.(); }),
+    };
   };
   /** Each take is a distinct blob, so a test can tell which piece was kept. */
   const fakeMic = () => {
@@ -2940,6 +2948,21 @@ describe('recording in pieces', () => {
     await waitFor(() => expect(languageApi.recording).toHaveBeenCalledTimes(1));
     expect(languageApi.recording.mock.calls[0][3].type).toBe('audio/wav');
     expect(languageLog.capture).toHaveBeenCalledWith('stitched', expect.objectContaining({ seq: 1, pieces: 2, durationMs: 1700 }));
+  });
+
+  it('offers Pause only while the sentence itself sounds — not during the ding', async () => {
+    const model = modelPlayer(); fakeMic(); recordingDay(); program();
+    await screen.findByRole('button', { name: 'Listen, then record' });
+    pressKey(' ');
+    expect(await screen.findByRole('button', { name: 'Pause here' })).toBeTruthy();
+    // The sentence ends on its own; the ding that follows cannot be cut.
+    model.holdNext((src) => src.startsWith('/cue/'));
+    model.end();
+    await waitFor(() => expect(model.played.at(-1).src).toBe('/cue/record'));
+    expect(screen.getByRole('status', { name: 'Listen' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Pause here' })).toBeNull();
+    model.end();
+    await screen.findByRole('button', { name: 'Stop' });
   });
 
   /** Cut at 1.5s and say part one; leaves the rung in part-one review. */

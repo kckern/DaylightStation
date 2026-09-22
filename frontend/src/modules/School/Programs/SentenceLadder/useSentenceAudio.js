@@ -34,7 +34,14 @@ const REPEAT_GAP_MS = 1000;
  */
 const LOOP_GAP_MS = 2500;
 
-export function useSentenceAudio({ onSequenceEnd } = {}) {
+/**
+ * @param {object} [options]
+ * @param {() => void} [options.onSequenceEnd] fired when a sequence finishes
+ * @param {(clip: object|null) => void} [options.onClip] fired when the clip
+ *   sounding changes — the clip as it starts, null in a gap, at the end and
+ *   on stop(). For a control that only applies while one clip plays.
+ */
+export function useSentenceAudio({ onSequenceEnd, onClip } = {}) {
   const elementRef = useRef(null);
   const preloadRef = useRef([]);
   const queueRef = useRef([]);
@@ -52,6 +59,14 @@ export function useSentenceAudio({ onSequenceEnd } = {}) {
   const [blocked, setBlocked] = useState(false);
 
   useEffect(() => { endRef.current = onSequenceEnd; }, [onSequenceEnd]);
+  const clipRef = useRef(onClip);
+  useEffect(() => { clipRef.current = onClip; }, [onClip]);
+  // Only refs, so the callbacks below may hold it without listing it.
+  const setActive = (clip) => {
+    if (activeRef.current === clip) return;
+    activeRef.current = clip;
+    clipRef.current?.(clip);
+  };
 
   useEffect(() => {
     const el = new Audio();
@@ -98,7 +113,7 @@ export function useSentenceAudio({ onSequenceEnd } = {}) {
   const stop = useCallback(() => {
     clearTimer();
     clearSpan();
-    activeRef.current = null;
+    setActive(null);
     const el = elementRef.current;
     if (el) {
       el.pause();
@@ -119,7 +134,7 @@ export function useSentenceAudio({ onSequenceEnd } = {}) {
     // NOTHING SOUNDS BETWEEN STEPS: a gap or the end of the sequence has no
     // position, so a live cut made there reads null rather than the last clip.
     clearSpan();
-    activeRef.current = null;
+    setActive(null);
     const queue = queueRef.current;
 
     if (queue.length === 0) {
@@ -145,7 +160,7 @@ export function useSentenceAudio({ onSequenceEnd } = {}) {
       // A SPAN: a piece of the model, for a take said in pieces. Seek before
       // play; the element honours a pre-metadata seek as its start position.
       if (next.startMs != null) el.currentTime = next.startMs / 1000;
-      activeRef.current = next;
+      setActive(next);
       // Only the clip still active may advance. A span that ends where the
       // file ends can still fire `ended` after its timer has moved on.
       el.onended = () => {
@@ -180,7 +195,7 @@ export function useSentenceAudio({ onSequenceEnd } = {}) {
             return;
           }
           languageLog.audioError('play-blocked', { url: next.url, error: err?.message });
-          activeRef.current = null;
+          setActive(null);
           setBlocked(true);
           setPlaying(false);
         });

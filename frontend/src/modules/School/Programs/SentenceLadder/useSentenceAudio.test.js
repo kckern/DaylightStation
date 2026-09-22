@@ -218,3 +218,30 @@ describe('an interrupted play is not a blocked one', () => {
     expect(result.current.blocked).toBe(true);
   });
 });
+
+/** What is sounding, as it changes — so a rung can offer a control only while
+ *  the clip it applies to is actually playing (the recording rung's Pause). */
+describe('onClip', () => {
+  it('reports each clip as it starts, and null between clips and at the end', () => {
+    const onClip = vi.fn();
+    const { result } = renderHook(() => useSentenceAudio({ onClip }));
+    const a = { url: '/a.mp3', language: 'KR' };
+    const b = { url: '/cue.mp3', role: 'cue', gapMs: 400 };
+    act(() => result.current.playSequence([a, b]));
+    expect(onClip.mock.calls.map(([c]) => c)).toEqual([a]);
+    endCurrentClip();                                   // the gap before b
+    expect(onClip.mock.calls.map(([c]) => c)).toEqual([a, null]);
+    act(() => vi.advanceTimersByTime(400));
+    expect(onClip.mock.calls.map(([c]) => c)).toEqual([a, null, b]);
+    endCurrentClip();
+    expect(onClip.mock.calls.map(([c]) => c)).toEqual([a, null, b, null]);
+  });
+
+  it('reports null when stopped', () => {
+    const onClip = vi.fn();
+    const { result } = renderHook(() => useSentenceAudio({ onClip }));
+    act(() => result.current.playSequence([{ url: '/a.mp3' }]));
+    act(() => result.current.stop());
+    expect(onClip).toHaveBeenLastCalledWith(null);
+  });
+});
