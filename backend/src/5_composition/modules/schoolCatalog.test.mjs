@@ -1,4 +1,7 @@
 import path from 'node:path';
+import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { dump } from 'js-yaml';
 import { describe, expect, it } from 'vitest';
 import { createSchoolCatalog } from './schoolCatalog.mjs';
 
@@ -24,5 +27,21 @@ describe('shared School Catalog composition', () => {
       },
     });
     expect(catalog).toMatchObject({ wired: false, query: null });
+  });
+
+  it('expands lexicon decks through the catalog content when a media dir is configured', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'school-catalog-lexicon-'));
+    try {
+      await mkdir(path.join(root, 'data/content/school/learning-catalog/flashcard-decks'), { recursive: true });
+      await mkdir(path.join(root, 'media/school/language/korean-vocab'), { recursive: true });
+      await writeFile(path.join(root, 'media/school/language/korean-vocab/lexicon.yml'), dump({ schema: 'school.word-lexicon/v1', entries: [{ id: 'gawi', kind: 'word', korean: '가위', english: 'Scissors', pronunciation: null, decoys: { korean: ['가지', '바위', '가방'], english: ['Knife', 'Tape', 'Ruler'] } }] }));
+      await writeFile(path.join(root, 'data/content/school/learning-catalog/flashcard-decks/w.yml'), dump({ schema: 'school.flashcard-deck/v1', id: 'language/korean/w', title: 'W', lexicon: 'media:language/korean-vocab/lexicon.yml', words: ['gawi'] }));
+      const catalog = createSchoolCatalog({ configService: {
+        getHouseholdAppConfig: () => ({ catalog: {} }), getDataDir: () => path.join(root, 'data'), getMediaDir: () => path.join(root, 'media'),
+        getHouseholdPath: (relative) => path.join(root, 'data/household', relative),
+      } });
+      const deck = await catalog.content.getFlashcardDeck('language/korean/w');
+      expect(deck.cards[0].cardId).toBe('gawi');
+    } finally { await rm(root, { recursive: true, force: true }); }
   });
 });
