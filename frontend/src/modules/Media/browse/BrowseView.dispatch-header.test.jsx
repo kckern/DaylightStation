@@ -185,13 +185,31 @@ describe('BrowseView — nested drill carries containerItem forward', () => {
 });
 
 describe('BrowseView — leaf Detail and Play Now entrypoints', () => {
-  it('keeps the row title as a Detail entrypoint without dispatching playback', () => {
+  it('keeps the playable row itself as one-tap Play Now at the current aim', () => {
     browseState = {
       items: [{ id: 'plex:55854', title: 'Arrival', type: 'movie', thumbnail: 'arrival.jpg' }],
       total: 1, loading: false, error: null,
     };
     renderBrowse();
-    fireEvent.click(screen.getByTestId('browse-detail-plex:55854'));
+    const row = screen.getByRole('button', { name: /Arrival artwork\s+Arrival/ });
+    expect(row).toHaveAttribute('data-testid', 'result-play-now-plex:55854');
+    fireEvent.click(row);
+
+    expect(dispatchLeafVerbMock).toHaveBeenCalledWith('playNow', 'plex:55854', expect.objectContaining({
+      id: 'plex:55854', title: 'Arrival', thumbnail: 'arrival.jpg',
+    }));
+    expect(navPush).not.toHaveBeenCalled();
+  });
+
+  it('opens the exact item from a separate Detail action without dispatching playback', () => {
+    browseState = {
+      items: [{ id: 'plex:55854', title: 'Arrival', type: 'movie', thumbnail: 'arrival.jpg' }],
+      total: 1, loading: false, error: null,
+    };
+    renderBrowse();
+    const detail = screen.getByRole('button', { name: 'Details', exact: true });
+    expect(detail).toHaveAttribute('data-testid', 'browse-detail-plex:55854');
+    fireEvent.click(detail);
 
     expect(navPush).toHaveBeenCalledWith('detail', { contentId: 'plex:55854' });
     expect(dispatchLeafVerbMock).not.toHaveBeenCalled();

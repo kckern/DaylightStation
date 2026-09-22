@@ -236,11 +236,12 @@ export function BrowseView({
                   title={displayTitle(row)}
                   subtitle={resultSubtitle(row)}
                   thumbnail={row.thumbnail}
-                  testId={rowIsContainer ? `browse-open-${id}` : `browse-detail-${id}`}
+                  testId={rowIsContainer ? `browse-open-${id}` : `result-play-now-${id}`}
                   focusId={id}
-                  onTap={() => rowIsContainer ? openContainer(row, id) : push('detail', { contentId: id })}
+                  onTap={() => rowIsContainer ? openContainer(row, id) : dispatchLeafVerb('playNow', id, row)}
                   onPlayAll={rowIsContainer ? () => playContainerAsQueue(id, row) : null}
-                  onPlayNow={rowIsContainer ? null : () => dispatchLeafVerb('playNow', id, row)}
+                  onDetails={rowIsContainer ? null : () => push('detail', { contentId: id })}
+                  detailsTestId={rowIsContainer ? null : `browse-detail-${id}`}
                   onAction={action => {
                   if (['playOn', 'addOn'].includes(action.kind)) setOneShot(action);
                   else if (action.kind === 'details') push('detail', { contentId: id });
