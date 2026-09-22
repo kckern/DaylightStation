@@ -92,3 +92,44 @@ describe('ExerciseNotation — the note at the cursor', () => {
     expect(inks(container)).toEqual(['exercise-note-done', 'exercise-note-done', 'exercise-note-next']);
   });
 });
+
+describe('ExerciseNotation — a timed run paints the recorded verdicts', () => {
+  const verdictMap = (entries) => new Map(entries.map(([index, byMidi]) => [index, new Map(byMidi)]));
+
+  it('never greens a late note, even while its key is held at the cursor', () => {
+    const verdicts = verdictMap([[0, [[60, { state: 'late', driftMs: 450 }]]]]);
+    const { container } = render(
+      <ExerciseNotation instance={instance} eventIndex={0} verdicts={verdicts}
+        activeNotes={new Map([[60, { timestamp: IN_A_MOMENT }]])} />,
+    );
+    expect(inks(container)).toEqual(['exercise-note-late', 'exercise-note-todo', 'exercise-note-todo']);
+  });
+
+  it('paints hit green, early amber, lapsed grey, and leaves undecided notes unplayed ink', () => {
+    const verdicts = verdictMap([
+      [0, [[60, { state: 'hit', driftMs: 10 }]]],
+      [1, [[62, { state: 'early', driftMs: -250 }]]],
+    ]);
+    const { container } = render(<ExerciseNotation instance={instance} eventIndex={2} verdicts={verdicts} />);
+    expect(inks(container)).toEqual(['exercise-note-hit', 'exercise-note-early', 'exercise-note-next']);
+    const lapsed = render(<ExerciseNotation instance={instance} eventIndex={2}
+      verdicts={verdictMap([[0, [[60, { state: 'lapsed' }]]], [1, [[62, { state: 'miss' }]]]])} />);
+    expect(inks(lapsed.container).slice(0, 2)).toEqual(['exercise-note-unplayed', 'exercise-note-unplayed']);
+  });
+
+  it('marks the note under the clock cursor whatever its verdict, so the lane can find it', () => {
+    const verdicts = verdictMap([[1, [[62, { state: 'lapsed' }]]]]);
+    const { container } = render(<ExerciseNotation instance={instance} eventIndex={1} verdicts={verdicts} />);
+    const notes = [...container.querySelectorAll('[data-note]')];
+    expect(notes[1].classList.contains('exercise-note-at-cursor')).toBe(true);
+    expect(notes[1].classList.contains('exercise-note-unplayed')).toBe(true);
+  });
+
+  it('a held wrong key does not turn the cursor note red — only a recorded verdict colours', () => {
+    const { container } = render(
+      <ExerciseNotation instance={instance} eventIndex={1} verdicts={new Map()}
+        activeNotes={new Map([[65, { timestamp: IN_A_MOMENT }]])} />,
+    );
+    expect(inks(container)[1]).toBe('exercise-note-next');
+  });
+});

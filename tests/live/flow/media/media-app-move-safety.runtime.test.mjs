@@ -40,18 +40,20 @@ async function findArrivalOption(page) {
   return { option, contentId };
 }
 
-async function expectMoveBlockedButKeepReachable(picker) {
+async function selectFirstDevice(picker) {
   const device = picker.locator('[data-testid^="picker-device-"]').first();
   await expect(device).toBeVisible();
   await device.click();
+}
+
+async function expectMoveBlockedButKeepReachable(picker) {
+  await selectFirstDevice(picker);
 
   await expect(picker.getByTestId('picker-mode-transfer')).toBeDisabled();
   await expect(picker.getByTestId('picker-move-unavailable'))
     .toHaveText(/Move playback is not available yet/i);
   const submit = picker.getByTestId('picker-submit');
-  await expect(submit).toBeDisabled();
-
-  await picker.getByTestId('picker-mode-fork').click();
+  await expect(picker.getByTestId('picker-mode-fork')).toHaveAttribute('aria-checked', 'true');
   await expect(submit).toBeEnabled();
 }
 
@@ -120,31 +122,113 @@ test.describe('Media M0 Move safety', () => {
 
     const handoffPicker = page.getByTestId('handoff-section').getByTestId('dispatch-target-picker');
     await expect(handoffPicker).toBeVisible();
-    await expectMoveBlockedButKeepReachable(handoffPicker);
+    await selectFirstDevice(handoffPicker);
+    await expect(handoffPicker.getByTestId('picker-mode-transfer')).toBeEnabled();
+    await expect(handoffPicker.getByTestId('picker-mode-fork')).toHaveText(/Keep playing here too/i);
+    await handoffPicker.getByTestId('picker-submit').click();
+    await expect(handoffPicker.getByTestId('picker-dispatch-failed'))
+      .toHaveText(/Playback here was kept/i);
 
-    // Do not submit Keep. Back is the existing cancellation/exit path for the
-    // inline handoff picker and must leave the same local playback alive.
-    await page.getByTestId('now-playing-back').click();
-    await expect(page.getByTestId('now-playing-view')).toBeHidden();
+    // The blocked destination request is uncertain, never source-stop proof.
+    // The same native node must remain alive and continue advancing.
     const sameNativeNode = await page.evaluate(
-      // Back removes the expanded host label; ownership is the same actual
-      // node still attached anywhere in the app, not its presentation parent.
       (original) => original.isConnected && [...document.querySelectorAll('video')].includes(original),
       nativeNode,
     );
     expect(sameNativeNode).toBe(true);
     await expect.poll(
       () => nativeNode.evaluate((node) => node.currentTime),
-      { timeout: 10000, message: 'opening and cancelling the picker must not reset or pause Arrival' },
+      { timeout: 10000, message: 'an uncertain destination must not reset, pause, or stop Arrival' },
     ).toBeGreaterThan(timeBeforePicker + 0.25);
+    expect(deviceAttempts.some(({ path }) => /\/session\/handoff$/.test(path))).toBe(true);
 
     // Stop intentionally retains the queue. Assert the existing contract:
     // native media is paused/ended and the retained queue remains reachable.
-    await page.getByTestId('mini-player-open-nowplaying').click();
     await page.getByTestId('np-stop').click();
     await expect.poll(() => page.locator('video, audio')
       .evaluateAll((nodes) => nodes.every((node) => node.paused || node.ended))).toBe(true);
     await expect(page.getByTestId('mini-player-open-nowplaying')).toBeVisible();
-    expect(deviceAttempts, 'M0 inspection and ordinary local Stop must not issue a device command').toEqual([]);
+  });
+
+  test('paused Arrival moves at the same paused native position before the unchanged source stops', async ({ page, context }) => {
+    const receiver = await context.newPage();
+    try {
+      await receiver.goto('/screen/living-room', { waitUntil: 'domcontentloaded' });
+      await expect.poll(async () => receiver.evaluate(async () => {
+        const response = await fetch('/api/v1/device/acceptance-media/receiver-ready');
+        return response.ok && (await response.json()).ready;
+      }), { timeout: 30000 }).toBe(true);
+
+      // A native move replaces an existing destination owner. Establish that
+      // owner through the real ordinary-device load path rather than inventing
+      // an idle handoff capability that the screen does not have.
+      const seeded = await receiver.evaluate(async () => {
+        const dispatchId = `paused-move-seed-${Date.now()}`;
+        const response = await fetch(`/api/v1/device/acceptance-media/load?play=plex:697368&dispatchId=${dispatchId}`);
+        return response.ok;
+      });
+      expect(seeded).toBe(true);
+      const seededNative = receiver.locator('.video-player video');
+      await expect(seededNative).toHaveCount(1, { timeout: 30000 });
+      await expect.poll(() => seededNative.evaluate(node => !node.paused && node.readyState >= 2 && node.currentTime > 0),
+        { timeout: 30000 }).toBe(true);
+
+      await page.goto('/media');
+      const { option } = await findArrivalOption(page);
+      await option.click();
+      await expect(page.getByTestId('mini-player-open-nowplaying')).toBeVisible({ timeout: 30000 });
+      await page.getByTestId('mini-player-open-nowplaying').click();
+
+      const sourceNative = page.getByTestId('now-playing-host').locator('video');
+      await expect.poll(
+        () => sourceNative.evaluate(node => !node.paused && node.readyState >= 2 && node.currentTime > 1),
+        { timeout: 30000 },
+      ).toBe(true);
+      await page.getByTestId('np-toggle').click();
+      await expect.poll(() => sourceNative.evaluate(node => node.paused && !node.seeking)).toBe(true);
+      const pausedAt = await sourceNative.evaluate(node => node.currentTime);
+
+      const picker = page.getByTestId('handoff-section').getByTestId('dispatch-target-picker');
+      await picker.getByTestId('picker-device-acceptance-media').click();
+      await picker.getByTestId('picker-mode-transfer').click();
+      await picker.getByTestId('picker-submit').click();
+
+      const receiverNative = receiver.locator('.video-player video');
+      await expect(receiverNative).toHaveCount(1, { timeout: 30000 });
+      await expect.poll(() => receiverNative.evaluate((node, expected) => {
+        const delta = Math.abs(node.currentTime - expected);
+        return {
+          paused: node.paused,
+          ready: node.readyState >= 2,
+          seeking: node.seeking,
+          delta,
+          withinPositionTolerance: delta <= 2,
+        };
+      }, pausedAt), { timeout: 30000 }).toMatchObject({
+        paused: true,
+        ready: true,
+        seeking: false,
+        delta: expect.any(Number),
+        withinPositionTolerance: true,
+      });
+
+      await expect(page.getByTestId('now-playing-title')).toHaveText('Nothing playing', { timeout: 30000 });
+      await expect.poll(() => page.locator('video, audio')
+        .evaluateAll(nodes => nodes.every(node => node.paused || node.ended))).toBe(true);
+      await expect.poll(() => page.evaluate(async (expected) => {
+        const response = await fetch('/api/v1/device/acceptance-media/receiver-state');
+        const reported = await response.json();
+        return reported.snapshot?.state === 'paused'
+          && Math.abs(reported.snapshot?.position - expected) <= 2;
+      }, pausedAt), { timeout: 30000 }).toBe(true);
+      const reported = await page.evaluate(async () => {
+        const response = await fetch('/api/v1/device/acceptance-media/receiver-state');
+        return response.json();
+      });
+      expect(reported.snapshot?.state).toBe('paused');
+      expect(Math.abs(reported.snapshot?.position - pausedAt)).toBeLessThanOrEqual(2);
+    } finally {
+      await receiver.close();
+    }
   });
 });

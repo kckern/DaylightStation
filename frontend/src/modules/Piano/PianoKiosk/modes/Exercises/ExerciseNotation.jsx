@@ -13,7 +13,14 @@ import {
   accidentalForKey, clefForInstance, eventsToStaffNotes, instanceKeySignature,
 } from './runPresentation.js';
 
-const FEEDBACK = ['exercise-note-done', 'exercise-note-next', 'exercise-note-wrong', 'exercise-note-todo', 'exercise-note-hit'];
+const FEEDBACK = ['exercise-note-done', 'exercise-note-next', 'exercise-note-wrong', 'exercise-note-todo', 'exercise-note-hit',
+  'exercise-note-early', 'exercise-note-late', 'exercise-note-unplayed', 'exercise-note-at-cursor'];
+/** A recorded verdict state → the notehead class a judged (timed) run paints. */
+const VERDICT_CLASS = Object.freeze({
+  hit: 'exercise-note-hit', early: 'exercise-note-early', late: 'exercise-note-late',
+  lapsed: 'exercise-note-unplayed', miss: 'exercise-note-unplayed',
+});
+const DRIFT_TICK = Object.freeze({ early: '\u25C2', late: '\u25B8' });
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
 /**
@@ -73,7 +80,18 @@ function rootBox(element) {
 }
 
 
-export default function ExerciseNotation({ instance, eventIndex = 0, activeNotes = null, complete = false, preview = false }) {
+/**
+ * @param {Map<number, Map<number, object>>|null} [verdicts] A timed run's
+ *   RECORDED verdicts (`performance/timedVerdicts.js`), keyed by event index
+ *   then midi. When present the staff judges nothing: every notehead takes its
+ *   verdict's colour (hit green, early/late amber with a ◂/▸ tick, lapsed/miss
+ *   grey), a recorded wrong pitch draws a red ghost beside the event it was
+ *   charged to, and `activeNotes` colours nothing. Absent, unchanged.
+ * @param {boolean} [windowOpen] Timed runs: lights the cursor lane while the
+ *   current event's window is open and dims it between windows.
+ */
+export default function ExerciseNotation({ instance, eventIndex = 0, activeNotes = null, complete = false, preview = false, verdicts = null, windowOpen = undefined }) {
+  const judged = verdicts instanceof Map;
   /**
    * When the cursor reached the current event — the other half of the ghost
    * rule. Stamped during render rather than from an effect, and only when the
@@ -115,17 +133,32 @@ export default function ExerciseNotation({ instance, eventIndex = 0, activeNotes
         // that signal; the notehead colour never did, and `SvgSequenceStaff` had
         // been carrying the fix alone since 2026-09-11. One rule, both staves:
         // MusicNotation/model/heldPitch.js.
-        const attempting = current && attemptUnderWay(activeNotes, { cursorArrivedAt, cursorTargets: targets });
+        const attempting = !judged && current && attemptUnderWay(activeNotes, { cursorArrivedAt, cursorTargets: targets });
+        // Judged (timed) runs paint the RECORD: the verdict for this pitch at
+        // this event, or plain unplayed ink while nothing is decided yet.
+        const recorded = judged ? verdicts.get(index) : null;
+        const verdict = recorded?.get(target);
+        const verdictClass = verdict ? VERDICT_CLASS[verdict.state] : null;
+        const wrongs = judged ? [...(recorded?.values() ?? [])].filter((v) => v.state === 'wrong' && Number.isFinite(v.midi)) : [];
         note.els.forEach((element) => {
           element.classList.remove(...FEEDBACK);
           if (preview) return;
-          if (complete || index < eventIndex) element.classList.add('exercise-note-done');
+          if (judged) {
+            element.classList.add(verdictClass ?? (index === eventIndex ? 'exercise-note-next' : 'exercise-note-todo'));
+            // Where the clock cursor is, whatever the record says about it (a
+            // lapsed note under the lane is grey, and still the note it marks).
+            // A hook for the lane's geometry, carrying no paint of its own.
+            if (index === eventIndex) element.classList.add('exercise-note-at-cursor');
+          }
+          else if (complete || index < eventIndex) element.classList.add('exercise-note-done');
           else if (current) element.classList.add(attempting
             ? activeNotes.has(target) ? 'exercise-note-hit' : 'exercise-note-wrong'
             : 'exercise-note-next');
           else element.classList.add('exercise-note-todo');
         });
-        if (!current || preview) return;
+        const offbeat = verdict?.state === 'early' || verdict?.state === 'late' ? verdict.state : null;
+        const marked = judged && !preview && (offbeat || wrongs.length);
+        if (!(current && !preview) && !marked) return;
         const svg = note.els[0]?.closest('svg');
         const head = note.els[0]?.querySelector('.abcjs-notehead');
         const stave = svg?.querySelectorAll('.abcjs-staff')[staffIndex];
@@ -166,21 +199,35 @@ export default function ExerciseNotation({ instance, eventIndex = 0, activeNotes
         // hand pressed it, so the ghost goes to the staff whose register holds
         // it: the same middle-C split `exerciseAbc.notesFor` uses to decide
         // which staff a hand-less note is engraved on.
+        const onThisStaff = ({ midi }) => staffRef.current.length < 2
+          || staffIndex === (handForPitch(midi) === 'left' ? 1 : 0);
         const ghosts = attempting
           ? partitionHeldPitches(activeNotes, { cursorArrivedAt, cursorTargets: targets })
-            .ghosts.filter(({ midi }) => staffRef.current.length < 2
-              || staffIndex === (handForPitch(midi) === 'left' ? 1 : 0))
+            .ghosts.filter(onThisStaff)
             .map(({ midi }) => ({ midi, ...getStaffPositionOnClef(midi, clef, accidental) }))
           : [];
         const y = Math.min(lines[0] - spacing, box.y - 4 * scale);
         // Keep ledger-line notes inside the same lane, including abcjs's
         // slightly taller noteheads at the bottom edge of the stave.
         const height = Math.max(84 * scale, box.y + box.height + 4 * scale - y);
-        lanes.push({ x, y, height, bottom, scale, spacing, ghosts });
+        if (current && !preview) lanes.push({ x, y, height, bottom, scale, spacing, ghosts });
+        if (marked) {
+          // Recorded marks, beside the event they belong to: an off-beat tick
+          // under the notehead, and the wrong pitch as a red ghost placed the
+          // way the live ghost is, out from where this event's lane would be.
+          lanes.push({
+            x, y, height, bottom, scale, spacing, marksOnly: true,
+            // Out from the NOTEHEAD, not from a lane that is not drawn here: a
+            // lane-width gutter would stand the ghost on the next note.
+            edge: box.x + box.width,
+            tick: offbeat ? { side: offbeat, midi: target, x, y: box.y + box.height + 16 * scale } : null,
+            ghosts: wrongs.filter(onThisStaff).map(({ midi }) => ({ midi, wrong: true, ...getStaffPositionOnClef(midi, clef, accidental) })),
+          });
+        }
       });
     }
     setDecoration(host && lanes.length ? { host, lanes } : null);
-  }, [activeNotes, complete, cursorArrivedAt, eventIndex, instance, preview]);
+  }, [activeNotes, complete, cursorArrivedAt, eventIndex, instance, judged, preview, verdicts]);
   useEffect(paint, [paint]);
   const rendered = useCallback((_tune, staffNotes) => { staffRef.current = staffNotes; paint(); }, [paint]);
   // instanceToAbc returns '' for material this module has no business drawing
@@ -192,21 +239,23 @@ export default function ExerciseNotation({ instance, eventIndex = 0, activeNotes
     {decoration && createPortal(decoration.lanes.map((lane, index) => <g key={index}>
       {/* Same lane geometry and yellow treatment as the original sequence
           cursor (39cf60b81), scaled to this engraving's staff spacing. */}
-      <rect className="exercise-notation__cursor" x={lane.x - LANE_HALF_WIDTH * lane.scale} y={lane.y}
-        width={LANE_HALF_WIDTH * 2 * lane.scale} height={lane.height} rx={4 * lane.scale} />
+      {!lane.marksOnly && <rect className={`exercise-notation__cursor${windowOpen === true ? ' is-window-open' : windowOpen === false ? ' is-window-closed' : ''}`} x={lane.x - LANE_HALF_WIDTH * lane.scale} y={lane.y}
+        width={LANE_HALF_WIDTH * 2 * lane.scale} height={lane.height} rx={4 * lane.scale} />}
+      {lane.tick && <text className={`exercise-notation__drift exercise-notation__drift--${lane.tick.side}`} data-midi={lane.tick.midi}
+        x={lane.tick.x} y={lane.tick.y} textAnchor="middle" fontSize={18 * lane.scale} fill="rgb(180, 110, 0)" stroke="none">{DRIFT_TICK[lane.tick.side]}</text>}
       {lane.ghosts.map(ghost => {
         // Everything here is measured OUT FROM the lane's right edge, so the
         // ghost sits beside the note being read rather than on top of it. An
         // accidental claims the first slot; without one the head moves in to
         // close the gap, which keeps the annotation tight to its note.
-        const laneEdge = lane.x + LANE_HALF_WIDTH * lane.scale;
+        const laneEdge = lane.edge ?? lane.x + LANE_HALF_WIDTH * lane.scale;
         const hasAccidental = ghost.isSharp || ghost.isFlat;
         const accX = laneEdge + (GHOST_GUTTER + ACCIDENTAL_WIDTH / 2) * lane.scale;
         const x = hasAccidental
           ? accX + (ACCIDENTAL_WIDTH / 2 + ACCIDENTAL_GAP + NOTEHEAD_RX) * lane.scale
           : laneEdge + (GHOST_GUTTER + NOTEHEAD_RX) * lane.scale;
         const y = lane.bottom - ghost.position * lane.spacing / 2;
-        return <g className="exercise-notation__ghost" key={ghost.midi}>
+        return <g className={`exercise-notation__ghost${ghost.wrong ? ' is-wrong' : ''}`} key={ghost.midi}>
           {ledgerLineYs(ghost.position, lane.bottom, lane.spacing / 2).map(ly =>
             <line key={ly} x1={x - (NOTEHEAD_RX + 5) * lane.scale} x2={x + (NOTEHEAD_RX + 5) * lane.scale}
               y1={ly} y2={ly} />)}

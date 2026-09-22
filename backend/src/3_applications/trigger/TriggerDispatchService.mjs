@@ -31,6 +31,7 @@ import { createDebounce } from './guards/debounce.mjs';
 import { TriggerEvent } from '#domains/trigger/TriggerEvent.mjs';
 import { canonicalizeNfcUid } from '#domains/trigger/nfcUid.mjs';
 import { assertTriggerActuationGateway } from './ports/ITriggerActuationGateway.mjs';
+import { pushData, titleCaseId } from '#domains/notification/push/pushText.mjs';
 
 const unavailableActuationGateway = Object.freeze({
   clearDevice() { throw new Error('Trigger actuation unavailable'); },
@@ -49,6 +50,7 @@ export class TriggerDispatchService {
   #deps;
   #tagWriter;
   #onUnknownTag;
+  #locationLabel;
   #broadcast;
   #logger;
   #debounce;
@@ -91,6 +93,10 @@ export class TriggerDispatchService {
     // Response, so this is the only point in the pipeline that can tell the
     // screen in front of the child that the book is not known yet.
     onUnknownTag = null,
+    // `(location, locationConfig) => string|null` — the room a person would
+    // name for a reader location ("Living Room"). Absent or null, the push
+    // falls back to a title-cased location id.
+    locationLabel = null,
     broadcast,
     logger = console,
     debounceWindowMs = 30000,
@@ -107,6 +113,7 @@ export class TriggerDispatchService {
     this.#deps = { wakeAndLoadService, actuationGateway: assertTriggerActuationGateway(actuationGateway || unavailableActuationGateway), contentDispatcher, contentInterceptors, endpointGateway, learnerActions, createDispatchId, logger };
     this.#tagWriter = tagWriter;
     this.#onUnknownTag = onUnknownTag;
+    this.#locationLabel = typeof locationLabel === 'function' ? locationLabel : null;
     this.#broadcast = broadcast || (() => {});
     this.#logger = logger;
     this.#debounceWindowMs = debounceWindowMs;
@@ -426,10 +433,21 @@ export class TriggerDispatchService {
     const notifyService = locationConfig.notify_unknown;
     if (!notifyService) return;
 
+    let where = null;
+    try {
+      where = this.#locationLabel?.(location, locationConfig) ?? null;
+    } catch (err) {
+      this.#logger.warn?.('trigger.notify.label_failed', { location, error: err?.message ?? String(err) });
+    }
+    // The uid rides only in the tag and the reply action (the reply handler
+    // parses `NFC_REPLY|location|uid`); the visible text names the room.
+    // Re-tapping the same unknown card replaces its card without ringing.
     const payload = {
-      title: `Unknown NFC tag at ${location}`,
-      message: `Tap "Add note" to name tag ${uid}`,
-      data: {
+      title: `🏷️ New tag tapped — ${where || titleCaseId(location) || 'a reader'}`,
+      message: 'Tap "Add note" to name it',
+      data: pushData({
+        tag: `nfc-${uid}`,
+        alertOnce: true,
         actions: [{
           action: `NFC_REPLY|${location}|${uid}`,
           title: 'Add note',
@@ -437,7 +455,7 @@ export class TriggerDispatchService {
           textInputButtonTitle: 'Save',
           textInputPlaceholder: 'Tag name',
         }],
-      },
+      }),
     };
     try {
       await this.#deps.actuationGateway.sendNotification(notifyService, payload);

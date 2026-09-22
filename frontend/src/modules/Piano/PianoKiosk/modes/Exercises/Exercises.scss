@@ -370,6 +370,26 @@
     pointer-events: none;
   }
 
+  .piano-score-passage__cursor.is-window-closed {
+    fill: rgba(255, 200, 60, 0.1);
+    stroke: rgba(200, 150, 0, 0.2);
+  }
+
+  // Recorded verdicts on the engraved notes (timed runs). Scoped under the
+  // passage AND the renderer so they outrank NoteHighlightLayer's lit ink.
+  .musicxml-renderer__svg {
+    .piano-note-verdict-hit { path, rect, ellipse, text { fill: rgb(0, 150, 70); animation: none; } }
+    .piano-note-verdict-early,
+    .piano-note-verdict-late { path, rect, ellipse, text { fill: rgb(222, 140, 0); animation: none; } }
+    .piano-note-verdict-unplayed { path, rect, ellipse, text { fill: rgb(150, 150, 150); animation: none; } }
+  }
+
+  .piano-score-passage__drift {
+    fill: rgb(180, 110, 0);
+    font-weight: 700;
+    pointer-events: none;
+  }
+
   .piano-score-passage__dim {
     path, rect, ellipse, text { fill: #b6b4ae; }
   }
@@ -602,6 +622,21 @@
   ellipse { fill: rgba(0, 0, 0, .45); stroke: rgba(0, 0, 0, .6); }
   > line { stroke: rgba(0, 0, 0, .35); }
 }
+// Timed runs paint RECORDED verdicts (ExerciseNotation's `verdicts`): the
+// right pitch off the beat is amber with a ◂/▸ tick, a lapsed or missed note
+// is grey, a recorded wrong pitch is the ghost in red. Same values as the
+// sequence staff's (SvgSequenceStaff.scss).
+.exercise-note-early,
+.exercise-note-late { fill: rgb(222, 140, 0) !important; color: rgb(222, 140, 0) !important; }
+.exercise-note-unplayed { fill: rgb(150, 150, 150) !important; color: rgb(150, 150, 150) !important; }
+.exercise-notation__drift { fill: rgb(180, 110, 0) !important; stroke: none !important; font-weight: 700; }
+.exercise-notation__ghost.is-wrong {
+  color: rgba(200, 40, 40, .85);
+  ellipse { fill: rgba(200, 40, 40, .8); stroke: none; }
+  > line { stroke: rgba(200, 40, 40, .5); }
+}
+// The lane is lit while the current event's window is open, dim between.
+.exercise-notation__cursor.is-window-closed { fill: rgba(255, 200, 60, .1); stroke: rgba(200, 150, 0, .2); }
 
 @media (max-width: 1050px) {
   .piano-exercises__filter-panel { grid-template-columns: repeat(3, 1fr) auto; position: static; }

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { HaApprovalNotifier } from '#adapters/home-automation/donow/HaApprovalNotifier.mjs';
+import { findPushTextDefects } from '#domains/notification/push/pushText.mjs';
 
 // Article-free, lowercase — the real shape a surface adapter's `label()` now
 // returns (spec review finding). `HaApprovalNotifier` is the one place a
@@ -44,6 +45,26 @@ describe('HaApprovalNotifier.notify', () => {
 
     const [payload] = callHomeAssistant.execute.mock.calls[0];
     expect(payload.data.message).toBe("Garage fitness kiosk — a grown-up's OK is needed to start.");
+  });
+
+  it('tags the card by request so a re-send replaces it without ringing twice', async () => {
+    const callHomeAssistant = { execute: vi.fn().mockResolvedValue({ result: 'ok' }) };
+    const notifier = new HaApprovalNotifier({
+      callHomeAssistant,
+      notifyService: 'notify.mobile_app_parent_phones',
+    });
+
+    await notifier.notify(record());
+
+    const [payload] = callHomeAssistant.execute.mock.calls[0];
+    expect(payload.data.data.tag).toBe('donow-dnr_test1');
+    expect(payload.data.data.alert_once).toBe(true);
+    // Delivery and actions are unchanged by the tag.
+    expect(payload.data.data).toMatchObject({
+      ttl: 0, priority: 'high', channel: 'DoNow approvals', importance: 'high',
+    });
+    expect(findPushTextDefects(payload.data.title)).toEqual([]);
+    expect(findPushTextDefects(payload.data.message)).toEqual([]);
   });
 
   it('requires callHomeAssistant and notifyService', () => {

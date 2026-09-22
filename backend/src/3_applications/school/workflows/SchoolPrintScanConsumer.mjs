@@ -17,6 +17,8 @@
 // the SAME behaviour as before this file existed: nothing else happens. This
 // consumer only ever ADDS a resolution; it can never subtract one.
 import { scanNoticeDocument } from '#domains/school/documents/scanNotices.mjs';
+import { composeSchoolPush } from '#domains/school/notifications/schoolPush.mjs';
+import { courseDisplay } from '#domains/school/curriculum/display.mjs';
 
 /**
  * @param {object} deps
@@ -57,14 +59,33 @@ import { scanNoticeDocument } from '#domains/school/documents/scanNotices.mjs';
  *   (never awaited) at each of the four terminal scan outcomes — unresolved,
  *   refused, graded, review — so a slow or broken Home Assistant can never
  *   delay or prevent a grade being recorded. The adapter itself never
- *   throws; the `.catch(() => {})` at each call site is belt-and-suspenders
- *   for a fake/hook that rejects outright.
+ *   throws; the `.catch(() => {})` in `fireHook` is belt-and-suspenders for
+ *   a fake/hook that throws or rejects outright.
+ *
+ *   Every fire also carries `notification` — the finished phone copy
+ *   (`composeSchoolPush`), or null when the phone should hear nothing. It is
+ *   composed off the ceremony path, so label lookups never delay `speak`,
+ *   the slip, or grading; with no hook wired, nothing is composed at all.
+ * @param {{getWork: Function}} [deps.curriculum] - the school catalog
+ *   (`getWork('<subject>/<course>')`), for the course label in the push.
+ *   Absent, the course clause is dropped, never replaced by an id.
+ * @param {(learnerId: string) => (string|null|Promise<string|null>)} [deps.studentName] -
+ *   the learner's display name for the push. Absent, the name is omitted.
+ * @param {() => string} [deps.today] - the household study day
+ *   (`YYYY-MM-DD`), so a late sheet's push can say which day it was from.
+ * @param {import('../ports/IAsyncScheduler.mjs').IAsyncScheduler} [deps.scheduler] -
+ *   bounds the push's label lookups (`withDeadline`). HA's room siren rides
+ *   the same fire, so it must never wait on a label: past the deadline the
+ *   hook fires with fallback copy. Absent, the lookups are unbounded.
+ * @param {number} [deps.pushLabelTimeoutMs=2000] - that deadline.
  * @returns {{ dispose: () => void }}
  */
 export function createSchoolPrintScanConsumer({
   realtime, config = {}, resolveCardScan, recordCardScanOutcome = null,
   closeSessionOutcome = null, gradingHook = null, logger = console,
   receipts = null, printDocuments = null,
+  curriculum = null, studentName = null, today = null,
+  scheduler = null, pushLabelTimeoutMs = 2000,
 }) {
   if (!realtime?.onPrintSheet || !realtime?.printScanResolved) {
     throw new Error('createSchoolPrintScanConsumer: realtime print-sheet capability required');
@@ -136,14 +157,122 @@ export function createSchoolPrintScanConsumer({
         });
     };
 
-    /** The sheet's printed title, for the slip and the panel — null when unknown. */
-    const titleFor = async (card) => {
-      try {
-        const published = await printDocuments?.getPublished?.(card.documentId, card.rev);
-        return typeof published?.title === 'string' && published.title.trim() ? published.title.trim() : null;
-      } catch {
-        return null;
+    /**
+     * The sheet's printed title, for the slip, the panel and the push — null
+     * when unknown. Memoised per payload, so the push and the `speak` beside
+     * it share one `getPublished` read.
+     */
+    const titles = new Map();
+    const titleFor = (card) => {
+      const key = `${card.documentId}@${card.rev}`;
+      if (!titles.has(key)) {
+        titles.set(key, (async () => {
+          try {
+            const published = await printDocuments?.getPublished?.(card.documentId, card.rev);
+            return typeof published?.title === 'string' && published.title.trim() ? published.title.trim() : null;
+          } catch {
+            return null;
+          }
+        })());
       }
+      return titles.get(key);
+    };
+
+    /**
+     * The phone copy for one hook fire. Labels are best-effort (a missing
+     * catalog entry drops that clause, never prints an id); a failure here
+     * falls back to the same outcome without labels, and can never block the
+     * fire or grading.
+     */
+    const pushFor = async (event, card = null, curriculumIds = null) => {
+      try {
+        const subjectId = curriculumIds?.subjectId ?? card?.subjectId ?? null;
+        const courseId = curriculumIds?.courseId ?? card?.courseId ?? null;
+        let course = null;
+        if (subjectId && courseId && curriculum?.getWork) {
+          const work = await curriculum.getWork(`${subjectId}/${courseId}`);
+          course = work ? courseDisplay({ work }).shortTitle : null;
+        }
+        const learnerId = event.learnerId ?? card?.learnerId ?? null;
+        const child = learnerId && studentName ? ((await studentName(learnerId)) ?? null) : null;
+        const lesson = card ? await titleFor(card) : null;
+        const notification = composeSchoolPush({
+          testId, child, course, lesson, today: today?.() ?? null, ...event, learnerId,
+        });
+        if (notification) {
+          logger.debug?.('school.push.composed', { testId, kind: event.kind, tag: notification.data?.tag ?? null });
+        } else {
+          logger.info?.('school.push.suppressed', {
+            testId,
+            kind: event.kind,
+            reason: event.kind === 'unmarked' ? 'unmarked-record-with-graded-work' : 'no-copy',
+          });
+        }
+        return notification;
+      } catch (err) {
+        logger.warn?.('school.push.compose-failed', { testId, kind: event.kind, error: err.message });
+        return fallbackPush(event, card);
+      }
+    };
+
+    /**
+     * The copy for a push whose labels could not be looked up: the SAME
+     * outcome, recomposed with no labels, so a pass stays a pass on the
+     * progress lane and a suppressed push stays suppressed (null). Generic
+     * "couldn't be graded" copy is only the last resort, if composing
+     * itself throws. Either way it keeps the learner and session, so its tag
+     * matches the real copy and it replaces an earlier push for the sheet.
+     */
+    const fallbackPush = (event, card) => {
+      const learnerId = event.learnerId ?? card?.learnerId ?? null;
+      try {
+        return composeSchoolPush({ testId, ...event, learnerId });
+      } catch {
+        return composeSchoolPush({ kind: 'unresolved', testId, learnerId, sessionId: event.sessionId ?? null });
+      }
+    };
+
+    /**
+     * `pushFor`, bounded: a lookup that never settles gives way to fallback
+     * copy after `pushLabelTimeoutMs`, so the fire (and HA's siren) always
+     * happens. `withDeadline` clears its own timer when the compose wins.
+     * `pushFor` never rejects, so a rejection here is only ever the deadline.
+     */
+    const boundedPushFor = (event, card, curriculumIds) => {
+      const composing = pushFor(event, card, curriculumIds);
+      if (!scheduler?.withDeadline) return composing;
+      return scheduler.withDeadline(composing, {
+        milliseconds: pushLabelTimeoutMs, description: 'school push labels',
+      }).catch(() => {
+        logger.warn?.('school.push.compose-timeout', { testId, kind: event.kind, timeoutMs: pushLabelTimeoutMs });
+        return fallbackPush(event, card);
+      });
+    };
+
+    /**
+     * Fires the grading hook with `outcome` plus its composed `notification`.
+     * Fire-and-forget and detached from the caller: the push is composed on
+     * its own promise chain, so the `speak` that follows a fire is never
+     * held up by a catalog or name lookup (and a lookup that never answers
+     * is cut off by `boundedPushFor`), and a hook that throws or rejects
+     * (synchronously or not) lands in the trailing `.catch`. No hook wired:
+     * returns at once, with no catalog reads.
+     *
+     * This chain is also the CRITICAL 1b guard (final review): the JSDoc
+     * contract sanctions "any fake with a `fire(outcome)`", and a hook whose
+     * `fire` returns a non-promise, or throws, must never throw into the
+     * incident path before the `speak` beside the call site runs.
+     *
+     * Several fires for one card (two sections, or an unmarked record beside
+     * graded work) can reach HA in either order, since each waits on its own
+     * label lookup.
+     */
+    const fireHook = (outcome, event, card = null, curriculumIds = null) => {
+      if (!gradingHook) return;
+      Promise.resolve()
+        .then(() => boundedPushFor(event, card, curriculumIds))
+        .then((notification) => gradingHook.fire({ ...outcome, notification }))
+        .catch(() => {});
     };
 
     /** Blank/ambiguous rows and the answered count for one resolved sheet. */
@@ -250,13 +379,12 @@ export function createSchoolPrintScanConsumer({
         });
         // Home automation is a bystander: never awaited into the grading path
         // and never able to fail it. The adapter already swallows its own
-        // errors; this catch covers a hook that rejects outright.
-        // CRITICAL 1b (final review): wrapped in `Promise.resolve` — the
-        // JSDoc contract above sanctions "any fake with a `fire(outcome)`",
-        // and a hook that returns a non-promise would otherwise throw
-        // SYNCHRONOUSLY calling `.catch` on it, on the exact incident path,
-        // before the `speak` a few lines below ever runs.
-        Promise.resolve(gradingHook?.fire({ result: 'unresolved', testId, code: outcome.error.code })).catch(() => {});
+        // errors; `fireHook` covers a hook that throws or rejects outright
+        // (CRITICAL 1b — see its doc comment).
+        fireHook(
+          { result: 'unresolved', testId, code: outcome.error.code },
+          { kind: 'unresolved', code: outcome.error.code },
+        );
         // Same outcome, second listener: the School panel ceremony (Slice
         // D) needs this broadcast too. `testIdCandidates` here is the RAW
         // per-column digit-mark arrays `decodeQuizSheet` built (one entry
@@ -321,9 +449,10 @@ export function createSchoolPrintScanConsumer({
         // (fetch a grown-up); only the `code` distinguishes them, which is
         // all a grown-up needs to tell "card id we've never seen" from
         // "record on a known card refused".
-        // See CRITICAL 1b note above: `Promise.resolve(...)` guards a hook
-        // whose `fire` returns a non-promise.
-        Promise.resolve(gradingHook?.fire({ result: 'unresolved', testId, code: 'unknown_card' })).catch(() => {});
+        fireHook(
+          { result: 'unresolved', testId, code: 'unknown_card' },
+          { kind: 'unresolved', code: 'unknown_card' },
+        );
         speak({
           event: 'scan-refused', code: 'unknown_card', recordId: null,
         });
@@ -352,9 +481,10 @@ export function createSchoolPrintScanConsumer({
         // sheet is simply out of date, and scanning their card prints a
         // fresh one. Refusing them to a grown-up here would send a child
         // to fetch help for something self-service already solves.
-        // See CRITICAL 1b note above: `Promise.resolve(...)` guards a hook
-        // whose `fire` returns a non-promise.
-        Promise.resolve(gradingHook?.fire({ result: 'unresolved', testId, code: 'dead_card' })).catch(() => {});
+        fireHook(
+          { result: 'unresolved', testId, code: 'dead_card' },
+          { kind: 'unresolved', code: 'dead_card' },
+        );
         speak({
           event: 'scan-stale-sheet', code: 'dead_card', testId,
         });
@@ -373,17 +503,20 @@ export function createSchoolPrintScanConsumer({
         logger.warn?.('school.print.scan-live-record-unmarked', {
           testId, silentLiveRecords: outcome.silentLiveRecords,
         });
-        // See CRITICAL 1b note above: `Promise.resolve(...)` guards a hook
-        // whose `fire` returns a non-promise — on THIS incident path, the
-        // very one the 2026-08-26 report is about, a thrown `.catch` here
-        // would fire before the `scan-rows-unmarked` `speak` a few lines
-        // below ever runs.
-        Promise.resolve(gradingHook?.fire({
+        // The phone hears this only when nothing else on the card graded
+        // (`otherWorkGraded` → null notification), for the same reason the
+        // panel below stays house-only in that case.
+        fireHook({
           result: 'partial',
           testId,
           code: 'live_record_unmarked',
           silentLiveRecords: outcome.silentLiveRecords,
-        })).catch(() => {});
+        }, {
+          kind: 'unmarked',
+          learnerId: outcome.silentLiveRecords[0]?.learnerId ?? null,
+          rowRanges: outcome.silentLiveRecords.map((record) => record.rowRange),
+          otherWorkGraded: Boolean(outcome.results?.length),
+        });
         // WHO HEARS THIS depends on whether anything else will speak, and
         // the original code got that call backwards by only ever considering
         // one of the two cases.
@@ -479,11 +612,9 @@ export function createSchoolPrintScanConsumer({
           // `recordId` deliberately NOT sent — `toVariables()`'s 11-key
           // contract has no `record_id`, so it would be silently discarded;
           // the id is already on the adjacent log line for anyone who needs it.
-          // See CRITICAL 1b note above: `Promise.resolve(...)` guards a hook
-          // whose `fire` returns a non-promise.
-          Promise.resolve(gradingHook?.fire({
+          fireHook({
             result: 'refused', testId, code: card.error.code, learnerId: card.learnerId ?? null,
-          })).catch(() => {});
+          }, { kind: 'refused', code: card.error.code, learnerId: card.learnerId ?? null }, card);
           // Same outcome, second listener: the School panel ceremony
           // (Slice D) needs this on the wire too.
           speak({
@@ -588,6 +719,10 @@ export function createSchoolPrintScanConsumer({
                 // all.
                 let printed = false;
                 let printReason = 'not_settled';
+                // For the phone copy: a cleared retake and a late sheet read
+                // differently ("Retake: …", "· from Mon Sep 14").
+                let settledRetake = false;
+                let settledStudyDay = null;
                 if (closeSessionOutcome) {
                   try {
                     // The bridge returns the authoritative session id (a
@@ -597,6 +732,8 @@ export function createSchoolPrintScanConsumer({
                     settledResult = settled?.result ?? settledResult;
                     printed = settled?.printed === true;
                     printReason = printed ? null : (settled?.printReason ?? 'unknown');
+                    settledRetake = Boolean(settled?.remediationOf);
+                    settledStudyDay = settled?.studyDay ?? null;
                   } catch (err) {
                     // The settle is now UPSTREAM of the broadcast (it has to
                     // be — the print outcome does not exist before it), so
@@ -646,9 +783,7 @@ export function createSchoolPrintScanConsumer({
                 // Assistant can distinguish a passing non-perfect score
                 // from a score needing remediation. The hook itself is
                 // still fire-and-forget and cannot affect grading.
-                // See CRITICAL 1b note above: `Promise.resolve(...)` guards
-                // a hook whose `fire` returns a non-promise.
-                Promise.resolve(gradingHook?.fire({
+                fireHook({
                   result: settledResult,
                   testId,
                   learnerId: card.learnerId ?? null,
@@ -660,11 +795,17 @@ export function createSchoolPrintScanConsumer({
                   course: sectionOutcome.curriculum?.courseId ?? null,
                   unit: sectionOutcome.curriculum?.unitId ?? null,
                   lesson: sectionOutcome.curriculum?.lessonId ?? null,
-                })).catch(() => {});
+                }, {
+                  kind: 'graded',
+                  result: settledResult,
+                  earned,
+                  total,
+                  sessionId: sectionOutcome.session.sessionId,
+                  retake: settledRetake,
+                  studyDay: settledStudyDay,
+                }, card, sectionOutcome.curriculum);
               } else if (sectionOutcome?.session?.reason === 'awaiting-review') {
-                // See CRITICAL 1b note above: `Promise.resolve(...)` guards
-                // a hook whose `fire` returns a non-promise.
-                Promise.resolve(gradingHook?.fire({
+                fireHook({
                   result: 'review',
                   testId,
                   learnerId: card.learnerId ?? null,
@@ -676,7 +817,12 @@ export function createSchoolPrintScanConsumer({
                   course: sectionOutcome.curriculum?.courseId ?? null,
                   unit: sectionOutcome.curriculum?.unitId ?? null,
                   lesson: sectionOutcome.curriculum?.lessonId ?? null,
-                })).catch(() => {});
+                }, {
+                  kind: 'review',
+                  sessionId: sectionOutcome.session.sessionId,
+                  pendingReview: sectionOutcome.session.pendingReview,
+                  reasons: sectionOutcome.session.reasons,
+                }, card, sectionOutcome.curriculum);
                 // Same outcome, second listener: the School panel ceremony
                 // (Slice D) needs this on the wire too.
                 speak({
@@ -715,14 +861,17 @@ export function createSchoolPrintScanConsumer({
                   testId, recordId: card.recordId, learnerId: card.learnerId ?? null,
                   sessionId: sectionOutcome.session.sessionId, blankRows, ambiguousRows,
                 });
-                // See CRITICAL 1b note above: `Promise.resolve(...)` guards a
-                // hook whose `fire` returns a non-promise.
-                Promise.resolve(gradingHook?.fire({
+                fireHook({
                   result: 'partial',
                   testId,
                   code: 'partial_scan',
                   learnerId: card.learnerId ?? null,
-                })).catch(() => {});
+                }, {
+                  kind: 'partial',
+                  sessionId: sectionOutcome.session.sessionId,
+                  blankRows,
+                  ambiguousRows,
+                }, card, sectionOutcome?.curriculum);
                 speak({
                   event: 'scan-rows-incomplete',
                   testId,

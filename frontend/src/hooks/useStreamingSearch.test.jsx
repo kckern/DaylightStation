@@ -52,6 +52,85 @@ describe('useStreamingSearch', () => {
     expect(result.current.results).toEqual([]);
     expect(result.current.pending).toEqual([]);
     expect(result.current.isSearching).toBe(false);
+    expect(result.current.state).toEqual({
+      query: '',
+      scope: '',
+      sources: {},
+      results: [],
+      phase: 'idle',
+      failedSources: [],
+    });
+  });
+
+  it('exposes one lifecycle through loading, partial, and settled-with-failures', () => {
+    const { result } = renderHook(() => useStreamingSearch('/api/search/stream', 'mediaType=audio'));
+
+    act(() => { result.current.search('holes'); });
+    expect(result.current.state).toMatchObject({
+      query: 'holes', scope: 'mediaType=audio', phase: 'loading', results: [], failedSources: [],
+    });
+
+    const es = MockEventSource.instances[0];
+    act(() => {
+      es.simulateMessage({ event: 'pending', sources: ['plex', 'files'] });
+      es.simulateMessage({ event: 'source_error', source: 'plex', error: 'timeout', pending: ['files'] });
+      es.simulateMessage({ event: 'results', source: 'files', items: [{ id: 'files:holes', title: 'Holes' }], pending: [] });
+    });
+    expect(result.current.state).toMatchObject({
+      query: 'holes',
+      scope: 'mediaType=audio',
+      sources: { plex: 'failed', files: 'complete' },
+      phase: 'partial',
+      failedSources: ['plex'],
+    });
+
+    act(() => { es.simulateMessage({ event: 'complete' }); });
+    expect(result.current.state.phase).toBe('partial');
+    expect(result.current.state.failedSources).toEqual(['plex']);
+  });
+
+  it('retains completed source failures while widening the same query', () => {
+    const { result } = renderHook(() => useStreamingSearch('/api/search/stream', 'mediaType=audio'));
+    act(() => { result.current.search('holes'); });
+    const scoped = MockEventSource.instances[0];
+    act(() => {
+      scoped.simulateMessage({ event: 'pending', sources: ['plex', 'files'] });
+      scoped.simulateMessage({ event: 'source_error', source: 'plex', error: 'timeout', pending: ['files'] });
+      scoped.simulateMessage({ event: 'results', source: 'files', items: [], pending: [] });
+      scoped.simulateMessage({ event: 'complete' });
+    });
+
+    act(() => { result.current.search('holes', '', { preserveFailures: true }); });
+    const widened = MockEventSource.instances[1];
+    act(() => {
+      widened.simulateMessage({ event: 'results', source: 'files', items: [{ id: 'files:holes' }], pending: [] });
+      widened.simulateMessage({ event: 'complete' });
+    });
+
+    expect(result.current.state).toMatchObject({
+      query: 'holes', scope: '', phase: 'partial', failedSources: ['plex'],
+    });
+    expect(result.current.state.sources.plex).toBe('failed');
+  });
+
+  it('never lets a stale query generation change the unified lifecycle', () => {
+    const { result } = renderHook(() => useStreamingSearch('/api/search/stream'));
+    act(() => { result.current.search('first'); });
+    const first = MockEventSource.instances[0];
+    act(() => { result.current.search('second'); });
+    const second = MockEventSource.instances[1];
+
+    act(() => {
+      first.simulateMessage({ event: 'source_error', source: 'plex', error: 'late' });
+      first.simulateMessage({ event: 'results', source: 'plex', items: [{ id: 'plex:stale' }], pending: [] });
+      second.simulateMessage({ event: 'results', source: 'files', items: [{ id: 'files:fresh' }], pending: [] });
+      second.simulateMessage({ event: 'complete' });
+    });
+
+    expect(result.current.state.query).toBe('second');
+    expect(result.current.state.results.map((item) => item.id)).toEqual(['files:fresh']);
+    expect(result.current.state.failedSources).toEqual([]);
+    expect(result.current.state.phase).toBe('complete');
   });
 
   it('sets isSearching true when search starts', () => {
@@ -372,6 +451,11 @@ describe('useStreamingSearch', () => {
     act(() => {
       primary.simulateMessage({ event: 'results', source: 'plex', items: [{ id: 'plex:arrival', title: 'Arrival' }], pending: [] });
       primary.simulateMessage({ event: 'complete' });
+    });
+    expect(result.current.pending).toContain('abs');
+    expect(result.current.state.sources.abs).toBe('pending');
+
+    act(() => {
       retry.simulateMessage({ event: 'results', source: 'abs', items: [{ id: 'abs:arrival', title: 'Arrival audiobook' }], pending: [] });
       retry.simulateMessage({ event: 'complete' });
     });

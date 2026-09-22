@@ -4,6 +4,7 @@ import { asyncHandler } from '#system/http/middleware/index.mjs';
 import { buildErrorBody, ERROR_CODES } from '#shared-contracts/media/errors.mjs';
 import { validateHandoffCommandAck, validateHandoffParams } from '#shared-contracts/media/handoff.mjs';
 import { validateSessionSnapshot } from '#shared-contracts/media/shapes.mjs';
+import { buildCommandEnvelope, validateCommandEnvelope } from '#shared-contracts/media/envelopes.mjs';
 import { TRANSPORT_ACTIONS, QUEUE_OPS, REPEAT_MODES, isTransportAction, isQueueOp, isRepeatMode } from '#shared-contracts/media/commands.mjs';
 
 const nonEmpty = value => typeof value === 'string' && value.length > 0;
@@ -182,12 +183,29 @@ export function createDeviceRouter({ fleetService, presenceService, sessionServi
     return mapCommand(await sessionService.transport(req.params.deviceId, { action, value, commandId }), res);
   }));
 
+  // Cancellation is coordinated before a cold screen owns a session. A claim
+  // is only a delivery gate, never a playback/queue confirmation receipt.
+  router.post('/:deviceId/session/item-action/:operationId/:action', asyncHandler(async (req, res) => {
+    const { deviceId, operationId, action } = req.params;
+    if (!['claim', 'cancel'].includes(action) || !nonEmpty(operationId)) return res.status(400).json({ ok: false, code: 'VALIDATION' });
+    if (!dispatchService?.claimItemAction) return res.status(503).json({ ok: false, code: 'ITEM_ACTION_UNSUPPORTED' });
+    const result = action === 'claim' ? dispatchService.claimItemAction(deviceId, operationId) : dispatchService.cancelItemAction(deviceId, operationId);
+    return res.json(result);
+  }));
+
   router.post('/:deviceId/session/queue/:op', asyncHandler(async (req, res) => {
     if (!requireSessions(sessionService, res)) return;
     const { deviceId, op } = req.params;
     const { contentId, queueItemId, from, to, items, clearRest, commandId } = req.body || {};
     if (!isQueueOp(op)) return res.status(400).json(buildErrorBody({ error: `Unknown queue op "${op}"; must be one of: ${QUEUE_OPS.join(', ')}`, code: 'VALIDATION' }));
     if (!nonEmpty(commandId)) return res.status(400).json(buildErrorBody({ error: 'commandId required (non-empty string)' }));
+    if (op === 'item-action' || op === 'undo') {
+      const { kind, item, collectionItems, operationId, tappedAt } = req.body;
+      const params = { op, operationId, ...(op === 'item-action' ? { kind, item, collectionItems, tappedAt, clearRest, queueItemId } : {}) };
+      const checked = validateCommandEnvelope(buildCommandEnvelope({ targetDevice: deviceId, commandId, command: 'queue', params }));
+      if (!checked.valid) return res.status(400).json(buildErrorBody({ error: checked.errors.join('; '), code: 'VALIDATION' }));
+      return mapCommand(await sessionService.queue(deviceId, commandId, params), res);
+    }
     if (['play-now', 'play-next', 'add-up-next', 'add'].includes(op) && !nonEmpty(contentId)) {
       return res.status(400).json(buildErrorBody({ error: `contentId required (non-empty string) for op "${op}"` }));
     }

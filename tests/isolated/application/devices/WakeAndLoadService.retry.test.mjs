@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { WakeAndLoadService } from '#apps/devices/services/WakeAndLoadService.mjs';
 import { testApplicationRuntime } from '../../../_lib/applicationRuntime.mjs';
+import { findPushTextDefects } from '#domains/notification/push/pushText.mjs';
 
 const RETRY_DELAY_MS = 45_000;
 
@@ -91,6 +92,34 @@ describe('WakeAndLoadService deferred retry on verify failure', () => {
       'mobile_app_kc_phone',
       expect.objectContaining({ title: expect.any(String) })
     );
+  });
+
+  it('the power-failure push names the TV and collapses repeats for the same device', async () => {
+    const named = makeDevice({ name: 'Living Room TV' });
+    const svc = makeSvc({ device: named, readinessPolicy, haGateway });
+
+    await svc.execute('livingroom-tv', { queue: 'plex:1' });
+    await vi.advanceTimersByTimeAsync(RETRY_DELAY_MS);
+
+    const call = haGateway.callService.mock.calls.find(([domain]) => domain === 'notify');
+    const [, service, payload] = call;
+    expect(service).toBe('mobile_app_kc_phone');
+    expect(payload.title).toBe("📺 Living Room TV didn't turn on");
+    expect(payload.message).toBe("It didn't respond after a retry");
+    expect(findPushTextDefects(payload.title)).toEqual([]);
+    expect(findPushTextDefects(payload.message)).toEqual([]);
+    expect(payload.data).toEqual({ tag: 'tv-livingroom-tv', alert_once: true });
+  });
+
+  it('the power-failure push falls back to a title-cased id when the device has no name', async () => {
+    const svc = makeSvc({ device, readinessPolicy, haGateway });
+
+    await svc.execute('office-tv', { queue: 'plex:1' });
+    await vi.advanceTimersByTimeAsync(RETRY_DELAY_MS);
+
+    const [, , payload] = haGateway.callService.mock.calls.find(([domain]) => domain === 'notify');
+    expect(payload.title).toBe("📺 Office Tv didn't turn on");
+    expect(findPushTextDefects(payload.title)).toEqual([]);
   });
 
   it('does not cascade retries — retry failure schedules no further retry', async () => {

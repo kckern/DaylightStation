@@ -2,6 +2,8 @@ import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
+import { FleetContext } from '../fleet/FleetProvider.jsx';
+import { CastTargetProvider } from '../cast/CastTargetProvider.jsx';
 
 const transport = {
   play: vi.fn(), pause: vi.fn(), stop: vi.fn(), seekAbs: vi.fn(), seekRel: vi.fn(), skipNext: vi.fn(), skipPrev: vi.fn(),
@@ -50,8 +52,17 @@ let backDestination = 'Devices';
 vi.mock('./NavProvider.jsx', () => ({ useNav: () => ({ pop: peekPop, backDestination }) }));
 import { PeekPanel } from './PeekPanel.jsx';
 
+const emptyFleetEntries = new Map();
+const peekFleetStore = { subscribeAll: () => () => {}, getAll: () => emptyFleetEntries, getEntry: () => null };
+function PeekTestProviders({ deviceId = 'tv-1' }) {
+  return (
+    <FleetContext.Provider value={{ devices: [{ id: 'tv-1', name: 'Office TV', location: 'Office' }], store: peekFleetStore }}>
+      <CastTargetProvider><MantineProvider><PeekPanel deviceId={deviceId} /></MantineProvider></CastTargetProvider>
+    </FleetContext.Provider>
+  );
+}
 function renderPeekPanel() {
-  return render(<MantineProvider><PeekPanel deviceId="tv-1" /></MantineProvider>);
+  return render(<PeekTestProviders />);
 }
 
 function measureSeekTrack(track, { left = 0, width = 200 } = {}) {
@@ -66,6 +77,7 @@ function fireSeekPointer(track, type, clientX) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  localStorage.clear();
   transport.pause.mockResolvedValue({ ok: true });
   transport.stop.mockResolvedValue({ ok: true });
   transport.seekAbs.mockResolvedValue({ ok: true });
@@ -79,6 +91,15 @@ beforeEach(() => {
 });
 
 describe('PeekPanel shared target controls', () => {
+  it('keeps the persisted local aim while steering the Office screen', () => {
+    localStorage.setItem('media-app.cast-target', JSON.stringify({
+      mode: 'transfer', targetIds: [], activityAt: Date.now(), exemptionStartedAt: null,
+    }));
+    renderPeekPanel();
+    expect(screen.getByTestId('aim-label')).toHaveTextContent('Aim: This device');
+    expect(screen.getByTestId('aim-label')).not.toHaveTextContent('Office TV');
+  });
+
   it('names the actual prior area on its visible Back control', () => {
     backDestination = 'Browse';
     renderPeekPanel();
@@ -97,7 +118,7 @@ describe('PeekPanel shared target controls', () => {
       currentItem: null,
       queue: { ...state.snapshot.queue, currentIndex: 0 },
     };
-    view.rerender(<MantineProvider><PeekPanel deviceId="tv-1" /></MantineProvider>);
+    view.rerender(<PeekTestProviders />);
 
     expect(await screen.findByTestId('peek-queue-kept')).toHaveTextContent('Queue kept: 1 item');
     expect(screen.getByTestId('peek-open-queue')).toBeVisible();
@@ -110,7 +131,7 @@ describe('PeekPanel shared target controls', () => {
     await screen.findByTestId('np-command-feedback');
 
     state.snapshot = { ...state.snapshot, state: 'ready', currentItem: null };
-    view.rerender(<MantineProvider><PeekPanel deviceId="tv-1" /></MantineProvider>);
+    view.rerender(<PeekTestProviders />);
     await waitFor(() => expect(screen.queryByTestId('peek-queue-kept')).toBeNull());
   });
 
@@ -119,14 +140,14 @@ describe('PeekPanel shared target controls', () => {
     fireEvent.click(screen.getByTestId('np-stop'));
     state.snapshot = { ...state.snapshot, state: 'ready', currentItem: null };
     await act(async () => { await Promise.resolve(); });
-    view.rerender(<MantineProvider><PeekPanel deviceId="tv-1" /></MantineProvider>);
+    view.rerender(<PeekTestProviders />);
     await screen.findByTestId('peek-queue-kept');
 
     state.entry = { isStale: true };
-    view.rerender(<MantineProvider><PeekPanel deviceId="tv-1" /></MantineProvider>);
+    view.rerender(<PeekTestProviders />);
     await waitFor(() => expect(screen.queryByTestId('peek-queue-kept')).toBeNull());
 
-    view.rerender(<MantineProvider><PeekPanel deviceId="tv-2" /></MantineProvider>);
+    view.rerender(<PeekTestProviders deviceId="tv-2" />);
     expect(screen.queryByTestId('peek-queue-kept')).toBeNull();
   });
 

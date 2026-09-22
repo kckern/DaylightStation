@@ -24,6 +24,10 @@ describe('SchoolCalc DDD and product boundaries', () => {
   it('keeps the School domain pure and independent of outer layers', () => {
     const violations = importsFrom(productionFiles(SCHOOL_DOMAIN)).filter(({ file, specifier }) => {
       if (specifier.startsWith('#domains/')) return false;
+      // Shared contracts are pure, dependency-free modules both tiers agree on
+      // (every file under shared/contracts imports only its siblings); other
+      // domains already import them. `typeableText` is one (2026-09-14).
+      if (specifier.startsWith('#shared/contracts/')) return false;
       if (specifier.startsWith('.')) return !inside(resolveImport(file, specifier), DOMAIN_ROOT);
       return true;
     });

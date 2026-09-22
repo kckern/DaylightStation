@@ -1,20 +1,21 @@
 // frontend/src/modules/Media/browse/DetailView.jsx
 // One item, all its actions: artwork, description, Play Now / Play Next /
 // Up Next / Add / Cast.
-import React from 'react';
+import React, { useState } from 'react';
 import { Alert, Stack, Title, Text, Button, Group, Image } from '@mantine/core';
 import { IconPlayerPlayFilled, IconPlayerTrackNext, IconRowInsertTop, IconPlaylistAdd, IconAlertCircle } from '@tabler/icons-react';
 import { useContentInfo } from './useContentInfo.js';
-import { useSessionController } from '../controller/useSessionController.js';
 import { useContentDispatch } from '../search/useContentDispatch.js';
-import { resultToQueueInput } from '../search/resultToQueueInput.js';
 import { CastButton } from '../cast/CastButton.jsx';
 import { useNav } from '../shell/NavProvider.jsx';
 import Skeleton from '@/lib/ui/Skeleton.jsx';
+import { isContainer } from '../../Content/combobox/comboboxMachine.js';
+import { ItemDestinationPicker } from '../actions/ItemDestinationPicker.jsx';
+import { DestinationLine } from '../cast/DestinationLine.jsx';
 
 export function DetailView({ contentId }) {
+  const [oneShot, setOneShot] = useState(null);
   const { info, loading, error } = useContentInfo(contentId);
-  const { queue } = useSessionController('local');
   const { dispatchLeafVerb } = useContentDispatch();
   const { pop, backDestination } = useNav();
   const back = (
@@ -48,7 +49,6 @@ export function DetailView({ contentId }) {
   if (!info) return <Stack data-testid="detail-empty" gap="md">{back}</Stack>;
 
   const detailItem = { id: contentId, ...info };
-  const input = resultToQueueInput(detailItem) ?? { contentId };
 
   return (
     <Stack data-testid="detail-view" className="detail-view" gap="md">
@@ -58,6 +58,7 @@ export function DetailView({ contentId }) {
       )}
       <Title order={1}>{info.title ?? contentId}</Title>
       {info.description && <Text c="dimmed">{info.description}</Text>}
+      <DestinationLine surface="detail" />
       <Group className="detail-actions" gap="sm">
         <Button
           data-testid="detail-play-now"
@@ -66,20 +67,23 @@ export function DetailView({ contentId }) {
         >
           Play Now
         </Button>
+        {isContainer(detailItem) && <Button variant="default" onClick={() => dispatchLeafVerb('shuffle', contentId, detailItem)}>Shuffle</Button>}
         <Button data-testid="detail-play-next" variant="default" leftSection={<IconPlayerTrackNext size={16} />}
-                onClick={() => queue.playNext(input)}>
+                onClick={() => dispatchLeafVerb('playNext', contentId, detailItem)}>
           Play Next
         </Button>
         <Button data-testid="detail-up-next" variant="default" leftSection={<IconRowInsertTop size={16} />}
-                onClick={() => queue.addUpNext(input)}>
-          Up Next
+                onClick={() => dispatchLeafVerb('playFirst', contentId, detailItem)}>
+          Play First
         </Button>
         <Button data-testid="detail-add" variant="default" leftSection={<IconPlaylistAdd size={16} />}
-                onClick={() => queue.add(input)}>
+                onClick={() => dispatchLeafVerb('add', contentId, detailItem)}>
           Add to Queue
         </Button>
-        <CastButton contentId={contentId} title={info.title ?? null} />
+        <CastButton contentId={contentId} title={info.title ?? null} item={detailItem} />
+        <Button variant="default" onClick={() => setOneShot({ kind: 'addOn', item: detailItem })}>Add on…</Button>
       </Group>
+      <ItemDestinationPicker action={oneShot} onClose={() => setOneShot(null)} />
     </Stack>
   );
 }

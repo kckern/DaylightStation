@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import ExerciseRun from './ExerciseRun.jsx';
+import ExerciseRun, { CLICK_PREROLL_MS } from './ExerciseRun.jsx';
 import { BUILT_IN_FLOOR } from '../Games/gateRepertoire.js';
 import { requirementForLevel } from '../Games/gateAsk.js';
 import { keysInstance } from '../Games/gateMaterial.js';
@@ -88,8 +88,9 @@ vi.mock('../../../components/PianoKeyboard.jsx', () => ({
   ),
 }));
 vi.mock('./ExerciseNotation.jsx', () => ({
-  default: ({ eventIndex, wrong }) => (
-    <div data-testid="notation" data-wrong={String(wrong)}>{eventIndex}</div>
+  default: ({ eventIndex, wrong, verdicts, windowOpen }) => (
+    <div data-testid="notation" data-wrong={String(wrong)} data-judged={String(verdicts instanceof Map)}
+      data-window-open={String(windowOpen)}>{eventIndex}</div>
   ),
 }));
 // The other two stages, mocked at the same boundary and for the same reason:
@@ -633,11 +634,14 @@ describe('ExerciseRun shared assessment wiring', () => {
 
     press(view, props, 63); // any key at all — not a note this ask expects
 
-    expect(h.start).toHaveBeenCalledWith({ leadInMs: 4 * 60000 / 60, clock: 'date-now' });
+    expect(h.start).toHaveBeenCalledWith({ time: expect.any(Number), leadInMs: 4 * 60000 / 60, clock: 'date-now' });
     // The arming key is a gesture, not a performance: it is never graded.
     expect(h.observe).not.toHaveBeenCalled();
-    // The count-in is visible from its first beat…
-    expect(screen.getByLabelText('Count in, beat 1')).toBeInTheDocument();
+    // No number before the first click has sounded (the pre-roll)…
+    expect(screen.queryByLabelText(/Count in, beat/)).not.toBeInTheDocument();
+    // …then the count-in is visible from its first beat, once the pre-roll
+    // (CLICK_PREROLL_MS) has passed on the run's own clock…
+    expect(await screen.findByLabelText('Count in, beat 1')).toBeInTheDocument();
     // …and audible: the metronome covers the lead-in, so the last count-in
     // click and the first played beat are one grid.
     expect(h.metronome.mock.calls.at(-1)[0]).toMatchObject({ enabled: true, bpm: 60 });
@@ -661,7 +665,7 @@ describe('ExerciseRun shared assessment wiring', () => {
 
     press(view, props, 72);
 
-    expect(h.start).toHaveBeenCalledWith({ leadInMs: 4 * 60000 / 90, clock: 'date-now' });
+    expect(h.start).toHaveBeenCalledWith({ time: expect.any(Number), leadInMs: 4 * 60000 / 90, clock: 'date-now' });
     // And the clicks are AUDIBLE at that same tempo. `clickBpm` is NaN here —
     // a cued rung carries no `gates.pace` and this instance has no tempo — and
     // the hook creates no scheduler at all for a non-positive bpm, so a child
@@ -700,7 +704,7 @@ describe('ExerciseRun shared assessment wiring', () => {
 
     // The count-in is still exactly ONE MEASURE of the music. Only the number
     // of clicks inside it changed, never its length.
-    expect(h.start).toHaveBeenCalledWith({ leadInMs: 4 * 60000 / 60, clock: 'date-now' });
+    expect(h.start).toHaveBeenCalledWith({ time: expect.any(Number), leadInMs: 4 * 60000 / 60, clock: 'date-now' });
     // 60bpm in quarters IS 120 in eighths, and 120 is what the child hears.
     expect(h.metronome.mock.calls.at(-1)[0]).toMatchObject({ enabled: true, bpm: 120 });
   });
@@ -1749,6 +1753,9 @@ describe('timed exercise clock and input boundary', () => {
     const view = render(<ExerciseRun {...props} />);
     await screen.findByText(/Press any key to start/);
     pressKey(view, props, 55);
+    // The grading clock starts a pre-roll after the arming key (room for the
+    // first anchored click); the timings below are measured from that start.
+    act(() => vi.advanceTimersByTime(CLICK_PREROLL_MS));
     return {view,props};
   };
   it('ignores countdown input, hides feedback, and requires held notes to be repressed', async () => {
@@ -1807,6 +1814,26 @@ describe('timed exercise clock and input boundary', () => {
     act(() => vi.advanceTimersByTime(1000));
     expect(props.onPassed).toHaveBeenCalledTimes(1);
     expect(h.metronome.mock.calls.at(-1)[0].enabled).toBe(false);
+  });
+
+  it('builds the timed attempt on the fraction window policy and hands the record to the staff', async () => {
+    const {view,props} = await mountTimed();
+    expect(h.createAttempt.mock.calls.at(-1)[0].policy).toMatchObject({ windowFraction: 0.4, windowMinMs: 80, windowMaxMs: 400 });
+    act(() => vi.advanceTimersByTime(4050));
+    // 60 bpm quarters: a 1000 ms gap, so a 400 ms window. 50 ms in, it is open.
+    expect(screen.getByTestId('notation')).toHaveAttribute('data-judged', 'true');
+    expect(screen.getByTestId('notation')).toHaveAttribute('data-window-open', 'true');
+    act(() => vi.advanceTimersByTime(500));
+    expect(screen.getByTestId('notation')).toHaveAttribute('data-window-open', 'false');
+    pressKey(view, props, 62);
+  });
+
+  it('a free run hands the staff no verdicts: it keeps judging held keys live', async () => {
+    const props = { instance: subject(), score: null, intent: 'practice', practiceMode: 'free', tier: 3 };
+    render(<ExerciseRun {...props} />);
+    await screen.findByText('Play the first note to begin.');
+    expect(screen.getByTestId('notation')).toHaveAttribute('data-judged', 'false');
+    expect(screen.getByTestId('notation')).toHaveAttribute('data-window-open', 'undefined');
   });
 
   it('preserves completed assessment evidence when leaving before the musical duration ends', async () => {

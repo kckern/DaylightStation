@@ -834,6 +834,9 @@ public class BridgeCore {
             int end = offset + count;
             // Tap first, before any parsing decision can hide a byte.
             tapMidiIn(data, offset, count);
+            // Epoch ms of this MIDI event, from the receiver's nanoTime-based timestamp.
+            // Sampled once per chunk: every message in one BLE packet shares `timestamp`.
+            long t = ControlServer.midiEventEpochMs(timestamp, System.currentTimeMillis(), System.nanoTime());
             while (i < end) {
                 int status = data[i] & 0xFF;
                 // `d` = index of the FIRST DATA byte of this message. With an explicit
@@ -865,10 +868,10 @@ public class BridgeCore {
                     // swallow it — it must never light a key on screen or wake the display.
                     if (loopback != null && loopback.onInboundNote(status, note, vel)) { i = d + 2; continue; }
                     if (vel == 0) {
-                        handleNoteOff(note);
+                        handleNoteOff(note, t);
                     } else {
                         if (engine != null) engine.noteOn(note, vel);
-                        if (controlServer != null) controlServer.fanOutNoteOn(note, vel);
+                        if (controlServer != null) controlServer.fanOutNoteOn(note, vel, t);
                         // Wake the tablet's FKB backlight if it's dark (debounced).
                         if (screenWaker != null) screenWaker.poke();
                         // Keep the WebView frame clock un-throttled while playing.
@@ -878,7 +881,7 @@ public class BridgeCore {
                 } else if (type == 0x80 && d + 1 < end) { // note off
                     int note = data[d] & 0x7F;
                     if (loopback != null && note == Loopback.PROBE_NOTE) { i = d + 2; continue; }
-                    handleNoteOff(note);
+                    handleNoteOff(note, t);
                     i = d + 2;
                 } else if (type == 0xB0 && d + 1 < end) { // control change
                     int cc = data[d] & 0x7F;
@@ -892,9 +895,9 @@ public class BridgeCore {
             }
         }
 
-        private void handleNoteOff(int note) {
+        private void handleNoteOff(int note, long t) {
             if (engine != null) engine.noteOff(note);
-            if (controlServer != null) controlServer.fanOutNoteOff(note);
+            if (controlServer != null) controlServer.fanOutNoteOff(note, t);
         }
     }
 }

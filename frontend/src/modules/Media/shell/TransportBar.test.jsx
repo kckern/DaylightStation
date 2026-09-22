@@ -170,12 +170,15 @@ describe('TransportBar', () => {
     expect(config.setPlaybackRate).toHaveBeenCalledWith(1.25);
   });
 
-  it('keeps speed visible but disabled with a plain reason when target has no rate method', () => {
-    config.setPlaybackRate = undefined;
+  it('keeps speed visible but disabled with the controller-provided unsupported reason', () => {
+    state.capabilities = {
+      ...state.capabilities,
+      speed: { available: false, reason: 'Playback speed is not supported by Office TV' },
+    };
     render(<TransportBar target={{ deviceId: 'tv-1' }} />);
 
     expect(screen.getByTestId('np-rate')).toBeDisabled();
-    expect(screen.getByText('Playback speed is not available for this screen')).toBeInTheDocument();
+    expect(screen.getByText('Playback speed is not supported by Office TV')).toBeInTheDocument();
   });
 
   it('reports ambiguous remote command rejection without claiming it was not sent', async () => {

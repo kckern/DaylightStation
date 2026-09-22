@@ -584,6 +584,10 @@ export class CloseSessionOutcome {
       outcomeId: outcome.outcomeId,
       result: outcome.result,
       percent: state.gradedPercent,
+      // For the phone copy: a retake reads "Retake: 3 of 3", and work from a
+      // past study day carries its date. Both are facts of the session.
+      remediationOf: state.remediationOf ?? null,
+      studyDay: state.studyDay ?? null,
       reward,
       unlocked,
       nextSubjectToken,

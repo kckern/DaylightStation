@@ -6,7 +6,7 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 
 vi.mock('./DispatchTargetPicker.jsx', () => ({
-  DispatchTargetPicker: () => <div data-testid="picker-stub">Picker</div>,
+  DispatchTargetPicker: ({ source }) => <div data-testid="picker-stub" data-source={JSON.stringify(source)}>Picker</div>,
 }));
 
 import { CastButton } from './CastButton.jsx';
@@ -34,6 +34,12 @@ afterEach(() => {
 });
 
 describe('CastButton viewport-bounded picker', () => {
+  it('carries the same leaf Play action to the one-shot destination', () => {
+    openCastPopover({ top: 570, bottom: 600, right: 1200 });
+    expect(JSON.parse(screen.getByTestId('picker-stub').dataset.source)).toMatchObject({
+      itemAction: { kind: 'playNow', item: { contentId: 'plex:arrival' }, clearRest: false },
+    });
+  });
   it('caps a below-trigger picker to the remaining viewport height', () => {
     setViewport({ height: 900 });
     const popover = openCastPopover({ top: 570, bottom: 600, right: 1200 });

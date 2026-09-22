@@ -179,6 +179,12 @@ export class SessionControlService extends ISessionControl {
     return this.sendCommand(this.#transport.buildCommand({ targetDevice: deviceId, command: 'queue', commandId, params }));
   }
 
+  handoff(deviceId, { commandId, params }) {
+    return this.sendCommand(this.#transport.buildCommand({
+      targetDevice: deviceId, command: 'handoff', commandId, params,
+    }));
+  }
+
   /**
    * Session settings — volume, shuffle, repeat, shader.
    *

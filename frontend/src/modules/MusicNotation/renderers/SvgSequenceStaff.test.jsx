@@ -831,3 +831,87 @@ describe('the clef is full-strength ink', () => {
     expect(container.querySelector('.action-staff__clef').getAttribute('fill')).toBe('rgba(0,0,0,1)');
   });
 });
+
+// ── Recorded verdicts (timed runs) ─────────────────────────────────────────
+// A timed run's staff paints what the judge RECORDED. The field bug: the staff
+// greened any held key matching the clock cursor's note, and the cursor sits on
+// a note until the next onset, so a child ~450 ms late saw green and scored 0.
+describe('SvgSequenceStaff — painting recorded verdicts', () => {
+  const verdictMap = (entries) => new Map(entries.map(([index, byMidi]) => [index, new Map(byMidi)]));
+  const stateOf = (container, midi) => {
+    const head = container.querySelector(`.action-staff__note[data-midi="${midi}"]`);
+    return [...head.classList].find((name) => name.startsWith('sequence-note-'));
+  };
+
+  it('paints a late note amber with a ▸ tick, never green — even while its key is held at the cursor', () => {
+    const verdicts = verdictMap([[0, [[60, { state: 'late', driftMs: 450 }]]]]);
+    const held = new Map([[60, { velocity: 80, timestamp: Date.now() + 10 }]]);
+    const { container } = render(
+      <SvgSequenceStaff notes={notes(60, 62, 64)} cursorIndex={0} activeNotes={held} verdicts={verdicts} />
+    );
+    expect(stateOf(container, 60)).toBe('sequence-note-late');
+    expect(container.querySelector('.sequence-note-hit')).toBeNull();
+    const tick = container.querySelector('.sequence-staff__drift--late');
+    expect(tick).not.toBeNull();
+    expect(tick.textContent).toBe('▸');
+  });
+
+  it('paints an early note amber with a ◂ tick', () => {
+    const verdicts = verdictMap([[1, [[62, { state: 'early', driftMs: -300 }]]]]);
+    const { container } = render(<SvgSequenceStaff notes={notes(60, 62, 64)} cursorIndex={2} verdicts={verdicts} />);
+    expect(stateOf(container, 62)).toBe('sequence-note-early');
+    expect(container.querySelector('.sequence-staff__drift--early').textContent).toBe('◂');
+  });
+
+  it('paints a hit green, a lapsed or missed note grey, and an undecided note black', () => {
+    const verdicts = verdictMap([
+      [0, [[60, { state: 'hit', driftMs: 20 }]]],
+      [1, [[62, { state: 'lapsed' }]]],
+      [2, [[64, { state: 'miss' }]]],
+    ]);
+    const { container } = render(<SvgSequenceStaff notes={notes(60, 62, 64, 65)} cursorIndex={2} verdicts={verdicts} />);
+    expect(stateOf(container, 60)).toBe('sequence-note-hit');
+    expect(stateOf(container, 62)).toBe('sequence-note-unplayed');
+    expect(stateOf(container, 64)).toBe('sequence-note-unplayed');
+    expect(stateOf(container, 65)).toBe('sequence-note-todo');
+    expect(container.querySelector('.sequence-staff__drift')).toBeNull();
+  });
+
+  it('draws a recorded wrong pitch as a red ghost beside the entry it was charged to', () => {
+    const verdicts = verdictMap([[1, [[65, { state: 'wrong', midi: 65, driftMs: 30 }]]]]);
+    const { container } = render(<SvgSequenceStaff notes={notes(60, 62, 64)} cursorIndex={2} verdicts={verdicts} />);
+    const ghost = container.querySelector('.sequence-staff__ghost--wrong');
+    expect(ghost).not.toBeNull();
+    expect(ghost.getAttribute('data-entry-index')).toBe('1');
+    expect(ghost.querySelector('.sequence-note-wrong-verdict').getAttribute('data-midi')).toBe('65');
+    // The expected note at that entry carries no verdict of its own yet.
+    expect(stateOf(container, 62)).toBe('sequence-note-todo');
+  });
+
+  it('ignores held keys entirely: no live ghost, no red, no green', () => {
+    const held = new Map([[71, { velocity: 80, timestamp: Date.now() + 10 }], [60, { velocity: 80, timestamp: Date.now() + 10 }]]);
+    const { container } = render(
+      <SvgSequenceStaff notes={notes(60, 62)} cursorIndex={0} activeNotes={held} verdicts={new Map()} />
+    );
+    expect(container.querySelector('.sequence-staff__ghost')).toBeNull();
+    expect(container.querySelector('.sequence-note-hit, .sequence-note-miss')).toBeNull();
+    expect(stateOf(container, 60)).toBe('sequence-note-current');
+  });
+
+  it('keys verdicts by index into `notes`, so an empty entry does not shift them', () => {
+    const verdicts = verdictMap([[2, [[64, { state: 'hit' }]]]]);
+    const { container } = render(
+      <SvgSequenceStaff notes={[{ midi: 60 }, { midi: undefined }, { midi: 64 }]} cursorIndex={0} verdicts={verdicts} />
+    );
+    expect(stateOf(container, 64)).toBe('sequence-note-hit');
+  });
+
+  it('dims the cursor lane between hit windows and lights it inside one', () => {
+    const closed = render(<SvgSequenceStaff notes={notes(60, 62)} cursorIndex={0} verdicts={new Map()} windowOpen={false} />);
+    expect(closed.container.querySelector('.sequence-staff__cursor').classList.contains('is-window-closed')).toBe(true);
+    const open = render(<SvgSequenceStaff notes={notes(60, 62)} cursorIndex={0} verdicts={new Map()} windowOpen />);
+    expect(open.container.querySelector('.sequence-staff__cursor').classList.contains('is-window-open')).toBe(true);
+    const plain = render(<SvgSequenceStaff notes={notes(60, 62)} cursorIndex={0} />);
+    expect(plain.container.querySelector('.sequence-staff__cursor').getAttribute('class')).toBe('sequence-staff__cursor');
+  });
+});

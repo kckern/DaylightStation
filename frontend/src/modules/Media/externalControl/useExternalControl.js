@@ -27,7 +27,7 @@ export function useExternalControl(controller) {
       if (!commandId) return;
       const ack = (extra) => publish(buildClientAck(controlClientId, msg, extra));
       try {
-        const result = applyCommandEnvelope(controller, msg);
+        const complete = (result) => {
         if (result.ok) {
           mediaLog.externalControlReceived({ commandId, command: msg.command });
           ack({ ok: true });
@@ -35,6 +35,10 @@ export function useExternalControl(controller) {
           mediaLog.externalControlRejected({ commandId, reason: result.reason });
           ack({ ok: false, error: result.reason, code: result.code, handoff: result.handoff });
         }
+        };
+        const result = applyCommandEnvelope(controller, msg);
+        if (result?.then) result.then(complete).catch(err => ack({ ok: false, error: err.message }));
+        else complete(result);
       } catch (err) {
         mediaLog.externalControlRejected({ commandId, reason: err?.message });
         ack({ ok: false, error: err?.message });

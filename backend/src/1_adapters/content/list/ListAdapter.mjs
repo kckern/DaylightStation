@@ -912,6 +912,7 @@ export class ListAdapter {
         source,
         localId,
         title: item.title || item.label || localId,
+        label: item.label,
         type: isWatchlist ? (actionType === 'queue' ? 'queue' : 'list') : undefined,
         thumbnail,
         metadata,

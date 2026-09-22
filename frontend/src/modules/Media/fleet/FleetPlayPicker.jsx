@@ -12,13 +12,14 @@ import { useDevice } from './useDevice.js';
 import { deviceName } from './deviceDisplay.js';
 import { useLiveSearch } from '../search/useLiveSearch.js';
 import { displayTitle, resultSubtitle } from '../search/resultPresentation.js';
-import { deriveSearchState, SEARCH_STATE } from '../search/searchStates.js';
 import { SearchEmptyState } from '../search/SearchEmptyState.jsx';
 import { SearchErrorState } from '../search/SearchErrorState.jsx';
+import { StreamStatusLine } from '../../Content/combobox/StreamStatusLine.jsx';
 import { describeBusy } from '../cast/castCopy.js';
 import { useDispatch } from '../cast/useDispatch.js';
 import { useDismissable } from '../../../hooks/useDismissable.js';
 import './Fleet.scss';
+import { isContainer } from '../../Content/combobox/comboboxMachine.js';
 
 // Thumbnail for a result row: explicit thumbnail wins, else the display
 // endpoint derived from the id (the id only ever appears in the img src
@@ -40,7 +41,8 @@ function sentenceCase(phrase) {
 export function FleetPlayPicker({ deviceId, onClose }) {
   const { device, entry } = useDevice(deviceId);
   const { dispatchToTarget } = useDispatch();
-  const { results, pending, isSearching, error, sourceErrors, setQuery, retry } = useLiveSearch();
+  const liveSearch = useLiveSearch();
+  const { results, error, sourceErrors, setQuery, retry } = liveSearch;
   const [text, setText] = useState('');
   const panelRef = useRef(null);
 
@@ -51,7 +53,23 @@ export function FleetPlayPicker({ deviceId, onClose }) {
 
   const name = deviceName(device, deviceId);
   const busy = describeBusy(entry);
-  const state = deriveSearchState({ query: text, isSearching, results, error });
+  const state = liveSearch.state ?? {
+    query: text, scope: '',
+    sources: Object.fromEntries([
+      ...(liveSearch.pending ?? []).map((source) => [source, 'pending']),
+      ...(sourceErrors ?? []).map(({ source }) => [source, 'failed']),
+    ]),
+    results,
+    phase: error ? 'failed' : liveSearch.isSearching ? (results.length ? 'partial' : 'loading')
+      : text.trim().length < 2 ? 'idle' : 'complete',
+    failedSources: (sourceErrors ?? []).map(({ source }) => source),
+  };
+  const hasResults = state.results.length > 0;
+  const idle = state.phase === 'idle' && !liveSearch.isSearching;
+  const searching = !hasResults && (state.phase === 'loading' || liveSearch.isSearching);
+  const empty = state.phase === 'complete' && !hasResults;
+  const failed = state.phase === 'failed';
+  const showStreamStatus = hasResults || state.phase === 'partial';
 
   const onInput = useCallback((e) => {
     setText(e.target.value);
@@ -62,7 +80,8 @@ export function FleetPlayPicker({ deviceId, onClose }) {
     const id = row.id ?? row.itemId;
     if (!id) return;
     // fork: never touches the local session — see header comment.
-    dispatchToTarget({ targetIds: [deviceId], play: id, title: displayTitle(row), mode: 'fork' });
+    dispatchToTarget({ targetIds: [deviceId], play: id, title: displayTitle(row), mode: 'fork',
+      itemAction: { kind: 'playNow', item: { ...row, contentId: id }, clearRest: isContainer(row) } });
     onClose?.();
   }, [dispatchToTarget, deviceId, onClose]);
 
@@ -87,22 +106,27 @@ export function FleetPlayPicker({ deviceId, onClose }) {
           {sentenceCase(busy.phrase)} — this will replace it
         </div>
       )}
-      {state.kind === SEARCH_STATE.IDLE && (
+      {idle && (
         <div className="fleet-play-hint">Search your libraries for something to play here.</div>
       )}
-      {state.kind === SEARCH_STATE.SEARCHING && (
+      {searching && (
         <div data-testid="fleet-play-searching" className="search-still-searching" aria-live="polite">
           <span className="search-still-searching-spinner" aria-hidden="true" />
           Searching…
         </div>
       )}
-      {state.kind === SEARCH_STATE.EMPTY && (
+      {empty && (
         <SearchEmptyState query={state.query} sourceErrors={sourceErrors} onRetry={retry} />
       )}
-      {state.kind === SEARCH_STATE.ERROR && (
-        <SearchErrorState error={state.error} onRetry={retry} />
+      {failed && (
+        <SearchErrorState error={error} onRetry={retry} />
       )}
-      {state.kind === SEARCH_STATE.RESULTS && (
+      {showStreamStatus && (
+        <div data-testid={Object.values(state.sources).includes('pending') ? 'fleet-play-pending' : undefined}>
+          <StreamStatusLine state={state} onRetry={retry} />
+        </div>
+      )}
+      {hasResults && (
         <ul className="fleet-play-results">
           {results.map((row) => {
             const id = row.id ?? row.itemId;
@@ -134,12 +158,6 @@ export function FleetPlayPicker({ deviceId, onClose }) {
               </li>
             );
           })}
-          {pending.length > 0 && (
-            <li data-testid="fleet-play-pending" className="search-still-searching" aria-live="polite">
-              <span className="search-still-searching-spinner" aria-hidden="true" />
-              Still searching…
-            </li>
-          )}
         </ul>
       )}
     </div>

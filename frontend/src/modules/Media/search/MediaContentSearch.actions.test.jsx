@@ -105,6 +105,20 @@ describe('MediaContentSearch action-menu retention', () => {
 
   afterEach(() => vi.unstubAllGlobals());
 
+  it('keeps the exact query open after the ordinary playable-row action completes', async () => {
+    const { controller } = renderSearch();
+    const input = screen.getByRole('textbox', { name: 'Search media…' });
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: 'Disclosure Day' } });
+
+    pointerActivate(await screen.findByTestId('combobox-option-plex:697368'));
+
+    expect(controller.getSnapshot().currentItem.contentId).toBe('plex:existing');
+    expect(dispatchContent).toHaveBeenCalledWith('plex:697368', expect.objectContaining({ title: 'Disclosure Day' }));
+    expect(input).toHaveValue('Disclosure Day');
+    expect(screen.getByRole('listbox')).toBeVisible();
+  });
+
   it('keeps the query after pointer More → Add finishes portal dismissal', async () => {
     const { controller, play } = renderSearch();
     const input = screen.getByRole('textbox', { name: 'Search media…' });
@@ -147,7 +161,7 @@ describe('MediaContentSearch action-menu retention', () => {
     expect(play).not.toHaveBeenCalled();
 
     fireEvent.keyDown(document.body, { key: 'Escape', code: 'Escape' });
-    expect(onBaseDismiss).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(onBaseDismiss).toHaveBeenCalledTimes(1));
   });
 
   it('[RELY.10a] retains the desktop draft across Escape but not base dismissal', async () => {

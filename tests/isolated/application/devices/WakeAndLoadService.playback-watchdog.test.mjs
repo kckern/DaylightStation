@@ -77,6 +77,25 @@ describe('WakeAndLoadService — playback watchdog on container dispatches', () 
     expect(prewarmService.prewarm).toHaveBeenCalledWith('plex:59493', expect.any(Object));
   });
 
+  it('confirms a shuffled child only with the matching operation and real playing state', async () => {
+    const itemAction = { kind: 'shuffle', operationId: 'shuffle-op', tappedAt: Date.now(), clearRest: true, item: { contentId: 'plex:59493', type: 'show' } };
+    await svc.execute('tv', { play: 'plex:59493', itemAction: JSON.stringify(itemAction) });
+    const snapshot = {
+      sessionId: 'shuffled', state: 'paused', currentItem: { contentId: 'plex:different-child', queueItemId: 'visit' },
+      queue: { items: [{ contentId: 'plex:different-child', queueItemId: 'visit', itemActionId: 'shuffle-op' }], currentIndex: 0 },
+      meta: { ownerId: 'tv', playbackOwner: { ownerInstanceId: 'player', playbackRevision: 2, queueRevision: 2 } },
+    };
+    eventBus.emit('device-state:tv', { deviceId: 'tv', snapshot });
+    expect(broadcast.mock.calls.some(([event]) => event.step === 'playback' && event.status === 'confirmed')).toBe(false);
+    snapshot.state = 'playing';
+    snapshot.queue.items[0].itemActionId = 'wrong-op';
+    eventBus.emit('device-state:tv', { deviceId: 'tv', snapshot });
+    expect(broadcast.mock.calls.some(([event]) => event.step === 'playback' && event.status === 'confirmed')).toBe(false);
+    snapshot.queue.items[0].itemActionId = 'shuffle-op';
+    eventBus.emit('device-state:tv', { deviceId: 'tv', snapshot });
+    expect(broadcast).toHaveBeenCalledWith(expect.objectContaining({ step: 'playback', status: 'confirmed', contentId: 'plex:different-child' }));
+  });
+
   it('confirms the resolved child only from the target device state', async () => {
     await svc.execute('tv', { play: 'plex:59493' });
 

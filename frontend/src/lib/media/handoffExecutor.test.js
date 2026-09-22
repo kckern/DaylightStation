@@ -70,7 +70,33 @@ function startedObservation({ token = {}, node = {}, nodeGeneration = 2, current
   return { node, nodeGeneration, resolvedContentId: 'plex:a', resolvedGeneration, identity, currentTime, readyState: 2, paused: false, seeking: false, ended: false, error: null, playingObserved, advancedObserved, targetSeekedObserved, operationId, rendererToken: token };
 }
 
+function pausedObservation(options = {}) {
+  return { ...startedObservation(options), paused: true, playingObserved: false, advancedObserved: false };
+}
+
 describe('handoffExecutor', () => {
+  it('adopts a paused source and returns started only after exact operation-bound paused native proof', async () => {
+    const harness = ownerHarness();
+    const clock = timers();
+    const token = Object.freeze({ tokenId: 'paused-token' });
+    const node = {};
+    harness.owner.adoptAndBeginHandoffStart.mockImplementation((request) => {
+      harness.setCapture(capture({ ...destinationIdentity, playbackRevision: 2, contentId: 'plex:a', queueItemId: 'entry-a' }, { state: 'paused', position: 4 }));
+      harness.setBoundaryBinding(acceptedBinding({ operationId: request.operationId, node, token }));
+      return { ok: true, operationId: request.operationId };
+    });
+    const executor = createHandoffExecutor({ owner: harness.owner, destination: { kind: 'device', id: 'tv-a' }, setTimer: clock.setTimer, clearTimer: clock.clearTimer });
+    const params = { ...startParams(), snapshot: snapshot(sourceIdentity, { state: 'paused', position: 4 }) };
+
+    const pending = executor.execute({ commandId: 'paused-start', params });
+    harness.emit(pausedObservation({ node, token, nodeGeneration: 3, resolvedGeneration: 3, targetSeekedObserved: true }));
+
+    await expect(pending).resolves.toMatchObject({ ok: true, handoff: { phase: 'started', receipt: { actualPosition: 4 } } });
+    expect(harness.owner.adoptAndBeginHandoffStart).toHaveBeenCalledWith(expect.objectContaining({
+      snapshot: expect.objectContaining({ state: 'paused', position: 4 }),
+      targetSeconds: 4,
+    }));
+  });
   it('captures a detached, schema-valid owner state without playback mutation', async () => {
     const harness = ownerHarness({ initial: capture(sourceIdentity) });
     const executor = createHandoffExecutor({ owner: harness.owner, destination: { kind: 'device', id: 'tv-a' } });

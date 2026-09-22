@@ -109,6 +109,13 @@ export const PIANO_CONFIG_DEFAULTS = {
   //                        not named keep their own range — Checkers and
   //                        Connect Four keys take a finger, and narrower keys
   //                        would fall under the tap floor.
+  // Audio timing. clickLeadMs: how many ms EARLY the metronome click is played
+  // so the child hears it on the grading clock's beat — the output latency the
+  // browser does not report (Bluetooth A2DP to the piano) plus MIDI input lag.
+  // Measured by a grown-up with the click calibration in Piano maintenance and
+  // written per piano (`pianos.{id}.timing.clickLeadMs`). Null = not measured:
+  // resolveClickLead (modes/SheetMusic/clickLead.js) falls back to the browser.
+  timing: { clickLeadMs: null },
   boardGameFullscreen: {
     enterOnOpen: true,
     keyboardHeightScale: 0.6,
@@ -228,6 +235,7 @@ export function resolvePianoConfig(raw, pianoId) {
       ...(shared.gameAddressing || {}),
       ...(p.gameAddressing || {}),
     },
+    timing: { ...PIANO_CONFIG_DEFAULTS.timing, ...(shared.timing || {}), ...(p.timing || {}) },
     boardGameFullscreen: {
       ...PIANO_CONFIG_DEFAULTS.boardGameFullscreen,
       ...(shared.boardGameFullscreen || {}),

@@ -1,3 +1,5 @@
+import { isFractionPolicy, judgeTimedOnset, timedReachMs, timedTarget, timedWindowMs } from './timedJudge.js';
+
 const MODES = new Set(['free', 'metronome', 'cued']);
 const MATCHERS = new Set(['cursor', 'timed', 'held']);
 const TERMINAL = new Set(['completed', 'aborted', 'timeout', 'error']);
@@ -167,18 +169,6 @@ export function prepareExerciseAssessment({ instance, mode = 'free', purpose = '
   return { expectation, matcher, mode, purpose, requirement: generatedRequirement };
 }
 
-function quarterToMs(map, quarter) {
-  let ms = 0;
-  let prior = map[0];
-  if (!prior) return null;
-  for (let i = 1; i < map.length && map[i].onsetQuarter < quarter; i += 1) {
-    const next = map[i];
-    ms += (next.onsetQuarter - prior.onsetQuarter) * 60000 / prior.bpm;
-    prior = next;
-  }
-  return ms + (quarter - prior.onsetQuarter) * 60000 / prior.bpm;
-}
-
 function tempoAtQuarter(map, quarter) {
   let active = map[0]?.bpm ?? null;
   for (const entry of map) {
@@ -243,7 +233,7 @@ export function createAssessmentAttempt(config = {}) {
     expectation, matcher, mode, purpose: config.purpose || 'practice', requirement: config.requirement || null,
     grading: config.grading || {}, policy,
     status: 'prepared', startedAt: null, originQuarter: 0, leadInMs: 0, clock: config.clock ?? null,
-    cursor: skipEmpty(expectation.events, 0), hits: {}, wrong: [], ignored: [], misses: [], responses: [], closedSpans: [], musicalInput: false,
+    cursor: skipEmpty(expectation.events, 0), hits: {}, wrong: [], ignored: [], misses: [], lapsed: [], responses: [], closedSpans: [], musicalInput: false,
     heldWrongLatched: false,
   };
 }
@@ -269,12 +259,6 @@ function eventTime(attempt, event) {
   return { midi: Number(event?.midi ?? event?.note), time: event?.time ?? event?.atMs ?? null, clock: event?.clock ?? null, held: event?.held };
 }
 
-function timedTarget(attempt, event) {
-  const offset = quarterToMs(attempt.expectation.tempoMap, event.onsetQuarter)
-    - quarterToMs(attempt.expectation.tempoMap, attempt.originQuarter);
-  return attempt.startedAt + attempt.leadInMs + offset;
-}
-
 function pendingNotes(attempt) {
   const result = [];
   for (const event of attempt.expectation.events) for (const note of event.notes) if (!attempt.hits[note.id] && !attempt.misses.includes(note.id)) result.push({ event, note });
@@ -285,6 +269,34 @@ function completeIfDone(attempt, events) {
   if (pendingNotes(attempt).length) return { attempt, events };
   const completed = { ...attempt, status: 'completed' };
   return { attempt: completed, events: [...events, { type: 'attempt_complete' }] };
+}
+
+function observeTimed(attempt, input) {
+  const fraction = isFractionPolicy(attempt.policy);
+  const judged = judgeTimedOnset(attempt, { midi: input.midi, time: input.time });
+  const event = judged.eventId == null ? null : attempt.expectation.events.find((candidate) => candidate.id === judged.eventId);
+  if (judged.verdict === 'wrong') {
+    const record = { midi: input.midi, time: input.time, spanId: event?.spanId ?? null, eventId: judged.eventId };
+    if (fraction && Number.isFinite(judged.driftMs)) record.driftMs = judged.driftMs;
+    return {
+      attempt: { ...attempt, musicalInput: true, wrong: [...attempt.wrong, record] },
+      event: { type: 'wrong', midi: input.midi, eventId: judged.eventId },
+    };
+  }
+  const offbeat = judged.verdict === 'early' || judged.verdict === 'late' ? judged.verdict : null;
+  const hits = { ...attempt.hits };
+  for (const noteId of judged.noteIds) {
+    hits[noteId] = fraction
+      ? { time: input.time, driftMs: judged.driftMs, windowMs: judged.windowMs, ...(offbeat ? { offbeat } : {}) }
+      : { time: input.time, driftMs: judged.driftMs };
+  }
+  const next = { ...attempt, musicalInput: true, hits, responses: [...attempt.responses, Math.max(0, judged.driftMs)] };
+  const onsetComplete = event.notes.every((note) => hits[note.id]);
+  const emitted = offbeat
+    ? { type: 'offbeat', eventId: event.id, noteIds: judged.noteIds, driftMs: judged.driftMs, side: offbeat }
+    : { type: onsetComplete ? 'onset_complete' : 'hit', eventId: event.id, noteIds: judged.noteIds, driftMs: judged.driftMs };
+  const completed = completeIfDone(next, [emitted]);
+  return { attempt: completed.attempt, event: completed.events[0], events: completed.events };
 }
 
 export function observeAssessment(attempt, midiOrHeldEvent) {
@@ -298,32 +310,7 @@ export function observeAssessment(attempt, midiOrHeldEvent) {
   if (attempt.matcher === 'timed' && !Number.isFinite(input.time)) return ignored(attempt, 'missing_time', input);
   if (Number.isFinite(input.time) && input.time < attempt.startedAt) return ignored(attempt, 'before_start', input);
 
-  if (attempt.matcher === 'timed') {
-    let best = null;
-    for (const candidate of pendingNotes(attempt)) {
-      if (candidate.note.midi !== input.midi) continue;
-      const targetTime = timedTarget(attempt, candidate.event);
-      const drift = input.time - targetTime;
-      if (Math.abs(drift) <= attempt.policy.matchWindowMs && (!best || Math.abs(drift) < Math.abs(best.drift))) best = { ...candidate, targetTime, drift };
-    }
-    if (!best) {
-      const nearest = pendingNotes(attempt).map((candidate) => ({
-        ...candidate,
-        distance: Math.abs(input.time - timedTarget(attempt, candidate.event)),
-      })).sort((a, b) => a.distance - b.distance)[0];
-      return {
-        attempt: { ...attempt, musicalInput: true, wrong: [...attempt.wrong, { midi: input.midi, time: input.time, spanId: nearest?.event.spanId ?? null, eventId: nearest?.event.id ?? null }] },
-        event: { type: 'wrong', midi: input.midi, eventId: nearest?.event.id ?? null },
-      };
-    }
-    const samePitch = pendingNotes(attempt).filter(({ event, note }) => event.id === best.event.id && note.midi === input.midi);
-    const hits = { ...attempt.hits };
-    for (const { note } of samePitch) hits[note.id] = { time: input.time, driftMs: best.drift };
-    const next = { ...attempt, musicalInput: true, hits, responses: [...attempt.responses, Math.max(0, input.time - best.targetTime)] };
-    const onsetComplete = best.event.notes.every((note) => hits[note.id]);
-    const completed = completeIfDone(next, [{ type: onsetComplete ? 'onset_complete' : 'hit', eventId: best.event.id, noteIds: samePitch.map(({ note }) => note.id), driftMs: best.drift }]);
-    return { attempt: completed.attempt, event: completed.events[0], events: completed.events };
-  }
+  if (attempt.matcher === 'timed') return observeTimed(attempt, input);
 
   const index = skipEmpty(attempt.expectation.events, attempt.cursor);
   const current = attempt.expectation.events[index];
@@ -395,14 +382,37 @@ export function advanceAssessment(attempt, time) {
   if (attempt.status !== 'running' || attempt.matcher !== 'timed') return { attempt, events: [] };
   const misses = [...attempt.misses];
   const events = [];
-  for (const { event, note } of pendingNotes(attempt)) {
-    if (time > timedTarget(attempt, event) + attempt.policy.missWindowMs) {
-      misses.push(note.id);
-      events.push({ type: 'miss', eventId: event.id, noteId: note.id });
+  if (!isFractionPolicy(attempt.policy)) {
+    for (const { event, note } of pendingNotes(attempt)) {
+      if (time > timedTarget(attempt, event) + attempt.policy.missWindowMs) {
+        misses.push(note.id);
+        events.push({ type: 'miss', eventId: event.id, noteId: note.id });
+      }
     }
+    if (!events.length) return { attempt, events };
+    return completeIfDone({ ...attempt, misses }, events);
   }
+  // Fraction policy: a note lapses when its window closes unclaimed (it can
+  // still be claimed late) and is finally missed once its reach has passed.
+  const lapsed = [...(attempt.lapsed || [])];
+  attempt.expectation.events.forEach((event, index) => {
+    const open = event.notes.filter((note) => !attempt.hits[note.id] && !attempt.misses.includes(note.id));
+    if (!open.length) return;
+    const target = timedTarget(attempt, event);
+    const reach = timedReachMs(attempt, index);
+    const window = timedWindowMs(attempt, index);
+    for (const note of open) {
+      if (time > target + reach) {
+        misses.push(note.id);
+        events.push({ type: 'miss', eventId: event.id, noteId: note.id });
+      } else if (time > target + window && !lapsed.includes(note.id)) {
+        lapsed.push(note.id);
+        events.push({ type: 'lapse', eventId: event.id, noteId: note.id });
+      }
+    }
+  });
   if (!events.length) return { attempt, events };
-  return completeIfDone({ ...attempt, misses }, events);
+  return completeIfDone({ ...attempt, misses, lapsed }, events);
 }
 
 export function closeAssessmentSpan(attempt, spanId, time) {
@@ -430,15 +440,40 @@ function attribution(attempt, wrong) {
   return { ambiguous: true };
 }
 
+function fixedPlacement(attempt, notes) {
+  const drifts = notes.map((note) => attempt.hits[note.id]?.driftMs).filter(Number.isFinite);
+  return drifts.length ? drifts.reduce((sum, drift) => sum + unit(1 - Math.max(0, Math.abs(drift) - attempt.policy.timingToleranceMs) / attempt.policy.timingWindowMs), 0) / drifts.length : 0;
+}
+
+// Fraction policy: 1 inside ±(0.4 × the event's window), linear to 0 at the
+// window edge; an off-beat (early/late) claim earns 0.
+const PLACEMENT_FULL_CREDIT_SHARE = 0.4;
+function fractionPlacement(attempt, notes) {
+  const scored = notes.map((note) => attempt.hits[note.id]).filter((hit) => hit && Number.isFinite(hit.driftMs));
+  if (!scored.length) return 0;
+  return scored.reduce((sum, hit) => {
+    if (hit.offbeat || !(hit.windowMs > 0)) return sum;
+    const tolerance = PLACEMENT_FULL_CREDIT_SHARE * hit.windowMs;
+    return sum + unit(1 - Math.max(0, Math.abs(hit.driftMs) - tolerance) / (hit.windowMs - tolerance));
+  }, 0) / scored.length;
+}
+
 function resultSlice(attempt, notes, wrongCount) {
   const matched = notes.filter((note) => attempt.hits[note.id]).length;
   const expected = notes.length;
-  const drifts = notes.map((note) => attempt.hits[note.id]?.driftMs).filter(Number.isFinite);
-  const placement = drifts.length ? drifts.reduce((sum, drift) => sum + unit(1 - Math.max(0, Math.abs(drift) - attempt.policy.timingToleranceMs) / attempt.policy.timingWindowMs), 0) / drifts.length : 0;
+  const placement = isFractionPolicy(attempt.policy) ? fractionPlacement(attempt, notes) : fixedPlacement(attempt, notes);
   return {
     criteria: { completeness: expected ? matched / expected : 1, cleanliness: matched + wrongCount ? matched / (matched + wrongCount) : (expected ? 0 : 1), ...(attempt.matcher === 'timed' ? { placement } : {}) },
     diagnostics: { expected_notes: expected, matched_notes: matched, wrong_notes: wrongCount, missed_notes: expected - matched },
   };
+}
+
+function offbeatDiagnostics(attempt, notes) {
+  const claims = notes.map((note) => attempt.hits[note.id]).filter(Boolean);
+  const early = claims.filter((hit) => hit.offbeat === 'early').length;
+  const late = claims.filter((hit) => hit.offbeat === 'late').length;
+  const drift = median(claims.map((hit) => hit.driftMs).filter(Number.isFinite));
+  return { offbeat_notes: early + late, early_notes: early, late_notes: late, ...(Number.isFinite(drift) ? { median_drift_ms: drift } : {}) };
 }
 
 export function finalizeAssessmentAttempt(attempt, { status = 'completed' } = {}) {
@@ -530,7 +565,7 @@ export function finalizeAssessmentAttempt(attempt, { status = 'completed' } = {}
   const responseMedian = median(attempt.responses);
   const result = {
     status: 'completed', score, criteria, parts: partResults, spans,
-    diagnostics: { expected_notes: allNotes.length, matched_notes: allNotes.filter((note) => attempt.hits[note.id]).length, wrong_notes: attempt.wrong.length, missed_notes: allNotes.filter((note) => !attempt.hits[note.id]).length, ...(Number.isFinite(responseMedian) ? { response_median_ms: responseMedian } : {}) },
+    diagnostics: { expected_notes: allNotes.length, matched_notes: allNotes.filter((note) => attempt.hits[note.id]).length, wrong_notes: attempt.wrong.length, missed_notes: allNotes.filter((note) => !attempt.hits[note.id]).length, ...(Number.isFinite(responseMedian) ? { response_median_ms: responseMedian } : {}), ...(isFractionPolicy(attempt.policy) ? offbeatDiagnostics(attempt, allNotes) : {}) },
     ...(Number.isFinite(targetBpm) ? { gates: { pace: { passed: pacePassed, actual: actualBpm, target: targetBpm } } } : {}),
     rubric: { id: attempt.requirement?.rubric?.id || 'piano-assessment-v2', version: String(attempt.requirement?.rubric?.version || '2'), weights: rubricWeights, part_weights: weights },
     verdict: { score, passed: failedCriteria.length === 0 && failedGates.length === 0, failed_criteria: failedCriteria, failed_gates: failedGates },

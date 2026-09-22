@@ -22,7 +22,7 @@
 // explicit verbs (play-as-queue for containers; Play Now/Play Next/Up Next/
 // Add to Queue/Open detail for leaves). Tapping a row dispatches via the
 // same useContentDispatch path MediaContentSearch already uses.
-import React, { useCallback, useEffect, useMemo, useRef } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { IconX, IconAlertTriangle } from '@tabler/icons-react';
 import { Button } from '@mantine/core';
 import { useContentCombobox } from '../../Content/combobox/useContentCombobox.js';
@@ -39,15 +39,19 @@ import { displayTitle, resultSubtitle } from './resultPresentation.js';
 import { notifications } from '@mantine/notifications';
 import getLogger from '../../../lib/logging/Logger.js';
 import mediaLog from '../logging/mediaLog.js';
+import { ItemDestinationPicker } from '../actions/ItemDestinationPicker.jsx';
 import './Search.scss';
 
 export function SearchMode({ onClose }) {
+  const [oneShotAction, setOneShotAction] = useState(null);
   const { scopes, currentScopeKey, currentScope, scopeError, resetScope } = useSearchContext();
   const { dispatch, dispatchLeafVerb, playContainerAsQueue } = useContentDispatch();
   const { queue } = useSessionController('local');
   const { push } = useNav();
   const log = useMemo(() => getLogger().child({ component: 'search-mode' }), []);
   const inputRef = useRef(null);
+  const priorFocusRef = useRef(typeof document !== 'undefined' ? document.activeElement : null);
+  const priorScrollRef = useRef(typeof window !== 'undefined' ? window.scrollY : 0);
   // Guards against a close path AND the popstate it triggers both firing a
   // close (every non-'back' close consumes the history entry pushed on open
   // via history.back(), which itself fires a popstate — this makes that
@@ -75,6 +79,12 @@ export function SearchMode({ onClose }) {
     closedRef.current = true;
     mediaLog.searchModeExited({ reason });
     onClose?.();
+    if (!opts.navigated) {
+      priorFocusRef.current?.focus?.({ preventScroll: true });
+      if (typeof window !== 'undefined' && window.scrollY !== priorScrollRef.current) {
+        window.scrollTo?.({ top: priorScrollRef.current, behavior: 'instant' });
+      }
+    }
     if (reason === 'back') return; // the popstate we're reacting to already consumed it
     if (opts.navigated) {
       // The pushed route replaced this entry. Strip the marker flag so it
@@ -150,14 +160,15 @@ export function SearchMode({ onClose }) {
     const id = item?.id;
     if (!id) return;
     log.info('row_action', { contentId: id, action });
-    if (action === 'playNow' || action === 'add') {
-      dispatchLeafVerb(action, id, item);
+    if (action === 'playOn' || action === 'addOn') { setOneShotAction({ kind: action, item }); return; }
+    if (action !== 'detail' && action !== 'details') {
+      dispatchLeafVerb(action === 'upNext' ? 'playFirst' : action, id, item);
       return;
     }
-    applyResultRowVerb(action, item, { queue, push: pushOverSurface });
+    applyResultRowVerb('detail', item, { queue, push: pushOverSurface });
     // 'detail' is the only verb that navigates; queue mutations leave search
     // and its marker untouched.
-    if (action === 'detail') closeSurface('dispatch', { navigated: true });
+    if (action === 'detail' || action === 'details') closeSurface('dispatch', { navigated: true });
   }, [queue, pushOverSurface, log, closeSurface, dispatchLeafVerb]);
 
   const combo = useContentCombobox({
@@ -174,7 +185,7 @@ export function SearchMode({ onClose }) {
     logApp: 'media',
   });
   const {
-    state, handleInput, isSearching, pendingSources, sourceErrors,
+    state, searchState, handleInput, isSearching, pendingSources, sourceErrors,
     streamError, retrySource = () => {}, fellBackToAll,
   } = combo;
   const results = state.results;
@@ -226,7 +237,7 @@ export function SearchMode({ onClose }) {
   // scope that came up empty. Held back while the widened search is still in
   // flight so it can't flash "nothing anywhere" before the results land.
   const scopeThatCameUpEmpty = currentScope?.label || 'this scope';
-  const showWideningNotice = fellBackToAll && !isSearching && !streamError && !hasUnresolvedSourceFailures;
+  const showWideningNotice = fellBackToAll && !isSearching && !streamError;
 
   return (
     <div className="search-mode" data-testid="search-mode" role="dialog" aria-modal="true" aria-label="Search media">
@@ -263,7 +274,23 @@ export function SearchMode({ onClose }) {
         )}
       </div>
 
-      <StreamStatusLine pending={pendingSources} sourceErrors={sourceErrors} onRetry={handleStreamRetry} />
+      <StreamStatusLine
+        state={searchState ?? {
+          query: searchText,
+          scope: currentScopeKey ?? '',
+          sources: Object.fromEntries([
+            ...pendingSources.map((source) => [source, 'pending']),
+            ...sourceErrors.map(({ source }) => [source, 'failed']),
+          ]),
+          results,
+          phase: isSearching ? (results.length ? 'partial' : 'loading') : sourceErrors.length ? 'partial' : 'complete',
+          failedSources: sourceErrors.map(({ source }) => source),
+        }}
+        widening={showWideningNotice
+          ? { active: true, from: scopeThatCameUpEmpty, resultCount: results.length, testId: 'search-mode-widening-notice' }
+          : null}
+        onRetry={handleStreamRetry}
+      />
 
       {streamError && (
         <div className="stream-status-line stream-status-line--error" data-testid="search-mode-stream-error" role="status">
@@ -271,14 +298,6 @@ export function SearchMode({ onClose }) {
           <Button variant="subtle" size="compact-xs" data-testid="search-mode-stream-retry" onClick={() => retrySource()}>
             Retry
           </Button>
-        </div>
-      )}
-
-      {showWideningNotice && (
-        <div className="search-mode-widening-notice" data-testid="search-mode-widening-notice" role="status">
-          {results.length > 0
-            ? `Nothing in ${scopeThatCameUpEmpty} — showing ${results.length} result${results.length === 1 ? '' : 's'} from everywhere.`
-            : `Nothing in ${scopeThatCameUpEmpty} — and nothing found anywhere else either.`}
         </div>
       )}
 
@@ -308,11 +327,13 @@ export function SearchMode({ onClose }) {
               onTap={() => handleChange(item.id, item)}
               onPlayAll={() => handlePlayAll(item)}
               onMore={(action) => handleMore(action, item)}
+              onAction={({ kind }) => handleMore(kind, item)}
               testId={`search-mode-result-${item.id}`}
             />
           </li>
         ))}
       </ul>
+      <ItemDestinationPicker action={oneShotAction} onClose={() => setOneShotAction(null)} />
     </div>
   );
 }

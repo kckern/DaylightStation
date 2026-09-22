@@ -56,4 +56,37 @@ describe('YamlPianoAttemptStore', () => {
     expect(store.save('learner4', payload)).toEqual(first);
     expect(store.listRecent('learner4')).toHaveLength(1);
   });
+
+  it('keeps a voided attempt on disk but out of every listing', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'piano-attempts-'));
+    scratch.push(root);
+    const store = new YamlPianoAttemptStore({ usersDir: root, clock: () => new Date('2026-09-22T19:48:04.000Z') });
+    store.save('learner4', { attempt_id: 'attempt-bad-grade', status: 'completed', score: 0 });
+    store.save('learner4', { attempt_id: 'attempt-kept', status: 'completed', score: 1 });
+    const voided = store.void('learner4', 'attempt-bad-grade', { reason: 'grader fault' });
+    expect(voided.voided).toEqual({ at: '2026-09-22T19:48:04.000Z', reason: 'grader fault' });
+    expect(store.listRecent('learner4').map((a) => a.attempt_id)).toEqual(['attempt-kept']);
+    expect(store.list('learner4').map((a) => a.attempt_id)).toEqual(['attempt-kept']);
+    expect(store.listRecent('learner4', { includeVoided: true })).toHaveLength(2);
+  });
+
+  it('treats a retried POST of a voided attempt as the same attempt', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'piano-attempts-'));
+    scratch.push(root);
+    const store = new YamlPianoAttemptStore({ usersDir: root });
+    const payload = { attempt_id: 'attempt-retry', status: 'completed', score: 0 };
+    store.save('learner4', payload);
+    store.void('learner4', 'attempt-retry', { reason: 'grader fault' });
+    expect(() => store.save('learner4', structuredClone(payload))).not.toThrow();
+    expect(store.listRecent('learner4')).toHaveLength(0);
+  });
+
+  it('refuses to void an attempt it cannot find, or without a reason', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'piano-attempts-'));
+    scratch.push(root);
+    const store = new YamlPianoAttemptStore({ usersDir: root });
+    expect(() => store.void('learner4', 'attempt-missing', { reason: 'x' })).toThrow(/not found/);
+    store.save('learner4', { attempt_id: 'attempt-1', status: 'completed' });
+    expect(() => store.void('learner4', 'attempt-1', {})).toThrow(/reason/);
+  });
 });

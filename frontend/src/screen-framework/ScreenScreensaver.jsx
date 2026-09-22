@@ -6,6 +6,7 @@ import { useMenuNavigationContext } from '../context/useMenuNavigationContext.js
 import getLogger from '../lib/logging/Logger.js';
 import { BROWSE_NAV_TYPES } from './screenActivity.js';
 import { hasInitialScreenAction } from './screenAppPath.js';
+import { getActionBus } from './input/ActionBus.js';
 
 let _logger;
 function logger() {
@@ -104,6 +105,12 @@ export function ScreenScreensaver({ config }) {
       close();
     };
 
+    const unsubscribeSuperseded = getActionBus().subscribe('screen:screensaver-dismiss', () => {
+      if (!shown) return;
+      logger().info('screensaver.superseded', { widget: widgetKey });
+      close();
+    });
+
     function show() {
       if (shown) return;
       // Suppressed while content is active — a fullscreen overlay OR a nav-stack
@@ -152,6 +159,7 @@ export function ScreenScreensaver({ config }) {
       if (timer) clearTimeout(timer);
       ACTIVITY_EVENTS.forEach((evt) => window.removeEventListener(evt, onActivity));
       ACTIVITY_EVENTS.forEach((evt) => window.removeEventListener(evt, wake, true));
+      unsubscribeSuperseded();
       if (shown) dismissOverlay('fullscreen');
     };
      

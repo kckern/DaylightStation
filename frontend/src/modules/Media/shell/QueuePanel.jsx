@@ -6,6 +6,8 @@ import React from 'react';
 import { ActionIcon, Button, Group, Text, Badge } from '@mantine/core';
 import { IconX, IconArrowsShuffle, IconRepeat, IconRepeatOnce, IconClearAll, IconChevronUp, IconChevronDown } from '@tabler/icons-react';
 import { useSessionController } from '../controller/useSessionController.js';
+import { createOperationId } from '../actions/itemAction.js';
+import { offerActionUndo } from '../actions/actionNotice.jsx';
 
 const REPEAT_NEXT = { off: 'all', all: 'one', one: 'off' };
 const REPEAT_LABEL = { off: 'Repeat off', all: 'Repeat all', one: 'Repeat one' };
@@ -16,11 +18,18 @@ const REPEAT_LABEL = { off: 'Repeat off', all: 'Repeat all', one: 'Repeat one' }
 const fire = (thunk) => { try { Promise.resolve(thunk()).catch(() => {}); } catch { /* sync throw */ } };
 
 export function QueuePanel({ target = 'local', availability = null }) {
-  const { snapshot, queue, config } = useSessionController(target);
+  const { controller, snapshot, queue, config } = useSessionController(target);
   const q = snapshot?.queue;
   const controlsAvailable = availability?.available !== false;
   const dispatch = (thunk) => {
     if (controlsAvailable) fire(thunk);
+  };
+  const edit = (kind, queueItemId) => {
+    if (!controlsAvailable) return;
+    if (!controller?.execute) { dispatch(() => kind === 'clear' ? queue.clear?.() : queue.remove?.(queueItemId)); return; }
+    const operationId = createOperationId();
+    offerActionUndo({ operationId, targetName: target === 'local' ? 'Here' : 'This screen', title: kind === 'clear' ? 'Clear queue' : 'Remove item', undo: controller.undo });
+    fire(() => controller.execute({ kind, queueItemId, operationId, tappedAt: Date.now() }));
   };
 
   if (!q || !Array.isArray(q.items) || q.items.length === 0) {
@@ -79,7 +88,7 @@ export function QueuePanel({ target = 'local', availability = null }) {
           color="gray"
           leftSection={<IconClearAll size={16} />}
           disabled={!controlsAvailable}
-          onClick={() => dispatch(() => queue.clear?.())}
+          onClick={() => edit('clear')}
           ml="auto"
         >
           Clear
@@ -131,7 +140,7 @@ export function QueuePanel({ target = 'local', availability = null }) {
                 aria-label="Remove from queue"
                 data-testid={`queue-remove-${it.queueItemId}`}
                 disabled={!controlsAvailable}
-                onClick={() => dispatch(() => queue.remove?.(it.queueItemId))}
+                onClick={() => edit('remove', it.queueItemId)}
               >
                 <IconX size={16} />
               </ActionIcon>

@@ -57,7 +57,7 @@
 // toast naming the device and the SPECIFIC backend error (never a
 // substituted generic string), with Retry re-invoking the exact same
 // dispatch via DispatchProvider's retry(dispatchId).
-import React, { useCallback, useEffect, useMemo, useRef } from 'react';
+import React, { useCallback, useContext, useEffect, useMemo, useRef } from 'react';
 import { Button, Group, Text } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { useNav } from '../shell/NavProvider.jsx';
@@ -69,6 +69,9 @@ import { deviceName } from '../fleet/deviceDisplay.js';
 import { isContainer } from '../../Content/combobox/comboboxMachine.js';
 import { contentIdToBrowsePath } from '../browse/browsePath.js';
 import { resultToQueueInput } from './resultToQueueInput.js';
+import { PeekContext } from '../peek/PeekContext.js';
+import { executeItemAction, createOperationId } from '../actions/itemAction.js';
+import { offerActionUndo } from '../actions/actionNotice.jsx';
 
 function namesFor(ids, devices) {
   return ids.map((id) => deviceName(devices.find((d) => d.id === id), id)).join(', ');
@@ -98,7 +101,8 @@ export function useContentDispatch() {
   const { push } = useNav();
   const { dispatchToTarget, dispatches, retry } = useDispatch();
   const { targetIds, mode } = useCastTarget();
-  const { queue, config } = useSessionController('local');
+  const { controller, queue, config } = useSessionController('local');
+  const peek = useContext(PeekContext);
   const { devices } = useFleetContext();
   // dispatchId -> deviceId, for dispatches THIS hook fired that haven't
   // resolved yet. dispatchToTarget is fire-and-forget (it returns the
@@ -128,7 +132,7 @@ export function useContentDispatch() {
   // ("Adding" not "Casting") so the wording never claims an action it
   // didn't take.
   const castTo = useCallback((castTargetIds, castMode, id, title, opts = {}) => {
-    const { shuffle = false, verb = 'play' } = opts;
+    const { shuffle = false, verb = 'play', itemAction } = opts;
     // An aimed content pick starts new playback; it is not an ownership
     // transfer. Keep the transfer guard reserved for snapshot handoff while
     // allowing a fresh/default destination aim to dispatch normally.
@@ -151,12 +155,51 @@ export function useContentDispatch() {
       mode,
       title,
       ...(shuffle ? { shuffle: true } : {}),
+      ...(itemAction ? { itemAction } : {}),
     })).then((dispatchIds) => {
       (dispatchIds ?? []).forEach((dispatchId, i) => {
         pendingRef.current.set(dispatchId, castTargetIds[i]);
       });
     });
   }, [dispatchToTarget, devices]);
+
+  const runAction = useCallback((kind, id, item, opts = {}) => {
+    const input = resultToQueueInput({ ...item, id }) ?? { contentId: id, title: item?.title };
+    const operationId = createOperationId();
+    const remote = targetIds.length > 0;
+    const destination = remote ? {
+      id: targetIds.join(','),
+      execute: command => {
+        castTo(targetIds, mode, id, item?.title, {
+          verb: ['add', 'playNext', 'playFirst'].includes(kind) ? 'queue' : 'play',
+          shuffle: kind === 'shuffle', itemAction: command,
+        });
+        return { ok: true, pending: true, operationId: command.operationId };
+      },
+      undo: async operation => {
+        const results = await Promise.all(targetIds.map(target => peek?.getController?.(target)?.undo(operation)
+          ?? { ok: false, code: 'ITEM_ACTION_UNSUPPORTED' }));
+        return results.find(result => !result?.ok) ?? { ok: true };
+      },
+    } : controller;
+    // Older embedders expose just the queue facade. Keep their additive API
+    // working while full Media owners always use the common operation seam.
+    if (!destination) {
+      if (kind === 'playNow' || kind === 'shuffle') {
+        if (kind === 'shuffle') config?.setShuffle?.(true);
+        queue.playNow(input, { clearRest: !!opts.collection || kind === 'shuffle' });
+      } else if (kind === 'playNext') queue.addUpNext?.(input);
+      else if (kind === 'playFirst') queue.playNext?.(input);
+      else queue.add(input);
+      return 'local';
+    }
+    executeItemAction({ kind, item: input, destination, operationId, options: {
+      onStarted: () => { if (!remote) offerActionUndo({ operationId, targetName: 'Here', title: item?.title, undo: destination.undo }); },
+    } }).then(result => {
+      if (result?.ok === false) notifications.show({ color: 'red', title: 'Could not apply action', message: result.reason ?? result.code });
+    }).catch(error => notifications.show({ color: 'red', title: 'Could not apply action', message: error.message }));
+    return remote ? 'cast' : 'local';
+  }, [targetIds, mode, castTo, controller, queue, config, peek, devices]);
 
   // `opts.replaceHistoryEntry` is for a caller that is itself occupying the
   // current history entry and is about to close: the mobile Search Mode. Its
@@ -183,6 +226,7 @@ export function useContentDispatch() {
       else push('browse', browseParams);
       return 'browse';
     }
+    if (controller) return runAction('playNow', id, item);
     if (targetIds.length > 0) {
       castTo(targetIds, mode, id, title);
       return 'cast';
@@ -192,14 +236,16 @@ export function useContentDispatch() {
       { clearRest: true }
     );
     return 'local';
-  }, [push, targetIds, mode, queue, castTo]);
+  }, [push, targetIds, mode, queue, castTo, controller, runAction]);
 
   // Explicit leaf actions from the ResultRow ⋯ menu share the aimed-target
   // route without inheriting selection's clearRest policy: More → Play Now
   // starts this item while retaining the local queue tail. Only these two
   // verbs are centralized here; Play Next/Up Next remain local queue edits.
   const dispatchLeafVerb = useCallback((verb, id, item) => {
-    if (verb !== 'playNow' && verb !== 'add') return undefined;
+    const kind = ({ upNext: 'playFirst', playOn: 'playNow', addOn: 'add' })[verb] ?? verb;
+    if (!['playNow', 'add', 'playNext', 'playFirst', 'shuffle'].includes(kind)) return undefined;
+    if (controller || !['playNow', 'add'].includes(kind)) return runAction(kind, id, item);
     const title = item?.title ?? null;
     if (targetIds.length > 0) {
       castTo(targetIds, mode, id, title, { verb: verb === 'add' ? 'queue' : 'play' });
@@ -210,7 +256,7 @@ export function useContentDispatch() {
     if (verb === 'playNow') queue.playNow(input);
     else queue.add(input);
     return 'local';
-  }, [targetIds, mode, queue, castTo]);
+  }, [targetIds, mode, queue, castTo, controller, runAction]);
 
   // The ▶ verb on a container row: explicitly send the WHOLE container to
   // the current destination, replacing the queue. Same destination
@@ -221,6 +267,7 @@ export function useContentDispatch() {
   // false/omitted every payload is byte-identical to the pre-Task-15 shape.
   const playContainerAsQueue = useCallback((id, item, opts = {}) => {
     const { shuffle = false } = opts;
+    if (controller) return runAction(shuffle ? 'shuffle' : 'playNow', id, { ...item, itemType: 'container' }, { collection: true });
     const title = item?.title ?? null;
     if (targetIds.length > 0) {
       castTo(targetIds, mode, id, title, { shuffle });
@@ -235,7 +282,7 @@ export function useContentDispatch() {
     if (shuffle) config?.setShuffle?.(true);
     queue.playNow(input, { clearRest: true });
     return 'local';
-  }, [targetIds, mode, queue, config, castTo]);
+  }, [targetIds, mode, queue, config, castTo, controller, runAction]);
 
   // The + verb on a container row (Task 15): append the WHOLE container to
   // the current destination's queue instead of replacing it. Same
@@ -243,6 +290,7 @@ export function useContentDispatch() {
   // send the container as `queue:` (append) rather than `play:` (replace) —
   // see castTo's verb option and the header comment above.
   const addContainerToQueue = useCallback((id, item) => {
+    if (controller) return runAction('add', id, { ...item, itemType: 'container' });
     const title = item?.title ?? null;
     if (targetIds.length > 0) {
       castTo(targetIds, mode, id, title, { verb: 'queue' });
@@ -252,7 +300,7 @@ export function useContentDispatch() {
       ?? { contentId: id, title, thumbnail: item?.thumbnail ?? null };
     queue.add(input);
     return 'local';
-  }, [targetIds, mode, queue, castTo]);
+  }, [targetIds, mode, queue, castTo, controller, runAction]);
 
   return useMemo(
     () => ({ dispatch, dispatchLeafVerb, playContainerAsQueue, addContainerToQueue }),
