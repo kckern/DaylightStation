@@ -30,6 +30,16 @@ describe('exercise enrichment', () => {
     expect(screen.getByRole('link')).toBeTruthy();
   });
 
+  it('shows what was said after the workout and what the episode was about', async () => {
+    api.mockResolvedValue({ sessions: [{ ...linked,
+      voiceMemos: [{ transcript: 'We did the first two races of Graffiti Cup.', durationSeconds: 12 }, { transcript: '  ' }],
+      segments: [{ sessionId: 'segment-1', media: { primary: { grandparentId: 'plex:42', showTitle: 'Program', description: 'Sonic and an all-star Sega cast race.' } } }] }] });
+    show([workout]);
+    expect(await screen.findByText('“We did the first two races of Graffiti Cup.”')).toBeTruthy();
+    expect(document.querySelectorAll('.health-exercise__memo')).toHaveLength(1);
+    expect(screen.getByText('Sonic and an all-star Sega cast race.')).toHaveClass('health-exercise__description');
+  });
+
   it('leaves an unmatched workout readable without an invented session link', async () => {
     api.mockResolvedValue({ sessions: [{ sessionId: 'unrelated' }] });
     show([workout]);
