@@ -154,7 +154,7 @@ test.describe('Media M0 Move safety', () => {
     const receiver = await context.newPage();
     try {
       await receiver.goto('/screen/living-room', { waitUntil: 'domcontentloaded' });
-      await expect.poll(async () => page.evaluate(async () => {
+      await expect.poll(async () => receiver.evaluate(async () => {
         const response = await fetch('/api/v1/device/acceptance-media/receiver-ready');
         return response.ok && (await response.json()).ready;
       }), { timeout: 30000 }).toBe(true);
