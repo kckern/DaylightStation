@@ -57,7 +57,12 @@ export default function MediaApp() {
 
   return (
     <AppThemeProvider pack={MEDIA_PACK} forceColorScheme="dark">
-      <Notifications position="top-center" autoClose={3000} />
+      <Notifications
+        position="top-center"
+        autoClose={3000}
+        classNames={{ notification: 'media-app-notification' }}
+        styles={{ notification: { pointerEvents: 'none' } }}
+      />
       <ClientIdentityProvider>
         <LocalSessionProvider>
           <FleetProvider>
