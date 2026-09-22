@@ -18,7 +18,7 @@ import { MonthBlock } from './MonthBlock.jsx';
 import { useBudgetRange } from './useBudgetRange.js';
 import { useIsWideViewport } from './layout.js';
 import { LogTable } from './LogTable.jsx';
-import { AddCombobox } from './AddCombobox.jsx';
+import { MealAddRow } from './MealAddRow.jsx';
 import { NeedsReviewSection } from './NeedsReviewSection.jsx';
 import { CleanupQuestions } from '../cleanup/CleanupQuestions.jsx';
 import { ObservationsSection } from './ObservationRow.jsx';
@@ -27,7 +27,6 @@ import { ConfirmDialog } from './ConfirmDialog.jsx';
 import { deleteEntry, deleteConfirmBody, entryLabel } from './entryCommands.js';
 import { TemplatePicker } from './TemplatePicker.jsx';
 import { FoodCatalogManager } from './FoodCatalogManager.jsx';
-import { PhotoCapture } from '../capture/PhotoCapture.jsx';
 import { QuickCaptureBar } from './QuickCaptureBar.jsx';
 import { localTodayISO as todayISO, currentMealBucketId, bucketLabel } from './mealBuckets.js';
 import { useNutritionInput } from '../capture/useNutritionInput.js';
@@ -46,8 +45,14 @@ export function TodayView({ active = true, sidebarTarget, onSetupGoals, onCoachT
   const viewportEnd = isISODate(weekParam) && weekParam <= weekEnd(todayISO()) ? weekEnd(weekParam) : weekEnd(date);
   const day = useHealthDay(date, { enabled: active });
   const preview = usePortionDraft(day, date);
-  const [addingTo, setAddingTo] = useState(null);
-  const [typingIn, setTypingIn] = useState(null);
+  // The quick bar's + names a meal; that meal is shown (even if empty) and its
+  // add row takes focus. `n` makes a repeat tap on the same meal refocus.
+  // The request is pinned to the day it was made on: sections remount per
+  // date, and a remounted add row with a live request would grab focus (and
+  // the phone keyboard) on every date change.
+  const [focusRequestState, setFocusRequest] = useState(null);
+  const focusRequest = focusRequestState?.date === date ? focusRequestState : null;
+  const revealMeal = bucket => setFocusRequest(prev => ({ bucket, date, n: (prev?.n || 0) + 1 }));
   const [mealUndo, setMealUndo] = useState(null);
   const mealUndoOperation = useRef(null);   // bucketId | null — F5 renders the combobox here
   const [editingRow, setEditingRow] = useState(null); // row | null — F6 renders the edit sheet
@@ -385,7 +390,7 @@ export function TodayView({ active = true, sidebarTarget, onSetupGoals, onCoachT
         showIntake={false} />
       {wideViewport && sidebarTarget ? createPortal(history, sidebarTarget) : null}
       <QuickCaptureBar hideVoice active={active} onVoiceCapture={onVoiceCapture} onPhotoCapture={onPhotoCapture}
-        onOpenBarcode={openBarcode} onAddTo={setAddingTo} busy={nutrition.busy} date={date} />
+        onOpenBarcode={openBarcode} onAddTo={revealMeal} busy={nutrition.busy} date={date} />
       {preview.control.draft?.validationError ? <div role="alert" className="health-portion-error">
         {preview.control.draft.validationError}<Button onClick={() => preview.control.cancel()}>Discard change</Button>
       </div> : null}
@@ -441,28 +446,17 @@ export function TodayView({ active = true, sidebarTarget, onSetupGoals, onCoachT
         active={active}
         exerciseAvailable={Boolean(day.budget)}
         coldLoading={coldLoading} capturePendingBuckets={[...capturePending.values()].filter(pending => pending.date === date).map(pending => pending.bucket)}
-        onAddTo={bucket=>{setAddingTo(prev=>prev===bucket?null:bucket);setTypingIn(null);}} onRowTap={setEditingRow} onConfirm={day.reload} onRequestDelete={row => { setDeleteError(null); setPendingDelete(row); }} addingTo={addingTo}
+        onRowTap={setEditingRow} onConfirm={day.reload} onRequestDelete={row => { setDeleteError(null); setPendingDelete(row); }}
         bucketHeaderAction={bucketHeaderAction}
-        onVoiceCapture={onVoiceCapture} onTextCapture={onTextCapture} onPhotoCapture={onPhotoCapture}
+        onVoiceCapture={onVoiceCapture} onTextCapture={onTextCapture}
         onMealChanged={result=>handleCaptureResult(result)} captureTasks={[...capturePending.values()]}
-        onOpenBarcode={openBarcode} captureBusy={nutrition.busy}
         measuredByUuid={measuredByUuid}
-        addSlot={addingTo ? (
-          <div className="health-meal__adding">
-          <div className="health-meal-add-options">
-            <Button size="compact-xs" onClick={()=>setTypingIn(addingTo)}>Type food</Button>
-            <PhotoCapture bucket={addingTo} mealLabel={bucketLabel(addingTo)} onCapture={onPhotoCapture}/>
-            <Button size="compact-xs" variant="subtle" onClick={()=>openBarcode(addingTo)}>Scan barcode</Button>
-            <Button size="compact-xs" variant="subtle" onClick={()=>{setFocusTemplateId(null);setTemplatesFor(addingTo);}}>Meals &amp; templates</Button>
-          </div>
-          {typingIn === addingTo ? <AddCombobox bucketId={addingTo} date={date}
-            onDone={() => { setAddingTo(null); day.reload(); }}
-            onCancel={() => setAddingTo(null)}
-            onManageFoods={() => setManageFoods(true)}
-            onMeals={() => { setFocusTemplateId(null); setTemplatesFor(addingTo); }}
-            onTemplate={(entry) => { setFocusTemplateId(entry.id); setTemplatesFor(addingTo); }} /> : null}
-          </div>
-        ) : null} />
+        revealedBucket={focusRequest?.bucket ?? null}
+        renderAddRow={(bucket, label) => <MealAddRow bucket={bucket} label={label} date={date}
+          focusRequest={focusRequest?.bucket === bucket ? focusRequest.n : 0} busy={nutrition.busy}
+          onAdded={() => day.reload()} onPhotoCapture={onPhotoCapture} onOpenBarcode={openBarcode}
+          onOpenTemplates={(target, templateId) => { setFocusTemplateId(templateId); setTemplatesFor(target); }}
+          onManageFoods={() => setManageFoods(true)} />} />
       <NeedsReviewSection pending={pendingLogs} onChanged={day.reload} />
       {!wideViewport || !sidebarTarget ? <details className="health-history"><summary>Week &amp; weight history</summary>{history}</details> : null}
       {coachLine ? <Button variant="subtle" onClick={() => onCoachTap()}>{coachLine}</Button> : null}
@@ -495,7 +489,7 @@ export function TodayView({ active = true, sidebarTarget, onSetupGoals, onCoachT
         }} />
       <FoodCatalogManager open={active && manageFoods} onClose={() => setManageFoods(false)} onChanged={day.reload} />
       <TemplatePicker open={active && Boolean(templatesFor)} bucketId={templatesFor} date={date} focusTemplateId={focusTemplateId}
-        onLogged={() => { setTemplatesFor(null); setFocusTemplateId(null); setAddingTo(null); day.reload(); }}
+        onLogged={() => { setTemplatesFor(null); setFocusTemplateId(null); day.reload(); }}
         onClose={() => { setTemplatesFor(null); setFocusTemplateId(null); }} />
     </div></PortionContext.Provider>
   );

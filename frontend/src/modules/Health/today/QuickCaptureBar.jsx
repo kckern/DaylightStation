@@ -19,8 +19,9 @@ const PlusIcon = () => (
   </svg>
 );
 
-/** Central capture toolbar with an explicit meal selector. Per-meal Add reuses
- * it with a fixed target. Historical days default to breakfast, not the clock. */
+/** Central capture toolbar with an explicit meal selector. Its + reveals the
+ * chosen meal on Today and focuses that meal's add row. Historical days default
+ * to breakfast, not the clock. */
 const FIRST_BUCKET = 'morning';
 export function QuickCaptureBar({ hideVoice = false, active = true, onVoiceCapture, onPhotoCapture, onOpenBarcode, onAddTo, busy, date = null, bucketOverride = null }) {
   const [selected, setSelected] = useState(null);
