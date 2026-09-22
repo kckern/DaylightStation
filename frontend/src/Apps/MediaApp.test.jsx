@@ -1,6 +1,7 @@
 import React from 'react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { act, render, screen, fireEvent, cleanup } from '@testing-library/react';
+import { notifications } from '@mantine/notifications';
 
 vi.mock('../modules/Player/Player.jsx', () => ({
   default: ({ play }) => <div data-testid="player-stub">Player: {play?.contentId ?? 'none'}</div>,
@@ -30,9 +31,35 @@ vi.mock('../lib/api.mjs', () => ({
 }));
 
 import MediaApp from './MediaApp.jsx';
+import { offerActionUndo } from '../modules/Media/actions/actionNotice.jsx';
+import { createLocalSessionController } from '../modules/Media/session/LocalSessionController.js';
+import { writePersistedSession } from '../modules/Media/session/persistence.js';
 
 describe('MediaApp', () => {
   beforeEach(() => { localStorage.clear(); });
+  afterEach(() => { cleanup(); notifications.clean(); });
+
+  it('keeps an immediate action Undo notice away from the bottom mini-player action region', () => {
+    const controller = createLocalSessionController({ clientId: 'notice-layout' });
+    controller.queue.playNow({ contentId: 'plex:movie', title: 'Movie', format: 'video' });
+    writePersistedSession(controller.getSnapshot());
+    render(<MediaApp />);
+    act(() => offerActionUndo({ operationId: 'layout', targetName: 'Here', title: 'Movie', undo: async () => ({ ok: true }) }));
+    const undo = screen.getByRole('button', { name: 'Undo', exact: true });
+    expect(undo).toBeEnabled();
+    const noticeRegion = undo.closest('.mantine-Notifications-root');
+    const notice = undo.closest('.mantine-Notification-root');
+    // This DOM environment has no hit testing. Assert the real rendered
+    // overlay's anchoring contract; browser coverage checks ordinary clicks.
+    expect(noticeRegion.style.getPropertyValue('--notifications-bottom')).toBe('');
+    expect(noticeRegion.style.getPropertyValue('--notifications-top')).not.toBe('');
+    expect(getComputedStyle(noticeRegion).pointerEvents).toBe('none');
+    expect(getComputedStyle(notice).pointerEvents).toBe('none');
+    expect(getComputedStyle(undo).pointerEvents).toBe('auto');
+    fireEvent.click(screen.getByTestId('mini-player-open-nowplaying'));
+    expect(screen.getByTestId('now-playing-view')).toBeInTheDocument();
+    expect(undo).toBeEnabled();
+  });
 
   it('renders the shell inside the provider stack', () => {
     render(<MediaApp />);

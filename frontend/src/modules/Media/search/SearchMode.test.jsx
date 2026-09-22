@@ -180,6 +180,20 @@ describe('SearchMode', () => {
     expect(screen.queryByTestId('search-mode')).not.toBeInTheDocument();
   });
 
+  it('closing restores the exact prior focus and scroll position', async () => {
+    render(<Harness initialOpen={false} />);
+    const launcher = screen.getByTestId('harness-reopen');
+    launcher.focus();
+    Object.defineProperty(window, 'scrollY', { configurable: true, value: 246 });
+    fireEvent.click(launcher);
+    await waitFor(() => expect(screen.getByTestId('search-mode-input')).toHaveFocus());
+
+    fireEvent.click(screen.getByTestId('search-mode-close'));
+
+    expect(launcher).toHaveFocus();
+    expect(window.scrollY).toBe(246);
+  });
+
   it('logs search.mode_exited with reason "dismiss" on ✕', async () => {
     render(<Harness />);
     await screen.findByTestId('search-mode');
@@ -323,7 +337,7 @@ describe('SearchMode', () => {
       await renderWidened({ results: [{ id: 'plex:685088', title: 'Bluey', type: 'episode', thumbnail: null }] });
 
       const notice = screen.getByTestId('search-mode-widening-notice');
-      expect(notice).toHaveTextContent('Nothing in Ambient — showing 1 result from everywhere.');
+      expect(notice).toHaveTextContent('Not in Ambient — From everything: 1 result');
       // The chip that came up empty is still the pressed one — that is exactly
       // why the notice has to exist.
       expect(screen.getByTestId('scope-chip-ambient')).toHaveAttribute('aria-pressed', 'true');
@@ -337,13 +351,13 @@ describe('SearchMode', () => {
         ],
       });
       expect(screen.getByTestId('search-mode-widening-notice'))
-        .toHaveTextContent('Nothing in Ambient — showing 2 results from everywhere.');
+        .toHaveTextContent('Not in Ambient — From everything: 2 results');
     });
 
     it('says nothing was found anywhere when the widened search is also empty, and suppresses the generic empty line', async () => {
       await renderWidened({ results: [] });
       expect(screen.getByTestId('search-mode-widening-notice'))
-        .toHaveTextContent('Nothing in Ambient — and nothing found anywhere else either.');
+        .toHaveTextContent('Not in Ambient — From everything: no matches. Check the spelling or browse Ambient.');
       expect(screen.queryByTestId('search-mode-empty')).toBeNull();
     });
 
@@ -395,14 +409,14 @@ describe('SearchMode', () => {
       expect(screen.getByTestId('search-mode')).toBeInTheDocument();
     });
 
-    it('a container row never shows the ⋯ leaf menu', async () => {
+    it('a container row also offers the common queue action menu', async () => {
       comboState = {
         search: 'tuttle',
         results: [{ id: 'plex:663508', title: 'Tuttle Twins', type: 'show', thumbnail: null }],
       };
       render(<Harness />);
       await screen.findByTestId('search-mode-result-plex:663508');
-      expect(screen.queryByTestId('result-more-plex:663508')).toBeNull();
+      expect(screen.getByTestId('result-more-plex:663508')).toBeInTheDocument();
     });
 
     it('a leaf row never shows the container ▶', async () => {
@@ -415,7 +429,7 @@ describe('SearchMode', () => {
       expect(screen.queryByTestId('result-play-all-plex:685088')).toBeNull();
     });
 
-    it('⋯ on a leaf: Play Next calls queue.playNext and keeps the surface open', async () => {
+    it('⋯ on a leaf: Play Next follows the aim and keeps the surface open', async () => {
       comboState = {
         search: 'bluey',
         results: [{ id: 'plex:685088', title: 'Bluey', type: 'episode', thumbnail: null }],
@@ -425,11 +439,11 @@ describe('SearchMode', () => {
       fireEvent.click(screen.getByTestId('result-more-plex:685088'));
       fireEvent.click(await screen.findByTestId('result-action-playNext-plex:685088'));
 
-      expect(queuePlayNext).toHaveBeenCalledWith(expect.objectContaining({ contentId: 'plex:685088' }));
+      expect(dispatchLeafVerbMock).toHaveBeenCalledWith('playNext', 'plex:685088', expect.objectContaining({ id: 'plex:685088' }));
       expect(screen.getByTestId('search-mode')).toBeInTheDocument();
     });
 
-    it('⋯ Up Next calls queue.addUpNext', async () => {
+    it('⋯ Play First follows the aim', async () => {
       comboState = {
         search: 'bluey',
         results: [{ id: 'plex:685088', title: 'Bluey', type: 'episode', thumbnail: null }],
@@ -439,7 +453,7 @@ describe('SearchMode', () => {
       fireEvent.click(screen.getByTestId('result-more-plex:685088'));
       fireEvent.click(await screen.findByTestId('result-action-upNext-plex:685088'));
 
-      expect(queueAddUpNext).toHaveBeenCalledWith(expect.objectContaining({ contentId: 'plex:685088' }));
+      expect(dispatchLeafVerbMock).toHaveBeenCalledWith('playFirst', 'plex:685088', expect.objectContaining({ id: 'plex:685088' }));
       expect(screen.getByTestId('search-mode')).toBeInTheDocument();
     });
 

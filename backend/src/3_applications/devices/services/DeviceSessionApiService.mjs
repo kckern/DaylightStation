@@ -46,6 +46,9 @@ export class DeviceSessionApiService {
     const validation = validateHandoffParams(params);
     if (!validation.valid) return Promise.resolve({ ok: false, commandId, code: 'INVALID_ENVELOPE', error: validation.errors[0] || 'Invalid handoff params' });
     this.#logger.info?.('device.router.session.handoff', { deviceId, commandId, op: params.op });
+    if (typeof this.#sessions.handoff === 'function') {
+      return this.#sessions.handoff(deviceId, { commandId, params });
+    }
     return this.#sessions.sendCommand({ targetDevice: deviceId, command: 'handoff', commandId, params });
   }
 }

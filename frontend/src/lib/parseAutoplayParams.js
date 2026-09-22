@@ -1,3 +1,5 @@
+import { decodeItemAction } from '../../../shared/contracts/media/item-action.mjs';
+
 /**
  * Parse URL search params into an autoplay command.
  *
@@ -34,7 +36,7 @@ const CONFIG_KEYS = [
 // ?scanned_at=... became contentId 'scanned_at:...' → 404 → stuck Loading).
 const PASSTHROUGH_KEYS = new Set([
   'op', 'endBehavior', 'endDeviceId', 'endLocation',
-  'scanned_at', 'note', 'dispatchId', 'token',
+  'scanned_at', 'note', 'dispatchId', 'token', 'itemAction',
 ]);
 
 const BOOLEAN_CONFIG_KEYS = new Set(['shuffle', 'continuous', 'repeat', 'loop']);
@@ -85,6 +87,12 @@ export function parseAutoplayParams(searchString, supportedActions) {
   const params = new URLSearchParams(searchString);
   const queryEntries = Object.fromEntries(params.entries());
   if (Object.keys(queryEntries).length === 0) return null;
+  if (queryEntries.itemAction != null) {
+    try {
+      const action = decodeItemAction(queryEntries.itemAction);
+      return { queueOp: { ...action, commandId: queryEntries.dispatchId ?? action.operationId } };
+    } catch { return null; }
+  }
 
   // Extract config modifiers
   const config = {};

@@ -10,6 +10,7 @@
 
 import { randomUUID } from 'node:crypto';
 import { buildCommandEnvelope } from '#shared-contracts/media/envelopes.mjs';
+import { decodeItemAction } from '#shared-contracts/media/item-action.mjs';
 import { isLoadContentQueueOp } from '#shared-contracts/media/commands.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 import { IContentControl } from '#apps/devices/ports/IContentControl.mjs';
@@ -112,7 +113,7 @@ export class WebSocketContentAdapter extends IContentControl {
         targetDevice: this.#deviceId,
         command: 'queue',
         commandId,
-        params: { ...options, op: requestedOp, contentId },
+        params: decodeItemAction(query.itemAction) ?? { ...options, op: requestedOp, contentId },
       });
 
       this.#logger.info?.('websocket.load', {

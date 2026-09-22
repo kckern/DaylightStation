@@ -139,16 +139,20 @@ describe('useSessionStatePublisher', () => {
 
     act(() => source.fireState('playing'));
 
-    act(() => { vi.advanceTimersByTime(4999); });
+    act(() => { vi.advanceTimersByTime(499); });
+    expect(wsService.send).not.toHaveBeenCalled();
+
+    act(() => { vi.advanceTimersByTime(1); });
+    expect(wsService.send).toHaveBeenCalledTimes(1);
+    expect(wsService.send.mock.calls[0][0]).toMatchObject({ reason: 'change', snapshot: { state: 'playing' } });
+
+    wsService.send.mockClear();
+    act(() => { vi.advanceTimersByTime(4499); });
     expect(wsService.send).not.toHaveBeenCalled();
 
     act(() => { vi.advanceTimersByTime(1); });
     expect(wsService.send).toHaveBeenCalledTimes(1);
     expect(wsService.send.mock.calls[0][0].reason).toBe('heartbeat');
-
-    act(() => { vi.advanceTimersByTime(5000); });
-    expect(wsService.send).toHaveBeenCalledTimes(2);
-    expect(wsService.send.mock.calls[1][0].reason).toBe('heartbeat');
   });
 
   it('keeps heartbeating while idle — always-on kiosks must always report', () => {
@@ -162,7 +166,7 @@ describe('useSessionStatePublisher', () => {
 
     act(() => source.fireState('playing'));
     act(() => { vi.advanceTimersByTime(5000); });
-    expect(wsService.send).toHaveBeenCalledTimes(1); // one heartbeat
+    expect(wsService.send.mock.calls.map(([message]) => message.reason)).toEqual(['change', 'heartbeat']);
 
     // Going idle must NOT silence the device — an idle-but-on kiosk aging
     // out reads as "Not reporting"/"Off" in the fleet, which is reserved for
@@ -170,7 +174,12 @@ describe('useSessionStatePublisher', () => {
     act(() => source.fireState('idle'));
     wsService.send.mockClear();
 
-    act(() => { vi.advanceTimersByTime(20000); });
+    act(() => { vi.advanceTimersByTime(500); });
+    expect(wsService.send).toHaveBeenCalledTimes(1);
+    expect(wsService.send.mock.calls[0][0].reason).toBe('change');
+    wsService.send.mockClear();
+
+    act(() => { vi.advanceTimersByTime(15000); });
     expect(wsService.send.mock.calls.length).toBeGreaterThanOrEqual(3); // ~every 5s
     expect(wsService.send.mock.calls[0][0].reason).toBe('heartbeat');
   });

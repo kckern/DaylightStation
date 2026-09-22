@@ -554,7 +554,7 @@ describe('createPlayerSessionBridge', () => {
     bridge.stop();
   });
 
-  it('subscribes before adoption and synchronously acks the exact fresh-node binding', () => {
+  it('retains the decoder observer when React recreates the same Player public handle', () => {
     const oldNode = document.createElement('video');
     const freshNode = document.createElement('video');
     const rendererToken = Object.freeze({ tokenId: 'renderer-fresh', node: freshNode });
@@ -569,11 +569,12 @@ describe('createPlayerSessionBridge', () => {
       playbackRevision: 1,
     };
     let activeNode = oldNode;
-    const handle = {
+    let handle = {
       ...makeHandle({ el: oldNode, meta: { contentId: 'plex:a', format: 'video' }, queueSnapshot: {
         items: [{ queueItemId: 'a', contentId: 'plex:a', format: 'video' }],
         currentIndex: 0, executionOrder: ['a'],
       } }),
+      getPlayerInstanceId: () => 'stable-player-instance',
       getMediaElement: () => activeNode,
       getMountedContentId: () => 'plex:a',
       getMountedMediaGeneration: () => activeNode === freshNode ? 2 : 1,
@@ -588,6 +589,9 @@ describe('createPlayerSessionBridge', () => {
     const bridge = startBridge(() => handle);
     expect(operationObserver).toBeTypeOf('function');
 
+    // Player's useImperativeHandle publishes a fresh object after owner state
+    // changes even though the physical Player instance and observer map remain.
+    handle = { ...handle };
     bridge.queueController.adopt({ queue: {} }, { autoplay: false, operationId: 'legacy-adopt-1' });
     expect(adoptSessionSnapshot).toHaveBeenCalledWith({ queue: {} }, {
       autoplay: false,
@@ -611,6 +615,27 @@ describe('createPlayerSessionBridge', () => {
     freshNode.dispatchEvent(new Event('seeked'));
     expect(bridge.queueController.getNativeObservation('legacy-session'))
       .toMatchObject({ targetSeekedObserved: true });
+    bridge.stop();
+  });
+
+  it('adopts paused handoff snapshots without autoplaying them', () => {
+    const adoptSessionSnapshot = vi.fn(() => ({ ok: true }));
+    const handle = {
+      ...makeHandle({ el: makeMediaEl({ paused: true }), meta: { contentId: 'plex:a', format: 'video' } }),
+      getPlayerInstanceId: () => 'paused-player',
+      getPlaybackIdentity: () => ({ ownerInstanceId: 'owner', playbackRevision: 1, queueRevision: 1 }),
+      subscribeMountedMediaOperations: () => ({ observerId: 'observer', unsubscribe: vi.fn() }),
+      adoptSessionSnapshot,
+    };
+    const bridge = startBridge(() => handle);
+
+    expect(bridge.queueController.adoptAndBeginHandoffStart({
+      operationId: 'paused-start', snapshot: { state: 'paused', position: 17 }, targetSeconds: 17,
+    })).toEqual({ ok: true, operationId: 'paused-start' });
+    expect(adoptSessionSnapshot).toHaveBeenCalledWith(
+      { state: 'paused', position: 17 },
+      expect.objectContaining({ operationId: 'paused-start', autoplay: false }),
+    );
     bridge.stop();
   });
 });

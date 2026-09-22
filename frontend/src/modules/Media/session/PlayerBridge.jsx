@@ -87,7 +87,11 @@ export function PlayerBridge() {
       if (rendererOperationObserverRef.current === subscription) rendererOperationObserverRef.current = null;
       subscription?.unsubscribe?.();
     };
-  }, [hasCurrentItem, currentItem?.contentId]);
+  // This observer identifies the bridge, not one content item. Re-subscribing
+  // on an A -> B adoption removes the exact observer ID that the synchronous
+  // renderer-boundary request just marked as required, so B can never admit
+  // its mounted decoder operation and its native resume seek remains at zero.
+  }, [hasCurrentItem]);
 
   // Track volume so we can sync it to the media element as the user adjusts it.
   const [volume, setVolume] = useState(() => controller.getSnapshot().config?.volume ?? 100);

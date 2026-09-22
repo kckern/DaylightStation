@@ -67,6 +67,7 @@ export function useQueueController({ play, queue, clear, shuffle, onError, conte
     play?.playbackRate || play?.playbackrate || queue?.playbackRate || queue?.playbackrate || 1
   );
   const [playQueue, setQueue] = useState([]);
+  const [detachedQueue, setDetachedQueue] = useState(null);
   const [originalQueue, setOriginalQueue] = useState([]);
   const [isShuffle, setIsShuffle] = useState(!!play?.shuffle || !!queue?.shuffle || !!shuffle || false);
   const [shaderUserCycled, setShaderUserCycled] = useState(false);
@@ -161,6 +162,24 @@ export function useQueueController({ play, queue, clear, shuffle, onError, conte
     setShaderState(snapshot.config.shader ?? 'default');
     return true;
   }, [issueOwnerRevision, play, queue]);
+
+  const applyQueueSnapshot = useCallback((snapshot) => {
+    const detached = snapshot.items.map(item => ({ ...item, guid: item.queueItemId }));
+    const byId = new Map(detached.map(item => [item.guid, item]));
+    const order = snapshot.executionOrder ?? detached.slice(Math.max(0, snapshot.currentIndex)).map(item => item.guid);
+    const visits = order.map(id => byId.get(id)).filter(Boolean);
+    issueOwnerRevision({ queue: true });
+    setOriginalQueue(detached);
+    if (snapshot.currentIndex < 0) {
+      setQueue(previous => previous.length ? [previous[0], ...detached] : []);
+      setDetachedQueue({ queue: snapshot, currentGuid: playQueue[0]?.guid ?? null });
+    } else {
+      setQueue(visits);
+      setDetachedQueue(null);
+    }
+    setOnDeckState(null);
+    return { ok: true };
+  }, [issueOwnerRevision, playQueue]);
 
   // Single-item input (e.g. play: { contentId: 'watchlist:...' }) can resolve to a
   // multi-item playlist via the /api/v1/queue fetch. Reflect that here so consumers
@@ -543,6 +562,7 @@ export function useQueueController({ play, queue, clear, shuffle, onError, conte
   // Read-only owner capture: retain historical entries and the exact active
   // visit order separately, since legacy slicing/rotation can make them diverge.
   const queueSnapshot = useMemo(() => {
+    if (detachedQueue && (playQueue[0]?.guid ?? null) === detachedQueue.currentGuid) return detachedQueue.queue;
     const byId = new Map();
     for (const item of [...originalQueue, ...playQueue, ...(onDeck ? [onDeck] : [])]) {
       if (item?.guid && !byId.has(item.guid)) byId.set(item.guid, { ...item, queueItemId: item.guid,
@@ -555,7 +575,7 @@ export function useQueueController({ play, queue, clear, shuffle, onError, conte
       .map((item) => item?.guid).filter(Boolean);
     return { items, currentIndex: items.findIndex((item) => item.queueItemId === playQueue[0]?.guid),
       upNextCount: items.filter((item) => item.priority === 'upNext').length, executionOrder: order };
-  }, [originalQueue, playQueue, onDeck]);
+  }, [originalQueue, playQueue, onDeck, detachedQueue]);
 
   useEffect(() => {
     for (const [queueItemId, onApplied] of pendingAppendResultsRef.current) {
@@ -647,5 +667,6 @@ export function useQueueController({ play, queue, clear, shuffle, onError, conte
     playNow,
     append,
     adoptQueueSnapshot,
+    applyQueueSnapshot,
   };
 }

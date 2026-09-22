@@ -171,7 +171,8 @@ describe('SearchMode streaming lifecycle', () => {
     });
 
     expect(await screen.findByTestId('stream-status-retry-plex')).toBeInTheDocument();
-    expect(screen.queryByTestId('search-mode-widening-notice')).toBeNull();
+    expect(screen.getByTestId('search-mode-widening-notice'))
+      .toHaveTextContent('Not in Family — From everything: results may be incomplete. Retry the source above.');
     expect(screen.queryByText(/nothing found anywhere else either/i)).toBeNull();
     expect(screen.queryByTestId('search-mode-empty')).toBeNull();
   });

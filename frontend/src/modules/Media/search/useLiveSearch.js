@@ -18,8 +18,13 @@ export function useLiveSearch({ scopeParams = '' } = {}) {
   useEffect(() => () => clearTimeout(timerRef.current), []);
 
   const setQuery = useCallback((query) => {
+    const queryChanged = query !== lastQueryRef.current;
     lastQueryRef.current = query;
     clearTimeout(timerRef.current);
+    // Intent changes synchronously retire the prior generation. Waiting for
+    // the debounce to call search() left the old SSE live while the wrapper
+    // labelled its results with the newly typed query.
+    if (queryChanged) inner.cancel();
     if (!query || query.length < 2) {
       // Short/empty queries clear hook state instantly — no debounce.
       setWaiting(false);
@@ -34,12 +39,19 @@ export function useLiveSearch({ scopeParams = '' } = {}) {
     }, TIMING.SEARCH_DEBOUNCE_MS);
   }, [inner, scopeParams]);
 
-  const retry = useCallback(() => {
+  const retry = useCallback((source) => {
+    if (source) {
+      inner.retry(source);
+      return;
+    }
     const q = lastQueryRef.current;
     if (q) setQuery(q);
-  }, [setQuery]);
+  }, [inner, setQuery]);
 
   return {
+    // SearchState belongs to the streaming reducer. Debounce is wrapper UI
+    // state (`isSearching`) and must not relabel reducer results or phases.
+    state: inner.state,
     results: inner.results,
     pending: inner.pending,
     isSearching: waiting || inner.isSearching,

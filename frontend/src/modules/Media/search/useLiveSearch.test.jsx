@@ -2,7 +2,10 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 
 const mockSearch = vi.fn();
-let innerState = { results: [], pending: [], isSearching: false, search: mockSearch };
+const mockCancel = vi.fn();
+const mockRetry = vi.fn();
+const emptyState = () => ({ query: '', scope: '', sources: {}, results: [], phase: 'idle', failedSources: [] });
+let innerState = { state: emptyState(), results: [], pending: [], isSearching: false, search: mockSearch, cancel: mockCancel, retry: mockRetry };
 vi.mock('../../../hooks/useStreamingSearch.js', () => ({
   useStreamingSearch: vi.fn(() => innerState),
 }));
@@ -16,13 +19,19 @@ import mediaLog from '../logging/mediaLog.js';
 
 beforeEach(() => {
   mockSearch.mockClear();
+  mockCancel.mockClear();
+  mockRetry.mockClear();
   mediaLog.searchIssued.mockClear();
-  innerState = { results: [], pending: [], isSearching: false, search: mockSearch };
+  innerState = { state: emptyState(), results: [], pending: [], isSearching: false, search: mockSearch, cancel: mockCancel, retry: mockRetry };
 });
 
 describe('useLiveSearch', () => {
   it('exposes snapshot of inner streaming hook', () => {
-    innerState = { results: [{ id: 'plex:1' }], pending: ['abs'], isSearching: true, search: mockSearch };
+    innerState = {
+      state: { query: 'bluey', scope: '', sources: { abs: 'pending' }, results: [{ id: 'plex:1' }], phase: 'partial', failedSources: [] },
+      results: [{ id: 'plex:1' }], pending: ['abs'], isSearching: true,
+      search: mockSearch, cancel: mockCancel, retry: mockRetry,
+    };
     const { result } = renderHook(() => useLiveSearch({ scopeParams: '' }));
     expect(result.current.results).toEqual([{ id: 'plex:1' }]);
     expect(result.current.pending).toEqual(['abs']);
@@ -63,6 +72,13 @@ describe('useLiveSearch', () => {
     const { result } = renderHook(() => useLiveSearch({ scopeParams: '' }));
     act(() => { result.current.retry(); });
     expect(mediaLog.searchIssued).not.toHaveBeenCalled();
+    expect(mockSearch).not.toHaveBeenCalled();
+  });
+
+  it('routes a named-source retry directly to the active streaming generation', () => {
+    const { result } = renderHook(() => useLiveSearch({ scopeParams: 'source=plex' }));
+    act(() => { result.current.retry('abs'); });
+    expect(mockRetry).toHaveBeenCalledWith('abs');
     expect(mockSearch).not.toHaveBeenCalled();
   });
 });

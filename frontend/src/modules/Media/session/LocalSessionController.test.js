@@ -565,11 +565,19 @@ describe('LocalSessionController — capabilities', () => {
   it('does not invent seekability before a finite positive duration is observed', () => {
     const c = makeController();
     expect(c.capabilities).toEqual({
-      seekable: false, live: false, reason: 'Nothing is playing', acked: false,
+      seekable: false,
+      live: false,
+      reason: 'Nothing is playing',
+      acked: false,
+      speed: { available: true, reason: null },
     });
     c.queue.playNow({ contentId: 'vod:1', format: 'video', duration: null });
     expect(c.capabilities).toEqual({
-      seekable: false, live: false, reason: 'Playback duration is unavailable', acked: false,
+      seekable: false,
+      live: false,
+      reason: 'Playback duration is unavailable',
+      acked: false,
+      speed: { available: true, reason: null },
     });
     c.onPlayerObservation('vod:1', { duration: 0 });
     expect(c.capabilities.seekable).toBe(false);
@@ -584,7 +592,11 @@ describe('LocalSessionController — capabilities', () => {
     expect(c.capabilities.seekable).toBe(false);
     c.store.dispatch({ type: 'LOAD_ITEM', item: { contentId: 'cam:1', format: 'video', isLive: true, duration: 120 } });
     expect(c.capabilities).toEqual({
-      seekable: false, live: true, reason: 'Live playback has no seekable position', acked: false,
+      seekable: false,
+      live: true,
+      reason: 'Live playback has no seekable position',
+      acked: false,
+      speed: { available: true, reason: null },
     });
   });
 });

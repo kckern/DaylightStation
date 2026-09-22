@@ -59,7 +59,7 @@ export function deviceIcon(device) {
  * @param {{location?: string}|null} device
  */
 export function deviceLocation(device) {
-  const loc = device?.location;
+  const loc = device?.location ?? device?.room;
   return typeof loc === 'string' ? loc.trim() : '';
 }
 

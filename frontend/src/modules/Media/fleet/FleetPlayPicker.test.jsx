@@ -91,6 +91,7 @@ describe('FleetPlayPicker', () => {
       play: 'plex:12345',
       title: 'Bluey (2018)',
       mode: 'fork',
+      itemAction: { kind: 'playNow', item: { ...BLUEY, contentId: 'plex:12345' }, clearRest: true },
     });
     expect(onClose).toHaveBeenCalled();
   });
@@ -110,7 +111,7 @@ describe('FleetPlayPicker', () => {
     search.value = baseSearch({ results: [BLUEY], pending: ['abs'], isSearching: true });
     renderPicker();
     typeQuery('bluey');
-    expect(screen.getByTestId('fleet-play-pending')).toHaveTextContent('Still searching…');
+    expect(screen.getByTestId('fleet-play-pending')).toHaveTextContent('Still searching');
   });
 
   it('warns in one quiet line when the device is playing something', () => {
@@ -154,6 +155,24 @@ describe('FleetPlayPicker', () => {
     expect(errorState.textContent).not.toContain('8000ms');
     fireEvent.click(screen.getByTestId('search-retry'));
     expect(search.value.retry).toHaveBeenCalled();
+  });
+
+  it('shows a no-result partial source failure and retries only that source', () => {
+    const retry = vi.fn();
+    search.value = baseSearch({
+      state: {
+        query: 'bluey', scope: '', results: [], phase: 'partial',
+        sources: { plex: 'failed', files: 'complete' }, failedSources: ['plex'],
+      },
+      sourceErrors: [{ source: 'plex', error: 'offline' }],
+      retry,
+    });
+    renderPicker();
+
+    expect(screen.getByText('Plex did not answer')).toBeVisible();
+    fireEvent.click(screen.getByTestId('stream-status-retry-plex'));
+    expect(retry).toHaveBeenCalledWith('plex');
+    expect(screen.queryByTestId('search-empty')).toBeNull();
   });
 
   it('dismisses on Escape', () => {
