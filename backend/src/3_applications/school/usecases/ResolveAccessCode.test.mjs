@@ -260,6 +260,91 @@ describe('ResolveAccessCode — a served reading code continues to what the toke
   });
 });
 
+/**
+ * Task 4 (kiosk-friction-detection): every one of this resolver's three
+ * reject exits — `used_up`, and the combined `unscoped-record`/
+ * `no-live-record` branch — must record a `code-rejected` friction ping,
+ * UNCONDITIONALLY (not only when `#strikeAttempt`'s own narrower burst
+ * throttle trips). The friction tracker is optional-degrading, same as
+ * `attemptLimiter`: these tests inject a fake and assert it was called with
+ * exactly the deviceId the test passed into `resolve(...)`.
+ */
+describe('ResolveAccessCode — records kiosk friction on every reject path', () => {
+  function makeFrictionTracker() {
+    const calls = [];
+    return { calls, recordFriction: async (args) => { calls.push(args); } };
+  }
+
+  it('used_up ⇒ records code-rejected friction for the device', async () => {
+    const kioskFrictionTracker = makeFrictionTracker();
+    const resolver = new ResolveAccessCode({
+      tokens: { async getByAccessCode() { return { maxUses: 1, useCount: 1 }; } },
+      curriculum: makeCurriculum(),
+      assignments: makeAssignments(),
+      sessions: makeSessions({ served: false }),
+      kioskFrictionTracker,
+      clock: () => new Date(NOW_ISO),
+      logger: noopLogger,
+    });
+
+    const { card } = await resolver.resolve({ code: '482913', deviceId: 'portal-1' });
+
+    expect(card.reason).toBe('used_up');
+    expect(kioskFrictionTracker.calls).toEqual([{ deviceId: 'portal-1', kind: 'code-rejected' }]);
+  });
+
+  it('unscoped-record (a live record with no learner/subject) ⇒ records code-rejected friction', async () => {
+    const kioskFrictionTracker = makeFrictionTracker();
+    const resolver = new ResolveAccessCode({
+      tokens: { async getByAccessCode() { return {}; } },
+      curriculum: makeCurriculum(),
+      assignments: makeAssignments(),
+      sessions: makeSessions({ served: false }),
+      kioskFrictionTracker,
+      clock: () => new Date(NOW_ISO),
+      logger: noopLogger,
+    });
+
+    const { card } = await resolver.resolve({ code: '000000', deviceId: 'portal-2' });
+
+    expect(card.reason).toBe('unknown_code');
+    expect(kioskFrictionTracker.calls).toEqual([{ deviceId: 'portal-2', kind: 'code-rejected' }]);
+  });
+
+  it('no-live-record (unknown code) ⇒ records code-rejected friction', async () => {
+    const kioskFrictionTracker = makeFrictionTracker();
+    const resolver = new ResolveAccessCode({
+      tokens: { async getByAccessCode() { return null; } },
+      curriculum: makeCurriculum(),
+      assignments: makeAssignments(),
+      sessions: makeSessions({ served: false }),
+      kioskFrictionTracker,
+      clock: () => new Date(NOW_ISO),
+      logger: noopLogger,
+    });
+
+    const { card } = await resolver.resolve({ code: '999999', deviceId: 'portal-3' });
+
+    expect(card.reason).toBe('unknown_code');
+    expect(kioskFrictionTracker.calls).toEqual([{ deviceId: 'portal-3', kind: 'code-rejected' }]);
+  });
+
+  it('never throws when kioskFrictionTracker is absent (optional-degrading)', async () => {
+    const resolver = new ResolveAccessCode({
+      tokens: { async getByAccessCode() { return null; } },
+      curriculum: makeCurriculum(),
+      assignments: makeAssignments(),
+      sessions: makeSessions({ served: false }),
+      clock: () => new Date(NOW_ISO),
+      logger: noopLogger,
+    });
+
+    const { card } = await resolver.resolve({ code: '111111', deviceId: 'portal-4' });
+
+    expect(card.reason).toBe('unknown_code');
+  });
+});
+
 it('shows an invalid worksheet reason instead of offering an unusable screen', async () => {
   const unit = { ...unitA, bank: 'test/worksheet' };
   const resolver = new ResolveAccessCode({

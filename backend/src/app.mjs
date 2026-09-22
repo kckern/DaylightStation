@@ -4105,6 +4105,10 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       tokenRegistry: schoolCalc.tokenRegistry ?? null,
       schoolCalcActionResolver: schoolCalc.actionResolver ?? null,
       schoolCalcStudies: schoolCalc.wired ? schoolCalc.studySessions : null,
+      // Same instance Task 3's router reads — a rejected panel code is the
+      // first real friction signal source (see the `kioskFrictionTracker`
+      // construction above, alongside `kioskFrictionStateGatesPrincipal`).
+      kioskFrictionTracker,
       logger: schoolLifecycleLogger
     });
   } catch (err) {
