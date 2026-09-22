@@ -28,6 +28,8 @@ export const wordLadderLog = {
   reviewViewed: (data) => emit('review.viewed', data, 'debug'),
   done: (data) => emit('day.done', data),
   audioBlocked: (data) => emit('audio.blocked', data, 'debug'),
+  writeFailed: (data) => emit('write.failed', data, 'warn'),
+  planRefetched: (data) => emit('plan.refetched', data),
   apiRejected: (data) => emit('api.rejected', data, 'warn'),
   apiFailed: (data) => emit('api.failed', data, 'error'),
 };

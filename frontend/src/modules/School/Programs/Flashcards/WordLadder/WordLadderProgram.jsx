@@ -9,6 +9,9 @@ import './WordLadder.scss';
 
 const LANGUAGES = Object.freeze({ source: 'en', target: 'ko' });
 const CAPABILITY_KEY = 'korean-vocab';
+const NOT_SAVED = "That didn't save — try again";
+/** Upload failures on one card before the card falls back to flip-and-mark. */
+const UPLOAD_FAILURES_BEFORE_FALLBACK = 2;
 
 /** Checks, then study (including today's misses), then the review quiz. */
 export function nextStep(plan) {
@@ -37,7 +40,9 @@ export default function WordLadderProgram({ descriptor, api = wordLadderApi, res
   const [feedback, setFeedback] = useState(null);
   const [micReason, setMicReason] = useState(null);
   const [reviewRun, setReviewRun] = useState(null);
+  const [notice, setNotice] = useState(null);
   const doneLogged = useRef(false);
+  const uploadFailures = useRef({});
 
   useEffect(() => {
     wordLadderLog.mounted({ userId, deckId });
@@ -89,38 +94,69 @@ export default function WordLadderProgram({ descriptor, api = wordLadderApi, res
     api.viewReview(sessionId, { userId, wordId: reviewCard.wordId });
   }, [reviewRun, reviewCard, sessionId, userId, api]);
 
-  const answer = useCallback(async (item, choice) => {
-    const { ok, data } = await api.answer(sessionId, { userId, wordId: item.wordId, choice });
-    if (!ok || !data) return;
-    wordLadderLog.checkAnswered({ userId, wordId: item.wordId, phase: item.phase, direction: item.direction, correct: data.correct });
-    if (!data.correct && data.card?.media?.audio) playClip(resolveAssetUrl(data.card.media.audio));
-    setFeedback({ item, result: { correct: data.correct, answer: data.answer, card: data.card } });
-    setPlan(data.plan);
-  }, [api, sessionId, userId, resolveAssetUrl]);
-
-  const record = useCallback(async (wordId, blob) => {
-    const { ok, status, data } = await api.uploadRecording(sessionId, { userId, wordId, blob });
-    if (!ok || !data) {
-      wordLadderLog.recordingFailed({ userId, wordId, status, bytes: blob?.size ?? null });
-      return false;
+  /**
+   * A write that did not come back ok may still have landed (a lost
+   * response). Re-reading the plan heals that: the step the server already
+   * recorded disappears instead of 400-ing on every retap forever.
+   */
+  const notSaved = useCallback(async (what, details) => {
+    setNotice(NOT_SAVED);
+    wordLadderLog.writeFailed({ userId, what, ...details });
+    if (!sessionId) return;
+    const { ok, data } = await api.plan(sessionId, userId);
+    if (ok && data?.plan) {
+      setPlan(data.plan);
+      wordLadderLog.planRefetched({ userId, what });
     }
-    wordLadderLog.recordingUploaded({ userId, wordId, take: data.take, bytes: blob?.size ?? null });
-    setPlan(data.plan);
-    return true;
   }, [api, sessionId, userId]);
-
-  const mark = useCallback(async (item, value) => {
-    const recording = item.studied ? null : { status: 'unavailable', reason: unavailableReason ?? 'unknown' };
-    const { ok, data } = await api.mark(sessionId, { userId, wordId: item.wordId, mark: value, recording });
-    if (!ok || !data) return;
-    wordLadderLog.cardMarked({ userId, wordId: item.wordId, mark: value, recording: recording ? 'unavailable' : 'taken' });
-    setPlan(data.plan);
-  }, [api, sessionId, userId, unavailableReason]);
 
   const onMicUnavailable = useCallback((reason) => {
     setMicReason(reason);
     wordLadderLog.micUnavailable({ userId, reason });
   }, [userId]);
+
+  const answer = useCallback(async (item, choice) => {
+    const { ok, status, data } = await api.answer(sessionId, { userId, wordId: item.wordId, choice });
+    if (!ok || !data) {
+      await notSaved('answer', { wordId: item.wordId, status });
+      return;
+    }
+    setNotice(null);
+    wordLadderLog.checkAnswered({ userId, wordId: item.wordId, phase: item.phase, direction: item.direction, correct: data.correct });
+    if (!data.correct && data.card?.media?.audio) playClip(resolveAssetUrl(data.card.media.audio));
+    setFeedback({ item, result: { correct: data.correct, answer: data.answer, card: data.card } });
+    setPlan(data.plan);
+  }, [api, sessionId, userId, resolveAssetUrl, notSaved]);
+
+  const record = useCallback(async (wordId, blob) => {
+    const { ok, status, data } = await api.uploadRecording(sessionId, { userId, wordId, blob });
+    if (!ok || !data) {
+      const failures = (uploadFailures.current[wordId] ?? 0) + 1;
+      uploadFailures.current[wordId] = failures;
+      wordLadderLog.recordingFailed({ userId, wordId, status, failures, bytes: blob?.size ?? null });
+      // A server that cannot take the audio must not wall the card: after
+      // repeated failures (or any server error) the card becomes flip-and-mark.
+      if (status >= 500 || failures >= UPLOAD_FAILURES_BEFORE_FALLBACK) onMicUnavailable('upload-failed');
+      await notSaved('recording', { wordId, status });
+      return false;
+    }
+    setNotice(null);
+    wordLadderLog.recordingUploaded({ userId, wordId, take: data.take, bytes: blob?.size ?? null });
+    setPlan(data.plan);
+    return true;
+  }, [api, sessionId, userId, onMicUnavailable, notSaved]);
+
+  const mark = useCallback(async (item, value) => {
+    const recording = item.studied ? null : { status: 'unavailable', reason: unavailableReason ?? 'unknown' };
+    const { ok, status, data } = await api.mark(sessionId, { userId, wordId: item.wordId, mark: value, recording });
+    if (!ok || !data) {
+      await notSaved('mark', { wordId: item.wordId, status });
+      return;
+    }
+    setNotice(null);
+    wordLadderLog.cardMarked({ userId, wordId: item.wordId, mark: value, recording: recording ? 'unavailable' : 'taken' });
+    setPlan(data.plan);
+  }, [api, sessionId, userId, unavailableReason, notSaved]);
 
   const startReview = () => {
     setReviewRun({ index: 0 });
@@ -138,6 +174,13 @@ export default function WordLadderProgram({ descriptor, api = wordLadderApi, res
   if (!plan || !ready) return <div className="word-ladder"><p>Loading…</p></div>;
 
   const header = <header className="word-ladder-header"><p aria-label="Today">{plan.progressLabel}</p></header>;
+  const working = (
+    <header className="word-ladder-header">
+      <button type="button" className="word-ladder-leave" onClick={onExit}>Leave for now</button>
+      <p aria-label="Today">{plan.progressLabel}</p>
+      {notice && <p className="word-ladder-notice" role="status">{notice}</p>}
+    </header>
+  );
 
   if (reviewRun) {
     if (!reviewCard) {
@@ -167,7 +210,7 @@ export default function WordLadderProgram({ descriptor, api = wordLadderApi, res
   if (feedback) {
     return (
       <div className="word-ladder">
-        {header}
+        {working}
         <CheckCard item={feedback.item} result={feedback.result} resolveAssetUrl={resolveAssetUrl} onContinue={() => setFeedback(null)} />
       </div>
     );
@@ -186,7 +229,7 @@ export default function WordLadderProgram({ descriptor, api = wordLadderApi, res
   }
   return (
     <div className="word-ladder">
-      {header}
+      {working}
       {step.type === 'check' ? (
         <CheckCard key={`${step.item.phase}:${step.item.wordId}`} item={step.item} resolveAssetUrl={resolveAssetUrl} onAnswer={answer} />
       ) : (

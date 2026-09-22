@@ -6,11 +6,19 @@ import { SILENT_LEVEL, judgeTake } from '../../shared/speechFloor.js';
 import { playClip, playSequence } from './wordLadderAudio.js';
 import { wordLadderLog } from './wordLadderLog.js';
 
+/** A picture that removes itself when it fails to load — never a broken-image icon. */
+export function Picture({ src, alt }) {
+  const [broken, setBroken] = useState(false);
+  useEffect(() => { setBroken(false); }, [src]);
+  if (!src || broken) return null;
+  return <img className="word-ladder-picture" src={src} alt={alt} onError={() => setBroken(true)} />;
+}
+
 /** Picture, Korean, native audio. Anything missing is simply not drawn. */
 export function WordFace({ card, resolveAssetUrl }) {
   return (
     <div className="word-ladder-face">
-      {card.media?.image && <img className="word-ladder-picture" src={resolveAssetUrl(card.media.image)} alt={card.english} />}
+      {card.media?.image && <Picture src={resolveAssetUrl(card.media.image)} alt={card.english} />}
       <p className="word-ladder-korean" lang="ko">{card.korean}</p>
       {card.media?.audio && (
         <button type="button" className="word-ladder-hear" onClick={() => playClip(resolveAssetUrl(card.media.audio))}>
@@ -36,7 +44,7 @@ export default function StudyCard({
   onMark = async () => {}, onMicUnavailable = () => {}, reviewOnly = false, onNext = () => {},
 }) {
   const [flipped, setFlipped] = useState(false);
-  const [phase, setPhase] = useState('idle'); // idle | recording | saving
+  const [phase, setPhase] = useState('idle'); // idle | recording | stopping | saving
   const [recorded, setRecorded] = useState(false);
   const [verdict, setVerdict] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -103,9 +111,9 @@ export default function StudyCard({
         <div className="word-ladder-record">
           <VoiceBand stream={phase === 'recording' ? stream : null} onLevel={phase === 'recording' ? onLevel : null} />
           {phase === 'recording' ? (
-            <button type="button" onClick={() => stop()}><Icon name="stop" /> Stop</button>
+            <button type="button" onClick={() => { setPhase('stopping'); stop(); }}><Icon name="stop" /> Stop</button>
           ) : (
-            <button type="button" disabled={phase === 'saving'} onClick={beginRecording}>
+            <button type="button" disabled={phase === 'saving' || phase === 'stopping'} onClick={beginRecording}>
               <Icon name={verdict ? 'record-again' : 'record'} /> {verdict ? 'Record again' : 'Record'}
             </button>
           )}
