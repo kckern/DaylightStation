@@ -385,4 +385,37 @@ describe('WordLadderStudyService', () => {
     expect(store.packages['spanish-vocab'].kid.words.gawi.history.at(-1)).toMatchObject({ event: 'quiz-miss', attemptId: 'att_es' });
     expect(store.packages['korean-vocab'].kid.paperAttemptsFolded).toEqual([]);
   });
+
+  it('an unloadable deck answers "Not opened" for dayStatus and is skipped by the teacher fold', async () => {
+    const BROKEN = 'language/korean/week-03-broken';
+    const store = memoryStore();
+    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
+    const attempts = [{ id: 'att_1', transport: 'paper', bankId: `${DECK_ID}-quiz@1`, itemId: 'gawi', correct: false, at: '2026-09-22T20:00:00.000Z' }];
+    const service = new WordLadderStudyService({
+      store,
+      decks: {
+        getFlashcardDeck: async (id) => {
+          if (id === BROKEN) throw new Error("lexicon 'media:x/lexicon.yml': not found");
+          return id === DECK_ID ? { id: DECK_ID, lexicon: REF, words: ['gawi', 'pul'], cards: [] } : null;
+        },
+        listFlashcardDecks: async () => [{ id: DECK_ID, lexicon: REF, words: ['gawi', 'pul'] }],
+      },
+      lexicons: { getLexicon: () => LEX },
+      assignments: { get: async () => ({ programs: [
+        { programId: 'flashcards', deckId: BROKEN, policy: { mode: 'word-ladder' } },
+        { programId: 'flashcards', deckId: DECK_ID, policy: { mode: 'word-ladder' } },
+      ] }) },
+      attempts: { readAttemptsInRange: () => attempts },
+      recordings: { save: () => ({ take: 1 }), latest: () => null },
+      teacherGate: { assert: vi.fn() },
+      timezone: 'America/Los_Angeles', now: () => DAY1_MS, id: () => 'x1', logger,
+    });
+    await expect(service.dayStatus({ userId: 'kid', deckId: BROKEN, day: '2026-09-20' }))
+      .resolves.toEqual({ doneToday: false, progressLabel: 'Not opened', remaining: null });
+    await expect(service.dayStatus({ userId: 'kid', deckId: BROKEN })).resolves.toMatchObject({ doneToday: false, progressLabel: 'Not opened' });
+    expect(logger.warn).toHaveBeenCalledWith('school.word-ladder.day-status-unloadable', expect.objectContaining({ deckId: BROKEN }));
+    await expect(service.fold({ learnerId: 'kid', actorId: 'teacher' })).resolves.toEqual({ learnerId: 'kid', folded: 1, demoted: ['gawi'] });
+    expect(logger.warn).toHaveBeenCalledWith('school.word-ladder.fold-deck-skipped', expect.objectContaining({ deckId: BROKEN }));
+    expect(store.packages['korean-vocab'].kid.words.gawi.state).toBe('learning');
+  });
 });

@@ -394,8 +394,14 @@ export class WordLadderStudyService {
     const today = this.#today();
     const byPackage = new Map();
     for (const enrollment of enrollments) {
-      const { deck, pkg } = await this.#load(enrollment.deckId ?? enrollment.corpusId);
-      if (!byPackage.has(pkg)) byPackage.set(pkg, deck);
+      const deckId = enrollment.deckId ?? enrollment.corpusId;
+      // One unloadable deck must not block folding every other package.
+      try {
+        const { deck, pkg } = await this.#load(deckId);
+        if (!byPackage.has(pkg)) byPackage.set(pkg, deck);
+      } catch (error) {
+        this.#logger.warn?.('school.word-ladder.fold-deck-skipped', { learnerId, deckId, error: error.message });
+      }
     }
     const all = [];
     for (const [pkg, deck] of byPackage) {
@@ -417,7 +423,16 @@ export class WordLadderStudyService {
   async dayStatus({ userId, deckId, day = null } = {}) {
     const today = this.#today();
     const target = day ?? today;
-    const { deck, lexicon, pkg } = await this.#load(deckId);
+    let loaded;
+    try {
+      loaded = await this.#load(deckId);
+    } catch (error) {
+      // A broken deck answers like a day never opened; it must not throw
+      // through the launcher and take the rest of the agenda with it.
+      this.#logger.warn?.('school.word-ladder.day-status-unloadable', { learnerId: userId, deckId, day: target, error: error.message });
+      return { doneToday: false, progressLabel: 'Not opened', remaining: null };
+    }
+    const { deck, lexicon, pkg } = loaded;
     const status = this.#store.read(userId, pkg);
     let dayPlan = WordLadderStudyService.#frozenPlan(status, target, deckId);
     if (!dayPlan && target === today) {
