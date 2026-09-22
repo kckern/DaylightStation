@@ -64,6 +64,14 @@ describe('LexiconDeckLoader', () => {
     expect(() => lexicons.getLexicon('media:../../decks/cells.yml')).toThrow(/must not contain/);
     expect(() => lexicons.getLexicon('media:language/korean-vocab/missing.yml')).toThrow(/not found/);
   });
+  it('refuses a lexicon whose package id differs from its directory (two lexicons can never share status)', async () => {
+    await mkdir(path.join(root, 'media/school/language/korean-vocab-copy'), { recursive: true });
+    await writeFile(path.join(root, 'media/school/language/korean-vocab-copy/lexicon.yml'), dump(LEXICON));
+    const lexicons = new YamlLexiconRepository({ mediaRoot: path.join(root, 'media/school') });
+    expect(() => lexicons.getLexicon('media:language/korean-vocab-copy/lexicon.yml'))
+      .toThrow(/package 'korean-vocab' must match its directory name 'korean-vocab-copy'/);
+    expect(lexicons.getLexicon('media:language/korean-vocab/lexicon.yml').package).toBe('korean-vocab');
+  });
   it('delegates non-deck reads unchanged', async () => {
     const content = { getDocument: vi.fn(async () => 'doc'), getQuestionBank: vi.fn(async () => 'bank'), getLearningAction: vi.fn(async () => 'action'), getFlashcardDeck: vi.fn(), listFlashcardDecks: vi.fn() };
     const wrapped = new LexiconDeckLoader({ content, lexicons: { getLexicon: vi.fn() } });
