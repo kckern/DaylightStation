@@ -11,6 +11,47 @@ const period = new PeriodRef({
   endsAt: Date.parse('2026-08-30T00:00:00-07:00'),
 });
 const learner = new SubjectRef({ kind: 'learner', id: 'user_4' });
+const device = new SubjectRef({ kind: 'device', id: 'portal' });
+const interval = new PeriodRef({
+  kind: 'interval', id: '2026-08-29T11:00:00Z--2026-08-29T12:00:00Z',
+  startsAt: now - (60 * 60 * 1000), endsAt: now,
+});
+
+function kioskFrictionPolicy() {
+  return {
+    schemaVersion: 1, policyRevision: 1, digest: 'digest', activatedAt: now,
+    publishers: { 'kiosk-friction-tracker': {} }, subjectSets: {},
+    claimTypes: {
+      'kiosk.friction-score': {
+        schemaVersion: 1, valueSchema: { type: 'number', min: 0 }, subjectKinds: ['device'],
+        periodKinds: ['interval'], acceptedPublishers: ['kiosk-friction-tracker'], visibility: 'administrative',
+      },
+    },
+    gates: {
+      'kiosk.friction-ok': {
+        schemaVersion: 1, subjectKinds: ['device'], periodKinds: ['interval'],
+        expression: {
+          kind: 'not', nodeId: 'kiosk.friction-ok/expression',
+          child: {
+            kind: 'comparison', nodeId: 'kiosk.friction-ok/expression/not',
+            claim: {
+              claimTypeId: 'kiosk.friction-score', publisherId: 'kiosk-friction-tracker',
+              subject: '$subject', period: '$period',
+            },
+            op: 'gte', value: 5,
+          },
+        },
+      },
+    },
+    entitlements: {
+      'kiosk.access': { gateId: 'kiosk.friction-ok', failurePosture: 'fail_open' },
+    },
+  };
+}
+
+function kioskGraph(value = kioskFrictionPolicy()) {
+  return PolicyGraph.create(value, { timezone, publisherIds: ['kiosk-friction-tracker'], subjects: [device] });
+}
 
 function candidate(expression = { kind: 'claim', claimTypeId: 'school.done', publisherId: 'school', subject: '$subject', period: '$period', nodeId: 'claim' }) {
   return {
@@ -154,5 +195,36 @@ describe('State Gates domain', () => {
     expect(() => graph(value)).toThrowError(expect.objectContaining({ code: 'GATE_CYCLE' }));
     const valid = graph();
     expect(() => valid.gates.set('school.extra', {})).toThrow(/ReadonlyMap/);
+  });
+
+  it('fails kiosk.access open when a device has no friction-score evidence yet', () => {
+    const policy = kioskGraph();
+    const claim = policy.claimTypes.get('kiosk.friction-score');
+
+    // No assertion at all for a fresh device — fail-open, so the kiosk stays usable.
+    const missing = evaluateGate({ graph: policy, assertions: [], gateId: 'kiosk.friction-ok', subject: device, period: interval, now, timezone });
+    expect(missing.state).toBe('indeterminate');
+    expect(decideEntitlement({ definition: policy.entitlements.get('kiosk.access'), evaluation: missing }))
+      .toMatchObject({ decision: 'granted', degraded: true });
+
+    // Below the threshold — granted, and not degraded (real evidence, not a fallback).
+    const low = Assertion.observe({
+      id: 'kiosk:a:low', claimTypeId: 'kiosk.friction-score', subject: device, period: interval,
+      publisherId: 'kiosk-friction-tracker', value: 4, sourceRevision: 1, observedAt: now, validFrom: now,
+    }, claim, { now }).assertion;
+    const belowThreshold = evaluateGate({ graph: policy, assertions: [low], gateId: 'kiosk.friction-ok', subject: device, period: interval, now, timezone });
+    expect(belowThreshold.state).toBe('satisfied');
+    expect(decideEntitlement({ definition: policy.entitlements.get('kiosk.access'), evaluation: belowThreshold }))
+      .toMatchObject({ decision: 'granted', degraded: false });
+
+    // At/above the threshold — denied.
+    const high = Assertion.observe({
+      id: 'kiosk:a:high', claimTypeId: 'kiosk.friction-score', subject: device, period: interval,
+      publisherId: 'kiosk-friction-tracker', value: 6, sourceRevision: 1, observedAt: now, validFrom: now,
+    }, claim, { now }).assertion;
+    const atThreshold = evaluateGate({ graph: policy, assertions: [high], gateId: 'kiosk.friction-ok', subject: device, period: interval, now, timezone });
+    expect(atThreshold.state).toBe('unsatisfied');
+    expect(decideEntitlement({ definition: policy.entitlements.get('kiosk.access'), evaluation: atThreshold }))
+      .toMatchObject({ decision: 'denied', degraded: false });
   });
 });
