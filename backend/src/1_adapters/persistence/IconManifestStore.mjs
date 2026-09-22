@@ -9,13 +9,15 @@
  *   icons:                       # the OFFERED vocabulary
  *     carrot: { path: img/nutrition/icons/vegetables/carrot.png }
  *   aliases:                     # resolvable, never offered
- *     apple_sauce: { path: img/icons/food/apple_sauce.png }
+ *     pita_bread: { path: img/nutrition/icons/bakery/pita-bread.png }
  *
  * `icons` is what the parse agent chooses from and what the picker lists.
  * `aliases` keep reviewed alternate names requestable without offering them in
  * the picker. They may preserve a legacy nutribot slug when the new vocabulary
  * has an honest equivalent; an unmapped legacy slug deliberately renders the
- * neutral fallback rather than being pointed at a misleading image. Renames
+ * neutral fallback rather than being pointed at a misleading image. The hi-res
+ * set is exclusive: any entry pointing at the retired flat art
+ * (`img/icons/food/`) is dropped at load. Renames
  * happen by editing a path here, never by moving files and hoping the code follows.
  *
  * Filenames live in the manifest, never in code (household rule: no hardcoded
@@ -57,6 +59,9 @@ export const ICON_SLUG_PATTERN = /^[a-z0-9][a-z0-9_-]*$/;
 const CONTENT_TYPES = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg' };
 
 const MANIFEST_ADDRESS = 'apps/health/icon-manifest';
+
+/** The retired 20 px flat set. Never served, whatever the manifest says. */
+const RETIRED_ART_PREFIX = 'img/icons/food/';
 
 /**
  * The hi-res source art averages ~3 MB per file (median 3.0 MB; 528 of 534
@@ -173,8 +178,24 @@ export class IconManifestStore {
       this.#logger.warn?.('health.icons.manifest.missing', { address: MANIFEST_ADDRESS });
       return;
     }
-    this.#icons = raw.icons && typeof raw.icons === 'object' ? raw.icons : {};
-    this.#aliases = raw.aliases && typeof raw.aliases === 'object' ? raw.aliases : {};
+    // The hi-res set is the EXCLUSIVE icon set. An entry pointing at the
+    // retired 20 px flat art is dropped here, so a hand-edited manifest cannot
+    // bring it back. Stored rows carrying a retired name are re-iconed by data
+    // repair, not served.
+    const retired = [];
+    const keepHiRes = (section) => {
+      if (!section || typeof section !== 'object') return {};
+      return Object.fromEntries(Object.entries(section).filter(([slug, entry]) => {
+        const isFlat = typeof entry?.path === 'string' && entry.path.startsWith(RETIRED_ART_PREFIX);
+        if (isFlat) retired.push(slug);
+        return !isFlat;
+      }));
+    };
+    this.#icons = keepHiRes(raw.icons);
+    this.#aliases = keepHiRes(raw.aliases);
+    if (retired.length > 0) {
+      this.#logger.warn?.('health.icons.manifest.retired_art_dropped', { count: retired.length, slugs: retired.sort() });
+    }
     this.#foodNames = raw.foodNames && typeof raw.foodNames === 'object' ? raw.foodNames : {};
     this.#logger.info?.('health.icons.manifest.loaded', {
       icons: Object.keys(this.#icons).length,

@@ -36,7 +36,9 @@ export function iconVocabulary(foodIconsString, foodNames = {}) {
   return vocabulary;
 }
 
-const normalizeName = value => String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+/** The key a reviewed food-name → icon map is matched on. */
+export const normalizeIconFoodName = value => String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+const normalizeName = normalizeIconFoodName;
 
 /**
  * @param {unknown} icon - whatever the model put in the `icon` field

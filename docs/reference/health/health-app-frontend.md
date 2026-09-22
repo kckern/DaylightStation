@@ -148,6 +148,7 @@ The app does not require a pointing device for any operation. A user with a keyb
 
 - `frontend/src/Apps/` — top-level health app entry, route binding, page-level styles.
 - `frontend/src/modules/Health/` — hub view and detail view shells.
+- `frontend/src/modules/Health/today/` — the Today log. `LogTable` lays meals out in two column stacks (Lunch left, Dinner right, always shown); each visible meal ends in a `MealAddRow` (the inline `AddCombobox` plus photo, barcode and saved-meal buttons for that meal).
 - `frontend/src/modules/Health/cards/` — hub summary cards (weight, nutrition, sessions, recency, goals).
 - `frontend/src/modules/Health/detail/` — detail views (weight, nutrition, sessions, goals) and the shared multi-axis history chart.
 - `frontend/src/modules/Fitness/widgets/_shared/` — shared dashboard card chrome originally written for the fitness app and reused here, so the two apps render visually consistent cards.
@@ -169,3 +170,18 @@ The app does not require a pointing device for any operation. A user with a keyb
 
 - `frontend/src/Apps/HealthApp.scss` — page-level layout, hub grid, detail shell.
 - `frontend/src/modules/Health/Nutrition.scss` and `Weight.scss` — nutrition and weight surface styling shared with related modules.
+
+## Observability — artwork and day data quality
+
+Food artwork falls back to the bowl glyph, and unknown nutrients render as "—".
+Neither case is silent any more:
+
+| Event | Level | Emitted by | When |
+|---|---|---|---|
+| `artwork.icon-failed` | warn | `today/FoodIcon.jsx` via `today/artworkLog.js` | an icon slug fails to load or decode (e.g. a slug the manifest does not carry → 404). Once per slug per page session. |
+| `artwork.photo-failed` | warn | `today/EntryRow.jsx` via `today/artworkLog.js` | a row's `photoRef` thumbnail fails. Once per photoRef per page session. |
+| `add-row.focus` | debug | `today/AddCombobox.jsx` (inline mode) | a meal's add row takes focus. `{bucket}` |
+| `quickadd.done` / `sentence.committed` | info | `today/AddCombobox.jsx` | a food logged from the add surface. `{bucket, surface: 'inline' \| 'sheet'}` |
+| `day.quality` | info | `today/useHealthDay.js` (`today/dayQuality.js`) | once per date + ledger revision, only when the day has gaps: `noArtwork`, `unknownCalories`, `noGrams`, `allCaps`, `duplicates`, each `{count, samples}`. |
+
+All carry `context.app: health`.

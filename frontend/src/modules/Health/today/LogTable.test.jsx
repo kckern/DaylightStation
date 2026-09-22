@@ -18,60 +18,64 @@ const emptyByBucket = new Map([
 ]);
 
 const wrapper = ({ children }) => <MantineProvider>{children}</MantineProvider>;
+const addRow = (bucket, label) => <input aria-label={`Add to ${label}`} data-bucket={bucket} />;
 
 describe('LogTable', () => {
   it('renders bucket labels, rows, and kcal subtotals', () => {
-    render(<LogTable byBucket={byBucket} sessions={[]} onAddTo={() => {}} onRowTap={() => {}} />, { wrapper });
+    render(<LogTable byBucket={byBucket} sessions={[]} renderAddRow={addRow} onRowTap={() => {}} />, { wrapper });
     expect(screen.getByText('Breakfast')).toBeTruthy();
     expect(screen.getByText('Eggs')).toBeTruthy();
     expect(screen.getByText('140 kcal')).toBeTruthy();
-    expect(screen.getAllByRole('button', { name: /Add food/ })).toHaveLength(BUCKETS.length);
+    // Breakfast (has food) + the two primaries; Snacks is empty so absent.
+    expect(screen.getAllByRole('textbox', { name: /^Add to / })).toHaveLength(BUCKETS.length - 1);
   });
 
   it('hides UNGROUPED when empty, shows it when populated', () => {
-    const { rerender } = render(<LogTable byBucket={byBucket} sessions={[]} onAddTo={() => {}} onRowTap={() => {}} />, { wrapper });
+    const { rerender } = render(<LogTable byBucket={byBucket} sessions={[]} onRowTap={() => {}} />, { wrapper });
     expect(screen.queryByText('Ungrouped')).toBeNull();
     const withOrphan = new Map(byBucket);
     withOrphan.set(null, [{ uuid: '9', name: 'Mystery', calories: 100 }]);
-    rerender(<MantineProvider><LogTable byBucket={withOrphan} sessions={[]} onAddTo={() => {}} onRowTap={() => {}} /></MantineProvider>);
+    rerender(<MantineProvider><LogTable byBucket={withOrphan} sessions={[]} onRowTap={() => {}} /></MantineProvider>);
     expect(screen.getByText('Ungrouped')).toBeTruthy();
   });
 
   it('renders exercise sessions read-only with credit', () => {
     render(<LogTable byBucket={byBucket}
       sessions={[{ type: 'cycling', duration_min: 42, calories: 320 }]}
-      onAddTo={() => {}} onRowTap={() => {}} />, { wrapper });
+      onRowTap={() => {}} />, { wrapper });
     expect(screen.getByText('Exercise')).toBeTruthy();
     // Both the section subtotal ("+320 kcal") and the row credit ("+320") own
     // matching direct text nodes, so both legitimately match this pattern.
     expect(screen.getAllByText(/\+320/).length).toBeGreaterThan(0);
   });
 
-  it('add and row taps fire with the right arguments', () => {
-    const onAddTo = vi.fn(); const onRowTap = vi.fn();
-    render(<LogTable byBucket={byBucket} sessions={[]} onAddTo={onAddTo} onRowTap={onRowTap} />, { wrapper });
-    fireEvent.click(screen.getAllByRole('button', { name: /Add food/ })[0]);
-    expect(onAddTo).toHaveBeenCalledWith('morning');
+  it('asks for each visible meal add row by bucket and label; row taps fire with the row', () => {
+    const renderAddRow = vi.fn(addRow); const onRowTap = vi.fn();
+    render(<LogTable byBucket={byBucket} sessions={[]} renderAddRow={renderAddRow} onRowTap={onRowTap} />, { wrapper });
+    expect(renderAddRow).toHaveBeenCalledWith('morning', 'Breakfast');
+    expect(screen.getByText('Breakfast').closest('section').querySelector('[data-bucket="morning"]')).toBeTruthy();
     fireEvent.click(screen.getByText('Eggs'));
     expect(onRowTap).toHaveBeenCalledWith(expect.objectContaining({ uuid: '1' }));
   });
 
   describe('permanent chrome (Task 3.2)', () => {
-    it('renders all bucket headings and add rows during a true cold start (coldLoading, no rows anywhere)', () => {
+    it('renders the primary meal headings and add rows during a true cold start (coldLoading, no rows anywhere)', () => {
       render(<LogTable byBucket={emptyByBucket} sessions={[]} coldLoading
-        onAddTo={() => {}} onRowTap={() => {}} />, { wrapper });
-      expect(screen.getByText('Breakfast')).toBeTruthy();
+        renderAddRow={addRow} onRowTap={() => {}} />, { wrapper });
+      // Lunch and Dinner are permanent; a cold start no longer flashes the
+      // optional meals open as four shimmering sections.
       expect(screen.getByText('Lunch')).toBeTruthy();
       expect(screen.getByText('Dinner')).toBeTruthy();
-      expect(screen.getByText('Snacks')).toBeTruthy();
+      expect(screen.queryByText('Breakfast')).toBeNull();
+      expect(screen.queryByText('Snacks')).toBeNull();
       // Structure is present alongside the shimmer, not instead of it.
-      expect(screen.getAllByRole('button', { name: /Add food/ })).toHaveLength(BUCKETS.length);
+      expect(screen.getAllByRole('textbox', { name: /^Add to / })).toHaveLength(2);
       expect(screen.getAllByLabelText(/^Loading /).length).toBeGreaterThan(0);
     });
 
     it('does NOT show a shimmer for a bucket that already has cached rows, even while coldLoading is (incorrectly) passed true', () => {
       render(<LogTable byBucket={byBucket} sessions={[]} coldLoading
-        onAddTo={() => {}} onRowTap={() => {}} />, { wrapper });
+        onRowTap={() => {}} />, { wrapper });
       // Breakfast has a row -> no shimmer there, and the row itself renders.
       expect(screen.getByText('Eggs')).toBeTruthy();
       expect(screen.queryByLabelText(/loading breakfast/i)).toBeNull();
@@ -81,25 +85,25 @@ describe('LogTable', () => {
 
     it('shows no shimmer anywhere when coldLoading is false, even with empty buckets (background revalidation)', () => {
       render(<LogTable byBucket={emptyByBucket} sessions={[]} coldLoading={false}
-        onAddTo={() => {}} onRowTap={() => {}} />, { wrapper });
+        onRowTap={() => {}} />, { wrapper });
       expect(screen.queryByLabelText(/^Loading /)).toBeNull();
     });
 
     it('the Exercise header renders with zero sessions once budget data exists (exerciseAvailable)', () => {
       render(<LogTable byBucket={byBucket} sessions={[]} exerciseAvailable
-        onAddTo={() => {}} onRowTap={() => {}} />, { wrapper });
+        onRowTap={() => {}} />, { wrapper });
       expect(screen.getByText('Exercise')).toBeTruthy();
     });
 
     it('the Exercise header is absent before budget data has ever loaded (exerciseAvailable false, no sessions)', () => {
       render(<LogTable byBucket={byBucket} sessions={[]}
-        onAddTo={() => {}} onRowTap={() => {}} />, { wrapper });
+        onRowTap={() => {}} />, { wrapper });
       expect(screen.queryByText('Exercise')).toBeNull();
     });
 
     it('shows an "Analyzing…" placeholder in the targeted bucket only, with aria-busy', () => {
       render(<LogTable byBucket={byBucket} sessions={[]} capturePendingBucket="afternoon"
-        onAddTo={() => {}} onRowTap={() => {}} />, { wrapper });
+        onRowTap={() => {}} />, { wrapper });
       const placeholder = screen.getByText('Analyzing…');
       expect(placeholder.closest('[aria-busy="true"]')).toBeTruthy();
       // It sits under Lunch (afternoon), not Breakfast (morning).
@@ -111,7 +115,7 @@ describe('LogTable', () => {
 
     it('shows no placeholder in any bucket when capturePendingBucket is null', () => {
       render(<LogTable byBucket={byBucket} sessions={[]}
-        onAddTo={() => {}} onRowTap={() => {}} />, { wrapper });
+        onRowTap={() => {}} />, { wrapper });
       expect(screen.queryByText('Analyzing…')).toBeNull();
     });
   });
@@ -128,7 +132,7 @@ describe('LogTable', () => {
     ]);
 
     it('a collapsed group shows its rolled-up kcal while its children are not rendered', () => {
-      render(<LogTable byBucket={groupBucket} sessions={[]} onAddTo={() => {}} onRowTap={() => {}} />, { wrapper });
+      render(<LogTable byBucket={groupBucket} sessions={[]} onRowTap={() => {}} />, { wrapper });
       fireEvent.click(screen.getByRole('button', { name: /collapse smoothie/i }));
       expect(screen.getByText('Smoothie')).toBeTruthy();
       // Rollup (105 + 120), not the group row's own (zero) calories.
@@ -140,7 +144,7 @@ describe('LogTable', () => {
     });
 
     it('expanding the group reveals its children indented, without changing the rollup', () => {
-      render(<LogTable byBucket={groupBucket} sessions={[]} onAddTo={() => {}} onRowTap={() => {}} />, { wrapper });
+      render(<LogTable byBucket={groupBucket} sessions={[]} onRowTap={() => {}} />, { wrapper });
       expect(screen.getByText('Banana')).toBeTruthy(); // Expanded by default.
       fireEvent.click(screen.getByRole('button', { name: /collapse smoothie/i }));
       fireEvent.click(screen.getByRole('button', { name: /expand smoothie/i }));
@@ -153,13 +157,13 @@ describe('LogTable', () => {
 
     it('tapping the group row itself (not the chevron) fires onRowTap like an item row', () => {
       const onRowTap = vi.fn();
-      render(<LogTable byBucket={groupBucket} sessions={[]} onAddTo={() => {}} onRowTap={onRowTap} />, { wrapper });
+      render(<LogTable byBucket={groupBucket} sessions={[]} onRowTap={onRowTap} />, { wrapper });
       fireEvent.click(screen.getByText('Smoothie'));
       expect(onRowTap).toHaveBeenCalledWith(expect.objectContaining({ id: 'g1' }));
     });
 
     it('bucket kcal total counts each gram once (group contributes zero, children carry the values)', () => {
-      render(<LogTable byBucket={groupBucket} sessions={[]} onAddTo={() => {}} onRowTap={() => {}} />, { wrapper });
+      render(<LogTable byBucket={groupBucket} sessions={[]} onRowTap={() => {}} />, { wrapper });
       // 0 (group) + 105 + 120 = 225, not 450 (double-counted) or 0.
       expect(document.querySelector('.health-meal__kcal').textContent).toBe('225 kcal');
     });
@@ -178,7 +182,7 @@ describe('LogTable', () => {
         ['afternoon', []], ['evening', []], ['night', []],
         [null, []],
       ]);
-      render(<LogTable byBucket={plainParentBucket} sessions={[]} onAddTo={() => {}} onRowTap={() => {}} />, { wrapper });
+      render(<LogTable byBucket={plainParentBucket} sessions={[]} onRowTap={() => {}} />, { wrapper });
       expect(screen.getByText('Plate')).toBeTruthy();
       // Rolled-up kcal shown collapsed; the child itself appears once expanded.
       expect(document.querySelector('.health-row-line--group .health-row__kcal').textContent).toBe('200 kcal');
@@ -189,25 +193,35 @@ describe('LogTable', () => {
   });
 
   describe('per-meal capture controls (Task 4.2)', () => {
-    it('meal headers do not repeat capture controls', () => {
-      render(<LogTable byBucket={emptyByBucket} sessions={[]} onAddTo={() => {}} onRowTap={() => {}} />, { wrapper });
-      expect(screen.queryByRole('button', { name: /Log by voice/ })).toBeNull();
-      expect(screen.queryByRole('button', { name: /Scan barcode/ })).toBeNull();
-      expect(screen.getAllByRole('button', { name: /Add food/ })).toHaveLength(4);
+    it('an empty day shows Lunch and Dinner, each ending in its own add row', () => {
+      render(<LogTable byBucket={emptyByBucket} sessions={[]} renderAddRow={addRow} onRowTap={() => {}} />, { wrapper });
+      expect(screen.getAllByRole('heading', { level: 4 }).map(h => h.textContent)).toEqual(['Lunch', 'Dinner']);
+      const lunch = screen.getByText('Lunch').closest('section');
+      expect(lunch.querySelector('[aria-label="Add to Lunch"]')).toBeTruthy();
+      expect(lunch.lastElementChild.getAttribute('aria-label')).toBe('Add to Lunch');
+      expect(screen.queryByRole('button', { name: /Add food to/ })).toBeNull();
+      expect(document.querySelector('.health-log__empty-meals')).toBeNull();
     });
 
-    it('Add food preserves the chosen meal target', () => {
-      const onAddTo = vi.fn();
-      render(<LogTable byBucket={emptyByBucket} sessions={[]} onAddTo={onAddTo} onRowTap={() => {}} />, { wrapper });
-      fireEvent.click(screen.getByRole('button', { name: 'Add food to Lunch' }));
-      expect(onAddTo).toHaveBeenCalledWith('afternoon');
+    it('Breakfast joins the early column above Lunch, Snacks the late column below Dinner', () => {
+      const day = new Map([['morning', [{ uuid: 'b', name: 'Oats', mealTime: 'morning', calories: 150 }]],
+        ['night', [{ uuid: 's', name: 'Tea', mealTime: 'night', calories: 0 }]]]);
+      render(<LogTable byBucket={day} sessions={[]} renderAddRow={addRow} onRowTap={() => {}} />, { wrapper });
+      const [early, late] = document.querySelectorAll('.health-log__column');
+      expect([...early.querySelectorAll('h4')].map(h => h.textContent)).toEqual(['Breakfast', 'Lunch']);
+      expect([...late.querySelectorAll('h4')].map(h => h.textContent)).toEqual(['Dinner', 'Snacks']);
+    });
+
+    it('a revealed meal shows even while empty', () => {
+      render(<LogTable byBucket={emptyByBucket} sessions={[]} revealedBucket="morning" renderAddRow={addRow} onRowTap={() => {}} />, { wrapper });
+      expect(screen.getByText('Breakfast')).toBeTruthy();
     });
 
     it('the Ungrouped/orphans section carries NO capture controls (only real meal buckets do)', () => {
       const withOrphan = new Map(byBucket);
       withOrphan.set(null, [{ uuid: '9', name: 'Mystery', calories: 100 }]);
       render(<LogTable byBucket={withOrphan} sessions={[]}
-        onAddTo={() => {}} onRowTap={() => {}}
+        onRowTap={() => {}}
         onVoiceCapture={() => {}} onPhotoCapture={() => {}} onOpenBarcode={() => {}} />, { wrapper });
 
       const ungroupedSection = screen.getByText('Ungrouped').closest('section');
@@ -225,7 +239,7 @@ describe('LogTable', () => {
         ['afternoon', []], ['evening', []], ['night', []],
         [null, []],
       ]);
-      render(<LogTable byBucket={unsettledGroupBucket} sessions={[]} onAddTo={() => {}} onRowTap={() => {}} />, { wrapper });
+      render(<LogTable byBucket={unsettledGroupBucket} sessions={[]} onRowTap={() => {}} />, { wrapper });
       expect(screen.queryByText(/estimated/i)).toBeNull();
       expect(screen.getByRole('button', { name: /confirm entry/i })).toBeTruthy();
     });
@@ -242,7 +256,7 @@ describe('LogTable — per-meal macro subtotal', () => {
     render(<LogTable byBucket={bucketsWith([
       { uuid: '1', name: 'Eggs', calories: 140, protein: 12, carbs: 1, fat: 10 },
       { uuid: '2', name: 'Toast', calories: 90, protein: 3, carbs: 17, fat: 1 },
-    ])} sessions={[]} onAddTo={() => {}} onRowTap={() => {}} />, { wrapper });
+    ])} sessions={[]} onRowTap={() => {}} />, { wrapper });
     expect(screen.getByRole('img', { name: 'Protein: 15 grams' })).toHaveTextContent('15');
     expect(screen.getByRole('img', { name: 'Carbs: 18 grams' })).toHaveTextContent('18');
     expect(screen.getByRole('img', { name: 'Fat: 11 grams' })).toHaveTextContent('11');
@@ -253,35 +267,31 @@ describe('LogTable — per-meal macro subtotal', () => {
       { uuid: 'g1', kind: 'group', name: 'Smoothie', calories: 0, protein: 0, carbs: 0, fat: 0 },
       { uuid: 'c1', parentId: 'g1', name: 'Banana', calories: 105, protein: 1, carbs: 27, fat: 0 },
       { uuid: 'c2', parentId: 'g1', name: 'Yogurt', calories: 100, protein: 10, carbs: 6, fat: 3 },
-    ])} sessions={[]} onAddTo={() => {}} onRowTap={() => {}} />, { wrapper });
+    ])} sessions={[]} onRowTap={() => {}} />, { wrapper });
     expect([...document.querySelector('.health-meal__macros').children].map(badge => badge.textContent)).toEqual(['11', '33', '3']);
   });
 
   it('renders NO subtotal line for a meal of legacy rows with no macro data', () => {
     render(<LogTable byBucket={bucketsWith([{ uuid: '1', name: 'Mystery', calories: 200 }])}
-      sessions={[]} onAddTo={() => {}} onRowTap={() => {}} />, { wrapper });
+      sessions={[]} onRowTap={() => {}} />, { wrapper });
     expect(screen.getByText('200 kcal')).toBeTruthy();
     expect(screen.queryByText(/^P \d/)).toBeNull();
   });
 
   it('renders no subtotal line for an empty meal', () => {
-    render(<LogTable byBucket={bucketsWith([])} sessions={[]} onAddTo={() => {}} onRowTap={() => {}} />, { wrapper });
+    render(<LogTable byBucket={bucketsWith([])} sessions={[]} onRowTap={() => {}} />, { wrapper });
     expect(screen.queryByText(/^P \d/)).toBeNull();
   });
 });
 
 
-describe('anticipated meal capture', () => {
-  it('shows Dinner at 18:30, retires it next window, and preserves populated meals', () => {
-    vi.useFakeTimers(); vi.setSystemTime(new Date('2026-09-06T18:30:00'));
+describe('clock does not open empty meals', () => {
+  it('at 21:30 Snacks stays hidden and Dinner stays shown', () => {
+    vi.useFakeTimers(); vi.setSystemTime(new Date('2026-09-06T21:30:00'));
     try {
-      const { rerender } = render(<LogTable byBucket={byBucket} date="2026-09-06" onAddTo={()=>{}} onVoiceCapture={()=>{}} onRowTap={()=>{}}/>, {wrapper});
-      expect(screen.getByRole('button',{name:'Log by voice to Dinner'})).toBeTruthy();
-      vi.setSystemTime(new Date('2026-09-06T21:30:00'));
-      rerender(<LogTable byBucket={byBucket} date="2026-09-06" onAddTo={()=>{}} onVoiceCapture={()=>{}} onRowTap={()=>{}}/>);
-      expect(screen.getByRole('button',{name:'Log by voice to Snacks'})).toBeTruthy();
-      expect(screen.queryByRole('button',{name:'Log by voice to Dinner'})).toBeNull();
-      expect(screen.getByText('Eggs')).toBeTruthy();
+      render(<LogTable byBucket={new Map()} date="2026-09-06" onVoiceCapture={() => {}} onRowTap={() => {}} />, { wrapper });
+      expect(screen.getByRole('button', { name: 'Log by voice to Dinner' })).toBeTruthy();
+      expect(screen.queryByRole('button', { name: 'Log by voice to Snacks' })).toBeNull();
     } finally { vi.useRealTimers(); }
   });
 });

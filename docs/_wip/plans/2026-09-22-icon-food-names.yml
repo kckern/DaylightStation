@@ -1,0 +1,13 @@
+# Reviewed food-name -> hi-res icon map (Task B9c). Merged into the installed
+# icon manifest's `foodNames` by cli/health-icon-manifest-merge.cli.mjs.
+# Every target is an offered slug in the installed manifest (verified 2026-09-22).
+pita bread: pita-bread
+feta cheese: feta-cubes
+sharp cheddar cheese: cheddar-wedge
+baby spinach: spinach
+diet coca cola: cola
+diet coke: cola
+peeled baby-cut carrots: carrot
+shredded carrots: carrot
+peanut butter spread: peanut-butter
+chicken fried rice: fried-rice

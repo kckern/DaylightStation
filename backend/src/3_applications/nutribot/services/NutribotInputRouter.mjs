@@ -5,6 +5,7 @@ import { decodeCallback, CallbackActions } from '../lib/callback.mjs';
 import { stampUnsettled } from '../lib/unsettledStamp.mjs';
 import { NutribotScaleRefusal } from '../ports/NutribotScaleRefusal.mjs';
 import { MealTimes } from '#domains/nutrition/entities/schemas.mjs';
+import { UPC_REJECTED } from '../usecases/LogFoodFromUPC.mjs';
 
 /**
  * Nutribot Input Router
@@ -372,17 +373,30 @@ export class NutribotInputRouter extends BaseInputRouter {
   async handleUpc(event, responseContext) {
     const useCase = this.container.getLogFoodFromUPC();
     // The UPC use case owns capture for hardware and interactive transports.
-    return await this.#capture(event, responseContext, { source: 'barcode', commit: false }, (rc) =>
-      useCase.execute({
-        userId: this.#resolveUserId(event),
-        conversationId: event.conversationId,
-        upc: event.payload.text,
-        messageId: event.messageId,
-        operationId: event.payload.operationId || event.operationId,
-        bucket: event.payload.bucket || null,
-        date: event.payload.date || null,
-        responseContext: rc,
-      }));
+    try {
+      return await this.#capture(event, responseContext, { source: 'barcode', commit: false }, (rc) =>
+        useCase.execute({
+          userId: this.#resolveUserId(event),
+          conversationId: event.conversationId,
+          upc: event.payload.text,
+          messageId: event.messageId,
+          operationId: event.payload.operationId || event.operationId,
+          bucket: event.payload.bucket || null,
+          date: event.payload.date || null,
+          responseContext: rc,
+        }));
+    } catch (error) {
+      // A malformed code (bad check digit, an ISBN, a glued read that did not
+      // collapse) is a refusal, not a failure: one short line to the person
+      // (Telegram shows it; the web capture context carries it to Health).
+      if (error?.code !== UPC_REJECTED) throw error;
+      const reason = error.context?.reason ?? null;
+      this.logger.info?.('nutribot.upc.rejected', { conversationId: event.conversationId, reason });
+      try { await responseContext?.sendMessage?.(error.message, {}); } catch (sendError) {
+        this.logger.warn?.('nutribot.upc.rejected.replyFailed', { error: sendError.message });
+      }
+      return { ok: false, code: UPC_REJECTED, rejected: reason, message: error.message };
+    }
   }
 
   #aiUnavailable(event, responseContext, message) {
