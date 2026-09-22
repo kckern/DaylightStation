@@ -36,6 +36,18 @@ import { INLINE_SPAN_PLAIN, INLINE_SPAN_ITALIC } from './inlineGrammar.mjs';
 /** Bundled font assets, resolved against this module — never the process cwd. */
 const DEFAULT_FONT_DIR = fileURLToPath(new URL('../../../../assets/fonts', import.meta.url));
 
+/**
+ * Hangul (Jamo, Compatibility Jamo, Syllables). The house fonts have no
+ * Hangul glyphs — a Korean word would print as `.notdef` boxes — so any run
+ * containing Hangul is set in the theme's `hangul` face (Noto Sans KR, OFL).
+ * Per run, not per glyph: the inline grammar already splits bold/italic/code
+ * into runs, and a run is the unit both measurement and drawing agree on.
+ */
+export const HANGUL_PATTERN = /[ᄀ-ᇿ㄰-㆏가-힯]/;
+export function withScriptFont(run) {
+  return run && typeof run.text === 'string' && HANGUL_PATTERN.test(run.text) ? { ...run, font: 'hangul' } : run;
+}
+
 /** Markdown subset: ATX headings, blank-line paragraphs, `-`/`*` bullets. */
 const HEADING = /^(#{1,6})\s+(.*)$/;
 const BULLET = /^[-*]\s+(.*)$/;
@@ -131,7 +143,7 @@ export function createMeasurementDocument({ theme = documentPdfTheme, fontDir = 
 }
 
 const stringWidth = (doc, theme, fontKey, sizePt, text) =>
-  doc.font(theme.fonts[fontKey].name).fontSize(sizePt).widthOfString(text);
+  doc.font((theme.fonts[fontKey] ?? theme.fonts.regular).name).fontSize(sizePt).widthOfString(text);
 
 /**
  * Typographic quotes. A worksheet is typeset, not code: it must never show a
@@ -190,7 +202,7 @@ function splitParagraphs(md) {
 function segmentParagraph(text, { italic = false } = {}) {
   const segments = [];
   let runs = [];
-  const pushText = (raw, font) => { if (raw) runs.push({ text: raw, font }); };
+  const pushText = (raw, font) => { if (raw) runs.push(withScriptFont({ text: raw, font })); };
   const flushText = () => {
     if (runs.some((r) => r.text.trim())) segments.push({ kind: 'text', runs });
     runs = [];
@@ -237,7 +249,7 @@ function inlineRuns(text, { italic = false, baseFont = 'regular' } = {}) {
   const pattern = italic ? INLINE_SPAN_ITALIC : INLINE_SPAN_PLAIN;
   pattern.lastIndex = 0;
   const runs = [];
-  const push = (raw, font) => { if (raw) runs.push({ text: raw, font }); };
+  const push = (raw, font) => { if (raw) runs.push(withScriptFont({ text: raw, font })); };
   let cursor = 0;
   let match = pattern.exec(text);
   while (match) {
@@ -273,7 +285,7 @@ function clozeInlineItems(text, blanksByN, theme, { italic = false } = {}) {
   const pattern = italic ? CLOZE_SPAN_ITALIC : CLOZE_SPAN_PLAIN;
   pattern.lastIndex = 0;
   const items = [];
-  const push = (raw, font) => { if (raw) items.push({ text: raw, font }); };
+  const push = (raw, font) => { if (raw) items.push(withScriptFont({ text: raw, font })); };
   let cursor = 0;
   let match = pattern.exec(text);
   while (match) {

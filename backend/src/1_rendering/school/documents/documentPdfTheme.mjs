@@ -41,6 +41,8 @@ export const documentPdfTheme = Object.freeze({
     // Registration is lazy in pdfkit, so a document that never prints a code
     // embeds nothing and stays byte-identical.
     code: { name: 'school-doc-code', file: 'kongtext/kongtext.ttf' },
+    // Hangul fallback — see workbookTheme. Lazy registration keeps goldens identical.
+    hangul: { name: 'school-doc-hangul', file: 'noto-sans-kr/NotoSansKR-Regular.otf' },
   },
 
   /**
