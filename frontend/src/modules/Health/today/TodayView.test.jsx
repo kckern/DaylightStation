@@ -1,9 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
 
 const apiMock = vi.fn();
 const departureState = vi.hoisted(()=>({departed:false}));
+// The latest props the QuickCaptureBar stub received, so a test can drive its
+// callbacks (e.g. the + that reveals a meal) without rendering the real bar.
+const quickBarProps = vi.hoisted(() => ({ current: null }));
 vi.mock('../../../lib/api.mjs', () => ({ DaylightAPI: (...a) => apiMock(...a) }));
 
 // Bypass the real file-picker/FileReader and MediaRecorder plumbing — the
@@ -18,10 +21,14 @@ vi.mock('../../../lib/api.mjs', () => ({ DaylightAPI: (...a) => apiMock(...a) })
 // buttons pass that meal's id) — the bucket-less branch below is dead in
 // practice but kept so the mock still degrades sensibly if some future
 // caller omits it.
+//
+// Each meal's add row (MealAddRow) also mounts a PhotoCapture, with a
+// `labelPrefix`. Those get their own label so they never collide with the
+// QuickCaptureBar stub's `MockPhotoCapture-{bucket}` buttons below.
 vi.mock('../capture/PhotoCapture.jsx', () => ({
-  PhotoCapture: ({ onCapture, bucket }) => (
+  PhotoCapture: ({ onCapture, bucket, labelPrefix }) => (
     <button onClick={() => onCapture('data:image/png;base64,zzz', bucket)}>
-      {bucket ? `MockPhotoCapture-${bucket}` : 'MockPhotoCapture'}
+      {labelPrefix ? `MockAddRowPhoto-${bucket}` : bucket ? `MockPhotoCapture-${bucket}` : 'MockPhotoCapture'}
     </button>
   ),
 }));
@@ -47,11 +54,12 @@ vi.mock('../capture/CustomFoodSheet.jsx', () => ({ CustomFoodSheet: () => null }
 // per-meal instance happens to share that hour's bucket, since the mock's
 // label depends only on `bucket`, not on which caller rendered it.
 // Expose the toolbar callback seam deterministically; its real target UI has a separate suite.
-vi.mock('./QuickCaptureBar.jsx', () => ({ QuickCaptureBar: ({ bucketOverride, hideVoice, onPhotoCapture, onVoiceCapture }) => bucketOverride ? null :
-  <div>{['morning', 'afternoon', 'evening', 'night'].map(bucket => <div key={bucket}>
+vi.mock('./QuickCaptureBar.jsx', () => ({ QuickCaptureBar: (props) => { quickBarProps.current = props;
+  const { bucketOverride, hideVoice, onPhotoCapture, onVoiceCapture } = props;
+  return bucketOverride ? null : <div>{['morning', 'afternoon', 'evening', 'night'].map(bucket => <div key={bucket}>
     <button onClick={() => onPhotoCapture('data:image/png;base64,zzz', bucket)}>MockPhotoCapture-{bucket}</button>
     {!hideVoice ? <button onClick={() => onVoiceCapture('data:audio/webm;base64,zzz', bucket)}>MockVoiceCapture-{bucket}</button> : null}
-  </div>)}</div>
+  </div>)}</div>; }
 }));
 
 // Pin the capture-pending bucket target so the "which bucket does the
@@ -197,7 +205,7 @@ const NUTRILIST_WITH_TWO_ROWS = {
 describe('TodayView — Task 3.2: permanent chrome, SWR day data, in-place capture pending', () => {
   beforeEach(() => { apiMock.mockReset(); resetApiResourceCache(); });
 
-  it('renders every meal heading during a true cold load, with the shimmer confined to section bodies', async () => {
+  it('renders the Lunch and Dinner headings during a true cold load, with the shimmer confined to section bodies', async () => {
     apiMock.mockImplementation(async (path) => {
       if (path.includes('health/day?')) return new Promise(() => {}); // never resolves — stay cold
       if (path.includes('budget')) return BUDGET;
@@ -209,11 +217,12 @@ describe('TodayView — Task 3.2: permanent chrome, SWR day data, in-place captu
     r(<TodayView onSetupGoals={() => {}} onCoachTap={() => {}} />);
 
     // Synchronously, before anything resolves: structure is already there.
-    expect(screen.getByText('Breakfast')).toBeTruthy();
+    // Lunch and Dinner are permanent; Breakfast and Snacks wait for food.
     expect(screen.getByText('Lunch')).toBeTruthy();
     expect(screen.getByText('Dinner')).toBeTruthy();
-    expect(screen.getByText('Snacks')).toBeTruthy();
-    expect(screen.getAllByRole('button', { name: /Add food/ }).length).toBe(4);
+    expect(screen.queryByText('Breakfast')).toBeNull();
+    expect(screen.queryByText('Snacks')).toBeNull();
+    expect(screen.getAllByRole('combobox', { name: /^Add to / }).length).toBe(2);
     // The shimmer lives INSIDE a section body, not as a page-level spinner.
     const shimmers = screen.getAllByLabelText(/^Loading /);
     expect(shimmers.length).toBeGreaterThan(0);
@@ -312,7 +321,7 @@ describe('TodayView — Task 3.2: permanent chrome, SWR day data, in-place captu
     expect(placeholder.closest('[aria-busy="true"]')).toBeTruthy();
     const lunchSection = screen.getByText('Lunch').closest('section');
     expect(lunchSection.contains(placeholder)).toBe(true);
-    expect(screen.getByRole('button', { name: 'Add food to Breakfast' })).toBeTruthy();
+    expect(screen.getByRole('combobox', { name: 'Add to Dinner' })).toBeTruthy();
 
     resolveInput({ messages: [] });
     await waitFor(() => expect(screen.queryByText('Analyzing…')).toBeNull());
@@ -394,7 +403,7 @@ describe('TodayView — Task 4.3: QuickCaptureBar wiring', () => {
   it('does not render MacroFooter capture controls — QuickCaptureBar is the one capture surface', async () => {
     apiMock.mockImplementation(baseApi());
     r(<TodayView onSetupGoals={() => {}} onCoachTap={() => {}} />);
-    await waitFor(() => screen.getByText('Breakfast'));
+    await waitFor(() => screen.getByText('Lunch'));
     // No BARE (bucket-less, footer-style) capture trigger exists anywhere —
     // every remaining mocked instance carries a `-{bucket}` suffix, i.e.
     // came from LogTable's per-meal header, never a page-level footer icon.
@@ -480,7 +489,7 @@ describe('TodayView — scale observations', () => {
   it('a day with no observations renders no section at all', async () => {
     apiMock.mockImplementation(baseApi());
     r(<TodayView onSetupGoals={() => {}} onCoachTap={() => {}} />);
-    await waitFor(() => screen.getByText('Breakfast'));
+    await waitFor(() => screen.getByText('Lunch'));
     expect(document.querySelector('.health-obs')).toBeFalsy();
   });
 
@@ -538,9 +547,40 @@ describe('TodayView — scale observations', () => {
   it('REGRESSION: the per-meal capture buttons still render alongside the new section', async () => {
     apiMock.mockImplementation(baseApi({ observations: { observations: [OPEN_WEIGHT] } }));
     r(<TodayView onSetupGoals={() => {}} onCoachTap={() => {}} />);
-    await waitFor(() => screen.getByText('MockPhotoCapture-morning'));
-    expect(screen.getByRole('button', {name:'Add food to Dinner'})).toBeTruthy();
+    await waitFor(() => screen.getByRole('combobox', { name: 'Add to Dinner' }));
+    // Dinner's add row carries its own photo / barcode / saved-meals trio.
+    expect(screen.getByText('MockAddRowPhoto-evening')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Scan barcode to Dinner' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Saved meals for Dinner' })).toBeTruthy();
+    // Breakfast is empty and unrevealed, so it has no add row at all.
     expect(screen.queryByRole('button', { name: 'Scan barcode to Breakfast' })).toBeNull();
+  });
+
+  it('the quick bar + reveals a hidden meal and focuses its add row', async () => {
+    apiMock.mockImplementation(baseApi({}));
+    r(<TodayView onSetupGoals={() => {}} onCoachTap={() => {}} />);
+    await waitFor(() => screen.getByRole('combobox', { name: 'Add to Lunch' }));
+    expect(screen.queryByRole('combobox', { name: 'Add to Breakfast' })).toBeNull();
+    act(() => quickBarProps.current.onAddTo('morning'));
+    const input = await screen.findByRole('combobox', { name: 'Add to Breakfast' });
+    await waitFor(() => expect(document.activeElement).toBe(input));
+  });
+
+  // Sections remount per date. A reveal made on one day must not follow the
+  // user to another, where the remounted row would grab focus (and, on a
+  // phone, the keyboard) without being asked.
+  it('a reveal belongs to the day it was made on', async () => {
+    apiMock.mockImplementation(baseApi({}));
+    r(<TodayView onSetupGoals={() => {}} onCoachTap={() => {}} />);
+    await waitFor(() => screen.getByRole('combobox', { name: 'Add to Lunch' }));
+    act(() => quickBarProps.current.onAddTo('morning'));
+    await screen.findByRole('combobox', { name: 'Add to Breakfast' });
+    const today = new Date(); today.setDate(today.getDate() - 1);
+    const yesterday = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    fireEvent.click(document.querySelector(`[data-date="${yesterday}"]`));
+    await waitFor(() => expect(apiMock.mock.calls.some(([p]) => p.includes(`health/day?date=${yesterday}`))).toBe(true));
+    await waitFor(() => expect(screen.queryByRole('combobox', { name: 'Add to Breakfast' })).toBeNull());
+    expect(document.activeElement?.getAttribute('role')).not.toBe('combobox');
   });
 });
 
@@ -583,10 +623,7 @@ describe('TodayView — saving a meal writes a template, and the picker is the o
   it('the add row opens the template picker, which asks for proposals too', async () => {
     apiMock.mockImplementation(dayApi());
     r(<TodayView onSetupGoals={() => {}} onCoachTap={() => {}} />);
-    await waitFor(() => screen.getAllByRole('button', { name: /Add food/i }));
-    fireEvent.click(screen.getAllByRole('button', { name: /Add food/i })[0]);
-    const meals = await screen.findByText(/Meals & templates/);
-    fireEvent.click(meals);
+    fireEvent.click(await screen.findByRole('button', { name: 'Saved meals for Lunch' }));
     await waitFor(() => expect(
       apiMock.mock.calls.some(([p]) => p.includes('nutrition/templates?includeProposed=1')),
     ).toBe(true));
