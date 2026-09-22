@@ -245,7 +245,16 @@ export class GradeSubmission {
       ? worksheetInstanceRoster(await this.#worksheetInstances?.findBySession?.(sessionId) ?? null)
       : null;
     const expectedItems = isPrintUnit
-      ? [...new Set(queueItemsForSession.map((item) => item.itemId))]
+      // A `key-alignment-suspected` entry (OMR key-alignment check) is a
+      // synthetic queue row, not a question — nothing was printed for it,
+      // nothing was answered — so it must never join the score's
+      // denominator, even once a teacher resolves it with a truth-value
+      // verdict instead of `void`.
+      ? [...new Set(
+        queueItemsForSession
+          .filter((item) => item.reason !== 'key-alignment-suspected')
+          .map((item) => item.itemId),
+      )]
       : (document ? questionItemIds(document) : (roster ?? (bank?.items ?? []).map((i) => i.id)));
     if (!expectedItems.length) return this.#unavailable(sessionId, 'There are no questions to mark on that one.');
 
