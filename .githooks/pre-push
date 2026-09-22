@@ -26,6 +26,17 @@ set -u
 repo_root=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
 cd "$repo_root" || exit 0
 
+# The inputs below (.env, .claude/*.local.txt) are gitignored, so a linked
+# worktree (.worktrees/<name>) has none of them and every check here used to
+# be skipped when pushing from one (found 2026-09-22). Prefer the current
+# checkout's copy, then fall back to the main checkout that owns the repo.
+common_dir=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || common_dir=""
+main_root=${common_dir%/.git}
+local_file() {
+  if [ -f "$repo_root/$1" ] || [ -z "$main_root" ]; then printf '%s' "$repo_root/$1"
+  else printf '%s' "$main_root/$1"; fi
+}
+
 ZERO=0000000000000000000000000000000000000000
 
 # ---------------------------------------------------------------- collect ----
@@ -61,7 +72,7 @@ deny() {
 }
 
 # ------------------------------------------------------- 1) FKB password ----
-BASE=$(grep -E '^DAYLIGHT_BASE_PATH=' "$repo_root/.env" 2>/dev/null | cut -d= -f2- | tr -d '"')
+BASE=$(grep -E '^DAYLIGHT_BASE_PATH=' "$(local_file .env)" 2>/dev/null | cut -d= -f2- | tr -d '"')
 AUTH="${SECRET_GUARD_AUTH_FILE:-$BASE/data/household/auth/fullykiosk.yml}"
 if [ -f "$AUTH" ]; then
   PW=$(grep -E '^password:' "$AUTH" | sed 's/^password:[[:space:]]*//; s/^"//; s/"$//; s/^'"'"'//; s/'"'"'$//')
@@ -79,7 +90,7 @@ if [ -f "$AUTH" ]; then
 fi
 
 # --------------------------------------------- 2) household PII patterns ----
-PAT_FILE="$repo_root/.claude/secret-patterns.local.txt"
+PAT_FILE=$(local_file .claude/secret-patterns.local.txt)
 if [ ! -f "$PAT_FILE" ]; then
   # Fail OPEN, loudly. Blocking every push on a machine that has never had the
   # (gitignored) pattern file would make the hook the first thing anyone removes.
@@ -91,7 +102,7 @@ fi
 
 # Known-safe phrases are removed before matching. "Felix Lullabye" is a Plex
 # media title, not a person; an optional gitignored allowlist can add more.
-ALLOW_FILE="$repo_root/.claude/secret-allowlist.local.txt"
+ALLOW_FILE=$(local_file .claude/secret-allowlist.local.txt)
 FILTERED=$(printf '%s' "$SCAN" | grep -v 'Felix Lullabye')
 if [ -f "$ALLOW_FILE" ]; then
   while IFS= read -r phrase; do

@@ -77,6 +77,47 @@ set with the current authored onset and latches one wrong result per gesture.
 configured window, accumulates chords, and records drift. One physical attack
 may satisfy same-pitch logical notes in multiple parts at one onset.
 
+### Timed judge and window policies
+
+Every timed onset is decided by `judgeTimedOnset` in `performance/timedJudge.js`;
+the attempt only records its verdict. The policy picks one of two behaviours:
+
+- **Fixed** (no `policy.windowFraction`; Sheet Music, Piano Hero, Space
+  Invaders): a same-pitch pending note within ±`matchWindowMs` is a hit
+  (closest wins). Anything else is `wrong`, charged to the nearest pending
+  note's event. Pending notes miss at target + `missWindowMs`. Placement uses
+  `timingToleranceMs` / `timingWindowMs`.
+- **Fraction** (`windowFraction`, `windowMinMs`, `windowMaxMs`; exercises
+  default to 0.4 / 80 / 400): each event's window is
+  `clamp(windowFraction × gap)`, where gap is the distance to the nearest
+  non-empty neighbouring onset (a single-event ask uses `windowMaxMs`). Its
+  reach is the gap (never below the window).
+  - `hit`: right pitch inside the window.
+  - `early` / `late`: right pitch outside the window but inside reach. It is
+    stored on its own event as `hits[noteId] = { time, driftMs, windowMs,
+    offbeat }`, counts toward completeness, earns 0 placement, and emits
+    `{ type: 'offbeat', eventId, noteIds, driftMs, side }`. A steady lag
+    therefore never cascades onto the next beat.
+  - `wrong`: anything else, charged to the nearest non-empty event by time.
+  - `advanceAssessment` adds a note to `attempt.lapsed` (emits `lapse`) once
+    its window closes unclaimed; it can still be claimed late. It is finally
+    missed at target + reach. The attempt completes only when every note is
+    claimed or finally missed.
+  - Placement per claimed note: 1 within ±0.4 × window, linear to 0 at the
+    window edge, 0 for off-beat claims. Result diagnostics add
+    `offbeat_notes`, `early_notes`, `late_notes`, and `median_drift_ms`
+    (signed median over claimed notes). `response_median_ms` includes
+    off-beat claims, so it reflects real lateness.
+
+`performance/timedVerdicts.js` projects a timed attempt for renderers:
+`timedVerdicts(attempt)` returns `Map<eventIndex, Map<midi, verdict>>` with
+states `hit | early | late | lapsed | miss | wrong` (a claim beats a miss,
+which beats lapsed; a wrong pitch never overwrites an expected note at the same
+midi). `timedRunSummary(result, attempt)` returns `{ kind, offbeat, late,
+early, medianDriftMs }`; `kind` is `timing` when a failed run claimed every
+note with the right pitch, cleanliness did not fail, and placement failed or
+some notes were off the beat. Any other failure is `notes`.
+
 Free and metronome attempts are untimed and never produce placement. Cued mode
 requires a tempo map and timed matching. Metronome sound is presentation; it
 does not turn a wait-for-correct attempt into a timed one.

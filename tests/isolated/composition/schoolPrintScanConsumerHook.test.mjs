@@ -159,10 +159,13 @@ describe('gradingHook: fired fire-and-forget at all four terminal scan outcomes'
     await flush();
 
     expect(gradingHook.calls).toHaveLength(2);
-    expect(gradingHook.calls[0]).toMatchObject({
+    // Found by session, not index: each fire waits on its own label lookup,
+    // so the two can reach the hook in either order.
+    const bySession = (id) => gradingHook.calls.find((c) => c.sessionId === id);
+    expect(bySession('sec-a')).toMatchObject({
       result: 'graded', sessionId: 'sec-a', earned: 2, total: 2, percent: 100,
     });
-    expect(gradingHook.calls[1]).toMatchObject({
+    expect(bySession('sec-b')).toMatchObject({
       result: 'graded', sessionId: 'sec-b', earned: 1, total: 3, percent: 33.33,
     });
     // Neither fire used the card's own (deliberately mismatched) aggregate.

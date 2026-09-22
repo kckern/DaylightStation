@@ -185,7 +185,7 @@ items:
     input: singalong:hymn/108
 ```
 
-**Key differences**: Legacy uses `label`/`input`/`action` (action as separate field). Target uses `title` + action-as-key (`play:`, `open:`, `list:`, `display:`). Some legacy `input` values have a space after the colon (e.g., `'app: gratitude'`) — the yaml-config driver must `.trim()` after splitting.
+**Key differences**: Legacy uses `label`/`input`/`action` (action as separate field). Target uses `title` + action-as-key (`play:`, `open:`, `list:`, `display:`). During compatibility reads, an item can contain both fields: `label` is the administrator-authored display name and takes precedence in list-facing UI, while `title` remains the underlying authored or source title and is the fallback when no label exists. Some legacy `input` values have a space after the colon (e.g., `'app: gratitude'`) — the yaml-config driver must `.trim()` after splitting.
 
 #### Dynamic Query References
 

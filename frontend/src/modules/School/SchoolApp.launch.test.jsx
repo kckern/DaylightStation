@@ -126,6 +126,10 @@ vi.mock('./books/BookShelf.jsx', () => ({
 vi.mock('./Programs/RubiksCube/RubiksCubeProgram.jsx', () => ({
   default: () => <div data-testid="cube-stub">cube</div>,
 }));
+const wordLadderProps = vi.fn();
+vi.mock('./Programs/Flashcards/WordLadder/WordLadderProgram.jsx', () => ({
+  default: (props) => { wordLadderProps(props); return <div data-testid="word-ladder-stub">word ladder</div>; },
+}));
 
 // `onPortalLaunch` RETURNS whether it mounted, and the keypad keeps its card
 // up on `false`. The WS path above drops that boolean, so the real hook is
@@ -656,4 +660,33 @@ it('Portal scan waits for keypad digits, hands returned grant to the shelf and d
     // title is both the art and the card's heading.
     expect(screen.getAllByText('Next book').length).toBeGreaterThan(0);
   } finally { r.unmount(); window.history.replaceState({}, '', oldUrl); }
+});
+
+describe('SchoolApp — word-ladder flashcards target', () => {
+  const TARGET = { kind: 'program', program: 'flashcards', deckId: 'language/korean/week-01-classroom', policy: { mode: 'word-ladder' } };
+
+  it('mounts the word ladder (not the FSRS player) for the launched learner and answers true', async () => {
+    render(<SchoolApp clear={() => {}} mode="open" />);
+    await screen.findByText('Civilization');
+    let mounted;
+    await act(async () => {
+      launchHook.claim('kid1');
+      mounted = await launchHook.onLaunch(TARGET, 'kid1');
+    });
+    expect(mounted).toBe(true);
+    expect(await screen.findByTestId('word-ladder-stub')).toBeInTheDocument();
+    const props = wordLadderProps.mock.calls.at(-1)[0];
+    expect(props.descriptor).toEqual({ deckId: 'language/korean/week-01-classroom', userId: 'kid1' });
+    expect(typeof props.onExit).toBe('function');
+    expect(typeof props.resolveAssetUrl).toBe('function');
+  });
+
+  it('answers false without a deck', async () => {
+    render(<SchoolApp clear={() => {}} mode="open" />);
+    await screen.findByText('Civilization');
+    let mounted;
+    await act(async () => { mounted = await launchHook.onLaunch({ ...TARGET, deckId: null }, 'kid1'); });
+    expect(mounted).toBe(false);
+    expect(screen.queryByTestId('word-ladder-stub')).toBeNull();
+  });
 });

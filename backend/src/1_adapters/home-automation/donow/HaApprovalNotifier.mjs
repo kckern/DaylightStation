@@ -75,6 +75,10 @@ export class HaApprovalNotifier {
           // documented "deliver now" pair.
           ttl: 0,
           priority: 'high',
+          // A re-send for the same pending request replaces its card
+          // without ringing a second time.
+          tag: `donow-${record.id}`,
+          alert_once: true,
           channel: 'DoNow approvals',
           importance: 'high',
           actions: [

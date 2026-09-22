@@ -9,6 +9,7 @@ import { useArmedAction } from '../../../lib/identity/useArmedAction.js';
 import { launchAndroidTarget } from '../../../lib/fkb.js';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import PianoMidiMonitor from './PianoMidiMonitor.jsx';
+import ClickCalibration from './ClickCalibration.jsx';
 import TransportSheet from './transport/TransportSheet.jsx';
 import SettingsTile from './SettingsTile.jsx';
 import FeedbackOverlay from '@/modules/Feedback/FeedbackOverlay.jsx';
@@ -35,6 +36,7 @@ export default function OperatorDrawer({ open, onClose }) {
   const turnOffPianoScreen = usePianoScreenOff();
   const logger = useMemo(() => getLogger().child({ component: 'piano-maintenance', pianoId }), [pianoId]);
   const [diagnostics, setDiagnostics] = useState(false);
+  const [calibrating, setCalibrating] = useState(false);
   const [action, setAction] = useState({ state: 'idle', message: null, name: null });
   const [feedbackOpen, setFeedbackOpen] = useState(false);
 
@@ -89,6 +91,7 @@ export default function OperatorDrawer({ open, onClose }) {
     if (open) return;
     disarmScreen(); disarmReload(); disarmReboot();
     setDiagnostics(false);
+    setCalibrating(false);
     setFeedbackOpen(false);
     setAction({ state: 'idle', message: null, name: null });
   }, [open, disarmScreen, disarmReload, disarmReboot]);
@@ -113,7 +116,7 @@ export default function OperatorDrawer({ open, onClose }) {
         <SettingsTile icon="connection" label="Repair connection" emphasis={ready ? 'default' : 'primary'} disabled={repairing} onPress={repairConnection} message={repairing ? 'Repairing…' : repair.message} tone={repairing ? 'working' : repair.state === 'failed' ? 'failed' : repair.state === 'success' ? 'success' : 'idle'} />
       </div>
 
-      {diagnostics ? <div className="piano-settings__diag">
+      {calibrating ? <ClickCalibration onBack={() => setCalibrating(false)} /> : diagnostics ? <div className="piano-settings__diag">
         <SettingsTile icon="back" label="Back" onPress={() => setDiagnostics(false)} />
         <PianoMidiMonitor />
       </div> : <>
@@ -122,6 +125,7 @@ export default function OperatorDrawer({ open, onClose }) {
           <SettingsTile icon="stop" label="Stop stuck notes" onPress={stopStuckNotes} message={messageFor('stop-stuck-notes')} tone={toneFor('stop-stuck-notes')} />
           <SettingsTile icon="system-shutdown" label={screenArmed ? 'Tap again to confirm' : 'Turn off display'} emphasis="danger" on={screenArmed} onPress={screenOff} message={messageFor('screen-off')} tone={toneFor('screen-off')} />
           <SettingsTile icon="settings" label="Diagnostics" onPress={() => setDiagnostics(true)} />
+          <SettingsTile icon="metronome" label="Click timing" onPress={() => { logger.info('piano.maintenance.click-timing', {}); setCalibrating(true); }} />
           <SettingsTile icon="record" label="Record feedback" onPress={() => setFeedbackOpen(true)} />
         </div>
         <div className="piano-settings__danger" role="group" aria-label="Recovery">

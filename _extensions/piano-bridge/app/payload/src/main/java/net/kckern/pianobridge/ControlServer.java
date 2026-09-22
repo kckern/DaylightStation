@@ -43,7 +43,7 @@ import fi.iki.elonen.NanoWSD;
  *     status   { engine:"running"|"stopped", preset:<id|null>, cpu:<n>, xruns:<n> }
  *                                                        (~1s heartbeat)
  *     error    { code, msg }                             (on failure)
- *     note.on  { note, velocity }                        (live MIDI fan-out)
+ *     note.on  { note, velocity, t }                     (live MIDI fan-out; t = epoch ms of the MIDI event, p20+)
  *     note.off { note }                                  (live MIDI fan-out)
  *
  * The browser is the config authority: preset.load ships a fully-resolved spec.
@@ -120,7 +120,7 @@ public class ControlServer extends NanoWSD {
     }
 
     /** Which payload built this server — so "who is answering :8770" is never ambiguous. */
-    public static final String BUILT_BY = "p19-gatt-latch";
+    public static final String BUILT_BY = "p20-note-time";
 
     @Override
     protected WebSocket openWebSocket(IHTTPSession handshake) {
@@ -689,21 +689,35 @@ public class ControlServer extends NanoWSD {
     // --- live MIDI fan-out (called by BridgeCore's MidiReceiver) ---
 
     /** Forward a live note-on from the BLE-MIDI piano to all connected clients. */
-    public void fanOutNoteOn(int note, int velocity) {
-        broadcast(buildNote("note.on", note, velocity));
+    public void fanOutNoteOn(int note, int velocity, long eventEpochMs) {
+        broadcast(buildNote("note.on", note, velocity, eventEpochMs));
     }
 
     /** Forward a live note-off from the BLE-MIDI piano to all connected clients. */
-    public void fanOutNoteOff(int note) {
-        broadcast(buildNote("note.off", note, -1));
+    public void fanOutNoteOff(int note, long eventEpochMs) {
+        broadcast(buildNote("note.off", note, -1, eventEpochMs));
     }
 
-    private String buildNote(String type, int note, int velocity) {
+    /**
+     * Convert an android.media.midi event timestamp (System.nanoTime() base) to epoch
+     * ms, given a (currentTimeMillis, nanoTime) pair sampled together. A timestamp of
+     * 0 (or negative) means "no timestamp" and yields the receipt time. p20+: this is
+     * the `t` on note.on/note.off, so a grader can judge when the key went down rather
+     * than when the WebView got round to reading the socket.
+     */
+    static long midiEventEpochMs(long midiNanos, long nowEpochMs, long nowNanos) {
+        if (midiNanos <= 0) return nowEpochMs;
+        return nowEpochMs - Math.round((nowNanos - midiNanos) / 1e6);
+    }
+
+    /** JSON for an outbound note. `t` (epoch ms) is omitted when eventEpochMs <= 0. */
+    static String buildNote(String type, int note, int velocity, long eventEpochMs) {
         try {
             JSONObject o = new JSONObject();
             o.put("type", type);
             o.put("note", note);
             if (velocity >= 0) o.put("velocity", velocity);
+            if (eventEpochMs > 0) o.put("t", eventEpochMs);
             return o.toString();
         } catch (JSONException e) {
             return null;

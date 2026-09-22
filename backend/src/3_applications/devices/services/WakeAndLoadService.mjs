@@ -25,6 +25,7 @@ import { decodeItemAction } from '#shared-contracts/media/item-action.mjs';
 import { isLoadContentQueueOp } from '#shared-contracts/media/commands.mjs';
 import { resolveContentId } from '../ports/contentControlQuery.mjs';
 import { contentRequiresCamera } from './contentRequiresCamera.mjs';
+import { pushData, titleCaseId } from '#domains/notification/push/pushText.mjs';
 
 // Note: 'playback' is an optional trailing step emitted only by the playback
 // watchdog (after load). Not in the sequential flow; frontend consumers may
@@ -794,9 +795,13 @@ export class WakeAndLoadService {
     const notifyService = device?.notifyService;
     if (!notifyService || !this.#haGateway) return;
     try {
+      // Name the device as the household does; the id stays only in the tag,
+      // so a second failure for the same TV replaces the card without ringing.
+      const name = device?.name ?? titleCaseId(deviceId);
       await this.#haGateway.callService('notify', notifyService, {
-        title: 'TV failed to turn on',
-        message: `${deviceId} did not respond after retry`
+        title: `📺 ${name} didn't turn on`,
+        message: "It didn't respond after a retry",
+        data: pushData({ tag: `tv-${deviceId}`, alertOnce: true }),
       });
       this.#logger.info?.('wake-and-load.notify.sent', { deviceId, notifyService });
     } catch (err) {

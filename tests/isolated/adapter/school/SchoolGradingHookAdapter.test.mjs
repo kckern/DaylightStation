@@ -31,8 +31,21 @@ describe('SchoolGradingHookAdapter', () => {
       result: 'graded', learner_id: 'learner4', student: 'Learner4', test_id: '4071314',
       session_id: 'ses_f6Buxumv', percent: 83, earned: 5, total: 6,
       pending_review: null, reasons: [], items: [], code: null,
-      subject: null, course: null, unit: null, lesson: null,
+      subject: null, course: null, unit: null, lesson: null, notification: null,
     });
+  });
+
+  it('forwards a composed notification verbatim', async () => {
+    const { adapter, calls } = makeAdapter();
+    const notification = { title: '✅ Learner4 — Atlas: Ohio', message: '6 of 6 correct', data: { tag: 't' } };
+    await adapter.fire({ ...GRADED, notification });
+    expect(calls[0].data.notification).toEqual(notification);
+  });
+
+  it('sends notification: null when none was composed', async () => {
+    const { adapter, calls } = makeAdapter();
+    await adapter.fire(GRADED);
+    expect(calls[0].data).toHaveProperty('notification', null);
   });
 
   it('fills inapplicable keys with null and [] on an unresolved outcome', async () => {
@@ -42,7 +55,7 @@ describe('SchoolGradingHookAdapter', () => {
       result: 'unresolved', learner_id: null, student: null, test_id: '12123F',
       session_id: null, percent: null, earned: null, total: null,
       pending_review: null, reasons: [], items: [], code: 'CARD_ID_UNREADABLE',
-      subject: null, course: null, unit: null, lesson: null,
+      subject: null, course: null, unit: null, lesson: null, notification: null,
     });
   });
 
@@ -158,7 +171,7 @@ describe('SchoolGradingHookAdapter', () => {
     // there is nothing here to skip or fail on — the defensive toVariables
     // fix means a null outcome just becomes an all-null grade record and
     // dispatches normally. This is the deliberate choice: `fire` never
-    // throws AND a null outcome still produces the uniform 11-key contract.
+    // throws AND a null outcome still produces the uniform variable contract.
     const { adapter, calls } = makeAdapter();
     const res = await adapter.fire(null);
     expect(res.ok).toBe(true);
@@ -167,7 +180,7 @@ describe('SchoolGradingHookAdapter', () => {
       result: null, learner_id: null, student: null, test_id: null,
       session_id: null, percent: null, earned: null, total: null,
       pending_review: null, reasons: [], items: [], code: null,
-      subject: null, course: null, unit: null, lesson: null,
+      subject: null, course: null, unit: null, lesson: null, notification: null,
     });
   });
 

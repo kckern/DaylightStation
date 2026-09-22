@@ -285,6 +285,11 @@ recover from the rough edges of an aging WebView.
   and `end` are local `HH:MM` (start inclusive, end exclusive; `start > end` means an
   overnight window), and the kiosk re-evaluates on a 30s timer, so a wall tablet parked on
   the menu for days crosses the boundary without a reload.
+- **Click timing.** The metronome click reaches the ear late on the tablet (Bluetooth
+  A2DP), so timed runs anchor the click to the grading clock and play it early by
+  `timing.clickLeadMs`, which a grown-up measures with **Piano maintenance → Click
+  timing** (a 24-click tap-along). See
+  [sheet-music-player.md](./sheet-music-player.md#metronome-click-anchored-grid-and-click-lead).
 - **Reload guard.** During states where an accidental pull-to-refresh would lose work (a
   recording in progress), a guard intercepts the unload.
 - **Render watchdog.** A passive sensor measures frame-presentation rate and logs jank
@@ -315,7 +320,7 @@ logging, so a backend outage degrades gracefully rather than breaking the surfac
 |---------|------|
 | App root + routing | `frontend/src/Apps/PianoApp.jsx` |
 | Home menu, chrome, tiles | `frontend/src/modules/Piano/PianoKiosk/Piano{Menu,Chrome,Tile}.jsx` |
-| Configuration | `frontend/src/modules/Piano/PianoKiosk/PianoConfig.jsx` · `data/household/config/piano.yml` |
+| Configuration | `frontend/src/modules/Piano/PianoKiosk/PianoConfig.jsx` · `data/household/piano/config.yml` (path from `shared/contracts/householdConfig.mjs`) |
 | MIDI pipeline | `frontend/src/modules/Piano/PianoKiosk/{useWebMidiBLE,PianoMidiContext,usePianoBridgeNotes,midiDecode}.js[x]` · `noteHistory.js` |
 | MIDI architecture, compromises & risks | [midi-architecture.md](./midi-architecture.md) |
 | Sound + device profiles | `frontend/src/modules/Piano/PianoKiosk/{PianoSoundContext,usePianoVoiceBridge,instrumentSpec}.js[x]` · `devices/` |

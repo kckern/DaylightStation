@@ -1,0 +1,167 @@
+# Korean word ladder — lexicon for the korean-vocab word package.
+# Installed to media/school/language/korean-vocab/lexicon.yml.
+# Ids are permanent once studied (status is keyed by them).
+# Decoys: at least 3 per side, confusable, never the answer; an in-set decoy
+# must be the same kind (phrase decoys only from phrases).
+schema: school.word-lexicon/v1
+entries:
+  - id: annyeong
+    kind: phrase
+    korean: 안녕
+    english: Hi (casual)
+    pronunciation: an-nyeong
+    decoys:
+      korean: [안녕하세요, 안녕히계세요, 안경]
+      english: [Hello (polite), Thank you, Excuse me]
+  - id: annyeong-haseyo
+    kind: phrase
+    korean: 안녕하세요
+    english: Hello (polite)
+    pronunciation: an-nyeong-ha-se-yo
+    decoys:
+      korean: [안녕히계세요, 안녕, 안녕히가세요]
+      english: [Hi (casual), Goodbye (to someone staying), Thank you]
+  - id: annyeonghi-gyeseyo
+    kind: phrase
+    korean: 안녕히계세요
+    english: Goodbye (to someone staying)
+    pronunciation: an-nyeong-hi gye-se-yo
+    decoys:
+      korean: [안녕히가세요, 안녕하세요, 안녕]
+      english: [Goodbye (to someone leaving), Hello (polite), Good night]
+  - id: seonsaengnim
+    kind: phrase
+    korean: 선생님
+    english: Teacher
+    pronunciation: seon-saeng-nim
+    decoys:
+      korean: [선생, 학생, 친구들]
+      english: [Student, Friends, Principal]
+  - id: chingu-deul
+    kind: phrase
+    korean: 친구들
+    english: Friends
+    pronunciation: chin-gu-deul
+    decoys:
+      korean: [친구, 가족들, 선생님]
+      english: [Friend, Family, Teacher]
+  - id: ireumi-mwoyeyo
+    kind: phrase
+    korean: 이름이 뭐예요?
+    english: What is your name?
+    pronunciation: i-reu-mi mwo-ye-yo
+    decoys:
+      korean: [이게 뭐예요?, 어디예요?, 몇 살이에요?]
+      english: [What is this?, Where is it?, How old are you?]
+  - id: ireum
+    kind: word
+    korean: 이름
+    english: Name
+    pronunciation: null
+    decoys:
+      korean: [이마, 여름, 얼음]
+      english: [Number, Age, Nickname]
+  - id: gawi
+    kind: word
+    korean: 가위
+    english: Scissors
+    pronunciation: null
+    decoys:
+      korean: [가지, 바위, 가방]
+      english: [Knife, Tape, Ruler]
+  - id: pul
+    kind: word
+    korean: 풀
+    english: Glue
+    pronunciation: null
+    decoys:
+      korean: [불, 뿔, 발]
+      english: [Tape, Paint, Stapler]
+  - id: chaek
+    kind: word
+    korean: 책
+    english: Book
+    pronunciation: null
+    decoys:
+      korean: [책상, 채소, 창]
+      english: [Notebook, Desk, Magazine]
+  - id: jiugae
+    kind: word
+    korean: 지우개
+    english: Eraser
+    pronunciation: null
+    decoys:
+      korean: [지구, 지도, 지갑]
+      english: [Pencil sharpener, Ruler, Crayon]
+  - id: baindeo
+    kind: word
+    korean: 바인더
+    english: Binder
+    pronunciation: null
+    decoys:
+      korean: [바나나, 파일, 바구니]
+      english: [Folder, Notebook, Clipboard]
+  - id: jongi
+    kind: word
+    korean: 종이
+    english: Paper
+    pronunciation: null
+    decoys:
+      korean: [색종이, 종, 종이컵]
+      english: [Colored paper, Cardboard, Envelope]
+  - id: saek-jongi
+    kind: word
+    korean: 색종이
+    english: Colored paper
+    pronunciation: null
+    decoys:
+      korean: [종이, 색연필, 색깔]
+      english: [Paper, Colored pencil, Sticker]
+  - id: yeonpil
+    kind: word
+    korean: 연필
+    english: Pencil
+    pronunciation: null
+    decoys:
+      korean: [색연필, 연기, 연못]
+      english: [Colored pencil, Pen, Crayon]
+  - id: saek-yeonpil
+    kind: word
+    korean: 색연필
+    english: Colored pencil
+    pronunciation: null
+    decoys:
+      korean: [연필, 색종이, 사인펜]
+      english: [Pencil, Colored paper, Marker]
+  - id: gansik
+    kind: word
+    korean: 간식
+    english: Snack
+    pronunciation: null
+    decoys:
+      korean: [간장, 감자, 점심]
+      english: [Lunch, Dessert, Drink]
+  - id: hanguk
+    kind: word
+    korean: 한국
+    english: Korea
+    pronunciation: null
+    decoys:
+      korean: [한글, 미국, 학교]
+      english: [Japan, China, Korean alphabet]
+  - id: hakgyo
+    kind: word
+    korean: 학교
+    english: School
+    pronunciation: null
+    decoys:
+      korean: [학생, 한국, 학원]
+      english: [Student, Classroom, Library]
+
+# Decoy audit (why each list is honest): 풀 also means grass, so "Grass" is
+# deliberately absent from its English decoys; 간식's Korean decoys avoid
+# 과자 (a snack itself); 안녕 also means bye, so no plain "Goodbye" decoy is
+# offered for it. In-set decoys are same-kind only: phrases 안녕하세요 /
+# 안녕히계세요 / 안녕 / 선생님 / 친구들 and their English appear only under
+# phrases; words 색종이 / 종이 / 색연필 / 연필 / 학교 / 한국 and their
+# English only under words.

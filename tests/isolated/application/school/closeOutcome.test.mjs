@@ -104,6 +104,24 @@ describe('the outcome', () => {
     expect(sessions.derive(SID).outcome).toMatchObject({ outcomeId: `out:${SID}`, result: 'passed' });
   });
 
+  it('reports the retake parent and study day for the phone copy', async () => {
+    await sessions.appendEvent(SID, {
+      type: 'created', at: clock.iso(), sessionId: SID, learnerId: 'kid1', unitId: WORKSHEET_UNIT,
+      remediationOf: 'ses_parent', studyDay: '2026-09-14',
+    });
+    await sessions.appendEvent(SID, { type: 'issued', at: clock.iso(), sessionId: SID, artifactId: 'art_1' });
+    await sessions.appendEvent(SID, { type: 'submitted', at: clock.iso(), sessionId: SID, transport: 'paper' });
+    await sessions.appendEvent(SID, { type: 'graded', at: clock.iso(), sessionId: SID, attemptIds: ['att_1'], percent: 90 });
+    const result = await close.execute({ sessionId: SID });
+    expect(result).toMatchObject({ status: 'settled', remediationOf: 'ses_parent', studyDay: '2026-09-14' });
+  });
+
+  it('reports remediationOf: null for an ordinary session', async () => {
+    await graded();
+    const result = await close.execute({ sessionId: SID });
+    expect(result).toMatchObject({ status: 'settled', remediationOf: null, studyDay: null });
+  });
+
   it('records a fail below the unit\'s passing bar', async () => {
     await graded({ percent: 50 });
     expect(await close.execute({ sessionId: SID })).toMatchObject({ result: 'needs_remediation' });
