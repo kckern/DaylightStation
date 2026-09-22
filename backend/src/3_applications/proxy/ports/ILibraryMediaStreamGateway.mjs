@@ -6,8 +6,8 @@
  * upstream_error. Concrete HTTP, redirects, provider origins, and response
  * translation belong to the implementing adapter.
  */
-export class ILibbyStreamGateway {
+export class ILibraryMediaStreamGateway {
   async open(_request) {
-    throw new Error('ILibbyStreamGateway.open must be implemented');
+    throw new Error('ILibraryMediaStreamGateway.open must be implemented');
   }
 }

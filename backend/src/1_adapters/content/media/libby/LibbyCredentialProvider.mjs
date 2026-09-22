@@ -22,7 +22,7 @@ function jwtChipId(token) {
 
 function unavailable(cause = null) {
   const error = new Error('Libby credential unavailable');
-  error.code = 'LIBBY_CREDENTIAL_UNAVAILABLE';
+  error.code = 'LIBRARY_MEDIA_CREDENTIAL_UNAVAILABLE';
   if (cause) error.cause = cause;
   return error;
 }

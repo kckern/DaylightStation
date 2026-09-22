@@ -112,14 +112,14 @@ describe('LibbyClient', () => {
 
     it.each(['upstream_error', 'timeout', 'busy', 'unsupported'])('fails closed on browser category %s', async kind => {
       const { client } = fixture({ result: { kind } });
-      await expect(client.openLoan(input)).rejects.toMatchObject({ code: kind === 'unsupported' ? 'LIBBY_UNSUPPORTED_FULFILLMENT' : 'LIBBY_PROVIDER_FAILED' });
+      await expect(client.openLoan(input)).rejects.toMatchObject({ code: kind === 'unsupported' ? 'LIBRARY_MEDIA_UNSUPPORTED_FULFILLMENT' : 'LIBRARY_MEDIA_PROVIDER_FAILED' });
     });
 
     it('redacts unexpected errors thrown by the injected port', async () => {
       const { client, open } = fixture();
       open.mockRejectedValue(new Error('secret capability'));
       const error = await client.openLoan(input).catch(error => error);
-      expect(error.code).toBe('LIBBY_PROVIDER_FAILED');
+      expect(error.code).toBe('LIBRARY_MEDIA_PROVIDER_FAILED');
       expect(error.message).not.toContain('secret');
     });
 
@@ -167,14 +167,14 @@ describe('LibbyClient', () => {
 
     it.each(['http://img3.od-cdn.com/a.jpg', 'https://img3.od-cdn.com.evil.test/a.jpg', 'https://img3.od-cdn.com:444/a.jpg', 'https://user:secret@img3.od-cdn.com/a.jpg', 'not a url', null])('rejects cover target %s', async (coverUrl) => {
       const { client, fetch } = fixture({ coverUrl });
-      await expect(client.openCover(input)).rejects.toMatchObject({ code: 'LIBBY_ORIGIN_REJECTED' });
+      await expect(client.openCover(input)).rejects.toMatchObject({ code: 'LIBRARY_MEDIA_ORIGIN_REJECTED' });
       expect(fetch).toHaveBeenCalledTimes(1);
     });
 
     it.each(['http://img3.od-cdn.com/a.jpg', 'https://img3.od-cdn.com.evil.test/a.jpg', 'https://img3.od-cdn.com:444/a.jpg'])('cancels redirects to forbidden target %s', async (location) => {
       const { result, cancel } = tracked('redirect', { status: 302, headers: { location } });
       const { client, fetch } = fixture({ replies: [result] });
-      await expect(client.openCover(input)).rejects.toMatchObject({ code: 'LIBBY_ORIGIN_REJECTED' });
+      await expect(client.openCover(input)).rejects.toMatchObject({ code: 'LIBRARY_MEDIA_ORIGIN_REJECTED' });
       expect(cancel).toHaveBeenCalledTimes(1);
       expect(fetch).toHaveBeenCalledTimes(2);
     });
@@ -219,7 +219,7 @@ describe('LibbyClient', () => {
     it('cancels the fourth redirect without fetching a fifth image target', async () => {
       const redirects = Array.from({ length: 4 }, () => tracked('redirect', { status: 302, headers: { location: '/next.jpg' } }));
       const { client, fetch } = fixture({ replies: redirects.map(({ result }) => result) });
-      await expect(client.openCover(input)).rejects.toMatchObject({ code: 'LIBBY_PROVIDER_FAILED' });
+      await expect(client.openCover(input)).rejects.toMatchObject({ code: 'LIBRARY_MEDIA_PROVIDER_FAILED' });
       expect(fetch).toHaveBeenCalledTimes(5);
       for (const { cancel } of redirects) expect(cancel).toHaveBeenCalledTimes(1);
     });
@@ -227,7 +227,7 @@ describe('LibbyClient', () => {
     it.each([{ status: 200, headers: { 'content-type': 'text/html' } }, { status: 502 }, { status: 302 }])('cancels a rejected provider response %j', async (options) => {
       const { result, cancel } = tracked('invalid', options);
       const { client } = fixture({ replies: [result] });
-      await expect(client.openCover(input)).rejects.toMatchObject({ code: 'LIBBY_PROVIDER_FAILED' });
+      await expect(client.openCover(input)).rejects.toMatchObject({ code: 'LIBRARY_MEDIA_PROVIDER_FAILED' });
       expect(cancel).toHaveBeenCalledTimes(1);
     });
 
@@ -255,7 +255,7 @@ describe('LibbyClient', () => {
 
     it('rejects expired loans before fetching artwork', async () => {
       const { client, fetch } = fixture({ loanOverrides: { expireDate: '2000-01-01' } });
-      await expect(client.openCover(input)).rejects.toMatchObject({ code: 'LIBBY_LOAN_EXPIRED' });
+      await expect(client.openCover(input)).rejects.toMatchObject({ code: 'LIBRARY_MEDIA_LOAN_EXPIRED' });
       expect(fetch).toHaveBeenCalledTimes(1);
     });
   });
@@ -333,7 +333,7 @@ describe('LibbyClient', () => {
       : response({ message: 'fixture-message', urls }));
     const client = new LibbyClient({ fetch, credentials: { getSnapshot: () => ({ token: 'fixture-token' }) }, allowedHosts: ['.listen.libbyapp.com'] });
     await expect(client.openLoan({ cardId: '123456789', titleId: '9999999' }))
-      .rejects.toMatchObject({ code: 'LIBBY_UNSUPPORTED_FULFILLMENT' });
+      .rejects.toMatchObject({ code: 'LIBRARY_MEDIA_UNSUPPORTED_FULFILLMENT' });
     expect(fetch).toHaveBeenCalledTimes(2);
   });
 
@@ -348,7 +348,7 @@ describe('LibbyClient', () => {
       : response({ message: 'fixture-message', urls }));
     const client = new LibbyClient({ fetch, credentials: { getSnapshot: () => ({ token: 'fixture-token' }) }, allowedHosts: ['.listen.libbyapp.com'] });
     await expect(client.openLoan({ cardId: '123456789', titleId: '9999999' }))
-      .rejects.toMatchObject({ code: 'LIBBY_ORIGIN_REJECTED' });
+      .rejects.toMatchObject({ code: 'LIBRARY_MEDIA_ORIGIN_REJECTED' });
     expect(fetch).toHaveBeenCalledTimes(2);
   });
 
@@ -356,7 +356,7 @@ describe('LibbyClient', () => {
     const { client, calls } = clientFixture({ loan: { websiteId } });
 
     await expect(client.openLoan({ cardId: '123456789', titleId: '9999999' }))
-      .rejects.toMatchObject({ code: 'LIBBY_PROVIDER_FAILED' });
+      .rejects.toMatchObject({ code: 'LIBRARY_MEDIA_PROVIDER_FAILED' });
     expect(calls.some((url) => url.includes('/open/audiobook/'))).toBe(false);
   });
 
@@ -366,7 +366,7 @@ describe('LibbyClient', () => {
       credentials: { getSnapshot: () => ({ token: 'secret', generation: 'g1' }) },
       apiBase: 'https://sentry.libbyapp.com/', allowedHosts: ['sentry.libbyapp.com'],
     });
-    await expect(client.openLoan({ cardId: '123456789', titleId: 'not-active' })).rejects.toMatchObject({ code: 'LIBBY_LOAN_NOT_FOUND' });
+    await expect(client.openLoan({ cardId: '123456789', titleId: 'not-active' })).rejects.toMatchObject({ code: 'LIBRARY_MEDIA_LOAN_NOT_FOUND' });
   });
 
   it('rejects provider-controlled URLs outside the closed origin policy', async () => {
@@ -378,7 +378,7 @@ describe('LibbyClient', () => {
       fetch, credentials: { getSnapshot: () => ({ token: 'secret', generation: 'g1' }) },
       apiBase: 'https://sentry.libbyapp.com/', allowedHosts: ['sentry.libbyapp.com', 'listen.libbyapp.com'],
     });
-    await expect(client.openLoan({ cardId: '123456789', titleId: '9999999' })).rejects.toMatchObject({ code: 'LIBBY_ORIGIN_REJECTED' });
+    await expect(client.openLoan({ cardId: '123456789', titleId: '9999999' })).rejects.toMatchObject({ code: 'LIBRARY_MEDIA_ORIGIN_REJECTED' });
   });
 
   it('never follows provider redirects or non-default HTTPS ports', async () => {
@@ -389,12 +389,12 @@ describe('LibbyClient', () => {
       fetch: redirectedFetch, credentials: { getSnapshot: () => ({ token: 'secret' }) },
       apiBase: 'https://sentry.libbyapp.com/', allowedHosts: ['.listen.libbyapp.com'],
     });
-    await expect(redirected.sync()).rejects.toMatchObject({ code: 'LIBBY_PROVIDER_FAILED' });
+    await expect(redirected.sync()).rejects.toMatchObject({ code: 'LIBRARY_MEDIA_PROVIDER_FAILED' });
     expect(redirectedFetch).toHaveBeenCalledTimes(1);
     await expect(new LibbyClient({
       fetch: vi.fn(), credentials: { getSnapshot: () => ({ token: 'secret' }) },
       apiBase: 'https://sentry.libbyapp.com:444/',
-    }).sync()).rejects.toMatchObject({ code: 'LIBBY_ORIGIN_REJECTED' });
+    }).sync()).rejects.toMatchObject({ code: 'LIBRARY_MEDIA_ORIGIN_REJECTED' });
   });
 
   it('rejects non-MP3 or license-controlled spine entries', async () => {
@@ -406,7 +406,7 @@ describe('LibbyClient', () => {
       return response(encrypted);
     });
     const client = new LibbyClient({ fetch, credentials: { getSnapshot: () => ({ token: 'secret', generation: 'g1' }) }, apiBase: 'https://sentry.libbyapp.com/', allowedHosts: ['sentry.libbyapp.com', 'listen.libbyapp.com'] });
-    await expect(client.openLoan({ cardId: '123456789', titleId: '9999999' })).rejects.toMatchObject({ code: 'LIBBY_UNSUPPORTED_FULFILLMENT' });
+    await expect(client.openLoan({ cardId: '123456789', titleId: '9999999' })).rejects.toMatchObject({ code: 'LIBRARY_MEDIA_UNSUPPORTED_FULFILLMENT' });
   });
 });
 

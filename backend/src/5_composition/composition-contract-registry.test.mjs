@@ -448,7 +448,7 @@ const contracts = [
       const runtime = createLibbyRuntime({ dataPath: '/fixture', username: 'reader', fetch: vi.fn() });
       expect(runtime.streamGateway).toBeInstanceOf(LibbyStreamGateway);
       expect(runtime.streamService).toEqual(expect.any(Object));
-      const applicationSource = fs.readFileSync(new URL('../3_applications/proxy/LibbyStreamService.mjs', import.meta.url), 'utf8');
+      const applicationSource = fs.readFileSync(new URL('../3_applications/proxy/LibraryMediaStreamService.mjs', import.meta.url), 'utf8');
       expect(applicationSource).not.toMatch(/\bfetch\b|new URL|listen\.libbyapp|overdrive\.com|redirect:\s*['"]manual/);
       runtime.leases.dispose();
     },
