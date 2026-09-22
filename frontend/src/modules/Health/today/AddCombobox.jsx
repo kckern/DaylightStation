@@ -15,7 +15,8 @@ const logger = createAppLogger('health').child('add-combobox');
 // filtered list is already short.
 const OPEN_SUGGEST_LIMIT = 8;
 
-export function AddCombobox({ bucketId, date = null, onDone, onCancel, onMeals, onTemplate, onManageFoods }) {
+export function AddCombobox({ bucketId, date = null, onDone, onCancel, onMeals, onTemplate, onManageFoods,
+  inline = false, label = null, focusRequest = 0, actions = null }) {
   const [text, setText] = useState('');
   const [items, setItems] = useState([]);
   const [highlight, setHighlight] = useState(-1);
@@ -26,6 +27,13 @@ export function AddCombobox({ bucketId, date = null, onDone, onCancel, onMeals, 
   const submitting = useRef(false);
   const requestRef = useRef(null);
   const listId = useId();
+  const inputRef = useRef(null);
+  const [focused, setFocused] = useState(false);
+  const surface = inline ? 'inline' : 'sheet';
+  // Inline rows sit on every visible meal at once, so each one fetches and
+  // draws its shortlist only while it is being used.
+  const open = !inline || focused || text.trim().length > 0;
+  useEffect(() => { if (focusRequest) inputRef.current?.focus(); }, [focusRequest]);
 
   // One effect for both lists. With text, it is the query path exactly as
   // before (debounced). Without, it is the bucket-aware zero-keystroke list
@@ -34,6 +42,7 @@ export function AddCombobox({ bucketId, date = null, onDone, onCancel, onMeals, 
   // suggestions. Both share the `rid` guard, so a slow open cannot overwrite a
   // fast first keystroke, or vice versa.
   useEffect(() => {
+    if (!open) return undefined;
     const q = text.trim();
     const path = q
       ? `api/v1/health/nutrition/catalog/suggest?q=${encodeURIComponent(q)}${bucketId ? `&bucket=${encodeURIComponent(bucketId)}` : ''}`
@@ -56,7 +65,19 @@ export function AddCombobox({ bucketId, date = null, onDone, onCancel, onMeals, 
     clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(fetchSuggestions, 250);
     return () => clearTimeout(debounceRef.current);
-  }, [text, bucketId]);
+  }, [text, bucketId, open]);
+
+  // The sheet unmounts on success. The inline row stays: clear it, forget
+  // the operation id (the next add is a new intent even when the payload is
+  // identical), and hand focus back for the next food.
+  const finish = (result) => {
+    if (inline) {
+      requestRef.current = null;
+      setText(''); setHighlight(-1); setPhase('typing');
+      setTimeout(() => inputRef.current?.focus(), 0);
+    }
+    onDone?.(result);
+  };
 
   const pick = async (entry) => {
     if (submitting.current) return;
@@ -88,8 +109,8 @@ export function AddCombobox({ bucketId, date = null, onDone, onCancel, onMeals, 
       operationRequest(requestRef, { catalogEntryId: entry.id, ...(bucketId ? { mealTime: bucketId } : {}), ...(date ? { date } : {}) }),
         'POST',
       );
-      logger.info('quickadd.done', { entry: entry.name, bucket: bucketId });
-      onDone();
+      logger.info('quickadd.done', { entry: entry.name, bucket: bucketId, surface });
+      finish();
     } catch (err) {
       logger.error('quickadd.failed', { error: err?.message });
       setError(err); setPhase('typing');
@@ -114,11 +135,11 @@ export function AddCombobox({ bucketId, date = null, onDone, onCancel, onMeals, 
       operationRequest(requestRef, { type: 'text', content: text.trim(), ...(bucketId ? { bucket: bucketId } : {}), ...(date ? { date } : {}) }),
       'POST',
     );
-      logger.info('sentence.committed', {});
+      logger.info('sentence.committed', { bucket: bucketId, surface });
       if (result?.noFood || result?.committed === false) {
         setError(new Error(result?.message || 'No food was logged. Tweak the sentence and try again.'));
         setPhase('typing');
-      } else onDone(result);
+      } else finish(result);
     } catch (err) {
       logger.error('sentence.failed', { error: err?.message });
       setError(err); setPhase('typing'); // text preserved — input never lost
@@ -127,7 +148,13 @@ export function AddCombobox({ bucketId, date = null, onDone, onCancel, onMeals, 
 
   const onKeyDown = (e) => {
     if (submitting.current) { e.preventDefault(); return; }
-    if (e.key === 'Escape') return onCancel();
+    if (e.key === 'Escape') {
+      if (!inline) return onCancel();
+      e.preventDefault();
+      // First Escape clears the text; a second one on an empty row leaves it.
+      if (text) { setText(''); requestRef.current = null; } else inputRef.current?.blur();
+      return;
+    }
     if (e.key === 'ArrowDown') { e.preventDefault(); setHighlight((h) => Math.min(h + 1, items.length - 1)); }
     if (e.key === 'ArrowUp') { e.preventDefault(); setHighlight((h) => Math.max(h - 1, -1)); }
     if (e.key === 'Enter') {
@@ -138,15 +165,25 @@ export function AddCombobox({ bucketId, date = null, onDone, onCancel, onMeals, 
   };
 
   return (
-    <div className="health-suggest">
-      <TextInput autoFocus size="sm" value={text} placeholder="Food name, or a sentence to parse…"
-        aria-label="Food name or sentence" role="combobox" aria-expanded="true" aria-controls={listId}
-        aria-activedescendant={highlight >= 0 ? `${listId}-${highlight}` : undefined}
-        disabled={phase === 'parsing'}
-        onChange={(e) => setText(e.target.value)} onKeyDown={onKeyDown}
-        rightSection={phase === 'parsing' ? <Loader size="xs" /> : null} />
+    <div className={`health-suggest${inline ? ' health-suggest--inline' : ''}`}>
+      <div className="health-suggest__field">
+        <TextInput ref={inputRef} autoFocus={!inline} size="sm" value={text}
+          placeholder={inline ? `Add to ${label}…` : 'Food name, or a sentence to parse…'}
+          aria-label={inline ? `Add to ${label}` : 'Food name or sentence'} role="combobox"
+          aria-expanded={open ? 'true' : 'false'} aria-controls={listId}
+          aria-activedescendant={highlight >= 0 ? `${listId}-${highlight}` : undefined}
+          disabled={phase === 'parsing'}
+          onFocus={() => { setFocused(true); if (inline) logger.debug('add-row.focus', { bucket: bucketId }); }}
+          onBlur={() => setFocused(false)}
+          onChange={(e) => setText(e.target.value)} onKeyDown={onKeyDown}
+          rightSection={phase === 'parsing' ? <Loader size="xs" /> : null} />
+        {actions}
+      </div>
       {error ? <p className="health-suggest__error">{error.message}</p> : null}
-      <ul id={listId} className="health-suggest__list" role="listbox" aria-label="Suggested foods">
+      {/* preventDefault on mousedown keeps the input focused while a suggestion
+          is pressed; otherwise blur closes the inline list before the click lands. */}
+      {open ? <ul id={listId} className="health-suggest__list" role="listbox" aria-label="Suggested foods"
+        onMouseDown={(e) => e.preventDefault()}>
         {items.map((entry, i) => {
           // The food's picture where it has one (PRD F5.3 asks for it here too).
           // A slug whose image fails is retired by NAME, so a later suggestion of
@@ -172,14 +209,14 @@ export function AddCombobox({ bucketId, date = null, onDone, onCancel, onMeals, 
             </li>
           );
         })}
-      </ul>
-      {text.trim() ? <Button size="compact-sm" disabled={phase === 'parsing'} onClick={submitSentence}>Log sentence</Button> : null}
-      {onMeals ? (
+      </ul> : null}
+      {open && text.trim() ? <Button size="compact-sm" disabled={phase === 'parsing'} onClick={submitSentence}>Log sentence</Button> : null}
+      {open && onMeals ? (
         <UnstyledButton className="health-suggest__saved-meals" onClick={onMeals}>
           Meals &amp; templates ▸
         </UnstyledButton>
       ) : null}
-      {onManageFoods ? <UnstyledButton className="health-suggest__saved-meals" onClick={onManageFoods}>Manage saved foods ▸</UnstyledButton> : null}
+      {open && onManageFoods ? <UnstyledButton className="health-suggest__saved-meals" onClick={onManageFoods}>Manage saved foods ▸</UnstyledButton> : null}
     </div>
   );
 }
