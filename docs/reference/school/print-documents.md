@@ -419,10 +419,15 @@ name/date lines, a score box for point-bearing documents, page furniture
 gutters), and vector QR codes
 for any action block whose token was minted at issue time.
 
-**Korean text.** The house fonts carry no Hangul. Any inline text run that
-contains Hangul (U+1100–11FF, U+3130–318F, U+AC00–D7AF) is set in Noto Sans KR
-(`backend/assets/fonts/noto-sans-kr/`, OFL) — the theme's `hangul` face —
-while Latin runs keep the house font. The swap happens where runs are built
+**Non-Latin scripts.** The house fonts carry Latin only. `measure.mjs`
+keeps a `SCRIPT_FALLBACKS` table — one row per script (`script`, a coverage
+`pattern`, the theme `fontKey`) — and any inline text run containing a listed
+script is set in that script's face, while Latin runs keep the house font.
+Today's one row is Hangul (U+1100–11FF, U+3130–318F, U+AC00–D7AF) → Noto Sans
+KR (`backend/assets/fonts/noto-sans-kr/`, OFL), the themes' `hangul` face.
+Adding a script = one table row + a font entry under the same key in
+`workbookTheme` and `documentPdfTheme` + the font file; fonts are not
+configured in YAML. The swap happens where runs are built
 (`measure.mjs#withScriptFont`), so measurement and drawing agree. Bold and
 italic Hangul print in the regular weight. Header text (title, subtitle,
 instructions) is drawn outside the run grammar and must stay Latin.
@@ -1055,13 +1060,15 @@ artifacts remain immutable and exact reprints retain their original wording.
 
 ### Word-ladder quizzes
 
-`node cli/school.mjs korean-vocab quiz --deck <deckId|slug>` writes a
+`node cli/school.mjs word-ladder quiz --deck <deckId|slug>` writes a
 `school.document-source/v1` quiz for a lexicon deck at
 `content/school/learning-catalog/documents/<deckId>-quiz.yml`: one `question`
 per word with `itemId: <wordId>`, answer + three authored decoys, alternating
-Korean→English / English→Korean, `fit.typeScale: young`, and the header
-instruction `Not sure of a word? Open Korean words on the Portal and review
-the cards, then come back.` Publish it with `school docs publish`, then
+term→gloss (`What does **<term>** mean?`) / gloss→term
+(`Which is **<gloss>** in <language.name>?`), `fit.typeScale: young`. The
+header instruction and the `topics` come from the lexicon's `quiz` block
+(defaults: `Not sure of a word? Open <program.title> on the Portal and review
+the cards, then come back.` and `[<language>, vocabulary]`). Publish it with `school docs publish`, then
 render per learner with `variety=omr`. A scanned row's attempt carries the
 word id, and the word ladder folds it (see `word-ladder.md`).
 
