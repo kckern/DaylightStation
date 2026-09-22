@@ -8,16 +8,22 @@ import { getDeviceId } from '../../../lib/deviceIdentity.js';
 
 const EMPTY_FLEET = new Map();
 
+function normalizedDeviceId(deviceId) {
+  if (typeof deviceId !== 'string' || !deviceId) return null;
+  if (!deviceId.startsWith('fleet:')) return deviceId;
+  return deviceId.slice('fleet:'.length) || null;
+}
+
 function isCurrentDeviceOrigin(originId, { clientId = null, deviceId = null } = {}) {
-  if (typeof originId !== 'string' || !originId) return false;
+  const normalizedOrigin = normalizedDeviceId(originId);
+  if (!normalizedOrigin) return false;
 
   // Browser playback is represented in the fleet by the canonical id built
   // from ClientIdentityContext.clientId. The HTTP/device identity carries its
   // own provenance; named screens use their configured fleet id in snapshots.
-  if (typeof clientId === 'string' && clientId && originId === `browser:${clientId}`) return true;
-  if (typeof deviceId !== 'string' || !deviceId) return false;
-  if (originId === deviceId) return true;
-  return deviceId.startsWith('fleet:') && originId === deviceId.slice('fleet:'.length);
+  if (typeof clientId === 'string' && clientId
+    && normalizedOrigin === normalizedDeviceId(`browser:${clientId}`)) return true;
+  return normalizedOrigin === normalizedDeviceId(deviceId);
 }
 
 export function busyOriginName(targetIds = [], devices = [], entries = EMPTY_FLEET, currentIdentity = {}) {
@@ -28,7 +34,8 @@ export function busyOriginName(targetIds = [], devices = [], entries = EMPTY_FLE
   const origin = entry.snapshot?.meta?.origin;
   if (origin?.kind === 'device' && typeof origin.id === 'string' && origin.id) {
     if (isCurrentDeviceOrigin(origin.id, currentIdentity)) return null;
-    const device = devices.find((candidate) => candidate.id === origin.id);
+    const originDeviceId = normalizedDeviceId(origin.id);
+    const device = devices.find((candidate) => normalizedDeviceId(candidate.id) === originDeviceId);
     // An unrecognised id is not human provenance; never leak or humanise it.
     return device ? deviceName(device, origin.id) : null;
   }
