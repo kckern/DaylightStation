@@ -78,16 +78,26 @@ the new ledger's replay/tombstone contract; coordinate both deliberately.
 ## Scan data repair (2026-09 barcode cleanup)
 
 `cli/health-scan-repair.cli.mjs` fixes rows written before the barcode intake gate:
-re-fire duplicates (same UPC-sourced food, same meal and calories, ≤ 30 s apart), explicitly
-chosen empty UPC rows (`--delete-ids`, from the report's `emptyUpc` list), placeholder
-product photos (by content hash), shouting names (never a person-set name), ml-labelled
-solids with a printed gram figure (`labelGrams`), and retired icon names re-iconed from a
-reviewed name→slug table (`--icon-table`, kept in the private data tree, not in git) plus
-the manifest `foodNames` file. Catalog entries get the same icon and name fixes. It uses the
-same contract as above: dry run writes a private report; apply needs `--offline`, a new
-`--backup` outside the tree, refuses if any input or file changed since the report, runs
-all ledger changes through `mutateEntries` (archive months included, tombstoned deletes,
-nutriday recomputed) and verifies afterwards.
+
+- **Deletes:** re-fire duplicates (same UPC-sourced food, same meal and calories,
+  ≤ 30 s apart; the report names the kept sibling and the delay) and explicitly
+  chosen empty UPC rows (`--delete-ids`, from the report's `emptyUpc` list).
+- **Rows:** placeholder product photos (by content hash) cleared; shouting names
+  normalized (never a person-set name; `RENAMES` in the CLI holds the explicit
+  corrections); ml-labelled solids with a printed gram figure (`LABEL_GRAMS`)
+  converted to grams, except where a person set the portion or the stored serving
+  is not ml (both listed as `mlUnresolved`).
+- **Icons:** manifest aliases map to the offered icon sharing their path (same
+  picture) and are otherwise kept; retired flat-set names are re-iconed from the
+  reviewed name→slug table plus the `foodNames` file, else `default`. The report
+  counts what fell through to `default` per retired slug.
+- **Catalog:** the same icon rules (no table hit gives `null`, never `default`),
+  name normalization (collisions skipped and reported), and remembered ml portions
+  (`usageByBucket.*.quantity`) converted with the label grams.
+
+`--icon-table` is **required** (dry run and apply): without the reviewed table every
+retired icon would fall through to `default`. The table lives in the private data
+tree, not in git.
 
 ```bash
 node cli/health-scan-repair.cli.mjs --nutrition-dir <dir> --manifest <icon-manifest.yml> \
@@ -95,6 +105,36 @@ node cli/health-scan-repair.cli.mjs --nutrition-dir <dir> --manifest <icon-manif
   [--delete-ids id1,id2] --report <new-report.json>
 node cli/health-scan-repair.cli.mjs --apply <new-report.json> --backup <new-dir> --offline
 ```
+
+Apply order and checks:
+
+1. Refuses unless the data, inputs and plan are byte-for-byte what the report
+   reviewed; copies every nutrition YAML to the new `--backup` (outside the tree)
+   and verifies each copy.
+2. Builds and validates every catalog change in memory (entry exists, no rename
+   collision) before anything is written.
+3. Commits the ledger through `mutateEntries` (hot file and archive months in one
+   journaled transaction, deletes tombstoned). Daily summaries (`nutriday`) change
+   only for dates that lost a row; every other date keeps its stored summary.
+4. Writes the catalog once, then verifies the same ids in the same order and that
+   nothing outside icon, pin, name and remembered portion changed.
+5. Re-plans: nutrition on surviving rows unchanged, row count as planned, nothing
+   left to do. The result (including every `nutriday` change) is written to
+   `<backup>/scan-repair-result.json`.
+6. Moves the abandoned `food_catalog.yml.tmp-*` into `_backups/` when it is older
+   than the live catalog and `lsof` shows no local holder.
+
+**`--offline` is the real guard.** Prod and this laptop share the Dropbox data tree,
+and `lsof` on the laptop cannot see the prod container's processes. Stop every
+nutrition writer first — the prod container included — and only then pass
+`--offline`.
+
+**Restore:** with writers still stopped, copy the backup's files back over the
+nutrition directory (`cp -R <backup>/. <nutrition-dir>/`, which restores every YAML
+including `nutriday.yml`, `ledger-deleted.yml` and `food_catalog.yml`), and move the
+temp file back from `_backups/` if it was moved. `scan-repair.json` and
+`scan-repair-result.json` in the backup are the reviewed plan and the outcome;
+delete them from the nutrition directory after the copy.
 
 `cli/health-icon-manifest-merge.cli.mjs --manifest <path> --food-names <path>` dry-runs the
 `foodNames` merge; `--apply --backup <new-path>` writes it. Restart the backend afterwards.
