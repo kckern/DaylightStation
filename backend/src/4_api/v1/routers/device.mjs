@@ -64,7 +64,7 @@ function requireSessions(service, res) {
 }
 
 export function createDeviceRouter({ fleetService, presenceService, sessionService, screenService,
-  dispatchService, recoveryService } = {}) {
+  dispatchService, recoveryService, kioskFrictionTracker } = {}) {
   const router = express.Router();
 
   router.get('/config', (req, res) => res.json(fleetService.configuration(req.query.householdId)));
@@ -124,6 +124,29 @@ export function createDeviceRouter({ fleetService, presenceService, sessionServi
     if (!presenceService.configured()) return res.status(503).json({ error: 'presence not configured' });
     return res.json(presenceService.get(req.params.deviceId));
   });
+
+  // A kiosk (Portal, yellow-room tablet, …) reports a moment of unsupervised-
+  // input "friction" (a stray press, a rejected code, a forced video restart).
+  // KioskFrictionTracker keeps a short rolling count and republishes it to
+  // State Gates as `kiosk.friction-score`, which the `kiosk.friction-ok` gate
+  // (fail_open) reads. Fire-and-forget by design — recordFriction never
+  // throws, so this route only validates the request shape.
+  router.post('/:deviceId/friction-ping', asyncHandler(async (req, res) => {
+    // Same-pattern guard as requireSessions/presenceService.configured()
+    // above: not a live bug today (always wired in production), but an
+    // absent optional collaborator should be a clear 503, not an
+    // unhandled TypeError.
+    if (!kioskFrictionTracker) {
+      return res.status(503).json(buildErrorBody({ error: 'Kiosk friction tracking not configured', code: 'KIOSK_FRICTION_TRACKER_NOT_CONFIGURED' }));
+    }
+    const { deviceId } = req.params;
+    const { kind } = req.body ?? {};
+    if (typeof kind !== 'string' || !kind) {
+      return res.status(400).json(buildErrorBody({ error: 'kind is required (non-empty string)', code: 'VALIDATION' }));
+    }
+    await kioskFrictionTracker.recordFriction({ deviceId, kind });
+    return res.json({ ok: true });
+  }));
 
   router.post('/audio-bridge/heal', asyncHandler(async (req, res) => {
     return res.status(200).json(await fleetService.healAudioBridge({
