@@ -1,4 +1,4 @@
-const RECORDING_EXTENSIONS = Object.freeze(['webm', 'mp3', 'ogg', 'm4a', 'wav']);
+import { RECORDING_FORMATS } from '#domains/school/language/recordingFormats.mjs';
 
 /** Endpoint-shaped application operation for Sentence Ladder audio resources. */
 export class LanguageAudioResource {
@@ -49,7 +49,7 @@ export class LanguageAudioResource {
       userId,
       seq,
       language,
-      extensions: RECORDING_EXTENSIONS,
+      extensions: RECORDING_FORMATS,
     });
   }
 }
