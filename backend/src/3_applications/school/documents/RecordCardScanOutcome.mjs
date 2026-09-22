@@ -122,6 +122,22 @@ const gateMarks = (gate) => (Array.isArray(gate?.given) ? [...gate.given].sort()
 /** Same row, same marks: nothing about the finish-code row has changed. */
 const sameGateReading = (a, b) => a.status === b.status && gateMarks(a) === gateMarks(b);
 
+/**
+ * Grown-up-facing guidance for the review queue (rides `rubric`, never
+ * `prompt` — `prompt` can reach a resolved item's `StudentPanel` rendering
+ * if a teacher marks `correct`/`incorrect` rather than `void`; `rubric` is
+ * never read there). Never printed to the child directly either way.
+ */
+function keyAlignmentRubric({
+  offset, literalMatches, shiftedMatches, itemCount,
+}) {
+  const direction = offset > 0 ? 'down' : 'up';
+  const rows = Math.abs(offset) === 1 ? 'row' : 'rows';
+  return `Shifting the answers ${direction} ${Math.abs(offset)} ${rows} would score `
+    + `${shiftedMatches}/${itemCount} instead of ${literalMatches}/${itemCount} — `
+    + `worth asking before this counts against them.`;
+}
+
 export class RecordCardScanOutcome {
   #datastore; #sessions; #reviewQueue; #resultArtifacts; #renderMachineResult; #clock; #logger; #newAttemptId;
 
@@ -671,6 +687,18 @@ export class RecordCardScanOutcome {
             reason: 'free_response', given: null,
             prompt: item.prompt ?? null, questionNumber: null, rubric: null, enqueuedAt: at,
           })),
+          // A whole-card row-shift suspicion (Task 2's `ResolveCardScan`,
+          // `card.keyAlignmentSuspect`) is not a question — nothing was
+          // printed for it and nothing was answered — so its itemId is a
+          // plain session-unique literal, never a `recordId` (which can
+          // carry `/`, `@`, `:` that are unsafe to fold into an itemId that
+          // may travel through a URL path segment).
+          ...(card.keyAlignmentSuspect ? [{
+            sessionId, itemId: 'key-alignment', learnerId: state.learnerId, unitId: state.unitId,
+            reason: 'key-alignment-suspected', given: null,
+            prompt: 'Row alignment check', questionNumber: null,
+            rubric: keyAlignmentRubric(card.keyAlignmentSuspect), enqueuedAt: at,
+          }] : []),
         ];
         // Enqueued unconditionally — the machine marks belong on the verdict
         // sheet whether or not anything is left pending (a fully machine-

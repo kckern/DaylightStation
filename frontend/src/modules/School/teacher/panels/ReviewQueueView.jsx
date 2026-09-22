@@ -27,6 +27,7 @@ const REASON_COPY = {
   ambiguous: 'the scanner could not tell which bubble was meant',
   blank: 'the row was left blank',
   free_response: 'a written answer needs a human mark',
+  'key-alignment-suspected': 'the marked answers might be shifted by a row — check the note below before marking',
 };
 
 export default function ReviewQueueView({ items, kids, onResolved }) {

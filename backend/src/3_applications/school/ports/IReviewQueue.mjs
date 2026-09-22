@@ -30,7 +30,7 @@
  * builder structurally cannot read from.
  *
  * @typedef {{ sessionId: string, itemId: string, learnerId: string|null,
- *             unitId: string|null, reason: 'ambiguous'|'blank'|'free_response'|'unscorable'|'machine',
+ *             unitId: string|null, reason: 'ambiguous'|'blank'|'free_response'|'unscorable'|'machine'|'key-alignment-suspected',
  *             given: *, prompt: string|null, questionNumber: number|null,
  *             rubric: string|null, enqueuedAt: string,
  *             verdict: 'correct'|'incorrect'|'void'|null, gradedBy: string|null,
