@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { nutritionIconUrl } from './iconUrl.js';
+import { reportArtworkFailure } from './artworkLog.js';
 
 /** One honest fallback for unassigned, unsupported, or failed food artwork. */
 export function FoodIcon({ icon, className = 'health-row__icon', alt = '' }) {
@@ -15,8 +16,10 @@ export function FoodIcon({ icon, className = 'health-row__icon', alt = '' }) {
       style={{ opacity: ready ? 1 : 0 }}
       onLoad={async event => {
         const img = event.currentTarget;
-        try { await img.decode?.(); setLoaded(url); } catch { setFailed(icon); }
+        try { await img.decode?.(); setLoaded(url); } catch {
+          setFailed(icon); reportArtworkFailure('icon', icon, { url, reason: 'decode' });
+        }
       }}
-      onError={() => setFailed(icon)} /> : null}
+      onError={() => { setFailed(icon); reportArtworkFailure('icon', icon, { url, reason: 'load' }); }} /> : null}
   </span>;
 }

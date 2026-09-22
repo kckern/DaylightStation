@@ -6,6 +6,7 @@ import { DensityBadge } from './DensityBadge.jsx';
 import { useHealthDisplayPreferences } from '../display/HealthDisplayPreferences.jsx';
 import { nutritionPhotoUrl } from './photoUrl.js';
 import { FoodIcon } from './FoodIcon.jsx';
+import { reportArtworkFailure } from './artworkLog.js';
 import { PortionControl } from './PortionControl.jsx';
 import { entryId, entryError, isEntryConflict, updateEntry } from './entryCommands.js';
 import { usePortionControl } from './usePortionDraft.js';
@@ -46,7 +47,7 @@ export function EntryRow({ row, densityRow = row, onTap, onConfirm, onRequestDel
     <div className={`health-row-identity health-row__identity health-row__visual health-density-${densityPlacement}`}>
       {densityPlacement === 'before' ? <DensityBadge row={densityRow} editRow={row} /> : null}
       <span className="health-row-artwork">{row.photoRef && brokenPhoto !== row.photoRef ? <img className="health-row__thumb"
-        src={nutritionPhotoUrl(row.photoRef, { thumb: true })} alt="" loading="lazy" onError={() => setBrokenPhoto(row.photoRef)} /> : <FoodIcon icon={row.icon} />}</span>
+        src={nutritionPhotoUrl(row.photoRef, { thumb: true })} alt="" loading="lazy" onError={() => { setBrokenPhoto(row.photoRef); reportArtworkFailure('photo', row.photoRef, { uuid: entryId(row), name, icon: row.icon || null }); }} /> : <FoodIcon icon={row.icon} />}</span>
       <UnstyledButton className="health-row-name" disabled={Boolean(portions?.draft)} onClick={() => onTap(row)} aria-label={`Edit ${name}`}>
       <span className="health-row__description" title={name}><span className="health-row__name">{name}</span>{' '}
         {measured ? <span className="health-row__scale" title={measured}> · Scale ✓</span> : null}
