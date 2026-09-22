@@ -20,7 +20,7 @@
 - Mic unavailable drops only the recording step; the recording floor is the Sentence Ladder's `heard` / 1200 ms rule, shared, not copied.
 - `policy.mode ∈ {fsrs, word-ladder}` lives **inside** `policy` (default `fsrs`); `word-ladder` rejects `newCardLimit`, `masteryPercent`, `minimumReviews`.
 - Asset ids for word packages use the `media:` prefix: `media:language/korean-vocab/words/<id>/image.jpg`, `…/ko.mp3`. A 0-byte file is missing.
-- Printed quiz: document id `<deckId>-quiz`, `archetype: quiz`, `fit.typeScale: young`, one `question` per word with `itemId: <wordId>`, answer + 3 authored decoys, alternating Korean→English / English→Korean by index, text only. Instruction line, verbatim: `Not sure of a word? Open Korean on the Portal and review the cards, then come back.`
+- Printed quiz: document id `<deckId>-quiz`, `archetype: quiz`, `fit.typeScale: young`, one `question` per word with `itemId: <wordId>`, answer + 3 authored decoys, alternating Korean→English / English→Korean by index, text only. Instruction line, verbatim: `Not sure of a word? Open Korean words on the Portal and review the cards, then come back.`
 - Paper never promotes; the paper fold is a pull at plan build, idempotent by attempt id.
 - The review run (rev 3): every current-deck word in deck order, flip only, no marks, no recording, no state/step change, each card viewed logs `{ event: review, at, day }`; credit unaffected.
 - Frontend diagnostics use the logging framework (`frontend/src/lib/logging/`), never raw `console.*`. New code ships with lifecycle / API / error logging.
@@ -39,7 +39,7 @@
 7. **`variety` is not a document field.** It is a render-request parameter (`variety=omr`). The generator emits none; the sheet is rendered with the OMR variety.
 8. **Quiz "instruction line"** is `header.instructions` (`documentV2.mjs:220`, drawn under the title by `DocumentPdfRenderer.mjs:803`). It is drawn with `lineBreak: false`, so a render test asserts the line fits the young-scale content width.
 9. **"The agenda tile never closes."** `planDailyAgenda` drops a done program from `next` by design (credit). The existing launcher contract `reopenable: true` (`findReopenableProgramEntry`, used by `ResolveAccessCode` and `ResolveSubjectNext`) keeps a served subject's button. Ruling: the word-ladder status returns `reopenable: true`; `agenda.mjs` is unchanged; `WordLadderProgram` lands on the review run when the plan is already done.
-10. **"Open Korean on the Portal"** — flashcard plan entries are titled `enrollment.title ?? 'Flashcards'` (`assignedProgramPlan.mjs:103`) and the validator drops `title`. Ruling: `validateFlashcardEnrollment` keeps an optional `title`; the seeded enrollment uses `title: Korean words`. The Sentence Ladder tile is also titled "Korean"; the sheet line stays verbatim per spec.
+10. **"Open Korean on the Portal"** — flashcard plan entries are titled `enrollment.title ?? 'Flashcards'` (`assignedProgramPlan.mjs:103`) and the validator drops `title`. Ruling: `validateFlashcardEnrollment` keeps an optional `title`; the seeded enrollment uses `title: Korean words`. The Sentence Ladder tile is also titled "Korean", so the sheet line names the seeded tile: "Open Korean words on the Portal" (spec rev 3 amended to match).
 11. **Two learners** hold a `glossika-korean` sentence-ladder enrollment; the spec names one. Ruling: the one with the 12-sentence lessons and `dictationMode: copy` (the younger learner; young type scale, beginner classroom list). Real ids are kept out of this public repo (the PII pre-commit guard blocks them); the controller receives them out of band and **confirms the learner with the user before Task 17 Part D**.
 12. **`data/content/school/learning-catalog/` does not exist at all** on the live volume (not only `flashcard-decks/`). Seeding creates it.
 13. **Seeding before deploy is unsafe**: old code would list a card-less deck at `GET /flashcards`. Every live install (lexicon, deck, placeholders, quiz, enrollment, README) is post-deploy and controller-run; the enrollment goes through `school ops assign` (the real `SetAssignments` path), never a hand-edited learner YAML.
@@ -3418,7 +3418,7 @@ describe('buildWordQuizSource', () => {
       schema: 'school.document-source/v1', id: 'language/korean/week-01-classroom-quiz', subject: 'language',
       archetype: 'quiz', target: ['letter'], fit: { typeScale: 'young' }, header: { instructions: QUIZ_INSTRUCTIONS },
     });
-    expect(QUIZ_INSTRUCTIONS).toBe('Not sure of a word? Open Korean on the Portal and review the cards, then come back.');
+    expect(QUIZ_INSTRUCTIONS).toBe('Not sure of a word? Open Korean words on the Portal and review the cards, then come back.');
     expect(quizDocumentIdFor(DECK.id)).toBe(source.id);
   });
   it('one question per word, itemId = word id, answer + 3 authored decoys, alternating directions', () => {
@@ -3560,7 +3560,7 @@ Expected: FAIL — `buildWordQuizSource` / `./koreanVocab.mjs` not found.
  */
 import { hashString, seededShuffle } from './checkItem.mjs';
 
-export const QUIZ_INSTRUCTIONS = 'Not sure of a word? Open Korean on the Portal and review the cards, then come back.';
+export const QUIZ_INSTRUCTIONS = 'Not sure of a word? Open Korean words on the Portal and review the cards, then come back.';
 
 export function quizDocumentIdFor(deckId) { return `${deckId}-quiz`; }
 
@@ -5451,7 +5451,7 @@ SCRATCH=/tmp/claude-1001/-opt-Code-DaylightStation
 curl -s -o "$SCRATCH/week-01-quiz-proof.pdf" "http://localhost:3111/api/v1/school/print/language/korean/week-01-classroom-quiz?variety=hand"
 pdftoppm -png -r 80 -f 1 -l 1 "$SCRATCH/week-01-quiz-proof.pdf" "$SCRATCH/week-01-quiz-proof"
 # Read $SCRATCH/week-01-quiz-proof-1.png: Hangul glyphs (not boxes) in prompts and choices,
-# and "Not sure of a word? Open Korean on the Portal and review the cards, then come back." under the title.
+# and "Not sure of a word? Open Korean words on the Portal and review the cards, then come back." under the title.
 # The per-learner OMR sheet is printed by a grown-up with POST /print/render {id, variety: omr, learnerId}.
 curl -s "$LOG_STORE/select/logsql/query" -d 'query="school.word-ladder" AND _time:1h' -d 'limit=50'   # LOG_STORE = the log-store URL from CLAUDE.local.md
 ```
