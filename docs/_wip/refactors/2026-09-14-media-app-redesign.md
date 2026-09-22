@@ -117,7 +117,7 @@ Update a row when its step lands: date, commit, tests, deploy, and notes (includ
 | P0 · 3 | One verb set and tap rule; TV-player queue ops | RQ-PLAY-01–07, RQ-FIND-09, 10 | Not started | — | |
 | P0 · 4 | One search, browse | RQ-FIND-01–08 | Not started | — | |
 | P0 · 5 | One handle, one set of controls | RQ-STEER-01–03, 05–10, 15–18 | Not started | — | |
-| P0 · 6 | House view, browsers as screens, origin attribution, minimum naming | RQ-HOUSE-01–03, 05; RQ-AUTO-01, 03, 04; O6 | Implemented; exact acceptance pending | — | Persisted browser identity and rename UI; canonical single publication/relay path; stable browser control; two-minute uncertainty; origin propagation; 10-second routine dedupe. Broader Move here, rename history/warnings, whole-house reconnect acceptance, and routine history remain unclaimed. |
+| P0 · 6 | House view, browsers as screens, origin attribution, minimum naming | RQ-HOUSE-01–03, 05; RQ-AUTO-01, 03, 04; O6 | Complete | `2259c69a7` | Exact compiled-artifact matrix 4/4 and full P0 25 stories / 54 criteria. Promoted only HOUSE.2a/AC3, HOUSE.3a/AC1+AC3, HOUSE.4a/AC2+AC4, and AUTO.3a/AC1+AC2. AUTO.1a/1b/2a, unique-name history/warnings, Move here, and whole-house reconnect acceptance remain unclaimed. |
 | P0 · 7 | One voice for outcomes | RQ-RELY-01–03, 05, 06 | Not started | — | |
 | P0 · 8 | Keep your place, orientation | RQ-RELY-07, 09–11 | Not started | — | |
 | P0 · 9 | Comfortable use, device-size parity | RQ-RELY-13–15; NF-A11Y; NF-DEV | Not started | — | |
