@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { LibbyStreamLeaseService } from '#adapters/content/media/libby/LibbyStreamLeaseService.mjs';
 import { LibbyStreamGateway } from '#adapters/content/media/libby/LibbyStreamGateway.mjs';
-import { LibbyStreamService } from './LibbyStreamService.mjs';
+import { LibraryMediaStreamService } from './LibraryMediaStreamService.mjs';
 
 const loan = { cardId: '123456789', titleId: '9999999', expiresAt: 2_000_000, parts: [] };
 const part = { key: 'part-a', upstreamUrl: 'https://a.listen.libbyapp.com/a.mp3', headers: { Cookie: 'session=secret' } };
@@ -15,7 +15,7 @@ function fixture({ now = () => 1_000_000, fetch, client, scheduler = runtimeTime
   let byte = 1;
   const leases = new LibbyStreamLeaseService({ now, randomBytes: () => Buffer.alloc(32, byte++) });
   const { handle } = leases.issue({ loan, part });
-  const service = new LibbyStreamService({
+  const service = new LibraryMediaStreamService({
     leases, streamGateway: gateway(fetch), scheduler,
     client: client || { openLoan: vi.fn(async () => ({ ...loan, parts: [part] })) },
     now,
@@ -23,7 +23,7 @@ function fixture({ now = () => 1_000_000, fetch, client, scheduler = runtimeTime
   return { service, leases, handle };
 }
 
-describe('LibbyStreamService', () => {
+describe('LibraryMediaStreamService', () => {
   it('uses injected scheduling to expire active streams and cancels scheduled work on cleanup', async () => {
     const deadlines = new Set();
     const intervals = new Set();
@@ -72,7 +72,7 @@ describe('LibbyStreamService', () => {
     let byte = 90;
     const leases = new LibbyStreamLeaseService({ now: () => 1_000_000, randomBytes: () => Buffer.alloc(32, byte++) });
     const { handle } = leases.issue({ loan, part: signedPart });
-    const service = new LibbyStreamService({ leases, streamGateway: gateway(fetch, ['audioclips.cdn.overdrive.com']), scheduler: runtimeTimers, now: () => 1_000_000,
+    const service = new LibraryMediaStreamService({ leases, streamGateway: gateway(fetch, ['audioclips.cdn.overdrive.com']), scheduler: runtimeTimers, now: () => 1_000_000,
       client: { openLoan: vi.fn(async () => ({ ...loan, parts: [signedPart] })) }, allowedHosts: ['audioclips.cdn.overdrive.com'] });
     const result = await service.open({ handle, range: 'bytes=0-0' });
     expect(result).toMatchObject({ kind: 'opened', status: 206, contentRange: 'bytes 0-0/1234' });
@@ -180,7 +180,7 @@ describe('LibbyStreamService', () => {
     const handleB = leases.issue({ loan, part: partB }).handle;
     const client = { openLoan: vi.fn(async () => { await pending; return { ...loan, parts: [part, partB] }; }) };
     const fetch = vi.fn(async () => new Response(new Uint8Array([1]), { status: 200, headers: { 'content-type': 'audio/mpeg' } }));
-    const service = new LibbyStreamService({ leases, client, streamGateway: gateway(fetch, ['.listen.libbyapp.com']), scheduler: runtimeTimers, now: () => time });
+    const service = new LibraryMediaStreamService({ leases, client, streamGateway: gateway(fetch, ['.listen.libbyapp.com']), scheduler: runtimeTimers, now: () => time });
     time += 61_000;
     const a = service.open({ handle: handleA });
     const b = service.open({ handle: handleB });
@@ -203,7 +203,7 @@ describe('LibbyStreamService', () => {
   it('revokes the lease when the active loan disappears during entitlement refresh', async () => {
     let time = 1_000_000;
     const missing = new Error('loan absent');
-    missing.code = 'LIBBY_LOAN_NOT_FOUND';
+    missing.code = 'LIBRARY_MEDIA_LOAN_NOT_FOUND';
     const client = { openLoan: vi.fn(async () => { throw missing; }) };
     const fetch = vi.fn();
     const { service, leases, handle } = fixture({ now: () => time, fetch, client });
@@ -225,7 +225,7 @@ describe('LibbyStreamService', () => {
       const first = leases.issue({ loan: liveLoan, part }).handle;
       vi.advanceTimersByTime(20);
       const second = leases.issue({ loan: liveLoan, part: { ...part, key: 'part-b' } }).handle;
-      const service = new LibbyStreamService({
+      const service = new LibraryMediaStreamService({
         leases, client: { openLoan: vi.fn() }, scheduler: runtimeTimers, now, entitlementTtlMs: 1_000,
         streamGateway: gateway(vi.fn(async () => new Response(new ReadableStream({ start() {} }), { status: 200, headers: { 'content-type': 'audio/mpeg' } })), ['.listen.libbyapp.com']),
       });

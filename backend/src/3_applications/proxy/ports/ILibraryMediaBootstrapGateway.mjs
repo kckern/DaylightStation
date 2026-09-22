@@ -40,8 +40,8 @@ export function normalizeBootstrapSpine(value) {
  * returns the strict normalized spine above or throws a BOOTSTRAP_* category.
  * No HTTP vocabulary, provider session state, or concrete gateway crosses this port.
  */
-export class ILibbyBootstrapGateway {
+export class ILibraryMediaBootstrapGateway {
   async bootstrapLoan(_input, _options = {}) {
-    throw new Error('ILibbyBootstrapGateway.bootstrapLoan must be implemented');
+    throw new Error('ILibraryMediaBootstrapGateway.bootstrapLoan must be implemented');
   }
 }
