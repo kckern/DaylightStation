@@ -56,10 +56,14 @@ It uses the existing `geo:us-state-capitals` generated assessment bank and
 demonstrates bidirectional text cards plus browser text-to-speech.
 
 Run `npm run school:certify` before publishing content. Its gate validates
-every mounted flashcard-deck schema, rejects duplicate deck IDs, and verifies
-all image, audio, video, and video-poster assets alongside normal catalog
-content. Use `--flashcard-deck-directories <a,b>` with `school.mjs certify`
-when validating a nonstandard deck mount.
+every mounted flashcard-deck schema (lexicon decks are expanded first, exactly
+as at runtime), rejects duplicate deck IDs, and verifies all image, audio,
+video, and video-poster assets alongside normal catalog content. A 0-byte
+content asset is missing (error). A `media:` asset resolves under
+`--media-dir <path>/school` (default `$DAYLIGHT_BASE_PATH/media`): an absent
+file is an error, a 0-byte placeholder is a warning, and `--strict-media`
+turns placeholders into errors. Use `--flashcard-deck-directories <a,b>` with
+`school.mjs certify` when validating a nonstandard deck mount.
 
 ## Assets
 
@@ -69,6 +73,36 @@ when validating a nonstandard deck mount.
 missing files, and unknown MIME types. Use approved image (`png`, `jpg`,
 `webp`, `svg`, `gif`, `avif`), audio (`mp3`, `m4a`, `ogg`, `wav`), and video
 (`mp4`, `webm`) files only.
+
+## Word packages (lexicon decks)
+
+A deck may list word ids instead of cards. It names a lexicon on the media
+mount and never authors `cards` itself:
+
+    schema: school.flashcard-deck/v1
+    id: language/korean/week-01-classroom
+    title: Korean — Classroom
+    revision: 1
+    lexicon: media:language/korean-vocab/lexicon.yml
+    words: [annyeong, gawi, …]
+
+The lexicon (`school.word-lexicon/v2`) is the word package's whole language
+identity: `package`, `language: {code, name}` (being learned),
+`gloss: {code, name}` (the meanings' language), `program.title`, optional
+`quiz` copy, and per word `id`, `kind` (`word|phrase`), `group` (the course
+unit that introduced it), `term`, `gloss`, `pronunciation` (required for
+phrases) and at least three `decoys.term` / `decoys.gloss` each. A decoy may
+never equal its own answer, and a decoy that is another in-set entry must be
+the same kind. `LexiconDeckLoader` expands the deck at the content-repository
+seam (both `getFlashcardDeck` and `listFlashcardDecks`), before any
+validation: the front is the picture (alt = gloss), the term, and `term.mp3`;
+the back is the gloss, plus the pronunciation for a phrase. Media is found by
+convention at `media:<package dir>/words/<group>/<id>/{image.jpg,term.mp3,gloss.mp3}`.
+Full schema and "adding a language": `word-ladder.md`.
+
+`media:` asset ids resolve under `<media dir>/school`; bare ids keep resolving
+under the content asset dir. A 0-byte file is a placeholder and counts as
+missing: the player renders the card without it.
 
 ## Module and assignment policy
 
@@ -98,6 +132,13 @@ policy:
   quizRequired: true
   quizPassingPercent: 80 # optional; defaults to 80
 ```
+
+`policy.mode` selects the study engine: `fsrs` (default, everything above) or
+`word-ladder` (see `word-ladder.md`). `mode` lives inside `policy` because
+`SetAssignments` persists only what the validator returns and `policy` is what
+rides the launch target. `word-ladder` rejects `newCardLimit`,
+`masteryPercent` and `minimumReviews`. An optional `title` names the agenda
+tile (default `Flashcards`).
 
 `quizRequired: true` requires the referenced deck to define
 `assessment.bankId`; an assignment cannot override it. Flashcard ratings are

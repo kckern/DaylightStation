@@ -12,9 +12,30 @@ import { formatLocalTimestamp } from '#domains/core/utils/time.mjs';
 import { provisionalReview } from '#shared/contracts/nutrition/reviewLifecycle.mjs';
 import { sha256Text } from '#system/utils/sha256.mjs';
 import { confineIcon, iconVocabulary } from '#domains/nutrition/services/icons.mjs';
+import { parseGtin } from '#domains/nutrition/services/gtin.mjs';
+import { isQuarantined, quarantineMarker } from '#domains/nutrition/services/quarantine.mjs';
+import { InvalidInputError } from '#apps/common/errors/SemanticErrors.mjs';
 
+// The largest mass one label serving can plausibly be; an AI estimate above it is refused.
+const MAX_ESTIMATED_SERVING_GRAMS = 500;
 const NUTRIENTS = ['calories', 'protein', 'carbs', 'fat', 'fiber', 'sugar', 'sodium', 'cholesterol'];
-const finiteNutrient = value => value != null && Number.isFinite(Number(value)) && Number(value) >= 0 ? Number(value) : null;
+// '' is unknown, not zero (`Number('')` is 0) — the same guard normalizeProductNutrition applies.
+const finiteNutrient = value => value != null && value !== '' && Number.isFinite(Number(value)) && Number(value) >= 0 ? Number(value) : null;
+// The code a capture is stored under: the collapsed GTIN when the raw read
+// parses, else the raw input (which #execute will refuse).
+const storedUpc = raw => { const gtin = parseGtin(raw); return gtin.ok ? gtin.code : raw; };
+
+/** Code on the error a malformed barcode raises; every entry point translates it. */
+export const UPC_REJECTED = 'NUTRIBOT_UPC_REJECTED';
+// The message IS the sentence the person sees, on every transport.
+const REFUSALS = {
+  'check-digit': "That isn't a food barcode (check digit).",
+  isbn: "That's a book (ISBN), not a food.",
+  length: "That isn't a food barcode (wrong length).",
+  empty: 'No barcode was read.',
+};
+const upcRejected = (reason, upc) => new InvalidInputError(REFUSALS[reason] || "That isn't a food barcode.",
+  { code: UPC_REJECTED, context: { reason, upc } });
 
 /**
  * Log food from UPC use case
@@ -52,7 +73,7 @@ export class LogFoodFromUPC {
     this.#config = deps.config;
     this.#logger = deps.logger || console;
     this.#encodeCallback = deps.encodeCallback || ((cmd, data) => JSON.stringify({ cmd, ...data }));
-    this.#foodIconsString = deps.foodIconsString || 'apple banana bread cheese chicken default';
+    this.#foodIconsString = deps.foodIconsString || 'default';
     this.#iconVocabulary = iconVocabulary(this.#foodIconsString, deps.foodIconNames);
     this.#barcodeGenerator = deps.barcodeGenerator; // Optional: for generating barcode images
     this.#catalogService = deps.catalogService || null;
@@ -114,25 +135,28 @@ export class LogFoodFromUPC {
     const logId = `${hash.slice(0, 8)}-${hash.slice(8, 12)}-4${hash.slice(13, 16)}-a${hash.slice(17, 20)}-${hash.slice(20, 32)}`;
     if (this.#inflight.has(logId)) {
       const active = this.#inflight.get(logId);
-      if (active.upc !== input.upc) throw Object.assign(new Error('Capture operation ID reused for another barcode'), { status: 409 });
+      if (active.upc !== storedUpc(input.upc)) throw Object.assign(new Error('Capture operation ID reused for another barcode'), { status: 409 });
       return active.promise;
     }
     const pending = (async () => {
       const existing = await this.#foodLogStore?.findById?.(input.userId, logId);
       if (existing) {
-        if (existing.metadata?.sourceUpc !== input.upc) throw Object.assign(new Error('Capture operation ID reused for another barcode'), { status: 409 });
-        if (existing.status === 'pending' && this.#reviewService) await this.#reviewService.capture({ userId: input.userId, logUuid: logId });
-        return { success: true, nutrilogUuid: logId, committed: existing.status === 'accepted' || (existing.status === 'pending' && !!this.#reviewService),
-          mealTime: existing.meal.time, alreadyProcessed: true };
+        if (existing.metadata?.sourceUpc !== storedUpc(input.upc)) throw Object.assign(new Error('Capture operation ID reused for another barcode'), { status: 409 });
+        // A quarantined capture is pending on purpose; a replay must not accept it.
+        const quarantined = isQuarantined(existing);
+        if (existing.status === 'pending' && this.#reviewService && !quarantined) await this.#reviewService.capture({ userId: input.userId, logUuid: logId });
+        return { success: true, nutrilogUuid: logId,
+          committed: existing.status === 'accepted' || (existing.status === 'pending' && !!this.#reviewService && !quarantined),
+          quarantined, mealTime: existing.meal.time, alreadyProcessed: true };
       }
       return this.#execute({ ...input, captureId: logId });
     })();
-    this.#inflight.set(logId, { upc: input.upc, promise: pending });
+    this.#inflight.set(logId, { upc: storedUpc(input.upc), promise: pending });
     try { return await pending; } finally { this.#inflight.delete(logId); }
   }
   async #execute(input) {
     const {
-      userId, conversationId, upc, messageId,
+      userId, conversationId, upc: rawUpc, messageId,
       // The day the client is LOOKING AT (`YYYY-MM-DD`). ABSENT MEANS TODAY,
       // and absent is the ONLY thing Telegram/the scale ever send — which is
       // why `meal` is passed only when a date arrives, leaving NutriLog's own
@@ -140,6 +164,17 @@ export class LogFoodFromUPC {
       date: viewedDate = null,
       responseContext,
     } = input;
+
+    // Shape before lookup. Every UPC path (relay, HTTP, Telegram, web) lands here,
+    // and only the relay parses the code first. A bad check digit, an ISBN from the
+    // shared reader, or two reads glued together must not become a food.
+    const gtin = parseGtin(rawUpc);
+    if (!gtin.ok) {
+      this.#logger.info?.('upc.rejected', { upc: rawUpc, reason: gtin.reason });
+      throw upcRejected(gtin.reason, rawUpc);
+    }
+    const upc = gtin.code;
+    if (gtin.collapsed) this.#logger.info?.('upc.collapsed', { raw: rawUpc, upc });
 
     this.#logger.debug?.('logUPC.start', { conversationId, upc, hasResponseContext: !!responseContext });
 
@@ -267,6 +302,32 @@ export class LogFoodFromUPC {
         }
       }
 
+      // 4b. A per-100 fallback is honest but rarely the portion eaten. The
+      // classifier already running for the icon also estimates the label's
+      // serving ("2 tbsp") in grams; the row stays unconfirmed, so the estimate is
+      // reviewed like any other. Grams only: a millilitre fallback is never
+      // turned into mass. One label serving is at most 500 g, and never more
+      // than the whole package when its mass is known.
+      let servingAssumption = product.nutritionLookup?.servingFallback === 'per100' ? 'per100' : 'one-serving';
+      if (product.nutritionLookup?.servingFallback === 'per100' && product.serving?.unit === 'g'
+        && classification?.servingGrams != null) {
+        const estimate = Number(classification.servingGrams);
+        const packageGrams = Number(product.nutritionLookup.packageGrams);
+        const maxGrams = Math.min(MAX_ESTIMATED_SERVING_GRAMS, packageGrams > 0 ? packageGrams : Infinity);
+        if (Number.isFinite(estimate) && estimate > 0 && estimate <= maxGrams) {
+          const factor = estimate / 100;
+          product = { ...product, serving: { size: estimate, unit: 'g' },
+            nutrition: Object.fromEntries(Object.entries(product.nutrition || {})
+              .map(([key, value]) => [key, value == null ? null : Math.round(value * factor * 1000) / 1000])),
+            nutritionLookup: { ...product.nutritionLookup, servingEstimate: { source: 'ai', grams: estimate } } };
+          servingAssumption = 'ai-serving-estimate';
+          this.#logger.info?.('upc.serving.estimated', { upc, name: product.name, servingText: product.nutritionLookup.servingText || null, grams: estimate });
+        } else {
+          this.#logger.info?.('upc.serving.estimateRejected', { upc, name: product.name,
+            servingText: product.nutritionLookup.servingText || null, grams: classification.servingGrams, maxGrams });
+        }
+      }
+
       // 5. Create food item from product
       const grams = ['g', 'gram', 'grams'].includes(String(product.serving?.unit).toLowerCase())
         && Number(product.serving?.size) > 0 ? Number(product.serving.size) : null;
@@ -275,7 +336,10 @@ export class LogFoodFromUPC {
       // nine times, classify cleanly every time (the Noom colour proves the model
       // answered), and land on the neutral dot without a single log line saying
       // the model's guess was not a slug we own. Name the miss.
-      const proposedIcon = product.icon && product.icon !== 'default' ? product.icon : classification.icon;
+      // Only a slug we own can outrank the classifier; the gateway used to stamp
+      // every product with an emoji that won this contest and then failed it.
+      const proposedIcon = product.icon && product.icon !== 'default' && this.#iconVocabulary.has(product.icon)
+        ? product.icon : classification.icon;
       const resolvedIcon = catalogEntry?.iconOverride
         || confineIcon(proposedIcon, this.#iconVocabulary, product.name);
       if (resolvedIcon === 'default') {
@@ -293,9 +357,14 @@ export class LogFoodFromUPC {
         color: classification.noomColor,
         ...Object.fromEntries(NUTRIENTS.map(key => [key, finiteNutrient(product.nutrition?.[key])])),
         ...provisionalReview({}, this.#clock.now(), 'upc'),
-        captureEvidence: { source: 'upc', upc, serving: product.serving, assumption: 'one-serving' },
+        captureEvidence: { source: 'upc', upc, serving: product.serving, assumption: servingAssumption },
       };
       if (this.#catalogService?.resolveIdentity) Object.assign(foodItem, await this.#catalogService.resolveIdentity(foodItem, userId));
+      // Unknown calories (a known 0 is known) is not a food we can count. It stays
+      // a pending capture — shown in Needs Review, outside the budget — instead of a
+      // committed row that puts "+" on the day's totals. The marker on the log is
+      // what keeps auto-report, confirm-all and capture recovery off it.
+      const quarantined = foodItem.calories == null;
 
       // 5b. Keep the manufacturer's own photo. The row renders `photoRef` ahead
       // of any icon (EntryRow), so a real picture of the product beats the best
@@ -327,6 +396,8 @@ export class LogFoodFromUPC {
           source: 'upc',
           sourceUpc: upc,
           ...(product.nutritionLookup ? { nutritionLookup: product.nutritionLookup } : {}),
+          ...(quarantined ? { ...quarantineMarker(), nutritionLookup: { ...product.nutritionLookup,
+            missing: [...new Set([...(product.nutritionLookup?.missing || []), 'calories'])] } } : {}),
         },
         timezone,
         timestamp: now,
@@ -335,15 +406,18 @@ export class LogFoodFromUPC {
       // 7. Save NutriLog
       if (this.#foodLogStore) {
         await this.#foodLogStore.save(nutriLog);
+        // Saved is final for a quarantined capture: nothing after this may undo it.
+        if (quarantined) capturedLog = nutriLog;
       }
-      if (this.#reviewService) {
+      if (this.#reviewService && !quarantined) {
         await this.#reviewService.capture({ userId, logUuid: nutriLog.id });
         nutriLog = await this.#foodLogStore.findById(userId, nutriLog.id);
         capturedLog = nutriLog;
       }
+      if (quarantined) this.#logger.info?.('upc.quarantined', { upc, name: product.name, logUuid: nutriLog.id });
 
       // 7b. Record food item in catalog for quick-add
-      if (this.#catalogService && !product.nutritionLookup?.warnings?.length) {
+      if (this.#catalogService && !product.nutritionLookup?.warnings?.length && !quarantined) {
         try {
           await this.#catalogService.recordUsage({
             foodId: foodItem.foodId,
@@ -405,12 +479,14 @@ export class LogFoodFromUPC {
         nutrilogUuid: nutriLog.id,
         product,
         committed: nutriLog.status === 'accepted',
+        quarantined,
         mealTime: nutriLog.meal.time,
       };
     } catch (error) {
       if (capturedLog) {
         this.#logger.warn?.('logUPC.savedDeliveryFailed', { upc, logUuid: capturedLog.id, error: error.message });
-        return { success: true, nutrilogUuid: capturedLog.id, committed: true, mealTime: capturedLog.meal.time, deliveryFailed: true };
+        return { success: true, nutrilogUuid: capturedLog.id, committed: capturedLog.status === 'accepted',
+          quarantined: isQuarantined(capturedLog), mealTime: capturedLog.meal.time, deliveryFailed: true };
       }
       this.#logger.error?.('logUPC.error', { conversationId, upc, error: error.message });
 
@@ -473,7 +549,17 @@ Calories: ${product.nutrition?.calories ?? 'unknown'}`,
    */
   async #classifyProduct(product) {
     const availableIcons = this.#foodIconsString.split(' ');
-
+    // Only a per-100 GRAM fallback asks for a serving estimate; every other
+    // product keeps the original { icon, noomColor } contract. A volume is never
+    // turned into grams, so a millilitre fallback is not asked.
+    const askServing = product.nutritionLookup?.servingFallback === 'per100' && product.serving?.unit === 'g';
+    const example = askServing ? '{ "icon": "apple", "noomColor": "green", "servingGrams": 30 }' : '{ "icon": "apple", "noomColor": "green" }';
+    const servingRule = askServing
+      ? '\nThe calories given are per 100 g. Also estimate the mass in grams of the label serving as "servingGrams" (number, or null if unknowable).'
+      : '';
+    const caloriesLine = askServing
+      ? `Calories per 100 g: ${product.nutrition?.calories ?? 'unknown'}\nLabel serving: ${product.nutritionLookup.servingText || 'unknown'}`
+      : `Calories: ${product.nutrition?.calories ?? 'unknown'}`;
     const prompt = [
       {
         role: 'system',
@@ -485,11 +571,11 @@ Choose the MOST relevant icon filename for the product and assign a Noom color:
 - yellow: lean proteins, whole grains, legumes
 - orange: processed foods, high-calorie items
 
-Respond ONLY in JSON: { "icon": "apple", "noomColor": "green" }`,
+Respond ONLY in JSON: ${example}${servingRule}`,
       },
       {
         role: 'user',
-        content: `Product: ${product.name}${product.brand ? ` by ${product.brand}` : ''}\nCalories: ${product.nutrition?.calories || 'unknown'}`,
+        content: `Product: ${product.name}${product.brand ? ` by ${product.brand}` : ''}\n${caloriesLine}`,
       },
     ];
 

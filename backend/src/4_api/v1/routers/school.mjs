@@ -8,6 +8,7 @@ import { splatPath } from '#api/utils/wildcard.mjs';
 import { sendLocalFileResource } from '#system/http/streamFile.mjs';
 import { presentPublicResources } from '../presenters/publicResourceRefs.mjs';
 import { mountTeacherReadingRoutes } from './school.teacherReading.mjs';
+import { mountWordLadderRoutes } from './school.wordLadder.mjs';
 
 export function createSchoolRouter({
   // () => boolean. Whether school.yml still configures a console PIN. The
@@ -19,6 +20,7 @@ export function createSchoolRouter({
   schoolService,
   schoolApiSessions,
   flashcardStudy = null,
+  wordLadderStudy = null,
   schoolResourceService = null,
   schoolPrintAccess = null,
   schoolRecordsQuery = null,
@@ -544,6 +546,12 @@ export function createSchoolRouter({
     if (!flashcardStudy) throw new EntityNotFoundError('flashcard study', 'not configured');
     res.json({ deck: await flashcardStudy.getDeck(req.params.deckId) });
   }));
+  // The word ladder (any word package): a flashcard enrollment in `policy.mode:
+  // word-ladder`. Its own module, like the teacher reading workspace.
+  mountWordLadderRoutes({
+    router, wrap, wordLadderStudy, sendFileResource,
+    notConfigured: (what) => new EntityNotFoundError(what, 'not configured'),
+  });
   router.post('/sessions/:sessionId/remediation-offer', wrap(async (req, res) => {
     if (!offerCatalogQuizRemediation) {
       throw new EntityNotFoundError('adaptive remediation offer', 'not configured');

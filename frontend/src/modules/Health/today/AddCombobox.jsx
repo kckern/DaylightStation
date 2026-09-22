@@ -15,7 +15,8 @@ const logger = createAppLogger('health').child('add-combobox');
 // filtered list is already short.
 const OPEN_SUGGEST_LIMIT = 8;
 
-export function AddCombobox({ bucketId, date = null, onDone, onCancel, onMeals, onTemplate, onManageFoods }) {
+export function AddCombobox({ bucketId, date = null, onDone, onCancel, onMeals, onTemplate, onManageFoods,
+  inline = false, label = null, focusRequest = 0, actions = null }) {
   const [text, setText] = useState('');
   const [items, setItems] = useState([]);
   const [highlight, setHighlight] = useState(-1);
@@ -26,6 +27,40 @@ export function AddCombobox({ bucketId, date = null, onDone, onCancel, onMeals, 
   const submitting = useRef(false);
   const requestRef = useRef(null);
   const listId = useId();
+  const inputRef = useRef(null);
+  const rootRef = useRef(null);
+  const popupRef = useRef(null);
+  const [focused, setFocused] = useState(false);
+  const surface = inline ? 'inline' : 'sheet';
+  // Inline rows sit on every visible meal at once, so each one fetches and
+  // draws its shortlist only while it is being used. Leaving the row closes
+  // the list but keeps any typed text; coming back reopens it.
+  const open = !inline || focused;
+  useEffect(() => { if (focusRequest) inputRef.current?.focus(); }, [focusRequest]);
+  // Focus moving between the input and its own popup (suggestions, Log
+  // sentence, the two links) is still "in the row" — a Tab onto "Manage saved
+  // foods" must not unmount the link it is landing on.
+  const onRowBlur = (e) => {
+    const next = e.relatedTarget;
+    if (next && (next === inputRef.current || popupRef.current?.contains(next))) return;
+    setFocused(false);
+    setHighlight(-1);
+    // An empty row forgets its shortlist, so a refocus never flashes stale
+    // results (or a stale activedescendant) before the fresh fetch lands.
+    if (!text.trim()) setItems([]);
+  };
+  // The input is never disabled (disabling a focused field blurs it, and on a
+  // phone that closes the keyboard between every add). If focus did end up
+  // outside anything focusable — a pressed button that went disabled while
+  // parsing — hand it back to the input once the request settles, success or
+  // error. Focus that went somewhere else on purpose is left alone.
+  const prevPhase = useRef(phase);
+  useEffect(() => {
+    const was = prevPhase.current; prevPhase.current = phase;
+    if (!inline || was !== 'parsing' || phase !== 'typing') return;
+    const active = document.activeElement;
+    if (!active || active === document.body || (active !== inputRef.current && rootRef.current?.contains(active))) inputRef.current?.focus();
+  }, [phase, inline]);
 
   // One effect for both lists. With text, it is the query path exactly as
   // before (debounced). Without, it is the bucket-aware zero-keystroke list
@@ -34,6 +69,7 @@ export function AddCombobox({ bucketId, date = null, onDone, onCancel, onMeals, 
   // suggestions. Both share the `rid` guard, so a slow open cannot overwrite a
   // fast first keystroke, or vice versa.
   useEffect(() => {
+    if (!open) return undefined;
     const q = text.trim();
     const path = q
       ? `api/v1/health/nutrition/catalog/suggest?q=${encodeURIComponent(q)}${bucketId ? `&bucket=${encodeURIComponent(bucketId)}` : ''}`
@@ -56,7 +92,19 @@ export function AddCombobox({ bucketId, date = null, onDone, onCancel, onMeals, 
     clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(fetchSuggestions, 250);
     return () => clearTimeout(debounceRef.current);
-  }, [text, bucketId]);
+  }, [text, bucketId, open]);
+
+  // The sheet unmounts on success. The inline row stays: clear it and forget
+  // the operation id (the next add is a new intent even when the payload is
+  // identical). Focus never left the input, so the next food can be typed
+  // straight away.
+  const finish = (result) => {
+    if (inline) {
+      requestRef.current = null;
+      setText(''); setHighlight(-1); setPhase('typing');
+    }
+    onDone?.(result);
+  };
 
   const pick = async (entry) => {
     if (submitting.current) return;
@@ -88,8 +136,8 @@ export function AddCombobox({ bucketId, date = null, onDone, onCancel, onMeals, 
       operationRequest(requestRef, { catalogEntryId: entry.id, ...(bucketId ? { mealTime: bucketId } : {}), ...(date ? { date } : {}) }),
         'POST',
       );
-      logger.info('quickadd.done', { entry: entry.name, bucket: bucketId });
-      onDone();
+      logger.info('quickadd.done', { entry: entry.name, bucket: bucketId, surface });
+      finish();
     } catch (err) {
       logger.error('quickadd.failed', { error: err?.message });
       setError(err); setPhase('typing');
@@ -114,11 +162,11 @@ export function AddCombobox({ bucketId, date = null, onDone, onCancel, onMeals, 
       operationRequest(requestRef, { type: 'text', content: text.trim(), ...(bucketId ? { bucket: bucketId } : {}), ...(date ? { date } : {}) }),
       'POST',
     );
-      logger.info('sentence.committed', {});
+      logger.info('sentence.committed', { bucket: bucketId, surface });
       if (result?.noFood || result?.committed === false) {
         setError(new Error(result?.message || 'No food was logged. Tweak the sentence and try again.'));
         setPhase('typing');
-      } else onDone(result);
+      } else finish(result);
     } catch (err) {
       logger.error('sentence.failed', { error: err?.message });
       setError(err); setPhase('typing'); // text preserved — input never lost
@@ -127,7 +175,13 @@ export function AddCombobox({ bucketId, date = null, onDone, onCancel, onMeals, 
 
   const onKeyDown = (e) => {
     if (submitting.current) { e.preventDefault(); return; }
-    if (e.key === 'Escape') return onCancel();
+    if (e.key === 'Escape') {
+      if (!inline) return onCancel();
+      e.preventDefault();
+      // First Escape clears the text; a second one on an empty row leaves it.
+      if (text) { setText(''); setError(null); requestRef.current = null; } else inputRef.current?.blur();
+      return;
+    }
     if (e.key === 'ArrowDown') { e.preventDefault(); setHighlight((h) => Math.min(h + 1, items.length - 1)); }
     if (e.key === 'ArrowUp') { e.preventDefault(); setHighlight((h) => Math.max(h - 1, -1)); }
     if (e.key === 'Enter') {
@@ -138,14 +192,25 @@ export function AddCombobox({ bucketId, date = null, onDone, onCancel, onMeals, 
   };
 
   return (
-    <div className="health-suggest">
-      <TextInput autoFocus size="sm" value={text} placeholder="Food name, or a sentence to parse…"
-        aria-label="Food name or sentence" role="combobox" aria-expanded="true" aria-controls={listId}
-        aria-activedescendant={highlight >= 0 ? `${listId}-${highlight}` : undefined}
-        disabled={phase === 'parsing'}
-        onChange={(e) => setText(e.target.value)} onKeyDown={onKeyDown}
-        rightSection={phase === 'parsing' ? <Loader size="xs" /> : null} />
+    <div ref={rootRef} className={`health-suggest${inline ? ' health-suggest--inline' : ''}`}>
+      <div className="health-suggest__field">
+        <TextInput ref={inputRef} autoFocus={!inline} size="sm" value={text}
+          placeholder={inline ? `Add to ${label}…` : 'Food name, or a sentence to parse…'}
+          aria-label={inline ? `Add to ${label}` : 'Food name or sentence'} role="combobox"
+          aria-expanded={open ? 'true' : 'false'} aria-controls={open ? listId : undefined}
+          aria-activedescendant={open && highlight >= 0 ? `${listId}-${highlight}` : undefined}
+          readOnly={phase === 'parsing'} aria-busy={phase === 'parsing' ? 'true' : undefined}
+          onFocus={() => { if (!focused && inline) logger.debug('add-row.focus', { bucket: bucketId }); setFocused(true); }}
+          onBlur={onRowBlur}
+          onChange={(e) => setText(e.target.value)} onKeyDown={onKeyDown}
+          rightSection={phase === 'parsing' ? <Loader size="xs" /> : null} />
+        {actions}
+      </div>
       {error ? <p className="health-suggest__error">{error.message}</p> : null}
+      {/* Everything the row opens lives in one popup. preventDefault on
+          mousedown keeps the input focused while anything in it is pressed;
+          otherwise blur would close the inline popup before the click lands. */}
+      {open ? <div ref={popupRef} className="health-suggest__popup" onMouseDown={(e) => e.preventDefault()} onBlur={onRowBlur}>
       <ul id={listId} className="health-suggest__list" role="listbox" aria-label="Suggested foods">
         {items.map((entry, i) => {
           // The food's picture where it has one (PRD F5.3 asks for it here too).
@@ -180,6 +245,7 @@ export function AddCombobox({ bucketId, date = null, onDone, onCancel, onMeals, 
         </UnstyledButton>
       ) : null}
       {onManageFoods ? <UnstyledButton className="health-suggest__saved-meals" onClick={onManageFoods}>Manage saved foods ▸</UnstyledButton> : null}
+      </div> : null}
     </div>
   );
 }

@@ -5,6 +5,7 @@ import { bindMediaToMaster } from '../../../../../lib/volume/bindMediaToMaster.j
 import Icon from '../../../home/icons/Icon.jsx';
 import VoiceBand from './VoiceBand.jsx';
 import useVoiceCapture from './useVoiceCapture.js';
+import { SILENT_AFTER_MS, SILENT_LEVEL, judgeTake } from '../../shared/speechFloor.js';
 import useModelPauses from './useModelPauses.js';
 import { snapCut } from './pauses.js';
 import {
@@ -44,40 +45,6 @@ import { joinTake } from './joinTake.js';
  * as a dead control — the queue simply omits it on a device without one.
  */
 
-/** Below this shaped level for SILENT_AFTER_MS, the mic is called silent. */
-const SILENT_LEVEL = 0.04;
-const SILENT_AFTER_MS = 2000;
-/**
- * The floor a take has to clear to be KEPT at all: long enough to be a
- * sentence, and loud enough to have been one.
- *
- * A rung that accepts anything is a rung that can be tapped through, and the
- * evidence that this was happening is in the log for 2026-09-11: six takes, the
- * last two at ~1s each with `heard: false`, one of them accepted 1 second after
- * it stopped. Recording was being spent rather than done.
- *
- * `heard` is the strong signal and does most of the work — it means the live
- * level never once crossed SILENT_LEVEL, and a real utterance always crosses
- * it. The duration floor catches the other shape: a tap, a cough, a single loud
- * syllable that clears the level but is not an attempt at the sentence.
- *
- * 1200ms IS NOT A GUESS. The six takes from that session were pulled off disk
- * and measured, and they separate cleanly:
- *
- *   take  length   peak      whisper no_speech   text
- *   1-4   1.74s     -0.0dB   0.035-0.093         real Korean sentences
- *          -2.58s   -4.5dB                       (incl. the 이 가방은/가방들은 pair)
- *   5     1.14s    -63.5dB   0.941               silence
- *   6     0.66s    -52.6dB   0.963               silence
- *
- * A -63dB peak is under a quiet room's noise floor; the spectrograms of 5 and 6
- * are black, with no harmonics or formants anywhere. Whisper returned the same
- * byte-identical Korean broadcast sign-off for both, which is its documented
- * hallucination on silence — two different files producing one phrase is the
- * tell. Spoken takes ran 1.74-2.58s and tapped-through ones 0.66-1.14s, so the
- * floor sits in the gap with room on either side.
- */
-const MIN_TAKE_MS = 1200;
 /** The take is kept as this many mono samples — plenty for a band a few
  *  hundred bars wide, cheap enough to bin every resize. */
 const TAKE_SAMPLES = 4096;
@@ -294,9 +261,9 @@ export default function RecordingRung({
     // is false for every take ever made, and refusing on it would lock the
     // rung shut on a device where nothing is wrong. So loudness is only
     // judged when a level actually arrived; length is judged always.
-    const verdict = measurable && !heard ? 'too-quiet'
-      : durationMs < MIN_TAKE_MS ? 'too-short'
-        : null;
+    // A take joined from pieces is judged here too, on the same one-go floor
+    // (MIN_TAKE_MS, in `speechFloor`) — its loudness was judged per piece.
+    const verdict = judgeTake({ heard, sampled: measurable, durationMs });
     setTakeVerdict(verdict);
     if (verdict) {
       setRefusals((n) => n + 1);

@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { summarizeDayQuality } from './dayQuality.js';
 import { useApiResource } from '../../../lib/hooks/useApiResource.js';
 import { createAppLogger } from '../../../lib/ui/createAppLogger.js';
 import { BUCKETS } from './mealBuckets.js';
@@ -30,6 +31,20 @@ export function useHealthDay(date, { enabled = true } = {}) {
     }
     return map;
   }, [items]);
+
+  // One data-quality census per (date, ledger revision) — not per poll — so
+  // the log store can answer "which days render gaps, and why" without a
+  // screenshot. Clean days log nothing.
+  const revision = list.data?.revision ?? null;
+  const qualityLogged = useRef(null);
+  useEffect(() => {
+    if (!enabled || !list.data) return;
+    const key = `${date}@${revision}`;
+    if (qualityLogged.current === key) return;
+    qualityLogged.current = key;
+    const summary = summarizeDayQuality(items);
+    if (summary.issues > 0) logger.info('day.quality', { date, revision, ...summary });
+  }, [enabled, list.data, date, revision, items]);
 
   const reload = refreshHealthResources;
 

@@ -44,12 +44,14 @@ re-colours the past. That is the school convention — rollups are derived,
 never stored — and the reason the verdicts are recomputable rather than a
 record.
 
-Programs that keep only their current state (a flashcard deck's mastery, a
-language ladder's position, a reel, the cube) cannot be replayed. On a past
-day they are neither owed, served nor faulted; a day on which they were the
-only assignment reads `unknown / no_history`. Programs that keep dated
-evidence — the piano course, the book log, story time, surface dispatches —
-answer for any day.
+Programs that keep only their current state (an FSRS flashcard deck's
+mastery, a language ladder's position, a reel, the cube) cannot be replayed.
+On a past day they are neither owed, served nor faulted; a day on which they
+were the only assignment reads `unknown / no_history`. Programs that keep dated
+evidence — the piano course, the book log, story time, surface dispatches, and
+a `word-ladder` flashcard enrollment (its frozen day plan plus dated history) —
+answer for any day. The flashcards launcher is one launcher for both engines,
+so it declares `replayable` and answers `no_history` itself for an FSRS deck.
 
 Today's square is the live completion read, the same call the games gate and
 the completion bridge make, so the grid's rightmost cell and the

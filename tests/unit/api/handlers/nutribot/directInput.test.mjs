@@ -25,6 +25,21 @@ describe('directUPCHandler', () => {
     });
   });
 
+  it('answers a refused barcode with 400 and the reason', async () => {
+    const refusal = Object.assign(new Error("That isn't a food barcode (check digit)."),
+      { name: 'ValidationError', code: 'NUTRIBOT_UPC_REJECTED', context: { reason: 'check-digit', upc: '037000338368' } });
+    executeMock.mockRejectedValueOnce(refusal);
+    const res = mockRes();
+    await handler({ query: { upc: '037000338368' }, body: {} }, res);
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith({ ok: false, error: "That isn't a food barcode (check digit).", rejected: 'check-digit' });
+  });
+
+  it('lets any other failure reach the error middleware', async () => {
+    executeMock.mockRejectedValueOnce(new Error('OFF down'));
+    await expect(handler({ query: { upc: '037000338369' }, body: {} }, mockRes())).rejects.toThrow('OFF down');
+  });
+
   it('logs food from a normal upc query param', async () => {
     const res = mockRes();
     await handler({ query: { upc: '016000275287' }, body: {} }, res);

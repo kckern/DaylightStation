@@ -1,0 +1,23 @@
+.word-ladder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.25rem;
+  padding: 1.5rem;
+  min-height: 100%;
+}
+.word-ladder-header { align-self: stretch; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.75rem; }
+.word-ladder-header > p[aria-label='Today'] { margin: 0 0 0 auto; opacity: 0.75; }
+.word-ladder-notice { flex-basis: 100%; margin: 0; text-align: center; font-size: 1.25rem; }
+.word-ladder-card { display: flex; flex-direction: column; align-items: center; gap: 1rem; width: min(40rem, 100%); }
+.word-ladder-picture { max-width: 100%; max-height: 16rem; object-fit: contain; border-radius: 0.75rem; }
+.word-ladder-term { font-size: 3rem; font-weight: 700; margin: 0; }
+.word-ladder-gloss { font-size: 2.25rem; margin: 0; }
+.word-ladder-pronunciation { font-size: 1.25rem; opacity: 0.8; margin: 0; }
+.word-ladder-choices { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.75rem; width: 100%; }
+.word-ladder-choice { font-size: 1.5rem; padding: 1rem; }
+.word-ladder-choice.is-answer { outline: 3px solid currentColor; }
+.word-ladder-record, .word-ladder-marks { display: flex; flex-wrap: wrap; gap: 0.75rem; justify-content: center; }
+.word-ladder button { min-height: 3.5rem; min-width: 7rem; font-size: 1.25rem; border-radius: 0.75rem; }
+.word-ladder-tick { font-size: 1.75rem; }
+.word-ladder-done h2 { font-size: 2rem; }

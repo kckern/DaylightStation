@@ -29,8 +29,8 @@ test('sentence logs immediately, without an extra accept step', async ({ page })
   });
   await page.route('**/api/v1/lifelog/weight', route => route.fulfill({ json: {} }));
   await page.goto('/health');
-  await page.getByRole('button', { name: /Add food to/ }).first().click();
-  const input = page.getByRole('combobox', { name: 'Food name or sentence' });
+  const input = page.getByRole('combobox', { name: 'Add to Lunch' });
+  await input.click();
   await input.fill('two scrambled eggs');
   await input.press('Enter');
   await expect(page.locator('.health-row-line', { hasText: /Scrambled eggs/ })).toBeVisible();

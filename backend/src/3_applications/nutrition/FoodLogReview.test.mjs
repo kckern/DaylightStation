@@ -9,6 +9,8 @@ import { YamlNutriListDatastore } from '#adapters/persistence/yaml/YamlNutriList
 import { groupParsedItems } from '#domains/nutrition/services/groupParsedItems.mjs';
 import { serializeFoodItem } from '#shared/contracts/nutrition/foodItemRecord.mjs';
 import { NutribotContainer } from '#apps/nutribot/NutribotContainer.mjs';
+import { provisionalReview } from '#shared/contracts/nutrition/reviewLifecycle.mjs';
+import { quarantineMarker } from '#domains/nutrition/services/quarantine.mjs';
 
 async function fixture() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'health-review-'));
@@ -137,5 +139,39 @@ describe('shared pending food review', () => {
     await expect(f.review.execute({ ...input, operationId: 'stale' })).rejects.toMatchObject({ status: 409 });
     await expect(f.review.execute({ ...input, items: [] })).rejects.toMatchObject({ status: 409 });
     expect(await f.items.findByDate('alice', '2026-09-04')).toHaveLength(0);
+  });
+});
+
+describe('a quarantined barcode capture (calories unknown)', () => {
+  async function quarantined() {
+    const f = await fixture();
+    const now = Date.parse('2026-09-04T19:00:00Z');
+    const log = f.log.with({
+      items: f.log.items.map(item => item.with({ calories: null, ...provisionalReview({}, now, 'upc') })),
+      metadata: { ...f.log.metadata, ...quarantineMarker(),
+        nutritionLookup: { source: 'fixture', warnings: [], missing: ['calories'] } },
+    }, new Date(now));
+    await f.foodLogs.save(log);
+    return { ...f, log };
+  }
+
+  it('is never captured into the ledger, and recovery leaves it pending', async () => {
+    const f = await quarantined();
+    await expect(f.review.capture({ userId: 'alice', logUuid: f.log.id })).rejects.toMatchObject({ status: 409 });
+    await f.review.recover('alice');
+    expect(await f.items.findByDate('alice', '2026-09-04')).toHaveLength(0);
+    expect((await f.foodLogs.findById('alice', f.log.id)).status).toBe('pending');
+  });
+
+  it('confirms once calories are supplied, and the marker goes with it', async () => {
+    const f = await quarantined();
+    const [item] = f.log.items;
+    await expect(f.review.execute({ userId: 'alice', logUuid: f.log.id, action: 'confirm' }))
+      .rejects.toThrow(/calories/i);
+    await f.review.execute({ userId: 'alice', logUuid: f.log.id, action: 'confirm', items: [{ id: item.id, calories: 140 }] });
+    const saved = await f.foodLogs.findById('alice', f.log.id);
+    expect(saved.status).toBe('accepted');
+    expect(saved.metadata.quarantined).toBeFalsy();
+    expect(await f.items.findByDate('alice', '2026-09-04')).toEqual([expect.objectContaining({ calories: 140 })]);
   });
 });
