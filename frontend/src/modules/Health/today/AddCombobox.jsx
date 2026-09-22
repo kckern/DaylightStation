@@ -28,12 +28,39 @@ export function AddCombobox({ bucketId, date = null, onDone, onCancel, onMeals, 
   const requestRef = useRef(null);
   const listId = useId();
   const inputRef = useRef(null);
+  const rootRef = useRef(null);
+  const popupRef = useRef(null);
   const [focused, setFocused] = useState(false);
   const surface = inline ? 'inline' : 'sheet';
   // Inline rows sit on every visible meal at once, so each one fetches and
-  // draws its shortlist only while it is being used.
-  const open = !inline || focused || text.trim().length > 0;
+  // draws its shortlist only while it is being used. Leaving the row closes
+  // the list but keeps any typed text; coming back reopens it.
+  const open = !inline || focused;
   useEffect(() => { if (focusRequest) inputRef.current?.focus(); }, [focusRequest]);
+  // Focus moving between the input and its own popup (suggestions, Log
+  // sentence, the two links) is still "in the row" — a Tab onto "Manage saved
+  // foods" must not unmount the link it is landing on.
+  const onRowBlur = (e) => {
+    const next = e.relatedTarget;
+    if (next && (next === inputRef.current || popupRef.current?.contains(next))) return;
+    setFocused(false);
+    setHighlight(-1);
+    // An empty row forgets its shortlist, so a refocus never flashes stale
+    // results (or a stale activedescendant) before the fresh fetch lands.
+    if (!text.trim()) setItems([]);
+  };
+  // The input is never disabled (disabling a focused field blurs it, and on a
+  // phone that closes the keyboard between every add). If focus did end up
+  // outside anything focusable — a pressed button that went disabled while
+  // parsing — hand it back to the input once the request settles, success or
+  // error. Focus that went somewhere else on purpose is left alone.
+  const prevPhase = useRef(phase);
+  useEffect(() => {
+    const was = prevPhase.current; prevPhase.current = phase;
+    if (!inline || was !== 'parsing' || phase !== 'typing') return;
+    const active = document.activeElement;
+    if (!active || active === document.body || (active !== inputRef.current && rootRef.current?.contains(active))) inputRef.current?.focus();
+  }, [phase, inline]);
 
   // One effect for both lists. With text, it is the query path exactly as
   // before (debounced). Without, it is the bucket-aware zero-keystroke list
@@ -67,14 +94,14 @@ export function AddCombobox({ bucketId, date = null, onDone, onCancel, onMeals, 
     return () => clearTimeout(debounceRef.current);
   }, [text, bucketId, open]);
 
-  // The sheet unmounts on success. The inline row stays: clear it, forget
+  // The sheet unmounts on success. The inline row stays: clear it and forget
   // the operation id (the next add is a new intent even when the payload is
-  // identical), and hand focus back for the next food.
+  // identical). Focus never left the input, so the next food can be typed
+  // straight away.
   const finish = (result) => {
     if (inline) {
       requestRef.current = null;
       setText(''); setHighlight(-1); setPhase('typing');
-      setTimeout(() => inputRef.current?.focus(), 0);
     }
     onDone?.(result);
   };
@@ -152,7 +179,7 @@ export function AddCombobox({ bucketId, date = null, onDone, onCancel, onMeals, 
       if (!inline) return onCancel();
       e.preventDefault();
       // First Escape clears the text; a second one on an empty row leaves it.
-      if (text) { setText(''); requestRef.current = null; } else inputRef.current?.blur();
+      if (text) { setText(''); setError(null); requestRef.current = null; } else inputRef.current?.blur();
       return;
     }
     if (e.key === 'ArrowDown') { e.preventDefault(); setHighlight((h) => Math.min(h + 1, items.length - 1)); }
@@ -165,25 +192,26 @@ export function AddCombobox({ bucketId, date = null, onDone, onCancel, onMeals, 
   };
 
   return (
-    <div className={`health-suggest${inline ? ' health-suggest--inline' : ''}`}>
+    <div ref={rootRef} className={`health-suggest${inline ? ' health-suggest--inline' : ''}`}>
       <div className="health-suggest__field">
         <TextInput ref={inputRef} autoFocus={!inline} size="sm" value={text}
           placeholder={inline ? `Add to ${label}…` : 'Food name, or a sentence to parse…'}
           aria-label={inline ? `Add to ${label}` : 'Food name or sentence'} role="combobox"
-          aria-expanded={open ? 'true' : 'false'} aria-controls={listId}
-          aria-activedescendant={highlight >= 0 ? `${listId}-${highlight}` : undefined}
-          disabled={phase === 'parsing'}
-          onFocus={() => { setFocused(true); if (inline) logger.debug('add-row.focus', { bucket: bucketId }); }}
-          onBlur={() => setFocused(false)}
+          aria-expanded={open ? 'true' : 'false'} aria-controls={open ? listId : undefined}
+          aria-activedescendant={open && highlight >= 0 ? `${listId}-${highlight}` : undefined}
+          readOnly={phase === 'parsing'} aria-busy={phase === 'parsing' ? 'true' : undefined}
+          onFocus={() => { if (!focused && inline) logger.debug('add-row.focus', { bucket: bucketId }); setFocused(true); }}
+          onBlur={onRowBlur}
           onChange={(e) => setText(e.target.value)} onKeyDown={onKeyDown}
           rightSection={phase === 'parsing' ? <Loader size="xs" /> : null} />
         {actions}
       </div>
       {error ? <p className="health-suggest__error">{error.message}</p> : null}
-      {/* preventDefault on mousedown keeps the input focused while a suggestion
-          is pressed; otherwise blur closes the inline list before the click lands. */}
-      {open ? <ul id={listId} className="health-suggest__list" role="listbox" aria-label="Suggested foods"
-        onMouseDown={(e) => e.preventDefault()}>
+      {/* Everything the row opens lives in one popup. preventDefault on
+          mousedown keeps the input focused while anything in it is pressed;
+          otherwise blur would close the inline popup before the click lands. */}
+      {open ? <div ref={popupRef} className="health-suggest__popup" onMouseDown={(e) => e.preventDefault()} onBlur={onRowBlur}>
+      <ul id={listId} className="health-suggest__list" role="listbox" aria-label="Suggested foods">
         {items.map((entry, i) => {
           // The food's picture where it has one (PRD F5.3 asks for it here too).
           // A slug whose image fails is retired by NAME, so a later suggestion of
@@ -209,14 +237,15 @@ export function AddCombobox({ bucketId, date = null, onDone, onCancel, onMeals, 
             </li>
           );
         })}
-      </ul> : null}
-      {open && text.trim() ? <Button size="compact-sm" disabled={phase === 'parsing'} onClick={submitSentence}>Log sentence</Button> : null}
-      {open && onMeals ? (
+      </ul>
+      {text.trim() ? <Button size="compact-sm" disabled={phase === 'parsing'} onClick={submitSentence}>Log sentence</Button> : null}
+      {onMeals ? (
         <UnstyledButton className="health-suggest__saved-meals" onClick={onMeals}>
           Meals &amp; templates ▸
         </UnstyledButton>
       ) : null}
-      {open && onManageFoods ? <UnstyledButton className="health-suggest__saved-meals" onClick={onManageFoods}>Manage saved foods ▸</UnstyledButton> : null}
+      {onManageFoods ? <UnstyledButton className="health-suggest__saved-meals" onClick={onManageFoods}>Manage saved foods ▸</UnstyledButton> : null}
+      </div> : null}
     </div>
   );
 }

@@ -581,6 +581,16 @@ describe('TodayView — scale observations', () => {
     await waitFor(() => expect(apiMock.mock.calls.some(([p]) => p.includes(`health/day?date=${yesterday}`))).toBe(true));
     await waitFor(() => expect(screen.queryByRole('combobox', { name: 'Add to Breakfast' })).toBeNull());
     expect(document.activeElement?.getAttribute('role')).not.toBe('combobox');
+    // Coming back: the request was spent when the day was left, so the
+    // remounted rows neither refocus nor re-reveal the empty Breakfast.
+    const now = new Date();
+    const back = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    fireEvent.click(document.querySelector(`[data-date="${back}"]`));
+    await waitFor(() => expect(document.querySelector(`[data-date="${back}"]`).getAttribute('aria-current')).toBe('date'));
+    await waitFor(() => screen.getByRole('combobox', { name: 'Add to Lunch' }));
+    await new Promise(res => setTimeout(res, 20));
+    expect(screen.queryByRole('combobox', { name: 'Add to Breakfast' })).toBeNull();
+    expect(document.activeElement?.getAttribute('role')).not.toBe('combobox');
   });
 });
 
