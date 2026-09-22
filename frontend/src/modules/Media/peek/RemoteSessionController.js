@@ -393,20 +393,21 @@ export function createRemoteSessionController({
 
     get capabilities() {
       const item = snapshot()?.currentItem;
-      if (!item) return { seekable: false, live: false, reason: 'Nothing is playing', acked: true };
+      const speed = { available: false, reason: `Playback speed is not supported by ${deviceId}` };
+      if (!item) return { seekable: false, live: false, reason: 'Nothing is playing', acked: true, speed };
       if (item.isLive === true) {
         return {
           seekable: false, live: true,
-          reason: 'Live playback has no seekable position', acked: true,
+          reason: 'Live playback has no seekable position', acked: true, speed,
         };
       }
       if (!Number.isFinite(item.duration) || item.duration <= 0) {
         return {
           seekable: false, live: false,
-          reason: 'Playback duration is unavailable', acked: true,
+          reason: 'Playback duration is unavailable', acked: true, speed,
         };
       }
-      return { seekable: true, live: false, reason: null, acked: true };
+      return { seekable: true, live: false, reason: null, acked: true, speed };
     },
 
     destroy() {

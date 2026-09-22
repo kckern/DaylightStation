@@ -607,22 +607,23 @@ describe('RemoteSessionController', () => {
 
   it('capabilities distinguish on-demand, live, and unavailable seeking with a reason', () => {
     const { fleetStore, ctl } = setup();
+    const speed = { available: false, reason: 'Playback speed is not supported by tv' };
     expect(ctl.capabilities).toEqual({
-      seekable: false, live: false, reason: 'Nothing is playing', acked: true,
+      seekable: false, live: false, reason: 'Nothing is playing', acked: true, speed,
     });
     fleetStore.receive({ deviceId: 'tv', snapshot: {
       state: 'playing', currentItem: { contentId: 'plex:1', duration: 120, isLive: false },
     } });
     expect(ctl.capabilities).toEqual({
-      seekable: true, live: false, reason: null, acked: true,
+      seekable: true, live: false, reason: null, acked: true, speed,
     });
     fleetStore.receive({ deviceId: 'tv', snapshot: { state: 'playing', currentItem: { contentId: 'cam:1', isLive: true } } });
     expect(ctl.capabilities).toEqual({
-      seekable: false, live: true, reason: 'Live playback has no seekable position', acked: true,
+      seekable: false, live: true, reason: 'Live playback has no seekable position', acked: true, speed,
     });
     fleetStore.receive({ deviceId: 'tv', snapshot: { state: 'playing', currentItem: { contentId: 'plex:2', duration: null } } });
     expect(ctl.capabilities).toEqual({
-      seekable: false, live: false, reason: 'Playback duration is unavailable', acked: true,
+      seekable: false, live: false, reason: 'Playback duration is unavailable', acked: true, speed,
     });
   });
 });

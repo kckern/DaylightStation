@@ -135,6 +135,8 @@ export function createPlayerSessionBridge({
   let mountedOperationSubscription = null;
   let mountedOperationHandle = null;
   const nativeSubs = new Set();
+  const handoffBoundarySubs = new Set();
+  const handoffBindings = new Map();
 
   const readHandle = () => {
     try {
@@ -611,8 +613,11 @@ export function createPlayerSessionBridge({
     getOwnerCapabilities() {
       const current = readOwnerCapture();
       const item = current?.currentItem;
+      const handle = readHandle();
       return {
-        handoffV1: false,
+        handoffV1: Boolean(handle
+          && typeof handle.adoptSessionSnapshot === 'function'
+          && typeof handle.subscribeMountedMediaOperations === 'function'),
         seekable: Boolean(item && Number.isFinite(current?.position) && getDuration() != null),
         liveEdge: false,
       };
@@ -627,6 +632,21 @@ export function createPlayerSessionBridge({
         ? [mountedOperationSubscription.observerId]
         : [];
       return handle.adoptSessionSnapshot(snapshot, { ...options, requiredObserverIds });
+    },
+    adoptAndBeginHandoffStart({ operationId, snapshot, targetSeconds }) {
+      const adopted = this.adopt({ ...snapshot, position: targetSeconds }, {
+        operationId,
+        autoplay: true,
+      });
+      return adopted?.ok ? { ok: true, operationId } : adopted;
+    },
+    getHandoffBoundaryBinding(operationId) {
+      return handoffBindings.get(operationId) ?? null;
+    },
+    subscribeHandoffBoundaryBinding(listener) {
+      if (typeof listener !== 'function') return () => {};
+      handoffBoundarySubs.add(listener);
+      return () => handoffBoundarySubs.delete(listener);
     },
     applyQueue(snapshot) {
       return readHandle()?.applyQueueSnapshot?.(snapshot) ?? { ok: false, code: 'ITEM_ACTION_UNSUPPORTED' };
@@ -703,6 +723,13 @@ export function createPlayerSessionBridge({
             const ready = observedBindingKey?.node === binding.node
               && observedBindingKey?.resolvedGeneration === binding.resolvedGeneration
               && accepted?.rendererToken === binding.rendererToken;
+            if (ready && binding.operationId) {
+              const admitted = Object.freeze({ ...binding });
+              handoffBindings.set(binding.operationId, admitted);
+              for (const listener of [...handoffBoundarySubs]) {
+                try { listener(admitted); } catch { /* observer isolation */ }
+              }
+            }
             return ready ? { ready: true, ...binding } : { ready: false };
           });
         }
@@ -749,6 +776,8 @@ export function createPlayerSessionBridge({
       try { mountedOperationSubscription?.unsubscribe?.(); } catch { /* ignore */ }
       mountedOperationSubscription = null;
       mountedOperationHandle = null;
+      handoffBindings.clear();
+      handoffBoundarySubs.clear();
       lastState = null;
       lastItemKey = null;
       try { detachNativeObservation(); } catch { /* ignore */ }

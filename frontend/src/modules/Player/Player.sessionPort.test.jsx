@@ -328,7 +328,7 @@ describe('Player session port', () => {
     expect(adopted.identity.ownerInstanceId).toBe(destinationRef.current.getPlayerInstanceId());
     expect(adopted.identity.playbackRevision).toBeGreaterThan(before.playbackRevision);
     expect(adopted.identity.queueRevision).toBeGreaterThan(before.queueRevision);
-    expect(adopted.capabilities.handoffV1).toBe(false);
+    expect(adopted.capabilities.handoffV1).toBe(true);
     expect(source.capture().identity.ownerInstanceId).toBe(sourceOwnerId);
     expect(adopted.identity.ownerInstanceId).toBe(before.ownerInstanceId);
     expect(view.getAllByTestId('single-player')).toHaveLength(2);

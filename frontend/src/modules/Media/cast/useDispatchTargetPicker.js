@@ -8,6 +8,7 @@ import { useCallback, useContext, useEffect, useRef, useState, useSyncExternalSt
 import { useFleetContext } from '../fleet/useFleetContext.js';
 import { useDispatch } from './useDispatch.js';
 import { useCastTarget } from './useCastTarget.js';
+import { useHandOff } from './useHandOff.js';
 import { LocalSessionContext } from '../session/LocalSessionContext.js';
 import mediaLog from '../logging/mediaLog.js';
 
@@ -20,7 +21,7 @@ const LOCAL_ACTIVE_STATES = new Set(['playing', 'paused', 'buffering', 'stalled'
  * source implies local playback by construction; otherwise read the local
  * session controller when one is mounted, defaulting to false.
  */
-function useLocalPlaybackActive(source) {
+export function useLocalPlaybackActive(source) {
   const local = useContext(LocalSessionContext);
   const controller = local?.controller ?? null;
   const subscribe = useCallback(
@@ -39,6 +40,7 @@ function useLocalPlaybackActive(source) {
 export function useDispatchTargetPicker({ source, onComplete } = {}) {
   const fleet = useFleetContext();
   const { dispatchToTarget } = useDispatch();
+  const handOff = useHandOff();
   const { targetIds: defaultTargets, mode: defaultMode } = useCastTarget();
   const [selected, setSelected] = useState(() => new Set(defaultTargets));
   const [multi, setMulti] = useState(() => defaultTargets.length > 1);
@@ -49,7 +51,9 @@ export function useDispatchTargetPicker({ source, onComplete } = {}) {
   // getSnapshot source can disappear between render and submit, so it must
   // never be used as proof that submit has a payload to dispatch.
   const hasPotentialContent = !!(source?.getSnapshot || source?.snapshot || source?.play || source?.queue);
-  const moveUnavailable = hasPotentialContent && mode === 'transfer';
+  const hasMoveSnapshot = !!(source?.getSnapshot || source?.snapshot);
+  const moveSupported = hasMoveSnapshot && selected.size === 1;
+  const moveUnavailable = hasPotentialContent && mode === 'transfer' && !moveSupported;
 
   const devices = fleet.devices ?? [];
 
@@ -92,7 +96,9 @@ export function useDispatchTargetPicker({ source, onComplete } = {}) {
   const submit = useCallback(async () => {
     if (!canSubmit) return;
     if (moveUnavailable) {
-      setDispatchError('Move playback is not available yet. Choose the non-destructive option instead.');
+      setDispatchError(hasMoveSnapshot
+        ? 'Move playback to one screen at a time.'
+        : 'Move needs an active session. Keep playing here instead.');
       return { ok: false, error: 'move-unsupported' };
     }
     const targetIds = Array.from(selected);
@@ -120,6 +126,16 @@ export function useDispatchTargetPicker({ source, onComplete } = {}) {
     // A destination-only sheet (DestinationLine) mounts this picker with no
     // source at all: it changes the preferred target but does not dispatch.
     let dispatchIds = [];
+    if (hasDispatchContent && mode === 'transfer') {
+      const outcome = await handOff(targetIds[0], { mode });
+      if (!outcome?.ok) {
+        setDispatchError(`Could not confirm the move${outcome?.error ? `: ${outcome.error}` : ''}. Playback here was kept.`);
+        return outcome ?? { ok: false, error: 'move-unconfirmed' };
+      }
+      setDispatchError(null);
+      onComplete?.({ targetIds, mode });
+      return outcome;
+    }
     if (hasDispatchContent) {
       try {
         dispatchIds = await dispatchToTarget(params);
@@ -135,9 +151,9 @@ export function useDispatchTargetPicker({ source, onComplete } = {}) {
     setDispatchError(null);
     onComplete?.({ targetIds, mode });
     return { ok: true, dispatchIds };
-  }, [canSubmit, moveUnavailable, selected, mode, source, dispatchToTarget, onComplete, hasPotentialContent]);
+  }, [canSubmit, moveUnavailable, hasMoveSnapshot, selected, mode, source, dispatchToTarget, handOff, onComplete, hasPotentialContent]);
 
-  return { devices, selected, multi, mode, canSubmit, localPlaying, hasPotentialContent, moveUnavailable, dispatchError, select, toggleMulti, setMode, submit };
+  return { devices, selected, multi, mode, canSubmit, localPlaying, hasPotentialContent, moveSupported, moveUnavailable, dispatchError, select, toggleMulti, setMode, submit };
 }
 
 export default useDispatchTargetPicker;

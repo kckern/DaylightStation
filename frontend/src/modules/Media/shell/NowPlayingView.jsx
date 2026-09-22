@@ -16,6 +16,8 @@ import { formatTime } from './formatTime.js';
 import { QueuePanel } from './QueuePanel.jsx';
 import { DispatchTargetPicker } from '../cast/DispatchTargetPicker.jsx';
 import { playbackStateLabel, queuePositionLabel } from './stateCopy.js';
+import { SessionControlFrame } from '../controller/SessionControlFrame.jsx';
+import { AimLabel } from '../cast/AimLabel.jsx';
 import './NowPlaying.scss';
 
 // Format enrichment may not arrive before a paused/autoplay-blocked video
@@ -122,7 +124,9 @@ export function NowPlayingView() {
 
       <div data-testid="now-playing-host" ref={hostRef} className="now-playing-host" />
 
-      {item && (
+      <AimLabel targetIds={[]} devices={[]} />
+      <SessionControlFrame targetKind="local">
+        {item && (
         <>
           {(!expanded || isAudio) && <div className="np-meta" data-testid="np-meta">
             {item.thumbnail ? (
@@ -152,9 +156,10 @@ export function NowPlayingView() {
           <SeekBar target="local" />
           <TransportBar target="local" targetLabel="This device" />
         </>
-      )}
+        )}
 
-      {!expanded && <QueuePanel target="local" />}
+        {!expanded && <QueuePanel target="local" />}
+      </SessionControlFrame>
 
       {item && !expanded && (
         <div className="handoff-section" data-testid="handoff-section">

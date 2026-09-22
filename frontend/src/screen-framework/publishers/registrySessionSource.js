@@ -190,6 +190,19 @@ export function createRegistrySessionSource({ registry, ownerId, sessionId } = {
       }
     },
     adopt: (snapshot, options) => invokeCurrent('adopt', { ok: false, code: 'UNSUPPORTED' }, snapshot, options),
+    adoptAndBeginHandoffStart: (request) => invokeCurrent('adoptAndBeginHandoffStart', { ok: false, code: 'UNSUPPORTED' }, request),
+    getHandoffBoundaryBinding: (operationId) => invokeCurrent('getHandoffBoundaryBinding', null, operationId),
+    subscribeHandoffBoundaryBinding: (listener) => {
+      if (typeof listener !== 'function') return () => {};
+      let innerUnsub = null;
+      const wire = () => {
+        try { innerUnsub?.(); } catch { /* ignore */ }
+        innerUnsub = invokeCurrent('subscribeHandoffBoundaryBinding', () => {}, listener);
+      };
+      wire();
+      const registryUnsub = registry.subscribe(wire);
+      return () => { try { registryUnsub?.(); } catch { /* ignore */ } try { innerUnsub?.(); } catch { /* ignore */ } };
+    },
     getNativeObservation: () => invokeCurrent('getNativeObservation', null),
     subscribeNative,
     stopIfCurrent: (expected) => invokeCurrent('stopIfCurrent', { ok: false, code: 'SOURCE_CHANGED' }, expected),

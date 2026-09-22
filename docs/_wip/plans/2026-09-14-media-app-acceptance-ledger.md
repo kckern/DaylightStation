@@ -466,7 +466,7 @@ As a **Room Hopper**, I want to decide, when I send, whether this device stops o
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
 | PLACE.6a/AC1 | Whenever this device is playing and the aim is another screen, the aim label shows what will happen here ("move it" or "keep playing here too"), and I can change it there before tapping, on every device size (R2). | Unverified | — |
-| PLACE.6a/AC2 | A one-off **Play on…** or **Move to…** asks at that moment, pre-set to my usual choice. | Unverified | — |
+| PLACE.6a/AC2 | A one-off **Play on…** or **Move to…** asks at that moment, pre-set to my usual choice. | Accepted | `TASK-5-EXACT-RUNTIME`: ordinary Search playback opened the persistent handle and then full Now Playing; its one-off hand-off picker visibly offered the pre-selected **Move playback to Living Room TV** and **Keep playing here too** choices before any destination command. `JOURNEY-TASK5-HANDOFF-PICKER`. |
 | PLACE.6a/AC3 | My usual choice is remembered and pre-selected, and visible before I confirm. | Unverified | — |
 | PLACE.6a/AC4 | Afterwards, this device does exactly what the choice said. | Unverified | — |
 
@@ -488,7 +488,7 @@ As a **Room Hopper**, I want to send what's playing here to a TV at the same mom
 
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
-| PLACE.8a/AC1 | From the handle on my own playback, "move to…" is offered, wherever I am in the app. | Unverified | — |
+| PLACE.8a/AC1 | From the handle on my own playback, "move to…" is offered, wherever I am in the app. | Accepted | `TASK-5-EXACT-RUNTIME`: after an ordinary Search play, the persistent handle opened full controls and the shared hand-off picker offered **Move playback to Living Room TV**. The exact journey uses ordinary pointer input and no store/controller mutation. `JOURNEY-TASK5-HANDOFF-PICKER`. |
 | PLACE.8a/AC2 | The chosen screen starts at the same moment with the same queue. | Unverified | — |
 | PLACE.8a/AC3 | This device stops or keeps playing according to `PLACE.6`. | Unverified | — |
 | PLACE.8a/AC4 | Progress and confirmation follow `RELY.2` and `RELY.3`. | Unverified | — |
@@ -510,8 +510,8 @@ As a **Hand-Held Viewer**, I want a persistent handle on what's playing here, so
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
 | STEER.1a/AC1 | While anything is playing or paused on this device, a compact handle is visible in every part of the app with title, picture, progress, and play/pause. | Unverified | — |
-| STEER.1a/AC2 | Tapping it opens full controls and the queue. | Unverified | — |
-| STEER.1a/AC3 | When full controls are open, the compact handle doesn't duplicate them. | Unverified | — |
+| STEER.1a/AC2 | Tapping it opens full controls and the queue. | Accepted | `TASK-5-EXACT-RUNTIME`: ordinary local playback exposed the compact handle; tapping its accessible title opened Now Playing with the shared transport and visible queue panel. `JOURNEY-TASK5-HANDOFF-PICKER`. |
+| STEER.1a/AC3 | When full controls are open, the compact handle doesn't duplicate them. | Accepted | `TASK-5-EXACT-RUNTIME`: after opening full controls from the compact handle, the journey asserted that `media-mini-player` had count zero while full transport and queue remained visible. `JOURNEY-TASK5-HANDOFF-PICKER`. |
 | STEER.1a/AC4 | The handle also covers the screen I most recently sent to or steered, so pausing the TV when the phone rings is one tap (R21). | Unverified | — |
 | STEER.1a/AC5 | The same controls are available from the lock screen and notifications (R21). | Unverified | — |
 
@@ -587,7 +587,7 @@ As a **Fixer**, I want to stop playback and know what stopping leaves, so that I
 |---|---|---|---|
 | STEER.6a/AC1 | There is one "stop" control, meaning the same thing everywhere. | Partial | `JOURNEY-STOP-RESTART` verifies local Stop; `JOURNEY-REMOTE-STOP-PLAY` verifies remote Stop via correlated ack, ready/null-current receiver state, native pause/reset and successful same-item Play resume. Consistent semantics across all surfaces remain unverified. |
 | STEER.6a/AC2 | After stopping, I'm told what remains ("Queue kept: 8 items") and can reopen it. | Partial | `JOURNEY-STOP-RESTART` verifies local queue reopen. `JOURNEY-REMOTE-STOP-PLAY` on c21 verifies remote queue-retained feedback, exact queue identity, Open queue and Play resume. Broader device/surface parity remains unverified. |
-| STEER.6a/AC3 | Emptying the queue is a separate, clearly named action (`STEER.8`). | Unverified | — |
+| STEER.6a/AC3 | Emptying the queue is a separate, clearly named action (`STEER.8`). | Accepted | `TASK-5-EXACT-RUNTIME`: ordinary Stop left a visible `1 item ready` handle; reopening it showed an enabled, separately named **Clear queue** action. `JOURNEY-TASK5-STOP-FLOW`. |
 | STEER.6a/AC4 | Where the screen supports it, stop also offers **and turn the screen off** (R42). | Unverified | — |
 
 ### STEER.10a

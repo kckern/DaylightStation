@@ -16,6 +16,7 @@ vi.mock('../controller/useSessionController.js', () => ({
   useSessionController: () => ({ queue: { playNow: queuePlayNow, playNext: vi.fn(), addUpNext: vi.fn(), add: vi.fn() } }),
 }));
 vi.mock('../cast/CastButton.jsx', () => ({ CastButton: () => null }));
+vi.mock('../cast/DestinationLine.jsx', () => ({ DestinationLine: () => <div data-testid="detail-aim">Aim: This device</div> }));
 vi.mock('../shell/NavProvider.jsx', () => ({ useNav: () => ({ pop, backDestination }) }));
 
 import { DetailView } from './DetailView.jsx';
@@ -27,6 +28,14 @@ beforeEach(() => {
 });
 
 describe('DetailView Play Now', () => {
+  it('keeps the visible aim beside every detail-page playback verb', () => {
+    render(<MantineProvider><DetailView contentId="plex:685088" /></MantineProvider>);
+    expect(screen.getByTestId('detail-aim')).toHaveTextContent('Aim: This device');
+    expect(screen.getByTestId('detail-play-now')).toBeVisible();
+    expect(screen.getByTestId('detail-play-next')).toBeVisible();
+    expect(screen.getByTestId('detail-up-next')).toBeVisible();
+    expect(screen.getByTestId('detail-add')).toBeVisible();
+  });
   it('offers explicit Shuffle beside collection Play', () => {
     contentState.info = { title: 'Album', type: 'album' };
     render(<MantineProvider><DetailView contentId="plex:album" /></MantineProvider>);

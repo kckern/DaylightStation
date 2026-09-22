@@ -38,7 +38,7 @@ async function startArrival(context, sender, phone) {
     await searchMode.getByTestId('destination-line').click();
     await sender.getByTestId('picker-device-acceptance-media').click();
     await sender.getByTestId('picker-submit').click();
-    await expect(searchMode.getByTestId('destination-line-name')).toHaveText('Acceptance receiver');
+    await expect(searchMode.getByTestId('destination-line-name')).toHaveText(/^Aim: Acceptance receiver/);
     input = searchMode.getByTestId('search-mode-input');
     result = searchMode.getByTestId('search-mode-result-plex:55854');
   } else {

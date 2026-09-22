@@ -159,10 +159,10 @@ for (const [surface, viewport, isPhone] of surfaces) {
       actions: await actionSnapshot(page, id),
     };
     expect(baseline.scope).toBe('true');
-    await expect(searchSurface(page, isPhone).getByTestId('destination-line-name')).toHaveText('This device');
+    await expect(searchSurface(page, isPhone).getByTestId('destination-line-name')).toHaveText(/^Aim: This device/);
 
     await setDestination(page, isPhone, 'acceptance-media');
-    await expect(searchSurface(page, isPhone).getByTestId('destination-line-name')).toHaveText('Acceptance receiver');
+    await expect(searchSurface(page, isPhone).getByTestId('destination-line-name')).toHaveText(/^Aim: Acceptance receiver/);
     expect({
       query: await input.inputValue(),
       scope: await scopeChip(page, isPhone, selectable.key).getAttribute('aria-pressed'),
@@ -171,7 +171,7 @@ for (const [surface, viewport, isPhone] of surfaces) {
     }).toEqual(baseline);
 
     await setDestination(page, isPhone, null);
-    await expect(searchSurface(page, isPhone).getByTestId('destination-line-name')).toHaveText('This device');
+    await expect(searchSurface(page, isPhone).getByTestId('destination-line-name')).toHaveText(/^Aim: This device/);
     expect({
       query: await input.inputValue(),
       scope: await scopeChip(page, isPhone, selectable.key).getAttribute('aria-pressed'),
