@@ -435,7 +435,12 @@ export default function RecordingRung({
   // EXCEPT AFTER A TAKE JOINED FROM PIECES. That sentence was too long to say
   // in one go, so a bare ding would ask for exactly that; it starts over from
   // the sentence, and can be cut again.
+  //
+  // A COMPARE MAY STILL BE SOUNDING (Tab, then Backspace). It is silenced
+  // before anything else: left running, the speaker plays the model and the
+  // old take into the new take, and its level passes the too-quiet gate.
   const recordAgain = useCallback(() => {
+    stopListening();
     if (joinedRef.current) {
       stopPlayback();
       languageLog.capture('retake', { seq: entry.seq, joined: true });
@@ -449,7 +454,7 @@ export default function RecordingRung({
     setPhase('prompting');
     languageLog.capture('retake', { seq: entry.seq });
     playSequence(cue());
-  }, [entry.seq, cue, playSequence, stopPlayback, dropTake, start]);
+  }, [entry.seq, cue, playSequence, stopPlayback, stopListening, dropTake, start]);
 
   /** Piece i's part of the model, as a clip: from its start to its cut, or to
    *  the end of the sentence for the open-ended last piece. */
