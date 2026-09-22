@@ -1,4 +1,4 @@
-import { foodGrams } from './foodQuantity.mjs';
+import { foodMass } from './foodQuantity.mjs';
 import { isCountedRow } from '../nutrition/countedRows.mjs';
 import { DEFAULT_DENSITY_LEVELS } from './densityLevels.mjs';
 
@@ -10,7 +10,7 @@ const knownCalories = row => (
 
 export function foodDensity(row) {
   if (row?.kind === 'group') return foodDensityOfRows(row.children);
-  const grams = foodGrams(row);
+  const grams = foodMass(row);
   const calories = knownCalories(row);
   return grams === null || calories === null ? null : calories / grams;
 }
@@ -23,7 +23,7 @@ export function foodDensityOfRows(rows) {
   let sumCalories = 0;
   let sumGrams = 0;
   for (const row of foods) {
-    const grams = foodGrams(row);
+    const grams = foodMass(row);
     const calories = knownCalories(row);
     if (grams === null || calories === null) return null;
     sumGrams += grams;

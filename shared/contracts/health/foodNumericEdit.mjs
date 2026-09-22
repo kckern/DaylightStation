@@ -1,4 +1,4 @@
-import { foodGrams, foodPortion, scaleFoodPortion } from './foodQuantity.mjs';
+import { foodGrams, foodMass, foodPortion, scaleFoodPortion } from './foodQuantity.mjs';
 
 const MACROS = { protein: 4, carbs: 4, fat: 9 };
 const idOf = row => row.uuid || row.id;
@@ -17,8 +17,8 @@ export function numericFoodValue(row, field) {
   if (!members.every(item => known(item[key]))) return null;
   const total = members.reduce((sum, item) => sum + item[key], 0);
   if (field !== 'density') return total;
-  if (!members.every(item => foodGrams(item) !== null)) return null;
-  return total / members.reduce((sum, item) => sum + foodGrams(item), 0);
+  if (!members.every(item => foodMass(item) !== null)) return null;
+  return total / members.reduce((sum, item) => sum + foodMass(item), 0);
 }
 
 /** Pure, shared by the gesture preview and the versioned server command.
@@ -33,7 +33,7 @@ export function numericFoodPatches(row, { field, value }) {
   const current = numericFoodValue(row, field);
   if (current === null) {
     const key = field === 'density' ? 'calories' : field;
-    const missing = members.find(item => !known(item[key])) || members.find(item => foodGrams(item) === null) || row;
+    const missing = members.find(item => !known(item[key])) || members.find(item => foodMass(item) === null) || row;
     fail(`Enter an exact ${field} value for ${nameOf(missing)} first`);
   }
   if (field === 'portion' || field === 'grams' || field === 'calories') {

@@ -8,6 +8,21 @@ export function foodGrams(row) {
     ? row.amount : null;
 }
 
+// Millilitres per unit for the volumes captures store.
+const VOLUME_ML = { ml: 1, milliliter: 1, milliliters: 1, cl: 10, dl: 100, l: 1000, liter: 1000,
+  liters: 1000, 'fl oz': 29.5735, floz: 29.5735 };
+
+/** Mass for density: known grams, else a stored volume at 1 g/ml (drinks,
+ * yogurts and sauces sit within a few percent of water). Never used to rewrite
+ * the stored portion — a 414 ml shake still displays as 414 ml. */
+export function foodMass(row) {
+  const grams = foodGrams(row);
+  if (grams !== null) return grams;
+  const perMl = VOLUME_ML[String(row?.unit || '').toLowerCase()];
+  const amount = row?.amount;
+  return perMl && typeof amount === 'number' && Number.isFinite(amount) && amount > 0 ? amount * perMl : null;
+}
+
 /** The current ledger quantity wins over the historical capture quantity.
  * Volume and servings are useful quantities, but are never assumed to be mass. */
 export function foodPortion(row) {
