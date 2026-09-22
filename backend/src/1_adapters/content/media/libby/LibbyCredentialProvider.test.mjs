@@ -63,6 +63,65 @@ describe('LibbyCredentialProvider', () => {
     expect(() => provider.getSnapshot()).toThrow(/credential unavailable/i);
   });
 
+  it('exposes the chip id from the token so renewal can address the existing chip', () => {
+    const chipId = '0f5a1c3d-1111-2222-3333-444455556666';
+    const body = Buffer.from(JSON.stringify({ exp: 2_000, chip: { id: chipId } })).toString('base64url');
+    const provider = new LibbyCredentialProvider({
+      filePath: '/auth/libby.yml', now: () => 1_000_000,
+      stat: () => ({ ino: 7, size: 1, mtimeMs: 1 }),
+      load: () => ({ token: `eyJhbGciOiJSUzI1NiJ9.${body}.signature` }),
+    });
+    expect(provider.getSnapshot().chipId).toBe(chipId);
+  });
+
+  it('persists a renewed token atomically, preserving operator comments', async () => {
+    const next = token(3_000, 'renewed');
+    const writes = [];
+    let stored = { token: token(2_000, 'current') };
+    let generation = 1;
+    const provider = new LibbyCredentialProvider({
+      filePath: '/auth/libby.yml', now: () => 1_000_000,
+      stat: () => ({ ino: 7, size: generation, mtimeMs: generation }),
+      load: () => stored,
+      readText: () => `# keep me\ntoken: ${stored.token}\n`,
+      writeAtomic: (p, contents) => {
+        writes.push([p, contents]);
+        generation += 1;
+        stored = { token: next };
+      },
+    });
+
+    await provider.persist(next);
+
+    expect(writes).toEqual([['/auth/libby.yml', `# keep me\ntoken: ${next}\n`]]);
+    expect(provider.getSnapshot().token).toBe(next);
+  });
+
+  it('surfaces an unreadable credential file instead of overwriting it', async () => {
+    const provider = new LibbyCredentialProvider({
+      filePath: '/auth/libby.yml', now: () => 1_000_000,
+      stat: () => ({ ino: 7, size: 1, mtimeMs: 1 }),
+      load: () => ({ token: token(2_000) }),
+      readText: () => { const error = new Error('permission denied'); error.code = 'EACCES'; throw error; },
+      writeAtomic: () => { throw new Error('must not write over an unreadable file'); },
+    });
+
+    await expect(provider.persist(token(3_000))).rejects.toMatchObject({ code: 'EACCES' });
+  });
+
+  it('refuses to persist a token that is malformed or already expired', async () => {
+    const provider = new LibbyCredentialProvider({
+      filePath: '/auth/libby.yml', now: () => 1_000_000,
+      stat: () => ({ ino: 7, size: 1, mtimeMs: 1 }),
+      load: () => ({ token: token(2_000) }),
+      readText: () => 'token: x\n',
+      writeAtomic: () => { throw new Error('must not write'); },
+    });
+
+    await expect(provider.persist('not-a-jwt')).rejects.toThrow(/refused/i);
+    await expect(provider.persist(token(999))).rejects.toThrow(/refused/i);
+  });
+
   it('never includes token material in warnings', () => {
     const secret = token(2_000, 'secret-marker');
     const logger = { warn: vi.fn() };

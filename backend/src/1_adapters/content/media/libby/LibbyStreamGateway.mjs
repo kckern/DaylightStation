@@ -1,4 +1,4 @@
-import { ILibbyStreamGateway } from '#apps/proxy/ports/ILibbyStreamGateway.mjs';
+import { ILibraryMediaStreamGateway } from '#apps/proxy/ports/ILibraryMediaStreamGateway.mjs';
 
 function hostAllowed(hostname, allowedHosts) {
   return [...allowedHosts].some(rule => rule.startsWith('.')
@@ -7,7 +7,7 @@ function hostAllowed(hostname, allowedHosts) {
 }
 
 /** Provider anti-corruption adapter for ephemeral Libby media capabilities. */
-export class LibbyStreamGateway extends ILibbyStreamGateway {
+export class LibbyStreamGateway extends ILibraryMediaStreamGateway {
   #fetch;
   #allowedHosts;
 

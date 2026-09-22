@@ -1,4 +1,4 @@
-import { ILibbyBootstrapGateway, normalizeBootstrapSpine, validBootstrapInput } from '#apps/proxy/ports/ILibbyBootstrapGateway.mjs';
+import { ILibraryMediaBootstrapGateway, normalizeBootstrapSpine, validBootstrapInput } from '#apps/proxy/ports/ILibraryMediaBootstrapGateway.mjs';
 
 const MAX_RESPONSE_BYTES = 1024 * 1024;
 const failure = code => Object.assign(new Error(code), { code });
@@ -35,7 +35,7 @@ function signedAudioUrl(value) {
 }
 
 /** Narrow HTTP adapter. Neither request capabilities nor external error detail are logged. */
-export class DaylightBrowserLibbyGateway extends ILibbyBootstrapGateway {
+export class DaylightBrowserLibbyGateway extends ILibraryMediaBootstrapGateway {
   #endpoint;
   #fetch;
   #timeoutMs;

@@ -1,9 +1,9 @@
-import { normalizeBootstrapSpine, validBootstrapInput } from './ports/ILibbyBootstrapGateway.mjs';
+import { normalizeBootstrapSpine, validBootstrapInput } from './ports/ILibraryMediaBootstrapGateway.mjs';
 
 /** Map the bootstrap port into categorical outcomes without exposing external failure details. */
-export class LibbyBootstrapService {
+export class LibraryMediaBootstrapService {
   constructor({ bootstrapGateway } = {}) {
-    if (typeof bootstrapGateway?.bootstrapLoan !== 'function') throw new Error('LibbyBootstrapService requires bootstrapGateway');
+    if (typeof bootstrapGateway?.bootstrapLoan !== 'function') throw new Error('LibraryMediaBootstrapService requires bootstrapGateway');
     this.bootstrapGateway = bootstrapGateway;
   }
 
