@@ -53,6 +53,42 @@ are authoritative where older examples in this reference use broader imports.
 
 **The inner layers are stable; the outer layers are volatile.**
 
+### Filesystem Access
+
+**`0_system/utils/FileIO.mjs` is the only module authorized to import `node:fs`.**
+Every other layer — adapters included — reaches the filesystem exclusively
+through its exported helpers. There is no exception for "just one read."
+
+The gateway exists so that path containment, `EACCES` diagnostics, atomic
+staging-and-rename, and the distinction between *missing* and *unreadable* are
+decided in one place instead of re-improvised per adapter.
+
+Enforced by `npm run audit:layers` (`adapters-no-direct-fs`, `apps-no-fs`,
+`apps-no-fileio`, `api-no-fileio`, `api-no-node-infrastructure`,
+`composition-no-fileio`, `composition-no-direct-runtime-io`) and by a
+pre-commit gate that rejects the import outright.
+
+Using the gateway is necessary but not sufficient — `3_applications`, `4_api`
+and `5_composition` may not import FileIO *at all*. They must not touch storage
+even through it; a named adapter owns that mechanic and is injected. In
+practice the callers are `1_adapters` and `0_system`. (`1_rendering` is not
+barred by a rule today, but it reaches the filesystem through injected
+dependencies rather than importing FileIO directly.)
+
+**Picking the right helper matters as much as using the module.** The common
+failure is reaching for a forgiving reader in a place that needs a strict one:
+
+| Need | Use | Not |
+|------|-----|-----|
+| Read text where unreadable must not be mistaken for absent | `readTextFromPath` | `readFile` (returns `null`, masks every error) |
+| Read text where absent and unreadable both mean "nothing" | `readFile` | — |
+| Replace a file so readers never observe a partial write | `writeFileAtomic`, `saveYamlToPathAtomic`, `writeBinaryAtomic` | `writeFile` (briefly exposes a truncated file) |
+| Create only if absent, preserving `EEXIST` | `writeFileExclusive` | `writeFile` |
+
+A credential or ledger rewritten with `writeFile` is a torn read waiting to
+happen; one read with `readFile` turns a permissions failure into silent data
+loss.
+
 ---
 
 ## Strategic Design
@@ -724,7 +760,7 @@ describe('CompleteSession', () => {
 
 | Layer | Responsibility | Contains |
 |-------|---------------|----------|
-| `0_system` | Infrastructure wiring | Config, logging, bootstrap, utils |
+| `0_system` | Infrastructure wiring | Config, logging, bootstrap, utils, and `utils/FileIO.mjs` — the sole filesystem gateway ([rules](#filesystem-access)) |
 | `1_adapters` | External integrations | Repositories, gateways, API clients |
 | `1_rendering` | Server-side presentation | Thermal receipts, PDF output, canvas layout |
 | `2_domains` | Pure business logic | Entities, value objects, domain services |
