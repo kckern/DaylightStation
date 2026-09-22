@@ -1053,6 +1053,18 @@ bibliographic fallback. The course's pacing `source.title` is never a worksheet
 reading source. Single and composed worksheets share that rule. Already-issued
 artifacts remain immutable and exact reprints retain their original wording.
 
+### Word-ladder quizzes
+
+`node cli/school.mjs korean-vocab quiz --deck <deckId|slug>` writes a
+`school.document-source/v1` quiz for a lexicon deck at
+`content/school/learning-catalog/documents/<deckId>-quiz.yml`: one `question`
+per word with `itemId: <wordId>`, answer + three authored decoys, alternating
+Korean→English / English→Korean, `fit.typeScale: young`, and the header
+instruction `Not sure of a word? Open Korean words on the Portal and review
+the cards, then come back.` Publish it with `school docs publish`, then
+render per learner with `variety=omr`. A scanned row's attempt carries the
+word id, and the word ladder folds it (see `word-ladder.md`).
+
 ## 8. Scan-back: grading and the lifecycle
 
 The scan consumer subscribes alongside the household's existing bubble-sheet
