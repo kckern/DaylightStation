@@ -12,9 +12,18 @@ import { formatLocalTimestamp } from '#domains/core/utils/time.mjs';
 import { provisionalReview } from '#shared/contracts/nutrition/reviewLifecycle.mjs';
 import { sha256Text } from '#system/utils/sha256.mjs';
 import { confineIcon, iconVocabulary } from '#domains/nutrition/services/icons.mjs';
+import { parseGtin } from '#domains/nutrition/services/gtin.mjs';
 
 const NUTRIENTS = ['calories', 'protein', 'carbs', 'fat', 'fiber', 'sugar', 'sodium', 'cholesterol'];
 const finiteNutrient = value => value != null && Number.isFinite(Number(value)) && Number(value) >= 0 ? Number(value) : null;
+// Nothing known at all (not even a zero) is not a food we can count.
+const nutritionless = items => items.length > 0 && items.every(item => NUTRIENTS.every(key => item?.[key] == null));
+// The code a capture is stored under: the collapsed GTIN when the raw read
+// parses, else the raw input (which #execute will refuse).
+const storedUpc = raw => { const gtin = parseGtin(raw); return gtin.ok ? gtin.code : raw; };
+// The one unsuccessful exit (refused barcode, product not found). Kept as one
+// shape so the two refusals cannot drift apart for callers that read `success`.
+const notLogged = fields => ({ success: false, ...fields });
 
 /**
  * Log food from UPC use case
@@ -120,10 +129,13 @@ export class LogFoodFromUPC {
     const pending = (async () => {
       const existing = await this.#foodLogStore?.findById?.(input.userId, logId);
       if (existing) {
-        if (existing.metadata?.sourceUpc !== input.upc) throw Object.assign(new Error('Capture operation ID reused for another barcode'), { status: 409 });
-        if (existing.status === 'pending' && this.#reviewService) await this.#reviewService.capture({ userId: input.userId, logUuid: logId });
-        return { success: true, nutrilogUuid: logId, committed: existing.status === 'accepted' || (existing.status === 'pending' && !!this.#reviewService),
-          mealTime: existing.meal.time, alreadyProcessed: true };
+        if (existing.metadata?.sourceUpc !== storedUpc(input.upc)) throw Object.assign(new Error('Capture operation ID reused for another barcode'), { status: 409 });
+        // A quarantined capture is pending on purpose; a replay must not accept it.
+        const quarantined = existing.status === 'pending' && nutritionless(existing.items || []);
+        if (existing.status === 'pending' && this.#reviewService && !quarantined) await this.#reviewService.capture({ userId: input.userId, logUuid: logId });
+        return { success: true, nutrilogUuid: logId,
+          committed: existing.status === 'accepted' || (existing.status === 'pending' && !!this.#reviewService && !quarantined),
+          mealTime: existing.meal.time, alreadyProcessed: true, ...(quarantined ? { quarantined } : {}) };
       }
       return this.#execute({ ...input, captureId: logId });
     })();
@@ -132,7 +144,7 @@ export class LogFoodFromUPC {
   }
   async #execute(input) {
     const {
-      userId, conversationId, upc, messageId,
+      userId, conversationId, upc: rawUpc, messageId,
       // The day the client is LOOKING AT (`YYYY-MM-DD`). ABSENT MEANS TODAY,
       // and absent is the ONLY thing Telegram/the scale ever send — which is
       // why `meal` is passed only when a date arrives, leaving NutriLog's own
@@ -140,6 +152,17 @@ export class LogFoodFromUPC {
       date: viewedDate = null,
       responseContext,
     } = input;
+
+    // Shape before lookup. Every UPC path (relay, HTTP, Telegram, web) lands here,
+    // and only the relay parses the code first. A bad check digit, an ISBN from the
+    // shared reader, or two reads glued together must not become a food.
+    const gtin = parseGtin(rawUpc);
+    if (!gtin.ok) {
+      this.#logger.info?.('upc.rejected', { upc: rawUpc, reason: gtin.reason });
+      return notLogged({ error: 'Invalid barcode', rejected: gtin.reason, upc: rawUpc });
+    }
+    const upc = gtin.code;
+    if (gtin.collapsed) this.#logger.info?.('upc.collapsed', { raw: rawUpc, upc });
 
     this.#logger.debug?.('logUPC.start', { conversationId, upc, hasResponseContext: !!responseContext });
 
@@ -244,7 +267,7 @@ export class LogFoodFromUPC {
             text: `❓ Product not found for barcode: ${upc}\n\nYou can describe the food instead.`,
           });
         }
-        return { success: false, error: 'Product not found', unknownUpc: true, upc };
+        return notLogged({ error: 'Product not found', unknownUpc: true, upc });
       }
 
       // 4. Classify product if AI available
@@ -296,6 +319,10 @@ export class LogFoodFromUPC {
         captureEvidence: { source: 'upc', upc, serving: product.serving, assumption: 'one-serving' },
       };
       if (this.#catalogService?.resolveIdentity) Object.assign(foodItem, await this.#catalogService.resolveIdentity(foodItem, userId));
+      // Nothing known at all (not even a zero) is not a food we can count. It stays
+      // a pending capture — shown in Needs Review, outside the budget — instead of a
+      // committed row of dashes that puts "+" on the day's totals.
+      const quarantined = nutritionless([foodItem]);
 
       // 5b. Keep the manufacturer's own photo. The row renders `photoRef` ahead
       // of any icon (EntryRow), so a real picture of the product beats the best
@@ -336,14 +363,15 @@ export class LogFoodFromUPC {
       if (this.#foodLogStore) {
         await this.#foodLogStore.save(nutriLog);
       }
-      if (this.#reviewService) {
+      if (this.#reviewService && !quarantined) {
         await this.#reviewService.capture({ userId, logUuid: nutriLog.id });
         nutriLog = await this.#foodLogStore.findById(userId, nutriLog.id);
         capturedLog = nutriLog;
       }
+      if (quarantined) this.#logger.info?.('upc.quarantined', { upc, name: product.name, logUuid: nutriLog.id });
 
       // 7b. Record food item in catalog for quick-add
-      if (this.#catalogService && !product.nutritionLookup?.warnings?.length) {
+      if (this.#catalogService && !product.nutritionLookup?.warnings?.length && !quarantined) {
         try {
           await this.#catalogService.recordUsage({
             foodId: foodItem.foodId,
@@ -405,6 +433,7 @@ export class LogFoodFromUPC {
         nutrilogUuid: nutriLog.id,
         product,
         committed: nutriLog.status === 'accepted',
+        quarantined,
         mealTime: nutriLog.meal.time,
       };
     } catch (error) {
