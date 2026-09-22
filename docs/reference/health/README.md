@@ -22,7 +22,11 @@ point.
   full-capture revision conflicts if its entries have since been corrected.
 - **Truthful portions:** `grams: number | null`, `schemaVersion: 2`, row `version`,
   preserved `originalQuantity`, optional stable `foodId`, and per-key provenance.
-  Legacy counts/volumes are never treated as grams.
+  Legacy counts/volumes are never treated as grams at read time. The one
+  exception is written, not inferred: the scan repair's `legacy-quantity` rule
+  stores an old nutribot gram figure as `grams` with
+  `quantityProvenance: {source: 'legacy-amount', label}` (the household label it
+  was mis-filed under) — see `docs/runbooks/health-ledger-repair.md`.
 - **Durable commands:** group edits, moves, deletes, copies and restores validate all
   targets before a journaled, fsynced multi-file commit. Source and destination
   summaries are rebuilt, including empty days. Recovery replays a prepared journal.

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { planScanDataRepair, planCatalogIconRepair, manifestVocabulary } from './ScanDataRepair.mjs';
+import { NUTRIENT_KEYS } from '#shared/contracts/health/foodQuantity.mjs';
 
 // Fixtures mirror the 2026-09-22 data-quality audit
 // (docs/_wip/audits/2026-09-22-health-app-data-quality-audit.md).
@@ -262,5 +263,83 @@ describe('manifestVocabulary', () => {
         pitasandwich: { path: 'img/icons/food/pitasandwich.png' },
       },
     })).toEqual({ offered: ['peanut-butter'], aliases: { peanut_butter: 'peanut-butter', chickpea: 'chickpea' } });
+  });
+});
+
+describe('legacy-quantity rule', () => {
+  // Legacy rows: the nutribot stored grams in originalQuantity.amount under a
+  // household label, and the ledger kept unit g with no amount.
+  const legacy = (id, name, originalQuantity, calories, over = {}) => row({
+    id, item: name, source: 'text', unit: 'g', amount: null, grams: null, originalQuantity, calories, ...over,
+  });
+  const ledger = () => [
+    legacy('kale', 'Kale', { amount: 134, unit: 'cup' }, 45),
+    legacy('seeds', 'Sunflower Seeds', { amount: 34, unit: 'tbsp' }, 200),
+    legacy('carrot', 'Sliced Carrots', { amount: 84, unit: 'serving' }, 34),
+    legacy('water', 'Sparkling Water', { amount: 50, unit: 'piece' }, 0),
+    legacy('milk', 'Milk', { amount: 325, unit: 'mL' }, 150),
+    legacy('soda', 'Soda', { amount: 0.33, unit: 'Litres' }, 140),
+    legacy('rice', 'Rice', { amount: 1, unit: 'cup' }, 200),
+    legacy('typo', 'Premier Protein', { amount: 3, unit: 'ml' }, 480),
+    legacy('zero-ml', 'Water', { amount: 250, unit: 'ml' }, 0),
+    legacy('coffee', 'Black Coffee', { amount: 500, unit: 'ml' }, 2),
+    legacy('blank', 'Mystery', { amount: null, unit: 'g' }, 90),
+    legacy('mine', 'Oatmeal', { amount: 1, unit: 'cup' }, 150, { manualFields: ['amount'] }),
+    legacy('uncal', 'Broth', { amount: 240, unit: 'cup' }, null),
+    legacy('grp', 'Lunch', { amount: 300, unit: 'g' }, 500, { kind: 'group' }),
+    // Already has a mass: not this rule's business.
+    row({ id: 'fine', item: 'Apple', source: 'text' }),
+  ];
+  const plan = () => planScanDataRepair(ledger(), { offered: [] });
+  const changesOf = (p, id) => p.updates.find(update => update.id === id)?.changes;
+
+  it('reads a plausible legacy amount as grams, with provenance', () => {
+    const p = plan();
+    expect(changesOf(p, 'kale')).toEqual({ grams: 134, amount: 134, unit: 'g',
+      quantityProvenance: { source: 'legacy-amount', label: 'cup' } });
+    expect(changesOf(p, 'seeds')).toEqual({ grams: 34, amount: 34, unit: 'g',
+      quantityProvenance: { source: 'legacy-amount', label: 'tbsp' } });
+    expect(changesOf(p, 'carrot').grams).toBe(84);
+    expect(p.updates.find(update => update.id === 'kale')).toMatchObject({ expectedVersion: 1, reasons: ['legacy-quantity'] });
+  });
+
+  it('accepts any positive amount as grams when calories are zero', () => {
+    expect(changesOf(plan(), 'water')).toEqual({ grams: 50, amount: 50, unit: 'g',
+      quantityProvenance: { source: 'legacy-amount', label: 'piece' } });
+  });
+
+  it('restores a metric volume verbatim, normalized, with no grams', () => {
+    const p = plan();
+    expect(changesOf(p, 'milk')).toEqual({ amount: 325, unit: 'ml' });
+    expect(changesOf(p, 'soda')).toEqual({ amount: 0.33, unit: 'l' });
+    expect(p.report.legacyQuantity.find(entry => entry.id === 'soda')).toMatchObject({ kind: 'volume', density: 0.42 });
+    expect(changesOf(p, 'zero-ml')).toEqual({ amount: 250, unit: 'ml' });
+    // Only the ceiling applies to a volume: thin drinks are real.
+    expect(changesOf(p, 'coffee')).toEqual({ amount: 500, unit: 'ml' });
+  });
+
+  it('reports what it cannot resolve and changes nothing there', () => {
+    const p = plan();
+    for (const id of ['rice', 'typo', 'blank', 'mine', 'uncal', 'grp', 'fine']) expect(changesOf(p, id)).toBeUndefined();
+    expect(p.report.legacyQuantityUnresolved).toEqual([
+      { id: 'rice', name: 'Rice', originalQuantity: { amount: 1, unit: 'cup' }, calories: 200,
+        reason: '200 kcal/g is outside 0.05-9.5 if the amount were grams' },
+      { id: 'typo', name: 'Premier Protein', originalQuantity: { amount: 3, unit: 'ml' }, calories: 480,
+        reason: '160 kcal/g is above 9.5 if the amount were ml' },
+      { id: 'blank', name: 'Mystery', originalQuantity: { amount: null, unit: 'g' }, calories: 90, reason: 'no original amount' },
+    ]);
+  });
+
+  it('never changes a nutrient and converges', () => {
+    const rows = ledger();
+    const p = planScanDataRepair(rows, { offered: [] });
+    for (const { changes } of p.updates) for (const key of Object.keys(changes)) expect(NUTRIENT_KEYS).not.toContain(key);
+    const applied = rows.map(r => {
+      const update = p.updates.find(u => u.id === r.id);
+      return update ? { ...r, ...update.changes, version: r.version + 1 } : r;
+    });
+    const again = planScanDataRepair(applied, { offered: [] });
+    expect(again.updates).toEqual([]);
+    expect(again.report.legacyQuantity).toEqual([]);
   });
 });
