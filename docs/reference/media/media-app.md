@@ -352,6 +352,9 @@ Rules of the navigation model:
 
 - In-app navigation is a **stack** (push/pop) mirrored to the URL, so the
   browser Back button, sharing a URL, and refreshing all do the right thing.
+- Reselecting a primary area traverses to its existing root entry; one Back
+  then reaches the prior area. Saved browse scroll and focus do not change
+  that root's route identity, and its viewport snapshot remains available.
 - Navigation parameters (`view`, `path`, `contentId`, `deviceId`) and playback
   parameters (`play`, `queue`, `shuffle`, `shader`, `volume`) are disjoint
   namespaces; writing one never clobbers the other.
