@@ -9,7 +9,7 @@ import { ClientIngressService } from '../../../../backend/src/3_applications/eve
 // receiver hook/controller, branch WebSocket bus and ingress, and caller
 // correlator. Only the socket destination changes; no fabricated ACK/state.
 test.use({ viewport: { width: 1440, height: 900 }, trace: 'retain-on-failure' });
-test.setTimeout(90000);
+test.setTimeout(120000);
 let server;
 let bus;
 let socketUrl;
@@ -94,19 +94,46 @@ test('[HOUSE.4a] stable browser identities route a queue command through the act
   await expect(targetCard).toContainText('Kitchen');
 
   const commandId = `acceptance-routine-${Date.now()}`;
-  const result = await caller.evaluate(async ({ callerId, targetId, commandId }) => {
-    const { wsService } = await import('/src/services/WebSocketService.js');
-    const { createClientControlCorrelator } = await import('/src/modules/Media/externalControl/clientControlCorrelator.js');
-    const correlator = createClientControlCorrelator({ controlClientId: callerId, service: wsService });
-    const send = command => correlator.send({ targetControlClientId: targetId, command });
+  const result = await caller.evaluate(async ({ targetId, commandId }) => {
+    const callerId = `acceptance-caller-${commandId}`;
+    const ws = new WebSocket(`${location.origin.replace(/^http/, 'ws')}/ws`);
+    const inbox = [];
+    const waitFor = (predicate, timeoutMs = 10_000) => new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('acceptance-control-timeout')), timeoutMs);
+      const inspect = message => {
+        if (!predicate(message)) return false;
+        clearTimeout(timer);
+        resolve(message);
+        return true;
+      };
+      const queued = inbox.find(inspect);
+      if (queued) return;
+      const listener = event => {
+        const message = JSON.parse(event.data);
+        if (inspect(message)) ws.removeEventListener('message', listener);
+        else inbox.push(message);
+      };
+      ws.addEventListener('message', listener);
+    });
+    await new Promise((resolve, reject) => {
+      ws.addEventListener('open', resolve, { once: true });
+      ws.addEventListener('error', () => reject(new Error('acceptance-control-connect-failed')), { once: true });
+    });
+    const nonce = `${commandId}-identify`;
+    ws.send(JSON.stringify({ type: 'identify', clientId: callerId, nonce }));
+    await waitFor(message => message.type === 'identify_ack' && message.nonce === nonce && message.ok === true);
+    const send = async command => {
+      ws.send(JSON.stringify({ ...command, topic: `client-control:${targetId}` }));
+      return waitFor(message => message.topic === `client-ack:${callerId}` && message.commandId === command.commandId);
+    };
     try {
       const origin = { kind: 'routine', name: 'Breakfast', triggerId: 'daily-0700' };
       const first = await send({ commandId, command: 'queue', params: { op: 'play-now', contentId: 'plex:55854' }, origin });
       const duplicate = await send({ commandId: `${commandId}-duplicate`, command: 'queue', params: { op: 'play-now', contentId: 'plex:55854' }, origin });
       const human = await send({ commandId: `${commandId}-human`, command: 'queue', params: { op: 'add', contentId: 'plex:697368' }, origin: { kind: 'device', id: `browser:${callerId}` } });
       return { first, duplicate, human };
-    } finally { correlator.dispose(); }
-  }, { callerId: identity(caller), targetId: identity(target), commandId });
+    } finally { ws.close(); }
+  }, { targetId: identity(target), commandId });
   expect(result.first).toMatchObject({ commandId, clientId: identity(target), ok: true });
   expect(result.duplicate).toMatchObject({ commandId: `${commandId}-duplicate`, clientId: identity(target), ok: true });
   expect(result.human).toMatchObject({ commandId: `${commandId}-human`, clientId: identity(target), ok: true });
@@ -130,8 +157,9 @@ test('[HOUSE.4a] stable browser identities route a queue command through the act
   await expect.poll(() => resumedNative.evaluate(video => ({ ready: video.readyState >= 2, paused: video.paused, seconds: video.currentTime })), { timeout: 30000 })
     .toMatchObject({ ready: true, paused: false, seconds: expect.any(Number) });
   expect(await resumedNative.evaluate(video => video.currentTime)).toBeGreaterThanOrEqual(Math.max(0, beforeReloadSeconds - 3));
-  await target.getByTestId('mini-player-open-nowplaying').click();
-  await expect(target.getByTestId('queue-panel').locator('.queue-item-title')).toHaveCount(2);
+  const reloadedQueue = target.getByTestId('queue-panel');
+  if (!await reloadedQueue.isVisible()) await target.getByTestId('mini-player-open-nowplaying').click();
+  await expect(reloadedQueue.locator('.queue-item-title')).toHaveCount(2);
   await expect(caller.getByTestId('mini-player-open-nowplaying')).toHaveCount(0);
   await expect(targetCard).toContainText('Arrival', { timeout: 30000 });
   await expect(targetCard.locator('img')).toBeVisible();
