@@ -2569,6 +2569,32 @@ describe('hearing it again, from any rung, by key or by tap', () => {
       expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledTimes(2);
       expect(languageApi.recording).not.toHaveBeenCalled();
     });
+
+    // 2026-09-22: Tab pressed after a finished take, to hear the model against
+    // it, deleted the take and reopened the mic. Once a take exists Tab
+    // compares — sentence, then take — and the take survives to be kept.
+    it('Tab after a take plays the sentence then the take, and keeps the take', async () => {
+      const played = playsToEnd();
+      fakeMic();
+      recordingDay();
+      program();
+      await screen.findByRole('button', { name: 'Listen, then record' });
+      let now = Date.now();
+      const clock = vi.spyOn(Date, 'now').mockImplementation(() => now);
+      pressKey(' ');
+      await screen.findByRole('button', { name: 'Stop' });
+      now += 2000;
+      pressKey(' ');
+      clock.mockRestore();
+      await screen.findByRole('button', { name: 'Keep it' });
+      const before = played.length;
+
+      pressKey('Tab');
+      await waitFor(() => expect(played.slice(before).map(path)).toEqual(['/audio/glossika-korean/1/KR', 'blob:take']));
+      expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledTimes(1);
+      const keep = screen.getByRole('button', { name: 'Keep it' });
+      expect(keep.disabled).toBe(false);
+    });
   });
 
   describe('repetition', () => {

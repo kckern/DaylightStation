@@ -13,6 +13,7 @@ import useVoiceCapture from './useVoiceCapture.js';
  *
  *   tap / Space ─▶ the sentence sounds ─▶ the ding ─▶ the mic is live
  *   tap / Space ─▶ the take plays straight back ─▶ Keep it, or Record again
+ *   Tab (with a take) ─▶ the sentence, then the take — compare, nothing lost
  *
  * The ding is the cue to speak, so nothing on screen has to say "listen" or
  * "now" — a child follows the sound, not the copy. Playback is automatic and
@@ -318,21 +319,39 @@ export default function RecordingRung({
   }, [audioUrl, entry.seq, listenTo, stopPlayback]);
 
   /**
-   * TAB ALWAYS BRINGS THE SENTENCE BACK. Before a take it is a listen. Once the
-   * learner is recording, or has a take in hand, it starts over: the take in
-   * progress is thrown away — never judged, never played back — the sentence
-   * sounds again, and the microphone opens when it has finished, exactly as the
-   * first press did. Nobody is sent into a recording having heard it only once.
+   * TAB ALWAYS BRINGS THE SENTENCE BACK. Before a take it is a listen. While
+   * the learner is recording it starts over: the take in progress is thrown
+   * away — never judged, never played back — the sentence sounds again, and
+   * the microphone opens when it has finished, exactly as the first press did.
+   * Nobody is sent into a recording having heard it only once.
+   *
+   * ONCE A TAKE EXISTS, TAB IS A COMPARISON, NOT A RETAKE: the sentence, then
+   * the learner's own take, and the take is kept. Throwing a finished take away
+   * here is what happened on 2026-09-22 — Tab pressed 2.7s after a good take
+   * stopped (seq 13) and again 1.7s into its playback (seq 14), each time to
+   * hear the model against the take, each time deleting the take and opening
+   * the mic. Backspace is the retake key; Tab never is, once there is
+   * something to lose.
    */
   const replaySentence = useCallback(() => {
     const current = phaseRef.current;
     if (current === 'idle') { hear(targetLang); return; }
+    if ((current === 'playback' || current === 'review') && takeUrlRef.current) {
+      stopPlayback();
+      setPhase('review');
+      languageLog.capture('compare', { seq: entry.seq, from: current });
+      listenTo([
+        { url: audioUrl(entry.seq, targetLang), language: targetLang },
+        { url: takeUrlRef.current, role: 'take', gapMs: 400 },
+      ]);
+      return;
+    }
     languageLog.capture('replay-restart', { seq: entry.seq, from: current });
     if (current === 'recording') cancelCapture();
     stopPlayback();
     setTakeVerdict(null);
     start();
-  }, [cancelCapture, entry.seq, hear, start, stopPlayback, targetLang]);
+  }, [audioUrl, cancelCapture, entry.seq, hear, listenTo, start, stopPlayback, targetLang]);
 
   useEffect(() => {
     if (!blocked || phase !== 'prompting') return;
@@ -532,7 +551,9 @@ export default function RecordingRung({
           about a Tab it does not have. */}
       {showShortcuts && (
         <p className="lang-rung__keys" aria-hidden="true">
-          Space: go · Tab: hear it again · Shift+Tab: hear the meaning · Backspace: record again
+          {phase === 'playback' || phase === 'review'
+            ? 'Space: go · Tab: compare with the sentence · Shift+Tab: hear the meaning · Backspace: record again'
+            : 'Space: go · Tab: hear it again · Shift+Tab: hear the meaning · Backspace: record again'}
         </p>
       )}
     </div>
