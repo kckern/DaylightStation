@@ -152,3 +152,18 @@ counters reset.
 - Display: verdict map drives colours; no green while the record says off-beat.
 - Input: `t` preserved end to end; stale `t` falls back.
 - Click: anchored schedule lands on `anchorMs + n·period - leadMs`.
+
+## Integration notes (as built)
+
+- **Pre-roll.** A cued run's grading clock starts `clickLeadMs + 150 ms` after
+  the arming key (`CLICK_PREROLL_MS`). Anchored at the key press itself, the
+  first count-in click (played `leadMs` early) would already be in the past and
+  be skipped. No count-in number shows until the first click.
+- **Window light.** The cursor is lit while ANY beat's window is open, not only
+  the cursor's event: the next note's window opens before the clock cursor moves
+  there, and dimming then told the child "not now" when an on-time note counts.
+- **Replaying the incident** under the new judge: notes 416-478 ms late at a
+  500 ms gap are claimed `late` on their own beat (amber ▸) instead of `wrong`
+  on the next; the first two notes of run 1 (+650, +508) exceed one full gap
+  and remain wrong. With the click now anchored and led, the heard beat moves
+  ~0.3 s earlier, which is most of that lag.

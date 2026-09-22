@@ -16,6 +16,8 @@ const h = vi.hoisted(() => ({
   activeNotes: new Map(),
   log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn(), sampled: vi.fn() },
   record: vi.fn(),
+  click: [],
+  kioskConfig: null,
 }));
 
 vi.mock('../../../../../lib/logging/Logger.js', () => ({ default: () => ({ child: () => h.log }) }));
@@ -27,13 +29,17 @@ vi.mock('../../PianoUserContext.jsx', () => ({ usePianoUser: () => ({ currentUse
 vi.mock('../../../components/PianoKeyboard.jsx', () => ({
   PianoKeyboard: ({ wrongNotes }) => <div data-testid="keyboard" data-wrong={[...(wrongNotes ?? [])].join(',')} />,
 }));
-vi.mock('../SheetMusic/useMetronomeClick.js', () => ({ useMetronomeClick: () => {} }));
+vi.mock('../SheetMusic/useMetronomeClick.js', () => ({ useMetronomeClick: (args) => { h.click.push(args); } }));
+vi.mock('../../PianoConfig.jsx', async (importOriginal) => {
+  const actual = await importOriginal();
+  return { ...actual, usePianoKioskConfigOptional: () => (h.kioskConfig ? { config: h.kioskConfig } : null) };
+});
 vi.mock('../../../performance/attemptEvidence.js', async (importOriginal) => {
   const actual = await importOriginal();
   return { ...actual, pianoAttemptClient: { record: h.record } };
 });
 
-const { default: ExerciseRun, timingSentence, timedWindowOpen } = await import('./ExerciseRun.jsx');
+const { default: ExerciseRun, timingSentence, timedWindowOpen, CLICK_PREROLL_MS } = await import('./ExerciseRun.jsx');
 
 // Four quarters at 120 bpm: onsets 500 ms apart, so each beat's window is
 // 0.4 × 500 = 200 ms and a right note up to 500 ms off is claimed early/late.
@@ -72,7 +78,9 @@ const headState = (midi) => {
 function mountAndArm() {
   view = render(<ExerciseRun {...props} />);
   expect(screen.getByText(/Press any key to start/)).toBeInTheDocument();
-  armedAt = Date.now();
+  // The run's clock starts a pre-roll after the arming key: the click lead
+  // plus scheduler headroom, so the first anchored click is still ahead.
+  armedAt = Date.now() + CLICK_PREROLL_MS + (h.kioskConfig?.timing?.clickLeadMs ?? 0);
   strike(55, { holdMs: 0 });
   release();
   expect(document.querySelector('.piano-exercise-run').dataset.stage).toBe('sequence');
@@ -82,6 +90,8 @@ describe('a timed run paints the judge, not the held key', () => {
   beforeEach(() => {
     vi.useFakeTimers({ now: new Date('2026-09-22T16:54:00Z') });
     h.activeNotes = new Map();
+    h.click = [];
+    h.kioskConfig = null;
     h.record.mockReset();
     h.record.mockResolvedValue({ ok: true, status: 201, data: { attempt_id: 'stored' }, durationMs: 4 });
     for (const logger of Object.values(h.log)) logger.mockClear();
@@ -170,12 +180,36 @@ describe('a timed run paints the judge, not the held key', () => {
     expect(headState(60)).toBe('sequence-note-hit');
   });
 
-  it('lights the cursor only while the current beat\'s window is open', () => {
+  it('lights the cursor only while a beat\'s window is open', () => {
     mountAndArm();
     advanceTo(LEAD_IN_MS + 50);
     expect(document.querySelector('.sequence-staff__cursor').classList.contains('is-window-open')).toBe(true);
-    advanceTo(LEAD_IN_MS + 300);
+    advanceTo(LEAD_IN_MS + 250);
     expect(document.querySelector('.sequence-staff__cursor').classList.contains('is-window-closed')).toBe(true);
+  });
+
+  it('is lit in the early half of the next beat\'s window, before the cursor moves there', () => {
+    mountAndArm();
+    // Beat 1's window closed at +200; beat 2's opens at +300 while the clock
+    // cursor still sits on beat 1 until +500. An on-time note counts here, so
+    // the lane must not say "not now".
+    advanceTo(LEAD_IN_MS + GAP_MS - 150);
+    expect(document.querySelector('.sequence-staff__cursor').classList.contains('is-window-open')).toBe(true);
+  });
+
+  it('anchors the click to the attempt\'s own start and plays it early by the calibrated lead', () => {
+    h.kioskConfig = { timing: { clickLeadMs: 240 } };
+    mountAndArm();
+    const last = h.click.at(-1);
+    expect(last.enabled).toBe(true);
+    expect(last.anchorMs).toBe(armedAt);
+    expect(last.leadMs).toBe(240);
+    expect(h.log.info).toHaveBeenCalledWith('piano.click.anchored', expect.objectContaining({ leadMs: 240, source: 'config', anchorMs: armedAt }));
+  });
+
+  it('leaves the click unanchored before the run is armed', () => {
+    view = render(<ExerciseRun {...props} />);
+    expect(h.click.at(-1).anchorMs).toBeUndefined();
   });
 });
 
