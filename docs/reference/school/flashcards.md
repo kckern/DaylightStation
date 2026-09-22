@@ -86,15 +86,19 @@ mount and never authors `cards` itself:
     lexicon: media:language/korean-vocab/lexicon.yml
     words: [annyeong, gawi, …]
 
-The lexicon (`school.word-lexicon/v1`) holds each word's `id`, `kind`
-(`word|phrase`), `korean`, `english`, `pronunciation` (required for phrases)
-and at least three `decoys.korean` / `decoys.english` each. A decoy may never
-equal its own answer, and a decoy that is another in-set entry must be the
-same kind. `LexiconDeckLoader` expands the deck at the content-repository seam
-(both `getFlashcardDeck` and `listFlashcardDecks`), before any validation: the
-front is the picture (alt = English), the Korean, and `ko.mp3`; the back is
-the English, plus the pronunciation for a phrase. Media is found by
-convention at `media:<package>/words/<id>/{image.jpg,ko.mp3,en.mp3}`.
+The lexicon (`school.word-lexicon/v2`) is the word package's whole language
+identity: `package`, `language: {code, name}` (being learned),
+`gloss: {code, name}` (the meanings' language), `program.title`, optional
+`quiz` copy, and per word `id`, `kind` (`word|phrase`), `group` (the course
+unit that introduced it), `term`, `gloss`, `pronunciation` (required for
+phrases) and at least three `decoys.term` / `decoys.gloss` each. A decoy may
+never equal its own answer, and a decoy that is another in-set entry must be
+the same kind. `LexiconDeckLoader` expands the deck at the content-repository
+seam (both `getFlashcardDeck` and `listFlashcardDecks`), before any
+validation: the front is the picture (alt = gloss), the term, and `term.mp3`;
+the back is the gloss, plus the pronunciation for a phrase. Media is found by
+convention at `media:<package dir>/words/<group>/<id>/{image.jpg,term.mp3,gloss.mp3}`.
+Full schema and "adding a language": `word-ladder.md`.
 
 `media:` asset ids resolve under `<media dir>/school`; bare ids keep resolving
 under the content asset dir. A 0-byte file is a placeholder and counts as
