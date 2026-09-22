@@ -41,6 +41,7 @@
  * @module applications/school/PianoLessonCeremonyBridge
  */
 import { studyDayForInstant } from '#domains/school/studyDay.mjs';
+import { composeSchoolPush } from '#domains/school/notifications/schoolPush.mjs';
 
 const BOUNDARY_HOUR = 4;
 
@@ -225,7 +226,7 @@ export class PianoLessonCeremonyBridge {
     });
 
     this.#broadcast({ learnerId, student, courseId, lesson, status, studyDate });
-    await this.#fireHook({ learnerId, student, courseId, lesson, status });
+    await this.#fireHook({ learnerId, student, courseId, lesson, status, studyDate });
   }
 
   /**
@@ -254,7 +255,7 @@ export class PianoLessonCeremonyBridge {
       const lesson = status?.servedWork?.[0]?.title ?? 'PianoChallenge';
       this.#logger.info?.('school.piano-challenge-ceremony.satisfied', { learnerId, courseId, descriptorId, studyDate, lesson });
       this.#broadcast({ learnerId, student, courseId, lesson, status, studyDate });
-      await this.#fireHook({ learnerId, student, courseId, lesson, status });
+      await this.#fireHook({ learnerId, student, courseId, lesson, status, studyDate });
       return;
     }
   }
@@ -391,9 +392,19 @@ export class PianoLessonCeremonyBridge {
    * The Home Assistant half. The adapter never throws and owns its own
    * circuit breaker, so this only has to keep a rejection from escaping.
    */
-  async #fireHook({ learnerId, student, courseId, lesson, status }) {
+  async #fireHook({ learnerId, student, courseId, lesson, status, studyDate }) {
     if (!this.#hook?.fire) return;
     try {
+      // The unit row is the scale a child feels progress at (see the launcher's
+      // #progress). `status.score` is COURSE completion, never a lesson score,
+      // and is deliberately not shown. A malformed `progress` must not throw
+      // here: HA's room chime rides this same fire.
+      const rows = Array.isArray(status?.progress) ? status.progress : [];
+      const unitRow = rows.find((row) => row?.scope === 'module') ?? null;
+      const notification = composeSchoolPush({
+        kind: 'piano', learnerId, child: student, lesson, studyDay: studyDate,
+        unitProgress: unitRow ? { label: unitRow.label ?? null, completed: unitRow.completed, total: unitRow.total } : null,
+      });
       await this.#hook.fire({
         result: 'satisfied',
         learnerId,
@@ -402,6 +413,7 @@ export class PianoLessonCeremonyBridge {
         course: courseId,
         lesson,
         percent: status?.score ?? null,
+        notification,
       });
     } catch (err) {
       this.#logger.warn?.('school.piano-ceremony.hook-failed', {
