@@ -27,6 +27,7 @@ export function deviceStateLabel(state, { offline = false } = {}) {
     return 'Off';
   }
   switch (state) {
+    case 'uncertain': return 'Uncertain';
     case 'playing': return 'Playing';
     case 'paused': return 'Paused';
     case 'loading': return 'Starting…';

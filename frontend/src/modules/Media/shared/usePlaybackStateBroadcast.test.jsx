@@ -61,4 +61,42 @@ describe('usePlaybackStateBroadcast', () => {
     expect(send).toHaveBeenCalled();
     expect(send.mock.calls[send.mock.calls.length - 1][0].state).toBe('stopped');
   });
+
+  it('publishes the persisted browser identity and one canonical state projection', () => {
+    renderHook(() => usePlaybackStateBroadcast({
+      send,
+      identity: {
+        clientId: 'c1', deviceId: 'browser:c1', name: 'Kitchen tablet', room: 'Kitchen',
+        connectedAt: '2026-09-22T12:00:00.000Z',
+      },
+      snapshot: {
+        sessionId: 's1', state: 'playing',
+        currentItem: { contentId: 'p:1', format: 'video', title: 'T', duration: 60 },
+        position: 2,
+        queue: { items: [], currentIndex: -1, upNextCount: 0 },
+        config: { shuffle: false, repeat: 'off', shader: null, volume: 50, playbackRate: 1 },
+        meta: { ownerId: 'c1', updatedAt: '2026-09-22T12:00:01.000Z', revision: 7, origin: { kind: 'routine', name: 'Morning' } },
+      },
+    }));
+
+    expect(send).toHaveBeenCalledWith(expect.objectContaining({
+      topic: 'playback_state',
+      identity: expect.objectContaining({ deviceId: 'browser:c1', name: 'Kitchen tablet', room: 'Kitchen' }),
+      deviceId: 'browser:c1', ownerId: 'c1', revision: 7,
+      origin: { kind: 'routine', name: 'Morning' },
+      queue: { items: [], currentIndex: -1, upNextCount: 0 },
+      connected: true,
+      lastHeardAt: expect.any(String),
+    }));
+  });
+
+  it('heartbeats while idle so an open browser is not mistaken for off', () => {
+    renderHook(() => usePlaybackStateBroadcast({
+      send, clientId: 'c1', displayName: 'D',
+      snapshot: { sessionId: 's1', state: 'idle', currentItem: null, position: 0, queue: { items: [], currentIndex: -1, upNextCount: 0 }, config: { shuffle: false, repeat: 'off', shader: null, volume: 50, playbackRate: 1 }, meta: { ownerId: 'c1', updatedAt: 'x' } },
+    }));
+    send.mockClear();
+    act(() => { vi.advanceTimersByTime(30_001); });
+    expect(send).toHaveBeenCalledWith(expect.objectContaining({ state: 'idle', reason: 'heartbeat' }));
+  });
 });

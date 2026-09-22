@@ -14,6 +14,8 @@ export const TIMING = {
   POSITION_PERSIST_INTERVAL_S: 5,       // §11.3 — durable position cadence while playing
   PERSIST_THROTTLE_MS: 500,             // §11.3 — ≤1 localStorage write per 500ms
   PLAYBACK_HEARTBEAT_MS: 5_000,         // C10.3 — playback_state heartbeat while playing
+  BROWSER_HEARTBEAT_MS: 30_000,         // HOUSE.3a — open browsers report even while idle
+  BROWSER_UNCERTAIN_AFTER_MS: 120_000,  // HOUSE.3a — silence becomes uncertain after 2m
   DEVICE_STALE_AFTER_MS: 15_000,        // §7.4 — missed device heartbeats → stale
   VOLUME_APPLY_RETRY_MS: 200,           // PlayerBridge: media element may mount after the effect
   VOLUME_APPLY_GIVE_UP_MS: 5_000,
@@ -29,6 +31,7 @@ export const TIMING = {
 export const STORAGE_KEYS = {
   CLIENT_ID: 'media-app.client-id',
   DISPLAY_NAME: 'media-app.display-name',
+  BROWSER_IDENTITY: 'media-app.browser-identity',
   SESSION: 'media-app.session',
   URL_COMMAND_TOKEN: 'media-app.url-command-token',
 };

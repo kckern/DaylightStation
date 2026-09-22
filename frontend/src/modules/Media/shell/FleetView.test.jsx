@@ -8,9 +8,10 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
 
 const fleet = { devices: [], entries: {} };
+const getController = vi.fn();
 
 vi.mock('../fleet/useFleetContext.js', () => ({
-  useFleetContext: () => ({ devices: fleet.devices, loading: false, error: null, store: {} }),
+  useFleetContext: () => ({ devices: fleet.devices, loading: false, error: null, store: {}, connected: fleet.connected }),
 }));
 vi.mock('../fleet/useDevice.js', () => ({
   useDevice: (deviceId) => ({
@@ -24,6 +25,7 @@ vi.mock('./NavProvider.jsx', () => ({
 vi.mock('../peek/useTakeOver.js', () => ({
   useTakeOver: () => vi.fn(),
 }));
+vi.mock('../peek/usePeek.js', () => ({ usePeek: () => ({ getController }) }));
 // The picker's own behavior is covered in fleet/FleetPlayPicker.test.jsx —
 // here it's a marker with a close hook.
 vi.mock('../fleet/FleetPlayPicker.jsx', () => ({
@@ -50,6 +52,8 @@ beforeEach(() => {
     { id: 'office-tv', name: 'Office TV', type: 'linux-pc' },
   ];
   fleet.entries = {};
+  fleet.connected = true;
+  getController.mockReset();
 });
 
 describe('FleetView Play… affordance', () => {
@@ -110,5 +114,32 @@ describe('FleetView Play… affordance', () => {
     renderFleet();
     expect(screen.getByTestId('fleet-play-livingroom-tv'))
       .toHaveAttribute('data-play-toggle', 'livingroom-tv');
+  });
+
+  it('offers inline Pause and Stop which route to that browser controller', () => {
+    const pause = vi.fn();
+    const stop = vi.fn();
+    getController.mockReturnValue({ transport: { pause, stop } });
+    fleet.devices = [{ id: 'browser:wall', name: 'Kitchen tablet', type: 'browser' }];
+    fleet.entries = { 'browser:wall': { snapshot: { state: 'playing', currentItem: { title: 'Arrival' } } } };
+    renderFleet();
+
+    fireEvent.click(screen.getByTestId('fleet-pause-browser:wall'));
+    fireEvent.click(screen.getByTestId('fleet-stop-browser:wall'));
+    expect(pause).toHaveBeenCalledTimes(1);
+    expect(stop).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows house-disconnected and per-screen uncertainty copy', () => {
+    fleet.connected = false;
+    fleet.devices = [{ id: 'browser:wall', name: 'Kitchen tablet', type: 'browser', state: 'uncertain' }];
+    fleet.entries = {
+      'browser:wall': { isStale: true, lastSeenAt: '2026-09-22T12:00:00.000Z', snapshot: { state: 'paused' } },
+    };
+    renderFleet();
+    expect(screen.getByTestId('fleet-connection-warning')).toHaveTextContent('lost touch');
+    expect(screen.getByTestId('fleet-state-browser:wall')).toHaveTextContent('Uncertain');
+    expect(screen.getByTestId('fleet-uncertain-browser:wall')).toHaveTextContent('may not be confirmed');
+    expect(screen.getByTestId('fleet-card-browser:wall')).toHaveTextContent('Last heard');
   });
 });

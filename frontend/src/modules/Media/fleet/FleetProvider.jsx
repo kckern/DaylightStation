@@ -2,13 +2,14 @@
 // Wires the fleet store to the world: device roster from the Device API
 // (refreshed when the tab regains focus), live state from device-state:*
 // broadcasts, staleness from WS connection status.
-import React, { createContext, useEffect, useMemo, useRef, useSyncExternalStore } from 'react';
+import React, { createContext, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { subscribeTopic, subscribeTopicKind, onStatus, topics } from '../net/ws.js';
 import { useDevices } from './useDevices.js';
 import { createFleetStore } from './fleetStore.js';
 import mediaLog from '../logging/mediaLog.js';
 import { useClientIdentity } from '../identity/useClientIdentity.js';
-import { useSessionController } from '../controller/useSessionController.js';
+import { TIMING } from '../constants.js';
+import { browserDisplayState, sortFleetDevices } from './browserLiveness.js';
 
 export const FleetContext = createContext(null);
 
@@ -19,33 +20,39 @@ function playbackSnapshot(message) {
     sessionId: message.sessionId,
     state: message.state,
     currentItem: message.currentItem ?? null,
+    queue: message.queue ?? [],
     position: message.position ?? 0,
     config: message.config ?? null,
     displayName: message.displayName,
+    meta: {
+      ownerId: message.ownerId,
+      revision: message.revision,
+      origin: message.origin ?? null,
+      updatedAt: message.lastHeardAt ?? message.ts,
+    },
   };
 }
 
 export function FleetProvider({ children }) {
   const { devices, loading, error, refresh } = useDevices();
+  const [connected, setConnected] = useState(true);
   const { clientId, displayName } = useClientIdentity();
-  const { snapshot: localSnapshot } = useSessionController('local');
   const storeRef = useRef(null);
   if (!storeRef.current) storeRef.current = createFleetStore();
   const store = storeRef.current;
   const browserEntries = useSyncExternalStore(store.subscribeAll, store.getAll, store.getAll);
 
-  useEffect(() => {
-    if (!localSnapshot) return;
-    store.receive({ deviceId: browserDeviceId(clientId), snapshot: localSnapshot, reason: 'change' });
-  }, [store, clientId, localSnapshot]);
-
   useEffect(() => subscribeTopic(topics.playbackState, (message) => {
-    if (!message?.clientId || !message?.displayName || !message?.state) return;
+    if (!message?.identity?.clientId || !message?.deviceId || !message?.state) return;
     store.receive({
-      deviceId: browserDeviceId(message.clientId),
+      deviceId: message.deviceId,
       snapshot: playbackSnapshot(message),
       reason: 'change',
       ts: message.ts,
+      identity: message.identity,
+      connected: message.connected,
+      lastHeardAt: message.lastHeardAt,
+      staleAfterMs: TIMING.BROWSER_UNCERTAIN_AFTER_MS,
     });
   }), [store]);
 
@@ -64,9 +71,11 @@ export function FleetProvider({ children }) {
   useEffect(() => {
     return onStatus((status) => {
       if (status && status.connected === false) {
-        store.markAllStale();
+        setConnected(false);
+        store.markAllStale({ exclude: id => id.startsWith('browser:') });
         mediaLog.wsDisconnected({});
       } else if (status && status.connected === true) {
+        setConnected(true);
         mediaLog.wsConnected({});
       }
     });
@@ -85,16 +94,25 @@ export function FleetProvider({ children }) {
       .filter(([id]) => id.startsWith('browser:'))
       .map(([id, entry]) => ({
         id,
-        name: entry.snapshot?.displayName ?? (id === browserDeviceId(clientId) ? displayName : id.slice('browser:'.length)),
+        name: entry.identity?.name ?? entry.snapshot?.displayName ?? (id === browserDeviceId(clientId) ? displayName : id.slice('browser:'.length)),
+        room: entry.identity?.room,
         type: 'browser',
         isLocal: id === browserDeviceId(clientId),
+        state: browserDisplayState({
+          connected: entry.connected,
+          lastHeardMs: Math.max(0, Date.now() - new Date(entry.lastSeenAt).getTime()),
+          state: entry.snapshot?.state,
+        }),
+        isStale: entry.isStale,
+        connected: entry.connected,
+        lastHeardAt: entry.lastSeenAt,
       }));
-    return [...devices, ...browsers.filter(browser => !devices.some(device => device.id === browser.id))];
+    return sortFleetDevices([...devices, ...browsers.filter(browser => !devices.some(device => device.id === browser.id))]);
   }, [devices, browserEntries, clientId, displayName]);
 
   const value = useMemo(
-    () => ({ devices: fleetDevices, store, loading, error, refresh }),
-    [fleetDevices, store, loading, error, refresh]
+    () => ({ devices: fleetDevices, store, loading, error, refresh, connected, identity: { clientId, deviceId: browserDeviceId(clientId) } }),
+    [fleetDevices, store, loading, error, refresh, connected, clientId]
   );
 
   return <FleetContext.Provider value={value}>{children}</FleetContext.Provider>;
