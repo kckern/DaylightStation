@@ -5,12 +5,13 @@ import { expandContainerInput, isContainerInput } from '../session/containerExpa
 /** Shared owner algorithm, used by the local controller and screen owner. */
 export function createItemActionOwner({ targetId, capture, revision, apply, getPendingCommit, fetchImpl, now = Date.now }) {
   const ledger = createUndoLedger({ targetId, capture, revision, restore: (snapshot, record) => {
-    if (!record.playbackChanged) {
+    const restorePlaybackSnapshot = record.restorePlaybackSnapshot ?? record.playbackChanged;
+    if (!restorePlaybackSnapshot) {
       const current = capture();
       snapshot.position = current.position;
       snapshot.state = current.state;
     }
-    return apply(snapshot, { restore: record.playbackChanged, playbackChanged: record.playbackChanged });
+    return apply(snapshot, { restore: restorePlaybackSnapshot, playbackChanged: record.playbackChanged });
   }, now });
   const operations = new Map();
   let pendingQueueIntent = null;
@@ -57,8 +58,14 @@ export function createItemActionOwner({ targetId, capture, revision, apply, getP
       // a synthetic playback receipt. Native playing proof is still required.
       next.queue.items = next.queue.items.map(entry => before.queue.items.some(old => old.queueItemId === entry.queueItemId)
         ? entry : { ...entry, itemActionId: operationId });
+      const currentQueueItemId = before.queue.items[before.queue.currentIndex]?.queueItemId;
       const playbackChanged = kind === 'playNow' || kind === 'shuffle'
-        || (kind === 'remove' && before.queue.items[before.queue.currentIndex]?.queueItemId === command.queueItemId);
+        || (kind === 'remove' && currentQueueItemId === command.queueItemId);
+      // Clear mutates the queue only: its current visit keeps running while
+      // unlinked from the queue. Its Undo nevertheless must restore the
+      // tap-time playback snapshot, because a post-Clear owner capture has
+      // no queue identity and can legitimately report idle/zero.
+      const restorePlaybackSnapshot = playbackChanged || (kind === 'clear' && currentQueueItemId != null);
       if (playbackChanged) next.position = 0;
       const complete = (applied) => {
         if (applied?.ok === false) return applied;
@@ -68,7 +75,7 @@ export function createItemActionOwner({ targetId, capture, revision, apply, getP
         const recorded = ledger.applied(operationId);
         return recorded?.then ? recorded.then(result) : result(recorded);
       };
-      ledger.applying(operationId, { playbackChanged });
+      ledger.applying(operationId, { playbackChanged, restorePlaybackSnapshot });
       const applied = apply(next, { playbackChanged, operationId });
       ledger.issued(operationId);
       return applied?.then ? applied.then(complete) : complete(applied);
