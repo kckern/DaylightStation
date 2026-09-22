@@ -9,3 +9,5 @@ export {
 export {
   CHECK_DIRECTIONS, hashString, seededShuffle, checkDirection, resolveDirection, answerFor, buildChoices,
 } from './checkItem.mjs';
+export { planDay, dayProgress, progressLabel } from './planDay.mjs';
+export { foldPaperAttempts } from './foldPaperAttempts.mjs';
