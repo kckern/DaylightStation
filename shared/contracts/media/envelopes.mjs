@@ -11,7 +11,7 @@ import { validateHandoffParams, validateHandoffResult } from './handoff.mjs';
 
 const DEVICE_STATE_REASONS = Object.freeze(['change', 'heartbeat', 'initial', 'offline']);
 const PLAYBACK_BROADCAST_STATES = Object.freeze([
-  'playing', 'paused', 'buffering', 'stalled', 'stopped', 'idle',
+  'playing', 'paused', 'loading', 'ready', 'buffering', 'stalled', 'stopped', 'idle', 'ended', 'error',
 ]);
 
 const isStr  = (v) => typeof v === 'string' && v.length > 0;
@@ -40,6 +40,7 @@ export function buildCommandEnvelope({
   command,
   params,
   commandId,
+  origin,
   ts,
 } = {}) {
   if (!isCommandKind(command)) {
@@ -56,7 +57,23 @@ export function buildCommandEnvelope({
     ts: ts ?? nowIso(),
   };
   if (targetScreen !== undefined) env.targetScreen = targetScreen;
+  if (origin !== undefined) env.origin = origin;
   return env;
+}
+
+function validateOrigin(origin, errors, prefix = 'origin') {
+  if (!origin || typeof origin !== 'object') {
+    errors.push(`${prefix}: must be object when present`);
+    return;
+  }
+  if (origin.kind === 'device') {
+    if (!isStr(origin.id)) errors.push(`${prefix}.id: required for device origin`);
+  } else if (origin.kind === 'routine') {
+    if (!isStr(origin.name)) errors.push(`${prefix}.name: required for routine origin`);
+    if (origin.triggerId !== undefined && !isStr(origin.triggerId)) errors.push(`${prefix}.triggerId: must be string when present`);
+  } else {
+    errors.push(`${prefix}.kind: must be device|routine`);
+  }
 }
 
 /**
@@ -220,6 +237,7 @@ export function validateCommandEnvelope(env) {
   if (env.ts !== undefined && !isStr(env.ts)) {
     errors.push('ts: must be ISO string when present');
   }
+  if (env.origin !== undefined) validateOrigin(env.origin, errors);
   return result(errors);
 }
 
@@ -334,7 +352,12 @@ export function validateDeviceStateBroadcast(msg) {
  * one of the canonical broadcast states.
  */
 export function buildPlaybackStateBroadcast({
+  identity,
   clientId,
+  deviceId,
+  ownerId,
+  revision,
+  origin,
   sessionId,
   displayName,
   state,
@@ -342,6 +365,10 @@ export function buildPlaybackStateBroadcast({
   position,
   duration,
   config,
+  queue,
+  connected,
+  lastHeardAt,
+  reason,
   ts,
 } = {}) {
   if (!PLAYBACK_BROADCAST_STATES.includes(state)) {
@@ -350,11 +377,11 @@ export function buildPlaybackStateBroadcast({
       + `must be one of ${PLAYBACK_BROADCAST_STATES.join('|')}`,
     );
   }
-  return {
+  const message = {
     topic: 'playback_state',
-    clientId,
+    clientId: clientId ?? identity?.clientId,
     sessionId,
-    displayName,
+    displayName: displayName ?? identity?.name,
     state,
     currentItem: currentItem ?? null,
     position,
@@ -362,6 +389,16 @@ export function buildPlaybackStateBroadcast({
     config,
     ts: ts ?? nowIso(),
   };
+  if (identity !== undefined) message.identity = identity;
+  if (deviceId !== undefined || identity?.deviceId) message.deviceId = deviceId ?? identity.deviceId;
+  if (ownerId !== undefined) message.ownerId = ownerId;
+  if (revision !== undefined) message.revision = revision;
+  if (origin !== undefined) message.origin = origin;
+  if (queue !== undefined) message.queue = queue;
+  if (connected !== undefined) message.connected = connected;
+  if (lastHeardAt !== undefined) message.lastHeardAt = lastHeardAt;
+  if (reason !== undefined) message.reason = reason;
+  return message;
 }
 
 export function validatePlaybackStateBroadcast(msg) {
@@ -375,6 +412,18 @@ export function validatePlaybackStateBroadcast(msg) {
   if (!isStr(msg.clientId))    errors.push('clientId: required string');
   if (!isStr(msg.sessionId))   errors.push('sessionId: required string');
   if (!isStr(msg.displayName)) errors.push('displayName: required string');
+  if (!msg.identity || typeof msg.identity !== 'object') errors.push('identity: required object');
+  else {
+      if (!isStr(msg.identity.clientId)) errors.push('identity.clientId: required string');
+      if (!isStr(msg.identity.deviceId)) errors.push('identity.deviceId: required string');
+      if (!isStr(msg.identity.name)) errors.push('identity.name: required string');
+      if (!isStr(msg.identity.connectedAt)) errors.push('identity.connectedAt: required string');
+      if (msg.identity.room !== undefined && !isStr(msg.identity.room)) errors.push('identity.room: must be string when present');
+  }
+  if (!isStr(msg.deviceId)) errors.push('deviceId: required string');
+  if (!isStr(msg.ownerId)) errors.push('ownerId: required string');
+  if (!Number.isInteger(msg.revision) || msg.revision < 0) errors.push('revision: required non-negative integer');
+  if (msg.origin !== undefined) validateOrigin(msg.origin, errors);
   if (!PLAYBACK_BROADCAST_STATES.includes(msg.state)) {
     errors.push(
       `state: must be one of ${PLAYBACK_BROADCAST_STATES.join('|')}`,
@@ -389,6 +438,10 @@ export function validatePlaybackStateBroadcast(msg) {
   if (!msg.config || typeof msg.config !== 'object') {
     errors.push('config: required object');
   }
+  if (!msg.queue || typeof msg.queue !== 'object' || !Array.isArray(msg.queue.items)) errors.push('queue: required queue snapshot');
+  if (!isBool(msg.connected)) errors.push('connected: required boolean');
+  if (!isStr(msg.lastHeardAt)) errors.push('lastHeardAt: required string');
+  if (msg.reason !== undefined && !['initial', 'change', 'heartbeat', 'disconnect'].includes(msg.reason)) errors.push('reason: invalid when present');
   if (msg.ts !== undefined && !isStr(msg.ts)) {
     errors.push('ts: must be ISO string when present');
   }

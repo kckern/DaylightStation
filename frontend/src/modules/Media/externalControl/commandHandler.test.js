@@ -8,6 +8,7 @@ function makeController() {
     queue: { playNow: vi.fn(), playNext: vi.fn(), addUpNext: vi.fn(), add: vi.fn(), remove: vi.fn(), reorder: vi.fn(), jump: vi.fn(), clear: vi.fn() },
     config: { setShuffle: vi.fn(), setRepeat: vi.fn(), setShader: vi.fn(), setVolume: vi.fn() },
     lifecycle: { reset: vi.fn(), adoptSnapshot: vi.fn() },
+    setOrigin: vi.fn(),
   };
 }
 
@@ -36,6 +37,13 @@ describe('applyCommandEnvelope', () => {
   it('routes transport actions with values', () => {
     expect(applyCommandEnvelope(c, env('transport', { action: 'seekAbs', value: 90 })).ok).toBe(true);
     expect(c.transport.seekAbs).toHaveBeenCalledWith(90);
+  });
+
+  it('applies routine origin before the command changes the published snapshot', () => {
+    const origin = { kind: 'routine', name: 'Breakfast', triggerId: 'daily-0700' };
+    expect(applyCommandEnvelope(c, { ...env('transport', { action: 'play' }), origin }).ok).toBe(true);
+    expect(c.setOrigin).toHaveBeenCalledWith(origin);
+    expect(c.setOrigin.mock.invocationCallOrder[0]).toBeLessThan(c.transport.play.mock.invocationCallOrder[0]);
   });
 
   it('routes queue play-now with clearRest', () => {
@@ -73,5 +81,12 @@ describe('applyCommandEnvelope', () => {
   it('rejects unknown command kinds via validation', () => {
     const result = applyCommandEnvelope(c, env('self-destruct', {}));
     expect(result.ok).toBe(false);
+  });
+
+  it('does not mutate origin for a rejected supported envelope', () => {
+    const origin = { kind: 'routine', name: 'Breakfast', triggerId: 'daily-0700' };
+    const result = applyCommandEnvelope(c, { ...env('queue', { op: 'not-an-operation' }), origin });
+    expect(result.ok).toBe(false);
+    expect(c.setOrigin).not.toHaveBeenCalled();
   });
 });

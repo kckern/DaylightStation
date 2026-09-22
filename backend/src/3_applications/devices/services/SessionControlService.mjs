@@ -26,6 +26,7 @@
 import { ERROR_CODES } from '#shared-contracts/media/errors.mjs';
 import { ISessionControl } from '../ports/ISessionControl.mjs';
 import { isDeviceTransportGateway } from '../ports/IDeviceTransportGateway.mjs';
+import { RoutineTriggerDedupeService } from './RoutineTriggerDedupeService.mjs';
 
 const DEFAULT_ACK_TIMEOUT_MS       = 5000;
 const DEFAULT_IDEMPOTENCY_TTL_MS   = 60000;
@@ -53,6 +54,7 @@ export class SessionControlService extends ISessionControl {
   #clock;
   #ackTimeoutMs;
   #idempotencyTtlMs;
+  #routineDedupe;
 
   /** @type {Map<string, IdempotencyEntry>} */
   #idempotency = new Map();
@@ -84,6 +86,7 @@ export class SessionControlService extends ISessionControl {
     this.#idempotencyTtlMs = Number.isFinite(deps.idempotencyTtlMs) && deps.idempotencyTtlMs > 0
       ? deps.idempotencyTtlMs
       : DEFAULT_IDEMPOTENCY_TTL_MS;
+    this.#routineDedupe = deps.routineDedupe ?? new RoutineTriggerDedupeService({ clock: this.#clock });
   }
 
   /**
@@ -148,13 +151,20 @@ export class SessionControlService extends ISessionControl {
       };
     }
 
-    // 5. Arm ack subscription BEFORE publishing to avoid races.
-    const ackResult = await this.#transport.sendCommand(targetDevice, envelope, { timeoutMs: this.#ackTimeoutMs });
+    return this.#routineDedupe.run({
+      triggerId: envelope.origin?.triggerId,
+      targetId: targetDevice,
+      kind: envelope.command,
+      content: envelope.params,
+      origin: envelope.origin,
+    }, async () => {
+      // 5. Arm ack subscription BEFORE publishing to avoid races.
+      const ackResult = await this.#transport.sendCommand(targetDevice, envelope, { timeoutMs: this.#ackTimeoutMs });
 
-    // 6. Record in idempotency cache regardless of outcome.
-    this.#recordIdempotency(commandId, envelope, ackResult);
-
-    return ackResult;
+      // 6. Record in idempotency cache regardless of outcome.
+      this.#recordIdempotency(commandId, envelope, ackResult);
+      return ackResult;
+    });
   }
 
   /**

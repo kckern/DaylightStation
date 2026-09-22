@@ -2,6 +2,7 @@ import http from 'node:http';
 import { test, expect } from '@playwright/test';
 import { WebSocketEventBus } from '../../../../backend/src/1_adapters/eventbus/WebSocketEventBus.mjs';
 import { EventBusClientIngressAdapter } from '../../../../backend/src/1_adapters/eventbus/EventBusClientIngressAdapter.mjs';
+import { EventBusPlaybackStateRelay } from '../../../../backend/src/1_adapters/eventbus/EventBusMediaClientIngress.mjs';
 import { ClientIngressService } from '../../../../backend/src/3_applications/eventbus/ClientIngressService.mjs';
 
 // Foundation integration, not whole-story acceptance: real browser providers,
@@ -20,6 +21,7 @@ test.beforeAll(async () => {
   await bus.start(server);
   const publications = new EventBusClientIngressAdapter({ eventBus: bus });
   publications.attach(new ClientIngressService({ publications }));
+  new EventBusPlaybackStateRelay({ eventBus: bus, logger: { info() {}, warn() {}, error() {}, debug() {} } }).attach();
   socketUrl = `ws://127.0.0.1:${server.address().port}/ws`;
 });
 
@@ -28,8 +30,10 @@ test.afterAll(async () => {
   if (server?.listening) await new Promise(resolve => server.close(resolve));
 });
 
-test('[F2 foundation] same-profile tabs route a queue command through the actual receiver and return its ack', async ({ context, page: caller }) => {
-  await context.addInitScript(({ socketUrl }) => {
+test('[HOUSE.4a] stable browser identities route a queue command through the actual receiver and return its ack', async ({ browser }) => {
+  const callerContext = await browser.newContext();
+  const targetContext = await browser.newContext();
+  const installSocket = async context => context.addInitScript(({ socketUrl }) => {
     const NativeWebSocket = window.WebSocket;
     window.WebSocket = class extends NativeWebSocket {
       constructor(url, protocols) {
@@ -39,15 +43,18 @@ test('[F2 foundation] same-profile tabs route a queue command through the actual
       }
     };
   }, { socketUrl });
+  await Promise.all([installSocket(callerContext), installSocket(targetContext)]);
   const hardwareWrites = [];
-  await context.route('**/api/v1/device/**', async route => {
+  const guardHardware = async route => {
     if (route.request().method() !== 'GET' || /\/load(?:\?|$)/.test(route.request().url())) {
       hardwareWrites.push(route.request().method());
       return route.abort('blockedbyclient');
     }
     return route.continue();
-  });
-  const target = await context.newPage();
+  };
+  await Promise.all([callerContext.route('**/api/v1/device/**', guardHardware), targetContext.route('**/api/v1/device/**', guardHardware)]);
+  const caller = await callerContext.newPage();
+  const target = await targetContext.newPage();
   const received = new Map([[caller, []], [target, []]]);
   for (const browserPage of [caller, target]) {
     browserPage.on('websocket', socket => {
@@ -56,8 +63,7 @@ test('[F2 foundation] same-profile tabs route a queue command through the actual
       });
     });
   }
-  // Sequential navigation ensures the shared persistent profile identity is
-  // already created before the second provider mounts.
+  try {
   await caller.goto('/media');
   await expect(caller.getByRole('textbox', { name: 'Search media…' })).toBeVisible({ timeout: 30000 });
   await target.goto('/media');
@@ -67,27 +73,73 @@ test('[F2 foundation] same-profile tabs route a queue command through the actual
   expect(identity(caller)).not.toBe(identity(target));
   const profileId = browserPage => browserPage.evaluate(() => localStorage.getItem('media-app.client-id'));
   expect(await profileId(caller)).toBeTruthy();
-  expect(await profileId(target)).toBe(await profileId(caller));
+  expect(await profileId(target)).not.toBe(await profileId(caller));
+  const targetStableId = await profileId(target);
+  await target.getByTestId('settings-menu-trigger').click();
+  await target.getByTestId('settings-rename-device').click();
+  await target.getByRole('textbox', { name: 'Device name' }).fill('Kitchen tablet');
+  await target.getByRole('textbox', { name: 'Room' }).fill('Kitchen');
+  await target.getByRole('button', { name: 'Save device name' }).click();
+  await target.reload();
+  await expect(target.getByRole('textbox', { name: 'Search media…' })).toBeVisible({ timeout: 30000 });
+  expect(await profileId(target)).toBe(targetStableId);
+  expect(await target.evaluate(() => JSON.parse(localStorage.getItem('media-app.browser-identity')))).toMatchObject({
+    clientId: targetStableId, deviceId: `browser:${targetStableId}`, name: 'Kitchen tablet', room: 'Kitchen',
+  });
+  await expect.poll(() => received.get(target).filter(message => message.type === 'identify_ack' && message.ok === true).length).toBeGreaterThan(1);
 
-  const commandId = `acceptance-queue-${Date.now()}`;
-  const ack = await caller.evaluate(async ({ callerId, targetId, commandId }) => {
+  await caller.getByTestId('app-nav-fleet').click();
+  const targetCard = caller.getByTestId(`fleet-card-browser:${targetStableId}`);
+  await expect(targetCard).toContainText('Kitchen tablet', { timeout: 30000 });
+  await expect(targetCard).toContainText('Kitchen');
+
+  const commandId = `acceptance-routine-${Date.now()}`;
+  const result = await caller.evaluate(async ({ callerId, targetId, commandId }) => {
     const { wsService } = await import('/src/services/WebSocketService.js');
     const { createClientControlCorrelator } = await import('/src/modules/Media/externalControl/clientControlCorrelator.js');
     const correlator = createClientControlCorrelator({ controlClientId: callerId, service: wsService });
+    const send = command => correlator.send({ targetControlClientId: targetId, command });
     try {
-      return await correlator.send({ targetControlClientId: targetId,
-        command: { commandId, command: 'queue', params: { op: 'add', contentId: 'plex:55854' } } });
+      const origin = { kind: 'routine', name: 'Breakfast', triggerId: 'daily-0700' };
+      const first = await send({ commandId, command: 'queue', params: { op: 'play-now', contentId: 'plex:55854' }, origin });
+      const duplicate = await send({ commandId: `${commandId}-duplicate`, command: 'queue', params: { op: 'play-now', contentId: 'plex:55854' }, origin });
+      const human = await send({ commandId: `${commandId}-human`, command: 'queue', params: { op: 'add', contentId: 'plex:697368' }, origin: { kind: 'device', id: `browser:${callerId}` } });
+      return { first, duplicate, human };
     } finally { correlator.dispose(); }
   }, { callerId: identity(caller), targetId: identity(target), commandId });
-  expect(ack).toMatchObject({ commandId, clientId: identity(target), ok: true });
+  expect(result.first).toMatchObject({ commandId, clientId: identity(target), ok: true });
+  expect(result.duplicate).toMatchObject({ commandId: `${commandId}-duplicate`, clientId: identity(target), ok: true });
+  expect(result.human).toMatchObject({ commandId: `${commandId}-human`, clientId: identity(target), ok: true });
   expect(received.get(target).find(message => message.commandId === commandId)).toMatchObject({
-    topic: `client-control:${identity(target)}`, params: { op: 'add', contentId: 'plex:55854' },
+    topic: `client-control:${identity(target)}`, params: { op: 'play-now', contentId: 'plex:55854' },
+    origin: { kind: 'routine', name: 'Breakfast', triggerId: 'daily-0700' },
   });
+  const native = target.locator('.video-player video');
+  await expect(native).toBeVisible({ timeout: 60000 });
+  await expect.poll(() => native.evaluate(video => video.readyState >= 2 && !video.paused && video.currentTime > 0), { timeout: 30000 }).toBe(true);
   await target.getByTestId('mini-player-open-nowplaying').click();
-  await expect(target.getByTestId('queue-panel').locator('.queue-item-title')).toHaveCount(1);
+  await expect(target.getByTestId('queue-panel').locator('.queue-item-title')).toHaveCount(2);
+  await expect(target.getByTestId('queue-panel')).toContainText('Arrival');
+  await expect.poll(() => native.evaluate(video => video.currentTime), { timeout: 30000 }).toBeGreaterThan(5);
+  const beforeReloadSeconds = await native.evaluate(video => video.currentTime);
+  await target.reload();
+  await expect(target.getByRole('textbox', { name: 'Search media…' })).toBeVisible({ timeout: 30000 });
+  expect(await profileId(target)).toBe(targetStableId);
+  const resumedNative = target.locator('.video-player video');
+  await expect(resumedNative).toBeVisible({ timeout: 60000 });
+  await expect.poll(() => resumedNative.evaluate(video => ({ ready: video.readyState >= 2, paused: video.paused, seconds: video.currentTime })), { timeout: 30000 })
+    .toMatchObject({ ready: true, paused: false, seconds: expect.any(Number) });
+  expect(await resumedNative.evaluate(video => video.currentTime)).toBeGreaterThanOrEqual(Math.max(0, beforeReloadSeconds - 3));
+  await target.getByTestId('mini-player-open-nowplaying').click();
+  await expect(target.getByTestId('queue-panel').locator('.queue-item-title')).toHaveCount(2);
   await expect(caller.getByTestId('mini-player-open-nowplaying')).toHaveCount(0);
-  await expect(target.locator('video')).toHaveCount(0);
+  await expect(targetCard).toContainText('Arrival', { timeout: 30000 });
+  await expect(targetCard.locator('img')).toBeVisible();
+  await expect(targetCard.getByRole('progressbar')).toBeVisible();
+  await expect(caller.locator('[data-testid^="fleet-card-"]').first()).toHaveAttribute('data-testid', `fleet-card-browser:${targetStableId}`);
   expect(received.get(caller).filter(message => message.topic === `client-control:${identity(target)}`)).toEqual([]);
   expect(hardwareWrites).toEqual([]);
-  await target.close();
+  } finally {
+    await Promise.all([callerContext.close(), targetContext.close()]);
+  }
 });

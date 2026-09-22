@@ -1,4 +1,5 @@
 import { PLAYBACK_STATE_TOPIC } from '#shared/contracts/media/topics.mjs';
+import { validatePlaybackStateBroadcast } from '#shared-contracts/media/envelopes.mjs';
 
 /** Translates media command frames into MediaQueueCommandService calls. */
 export class EventBusMediaCommandIngress {
@@ -31,12 +32,55 @@ export class EventBusPlaybackStateRelay {
   }
 
   attach() {
+    const byConnection = new Map();
     this.eventBus.onClientMessage((clientId, message) => {
       if (message.topic !== 'playback_state') return;
-      const broadcastId = message.deviceId || message.clientId;
-      if (!broadcastId) return;
-      this.logger.debug?.('eventbus.playback_state.relay', { from: clientId, broadcastId, state: message.state });
-      this.eventBus.broadcast(PLAYBACK_STATE_TOPIC, message);
+      const registeredClientId = this.eventBus.getClientMeta?.(clientId)?.clientId;
+      const identity = message.identity;
+      if (identity) {
+        if (!registeredClientId || identity.clientId !== registeredClientId) {
+          this.logger.warn?.('eventbus.playback_state.identity-mismatch', { clientId });
+          return;
+        }
+        const deviceId = `browser:${registeredClientId}`;
+        const canonical = {
+          ...message,
+          identity: { ...identity, clientId: registeredClientId, deviceId },
+          clientId: registeredClientId,
+          deviceId,
+          ownerId: registeredClientId,
+          displayName: identity.name,
+          connected: message.connected !== false,
+          lastHeardAt: message.lastHeardAt ?? message.ts ?? new Date().toISOString(),
+        };
+        if (!validatePlaybackStateBroadcast(canonical).valid) {
+          this.logger.warn?.('eventbus.playback_state.invalid', { clientId });
+          return;
+        }
+        byConnection.set(clientId, canonical);
+        this.logger.debug?.('eventbus.playback_state.relay', {
+          from: clientId, broadcastId: canonical.deviceId, state: canonical.state,
+        });
+        this.eventBus.broadcast(PLAYBACK_STATE_TOPIC, canonical);
+        return;
+      }
+      this.logger.warn?.('eventbus.playback_state.missing-identity', { clientId });
+    });
+    this.eventBus.onClientDisconnection?.((clientId) => {
+      const last = byConnection.get(clientId);
+      if (!last) return;
+      byConnection.delete(clientId);
+      const ts = new Date().toISOString();
+      this.eventBus.broadcast(PLAYBACK_STATE_TOPIC, {
+        ...last,
+        state: 'stopped',
+        currentItem: null,
+        position: 0,
+        connected: false,
+        reason: 'disconnect',
+        ts,
+        lastHeardAt: last.lastHeardAt ?? ts,
+      });
     });
   }
 }

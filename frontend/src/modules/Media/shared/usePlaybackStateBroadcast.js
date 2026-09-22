@@ -1,79 +1,93 @@
-// frontend/src/modules/Media/shared/usePlaybackStateBroadcast.js
-// Publish the local session's live state on the playback_state topic (C8.3,
-// C10.3): on every state change, every PLAYBACK_HEARTBEAT_MS while playing,
-// and a terminal `stopped` on unmount. External dashboards consume this —
-// keep the message shape stable (§9.10).
+// The browser's one authoritative house-state publication path. LocalSessionProvider
+// mounts this hook once; Fleet consumes only the relayed playback_state projection.
 import { useEffect, useRef } from 'react';
+import { buildPlaybackStateBroadcast } from '@shared-contracts/media/envelopes.mjs';
 import { TIMING } from '../constants.js';
 
-function buildMessage({ clientId, sessionId, displayName, state, currentItem, position, config }) {
-  // Hidden items (internal control markers) must not appear in broadcasts.
-  const visibleItem = currentItem?.hidden ? null : (currentItem ?? null);
+function legacyIdentity({ clientId, displayName }) {
   return {
-    topic: 'playback_state',
     clientId,
-    sessionId,
-    displayName,
-    state,
-    currentItem: visibleItem,
-    position: position ?? 0,
-    duration: visibleItem?.duration ?? null,
-    config: config ?? null,
-    ts: new Date().toISOString(),
+    deviceId: `browser:${clientId}`,
+    name: displayName,
+    connectedAt: new Date().toISOString(),
   };
 }
 
-export function usePlaybackStateBroadcast({ send, clientId, displayName, snapshot }) {
-  const lastStateRef = useRef(null);
+function revisionOf(snapshot) {
+  const owner = snapshot?.meta?.playbackOwner;
+  if (Number.isInteger(snapshot?.meta?.revision)) return snapshot.meta.revision;
+  if (Number.isInteger(owner?.playbackRevision) || Number.isInteger(owner?.queueRevision)) {
+    return Math.max(owner?.playbackRevision ?? 0, owner?.queueRevision ?? 0);
+  }
+  return 0;
+}
+
+function buildMessage({ identity, snapshot, reason, connected = true }) {
+  const visibleItem = snapshot?.currentItem?.hidden ? null : (snapshot?.currentItem ?? null);
+  const lastHeardAt = new Date().toISOString();
+  return buildPlaybackStateBroadcast({
+    identity,
+    clientId: identity.clientId,
+    deviceId: identity.deviceId,
+    ownerId: snapshot?.meta?.ownerId ?? identity.clientId,
+    revision: revisionOf(snapshot),
+    origin: snapshot?.meta?.origin,
+    sessionId: snapshot?.sessionId ?? `browser:${identity.clientId}`,
+    displayName: identity.name,
+    state: snapshot?.state ?? 'idle',
+    currentItem: visibleItem,
+    position: snapshot?.position ?? 0,
+    duration: visibleItem?.duration ?? 0,
+    queue: snapshot?.queue ?? { items: [], currentIndex: -1, upNextCount: 0 },
+    config: snapshot?.config ?? { shuffle: false, repeat: 'off', shader: null, volume: 50, playbackRate: 1 },
+    connected,
+    lastHeardAt,
+    reason,
+    ts: lastHeardAt,
+  });
+}
+
+export function usePlaybackStateBroadcast({ send, identity: providedIdentity, clientId, displayName, snapshot }) {
+  const identity = providedIdentity ?? legacyIdentity({ clientId, displayName });
+  const latestRef = useRef({ snapshot, send, identity });
+  latestRef.current = { snapshot, send, identity };
+  const publishedRef = useRef(false);
 
   useEffect(() => {
-    if (!snapshot) return;
-    if (lastStateRef.current !== snapshot.state) {
-      send(buildMessage({
-        clientId, displayName,
-        sessionId: snapshot.sessionId,
-        state: snapshot.state,
-        currentItem: snapshot.currentItem,
-        position: snapshot.position,
-        config: snapshot.config,
-      }));
-      lastStateRef.current = snapshot.state;
-    }
-  }, [send, clientId, displayName, snapshot]);
+    if (!snapshot || !identity?.clientId) return;
+    send(buildMessage({
+      identity,
+      snapshot,
+      reason: publishedRef.current ? 'change' : 'initial',
+    }));
+    publishedRef.current = true;
+  }, [send, identity, snapshot]);
 
   useEffect(() => {
-    if (!snapshot || snapshot.state !== 'playing') return undefined;
+    if (!identity?.clientId) return undefined;
     const id = setInterval(() => {
-      send(buildMessage({
-        clientId, displayName,
-        sessionId: snapshot.sessionId,
-        state: snapshot.state,
-        currentItem: snapshot.currentItem,
-        position: snapshot.position,
-        config: snapshot.config,
-      }));
+      const latest = latestRef.current;
+      if (!latest.snapshot) return;
+      latest.send(buildMessage({ ...latest, reason: 'heartbeat' }));
     }, TIMING.PLAYBACK_HEARTBEAT_MS);
     return () => clearInterval(id);
-  }, [send, clientId, displayName, snapshot]);
+  }, [identity?.clientId]);
 
-  // Terminal stopped on unmount. The cleanup must report the CURRENT
-  // session, not the one from first render — sessions rotate on reset and
-  // adoption, and external consumers correlate by sessionId (§10.3).
-  const latestRef = useRef({ snapshot, send, clientId, displayName });
-  latestRef.current = { snapshot, send, clientId, displayName };
   useEffect(() => {
-    return () => {
+    const publishClosed = () => {
       const latest = latestRef.current;
-      latest.send({
-        topic: 'playback_state',
-        clientId: latest.clientId,
-        sessionId: latest.snapshot?.sessionId,
-        displayName: latest.displayName,
-        state: 'stopped',
-        currentItem: null,
-        position: 0,
-        ts: new Date().toISOString(),
-      });
+      if (!latest.identity?.clientId) return;
+      latest.send(buildMessage({
+        ...latest,
+        snapshot: { ...latest.snapshot, state: 'stopped', currentItem: null, position: 0 },
+        reason: 'disconnect',
+        connected: false,
+      }));
+    };
+    window.addEventListener('pagehide', publishClosed);
+    return () => {
+      window.removeEventListener('pagehide', publishClosed);
+      publishClosed();
     };
   }, []);
 }

@@ -79,6 +79,36 @@ export const P0_EXTENSION_ENTRIES = Object.freeze([
     file: 'media-app-browse-breadcrumb.runtime.test.mjs',
     grep: 'browse shows pictures, natural order, every parent, and collection actions',
   },
+  {
+    story: 'HOUSE.2a',
+    criteria: ['HOUSE.2a/AC3'],
+    file: 'media-app-browser-control.runtime.test.mjs',
+    grep: 'stable browser identities route a queue command through the actual receiver and return its ack',
+  },
+  {
+    story: 'HOUSE.3a',
+    criteria: ['HOUSE.3a/AC1', 'HOUSE.3a/AC3'],
+    file: 'media-app-house-browser-session.runtime.test.mjs',
+    grep: 'two browser devices agree on the local player title and state',
+  },
+  {
+    story: 'HOUSE.4a',
+    criteria: ['HOUSE.4a/AC2', 'HOUSE.4a/AC4'],
+    file: 'media-app-browser-control.runtime.test.mjs',
+    grep: 'stable browser identities route a queue command through the actual receiver and return its ack',
+  },
+  {
+    story: 'AUTO.3a',
+    criteria: ['AUTO.3a/AC1'],
+    file: 'media-app-browser-control.runtime.test.mjs',
+    grep: 'stable browser identities route a queue command through the actual receiver and return its ack',
+  },
+  {
+    story: 'AUTO.3a',
+    criteria: ['AUTO.3a/AC2'],
+    file: 'media-app-house-browser-session.runtime.test.mjs',
+    grep: 'two browser devices agree on the local player title and state',
+  },
 ]);
 
 const STABLE_ENTRIES = [...ACCEPTED_STORIES, ...SUPPORTING_ACCEPTED_CRITERIA];

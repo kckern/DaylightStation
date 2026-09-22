@@ -24,11 +24,11 @@ import { publish } from '../net/ws.js';
 import mediaLog from '../logging/mediaLog.js';
 
 function SessionSideEffects() {
-  const { clientId, displayName } = useClientIdentity();
+  const identity = useClientIdentity();
   const { controller, snapshot } = useSessionController('local');
   useUrlCommand(controller);
   useExternalControl(controller);
-  usePlaybackStateBroadcast({ send: publish, clientId, displayName, snapshot });
+  usePlaybackStateBroadcast({ send: publish, identity, snapshot });
   return null;
 }
 
@@ -75,25 +75,6 @@ export function LocalSessionProvider({ children }) {
   useEffect(() => () => controller.detachers?.forEach((d) => d()), [controller]);
 
   const value = useMemo(() => ({ controller }), [controller]);
-
-  // Terminal broadcast on tab close (C10.3): the unmount broadcast in
-  // usePlaybackStateBroadcast covers SPA unmounts; beforeunload covers the
-  // browser closing the tab.
-  useEffect(() => {
-    const onUnload = () => {
-      try {
-        publish({
-          topic: 'playback_state',
-          clientId,
-          sessionId: controller.getSnapshot().sessionId,
-          state: 'stopped',
-          ts: new Date().toISOString(),
-        });
-      } catch { /* ignore */ }
-    };
-    window.addEventListener('beforeunload', onUnload);
-    return () => window.removeEventListener('beforeunload', onUnload);
-  }, [controller, clientId]);
 
   return (
     <LocalSessionContext.Provider value={value}>

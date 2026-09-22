@@ -57,6 +57,11 @@ describe('sessionReducer', () => {
     expect(next.config.repeat).toBe('off'); // untouched
   });
 
+  it('SET_ORIGIN copies command provenance into session metadata', () => {
+    const origin = { kind: 'routine', name: 'Breakfast', triggerId: 'daily-0700' };
+    expect(reduce(snap(), { type: 'SET_ORIGIN', origin }).meta.origin).toEqual(origin);
+  });
+
   it('touches meta.updatedAt on every reduction', async () => {
     const before = snap();
     // Small delay to ensure timestamp differs

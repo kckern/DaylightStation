@@ -76,11 +76,17 @@ export function createLocalSessionController({
   clearPersisted = () => {},
   fetchImpl = undefined, // container expansion; defaults to globalThis.fetch
 } = {}) {
-  const initial = persistedSnapshot ?? createIdleSessionSnapshot({
+  const restored = persistedSnapshot ?? createIdleSessionSnapshot({
     sessionId: randomUuid(),
     ownerId: clientId,
     now: nowFn(),
   });
+  let canonicalRevision = Number.isInteger(restored.meta?.revision) ? restored.meta.revision : 0;
+  let pendingOrigin = null;
+  const initial = {
+    ...restored,
+    meta: { ...restored.meta, revision: canonicalRevision },
+  };
   const store = createSessionStore(initial);
   const position = createPositionChannel();
   position.set(initial.position ?? 0);
@@ -111,6 +117,13 @@ export function createLocalSessionController({
   // Revisions change at the owner action boundary. Metadata/position updates
   // are deliberately absent so an enrichment cannot invalidate a move guard.
   store.onTransition((prev, next, action) => {
+    canonicalRevision += 1;
+    next.meta = {
+      ...next.meta,
+      revision: canonicalRevision,
+      ...(pendingOrigin ? { origin: pendingOrigin } : {}),
+    };
+    pendingOrigin = null;
     if (['STOP', 'RESET'].includes(action?.type)) stopRevision += 1;
     if (action?.type === 'ADOPT_SNAPSHOT' || queueFingerprint(prev) !== queueFingerprint(next)) {
       queueRevision += 1;
@@ -128,6 +141,9 @@ export function createLocalSessionController({
   };
 
   const snap = () => store.getSnapshot();
+  const beginAction = () => {
+    if (!pendingOrigin) pendingOrigin = { kind: 'device', id: `browser:${clientId}` };
+  };
 
   const currentIdentity = (snapshot = snap()) => {
     const items = snapshot.queue?.items ?? [];
@@ -381,6 +397,7 @@ export function createLocalSessionController({
   };
 
   const setConfig = (patch) => {
+    beginAction();
     mediaLog.configChanged({ sessionId: snap().sessionId, patch });
     store.dispatch({ type: 'SET_CONFIG', patch });
   };
@@ -451,6 +468,7 @@ export function createLocalSessionController({
   // behavior. Expansion failure or zero children degrades to the single-item
   // path: the tap always enqueues SOMETHING.
   const enqueue = (op, input, opts) => {
+    beginAction();
     const apply = enqueueAppliers[op];
     const context = { contentId: input?.contentId };
     if (!isContainerInput(input)) {
@@ -477,10 +495,14 @@ export function createLocalSessionController({
 
     getSnapshot: () => store.getSnapshot(),
     subscribe: (fn) => store.subscribe(fn),
+    // The origin is attached atomically to the next real state transition.
+    // A rejected command therefore cannot change provenance on its own.
+    setOrigin: (origin) => { pendingOrigin = origin ?? null; },
     position: { get: position.get, subscribe: position.subscribe },
 
     transport: {
       play: () => {
+        beginAction();
         mediaLog.transportCommand({ action: 'play', target: 'local' });
         // Playing from a stopped/ready session starts the queue head.
         if (!snap().currentItem) {
@@ -491,6 +513,7 @@ export function createLocalSessionController({
         player.play();
       },
       pause: () => {
+        beginAction();
         mediaLog.transportCommand({ action: 'pause', target: 'local' });
         // Flush the hot-tier position durably — pausing is the moment the
         // user expects "their place" to be saved.
@@ -499,6 +522,7 @@ export function createLocalSessionController({
         player.pause();
       },
       stop: () => {
+        beginAction();
         mediaLog.transportCommand({ action: 'stop', target: 'local' });
         player.pause();
         // Stop ends playback but does NOT destroy the queue — only the
@@ -508,10 +532,12 @@ export function createLocalSessionController({
         position.set(0);
       },
       seekAbs: (seconds) => {
+        beginAction();
         mediaLog.transportCommand({ action: 'seekAbs', value: seconds, target: 'local' });
         player.seek(seconds);
       },
       seekRel: (delta) => {
+        beginAction();
         mediaLog.transportCommand({ action: 'seekRel', value: delta, target: 'local' });
         const mediaTime = player.getMediaElement?.()?.currentTime;
         const current = typeof mediaTime === 'number' && Number.isFinite(mediaTime)
@@ -520,14 +546,17 @@ export function createLocalSessionController({
         controller.transport.seekAbs(Math.max(0, current + delta));
       },
       skipNext: () => {
+        beginAction();
         mediaLog.transportCommand({ action: 'skipNext', target: 'local' });
         advance('skip-next');
       },
       skipPrev: () => {
+        beginAction();
         mediaLog.transportCommand({ action: 'skipPrev', target: 'local' });
         advanceBack();
       },
       restartCurrent: () => {
+        beginAction();
         mediaLog.transportCommand({ action: 'restartCurrent', target: 'local' });
         controller.transport.seekAbs(0);
       },
@@ -539,6 +568,7 @@ export function createLocalSessionController({
       addUpNext: (input) => enqueue('addUpNext', input),
       add: (input) => enqueue('add', input),
       remove: (queueItemId) => {
+        beginAction();
         const wasCurrent = snap().queue.items[snap().queue.currentIndex]?.queueItemId === queueItemId;
         const next = qOps.remove(snap(), queueItemId);
         logQueueMutation('remove', next, { queueItemId });
@@ -552,17 +582,20 @@ export function createLocalSessionController({
         }
       },
       reorder: (input) => {
+        beginAction();
         const next = qOps.reorder(snap(), input);
         logQueueMutation('reorder', next);
         store.replace(next);
       },
       jump: (queueItemId) => {
+        beginAction();
         const next = qOps.jump(snap(), queueItemId);
         logQueueMutation('jump', next, { queueItemId });
         store.replace(next);
         loadCurrent(next);
       },
       clear: () => {
+        beginAction();
         const next = qOps.clear(snap());
         logQueueMutation('clear', next);
         store.replace(next);
@@ -588,12 +621,14 @@ export function createLocalSessionController({
 
     lifecycle: {
       reset: () => {
+        beginAction();
         mediaLog.sessionReset({ sessionId: snap().sessionId });
         clearPersisted();
         store.dispatch({ type: 'RESET', newSessionId: randomUuid() });
         position.set(0);
       },
       adoptSnapshot: (snapshot, { autoplay = true } = {}) => {
+        beginAction();
         return adopt(snapshot, { autoplay });
       },
     },
