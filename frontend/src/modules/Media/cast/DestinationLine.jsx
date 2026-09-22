@@ -16,9 +16,8 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Modal } from '@mantine/core';
 import { IconPlayerPlayFilled } from '@tabler/icons-react';
 import { useCastTarget } from './useCastTarget.js';
-import { useFleetContext } from '../fleet/useFleetContext.js';
-import { deviceName } from '../fleet/deviceDisplay.js';
 import { DispatchTargetPicker } from './DispatchTargetPicker.jsx';
+import { GlobalAimLabel } from './AimLabel.jsx';
 import { useDismissLayer } from '../shell/useDismissLayer.js';
 import mediaLog from '../logging/mediaLog.js';
 import './Cast.scss';
@@ -27,14 +26,6 @@ import './Cast.scss';
 // at the document root, so its default modal layer (200) would sit behind the
 // search surface and leave the visible picker unable to receive pointer taps.
 const DESTINATION_MODAL_Z_INDEX = 600;
-
-function destinationLabel(targetIds, devices) {
-  if (targetIds.length === 0) return 'This device';
-  if (targetIds.length === 1) {
-    return deviceName(devices.find((d) => d.id === targetIds[0]), targetIds[0]);
-  }
-  return `${targetIds.length} devices`;
-}
 
 // Order-independent identity for the destination_changed from/to fields —
 // picking the same two devices in a different order isn't a change.
@@ -54,8 +45,7 @@ export function DestinationLine({ surface, onInteractionStart, onInteractionEnd 
   const wasOpenRef = useRef(false);
   const interactionEndRef = useRef(onInteractionEnd);
   interactionEndRef.current = onInteractionEnd;
-  const { targetIds, clearTargets, toggleTarget, setMode } = useCastTarget();
-  const { devices } = useFleetContext();
+  const { targetIds, mode, clearTargets, toggleTarget, setMode } = useCastTarget();
 
   const close = useCallback(() => setOpen(false), []);
   // Mantine's own window-capture Escape can close and unregister the Modal
@@ -133,8 +123,6 @@ export function DestinationLine({ surface, onInteractionStart, onInteractionEnd 
     finishInteraction();
   }, [open, finishInteraction]);
 
-  const name = destinationLabel(targetIds, devices);
-
   // The sheet body (DispatchTargetPicker) is the SAME tap-a-device cast
   // picker used everywhere else — reused, not redesigned. A pick here both
   // dispatches (when the picker had real content to send) and — the part
@@ -163,7 +151,10 @@ export function DestinationLine({ surface, onInteractionStart, onInteractionEnd 
         onFocus={handleTriggerFocus}
         onClick={openPicker}
       >
-        <IconPlayerPlayFilled size={14} aria-hidden="true" /> Playing to: <strong data-testid="destination-line-name">{name}</strong>
+        <IconPlayerPlayFilled size={14} aria-hidden="true" />
+        <span data-testid="destination-line-name">
+          <GlobalAimLabel compact />
+        </span>
       </button>
       <Modal
         opened={open}

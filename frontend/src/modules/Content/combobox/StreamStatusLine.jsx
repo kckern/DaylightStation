@@ -38,7 +38,53 @@ import { sourceLabel } from '../lib/sourceLabels.js';
  * @param {(source: string) => void} [props.onRetry] - called per errored
  *   source's Retry button
  */
-export function StreamStatusLine({ pending = [], sourceErrors = [], onRetry }) {
+function failureLabel(source) {
+  if (String(source).toLowerCase() === 'plex') return 'Plex';
+  return sourceLabel(source) || source;
+}
+
+export function StreamStatusLine({ state = null, pending = [], sourceErrors = [], widening = null, onRetry }) {
+  const effectiveState = state ?? (widening?.active ? { sources: {}, failedSources: [] } : null);
+  if (effectiveState) {
+    const pendingSources = Object.entries(effectiveState.sources ?? {})
+      .filter(([, status]) => status === 'pending')
+      .map(([source]) => source);
+    const failedSources = effectiveState.failedSources ?? [];
+    if (pendingSources.length === 0 && failedSources.length === 0 && !widening?.active) return null;
+    return (
+      <div data-testid="stream-status-line" className="stream-status-line" aria-live="polite">
+        {failedSources.map((source) => (
+          <span key={source} className="stream-status-error-item">
+            <span>{failureLabel(source)} did not answer</span>
+            {onRetry && (
+              <button type="button" className="stream-status-retry-btn"
+                data-testid={`stream-status-retry-${source}`}
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => onRetry(source)}>
+                Retry
+              </button>
+            )}
+          </span>
+        ))}
+        {pendingSources.length > 0 && (
+          <span className="stream-status-line--pending">
+            <span className="stream-status-spinner" aria-hidden="true" />
+            <span>Still searching — {pendingSources.length} source{pendingSources.length === 1 ? '' : 's'} still answering</span>
+          </span>
+        )}
+        {widening?.active && (
+          <span className="stream-status-widening" data-testid={widening.testId || 'search-widening-divider'}>
+            Not in {widening.from || 'this kind'} — <strong>From everything:</strong>{' '}
+            {widening.resultCount > 0
+              ? `${widening.resultCount} result${widening.resultCount === 1 ? '' : 's'}`
+              : failedSources.length > 0
+                ? 'results may be incomplete. Retry the source above.'
+              : `no matches. Check the spelling or browse ${widening.from || 'this kind'}.`}
+          </span>
+        )}
+      </div>
+    );
+  }
   if (pending.length > 0) {
     return (
       <div data-testid="stream-status-line" className="stream-status-line stream-status-line--pending" aria-live="polite">

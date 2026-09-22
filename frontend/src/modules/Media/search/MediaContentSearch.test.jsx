@@ -10,7 +10,7 @@ const dispatch = vi.fn();
 const dispatchLeafVerb = vi.fn();
 const playContainerAsQueue = vi.fn();
 const addContainerToQueue = vi.fn();
-const info = vi.fn();
+const { info } = vi.hoisted(() => ({ info: vi.fn() }));
 
 vi.mock('./useContentDispatch.js', () => ({
   useContentDispatch: () => ({ dispatch, dispatchLeafVerb, playContainerAsQueue, addContainerToQueue }),
@@ -232,11 +232,11 @@ describe('MediaContentSearch', () => {
       expect(notificationsShow).not.toHaveBeenCalled();
     });
 
-    it('⋯ Play Next calls queue.playNext', () => {
+    it('⋯ Play Next follows the displayed destination', () => {
       render(<MediaContentSearch />);
       fireEvent.click(screen.getByTestId('more-play-next'));
 
-      expect(queuePlayNext).toHaveBeenCalledWith(expect.objectContaining({ contentId: 'plex:685088' }));
+      expect(dispatchLeafVerb).toHaveBeenCalledWith('playNext', 'plex:685088', expect.objectContaining({ id: 'plex:685088' }));
     });
 
     it('⋯ Play Now routes the leaf through the current aim instead of a local applier', () => {

@@ -9,6 +9,7 @@ export const TRANSPORT_ACTIONS = Object.freeze([
 export const QUEUE_OPS = Object.freeze([
   'play-now', 'play-next', 'add-up-next', 'add',
   'reorder', 'remove', 'jump', 'clear',
+  'item-action', 'undo',
 ]);
 
 export const CONFIG_SETTINGS = Object.freeze(['shuffle', 'repeat', 'shader', 'volume']);

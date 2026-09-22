@@ -380,3 +380,19 @@
     outline-offset: 1px;
   }
 }
+.cast-aim-label {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.2rem;
+}
+
+.cast-aim-label-prefix {
+  opacity: 0.72;
+}
+
+.cast-aim-busy,
+.cast-aim-behavior {
+  font-size: 0.85em;
+  opacity: 0.82;
+}

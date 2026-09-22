@@ -1,5 +1,5 @@
 // frontend/src/hooks/useStreamingSearch.js
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef, useEffect, useReducer } from 'react';
 import getLogger from '../lib/logging/Logger.js';
 
 let _logger;
@@ -61,6 +61,97 @@ function crossSourceKey(item) {
   const title = String(item?.title ?? '').trim().toLowerCase().replace(/\s+/g, ' ');
   if (!title) return null;
   return `${title}|${String(item?.mediaType ?? '').toLowerCase()}`;
+}
+
+export const SEARCH_PHASE = Object.freeze({
+  IDLE: 'idle',
+  LOADING: 'loading',
+  PARTIAL: 'partial',
+  COMPLETE: 'complete',
+  FAILED: 'failed',
+});
+
+export const EMPTY_SEARCH_STATE = Object.freeze({
+  query: '',
+  scope: '',
+  sources: Object.freeze({}),
+  results: Object.freeze([]),
+  phase: SEARCH_PHASE.IDLE,
+  failedSources: Object.freeze([]),
+});
+
+function phaseFor({ sources, results, terminal = false, transportFailed = false }) {
+  const values = Object.values(sources);
+  const hasPending = values.includes('pending');
+  const hasFailed = values.includes('failed');
+  const hasCompleted = values.includes('complete');
+  if (transportFailed && results.length === 0 && !hasCompleted) return SEARCH_PHASE.FAILED;
+  if (hasFailed) return hasCompleted || results.length > 0 || hasPending ? SEARCH_PHASE.PARTIAL : SEARCH_PHASE.FAILED;
+  if (terminal) return SEARCH_PHASE.COMPLETE;
+  if (results.length > 0) return SEARCH_PHASE.PARTIAL;
+  return SEARCH_PHASE.LOADING;
+}
+
+export function searchStateReducer(state, event) {
+  switch (event.type) {
+    case 'START': {
+      const failedSources = event.preserveFailures ? state.failedSources : [];
+      const sources = event.preserveFailures
+        ? Object.fromEntries(failedSources.map((source) => [source, 'failed']))
+        : {};
+      return {
+        query: event.query,
+        scope: event.scope ?? '',
+        sources,
+        results: event.preserveResults ? state.results : [],
+        phase: SEARCH_PHASE.LOADING,
+        failedSources,
+      };
+    }
+    case 'PENDING': {
+      const pending = new Set(event.sources ?? []);
+      const sources = { ...state.sources };
+      for (const source of pending) if (sources[source] !== 'failed') sources[source] = 'pending';
+      return { ...state, sources, phase: phaseFor({ sources, results: state.results }) };
+    }
+    case 'RESULTS': {
+      const pending = new Set(event.pending ?? []);
+      const sources = { ...state.sources };
+      if (event.source && sources[event.source] !== 'failed') sources[event.source] = 'complete';
+      for (const source of pending) if (sources[source] !== 'failed') sources[source] = 'pending';
+      const results = mergeSearchResults(state.results, event.items ?? [], state.query);
+      return { ...state, sources, results, phase: phaseFor({ sources, results }) };
+    }
+    case 'SOURCE_FAILED': {
+      const sources = { ...state.sources, [event.source]: 'failed' };
+      for (const source of event.pending ?? []) if (sources[source] !== 'failed') sources[source] = 'pending';
+      const failedSources = state.failedSources.includes(event.source)
+        ? state.failedSources
+        : [...state.failedSources, event.source];
+      return { ...state, sources, failedSources, phase: phaseFor({ sources, results: state.results }) };
+    }
+    case 'RETRY_SOURCE': {
+      const sources = { ...state.sources, [event.source]: 'pending' };
+      const failedSources = state.failedSources.filter((source) => source !== event.source);
+      return { ...state, sources, failedSources, phase: phaseFor({ sources, results: state.results }) };
+    }
+    case 'COMPLETE': {
+      const stillOwned = new Set(event.stillOwned ?? []);
+      const sources = Object.fromEntries(Object.entries(state.sources).map(([source, status]) => {
+        const belongsToCompletedRequest = event.source
+          ? source === event.source
+          : !stillOwned.has(source);
+        return [source, belongsToCompletedRequest && status === 'pending' ? 'complete' : status];
+      }));
+      return { ...state, sources, phase: phaseFor({ sources, results: state.results, terminal: true }) };
+    }
+    case 'TRANSPORT_FAILED':
+      return { ...state, phase: phaseFor({ sources: state.sources, results: state.results, transportFailed: true }) };
+    case 'CLEAR':
+      return { ...EMPTY_SEARCH_STATE, sources: {}, results: [], failedSources: [] };
+    default:
+      return state;
+  }
 }
 
 /**
@@ -136,11 +227,9 @@ export function mergeSearchResults(prev, incoming, query) {
  */
 export function useStreamingSearch(endpoint, extraQueryString = '', options = {}) {
   const streamDeadlineMs = options.streamDeadlineMs ?? 30000;
-  const [results, setResults] = useState([]);
-  const [pending, setPending] = useState([]);
-  const [isSearching, setIsSearching] = useState(false);
+  const [state, dispatchState] = useReducer(searchStateReducer, EMPTY_SEARCH_STATE);
   const [error, setError] = useState(null);
-  const [sourceErrors, setSourceErrors] = useState([]);
+  const sourceErrorDetailsRef = useRef(new Map());
   const queryRef = useRef('');
   const resultCountRef = useRef(0);
   const startedAtRef = useRef(null);
@@ -154,7 +243,7 @@ export function useStreamingSearch(endpoint, extraQueryString = '', options = {}
     for (const request of requestsRef.current) {
       if (request.source && request.sourcePending) names.add(request.source);
     }
-    setPending([...names]);
+    dispatchState({ type: 'PENDING', sources: [...names] });
   }, []);
 
   const closeRequest = useCallback((request) => {
@@ -181,6 +270,7 @@ export function useStreamingSearch(endpoint, extraQueryString = '', options = {}
 
   const startRequest = useCallback((query, effectiveExtra, {
     preserveResults = false,
+    preserveFailures = false,
     source = null,
     replaceGeneration = true,
   } = {}) => {
@@ -189,16 +279,16 @@ export function useStreamingSearch(endpoint, extraQueryString = '', options = {}
       generationRef.current += 1;
       primaryPendingRef.current = new Set();
       setError(null);
-      setSourceErrors([]);
+      if (!preserveFailures) sourceErrorDetailsRef.current = new Map();
       if (!preserveResults) {
         resultCountRef.current = 0;
-        setResults([]);
       }
     } else {
       // A source retry is a sibling of the active primary stream. It must not
       // retire that stream: other sources may still be validly pending.
       setError(null);
-      setSourceErrors(prev => prev.filter((entry) => entry.source !== source));
+      sourceErrorDetailsRef.current.delete(source);
+      dispatchState({ type: 'RETRY_SOURCE', source });
     }
 
     queryRef.current = query;
@@ -206,7 +296,11 @@ export function useStreamingSearch(endpoint, extraQueryString = '', options = {}
       currentSearchRef.current = { query, effectiveExtra, generation: generationRef.current };
     }
     if (replaceGeneration) startedAtRef.current = Date.now();
-    setIsSearching(true);
+    if (replaceGeneration) {
+      dispatchState({
+        type: 'START', query, scope: effectiveExtra ?? '', preserveResults, preserveFailures,
+      });
+    }
     recomputePending();
 
     const url = `${endpoint}?text=${encodeURIComponent(query)}${effectiveExtra ? '&' + effectiveExtra : ''}`;
@@ -243,19 +337,21 @@ export function useStreamingSearch(endpoint, extraQueryString = '', options = {}
         ? (request.sourcePending ? [request.source] : [])
         : [...primaryPendingRef.current];
       if (promoteUnanswered && unanswered.length > 0) {
-        setSourceErrors(prev => {
-          const existing = new Set(prev.map((entry) => entry.source));
-          return [...prev, ...unanswered
-            .filter((name) => !existing.has(name))
-            .map((name) => ({ source: name, error: sourceError ?? failure?.message ?? 'Search stream ended before all sources answered.' }))];
-        });
+        for (const name of unanswered) {
+          if (!sourceErrorDetailsRef.current.has(name)) {
+            sourceErrorDetailsRef.current.set(name, sourceError ?? failure?.message ?? 'Search stream ended before all sources answered.');
+            dispatchState({ type: 'SOURCE_FAILED', source: name });
+          }
+        }
       }
       closeRequest(request);
       if (request.source) request.sourcePending = false;
       else primaryPendingRef.current = new Set();
-      if (failure) setError(failure);
       recomputePending();
-      if (requestsRef.current.size === 0) setIsSearching(false);
+      if (failure) {
+        setError(failure);
+        dispatchState({ type: 'TRANSPORT_FAILED' });
+      }
     };
 
     const timeout = () => {
@@ -284,11 +380,8 @@ export function useStreamingSearch(endpoint, extraQueryString = '', options = {}
           recomputePending();
         } else if (data.event === 'results') {
           const newItems = data.items?.length || 0;
-          setResults(prev => {
-            const merged = mergeSearchResults(prev, data.items ?? [], request.query);
-            resultCountRef.current = merged.length;
-            return merged;
-          });
+          resultCountRef.current += data.items?.length ?? 0;
+          dispatchState({ type: 'RESULTS', source: data.source, items: data.items ?? [], pending: data.pending ?? [] });
           logger().info('search.results-received', { source: data.source, newItems });
           if (request.source) request.sourcePending = false;
           else primaryPendingRef.current = new Set(Array.isArray(data.pending) ? data.pending : []);
@@ -300,13 +393,17 @@ export function useStreamingSearch(endpoint, extraQueryString = '', options = {}
             totalMs: startedAtRef.current ? Date.now() - startedAtRef.current : null,
           });
           finish();
+          dispatchState({
+            type: 'COMPLETE',
+            source: request.source,
+            stillOwned: [...requestsRef.current]
+              .filter((activeRequest) => activeRequest.source && activeRequest.sourcePending)
+              .map((activeRequest) => activeRequest.source),
+          });
         } else if (data.event === 'source_error') {
           logger().warn('search.source-error', { query: request.query, source: data.source, error: data.error });
-          setSourceErrors(prev => (
-            prev.some((entry) => entry.source === data.source)
-              ? prev
-              : [...prev, { source: data.source, error: data.error }]
-          ));
+          sourceErrorDetailsRef.current.set(data.source, data.error);
+          dispatchState({ type: 'SOURCE_FAILED', source: data.source, pending: data.pending ?? [] });
           if (request.source) request.sourcePending = false;
           else if (Array.isArray(data.pending)) primaryPendingRef.current = new Set(data.pending);
           else primaryPendingRef.current.delete(data.source);
@@ -336,23 +433,21 @@ export function useStreamingSearch(endpoint, extraQueryString = '', options = {}
     };
   }, [cancelAllRequests, closeRequest, endpoint, recomputePending, streamDeadlineMs]);
 
-  const search = useCallback((query, overrideExtraQuery) => {
+  const search = useCallback((query, overrideExtraQuery, searchOptions = {}) => {
     // Short queries: clear and don't search
     if (!query || query.length < 2) {
       cancelAllRequests('clear-or-short-query');
       generationRef.current += 1;
       currentSearchRef.current = null;
       setError(null);
-      setResults([]);
-      setPending([]);
-      setSourceErrors([]);
-      setIsSearching(false);
+      sourceErrorDetailsRef.current = new Map();
+      dispatchState({ type: 'CLEAR' });
       return;
     }
 
     // Use override if provided, otherwise use hook-level extraQueryString
     const effectiveExtra = overrideExtraQuery !== undefined ? overrideExtraQuery : extraQueryString;
-    startRequest(query, effectiveExtra);
+    startRequest(query, effectiveExtra, searchOptions);
   }, [cancelAllRequests, extraQueryString, startRequest]);
 
   // Intent can change before a consumer's debounce has chosen the next query.
@@ -364,11 +459,9 @@ export function useStreamingSearch(endpoint, extraQueryString = '', options = {}
     currentSearchRef.current = null;
     queryRef.current = '';
     resultCountRef.current = 0;
-    setResults([]);
-    setPending([]);
     setError(null);
-    setSourceErrors([]);
-    setIsSearching(false);
+    sourceErrorDetailsRef.current = new Map();
+    dispatchState({ type: 'CLEAR' });
   }, [cancelAllRequests]);
 
   const retry = useCallback((source) => {
@@ -397,7 +490,23 @@ export function useStreamingSearch(endpoint, extraQueryString = '', options = {}
     });
   }, [startRequest]);
 
-  return { results, pending, isSearching, error, sourceErrors, search, retry, cancel };
+  const pending = Object.entries(state.sources)
+    .filter(([, status]) => status === 'pending')
+    .map(([source]) => source);
+  const sourceErrors = state.failedSources.map((source) => ({
+    source,
+    error: sourceErrorDetailsRef.current.get(source) ?? 'Search source did not answer.',
+  }));
+  // A source may legitimately send its final result batch with `pending: []`
+  // before the stream's terminal `complete` frame. The request still owns the
+  // lifecycle during that gap; treating it as settled makes consumers log an
+  // empty snapshot (their result projection effect has not run yet) and can
+  // start retry/widen recovery while the original stream is still open.
+  const isSearching = state.phase === SEARCH_PHASE.LOADING
+    || pending.length > 0
+    || requestsRef.current.size > 0;
+
+  return { state, results: state.results, pending, isSearching, error, sourceErrors, search, retry, cancel };
 }
 
 export default useStreamingSearch;

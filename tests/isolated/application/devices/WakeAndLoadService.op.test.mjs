@@ -63,6 +63,19 @@ describe('WakeAndLoadService op pass-through', () => {
       .filter((m) => m && m.command === 'queue');
   }
 
+  it('carries the same item operation through warm delivery and cold URL fallback', async () => {
+    const itemAction = { kind: 'playNow', operationId: 'op-1', tappedAt: 1000, clearRest: false, item: { contentId: 'plex:1', format: 'video' } };
+    const query = { play: 'plex:1', itemAction: JSON.stringify(itemAction) };
+    await svc.execute('tv', query, { dispatchId: 'd' });
+    expect(getQueueBroadcasts()[0].params).toMatchObject({ op: 'item-action', ...itemAction });
+    eventBus.getTopicSubscriberCount.mockReturnValue(0);
+    await svc.execute('tv', query, { dispatchId: 'cold' });
+    const coldQuery = device.loadContent.mock.calls.at(-1)[1];
+    expect(autoplayToAction(parseAutoplayParams(`?${new URLSearchParams(coldQuery)}`, AUTOPLAY_ACTIONS))).toEqual({
+      event: 'media:queue-op', payload: { op: 'item-action', ...itemAction, commandId: 'cold' },
+    });
+  });
+
   it('plain screen navigation does not attach a media dispatch id or wait for a receiver ack', async () => {
     await svc.execute('tv', {}, { dispatchId: 'navigation-1' });
 

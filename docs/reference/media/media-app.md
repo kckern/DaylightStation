@@ -8,6 +8,33 @@ wire-level contracts live in [`media-app-technical.md`](./media-app-technical.md
 
 ---
 
+## Item actions and minimum Undo
+
+Item action owners share `executeItemAction`: leaf Play Now preserves the tail;
+collection Play replaces in natural order with shuffle off; Shuffle replaces in
+shuffled order with shuffle on; Play Next appends to the FIFO next band; Play First
+inserts at its front; Add appends. Play on / Add on choose one-shot destinations
+without changing the persistent aim. Content components expose additive action
+callbacks and do not import Media implementation code.
+Escape dismisses an open More menu first. After a menu action closes it,
+Escape follows the outer search dismissal lifecycle instead of reopening More.
+The dismiss stack preserves layer ownership for the entire key event: a layer
+that closes before document bubbling cannot send that same Escape to view Back.
+
+Each operation has a tap identity and a ten-second Undo deadline. The selected
+playback owner captures the prior native position and queue generations before
+mutation, guards restoration by its applied revision, and rejects late delivery
+after cancellation. Queue-only Undo preserves current native playback; playback
+replacement Undo restores the prior position (live streams return to live edge).
+Action notices appear at the top, keeping the bottom mini-player controls
+clickable throughout the immediate ten-second Undo window.
+Remote content operations retain WakeAndLoad readiness and progress handling;
+cold-wake cancellation is coordinated before receiver claim. A claim/ACK alone
+does not confirm playback: progress still requires authoritative owner state.
+
+The ordinary-input queue journey covers the minimum Undo path; exact-build runtime
+verification remains required before claiming acceptance.
+
 ## What This App Is
 
 The Media App is the household's **universal content front door and universal
@@ -93,7 +120,7 @@ this app with zero app changes.
 
 ### Queue
 - Against any search result, browse row, or detail page, I want the four
-  Plex-style actions — **Play Now**, **Play Next**, **Up Next**, **Add to
+  queue actions — **Play Now**, **Play Next**, **Play First**, **Add to
   Queue** — without leaving where I am, with instant visual confirmation.
 - I want to see the queue, jump to any item, remove items, clear it, and
   toggle shuffle and repeat (off/one/all) — whether or not anything is
@@ -141,7 +168,7 @@ Search or browse → pick an item → it plays in this browser. Browsing,
 searching, and queueing remain available before, during, and after playback.
 
 ### J2. Build and manage the queue
-From any item: Play Now / Play Next / Add to Up Next / Add to Queue. Against
+From any item: Play Now / Play Next / Play First / Add to Queue. Against
 the queue: remove, jump, clear, shuffle, repeat (off/one/all). Available at
 all times, for the local session and for any peeked remote session alike.
 
@@ -204,7 +231,7 @@ and a **canvas** that shows exactly one view at a time:
   away, never a destination page; results drop down inline. A row tap plays
   a playable item at the current destination and opens a container in
   Browse; containers carry a trailing ▶ (play the whole thing) and playable
-  items a trailing ⋯ (Play Now / Play Next / Up Next / Add to Queue / Open
+  items a trailing ⋯ (Play Now / Play Next / Play First / Add to Queue / Open
   detail). Per-item Cast lives on the Detail view, not on result rows,
 - the **fleet indicator** — an at-a-glance summary of what's playing in the
   house, linking to the fleet view,
@@ -231,6 +258,32 @@ Below the canvas, at every width, the shell stacks:
   tapping the title opens Now Playing. Stop retains a ready handle while the
   queue has items so the queue can be opened or restarted; clear/reset removes
   the handle once both the current item and queue are empty.
+
+Local Now Playing and a remote Peek use the same ordered controller frame:
+seek, transport, then queue. Capability differences do not remove controls;
+the control stays visible and states the receiver-provided reason it is
+unavailable. Stop retains the queue and Clear remains a separate action.
+
+A destructive Move is a two-owner transaction. Its request binds an
+`operationId`, destination, captured snapshot, and the source owner/revision.
+HTTP or command receipt is never adoption proof. The destination must return a
+typed started receipt bound to that operation, queue/current-item identity,
+destination revision, and an admitted native renderer that is ready and
+advancing for a playing source, or ready and still paused at the captured
+position for a paused source. Paused adoption is issued without autoplay.
+Rejection, timeout/uncertainty, or any newer source revision keeps
+the source playing. Only confirmed adoption may conditionally stop the exact
+unchanged source; **Keep playing here too** never stops it.
+
+Aim labels always read the one persisted global aim, including while a person
+is steering a different screen in Peek. A busy origin is shown only when a
+fresh receiver snapshot carries explicit `meta.origin` provenance: either a
+known `{ kind: 'device', id }` belonging to a different client/device, or a
+named `{ kind: 'routine', name }`. The current browser client and configured
+fleet-device identities are compared by their canonical IDs, never by display
+name; canonical `fleet:<id>` provenance and the roster's bare `<id>` identify
+the same configured device. Receiver ownership metadata is not sender
+provenance and is never presented as such.
 
 **On phones the dock cannot hold all of that at once — so it doesn't try.**
 At 360px there is ~336px to spend; splitting that between a scope selector, a
@@ -274,6 +327,15 @@ tablet-only now — on mobile the fleet-active signal moved to a small badge on
 the Devices tab (`PrimaryNav.jsx`, sourced from `useFleetSummary`) instead of
 occupying dock space that search now owns outright.
 
+Every search surface consumes one lifecycle value:
+`SearchState = { query, scope, sources, results, phase, failedSources }`, where
+`phase` is exactly `idle | loading | partial | complete | failed`. A new query
+generation retires older callbacks, while widening may retain already observed
+source failures. Pending, partial, failed and widened states therefore use the
+same wording and ordering on the dock, Search Mode and destination picker: a
+named source failure and its Retry action appear before any wider result claim,
+and a settled empty result cannot still present as loading.
+
 At tablet-up widths the dock is unchanged: the persistent search bar (with
 inline scope chips), fleet indicator, and cast target chip all still render
 exactly as before. The left search icon remains `pointer-events: none` — it
@@ -284,8 +346,8 @@ is decoration, never a tap target.
 | View | Purpose | Reached from |
 |---|---|---|
 | **Home** | Landing surface: resume card (current session) and recents row. (Config-driven category cards were removed; the Browse tab covers them.) | Default; nav; breadcrumb. |
-| **Browse** | Hierarchical catalog listing with breadcrumb, container drill-down, inline Play Now/Add per playable row, paging ("load more"). A view opened for a specific container adds a Play / Shuffle / Queue header acting on the whole container at the current destination. | Nav; container rows; container taps in search. |
-| **Detail** | One item: artwork, description, full action row (Play Now / Play Next / Up Next / Add / Cast). | Browse rows; search results. |
+| **Browse** | Hierarchical catalog listing with artwork or a recognisable placeholder, kind labels, natural part ordering, and a breadcrumb containing every parent. Long collections page automatically as the end approaches; there is no separate load-more hunt. Each history entry owns `{ path, scrollTop, focusedId }`, captured before drilling into a container or opening Detail through either Details or More → Open detail, so Back restores the exact prior collection viewport and triggering row focus. A specific container adds Play / Shuffle / Add at the top and names the current destination. | Nav; container rows; container taps in search. |
+| **Detail** | One item: artwork, description, full action row (Play Now / Play Next / Play First / Add / Cast). | Browse rows; search results. |
 | **Now Playing** | Full local transport: seek bar, prev/play-pause/next/stop, volume, the queue panel, and the hand-off picker. Hosts the visual output of the player. | Mini player; Escape/Back returns. |
 | **Fleet** | All devices, live state cards. Each card offers **Remote** (Peek), **Play…** (inline search that plays straight to that device), and **Play here** (Take Over) when a session is active. | Nav; fleet indicator. |
 | **Peek** | Remote control for one device: transport, seek, volume, and the same queue panel bound to the remote session. Optimistic — controls reflect the predicted state instantly and lock until the device confirms. | Fleet cards. |
@@ -316,6 +378,9 @@ Rules of the navigation model:
 
 - In-app navigation is a **stack** (push/pop) mirrored to the URL, so the
   browser Back button, sharing a URL, and refreshing all do the right thing.
+- Reselecting a primary area traverses to its existing root entry; one Back
+  then reaches the prior area. Saved browse scroll and focus do not change
+  that root's route identity, and its viewport snapshot remains available.
 - Navigation parameters (`view`, `path`, `contentId`, `deviceId`) and playback
   parameters (`play`, `queue`, `shuffle`, `shader`, `volume`) are disjoint
   namespaces; writing one never clobbers the other.

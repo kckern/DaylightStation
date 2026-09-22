@@ -34,6 +34,7 @@ import { createPlayerSessionRegistry } from '../../screen-framework/publishers/p
 import { createRegistrySessionSource } from '../../screen-framework/publishers/registrySessionSource.js';
 import { __resetPlayerQueueOpRegistryForTests, getPlayerQueueOpRegistry } from './lib/queueOpRegistry.js';
 import { DaylightAPI } from '../../lib/api.mjs';
+import { createScreenItemActions } from '../../screen-framework/actions/screenItemActions.js';
 
 beforeEach(() => {
   DaylightAPI.mockReset();
@@ -55,6 +56,95 @@ afterEach(() => {
 });
 
 describe('Player session port', () => {
+  it.each(['add', 'playNext', 'playFirst'])('rebases an expanded %s onto a newer Play after its delayed screen commit', async (kind) => {
+    const ref = createRef();
+    const native = document.createElement('video');
+    Object.defineProperty(native, 'paused', { configurable: true, value: false });
+    mockMediaElement = native;
+    render(<Player ref={ref} play={{ contentId: 'plex:a', format: 'video' }} />);
+    await waitFor(() => expect(ref.current?.getQueueSnapshot().items[0]?.contentId).toBe('plex:a'));
+    const registry = createPlayerSessionRegistry();
+    const bridge = createPlayerSessionBridge({ getPlayerHandle: () => ref.current, registry,
+      setIntervalFn: () => 1, clearIntervalFn: () => {} });
+    bridge.start();
+    const source = createRegistrySessionSource({ registry, ownerId: 'screen', sessionId: 'overlap-session' });
+    let resolveExpansion;
+    const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation(() => new Promise(resolve => { resolveExpansion = resolve; }));
+    try {
+      let commitPlay;
+      const queueCommits = [];
+      // Defer the write boundaries, but commit through the actual registry
+      // and mounted Player rather than substituting a local session owner.
+      const actions = createScreenItemActions({ targetId: 'screen', source: { ...source,
+        adopt: (snapshot, options) => { commitPlay = () => source.adopt(snapshot, options); return { ok: true }; },
+        applyQueue: queue => { queueCommits.push(() => source.applyQueue(queue)); return { ok: true }; },
+      } });
+      const insert = actions.execute({ kind, item: { contentId: 'plex:album', type: 'album' },
+        operationId: 'older-insert', tappedAt: Date.now() });
+      const play = actions.execute({ kind: 'playNow', item: { contentId: 'plex:b', format: 'video' },
+        clearRest: true, operationId: 'newer-play', tappedAt: Date.now() });
+      await act(async () => {
+        resolveExpansion({ ok: true, json: async () => ({ items: [{ id: 'plex:child', type: 'movie' }] }) });
+        await new Promise(resolve => setTimeout(resolve, 0));
+      });
+      const insertsIssuedBeforePlayCommit = queueCommits.length;
+      expect(source.capture().snapshot.queue.items.map(item => item.contentId)).toEqual(['plex:a']);
+      act(() => commitPlay());
+      expect((await play).ok).toBe(true);
+      await waitFor(() => expect(queueCommits).toHaveLength(1));
+      act(() => queueCommits[0]());
+      expect((await insert).ok).toBe(true);
+      expect(source.capture().snapshot.queue.items.map(item => item.contentId)).toEqual(['plex:b', 'plex:child']);
+      expect(source.capture().snapshot.currentItem.contentId).toBe('plex:b');
+      expect(insertsIssuedBeforePlayCommit).toBe(0);
+    } finally {
+      fetch.mockRestore();
+      bridge.stop();
+    }
+  });
+  it('removing the final direct-play item stops native playback and cannot revive the original play prop', async () => {
+    const ref = createRef();
+    const native = document.createElement('video');
+    Object.defineProperties(native, {
+      paused: { configurable: true, writable: true, value: false },
+      currentTime: { configurable: true, writable: true, value: 23 },
+      pause: { configurable: true, value: () => { native.paused = true; } },
+    });
+    mockMediaElement = native;
+    let resolveQueue;
+    DaylightAPI.mockImplementation(path => String(path).startsWith('api/v1/queue/')
+      ? new Promise(resolve => { resolveQueue = resolve; })
+      : Promise.resolve({ contentId: 'plex:direct-final', title: 'Final', mediaUrl: '/stream/final', format: 'video' }));
+    const direct = { contentId: 'plex:direct-final', title: 'Final', format: 'video' };
+    const view = render(<Player ref={ref} play={direct} />);
+    await waitFor(() => expect(ref.current?.getQueueSnapshot().items).toHaveLength(1));
+    let tick;
+    const registry = createPlayerSessionRegistry();
+    const bridge = createPlayerSessionBridge({ getPlayerHandle: () => ref.current, registry,
+      setIntervalFn: fn => { tick = fn; return 1; }, clearIntervalFn: () => {} });
+    bridge.start();
+    act(() => {
+      latestSinglePlayerProps.onMediaRef(native, { contentId: direct.contentId });
+      tick(); native.dispatchEvent(new Event('playing')); tick();
+    });
+    const source = createRegistrySessionSource({ registry, ownerId: 'screen', sessionId: 'final-session' });
+    expect(source.getSnapshot().state).toBe('playing');
+    const actions = createScreenItemActions({ source, targetId: 'screen' });
+    const queueItemId = source.capture().snapshot.queue.items[0].queueItemId;
+    let pending;
+    act(() => { pending = actions.execute({ kind: 'remove', queueItemId, operationId: 'remove-final', tappedAt: Date.now() }); });
+    await waitFor(() => expect(source.capture().snapshot.queue.items).toHaveLength(0));
+    expect((await pending).ok).toBe(true);
+    expect(native.paused).toBe(true);
+    expect(source.getSnapshot()).toMatchObject({ state: 'idle', currentItem: null });
+    expect(view.queryByTestId('single-player')).toBeNull();
+    await act(async () => resolveQueue({ items: [direct], audio: null }));
+    view.rerender(<Player ref={ref} play={direct} />);
+    act(() => tick());
+    expect(source.getSnapshot()).toMatchObject({ state: 'idle', currentItem: null, queue: { items: [] } });
+    expect(view.queryByTestId('single-player')).toBeNull();
+    bridge.stop();
+  });
   const adoptionSnapshot = ({
     items, executionOrder, repeat = 'off', playbackRate = 1, shader = null,
   }) => ({
@@ -238,7 +328,7 @@ describe('Player session port', () => {
     expect(adopted.identity.ownerInstanceId).toBe(destinationRef.current.getPlayerInstanceId());
     expect(adopted.identity.playbackRevision).toBeGreaterThan(before.playbackRevision);
     expect(adopted.identity.queueRevision).toBeGreaterThan(before.queueRevision);
-    expect(adopted.capabilities.handoffV1).toBe(false);
+    expect(adopted.capabilities.handoffV1).toBe(true);
     expect(source.capture().identity.ownerInstanceId).toBe(sourceOwnerId);
     expect(adopted.identity.ownerInstanceId).toBe(before.ownerInstanceId);
     expect(view.getAllByTestId('single-player')).toHaveLength(2);

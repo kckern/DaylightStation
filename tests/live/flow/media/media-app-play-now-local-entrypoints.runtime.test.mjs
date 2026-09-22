@@ -87,7 +87,7 @@ async function setReceiverAim(page, phone) {
     await expect(page.getByTestId('destination-sheet')).toBeVisible();
     await page.getByTestId('picker-device-acceptance-media').click();
     await page.getByTestId('picker-submit').click();
-    await expect(searchSurface.getByTestId('destination-line-name')).toHaveText('Acceptance receiver');
+    await expect(searchSurface.getByTestId('destination-line-name')).toHaveText(/^Aim: Acceptance receiver/);
     return;
   }
   await page.getByTestId('cast-target-chip').click();
@@ -103,7 +103,7 @@ async function setLocalAim(page, phone) {
     await searchSurface.getByTestId('destination-line').click();
     await expect(page.getByTestId('destination-sheet')).toBeVisible();
     await page.getByTestId('picker-this-device').click();
-    await expect(searchSurface.getByTestId('destination-line-name')).toHaveText('This device');
+    await expect(searchSurface.getByTestId('destination-line-name')).toHaveText(/^Aim: This device/);
     return closeSearch(page, true);
   }
   await page.getByTestId('cast-target-chip').click();

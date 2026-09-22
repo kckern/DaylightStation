@@ -4,14 +4,22 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
 import { CastTargetProvider } from './CastTargetProvider.jsx';
 import { useCastTarget } from './useCastTarget.js';
+import { LocalSessionContext } from '../session/LocalSessionContext.js';
+import { ClientIdentityContext } from '../identity/ClientIdentityProvider.jsx';
 
 // ── Mocks ────────────────────────────────────────────────────────────────
 let fleetDevices = [
   { id: 'livingroom-tv', name: 'Living Room TV' },
   { id: 'yellow-room-tablet', name: 'Yellow Room Tablet' },
 ];
+let fleetEntries = new Map();
+const fleetStore = {
+  subscribeAll: () => () => {},
+  getAll: () => fleetEntries,
+  getEntry: (id) => fleetEntries.get(id) ?? null,
+};
 vi.mock('../fleet/useFleetContext.js', () => ({
-  useFleetContext: () => ({ devices: fleetDevices }),
+  useFleetContext: () => ({ devices: fleetDevices, store: fleetStore }),
 }));
 
 const dismissLayer = vi.fn();
@@ -50,13 +58,17 @@ function Probe() {
   );
 }
 
-function renderLine(props) {
+function renderLine(props, controller = null, identity = { clientId: 'current-client', displayName: 'Current browser' }) {
   return render(
     <MantineProvider>
-      <CastTargetProvider>
-        <DestinationLine {...props} />
-        <Probe />
-      </CastTargetProvider>
+      <ClientIdentityContext.Provider value={identity}>
+        <LocalSessionContext.Provider value={controller ? { controller } : null}>
+          <CastTargetProvider>
+            <DestinationLine {...props} />
+            <Probe />
+          </CastTargetProvider>
+        </LocalSessionContext.Provider>
+      </ClientIdentityContext.Provider>
     </MantineProvider>
   );
 }
@@ -64,11 +76,13 @@ function renderLine(props) {
 beforeEach(() => {
   vi.clearAllMocks();
   localStorage.clear();
+  delete window.__DAYLIGHT_DEVICE_ID;
   fleetDevices = [
     { id: 'livingroom-tv', name: 'Living Room TV' },
     { id: 'yellow-room-tablet', name: 'Yellow Room Tablet' },
   ];
   lastPick = { targetIds: ['yellow-room-tablet'], mode: 'transfer' };
+  fleetEntries = new Map();
 });
 
 describe('DestinationLine', () => {
@@ -87,6 +101,90 @@ describe('DestinationLine', () => {
     );
     renderLine();
     expect(screen.getByTestId('destination-line-name')).toHaveTextContent('Living Room TV');
+  });
+
+  it('resolves a canonical foreign fleet origin against the bare fleet roster id', () => {
+    localStorage.setItem(
+      'media-app.cast-target',
+      JSON.stringify({ mode: 'transfer', targetIds: ['livingroom-tv'], activityAt: Date.now(), exemptionStartedAt: null })
+    );
+    fleetDevices.push({ id: 'kitchen-tablet', name: 'Kitchen Tablet' });
+    fleetEntries = new Map([['livingroom-tv', {
+      snapshot: { state: 'playing', meta: { origin: { kind: 'device', id: 'fleet:kitchen-tablet' } } },
+      offline: false, isStale: false,
+    }]]);
+    renderLine();
+    expect(screen.getByTestId('aim-busy-origin')).toHaveTextContent('Busy — started from Kitchen Tablet');
+  });
+
+  it('does not call a busy aimed screen foreign when this browser client started it', () => {
+    localStorage.setItem(
+      'media-app.cast-target',
+      JSON.stringify({ mode: 'transfer', targetIds: ['livingroom-tv'], activityAt: Date.now(), exemptionStartedAt: null })
+    );
+    fleetDevices.push({ id: 'browser:current-client', name: 'Current browser' });
+    fleetEntries = new Map([['livingroom-tv', {
+      snapshot: { state: 'playing', meta: { origin: { kind: 'device', id: 'browser:current-client' } } },
+      offline: false, isStale: false,
+    }]]);
+    renderLine();
+    expect(screen.queryByTestId('aim-busy-origin')).toBeNull();
+  });
+
+  it('does not call a canonical fleet origin foreign when this fleet device started it', () => {
+    window.__DAYLIGHT_DEVICE_ID = 'kitchen-tablet';
+    localStorage.setItem(
+      'media-app.cast-target',
+      JSON.stringify({ mode: 'transfer', targetIds: ['livingroom-tv'], activityAt: Date.now(), exemptionStartedAt: null })
+    );
+    fleetDevices.push({ id: 'kitchen-tablet', name: 'Kitchen Tablet' });
+    fleetEntries = new Map([['livingroom-tv', {
+      snapshot: { state: 'paused', meta: { origin: { kind: 'device', id: 'fleet:kitchen-tablet' } } },
+      offline: false, isStale: false,
+    }]]);
+    renderLine();
+    expect(screen.queryByTestId('aim-busy-origin')).toBeNull();
+    delete window.__DAYLIGHT_DEVICE_ID;
+  });
+
+  it('still shows explicit routine provenance as another busy origin', () => {
+    localStorage.setItem(
+      'media-app.cast-target',
+      JSON.stringify({ mode: 'transfer', targetIds: ['livingroom-tv'], activityAt: Date.now(), exemptionStartedAt: null })
+    );
+    fleetEntries = new Map([['livingroom-tv', {
+      snapshot: { state: 'buffering', meta: { origin: { kind: 'routine', name: 'Morning music' } } },
+      offline: false, isStale: false,
+    }]]);
+    renderLine();
+    expect(screen.getByTestId('aim-busy-origin')).toHaveTextContent('Busy — started from Morning music routine');
+  });
+
+  it('does not invent a busy origin from the receiver owner id', () => {
+    localStorage.setItem(
+      'media-app.cast-target',
+      JSON.stringify({ mode: 'transfer', targetIds: ['livingroom-tv'], activityAt: Date.now(), exemptionStartedAt: null })
+    );
+    fleetEntries = new Map([['livingroom-tv', {
+      snapshot: { state: 'playing', meta: { ownerId: 'kitchen-tablet' } },
+      offline: false, isStale: false,
+    }]]);
+    renderLine();
+    expect(screen.queryByTestId('aim-busy-origin')).toBeNull();
+  });
+
+  it('shows the remembered move choice on the aim while local playback is active', () => {
+    localStorage.setItem(
+      'media-app.cast-target',
+      JSON.stringify({ mode: 'transfer', targetIds: ['livingroom-tv'] })
+    );
+    const activeSnapshot = { state: 'playing', currentItem: { contentId: 'plex:1' } };
+    const controller = {
+      subscribe: () => () => {},
+      getSnapshot: () => activeSnapshot,
+    };
+    renderLine(undefined, controller);
+    expect(screen.getByTestId('destination-line-name')).toHaveTextContent('Next tap will move playback');
   });
 
   it('tapping the line opens the device sheet', async () => {

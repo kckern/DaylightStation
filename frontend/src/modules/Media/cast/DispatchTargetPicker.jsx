@@ -78,7 +78,7 @@ function BusyWarning({ device, intent }) {
 
 export function DispatchTargetPicker({ source, onComplete, autoFocus = true, verb = 'Cast', intent = 'dispatch' }) {
   const {
-    devices, selected, multi, mode, canSubmit, localPlaying, hasPotentialContent, moveUnavailable, dispatchError,
+    devices, selected, multi, mode, canSubmit, localPlaying, hasPotentialContent, moveSupported, moveUnavailable, dispatchError,
     select, toggleMulti, setMode, submit,
   } = useDispatchTargetPicker({ source, onComplete });
 
@@ -144,14 +144,16 @@ export function DispatchTargetPicker({ source, onComplete, autoFocus = true, ver
             aria-checked={mode === 'transfer'}
             data-testid="picker-mode-transfer"
             className={`cast-picker-mode-option ${mode === 'transfer' ? 'cast-picker-mode-option--on' : ''}`}
-            disabled
+            disabled={!moveSupported}
             onClick={() => setMode('transfer')}
           >
             Move playback to {targetLabel ?? 'device'}
           </button>
-          <div data-testid="picker-move-unavailable" className="cast-picker-warning" role="status">
-            Move playback is not available yet. Choose the non-destructive option instead.
-          </div>
+          {!moveSupported && <div data-testid="picker-move-unavailable" className="cast-picker-warning" role="status">
+            {selected.size > 1
+              ? 'Move playback to one screen at a time.'
+              : 'Move playback is not available yet for a single item. Keep playing here instead.'}
+          </div>}
           <button
             type="button"
             role="radio"
