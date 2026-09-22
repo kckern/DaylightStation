@@ -162,6 +162,23 @@ describe('Sentence Ladder study grant boundary', () => {
     expect(service.saveRecording.mock.calls[0][0].buffer).toEqual(bytes);
   });
 
+  it('accepts a WAV upload — a take joined from pieces', async () => {
+    const bytes = Buffer.from('RIFF-joined-take');
+    const { app, service } = appWith();
+    service.saveRecording.mockReturnValue({ rung: 'recording', seq: 7 });
+
+    const res = await request(app)
+      .post('/api/v1/school/sentence-ladder/users/learner3/recording?corpus=korean&seq=7&ext=wav&microphone=1&textInput=KR')
+      .set('X-School-Study-Grant', 'signed')
+      .set('Content-Type', 'audio/wav')
+      .send(bytes);
+
+    expect(res.status).toBe(200);
+    const { buffer, ext } = service.saveRecording.mock.calls[0][0];
+    expect(ext).toBe('wav');
+    expect(Buffer.isBuffer(buffer) && buffer.equals(bytes)).toBe(true);
+  });
+
   // A REVEAL IS A DIFFERENT RECORD, so the flag has to survive the wire. An
   // un-plumbed field on the service is not "recorded": the screen would draw
   // an honest reveal and the log would still say the child answered.

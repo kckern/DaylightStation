@@ -259,8 +259,9 @@ export function createLanguageRouter({
 
   // Voice capture. Same shape as the piano recorder: a raw audio body rather
   // than multipart, since there is exactly one file and no fields.
+  // WAV is what a take joined from pieces is (see `rungs/joinTake.js`).
   const rawAudio = express.raw({
-    type: ['audio/webm', 'audio/ogg', 'audio/mp4', 'application/octet-stream'],
+    type: ['audio/webm', 'audio/ogg', 'audio/mp4', 'audio/wav', 'audio/x-wav', 'audio/wave', 'application/octet-stream'],
     limit: '25mb',
   });
   router.post('/users/:userId/recording', rawAudio, wrap((req, res) => {
