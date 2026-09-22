@@ -2898,4 +2898,101 @@ describe('recording in pieces', () => {
     expect(languageApi.recording.mock.calls[0][3].type).toBe('audio/wav');
     expect(languageLog.capture).toHaveBeenCalledWith('stitched', expect.objectContaining({ seq: 1, pieces: 2, durationMs: 1700 }));
   });
+
+  /** Cut at 1.5s and say part one; leaves the rung in part-one review. */
+  const firstPiece = async (model, ms = 800) => {
+    await screen.findByRole('button', { name: 'Listen, then record' });
+    pressKey(' ');
+    await waitFor(() => expect(model.played).toHaveLength(1));
+    model.at(1500);
+    pressKey('ArrowRight');
+    await sayPiece(ms);
+  };
+
+  it('Backspace redoes only the part in hand', async () => {
+    const model = modelPlayer(); fakeMic(); recordingDay(); program();
+    const { languageLog } = await import('./languageLog.js');
+    await firstPiece(model);
+    await screen.findByRole('button', { name: 'Next part' });
+    pressKey(' ');
+    await sayPiece(900);                              // take2 = part two
+    await screen.findByRole('button', { name: 'Finish' });
+    const before = model.played.length;
+    pressKey('Backspace');
+    await sayPiece(1000);                             // take3 = part two again
+    expect(model.played.slice(before)[0]).toEqual({ src: '/audio/glossika-korean/1/KR', atMs: 1500 });
+    expect(languageLog.capture).toHaveBeenCalledWith('piece-redo', { seq: 1, piece: 1 });
+    await screen.findByRole('button', { name: 'Finish' });
+    pressKey(' ');
+    await waitFor(() => expect(joinTakeMock).toHaveBeenCalled());
+    expect(await Promise.all(joinTakeMock.mock.calls[0][0].map((b) => b.text()))).toEqual(['take1', 'take3']);
+  });
+
+  it('Tab mid-part starts that part over and keeps the parts before it', async () => {
+    const model = modelPlayer(); fakeMic(); recordingDay(); program();
+    await firstPiece(model);
+    await screen.findByRole('button', { name: 'Next part' });
+    pressKey(' ');
+    await screen.findByRole('button', { name: 'Stop' });
+    const before = model.played.length;
+    pressKey('Tab');                                  // abandons part two's take
+    await sayPiece(900);
+    expect(model.played.slice(before)[0]).toEqual({ src: '/audio/glossika-korean/1/KR', atMs: 1500 });
+    await screen.findByRole('button', { name: 'Finish' });
+    pressKey(' ');
+    await waitFor(() => expect(joinTakeMock).toHaveBeenCalled());
+    expect(joinTakeMock.mock.calls[0][0]).toHaveLength(2);
+    expect(await joinTakeMock.mock.calls[0][0][0].text()).toBe('take1');
+  });
+
+  it('Tab in part review compares — its span, then its take — and deletes nothing', async () => {
+    const model = modelPlayer(); fakeMic(); recordingDay(); program();
+    await firstPiece(model);
+    await screen.findByRole('button', { name: 'Next part' });
+    const before = model.played.length;
+    pressKey('Tab');
+    await waitFor(() => expect(model.played.length).toBe(before + 2));
+    expect(model.played[before]).toEqual({ src: '/audio/glossika-korean/1/KR', atMs: 0 });
+    expect(model.played[before + 1].src).toMatch(/^blob:/);
+    expect(screen.getByRole('button', { name: 'Next part' })).toBeEnabled();
+  });
+
+  it('a part too short to be a phrase cannot be moved past', async () => {
+    const model = modelPlayer(); fakeMic(); recordingDay(); program();
+    await firstPiece(model, 100);
+    expect(await screen.findByText(/too quick/i)).toBeInTheDocument();
+    // The notice is up while the part is still playing back; the tiles follow.
+    expect(await screen.findByRole('button', { name: 'Next part' })).toBeDisabled();
+    const before = model.played.length;
+    pressKey(' ');
+    await new Promise((r) => setTimeout(r, 0));
+    expect(model.played).toHaveLength(before);
+  });
+
+  it('leaving partway uploads nothing and says how far it got', async () => {
+    const model = modelPlayer(); fakeMic(); recordingDay();
+    const { unmount } = program();
+    const { languageApi } = await import('./languageApi.js');
+    const { languageLog } = await import('./languageLog.js');
+    await firstPiece(model);
+    await screen.findByRole('button', { name: 'Next part' });
+    unmount();
+    expect(languageApi.recording).not.toHaveBeenCalled();
+    expect(languageLog.capture).toHaveBeenCalledWith('pieces-abandoned', { seq: 1, pieces: 1 });
+  });
+
+  it('a join that fails falls back to saying it in one go', async () => {
+    joinTakeMock.mockRejectedValueOnce(new Error('no-web-audio'));
+    const model = modelPlayer(); fakeMic(); recordingDay(); program();
+    const { languageLog } = await import('./languageLog.js');
+    await firstPiece(model);
+    await screen.findByRole('button', { name: 'Next part' });
+    pressKey(' ');
+    await sayPiece(900);
+    await screen.findByRole('button', { name: 'Finish' });
+    pressKey(' ');
+    expect(await screen.findByText(/say it in one go/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Listen, then record' })).toBeTruthy();
+    expect(languageLog.capture).toHaveBeenCalledWith('stitch-failed', { seq: 1, pieces: 2, error: 'no-web-audio' });
+  });
 });

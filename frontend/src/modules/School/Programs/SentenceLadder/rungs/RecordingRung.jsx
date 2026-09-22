@@ -214,6 +214,15 @@ export default function RecordingRung({
     setPiece(null);
   }, []);
 
+  /** Pieces thrown away before they became a take — a sentence started over
+   *  from idle, a mic that went away. Logged, because a run of these is a
+   *  sentence too long to finish even in parts. */
+  const abandonPieces = useCallback(() => {
+    const pieces = piecesRef.current.takes.length;
+    if (pieces) languageLog.capture('pieces-abandoned', { seq: entry.seq, pieces });
+    dropPieces();
+  }, [dropPieces, entry.seq]);
+
   /**
    * Straight into hearing it — a whole take or one piece. The Stop tap is the
    * gesture behind this play(), so autoplay policy is satisfied; if it still
@@ -330,10 +339,10 @@ export default function RecordingRung({
     setError('The microphone is unavailable on this device.');
     // Pieces said so far go too: the sentence cannot be finished without the
     // mic, and a later start begins it whole.
-    dropPieces();
+    abandonPieces();
     setCutOffered(false);
     setPhase('idle');
-  }, [dropPieces, entry.seq]);
+  }, [abandonPieces, entry.seq]);
 
   // Destructured, not held as an object: `beginCapture` is what
   // `useSentenceAudio` fires at the end of the prompt sequence, so an identity
@@ -411,13 +420,13 @@ export default function RecordingRung({
   const start = useCallback(() => {
     stopListening();
     dropTake();
-    dropPieces();
+    abandonPieces();
     joinedRef.current = false;
     setJoinFailed(false);
     setCutOffered(!noPiecesRef.current);
     setPhase('prompting');
     playSequence([...clipsFor(entry, audioUrl), ...cue()]);
-  }, [entry, audioUrl, cue, playSequence, dropTake, dropPieces, stopListening]);
+  }, [entry, audioUrl, cue, playSequence, dropTake, abandonPieces, stopListening]);
 
   // Again means the ding and the mic — not the whole sentence over. Hearing
   // the prompt again is what the Repetition rung is for, and a retry that is
@@ -462,6 +471,16 @@ export default function RecordingRung({
     setPhase('prompting');
     playSequence([spanClip(i), ...cue()]);
   }, [cue, dropTake, playSequence, spanClip, stopListening, stopPlayback]);
+
+  /** Backspace in piece review: this piece only — its span, the ding, the mic.
+   *  The pieces before it are kept, and its old take stays until a new one
+   *  replaces it. */
+  const redoPiece = useCallback(() => {
+    const i = pieceRef.current;
+    if (i == null) return;
+    languageLog.capture('piece-redo', { seq: entry.seq, piece: i });
+    playPiece(i);
+  }, [entry.seq, playPiece]);
 
   /**
    * → WHILE THE SENTENCE PLAYS: "that's enough — let me say this much". Only
@@ -583,6 +602,24 @@ export default function RecordingRung({
     if (current === 'idle') { hear(targetLang); return; }
     // The pieces are being joined; there is nothing to restart or compare yet.
     if (current === 'joining') return;
+    // IN PIECES, THE SAME RULES FOR THE PIECE IN HAND: with its take, Tab
+    // compares that piece's span with that take; otherwise it restarts that
+    // piece — its span, the ding, the mic. Earlier pieces are never touched.
+    if (pieceRef.current != null) {
+      const i = pieceRef.current;
+      if ((current === 'playback' || current === 'review') && pieceUrlRef.current) {
+        stopPlayback();
+        setPhase('review');
+        languageLog.capture('compare', { seq: entry.seq, from: current, piece: i });
+        listenTo([spanClip(i), { url: pieceUrlRef.current, role: 'take', gapMs: 400 }]);
+        return;
+      }
+      languageLog.capture('replay-restart', { seq: entry.seq, from: current, piece: i });
+      if (current === 'recording') cancelCapture();
+      stop();
+      playPiece(i);
+      return;
+    }
     if ((current === 'playback' || current === 'review') && takeUrlRef.current) {
       stopPlayback();
       setPhase('review');
@@ -598,7 +635,9 @@ export default function RecordingRung({
     stopPlayback();
     setTakeVerdict(null);
     start();
-  }, [audioUrl, cancelCapture, entry.seq, hear, listenTo, start, stopPlayback, targetLang]);
+  }, [
+    audioUrl, cancelCapture, entry.seq, hear, listenTo, playPiece, spanClip, start, stop, stopPlayback, targetLang,
+  ]);
 
   useEffect(() => {
     if (!blocked || phase !== 'prompting') return;
@@ -677,11 +716,17 @@ export default function RecordingRung({
         }
         return;
       }
-      if (current === 'playback' || current === 'review') { e.preventDefault(); recordAgain(); }
+      if (current === 'playback' || current === 'review') {
+        e.preventDefault();
+        if (pieceRef.current != null) redoPiece();
+        else recordAgain();
+      }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [start, stopRecording, skipPlayback, accept, recordAgain, hear, replaySentence, sourceLang, cut, nextPiece]);
+  }, [
+    start, stopRecording, skipPlayback, accept, recordAgain, hear, replaySentence, sourceLang, cut, nextPiece, redoPiece,
+  ]);
 
   const getPlayhead = useCallback(() => {
     const el = playbackRef.current;
@@ -817,7 +862,7 @@ export default function RecordingRung({
             <button
               type="button"
               className={`lang-tile${takeVerdict ? ' lang-tile--primary' : ''}`}
-              onClick={() => playPiece(piece)}
+              onClick={redoPiece}
               aria-label="Redo this part"
             >
               <Icon name="record-again" className="lang-tile__glyph" />
