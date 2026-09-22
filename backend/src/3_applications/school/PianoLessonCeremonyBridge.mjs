@@ -42,6 +42,7 @@
  */
 import { studyDayForInstant } from '#domains/school/studyDay.mjs';
 import { composeSchoolPush } from '#domains/school/notifications/schoolPush.mjs';
+import { personDisplayName } from '#domains/notification/push/pushText.mjs';
 
 const BOUNDARY_HOUR = 4;
 
@@ -252,10 +253,13 @@ export class PianoLessonCeremonyBridge {
       if (this.#announced.get(learnerId) === studyDate) return;
       this.#announced.set(learnerId, studyDate);
       const student = await this.#studentName(learnerId);
-      const lesson = status?.servedWork?.[0]?.title ?? 'PianoChallenge';
+      const servedTitle = status?.servedWork?.[0]?.title ?? null;
+      const lesson = servedTitle ?? 'PianoChallenge';
       this.#logger.info?.('school.piano-challenge-ceremony.satisfied', { learnerId, courseId, descriptorId, studyDate, lesson });
       this.#broadcast({ learnerId, student, courseId, lesson, status, studyDate });
-      await this.#fireHook({ learnerId, student, courseId, lesson, status, studyDate });
+      // The phone never shows the internal 'PianoChallenge' token; with no
+      // served title the composer says 'Piano lesson'.
+      await this.#fireHook({ learnerId, student, courseId, lesson, pushLesson: servedTitle, status, studyDate });
       return;
     }
   }
@@ -392,7 +396,7 @@ export class PianoLessonCeremonyBridge {
    * The Home Assistant half. The adapter never throws and owns its own
    * circuit breaker, so this only has to keep a rejection from escaping.
    */
-  async #fireHook({ learnerId, student, courseId, lesson, status, studyDate }) {
+  async #fireHook({ learnerId, student, courseId, lesson, pushLesson = lesson, status, studyDate }) {
     if (!this.#hook?.fire) return;
     try {
       // The unit row is the scale a child feels progress at (see the launcher's
@@ -402,7 +406,7 @@ export class PianoLessonCeremonyBridge {
       const rows = Array.isArray(status?.progress) ? status.progress : [];
       const unitRow = rows.find((row) => row?.scope === 'module') ?? null;
       const notification = composeSchoolPush({
-        kind: 'piano', learnerId, child: student, lesson, studyDay: studyDate,
+        kind: 'piano', learnerId, child: student, lesson: pushLesson, studyDay: studyDate,
         unitProgress: unitRow ? { label: unitRow.label ?? null, completed: unitRow.completed, total: unitRow.total } : null,
       });
       await this.#hook.fire({
@@ -422,9 +426,11 @@ export class PianoLessonCeremonyBridge {
     }
   }
 
+  /** Never the raw id: it is read on a phone ('user_4' → 'User 4'). */
   async #studentName(learnerId) {
-    if (!this.#resolveStudent) return learnerId;
-    try { return (await this.#resolveStudent(learnerId)) ?? learnerId; } catch { return learnerId; }
+    const fallback = personDisplayName(null, learnerId) ?? learnerId;
+    if (!this.#resolveStudent) return fallback;
+    try { return (await this.#resolveStudent(learnerId)) ?? fallback; } catch { return fallback; }
   }
 
   #nowMs() {
