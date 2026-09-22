@@ -45,7 +45,7 @@ describe('LogFoodFromUPC', () => {
       await useCase.execute({
         userId: 'user_1',  // This is the resolved username
         conversationId: 'telegram:b6898194425_c575596036',
-        upc: '012345678901',
+        upc: '012345678905',
         messageId: '50',
       });
 

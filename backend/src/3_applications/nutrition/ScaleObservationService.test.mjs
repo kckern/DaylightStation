@@ -144,17 +144,19 @@ describe('durable provisional scale capture', () => {
   });
   it('replays yogurt + chia + 458g at 140 kcal/100g as three counted entries without messaging', async () => {
     const f = await fixture();
+    // Real GTINs (valid check digits): the use case refuses a malformed barcode.
+    const YOGURT = '012345678905', CHIA = '96385074';
     const gateway = { sendMessage: vi.fn(() => { throw new Error('Telegram unavailable'); }) };
     const uc = new LogFoodFromUPC({ messagingGateway: gateway, foodLogStore: f.foodLogs,
       reviewService: f.review, logger: f.logger, config: { getUserTimezone: () => 'America/Los_Angeles' },
-      upcGateway: { lookup: async upc => ({ name: upc === 'yogurt' ? 'Oikos yogurt' : 'Chia seeds',
-        serving: upc === 'yogurt' ? { size: 1, unit: 'serving' } : { size: 14, unit: 'g' },
-        nutrition: { calories: upc === 'yogurt' ? 160 : 70 },
+      upcGateway: { lookup: async upc => ({ name: upc === YOGURT ? 'Oikos yogurt' : 'Chia seeds',
+        serving: upc === YOGURT ? { size: 1, unit: 'serving' } : { size: 14, unit: 'g' },
+        nutrition: { calories: upc === YOGURT ? 160 : 70 },
         nutritionLookup: { source: 'fixture', warnings: ['Portion estimate'], missing: ['sugar'] } }) } });
-    const yogurt = { userId: 'alice', conversationId: 'device:alice', headless: true, upc: 'yogurt', date: '2026-09-05', operationId: 'scan-yogurt' };
+    const yogurt = { userId: 'alice', conversationId: 'device:alice', headless: true, upc: YOGURT, date: '2026-09-05', operationId: 'scan-yogurt' };
     await Promise.all([uc.execute(yogurt), uc.execute(yogurt)]);
     await uc.execute(yogurt);
-    await uc.execute({ userId: 'alice', conversationId: 'device:alice', headless: true, upc: 'chia', date: '2026-09-05' });
+    await uc.execute({ userId: 'alice', conversationId: 'device:alice', headless: true, upc: CHIA, date: '2026-09-05' });
     f.advance(100 * 60000);
     await f.publish(458);
     f.advance(7000);
