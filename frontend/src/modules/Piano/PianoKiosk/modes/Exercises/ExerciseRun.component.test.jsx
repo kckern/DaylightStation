@@ -88,8 +88,9 @@ vi.mock('../../../components/PianoKeyboard.jsx', () => ({
   ),
 }));
 vi.mock('./ExerciseNotation.jsx', () => ({
-  default: ({ eventIndex, wrong }) => (
-    <div data-testid="notation" data-wrong={String(wrong)}>{eventIndex}</div>
+  default: ({ eventIndex, wrong, verdicts, windowOpen }) => (
+    <div data-testid="notation" data-wrong={String(wrong)} data-judged={String(verdicts instanceof Map)}
+      data-window-open={String(windowOpen)}>{eventIndex}</div>
   ),
 }));
 // The other two stages, mocked at the same boundary and for the same reason:
@@ -1807,6 +1808,26 @@ describe('timed exercise clock and input boundary', () => {
     act(() => vi.advanceTimersByTime(1000));
     expect(props.onPassed).toHaveBeenCalledTimes(1);
     expect(h.metronome.mock.calls.at(-1)[0].enabled).toBe(false);
+  });
+
+  it('builds the timed attempt on the fraction window policy and hands the record to the staff', async () => {
+    const {view,props} = await mountTimed();
+    expect(h.createAttempt.mock.calls.at(-1)[0].policy).toMatchObject({ windowFraction: 0.4, windowMinMs: 80, windowMaxMs: 400 });
+    act(() => vi.advanceTimersByTime(4050));
+    // 60 bpm quarters: a 1000 ms gap, so a 400 ms window. 50 ms in, it is open.
+    expect(screen.getByTestId('notation')).toHaveAttribute('data-judged', 'true');
+    expect(screen.getByTestId('notation')).toHaveAttribute('data-window-open', 'true');
+    act(() => vi.advanceTimersByTime(500));
+    expect(screen.getByTestId('notation')).toHaveAttribute('data-window-open', 'false');
+    pressKey(view, props, 62);
+  });
+
+  it('a free run hands the staff no verdicts: it keeps judging held keys live', async () => {
+    const props = { instance: subject(), score: null, intent: 'practice', practiceMode: 'free', tier: 3 };
+    render(<ExerciseRun {...props} />);
+    await screen.findByText('Play the first note to begin.');
+    expect(screen.getByTestId('notation')).toHaveAttribute('data-judged', 'false');
+    expect(screen.getByTestId('notation')).toHaveAttribute('data-window-open', 'undefined');
   });
 
   it('preserves completed assessment evidence when leaving before the musical duration ends', async () => {
