@@ -68,7 +68,7 @@ function harness({
   const fired = [];
   const warns = [];
   const printed = [];
-  const reads = { getWork: [], studentName: [] };
+  const reads = { getWork: [], studentName: [], getPublished: [] };
   const labelDeps = labels ? {
     curriculum: {
       async getWork(id) {
@@ -88,7 +88,12 @@ function harness({
     recordCardScanOutcome: { async execute() { return recordOutcome(); } },
     closeSessionOutcome: { async execute() { return settleOutcome(); } },
     receipts: { async print(document) { printed.push(document); return { printed: true, reason: null }; } },
-    printDocuments: { getPublished: (id, rev) => (id === 'civilization/atlas/ws-ses-4jqdgpr5b3' && rev === 'ca29ac85c' ? { title: 'South Dakota' } : null) },
+    printDocuments: {
+      getPublished: (id, rev) => {
+        reads.getPublished.push(`${id}@${rev}`);
+        return id === 'civilization/atlas/ws-ses-4jqdgpr5b3' && rev === 'ca29ac85c' ? { title: 'South Dakota' } : null;
+      },
+    },
     gradingHook: hook ? { fire: (outcome) => { fired.push(outcome); } } : null,
     scheduler,
     logger: { info() {}, debug() {}, error() {}, warn: (event, data) => { warns.push({ event, data }); } },
@@ -164,6 +169,24 @@ describe('SchoolPrintScanConsumer — every hook fire carries the phone copy', (
     expect(graded.notification.title).toBe('✅ Learner4 — U.S. Atlas: South Dakota');
   });
 
+  it('a throwing label dep cannot turn the suppressed unmarked-record push into one', async () => {
+    const { fired, feed } = harness({
+      resolve: () => ({ results: [southDakota()], silentLiveRecords: [{ learnerId: 'user_4', rowRange: { start: 34, end: 39 } }] }),
+      studentName: () => { throw new Error('profile store down'); },
+    });
+    await feed();
+    const unmarked = fired.find((f) => f.code === 'live_record_unmarked');
+    expect(unmarked).toHaveProperty('notification', null);
+  });
+
+  it('the push and the ceremony share one published-title read', async () => {
+    const { fired, spoken, reads, feed } = harness({ recordOutcome: PARTIAL });
+    await feed();
+    expect(spoken[0].title).toBe('South Dakota');
+    expect(fired[0].notification.title).toBe('⚠️ Learner4 — U.S. Atlas: South Dakota');
+    expect(reads.getPublished).toEqual(['civilization/atlas/ws-ses-4jqdgpr5b3@ca29ac85c']);
+  });
+
   it('an unmarked record standing alone warns the phone with the row range', async () => {
     const { fired, spoken, feed } = harness({
       resolve: () => ({ results: [], silentLiveRecords: [{ learnerId: 'user_4', rowRange: { start: 34, end: 39 } }] }),
@@ -232,15 +255,16 @@ describe('SchoolPrintScanConsumer — every hook fire carries the phone copy', (
     noDefects(notification);
   });
 
-  it('a throwing label dep logs compose-failed and still fires with generic copy', async () => {
+  it('a throwing label dep logs compose-failed and still sends the outcome, just without labels', async () => {
     const { fired, warns, spoken, feed } = harness({ studentName: () => { throw new Error('profile store down'); } });
     await feed();
     expect(spoken.map((a) => a.kind)).toEqual(['scan-graded']);
     expect(fired).toHaveLength(1);
     expect(fired[0].result).toBe('passed');
-    // The learner is known even though the name lookup broke: no "Unknown card".
-    expect(fired[0].notification.title).toBe('⚠️ School card');
-    expect(fired[0].notification.message).toBe("Card couldn't be graded — check the School teacher view");
+    // A passed sheet stays a pass on the progress lane — never "couldn't be graded".
+    expect(fired[0].notification.title).toBe('✅ School card');
+    expect(fired[0].notification.message).toBe('5 of 6 correct');
+    expect(fired[0].notification.data.channel).toBe('School progress');
     // Same session tag as the real copy, so it replaces an earlier push for this sheet.
     expect(fired[0].notification.data.tag).toBe('school-user_4-ses_4jqdgpr5b3');
     expect(warns.find((w) => w.event === 'school.push.compose-failed')).toMatchObject({
@@ -252,21 +276,22 @@ describe('SchoolPrintScanConsumer — every hook fire carries the phone copy', (
     const { fired, spoken, printed, warns, feed } = harness({
       recordOutcome: PARTIAL,
       curriculum: { getWork: () => new Promise(() => {}) },
-      pushLabelTimeoutMs: 20,
+      pushLabelTimeoutMs: 100,
     });
     await feed();
     // The ceremony and the slip went out before the lookup was given up on.
     expect(spoken.map((a) => a.kind)).toEqual(['scan-rows-incomplete']);
     expect(printed).toHaveLength(1);
     expect(fired).toHaveLength(0);
-    await new Promise((resolve) => setTimeout(resolve, 40));
+    await new Promise((resolve) => setTimeout(resolve, 250));
     await settle();
     // The hook still fires (HA's siren branches on `result`), with fallback copy.
     expect(fired).toHaveLength(1);
     const { notification, ...rest } = fired[0];
     expect(rest).toEqual({ result: 'partial', testId: '5278294', code: 'partial_scan', learnerId: 'user_4' });
+    // The outcome's own copy, minus the labels that never arrived.
     expect(notification.title).toBe('⚠️ School card');
-    expect(notification.message).toBe("Card couldn't be graded — check the School teacher view");
+    expect(notification.message).toBe('Row 33 blank — fill in and rescan');
     expect(notification.data.tag).toBe('school-user_4-ses_4jqdgpr5b3');
     expect(warns.find((w) => w.event === 'school.push.compose-timeout')).toMatchObject({
       data: { testId: '5278294', kind: 'partial' },
