@@ -171,8 +171,16 @@ export function useSentenceAudio({ onSequenceEnd } = {}) {
       const result = el.play();
       if (result?.then) {
         result.then(armSpanEnd, (err) => {
+          // OUR OWN INTERRUPTION IS NOT A BLOCK. stop(), or a new sequence
+          // taking the element, aborts the pending play() — and by then this
+          // clip is no longer the active one. Only a refusal of the clip still
+          // meant to be sounding is the browser saying no.
+          if (activeRef.current !== next) {
+            languageLog.audio('play-interrupted', { url: next.url, error: err?.name || err?.message });
+            return;
+          }
           languageLog.audioError('play-blocked', { url: next.url, error: err?.message });
-          if (activeRef.current === next) activeRef.current = null;
+          activeRef.current = null;
           setBlocked(true);
           setPlaying(false);
         });
