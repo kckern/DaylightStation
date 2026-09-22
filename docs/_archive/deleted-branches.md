@@ -471,3 +471,4 @@ The corollary bit twice in this sweep: `feat/teacher-workspace-ia` and `feature/
 | 2026-09-22 | fix/timed-grading | b1b55259c | Integration branch for the timed-grading fix (design, voided attempts, click wiring); fast-forwarded into main. |
 | 2026-09-22 | feat/korean-word-ladder | 4ab20df3da | Korean vocab word ladder (lexicon decks, per-word ladder, review run, printed OMR quiz fold); merged to main as b5b9957dc3, quiz-choices fix e792921397 |
 | 2026-09-22 | feat/health-inline-add | acb6a843d | Health inline add rows + fixed Lunch/Dinner columns, barcode intake gate/quarantine, hi-res-only icons, scan repair tooling; merged to main as 33df39b26 |
+| 2026-09-22 | refactor/word-ladder-language-neutral | 52481b0046 | Word ladder language-neutral (lexicon v2: term/gloss, language+labels from YAML, package-keyed state, media grouped words/<group>/<id>); merged as 65543bab18 |
