@@ -118,6 +118,7 @@ import { createScreenPresenceService } from '#composition/modules/screenPresence
 import { createPianoScreenPowerSync } from '#composition/modules/pianoScreenPowerSync.mjs';
 import { createPianoMidiWake } from '#composition/modules/pianoMidiWake.mjs';
 import { createStateGatesModule } from '#composition/modules/stateGates.mjs';
+import { KioskFrictionTracker } from '#apps/devices/services/KioskFrictionTracker.mjs';
 
 // AI router import
 import { createAIRouter } from './4_api/v1/routers/ai.mjs';
@@ -3872,6 +3873,23 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'piano-midi-wake' }),
   });
 
+  // Kiosk unsupervised-input friction (Portal, yellow-room tablet, …) →
+  // State Gates. Republishes a per-device-per-day `kiosk.friction-score`
+  // claim (corrected in place, strictly increasing sourceRevision) that the
+  // installed `kiosk.friction-ok` gate/`kiosk.access` entitlement (fail_open)
+  // read. `stateGatesModule`/`kioskFrictionStateGatesPrincipal` are wired
+  // above alongside `producerPrincipals`. windowMs mirrors the rolling
+  // window the installed policy's `kiosk.friction-ok` gate was tuned
+  // against — see the "PROVISIONAL threshold" comment on that gate in
+  // installedStateGatesPolicy.mjs; keep the two in sync if either changes.
+  const kioskFrictionTracker = new KioskFrictionTracker({
+    ingress: stateGatesModule.ingress,
+    householdId,
+    principal: kioskFrictionStateGatesPrincipal,
+    windowMs: 5 * 60 * 1000,
+    logger: rootLogger.child({ module: 'kiosk-friction-tracker' }),
+  });
+
   // Per-device "is a video playing" registry (excludes ArtMode scenes), fed by
   // the same `screen.presence` heartbeat. Read by the ambient scheduler.
   const screenContentTracker = new ScreenContentTracker({
@@ -4825,6 +4843,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     configService,
     loadFile,
     pianoMidiWakeService,
+    kioskFrictionTracker,
     logger: rootLogger.child({ module: 'device-api' })
   });
 
