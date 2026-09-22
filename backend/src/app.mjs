@@ -4292,7 +4292,10 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         // work can say which day it was for.
         curriculum: schoolLifecycle.stores.curriculum ?? null,
         studentName: (learnerId) => personDisplayName(configService.getUserProfile?.(learnerId), learnerId),
-        today: () => studyDayForInstant(Date.now(), { timezone: configService.getHouseholdTimezone?.() ?? null }),
+        // Same zone school's study days use (schoolLifecycle's `timezone`, fed
+        // to CloseSessionOutcome and the piano bridge), so on-time work near
+        // the 4 AM boundary never reads as late.
+        today: () => studyDayForInstant(Date.now(), { timezone: configService.getTimezone?.() || null }),
         // Bounds the label lookups (default 2s) so a hung catalog/name read can
         // never withhold the hook and, with it, the room siren.
         scheduler: new NodeAsyncScheduler(),

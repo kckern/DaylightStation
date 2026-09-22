@@ -163,6 +163,40 @@ describe('PianoLessonCeremonyBridge', () => {
       expect(fired.notification.message).toBe('Piano lesson done');
     });
 
+    it('never shows the internal PianoChallenge token as a lesson title', async () => {
+      const c = build({
+        status: { doneToday: true, challengeCompleted: true, score: 37, servedWork: [] },
+        resolveStudent: async () => 'Learner4',
+      });
+      await c.bus.emit('piano.school-challenge.completed', {
+        userId: 'user_4', descriptorId: 'unit-3-c-major', completedAt: '2026-08-25T18:00:00.000Z',
+      });
+      expect(c.fired[0].notification.title).toBe('🎹 Learner4 — Piano lesson');
+      expect(JSON.stringify(c.fired[0].notification)).not.toMatch(/PianoChallenge/);
+      // The HA key and the Portal banner keep their existing value.
+      expect(c.fired[0].lesson).toBe('PianoChallenge');
+    });
+
+    it('shows a readable name, never the raw id, when the name lookup throws', async () => {
+      const fired = await (async () => {
+        const c = build({
+          status: pianoStatus([]),
+          resolveStudent: async () => { throw new Error('profile unreadable'); },
+        });
+        await c.bus.emit('piano.lesson.completed', { userId: 'user_4', plexId: 'plex:9001', title: LESSON });
+        return c.fired[0];
+      })();
+      expect(fired.student).toBe('User 4');
+      expect(fired.notification.title).toBe('🎹 User 4 — How to Play “Lavender’s Blue”');
+    });
+
+    it('shows a readable name when no resolver is wired', async () => {
+      const c = build({ status: pianoStatus([]), resolveStudent: null });
+      await c.bus.emit('piano.lesson.completed', { userId: 'user_4', plexId: 'plex:9001', title: LESSON });
+      expect(c.fired[0].student).toBe('User 4');
+      expect(c.fired[0].notification.title).not.toMatch(/user_4/);
+    });
+
     it('composes the challenge completion the same way', async () => {
       const c = build({
         status: {
