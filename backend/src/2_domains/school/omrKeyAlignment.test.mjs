@@ -71,19 +71,20 @@ describe('omrKeyAlignmentSuspect', () => {
     expect(result).toEqual({ offset: 1, literalMatches: 0, shiftedMatches: 3, itemCount: 4 });
   });
 
-  it('does not flag an already-passing sheet even when a shift would score higher still', () => {
-    // 9/12 correct literally (75%) — a real pass on most grading scales.
-    // Constructed so shifting by -1 would raise 3 of the wrong rows to
-    // correct, pushing shiftedMatches to 12 — margin(2) alone does NOT rule
-    // this out (12 - 9 = 3 >= 2), which is exactly the false "structural"
-    // proof an earlier draft of this file relied on. PASSING_FLOOR is the
-    // real guard: literalMatches/itemCount (0.75) is at or above it, so this
-    // must return null regardless of how large the shifted score is.
-    const correct = ['A', 'B', 'C', 'D', 'A', 'B', 'C', 'D', 'A', 'B', 'C', 'D'];
-    const rows = correct.map((letter, index) => ({
-      row: index + 1,
-      given: index < 9 ? letter : correct[index - 1], // last 3 rows: shifted-late guess
-      correctLetter: letter,
+  it('does not flag an already-passing sheet even when MARGIN alone would (PASSING_FLOOR is what prevents it)', () => {
+    // 12 rows: correct key is 'A' for rows 1-10, then 'B' (row 11), 'C' (row 12).
+    // given matches literally for rows 1-9 (literalMatches=9, 75% -- passes
+    // PASSING_FLOOR=0.7) and is deliberately WRONG but shift-aligned for rows
+    // 10-12: given(10)='B'=correct(11), given(11)='C'=correct(12). Hand-verified:
+    // at offset +1, every row i=1..11 has given[i] === correct[i+1] (rows 1-9
+    // because correct[i+1] is still 'A' through row 10; rows 10-11 by
+    // construction), so shiftedMatches=11. shiftedMatches - literalMatches =
+    // 11 - 9 = 2, which MEETS margin(2) -- MARGIN ALONE would flag this
+    // passing sheet. Only PASSING_FLOOR (9/12 = 0.75 >= 0.7) stops it.
+    const correctKey = ['A', 'A', 'A', 'A', 'A', 'A', 'A', 'A', 'A', 'A', 'B', 'C'];
+    const givenMarks = ['A', 'A', 'A', 'A', 'A', 'A', 'A', 'A', 'A', 'B', 'C', 'E'];
+    const rows = correctKey.map((correctLetter, index) => ({
+      row: index + 1, given: givenMarks[index], correctLetter,
     }));
     expect(omrKeyAlignmentSuspect(rows)).toBeNull();
   });
