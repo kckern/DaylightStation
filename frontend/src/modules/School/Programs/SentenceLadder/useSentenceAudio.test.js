@@ -169,3 +169,52 @@ describe('spans and position (recording in pieces)', () => {
     expect(result.current.position()).toBeNull();
   });
 });
+
+/**
+ * A play() the hook itself interrupted — stop(), or a new sequence taking the
+ * element — rejects with an AbortError. That is not the browser refusing to
+ * play, and reporting it as `blocked` bounced the recording rung back to idle
+ * with "The sound didn't start" after a perfectly good stop.
+ */
+describe('an interrupted play is not a blocked one', () => {
+  /** Every play() stays pending until the test settles it, one per call. */
+  const pendingPlay = () => {
+    const rejects = [];
+    window.HTMLMediaElement.prototype.play = vi.fn(function play() {
+      elements.push(this);
+      return new Promise((_, r) => { rejects.push(r); });
+    });
+    const abortError = () => Object.assign(new Error('The play() request was interrupted'), { name: 'AbortError' });
+    return {
+      abort: (i = rejects.length - 1) => rejects[i](abortError()),
+      refuse: (i = rejects.length - 1) => rejects[i](new Error('NotAllowedError')),
+    };
+  };
+
+  it('a play aborted by stop() does not set blocked', async () => {
+    const play = pendingPlay();
+    const { result } = renderHook(() => useSentenceAudio());
+    act(() => result.current.playSequence([{ url: '/a.mp3' }]));
+    act(() => result.current.stop());
+    await act(async () => { play.abort(); });
+    expect(result.current.blocked).toBe(false);
+  });
+
+  it('a play aborted by the next sequence does not set blocked', async () => {
+    const play = pendingPlay();
+    const { result } = renderHook(() => useSentenceAudio());
+    act(() => result.current.playSequence([{ url: '/a.mp3' }]));
+    act(() => result.current.playSequence([{ url: '/b.mp3' }]));
+    await act(async () => { play.abort(0); });
+    expect(result.current.blocked).toBe(false);
+    expect(result.current.playing).toBe(true);
+  });
+
+  it('a refusal of the clip still sounding is still blocked', async () => {
+    const play = pendingPlay();
+    const { result } = renderHook(() => useSentenceAudio());
+    act(() => result.current.playSequence([{ url: '/a.mp3' }]));
+    await act(async () => { play.refuse(); });
+    expect(result.current.blocked).toBe(true);
+  });
+});
