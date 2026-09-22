@@ -102,6 +102,26 @@ export function scanNoticeDocument(announcement = {}) {
       });
     }
     case 'scan-review': {
+      // Key-alignment is its own reason, not a double-marked bubble — the
+      // stock "two answers filled in" copy would lie about why the sheet is
+      // held. Only reached for the sole-reason case: Task 2's guard against
+      // a still-mid-fill sheet is BLANK ROWS ONLY (`hasBlankRow` suppresses
+      // the whole check). An ambiguous/multi-mark row does not suppress it —
+      // it is simply excluded from the row SET the check compares, because
+      // a double-marked row's `given` is an array and `omrKeyAlignmentSuspect`
+      // only ever sees rows whose raw scanned answer is a single letter. So a
+      // sheet CAN legitimately carry `key-alignment-suspected` alongside
+      // `ambiguous`/`free_response` (this file's own test exercises exactly
+      // that mix) — that combined case falls through to the generic copy
+      // below, which is at least never wrong about a grown-up being needed.
+      const reasons = Array.isArray(announcement.reasons) ? announcement.reasons : [];
+      if (reasons.length === 1 && reasons[0] === 'key-alignment-suspected') {
+        return noticeDocument({
+          id,
+          headline: headlineFor(announcement.title, 'NEEDS A GROWN-UP'),
+          lines: ['A grown-up is double-checking one of your answers.', 'Ask them to take a look.'],
+        });
+      }
       const count = isNumber(announcement.pendingReview) ? announcement.pendingReview : null;
       const what = count === null ? 'Some questions' : count === 1 ? '1 question' : `${count} questions`;
       return noticeDocument({

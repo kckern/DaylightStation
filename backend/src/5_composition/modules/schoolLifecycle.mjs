@@ -269,6 +269,11 @@ export async function createSchoolLifecycle({
   bookGrants = null, resolveBook = null, bookRepository = null, bookCoverUrlFor = null,
   donow = null, donowSurfaces = null, donowDatastore = null,
   tokenRegistry = null, schoolCalcActionResolver = null, schoolCalcStudies = null,
+  // Kiosk unsupervised-input friction tracker (kiosk-friction-detection Task
+  // 3/4): a rejected access code is the panel's own first signal source. Null
+  // in a composition without it — `ResolveAccessCode` degrades exactly like
+  // it does with no `attemptLimiter`: rejections are simply not counted.
+  kioskFrictionTracker = null,
   // A THUNK returning every `learner_action` the household's trigger sources
   // declare (or `null` when they could not be read). A function, not a value,
   // because this module is composed before the trigger API that owns the
@@ -1309,6 +1314,7 @@ export async function createSchoolLifecycle({
     planProjection,
     tokens: stores.tokens,
     attemptLimiter: accessCodeAttemptLimiter,
+    kioskFrictionTracker,
     curriculum,
     assignments: stores.assignments,
     sessions: stores.sessions,

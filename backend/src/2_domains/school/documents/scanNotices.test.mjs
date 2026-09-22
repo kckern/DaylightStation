@@ -64,6 +64,48 @@ describe('scanNoticeDocument', () => {
   it('is silent on an unknown kind', () => {
     expect(scanNoticeDocument({ kind: 'something-else' })).toBeNull();
   });
+
+  it('tells the truth about a key-alignment hold instead of "two answers filled in"', () => {
+    const doc = scanNoticeDocument({
+      kind: 'scan-review', testId: '5252427', title: 'New York', reasons: ['key-alignment-suspected'],
+    });
+    const text = md(doc);
+    expect(text).toContain('# NEW YORK — NEEDS A GROWN-UP');
+    expect(text).toContain('A grown-up is double-checking one of your answers.');
+    expect(text).toContain('Ask them to take a look.');
+    expect(text).not.toMatch(/two answers filled in/i);
+  });
+
+  it('keeps the original "two answers filled in" copy for an ambiguous-bubble hold (regression)', () => {
+    const doc = scanNoticeDocument({
+      kind: 'scan-review', testId: '5252427', title: 'New York', reasons: ['ambiguous'], pendingReview: 1,
+    });
+    const text = md(doc);
+    expect(text).toContain('1 question had two answers filled in.');
+    expect(text).toContain('Ask a grown-up to check it.');
+    expect(text).not.toMatch(/double-checking/i);
+  });
+
+  /**
+   * A sheet CAN legitimately carry `key-alignment-suspected` alongside
+   * another reason: Task 2's guard against a still-mid-fill sheet is
+   * blank-rows-only, and an ambiguous/multi-mark row is excluded from the
+   * row SET the check compares (its raw scanned answer is an array, not a
+   * string) rather than suppressing the whole check — so a genuinely
+   * possible mix like `['key-alignment-suspected', 'free_response']` must
+   * still fall through to the generic copy, never the key-alignment-only
+   * one-liner (whole-branch review finding #5).
+   */
+  it('falls through to the generic "two answers filled in" copy for a mixed key-alignment + free_response hold', () => {
+    const doc = scanNoticeDocument({
+      kind: 'scan-review', testId: '5252427', title: 'New York',
+      reasons: ['key-alignment-suspected', 'free_response'], pendingReview: 2,
+    });
+    const text = md(doc);
+    expect(text).toContain('2 questions had two answers filled in.');
+    expect(text).toContain('Ask a grown-up to check it.');
+    expect(text).not.toMatch(/double-checking/i);
+  });
 });
 
 describe('rowList', () => {

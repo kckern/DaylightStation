@@ -814,6 +814,72 @@ describe('GradeSubmission on a print-document unit', () => {
     expect(result).toMatchObject({ status: 'graded' });
     expect(teacherGate.assert).not.toHaveBeenCalled();
   });
+
+  /**
+   * The key-alignment check (OMR key-alignment-check, Task 3) enqueues ONE
+   * synthetic `key-alignment-suspected` item alongside the sheet's real
+   * rows so a teacher can be shown the evidence before trusting the score.
+   * That item is not a question — nothing was printed for it, nothing was
+   * answered — so it must never become a 7th row in the denominator, even
+   * when a teacher resolves it with a truth-value verdict (`correct`)
+   * instead of the `void` the console's third button sends. A first draft of
+   * this plan missed this entirely: `expectedItems` used to be every queued
+   * itemId, unfiltered.
+   */
+  const seedSixMachineMarks = (reviewQueue, at) => reviewQueue.enqueue(
+    Array.from({ length: 6 }, (_, i) => ({
+      sessionId: SID,
+      itemId: `q${i + 1}`,
+      learnerId: 'kid1',
+      unitId: OMR_UNIT,
+      reason: 'machine',
+      given: 'blue',
+      prompt: `P${i + 1}`,
+      questionNumber: i + 1,
+      rubric: null,
+      enqueuedAt: at,
+      verdict: 'correct',
+      gradedBy: 'engine',
+      gradedAt: at,
+      attemptId: `att-${i + 1}`,
+    })),
+  );
+
+  const seedKeyAlignmentEntry = (reviewQueue, at) => reviewQueue.enqueue([{
+    sessionId: SID,
+    itemId: 'key-alignment',
+    learnerId: 'kid1',
+    unitId: OMR_UNIT,
+    reason: 'key-alignment-suspected',
+    given: null,
+    prompt: 'Row alignment check',
+    questionNumber: null,
+    rubric: 'Shifting the answers up 1 row would score 2/6 instead of 6/6 — worth asking before this counts against them.',
+    enqueuedAt: at,
+  }]);
+
+  it('excludes a key-alignment-suspected queue entry from the print-unit denominator', async () => {
+    const { clock, sessions, reviewQueue, grade } = buildPrintCase();
+    await submittedAt(sessions, clock);
+    const at = clock.iso();
+    await seedSixMachineMarks(reviewQueue, at);
+    await seedKeyAlignmentEntry(reviewQueue, at);
+
+    // The natural, wrong gesture a teacher might make: resolving the
+    // synthetic entry with a verdict rather than voiding it.
+    await reviewQueue.resolve({
+      sessionId: SID, itemId: 'key-alignment', verdict: 'correct', gradedBy: 'dad', at,
+    });
+
+    const result = await grade.execute({ sessionId: SID });
+    // Six real rows, all correct — 100%, never a 7th question.
+    expect(result).toMatchObject({
+      status: 'graded', correct: 6, expected: 6, percent: 100,
+    });
+    const gradedEvent = (await sessions.readEvents(SID)).find((e) => e.type === 'graded');
+    expect(gradedEvent).toMatchObject({ correctCount: 6, totalCount: 6 });
+    expect(sessions.derive(SID)).toMatchObject({ gradedCorrectCount: 6, gradedTotalCount: 6 });
+  });
 });
 
 // ---------------------------------------------------------------------------

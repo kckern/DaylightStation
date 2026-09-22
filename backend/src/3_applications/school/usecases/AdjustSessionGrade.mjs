@@ -1,6 +1,7 @@
 import { sha256Text } from '#system/utils/sha256.mjs';
 import { ValidationError, EntityNotFoundError, DomainInvariantError } from '#domains/core/errors/index.mjs';
 import { createEvent, reduceSession } from '#domains/school/sessions/sessionEvents.mjs';
+import { isSyntheticReviewItem } from '#apps/school/ports/IReviewQueue.mjs';
 
 const text = (value) => (typeof value === 'string' && value.trim() ? value.trim() : null);
 const lastSeq = (events) => events.reduce((max, event) => Math.max(max, Number(event?.seq) || 0), 0);
@@ -194,9 +195,16 @@ export class AdjustSessionGrade {
       this.#worksheets?.findBySession?.(sessionId) ?? null,
       this.#reviews?.listForSession?.(sessionId) ?? [],
     ]);
+    // A `key-alignment-suspected` entry (OMR key-alignment check) is a
+    // synthetic review-queue row, not a printed question — the same fix
+    // `GradeSubmission.mjs`'s print-unit denominator needed. A print unit
+    // ordinarily has no worksheet instance, so this evidence-derived roster
+    // is exactly the branch a correction on a key-alignment-held session
+    // walks; without the exclusion, resolving that entry (or a correction
+    // touching any other question) would fold it in as a 7th printed row.
     const roster = worksheet?.itemIds?.length
       ? worksheet.itemIds
-      : evidence.map((item) => item.itemId).filter(Boolean);
+      : evidence.filter((item) => !isSyntheticReviewItem(item)).map((item) => item.itemId).filter(Boolean);
     if (!roster.length) {
       // Legacy sessions have no immutable item snapshot. Their only honest
       // correction surface is the historical percent/count override.

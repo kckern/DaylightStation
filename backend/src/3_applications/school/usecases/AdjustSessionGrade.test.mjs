@@ -423,3 +423,80 @@ describe('AdjustSessionGrade with a voided question', () => {
     })).rejects.toThrow(/nothing left to score/);
   });
 });
+
+/**
+ * A KEY-ALIGNMENT-SUSPECTED ENTRY IS NOT A QUESTION (whole-branch review,
+ * finding #1). The same denominator leak Task 3 fixed in
+ * `GradeSubmission.mjs` reappears here: for a print unit there is usually
+ * no worksheet instance, so `#normalizeItemVerdicts`' roster falls back to
+ * `evidence.map((item) => item.itemId)` — the review queue's raw itemIds —
+ * which can carry the synthetic `key-alignment` entry the OMR key-alignment
+ * check enqueues. This is the EXACT branch `AdjustSessionGrade.mjs:197-199`
+ * is reachable on: a teacher using "Fix a marked answer" on a session that
+ * had a key-alignment hold.
+ */
+describe('AdjustSessionGrade with a key-alignment-suspected queue entry (no worksheet instance)', () => {
+  const SIX = Array.from({ length: 6 }, (_, i) => `q${i + 1}`);
+
+  // Graded 6 of 6 — the exact shape `GradeSubmission.mjs`'s own
+  // key-alignment denominator fix produces once a teacher resolves the
+  // synthetic entry (paperWork.test.mjs: "excludes a key-alignment-suspected
+  // queue entry from the print-unit denominator").
+  const gradedSixOfSix = () => [
+    { type: 'created', at: '2026-09-21T10:00:00.000Z', sessionId: 'ses_ka', seq: 1, learnerId: 'kid', unitId: 'science' },
+    { type: 'issued', at: '2026-09-21T10:01:00.000Z', sessionId: 'ses_ka', seq: 2, artifactId: 'card-1' },
+    { type: 'submitted', at: '2026-09-21T10:02:00.000Z', sessionId: 'ses_ka', seq: 3, transport: 'paper' },
+    { type: 'graded', at: '2026-09-21T10:03:00.000Z', sessionId: 'ses_ka', seq: 4, attemptIds: ['att_1'],
+      percent: 100, passingPercent: 80, correctCount: 6, totalCount: 6 },
+  ];
+
+  // The review queue's real shape: six machine-marked rows plus one
+  // synthetic key-alignment entry — resolved with a truth-value verdict
+  // (`correct`), the natural, wrong gesture a teacher might make instead of
+  // voiding it.
+  const evidenceWithSyntheticEntry = () => [
+    ...SIX.map((itemId) => ({ itemId, verdict: 'correct', reason: 'machine' })),
+    { itemId: 'key-alignment', verdict: 'correct', reason: 'key-alignment-suspected' },
+  ];
+
+  // No `worksheetInstances` wired at all — a print unit ordinarily mints no
+  // worksheet instance (that's a bank-select shape), so this is exactly the
+  // "evidence-roster, no worksheet instance" configuration the finding names.
+  function build({ log = gradedSixOfSix(), evidence = evidenceWithSyntheticEntry() } = {}) {
+    const sessions = {
+      readEvents: vi.fn(async () => log.map((event) => ({ ...event }))),
+      appendEvent: vi.fn(async (sessionId, event) => {
+        const stored = { ...event, sessionId, seq: log.length + 1 };
+        log.push(stored);
+        return stored;
+      }),
+    };
+    const adjust = new AdjustSessionGrade({
+      sessions, teacherGate: { assert: vi.fn() },
+      reviewQueue: { listForSession: vi.fn(async () => evidence) },
+      clock: () => new Date('2026-09-21T12:00:00.000Z'), logger: { info() {}, warn() {} },
+    });
+    return { log, adjust };
+  }
+
+  const sixCorrectExcept = (overrides = {}) => SIX.map((itemId) => ({
+    itemId, verdict: overrides[itemId] ?? 'unchanged',
+  }));
+
+  it('keeps the denominator at 6, not 7 — the synthetic entry never becomes a printed question', async () => {
+    const { adjust } = build();
+    // Not supplying a verdict for 'key-alignment' proves the roster excludes
+    // it: `#normalizeItemVerdicts` throws "a verdict is required for printed
+    // item {itemId}" for every roster entry with no supplied verdict, so this
+    // would throw for 'key-alignment' if the bug were still present.
+    const result = await adjust.execute({
+      sessionId: 'ses_ka', adjustmentId: 'adj_ka', reason: 'q3 was actually wrong', adjustedBy: 'parent',
+      baseSeq: 4, itemVerdicts: sixCorrectExcept({ q3: 'incorrect' }),
+    });
+    // 5 of 6 (83.33%), never 5 of 7 (71.43%) — the synthetic entry counted
+    // as neither a printed question nor a missed one.
+    expect(result.effectiveGrade).toMatchObject({ correctCount: 5, totalCount: 6, percent: 83.33 });
+    expect(result.effectiveGrade.missedItemIds).toEqual(['q3']);
+    expect(result.effectiveGrade.missedItemIds).not.toContain('key-alignment');
+  });
+});

@@ -174,16 +174,22 @@ See [API and events](api-and-events.md) for exact resources and error behavior.
 
 ## Installed integrations
 
-Root composition registers fixed, object-identity principals for `school` and `fitness`
-in addition to `manual-attestation`. A request body or event-bus message cannot obtain
-those identities. When no household policy exists, the installed policy declares:
+Root composition registers fixed, object-identity principals for `school`, `fitness`,
+and `kiosk-friction-tracker` in addition to `manual-attestation`. A request body or
+event-bus message cannot obtain those identities. When no household policy exists, the
+installed policy declares:
 
 | Producer fact | Gate/entitlement consumer |
 |---|---|
 | `school.day.complete` on `interval/school-day:YYYY-MM-DD` | `school.day-complete` -> fail-closed `piano.games` |
 | `fitness.weekly.rings` on `interval/fitness-week:FROM:TO` | `fitness.weekly-rings` progress -> Agenda ring count |
+| `kiosk.friction-score` on `interval/kiosk-day:DEVICE:YYYY-MM-DD` | `kiosk.friction-ok` -> fail-open `kiosk.access` |
 
-Both intervals use the household's 4 a.m. study-day boundary. A household-authored
-policy replaces the installed candidate and therefore must carry these IDs if it wants
-the installed producer/consumer wiring to remain active. The legacy School completion
-and weekly-measures read APIs remain available to unmigrated callers.
+The school and fitness intervals use the household's 4 a.m. study-day boundary. The
+kiosk-friction interval does not: it uses a UTC calendar-day boundary, kept
+household-timezone-agnostic on purpose (`KioskFrictionTracker.mjs`'s `utcDayWindow`
+helper), since the cooldown it drives needs assertion-id/period stability, not
+curriculum-day precision. A household-authored policy replaces the installed candidate
+and therefore must carry these IDs if it wants the installed producer/consumer wiring
+to remain active. The legacy School completion and weekly-measures read APIs remain
+available to unmigrated callers.
