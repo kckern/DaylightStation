@@ -1,5 +1,5 @@
 import fs from 'node:fs';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
 import SentenceLadderProgram from './SentenceLadderProgram.jsx';
 import TypedRung from './rungs/TypedRung.jsx';
@@ -44,6 +44,14 @@ const {
   pacingWarnMock: vi.fn(),
   capabilityLogMock: vi.fn(),
 }));
+
+/**
+ * The join is Web Audio (decode, resample, encode), which happy-dom does not
+ * have. The rung's wiring is what these tests are about; `joinTake.test.js`
+ * covers the join itself.
+ */
+const { joinTakeMock } = vi.hoisted(() => ({ joinTakeMock: vi.fn() }));
+vi.mock('./rungs/joinTake.js', () => ({ joinTake: (...a) => joinTakeMock(...a) }));
 
 vi.mock('./languageLog.js', () => ({
   languageLog: {
@@ -2765,5 +2773,129 @@ describe('the first day request', () => {
     await screen.findByLabelText(/Type what you hear/i);
     await waitFor(() => expect(dayMock.mock.calls.at(-1)[2]).toEqual(expect.objectContaining({ textInput: ['EN', 'KR'] })));
     expect(dayMock.mock.calls[0][2]).toEqual(expect.objectContaining({ textInput: [] }));
+  });
+});
+
+/**
+ * RECORDING IN PIECES (2026-09-22). A long sentence is cut live with → while
+ * the model plays; each piece is its own take against its own span of the
+ * model, and the pieces are joined into one take before review.
+ */
+describe('recording in pieces', () => {
+  const path = (url) => url.replace(/^https?:\/\/[^/]+/, '');
+  const pressKey = (key) => fireEvent.keyDown(document.body, { key });
+  let originalTime;
+  let clock;
+  beforeEach(() => {
+    originalTime = Object.getOwnPropertyDescriptor(window.HTMLMediaElement.prototype, 'currentTime');
+    Object.defineProperty(window.HTMLMediaElement.prototype, 'currentTime', {
+      configurable: true, get() { return this._t ?? 0; }, set(v) { this._t = v; },
+    });
+    // FROZEN, not offset from the real clock: a take's length is exactly the
+    // time the test says passed, so the joined length can be asserted exactly.
+    let now = Date.now();
+    vi.spyOn(Date, 'now').mockImplementation(() => now);
+    clock = { advance: (ms) => { now += ms; } };
+    joinTakeMock.mockReset();
+    joinTakeMock.mockImplementation(async () => new Blob(['joined'], { type: 'audio/wav' }));
+  });
+  afterEach(() => {
+    Date.now.mockRestore?.();
+    if (originalTime) Object.defineProperty(window.HTMLMediaElement.prototype, 'currentTime', originalTime);
+    else delete window.HTMLMediaElement.prototype.currentTime;
+  });
+
+  /** The FIRST full sentence hangs so the test can cut into it; every other
+   *  clip ends at once. `played` records the src and the seek point. */
+  const modelPlayer = () => {
+    const played = [];
+    let held = null;
+    window.HTMLMediaElement.prototype.pause = vi.fn();
+    window.HTMLMediaElement.prototype.play = vi.fn(function play() {
+      const src = path(this.src);
+      played.push({ src, atMs: Math.round((this._t ?? 0) * 1000) });
+      if (!held && src.endsWith('/KR')) { held = this; return Promise.resolve(); }
+      setTimeout(() => this.onended?.(), 0);
+      return Promise.resolve();
+    });
+    return { played, at: (ms) => { held._t = ms / 1000; } };
+  };
+  /** Each take is a distinct blob, so a test can tell which piece was kept. */
+  const fakeMic = () => {
+    Object.defineProperty(navigator, 'mediaDevices', {
+      configurable: true,
+      value: {
+        getUserMedia: vi.fn(async () => ({ getTracks: () => [{ stop: vi.fn() }] })),
+        enumerateDevices: vi.fn(async () => [{ kind: 'audioinput' }]),
+      },
+    });
+    let n = 0;
+    class FakeRecorder {
+      constructor() { this.state = 'inactive'; this.mimeType = 'audio/webm'; }
+      start() { this.state = 'recording'; }
+      stop() {
+        this.state = 'inactive';
+        n += 1;
+        this.ondataavailable?.({ data: new Blob([`take${n}`], { type: 'audio/webm' }) });
+        this.onstop?.();
+      }
+    }
+    window.MediaRecorder = FakeRecorder;
+    let u = 0;
+    window.URL.createObjectURL = vi.fn(() => { u += 1; return `blob:take-${u}`; });
+    window.URL.revokeObjectURL = vi.fn();
+    window.HTMLCanvasElement.prototype.getContext = vi.fn(() => null);
+  };
+  const recordingDay = () => dayMock.mockResolvedValue(
+    dayPayload({ chain: ['recording'], queue: [entry(1, 'recording')], cues: ['record'] }),
+  );
+  const program = () => render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+  /** Say one piece: the mic is open, `ms` pass, Space stops. */
+  const sayPiece = async (ms) => {
+    await screen.findByRole('button', { name: 'Stop' });
+    clock.advance(ms);
+    pressKey(' ');
+  };
+
+  it('→ cuts the sentence: part one, then the rest from the cut, then one WAV is kept', async () => {
+    const model = modelPlayer();
+    fakeMic();
+    recordingDay();
+    program();
+    const { languageApi } = await import('./languageApi.js');
+    const { languageLog } = await import('./languageLog.js');
+
+    await screen.findByRole('button', { name: 'Listen, then record' });
+    pressKey(' ');
+    await waitFor(() => expect(model.played.map((p) => p.src)).toEqual(['/audio/glossika-korean/1/KR']));
+    model.at(1500);
+    pressKey('ArrowRight');
+
+    // The model stops, the ding sounds, the mic opens for part one.
+    await sayPiece(800);
+    expect(model.played.map((p) => p.src)).toContain('/cue/record');
+    expect(languageLog.capture).toHaveBeenCalledWith('cut', expect.objectContaining({ seq: 1, piece: 0, rawMs: 1500, cutMs: 1500 }));
+
+    // Part one plays back; Space goes on to the rest, FROM THE CUT.
+    const before = model.played.length;
+    await screen.findByRole('button', { name: 'Next part' });
+    pressKey(' ');
+    await sayPiece(900);
+    expect(model.played.slice(before)).toEqual(expect.arrayContaining([
+      { src: '/audio/glossika-korean/1/KR', atMs: 1500 },
+    ]));
+
+    // The last part: Finish joins the pieces into one take.
+    await screen.findByRole('button', { name: 'Finish' });
+    pressKey(' ');
+    await waitFor(() => expect(joinTakeMock).toHaveBeenCalledTimes(1));
+    const pieces = joinTakeMock.mock.calls[0][0];
+    expect(await Promise.all(pieces.map((b) => b.text()))).toEqual(['take1', 'take2']);
+
+    await screen.findByRole('button', { name: 'Keep it' });
+    pressKey(' ');
+    await waitFor(() => expect(languageApi.recording).toHaveBeenCalledTimes(1));
+    expect(languageApi.recording.mock.calls[0][3].type).toBe('audio/wav');
+    expect(languageLog.capture).toHaveBeenCalledWith('stitched', expect.objectContaining({ seq: 1, pieces: 2, durationMs: 1700 }));
   });
 });
