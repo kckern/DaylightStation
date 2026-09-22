@@ -1,5 +1,7 @@
 # Word ladder: learner door, read-only test mode, card layout, session trace
 
+> **Superseded 2026-09-22** by `docs/_wip/plans/2026-09-22-word-ladder-mastery-redesign.md`.
+
 Status: design, awaiting review (2026-09-22)
 Builds on: `docs/reference/school/word-ladder.md`,
 `docs/_wip/plans/2026-09-22-korean-vocab-word-ladder-design.md`
