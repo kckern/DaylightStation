@@ -136,16 +136,23 @@ export class WordLadderStudyService {
     };
   }
 
+  /**
+   * `ok: false` means the read failed and nothing was actually observed — the
+   * caller must NOT advance `lastFoldedDay` in that case, or a transient read
+   * failure would silently skip the attempts in the un-scanned window forever
+   * (the next successful read starts its lookback from the day that never
+   * really got folded).
+   */
   #readAttempts(userId, status, today) {
-    if (typeof this.#attempts?.readAttemptsInRange !== 'function') return [];
+    if (typeof this.#attempts?.readAttemptsInRange !== 'function') return { attempts: [], ok: true };
     // Attempt shards are keyed by the UTC date of `at`, not the study day, so
     // the window reaches one day past today and two days behind the last fold.
     const from = status.lastFoldedDay ? addDays(status.lastFoldedDay, -FOLD_SKEW_DAYS) : addDays(today, -FOLD_LOOKBACK_DAYS);
     try {
-      return this.#attempts.readAttemptsInRange(userId, from, addDays(today, 1)) ?? [];
+      return { attempts: this.#attempts.readAttemptsInRange(userId, from, addDays(today, 1)) ?? [], ok: true };
     } catch (error) {
       this.#logger.warn?.('school.word-ladder.attempts-unreadable', { learnerId: userId, error: error.message });
-      return [];
+      return { attempts: [], ok: false };
     }
   }
 
@@ -161,12 +168,12 @@ export class WordLadderStudyService {
     return [...ids];
   }
 
-  #foldInto(status, attempts, quizDocumentIds, today) {
+  #foldInto(status, attempts, quizDocumentIds, today, ok = true) {
     const { status: next, folded } = foldPaperAttempts({
       status, attempts, quizDocumentIds,
       dayOf: (at) => studyDayForInstant(Date.parse(at), { timezone: this.#timezone }),
     });
-    next.lastFoldedDay = today;
+    if (ok) next.lastFoldedDay = today;
     return { next, folded };
   }
 
@@ -192,13 +199,13 @@ export class WordLadderStudyService {
     const media = this.#media(deck, lexicon);
     const today = this.#today();
     const at = this.#at();
-    const attempts = this.#readAttempts(userId, this.#store.read(userId), today);
+    const { attempts, ok: attemptsOk } = this.#readAttempts(userId, this.#store.read(userId), today);
     const quizDocumentIds = await this.#quizDocumentIds(deckId);
     const sessionId = this.#id();
     let folded = [];
     let frozen = false;
     const status = this.#store.update(userId, (current) => {
-      const { next, folded: applied } = this.#foldInto(current, attempts, quizDocumentIds, today);
+      const { next, folded: applied } = this.#foldInto(current, attempts, quizDocumentIds, today, attemptsOk);
       folded = applied;
       if (!WordLadderStudyService.#frozenPlan(next, today, deckId)) {
         next.days = {
@@ -345,11 +352,11 @@ export class WordLadderStudyService {
     if (!enrollment) throw new EntityNotFoundError('word-ladder assignment', learnerId);
     const deckId = enrollment.deckId ?? enrollment.corpusId;
     const today = this.#today();
-    const attempts = this.#readAttempts(learnerId, this.#store.read(learnerId), today);
+    const { attempts, ok: attemptsOk } = this.#readAttempts(learnerId, this.#store.read(learnerId), today);
     const quizDocumentIds = await this.#quizDocumentIds(deckId);
     let folded = [];
     this.#store.update(learnerId, (current) => {
-      const { next, folded: applied } = this.#foldInto(current, attempts, quizDocumentIds, today);
+      const { next, folded: applied } = this.#foldInto(current, attempts, quizDocumentIds, today, attemptsOk);
       folded = applied;
       return next;
     });

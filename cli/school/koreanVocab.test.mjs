@@ -41,6 +41,27 @@ describe('korean-vocab CLI', () => {
       expect(await main([...argv, '--force'], io())).toBe(0);
     } finally { await rm(root, { recursive: true, force: true }); }
   });
+  it('enroll-plan defaults the tile title to "Korean words" when --title is not given', () => {
+    const plan = buildEnrollPlan({ courses: [], units: [], programs: [] }, { deckId: 'language/korean/week-02-home' });
+    expect(plan.programs).toEqual([
+      { programId: 'flashcards', deckId: 'language/korean/week-02-home', title: 'Korean words', policy: { mode: 'word-ladder' }, schedule: { daysOfWeek: [1, 2, 3, 4, 5] } },
+    ]);
+  });
+
+  it('enroll-plan CLI command writes the default title when --title is omitted', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'korean-vocab-enroll-'));
+    try {
+      const out = path.join(root, 'plan.yml');
+      const fetchImpl = vi.fn(async () => ({ ok: true, json: async () => ({ courses: [], units: [], programs: [] }) }));
+      const argv = ['enroll-plan', '--learner', 'kid', '--deck', 'week-02-home', '--out', out];
+      expect(await main(argv, io(), { fetch: fetchImpl })).toBe(0);
+      const plan = load(await readFile(out, 'utf8'));
+      expect(plan.programs).toEqual([
+        { programId: 'flashcards', deckId: 'language/korean/week-02-home', title: 'Korean words', policy: { mode: 'word-ladder' }, schedule: { daysOfWeek: [1, 2, 3, 4, 5] } },
+      ]);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
   it('enroll-plan appends (or replaces) the word-ladder program and keeps everything else', () => {
     const current = {
       learnerId: 'kid', updatedAt: '2026-09-04T05:35:39.484Z',

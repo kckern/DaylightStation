@@ -30,6 +30,7 @@ export const wordLadderLog = {
   audioBlocked: (data) => emit('audio.blocked', data, 'debug'),
   writeFailed: (data) => emit('write.failed', data, 'warn'),
   planRefetched: (data) => emit('plan.refetched', data),
+  sessionReopened: (data) => emit('session.reopened', data),
   apiRejected: (data) => emit('api.rejected', data, 'warn'),
   apiFailed: (data) => emit('api.failed', data, 'error'),
 };

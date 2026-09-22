@@ -90,7 +90,7 @@ async function quiz(argv, io) {
   return 0;
 }
 
-export function buildEnrollPlan(current, { deckId, title = null }) {
+export function buildEnrollPlan(current, { deckId, title = 'Korean words' }) {
   const programs = (current?.programs ?? []).filter((row) => !(row?.programId === 'flashcards' && row.policy?.mode === 'word-ladder'));
   programs.push({
     programId: 'flashcards', deckId, ...(title ? { title } : {}),
@@ -107,7 +107,7 @@ async function enrollPlan(argv, io, fetchImpl = globalThis.fetch) {
   const baseUrl = (option(argv, '--base-url') ?? DEFAULT_BASE_URL).replace(/\/$/, '');
   const response = await fetchImpl(`${baseUrl}/lifecycle/assignments/${encodeURIComponent(learner)}`);
   if (!response.ok) throw new Error(`could not read ${learner}'s assignment (HTTP ${response.status})`);
-  const plan = buildEnrollPlan(await response.json(), { deckId, title: option(argv, '--title') ?? null });
+  const plan = buildEnrollPlan(await response.json(), { deckId, title: option(argv, '--title') ?? 'Korean words' });
   fs.mkdirSync(path.dirname(path.resolve(out)), { recursive: true });
   fs.writeFileSync(out, yaml.dump(plan, { lineWidth: -1, noRefs: true }), 'utf8');
   io.stdout.write(`wrote ${out} (${plan.programs.length} programs)\n`);
