@@ -59,8 +59,8 @@ import { courseDisplay } from '#domains/school/curriculum/display.mjs';
  *   (never awaited) at each of the four terminal scan outcomes — unresolved,
  *   refused, graded, review — so a slow or broken Home Assistant can never
  *   delay or prevent a grade being recorded. The adapter itself never
- *   throws; the `.catch(() => {})` at each call site is belt-and-suspenders
- *   for a fake/hook that rejects outright.
+ *   throws; the `.catch(() => {})` in `fireHook` is belt-and-suspenders for
+ *   a fake/hook that throws or rejects outright.
  *
  *   Every fire also carries `notification` — the finished phone copy
  *   (`composeSchoolPush`), or null when the phone should hear nothing. It is
@@ -157,20 +157,32 @@ export function createSchoolPrintScanConsumer({
         });
     };
 
-    /** The sheet's printed title, for the slip and the panel — null when unknown. */
-    const titleFor = async (card) => {
-      try {
-        const published = await printDocuments?.getPublished?.(card.documentId, card.rev);
-        return typeof published?.title === 'string' && published.title.trim() ? published.title.trim() : null;
-      } catch {
-        return null;
+    /**
+     * The sheet's printed title, for the slip, the panel and the push — null
+     * when unknown. Memoised per payload, so the push and the `speak` beside
+     * it share one `getPublished` read.
+     */
+    const titles = new Map();
+    const titleFor = (card) => {
+      const key = `${card.documentId}@${card.rev}`;
+      if (!titles.has(key)) {
+        titles.set(key, (async () => {
+          try {
+            const published = await printDocuments?.getPublished?.(card.documentId, card.rev);
+            return typeof published?.title === 'string' && published.title.trim() ? published.title.trim() : null;
+          } catch {
+            return null;
+          }
+        })());
       }
+      return titles.get(key);
     };
 
     /**
      * The phone copy for one hook fire. Labels are best-effort (a missing
      * catalog entry drops that clause, never prints an id); a failure here
-     * falls back to generic copy and can never block the fire or grading.
+     * falls back to the same outcome without labels, and can never block the
+     * fire or grading.
      */
     const pushFor = async (event, card = null, curriculumIds = null) => {
       try {
@@ -185,13 +197,15 @@ export function createSchoolPrintScanConsumer({
         const child = learnerId && studentName ? ((await studentName(learnerId)) ?? null) : null;
         const lesson = card ? await titleFor(card) : null;
         const notification = composeSchoolPush({
-          testId, learnerId, child, course, lesson, today: today?.() ?? null, ...event,
+          testId, child, course, lesson, today: today?.() ?? null, ...event, learnerId,
         });
         if (notification) {
           logger.debug?.('school.push.composed', { testId, kind: event.kind, tag: notification.data?.tag ?? null });
         } else {
           logger.info?.('school.push.suppressed', {
-            testId, kind: event.kind, reason: event.kind === 'unmarked' ? 'unmarked-record-with-graded-work' : 'no-copy',
+            testId,
+            kind: event.kind,
+            reason: event.kind === 'unmarked' ? 'unmarked-record-with-graded-work' : 'no-copy',
           });
         }
         return notification;
@@ -202,16 +216,21 @@ export function createSchoolPrintScanConsumer({
     };
 
     /**
-     * Generic copy for a push whose labels could not be composed. Keeps the
-     * learner and session, so its tag matches the real copy and it still
-     * replaces an earlier push for the same sheet.
+     * The copy for a push whose labels could not be looked up: the SAME
+     * outcome, recomposed with no labels, so a pass stays a pass on the
+     * progress lane and a suppressed push stays suppressed (null). Generic
+     * "couldn't be graded" copy is only the last resort, if composing
+     * itself throws. Either way it keeps the learner and session, so its tag
+     * matches the real copy and it replaces an earlier push for the sheet.
      */
-    const fallbackPush = (event, card) => composeSchoolPush({
-      kind: 'unresolved',
-      testId,
-      learnerId: event.learnerId ?? card?.learnerId ?? null,
-      sessionId: event.sessionId ?? null,
-    });
+    const fallbackPush = (event, card) => {
+      const learnerId = event.learnerId ?? card?.learnerId ?? null;
+      try {
+        return composeSchoolPush({ testId, ...event, learnerId });
+      } catch {
+        return composeSchoolPush({ kind: 'unresolved', testId, learnerId, sessionId: event.sessionId ?? null });
+      }
+    };
 
     /**
      * `pushFor`, bounded: a lookup that never settles gives way to fallback
@@ -238,6 +257,15 @@ export function createSchoolPrintScanConsumer({
      * is cut off by `boundedPushFor`), and a hook that throws or rejects
      * (synchronously or not) lands in the trailing `.catch`. No hook wired:
      * returns at once, with no catalog reads.
+     *
+     * This chain is also the CRITICAL 1b guard (final review): the JSDoc
+     * contract sanctions "any fake with a `fire(outcome)`", and a hook whose
+     * `fire` returns a non-promise, or throws, must never throw into the
+     * incident path before the `speak` beside the call site runs.
+     *
+     * Several fires for one card (two sections, or an unmarked record beside
+     * graded work) can reach HA in either order, since each waits on its own
+     * label lookup.
      */
     const fireHook = (outcome, event, card = null, curriculumIds = null) => {
       if (!gradingHook) return;
@@ -351,12 +379,8 @@ export function createSchoolPrintScanConsumer({
         });
         // Home automation is a bystander: never awaited into the grading path
         // and never able to fail it. The adapter already swallows its own
-        // errors; this catch covers a hook that rejects outright.
-        // CRITICAL 1b (final review): `fireHook` calls `fire` inside a
-        // `Promise.resolve()` chain — the JSDoc contract above sanctions
-        // "any fake with a `fire(outcome)`", and a hook that returns a non-promise would otherwise throw
-        // SYNCHRONOUSLY calling `.catch` on it, on the exact incident path,
-        // before the `speak` a few lines below ever runs.
+        // errors; `fireHook` covers a hook that throws or rejects outright
+        // (CRITICAL 1b — see its doc comment).
         fireHook(
           { result: 'unresolved', testId, code: outcome.error.code },
           { kind: 'unresolved', code: outcome.error.code },
@@ -425,8 +449,6 @@ export function createSchoolPrintScanConsumer({
         // (fetch a grown-up); only the `code` distinguishes them, which is
         // all a grown-up needs to tell "card id we've never seen" from
         // "record on a known card refused".
-        // See CRITICAL 1b note above: `fireHook`'s promise chain guards a hook
-        // whose `fire` returns a non-promise.
         fireHook(
           { result: 'unresolved', testId, code: 'unknown_card' },
           { kind: 'unresolved', code: 'unknown_card' },
@@ -459,8 +481,6 @@ export function createSchoolPrintScanConsumer({
         // sheet is simply out of date, and scanning their card prints a
         // fresh one. Refusing them to a grown-up here would send a child
         // to fetch help for something self-service already solves.
-        // See CRITICAL 1b note above: `fireHook`'s promise chain guards a hook
-        // whose `fire` returns a non-promise.
         fireHook(
           { result: 'unresolved', testId, code: 'dead_card' },
           { kind: 'unresolved', code: 'dead_card' },
@@ -483,11 +503,6 @@ export function createSchoolPrintScanConsumer({
         logger.warn?.('school.print.scan-live-record-unmarked', {
           testId, silentLiveRecords: outcome.silentLiveRecords,
         });
-        // See CRITICAL 1b note above: `fireHook`'s promise chain guards a hook
-        // whose `fire` returns a non-promise — on THIS incident path, the
-        // very one the 2026-08-26 report is about, a thrown `.catch` here
-        // would fire before the `scan-rows-unmarked` `speak` a few lines
-        // below ever runs.
         // The phone hears this only when nothing else on the card graded
         // (`otherWorkGraded` → null notification), for the same reason the
         // panel below stays house-only in that case.
@@ -597,8 +612,6 @@ export function createSchoolPrintScanConsumer({
           // `recordId` deliberately NOT sent — `toVariables()`'s 11-key
           // contract has no `record_id`, so it would be silently discarded;
           // the id is already on the adjacent log line for anyone who needs it.
-          // See CRITICAL 1b note above: `fireHook`'s promise chain guards a hook
-          // whose `fire` returns a non-promise.
           fireHook({
             result: 'refused', testId, code: card.error.code, learnerId: card.learnerId ?? null,
           }, { kind: 'refused', code: card.error.code, learnerId: card.learnerId ?? null }, card);
@@ -770,8 +783,6 @@ export function createSchoolPrintScanConsumer({
                 // Assistant can distinguish a passing non-perfect score
                 // from a score needing remediation. The hook itself is
                 // still fire-and-forget and cannot affect grading.
-                // See CRITICAL 1b note above: `fireHook`'s promise chain guards
-                // a hook whose `fire` returns a non-promise.
                 fireHook({
                   result: settledResult,
                   testId,
@@ -794,8 +805,6 @@ export function createSchoolPrintScanConsumer({
                   studyDay: settledStudyDay,
                 }, card, sectionOutcome.curriculum);
               } else if (sectionOutcome?.session?.reason === 'awaiting-review') {
-                // See CRITICAL 1b note above: `fireHook`'s promise chain guards
-                // a hook whose `fire` returns a non-promise.
                 fireHook({
                   result: 'review',
                   testId,
@@ -852,8 +861,6 @@ export function createSchoolPrintScanConsumer({
                   testId, recordId: card.recordId, learnerId: card.learnerId ?? null,
                   sessionId: sectionOutcome.session.sessionId, blankRows, ambiguousRows,
                 });
-                // See CRITICAL 1b note above: `fireHook`'s promise chain guards a
-                // hook whose `fire` returns a non-promise.
                 fireHook({
                   result: 'partial',
                   testId,
