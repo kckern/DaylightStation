@@ -14,20 +14,38 @@ exploring):
 
 | Question | Finding |
 |---|---|
-| Is the content DRM-free? | **Per title.** `2474245` is plaintext HLS. `14634419` is DASH with Widevine **and** PlayReady under `cenc`. |
-| Does metadata disclose DRM? | **No.** `/kapi/videos/{id}` has no DRM field. Protection is only discoverable by fetching the manifest. |
+| Is the content DRM-free? | **Per title.** `2474245` is plaintext HLS. `14634419` is DASH with Widevine **and** PlayReady under `cenc`, and its HLS variant carries `EXT-X-KEY`. |
+| Does metadata disclose DRM? | **No.** Neither `/kapi/videos/{id}` nor `/kapi/search/videos` has any protection field. |
+| Does anything disclose it? | **Yes, two ways.** `POST /kapi/plays` returns `manifests[].drmType` (observed `"none"`), and the manifest endpoint itself is self-describing — and unauthenticated. |
+| Can search run headless? | Needs the bearer (`401` without) but **no cookies and no `cf_clearance`**. |
 | Plaintext evidence | Master playlist has an *empty* `# FairPlay Info` block; no `#EXT-X-KEY` or `#EXT-X-SESSION-KEY` in any variant; segments are MPEG-TS (`0x47` sync) with no `pssh`/`sinf`/`senc`/`tenc` boxes. |
 | Range requests | Segments return `206`, so the existing range-preserving relay works. |
 | Auth required for the manifest | **None.** `/kapi/manifests/hls/{id}.m3u8` returns the full playlist with no cookie and no bearer. |
 
 ## The two facts that shape the design
 
-**1. DRM is a per-title property and is invisible until fulfillment.**
-There is no metadata flag to filter on. The adapter must fetch the manifest and
-inspect it at fulfillment time, then fail closed. This is structurally the same
-guard `LibbyClient.#normalizeFulfillment` already applies via
-`openbook.encryption || openbook.license` — evidence the existing port contract
-encodes the right idea.
+**1. DRM is a per-title property, and catalogue surfaces cannot see it.**
+Neither search nor the video endpoint carries a protection field, so a browse
+grid cannot be pre-filtered to "playable through the proxy" from metadata alone.
+The adapter must fail closed at fulfillment, the same guard
+`LibbyClient.#normalizeFulfillment` already applies via
+`openbook.encryption || openbook.license` — evidence the port contract encodes
+the right idea.
+
+Protection *is* discoverable in two places:
+
+- `POST /kapi/plays` → `manifests[].drmType` (`"none"` for the plaintext title),
+  alongside `drmLicenseID` and the CDN. Authoritative, but costs a play.
+- `GET /kapi/manifests/{hls|dash}/{manifestId}` — **unauthenticated** and
+  self-describing. Free, and the basis for a pre-filter.
+
+The obstacle to the free check is that **manifest id is not video id.** They
+coincide for single-part titles (`2474245`), but a multi-part title's video id
+`14634417` returns `500` from the manifest endpoint while its real manifest is
+`14634419` — the pair visible in its watch URL `/watch/video/14634417/14634419`.
+Resolving child stream ids without spending a play is the one unknown blocking
+a catalogue-wide pre-filter. Until it is solved, fulfillment-time refusal is the
+only guard, and it is sufficient for correctness — just not for a tidy UI.
 
 **2. The manifest endpoint is unauthenticated, and we will authenticate anyway.**
 Because no credential is required to fetch a playlist, it is technically
@@ -74,12 +92,18 @@ Matching the existing `libby:loan/<card-id>/<title-id>` convention.
 ## Fulfillment sequence
 
 1. Resolve `/kapi/videos/{videoId}?domainId=&ageRatingDomainId=` for metadata.
-2. `POST /kapi/plays` with `{videoId, userId, domainId}` to record the view.
-3. Fetch `/kapi/manifests/hls/{id}.m3u8`; if a DASH manifest exists instead, or
-   any `ContentProtection` / `EXT-X-KEY` / `EXT-X-SESSION-KEY` is present,
-   throw `LIBRARY_MEDIA_UNSUPPORTED_FULFILLMENT` and stop.
+2. `POST /kapi/plays` with `{videoId, userId, domainId}` — this both records the
+   view and returns the manifest set.
+3. Refuse unless a manifest with `drmType: "none"` is offered. Then fetch it and
+   verify independently: no `ContentProtection`, no `EXT-X-KEY`, no
+   `EXT-X-SESSION-KEY`. Either check failing throws
+   `LIBRARY_MEDIA_UNSUPPORTED_FULFILLMENT`.
 4. Select a variant, mint a process-local lease, and serve a rewritten playlist.
 5. Relay segments through the existing range-preserving gateway.
+
+Step 3 deliberately checks twice. `drmType` is the provider's assertion; the
+manifest is the ground truth. Trusting a self-reported field alone would make
+the guard only as good as the provider's bookkeeping.
 
 ## Metadata mapping
 
@@ -119,16 +143,45 @@ server-side.
 4. Never log tokens, signed URLs, or lease handles.
 5. Buffering stays ephemeral — no archiving, matching the Libby boundary.
 
+## What `POST /kapi/plays` returns
+
+Resolved by spending one authorized play on `2474245`:
+
+```text
+playId      "1790099177590080024"
+manifests[] { manifestType: "hls", url, drmType: "none",
+              storageService, cdn, drmLicenseID }
+captions[]  { language, label, files[] }   # .vtt, .srt, .transcript
+thumbnails[]
+dva         { u }
+```
+
+So it is **not** purely accounting — it is also the fulfillment response. It
+hands back the manifest URL, states the DRM type outright, and supplies
+caption tracks the player can use directly. The design's step 2 and step 3
+collapse into one call.
+
+## Search and discovery
+
+`GET /kapi/search/videos?query=&sort=&domainId=&isKids=&page=&perPage=`
+requires the bearer (`401` without) but no cookies. It returns `list`, `count`,
+and a set of `*FilterOptions` for faceting. Each result is a thin card —
+`videoId`, `title`, `tagline`, `images`, `isKids`, `isSilent`, `feedId` — with
+no duration, year, description, or protection status, so a detail view needs
+`/kapi/videos/{id}`.
+
 ## Open questions
 
+- **How is a title's manifest/stream id resolved without spending a play?**
+  This is the blocker for a free DRM pre-filter. The watch URL exposes the pair,
+  so the child id is likely reachable from the video payload
+  (`ancestorVideoIds`, `supplementalMaterial`, or a chapters collection) — not
+  yet confirmed.
 - Does `isFree` or `supplier` correlate with plaintext delivery? Suspected from
-  a sample of two, which is not evidence. Worth measuring before assuming any
-  title class is safe to skip the manifest check for — and the check is cheap
-  enough that the answer may not matter.
-- Does `POST /kapi/plays` return anything needed for fulfillment (a session or
-  token), or is it purely accounting? Untested, because calling it spends a play.
-- Play credits: `/kapi/memberships` returned an empty list for this account, so
-  the entitlement model is not yet understood.
+  a sample of two, which is not evidence.
+- `/kapi/memberships?userId=` returns `400 invalid` for this account, so the
+  entitlement and play-credit model is still unknown. It may not be needed:
+  `plays` succeeded without consulting it.
 
 ## Testing
 
