@@ -38,6 +38,11 @@ describe('buildWordQuizSource', () => {
     expect(questions[0].answer).toBe('Hi (casual)');
     expect(questions[1].blocks[0].md).toBe('Which is **Hello (polite)** in Korean?');
     expect(questions[1].answer).toBe('안녕하세요');
+    // The printed sheet only shows lettered choices when the question carries an omr_response.
+    for (const q of questions) {
+      expect(q.omr).toBe(true);
+      expect(q.blocks[1]).toEqual({ type: 'omr_response', itemId: q.itemId, choices: q.choices.length, layout: 'compact' });
+    }
     for (const q of questions) {
       expect(q.choices).toHaveLength(4);
       expect(new Set(q.choices).size).toBe(4);
