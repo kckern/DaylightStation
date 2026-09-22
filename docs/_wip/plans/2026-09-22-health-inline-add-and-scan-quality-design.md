@@ -133,8 +133,9 @@ practice.
   date; success clears text and keeps focus; Escape clears then blurs.
 - `QuickCaptureBar` `+` on a hidden bucket shows that section and focuses its
   row.
-- Existing `viewedDate.test.jsx` covers date routing but its 6 tests time out at
-  HEAD today; fix that harness first so it can guard this change.
+- Existing `viewedDate.test.jsx` covers date routing. It passes alone (9/9);
+  its timeouts only appear when the whole Health suite runs at once, so run
+  test files one at a time.
 
 ---
 
@@ -144,17 +145,20 @@ Numbers refer to the audit's findings.
 
 ### B1. Barcode intake guard (Magazine ×6, findings 3 and 8)
 
-A single gate in the nutribot barcode path, before lookup, in the application
-layer (`BarcodeScanService` / the nutribot route), not the relay:
+Shape checks live in `LogFoodFromUPC`, which every UPC path (relay, HTTP,
+Telegram, web) runs. Repeat suppression lives in the relay's product handler
+(`ScanIngressCoordinator.handleProduct`), because each relay scan carries its
+own operation id and nothing downstream can tell a re-fire from a second can:
 
 1. **Shape.** Digits only after prefix stripping. Accept GTIN-8/12/13/14 with
    a valid check digit. A code that is an exact repetition of a valid code
    (`XX`, two reads without a terminator) collapses to one read. Anything else
-   is rejected: `barcode.nutribot.rejected {code, reason: 'shape'}`.
+   is rejected: `upc.rejected {upc, reason}`.
 2. **Books are not food.** 13-digit codes with a `978`/`979` prefix are ISBNs
    from the shared reader and are never looked up as food:
-   `reason: 'isbn'`. (School's book scan keeps its own route; this only
-   stops nutribot from consuming them.)
+   `reason: 'isbn'`. Relay scans already route ISBNs to School's book handler
+   (`ScanCode` parses them to the `book` namespace); the HTTP, Telegram and web
+   paths do not parse first, so the use case refuses them too.
 3. **Repeat suppression.** The same code from the same device within 30 s of
    an accepted scan is dropped: `barcode.nutribot.repeat {code, sinceMs}`.
    The Magazine burst spanned 15 s. A deliberate second item is a portion
@@ -163,12 +167,12 @@ layer (`BarcodeScanService` / the nutribot route), not the relay:
 ### B2. Quarantine instead of logging an empty food (findings 3, 6)
 
 When a lookup returns a product with **no calories and no per-100 basis**
-(Magazine, Winco Foods), the capture is written as a **pending** NutriLog
-(`status: 'pending'`, `reason: 'no-nutrition'`), not a committed row. Budget
-and macro sums already exclude `pending`, so the day's totals stay clean. It
-appears in the existing Needs Review section as *"Scanned 037000338369 —
-'Magazine', no nutrition found"* with **Describe** (opens that meal's add row
-prefilled with the name) and **Discard**.
+(Magazine, Winco Foods), the capture stays a **pending** NutriLog: the use
+case saves it but skips the review service's `capture`, which is the step that
+accepts a log into the ledger. Budget and macro sums already exclude pending
+logs, so the day's totals stay clean. It appears in the existing Needs Review
+section (Barcode tag, "Calories need review") with its existing **Review food**
+and **Discard** actions; no new UI is needed.
 
 ### B3. Nutrition that is known must stay known (finding 6)
 
@@ -192,23 +196,28 @@ would break the ledger's "volumes are never grams" rule.
 
 ### B5. Icons (findings 1, 2)
 
-- `UPCGateway` stops stamping `icon: '🍽️'` (and `NutritionixAdapter` its
-  emoji fallback). `LogFoodFromUPC` takes `product.icon` only if it is a
-  manifest slug; otherwise the classifier's answer wins.
-- `FoodCatalogService.resolveIdentity` runs the catalog's icon through
-  `confineIcon` like every other path, so a legacy slug cannot ride onto a new
-  row.
-- **Legacy vocabulary.** The 83 retired slugs (186 catalog entries, 32 hot
-  rows) get manifest **aliases** where a real icon exists (`pitasandwich →
-  pita-bread`, `ranch_dressing → …`). The mapping is written out as a
-  reviewed table in the plan rather than guessed in code. Slugs with no
-  honest match (plain `cheese`, `feta`) are the manifest's real gaps. They get
-  new icons, added through the same asset process the existing set used. Until
-  then they stay `default` and `artwork.icon-failed` / `day.quality` name
-  them.
-- A one-time backfill rewrites catalog `icon` fields to canonical slugs (dry
-  run first, diff reviewed). Hot rows are snapshots and pick up the fix through
-  the alias at render time, so no ledger rewrite is needed for icons.
+- `UPCGateway` stops stamping `icon: '🍽️'`. `LogFoodFromUPC` takes
+  `product.icon` only if it is a slug in the vocabulary; otherwise the
+  classifier's answer wins. (`NutritionixAdapter`'s emoji fallback is dead
+  code; nothing constructs it.)
+- `FoodCatalogService.resolveIdentity` stops copying retired icons onto new
+  rows. A user pin (`iconOverride`) wins whenever the slug resolves. An
+  automatically learned catalog icon wins only when the manifest *offers* it
+  (a primary icon, not an alias). Otherwise the capture's own icon stands.
+- **Legacy vocabulary.** The 83 retired slugs are nutribot's original flat
+  icon set (`media/img/icons/food/*.png`, 20 px). `cli/curate-nutrition-icons.mjs`
+  already maps all 310 of them as aliases and says they "must keep resolving
+  forever", but the installed manifest kept only 21. Restoring the missing
+  aliases makes every stored row render its original art instead of the bowl.
+  Only `brown_bean`, `protein` and the literal emoji have no file.
+- **Reviewed food names.** The manifest's `foodNames` map (read by
+  `confineIcon` before anything else) gets entries for the foods the audit
+  found, each pointing at a hi-res icon that is already installed:
+  Pita Bread → `pita-bread`, Feta Cheese → `feta-cubes`, Sharp Cheddar →
+  `cheddar-wedge`, Baby Spinach → `spinach`, Diet Coke → `cola`, carrots →
+  `carrot`, Peanut Butter Spread → `peanut-butter`, Chicken Fried Rice →
+  `fried-rice`. No new art is needed for these.
+- The ledger repair (B8) re-icons existing rows whose name is in that map.
 
 ### B6. Placeholder product photos (finding 4)
 
@@ -245,6 +254,8 @@ editing YAML:
 - Re-normalize the ml-labelled solids from B4 (OIKOS, cheese blend, kidney
   beans, Spring Mix) to grams where the label gives them.
 - Clear placeholder `photoRef`s (B6); rename all-caps rows (B7).
+- Re-icon rows whose name is in the reviewed `foodNames` map (B5), and turn
+  the two literal-emoji icons back into `default`.
 - Move the abandoned `food_catalog.yml.tmp-…` to `_backups/`.
 
 Each repair script prints its change set and needs `--apply`.
