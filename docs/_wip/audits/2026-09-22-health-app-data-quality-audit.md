@@ -117,3 +117,22 @@ remain in the nutrition folder.
 ## Pre-existing test failures (not from this pass)
 
 `today/viewedDate.test.jsx` — 6 tests time out at HEAD as well.
+
+## Status (branch `feat/health-inline-add`)
+
+| Finding | Fix |
+|---|---|
+| 1. Emoji icon beats the classifier | B5 `9f853ba90` — gateway stamps no icon; only a vocabulary slug outranks the classifier |
+| 2. Retired icon vocabulary | B8 `ecd9cc0b4` (catalog propagates offered icons only), B9a/b `106965f0f`/`4ab98ff9e` (flat art never proposed/served), B9c `884ca788f` (reviewed `foodNames`), B10 repair re-icons stored rows by food name |
+| 3. Magazine ×6 | B1–B3 `abe715408` `a86a43305` `7df297c1f` + `7d8f410b1` `85713ee0d` `205a1bc9e` — GTIN gate, doubled-read collapse, ISBN refusal, 30 s repeat window, calorie-less scans quarantined as pending; B10 deletes the re-fires |
+| 4. Placeholder photos | B6 `4e3d1b9d0` `f84928b15`; B10 clears existing placeholder `photoRef`s |
+| 5. ml-labelled solids | B4 `da58ce271` `f14ba10d9`; B10 converts existing rows where the label prints grams |
+| 6. Known nutrition as unknown | B4/B5 per-100 fallback + bounded label-serving estimate `468918ea7` |
+| 7. All-caps names | B7 `4ce2fa95d` `b7b65887f`; B10 renames existing rows (never person-set names) and catalog entries |
+| 8. `%s` prefix | unchanged — `direct.upc.prefixStripped` handles it; the sender is outside this repo |
+| 10. Frontend observability | `bd2eaef59` |
+
+Test note: `viewedDate.test.jsx` passes alone; its timeouts appear only when the whole
+Health folder runs at once. Nine unrelated backend test files (piano routes, fitness
+timelapse, proxy.stream, static.resize, harvest/calendar characterization) fail identically
+at the branch's base commit.
