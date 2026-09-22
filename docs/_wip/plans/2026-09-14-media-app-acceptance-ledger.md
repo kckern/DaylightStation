@@ -466,7 +466,7 @@ As a **Room Hopper**, I want to decide, when I send, whether this device stops o
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
 | PLACE.6a/AC1 | Whenever this device is playing and the aim is another screen, the aim label shows what will happen here ("move it" or "keep playing here too"), and I can change it there before tapping, on every device size (R2). | Unverified | — |
-| PLACE.6a/AC2 | A one-off **Play on…** or **Move to…** asks at that moment, pre-set to my usual choice. | Accepted | `TASK-5-EXACT-RUNTIME`: ordinary Search playback opened the persistent handle and then full Now Playing; its one-off hand-off picker visibly offered the pre-selected **Move playback to Living Room TV** and **Keep playing here too** choices before any destination command. `JOURNEY-TASK5-HANDOFF-PICKER`. |
+| PLACE.6a/AC2 | A one-off **Play on…** or **Move to…** asks at that moment, pre-set to my usual choice. | Partial | Now Playing's **Move to…** hand-off picker asks Move/Keep, but the item-level **Play on…** path uses item-action/fork, has no movable session snapshot, disables Move, and does not show a remembered stop/keep choice. The prior Task 5 Now Playing evidence therefore did not prove this whole criterion. |
 | PLACE.6a/AC3 | My usual choice is remembered and pre-selected, and visible before I confirm. | Unverified | — |
 | PLACE.6a/AC4 | Afterwards, this device does exactly what the choice said. | Unverified | — |
 

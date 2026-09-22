@@ -12,17 +12,14 @@
 // ScopeChips. `surface` is optional and used only to tag the
 // dispatch.destination_changed log line; mounted unchanged by SearchMode's
 // full-screen surface (Task 13) and the container browse header (Task 15).
-import React, { useCallback, useContext, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Modal } from '@mantine/core';
 import { IconPlayerPlayFilled } from '@tabler/icons-react';
 import { useCastTarget } from './useCastTarget.js';
-import { useFleetContext } from '../fleet/useFleetContext.js';
 import { DispatchTargetPicker } from './DispatchTargetPicker.jsx';
-import { AimLabel } from './AimLabel.jsx';
+import { GlobalAimLabel } from './AimLabel.jsx';
 import { useDismissLayer } from '../shell/useDismissLayer.js';
 import mediaLog from '../logging/mediaLog.js';
-import { ClientIdentityContext } from '../identity/ClientIdentityProvider.jsx';
-import { useLocalPlaybackActive } from './useDispatchTargetPicker.js';
 import './Cast.scss';
 
 // SearchMode is a fixed phone surface at Mantine's modal tier (z-index 200). Mantine portals Modal
@@ -49,9 +46,6 @@ export function DestinationLine({ surface, onInteractionStart, onInteractionEnd 
   const interactionEndRef = useRef(onInteractionEnd);
   interactionEndRef.current = onInteractionEnd;
   const { targetIds, mode, clearTargets, toggleTarget, setMode } = useCastTarget();
-  const { devices } = useFleetContext();
-  const localName = useContext(ClientIdentityContext)?.displayName ?? null;
-  const localPlaying = useLocalPlaybackActive();
 
   const close = useCallback(() => setOpen(false), []);
   // Mantine's own window-capture Escape can close and unregister the Modal
@@ -159,14 +153,7 @@ export function DestinationLine({ surface, onInteractionStart, onInteractionEnd 
       >
         <IconPlayerPlayFilled size={14} aria-hidden="true" />
         <span data-testid="destination-line-name">
-          <AimLabel
-            targetIds={targetIds}
-            devices={devices}
-            localName={localName}
-            localPlaying={localPlaying}
-            mode={mode}
-            compact
-          />
+          <GlobalAimLabel compact />
         </span>
       </button>
       <Modal

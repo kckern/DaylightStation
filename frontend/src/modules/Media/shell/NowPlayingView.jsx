@@ -17,7 +17,7 @@ import { QueuePanel } from './QueuePanel.jsx';
 import { DispatchTargetPicker } from '../cast/DispatchTargetPicker.jsx';
 import { playbackStateLabel, queuePositionLabel } from './stateCopy.js';
 import { SessionControlFrame } from '../controller/SessionControlFrame.jsx';
-import { AimLabel } from '../cast/AimLabel.jsx';
+import { GlobalAimLabel } from '../cast/AimLabel.jsx';
 import './NowPlaying.scss';
 
 // Format enrichment may not arrive before a paused/autoplay-blocked video
@@ -124,7 +124,7 @@ export function NowPlayingView() {
 
       <div data-testid="now-playing-host" ref={hostRef} className="now-playing-host" />
 
-      <AimLabel targetIds={[]} devices={[]} />
+      <GlobalAimLabel />
       <SessionControlFrame targetKind="local">
         {item && (
         <>

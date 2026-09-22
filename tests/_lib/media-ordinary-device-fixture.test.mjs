@@ -87,4 +87,26 @@ describe('media ordinary device fixture', () => {
       .expect(403, { ok: false, error: 'ordinary acceptance blocks physical device routes' });
     await fixture.stop();
   });
+
+  it('routes typed handoff only to the ordinary virtual receiver', async () => {
+    const fixture = createMediaOrdinaryDeviceFixture({ upstream: 'http://127.0.0.1:3111' });
+    const commands = [];
+    fixture.eventBus.subscribe('screen:acceptance-media', command => {
+      commands.push(command);
+      fixture.eventBus.broadcast('device-ack:acceptance-media', {
+        deviceId: 'acceptance-media', commandId: command.commandId, ok: true,
+        handoff: { transferId: command.params.transferId, phase: 'starting' },
+      });
+    });
+    await request(fixture.app)
+      .post('/acceptance-media/session/handoff')
+      .send({ commandId: 'paused-handoff', params: { version: 1, transferId: 'transfer-paused', op: 'status' } })
+      .expect(202);
+    expect(commands[0]).toMatchObject({ command: 'handoff', commandId: 'paused-handoff' });
+    await request(fixture.app)
+      .post('/livingroom-tv/session/handoff')
+      .send({ commandId: 'physical', params: { version: 1, transferId: 'transfer-paused', op: 'status' } })
+      .expect(403);
+    await fixture.stop();
+  });
 });

@@ -636,7 +636,7 @@ export function createPlayerSessionBridge({
     adoptAndBeginHandoffStart({ operationId, snapshot, targetSeconds }) {
       const adopted = this.adopt({ ...snapshot, position: targetSeconds }, {
         operationId,
-        autoplay: true,
+        autoplay: snapshot.state !== 'paused',
       });
       return adopted?.ok ? { ok: true, operationId } : adopted;
     },

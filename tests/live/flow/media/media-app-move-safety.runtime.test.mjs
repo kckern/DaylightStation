@@ -149,4 +149,57 @@ test.describe('Media M0 Move safety', () => {
       .evaluateAll((nodes) => nodes.every((node) => node.paused || node.ended))).toBe(true);
     await expect(page.getByTestId('mini-player-open-nowplaying')).toBeVisible();
   });
+
+  test('paused Arrival moves at the same paused native position before the unchanged source stops', async ({ page, context }) => {
+    const receiver = await context.newPage();
+    try {
+      await receiver.goto('/screen/living-room', { waitUntil: 'domcontentloaded' });
+      await expect.poll(async () => page.evaluate(async () => {
+        const response = await fetch('/api/v1/device/acceptance-media/receiver-ready');
+        return response.ok && (await response.json()).ready;
+      }), { timeout: 30000 }).toBe(true);
+
+      await page.goto('/media');
+      const { option } = await findArrivalOption(page);
+      await option.click();
+      await expect(page.getByTestId('mini-player-open-nowplaying')).toBeVisible({ timeout: 30000 });
+      await page.getByTestId('mini-player-open-nowplaying').click();
+
+      const sourceNative = page.getByTestId('now-playing-host').locator('video');
+      await expect.poll(
+        () => sourceNative.evaluate(node => !node.paused && node.readyState >= 2 && node.currentTime > 1),
+        { timeout: 30000 },
+      ).toBe(true);
+      await page.getByTestId('np-toggle').click();
+      await expect.poll(() => sourceNative.evaluate(node => node.paused && !node.seeking)).toBe(true);
+      const pausedAt = await sourceNative.evaluate(node => node.currentTime);
+
+      const picker = page.getByTestId('handoff-section').getByTestId('dispatch-target-picker');
+      await picker.getByTestId('picker-device-acceptance-media').click();
+      await picker.getByTestId('picker-mode-transfer').click();
+      await picker.getByTestId('picker-submit').click();
+
+      const receiverNative = receiver.locator('.video-player video');
+      await expect(receiverNative).toHaveCount(1, { timeout: 30000 });
+      await expect.poll(() => receiverNative.evaluate((node, expected) => ({
+        paused: node.paused,
+        ready: node.readyState >= 2,
+        seeking: node.seeking,
+        delta: Math.abs(node.currentTime - expected),
+      }), pausedAt), { timeout: 30000 }).toMatchObject({ paused: true, ready: true, seeking: false, delta: expect.any(Number) });
+      expect(await receiverNative.evaluate((node, expected) => Math.abs(node.currentTime - expected), pausedAt)).toBeLessThanOrEqual(2);
+
+      await expect(page.getByTestId('now-playing-title')).toHaveText('Nothing playing', { timeout: 30000 });
+      await expect.poll(() => page.locator('video, audio')
+        .evaluateAll(nodes => nodes.every(node => node.paused || node.ended))).toBe(true);
+      const reported = await page.evaluate(async () => {
+        const response = await fetch('/api/v1/device/acceptance-media/receiver-state');
+        return response.json();
+      });
+      expect(reported.state).toBe('paused');
+      expect(Math.abs(reported.position - pausedAt)).toBeLessThanOrEqual(2);
+    } finally {
+      await receiver.close();
+    }
+  });
 });

@@ -105,6 +105,11 @@ export function createHandoffExecutor({
     const sourceCurrent = sourceSnapshot.queue?.items?.[sourceSnapshot.queue?.currentIndex] ?? null;
     const baseline = operation.baseline;
     const baselineIsBound = baseline?.node != null;
+    const nativeStateQualifies = sourceSnapshot.state === 'paused'
+      ? observation.paused === true
+      : observation.paused === false
+        && observation.playingObserved === true
+        && observation.advancedObserved === true;
     const qualifies = observation.node && Number.isInteger(observation.nodeGeneration)
       && Number.isInteger(observation.resolvedGeneration)
       && (!baselineIsBound || (observation.node !== baseline.node
@@ -119,9 +124,8 @@ export function createHandoffExecutor({
       && Number.isFinite(observation.currentTime)
       && Math.abs(observation.currentTime - params.positionPolicy.seconds) <= positionToleranceSeconds
       && (params.positionPolicy.seconds === 0 || observation.targetSeekedObserved === true)
-      && observation.readyState >= 2 && observation.paused === false && observation.seeking === false
-      && observation.ended === false && !observation.error
-      && observation.playingObserved === true && observation.advancedObserved === true;
+      && observation.readyState >= 2 && nativeStateQualifies && observation.seeking === false
+      && observation.ended === false && !observation.error;
     if (!qualifies) return;
     const receipt = {
       transferId: params.transferId, phase: 'started',
@@ -294,8 +298,6 @@ export function createHandoffExecutor({
     } else if (!currentCapture.capabilities.handoffV1 || !currentCapture.capabilities.seekable
       || params.positionPolicy.kind === 'live-edge') {
       finish(record, operation, failed(transferId, 'HANDOFF_UNSUPPORTED'), current);
-    } else if (isStart && sourceSnapshot.state === 'paused') {
-      finish(record, operation, failed(transferId, 'PAUSED_MOVE_UNSUPPORTED'), current);
     } else {
       operation.operationId = `${transferId}:${params.op}`;
       operation.context.sourceSnapshot = sourceSnapshot;

@@ -11,8 +11,14 @@ let fleetDevices = [
   { id: 'livingroom-tv', name: 'Living Room TV' },
   { id: 'yellow-room-tablet', name: 'Yellow Room Tablet' },
 ];
+let fleetEntries = new Map();
+const fleetStore = {
+  subscribeAll: () => () => {},
+  getAll: () => fleetEntries,
+  getEntry: (id) => fleetEntries.get(id) ?? null,
+};
 vi.mock('../fleet/useFleetContext.js', () => ({
-  useFleetContext: () => ({ devices: fleetDevices }),
+  useFleetContext: () => ({ devices: fleetDevices, store: fleetStore }),
 }));
 
 const dismissLayer = vi.fn();
@@ -72,6 +78,7 @@ beforeEach(() => {
     { id: 'yellow-room-tablet', name: 'Yellow Room Tablet' },
   ];
   lastPick = { targetIds: ['yellow-room-tablet'], mode: 'transfer' };
+  fleetEntries = new Map();
 });
 
 describe('DestinationLine', () => {
@@ -90,6 +97,33 @@ describe('DestinationLine', () => {
     );
     renderLine();
     expect(screen.getByTestId('destination-line-name')).toHaveTextContent('Living Room TV');
+  });
+
+  it('shows who started a busy aimed screen only from explicit live provenance', () => {
+    localStorage.setItem(
+      'media-app.cast-target',
+      JSON.stringify({ mode: 'transfer', targetIds: ['livingroom-tv'], activityAt: Date.now(), exemptionStartedAt: null })
+    );
+    fleetDevices.push({ id: 'kitchen-tablet', name: 'Kitchen Tablet' });
+    fleetEntries = new Map([['livingroom-tv', {
+      snapshot: { state: 'playing', meta: { origin: { kind: 'device', id: 'kitchen-tablet' } } },
+      offline: false, isStale: false,
+    }]]);
+    renderLine();
+    expect(screen.getByTestId('aim-busy-origin')).toHaveTextContent('Busy — started from Kitchen Tablet');
+  });
+
+  it('does not invent a busy origin from the receiver owner id', () => {
+    localStorage.setItem(
+      'media-app.cast-target',
+      JSON.stringify({ mode: 'transfer', targetIds: ['livingroom-tv'], activityAt: Date.now(), exemptionStartedAt: null })
+    );
+    fleetEntries = new Map([['livingroom-tv', {
+      snapshot: { state: 'playing', meta: { ownerId: 'kitchen-tablet' } },
+      offline: false, isStale: false,
+    }]]);
+    renderLine();
+    expect(screen.queryByTestId('aim-busy-origin')).toBeNull();
   });
 
   it('shows the remembered move choice on the aim while local playback is active', () => {
