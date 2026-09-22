@@ -2,6 +2,18 @@ import { randomUUID } from 'node:crypto';
 import { normalizeBootstrapSpine } from '#apps/proxy/ports/ILibbyBootstrapGateway.mjs';
 
 const DEFAULT_API_BASE = 'https://sentry.libbyapp.com/';
+// Mirrors the official web client's `acquireChip` parameters; the provider keys
+// renewal off the chip prefix in `v`, and omitting it mints an unrelated chip.
+const DEFAULT_CLIENT_VERSION = '22.1.1';
+
+function jwtExpiry(token) {
+  try {
+    const payload = JSON.parse(Buffer.from(String(token).split('.')[1], 'base64url').toString('utf8'));
+    return Number.isFinite(payload?.exp) ? payload.exp * 1000 : null;
+  } catch {
+    return null;
+  }
+}
 
 function failure(code, message) {
   const error = new Error(message);
@@ -35,8 +47,9 @@ export class LibbyClient {
   #allowedHosts;
   #coverAllowedHosts;
   #bootstrapService;
+  #clientVersion;
 
-  constructor({ fetch = globalThis.fetch, credentials, apiBase = DEFAULT_API_BASE, allowedHosts = [], coverAllowedHosts = [], bootstrapService } = {}) {
+  constructor({ fetch = globalThis.fetch, credentials, apiBase = DEFAULT_API_BASE, allowedHosts = [], coverAllowedHosts = [], bootstrapService, clientVersion = DEFAULT_CLIENT_VERSION } = {}) {
     if (typeof fetch !== 'function') throw new Error('LibbyClient requires fetch');
     if (!credentials?.getSnapshot) throw new Error('LibbyClient requires credentials');
     this.#fetch = fetch;
@@ -45,6 +58,37 @@ export class LibbyClient {
     this.#allowedHosts = new Set([this.#apiBase.hostname, ...allowedHosts]);
     this.#coverAllowedHosts = new Set(coverAllowedHosts);
     this.#bootstrapService = bootstrapService;
+    this.#clientVersion = clientVersion;
+  }
+
+  /**
+   * Exchange the current identity for a fresh one on the SAME chip. The provider
+   * returns `syncable:false, primary:false` even on a correct renewal, so chip
+   * equality is the only trustworthy guard against being handed an empty chip.
+   */
+  async renewIdentity({ signal } = {}) {
+    const { token, chipId, expiresAt: currentExpiry } = this.#credentials.getSnapshot();
+    if (typeof chipId !== 'string' || !chipId) {
+      throw failure('LIBBY_CHIP_UNKNOWN', 'Libby credential does not carry a chip id');
+    }
+    const url = new URL('chip', this.#apiBase);
+    url.searchParams.set('c', `d:${this.#clientVersion}`);
+    url.searchParams.set('s', '0');
+    url.searchParams.set('v', chipId.split('-')[0]);
+
+    const body = await this.#requestJson(url, { authenticated: true, method: 'POST', signal });
+    if (body?.chip !== chipId) {
+      throw failure('LIBBY_CHIP_REPLACED', 'Libby renewal returned a different chip');
+    }
+    const identity = typeof body?.identity === 'string' ? body.identity.trim() : '';
+    if (!identity || identity === token) {
+      throw failure('LIBBY_PROVIDER_FAILED', 'Libby renewal returned no new identity');
+    }
+    const expiresAt = jwtExpiry(identity);
+    if (!Number.isFinite(expiresAt) || !(expiresAt > currentExpiry)) {
+      throw failure('LIBBY_RENEWAL_NOT_ADVANCED', 'Libby renewal did not extend the identity');
+    }
+    return Object.freeze({ identity, expiresAt });
   }
 
   #url(value, base = this.#apiBase) {

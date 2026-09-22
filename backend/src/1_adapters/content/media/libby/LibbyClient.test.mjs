@@ -409,3 +409,52 @@ describe('LibbyClient', () => {
     await expect(client.openLoan({ cardId: '123456789', titleId: '9999999' })).rejects.toMatchObject({ code: 'LIBBY_UNSUPPORTED_FULFILLMENT' });
   });
 });
+
+describe('LibbyClient.renewIdentity', () => {
+  const CHIP = '0f5a1c3d-1111-2222-3333-444455556666';
+
+  function identity(expSeconds, marker = 'current') {
+    const body = Buffer.from(JSON.stringify({ exp: expSeconds, chip: { id: CHIP }, marker })).toString('base64url');
+    return `eyJhbGciOiJSUzI1NiJ9.${body}.signature`;
+  }
+
+  function fixture({ chip = CHIP, exp = 2_000_000 } = {}) {
+    const calls = [];
+    const fetch = vi.fn(async (url, options = {}) => {
+      calls.push({ url, options });
+      return response({ chip, identity: identity(exp, 'renewed'), syncable: false, primary: false });
+    });
+    const client = new LibbyClient({
+      fetch,
+      credentials: { getSnapshot: () => ({ token: identity(1_000_000), chipId: CHIP, expiresAt: 1_000_000_000 }) },
+      apiBase: 'https://sentry.libbyapp.com/',
+      allowedHosts: ['sentry.libbyapp.com'],
+    });
+    return { client, calls };
+  }
+
+  it('addresses the chip it already holds and returns the renewed identity', async () => {
+    const { client, calls } = fixture();
+    const result = await client.renewIdentity();
+
+    const { url, options } = calls[0];
+    expect(options.method).toBe('POST');
+    expect(options.headers.Authorization).toBe(`Bearer ${identity(1_000_000)}`);
+    const params = new URL(url).searchParams;
+    expect(params.get('v')).toBe('0f5a1c3d');
+    expect(params.get('s')).toBe('0');
+    expect(params.get('c')).toMatch(/^d:\d+\.\d+\.\d+$/);
+    expect(result.identity).toBe(identity(2_000_000, 'renewed'));
+    expect(result.expiresAt).toBe(2_000_000_000);
+  });
+
+  it('rejects a response that hands back a different chip', async () => {
+    const { client } = fixture({ chip: 'ffffffff-9999-8888-7777-666655554444' });
+    await expect(client.renewIdentity()).rejects.toMatchObject({ code: 'LIBBY_CHIP_REPLACED' });
+  });
+
+  it('rejects a renewal whose expiry does not advance', async () => {
+    const { client } = fixture({ exp: 1_000_000 });
+    await expect(client.renewIdentity()).rejects.toMatchObject({ code: 'LIBBY_RENEWAL_NOT_ADVANCED' });
+  });
+});
