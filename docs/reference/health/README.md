@@ -233,6 +233,19 @@ stale-while-revalidate mode; see
 [`docs/reference/frontend/design-system.md`](../frontend/design-system.md#data-fetching)
 for how the primitive itself works.
 
+**Days around the viewed day are already loaded.** Once the viewed day is on screen,
+`useHealthDayPrefetch` warms a ±7-day buffer of the per-day resources (`/day`,
+`/nutrition/pending`, `/nutrition/observations`), nearest first and, at equal
+distance, in the direction the user is moving. The same queue also warms every meal's
+add-row shortlist, the sidebar's 30-day range and the neighbouring weeks. It pre-decodes
+the icons of prefetched rows too. Each flip replaces the queue with the new
+neighbourhood (`prefetchApiResources` in `useApiResource.js`: two requests at a time,
+fresh entries skipped, a newer reader response never overwritten; mutations mark cached
+health paths stale so the next pass refreshes them). A cached day paints in the SAME
+render as the date change (the hook reads the cache during render, so there is no empty
+frame), and icons already decoded in the page session render at once instead of fading
+in from the placeholder. Days after today are never requested.
+
 The Exercise section's header follows the same discipline for a different
 reason: it appears once the day's budget has loaded, whether or not any
 workout is logged, so a workout-free day gets a stable header rather than one

@@ -6,6 +6,11 @@ const apiMock = vi.fn();
 vi.mock('../../../lib/api.mjs', () => ({ DaylightAPI: (...a) => apiMock(...a) }));
 
 import { AddCombobox } from './AddCombobox.jsx';
+import { resetApiResourceCache, primeApiResource } from '../../../lib/hooks/useApiResource.js';
+import { shortlistPath } from '../healthResources.js';
+
+// The shortlist is cached module-wide; no case may inherit another's.
+beforeEach(() => resetApiResourceCache());
 
 function r(ui) { return render(<MantineProvider>{ui}</MantineProvider>); }
 
@@ -310,6 +315,15 @@ describe('AddCombobox inline', () => {
     expect(await screen.findByText('Chicken breast')).toBeTruthy();
   });
 
+  it('a prefetched shortlist paints the moment the row is focused', async () => {
+    primeApiResource(shortlistPath('evening'), SUGGEST);
+    apiMock.mockReturnValue(new Promise(() => {})); // the refresh never lands
+    inline();
+    fireEvent.focus(screen.getByRole('combobox', { name: 'Add to Dinner' }));
+    expect(screen.getByText('Chicken breast')).toBeTruthy();
+    expect(apiMock).toHaveBeenCalledWith(shortlistPath('evening'));
+  });
+
   it('Enter on free text parses into this meal and day, then clears and stays focused', async () => {
     let commit;
     apiMock.mockImplementation((path) => path.includes('suggest') ? Promise.resolve({ items: [] })
@@ -428,22 +442,25 @@ describe('AddCombobox inline', () => {
     expect(await screen.findByRole('listbox')).toBeTruthy();
   });
 
-  it('an empty row forgets its shortlist and highlight on blur', async () => {
-    apiMock.mockResolvedValue(SUGGEST);
+  it('an empty row forgets its highlight on blur; refocus repaints the cached shortlist, not stale search results', async () => {
+    apiMock.mockImplementation(async path => path.includes('q=') ? { items: [{ id: 'z', name: 'Zucchini', nutrients: { calories: 20 } }] } : SUGGEST);
     inline();
     const input = screen.getByRole('combobox', { name: 'Add to Dinner' });
     input.focus();
     await screen.findByText('Chicken breast');
+    fireEvent.change(input, { target: { value: 'zu' } });
+    await screen.findByText('Zucchini');
+    fireEvent.change(input, { target: { value: '' } });
+    await screen.findByText('Chicken breast');
     fireEvent.keyDown(input, { key: 'ArrowDown' });
     expect(input.getAttribute('aria-activedescendant')).toBeTruthy();
     act(() => input.blur());
-    let resolve; apiMock.mockImplementation(() => new Promise(res => { resolve = res; }));
+    apiMock.mockImplementation(() => new Promise(() => {}));
     act(() => input.focus());
-    // Reopened, but the old results are gone until the fresh fetch lands.
-    expect(screen.queryByText('Chicken breast')).toBeNull();
+    // Reopened: the shortlist paints at once from cache, no highlight, no search leftovers.
+    expect(screen.getByText('Chicken breast')).toBeTruthy();
+    expect(screen.queryByText('Zucchini')).toBeNull();
     expect(input.getAttribute('aria-activedescendant')).toBeNull();
-    resolve(SUGGEST);
-    expect(await screen.findByText('Chicken breast')).toBeTruthy();
   });
 
   it('a focusRequest change focuses the input', () => {

@@ -2,6 +2,7 @@ import { ActionIcon } from '@mantine/core';
 import { createAppLogger } from '../../../lib/ui/createAppLogger.js';
 import { AddCombobox } from './AddCombobox.jsx';
 import { PhotoCapture } from '../capture/PhotoCapture.jsx';
+import { VoiceCapture } from '../capture/VoiceCapture.jsx';
 
 const logger = createAppLogger('health').child('meal-add-row');
 
@@ -17,9 +18,12 @@ const MealsIcon = () => (
 );
 
 /** The add input at the foot of one meal: typing is the default, and the
- * photo / barcode / saved-meal routes sit beside it for that same meal. */
-export function MealAddRow({ bucket, label, date, focusRequest = 0, busy = false,
-  onAdded, onPhotoCapture, onOpenBarcode, onOpenTemplates, onManageFoods }) {
+ * voice / photo / barcode / saved-meal routes sit beside it for that same meal.
+ * Voice here only ADDS: it carries no selection, so the parser treats what was
+ * said as new food and splits "two eggs, toast and coffee" into its own rows.
+ * (The header mic, with foods selected, is the one that edits a meal.) */
+export function MealAddRow({ bucket, label, date, focusRequest = 0, busy = false, active = true,
+  onAdded, onVoiceCapture, onPhotoCapture, onOpenBarcode, onOpenTemplates, onManageFoods }) {
   const openBarcode = () => { logger.debug('barcode.open', { bucket }); onOpenBarcode(bucket); };
   const openTemplates = (templateId) => { logger.debug('templates.open', { bucket, templateId }); onOpenTemplates(bucket, templateId); };
   return <div className="health-meal__add-row">
@@ -27,6 +31,9 @@ export function MealAddRow({ bucket, label, date, focusRequest = 0, busy = false
       onDone={onAdded} onManageFoods={onManageFoods}
       onTemplate={entry => openTemplates(entry.id)}
       actions={<span className="health-meal__add-actions">
+        {onVoiceCapture ? <VoiceCapture active={active} bucket={bucket} mealLabel={label} labelPrefix="Speak foods"
+          busy={busy} className="health-meal__add-action"
+          onCapture={(content, target, metadata) => onVoiceCapture(content, target, { date, ...metadata })} /> : null}
         <PhotoCapture bucket={bucket} mealLabel={label} labelPrefix="Photo" busy={busy}
           className="health-meal__add-action" onCapture={onPhotoCapture} />
         <ActionIcon variant="subtle" className="health-meal__add-action" aria-label={`Scan barcode to ${label}`}

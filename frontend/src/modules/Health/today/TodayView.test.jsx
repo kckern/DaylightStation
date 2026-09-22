@@ -35,7 +35,10 @@ vi.mock('../capture/PhotoCapture.jsx', () => ({
   ),
 }));
 vi.mock('../capture/VoiceCapture.jsx', () => ({
-  VoiceCapture: ({ onCapture, bucket }) => (
+  // The add row's mic carries a labelPrefix; the meal header's does not.
+  VoiceCapture: ({ onCapture, bucket, labelPrefix }) => labelPrefix ? (
+    <button onClick={() => onCapture('data:audio/webm;base64,zzz', bucket)}>MockAddRowVoice-{bucket}</button>
+  ) : (
     <><button onClick={() => onCapture('data:audio/webm;base64,zzz', bucket)}>
       {bucket ? `MockVoiceCapture-${bucket}` : 'MockVoiceCapture'}
     </button><button onClick={() => onCapture('data:audio/webm;base64,zzz', bucket, { departed:true }).catch(()=>{})}>
