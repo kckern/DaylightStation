@@ -64,11 +64,12 @@ export function FleetPlayPicker({ deviceId, onClose }) {
       : text.trim().length < 2 ? 'idle' : 'complete',
     failedSources: (sourceErrors ?? []).map(({ source }) => source),
   };
-  const idle = state.phase === 'idle';
-  const searching = state.phase === 'loading';
   const hasResults = state.results.length > 0;
+  const idle = state.phase === 'idle' && !liveSearch.isSearching;
+  const searching = !hasResults && (state.phase === 'loading' || liveSearch.isSearching);
   const empty = state.phase === 'complete' && !hasResults;
   const failed = state.phase === 'failed';
+  const showStreamStatus = hasResults || state.phase === 'partial';
 
   const onInput = useCallback((e) => {
     setText(e.target.value);
@@ -120,6 +121,11 @@ export function FleetPlayPicker({ deviceId, onClose }) {
       {failed && (
         <SearchErrorState error={error} onRetry={retry} />
       )}
+      {showStreamStatus && (
+        <div data-testid={Object.values(state.sources).includes('pending') ? 'fleet-play-pending' : undefined}>
+          <StreamStatusLine state={state} onRetry={retry} />
+        </div>
+      )}
       {hasResults && (
         <ul className="fleet-play-results">
           {results.map((row) => {
@@ -152,9 +158,6 @@ export function FleetPlayPicker({ deviceId, onClose }) {
               </li>
             );
           })}
-          <li data-testid={Object.values(state.sources).includes('pending') ? 'fleet-play-pending' : undefined}>
-            <StreamStatusLine state={state} onRetry={retry} />
-          </li>
         </ul>
       )}
     </div>

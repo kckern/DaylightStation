@@ -18,27 +18,40 @@ export function useListBrowse(path, { modifiers = {}, take = 50 } = {}) {
   const [error, setError] = useState(null);
   const skipRef = useRef(0);
   const baseRef = useRef('');
-  const loadMoreInFlightRef = useRef(false);
+  const totalRef = useRef(0);
+  const generationRef = useRef(0);
+  const readyGenerationRef = useRef(null);
+  const loadMoreInFlightRef = useRef(null);
 
   useEffect(() => {
     const base = buildPath(path, { modifiers });
+    const generation = generationRef.current + 1;
+    generationRef.current = generation;
     baseRef.current = base;
     skipRef.current = 0;
+    totalRef.current = 0;
+    readyGenerationRef.current = null;
+    loadMoreInFlightRef.current = null;
     setItems([]);
     setLoading(true);
+    setLoadingMore(false);
     setError(null);
 
     let cancelled = false;
     DaylightAPI(`${base}?take=${take}`)
       .then((res) => {
-        if (cancelled) return;
-        setItems(Array.isArray(res?.items) ? res.items : []);
-        setTotal(typeof res?.total === 'number' ? res.total : 0);
-        skipRef.current = Array.isArray(res?.items) ? res.items.length : 0;
+        if (cancelled || generationRef.current !== generation) return;
+        const nextItems = Array.isArray(res?.items) ? res.items : [];
+        const nextTotal = typeof res?.total === 'number' ? res.total : 0;
+        setItems(nextItems);
+        setTotal(nextTotal);
+        totalRef.current = nextTotal;
+        skipRef.current = nextItems.length;
+        readyGenerationRef.current = generation;
         setLoading(false);
       })
       .catch((err) => {
-        if (cancelled) return;
+        if (cancelled || generationRef.current !== generation) return;
         setError(err);
         setLoading(false);
       });
@@ -47,21 +60,29 @@ export function useListBrowse(path, { modifiers = {}, take = 50 } = {}) {
   }, [path, take, modifiers.playable, modifiers.shuffle, modifiers.recent_on_top]);
 
   const loadMore = useCallback(async () => {
-    if (loadMoreInFlightRef.current || skipRef.current >= total) return;
-    const url = `${baseRef.current}?take=${take}&skip=${skipRef.current}`;
-    loadMoreInFlightRef.current = true;
+    const generation = generationRef.current;
+    if (readyGenerationRef.current !== generation) return;
+    if (loadMoreInFlightRef.current?.generation === generation || skipRef.current >= totalRef.current) return;
+    const base = baseRef.current;
+    const skip = skipRef.current;
+    const request = { generation, base, skip };
+    const url = `${base}?take=${take}&skip=${skip}`;
+    loadMoreInFlightRef.current = request;
     setLoadingMore(true);
     try {
       const res = await DaylightAPI(url);
-      setItems((prev) => prev.concat(Array.isArray(res?.items) ? res.items : []));
-      skipRef.current += Array.isArray(res?.items) ? res.items.length : 0;
+      if (generationRef.current !== generation || baseRef.current !== base
+        || readyGenerationRef.current !== generation || skipRef.current !== skip) return;
+      const nextItems = Array.isArray(res?.items) ? res.items : [];
+      setItems((prev) => prev.concat(nextItems));
+      skipRef.current = skip + nextItems.length;
     } catch (err) {
-      setError(err);
+      if (generationRef.current === generation) setError(err);
     } finally {
-      loadMoreInFlightRef.current = false;
-      setLoadingMore(false);
+      if (loadMoreInFlightRef.current === request) loadMoreInFlightRef.current = null;
+      if (generationRef.current === generation) setLoadingMore(false);
     }
-  }, [take, total]);
+  }, [take]);
 
   return { items, total, loading, loadingMore, error, loadMore };
 }
