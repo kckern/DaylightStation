@@ -103,14 +103,14 @@ describe('DestinationLine', () => {
     expect(screen.getByTestId('destination-line-name')).toHaveTextContent('Living Room TV');
   });
 
-  it('shows who started a busy aimed screen only from explicit live provenance', () => {
+  it('resolves a canonical foreign fleet origin against the bare fleet roster id', () => {
     localStorage.setItem(
       'media-app.cast-target',
       JSON.stringify({ mode: 'transfer', targetIds: ['livingroom-tv'], activityAt: Date.now(), exemptionStartedAt: null })
     );
     fleetDevices.push({ id: 'kitchen-tablet', name: 'Kitchen Tablet' });
     fleetEntries = new Map([['livingroom-tv', {
-      snapshot: { state: 'playing', meta: { origin: { kind: 'device', id: 'kitchen-tablet' } } },
+      snapshot: { state: 'playing', meta: { origin: { kind: 'device', id: 'fleet:kitchen-tablet' } } },
       offline: false, isStale: false,
     }]]);
     renderLine();
@@ -131,7 +131,7 @@ describe('DestinationLine', () => {
     expect(screen.queryByTestId('aim-busy-origin')).toBeNull();
   });
 
-  it('does not call a busy aimed screen foreign when this fleet device started it', () => {
+  it('does not call a canonical fleet origin foreign when this fleet device started it', () => {
     window.__DAYLIGHT_DEVICE_ID = 'kitchen-tablet';
     localStorage.setItem(
       'media-app.cast-target',
@@ -139,7 +139,7 @@ describe('DestinationLine', () => {
     );
     fleetDevices.push({ id: 'kitchen-tablet', name: 'Kitchen Tablet' });
     fleetEntries = new Map([['livingroom-tv', {
-      snapshot: { state: 'paused', meta: { origin: { kind: 'device', id: 'kitchen-tablet' } } },
+      snapshot: { state: 'paused', meta: { origin: { kind: 'device', id: 'fleet:kitchen-tablet' } } },
       offline: false, isStale: false,
     }]]);
     renderLine();

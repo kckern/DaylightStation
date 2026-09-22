@@ -281,8 +281,9 @@ fresh receiver snapshot carries explicit `meta.origin` provenance: either a
 known `{ kind: 'device', id }` belonging to a different client/device, or a
 named `{ kind: 'routine', name }`. The current browser client and configured
 fleet-device identities are compared by their canonical IDs, never by display
-name. Receiver ownership metadata is not sender provenance and is never
-presented as such.
+name; canonical `fleet:<id>` provenance and the roster's bare `<id>` identify
+the same configured device. Receiver ownership metadata is not sender
+provenance and is never presented as such.
 
 **On phones the dock cannot hold all of that at once — so it doesn't try.**
 At 360px there is ~336px to spend; splitting that between a scope selector, a
