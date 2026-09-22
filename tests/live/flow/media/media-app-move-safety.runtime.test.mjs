@@ -159,6 +159,20 @@ test.describe('Media M0 Move safety', () => {
         return response.ok && (await response.json()).ready;
       }), { timeout: 30000 }).toBe(true);
 
+      // A native move replaces an existing destination owner. Establish that
+      // owner through the real ordinary-device load path rather than inventing
+      // an idle handoff capability that the screen does not have.
+      const seeded = await receiver.evaluate(async () => {
+        const dispatchId = `paused-move-seed-${Date.now()}`;
+        const response = await fetch(`/api/v1/device/acceptance-media/load?play=plex:697368&dispatchId=${dispatchId}`);
+        return response.ok;
+      });
+      expect(seeded).toBe(true);
+      const seededNative = receiver.locator('.video-player video');
+      await expect(seededNative).toHaveCount(1, { timeout: 30000 });
+      await expect.poll(() => seededNative.evaluate(node => !node.paused && node.readyState >= 2 && node.currentTime > 0),
+        { timeout: 30000 }).toBe(true);
+
       await page.goto('/media');
       const { option } = await findArrivalOption(page);
       await option.click();
@@ -196,8 +210,8 @@ test.describe('Media M0 Move safety', () => {
         const response = await fetch('/api/v1/device/acceptance-media/receiver-state');
         return response.json();
       });
-      expect(reported.state).toBe('paused');
-      expect(Math.abs(reported.position - pausedAt)).toBeLessThanOrEqual(2);
+      expect(reported.snapshot?.state).toBe('paused');
+      expect(Math.abs(reported.snapshot?.position - pausedAt)).toBeLessThanOrEqual(2);
     } finally {
       await receiver.close();
     }
