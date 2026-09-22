@@ -30,17 +30,21 @@ function kioskFrictionPolicy() {
     gates: {
       'kiosk.friction-ok': {
         schemaVersion: 1, subjectKinds: ['device'], periodKinds: ['interval'],
+        // Bare comparison (friction < threshold), not not(comparison(gte)) —
+        // the `not` node only inverts state and forwards the child's reasons
+        // unchanged, and comparison() only emits THRESHOLD_NOT_MET when its
+        // own raw comparison is unsatisfied. Under not(gte), the denial case
+        // has the raw comparison SATISFIED (reasons: []), so no reason code
+        // would ever surface. Mirrors the installed kiosk.friction-ok gate.
         expression: {
-          kind: 'not', nodeId: 'kiosk.friction-ok/expression',
-          child: {
-            kind: 'comparison', nodeId: 'kiosk.friction-ok/expression/not',
-            claim: {
-              claimTypeId: 'kiosk.friction-score', publisherId: 'kiosk-friction-tracker',
-              subject: '$subject', period: '$period',
-            },
-            op: 'gte', value: 5,
+          kind: 'comparison', nodeId: 'kiosk.friction-ok/expression',
+          claim: {
+            claimTypeId: 'kiosk.friction-score', publisherId: 'kiosk-friction-tracker',
+            subject: '$subject', period: '$period',
           },
+          op: 'lt', value: 5,
         },
+        reasonLabels: { THRESHOLD_NOT_MET: 'This device is in a cooldown.' },
       },
     },
     entitlements: {
@@ -226,5 +230,12 @@ describe('State Gates domain', () => {
     expect(atThreshold.state).toBe('unsatisfied');
     expect(decideEntitlement({ definition: policy.entitlements.get('kiosk.access'), evaluation: atThreshold }))
       .toMatchObject({ decision: 'denied', degraded: false });
+
+    // The denial actually carries a reason code, and that code resolves to
+    // the gate's configured label — this is the part a not(comparison(gte))
+    // shape cannot do, since `not` forwards the child's reasons unchanged
+    // and comparison() only emits a reason when its own raw result fails.
+    expect(atThreshold.reasons).toEqual([{ code: 'THRESHOLD_NOT_MET' }]);
+    expect(policy.gates.get('kiosk.friction-ok').reasonLabels.THRESHOLD_NOT_MET).toBe('This device is in a cooldown.');
   });
 });

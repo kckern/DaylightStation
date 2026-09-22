@@ -83,22 +83,30 @@ export const INSTALLED_STATE_GATES_POLICY = Object.freeze({
       schema_version: 1,
       subject_kinds: ['device'],
       period_kinds: ['interval'],
+      // A bare `comparison` (not `not(comparison(gte)))`) on purpose: the
+      // GateEvaluator's `not` node only inverts `state` and passes the
+      // child's `reasons` through unchanged. `comparison` only ever emits a
+      // reason when ITS OWN raw comparison is unsatisfied, so under
+      // not(comparison(gte 5)) the denial case (friction >= 5) has the raw
+      // comparison SATISFIED (reasons: []) and `not` forwards that empty
+      // array — no reason code, ever, regardless of which key reason_labels
+      // uses below. Expressing the gate directly as `friction < threshold`
+      // (matching the bare-comparison shape fitness.weekly-rings already
+      // uses) makes THRESHOLD_NOT_MET fire on the actual denial.
       expression: {
-        not: {
-          comparison: {
-            claim: {
-              type: 'kiosk.friction-score', publisher: 'kiosk-friction-tracker',
-              subject: '$subject', period: '$period',
-            },
-            op: 'gte',
-            // PROVISIONAL threshold — spec §10 open question 1. Retune
-            // against real friction-score history; do not treat as final.
-            value: 5,
+        comparison: {
+          claim: {
+            type: 'kiosk.friction-score', publisher: 'kiosk-friction-tracker',
+            subject: '$subject', period: '$period',
           },
+          op: 'lt',
+          // PROVISIONAL threshold — spec §10 open question 1. Retune
+          // against real friction-score history; do not treat as final.
+          value: 5,
         },
       },
       reason_labels: {
-        CLAIM_FALSE: 'This device is in a cooldown.',
+        THRESHOLD_NOT_MET: 'This device is in a cooldown.',
       },
     },
   },
