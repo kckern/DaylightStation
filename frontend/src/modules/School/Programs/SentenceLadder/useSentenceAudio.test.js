@@ -70,3 +70,178 @@ describe('useSentenceAudio loop', () => {
     expect(playCount()).toBe(1);
   });
 });
+
+describe('spans and position (recording in pieces)', () => {
+  let original;
+  beforeEach(() => {
+    original = Object.getOwnPropertyDescriptor(window.HTMLMediaElement.prototype, 'currentTime');
+    Object.defineProperty(window.HTMLMediaElement.prototype, 'currentTime', {
+      configurable: true, get() { return this._t ?? 0; }, set(v) { this._t = v; },
+    });
+  });
+  afterEach(() => {
+    if (original) Object.defineProperty(window.HTMLMediaElement.prototype, 'currentTime', original);
+    else delete window.HTMLMediaElement.prototype.currentTime;
+  });
+
+  it('starts a clip at startMs', () => {
+    const { result } = renderHook(() => useSentenceAudio());
+    act(() => result.current.playSequence([{ url: '/kr.mp3', startMs: 1100 }]));
+    expect(elements.at(-1).currentTime).toBeCloseTo(1.1);
+  });
+
+  it('ends a clip at endMs and moves on to the next step', async () => {
+    const onSequenceEnd = vi.fn();
+    const { result } = renderHook(() => useSentenceAudio({ onSequenceEnd }));
+    act(() => result.current.playSequence([{ url: '/kr.mp3', startMs: 1000, endMs: 1600 }, { url: '/cue.mp3' }]));
+    await act(async () => {});           // let play() resolve
+    act(() => vi.advanceTimersByTime(599));
+    expect(playCount()).toBe(1);
+    act(() => vi.advanceTimersByTime(1));
+    expect(playCount()).toBe(2);
+    expect(elements.at(-1).src).toContain('/cue.mp3');
+  });
+
+  it('a clip that ends on its own does not also fire its span timer', async () => {
+    const { result } = renderHook(() => useSentenceAudio());
+    act(() => result.current.playSequence([{ url: '/kr.mp3', endMs: 600 }, { url: '/cue.mp3' }, { url: '/b.mp3' }]));
+    await act(async () => {});
+    endCurrentClip();                    // natural end → cue
+    act(() => vi.advanceTimersByTime(1000));
+    expect(playCount()).toBe(2);         // the stale timer did not skip the cue
+  });
+
+  it('an `ended` after the span timer stopped the clip does not skip the next step', async () => {
+    // A span ending at the file's end: the browser can still fire `ended`
+    // after the timer paused the element and moved on.
+    const { result } = renderHook(() => useSentenceAudio());
+    act(() => result.current.playSequence([
+      { url: '/kr.mp3', endMs: 600 }, { url: '/cue.mp3', gapMs: 1000 }, { url: '/b.mp3' },
+    ]));
+    await act(async () => {});
+    const staleEnded = elements.at(-1).onended;
+    act(() => vi.advanceTimersByTime(600));   // span ends; cue waits on its gap
+    act(() => { elements.at(-1).onended?.(); staleEnded?.(); });
+    expect(playCount()).toBe(1);
+    act(() => vi.advanceTimersByTime(1000));
+    expect(playCount()).toBe(2);
+    expect(elements.at(-1).src).toContain('/cue.mp3');
+  });
+
+  it('arms no span timer when play() is rejected', async () => {
+    window.HTMLMediaElement.prototype.play = vi.fn(function play() {
+      elements.push(this);
+      return Promise.reject(new Error('NotAllowedError'));
+    });
+    const { result } = renderHook(() => useSentenceAudio());
+    act(() => result.current.playSequence([{ url: '/kr.mp3', endMs: 600 }, { url: '/cue.mp3' }]));
+    await act(async () => {});
+    expect(result.current.blocked).toBe(true);
+    expect(result.current.playing).toBe(false);
+    act(() => vi.advanceTimersByTime(1000));
+    expect(playCount()).toBe(1);
+    expect(result.current.position()).toBeNull();
+  });
+
+  it('stop() cancels a pending span end', async () => {
+    const { result } = renderHook(() => useSentenceAudio());
+    act(() => result.current.playSequence([{ url: '/kr.mp3', endMs: 600 }, { url: '/cue.mp3' }]));
+    await act(async () => {});
+    act(() => result.current.stop());
+    act(() => vi.advanceTimersByTime(1000));
+    expect(playCount()).toBe(1);
+  });
+
+  it('reports the playing clip and how far into it playback is', () => {
+    const { result } = renderHook(() => useSentenceAudio());
+    expect(result.current.position()).toBeNull();
+    act(() => result.current.playSequence([{ url: '/kr.mp3', language: 'KR' }]));
+    elements.at(-1).currentTime = 1.35;
+    expect(result.current.position()).toEqual({ language: 'KR', role: undefined, ms: 1350 });
+    act(() => result.current.stop());
+    expect(result.current.position()).toBeNull();
+  });
+
+  it('reports no position once a sequence has ended', () => {
+    const { result } = renderHook(() => useSentenceAudio());
+    act(() => result.current.playSequence([{ url: '/kr.mp3', language: 'KR' }]));
+    endCurrentClip();
+    expect(result.current.position()).toBeNull();
+  });
+});
+
+/**
+ * A play() the hook itself interrupted — stop(), or a new sequence taking the
+ * element — rejects with an AbortError. That is not the browser refusing to
+ * play, and reporting it as `blocked` bounced the recording rung back to idle
+ * with "The sound didn't start" after a perfectly good stop.
+ */
+describe('an interrupted play is not a blocked one', () => {
+  /** Every play() stays pending until the test settles it, one per call. */
+  const pendingPlay = () => {
+    const rejects = [];
+    window.HTMLMediaElement.prototype.play = vi.fn(function play() {
+      elements.push(this);
+      return new Promise((_, r) => { rejects.push(r); });
+    });
+    const abortError = () => Object.assign(new Error('The play() request was interrupted'), { name: 'AbortError' });
+    return {
+      abort: (i = rejects.length - 1) => rejects[i](abortError()),
+      refuse: (i = rejects.length - 1) => rejects[i](new Error('NotAllowedError')),
+    };
+  };
+
+  it('a play aborted by stop() does not set blocked', async () => {
+    const play = pendingPlay();
+    const { result } = renderHook(() => useSentenceAudio());
+    act(() => result.current.playSequence([{ url: '/a.mp3' }]));
+    act(() => result.current.stop());
+    await act(async () => { play.abort(); });
+    expect(result.current.blocked).toBe(false);
+  });
+
+  it('a play aborted by the next sequence does not set blocked', async () => {
+    const play = pendingPlay();
+    const { result } = renderHook(() => useSentenceAudio());
+    act(() => result.current.playSequence([{ url: '/a.mp3' }]));
+    act(() => result.current.playSequence([{ url: '/b.mp3' }]));
+    await act(async () => { play.abort(0); });
+    expect(result.current.blocked).toBe(false);
+    expect(result.current.playing).toBe(true);
+  });
+
+  it('a refusal of the clip still sounding is still blocked', async () => {
+    const play = pendingPlay();
+    const { result } = renderHook(() => useSentenceAudio());
+    act(() => result.current.playSequence([{ url: '/a.mp3' }]));
+    await act(async () => { play.refuse(); });
+    expect(result.current.blocked).toBe(true);
+  });
+});
+
+/** What is sounding, as it changes — so a rung can offer a control only while
+ *  the clip it applies to is actually playing (the recording rung's Pause). */
+describe('onClip', () => {
+  it('reports each clip as it starts, and null between clips and at the end', () => {
+    const onClip = vi.fn();
+    const { result } = renderHook(() => useSentenceAudio({ onClip }));
+    const a = { url: '/a.mp3', language: 'KR' };
+    const b = { url: '/cue.mp3', role: 'cue', gapMs: 400 };
+    act(() => result.current.playSequence([a, b]));
+    expect(onClip.mock.calls.map(([c]) => c)).toEqual([a]);
+    endCurrentClip();                                   // the gap before b
+    expect(onClip.mock.calls.map(([c]) => c)).toEqual([a, null]);
+    act(() => vi.advanceTimersByTime(400));
+    expect(onClip.mock.calls.map(([c]) => c)).toEqual([a, null, b]);
+    endCurrentClip();
+    expect(onClip.mock.calls.map(([c]) => c)).toEqual([a, null, b, null]);
+  });
+
+  it('reports null when stopped', () => {
+    const onClip = vi.fn();
+    const { result } = renderHook(() => useSentenceAudio({ onClip }));
+    act(() => result.current.playSequence([{ url: '/a.mp3' }]));
+    act(() => result.current.stop());
+    expect(onClip).toHaveBeenLastCalledWith(null);
+  });
+});

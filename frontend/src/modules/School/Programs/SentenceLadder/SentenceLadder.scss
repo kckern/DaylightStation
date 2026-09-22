@@ -725,3 +725,6 @@ $disc: 5.5rem;
 // The keys, where a keyboard is attached. Quiet: an answer to "how", not a banner.
 .lang-rung__keys,
 .lang-program__keys { margin: 0.5rem 0 0; font-size: 0.85rem; color: var(--school-muted); }
+/* Which part of a sentence said in pieces is in hand — the same muted voice
+   as the key hints, so it reads as a label rather than a control. */
+.lang-rung__part { margin: 0; font-size: 0.85rem; color: var(--school-muted); }

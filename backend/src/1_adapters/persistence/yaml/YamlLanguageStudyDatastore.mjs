@@ -16,8 +16,9 @@
  * day queue is derived from.
  */
 import path from 'path';
-import { dirExists, listEntries, loadYamlSafe, saveYaml, ensureDir, listYamlFiles, writeBinary } from '#system/utils/FileIO.mjs';
+import { dirExists, listEntries, loadYamlSafe, saveYaml, ensureDir, listYamlFiles, writeBinary, deleteFile } from '#system/utils/FileIO.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
+import { RECORDING_FORMATS, isRecordingFormat } from '#domains/school/language/recordingFormats.mjs';
 
 const ID_RE = /^[a-z0-9][a-z0-9_-]*$/i;
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -157,18 +158,32 @@ export class YamlLanguageStudyDatastore {
     if (!this.#configService.getUserProfile?.(userId)) return null;
     if (!Number.isFinite(Number(seq))) return null;
     if (!LANG_RE.test(String(language))) return null;
-    if (!/^[a-z0-9]{2,5}$/i.test(String(ext))) return null;
+    // Only a format the reader serves: anything else would be written, never
+    // played, and would cost the real recording its place (see writeRecording).
+    if (!isRecordingFormat(ext)) return null;
     return path.join(
       dir, 'recordings', String(userId),
       `${padSeq(seq)}-${String(language).toUpperCase()}.${String(ext).toLowerCase()}`,
     );
   }
 
+  /**
+   * ONE RECORDING PER SENTENCE. A take joined from pieces is a WAV while a
+   * one-go take is WebM, and the reader tries formats in a fixed order — so a
+   * surviving sibling in another format would be served instead of the take
+   * the learner just kept. The new file is written first, then the siblings go,
+   * so a failed write never costs the old recording.
+   */
   writeRecording(corpusId, userId, seq, language, buffer, ext = 'webm') {
     const target = this.resolveRecordingPath(corpusId, userId, seq, language, ext);
     if (!target) return null;
     ensureDir(path.dirname(target));
     writeBinary(target, buffer);
+    const base = target.slice(0, -path.extname(target).length);
+    for (const format of RECORDING_FORMATS) {
+      const sibling = `${base}.${format}`;
+      if (sibling !== target) deleteFile(sibling);
+    }
     return target;
   }
 
