@@ -148,7 +148,7 @@ server-side.
 Resolved by spending one authorized play on `2474245`:
 
 ```text
-playId      "1790099177590080024"
+playId      "<play-id>"
 manifests[] { manifestType: "hls", url, drmType: "none",
               storageService, cdn, drmLicenseID }
 captions[]  { language, label, files[] }   # .vtt, .srt, .transcript
