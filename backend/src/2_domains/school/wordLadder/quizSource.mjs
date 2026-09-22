@@ -23,7 +23,14 @@ export function buildWordQuizSource({ deck, lexicon, seed }) {
       type: 'question',
       itemId: wordId,
       number: index + 1,
-      blocks: [{ type: 'rich_text', md: koreanToEnglish ? `What does **${entry.korean}** mean?` : `Which is **${entry.english}** in Korean?` }],
+      omr: true,
+      fillAfter: true,
+      // The omr_response child is what prints the lettered choices (Ⓐ text …)
+      // beside the card's bubbles; without it the sheet shows the stem only.
+      blocks: [
+        { type: 'rich_text', md: koreanToEnglish ? `What does **${entry.korean}** mean?` : `Which is **${entry.english}** in Korean?` },
+        { type: 'omr_response', itemId: wordId, choices: 1 + decoys.length, layout: 'compact' },
+      ],
       choices: seededShuffle([answer, ...decoys], hashString(`${seed}|${wordId}`)),
       answer,
     };
