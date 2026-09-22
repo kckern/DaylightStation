@@ -40,6 +40,9 @@ import {
   YamlLearningContentRepository,
   YamlSurfaceProfileRepository,
 } from '#adapters/school/catalog/index.mjs';
+import { YamlLexiconRepository } from '#adapters/school/catalog/YamlLexiconRepository.mjs';
+import { expandDeckWithLexicons } from '#adapters/school/catalog/LexiconDeckLoader.mjs';
+import { parseMediaRef } from '#domains/school/wordLadder/index.mjs';
 import { PaperCertification } from '#adapters/school/paper/PaperCertification.mjs';
 import { ScreenCertification } from '#adapters/school/screen/ScreenCertification.mjs';
 import { Ti86SchoolCalcCodec } from '#adapters/schoolcalc/ti86/index.mjs';
@@ -74,8 +77,10 @@ const VALUE_FLAGS = new Set([
   'surface',
   'address',
   'file',
+  'media-dir',
 ]);
-const BOOLEAN_FLAGS = new Set(['json', 'write-manifest', 'strict-concepts']);
+const BOOLEAN_FLAGS = new Set(['json', 'write-manifest', 'strict-concepts', 'strict-media']);
+const MEDIA_PREFIX = 'media:';
 const ALLOWED_FLAGS = new Set([...VALUE_FLAGS, ...BOOLEAN_FLAGS]);
 
 const HELP = `school-certify — certify published School content against registered surface profiles
@@ -94,6 +99,8 @@ Options:
   --surfaces-directory <path>        override surface-profile directory
                                      (default: household/school/surfaces)
   --assets-directory <path>          override asset directory (default: <content-root>/assets)
+  --media-dir <path>                 media root; media:<path> assets resolve under <media-dir>/school
+                                     (default: $DAYLIGHT_BASE_PATH/media, else /usr/src/app/media)
   --surface <id>                     restrict to one surface/baseline id (repeatable, query mode)
   --address <addr>                   certify one lesson (a/b/c/d/e) or bank (bank:<id>) address (query mode)
   --file <path>                      certify one catalog or question-bank file (query mode)
@@ -102,6 +109,7 @@ Options:
                                      (gate mode only — usage error otherwise)
   --strict-concepts                  fail on a bank concept id absent from the concept registry
                                      (<data-dir>/content/school/concepts.yml) instead of warning
+  --strict-media                     fail (instead of warn) on 0-byte media: placeholders
   --help, -h                         show this message
 
 Directory lists are comma-separated; relative entries resolve under --data-dir.
@@ -174,10 +182,16 @@ export function resolveCertifyPaths({ flags = {}, env = process.env } = {}) {
   const assetsDirectory = resolveOptionalDirectory(
     flags['assets-directory'], path.join(base.contentRoot, 'assets'), base.dataDir, 'assets-directory',
   );
+  const mediaFlag = valueFlag(flags['media-dir'], 'media-dir');
+  const mediaDir = mediaFlag !== undefined
+    ? path.resolve(mediaFlag)
+    : (env.DAYLIGHT_BASE_PATH ? path.join(env.DAYLIGHT_BASE_PATH, 'media') : '/usr/src/app/media');
   return {
     ...base,
     surfacesDirectory,
     assetsDirectory,
+    mediaDir,
+    mediaSchoolRoot: path.join(mediaDir, 'school'),
     deckDirectories: resolveDirectoryList(
       flags['flashcard-deck-directories'], [path.join(base.contentRoot, 'flashcard-decks')], base.dataDir, 'flashcard-deck-directories',
     ),
@@ -243,6 +257,11 @@ function collectAssetKeys(assetsDirectory) {
       const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
       if (entry.isDirectory()) walk(path.join(dir, entry.name), rel);
       else {
+        // A 0-byte file is a placeholder, not an asset (word-ladder design:
+        // "treat a 0-byte file as missing").
+        let size = 0;
+        try { size = fs.statSync(path.join(dir, entry.name)).size; } catch { return; }
+        if (size === 0) return;
         // Historical question banks use extensionless content refs, while rich
         // flashcard media uses the concrete served filename. Both are valid.
         keys.add(rel);
@@ -288,6 +307,44 @@ function collectItemAssetRefs(item) {
 }
 
 /**
+ * 'ok' | 'empty' | 'missing' for a `media:<path>` asset under
+ * `<media-dir>/school`. Prefix parsing and traversal refusal are the
+ * domain's `parseMediaRef` (Ruling P10) — this only adds the fs-backed
+ * 0-byte-placeholder check, which the domain layer cannot do (no fs).
+ */
+function mediaAssetState(mediaSchoolRoot, ref) {
+  const parsed = parseMediaRef(ref);
+  if (!parsed.ok) return 'missing';
+  const file = path.resolve(mediaSchoolRoot, parsed.path);
+  let stats;
+  try { stats = fs.statSync(file); } catch { return 'missing'; }
+  if (!stats.isFile()) return 'missing';
+  return stats.size === 0 ? 'empty' : 'ok';
+}
+
+/** Every mounted deck, lexicon decks expanded exactly as the runtime expands them. */
+function readDecks(deckDirectories, lexicons) {
+  const decks = [];
+  deckDirectories.forEach((directory) => {
+    [...listYamlFiles(directory, { recursive: true })].sort().forEach((relative) => {
+      const file = path.join(directory, relative);
+      const raw = loadYaml(file);
+      if (!raw) return;
+      try {
+        decks.push({
+          relative, file, raw, deck: expandDeckWithLexicons(raw, lexicons), error: null,
+        });
+      } catch (error) {
+        decks.push({
+          relative, file, raw, deck: null, error: error.message,
+        });
+      }
+    });
+  });
+  return decks;
+}
+
+/**
  * Asset-existence validation (spec §5.5.2): every document `asset` block's
  * `assetId` and every bank item's asset/image reference (`asset`,
  * `promptImage`, `choices[].image`) must resolve to a real file under
@@ -295,9 +352,12 @@ function collectItemAssetRefs(item) {
  * through catalog references) so a stray unreferenced document/bank with a
  * dangling ref is still caught.
  */
-function validateAssetReferences({ documentDirectories, bankDirectories, deckDirectories = [], assetsDirectory }) {
+function validateAssetReferences({
+  documentDirectories, bankDirectories, decks = [], assetsDirectory, mediaSchoolRoot,
+}) {
   const assetKeys = collectAssetKeys(assetsDirectory);
   const errors = [];
+  const placeholders = [];
   documentDirectories.forEach((directory) => {
     [...listYamlFiles(directory, { recursive: true })].sort().forEach((relative) => {
       const document = loadYaml(path.join(directory, relative));
@@ -323,41 +383,48 @@ function validateAssetReferences({ documentDirectories, bankDirectories, deckDir
       });
     });
   });
-  deckDirectories.forEach((directory) => {
-    [...listYamlFiles(directory, { recursive: true })].sort().forEach((relative) => {
-      const deck = loadYaml(path.join(directory, relative));
-      if (!deck || !Array.isArray(deck.cards)) return;
-      deck.cards.forEach((card) => ['front', 'back'].forEach((face) => {
-        (card?.[face]?.blocks ?? []).forEach((block, index) => {
-          if (!['image', 'audio', 'video'].includes(block?.type)) return;
-          if (!assetKeys.has(block.assetId)) errors.push(`flashcard deck '${deck.id ?? relative}': card '${card.cardId ?? '?'}' ${face}.blocks[${index}] references missing asset '${block.assetId}'`);
-          if (block.type === 'video' && !assetKeys.has(block.posterAssetId)) errors.push(`flashcard deck '${deck.id ?? relative}': card '${card.cardId ?? '?'}' ${face}.blocks[${index}] references missing poster asset '${block.posterAssetId}'`);
+  decks.forEach(({ relative, deck }) => {
+    if (!deck || !Array.isArray(deck.cards)) return;
+    deck.cards.forEach((card) => ['front', 'back'].forEach((face) => {
+      (card?.[face]?.blocks ?? []).forEach((block, index) => {
+        if (!['image', 'audio', 'video'].includes(block?.type)) return;
+        const where = `flashcard deck '${deck.id ?? relative}': card '${card.cardId ?? '?'}' ${face}.blocks[${index}]`;
+        const refs = [['asset', block.assetId], ...(block.type === 'video' ? [['poster asset', block.posterAssetId]] : [])];
+        refs.forEach(([label, ref]) => {
+          if (typeof ref === 'string' && ref.startsWith(MEDIA_PREFIX)) {
+            const state = mediaAssetState(mediaSchoolRoot, ref);
+            if (state === 'empty') placeholders.push(`${where} ${label} '${ref}' is a 0-byte placeholder`);
+            else if (state === 'missing') errors.push(`${where} references missing ${label} '${ref}'`);
+          } else if (!assetKeys.has(ref)) {
+            errors.push(`${where} references missing ${label} '${ref}'`);
+          }
         });
-      }));
-    });
+      });
+    }));
   });
-  return errors;
+  return { errors, placeholders };
 }
 
-function validateFlashcardDecks(deckDirectories, bankDirectories = []) {
+function validateFlashcardDecks(decks, bankDirectories = []) {
   const errors = [];
   const ids = new Map();
   const bankIds = new Set();
   bankDirectories.forEach((directory) => [...listYamlFiles(directory, { recursive: true })].sort().forEach((relative) => {
     const raw = loadYaml(path.join(directory, relative)); if (raw?.id) bankIds.add(raw.id);
   }));
-  deckDirectories.forEach((directory) => {
-    [...listYamlFiles(directory, { recursive: true })].sort().forEach((relative) => {
-      const file = path.join(directory, relative);
-      const raw = loadYaml(file);
-      if (!raw) return;
-      const result = validateFlashcardDeck(raw, { path: `flashcard deck '${raw.id ?? relative}'` });
+  decks.forEach(({
+    relative, file, raw, deck, error,
+  }) => {
+    const label = `flashcard deck '${raw.id ?? relative}'`;
+    if (error) errors.push(`${label}: ${error}`);
+    else {
+      const result = validateFlashcardDeck(deck, { path: label });
       result.errors.forEach((message) => errors.push(message));
       const bankId = result.deck?.assessment?.bankId;
-      if (bankId && !bankIds.has(bankId)) errors.push(`flashcard deck '${raw.id ?? relative}' references missing assessment bank '${bankId}'`);
-      if (raw.id && ids.has(raw.id)) errors.push(`flashcard deck '${raw.id}' is duplicated in '${ids.get(raw.id)}' and '${file}'`);
-      else if (raw.id) ids.set(raw.id, file);
-    });
+      if (bankId && !bankIds.has(bankId)) errors.push(`${label} references missing assessment bank '${bankId}'`);
+    }
+    if (raw.id && ids.has(raw.id)) errors.push(`flashcard deck '${raw.id}' is duplicated in '${ids.get(raw.id)}' and '${file}'`);
+    else if (raw.id) ids.set(raw.id, file);
   });
   return errors;
 }
@@ -547,17 +614,21 @@ async function certifyTargets(certification, targets) {
  *   validation reuses only `errors`, matching the existing "no query-mode
  *   warnings" scope of `certifiedNowhereWarnings`).
  */
-async function validateCorpusScope({ corpus, paths, strictConcepts = false }) {
+async function validateCorpusScope({
+  corpus, paths, strictConcepts = false, strictMedia = false,
+}) {
   const validation = await new ValidateSchoolCalcPublication({
     catalogs: corpus.catalogs, bundles: corpus.buildLesson,
   }).execute();
-  const assetErrors = validateAssetReferences({
+  const decks = readDecks(paths.deckDirectories, new YamlLexiconRepository({ mediaRoot: paths.mediaSchoolRoot }));
+  const { errors: assetErrors, placeholders } = validateAssetReferences({
     documentDirectories: paths.documentDirectories,
     bankDirectories: paths.bankDirectories,
-    deckDirectories: paths.deckDirectories,
+    decks,
     assetsDirectory: paths.assetsDirectory,
+    mediaSchoolRoot: paths.mediaSchoolRoot,
   });
-  const deckErrors = validateFlashcardDecks(paths.deckDirectories, paths.bankDirectories);
+  const deckErrors = validateFlashcardDecks(decks, paths.bankDirectories);
   const capabilityErrors = await validateRequiredCapabilityReferences({
     catalogs: corpus.catalogs,
     customCapabilities: corpus.moduleRegistry.list().map((definition) => definition.capability),
@@ -570,11 +641,13 @@ async function validateCorpusScope({ corpus, paths, strictConcepts = false }) {
     ...deckErrors,
     ...capabilityErrors,
     ...(strictConcepts ? conceptMessages : []),
+    ...(strictMedia ? placeholders : []),
   ].sort();
   return {
     errors,
     conceptWarnings: strictConcepts ? [] : conceptMessages,
     conceptNotices: conceptRegistry.notices,
+    mediaWarnings: strictMedia ? [] : placeholders,
   };
 }
 
@@ -588,7 +661,9 @@ function maybeWriteManifest({ flags, rows, manifestPath, fs: fsDep = fs }) {
 async function runGateMode({ paths, flags, deps }) {
   const corpus = buildCorpus(paths);
   const strictConcepts = Boolean(flags['strict-concepts']);
-  const corpusValidation = await validateCorpusScope({ corpus, paths, strictConcepts });
+  const corpusValidation = await validateCorpusScope({
+    corpus, paths, strictConcepts, strictMedia: Boolean(flags['strict-media']),
+  });
   const { registry, profileErrors } = await buildRegistry({
     surfacesDirectory: paths.surfacesDirectory, moduleRegistry: corpus.moduleRegistry,
   });
@@ -618,7 +693,7 @@ async function runGateMode({ paths, flags, deps }) {
     };
   }
 
-  const warnings = [...certifiedNowhereWarnings(rows), ...corpusValidation.conceptWarnings].sort();
+  const warnings = [...certifiedNowhereWarnings(rows), ...corpusValidation.conceptWarnings, ...corpusValidation.mediaWarnings].sort();
   const sortedRows = sortRows(rows);
   const manifestWritten = maybeWriteManifest({
     flags, rows: sortedRows, manifestPath: paths.manifestPath, fs: deps.fs,
@@ -666,7 +741,9 @@ async function resolveQueryTargets({ flags, corpus, paths }) {
   // (finding: this branch used to reuse listAllLessonAddresses's silent
   // continue-on-error, which is only safe when a prior pass already
   // validated — which, unlike gate mode, this path never did).
-  const corpusValidation = await validateCorpusScope({ corpus, paths, strictConcepts: Boolean(flags['strict-concepts']) });
+  const corpusValidation = await validateCorpusScope({
+    corpus, paths, strictConcepts: Boolean(flags['strict-concepts']), strictMedia: Boolean(flags['strict-media']),
+  });
   if (corpusValidation.errors.length) return { targets: [], errors: corpusValidation.errors };
 
   const lessonAddresses = await listAllLessonAddresses(corpus.catalogs);
