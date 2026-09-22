@@ -120,16 +120,22 @@ export function BrowseView({
     return () => observer.disconnect();
   }, [items.length, loadMore, loading, loadingMore, total]);
 
-  const openContainer = (row, id) => {
+  const pushFromBrowse = (view, params, focusedId) => {
     const host = findScrollHost(rootRef.current);
-    const currentPatch = { path, scrollTop: host?.scrollTop ?? 0, focusedId: id };
-    push('browse', {
+    const currentPatch = { path, scrollTop: host?.scrollTop ?? 0, focusedId };
+    push(view, params, { currentPatch });
+  };
+
+  const openDetail = (id) => pushFromBrowse('detail', { contentId: id }, id);
+
+  const openContainer = (row, id) => {
+    pushFromBrowse('browse', {
       path: String(id).replace(':', '/'),
       label: row.title ?? id,
       modifiers,
       containerItem: { ...row, id },
       breadcrumbs: [...breadcrumbs, { path, label: crumbLabel, containerItem }],
-    }, { currentPatch });
+    }, id);
   };
 
   const runHeaderVerb = (action, fn) => {
@@ -241,11 +247,11 @@ export function BrowseView({
                   focusId={id}
                   onTap={() => rowIsContainer ? openContainer(row, id) : dispatchLeafVerb('playNow', id, row)}
                   onPlayAll={rowIsContainer ? () => playContainerAsQueue(id, row) : null}
-                  onDetails={rowIsContainer ? null : () => push('detail', { contentId: id })}
+                  onDetails={rowIsContainer ? null : () => openDetail(id)}
                   detailsTestId={rowIsContainer ? null : `browse-detail-${id}`}
                   onAction={action => {
                   if (['playOn', 'addOn'].includes(action.kind)) setOneShot(action);
-                  else if (action.kind === 'details') push('detail', { contentId: id });
+                  else if (action.kind === 'details') openDetail(id);
                   else dispatchLeafVerb(action.kind, id, row);
                   }}
                 />

@@ -212,7 +212,9 @@ describe('BrowseView — leaf Detail and Play Now entrypoints', () => {
     expect(detail).toHaveAttribute('data-testid', 'browse-detail-plex:55854');
     fireEvent.click(detail);
 
-    expect(navPush).toHaveBeenCalledWith('detail', { contentId: 'plex:55854' });
+    expect(navPush).toHaveBeenCalledWith('detail', { contentId: 'plex:55854' }, {
+      currentPatch: { path: 'plex/663508', scrollTop: 0, focusedId: 'plex:55854' },
+    });
     expect(dispatchLeafVerbMock).not.toHaveBeenCalled();
   });
 
