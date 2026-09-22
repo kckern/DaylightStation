@@ -51,6 +51,43 @@ describe('GetTeacherSession artifact read-through', () => {
     expect(result.artifacts[0].thumbnailUrl).toBeUndefined();
     expect(getPublished).toHaveBeenCalledWith('civilization/young-peoples-atlas-us/ws-ses-illinois', 'frozen-rev');
   });
+
+  /**
+   * Whole-branch review finding #4: a `key-alignment-suspected` queue entry
+   * has `questionNumber: null` (nothing was printed for it), so mapping
+   * `reviewEvidence` unfiltered with an `index + 1` fallback fabricates a
+   * phantom "Question N" in the teacher's "printed questions" list. It must
+   * be excluded from `assessment.items`, and the real questions after it
+   * must keep numbering as if it were never there.
+   */
+  it('never numbers the synthetic key-alignment queue entry as a printed question', async () => {
+    const useCase = new GetTeacherSession({
+      sessions: {
+        readEvents: vi.fn(async () => events),
+        listForLearner: vi.fn(async () => []),
+      },
+      curriculum: { getUnit: vi.fn(async () => null), listWorks: vi.fn(async () => []), listUnits: vi.fn(async () => []) },
+      issuedArtifacts: { get: vi.fn(async () => null) },
+      reviewQueue: {
+        listForSession: vi.fn(async () => [
+          { itemId: 'q1', questionNumber: 1, prompt: 'P1', given: 'A', verdict: 'correct' },
+          { itemId: 'key-alignment', reason: 'key-alignment-suspected', questionNumber: null,
+            prompt: 'Row alignment check', given: null, verdict: null },
+          { itemId: 'q2', questionNumber: 2, prompt: 'P2', given: 'B', verdict: 'incorrect' },
+        ]),
+      },
+    });
+
+    const result = await useCase.execute({ sessionId: 'ses_illinois' });
+
+    expect(result.assessment.items).toEqual([
+      expect.objectContaining({ itemId: 'q1', questionNumber: 1 }),
+      expect.objectContaining({ itemId: 'q2', questionNumber: 2 }),
+    ]);
+    expect(result.assessment.items.some((item) => item.itemId === 'key-alignment')).toBe(false);
+    // Still visible to a teacher elsewhere (the raw review-queue read model).
+    expect(result.reviewEvidence.some((item) => item.itemId === 'key-alignment')).toBe(true);
+  });
 });
 
 describe('GetLearnerTimeline catalog join', () => {
