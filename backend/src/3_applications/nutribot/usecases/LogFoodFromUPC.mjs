@@ -16,6 +16,8 @@ import { parseGtin } from '#domains/nutrition/services/gtin.mjs';
 import { isQuarantined, quarantineMarker } from '#domains/nutrition/services/quarantine.mjs';
 import { InvalidInputError } from '#apps/common/errors/SemanticErrors.mjs';
 
+// The largest mass one label serving can plausibly be; an AI estimate above it is refused.
+const MAX_ESTIMATED_SERVING_GRAMS = 500;
 const NUTRIENTS = ['calories', 'protein', 'carbs', 'fat', 'fiber', 'sugar', 'sodium', 'cholesterol'];
 // '' is unknown, not zero (`Number('')` is 0) — the same guard normalizeProductNutrition applies.
 const finiteNutrient = value => value != null && value !== '' && Number.isFinite(Number(value)) && Number(value) >= 0 ? Number(value) : null;
@@ -304,16 +306,26 @@ export class LogFoodFromUPC {
       // classifier already running for the icon also estimates the label's
       // serving ("2 tbsp") in grams; the row stays unconfirmed, so the estimate is
       // reviewed like any other. Grams only: a millilitre fallback is never
-      // turned into mass.
-      const estimate = Number(classification?.servingGrams);
+      // turned into mass. One label serving is at most 500 g, and never more
+      // than the whole package when its mass is known.
+      let servingAssumption = product.nutritionLookup?.servingFallback === 'per100' ? 'per100' : 'one-serving';
       if (product.nutritionLookup?.servingFallback === 'per100' && product.serving?.unit === 'g'
-        && Number.isFinite(estimate) && estimate > 0 && estimate < 2000) {
-        const factor = estimate / 100;
-        product = { ...product, serving: { size: estimate, unit: 'g' },
-          nutrition: Object.fromEntries(Object.entries(product.nutrition || {})
-            .map(([key, value]) => [key, value == null ? null : Math.round(value * factor * 1000) / 1000])),
-          nutritionLookup: { ...product.nutritionLookup, servingEstimate: { source: 'ai', grams: estimate } } };
-        this.#logger.info?.('upc.serving.estimated', { upc, name: product.name, servingText: product.nutritionLookup.servingText || null, grams: estimate });
+        && classification?.servingGrams != null) {
+        const estimate = Number(classification.servingGrams);
+        const packageGrams = Number(product.nutritionLookup.packageGrams);
+        const maxGrams = Math.min(MAX_ESTIMATED_SERVING_GRAMS, packageGrams > 0 ? packageGrams : Infinity);
+        if (Number.isFinite(estimate) && estimate > 0 && estimate <= maxGrams) {
+          const factor = estimate / 100;
+          product = { ...product, serving: { size: estimate, unit: 'g' },
+            nutrition: Object.fromEntries(Object.entries(product.nutrition || {})
+              .map(([key, value]) => [key, value == null ? null : Math.round(value * factor * 1000) / 1000])),
+            nutritionLookup: { ...product.nutritionLookup, servingEstimate: { source: 'ai', grams: estimate } } };
+          servingAssumption = 'ai-serving-estimate';
+          this.#logger.info?.('upc.serving.estimated', { upc, name: product.name, servingText: product.nutritionLookup.servingText || null, grams: estimate });
+        } else {
+          this.#logger.info?.('upc.serving.estimateRejected', { upc, name: product.name,
+            servingText: product.nutritionLookup.servingText || null, grams: classification.servingGrams, maxGrams });
+        }
       }
 
       // 5. Create food item from product
@@ -345,7 +357,7 @@ export class LogFoodFromUPC {
         color: classification.noomColor,
         ...Object.fromEntries(NUTRIENTS.map(key => [key, finiteNutrient(product.nutrition?.[key])])),
         ...provisionalReview({}, this.#clock.now(), 'upc'),
-        captureEvidence: { source: 'upc', upc, serving: product.serving, assumption: 'one-serving' },
+        captureEvidence: { source: 'upc', upc, serving: product.serving, assumption: servingAssumption },
       };
       if (this.#catalogService?.resolveIdentity) Object.assign(foodItem, await this.#catalogService.resolveIdentity(foodItem, userId));
       // Unknown calories (a known 0 is known) is not a food we can count. It stays
@@ -537,14 +549,17 @@ Calories: ${product.nutrition?.calories ?? 'unknown'}`,
    */
   async #classifyProduct(product) {
     const availableIcons = this.#foodIconsString.split(' ');
-    // Only a per-100 fallback asks for a serving estimate; every other product
-    // keeps the original { icon, noomColor } contract.
-    const askServing = !!product.nutritionLookup?.servingFallback;
+    // Only a per-100 GRAM fallback asks for a serving estimate; every other
+    // product keeps the original { icon, noomColor } contract. A volume is never
+    // turned into grams, so a millilitre fallback is not asked.
+    const askServing = product.nutritionLookup?.servingFallback === 'per100' && product.serving?.unit === 'g';
+    const example = askServing ? '{ "icon": "apple", "noomColor": "green", "servingGrams": 30 }' : '{ "icon": "apple", "noomColor": "green" }';
     const servingRule = askServing
-      ? '\nIf a label serving is given, also estimate its mass in grams as "servingGrams" (number, or null if unknowable).'
+      ? '\nThe calories given are per 100 g. Also estimate the mass in grams of the label serving as "servingGrams" (number, or null if unknowable).'
       : '';
-    const servingLine = askServing ? `\nLabel serving: ${product.nutritionLookup.servingText || 'unknown'}` : '';
-
+    const caloriesLine = askServing
+      ? `Calories per 100 g: ${product.nutrition?.calories ?? 'unknown'}\nLabel serving: ${product.nutritionLookup.servingText || 'unknown'}`
+      : `Calories: ${product.nutrition?.calories ?? 'unknown'}`;
     const prompt = [
       {
         role: 'system',
@@ -556,11 +571,11 @@ Choose the MOST relevant icon filename for the product and assign a Noom color:
 - yellow: lean proteins, whole grains, legumes
 - orange: processed foods, high-calorie items
 
-Respond ONLY in JSON: { "icon": "apple", "noomColor": "green" }${servingRule}`,
+Respond ONLY in JSON: ${example}${servingRule}`,
       },
       {
         role: 'user',
-        content: `Product: ${product.name}${product.brand ? ` by ${product.brand}` : ''}\nCalories: ${product.nutrition?.calories ?? 'unknown'}${servingLine}`,
+        content: `Product: ${product.name}${product.brand ? ` by ${product.brand}` : ''}\n${caloriesLine}`,
       },
     ];
 

@@ -80,7 +80,8 @@ export function normalizeProductNutrition(product) {
   }
   if (missing.length) warnings.push(`Nutrition unavailable: ${missing.join(', ')}.`);
   return { serving, nutrition, nutritionLookup: { source: 'openfoodfacts', basis, missing, warnings, conflicts,
-    servingVerified: servingKnown && !servingFallback, servingFallback, servingText: product.serving_size || null } };
+    servingVerified: servingKnown && !servingFallback, servingFallback, servingText: product.serving_size || null,
+    packageGrams: labelGrams(product.quantity) } };
 }
 
 /** Nutritionix nf_* fields describe one serving; serving_weight_grams is mass,
