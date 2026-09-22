@@ -13,11 +13,11 @@ import { provisionalReview } from '#shared/contracts/nutrition/reviewLifecycle.m
 import { sha256Text } from '#system/utils/sha256.mjs';
 import { confineIcon, iconVocabulary } from '#domains/nutrition/services/icons.mjs';
 import { parseGtin } from '#domains/nutrition/services/gtin.mjs';
+import { isQuarantined, quarantineMarker } from '#domains/nutrition/services/quarantine.mjs';
 
 const NUTRIENTS = ['calories', 'protein', 'carbs', 'fat', 'fiber', 'sugar', 'sodium', 'cholesterol'];
-const finiteNutrient = value => value != null && Number.isFinite(Number(value)) && Number(value) >= 0 ? Number(value) : null;
-// Nothing known at all (not even a zero) is not a food we can count.
-const nutritionless = items => items.length > 0 && items.every(item => NUTRIENTS.every(key => item?.[key] == null));
+// '' is unknown, not zero (`Number('')` is 0) — the same guard normalizeProductNutrition applies.
+const finiteNutrient = value => value != null && value !== '' && Number.isFinite(Number(value)) && Number(value) >= 0 ? Number(value) : null;
 // The code a capture is stored under: the collapsed GTIN when the raw read
 // parses, else the raw input (which #execute will refuse).
 const storedUpc = raw => { const gtin = parseGtin(raw); return gtin.ok ? gtin.code : raw; };
@@ -123,7 +123,7 @@ export class LogFoodFromUPC {
     const logId = `${hash.slice(0, 8)}-${hash.slice(8, 12)}-4${hash.slice(13, 16)}-a${hash.slice(17, 20)}-${hash.slice(20, 32)}`;
     if (this.#inflight.has(logId)) {
       const active = this.#inflight.get(logId);
-      if (active.upc !== input.upc) throw Object.assign(new Error('Capture operation ID reused for another barcode'), { status: 409 });
+      if (active.upc !== storedUpc(input.upc)) throw Object.assign(new Error('Capture operation ID reused for another barcode'), { status: 409 });
       return active.promise;
     }
     const pending = (async () => {
@@ -131,15 +131,15 @@ export class LogFoodFromUPC {
       if (existing) {
         if (existing.metadata?.sourceUpc !== storedUpc(input.upc)) throw Object.assign(new Error('Capture operation ID reused for another barcode'), { status: 409 });
         // A quarantined capture is pending on purpose; a replay must not accept it.
-        const quarantined = existing.status === 'pending' && nutritionless(existing.items || []);
+        const quarantined = isQuarantined(existing);
         if (existing.status === 'pending' && this.#reviewService && !quarantined) await this.#reviewService.capture({ userId: input.userId, logUuid: logId });
         return { success: true, nutrilogUuid: logId,
           committed: existing.status === 'accepted' || (existing.status === 'pending' && !!this.#reviewService && !quarantined),
-          mealTime: existing.meal.time, alreadyProcessed: true, ...(quarantined ? { quarantined } : {}) };
+          quarantined, mealTime: existing.meal.time, alreadyProcessed: true };
       }
       return this.#execute({ ...input, captureId: logId });
     })();
-    this.#inflight.set(logId, { upc: input.upc, promise: pending });
+    this.#inflight.set(logId, { upc: storedUpc(input.upc), promise: pending });
     try { return await pending; } finally { this.#inflight.delete(logId); }
   }
   async #execute(input) {
@@ -338,10 +338,11 @@ export class LogFoodFromUPC {
         captureEvidence: { source: 'upc', upc, serving: product.serving, assumption: 'one-serving' },
       };
       if (this.#catalogService?.resolveIdentity) Object.assign(foodItem, await this.#catalogService.resolveIdentity(foodItem, userId));
-      // Nothing known at all (not even a zero) is not a food we can count. It stays
+      // Unknown calories (a known 0 is known) is not a food we can count. It stays
       // a pending capture — shown in Needs Review, outside the budget — instead of a
-      // committed row of dashes that puts "+" on the day's totals.
-      const quarantined = nutritionless([foodItem]);
+      // committed row that puts "+" on the day's totals. The marker on the log is
+      // what keeps auto-report, confirm-all and capture recovery off it.
+      const quarantined = foodItem.calories == null;
 
       // 5b. Keep the manufacturer's own photo. The row renders `photoRef` ahead
       // of any icon (EntryRow), so a real picture of the product beats the best
@@ -373,6 +374,8 @@ export class LogFoodFromUPC {
           source: 'upc',
           sourceUpc: upc,
           ...(product.nutritionLookup ? { nutritionLookup: product.nutritionLookup } : {}),
+          ...(quarantined ? { ...quarantineMarker(), nutritionLookup: { ...product.nutritionLookup,
+            missing: [...new Set([...(product.nutritionLookup?.missing || []), 'calories'])] } } : {}),
         },
         timezone,
         timestamp: now,
@@ -381,6 +384,8 @@ export class LogFoodFromUPC {
       // 7. Save NutriLog
       if (this.#foodLogStore) {
         await this.#foodLogStore.save(nutriLog);
+        // Saved is final for a quarantined capture: nothing after this may undo it.
+        if (quarantined) capturedLog = nutriLog;
       }
       if (this.#reviewService && !quarantined) {
         await this.#reviewService.capture({ userId, logUuid: nutriLog.id });
@@ -458,7 +463,8 @@ export class LogFoodFromUPC {
     } catch (error) {
       if (capturedLog) {
         this.#logger.warn?.('logUPC.savedDeliveryFailed', { upc, logUuid: capturedLog.id, error: error.message });
-        return { success: true, nutrilogUuid: capturedLog.id, committed: true, mealTime: capturedLog.meal.time, deliveryFailed: true };
+        return { success: true, nutrilogUuid: capturedLog.id, committed: capturedLog.status === 'accepted',
+          quarantined: isQuarantined(capturedLog), mealTime: capturedLog.meal.time, deliveryFailed: true };
       }
       this.#logger.error?.('logUPC.error', { conversationId, upc, error: error.message });
 

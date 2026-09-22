@@ -8,6 +8,7 @@
 
 import { NOOM_COLOR_EMOJI } from '#domains/nutrition/entities/formatters.mjs';
 import { prepareDailyReportPresentation } from '../DailyReportPresentation.mjs';
+import { withoutQuarantined, isQuarantined } from '#domains/nutrition/services/quarantine.mjs';
 
 /**
  * Decide which date a `/report` should render.
@@ -153,7 +154,9 @@ export class GenerateDailyReport {
           await this.#pause(500);
         }
 
-        const pendingLogs = await this.#foodLogStore.findPending(userId);
+        // A quarantined capture (calories unknown) waits in Needs Review for a
+        // person; it neither holds the report back nor gets auto-accepted.
+        const pendingLogs = withoutQuarantined(await this.#foodLogStore.findPending(userId));
 
         if (pendingLogs.length > 0) {
           if (autoAcceptPending) {
@@ -463,6 +466,7 @@ export class GenerateDailyReport {
   async #autoAcceptPendingLogs(pendingLogs, messaging) {
     const now = new Date();
     for (const log of pendingLogs) {
+      if (isQuarantined(log)) continue;
       try {
         const acceptedLog = log.accept(now);
         await this.#foodLogStore.save(acceptedLog);
