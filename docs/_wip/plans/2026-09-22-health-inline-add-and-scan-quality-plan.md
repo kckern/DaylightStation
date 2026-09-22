@@ -1200,29 +1200,28 @@ Rerun `UPCGateway.image.test.mjs` and the gate tests.
 
 ---
 
-### Task B8: Catalog icons only propagate when the manifest offers them
+### Task B8: Only offered (hi-res) icons propagate from the catalog
 
 **Files:**
 - Modify: `backend/src/3_applications/health/FoodCatalogService.mjs:68-76,423-434`
 - Modify: `backend/src/5_composition/bootstrap.mjs:2423-2430`
 - Test: `backend/src/3_applications/health/FoodCatalogService.icon.test.mjs` (extend)
 
-Old catalog entries carry the retired flat vocabulary (`cheese`, `pitasandwich`,
-`ranch_dressing` — 186 entries). `resolveIdentity` copies them onto new rows
-ahead of the capture's own, better icon. A user pin (`iconOverride`) still wins
-whenever the slug exists; an automatic catalog icon wins only if it is OFFERED
-(a primary manifest icon, not an alias).
+The hi-res manifest is the exclusive icon set. Old catalog entries carry the
+retired 20 px vocabulary (`cheese`, `pitasandwich`, `ranch_dressing` — 186
+entries), and `resolveIdentity` copies them onto new rows ahead of the capture's
+own hi-res icon. After this task a catalog icon — learned or pinned — is used
+only when the manifest OFFERS it.
 
 **Step 1: failing tests** — read the file's existing construction helper, then add:
 
 ```js
 describe('resolveIdentity icon precedence', () => {
   const offered = new Set(['feta-cubes', 'pita-bread']);
-  const known = new Set([...offered, 'cheese', 'pitasandwich']); // aliases resolve but are not offered
   const svc = (entry) => new FoodCatalogService({
     catalogStore: { findByNormalizedName: async () => entry, getById: async () => entry },
     clock: { now: () => 0 }, createId: () => 'id',
-    iconOffered: slug => offered.has(slug), iconExists: slug => known.has(slug),
+    iconOffered: slug => offered.has(slug),
   });
   it('a retired catalog icon does not override the capture\'s icon', async () => {
     const out = await svc({ id: 'f', icon: 'cheese' }).resolveIdentity({ name: 'Feta Cheese', icon: 'feta-cubes' }, 'u');
@@ -1232,9 +1231,11 @@ describe('resolveIdentity icon precedence', () => {
     const out = await svc({ id: 'f', icon: 'pita-bread' }).resolveIdentity({ name: 'Pita Bread', icon: 'default' }, 'u');
     expect(out.icon).toBe('pita-bread');
   });
-  it('a user pin wins whenever it resolves, alias or not', async () => {
-    const out = await svc({ id: 'f', icon: 'x', iconOverride: 'pitasandwich' }).resolveIdentity({ name: 'Pita', icon: 'pita-bread' }, 'u');
-    expect(out.icon).toBe('pitasandwich');
+  it('an offered pin wins over the learned icon; a retired pin does not', async () => {
+    expect((await svc({ id: 'f', icon: 'feta-cubes', iconOverride: 'pita-bread' })
+      .resolveIdentity({ name: 'Pita', icon: 'default' }, 'u')).icon).toBe('pita-bread');
+    expect((await svc({ id: 'f', icon: 'x', iconOverride: 'pitasandwich' })
+      .resolveIdentity({ name: 'Pita', icon: 'pita-bread' }, 'u')).icon).toBe('pita-bread');
   });
 });
 ```
@@ -1243,102 +1244,87 @@ describe('resolveIdentity icon precedence', () => {
 
 **Step 3: implement.**
 
-Constructor accepts two optional predicates (default: accept everything, so
-every existing construction keeps its behaviour):
+Constructor accepts an optional predicate (default: accept everything, so every
+existing construction keeps its behaviour):
 
 ```js
 this.#iconOffered = typeof iconOffered === 'function' ? iconOffered : () => true;
-this.#iconExists = typeof iconExists === 'function' ? iconExists : () => true;
 ```
 
 `resolveIdentity`'s entry branch:
 
 ```js
 if (!entry) return { ...item, foodId };
-const pinned = isRealIcon(entry.iconOverride) && this.#iconExists(entry.iconOverride) ? entry.iconOverride : null;
-const learned = isRealIcon(entry.icon) && this.#iconOffered(entry.icon) ? entry.icon : null;
-return { ...item, foodId: entry.id, icon: pinned || learned || item.icon };
+// The hi-res manifest is the only icon set. A catalog icon from the retired
+// flat vocabulary, pinned or learned, never reaches a new row.
+const usable = slug => isRealIcon(slug) && this.#iconOffered(slug);
+const icon = [entry.iconOverride, entry.icon].find(usable) || item.icon;
+return { ...item, foodId: entry.id, icon };
 ```
+
+Also guard `setIcon(id, userId, icon)` (L461): refuse a non-offered, non-null
+slug with a 400-style error (`code: 'ICON_NOT_OFFERED'`); add a test.
 
 `bootstrap.mjs`, in `createHealthServices` before `catalogService`:
 
 ```js
-// The catalog needs the manifest's view of an icon: offered (primary) vs merely
-// resolvable (an alias kept so old rows still render). Built fail-soft like
-// nutribot's own store: no media root, no filtering.
+// The catalog needs the manifest's offered (hi-res) vocabulary. Built fail-soft
+// like nutribot's own store: no media root, no filtering.
 const catalogIcons = configService?.getMediaDir
   ? new IconManifestStore({ dataService, mediaRoot: configService.getMediaDir(), logger })
   : null;
 ```
 
 and pass `iconOffered: catalogIcons ? slug => catalogIcons.list().includes(slug) : null,`
-`iconExists: catalogIcons ? slug => catalogIcons.has(slug) : null,` to
-`new FoodCatalogService({...})`. (`IconManifestStore` is already imported in
-bootstrap; `list()` is loaded once and cheap to call, but if profiling shows
-otherwise, memoize the `Set`.)
+to `new FoodCatalogService({...})`. (`IconManifestStore` is already imported in
+bootstrap; `list()` loads once.)
 
-**Step 4:** rerun all `FoodCatalogService.*.test.mjs` →
-PASS; run `npm run test:composition-contracts` → PASS.
+**Step 4:** rerun all `FoodCatalogService.*.test.mjs` → PASS;
+`npm run test:composition-contracts` → PASS.
 
-**Step 5:** commit `fix(health): retired catalog icons no longer override a capture's icon`.
+**Step 5:** commit `fix(health): only offered hi-res icons propagate from the food catalog`.
 
 ---
 
-### Task B9: Restore retired icon aliases; reviewed food-name icons
+### Task B9: Hi-res icons are the exclusive set
+
+Verified 2026-09-22: the installed manifest (534 icons, 21 aliases) already
+points only at hi-res art (`img/nutrition/icons/**`); every alias maps an old
+name to a hi-res file. The 20 px flat set (`img/icons/food/*.png`) is not in it.
+This task keeps it that way and moves stored data off the retired names.
 
 **Files:**
-- Create: `cli/health-icon-manifest-merge.cli.mjs` (+ `cli/health-icon-manifest-merge.test.mjs`)
-- Data (via the CLI, not by hand): `data/household/apps/health/icon-manifest.yml`
+- Modify: `cli/curate-nutrition-icons.mjs:128-150` (+ new `cli/curate-nutrition-icons.test.mjs`)
+- Modify: `backend/src/1_adapters/persistence/IconManifestStore.mjs` `#load` (+ its test)
+- Create: `cli/health-icon-manifest-merge.cli.mjs` (+ test) — `foodNames` only
+- Create: `docs/_wip/plans/2026-09-22-icon-reassignment.yml` (reviewed data)
 
-The installed manifest keeps 534 icons and only 21 aliases. The curation draft
-(`node cli/curate-nutrition-icons.mjs --media-root <media> --out <tmp>`) maps all
-310 flat legacy files: 267 aliases, 258 of them to their own 20 px legacy art.
-Its own header says legacy slugs "must keep resolving forever", and 81 of the 83
-retired slugs on rows and catalog entries are among them. The merge restores
-those aliases (legacy art beats the bowl) and adds a reviewed `foodNames` map for
-the foods the audit found, all pointing at hi-res icons that are ALREADY installed.
+**B9a — curation stops proposing flat art.** In `buildManifest`, a flat legacy
+file whose hyphenated slug has no hi-res counterpart is no longer aliased to the
+flat file (delete the `else` branch at ~L146-149); count it in
+`aliasReport.retired` and list it in the report instead. Update the header
+comment ("must keep resolving forever" → retired names are re-iconed by data
+repair, never served). Test: call the exported `buildManifest` (read its
+signature and input shape first) with one hi-res file `bakery/pita-bread.png`
+and flat files `pita_bread.png`, `pitasandwich.png`; expect `aliases.pita_bread`
+→ the hi-res path, no `aliases.pitasandwich`, and `report.aliasReport.retired === 1`.
 
-**Step 1: failing test** for a pure `mergeManifest(installed, draft, foodNames)`:
+**B9b — the store refuses flat art at runtime.** In `IconManifestStore#load`,
+drop any `icons` or `aliases` entry whose `path` starts with `img/icons/food/`
+and log `health.icons.manifest.retired_art_dropped { count, slugs }` at warn.
+Test in `IconManifestStore.test.mjs` style: a manifest with one hi-res icon and
+one flat-path alias → `has(flatAlias) === false`, `resolve(flatAlias) === null`,
+warn logged. This makes a hand-edited manifest unable to bring the 20 px set
+back.
 
-```js
-import { describe, it, expect } from 'vitest';
-import { mergeManifest } from './health-icon-manifest-merge.cli.mjs';
-
-describe('mergeManifest', () => {
-  const installed = { icons: { 'pita-bread': { path: 'a.png' } }, aliases: { almond: { path: 'b.png' } } };
-  const draft = { icons: { 'pita-bread': { path: 'a.png' }, other: { path: 'c.png' } },
-    aliases: { almond: { path: 'z.png' }, cheese: { path: 'img/icons/food/cheese.png' }, 'pita-bread': { path: 'q.png' } } };
-  it('adds missing aliases only; never changes icons, existing aliases, or shadows an icon', () => {
-    const { manifest, added } = mergeManifest(installed, draft, {});
-    expect(manifest.icons).toEqual(installed.icons);
-    expect(manifest.aliases.almond).toEqual({ path: 'b.png' });
-    expect(manifest.aliases.cheese).toEqual({ path: 'img/icons/food/cheese.png' });
-    expect(manifest.aliases['pita-bread']).toBeUndefined();
-    expect(added.aliases).toEqual(['cheese']);
-  });
-  it('adds foodNames only for installed icons, and refuses an unknown slug', () => {
-    expect(mergeManifest(installed, draft, { 'pita bread': 'pita-bread' }).manifest.foodNames).toEqual({ 'pita bread': 'pita-bread' });
-    expect(() => mergeManifest(installed, draft, { feta: 'nope' })).toThrow(/nope/);
-  });
-});
-```
-
-**Step 2:** run → FAIL.
-
-**Step 3: implement** the CLI, following `cli/health-group-repair.cli.mjs`'s
-shape (pure function exported, `main` guarded by the `import.meta.url` check):
-
-- `mergeManifest(installed, draft, foodNames)` → `{ manifest, added: { aliases: [...], foodNames: [...] } }`
-  as specified by the test; keys in `foodNames` are stored as given (the store
-  normalizes on read).
-- `main`: `--manifest PATH --draft PATH --food-names PATH [--apply --backup NEW_PATH]`.
-  Without `--apply` it prints the counts and the added alias list. With
-  `--apply` it copies the manifest to `--backup` (`COPYFILE_EXCL`), writes the
-  merged YAML with `saveYamlToPathAtomic`, re-reads and checks the icon count
-  is unchanged.
-
-The reviewed food-name map, `docs/_wip/plans/2026-09-22-icon-food-names.yml`
-(every target verified installed on 2026-09-22):
+**B9c — reviewed food names.** `mergeFoodNames(installed, foodNames)` adds the
+reviewed map to the manifest's `foodNames`, refusing any slug not in `icons`
+(test: accepted slug added; unknown slug throws naming it; `icons` and `aliases`
+untouched). CLI: `--manifest PATH --food-names PATH [--apply --backup NEW_PATH]`;
+dry run prints additions; `--apply` copies the manifest to `--backup`
+(`COPYFILE_EXCL`), writes with `saveYamlToPathAtomic`, re-reads and checks icon
+and alias counts unchanged. The map, `docs/_wip/plans/2026-09-22-icon-food-names.yml`
+(every target verified installed):
 
 ```yaml
 pita bread: pita-bread
@@ -1353,23 +1339,28 @@ peanut butter spread: peanut-butter
 chicken fried rice: fried-rice
 ```
 
-**Step 4:** run the test → PASS. Then the dry run against the real files:
+**B9d — reassignment table for stored retired names.** A name→slug table for
+every catalog entry and ledger row (hot and archives) whose icon is neither
+`default` nor offered. Generic retired slugs (`cheese`, `chicken`, `sauce`) have
+no single hi-res equivalent, so assignment is by FOOD NAME, exactly as a new
+capture would choose:
 
-```bash
-# DAYLIGHT_BASE_PATH comes from the repo's .env
-MEDIA=$DAYLIGHT_BASE_PATH/media
-DATA=$DAYLIGHT_BASE_PATH/data
-node cli/curate-nutrition-icons.mjs --media-root $MEDIA --out /tmp/icon-draft.yml
-node cli/health-icon-manifest-merge.cli.mjs --manifest $DATA/household/apps/health/icon-manifest.yml \
-  --draft /tmp/icon-draft.yml --food-names docs/_wip/plans/2026-09-22-icon-food-names.yml
-```
+1. Script (scratch, not committed): list distinct `(name, retired slug, count)`
+   from `food_catalog.yml`, `nutrilist.yml` and `archives/nutrilist/*.yml`.
+2. For each name: the B9c `foodNames` entry if present; otherwise pick the best
+   slug from the installed `icons` list by name (the executing agent does this,
+   viewing the candidate PNGs under `media/img/nutrition/icons/` with the Read
+   tool where two candidates are close); otherwise `default`. Never an alias,
+   never a flat-set slug.
+3. Write `docs/_wip/plans/2026-09-22-icon-reassignment.yml` as
+   `{ "<normalized name>": "<slug|default>" }` with a comment giving the old slug
+   and count per line. **Show it to the user for review before B10 applies it.**
 
-Expected: ~246 aliases added, 10 food names, icons unchanged. **Stop and show
-the user the dry-run output before `--apply`**; the manifest is live household
-data and prod reads it after restart.
-
-**Step 5:** commit the CLI + test + food-name map:
-`feat(health): merge retired icon aliases and reviewed food-name icons into the manifest`.
+**Commits:** one per sub-task (`fix(icons): curation never proposes flat art`,
+`fix(icons): manifest store refuses flat-art entries`,
+`feat(health): reviewed food-name icons merge`, `docs(health): icon reassignment table`).
+Running the B9c `--apply` needs the user's go-ahead (live household data;
+backend restart to load).
 
 ---
 
@@ -1384,7 +1375,8 @@ A pure planner over NutriList rows, applied through
 (inventory hash → report → `--apply` with verified backup → `--offline` required
 → verify after).
 
-**Planner contract** — `planScanDataRepair(rows, { placeholderPhotoRefs, labelGrams, foodNames, deleteIds })`
+**Planner contract** — `planScanDataRepair(rows, { placeholderPhotoRefs, labelGrams, iconByName, offered, deleteIds })`
+(`iconByName` = the B9c food names merged with the reviewed B9d table; `offered` = the manifest's `icons` keys)
 returns `{ deleteIds, updates, report }`:
 
 | Rule | Selects | Change |
@@ -1394,8 +1386,8 @@ returns `{ deleteIds, updates, report }`:
 | Placeholder photos | `photoRef` in `placeholderPhotoRefs` | `photoRef: null` |
 | Shouting names | `review.source === 'upc'`, `normalizeProductName(item) !== item`, `name` not in `manualFields` | `name: normalized` |
 | Mislabelled ml | `unit === 'ml'`, `item` in `labelGrams`, `originalQuantity.amount > 0` | `grams = amount × labelGrams[item] / originalQuantity.amount`, `unit: 'g'`, `amount: grams` |
-| Food-name icons | normalized `item` in `foodNames`, icon differs, `icon` not user-pinned | `icon: foodNames[name]` |
-| Emoji icons | `icon === '🍽️'` | `icon: 'default'` |
+| Retired icons | `icon` neither `default` nor in `offered` (includes the literal `🍽️`) | `icon: iconByName[normalized item] ?? 'default'` |
+| Reviewed food names | normalized `item` in `iconByName`, current icon offered but different | `icon: iconByName[name]` |
 
 The report also lists (never changes) `emptyUpc`: UPC rows where every nutrient
 is null (Magazine, Peanut Butter Spread, Winco Foods). Real foods among them are
@@ -1407,6 +1399,8 @@ from the audit (six "Magazine" rows 1–3 s apart, two Strawberry Milkshake rows
 that must NOT be renamed, one placeholder photoRef) and asserts the exact
 `deleteIds` and `updates`. Placeholder photoRefs are found by the CLI (hash every
 `photos/*.jpg` against `PLACEHOLDER_IMAGE_SHA256`), not the planner.
+
+Catalog icons: entries whose `icon` or `iconOverride` is not offered get `icon: iconByName[name] ?? 'default'` and a non-offered `iconOverride` cleared, written through the catalog datastore's `save`.
 
 Catalog names: the CLI also plans `FoodCatalogService.updateDefinition(id, userId, { name })`
 for entries whose `name` normalizes differently. It skips (and reports) any that
@@ -1443,6 +1437,9 @@ nutrition directory's `_backups/`; confirm first that no process holds it
   described (grep `UPC`).
 - `docs/runbooks/health-ledger-repair.md` — add `health-scan-repair.cli.mjs` and
   `health-icon-manifest-merge.cli.mjs` usage.
+- `docs/reference/health/README.md` — icons: the hi-res manifest is the only
+  set; flat-path entries are dropped at load; retired names on old rows are
+  re-iconed by repair, not aliased.
 - Audit doc: mark findings fixed with commit hashes.
 
 **Commit:** `docs(health): barcode intake gate, quarantine, icon aliases, repairs`.
@@ -1452,6 +1449,6 @@ nutrition directory's `_backups/`; confirm first that no process holds it
 ## Deploy notes (after merge)
 
 - Frontend and backend ship together; no config changes.
-- The icon-manifest merge (B9) and ledger repair (B10) are data operations run
-  once, with the user's go-ahead, in that order. `IconManifestStore` caches the
-  manifest: the backend must restart after B9 for aliases and food names to load.
+- The food-name merge (B9c) and ledger/catalog repair (B10, using the reviewed
+  B9d table) are data operations run once, with the user's go-ahead, in that order. `IconManifestStore` caches the
+  manifest: the backend must restart after B9c for the food names to load.

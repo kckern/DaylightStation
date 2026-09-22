@@ -200,24 +200,27 @@ would break the ledger's "volumes are never grams" rule.
   `product.icon` only if it is a slug in the vocabulary; otherwise the
   classifier's answer wins. (`NutritionixAdapter`'s emoji fallback is dead
   code; nothing constructs it.)
-- `FoodCatalogService.resolveIdentity` stops copying retired icons onto new
-  rows. A user pin (`iconOverride`) wins whenever the slug resolves. An
-  automatically learned catalog icon wins only when the manifest *offers* it
-  (a primary icon, not an alias). Otherwise the capture's own icon stands.
-- **Legacy vocabulary.** The 83 retired slugs are nutribot's original flat
-  icon set (`media/img/icons/food/*.png`, 20 px). `cli/curate-nutrition-icons.mjs`
-  already maps all 310 of them as aliases and says they "must keep resolving
-  forever", but the installed manifest kept only 21. Restoring the missing
-  aliases makes every stored row render its original art instead of the bowl.
-  Only `brown_bean`, `protein` and the literal emoji have no file.
+- **The hi-res manifest is the exclusive icon set.** The installed manifest
+  already points only at hi-res art; the 20 px flat set
+  (`media/img/icons/food/`) is out of the pool and stays out:
+  - `FoodCatalogService.resolveIdentity` uses a catalog icon, pinned or
+    learned, only when the manifest offers it; otherwise the capture's own
+    icon stands. `setIcon` refuses non-offered slugs.
+  - `cli/curate-nutrition-icons.mjs` stops proposing aliases to flat files.
+  - `IconManifestStore` drops any entry whose path is in the flat folder, so
+    a hand edit cannot bring it back.
+- **Retired names on stored data are re-iconed, not aliased.** The 83 retired
+  slugs on catalog entries and ledger rows are reassigned from the hi-res set
+  by *food name*, the same way a new capture chooses: reviewed `foodNames`
+  first, then the best offered icon for that name, else `default`. Generic
+  slugs like `cheese` have no one hi-res equivalent, so a slug-to-slug map
+  would be wrong. The table is reviewed before the repair applies it.
 - **Reviewed food names.** The manifest's `foodNames` map (read by
   `confineIcon` before anything else) gets entries for the foods the audit
-  found, each pointing at a hi-res icon that is already installed:
-  Pita Bread → `pita-bread`, Feta Cheese → `feta-cubes`, Sharp Cheddar →
-  `cheddar-wedge`, Baby Spinach → `spinach`, Diet Coke → `cola`, carrots →
-  `carrot`, Peanut Butter Spread → `peanut-butter`, Chicken Fried Rice →
-  `fried-rice`. No new art is needed for these.
-- The ledger repair (B8) re-icons existing rows whose name is in that map.
+  found, each pointing at an installed hi-res icon: Pita Bread →
+  `pita-bread`, Feta Cheese → `feta-cubes`, Sharp Cheddar → `cheddar-wedge`,
+  Baby Spinach → `spinach`, Diet Coke → `cola`, carrots → `carrot`, Peanut
+  Butter Spread → `peanut-butter`, Chicken Fried Rice → `fried-rice`.
 
 ### B6. Placeholder product photos (finding 4)
 
@@ -254,8 +257,8 @@ editing YAML:
 - Re-normalize the ml-labelled solids from B4 (OIKOS, cheese blend, kidney
   beans, Spring Mix) to grams where the label gives them.
 - Clear placeholder `photoRef`s (B6); rename all-caps rows (B7).
-- Re-icon rows whose name is in the reviewed `foodNames` map (B5), and turn
-  the two literal-emoji icons back into `default`.
+- Re-icon every catalog entry and row holding a retired or emoji icon from the
+  reviewed name table (B5), including history archives.
 - Move the abandoned `food_catalog.yml.tmp-…` to `_backups/`.
 
 Each repair script prints its change set and needs `--apply`.
