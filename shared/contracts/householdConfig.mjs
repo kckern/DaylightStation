@@ -63,6 +63,7 @@ export const HOUSEHOLD_APP_CONFIGS = Object.freeze({
   // on disk were named the other way round before this migration.
   media:            'media/config',
   'media-app':      'media/app',
+  libby:            'media/libby',
   newsreporter:     'newsreporter/config',
   notifications:    'notifications/config',
   'omr-readers':    'hardware/omr/readers',

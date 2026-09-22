@@ -44,6 +44,10 @@ function routeGroup(p) {
   return parts.length ? `/${parts.join('/')}` : '/';
 }
 
+function safePath(p) {
+  return String(p || '/').replace(/((?:\/proxy)?\/libby\/stream\/)[^/]+/i, '$1:handle');
+}
+
 /**
  * Create request logger middleware
  * @param {Object} options
@@ -74,7 +78,7 @@ export function requestLoggerMiddleware(options = {}) {
         method: req.method,
         // Mount-relative, and deliberately without the query string: session
         // ids and tokens ride in query params and have no business here.
-        path: req.path,
+        path: safePath(req.path),
         route: routeGroup(req.path),
         status: res.statusCode,
         // Read THIS in an aggregate, not `status` — the sampler sums numbers,

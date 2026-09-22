@@ -28,6 +28,7 @@ import { PlexSessionAdapter } from '#adapters/content/media/plex/PlexSessionAdap
 import { PlaybackSessionRegistry } from '#apps/content/runtime/PlaybackSessionRegistry.mjs';
 import { ReportPlaybackSession } from '#apps/content/usecases/ReportPlaybackSession.mjs';
 import { createPlexSurfaceIdentityResolver } from '#composition/modules/plexSurfaceIdentity.mjs';
+import { createConfiguredLibbyRuntime } from '#composition/modules/libby.mjs';
 
 // Logging system
 import { getDispatcher } from './0_system/logging/dispatcher.mjs';
@@ -1133,6 +1134,13 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const prefixAliases = contentPrefixes.aliases || {};
   const storagePaths = contentPrefixes.storagePaths || {};
 
+  const { config: libbyConfig, runtime: libbyRuntime } = createConfiguredLibbyRuntime({
+    configService,
+    householdId,
+    dataPath: dataBasePath,
+    logger: rootLogger.child({ module: 'libby' }),
+  });
+
   const { registry: contentRegistry, savedQueryService } = createContentRegistry({
     mediaBasePath,
     plex: mediaLibConfig,  // Bootstrap key stays 'plex' for now
@@ -1150,8 +1158,17 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       config: configService.getHouseholdAppConfig(null, 'games'),
       catalogReader: () => dataService.household.read('gaming/retroarch/catalog')
     },
-    storagePaths                 // Collection → media_memory filename mapping
-  }, { httpClient: axios, mediaProgressMemory, app, configService, logger: rootLogger });
+    storagePaths,                // Collection → media_memory filename mapping
+    libby: libbyConfig,
+  }, {
+    httpClient: axios,
+    mediaProgressMemory,
+    app,
+    configService,
+    logger: rootLogger,
+    libbyClient: libbyRuntime?.client,
+    libbyLeaseService: libbyRuntime?.leases,
+  });
 
   // Create proxy service for content domain (used for media library passthrough)
   const komgaProxyAuth = configService.getHouseholdAuth('komga');
@@ -1245,6 +1262,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     eventBus,
     economyService: economyApi.economyService,
     reportPlaybackSession,
+    libbyStreamService: libbyRuntime?.streamService,
+    libbyCoverService: libbyRuntime?.coverService,
     logger: rootLogger.child({ module: 'content' })
   });
 

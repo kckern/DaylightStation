@@ -89,7 +89,7 @@ import { buildBareContentNameMap, CONTENT_SEARCH_BUDGET, LEGACY_CONTENT_ALIASES 
  * @returns {Object} Router configuration
  */
 export function createApiRouters(config) {
-  const { registry, mediaProgressMemory, progressSyncService, progressSyncSources, menuMemoryRepository, cacheBasePath, dataPath, mediaBasePath, proxyService, retroarchProxy, composePresentationUseCase, configService, prefixAliases = {}, savedQueryService = null, eventBus = null, economyService = null, reportPlaybackSession = null, logger = console } = config;
+  const { registry, mediaProgressMemory, progressSyncService, progressSyncSources, menuMemoryRepository, cacheBasePath, dataPath, mediaBasePath, proxyService, retroarchProxy, composePresentationUseCase, configService, prefixAliases = {}, savedQueryService = null, eventBus = null, economyService = null, reportPlaybackSession = null, libbyStreamService = null, libbyCoverService = null, logger = console } = config;
 
   // Register prefix aliases (e.g., hymn → singalong:hymn) from config
   // This enables the content API to resolve aliased prefixes via registry.resolveFromPrefix()
@@ -301,6 +301,8 @@ export function createApiRouters(config) {
         compositeHeroService,
         remoteThumbnailService,
         dynamicStreamService,
+        libbyStreamService,
+        libbyCoverService,
         passthroughHandlers,
         logger: proxyLogger,
       }),
