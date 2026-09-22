@@ -4,6 +4,7 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
 import { CastTargetProvider } from './CastTargetProvider.jsx';
 import { useCastTarget } from './useCastTarget.js';
+import { LocalSessionContext } from '../session/LocalSessionContext.js';
 
 // ── Mocks ────────────────────────────────────────────────────────────────
 let fleetDevices = [
@@ -50,13 +51,15 @@ function Probe() {
   );
 }
 
-function renderLine(props) {
+function renderLine(props, controller = null) {
   return render(
     <MantineProvider>
-      <CastTargetProvider>
-        <DestinationLine {...props} />
-        <Probe />
-      </CastTargetProvider>
+      <LocalSessionContext.Provider value={controller ? { controller } : null}>
+        <CastTargetProvider>
+          <DestinationLine {...props} />
+          <Probe />
+        </CastTargetProvider>
+      </LocalSessionContext.Provider>
     </MantineProvider>
   );
 }
@@ -87,6 +90,20 @@ describe('DestinationLine', () => {
     );
     renderLine();
     expect(screen.getByTestId('destination-line-name')).toHaveTextContent('Living Room TV');
+  });
+
+  it('shows the remembered move choice on the aim while local playback is active', () => {
+    localStorage.setItem(
+      'media-app.cast-target',
+      JSON.stringify({ mode: 'transfer', targetIds: ['livingroom-tv'] })
+    );
+    const activeSnapshot = { state: 'playing', currentItem: { contentId: 'plex:1' } };
+    const controller = {
+      subscribe: () => () => {},
+      getSnapshot: () => activeSnapshot,
+    };
+    renderLine(undefined, controller);
+    expect(screen.getByTestId('destination-line-name')).toHaveTextContent('Next tap will move playback');
   });
 
   it('tapping the line opens the device sheet', async () => {

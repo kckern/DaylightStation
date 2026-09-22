@@ -15,6 +15,8 @@ import { SeekBar } from './SeekBar.jsx';
 import { TransportBar } from './TransportBar.jsx';
 import { remoteStatusLine } from './stateCopy.js';
 import { useRemoteStopFeedback } from './useRemoteStopFeedback.js';
+import { SessionControlFrame } from '../controller/SessionControlFrame.jsx';
+import { AimLabel } from '../cast/AimLabel.jsx';
 
 export function PeekPanel({ deviceId }) {
   const { enterPeek, exitPeek } = usePeek();
@@ -103,6 +105,9 @@ export function PeekPanel({ deviceId }) {
         {statusLine}
       </Text>
 
+      <AimLabel targetIds={[deviceId]} devices={device ? [device] : []} />
+
+      <SessionControlFrame targetKind="remote">
       {snap?.currentItem && <SeekBar
         target={{ deviceId }}
         availability={availability}
@@ -139,6 +144,7 @@ export function PeekPanel({ deviceId }) {
       <div ref={queueRef} tabIndex={-1}>
         <QueuePanel target={{ deviceId }} availability={availability} />
       </div>
+      </SessionControlFrame>
     </Stack>
   );
 }

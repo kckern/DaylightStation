@@ -259,6 +259,20 @@ Below the canvas, at every width, the shell stacks:
   queue has items so the queue can be opened or restarted; clear/reset removes
   the handle once both the current item and queue are empty.
 
+Local Now Playing and a remote Peek use the same ordered controller frame:
+seek, transport, then queue. Capability differences do not remove controls;
+the control stays visible and states the receiver-provided reason it is
+unavailable. Stop retains the queue and Clear remains a separate action.
+
+A destructive Move is a two-owner transaction. Its request binds an
+`operationId`, destination, captured snapshot, and the source owner/revision.
+HTTP or command receipt is never adoption proof. The destination must return a
+typed started receipt bound to that operation, queue/current-item identity,
+destination revision, and an admitted native renderer that is ready and
+advancing. Rejection, timeout/uncertainty, or any newer source revision keeps
+the source playing. Only confirmed adoption may conditionally stop the exact
+unchanged source; **Keep playing here too** never stops it.
+
 **On phones the dock cannot hold all of that at once — so it doesn't try.**
 At 360px there is ~336px to spend; splitting that between a scope selector, a
 search input, and a 168px icon cluster left the input ~50px wide (its own

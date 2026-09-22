@@ -126,6 +126,29 @@ describe('useCommandAckPublisher', () => {
     });
   });
 
+  it('publishes only the native executor terminal result when a handoff owner is installed', async () => {
+    const handoffExecutor = {
+      execute: vi.fn().mockResolvedValue({
+        ok: true, commandId: 'handoff-1',
+        handoff: { transferId: 'transfer-1', phase: 'captured', capture: { snapshot: {}, identity: {}, capabilities: {} } },
+      }),
+    };
+    renderHook(() => useCommandAckPublisher({ deviceId: 'tv-1', actionBus: bus, handoffExecutor }));
+    await act(async () => {
+      bus.emit('media:handoff', { commandId: 'handoff-1', transferId: 'transfer-1', op: 'capture', version: 1 });
+      await Promise.resolve();
+    });
+    expect(handoffExecutor.execute).toHaveBeenCalledWith({
+      commandId: 'handoff-1',
+      params: { version: 1, transferId: 'transfer-1', op: 'capture' },
+    });
+    expect(ackCalls()).toHaveLength(1);
+    expect(ackCalls()[0][0]).toMatchObject({
+      commandId: 'handoff-1', ok: true,
+      handoff: { transferId: 'transfer-1', phase: 'captured' },
+    });
+  });
+
   it('is a no-op when deviceId is falsy', () => {
     renderHook(() => useCommandAckPublisher({ deviceId: null, actionBus: bus }));
     act(() => bus.emit('media:playback', { command: 'play', commandId: 'c1' }));

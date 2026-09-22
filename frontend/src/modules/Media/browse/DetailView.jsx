@@ -11,6 +11,7 @@ import { useNav } from '../shell/NavProvider.jsx';
 import Skeleton from '@/lib/ui/Skeleton.jsx';
 import { isContainer } from '../../Content/combobox/comboboxMachine.js';
 import { ItemDestinationPicker } from '../actions/ItemDestinationPicker.jsx';
+import { DestinationLine } from '../cast/DestinationLine.jsx';
 
 export function DetailView({ contentId }) {
   const [oneShot, setOneShot] = useState(null);
@@ -57,6 +58,7 @@ export function DetailView({ contentId }) {
       )}
       <Title order={1}>{info.title ?? contentId}</Title>
       {info.description && <Text c="dimmed">{info.description}</Text>}
+      <DestinationLine surface="detail" />
       <Group className="detail-actions" gap="sm">
         <Button
           data-testid="detail-play-now"

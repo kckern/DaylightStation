@@ -40,18 +40,20 @@ async function findArrivalOption(page) {
   return { option, contentId };
 }
 
-async function expectMoveBlockedButKeepReachable(picker) {
+async function selectFirstDevice(picker) {
   const device = picker.locator('[data-testid^="picker-device-"]').first();
   await expect(device).toBeVisible();
   await device.click();
+}
+
+async function expectMoveBlockedButKeepReachable(picker) {
+  await selectFirstDevice(picker);
 
   await expect(picker.getByTestId('picker-mode-transfer')).toBeDisabled();
   await expect(picker.getByTestId('picker-move-unavailable'))
     .toHaveText(/Move playback is not available yet/i);
   const submit = picker.getByTestId('picker-submit');
-  await expect(submit).toBeDisabled();
-
-  await picker.getByTestId('picker-mode-fork').click();
+  await expect(picker.getByTestId('picker-mode-fork')).toHaveAttribute('aria-checked', 'true');
   await expect(submit).toBeEnabled();
 }
 
@@ -120,31 +122,31 @@ test.describe('Media M0 Move safety', () => {
 
     const handoffPicker = page.getByTestId('handoff-section').getByTestId('dispatch-target-picker');
     await expect(handoffPicker).toBeVisible();
-    await expectMoveBlockedButKeepReachable(handoffPicker);
+    await selectFirstDevice(handoffPicker);
+    await expect(handoffPicker.getByTestId('picker-mode-transfer')).toBeEnabled();
+    await expect(handoffPicker.getByTestId('picker-mode-fork')).toHaveText(/Keep playing here too/i);
+    await handoffPicker.getByTestId('picker-submit').click();
+    await expect(handoffPicker.getByTestId('picker-dispatch-failed'))
+      .toHaveText(/Playback here was kept/i);
 
-    // Do not submit Keep. Back is the existing cancellation/exit path for the
-    // inline handoff picker and must leave the same local playback alive.
-    await page.getByTestId('now-playing-back').click();
-    await expect(page.getByTestId('now-playing-view')).toBeHidden();
+    // The blocked destination request is uncertain, never source-stop proof.
+    // The same native node must remain alive and continue advancing.
     const sameNativeNode = await page.evaluate(
-      // Back removes the expanded host label; ownership is the same actual
-      // node still attached anywhere in the app, not its presentation parent.
       (original) => original.isConnected && [...document.querySelectorAll('video')].includes(original),
       nativeNode,
     );
     expect(sameNativeNode).toBe(true);
     await expect.poll(
       () => nativeNode.evaluate((node) => node.currentTime),
-      { timeout: 10000, message: 'opening and cancelling the picker must not reset or pause Arrival' },
+      { timeout: 10000, message: 'an uncertain destination must not reset, pause, or stop Arrival' },
     ).toBeGreaterThan(timeBeforePicker + 0.25);
+    expect(deviceAttempts.some(({ path }) => /\/session\/handoff$/.test(path))).toBe(true);
 
     // Stop intentionally retains the queue. Assert the existing contract:
     // native media is paused/ended and the retained queue remains reachable.
-    await page.getByTestId('mini-player-open-nowplaying').click();
     await page.getByTestId('np-stop').click();
     await expect.poll(() => page.locator('video, audio')
       .evaluateAll((nodes) => nodes.every((node) => node.paused || node.ended))).toBe(true);
     await expect(page.getByTestId('mini-player-open-nowplaying')).toBeVisible();
-    expect(deviceAttempts, 'M0 inspection and ordinary local Stop must not issue a device command').toEqual([]);
   });
 });

@@ -623,21 +623,21 @@ export function createLocalSessionController({
 
     get capabilities() {
       const item = snap().currentItem;
-      if (!item) return { seekable: false, live: false, reason: 'Nothing is playing', acked: false };
+      if (!item) return { seekable: false, live: false, reason: 'Nothing is playing', acked: false, speed: { available: true, reason: null } };
       if (item.isLive === true) {
         return {
           seekable: false, live: true,
-          reason: 'Live playback has no seekable position', acked: false,
+          reason: 'Live playback has no seekable position', acked: false, speed: { available: true, reason: null },
         };
       }
       if (!Number.isFinite(item.duration) || item.duration <= 0) {
         return {
           seekable: false, live: false,
-          reason: 'Playback duration is unavailable', acked: false,
+          reason: 'Playback duration is unavailable', acked: false, speed: { available: true, reason: null },
         };
       }
       return {
-        seekable: true, live: false, reason: null, acked: false,
+        seekable: true, live: false, reason: null, acked: false, speed: { available: true, reason: null },
       };
     },
 

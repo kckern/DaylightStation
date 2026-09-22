@@ -102,7 +102,7 @@ async function startArrivalJourney(context, sender, {
     await expect(sender.getByTestId('destination-sheet')).toBeVisible();
     await sender.getByTestId('picker-device-acceptance-media').click();
     await sender.getByTestId('picker-submit').click();
-    await expect(searchMode.getByTestId('destination-line-name')).toHaveText('Acceptance receiver');
+    await expect(searchMode.getByTestId('destination-line-name')).toHaveText(/^Aim: Acceptance receiver/);
     searchInput = sender.getByTestId('search-mode-input');
     result = sender.getByTestId(`search-mode-result-${media.contentId}`);
   } else {
@@ -295,7 +295,7 @@ async function runSteerConfirmationJourney(context, sender, {
       await searchMode.getByTestId('destination-line').click();
       await expect(sender.getByTestId('destination-sheet')).toBeVisible();
       await sender.getByTestId('picker-this-device').click();
-      await expect(searchMode.getByTestId('destination-line-name')).toHaveText('This device');
+      await expect(searchMode.getByTestId('destination-line-name')).toHaveText(/^Aim: This device/);
       return;
     }
     await sender.getByTestId('cast-target-chip').click();

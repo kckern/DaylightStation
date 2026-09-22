@@ -14,6 +14,30 @@ const MEDIA_JOURNEY_DIRECTORY = 'tests/live/flow/media';
 
 export const P0_EXTENSION_ENTRIES = Object.freeze([
   {
+    story: 'PLACE.6a',
+    criteria: ['PLACE.6a/AC2'],
+    file: 'media-app-handoff-picker.runtime.test.mjs',
+    grep: 'NowPlaying hand-off shows truthful aim plus explicit move/keep choices',
+  },
+  {
+    story: 'PLACE.8a',
+    criteria: ['PLACE.8a/AC1'],
+    file: 'media-app-handoff-picker.runtime.test.mjs',
+    grep: 'NowPlaying hand-off shows truthful aim plus explicit move/keep choices',
+  },
+  {
+    story: 'STEER.1a',
+    criteria: ['STEER.1a/AC2', 'STEER.1a/AC3'],
+    file: 'media-app-handoff-picker.runtime.test.mjs',
+    grep: 'NowPlaying hand-off shows truthful aim plus explicit move/keep choices',
+  },
+  {
+    story: 'STEER.6a',
+    criteria: ['STEER.6a/AC3'],
+    file: 'media-app-stop-flow.runtime.test.mjs',
+    grep: 'Stop keeps the queue reachable and separates Clear',
+  },
+  {
     story: 'RELY.4a',
     criteria: ['RELY.4a/AC1', 'RELY.4a/AC2'],
     file: 'media-app-queue-journey.runtime.test.mjs',

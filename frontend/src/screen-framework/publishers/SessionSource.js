@@ -248,6 +248,10 @@ export function createSessionSource({
     applyQueue: (snapshot) => queueController?.applyQueue?.(snapshot) ?? { ok: false, code: 'ITEM_ACTION_UNSUPPORTED' },
     adopt: (snapshot, options) => queueController?.adopt?.(snapshot, { ...options, sessionId: sid })
       ?? { ok: false, code: 'UNSUPPORTED' },
+    adoptAndBeginHandoffStart: (request) => queueController?.adoptAndBeginHandoffStart?.(request)
+      ?? { ok: false, code: 'UNSUPPORTED' },
+    getHandoffBoundaryBinding: (operationId) => queueController?.getHandoffBoundaryBinding?.(operationId) ?? null,
+    subscribeHandoffBoundaryBinding: (listener) => queueController?.subscribeHandoffBoundaryBinding?.(listener) ?? (() => {}),
     getNativeObservation: () => queueController?.getNativeObservation?.(sid) ?? null,
     subscribeNative: (listener) => queueController?.subscribeNative?.(listener, sid) ?? (() => {}),
     stopIfCurrent: (expected) => queueController?.stopIfCurrent?.(expected, sid)

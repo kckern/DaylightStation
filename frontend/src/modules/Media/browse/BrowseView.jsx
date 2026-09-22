@@ -211,6 +211,7 @@ export function BrowseView({
           <DestinationLine surface="browse-header" />
         </div>
       )}
+      {!isContainerView && <DestinationLine surface="browse-list" />}
 
       {loading && (
         <Stack gap="xs" data-testid="browse-view-loading">

@@ -74,7 +74,11 @@ export function TransportBar({ target, snapshot: snapshotOverride = null, onComm
   const repeat = snapshot?.config?.repeat ?? 'off';
   const volume = snapshot?.config?.volume ?? 100;
   const rate = snapshot?.config?.playbackRate ?? 1;
-  const canSetRate = typeof config.setPlaybackRate === 'function';
+  const speedCapability = capabilities?.speed;
+  const canSetRate = typeof config.setPlaybackRate === 'function'
+    && speedCapability?.available !== false;
+  const speedUnavailableReason = speedCapability?.reason
+    ?? 'Playback speed is not available for this screen';
   const controlsAvailable = availability?.available !== false;
   const unavailableReason = availability?.reason ?? 'Playback controls are unavailable for this screen';
 
@@ -216,7 +220,7 @@ export function TransportBar({ target, snapshot: snapshotOverride = null, onComm
         >
           {playbackRateLabel(rate)}
         </button>
-        {controlsAvailable && !canSetRate && <div className="np-control-unavailable" role="status">Playback speed is not available for this screen</div>}
+        {controlsAvailable && !canSetRate && <div className="np-control-unavailable" role="status">{speedUnavailableReason}</div>}
         <span className="np-volume-group">
           <IconVolume size={18} aria-hidden="true" />
           <button

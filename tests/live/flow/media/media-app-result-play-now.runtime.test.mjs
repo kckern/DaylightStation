@@ -317,7 +317,7 @@ for (const [surface, viewport, isPhone] of surfaces) {
     await assertSearchIdentity(sender, input, isPhone, id);
 
     await setDestination(sender, isPhone, 'acceptance-media');
-    await expect(searchSurface(sender, isPhone).getByTestId('destination-line-name')).toHaveText('Acceptance receiver');
+    await expect(searchSurface(sender, isPhone).getByTestId('destination-line-name')).toHaveText(/^Aim: Acceptance receiver/);
     await assertSearchIdentity(sender, input, isPhone, id);
     const remotePlayActions = await resultActionIdentity(sender, id);
     await assertSearchIdentity(sender, input, isPhone, id);
@@ -393,7 +393,7 @@ for (const [surface, viewport, isPhone] of surfaces) {
     await input.fill('arrival');
     await assertSearchIdentity(sender, input, isPhone, id);
     await setDestination(sender, isPhone, null);
-    await expect(searchSurface(sender, isPhone).getByTestId('destination-line-name')).toHaveText('This device');
+    await expect(searchSurface(sender, isPhone).getByTestId('destination-line-name')).toHaveText(/^Aim: This device/);
     await assertSearchIdentity(sender, input, isPhone, id);
     const localPlayActions = await resultActionIdentity(sender, id);
     await assertSearchIdentity(sender, input, isPhone, id);

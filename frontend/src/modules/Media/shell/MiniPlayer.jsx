@@ -135,7 +135,7 @@ export function MiniPlayer() {
           data-testid="mini-stop"
           className="np-icon-btn"
           aria-label="Stop"
-          title="Stop and clear current item"
+          title="Stop playback and keep the queue"
           onClick={() => transport.stop()}
         >
           <IconPlayerStopFilled size={18} />
