@@ -1,3 +1,5 @@
+import { isSyntheticReviewItem } from '#apps/school/ports/IReviewQueue.mjs';
+
 /** Build the visual model for an effective or original machine result. */
 export function prepareSessionResultPresentation(session, { kind = 'effective' } = {}) {
   const correction = session?.state?.gradeAdjustments?.filter((row) => !row.retracted).at(-1);
@@ -7,7 +9,11 @@ export function prepareSessionResultPresentation(session, { kind = 'effective' }
     score: kind === 'machine' ? session?.scores?.machine : session?.scores?.effective,
     sessionId: session?.sessionId,
     kind,
-    items: (session?.reviewEvidence ?? []).map((item, index) => {
+    // A `key-alignment-suspected` entry is not a printed question — nothing
+    // was asked, nothing was answered — so it must never become a numbered
+    // row in this result view (same fix as `GetTeacherSession.mjs`'s
+    // `assessment.items`, whole-branch review finding #4).
+    items: (session?.reviewEvidence ?? []).filter((item) => !isSyntheticReviewItem(item)).map((item, index) => {
       const adjusted = correction?.itemVerdicts?.find((row) => row.itemId === item.itemId);
       const verdict = kind === 'effective' && adjusted && adjusted.voided !== true
         ? (adjusted.correct ? 'correct' : 'incorrect')

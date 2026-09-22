@@ -1,3 +1,5 @@
+import { isSyntheticReviewItem } from '#apps/school/ports/IReviewQueue.mjs';
+
 /** Read-side projections spanning School's append-only record sources. */
 export class SchoolRecordsQueryService {
   constructor({
@@ -78,7 +80,14 @@ export class SchoolRecordsQueryService {
   }
 
   async learnerReview(learnerId, limit) {
-    const items = this.reviewQueue ? await this.reviewQueue.listForLearner(learnerId, { limit }) : [];
+    // A `key-alignment-suspected` entry is a synthetic, non-child-facing
+    // hold, never a question a grown-up marked — once resolved it must not
+    // surface in the child's own "Feedback" rail as a fabricated graded
+    // item (whole-branch review finding #8; same predicate as the roster/
+    // denominator exclusions in `GradeSubmission.mjs`/`AdjustSessionGrade.mjs`).
+    const items = this.reviewQueue
+      ? (await this.reviewQueue.listForLearner(learnerId, { limit })).filter((item) => !isSyntheticReviewItem(item))
+      : [];
     const titleOf = async (unitId) => {
       if (!unitId) return null;
       try { return (await this.curriculumQuery?.getUnit?.(unitId))?.title ?? null; } catch { return null; }
