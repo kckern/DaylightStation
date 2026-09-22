@@ -102,6 +102,10 @@ export function createTriggerApiRouter(config) {
     actuationGateway,
     tagWriter: triggerConfigRepository,
     onUnknownTag,
+    // The unknown-tag push names the room the reader's target device is in.
+    locationLabel: (_location, locationConfig) => (locationConfig?.target
+      ? deviceServices.deviceService?.get?.(locationConfig.target)?.location ?? null
+      : null),
     contentDispatcher,
     contentInterceptors,
     endpointGateway,

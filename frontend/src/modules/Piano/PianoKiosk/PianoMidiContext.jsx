@@ -26,8 +26,8 @@ export function PianoMidiProvider({ children, preferredInputName }) {
   // bridge needs midi's feedNote) — the ref is filled in right after midi is
   // built. Harmless in fallback: the bridge never delivers a note there.
   const feedRef = useRef(null);
-  const onNote = useCallback((type, note, velocity) => {
-    feedRef.current?.(type, note, velocity);
+  const onNote = useCallback((type, note, velocity, t) => {
+    feedRef.current?.(type, note, velocity, t);
   }, []);
 
   const bridge = usePianoBridgeNotes({ onNote });

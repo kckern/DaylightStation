@@ -23,6 +23,8 @@ import DrillProgress, { DrillPlacard } from './DrillProgress.jsx';
 import { deckSets, deckProjection, deckWindow } from './deckProgress.js';
 import ExerciseNotation from './ExerciseNotation.jsx';
 import { timedRunPresentation } from './timedRunPresentation.js';
+import { timedVerdicts, timedRunSummary } from '../../../performance/timedVerdicts.js';
+import { timedTarget, timedWindowMs } from '../../../performance/timedJudge.js';
 import KeysAsk from './KeysAsk.jsx';
 import ScorePassage from './ScorePassage.jsx';
 import { titleFromScoreId } from '../SheetMusic/scoreTitle.js';
@@ -40,6 +42,8 @@ import {
 import { askTupleFor, deriveStage } from '../../../ask/askSchema.js';
 import { nextHuntState, huntingArmed, NO_HUNT } from './stuckLadder.js';
 import { useMetronomeClick } from '../SheetMusic/useMetronomeClick.js';
+import { resolveClickLead, logClickAnchored } from '../SheetMusic/clickLead.js';
+import { audioContext } from '../SheetMusic/click.js';
 import CountInOverlay from '../SheetMusic/CountInOverlay.jsx';
 import { countInPlan, askPulseQuarters, askPace, countInSentence } from '../SheetMusic/countIn.js';
 import './Exercises.scss';
@@ -47,8 +51,24 @@ import './Exercises.scss';
 const NO_FEEDBACK_NOTES = new Map();
 const EMPTY_SNAPSHOT = Object.freeze({ status: 'prepared', result: null, musicalInput: false });
 
-/** The surface's own windows. A requirement's `policy` is layered over these. */
-const DEFAULT_POLICY = Object.freeze({ matchWindowMs: 220, missWindowMs: 420, timingToleranceMs: 80, timingWindowMs: 320 });
+/**
+ * The surface's own windows. A requirement's `policy` is layered over these.
+ *
+ * `windowFraction` / `windowMinMs` / `windowMaxMs` put every TIMED run on this
+ * surface (a cued exercise, and a cued score passage, practice or challenge) on
+ * the judge's gap-relative policy: each beat's window is 40% of the gap to its
+ * nearest neighbour, clamped to 80..400 ms, and a right note outside it is
+ * recorded on its own beat as early/late rather than cascading onto the next
+ * one (performance/timedJudge.js). The fixed `matchWindowMs`/`missWindowMs`
+ * stay for any requirement that turns the fraction off, and the untimed
+ * matchers ignore all of these.
+ */
+/** Scheduler headroom before the first anchored click (tick 100 ms + margin). */
+export const CLICK_PREROLL_MS = 150;
+const DEFAULT_POLICY = Object.freeze({
+  matchWindowMs: 220, missWindowMs: 420, timingToleranceMs: 80, timingWindowMs: 320,
+  windowFraction: 0.4, windowMinMs: 80, windowMaxMs: 400,
+});
 
 /**
  * The two statuses that carry a JUDGED attempt — one a child played and this
@@ -103,8 +123,73 @@ const HINT_REVEAL_MS = 12000;
  */
 const PRE_PULSE_LIMIT_MS = 60000;
 
+/**
+ * When the first beat's hit window opens, on the attempt's clock. An onset
+ * stamped before it is a count-in gesture, not a note of the run.
+ */
+function firstWindowOpensAt(attempt) {
+  const events = attempt?.expectation?.events ?? [];
+  const index = events.findIndex((event) => event.notes.length);
+  const start = (attempt?.startedAt ?? 0) + (attempt?.leadInMs ?? 0);
+  if (index < 0) return start;
+  const opens = timedTarget(attempt, events[index]) - timedWindowMs(attempt, index);
+  return Number.isFinite(opens) ? opens : start;
+}
+
+/**
+ * Is the hit window of the event the clock cursor is on open at `nowMs`?
+ * `undefined` when there is no cursor to light (count-in, prepared, done, or a
+ * rest): renderers then draw their cursor exactly as they always have.
+ */
+export function timedWindowOpen(attempt, cursorIndex, nowMs) {
+  const events = attempt?.expectation?.events ?? [];
+  const event = events[cursorIndex];
+  if (!event || !event.notes.length || !Number.isFinite(attempt?.startedAt)) return undefined;
+  // ANY beat's window, not only the cursor's. The clock cursor moves on at the
+  // next onset, but that note's window opens before it — asking only about the
+  // cursor's event dimmed the lane during the early half of every window, i.e.
+  // told the child "not now" at a moment an on-time note would have counted.
+  return events.some((candidate, index) => candidate.notes.length
+    && Math.abs(nowMs - timedTarget(attempt, candidate)) <= timedWindowMs(attempt, index));
+}
+
+/** One decimal of a second, as a child is told it: 450 ms → "0.5". */
+const seconds = (ms) => (Math.abs(ms) / 1000).toFixed(1);
+
+/**
+ * WHY A TIMED RUN FAILED, WHEN IT WAS THE TIMING — the result line for a run
+ * that played every right note but not on the click (`timedRunSummary` kind
+ * `timing`). Any other summary answers null and the caller keeps its own copy.
+ */
+export function timingSentence(summary, totalNotes) {
+  if (summary?.kind !== 'timing') return null;
+  const { late = 0, early = 0, offbeat = 0, medianDriftMs = null } = summary;
+  const drift = Number.isFinite(medianDriftMs) && seconds(medianDriftMs) !== '0.0' ? seconds(medianDriftMs) : null;
+  if (late && !early) {
+    return `Every note was right, but ${late} of ${totalNotes} came late${drift && medianDriftMs > 0 ? ` — about ${drift} s behind the click` : ''}.`;
+  }
+  if (early && !late) {
+    return `Every note was right, but ${early} of ${totalNotes} came early${drift && medianDriftMs < 0 ? ` — about ${drift} s ahead of the click` : ''}.`;
+  }
+  if (offbeat) return `Every note was right, but ${offbeat} of ${totalNotes} were off the beat.`;
+  return `Every note was right, but not quite on the click${drift ? ` — about ${drift} s ${medianDriftMs > 0 ? 'behind' : 'ahead of'} it` : ''}.`;
+}
+
 function makeId(prefix) {
   return `${prefix}-${globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`}`;
+}
+
+/**
+ * A verdict map re-keyed to a window of its events: `[offset, offset+length)`
+ * becomes `[0, length)`, which is how a stage showing part of a deck indexes
+ * the notes it was handed.
+ */
+export function windowOfVerdicts(verdicts, offset, length) {
+  const windowed = new Map();
+  for (const [index, byMidi] of verdicts ?? []) {
+    if (index >= offset && index < offset + length) windowed.set(index - offset, byMidi);
+  }
+  return windowed;
 }
 
 /**
@@ -485,6 +570,12 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
           statusBefore: previous?.status ?? null,
           statusAfter: state?.status ?? null,
           held: Array.isArray(event.held) ? event.held : null,
+          // The judge's own numbers for a timed onset: how far from the beat
+          // (signed, ms), which side of it an off-beat claim landed, and which
+          // notes a hit, off-beat claim or lapse was about.
+          driftMs: Number.isFinite(event.driftMs) ? Math.round(event.driftMs) : null,
+          side: event.side ?? null,
+          noteIds: event.noteIds ?? (event.noteId ? [event.noteId] : null),
         });
       },
     });
@@ -521,6 +612,15 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
   );
 
   const timed = snapshot.matcher === 'timed';
+  /**
+   * THE RECORD, for every renderer of a timed run. The staff used to judge for
+   * itself — green whenever the held key matched the clock cursor's note, and
+   * the cursor sits on a note until the next onset — so a child up to a whole
+   * beat late saw green while the grader charged them. Renderers now paint only
+   * what the judge recorded. Memoized on the snapshot, which changes identity
+   * only when the runtime publishes, so the 50 ms clock tick does not rebuild it.
+   */
+  const verdicts = useMemo(() => (timed ? timedVerdicts(snapshot) : null), [timed, snapshot]);
   const clockPosition = timed ? timedRunPresentation(snapshot, Math.max(clockNow, Date.now())) : null;
   // The matcher may finish early. Its result must not end the musical display
   // before the authored time has elapsed.
@@ -613,6 +713,21 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
       engine_verdict: snapshot.result.verdict?.passed ?? null,
       passed,
     });
+    if (snapshot.matcher === 'timed') {
+      // How the run went against the click, in one line: the numbers behind
+      // the result copy, and the window the first beat was judged with.
+      const summary = timedRunSummary(snapshot.result, snapshot);
+      const first = (snapshot.expectation?.events ?? []).findIndex((event) => event.notes.length);
+      traceEvent('piano.exercise-timing-summary', {
+        id: subject?.id ?? null,
+        kind: summary.kind,
+        late: summary.late,
+        early: summary.early,
+        offbeat: summary.offbeat,
+        medianDriftMs: Number.isFinite(summary.medianDriftMs) ? Math.round(summary.medianDriftMs) : null,
+        windowMs: first >= 0 ? Math.round(timedWindowMs(snapshot, first)) : null,
+      });
+    }
     // A judged attempt that did not clear its bar. `onPassed` stays
     // automatic for every host;
     // a failure is reported straight to the host so
@@ -800,9 +915,14 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
     return askPace(events.map((event) => event.onsetQuarter), clickQuarters);
   }, [snapshot.expectation, countIn]);
 
-  const countInBeat = countingDown && countIn
-    ? Math.min(countIn.clicks, Math.floor(((snapshot.leadInMs ?? 0) - timeline.countdownRemainingMs) / countIn.periodMs) + 1)
+  // Null during the pre-roll (the count has not reached its first click yet).
+  const countInPosition = countingDown && countIn
+    ? Math.floor(((snapshot.leadInMs ?? 0) - timeline.countdownRemainingMs) / countIn.periodMs) + 1
     : null;
+  const countInBeat = countInPosition != null && countInPosition >= 1 ? Math.min(countIn.clicks, countInPosition) : null;
+
+  // Resolved once per config: see the anchored click below.
+  const clickLead = useMemo(() => resolveClickLead(kioskConfig, audioContext()), [kioskConfig]);
 
   /**
    * A cued ask arms on ANY key — the child is saying "I am here", not playing
@@ -815,14 +935,20 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
     if (!runtime) return;
     // No usable tempo to count at — start anyway. A key that does nothing is a
     // dead surface, and a child cannot tell that apart from a broken piano.
-    runtime.start({ leadInMs: countIn?.leadInMs ?? 0, clock: 'date-now' });
+    // THE FIRST CLICK MUST STILL BE SCHEDULABLE. Clicks are anchored to
+    // `startedAt` and played `leadMs` early; anchored at the key press itself,
+    // the first click would already be in the past and be skipped, and a child
+    // counting "one" would hear the count begin on "two". So the grading clock
+    // starts a pre-roll later: the lead plus room for the scheduler's tick.
+    const prerollMs = Math.max(0, clickLead.leadMs) + CLICK_PREROLL_MS;
+    runtime.start({ time: Date.now() + prerollMs, leadInMs: countIn?.leadInMs ?? 0, clock: 'date-now' });
     countdownHeldRef.current = new Set(activeNotesRef.current.keys());
     setClockNow(Date.now());
     traceEvent('piano.exercise-countdown-started', {
       ...timedRunPresentation(runtime.getSnapshot(), Date.now()),
       ignored: [...activeNotesRef.current.keys()], reason: 'arming-key',
     });
-  }, [countIn, runtime, traceEvent]);
+  }, [clickLead, countIn, runtime, traceEvent]);
 
   /**
    * The notes that can arm a free ask: the pitches of the event the cursor is
@@ -855,7 +981,23 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
     return () => globalThis.clearTimeout(timer);
   }, [prePulse, prePulseStopped]);
 
+  /**
+   * THE CLICK IS ON THE GRADING CLOCK. A cued run's clicks are anchored to the
+   * attempt's own `startedAt` (the first count-in click) and played `leadMs`
+   * early, so the beat the child HEARS — out of the piano, over Bluetooth — is
+   * the beat they are graded on. Unanchored, the grid started whenever this
+   * effect ran plus 80 ms and then reached the ear ~0.2-0.3 s later still: a
+   * child playing exactly on the click was graded one eighth late.
+   */
+  const clickAnchorMs = snapshot.mode === 'cued' && Number.isFinite(snapshot.startedAt) ? snapshot.startedAt : undefined;
+  useEffect(() => {
+    if (clickAnchorMs === undefined) return;
+    logClickAnchored(clickLead, { anchorMs: clickAnchorMs, assessmentId: assessmentIdRef.current ?? null });
+  }, [clickAnchorMs, clickLead]);
+
   useMetronomeClick({
+    anchorMs: clickAnchorMs,
+    leadMs: clickLead.leadMs,
     enabled: ((snapshot.status === 'running' || awaitingTimeline) && ['metronome', 'cued'].includes(snapshot.mode))
       || (prePulse && !prePulseStopped),
     // The tempo the attempt is GRADED at, which is not always `clickBpm`: a
@@ -890,8 +1032,37 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
     for (const midi of releases) countdownHeldRef.current.delete(midi);
     if (exitHeld) return;
     const currentState = runtime.getSnapshot();
+    const timedInput = currentState.matcher === 'timed' && currentState.status === 'running';
+    /**
+     * A TIMED ONSET IS JUDGED AT THE NOTE'S OWN TIME — the MIDI event's
+     * timestamp, carried on `activeNotes` — never at the moment this effect got
+     * round to running, which is a render (and a bridge hop) later. Untimed
+     * runs keep the effect's clock: nothing there is measured against a beat.
+     */
+    const onsetTime = (midi) => {
+      const stamped = activeNotes.get(midi)?.timestamp;
+      return timedInput && Number.isFinite(stamped) ? stamped : time;
+    };
+    let graded = onsets;
     const inputClock = currentState.matcher === 'timed' ? timedRunPresentation(currentState, time) : null;
-    if (inputClock?.phase === 'countdown') {
+    if (timedInput) {
+      // Count-in or not is decided per note, by the note's own time: a key
+      // struck before the first beat's window opens is the child getting
+      // ready, and is never graded; one struck inside it is the first note,
+      // however early the effect saw it.
+      const opensAt = firstWindowOpensAt(currentState);
+      const gestures = onsets.filter((midi) => !(onsetTime(midi) >= opensAt));
+      graded = onsets.filter((midi) => !gestures.includes(midi));
+      if (inputClock?.phase === 'countdown') {
+        for (const midi of held) if (!graded.includes(midi)) countdownHeldRef.current.add(midi);
+      } else {
+        for (const midi of gestures) countdownHeldRef.current.add(midi);
+      }
+      if (gestures.length) traceEvent('piano.exercise-input-ignored', {
+        ...inputClock, displayedCursor: -1, ignored: gestures, reason: 'countdown', held,
+      });
+      if (!graded.length && (inputClock?.phase === 'countdown' || gestures.length)) return;
+    } else if (inputClock?.phase === 'countdown') {
       for (const midi of held) countdownHeldRef.current.add(midi);
       if (onsets.length) traceEvent('piano.exercise-input-ignored', {
         ...inputClock, displayedCursor: -1, ignored: onsets, reason: 'countdown', held,
@@ -950,7 +1121,7 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
       runtime.observe({ held: activeNotes, time, clock: 'date-now' });
       return;
     }
-    for (const midi of onsets) runtime.observe({ midi, time, clock: 'date-now' });
+    for (const midi of graded) runtime.observe({ midi, time: onsetTime(midi), clock: 'date-now' });
   }, [activeNotes, armingPitches, exitHeld, held, heldKey, runtime, snapshot.cursor, snapshot.matcher, snapshot.mode, snapshot.status, startCountIn, traceEvent]);
 
   useEffect(() => () => {
@@ -990,6 +1161,9 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
   const visualCursor = timed
     ? { index: timeline.phase === 'countdown' || timeline.phase === 'prepared' ? -1 : timeline.expectedCursor, reason: 'clock' }
     : visualCursorFor(askEvents, eventIndex, snapshot.status);
+  const windowOpen = timed && timeline?.phase === 'running'
+    ? timedWindowOpen(snapshot, visualCursor.index, Math.max(clockNow, Date.now()))
+    : undefined;
   const visualCursorSignature = `${assessmentIdRef.current ?? 'none'}:${eventIndex}:${visualCursor.index}:${visualCursor.reason}:${heldKey}:${snapshot.status}:${timeline?.phase}:${timeline?.beat}:${countInBeat}`;
   useEffect(() => {
     if (lastVisualCursorRef.current === visualCursorSignature) return;
@@ -1032,6 +1206,11 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
   const isWrong = !countingDown && lastWrong !== null;
   const wrongNotes = countingDown || lastWrong === null ? null : new Set([lastWrong.midi]);
   const passed = runPassed(result, { challenge, passScore: requirement?.passScore });
+  // A timed run that failed on TIMING says so, in the child's terms. Anything
+  // else (a missing or wrong note) keeps the copy below.
+  const timingCopy = timed && result && !passed
+    ? timingSentence(timedRunSummary(result, snapshot), expected.length)
+    : null;
   // A host handling failures owns the next screen. Suppress the local result
   // panel so it cannot flash a retry instruction before that transition.
   const hostOwnsFailure = Boolean(onFailed) && !passed;
@@ -1105,6 +1284,9 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
   const staffNotes = stage === 'single-note' ? allStaffNotes.slice(deckIndex, deckIndex + 1) : allStaffNotes;
   const staffCursor = stage === 'single-note' ? 0 : visualCursor.index;
   const staffViewBox = sequenceStaffViewBox(staffNotes.length, { keySignature });
+  // The staff's verdicts are keyed by index into the notes it is HANDED, which
+  // for a one-card stage is the card at `deckIndex`, not the whole deck.
+  const staffVerdicts = verdicts && stage === 'single-note' ? windowOfVerdicts(verdicts, deckIndex, 1) : verdicts;
   const cued = selectedMode === 'cued';
   // Only the ordered stages carry a keyboard footer: KeysAsk brings its own
   // keyboard as its primary surface, and two pianos on one screen is a puzzle.
@@ -1268,6 +1450,10 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
             cursorIndex={keysWindow.cursorIndex}
             activeNotes={feedbackNotes}
             wrongMidi={countingDown ? null : lastWrong?.midi ?? null}
+            {...(verdicts ? {
+              verdicts: windowOfVerdicts(verdicts, visualCursor.index - keysWindow.cursorIndex, keysWindow.events.length),
+              windowOpen,
+            } : {})}
             showStaff={askStaff}
             accidental={accidental}
             keyboard={keyboardConfig}
@@ -1313,7 +1499,8 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
                 `activeNotes` in real time (SvgSequenceStaff's own contract),
                 never off `lastWrong` — that flag can outlive the key that set
                 it, and a ghost that outlives a key-up is exactly the bug the
-                rule this component now follows exists to forbid. */}
+                rule this component now follows exists to forbid. A timed run
+                also hands it `verdicts`, and then it paints only the record. */}
             <SvgSequenceStaff
               notes={staffNotes}
               cursorIndex={staffCursor}
@@ -1321,11 +1508,12 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
               clef={clefForInstance(instance)}
               accidental={accidental}
               keySignature={keySignature}
+              {...(verdicts ? { verdicts: staffVerdicts, windowOpen } : {})}
             />
           </div>
         )}
         {stage === 'notation' && (
-          <ExerciseNotation activeNotes={feedbackNotes} instance={instance} eventIndex={visualCursor.index} wrong={isWrong} complete={phase === 'done' && passed} />
+          <ExerciseNotation activeNotes={feedbackNotes} instance={instance} eventIndex={visualCursor.index} wrong={isWrong} complete={phase === 'done' && passed} {...(verdicts ? { verdicts, windowOpen } : {})} />
         )}
         {stage === 'score' && (
           /* The passage is BOTH the stage and the source of the ask: it engraves
@@ -1341,9 +1529,10 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
             onUnrunnable={handleScoreUnrunnable}
             cursorIndex={visualCursor.index}
             wrongMidi={countingDown ? null : lastWrong?.midi ?? null}
+            {...(verdicts ? { verdicts, windowOpen } : {})}
           />
         )}
-        <CountInOverlay active={countingDown} beat={countInBeat} />
+        <CountInOverlay active={countingDown && countInBeat != null} beat={countInBeat} />
       </div>
       {/* No button: the piano starts the run. A cued ask arms on any key and
           counts a measure; every other ask arms on the note it is asking for. */}
@@ -1369,8 +1558,8 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
             for children who have not been given it yet. They are told the same
             thing in words: what happened, and what to do about it. */}
         {scoreReadout
-          ? <dl><div><dt>All notes</dt><dd>{Math.round((result.criteria.completeness ?? 0) * 100)}%</dd></div><div><dt>Clean notes</dt><dd>{Math.round((result.criteria.cleanliness ?? 0) * 100)}%</dd></div>{Number.isFinite(result.criteria.placement) && <div><dt>On the beat</dt><dd>{Math.round(result.criteria.placement * 100)}%</dd></div>}</dl>
-          : <p className="piano-exercise-run__result-copy">{passed ? 'You played every note that was asked for.' : 'Some of the notes are still missing. Have another go.'}</p>}
+          ? <>{timingCopy && <p className="piano-exercise-run__result-copy">{timingCopy}</p>}<dl><div><dt>All notes</dt><dd>{Math.round((result.criteria.completeness ?? 0) * 100)}%</dd></div><div><dt>Clean notes</dt><dd>{Math.round((result.criteria.cleanliness ?? 0) * 100)}%</dd></div>{Number.isFinite(result.criteria.placement) && <div><dt>On the beat</dt><dd>{Math.round(result.criteria.placement * 100)}%</dd></div>}</dl></>
+          : <p className="piano-exercise-run__result-copy">{passed ? 'You played every note that was asked for.' : timingCopy ?? 'Some of the notes are still missing. Have another go.'}</p>}
         {localRetry && <p className="piano-exercise-run__result-onward">Release the keys, then play any key to try again.{onExit && ' Hold the lowest and highest keys for two seconds to leave.'}</p>}
       </section>}
       </div>

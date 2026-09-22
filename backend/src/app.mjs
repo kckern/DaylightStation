@@ -376,6 +376,8 @@ import { createSchoolRouter } from './4_api/v1/routers/school.mjs';
 import { SchoolService } from './3_applications/school/SchoolService.mjs';
 import { YamlSchoolDatastore } from './1_adapters/persistence/yaml/YamlSchoolDatastore.mjs';
 import { effectiveAttempts } from '#domains/school/attempt.mjs';
+import { studyDayForInstant } from '#domains/school/studyDay.mjs';
+import { studentDisplayName } from '#composition/modules/studentNames.mjs';
 import { createSentenceLadderRouter } from './4_api/v1/routers/sentenceLadder.mjs';
 import { createLanguageStudyService } from './5_composition/modules/schoolLanguage.mjs';
 import { YamlLanguageStudyDatastore } from './1_adapters/persistence/yaml/YamlLanguageStudyDatastore.mjs';
@@ -3196,9 +3198,33 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       id: shortId,
     })
     : null;
+  // `media:` ids (generated word packages) resolve under <mediaDir>/school.
+  const schoolMediaRoot = path.join(configService.getMediaDir(), 'school');
   const flashcardAssets = new SchoolFlashcardAssetRepository({
     rootDir: schoolFullConfig.flashcards?.assets?.dir ?? path.join(dataDir, 'content', 'assets'),
+    mediaRootDir: schoolMediaRoot,
   });
+  const { WordLadderStudyService } = await import('#apps/school/WordLadderStudyService.mjs');
+  const { YamlWordLadderStore } = await import('#adapters/school/wordLadder/YamlWordLadderStore.mjs');
+  const { FilesystemWordLadderRecordings } = await import('#adapters/school/wordLadder/FilesystemWordLadderRecordings.mjs');
+  const { YamlLexiconRepository } = await import('#adapters/school/catalog/YamlLexiconRepository.mjs');
+  const wordLadderLogger = rootLogger.child({ module: 'school-word-ladder' });
+  const wordLadderStudy = schoolCatalog.content
+    ? new WordLadderStudyService({
+      store: new YamlWordLadderStore({ configService, logger: wordLadderLogger }),
+      decks: schoolCatalog.content,
+      lexicons: new YamlLexiconRepository({ mediaRoot: schoolMediaRoot }),
+      assignments: flashcardAssignments,
+      attempts: schoolDatastore,
+      recordings: new FilesystemWordLadderRecordings({ rootDir: path.join(schoolMediaRoot, 'recordings', 'korean-vocab') }),
+      assets: flashcardAssets,
+      teacherGate: schoolTeacherGate,
+      timezone: configService.getTimezone?.() || null,
+      now: Date.now,
+      id: shortId,
+      logger: wordLadderLogger,
+    })
+    : null;
   const openCatalogLearningSession = schoolCatalog.query
     ? new OpenCatalogLearningSession({ catalog: schoolCatalog.query, grader: schoolService })
     : null;
@@ -4025,6 +4051,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Same adapter class, same guard, own `school.yml` block — see the grading
   // hook's wiring below for why a home-automation failure must never take the
   // rest of School down with it.
+  // The one learner-name resolver every school/piano push producer below uses.
+  const learnerDisplayName = studentDisplayName(configService);
   let pianoLessonHook = null;
   if (homeAutomationAdapters.haGateway) {
     try {
@@ -4033,7 +4061,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         gateway: homeAutomationAdapters.haGateway,
         configKey: 'piano_lesson_hook',
         loadSchoolConfig: () => configService.getHouseholdAppConfig(null, 'school') || {},
-        resolveStudent: (learnerId) => configService.getUserProfile?.(learnerId)?.name ?? learnerId,
+        resolveStudent: learnerDisplayName,
         logger: rootLogger.child({ module: 'school-piano-lesson-hook' }),
       });
     } catch (err) {
@@ -4113,6 +4141,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       // only the chime is absent.
       pianoLessonHook,
       flashcardStudyService: flashcardStudy,
+      wordLadderStudyService: wordLadderStudy,
       rubiksCubeService,
       rubiksCubeGrants: schoolCubeGrants,
       // The reading shelf (book-log program): grants for the panel's /act
@@ -4266,7 +4295,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
             // same `school.yml` — the household-id arg is accepted for the
             // adapter's contract but this module always resolves against `null`.
             loadSchoolConfig: () => configService.getHouseholdAppConfig(null, 'school') || {},
-            resolveStudent: (learnerId) => configService.getUserProfile?.(learnerId)?.name ?? learnerId,
+            resolveStudent: learnerDisplayName,
             logger: rootLogger.child({ module: 'school-grading-hook' }),
           });
         } catch (err) {
@@ -4285,6 +4314,18 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         // thermal printer the result receipts use (2026-09-15).
         receipts: schoolLifecycle.receipts ?? null,
         printDocuments: schoolLifecycle.stores.printDocuments,
+        // Phone-copy labels (2026-09-22 push redesign): course short titles
+        // from the catalog, display names, and today's study day so late
+        // work can say which day it was for.
+        curriculum: schoolLifecycle.stores.curriculum ?? null,
+        studentName: learnerDisplayName,
+        // Same zone school's study days use (schoolLifecycle's `timezone`, fed
+        // to CloseSessionOutcome and the piano bridge), so on-time work near
+        // the 4 AM boundary never reads as late.
+        today: () => studyDayForInstant(Date.now(), { timezone: configService.getTimezone?.() || null }),
+        // Bounds the label lookups (default 2s) so a hung catalog/name read can
+        // never withhold the hook and, with it, the room siren.
+        scheduler: new NodeAsyncScheduler(),
         logger: rootLogger.child({ module: 'school-print-scan' }),
       });
     } catch (err) {
@@ -4594,6 +4635,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     schoolErrors,
     schoolService,
     flashcardStudy,
+    wordLadderStudy,
     flashcardAssets,
     getMaterialCatalog,
     getMaterialUnits,
@@ -5185,6 +5227,13 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // is still the right answer for a household with no story-time launcher.
   if (readingSessions) {
     const { makeReadingSessionHandler } = await import('#composition/modules/learnerCardActions.mjs');
+    const { NotifyReadingSessionFailure } = await import('#apps/school/workflows/NotifyReadingSessionFailure.mjs');
+    const notifyReadingSessionFailure = new NotifyReadingSessionFailure({
+      notificationTargetForDevice: (id) => deviceServices.deviceService.get(id)?.notifyService ?? null,
+      notifier: homeAutomationAdapters.haGateway?.callService ? homeAutomationAdapters.haGateway : null,
+      studentName: learnerDisplayName,
+      deviceLabel: (id) => deviceServices.deviceService.get(id)?.name ?? null,
+    });
     const readingSessionHandler = makeReadingSessionHandler({
       sessions: readingSessions,
       // D2 — the one question that can refuse a tap: is unrelated content
@@ -5198,14 +5247,9 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       // the media-lesson dispatch, which needs it for the same reason — see
       // `wakeScreenForBroadcast` above.
       wakeScreen: wakeScreenForBroadcast,
-      alertAdult: async ({ target, location, learnerId }) => {
-        const device = target ? deviceServices.deviceService.get(target) : null;
-        if (!device?.notifyService || !homeAutomationAdapters.haGateway?.callService) return;
-        await homeAutomationAdapters.haGateway.callService('notify', device.notifyService, {
-          title: 'Story time screen needs help',
-          message: `${learnerId ?? 'A learner'} started story time at ${location}, but the screen did not respond.`,
-        });
-      },
+      // The one story-time failure push. With no HA gateway `notifier` is
+      // null and the use case sends nothing, as the inline copy it replaced did.
+      alertAdult: (args) => notifyReadingSessionFailure.execute(args),
       eventBus,
       logger: rootLogger.child({ module: 'trigger-learner' }),
     });
@@ -5294,12 +5338,13 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     };
   };
   const shutdownCue = homeAutomationAdapters.haGateway?.callService ? {
-    announce: ({ lockedUntil, source }) => {
+    announce: ({ lockedUntil, source, notification }) => {
       const script = readShutdownConfig().home_assistant?.script;
       if (!script) return undefined;
+      // `notification` is the composed phone push; the HA script relays it.
       return homeAutomationAdapters.haGateway.callService('script', 'turn_on', {
         entity_id: script,
-        variables: { locked_until: lockedUntil, source },
+        variables: { locked_until: lockedUntil, source, notification: notification ?? null },
       });
     },
   } : null;
@@ -5309,6 +5354,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     getPolicy: getShutdownPolicy,
     cue: shutdownCue,
     portal,
+    timezone: configService.getTimezone?.() || null,
     scheduleEvery: (intervalMs, task) => {
       const timer = setInterval(task, intervalMs);
       timer.unref?.();

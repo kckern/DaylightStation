@@ -193,6 +193,8 @@ describe('ExerciseRun — score material, handed down as props', () => {
     expect(config.matcher).toBe('timed');
     expect(config.mode).toBe('cued');
     expect(config.expectation.tempoMap).toEqual([{ onsetQuarter: 0, bpm: 80 }]);
+    // The same gap-relative window policy a cued exercise gets: one judge.
+    expect(config.policy).toMatchObject({ windowFraction: 0.4, windowMinMs: 80, windowMaxMs: 400 });
     expect(h.prepareExercise).not.toHaveBeenCalled();
   });
 

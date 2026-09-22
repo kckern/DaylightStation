@@ -159,6 +159,7 @@ import { YamlTermVerdictCache } from '#adapters/persistence/yaml/YamlTermVerdict
 import { TermVerdictService } from '#apps/school/TermVerdictService.mjs';
 import { GetLearnerTerm } from '#apps/school/usecases/GetLearnerTerm.mjs';
 import { RebuildLearnerTerm } from '#apps/school/usecases/RebuildLearnerTerm.mjs';
+import { studentDisplayName } from './studentNames.mjs';
 
 /**
  * Tokens are printed and carried around a house; a predictable stream would let
@@ -260,6 +261,7 @@ export async function createSchoolLifecycle({
   // `SchoolGradingHookAdapter` bound to `piano_lesson_hook`; null with no HA.
   pianoLessonHook = null,
   flashcardStudyService = null,
+  wordLadderStudyService = null,
   rubiksCubeService = null,
   rubiksCubeGrants = null,
   // The reading shelf. `bookGrants` signs the panel's launch target; the
@@ -595,6 +597,7 @@ export async function createSchoolLifecycle({
   if (flashcardStudyService) {
     launchers.set('flashcards', new FlashcardProgramLauncher({
       studyService: flashcardStudyService, assignments: stores.assignments, donow,
+      wordLadder: wordLadderStudyService,
     }));
   }
   // RUBIKS_CUBE_COURSE_ID is null when course.yml hasn't been authored yet
@@ -1201,7 +1204,7 @@ export async function createSchoolLifecycle({
         launcher: pianoCourseLauncher,
         evidenceRepository: learningEvidenceRepository,
         hook: pianoLessonHook,
-        resolveStudent: (learnerId) => configService.getUserProfile?.(learnerId)?.name ?? learnerId,
+        resolveStudent: studentDisplayName(configService),
         timezone, clock, logger,
       });
       pianoLessonCeremonyBridge.start();

@@ -190,7 +190,7 @@ export function createDocumentPdfRenderer({
 
   // ── drawing primitives ────────────────────────────────────────────────
   const setFont = (out, fontKey, sizePt, inkKey = 'text') => out
-    .font(theme.fonts[fontKey].name)
+    .font((theme.fonts[fontKey] ?? theme.fonts.regular).name)
     .fontSize(sizePt)
     .fillColor(theme.ink[inkKey]);
 
