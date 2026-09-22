@@ -11,3 +11,4 @@ export {
 } from './checkItem.mjs';
 export { planDay, dayProgress, progressLabel } from './planDay.mjs';
 export { foldPaperAttempts } from './foldPaperAttempts.mjs';
+export { quizDocumentIdFor } from './quizId.mjs';
