@@ -44,6 +44,7 @@ function build({
   },
   hookResult = { ok: true },
   logger = { warn() {}, info() {} },
+  resolveStudent = async (id) => `${id.toUpperCase()}!`,
 } = {}) {
   const bus = fakeBus();
   const fired = [];
@@ -55,7 +56,7 @@ function build({
     launcher: { id: 'piano-course', status: async () => status },
     evidenceRepository: { appendEvidence: async (row) => { evidence.push(row); return { status: 'recorded', evidence: row }; } },
     hook,
-    resolveStudent: async (id) => `${id.toUpperCase()}!`,
+    resolveStudent,
     timezone: 'America/Los_Angeles',
     clock: () => new Date('2026-08-25T20:00:00Z'),
     logger,
@@ -116,6 +117,70 @@ describe('PianoLessonCeremonyBridge', () => {
       source: { surface: 'piano-kiosk', transport: 'playback' },
     });
     expect(validateLearningEvidence(ctx.evidence[0]).errors).toEqual([]);
+  });
+
+  describe('phone copy (notification)', () => {
+    const LESSON = 'How to Play “Lavender’s Blue”';
+    const pianoStatus = (progress) => ({
+      doneToday: true, progressLabel: '12/344', score: 37, progress,
+      completedLessonsToday: [completion('plex:9001', LESSON)],
+      completedLessons: [completion('plex:9001', LESSON)],
+    });
+    const fireFor = async (progress) => {
+      const c = build({ status: pianoStatus(progress), resolveStudent: async () => 'Learner4' });
+      await c.bus.emit('piano.lesson.completed', { userId: 'user_4', plexId: 'plex:9001', title: LESSON });
+      expect(c.fired).toHaveLength(1);
+      return c.fired[0];
+    };
+
+    it('names the lesson and the unit row, never the course score', async () => {
+      const fired = await fireFor([
+        { scope: 'course', label: 'Course', measures: 'unit', completed: 2, total: 20 },
+        { scope: 'module', label: 'Folk Songs', measures: 'lesson', completed: 3, total: 8 },
+      ]);
+      expect(fired.notification).toMatchObject({
+        title: '🎹 Learner4 — How to Play “Lavender’s Blue”',
+        message: 'Piano lesson done · Folk Songs: 3 of 8 lessons',
+      });
+      expect(fired.notification.data.channel).toBe('School progress');
+      expect(fired.notification.data.tag).toBe('school-user_4-piano-2026-08-25');
+      // `status.score` (37) is course completion, not a lesson score.
+      expect(JSON.stringify(fired.notification)).not.toMatch(/37/);
+      // The existing HA keys are unchanged.
+      expect(fired).toMatchObject({ result: 'satisfied', learnerId: 'user_4', student: 'Learner4', lesson: LESSON });
+    });
+
+    it('says only that the lesson is done when there is no unit row', async () => {
+      const fired = await fireFor([{ scope: 'course', label: 'Course', measures: 'unit', completed: 2, total: 20 }]);
+      expect(fired.notification.title).toBe('🎹 Learner4 — How to Play “Lavender’s Blue”');
+      expect(fired.notification.message).toBe('Piano lesson done');
+      expect(JSON.stringify(fired.notification)).not.toMatch(/37/);
+    });
+
+    it('still fires the hook when the launcher reports a malformed progress', async () => {
+      const fired = await fireFor('not-a-list');
+      expect(fired.result).toBe('satisfied');
+      expect(fired.notification.message).toBe('Piano lesson done');
+    });
+
+    it('composes the challenge completion the same way', async () => {
+      const c = build({
+        status: {
+          doneToday: true, challengeCompleted: true, score: 37,
+          servedWork: [{ unitId: 'plex:season:3', title: 'Unit 3 Lesson 7' }],
+          progress: [{ scope: 'module', label: 'Folk Songs', measures: 'lesson', completed: 3, total: 8 }],
+        },
+        resolveStudent: async () => 'Learner4',
+      });
+      await c.bus.emit('piano.school-challenge.completed', {
+        userId: 'user_4', descriptorId: 'unit-3-c-major', completedAt: '2026-08-25T18:00:00.000Z',
+      });
+      expect(c.fired[0].notification).toMatchObject({
+        title: '🎹 Learner4 — Unit 3 Lesson 7',
+        message: 'Piano lesson done · Folk Songs: 3 of 8 lessons',
+        data: { tag: 'school-user_4-piano-2026-08-25' },
+      });
+    });
   });
 
   it('reconciles historical Piano completions into idempotent School course/unit/lesson evidence', async () => {
