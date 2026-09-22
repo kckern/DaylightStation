@@ -376,6 +376,8 @@ import { createSchoolRouter } from './4_api/v1/routers/school.mjs';
 import { SchoolService } from './3_applications/school/SchoolService.mjs';
 import { YamlSchoolDatastore } from './1_adapters/persistence/yaml/YamlSchoolDatastore.mjs';
 import { effectiveAttempts } from '#domains/school/attempt.mjs';
+import { studyDayForInstant } from '#domains/school/studyDay.mjs';
+import { personDisplayName } from '#domains/notification/push/pushText.mjs';
 import { createSentenceLadderRouter } from './4_api/v1/routers/sentenceLadder.mjs';
 import { createLanguageStudyService } from './5_composition/modules/schoolLanguage.mjs';
 import { YamlLanguageStudyDatastore } from './1_adapters/persistence/yaml/YamlLanguageStudyDatastore.mjs';
@@ -4033,7 +4035,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         gateway: homeAutomationAdapters.haGateway,
         configKey: 'piano_lesson_hook',
         loadSchoolConfig: () => configService.getHouseholdAppConfig(null, 'school') || {},
-        resolveStudent: (learnerId) => configService.getUserProfile?.(learnerId)?.name ?? learnerId,
+        resolveStudent: (learnerId) => personDisplayName(configService.getUserProfile?.(learnerId), learnerId) ?? learnerId,
         logger: rootLogger.child({ module: 'school-piano-lesson-hook' }),
       });
     } catch (err) {
@@ -4266,7 +4268,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
             // same `school.yml` — the household-id arg is accepted for the
             // adapter's contract but this module always resolves against `null`.
             loadSchoolConfig: () => configService.getHouseholdAppConfig(null, 'school') || {},
-            resolveStudent: (learnerId) => configService.getUserProfile?.(learnerId)?.name ?? learnerId,
+            resolveStudent: (learnerId) => personDisplayName(configService.getUserProfile?.(learnerId), learnerId) ?? learnerId,
             logger: rootLogger.child({ module: 'school-grading-hook' }),
           });
         } catch (err) {
@@ -4285,6 +4287,15 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         // thermal printer the result receipts use (2026-09-15).
         receipts: schoolLifecycle.receipts ?? null,
         printDocuments: schoolLifecycle.stores.printDocuments,
+        // Phone-copy labels (2026-09-22 push redesign): course short titles
+        // from the catalog, display names, and today's study day so late
+        // work can say which day it was for.
+        curriculum: schoolLifecycle.stores.curriculum ?? null,
+        studentName: (learnerId) => personDisplayName(configService.getUserProfile?.(learnerId), learnerId),
+        today: () => studyDayForInstant(Date.now(), { timezone: configService.getHouseholdTimezone?.() ?? null }),
+        // Bounds the label lookups (default 2s) so a hung catalog/name read can
+        // never withhold the hook and, with it, the room siren.
+        scheduler: new NodeAsyncScheduler(),
         logger: rootLogger.child({ module: 'school-print-scan' }),
       });
     } catch (err) {
