@@ -76,4 +76,40 @@ describe('LibbyAdapter', () => {
     await expect(value.getItem('loan/123456789/9999999/part/missing')).resolves.toBeNull();
     expect(issue).not.toHaveBeenCalled();
   });
+
+  it('reuses a recent authorized loan window across renderer re-resolution', async () => {
+    let now = Date.parse('2026-09-22T16:00:00Z');
+    const openLoan = vi.fn(async () => loan);
+    const value = new LibbyAdapter({
+      client: { openLoan },
+      leases: { issue: ({ part }) => ({ handle: `handle-${part.key}` }) },
+      now: () => now,
+      loanReuseMs: 60_000,
+    });
+
+    await value.resolvePlayables('loan/123456789/9999999');
+    await value.getItem('loan/123456789/9999999');
+    await value.getItem('loan/123456789/9999999/part/part-a');
+    expect(openLoan).toHaveBeenCalledTimes(1);
+
+    now += 60_001;
+    await value.resolvePlayables('loan/123456789/9999999');
+    expect(openLoan).toHaveBeenCalledTimes(2);
+  });
+
+  it('never reuses a loan window at or beyond the provider loan expiry', async () => {
+    let now = loan.expiresAt - 1;
+    const openLoan = vi.fn(async () => loan);
+    const value = new LibbyAdapter({
+      client: { openLoan },
+      leases: { issue: ({ part }) => ({ handle: `handle-${part.key}` }) },
+      now: () => now,
+      loanReuseMs: 60_000,
+    });
+
+    await value.resolvePlayables('loan/123456789/9999999');
+    now = loan.expiresAt;
+    await value.resolvePlayables('loan/123456789/9999999');
+    expect(openLoan).toHaveBeenCalledTimes(2);
+  });
 });
