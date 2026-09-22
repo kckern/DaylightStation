@@ -1,6 +1,6 @@
 import path from 'node:path';
 import YAML from 'yaml';
-import { ensureDir, fileExists, readDirectory, readTextFromPath, writeFileExclusive } from '#system/utils/FileIO.mjs';
+import { ensureDir, fileExists, readDirectory, readTextFromPath, writeFileAtomic, writeFileExclusive } from '#system/utils/FileIO.mjs';
 
 const SEGMENT_RE = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/;
 
@@ -10,10 +10,13 @@ function canonical(value) {
   return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonical(value[key])]));
 }
 
+// `voided` is an annotation added after the fact, not part of what the client
+// posted, so a retried POST of a voided attempt is still the same attempt.
 function attemptPayload(record) {
-  const { user_id: ignoredUser, created_at: ignoredCreated, ...payload } = record || {};
+  const { user_id: ignoredUser, created_at: ignoredCreated, voided: ignoredVoided, ...payload } = record || {};
   void ignoredUser;
   void ignoredCreated;
+  void ignoredVoided;
   return canonical(payload);
 }
 
@@ -71,7 +74,25 @@ export class YamlPianoAttemptStore {
     return existing;
   }
 
-  listRecent(userId, { limit = 100 } = {}) {
+  /**
+   * Mark an attempt as not counting — e.g. a run the grader got wrong. The
+   * record stays on disk (with when and why) so the evidence is never lost,
+   * but every listing skips it, and every policy reads through a listing.
+   */
+  void(userId, attemptId, { reason } = {}) {
+    if (!SEGMENT_RE.test(String(userId)) || !SEGMENT_RE.test(String(attemptId))) {
+      throw new Error('invalid piano attempt identity');
+    }
+    if (typeof reason !== 'string' || !reason.trim()) throw new Error('voiding a piano attempt needs a reason');
+    const file = this.#findAttemptFile(userId, attemptId);
+    if (!file) throw new Error(`piano attempt not found: ${attemptId}`);
+    const record = YAML.parse(readTextFromPath(file), { uniqueKeys: true });
+    const voided = { ...record, voided: { at: this.clock().toISOString(), reason: reason.trim() } };
+    writeFileAtomic(file, YAML.stringify(voided));
+    return voided;
+  }
+
+  listRecent(userId, { limit = 100, includeVoided = false } = {}) {
     if (!SEGMENT_RE.test(String(userId))) return [];
     const root = path.join(this.usersDir, String(userId), 'apps', 'piano', 'attempts');
     if (!fileExists(root)) return [];
@@ -83,6 +104,7 @@ export class YamlPianoAttemptStore {
         .map((name) => path.join(root, day.name, name)));
     return files
       .map((file) => YAML.parse(readTextFromPath(file), { uniqueKeys: true }))
+      .filter((attempt) => includeVoided || !attempt?.voided)
       .sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')))
       .slice(0, Math.max(0, limit));
   }
