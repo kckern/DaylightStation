@@ -34,12 +34,24 @@ const REPEAT_GAP_MS = 1000;
  */
 const LOOP_GAP_MS = 2500;
 
-export function useSentenceAudio({ onSequenceEnd } = {}) {
+/**
+ * @param {object} [options]
+ * @param {() => void} [options.onSequenceEnd] fired when a sequence finishes
+ * @param {(clip: object|null) => void} [options.onClip] fired when the clip
+ *   sounding changes — the clip as it starts, null in a gap, at the end and
+ *   on stop(). For a control that only applies while one clip plays.
+ */
+export function useSentenceAudio({ onSequenceEnd, onClip } = {}) {
   const elementRef = useRef(null);
   const preloadRef = useRef([]);
   const queueRef = useRef([]);
   const loopRef = useRef(null);
   const timerRef = useRef(null);
+  // The end of a span (a clip with `endMs`) and the clip sounding now. Both
+  // are cleared on every advance, so a clip that ends on its own can never
+  // also fire a stale span timer that skips the step after it.
+  const spanTimerRef = useRef(null);
+  const activeRef = useRef(null);
   const endRef = useRef(onSequenceEnd);
 
   const [playing, setPlaying] = useState(false);
@@ -47,6 +59,14 @@ export function useSentenceAudio({ onSequenceEnd } = {}) {
   const [blocked, setBlocked] = useState(false);
 
   useEffect(() => { endRef.current = onSequenceEnd; }, [onSequenceEnd]);
+  const clipRef = useRef(onClip);
+  useEffect(() => { clipRef.current = onClip; }, [onClip]);
+  // Only refs, so the callbacks below may hold it without listing it.
+  const setActive = (clip) => {
+    if (activeRef.current === clip) return;
+    activeRef.current = clip;
+    clipRef.current?.(clip);
+  };
 
   useEffect(() => {
     const el = new Audio();
@@ -60,6 +80,9 @@ export function useSentenceAudio({ onSequenceEnd } = {}) {
 
     return () => {
       clearTimeout(timerRef.current);
+      clearTimeout(spanTimerRef.current);
+      spanTimerRef.current = null;
+      activeRef.current = null;
       unbindVolume();
       el.pause();
       // Clearing `src` fires `error` on the element; with the sequence's
@@ -80,8 +103,17 @@ export function useSentenceAudio({ onSequenceEnd } = {}) {
     }
   };
 
+  const clearSpan = () => {
+    if (spanTimerRef.current) {
+      clearTimeout(spanTimerRef.current);
+      spanTimerRef.current = null;
+    }
+  };
+
   const stop = useCallback(() => {
     clearTimer();
+    clearSpan();
+    setActive(null);
     const el = elementRef.current;
     if (el) {
       el.pause();
@@ -99,6 +131,10 @@ export function useSentenceAudio({ onSequenceEnd } = {}) {
   const advance = useCallback(() => {
     const el = elementRef.current;
     if (!el) return;
+    // NOTHING SOUNDS BETWEEN STEPS: a gap or the end of the sequence has no
+    // position, so a live cut made there reads null rather than the last clip.
+    clearSpan();
+    setActive(null);
     const queue = queueRef.current;
 
     if (queue.length === 0) {
@@ -121,20 +157,50 @@ export function useSentenceAudio({ onSequenceEnd } = {}) {
 
     const run = () => {
       el.src = next.url;
-      el.onended = () => advance();
+      // A SPAN: a piece of the model, for a take said in pieces. Seek before
+      // play; the element honours a pre-metadata seek as its start position.
+      if (next.startMs != null) el.currentTime = next.startMs / 1000;
+      setActive(next);
+      // Only the clip still active may advance. A span that ends where the
+      // file ends can still fire `ended` after its timer has moved on.
+      el.onended = () => {
+        if (activeRef.current === next) advance();
+      };
       el.onerror = () => {
         // A missing clip must not freeze the rung — log it and move on so the
         // learner can still finish the sentence.
         languageLog.audioError('load-failed', { url: next.url });
         advance();
       };
+      // Armed only once play() has started, so the span is timed from sound,
+      // not from the request. A rejected play() arms nothing.
+      const armSpanEnd = () => {
+        if (next.endMs == null || activeRef.current !== next) return;
+        spanTimerRef.current = setTimeout(() => {
+          spanTimerRef.current = null;
+          el.onended = null;
+          el.pause();
+          advance();
+        }, Math.max(0, next.endMs - (next.startMs || 0)));
+      };
       const result = el.play();
-      if (result?.catch) {
-        result.catch((err) => {
+      if (result?.then) {
+        result.then(armSpanEnd, (err) => {
+          // OUR OWN INTERRUPTION IS NOT A BLOCK. stop(), or a new sequence
+          // taking the element, aborts the pending play() — and by then this
+          // clip is no longer the active one. Only a refusal of the clip still
+          // meant to be sounding is the browser saying no.
+          if (activeRef.current !== next) {
+            languageLog.audio('play-interrupted', { url: next.url, error: err?.name || err?.message });
+            return;
+          }
           languageLog.audioError('play-blocked', { url: next.url, error: err?.message });
+          setActive(null);
           setBlocked(true);
           setPlaying(false);
         });
+      } else {
+        armSpanEnd();
       }
     };
 
@@ -146,7 +212,8 @@ export function useSentenceAudio({ onSequenceEnd } = {}) {
   }, []);
 
   /**
-   * @param {Array<{url: string, gapMs?: number}>} clips
+   * @param {Array<{url: string, gapMs?: number, startMs?: number, endMs?: number}>} clips
+   * A clip with `startMs`/`endMs` plays only that span of its file.
    * @param {{loop?: boolean}} [options] Repeat the complete sequence until
    * stopped. Used only by the typing rungs after a learner gesture.
    */
@@ -177,7 +244,16 @@ export function useSentenceAudio({ onSequenceEnd } = {}) {
     if (urls.length) languageLog.audio('preload', { count: urls.length });
   }, []);
 
-  return { playSequence, preload, stop, playing, step, blocked, REPEAT_GAP_MS, LOOP_GAP_MS };
+  /** The clip sounding now and how far into it playback is — what a live cut
+   *  reads. Null between sequences, during a gap and after stop(). */
+  const position = useCallback(() => {
+    const el = elementRef.current;
+    const clip = activeRef.current;
+    if (!el || !clip) return null;
+    return { language: clip.language, role: clip.role, ms: Math.round(el.currentTime * 1000) };
+  }, []);
+
+  return { playSequence, preload, stop, position, playing, step, blocked, REPEAT_GAP_MS, LOOP_GAP_MS };
 }
 
 /**

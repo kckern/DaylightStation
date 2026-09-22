@@ -17,3 +17,4 @@ export { normalize, editDistance, accuracy, isCloseEnough, CLOSE_ENOUGH } from '
 export { validateCorpus, indexBySeq } from './corpus.mjs';
 export { unitFor, unitProgress, normalizeUnits } from './units.mjs';
 export { validateProgramEnrollment } from './programEnrollment.mjs';
+export { RECORDING_FORMATS, isRecordingFormat } from './recordingFormats.mjs';

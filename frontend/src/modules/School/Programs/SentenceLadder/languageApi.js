@@ -152,8 +152,10 @@ export const languageApi = {
     // broken route.
     const shape = { bytes: blob?.size ?? null, type: blob?.type || null };
     try {
-      const ext = (blob.type || '').includes('ogg') ? 'ogg'
-        : (blob.type || '').includes('mp4') ? 'm4a' : 'webm';
+      const type = blob.type || '';
+      const ext = type.includes('ogg') ? 'ogg'
+        : type.includes('mp4') ? 'm4a'
+          : type.includes('wav') ? 'wav' : 'webm';
       const r = await fetch(
         `${BASE}/users/${enc(userId)}/recording?corpus=${enc(corpus)}&seq=${enc(seq)}&ext=${ext}&${capabilityQuery(capabilities)}`,
         {

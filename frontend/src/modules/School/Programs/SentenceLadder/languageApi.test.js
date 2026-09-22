@@ -159,3 +159,13 @@ describe('run id correlation', () => {
     expect(lastCallHeaders()['X-School-Run-Id']).toBeUndefined();
   });
 });
+
+describe('recording upload', () => {
+  it('uploads a joined WAV take as ext=wav with its own content type', async () => {
+    globalThis.fetch.mockResolvedValue({ ok: true, status: 200, json: async () => ({}) });
+    await languageApi.recording('test-user', 'ko-basic', 4, new Blob(['x'], { type: 'audio/wav' }), {}, 'grant-1');
+    const [url, init] = globalThis.fetch.mock.calls.at(-1);
+    expect(url).toContain('ext=wav');
+    expect(init.headers['Content-Type']).toBe('audio/wav');
+  });
+});

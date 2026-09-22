@@ -7,6 +7,8 @@
  * tree or mint a directory under an unknown user.
  */
 import { describe, it, expect } from 'vitest';
+import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import { YamlLanguageStudyDatastore, padSeq } from './YamlLanguageStudyDatastore.mjs';
 
@@ -103,5 +105,52 @@ describe('appendEvent', () => {
     // backfilled event lands in the day it actually happened.
     expect(() => ds.appendEvent('kckern', 'glossika-korean', { at: 'not-a-date' }))
       .toThrow(/timestamp/i);
+  });
+});
+
+describe('writeRecording', () => {
+  it('replaces a recording of the same sentence stored in another format', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'lang-rec-'));
+    const store = new YamlLanguageStudyDatastore({
+      configService: { ...configService, getMediaDir: () => root },
+    });
+    const webm = store.writeRecording('glossika-korean', 'kckern', 7, 'KR', Buffer.from('old'), 'webm');
+    const wav = store.writeRecording('glossika-korean', 'kckern', 7, 'KR', Buffer.from('new'), 'wav');
+    // The reader tries webm before wav, so a surviving .webm would be served
+    // instead of the take the learner just kept.
+    expect(fs.existsSync(webm)).toBe(false);
+    expect(fs.readFileSync(wav, 'utf8')).toBe('new');
+    expect([...store.listRecordingKeys('glossika-korean', 'kckern')]).toEqual(['7-KR']);
+  });
+
+  it('leaves other sentences alone', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'lang-rec-'));
+    const store = new YamlLanguageStudyDatastore({
+      configService: { ...configService, getMediaDir: () => root },
+    });
+    const other = store.writeRecording('glossika-korean', 'kckern', 8, 'KR', Buffer.from('x'), 'webm');
+    store.writeRecording('glossika-korean', 'kckern', 7, 'KR', Buffer.from('y'), 'wav');
+    expect(fs.existsSync(other)).toBe(true);
+  });
+
+  // A format the reader never tries would be written and never served — and
+  // writing it would delete the good recording as a "sibling".
+  it('refuses a format the reader does not serve, and the kept recording survives', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'lang-rec-'));
+    const store = new YamlLanguageStudyDatastore({
+      configService: { ...configService, getMediaDir: () => root },
+    });
+    const webm = store.writeRecording('glossika-korean', 'kckern', 7, 'KR', Buffer.from('good'), 'webm');
+    expect(store.resolveRecordingPath('glossika-korean', 'kckern', 7, 'KR', 'aac')).toBeNull();
+    expect(store.writeRecording('glossika-korean', 'kckern', 7, 'KR', Buffer.from('bad'), 'aac')).toBeNull();
+    expect(fs.readFileSync(webm, 'utf8')).toBe('good');
+  });
+
+  it('accepts a served format in any case', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'lang-rec-'));
+    const store = new YamlLanguageStudyDatastore({
+      configService: { ...configService, getMediaDir: () => root },
+    });
+    expect(store.resolveRecordingPath('glossika-korean', 'kckern', 7, 'KR', 'WAV')).toMatch(/0007-KR\.wav$/);
   });
 });

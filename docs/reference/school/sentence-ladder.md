@@ -588,17 +588,92 @@ because a shared kiosk may need it. A denied microphone is recorded and the
 rung steps aside rather than looping on a permission it will not get.
 
 **Tab always brings the sentence back.** Before a take it is a plain listen,
-on a player of its own that never opens the mic. Once the learner is
-recording, or has a take in hand, it starts over: the take in progress is
-thrown away (never judged, never played back), the sentence sounds again, the
-ding plays, and the mic opens, just as the first press did. Nobody has to record
-having heard the sentence only once.
+on a player of its own that never opens the mic. While the learner is
+recording it starts over: the take in progress is thrown away (never judged,
+never played back), the sentence sounds again, the ding plays, and the mic
+opens, just as the first press did. Nobody has to record having heard the
+sentence only once.
+
+**Once a take exists, Tab compares.** During playback or review it plays the
+sentence and then the learner's own take (`capture.compare`), and the take is
+kept. Only Backspace records again. Until 2026-09-22 Tab restarted here too,
+and the log for that day shows it deleting two good takes that a learner was
+trying to hear side by side with the model (`capture.replay-restart` with
+`from: review` and `from: playback`, seconds after the take stopped).
 
 **The meaning is on screen, small, above the sentence.** It is there for
 reinforcement and is never played unless asked for. Tapping either line plays
 that line (Shift+Tab plays the meaning), except while the learner is speaking
 or the prompt is already sounding. A finished take is kept, because hearing a
 line again is a listen, not a retake.
+
+### Recording in pieces
+
+A long sentence can be said a piece at a time. It is the learner's choice,
+made live: **→** (or the *Pause* tile) while the sentence is sounding stops it
+there, the ding plays, and the learner says that much. The rest of the
+sentence then plays from the cut, and the learner says that. Two or three
+pieces is typical; a further → during the rest makes another cut.
+
+| Moment | Space | Backspace | Tab | → |
+|---|---|---|---|---|
+| model sounding | — | — | restart this piece | cut here |
+| recording a piece | stop | — | throw this piece's take away, replay its part, mic | — |
+| piece review | the rest (or *Finish* after the last piece) | redo **this piece only** | its part of the model, then its take | — |
+| joined-take review | keep | the whole sentence over, cuttable again | the sentence, then the joined take | — |
+
+A piece is the *last* one when no cut was made while its part played.
+
+**The cut snaps to a pause.** A child presses a beat after the word they
+meant, so a raw cut would start the next piece mid-syllable. The model clip is
+decoded once per sentence, and only once that sentence has been started, so a
+rung that is never cut costs nothing (`rungs/useModelPauses.js`), and its interior pauses
+found (`rungs/pauses.js`: RMS under 0.02 for at least 120ms, leading and
+trailing silence excluded). A cut moves back to the latest pause within 500ms,
+never forward — the learner has not heard what follows the press. Without Web
+Audio, or when the decode fails, the cut lands where the key was pressed.
+A cut is ignored in the meaning clip, during the ding, in a part that already
+ends at a cut, and within 300ms of a part's start. The *Pause* tile and the
+→ hint appear only while a cuttable clip is actually sounding (the player's
+`onClip` callback says which clip that is).
+
+**Each piece is judged, and so is the whole.** A piece must be heard (when
+loudness could be measured) and at least 500ms long (`MIN_PIECE_MS`) — a
+two-word phrase is shorter than the 1.2s one-go floor. A refused piece blocks
+Space and counts toward the three-refusal "skip recording on this device"
+escape. The joined take must reach the ordinary 1.2s floor in total.
+
+**The pieces become one recording.** After the last piece the tablet decodes
+each piece, resamples to 16kHz mono, joins them with 250ms of silence, and
+writes a 16-bit WAV (`rungs/joinTake.js`) — about 0.5MB for 15s. WebM pieces
+cannot simply be concatenated, since each carries its own header. From there
+the joined take is an ordinary take: it plays back, can be kept or redone, and
+uploads through the same route with `ext=wav`. Review, the shelf and credit
+see one recording per sentence.
+
+**One recording per sentence, whatever its format.** A recording is stored
+only in a format the reader serves (`2_domains/school/language/recordingFormats.mjs`,
+shared by the datastore and the reader); anything else is refused with a 400.
+Saving a recording deletes any sibling of the same sentence in another format. The reader tries
+formats in a fixed order (webm first), so without this an older one-go `.webm`
+would be served in place of a newer joined `.wav`.
+
+**When it goes wrong.** Leaving the rung part-way drops every piece, uploads
+nothing and logs `capture.pieces-abandoned {seq, pieces}` — a half-said
+sentence is not a recording. If the prompt is blocked part-way through
+pieces, the next Space or Record resumes *that part* (`capture.piece-resume`)
+rather than discarding the parts already said. A join that fails, or does not
+settle within 10s (`error: 'timeout'`), logs `capture.stitch-failed`,
+tells the learner to say it in one go, and turns cutting off for that sentence
+so the rung cannot loop on it. A denied microphone drops the pieces and takes
+the ordinary denied path.
+
+Log events, all `school.language.capture.*`: `cut {seq, piece, rawMs, cutMs,
+snapped}`, `piece-stop`, `refused {…, piece}`, `piece-redo`, `compare {…,
+piece}`, `replay-restart {…, piece}`, `stitched {seq, pieces, durationMs,
+bytes}`, `stitch-failed`, `pieces-abandoned`, `piece-resume`. A `play()` cut
+short by our own stop or restart logs `audio.play-interrupted` and is not
+treated as a blocked sound.
 
 ### Hearing a line again, on every rung
 
@@ -634,7 +709,7 @@ it acts on the rung rather than re-pressing that button.
 | repetition | play; stop while sounding; Next once held | play again | ← play again · → Next | hear the sentence / the meaning | — |
 | dictation | Space is a space; Enter submits | edits the answer | edit the answer | replay / hear the meaning | F1 peek (copy mode), F6 IME |
 | interpretation | Space is a space; Enter submits, or finishes a spoken take | edits the answer | edit the answer | replay (drops a take in progress) | F2 speak / stop |
-| recording | start; stop the take; keep it | record again | — | replay, restarting any take / hear the meaning | — |
+| recording | start; stop the take; keep it (in pieces: the rest / Finish) | record again (in pieces: redo this piece) | → cut here, record in pieces | replay (restarts a take in progress; with a finished take, sentence then take) / hear the meaning | — |
 | the shell | on the day-complete panel: Done, or Start the next day | — | ↑ ↓ walk the rungs and the Review shelf · → Start the next day | — | — |
 
 None of these fire while a button or field has focus; a focused control keeps
