@@ -64,6 +64,27 @@ describe('scanNoticeDocument', () => {
   it('is silent on an unknown kind', () => {
     expect(scanNoticeDocument({ kind: 'something-else' })).toBeNull();
   });
+
+  it('tells the truth about a key-alignment hold instead of "two answers filled in"', () => {
+    const doc = scanNoticeDocument({
+      kind: 'scan-review', testId: '5252427', title: 'New York', reasons: ['key-alignment-suspected'],
+    });
+    const text = md(doc);
+    expect(text).toContain('# NEW YORK — NEEDS A GROWN-UP');
+    expect(text).toContain('A grown-up is double-checking one of your answers.');
+    expect(text).toContain('Ask them to take a look.');
+    expect(text).not.toMatch(/two answers filled in/i);
+  });
+
+  it('keeps the original "two answers filled in" copy for an ambiguous-bubble hold (regression)', () => {
+    const doc = scanNoticeDocument({
+      kind: 'scan-review', testId: '5252427', title: 'New York', reasons: ['ambiguous'], pendingReview: 1,
+    });
+    const text = md(doc);
+    expect(text).toContain('1 question had two answers filled in.');
+    expect(text).toContain('Ask a grown-up to check it.');
+    expect(text).not.toMatch(/double-checking/i);
+  });
 });
 
 describe('rowList', () => {
