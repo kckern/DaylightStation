@@ -626,13 +626,16 @@ A piece is the *last* one when no cut was made while its part played.
 
 **The cut snaps to a pause.** A child presses a beat after the word they
 meant, so a raw cut would start the next piece mid-syllable. The model clip is
-decoded once per sentence (`rungs/useModelPauses.js`) and its interior pauses
+decoded once per sentence, and only once that sentence has been started, so a
+rung that is never cut costs nothing (`rungs/useModelPauses.js`), and its interior pauses
 found (`rungs/pauses.js`: RMS under 0.02 for at least 120ms, leading and
 trailing silence excluded). A cut moves back to the latest pause within 500ms,
 never forward — the learner has not heard what follows the press. Without Web
 Audio, or when the decode fails, the cut lands where the key was pressed.
 A cut is ignored in the meaning clip, during the ding, in a part that already
-ends at a cut, and within 300ms of a part's start.
+ends at a cut, and within 300ms of a part's start. The *Pause* tile and the
+→ hint appear only while a cuttable clip is actually sounding (the player's
+`onClip` callback says which clip that is).
 
 **Each piece is judged, and so is the whole.** A piece must be heard (when
 loudness could be measured) and at least 500ms long (`MIN_PIECE_MS`) — a
@@ -648,14 +651,19 @@ the joined take is an ordinary take: it plays back, can be kept or redone, and
 uploads through the same route with `ext=wav`. Review, the shelf and credit
 see one recording per sentence.
 
-**One recording per sentence, whatever its format.** Saving a recording
-deletes any sibling of the same sentence in another format. The reader tries
+**One recording per sentence, whatever its format.** A recording is stored
+only in a format the reader serves (`2_domains/school/language/recordingFormats.mjs`,
+shared by the datastore and the reader); anything else is refused with a 400.
+Saving a recording deletes any sibling of the same sentence in another format. The reader tries
 formats in a fixed order (webm first), so without this an older one-go `.webm`
 would be served in place of a newer joined `.wav`.
 
 **When it goes wrong.** Leaving the rung part-way drops every piece, uploads
 nothing and logs `capture.pieces-abandoned {seq, pieces}` — a half-said
-sentence is not a recording. A join that fails logs `capture.stitch-failed`,
+sentence is not a recording. If the prompt is blocked part-way through
+pieces, the next Space or Record resumes *that part* (`capture.piece-resume`)
+rather than discarding the parts already said. A join that fails, or does not
+settle within 10s (`error: 'timeout'`), logs `capture.stitch-failed`,
 tells the learner to say it in one go, and turns cutting off for that sentence
 so the rung cannot loop on it. A denied microphone drops the pieces and takes
 the ordinary denied path.
@@ -663,7 +671,9 @@ the ordinary denied path.
 Log events, all `school.language.capture.*`: `cut {seq, piece, rawMs, cutMs,
 snapped}`, `piece-stop`, `refused {…, piece}`, `piece-redo`, `compare {…,
 piece}`, `replay-restart {…, piece}`, `stitched {seq, pieces, durationMs,
-bytes}`, `stitch-failed`, `pieces-abandoned`.
+bytes}`, `stitch-failed`, `pieces-abandoned`, `piece-resume`. A `play()` cut
+short by our own stop or restart logs `audio.play-interrupted` and is not
+treated as a blocked sound.
 
 ### Hearing a line again, on every rung
 
