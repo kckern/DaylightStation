@@ -1,4 +1,4 @@
-import { render, act } from '@testing-library/react';
+import { render, act, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import React from 'react';
 import { getActionBus, resetActionBus } from '../input/ActionBus.js';
@@ -9,7 +9,9 @@ import {
   _resetForTests as resetVolumeModuleState,
 } from '../../lib/volume/ScreenVolumeContext.js';
 import { ScreenActionHandler } from './ScreenActionHandler.jsx';
+import { ScreenScreensaver } from '../ScreenScreensaver.jsx';
 import { MenuNavigationProvider } from '../../context/MenuNavigationContext.jsx';
+import { SessionSourceProvider } from '../publishers/SessionSourceContext.jsx';
 import * as apiModule from '../../lib/api.mjs';
 import {
   __resetPlayerQueueOpRegistryForTests,
@@ -1057,6 +1059,71 @@ describe('ScreenActionHandler', () => {
 
     expect(handler).toHaveBeenCalledTimes(1);
     expect(handler).toHaveBeenCalledWith(expect.objectContaining({ op: 'play-now', contentId: 'plex:2' }));
+  });
+
+  it('replaces an idle fullscreen overlay before bootstrapping an item-action owner', async () => {
+    let snapshot = {
+      sessionId: 'screen-session',
+      state: 'idle',
+      currentItem: null,
+      position: 0,
+      queue: { items: [], currentIndex: -1, upNextCount: 0, executionOrder: [] },
+      config: { shuffle: false, repeat: 'off', shader: null, volume: 50, playbackRate: 1 },
+      meta: { ownerId: 'acceptance-media', updatedAt: new Date().toISOString() },
+    };
+    let queueRevision = 0;
+    const ownerIdentity = () => document.querySelector('[data-testid="player"]') ? {
+      ownerInstanceId: 'screen-player', playbackRevision: 0, queueRevision, stopRevision: 0,
+    } : null;
+    const source = {
+      ownerId: 'acceptance-media',
+      getActionOwner: ownerIdentity,
+      capture: () => ({ snapshot: structuredClone(snapshot), identity: ownerIdentity() }),
+      applyQueue: vi.fn(),
+      adopt: vi.fn((next) => {
+        snapshot = structuredClone(next);
+        queueRevision += 1;
+        return { ok: true };
+      }),
+    };
+    const apiSpy = vi.spyOn(apiModule, 'DaylightAPI').mockResolvedValue({ ok: true });
+    const applied = vi.fn();
+    getActionBus().subscribe('media:queue-op-applied', applied);
+
+    const { findByTestId, queryByTestId } = render(
+      <MenuNavigationProvider>
+        <ScreenOverlayProvider>
+          <SessionSourceProvider source={source}>
+            <ScreenScreensaver config={{ widget: 'art', idle: 0.01, showOnLoad: true, interactive: true }} />
+            <ScreenActionHandler />
+          </SessionSourceProvider>
+        </ScreenOverlayProvider>
+      </MenuNavigationProvider>
+    );
+    await findByTestId('art-scene');
+
+    act(() => getActionBus().emit('media:queue-op', {
+      op: 'item-action',
+      kind: 'playNow',
+      item: { contentId: 'plex:55854', title: 'Arrival', type: 'movie' },
+      clearRest: false,
+      operationId: 'cold-play',
+      tappedAt: Date.now(),
+      commandId: 'cold-command',
+      options: {},
+    }));
+
+    await findByTestId('player', {}, { timeout: 1000 });
+    expect(queryByTestId('art-scene')).toBeNull();
+    await waitFor(() => expect(applied).toHaveBeenCalledWith(expect.objectContaining({
+      operationId: 'cold-play', ok: true,
+    })));
+    expect(source.adopt).toHaveBeenCalledTimes(1);
+
+    act(() => getActionBus().emit('escape', {}));
+    await waitFor(() => expect(queryByTestId('player')).toBeNull());
+    await findByTestId('art-scene', {}, { timeout: 1000 });
+    apiSpy.mockRestore();
   });
 
   describe('hardware Back (popstate) consumer', () => {

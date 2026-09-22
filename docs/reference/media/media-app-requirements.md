@@ -139,7 +139,7 @@ numbered so plans and tests can reference it.
   via navigation to a dedicated results page. Search is always available without
   leaving the current context (browsing, detail view, or during playback).
 - **C1.1a** Search results MUST be directly actionable from the inline result
-  list — the user can Play Now, Play Next, Add to Up Next, Add to Queue, or
+  list — the user can Play Now, Play Next, Play First, Add to Queue, or
   Cast to a target without first navigating into a detail view.
 - **C1.1b** Search scope selection (catalog-wide vs. within a specific source or
   collection) MUST be available from the search affordance itself. Scopes are
@@ -152,7 +152,7 @@ numbered so plans and tests can reference it.
   categories). Content of the home surface is config-driven, not hard-coded.
 - **C1.4** The app MUST provide a detail view for any content item resolvable
   via `GET /api/v1/info/:source/*`, showing metadata, thumbnail, and available
-  actions (play now, play next, add to up next, add to queue, cast to target).
+  actions (play now, play next, play first, add to queue, cast to target).
 
 ### C2. Local session
 
@@ -168,8 +168,8 @@ numbered so plans and tests can reference it.
 
 ### C3. Queue management
 
-- **C3.1** The app MUST support the Plex MP queue-action model: Play Now,
-  Play Next, Add to Up Next, Add to Queue.
+- **C3.1** The app MUST support four queue actions: Play Now, Play Next,
+  Play First, Add to Queue.
 - **C3.2** The app MUST support queue operations: remove item, reorder items,
   jump to item, clear queue.
 - **C3.3** The app MUST support shuffle toggle and repeat modes (off, one, all).

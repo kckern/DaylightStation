@@ -74,4 +74,17 @@ describe('media ordinary device fixture', () => {
       .expect(200);
     await fixture.stop();
   });
+
+  it('allows the virtual receiver to claim its Task 3 item action without opening physical routes', async () => {
+    const fixture = createMediaOrdinaryDeviceFixture({ upstream: 'http://127.0.0.1:3111' });
+    await request(fixture.app)
+      .post('/acceptance-media/session/item-action/operation-1/claim')
+      .send({})
+      .expect(200, { ok: true });
+    await request(fixture.app)
+      .post('/livingroom-tv/session/item-action/operation-1/claim')
+      .send({})
+      .expect(403, { ok: false, error: 'ordinary acceptance blocks physical device routes' });
+    await fixture.stop();
+  });
 });

@@ -121,6 +121,8 @@ export function createMediaOrdinaryDeviceFixture({ upstream, logger = quiet } = 
     if (req.method === 'POST'
       && path === `/${ORDINARY_DEVICE_ID}/session/transport`
       && VIRTUAL_TRANSPORT_ACTIONS.has(req.body?.action)) return next();
+    if (req.method === 'POST'
+      && new RegExp(`^/${ORDINARY_DEVICE_ID}/session/item-action/[^/]+/claim$`).test(path)) return next();
     return res.status(403).json({ ok: false, error: 'ordinary acceptance blocks physical device routes' });
   });
   app.use(router);

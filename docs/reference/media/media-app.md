@@ -120,7 +120,7 @@ this app with zero app changes.
 
 ### Queue
 - Against any search result, browse row, or detail page, I want the four
-  Plex-style actions — **Play Now**, **Play Next**, **Up Next**, **Add to
+  queue actions — **Play Now**, **Play Next**, **Play First**, **Add to
   Queue** — without leaving where I am, with instant visual confirmation.
 - I want to see the queue, jump to any item, remove items, clear it, and
   toggle shuffle and repeat (off/one/all) — whether or not anything is
@@ -168,7 +168,7 @@ Search or browse → pick an item → it plays in this browser. Browsing,
 searching, and queueing remain available before, during, and after playback.
 
 ### J2. Build and manage the queue
-From any item: Play Now / Play Next / Add to Up Next / Add to Queue. Against
+From any item: Play Now / Play Next / Play First / Add to Queue. Against
 the queue: remove, jump, clear, shuffle, repeat (off/one/all). Available at
 all times, for the local session and for any peeked remote session alike.
 
@@ -231,7 +231,7 @@ and a **canvas** that shows exactly one view at a time:
   away, never a destination page; results drop down inline. A row tap plays
   a playable item at the current destination and opens a container in
   Browse; containers carry a trailing ▶ (play the whole thing) and playable
-  items a trailing ⋯ (Play Now / Play Next / Up Next / Add to Queue / Open
+  items a trailing ⋯ (Play Now / Play Next / Play First / Add to Queue / Open
   detail). Per-item Cast lives on the Detail view, not on result rows,
 - the **fleet indicator** — an at-a-glance summary of what's playing in the
   house, linking to the fleet view,
@@ -312,7 +312,7 @@ is decoration, never a tap target.
 |---|---|---|
 | **Home** | Landing surface: resume card (current session) and recents row. (Config-driven category cards were removed; the Browse tab covers them.) | Default; nav; breadcrumb. |
 | **Browse** | Hierarchical catalog listing with breadcrumb, container drill-down, inline Play Now/Add per playable row, paging ("load more"). A view opened for a specific container adds a Play / Shuffle / Queue header acting on the whole container at the current destination. | Nav; container rows; container taps in search. |
-| **Detail** | One item: artwork, description, full action row (Play Now / Play Next / Up Next / Add / Cast). | Browse rows; search results. |
+| **Detail** | One item: artwork, description, full action row (Play Now / Play Next / Play First / Add / Cast). | Browse rows; search results. |
 | **Now Playing** | Full local transport: seek bar, prev/play-pause/next/stop, volume, the queue panel, and the hand-off picker. Hosts the visual output of the player. | Mini player; Escape/Back returns. |
 | **Fleet** | All devices, live state cards. Each card offers **Remote** (Peek), **Play…** (inline search that plays straight to that device), and **Play here** (Take Over) when a session is active. | Nav; fleet indicator. |
 | **Peek** | Remote control for one device: transport, seek, volume, and the same queue panel bound to the remote session. Optimistic — controls reflect the predicted state instantly and lock until the device confirms. | Fleet cards. |

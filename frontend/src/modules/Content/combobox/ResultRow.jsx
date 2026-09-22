@@ -8,7 +8,7 @@
 //
 //   Playable leaf   -> tap dispatches PLAY NOW to the current destination.
 //                      Trailing ⋯ opens the four queue verbs (Play Now /
-//                      Play Next / Up Next / Add to Queue) + Open detail.
+//                      Play Next / Play First / Add to Queue) + Open detail.
 //   Container       -> tap ALWAYS browses into it — never an accidental
 //                      queue blowaway, regardless of an aimed cast target.
 //                      Trailing ▶ is the explicit "send the whole thing"
@@ -20,7 +20,9 @@
 // StreamStatusLine here for the identical reason). ResultRow itself knows
 // nothing about casting, queues, or navigation — callers own ALL of that via
 // the onTap/onPlayAll/onMore callback props. `onMore` is called with a verb
-// string ('playNow'|'playNext'|'upNext'|'add'|'detail'); the caller maps
+// string ('playNow'|'playNext'|'upNext'|'add'|'detail'); the legacy `upNext`
+// slot is presented and dispatched as Task 3's `playFirst` action when the
+// additive onAction contract is used. The caller maps legacy onMore values
 // that onto its own dispatch/queue/nav plumbing (see
 // Media/search/resultRowVerbs.js).
 import React from 'react';
