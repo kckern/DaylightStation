@@ -38,7 +38,8 @@ const INDEX_DIR_NAME = '_index';
 // (rebuilt on demand), so old shards never serve stale-shaped data.
 // v4: primary-media selection became longest-wins (near-tie recency tiebreak),
 //     so every cached list summary's title had to be re-derived.
-const INDEX_VERSION = 4;
+// v5: media.primary carries the episode's description (Health's exercise rows).
+const INDEX_VERSION = 5;
 
 /**
  * Derive session date from sessionId
@@ -524,6 +525,14 @@ export class YamlSessionDatastore extends ISessionDatastore {
             };
           }
         }
+      }
+
+      // The primary episode's own description, from its timeline media event —
+      // the summary block does not keep it. Flattened and capped for list use.
+      if (media?.primary?.contentId && !media.primary.description) {
+        const described = (data.timeline?.events || []).find(e => e?.type === 'media' && e.data?.description
+          && ItemId.normalize(e.data.contentId, ItemId.extractSource(e.data.contentId)) === media.primary.contentId);
+        if (described) media.primary.description = String(described.data.description).replace(/\s+/g, ' ').trim().slice(0, 400);
       }
 
       // Extract suffer scores and corresponding activityId across participants
