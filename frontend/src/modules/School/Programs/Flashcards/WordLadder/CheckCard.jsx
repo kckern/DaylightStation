@@ -4,12 +4,15 @@ import { Picture, WordFace } from './StudyCard.jsx';
 import { playClip } from './wordLadderAudio.js';
 
 /** One graded check. The server grades; this only shows the prompt, the four choices, and the result. */
-export default function CheckCard({ item, result = null, resolveAssetUrl = (id) => id, onAnswer = async () => {}, onContinue = () => {} }) {
+export default function CheckCard({
+  item, result = null, langs = {}, resolveAssetUrl = (id) => id, onAnswer = async () => {}, onContinue = () => {},
+}) {
   const [busy, setBusy] = useState(false);
-  // The prompt is Korean for korean_to_english; any "*_to_korean" direction
-  // asks for Korean in the choices, so the prompt is not Korean there.
-  const choicesKorean = typeof item.direction === 'string' && item.direction.endsWith('_to_korean');
-  const promptKorean = !choicesKorean;
+  // The prompt is the term for term_to_gloss; any "*_to_term" direction asks
+  // for the term in the choices, so the prompt is not the term there.
+  const choicesTerm = typeof item.direction === 'string' && item.direction.endsWith('_to_term');
+  const promptTerm = !choicesTerm;
+  const langOf = (isTerm) => (isTerm ? langs.term : langs.gloss) ?? undefined;
   const promptUrl = item.prompt?.assetId ? resolveAssetUrl(item.prompt.assetId) : null;
   useEffect(() => {
     setBusy(false);
@@ -31,7 +34,7 @@ export default function CheckCard({ item, result = null, resolveAssetUrl = (id) 
           <button type="button" className="word-ladder-hear" onClick={() => playClip(promptUrl)}><Icon name="volume" /> Hear it</button>
         )}
         {item.prompt?.type === 'text' && (
-          <p className={promptKorean ? 'word-ladder-korean' : 'word-ladder-english'} lang={promptKorean ? 'ko' : 'en'}>{item.prompt.text}</p>
+          <p className={promptTerm ? 'word-ladder-term' : 'word-ladder-gloss'} lang={langOf(promptTerm)}>{item.prompt.text}</p>
         )}
       </div>
       <div className="word-ladder-choices" role="group" aria-label="Choices">
@@ -40,7 +43,7 @@ export default function CheckCard({ item, result = null, resolveAssetUrl = (id) 
             key={choice}
             type="button"
             disabled={busy || Boolean(result)}
-            lang={choicesKorean ? 'ko' : 'en'}
+            lang={langOf(choicesTerm)}
             className={`word-ladder-choice${result && choice === result.answer ? ' is-answer' : ''}`}
             onClick={() => choose(choice)}
           >
@@ -52,8 +55,8 @@ export default function CheckCard({ item, result = null, resolveAssetUrl = (id) 
       {result?.correct === false && (
         <div className="word-ladder-correction" role="status">
           <p>Not quite. Here is the card:</p>
-          <WordFace card={result.card} resolveAssetUrl={resolveAssetUrl} />
-          <p className="word-ladder-english">{result.card.english}</p>
+          <WordFace card={result.card} langs={langs} resolveAssetUrl={resolveAssetUrl} />
+          <p className="word-ladder-gloss" lang={langOf(false)}>{result.card.gloss}</p>
         </div>
       )}
       {result && <button type="button" className="word-ladder-next" onClick={onContinue}><Icon name="next" /> Next</button>}
