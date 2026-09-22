@@ -7,11 +7,12 @@ const logger = { info: vi.fn(), warn: vi.fn() };
 describe('DeviceSessionApiService handoff', () => {
   it('forwards one validated, lossless handoff envelope and its typed terminal result', async () => {
     const terminal = { ok: false, commandId: 'handoff-1', code: 'HANDOFF_UNSUPPORTED', handoff: { transferId: 'transfer-1', phase: 'failed', code: 'HANDOFF_UNSUPPORTED' } };
-    const sessions = { sendCommand: vi.fn().mockResolvedValue(terminal) };
+    const sessions = { handoff: vi.fn().mockResolvedValue(terminal), sendCommand: vi.fn() };
     const api = new DeviceSessionApiService({ sessionControl: sessions, logger });
 
     await expect(api.handoff('tv-a', { commandId: 'handoff-1', params: capture })).resolves.toEqual(terminal);
-    expect(sessions.sendCommand).toHaveBeenCalledWith({ targetDevice: 'tv-a', command: 'handoff', commandId: 'handoff-1', params: capture });
+    expect(sessions.handoff).toHaveBeenCalledWith('tv-a', { commandId: 'handoff-1', params: capture });
+    expect(sessions.sendCommand).not.toHaveBeenCalled();
   });
 
   it('rejects malformed direct handoff input without falling through to scalar sendCommand validation', async () => {
