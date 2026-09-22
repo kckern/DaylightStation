@@ -1,5 +1,7 @@
 # Korean Vocab Word Ladder Implementation Plan
 
+> **Superseded by the language-neutral refactor (2026-09-22).** The word ladder no longer names Korean anywhere in code: lexicon `school.word-lexicon/v2` (`term`/`gloss`, per-entry `group`, `package`/`language`/`gloss`/`program` headers), directions `picture_to_term`/`audio_to_term`/`term_to_gloss`, media `words/<group>/<id>/{image.jpg,term.mp3,gloss.mp3}`, status/recordings keyed by package, CLI `school word-ladder`, seed script `scripts/school/seed-word-package.sh`. Current reference: `docs/reference/school/word-ladder.md`. This document is kept as written.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** A `word-ladder` mode for assigned School flashcards: weekly Korean word decks expanded from a media-mount lexicon, a per-word NEW → LEARNING → CLAIMED → KNOWN ladder with widening re-checks, recorded speaking practice, a post-completion review run, and a printed OMR quiz whose scanned misses demote words.

@@ -1,5 +1,5 @@
 export {
-  LEXICON_SCHEMA, WORD_KINDS, validateLexicon, parseMediaRef, wordPackageDir, wordAssetIds,
+  LEXICON_SCHEMA, WORD_KINDS, DECOY_SIDES, SLUG, validateLexicon, parseMediaRef, wordPackageDir, wordAssetIds,
   isLexiconDeck, expandLexiconDeck,
 } from './lexicon.mjs';
 export {
@@ -12,4 +12,4 @@ export {
 export { planDay, dayProgress, progressLabel } from './planDay.mjs';
 export { foldPaperAttempts } from './foldPaperAttempts.mjs';
 export { quizDocumentIdFor } from './quizId.mjs';
-export { QUIZ_INSTRUCTIONS, buildWordQuizSource } from './quizSource.mjs';
+export { buildWordQuizSource } from './quizSource.mjs';

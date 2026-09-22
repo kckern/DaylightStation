@@ -36,7 +36,7 @@ describe('planDay', () => {
     const status = emptyStatus();
     status.words.gawi = claimed('2026-09-22');
     const without = plan(status, '2026-09-23', {});
-    expect(without.checks[0].direction).toBe('korean_to_english');
+    expect(without.checks[0].direction).toBe('term_to_gloss');
     const withMedia = plan(status, '2026-09-23', { gawi: { image: true, audio: true } });
     expect(withMedia.checks[0].direction).toBe(checkDirection('gawi', '2026-09-23'));
   });
@@ -56,7 +56,7 @@ describe('planDay', () => {
 
 describe('dayProgress', () => {
   const day = '2026-09-23';
-  const dayPlan = { deckId: 'd', checks: [{ wordId: 'gawi', direction: 'korean_to_english' }], study: ['pul'], reviewQuiz: [] };
+  const dayPlan = { deckId: 'd', checks: [{ wordId: 'gawi', direction: 'term_to_gloss' }], study: ['pul'], reviewQuiz: [] };
   it('is incomplete until every check is answered and every study card studied and marked', () => {
     const words = { gawi: claimed('2026-09-22'), pul: emptyWord() };
     const before = dayProgress({ dayPlan, words, day });
@@ -64,7 +64,7 @@ describe('dayProgress', () => {
     expect(before.complete).toBe(false);
     expect(progressLabel(before)).toBe('1 check · 1 to study');
 
-    words.gawi = applyCheck(words.gawi, { at: at(day), day, correct: true, phase: 'check', direction: 'korean_to_english' });
+    words.gawi = applyCheck(words.gawi, { at: at(day), day, correct: true, phase: 'check', direction: 'term_to_gloss' });
     words.pul = applyStudy(words.pul, { at: at(day, '16:01:00'), day, recording: 'taken' });
     const studiedOnly = dayProgress({ dayPlan, words, day });
     expect(studiedOnly.study[0]).toMatchObject({ studied: true, recording: 'taken', marked: null, done: false });

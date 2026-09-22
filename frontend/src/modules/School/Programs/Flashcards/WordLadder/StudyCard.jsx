@@ -14,12 +14,15 @@ export function Picture({ src, alt }) {
   return <img className="word-ladder-picture" src={src} alt={alt} onError={() => setBroken(true)} />;
 }
 
-/** Picture, Korean, native audio. Anything missing is simply not drawn. */
-export function WordFace({ card, resolveAssetUrl }) {
+/**
+ * Picture, term, native audio. Anything missing is simply not drawn.
+ * `langs` = `{ term, gloss }` language codes from the plan.
+ */
+export function WordFace({ card, langs = {}, resolveAssetUrl }) {
   return (
     <div className="word-ladder-face">
-      {card.media?.image && <Picture src={resolveAssetUrl(card.media.image)} alt={card.english} />}
-      <p className="word-ladder-korean" lang="ko">{card.korean}</p>
+      {card.media?.image && <Picture src={resolveAssetUrl(card.media.image)} alt={card.gloss} />}
+      <p className="word-ladder-term" lang={langs.term ?? undefined}>{card.term}</p>
       {card.media?.audio && (
         <button type="button" className="word-ladder-hear" onClick={() => playClip(resolveAssetUrl(card.media.audio))}>
           <Icon name="volume" /> Hear it
@@ -35,12 +38,12 @@ const VERDICT_COPY = {
 };
 
 /**
- * One study card: front plays ko.mp3; record (when the mic is available) →
- * the take plays back, then the native audio; flip to English; mark.
- * `reviewOnly` is the rev-3 review run: flip and move on, nothing else.
+ * One study card: front plays the term audio; record (when the mic is
+ * available) → the take plays back, then the native audio; flip to the gloss;
+ * mark. `reviewOnly` is the rev-3 review run: flip and move on, nothing else.
  */
 export default function StudyCard({
-  card, needsRecording = false, resolveAssetUrl = (id) => id, onRecorded = async () => false,
+  card, langs = {}, needsRecording = false, resolveAssetUrl = (id) => id, onRecorded = async () => false,
   onMark = async () => {}, onMicUnavailable = () => {}, reviewOnly = false, onNext = () => {},
 }) {
   const [flipped, setFlipped] = useState(false);
@@ -103,10 +106,10 @@ export default function StudyCard({
     <section className="word-ladder-card word-ladder-study" aria-label={reviewOnly ? 'Review card' : 'Study card'}>
       {flipped ? (
         <div className="word-ladder-back">
-          <p className="word-ladder-english">{card.english}</p>
+          <p className="word-ladder-gloss" lang={langs.gloss ?? undefined}>{card.gloss}</p>
           {card.pronunciation && <p className="word-ladder-pronunciation">{card.pronunciation}</p>}
         </div>
-      ) : <WordFace card={card} resolveAssetUrl={resolveAssetUrl} />}
+      ) : <WordFace card={card} langs={langs} resolveAssetUrl={resolveAssetUrl} />}
       {showRecorder && (
         <div className="word-ladder-record">
           <VoiceBand stream={phase === 'recording' ? stream : null} onLevel={phase === 'recording' ? onLevel : null} />

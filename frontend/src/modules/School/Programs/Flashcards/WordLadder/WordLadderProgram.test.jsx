@@ -1,9 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 
-const h = vi.hoisted(() => ({ caps: { microphone: true }, handlers: null, takeMs: 1500 }));
+const h = vi.hoisted(() => ({ caps: { microphone: true }, handlers: null, takeMs: 1500, capabilityCalls: [] }));
 vi.mock('../../SentenceLadder/useCapabilities.js', () => ({
-  useCapabilities: () => ({ capabilities: { microphone: h.caps.microphone, textInput: [] }, ready: true }),
+  useCapabilities: (key, languages) => {
+    h.capabilityCalls.push({ key, languages });
+    return { capabilities: { microphone: h.caps.microphone, textInput: [] }, ready: true };
+  },
 }));
 vi.mock('../../SentenceLadder/rungs/useVoiceCapture.js', () => ({
   default: (handlers) => {
@@ -23,12 +26,13 @@ vi.mock('./wordLadderLog.js', () => ({
 
 import WordLadderProgram, { nextStep } from './WordLadderProgram.jsx';
 
-const card = (wordId, korean, english, media = { image: null, audio: null }) => ({ wordId, kind: 'word', korean, english, pronunciation: null, media });
+const card = (wordId, term, gloss, media = { image: null, audio: null }) => ({ wordId, kind: 'word', term, gloss, pronunciation: null, media });
 const GAWI = card('gawi', '가위', 'Scissors');
 const PUL = card('pul', '풀', 'Glue');
 const basePlan = (over = {}) => ({
   day: '2026-09-22', deckId: 'language/korean/week-01-classroom',
-  checks: [{ wordId: 'gawi', kind: 'word', phase: 'check', direction: 'korean_to_english', prompt: { type: 'text', text: '가위' }, choices: ['Knife', 'Scissors', 'Tape', 'Ruler'], done: false, correct: null }],
+  package: 'korean-vocab', title: 'Korean words', language: { code: 'ko', name: 'Korean' }, gloss: { code: 'en', name: 'English' },
+  checks: [{ wordId: 'gawi', kind: 'word', phase: 'check', direction: 'term_to_gloss', prompt: { type: 'text', text: '가위' }, choices: ['Knife', 'Scissors', 'Tape', 'Ruler'], done: false, correct: null }],
   study: [{ wordId: 'pul', studied: false, recording: null, marked: null, done: false, card: PUL }],
   review: [], deckCards: [GAWI, PUL], remaining: { checks: 1, study: 1, review: 0 }, doneToday: false, progressLabel: '1 check · 1 to study',
   ...over,
@@ -51,7 +55,7 @@ function fakeApi(plan) {
 }
 
 beforeEach(() => {
-  h.caps.microphone = true; h.takeMs = 1500;
+  h.caps.microphone = true; h.takeMs = 1500; h.capabilityCalls = [];
   globalThis.URL.createObjectURL = vi.fn(() => 'blob:take');
   globalThis.URL.revokeObjectURL = vi.fn();
 });
@@ -128,10 +132,10 @@ describe('WordLadderProgram', () => {
     expect(screen.queryByRole('img')).toBeNull();
     expect(screen.queryByRole('button', { name: 'Hear it' })).toBeNull();
     unmount();
-    const withMedia = { ...PUL, media: { image: 'media:language/korean-vocab/words/pul/image.jpg', audio: 'media:language/korean-vocab/words/pul/ko.mp3' } };
+    const withMedia = { ...PUL, media: { image: 'media:language/korean-vocab/words/week-01-classroom/pul/image.jpg', audio: 'media:language/korean-vocab/words/week-01-classroom/pul/term.mp3' } };
     const api2 = fakeApi(checked(basePlan({ study: [{ wordId: 'pul', studied: false, recording: null, marked: null, done: false, card: withMedia }] })));
     render(<WordLadderProgram descriptor={{ deckId: 'd', userId: 'kid' }} api={api2} resolveAssetUrl={(id) => `/assets/${id}`} />);
-    expect(await screen.findByRole('img', { name: 'Glue' })).toHaveAttribute('src', '/assets/media:language/korean-vocab/words/pul/image.jpg');
+    expect(await screen.findByRole('img', { name: 'Glue' })).toHaveAttribute('src', '/assets/media:language/korean-vocab/words/week-01-classroom/pul/image.jpg');
     expect(screen.getByRole('button', { name: 'Hear it' })).toBeInTheDocument();
   });
 
@@ -248,5 +252,34 @@ describe('WordLadderProgram', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('This word list is not ready right now.');
     fireEvent.click(screen.getByRole('button', { name: 'Back' }));
     expect(onExit).toHaveBeenCalled();
+  });
+
+  it('takes every language code and the capability key from the plan (a Spanish package)', async () => {
+    const GATO = card('gato', 'gato', 'Cat');
+    const PERRO = card('perro', 'perro', 'Dog');
+    const spanish = basePlan({
+      deckId: 'language/spanish/unit-01', package: 'spanish-vocab', title: 'Spanish words',
+      language: { code: 'es', name: 'Spanish' }, gloss: { code: 'en', name: 'English' },
+      checks: [{ wordId: 'gato', kind: 'word', phase: 'check', direction: 'term_to_gloss', prompt: { type: 'text', text: 'gato' }, choices: ['Dog', 'Cat', 'Duck', 'Rooster'], done: false, correct: null }],
+      study: [{ wordId: 'perro', studied: false, recording: null, marked: null, done: false, card: PERRO }],
+      deckCards: [GATO, PERRO],
+    });
+    const { container } = render(<WordLadderProgram descriptor={{ deckId: 'language/spanish/unit-01', userId: 'kid' }} api={fakeApi(spanish)} />);
+    expect(await screen.findByText('gato')).toHaveAttribute('lang', 'es');
+    expect(screen.getByRole('button', { name: 'Cat' })).toHaveAttribute('lang', 'en');
+    expect(container.querySelector('[lang="ko"]')).toBeNull();
+    expect(h.capabilityCalls.at(-1)).toEqual({ key: 'word-ladder:spanish-vocab', languages: { source: 'en', target: 'es' } });
+    // Before the plan arrives nothing is guessed: no key, no languages.
+    expect(h.capabilityCalls[0]).toEqual({ key: null, languages: { source: null, target: null } });
+  });
+
+  it('marks the Korean example\'s term and gloss with the plan\'s codes', async () => {
+    h.caps.microphone = false;
+    render(<WordLadderProgram descriptor={{ deckId: 'd', userId: 'kid' }} api={fakeApi(checked(basePlan()))} />);
+    expect(await screen.findByText('풀')).toHaveAttribute('lang', 'ko');
+    expect(screen.getByText('풀')).toHaveClass('word-ladder-term');
+    fireEvent.click(screen.getByRole('button', { name: 'Flip' }));
+    expect(screen.getByText('Glue')).toHaveAttribute('lang', 'en');
+    expect(screen.getByText('Glue')).toHaveClass('word-ladder-gloss');
   });
 });

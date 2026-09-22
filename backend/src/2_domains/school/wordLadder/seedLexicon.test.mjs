@@ -18,26 +18,35 @@ const WEEK_ONE = [
   ['saek-yeonpil', '색연필', 'word'], ['gansik', '간식', 'word'], ['hanguk', '한국', 'word'], ['hakgyo', '학교', 'word'],
 ];
 
-describe('Korean vocab seed package', () => {
-  const { errors, entries } = validateLexicon(read('lexicon.yml'));
-  it('the lexicon is valid and holds exactly the week-1 list', () => {
+describe('korean-vocab seed package (the worked example)', () => {
+  const { errors, lexicon } = validateLexicon(read('lexicon.yml'));
+  const entries = lexicon?.entries ?? new Map();
+  it('the lexicon is valid v2 and holds exactly the week-1 list, all in the week-1 group', () => {
     expect(errors).toEqual([]);
-    expect([...entries.values()].map((e) => [e.id, e.korean, e.kind])).toEqual(WEEK_ONE);
+    expect([...entries.values()].map((e) => [e.id, e.term, e.kind])).toEqual(WEEK_ONE);
+    expect([...entries.values()].every((e) => e.group === 'week-01-classroom')).toBe(true);
+  });
+  it('carries the package identity the code no longer hard-codes', () => {
+    expect(lexicon).toMatchObject({
+      package: 'korean-vocab', language: { code: 'ko', name: 'Korean' }, gloss: { code: 'en', name: 'English' },
+      program: { title: 'Korean words' },
+      quiz: { topics: ['korean', 'vocabulary'], instructions: 'Not sure of a word? Open Korean words on the Portal and review the cards, then come back.' },
+    });
   });
   it('every phrase carries a pronunciation; decoys are confusable-sized and never the answer', () => {
     for (const entry of entries.values()) {
       if (entry.kind === 'phrase') expect(entry.pronunciation, entry.id).toBeTruthy();
-      expect(entry.decoys.korean.length).toBeGreaterThanOrEqual(3);
-      expect(entry.decoys.english.length).toBeGreaterThanOrEqual(3);
+      expect(entry.decoys.term.length).toBeGreaterThanOrEqual(3);
+      expect(entry.decoys.gloss.length).toBeGreaterThanOrEqual(3);
     }
   });
   it('the week-1 deck expands to 19 valid cards and a valid quiz source', () => {
     const raw = read('week-01-classroom.yml');
     expect(raw.words).toEqual(WEEK_ONE.map(([id]) => id));
-    const { errors: deckErrors, deck } = expandLexiconDeck(raw, entries);
+    const { errors: deckErrors, deck } = expandLexiconDeck(raw, lexicon);
     expect(deckErrors).toEqual([]);
     expect(validateFlashcardDeck(deck).errors).toEqual([]);
     expect(deck.cards).toHaveLength(19);
-    expect(validateDocumentSource(buildWordQuizSource({ deck, lexicon: entries, seed: 1 })).errors).toEqual([]);
+    expect(validateDocumentSource(buildWordQuizSource({ deck, lexicon, seed: 1 })).errors).toEqual([]);
   });
 });

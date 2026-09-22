@@ -546,7 +546,7 @@ export function createSchoolRouter({
     if (!flashcardStudy) throw new EntityNotFoundError('flashcard study', 'not configured');
     res.json({ deck: await flashcardStudy.getDeck(req.params.deckId) });
   }));
-  // The Korean word ladder: a flashcard enrollment in `policy.mode:
+  // The word ladder (any word package): a flashcard enrollment in `policy.mode:
   // word-ladder`. Its own module, like the teacher reading workspace.
   mountWordLadderRoutes({
     router, wrap, wordLadderStudy, sendFileResource,

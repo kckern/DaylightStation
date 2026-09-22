@@ -3,7 +3,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as fontkit from 'fontkit';
 import { createDocumentPdfRenderer } from './DocumentPdfRenderer.mjs';
-import { createMeasurementDocument, measureDocumentFragments, withScriptFont } from './measure.mjs';
+import { SCRIPT_FALLBACKS, createMeasurementDocument, measureDocumentFragments, withScriptFont } from './measure.mjs';
+import { documentPdfTheme } from './documentPdfTheme.mjs';
 import { createWorkbookTheme } from './workbookTheme.mjs';
 import { texToSvg } from './mathSvg.mjs';
 
@@ -14,6 +15,16 @@ const doc = {
   id: 'hangul-fallback', title: 'Korean check', seed: 1, variant: 0, target: ['letter'],
   blocks: [{ type: 'rich_text', md: 'What does **가위** mean? **안녕하세요**' }],
 };
+
+describe('script fallback table', () => {
+  it('every fallback names a face every theme defines, keyed by script', () => {
+    expect(SCRIPT_FALLBACKS.map((row) => row.script)).toContain('hangul');
+    for (const row of SCRIPT_FALLBACKS) {
+      expect(theme.fonts[row.fontKey]?.file, row.script).toBeTruthy();
+      expect(documentPdfTheme.fonts[row.fontKey]?.file, row.script).toBeTruthy();
+    }
+  });
+});
 
 describe('Hangul font fallback', () => {
   it('sets any run containing Hangul in the hangul face and leaves Latin runs alone', () => {

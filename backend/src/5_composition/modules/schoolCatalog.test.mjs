@@ -34,7 +34,7 @@ describe('shared School Catalog composition', () => {
     try {
       await mkdir(path.join(root, 'data/content/school/learning-catalog/flashcard-decks'), { recursive: true });
       await mkdir(path.join(root, 'media/school/language/korean-vocab'), { recursive: true });
-      await writeFile(path.join(root, 'media/school/language/korean-vocab/lexicon.yml'), dump({ schema: 'school.word-lexicon/v1', entries: [{ id: 'gawi', kind: 'word', korean: '가위', english: 'Scissors', pronunciation: null, decoys: { korean: ['가지', '바위', '가방'], english: ['Knife', 'Tape', 'Ruler'] } }] }));
+      await writeFile(path.join(root, 'media/school/language/korean-vocab/lexicon.yml'), dump({ schema: 'school.word-lexicon/v2', package: 'korean-vocab', language: { code: 'ko', name: 'Korean' }, gloss: { code: 'en', name: 'English' }, program: { title: 'Korean words' }, entries: [{ id: 'gawi', kind: 'word', group: 'w', term: '가위', gloss: 'Scissors', pronunciation: null, decoys: { term: ['가지', '바위', '가방'], gloss: ['Knife', 'Tape', 'Ruler'] } }] }));
       await writeFile(path.join(root, 'data/content/school/learning-catalog/flashcard-decks/w.yml'), dump({ schema: 'school.flashcard-deck/v1', id: 'language/korean/w', title: 'W', lexicon: 'media:language/korean-vocab/lexicon.yml', words: ['gawi'] }));
       const catalog = createSchoolCatalog({ configService: {
         getHouseholdAppConfig: () => ({ catalog: {} }), getDataDir: () => path.join(root, 'data'), getMediaDir: () => path.join(root, 'media'),

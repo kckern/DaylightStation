@@ -5,7 +5,12 @@
  */
 import { ValidationError } from '#domains/core/errors/index.mjs';
 
-export const CHECK_DIRECTIONS = Object.freeze(['picture_to_korean', 'audio_to_korean', 'korean_to_english']);
+/**
+ * `term` is the word in the language being learned, `gloss` its meaning in
+ * the learner's language. Picture and audio prompts ask for the term; a text
+ * prompt shows the term and asks for its gloss.
+ */
+export const CHECK_DIRECTIONS = Object.freeze(['picture_to_term', 'audio_to_term', 'term_to_gloss']);
 
 /** FNV-1a, 32 bit. */
 export function hashString(value) {
@@ -42,23 +47,23 @@ export function checkDirection(wordId, day) {
   return CHECK_DIRECTIONS[hashString(`${wordId}|${day}`) % CHECK_DIRECTIONS.length];
 }
 
-/** A direction that needs media the word does not have falls back to Korean→English. */
+/** A direction that needs media the word does not have falls back to term→gloss. */
 export function resolveDirection(wordId, day, media = {}) {
   const direction = checkDirection(wordId, day);
-  if (direction === 'picture_to_korean' && media?.image !== true) return 'korean_to_english';
-  if (direction === 'audio_to_korean' && media?.audio !== true) return 'korean_to_english';
+  if (direction === 'picture_to_term' && media?.image !== true) return 'term_to_gloss';
+  if (direction === 'audio_to_term' && media?.audio !== true) return 'term_to_gloss';
   return direction;
 }
 
 export function answerFor(entry, direction) {
-  return direction === 'korean_to_english' ? entry.english : entry.korean;
+  return direction === 'term_to_gloss' ? entry.gloss : entry.term;
 }
 
 export function buildChoices(entry, direction, day) {
   if (!CHECK_DIRECTIONS.includes(direction)) throw new ValidationError(`unknown check direction '${direction}'`);
   const answer = answerFor(entry, direction);
   const fold = (value) => value.trim().toLocaleLowerCase();
-  const pool = (direction === 'korean_to_english' ? entry.decoys.english : entry.decoys.korean)
+  const pool = (direction === 'term_to_gloss' ? entry.decoys.gloss : entry.decoys.term)
     .filter((decoy) => fold(decoy) !== fold(answer));
   const decoys = seededShuffle(pool, hashString(`${entry.id}|${day}|decoys`)).slice(0, 3);
   const choices = seededShuffle([answer, ...decoys], hashString(`${entry.id}|${day}|${direction}`));

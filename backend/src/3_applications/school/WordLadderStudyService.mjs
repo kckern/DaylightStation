@@ -1,7 +1,15 @@
 /**
- * Word ladder study (Korean vocab design): server-authoritative day plans,
+ * Word ladder study (word-ladder design): server-authoritative day plans,
  * graded checks, recorded study cards, the post-completion review run, and
  * the pull-fold of scanned paper quizzes.
+ *
+ * LANGUAGE-NEUTRAL. Everything language-specific — which language is taught,
+ * which one the meanings are in, the program title — comes from the deck's
+ * lexicon. Every operation resolves the WORD PACKAGE (`lexicon.package`) from
+ * the deck: status, sessions, frozen plans, fold bookkeeping and recordings all
+ * live under that package, so word ids need only be unique within a package.
+ * A session id carries its package (`<package>.<id>`) so session-scoped calls
+ * find the right status file without the client naming a deck.
  *
  * THE DAY PLAN IS FROZEN on the first open of a study day. Rebuilding it from
  * the store mid-day would drop checks just passed and then offer a review
@@ -20,6 +28,13 @@ import {
 const FOLD_LOOKBACK_DAYS = 60;
 const FOLD_SKEW_DAYS = 2;
 const MARKS = new Set(['know', 'learning']);
+const PACKAGE_SLUG = /^[a-z0-9][a-z0-9-]{0,63}$/;
+
+function sessionPackage(sessionId) {
+  const cut = typeof sessionId === 'string' ? sessionId.indexOf('.') : -1;
+  const pkg = cut > 0 ? sessionId.slice(0, cut) : null;
+  return pkg && PACKAGE_SLUG.test(pkg) ? pkg : null;
+}
 
 /** An ISO instant carrying the household's own offset: `2026-09-22T16:05:12-07:00`. */
 function isoWithOffset(ms, timezone) {
@@ -51,11 +66,13 @@ export class WordLadderStudyService {
   #today() { return studyDayForInstant(this.#now(), { timezone: this.#timezone }); }
   #at() { return isoWithOffset(this.#now(), this.#timezone); }
 
-  async #enrollment(userId, deckId = null) {
+  async #enrollments(userId) {
     const assignment = await this.#assignments.get(userId);
-    return (assignment?.programs ?? []).find((row) => row?.programId === 'flashcards'
-      && row.policy?.mode === 'word-ladder'
-      && (deckId === null || (row.deckId ?? row.corpusId) === deckId)) ?? null;
+    return (assignment?.programs ?? []).filter((row) => row?.programId === 'flashcards' && row.policy?.mode === 'word-ladder');
+  }
+
+  async #enrollment(userId, deckId) {
+    return (await this.#enrollments(userId)).find((row) => (row.deckId ?? row.corpusId) === deckId) ?? null;
   }
 
   async #assertAssigned(userId, deckId) {
@@ -66,10 +83,12 @@ export class WordLadderStudyService {
     }
   }
 
+  /** The deck, its validated lexicon, and the word package both belong to. */
   async #load(deckId) {
     const deck = await this.#decks.getFlashcardDeck(deckId);
     if (!deck || !Array.isArray(deck.words) || typeof deck.lexicon !== 'string') throw new EntityNotFoundError('word-ladder deck', deckId);
-    return { deck, lexicon: this.#lexicons.getLexicon(deck.lexicon) };
+    const lexicon = this.#lexicons.getLexicon(deck.lexicon);
+    return { deck, lexicon, pkg: lexicon.package };
   }
 
   #has(assetId) {
@@ -78,9 +97,9 @@ export class WordLadderStudyService {
 
   #media(deck, lexicon) {
     const media = {};
-    for (const wordId of lexicon.keys()) {
-      const ids = wordAssetIds(deck.lexicon, wordId);
-      media[wordId] = { image: this.#has(ids.image), audio: this.#has(ids.audio), imageId: ids.image, audioId: ids.audio };
+    for (const entry of lexicon.entries.values()) {
+      const ids = wordAssetIds(deck.lexicon, entry);
+      media[entry.id] = { image: this.#has(ids.image), audio: this.#has(ids.audio), imageId: ids.image, audioId: ids.audio };
     }
     return media;
   }
@@ -88,7 +107,7 @@ export class WordLadderStudyService {
   #card(entry, media) {
     const m = media[entry.id] ?? {};
     return {
-      wordId: entry.id, kind: entry.kind, korean: entry.korean, english: entry.english,
+      wordId: entry.id, kind: entry.kind, term: entry.term, gloss: entry.gloss,
       pronunciation: entry.pronunciation ?? null,
       media: { image: m.image ? m.imageId : null, audio: m.audio ? m.audioId : null },
     };
@@ -96,9 +115,9 @@ export class WordLadderStudyService {
 
   #check(item, entry, media, day) {
     const m = media[entry.id] ?? {};
-    const prompt = item.direction === 'picture_to_korean' ? { type: 'image', assetId: m.imageId }
-      : item.direction === 'audio_to_korean' ? { type: 'audio', assetId: m.audioId }
-        : { type: 'text', text: entry.korean };
+    const prompt = item.direction === 'picture_to_term' ? { type: 'image', assetId: m.imageId }
+      : item.direction === 'audio_to_term' ? { type: 'audio', assetId: m.audioId }
+        : { type: 'text', text: entry.term };
     return {
       wordId: entry.id, kind: entry.kind, phase: item.phase, direction: item.direction, prompt,
       choices: buildChoices(entry, item.direction, day).choices, done: item.done, correct: item.correct,
@@ -122,14 +141,19 @@ export class WordLadderStudyService {
   #publicPlan(status, day, deck, lexicon, media) {
     const dayPlan = WordLadderStudyService.#frozenPlan(status, day, deck.id);
     const progress = dayProgress({ dayPlan, words: status.words, day });
-    const known = (item) => lexicon.has(item.wordId);
+    const { entries } = lexicon;
+    const known = (item) => entries.has(item.wordId);
     return {
       day,
       deckId: deck.id,
-      checks: progress.checks.filter(known).map((item) => this.#check(item, lexicon.get(item.wordId), media, day)),
-      study: progress.study.filter(known).map((item) => ({ ...item, card: this.#card(lexicon.get(item.wordId), media) })),
-      review: progress.review.filter(known).map((item) => this.#check(item, lexicon.get(item.wordId), media, day)),
-      deckCards: deck.words.filter((wordId) => lexicon.has(wordId)).map((wordId) => this.#card(lexicon.get(wordId), media)),
+      package: lexicon.package,
+      title: lexicon.program.title,
+      language: { code: lexicon.language.code, name: lexicon.language.name },
+      gloss: { code: lexicon.gloss.code, name: lexicon.gloss.name },
+      checks: progress.checks.filter(known).map((item) => this.#check(item, entries.get(item.wordId), media, day)),
+      study: progress.study.filter(known).map((item) => ({ ...item, card: this.#card(entries.get(item.wordId), media) })),
+      review: progress.review.filter(known).map((item) => this.#check(item, entries.get(item.wordId), media, day)),
+      deckCards: deck.words.filter((wordId) => entries.has(wordId)).map((wordId) => this.#card(entries.get(wordId), media)),
       remaining: progress.remaining,
       doneToday: progress.complete,
       progressLabel: progressLabel(progress),
@@ -156,11 +180,16 @@ export class WordLadderStudyService {
     }
   }
 
-  async #quizDocumentIds(deckId) {
-    const ids = new Set([quizDocumentIdFor(deckId)]);
+  /**
+   * Every printed quiz whose rows fold into THIS package: a scanned row's
+   * itemId is a word id, and word ids are only unique within a package, so a
+   * quiz printed from another package's deck must never fold here.
+   */
+  async #quizDocumentIds(deck) {
+    const ids = new Set([quizDocumentIdFor(deck.id)]);
     try {
-      for (const deck of await this.#decks.listFlashcardDecks?.() ?? []) {
-        if (Array.isArray(deck?.words) && typeof deck.id === 'string') ids.add(quizDocumentIdFor(deck.id));
+      for (const other of await this.#decks.listFlashcardDecks?.() ?? []) {
+        if (Array.isArray(other?.words) && typeof other.id === 'string' && other.lexicon === deck.lexicon) ids.add(quizDocumentIdFor(other.id));
       }
     } catch (error) {
       this.#logger.warn?.('school.word-ladder.decks-unlisted', { error: error.message });
@@ -177,34 +206,43 @@ export class WordLadderStudyService {
     return { next, folded };
   }
 
-  #logFold(learnerId, folded, source) {
+  #logFold(learnerId, pkg, folded, source) {
     if (!folded.length) return;
     this.#logger.info?.('school.word-ladder.folded', {
-      learnerId, source, count: folded.length, demoted: folded.filter((row) => !row.correct).map((row) => row.wordId),
+      learnerId, package: pkg, source, count: folded.length, demoted: folded.filter((row) => !row.correct).map((row) => row.wordId),
     });
   }
 
   #session(userId, sessionId) {
     if (typeof userId !== 'string' || !userId) throw new ValidationError('userId is required');
-    const status = this.#store.read(userId);
+    const pkg = sessionPackage(sessionId);
+    if (!pkg) throw new EntityNotFoundError('word-ladder session', sessionId);
+    const status = this.#store.read(userId, pkg);
     const session = status.sessions?.[sessionId];
     const today = this.#today();
     if (!session || session.day !== today) throw new EntityNotFoundError('word-ladder session', sessionId);
-    return { status, session, today };
+    return { status, session, today, pkg };
+  }
+
+  /** Session-scoped work re-reads the deck; a deck moved to another package must not write across packages. */
+  async #sessionLoad(session, pkg) {
+    const loaded = await this.#load(session.deckId);
+    if (loaded.pkg !== pkg) throw new EntityNotFoundError('word-ladder session', `${pkg}/${session.deckId}`);
+    return loaded;
   }
 
   async open({ userId, deckId } = {}) {
     await this.#assertAssigned(userId, deckId);
-    const { deck, lexicon } = await this.#load(deckId);
+    const { deck, lexicon, pkg } = await this.#load(deckId);
     const media = this.#media(deck, lexicon);
     const today = this.#today();
     const at = this.#at();
-    const { attempts, ok: attemptsOk } = this.#readAttempts(userId, this.#store.read(userId), today);
-    const quizDocumentIds = await this.#quizDocumentIds(deckId);
-    const sessionId = this.#id();
+    const { attempts, ok: attemptsOk } = this.#readAttempts(userId, this.#store.read(userId, pkg), today);
+    const quizDocumentIds = await this.#quizDocumentIds(deck);
+    const sessionId = `${pkg}.${this.#id()}`;
     let folded = [];
     let frozen = false;
-    const status = this.#store.update(userId, (current) => {
+    const status = this.#store.update(userId, pkg, (current) => {
       const { next, folded: applied } = this.#foldInto(current, attempts, quizDocumentIds, today, attemptsOk);
       folded = applied;
       if (!WordLadderStudyService.#frozenPlan(next, today, deckId)) {
@@ -212,7 +250,7 @@ export class WordLadderStudyService {
           ...(next.days ?? {}),
           [today]: {
             ...(next.days?.[today] ?? {}),
-            [deckId]: planDay({ status: next, deckId, deckWordIds: deck.words, lexiconIds: [...lexicon.keys()], today, media }),
+            [deckId]: planDay({ status: next, deckId, deckWordIds: deck.words, lexiconIds: [...lexicon.entries.keys()], today, media }),
           },
         };
         frozen = true;
@@ -222,29 +260,29 @@ export class WordLadderStudyService {
       return next;
     });
     const plan = this.#publicPlan(status, today, deck, lexicon, media);
-    this.#logFold(userId, folded, 'open');
+    this.#logFold(userId, pkg, folded, 'open');
     this.#logger.info?.('school.word-ladder.opened', {
-      learnerId: userId, deckId, day: today, sessionId, frozen, folded: folded.length,
+      learnerId: userId, deckId, package: pkg, day: today, sessionId, frozen, folded: folded.length,
       checks: plan.checks.length, study: plan.study.length, review: plan.review.length, doneToday: plan.doneToday,
     });
     return { sessionId, day: today, deckId, folded: folded.length, plan };
   }
 
   async plan({ userId, sessionId } = {}) {
-    const { status, session, today } = this.#session(userId, sessionId);
-    const { deck, lexicon } = await this.#load(session.deckId);
+    const { status, session, today, pkg } = this.#session(userId, sessionId);
+    const { deck, lexicon } = await this.#sessionLoad(session, pkg);
     return { sessionId, day: today, deckId: session.deckId, plan: this.#publicPlan(status, today, deck, lexicon, this.#media(deck, lexicon)) };
   }
 
   async answerCheck({ userId, sessionId, wordId, choice } = {}) {
-    const { session, today } = this.#session(userId, sessionId);
-    const { deck, lexicon } = await this.#load(session.deckId);
-    const entry = lexicon.get(wordId);
+    const { session, today, pkg } = this.#session(userId, sessionId);
+    const { deck, lexicon } = await this.#sessionLoad(session, pkg);
+    const entry = lexicon.entries.get(wordId);
     if (!entry) throw new EntityNotFoundError('word', wordId);
     if (typeof choice !== 'string' || !choice) throw new ValidationError('choice is required');
     const at = this.#at();
     let outcome = null;
-    const status = this.#store.update(userId, (current) => {
+    const status = this.#store.update(userId, pkg, (current) => {
       const progress = this.#progress(current, today, session.deckId);
       const item = [...progress.checks, ...progress.review].find((row) => row.wordId === wordId && !row.done);
       if (!item) throw new ValidationError(`'${wordId}' has no open check today`);
@@ -276,20 +314,20 @@ export class WordLadderStudyService {
   }
 
   async saveRecording({ userId, sessionId, wordId, buffer, ext = 'webm' } = {}) {
-    const { status: before, session, today } = this.#session(userId, sessionId);
+    const { status: before, session, today, pkg } = this.#session(userId, sessionId);
     if (!buffer || buffer.length === 0) throw new ValidationError('recording is empty');
     this.#openStudyItem(before, today, session.deckId, wordId);
-    const { deck, lexicon } = await this.#load(session.deckId);
+    const { deck, lexicon } = await this.#sessionLoad(session, pkg);
     // File first: an orphan file is recoverable, an event pointing at nothing is not.
     let saved;
     try {
-      saved = this.#recordings.save({ learnerId: userId, day: today, wordId, buffer, ext });
+      saved = this.#recordings.save({ package: pkg, learnerId: userId, day: today, wordId, buffer, ext });
     } catch (error) {
       this.#logger.error?.('school.word-ladder.recording-write-failed', { learnerId: userId, wordId, error: error.message });
       throw new ValidationError('could not store recording');
     }
     const at = this.#at();
-    const status = this.#store.update(userId, (current) => {
+    const status = this.#store.update(userId, pkg, (current) => {
       this.#openStudyItem(current, today, session.deckId, wordId);
       current.words = { ...current.words, [wordId]: applyStudy(readWord(current, wordId), { at, day: today, recording: 'taken', take: saved.take }) };
       return current;
@@ -299,19 +337,19 @@ export class WordLadderStudyService {
   }
 
   async latestRecording({ userId, sessionId, wordId } = {}) {
-    const { today } = this.#session(userId, sessionId);
-    const found = this.#recordings.latest({ learnerId: userId, day: today, wordId });
+    const { today, pkg } = this.#session(userId, sessionId);
+    const found = this.#recordings.latest({ package: pkg, learnerId: userId, day: today, wordId });
     if (!found) throw new EntityNotFoundError('recording', wordId);
     return found;
   }
 
   async markCard({ userId, sessionId, wordId, mark, recording = null } = {}) {
     if (!MARKS.has(mark)) throw new ValidationError('mark must be know or learning');
-    const { session, today } = this.#session(userId, sessionId);
-    const { deck, lexicon } = await this.#load(session.deckId);
+    const { session, today, pkg } = this.#session(userId, sessionId);
+    const { deck, lexicon } = await this.#sessionLoad(session, pkg);
     const at = this.#at();
     const unavailable = recording?.status === 'unavailable';
-    const status = this.#store.update(userId, (current) => {
+    const status = this.#store.update(userId, pkg, (current) => {
       const item = this.#openStudyItem(current, today, session.deckId, wordId);
       let word = readWord(current, wordId);
       if (!item.studied) {
@@ -329,14 +367,14 @@ export class WordLadderStudyService {
 
   /** Review run (rev 3): no marks, no recording, no state change; the view is logged. */
   async viewReviewCard({ userId, sessionId, wordId } = {}) {
-    const { status: before, session, today } = this.#session(userId, sessionId);
-    const { deck } = await this.#load(session.deckId);
+    const { status: before, session, today, pkg } = this.#session(userId, sessionId);
+    const { deck } = await this.#sessionLoad(session, pkg);
     if (!deck.words.includes(wordId)) throw new ValidationError(`'${wordId}' is not in this deck`);
     if (!this.#progress(before, today, session.deckId).complete) {
       throw new ValidationError('the review run opens after today\'s words are done');
     }
     const at = this.#at();
-    this.#store.update(userId, (current) => {
+    this.#store.update(userId, pkg, (current) => {
       current.words = { ...current.words, [wordId]: applyReviewView(readWord(current, wordId), { at, day: today }) };
       return current;
     });
@@ -344,36 +382,62 @@ export class WordLadderStudyService {
     return { wordId, logged: true };
   }
 
-  /** The teacher's "apply scanned quiz": the same fold `open` runs, on demand. */
+  /**
+   * The teacher's "apply scanned quiz": the same fold `open` runs, on demand,
+   * for every word package the learner has a word-ladder assignment in.
+   */
   async fold({ learnerId, actorId = null, pin = null } = {}) {
     if (!this.#teacherGate) throw new ValidationError('teacher gate is not configured');
     this.#teacherGate.assert({ userId: actorId, pin, action: 'word-ladder.fold', context: { learnerId } });
-    const enrollment = await this.#enrollment(learnerId);
-    if (!enrollment) throw new EntityNotFoundError('word-ladder assignment', learnerId);
-    const deckId = enrollment.deckId ?? enrollment.corpusId;
+    const enrollments = await this.#enrollments(learnerId);
+    if (!enrollments.length) throw new EntityNotFoundError('word-ladder assignment', learnerId);
     const today = this.#today();
-    const { attempts, ok: attemptsOk } = this.#readAttempts(learnerId, this.#store.read(learnerId), today);
-    const quizDocumentIds = await this.#quizDocumentIds(deckId);
-    let folded = [];
-    this.#store.update(learnerId, (current) => {
-      const { next, folded: applied } = this.#foldInto(current, attempts, quizDocumentIds, today, attemptsOk);
-      folded = applied;
-      return next;
-    });
-    this.#logFold(learnerId, folded, 'teacher');
-    return { learnerId, folded: folded.length, demoted: folded.filter((row) => !row.correct).map((row) => row.wordId) };
+    const byPackage = new Map();
+    for (const enrollment of enrollments) {
+      const deckId = enrollment.deckId ?? enrollment.corpusId;
+      // One unloadable deck must not block folding every other package.
+      try {
+        const { deck, pkg } = await this.#load(deckId);
+        if (!byPackage.has(pkg)) byPackage.set(pkg, deck);
+      } catch (error) {
+        this.#logger.warn?.('school.word-ladder.fold-deck-skipped', { learnerId, deckId, error: error.message });
+      }
+    }
+    const all = [];
+    for (const [pkg, deck] of byPackage) {
+      const { attempts, ok: attemptsOk } = this.#readAttempts(learnerId, this.#store.read(learnerId, pkg), today);
+      const quizDocumentIds = await this.#quizDocumentIds(deck);
+      let folded = [];
+      this.#store.update(learnerId, pkg, (current) => {
+        const { next, folded: applied } = this.#foldInto(current, attempts, quizDocumentIds, today, attemptsOk);
+        folded = applied;
+        return next;
+      });
+      this.#logFold(learnerId, pkg, folded, 'teacher');
+      all.push(...folded);
+    }
+    return { learnerId, folded: all.length, demoted: all.filter((row) => !row.correct).map((row) => row.wordId) };
   }
 
   /** Read-only credit for the launcher: today (live) or a past study day (replay). */
   async dayStatus({ userId, deckId, day = null } = {}) {
     const today = this.#today();
     const target = day ?? today;
-    const status = this.#store.read(userId);
+    let loaded;
+    try {
+      loaded = await this.#load(deckId);
+    } catch (error) {
+      // A broken deck answers like a day never opened; it must not throw
+      // through the launcher and take the rest of the agenda with it.
+      this.#logger.warn?.('school.word-ladder.day-status-unloadable', { learnerId: userId, deckId, day: target, error: error.message });
+      return { doneToday: false, progressLabel: 'Not opened', remaining: null };
+    }
+    const { deck, lexicon, pkg } = loaded;
+    const status = this.#store.read(userId, pkg);
     let dayPlan = WordLadderStudyService.#frozenPlan(status, target, deckId);
     if (!dayPlan && target === today) {
-      const { deck, lexicon } = await this.#load(deckId);
       dayPlan = planDay({
-        status, deckId, deckWordIds: deck.words, lexiconIds: [...lexicon.keys()], today, media: this.#media(deck, lexicon),
+        status, deckId, deckWordIds: deck.words, lexiconIds: [...lexicon.entries.keys()], today, media: this.#media(deck, lexicon),
       });
     }
     if (!dayPlan) return { doneToday: false, progressLabel: 'Not opened', remaining: null };

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useCapabilities } from '../../SentenceLadder/useCapabilities.js';
 import CheckCard from './CheckCard.jsx';
 import StudyCard from './StudyCard.jsx';
@@ -7,8 +7,6 @@ import { playClip } from './wordLadderAudio.js';
 import { wordLadderLog } from './wordLadderLog.js';
 import './WordLadder.scss';
 
-const LANGUAGES = Object.freeze({ source: 'en', target: 'ko' });
-const CAPABILITY_KEY = 'korean-vocab';
 const NOT_SAVED = "That didn't save — try again";
 /** Upload failures on one card before the card falls back to flip-and-mark. */
 const UPLOAD_FAILURES_BEFORE_FALLBACK = 2;
@@ -25,17 +23,26 @@ export function nextStep(plan) {
 }
 
 /**
- * The Korean word ladder (flashcards `policy.mode: word-ladder`). The server
- * owns the day: it freezes the plan, grades every check and decides credit.
+ * The word ladder (flashcards `policy.mode: word-ladder`) for any word
+ * package. The server owns the day: it freezes the plan, grades every check
+ * and decides credit. It also names the languages — `plan.language` (the one
+ * being learned) and `plan.gloss` (the one meanings are written in) — so
+ * nothing here knows which language it is teaching.
  * A finished day lands on the review run (design rev 3): every deck card,
  * flip only, as many times as the child wants.
  */
 export default function WordLadderProgram({ descriptor, api = wordLadderApi, resolveAssetUrl = (id) => id, onExit = () => {} }) {
   const userId = descriptor?.userId ?? null;
   const deckId = descriptor?.deckId ?? null;
-  const { capabilities, ready } = useCapabilities(CAPABILITY_KEY, LANGUAGES);
   const [sessionId, setSessionId] = useState(null);
   const [plan, setPlan] = useState(null);
+  // Capabilities wait for the plan: the key and languages are the package's.
+  const capabilityKey = plan?.package ? `word-ladder:${plan.package}` : null;
+  const termLang = plan?.language?.code ?? null;
+  const glossLang = plan?.gloss?.code ?? null;
+  const languages = useMemo(() => ({ source: glossLang, target: termLang }), [glossLang, termLang]);
+  const langs = useMemo(() => ({ term: termLang, gloss: glossLang }), [termLang, glossLang]);
+  const { capabilities, ready } = useCapabilities(capabilityKey, languages);
   const [error, setError] = useState(null);
   const [feedback, setFeedback] = useState(null);
   const [micReason, setMicReason] = useState(null);
@@ -62,7 +69,7 @@ export default function WordLadderProgram({ descriptor, api = wordLadderApi, res
       setSessionId(data.sessionId);
       setPlan(data.plan);
       wordLadderLog.planLoaded({
-        userId, deckId, day: data.day, folded: data.folded ?? 0, doneToday: data.plan.doneToday,
+        userId, deckId, package: data.plan.package ?? null, language: data.plan.language?.code ?? null, day: data.day, folded: data.folded ?? 0, doneToday: data.plan.doneToday,
         checks: data.plan.checks.length, study: data.plan.study.length, review: data.plan.review.length,
       });
       if (data.plan.doneToday) {
@@ -214,6 +221,7 @@ export default function WordLadderProgram({ descriptor, api = wordLadderApi, res
         <StudyCard
           key={`review:${reviewRun.index}:${reviewCard.wordId}`}
           card={reviewCard}
+          langs={langs}
           reviewOnly
           resolveAssetUrl={resolveAssetUrl}
           onNext={() => setReviewRun({ index: reviewRun.index + 1 })}
@@ -226,7 +234,7 @@ export default function WordLadderProgram({ descriptor, api = wordLadderApi, res
     return (
       <div className="word-ladder">
         {working}
-        <CheckCard item={feedback.item} result={feedback.result} resolveAssetUrl={resolveAssetUrl} onContinue={() => setFeedback(null)} />
+        <CheckCard item={feedback.item} result={feedback.result} langs={langs} resolveAssetUrl={resolveAssetUrl} onContinue={() => setFeedback(null)} />
       </div>
     );
   }
@@ -246,11 +254,12 @@ export default function WordLadderProgram({ descriptor, api = wordLadderApi, res
     <div className="word-ladder">
       {working}
       {step.type === 'check' ? (
-        <CheckCard key={`${step.item.phase}:${step.item.wordId}`} item={step.item} resolveAssetUrl={resolveAssetUrl} onAnswer={answer} />
+        <CheckCard key={`${step.item.phase}:${step.item.wordId}`} item={step.item} langs={langs} resolveAssetUrl={resolveAssetUrl} onAnswer={answer} />
       ) : (
         <StudyCard
           key={`study:${step.item.wordId}`}
           card={step.item.card}
+          langs={langs}
           needsRecording={micAvailable && !step.item.studied}
           resolveAssetUrl={resolveAssetUrl}
           onRecorded={(blob) => record(step.item.wordId, blob)}
