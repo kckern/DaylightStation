@@ -287,11 +287,27 @@ export class WebNutribotAdapter {
     }
 
     const outcome = routerResult?.result || {};
-    response.committed = Boolean(routerResult?.committed || (routerType === 'upc' && outcome.success && outcome.nutrilogUuid));
+    // A saved UPC log counts as committed only when the use case says so. A
+    // quarantined capture (no calories found) is saved but pending, and waits
+    // in Needs Review; reporting it as committed hid it from the person.
+    const upcHeld = routerType === 'upc' && (outcome.committed === false || outcome.quarantined === true);
+    response.committed = Boolean(routerResult?.committed
+      || (routerType === 'upc' && outcome.success && outcome.nutrilogUuid && !upcHeld));
     response.outcome = response.committed ? 'committed' : response.transcribeFailed ? 'retryable-failure' : response.unknownUpc ? 'unknown-food' : 'no-food';
+    // A refused barcode (bad check digit, an ISBN): the router already put the
+    // sentence in `messages`; name the outcome so Health can show it.
+    if (routerType === 'upc' && routerResult?.ok === false && routerResult.rejected) {
+      response.outcome = 'rejected-barcode';
+      response.rejected = routerResult.rejected;
+      if (routerResult.message) response.responseText = routerResult.message;
+    } else if (upcHeld && outcome.success && outcome.nutrilogUuid) {
+      response.outcome = 'needs-review';
+      response.quarantined = outcome.quarantined === true;
+      response.responseText = outcome.quarantined ? 'Needs review — no calories found' : 'Needs review';
+    }
     response.logId = outcome.nutrilogUuid || null;
     response.entryIds = (routerResult?.items || []).map(item => item.uuid || item.id).filter(Boolean);
-    response.message = outcome.message || responseText;
+    response.message = outcome.message || routerResult?.message || response.responseText;
     for (const key of ['undoToken', 'affectedIds', 'clarification', 'instructionText', 'groups', 'expectedVersions']) {
       if (outcome[key] !== undefined) response[key] = outcome[key];
     }

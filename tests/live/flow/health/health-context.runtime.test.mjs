@@ -8,8 +8,7 @@ test('draft and scroll survive tab navigation; absent goals offer a real form; m
   ] }] } }));
   await page.setViewportSize({ width: 390, height: 700 });
   await page.goto('/health?date=2026-09-01');
-  await page.getByRole('button', { name: /Add food to/ }).last().click();
-  await page.getByRole('combobox').fill('my unfinished food');
+  await page.getByRole('combobox', { name: 'Add to Dinner' }).fill('my unfinished food');
   const priorScroll = await page.locator('.ds-chrome__main').evaluate(element => element.scrollTop);
   await page.getByRole('link', { name: 'Medical', exact: true }).click();
   await expect(page.locator('.health-medical__row').first()).toContainText('90 mg/dL');
@@ -20,7 +19,7 @@ test('draft and scroll survive tab navigation; absent goals offer a real form; m
   await expect(page.getByRole('button', { name: 'Save goals', exact: true })).toBeVisible();
   await page.keyboard.press('Escape');
   await page.getByRole('link', { name: 'Today', exact: true }).click();
-  await expect(page.getByRole('combobox')).toHaveValue('my unfinished food');
+  await expect(page.getByRole('combobox', { name: 'Add to Dinner' })).toHaveValue('my unfinished food');
   await expect(page).toHaveURL(/date=2026-09-01/);
   await expect.poll(() => page.locator('.ds-chrome__main').evaluate(element => element.scrollTop)).toBe(priorScroll);
   expect(state.unexpected).toEqual([]);

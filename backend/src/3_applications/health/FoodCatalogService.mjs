@@ -58,12 +58,15 @@ export class FoodCatalogService {
   #logger;
   #clock;
   #createId;
+  #iconOffered;
 
   /**
    * @param {Object} config
    * @param {Object} config.catalogStore - IFoodCatalogDatastore
    * @param {Object} [config.nutriListStore] - NutriList store for quick-add and backfill
    * @param {Object} [config.logger]
+   * @param {(slug: string) => boolean} [config.iconOffered] - true when the
+   *   hi-res manifest offers this slug. Absent: every slug is accepted.
    */
   constructor(config) {
     if (!config.catalogStore) throw new Error('FoodCatalogService requires catalogStore');
@@ -73,6 +76,7 @@ export class FoodCatalogService {
     this.#logger = config.logger || console;
     this.#clock = config.clock;
     this.#createId = config.createId;
+    this.#iconOffered = typeof config.iconOffered === 'function' ? config.iconOffered : () => true;
   }
 
   /**
@@ -426,7 +430,12 @@ export class FoodCatalogService {
     try {
       const entry = item.foodId ? await this.#catalogStore.getById(item.foodId, userId)
         : await this.#catalogStore.findByNormalizedName(item.name || item.label, userId);
-      return entry ? { ...item, foodId: entry.id, icon: entry.iconOverride || (isRealIcon(entry.icon) ? entry.icon : item.icon) } : { ...item, foodId };
+      if (!entry) return { ...item, foodId };
+      // The hi-res manifest is the only icon set. A catalog icon from the
+      // retired flat vocabulary, pinned or learned, never reaches a new row.
+      const usable = slug => isRealIcon(slug) && this.#iconOffered(slug);
+      const icon = [entry.iconOverride, entry.icon].find(usable) || item.icon;
+      return { ...item, foodId: entry.id, icon };
     } catch (err) {
       this.#logger.warn?.('health.catalog.identity_unavailable', { error: err.message });
       return { ...item, foodId };
@@ -459,8 +468,11 @@ export class FoodCatalogService {
    *   neutral fallback
    */
   async setIcon(id, userId, icon) {
+    if (isRealIcon(icon) && !this.#iconOffered(icon)) {
+      throw Object.assign(new Error(`Icon not offered: ${icon}`), { status: 400, code: 'ICON_NOT_OFFERED' });
+    }
     const entry = await this.#catalogStore.getById(id, userId);
-    if (!entry) throw new Error(`Catalog entry not found: ${id}`);
+    if (!entry) throw Object.assign(new Error(`Catalog entry not found: ${id}`), { status: 404, code: 'NOT_FOUND' });
     entry.icon = isRealIcon(icon) ? icon : null;
     entry.iconOverride = entry.icon;
     await this.#catalogStore.save(entry, userId);
@@ -471,7 +483,7 @@ export class FoodCatalogService {
   /** Same, addressed by food name — what a log row can actually supply. */
   async setIconByName(name, userId, icon) {
     const existing = await this.#catalogStore.findByNormalizedName(name, userId);
-    if (!existing) throw new Error(`Catalog entry not found by name: ${name}`);
+    if (!existing) throw Object.assign(new Error(`Catalog entry not found by name: ${name}`), { status: 404, code: 'NOT_FOUND' });
     return this.setIcon(existing.id, userId, icon);
   }
 

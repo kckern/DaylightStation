@@ -320,9 +320,18 @@ $health-aside-gap: 1.5rem;
 @media (min-width: $health-aside-breakpoint) {
   .health-log { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
-.health-log__empty-meals, .health-meal--exercise { grid-column: 1 / -1; }
-.health-log__empty-meals { display: flex; flex-wrap: wrap; gap: 0.5rem; }
-.health-log__empty-add { min-height: 44px; padding-inline: 0.5rem; color: var(--ds-text-mid); }
+// Lunch heads the early column and Dinner the late one on every day, so the
+// two meals keep their places whether or not either has food yet.
+.health-log__column { display: grid; gap: 0.5rem; align-content: start; min-width: 0; }
+.health-log__wide { grid-column: 1 / -1; }
+.health-meal__add-row { margin-top: 0.25rem; }
+.health-suggest__field { display: flex; align-items: center; gap: 4px; > :first-child { flex: 1; min-width: 0; } }
+.health-meal__add-actions { display: inline-flex; align-items: center; gap: 2px; color: var(--ds-text-mid); }
+// Phone widths are touch-first: the add row's photo / barcode / saved-meals
+// icons get the same 44px floor as `.health-meal__capture-btn`.
+@media (max-width: 760px) {
+  .health-meal__add-action { min-width: 44px; min-height: 44px; }
+}
 .health-portion { cursor: ew-resize; touch-action: pan-y; user-select: none; min-height: 28px; min-width: 44px; text-align: right; }
 .health-portion-error { display: flex; flex-wrap: wrap; gap: 0.5rem; color: var(--ds-danger); }
 .health-portion:focus-visible, .health-row-name:focus-visible { outline: 2px solid var(--ds-accent); outline-offset: 1px; }

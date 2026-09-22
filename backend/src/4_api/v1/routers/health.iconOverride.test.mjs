@@ -20,7 +20,7 @@ function makeApp({ withManifest = true, catalog = {}, operations = {} } = {}) {
   const catalogService = {
     setIcon: async (id, userId, icon) => {
       calls.setIcon.push({ id, userId, icon });
-      if (catalog.missing) throw new Error(`Catalog entry not found: ${id}`);
+      if (catalog.missing) throw Object.assign(new Error(`Catalog entry not found: ${id}`), { status: 404 });
       // Mirrors the real `setIcon`, which writes BOTH: `icon` is the picture,
       // `iconOverride` is the record that a person chose it. A double that
       // only wrote one would let the pin silently stop being presented.
@@ -28,7 +28,9 @@ function makeApp({ withManifest = true, catalog = {}, operations = {} } = {}) {
     },
     setIconByName: async (name, userId, icon) => {
       calls.setIconByName.push({ name, userId, icon });
-      if (catalog.missing) throw new Error(`Catalog entry not found by name: ${name}`);
+      if (catalog.missing) throw Object.assign(new Error(`Catalog entry not found by name: ${name}`), { status: 404 });
+      if (catalog.broken) throw new Error('EACCES: /data/users/kckern/lifelog/nutrition/food_catalog.yml');
+      if (catalog.notOffered) throw Object.assign(new Error(`Icon not offered: ${icon}`), { status: 400, code: 'ICON_NOT_OFFERED' });
       return { id: 'e1', name, normalizedName: name.toLowerCase(), nutrients: {}, useCount: 1, icon, iconOverride: icon };
     },
   };
@@ -147,6 +149,24 @@ describe('PUT /api/v1/health/nutrition/catalog/icon — "always for this food"',
       .put('/api/v1/health/nutrition/catalog/icon')
       .send({ name: 'Pterodactyl', icon: 'fried-eggs' });
     expect(res.status).toBe(404);
+  });
+
+  it('an unexpected failure is a 500 with a generic body (no paths or usernames)', async () => {
+    const { app } = makeApp({ catalog: { broken: true } });
+    const res = await request(app)
+      .put('/api/v1/health/nutrition/catalog/icon')
+      .send({ name: 'Eggs', icon: 'fried-eggs' });
+    expect(res.status).toBe(500);
+    expect(JSON.stringify(res.body)).not.toMatch(/kckern|\/data\//);
+  });
+
+  it('passes the catalog\'s ICON_NOT_OFFERED refusal through as a 400', async () => {
+    const { app } = makeApp({ catalog: { notOffered: true } });
+    const res = await request(app)
+      .put('/api/v1/health/nutrition/catalog/icon')
+      .send({ name: 'Eggs', icon: 'fried-eggs' });
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('ICON_NOT_OFFERED');
   });
 });
 

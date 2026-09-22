@@ -5,7 +5,7 @@ test('suggestion → food → centered correction → delete → Undo, without h
   const state = await installHealthFixtures(page, { foods: [{ id: 'food-chicken', name: 'Fixture chicken', grams: 150, calories: 231, protein: 43, carbs: 0, fat: 5 }] });
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto('/health');
-  await page.getByRole('button', { name: /Add food to/ }).first().click();
+  await page.getByRole('combobox', { name: 'Add to Lunch' }).click();
   await page.getByRole('option', { name: /Fixture chicken/ }).click();
   const row = page.locator('.health-row-line', { hasText: 'Fixture chicken' });
   await expect(row).toBeVisible();

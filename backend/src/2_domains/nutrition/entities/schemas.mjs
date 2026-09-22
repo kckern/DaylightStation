@@ -379,6 +379,11 @@ export function validateNutriLog(log) {
         captureRecovery: log.metadata?.captureRecovery,
         captureEvidence: log.metadata?.captureEvidence,
         placementId: log.metadata?.placementId,
+        // Capture quarantine (services/quarantine.mjs): a barcode capture with
+        // unknown calories held pending. Dropping these would let auto-report,
+        // confirm-all and capture recovery sweep it into the ledger.
+        quarantined: log.metadata?.quarantined,
+        quarantineReason: log.metadata?.quarantineReason,
         // Scale-path provenance. This whitelist is what actually reaches YAML
         // (`save()` stores `toJSON()`), so a key omitted here is DROPPED, not
         // merely unvalidated. These four were being silently discarded:

@@ -15,12 +15,17 @@
 //                                  Becomes the PRIMARY vocabulary: the slugs
 //                                  offered to the parse agent and to the
 //                                  icon picker.
-//   media/img/icons/food/*.png     nutribot's original flat set. Its basenames
-//                                  are ALREADY STORED on rows as
-//                                  `FoodItem.icon`, so every one of them must
-//                                  keep resolving forever. Those that the
-//                                  hi-res set does not already provide become
-//                                  ALIASES — resolvable, but not offered.
+//   media/img/icons/food/*.png     nutribot's original flat 20 px set. Its
+//                                  basenames are stored on old rows as
+//                                  `FoodItem.icon`. A name with a hi-res
+//                                  counterpart becomes an ALIAS to that
+//                                  hi-res file (resolvable, not offered).
+//                                  A name WITHOUT one is RETIRED: it is never
+//                                  aliased to the flat file, because the
+//                                  hi-res set is the exclusive icon set.
+//                                  Retired names on stored rows are re-iconed
+//                                  by data repair (cli/health-scan-repair.cli.mjs),
+//                                  never served.
 //
 // Traps this script encodes, each verified against the real tree on 2026-09-03:
 //
@@ -124,13 +129,14 @@ export function buildManifest({ hiResFiles, flatFiles, hiResPrefix, flatPrefix }
   }
 
   // ── Aliases ────────────────────────────────────────────────────────────
-  // Every basename in the flat set is a slug ALREADY WRITTEN to rows. Losing
-  // one breaks a stored `FoodItem.icon` silently (the row renders its
-  // fallback glyph and nothing logs), so each is preserved: pointed at the
-  // hi-res counterpart where one exists (underscores in the old names
-  // correspond to dashes in the new), else at the original flat file.
+  // Every basename in the flat set is a slug written to old rows. One with a
+  // hi-res counterpart (underscores in the old names correspond to dashes in
+  // the new) is aliased to it. One without is RETIRED and listed in the
+  // report: the flat 20 px art is never proposed, and stored rows carrying a
+  // retired name are re-iconed by data repair.
   const aliases = {};
-  const aliasReport = { toHiRes: 0, toFlatFile: 0, alreadyPrimary: 0, rejected: 0 };
+  const retired = [];
+  const aliasReport = { toHiRes: 0, retired: 0, alreadyPrimary: 0, rejected: 0 };
   for (const file of flatFiles) {
     const legacySlug = file.replace(/\.[a-z0-9]+$/i, '');
     if (!ICON_SLUG_PATTERN.test(legacySlug)) {
@@ -144,8 +150,8 @@ export function buildManifest({ hiResFiles, flatFiles, hiResPrefix, flatPrefix }
       aliases[legacySlug] = { path: icons[hyphenated].path, note: `hi-res counterpart of ${hyphenated}` };
       aliasReport.toHiRes += 1;
     } else {
-      aliases[legacySlug] = { path: `${flatPrefix}/${file}` };
-      aliasReport.toFlatFile += 1;
+      retired.push(legacySlug);
+      aliasReport.retired += 1;
     }
   }
 
@@ -163,6 +169,7 @@ export function buildManifest({ hiResFiles, flatFiles, hiResPrefix, flatPrefix }
       flatScanned: flatFiles.length,
       aliasCount: Object.keys(sortedAliases).length,
       aliasReport,
+      retired,
     },
   };
 }
@@ -210,8 +217,9 @@ function main(argv) {
     '# MEDIA root (ConfigService.getMediaDir()), never to the repo.',
     '#',
     '# `icons` is the offered vocabulary: the parse agent chooses from these and',
-    '# the picker lists them. `aliases` are legacy nutribot slugs already stored',
-    '# on rows — they still resolve, but are never offered. Renames happen HERE,',
+    '# the picker lists them. `aliases` are legacy nutribot slugs that point at a',
+    '# hi-res file — they resolve, but are never offered. The flat 20 px set is',
+    '# retired and never referenced here. Renames happen HERE,',
     '# by editing a path, never by moving files and hoping the code follows.',
     `#`,
     `# ${report.iconCount} icons, ${report.aliasCount} aliases.`,
@@ -230,7 +238,8 @@ function main(argv) {
     `aliases              : ${report.aliasCount}`,
     `    already primary  : ${report.aliasReport.alreadyPrimary}`,
     `    -> hi-res icon   : ${report.aliasReport.toHiRes}`,
-    `    -> legacy file   : ${report.aliasReport.toFlatFile}`,
+    `    retired          : ${report.aliasReport.retired}`,
+    ...report.retired.map((slug) => `        ${slug}`),
     `rejected             : ${report.rejected.length}`,
     ...report.rejected.map((r) => `    ${r.path}: ${r.reason}`),
     `draft written        : ${outPath}`,

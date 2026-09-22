@@ -5,6 +5,7 @@ import { serializeFoodItem } from '#shared/contracts/nutrition/foodItemRecord.mj
 import { nutritionLogVersion } from '#apps/nutrition/FoodLogReview.mjs';
 import { cleanupDates, CLEANUP_FIELDS, CLEANUP_NUMBERS, entryKey } from '#domains/nutrition/services/cleanupPolicy.mjs';
 import { canAutoReview } from '#shared/contracts/nutrition/reviewLifecycle.mjs';
+import { withoutQuarantined } from '#domains/nutrition/services/quarantine.mjs';
 
 const nullableString = { type: ['string', 'null'] };
 const changes = { type: 'object', additionalProperties: false, minProperties: 1,
@@ -151,7 +152,9 @@ export class NutritionAuditor extends BaseAgent {
     const eligible = row => row.review ? canAutoReview(row, this.clock.now())
       : row.settled === false && row.settledBy !== 'user' && dates.includes(row.date);
     const rows = (await this.items.findByDateRange(userId, '0001-01-01', '9999-12-31')).filter(eligible);
-    const pending = (await this.foodLogs.findPending(userId)).filter(log => log.items.some(item => eligible({ ...serializeFoodItem(item), date: log.meal.date })));
+    // Quarantined captures (calories unknown) are completed only by a person in
+    // Needs Review; FoodLogReview refuses to capture them, so do not propose it.
+    const pending = withoutQuarantined(await this.foodLogs.findPending(userId)).filter(log => log.items.some(item => eligible({ ...serializeFoodItem(item), date: log.meal.date })));
     const captures = pending.map(log => ({ id: log.id, version: nutritionLogVersion(log), date: log.meal.date, source: log.metadata?.source,
       items: log.items.map(item => ({ ...serializeFoodItem(item), date: log.meal.date, mealTime: log.meal.time, version: 1, logUuid: log.id })) }));
     const data = { dates, rows, pending: captures, observations };

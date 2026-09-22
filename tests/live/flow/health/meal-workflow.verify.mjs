@@ -54,9 +54,8 @@ try{
  await page.goto(baseUrl+'/health?date='+date,{waitUntil:'domcontentloaded'});
  await page.getByRole('button',{name:'Log by voice to Dinner',exact:true}).waitFor();
  assert.equal(await page.getByRole('button',{name:/voice.*Dinner/}).count(),1);
- await page.getByRole('button',{name:'Add food to Dinner',exact:true}).click();
- assert.equal(await page.getByRole('combobox',{name:'Food name or sentence'}).count(),0);
- await page.getByRole('button',{name:'Add food to Dinner',exact:true}).click();
+ // Dinner is always shown and ends in its own add row; no + to open first.
+ assert.equal(await page.getByRole('combobox',{name:'Add to Dinner',exact:true}).count(),1);
  await page.getByRole('button',{name:'Select foods',exact:true}).click();
  await page.getByRole('checkbox',{name:'Select Beef broth',exact:true}).check();
  await page.getByRole('checkbox',{name:'Select Tomatoes',exact:true}).check();

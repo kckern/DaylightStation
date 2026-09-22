@@ -6,6 +6,7 @@ import { scaleFoodPortion } from '#shared/contracts/health/foodQuantity.mjs';
 import { nutritionLookupFor } from '#shared/contracts/nutrition/nutritionLookup.mjs';
 import { FoodItem } from '#domains/nutrition/entities/FoodItem.mjs';
 import { provisionalReview, confirmReview, canAutoReview } from '#shared/contracts/nutrition/reviewLifecycle.mjs';
+import { isQuarantined } from '#domains/nutrition/services/quarantine.mjs';
 import { validateCleanup, entryKey, CLEANUP_FIELDS } from '#domains/nutrition/services/cleanupPolicy.mjs';
 
 const nutrients = ['calories', 'protein', 'carbs', 'fat', 'fiber', 'sugar', 'sodium', 'cholesterol'];
@@ -53,6 +54,8 @@ export class FoodLogReview {
     return this.runExclusive(userId, async () => {
       for (const log of await this.#foodLogs.findPending(userId)) {
         if (log.metadata?.reviewOperation?.complete === false) await this.#finish(userId, log);
+        // A quarantined capture waits for a person to supply its calories.
+        else if (isQuarantined(log)) continue;
         else if (log.metadata?.source !== 'scale' && log.items.some(item => item.review?.state === 'provisional')) {
           await this.#execute({ userId, logUuid: log.id, action: 'capture', operationId: `capture:${log.id}` });
         }
@@ -215,6 +218,9 @@ export class FoodLogReview {
     if (typeof nutritionReviewed !== 'boolean') fail('Nutrition review acknowledgement must be a boolean');
     let log = await this.#foodLogs.findById(userId, logUuid);
     if (!log) fail('Food log not found', 404);
+    // Capture is the automatic path into the ledger; a quarantined log only
+    // leaves Needs Review through a person confirming it with calories.
+    if (action === 'capture' && isQuarantined(log)) fail('Calories unknown: this capture waits in Needs Review', 409);
     // Health Undo restores the authoritative rows; a historical capture status
     // must not disable subsequent Telegram commands on those restored entries.
     if (log.status === 'deleted' && (await this.#items.findByLogId(userId, log.id)).length) {
@@ -250,7 +256,7 @@ export class FoodLogReview {
       }
       const lookup = nutritionLookupFor(log);
       if (action === 'confirm' && lookup?.warnings?.length && !nutritionReviewed && !lookup.reviewed) fail('Review the product nutrition warning before confirming');
-      if (action === 'confirm' && lookup?.missing?.includes('calories')
+      if (action === 'confirm' && (lookup?.missing?.includes('calories') || isQuarantined(log))
         && !edits.some(edit => Number.isFinite(edit.calories))) fail('Enter the calories from the product label before confirming');
       let items = log.items.map(item => {
         const edit = edits.find(candidate => candidate.id === item.id) || {};
@@ -283,7 +289,9 @@ export class FoodLogReview {
           reviewOperation: { id: operationId || `review:${nutritionLogVersion(log)}:${action}`, hash: requestHash, action,
             ledgerVersions: ledger.map(row => ({ id: row.uuid || row.id, version: row.version, date: row.date, mealTime: row.mealTime })),
             placement: { ...(date !== undefined ? { date } : {}), ...(mealTime !== undefined ? { mealTime } : {}) },
-            complete: action === 'save' && !ledger.length } },
+            complete: action === 'save' && !ledger.length },
+          // Confirmed with calories supplied: no longer held back.
+          ...(action === 'confirm' && isQuarantined(log) ? { quarantined: false, quarantineReason: null } : {}) },
       }, new Date());
       await this.#foodLogs.save(log);
     }

@@ -2,6 +2,9 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, fireEvent, act } from '@testing-library/react';
 import { FoodIcon } from './FoodIcon.jsx';
 
+const { reportArtworkFailure } = vi.hoisted(() => ({ reportArtworkFailure: vi.fn() }));
+vi.mock('./artworkLog.js', () => ({ reportArtworkFailure }));
+
 describe('stable food artwork', () => {
   it('keeps the same slot and placeholder until image decoding finishes', async () => {
     const { container } = render(<FoodIcon icon="tortilla" />);
@@ -27,5 +30,12 @@ describe('stable food artwork', () => {
     expect(slot.dataset.state).toBe('loading');
     await act(async () => fireEvent.load(slot.querySelector('img')));
     expect(slot.dataset.state).toBe('ready');
+  });
+  it('reports a failed icon load with its slug and url', () => {
+    reportArtworkFailure.mockClear();
+    const { container } = render(<FoodIcon icon="cheese" />);
+    fireEvent.error(container.querySelector('img'));
+    expect(reportArtworkFailure).toHaveBeenCalledWith('icon', 'cheese',
+      { url: '/api/v1/health/nutrition/icons/cheese', reason: 'load' });
   });
 });
