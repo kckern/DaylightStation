@@ -4,9 +4,9 @@ import { LibbyCredentialProvider } from '#adapters/content/media/libby/LibbyCred
 import { LibbyIdentityRenewalService, startIdentityRenewal } from '#adapters/content/media/libby/LibbyIdentityRenewalService.mjs';
 import { LibbyClient } from '#adapters/content/media/libby/LibbyClient.mjs';
 import { LibbyStreamLeaseService } from '#adapters/content/media/libby/LibbyStreamLeaseService.mjs';
-import { LibbyStreamService } from '#apps/proxy/LibbyStreamService.mjs';
-import { LibbyCoverService } from '#apps/proxy/LibbyCoverService.mjs';
-import { LibbyBootstrapService } from '#apps/proxy/LibbyBootstrapService.mjs';
+import { LibraryMediaStreamService } from '#apps/proxy/LibraryMediaStreamService.mjs';
+import { LibraryMediaCoverService } from '#apps/proxy/LibraryMediaCoverService.mjs';
+import { LibraryMediaBootstrapService } from '#apps/proxy/LibraryMediaBootstrapService.mjs';
 import { DaylightBrowserLibbyGateway } from '#adapters/content/media/libby/DaylightBrowserLibbyGateway.mjs';
 import { LibbyStreamGateway } from '#adapters/content/media/libby/LibbyStreamGateway.mjs';
 
@@ -33,15 +33,15 @@ export function createLibbyRuntime({ dataPath, username, fetch = globalThis.fetc
   // The caller deadline must outlive the sidecar's 70s HTTP budget so a
   // categorical 504 wins the race over a transport-level abort.
   const bootstrapGateway = new DaylightBrowserLibbyGateway({ baseUrl: browserBaseUrl, fetch, timeoutMs: browserTimeoutMs });
-  const bootstrapService = new LibbyBootstrapService({ bootstrapGateway });
+  const bootstrapService = new LibraryMediaBootstrapService({ bootstrapGateway });
   const client = new LibbyClient({ fetch, credentials, allowedHosts: PROVIDER_HOSTS, coverAllowedHosts: COVER_HOSTS, bootstrapService });
   const leases = new LibbyStreamLeaseService();
   const streamGateway = new LibbyStreamGateway({ fetch, allowedHosts: PROVIDER_HOSTS });
-  const streamService = new LibbyStreamService({
+  const streamService = new LibraryMediaStreamService({
     leases, client, streamGateway,
     scheduler: { setTimeout, clearTimeout, setInterval, clearInterval },
   });
-  const coverService = new LibbyCoverService({ coverGateway: client });
+  const coverService = new LibraryMediaCoverService({ coverGateway: client });
 
   // The credential file is in the shared data tree, so exactly one instance may
   // rotate it; a second writer produces conflicted copies. Reuse the same signal

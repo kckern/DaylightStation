@@ -8,8 +8,8 @@ function validRange(value) {
   return !end || Number.isSafeInteger(Number(end));
 }
 
-/** Range-preserving relay for lease-scoped Libby audiobook parts. */
-export class LibbyStreamService {
+/** Range-preserving relay for lease-scoped library-media audiobook parts. */
+export class LibraryMediaStreamService {
   #leases;
   #client;
   #streamGateway;
@@ -20,8 +20,8 @@ export class LibbyStreamService {
   #loanState = new Map();
 
   constructor({ leases, client, streamGateway, scheduler, now = Date.now, entitlementTtlMs = 60_000 } = {}) {
-    if (!leases?.resolve || !client?.openLoan || typeof streamGateway?.open !== 'function') throw new Error('LibbyStreamService requires leases, client, and streamGateway');
-    if (!['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'].every((method) => typeof scheduler?.[method] === 'function')) throw new Error('LibbyStreamService requires scheduler');
+    if (!leases?.resolve || !client?.openLoan || typeof streamGateway?.open !== 'function') throw new Error('LibraryMediaStreamService requires leases, client, and streamGateway');
+    if (!['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'].every((method) => typeof scheduler?.[method] === 'function')) throw new Error('LibraryMediaStreamService requires scheduler');
     this.#leases = leases;
     this.#client = client;
     this.#streamGateway = streamGateway;
@@ -33,19 +33,19 @@ export class LibbyStreamService {
   #applyFulfillment(handle, lease, loan) {
     const part = loan.parts.find((candidate) => candidate.key === lease.partKey);
     if (!part) {
-      const error = new Error('Libby part no longer exists');
-      error.code = 'LIBBY_LOAN_EXPIRED';
+      const error = new Error('Library media part no longer exists');
+      error.code = 'LIBRARY_MEDIA_LOAN_EXPIRED';
       throw error;
     }
     if (!this.#leases.update(handle, { loan, part, verifiedAt: this.#now() })) {
-      const error = new Error('Libby stream lease expired');
-      error.code = 'LIBBY_LEASE_EXPIRED';
+      const error = new Error('Library media stream lease expired');
+      error.code = 'LIBRARY_MEDIA_LEASE_EXPIRED';
       throw error;
     }
     const updated = this.#leases.resolve(handle);
     if (updated.kind !== 'found') {
-      const error = new Error('Libby stream lease expired');
-      error.code = 'LIBBY_LEASE_EXPIRED';
+      const error = new Error('Library media stream lease expired');
+      error.code = 'LIBRARY_MEDIA_LEASE_EXPIRED';
       throw error;
     }
     return updated.lease;
@@ -54,8 +54,8 @@ export class LibbyStreamService {
   async #refresh(handle, lease, force = false, observedGeneration = 0) {
     const current = this.#leases.resolve(handle);
     if (current.kind !== 'found') {
-      const error = new Error('Libby stream lease expired');
-      error.code = 'LIBBY_LEASE_EXPIRED';
+      const error = new Error('Library media stream lease expired');
+      error.code = 'LIBRARY_MEDIA_LEASE_EXPIRED';
       throw error;
     }
     lease = current.lease;
@@ -91,12 +91,12 @@ export class LibbyStreamService {
     let lease;
     try { lease = await this.#refresh(handle, resolved.lease); }
     catch (error) {
-      if (error?.code === 'LIBBY_CREDENTIAL_UNAVAILABLE') return { kind: 'credential_unavailable' };
-      if (error?.code === 'LIBBY_LEASE_EXPIRED') {
+      if (error?.code === 'LIBRARY_MEDIA_CREDENTIAL_UNAVAILABLE') return { kind: 'credential_unavailable' };
+      if (error?.code === 'LIBRARY_MEDIA_LEASE_EXPIRED') {
         this.#leases.revoke(handle);
         return { kind: 'gone', reason: 'lease_expired' };
       }
-      if (['LIBBY_LOAN_EXPIRED', 'LIBBY_LOAN_NOT_FOUND'].includes(error?.code)) {
+      if (['LIBRARY_MEDIA_LOAN_EXPIRED', 'LIBRARY_MEDIA_LOAN_NOT_FOUND'].includes(error?.code)) {
         this.#leases.revokeLoan(resolved.lease.cardId, resolved.lease.titleId);
         return { kind: 'gone', reason: 'loan_unavailable' };
       }
@@ -126,12 +126,12 @@ export class LibbyStreamService {
       if (upstream.kind === 'unauthorized') {
         try { lease = await this.#refresh(handle, lease, true, requestGeneration); }
         catch (error) {
-          if (error?.code === 'LIBBY_CREDENTIAL_UNAVAILABLE') return { kind: 'credential_unavailable' };
-          if (error?.code === 'LIBBY_LEASE_EXPIRED') {
+          if (error?.code === 'LIBRARY_MEDIA_CREDENTIAL_UNAVAILABLE') return { kind: 'credential_unavailable' };
+          if (error?.code === 'LIBRARY_MEDIA_LEASE_EXPIRED') {
             this.#leases.revoke(handle);
             return { kind: 'gone', reason: 'lease_expired' };
           }
-          if (['LIBBY_LOAN_EXPIRED', 'LIBBY_LOAN_NOT_FOUND'].includes(error?.code)) {
+          if (['LIBRARY_MEDIA_LOAN_EXPIRED', 'LIBRARY_MEDIA_LOAN_NOT_FOUND'].includes(error?.code)) {
             this.#leases.revokeLoan(lease.cardId, lease.titleId);
             return { kind: 'gone', reason: 'loan_unavailable' };
           }
@@ -145,7 +145,7 @@ export class LibbyStreamService {
         if (!active) return;
         try { lease = await this.#refresh(handle, lease); }
         catch (error) {
-          if (['LIBBY_LOAN_EXPIRED', 'LIBBY_LOAN_NOT_FOUND'].includes(error?.code)) {
+          if (['LIBRARY_MEDIA_LOAN_EXPIRED', 'LIBRARY_MEDIA_LOAN_NOT_FOUND'].includes(error?.code)) {
             this.#leases.revokeLoan(lease.cardId, lease.titleId);
           } else this.#leases.revoke(handle);
         }
@@ -172,4 +172,4 @@ export class LibbyStreamService {
   }
 }
 
-export default LibbyStreamService;
+export default LibraryMediaStreamService;
