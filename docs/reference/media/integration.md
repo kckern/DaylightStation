@@ -4,6 +4,36 @@ This document records provider-specific integration boundaries for the Media
 App. Integrations resolve a Daylight content ID into the normal media
 contracts; they do not change the player or remote-surface protocol.
 
+## Provider capability boundary
+
+The application layer speaks in `LibraryMedia*` terms and knows no provider by
+name. What it does encode is a policy: **the proxy relays only media we may
+lawfully relay.** That is why `ILibraryMediaStreamGateway` assumes plaintext
+byte ranges — a DRM-protected provider cannot satisfy it, and that is the
+correct outcome rather than a gap to fill.
+
+Three rules follow, and they apply to every provider:
+
+1. **Protection is checked at fulfillment, never inferred from metadata.**
+   A provider may serve some titles in the clear and others under DRM from the
+   same catalogue and the same API, with nothing in the metadata to
+   distinguish them. The adapter inspects the actual manifest and fails closed
+   on any protection signal — a DASH `ContentProtection` element, an HLS
+   `EXT-X-KEY` or `EXT-X-SESSION-KEY`, or `encryption` / `license` on a
+   fulfillment spine.
+2. **Refusal is the answer, not another route.** When a title is protected, the
+   integration stops. It does not look for a different endpoint, a lower
+   tier, or an unprotected copy of the same work.
+3. **An absent lock is not a licence.** Where a provider's manifest happens to
+   need no authentication, the adapter still authenticates and still records
+   the view through the provider's own accounting path. Library services are
+   free to the household because a library pays per circulation; quietly
+   consuming that without being counted is not a technicality.
+
+A provider that cannot meet these is not thereby excluded from the app — it is
+excluded from *the proxy*. Catalogue and deep-link integrations remain
+available, and are the right home for DRM-protected services.
+
 ## Libby audiobooks
 
 Libby loans are addressed by explicit content IDs:
@@ -83,6 +113,37 @@ the official playback path. It honors the provider's signed URLs and their
 expiry, keeps buffering ephemeral, and exposes only the portions observed by
 the official player. It is not a general downloader, archive, DRM circumvention
 layer, or account automation surface.
+
+## Kanopy video
+
+**Designed, not implemented.** See
+[the design](../../_wip/plans/2026-09-22-kanopy-adapter-design.md).
+
+Kanopy is addressed as:
+
+```text
+kanopy:video/<video-id>
+```
+
+Kanopy is the case the capability boundary above was written for. Verified
+against a live account: one title is served as plaintext HLS with no
+`EXT-X-KEY` in any variant and MPEG-TS segments carrying no encryption boxes,
+while another is DASH under both Widevine and PlayReady. Nothing in
+`/kapi/videos/{id}` distinguishes them, so protection is knowable only by
+fetching the manifest.
+
+Consequences for the adapter:
+
+- Fulfillment fetches the HLS manifest and refuses anything carrying a
+  protection signal, or anything offered only as DASH.
+- A view is recorded through the provider's own play endpoint before
+  fulfillment. The manifest endpoint happens to require no credential at all;
+  the adapter authenticates and records the play regardless, per rule 3 above.
+- Delivery is a playlist over many segments rather than discrete parts, so the
+  proxy serves a rewritten playlist whose segment URLs point back at itself.
+  Provider URLs stay process-local, as with Libby.
+- The account credential is a long-lived bearer token, so none of the identity
+  renewal built for Libby applies.
 
 For the wire-level content-resolution contract, see
 [`media-app-technical.md`](./media-app-technical.md#21-content-resolution).
