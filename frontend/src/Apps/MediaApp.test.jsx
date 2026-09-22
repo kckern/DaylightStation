@@ -48,10 +48,13 @@ describe('MediaApp', () => {
     const undo = screen.getByRole('button', { name: 'Undo', exact: true });
     expect(undo).toBeEnabled();
     const noticeRegion = undo.closest('.mantine-Notifications-root');
+    const notice = undo.closest('.mantine-Notification-root');
     // This DOM environment has no hit testing. Assert the real rendered
     // overlay's anchoring contract; browser coverage checks ordinary clicks.
     expect(noticeRegion.style.getPropertyValue('--notifications-bottom')).toBe('');
     expect(noticeRegion.style.getPropertyValue('--notifications-top')).not.toBe('');
+    expect(getComputedStyle(notice).pointerEvents).toBe('none');
+    expect(getComputedStyle(undo).pointerEvents).toBe('auto');
     fireEvent.click(screen.getByTestId('mini-player-open-nowplaying'));
     expect(screen.getByTestId('now-playing-view')).toBeInTheDocument();
     expect(undo).toBeEnabled();

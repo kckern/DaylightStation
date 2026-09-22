@@ -7,7 +7,7 @@ export function offerActionUndo({ operationId, targetName, title, undo, expiresA
   const id = `media-undo-${operationId}`;
   notifications.show({
     id, title: `${title ?? 'Queue change'} · ${targetName}`, autoClose: Math.max(1, expiresAt - Date.now()),
-    message: <Button size="xs" variant="subtle" data-testid="item-action-undo" onClick={async () => {
+    message: <Button size="xs" variant="subtle" style={{ pointerEvents: 'auto' }} data-testid="item-action-undo" onClick={async () => {
       try {
         const result = await undo(operationId);
         if (result?.ok === false) throw new Error(result.reason ?? result.code);

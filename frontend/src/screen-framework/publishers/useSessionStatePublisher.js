@@ -108,6 +108,11 @@ export function useSessionStatePublisher({ deviceId, getSnapshot, subscribe } = 
     };
 
     const handleStateTransition = () => {
+      // A state transition is also a snapshot change. Publish it on the normal
+      // debounce instead of making controllers wait for the next heartbeat.
+      // This is especially important for the first `playing` observation,
+      // which upgrades an accepted item action to confirmed playback.
+      handleChange();
       // Restart heartbeat on any state transition so the interval is
       // predictable regardless of how many times we transition.
       startHeartbeat();

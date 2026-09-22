@@ -24,3 +24,14 @@ html:has(.media-app),
 body:has(.media-app) {
   overscroll-behavior-y: none;
 }
+
+// Action feedback is informative, not a modal surface. Keep its Undo and
+// dismiss buttons interactive without letting the notification card block
+// destination controls underneath it on narrow viewports.
+.media-app-notification {
+  pointer-events: none;
+
+  button {
+    pointer-events: auto;
+  }
+}
