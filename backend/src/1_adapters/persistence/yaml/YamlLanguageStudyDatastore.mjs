@@ -18,13 +18,11 @@
 import path from 'path';
 import { dirExists, listEntries, loadYamlSafe, saveYaml, ensureDir, listYamlFiles, writeBinary, deleteFile } from '#system/utils/FileIO.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
+import { RECORDING_FORMATS, isRecordingFormat } from '#domains/school/language/recordingFormats.mjs';
 
 const ID_RE = /^[a-z0-9][a-z0-9_-]*$/i;
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 const LANG_RE = /^[A-Za-z]{2,8}$/;
-
-/** Every format a recording can be stored in — the same list the reader tries. */
-const RECORDING_FORMATS = Object.freeze(['webm', 'mp3', 'ogg', 'm4a', 'wav']);
 
 /** Sequence numbers are zero-padded to 4 on disk, matching the source assets. */
 export function padSeq(seq) {
@@ -160,7 +158,9 @@ export class YamlLanguageStudyDatastore {
     if (!this.#configService.getUserProfile?.(userId)) return null;
     if (!Number.isFinite(Number(seq))) return null;
     if (!LANG_RE.test(String(language))) return null;
-    if (!/^[a-z0-9]{2,5}$/i.test(String(ext))) return null;
+    // Only a format the reader serves: anything else would be written, never
+    // played, and would cost the real recording its place (see writeRecording).
+    if (!isRecordingFormat(ext)) return null;
     return path.join(
       dir, 'recordings', String(userId),
       `${padSeq(seq)}-${String(language).toUpperCase()}.${String(ext).toLowerCase()}`,
