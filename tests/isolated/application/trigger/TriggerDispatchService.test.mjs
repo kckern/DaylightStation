@@ -433,6 +433,20 @@ describe('TriggerDispatchService.handleTrigger — unknown NFC branch', () => {
     }]);
   });
 
+  it('a throwing locationLabel is logged and the push still names the location', async () => {
+    const locationLabel = vi.fn(() => { throw new Error('device lookup failed'); });
+    const service = makeService(makeRegistry(), { locationLabel });
+    await service.handleTrigger('livingroom', 'nfc', '04a1b2c3');
+
+    expect(logger.warn).toHaveBeenCalledWith('trigger.notify.label_failed', expect.objectContaining({
+      location: 'livingroom', error: 'device lookup failed',
+    }));
+    const [, , payload] = haGateway.callService.mock.calls[0];
+    expect(payload.title).toBe('🏷️ New tag tapped — Livingroom');
+    expect(findPushTextDefects(payload.title)).toEqual([]);
+    expect(findPushTextDefects(payload.message)).toEqual([]);
+  });
+
   it('the unknown-tag push falls back to a title-cased location without a label', async () => {
     const service = makeService(makeRegistry());
     await service.handleTrigger('livingroom', 'nfc', '04a1b2c3');

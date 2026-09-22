@@ -26,6 +26,10 @@ describe('time formatting', () => {
     expect(formatClockTime('2026-08-28T01:13:29.185Z', 'America/Los_Angeles')).toBe('6:13 PM');
     expect(formatClockTime('not a date', 'America/Los_Angeles')).toBeNull();
   });
+  it('returns null for an invalid timezone instead of throwing', () => {
+    expect(() => formatClockTime('2026-08-28T01:13:29.185Z', 'America/LosAngeles')).not.toThrow();
+    expect(formatClockTime('2026-08-28T01:13:29.185Z', 'America/LosAngeles')).toBeNull();
+  });
   it('formats durations in minutes and hours', () => {
     expect(formatDuration(30 * 60_000)).toBe('30 min');
     expect(formatDuration(90 * 60_000)).toBe('1 hr 30 min');

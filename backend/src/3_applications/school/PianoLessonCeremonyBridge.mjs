@@ -398,17 +398,26 @@ export class PianoLessonCeremonyBridge {
    */
   async #fireHook({ learnerId, student, courseId, lesson, pushLesson = lesson, status, studyDate }) {
     if (!this.#hook?.fire) return;
+    // The phone copy composes in its own try: HA's room chime rides the fire
+    // below, and a composition failure must cost only the push, never the chime.
+    let notification = null;
     try {
       // The unit row is the scale a child feels progress at (see the launcher's
       // #progress). `status.score` is COURSE completion, never a lesson score,
-      // and is deliberately not shown. A malformed `progress` must not throw
-      // here: HA's room chime rides this same fire.
+      // and is deliberately not shown.
       const rows = Array.isArray(status?.progress) ? status.progress : [];
       const unitRow = rows.find((row) => row?.scope === 'module') ?? null;
-      const notification = composeSchoolPush({
+      notification = composeSchoolPush({
         kind: 'piano', learnerId, child: student, lesson: pushLesson, studyDay: studyDate,
         unitProgress: unitRow ? { label: unitRow.label ?? null, completed: unitRow.completed, total: unitRow.total } : null,
       });
+    } catch (err) {
+      notification = null;
+      this.#logger.warn?.('school.piano-ceremony.push-compose-failed', {
+        learnerId, error: err?.message ?? String(err),
+      });
+    }
+    try {
       await this.#hook.fire({
         result: 'satisfied',
         learnerId,

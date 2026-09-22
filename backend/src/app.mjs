@@ -377,7 +377,7 @@ import { SchoolService } from './3_applications/school/SchoolService.mjs';
 import { YamlSchoolDatastore } from './1_adapters/persistence/yaml/YamlSchoolDatastore.mjs';
 import { effectiveAttempts } from '#domains/school/attempt.mjs';
 import { studyDayForInstant } from '#domains/school/studyDay.mjs';
-import { personDisplayName } from '#domains/notification/push/pushText.mjs';
+import { studentDisplayName } from '#composition/modules/studentNames.mjs';
 import { createSentenceLadderRouter } from './4_api/v1/routers/sentenceLadder.mjs';
 import { createLanguageStudyService } from './5_composition/modules/schoolLanguage.mjs';
 import { YamlLanguageStudyDatastore } from './1_adapters/persistence/yaml/YamlLanguageStudyDatastore.mjs';
@@ -4027,6 +4027,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Same adapter class, same guard, own `school.yml` block — see the grading
   // hook's wiring below for why a home-automation failure must never take the
   // rest of School down with it.
+  // The one learner-name resolver every school/piano push producer below uses.
+  const learnerDisplayName = studentDisplayName(configService);
   let pianoLessonHook = null;
   if (homeAutomationAdapters.haGateway) {
     try {
@@ -4035,7 +4037,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         gateway: homeAutomationAdapters.haGateway,
         configKey: 'piano_lesson_hook',
         loadSchoolConfig: () => configService.getHouseholdAppConfig(null, 'school') || {},
-        resolveStudent: (learnerId) => personDisplayName(configService.getUserProfile?.(learnerId), learnerId) ?? learnerId,
+        resolveStudent: learnerDisplayName,
         logger: rootLogger.child({ module: 'school-piano-lesson-hook' }),
       });
     } catch (err) {
@@ -4268,7 +4270,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
             // same `school.yml` — the household-id arg is accepted for the
             // adapter's contract but this module always resolves against `null`.
             loadSchoolConfig: () => configService.getHouseholdAppConfig(null, 'school') || {},
-            resolveStudent: (learnerId) => personDisplayName(configService.getUserProfile?.(learnerId), learnerId) ?? learnerId,
+            resolveStudent: learnerDisplayName,
             logger: rootLogger.child({ module: 'school-grading-hook' }),
           });
         } catch (err) {
@@ -4291,7 +4293,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         // from the catalog, display names, and today's study day so late
         // work can say which day it was for.
         curriculum: schoolLifecycle.stores.curriculum ?? null,
-        studentName: (learnerId) => personDisplayName(configService.getUserProfile?.(learnerId), learnerId),
+        studentName: learnerDisplayName,
         // Same zone school's study days use (schoolLifecycle's `timezone`, fed
         // to CloseSessionOutcome and the piano bridge), so on-time work near
         // the 4 AM boundary never reads as late.
@@ -5203,7 +5205,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     const notifyReadingSessionFailure = new NotifyReadingSessionFailure({
       notificationTargetForDevice: (id) => deviceServices.deviceService.get(id)?.notifyService ?? null,
       notifier: homeAutomationAdapters.haGateway?.callService ? homeAutomationAdapters.haGateway : null,
-      studentName: (learnerId) => personDisplayName(configService.getUserProfile?.(learnerId), learnerId),
+      studentName: learnerDisplayName,
       deviceLabel: (id) => deviceServices.deviceService.get(id)?.name ?? null,
     });
     const readingSessionHandler = makeReadingSessionHandler({
