@@ -157,6 +157,24 @@ describe('FleetPlayPicker', () => {
     expect(search.value.retry).toHaveBeenCalled();
   });
 
+  it('shows a no-result partial source failure and retries only that source', () => {
+    const retry = vi.fn();
+    search.value = baseSearch({
+      state: {
+        query: 'bluey', scope: '', results: [], phase: 'partial',
+        sources: { plex: 'failed', files: 'complete' }, failedSources: ['plex'],
+      },
+      sourceErrors: [{ source: 'plex', error: 'offline' }],
+      retry,
+    });
+    renderPicker();
+
+    expect(screen.getByText('Plex did not answer')).toBeVisible();
+    fireEvent.click(screen.getByTestId('stream-status-retry-plex'));
+    expect(retry).toHaveBeenCalledWith('plex');
+    expect(screen.queryByTestId('search-empty')).toBeNull();
+  });
+
   it('dismisses on Escape', () => {
     const { onClose } = renderPicker();
     fireEvent.keyDown(document.body, { key: 'Escape' });
