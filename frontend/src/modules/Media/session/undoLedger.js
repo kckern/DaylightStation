@@ -37,9 +37,13 @@ export function createUndoLedger({ targetId, capture, revision, restore, now = D
       record.priorSnapshot = capture();
       record.priorRevision = currentRevision();
     },
-    applying(operationId, { playbackChanged = true } = {}) {
+    applying(operationId, { playbackChanged = true, restorePlaybackSnapshot = playbackChanged } = {}) {
       const record = records.get(operationId);
-      if (record?.status === 'pending') { record.status = 'applying'; record.playbackChanged = playbackChanged; }
+      if (record?.status === 'pending') {
+        record.status = 'applying';
+        record.playbackChanged = playbackChanged;
+        record.restorePlaybackSnapshot = restorePlaybackSnapshot;
+      }
     },
     issued(operationId) {
       const record = records.get(operationId);

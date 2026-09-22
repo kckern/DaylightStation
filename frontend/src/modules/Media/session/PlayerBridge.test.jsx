@@ -445,6 +445,40 @@ describe('PlayerBridge real Player contract', () => {
     expect(controller.getSnapshot().state).toBe('playing');
   });
 
+  it('restores the paused native visit after Clear Undo instead of adopting Clear\'s zero-position observation', async () => {
+    const controller = makeRealController();
+    controller.queue.playNow({ contentId: 'plex:disclosure', title: 'Disclosure Day', duration: 120, format: 'video' });
+    controller.queue.add({ contentId: 'plex:arrival', title: 'Arrival', duration: 120, format: 'video' });
+    const originalVisit = controller.getSnapshot().queue.items[0].queueItemId;
+    mediaElement = document.createElement('video');
+    Object.defineProperties(mediaElement, {
+      currentTime: { configurable: true, writable: true, value: 37 },
+      duration: { configurable: true, value: 120 },
+      paused: { configurable: true, value: true },
+    });
+    mountedContentId = 'plex:disclosure';
+    render(<Harness controller={controller} />);
+    act(() => latestPlayerProps.onProgress({ currentTime: 37, paused: true, isSeeking: false }));
+    expect(controller.getSnapshot()).toMatchObject({ state: 'paused', position: 37 });
+
+    await act(async () => {
+      expect((await controller.execute({ kind: 'clear', operationId: 'clear-current', tappedAt: Date.now() })).ok).toBe(true);
+    });
+    // Once Clear unlinks the queue visit, its replacement/native callback may
+    // legitimately report zero. Undo must recover the tap-time paused visit,
+    // not recapture this post-Clear observation as the prior state.
+    mediaElement.currentTime = 0;
+    act(() => latestPlayerProps.onProgress({ currentTime: 0, paused: true, isSeeking: false }));
+    expect(controller.position.get().seconds).toBe(0);
+
+    await act(async () => { expect((await controller.undo('clear-current')).ok).toBe(true); });
+    expect(controller.getSnapshot()).toMatchObject({
+      state: 'paused', position: 37,
+      currentItem: { contentId: 'plex:disclosure' },
+      queue: { items: [expect.objectContaining({ queueItemId: originalVisit }), expect.any(Object)], currentIndex: 0 },
+    });
+  });
+
   it('acks an exact operation binding synchronously and publishes only post-playing advance', () => {
     const controller = makeRealController();
     controller.queue.playNow({ contentId: 'plex:operation', title: 'Operation', duration: 90, format: 'audio' });

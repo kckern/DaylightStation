@@ -74,4 +74,40 @@ describe('screen item actions', () => {
     queueRevision++; // A newer owner action must invalidate the old Undo.
     expect(await actions.undo('held')).toMatchObject({ ok: false, code: 'UNDO_SUPERSEDED' });
   });
+
+  it('uses snapshot adoption only for Undo of Clear that unlinked the paused current visit', async () => {
+    const c = createLocalSessionController({ clientId: 'screen' });
+    c.queue.playNow({ contentId: 'old', format: 'video' });
+    c.queue.add({ contentId: 'tail', format: 'video' });
+    const node = { currentTime: 37, paused: true };
+    c.setPlayerHandle({ getMediaElement: () => node, getMountedContentId: () => 'old' });
+    c.onPlayerStateChange('paused', 'old');
+    const originalVisit = c.getSnapshot().queue.items[0].queueItemId;
+    let queueRevision = 0;
+    const adopt = vi.fn(snapshot => {
+      queueRevision += 1;
+      c.store.replace(snapshot);
+      return { ok: true };
+    });
+    const actions = createScreenItemActions({ source: {
+      capture: c.portability.capture,
+      getActionOwner: () => ({ ownerInstanceId: 'screen', queueRevision, stopRevision: 0 }),
+      applyQueue: queue => {
+        queueRevision += 1;
+        c.store.replace({ ...c.getSnapshot(), queue });
+        return { ok: true };
+      },
+      adopt,
+    }, targetId: 'screen' });
+
+    expect((await actions.execute({ kind: 'clear', operationId: 'clear-current', tappedAt: Date.now() })).ok).toBe(true);
+    expect(adopt).not.toHaveBeenCalled();
+    node.currentTime = 0;
+    c.onPlayerPositionTick(0, 'old');
+    expect((await actions.undo('clear-current')).ok).toBe(true);
+    const [adopted, options] = adopt.mock.calls[0];
+    expect(adopted).toMatchObject({ state: 'paused', position: 37, queue: { currentIndex: 0 } });
+    expect(adopted.queue.items[0].queueItemId).toBe(originalVisit);
+    expect(options).toMatchObject({ autoplay: false });
+  });
 });
