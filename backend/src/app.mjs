@@ -3196,8 +3196,11 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       id: shortId,
     })
     : null;
+  // `media:` ids (generated word packages) resolve under <mediaDir>/school.
+  const schoolMediaRoot = path.join(configService.getMediaDir(), 'school');
   const flashcardAssets = new SchoolFlashcardAssetRepository({
     rootDir: schoolFullConfig.flashcards?.assets?.dir ?? path.join(dataDir, 'content', 'assets'),
+    mediaRootDir: schoolMediaRoot,
   });
   const openCatalogLearningSession = schoolCatalog.query
     ? new OpenCatalogLearningSession({ catalog: schoolCatalog.query, grader: schoolService })
