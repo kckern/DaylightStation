@@ -460,3 +460,4 @@ The corollary bit twice in this sweep: `feat/teacher-workspace-ia` and `feature/
 
 | 2026-09-22 | feat/omr-key-alignment | 9e129187b | OMR key-alignment suspect check (row-shift detection for paper worksheets) |
 | 2026-09-22 | feat/kiosk-friction-detection | 0f86ae1b6 | Kiosk friction detection backend (rolling window, State Gates policy, KioskFrictionTracker, code-rejection wiring) — frontend consumer (Tasks 5-7 of the design) not yet built |
+| 2026-09-22 | feat/libby-ephemeral-proxy | b077ca98c | Provider-neutral DaylightBrowser sidecar and bounded Libby audiobook proxy; merged to main as 02cba839e, with renderer re-resolution fix 8d3dfc3ba. |
