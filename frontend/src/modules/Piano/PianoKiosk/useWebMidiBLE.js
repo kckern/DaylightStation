@@ -6,6 +6,7 @@ import {
   isSustainDown,
 } from '../noteHistory.js';
 import { createNoteStore } from './noteStore.js';
+import { resolveNoteTime, webMidiEventEpochMs } from './noteTime.js';
 import { bridgeSendMidi, bridgeSendMidiAt, bridgeOutUp } from './bridgeMidiOut.js';
 
 const STORAGE_KEY = 'piano-kiosk-midi-input-id';
@@ -52,6 +53,25 @@ let _logger;
 function logger() {
   if (!_logger) _logger = getLogger().child({ component: 'piano-webmidi-ble' });
   return _logger;
+}
+
+// Resolve the time a hardware note is stored under (event time when trusted,
+// else receipt) and report on it: an untimed/skewed note is a sampled warn, and
+// the bridge's delivery lag (receipt - event) is a sampled info so grading
+// drift can be read from the log store. Returns the epoch ms to store.
+export function stampNote(eventTime, source) {
+  const receipt = Date.now();
+  const r = resolveNoteTime(eventTime, receipt);
+  if (!r.timed) {
+    logger().sampled('piano.input.untimed', {
+      source,
+      reason: typeof eventTime === 'number' && Number.isFinite(eventTime) ? 'skew' : 'missing',
+      skewMs: typeof eventTime === 'number' && Number.isFinite(eventTime) ? receipt - eventTime : null,
+    }, { maxPerMinute: 6, aggregate: true, level: 'warn' });
+  } else if (source === 'bridge') {
+    logger().sampled('piano.input.bridge-lag', { lagMs: r.lagMs }, { maxPerMinute: 6, aggregate: true });
+  }
+  return r.time;
 }
 
 // Monotonic counter across ALL outbound control messages, so logs reveal the
@@ -202,14 +222,16 @@ export function useWebMidiBLE({ preferredInputName, acquireInput = true } = {}) 
     return () => rawListenersRef.current.delete(fn);
   }, []);
 
-  const applyNoteOn = useCallback((note, velocity) => {
-    const time = Date.now();
+  // `at` (optional) is the already-resolved event time in epoch ms (see
+  // stampNote). Local sources (on-screen keys, dev keys) omit it and get receipt.
+  const applyNoteOn = useCallback((note, velocity, at) => {
+    const time = Number.isFinite(at) ? at : Date.now();
     storeRef.current.noteOn(note, velocity, time);
     emit({ type: 'note_on', note, velocity, time });
   }, [emit]);
 
-  const applyNoteOff = useCallback((note) => {
-    const time = Date.now();
+  const applyNoteOff = useCallback((note, at) => {
+    const time = Number.isFinite(at) ? at : Date.now();
     storeRef.current.noteOff(note, time);
     emit({ type: 'note_off', note, velocity: 0, time });
   }, [emit]);
@@ -237,8 +259,11 @@ export function useWebMidiBLE({ preferredInputName, acquireInput = true } = {}) 
     emitRaw(event.data); // feed the monitor everything, before note-only parsing
     const parsed = parseMidiMessage(event.data);
     if (!parsed) return;
-    if (parsed.type === 'note_on') applyNoteOn(parsed.note, parsed.velocity);
-    else if (parsed.type === 'note_off') applyNoteOff(parsed.note);
+    if (parsed.type === 'note_on') {
+      applyNoteOn(parsed.note, parsed.velocity, stampNote(webMidiEventEpochMs(event), 'webmidi'));
+    } else if (parsed.type === 'note_off') {
+      applyNoteOff(parsed.note, stampNote(webMidiEventEpochMs(event), 'webmidi'));
+    }
     else if (parsed.type === 'control' && parsed.controller === SUSTAIN_CONTROLLER) {
       storeRef.current.sustain(isSustainDown(parsed.value));
     }
@@ -775,9 +800,11 @@ export function useWebMidiBLE({ preferredInputName, acquireInput = true } = {}) 
   // store as hardware MIDI input so every consumer (keyboard, waterfall,
   // monitor) sees it identically, but never echoes to the MIDI output (a
   // bridge-fed note is inbound only, not something we're relaying out).
-  const feedNote = useCallback((type, note, velocity) => {
-    if (type === 'note_on') applyNoteOn(note, velocity);
-    else if (type === 'note_off') applyNoteOff(note);
+  // `t` (optional) is the bridge's epoch-ms MIDI event time (payload p20+).
+  // Older payloads omit it; the note then lands at receipt time exactly as before.
+  const feedNote = useCallback((type, note, velocity, t) => {
+    if (type === 'note_on') applyNoteOn(note, velocity, stampNote(t, 'bridge'));
+    else if (type === 'note_off') applyNoteOff(note, stampNote(t, 'bridge'));
   }, [applyNoteOn, applyNoteOff]);
 
   // Periodic cleanup of stale active notes / trim history (lost note-offs).
