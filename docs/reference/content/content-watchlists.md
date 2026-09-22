@@ -75,7 +75,7 @@ The `listConfigNormalizer.mjs` handles both formats transparently — legacy `sr
 |-------|------|---------|
 | `src` | string | Source adapter name (legacy format — `scriptures`, `plex`, etc.) |
 | `media_key` | string | Content path within source (legacy format — `dc/rex/37707`, `463210`) |
-| `label` / `title` | string | Display name |
+| `label` / `title` | string | Display name. When both exist, `label` is the admin-authored display override and `title` is the underlying/fallback title. |
 | `program` | string | Grouping label for display (e.g., "BibleProject", "Rex Pinnegar") |
 | `priority` | string | Selection priority: `urgent`, `high` (alias: `High`), `medium` (alias: `Medium`), `low` |
 | `wait_until` | date string | Item is invisible before this date |
