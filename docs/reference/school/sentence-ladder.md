@@ -588,11 +588,18 @@ because a shared kiosk may need it. A denied microphone is recorded and the
 rung steps aside rather than looping on a permission it will not get.
 
 **Tab always brings the sentence back.** Before a take it is a plain listen,
-on a player of its own that never opens the mic. Once the learner is
-recording, or has a take in hand, it starts over: the take in progress is
-thrown away (never judged, never played back), the sentence sounds again, the
-ding plays, and the mic opens, just as the first press did. Nobody has to record
-having heard the sentence only once.
+on a player of its own that never opens the mic. While the learner is
+recording it starts over: the take in progress is thrown away (never judged,
+never played back), the sentence sounds again, the ding plays, and the mic
+opens, just as the first press did. Nobody has to record having heard the
+sentence only once.
+
+**Once a take exists, Tab compares.** During playback or review it plays the
+sentence and then the learner's own take (`capture.compare`), and the take is
+kept. Only Backspace records again. Until 2026-09-22 Tab restarted here too,
+and the log for that day shows it deleting two good takes that a learner was
+trying to hear side by side with the model (`capture.replay-restart` with
+`from: review` and `from: playback`, seconds after the take stopped).
 
 **The meaning is on screen, small, above the sentence.** It is there for
 reinforcement and is never played unless asked for. Tapping either line plays
@@ -634,7 +641,7 @@ it acts on the rung rather than re-pressing that button.
 | repetition | play; stop while sounding; Next once held | play again | ← play again · → Next | hear the sentence / the meaning | — |
 | dictation | Space is a space; Enter submits | edits the answer | edit the answer | replay / hear the meaning | F1 peek (copy mode), F6 IME |
 | interpretation | Space is a space; Enter submits, or finishes a spoken take | edits the answer | edit the answer | replay (drops a take in progress) | F2 speak / stop |
-| recording | start; stop the take; keep it | record again | — | replay, restarting any take / hear the meaning | — |
+| recording | start; stop the take; keep it | record again | — | replay (restarts a take in progress; with a finished take, sentence then take) / hear the meaning | — |
 | the shell | on the day-complete panel: Done, or Start the next day | — | ↑ ↓ walk the rungs and the Review shelf · → Start the next day | — | — |
 
 None of these fire while a button or field has focus; a focused control keeps
