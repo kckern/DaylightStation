@@ -30,6 +30,13 @@ import './Exercises.scss';
  * that decided the staff may be shown decided which clef it fits on; the
  * default here answers with the same rule (`clefForAsk`) rather than a second
  * one, so the two can never disagree.
+ *
+ * `verdicts` (timed runs only) are the RECORDED verdicts for these `events`,
+ * keyed by index into this `events` array — a host showing a window of a deck
+ * re-keys them to the window. They go to the staff, which then paints the
+ * record instead of the held keys; `windowOpen` dims its cursor between hit
+ * windows. The keyboard's red key stays `wrongMidi`, which a timed host feeds
+ * from the judge's own `wrong` events, so the two surfaces tell one story.
  */
 export default function KeysAsk({
   events = [],
@@ -40,6 +47,8 @@ export default function KeysAsk({
   accidental = 'sharp',
   clef = null,
   keyboard = null,
+  verdicts = null,
+  windowOpen = undefined,
 }) {
   const isSequence = events.length > 1;
   const currentEvent = isSequence
@@ -88,6 +97,8 @@ export default function KeysAsk({
             activeNotes={activeNotes}
             accidental={accidental}
             clef={clef ?? clefForAsk(events)}
+            {...(verdicts ? { verdicts } : {})}
+            {...(windowOpen !== undefined ? { windowOpen } : {})}
           />
         </div>
       )}

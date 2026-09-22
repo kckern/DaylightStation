@@ -114,9 +114,10 @@ export function usePianoBridgeNotes({ url = DEFAULT_URL, enabled = true, onNote 
         try {
           const msg = JSON.parse(e.data);
           if (msg.type === 'note.on') {
-            onNoteRef.current?.('note_on', msg.note, msg.velocity ?? 0);
+            // `t` = epoch ms of the MIDI event (payload p20+); undefined on older payloads.
+            onNoteRef.current?.('note_on', msg.note, msg.velocity ?? 0, msg.t);
           } else if (msg.type === 'note.off') {
-            onNoteRef.current?.('note_off', msg.note, 0);
+            onNoteRef.current?.('note_off', msg.note, 0, msg.t);
           } else if (msg.type === 'status' && 'speakerOk' in msg) {
             if (msg.speakerOk) {
               speakerFalseRunRef.current = 0;

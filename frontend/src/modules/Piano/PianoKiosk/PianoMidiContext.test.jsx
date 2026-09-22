@@ -69,7 +69,13 @@ describe('PianoMidiProvider wiring', () => {
     render(<PianoMidiProvider><Probe /></PianoMidiProvider>);
     // onNote must forward to midi.feedNote (directly or via a stable ref shim).
     h.usePianoBridgeNotesArgs.onNote('note_on', 60, 90);
-    expect(h.midi.feedNote).toHaveBeenCalledWith('note_on', 60, 90);
+    expect(h.midi.feedNote).toHaveBeenCalledWith('note_on', 60, 90, undefined);
+  });
+
+  it('forwards the bridge event time to midi.feedNote', () => {
+    render(<PianoMidiProvider><Probe /></PianoMidiProvider>);
+    h.usePianoBridgeNotesArgs.onNote('note_on', 60, 90, 1800000000123);
+    expect(h.midi.feedNote).toHaveBeenLastCalledWith('note_on', 60, 90, 1800000000123);
   });
 
   it('status/connected reflect the bridge link when the bridge is connected', () => {
