@@ -32,18 +32,42 @@ const GRADED = () => ({
 });
 const SETTLED = () => ({ result: 'passed', printed: true, remediationOf: null, studyDay: '2026-09-14' });
 
+/**
+ * An `IAsyncScheduler` fake with the same `withDeadline` semantics as
+ * `NodeAsyncScheduler`, which also reports the timers it still holds.
+ */
+function fakeScheduler() {
+  const pending = new Set();
+  return {
+    pending,
+    withDeadline(work, { milliseconds } = {}) {
+      let timer = null;
+      const deadline = new Promise((_, reject) => {
+        timer = setTimeout(() => { pending.delete(timer); reject(new Error('timed out')); }, milliseconds);
+        pending.add(timer);
+      });
+      return Promise.race([Promise.resolve(work), deadline])
+        .finally(() => { pending.delete(timer); clearTimeout(timer); });
+    },
+    every() { return () => {}; },
+    wait: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+  };
+}
+
 function harness({
   resolve = () => ({ results: [southDakota()] }),
   recordOutcome = GRADED,
   settleOutcome = SETTLED,
   labels = true,
   hook = true,
+  scheduler = fakeScheduler(),
   ...overrides
 } = {}) {
   let handler = null;
   const spoken = [];
   const fired = [];
   const warns = [];
+  const printed = [];
   const reads = { getWork: [], studentName: [] };
   const labelDeps = labels ? {
     curriculum: {
@@ -63,14 +87,16 @@ function harness({
     resolveCardScan: { async execute() { return resolve(); } },
     recordCardScanOutcome: { async execute() { return recordOutcome(); } },
     closeSessionOutcome: { async execute() { return settleOutcome(); } },
+    receipts: { async print(document) { printed.push(document); return { printed: true, reason: null }; } },
     printDocuments: { getPublished: (id, rev) => (id === 'civilization/atlas/ws-ses-4jqdgpr5b3' && rev === 'ca29ac85c' ? { title: 'South Dakota' } : null) },
     gradingHook: hook ? { fire: (outcome) => { fired.push(outcome); } } : null,
+    scheduler,
     logger: { info() {}, debug() {}, error() {}, warn: (event, data) => { warns.push({ event, data }); } },
     ...labelDeps,
     ...overrides,
   });
   return {
-    spoken, fired, warns, reads,
+    spoken, fired, warns, reads, printed, scheduler,
     feed: async () => { handler({ testId: '5278294', answers: { 28: 'A' } }); await settle(); },
   };
 }
@@ -212,20 +238,47 @@ describe('SchoolPrintScanConsumer — every hook fire carries the phone copy', (
     expect(spoken.map((a) => a.kind)).toEqual(['scan-graded']);
     expect(fired).toHaveLength(1);
     expect(fired[0].result).toBe('passed');
+    // The learner is known even though the name lookup broke: no "Unknown card".
+    expect(fired[0].notification.title).toBe('⚠️ School card');
     expect(fired[0].notification.message).toBe("Card couldn't be graded — check the School teacher view");
+    // Same session tag as the real copy, so it replaces an earlier push for this sheet.
+    expect(fired[0].notification.data.tag).toBe('school-user_4-ses_4jqdgpr5b3');
     expect(warns.find((w) => w.event === 'school.push.compose-failed')).toMatchObject({
       data: { testId: '5278294', kind: 'graded', error: 'profile store down' },
     });
   });
 
-  it('a label lookup that never answers does not hold up the ceremony or the slip', async () => {
-    const { fired, spoken, feed } = harness({
+  it('a label lookup that never answers holds up neither the ceremony nor the siren', async () => {
+    const { fired, spoken, printed, warns, feed } = harness({
       recordOutcome: PARTIAL,
       curriculum: { getWork: () => new Promise(() => {}) },
+      pushLabelTimeoutMs: 20,
     });
     await feed();
+    // The ceremony and the slip went out before the lookup was given up on.
     expect(spoken.map((a) => a.kind)).toEqual(['scan-rows-incomplete']);
+    expect(printed).toHaveLength(1);
     expect(fired).toHaveLength(0);
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    await settle();
+    // The hook still fires (HA's siren branches on `result`), with fallback copy.
+    expect(fired).toHaveLength(1);
+    const { notification, ...rest } = fired[0];
+    expect(rest).toEqual({ result: 'partial', testId: '5278294', code: 'partial_scan', learnerId: 'user_4' });
+    expect(notification.title).toBe('⚠️ School card');
+    expect(notification.message).toBe("Card couldn't be graded — check the School teacher view");
+    expect(notification.data.tag).toBe('school-user_4-ses_4jqdgpr5b3');
+    expect(warns.find((w) => w.event === 'school.push.compose-timeout')).toMatchObject({
+      data: { testId: '5278294', kind: 'partial' },
+    });
+  });
+
+  it('a compose that wins the race leaves no timer behind', async () => {
+    const { fired, scheduler, feed } = harness({ recordOutcome: PARTIAL, pushLabelTimeoutMs: 60_000 });
+    await feed();
+    expect(fired).toHaveLength(1);
+    expect(fired[0].notification.title).toBe('⚠️ Learner4 — U.S. Atlas: South Dakota');
+    expect(scheduler.pending.size).toBe(0);
   });
 
   it('no grading hook: no catalog or name reads at all', async () => {

@@ -47,6 +47,12 @@ describe('composeSchoolPush — catalog', () => {
 });
 
 describe('composeSchoolPush — suppression and fallbacks', () => {
+  it('says "Unknown card" only when the learner itself is unknown, not when just the name is missing', () => {
+    const known = { learnerId: 'user_4', testId: '5278294', sessionId: 'ses_a' };
+    expect(composeSchoolPush({ ...known, kind: 'unresolved', code: 'SOMETHING_NEW' }).title).toBe('⚠️ School card');
+    expect(composeSchoolPush({ ...known, ...labels, kind: 'partial', blankRows: [4] }).title).toBe('⚠️ U.S. Atlas: New York');
+    expect(composeSchoolPush({ testId: '5278294', kind: 'unresolved', code: 'SOMETHING_NEW' }).title).toBe('⚠️ Unknown card — School card');
+  });
   it('sends nothing for an unmarked old record when other work on the card graded', () => {
     expect(composeSchoolPush({ testId: '1', kind: 'unmarked', otherWorkGraded: true })).toBeNull();
   });

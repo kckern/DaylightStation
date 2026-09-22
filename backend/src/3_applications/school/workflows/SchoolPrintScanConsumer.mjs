@@ -73,6 +73,11 @@ import { courseDisplay } from '#domains/school/curriculum/display.mjs';
  *   the learner's display name for the push. Absent, the name is omitted.
  * @param {() => string} [deps.today] - the household study day
  *   (`YYYY-MM-DD`), so a late sheet's push can say which day it was from.
+ * @param {import('../ports/IAsyncScheduler.mjs').IAsyncScheduler} [deps.scheduler] -
+ *   bounds the push's label lookups (`withDeadline`). HA's room siren rides
+ *   the same fire, so it must never wait on a label: past the deadline the
+ *   hook fires with fallback copy. Absent, the lookups are unbounded.
+ * @param {number} [deps.pushLabelTimeoutMs=2000] - that deadline.
  * @returns {{ dispose: () => void }}
  */
 export function createSchoolPrintScanConsumer({
@@ -80,6 +85,7 @@ export function createSchoolPrintScanConsumer({
   closeSessionOutcome = null, gradingHook = null, logger = console,
   receipts = null, printDocuments = null,
   curriculum = null, studentName = null, today = null,
+  scheduler = null, pushLabelTimeoutMs = 2000,
 }) {
   if (!realtime?.onPrintSheet || !realtime?.printScanResolved) {
     throw new Error('createSchoolPrintScanConsumer: realtime print-sheet capability required');
@@ -191,22 +197,52 @@ export function createSchoolPrintScanConsumer({
         return notification;
       } catch (err) {
         logger.warn?.('school.push.compose-failed', { testId, kind: event.kind, error: err.message });
-        return composeSchoolPush({ kind: 'unresolved', testId, learnerId: event.learnerId ?? card?.learnerId ?? null });
+        return fallbackPush(event, card);
       }
+    };
+
+    /**
+     * Generic copy for a push whose labels could not be composed. Keeps the
+     * learner and session, so its tag matches the real copy and it still
+     * replaces an earlier push for the same sheet.
+     */
+    const fallbackPush = (event, card) => composeSchoolPush({
+      kind: 'unresolved',
+      testId,
+      learnerId: event.learnerId ?? card?.learnerId ?? null,
+      sessionId: event.sessionId ?? null,
+    });
+
+    /**
+     * `pushFor`, bounded: a lookup that never settles gives way to fallback
+     * copy after `pushLabelTimeoutMs`, so the fire (and HA's siren) always
+     * happens. `withDeadline` clears its own timer when the compose wins.
+     * `pushFor` never rejects, so a rejection here is only ever the deadline.
+     */
+    const boundedPushFor = (event, card, curriculumIds) => {
+      const composing = pushFor(event, card, curriculumIds);
+      if (!scheduler?.withDeadline) return composing;
+      return scheduler.withDeadline(composing, {
+        milliseconds: pushLabelTimeoutMs, description: 'school push labels',
+      }).catch(() => {
+        logger.warn?.('school.push.compose-timeout', { testId, kind: event.kind, timeoutMs: pushLabelTimeoutMs });
+        return fallbackPush(event, card);
+      });
     };
 
     /**
      * Fires the grading hook with `outcome` plus its composed `notification`.
      * Fire-and-forget and detached from the caller: the push is composed on
      * its own promise chain, so the `speak` that follows a fire is never
-     * held up by a catalog or name lookup, and a hook that throws or rejects
+     * held up by a catalog or name lookup (and a lookup that never answers
+     * is cut off by `boundedPushFor`), and a hook that throws or rejects
      * (synchronously or not) lands in the trailing `.catch`. No hook wired:
      * returns at once, with no catalog reads.
      */
     const fireHook = (outcome, event, card = null, curriculumIds = null) => {
       if (!gradingHook) return;
       Promise.resolve()
-        .then(() => pushFor(event, card, curriculumIds))
+        .then(() => boundedPushFor(event, card, curriculumIds))
         .then((notification) => gradingHook.fire({ ...outcome, notification }))
         .catch(() => {});
     };

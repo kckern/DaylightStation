@@ -42,9 +42,12 @@ function lateSuffix({ studyDay, today }) {
   return day ? ` · from ${day}` : '';
 }
 
-function titleOf(emoji, { child, course, lesson }, unknownChild) {
+// "Unknown card" is only for a card with no learner at all. A known learner
+// whose name lookup came back empty is not an unknown card; the title just
+// drops the name.
+function titleOf(emoji, { child, course, lesson, learnerId }, unknownChild) {
   const subject = [course, lesson].filter(Boolean).join(': ') || 'School card';
-  const who = child ?? (unknownChild ? 'Unknown card' : null);
+  const who = child ?? (unknownChild && !learnerId ? 'Unknown card' : null);
   return who ? `${emoji} ${who} — ${subject}` : `${emoji} ${subject}`;
 }
 
