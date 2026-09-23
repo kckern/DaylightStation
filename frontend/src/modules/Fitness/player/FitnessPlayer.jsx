@@ -17,6 +17,7 @@ import FitnessChartBackButton from './FitnessChartBackButton.jsx';
 import { resolvePostEpisodeRedirect } from './postEpisodeRedirect.js';
 import { makeCloseGuard } from './closeGuard.js';
 import { useGovernanceProgressEnforcer } from './governanceProgressEnforcer.js';
+import { decideVoiceMemoPause } from './voiceMemoPauseDecision.js';
 import { useCloseWatchdog } from '@/modules/Player/hooks/useCloseWatchdog.js';
 import { useMediaAmplifier } from '@/modules/Fitness/components/useMediaAmplifier.js';
 import { FitnessPlayerFrame } from './frames';
@@ -628,33 +629,46 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
     };
   }, [governancePaused]);
   
-  // Handled manual pause/resume for voice memos (BUG-08)
+  // Handled manual pause/resume for voice memos (BUG-08), emergency, and module
+  // pause requests. videoPlayerPaused is also a mirror of element state (the
+  // enforcer writes it every tick), so only a false -> true TRANSITION pauses;
+  // a new element or a governance change while it is already true does nothing.
+  // See voiceMemoPauseDecision.js.
   const wasPlayingBeforeVoiceMemoRef = useRef(false);
+  const prevVideoPlayerPausedRef = useRef(false);
   useEffect(() => {
-    if (videoPlayerPaused) {
-      // Capture playing state before pausing
-      if (mediaElement && !mediaElement.paused) {
-        const elapsed = Date.now() - lastPauseToggleRef.current;
-        if (elapsed < PAUSE_DEBOUNCE_MS) return;
-        lastPauseToggleRef.current = Date.now();
-        wasPlayingBeforeVoiceMemoRef.current = true;
-        mediaElement.pause();
-      }
-    } else {
-      // Resume if we were playing before the pause
-      if (wasPlayingBeforeVoiceMemoRef.current && mediaElement) {
-        wasPlayingBeforeVoiceMemoRef.current = false;
-        // Only resume if governance isn't currently locking the video.
-        // If governance is locked, the governance unlock effect will handle resume.
-        if (!governancePaused && mediaElement.paused) {
-          const elapsed = Date.now() - lastPauseToggleRef.current;
-          if (elapsed < PAUSE_DEBOUNCE_MS) return;
-          lastPauseToggleRef.current = Date.now();
-          mediaElement.play().catch(() => {
-            // Ignore play errors (e.g. user gesture requirements which should already be met)
-          });
-        }
-      }
+    const requested = Boolean(videoPlayerPaused);
+    const { action, wePausedIt } = decideVoiceMemoPause({
+      prevRequested: prevVideoPlayerPausedRef.current,
+      requested,
+      hasElement: Boolean(mediaElement),
+      elementPaused: Boolean(mediaElement?.paused),
+      wePausedIt: wasPlayingBeforeVoiceMemoRef.current,
+      // If governance is locked, the governance unlock effect will handle resume.
+      governanceLocked: governancePaused,
+    });
+
+    if (action === 'pause') {
+      const elapsed = Date.now() - lastPauseToggleRef.current;
+      // Debounced: leave the request unconsumed (prev stays false) so the next
+      // run can still honour it, as the original effect did.
+      if (elapsed < PAUSE_DEBOUNCE_MS) return;
+      prevVideoPlayerPausedRef.current = requested;
+      lastPauseToggleRef.current = Date.now();
+      wasPlayingBeforeVoiceMemoRef.current = wePausedIt;
+      mediaElement.pause();
+      return;
+    }
+
+    prevVideoPlayerPausedRef.current = requested;
+    wasPlayingBeforeVoiceMemoRef.current = wePausedIt;
+    if (action === 'resume') {
+      const elapsed = Date.now() - lastPauseToggleRef.current;
+      if (elapsed < PAUSE_DEBOUNCE_MS) return;
+      lastPauseToggleRef.current = Date.now();
+      mediaElement.play().catch(() => {
+        // Ignore play errors (e.g. user gesture requirements which should already be met)
+      });
     }
   }, [videoPlayerPaused, mediaElement, governancePaused]);
 
