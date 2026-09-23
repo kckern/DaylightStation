@@ -6,6 +6,7 @@ import { operationRequest } from '../capture/operationRequest.js';
 import { FoodIcon } from './FoodIcon.jsx';
 import { peekApiResource, primeApiResource } from '../../../lib/hooks/useApiResource.js';
 import { shortlistPath } from '../healthResources.js';
+import { addedRowIds, trackAddFlow } from './addFlow.js';
 
 const logger = createAppLogger('health').child('add-combobox');
 
@@ -118,6 +119,7 @@ export function AddCombobox({ bucketId, date = null, onDone, onCancel, onMeals, 
     }
     submitting.current = true;
     setPhase('parsing'); setError(null);
+    const submittedAt = performance.now();
     try {
       // One request, not two. `mealTime` travels WITH the quick-add (Task 9.1),
       // which retires the follow-up PUT this used to make. That PUT was doing
@@ -128,7 +130,7 @@ export function AddCombobox({ bucketId, date = null, onDone, onCancel, onMeals, 
       // and never had anything to cascade. Deleting it also closes a real hole:
       // when the PUT failed, the row was left in the CLOCK's bucket and
       // unsettled, with the combobox already closed.
-      await DaylightAPI(
+      const response = await DaylightAPI(
         'api/v1/health/nutrition/catalog/quickadd',
         // The row lands on the day being VIEWED, in the meal row it was
       // launched from. Both keys are omitted when absent — absent still means
@@ -137,6 +139,7 @@ export function AddCombobox({ bucketId, date = null, onDone, onCancel, onMeals, 
         'POST',
       );
       logger.info('quickadd.done', { entry: entry.name, bucket: bucketId, surface });
+      trackAddFlow({ ids: addedRowIds(response), bucket: bucketId ?? null, surface, kind: 'pick', submitToCommittedMs: performance.now() - submittedAt });
       finish();
     } catch (err) {
       logger.error('quickadd.failed', { error: err?.message });
@@ -149,6 +152,7 @@ export function AddCombobox({ bucketId, date = null, onDone, onCancel, onMeals, 
     submitting.current = true;
     setPhase('parsing'); setError(null);
     logger.info('sentence.submit', { length: text.length });
+    const submittedAt = performance.now();
     try {
       // POST /nutrition/input now commits immediately ({ committed: true, ... }) —
       // no review phase. The rows are already logged (unsettled); the day
@@ -166,7 +170,10 @@ export function AddCombobox({ bucketId, date = null, onDone, onCancel, onMeals, 
       if (result?.noFood || result?.committed === false) {
         setError(new Error(result?.message || 'No food was logged. Tweak the sentence and try again.'));
         setPhase('typing');
-      } else finish(result);
+      } else {
+        trackAddFlow({ ids: addedRowIds(result), bucket: bucketId ?? null, surface, kind: 'sentence', submitToCommittedMs: performance.now() - submittedAt });
+        finish(result);
+      }
     } catch (err) {
       logger.error('sentence.failed', { error: err?.message });
       setError(err); setPhase('typing'); // text preserved — input never lost

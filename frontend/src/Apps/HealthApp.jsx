@@ -14,6 +14,7 @@ import useDocumentTitle from '../hooks/useDocumentTitle.js';
 import CoachChat from '../modules/Health/CoachChat';
 import { ChatOverlay } from '../modules/Health/ChatOverlay/index.jsx';
 import { TodayView } from '../modules/Health/today/TodayView.jsx';
+import { useLayoutShiftLog } from '../modules/Health/useLayoutShiftLog.js';
 import { HealthDisplayPreferencesProvider } from '../modules/Health/display/HealthDisplayPreferences.jsx';
 import '../modules/Health/health.scss';
 const ProgressView = lazy(() => import('../modules/Health/progress/ProgressView.jsx').then(module => ({ default: module.ProgressView })));
@@ -71,6 +72,8 @@ const HealthShell = ({ userId }) => {
   useHotkey('mod+k', () => openCoach(null));
 
   const activeTab = tabForPath(location.pathname);
+  // Unexpected page movement, per 1 s burst (ui.layout-shift).
+  useLayoutShiftLog({ route: location.pathname, tab: activeTab });
   const shellRef = useRef(null);
   const scrollPositions = useRef(new Map());
   const visitedToday = useRef(false);
