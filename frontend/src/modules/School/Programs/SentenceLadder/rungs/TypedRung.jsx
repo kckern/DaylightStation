@@ -788,6 +788,10 @@ export default function TypedRung({
     const onKey = (e) => {
       if (e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey) return;
       if (e.key === 'Tab') { e.preventDefault(); play(); return; }
+      // A focused control keeps its own keys (the shell's rule) — except the
+      // commit button, whose Space/Enter IS "go on".
+      const owner = e.target?.closest?.('button, input, select, textarea, a[href], [contenteditable="true"]');
+      if (owner && owner !== commitRef.current) return;
       if (e.key === ' ' || e.key === 'Enter') {
         e.preventDefault();
         submit(e.key === ' ' ? 'key:Space' : 'key:Enter');

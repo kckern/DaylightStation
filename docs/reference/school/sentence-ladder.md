@@ -612,7 +612,7 @@ Space ─▶ the chunk plays straight back ─▶ Space: on from where it paused
 | **Enter** | done: join what has been said, even mid-sentence. With no chunks, as Space | cuts |
 | **→** | pause here — the old key, an alias of Space while the sentence sounds | — |
 | tap a **segment** | redo that chunk | — |
-| Shift+Tab | hear the meaning | — |
+| **Shift+Tab** | hear the meaning — or, **in chunk mode**, the whole sentence from the top (a listen: allowed wherever hearing is, never at a live mic or while the prompt sounds); the sentence line carries the hint on a keyboard device | destroys anything |
 
 **Tab at a live mic stops and keeps rather than being ignored.** A child who
 presses "hear it again" and hears nothing presses it again; on seq 16 that

@@ -236,7 +236,13 @@ export default function RecordingRung({
       intentRef.current = null;
     }
   }, [entry.seq]);
-  const onTap = (action) => () => dispatch('touch', action);
+  // A tapped tile hands the keys straight back to the stage: left on the tile,
+  // the next Space would re-press it (a focused control owns its keys) instead
+  // of being the rung's forward key.
+  const onTap = (action) => () => {
+    dispatch('touch', action);
+    rootRef.current?.focus?.({ preventScroll: true });
+  };
 
   /**
    * PLAYBACK, one line per thing heard: `capture.playback {what, ms, outcome}`
@@ -385,9 +391,8 @@ export default function RecordingRung({
     if (result?.catch) {
       result.catch((err) => {
         languageLog.audioError('play-blocked', { url: 'take', error: err?.message });
-        closePlay('take', 'blocked');
-        playbackRef.current = null;
-        toReview();
+        // Through `finish`, so the master-volume binding is released too.
+        finish('blocked')();
       });
     }
   }, [closePlay, openPlay, toReview]);
@@ -1026,7 +1031,9 @@ export default function RecordingRung({
       if (e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey) return;
       if (e.key === 'Tab') {
         e.preventDefault();
-        if (e.shiftKey) dispatch('key:Shift+Tab', () => hear(sourceLang));
+        // Shift+Tab: the meaning — or, in chunk mode, where Tab is the chunk's
+        // span, the WHOLE sentence. A listen either way; nothing is lost.
+        if (e.shiftKey) dispatch('key:Shift+Tab', () => hear(pieceRef.current != null ? targetLang : sourceLang));
         else dispatch('key:Tab', replaySentence);
         return;
       }
@@ -1066,7 +1073,7 @@ export default function RecordingRung({
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [again, cut, dispatch, done, forward, hear, replaySentence, sourceLang, startOver]);
+  }, [again, cut, dispatch, done, forward, hear, replaySentence, sourceLang, startOver, targetLang]);
 
   const getPlayhead = useCallback(() => {
     const el = playbackRef.current;
@@ -1139,6 +1146,9 @@ export default function RecordingRung({
       <button type="button" tabIndex={-1} className="lang-rung__say lang-rung__target" onClick={tapToHear(targetLang)}>
         {entry.text?.[targetLang]}
       </button>
+      {showShortcuts && inPieces && (
+        <p className="lang-rung__keys" aria-hidden="true">Shift+Tab: whole sentence</p>
+      )}
 
       {/* Always on the stage — a bare line before anything has been said, so
           the sentence does not move when the voice starts filling it. */}

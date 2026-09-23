@@ -156,3 +156,19 @@ describe('interpretation — check your work', () => {
     expect(onComplete).toHaveBeenCalledWith({ seq: 7, rung: 'interpretation', revealed: true });
   });
 });
+
+describe('interpretation — the check panel leaves a focused control its own keys', () => {
+  it('Space on a focused Play control does not commit the answer', async () => {
+    renderRung();
+    await type('it is cold');
+    await enter();
+    const playBtn = screen.getAllByRole('button').find((b) => /Play/.test(b.textContent));
+    playBtn.focus();
+    fireEvent.keyDown(playBtn, { key: ' ' });
+    expect(onComplete).not.toHaveBeenCalled();
+    // The commit control itself still takes Space/Enter.
+    const cont = screen.getByRole('button', { name: 'Continue' });
+    fireEvent.keyDown(cont, { key: 'Enter' });
+    expect(onComplete).toHaveBeenCalledTimes(1);
+  });
+});
