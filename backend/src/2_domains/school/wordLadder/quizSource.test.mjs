@@ -50,7 +50,7 @@ describe('a second language needs only YAML', () => {
     expect(deck.cards[2].front.blocks[2].assetId).toBe('media:language/spanish-vocab/words/unit-02-greetings/hola/term.mp3');
     const { dayFile } = openDay({
       status: emptyStatusV3(), dayFile: emptyDay('2026-09-22'), day: '2026-09-22', deckId: raw.id,
-      pool: raw.words, settings: DEFAULT_SETTINGS, learnerId: 'test-learner',
+      pool: raw.words, settings: DEFAULT_SETTINGS, learnerId: 'test-learner', at: '2026-09-22T16:00:00-07:00',
     });
     expect(dayFile.rounds[0].words.length).toBeGreaterThan(0);
     expect(dayFile.rounds[0].words.every((id) => raw.words.includes(id))).toBe(true);

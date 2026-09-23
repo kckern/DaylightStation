@@ -26,7 +26,8 @@ export function addActiveTime(dayFile, atMs) {
   return next;
 }
 
-export function openDay({ status, dayFile, day, deckId, pool, settings, learnerId }) {
+export function openDay({ status, dayFile, day, deckId, pool, settings, learnerId, at }) {
+  if (typeof at !== 'string' || at.length === 0) throw new ValidationError('at is required');
   const nextStatus = clone(status);
   if (!nextStatus.decksSeen.includes(deckId)) nextStatus.decksSeen.push(deckId);
   const nextDay = clone(dayFile);
@@ -42,16 +43,33 @@ export function openDay({ status, dayFile, day, deckId, pool, settings, learnerI
   }
   // Rounds are planned eagerly so `currentItem` never has to create state. A
   // round nobody has touched yet is re-planned, so a re-open with a different
-  // pool (the service opens once with an empty pool to record decksSeen, then
-  // again with the real one) never leaves a stale plan behind.
+  // pool (a deck assigned or edited since the last sitting) never leaves a
+  // stale plan behind.
   const last = nextDay.rounds.at(-1);
   if (last && last.phase !== 'done' && !roundTouched(nextDay, last)) nextDay.rounds.pop();
   const ctx = { status: nextStatus, dayFile: nextDay, day, pool, settings, learnerId };
-  if (!nextDay.doneAt && !nextDay.rechecks.order.some((id) => !nextDay.rechecks.answered[id]) && !openRound(ctx)) {
-    const upcoming = nextRound(ctx);
-    if (upcoming) nextDay.rounds.push(upcoming);
-  }
+  // A day with nothing to do (everything mastered and not due, or the cap
+  // already spent) is credited here — `respond` would never run to do it.
+  if (!nextDay.doneAt) settleDay(ctx, at);
   return { status: nextStatus, dayFile: nextDay };
+}
+
+function hasPendingRecheck(dayFile) {
+  return dayFile.rechecks.order.some((id) => !dayFile.rechecks.answered[id]);
+}
+
+// Spec §4 Done for today: goal met, or the day's cap reached with no round in
+// progress. With no round open and no recheck pending, the next round is
+// planned; if none can be, the goal is met. A pending recheck stays answerable
+// (currentItem still offers it) but no longer holds the day open once the cap
+// has elapsed. Mutates ctx.dayFile.
+function settleDay(ctx, at) {
+  if (openRound(ctx)) return;
+  if (!hasPendingRecheck(ctx.dayFile)) {
+    const upcoming = nextRound(ctx);
+    if (upcoming) { ctx.dayFile.rounds.push(upcoming); return; }
+  } else if (remainingMs(ctx) > 0) return;
+  ctx.dayFile.doneAt = ctx.dayFile.doneAt ?? at;
 }
 
 function roundTouched(dayFile, round) {
@@ -148,14 +166,6 @@ export function currentItem(ctx) {
 
 function quizzedCount(dayFile) {
   return dayFile.rounds.reduce((n, round) => n + round.quiz.passed.length + round.quiz.failed.length, 0);
-}
-
-// Spec §4 Done for today: goal met, or the day's cap reached with no round in
-// progress. A pending recheck stays answerable (currentItem still offers it),
-// but it no longer holds the day open once the cap has elapsed.
-export function dayDone(ctx) {
-  if (currentItem(ctx).type === 'summary') return true;
-  return remainingMs(ctx) <= 0 && !openRound(ctx);
 }
 
 // `quizNow`: the child asked to be quizzed, so words not yet sorted this round
@@ -294,10 +304,6 @@ export function respond(inputCtx, itemId, response = {}, { at, verdict = null } 
     }
   }
   ctx.dayFile.items[itemId] = { at, response, result };
-  if (!openRound(ctx) && !ctx.dayFile.rechecks.order.some((id) => !ctx.dayFile.rechecks.answered[id])) {
-    const upcoming = nextRound(ctx);
-    if (upcoming) ctx.dayFile.rounds.push(upcoming);
-    else ctx.dayFile.doneAt = ctx.dayFile.doneAt ?? at;
-  }
+  settleDay(ctx, at);
   return { status: ctx.status, dayFile: ctx.dayFile, result };
 }

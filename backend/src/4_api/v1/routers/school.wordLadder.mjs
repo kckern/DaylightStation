@@ -38,7 +38,9 @@ export function mountWordLadderRoutes({
     const { learnerId, actorId, pin = null } = req.body || {};
     noStore(res).json(await wordLadderStudy.fold({ learnerId, actorId, pin }));
   }));
-  // Test routes first: '/word-ladder/test/open' must not be read as a live sitting id.
+  // Order does not matter: every live route has a literal second segment
+  // (`open`, `sittings`, `stage`, `fold`) and every test route has `test`, so
+  // the two sets are disjoint — no test path can match a live pattern.
   mount('/word-ladder/test', () => wordLadderTest, { test: true });
   mount('/word-ladder', () => wordLadderStudy, { test: false });
 }

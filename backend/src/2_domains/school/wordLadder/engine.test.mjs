@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import { emptyWordV3 } from './mastery.mjs';
 import { emptyDay, emptyStatusV3 } from './statusV3.mjs';
-import { addActiveTime, currentItem, dayDone, openDay, respond } from './engine.mjs';
+import { addActiveTime, currentItem, openDay, respond } from './engine.mjs';
 
 const D = '2026-09-22';
 const SET = {
@@ -18,7 +18,7 @@ let clock = Date.parse(`${D}T16:00:00-07:00`);
 const at = () => new Date((clock += 5000)).toISOString();
 
 function start(status = emptyStatusV3()) {
-  const opened = openDay({ status, dayFile: emptyDay(D), day: D, deckId: 'deck', pool, settings: SET, learnerId: 'test-learner' });
+  const opened = openDay({ status, dayFile: emptyDay(D), day: D, deckId: 'deck', pool, settings: SET, learnerId: 'test-learner', at: at() });
   return { ...opened, day: D, lexicon, media, pool, settings: SET, learnerId: 'test-learner' };
 }
 function step(ctx, response, verdict = null) {
@@ -52,7 +52,7 @@ describe('engine — a fresh day', () => {
     }
     expect(ctx.status.words.gawi).toMatchObject({ state: 'mastered', stage: 0 });
     expect(currentItem(ctx)).toMatchObject({ type: 'summary', doneToday: true });
-    expect(dayDone(ctx)).toBe(true);
+    expect(ctx.dayFile.doneAt).toEqual(expect.any(String));
   });
 
   it('a copy mismatch keeps the copy item current', () => {
@@ -185,7 +185,7 @@ describe('engine — openDay', () => {
     expect(ctx.status.decksSeen).toEqual(['deck']);
     expect(ctx.dayFile.atOpen).toMatchObject({ dueRechecks: ['gawi'], tricky: [], newAllowance: 4 });
     expect(ctx.dayFile.rounds).toEqual([]);
-    const again = openDay({ status: ctx.status, dayFile: ctx.dayFile, day: D, deckId: 'deck', pool, settings: SET, learnerId: 'test-learner' });
+    const again = openDay({ status: ctx.status, dayFile: ctx.dayFile, day: D, deckId: 'deck', pool, settings: SET, learnerId: 'test-learner', at: at() });
     expect(again.status.decksSeen).toEqual(['deck']);
     expect(again.dayFile.atOpen).toEqual(ctx.dayFile.atOpen);
   });
@@ -193,10 +193,10 @@ describe('engine — openDay', () => {
   it('an untouched first round is re-planned when the day is re-opened with the real pool', () => {
     const status = emptyStatusV3();
     status.words.chaek = { ...emptyWordV3(), state: 'familiar', introducedDay: '2026-09-20' };
-    const first = openDay({ status, dayFile: emptyDay(D), day: D, deckId: 'deck', pool: [], settings: SET, learnerId: 'test-learner' });
+    const first = openDay({ status, dayFile: emptyDay(D), day: D, deckId: 'deck', pool: [], settings: SET, learnerId: 'test-learner', at: at() });
     expect(first.dayFile.rounds).toHaveLength(1);
     expect(first.dayFile.rounds[0]).toMatchObject({ kind: 'carry', words: ['chaek'] });
-    const second = openDay({ ...first, day: D, deckId: 'deck', pool: ['gawi', 'pul'], settings: SET, learnerId: 'test-learner' });
+    const second = openDay({ ...first, day: D, deckId: 'deck', pool: ['gawi', 'pul'], settings: SET, learnerId: 'test-learner', at: at() });
     expect(second.dayFile.rounds).toHaveLength(1);
     expect(second.dayFile.rounds[0]).toMatchObject({ id: 'r1', kind: 'new', newWords: ['gawi', 'pul'], words: ['gawi', 'pul', 'chaek'] });
   });
@@ -204,7 +204,7 @@ describe('engine — openDay', () => {
   it('a started round is never re-planned', () => {
     let ctx = start();
     ({ ctx } = step(ctx, { seen: true }));
-    const reopened = openDay({ status: ctx.status, dayFile: ctx.dayFile, day: D, deckId: 'deck', pool: ['pul'], settings: SET, learnerId: 'test-learner' });
+    const reopened = openDay({ status: ctx.status, dayFile: ctx.dayFile, day: D, deckId: 'deck', pool: ['pul'], settings: SET, learnerId: 'test-learner', at: at() });
     expect(reopened.dayFile.rounds).toEqual(ctx.dayFile.rounds);
   });
 });
@@ -300,17 +300,38 @@ describe('engine — responses must fit the item', () => {
 
 describe('engine — cap-done', () => {
   const CAP = SET.session.capMinutes * 60000;
-  it('the cap with no round in progress is done even with a recheck pending', () => {
+  const dueStatus = () => {
     const status = emptyStatusV3();
     status.words.gawi = { ...emptyWordV3(), state: 'mastered', stage: 1, dueDay: D, introducedDay: '2026-09-10' };
-    const ctx = start(status);
-    expect(dayDone(ctx)).toBe(false);
-    const capped = { ...ctx, dayFile: { ...ctx.dayFile, activeMs: CAP } };
-    expect(currentItem(capped)).toMatchObject({ id: 'rc:gawi', source: 'recheck' });
-    expect(dayDone(capped)).toBe(true);
+    return status;
+  };
+  it('the cap with no round in progress is done even with a recheck pending', () => {
+    expect(start(dueStatus()).dayFile.doneAt).toBeNull();
+    const openedAt = at();
+    const capped = openDay({ status: dueStatus(), dayFile: { ...emptyDay(D), activeMs: CAP }, day: D, deckId: 'deck', pool, settings: SET, learnerId: 'test-learner', at: openedAt });
+    expect(currentItem({ ...capped, day: D, lexicon, media, pool, settings: SET, learnerId: 'test-learner' })).toMatchObject({ id: 'rc:gawi', source: 'recheck' });
+    expect(capped.dayFile.doneAt).toBe(openedAt);
   });
   it('the cap does not end a round in progress', () => {
-    const ctx = start();
-    expect(dayDone({ ...ctx, dayFile: { ...ctx.dayFile, activeMs: CAP } })).toBe(false);
+    let ctx = start();
+    ctx = { ...ctx, dayFile: { ...ctx.dayFile, activeMs: CAP } };
+    ({ ctx } = step(ctx, { seen: true }));
+    expect(ctx.dayFile.doneAt).toBeNull();
+  });
+});
+
+describe('engine — a day with nothing to do', () => {
+  it('is credited at open when every word is mastered and none is due', () => {
+    const status = emptyStatusV3();
+    for (const id of pool) status.words[id] = { ...emptyWordV3(), state: 'mastered', stage: 2, dueDay: '2026-10-01', introducedDay: '2026-09-01' };
+    const openedAt = at();
+    const opened = openDay({ status, dayFile: emptyDay(D), day: D, deckId: 'deck', pool, settings: SET, learnerId: 'test-learner', at: openedAt });
+    expect(opened.dayFile.rounds).toEqual([]);
+    expect(opened.dayFile.doneAt).toBe(openedAt);
+    const again = openDay({ ...opened, day: D, deckId: 'deck', pool, settings: SET, learnerId: 'test-learner', at: at() });
+    expect(again.dayFile.doneAt).toBe(openedAt);
+  });
+  it('requires at', () => {
+    expect(() => openDay({ status: emptyStatusV3(), dayFile: emptyDay(D), day: D, deckId: 'deck', pool, settings: SET, learnerId: 'test-learner' })).toThrow('at is required');
   });
 });
