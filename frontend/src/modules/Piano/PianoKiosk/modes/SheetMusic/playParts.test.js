@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { partsOf, buildArcadeGameTimeline } from './playParts.js';
+import { partsOf, buildPlayTimeline } from './playParts.js';
 
 const NOTES = [
   { midi: 76, staff: 0, onsetQuarter: 0, durationQuarters: 1 },
@@ -15,9 +15,9 @@ describe('partsOf', () => {
   });
 });
 
-describe('buildArcadeGameTimeline', () => {
+describe('buildPlayTimeline', () => {
   it('merges cursor steps with note on/offs for audible parts only, time-sorted', () => {
-    const tl = buildArcadeGameTimeline(EVENTS, NOTES, MAP, { 0: 'mute', 1: 'play' });
+    const tl = buildPlayTimeline(EVENTS, NOTES, MAP, { 0: 'mute', 1: 'play' });
     expect(tl.map((e) => e.kind ?? e.type)).toEqual(['step', 'note_on', 'step', 'note_off']);
     expect(tl.find((e) => e.type === 'note_on').note).toBe(40); // only the active (LH) staff sounds
   });
