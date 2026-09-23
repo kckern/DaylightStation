@@ -3,7 +3,7 @@
 // onProgress, so a DEAD onProgress closure (FitnessPlayer's, captured while
 // governance was locked) re-paused the video on every play press.
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import React, { useEffect } from 'react';
+import React, { useLayoutEffect } from 'react';
 import { render, act } from '@testing-library/react';
 import { useCommonMediaController } from './useCommonMediaController.js';
 import * as Logger from '../../../lib/logging/Logger.js';
@@ -43,16 +43,26 @@ function makeFakeVideo({ currentTime = 100, duration = 1000 } = {}) {
   return el;
 }
 
-function Harness({ video, onProgress, volume = 100, meta = { assetId: 'plex:1', title: 'T' }, start }) {
+// Module constants: `meta` and `onEnd` are element-setup effect deps. An inline
+// default (and the hook's own `onEnd = () => {}` default) is a new value each
+// render, which would re-run the effect on EVERY render instead of only on the
+// `volume` change the tests describe.
+const DEFAULT_META = { assetId: 'plex:1', title: 'T' };
+const NOOP_END = () => {};
+
+function Harness({ video, onProgress, volume = 100, meta = DEFAULT_META, playbackRate }) {
   const api = useCommonMediaController({
     meta,
-    start,
+    playbackRate,
+    onEnd: NOOP_END,
     isVideo: true,
     onProgress,
     volume,
     onController: () => {}
   });
-  useEffect(() => { api.containerRef.current = video; }, [api, video]);
+  // Layout effect: attaches the element before the hook's passive element-setup
+  // effect runs, so the first run sees it without relying on a re-render.
+  useLayoutEffect(() => { api.containerRef.current = video; }, [api, video]);
   return null;
 }
 
@@ -127,27 +137,38 @@ describe('useCommonMediaController listener lifetime', () => {
     expect(video.count('seeked')).toBe(seeked);
   });
 
-  it('removes a pending DASH start-seek listener pair when the effect re-runs before the seek applies', () => {
-    const video = makeFakeVideo({ duration: 3600 });
-    video.readyState = 0; // metadata not ready: applySeek stays pending
+  it('a seeked listener from an earlier run never restores the earlier playbackRate', () => {
+    const video = makeFakeVideo();
     const onProgress = vi.fn();
-    const meta = { assetId: 'plex:dash-pending', title: 'D', mediaType: 'dash_video' };
-    const { rerender } = render(
-      <Harness video={video} onProgress={onProgress} volume={100} meta={meta} start={600} />
-    );
-    const loaded = video.count('loadedmetadata');
-    const timeupdate = video.count('timeupdate');
-
-    // First loadedmetadata of the run: the DASH branch arms onLoaded + onTimeUpdate.
+    const { rerender } = render(<Harness video={video} onProgress={onProgress} volume={100} playbackRate={1.5} />);
     act(() => { video.fire('loadedmetadata'); });
-    expect(video.count('loadedmetadata')).toBe(loaded + 1);
-    expect(video.count('timeupdate')).toBe(timeupdate + 1);
 
-    // Effect re-runs before either fires.
-    rerender(<Harness video={video} onProgress={onProgress} volume={90} meta={meta} start={600} />);
+    rerender(<Harness video={video} onProgress={onProgress} volume={90} playbackRate={1} />);
+    act(() => { video.fire('seeked'); });
 
-    expect(video.count('loadedmetadata')).toBe(loaded);
-    expect(video.count('timeupdate')).toBe(timeupdate);
+    expect(video.playbackRate).toBe(1);
+  });
+
+  it('publishes the live isSeeking on timeupdate after a seek that spanned an effect re-run', () => {
+    const video = makeFakeVideo();
+    const onProgress = vi.fn();
+    const { rerender } = render(<Harness video={video} onProgress={onProgress} volume={100} />);
+
+    act(() => { video.fire('seeking'); });
+    // Effect re-runs while isSeeking is true (its closure would capture true).
+    rerender(<Harness video={video} onProgress={onProgress} volume={90} />);
+    act(() => { video.fire('seeked'); });
+    act(() => { vi.advanceTimersByTime(50); }); // flush the rAF that clears isSeeking
+
+    onProgress.mockClear();
+    act(() => {
+      video.paused = false;
+      video._ct = 101;
+      video.fire('timeupdate');
+    });
+
+    expect(onProgress).toHaveBeenCalled();
+    expect(onProgress.mock.calls.at(-1)[0].isSeeking).toBe(false);
   });
 
   it('does not publish progress from the playing event (only seeked/timeupdate do)', () => {
