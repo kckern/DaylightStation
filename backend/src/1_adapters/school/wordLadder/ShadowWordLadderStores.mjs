@@ -26,6 +26,20 @@ export class ShadowWordLadderStores {
     this.#shadows.set(token, { createdAt: this.#now(), status: snapshot.status, days: { [day]: snapshot.dayFile } });
     return token;
   }
+  /**
+   * The same seeded snapshot `create` takes, handed back READ-ONLY and never
+   * kept: the start card asks what a test sitting would open on without
+   * taking a shadow slot (or evicting someone's live test sitting) to do it.
+   */
+  peek(userId, pkg, day, seed = null) {
+    let snapshot = { status: this.#real.readStatus(userId, pkg), dayFile: this.#real.readDay(userId, pkg, day) };
+    if (typeof seed === 'function') snapshot = seed(structuredClone(snapshot));
+    return {
+      readStatus: () => structuredClone(snapshot.status),
+      readDay: (_u, _p, d) => structuredClone(d === day ? snapshot.dayFile : this.#real.readDay(_u, _p, d)),
+      readTuning: (u, p) => this.#real.readTuning?.(u, p) ?? null,
+    };
+  }
   forToken(token) {
     const shadow = this.#shadows.get(token);
     if (!shadow || this.#now() - shadow.createdAt > this.#ttlMs) {

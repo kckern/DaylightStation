@@ -17,7 +17,7 @@ export function newAllowance({ words, day, settings }) {
   return Math.max(0, Math.min(settings.batch.newPerDay - introducedToday, settings.batch.workingSet - unsettled));
 }
 
-function carryCandidates(words, day, roundedToday) {
+export function carryCandidates(words, day, roundedToday) {
   return Object.entries(words ?? {})
     .filter(([id, word]) => !isExcluded(word) && CARRY_STATES.includes(word.state) && word.introducedDay && word.introducedDay < day
       && !roundedToday.has(id) && word.verifyFailedDay !== day)

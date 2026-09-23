@@ -10,7 +10,8 @@ export { STATUS_SCHEMA_V3, DAY_SCHEMA, emptyStatusV3, emptyDay, migrateStatusV2 
 export { normalizeAnswer, hasHangul, keystrokeJamo } from './jamo.mjs';
 export { BANDS, scoreTypedDeterministic, isShortTarget, modelMayRaise, raiseOneBand } from './typedScore.mjs';
 export { pickMeaningChoices, pickTermChoices, cueFor, channelFor } from './choices.mjs';
-export { ESTIMATE_MS, newAllowance, planNextRound } from './rounds.mjs';
+export { ESTIMATE_MS, carryCandidates, newAllowance, planNextRound } from './rounds.mjs';
+export { introPreview, introPlanLabel, deckProgress } from './intro.mjs';
 export { openDay, currentItem, respond, addActiveTime, startPractice, wordTransitions, excludeWordFromDay } from './engine.mjs';
 export { foldPaperAttempts } from './foldPaperAttempts.mjs';
 export { formatTrace } from './trace.mjs';

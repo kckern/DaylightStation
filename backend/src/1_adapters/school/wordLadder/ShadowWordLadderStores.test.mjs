@@ -36,4 +36,15 @@ describe('ShadowWordLadderStores', () => {
     expect(store.writeTuning).toBeUndefined();
     expect(real.writes).toBe(0);
   });
+  it('peek: a seeded, read-only snapshot that is never kept (the start card)', () => {
+    const shadows = new ShadowWordLadderStores({ real, now: () => 0, max: 1 });
+    const kept = shadows.create('test-learner', 'korean-vocab', '2026-09-22');
+    const store = shadows.peek('test-learner', 'korean-vocab', '2026-09-22', ({ status, dayFile }) => ({ status: { ...status, lastFoldedDay: 'seeded' }, dayFile }));
+    expect(store.readStatus().lastFoldedDay).toBe('seeded');
+    expect(store.readDay('test-learner', 'korean-vocab', '2026-09-22').day).toBe('2026-09-22');
+    expect(store.transact).toBeUndefined();
+    // A peek takes no slot: the one kept shadow (max 1) survives it.
+    expect(() => shadows.forToken(kept)).not.toThrow();
+    expect(real.writes).toBe(0);
+  });
 });

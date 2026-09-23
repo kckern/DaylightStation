@@ -5,6 +5,7 @@
  * `private, no-store`: a child's sitting must not sit in a shared cache.
  */
 import express from 'express';
+import { presentPublicResources } from '../presenters/publicResourceRefs.mjs';
 
 // A spoken take arrives as the raw request body (MediaRecorder output).
 const rawAudio = express.raw({ type: ['audio/webm', 'audio/ogg', 'audio/mp4', 'application/octet-stream'], limit: '10mb' });
@@ -20,6 +21,13 @@ export function mountWordLadderRoutes({
       if (!s) throw notConfigured(test ? 'word-ladder test mode' : 'word-ladder');
       return s;
     };
+    // The start card (read-only; nothing opens before Start, spec §6). Test
+    // mode reads the seeded snapshot Start would open on (`scenario`).
+    router.get(`${base}/intro`, wrap(async (req, res) => {
+      const { userId, deckId, scenario = null } = req.query;
+      const intro = await service().intro(test ? { userId, deckId, scenario } : { userId, deckId });
+      noStore(res).json(presentPublicResources(intro));
+    }));
     router.post(`${base}/open`, wrap(async (req, res) => {
       const { userId, deckId, scenario = null, capabilities } = req.body || {};
       noStore(res).json(await service().open(test ? { userId, deckId, scenario, capabilities } : { userId, deckId, capabilities }));
@@ -119,7 +127,7 @@ export function mountWordLadderRoutes({
     noStore(res).json(await tuning().adminUndo({ learnerId, deckId, setting, actorId, pin }));
   }));
   // Order does not matter: every live route has a literal second segment
-  // (`open`, `sittings`, `words`, `stage`, `fold`, `admin`) and every test route has `test`, so
+  // (`intro`, `open`, `sittings`, `words`, `stage`, `fold`, `admin`) and every test route has `test`, so
   // the two sets are disjoint — no test path can match a live pattern.
   mount('/word-ladder/test', () => wordLadderTest, { test: true });
   mount('/word-ladder', () => wordLadderStudy, { test: false });

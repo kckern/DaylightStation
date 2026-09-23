@@ -25,15 +25,15 @@ const lexicon = {
   entries: new Map([['gawi', { id: 'gawi', group: 'week-01', term: '가위', gloss: 'Scissors', kind: 'word', decoys: { term: ['a', 'b', 'c'], gloss: ['x', 'y', 'z'] } }],
     ['pul', { id: 'pul', group: 'week-01', term: '풀', gloss: 'Glue', kind: 'word', decoys: { term: ['d', 'e', 'f'], gloss: ['u', 'v', 'w'] } }]]),
 };
-function make({ judgementCache = null, recordings = null, mode = 'live', attempts = null, attemptsReader = null, teacherGate = null, judge = null, store = memoryStore(), media = false, decks = null, bounds = null } = {}) {
+function make({ judgementCache = null, recordings = null, mode = 'live', attempts = null, attemptsReader = null, teacherGate = null, judge = null, store = memoryStore(), media = false, decks = null, bounds = null, peek = undefined } = {}) {
   let t = Date.parse('2026-09-22T16:00:00-07:00');
   const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
   const judgeFn = judge ?? vi.fn(async ({ typed, entry }) => ({ score: typed === entry.term ? 10 : 2, judge: 'exact', reason: null, pass: typed === entry.term }));
   const token = mode === 'test' ? 'abc123' : 'live';
   const service = new WordLadderSittingService({
-    stores: { open: () => ({ store, token }), forToken: (tk) => { if (tk !== token) throw new Error('unknown sitting'); return store; } },
+    stores: { open: () => ({ store, token }), forToken: (tk) => { if (tk !== token) throw new Error('unknown sitting'); return store; }, ...(peek ? { peek } : {}) },
     decks: decks ?? {
-      getFlashcardDeck: async (id) => (id === DECK ? { id: DECK, words: ['gawi', 'pul'], lexicon: REF } : null),
+      getFlashcardDeck: async (id) => (id === DECK ? { id: DECK, title: 'Week 1: Classroom', words: ['gawi', 'pul'], lexicon: REF } : null),
       listFlashcardDecks: async () => [{ id: DECK, words: ['gawi', 'pul'], lexicon: REF }, { id: DECK_OTHER, words: ['pul'], lexicon: REF }, { id: 'biology/cells', cards: [] }],
     },
     lexicons: { getLexicon: () => lexicon },
@@ -205,9 +205,73 @@ describe('WordLadderSittingService', () => {
 
   it('dayStatus: not opened, then in progress', async () => {
     const { service } = make();
-    await expect(service.dayStatus({ userId: 'test-learner', deckId: DECK })).resolves.toEqual({ doneToday: false, progressLabel: 'Not opened', remaining: null });
+    await expect(service.dayStatus({ userId: 'test-learner', deckId: DECK })).resolves.toMatchObject({ doneToday: false, progressLabel: 'Not opened', remaining: null });
     await service.open({ userId: 'test-learner', deckId: DECK });
-    await expect(service.dayStatus({ userId: 'test-learner', deckId: DECK })).resolves.toEqual({ doneToday: false, progressLabel: 'In progress', remaining: null });
+    await expect(service.dayStatus({ userId: 'test-learner', deckId: DECK })).resolves.toMatchObject({ doneToday: false, progressLabel: 'In progress', remaining: null });
+  });
+
+  it('dayStatus carries the launch card: course, unit, today\'s plan and words learned — without writing', async () => {
+    const store = memoryStore();
+    store.s.status.words.pul = { ...emptyWordV3(), state: 'mastered', stage: 1, dueDay: '2026-10-30', introducedDay: '2026-09-01' };
+    const { service } = make({ store });
+    const status = await service.dayStatus({ userId: 'test-learner', deckId: DECK });
+    expect(status.context).toEqual({
+      course: { id: 'program:word-ladder:korean-vocab', title: 'Korean words' },
+      unit: { id: DECK, title: 'Week 1: Classroom' },
+      lesson: { id: `${DECK}:${TODAY}`, title: '1 new word' },
+    });
+    expect(status.progress).toEqual([{ scope: 'unit', label: 'Words learned', completed: 1, total: 2 }]);
+    expect(status.description).toBe('About 3 minutes');
+    expect(store.s.writes).toBe(0);
+    expect(store.s.days[TODAY]).toBeUndefined();
+  });
+
+  it('dayStatus for a past day (replay) carries no card', async () => {
+    const { service } = make();
+    const status = await service.dayStatus({ userId: 'test-learner', deckId: DECK, day: '2026-09-20' });
+    expect(status.context).toBeUndefined();
+  });
+
+  it('intro: the start card, read-only, before any sitting opens', async () => {
+    const { service, store } = make();
+    const intro = await service.intro({ userId: 'test-learner', deckId: DECK });
+    expect(intro).toEqual({
+      deckId: DECK, package: 'korean-vocab', day: TODAY, test: false,
+      course: { id: 'program:word-ladder:korean-vocab', title: 'Korean words' },
+      unit: { id: DECK, title: 'Week 1: Classroom' },
+      poster: { kind: 'curriculum-poster', scope: 'selfservice', courseId: 'program:word-ladder:korean-vocab' },
+      today: { newCount: 2, reviewCount: 0, estimatedMinutes: 5, doneToday: false, label: '2 new words', line: '2 new words · about 5 minutes' },
+      progress: { learned: 0, total: 2 },
+    });
+    expect(store.s.writes).toBe(0);
+    await expect(service.intro({ userId: 'someone-else', deckId: DECK })).rejects.toThrow(/no word-ladder assignment/);
+  });
+
+  it('intro after the day is done says so', async () => {
+    const store = memoryStore();
+    for (const id of ['gawi', 'pul']) store.s.status.words[id] = { ...emptyWordV3(), state: 'mastered', stage: 3, dueDay: '2026-10-30', introducedDay: '2026-09-01' };
+    store.s.status.decksSeen = [DECK];
+    const { service } = make({ store });
+    await service.open({ userId: 'test-learner', deckId: DECK });
+    const intro = await service.intro({ userId: 'test-learner', deckId: DECK });
+    expect(intro.today).toMatchObject({ doneToday: true, line: 'Done for today — practice anytime' });
+    expect(intro.progress).toEqual({ learned: 2, total: 2 });
+  });
+
+  it('intro in test mode reads a peeked shadow snapshot (with the scenario) and never opens a shadow', async () => {
+    const shadow = memoryStore();
+    shadow.s.status.words.gawi = { ...emptyWordV3(), state: 'mastered', stage: 1, dueDay: TODAY, introducedDay: '2026-09-01' };
+    const peek = vi.fn(() => shadow);
+    const { service, store } = make({ mode: 'test', peek });
+    const intro = await service.intro({ userId: 'test-learner', deckId: DECK, scenario: 'rechecks' });
+    expect(peek).toHaveBeenCalledWith('test-learner', 'korean-vocab', TODAY, expect.objectContaining({ scenario: 'rechecks' }));
+    expect(intro).toMatchObject({ test: true, today: { reviewCount: 1, newCount: 1 } });
+    expect(store.s.writes).toBe(0);
+  });
+
+  it('intro in test mode refuses without a peekable store', async () => {
+    const { service } = make({ mode: 'test' });
+    await expect(service.intro({ userId: 'test-learner', deckId: DECK })).rejects.toThrow(/peek/);
   });
 
   it('open folds scanned paper misses once, from any deck sharing the lexicon', async () => {
