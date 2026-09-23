@@ -10,7 +10,7 @@ import express from 'express';
 const rawAudio = express.raw({ type: ['audio/webm', 'audio/ogg', 'audio/mp4', 'application/octet-stream'], limit: '10mb' });
 
 export function mountWordLadderRoutes({
-  router, wrap, notConfigured, wordLadderStudy = null, wordLadderTest = null, stageScreen = null,
+  router, wrap, notConfigured, wordLadderStudy = null, wordLadderTest = null, stageScreen = null, capabilityProof = () => null,
 }) {
   const noStore = (res) => res.set('Cache-Control', 'private, no-store');
   const mount = (base, getService, { test }) => {
@@ -64,12 +64,13 @@ export function mountWordLadderRoutes({
     noStore(res).json(await wordLadderStudy.fold({ learnerId, actorId, pin }));
   }));
   // Grown-up word controls (spec §6): live only, teacher-gated in the service.
-  // `pin` may also be the console's cookie capability, which the school router
-  // injects into the body (a GET carries a literal pin in the query).
+  // `pin` may also be the console's cookie capability: the school router
+  // injects it into a POST body, but a GET has no body, so the GET reads the
+  // cookie itself via `capabilityProof` (a literal query pin always wins).
   const live = () => { if (!wordLadderStudy) throw notConfigured('word-ladder'); return wordLadderStudy; };
   router.get('/word-ladder/admin/words', wrap(async (req, res) => {
     const { learnerId, deckId, actorId = null } = req.query;
-    const pin = req.query.pin ?? req.body?.pin ?? null;
+    const pin = req.query.pin ?? capabilityProof(req) ?? null;
     noStore(res).json(await live().adminWords({ learnerId, deckId, actorId, pin }));
   }));
   const adminPost = (path, method, fields) => router.post(`/word-ladder/admin/${path}`, wrap(async (req, res) => {
