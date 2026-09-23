@@ -491,3 +491,5 @@ The corollary bit twice in this sweep: `feat/teacher-workspace-ia` and `feature/
 | 2026-09-23 | feat/health-today-refresh | 5a228505ae | Health Today refresh (budget bar, quiet add rows, drag food/meal between meals, day-wide kcal bars) + catalog serving/photo fix + artwork remediation queue; merged to main (deployed 5a228505ae) |
 | 2026-09-23 | feat/health-add-align | 429d1ba2d7 | Health add line indented under food names; suggestions show barcode product photos; merged to main |
 | 2026-09-23 | feat/card-ladder-script-rules | 5fa22bfe09 | card ladder per-script grading (latin/hangul/generic, numbers exact, script-normalized cache keys); deployed b789ded8a7 |
+| 2026-09-23 | feat/health-preview-singleton | cc0e84fb7d | Health row preview: one cursor-bound card for the page; merged to main |
+| 2026-09-23 | fix/fitness-map-tiles | 40f70a07b0 | Fitness route maps: OpenStreetMap tiles (CARTO now requires a key); merged to main |
