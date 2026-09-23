@@ -324,12 +324,14 @@ describe('DrillItem', () => {
     expect(screen.getByRole('button', { name: /enter/i })).toBeInTheDocument();
   });
 
-  it('a held dictation result (third miss, step advanced) shows "It\'s X" and Next, not a retry', () => {
+  it('a held dictation result (third miss, step advanced) shows the result panel and Next, not a retry', () => {
     const onContinue = vi.fn();
     render(<DrillItem item={dictation} langs={langs} resolveAssetUrl={id} onRespond={vi.fn()} result={{ correct: false, answer: '가위' }} pending onContinue={onContinue} />);
-    expect(screen.getByRole('status')).toHaveTextContent("It's 가위");
-    expect(screen.getByRole('status')).not.toHaveTextContent('type it');
-    expect(screen.getByLabelText('Your answer')).toBeDisabled();
+    expect(screen.getByTestId('wl-result')).toHaveTextContent('The answer');
+    expect(screen.getByTestId('wl-result')).toHaveTextContent('가위');
+    expect(screen.getByTestId('wl-result')).not.toHaveTextContent('type it');
+    // The panel replaces the finished field: there is nothing left to type.
+    expect(screen.queryByLabelText('Your answer')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: /next/i }));
     expect(onContinue).toHaveBeenCalled();
   });

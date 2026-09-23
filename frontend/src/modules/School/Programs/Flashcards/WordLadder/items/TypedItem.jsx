@@ -8,6 +8,7 @@ import { useHardwareKeyboard } from '../../../../../../hooks/useHardwareKeyboard
 import { wordLadderLog } from '../wordLadderLog.js';
 import JamoKeypad from '../JamoKeypad.jsx';
 import EnglishCue, { englishCueAudio } from './EnglishCue.jsx';
+import ResultPanel from './ResultPanel.jsx';
 
 // Spec §6: the field has had focus this long with no keydown before the
 // keypad opens itself. Once per item — a physical keyboard shows up as
@@ -191,7 +192,11 @@ export default function TypedItem({ item, mode, langs, resolveAssetUrl, onRespon
   };
   // Tab = hear it again, the one key that works from inside the field (it
   // types nothing). Never a letter here: on the Korean layout H is ㅗ.
-  const hear = (mode === 'copy' || (dictation && !answered)) && termAudio
+  // Answered: Tab replays the revealed word (the result carries its audio).
+  const answerAudio = answered && result?.audio ? resolveAssetUrl(result.audio) : null;
+  const hear = answerAudio
+    ? () => playClip(answerAudio, 'term')
+    : (mode === 'copy' || (dictation && !answered)) && termAudio
     ? () => playClip(termAudio, 'term')
     : graded && englishCueAudio(item, resolveAssetUrl) ? () => playClip(englishCueAudio(item, resolveAssetUrl), 'gloss') : null;
   useWordLadderKeys({
@@ -208,32 +213,46 @@ export default function TypedItem({ item, mode, langs, resolveAssetUrl, onRespon
       <div className="wl-prompt">
         {mode === 'copy' && <FitText role="term" text={word?.term ?? ''} lang={langs.term} onFit={onLayout} />}
         {dictation && !answered && <TouchButton variant="secondary" keyHint="Tab" onClick={() => termAudio && playClip(termAudio, 'term')}><Icon name="volume" /> Listen</TouchButton>}
-        {graded && <EnglishCue item={item} resolveAssetUrl={resolveAssetUrl} lang={langs.gloss} />}
+        {graded && <EnglishCue item={item} resolveAssetUrl={resolveAssetUrl} lang={langs.gloss} keyHint={answerAudio ? null : 'Tab'} />}
       </div>
-      <input
-        ref={input}
-        className="wl-typed__field"
-        type="text"
-        lang={langs.term}
-        data-ime-lang={langs.term}
-        autoComplete="off"
-        autoCorrect="off"
-        spellCheck={false}
-        value={value}
-        disabled={fieldDisabled}
-        aria-label="Your answer"
-        onChange={(e) => setValue(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') { e.preventDefault(); submit(); }
-          // Show me = give up and see the word: the hunted-for Backslash, like
-          // Skip elsewhere. Nobody types a backslash into a Korean answer.
-          else if (e.code === 'Backslash' && canShowMe && !answered) { e.preventDefault(); showMe(); }
-        }}
-        onPointerDown={startLongPress}
-        onPointerUp={endLongPress}
-        onPointerLeave={endLongPress}
-        onPointerCancel={endLongPress}
-      />
+      {!answered && (
+        <input
+          ref={input}
+          className="wl-typed__field"
+          type="text"
+          lang={langs.term}
+          data-ime-lang={langs.term}
+          autoComplete="off"
+          autoCorrect="off"
+          spellCheck={false}
+          value={value}
+          disabled={fieldDisabled}
+          aria-label="Your answer"
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') { e.preventDefault(); submit(); }
+            // Show me = give up and see the word: the hunted-for Backslash, like
+            // Skip elsewhere. Nobody types a backslash into a Korean answer.
+            else if (e.code === 'Backslash' && canShowMe && !answered) { e.preventDefault(); showMe(); }
+          }}
+          onPointerDown={startLongPress}
+          onPointerUp={endLongPress}
+          onPointerLeave={endLongPress}
+          onPointerCancel={endLongPress}
+        />
+      )}
+      {answered && (
+        <ResultPanel
+          itemId={item.id}
+          correct={Boolean(result.correct)}
+          score={result.score ?? null}
+          answer={result.answer}
+          answerLang={langs.term}
+          typed={value || null}
+          reason={result.reason ?? null}
+          audio={answerAudio}
+        />
+      )}
       <div className="wl-controls">
         {mode === 'copy' && termAudio && <TouchButton variant="secondary" keyHint="Tab" onClick={() => playClip(termAudio, 'term')}><Icon name="volume" /> Hear it</TouchButton>}
         {/* A copy mismatch is a retry, not a terminal result — only a GRADED
@@ -251,13 +270,6 @@ export default function TypedItem({ item, mode, langs, resolveAssetUrl, onRespon
                 sends `answer` then) — from there the step is a copy. */}
             {dictation && !result.answer && 'Not quite — listen again and have another go.'}
             {dictation && result.answer && <>It&apos;s <span lang={langs.term}>{result.answer}</span> — type it</>}
-          </p>
-        )}
-        {graded && result && (
-          <p className="wl-verdict" role="status">
-            {result.correct && (result.score == null || result.score === 10) && 'Right!'}
-            {result.correct && result.score != null && result.score < 10 && <>Got it! Here&apos;s the spelling: <span lang={langs.term}>{result.answer}</span></>}
-            {!result.correct && <>It&apos;s <span lang={langs.term}>{result.answer}</span></>}
           </p>
         )}
         {graded && result && <TouchButton variant="primary" keyHint="Space" onClick={onContinue}>Next</TouchButton>}

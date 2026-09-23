@@ -128,10 +128,12 @@ describe('WordLadderProgram', () => {
     renderStarted(<WordLadderProgram descriptor={{ deckId: 'd', userId: 'test-learner' }} api={api} />);
     await screen.findByText('Glue');
     act(() => { fireEvent.keyDown(window, { key: '1' }); });
-    expect(await screen.findByText("It's Scissors")).toBeInTheDocument();
+    const panel = await screen.findByTestId('wl-result');
+    expect(panel).toHaveTextContent('Not quite');
+    expect(panel).toHaveTextContent('Scissors');
     // The response is exactly what the item sent — no flags spread in.
     expect(api.respond).toHaveBeenCalledWith('s', { userId: 'test-learner', itemId: 'r1:q:0', response: { choice: 'Glue' } });
-    expect(screen.getByText('Glue')).toBeInTheDocument();
+    expect(screen.getAllByText('Glue').length).toBeGreaterThan(0);
     expect(screen.queryByRole('region', { name: 'Flashcard' })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: /next/i }));
     expect(await screen.findByRole('region', { name: 'Flashcard' })).toBeInTheDocument();
@@ -345,7 +347,7 @@ describe('WordLadderProgram — dispatches every item type', () => {
     fireEvent.change(input, { target: { value: '가이' } });
     fireEvent.keyDown(input, { key: 'Enter' });
     await waitFor(() => expect(api.respond).toHaveBeenCalledWith('s', { userId: 'test-learner', itemId: 'd1:5', response: { typed: '가이' } }));
-    expect(await screen.findByText(/It's/)).toBeInTheDocument();
+    expect(await screen.findByTestId('wl-result')).toHaveTextContent('The answer');
     expect(screen.getByRole('region', { name: 'Write what you hear' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /next/i }));
     expect(await screen.findByRole('group', { name: 'Tiles' })).toBeInTheDocument();

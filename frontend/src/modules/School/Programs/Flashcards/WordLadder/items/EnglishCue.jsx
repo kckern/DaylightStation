@@ -23,7 +23,8 @@ export function englishCueParts(item) {
  * Listen button (Tab) for the gloss clip. Never an audio-only prompt: the text
  * is always on screen. The Korean is never here — it is the answer.
  */
-export default function EnglishCue({ item, resolveAssetUrl, lang }) {
+/** `keyHint={null}` once a result's own Listen owns Tab (one Tab hint on screen). */
+export default function EnglishCue({ item, resolveAssetUrl, lang, keyHint = 'Tab' }) {
   const parts = englishCueParts(item);
   if (!parts) return null;
   const src = parts.image && item.assets?.image ? resolveAssetUrl(item.assets.image) : null;
@@ -34,7 +35,7 @@ export default function EnglishCue({ item, resolveAssetUrl, lang }) {
       <div className="wl-cue__words">
         {parts.text && <div className="wl-cue__text"><FitText role="prompt" text={parts.text} lang={lang} /></div>}
         {glossAudio && (
-          <TouchButton variant="secondary" keyHint="Tab" onClick={() => playClip(glossAudio, 'gloss')}>
+          <TouchButton variant="secondary" keyHint={keyHint} onClick={() => playClip(glossAudio, 'gloss')}>
             <Icon name="volume" /> Listen
           </TouchButton>
         )}

@@ -486,7 +486,21 @@ export class WordLadderSittingService {
       });
     }
     this.#logTransitions({ learnerId: userId, sittingId, pkg, day, itemId }, transitions);
-    return { result: out.result, item: this.#publicItem(nextItem, nextCtx), progress: this.#progress(out.dayFile, ctx.settings) };
+    return { result: this.#withAnswerAudio(out.result, out.dayFile.items?.[itemId]?.wordId ?? (item.id === itemId ? item.wordId : null), ctx), item: this.#publicItem(nextItem, nextCtx), progress: this.#progress(out.dayFile, ctx.settings) };
+  }
+
+  /**
+   * Once the Korean answer is on screen (a result that names the term), its
+   * native clip goes with it, so the result panel's Listen can play the right
+   * word. Only then: a result that withholds the answer (a dictation retry)
+   * gets no audio either, and a 2.2 result's answer is the gloss, not the term.
+   */
+  #withAnswerAudio(result, wordId, ctx) {
+    if (!result?.answer || !wordId) return result;
+    const entry = ctx.lexicon.entries.get(wordId);
+    const m = ctx.media?.[wordId];
+    if (!entry || result.answer !== entry.term || !m?.audio) return result;
+    return { ...result, audio: m.ids.audio };
   }
 
   async get({ userId, sittingId } = {}) {

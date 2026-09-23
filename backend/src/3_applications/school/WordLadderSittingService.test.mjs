@@ -160,6 +160,15 @@ describe('WordLadderSittingService', () => {
     expect(judge).toHaveBeenCalledTimes(1);
   });
 
+  it('a revealed Korean answer comes with its audio id, for the result panel\'s Listen', async () => {
+    const { service } = make({ store: dueStore(1), media: true });
+    const { sittingId, item } = await service.open({ userId: 'test-learner', deckId: DECK });
+    const out = await service.respond({ userId: 'test-learner', sittingId, itemId: item.id, response: { typed: '가비' } });
+    expect(out.result).toMatchObject({ correct: false, answer: '가위', audio: expect.stringContaining(TERM_AUDIO) });
+    const repeat = await service.respond({ userId: 'test-learner', sittingId, itemId: item.id, response: { typed: '가비' } });
+    expect(repeat.result).toEqual(out.result);
+  });
+
   it('get returns the current item; close records the reason', async () => {
     const { service, store } = make();
     const opened = await service.open({ userId: 'test-learner', deckId: DECK });
