@@ -2447,3 +2447,135 @@
   .teacher-agenda-dispatch__ready button:last-child,
   .teacher-agenda-dispatch__blocked button { background: transparent; color: #756d5f; }
 }
+
+// WordLadderWordsPanel — the Words tab's per-deck table (task-5-brief.md).
+// Same palette as .teacher-reading above: this is an observation-plus-repair
+// surface over the same kind of per-child record, not a card grid.
+.teacher-word-ladder {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+
+  &__table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+
+    th, td {
+      text-align: left;
+      vertical-align: top;
+      padding: 8px 10px;
+      border-bottom: 1px solid #ece5d6;
+    }
+
+    th {
+      color: #8a7c5c;
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    td { color: #2b2620; }
+  }
+
+  &__row[data-excluded='true'] td { color: #a89d87; }
+
+  &__chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 9px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 800;
+    white-space: nowrap;
+
+    &--new, &--introduced { background: #efe9da; color: #6b6255; }
+    &--learning { background: #faedc8; color: #6f5419; }
+    &--mastered { background: #e2efdc; color: #396034; }
+    &--tricky { background: #f8dfd8; color: #813927; }
+  }
+
+  &__typed-list {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    min-width: 160px;
+  }
+
+  &__typed-toggle {
+    border: 0;
+    background: none;
+    padding: 0;
+    font: inherit;
+    font-size: 12px;
+    color: #604521;
+    text-align: left;
+    cursor: pointer;
+    text-decoration: underline dotted;
+
+    &:hover, &:focus-visible { color: #3d3326; }
+  }
+
+  &__typed-detail {
+    margin: 2px 0 4px;
+    padding: 6px 8px;
+    border: 1px solid #ece5d6;
+    border-radius: 8px;
+    background: #fffdf8;
+
+    p { margin: 0 0 6px; font-size: 12px; color: #5f584c; }
+  }
+
+  &__actions {
+    min-width: 320px;
+
+    .teacher-action-row { flex-wrap: wrap; align-items: center; }
+  }
+
+  &__stage-pick {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+    color: #6b6255;
+
+    select { min-height: 32px; }
+  }
+
+  &__pool {
+    padding-top: 10px;
+    border-top: 1px solid #e8e1d2;
+  }
+
+  &__pool-title {
+    margin: 0 0 6px;
+    color: #8a7c5c;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+  }
+
+  &__pool-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+
+    li {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 4px 0;
+      font-size: 13px;
+    }
+  }
+}
