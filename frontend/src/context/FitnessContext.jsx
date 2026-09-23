@@ -321,7 +321,13 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   }, []);
 
   // Session State
-  const fitnessSessionRef = useRef(new FitnessSession());
+  // Lazy: `useRef(new FitnessSession())` built a throwaway session (+ a
+  // GovernanceEngine that writes phase:'pending' into window.__fitnessGovernance)
+  // on EVERY render, so profiling logs reported a phase the live engine was not in.
+  const fitnessSessionRef = useRef(null);
+  if (fitnessSessionRef.current === null) {
+    fitnessSessionRef.current = new FitnessSession();
+  }
   const usersConfigRef = useRef({});
   
   // Sync kiosk mode to session — only kiosk clients auto-start sessions

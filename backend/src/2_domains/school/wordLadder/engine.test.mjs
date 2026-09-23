@@ -469,6 +469,15 @@ describe('engine — drill', () => {
     const withLexicon = openDay({ status: s, dayFile: emptyDay(D), day: D, deckId: 'deck', pool, settings: SET, learnerId: 'test-learner', at: at(), media: {}, lexicon });
     expect(withLexicon.dayFile.drills.map((d) => d.wordId)).toEqual(['gawi']);
   });
+  it('an open drill whose word has left the lexicon counts as done — no crash', () => {
+    const ctx = start(trickyStatus());
+    expect(currentItem(ctx)).toMatchObject({ type: 'drill', wordId: 'gawi' });
+    const without = new Map(lexicon.entries); without.delete('gawi');
+    const gone = { ...ctx, lexicon: { entries: without } };
+    const item = currentItem(gone);
+    expect(item.type).not.toBe('drill');
+    expect(() => respond(gone, item.id, item.type === 'flashcard' ? { seen: true } : {}, { at: at() })).not.toThrow(TypeError);
+  });
   it('the tricky drill is skipped when its estimate does not fit', () => {
     const tight = { ...emptyDay(D), activeMs: SET.session.capMinutes * 60000 - 200000 };
     const ctx = start(trickyStatus(), { dayFile: tight });
@@ -573,12 +582,16 @@ describe('engine — practice', () => {
     expect(currentItem(ctx)).toMatchObject({ id: 'menu', type: 'menu' });
   });
   it('the menu offers only modes whose default run is not empty', () => {
+    // Say is offered without term audio: say-from-cue (Without help) needs none.
     const noAudio = withWords(doneCtx({ microphone: true }), { chaek: familiar });
-    expect(currentItem(noAudio).modes).toEqual(['flashcards', 'write', 'drill', 'quiz']);
+    expect(currentItem(noAudio).modes).toEqual(['flashcards', 'say', 'write', 'drill', 'quiz']);
+    expect(currentItem(noAudio).sayHelp).toEqual([false]);
     const all = withWords(doneCtx({ microphone: true }), { gawi: familiar, pul: familiar, chaek: familiar, mul: familiar });
     expect(currentItem(all).modes).toEqual(['flashcards', 'match', 'say', 'write', 'listen', 'drill', 'quiz']);
+    expect(currentItem(all).sayHelp).toEqual([true, false]);
     const noMic = withWords(doneCtx(), { gawi: familiar });
     expect(currentItem(noMic).modes).toEqual(['flashcards', 'write', 'listen', 'drill', 'quiz']);
+    expect(currentItem(noMic).sayHelp).toEqual([]);
     const nothingToQuiz = withWords(doneCtx(), { gawi: { ...emptyWordV3(), state: 'mastered', stage: 1, introducedDay: '2026-09-01' } });
     expect(currentItem(nothingToQuiz).modes).not.toContain('quiz');
   });

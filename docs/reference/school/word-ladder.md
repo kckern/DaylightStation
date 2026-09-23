@@ -13,7 +13,8 @@ YAML + media, never a code change. Korean (`korean-vocab`) is the worked
 example throughout.
 
 Spec: `docs/_wip/plans/2026-09-22-word-ladder-mastery-redesign.md` (rev 4).
-This page describes what **Plan 1 (core loop)** actually ships; see
+This page describes what **Plan 1 (core loop)** and **Plan 2 (tricky-word
+drill, speaking, on-screen keypad, practice menu)** actually ship; see
 [What is not yet built](#what-is-not-yet-built) for the rest.
 
 ## Where things live
@@ -96,8 +97,9 @@ already was.
 | Paper row miss | `new`, `introduced`, `notYet` | logged only |
 | Paper row pass | any | logged only |
 
-`missStreak ≥ drill.afterMisses` sets `tricky` (flags the word — Plan 1 does
-not yet drill it; see below). Code: `backend/src/2_domains/school/wordLadder/mastery.mjs`.
+`missStreak ≥ drill.afterMisses` sets `tricky` (flags the word — see
+[The tricky-word drill](#the-tricky-word-drill-spec-3-drill-path) below).
+Code: `backend/src/2_domains/school/wordLadder/mastery.mjs`.
 
 ## Rounds and the three piles
 
@@ -134,6 +136,122 @@ One graded task per due word: below stage 2, `2.2` and `3.1` alternate and
 every `review.typedEvery`-th recheck is `3.3`; stage 2 and above is always
 `3.3`.
 
+## The tricky-word drill (spec §3 drill path)
+
+A word whose graded-miss streak reaches `drill.afterMisses` is flagged
+`tricky` (see States above), but the flag alone changes nothing else. Up to
+`drill.perSitting` (default 1) tricky words are drilled per **study day**,
+oldest `trickySince` first, drawn from the day's at-open snapshot; a word
+already drilled that day is never drawn again. The tricky drill starts at
+the top of a study day (after rechecks, before rounds), but only while the
+day's remaining time is at least 4 minutes (`DRILL_MS`, the drill's own time
+estimate) — if it doesn't fit, the day proceeds without it and the word
+stays tricky for another day. **Nothing in a drill grades or changes word
+state**; it exists purely to walk one word from full support to none.
+
+Steps, fixed at creation and always in this order
+(`DRILL_STEPS` in `backend/src/2_domains/school/wordLadder/drill.mjs`):
+
+| Step | What the child does | Skipped when |
+|---|---|---|
+| **look** | sees the picture, term and meaning together, and hears the term | never |
+| **copy** | the term is on screen; types it | never |
+| **say-after** | hears the term, records saying it after | no microphone capability, or the word has no term audio |
+| **match** | 4-pair picture/text match board (the drill word plus up to 3 other introduced words) | fewer than 2 other introduced words exist to pair with |
+| **read-aloud** | reads the term aloud and records; the native audio is revealed only after the take | no microphone capability |
+| **dictation** | hears the term (no text shown), types what was heard | the word has no term audio |
+| **tiles** | taps syllable tiles (the term's syllables plus 2 decoys) to spell the term from a cue | never |
+| **say-from-cue** | given only a cue (no term shown at all), records saying the term; the term is revealed only after the take | no microphone capability |
+| **type** | given only a cue, types the term | never |
+
+A step needing a microphone or term audio is dropped from the walk when the
+drill is created (`stepsFor`/`drillSteps`) — never shown and blocked on, and
+never an error. **Tiles and dictation are never dead ends**: a miss retries
+the same step in place — the term stays hidden through the first miss, is
+**revealed** (read-only, "It's 가위 — …", the step becomes copyable) after
+the **second** miss, and the step **advances regardless on the third try**.
+When a tiles or dictation step advances (a match or the third miss) the
+program **holds** that verdict — "Right!" or "It's 가위" — with a Next
+button before the next step replaces it (`HELD_DRILL_STEPS`). An open drill
+whose word has since left the lexicon is treated as done (`openDrill`), never
+a 500.
+Copy and type must match exactly to advance (copy's miss carries the answer
+so the retry can be completed); say-after / read-aloud / say-from-cue are
+speaking and never graded at all (see [Speaking](#speaking-never-graded)).
+
+Two ways into a drill:
+
+- **Tricky drill** (`source: 'tricky'`) — automatic, described above.
+- **Round-end drill offer** (`source: 'offer'`, spec §3) — **at most one per
+  round**, for the round's word whose latest sort was Not yet with the most
+  Not-yet sorts this round, and only while the drill still fits the
+  remaining time (≥ 4 minutes; never offered once the day's cap is spent).
+  The child is asked "This one's tricky — want to practise it?"
+  (`Practise` / `Not now`, keys 1/2, `items/DrillOfferItem.jsx`) — never
+  forced, and answering either way finishes the round.
+
+## Speaking (never graded)
+
+Say-after (drill, round intro, and the practice menu's Say mode),
+read-aloud and say-from-cue (spec §3 1.2 / 1.3 / 3.4) are never graded and
+never a gate: Skip/Next is available from the moment the item is on
+screen, and whatever button is pressed the response is always
+`{done:true}` — a take is never required, only offered.
+
+A **kept** take (one that passes the shared speech floor —
+`shared/speechFloor.js`, not too quiet, not too short) is uploaded via
+`POST /word-ladder/sittings/:sittingId/recordings/:itemId` and saved for a
+grown-up to review at
+`media/school/recordings/word-ladder/<package>/<learnerId>/<studyDay>/<wordId>-<n>.<ext>`
+(`FilesystemWordLadderRecordings`). **Test mode never writes a file**: its
+sink (`DiscardingRecordings`) counts the take and drops it, so the test
+banner's "nothing is saved" holds for speaking too. A refused take (too
+quiet / too short) is never uploaded and never disables anything.
+
+What the child sees before a take differs by step, following exactly what
+the server sent (never a local guess):
+
+- **say-after** — the full word card and its native audio play on arrival
+  ("see and hear it, then say it"); the take reveals nothing new.
+- **read-aloud** — the term's text only; no audio until a take is uploaded,
+  at which point the response's `reveal: {term, audio}` unlocks the native
+  clip.
+- **say-from-cue** — no word at all, only a cue; the term itself is learned
+  for the first time from `reveal.term` after a take — reading it off the
+  card can't stand in for recalling it.
+
+Playback order after a kept take is always the child's own take, then the
+native audio — never the other order. An upload failure is logged
+(`recordingFailed`) and never blocks; for read-aloud/say-from-cue nothing is
+revealed on a failed upload (the take was still said and heard — only the
+grown-up review copy, and the reveal, are missing).
+
+**Intro say-after**: introducing a new word (spec §2 flash → say → copy)
+inserts a say-after step between the flashcard flash and the copy step,
+but only when the sitting has microphone capability **and** the word has
+term audio — otherwise introduction goes straight from flash to copy.
+
+## The on-screen jamo keypad (spec §6)
+
+There is no web API that tells a page a Bluetooth keyboard is attached, so
+the keypad (`JamoKeypad.jsx`) is a **toggle**, offered on every typing item
+(copy, dictation, graded typed, and a drill's copy/dictation/type steps).
+Two-set (두벌식) layout: base rows plus a Shift key for ㅃ/ㅉ/ㄸ/ㄲ/ㅆ/ㅒ/ㅖ
+(Shift is one-shot — it releases after the next key press whether or not
+that key has a Shift form), backspace, and Enter/submit. Every key fires on
+`onPointerDown` (never `onClick`) and re-focuses the field first, so a tap
+never loses focus mid-run.
+
+It **auto-opens once per item**: once the field has had focus for 10 s with
+no keydown, the keypad opens itself and refocuses the field
+(`KEYPAD_AUTO_OPEN_MS` in `TypedItem.jsx`) — skipped if the item has since
+moved on or the field is disabled (a held verdict, a submit in flight). It
+**closes on the first physical keydown** on the field — a `document`-level
+capture listener, because the in-page Hangul IME's own capture listener
+stops propagation before it would otherwise reach the field. When the
+keypad is open, the typed item's prompt collapses to a compact height so
+the stage still fits at 1280×800.
+
 ## Typed input and the judge (`WordLadderTypedJudge`)
 
 A mastery test, not a spelling test — grading is deliberately generous.
@@ -156,8 +274,10 @@ model call. **Longer words**: if `word_ladder.judge.model` is configured, a
 small low-effort model may raise an eligible floor (score ≥ 4 and d/L ≤ 33%) by
 **one band** (`judge: model`), never lower it; model failure or timeout falls
 back to the deterministic score (`judge: fallback`). **On this household
-`word_ladder.judge.model` is `null`, so the model step never runs** — every
-verdict today is `exact`, `no-hangul`, `guard`, `distance` or `cache`.
+`word_ladder.judge.model` is `gpt-5-nano`**, so a long-word misspelling that
+clears the deterministic floor can still gain the model's +1-band step;
+verdicts still land on `exact`, `no-hangul`, `guard`, `distance`, `cache` or
+`fallback` whenever the model doesn't apply or doesn't answer in time.
 
 Pass = score ≥ `typing.passScore` (default 6). Verdicts are cached by
 (package, word id, normalised answer) in
@@ -170,10 +290,10 @@ no second call.
 Goal and cap are **per study day, across all of that day's sittings** — idle
 close makes several sittings a day routine.
 
-- **Goal (Plan 1)** = every recheck in the day's first sitting's at-open
-  snapshot answered, and every round started today finished (stream + quiz).
-  The spec's full goal also includes the day's drill run; Plan 1 has no drill,
-  so the engine's done-rule omits that clause until Plan 2 lands.
+- **Goal** = every recheck in the day's first sitting's at-open snapshot
+  answered, every round started today finished (stream + quiz), and the
+  day's tricky-word drill — if the day started one — finished too. A day
+  cannot go "done" with an open drill sitting mid-walk.
 - **Cap** = cumulative `activeMs` of the day's sittings ≥ `session.capMinutes`
   (default 15; active means input within the last 45s) with no round in
   progress.
@@ -208,9 +328,62 @@ moves the goalposts under a child already partway through.
 | `review.gapScale` | recheck gap multiplier | 1.0 |
 | `review.typedEvery` | typed-recheck cadence below stage 2 | 2 |
 | `drill.afterMisses` | graded-miss streak → tricky | 2 |
-| `drill.perSitting` | tricky words drilled per sitting | 1 (not yet acted on — Plan 2) |
+| `drill.perSitting` | tricky words drilled per study day | 1 |
 | `session.capMinutes` | day cap | 15 |
 | `typing.passScore` | judge pass threshold | 6 |
+
+## The practice menu (spec §6, post-goal)
+
+Once the day is done (goal or cap) the summary shows once
+(`dayFile.summarySeen`), then the **practice menu**: exactly the modes the
+server lists in `item.modes` (`PRACTICE_MODES` in
+`backend/src/2_domains/school/wordLadder/practice.mjs`: flashcards, match,
+say, write, listen, drill, quiz) — a mode whose default run (with help,
+every introduced word) would come up empty is not offered at all. **Say** is
+the exception: it is offered when EITHER variant has a run (Without help
+needs no term audio), and the menu item's `sayHelp` (`[true,false]` subset)
+lists the variants the With/Without help chooser offers. Only
+**Quiz me** grades (rule 1); every other mode is study and never changes a
+word's state except a sort (down freely, up only to Got it, same as the
+round stream).
+
+| Mode | How it's chosen | With help | Without help |
+|---|---|---|---|
+| Flashcards | front side ("Word first" / "Meaning first") | term-first | meaning-first |
+| Match | starts directly | 4–6 pair picture/text boards over the practice word set | — |
+| Say | With help / Without help | **1.2 say-after** — hears the term, says it after (dropped from the run if no microphone or the word has no term audio) | **3.4 say-from-cue** — cue only; there's no model to say after, so the native comparison at the end is simply skipped |
+| Write | With help / Without help | **1.1 copy-type** — the term is on screen, type it | **3.3 type-from-cue** — cue only, no reference to copy; a **Show me** button submits an empty answer and reveals the word (the drill's type step has it too) |
+| Listen | starts directly | one run through every practice word that has term audio (`items/ListenItem.jsx`) | — |
+| Drill | word picker first (**My words**, multi-select, "Drill these") | the same drill walk as the tricky-word drill (look → … → type), over the chosen words | — |
+| Quiz me | starts directly | graded — see below | — |
+
+**Quiz me eligibility** is the same rule as a round's verify (rule 3):
+`familiar` or `claimed` state, or `notYetCarry === true` — never `new`,
+`introduced` or `notYet` — and never a word whose `verifyFailedDay` is
+today.
+
+**Practice flashcards are forward-only.** The spec (§6) describes a
+practice flashcard run with prev/next and undo; Plan 2 shipped it
+**forward-only** — a deliberate ruling recorded mid-build, not an
+oversight. Sort 1/2/3 or Space advances; there is no back/undo key on this
+run. Cost if wrong: a child can't back up a card in free practice.
+
+A practice run replaces any earlier one; starting one also marks the
+summary seen. `{menu:true}` (the Menu button, key **M**) ends the run early
+and returns to the menu — disabled while a typing item's field has focus,
+so a Korean-layout keystroke (ㅡ, physically `M`) can't end the run by
+accident.
+
+### My words
+
+Read-only from the practice menu ("My words", `items/WordsItem.jsx`) or as
+the word picker for Drill ("Pick words to drill", `pick` mode, introduced
+words only): every word the learner can meet — decks seen in order, then
+the current deck, plus any other introduced word — with a state chip
+(New / Just met / Not yet / Familiar / Got it / Mastered, with stars for
+mastery stage) and a Tricky chip when set. `GET /word-ladder/words` in test
+mode **requires `sittingId`** — it reads that sitting's shadow; there is no
+"current" live status for it to fall back to.
 
 ## API
 
@@ -312,10 +485,21 @@ The sitting does not open on mount: the program first shows its title
 tap is the page's user gesture, so the clips after it may autoplay; only then
 is `POST …/open` sent. The test banner shows on the Start screen too.
 
-Items live today: flashcard front/back (`items/FlashcardItem.jsx`), choice
-(`items/ChoiceItem.jsx`), typed/copy (`items/TypedItem.jsx`), summary
-(`items/SummaryItem.jsx`). Keys: `useWordLadderKeys.js` (1/2/3 sort, Space/Enter
-continue, 1–4/0 choices, U undo, Q quiz me, H hear). Keys match the
+Items live today: flashcard front/back (`items/FlashcardItem.jsx`, intro and
+practice modes), choice (`items/ChoiceItem.jsx`), typed/copy/dictation/
+practice (`items/TypedItem.jsx`), the tricky-word drill
+(`items/DrillItem.jsx`, delegating each step to the item that already
+renders that task, plus `items/TilesItem.jsx` for pick-spelling and
+`items/MatchItem.jsx` for the match board), the round-end drill offer
+(`items/DrillOfferItem.jsx`), speaking (`items/SayItem.jsx` — say-after,
+read-aloud, say-from-cue), the practice menu's listen run
+(`items/ListenItem.jsx`), the practice menu and My words / word picker
+(`items/MenuItem.jsx`, `items/WordsItem.jsx`), and summary
+(`items/SummaryItem.jsx`). Keys: `useWordLadderKeys.js` (1/2/3 sort,
+Space/Enter continue, 1–4/0 choices, U undo, Q quiz me, H hear, match board
+digits (both columns hinted: a digit picks a word, the next picks its
+meaning), M menu — only
+while a practice item is on screen and no typing field has focus). Keys match the
 **physical** key (`event.code` — `KeyH`, `Digit1`, `Space`, `NumpadEnter`…)
 first and `event.key` second, because on a Korean keyboard layout `key` for H
 is `ㅗ`. Keys typed into an input are never taken as commands.
@@ -324,6 +508,12 @@ The typed field declares the lexicon's BCP-47 code (`lang` / `data-ime-lang`,
 e.g. `ko`); `ime/languages.js` normalises it (`ko`, `ko-KR` → `KR`) so the
 in-page Hangul IME switches to Korean on focus. A copy mismatch clears the
 field for the retry.
+
+**One audio lane** (`wordLadderAudio.js`): every clip goes through
+`startClip`, and starting one stops whichever is playing; the program stops
+the lane on unmount. **A late take is dropped**: `useTakeRecorder` ignores a
+MediaRecorder `onstop` that lands after its item unmounted (Stop, then Next),
+so it is never uploaded or played over the next item.
 
 An **image cue** on 3.1 / 3.3 always arrives with the gloss as `cue.text` (the
 gloss is the cue there, never the answer). `items/CuePicture.jsx` renders the
@@ -351,17 +541,19 @@ on each turn.
 
 ## What is not yet built
 
-This page describes **Plan 1 (core loop)** only:
-`docs/_wip/plans/2026-09-22-word-ladder-plan-1-core-loop.md`. The rest of the
-spec is written but not implemented:
+This page describes **Plan 1 (core loop)** and **Plan 2 (tricky-word drill,
+speaking, on-screen keypad, practice menu)**:
+`docs/_wip/plans/2026-09-22-word-ladder-plan-1-core-loop.md`,
+`docs/_wip/plans/2026-09-22-word-ladder-plan-2-drill-practice.md`. The rest of
+the spec is written but not implemented:
 
-- **Drill, practice menu, keypad, say-tasks** — `docs/_wip/plans/2026-09-22-word-ladder-plan-2-drill-practice.md`.
-  `tricky` is flagged (§ States above) but never drilled yet; there is no
-  practice menu, no on-screen jamo keypad, and no recorded speaking task.
 - **Trace CLI and grown-up word controls** — `docs/_wip/plans/2026-09-22-word-ladder-plan-4-observability-controls.md`.
   `school word-ladder trace` and the teacher console's per-word reset/exclude/
   re-grade controls do not exist; a word's state is visible only in
   `status.yml` today.
+- **Practice flashcards prev/undo** — spec §6 describes a practice
+  flashcard run with prev/next and undo; Plan 2 shipped it forward-only (see
+  [The practice menu](#the-practice-menu-spec-6-post-goal)), by ruling.
 - **Tuning agent** — `docs/_wip/plans/2026-09-22-word-ladder-plan-5-tuning-agent.md`.
   `word_ladder.settings` / `word_ladder.bounds` are static config; nothing
   adjusts them automatically yet.

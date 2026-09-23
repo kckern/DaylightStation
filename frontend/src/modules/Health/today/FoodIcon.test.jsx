@@ -1,6 +1,8 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent, act } from '@testing-library/react';
-import { FoodIcon } from './FoodIcon.jsx';
+import { FoodIcon, resetDecodedIcons } from './FoodIcon.jsx';
+
+beforeEach(() => resetDecodedIcons());
 
 const { reportArtworkFailure } = vi.hoisted(() => ({ reportArtworkFailure: vi.fn() }));
 vi.mock('./artworkLog.js', () => ({ reportArtworkFailure }));
@@ -37,5 +39,19 @@ describe('stable food artwork', () => {
     fireEvent.error(container.querySelector('img'));
     expect(reportArtworkFailure).toHaveBeenCalledWith('icon', 'cheese',
       { url: '/api/v1/health/nutrition/icons/cheese', reason: 'load' });
+  });
+});
+
+describe('decoded icons across remounts', () => {
+  it('an icon decoded once paints immediately when a new row mounts it', async () => {
+    const first = render(<FoodIcon icon="carrot" />);
+    const img = first.container.querySelector('img');
+    img.decode = vi.fn(() => Promise.resolve());
+    await act(async () => fireEvent.load(img));
+    expect(first.container.firstChild.dataset.state).toBe('ready');
+    first.unmount();
+    const second = render(<FoodIcon icon="carrot" />);
+    expect(second.container.firstChild.dataset.state).toBe('ready');
+    expect(second.container.querySelector('svg')).toBeNull();
   });
 });

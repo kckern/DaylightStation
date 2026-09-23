@@ -3,9 +3,15 @@ import { renderHook, waitFor, act } from '@testing-library/react';
 
 const apiMock = vi.fn();
 vi.mock('../../../lib/api.mjs', () => ({ DaylightAPI: (...a) => apiMock(...a) }));
+const infoLog = vi.fn();
+vi.mock('../../../lib/ui/createAppLogger.js', () => {
+  const log = { debug: vi.fn(), info: (...a) => infoLog(...a), warn: vi.fn(), error: vi.fn(), sampled: vi.fn() };
+  log.child = () => log;
+  return { createAppLogger: () => log };
+});
 
 import { useHealthDay } from './useHealthDay.js';
-import { resetApiResourceCache } from '../../../lib/hooks/useApiResource.js';
+import { resetApiResourceCache, primeApiResource } from '../../../lib/hooks/useApiResource.js';
 
 const ROWS = [
   { uuid: '1', name: 'Eggs', calories: 140, mealTime: 'morning' },
@@ -112,5 +118,20 @@ describe('useHealthDay', () => {
     // No waitFor — this is the very first render after mount.
     expect(second.result.current.loading).toBe(false);
     expect(second.result.current.items).toHaveLength(3);
+  });
+
+  it('logs day.view once per date: cold, then from the cache', async () => {
+    infoLog.mockClear();
+    primeApiResource('api/v1/health/day?date=2026-09-01', { items: ROWS, budget: BUDGET, revision: 1 });
+    const { result, rerender } = renderHook(({ date }) => useHealthDay(date), { initialProps: { date: '2026-09-02' } });
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    rerender({ date: '2026-09-01' });
+    await waitFor(() => expect(infoLog.mock.calls.filter(([e]) => e === 'day.view')).toHaveLength(2));
+    rerender({ date: '2026-09-01' });
+    const views = infoLog.mock.calls.filter(([e]) => e === 'day.view').map(([, d]) => d);
+    expect(views).toHaveLength(2);
+    expect(views[0]).toMatchObject({ date: '2026-09-02', fromCache: false });
+    expect(views[1]).toMatchObject({ date: '2026-09-01', fromCache: true });
+    expect(views.every(v => Number.isFinite(v.paintMs) && v.paintMs >= 0)).toBe(true);
   });
 });

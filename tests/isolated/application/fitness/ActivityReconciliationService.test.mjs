@@ -323,3 +323,208 @@ describe('ActivityReconciliationService — Pass 1: title/description correction
     expect(stravaClient.updateActivity).not.toHaveBeenCalled();
   });
 });
+
+describe('ActivityReconciliationService — title sync (Strava → session)', () => {
+  let stravaClient;
+  let service;
+
+  const stravaOnly = () => ({
+    sessionId: '20260919104104',
+    session: { id: '20260919104104', start: '2026-09-19 10:41:04', duration_seconds: 4920, source: 'strava' },
+    participants: {},
+    timeline: { events: [] },
+    summary: { media: [] },
+    strava: { activityId: 20245291061, name: 'Morning Run' },
+  });
+
+  beforeEach(() => {
+    vi.resetAllMocks();
+    let firstDate = null;
+    dirExists.mockImplementation((p) => {
+      const date = p?.match(/(\d{4}-\d{2}-\d{2})/)?.[1];
+      if (!firstDate && date) firstDate = date;
+      return date === firstDate;
+    });
+    listYamlFiles.mockReturnValue(['20260919104104']);
+    stravaClient = { getActivity: vi.fn(), updateActivity: vi.fn().mockResolvedValue({}) };
+    service = new ActivityReconciliationService({
+      activityGateway: stravaClient,
+      lookbackDays: 10,
+      selectionConfig: {},
+      timezone: 'America/Los_Angeles',
+      historyRepository: historyRepository(),
+      logger: { info: vi.fn(), warn: vi.fn() },
+    });
+  });
+
+  test('pulls a title renamed on Strava into session.strava.name', async () => {
+    loadYamlSafe.mockReturnValue(stravaOnly());
+    stravaClient.getActivity.mockResolvedValue({
+      id: 20245291061,
+      name: 'Seattle North Spartan Sprint 5K - Saturday',
+      start_date: '2026-09-19T17:41:04Z',
+      elapsed_time: 4920,
+    });
+
+    await service.reconcile();
+
+    const saved = saveYaml.mock.calls.map(c => c[1]).find(s => s?.strava);
+    expect(saved.strava.name).toBe('Seattle North Spartan Sprint 5K - Saturday');
+  });
+
+  test('does not add a name to a home session strava block', async () => {
+    const home = { ...stravaOnly(), session: { id: 'h', start: '2026-09-19 10:41:04', source: 'home' }, strava: { activityId: 20245291061 } };
+    loadYamlSafe.mockReturnValue(home);
+    stravaClient.getActivity.mockResolvedValue({ id: 20245291061, name: 'Lunch Workout' });
+
+    await service.reconcile();
+
+    const saved = saveYaml.mock.calls.map(c => c[1]).find(s => s?.strava);
+    expect(saved.strava.name).toBeUndefined();
+  });
+
+  test('leaves the title alone when Strava has none', async () => {
+    loadYamlSafe.mockReturnValue(stravaOnly());
+    stravaClient.getActivity.mockResolvedValue({ id: 20245291061, name: '' });
+
+    await service.reconcile();
+
+    const saved = saveYaml.mock.calls.map(c => c[1]).find(s => s?.strava);
+    expect(saved.strava.name).toBe('Morning Run');
+  });
+});
+
+describe('ActivityReconciliationService — auth + rename webhook', () => {
+  const baseDeps = (overrides = {}) => ({
+    activityGateway: { getActivity: vi.fn().mockResolvedValue(null), updateActivity: vi.fn() },
+    lookbackDays: 3,
+    selectionConfig: {},
+    timezone: 'America/Los_Angeles',
+    historyRepository: historyRepository(),
+    logger: { info: vi.fn(), warn: vi.fn() },
+    ...overrides,
+  });
+
+  beforeEach(() => {
+    vi.resetAllMocks();
+    let firstDate = null;
+    dirExists.mockImplementation((p) => {
+      const date = p?.match(/(\d{4}-\d{2}-\d{2})/)?.[1];
+      if (!firstDate && date) firstDate = date;
+      return date === firstDate;
+    });
+    listYamlFiles.mockReturnValue(['s1']);
+  });
+
+  test('refreshes provider auth before sweeping', async () => {
+    const order = [];
+    const deps = baseDeps({ ensureAccess: vi.fn(async () => order.push('auth')) });
+    deps.activityGateway.getActivity.mockImplementation(async () => { order.push('fetch'); return null; });
+    loadYamlSafe.mockReturnValue({ sessionId: 's1', strava: { activityId: 5, name: 'x' } });
+    await new ActivityReconciliationService(deps).reconcile();
+    expect(order[0]).toBe('auth');
+    expect(order).toContain('fetch');
+  });
+
+  test('skips the sweep when auth fails instead of erroring per session', async () => {
+    const deps = baseDeps({ ensureAccess: vi.fn().mockRejectedValue(new Error('no refresh token')) });
+    loadYamlSafe.mockReturnValue({ sessionId: 's1', strava: { activityId: 5, name: 'x' } });
+    await new ActivityReconciliationService(deps).reconcile();
+    expect(deps.activityGateway.getActivity).not.toHaveBeenCalled();
+    expect(deps.logger.warn).toHaveBeenCalledWith('strava.reconciliation.auth_failed', expect.anything());
+  });
+
+  test('applyTitle writes a renamed title into the linked session', () => {
+    loadYamlSafe.mockReturnValue({ sessionId: 's1', strava: { activityId: 20245291061, name: 'Morning Run' } });
+    const updated = new ActivityReconciliationService(baseDeps()).applyTitle('20245291061', 'Spartan Sprint');
+    expect(updated).toBe(1);
+    expect(saveYaml.mock.calls[0][1].strava.name).toBe('Spartan Sprint');
+  });
+
+  test('applyTitle leaves other activities alone', () => {
+    loadYamlSafe.mockReturnValue({ sessionId: 's1', strava: { activityId: 999, name: 'Morning Run' } });
+    expect(new ActivityReconciliationService(baseDeps()).applyTitle('20245291061', 'Spartan Sprint')).toBe(0);
+    expect(saveYaml).not.toHaveBeenCalled();
+  });
+});
+
+describe('ActivityReconciliationService — Pass 4: Strava timeline repair', () => {
+  const squeezed = () => ({
+    sessionId: '20260919104104',
+    session: { id: '20260919104104', duration_seconds: 100, source: 'strava' },
+    participants: { kc: {} },
+    timeline: { interval_seconds: 5, tick_count: 4, series: { 'kc:hr': [130, 130, 130, 130] } },
+    treasureBox: { totalRings: 8 },
+    summary: { rings: { total: 8 }, participants: { kc: { rings: 8 } } },
+    strava: { activityId: 42, name: 'Run' },
+  });
+  // 20 samples, one every 5s → 20 ticks covering 100s
+  const streams = { heartrate: { data: Array(20).fill(130) }, time: { data: Array.from({ length: 20 }, (_, i) => i * 5) } };
+
+  let gateway; let repo; let health; let service;
+  beforeEach(() => {
+    vi.resetAllMocks();
+    let firstDate = null;
+    dirExists.mockImplementation((p) => {
+      const date = p?.match(/(\d{4}-\d{2}-\d{2})/)?.[1];
+      if (!firstDate && date) firstDate = date;
+      return date === firstDate;
+    });
+    listYamlFiles.mockReturnValue(['20260919104104']);
+    gateway = {
+      getActivity: vi.fn().mockResolvedValue({ id: 42, name: 'Run' }),
+      updateActivity: vi.fn(),
+      getActivityStreams: vi.fn().mockResolvedValue(streams),
+    };
+    repo = { ...historyRepository(), snapshot: vi.fn(() => '/backups/x.yml') };
+    health = { recordSweep: vi.fn() };
+    service = new ActivityReconciliationService({
+      activityGateway: gateway, lookbackDays: 2, selectionConfig: {}, timezone: 'America/Los_Angeles',
+      historyRepository: repo, health, logger: { info: vi.fn(), warn: vi.fn() },
+    });
+  });
+
+  test('rebuilds a squeezed Strava-only timeline, snapshotting first', async () => {
+    loadYamlSafe.mockReturnValue(squeezed());
+    await service.reconcile();
+    expect(gateway.getActivityStreams).toHaveBeenCalledWith('42', ['heartrate', 'time']);
+    expect(repo.snapshot).toHaveBeenCalledWith('20260919104104', 'timeline-rebuild');
+    const saved = saveYaml.mock.calls.map(c => c[1]).find(s => s?.timeline);
+    expect(saved.timeline.tick_count).toBe(20);
+    expect(saved.treasureBox.totalRings).toBe(40);
+    expect(health.recordSweep).toHaveBeenCalledWith(expect.objectContaining({ ok: true, flagged: [] }));
+  });
+
+  test('never shrinks: a shorter provider stream is reported, not written', async () => {
+    const s = squeezed();
+    s.timeline.tick_count = 30;
+    s.timeline.series['kc:hr'] = Array(30).fill(130);
+    s.session.duration_seconds = 400;
+    loadYamlSafe.mockReturnValue(s);
+    await service.reconcile();
+    expect(repo.snapshot).not.toHaveBeenCalled();
+    const saved = saveYaml.mock.calls.map(c => c[1]).find(x => x?.timeline);
+    expect(saved?.timeline.tick_count ?? 30).toBe(30);
+    expect(health.recordSweep).toHaveBeenCalledWith(expect.objectContaining({
+      flagged: ['20260919104104'],
+      unresolved: [{ sessionId: '20260919104104', reason: 'would-shrink' }],
+    }));
+  });
+
+  test('leaves consistent and home sessions alone', async () => {
+    const s = squeezed();
+    s.session.source = undefined;
+    loadYamlSafe.mockReturnValue(s);
+    await service.reconcile();
+    expect(gateway.getActivityStreams).not.toHaveBeenCalled();
+  });
+
+  test('reports a sweep where most sessions error as failed', async () => {
+    loadYamlSafe.mockReturnValue(squeezed());
+    gateway.getActivity.mockRejectedValue(new Error('Request failed with status code 401'));
+    await service.reconcile();
+    expect(health.recordSweep).toHaveBeenCalledWith(expect.objectContaining({
+      ok: false, errors: 1, error: 'Request failed with status code 401',
+    }));
+  });
+});

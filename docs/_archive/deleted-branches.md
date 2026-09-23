@@ -475,3 +475,9 @@ The corollary bit twice in this sweep: `feat/teacher-workspace-ia` and `feature/
 | 2026-09-22 | feat/recording-in-pieces | 863b518544 | Sentence Ladder recording in pieces (→ cut, per-piece redo/compare, joined WAV) + Tab-after-take compares; merged to main as 3f1ff3104 |
 | 2026-09-22 | feat/word-ladder-v3 | d28952e1b8 | Word ladder v3 core loop (Plan 1): mastery states, rounds + 3-pile stream, round-end verify, typed judge, day engine, door + /test mode, stage/TouchButton/FitText; merged to main as 2802647b89 |
 | 2026-09-22 | feat/word-ladder-p3 | 29a4a17d17 | Word ladder Plan 3: per-learner printed quiz (builder, lowercase-week ids, segment-bounded fold refusing siblings, CLI --learner); merged to main as 29a4a17d17 |
+| 2026-09-22 | fix/density-units | 52ead8b9b | Density for volume/cup/spoon/imperial units; scan repair restores legacy quantities (grams from mislabeled legacy amounts, volumes restored) |
+| 2026-09-22 | feat/health-day-prefetch | 0bac5d2a9 | Health ±7-day prefetch, instant shortlists, no cached-day flicker, add-row mic, calorie sort + inline bar, exercise memos/descriptions |
+| 2026-09-22 | feat/health-add-polish | 6de6dae8e | Add-row overlay popup, pending/highlight rows, 16-row blended shortlist + icon fallback, AI estimate for calorie-less scans, row magnifier card, frozen order during drags + FLIP, new UI observability |
+| 2026-09-22 | fix/strava-hr-time-axis | b27672b75 | Strava HR on the time stream (sessions ~5x short), title sync + rename webhooks, sweep auth refresh, save-time integrity check, grow-only repair, sync-health push; merged to main as 5835fca97 |
+| 2026-09-22 | fix/fitness-play-means-play | aea482f7f | Fitness play re-paused by stale governance closure (leaked media listener); merged 3246ec6b5 |
+| 2026-09-22 | feat/word-ladder-p2 | db6ffe08ae | Word ladder Plan 2: tricky drill + offer, say-it recording, jamo keypad, practice menu + My words; deployed as db6ffe08ae; merged to main as f63dc25e8f |

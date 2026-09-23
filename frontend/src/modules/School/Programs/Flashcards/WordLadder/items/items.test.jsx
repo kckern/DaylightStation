@@ -287,6 +287,38 @@ describe('TypedItem keypad toggle', () => {
   });
 });
 
+describe('TypedItem — busy keeps the keypad, Show me', () => {
+  const cueItem = { id: 'b1', type: 'typed', task: '3.3', cue: { type: 'text', text: 'Scissors' }, assets: {} };
+
+  it('an open keypad and its toggle stay mounted while a submit is in flight; only an answer removes them', () => {
+    const props = { item: cueItem, mode: 'graded', langs, resolveAssetUrl: (x) => x, onRespond: () => {}, onContinue: () => {} };
+    const { rerender } = render(<TypedItem {...props} />);
+    fireEvent.click(screen.getByRole('button', { name: /Keypad/ }));
+    rerender(<TypedItem {...props} busy />);
+    expect(screen.getByTestId('jamo-keypad')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Keypad/ })).toBeInTheDocument();
+    rerender(<TypedItem {...props} result={{ correct: true, score: 10, answer: '가위' }} />);
+    expect(screen.queryByTestId('jamo-keypad')).toBeNull();
+    expect(screen.queryByRole('button', { name: /Keypad/ })).toBeNull();
+  });
+
+  it('practice mode (drill type step) offers Show me → {typed:""}', () => {
+    const onRespond = vi.fn();
+    render(<TypedItem item={cueItem} mode="practice" langs={langs} resolveAssetUrl={(x) => x} onRespond={onRespond} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Show me' }));
+    expect(onRespond).toHaveBeenCalledWith({ typed: '' });
+  });
+
+  it('Write without help (an unjudged typed item) offers Show me; a judged one and copy do not', () => {
+    const { rerender } = render(<TypedItem item={{ ...cueItem, graded: false }} mode="graded" langs={langs} resolveAssetUrl={(x) => x} onRespond={() => {}} />);
+    expect(screen.getByRole('button', { name: 'Show me' })).toBeInTheDocument();
+    rerender(<TypedItem item={{ ...cueItem, id: 'b2' }} mode="graded" langs={langs} resolveAssetUrl={(x) => x} onRespond={() => {}} />);
+    expect(screen.queryByRole('button', { name: 'Show me' })).toBeNull();
+    rerender(<TypedItem item={{ id: 'b3', type: 'copy', word, assets: {} }} mode="copy" langs={langs} resolveAssetUrl={(x) => x} onRespond={() => {}} />);
+    expect(screen.queryByRole('button', { name: 'Show me' })).toBeNull();
+  });
+});
+
 describe('SummaryItem', () => {
   it('shows the quizzed count and calls onExit on Space', () => {
     const onExit = vi.fn();

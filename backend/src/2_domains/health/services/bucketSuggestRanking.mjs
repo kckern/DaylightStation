@@ -110,3 +110,70 @@ export function rankSuggestions(entries, { bucket = null, nowMs, limit = 12 } = 
     ))
     .slice(0, limit);
 }
+
+/**
+ * The zero-keystroke shortlist: half "what I usually have here", half "what I
+ * had lately", interleaved.
+ *
+ * The frequency ranking alone (`rankSuggestions`) buries a food that is new
+ * or occasional under years of regulars: something eaten twice this week
+ * never reaches a 16-row list. The recency list alone forgets a staple the
+ * moment it skips a week. So the two lists alternate — common first, then
+ * recent, then common… — each skipping anything the other already placed,
+ * until `limit`. When one list runs dry the other fills the rest.
+ *
+ *   common — `rankSuggestions` exactly (favorites, then this bucket's
+ *            blended score, then the global backfill while the bucket is thin)
+ *   recent — the same admitted entries, most recently used first: entries
+ *            with history IN THIS BUCKET by that bucket's `lastUsed`, then
+ *            the rest by their global `lastUsed`. Never-used entries are not
+ *            "recent" and appear only through the common list.
+ *
+ * Ties break on normalized name, so the same catalog and clock always give the
+ * same list. Typed queries do not use this: there the person is steering, and
+ * `rankSuggestions` alone orders the matches.
+ *
+ * @param {Array<Object>} entries - FoodCatalogEntry instances
+ * @param {Object} opts - as `rankSuggestions`
+ * @returns {Array<Object>} at most `limit` distinct entries
+ */
+export function blendShortlist(entries, { bucket = null, nowMs, limit = 12 } = {}) {
+  const list = Array.isArray(entries) ? entries.filter(Boolean) : [];
+  const max = Math.max(0, limit);
+  const common = rankSuggestions(list, { bucket, nowMs, limit: list.length });
+  const admitted = new Set(common);
+
+  const usageOf = (e) => (bucket ? e?.usageByBucket?.[bucket] : null);
+  const bucketDay = (e) => (usageOf(e)?.count > 0 && typeof usageOf(e)?.lastUsed === 'string' ? usageOf(e).lastUsed : null);
+  const globalDay = (e) => (typeof e?.lastUsed === 'string' && e.lastUsed ? e.lastUsed : null);
+  const name = (e) => String(e?.normalizedName ?? '');
+  const byDayDesc = (day) => (a, b) => (day(b) > day(a) ? 1 : day(b) < day(a) ? -1 : name(a).localeCompare(name(b)));
+
+  const inBucket = common.filter((e) => bucketDay(e) !== null).sort(byDayDesc(bucketDay));
+  const placed = new Set(inBucket);
+  const elsewhere = common.filter((e) => !placed.has(e) && globalDay(e) !== null).sort(byDayDesc(globalDay));
+  const recent = [...inBucket, ...elsewhere].filter((e) => admitted.has(e));
+
+  const out = [];
+  const seen = new Set();
+  const take = (source, cursor) => {
+    while (cursor.i < source.length) {
+      const e = source[cursor.i++];
+      const key = e?.id ?? e;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(e);
+      return true;
+    }
+    return false;
+  };
+  const c = { i: 0 };
+  const r = { i: 0 };
+  while (out.length < max) {
+    const tookCommon = take(common, c);
+    if (out.length >= max) break;
+    const tookRecent = take(recent, r);
+    if (!tookCommon && !tookRecent) break;
+  }
+  return out;
+}

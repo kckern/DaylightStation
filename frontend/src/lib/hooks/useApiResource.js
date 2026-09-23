@@ -53,6 +53,9 @@ const invalidationListeners = new Set();
 
 /** Revalidate mounted readers together without blanking same-key snapshots. */
 export function invalidateApiResources(matches = () => true) {
+  // Cached-but-unmounted entries (prefetched neighbours) become stale too:
+  // they keep painting instantly, and the next prefetch pass refreshes them.
+  for (const path of fetchedAt.keys()) if (matches(path)) fetchedAt.delete(path);
   for (const notify of invalidationListeners) notify(matches);
 }
 
@@ -89,11 +92,93 @@ function isNewestGeneration(path, generation) {
   return pathGenerations.get(path) === generation;
 }
 
+// ---- Prefetch --------------------------------------------------------------
+// Fills the same swr cache ahead of a reader, so a view that mounts on that
+// path paints instantly (and still revalidates quietly, as every swr hit
+// does). Low priority by construction: a small concurrency cap, queued work
+// is replaceable wholesale when the user moves, and a response only writes the
+// cache if no newer request for that path was issued meanwhile.
+const PREFETCH_CONCURRENCY = 2;
+const PREFETCH_FRESH_MS = 60_000;
+const fetchedAt = new Map();
+let prefetchQueue = [];
+let prefetchActive = 0;
+const prefetchInFlight = new Set();
+let prefetchEpoch = 0; // bumped by resetApiResourceCache so stale in-flight work can't hold slots
+// Cumulative since page load (or the last reset): what the prefetcher was
+// asked to warm, and how it went. Read by callers that report on it.
+const prefetchStats = { queued: 0, completed: 0, failed: 0 };
+let prefetchOnIdle = null; // the latest caller's "queue drained" callback
+
+function pumpPrefetch() {
+  while (prefetchActive < PREFETCH_CONCURRENCY && prefetchQueue.length) {
+    const { path, onDone } = prefetchQueue.shift();
+    const generation = claimGeneration(path);
+    const epoch = prefetchEpoch;
+    prefetchActive += 1;
+    prefetchInFlight.add(path);
+    DaylightAPI(path)
+      .then(result => {
+        if (epoch !== prefetchEpoch) return;
+        if (isNewestGeneration(path, generation)) { cacheSet(path, result); fetchedAt.set(path, Date.now()); }
+        prefetchStats.completed += 1;
+        onDone?.(null, path);
+      })
+      .catch(err => { if (epoch !== prefetchEpoch) return; prefetchStats.failed += 1; onDone?.(err, path); })
+      .finally(() => { if (epoch !== prefetchEpoch) return; prefetchActive -= 1; prefetchInFlight.delete(path); pumpPrefetch();
+        if (isPrefetchIdle() && prefetchOnIdle) { const onIdle = prefetchOnIdle; prefetchOnIdle = null; onIdle(getPrefetchStats()); } });
+  }
+}
+
+/** Prefetch counters since load: `{ queued, completed, failed }` (a copy). */
+export function getPrefetchStats() {
+  return { ...prefetchStats };
+}
+
+/** True when nothing is queued or in flight. */
+export function isPrefetchIdle() {
+  return prefetchActive === 0 && prefetchQueue.length === 0;
+}
+
+/** True when the swr cache holds a payload for `path` fetched recently. */
+export function isApiResourceFresh(path, maxAgeMs = PREFETCH_FRESH_MS) {
+  return swrCache.has(path) && Date.now() - (fetchedAt.get(path) || 0) < maxAgeMs;
+}
+
+/** The cached payload for `path`, or undefined. Does not touch recency. */
+export function peekApiResource(path) {
+  return swrCache.get(path);
+}
+
+/** Write a payload fetched outside the hook (same freshness bookkeeping). */
+export function primeApiResource(path, value) {
+  cacheSet(path, value);
+  fetchedAt.set(path, Date.now());
+}
+
+/**
+ * Replace the prefetch queue with `paths`, in priority order. Paths already
+ * fresh in the cache are skipped; requests already in flight finish.
+ * `onIdle(stats)` fires once, when the queue and in-flight set drain.
+ */
+export function prefetchApiResources(paths, { onDone, onIdle } = {}) {
+  prefetchOnIdle = typeof onIdle === 'function' ? onIdle : null;
+  prefetchQueue = paths.filter(path => path && !isApiResourceFresh(path) && !prefetchInFlight.has(path)).map(path => ({ path, onDone }));
+  const accepted = prefetchQueue.length;
+  prefetchStats.queued += accepted;
+  pumpPrefetch();
+  // Nothing to fetch and nothing in flight: this call's neighbourhood is
+  // already warm, so report now (with the caller's own context) rather than
+  // leave the callback waiting for a drain that will not come.
+  if (isPrefetchIdle() && prefetchOnIdle) { const onIdle = prefetchOnIdle; prefetchOnIdle = null; onIdle(getPrefetchStats()); }
+  return accepted;
+}
+
 // Test-only reset, and the seam a later task (day-view mutation) can use to
 // invalidate a specific path after a write — call with a path to drop just
 // that entry, or with no argument to clear everything.
 export function resetApiResourceCache(path) {
-  if (path === undefined) { swrCache.clear(); pathGenerations.clear(); return; }
+  if (path === undefined) { swrCache.clear(); pathGenerations.clear(); fetchedAt.clear(); prefetchQueue = []; prefetchActive = 0; prefetchInFlight.clear(); prefetchEpoch += 1; prefetchOnIdle = null; Object.assign(prefetchStats, { queued: 0, completed: 0, failed: 0 }); return; }
   swrCache.delete(path);
   pathGenerations.delete(path);
 }
@@ -169,7 +254,7 @@ export function useApiResource(path, { deps = [], enabled = true, label, logger 
         //     last win the cache, even if it was issued first (i.e. is
         //     actually the staler answer).
         if (!live) return;
-        if (swr && isNewestGeneration(path, myGeneration)) cacheSet(path, result);
+        if (swr && isNewestGeneration(path, myGeneration)) { cacheSet(path, result); fetchedAt.set(path, Date.now()); }
         setData(result);
         setResultPath(path);
         setLoading(false);
@@ -190,7 +275,13 @@ export function useApiResource(path, { deps = [], enabled = true, label, logger 
 
   // Effects run after render: conceal the previous key synchronously, not
   // just after the new request starts, so stale rows are never actionable.
+  // With swr, a key change that the cache already holds paints that key's
+  // own snapshot in the SAME render instead of one empty frame first — the
+  // flash a day flip used to show before the effect copied the cache over.
   const matches = resultPath === path;
+  if (!matches && swr && enabled && path && swrCache.has(path)) {
+    return { data: swrCache.get(path), resourceKey: path, loading: false, error: null, revalidating: true, reload };
+  }
   return { data: matches ? data : null, resourceKey: path,
     loading: matches ? loading : Boolean(enabled && path),
     error: matches ? error : null, revalidating: matches && revalidating, reload };

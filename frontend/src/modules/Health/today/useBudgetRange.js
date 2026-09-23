@@ -27,8 +27,10 @@ const logger = createAppLogger('health').child('budget-range');
  *   a gap `{ date, error }`. Gaps are NOT filtered out — a caller that wants to
  *   draw a hole needs to know where the holes are.
  */
+export const budgetRangePath = (from, to) => `api/v1/health/budget/range?from=${from}&to=${to}`;
+
 export function useBudgetRange(from, to, { enabled = true } = {}) {
-  const path = from && to ? `api/v1/health/budget/range?from=${from}&to=${to}` : null;
+  const path = from && to ? budgetRangePath(from, to) : null;
   const res = useApiResource(path, { label: 'budget-range', logger, swr: true, enabled });
   const days = useMemo(() => res.data?.days || [], [res.data]);
   const byDate = useMemo(() => new Map(days.map((d) => [d.date, d])), [days]);

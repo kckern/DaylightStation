@@ -5,7 +5,13 @@ import { MantineProvider } from '@mantine/core';
 const apiMock = vi.fn();
 vi.mock('../../../lib/api.mjs', () => ({ DaylightAPI: (...a) => apiMock(...a) }));
 
-import { AddCombobox } from './AddCombobox.jsx';
+import { AddCombobox, popupPlacement } from './AddCombobox.jsx';
+import { resetApiResourceCache, primeApiResource } from '../../../lib/hooks/useApiResource.js';
+import { shortlistPath } from '../healthResources.js';
+import { noteVisibleRows, resetAddFlow } from './addFlow.js';
+
+// The shortlist is cached module-wide; no case may inherit another's.
+beforeEach(() => resetApiResourceCache());
 
 function r(ui) { return render(<MantineProvider>{ui}</MantineProvider>); }
 
@@ -107,6 +113,60 @@ describe('AddCombobox', () => {
     expect(onDone).not.toHaveBeenCalled();
   });
 
+  it('a sentence holds a pending "Adding" row until its parsed rows are on the day', async () => {
+    resetAddFlow();
+    apiMock.mockImplementation(async (path) => {
+      if (path.includes('suggest')) return { items: [] };
+      if (path.includes('nutrition/input')) return { committed: true, entryIds: ['n1', 'n2'] };
+      return {};
+    });
+    const release = vi.fn();
+    const onSentencePending = vi.fn(() => release);
+    const onDone = vi.fn();
+    r(<AddCombobox bucketId="morning" onDone={onDone} onCancel={() => {}} onSentencePending={onSentencePending} />);
+    const input = screen.getByRole('combobox');
+    fireEvent.change(input, { target: { value: ' 2 eggs and toast ' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(onSentencePending).toHaveBeenCalledWith('2 eggs and toast');
+    await waitFor(() => expect(onDone).toHaveBeenCalled());
+    expect(release).not.toHaveBeenCalled();
+    act(() => noteVisibleRows([{ uuid: 'n1' }, { uuid: 'n2' }]));
+    await waitFor(() => expect(release).toHaveBeenCalledTimes(1));
+  });
+
+  it.each([
+    ['another meal', { committed: true, entryIds: ['m1'], mealTime: 'afternoon', moved: true }],
+    ['another day', { committed: true, entryIds: ['d1'], items: [{ uuid: 'd1', date: '2026-09-01' }] }],
+  ])('a sentence filed on %s releases its pending row at once, not after the timeout', async (_label, response) => {
+    resetAddFlow();
+    apiMock.mockImplementation(async (path) => {
+      if (path.includes('suggest')) return { items: [] };
+      if (path.includes('nutrition/input')) return response;
+      return {};
+    });
+    const release = vi.fn();
+    r(<AddCombobox bucketId="morning" date="2026-09-02" onDone={() => {}} onCancel={() => {}} onSentencePending={() => release} />);
+    const input = screen.getByRole('combobox');
+    fireEvent.change(input, { target: { value: 'soup for lunch' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    await waitFor(() => expect(release).toHaveBeenCalledTimes(1));
+  });
+
+  it('a failed sentence releases its pending row at once', async () => {
+    apiMock.mockImplementation(async (path) => {
+      if (path.includes('suggest')) return { items: [] };
+      if (path.includes('nutrition/input')) throw new Error('network down');
+      return {};
+    });
+    const release = vi.fn();
+    r(<AddCombobox bucketId="morning" onDone={() => {}} onCancel={() => {}} onSentencePending={() => release} />);
+    const input = screen.getByRole('combobox');
+    fireEvent.change(input, { target: { value: 'soup' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    await waitFor(() => expect(screen.getByText(/network down/)).toBeTruthy());
+    expect(release).toHaveBeenCalledTimes(1);
+  });
+
   it('a slow older suggest response cannot overwrite a newer one (stale-response guard)', async () => {
     const older = { items: [{ id: 'x', name: 'OLD RESULT', nutrients: {} }] };
     const newer = { items: [{ id: 'y', name: 'NEW RESULT', nutrients: {} }] };
@@ -163,11 +223,11 @@ describe('AddCombobox — zero-keystroke suggestions', () => {
     expect(path).not.toContain('q=');
   });
 
-  it('keeps the opening list SHORT — the burst of icon requests it triggers is unprompted', async () => {
+  it('asks for a bounded opening list (16 compact rows, prefetched with the day)', async () => {
     apiMock.mockResolvedValue(OPEN);
     r(<AddCombobox bucketId="morning" onDone={() => {}} onCancel={() => {}} />);
     await waitFor(() => expect(apiMock).toHaveBeenCalled());
-    expect(apiMock.mock.calls[0][0]).toContain('limit=8');
+    expect(apiMock.mock.calls[0][0]).toContain('limit=16');
   });
 
   it('draws exactly one icon request per suggestion that HAS an icon, and none for one that does not', async () => {
@@ -306,8 +366,17 @@ describe('AddCombobox inline', () => {
     expect(apiMock).not.toHaveBeenCalled();
     expect(screen.queryByRole('listbox')).toBeNull();
     fireEvent.focus(input);
-    await waitFor(() => expect(apiMock).toHaveBeenCalledWith(expect.stringContaining('bucket=evening&limit=8')));
+    await waitFor(() => expect(apiMock).toHaveBeenCalledWith(expect.stringContaining('bucket=evening&limit=16')));
     expect(await screen.findByText('Chicken breast')).toBeTruthy();
+  });
+
+  it('a prefetched shortlist paints the moment the row is focused', async () => {
+    primeApiResource(shortlistPath('evening'), SUGGEST);
+    apiMock.mockReturnValue(new Promise(() => {})); // the refresh never lands
+    inline();
+    fireEvent.focus(screen.getByRole('combobox', { name: 'Add to Dinner' }));
+    expect(screen.getByText('Chicken breast')).toBeTruthy();
+    expect(apiMock).toHaveBeenCalledWith(shortlistPath('evening'));
   });
 
   it('Enter on free text parses into this meal and day, then clears and stays focused', async () => {
@@ -428,22 +497,25 @@ describe('AddCombobox inline', () => {
     expect(await screen.findByRole('listbox')).toBeTruthy();
   });
 
-  it('an empty row forgets its shortlist and highlight on blur', async () => {
-    apiMock.mockResolvedValue(SUGGEST);
+  it('an empty row forgets its highlight on blur; refocus repaints the cached shortlist, not stale search results', async () => {
+    apiMock.mockImplementation(async path => path.includes('q=') ? { items: [{ id: 'z', name: 'Zucchini', nutrients: { calories: 20 } }] } : SUGGEST);
     inline();
     const input = screen.getByRole('combobox', { name: 'Add to Dinner' });
     input.focus();
     await screen.findByText('Chicken breast');
+    fireEvent.change(input, { target: { value: 'zu' } });
+    await screen.findByText('Zucchini');
+    fireEvent.change(input, { target: { value: '' } });
+    await screen.findByText('Chicken breast');
     fireEvent.keyDown(input, { key: 'ArrowDown' });
     expect(input.getAttribute('aria-activedescendant')).toBeTruthy();
     act(() => input.blur());
-    let resolve; apiMock.mockImplementation(() => new Promise(res => { resolve = res; }));
+    apiMock.mockImplementation(() => new Promise(() => {}));
     act(() => input.focus());
-    // Reopened, but the old results are gone until the fresh fetch lands.
-    expect(screen.queryByText('Chicken breast')).toBeNull();
+    // Reopened: the shortlist paints at once from cache, no highlight, no search leftovers.
+    expect(screen.getByText('Chicken breast')).toBeTruthy();
+    expect(screen.queryByText('Zucchini')).toBeNull();
     expect(input.getAttribute('aria-activedescendant')).toBeNull();
-    resolve(SUGGEST);
-    expect(await screen.findByText('Chicken breast')).toBeTruthy();
   });
 
   it('a focusRequest change focuses the input', () => {
@@ -451,5 +523,31 @@ describe('AddCombobox inline', () => {
     const { rerender } = inline({ focusRequest: 0 });
     rerender(<MantineProvider><AddCombobox inline bucketId="evening" label="Dinner" onDone={() => {}} focusRequest={1} /></MantineProvider>);
     expect(document.activeElement).toBe(screen.getByRole('combobox', { name: 'Add to Dinner' }));
+  });
+});
+
+describe('AddCombobox — popup placement', () => {
+  it('opens below unless the visible viewport lacks room below and has more above', () => {
+    const viewport = { offsetTop: 0, height: 700 };
+    expect(popupPlacement({ top: 100, bottom: 140 }, 300, viewport)).toBe('below');
+    expect(popupPlacement({ top: 560, bottom: 600 }, 300, viewport)).toBe('above');
+    // A shrunken viewport (keyboard up) counts, not the layout height.
+    expect(popupPlacement({ top: 300, bottom: 340 }, 300, { offsetTop: 0, height: 400 })).toBe('above');
+    // Too little room either way: stay below (the list scrolls inside).
+    expect(popupPlacement({ top: 60, bottom: 100 }, 300, { offsetTop: 0, height: 180 })).toBe('below');
+  });
+
+  it('flips the inline popup above the input near the bottom of the screen', async () => {
+    apiMock.mockResolvedValue({ items: [] });
+    const height = window.innerHeight;
+    const rect = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function () {
+      return { top: height - 60, bottom: height - 20, left: 0, right: 300, width: 300, height: 40 };
+    });
+    const offset = vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(250);
+    try {
+      const { container } = r(<AddCombobox inline bucketId="evening" label="Dinner" onDone={() => {}} />);
+      fireEvent.focus(screen.getByRole('combobox'));
+      await waitFor(() => expect(container.querySelector('.health-suggest--above')).toBeTruthy());
+    } finally { rect.mockRestore(); offset.mockRestore(); }
   });
 });
