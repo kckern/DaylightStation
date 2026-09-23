@@ -757,5 +757,13 @@ describe('TodayView — a barcode the person must hear about', () => {
     expect(await screen.findByText('Needs review — no calories found')).toBeTruthy();
     await waitFor(() => expect(pendingCalls()).toBeGreaterThan(before));
   });
+  it('a label with no calories logged as an AI estimate says it is an estimate', async () => {
+    apiMock.mockImplementation(baseApi({ nutritionInput: { committed: true, outcome: 'committed', aiEstimate: true,
+      logId: 'L2', messages: [] } }));
+    r(<TodayView onSetupGoals={() => {}} onCoachTap={() => {}} />);
+    await waitFor(() => expect(barcodeProps.current).toBeTruthy());
+    await act(async () => { await barcodeProps.current.onDecode('037000338369', 'afternoon'); });
+    expect(await screen.findByText('No calories on the label — estimated for one serving. Check the row.')).toBeTruthy();
+  });
 });
 
