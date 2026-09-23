@@ -139,6 +139,11 @@ describe('add-food suggestion panel', () => {
     expect(css).not.toMatch(/\} \.health-suggest__popup \{[^}]*position: absolute/);
   });
 
+  it('suggestion rows are compact under a mouse and 44px under a finger', () => {
+    expect(rule('.health-suggest__item')).toMatch(/min-height: 32px/);
+    expect(css).toMatch(/@media \(pointer: coarse\) \{ \.health-suggest__item \{[^}]*min-height: 44px/);
+  });
+
   it('uses two compact columns when the viewport can hold them', () => {
     expect(css).toContain('@media (min-width: 480px)');
     expect(css).toMatch(/\.health-suggest__list \{[^}]*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/);
