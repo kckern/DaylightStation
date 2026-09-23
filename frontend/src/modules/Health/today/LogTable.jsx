@@ -24,7 +24,7 @@ const kcal = (rows) => Math.round(sumCounted(rows, 'calories'));
 
 function Section({
   label, rows, addRow = null, onRowTap, onConfirm, onRequestDelete, headerAction, coldLoading, pending,
-  measuredByUuid, date, bucket, active, onVoiceCapture, onTextCapture, onChanged, captureTasks = [], onHoldChange, externalClarification, onClearClarification,
+  measuredByUuid, addedIds = null, date, bucket, active, onVoiceCapture, onTextCapture, onChanged, captureTasks = [], onHoldChange, externalClarification, onClearClarification,
 }) {
   const [selecting, setSelecting] = useState(false);
   const [selection, setSelection] = useState([]);
@@ -39,8 +39,11 @@ function Section({
     else setClarification(null);
     return result;
   };
-  const renderRow = props => {
-    const id = props.row.uuid || props.row.id;
+  const renderRow = rowProps => {
+    const id = rowProps.row.uuid || rowProps.row.id;
+    // Just added from an add row: a brief highlight so the eye finds it even
+    // when the heaviest-first sort lands it mid-list.
+    const props = addedIds?.has(String(id)) ? { ...rowProps, added: true } : rowProps;
     if (!selecting) return <EntryRow key={id} {...props}/>;
     const ids = props.isGroup ? props.row.children.map(row=>row.uuid || row.id) : [id];
     return <div key={id} className="health-meal-selection-row"><input type="checkbox" aria-label={`Select ${props.row.name || props.row.label || props.row.item}`}
@@ -160,7 +163,7 @@ export function LogTable({
   byBucket, date, sessions = [], exerciseAvailable = false, onRowTap, onConfirm, onRequestDelete,
   bucketHeaderAction, coldLoading = false, capturePendingBucket = null, capturePendingBuckets = [],
   measuredByUuid = null, active = true, onVoiceCapture, onTextCapture, onMealChanged, captureTasks = [], clarifications, onClearClarification,
-  revealedBucket = null, renderAddRow = null,
+  revealedBucket = null, renderAddRow = null, addedIds = null,
 }) {
   const [heldSections, setHeldSections] = useState(new Set());
   const holdSection = (key, held) => setHeldSections(previous => {
@@ -191,7 +194,7 @@ export function LogTable({
           onRowTap={onRowTap} onConfirm={onConfirm} onRequestDelete={onRequestDelete}
           headerAction={bucketHeaderAction ? bucketHeaderAction(b.id, rows, b.label) : null}
           coldLoading={coldLoading} pending={capturePendingBucket === b.id || capturePendingBuckets.includes(b.id)}
-          measuredByUuid={measuredByUuid} addRow={renderAddRow ? renderAddRow(b.id, b.label) : null} />
+          measuredByUuid={measuredByUuid} addedIds={addedIds} addRow={renderAddRow ? renderAddRow(b.id, b.label) : null} />
       </div>
     );
   };

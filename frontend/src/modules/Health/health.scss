@@ -513,6 +513,12 @@ $health-aside-gap: 1.5rem;
   display: flex; align-items: center; justify-content: flex-end; gap: 0.15rem;
 }
 .health-row-line--group { background: var(--ds-surface); border-radius: 6px; font-weight: 600; }
+// A row just added from an add row (addFlow.js, ADDED_HIGHLIGHT_MS): a subtle
+// accent tint that fades in and back out, so the eye finds a new row the
+// heaviest-first sort may have placed mid-list.
+.health-row-line--added { background: color-mix(in srgb, var(--ds-accent) 16%, transparent); border-radius: 6px; }
+.health-row-line { transition: background-color var(--ds-motion-reveal) var(--ds-motion-easing); }
+@media (prefers-reduced-motion: reduce) { .health-row-line { transition: none; } }
 .health-row-line--child .health-row__visual { opacity: 0.75; }
 .health-row-line--child .health-row-identity { box-sizing: border-box; padding-left: 16px; }
 .health-row-line--child .health-row__name { font-size: 0.78rem; }

@@ -12,6 +12,7 @@ import { useApiResource } from '../../../lib/hooks/useApiResource.js';
 import { useHealthDay } from './useHealthDay.js';
 import { pendingReviewPath, observationsPath } from '../healthResources.js';
 import { useHealthDayPrefetch } from './useHealthDayPrefetch.js';
+import { useAddedRowHighlight } from './addFlow.js';
 import { EquationStrip } from './EquationStrip.jsx';
 import { WeekStrip, addDays, weekEnd } from './WeekStrip.jsx';
 import { MacroBarRow } from './MacroBarRow.jsx';
@@ -47,6 +48,8 @@ export function TodayView({ active = true, sidebarTarget, onSetupGoals, onCoachT
   const viewportEnd = isISODate(weekParam) && weekParam <= weekEnd(todayISO()) ? weekEnd(weekParam) : weekEnd(date);
   const day = useHealthDay(date, { enabled: active });
   const preview = usePortionDraft(day, date);
+  // Rows just added from an add row, briefly highlighted once on screen.
+  const addedIds = useAddedRowHighlight(day.items);
   // Warm ±7 days and each meal's shortlist once the viewed day is on screen.
   useHealthDayPrefetch(date, { enabled: active, ready: !day.loading });
   // The quick bar's + names a meal; that meal is shown (even if empty) and its
@@ -466,7 +469,7 @@ export function TodayView({ active = true, sidebarTarget, onSetupGoals, onCoachT
         bucketHeaderAction={bucketHeaderAction}
         onVoiceCapture={onVoiceCapture} onTextCapture={onTextCapture}
         onMealChanged={result=>handleCaptureResult(result)} captureTasks={[...capturePending.values()]}
-        measuredByUuid={measuredByUuid}
+        measuredByUuid={measuredByUuid} addedIds={addedIds}
         revealedBucket={focusRequest?.bucket ?? null}
         renderAddRow={(bucket, label) => <MealAddRow bucket={bucket} label={label} date={date} active={active} onVoiceCapture={onVoiceCapture}
           focusRequest={focusRequest?.bucket === bucket ? focusRequest.n : 0} busy={nutrition.busy}

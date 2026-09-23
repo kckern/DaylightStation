@@ -27,3 +27,9 @@ it('a typed sentence in flight shows its own "Adding" row in its meal',()=>{
  renderLog({captureTasks:[{id:'s',date:'2026-09-06',bucket:'evening',startedAt:Date.now(),text:'bowl of chili'}]});
  expect(screen.getByText('Adding “bowl of chili”…')).toBeTruthy();
 });
+it('marks just-added rows for the highlight',()=>{
+ const {container}=renderLog({addedIds:new Set(['tomato'])});
+ const lines=[...container.querySelectorAll('.health-row-line--added')];
+ expect(lines).toHaveLength(1);
+ expect(lines[0].textContent).toContain('Tomatoes');
+});

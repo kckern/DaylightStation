@@ -13,7 +13,7 @@ import { usePortionControl } from './usePortionDraft.js';
 
 const logger = createAppLogger('health').child('entry-row');
 
-export function EntryRow({ row, densityRow = row, onTap, onConfirm, onRequestDelete, isGroup = false, expanded = false, onToggle, rollupKcal, child = false, lastChild = false, measured = null, kcalShare = null }) {
+export function EntryRow({ row, densityRow = row, onTap, onConfirm, onRequestDelete, isGroup = false, expanded = false, onToggle, rollupKcal, child = false, lastChild = false, measured = null, kcalShare = null, added = false }) {
   const [error, setError] = useState(null);
   const [confirmation, setConfirmation] = useState(null);
   const pending = useRef(false);
@@ -37,7 +37,7 @@ export function EntryRow({ row, densityRow = row, onTap, onConfirm, onRequestDel
       logger.warn('entry.confirm_failed', { uuid: entryId(row), error: err.message });
     } finally { pending.current = false; }
   };
-  return <div className={['health-row-line', unsettled && confirmation !== 'saved' && 'health-row-line--unsettled', child && 'health-row-line--child', lastChild && 'health-row-line--last-child', isGroup && 'health-row-line--group'].filter(Boolean).join(' ')}>
+  return <div className={['health-row-line', unsettled && confirmation !== 'saved' && 'health-row-line--unsettled', child && 'health-row-line--child', lastChild && 'health-row-line--last-child', isGroup && 'health-row-line--group', added && 'health-row-line--added'].filter(Boolean).join(' ')}>
     <div className="health-row__branch">
       {isGroup ? <UnstyledButton className="health-row__expand" aria-expanded={expanded}
         aria-label={`${expanded ? 'Collapse' : 'Expand'} ${name}`} onClick={onToggle}><svg className="health-row__triangle" viewBox="0 0 10 10" aria-hidden="true" focusable="false">
