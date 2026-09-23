@@ -49,15 +49,20 @@ export function tunableValues(settings) {
 
 /**
  * Resolved (nested) settings with a learner's tuned values laid over them —
- * tunables only, finite numbers only, clamped to the spec bounds. Pure.
+ * tunables only, finite numbers only, clamped to the spec bounds and to the
+ * household's `word_ladder.bounds` (the narrower of the two). Pure.
  */
-export function withTunedValues(settings, values = {}) {
+export function withTunedValues(settings, values = {}, bounds = null) {
   const out = structuredClone(settings);
   for (const [dotted, value] of Object.entries(values ?? {})) {
     if (!Object.hasOwn(TUNABLE, dotted) || typeof value !== 'number' || !Number.isFinite(value)) continue;
     const [group, key] = dotted.split('.');
     if (typeof out?.[group]?.[key] !== 'number') continue;
-    const [lo, hi] = TUNING_BOUNDS[dotted];
+    let [lo, hi] = TUNING_BOUNDS[dotted];
+    const household = bounds?.[dotted];
+    if (Array.isArray(household) && household.length === 2 && household.every(Number.isFinite)) {
+      lo = Math.max(lo, household[0]); hi = Math.min(hi, household[1]);
+    }
     out[group][key] = tidy(Math.min(hi, Math.max(lo, value)));
   }
   return out;

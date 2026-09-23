@@ -25,7 +25,7 @@ const lexicon = {
   entries: new Map([['gawi', { id: 'gawi', group: 'week-01', term: '가위', gloss: 'Scissors', kind: 'word', decoys: { term: ['a', 'b', 'c'], gloss: ['x', 'y', 'z'] } }],
     ['pul', { id: 'pul', group: 'week-01', term: '풀', gloss: 'Glue', kind: 'word', decoys: { term: ['d', 'e', 'f'], gloss: ['u', 'v', 'w'] } }]]),
 };
-function make({ judgementCache = null, recordings = null, mode = 'live', attempts = null, attemptsReader = null, teacherGate = null, judge = null, store = memoryStore(), media = false, decks = null } = {}) {
+function make({ judgementCache = null, recordings = null, mode = 'live', attempts = null, attemptsReader = null, teacherGate = null, judge = null, store = memoryStore(), media = false, decks = null, bounds = null } = {}) {
   let t = Date.parse('2026-09-22T16:00:00-07:00');
   const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
   const judgeFn = judge ?? vi.fn(async ({ typed, entry }) => ({ score: typed === entry.term ? 10 : 2, judge: 'exact', reason: null, pass: typed === entry.term }));
@@ -42,7 +42,7 @@ function make({ judgementCache = null, recordings = null, mode = 'live', attempt
     assets: { exists: typeof media === 'function' ? media : () => media },
     judge: { judge: judgeFn },
     teacherGate, recordings, judgementCache,
-    settings: () => SETTINGS, timezone: 'America/Los_Angeles', now: () => (t += 4000), logger, mode,
+    settings: () => SETTINGS, bounds, timezone: 'America/Los_Angeles', now: () => (t += 4000), logger, mode,
   });
   return { service, store, logger, judge: judgeFn, advance: (ms) => { t += ms; } };
 }
@@ -823,6 +823,12 @@ describe('WordLadderSittingService — tuned settings (plan 5 task 3, spec §7)'
     expect(store.s.days['2026-09-23'].atOpen.settings.round).toEqual({ size: 6, maxPasses: 3 });
     expect(store.s.days['2026-09-23'].atOpen.settings.review.gapScale).toBe(1.1);
     expect(store.s.days[TODAY].atOpen.settings.round.size).toBe(5);
+  });
+  it('tuned values are clamped to the household word_ladder.bounds too', async () => {
+    const store = tunedStore({ 'round.size': 7 });
+    const { service } = make({ store, bounds: { 'round.size': [3, 6] } });
+    await service.open({ userId: 'test-learner', deckId: DECK });
+    expect(store.s.days[TODAY].atOpen.settings.round.size).toBe(6);
   });
   it('tuned values never touch grown-up settings', async () => {
     const store = tunedStore({ 'session.capMinutes': 60, 'typing.passScore': 2 });

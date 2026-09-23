@@ -18,35 +18,44 @@
 import { ValidationError } from '#domains/core/errors/index.mjs';
 import { studyDayForInstant } from '#domains/school/studyDay.mjs';
 import {
-  applyTuningProposal, buildTuningDigest, tunableValues, withTunedValues,
+  applyTuningProposal, buildTuningDigest, dayStats, tunableValues, withTunedValues,
 } from '#domains/school/wordLadder/index.mjs';
 
 const DIGEST_DAYS = 8; // the day just ended + the 7-day trailing window
 const FINISHED = new Set(['goal', 'cap']);
 const DAY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
-/** A day is tuned only when a sitting closed on its goal or its time cap. */
-function finishedSitting(dayFile) {
-  return Object.values(dayFile?.sittings ?? {}).some((row) => FINISHED.has(row?.reason));
+/**
+ * A day is tuned only when it reached its goal or its time cap — as the
+ * server recorded it (credited `doneAt`, or active time at the cap) or as a
+ * sitting closed (`goal` | `cap`). A day that only closed idle / on unmount /
+ * on leave, with neither reached, never qualifies.
+ */
+function finishedDay(dayFile, settings) {
+  if (Object.values(dayFile?.sittings ?? {}).some((row) => FINISHED.has(row?.reason))) return true;
+  if (!dayFile?.atOpen) return false;
+  const stats = dayStats(dayFile, settings);
+  return stats.credited || stats.reachedGoal || stats.capHit;
 }
 
 /** Tuner off: a status note from the digest alone. */
 function deterministicNote(digest) {
   const today = digest.today ?? {};
   if (today.credited && today.quizzed === 0) {
-    return { status: 'concern', notes: 'Tuner has no model. The day was credited with no words quizzed.' };
+    return { status: 'concern', notes: ['Tuner has no model. The day was credited with no words quizzed.'] };
   }
-  return { status: 'on-track', notes: 'Tuner has no model; settings unchanged.' };
+  return { status: 'on-track', notes: ['Tuner has no model; settings unchanged.'] };
 }
 
 export class WordLadderTuningService {
+  #inFlight = new Set();
   #store; #assignments; #decks; #lexicons; #tuner; #settings; #bounds; #notify; #timezone; #now; #logger; #dwellDays;
 
   constructor({
     store, assignments, decks, lexicons, tuner = null, settings, bounds = null, notify = null,
     timezone = null, now, logger = console, dwellDays = 5,
   } = {}) {
-    for (const fn of ['readStatus', 'readDay', 'readTuning', 'writeTuning', 'listDays']) {
+    for (const fn of ['readStatus', 'readDay', 'readTuning', 'tuningState', 'writeTuning', 'listDays']) {
       if (typeof store?.[fn] !== 'function') throw new Error(`WordLadderTuningService requires store.${fn}()`);
     }
     if (typeof assignments?.get !== 'function' || typeof assignments?.list !== 'function') throw new Error('WordLadderTuningService requires assignments.get/list');
@@ -100,7 +109,9 @@ export class WordLadderTuningService {
         if (!day) continue;
         const { lastTunedDay } = this.#store.readTuning(learnerId, pkg);
         if (lastTunedDay && lastTunedDay >= day) continue;
-        if (!finishedSitting(this.#store.readDay(learnerId, pkg, day))) continue;
+        if (this.#store.tuningState(learnerId, pkg) === 'corrupt') continue;
+        const settings = withTunedValues(this.#settings(), this.#store.readTuning(learnerId, pkg).values, this.#bounds);
+        if (!finishedDay(this.#store.readDay(learnerId, pkg, day), settings)) continue;
         out.push({ learnerId, pkg, deckId, day });
       } catch (error) {
         this.#logger.warn?.('school.word-ladder.tuning-pending-failed', { learnerId, package: pkg, error: error.message });
@@ -113,29 +124,47 @@ export class WordLadderTuningService {
     this.#logger.info?.('school.word-ladder.tuning', { ...base, setting: row.setting, from: row.from, to: row.to, reason: row.reason, ...extra });
   }
 
-  /** Tunes one learner × package for the study day `day` (which must have ended). */
+  #skip(base, why) {
+    this.#logger.debug?.('school.word-ladder.tuning-skipped', { ...base, skipped: why });
+    return { ...base, skipped: why };
+  }
+
+  /**
+   * Tunes one learner × package for the study day `day` (which must have
+   * ended). One run per learner package at a time: an overlapping call is
+   * skipped `in-flight` rather than calling the model twice.
+   */
   async runFor({ learnerId, pkg, deckId = null, day } = {}) {
     if (typeof learnerId !== 'string' || !learnerId) throw new ValidationError('learnerId is required');
     if (typeof pkg !== 'string' || !pkg) throw new ValidationError('pkg is required');
     if (typeof day !== 'string' || !DAY_PATTERN.test(day)) throw new ValidationError('day must be YYYY-MM-DD');
     const base = { learnerId, package: pkg, day };
-    const skip = (why) => {
-      this.#logger.debug?.('school.word-ladder.tuning-skipped', { ...base, skipped: why });
-      return { ...base, skipped: why };
-    };
-    if (day >= this.#today()) return skip('day-not-ended');
+    const key = `${learnerId}|${pkg}`;
+    if (this.#inFlight.has(key)) return this.#skip(base, 'in-flight');
+    this.#inFlight.add(key);
+    try {
+      return await this.#run(base, deckId);
+    } finally {
+      this.#inFlight.delete(key);
+    }
+  }
+
+  async #run(base, deckId) {
+    const { learnerId, package: pkg, day } = base;
+    if (day >= this.#today()) return this.#skip(base, 'day-not-ended');
+    // A corrupt tuning.yml reads as empty; never spend a model call on it (it cannot be written).
+    if (this.#store.tuningState(learnerId, pkg) === 'corrupt') return this.#skip(base, 'corrupt');
     const tuning = this.#store.readTuning(learnerId, pkg);
-    if (tuning.lastTunedDay && tuning.lastTunedDay >= day) return skip('already-tuned');
-    if (!finishedSitting(this.#store.readDay(learnerId, pkg, day))) return skip('no-finished-sitting');
+    if (tuning.lastTunedDay && tuning.lastTunedDay >= day) return this.#skip(base, 'already-tuned');
+    const settings = withTunedValues(this.#settings(), tuning.values, this.#bounds);
+    if (!finishedDay(this.#store.readDay(learnerId, pkg, day), settings)) return this.#skip(base, 'no-finished-sitting');
 
     const studyDays = this.#store.listDays(learnerId, pkg).filter((d) => d <= day);
     const days = studyDays.slice(-DIGEST_DAYS).map((d) => this.#store.readDay(learnerId, pkg, d));
-    const settings = withTunedValues(this.#settings(), tuning.values);
     const digest = buildTuningDigest({ status: this.#store.readStatus(learnerId, pkg), days, settings, lastChanged: tuning.lastChanged });
 
     let status; let notes; let error = null;
     let applied = []; let dropped = [];
-    let values = { ...tuning.values }; let { lastChanged } = tuning;
     if (!this.#tuner) {
       ({ status, notes } = deterministicNote(digest));
     } else {
@@ -147,18 +176,22 @@ export class WordLadderTuningService {
           day, lastChanged: tuning.lastChanged, studyDays, dwellDays: this.#dwellDays,
         });
         ({ applied, dropped } = braked);
-        lastChanged = braked.lastChanged;
-        for (const row of applied) values[row.setting] = row.to;
       } catch (failure) {
-        status = null; notes = ''; error = failure.message; applied = []; dropped = [];
-        values = { ...tuning.values }; lastChanged = tuning.lastChanged;
+        status = null; notes = []; error = failure.message; applied = []; dropped = [];
         this.#logger.warn?.('school.word-ladder.tuning-failed', { ...base, error, code: failure.code ?? null });
       }
     }
 
+    // Re-read just before writing (another process may have tuned meanwhile)
+    // and merge this run's changes onto the fresh copy.
+    const fresh = this.#store.readTuning(learnerId, pkg);
+    if (fresh.lastTunedDay && fresh.lastTunedDay >= day) return this.#skip(base, 'already-tuned');
+    const values = { ...fresh.values };
+    const lastChanged = { ...fresh.lastChanged };
+    for (const row of applied) { values[row.setting] = row.to; lastChanged[row.setting] = day; }
     const entry = { day, status, notes, applied, dropped, ...(error ? { error } : {}) };
     this.#store.writeTuning(learnerId, pkg, {
-      values, lastChanged, lastTunedDay: day, history: [...(tuning.history ?? []), entry],
+      values, lastChanged, lastTunedDay: day, history: [...(fresh.history ?? []), entry],
     });
     const current = tunableValues(settings);
     for (const row of applied) this.#log(base, row, row.clampedFrom !== undefined ? { clampedFrom: row.clampedFrom } : {});

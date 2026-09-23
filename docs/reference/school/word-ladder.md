@@ -327,6 +327,39 @@ Defaults live in `backend/src/2_domains/school/wordLadder/settings.mjs`;
 at its first open** (`dayFile.atOpen.settings`) — a mid-day config edit never
 moves the goalposts under a child already partway through.
 
+A day's first open reads the settings as config settings with the learner's
+tuned values (`tuning.yml`, beside `status.yml`) laid over them. Only the six
+tunables are overlaid, and each is clamped to the spec bounds and to
+`word_ladder.bounds`. A tuning change therefore lands at the learner's **next
+day's first open**. Test mode reads the learner's tuned values but never
+writes them.
+
+### Tuning (`WordLadderTuningService`, spec §7)
+
+The tuner runs once per learner × word package for a study day that has
+ended. It skips a day in these cases:
+
+- the day is already tuned (`lastTunedDay ≥ day`);
+- `tuning.yml` is corrupt (skipped before any model call; the file is never overwritten);
+- another run for the same learner package is in flight;
+- the day never reached its goal or cap. A day qualifies when the server
+  credited it (`doneAt`), its active time reached the cap, or a sitting closed
+  `goal` / `cap`. A day that only closed idle, on unmount or on leave does not
+  qualify.
+
+The digest covers the last 8 study days. The proposal passes through the
+brakes (`applyTuningProposal`), and applied values merge onto a fresh read of
+`tuning.yml` just before the write. **Dwell counts study days: the dates that
+have a day file, which are the days the learner opened** (`listDays`). A day
+file is never created for a day the learner did not open, so calendar days
+off do not count toward the 5-day wait.
+
+History keeps 60 rows of `{day, status, notes[≤3], applied, dropped}`. With no
+model configured, a deterministic note is written instead (`concern` when a
+credited day quizzed no words) and nothing changes. A tuner failure changes
+nothing; it records `status: null, error` and marks the day. A `concern` calls
+the injected `notify` port.
+
 | Setting | Decides | Default |
 |---|---|---|
 | `round.size` | words per round | 5 |
@@ -572,7 +605,7 @@ by hand.
 
 ## Logs
 
-Backend: `school.word-ladder.{opened,graded,reopened,closed,folded,attempts-unreadable,decks-unlisted,status-corrupt}`,
+Backend: `school.word-ladder.{opened,graded,reopened,closed,folded,attempts-unreadable,decks-unlisted,store-corrupt,tuning,tuned,tuning-failed,tuning-skipped,tuning-unreadable}` (`store-corrupt` carries `kind: status|day|tuning`; `tuning` is one line per applied or dropped change, `{setting, from, to, reason, dropped?}`),
 all carrying `mode: live|test`. Frontend
 (`context.component: school-word-ladder`, events `school.word-ladder.*`):
 `started` (Start tapped), `plan.failed`, `stage-failed`, `media.failed`
