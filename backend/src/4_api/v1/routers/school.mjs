@@ -552,7 +552,7 @@ export function createSchoolRouter({
   // The word ladder (any word package): a flashcard enrollment in `policy.mode:
   // word-ladder`. Its own module, like the teacher reading workspace.
   mountWordLadderRoutes({
-    router, wrap, wordLadderStudy, wordLadderTest, stageScreen: wordLadderStageScreen,
+    router, wrap, wordLadderStudy, wordLadderTest, stageScreen: wordLadderStageScreen, capabilityProof,
     notConfigured: (what) => new EntityNotFoundError(what, 'not configured'),
   });
   router.post('/sessions/:sessionId/remediation-offer', wrap(async (req, res) => {

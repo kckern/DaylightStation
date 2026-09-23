@@ -105,5 +105,18 @@ describe('word-ladder routes', () => {
     const { a: unwired } = app({ wordLadderStudy: null });
     await request(unwired).post('/word-ladder/admin/reset').send({ ...who, wordId: 'w' }).expect(503);
   });
+  it('the admin words GET takes the console cookie capability when no query pin is given', async () => {
+    const adminWords = vi.fn(async () => ({ words: [] }));
+    const proof = { capabilityToken: 'cap-1', stepUpToken: null };
+    const capabilityProof = vi.fn((req) => (req.get('cookie') ? proof : null));
+    const { a, live } = app({ capabilityProof });
+    live.adminWords = adminWords;
+    await request(a).get('/word-ladder/admin/words?learnerId=k&deckId=d&actorId=p').set('Cookie', 'daylight_teacher_session=cap-1').expect(200);
+    expect(adminWords).toHaveBeenLastCalledWith({ learnerId: 'k', deckId: 'd', actorId: 'p', pin: proof });
+    await request(a).get('/word-ladder/admin/words?learnerId=k&deckId=d&actorId=p&pin=1234').set('Cookie', 'daylight_teacher_session=cap-1').expect(200);
+    expect(adminWords).toHaveBeenLastCalledWith({ learnerId: 'k', deckId: 'd', actorId: 'p', pin: '1234' });
+    await request(a).get('/word-ladder/admin/words?learnerId=k&deckId=d&actorId=p').expect(200);
+    expect(adminWords).toHaveBeenLastCalledWith({ learnerId: 'k', deckId: 'd', actorId: 'p', pin: null });
+  });
 });
 
