@@ -82,6 +82,26 @@ The hub is read-write for new entries, read-only for history. Quick edits happen
 
 **Inline interactions write back through the same input layer the rest of the system uses** — a meal logged from the hub lands in the same food log a meal logged from the messaging surface lands in, and the data pipeline folds it into the day's summary identically.
 
+**Row magnifier (Today, `today/RowPreview.jsx`).** A food row's artwork is 24px, too small to read a
+UPC product photo. Hovering the row's artwork or its name opens a speech-bubble card beside the
+row (Mantine `Popover`, controlled, portalled, arrow pointing at the row, flips to the side that
+has room). It opens after 350 ms and closes 150 ms after the pointer leaves both the row's targets
+and the card, so passing over the list does not flash cards. The card shows:
+
+- a 5em-square hero: the full capture/product photo (`nutritionPhotoUrl(photoRef)`, not the
+  thumbnail) when the row has one, else the hi-res icon through `FoodIcon` (so an icon already
+  decoded for the row paints at once), else the neutral placeholder; `object-fit: contain` on a
+  surface tint;
+- the name, the portion (`formatFoodPortion`), kcal, the P/C/F chips (`MacroBadges`, the log's
+  own macro colours) and the density in kcal/g when mass and calories are known;
+- for a group row: its total and the ingredient count.
+
+Keyboard focus on the row's name opens it and Escape closes it. Hover is mouse-only
+(`pointerType`), because a touch "hover" is the start of a tap; on a coarse pointer, tapping the
+artwork opens the card instead (tapping the name still opens the editor). It never opens while a
+portion or numeric drag is live on the page, and tapping the name to edit closes it first. Each
+open logs `row.preview.open` (sampled).
+
 ---
 
 ## States
@@ -182,6 +202,7 @@ Neither case is silent any more:
 | `artwork.photo-failed` | warn | `today/EntryRow.jsx` via `today/artworkLog.js` | a row's `photoRef` thumbnail fails. Once per photoRef per page session. |
 | `add-row.focus` | debug | `today/AddCombobox.jsx` (inline mode) | a meal's add row takes focus. `{bucket}` |
 | `quickadd.done` / `sentence.committed` | info | `today/AddCombobox.jsx` | a food logged from the add surface. `{bucket, surface: 'inline' \| 'sheet'}` |
+| `row.preview.open` | info (sampled, ≤20/min) | `today/RowPreview.jsx` | the row magnifier opened. `{uuid, hasPhoto}` |
 | `day.quality` | info | `today/useHealthDay.js` (`today/dayQuality.js`) | once per date + ledger revision, only when the day has gaps: `noArtwork`, `unknownCalories`, `noGrams`, `allCaps`, `duplicates`, each `{count, samples}`. |
 
 All carry `context.app: health`.
