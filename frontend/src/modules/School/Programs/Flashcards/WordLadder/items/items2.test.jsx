@@ -267,6 +267,26 @@ describe('WordsItem', () => {
   });
 });
 
+describe('WordsItem sign-off labels (ruling 2026-09-23)', () => {
+  it('a mastered word reads Recognised until the typed sign-off, then Mastered', async () => {
+    const api = {
+      words: vi.fn(async () => ({
+        ok: true, status: 200, data: {
+          words: [
+            { wordId: 'chaek', term: '책', gloss: 'Book', state: 'mastered', stage: 1, tricky: false, dueDay: null, level: 'recognised' },
+            { wordId: 'mul', term: '물', gloss: 'Water', state: 'mastered', stage: 2, tricky: false, dueDay: null, level: 'mastered' },
+          ],
+        },
+      })),
+    };
+    render(<WordsItem api={api} sittingId="s" userId="kid" deckId="d" langs={langs} onBack={vi.fn()} />);
+    expect(await screen.findByText('책')).toBeInTheDocument();
+    expect(screen.getByText('책').closest('li, tr, div').textContent).toMatch(/Recognised/);
+    expect(screen.getByText('물').closest('li, tr, div').textContent).toMatch(/Mastered/);
+    expect(screen.getAllByText(/Mastered/)).toHaveLength(1);
+  });
+});
+
 describe('WordsItem failure', () => {
   it('a failed read logs words.failed, not write.failed', async () => {
     const spy = vi.spyOn(wordLadderLog, 'wordsFailed');

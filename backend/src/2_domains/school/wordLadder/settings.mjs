@@ -2,7 +2,8 @@
 export const DEFAULT_SETTINGS = Object.freeze({
   round: { size: 5, maxPasses: 3 },
   batch: { newPerDay: 4, workingSet: 7 },
-  review: { gapScale: 1, typedEvery: 2 },
+  // review.typedEvery is retired (ruling 2026-09-23): typing is the sign-off, never a cadence.
+  review: { gapScale: 1 },
   drill: { afterMisses: 2, perSitting: 1 },
   session: { capMinutes: 15 },
   typing: { passScore: 6 },

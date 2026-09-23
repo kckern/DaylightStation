@@ -1,12 +1,12 @@
 // backend/src/2_domains/school/wordLadder/admin.mjs
 /**
  * Grown-up word controls (spec §6): the pure parts. `markMastered` sets a word
- * mastered at a chosen stage; `typedAnswers` lists a day file's judged 3.3
+ * mastered at a chosen stage; `typedAnswers` lists a day file's judged typed
  * answers so a grown-up can read and re-grade them. Nothing reads a clock.
  */
 import { ValidationError } from '#domains/core/errors/index.mjs';
 import { addDays } from '../termVerdict.mjs';
-import { GAPS } from './mastery.mjs';
+import { GAPS, TYPED_TASKS } from './mastery.mjs';
 
 /**
  * Mastered at `stage`, due after that stage's gap scaled by the day's tuned
@@ -21,9 +21,12 @@ export function markMastered(word, { stage, day, gapScale = 1 }) {
   // `introducedBy: 'admin'` keeps a grown-up's mark out of the day's intro count
   // (it must not use up the child's new-word allowance); carry still sees it.
   const intro = word.introducedDay ? {} : { introducedDay: day, introducedBy: 'admin' };
+  // A grown-up's mark is a sign-off (ruling 2026-09-23): the word reads
+  // Mastered, and its prerequisites stand met so later rechecks stay typed.
   return {
     ...word, ...intro, state: 'mastered', stage, dueDay: addDays(day, gap),
     missStreak: 0, tricky: false, trickySince: null, notYetCarry: false,
+    recognizedCount: Math.max(2, word.recognizedCount ?? 0), matched: true, typedSignedOff: word.typedSignedOff ?? day,
   };
 }
 
@@ -49,13 +52,13 @@ function legacyMeta(dayFile, itemId) {
   return null;
 }
 
-/** Every typed 3.3 answer recorded in `dayFile`, in answer order. Pure. */
+/** Every judged typed answer (3.3, or 1.4 graded dictation) recorded in `dayFile`, in answer order. Pure. */
 export function typedAnswers(dayFile) {
   const rows = [];
   for (const [itemId, record] of Object.entries(dayFile?.items ?? {})) {
     if (typeof record?.response?.typed !== 'string') continue;
     const meta = record.wordId && record.task ? { wordId: record.wordId, task: record.task, source: record.source ?? null } : legacyMeta(dayFile, itemId);
-    if (!meta?.wordId || meta.task !== '3.3') continue;
+    if (!meta?.wordId || !TYPED_TASKS.includes(meta.task)) continue;
     rows.push({
       day: dayFile.day, itemId, at: record.at ?? null, wordId: meta.wordId, task: meta.task, source: meta.source,
       typed: record.response.typed, correct: record.result?.correct ?? null, score: record.result?.score ?? null,

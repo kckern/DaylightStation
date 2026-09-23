@@ -83,8 +83,39 @@ folder AND change its `group`) loses no progress.
 | `notYet` | Not yet | child's sort |
 | `familiar` | Familiar | child's sort, a failed verify, a failed recheck, or a paper miss on a claimed/mastered word |
 | `claimed` | Got it | child's sort |
-| `mastered` stage 0 | Mastered ⭐ | a passed verify; due next study day |
-| `mastered` stage s ≥ 1 | Mastered ⭐… | s passed rechecks |
+| `mastered` stage 0 | Recognised ⭐ | a passed (recognition) verify; due next study day |
+| `mastered` stage s ≥ 1 | Recognised ⭐…, or **Mastered** ⭐… once signed off | s passed rechecks |
+
+### The sign-off ladder (ruling 2026-09-23)
+
+> **Typing from memory is the final sign-off only — recognition → claim →
+> match → typed sign-off. Recording is practice only, never a quiz or a
+> prerequisite.**
+
+The child is never asked to type a word from memory, from sound, or from
+English until they have shown they can recognise it, claimed it, and matched
+it. Copy-typing (1.1) with the word on screen is fine at any time (Learn,
+drill, Write with help); speaking is never graded and never gates anything.
+
+Per-word flags in status v3 (`mastery.mjs`):
+
+| Flag | Set by | Meaning |
+|---|---|---|
+| `recognizedCount` | every passed recognition task that ends a word's check: a verify pass (round quiz or practice Quiz me) and a recognition recheck pass | how many times the word was recognised |
+| `matched` | finishing a guided Match or a practice Match with the word on the board | the word was matched |
+| `typedSignedOff` | the first passed typed recheck (the study day); cleared by a typed miss or any demotion out of `mastered` | **Mastered** — signed off |
+
+`readyForSignOff(word)`: `mastered` (claimed-and-verified), stage ≥ 1 (its
+2nd-or-later recheck), `recognizedCount ≥ 2` (the round quiz plus the first
+recheck), `matched`, and not straight after a typed miss. What people read is
+`ladderLevel(word)`: `new`, `introduced`, `learning` (notYet / familiar /
+claimed), `recognised` (mastered, not signed off), `mastered` (signed off).
+The child's My words and the teacher Words tab both label by it; the API adds
+`level`, `recognizedCount`, `matched` and `typedSignedOff` to each word row
+beside the unchanged `state` / `stage`.
+
+A grown-up's **Mark mastered** is a sign-off: it sets `typedSignedOff` (and
+`recognizedCount ≥ 2`, `matched`).
 
 **Only a quiz grades** (round-end verify, rechecks, the paper quiz). Sorting a
 card, drill, match, say, write and listen never change a level except: sorting
@@ -97,8 +128,11 @@ already was.
 |---|---|---|
 | Verify passed | `familiar`, `claimed` | `mastered` s0, due next study day; streak 0; tricky off |
 | Verify failed | `familiar`, `claimed` | `familiar`; streak +1; `verifyFailedDay` = today |
-| Recheck passed | `mastered` s | stage s+1; due day + round(`GAPS[min(s+1,5)]` × `review.gapScale`) study days, `GAPS = [1, 3, 7, 14, 30, 60]` |
-| Recheck failed | `mastered` s | `familiar`, stage cleared; streak +1 |
+| Verify passed | (also) | `recognizedCount` +1 — recognised, **not** signed off |
+| Recheck passed | `mastered` s | stage s+1; due day + round(`GAPS[min(s+1,5)]` × `review.gapScale`) study days, `GAPS = [1, 3, 7, 14, 30, 60]`; a recognition pass adds 1 to `recognizedCount`, a typed pass sets `typedSignedOff` |
+| Recognition recheck passed, straight after a typed miss | `mastered` s | stage unchanged, due the next study day — the typed sign-off comes straight back |
+| Recognition recheck failed | `mastered` s | `familiar`, stage cleared; streak +1; sign-off cleared |
+| **Typed recheck failed** | `mastered` s ≥ 1 | stays `mastered` (Recognised) at **stage 1**, due the next study day; streak +1 (tricky at the threshold); `typedSignedOff` cleared. Its next recheck is recognition — never back to learning, no spiral |
 | Paper row miss (fold) | `familiar`, `claimed`, `mastered` | `familiar`, stage cleared; streak +1 |
 | Paper row miss | `new`, `introduced`, `notYet` | logged only |
 | Paper row pass | any | logged only |
@@ -123,24 +157,52 @@ The stream ends when no word's latest sort is Not yet, or after
 `round.maxPasses` (default 3) passes, or the child taps **Quiz me**. **Undo**
 reverses the last sort while its card is still the most recent.
 
-**Round end (verify)**: every word whose latest sort is Familiar or Got it,
-plus every `notYetCarry` word, and whose `verifyFailedDay` is not today. Per
-word, two graded tasks, **hardest first**, stopping at the first miss:
+A round runs **Learn › Sort › Quiz › Match**: introductions (flash → copy →
+say-after), the sort stream, the round quiz (verify), then the guided Match.
 
-1. **3.3 type-from-cue** (judged for meaning) — proves the word can be
-   produced from its meaning.
+**Round end (verify) — recognition only**: every word whose latest sort is
+Familiar or Got it, plus every `notYetCarry` word, and whose `verifyFailedDay`
+is not today. Per word, two graded **recognition** tasks (`VERIFY_TASKS` in
+`practice.mjs`), stopping at the first miss — never a typed item:
+
+1. **3.1 pick-term** — English cue → pick the Korean.
 2. **2.2 pick-meaning, hear channel** (read channel if no term audio) —
    proves it is known by ear.
 
 Right → the next task; wrong → the correct answer is shown (with audio), the
-word fails verify, its remaining task is dropped. Both right → passed. Every
-graded choice task has a **Don't know** option (counts as a miss).
+word fails verify, its remaining task is dropped. Both right → passed
+(`mastered` stage 0, `recognizedCount` +1 — Recognised, not signed off). Every
+graded choice task has a **Don't know** option (counts as a miss). **Quiz me**
+from the sort stream starts this same recognition quiz; so does the practice
+menu's Quiz me.
+
+**Match (guided)**: after the quiz, a round that verified at least one word
+serves one `match` item (`id: <round>:m`, `mode: 'round'`, answered
+`{done:true}`, the same `MatchItem` and board as practice Match) over the
+words just verified — padded to 3 with up to 2 already-known (`mastered`)
+words when fewer than 3 were verified. Finishing it sets `matched` on every
+word on the board. A round that verified nothing skips it. `round.phase` reads
+`match` while it is on screen; `progress.round.hasMatch` (read-only) says
+whether the round shows or will show the step — true before the quiz ends
+unless the quiz can no longer pass anything, and after it only if a Match ran.
+The drill offer (if any) follows the Match.
 
 ### Rechecks
 
-One graded task per due word: below stage 2, `2.2` and `3.1` alternate and
-every `review.typedEvery`-th recheck is `3.3`; stage 2 and above is always
-`3.3`.
+One graded task per due word:
+
+- **Typed sign-off** when `readyForSignOff` (recognised twice, claimed,
+  matched, stage ≥ 1 — so never before the 2nd recheck): **3.3
+  type-from-cue**, alternating per word with **1.4 dictation** (the term's
+  audio is the whole prompt; judged exactly like 3.3) when the word has term
+  audio. A pass signs the word off (Mastered); a miss drops it back to
+  recognition (see the table above).
+- **Recognition** otherwise, at any stage: `2.2` and `3.1` alternate per word
+  (starting side seeded by the word id).
+
+`review.typedEvery` is **retired** — typing is the sign-off, never a cadence.
+A stored tuned value, a `lastChanged` stamp or a tuner proposal naming it is
+ignored (it is not in `TUNABLE`).
 
 ## The tricky-word drill (spec §3 drill path)
 
@@ -156,7 +218,9 @@ stays tricky for another day. **Nothing in a drill grades or changes word
 state**; it exists purely to walk one word from full support to none.
 
 Steps, fixed at creation and always in this order
-(`DRILL_STEPS` in `backend/src/2_domains/school/wordLadder/drill.mjs`):
+(`DRILL_STEPS` in `backend/src/2_domains/school/wordLadder/drill.mjs`) — the
+unsupported production steps (dictation, say-from-cue, type) come last, after
+the scaffolded tiles, so writing from sound or memory is never front-loaded:
 
 | Step | What the child does | Skipped when |
 |---|---|---|
@@ -165,8 +229,8 @@ Steps, fixed at creation and always in this order
 | **say-after** | hears the term, records saying it after | no microphone capability, or the word has no term audio |
 | **match** | 4-pair picture/text match board (the drill word plus up to 3 other introduced words) | fewer than 2 other introduced words exist to pair with |
 | **read-aloud** | reads the term aloud and records; the native audio is revealed only after the take | no microphone capability |
-| **dictation** | hears the term (no text shown), types what was heard | the word has no term audio |
 | **tiles** | taps syllable tiles (the term's syllables plus 2 decoys) to spell the term from a cue | never |
+| **dictation** | hears the term (no text shown), types what was heard | the word has no term audio |
 | **say-from-cue** | given only a cue (no term shown at all), records saying the term; the term is revealed only after the take | no microphone capability |
 | **type** | given only a cue, types the term | never |
 
@@ -353,7 +417,8 @@ ended. It skips a day in these cases:
   `goal` / `cap`. A day that only closed idle, on unmount or on leave does not
   qualify.
 
-The digest covers the last 8 study days. The proposal passes through the
+The digest covers the last 8 study days. Its word summary also counts
+`signedOff` — mastered words the typed sign-off has passed. The proposal passes through the
 brakes (`applyTuningProposal`), and applied values merge onto a fresh read of
 `tuning.yml` just before the write. **Dwell counts study days: the dates that
 have a day file, which are the days the learner opened** (`listDays`). A day
@@ -435,7 +500,6 @@ when it is still that setting's latest change and still in force. Undo:
 | `batch.newPerDay` | new words per day | 4 |
 | `batch.workingSet` | unsettled-word cap | 7 |
 | `review.gapScale` | recheck gap multiplier | 1.0 |
-| `review.typedEvery` | typed-recheck cadence below stage 2 | 2 |
 | `drill.afterMisses` | graded-miss streak → tricky | 2 |
 | `drill.perSitting` | tricky words drilled per study day | 1 |
 | `session.capMinutes` | day cap | 15 |
@@ -459,12 +523,12 @@ round stream).
 | Mode | How it's chosen | With help | Without help |
 |---|---|---|---|
 | Flashcards | front side ("Word first" / "Meaning first") | term-first | meaning-first |
-| Match | starts directly | 4–6 pair picture/text boards over the practice word set | — |
+| Match | starts directly | 4–6 pair picture/text boards over the practice word set; finishing a board sets `matched` on its words | — |
 | Say | With help / Without help | **1.2 say-after** — hears the term, says it after (dropped from the run if no microphone or the word has no term audio) | **3.4 say-from-cue** — cue only; there's no model to say after, so the native comparison at the end is simply skipped |
-| Write | With help / Without help | **1.1 copy-type** — the term is on screen, type it | **3.3 type-from-cue** — cue only, no reference to copy; a **Show me** button submits an empty answer and reveals the word (the drill's type step has it too) |
+| Write | With help (offered first) / Without help | **1.1 copy-type** — the term is on screen, type it | **3.3 type-from-cue** — free practice, never graded and never a sign-off; cue only, no reference to copy; a **Show me** button submits an empty answer and reveals the word (the drill's type step has it too). Typing from memory is never the first suggestion: With help is option 1 |
 | Listen | starts directly | one run through every practice word that has term audio (`items/ListenItem.jsx`) | — |
 | Drill | word picker first (**My words**, multi-select, "Drill these") | the same drill walk as the tricky-word drill (look → … → type), over the chosen words | — |
-| Quiz me | starts directly | graded — see below | — |
+| Quiz me | starts directly | graded, recognition only (3.1 then 2.2, like the round quiz) — see below | — |
 
 **Quiz me eligibility** is the same rule as a round's verify (rule 3):
 `familiar` or `claimed` state, or `notYetCarry === true` — never `new`,
@@ -489,8 +553,9 @@ Read-only from the practice menu ("My words", `items/WordsItem.jsx`) or as
 the word picker for Drill ("Pick words to drill", `pick` mode, introduced
 words only): every word the learner can meet — decks seen in order, then
 the current deck, plus any other introduced word — with a state chip
-(New / Just met / Not yet / Familiar / Got it / Mastered, with stars for
-mastery stage) and a Tricky chip when set. `GET /word-ladder/words` in test
+(New / Just met / Not yet / Familiar / Got it / Recognised / Mastered, with
+stars for stage — a `mastered` word reads Recognised until the typed sign-off,
+from the row's `level`) and a Tricky chip when set. `GET /word-ladder/words` in test
 mode **requires `sittingId`** — it reads that sitting's shadow; there is no
 "current" live status for it to fall back to.
 
@@ -512,12 +577,12 @@ day the learner actually opened (`listDays` = their study days).
 
 | Action | Effect |
 |---|---|
-| **Words** (`adminWords`) | Every word the learner can meet (decks seen in order, this deck, then any other word with a record): state, stage, due, miss streak, tricky, excluded, `lastGraded`, and `recentTyped` — judged 3.3 answers from the last 14 study days' files, newest first, each with `itemId`, typed text, score, judge, reason and any `regraded` stamp |
+| **Words** (`adminWords`) | Every word the learner can meet (decks seen in order, this deck, then any other word with a record): state, `level` (the chip: Learning / Recognised / Mastered — Mastered only once signed off), `recognizedCount`, `matched`, `typedSignedOff`, stage, due, miss streak, tricky, excluded, `lastGraded`, `recentTyped` — judged typed answers (3.3, and 1.4 dictation sign-offs) from the last 14 study days' files, newest first, each with `itemId`, typed text, score, judge, reason and any `regraded` stamp |
 | **Reset** | The record becomes `emptyWordV3()` — nothing kept, `notYetCarry` included. If a round under way still quizzes it, grading fills `introducedDay` with that day (`applyGraded` does this for any verify/recheck on a word without one), so a miss is carried |
 | **Mark mastered (stage n)** | `mastered`, stage n, due today + `max(1, round(GAPS[min(n,5)] × review.gapScale))` — the day's tuned scale, as a recheck pass uses (1 when absent); miss streak, tricky and `notYetCarry` cleared. A word never introduced gets `introducedDay` = today and `introducedBy: admin`, so a later recheck miss (→ familiar) is carried like any other, but it does not count toward today's `batch.newPerDay` intros (`newAllowance` skips it) |
 | **Exclude / Include** | Sets `excluded`. An excluded word is never in the new-word pool or an intro, a carry round, a recheck (`isDue` is false), a tricky drill or drill offer, a practice run, a match board or 3.1 distractor, the printed learner quiz, or My words, and never counts toward the working set (`isUnsettled` is false). Excluding mid-day also drops its pending recheck and ends an unfinished drill on it (`excludeWordFromDay`, the drill marked `excluded: true` — it does not count toward `drill.perSitting`, so another tricky word may still be drilled); a round already under way keeps it until the round ends. An opened day is then **re-settled** in the same transaction: with nothing else pending, the next round or drill is planned, or the day is credited (`doneAt`) — the child never lands on a "done" summary for an uncredited day |
 | **Drop deck** | Removes the deck from `decksSeen` (the new-word pool); introduced words keep their state. Refused (400) for the current deck or any deck the learner is still enrolled in — the next open would re-add it; `adminWords.droppableDecks` lists the decks that can go |
-| **Re-grade** | For one logged typed (3.3) answer: overwrites the judge cache for `(package, word, normalised answer)` with `{score: pass ? typing.passScore : 1, judge: grown-up, reason: 'Re-graded by a grown-up'}` and stamps the item `regraded: {at, actorId, pass}`; the tuner's digest counts that answer's score as the re-grade (`passScore` or 1), not the judge's. **It does not change word state** — reset / mark mastered do that |
+| **Re-grade** | For one logged typed (3.3 or 1.4) answer: overwrites the judge cache for `(package, word, normalised answer)` with `{score: pass ? typing.passScore : 1, judge: grown-up, reason: 'Re-graded by a grown-up'}` and stamps the item `regraded: {at, actorId, pass}`; the tuner's digest counts that answer's score as the re-grade (`passScore` or 1), not the judge's. **It does not change word state** — reset / mark mastered do that |
 
 ## API
 
@@ -607,10 +672,10 @@ shadow 404s on next touch and the client reopens. The banner reads
 |---|---|
 | `today` (default) | the real snapshot, untouched |
 | `fresh` | empty status and day file — every word `new` |
-| `due` | every deck word `mastered` stage 1, due today — rechecks |
+| `due` | every deck word `mastered` stage 1, due today — rechecks; every other word ready for the typed sign-off, so both recognition and typed rechecks show |
 | `round-end` | every deck word `familiar`, introduced yesterday — straight to round-end verify |
 | `tricky` | every deck word `familiar` (introduced 3 days ago); the first is tricky since yesterday — the day opens on its drill |
-| `typos` | every deck word `familiar`, introduced yesterday — a carry round whose quiz has typed items to misspell |
+| `typos` | every deck word due for its typed sign-off recheck — typed items to misspell (the round quiz is recognition only) |
 | `done` | today already closed (`doneAt` = today) — straight to the summary/menu |
 
 A backend safety test

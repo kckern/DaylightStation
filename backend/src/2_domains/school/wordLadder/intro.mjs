@@ -11,6 +11,7 @@
  */
 import { isDue, isExcluded } from './mastery.mjs';
 import { ESTIMATE_MS, carryCandidates, newAllowance } from './rounds.mjs';
+import { ladderLevel } from './mastery.mjs';
 
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 
@@ -69,5 +70,12 @@ export function introPlanLabel(plan, { withTime = false } = {}) {
 export function deckProgress({ status, deckWords = [] }) {
   const words = status?.words ?? {};
   const kept = deckWords.filter((id) => !isExcluded(words[id]));
-  return { learned: kept.filter((id) => words[id]?.state === 'mastered').length, total: kept.length };
+  // "Learned" is the ladder's top rung — typed sign-off — not the internal
+  // `mastered` state, which a word reaches on recognition alone.
+  const level = (id) => ladderLevel(words[id]);
+  return {
+    learned: kept.filter((id) => level(id) === 'mastered').length,
+    recognised: kept.filter((id) => level(id) === 'recognised').length,
+    total: kept.length,
+  };
 }

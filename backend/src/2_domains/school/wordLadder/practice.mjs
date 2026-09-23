@@ -8,6 +8,14 @@ import { isExcluded, isUnsettled } from './mastery.mjs';
 
 const QUIZZABLE = new Set(['familiar', 'claimed']);
 
+/**
+ * The verify quiz, a round's or a practice Quiz me: recognition only (ruling
+ * 2026-09-23 — typing from memory is the final sign-off, never up front).
+ * 3.1 English → pick the Korean first, then 2.2 pick the meaning (hear
+ * channel when there is term audio). First-miss stop drops the rest.
+ */
+export const VERIFY_TASKS = Object.freeze(['3.1', '2.2']);
+
 export const PRACTICE_MODES = Object.freeze(['flashcards', 'match', 'say', 'write', 'listen', 'drill', 'quiz']);
 
 /**
@@ -61,9 +69,9 @@ export function buildPractice({ mode, help = true, filter = 'introduced', chosen
   else if (mode === 'quiz') {
     // Same rule as a round's verify (spec §4 Round end, rule 3): familiar or
     // claimed, or notYetCarry — never new / introduced / notYet — and not
-    // failed today.
+    // failed today. Recognition only, like verify (ruling 2026-09-23).
     const eligible = ids.filter((id) => (QUIZZABLE.has(words[id].state) || words[id].notYetCarry === true) && words[id].verifyFailedDay !== day);
-    queue = [...eligible.map((wordId) => ({ kind: 'graded', task: '3.3', wordId })), ...eligible.map((wordId) => ({ kind: 'graded', task: '2.2', wordId }))];
+    queue = VERIFY_TASKS.flatMap((task) => eligible.map((wordId) => ({ kind: 'graded', task, wordId })));
   }
   return { mode, help, queue, index: 0, step: 0, passed: [], failed: [] };
 }

@@ -8,7 +8,7 @@ const DECK_OTHER = 'language/korean/week-00';
 const REF = 'media:language/korean-vocab/lexicon.yml';
 const TODAY = '2026-09-22';
 const SETTINGS = {
-  round: { size: 5, maxPasses: 3 }, batch: { newPerDay: 4, workingSet: 7 }, review: { gapScale: 1, typedEvery: 2 },
+  round: { size: 5, maxPasses: 3 }, batch: { newPerDay: 4, workingSet: 7 }, review: { gapScale: 1 },
   drill: { afterMisses: 2 }, session: { capMinutes: 15 }, typing: { passScore: 6 },
 };
 function memoryStore() {
@@ -51,8 +51,19 @@ function make({ judgementCache = null, recordings = null, mode = 'live', attempt
 function dueStore(rechecks) {
   const store = memoryStore();
   store.s.status.words.gawi = { ...emptyWordV3(), state: 'mastered', stage: 0, dueDay: TODAY, introducedDay: '2026-09-20', rechecks };
-  store.s.status.words.pul = { ...emptyWordV3(), state: 'mastered', stage: 3, dueDay: '2026-10-30', introducedDay: '2026-09-01' };
+  store.s.status.words.pul = { ...emptyWordV3(), state: 'mastered', stage: 3, dueDay: '2026-10-30', introducedDay: '2026-09-01', typedSignedOff: '2026-09-20' };
   store.s.status.decksSeen = [DECK];
+  return store;
+}
+
+/**
+ * `gawi` due today with every typed sign-off prerequisite met (recognised
+ * twice, matched, stage 1): its recheck is typed — 3.3, or 1.4 dictation on
+ * alternate rechecks when there is term audio (ruling 2026-09-23).
+ */
+function readyStore(rechecks) {
+  const store = dueStore(rechecks);
+  store.s.status.words.gawi = { ...store.s.status.words.gawi, stage: 1, recognizedCount: 2, matched: true };
   return store;
 }
 
@@ -78,13 +89,46 @@ describe('WordLadderSittingService', () => {
     expect(opened.progress.round).toHaveProperty('quizLeft');
   });
 
-  it('graded items never carry the answer', async () => {
+  it('graded items never carry the answer; the round quiz opens on recognition (3.1), never typing', async () => {
     const { service } = make();
     const opened = await service.open({ userId: 'test-learner', deckId: DECK });
     const item = await walkToGraded(service, opened);
-    expect(item.type).toBe('typed');
-    expect(JSON.stringify(item)).not.toContain('가위');
+    expect(item).toMatchObject({ type: 'choice', task: '3.1', source: 'verify' });
+    expect(JSON.stringify({ ...item, choices: [] })).not.toContain(lexicon.entries.get(item.wordId).term);
     expect(item.word).toBeUndefined();
+  });
+
+  it('progress exposes the guided Match: hasMatch from the start of a round, round.phase match while it is on screen', async () => {
+    const { service } = make();
+    const opened = await service.open({ userId: 'test-learner', deckId: DECK });
+    expect(opened.progress.round).toMatchObject({ phase: 'intro', hasMatch: true });
+    let { item, progress } = opened;
+    for (let i = 0; i < 40 && item.type !== 'match'; i += 1) {
+      const response = item.type === 'copy' ? { typed: item.word.term }
+        : item.type === 'flashcard' ? (item.mode === 'intro' ? { seen: true } : { sort: 'claimed' })
+          : { choice: item.task === '2.2' ? lexicon.entries.get(item.wordId).gloss : lexicon.entries.get(item.wordId).term };
+      ({ item, progress } = await service.respond({ userId: 'test-learner', sittingId: opened.sittingId, itemId: item.id, response }));
+    }
+    expect(item).toMatchObject({ type: 'match', id: 'r1:m' });
+    expect(item.board.pairs.map((pair) => pair.wordId).sort()).toEqual(['gawi', 'pul']);
+    expect(progress).toMatchObject({ phase: 'round', round: { phase: 'match', hasMatch: true, quizLeft: 0 } });
+    ({ item, progress } = await service.respond({ userId: 'test-learner', sittingId: opened.sittingId, itemId: item.id, response: { done: true } }));
+    expect(item.type).toBe('summary');
+  });
+
+  it('hasMatch is false once a quiz ends with nothing verified', async () => {
+    const { service } = make();
+    const opened = await service.open({ userId: 'test-learner', deckId: DECK });
+    let { item, progress } = opened;
+    for (let i = 0; i < 40 && item.type !== 'summary' && progress?.round?.phase !== 'offer'; i += 1) {
+      const response = item.type === 'copy' ? { typed: item.word.term }
+        : item.type === 'flashcard' ? (item.mode === 'intro' ? { seen: true } : { sort: 'claimed' }) : { dontKnow: true };
+      ({ item, progress } = await service.respond({ userId: 'test-learner', sittingId: opened.sittingId, itemId: item.id, response }));
+      if (progress?.round?.phase === 'quiz' && progress.round.quizLeft > 0) expect(progress.round.hasMatch).toBe(true);
+    }
+    expect(item.type).toBe('summary');
+    const got = await service.get({ userId: 'test-learner', sittingId: opened.sittingId });
+    expect(got.progress.round).toBeNull();
   });
 
   it('refuses a learner without the enrollment', async () => {
@@ -94,7 +138,7 @@ describe('WordLadderSittingService', () => {
 
   it('a 2.2 recheck carries the term as its prompt and never the gloss answer outside the choices', async () => {
     const tasks = {};
-    for (const rechecks of [0, 2]) {
+    for (const rechecks of [0, 1]) {
       const { service } = make({ store: dueStore(rechecks) });
       const { item } = await service.open({ userId: 'test-learner', deckId: DECK });
       tasks[item.task] = item;
@@ -115,8 +159,8 @@ describe('WordLadderSittingService', () => {
   it('an image cue on 3.1 / 3.3 carries the gloss as its text fallback, never the term', async () => {
     const noGlossAudio = (id) => !String(id).includes('gloss');
     const seen = {};
-    for (const rechecks of [0, 1, 2]) {
-      const { service } = make({ store: dueStore(rechecks), media: noGlossAudio });
+    for (const store of [dueStore(0), dueStore(1), readyStore(0), readyStore(1)]) {
+      const { service } = make({ store, media: noGlossAudio });
       const { item } = await service.open({ userId: 'test-learner', deckId: DECK });
       if (item.cue?.type === 'image') seen[item.task] = item;
     }
@@ -128,18 +172,27 @@ describe('WordLadderSittingService', () => {
     }
   });
 
-  it('a 3.3 recheck carries no term anywhere', async () => {
-    const { service } = make({ store: dueStore(1), media: true });
-    const { item } = await service.open({ userId: 'test-learner', deckId: DECK });
-    expect(item).toMatchObject({ type: 'typed', task: '3.3' });
-    expect(JSON.stringify(item)).not.toContain('가위');
-    expect(item.word).toBeUndefined();
-    expect(item.prompt).toBeUndefined();
-    expect(item.assets.audio).toBeNull(); // term audio would speak the answer
+  it('a 3.3 recheck carries no term anywhere; a 1.4 dictation carries only the term audio', async () => {
+    const items = {};
+    for (const rechecks of [0, 1]) {
+      const { service } = make({ store: readyStore(rechecks), media: true });
+      const { item } = await service.open({ userId: 'test-learner', deckId: DECK });
+      items[item.task] = item;
+    }
+    expect(Object.keys(items).sort()).toEqual(['1.4', '3.3']);
+    for (const item of Object.values(items)) {
+      expect(item).toMatchObject({ type: 'typed', source: 'recheck' });
+      expect(JSON.stringify(item)).not.toContain('가위');
+      expect(item.word).toBeUndefined();
+      expect(item.prompt).toBeUndefined();
+    }
+    expect(items['3.3'].assets.audio).toBeNull(); // term audio would speak the answer
+    expect(items['1.4'].assets).toMatchObject({ audio: expect.any(String), image: null, glossAudio: null });
+    expect(items['1.4'].cue).toBeUndefined();
   });
 
   it('judges a typed answer before the engine sees it, once per item', async () => {
-    const { service, judge } = make({ store: dueStore(1) });
+    const { service, judge } = make({ store: readyStore(1) });
     const { sittingId, item } = await service.open({ userId: 'test-learner', deckId: DECK });
     const response = { typed: '가비' };
     const out = await service.respond({ userId: 'test-learner', sittingId, itemId: item.id, response });
@@ -223,7 +276,7 @@ describe('WordLadderSittingService', () => {
 
   it('dayStatus carries the launch card: course, unit, today\'s plan and words learned — without writing', async () => {
     const store = memoryStore();
-    store.s.status.words.pul = { ...emptyWordV3(), state: 'mastered', stage: 1, dueDay: '2026-10-30', introducedDay: '2026-09-01' };
+    store.s.status.words.pul = { ...emptyWordV3(), state: 'mastered', stage: 1, dueDay: '2026-10-30', introducedDay: '2026-09-01', typedSignedOff: '2026-09-20' };
     const { service } = make({ store });
     const status = await service.dayStatus({ userId: 'test-learner', deckId: DECK });
     expect(status.context).toEqual({
@@ -252,7 +305,7 @@ describe('WordLadderSittingService', () => {
       unit: { id: DECK, title: 'Week 1: Classroom' },
       poster: { kind: 'curriculum-poster', scope: 'selfservice', courseId: 'program:word-ladder:korean-vocab' },
       today: { newCount: 2, reviewCount: 0, estimatedMinutes: 5, doneToday: false, label: '2 new words', line: '2 new words · about 5 minutes' },
-      progress: { learned: 0, total: 2 },
+      progress: { learned: 0, recognised: 0, total: 2 },
     });
     expect(store.s.writes).toBe(0);
     await expect(service.intro({ userId: 'someone-else', deckId: DECK })).rejects.toThrow(/no word-ladder assignment/);
@@ -266,7 +319,7 @@ describe('WordLadderSittingService', () => {
     await service.open({ userId: 'test-learner', deckId: DECK });
     const intro = await service.intro({ userId: 'test-learner', deckId: DECK });
     expect(intro.today).toMatchObject({ doneToday: true, line: 'Done for today — practice anytime' });
-    expect(intro.progress).toEqual({ learned: 2, total: 2 });
+    expect(intro.progress).toEqual({ learned: 0, recognised: 2, total: 2 });
   });
 
   it('intro in test mode reads a peeked shadow snapshot (with the scenario) and never opens a shadow', async () => {
@@ -388,8 +441,8 @@ describe('WordLadderSittingService', () => {
   });
 
   it('a typed item answered by a request prepared before the previous answer landed is stale', async () => {
-    const store = dueStore(1);
-    store.s.status.words.pul = { ...emptyWordV3(), state: 'mastered', stage: 0, dueDay: TODAY, introducedDay: '2026-09-20', rechecks: 1 };
+    const store = readyStore(1);
+    store.s.status.words.pul = { ...emptyWordV3(), state: 'mastered', stage: 1, dueDay: TODAY, introducedDay: '2026-09-20', rechecks: 1, recognizedCount: 2, matched: true };
     store.s.status.decksSeen = [DECK_OTHER, DECK];
     let gate = null;
     const decks = {
@@ -493,7 +546,7 @@ describe('WordLadderSittingService — drills, speaking, practice, My words', ()
   it('drill steps carry exactly what the screen needs, and the unsupported ones never the term', async () => {
     const { service } = make({ store: trickyStore(), media: true });
     const { steps } = await walkDrill(service);
-    expect(Object.keys(steps)).toEqual(['look', 'copy', 'say-after', 'match', 'read-aloud', 'dictation', 'tiles', 'say-from-cue', 'type']);
+    expect(Object.keys(steps)).toEqual(['look', 'copy', 'say-after', 'match', 'read-aloud', 'tiles', 'dictation', 'say-from-cue', 'type']);
     for (const step of ['look', 'copy', 'say-after']) {
       expect(steps[step].word).toMatchObject({ term: '가위', gloss: 'Scissors', media: { audio: expect.stringContaining(TERM_AUDIO) } });
     }
@@ -609,7 +662,7 @@ describe('WordLadderSittingService — drills, speaking, practice, My words', ()
 
   it('words lists every word of the package in deck order, with its ladder state', async () => {
     const store = memoryStore();
-    store.s.status.words.pul = { ...emptyWordV3(), state: 'mastered', stage: 2, dueDay: '2026-10-01', introducedDay: '2026-09-01' };
+    store.s.status.words.pul = { ...emptyWordV3(), state: 'mastered', stage: 2, dueDay: '2026-10-01', introducedDay: '2026-09-01', recognizedCount: 2, matched: true, typedSignedOff: '2026-09-20' };
     store.s.status.words.gawi = { ...emptyWordV3(), state: 'familiar', tricky: true, trickySince: TODAY, introducedDay: '2026-09-10' };
     store.s.status.decksSeen = [DECK_OTHER];
     const decks = {
@@ -619,8 +672,14 @@ describe('WordLadderSittingService — drills, speaking, practice, My words', ()
     const { service } = make({ store, decks });
     await expect(service.words({ userId: 'test-learner', deckId: DECK })).resolves.toEqual({
       words: [
-        { wordId: 'pul', term: '풀', gloss: 'Glue', state: 'mastered', stage: 2, tricky: false, dueDay: '2026-10-01' },
-        { wordId: 'gawi', term: '가위', gloss: 'Scissors', state: 'familiar', stage: 0, tricky: true, dueDay: null },
+        {
+          wordId: 'pul', term: '풀', gloss: 'Glue', state: 'mastered', stage: 2, tricky: false, dueDay: '2026-10-01',
+          level: 'mastered', recognizedCount: 2, matched: true, typedSignedOff: '2026-09-20',
+        },
+        {
+          wordId: 'gawi', term: '가위', gloss: 'Scissors', state: 'familiar', stage: 0, tricky: true, dueDay: null,
+          level: 'learning', recognizedCount: 0, matched: false, typedSignedOff: null,
+        },
       ],
     });
     await expect(service.words({ userId: 'someone-else', deckId: DECK })).rejects.toThrow(/assignment/);
@@ -653,11 +712,11 @@ describe('WordLadderSittingService — graded and transition events (plan 4, spe
   it('a graded recheck logs graded once and its transition, with mode', async () => {
     const { service, logger } = make({ store: dueStore(1), mode: 'test' });
     const { sittingId, item } = await service.open({ userId: 'test-learner', deckId: DECK });
-    expect(item).toMatchObject({ type: 'typed', source: 'recheck' });
-    await service.respond({ userId: 'test-learner', sittingId, itemId: item.id, response: { typed: '가비' } });
+    expect(item).toMatchObject({ type: 'choice', source: 'recheck' }); // stage 0: a recognition recheck
+    await service.respond({ userId: 'test-learner', sittingId, itemId: item.id, response: { dontKnow: true } });
     expect(calls(logger, 'school.word-ladder.graded')).toEqual([{
       learnerId: 'test-learner', sittingId, mode: 'test', package: 'korean-vocab', day: TODAY, itemId: item.id,
-      wordId: 'gawi', task: '3.3', source: 'recheck', correct: false, score: 2, judge: 'exact',
+      wordId: 'gawi', task: item.task, source: 'recheck', correct: false, score: null, judge: null,
     }]);
     expect(calls(logger, 'school.word-ladder.transition')).toEqual([expect.objectContaining({
       mode: 'test', wordId: 'gawi', from: { state: 'mastered', stage: 0 }, to: { state: 'familiar', stage: null }, source: 'recheck',
@@ -668,8 +727,8 @@ describe('WordLadderSittingService — graded and transition events (plan 4, spe
   it('a replayed answer logs no second graded or transition', async () => {
     const { service, logger } = make({ store: dueStore(1) });
     const { sittingId, item } = await service.open({ userId: 'test-learner', deckId: DECK });
-    await service.respond({ userId: 'test-learner', sittingId, itemId: item.id, response: { typed: '가비' } });
-    await service.respond({ userId: 'test-learner', sittingId, itemId: item.id, response: { typed: '가비' } });
+    await service.respond({ userId: 'test-learner', sittingId, itemId: item.id, response: { dontKnow: true } });
+    await service.respond({ userId: 'test-learner', sittingId, itemId: item.id, response: { dontKnow: true } });
     expect(calls(logger, 'school.word-ladder.graded')).toHaveLength(1);
     expect(calls(logger, 'school.word-ladder.transition')).toHaveLength(1);
   });
@@ -750,6 +809,8 @@ describe('WordLadderSittingService — grown-up word controls (plan 4 task 4, sp
     expect(words.map((w) => w.wordId)).toEqual(['gawi', 'pul']);
     expect(words.find((w) => w.wordId === 'gawi')).toEqual({
       wordId: 'gawi', term: '가위', gloss: 'Scissors', state: 'mastered', stage: 0, dueDay: TODAY, missStreak: 0, tricky: false, excluded: false,
+      // Verified but not signed off by a typed recheck: Recognised, not Mastered (ruling 2026-09-23).
+      level: 'recognised', recognizedCount: 0, matched: false, typedSignedOff: null,
       lastGraded: { day: '2026-09-20', task: '3.3', correct: false },
       recentTyped: [{ day: '2026-09-20', itemId: 'rc:gawi', typed: '가이', score: 5, judge: 'model', reason: 'close', correct: false, source: 'recheck', regraded: null }],
     });

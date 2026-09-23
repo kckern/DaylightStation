@@ -63,7 +63,8 @@ describe('test mode never writes', () => {
     expect(sittingId.startsWith('test.')).toBe(true);
     for (let i = 0; i < 80 && item.type !== 'summary'; i += 1) {
       const response = item.type === 'flashcard' ? (item.mode === 'intro' ? { seen: true } : { sort: 'claimed' })
-        : item.type === 'copy' ? { typed: item.word.term } : item.type === 'typed' ? { typed: '가위' } : { choice: item.choices[0] };
+        : item.type === 'copy' ? { typed: item.word.term } : item.type === 'typed' ? { typed: '가위' }
+          : item.type === 'match' ? { done: true } : { choice: item.choices[0] };
       ({ item } = await service.respond({ userId: 'test-learner', sittingId, itemId: item.id, response }));
     }
     expect(item.type).toBe('summary');
@@ -79,7 +80,7 @@ describe('test mode never writes', () => {
       if (item.type === 'say') takes.push(await service.saveRecording({ userId: 'test-learner', sittingId, itemId: item.id, buffer: Buffer.from('take'), ext: 'webm' }));
       const response = item.type === 'flashcard' ? (item.mode === 'intro' ? { seen: true } : { sort: 'claimed' })
         : item.type === 'copy' ? { typed: item.word.term } : item.type === 'typed' ? { typed: '가위' }
-          : item.type === 'say' ? { done: true } : { choice: item.choices[0] };
+          : item.type === 'say' || item.type === 'match' ? { done: true } : { choice: item.choices[0] };
       ({ item } = await service.respond({ userId: 'test-learner', sittingId, itemId: item.id, response }));
     }
     expect(item.type).toBe('summary');

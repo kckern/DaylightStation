@@ -27,6 +27,16 @@ describe('YamlWordLadderStore v3', () => {
     expect(yaml.load(fs.readFileSync(path.join(base(), 'status.yml'), 'utf8')).schema).toBe('school.word-ladder-status/v3');
     expect(yaml.load(fs.readFileSync(path.join(base(), 'days', '2026-09-22.yml'), 'utf8')).activeMs).toBe(5);
   });
+  it('a v3 file written before the sign-off flags loads with them (ruling 2026-09-23); old mastered words are grandfathered', () => {
+    fs.mkdirSync(base(), { recursive: true });
+    fs.writeFileSync(path.join(base(), 'status.yml'), yaml.dump({
+      schema: 'school.word-ladder-status/v3', decksSeen: [],
+      words: { gawi: { state: 'mastered', stage: 2, dueDay: '2026-09-25' }, pul: { state: 'familiar' } },
+    }));
+    const { words } = new YamlWordLadderStore({ configService }).readStatus('test-learner', 'korean-vocab');
+    expect(words.gawi).toMatchObject({ state: 'mastered', recognizedCount: 2, matched: true, typedSignedOff: null });
+    expect(words.pul).toMatchObject({ state: 'familiar', recognizedCount: 0, matched: false, typedSignedOff: null });
+  });
   it('a transaction that leaves a missing day file empty writes status only (a day file means the day was opened)', () => {
     const store = new YamlWordLadderStore({ configService });
     store.transact('test-learner', 'korean-vocab', '2026-09-22', ({ status, dayFile }) => ({ status: { ...status, decksSeen: ['deck'] }, dayFile }));

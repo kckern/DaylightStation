@@ -23,9 +23,31 @@ function migrateWord(old) {
   if (old?.state === 'learning') return { ...w, state: 'familiar' };
   if (old?.state === 'claimed') return { ...w, state: 'claimed' };
   if (old?.state === 'known') {
-    return { ...w, state: 'mastered', stage: (old.step ?? 0) + 1, dueDay: old.nextCheckDay ?? null };
+    return { ...w, ...GRANDFATHERED, state: 'mastered', stage: (old.step ?? 0) + 1, dueDay: old.nextCheckDay ?? null };
   }
   return w;
+}
+
+// Ruling 2026-09-23: a word mastered before the sign-off flags existed already
+// passed the old ladder's quizzes, so it is not walled behind a Match it
+// never had. It is not signed off unless a typed pass is on record.
+const GRANDFATHERED = Object.freeze({ recognizedCount: 2, matched: true, typedSignedOff: null });
+
+function withFlags(word) {
+  if (!word || typeof word !== 'object' || Object.hasOwn(word, 'recognizedCount')) return word;
+  const typedPass = word.lastGraded?.correct === true && word.lastGraded?.task === '3.3' ? word.lastGraded.day ?? null : null;
+  if (word.state === 'mastered') return { ...word, ...GRANDFATHERED, typedSignedOff: word.typedSignedOff ?? typedPass };
+  return { ...word, recognizedCount: 0, matched: word.matched === true, typedSignedOff: word.typedSignedOff ?? null };
+}
+
+/**
+ * A v3 status as read (pure, on read, like the v1 migration): words written
+ * before the sign-off flags get them — at their defaults, or grandfathered
+ * when already mastered. A word that already carries them is left alone.
+ */
+export function normalizeStatusV3(raw) {
+  const words = Object.fromEntries(Object.entries(raw?.words ?? {}).map(([id, word]) => [id, withFlags(word)]));
+  return { ...emptyStatusV3(), ...raw, words };
 }
 
 export function migrateStatusV2(raw) {

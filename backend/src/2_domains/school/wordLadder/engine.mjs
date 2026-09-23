@@ -10,12 +10,12 @@
  */
 import { DomainInvariantError, ValidationError } from '#domains/core/errors/index.mjs';
 import { hashString, seededShuffle } from './checkItem.mjs';
-import { PILES, applyGraded, applySort, emptyWordV3, introduce, isDue, isExcluded } from './mastery.mjs';
+import { PILES, applyGraded, applySort, emptyWordV3, introduce, isDue, isExcluded, markMatched, readyForSignOff } from './mastery.mjs';
 import { channelFor, cueFor, pickMeaningChoices, pickTermChoices } from './choices.mjs';
 import { newAllowance, planNextRound } from './rounds.mjs';
 import { normalizeAnswer } from './jamo.mjs';
 import { drillSteps, matchBoard, tilesFor } from './drill.mjs';
-import { PRACTICE_MODES, buildPractice } from './practice.mjs';
+import { PRACTICE_MODES, VERIFY_TASKS, buildPractice } from './practice.mjs';
 
 const IDLE_CAP_MS = 45000;
 const NOT_YET_GAP = 2;
@@ -116,15 +116,16 @@ function roundTouched(dayFile, round) {
   return Object.keys(dayFile.items).some((id) => id.startsWith(prefix));
 }
 
-// Spec §2 Rechecks: below stage 2, 2.2 and 3.1 ALTERNATE (per word, starting
-// side seeded by the word id) and every typedEvery-th recheck is 3.3.
-function recheckTask(word, wordId, settings) {
-  if ((word.stage ?? 0) >= 2) return '3.3';
+// Rechecks (ruling 2026-09-23): typing from memory is the final sign-off only.
+// A word ready for it (`readyForSignOff`: recognised twice, claimed, matched,
+// stage ≥ 1) is typed — 3.3 from the cue, or 1.4 dictation from the term audio
+// when there is some, alternating per word from a side seeded by the word id.
+// Every other recheck is recognition: 2.2 and 3.1 alternate the same way.
+function recheckTask(word, wordId, media = {}) {
   const n = (word.rechecks ?? 0) + 1;
-  const every = settings.review.typedEvery;
-  if (every > 0 && n % every === 0) return '3.3';
-  const choiceIndex = n - (every > 0 ? Math.floor(n / every) : 0);
-  return (choiceIndex + hashString(wordId)) % 2 === 0 ? '2.2' : '3.1';
+  const side = (n + hashString(wordId)) % 2 === 0;
+  if (readyForSignOff(word)) return media.audio === true && !side ? '1.4' : '3.3';
+  return side ? '2.2' : '3.1';
 }
 
 function introducedSameKind(ctx, entry) {
@@ -138,6 +139,8 @@ function gradedItem(ctx, id, wordId, task, source) {
   const entry = ctx.lexicon.entries.get(wordId);
   const media = ctx.media[wordId] ?? {};
   const seed = `${ctx.learnerId}|${ctx.day}|${id}`;
+  // 1.4 graded dictation: the term's audio is the whole prompt (the service sends it).
+  if (task === '1.4') return { id, type: 'typed', task, source, wordId };
   if (task === '3.3') return { id, type: 'typed', task, source, wordId, cue: cueFor(entry, media, seed) };
   if (task === '3.1') {
     return { id, type: 'choice', task, source, wordId, cue: cueFor(entry, media, seed), choices: pickTermChoices(entry, introducedSameKind(ctx, entry), seed).choices };
@@ -285,6 +288,40 @@ function nextRound(ctx) {
   };
 }
 
+// The guided Match after a round's quiz (Learn › Sort › Quiz › Match): the
+// words just verified, padded to 3 with up to 2 already-known (mastered)
+// words. Skipped when the round verified nothing. Returns true when it starts.
+function startMatch(ctx, round) {
+  const verified = round.quiz.passed.filter((id) => hasEntry(ctx, id) && !isExcluded(wordOf(ctx.status, id)));
+  if (!verified.length) return false;
+  const known = Object.entries(ctx.status.words)
+    .filter(([id, word]) => word.state === 'mastered' && !isExcluded(word) && !verified.includes(id) && hasEntry(ctx, id))
+    .map(([id]) => id)
+    .sort();
+  const pad = seededShuffle(known, hashString(`${ctx.learnerId}|${ctx.day}|${round.id}|match`)).slice(0, Math.max(0, Math.min(2, 3 - verified.length)));
+  round.match = { wordIds: [...verified, ...pad] };
+  round.phase = 'match';
+  return true;
+}
+
+/**
+ * Whether a round shows (or will show) the guided Match step, for the header
+ * trail. Before its quiz ends a round plans one — unless the quiz is under
+ * way with nothing passed and nothing left that could pass. Once the quiz is
+ * over, only a round that actually started a Match has one. Pure, read-only.
+ */
+export function roundHasMatch(round) {
+  if (!round) return false;
+  if (round.match || round.phase === 'match') return true;
+  if (round.phase === 'intro' || round.phase === 'stream') return true;
+  if (round.phase === 'quiz') return (round.quiz?.passed?.length ?? 0) > 0 || (round.quiz?.index ?? 0) < (round.quiz?.queue?.length ?? 0);
+  return false;
+}
+
+function afterQuiz(ctx, round) {
+  if (!startMatch(ctx, round)) endRound(ctx, round);
+}
+
 function itemForRound(ctx, round) {
   if (round.phase === 'intro') {
     const wordId = round.newWords[round.intro.index];
@@ -293,6 +330,10 @@ function itemForRound(ctx, round) {
     return { id: `${round.id}:i:${wordId}:copy`, type: 'copy', wordId };
   }
   if (round.phase === 'offer') return { id: `${round.id}:offer`, type: 'drill-offer', wordId: round.offer.wordId };
+  if (round.phase === 'match') {
+    const entries = round.match.wordIds.map((id) => ctx.lexicon.entries.get(id)).filter(Boolean);
+    return { id: `${round.id}:m`, type: 'match', mode: 'round', board: matchBoard(entries, ctx.media ?? {}, `${ctx.learnerId}|${ctx.day}|${round.id}:m`) };
+  }
   if (round.phase === 'stream') {
     return { id: `${round.id}:s:${round.stream.views}`, type: 'flashcard', mode: 'stream', wordId: round.stream.queue[0] };
   }
@@ -302,7 +343,7 @@ function itemForRound(ctx, round) {
 
 export function currentItem(ctx) {
   const pending = ctx.dayFile.rechecks.order.find((id) => !ctx.dayFile.rechecks.answered[id]);
-  if (pending) return gradedItem(ctx, `rc:${pending}`, pending, recheckTask(wordOf(ctx.status, pending), pending, ctx.settings), 'recheck');
+  if (pending) return gradedItem(ctx, `rc:${pending}`, pending, recheckTask(wordOf(ctx.status, pending), pending, ctx.media?.[pending]), 'recheck');
   const drill = openDrill(ctx);
   if (drill) return drillItem(ctx, drill);
   const round = openRound(ctx);
@@ -387,7 +428,8 @@ function quizzedCount(dayFile) {
 }
 
 // `quizNow`: the child asked to be quizzed, so words not yet sorted this round
-// are quizzed too. Words that failed verify today never are.
+// are quizzed too. Words that failed verify today never are. Recognition only
+// (VERIFY_TASKS), whether the stream ended or the child asked.
 function startQuiz(ctx, round, { quizNow = false } = {}) {
   const eligible = round.words.filter((id) => {
     const word = wordOf(ctx.status, id);
@@ -395,7 +437,7 @@ function startQuiz(ctx, round, { quizNow = false } = {}) {
     if (word.verifyFailedDay === ctx.day) return false;
     return pile === 'familiar' || pile === 'claimed' || word.notYetCarry === true || (quizNow && !pile);
   });
-  round.quiz.queue = [...eligible.map((wordId) => ({ wordId, task: '3.3' })), ...eligible.map((wordId) => ({ wordId, task: '2.2' }))];
+  round.quiz.queue = VERIFY_TASKS.flatMap((task) => eligible.map((wordId) => ({ wordId, task })));
   round.phase = round.quiz.queue.length ? 'quiz' : 'done';
   if (round.phase === 'done') endRound(ctx, round);
 }
@@ -471,7 +513,7 @@ function gradeVerifyTask(ctx, holder, task, correct) {
 }
 
 function gradeQuizTask(ctx, round, task, correct) {
-  if (gradeVerifyTask(ctx, round.quiz, task, correct)) endRound(ctx, round);
+  if (gradeVerifyTask(ctx, round.quiz, task, correct)) afterQuiz(ctx, round);
 }
 
 function gradedResult(ctx, item, correct, verdict) {
@@ -493,6 +535,7 @@ function respondPractice(ctx, item, response, verdict) {
     gradeVerifyTask(ctx, run, task, correct);
     return { result: gradedResult(ctx, item, correct, verdict), advance: true };
   }
+  if (task.kind === 'match') matchWords(ctx, task.board.pairs.map((pair) => pair.wordId));
   if (task.kind === 'drill') {
     const out = respondDrill(ctx, task.drill, response);
     if (task.drill.done) run.index += 1;
@@ -510,6 +553,10 @@ function respondPractice(ctx, item, response, verdict) {
   }
   run.index += 1;
   return { result, advance: true };
+}
+
+function matchWords(ctx, wordIds) {
+  for (const id of wordIds) if (ctx.status.words[id]) ctx.status.words[id] = markMatched(ctx.status.words[id]);
 }
 
 function gradedCorrect(ctx, item, response, verdict) {
@@ -664,6 +711,9 @@ function applyResponse(ctx, item, itemId, response, { at, verdict }) {
       else nextIntro(round);
     } else if (item.type === 'say') {
       nextIntro(round);
+    } else if (item.type === 'match') {
+      matchWords(ctx, round.match.wordIds);
+      endRound(ctx, round);
     } else if (item.type === 'drill-offer') {
       round.offerSettled = true;
       if (response.drill === 'yes') (ctx.dayFile.drills ??= []).push(newDrill(ctx, round.offer.wordId, 'offer'));

@@ -6,7 +6,7 @@ describe('drill', () => {
     expect(drillSteps({ audio: true }, { microphone: true })).toEqual(DRILL_STEPS);
   });
   it('no mic drops the speaking steps; no audio drops say-after and dictation', () => {
-    expect(drillSteps({ audio: true }, { microphone: false })).toEqual(['look', 'copy', 'match', 'dictation', 'tiles', 'type']);
+    expect(drillSteps({ audio: true }, { microphone: false })).toEqual(['look', 'copy', 'match', 'tiles', 'dictation', 'type']);
     expect(drillSteps({ audio: false }, { microphone: true })).toEqual(['look', 'copy', 'match', 'read-aloud', 'tiles', 'say-from-cue', 'type']);
   });
   it('tiles are the answer syllables plus two decoys from other deck words', () => {
