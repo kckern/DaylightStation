@@ -1,272 +1,213 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useCapabilities } from '../../SentenceLadder/useCapabilities.js';
-import CheckCard from './CheckCard.jsx';
-import StudyCard from './StudyCard.jsx';
-import { wordLadderApi } from './wordLadderApi.js';
-import { playClip } from './wordLadderAudio.js';
+import { TouchButton } from '../../../../../lib/ui/index.js';
+import WordLadderStage from './WordLadderStage.jsx';
+import FlashcardItem from './items/FlashcardItem.jsx';
+import ChoiceItem from './items/ChoiceItem.jsx';
+import TypedItem from './items/TypedItem.jsx';
+import SummaryItem from './items/SummaryItem.jsx';
+import { createWordLadderApi } from './wordLadderApi.js';
 import { wordLadderLog } from './wordLadderLog.js';
+import { useWordLadderKeys } from './useWordLadderKeys.js';
 import './WordLadder.scss';
 
-const NOT_SAVED = "That didn't save — try again";
-/** Upload failures on one card before the card falls back to flip-and-mark. */
-const UPLOAD_FAILURES_BEFORE_FALLBACK = 2;
+/** Items whose answer the server grades: the verdict stays on screen until Next. */
+const GRADED = new Set(['choice', 'typed']);
 
-/** Checks, then study (including today's misses), then the review quiz. */
-export function nextStep(plan) {
-  const check = plan.checks.find((item) => !item.done);
-  if (check) return { type: 'check', item: check };
-  const study = plan.study.find((item) => !item.done);
-  if (study) return { type: 'study', item: study };
-  const quiz = plan.review.find((item) => !item.done);
-  if (quiz) return { type: 'check', item: quiz };
-  return { type: 'done' };
+function roundLabel(progress) {
+  if (!progress) return '';
+  if (progress.phase === 'rechecks') return `Checking ${progress.rechecksLeft} ${progress.rechecksLeft === 1 ? 'word' : 'words'}`;
+  if (progress.phase === 'summary' || !progress.round) return 'Done for today';
+  const { index, phase } = progress.round;
+  const what = phase === 'quiz' ? 'Quiz' : phase === 'intro' ? 'New words' : 'Cards';
+  return `Round ${index} · ${what}`;
+}
+
+function remainingLabel(progress) {
+  const round = progress?.phase === 'round' ? progress.round : null;
+  if (!round) return null;
+  if (round.phase === 'stream') return `${round.remainingInStream} left`;
+  if (round.phase === 'quiz') return `${round.quizLeft} left`;
+  return null;
 }
 
 /**
- * The word ladder (flashcards `policy.mode: word-ladder`) for any word
- * package. The server owns the day: it freezes the plan, grades every check
- * and decides credit. It also names the languages — `plan.language` (the one
- * being learned) and `plan.gloss` (the one meanings are written in) — so
- * nothing here knows which language it is teaching.
- * A finished day lands on the review run (design rev 3): every deck card,
- * flip only, as many times as the child wants.
+ * The word ladder (mastery redesign rev 4, spec §6). The server owns the day:
+ * it picks every item and grades every answer. This renders one item at a
+ * time inside the config-sized stage. `descriptor.test` = a read-only test
+ * sitting (banner, `/word-ladder/test/*` API, optional `scenario` seed).
+ *
+ * A graded answer comes back with the NEXT item; the verdict is shown on the
+ * current item until Next. A copy mismatch keeps the item. A 404 means the
+ * sitting is gone (the study day rolled, or a test sitting was evicted) — the
+ * program reopens.
+ *
+ * Nothing is opened on mount: the child taps Start first (spec §6). That tap is
+ * the page's user gesture, so every clip after it may autoplay.
  */
-export default function WordLadderProgram({ descriptor, api = wordLadderApi, resolveAssetUrl = (id) => id, onExit = () => {} }) {
-  const userId = descriptor?.userId ?? null;
-  const deckId = descriptor?.deckId ?? null;
-  const [sessionId, setSessionId] = useState(null);
-  const [plan, setPlan] = useState(null);
-  // Capabilities wait for the plan: the key and languages are the package's.
-  const capabilityKey = plan?.package ? `word-ladder:${plan.package}` : null;
-  const termLang = plan?.language?.code ?? null;
-  const glossLang = plan?.gloss?.code ?? null;
-  const languages = useMemo(() => ({ source: glossLang, target: termLang }), [glossLang, termLang]);
-  const langs = useMemo(() => ({ term: termLang, gloss: glossLang }), [termLang, glossLang]);
-  const { capabilities, ready } = useCapabilities(capabilityKey, languages);
+export default function WordLadderProgram({ descriptor, api: injected = null, resolveAssetUrl = (id) => id, onExit = () => {} }) {
+  const { userId = null, deckId = null, test = false, scenario = null, title = null } = descriptor ?? {};
+  const api = useMemo(() => injected ?? createWordLadderApi({ test }), [injected, test]);
+  const [session, setSession] = useState(null);
+  const [item, setItem] = useState(null);
+  const [pendingItem, setPendingItem] = useState(null);
+  const [progress, setProgress] = useState(null);
+  const [result, setResult] = useState(null);
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
-  const [feedback, setFeedback] = useState(null);
-  const [micReason, setMicReason] = useState(null);
-  const [reviewRun, setReviewRun] = useState(null);
-  const [notice, setNotice] = useState(null);
-  const doneLogged = useRef(false);
-  const uploadFailures = useRef({});
+  const [started, setStarted] = useState(false);
+  const stageRef = useRef(null);
+  // Only the latest open may land (a reopen can overlap a slow first open).
+  const generation = useRef(0);
+  const live = useRef(true);
+  const busyRef = useRef(false);
+  // The open sitting, and whether Leave/Done already closed it — an unmount
+  // closes anything still open (reason 'unmount').
+  const sittingRef = useRef(null);
+  const closedRef = useRef(false);
 
-  useEffect(() => {
-    wordLadderLog.mounted({ userId, deckId });
-    return () => wordLadderLog.unmounted({ userId, deckId });
-  }, [userId, deckId]);
+  const show = useCallback((nextItem, nextProgress) => {
+    setItem(nextItem); setProgress(nextProgress); setResult(null); setPendingItem(null);
+  }, []);
 
-  useEffect(() => {
-    if (!userId || !deckId) return undefined;
-    let live = true;
-    api.open({ userId, deckId }).then(({ ok, status, data }) => {
-      if (!live) return;
-      if (!ok || !data?.plan) {
-        setError('This word list is not ready right now.');
-        wordLadderLog.planFailed({ userId, deckId, status });
-        return;
-      }
-      setSessionId(data.sessionId);
-      setPlan(data.plan);
-      wordLadderLog.planLoaded({
-        userId, deckId, package: data.plan.package ?? null, language: data.plan.language?.code ?? null, day: data.day, folded: data.folded ?? 0, doneToday: data.plan.doneToday,
-        checks: data.plan.checks.length, study: data.plan.study.length, review: data.plan.review.length,
-      });
-      if (data.plan.doneToday) {
-        setReviewRun({ index: 0 });
-        wordLadderLog.reviewStarted({ userId, deckId, from: 'open' });
-      }
-    });
-    return () => { live = false; };
-  }, [api, userId, deckId]);
-
-  const deviceMic = ready && capabilities.microphone === true;
-  const micAvailable = deviceMic && !micReason;
-  const unavailableReason = micReason ?? (ready && !deviceMic ? 'no-device' : null);
-  useEffect(() => {
-    if (ready && !deviceMic) wordLadderLog.micUnavailable({ userId, reason: 'no-device' });
-  }, [ready, deviceMic, userId]);
-
-  useEffect(() => {
-    if (plan?.doneToday && !doneLogged.current) {
-      doneLogged.current = true;
-      wordLadderLog.done({ userId, deckId });
-    }
-  }, [plan?.doneToday, userId, deckId]);
-
-  const reviewCard = reviewRun && plan ? plan.deckCards?.[reviewRun.index] ?? null : null;
-  useEffect(() => {
-    if (!reviewCard || !sessionId) return;
-    wordLadderLog.reviewViewed({ userId, wordId: reviewCard.wordId });
-    api.viewReview(sessionId, { userId, wordId: reviewCard.wordId });
-  }, [reviewRun, reviewCard, sessionId, userId, api]);
-
-  /**
-   * A write that did not come back ok may still have landed (a lost
-   * response). Re-reading the plan heals that: the step the server already
-   * recorded disappears instead of 400-ing on every retap forever.
-   *
-   * A 404 is different: the session itself is gone (the study day rolled
-   * over underneath it), so re-reading THAT plan 404s too — a loop where
-   * every retap just re-shows "That didn't save". Reopen instead, adopt the
-   * fresh session + plan, and let the child carry straight on.
-   */
-  const notSaved = useCallback(async (what, details) => {
-    wordLadderLog.writeFailed({ userId, what, ...details });
-    if (details?.status === 404 && userId && deckId) {
-      const { ok, data } = await api.open({ userId, deckId });
-      if (ok && data?.plan) {
-        setSessionId(data.sessionId);
-        setPlan(data.plan);
-        setNotice(null);
-        wordLadderLog.sessionReopened({ userId, deckId, what, sessionId: data.sessionId });
-        return;
-      }
-    }
-    setNotice(NOT_SAVED);
-    if (!sessionId) return;
-    const { ok, data } = await api.plan(sessionId, userId);
-    if (ok && data?.plan) {
-      setPlan(data.plan);
-      wordLadderLog.planRefetched({ userId, what });
-    }
-  }, [api, sessionId, userId, deckId]);
-
-  const onMicUnavailable = useCallback((reason) => {
-    setMicReason(reason);
-    wordLadderLog.micUnavailable({ userId, reason });
-  }, [userId]);
-
-  const answer = useCallback(async (item, choice) => {
-    const { ok, status, data } = await api.answer(sessionId, { userId, wordId: item.wordId, choice });
-    if (!ok || !data) {
-      await notSaved('answer', { wordId: item.wordId, status });
+  const open = useCallback(async () => {
+    const mine = ++generation.current;
+    const { ok, status, data } = await api.open({ userId, deckId, scenario });
+    if (!live.current || mine !== generation.current) return;
+    if (!ok || !data?.item || !data?.sittingId) {
+      setError('This word list is not ready right now.');
+      wordLadderLog.planFailed({ userId, deckId, status, test });
       return;
     }
-    setNotice(null);
-    wordLadderLog.checkAnswered({ userId, wordId: item.wordId, phase: item.phase, direction: item.direction, correct: data.correct });
-    if (!data.correct && data.card?.media?.audio) playClip(resolveAssetUrl(data.card.media.audio));
-    setFeedback({ item, result: { correct: data.correct, answer: data.answer, card: data.card } });
-    setPlan(data.plan);
-  }, [api, sessionId, userId, resolveAssetUrl, notSaved]);
+    setError(null);
+    sittingRef.current = data.sittingId;
+    closedRef.current = false;
+    setSession({ id: data.sittingId, langs: { term: data.language?.code ?? null, gloss: data.gloss?.code ?? null } });
+    show(data.item, data.progress ?? null);
+    wordLadderLog.planLoaded({ userId, deckId, package: data.package ?? null, sittingId: data.sittingId, test, first: data.item.type, phase: data.progress?.phase ?? null });
+  }, [api, userId, deckId, scenario, test, show]);
 
-  const record = useCallback(async (wordId, blob) => {
-    const { ok, status, data } = await api.uploadRecording(sessionId, { userId, wordId, blob });
-    if (!ok || !data) {
-      const failures = (uploadFailures.current[wordId] ?? 0) + 1;
-      uploadFailures.current[wordId] = failures;
-      wordLadderLog.recordingFailed({ userId, wordId, status, failures, bytes: blob?.size ?? null });
-      // A server that cannot take the audio must not wall the card: after
-      // repeated failures (or any server error) the card becomes flip-and-mark.
-      if (status >= 500 || failures >= UPLOAD_FAILURES_BEFORE_FALLBACK) onMicUnavailable('upload-failed');
-      await notSaved('recording', { wordId, status });
-      return false;
-    }
-    setNotice(null);
-    wordLadderLog.recordingUploaded({ userId, wordId, take: data.take, bytes: blob?.size ?? null });
-    setPlan(data.plan);
-    return true;
-  }, [api, sessionId, userId, onMicUnavailable, notSaved]);
+  useEffect(() => {
+    live.current = true;
+    wordLadderLog.mounted({ userId, deckId, test, scenario });
+    return () => {
+      live.current = false;
+      const openId = sittingRef.current;
+      if (openId && !closedRef.current) {
+        closedRef.current = true;
+        // Fire-and-forget: the component is gone; the client never throws.
+        api.close(openId, { userId, reason: 'unmount' });
+      }
+      sittingRef.current = null;
+      wordLadderLog.unmounted({ userId, deckId, test, sittingId: openId ?? null });
+    };
+  }, [api, open, userId, deckId, test, scenario]);
 
-  const mark = useCallback(async (item, value) => {
-    const recording = item.studied ? null : { status: 'unavailable', reason: unavailableReason ?? 'unknown' };
-    const { ok, status, data } = await api.mark(sessionId, { userId, wordId: item.wordId, mark: value, recording });
-    if (!ok || !data) {
-      await notSaved('mark', { wordId: item.wordId, status });
+  const start = useCallback(() => {
+    if (started) return;
+    setStarted(true);
+    wordLadderLog.started({ userId, deckId, test, scenario });
+    open();
+  }, [started, open, userId, deckId, test, scenario]);
+  useWordLadderKeys({ ' ': start, enter: start }, { enabled: !started });
+
+  useEffect(() => {
+    if (item) wordLadderLog.itemShown({ itemId: item.id, type: item.type, task: item.task ?? null, mode: item.mode ?? null, wordId: item.wordId ?? item.word?.wordId ?? null, test });
+  }, [item, test]);
+
+  /** After a refused write, ask the server what is on screen now (a 404 there reopens too). */
+  const resync = useCallback(async () => {
+    if (!session) return;
+    const { ok, status, data } = await api.get(session.id, userId);
+    if (!live.current) return;
+    if (ok && data?.item) { show(data.item, data.progress ?? null); return; }
+    if (status === 404) { wordLadderLog.sessionReopened({ userId, deckId, test, from: 'get' }); await open(); }
+  }, [api, session, userId, deckId, test, open, show]);
+
+  const respond = useCallback(async (response) => {
+    if (!session || !item || busyRef.current) return;
+    busyRef.current = true;
+    setBusy(true);
+    // The item's response goes to the server exactly as the item built it.
+    const { ok, status, data } = await api.respond(session.id, { userId, itemId: item.id, response });
+    busyRef.current = false;
+    if (!live.current) return;
+    setBusy(false);
+    if (!ok) {
+      if (status === 404) { wordLadderLog.sessionReopened({ userId, deckId, test, from: 'respond' }); await open(); return; }
+      wordLadderLog.writeFailed({ userId, itemId: item.id, status, test });
+      if (status !== 0) await resync();
       return;
     }
-    setNotice(null);
-    wordLadderLog.cardMarked({ userId, wordId: item.wordId, mark: value, recording: recording ? 'unavailable' : 'taken' });
-    setPlan(data.plan);
-  }, [api, sessionId, userId, unavailableReason, notSaved]);
+    wordLadderLog.itemAnswered({ itemId: item.id, type: item.type, task: item.task ?? null, correct: data?.result?.correct ?? null, score: data?.result?.score ?? null, next: data?.item?.type ?? null, test });
+    setProgress(data?.progress ?? null);
+    if (GRADED.has(item.type) && data?.result && 'correct' in data.result) {
+      setResult(data.result); setPendingItem(data.item ?? null);
+      return;
+    }
+    if (item.type === 'copy' && data?.result?.correct === false) { setResult(data.result); return; }
+    setResult(null); setPendingItem(null);
+    if (data?.item) setItem(data.item);
+  }, [api, session, item, userId, deckId, test, open, resync]);
 
-  const startReview = () => {
-    setReviewRun({ index: 0 });
-    wordLadderLog.reviewStarted({ userId, deckId, from: 'done' });
-  };
+  const next = useCallback(() => {
+    if (!pendingItem) return;
+    setItem(pendingItem); setPendingItem(null); setResult(null);
+  }, [pendingItem]);
 
-  if (error) {
-    return (
-      <div className="word-ladder" role="alert">
-        <p>{error}</p>
-        <button type="button" onClick={onExit}>Back</button>
-      </div>
-    );
-  }
-  if (!plan || !ready) return <div className="word-ladder"><p>Loading…</p></div>;
-
-  const header = <header className="word-ladder-header"><p aria-label="Today">{plan.progressLabel}</p></header>;
-  const working = (
-    <header className="word-ladder-header">
-      <button type="button" className="word-ladder-leave" onClick={onExit}>Leave for now</button>
-      <p aria-label="Today">{plan.progressLabel}</p>
-      {notice && <p className="word-ladder-notice" role="status">{notice}</p>}
-    </header>
+  /** Leave (header) closes as 'leave'; Done (summary) as 'cap' when the time cap was hit, else 'goal'. */
+  const closeAndExit = useCallback(async (reason) => {
+    wordLadderLog.sittingLeft({ userId, deckId, sittingId: session?.id ?? null, itemId: item?.id ?? null, reason, test });
+    if (session && !closedRef.current) {
+      closedRef.current = true;
+      await api.close(session.id, { userId, reason });
+    }
+    onExit();
+  }, [api, session, item, userId, deckId, test, onExit]);
+  const leave = useCallback(() => closeAndExit('leave'), [closeAndExit]);
+  const done = useCallback(
+    () => closeAndExit(progress?.capMs && progress.activeMs >= progress.capMs ? 'cap' : 'goal'),
+    [closeAndExit, progress],
   );
 
-  if (reviewRun) {
-    if (!reviewCard) {
-      return (
-        <div className="word-ladder word-ladder-done">
-          {header}
-          <h2>That&apos;s every card</h2>
-          <button type="button" onClick={startReview}>Review again</button>
-          <button type="button" onClick={onExit}>Done</button>
-        </div>
-      );
-    }
-    return (
-      <div className="word-ladder">
-        {header}
-        <StudyCard
-          key={`review:${reviewRun.index}:${reviewCard.wordId}`}
-          card={reviewCard}
-          langs={langs}
-          reviewOnly
-          resolveAssetUrl={resolveAssetUrl}
-          onNext={() => setReviewRun({ index: reviewRun.index + 1 })}
-        />
+  let body = <p className="wl-loading">Loading…</p>;
+  if (!started) {
+    body = (
+      <div className="wl-item wl-start">
+        <h2 className="wl-start__title">{title || 'Words'}</h2>
+        <TouchButton variant="primary" keyHint="Space" onClick={start}>Start</TouchButton>
       </div>
     );
-  }
-
-  if (feedback) {
-    return (
-      <div className="word-ladder">
-        {working}
-        <CheckCard item={feedback.item} result={feedback.result} langs={langs} resolveAssetUrl={resolveAssetUrl} onContinue={() => setFeedback(null)} />
+  } else if (error) {
+    body = (
+      <div className="wl-item wl-error" role="alert">
+        <p>{error}</p>
+        <TouchButton variant="primary" onClick={onExit}>Back</TouchButton>
       </div>
     );
+  } else if (item && session) {
+    // Item ids repeat across sittings: key by sitting too, so a reopen remounts the card.
+    const key = `${session.id}:${item.id}`;
+    const common = { item, langs: session.langs, resolveAssetUrl, onRespond: respond, busy, result, onContinue: next };
+    if (item.type === 'flashcard') body = <FlashcardItem key={key} {...common} />;
+    else if (item.type === 'copy') body = <TypedItem key={key} {...common} mode="copy" />;
+    else if (item.type === 'typed') body = <TypedItem key={key} {...common} mode="graded" stageRef={stageRef} />;
+    else if (item.type === 'choice') body = <ChoiceItem key={key} {...common} />;
+    else body = <SummaryItem key={key} item={item} onExit={done} />;
   }
-
-  const step = nextStep(plan);
-  if (step.type === 'done') {
-    return (
-      <div className="word-ladder word-ladder-done">
-        {header}
-        <h2>All done for today</h2>
-        <button type="button" onClick={startReview}>Review the cards</button>
-        <button type="button" onClick={onExit}>Done</button>
-      </div>
-    );
-  }
+  const pct = progress?.capMs ? Math.min(100, Math.round((progress.activeMs / progress.capMs) * 100)) : 0;
+  const remaining = remainingLabel(progress);
   return (
-    <div className="word-ladder">
-      {working}
-      {step.type === 'check' ? (
-        <CheckCard key={`${step.item.phase}:${step.item.wordId}`} item={step.item} langs={langs} resolveAssetUrl={resolveAssetUrl} onAnswer={answer} />
-      ) : (
-        <StudyCard
-          key={`study:${step.item.wordId}`}
-          card={step.item.card}
-          langs={langs}
-          needsRecording={micAvailable && !step.item.studied}
-          resolveAssetUrl={resolveAssetUrl}
-          onRecorded={(blob) => record(step.item.wordId, blob)}
-          onMark={(value) => mark(step.item, value)}
-          onMicUnavailable={onMicUnavailable}
-        />
-      )}
-    </div>
+    <WordLadderStage>
+      <div className="wl" ref={stageRef} tabIndex={-1}>
+        {test && <div className="wl-test-banner" role="note">TEST — nothing is saved</div>}
+        <header className="wl-header">
+          <TouchButton variant="secondary" onClick={leave}>Leave</TouchButton>
+          <p className="wl-header__round" aria-label="Progress">{roundLabel(progress)}</p>
+          <p className="wl-header__piles">{remaining}</p>
+          <div className="wl-header__time" aria-hidden="true"><div style={{ width: `${pct}%` }} /></div>
+        </header>
+        <main className="wl-main">{body}</main>
+      </div>
+    </WordLadderStage>
   );
 }

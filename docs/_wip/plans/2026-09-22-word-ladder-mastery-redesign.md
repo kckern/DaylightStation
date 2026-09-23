@@ -214,7 +214,7 @@ One graded task per due word:
      stands, logged `judge: fallback`.
   8. **Pass = score ≥ `typing.passScore`** (grown-up setting, default **6**).
   9. **Cached** by (package, word id, normalised answer) in
-     `data/household/apps/school/word-ladder/<package>/judgements.yml` (derived
+     `data/household/school/runtime/word-ladder/<package>/judgements.yml` (derived
      data, shared across learners), so a reload, replay or repeated typo gets
      the same verdict with no second call. A grown-up **re-grade** (§6)
      overwrites the cache entry, so a wrong verdict is corrected everywhere.

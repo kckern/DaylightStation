@@ -21,6 +21,9 @@ export function createSchoolRouter({
   schoolApiSessions,
   flashcardStudy = null,
   wordLadderStudy = null,
+  // Test mode (`/word-ladder/test`) over read-only shadow stores; the stage screen id.
+  wordLadderTest = null,
+  wordLadderStageScreen = null,
   schoolResourceService = null,
   schoolPrintAccess = null,
   schoolRecordsQuery = null,
@@ -549,7 +552,7 @@ export function createSchoolRouter({
   // The word ladder (any word package): a flashcard enrollment in `policy.mode:
   // word-ladder`. Its own module, like the teacher reading workspace.
   mountWordLadderRoutes({
-    router, wrap, wordLadderStudy, sendFileResource,
+    router, wrap, wordLadderStudy, wordLadderTest, stageScreen: wordLadderStageScreen,
     notConfigured: (what) => new EntityNotFoundError(what, 'not configured'),
   });
   router.post('/sessions/:sessionId/remediation-offer', wrap(async (req, res) => {

@@ -89,6 +89,8 @@ browser.
 | `/school/go/<learner>/sentence-ladder/<corpusId>` | that day's sentence queue |
 | `/school/go/<learner>/book-log` | the reading shelf |
 | `/school/go/<learner>/flashcards/<deck/with/slashes>` | a deck (the tail is kept whole) |
+| `/school/go/<learner>/word-ladder` | the learner's current word-ladder enrollment |
+| `/school/go/<learner>/word-ladder/test?scenario=fresh\|due\|round-end\|done` | a **read-only** word-ladder sitting — nothing typed or sorted is saved |
 
 `GET /api/v1/school/lifecycle/direct-launch/programs` lists what can be opened
 and which programs need an instance.
@@ -104,6 +106,22 @@ It mints the same launch target a code produces and hands it to the same
 mounting path, so the runner, its session and its grant are indistinguishable
 from the ordinary route. It does NOT dispatch to the Portal: the work opens in
 the browser that asked, not on the tablet.
+
+**Word ladder needs FKB autoplay on the Portal.** The word ladder's cue and
+answer audio play without a tap-to-unlock gesture once the sitting's own
+**Start** button has run, but on the Portal itself FKB's autoplay setting
+still has to be **enabled** for that unlock to hold — a Portal with autoplay
+off leaves every clip behind a blocked-audio icon (`audio.played outcome:
+blocked` at info) instead of playing. Check it under FKB's own settings before
+troubleshooting "no sound" as a code bug.
+
+**Testing the word ladder without touching a real learner's record**: open
+`/school/go/<learner>/word-ladder/test`, optionally with
+`?scenario=fresh|due|round-end|done` to seed a specific state (see
+[`word-ladder.md`](../../reference/school/word-ladder.md#the-door-and-test)).
+The banner reads "TEST — nothing is saved", and a backend test
+(`WordLadderTestMode.test.mjs`) enforces that promise — every real file on
+disk is byte-identical before and after a full test sitting.
 
 ## A worksheet says "We could not make that sheet"
 
