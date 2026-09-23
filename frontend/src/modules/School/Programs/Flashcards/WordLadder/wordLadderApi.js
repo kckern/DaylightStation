@@ -51,14 +51,19 @@ export function createWordLadderApi({ test = false } = {}) {
         method: 'POST', body: blob, raw: true, contentType: blob?.type || 'application/octet-stream',
       });
     },
-    /** Practice-menu entry after the day's goal/cap is reached (spec §6). */
+    /** Practice-menu entry after the day's goal/cap is reached (spec §6).
+     *  Unset options are left out, never sent as null: the route's defaults
+     *  (filter 'introduced', frontSide 'term', help true) apply only to an
+     *  ABSENT field, and the engine refuses a null filter or front side. */
     practice: (sittingId, {
       userId, mode, help = null, filter = null, chosen = null, frontSide = null,
     }) => call(`/sittings/${enc(sittingId)}/practice`, {
-      method: 'POST', body: { userId, mode, help, filter, chosen, frontSide },
+      method: 'POST',
+      body: Object.fromEntries(Object.entries({ userId, mode, help, filter, chosen, frontSide }).filter(([, v]) => v !== null && v !== undefined)),
     }),
-    /** "My words" (practice menu). */
-    words: ({ userId, deckId }) => call(`/words?userId=${enc(userId)}&deckId=${enc(deckId)}`),
+    /** "My words" (practice menu). `sittingId` is required on the test mount
+     *  (it reads that sitting's shadow); live accepts it too. */
+    words: ({ userId, deckId, sittingId = null }) => call(`/words?userId=${enc(userId)}&deckId=${enc(deckId)}${sittingId ? `&sittingId=${enc(sittingId)}` : ''}`),
   };
 }
 
