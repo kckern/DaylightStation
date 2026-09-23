@@ -320,8 +320,12 @@ describe('WordLadderProgram — dispatches every item type', () => {
     api.respond.mockResolvedValue({ ok: true, status: 200, data: { result: { correct: false, answer: '가위' }, item: tilesNext, progress } });
     renderStarted(<WordLadderProgram descriptor={{ deckId: 'd', userId: 'test-learner' }} api={api} />);
     const input = await screen.findByLabelText('Your answer');
+    // The item's mount effect (focus + clear the field) lands after a render
+    // that happened outside act; type only once it has, or it wipes the text.
+    await waitFor(() => expect(document.activeElement).toBe(input));
     fireEvent.change(input, { target: { value: '가이' } });
     fireEvent.keyDown(input, { key: 'Enter' });
+    await waitFor(() => expect(api.respond).toHaveBeenCalledWith('s', { userId: 'test-learner', itemId: 'd1:5', response: { typed: '가이' } }));
     expect(await screen.findByText(/It's/)).toBeInTheDocument();
     expect(screen.getByRole('region', { name: 'Write what you hear' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /next/i }));
