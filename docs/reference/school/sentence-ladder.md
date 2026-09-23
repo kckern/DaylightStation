@@ -571,58 +571,70 @@ otherwise return the words as heard, wrong grammar and all.
 
 ### Recording
 
-One gesture runs the rung until the learner has spoken:
+**Ruling, 2026-09-23 owner:** Space pauses to chunk; Tab never destroys; ←
+start over; Backspace redo chunk; silence auto-stop.
+
+A learner says the sentence in chunks they choose — listen, stop the sound
+where they have had enough, say that much, carry on. Said in one go it is
+simply one chunk:
 
 ```
-tap / Space ─▶ the sentence sounds ─▶ the ding ─▶ the mic is live
-tap / Space ─▶ the take plays straight back ─▶ Keep it, or Record again
+Space ─▶ the sentence sounds ─▶ (Space: pause here) ─▶ the ding ─▶ the mic is live
+Space ─▶ the chunk plays straight back ─▶ Space: on from where it paused … ─▶ Space: join ─▶ Keep
 ```
+
+| Key | Does | Never |
+|---|---|---|
+| **Space** | forward: *Play* → *Pause here* (while the sentence sounds) → *Stop* → *Next* (on from the pause) → *Join* (after the last chunk) → *Keep* | destroys anything |
+| **Tab** | hear it again: the sentence (or the chunk's span); with a take, span then take. **At a live mic it stops the take, keeps it, and plays span + take** | throws a take away |
+| **Backspace** | redo this chunk — its span, the ding, the mic; other chunks kept. With no chunks, record again | touches other chunks |
+| **←** | start over: every chunk dropped, the sentence from the top | — |
+| **Enter** | done: join what has been said, even mid-sentence. With no chunks, as Space | cuts |
+| **→** | pause here — the old key, an alias of Space while the sentence sounds | — |
+| tap a **segment** | redo that chunk | — |
+| Shift+Tab | hear the meaning | — |
+
+**Tab at a live mic stops and keeps rather than being ignored.** A child who
+presses "hear it again" and hears nothing presses it again; on seq 16 that
+was three presses in 5s, and until this ruling each one threw the take away
+and reopened the mic. Stopping keeps what was said and answers the press.
+
+**Enter joins what exists.** The child said "that much", so a partial join is
+the recording: the unsaid tail is simply not in it, `capture.stitched` carries
+`partial: true, of: <chunks>`, and the joined take must still clear the 1.2s
+one-go floor.
+
+**Silence ends a take once speech was heard.** `AUTO_STOP_SILENT_MS` (3s,
+`shared/speechFloor.js`) of unbroken silence after the level first crossed
+`SILENT_LEVEL` stops the mic as Stop would, logged `capture.auto-stop {piece?,
+silentMs, afterMs}` with `via: auto`. Leading silence never stops it — the
+"Nothing's coming through" warning covers a child who has not started. On
+seq 16 a chunk ran 16.5s, 11.3s of it trailing silence.
+
+**The chunk bar** sits under the sentence: one segment per chunk, sized by its
+span of the model once the sentence's length is known. Filled = said, lit =
+in hand, empty = still to do. Each segment is a thumb-tall button that redoes
+its chunk. On a keyboard device each tile carries its key (`Space`, `Tab`,
+`⌫`, `←`, `Enter`); a touch panel is not shown keys it does not have.
 
 The learner records from what they heard, not from the text, which is why the
 prompt sounds first. While the mic is live a voice band draws the level and
-notices silence, so a take with nothing on it is offered *Record again* rather
-than kept. On Stop the whole take is decoded and fitted to the band, and it
-plays straight back — the source's instruction is to hunt for the differences
-between the native recording and your own. The mic is released between takes
-because a shared kiosk may need it. A denied microphone is recorded and the
-rung steps aside rather than looping on a permission it will not get.
-
-**Tab always brings the sentence back.** Before a take it is a plain listen,
-on a player of its own that never opens the mic. While the learner is
-recording it starts over: the take in progress is thrown away (never judged,
-never played back), the sentence sounds again, the ding plays, and the mic
-opens, just as the first press did. Nobody has to record having heard the
-sentence only once.
-
-**Once a take exists, Tab compares.** During playback or review it plays the
-sentence and then the learner's own take (`capture.compare`), and the take is
-kept. Only Backspace records again. Until 2026-09-22 Tab restarted here too,
-and the log for that day shows it deleting two good takes that a learner was
-trying to hear side by side with the model (`capture.replay-restart` with
-`from: review` and `from: playback`, seconds after the take stopped).
+notices silence. On Stop the take is decoded, fitted to the band, and plays
+straight back. The mic is released between takes because a shared kiosk may
+need it. A denied microphone is recorded and the rung steps aside.
 
 **The meaning is on screen, small, above the sentence.** It is there for
 reinforcement and is never played unless asked for. Tapping either line plays
 that line (Shift+Tab plays the meaning), except while the learner is speaking
-or the prompt is already sounding. A finished take is kept, because hearing a
-line again is a listen, not a retake.
+or the prompt is already sounding.
 
 ### Recording in pieces
 
-A long sentence can be said a piece at a time. It is the learner's choice,
-made live: **→** (or the *Pause* tile) while the sentence is sounding stops it
-there, the ding plays, and the learner says that much. The rest of the
-sentence then plays from the cut, and the learner says that. Two or three
-pieces is typical; a further → during the rest makes another cut.
-
-| Moment | Space | Backspace | Tab | → |
-|---|---|---|---|---|
-| model sounding | — | — | restart this piece | cut here |
-| recording a piece | stop | — | throw this piece's take away, replay its part, mic | — |
-| piece review | the rest (or *Finish* after the last piece) | redo **this piece only** | its part of the model, then its take | — |
-| joined-take review | keep | the whole sentence over, cuttable again | the sentence, then the joined take | — |
-
-A piece is the *last* one when no cut was made while its part played.
+A chunk is a *piece* in the code and the logs (`rungs/pieces.js`). A piece is
+the model from the previous cut (or 0) to its cut (or the end); a later piece
+is played FROM the cut. Space in review goes on to the first later piece with
+no take, and joins once every piece has one — so a chunk redone out of order
+does not re-ask for the ones already said.
 
 **The cut snaps to a pause.** A child presses a beat after the word they
 meant, so a raw cut would start the next piece mid-syllable. The model clip is
@@ -970,7 +982,7 @@ is the word ladder's (`Programs/shared/traceStamp.js`); a gap in `traceSeq`
 in the store is a `debug` event that never left the tablet.
 
 **Every capture line says what drove it.** `via` is `key:Space`,
-`key:Enter`, `key:Tab`, `key:Shift+Tab`, `key:Backspace`, `key:ArrowRight`,
+`key:Enter`, `key:Tab`, `key:Shift+Tab`, `key:Backspace`, `key:ArrowRight`, `key:ArrowLeft`,
 `touch`, or `auto` (the rung acting alone: the mic opening after the ding, a
 playback ending, the silent warning). It is set in one place — the rung's
 `dispatch`, which every key and tile goes through. `phase` is the rung's phase
@@ -989,8 +1001,11 @@ playback ending, the silent warning). It is set in one place — the rung's
 | `silent-warning` / `silent-cleared` | `piece?, afterMs` — once each per take, never per frame |
 | `piece-next` / `piece-redo` / `piece-resume` | `piece` |
 | `retake` | `joined?` |
-| `replay-restart` / `compare` | `from, piece?` |
-| `stitched` | `pieces, durationMs, bytes`, voice fields summed over the pieces |
+| `compare` / `hear` | `from, piece?, what?` — Tab; `hear` at a live mic stops and keeps the take |
+| `restart` | `from, pieces` — ← start over, the chunks dropped |
+| `auto-stop` | `piece?, silentMs, afterMs` — silence after speech ended the take (`via: auto`) |
+| `replay-restart` | `from, piece?` — the pre-2026-09-23 destructive Tab; no longer emitted, still rendered by the trace for old sittings |
+| `stitched` | `pieces, durationMs, bytes`, voice fields summed over the pieces; `partial: true, of` when Enter joined before every chunk was said |
 | `stitch-failed` / `pieces-abandoned` | `pieces, error?` |
 | `keep` | `joined, bytes` |
 

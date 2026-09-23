@@ -309,8 +309,42 @@ $disc: 5.5rem;
   // A span, not a button: nothing to press, so it must not look pressable. The
   // glyph takes the accent because sound is happening; the ground stays quiet.
   &--status { cursor: default; background: transparent; border-color: transparent; color: var(--school-accent); }
+  // The secondary keys — hear it, start over, done. The same square, quieter:
+  // no fill, so the forward tile stays the one thing that reads as "next".
+  &--minor { background: transparent; color: var(--school-muted); }
+  // The key that presses this tile, where there is a keyboard. Small and
+  // muted: an answer to "how", not part of the tile's word.
+  &__key {
+    font: inherit; font-size: 0.7rem; line-height: 1; color: inherit; opacity: 0.8;
+    padding: 0.1rem 0.3rem; border: 1px solid currentColor; border-radius: 4px;
+  }
   &:focus-visible { outline: 3px solid var(--school-accent); outline-offset: 2px; }
   &:disabled { opacity: 0.5; cursor: default; }
+}
+
+// --- chunk bar: the sentence in the parts the learner chose -----------------
+// One segment per chunk, sized by its span of the model. Filled = said, lit =
+// in hand, empty = still to do. Each is a tap target (redo that chunk), so the
+// bar is thumb-tall even though it reads as a line. Static: no animation on
+// the kiosk WebView.
+.lang-chunks {
+  display: flex; gap: 0.35rem; align-self: stretch;
+  width: 100%; max-width: 40rem; margin: 0 auto; box-sizing: border-box;
+
+  &__seg {
+    position: relative; flex: 1 1 0; min-width: 2rem; height: $touch-min; padding: 0;
+    border: 0; background: transparent; cursor: pointer;
+    // The bar, drawn inside the thumb-tall target.
+    &::before {
+      content: ''; position: absolute; left: 0; right: 0; top: 50%; height: 14px;
+      transform: translateY(-50%); box-sizing: border-box;
+      border: 2px solid var(--school-border); border-radius: 7px;
+    }
+    &.is-filled::before { background: var(--school-accent); border-color: var(--school-accent); }
+    &.is-current::before { border-color: var(--school-accent); box-shadow: 0 0 0 2px var(--school-accent); }
+    &:focus-visible { outline: 3px solid var(--school-accent); outline-offset: 2px; }
+    &:disabled { opacity: 0.5; cursor: default; }
+  }
 }
 
 // --- popover: one dismissal behaviour for both menus ------------------------

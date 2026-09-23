@@ -8,6 +8,13 @@
 export const SILENT_LEVEL = 0.04;
 export const SILENT_AFTER_MS = 2000;
 /**
+ * Once speech has been heard, this much unbroken silence ends the take by
+ * itself (owner ruling 2026-09-23). On 2026-09-23 a piece ran 16.5s with 11.3s
+ * of it trailing silence, because nothing but a key could end it. Leading
+ * silence never counts: a child who has not started yet is not finished.
+ */
+export const AUTO_STOP_SILENT_MS = 3000;
+/**
  * The floor a take has to clear to be KEPT at all: long enough to be a
  * sentence, and loud enough to have been one.
  *
@@ -68,14 +75,14 @@ export function judgeTake({ heard, sampled, durationMs }) {
 export function createVoiceMeter(startedAt) {
   return {
     startedAt, last: null, since: null,
-    heard: false, sampled: false, silent: false,
+    heard: false, sampled: false, silent: false, autoStopped: false,
     voicedMs: 0, silentMs: 0, endSilentMs: 0,
   };
 }
 
 /**
- * Feed one level. Returns the warning's transition — `'silent-on'`,
- * `'silent-off'` — or null, so a caller can log the moment it changes and
+ * Feed one level. Returns the transition — `'silent-on'`, `'silent-off'`,
+ * or `'auto-stop'` (once, AUTO_STOP_SILENT_MS after speech) — or null, so a caller can log the moment it changes and
  * nothing per frame.
  */
 export function meterLevel(meter, level, now) {
@@ -93,7 +100,10 @@ export function meterLevel(meter, level, now) {
   }
   m.silentMs += dt;
   m.endSilentMs += dt;
-  if (m.heard) return null;
+  if (m.heard) {
+    if (!m.autoStopped && m.endSilentMs >= AUTO_STOP_SILENT_MS) { m.autoStopped = true; return 'auto-stop'; }
+    return null;
+  }
   if (m.since == null) m.since = now;
   else if (now - m.since >= SILENT_AFTER_MS && !m.silent) { m.silent = true; return 'silent-on'; }
   return null;

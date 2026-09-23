@@ -73,3 +73,23 @@ describe('formatSentenceTrace — the seq-16 recording sitting', () => {
     expect(formatSentenceTrace([{ msg: 'school.word-ladder.item.shown', data: {} }])).toBe('');
   });
 });
+
+describe('formatSentenceTrace — the chunked flow (2026-09-23)', () => {
+  const e = (name, traceSeq, t, data) => ({
+    msg: `school.language.capture.${name}`,
+    data: { traceId: 'run-2', learnerId: 'learner-a', corpus: 'c', day: 9, traceSeq, t, seq: 3, ...data },
+  });
+  const out = formatSentenceTrace([
+    e('hear', 1, 1000, { from: 'recording', piece: 1, via: 'key:Tab', phase: 'recording' }),
+    e('auto-stop', 2, 5000, { piece: 1, silentMs: 3000, via: 'auto', phase: 'recording' }),
+    e('restart', 3, 6000, { from: 'review', pieces: 2, via: 'key:ArrowLeft', phase: 'review' }),
+    e('stitched', 4, 9000, { pieces: 1, partial: true, of: 2, durationMs: 1500, voicedMs: 1200, silentMs: 300, endSilentMs: 100, via: 'key:Enter', phase: 'review' }),
+  ]);
+  it('names each new step and what drove it', () => {
+    expect(out).toContain('hear piece 1  [key:Tab · recording]');
+    expect(out).toContain('auto-stop piece 1 after 3.0s of silence  [auto · recording]');
+    expect(out).toContain('start over (2 pieces dropped)  [key:ArrowLeft · review]');
+    expect(out).toContain('stitched 1 pieces → 1.5s · voiced 1.2s silent 0.3s end-silence 0.1s · PARTIAL  [key:Enter · review]');
+    expect(out).toContain('restarts 1 (key:ArrowLeft×1) · auto-stops 1');
+  });
+});

@@ -54,8 +54,10 @@ const lines = (detail) => capture.mock.calls.filter(([d]) => d === detail).map((
 let now;
 let originalTime;
 let originalDuration;
+let originalSrc;
 let heldModel;
 let holdModel;
+let played;
 
 beforeEach(() => {
   capture.mockReset();
@@ -66,6 +68,13 @@ beforeEach(() => {
   Object.defineProperty(window.HTMLMediaElement.prototype, 'currentTime', {
     configurable: true, get() { return this._t ?? 0; }, set(v) { this._t = v; },
   });
+  // A new src starts at 0, as a real element does.
+  originalSrc = Object.getOwnPropertyDescriptor(window.HTMLMediaElement.prototype, 'src');
+  Object.defineProperty(window.HTMLMediaElement.prototype, 'src', {
+    configurable: true,
+    get() { return this._src ?? this.getAttribute('src') ?? ''; },
+    set(v) { this._src = v; this._t = 0; },
+  });
   // The model is 5.4 s long; a take blob reports no length, as a fresh
   // MediaRecorder webm does.
   Object.defineProperty(window.HTMLMediaElement.prototype, 'duration', {
@@ -73,9 +82,11 @@ beforeEach(() => {
   });
   heldModel = null;
   holdModel = true;
+  played = [];
   window.HTMLMediaElement.prototype.pause = vi.fn();
   window.HTMLMediaElement.prototype.play = vi.fn(function play() {
     const src = path(this.src);
+    played.push({ src, atMs: Math.round((this._t ?? 0) * 1000) });
     if (holdModel && src === '/audio/16/KR') { heldModel = this; holdModel = false; return Promise.resolve(); }
     setTimeout(() => this.onended?.(), 0);
     return Promise.resolve();
@@ -105,6 +116,7 @@ afterEach(() => {
   if (originalTime) Object.defineProperty(window.HTMLMediaElement.prototype, 'currentTime', originalTime);
   else delete window.HTMLMediaElement.prototype.currentTime;
   if (originalDuration) Object.defineProperty(window.HTMLMediaElement.prototype, 'duration', originalDuration);
+  if (originalSrc) Object.defineProperty(window.HTMLMediaElement.prototype, 'src', originalSrc);
 });
 
 const renderRung = (props = {}) => render(
@@ -197,13 +209,12 @@ describe('recording rung — capture log', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Redo this part' }));
     expect(lastLine('piece-redo')).toMatchObject({ seq: 16, piece: 0, via: 'touch', phase: 'review' });
     await screen.findByRole('button', { name: 'Stop' });
-    pressKey('Tab');
-    expect(lastLine('replay-restart')).toMatchObject({ seq: 16, piece: 0, via: 'key:Tab', phase: 'recording' });
-    await screen.findByRole('button', { name: 'Stop' });
     speak({ voiced: 1200 });
-    pressKey('Enter');
+    pressKey('Tab');
+    // Tab at a live mic is "hear it again" (2026-09-23): the take stops and is kept.
+    expect(lastLine('hear')).toMatchObject({ seq: 16, piece: 0, via: 'key:Tab', phase: 'recording' });
     await screen.findByRole('button', { name: 'Next part' });
-    expect(lastLine('piece-stop')).toMatchObject({ via: 'key:Enter' });
+    expect(lastLine('piece-stop')).toMatchObject({ via: 'key:Tab', phase: 'recording' });
     pressKey('Backspace');
     expect(lastLine('piece-redo')).toMatchObject({ via: 'key:Backspace', phase: 'review' });
   });
@@ -284,5 +295,192 @@ describe('recording rung — capture log', () => {
     now += 700;
     pressKey(' ');
     expect(lastLine('playback')).toMatchObject({ what: 'take', outcome: 'stopped', ms: 700 });
+  });
+});
+
+/**
+ * THE CHUNKED FLOW (owner ruling 2026-09-23): Space pauses to chunk; Tab never
+ * destroys; ← starts over; Backspace redoes the chunk; Enter is done; silence
+ * after speech stops the mic.
+ */
+describe('recording rung — chunks', () => {
+  /** Space, model to `atMs`, Space again: a chunk ends there. Mic open for piece 0. */
+  async function pauseAt(atMs, key = ' ') {
+    await screen.findByRole('button', { name: 'Listen, then record' });
+    pressKey(' ');
+    await waitFor(() => expect(heldModel).not.toBeNull());
+    heldModel._t = atMs / 1000;
+    now += atMs;
+    pressKey(key);
+    await screen.findByRole('button', { name: 'Stop' });
+  }
+  const say = async (voiced = 1200) => {
+    speak({ voiced });
+    pressKey(' ');
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Stop' })).toBeNull());
+  };
+  const spanPlays = (fromMs) => played.filter((p) => p.src === '/audio/16/KR' && p.atMs === fromMs);
+
+  it('Space while the sentence plays pauses it there and makes a chunk', async () => {
+    renderRung();
+    await pauseAt(3611);
+    expect(lastLine('cut')).toMatchObject({ piece: 0, cutMs: 3611, via: 'key:Space', phase: 'prompting' });
+    expect(played.map((p) => p.src)).toContain('/cue/record');
+  });
+
+  it('→ still cuts, as an alias', async () => {
+    renderRung();
+    await pauseAt(2000, 'ArrowRight');
+    expect(lastLine('cut')).toMatchObject({ cutMs: 2000, via: 'key:ArrowRight' });
+  });
+
+  it('Space in review goes on with the sentence from where it paused', async () => {
+    renderRung();
+    await pauseAt(3611);
+    await say();
+    await screen.findByRole('button', { name: 'Next part' });
+    pressKey(' ');
+    await screen.findByRole('button', { name: 'Stop' });
+    expect(spanPlays(3611)).toHaveLength(1);
+  });
+
+  it('Tab while recording keeps the take — it stops, and plays the span then the take', async () => {
+    renderRung();
+    await pauseAt(3611);
+    speak({ voiced: 1200 });
+    pressKey('Tab');
+    await screen.findByRole('button', { name: 'Next part' });
+    expect(lines('replay-restart')).toHaveLength(0);
+    expect(lastLine('piece-stop')).toMatchObject({ piece: 0, via: 'key:Tab', phase: 'recording' });
+    await waitFor(() => expect(lastLine('playback')).toMatchObject({ what: 'compare', piece: 0 }));
+    expect(played.some((p) => p.src.startsWith('blob:'))).toBe(true);
+  });
+
+  it('Tab in any phase never throws a take away', async () => {
+    renderRung();
+    await pauseAt(3611);
+    await say();
+    await screen.findByRole('button', { name: 'Next part' });
+    pressKey('Tab');                                    // review: compare
+    pressKey(' ');                                      // on to piece 1
+    await screen.findByRole('button', { name: 'Stop' });
+    speak({ voiced: 1200 });
+    pressKey('Tab');                                    // recording: stop + keep
+    await screen.findByRole('button', { name: 'Finish' });
+    expect(lines('piece-stop')).toHaveLength(2);
+    expect(lines('replay-restart')).toHaveLength(0);
+    pressKey(' ');
+    await waitFor(() => expect(joinTakeMock).toHaveBeenCalled());
+    expect(joinTakeMock.mock.calls[0][0]).toHaveLength(2);
+  });
+
+  it('Backspace redoes only the chunk in hand', async () => {
+    renderRung();
+    await pauseAt(3611);
+    await say();
+    await screen.findByRole('button', { name: 'Next part' });
+    pressKey(' ');
+    await screen.findByRole('button', { name: 'Stop' });
+    await say();
+    await screen.findByRole('button', { name: 'Finish' });
+    pressKey('Backspace');
+    await screen.findByRole('button', { name: 'Stop' });
+    expect(lastLine('piece-redo')).toMatchObject({ piece: 1, via: 'key:Backspace' });
+    expect(spanPlays(3611)).toHaveLength(2);
+    expect(spanPlays(0).length).toBe(1);
+  });
+
+  it('← clears every chunk and plays the sentence from the top', async () => {
+    renderRung();
+    await pauseAt(3611);
+    await say();
+    await screen.findByRole('button', { name: 'Next part' });
+    pressKey('ArrowLeft');
+    expect(lastLine('restart')).toMatchObject({ pieces: 1, via: 'key:ArrowLeft', phase: 'review' });
+    await waitFor(() => expect(spanPlays(0)).toHaveLength(2));
+    // One segment again: the whole sentence, nothing recorded.
+    expect(screen.getAllByRole('button', { name: /^Part / })).toHaveLength(1);
+  });
+
+  it('Enter joins what has been said, even mid-sentence', async () => {
+    renderRung();
+    await pauseAt(3611);
+    await say(1500);
+    await screen.findByRole('button', { name: 'Next part' });
+    pressKey('Enter');
+    await waitFor(() => expect(joinTakeMock).toHaveBeenCalled());
+    expect(joinTakeMock.mock.calls[0][0]).toHaveLength(1);
+    await screen.findByRole('button', { name: 'Keep it' });
+    expect(lastLine('stitched')).toMatchObject({ pieces: 1, partial: true, via: 'key:Enter' });
+  });
+
+  it('silence stops the mic by itself — but only once speech was heard', async () => {
+    renderRung();
+    await pauseAt(3611);
+    speak({ silentFirst: 5000 });
+    expect(screen.getByRole('button', { name: 'Stop' })).toBeTruthy();
+    expect(lines('auto-stop')).toHaveLength(0);
+    speak({ voiced: 800, silentAfter: 3000 });
+    await screen.findByRole('button', { name: 'Next part' });
+    expect(lastLine('auto-stop')).toMatchObject({ piece: 0, via: 'auto', phase: 'recording' });
+    expect(lastLine('piece-stop')).toMatchObject({ via: 'auto', endSilentMs: 3000 });
+  });
+
+  it('tapping a segment redoes that chunk', async () => {
+    renderRung();
+    await pauseAt(3611);
+    await say();
+    await screen.findByRole('button', { name: 'Next part' });
+    pressKey(' ');
+    await screen.findByRole('button', { name: 'Stop' });
+    await say();
+    await screen.findByRole('button', { name: 'Finish' });
+    const segments = screen.getAllByRole('button', { name: /^Part / });
+    expect(segments).toHaveLength(2);
+    fireEvent.click(segments[0]);
+    await screen.findByRole('button', { name: 'Stop' });
+    expect(lastLine('piece-redo')).toMatchObject({ piece: 0, via: 'touch' });
+    expect(spanPlays(0).length).toBe(2);
+    // Chunk 1 still has its take: after the redo, Space joins rather than re-asking for it.
+    await say();
+    await screen.findByRole('button', { name: 'Finish' });
+  });
+
+  // The owner's seq-16 sitting, replayed: a cut, two short second pieces and
+  // their redos, then Tab pressed three times in 5s "to hear it again", then a
+  // long silent tail. It used to wipe the take three times and run 16.5s.
+  it('the seq-16 sitting no longer loops', async () => {
+    renderRung();
+    await pauseAt(3611);
+    await say(1200);
+    await screen.findByRole('button', { name: 'Next part' });
+    pressKey(' ');                                      // piece 1
+    await screen.findByRole('button', { name: 'Stop' });
+    await say(1300);
+    await screen.findByRole('button', { name: 'Finish' });
+    pressKey('Backspace');
+    await screen.findByRole('button', { name: 'Stop' });
+    await say(1700);
+    await screen.findByRole('button', { name: 'Finish' });
+    pressKey('Backspace');
+    await screen.findByRole('button', { name: 'Stop' });
+    // Tab ×3 in 5s: the first stops and keeps the take, the others compare.
+    speak({ voiced: 1500 });
+    pressKey('Tab');
+    await screen.findByRole('button', { name: 'Finish' });
+    now += 1500; pressKey('Tab');
+    now += 1500; pressKey('Tab');
+    expect(lines('replay-restart')).toHaveLength(0);
+    expect(lines('piece-stop')).toHaveLength(4);
+    // Redo once more and trail off: the mic stops itself after 3s of silence.
+    pressKey('Backspace');
+    await screen.findByRole('button', { name: 'Stop' });
+    speak({ voiced: 2100, silentAfter: 3000 });
+    await screen.findByRole('button', { name: 'Finish' });
+    expect(lastLine('piece-stop').durationMs).toBeLessThan(6000);
+    pressKey(' ');
+    await screen.findByRole('button', { name: 'Keep it' });
+    expect(lastLine('stitched')).toMatchObject({ pieces: 2 });
+    expect(lastLine('stitched').partial).toBeFalsy();
   });
 });
