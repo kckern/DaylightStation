@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   resampleHR,
+  expandToPerSecond,
   deriveZones,
   deriveRings,
   computeZoneMinutes,
@@ -22,6 +23,26 @@ describe('StravaSessionBuilder', () => {
 
     it('handles empty array', () => {
       expect(resampleHR([], 5)).toEqual([]);
+    });
+  });
+
+  describe('expandToPerSecond', () => {
+    it('places sparse samples at their time offsets, holding between them', () => {
+      expect(expandToPerSecond([100, 120, 140], [0, 3, 5]))
+        .toEqual([100, 100, 100, 120, 120, 140]);
+    });
+
+    it('leaves gaps longer than the hold limit null', () => {
+      const out = expandToPerSecond([100, 150], [0, 10], 4);
+      expect(out).toHaveLength(11);
+      expect(out[0]).toBe(100);
+      expect(out.slice(1, 10).every(v => v === null)).toBe(true);
+      expect(out[10]).toBe(150);
+    });
+
+    it('returns null when the streams do not line up', () => {
+      expect(expandToPerSecond([100, 110], [0])).toBeNull();
+      expect(expandToPerSecond([100, 110], null)).toBeNull();
     });
   });
 
@@ -96,6 +117,16 @@ describe('StravaSessionBuilder', () => {
       expect(result.hrStats.hrAvg).toBe(130);
       expect(result.buckets.yellow).toBe(10);
       expect(result.zoneMinutes.warm).toBeCloseTo(0.42, 1);
+    });
+
+    it('spans the real duration when given a smart-recording time stream', () => {
+      // 20 samples spread over 95s (one every 5s) — a per-second read would
+      // collapse this to 4 ticks; on the clock it is 20.
+      const hr = Array(20).fill(130);
+      const time = hr.map((_, i) => i * 5);
+      const result = buildStravaSessionTimeline(hr, time);
+      expect(result.hrSamples).toHaveLength(20);
+      expect(result.totalRings).toBe(40);
     });
 
     it('returns null for empty/missing HR data', () => {

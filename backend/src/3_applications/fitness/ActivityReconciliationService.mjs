@@ -5,7 +5,8 @@
  * provider (via IActivityGateway; Strava is the current implementation):
  *   Pass 1 (Session → Provider): Re-enrich missed or stale activities
  *   Pass 2 (Provider → Session): Pull manually-entered provider descriptions
- *                                back as strava_notes
+ *                                back as strava_notes, and keep the session's
+ *                                copy of the activity title current
  *
  * Triggered non-blocking after each provider webhook enrichment.
  *
@@ -65,6 +66,7 @@ export class ActivityReconciliationService {
     let sessionsProcessed = 0;
     let enriched = 0;
     let notesPulled = 0;
+    let titlesSynced = 0;
     let sliversAbsorbed = 0;
 
     for (const date of dates) {
@@ -93,13 +95,15 @@ export class ActivityReconciliationService {
           // Pass 2: Strava → Session (pull notes)
           const didPull = this.#pass2StravaToSession(session, activity);
           if (didPull) notesPulled++;
+          const didRetitle = this.#syncTitle(session, activity, didEnrich);
+          if (didRetitle) titlesSynced++;
 
           // Update staleness tracker
           if (!session.strava) session.strava = {};
           session.strava.last_reconciled_at = new Date().toISOString();
 
           // Save session if anything changed
-          if (didEnrich || didPull || !lastReconciled) {
+          if (didEnrich || didPull || didRetitle || !lastReconciled) {
             this.#historyRepository.save(sessionId, session);
           }
 
@@ -136,6 +140,7 @@ export class ActivityReconciliationService {
       sessionsProcessed,
       enriched,
       notesPulled,
+      titlesSynced,
       sliversAbsorbed,
     });
   }
@@ -227,6 +232,32 @@ export class ActivityReconciliationService {
       sessionId: session.sessionId || session.session?.id,
       textLength: desc.length,
     });
+    return true;
+  }
+
+  /**
+   * Keep `session.strava.name` equal to the title Strava holds now. It is
+   * written once at session creation ("Morning Run") and would otherwise
+   * never pick up a rename made on Strava afterwards.
+   *
+   * Only refreshes a name the session already carries. Home sessions keep a
+   * `strava` block (activityId, provenance) without a name, and giving them
+   * one would make the session list render them as Strava activities.
+   * @param {boolean} justPushed - Pass 1 updated Strava this sweep; the
+   *   fetched `activity` is stale and the pushed name is current.
+   * @returns {boolean} Whether the session title changed
+   */
+  #syncTitle(session, activity, justPushed) {
+    const current = justPushed ? session.strava?.pushed?.name : activity.name;
+    if (!current?.trim() || !session.strava?.name || session.strava.name === current) return false;
+
+    this.#logger.info?.('strava.reconciliation.title_synced', {
+      activityId: activity.id,
+      sessionId: session.sessionId || session.session?.id,
+      from: session.strava.name ?? null,
+      to: current,
+    });
+    session.strava.name = current;
     return true;
   }
 

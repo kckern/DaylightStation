@@ -141,6 +141,9 @@ export class HealthAggregator {
       if (Array.isArray(stravaData.heartRateOverTime)) {
         stravaData.heartRateOverTime = stravaData.heartRateOverTime.join('|');
       }
+      if (Array.isArray(stravaData.heartRateTimes)) {
+        stravaData.heartRateTimes = stravaData.heartRateTimes.join('|');
+      }
 
       // Try to match with FitnessSyncer
       const fitnessMatch = fitnessActivities.find((f, idx) => {

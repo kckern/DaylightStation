@@ -323,3 +323,73 @@ describe('ActivityReconciliationService — Pass 1: title/description correction
     expect(stravaClient.updateActivity).not.toHaveBeenCalled();
   });
 });
+
+describe('ActivityReconciliationService — title sync (Strava → session)', () => {
+  let stravaClient;
+  let service;
+
+  const stravaOnly = () => ({
+    sessionId: '20260919104104',
+    session: { id: '20260919104104', start: '2026-09-19 10:41:04', duration_seconds: 4920, source: 'strava' },
+    participants: {},
+    timeline: { events: [] },
+    summary: { media: [] },
+    strava: { activityId: 20245291061, name: 'Morning Run' },
+  });
+
+  beforeEach(() => {
+    vi.resetAllMocks();
+    let firstDate = null;
+    dirExists.mockImplementation((p) => {
+      const date = p?.match(/(\d{4}-\d{2}-\d{2})/)?.[1];
+      if (!firstDate && date) firstDate = date;
+      return date === firstDate;
+    });
+    listYamlFiles.mockReturnValue(['20260919104104']);
+    stravaClient = { getActivity: vi.fn(), updateActivity: vi.fn().mockResolvedValue({}) };
+    service = new ActivityReconciliationService({
+      activityGateway: stravaClient,
+      lookbackDays: 10,
+      selectionConfig: {},
+      timezone: 'America/Los_Angeles',
+      historyRepository: historyRepository(),
+      logger: { info: vi.fn(), warn: vi.fn() },
+    });
+  });
+
+  test('pulls a title renamed on Strava into session.strava.name', async () => {
+    loadYamlSafe.mockReturnValue(stravaOnly());
+    stravaClient.getActivity.mockResolvedValue({
+      id: 20245291061,
+      name: 'Seattle North Spartan Sprint 5K - Saturday',
+      start_date: '2026-09-19T17:41:04Z',
+      elapsed_time: 4920,
+    });
+
+    await service.reconcile();
+
+    const saved = saveYaml.mock.calls.map(c => c[1]).find(s => s?.strava);
+    expect(saved.strava.name).toBe('Seattle North Spartan Sprint 5K - Saturday');
+  });
+
+  test('does not add a name to a home session strava block', async () => {
+    const home = { ...stravaOnly(), session: { id: 'h', start: '2026-09-19 10:41:04', source: 'home' }, strava: { activityId: 20245291061 } };
+    loadYamlSafe.mockReturnValue(home);
+    stravaClient.getActivity.mockResolvedValue({ id: 20245291061, name: 'Lunch Workout' });
+
+    await service.reconcile();
+
+    const saved = saveYaml.mock.calls.map(c => c[1]).find(s => s?.strava);
+    expect(saved.strava.name).toBeUndefined();
+  });
+
+  test('leaves the title alone when Strava has none', async () => {
+    loadYamlSafe.mockReturnValue(stravaOnly());
+    stravaClient.getActivity.mockResolvedValue({ id: 20245291061, name: '' });
+
+    await service.reconcile();
+
+    const saved = saveYaml.mock.calls.map(c => c[1]).find(s => s?.strava);
+    expect(saved.strava.name).toBe('Morning Run');
+  });
+});
