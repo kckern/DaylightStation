@@ -1058,9 +1058,9 @@ bibliographic fallback. The course's pacing `source.title` is never a worksheet
 reading source. Single and composed worksheets share that rule. Already-issued
 artifacts remain immutable and exact reprints retain their original wording.
 
-### Word-ladder quizzes
+### Card-ladder quizzes
 
-`node cli/school.mjs word-ladder quiz --deck <deckId|slug>` writes a
+`node cli/school.mjs card-ladder quiz --deck <deckId|slug>` writes a
 `school.document-source/v1` quiz for a lexicon deck at
 `content/school/learning-catalog/documents/<deckId>-quiz.yml`: one `question`
 per word with `itemId: <wordId>`, answer + three authored decoys, alternating
@@ -1070,9 +1070,9 @@ header instruction and the `topics` come from the lexicon's `quiz` block
 (defaults: `Not sure of a word? Open <program.title> on the Portal and review
 the cards, then come back.` and `[<language>, vocabulary]`). Publish it with `school docs publish`, then
 render per learner with `variety=omr`. A scanned row's attempt carries the
-word id, and the word ladder folds it — id scheme, per-learner quiz, fold
+word id, and the card ladder folds it — id scheme, per-learner quiz, fold
 rules and the reprint rule are in
-[`word-ladder.md` → Printed quiz and the fold](./word-ladder.md#printed-quiz-and-the-fold-spec-8).
+[`card-ladder.md` → Printed quiz and the fold](./card-ladder.md#printed-quiz-and-the-fold-spec-8).
 
 ## 8. Scan-back: grading and the lifecycle
 
