@@ -82,3 +82,29 @@ describe('CardLadderTypedJudge — the target script seam', () => {
   });
 });
 
+
+describe('CardLadderTypedJudge — per-script grading', () => {
+  const ephemeral = { pkg: 'defs', entry: { id: 'ephemeral', term: 'ephemeral', gloss: 'lasting a very short time', kind: 'word' }, targetScript: 'latin', targetLanguage: 'English' };
+  it('an English definitions deck: case, a typo, a different real word, Hangul typed', async () => {
+    const { aiGateway, judge } = make(async () => ({ score: 9, reason: 'clearly the word' }));
+    expect(await judge.judge({ ...ephemeral, typed: 'Ephemeral', otherWords: [] })).toMatchObject({ score: 10, judge: 'exact', pass: true });
+    expect(await judge.judge({ ...ephemeral, typed: 'eternal', otherWords: ['Eternal'] })).toMatchObject({ score: 2, judge: 'guard', pass: false });
+    expect(await judge.judge({ ...ephemeral, typed: '에페메랄', otherWords: [] })).toMatchObject({ score: 1, judge: 'wrong-script', pass: false });
+    const typo = await judge.judge({ ...ephemeral, typed: 'Ephemeril', otherWords: [] });
+    expect(typo).toMatchObject({ pass: true });
+    expect(typo.score).toBeGreaterThanOrEqual(8);
+    const [messages] = aiGateway.chatWithJson.mock.calls[0];
+    expect(messages[0].content).not.toMatch(/Korean|Hangul|jamo/);
+    expect(messages[0].content).toContain('English');
+    expect(messages[0].content).toContain('latin');
+    expect(JSON.parse(messages[1].content)).toMatchObject({ attempt: 'ephemeril', script: 'latin', language: 'English' });
+  });
+  it('a Spanish accent slip passes at 8 without the model; a wrong year never passes', async () => {
+    const { aiGateway, judge } = make(async () => ({ score: 10 }));
+    const cafe = { pkg: 'es', entry: { id: 'cafe', term: 'café', gloss: 'coffee', kind: 'word' }, targetScript: 'latin', targetLanguage: 'Spanish', otherWords: [] };
+    expect(await judge.judge({ ...cafe, typed: 'cafe' })).toMatchObject({ score: 8, judge: 'accent', pass: true });
+    const decl = { pkg: 'hist', entry: { id: 'decl', term: 'Declaration of Independence (1776)', gloss: 'a founding document', kind: 'phrase' }, targetScript: 'latin', targetLanguage: 'English', otherWords: [] };
+    expect(await judge.judge({ ...decl, typed: 'Declaration of Independence (1767)' })).toMatchObject({ score: 2, judge: 'number', pass: false });
+    expect(aiGateway.chatWithJson).not.toHaveBeenCalled();
+  });
+});
