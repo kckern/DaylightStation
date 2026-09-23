@@ -35,6 +35,21 @@ describe('FlashcardItem', () => {
     expect(onRespond).toHaveBeenCalledTimes(1);
     expect(onRespond).toHaveBeenCalledWith({ seen: true });
   });
+
+  it('logs card.flipped on flip, card.sorted with the pile on a sort, and card.undone on Undo', () => {
+    const flipped = vi.spyOn(wordLadderLog, 'cardFlipped').mockImplementation(() => {});
+    const sorted = vi.spyOn(wordLadderLog, 'cardSorted').mockImplementation(() => {});
+    const undone = vi.spyOn(wordLadderLog, 'cardUndone').mockImplementation(() => {});
+    const onRespond = vi.fn();
+    render(<FlashcardItem item={{ id: 'r1:s:1', type: 'flashcard', mode: 'stream', word }} langs={langs} resolveAssetUrl={(x) => x} onRespond={onRespond} />);
+    fireEvent.keyDown(window, { key: ' ' }); // flip
+    expect(flipped).toHaveBeenCalledWith(expect.objectContaining({ itemId: 'r1:s:1', ms: expect.any(Number) }));
+    fireEvent.keyDown(window, { key: '2' }); // sort familiar
+    expect(sorted).toHaveBeenCalledWith({ itemId: 'r1:s:1', pile: 'familiar' });
+    fireEvent.keyDown(window, { key: 'u' }); // undo
+    expect(undone).toHaveBeenCalledWith({ itemId: 'r1:s:1' });
+    flipped.mockRestore(); sorted.mockRestore(); undone.mockRestore();
+  });
 });
 
 describe('ChoiceItem', () => {
@@ -65,10 +80,10 @@ describe('ChoiceItem', () => {
     const item = { id: 'q3', type: 'choice', task: '2.2', channel: 'read', prompt: '가위', choices: ['Glue', 'Scissors', 'Book', 'Pen'], assets: { audio: 'aud-gawi' } };
     render(<ChoiceItem item={item} langs={langs} resolveAssetUrl={(x) => x} onRespond={onRespond} result={{ correct: false, answer: 'Scissors' }} onContinue={() => {}} />);
     expect(playClip).toHaveBeenCalledTimes(1);
-    expect(playClip).toHaveBeenCalledWith('aud-gawi');
+    expect(playClip).toHaveBeenCalledWith('aud-gawi', 'term');
     playClip.mockClear();
     fireEvent.keyDown(window, { key: 'h' });
-    expect(playClip).toHaveBeenCalledWith('aud-gawi');
+    expect(playClip).toHaveBeenCalledWith('aud-gawi', 'term');
   });
 });
 

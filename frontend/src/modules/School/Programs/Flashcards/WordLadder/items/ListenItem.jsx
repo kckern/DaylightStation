@@ -39,7 +39,7 @@ export default function ListenItem({ item, langs, resolveAssetUrl, onRespond, bu
     for (let i = 0; i < words.length; i += 1) {
       if (mine !== run.current) return;
       setCurrent(i);
-      clip.current = startClip(resolveAssetUrl(words[i].audio));
+      clip.current = startClip(resolveAssetUrl(words[i].audio), 'term');
       await clip.current.done;
       if (mine !== run.current) return;
       if (i < words.length - 1) await new Promise((resolve) => { gap.current = setTimeout(resolve, GAP_MS); });
