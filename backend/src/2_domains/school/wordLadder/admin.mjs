@@ -12,13 +12,17 @@ import { GAPS } from './mastery.mjs';
  * Mastered at `stage`, due after that stage's gap scaled by the day's tuned
  * `gapScale` (as a recheck pass, never under a day); the miss flags a pass
  * would clear are cleared. A word never introduced counts as introduced
- * `day`, so a later recheck miss (→ familiar) is carried like any other.
+ * `day` (by `admin`), so a later recheck miss (→ familiar) is carried like any
+ * other, without spending the child's new-word allowance for `day`.
  */
 export function markMastered(word, { stage, day, gapScale = 1 }) {
   if (!Number.isInteger(stage) || stage < 0) throw new ValidationError('stage must be a whole number, 0 or more');
   const gap = Math.max(1, Math.round(GAPS[Math.min(stage, GAPS.length - 1)] * (gapScale ?? 1)));
+  // `introducedBy: 'admin'` keeps a grown-up's mark out of the day's intro count
+  // (it must not use up the child's new-word allowance); carry still sees it.
+  const intro = word.introducedDay ? {} : { introducedDay: day, introducedBy: 'admin' };
   return {
-    ...word, state: 'mastered', stage, dueDay: addDays(day, gap), introducedDay: word.introducedDay ?? day,
+    ...word, ...intro, state: 'mastered', stage, dueDay: addDays(day, gap),
     missStreak: 0, tricky: false, trickySince: null, notYetCarry: false,
   };
 }
