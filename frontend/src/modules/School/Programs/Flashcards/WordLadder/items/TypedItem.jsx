@@ -198,6 +198,7 @@ export default function TypedItem({ item, mode, langs, resolveAssetUrl, onRespon
   useWordLadderKeys({
     ...(result && graded ? { ' ': onContinue, enter: onContinue } : {}),
     ...(hear ? { tab: hear } : {}),
+    ...(canShowMe && !answered ? { '\\': showMe } : {}),
   });
   const keypadShowing = keypadOpen && !answered;
   return (
@@ -225,7 +226,12 @@ export default function TypedItem({ item, mode, langs, resolveAssetUrl, onRespon
         disabled={fieldDisabled}
         aria-label="Your answer"
         onChange={(e) => setValue(e.target.value)}
-        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); submit(); } }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') { e.preventDefault(); submit(); }
+          // Show me = give up and see the word: the hunted-for Backslash, like
+          // Skip elsewhere. Nobody types a backslash into a Korean answer.
+          else if (e.code === 'Backslash' && canShowMe && !answered) { e.preventDefault(); showMe(); }
+        }}
         onPointerDown={startLongPress}
         onPointerUp={endLongPress}
         onPointerLeave={endLongPress}
@@ -237,7 +243,7 @@ export default function TypedItem({ item, mode, langs, resolveAssetUrl, onRespon
             result hides the submit button; copy mode keeps it for the retry. */}
         {(!result || (!graded && result?.correct === false)) && (
           <>
-            {canShowMe && <TouchButton variant="secondary" disabled={busy} onClick={showMe}>Show me</TouchButton>}
+            {canShowMe && <TouchButton variant="secondary" keyHint="\\" disabled={busy} onClick={showMe}>Show me</TouchButton>}
             <TouchButton variant="primary" keyHint="Enter" disabled={busy || !value.trim()} onClick={submit}>{busy && graded ? 'Checking…' : 'Enter'}</TouchButton>
           </>
         )}

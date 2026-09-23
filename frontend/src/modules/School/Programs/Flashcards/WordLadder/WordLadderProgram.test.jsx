@@ -172,6 +172,24 @@ describe('WordLadderProgram', () => {
     expect(api.close).toHaveBeenCalledWith('s', { userId: 'test-learner', reason: 'leave' });
   });
 
+  it('Enter starts, like Space', async () => {
+    const api = fakeApi();
+    render(<WordLadderProgram descriptor={{ deckId: 'd', userId: 'test-learner' }} api={api} />);
+    fireEvent.keyDown(window, { key: 'Enter', code: 'Enter' });
+    await screen.findByText('가위');
+    expect(api.open).toHaveBeenCalledTimes(1);
+  });
+
+  it('the error screen\'s Back has a key (Space/Enter)', async () => {
+    const api = fakeApi();
+    api.open.mockResolvedValue({ ok: false, status: 404, data: null });
+    const onExit = vi.fn();
+    renderStarted(<WordLadderProgram descriptor={{ deckId: 'd', userId: 'test-learner' }} api={api} onExit={onExit} />);
+    await screen.findByRole('alert');
+    fireEvent.keyDown(window, { key: 'Enter', code: 'Enter' });
+    expect(onExit).toHaveBeenCalledTimes(1);
+  });
+
   it('an open failure says so and offers Back', async () => {
     const api = fakeApi();
     api.open.mockResolvedValue({ ok: false, status: 404, data: null });
