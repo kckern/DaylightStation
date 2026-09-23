@@ -11,10 +11,11 @@ import { PortionControl } from './PortionControl.jsx';
 import { entryId, entryError, isEntryConflict, updateEntry } from './entryCommands.js';
 import { usePortionControl } from './usePortionDraft.js';
 import { RowPreviewContent, useRowPreview, logRowPreviewOpen } from './RowPreview.jsx';
+import { useDraggableRow } from './mealDrag.jsx';
 
 const logger = createAppLogger('health').child('entry-row');
 
-export function EntryRow({ row, densityRow = row, onTap, onConfirm, onRequestDelete, isGroup = false, expanded = false, onToggle, rollupKcal, child = false, lastChild = false, measured = null, kcalShare = null, added = false, entryKey = undefined }) {
+export function EntryRow({ row, densityRow = row, onTap, onConfirm, onRequestDelete, isGroup = false, expanded = false, onToggle, rollupKcal, child = false, lastChild = false, measured = null, kcalShare = null, added = false, entryKey = undefined, dragBucket = null }) {
   const [error, setError] = useState(null);
   const [confirmation, setConfirmation] = useState(null);
   const pending = useRef(false);
@@ -27,6 +28,9 @@ export function EntryRow({ row, densityRow = row, onTap, onConfirm, onRequestDel
   const displayKcal = isGroup ? rollupKcal : row.calories;
   // The magnifier card: held closed while a portion drag owns the pointer.
   const preview = useRowPreview({ disabled: Boolean(portions?.draft), onOpen: () => logRowPreviewOpen(row) });
+  // The row is its own drag handle (mealDrag.jsx): never an ingredient on its
+  // own, never while a portion drag owns the pointer.
+  const drag = useDraggableRow(row, child ? null : dragBucket, { disabled: Boolean(portions?.draft) });
   const confirm = async () => {
     if (pending.current || confirmation === 'saved') return;
     pending.current = true; setConfirmation('saving'); setError(null);
@@ -40,7 +44,7 @@ export function EntryRow({ row, densityRow = row, onTap, onConfirm, onRequestDel
       logger.warn('entry.confirm_failed', { uuid: entryId(row), error: err.message });
     } finally { pending.current = false; }
   };
-  return <div className={['health-row-line', unsettled && confirmation !== 'saved' && 'health-row-line--unsettled', child && 'health-row-line--child', lastChild && 'health-row-line--last-child', isGroup && 'health-row-line--group', added && 'health-row-line--added'].filter(Boolean).join(' ')} data-preview={preview.opened ? 'open' : undefined} data-entry-key={entryKey}>
+  return <div ref={drag.ref} {...drag.handlers} className={['health-row-line', unsettled && confirmation !== 'saved' && 'health-row-line--unsettled', child && 'health-row-line--child', lastChild && 'health-row-line--last-child', isGroup && 'health-row-line--group', added && 'health-row-line--added', drag.draggable && 'health-row-line--draggable', drag.dragging && 'health-row-line--dragging'].filter(Boolean).join(' ')} data-preview={preview.opened ? 'open' : undefined} data-entry-key={entryKey}>
     <div className="health-row__branch">
       {isGroup ? <UnstyledButton className="health-row__expand" aria-expanded={expanded}
         aria-label={`${expanded ? 'Collapse' : 'Expand'} ${name}`} onClick={onToggle}><svg className="health-row__triangle" viewBox="0 0 10 10" aria-hidden="true" focusable="false">

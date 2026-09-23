@@ -509,6 +509,28 @@ $health-aside-gap: 1.5rem;
 // heaviest-first sort may have placed mid-list.
 .health-row-line--added { background: color-mix(in srgb, var(--ds-accent) 16%, transparent); border-radius: 6px; }
 .health-row-line { transition: background-color var(--ds-motion-reveal) var(--ds-motion-easing); }
+// Drag a food to another meal (mealDrag.jsx). The whole row is the handle,
+// so it reads as one object under the pointer: a faint full-row wash, and a
+// pointer cursor because a click still opens the editor. The sliders keep
+// their own ew-resize cursor.
+.health-row-line--draggable { user-select: none; -webkit-touch-callout: none; }
+@media (hover: hover) {
+  .health-row-line--draggable:hover { background: color-mix(in srgb, var(--ds-text-high) 5%, transparent); border-radius: 6px; cursor: pointer; }
+  .health-row-line--draggable:hover .health-row-name { cursor: pointer; }
+}
+.health-row-line--dragging { opacity: 0.35; }
+.health-meal { border-radius: 8px; transition: background-color var(--ds-motion-reveal) var(--ds-motion-easing), box-shadow var(--ds-motion-reveal) var(--ds-motion-easing); }
+.health-meal--drop-candidate { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ds-border) 60%, transparent); }
+.health-meal--drop-over { background: color-mix(in srgb, var(--ds-accent) 9%, transparent); box-shadow: inset 0 0 0 1px var(--ds-accent); }
+.health-drag-ghost {
+  display: inline-flex; align-items: center; gap: 0.4rem; width: max-content; max-width: 22rem;
+  padding: 0.3rem 0.6rem; border-radius: 8px; cursor: grabbing;
+  border: 1px solid var(--ds-border); background: var(--ds-surface); color: var(--ds-text-high); font-size: 0.85rem;
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--ds-text-high) 18%, transparent);
+  .health-row__icon { width: 22px; height: 22px; }
+  &__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+}
+@media (prefers-reduced-motion: reduce) { .health-meal { transition: none; } }
 // A meal entry gliding to its new place after a reorder (sectionOrder.js,
 // FLIP): the inline translate is set by the hook, this class animates it home.
 .health-flip-moving {

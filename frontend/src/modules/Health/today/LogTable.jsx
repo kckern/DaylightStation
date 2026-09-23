@@ -11,6 +11,7 @@ import { MealFoodControls } from './MealFoodControls.jsx';
 import { CaptureProgress } from './CaptureProgress.jsx';
 import { usePortionControl } from './usePortionDraft.js';
 import { useFrozenOrder, useFlipMoves } from './sectionOrder.js';
+import { MealDragProvider, useMealDropTarget } from './mealDrag.jsx';
 import './mealWorkflow.scss';
 
 // Bucket totals fold through the SHARED counted-rows contract — the same file
@@ -44,7 +45,9 @@ function Section({
     const id = rowProps.row.uuid || rowProps.row.id;
     // Just added from an add row: a brief highlight so the eye finds it even
     // when the heaviest-first sort lands it mid-list.
-    const props = addedIds?.has(String(id)) ? { ...rowProps, added: true } : rowProps;
+    const shown = addedIds?.has(String(id)) ? { ...rowProps, added: true } : rowProps;
+    // Rows drag to other meals, except while picking foods for a command.
+    const props = selecting ? shown : { ...shown, dragBucket: bucket };
     if (!selecting) return <EntryRow key={id} {...props}/>;
     const ids = props.isGroup ? props.row.children.map(row=>row.uuid || row.id) : [id];
     return <div key={id} className="health-meal-selection-row" data-entry-key={props.entryKey}><input type="checkbox" aria-label={`Select ${props.row.name || props.row.label || props.row.item}`}
@@ -62,6 +65,7 @@ function Section({
   const portionDraft = Boolean(usePortionControl()?.draft);
   const entries = useFrozenOrder(sortEntriesByCalories(groupRows(rows)), portionDraft);
   const sectionRef = useRef(null);
+  const drop = useMealDropTarget(bucket);
   useFlipMoves(sectionRef, entries.map(({ row }) => row.uuid ?? row.id).join('|'));
   const entryShares = calorieShares(entries.map(({ row, children, rollup }) => (children.length ? rollup.calories : row.calories)));
   // The section frame (heading + kcal + add row) is PERMANENT structure —
@@ -92,7 +96,8 @@ function Section({
   });
 
   return (
-    <section className="health-meal" ref={sectionRef}>
+    <section className={['health-meal', drop.dragging && 'health-meal--drop-candidate', drop.over && 'health-meal--drop-over'].filter(Boolean).join(' ')}
+      ref={node => { sectionRef.current = node; drop.ref(node); }}>
       <header className="health-meal__header">
         <h4 className="health-meal__label">{label}</h4>
         {rows.length ? <MacroBadges rows={rows} className="health-meal__macros" showLabels /> : null}
@@ -174,7 +179,7 @@ export function LogTable({
   byBucket, date, sessions = [], exerciseAvailable = false, onRowTap, onConfirm, onRequestDelete,
   bucketHeaderAction, coldLoading = false, capturePendingBucket = null, capturePendingBuckets = [],
   measuredByUuid = null, onVoiceCapture, onTextCapture, onMealChanged, captureTasks = [], clarifications, onClearClarification,
-  renderAddRow = null, addedIds = null,
+  renderAddRow = null, addedIds = null, onMoveEntry = null,
 }) {
   // All four meals always render: an empty one is its header and add row, so
   // any meal can be added to in place without a separate "add to" control.
@@ -195,7 +200,7 @@ export function LogTable({
       </div>
     );
   };
-  return (
+  const log = (
     <div className="health-log">
       {[EARLY_COLUMN, LATE_COLUMN].map((ids, index) => (
         <div key={index} className="health-log__column">
@@ -218,5 +223,6 @@ export function LogTable({
       ) : null}
     </div>
   );
+  return onMoveEntry ? <MealDragProvider onMove={onMoveEntry}>{log}</MealDragProvider> : log;
 }
 export default LogTable;

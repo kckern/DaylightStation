@@ -22,6 +22,7 @@ import { useBudgetRange } from './useBudgetRange.js';
 import { useIsWideViewport } from './layout.js';
 import { LogTable } from './LogTable.jsx';
 import { MealAddRow } from './MealAddRow.jsx';
+import { useMealMoves } from './mealDrag.jsx';
 import { NeedsReviewSection } from './NeedsReviewSection.jsx';
 import { CleanupQuestions } from '../cleanup/CleanupQuestions.jsx';
 import { ObservationsSection } from './ObservationRow.jsx';
@@ -46,9 +47,14 @@ export function TodayView({ active = true, sidebarTarget, onSetupGoals, onCoachT
   const weekParam = searchParams.get('week');
   const viewportEnd = isISODate(weekParam) && weekParam <= weekEnd(todayISO()) ? weekEnd(weekParam) : weekEnd(date);
   const day = useHealthDay(date, { enabled: active });
-  const preview = usePortionDraft(day, date);
+  // Drag-to-meal moves wear their new meal from the drop until the day
+  // reloads with them (mealDrag.jsx), so the portion overlay reads that view.
+  const moves = useMealMoves(day);
+  const movedDay = useMemo(() => ({ ...day, items: moves.items }), [day, moves.items]);
+  const preview = usePortionDraft(movedDay, date);
   // Rows just added from an add row, briefly highlighted once on screen.
-  const addedIds = useAddedRowHighlight(day.items);
+  const justAdded = useAddedRowHighlight(day.items);
+  const addedIds = useMemo(() => (moves.recentIds.size ? new Set([...justAdded, ...moves.recentIds]) : justAdded), [justAdded, moves.recentIds]);
   // Warm ±7 days and each meal's shortlist once the viewed day is on screen.
   useHealthDayPrefetch(date, { enabled: active, ready: !day.loading });
   const [mealUndo, setMealUndo] = useState(null);
@@ -399,6 +405,11 @@ export function TodayView({ active = true, sidebarTarget, onSetupGoals, onCoachT
         <Button onClick={() => preview.control.retry()}>{preview.control.draft.conflict ? 'Reload & apply intended change' : 'Retry same change'}</Button>
         <Button variant="subtle" onClick={() => { preview.control.cancel(); day.reload(); }}>Discard draft &amp; reload</Button>
       </div> : null}
+      {moves.undo ? <div className="health-pending" role="status"><span>{moves.undo.label}</span>
+        <Button size="compact-xs" aria-label="Undo move" onClick={moves.undo.run}>Undo</Button>
+        <Button size="compact-xs" variant="subtle" onClick={moves.undo.dismiss}>Dismiss</Button></div> : null}
+      {moves.error ? <div className="health-pending" role="alert"><span>{moves.error}</span>
+        <Button size="compact-xs" variant="subtle" onClick={moves.clearError}>Dismiss</Button></div> : null}
       {mealUndo ? <div className="health-pending" role="status"><span>{mealUndo.label}</span>
         <Button size="compact-xs" aria-label="Undo meal change" loading={undoBusy} onClick={async()=>{
           if(undoPending.current)return;
@@ -449,7 +460,7 @@ export function TodayView({ active = true, sidebarTarget, onSetupGoals, onCoachT
         bucketHeaderAction={bucketHeaderAction}
         onVoiceCapture={onVoiceCapture} onTextCapture={onTextCapture}
         onMealChanged={result=>handleCaptureResult(result)} captureTasks={[...capturePending.values()]}
-        measuredByUuid={measuredByUuid} addedIds={addedIds}
+        measuredByUuid={measuredByUuid} addedIds={addedIds} onMoveEntry={moves.move}
         renderAddRow={(bucket, label, meal) => <MealAddRow bucket={bucket} label={label} date={date} active={active}
           onVoiceCapture={meal?.onVoiceCapture} selectedCount={meal?.selectedIds?.length || 0} busy={nutrition.busy}
           onAdded={() => day.reload()} onSentencePending={text => beginSentencePending(bucket, text)} onPhotoCapture={onPhotoCapture} onOpenBarcode={openBarcode}

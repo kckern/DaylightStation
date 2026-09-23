@@ -4,7 +4,7 @@
  * Handles recording, search, quick-add, and backfill.
  */
 
-import { FoodCatalogEntry } from '#domains/health/entities/FoodCatalogEntry.mjs';
+import { FoodCatalogEntry, usableServing } from '#domains/health/entities/FoodCatalogEntry.mjs';
 import { hasMicroData, pickMicros } from '#domains/nutrition/services/micros.mjs';
 import { guessIconForName } from '#domains/nutrition/services/icons.mjs';
 import { rankSuggestions, blendShortlist } from '#domains/health/services/bucketSuggestRanking.mjs';
@@ -40,17 +40,32 @@ const asBucket = (value) => (MEAL_BUCKETS.includes(value) ? value : null);
 
 /** The clock's opinion when nothing more authoritative is supplied. */
 
+/** A positive number, or null. null/undefined/'' are UNKNOWN — `Number(null)` is 0. */
+const positiveOrNull = (value) => {
+  if (value === null || value === undefined || value === '') return null;
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? number : null;
+};
+
 /**
- * A portion worth remembering, or null. All-empty quantities are dropped so a
- * recorded `{}` cannot displace a real portion the entry already knew.
+ * A portion worth remembering, or null. A quantity with neither a mass nor an
+ * amount is not a portion, so it is not recorded at all: the old version read
+ * `grams: null` as `0` and wrote `{grams: 0, amount: 0}`, which every later
+ * quick-add of that food then copied as "0 g".
  */
 function normalizeQuantity(quantity) {
   if (!quantity) return null;
-  const grams = Number.isFinite(Number(quantity.grams)) ? Number(quantity.grams) : null;
-  const amount = Number.isFinite(Number(quantity.amount)) ? Number(quantity.amount) : null;
+  const grams = positiveOrNull(quantity.grams);
+  const amount = positiveOrNull(quantity.amount);
+  if (grams === null && amount === null) return null;
   const unit = typeof quantity.unit === 'string' && quantity.unit ? quantity.unit : null;
-  if (grams === null && amount === null && unit === null) return null;
   return { grams, unit, amount };
+}
+
+/** The label serving a capture describes: explicit, else (new entries only) the row's own quantity. */
+function servingOf(foodItem, { fromRow = false } = {}) {
+  return usableServing(foodItem.serving)
+    ?? (fromRow ? usableServing(foodItem.originalQuantity) ?? usableServing({ amount: foodItem.amount, unit: foodItem.unit, grams: foodItem.grams }) : null);
 }
 
 export class FoodCatalogService {
@@ -147,6 +162,13 @@ export class FoodCatalogService {
       // not an icon: donating it would pin the food to the fallback glyph and
       // block every real icon that came after.
       if (!existing.icon && isRealIcon(foodItem.icon)) existing.icon = foodItem.icon;
+      // The product photo and the label serving FILL the same way: a barcode
+      // capture that knows them teaches an entry that does not, and never
+      // replaces what an earlier capture (or a person) already gave it. Only an
+      // explicit serving fills an existing entry — its stored numbers came from
+      // an earlier row, so this row's quantity need not describe them.
+      if (!existing.photoRef && typeof foodItem.photoRef === 'string' && foodItem.photoRef) existing.photoRef = foodItem.photoRef;
+      if (!existing.serving) existing.serving = servingOf(foodItem);
       await this.#catalogStore.save(existing, userId);
       this.#logger.debug?.('health.catalog.usage_recorded', { name: foodItem.name, useCount: existing.useCount });
     } else {
@@ -166,6 +188,10 @@ export class FoodCatalogService {
         source: foodItem.source || 'nutritionix',
         barcodeUpc: foodItem.barcodeUpc || null,
         icon: isRealIcon(foodItem.icon) ? foodItem.icon : null,
+        photoRef: foodItem.photoRef || null,
+        // The base nutrients below ARE this row's totals, so this row's own
+        // quantity is the serving they describe (a 325 ml shake).
+        serving: servingOf(foodItem, { fromRow: true }),
         // A brand-new entry starts its bucket history at this first use, so the
         // very first thing a food records is already bucket-aware.
         usageByBucket: bucket
@@ -221,22 +247,17 @@ export class FoodCatalogService {
     // clock cannot speak for it — such a day is filled from its first meal.
     const mealTime = asBucket(options?.mealTime) || defaultBucketForDate(targetDate, now, bucketForHour);
     // PRD F8.3: the portion defaults to the last one logged for this food IN
-    // THIS BUCKET. Absent (a food never eaten at this meal), the catalog default
-    // stands — one serving, which is the portion the entry's own numbers
-    // describe. Per field, so a remembered `grams` is not lost to a missing `unit`.
-    const { grams, nutrients } = entry.proposedPortion(mealTime);
-    const unit = 'g';
-    const amount = grams;
-    // The row's numbers are DENSITY x THIS PORTION, not a copy of a stored
-    // total. That is what makes the fix self-correcting: a food whose ring
-    // still holds a doubled row derives its serving from the median density,
-    // and a remembered 385 g portion of a 0.485 kcal/g shake yields 187 kcal
-    // rather than the 610 the old copy-the-total path produced.
+    // THIS BUCKET, then the canonical mass, then the label serving a barcode
+    // capture carried (a 325 ml shake with no known grams), then one serving.
+    // The quantity is never null: a row with no amount renders "—" forever.
     //
-    // Null when the entry cannot be scaled (no observation carries a mass, or
-    // no portion is remembered): the canonical view then stands exactly as it
-    // did, because an unscalable food must keep working rather than become a
-    // written zero.
+    // The row's numbers are DENSITY x THIS PORTION when a mass is known, not a
+    // copy of a stored total. That is what makes the fix self-correcting: a
+    // food whose ring still holds a doubled row derives its serving from the
+    // median density, and a remembered 385 g portion of a 0.485 kcal/g shake
+    // yields 187 kcal rather than the 610 the old copy-the-total path produced.
+    const { grams, amount, unit, nutrients } = entry.proposedPortion(mealTime);
+    const icon = this.#quickAddIcon(entry);
     const micros = pickMicros(nutrients);
     const item = {
       uuid: this.#createId(),
@@ -255,10 +276,13 @@ export class FoodCatalogService {
       unit,
       amount,
       color: 'yellow',
-      // The food's picture travels with it (PRD U5.2). Null when the catalog
-      // entry has none — the row then renders the neutral dot, rather than a
-      // filename this layer invented.
-      icon: entry.icon ?? null,
+      // The food's picture travels with it (PRD U5.2): the pin, else the
+      // learned icon, else the closest offered slug by name (persisted below).
+      // Null only when nothing fits — the row then renders the neutral dot and
+      // the artwork queue picks it up.
+      icon,
+      // The product's own photo, from the barcode capture that named this food.
+      photoRef: entry.photoRef ?? null,
       date: targetDate,
       mealTime,
       // A one-tap pick of a known food is a DELIBERATE choice, not a machine
@@ -276,10 +300,35 @@ export class FoodCatalogService {
     // The bucket this actually landed in, and the portion it landed with —
     // so the next pick of this food at this meal defaults to the same portion.
     entry.recordUsage(targetDate, { bucket: mealTime, quantity: normalizeQuantity({ grams, unit, amount }) ?? undefined });
+    if (!entry.icon && !entry.iconOverride && isRealIcon(icon)) entry.icon = icon;
     await this.#catalogStore.save(entry, userId);
 
     this.#logger.info?.('health.catalog.quickadd', { name: entry.name, id: entry.id, date: targetDate, mealTime });
     return item;
+  }
+
+  /**
+   * The icon a quick-added row gets: the pin, else the learned icon, else the
+   * closest offered slug by name. Unlike the suggest-time guess this one is
+   * persisted (the caller writes it onto the entry): the food is now actually
+   * being logged, and a row that lands on the neutral glyph is a row the
+   * artwork queue has to repair later.
+   */
+  #quickAddIcon(entry) {
+    const offered = slug => isRealIcon(slug) && this.#iconOffered(slug);
+    const known = [entry.iconOverride, entry.icon].find(offered);
+    if (known) return known;
+    if (!this.#iconVocabulary) return entry.iconOverride || entry.icon || null;
+    let vocabulary = null;
+    try { vocabulary = this.#iconVocabulary(); } catch (err) {
+      this.#logger.warn?.('health.catalog.icon_fallback_unavailable', { error: err.message });
+    }
+    const guess = vocabulary?.size ? guessIconForName(entry.name, vocabulary) : null;
+    if (offered(guess)) {
+      this.#logger.info?.('health.catalog.quickadd_icon_guessed', { id: entry.id, name: entry.name, icon: guess });
+      return guess;
+    }
+    return entry.iconOverride || entry.icon || null;
   }
 
   /**

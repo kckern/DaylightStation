@@ -102,12 +102,14 @@ describe('FoodCatalogService.quickAdd — mealTime, settlement and per-bucket us
     } });
     const morning = await svc.quickAdd('e1', 'u', { mealTime: 'morning' });
     expect([morning.grams, morning.unit, morning.amount]).toEqual([120, 'g', 120]);
-    // A bucket this food has never been eaten in falls back to the catalog default.
+    // A bucket this food has never been eaten in falls back to the catalog
+    // default: with no known mass that is ONE SERVING, never a null amount
+    // (which rendered "—" and was remembered as "0 g").
     build({ usageByBucket: {
       morning: { count: 4, lastUsed: '2026-09-01', quantity: { grams: 120, unit: 'g', amount: 120 } },
     } });
     const evening = await svc.quickAdd('e1', 'u', { mealTime: 'evening' });
-    expect([evening.grams, evening.unit, evening.amount]).toEqual([null, 'g', null]);
+    expect([evening.grams, evening.unit, evening.amount]).toEqual([null, 'serving', 1]);
   });
 
   it('carries the whole Phase 6/7 payload through unchanged — micros with provenance, and the icon', async () => {

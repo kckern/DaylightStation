@@ -24,6 +24,10 @@ export function presentFoodCatalogEntry(entry) {
     // Presenting it is what lets that PUT's own caller check what it just set,
     // and lets a client tell "pinned" from "guessed" without a second call.
     iconOverride: entry.iconOverride ?? null,
+    // The product's own photo and label serving, from the barcode capture that
+    // named this food: what a quick-add will show and log when no mass is known.
+    photoRef: entry.photoRef ?? null,
+    serving: entry.serving ?? null,
     favorite: entry.favorite === true,
     lastUsed: entry.lastUsed,
     createdAt: entry.createdAt,

@@ -88,3 +88,24 @@ describe('YamlFoodCatalogDatastore — the observation ring survives a restart',
     expect(disk.rows[0].observations[0].kcal).toBe(160);
   });
 });
+
+describe('YamlFoodCatalogDatastore — a barcode food keeps its serving and photo', () => {
+  it('writes serving and photoRef and reads them back', async () => {
+    const { store, disk } = makeStore();
+    await store.save(new FoodCatalogEntry({ id: 'shake', name: 'Strawberry Milkshake', photoRef: 'ph_2DyAMj3lb6osrZzr',
+      serving: { amount: 325, unit: 'ml', grams: null }, lastUsed: '2026-09-22', createdAt: '2026-09-17T17:42:48.717Z' }), 'u');
+    expect(disk.rows[0]).toMatchObject({ photoRef: 'ph_2DyAMj3lb6osrZzr', serving: { amount: 325, unit: 'ml', grams: null } });
+    const back = await store.getById('shake', 'u');
+    expect(back.photoRef).toBe('ph_2DyAMj3lb6osrZzr');
+    expect(back.serving).toEqual({ amount: 325, unit: 'ml', grams: null });
+  });
+
+  it('an entry written before these fields loads unchanged, and a stored 0 g portion reads as absent', async () => {
+    const { store } = makeStore([{ id: 'old', name: 'Old', lastUsed: '2026-09-01', createdAt: '2026-01-01T00:00:00Z',
+      usageByBucket: { afternoon: { count: 1, lastUsed: '2026-09-01', quantity: { grams: 0, unit: 'g', amount: 0 } } } }]);
+    const entry = await store.getById('old', 'u');
+    expect(entry.photoRef).toBeNull();
+    expect(entry.serving).toBeNull();
+    expect(entry.usageByBucket.afternoon).toEqual({ count: 1, lastUsed: '2026-09-01', quantity: null });
+  });
+});
