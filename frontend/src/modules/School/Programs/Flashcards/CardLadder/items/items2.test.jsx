@@ -453,3 +453,43 @@ describe('SummaryItem', () => {
     expect(onExit).toHaveBeenCalled();
   });
 });
+
+describe('Learn more words (ruling 2026-09-23: never block extra learning)', () => {
+  it('the menu offers it on the digit after My words while new words remain', () => {
+    const onLearnMore = vi.fn();
+    render(<MenuItem {...menuProps(menuApi(), { onLearnMore, item: { id: 'menu', type: 'menu', modes: ['match', 'flashcards'], learnMore: 4 } })} />);
+    const button = screen.getByRole('button', { name: /learn more words/i });
+    expect(button.querySelector('.ds-touch__key')).toHaveTextContent('4');
+    fireEvent.keyDown(window, { key: '4', code: 'Digit4' });
+    expect(onLearnMore).toHaveBeenCalledTimes(1);
+    fireEvent.click(button);
+    expect(onLearnMore).toHaveBeenCalledTimes(2);
+    // Done stays on Space/Enter.
+    expect(screen.getByRole('button', { name: /^done/i })).toBeInTheDocument();
+  });
+
+  it('the menu hides it when the pool is empty', () => {
+    const onLearnMore = vi.fn();
+    render(<MenuItem {...menuProps(menuApi(), { onLearnMore, item: { id: 'menu', type: 'menu', modes: ['match', 'flashcards'], learnMore: 0 } })} />);
+    expect(screen.queryByRole('button', { name: /learn more words/i })).toBeNull();
+    fireEvent.keyDown(window, { key: '4', code: 'Digit4' });
+    expect(onLearnMore).not.toHaveBeenCalled();
+  });
+
+  it('the Done summary offers it on 2; Space is still Done', () => {
+    const onLearnMore = vi.fn();
+    const onExit = vi.fn();
+    render(<SummaryItem item={{ id: 'summary', type: 'summary', quizzed: 3, learnMore: 2 }} onRespond={vi.fn()} onLearnMore={onLearnMore} onExit={onExit} />);
+    expect(screen.getByRole('button', { name: /learn more words/i }).querySelector('.ds-touch__key')).toHaveTextContent('2');
+    fireEvent.keyDown(window, { key: '2', code: 'Digit2' });
+    expect(onLearnMore).toHaveBeenCalledTimes(1);
+    expect(onExit).not.toHaveBeenCalled();
+    fireEvent.keyDown(window, { key: ' ' });
+    expect(onExit).toHaveBeenCalledTimes(1);
+  });
+
+  it('the summary hides it when nothing is left to learn', () => {
+    render(<SummaryItem item={{ id: 'summary', type: 'summary', quizzed: 3, learnMore: 0 }} onRespond={vi.fn()} onLearnMore={vi.fn()} onExit={vi.fn()} />);
+    expect(screen.queryByRole('button', { name: /learn more words/i })).toBeNull();
+  });
+});

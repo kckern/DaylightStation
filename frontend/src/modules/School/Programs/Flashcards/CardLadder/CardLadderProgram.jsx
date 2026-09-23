@@ -394,6 +394,22 @@ export default function CardLadderProgram({ descriptor, api: injected = null, re
     if (status !== 0) await resync();
   }, [show, userId, deckId, session, test, open, resync]);
 
+  /** Learn more words (ruling 2026-09-23): one more guided round, from the menu or the summary. */
+  const learnMore = useCallback(async (from) => {
+    if (!session || !item || busyRef.current) return;
+    busyRef.current = true;
+    setBusy(true);
+    cardLadderLog.learnMoreStarted({ from, count: item.learnMore ?? null });
+    const { ok, status, data } = await api.learnMore(session.id, { userId });
+    busyRef.current = false;
+    if (!live.current) return;
+    setBusy(false);
+    if (ok && data?.item) { show(data.item, data.progress ?? null); return; }
+    cardLadderLog.learnMoreFailed({ userId, sittingId: session.id, status, error: data?.error ?? null, test });
+    if (status === 404) { cardLadderLog.sessionReopened({ userId, deckId, test, from: 'learn-more' }); await open(); return; }
+    if (status !== 0) await resync();
+  }, [api, session, item, userId, deckId, test, show, open, resync]);
+
   /** Any practice item can end the run early: back to the menu. */
   const inPractice = item?.source === 'practice';
   // Not while a held verdict waits for Next: the server has already moved past that item.
@@ -430,10 +446,10 @@ export default function CardLadderProgram({ descriptor, api: injected = null, re
       body = (
         <MenuItem
           key={key} item={item} api={api} sittingId={session.id} userId={userId} deckId={deckId}
-          langs={session.langs} onPractice={practiceStarted} onExit={done}
+          langs={session.langs} onPractice={practiceStarted} onLearnMore={learnMore} onExit={done}
         />
       );
-    } else body = <SummaryItem key={key} item={item} onRespond={respond} busy={busy} onExit={done} />;
+    } else body = <SummaryItem key={key} item={item} onRespond={respond} onLearnMore={learnMore} busy={busy} onExit={done} />;
   }
   const pct = progress?.capMs ? Math.min(100, Math.round((progress.activeMs / progress.capMs) * 100)) : 0;
   const remaining = remainingLabel(progress);

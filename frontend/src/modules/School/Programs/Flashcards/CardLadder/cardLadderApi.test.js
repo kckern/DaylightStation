@@ -104,6 +104,16 @@ describe('createCardLadderApi', () => {
     }));
   });
 
+  it('learnMore posts the userId to the sitting', async () => {
+    const fetchMock = vi.fn(async () => ({ ok: true, status: 200, json: async () => ({}) }));
+    vi.stubGlobal('fetch', fetchMock);
+    const api = createCardLadderApi({ test: false });
+    await api.learnMore('sit1', { userId: 'kid' });
+    expect(fetchMock).toHaveBeenCalledWith('/api/v1/school/card-ladder/sittings/sit1/learn-more', expect.objectContaining({
+      method: 'POST', body: JSON.stringify({ userId: 'kid' }),
+    }));
+  });
+
   it('words GETs with userId and deckId on the query', async () => {
     const fetchMock = vi.fn(async () => ({ ok: true, status: 200, json: async () => ({ words: [] }) }));
     vi.stubGlobal('fetch', fetchMock);

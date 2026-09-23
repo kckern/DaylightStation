@@ -83,6 +83,8 @@ export const cardLadderLog = {
   drillOffered: (data) => emit('drill.offered', data),                   // {accepted}
   practiceStarted: (data) => emit('practice.started', data),             // {itemMode, help, filter}
   practiceFailed: (data) => emit('practice.failed', data, 'warn'),
+  learnMoreStarted: (data) => emit('learn-more.started', data),         // {from: menu|summary, count} — one more guided round asked for
+  learnMoreFailed: (data) => emit('learn-more.failed', data, 'warn'),   // {status, error}
   wordsFailed: (data) => emit('words.failed', data, 'warn'),               // My words read refused/failed
 };
 
