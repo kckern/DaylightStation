@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { TouchButton } from '../../../../../lib/ui/index.js';
 import Icon from '../../../home/icons/Icon.jsx';
 
@@ -14,9 +14,10 @@ import Icon from '../../../home/icons/Icon.jsx';
  * what it can (the descriptor's title) and Start works.
  */
 function Poster({ src, title, onFailed }) {
-  const [failed, setFailed] = useState(false);
-  useEffect(() => setFailed(false), [src]);
-  if (!src || failed) {
+  // Which src failed, not a flag reset by an effect: a reset effect that
+  // flushes AFTER a fast onError would put the broken poster straight back.
+  const [failedSrc, setFailedSrc] = useState(null);
+  if (!src || failedSrc === src) {
     return (
       <div className="wl-start__poster wl-start__poster--placeholder" data-testid="wl-start-poster-placeholder" aria-hidden="true">
         <Icon name="kind-deck" />
@@ -26,7 +27,7 @@ function Poster({ src, title, onFailed }) {
   return (
     <img
       className="wl-start__poster" src={src} alt={`${title} poster`}
-      onError={() => { setFailed(true); onFailed?.(); }}
+      onError={() => { setFailedSrc(src); onFailed?.(); }}
     />
   );
 }
