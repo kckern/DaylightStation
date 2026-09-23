@@ -128,6 +128,17 @@ describe('add-food suggestion panel', () => {
     expect(rule('.health-suggest__list')).toMatch(/overflow-y: auto/);
   });
 
+  it('inline: the popup overlays what follows instead of pushing it down', () => {
+    expect(rule('.health-suggest--inline')).toMatch(/position: relative/);
+    const popup = rule('.health-suggest--inline .health-suggest__popup');
+    expect(popup).toMatch(/position: absolute/);
+    expect(popup).toMatch(/top: calc\(100% \+ 2px\)/);
+    expect(popup).toMatch(/z-index: \d+/);
+    expect(popup).toMatch(/background: var\(--ds-surface\)/);
+    // The sheet mode's popup stays in flow: no unscoped popup rule positions it.
+    expect(css).not.toMatch(/\} \.health-suggest__popup \{[^}]*position: absolute/);
+  });
+
   it('uses two compact columns when the viewport can hold them', () => {
     expect(css).toContain('@media (min-width: 480px)');
     expect(css).toMatch(/\.health-suggest__list \{[^}]*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/);
