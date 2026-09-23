@@ -90,7 +90,7 @@ describe('createWordLadderApi', () => {
     expect(fetchMock).toHaveBeenCalledWith('/api/v1/school/word-ladder/sittings/sit1/practice', expect.objectContaining({
       method: 'POST',
       body: JSON.stringify({
-        userId: 'kid', mode: 'flashcards', help: true, filter: null, chosen: null, frontSide: null,
+        userId: 'kid', mode: 'flashcards', help: true,
       }),
     }));
   });
@@ -102,6 +102,17 @@ describe('createWordLadderApi', () => {
     await api.words({ userId: 'kid', deckId: 'language/korean/week-01' });
     expect(fetchMock).toHaveBeenCalledWith(
       '/api/v1/school/word-ladder/words?userId=kid&deckId=language%2Fkorean%2Fweek-01',
+      expect.objectContaining({ method: 'GET' }),
+    );
+  });
+
+  it('words passes the sitting id when given (the test mount requires it)', async () => {
+    const fetchMock = vi.fn(async () => ({ ok: true, status: 200, json: async () => ({ words: [] }) }));
+    vi.stubGlobal('fetch', fetchMock);
+    const api = createWordLadderApi({ test: true });
+    await api.words({ userId: 'kid', deckId: 'd', sittingId: 'test.p.t.1' });
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/v1/school/word-ladder/test/words?userId=kid&deckId=d&sittingId=test.p.t.1',
       expect.objectContaining({ method: 'GET' }),
     );
   });

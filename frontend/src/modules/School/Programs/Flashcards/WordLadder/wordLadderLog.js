@@ -35,6 +35,10 @@ export const wordLadderLog = {
   recordingUploaded: (data) => emit('recording.uploaded', data),
   recordingFailed: (data) => emit('recording.failed', data, 'warn'),
   recordingRefused: (data) => emit('recording.refused', data, 'info'),
+  matchCompleted: (data) => emit('match.completed', data),               // {ms, misses, pairs}
+  drillOffered: (data) => emit('drill.offered', data),                   // {accepted}
+  practiceStarted: (data) => emit('practice.started', data),             // {mode, help, filter}
+  practiceFailed: (data) => emit('practice.failed', data, 'warn'),
 };
 
 export default wordLadderLog;

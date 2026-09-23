@@ -14,8 +14,14 @@ import CuePicture from './CuePicture.jsx';
 const KEYPAD_AUTO_OPEN_MS = 10_000;
 
 /**
- * 1.1 copy-type (the Korean is on screen; must match to continue) and 3.3
- * type-from-cue (graded by the server's judge — meaning, not spelling).
+ * Modes:
+ *   copy       1.1 copy-type — the Korean is on screen; must match to continue.
+ *   dictation  drill step — audio only (the item carries no term); must match
+ *              to continue, like copy.
+ *   graded     3.3 type-from-cue — judged by the server (meaning, not spelling);
+ *              the verdict stays until Next.
+ *   practice   drill step "type" — cue only, verdict until Next like graded
+ *              (the drill's result has no score: a pass is just "Right!").
  */
 export default function TypedItem({ item, mode, langs, resolveAssetUrl, onRespond, result = null, onContinue, busy = false, stageRef = null }) {
   const [value, setValue] = useState('');
@@ -24,8 +30,11 @@ export default function TypedItem({ item, mode, langs, resolveAssetUrl, onRespon
   const word = item.word;
   const image = item.assets?.image ? resolveAssetUrl(item.assets.image) : null;
   const glossAudio = item.assets?.glossAudio ? resolveAssetUrl(item.assets.glossAudio) : null;
-  const termAudio = word?.media?.audio ? resolveAssetUrl(word.media.audio) : null;
-  const graded = mode === 'graded';
+  const dictation = mode === 'dictation';
+  const termAudioId = dictation ? item.assets?.audio : word?.media?.audio;
+  const termAudio = termAudioId ? resolveAssetUrl(termAudioId) : null;
+  // graded + practice: cue prompt, verdict held until Next. copy + dictation: retry until it matches.
+  const graded = mode === 'graded' || mode === 'practice';
   const fieldDisabled = busy || (graded && Boolean(result));
 
   // Auto-open bookkeeping. Refs, not state: read inside a timer callback and
@@ -49,7 +58,7 @@ export default function TypedItem({ item, mode, langs, resolveAssetUrl, onRespon
     const thisItemId = item.id;
     setValue('');
     input.current?.focus();
-    if (mode === 'copy' && termAudio) playClip(termAudio);
+    if ((mode === 'copy' || dictation) && termAudio) playClip(termAudio);
     if (item.cue?.type === 'audio' && glossAudio) playClip(glossAudio);
     // Keypad: closed and re-armed to auto-open once per item.
     setKeypadOpen(false);
@@ -75,8 +84,8 @@ export default function TypedItem({ item, mode, langs, resolveAssetUrl, onRespon
   // A copy mismatch starts the retry from an empty field. Never select-all: the
   // in-page composer inserts at the caret, so a selection would not be replaced.
   useEffect(() => {
-    if (result && mode === 'copy' && result.correct === false) { setValue(''); input.current?.focus(); }
-  }, [result, mode]);
+    if (result && !graded && result.correct === false) { setValue(''); input.current?.focus(); }
+  }, [result, graded]);
 
   /**
    * "Closes on the first physical keydown" (spec §6). This has to be a
@@ -118,17 +127,18 @@ export default function TypedItem({ item, mode, langs, resolveAssetUrl, onRespon
   const submit = () => {
     if (busy || !value.trim()) return;
     onRespond({ typed: value });
-    if (mode === 'graded') { input.current?.blur(); stageRef?.current?.focus(); }
+    if (graded) { input.current?.blur(); stageRef?.current?.focus(); }
   };
   useWordLadderKeys(result && graded ? { ' ': onContinue, enter: onContinue } : {}, { enabled: Boolean(result) && graded });
   const keypadShowing = keypadOpen && !fieldDisabled;
   return (
     <section
       className={`wl-item wl-typed${keypadShowing ? ' wl-typed--keypad' : ''}`}
-      aria-label={graded ? 'Type the word' : 'Copy the word'}
+      aria-label={graded ? 'Type the word' : dictation ? 'Write what you hear' : 'Copy the word'}
     >
       <div className="wl-prompt">
-        {!graded && <FitText role="term" text={word.term} lang={langs.term} />}
+        {mode === 'copy' && <FitText role="term" text={word?.term ?? ''} lang={langs.term} />}
+        {dictation && <TouchButton variant="secondary" onClick={() => termAudio && playClip(termAudio)}><Icon name="volume" /> Listen</TouchButton>}
         {graded && item.cue?.type === 'image' && <CuePicture item={item} src={image} lang={langs.gloss} />}
         {graded && item.cue?.type === 'text' && <FitText role="prompt" text={item.cue.text} lang={langs.gloss} />}
         {graded && item.cue?.type === 'audio' && <TouchButton variant="secondary" onClick={() => glossAudio && playClip(glossAudio)}><Icon name="volume" /> Listen</TouchButton>}
@@ -149,7 +159,7 @@ export default function TypedItem({ item, mode, langs, resolveAssetUrl, onRespon
         onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); submit(); } }}
       />
       <div className="wl-controls">
-        {!graded && termAudio && <TouchButton variant="secondary" onClick={() => playClip(termAudio)}><Icon name="volume" /> Hear it</TouchButton>}
+        {mode === 'copy' && termAudio && <TouchButton variant="secondary" onClick={() => playClip(termAudio)}><Icon name="volume" /> Hear it</TouchButton>}
         {!fieldDisabled && (
           <TouchButton variant="secondary" aria-pressed={keypadOpen} onClick={toggleKeypad}>
             <Icon name="writing" /> Keypad
@@ -160,11 +170,13 @@ export default function TypedItem({ item, mode, langs, resolveAssetUrl, onRespon
         {(!result || (!graded && result?.correct === false)) && (
           <TouchButton variant="primary" keyHint="Enter" disabled={busy || !value.trim()} onClick={submit}>{busy && graded ? 'Checking…' : 'Enter'}</TouchButton>
         )}
-        {!graded && result?.correct === false && <p className="wl-verdict" role="status">Try again — copy it exactly.</p>}
+        {!graded && result?.correct === false && (
+          <p className="wl-verdict" role="status">{dictation ? 'Not quite — listen again and have another go.' : 'Try again — copy it exactly.'}</p>
+        )}
         {graded && result && (
           <p className="wl-verdict" role="status">
-            {result.correct && result.score === 10 && 'Right!'}
-            {result.correct && result.score < 10 && <>Got it! Here&apos;s the spelling: <span lang={langs.term}>{result.answer}</span></>}
+            {result.correct && (result.score == null || result.score === 10) && 'Right!'}
+            {result.correct && result.score != null && result.score < 10 && <>Got it! Here&apos;s the spelling: <span lang={langs.term}>{result.answer}</span></>}
             {!result.correct && <>It&apos;s <span lang={langs.term}>{result.answer}</span></>}
           </p>
         )}

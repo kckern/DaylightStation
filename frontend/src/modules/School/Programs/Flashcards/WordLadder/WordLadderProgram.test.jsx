@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import WordLadderProgram from './WordLadderProgram.jsx';
 
@@ -225,5 +225,75 @@ describe('WordLadderProgram', () => {
     // Same item id, new sitting: the card starts on its front again.
     await waitFor(() => expect(screen.queryByText('Scissors')).toBeNull());
     expect(screen.getByText('가위')).toBeInTheDocument();
+  });
+});
+
+vi.mock('./useTakeRecorder.js', () => ({
+  default: vi.fn(() => ({ start: vi.fn(), stop: vi.fn(), phase: 'idle', verdict: null, stream: null, onLevel: vi.fn() })),
+}));
+
+describe('WordLadderProgram — dispatches every item type', () => {
+  const wordCard = { ...word, pronunciation: null, media: { image: null, audio: null, glossAudio: null } };
+  const cases = [
+    ['say', { id: 'x1', type: 'say', mode: 'say-after', wordId: 'gawi', word: wordCard }, { name: 'Say it' }],
+    ['drill', { id: 'x2', type: 'drill', step: 'dictation', wordId: 'gawi', of: 9, at: 6, assets: { image: null, audio: null, glossAudio: null } }, { name: 'Drill' }],
+    ['drill-offer', { id: 'x3', type: 'drill-offer', wordId: 'gawi', word: wordCard }, { name: 'Tricky word' }],
+    ['match', { id: 'x4', type: 'match', source: 'practice', board: { pairs: [{ wordId: 'gawi', term: '가위', right: { type: 'text', text: 'Scissors' } }, { wordId: 'b', term: '책', right: { type: 'text', text: 'Book' } }] } }, { name: 'Match' }],
+    ['listen', { id: 'x5', type: 'listen', source: 'practice', words: [{ wordId: 'gawi', term: '가위', audio: 'a' }] }, { name: 'Listen' }],
+    ['menu', { id: 'menu', type: 'menu', modes: ['match'], quizzed: 2 }, { name: 'Practice' }],
+    ['summary', { id: 'summary', type: 'summary', quizzed: 2, doneToday: true }, { name: 'Done' }],
+  ];
+  for (const [type, item, region] of cases) {
+    it(`renders ${type}`, async () => {
+      const api = fakeApi();
+      api.open.mockResolvedValue(openWith(item));
+      renderStarted(<WordLadderProgram descriptor={{ deckId: 'd', userId: 'test-learner' }} api={api} />);
+      expect(await screen.findByRole('region', region)).toBeInTheDocument();
+    });
+  }
+
+  it('summary Practise more sends {done:true} and shows the menu', async () => {
+    const api = fakeApi();
+    api.open.mockResolvedValue(openWith({ id: 'summary', type: 'summary', quizzed: 2, doneToday: true }));
+    api.respond.mockResolvedValue({ ok: true, status: 200, data: { result: { ok: true }, item: { id: 'menu', type: 'menu', modes: ['match'], quizzed: 2 }, progress } });
+    renderStarted(<WordLadderProgram descriptor={{ deckId: 'd', userId: 'test-learner' }} api={api} />);
+    fireEvent.click(await screen.findByRole('button', { name: /practise more/i }));
+    expect(await screen.findByRole('region', { name: 'Practice' })).toBeInTheDocument();
+    expect(api.respond).toHaveBeenCalledWith('s', { userId: 'test-learner', itemId: 'summary', response: { done: true } });
+  });
+
+  it('a menu choice starts practice and shows its first item; a practice item offers Menu → {menu:true}', async () => {
+    const api = fakeApi();
+    const listen = { id: 'p1:0', type: 'listen', source: 'practice', words: [{ wordId: 'gawi', term: '가위', audio: 'a' }] };
+    api.open.mockResolvedValue(openWith({ id: 'menu', type: 'menu', modes: ['listen'], quizzed: 2 }));
+    api.practice = vi.fn(async () => ({ ok: true, status: 200, data: { item: listen, progress: { ...progress, phase: 'practice', practice: { mode: 'listen', at: 1, of: 1 } } } }));
+    renderStarted(<WordLadderProgram descriptor={{ deckId: 'd', userId: 'test-learner' }} api={api} />);
+    fireEvent.click(await screen.findByRole('button', { name: /listen/i }));
+    expect(await screen.findByRole('region', { name: 'Listen' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Progress')).toHaveTextContent('Practice');
+    fireEvent.click(screen.getByRole('button', { name: /^menu/i }));
+    await waitFor(() => expect(api.respond).toHaveBeenCalledWith('s', { userId: 'test-learner', itemId: 'p1:0', response: { menu: true } }));
+  });
+
+  it('labels the drill phase', async () => {
+    const api = fakeApi();
+    const drill = { id: 'x2', type: 'drill', step: 'dictation', wordId: 'gawi', of: 9, at: 6, assets: { image: null, audio: null, glossAudio: null } };
+    api.open.mockResolvedValue({ ...openWith(drill), data: { ...openWith(drill).data, progress: { ...progress, phase: 'drill', round: null, drill: { at: 6, of: 9 } } } });
+    renderStarted(<WordLadderProgram descriptor={{ deckId: 'd', userId: 'test-learner' }} api={api} />);
+    await screen.findByRole('region', { name: 'Drill' });
+    expect(screen.getByLabelText('Progress')).toHaveTextContent('Practising a tricky word');
+  });
+
+  it('a tiles retry keeps the tiles item and shows Not quite', async () => {
+    const api = fakeApi();
+    const tiles = { id: 'd1:6', type: 'drill', step: 'tiles', wordId: 'gawi', of: 9, at: 7, tiles: ['위', '가'], cue: { type: 'text', text: 'Scissors' }, assets: { image: null, audio: null, glossAudio: null } };
+    api.open.mockResolvedValue(openWith(tiles));
+    api.respond.mockResolvedValue({ ok: true, status: 200, data: { result: { correct: false, answer: null }, item: tiles, progress } });
+    renderStarted(<WordLadderProgram descriptor={{ deckId: 'd', userId: 'test-learner' }} api={api} />);
+    await screen.findByRole('region', { name: 'Drill' });
+    fireEvent.click(within(screen.getByRole('group', { name: 'Tiles' })).getByText('위'));
+    fireEvent.click(screen.getByRole('button', { name: /check/i }));
+    expect(await screen.findByText(/Not quite/)).toBeInTheDocument();
+    expect(api.respond).toHaveBeenCalledWith('s', { userId: 'test-learner', itemId: 'd1:6', response: { tiles: ['위'] } });
   });
 });
