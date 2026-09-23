@@ -244,13 +244,18 @@ export function useSentenceAudio({ onSequenceEnd, onClip } = {}) {
     if (urls.length) languageLog.audio('preload', { count: urls.length });
   }, []);
 
-  /** The clip sounding now and how far into it playback is — what a live cut
-   *  reads. Null between sequences, during a gap and after stop(). */
+  /** The clip sounding now, how far into it playback is, and how long its
+   *  file is — what a live cut reads. Null between sequences, during a gap and after stop(). */
   const position = useCallback(() => {
     const el = elementRef.current;
     const clip = activeRef.current;
     if (!el || !clip) return null;
-    return { language: clip.language, role: clip.role, ms: Math.round(el.currentTime * 1000) };
+    // `durationMs` is the whole FILE's length once its metadata is in, null
+    // before — the log uses it to say where the last piece of a cut ends.
+    const durationMs = Number.isFinite(el.duration) && el.duration > 0 ? Math.round(el.duration * 1000) : null;
+    return {
+      language: clip.language, role: clip.role, ms: Math.round(el.currentTime * 1000), durationMs,
+    };
   }, []);
 
   return { playSequence, preload, stop, position, playing, step, blocked, REPEAT_GAP_MS, LOOP_GAP_MS };

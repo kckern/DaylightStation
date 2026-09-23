@@ -157,7 +157,7 @@ describe('spans and position (recording in pieces)', () => {
     expect(result.current.position()).toBeNull();
     act(() => result.current.playSequence([{ url: '/kr.mp3', language: 'KR' }]));
     elements.at(-1).currentTime = 1.35;
-    expect(result.current.position()).toEqual({ language: 'KR', role: undefined, ms: 1350 });
+    expect(result.current.position()).toEqual({ language: 'KR', role: undefined, ms: 1350, durationMs: null });
     act(() => result.current.stop());
     expect(result.current.position()).toBeNull();
   });

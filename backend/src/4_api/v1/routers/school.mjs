@@ -8,7 +8,7 @@ import { splatPath } from '#api/utils/wildcard.mjs';
 import { sendLocalFileResource } from '#system/http/streamFile.mjs';
 import { presentPublicResources } from '../presenters/publicResourceRefs.mjs';
 import { mountTeacherReadingRoutes } from './school.teacherReading.mjs';
-import { mountWordLadderRoutes } from './school.wordLadder.mjs';
+import { mountCardLadderRoutes } from './school.cardLadder.mjs';
 
 export function createSchoolRouter({
   // () => boolean. Whether school.yml still configures a console PIN. The
@@ -20,11 +20,11 @@ export function createSchoolRouter({
   schoolService,
   schoolApiSessions,
   flashcardStudy = null,
-  wordLadderStudy = null,
-  // Test mode (`/word-ladder/test`) over read-only shadow stores; the stage screen id.
-  wordLadderTest = null,
-  wordLadderTuning = null,
-  wordLadderStageScreen = null,
+  cardLadderStudy = null,
+  // Test mode (`/card-ladder/test`) over read-only shadow stores; the stage screen id.
+  cardLadderTest = null,
+  cardLadderTuning = null,
+  cardLadderStageScreen = null,
   schoolResourceService = null,
   schoolPrintAccess = null,
   schoolRecordsQuery = null,
@@ -550,11 +550,11 @@ export function createSchoolRouter({
     if (!flashcardStudy) throw new EntityNotFoundError('flashcard study', 'not configured');
     res.json({ deck: await flashcardStudy.getDeck(req.params.deckId) });
   }));
-  // The word ladder (any word package): a flashcard enrollment in `policy.mode:
-  // word-ladder`. Its own module, like the teacher reading workspace.
-  mountWordLadderRoutes({
-    router, wrap, wordLadderStudy, wordLadderTest, stageScreen: wordLadderStageScreen, capabilityProof,
-    teacherCapabilitySessions, wordLadderTuning,
+  // The card ladder (any word package): a flashcard enrollment in `policy.mode:
+  // card-ladder`. Its own module, like the teacher reading workspace.
+  mountCardLadderRoutes({
+    router, wrap, cardLadderStudy, cardLadderTest, stageScreen: cardLadderStageScreen, capabilityProof,
+    teacherCapabilitySessions, cardLadderTuning,
     notConfigured: (what) => new EntityNotFoundError(what, 'not configured'),
   });
   router.post('/sessions/:sessionId/remediation-offer', wrap(async (req, res) => {

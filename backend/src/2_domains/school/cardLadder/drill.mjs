@@ -1,0 +1,43 @@
+/**
+ * The drill (spec §3 drill path): one word walked from full support to none.
+ * Nothing here grades. Steps that need a mic or term audio are dropped, never
+ * blocked on.
+ */
+import { hashString, seededShuffle } from './checkItem.mjs';
+
+// Unsupported production — writing from sound (dictation), saying and typing
+// from the cue — comes last (ruling 2026-09-23: never front-load it), so the
+// scaffolded tiles step (3.2) runs before dictation.
+export const DRILL_STEPS = Object.freeze(['look', 'copy', 'say-after', 'match', 'read-aloud', 'tiles', 'dictation', 'say-from-cue', 'type']);
+const NEEDS_MIC = new Set(['say-after', 'read-aloud', 'say-from-cue']);
+const NEEDS_AUDIO = new Set(['say-after', 'dictation']);
+// Typing from memory: only once the word is ready for its typed sign-off
+// (`readyForSignOff` — recognised twice, claimed, matched). Before that, copy
+// (the word visible) and tiles (scaffolded) are the drill's ceiling.
+const FROM_MEMORY = new Set(['dictation', 'type']);
+
+export function drillSteps(media = {}, capabilities = {}, { ready = false } = {}) {
+  return DRILL_STEPS.filter((step) => (capabilities.microphone === true || !NEEDS_MIC.has(step))
+    && (media.audio === true || !NEEDS_AUDIO.has(step))
+    && (ready === true || !FROM_MEMORY.has(step)));
+}
+
+const syllables = (text) => [...String(text).normalize('NFC')].filter((ch) => /[가-힣]/u.test(ch));
+
+export function tilesFor(entry, deckTerms = [], seed) {
+  const answer = syllables(entry.term);
+  const pool = [...new Set(deckTerms.flatMap(syllables))].filter((s) => !answer.includes(s));
+  const decoys = seededShuffle(pool, hashString(`${seed}|tile-decoys`)).slice(0, 2);
+  return seededShuffle([...answer, ...decoys], hashString(`${seed}|tiles`));
+}
+
+export function matchBoard(entries, media = {}, seed) {
+  const chosen = seededShuffle(entries, hashString(`${seed}|board`)).slice(0, 6);
+  const pictures = chosen.length > 0 && chosen.every((entry) => media[entry.id]?.image === true);
+  return {
+    pairs: chosen.map((entry) => ({
+      wordId: entry.id, term: entry.term,
+      right: pictures ? { type: 'image' } : { type: 'text', text: entry.gloss },
+    })),
+  };
+}

@@ -1,6 +1,24 @@
+> Renamed card ladder 2026-09-23 — current reference: `docs/reference/school/card-ladder.md`.
+
 # Word ladder — mastery redesign
 
 Status: rev 4 (2026-09-22) — third review (confirm pass) applied; cleared for planning
+
+> **Ruling 2026-09-23 (owner): typing from memory is the final sign-off only —
+> recognition → claim → match → typed sign-off; recording is practice only,
+> never a quiz or a prerequisite.** This supersedes §2's verify (now 3.1 then
+> 2.2, recognition only, first-miss stop kept) and §2's recheck cadence
+> (`review.typedEvery` retired, §7 table): a recheck is typed (3.3, or 1.4
+> dictation when there is term audio) only when the word is recognised twice,
+> mastered (claimed-and-verified), matched and at stage ≥ 1; otherwise 2.2 / 3.1
+> alternate. A typed pass signs the word off ("Mastered"); a typed miss keeps it
+> `mastered` at stage 1, due next study day, and its next recheck is
+> recognition — never back to learning. A round is Learn › Sort › Quiz ›
+> Match: a guided match over the words just verified (padded to 3 with up to 2
+> known words; skipped when none verified) sets `matched`. Mastered-before
+> words are grandfathered (recognised twice, matched, not signed off unless a
+> typed pass is on record). Current behaviour: `docs/reference/school/word-ladder.md`
+> "The sign-off ladder".
 Replaces: `docs/_archive/2026-09-22-word-ladder-test-mode-layout-observability-design.md`
 Benchmark: `docs/_wip/audits/2026-09-22-quizlet-benchmark-word-ladder.md`
 Current code: `docs/reference/school/word-ladder.md`
@@ -130,6 +148,8 @@ A stage-0 word's "recheck" the next study day is exactly the recheck above
 
 ## 2. Grading
 
+> **Ruling 2026-09-23 (owner): English-side cues show text + picture + audio together; the prompt is never the test.** (Supersedes the one-random-cue design in §3's cue column; see `docs/reference/school/word-ladder.md`.)
+
 ### The verify quiz (round end)
 
 Per word, two graded tasks, **hardest first**, stopping at the first miss:
@@ -155,7 +175,8 @@ the answer) — a guess is never forced.
 
 One graded task per due word:
 
-- **Below stage 2:** `2.2` and `3.1` alternate; every `review.typedEvery`-th
+- *(Superseded by the 2026-09-23 ruling above — typed only as the sign-off.)*
+  **Below stage 2:** `2.2` and `3.1` alternate; every `review.typedEvery`-th
   recheck of that word is `3.3`.
 - **Stage 2 and above:** always `3.3`.
 
@@ -605,7 +626,9 @@ on `ResizeObserver` and `document.fonts.ready`.
 - **Audio autoplay:** the sitting starts with a **Start** tap, which unlocks
   audio for the page. FKB's autoplay setting is required on the Portal (listed
   in the School runbook). A blocked clip leaves the large speaker button and
-  logs `audio.played outcome: blocked` at info.
+  logs `audio.played outcome: blocked` — at warn since the observability sweep
+  (2026-09-23): after the Start tap a blocked clip means the child heard
+  nothing, which is a problem to see.
 - **Quiz feedback:** right → tick; wrong / Don't know → the correct answer with
   Korean audio; a typed pass below 10 → "Got it! Here's the spelling" with the diff.
 
@@ -644,7 +667,7 @@ bounds. It never grades, never writes word states, never generates items.
 | `batch.newPerDay` | new words per day | 4 (2–6) |
 | `batch.workingSet` | unsettled-word cap | 7 (4–10) |
 | `review.gapScale` | recheck gap multiplier | 1.0 (0.5–1.5) |
-| `review.typedEvery` | typed-recheck cadence below stage 2 | 2 (1–4) |
+| ~~`review.typedEvery`~~ | retired by the 2026-09-23 ruling — typing is the sign-off, never a cadence | — |
 
 Grown-up settings only: `session.capMinutes` (15), `drill.perSitting` (1),
 `round.maxPasses` (3), `typing.passScore` (6).
@@ -751,6 +774,21 @@ event carries `traceId`, `sittingId`, `seq`, `t`, `learnerId`, `deckId`,
 `layout.clamped` (warn) · `sitting.closed` {reason, activeMs, remaining}.
 Backend: `school.word-ladder.{opened,graded,transition,folded,closed,tuning,admin}`
 with `mode`. Volume ≈ 6–8 events per item, ~300 per sitting.
+
+**Observability sweep (2026-09-23).** So a sitting can be evaluated from the
+logs alone, the backend also logs WHY each item is served (`item.served
+{reason}` — the engine returns the reason as data, `observe.mjs`), every plan
+change (`day.planned`, `round.planned`, `round.phase` with the quiz queue,
+`drill.started/finished`, `day.done`), a word's sign-off prerequisites
+(`word.prereqs`, and `prereqs` on `transition`), and `sitting.abandoned`
+(warn) for a sitting idle-closed without its client ever closing it. The
+frontend adds `input` (how the child acted) on `item.answered`,
+`result.shown/dismissed`, `item.skipped`, `showme.used`, `hint.shown`,
+`say.recording {phase}` (replacing `recording.*` / `mic.unavailable`),
+`audio.played {clip, trigger, outcome}` (replacing `kind`; failures at warn)
+and `visibility` / `screen` on `item.stalled`. The trace renders all of it
+(step sections, reasons, input, sub-lines, a summary footer). The full table
+is in `docs/reference/school/word-ladder.md` → Logs.
 
 ### `school word-ladder trace`
 

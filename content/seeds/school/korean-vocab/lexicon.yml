@@ -1,4 +1,4 @@
-# Word ladder lexicon — the korean-vocab word package (Korean words, English meanings).
+# Card ladder lexicon — the korean-vocab word package (Korean words, English meanings).
 # Installed to media/school/language/korean-vocab/lexicon.yml.
 # This file is the package's whole language identity: nothing in code names Korean.
 # Ids are permanent once studied (status is keyed by them); `group` is the course

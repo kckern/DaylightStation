@@ -87,6 +87,14 @@
   to { transform: translateY(0); opacity: 1; }
 }
 
+// A small celebratory pop (card ladder's right-answer toast): transform and
+// opacity only — cheap on the kiosk WebViews, no filter, no shadow.
+@keyframes ds-pop-in {
+  from { transform: scale(0.9); opacity: 0; }
+  60% { transform: scale(1.03); opacity: 1; }
+  to { transform: scale(1); opacity: 1; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .ds-sheet__panel { animation: none; }
 }

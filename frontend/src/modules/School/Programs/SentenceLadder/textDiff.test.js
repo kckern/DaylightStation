@@ -55,3 +55,20 @@ describe('diffChars', () => {
     expect(diffChars(null, undefined)).toEqual([]);
   });
 });
+
+describe('matchParts — what lights up on a check-your-work panel', () => {
+  it('marks the characters the answer and the attempt share, ignoring case, on both lines', async () => {
+    const { matchParts } = await import('./textDiff.js');
+    const { given, answer } = matchParts('It is cold today', 'it is warm today');
+    expect(given.filter((p) => p.match).map((p) => p.text).join('')).toContain('today');
+    expect(given.filter((p) => !p.match).map((p) => p.text).join('')).toContain('warm'.slice(0, 1));
+    // Each line keeps its own letters and case.
+    expect(given.map((p) => p.text).join('')).toBe('it is warm today');
+    expect(answer.map((p) => p.text).join('')).toBe('It is cold today');
+    expect(answer[0]).toEqual({ text: 'It is ', match: true });
+  });
+  it('an empty attempt matches nothing', async () => {
+    const { matchParts } = await import('./textDiff.js');
+    expect(matchParts('It is cold', '')).toEqual({ given: [], answer: [{ text: 'It is cold', match: false }] });
+  });
+});

@@ -56,7 +56,7 @@ describe('LexiconDeckLoader', () => {
     const logger = { error: vi.fn() };
     const decks = await loader(logger).listFlashcardDecks();
     expect(decks.map((deck) => deck.id)).toEqual(['biology/cells']);
-    expect(logger.error).toHaveBeenCalledWith('school.word-ladder.deck-unexpandable', expect.objectContaining({ deckId: WORD_DECK.id }));
+    expect(logger.error).toHaveBeenCalledWith('school.card-ladder.deck-unexpandable', expect.objectContaining({ deckId: WORD_DECK.id }));
     await expect(loader().getFlashcardDeck(WORD_DECK.id)).rejects.toThrow(/'nope' is not in the lexicon/);
   });
   it('refuses a lexicon reference that leaves the media root', () => {

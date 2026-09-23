@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # scripts/school/seed-word-package.sh <seed-dir>
 #
-# Install a word-ladder seed package (any language) into the running
+# Install a card-ladder seed package (any language) into the running
 # container's data and media volumes. CONTROLLER-ONLY, and only AFTER the
-# word-ladder code that reads school.word-lexicon/v2 is deployed.
+# card-ladder code that reads the lexicon's schema is deployed.
 #
 # A seed dir holds:
-#   lexicon.yml                 the package lexicon (school.word-lexicon/v2)
+#   lexicon.yml                 the package lexicon (school.word-lexicon/v2 or school.card-lexicon/v3)
 #   <deck>.yml ...              one or more lexicon decks (lexicon: media:<pkg dir>/lexicon.yml)
 #   media-readme-section.md     optional; appended once to media/school/README.md
 # Everything is derived from those files — nothing here names a language:
@@ -46,7 +46,7 @@ const DECK_ID = /^[a-z0-9][a-z0-9/_-]*$/;
 const seed = process.env.SEED;
 const fail = (message) => { console.error(message); process.exit(1); };
 const lexicon = yaml.load(fs.readFileSync(path.join(seed, "lexicon.yml"), "utf8"));
-if (lexicon?.schema !== "school.word-lexicon/v2") fail("lexicon.yml must be school.word-lexicon/v2");
+if (!["school.word-lexicon/v2", "school.card-lexicon/v3"].includes(lexicon?.schema)) fail("lexicon.yml must be school.word-lexicon/v2 or school.card-lexicon/v3");
 if (!SLUG.test(lexicon.package ?? "")) fail("lexicon.yml: package must be a lowercase slug");
 const decks = fs.readdirSync(seed).filter((name) => name.endsWith(".yml") && name !== "lexicon.yml").sort();
 if (!decks.length) fail("no deck .yml files in the seed dir");

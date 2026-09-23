@@ -1,3 +1,5 @@
+> Renamed card ladder 2026-09-23 — current reference: `docs/reference/school/card-ladder.md`.
+
 # Quizlet benchmark for the word ladder
 
 Date: 2026-09-22

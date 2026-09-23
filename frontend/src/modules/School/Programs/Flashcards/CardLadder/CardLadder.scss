@@ -1,0 +1,365 @@
+// Card ladder v3 (spec §6). Colours and motion only via --ds-* (school pack,
+// set by CardLadderStage's AppThemeProvider). Sizes are relative to the fixed
+// stage, which is the target screen's resolution scaled to fit — never the viewport.
+// Buttons are the design-system TouchButton; no button CSS lives here.
+
+.wl-stage-frame { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: var(--ds-background); overflow: hidden; }
+.wl-stage { flex: none; transform-origin: center center; background: var(--ds-background); color: var(--ds-text-high); overflow: hidden; }
+
+.wl { position: relative; display: grid; grid-template-rows: auto auto 1fr; width: 100%; height: 100%; outline: none; }
+.wl-test-banner {
+  position: absolute; top: 0; left: 50%; transform: translateX(-50%); z-index: 2;
+  padding: 0.25rem 1rem; border-radius: 0 0 10px 10px;
+  background: var(--ds-warning); color: var(--ds-background);
+  font-weight: 700; letter-spacing: 0.05em; white-space: nowrap;
+}
+
+// --- Sitting header (owner-approved layout) --------------------------------
+//   [Exit]   Review ✓ › LEARN › Sort › Quiz › Match › Practice   [3 left]
+//            Round 1 · New words
+//   [time bar]
+// then the once-per-step hint row, which is RESERVED (fixed height) so a hint
+// arriving or fading never moves the item below it; the fade is opacity +
+// transform only. Header budget at 1280×800: ~112px (was ~74px before the
+// trail's sub-line) + the 1.75rem hint row — see the budget notes below.
+.wl-header {
+  container-type: inline-size;
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center;
+  column-gap: 1rem; row-gap: 0.25rem; padding: 0.75rem 1.5rem 0.25rem;
+}
+// The test banner hangs from the top centre, over the trail: push the header below it.
+.wl:has(.wl-test-banner) .wl-header { padding-top: 2.5rem; }
+.wl-header__exit .school-icon { display: inline-flex; font-size: 1.25em; margin-right: 0.25rem; }
+.wl-header__right { justify-self: end; }
+.wl-header__round { grid-column: 2; margin: 0; text-align: center; font-size: 1.125rem; color: var(--ds-text-mid); }
+.wl-header__piles { margin: 0; font-size: 1.25rem; color: var(--ds-text-low); white-space: nowrap; }
+.wl-header__time {
+  grid-column: 1 / -1; height: 6px; border-radius: 3px; background: var(--ds-surface); overflow: hidden;
+  > div {
+    width: 100%; height: 100%; border-radius: 3px; background: var(--ds-accent);
+    transform-origin: left center; transition: transform var(--ds-motion-base) var(--ds-motion-easing);
+  }
+}
+
+.wl-trail {
+  display: flex; align-items: center; justify-content: center; flex-wrap: nowrap; gap: 0.5rem;
+  min-width: 0; margin: 0; padding: 0; list-style: none;
+}
+.wl-trail__step {
+  display: inline-flex; align-items: center; gap: 0.3rem; white-space: nowrap;
+  font-size: 1.125rem; color: var(--ds-text-low); opacity: 0.6;
+  // The chevron between steps is drawn, not typed: a glyph renders as tofu on the Portal's WebView.
+  & + &::before {
+    content: ''; width: 0.45em; height: 0.45em; margin-right: 0.35rem;
+    border-top: 2px solid var(--ds-border); border-right: 2px solid var(--ds-border);
+    transform: rotate(45deg); opacity: 0.8;
+  }
+  &.is-done { opacity: 1; color: var(--ds-text-mid); }
+  &.is-current {
+    opacity: 1; color: var(--ds-text-high); font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em;
+    .wl-trail__label { padding: 0.15rem 0.6rem; border-radius: 999px; background: var(--ds-surface); box-shadow: inset 0 0 0 2px var(--ds-accent); }
+  }
+}
+.wl-trail__tick { display: inline-flex; color: var(--ds-success); }
+.wl-trail__note { font-size: 0.8rem; font-style: italic; color: var(--ds-text-low); }
+// A narrow stage keeps only the step the child is on.
+@container (max-width: 900px) {
+  .wl-trail__step:not(.is-current) { display: none; }
+  .wl-trail__step.is-current::before { display: none; }
+}
+
+.wl-hint { display: flex; align-items: center; justify-content: center; height: 1.75rem; padding: 0 1.5rem; overflow: hidden; }
+.wl-hint__text {
+  margin: 0; font-size: 1.125rem; color: var(--ds-text-mid); white-space: nowrap; text-overflow: ellipsis; overflow: hidden;
+  animation: wl-hint-in var(--ds-motion-base) var(--ds-motion-easing) both;
+  transition: opacity var(--ds-motion-base) var(--ds-motion-easing), transform var(--ds-motion-base) var(--ds-motion-easing);
+  &.is-leaving { opacity: 0; transform: translateY(-0.35rem); }
+}
+@keyframes wl-hint-in {
+  from { opacity: 0; transform: translateY(0.35rem); }
+  to { opacity: 1; transform: none; }
+}
+
+.wl-main { display: flex; align-items: center; justify-content: center; min-height: 0; padding: 0 1.5rem 1.5rem; }
+.wl-item { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1.25rem; width: 100%; height: 100%; min-height: 0; }
+
+// The card is the 3D stage: `perspective` here, the surface turns inside it.
+// Two sides back to back, each carrying the border/background (a hidden
+// backface takes its paint with it). Only `transform` animates — never filter,
+// shadow or layout (the Portal is an FKB Chrome WebView); `will-change` is set
+// only while a turn is in flight. The turned-away side is `visibility: hidden`
+// too, so the back of a Korean front is never seen or read: visibility is
+// transitioned on the same duration, and a transition between visible and
+// hidden holds `visible` for its whole length — the leaving side stays drawn
+// for the turn and goes only once it has turned away.
+.wl-card {
+  --wl-flip-duration: calc(var(--ds-motion-reveal) * 1.25);
+  position: relative; display: block;
+  width: min(760px, 100%); flex: 1 1 auto; min-height: 0; max-height: 440px; padding: 0;
+  border: 0; border-radius: 20px; background: none; color: inherit;
+  font: inherit; cursor: pointer; perspective: 1400px;
+  &:focus-visible { outline: 3px solid var(--ds-accent); outline-offset: 3px; }
+}
+.wl-card__inner {
+  position: absolute; inset: 0; display: block;
+  transform-style: preserve-3d;
+  transition: transform var(--wl-flip-duration) var(--ds-motion-easing);
+}
+.wl-card.is-flipped .wl-card__inner { transform: rotateY(180deg); }
+.wl-card.is-flipping .wl-card__inner { will-change: transform; }
+.wl-card__side {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center; padding: 1.5rem;
+  border-radius: 20px; border: 2px solid var(--ds-border); background: var(--ds-surface);
+  backface-visibility: hidden;
+  transition: visibility var(--wl-flip-duration) var(--ds-motion-easing);
+}
+.wl-card__side--down { transform: rotateY(180deg); visibility: hidden; }
+.wl-card.is-flipped .wl-card__side--down { visibility: visible; }
+.wl-card.is-flipped .wl-card__side--up { visibility: hidden; }
+// Reduced motion (and the JS-side `wl-card--still`): an instant swap.
+.wl-card--still .wl-card__inner, .wl-card--still .wl-card__side { transition: none; }
+@media (prefers-reduced-motion: reduce) {
+  .wl-card__inner, .wl-card__side { transition: none; }
+}
+.wl-card__face { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1rem; width: 100%; height: 100%; min-height: 0; }
+.wl-card__face--front > .wl-fit { max-width: 100%; }
+.wl-card__face--back.has-picture { display: grid; grid-template-rows: minmax(0, 1fr) auto; }
+.wl-card__picture { max-width: 100%; max-height: 100%; min-height: 0; object-fit: contain; border-radius: 12px; justify-self: center; }
+.wl-card__gloss { display: flex; align-items: center; justify-content: center; width: 100%; min-height: 3.5rem; }
+.wl-card__pron { margin: 0; font-size: 1.25rem; color: var(--ds-text-mid); }
+
+.wl-prompt { display: flex; align-items: center; justify-content: center; width: min(760px, 100%); height: 220px; flex: none; }
+.wl-cue-picture { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 12px; }
+// The anchor cue bundle (ruling 2026-09-23): picture beside the text, Listen
+// under the text. It fills the prompt box and never grows it — the keypad-open
+// layout shrinks the prompt to 100px and the picture shrinks with it.
+.wl-cue {
+  display: flex; align-items: center; justify-content: center; gap: 1.5rem;
+  width: 100%; height: 100%; min-height: 0;
+  > .wl-cue-picture { flex: 0 1 auto; max-width: 40%; height: 100%; }
+}
+.wl-cue__words {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.75rem;
+  flex: 1 1 0; min-width: 0; height: 100%; min-height: 0;
+}
+.wl-cue__text { display: flex; align-items: center; justify-content: center; width: 100%; flex: 1 1 0; min-height: 0; }
+.wl-typed--keypad .wl-cue__words { flex-direction: row; }
+
+
+.wl-choices {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; width: min(900px, 100%);
+  .is-answer { outline: 4px solid var(--ds-success); outline-offset: 2px; }
+  .is-chosen { outline: 4px dashed var(--ds-warning); outline-offset: 2px; }
+}
+
+// The result panel (items/ResultPanel.jsx): a large card under the prompt
+// that stays until Next. Warm, never red, for a miss; the success token for a
+// right answer. Enters on the shared DS keyframes, transform/opacity only
+// (wrong: ds-sheet-up on --ds-motion-base; right: ds-pop-in, a touch longer).
+.wl-result {
+  display: flex; flex-direction: column; align-items: center; gap: 0.5rem;
+  width: min(760px, 100%); padding: 0.75rem 1.5rem 1rem;
+  border-radius: 20px; border: 3px solid var(--ds-warning); background: var(--ds-surface);
+  animation: ds-sheet-up var(--ds-motion-base) var(--ds-motion-easing);
+  &--right {
+    border-color: var(--ds-success);
+    animation: ds-pop-in calc(var(--ds-motion-reveal) * 0.9) var(--ds-motion-easing);
+    .wl-result__heading { color: var(--ds-success); }
+  }
+}
+.wl-result__heading { margin: 0; font-size: 2rem; color: var(--ds-warning); }
+.wl-result__row { display: flex; align-items: center; justify-content: center; gap: 1rem; width: 100%; margin: 0; }
+.wl-result__label { flex: none; font-size: 1.25rem; color: var(--ds-text-mid); }
+.wl-result__typed { font-size: 1.75rem; color: var(--ds-text-low); }
+.wl-result__answer { display: flex; align-items: center; justify-content: center; flex: 1 1 0; min-width: 0; height: 88px; color: var(--ds-text-high); }
+.wl-result__listen { flex: none; }
+.wl-result__note { margin: 0; font-size: 1.125rem; color: var(--ds-text-mid); }
+// A choice item with its verdict up: the prompt gives the panel its room.
+.wl-choice:has(.wl-result) .wl-prompt { height: 120px; }
+@media (prefers-reduced-motion: reduce) {
+  .wl-result, .wl-result--right { animation: none; }
+}
+
+.wl-controls { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 1rem; }
+.wl-controls--minor { gap: 0.75rem; opacity: 0.9; }
+
+// The on-screen keypad toggle: a last resort, not an option — a small
+// icon-only button pinned to the item's bottom-left, clear of the centred
+// keypad (≤920px on a 1280px stage). Hidden once a keyboard is known.
+.wl-typed { position: relative; }
+.wl-typed__keypad-toggle {
+  position: absolute; left: 0; bottom: 0;
+  min-width: 56px; width: 56px; min-height: 56px; height: 56px; padding: 0;
+  border-radius: 999px; opacity: 0.75;
+  svg { width: 24px; height: 24px; }
+}
+.wl-typed__field {
+  width: min(640px, 100%); min-height: 80px; padding: 0.5rem 1rem;
+  font-size: 2.5rem; text-align: center;
+  border-radius: 14px; border: 2px solid var(--ds-border); background: var(--ds-surface); color: var(--ds-text-high);
+  &:focus { outline: 3px solid var(--ds-accent); }
+  &:disabled { opacity: 0.7; }
+}
+
+.wl-verdict { margin: 0; font-size: 1.5rem; text-align: center; }
+.wl-say__notice { margin: 0; font-size: 1.25rem; text-align: center; color: var(--ds-warning); }
+.wl-summary h2 { margin: 0; font-size: 2.5rem; }
+.wl-summary p { margin: 0; font-size: 1.5rem; color: var(--ds-text-mid); }
+
+// --- Start screen: the launch card -----------------------------------------
+// Poster (2:3) left, copy right, centred in the stage. Sized from the stage's
+// own box (percentages of wl-main), never the viewport and never fixed px.
+.wl-item.wl-start {
+  display: grid; grid-template-columns: auto minmax(0, 34rem); grid-template-rows: minmax(0, 1fr);
+  align-items: center; justify-content: center; gap: 3rem;
+}
+// Height is a share of the stage's main area (a definite grid row), width follows from 2:3.
+.wl-start__poster {
+  display: flex; align-items: center; justify-content: center; box-sizing: border-box;
+  height: 82%; width: auto; aspect-ratio: 2 / 3; object-fit: cover; object-position: center top;
+  border: 1px solid var(--ds-border); border-radius: 16px; background: var(--ds-surface);
+  align-self: center;
+}
+// No poster (or one that failed): a calm, blank panel with a small mark — never a substitute image.
+.wl-start__poster--placeholder {
+  color: var(--ds-text-low); font-size: 3rem;
+  background:
+    radial-gradient(circle at 30% 22%, color-mix(in srgb, var(--ds-accent) 22%, transparent), transparent 45%),
+    var(--ds-surface);
+  .school-icon { display: inline-flex; opacity: 0.6; }
+}
+.wl-start__copy { display: flex; flex-direction: column; align-items: flex-start; gap: 1rem; min-width: 0; }
+.wl-start__course { margin: 0; font-size: 3rem; line-height: 1.05; font-weight: 800; color: var(--ds-text-high); word-break: keep-all; text-wrap: balance; }
+.wl-start__unit { margin: 0; font-size: 1.75rem; font-weight: 700; color: var(--ds-text-mid); text-wrap: balance; }
+.wl-start__today { margin: 0; font-size: 1.375rem; color: var(--ds-text-mid); }
+.wl-start__progress { display: grid; gap: 0.4rem; width: 100%; }
+.wl-start__progress-label { font-size: 1.125rem; color: var(--ds-text-low); }
+// Two segments side by side: mastered (solid) then recognised (lighter).
+.wl-start__progress-track {
+  display: flex; height: 10px; border-radius: 5px; background: var(--ds-surface); overflow: hidden;
+  > span { display: block; flex: none; height: 100%; transition: width var(--ds-motion-base) var(--ds-motion-easing); }
+}
+.wl-start__progress-mastered { background: var(--ds-accent); }
+.wl-start__progress-recognised { background: color-mix(in srgb, var(--ds-accent) 40%, transparent); }
+.wl-start__action { margin-top: 0.75rem; }
+.wl-loading { font-size: 1.5rem; color: var(--ds-text-mid); }
+.wl-error p { margin: 0; font-size: 1.5rem; text-align: center; }
+
+.wl-fit { display: block; max-width: 100%; text-align: center; line-height: 1.15; word-break: keep-all; overflow-wrap: normal; hyphens: none; }
+.wl-fit--clamped { overflow-wrap: anywhere; }
+
+// --- Keypad-open layout (Task 6 fix round 1) ----------------------------
+// The stage is a fixed 1280×800 (CardLadderStage scales it to fit, but the
+// LAYOUT itself has to fit at that resolution with no scroll). With the
+// on-screen keypad open, a typed item stacks five things top to bottom —
+// header, prompt, field, controls, keypad — and the default `.wl-prompt`
+// (220px, sized for a picture cue) is too tall to leave room for the last
+// one. Budget at 800px tall, keypad-open:
+//   wl-header                   ~104px  (padding + trail row + sub-line + time bar)
+//   wl-hint (reserved row)        28px
+//     + test banner              ~24px  (test sittings only: header padding-top 2.5rem)
+//   wl-main bottom padding        24px
+//   wl-item gaps (3 × 0.75rem)    36px
+//   wl-prompt (shrunk)           100px
+//   wl-typed__field               90px  (min-height 80px + padding)
+//   wl-controls                   64px  (one row of TouchButtons)
+//   wl-keypad (shrunk keys)      ~277px (3× 60px rows + Enter 60px + padding/border/gaps)
+//   ------------------------------------
+//   total                       ~723px live / ~747px in a test sitting —
+//   ~50px of margin at 800px even with the test banner (the step-trail header
+//   of 2026-09-23 spent ~58px of the old ~110px margin).
+.wl-item.wl-typed--keypad { gap: 0.75rem; }
+.wl-typed--keypad .wl-prompt { height: 100px; }
+// Still well above the 56px touch-target floor; only shrunk from the
+// default 64px to buy back the last bit of the budget above.
+.wl-typed--keypad .wl-keypad {
+  gap: 0.35rem;
+  padding: 0.5rem;
+  .wl-keypad__row { gap: 0.3rem; }
+  .wl-keypad__key, .wl-keypad__shift, .wl-keypad__backspace, .wl-keypad__enter {
+    min-height: 60px;
+  }
+}
+
+// --- Drill, match, tiles, listen, offer, menu, My words (Plan 2 task 8) ---
+// Budget at 1280×800: wl-header ~104px + hint row 28px + wl-main bottom
+// padding 24px leaves ~644px. A drill adds its own ~52px header row, so every step below keeps
+// its default layout under ~590px (a 4-pair drill match: 4×72 + gaps + Next ≈ 420px).
+
+.wl-drill { display: grid; grid-template-rows: auto minmax(0, 1fr); width: 100%; height: 100%; min-height: 0; gap: 0.5rem; }
+.wl-drill__header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; width: min(900px, 100%); justify-self: center; }
+.wl-drill__title { margin: 0; font-size: 1.5rem; color: var(--ds-text-mid); }
+.wl-drill__steps { display: flex; align-items: center; gap: 0.75rem; margin: 0; font-size: 1.125rem; color: var(--ds-text-low); }
+.wl-drill__dots { display: flex; gap: 0.375rem; }
+.wl-drill__dot {
+  width: 12px; height: 12px; border-radius: 50%; background: var(--ds-surface); border: 2px solid var(--ds-border);
+  &.is-done { background: var(--ds-accent); border-color: var(--ds-accent); }
+  &.is-current { outline: 2px solid var(--ds-accent); outline-offset: 2px; }
+}
+.wl-drill__body { min-height: 0; display: flex; }
+
+.wl-look__card { cursor: default; flex-direction: column; gap: 1rem; }
+.wl-look__card.has-picture { display: grid; grid-template-rows: minmax(0, 1fr) auto; justify-items: center; }
+.wl-look__words { display: flex; flex-direction: column; align-items: center; gap: 0.5rem; width: 100%; }
+
+.wl-match { gap: 1rem; }
+.wl-match__board { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.5rem; width: min(960px, 100%); min-height: 0; }
+.wl-match__column {
+  display: flex; flex-direction: column; gap: 0.625rem; min-height: 0;
+  .ds-touch--choice { min-height: 72px; }
+  .is-selected { outline: 4px solid var(--ds-accent); outline-offset: 2px; }
+  .is-matched { outline: 4px solid var(--ds-success); outline-offset: 2px; opacity: 0.75; }
+  .is-wrong { outline: 4px solid var(--ds-danger); outline-offset: 2px; }
+}
+.wl-match__picture { display: block; max-height: 56px; max-width: 100%; margin: 0 auto; object-fit: contain; border-radius: 8px; }
+
+.wl-tiles__answer, .wl-tiles__pool {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 0.75rem; width: min(900px, 100%);
+  .ds-touch--choice { width: auto; min-width: 88px; font-size: 2rem; }
+  .is-used { opacity: 0.35; }
+}
+.wl-tiles__answer {
+  min-height: 96px; padding: 0.25rem; border-radius: 14px; border: 2px dashed var(--ds-border); background: var(--ds-surface);
+}
+
+.wl-listen__count { margin: 0; font-size: 1.25rem; color: var(--ds-text-low); }
+
+.wl-offer__title, .wl-menu__title, .wl-words__title { margin: 0; font-size: 2rem; text-align: center; color: var(--ds-text-high); }
+
+.wl-menu__grid {
+  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1rem; width: min(1000px, 100%);
+  .ds-touch { width: 100%; min-height: 88px; font-size: 1.5rem; }
+}
+.wl-menu__grid--two { grid-template-columns: repeat(2, minmax(0, 1fr)); width: min(700px, 100%); }
+// A variant not open yet (Write Without help before any word is ready): the button, dimmed, and why.
+.wl-menu__locked { display: grid; gap: 0.5rem; justify-items: center; }
+.wl-menu__note { margin: 0; font-size: 1.125rem; text-align: center; color: var(--ds-text-low); }
+
+.wl-words { justify-content: flex-start; gap: 1rem; }
+.wl-words__grid {
+  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.75rem; align-content: start;
+  width: min(1100px, 100%); flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 0.25rem;
+}
+.wl-words__word {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.25rem;
+  min-height: 88px; padding: 0.5rem; border-radius: 14px; border: 2px solid var(--ds-border); background: var(--ds-surface);
+  &.is-selected { outline: 4px solid var(--ds-accent); outline-offset: 2px; }
+  &.is-cursor { border-color: var(--ds-accent); }
+  .ds-touch__label { display: flex; flex-direction: column; align-items: center; gap: 0.25rem; }
+}
+.wl-words__term { font-size: 1.75rem; color: var(--ds-text-high); }
+.wl-words__gloss { font-size: 1.125rem; color: var(--ds-text-mid); }
+.wl-words__chips { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.375rem; }
+.wl-chip {
+  display: inline-flex; align-items: center; gap: 0.25rem; padding: 0.125rem 0.625rem; border-radius: 999px;
+  font-size: 0.95rem; background: var(--ds-surface-alt); color: var(--ds-text-mid);
+  &--familiar, &--claimed { color: var(--ds-text-high); }
+  &--mastered { background: var(--ds-success); color: var(--ds-background); }
+  &--tricky { background: var(--ds-warning); color: var(--ds-background); }
+}
+.wl-chip__stars { display: inline-flex; gap: 2px; }
+.wl-chip__star {
+  width: 0.8em; height: 0.8em; background: currentColor;
+  clip-path: polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%);
+}

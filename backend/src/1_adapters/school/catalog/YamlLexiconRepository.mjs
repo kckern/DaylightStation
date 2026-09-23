@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { readYamlFromPath } from '#system/utils/FileIO.mjs';
-import { parseMediaRef, validateLexicon, wordPackageDir } from '#domains/school/wordLadder/index.mjs';
+import { parseMediaRef, validateLexicon, wordPackageDir } from '#domains/school/cardLadder/index.mjs';
 
 /**
  * Reads `media:<dir>/lexicon.yml` word lexicons from the School media root and

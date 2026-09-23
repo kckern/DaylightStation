@@ -49,7 +49,7 @@ mastery, a language ladder's position, a reel, the cube) cannot be replayed.
 On a past day they are neither owed, served nor faulted; a day on which they
 were the only assignment reads `unknown / no_history`. Programs that keep dated
 evidence — the piano course, the book log, story time, surface dispatches, and
-a `word-ladder` flashcard enrollment (its frozen day plan plus dated history) —
+a `card-ladder` flashcard enrollment (its frozen day plan plus dated history) —
 answer for any day. The flashcards launcher is one launcher for both engines,
 so it declares `replayable` and answers `no_history` itself for an FSRS deck.
 
