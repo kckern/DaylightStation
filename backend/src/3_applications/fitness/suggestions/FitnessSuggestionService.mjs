@@ -17,7 +17,7 @@ export class FitnessSuggestionService {
 
   // Cache for exclude_collections → showIds resolution. Collections change
   // rarely (user curates them manually), so a TTL of a few minutes is fine.
-  #excludedCache = null; // { key: string, at: number, ids: Set<string> }
+  #excludedCache = new Map(); // key -> { at: number, ids: Set<string> }
   static #EXCLUDED_TTL_MS = 5 * 60 * 1000;
 
   constructor({
@@ -52,9 +52,9 @@ export class FitnessSuggestionService {
   async #getExcludedShowIds(excludeCollections) {
     const key = JSON.stringify(excludeCollections || []);
     const now = Date.now();
-    if (this.#excludedCache && this.#excludedCache.key === key
-        && now - this.#excludedCache.at < FitnessSuggestionService.#EXCLUDED_TTL_MS) {
-      return this.#excludedCache.ids;
+    const cached = this.#excludedCache.get(key);
+    if (cached && now - cached.at < FitnessSuggestionService.#EXCLUDED_TTL_MS) {
+      return cached.ids;
     }
     const ids = new Set();
     if (Array.isArray(excludeCollections) && excludeCollections.length
@@ -69,7 +69,7 @@ export class FitnessSuggestionService {
         }
       }
     }
-    this.#excludedCache = { key, at: now, ids };
+    this.#excludedCache.set(key, { at: now, ids });
     return ids;
   }
 
@@ -97,6 +97,11 @@ export class FitnessSuggestionService {
     // honor their own explicit signals so they still surface these.
     const excludedShowIds = await this.#getExcludedShowIds(
       suggestionPolicy.excludedCollectionIds
+    );
+    // `never_suggest_collections` (e.g. the Kids menu collection) is absolute:
+    // its shows are dropped from every strategy's cards, explicit signals included.
+    const neverSuggestShowIds = await this.#getExcludedShowIds(
+      suggestionPolicy.neverSuggestCollectionIds
     );
 
     // Request-scoped memo for getPlayableEpisodes. The same show is resolved by
@@ -169,6 +174,8 @@ export class FitnessSuggestionService {
       for (const card of cards) {
         if (allCards.length >= maxCollect) break;
         if (card.showId && usedShowIds.has(card.showId)) continue;
+        if (card.showId && neverSuggestShowIds.size
+            && neverSuggestShowIds.has(this.#contentCatalog.canonicalize(card.showId).localId)) continue;
         allCards.push(card);
         if (card.showId) usedShowIds.add(card.showId);
       }

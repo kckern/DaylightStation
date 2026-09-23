@@ -42,6 +42,7 @@ export function fitnessSuggestionPolicy(raw = {}) {
     slots: value.grid_size || 8,
     lookbackDays: value.lookback_days ?? 10,
     excludedCollectionIds: value.exclude_collections || [],
+    neverSuggestCollectionIds: value.never_suggest_collections || [],
     favorites: value.favorites || [],
     discoveryLapsedDays: value.discovery_lapsed_days ?? 30,
     discoveryLapsedWeight: value.discovery_lapsed_weight ?? 0.7,
