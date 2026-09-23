@@ -42,7 +42,7 @@ export default function FlashcardItem({ item, langs, resolveAssetUrl, onRespond,
   const [flipping, setFlipping] = useState(false);
   useEffect(() => {
     setFlipped(false); setImageOk(true); shownAt.current = Date.now();
-    if (audio && !glossFront) playClip(audio, 'term');
+    if (audio && !glossFront) playClip(audio, 'term', { trigger: 'auto' });
   }, [item.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const flip = () => {
     // Turning a meaning-first card over reveals the Korean: its sound comes with it.

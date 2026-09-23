@@ -60,7 +60,8 @@ export const wordLadderLog = {
   itemAnswered: (data) => emit('item.answered', data),                  // {response, correct?, score?, judge, ms}
   itemStalled: (data) => emit('item.stalled', data, 'warn'),            // {ms: 45000|120000}
   sittingClosed: (data) => emit('sitting.closed', data),                // {reason, activeMs, remaining}
-  audioPlayed: (data) => emit('audio.played', data),                    // {kind, outcome: ended|error|blocked} — logged only from wordLadderAudio.js
+  // {clip, trigger: auto|key|touch, input?, outcome: ended|error|blocked} — logged only from wordLadderAudio.js; a failed clip is warn.
+  audioPlayed: (data) => emit('audio.played', data, data?.outcome === 'ended' ? 'info' : 'warn'),
   keypadToggled: (data) => emit('keypad.toggled', data),                // {auto, open, via?: 'long-press'}
   keyboardDetected: (data) => emit('keyboard.detected', data),          // once per device: a physical keyboard is known, keypad toggle hidden
   cardFlipped: (data) => emit('card.flipped', data),                    // {ms}
@@ -70,10 +71,14 @@ export const wordLadderLog = {
   roundEnded: (data) => emit('round.ended', data),                      // {quizzed, notYet}
   noticeShown: (data) => emit('notice.shown', data, 'warn'),
   visibility: (data) => emit('visibility', data),                       // {state}
-  recordingUploaded: (data) => emit('recording.uploaded', data),
-  recordingFailed: (data) => emit('recording.failed', data, 'warn'),
-  recordingRefused: (data) => emit('recording.refused', data, 'info'),
-  micUnavailable: (data) => emit('mic.unavailable', data, 'warn'),       // no mic / refused / failed: Space falls through to Skip
+  // Spoken takes (never graded): {itemId, itemMode, phase: started|stopped|uploaded|failed|refused|unavailable, ms (since the item was shown),
+  // durationMs?, bytes?, status?, reason?}. failed/unavailable are warn (unavailable: no mic, Space falls through to Skip).
+  sayRecording: (data) => emit('say.recording', data, data?.phase === 'failed' || data?.phase === 'unavailable' ? 'warn' : 'info'),
+  itemSkipped: (data) => emit('item.skipped', data),                     // {itemId, type, via, ms, what} — Skip on a say step with no take
+  showMeUsed: (data) => emit('showme.used', data),                       // {itemId, via, ms} — gave up and asked to see the word
+  resultShown: (data) => emit('result.shown', data),                     // {itemId, correct, score, judge, held} — the verdict panel on screen
+  resultDismissed: (data) => emit('result.dismissed', data),             // {itemId, via, ms} — Next past a held verdict
+  hintShown: (data) => emit('hint.shown', data),                         // {step} — a step's first-time hint
   matchCompleted: (data) => emit('match.completed', data),               // {ms, misses, pairs}
   drillOffered: (data) => emit('drill.offered', data),                   // {accepted}
   practiceStarted: (data) => emit('practice.started', data),             // {itemMode, help, filter}

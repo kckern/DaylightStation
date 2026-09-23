@@ -19,7 +19,7 @@ function LookStep({ item, langs, resolveAssetUrl, onRespond, busy, onLayout }) {
   const audio = word.media?.audio ? resolveAssetUrl(word.media.audio) : null;
   const image = word.media?.image ? resolveAssetUrl(word.media.image) : null;
   const [imageOk, setImageOk] = useState(true);
-  useEffect(() => { if (audio) playClip(audio, 'term'); }, [item.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (audio) playClip(audio, 'term', { trigger: 'auto' }); }, [item.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const next = () => { if (!busy) onRespond({ done: true }); };
   const hear = () => audio && playClip(audio, 'term');
   useWordLadderKeys({ ' ': next, enter: next, tab: hear, h: hear });

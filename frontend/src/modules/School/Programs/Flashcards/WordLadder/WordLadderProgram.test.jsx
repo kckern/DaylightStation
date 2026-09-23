@@ -623,7 +623,9 @@ describe('WordLadderProgram — spec §8 trace and events', () => {
     act(() => { fireEvent.click(screen.getByRole('button', { name: /start/i })); });
     await vi.waitFor(() => expect(screen.queryByText('가위')).not.toBeNull());
     act(() => { vi.advanceTimersByTime(45_000); });
-    expect(stalledSpy).toHaveBeenCalledWith({ itemId: 'r1:i:gawi:flash', ms: 45_000 });
+    // `visibility` tells a child gone quiet from a hidden tab; `screen` whether
+    // the item or a held verdict was up (spec §8).
+    expect(stalledSpy).toHaveBeenCalledWith({ itemId: 'r1:i:gawi:flash', ms: 45_000, visibility: document.visibilityState, screen: 'item' });
     stalledSpy.mockRestore();
   });
 
@@ -647,3 +649,56 @@ describe('WordLadderProgram — spec §8 trace and events', () => {
     visSpy.mockRestore();
   });
 });
+
+describe('WordLadderProgram — spec §8 input, verdict panel and hints', () => {
+  it('item.answered says the key that answered it', async () => {
+    const answeredSpy = vi.spyOn(wordLadderLog, 'itemAnswered');
+    const api = fakeApi();
+    renderStarted(<WordLadderProgram descriptor={{ deckId: 'd', userId: 'test-learner' }} api={api} />);
+    await screen.findByText('가위');
+    act(() => { fireEvent.keyDown(window, { key: ' ', code: 'Space' }); }); // flip
+    act(() => { fireEvent.keyDown(window, { key: 'Enter', code: 'Enter' }); }); // advance
+    await waitFor(() => expect(answeredSpy).toHaveBeenCalled());
+    expect(answeredSpy).toHaveBeenCalledWith(expect.objectContaining({ itemId: intro.id, input: 'key:Enter' }));
+    answeredSpy.mockRestore();
+  });
+
+  it('item.answered says touch when a button was tapped', async () => {
+    const answeredSpy = vi.spyOn(wordLadderLog, 'itemAnswered');
+    const api = fakeApi();
+    api.open.mockResolvedValue(openWith(choice));
+    api.respond.mockResolvedValue({ ok: true, status: 200, data: { result: { correct: true, answer: 'Scissors' }, item: stream, progress } });
+    renderStarted(<WordLadderProgram descriptor={{ deckId: 'd', userId: 'test-learner' }} api={api} />);
+    const option = await screen.findByRole('button', { name: /scissors/i });
+    fireEvent.pointerDown(option);
+    fireEvent.click(option);
+    await waitFor(() => expect(answeredSpy).toHaveBeenCalledWith(expect.objectContaining({ itemId: choice.id, input: 'touch' })));
+    answeredSpy.mockRestore();
+  });
+
+  it('a held verdict logs result.shown, and Next past it logs result.dismissed with how', async () => {
+    const shownSpy = vi.spyOn(wordLadderLog, 'resultShown');
+    const dismissedSpy = vi.spyOn(wordLadderLog, 'resultDismissed');
+    const api = fakeApi();
+    api.open.mockResolvedValue(openWith(choice));
+    api.respond.mockResolvedValue({ ok: true, status: 200, data: { result: { correct: false, answer: 'Scissors' }, item: stream, progress } });
+    renderStarted(<WordLadderProgram descriptor={{ deckId: 'd', userId: 'test-learner' }} api={api} />);
+    await screen.findByText('Glue');
+    act(() => { fireEvent.keyDown(window, { key: '1', code: 'Digit1' }); }); // Glue — wrong
+    await waitFor(() => expect(shownSpy).toHaveBeenCalledWith(expect.objectContaining({ itemId: choice.id, correct: false, held: true })));
+    await screen.findByTestId('wl-result');
+    act(() => { fireEvent.keyDown(window, { key: ' ', code: 'Space' }); });
+    await waitFor(() => expect(dismissedSpy).toHaveBeenCalledWith(expect.objectContaining({ itemId: choice.id, via: 'key:Space', ms: expect.any(Number) })));
+    shownSpy.mockRestore(); dismissedSpy.mockRestore();
+  });
+
+  it('a step hint shown for the first time logs hint.shown', async () => {
+    const hintSpy = vi.spyOn(wordLadderLog, 'hintShown');
+    const api = fakeApi();
+    renderStarted(<WordLadderProgram descriptor={{ deckId: 'd', userId: 'test-learner' }} api={api} />);
+    await screen.findByText('가위');
+    expect(hintSpy).toHaveBeenCalledWith({ step: 'learn' });
+    hintSpy.mockRestore();
+  });
+});
+

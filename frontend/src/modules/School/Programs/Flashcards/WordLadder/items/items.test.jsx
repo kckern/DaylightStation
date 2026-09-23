@@ -86,7 +86,7 @@ describe('ChoiceItem', () => {
     const item = { id: 'q3', type: 'choice', task: '2.2', channel: 'read', prompt: '가위', choices: ['Glue', 'Scissors', 'Book', 'Pen'], assets: { audio: 'aud-gawi' } };
     render(<ChoiceItem item={item} langs={langs} resolveAssetUrl={(x) => x} onRespond={onRespond} result={{ correct: false, answer: 'Scissors' }} onContinue={() => {}} />);
     expect(playClip).toHaveBeenCalledTimes(1);
-    expect(playClip).toHaveBeenCalledWith('aud-gawi', 'term');
+    expect(playClip).toHaveBeenCalledWith('aud-gawi', 'term', { trigger: 'auto' });
     playClip.mockClear();
     fireEvent.keyDown(window, { key: 'h' });
     expect(playClip).toHaveBeenCalledWith('aud-gawi', 'term');
@@ -164,7 +164,7 @@ describe('TypedItem', () => {
     playClip.mockClear();
     const onRespond = vi.fn();
     render(<TypedItem item={{ id: 'rc:gawi', type: 'typed', task: '1.4', source: 'recheck', wordId: 'gawi', assets: { image: null, audio: 'aud', glossAudio: null } }} mode="graded" langs={langs} resolveAssetUrl={(x) => `u-${x}`} onRespond={onRespond} />);
-    expect(playClip).toHaveBeenCalledWith('u-aud', 'term');
+    expect(playClip).toHaveBeenCalledWith('u-aud', 'term', { trigger: 'auto' });
     expect(screen.getByRole('region', { name: 'Write what you hear' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /Listen/ }));
     expect(playClip).toHaveBeenCalledTimes(2);
@@ -345,6 +345,14 @@ describe('TypedItem — busy keeps the keypad, Show me', () => {
     render(<TypedItem item={cueItem} mode="practice" langs={langs} resolveAssetUrl={(x) => x} onRespond={onRespond} />);
     fireEvent.click(screen.getByRole('button', { name: 'Show me' }));
     expect(onRespond).toHaveBeenCalledWith({ typed: '' });
+  });
+
+  it('Show me is logged as showme.used with how it was asked for (spec §8)', () => {
+    const spy = vi.spyOn(wordLadderLog, 'showMeUsed').mockImplementation(() => {});
+    render(<TypedItem item={cueItem} mode="practice" langs={langs} resolveAssetUrl={(x) => x} onRespond={() => {}} />);
+    act(() => { fireEvent.keyDown(window, { key: '\\', code: 'Backslash' }); });
+    expect(spy).toHaveBeenCalledWith(expect.objectContaining({ itemId: 'b1', via: 'key:Backslash', ms: expect.any(Number) }));
+    spy.mockRestore();
   });
 
   it('Write without help (an unjudged typed item) offers Show me; a judged one and copy do not', () => {

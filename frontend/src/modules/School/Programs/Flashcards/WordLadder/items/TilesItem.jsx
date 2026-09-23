@@ -19,7 +19,7 @@ export default function TilesItem({ item, langs, resolveAssetUrl, onRespond, res
   const [answer, setAnswer] = useState([]); // indexes into `tiles` (syllables can repeat)
   const glossAudio = item.assets?.glossAudio ? resolveAssetUrl(item.assets.glossAudio) : null;
   useEffect(() => {
-    if (item.cue?.type === 'audio' && glossAudio) playClip(glossAudio, 'gloss');
+    if (item.cue?.type === 'audio' && glossAudio) playClip(glossAudio, 'gloss', { trigger: 'auto' });
   }, [item.id]); // eslint-disable-line react-hooks/exhaustive-deps
   // A retry starts from an empty row.
   useEffect(() => { if (result && result.correct === false && !pending) setAnswer([]); }, [result, pending]);

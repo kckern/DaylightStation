@@ -18,6 +18,7 @@ describe('wordLadderAudio — one lane', () => {
     vi.stubGlobal('Audio', FakeAudio);
     mod = await import('./wordLadderAudio.js');
     mod.stopAudio();
+    (await import('./inputVia.js')).resetInput();
   });
   afterEach(() => { vi.unstubAllGlobals(); });
 
@@ -35,7 +36,7 @@ describe('wordLadderAudio — one lane', () => {
     const clip = mod.startClip('a', 'term');
     made[0].onended();
     await expect(clip.done).resolves.toBe('ended');
-    expect(audioPlayed).toHaveBeenCalledWith({ kind: 'term', outcome: 'ended' });
+    expect(audioPlayed).toHaveBeenCalledWith({ clip: 'term', trigger: 'auto', outcome: 'ended' });
     mod.stopAudio();
     expect(made[0].pause).not.toHaveBeenCalled();
   });
@@ -44,7 +45,7 @@ describe('wordLadderAudio — one lane', () => {
     const clip = mod.startClip('a', 'gloss');
     made[0].onerror();
     await expect(clip.done).resolves.toBe('error');
-    expect(audioPlayed).toHaveBeenCalledWith({ kind: 'gloss', outcome: 'error' });
+    expect(audioPlayed).toHaveBeenCalledWith({ clip: 'gloss', trigger: 'auto', outcome: 'error' });
   });
 
   it('a play() rejection (autoplay blocked) resolves "blocked" and logs it', async () => {
@@ -55,7 +56,7 @@ describe('wordLadderAudio — one lane', () => {
     const blockedMod = await import('./wordLadderAudio.js');
     const clip = blockedMod.startClip('a', 'term');
     await expect(clip.done).resolves.toBe('blocked');
-    expect(audioPlayed).toHaveBeenCalledWith({ kind: 'term', outcome: 'blocked' });
+    expect(audioPlayed).toHaveBeenCalledWith({ clip: 'term', trigger: 'auto', outcome: 'blocked' });
   });
 
   it('stopAudio stops the clip that is playing', () => {
@@ -68,7 +69,7 @@ describe('wordLadderAudio — one lane', () => {
     const p = mod.playClip('a', 'take');
     made[0].onended();
     await expect(p).resolves.toBe('ended');
-    expect(audioPlayed).toHaveBeenCalledWith({ kind: 'take', outcome: 'ended' });
+    expect(audioPlayed).toHaveBeenCalledWith({ clip: 'take', trigger: 'auto', outcome: 'ended' });
   });
 
   it('a sequence interrupted by a newer clip does not go on to its next url', async () => {
@@ -84,7 +85,29 @@ describe('wordLadderAudio — one lane', () => {
     await Promise.resolve(); // let the loop advance to the second entry
     made[1].onended();
     await seq;
-    expect(audioPlayed).toHaveBeenCalledWith({ kind: 'take', outcome: 'ended' });
-    expect(audioPlayed).toHaveBeenCalledWith({ kind: 'native', outcome: 'ended' });
+    expect(audioPlayed).toHaveBeenCalledWith({ clip: 'take', trigger: 'auto', outcome: 'ended' });
+    expect(audioPlayed).toHaveBeenCalledWith({ clip: 'native', trigger: 'auto', outcome: 'ended' });
+  });
+
+  it('a clip the child asked for says how (key/touch); one nobody asked for is auto', async () => {
+    const { noteInput } = await import('./inputVia.js');
+    noteInput('key:Tab');
+    mod.startClip('a', 'term');
+    made[0].onended();
+    noteInput('touch');
+    mod.startClip('b', 'gloss');
+    made[1].onended();
+    await Promise.resolve();
+    expect(audioPlayed).toHaveBeenCalledWith({ clip: 'term', trigger: 'key', input: 'key:Tab', outcome: 'ended' });
+    expect(audioPlayed).toHaveBeenCalledWith({ clip: 'gloss', trigger: 'touch', input: 'touch', outcome: 'ended' });
+  });
+
+  it('an explicit auto trigger (an autoplay on arrival) wins over a recent key', async () => {
+    const { noteInput } = await import('./inputVia.js');
+    noteInput('key:Space');
+    mod.startClip('a', 'term', { trigger: 'auto' });
+    made[0].onended();
+    await Promise.resolve();
+    expect(audioPlayed).toHaveBeenCalledWith({ clip: 'term', trigger: 'auto', outcome: 'ended' });
   });
 });

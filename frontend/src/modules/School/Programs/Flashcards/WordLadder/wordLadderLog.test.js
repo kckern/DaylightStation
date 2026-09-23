@@ -57,4 +57,24 @@ describe('wordLadderLog — trace binding', () => {
     wordLadderLog.itemShown({ itemId: 'untraced' });
     expect(info).toHaveBeenCalledWith('school.word-ladder.item.shown', { itemId: 'untraced' });
   });
+
+  it('audio.played is warn when the clip failed or was blocked, info when it ended', async () => {
+    const { wordLadderLog } = await import('./wordLadderLog.js');
+    wordLadderLog.audioPlayed({ clip: 'term', trigger: 'auto', outcome: 'ended' });
+    wordLadderLog.audioPlayed({ clip: 'term', trigger: 'auto', outcome: 'error' });
+    wordLadderLog.audioPlayed({ clip: 'term', trigger: 'auto', outcome: 'blocked' });
+    expect(info).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalledTimes(2);
+  });
+
+  it('say.recording is warn for failed/unavailable and info for the rest', async () => {
+    const { wordLadderLog } = await import('./wordLadderLog.js');
+    wordLadderLog.sayRecording({ phase: 'started' });
+    wordLadderLog.sayRecording({ phase: 'uploaded' });
+    wordLadderLog.sayRecording({ phase: 'failed' });
+    wordLadderLog.sayRecording({ phase: 'unavailable' });
+    expect(info.mock.calls.map(([name]) => name)).toEqual(['school.word-ladder.say.recording', 'school.word-ladder.say.recording']);
+    expect(warn).toHaveBeenCalledTimes(2);
+  });
 });
+

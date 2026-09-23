@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { noteKeyEvent } from './inputVia.js';
 
 const TYPING = new Set(['INPUT', 'TEXTAREA']);
 
@@ -40,7 +41,8 @@ export function useWordLadderKeys(map, { enabled = true } = {}) {
       const byCode = keyFromCode(event.code);
       if (TYPING.has(event.target?.tagName) && (byCode ?? byKey) !== 'tab') return;
       const action = (byCode !== null ? ref.current[byCode] : undefined) ?? ref.current[byKey];
-      if (action) { event.preventDefault(); action(); }
+      // Noted first, so whatever the action logs knows it was this key (spec §8 input).
+      if (action) { event.preventDefault(); noteKeyEvent(event); action(); }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);

@@ -1,5 +1,6 @@
 import { bindMediaToMaster } from '../../../../../lib/volume/bindMediaToMaster.js';
 import { wordLadderLog } from './wordLadderLog.js';
+import { currentInput } from './inputVia.js';
 
 /**
  * ONE AUDIO LANE. Every word-ladder clip goes through `startClip`, and
@@ -9,9 +10,13 @@ import { wordLadderLog } from './wordLadderLog.js';
  * calls it on unmount).
  *
  * `audio.played` (spec §8) is logged from HERE, and only from here — the one
- * place that knows how a clip actually finished. `kind` is the caller's own
- * label for what the clip was (`'term'`, `'gloss'`, `'take'`, `'native'`, …);
- * `outcome` is `'ended'` | `'error'` | `'blocked'`. A clip cut off early —
+ * place that knows how a clip actually finished: `{clip, trigger, input?,
+ * outcome}`. `clip` is the caller's own label for what the clip was
+ * (`'term'`, `'gloss'`, `'take'`, …); `trigger` is `'auto'` (an autoplay —
+ * the caller says so with `{trigger: 'auto'}`) or, when the caller does not
+ * say, `'key'`/`'touch'` from the input that asked for it (`inputVia.js`,
+ * with the exact key as `input`), else `'auto'`; `outcome` is `'ended'` |
+ * `'error'` | `'blocked'` (the latter two log at warn). A clip cut off early —
  * `stop()` called explicitly, or superseded by a newer clip — is neither a
  * success nor a failure the spec has a name for, so it logs nothing.
  */
@@ -29,8 +34,16 @@ export function stopAudio() {
  * outcome) — never throws; `stop()` halts it. `stopped` reads true once it
  * was halted (by `stop()` or by a newer clip).
  */
-export function startClip(url, kind = null) {
+function triggerFor(explicit) {
+  if (explicit) return { trigger: explicit };
+  const input = currentInput();
+  if (!input) return { trigger: 'auto' };
+  return { trigger: input === 'touch' ? 'touch' : 'key', input };
+}
+
+export function startClip(url, kind = null, { trigger = null } = {}) {
   stopAudio();
+  const how = triggerFor(trigger);
   if (!url) return { done: Promise.resolve(null), stop: () => {}, get stopped() { return false; } };
   const el = new Audio(url);
   const unbind = bindMediaToMaster(el);
@@ -43,7 +56,7 @@ export function startClip(url, kind = null) {
       settled = true;
       unbind?.();
       if (current === handle) current = null;
-      if (outcome) wordLadderLog.audioPlayed({ kind, outcome });
+      if (outcome) wordLadderLog.audioPlayed({ clip: kind, ...how, outcome });
       resolve(outcome);
     };
   });
@@ -61,8 +74,8 @@ export function startClip(url, kind = null) {
 }
 
 /** Play one clip at the panel's master volume. Resolves the outcome string (see `startClip`). */
-export function playClip(url, kind = null) {
-  return startClip(url, kind).done;
+export function playClip(url, kind = null, opts = {}) {
+  return startClip(url, kind, opts).done;
 }
 
 /**
@@ -70,10 +83,10 @@ export function playClip(url, kind = null) {
  * stopped by a newer one ends the sequence. Each entry is either a plain url
  * (kind `null`) or `{url, kind}`.
  */
-export async function playSequence(clips) {
+export async function playSequence(clips, opts = {}) {
   for (const entry of clips) {
     const { url, kind = null } = typeof entry === 'string' ? { url: entry } : entry;
-    const clip = startClip(url, kind);
+    const clip = startClip(url, kind, opts);
     await clip.done;
     if (clip.stopped) return;
   }

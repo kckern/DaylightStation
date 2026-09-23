@@ -6,6 +6,7 @@ import { playClip } from '../wordLadderAudio.js';
 import { useWordLadderKeys } from '../useWordLadderKeys.js';
 import { useHardwareKeyboard } from '../../../../../../hooks/useHardwareKeyboard.js';
 import { wordLadderLog } from '../wordLadderLog.js';
+import { currentInput } from '../inputVia.js';
 import JamoKeypad from '../JamoKeypad.jsx';
 import EnglishCue, { englishCueAudio } from './EnglishCue.jsx';
 import ResultPanel from './ResultPanel.jsx';
@@ -100,12 +101,15 @@ export default function TypedItem({ item, mode, langs, resolveAssetUrl, onRespon
   fieldDisabledRef.current = fieldDisabled;
   itemIdRef.current = item.id;
 
+  // For showme.used `ms` (spec §8): time since this item appeared.
+  const shownAtRef = useRef(Date.now());
   useEffect(() => {
     const thisItemId = item.id;
+    shownAtRef.current = Date.now();
     setValue('');
     input.current?.focus();
-    if ((mode === 'copy' || hearsTerm) && termAudio) playClip(termAudio, 'term');
-    if (item.cue?.type === 'audio' && glossAudio) playClip(glossAudio, 'gloss');
+    if ((mode === 'copy' || hearsTerm) && termAudio) playClip(termAudio, 'term', { trigger: 'auto' });
+    if (item.cue?.type === 'audio' && glossAudio) playClip(glossAudio, 'gloss', { trigger: 'auto' });
     // Keypad: closed and re-armed to auto-open once per item.
     setKeypadOpen(false);
     keypadUsedRef.current = false;
@@ -193,6 +197,7 @@ export default function TypedItem({ item, mode, langs, resolveAssetUrl, onRespon
   };
   const showMe = () => {
     if (busy || answered) return;
+    wordLadderLog.showMeUsed({ itemId: item.id, via: currentInput(), ms: Date.now() - shownAtRef.current });
     onRespond({ typed: '' });
     input.current?.blur(); stageRef?.current?.focus();
   };

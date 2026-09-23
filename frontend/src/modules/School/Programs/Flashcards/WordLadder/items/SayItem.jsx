@@ -6,6 +6,7 @@ import { FitText } from '../FitText.jsx';
 import { playClip, playSequence } from '../wordLadderAudio.js';
 import { useWordLadderKeys } from '../useWordLadderKeys.js';
 import { wordLadderLog } from '../wordLadderLog.js';
+import { currentInput } from '../inputVia.js';
 import useTakeRecorder from '../useTakeRecorder.js';
 import EnglishCue, { englishCueAudio } from './EnglishCue.jsx';
 
@@ -46,6 +47,12 @@ export default function SayItem({
   // the term for say-from-cue, and of the native clip for read-aloud/say-from-cue.
   const [revealed, setRevealed] = useState(null);
   const takeUrlRef = useRef(null);
+  // spec §8 say.recording `ms`: time since this say step appeared.
+  const shownAtRef = useRef(Date.now());
+  const logTake = useCallback((phase, extra = {}) => {
+    // `itemMode`, not `mode` — the trace stamp overwrites a colliding `mode` key.
+    wordLadderLog.sayRecording({ itemId: item.id, itemMode: mode, phase, ms: Date.now() - shownAtRef.current, ...extra });
+  }, [item.id, mode]);
 
   const word = item.word ?? null;
   const glossAudio = item.assets?.glossAudio ? resolveAssetUrl(item.assets.glossAudio) : null;
@@ -65,8 +72,7 @@ export default function SayItem({
     // since that response is the only place either ever comes from.
     let nativeAudio = termAudio;
     if (ok) {
-      // `itemMode`, not `mode` — the trace stamp overwrites a colliding `mode` key.
-      wordLadderLog.recordingUploaded({ itemId: item.id, itemMode: mode, bytes: blob.size, durationMs });
+      logTake('uploaded', { bytes: blob.size, durationMs });
       if (data?.reveal) {
         const audio = data.reveal.audio ? resolveAssetUrl(data.reveal.audio) : null;
         setRevealed({ term: data.reveal.term, audio });
@@ -76,15 +82,26 @@ export default function SayItem({
       // An upload failure is logged and never blocks — the take was still
       // said and heard; only the grown-up review copy (and, for
       // read-aloud/say-from-cue, the reveal) is missing.
-      wordLadderLog.recordingFailed({ itemId: item.id, itemMode: mode, status });
+      logTake('failed', { status, durationMs });
       if (mode !== 'say-after') nativeAudio = null;
     }
 
     // Own take, then the native word — never the other order (spec §1 1.2).
-    await playSequence([{ url: takeUrl, kind: 'take' }, ...(nativeAudio ? [{ url: nativeAudio, kind: 'term' }] : [])]);
-  }, [api, sittingId, userId, item.id, mode, termAudio, resolveAssetUrl]);
+    await playSequence([{ url: takeUrl, kind: 'take' }, ...(nativeAudio ? [{ url: nativeAudio, kind: 'term' }] : [])], { trigger: 'auto' });
+  }, [api, sittingId, userId, item.id, mode, termAudio, resolveAssetUrl, logTake]);
 
   const recorder = useTakeRecorder({ onTake });
+
+  // started / stopped from the recorder's own phase, so a key, a touch and
+  // the Stop button all land here once (spec §8 say.recording).
+  const lastPhaseRef = useRef(recorder.phase);
+  useEffect(() => {
+    const was = lastPhaseRef.current;
+    lastPhaseRef.current = recorder.phase;
+    if (was === recorder.phase) return;
+    if (recorder.phase === 'recording') logTake('started', { via: currentInput() });
+    else if (was === 'recording') logTake('stopped', { via: currentInput() });
+  }, [recorder.phase, logTake]);
 
   // Mount-only (WordLadderProgram keys each item to a fresh instance, so
   // item.id never changes within one SayItem's life — this is really
@@ -92,8 +109,8 @@ export default function SayItem({
   // cleanup revokes whatever take URL is still held when the item leaves —
   // not only when a NEXT take within this same item replaces it.
   useEffect(() => {
-    if (mode === 'say-after' && termAudio) playClip(termAudio, 'term');
-    if (item.cue?.type === 'audio' && glossAudio) playClip(glossAudio, 'gloss');
+    if (mode === 'say-after' && termAudio) playClip(termAudio, 'term', { trigger: 'auto' });
+    if (item.cue?.type === 'audio' && glossAudio) playClip(glossAudio, 'gloss', { trigger: 'auto' });
     return () => {
       if (takeUrlRef.current) { URL.revokeObjectURL(takeUrlRef.current); takeUrlRef.current = null; }
     };
@@ -101,12 +118,12 @@ export default function SayItem({
 
   useEffect(() => {
     if (!recorder.verdict) return;
-    wordLadderLog.recordingRefused({ itemId: item.id, itemMode: mode, reason: recorder.verdict });
+    logTake('refused', { reason: recorder.verdict });
     wordLadderLog.noticeShown({ itemId: item.id, itemMode: mode, reason: recorder.verdict });
     setNotice(recorder.verdict === 'too-quiet'
       ? "We didn't hear that one — say it out loud and have another go."
       : 'That was too quick — say the whole word.');
-  }, [recorder.verdict, item.id, mode]);
+  }, [recorder.verdict, item.id, mode, logTake]);
 
   const record = useCallback(() => {
     setNotice(null);
@@ -114,7 +131,18 @@ export default function SayItem({
     else recorder.start();
   }, [recorder]);
 
-  const next = useCallback(() => { if (!busy) onRespond({ done: true }); }, [busy, onRespond]);
+  const next = useCallback(() => {
+    if (busy) return;
+    // A Skip — moving on with no take — is logged apart from a Next after
+    // one, with how it was pressed (spec §8 item.skipped). Never graded either way.
+    if (!hasTaken) {
+      wordLadderLog.itemSkipped({
+        itemId: item.id, type: item.type, what: 'say', itemMode: mode, via: currentInput(),
+        ms: Date.now() - shownAtRef.current, micOff: recorder.unavailable === true,
+      });
+    }
+    onRespond({ done: true });
+  }, [busy, onRespond, hasTaken, item.id, mode, recorder.unavailable]);
 
   const showCue = mode === 'say-from-cue';
   // say-after/read-aloud already carry the term; say-from-cue only ever
@@ -126,8 +154,8 @@ export default function SayItem({
   // Space must not point at Record — it falls through to Skip. Never a dead end.
   const micOff = recorder.unavailable === true;
   useEffect(() => {
-    if (micOff) wordLadderLog.micUnavailable({ itemId: item.id, itemMode: mode });
-  }, [micOff, item.id, mode]);
+    if (micOff) logTake('unavailable');
+  }, [micOff, logTake]);
 
   /*
    * THE KEY MAP (owner, binding): Space is the forward action and NEVER a skip.
@@ -151,7 +179,7 @@ export default function SayItem({
   };
   const canRecordAgain = hasTaken && !recording && !saving && !micOff;
   const cueClip = showCue ? englishCueAudio(item, resolveAssetUrl) : null;
-  const hearCue = cueClip ? () => playClip(cueClip, 'gloss') : null;
+  const hearCue = cueClip ? () => playClip(cueClip, 'gloss') : null; // trigger: the key/touch that asked
   useWordLadderKeys({
     ' ': forward,
     enter: forward,
