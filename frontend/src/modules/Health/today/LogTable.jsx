@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import { Button } from '@mantine/core';
 import { LoadingState } from '@/lib/ui';
 import { sumCounted } from '@shared-contracts/nutrition/countedRows.mjs';
@@ -189,6 +189,27 @@ export function LogTable({
   // All four meals always render: an empty one is its header and add row, so
   // any meal can be added to in place without a separate "add to" control.
   const orphans = byBucket.get(null) || [];
+  // Each meal's add line starts where the food names start, so typed text
+  // stacks under the names. Measured from a real top-level row (the density
+  // badge, its placement preference and the phone tracks all move it) and
+  // shared as --health-name-inset, so an empty meal lines up too.
+  const logRef = useRef(null);
+  useLayoutEffect(() => {
+    const log = logRef.current;
+    if (!log) return undefined;
+    const measure = () => {
+      const name = log.querySelector('.health-row-line:not(.health-row-line--child) .health-row__name');
+      const section = name?.closest('.health-meal');
+      if (!name || !section) return;
+      const inset = Math.max(0, Math.round(name.getBoundingClientRect().left - section.getBoundingClientRect().left));
+      if (log.style.getPropertyValue('--health-name-inset') !== `${inset}px`) log.style.setProperty('--health-name-inset', `${inset}px`);
+    };
+    measure();
+    if (typeof ResizeObserver === 'undefined') return undefined;
+    const observer = new ResizeObserver(measure);
+    observer.observe(log);
+    return () => observer.disconnect();
+  }, [byBucket]);
   const kcalScale = dayCalorieScale([...byBucket.values()]);
   const renderBucket = (b) => {
     const rows = byBucket.get(b.id) || [];
@@ -207,7 +228,7 @@ export function LogTable({
     );
   };
   const log = (
-    <div className="health-log">
+    <div className="health-log" ref={logRef}>
       {[EARLY_COLUMN, LATE_COLUMN].map((ids, index) => (
         <div key={index} className="health-log__column">
           {ids.map(id => BUCKETS.find(b => b.id === id)).map(renderBucket)}
