@@ -1,8 +1,7 @@
 import React, { useMemo, useRef, useState, useCallback, useLayoutEffect } from 'react';
 import { seededHue } from '../_shared/sportIconUtils.js';
+import { TILE_SIZE, tileUrl, DARK_TILE_FILTER, MAP_ATTRIBUTION, MAP_ATTRIBUTION_URL } from '../_shared/mapTiles.js';
 
-const TILE_SIZE = 256;
-const TILE_URL = 'https://basemaps.cartocdn.com/dark_all';
 const MIN_ZOOM = 2;
 const MAX_ZOOM = 18;
 
@@ -60,7 +59,7 @@ function computeTilesAndRoute(decodedPoints, zoom, centerX, centerY, viewW, view
       const wx = ((tx % (maxTileIdx + 1)) + (maxTileIdx + 1)) % (maxTileIdx + 1);
       tiles.push({
         key: `${zoom}-${wx}-${ty}`,
-        url: `${TILE_URL}/${zoom}/${wx}/${ty}.png`,
+        url: tileUrl(zoom, wx, ty),
         left: tx * TILE_SIZE + offsetX,
         top: ty * TILE_SIZE + offsetY,
       });
@@ -244,7 +243,7 @@ export default function RouteMap({ polyline, sessionId, distance, elevation }) {
     >
       {mapData && (
         <>
-          <div style={{ position: 'absolute', inset: 0 }}>
+          <div style={{ position: 'absolute', inset: 0, filter: DARK_TILE_FILTER }}>
             {mapData.tiles.map(t => (
               <img
                 key={t.key}
@@ -295,7 +294,7 @@ export default function RouteMap({ polyline, sessionId, distance, elevation }) {
       <span style={{
         position: 'absolute', bottom: 2, right: 4,
         fontSize: '0.5rem', color: 'rgba(255,255,255,0.3)', pointerEvents: 'none',
-      }}>© OpenStreetMap</span>
+      }} title={MAP_ATTRIBUTION_URL}>{MAP_ATTRIBUTION}</span>
     </div>
   );
 }

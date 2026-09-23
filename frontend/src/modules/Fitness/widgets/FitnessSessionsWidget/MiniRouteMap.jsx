@@ -1,8 +1,7 @@
 import React, { useMemo } from 'react';
 import { seededHue } from '../_shared/sportIconUtils.js';
+import { TILE_SIZE, tileUrl, DARK_TILE_FILTER, MAP_ATTRIBUTION, MAP_ATTRIBUTION_URL } from '../_shared/mapTiles.js';
 
-const TILE_SIZE = 256;
-const TILE_URL = 'https://basemaps.cartocdn.com/dark_all';
 
 function decodePolyline(encoded) {
   const points = [];
@@ -75,7 +74,7 @@ export default function MiniRouteMap({ polyline, sessionId }) {
         const wx = ((tx % (maxTileIdx + 1)) + (maxTileIdx + 1)) % (maxTileIdx + 1);
         tiles.push({
           key: `${zoom}-${wx}-${ty}`,
-          url: `${TILE_URL}/${zoom}/${wx}/${ty}.png`,
+          url: tileUrl(zoom, wx, ty),
           left: tx * TILE_SIZE + offsetX,
           top: ty * TILE_SIZE + offsetY,
         });
@@ -93,7 +92,7 @@ export default function MiniRouteMap({ polyline, sessionId }) {
 
   return (
     <div style={{ width: '100%', height: '100%', position: 'relative', overflow: 'hidden', borderRadius: '6px', background: '#1a1a2e' }}>
-      <div style={{ position: 'absolute', inset: 0 }}>
+      <div style={{ position: 'absolute', inset: 0, filter: DARK_TILE_FILTER }}>
         {mapData.tiles.map(t => (
           <img key={t.key} src={t.url} alt="" draggable={false} style={{
             position: 'absolute', left: t.left, top: t.top, width: TILE_SIZE, height: TILE_SIZE,
@@ -103,6 +102,10 @@ export default function MiniRouteMap({ polyline, sessionId }) {
       <svg style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}>
         <polyline points={mapData.svgPoints} fill="none" stroke={routeColor} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" opacity="0.9" />
       </svg>
+      <span style={{
+        position: 'absolute', bottom: 1, right: 3,
+        fontSize: '0.45rem', color: 'rgba(255,255,255,0.3)', pointerEvents: 'none',
+      }} title={MAP_ATTRIBUTION_URL}>{MAP_ATTRIBUTION}</span>
     </div>
   );
 }
