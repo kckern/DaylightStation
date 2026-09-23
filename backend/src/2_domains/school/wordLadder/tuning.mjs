@@ -47,6 +47,32 @@ export function tunableValues(settings) {
   return Object.fromEntries(TUNABLE_KEYS.map((key) => [key, readPath(settings, key)]));
 }
 
+/**
+ * Resolved (nested) settings with a learner's tuned values laid over them —
+ * tunables only, finite numbers only, clamped to the spec bounds. Pure.
+ */
+export function withTunedValues(settings, values = {}) {
+  const out = structuredClone(settings);
+  for (const [dotted, value] of Object.entries(values ?? {})) {
+    if (!Object.hasOwn(TUNABLE, dotted) || typeof value !== 'number' || !Number.isFinite(value)) continue;
+    const [group, key] = dotted.split('.');
+    if (typeof out?.[group]?.[key] !== 'number') continue;
+    const [lo, hi] = TUNING_BOUNDS[dotted];
+    out[group][key] = tidy(Math.min(hi, Math.max(lo, value)));
+  }
+  return out;
+}
+
+// ---- tuning.yml -----------------------------------------------------------
+
+export const TUNING_FILE_SCHEMA = 'school.word-ladder-tuning/v1';
+export const TUNING_HISTORY_KEEP = 60;
+
+/** A learner × package's tuning record (`tuning.yml`, spec §7). */
+export function emptyTuning() {
+  return { schema: TUNING_FILE_SCHEMA, values: {}, lastChanged: {}, lastTunedDay: null, history: [] };
+}
+
 // ---- Digest ---------------------------------------------------------------
 
 function pileOf(round, wordId) {
