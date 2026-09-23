@@ -118,6 +118,23 @@ export default function WordLadderProgram({ descriptor, api: injected = null, re
   // Per-round tallies for round.ended {quizzed, notYet} — reset whenever
   // progress.round.index changes (see the round-tracking effect below).
   const roundRef = useRef({ index: null, quizzed: 0, notYet: 0 });
+  // Plain assignment on every render (mirrors TypedItem's fieldDisabledRef) —
+  // the unmount effect below runs once at mount, so its cleanup closes over
+  // whatever `progress`/`item` were on THAT render (always the initial
+  // null/null) unless read through a ref that stays current instead.
+  const progressRef = useRef(progress);
+  progressRef.current = progress;
+  const itemRef = useRef(item);
+  itemRef.current = item;
+  // item.layout {fontPx} (spec §8, follow-up to item.shown) — logged once per
+  // item from the main FitText's first computed size, not on every resize.
+  const layoutReportedForRef = useRef(null);
+  const handleLayout = useCallback((fontPx) => {
+    const current = itemRef.current;
+    if (!current || layoutReportedForRef.current === current.id) return;
+    layoutReportedForRef.current = current.id;
+    wordLadderLog.itemLayout({ itemId: current.id, fontPx });
+  }, []);
 
   const show = useCallback((nextItem, nextProgress) => {
     setItem(nextItem); setProgress(nextProgress); setResult(null); setPendingItem(null);
@@ -154,6 +171,11 @@ export default function WordLadderProgram({ descriptor, api: injected = null, re
       const openId = sittingRef.current;
       if (openId && !closedRef.current) {
         closedRef.current = true;
+        const p = progressRef.current;
+        const remaining = p?.capMs != null && p?.activeMs != null ? Math.max(0, p.capMs - p.activeMs) : null;
+        wordLadderLog.sittingClosed({
+          sittingId: openId, itemId: itemRef.current?.id ?? null, reason: 'unmount', activeMs: p?.activeMs ?? null, remaining,
+        });
         // Fire-and-forget: the component is gone; the client never throws.
         api.close(openId, { userId, reason: 'unmount' });
       }
@@ -178,8 +200,12 @@ export default function WordLadderProgram({ descriptor, api: injected = null, re
     if (!item) return;
     itemShownAtRef.current = Date.now();
     const media = mediaForItem(item);
+    // `itemMode`, not `mode`: createTrace's event() stamps the trace's own
+    // live/test `mode` over any colliding payload key, so an item.shown that
+    // sent `mode: item.mode` had its intro/sort/practice distinction
+    // silently replaced by 'live'/'test' the moment a trace was bound.
     wordLadderLog.itemShown({
-      itemId: item.id, type: item.type, task: item.task ?? null, mode: item.mode ?? null,
+      itemId: item.id, type: item.type, task: item.task ?? null, itemMode: item.mode ?? null,
       wordId: item.wordId ?? item.word?.wordId ?? null, layout: layoutForItem(item), media, fontPx: null,
     });
     // A cue that asked for image/audio media but the server sent no asset for
@@ -315,7 +341,7 @@ export default function WordLadderProgram({ descriptor, api: injected = null, re
   } else if (item && session) {
     // Item ids repeat across sittings: key by sitting too, so a reopen remounts the card.
     const key = `${session.id}:${item.id}`;
-    const common = { item, langs: session.langs, resolveAssetUrl, onRespond: respond, busy, result, onContinue: next };
+    const common = { item, langs: session.langs, resolveAssetUrl, onRespond: respond, busy, result, onContinue: next, onLayout: handleLayout };
     const speaking = { api, sittingId: session.id, userId };
     if (item.type === 'flashcard') body = <FlashcardItem key={key} {...common} />;
     else if (item.type === 'copy') body = <TypedItem key={key} {...common} mode="copy" />;

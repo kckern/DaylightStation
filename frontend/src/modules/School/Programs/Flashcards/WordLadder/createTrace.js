@@ -39,6 +39,12 @@ function randomTraceId() {
  * `seq` starts at 1 and increments on every call, including across a
  * `setSitting`/`setPackage` update — those just change what the NEXT event
  * stamps, they don't emit anything themselves.
+ *
+ * `mode` here is always the trace's own live/test — this is deliberate, not
+ * a gotcha to fix. An event with something item-level to say about "mode"
+ * (item.shown's intro/sort/practice, a say step, a practice run's mode)
+ * must use a different key (`itemMode`, by convention — see
+ * `wordLadderLog.js`), since this stamp silently overwrites `data.mode`.
  */
 export function createTrace({ learnerId = null, deckId = null, mode = 'live' } = {}) {
   const id = randomTraceId();

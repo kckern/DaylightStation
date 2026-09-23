@@ -14,7 +14,7 @@ const GAP_MS = 1500;
  * leaving stops the clip that is playing. Nothing is asked — Next sends
  * `{done:true}`.
  */
-export default function ListenItem({ item, langs, resolveAssetUrl, onRespond, busy = false }) {
+export default function ListenItem({ item, langs, resolveAssetUrl, onRespond, busy = false, onLayout }) {
   const words = item.words ?? [];
   const [current, setCurrent] = useState(null);
   const [playing, setPlaying] = useState(false);
@@ -59,7 +59,7 @@ export default function ListenItem({ item, langs, resolveAssetUrl, onRespond, bu
     <section className="wl-item wl-listen" aria-label="Listen">
       <div className="wl-prompt">
         {words.length
-          ? <FitText key={words[shown].wordId} role="term" text={words[shown].term} lang={langs.term} />
+          ? <FitText key={words[shown].wordId} role="term" text={words[shown].term} lang={langs.term} onFit={onLayout} />
           : <p className="wl-verdict">No sounds for these words yet.</p>}
       </div>
       {words.length > 0 && <p className="wl-listen__count" aria-live="polite">{shown + 1} of {words.length}</p>}

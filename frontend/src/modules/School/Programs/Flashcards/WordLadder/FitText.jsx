@@ -15,12 +15,18 @@ export function FitGroup({ children }) {
   return <GroupContext.Provider value={value}>{children}</GroupContext.Provider>;
 }
 
-export function FitText({ role = 'term', text, lang, className = '' }) {
+export function FitText({ role = 'term', text, lang, className = '', onFit }) {
   const ref = useRef(null);
   const group = useContext(GroupContext);
   const id = useMemo(() => Math.random().toString(36).slice(2), []);
   const [own, setOwn] = useState(ROLES[role][0]);
   const [clamped, setClamped] = useState(false);
+  // A ref, not an effect dep: callers (item components) pass this straight
+  // through from a prop, and re-measuring on every parent re-render just
+  // because that function's identity changed would defeat the ResizeObserver
+  // — fit() should re-run for a new role/text/group, never for a new onFit.
+  const onFitRef = useRef(onFit);
+  onFitRef.current = onFit;
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return undefined;
@@ -45,6 +51,7 @@ export function FitText({ role = 'term', text, lang, className = '' }) {
       el.style.fontSize = `${shown}px`;
       setOwn(result.px); setClamped(result.clamped);
       group?.report(id, result.px);
+      onFitRef.current?.(shown);
       if (result.clamped) wordLadderLog.layoutClamped({ role, text, width: Math.round(box.width), height: Math.round(box.height) });
     };
     fit();

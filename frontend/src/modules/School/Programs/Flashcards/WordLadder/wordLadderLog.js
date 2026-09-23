@@ -10,6 +10,13 @@
  * trace through props or context. Outside a bound trace (a component
  * rendered on its own, as most of the item unit tests do) these fall back to
  * plain unstamped logging — unchanged from before this file gained a trace.
+ *
+ * `mode` is reserved for the trace's own live/test stamp: `createTrace`'s
+ * `event()` spreads it AFTER the caller's data, so any payload that also
+ * used the key `mode` had that value silently discarded the moment a trace
+ * was bound. Call sites that log an item-level mode (item.shown's
+ * intro/sort/practice, a say step, a practice run's mode) use `itemMode`
+ * instead — never `mode` — for exactly this reason.
  */
 import getLogger from '../../../../../lib/logging/Logger.js';
 
@@ -45,7 +52,8 @@ export const wordLadderLog = {
   mediaFailed: (data) => emit('media.failed', data, 'warn'),        // image cue → text fallback
   promptFallback: (data) => emit('item.prompt-fallback', data, 'warn'), // cue asked for media that never resolved
   stageFailed: (data) => emit('stage.failed', data, 'warn'),
-  itemShown: (data) => emit('item.shown', data),                        // {task, wordId, layout, media, fontPx}
+  itemShown: (data) => emit('item.shown', data),                        // {task, wordId, itemMode, layout, media, fontPx} — fontPx is always null here; see item.layout
+  itemLayout: (data) => emit('item.layout', data),                      // {fontPx} — follow-up: the main FitText's first computed size for this item, once (see itemLayout.js)
   itemAnswered: (data) => emit('item.answered', data),                  // {response, correct?, score?, judge, ms}
   itemStalled: (data) => emit('item.stalled', data, 'warn'),            // {ms: 45000|120000}
   sittingClosed: (data) => emit('sitting.closed', data),                // {reason, activeMs, remaining}
@@ -63,7 +71,7 @@ export const wordLadderLog = {
   recordingRefused: (data) => emit('recording.refused', data, 'info'),
   matchCompleted: (data) => emit('match.completed', data),               // {ms, misses, pairs}
   drillOffered: (data) => emit('drill.offered', data),                   // {accepted}
-  practiceStarted: (data) => emit('practice.started', data),             // {mode, help, filter}
+  practiceStarted: (data) => emit('practice.started', data),             // {itemMode, help, filter}
   practiceFailed: (data) => emit('practice.failed', data, 'warn'),
   wordsFailed: (data) => emit('words.failed', data, 'warn'),               // My words read refused/failed
 };

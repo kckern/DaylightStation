@@ -205,7 +205,9 @@ describe('MenuItem', () => {
     await waitFor(() => expect(props.onPractice).toHaveBeenCalled());
     expect(api.practice).toHaveBeenCalledWith('s', expect.objectContaining({ userId: 'kid', mode: 'match' }));
     expect(props.onPractice.mock.calls[0][0]).toEqual(expect.objectContaining({ ok: true }));
-    expect(spy).toHaveBeenCalledWith(expect.objectContaining({ mode: 'match' }));
+    // itemMode, not mode — createTrace's own live/test mode stamp would
+    // otherwise clobber a colliding `mode` key in the logged payload.
+    expect(spy).toHaveBeenCalledWith(expect.objectContaining({ itemMode: 'match' }));
   });
 
   it('Say asks With help / Without help first', async () => {

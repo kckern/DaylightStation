@@ -53,4 +53,19 @@ describe('createTrace', () => {
     expect(info.mock.calls[0][1].seq).toBe(1);
     expect(info.mock.calls[0][1].traceId).toBe(trace.id);
   });
+
+  it('a caller-provided mode WOULD be clobbered by the stamp — this is why item.shown uses itemMode instead', async () => {
+    const { createTrace } = await import('./createTrace.js');
+    const trace = createTrace({ learnerId: 'kid-1', deckId: 'd', mode: 'live' });
+    trace.event('item.shown', { mode: 'intro' });
+    // The trace's own live/test mode wins — 'intro' never survives under this key.
+    expect(info.mock.calls[0][1].mode).toBe('live');
+  });
+
+  it('the trace\'s live/test mode and a caller\'s itemMode both survive side by side', async () => {
+    const { createTrace } = await import('./createTrace.js');
+    const trace = createTrace({ learnerId: 'kid-1', deckId: 'd', mode: 'test' });
+    trace.event('item.shown', { itemMode: 'sort' });
+    expect(info.mock.calls[0][1]).toMatchObject({ mode: 'test', itemMode: 'sort' });
+  });
 });
