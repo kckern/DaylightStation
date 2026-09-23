@@ -185,6 +185,22 @@ The inspector's Back control returns to that exact date; a session opened from
 History returns to History. The browser's incidental navigation stack is not
 the source of this promise.
 
+### The code-free door, and a program's own test mode
+
+Outside the graph above, `/school/go/<learner>/<program>[/<instance>]` opens
+any program from a grown-up's browser with no access code — full contract in
+the [School runbook](../../runbooks/school/README.md#opening-a-program-without-an-access-code).
+No authority travels in the URL: it mints the same launch target a code would
+have produced.
+
+One program adds a further, reserved segment: `/school/go/<learner>/word-ladder/test`
+(optionally `?scenario=fresh|due|round-end|done`) opens a **read-only test
+sitting** — the same engine, over an in-memory shadow of the learner's real
+files, so nothing typed or sorted there is ever saved. `/test` is parsed off
+the URL by the frontend shell before the program id, so a program with no test
+mode refuses it outright rather than falling through to a live runner. Details:
+[`word-ladder.md`](word-ladder.md#the-door-and-test).
+
 ---
 
 ## 3. The work-session lifecycle
