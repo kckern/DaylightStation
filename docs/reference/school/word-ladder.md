@@ -178,6 +178,11 @@ close makes several sittings a day routine.
   progress.
 - `doneToday` = goal met, or cap reached. A later sitting on a done day opens
   straight to the summary.
+- `doneAt` is stamped by whichever of `openDay` / `respond` first finds the day
+  settled (no round open, and either no recheck pending with no round left to
+  plan, or the cap spent). A day with nothing to do — every word mastered and
+  none due — is therefore credited the moment it is opened, not left
+  "In progress".
 
 New words available to introduce today =
 `max(0, min(batch.newPerDay, batch.workingSet − unsettled))`, computed when the
@@ -285,10 +290,28 @@ break inside a word, per-role min/max — and expose it as an `.wl-fit` element
 so a Playwright spec can assert none of them overflow their box (see
 `tests/live/flow/school/word-ladder-stage.runtime.test.mjs`).
 
+The sitting does not open on mount: the program first shows its title
+(`descriptor.title`, else "Words") and a **Start** button (Space/Enter). That
+tap is the page's user gesture, so the clips after it may autoplay; only then
+is `POST …/open` sent. The test banner shows on the Start screen too.
+
 Items live today: flashcard front/back (`items/FlashcardItem.jsx`), choice
 (`items/ChoiceItem.jsx`), typed/copy (`items/TypedItem.jsx`), summary
 (`items/SummaryItem.jsx`). Keys: `useWordLadderKeys.js` (1/2/3 sort, Space/Enter
-continue, 1–4/0 choices, U undo, Q quiz me).
+continue, 1–4/0 choices, U undo, Q quiz me, H hear). Keys match the
+**physical** key (`event.code` — `KeyH`, `Digit1`, `Space`, `NumpadEnter`…)
+first and `event.key` second, because on a Korean keyboard layout `key` for H
+is `ㅗ`. Keys typed into an input are never taken as commands.
+
+The typed field declares the lexicon's BCP-47 code (`lang` / `data-ime-lang`,
+e.g. `ko`); `ime/languages.js` normalises it (`ko`, `ko-KR` → `KR`) so the
+in-page Hangul IME switches to Korean on focus. A copy mismatch clears the
+field for the retry.
+
+An **image cue** on 3.1 / 3.3 always arrives with the gloss as `cue.text` (the
+gloss is the cue there, never the answer). `items/CuePicture.jsx` renders the
+picture and falls back to that text when the image has no asset or fails to
+load (logging `media.failed` at warn).
 
 ### Testing on the Portal
 
@@ -304,8 +327,10 @@ by hand.
 
 Backend: `school.word-ladder.{opened,graded,reopened,closed,folded,attempts-unreadable,decks-unlisted,status-corrupt}`,
 all carrying `mode: live|test`. Frontend
-(`context.component: school-word-ladder`): `plan-failed`, `stage-failed`, and
-the item/response events the program logs on each turn.
+(`context.component: school-word-ladder`, events `school.word-ladder.*`):
+`started` (Start tapped), `plan.failed`, `stage-failed`, `media.failed`
+(image cue fell back to text), and the item/response events the program logs
+on each turn.
 
 ## What is not yet built
 

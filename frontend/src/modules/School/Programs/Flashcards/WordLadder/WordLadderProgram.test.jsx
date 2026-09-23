@@ -22,6 +22,13 @@ function openWith(item, sittingId = 's') {
   return { ok: true, status: 200, data: { sittingId, package: 'korean-vocab', language: { code: 'ko' }, gloss: { code: 'en' }, item, progress } };
 }
 
+/** Renders the program and taps Start (spec §6: the sitting opens on a Start tap, which unlocks audio). */
+function renderStarted(ui) {
+  const view = render(ui);
+  fireEvent.click(screen.getByRole('button', { name: /start/i }));
+  return view;
+}
+
 function fakeApi(test = false) {
   return {
     test,
@@ -32,10 +39,54 @@ function fakeApi(test = false) {
   };
 }
 
+describe('WordLadderProgram — Start screen', () => {
+  it('does not open the sitting until Start is tapped', async () => {
+    const api = fakeApi();
+    render(<WordLadderProgram descriptor={{ deckId: 'd', userId: 'test-learner' }} api={api} />);
+    expect(screen.getByRole('heading', { name: 'Words' })).toBeInTheDocument();
+    expect(api.open).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: /start/i }));
+    await screen.findByText('가위');
+    expect(api.open).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows the descriptor title when one is known', () => {
+    render(<WordLadderProgram descriptor={{ deckId: 'd', userId: 'test-learner', title: 'Korean words' }} api={fakeApi()} />);
+    expect(screen.getByRole('heading', { name: 'Korean words' })).toBeInTheDocument();
+  });
+
+  it('Space and Enter start the sitting too', async () => {
+    for (const key of [' ', 'Enter']) {
+      const api = fakeApi();
+      const { unmount } = render(<WordLadderProgram descriptor={{ deckId: 'd', userId: 'test-learner' }} api={api} />);
+      act(() => { fireEvent.keyDown(window, { key }); });
+      await screen.findByText('가위');
+      expect(api.open).toHaveBeenCalledTimes(1);
+      unmount();
+    }
+  });
+
+  it('a test sitting shows the banner on the Start screen', () => {
+    render(<WordLadderProgram descriptor={{ deckId: 'd', userId: 'test-learner', test: true }} api={fakeApi(true)} />);
+    expect(screen.getByText(/TEST — nothing is saved/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /start/i })).toBeInTheDocument();
+  });
+
+  it('Leave before Start exits without opening or closing anything', () => {
+    const api = fakeApi();
+    const onExit = vi.fn();
+    render(<WordLadderProgram descriptor={{ deckId: 'd', userId: 'test-learner' }} api={api} onExit={onExit} />);
+    fireEvent.click(screen.getByRole('button', { name: /leave/i }));
+    expect(onExit).toHaveBeenCalled();
+    expect(api.open).not.toHaveBeenCalled();
+    expect(api.close).not.toHaveBeenCalled();
+  });
+});
+
 describe('WordLadderProgram', () => {
   it('opens, advances an intro card with Space, and shows the next item', async () => {
     const api = fakeApi();
-    render(<WordLadderProgram descriptor={{ deckId: 'd', userId: 'test-learner' }} api={api} />);
+    renderStarted(<WordLadderProgram descriptor={{ deckId: 'd', userId: 'test-learner' }} api={api} />);
     await screen.findByText('가위');
     act(() => { fireEvent.keyDown(window, { key: ' ' }); });
     act(() => { fireEvent.keyDown(window, { key: ' ' }); });
@@ -44,19 +95,19 @@ describe('WordLadderProgram', () => {
   });
 
   it('a test sitting shows the banner', async () => {
-    render(<WordLadderProgram descriptor={{ deckId: 'd', userId: 'test-learner', test: true }} api={fakeApi(true)} />);
+    renderStarted(<WordLadderProgram descriptor={{ deckId: 'd', userId: 'test-learner', test: true }} api={fakeApi(true)} />);
     expect(await screen.findByText(/TEST — nothing is saved/)).toBeInTheDocument();
   });
 
   it('a live sitting shows no banner', async () => {
-    render(<WordLadderProgram descriptor={{ deckId: 'd', userId: 'test-learner' }} api={fakeApi()} />);
+    renderStarted(<WordLadderProgram descriptor={{ deckId: 'd', userId: 'test-learner' }} api={fakeApi()} />);
     await screen.findByText('가위');
     expect(screen.queryByText(/TEST — nothing is saved/)).toBeNull();
   });
 
   it('opens with the descriptor scenario', async () => {
     const api = fakeApi(true);
-    render(<WordLadderProgram descriptor={{ deckId: 'd', userId: 'test-learner', test: true, scenario: 'round-end' }} api={api} />);
+    renderStarted(<WordLadderProgram descriptor={{ deckId: 'd', userId: 'test-learner', test: true, scenario: 'round-end' }} api={api} />);
     await screen.findByText('가위');
     expect(api.open).toHaveBeenCalledWith({ userId: 'test-learner', deckId: 'd', scenario: 'round-end' });
   });
@@ -65,7 +116,7 @@ describe('WordLadderProgram', () => {
     const api = fakeApi();
     api.open.mockResolvedValue(openWith(choice));
     api.respond.mockResolvedValue({ ok: true, status: 200, data: { result: { correct: false, answer: 'Scissors' }, item: stream, progress } });
-    render(<WordLadderProgram descriptor={{ deckId: 'd', userId: 'test-learner' }} api={api} />);
+    renderStarted(<WordLadderProgram descriptor={{ deckId: 'd', userId: 'test-learner' }} api={api} />);
     await screen.findByText('Glue');
     act(() => { fireEvent.keyDown(window, { key: '1' }); });
     expect(await screen.findByText("It's Scissors")).toBeInTheDocument();
@@ -81,7 +132,7 @@ describe('WordLadderProgram', () => {
     const api = fakeApi();
     api.open.mockResolvedValue(openWith(copy));
     api.respond.mockResolvedValue({ ok: true, status: 200, data: { result: { correct: false, answer: '가위' }, item: copy, progress } });
-    render(<WordLadderProgram descriptor={{ deckId: 'd', userId: 'test-learner' }} api={api} />);
+    renderStarted(<WordLadderProgram descriptor={{ deckId: 'd', userId: 'test-learner' }} api={api} />);
     const input = await screen.findByLabelText('Your answer');
     fireEvent.change(input, { target: { value: '가' } });
     fireEvent.keyDown(input, { key: 'Enter' });
@@ -93,7 +144,7 @@ describe('WordLadderProgram', () => {
     const api = fakeApi();
     api.open.mockResolvedValueOnce(openWith(intro, 's-old')).mockResolvedValueOnce(openWith(copy, 's-new'));
     api.respond.mockResolvedValueOnce({ ok: false, status: 404, data: null });
-    render(<WordLadderProgram descriptor={{ deckId: 'd', userId: 'test-learner' }} api={api} />);
+    renderStarted(<WordLadderProgram descriptor={{ deckId: 'd', userId: 'test-learner' }} api={api} />);
     await screen.findByText('가위');
     act(() => { fireEvent.keyDown(window, { key: ' ' }); });
     act(() => { fireEvent.keyDown(window, { key: ' ' }); });
@@ -105,7 +156,7 @@ describe('WordLadderProgram', () => {
   it('Leave closes the sitting with reason leave, then exits', async () => {
     const api = fakeApi();
     const onExit = vi.fn();
-    render(<WordLadderProgram descriptor={{ deckId: 'd', userId: 'test-learner' }} api={api} onExit={onExit} />);
+    renderStarted(<WordLadderProgram descriptor={{ deckId: 'd', userId: 'test-learner' }} api={api} onExit={onExit} />);
     await screen.findByText('가위');
     fireEvent.click(screen.getByRole('button', { name: /leave/i }));
     await waitFor(() => expect(onExit).toHaveBeenCalled());
@@ -115,13 +166,13 @@ describe('WordLadderProgram', () => {
   it('an open failure says so and offers Back', async () => {
     const api = fakeApi();
     api.open.mockResolvedValue({ ok: false, status: 404, data: null });
-    render(<WordLadderProgram descriptor={{ deckId: 'd', userId: 'test-learner' }} api={api} />);
+    renderStarted(<WordLadderProgram descriptor={{ deckId: 'd', userId: 'test-learner' }} api={api} />);
     expect(await screen.findByRole('alert')).toHaveTextContent('not ready');
   });
 
   it('Leave closes once as leave — unmount afterwards sends nothing more', async () => {
     const api = fakeApi();
-    const { unmount } = render(<WordLadderProgram descriptor={{ deckId: 'd', userId: 'test-learner' }} api={api} />);
+    const { unmount } = renderStarted(<WordLadderProgram descriptor={{ deckId: 'd', userId: 'test-learner' }} api={api} />);
     await screen.findByText('가위');
     fireEvent.click(screen.getByRole('button', { name: /leave/i }));
     await waitFor(() => expect(api.close).toHaveBeenCalledTimes(1));
@@ -134,7 +185,7 @@ describe('WordLadderProgram', () => {
     const api = fakeApi();
     const onExit = vi.fn();
     api.open.mockResolvedValue({ ...openWith({ id: 'summary', type: 'summary', quizzed: 4, doneToday: true }), data: { ...openWith(null).data, item: { id: 'summary', type: 'summary', quizzed: 4, doneToday: true }, progress: { phase: 'summary', rechecksLeft: 0, round: null, activeMs: 300000, capMs: 900000 } } });
-    render(<WordLadderProgram descriptor={{ deckId: 'd', userId: 'test-learner' }} api={api} onExit={onExit} />);
+    renderStarted(<WordLadderProgram descriptor={{ deckId: 'd', userId: 'test-learner' }} api={api} onExit={onExit} />);
     fireEvent.click(await screen.findByRole('button', { name: /done/i }));
     await waitFor(() => expect(onExit).toHaveBeenCalled());
     expect(api.close).toHaveBeenCalledWith('s', { userId: 'test-learner', reason: 'goal' });
@@ -144,7 +195,7 @@ describe('WordLadderProgram', () => {
     const api = fakeApi();
     const onExit = vi.fn();
     api.open.mockResolvedValue({ ...openWith(null), data: { ...openWith(null).data, item: { id: 'summary', type: 'summary', quizzed: 4, doneToday: true }, progress: { phase: 'summary', rechecksLeft: 0, round: null, activeMs: 900000, capMs: 900000 } } });
-    render(<WordLadderProgram descriptor={{ deckId: 'd', userId: 'test-learner' }} api={api} onExit={onExit} />);
+    renderStarted(<WordLadderProgram descriptor={{ deckId: 'd', userId: 'test-learner' }} api={api} onExit={onExit} />);
     fireEvent.click(await screen.findByRole('button', { name: /done/i }));
     await waitFor(() => expect(onExit).toHaveBeenCalled());
     expect(api.close).toHaveBeenCalledWith('s', { userId: 'test-learner', reason: 'cap' });
@@ -153,7 +204,7 @@ describe('WordLadderProgram', () => {
 
   it('unmounting with an open sitting closes it as unmount', async () => {
     const api = fakeApi();
-    const { unmount } = render(<WordLadderProgram descriptor={{ deckId: 'd', userId: 'test-learner' }} api={api} />);
+    const { unmount } = renderStarted(<WordLadderProgram descriptor={{ deckId: 'd', userId: 'test-learner' }} api={api} />);
     await screen.findByText('가위');
     unmount();
     expect(api.close).toHaveBeenCalledWith('s', { userId: 'test-learner', reason: 'unmount' });
@@ -163,7 +214,7 @@ describe('WordLadderProgram', () => {
     const api = fakeApi();
     api.open.mockResolvedValueOnce(openWith(intro, 's-old')).mockResolvedValueOnce(openWith(intro, 's-new'));
     api.respond.mockResolvedValueOnce({ ok: false, status: 404, data: null });
-    render(<WordLadderProgram descriptor={{ deckId: 'd', userId: 'test-learner' }} api={api} />);
+    renderStarted(<WordLadderProgram descriptor={{ deckId: 'd', userId: 'test-learner' }} api={api} />);
     await screen.findByText('가위');
     act(() => { fireEvent.keyDown(window, { key: ' ' }); });
     expect(screen.getByText('Scissors')).toBeInTheDocument();

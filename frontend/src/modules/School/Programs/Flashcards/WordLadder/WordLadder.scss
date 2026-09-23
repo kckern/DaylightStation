@@ -15,6 +15,8 @@
 }
 
 .wl-header { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 1rem; padding: 1rem 1.5rem 0.5rem; }
+// The test banner hangs from the top centre, over the round label: push the header below it.
+.wl:has(.wl-test-banner) .wl-header { padding-top: 2.5rem; }
 .wl-header__round { margin: 0; text-align: center; font-size: 1.5rem; color: var(--ds-text-mid); }
 .wl-header__piles { margin: 0; font-size: 1.25rem; color: var(--ds-text-low); white-space: nowrap; }
 .wl-header__time {
@@ -61,6 +63,8 @@
 .wl-verdict { margin: 0; font-size: 1.5rem; text-align: center; }
 .wl-summary h2 { margin: 0; font-size: 2.5rem; }
 .wl-summary p { margin: 0; font-size: 1.5rem; color: var(--ds-text-mid); }
+.wl-start { gap: 2rem; }
+.wl-start__title { margin: 0; font-size: 3rem; text-align: center; color: var(--ds-text-high); }
 .wl-loading { font-size: 1.5rem; color: var(--ds-text-mid); }
 .wl-error p { margin: 0; font-size: 1.5rem; text-align: center; }
 

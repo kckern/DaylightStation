@@ -26,6 +26,8 @@ export function FitText({ role = 'term', text, lang, className = '' }) {
     if (!el) return undefined;
     const [min, max, maxLines] = ROLES[role];
     const fit = () => {
+      // fonts.ready can resolve after unmount: never measure a detached node.
+      if (!el.isConnected) return;
       const box = el.parentElement.getBoundingClientRect();
       const result = fitFontSize({
         min, max,
@@ -35,6 +37,12 @@ export function FitText({ role = 'term', text, lang, className = '' }) {
           return { fits: el.scrollWidth <= box.width + 0.5 && el.scrollHeight <= Math.min(box.height, lineHeight * maxLines) + 0.5 };
         },
       });
+      // The search leaves its LAST trial size on the element. React only
+      // rewrites the style when the rendered value changes, so when the fitted
+      // size equals the previous render (or the group's shared size is
+      // unchanged) the trial size would stick. Set what should be shown.
+      const shown = group?.size != null ? Math.min(group.size, result.px) : result.px;
+      el.style.fontSize = `${shown}px`;
       setOwn(result.px); setClamped(result.clamped);
       group?.report(id, result.px);
       if (result.clamped) wordLadderLog.layoutClamped({ role, text, width: Math.round(box.width), height: Math.round(box.height) });

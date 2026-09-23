@@ -4,6 +4,7 @@ import Icon from '../../../../home/icons/Icon.jsx';
 import { FitGroup, FitText } from '../FitText.jsx';
 import { playClip } from '../wordLadderAudio.js';
 import { useWordLadderKeys } from '../useWordLadderKeys.js';
+import CuePicture from './CuePicture.jsx';
 
 /**
  * 2.2 pick-meaning (hear | read) and 3.1 pick-term (cue → Korean). Graded
@@ -46,7 +47,7 @@ export default function ChoiceItem({ item, langs, resolveAssetUrl, onRespond, re
             ? <FitText role="prompt" text={item.prompt} lang={langs.term} />
             : <TouchButton variant="secondary" keyHint="H" onClick={() => audio && playClip(audio)}><Icon name="volume" /> Listen</TouchButton>
         )}
-        {item.task === '3.1' && item.cue?.type === 'image' && image && <img className="wl-cue-picture" src={image} alt="" />}
+        {item.task === '3.1' && item.cue?.type === 'image' && <CuePicture item={item} src={image} lang={langs.gloss} />}
         {item.task === '3.1' && item.cue?.type === 'text' && <FitText role="prompt" text={item.cue.text} lang={langs.gloss} />}
         {item.task === '3.1' && item.cue?.type === 'audio' && <TouchButton variant="secondary" keyHint="H" onClick={() => glossAudio && playClip(glossAudio)}><Icon name="volume" /> Listen</TouchButton>}
       </div>

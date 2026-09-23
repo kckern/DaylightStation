@@ -7,6 +7,7 @@ import TypedItem from './items/TypedItem.jsx';
 import SummaryItem from './items/SummaryItem.jsx';
 import { createWordLadderApi } from './wordLadderApi.js';
 import { wordLadderLog } from './wordLadderLog.js';
+import { useWordLadderKeys } from './useWordLadderKeys.js';
 import './WordLadder.scss';
 
 /** Items whose answer the server grades: the verdict stays on screen until Next. */
@@ -39,9 +40,12 @@ function remainingLabel(progress) {
  * current item until Next. A copy mismatch keeps the item. A 404 means the
  * sitting is gone (the study day rolled, or a test sitting was evicted) — the
  * program reopens.
+ *
+ * Nothing is opened on mount: the child taps Start first (spec §6). That tap is
+ * the page's user gesture, so every clip after it may autoplay.
  */
 export default function WordLadderProgram({ descriptor, api: injected = null, resolveAssetUrl = (id) => id, onExit = () => {} }) {
-  const { userId = null, deckId = null, test = false, scenario = null } = descriptor ?? {};
+  const { userId = null, deckId = null, test = false, scenario = null, title = null } = descriptor ?? {};
   const api = useMemo(() => injected ?? createWordLadderApi({ test }), [injected, test]);
   const [session, setSession] = useState(null);
   const [item, setItem] = useState(null);
@@ -50,6 +54,7 @@ export default function WordLadderProgram({ descriptor, api: injected = null, re
   const [result, setResult] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
+  const [started, setStarted] = useState(false);
   const stageRef = useRef(null);
   // Only the latest open may land (a reopen can overlap a slow first open).
   const generation = useRef(0);
@@ -84,7 +89,6 @@ export default function WordLadderProgram({ descriptor, api: injected = null, re
   useEffect(() => {
     live.current = true;
     wordLadderLog.mounted({ userId, deckId, test, scenario });
-    open();
     return () => {
       live.current = false;
       const openId = sittingRef.current;
@@ -97,6 +101,14 @@ export default function WordLadderProgram({ descriptor, api: injected = null, re
       wordLadderLog.unmounted({ userId, deckId, test, sittingId: openId ?? null });
     };
   }, [api, open, userId, deckId, test, scenario]);
+
+  const start = useCallback(() => {
+    if (started) return;
+    setStarted(true);
+    wordLadderLog.started({ userId, deckId, test, scenario });
+    open();
+  }, [started, open, userId, deckId, test, scenario]);
+  useWordLadderKeys({ ' ': start, enter: start }, { enabled: !started });
 
   useEffect(() => {
     if (item) wordLadderLog.itemShown({ itemId: item.id, type: item.type, task: item.task ?? null, mode: item.mode ?? null, wordId: item.wordId ?? item.word?.wordId ?? null, test });
@@ -158,7 +170,14 @@ export default function WordLadderProgram({ descriptor, api: injected = null, re
   );
 
   let body = <p className="wl-loading">Loading…</p>;
-  if (error) {
+  if (!started) {
+    body = (
+      <div className="wl-item wl-start">
+        <h2 className="wl-start__title">{title || 'Words'}</h2>
+        <TouchButton variant="primary" keyHint="Space" onClick={start}>Start</TouchButton>
+      </div>
+    );
+  } else if (error) {
     body = (
       <div className="wl-item wl-error" role="alert">
         <p>{error}</p>

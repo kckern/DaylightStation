@@ -5,6 +5,8 @@ import ChoiceItem from './ChoiceItem.jsx';
 import TypedItem from './TypedItem.jsx';
 import SummaryItem from './SummaryItem.jsx';
 import { playClip } from '../wordLadderAudio.js';
+import { wordLadderLog } from '../wordLadderLog.js';
+import { modeForLanguage } from '../../../../ime/languages.js';
 
 vi.mock('../wordLadderAudio.js', () => ({ playClip: vi.fn(async () => true) }));
 const word = { wordId: 'gawi', term: '가위', gloss: 'Scissors', pronunciation: null, kind: 'word', media: { image: 'img', audio: 'aud', glossAudio: null } };
@@ -69,7 +71,63 @@ describe('ChoiceItem', () => {
   });
 });
 
+describe('image cues', () => {
+  const imageChoice = { id: 'p1', type: 'choice', task: '3.1', cue: { type: 'image', text: 'Scissors' }, choices: ['가위', '풀', '책', '펜'], assets: { image: 'img-gawi' } };
+  const imageTyped = { id: 'p2', type: 'typed', task: '3.3', cue: { type: 'image', text: 'Scissors' }, assets: { image: 'img-gawi' } };
+
+  it('ChoiceItem: an image that fails to load falls back to the text cue and logs', () => {
+    const spy = vi.spyOn(wordLadderLog, 'mediaFailed').mockImplementation(() => {});
+    const { container } = render(<ChoiceItem item={imageChoice} langs={langs} resolveAssetUrl={(x) => x} onRespond={() => {}} />);
+    const img = container.querySelector('img.wl-cue-picture');
+    expect(img).not.toBeNull();
+    expect(screen.queryByText('Scissors')).toBeNull();
+    fireEvent.error(img);
+    expect(container.querySelector('img.wl-cue-picture')).toBeNull();
+    expect(screen.getByText('Scissors')).toBeInTheDocument();
+    expect(spy).toHaveBeenCalledWith(expect.objectContaining({ kind: 'image', itemId: 'p1' }));
+    spy.mockRestore();
+  });
+
+  it('ChoiceItem: an image cue with no image asset renders the text cue', () => {
+    const { container } = render(<ChoiceItem item={{ ...imageChoice, assets: {} }} langs={langs} resolveAssetUrl={(x) => x} onRespond={() => {}} />);
+    expect(container.querySelector('img')).toBeNull();
+    expect(screen.getByText('Scissors')).toBeInTheDocument();
+  });
+
+  it('TypedItem: an image that fails to load falls back to the text cue and logs', () => {
+    const spy = vi.spyOn(wordLadderLog, 'mediaFailed').mockImplementation(() => {});
+    const { container } = render(<TypedItem item={imageTyped} mode="graded" langs={langs} resolveAssetUrl={(x) => x} onRespond={() => {}} />);
+    const img = container.querySelector('img.wl-cue-picture');
+    expect(img).not.toBeNull();
+    fireEvent.error(img);
+    expect(container.querySelector('img.wl-cue-picture')).toBeNull();
+    expect(screen.getByText('Scissors')).toBeInTheDocument();
+    expect(spy).toHaveBeenCalledWith(expect.objectContaining({ kind: 'image', itemId: 'p2' }));
+    spy.mockRestore();
+  });
+
+  it('TypedItem: an image cue with no image asset renders the text cue', () => {
+    const { container } = render(<TypedItem item={{ ...imageTyped, assets: {} }} mode="graded" langs={langs} resolveAssetUrl={(x) => x} onRespond={() => {}} />);
+    expect(container.querySelector('img')).toBeNull();
+    expect(screen.getByText('Scissors')).toBeInTheDocument();
+  });
+});
+
 describe('TypedItem', () => {
+  it('declares a language the in-page IME composes Korean for', () => {
+    render(<TypedItem item={{ id: 't0', type: 'typed', task: '3.3', cue: { type: 'text', text: 'Scissors' }, assets: {} }} mode="graded" langs={langs} resolveAssetUrl={(x) => x} onRespond={() => {}} />);
+    expect(modeForLanguage(screen.getByRole('textbox').dataset.imeLang)).toBe('KR');
+  });
+
+  it('a copy mismatch clears the field so the retry starts empty', () => {
+    const { rerender } = render(<TypedItem item={{ id: 'c0', type: 'typed', word, assets: {} }} mode="copy" langs={langs} resolveAssetUrl={(x) => x} onRespond={() => {}} />);
+    const input = screen.getByRole('textbox');
+    fireEvent.change(input, { target: { value: '가우' } });
+    expect(input.value).toBe('가우');
+    rerender(<TypedItem item={{ id: 'c0', type: 'typed', word, assets: {} }} mode="copy" langs={langs} resolveAssetUrl={(x) => x} onRespond={() => {}} result={{ correct: false }} />);
+    expect(input.value).toBe('');
+  });
+
   it('Enter submits the typed answer and number keys do not leak from the field', () => {
     const onRespond = vi.fn();
     render(<TypedItem item={{ id: 't', type: 'typed', task: '3.3', cue: { type: 'text', text: 'Scissors' }, assets: {} }} mode="graded" langs={langs} resolveAssetUrl={(x) => x} onRespond={onRespond} />);

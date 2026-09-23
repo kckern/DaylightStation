@@ -4,6 +4,7 @@ import Icon from '../../../../home/icons/Icon.jsx';
 import { FitText } from '../FitText.jsx';
 import { playClip } from '../wordLadderAudio.js';
 import { useWordLadderKeys } from '../useWordLadderKeys.js';
+import CuePicture from './CuePicture.jsx';
 
 /**
  * 1.1 copy-type (the Korean is on screen; must match to continue) and 3.3
@@ -22,7 +23,11 @@ export default function TypedItem({ item, mode, langs, resolveAssetUrl, onRespon
     if (mode === 'copy' && termAudio) playClip(termAudio);
     if (item.cue?.type === 'audio' && glossAudio) playClip(glossAudio);
   }, [item.id]); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => { if (result && mode === 'copy' && result.correct === false) input.current?.focus(); }, [result, mode]);
+  // A copy mismatch starts the retry from an empty field. Never select-all: the
+  // in-page composer inserts at the caret, so a selection would not be replaced.
+  useEffect(() => {
+    if (result && mode === 'copy' && result.correct === false) { setValue(''); input.current?.focus(); }
+  }, [result, mode]);
   const submit = () => {
     if (busy || !value.trim()) return;
     onRespond({ typed: value });
@@ -34,7 +39,7 @@ export default function TypedItem({ item, mode, langs, resolveAssetUrl, onRespon
     <section className="wl-item wl-typed" aria-label={graded ? 'Type the word' : 'Copy the word'}>
       <div className="wl-prompt">
         {!graded && <FitText role="term" text={word.term} lang={langs.term} />}
-        {graded && item.cue?.type === 'image' && image && <img className="wl-cue-picture" src={image} alt="" />}
+        {graded && item.cue?.type === 'image' && <CuePicture item={item} src={image} lang={langs.gloss} />}
         {graded && item.cue?.type === 'text' && <FitText role="prompt" text={item.cue.text} lang={langs.gloss} />}
         {graded && item.cue?.type === 'audio' && <TouchButton variant="secondary" onClick={() => glossAudio && playClip(glossAudio)}><Icon name="volume" /> Listen</TouchButton>}
       </div>
