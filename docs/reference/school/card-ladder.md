@@ -1,16 +1,40 @@
-# Word ladder (vocabulary word packages)
+# Card ladder (two-sided card packages)
 
-A flashcard enrollment in `policy.mode: word-ladder`. **The child sorts; the
+A flashcard enrollment in `policy.mode: card-ladder`. **The child sorts; the
 round-end quiz verifies; only a quiz grades.** Self-study is flashcards the
 child sorts into three piles (Not yet / Familiar / Got it); every word not
 sorted Not yet is quizzed at the end of its round; mastered words come back at
 widening gaps.
 
-The word ladder is **language-neutral**. Everything that names a language —
-which one is being learned, which one the meanings are written in, the tile
-title — lives in a **word package**'s lexicon YAML. Adding a language is new
-YAML + media, never a code change. Korean (`korean-vocab`) is the worked
-example throughout.
+The card ladder is **language-neutral**. Language learning is the primary use,
+but the engine serves any two-sided card: English-to-English definitions,
+history, and so on. Everything that names a language — which one is being
+learned, which one the meanings are written in, the tile title — lives in a
+**package**'s lexicon YAML. Adding a language (or a subject) is new YAML +
+media, never a code change. Korean (`korean-vocab`) is the worked example
+throughout.
+
+**Renamed 2026-09-23.** This engine was the *word ladder* until then. Every
+old name still works — see [Renamed from word ladder](#renamed-from-word-ladder-2026-09-23).
+
+### The two sides: target and anchor
+
+Every card has two sides, named by **role**, never by language:
+
+| Side | Meaning | Lexicon field | API / item field |
+|---|---|---|---|
+| **target** | what is being acquired — typed from memory at the sign-off | `term:` (or `target:`) | `word.term`, `prompt` on 2.2, choices on 3.1 |
+| **anchor** | what the learner already holds it by — the prompt side, which shows everything | `gloss:` (or `anchor:`) | `word.gloss`, the `cue` on 3.1 / 3.3 / drill steps |
+
+`term`/`gloss` stay the readable field names in the lexicon and in existing
+API payloads; they MEAN target/anchor. New code and UI names say
+target/anchor: the recall cue is `{type: 'anchor', …}` (`items/AnchorCue.jsx`),
+the client's languages are `langs = {target, anchor, targetScript}`, and
+`POST /card-ladder/open` returns `target: {code, name, script}` and
+`anchor: {code, name}` beside the older `language` / `gloss`.
+
+The progress rungs (new → introduced → learning → recognised → mastered) and
+the sort piles (Not yet / Familiar / Got it) are unchanged.
 
 Spec: `docs/_wip/plans/2026-09-22-word-ladder-mastery-redesign.md` (rev 4).
 This page describes what **Plan 1 (core loop)** and **Plan 2 (tricky-word
@@ -24,41 +48,58 @@ drill, speaking, on-screen keypad, practice menu)** actually ship; see
 | Lexicon | `media/school/language/<package>/lexicon.yml` (e.g. `language/korean-vocab/lexicon.yml`) |
 | Word media | `media/school/language/<package>/words/<group>/<id>/{image.jpg,term.mp3,gloss.mp3}` |
 | Weekly deck | `data/content/school/learning-catalog/flashcard-decks/<deck id>.yml` (`lexicon:` + `words:`), e.g. `language/korean/week-01-classroom` |
-| Enrollment | learner plan `programs:` → `{programId: flashcards, deckId, title, policy: {mode: word-ladder}, schedule}` |
-| Status (v3) | `data/users/{learnerId}/apps/school/word-ladder/<package>/status.yml` |
-| Day file | `data/users/{learnerId}/apps/school/word-ladder/<package>/days/<studyDay>.yml` |
-| Judgement cache | `data/household/school/runtime/word-ladder/<package>/judgements.yml` (derived, shared across learners) |
-| Spoken takes | `media/school/recordings/word-ladder/<package>/<learnerId>/<studyDay>/<wordId>-<n>.<ext>` (for grown-ups; never graded) |
-| Program poster | `media/school/programs/word-ladder/<package>/poster.jpg` (JPEG, 2:3) — served at `/api/v1/school/self-service/programs/word-ladder/<package>/poster.jpg`; missing = 404 and the surface draws its own placeholder |
-| Code (domain) | `backend/src/2_domains/school/wordLadder/` — pure engine, states, choices, rounds, jamo scoring, settings, scenarios |
-| Code (application) | `backend/src/3_applications/school/{WordLadderSittingService,WordLadderTypedJudge,WordLadderDoorLauncher}.mjs` |
-| Code (adapters) | `backend/src/1_adapters/school/wordLadder/{YamlWordLadderStore,ShadowWordLadderStores,YamlJudgementCache,FilesystemWordLadderRecordings,DiscardingRecordings}.mjs` |
-| Code (API) | `backend/src/4_api/v1/routers/school.wordLadder.mjs` |
-| Code (frontend) | `frontend/src/modules/School/Programs/Flashcards/WordLadder/` |
+| Enrollment | learner plan `programs:` → `{programId: flashcards, deckId, title, policy: {mode: card-ladder}, schedule}` |
+| Status (v3) | `data/users/{learnerId}/apps/school/card-ladder/<package>/status.yml` |
+| Day file | `data/users/{learnerId}/apps/school/card-ladder/<package>/days/<studyDay>.yml` |
+| Judgement cache | `data/household/school/runtime/card-ladder/<package>/judgements.yml` (derived, shared across learners) |
+| Spoken takes | `media/school/recordings/card-ladder/<package>/<learnerId>/<studyDay>/<wordId>-<n>.<ext>` (for grown-ups; never graded) |
+| Program poster | `media/school/programs/card-ladder/<package>/poster.jpg` (JPEG, 2:3), falling back to the pre-rename `programs/word-ladder/<package>/poster.jpg` — served at `/api/v1/school/self-service/programs/card-ladder/<package>/poster.jpg`; missing = 404 and the surface draws its own placeholder |
+| Code (domain) | `backend/src/2_domains/school/cardLadder/` — pure engine, states, choices, rounds, the target-script seam (`targetScript.mjs`) and Hangul scoring (`jamo.mjs`), settings, scenarios |
+| Code (application) | `backend/src/3_applications/school/{CardLadderSittingService,CardLadderTypedJudge,CardLadderDoorLauncher}.mjs` |
+| Code (adapters) | `backend/src/1_adapters/school/cardLadder/{YamlCardLadderStore,ShadowCardLadderStores,YamlJudgementCache,FilesystemCardLadderRecordings,DiscardingRecordings}.mjs` |
+| Code (API) | `backend/src/4_api/v1/routers/school.cardLadder.mjs` |
+| Code (frontend) | `frontend/src/modules/School/Programs/Flashcards/CardLadder/` |
 
 Everything per learner is keyed by the lexicon's `package`: status, day files
 and the judgement cache. Word ids need only be unique **within** a package.
 
-## The lexicon (`school.word-lexicon/v2`)
+## The lexicon (`school.word-lexicon/v2` or `school.card-lexicon/v3`)
 
 ```yaml
 schema: school.word-lexicon/v2
 package: korean-vocab            # stable id — status and the capability key use it
-language: { code: ko, name: Korean }    # the language being learned (BCP-47 code → lang= attributes)
-gloss:    { code: en, name: English }   # the learner's language the meanings are in
+language: { code: ko, name: Korean }    # the TARGET side's language (BCP-47 code → lang= attributes, script)
+gloss:    { code: en, name: English }   # the ANCHOR side's language (a header block, not the entry field)
 program:
   title: UBKS 비둘기              # the CLASS: the course line of the launch card (start screen + agenda tile)
 entries:
   - id: gawi                     # permanent once studied
     kind: word                   # word | phrase
     group: week-01-classroom     # the course unit that FIRST introduced the word; names its media folder
-    term: 가위                    # in the language being learned
-    gloss: Scissors              # in the learner's language
+    term: 가위                    # the target side (may be spelled target:)
+    gloss: Scissors              # the anchor side (may be spelled anchor:)
     pronunciation: null          # required for a phrase
     decoys:
       term: [가지, 바위, 가방]      # ≥3, confusable, never the answer
       gloss: [Knife, Tape, Ruler]
 ```
+
+**Schema note.** Both schemas are read and mean the same thing; v3 only
+renames the two language blocks by role:
+
+| | `school.word-lexicon/v2` | `school.card-lexicon/v3` |
+|---|---|---|
+| target language block | `language:` | `target:` |
+| anchor language block | `gloss:` | `anchor:` |
+| entry sides | `term:` / `gloss:`, or `target:` / `anchor:` | the same |
+| decoy sides | `decoys.term` / `decoys.gloss`, or `decoys.target` / `decoys.anchor` | the same |
+
+An entry that gives both spellings of one side must give the same text
+(otherwise the lexicon is refused). The parsed lexicon carries `language` /
+`gloss` (as before) plus `targetLanguage`, `anchorLanguage` and
+`targetScript` (`scriptFor(targetLanguage.code)`: `ko` → `hangul`, anything
+else → `generic`). An English-to-English definitions package is a v3 lexicon
+with `target: {code: en}` and `anchor: {code: en}`.
 
 **`program.title` is the class name.** It is the course line of the launch
 card — the start screen's heading and the agenda tile's course — so set it to
@@ -110,7 +151,7 @@ Per-word flags in status v3 (`mastery.mjs`):
 recheck), `matched`, and not straight after a typed miss. What people read is
 `ladderLevel(word)`: `new`, `introduced`, `learning` (notYet / familiar /
 claimed), `recognised` (mastered, not signed off), `mastered` (signed off).
-The child's My words and the teacher Words tab both label by it; the API adds
+The child's My words and the teacher Cards tab both label by it; the API adds
 `level`, `recognizedCount`, `matched` and `typedSignedOff` to each word row
 beside the unchanged `state` / `stage`.
 
@@ -139,7 +180,7 @@ already was.
 
 `missStreak ≥ drill.afterMisses` sets `tricky` (flags the word — see
 [The tricky-word drill](#the-tricky-word-drill-spec-3-drill-path) below).
-Code: `backend/src/2_domains/school/wordLadder/mastery.mjs`.
+Code: `backend/src/2_domains/school/cardLadder/mastery.mjs`.
 
 ## Rounds and the three piles
 
@@ -225,7 +266,7 @@ stays tricky for another day. **Nothing in a drill grades or changes word
 state**; it exists purely to walk one word from full support to none.
 
 Steps, fixed at creation and always in this order
-(`DRILL_STEPS` in `backend/src/2_domains/school/wordLadder/drill.mjs`) — the
+(`DRILL_STEPS` in `backend/src/2_domains/school/cardLadder/drill.mjs`) — the
 unsupported production steps (dictation, say-from-cue, type) come last, after
 the scaffolded tiles, so writing from sound or memory is never front-loaded.
 **Typing from memory (dictation, type) is in a drill only for a word
@@ -290,10 +331,10 @@ a model. Never while the mic is open or a take is saving.
 
 A **kept** take (one that passes the shared speech floor —
 `shared/speechFloor.js`, not too quiet, not too short) is uploaded via
-`POST /word-ladder/sittings/:sittingId/recordings/:itemId` and saved for a
+`POST /card-ladder/sittings/:sittingId/recordings/:itemId` and saved for a
 grown-up to review at
-`media/school/recordings/word-ladder/<package>/<learnerId>/<studyDay>/<wordId>-<n>.<ext>`
-(`FilesystemWordLadderRecordings`). **Test mode never writes a file**: its
+`media/school/recordings/card-ladder/<package>/<learnerId>/<studyDay>/<wordId>-<n>.<ext>`
+(`FilesystemCardLadderRecordings`). **Test mode never writes a file**: its
 sink (`DiscardingRecordings`) counts the take and drops it, so the test
 banner's "nothing is saved" holds for speaking too. A refused take (too
 quiet / too short) is never uploaded and never disables anything.
@@ -323,12 +364,17 @@ term audio — otherwise introduction goes straight from flash to copy.
 
 ## The on-screen jamo keypad (spec §6)
 
+**Only a Hangul target has an on-screen keypad.** `keypadFor(langs.targetScript)`
+(`CardLadder/targetScript.js`) returns `JamoKeypad` for `hangul` and nothing
+for any other script: a generic target shows no toggle, never auto-opens and
+ignores the long-press, and is typed on the device's own keyboard.
+
 There is no web API that tells a page a Bluetooth keyboard is attached, so
 the keypad (`JamoKeypad.jsx`) is a **toggle**, offered on every typing item
 (copy, dictation, graded typed, and a drill's copy/dictation/type steps).
 It is a **last resort, not an option** (owner, 2026-09-23): a small
 icon-only button pinned to the item's bottom-left (`aria-label` "Show / Hide
-Korean keypad"), out of the button row. It **hides once a hardware keyboard
+keypad"), out of the button row. It **hides once a hardware keyboard
 is known** — the shared heuristic in `lib/hardwareKeyboard.js` via
 `hooks/useHardwareKeyboard.js`: a real letter/digit/punctuation keydown
 (never `keyCode` 229, `Unidentified`, or a composing key), remembered per
@@ -353,41 +399,46 @@ stops propagation before it would otherwise reach the field. When the
 keypad is open, the typed item's prompt collapses to a compact height so
 the stage still fits at 1280×800.
 
-## Typed input and the judge (`WordLadderTypedJudge`)
+## Typed input and the judge (`CardLadderTypedJudge`)
 
 A mastery test, not a spelling test — grading is deliberately generous.
-`backend/src/3_applications/school/WordLadderTypedJudge.mjs` runs the
-deterministic half (`2_domains/school/wordLadder/{jamo,typedScore}.mjs`) in
-order, first decision wins:
+`backend/src/3_applications/school/CardLadderTypedJudge.mjs` runs the
+deterministic half (`2_domains/school/cardLadder/{targetScript,jamo,typedScore}.mjs`) in
+order, first decision wins. The sitting passes the judge the target side's
+script and language (`targetScript`, `targetLanguage`) — the one seam where
+script-specific grading plugs in:
 
 | Step | Condition | Score |
 |---|---|---|
 | Exact | normalised match | 10, `judge: exact` |
-| No Hangul | attempt has no Hangul syllable/jamo | 1, `judge: no-hangul` |
+| Wrong script | **Hangul target only**: the attempt has no Hangul syllable/jamo | 1, `judge: wrong-script` (days before 2026-09-23 say `no-hangul`) |
 | Different real word | normalised match to another introduced word or an authored decoy | 2, `judge: guard` |
 | Deterministic (short, L ≤ 4 jamo) | distance 1 → 6 · distance ≥ 2 → 2 | `judge: distance` |
 | Deterministic (longer) | d/L ≤ 10% → 8 · ≤ 20% → 6 · ≤ 33% → 4 · beyond → 2 | `judge: distance` |
 
-Distance is Levenshtein over **jamo as typed on a two-set keyboard** (compound
+Distance is Levenshtein over `keystrokeUnits(text, targetScript)`: for a
+Hangul target, **jamo as typed on a two-set keyboard** (compound
 vowels/finals split into component keys; tense consonants and ㅒ/ㅖ stay
-single). **Short words (≤ 2 syllables): the deterministic score is final** — no
-model call. **Longer words**: if `word_ladder.judge.model` is configured, a
+single); for any other target, code points, with no script floor. (Per-script
+normalizers — case folding, diacritics — are the next task.) The model's
+instructions name the target language (`typed Korean answer`). **Short words (≤ 2 syllables): the deterministic score is final** — no
+model call. **Longer words**: if `card_ladder.judge.model` is configured, a
 small low-effort model may raise an eligible floor (score ≥ 4 and d/L ≤ 33%) by
 **one band** (`judge: model`), never lower it; model failure or timeout falls
 back to the deterministic score (`judge: fallback`). **On this household
-`word_ladder.judge.model` is `gpt-5-nano`**, so a long-word misspelling that
+`card_ladder.judge.model` is `gpt-5-nano`**, so a long-word misspelling that
 clears the deterministic floor can still gain the model's +1-band step;
-verdicts still land on `exact`, `no-hangul`, `guard`, `distance`, `cache` or
+verdicts still land on `exact`, `wrong-script`, `guard`, `distance`, `cache` or
 `fallback` whenever the model doesn't apply or doesn't answer in time.
 
 Pass = score ≥ `typing.passScore` (default 6). Verdicts are cached by
 (package, word id, normalised answer) in
-`data/household/school/runtime/word-ladder/<package>/judgements.yml`
+`data/household/school/runtime/card-ladder/<package>/judgements.yml`
 (`YamlJudgementCache`) — a reload or repeated typo gets the same verdict with
 no second call. A **grown-up's re-grade** overwrites that answer's entry with
 `judge: grown-up` (see [Grown-up word controls](#grown-up-word-controls-spec-6));
 the judge checks for one **before any band**, so it wins even for an exact,
-short or no-Hangul answer.
+short or wrong-script answer.
 
 Every task item's day-file record (`items[itemId]`) keeps `wordId`, `task`,
 `source` and, for a judged answer, the judge's `reason` — what the console
@@ -422,8 +473,8 @@ enrolled in before (`status.decksSeen`) — a deck is a quota, not a deadline.
 
 ## Settings and bounds
 
-Defaults live in `backend/src/2_domains/school/wordLadder/settings.mjs`;
-`school.yml`'s `word_ladder.settings` / `word_ladder.bounds` override them
+Defaults live in `backend/src/2_domains/school/cardLadder/settings.mjs`;
+`school.yml`'s `card_ladder.settings` / `card_ladder.bounds` override them
 (`resolveSettings`). **The tuning values in force for a study day are frozen
 at its first open** (`dayFile.atOpen.settings`) — a mid-day config edit never
 moves the goalposts under a child already partway through.
@@ -431,11 +482,11 @@ moves the goalposts under a child already partway through.
 A day's first open reads the settings as config settings with the learner's
 tuned values (`tuning.yml`, beside `status.yml`) laid over them. Only the six
 tunables are overlaid, and each is clamped to the spec bounds and to
-`word_ladder.bounds`. A tuning change therefore lands at the learner's **next
+`card_ladder.bounds`. A tuning change therefore lands at the learner's **next
 day's first open**. Test mode reads the learner's tuned values but never
 writes them.
 
-### Tuning (`WordLadderTuningService`, spec §7)
+### Tuning (`CardLadderTuningService`, spec §7)
 
 The tuner runs once per learner × word package for a study day that has
 ended. It skips a day in these cases:
@@ -465,10 +516,10 @@ nothing; it records `status: null, error` and marks the day. A `concern` row
 also gets `notified: false` and `concernAt` (when a `notify` port is wired):
 an outstanding push that `deliverPushes` sends later, not `runFor`.
 
-**Composition and schedule** (`5_composition/modules/wordLadderTuning.mjs`,
+**Composition and schedule** (`5_composition/modules/cardLadderTuning.mjs`,
 wired in `app.mjs`). The service is built on the **live** store and the
-assignment store. The `WordLadderTuner` agent (a `MastraAdapter` runtime, one
-structured step, no tools) is built only when `word_ladder.tuner.model` is set
+assignment store. The `CardLadderTuner` agent (a `MastraAdapter` runtime, one
+structured step, no tools) is built only when `card_ladder.tuner.model` is set
 in the household School config. A bare id (`gpt-5-nano`) is assumed to be
 OpenAI's and passed on as `openai/gpt-5-nano`; any id with a `/` (for example
 `anthropic/…`) is passed as-is, since Mastra resolves only provider-qualified
@@ -483,10 +534,10 @@ ended, so the first tick after the study-day rollover does the work. One
 learner's failure is logged (`tuning-run-failed`) and the tick goes on.
 
 **Concern push.** `notify` composes the copy with `composeSchoolPush({kind:
-'word-ladder'})` (push standard): `🔤 {Child} — {Deck title}`, the body is the
+'card-ladder'})` (push standard): `🔤 {Child} — {Deck title}`, the body is the
 tuner's first note when it reads cleanly (no ids, slugs or enums), else
 "Word practice needs a grown-up's look", then the study day. The channel is
-School needs you, and the tag `school-{learnerId}-word-ladder-{package}` means
+School needs you, and the tag `school-{learnerId}-card-ladder-{package}` means
 the next concern replaces the card. It goes to every `teachers:` id through the
 household `NotificationService` (`category: school`, `urgency: high`,
 `dedupeKey` per teacher, learner, package and day). A failed label lookup drops
@@ -500,17 +551,17 @@ suppresses a non-critical push. `notify` answers `sent` (any copy delivered),
 `suppressed` (governance held every copy) or `failed`. `deliverPushes` marks a
 sent row `notified: true` (`notifiedAt`), leaves a suppressed or failed row
 pending for the next tick, and marks a row still pending after **48 hours**
-`notified: 'dropped'`. Each attempt logs `school.word-ladder.tuning-push
+`notified: 'dropped'`. Each attempt logs `school.card-ladder.tuning-push
 {status}`: info for `sent` / `suppressed`, warn for `failed` / `dropped`. It
 takes the same per-learner-package guard as a tuning run and re-reads
 `tuning.yml` before writing. With a morning quiet-hours end at 07:00, the push
 arrives on the first tick after it.
 
 **Console and undo** (`adminTuning`, `adminUndo`). Both are teacher-gated
-(`action: 'word-ladder.tuning'`), refuse a learner not enrolled in the deck,
+(`action: 'card-ladder.tuning'`), refuse a learner not enrolled in the deck,
 and exist only on the live service. The view lists each tunable with `current`
 (config plus tuned values, clamped), `default`, `min`/`max` (spec bounds
-narrowed by `word_ladder.bounds`), `tuned` and `lastChanged`, the last
+narrowed by `card_ladder.bounds`), `tuned` and `lastChanged`, the last
 non-undo run, and the history newest first. An applied change is `undoable`
 when it is still that setting's latest change and still in force. Undo:
 
@@ -520,7 +571,7 @@ when it is still that setting's latest change and still in force. Undo:
   `{day, undo: true, actorId, applied: [{setting, from, to, reason: 'grown-up undo'}]}`;
 - sets `lastChanged[setting]` to today, so the dwell brake holds the grown-up's
   value for the next 5 study days. `lastTunedDay` is untouched;
-- logs `school.word-ladder.tuning` with `reason: 'grown-up undo'` and `actorId`;
+- logs `school.card-ladder.tuning` with `reason: 'grown-up undo'` and `actorId`;
 - is refused while a tuning run for that learner package is in flight, when
   there is nothing to undo, or when the value has changed since.
 
@@ -541,7 +592,7 @@ when it is still that setting's latest change and still in force. Undo:
 Once the day is done (goal or cap) the summary shows once
 (`dayFile.summarySeen`), then the **practice menu**: exactly the modes the
 server lists in `item.modes` (`PRACTICE_MODES` in
-`backend/src/2_domains/school/wordLadder/practice.mjs`: flashcards, match,
+`backend/src/2_domains/school/cardLadder/practice.mjs`: flashcards, match,
 say, write, listen, drill, quiz) — a mode whose default run (with help,
 every introduced word) would come up empty is not offered at all. **Say** is
 the exception: it is offered when EITHER variant has a run (Without help
@@ -589,7 +640,7 @@ words only): every word the learner can meet — decks seen in order, then
 the current deck, plus any other introduced word — with a state chip
 (New / Just met / Not yet / Familiar / Got it / Recognised / Mastered, with
 stars for stage — a `mastered` word reads Recognised until the typed sign-off,
-from the row's `level`) and a Tricky chip when set. `GET /word-ladder/words` in test
+from the row's `level`) and a Tricky chip when set. `GET /card-ladder/words` in test
 mode **requires `sittingId`** — it reads that sitting's shadow; there is no
 "current" live status for it to fall back to.
 
@@ -597,12 +648,12 @@ mode **requires `sittingId`** — it reads that sitting's shadow; there is no
 
 Per learner, per word package, from the teacher console. **Live only** (the
 test service refuses them), and every call passes `TeacherGate.assert({userId:
-actorId, pin, action: 'word-ladder.admin', context: {learnerId}})` first — a
-refusal changes nothing. Each mutation logs `school.word-ladder.admin`
+actorId, pin, action: 'card-ladder.admin', context: {learnerId}})` first — a
+refusal changes nothing. Each mutation logs `school.card-ladder.admin`
 `{actorId, learnerId, package, wordId, action}` and a `transition` (source
 `admin`) for any word whose state or stage it moved. Pure parts live in
-`2_domains/school/wordLadder/admin.mjs`; the service methods are
-`WordLadderSittingService.admin*`.
+`2_domains/school/cardLadder/admin.mjs`; the service methods are
+`CardLadderSittingService.admin*`.
 
 A control that does not touch the day's plan (reset, mark mastered, drop deck,
 or exclude on a day not yet opened) writes `status.yml` only: the store never
@@ -620,50 +671,50 @@ day the learner actually opened (`listDays` = their study days).
 
 ## API
 
-Mounted by `mountWordLadderRoutes` (`backend/src/4_api/v1/routers/school.wordLadder.mjs`)
-at `/api/v1/school/word-ladder` (live) and `/api/v1/school/word-ladder/test`
+Mounted by `mountCardLadderRoutes` (`backend/src/4_api/v1/routers/school.cardLadder.mjs`)
+at `/api/v1/school/card-ladder` (live) and `/api/v1/school/card-ladder/test`
 (test mode, same shape). Every response is `Cache-Control: private, no-store`.
 
-- `GET /word-ladder/intro?userId=&deckId=` → the start card, **read-only** (opens no day, writes nothing):
+- `GET /card-ladder/intro?userId=&deckId=` → the start card, **read-only** (opens no day, writes nothing):
   `{deckId, package, day, test, course: {id, title}, unit: {id, title}, poster, today: {newCount, reviewCount,
   estimatedMinutes, doneToday, label, line}, progress: {learned, recognised, total}}`. `poster` is the self-service URL
   above. Test mode (`/test/intro?…&scenario=`) reads a **peeked** shadow — the same seeded snapshot Start's
-  open would take, built and thrown away, never kept (`ShadowWordLadderStores.peek`)
-- `POST /word-ladder/open {userId, deckId, capabilities?: {microphone}}` → `{sittingId, day, package, title, language, gloss, item, progress}`
+  open would take, built and thrown away, never kept (`ShadowCardLadderStores.peek`)
+- `POST /card-ladder/open {userId, deckId, capabilities?: {microphone}}` → `{sittingId, day, package, title, language, gloss, target, anchor, item, progress}` (`target: {code, name, script}`, `anchor: {code, name}`; `language`/`gloss` are the same two languages under their older names)
   (no microphone → no speaking steps; test mode also takes `scenario`)
-- `POST /word-ladder/sittings/:sittingId/items/:itemId {userId, response}` → `{result, item, progress}`;
+- `POST /card-ladder/sittings/:sittingId/items/:itemId {userId, response}` → `{result, item, progress}`;
   `response` shape depends on the current item: `{seen:true}` (flashcard intro),
   `{sort}` (flashcard stream), `{typed}` (copy / typed), `{choice}` / `{dontKnow:true}` (choice)
-- `GET /word-ladder/sittings/:sittingId?userId=` → current item + progress (reload)
-- `POST /word-ladder/sittings/:sittingId/close {userId, reason}` — `reason` ∈ `goal|cap|leave|idle|unmount`
-- `POST /word-ladder/sittings/:sittingId/recordings/:itemId?userId=&ext=` — raw audio body
+- `GET /card-ladder/sittings/:sittingId?userId=` → current item + progress (reload)
+- `POST /card-ladder/sittings/:sittingId/close {userId, reason}` — `reason` ∈ `goal|cap|leave|idle|unmount`
+- `POST /card-ladder/sittings/:sittingId/recordings/:itemId?userId=&ext=` — raw audio body
   (`audio/webm|ogg|mp4`, `application/octet-stream`, ≤10 MB) → `{take}`, plus
   `reveal: {term, audio}` for read-aloud / say-from-cue. Only for the current
   item when it is a speaking step (`say`, or a drill's say-after / read-aloud /
   say-from-cue); never touches status. Test mode's sink keeps nothing.
-- `POST /word-ladder/sittings/:sittingId/practice {userId, mode, help, filter, chosen, frontSide}` → `{item, progress}`;
+- `POST /card-ladder/sittings/:sittingId/practice {userId, mode, help, filter, chosen, frontSide}` → `{item, progress}`;
   400 before today's goal
-- `GET /word-ladder/words?userId=&deckId=[&sittingId=]` → `{words: [{wordId, term, gloss, state, stage, tricky, dueDay}]}`
+- `GET /card-ladder/words?userId=&deckId=[&sittingId=]` → `{words: [{wordId, term, gloss, state, stage, tricky, dueDay}]}`
   in deck order (decks seen, then this one); test mode requires `sittingId` and reads that shadow
 
 Items never leak an answer: dictation carries only the term audio; tiles the
 syllables and a cue; type / say-from-cue only the cue; read-aloud the text with
 no audio until the take; look / copy / say-after the full word card.
-- `GET /word-ladder/stage` → `{screen}` (the configured stage screen id, see below)
-- `POST /word-ladder/fold {learnerId, actorId, pin}` — teacher-gated: runs the paper-quiz fold for every
-  word-ladder package the learner is enrolled in, on demand
+- `GET /card-ladder/stage` → `{screen}` (the configured stage screen id, see below)
+- `POST /card-ladder/fold {learnerId, actorId, pin}` — teacher-gated: runs the paper-quiz fold for every
+  card-ladder package the learner is enrolled in, on demand
 - Grown-up word controls, **live mount only**, teacher-gated (`pin` may be the
   console's cookie capability — the GET, which has no body, reads the
   `daylight_teacher_session` cookie itself when no `pin` query is given):
-  `GET /word-ladder/admin/words?learnerId=&deckId=&actorId=&pin=` → `{learnerId, package, decksSeen, droppableDecks, words}`;
-  `POST /word-ladder/admin/reset {learnerId, deckId, wordId, actorId, pin}`,
+  `GET /card-ladder/admin/words?learnerId=&deckId=&actorId=&pin=` → `{learnerId, package, decksSeen, droppableDecks, words}`;
+  `POST /card-ladder/admin/reset {learnerId, deckId, wordId, actorId, pin}`,
   `…/admin/mastered {…, wordId, stage}`, `…/admin/exclude {…, wordId, excluded}`,
   `…/admin/drop-deck {…, dropDeckId}`, `…/admin/regrade {…, day, itemId, pass}`
-- Tuning, **live mount only**, teacher-gated in `WordLadderTuningService`. The
+- Tuning, **live mount only**, teacher-gated in `CardLadderTuningService`. The
   acting teacher is the capability session's own user when the cookie holds
   one, else the `actorId` given:
-  `GET /word-ladder/admin/tuning?learnerId=&deckId=` → `{learnerId, package, state, lastTunedDay, settings, last, history}`;
-  `POST /word-ladder/admin/tuning/undo {learnerId, deckId, setting, actorId, pin}` → `{learnerId, package, day, setting, from, to, reason}`
+  `GET /card-ladder/admin/tuning?learnerId=&deckId=` → `{learnerId, package, state, lastTunedDay, settings, last, history}`;
+  `POST /card-ladder/admin/tuning/undo {learnerId, deckId, setting, actorId, pin}` → `{learnerId, package, day, setting, from, to, reason}`
 
 Item ids make every response idempotent. A sitting belongs to its study day:
 after the day boundary it 404s and the client reopens. **Server idle close:** a
@@ -674,12 +725,12 @@ its last input — a reload or a late answer on the current one still lands.
 ## The door and `/test`
 
 ```
-/school/go/<learner>/word-ladder              the real sitting
-/school/go/<learner>/word-ladder/test         read-only test sitting
-/school/go/<learner>/word-ladder/<pkg>[/test] when the learner has >1 word package
+/school/go/<learner>/card-ladder              the real sitting
+/school/go/<learner>/card-ladder/test         read-only test sitting
+/school/go/<learner>/card-ladder/<pkg>[/test] when the learner has >1 word package
 ```
 
-`WordLadderDoorLauncher` resolves the learner's **current** word-ladder
+`CardLadderDoorLauncher` resolves the learner's **current** card-ladder
 enrollment and mints the ordinary flashcards launch target — no new authority.
 With several packages, a bare URL 404s listing them; name the package to pick
 one. This is the household's [code-free admin door](../../runbooks/school/README.md#opening-a-program-without-an-access-code);
@@ -687,7 +738,7 @@ one. This is the household's [code-free admin door](../../runbooks/school/README
 id/instance (`SchoolApp.jsx`) — a program with no test mode refuses a `/test`
 URL from the URL alone, before any grant is asked for.
 
-**Test mode** runs the same engine over a `ShadowWordLadderStores` in-memory
+**Test mode** runs the same engine over a `ShadowCardLadderStores` in-memory
 deep copy of the learner's real status + today's day file, snapshotted at
 open. The typed judge still runs (so verdicts can be tested) but its cache is
 an in-memory `MemoryJudgementCache` that reads through to the live
@@ -700,7 +751,7 @@ shadow 404s on next touch and the client reopens. The banner reads
 **"TEST — nothing is saved"**.
 
 `?scenario=` seeds the shadow before the sitting opens
-(`backend/src/2_domains/school/wordLadder/scenarios.mjs`):
+(`backend/src/2_domains/school/cardLadder/scenarios.mjs`):
 
 | Scenario | Seeds |
 |---|---|
@@ -713,31 +764,31 @@ shadow 404s on next touch and the client reopens. The banner reads
 | `done` | today already closed (`doneAt` = today) — straight to the summary/menu |
 
 A backend safety test
-(`backend/src/3_applications/school/WordLadderTestMode.test.mjs`) drives a full
+(`backend/src/3_applications/school/CardLadderTestMode.test.mjs`) drives a full
 test sitting end to end and asserts every real file on disk is byte-identical
 before and after — this is the guarantee the banner promises.
 
 ## Stage, layout, text fitting
 
 The program renders inside a **fixed stage** sized from config, never code:
-`GET /word-ladder/stage` returns the screen id named by `school.yml`'s
-`word_ladder.stage.screen` (the Portal); `WordLadderStage.jsx` reads that
+`GET /card-ladder/stage` returns the screen id named by `school.yml`'s
+`card_ladder.stage.screen` (the Portal); `CardLadderStage.jsx` reads that
 screen's `resolution` from `/api/v1/screens/<id>` (e.g. `screens/portal.yml`:
 1280×800) and centres/scales the stage uniformly to fit whatever the actual
 viewport is. If either fetch fails, the stage falls back to the raw viewport
-size and logs `school-word-ladder.stage-failed` rather than rendering nothing.
+size and logs `school-card-ladder.stage-failed` rather than rendering nothing.
 
 Text roles (`FitText.jsx`) fit the largest size that fits their region — no
 break inside a word, per-role min/max — and expose it as an `.wl-fit` element
 so a Playwright spec can assert none of them overflow their box (see
-`tests/live/flow/school/word-ladder-stage.runtime.test.mjs`).
+`tests/live/flow/school/card-ladder-stage.runtime.test.mjs`).
 
 ### The start card (launch card)
 
 The sitting does not open on mount (spec §6). The program first shows the
-**launch card** (`WordLadderStartCard.jsx`), filled from `GET …/intro`:
+**launch card** (`CardLadderStartCard.jsx`), filled from `GET …/intro`:
 
-- the **poster** (2:3, left) — `programs/word-ladder/<package>/poster.jpg`;
+- the **poster** (2:3, left) — `programs/card-ladder/<package>/poster.jpg`;
   missing or failing to load draws a calm blank placeholder, never a substitute;
 - the **course** = the lexicon's `program.title` (the class, "UBKS 비둘기");
 - the **unit** = the deck's `title` ("Week 1: Classroom");
@@ -761,9 +812,9 @@ the cap. If the intro cannot be
 read the card falls back to `descriptor.title` (else "Words") and Start still
 works. The test banner shows on the start card too.
 
-**The agenda tile carries the same card.** `WordLadderSittingService.dayStatus`
+**The agenda tile carries the same card.** `CardLadderSittingService.dayStatus`
 (today only — a replayed past day gets none) returns `context: {course: {id:
-'program:word-ladder:<package>', title}, unit: {id: deckId, title}, lesson:
+'program:card-ladder:<package>', title}, unit: {id: deckId, title}, lesson:
 {id, title: '4 new words · 3 to review'}}`, `description: 'About 10 minutes'`
 and `progress: [{scope: 'unit', label: '3 recognised · 1 mastered', completed:
 mastered, inProgress: recognised, total}]` — the launch card's progress row
@@ -784,7 +835,7 @@ Meet each new word.                               ← once per step
 
 - **Exit** (house `back` icon + label, `TouchButton`) behaves exactly as Leave
   did: closes the sitting with reason `leave` and exits.
-- **Step trail** (`stepTrail.js`, drawn by `WordLadderHeader.jsx`): today's
+- **Step trail** (`stepTrail.js`, drawn by `CardLadderHeader.jsx`): today's
   steps Review › Learn › Sort › Quiz › Match › Practice. The current step is
   lit, finished ones ticked, later ones dim. A step the day does not have is
   omitted: Review when no rechecks were due (`progress.rechecksTotal`), Learn
@@ -837,7 +888,7 @@ read-aloud, say-from-cue), the practice menu's listen run
 
 "Spacebar should be the way to progress through this in the least friction
 way possible … spacebar should never be a skip." One map per screen
-(`useWordLadderKeys.js`); the on-screen hint (`keyHint`) is always on the
+(`useCardLadderKeys.js`); the on-screen hint (`keyHint`) is always on the
 button that currently owns the key.
 
 | Key | Does | Where |
@@ -892,24 +943,25 @@ e.g. `ko`); `ime/languages.js` normalises it (`ko`, `ko-KR` → `KR`) so the
 in-page Hangul IME switches to Korean on focus. A copy mismatch clears the
 field for the retry.
 
-**One audio lane** (`wordLadderAudio.js`): every clip goes through
+**One audio lane** (`cardLadderAudio.js`): every clip goes through
 `startClip`, and starting one stops whichever is playing; the program stops
 the lane on unmount. **A late take is dropped**: `useTakeRecorder` ignores a
 MediaRecorder `onstop` that lands after its item unmounted (Stop, then Next),
 so it is never uploaded or played over the next item.
 
-**Ruling 2026-09-23 (owner): English-side cues show text + picture + audio
+**Ruling 2026-09-23 (owner): anchor-side cues show text + picture + audio
 together; the prompt is never the test.** "We're not testing for English
-comprehension." `cueFor` (`choices.mjs`) no longer picks one kind at random;
-it returns one bundle `{type: 'english', text: gloss, image, audio}` (pure,
-deterministic), and the sitting service serves every English-side cue — 3.1,
+comprehension" — the anchor is what the learner already holds. `cueFor`
+(`choices.mjs`) no longer picks one kind at random;
+it returns one bundle `{type: 'anchor', text: gloss, image, audio}` (pure,
+deterministic), and the sitting service serves every anchor-side cue — 3.1,
 3.3, the drill's tiles / say-from-cue / type — as that bundle with the
 picture and gloss-clip asset ids, rebuilt at publish time so an item stored
-under the old kinds renders the new way. `items/EnglishCue.jsx` lays it out:
+under the old kinds renders the new way. `items/AnchorCue.jsx` lays it out:
 the picture (via `CuePicture`, which simply drops out if it fails) beside the
-English text, and a **Listen (Tab)** for the gloss clip. No item renders an
-audio-only English prompt. The Korean side is unchanged: the picture never
-appears with the Korean on a learning front.
+anchor text, and a **Listen (Tab)** for the gloss clip. No item renders an
+audio-only anchor prompt. The target side is unchanged: the picture never
+appears with the target on a learning front.
 
 (Before the ruling:) An **image cue** on 3.1 / 3.3 always arrives with the gloss as `cue.text` (the
 gloss is the cue there, never the answer). `items/CuePicture.jsx` renders the
@@ -921,19 +973,51 @@ load (logging `media.failed` at warn).
 FKB's **autoplay** setting must be enabled on the Portal for cue and answer
 audio to play without a tap-to-unlock stall — see the
 [School runbook](../../runbooks/school/README.md). Drive a scenario headless
-with `WORD_LADDER_TEST_LEARNER=<id> npx playwright test
-tests/live/flow/school/word-ladder-stage.runtime.test.mjs`, or open
-`/school/go/<learner>/word-ladder/test?scenario=fresh` in a grown-up's browser
+with `CARD_LADDER_TEST_LEARNER=<id> npx playwright test
+tests/live/flow/school/card-ladder-stage.runtime.test.mjs`, or open
+`/school/go/<learner>/card-ladder/test?scenario=fresh` in a grown-up's browser
 by hand.
+
+## Renamed from word ladder (2026-09-23)
+
+The engine was renamed so its names describe role, not a language or a
+"word" assumption. Nothing in use broke; every old name is an alias:
+
+| Old | New | How the old one keeps working |
+|---|---|---|
+| `/api/v1/school/word-ladder/*` | `/api/v1/school/card-ladder/*` | every route is mounted under both roots (`CARD_LADDER_ROUTE_ROOTS`) |
+| `/school/go/<learner>/word-ladder[/<pkg>][/test]` | `/school/go/<learner>/card-ladder[…]` | the frontend door and `IssueDirectLaunch` (`DOOR_PROGRAM_ALIASES`) map it; `available()` lists only `card-ladder` |
+| `policy.mode: word-ladder` | `policy.mode: card-ladder` | read as `card-ladder` by `YamlAssignmentStore`, the validator, every service check (`isCardLadderPolicy`) and the client (`cardLadderMode.js`). The plan file is not rewritten; the next grown-up save writes the new value |
+| `school.yml` `word_ladder:` | `card_ladder:` | read when `card_ladder` is absent (`cardLadderConfigOf`); never merged |
+| log events `school.word-ladder.*` | `school.card-ladder.*` | the trace CLI queries both and `formatTrace` reads both (`canonicalTraceMsg`) |
+| `school word-ladder trace` | `school card-ladder trace` | a hidden CLI namespace alias |
+| `users/<id>/apps/school/word-ladder/<pkg>/` | `…/card-ladder/<pkg>/` | copied once, on the first live read (below) |
+| `household/school/runtime/word-ladder/<pkg>/judgements.yml` | `…/runtime/card-ladder/<pkg>/…` | copied once, on first use |
+| `media/school/recordings/word-ladder/<pkg>/<learner>/` | `…/recordings/card-ladder/…` | copied once per learner, on first use |
+| `media/school/programs/word-ladder/<pkg>/poster.jpg` | `…/programs/card-ladder/…` | the poster reader falls back to the old directory (media is not moved) |
+| schemas `school.word-ladder-status/v3`, `-day/v1`, `-tuning/v1` | `school.card-ladder-…` | read as the same schema; rewritten under the new name on the next write |
+| judge `no-hangul` | `wrong-script` | only a label; old day files keep theirs |
+
+**The one-time move.** `YamlCardLadderStore` copies a package's whole
+directory (status, days, tuning) from `word-ladder/` to `card-ladder/` the
+first time a **live** read touches a package whose new directory is missing
+(`copyDirectoryOnce`: staged beside the destination and renamed into place, so
+a crash leaves nothing half-copied). It logs `school.card-ladder.store-migrated`
+once and reads and writes only the copy from then on. **The old directory is
+never deleted or written again** — it is the rollback. Test mode's shadow
+stores, the judgement cache's test-mode fallback and the live start card read
+through `readOnlyView()`, which reads an unmoved package in place and has no
+writer, so a test sitting writes neither path. The CLI reads `card-ladder/`
+first, else `word-ladder/`, and never copies.
 
 ## Logs
 
-Everything lands in the log store as `school.word-ladder.*`, and every event
-carries `mode: live|test`. `school word-ladder trace` (see the
-[School runbook](../../runbooks/school/README.md#word-ladder-trace)) turns one
+Everything lands in the log store as `school.card-ladder.*`, and every event
+carries `mode: live|test`. `school card-ladder trace` (see the
+[School runbook](../../runbooks/school/README.md#card-ladder-trace)) turns one
 learner's events into a per-sitting timeline.
 
-**Backend** (`context.module: school-word-ladder`, service-side, no `seq`).
+**Backend** (`context.module: school-card-ladder`, service-side, no `seq`).
 Every sitting event carries `learnerId`, `sittingId`, `mode`, and (on the
 sequencing events) `package` and `day`:
 
@@ -959,6 +1043,7 @@ sequencing events) `package` and `day`:
 | `tuned` / `tuning-skipped` / `tuning-failed` / `tuning-unreadable` | the outcome of one tuning run | `day`, `status` or `error` |
 | `tuning-push` | a concern push attempt | `status: sent\|suppressed\|failed\|dropped` |
 | `store-corrupt` | a YAML file could not be parsed | `kind: status\|day\|tuning` |
+| `store-migrated` | a package was copied out of the pre-rename `word-ladder/` directory (once per learner × package) | `learnerId, package, from, to` |
 
 **`item.served` reasons.** The engine gives the reason as data
 (`observe.mjs` `servedWhy`, pure); the service only logs it.
@@ -982,9 +1067,9 @@ The tuning scheduler adds `tuning-wired`, `tuning-run-failed`,
 `tuning-unavailable`; the service also logs `attempts-unreadable`,
 `decks-unlisted`, `deck-unexpandable`, `day-status-unloadable` and `card-unavailable` (warn — the agenda card could not be built; the day's credit is still returned).
 
-**Frontend trace** (`context.component: school-word-ladder`). The program
+**Frontend trace** (`context.component: school-card-ladder`). The program
 creates one trace per mount (`createTrace.js`) and binds it to the logging
-facade (`wordLadderLog.js`), so every event below is **stamped** with
+facade (`cardLadderLog.js`), so every event below is **stamped** with
 `traceId`, `sittingId`, `seq` (1, 2, 3 … within the trace), `t` (ms since the
 trace began), `learnerId`, `deckId`, `package` and `mode` (live/test). Order
 a trace by `seq`, never by `_time` (the store stamps local time as UTC). The
@@ -993,7 +1078,7 @@ stamp owns `mode`, so an item-level mode is sent as `itemMode`.
 **Input.** `input` / `via` name how the child acted: `key:Space`,
 `key:Enter`, `key:Tab`, `key:Backslash`, `key:ArrowLeft`, `key:<letter or
 digit>`, or `touch` (null = nothing the child did in the last 1.5 s). It is
-noted centrally (`inputVia.js`): `useWordLadderKeys` notes the key it acts
+noted centrally (`inputVia.js`): `useCardLadderKeys` notes the key it acts
 on, and the program root's capture listeners note a touch on any button and
 an Enter that submits a field. Nothing is logged per keystroke.
 
@@ -1025,9 +1110,9 @@ Before 2026-09-23 the take events were `recording.uploaded` /
 ## What is deferred
 
 Plans 1–5 are built: the core loop, the drill / speaking / keypad / practice
-menu, the printed quiz and fold, the trace CLI and the console's **Words**
+menu, the printed quiz and fold, the trace CLI and the console's **Cards**
 view ([`teacher.md`](teacher.md#2-the-navigation-graph)), and the tuning
-pass. The tuner agent changes values only once `word_ladder.tuner.model` is
+pass. The tuner agent changes values only once `card_ladder.tuner.model` is
 set in the household School config. What remains, by ruling or by the spec's
 own scope:
 
@@ -1036,12 +1121,12 @@ own scope:
   [The practice menu](#the-practice-menu-spec-6-post-goal)), by ruling.
 - **Out of scope in the spec**: speech-recognition scoring (speaking is never
   graded), a trace viewer in the teacher console (the trace is a CLI), and
-  test mode for programs other than the word ladder.
+  test mode for programs other than the card ladder.
 
 ## Printed quiz and the fold (spec §8)
 
 Two quiz sources share one row shape (`buildWordQuizSource` /
-`buildLearnerQuizSource`, `backend/src/2_domains/school/wordLadder/quizSource.mjs`):
+`buildLearnerQuizSource`, `backend/src/2_domains/school/cardLadder/quizSource.mjs`):
 one `question` block per word, `itemId: <wordId>` (so a scanned row's attempt
 names the word the fold demotes), answer + three authored decoys, alternating
 term→gloss (`What does **<term>** mean?`) / gloss→term (`Which is **<gloss>**
@@ -1050,7 +1135,7 @@ The header instruction and `topics` come from the lexicon's `quiz` block.
 
 ### Whole-deck quiz (every word in one deck)
 
-    node cli/school.mjs word-ladder quiz --deck week-01-classroom
+    node cli/school.mjs card-ladder quiz --deck week-01-classroom
     node cli/school.mjs docs publish language/korean/week-01-classroom-quiz.yml
 
 Writes `<deckId>-quiz.yml`, one question per word in the deck — including
@@ -1060,7 +1145,7 @@ otherwise the CLI lists the matches — pass the full id.
 
 ### Per-learner weekly quiz (only what the learner has been introduced to)
 
-    node cli/school.mjs word-ladder quiz --learner <id> --package korean-vocab [--week 2026-W39] [--rows 20] [--seed N] [--force]
+    node cli/school.mjs card-ladder quiz --learner <id> --package korean-vocab [--week 2026-W39] [--rows 20] [--seed N] [--force]
     node cli/school.mjs docs publish language/korean/korean-vocab-quiz-<id>-2026-w39.yml
 
 Writes `<deckDir>/<pkg>-quiz-<learnerId>-<isoWeek>.yml` (`quizId.mjs`
@@ -1084,7 +1169,7 @@ sheet — this is correct behaviour, not a bug to route around.
 ### Publishing and the reprint rule
 
 Both forms write through the same `writeQuizSource` in
-`cli/school/wordLadder.mjs`: an identical file (byte-for-byte) is left alone
+`cli/school/cardLadder.mjs`: an identical file (byte-for-byte) is left alone
 (`unchanged: <file>`); a **different** file — the ordinary case for a
 reprint after new introductions or a scan-side re-grade — is refused unless
 `--force`. **A changed source must be republished as a new revision and a
@@ -1115,14 +1200,14 @@ and accepts `docId` two ways:
   refuse the wrong one). A **sibling's sheet** — a `docId` that parses as a
   per-learner id for this package but names a *different* `learnerId` — is
   refused, not silently dropped: it is logged
-  `school.word-ladder.fold-refused` with the attempt id and bankId, and
+  `school.card-ladder.fold-refused` with the attempt id and bankId, and
   recorded in `status.paperAttemptsFolded` so it is **never re-evaluated**
   on a later fold.
 - **Paper never promotes.** Whichever id shape matched, only a demotion or a
   logged-only pass/miss follows — folding a row can never raise a word's
   state.
 
-    curl -s -X POST {app}/api/v1/school/word-ladder/fold \
+    curl -s -X POST {app}/api/v1/school/card-ladder/fold \
       -H 'Content-Type: application/json' -d '{"learnerId":"{learnerId}","actorId":"{teacherId}"}'
 
 ## Rollover and media
@@ -1134,8 +1219,8 @@ renders around them and `school certify` warns (`--strict-media` fails).
 
 ## Migration from v2
 
-The v1 `status.word-ladder-status/v1` (or unversioned) shape is migrated on
-read (`migrateStatusV2` in `2_domains/school/wordLadder/statusV3.mjs`) and
+The v1 `status.card-ladder-status/v1` (or unversioned) shape is migrated on
+read (`migrateStatusV2` in `2_domains/school/cardLadder/statusV3.mjs`) and
 written as v3 on the next transaction: NEW → `new`, LEARNING → `familiar`,
 CLAIMED → `claimed`, KNOWN step n → `mastered` stage n+1 with `dueDay` = the v2
 next-check day verbatim. v2 day plans, the review run, the recording gate and

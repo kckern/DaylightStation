@@ -123,7 +123,7 @@ flowchart TD
         COURSES["/courses<br/>Courses and enrollment"]
         HIST["/history<br/>Sessions and feedback"]
         READING["/reading<br/>The reading shelf"]
-        WORDS["/words<br/>Word ladder: words and tuning"]
+        WORDS["/words<br/>Cards tab: card ladder cards and tuning"]
         REPORTS["/reports<br/>Records and grades"]
         LOPS["/operations<br/>Repair this child's record"]
     end
@@ -163,8 +163,8 @@ controls at all**, deep link included: a damaged year of evidence must never
 present as a shelf a grown-up starts "fixing". Full design:
 `docs/_wip/plans/2026-09-06-teacher-reading-admin-design.md`.
 
-**Words** is one panel per word-ladder deck the learner is enrolled in
-(`WordLadderWordsPanel`). The word table carries the grown-up word controls
+**Cards** (tab id `words`) is one panel per card-ladder deck the learner is enrolled in
+(`CardLadderWordsPanel`). The word table carries the grown-up word controls
 (reset, mark mastered, exclude, re-grade a typed answer, drop a deck from the
 pool). Under it, **Tuning** shows what the tuning agent has done for that word
 package: each tunable setting's current value against its default and bounds,
@@ -173,8 +173,8 @@ back. An applied change that is still the setting's latest and still in force
 has **Undo**, which puts the value back and holds it for the dwell (5 study
 days). Every control, reads included, is teacher-gated and live only; the
 acting teacher is the capability session's. Details:
-[`word-ladder.md`](word-ladder.md#grown-up-word-controls-spec-6) and its
-[tuning section](word-ladder.md#tuning-wordladdertuningservice-spec-7).
+[`card-ladder.md`](card-ladder.md#grown-up-word-controls-spec-6) and its
+[tuning section](card-ladder.md#tuning-cardladdertuningservice-spec-7).
 
 `/students/:id` is the canonical short form for the Day; `/students/:id/overview`
 is a retired alias that the shell redirects there rather than 404ing (trim
@@ -207,13 +207,13 @@ the [School runbook](../../runbooks/school/README.md#opening-a-program-without-a
 No authority travels in the URL: it mints the same launch target a code would
 have produced.
 
-One program adds a further, reserved segment: `/school/go/<learner>/word-ladder/test`
+One program adds a further, reserved segment: `/school/go/<learner>/card-ladder/test`
 (optionally `?scenario=fresh|due|round-end|done`) opens a **read-only test
 sitting** — the same engine, over an in-memory shadow of the learner's real
 files, so nothing typed or sorted there is ever saved. `/test` is parsed off
 the URL by the frontend shell before the program id, so a program with no test
 mode refuses it outright rather than falling through to a live runner. Details:
-[`word-ladder.md`](word-ladder.md#the-door-and-test).
+[`card-ladder.md`](card-ladder.md#the-door-and-test).
 
 ---
 
