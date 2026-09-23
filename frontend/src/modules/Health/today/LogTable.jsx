@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Button } from '@mantine/core';
 import { LoadingState } from '@/lib/ui';
 import { sumCounted } from '@shared-contracts/nutrition/countedRows.mjs';
@@ -10,6 +10,8 @@ import { groupRows, sortEntriesByCalories, calorieShares } from './groupRows.js'
 import { VoiceCapture } from '../capture/VoiceCapture.jsx';
 import { MealFoodControls } from './MealFoodControls.jsx';
 import { CaptureProgress } from './CaptureProgress.jsx';
+import { usePortionControl } from './usePortionDraft.js';
+import { useFrozenOrder, useFlipMoves } from './sectionOrder.js';
 import './mealWorkflow.scss';
 
 // Bucket totals fold through the SHARED counted-rows contract — the same file
@@ -46,7 +48,7 @@ function Section({
     const props = addedIds?.has(String(id)) ? { ...rowProps, added: true } : rowProps;
     if (!selecting) return <EntryRow key={id} {...props}/>;
     const ids = props.isGroup ? props.row.children.map(row=>row.uuid || row.id) : [id];
-    return <div key={id} className="health-meal-selection-row"><input type="checkbox" aria-label={`Select ${props.row.name || props.row.label || props.row.item}`}
+    return <div key={id} className="health-meal-selection-row" data-entry-key={props.entryKey}><input type="checkbox" aria-label={`Select ${props.row.name || props.row.label || props.row.item}`}
       checked={ids.every(id=>selectedIds.includes(id))} onChange={e=>setSelection(prev=>e.target.checked?[...new Set([...prev,...ids])]:prev.filter(id=>!ids.includes(id)))}/><EntryRow {...props}/></div>;
   };
   const [collapsed, setCollapsed] = useState(() => {
@@ -55,7 +57,13 @@ function Section({
   });
   // Heaviest first, and each calorie cell carries its share of the meal's
   // largest entry (an ingredient: of its dish) for the inline bar.
-  const entries = sortEntriesByCalories(groupRows(rows));
+  // While a portion/numeric drag (or its save) is live, the order holds still
+  // so the dragged row stays under the pointer; values still update. When the
+  // order does change, rows glide to their new places (sectionOrder.js).
+  const portionDraft = Boolean(usePortionControl()?.draft);
+  const entries = useFrozenOrder(sortEntriesByCalories(groupRows(rows)), portionDraft);
+  const sectionRef = useRef(null);
+  useFlipMoves(sectionRef, entries.map(({ row }) => row.uuid ?? row.id).join('|'));
   const entryShares = calorieShares(entries.map(({ row, children, rollup }) => (children.length ? rollup.calories : row.calories)));
   // The section frame (heading + kcal + add row) is PERMANENT structure —
   // it never depends on whether data has arrived yet. Only the entry list
@@ -79,7 +87,7 @@ function Section({
   });
 
   return (
-    <section className="health-meal">
+    <section className="health-meal" ref={sectionRef}>
       <header className="health-meal__header">
         <h4 className="health-meal__label">{label}</h4>
         {rows.length ? <MacroBadges rows={rows} className="health-meal__macros" showLabels /> : null}
@@ -127,12 +135,12 @@ function Section({
         // `id` for the same reason `key` does: not every row shape carries both.
         const measured = measuredByUuid?.get(row.uuid) ?? measuredByUuid?.get(row.id) ?? null;
         if (!isGroup) {
-          return renderRow({row,onTap:onRowTap,onConfirm,onRequestDelete,measured,kcalShare:entryShares[entryIndex]});
+          return renderRow({row,onTap:onRowTap,onConfirm,onRequestDelete,measured,kcalShare:entryShares[entryIndex],entryKey:String(key)});
         }
         const isOpen = !collapsed.has(key);
         const childShares = calorieShares(children.map(child => child.calories));
         return (
-          <div key={key} className="health-group">
+          <div key={key} className="health-group" data-entry-key={String(key)}>
             {/* `children` is attached to the row object here — not read
                 by EntryRow's own rendering (which uses rollupKcal/isGroup
                 for display) — purely so the tap handler forwards them to
