@@ -4,6 +4,31 @@ import { DaylightAPI } from '../../../lib/api.mjs';
 import { createAppLogger } from '../../../lib/ui/createAppLogger.js';
 import { operationRequest } from '../capture/operationRequest.js';
 import { FoodIcon } from './FoodIcon.jsx';
+import { nutritionPhotoUrl } from './photoUrl.js';
+import { reportArtworkFailure } from './artworkLog.js';
+
+/**
+ * A suggestion's picture: the product photo a barcode scan left on the food
+ * when there is one (legible where a 24px icon of "a drink" is not), else its
+ * icon. A photo that will not load falls back to the icon and is reported to
+ * the artwork queue.
+ */
+function SuggestArt({ entry }) {
+  const [broken, setBroken] = useState(null);
+  if (entry.photoRef && broken !== entry.photoRef) {
+    return <img className="health-suggest__icon health-suggest__photo" alt="" loading="lazy" decoding="async"
+      src={nutritionPhotoUrl(entry.photoRef, { thumb: true })}
+      onError={() => { setBroken(entry.photoRef); reportArtworkFailure('photo', entry.photoRef, { name: entry.name, icon: entry.icon || null }); }} />;
+  }
+  return <FoodIcon icon={entry.icon} className="health-suggest__icon" />;
+}
+
+/** "325 ml · " for a label serving, "30 g · " for grams, nothing when unknown. */
+function portionLabel(entry) {
+  if (entry.grams > 0) return `${Math.round(entry.grams)} g · `;
+  const serving = entry.serving;
+  return serving?.amount > 0 && serving.unit ? `${Math.round(serving.amount)} ${serving.unit} · ` : '';
+}
 import { peekApiResource, primeApiResource } from '../../../lib/hooks/useApiResource.js';
 import { shortlistPath } from '../healthResources.js';
 import { addedRowIds, trackAddFlow } from './addFlow.js';
@@ -293,14 +318,14 @@ export function AddCombobox({ bucketId, date = null, onDone, onCancel, onMeals, 
                 role="option" aria-selected={i === highlight}
                 onClick={() => pick(entry)}>
                 {entry.favorite ? <span className="health-suggest__star" aria-label="favorite">★</span> : null}
-                <FoodIcon icon={entry.icon} className="health-suggest__icon" />
+                <SuggestArt entry={entry} />
                 <span className="health-suggest__name">{entry.name}</span>
                 {entry.type === 'template' ? (
                   // A meal-level suggestion is visually distinguished from a
                   // single food (PRD F8.2) by a NON-COLOUR cue: the item count.
                   <span className="health-suggest__badge">{`${entry.itemCount ?? 0} items`}</span>
                 ) : null}
-                <span className="health-suggest__kcal">{entry.grams > 0 ? `${Math.round(entry.grams)} g · ` : ''}{entry.nutrients?.calories ?? ''} kcal</span>
+                <span className="health-suggest__kcal">{portionLabel(entry)}{entry.nutrients?.calories ?? ''} kcal</span>
               </UnstyledButton>
             </li>
           );
