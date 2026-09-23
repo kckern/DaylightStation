@@ -58,6 +58,15 @@ export function TodayView({ active = true, sidebarTarget, onSetupGoals, onCoachT
   // Warm ±7 days and each meal's shortlist once the viewed day is on screen.
   useHealthDayPrefetch(date, { enabled: active, ready: !day.loading });
   const [mealUndo, setMealUndo] = useState(null);
+  // A failed voice send whose mic unmounted (the day changed): { run, label, busy, error }.
+  const [orphanRetry, setOrphanRetry] = useState(null);
+  const keepOrphanedRecording = (run, { mealLabel, date: recordedOn }) => setOrphanRetry({ run, label: recordedOn && recordedOn !== todayISO() ? `${mealLabel} recording from ${recordedOn}` : `${mealLabel} recording`, busy: false, error: null });
+  const retryOrphanedRecording = async () => {
+    if (!orphanRetry || orphanRetry.busy) return;
+    setOrphanRetry(previous => ({ ...previous, busy: true, error: null }));
+    try { await orphanRetry.run(); setOrphanRetry(null); logger.info('voice.retry_handoff.sent'); }
+    catch (err) { setOrphanRetry(previous => previous && ({ ...previous, busy: false, error: err?.message || 'Still could not send it.' })); }
+  };
   const mealUndoOperation = useRef(null);   // bucketId | null — F5 renders the combobox here
   const [editingRow, setEditingRow] = useState(null); // row | null — F6 renders the edit sheet
   const [captureMode, setCaptureMode] = useState(null); // 'barcode' | null
@@ -409,12 +418,16 @@ export function TodayView({ active = true, sidebarTarget, onSetupGoals, onCoachT
         <Button onClick={() => preview.control.retry()}>{preview.control.draft.conflict ? 'Reload & apply intended change' : 'Retry same change'}</Button>
         <Button variant="subtle" onClick={() => { preview.control.cancel(); day.reload(); }}>Discard draft &amp; reload</Button>
       </div> : null}
-      {moves.undo ? <div className="health-pending" role="status"><span>{moves.undo.label}</span>
+      {orphanRetry ? <div className="health-pending health-pending--inline" role="status">
+        <span>{`Your ${orphanRetry.label} didn't send.`}{orphanRetry.error ? ` ${orphanRetry.error}` : ''}</span>
+        <Button size="compact-xs" loading={orphanRetry.busy} onClick={retryOrphanedRecording}>Retry recording</Button>
+        <Button size="compact-xs" variant="subtle" disabled={orphanRetry.busy} onClick={() => setOrphanRetry(null)}>Dismiss</Button></div> : null}
+      {moves.undo ? <div className="health-pending health-pending--inline" role="status"><span>{moves.undo.label}</span>
         <Button size="compact-xs" aria-label="Undo move" onClick={moves.undo.run}>Undo</Button>
         <Button size="compact-xs" variant="subtle" onClick={moves.undo.dismiss}>Dismiss</Button></div> : null}
-      {moves.error ? <div className="health-pending" role="alert"><span>{moves.error}</span>
+      {moves.error ? <div className="health-pending health-pending--inline" role="alert"><span>{moves.error}</span>
         <Button size="compact-xs" variant="subtle" onClick={moves.clearError}>Dismiss</Button></div> : null}
-      {mealUndo ? <div className="health-pending" role="status"><span>{mealUndo.label}</span>
+      {mealUndo ? <div className="health-pending health-pending--inline" role="status"><span>{mealUndo.label}</span>
         <Button size="compact-xs" aria-label="Undo meal change" loading={undoBusy} onClick={async()=>{
           if(undoPending.current)return;
           undoPending.current=true;setUndoBusy(true);
@@ -423,7 +436,7 @@ export function TodayView({ active = true, sidebarTarget, onSetupGoals, onCoachT
           catch(err){setCaptureNotice(err.message || 'Undo failed. Try again.');}
           finally{undoPending.current=false;setUndoBusy(false);}
         }}>Undo</Button><Button size="compact-xs" variant="subtle" disabled={undoBusy} onClick={()=>setMealUndo(null)}>Dismiss</Button></div> : null}
-      {undoDelete ? <div className="health-pending" role="status">
+      {undoDelete ? <div className="health-pending health-pending--inline" role="status">
         <span>{undoDelete.label} deleted.</span>
         <Button size="compact-xs" loading={undoBusy} onClick={async () => {
           if (undoPending.current) return;
@@ -466,7 +479,7 @@ export function TodayView({ active = true, sidebarTarget, onSetupGoals, onCoachT
         onMealChanged={result=>handleCaptureResult(result)} captureTasks={[...capturePending.values()]}
         measuredByUuid={measuredByUuid} addedIds={addedIds} onMoveEntry={moves.move} onMoveMeal={moves.moveMeal}
         renderAddRow={(bucket, label, meal) => <MealAddRow bucket={bucket} label={label} date={date} active={active}
-          onVoiceCapture={meal?.onVoiceCapture} selectedCount={meal?.selectedIds?.length || 0} busy={nutrition.busy}
+          onVoiceCapture={meal?.onVoiceCapture} selectedCount={meal?.selectedIds?.length || 0} busy={nutrition.busy} onOrphanedRetry={keepOrphanedRecording}
           onAdded={() => day.reload()} onSentencePending={text => beginSentencePending(bucket, text)} onPhotoCapture={onPhotoCapture} onOpenBarcode={openBarcode}
           onOpenTemplates={(target, templateId) => { setFocusTemplateId(templateId); setTemplatesFor(target); }}
           onManageFoods={() => setManageFoods(true)} />} />

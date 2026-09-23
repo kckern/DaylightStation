@@ -78,8 +78,10 @@ export function decodeAudit(result) {
   };
 }
 /** Unusable artwork must not cost an independently supported nutrient patch.
- * Domain policy still validates every surviving field and version. */
-export function normalizeAuditRepairs(result, icons, logger = {}) {
+ * Domain policy still validates every surviving field and version.
+ * The dropped icon is not the end of it: `onDroppedArt({ entryId, icon })` hands
+ * the food to the artwork remediation queue, which finds it the nearest real icon. */
+export function normalizeAuditRepairs(result, icons, logger = {}, onDroppedArt = null) {
   const clean = repair => {
     const byId = new Map();
     for (const update of repair.updates) {
@@ -87,6 +89,7 @@ export function normalizeAuditRepairs(result, icons, logger = {}) {
       if ('icon' in changes && changes.icon !== 'default'
         && (!icons?.has(changes.icon) || (icons.resolve && !icons.resolve(changes.icon)))) {
         logger.info?.('nutrition.audit.invalid_art_ignored', { entryId: update.id, icon: changes.icon });
+        onDroppedArt?.({ entryId: update.id, icon: changes.icon });
         delete changes.icon;
       }
       if (!Object.keys(changes).length) continue;
@@ -186,7 +189,24 @@ export class NutritionAuditor extends BaseAgent {
       snapshot: presented, evidence: { id: initial.id, kind: initial.kind }, ...(input.answer ? { userAnswer: input.answer } : {}),
     }), tools, systemPrompt: prompt, context: { userId, runId }, signal,
       outputSchema: auditWireSchema, limits: { timeoutMs: 120000, maxToolCalls: 20, maxSteps: 20 } });
-    return { ...normalizeAuditRepairs(decodeAudit(result.structured), this.icons, this.logger),
-      evidence: [...evidence.values()], fingerprint: snapshot.fingerprint };
+    const dropped = [];
+    const normalized = normalizeAuditRepairs(decodeAudit(result.structured), this.icons, this.logger, drop => dropped.push(drop));
+    this.#queueDroppedArt(userId, snapshot, dropped);
+    return { ...normalized, evidence: [...evidence.values()], fingerprint: snapshot.fingerprint };
+  }
+
+  /** The foods whose proposed art was refused go on the artwork queue instead of being forgotten. */
+  #queueDroppedArt(userId, snapshot, dropped) {
+    if (!dropped.length || !this.artwork?.enqueueMany) return;
+    const rows = new Map([...snapshot.rows, ...snapshot.pending.flatMap(log => log.items)].map(row => [entryKey(row), row]));
+    try {
+      this.artwork.enqueueMany(userId, dropped.map(({ entryId, icon }) => {
+        const row = rows.get(entryId);
+        return { kind: 'icon-missing', foodId: row?.foodId ?? null, name: row?.name || row?.label || null, icon: row?.icon ?? null,
+          rowIds: [entryId], error: `auditor proposed art the manifest does not serve: ${icon}` };
+      }));
+    } catch (error) {
+      this.logger?.warn?.('nutrition.audit.artwork_enqueue_failed', { userId, count: dropped.length, error: error.message });
+    }
   }
 }

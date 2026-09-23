@@ -29,7 +29,7 @@ const MicIcon = ({ active }) => (
  * `className` lets the caller apply its own sizing class instead of the
  * meal-row default.
  */
-export function VoiceCapture({ active = true, onCapture, busy, bucket, mealLabel, labelPrefix, className, onHoldChange }) {
+export function VoiceCapture({ active = true, onCapture, busy, bucket, mealLabel, labelPrefix, className, onHoldChange, onOrphanedRetry }) {
   const recRef = useRef(null);
   const [recording, setRecording] = useState(false);
   const [pending, setPending] = useState(false);
@@ -42,6 +42,12 @@ export function VoiceCapture({ active = true, onCapture, busy, bucket, mealLabel
   const activeRef = useRef(active);
   activeRef.current = active;
   const task = useCaptureTask();
+  // A failed recording must outlive this control: a date change or a meal
+  // remount unmounts it, and its Retry would go with it. On unmount the
+  // failed send is handed to `onOrphanedRetry`, which still owns the
+  // recording's original meal, date and selection.
+  const orphan = useRef(null);
+  orphan.current = task.failed && onOrphanedRetry ? { run: task.failed, hand: onOrphanedRetry } : null;
 
   // Keep automatic meal sections mounted until capture or its retry is resolved.
   const held = acquiringMic || recording || pending || task.pending || Boolean(task.retry) || Boolean(error);
@@ -57,7 +63,12 @@ export function VoiceCapture({ active = true, onCapture, busy, bucket, mealLabel
         rec.stream?.getTracks().forEach(track => track.stop());
       }
       holdCallback.current?.(false);
+      if (orphan.current) {
+        logger.info('voice.retry_handoff', { bucket: bucket || undefined });
+        orphan.current.hand(orphan.current.run, { bucket, mealLabel });
+      }
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Leaving Today completes the current recording; no hidden microphone is
