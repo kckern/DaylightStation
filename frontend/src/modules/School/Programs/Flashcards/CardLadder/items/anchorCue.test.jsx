@@ -7,7 +7,7 @@ import TilesItem from './TilesItem.jsx';
 import DrillItem from './DrillItem.jsx';
 import { playClip } from '../cardLadderAudio.js';
 
-// Ruling 2026-09-23 (owner): English-side cues show text + picture + audio
+// Ruling 2026-09-23 (owner): anchor-side cues show text + picture + audio
 // together; the prompt is never the test. The server sends one bundle.
 vi.mock('../cardLadderAudio.js', () => ({ playClip: vi.fn(async () => true), playSequence: vi.fn(async () => {}) }));
 vi.mock('../useTakeRecorder.js', () => ({
@@ -15,9 +15,9 @@ vi.mock('../useTakeRecorder.js', () => ({
 }));
 vi.mock('../../../../../../hooks/useHardwareKeyboard.js', () => ({ useHardwareKeyboard: () => false, default: () => false }));
 
-const langs = { term: 'ko', gloss: 'en' };
+const langs = { target: 'ko', anchor: 'en', targetScript: 'hangul' };
 const id = (x) => x;
-const bundle = { type: 'english', text: 'Scissors', image: true, audio: true };
+const bundle = { type: 'anchor', text: 'Scissors', image: true, audio: true };
 const assets = { image: 'img-gawi', audio: null, glossAudio: 'gloss-gawi' };
 
 const renders = {
@@ -30,7 +30,7 @@ const renders = {
 
 afterEach(() => playClip.mockClear());
 
-describe.each(Object.entries(renders))('%s: the English cue bundle', (_, ui) => {
+describe.each(Object.entries(renders))('%s: the anchor cue bundle', (_, ui) => {
   it('shows the picture, the English text and a Listen (Tab) together', () => {
     const { container } = render(ui());
     expect(screen.getByText('Scissors')).toBeInTheDocument();
@@ -49,14 +49,14 @@ describe.each(Object.entries(renders))('%s: the English cue bundle', (_, ui) => 
   });
 
   it('never an audio-only prompt: with no picture the text still shows beside Listen', () => {
-    const { container } = render(ui({ type: 'english', text: 'Scissors', image: false, audio: true }));
+    const { container } = render(ui({ type: 'anchor', text: 'Scissors', image: false, audio: true }));
     expect(screen.getByText('Scissors')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /listen/i })).toBeInTheDocument();
     expect(container.querySelector('img.wl-cue-picture')).toBeNull();
   });
 
   it('text alone when there is neither picture nor audio', () => {
-    render(ui({ type: 'english', text: 'Scissors', image: false, audio: false }));
+    render(ui({ type: 'anchor', text: 'Scissors', image: false, audio: false }));
     expect(screen.getByText('Scissors')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /listen/i })).toBeNull();
   });

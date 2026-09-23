@@ -44,11 +44,11 @@ export default function TilesItem({ item, langs, resolveAssetUrl, onRespond, res
   return (
     <section className="wl-item wl-tiles" aria-label="Spell it">
       <div className="wl-prompt">
-        <AnchorCue item={item} resolveAssetUrl={resolveAssetUrl} lang={langs.gloss} />
+        <AnchorCue item={item} resolveAssetUrl={resolveAssetUrl} lang={langs.anchor} />
       </div>
-      <div className="wl-tiles__answer" role="group" aria-label="Your answer" lang={langs.term}>
+      <div className="wl-tiles__answer" role="group" aria-label="Your answer" lang={langs.target}>
         {answer.map((index, at) => (
-          <TouchButton key={`${index}`} variant="choice" lang={langs.term} disabled={locked} onClick={() => remove(at)}>{tiles[index]}</TouchButton>
+          <TouchButton key={`${index}`} variant="choice" lang={langs.target} disabled={locked} onClick={() => remove(at)}>{tiles[index]}</TouchButton>
         ))}
       </div>
       <div className="wl-tiles__pool" role="group" aria-label="Tiles">
@@ -57,7 +57,7 @@ export default function TilesItem({ item, langs, resolveAssetUrl, onRespond, res
             key={`${tile}-${i}`}
             variant="choice"
             keyHint={String(i + 1)}
-            lang={langs.term}
+            lang={langs.target}
             className={answer.includes(i) ? 'is-used' : ''}
             disabled={locked || answer.includes(i)}
             onClick={() => add(i)}
@@ -70,7 +70,7 @@ export default function TilesItem({ item, langs, resolveAssetUrl, onRespond, res
         {result && (
           <p className="wl-verdict" role="status">
             {result.correct ? 'Right!' : 'Not quite.'}
-            {!result.correct && result.answer && <> It&apos;s <span lang={langs.term}>{result.answer}</span></>}
+            {!result.correct && result.answer && <> It&apos;s <span lang={langs.target}>{result.answer}</span></>}
           </p>
         )}
         {!pending && <TouchButton variant="primary" keyHint="Enter" disabled={busy || !answer.length} onClick={check}>Check</TouchButton>}

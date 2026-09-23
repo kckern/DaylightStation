@@ -113,7 +113,7 @@ function WordRow({ word, learnerId, deckId, run, busy, errors }) {
   // engine already scored `exact` mis-grades that same typed string for
   // every OTHER child too, not just this one. Only Fail asks, and only for
   // `exact`: Pass never disagrees with an exact match, and a non-exact judge
-  // (`model`/`distance`/`fallback`/`no-hangul`/`guard`) was already uncertain.
+  // (`model`/`distance`/`fallback`/`wrong-script` — `no-hangul` on older days — /`guard`) was already uncertain.
   const regrade = (answer, pass) => {
     if (!pass && answer.judge === 'exact' && !window.confirm(
       `“${answer.typed}” was judged an exact match, and re-grading a shared word affects every learner studying this package. Mark it wrong anyway?`,

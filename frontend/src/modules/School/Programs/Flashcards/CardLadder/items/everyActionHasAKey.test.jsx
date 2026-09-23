@@ -26,7 +26,7 @@ vi.mock('../useTakeRecorder.js', () => ({
 }));
 vi.mock('../../../../../../hooks/useHardwareKeyboard.js', () => ({ useHardwareKeyboard: () => false, default: () => false }));
 
-const langs = { term: 'ko', gloss: 'en' };
+const langs = { target: 'ko', anchor: 'en', targetScript: 'hangul' };
 const id = (x) => x;
 const word = { wordId: 'gawi', term: '가위', gloss: 'Scissors', pronunciation: null, kind: 'word', media: { image: null, audio: 'aud', glossAudio: null } };
 const enter = (target = window) => fireEvent.keyDown(target, { key: 'Enter', code: 'Enter' });

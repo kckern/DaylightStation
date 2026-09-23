@@ -201,8 +201,8 @@ export default function SayItem({
   return (
     <section className="wl-item wl-say" aria-label="Say it">
       <div className="wl-prompt">
-        {showCue && <AnchorCue item={item} resolveAssetUrl={resolveAssetUrl} lang={langs.gloss} keyHint={hearModel ? null : 'Tab'} />}
-        {term && <FitText role="term" text={term} lang={langs.term} onFit={onLayout} />}
+        {showCue && <AnchorCue item={item} resolveAssetUrl={resolveAssetUrl} lang={langs.anchor} keyHint={hearModel ? null : 'Tab'} />}
+        {term && <FitText role="term" text={term} lang={langs.target} onFit={onLayout} />}
       </div>
 
       <VoiceBand

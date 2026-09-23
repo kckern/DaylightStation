@@ -4,7 +4,8 @@
  * forgive one, a real other word is never a misspelling.
  */
 import { editDistance } from '#domains/school/language/transcription.mjs';
-import { hasHangul, keystrokeJamo, normalizeAnswer } from './jamo.mjs';
+import { normalizeAnswer } from './jamo.mjs';
+import { keystrokeUnits, scriptOfText, writtenInScript } from './targetScript.mjs';
 
 export const BANDS = Object.freeze([10, 8, 6, 4, 2]);
 
@@ -18,15 +19,22 @@ function band(distance, length) {
   return 2;
 }
 
-export function scoreTypedDeterministic({ target, typed, otherWords = [] }) {
+/**
+ * `target` is the target side's text; `targetScript` its script (`scriptFor`
+ * the lexicon's target language). Without one, the script is read off the
+ * target text itself. The "not in the target's script → 1" floor applies only
+ * to a script that has one (Hangul).
+ */
+export function scoreTypedDeterministic({ target, typed, otherWords = [], targetScript = null }) {
   const want = normalizeAnswer(target);
   const got = normalizeAnswer(typed);
-  const length = keystrokeJamo(want).length;
+  const script = targetScript ?? scriptOfText(want);
+  const length = keystrokeUnits(want, script).length;
   if (got === want) return { score: 10, judge: 'exact', distance: 0, length };
-  if (!hasHangul(got)) return { score: 1, judge: 'no-hangul', distance: null, length };
+  if (!writtenInScript(got, script)) return { score: 1, judge: 'wrong-script', distance: null, length };
   const others = new Set(otherWords.map(normalizeAnswer).filter((word) => word && word !== want));
   if (others.has(got)) return { score: 2, judge: 'guard', distance: null, length };
-  const distance = editDistance(keystrokeJamo(got).join(''), keystrokeJamo(want).join(''));
+  const distance = editDistance(keystrokeUnits(got, script), keystrokeUnits(want, script));
   return { score: band(distance, length), judge: 'distance', distance, length };
 }
 

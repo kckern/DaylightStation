@@ -7,19 +7,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 // test loads a fresh copy of the modules.
 vi.mock('../cardLadderAudio.js', () => ({ playClip: vi.fn(async () => true) }));
 
-const langs = { term: 'ko', gloss: 'en' };
+const langs = { target: 'ko', anchor: 'en', targetScript: 'hangul' };
 const item = { id: 'k1', type: 'typed', task: '3.3', cue: { type: 'text', text: 'Scissors' }, assets: {} };
 
-async function load() {
+async function load(sides = langs) {
   vi.resetModules();
   const { default: TypedItem } = await import('./TypedItem.jsx');
   const { cardLadderLog } = await import('../cardLadderLog.js');
   const detected = vi.spyOn(cardLadderLog, 'keyboardDetected').mockImplementation(() => {});
   const toggled = vi.spyOn(cardLadderLog, 'keypadToggled').mockImplementation(() => {});
-  const view = render(<TypedItem item={item} mode="graded" langs={langs} resolveAssetUrl={(x) => x} onRespond={() => {}} />);
+  const view = render(<TypedItem item={item} mode="graded" langs={sides} resolveAssetUrl={(x) => x} onRespond={() => {}} />);
   return { view, detected, toggled };
 }
-const toggle = () => screen.queryByRole('button', { name: /korean keypad/i });
+const toggle = () => screen.queryByRole('button', { name: /^(show|hide) keypad$/i });
 
 // A touch panel: no fine pointer (a mouse would count as a keyboard).
 const originalMatchMedia = window.matchMedia;
@@ -33,7 +33,7 @@ afterEach(() => { vi.useRealTimers(); window.localStorage.clear(); window.matchM
 describe('TypedItem keypad toggle — hardware keyboard heuristic', () => {
   it('renders as an icon with no text until a keyboard is known', async () => {
     await load();
-    expect(toggle()).toHaveAccessibleName('Show Korean keypad');
+    expect(toggle()).toHaveAccessibleName('Show keypad');
     expect(toggle()).toHaveTextContent(/^$/);
   });
 
@@ -90,5 +90,22 @@ describe('TypedItem keypad toggle — hardware keyboard heuristic', () => {
     act(() => { vi.advanceTimersByTime(600); });
     expect(screen.getByTestId('jamo-keypad')).toBeInTheDocument();
     expect(toggled).toHaveBeenCalledWith({ auto: false, open: true, via: 'long-press' });
+  });
+});
+
+describe('TypedItem keypad — keyed by the target script', () => {
+  const generic = { target: 'en', anchor: 'en', targetScript: 'generic' };
+  it('a target with no on-screen keypad shows no toggle, never auto-opens and ignores a long-press', async () => {
+    vi.useFakeTimers();
+    const { toggled } = await load(generic);
+    expect(toggle()).toBeNull();
+    act(() => { vi.advanceTimersByTime(10_000); });
+    expect(screen.queryByTestId('jamo-keypad')).toBeNull();
+    const input = screen.getByRole('textbox');
+    act(() => { fireEvent.pointerDown(input); });
+    act(() => { vi.advanceTimersByTime(600); });
+    expect(screen.queryByTestId('jamo-keypad')).toBeNull();
+    expect(toggled).not.toHaveBeenCalled();
+    expect(input).toHaveAttribute('lang', 'en');
   });
 });

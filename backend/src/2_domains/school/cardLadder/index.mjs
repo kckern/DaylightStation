@@ -1,5 +1,5 @@
 export {
-  LEXICON_SCHEMA, WORD_KINDS, DECOY_SIDES, SLUG, validateLexicon, parseMediaRef, wordPackageDir, wordAssetIds,
+  LEXICON_SCHEMA, LEXICON_SCHEMA_V3, LEXICON_SCHEMAS, WORD_KINDS, DECOY_SIDES, SLUG, validateLexicon, parseMediaRef, wordPackageDir, wordAssetIds,
   isLexiconDeck, expandLexiconDeck,
 } from './lexicon.mjs';
 export { hashString, seededShuffle } from './checkItem.mjs';
@@ -11,6 +11,9 @@ export { DRILL_STEPS, drillSteps, tilesFor, matchBoard } from './drill.mjs';
 export { PRACTICE_MODES, practiceWordIds, buildPractice } from './practice.mjs';
 export { STATUS_SCHEMA_V3, DAY_SCHEMA, emptyStatusV3, emptyDay, migrateStatusV2, normalizeStatusV3 } from './statusV3.mjs';
 export { normalizeAnswer, hasHangul, keystrokeJamo } from './jamo.mjs';
+export {
+  HANGUL_SCRIPT, GENERIC_SCRIPT, scriptFor, scriptOfText, keystrokeUnits, writtenInScript,
+} from './targetScript.mjs';
 export { BANDS, scoreTypedDeterministic, isShortTarget, modelMayRaise, raiseOneBand } from './typedScore.mjs';
 export { pickMeaningChoices, pickTermChoices, cueFor, channelFor } from './choices.mjs';
 export { ESTIMATE_MS, carryCandidates, newAllowance, planNextRound } from './rounds.mjs';
@@ -20,7 +23,7 @@ export {
 } from './engine.mjs';
 export { servedWhy, dayChanges, prereqChanges, signOffGaps } from './observe.mjs';
 export { foldPaperAttempts } from './foldPaperAttempts.mjs';
-export { formatTrace } from './trace.mjs';
+export { formatTrace, canonicalTraceMsg } from './trace.mjs';
 export { markMastered, typedAnswers } from './admin.mjs';
 export {
   quizDocumentIdFor, deckDirOf, isoWeekOf, learnerQuizDocumentId, learnerQuizPrefix, parseLearnerQuizId,

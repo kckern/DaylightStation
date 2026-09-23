@@ -65,3 +65,20 @@ describe('CardLadderTypedJudge', () => {
     expect(await judge.judge({ pkg: 'p', entry: entry('가위'), typed: 'hi', otherWords: [] })).toMatchObject({ judge: 'grown-up', pass: true });
   });
 });
+
+describe('CardLadderTypedJudge — the target script seam', () => {
+  it('a generic target has no script floor, and the model is told the target language', async () => {
+    const { aiGateway, judge } = make(async () => ({ score: 8, reason: 'same word' }));
+    const generic = { pkg: 'p', entry: entry('photosynthesis', 'how plants make food', 'word'), otherWords: [], targetScript: 'generic', targetLanguage: 'English' };
+    expect(await judge.judge({ ...generic, typed: 'photosynthesis' })).toMatchObject({ judge: 'exact', pass: true });
+    const near = await judge.judge({ ...generic, typed: 'photosynthesys' });
+    expect(near.judge).toBe('model');
+    expect(aiGateway.chatWithJson.mock.calls[0][0][0].content).toContain("typed English answer");
+  });
+  it('a Hangul target keeps the no-Hangul floor when targetScript says so', async () => {
+    const { judge } = make(async () => ({ score: 10 }));
+    expect(await judge.judge({ pkg: 'p', entry: entry('가위'), typed: 'gawi', otherWords: [], targetScript: 'hangul' }))
+      .toMatchObject({ score: 1, judge: 'wrong-script', pass: false });
+  });
+});
+

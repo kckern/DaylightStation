@@ -34,7 +34,7 @@ vi.mock('../useTakeRecorder.js', () => ({
   }),
 }));
 
-const langs = { term: 'ko', gloss: 'en' };
+const langs = { target: 'ko', anchor: 'en', targetScript: 'hangul' };
 
 // Fixtures below are the ACTUAL server shapes from
 // `CardLadderSittingService#publicItem` (backend/src/3_applications/school/

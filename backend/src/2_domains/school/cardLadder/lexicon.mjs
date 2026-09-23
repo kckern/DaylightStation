@@ -1,19 +1,37 @@
 /**
- * Word lexicon for the card ladder (design "Data model"). Pure.
+ * Card lexicon for the card ladder (design "Data model"). Pure.
  *
- * A lexicon is authored once per WORD PACKAGE on the media mount. It is the
- * single source of the package's language identity — which language is being
- * learned, which language the meanings are written in, the program's title and
- * the printed quiz's copy — and names every word's term (target language),
- * gloss (learner's language), kind, course-unit group and quiz decoys. Adding a
- * language is a new package (lexicon + media + deck), never a code change.
+ * A lexicon is authored once per PACKAGE on the media mount. It is the single
+ * source of the package's identity — the target side's language (what is
+ * being acquired), the anchor side's language (what the learner already holds
+ * it by), the program's title and the printed quiz's copy — and names every
+ * card's two sides, kind, course-unit group and quiz decoys. Adding a language
+ * (or an English-to-English definitions set, or a history deck) is a new
+ * package (lexicon + media + deck), never a code change.
  *
- * A weekly deck lists word ids only; `expandLexiconDeck` turns it into
+ * SIDES. `term` is the TARGET side and `gloss` the ANCHOR side; those two
+ * readable names stay the internal field names (and the API's). An entry may
+ * spell them `target:` / `anchor:` instead, and so may its decoys.
+ *
+ * SCHEMAS. `school.word-lexicon/v2` names the target language `language:` and
+ * the anchor language `gloss:` (a header block, not the entry field).
+ * `school.card-lexicon/v3` names them `target:` and `anchor:`. Both are read;
+ * the parsed lexicon carries `language`/`gloss` (as before) AND
+ * `targetLanguage`/`anchorLanguage`/`targetScript`.
+ *
+ * A weekly deck lists card ids only; `expandLexiconDeck` turns it into
  * ordinary flashcard cards BEFORE `validateFlashcardDeck` sees it, so every
  * existing deck consumer works on it.
  */
+import { scriptFor } from './targetScript.mjs';
+
 export const LEXICON_SCHEMA = 'school.word-lexicon/v2';
+/** Same content as v2 with side-neutral header names (`target:` / `anchor:` language blocks). */
+export const LEXICON_SCHEMA_V3 = 'school.card-lexicon/v3';
+export const LEXICON_SCHEMAS = Object.freeze([LEXICON_SCHEMA, LEXICON_SCHEMA_V3]);
 const RETIRED_SCHEMAS = new Set(['school.word-lexicon/v1']);
+/** An entry's side field → its side-neutral spelling. */
+const SIDE_ALIASES = Object.freeze({ term: 'target', gloss: 'anchor' });
 export const WORD_KINDS = Object.freeze(['word', 'phrase']);
 export const DECOY_SIDES = Object.freeze(['term', 'gloss']);
 
@@ -70,8 +88,9 @@ function validateLanguage(value, at, errors) {
 
 function validateHeader(raw, errors) {
   if (!SLUG.test(raw.package ?? '')) errors.push('package: must be a lowercase slug');
-  const language = validateLanguage(raw.language, 'language', errors);
-  const gloss = validateLanguage(raw.gloss, 'gloss', errors);
+  const v3 = raw.schema === LEXICON_SCHEMA_V3;
+  const language = validateLanguage(v3 ? raw.target : raw.language, v3 ? 'target' : 'language', errors);
+  const gloss = validateLanguage(v3 ? raw.anchor : raw.gloss, v3 ? 'anchor' : 'gloss', errors);
   const title = raw.program?.title;
   if (!text(title)) errors.push('program.title: is required');
   const quiz = raw.quiz ?? {};
@@ -85,6 +104,9 @@ function validateHeader(raw, errors) {
     package: raw.package,
     language,
     gloss,
+    targetLanguage: language,
+    anchorLanguage: gloss,
+    targetScript: scriptFor(language?.code),
     program: { title: programTitle },
     quiz: {
       topics: Array.isArray(quiz.topics) && quiz.topics.every(text)
@@ -97,6 +119,32 @@ function validateHeader(raw, errors) {
   };
 }
 
+/**
+ * One entry with `target:`/`anchor:` (and `decoys.target`/`decoys.anchor`)
+ * folded into the internal `term`/`gloss` names. Both spellings at once must
+ * agree — a lexicon that says two different things about one side is an error.
+ */
+function withSideNames(entry, at, errors) {
+  const out = { ...entry };
+  const decoys = isMap(entry.decoys) ? { ...entry.decoys } : entry.decoys;
+  for (const [side, alias] of Object.entries(SIDE_ALIASES)) {
+    if (entry[alias] !== undefined) {
+      if (entry[side] !== undefined && String(entry[side]).trim() !== String(entry[alias]).trim()) {
+        errors.push(`${at}: ${side} and ${alias} name the same side and must agree`);
+      }
+      out[side] = entry[alias];
+    }
+    if (isMap(decoys) && decoys[alias] !== undefined) {
+      if (decoys[side] !== undefined) errors.push(`${at}.decoys: give ${side} or ${alias}, not both`);
+      decoys[side] = decoys[alias];
+      delete decoys[alias];
+    }
+    delete out[alias];
+  }
+  if (decoys !== undefined) out.decoys = decoys;
+  return out;
+}
+
 /** Raw YAML → `{ errors, lexicon: { package, language, gloss, program, quiz, entries: Map } }`. */
 export function validateLexicon(raw) {
   const errors = [];
@@ -107,16 +155,17 @@ export function validateLexicon(raw) {
         + 'decoys.term/decoys.gloss, a group per entry, and package/language/gloss/program headers)'],
     };
   }
-  if (raw.schema !== LEXICON_SCHEMA) errors.push(`schema must be ${LEXICON_SCHEMA}`);
+  if (!LEXICON_SCHEMAS.includes(raw.schema)) errors.push(`schema must be ${LEXICON_SCHEMA} or ${LEXICON_SCHEMA_V3}`);
   const header = validateHeader(raw, errors);
   if (!Array.isArray(raw.entries) || raw.entries.length === 0) {
     errors.push('entries must be a non-empty list');
     return { errors };
   }
   const entries = new Map();
-  raw.entries.forEach((entry, index) => {
+  raw.entries.forEach((rawEntry, index) => {
     const at = `entries[${index}]`;
-    if (!isMap(entry)) { errors.push(`${at}: must be a mapping`); return; }
+    if (!isMap(rawEntry)) { errors.push(`${at}: must be a mapping`); return; }
+    const entry = withSideNames(rawEntry, at, errors);
     if (!SLUG.test(entry.id ?? '')) { errors.push(`${at}.id: must be a lowercase slug`); return; }
     if (entries.has(entry.id)) { errors.push(`${at}.id: duplicates '${entry.id}'`); return; }
     if (!SLUG.test(entry.group ?? '')) errors.push(`${at}.group: must be a lowercase slug (the course unit that introduced the word)`);
