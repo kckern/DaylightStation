@@ -87,10 +87,12 @@ export class MemorableStrategy {
       let description = null;
       let showLabels = [];
       if (contentCatalog) {
+        let item = null;
         try {
-          const item = await contentCatalog.describeItem(cid);
+          item = await contentCatalog.describeItem(cid);
           description = item?.description || null;
         } catch { /* proceed without description */ }
+        if (item && !isSuggestibleEpisode(item, suggestionPolicy)) continue;
         if (showRef) {
           try {
             const info = await contentCatalog.describeItem(showRef.contentId);
@@ -122,3 +124,4 @@ export class MemorableStrategy {
   }
 }
 import { contentImageRef, displayImageRef } from '#apps/common/resources/publicResourceRefs.mjs';
+import { isSuggestibleEpisode } from './suggestibleEpisode.mjs';

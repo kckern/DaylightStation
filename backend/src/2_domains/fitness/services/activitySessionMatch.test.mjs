@@ -149,6 +149,26 @@ describe('classifyActivityVenue', () => {
     expect(classifyActivityVenue({ distance: 5268.4, trainer: false })).toBe('outdoor');
   });
 
+  it('calls a non-distance sport indoor despite a GPS fix and drift distance', () => {
+    // Activity 20267859667 (2026-09-21): a Garmin "Workout" logged at the house
+    // with a GPS fix and 1.1 km of drift. Read as outdoor, it was refused by the
+    // garage session 20260921062242 and filed as a duplicate Strava-only session.
+    const workout = {
+      type: 'Workout', sport_type: 'Workout', trainer: false,
+      distance: 1110.6, start_latlng: [47.409739, -122.169323],
+    };
+    expect(classifyActivityVenue(workout)).toBe('indoor');
+    expect(classifyActivityVenue({ sport_type: 'WeightTraining', distance: 900 })).toBe('indoor');
+  });
+
+  it('still calls a GPS-fixed Run outdoor', () => {
+    // Activity 20245291061, the 2026-09-19 Spartan race — correctly refused.
+    expect(classifyActivityVenue({
+      type: 'Run', sport_type: 'Run', trainer: false,
+      distance: 8652.9, start_latlng: [47.7, -122.3],
+    })).toBe('outdoor');
+  });
+
   it('reports unknown when no venue signal is present at all', () => {
     expect(classifyActivityVenue({ id: 1 })).toBe('unknown');
   });
