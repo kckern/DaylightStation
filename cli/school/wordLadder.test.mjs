@@ -229,12 +229,39 @@ describe('word-ladder trace CLI', () => {
     const [url, init] = fetchImpl.mock.calls[0];
     expect(String(url)).toContain('/select/logsql/query');
     const body = String(init.body);
-    expect(body).toContain('data.learnerId%3Alearner-a');
+    expect(body).toContain('data.learnerId%3A%22learner-a%22');
     expect(body).toContain('school.word-ladder');
     const printed = out.stdout.write.mock.calls[0][0];
     expect(printed).toContain('learner-a · korean-vocab · ? · live · trace tr1');
     expect(printed).toContain('0:00  flashcard gawi flashcard-front');
     expect(printed).toContain('goal');
+  });
+
+  it('quotes learnerId/sittingId/mode in the LogsQL query — VictoriaLogs tokenizes an unquoted value on . and -', async () => {
+    const fetchImpl = ndjsonFetch([]);
+    const out = io();
+    const argv = ['trace', '--learner', 'learner-a', '--sitting', 'korean-vocab.abc.1', '--mode', 'live'];
+    await main(argv, out, { fetch: fetchImpl });
+    const body = String(fetchImpl.mock.calls[0][1].body);
+    expect(body).toContain('data.learnerId%3A%22learner-a%22');
+    expect(body).toContain('data.sittingId%3A%22korean-vocab.abc.1%22');
+    expect(body).toContain('data.mode%3A%22live%22');
+  });
+
+  it('warns on stderr when the store returns exactly the query limit (results may be truncated)', async () => {
+    const rows = Array.from({ length: 5000 }, (_, i) => row('school.word-ladder.sitting.opened', '2026-09-22T10:00:00Z', {
+      traceId: 'tr1', sittingId: 'korean-vocab.abc.1', seq: i + 1, t: i, learnerId: 'learner-a', package: 'korean-vocab', mode: 'live',
+    }));
+    const out = io();
+    const argv = ['trace', '--learner', 'learner-a', '--day', '2026-09-22'];
+    expect(await main(argv, out, { fetch: ndjsonFetch(rows) })).toBe(0);
+    expect(out.stderr.write).toHaveBeenCalledWith(expect.stringMatching(/5000 rows.*truncated/i));
+  });
+
+  it('does not warn about truncation when the store returns fewer than the query limit', async () => {
+    const out = io();
+    expect(await main(['trace', '--learner', 'learner-a', '--day', '2026-09-22'], out, { fetch: ndjsonFetch(TRACE_ROWS) })).toBe(0);
+    expect(out.stderr.write).not.toHaveBeenCalled();
   });
 
   it('rejects --mode outside live|test|all', async () => {

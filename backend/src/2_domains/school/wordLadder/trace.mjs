@@ -83,14 +83,14 @@ function formatMs(answered) {
   return answered && typeof answered.ms === 'number' ? `${answered.ms}ms` : '—';
 }
 
-// NOT `item.mode`: `createTrace.event()` spreads the trace's own `mode`
-// (live|test) AFTER the caller's data (createTrace.js), so any per-item
-// `data.mode` an item.shown call means to carry (e.g. a flashcard's intro
-// vs. sort mode) is always overwritten by the sitting-level mode before it
-// ever reaches the logger. Reading `item.mode` here would show "live" on
-// every single item, which is worse than not showing a mode at all.
+// `item.mode` NOT `data.mode`: the trace-level `mode` field (live|test) is
+// stamped by createTrace.event() onto every event, so an item.shown call's
+// own flashcard intro-vs-sort distinction is logged as `data.itemMode`
+// instead, to avoid colliding with it. `itemMode` is absent on item types
+// that don't have one (copy, typed, …), and on events logged before that
+// field existed — fall back to the bare type rather than show nothing.
 function kindOf(item) {
-  return item.type ?? '?';
+  return item.itemMode ? `${item.type ?? '?'}:${item.itemMode}` : (item.type ?? '?');
 }
 
 function transitionsSuffix(transitions) {
@@ -131,6 +131,7 @@ function buildTrace(traceId, feEvents, backendEvents) {
   let sittingId = null;
   let day = null;
   let closeEvent = null; // { reason, activeMs, itemId }
+  let orphaned = 0; // answered/stalled/transition/graded events with no matching item.shown — the log window is missing rows, not that nothing happened
   const items = [];
   const byItemId = new Map();
 
@@ -140,12 +141,16 @@ function buildTrace(traceId, feEvents, backendEvents) {
     deckId ??= d.deckId ?? null;
     pkg ??= d.package ?? null;
     mode ??= d.mode ?? null;
-    if (typeof d.sittingId === 'string' && d.sittingId) sittingId = d.sittingId; // set once, at open
+    // Runs on every event (not "once") because the sitting isn't known until
+    // it opens — early events (mounted, started) have no sittingId yet. Once
+    // it does appear it's constant for the rest of the trace, so the last
+    // non-empty value written here is also the only one that ever differs.
+    if (typeof d.sittingId === 'string' && d.sittingId) sittingId = d.sittingId;
     if (typeof d.day === 'string') day = d.day;
 
     if (ev.msg === MSG.ITEM_SHOWN) {
       const item = {
-        itemId: d.itemId ?? null, type: d.type ?? null, mode: d.mode ?? null,
+        itemId: d.itemId ?? null, type: d.type ?? null, itemMode: d.itemMode ?? null,
         task: d.task ?? null, layout: d.layout ?? null, wordId: d.wordId ?? null,
         tStart: typeof d.t === 'number' ? d.t : null, answered: null, stalls: [], transitions: [],
       };
@@ -153,7 +158,8 @@ function buildTrace(traceId, feEvents, backendEvents) {
       if (item.itemId) byItemId.set(item.itemId, item);
     } else if (ev.msg === MSG.ITEM_ANSWERED) {
       const item = d.itemId ? byItemId.get(d.itemId) : null;
-      if (item) {
+      if (!item) { orphaned += 1; }
+      else {
         item.answered = {
           response: d.response ?? null, correct: typeof d.correct === 'boolean' ? d.correct : null,
           score: typeof d.score === 'number' ? d.score : null, judge: d.judge ?? null,
@@ -162,7 +168,8 @@ function buildTrace(traceId, feEvents, backendEvents) {
       }
     } else if (ev.msg === MSG.ITEM_STALLED) {
       const item = d.itemId ? byItemId.get(d.itemId) : null;
-      if (item && typeof d.ms === 'number') item.stalls.push({ ms: d.ms });
+      if (!item) orphaned += 1;
+      else if (typeof d.ms === 'number') item.stalls.push({ ms: d.ms });
     } else if (ev.msg === MSG.SITTING_CLOSED) {
       closeEvent = {
         reason: d.reason ?? null, activeMs: typeof d.activeMs === 'number' ? d.activeMs : null,
@@ -180,10 +187,12 @@ function buildTrace(traceId, feEvents, backendEvents) {
     if (!day && typeof d.day === 'string') day = d.day;
     if (ev.msg === MSG.BACKEND_TRANSITION && d.itemId) {
       const item = byItemId.get(d.itemId);
-      if (item) item.transitions.push({ wordId: d.wordId ?? null, from: d.from ?? null, to: d.to ?? null, source: d.source ?? null });
+      if (!item) orphaned += 1;
+      else item.transitions.push({ wordId: d.wordId ?? null, from: d.from ?? null, to: d.to ?? null, source: d.source ?? null });
     } else if (ev.msg === MSG.BACKEND_GRADED && d.itemId) {
       const item = byItemId.get(d.itemId);
-      if (item && item.answered) {
+      if (!item) { orphaned += 1; }
+      else if (item.answered) {
         item.answered.correct = item.answered.correct ?? (typeof d.correct === 'boolean' ? d.correct : null);
         item.answered.score = item.answered.score ?? (typeof d.score === 'number' ? d.score : null);
         item.answered.judge = item.answered.judge ?? d.judge ?? null;
@@ -202,7 +211,10 @@ function buildTrace(traceId, feEvents, backendEvents) {
   const ending = closeEvent?.reason ?? null;
   const duration = closeEvent?.activeMs ?? (items.length ? items[items.length - 1].tStart : null);
   const endedOnItemId = closeEvent?.itemId ?? (items.length ? items[items.length - 1].itemId : null);
-  const markLeftHere = ending !== null && !CLEAN_ENDINGS.has(ending);
+  // No close event at all (a crash, a killed tab) is exactly as unearned an
+  // ending as an explicit leave/idle/unmount — there is no reason to treat
+  // silence as if it were a clean goal/cap finish.
+  const markLeftHere = !CLEAN_ENDINGS.has(ending);
 
   const header = `${learnerId ?? '?'} · ${pkg ?? '?'} · ${day ?? '?'} · ${mode ?? '?'} · trace ${traceId} · ${mmss(duration)} · ${ending ?? 'unknown'}`;
   const lines = [header];
@@ -210,6 +222,7 @@ function buildTrace(traceId, feEvents, backendEvents) {
     lines.push(itemLine(item, { isLeftHere: markLeftHere && item.itemId === endedOnItemId }));
     lines.push(...stallLines(item));
   }
+  if (orphaned > 0) lines.push(`⚠ ${orphaned} orphaned event(s) — log rows missing`);
   return lines.join('\n');
 }
 

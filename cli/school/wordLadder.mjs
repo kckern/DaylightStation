@@ -27,6 +27,7 @@ import {
 const ENTRYPOINT = fileURLToPath(import.meta.url);
 const DEFAULT_BASE_URL = process.env.SCHOOL_BASE_URL || 'http://localhost:3111/api/v1/school';
 const DEFAULT_LOGSTORE = process.env.DAYLIGHT_LOGSTORE || 'http://localhost:9428';
+const LOG_QUERY_LIMIT = 5000;
 const HELP = `school word-ladder — word-ladder operations (any word package)
 
 Usage:
@@ -258,10 +259,17 @@ function addDaysIso(day, n) {
   return d.toISOString().slice(0, 10);
 }
 
+// Unquoted, VictoriaLogs tokenizes a value on `.` and `-`, so a learnerId or
+// sittingId containing either (a sitting id is always `<pkg>.<token>.<n>`)
+// matches far more than intended. Quoting makes it an exact-phrase match.
+function quoteLogsqlValue(value) {
+  return `"${String(value).replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+}
+
 function traceQuery({ learnerId, mode, sittingId }) {
-  const parts = ['_msg:~"school.word-ladder"', `data.learnerId:${learnerId}`];
-  if (mode && mode !== 'all') parts.push(`data.mode:${mode}`);
-  if (sittingId) parts.push(`data.sittingId:${sittingId}`);
+  const parts = ['_msg:~"school.word-ladder"', `data.learnerId:${quoteLogsqlValue(learnerId)}`];
+  if (mode && mode !== 'all') parts.push(`data.mode:${quoteLogsqlValue(mode)}`);
+  if (sittingId) parts.push(`data.sittingId:${quoteLogsqlValue(sittingId)}`);
   return parts.join(' AND ');
 }
 
@@ -390,11 +398,17 @@ async function trace(argv, io, fetchImpl = globalThis.fetch) {
       const query = `${traceQuery({ learnerId, mode, sittingId })} AND ${timeWindow({ day: effectiveDay, sittingId })}`;
       const res = await fetchImpl(`${DEFAULT_LOGSTORE.replace(/\/$/, '')}/select/logsql/query`, {
         method: 'POST',
-        body: new URLSearchParams({ query, limit: '5000' }),
+        body: new URLSearchParams({ query, limit: String(LOG_QUERY_LIMIT) }),
       });
       if (res?.ok) rows = parseLogLines(await res.text());
       else reachable = false;
     } catch { reachable = false; }
+  }
+  // Hitting the limit exactly means the window may hold more rows than were
+  // fetched — the trace below could be missing its tail (or head) silently
+  // otherwise. A count under the limit proves the query saw everything.
+  if (rows.length === LOG_QUERY_LIMIT) {
+    io.stderr.write(`warning: the log store returned ${LOG_QUERY_LIMIT} rows (the query limit) — results may be truncated; narrow --day/--sitting/--mode\n`);
   }
 
   if (reachable && rows.length) {

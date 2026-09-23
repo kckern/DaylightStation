@@ -27,11 +27,10 @@ function be(msg, data = {}) {
 describe('formatTrace — intro, copy, sorts, verify miss, stall, leave', () => {
   const events = [
     fe('sitting.opened', 0, 1, { package: 'korean-vocab', first: 'flashcard', phase: 'round' }),
-    // `mode: 'intro'` here is intentionally NOT reflected in the rendered "kind": the real
-    // createTrace.event() stamps the trace's own live/test `mode` over any per-item `data.mode`
-    // (createTrace.js spreads the stamp after the caller's data), so item.shown's intended
-    // intro/sort distinction never survives into the logged event. See kindOf() in trace.mjs.
-    fe('item.shown', 200, 2, { itemId: 'r1:0:intro', type: 'flashcard', mode: 'intro', task: null, wordId: 'gawi', layout: 'flashcard-front', media: false, fontPx: null }),
+    // `itemMode` (not `mode`, which is the trace-level live/test field and would
+    // otherwise collide — see kindOf() in trace.mjs) carries a flashcard's
+    // intro-vs-sort distinction into the rendered "kind".
+    fe('item.shown', 200, 2, { itemId: 'r1:0:intro', type: 'flashcard', itemMode: 'intro', task: null, wordId: 'gawi', layout: 'flashcard-front', media: false, fontPx: null }),
     fe('item.answered', 3200, 3, { itemId: 'r1:0:intro', type: 'flashcard', task: null, response: {}, correct: null, score: null, judge: null, next: 'copy', ms: 3000 }),
     be('transition', { itemId: 'r1:0:intro', wordId: 'gawi', from: { state: 'new', stage: null }, to: { state: 'introduced', stage: null }, source: 'intro' }),
 
@@ -58,7 +57,7 @@ describe('formatTrace — intro, copy, sorts, verify miss, stall, leave', () => 
   it('renders the exact timeline', () => {
     expect(formatTrace(events)).toBe([
       'learner-a · korean-vocab · 2026-09-22 · live · trace tr1 · 1:58 · leave',
-      '0:00  flashcard gawi flashcard-front — — (3000ms) → introduced',
+      '0:00  flashcard:intro gawi flashcard-front — — (3000ms) → introduced',
       '0:03  copy gawi copy 가위 ✓ (3000ms)',
       '0:07  flashcard gawi flashcard-front sort:claimed — (2000ms) → claimed',
       '0:09  typed gawi 3.3 가방 ✗ (40000ms)',
@@ -109,6 +108,35 @@ describe('formatTrace — endings and grouping', () => {
   it('returns an empty string for no events and no dayFile', () => {
     expect(formatTrace([])).toBe('');
     expect(formatTrace()).toBe('');
+  });
+
+  it('marks "left here" on the last item even with no close event at all (a crash or killed tab)', () => {
+    const events = [
+      fe('item.shown', 0, 1, { itemId: 'i1', type: 'typed', task: '3.3', wordId: 'gawi', layout: 'typed' }),
+      fe('item.answered', 2000, 2, { itemId: 'i1', type: 'typed', task: '3.3', response: { typed: '가위' }, correct: true, ms: 2000 }),
+      // No sitting.closed at all — the tab died mid-item. There is no reason
+      // to trust that as a clean "goal"/"cap" ending, so it must still be flagged.
+    ];
+    const out = formatTrace(events);
+    expect(out).toContain('unknown');
+    expect(out).toContain('✗ left here');
+  });
+
+  it('reports orphaned answered/stalled/transition/graded events (no matching item.shown) instead of dropping them silently', () => {
+    const events = [
+      fe('item.shown', 0, 1, { itemId: 'i1', type: 'typed', task: '3.3', wordId: 'gawi', layout: 'typed' }),
+      fe('item.answered', 1000, 2, { itemId: 'i1', type: 'typed', task: '3.3', response: { typed: '가위' }, correct: true, ms: 1000 }),
+      // Every itemId below names an item this window's log rows never captured a `item.shown` for.
+      fe('item.answered', 2000, 3, { itemId: 'ghost-answered', type: 'typed', task: '3.3', response: { typed: 'x' }, correct: false, ms: 500 }),
+      fe('item.stalled', 3000, 4, { itemId: 'ghost-stalled', ms: 45000 }),
+      be('transition', { itemId: 'ghost-transition', wordId: 'gawi', from: { state: 'new', stage: null }, to: { state: 'introduced', stage: null }, source: 'intro' }),
+      be('graded', { itemId: 'ghost-graded', wordId: 'gawi', task: '3.3', source: 'verify', correct: true }),
+      fe('sitting.closed', 4000, 5, { sittingId: 'korean-vocab.abc123.1', itemId: 'i1', reason: 'goal', activeMs: 4000 }),
+    ];
+    const out = formatTrace(events);
+    expect(out).toContain('⚠ 4 orphaned event(s) — log rows missing');
+    // The real item is still rendered fine, undisturbed by the orphans.
+    expect(out).toContain('0:00  typed gawi 3.3 가위 ✓ (1000ms)');
   });
 });
 
