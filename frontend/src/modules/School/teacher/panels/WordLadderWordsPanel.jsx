@@ -14,9 +14,10 @@
  * routes are mounted at `/api/v1/school/word-ladder/admin`, a sibling base
  * neither existing client owns.
  */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { usePanelFetch } from '../usePanelFetch.js';
 import { useTeacherWrite } from '../useTeacherWrite.js';
+import { useTeacherProfileOptional } from '../TeacherProfileContext.jsx';
 import { teacherLog } from '../teacherLog.js';
 import PanelFrame from './PanelFrame.jsx';
 import { wordLadderAdminApi } from '../wordLadderAdminApi.js';
@@ -41,7 +42,7 @@ function StateChip({ state }) {
  * detail nobody asked to see yet — and Re-grade lives inside that fold so the
  * scannable row never carries a destructive control under a browsing thumb.
  */
-function TypedAnswer({ answer, onRegrade, busy }) {
+function TypedAnswer({ term, answer, onRegrade, busy, error }) {
   const [open, setOpen] = useState(false);
   return (
     <li className="teacher-word-ladder__typed">
@@ -61,9 +62,10 @@ function TypedAnswer({ answer, onRegrade, busy }) {
             {answer.reason ? ` — ${answer.reason}` : ''}
           </p>
           <div className="teacher-action-row">
-            <button type="button" disabled={busy} onClick={() => onRegrade(answer, true)}>Pass</button>
-            <button type="button" disabled={busy} onClick={() => onRegrade(answer, false)}>Fail</button>
+            <button type="button" aria-label={`Pass ${term} answer ${answer.typed}`} disabled={busy} onClick={() => onRegrade(answer, true)}>Pass</button>
+            <button type="button" aria-label={`Fail ${term} answer ${answer.typed}`} disabled={busy} onClick={() => onRegrade(answer, false)}>Fail</button>
           </div>
+          {error && <p className="teacher-panel__error">{error}</p>}
         </div>
       )}
     </li>
@@ -72,6 +74,12 @@ function TypedAnswer({ answer, onRegrade, busy }) {
 
 function WordRow({ word, learnerId, deckId, run, busy, errors }) {
   const [stagePick, setStagePick] = useState(String(word.stage ?? 0));
+  // Every write re-reads the table, and a refetch can change this word's
+  // stage out from under a picker nobody has touched yet (a Reset from a
+  // moment ago, another teacher's edit, mark-mastered elsewhere). The picker
+  // must follow the server, not freeze at whatever it was seeded with on the
+  // first render.
+  useEffect(() => { setStagePick(String(word.stage ?? 0)); }, [word.stage]);
   const resetKey = `reset:${word.wordId}`;
   const masteredKey = `mastered:${word.wordId}`;
   const excludeKey = `exclude:${word.wordId}`;
@@ -105,6 +113,7 @@ function WordRow({ word, learnerId, deckId, run, busy, errors }) {
   };
 
   const rowError = errors[resetKey] || errors[masteredKey] || errors[excludeKey];
+  const term = word.term;
 
   return (
     <tr className="teacher-word-ladder__row" data-excluded={word.excluded ? 'true' : 'false'}>
@@ -122,8 +131,10 @@ function WordRow({ word, learnerId, deckId, run, busy, errors }) {
             {word.recentTyped.map((answer) => (
               <TypedAnswer
                 key={`${answer.day}:${answer.itemId}`}
+                term={term}
                 answer={answer}
                 busy={busy === regradeKey(answer)}
+                error={errors[regradeKey(answer)]}
                 onRegrade={regrade}
               />
             ))}
@@ -132,19 +143,19 @@ function WordRow({ word, learnerId, deckId, run, busy, errors }) {
       </td>
       <td className="teacher-word-ladder__actions">
         <div className="teacher-action-row">
-          <button type="button" disabled={busy === resetKey} onClick={reset}>Reset</button>
+          <button type="button" aria-label={`Reset ${term}`} disabled={busy === resetKey} onClick={reset}>Reset</button>
           <label className="teacher-word-ladder__stage-pick">
             Mastered stage
             <select
-              aria-label="Mastered stage"
+              aria-label={`Mastered stage for ${term}`}
               value={stagePick}
               onChange={(event) => setStagePick(event.target.value)}
             >
               {STAGES.map((stage) => <option key={stage} value={stage}>{stage}</option>)}
             </select>
           </label>
-          <button type="button" disabled={busy === masteredKey} onClick={markMastered}>Mark mastered</button>
-          <button type="button" disabled={busy === excludeKey} onClick={toggleExclude}>
+          <button type="button" aria-label={`Mark ${term} mastered`} disabled={busy === masteredKey} onClick={markMastered}>Mark mastered</button>
+          <button type="button" aria-label={`${word.excluded ? 'Include' : 'Exclude'} ${term}`} disabled={busy === excludeKey} onClick={toggleExclude}>
             {word.excluded ? 'Include' : 'Exclude'}
           </button>
         </div>
@@ -177,7 +188,7 @@ function DeckPool({ decksSeen, droppableDecks, learnerId, deckId, run, busy, err
           <li key={id}>
             <span>{id}</span>
             {droppable.has(id) ? (
-              <button type="button" disabled={busy === key(id)} onClick={() => drop(id)}>Drop from pool</button>
+              <button type="button" aria-label={`Drop ${id} from pool`} disabled={busy === key(id)} onClick={() => drop(id)}>Drop from pool</button>
             ) : (
               <span className="teacher-muted">{id === deckId ? 'current' : 'assigned'}</span>
             )}
@@ -199,8 +210,15 @@ function DeckPool({ decksSeen, droppableDecks, learnerId, deckId, run, busy, err
  *   to the deck id when the plan never named one.
  */
 export default function WordLadderWordsPanel({ learnerId, deckId, title = null }) {
-  const record = usePanelFetch(() => wordLadderAdminApi.words(learnerId, deckId), {
-    deps: [learnerId, deckId],
+  // The GET is teacher-gated: TeacherGate.assert checks isAdult(userId)
+  // BEFORE it ever looks at the capability/pin, so an actorId-less read is
+  // refused with a 403 regardless of the cookie. `useTeacherProfileOptional`
+  // (not the throwing `useTeacherProfile`) because a fetch, unlike a write,
+  // must not crash a screen it is mounted on outside the console.
+  const profile = useTeacherProfileOptional();
+  const actorId = profile?.currentTeacher?.id ?? null;
+  const record = usePanelFetch(() => wordLadderAdminApi.words(learnerId, deckId, actorId), {
+    deps: [learnerId, deckId, actorId],
     panel: PANEL,
     notFoundAs: 'unavailable',
     isEmpty: (data) => !(data?.words ?? []).length,

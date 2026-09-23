@@ -11,6 +11,7 @@ const rawAudio = express.raw({ type: ['audio/webm', 'audio/ogg', 'audio/mp4', 'a
 
 export function mountWordLadderRoutes({
   router, wrap, notConfigured, wordLadderStudy = null, wordLadderTest = null, stageScreen = null, capabilityProof = () => null,
+  teacherCapabilitySessions = null,
 }) {
   const noStore = (res) => res.set('Cache-Control', 'private, no-store');
   const mount = (base, getService, { test }) => {
@@ -68,9 +69,26 @@ export function mountWordLadderRoutes({
   // injects it into a POST body, but a GET has no body, so the GET reads the
   // cookie itself via `capabilityProof` (a literal query pin always wins).
   const live = () => { if (!wordLadderStudy) throw notConfigured('word-ladder'); return wordLadderStudy; };
+  /**
+   * Who is asking, for the admin GET. Mirrors school.teacherReading.mjs's
+   * `actor(req)`: `TeacherGate.assert` checks `isAdult(userId)` BEFORE it
+   * ever looks at the capability/pin (TeacherGate.mjs), so a GET with no
+   * `actorId` was refused with a 403 regardless of how good the cookie was —
+   * the console's read never sent one, because the panel had no reason to
+   * think it needed to. The capability session's own userId outranks a query
+   * actorId a client supplied: the cookie is what the console actually
+   * holds, and a query param naming someone else would be attribution the
+   * gate never checked.
+   */
+  const sessionActorId = (req) => {
+    const proof = capabilityProof(req);
+    const session = proof ? teacherCapabilitySessions?.status(proof.capabilityToken) : null;
+    return session?.active ? session.userId : null;
+  };
   router.get('/word-ladder/admin/words', wrap(async (req, res) => {
-    const { learnerId, deckId, actorId = null } = req.query;
+    const { learnerId, deckId } = req.query;
     const pin = req.query.pin ?? capabilityProof(req) ?? null;
+    const actorId = sessionActorId(req) ?? req.query.actorId ?? null;
     noStore(res).json(await live().adminWords({ learnerId, deckId, actorId, pin }));
   }));
   const adminPost = (path, method, fields) => router.post(`/word-ladder/admin/${path}`, wrap(async (req, res) => {
