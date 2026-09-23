@@ -79,14 +79,144 @@ describe('WordLadderProgram — Start screen', () => {
     expect(screen.getByRole('button', { name: /start/i })).toBeInTheDocument();
   });
 
-  it('Leave before Start exits without opening or closing anything', () => {
+  it('Exit before Start exits without opening or closing anything', () => {
     const api = fakeApi();
     const onExit = vi.fn();
     render(<WordLadderProgram descriptor={{ deckId: 'd', userId: 'test-learner' }} api={api} onExit={onExit} />);
-    fireEvent.click(screen.getByRole('button', { name: /leave/i }));
+    fireEvent.click(screen.getByRole('button', { name: /exit/i }));
     expect(onExit).toHaveBeenCalled();
     expect(api.open).not.toHaveBeenCalled();
     expect(api.close).not.toHaveBeenCalled();
+  });
+});
+
+const INTRO = {
+  deckId: 'd', package: 'korean-vocab', day: '2026-09-23', test: false,
+  course: { id: 'program:word-ladder:korean-vocab', title: 'Test Class' },
+  unit: { id: 'd', title: 'Week 1: Classroom' },
+  poster: '/api/v1/school/self-service/programs/word-ladder/korean-vocab/poster.jpg',
+  today: { newCount: 4, reviewCount: 3, estimatedMinutes: 10, doneToday: false, label: '4 new words · 3 to review', line: '4 new words · 3 to review · about 10 minutes' },
+  progress: { learned: 0, total: 19 },
+};
+const introApi = (data = INTRO, ok = true) => ({ ...fakeApi(), intro: vi.fn(async () => ({ ok, status: ok ? 200 : 500, data: ok ? data : null })) });
+
+describe('WordLadderProgram — the start screen is a launch card', () => {
+  it('draws poster, class, unit, today and words learned — and opens nothing before Start', async () => {
+    const api = introApi();
+    const shown = vi.spyOn(wordLadderLog, 'introShown');
+    render(<WordLadderProgram descriptor={{ deckId: 'd', userId: 'test-learner' }} api={api} />);
+    expect(await screen.findByRole('heading', { name: 'Test Class' })).toBeInTheDocument();
+    expect(api.intro).toHaveBeenCalledWith({ userId: 'test-learner', deckId: 'd', scenario: null });
+    expect(screen.getByRole('img', { name: 'Test Class poster' })).toHaveAttribute('src', INTRO.poster);
+    expect(screen.getByText('Week 1: Classroom')).toBeInTheDocument();
+    expect(screen.getByText('4 new words · 3 to review · about 10 minutes')).toBeInTheDocument();
+    expect(screen.getByRole('progressbar', { name: '0 of 19 words learned' })).toHaveAttribute('aria-valuenow', '0');
+    expect(screen.getByRole('button', { name: /start/i })).toBeInTheDocument();
+    expect(api.open).not.toHaveBeenCalled();
+    expect(shown).toHaveBeenCalledWith({ hasPoster: true, newCount: 4, reviewCount: 3, learned: 0, total: 19 });
+  });
+
+  it('a poster that fails to load becomes the calm placeholder, never a substitute', async () => {
+    render(<WordLadderProgram descriptor={{ deckId: 'd', userId: 'test-learner' }} api={introApi()} />);
+    fireEvent.error(await screen.findByRole('img', { name: 'Test Class poster' }));
+    expect(screen.queryByRole('img', { name: 'Test Class poster' })).toBeNull();
+    expect(screen.getByTestId('wl-start-poster-placeholder')).toBeInTheDocument();
+  });
+
+  it('a done day says so on the card', async () => {
+    const done = { ...INTRO, today: { ...INTRO.today, doneToday: true, line: 'Done for today — practice anytime' }, progress: { learned: 7, total: 19 } };
+    render(<WordLadderProgram descriptor={{ deckId: 'd', userId: 'test-learner' }} api={introApi(done)} />);
+    expect(await screen.findByText('Done for today — practice anytime')).toBeInTheDocument();
+    expect(screen.getByRole('progressbar', { name: '7 of 19 words learned' })).toBeInTheDocument();
+  });
+
+  it('when the card facts are unavailable it falls back to the title and Start still opens the day', async () => {
+    const api = introApi(null, false);
+    render(<WordLadderProgram descriptor={{ deckId: 'd', userId: 'test-learner', title: 'Korean words' }} api={api} />);
+    await waitFor(() => expect(api.intro).toHaveBeenCalled());
+    expect(screen.getByRole('heading', { name: 'Korean words' })).toBeInTheDocument();
+    expect(screen.getByTestId('wl-start-poster-placeholder')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /start/i }));
+    await screen.findByText('가위');
+    expect(api.open).toHaveBeenCalledTimes(1);
+  });
+
+  it('a test sitting asks the test intro with its scenario, and keeps the banner', async () => {
+    const api = { ...introApi(), test: true };
+    render(<WordLadderProgram descriptor={{ deckId: 'd', userId: 'test-learner', test: true, scenario: 'fresh' }} api={api} />);
+    expect(await screen.findByRole('heading', { name: 'Test Class' })).toBeInTheDocument();
+    expect(api.intro).toHaveBeenCalledWith({ userId: 'test-learner', deckId: 'd', scenario: 'fresh' });
+    expect(screen.getByText(/TEST — nothing is saved/)).toBeInTheDocument();
+  });
+});
+
+const trailProgress = (phase, extra = {}) => ({
+  phase: 'round', rechecksLeft: 0, rechecksTotal: 2, roundsDone: 0, learnToday: true, doneToday: false, drill: null, practice: null,
+  round: { index: 1, kind: 'new', size: 2, phase, remainingInStream: 2, quizLeft: 0 }, activeMs: 0, capMs: 900000, ...extra,
+});
+
+describe('WordLadderProgram — the sitting header', () => {
+  it('shows the step trail with the current step lit, finished ones ticked, Practice locked with its note', async () => {
+    const api = fakeApi();
+    api.open.mockResolvedValue({ ...openWith(intro), data: { ...openWith(intro).data, progress: trailProgress('intro') } });
+    renderStarted(<WordLadderProgram descriptor={{ deckId: 'd', userId: 'test-learner' }} api={api} />);
+    const trail = await screen.findByRole('list', { name: 'Today\'s steps' });
+    const steps = within(trail).getAllByRole('listitem');
+    expect(steps.map((li) => [li.textContent.replace(/after today's words/, '').trim(), li.dataset.state]))
+      .toEqual([['Review', 'done'], ['Learn', 'current'], ['Sort', 'todo'], ['Quiz', 'todo'], ['Practice', 'todo']]);
+    expect(steps[1]).toHaveAttribute('aria-current', 'step');
+    expect(within(steps[4]).getByText('after today\'s words')).toBeInTheDocument();
+    expect(screen.getByText('Round 1 · New words')).toBeInTheDocument();
+  });
+
+  it('a step\'s hint shows the first time the step appears, goes on the first input, and never returns for that step', async () => {
+    const api = fakeApi();
+    const entered = vi.spyOn(wordLadderLog, 'stepEntered');
+    const introProgress = trailProgress('intro');
+    const sortProgress = trailProgress('stream');
+    api.open.mockResolvedValue({ ...openWith(intro), data: { ...openWith(intro).data, progress: introProgress } });
+    api.respond
+      .mockResolvedValueOnce({ ok: true, status: 200, data: { result: { ok: true }, item: { ...intro, id: 'r1:i:pul:flash' }, progress: introProgress } })
+      .mockResolvedValueOnce({ ok: true, status: 200, data: { result: { ok: true }, item: stream, progress: sortProgress } });
+    renderStarted(<WordLadderProgram descriptor={{ deckId: 'd', userId: 'test-learner' }} api={api} />);
+    expect(await screen.findByText('Meet each new word: flip it, then copy it.')).toBeInTheDocument();
+    expect(entered).toHaveBeenCalledWith({ step: 'learn', round: 1 });
+    // The first input dismisses it; a second Learn card does not bring it back.
+    act(() => { fireEvent.keyDown(window, { key: ' ' }); });
+    act(() => { fireEvent.keyDown(window, { key: ' ' }); });
+    await waitFor(() => expect(api.respond).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(screen.queryByText('Meet each new word: flip it, then copy it.')).toBeNull());
+    // A new step brings its own hint, once.
+    act(() => { fireEvent.keyDown(window, { key: ' ' }); });
+    act(() => { fireEvent.keyDown(window, { key: ' ' }); });
+    expect(await screen.findByText('Flip, then sort: Not yet, Familiar, or Got it.')).toBeInTheDocument();
+    expect(entered).toHaveBeenCalledWith({ step: 'sort', round: 1 });
+  });
+
+  it('a hint also goes by itself after a few seconds', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const api = fakeApi();
+      api.open.mockResolvedValue({ ...openWith(intro), data: { ...openWith(intro).data, progress: trailProgress('intro') } });
+      renderStarted(<WordLadderProgram descriptor={{ deckId: 'd', userId: 'test-learner' }} api={api} />);
+      expect(await screen.findByText('Meet each new word: flip it, then copy it.')).toBeInTheDocument();
+      await act(async () => { vi.advanceTimersByTime(7000); });
+      // Fading (opacity), then gone.
+      await act(async () => { vi.advanceTimersByTime(1000); });
+      expect(screen.queryByText('Meet each new word: flip it, then copy it.')).toBeNull();
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('Exit is an icon + label button that behaves as Leave did', async () => {
+    const api = fakeApi();
+    const onExit = vi.fn();
+    renderStarted(<WordLadderProgram descriptor={{ deckId: 'd', userId: 'test-learner' }} api={api} onExit={onExit} />);
+    await screen.findByText('가위');
+    const exit = screen.getByRole('button', { name: /exit/i });
+    expect(exit.querySelector('.school-icon')).not.toBeNull();
+    fireEvent.click(exit);
+    await waitFor(() => expect(onExit).toHaveBeenCalled());
+    expect(api.close).toHaveBeenCalledWith('s', { userId: 'test-learner', reason: 'leave' });
   });
 });
 
@@ -162,12 +292,12 @@ describe('WordLadderProgram', () => {
     expect(logs.sessionReopened).toHaveBeenCalled();
   });
 
-  it('Leave closes the sitting with reason leave, then exits', async () => {
+  it('Exit (the header\'s ← Exit, formerly Leave) closes the sitting with reason leave, then exits', async () => {
     const api = fakeApi();
     const onExit = vi.fn();
     renderStarted(<WordLadderProgram descriptor={{ deckId: 'd', userId: 'test-learner' }} api={api} onExit={onExit} />);
     await screen.findByText('가위');
-    fireEvent.click(screen.getByRole('button', { name: /leave/i }));
+    fireEvent.click(screen.getByRole('button', { name: /exit/i }));
     await waitFor(() => expect(onExit).toHaveBeenCalled());
     expect(api.close).toHaveBeenCalledWith('s', { userId: 'test-learner', reason: 'leave' });
   });
@@ -179,11 +309,11 @@ describe('WordLadderProgram', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('not ready');
   });
 
-  it('Leave closes once as leave — unmount afterwards sends nothing more', async () => {
+  it('Exit closes once as leave — unmount afterwards sends nothing more', async () => {
     const api = fakeApi();
     const { unmount } = renderStarted(<WordLadderProgram descriptor={{ deckId: 'd', userId: 'test-learner' }} api={api} />);
     await screen.findByText('가위');
-    fireEvent.click(screen.getByRole('button', { name: /leave/i }));
+    fireEvent.click(screen.getByRole('button', { name: /exit/i }));
     await waitFor(() => expect(api.close).toHaveBeenCalledTimes(1));
     unmount();
     expect(api.close).toHaveBeenCalledTimes(1);
@@ -402,7 +532,7 @@ describe('WordLadderProgram — spec §8 trace and events', () => {
     const api = fakeApi();
     renderStarted(<WordLadderProgram descriptor={{ deckId: 'd', userId: 'test-learner' }} api={api} />);
     await screen.findByText('가위');
-    fireEvent.click(screen.getByRole('button', { name: /leave/i }));
+    fireEvent.click(screen.getByRole('button', { name: /exit/i }));
     await waitFor(() => expect(closedSpy).toHaveBeenCalled());
     expect(closedSpy).toHaveBeenCalledWith(expect.objectContaining({
       sittingId: 's', reason: 'leave', activeMs: progress.activeMs, remaining: progress.capMs - progress.activeMs,
@@ -427,7 +557,7 @@ describe('WordLadderProgram — spec §8 trace and events', () => {
     const api = fakeApi();
     const { unmount } = renderStarted(<WordLadderProgram descriptor={{ deckId: 'd', userId: 'test-learner' }} api={api} />);
     await screen.findByText('가위');
-    fireEvent.click(screen.getByRole('button', { name: /leave/i }));
+    fireEvent.click(screen.getByRole('button', { name: /exit/i }));
     await waitFor(() => expect(closedSpy).toHaveBeenCalledTimes(1));
     unmount();
     expect(closedSpy).toHaveBeenCalledTimes(1);

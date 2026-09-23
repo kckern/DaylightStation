@@ -35,6 +35,8 @@ export function createWordLadderApi({ test = false } = {}) {
 
   return {
     test,
+    /** The start card (read-only — nothing opens before Start). Test mode reads what `scenario` would open on. */
+    intro: ({ userId, deckId, scenario = null }) => call(`/intro?userId=${enc(userId)}&deckId=${enc(deckId)}${test && scenario ? `&scenario=${enc(scenario)}` : ''}`),
     open: ({ userId, deckId, scenario = null, capabilities = null }) => call('/open', {
       method: 'POST',
       body: { userId, deckId, ...(test && scenario ? { scenario } : {}), ...(capabilities ? { capabilities } : {}) },

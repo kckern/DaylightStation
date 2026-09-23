@@ -26,6 +26,15 @@ describe('createWordLadderApi', () => {
     }));
   });
 
+  it('intro is a GET on the mount\'s own base; the test mount forwards a scenario', async () => {
+    const fetchMock = vi.fn(async () => ({ ok: true, status: 200, json: async () => ({ course: { title: 'C' } }) }));
+    vi.stubGlobal('fetch', fetchMock);
+    await createWordLadderApi({ test: false }).intro({ userId: 'kid', deckId: 'language/korean/week-01', scenario: 'fresh' });
+    expect(fetchMock).toHaveBeenLastCalledWith('/api/v1/school/word-ladder/intro?userId=kid&deckId=language%2Fkorean%2Fweek-01', expect.objectContaining({ method: 'GET' }));
+    await createWordLadderApi({ test: true }).intro({ userId: 'kid', deckId: 'd', scenario: 'fresh' });
+    expect(fetchMock).toHaveBeenLastCalledWith('/api/v1/school/word-ladder/test/intro?userId=kid&deckId=d&scenario=fresh', expect.objectContaining({ method: 'GET' }));
+  });
+
   it('respond, get and close hit the right paths with the right verbs', async () => {
     const fetchMock = vi.fn(async () => ({ ok: true, status: 200, json: async () => ({}) }));
     vi.stubGlobal('fetch', fetchMock);

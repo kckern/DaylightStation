@@ -203,6 +203,17 @@ describe('WordLadderSittingService', () => {
     await expect(service.dayStatus({ userId: 'test-learner', deckId: DECK })).resolves.toMatchObject({ doneToday: true, progressLabel: 'Done for today' });
   });
 
+  it('progress carries the step trail\'s facts: rechecks total, rounds done, whether today has new words, done', async () => {
+    const fresh = await make().service.open({ userId: 'test-learner', deckId: DECK });
+    expect(fresh.progress).toMatchObject({ rechecksTotal: 0, roundsDone: 0, learnToday: true, doneToday: false });
+    const due = await make({ store: dueStore(0) }).service.open({ userId: 'test-learner', deckId: DECK });
+    expect(due.progress).toMatchObject({ phase: 'rechecks', rechecksLeft: 1, rechecksTotal: 1, learnToday: false, doneToday: false });
+    const store = memoryStore();
+    for (const id of ['gawi', 'pul']) store.s.status.words[id] = { ...emptyWordV3(), state: 'mastered', stage: 3, dueDay: '2026-10-30', introducedDay: '2026-09-01' };
+    const done = await make({ store }).service.open({ userId: 'test-learner', deckId: DECK });
+    expect(done.progress).toMatchObject({ phase: 'summary', doneToday: true, roundsDone: 0 });
+  });
+
   it('dayStatus: not opened, then in progress', async () => {
     const { service } = make();
     await expect(service.dayStatus({ userId: 'test-learner', deckId: DECK })).resolves.toMatchObject({ doneToday: false, progressLabel: 'Not opened', remaining: null });
