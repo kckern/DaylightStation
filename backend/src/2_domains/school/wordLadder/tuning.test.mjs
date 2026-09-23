@@ -26,7 +26,13 @@ describe('TUNABLE', () => {
 });
 
 describe('applyTuningProposal brakes', () => {
-  const base = { current, bounds: TUNING_BOUNDS, day: '2026-09-20', lastChanged: {} };
+  const studyDays = ['2026-09-10', '2026-09-12', '2026-09-14', '2026-09-15', '2026-09-16', '2026-09-17', '2026-09-18', '2026-09-19', '2026-09-20'];
+  const base = { current, bounds: TUNING_BOUNDS, day: '2026-09-20', lastChanged: {}, studyDays };
+
+  it('requires the study-day list', () => {
+    const { studyDays: _omit, ...noDays } = base;
+    expect(() => applyTuningProposal({ ...noDays, proposal: [] })).toThrow(/studyDays is required/);
+  });
 
   it('applies a single one-step change and records it', () => {
     const out = applyTuningProposal({ ...base, proposal: [{ setting: 'batch.newPerDay', to: 3, reason: 'cap hit most days' }] });
@@ -43,7 +49,7 @@ describe('applyTuningProposal brakes', () => {
     expect(out.next).toEqual(current);
   });
 
-  it('drops a change 3 days after the last one (dwell) and allows it at 5', () => {
+  it('drops a change 3 study days after the last one (dwell) and allows it at 5', () => {
     const early = applyTuningProposal({ ...base, lastChanged: { 'round.size': '2026-09-17' }, proposal: [{ setting: 'round.size', to: 4, reason: 'r' }] });
     expect(early.dropped[0].brake).toBe('dwell');
     expect(early.next['round.size']).toBe(5);
@@ -51,7 +57,7 @@ describe('applyTuningProposal brakes', () => {
     expect(later.applied).toHaveLength(1);
   });
 
-  it('counts study days when given, not calendar days', () => {
+  it('counts study days, not calendar days', () => {
     const out = applyTuningProposal({
       ...base, lastChanged: { 'round.size': '2026-09-10' }, studyDays: ['2026-09-12', '2026-09-18', '2026-09-20'],
       proposal: [{ setting: 'round.size', to: 4, reason: 'r' }],
@@ -61,7 +67,7 @@ describe('applyTuningProposal brakes', () => {
 
   it('clamps out-of-bounds: a clamp that lands one step away applies, one that does not move drops (bounds)', () => {
     const near = applyTuningProposal({ ...base, current: { ...current, 'round.size': 6 }, proposal: [{ setting: 'round.size', to: 9, reason: 'r' }] });
-    expect(near.applied).toEqual([{ setting: 'round.size', from: 6, to: 7, reason: 'r' }]);
+    expect(near.applied).toEqual([{ setting: 'round.size', from: 6, to: 7, reason: 'r', clampedFrom: 9 }]);
     const atEdge = applyTuningProposal({ ...base, current: { ...current, 'round.size': 7 }, proposal: [{ setting: 'round.size', to: 8, reason: 'r' }] });
     expect(atEdge.dropped).toEqual([{ setting: 'round.size', to: 8, reason: 'r', brake: 'bounds' }]);
     const far = applyTuningProposal({ ...base, proposal: [{ setting: 'batch.newPerDay', to: 0, reason: 'r' }] });

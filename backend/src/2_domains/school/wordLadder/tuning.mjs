@@ -5,6 +5,7 @@
  * a value, and it enforces every brake — one step, one change per setting per
  * dwell window, clamped to bounds, tunables only. Nothing reads a clock.
  */
+import { ValidationError } from '#domains/core/errors/index.mjs';
 import { STATES } from './mastery.mjs';
 
 export const TUNABLE = Object.freeze({
@@ -30,7 +31,6 @@ export const TUNING_BOUNDS = Object.freeze({
 export const GROWN_UP_SETTINGS = Object.freeze(['session.capMinutes', 'drill.perSitting', 'round.maxPasses', 'typing.passScore']);
 
 const TUNABLE_KEYS = Object.keys(TUNABLE);
-const DAY_MS = 86400000;
 const TRAILING = 7;
 const PILE_KEYS = ['familiar', 'claimed', 'other'];
 // gapScale moves in tenths; integers are unaffected.
@@ -154,24 +154,19 @@ export function buildTuningDigest({ status, days = [], settings, lastChanged = {
 
 // ---- Brakes ---------------------------------------------------------------
 
-function dayNumber(day) {
-  const [y, m, d] = String(day).split('-').map(Number);
-  return Date.UTC(y, m - 1, d) / DAY_MS;
-}
-
-// Study days since the last change: counted from `studyDays` when the caller
-// knows them, else calendar days.
-function daysSince(last, day, studyDays) {
-  if (Array.isArray(studyDays)) return studyDays.filter((d) => d > last && d <= day).length;
-  return dayNumber(day) - dayNumber(last);
+// Study days since the last change: days in `studyDays` after it, up to today.
+function studyDaysSince(last, day, studyDays) {
+  return studyDays.filter((d) => d > last && d <= day).length;
 }
 
 /**
  * Applies a tuner proposal (`[{setting, to, reason}]` or `{changes: […]}`)
- * to flat current values. Every change that violates a brake is dropped with
+ * to flat current values. `studyDays` (oldest first) is required: dwell counts
+ * study days, never calendar days. Every change that violates a brake is dropped with
  * its brake name; the rest are applied and stamped in `lastChanged`.
  */
-export function applyTuningProposal({ current, proposal, bounds = TUNING_BOUNDS, day, lastChanged = {}, dwellDays = 5, studyDays = null }) {
+export function applyTuningProposal({ current, proposal, bounds = TUNING_BOUNDS, day, lastChanged = {}, dwellDays = 5, studyDays }) {
+  if (!Array.isArray(studyDays)) throw new ValidationError('studyDays is required (dwell counts study days)');
   const changes = Array.isArray(proposal) ? proposal : (proposal?.changes ?? []);
   const next = { ...current };
   const stamps = { ...lastChanged };
@@ -184,7 +179,7 @@ export function applyTuningProposal({ current, proposal, bounds = TUNING_BOUNDS,
     if (GROWN_UP_SETTINGS.includes(setting)) { drop('not-tunable'); continue; }
     if (!Object.hasOwn(TUNABLE, setting)) { drop('unknown'); continue; }
     const last = stamps[setting];
-    if (touched.has(setting) || (typeof last === 'string' && daysSince(last, day, studyDays) < dwellDays)) { drop('dwell'); continue; }
+    if (touched.has(setting) || (typeof last === 'string' && studyDaysSince(last, day, studyDays) < dwellDays)) { drop('dwell'); continue; }
     const from = next[setting];
     if (typeof to !== 'number' || !Number.isFinite(to) || typeof from !== 'number') { drop('step'); continue; }
     const [lo, hi] = bounds?.[setting] ?? TUNING_BOUNDS[setting];
@@ -194,7 +189,7 @@ export function applyTuningProposal({ current, proposal, bounds = TUNING_BOUNDS,
     next[setting] = clamped;
     stamps[setting] = day;
     touched.add(setting);
-    applied.push({ setting, from, to: clamped, reason });
+    applied.push({ setting, from, to: clamped, reason, ...(clamped !== tidy(to) ? { clampedFrom: to } : {}) });
   }
   return { next, applied, dropped, lastChanged: stamps };
 }
