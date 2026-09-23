@@ -7,7 +7,7 @@ import { createMeasurementDocument, measureDocumentFragments } from '#rendering/
 import { createWorkbookTheme } from '#rendering/school/documents/workbookTheme.mjs';
 import { texToSvg } from '#rendering/school/documents/mathSvg.mjs';
 import {
-  buildWordQuizSource, emptyStatus, emptyStatusV3, emptyWordV3, expandLexiconDeck, foldPaperAttempts, planDay, quizDocumentIdFor, validateLexicon,
+  DEFAULT_SETTINGS, buildWordQuizSource, emptyDay, emptyStatusV3, emptyWordV3, expandLexiconDeck, foldPaperAttempts, openDay, quizDocumentIdFor, validateLexicon,
 } from './index.mjs';
 
 const G = 'week-01-classroom';
@@ -48,8 +48,12 @@ describe('a second language needs only YAML', () => {
     const { errors: deckErrors, deck } = expandLexiconDeck(raw, spanish);
     expect(deckErrors).toEqual([]);
     expect(deck.cards[2].front.blocks[2].assetId).toBe('media:language/spanish-vocab/words/unit-02-greetings/hola/term.mp3');
-    const day = planDay({ status: emptyStatus(), deckId: raw.id, deckWordIds: raw.words, lexiconIds: [...spanish.entries.keys()], today: '2026-09-22' });
-    expect([...day.study].sort()).toEqual(['gato', 'hola', 'perro']);
+    const { dayFile } = openDay({
+      status: emptyStatusV3(), dayFile: emptyDay('2026-09-22'), day: '2026-09-22', deckId: raw.id,
+      pool: raw.words, settings: DEFAULT_SETTINGS, learnerId: 'test-learner',
+    });
+    expect(dayFile.rounds[0].words.length).toBeGreaterThan(0);
+    expect(dayFile.rounds[0].words.every((id) => raw.words.includes(id))).toBe(true);
     const quiz = buildWordQuizSource({ deck, lexicon: spanish, seed: 7 });
     expect(validateDocumentSource(quiz).errors).toEqual([]);
     expect(quiz.blocks[0].blocks[0].md).toBe('What does **gato** mean?');

@@ -79,6 +79,7 @@ import { ReceiptPrinting } from '#apps/school/ReceiptPrinting.mjs';
 import { SentenceLadderProgramLauncher } from '#apps/school/SentenceLadderProgramLauncher.mjs';
 import { LanguageReelsProgramLauncher } from '#apps/school/LanguageReelsProgramLauncher.mjs';
 import { FlashcardProgramLauncher } from '#apps/school/FlashcardProgramLauncher.mjs';
+import { WordLadderDoorLauncher } from '#apps/school/WordLadderDoorLauncher.mjs';
 import { RubiksCubeProgramLauncher } from '#apps/school/RubiksCubeProgramLauncher.mjs';
 import { RUBIKS_CUBE_COURSE_ID } from '#apps/school/rubiksCube/courseCatalog.mjs';
 import { createSchoolProgramEnrollmentValidators } from '#apps/school/SchoolProgramEnrollmentValidators.mjs';
@@ -598,6 +599,15 @@ export async function createSchoolLifecycle({
     launchers.set('flashcards', new FlashcardProgramLauncher({
       studyService: flashcardStudyService, assignments: stores.assignments, donow,
       wordLadder: wordLadderStudyService,
+    }));
+  }
+  // The learner door `/school/go/<learner>/word-ladder[/<package>]` (word
+  // ladder spec §8 Door): resolves the learner's CURRENT word-ladder
+  // enrollment and mints the ordinary flashcards target — no new authority.
+  if (wordLadderStudyService) {
+    launchers.set('word-ladder', new WordLadderDoorLauncher({
+      assignments: stores.assignments,
+      packageOf: (deckId) => wordLadderStudyService.packageOf(deckId),
     }));
   }
   // RUBIKS_CUBE_COURSE_ID is null when course.yml hasn't been authored yet

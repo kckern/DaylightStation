@@ -16,12 +16,3 @@ export { buildWordQuizSource } from './quizSource.mjs';
 export { SCENARIOS, seedScenario } from './scenarios.mjs';
 export { DEFAULT_SETTINGS, resolveSettings } from './settings.mjs';
 
-// v2 — removed with WordLadderStudyService in Task 14
-export {
-  STATUS_SCHEMA, CHECK_GAPS, MAX_STEP, CHECK_PHASES, emptyStatus, emptyWord, readWord, isScheduledCheck,
-  applyStudy, applyMark, applyCheck, applyReviewView,
-} from './wordLadder.mjs';
-export {
-  CHECK_DIRECTIONS, checkDirection, resolveDirection, answerFor, buildChoices,
-} from './checkItem.mjs';
-export { planDay, dayProgress, progressLabel } from './planDay.mjs';
