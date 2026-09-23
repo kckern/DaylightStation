@@ -8,7 +8,9 @@ import { describe, expect, it } from 'vitest';
 import { applyGraded, emptyWordV3, ladderLevel, readyForSignOff } from './mastery.mjs';
 import { emptyDay, emptyStatusV3, migrateStatusV2, normalizeStatusV3 } from './statusV3.mjs';
 import { currentItem, openDay, respond, roundHasMatch, startPractice } from './engine.mjs';
-import { DRILL_STEPS } from './drill.mjs';
+import { buildPractice } from './practice.mjs';
+import { introPreview } from './intro.mjs';
+import { DRILL_STEPS, drillSteps } from './drill.mjs';
 
 const D = '2026-09-23';
 const SET = {
@@ -291,8 +293,28 @@ describe('sign-off ladder — never a say item inside a quiz, never typing up fr
     expect(served.some((item) => item.type === 'say' && item.mode === 'say-after')).toBe(true);
   });
 
-  it('drill keeps its steps, with dictation, say-from-cue and type last', () => {
+  it('a drill types from memory (dictation, type-from-cue) only for a word ready for sign-off; copy and tiles are the ceiling otherwise', () => {
     expect(DRILL_STEPS.slice(-3)).toEqual(['dictation', 'say-from-cue', 'type']);
+    expect(drillSteps({ audio: true }, { microphone: false })).not.toContain('dictation');
+    expect(drillSteps({ audio: true }, { microphone: false })).not.toContain('type');
+    expect(drillSteps({ audio: true }, { microphone: false }, { ready: true })).toEqual(['look', 'copy', 'match', 'tiles', 'dictation', 'type']);
+    const base = start();
+    const done = { ...base, dayFile: { ...base.dayFile, doneAt: 'x', rounds: [], rechecks: { order: [], answered: {} }, summarySeen: true } };
+    done.status.words.gawi = { ...emptyWordV3(), state: 'familiar', introducedDay: '2026-09-01' };
+    done.status.words.pul = { ...due({ stage: 2, recognizedCount: 2, matched: true }), dueDay: '2026-10-30' };
+    const run = startPractice(done, { mode: 'drill', filter: 'chosen', chosen: ['gawi', 'pul'] }).dayFile.practice;
+    const stepsOf = (id) => run.queue.find((task) => task.wordId === id).drill.steps;
+    expect(stepsOf('gawi')).not.toEqual(expect.arrayContaining(['dictation']));
+    expect(stepsOf('gawi')).not.toContain('type');
+    expect(stepsOf('gawi')).toEqual(expect.arrayContaining(['copy', 'tiles']));
+    expect(stepsOf('pul')).toEqual(expect.arrayContaining(['dictation', 'type']));
+    // A tricky drill on a word still learning never types from memory either.
+    const status = emptyStatusV3();
+    status.words.gawi = { ...emptyWordV3(), state: 'familiar', introducedDay: '2026-09-10', tricky: true, trickySince: '2026-09-20', missStreak: 2 };
+    const tricky = start(status).dayFile.drills[0];
+    expect(tricky.wordId).toBe('gawi');
+    expect(tricky.steps).not.toContain('dictation');
+    expect(tricky.steps).not.toContain('type');
   });
 });
 
@@ -337,5 +359,139 @@ describe('sign-off ladder — levels and migration', () => {
     });
     expect(v3.words.k).toMatchObject({ state: 'mastered', stage: 2, recognizedCount: 2, matched: true, typedSignedOff: null });
     expect(v3.words.l).toMatchObject({ state: 'familiar', recognizedCount: 0, matched: false, typedSignedOff: null });
+  });
+});
+
+describe('Fable review — every verified word can be matched, and typed only when ready', () => {
+  const doneDay = (words) => {
+    const base = start();
+    const ctx = { ...base, dayFile: { ...base.dayFile, doneAt: 'x', rounds: [], rechecks: { order: [], answered: {} }, summarySeen: true } };
+    for (const [id, word] of Object.entries(words)) ctx.status.words[id] = word;
+    return ctx;
+  };
+
+  it('a practice Quiz me that passes a word ends on a Match of it, padded from introduced words', () => {
+    const done = doneDay({
+      pul: { ...emptyWordV3(), state: 'familiar', introducedDay: '2026-09-01', recognizedCount: 1 },
+      gawi: { ...emptyWordV3(), state: 'notYet', introducedDay: '2026-09-01' },
+    });
+    let ctx = { ...done, ...startPractice(done, { mode: 'quiz' }) };
+    ({ ctx } = step(ctx, { choice: '풀' }));
+    ({ ctx } = step(ctx, { choice: 'Glue' }));
+    const match = currentItem(ctx);
+    expect(match).toMatchObject({ type: 'match', source: 'practice' });
+    expect(match.board.pairs.map((pair) => pair.wordId).sort()).toEqual(['gawi', 'pul']);
+    ({ ctx } = step(ctx, { done: true }));
+    expect(ctx.status.words.pul.matched).toBe(true);
+    expect(currentItem(ctx).type).toBe('menu');
+  });
+
+  it('a practice Quiz me that passes nothing serves no Match', () => {
+    const done = doneDay({ pul: { ...emptyWordV3(), state: 'familiar', introducedDay: '2026-09-01' }, gawi: { ...emptyWordV3(), state: 'notYet', introducedDay: '2026-09-01' } });
+    let ctx = { ...done, ...startPractice(done, { mode: 'quiz' }) };
+    ({ ctx } = step(ctx, { dontKnow: true }));
+    expect(currentItem(ctx).type).toBe('menu');
+  });
+
+  it('a practice-verified word reaches the typed sign-off', () => {
+    const done = doneDay({
+      pul: { ...emptyWordV3(), state: 'familiar', introducedDay: '2026-09-01', recognizedCount: 1 },
+      gawi: { ...emptyWordV3(), state: 'notYet', introducedDay: '2026-09-01' },
+    });
+    let ctx = { ...done, ...startPractice(done, { mode: 'quiz' }) };
+    ({ ctx } = step(ctx, { choice: '풀' }));
+    ({ ctx } = step(ctx, { choice: 'Glue' }));
+    ({ ctx } = step(ctx, { done: true }));
+    let status = ctx.status;
+    let signed = false;
+    for (let n = 0; n < 6 && !signed; n += 1) {
+      const day = status.words.pul.dueDay;
+      const only = { ...status, words: { pul: status.words.pul } };
+      let rc = start(only, { day });
+      const item = currentItem(rc);
+      expect(item).toMatchObject({ source: 'recheck', wordId: 'pul' });
+      if (item.type === 'typed') { ({ ctx: rc } = step(rc, { typed: '풀' }, PASS)); signed = true; }
+      else ({ ctx: rc } = step(rc, { choice: rightChoice(item) }));
+      status = rc.status;
+    }
+    expect(signed).toBe(true);
+    expect(ladderLevel(status.words.pul)).toBe('mastered');
+  });
+
+  it('guided Match pads a lone verified word from any introduced word, and prefers a recognised word still owed its match', () => {
+    const status = emptyStatusV3();
+    status.words.mul = { ...emptyWordV3(), state: 'familiar', introducedDay: '2026-09-01' };
+    status.words.bul = { ...emptyWordV3(), state: 'mastered', stage: 2, dueDay: '2026-12-01', introducedDay: '2026-09-01', recognizedCount: 2, matched: false };
+    status.words.chaek = { ...emptyWordV3(), state: 'familiar', introducedDay: '2026-09-20' };
+    let ctx = { ...start(status), pool: [] };
+    ({ status: ctx.status, dayFile: ctx.dayFile } = openDay({ ...ctx, dayFile: emptyDay(D), deckId: 'deck', at: at() }));
+    let guard = 0;
+    while (currentItem(ctx).type !== 'match' && currentItem(ctx).type !== 'summary' && guard++ < 40) {
+      const item = currentItem(ctx);
+      if (item.type === 'flashcard') ({ ctx } = step(ctx, { sort: item.wordId === 'chaek' ? 'claimed' : 'notYet' }));
+      else if (item.type === 'drill-offer') ({ ctx } = step(ctx, { drill: 'no' }));
+      else ({ ctx } = step(ctx, { choice: rightChoice(item) }));
+    }
+    const board = currentItem(ctx).board.pairs.map((pair) => pair.wordId);
+    expect(board).toContain('chaek');
+    expect(board).toContain('bul');
+    expect(board.length).toBe(3);
+  });
+
+  it('guided Match is skipped when the board would still be a single pair', () => {
+    const status = emptyStatusV3();
+    status.words.chaek = { ...emptyWordV3(), state: 'familiar', introducedDay: '2026-09-20' };
+    let ctx = { ...start(status), pool: [] };
+    ({ status: ctx.status, dayFile: ctx.dayFile } = openDay({ ...ctx, dayFile: emptyDay(D), deckId: 'deck', at: at() }));
+    const served = [];
+    let guard = 0;
+    while (currentItem(ctx).type !== 'summary' && guard++ < 40) {
+      const item = currentItem(ctx);
+      served.push(item.type);
+      if (item.type === 'flashcard') ({ ctx } = step(ctx, { sort: 'claimed' }));
+      else if (item.type === 'match') ({ ctx } = step(ctx, { done: true }));
+      else ({ ctx } = step(ctx, { choice: rightChoice(item) }));
+    }
+    expect(ctx.status.words.chaek.state).toBe('mastered');
+    expect(served).not.toContain('match');
+    expect(ctx.dayFile.rounds.at(-1).match).toBeUndefined();
+  });
+});
+
+describe('Fable review — Write without help types from memory only over ready words', () => {
+  const words = {
+    gawi: { ...emptyWordV3(), state: 'familiar', introducedDay: '2026-09-01' },
+    pul: { ...due({ stage: 2, recognizedCount: 2, matched: true }), dueDay: '2026-10-30' },
+  };
+  const build = (help, w = words) => buildPractice({ mode: 'write', help, words: w, entries: lexicon.entries, media, day: D, seed: 's' });
+
+  it('With help copies every introduced word; Without help lists only words ready for sign-off', () => {
+    expect(build(true).queue.map((t) => t.wordId).sort()).toEqual(['gawi', 'pul']);
+    expect(build(false).queue).toEqual([{ kind: 'type-practice', wordId: 'pul' }]);
+    expect(build(false, { gawi: words.gawi }).queue).toEqual([]);
+  });
+
+  it('the menu says which Write variants have a run', () => {
+    const base = start();
+    const done = { ...base, dayFile: { ...base.dayFile, doneAt: 'x', rounds: [], rechecks: { order: [], answered: {} }, summarySeen: true } };
+    done.status.words.gawi = words.gawi;
+    expect(currentItem(done)).toMatchObject({ type: 'menu', writeHelp: [true] });
+    done.status.words.pul = words.pul;
+    expect(currentItem(done)).toMatchObject({ type: 'menu', writeHelp: [true, false] });
+    expect(() => startPractice({ ...done, status: { ...done.status, words: { gawi: words.gawi } } }, { mode: 'write', help: false })).toThrow(/nothing to practise/);
+  });
+});
+
+describe('Fable review — the start-card estimate uses the sign-off gate, not the retired stage cadence', () => {
+  it('a stage-2 word not ready for sign-off is estimated as a recognition recheck', () => {
+    const settings = SET;
+    const status = emptyStatusV3();
+    const plan = (word) => introPreview({ status: { ...status, words: Object.fromEntries(Array.from({ length: 20 }, (_, i) => [`w${i}`, word])) }, dayFile: null, day: D, pool: [], settings });
+    const notReady = plan(due({ stage: 2, recognizedCount: 1, matched: false }));
+    const ready = plan(due({ stage: 2, recognizedCount: 2, matched: true }));
+    expect(notReady.reviewCount).toBe(20);
+    expect(ready.estimatedMinutes).toBeGreaterThan(notReady.estimatedMinutes);
+    const stage0 = plan(due({ stage: 0, recognizedCount: 2, matched: true }));
+    expect(stage0.estimatedMinutes).toBe(notReady.estimatedMinutes);
   });
 });

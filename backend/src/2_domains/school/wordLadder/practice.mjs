@@ -4,7 +4,7 @@
  */
 import { hashString, seededShuffle } from './checkItem.mjs';
 import { drillSteps, matchBoard } from './drill.mjs';
-import { isExcluded, isUnsettled } from './mastery.mjs';
+import { isExcluded, isUnsettled, readyForSignOff } from './mastery.mjs';
 
 const QUIZZABLE = new Set(['familiar', 'claimed']);
 
@@ -62,10 +62,14 @@ export function buildPractice({ mode, help = true, filter = 'introduced', chosen
     else queue = ids.map((wordId) => ({ kind: 'say-from-cue', wordId }));
   }
   // write help = 1.1 copy-type (see text, type it); no help = 3.3 type-from-cue
-  // (cue only, no reference to copy) — neither needs audio.
-  else if (mode === 'write') queue = ids.map((wordId) => ({ kind: help ? 'copy' : 'type-practice', wordId }));
+  // (cue only, no reference to copy) — neither needs audio. Typing from memory
+  // only over words ready for their typed sign-off (ruling 2026-09-23).
+  else if (mode === 'write') {
+    queue = help ? ids.map((wordId) => ({ kind: 'copy', wordId }))
+      : ids.filter((id) => readyForSignOff(words[id])).map((wordId) => ({ kind: 'type-practice', wordId }));
+  }
   else if (mode === 'listen') { const heard = ids.filter((id) => media[id]?.audio); queue = heard.length ? [{ kind: 'listen', wordIds: heard }] : []; }
-  else if (mode === 'drill') queue = ids.map((wordId) => ({ kind: 'drill', wordId, steps: drillSteps(media[wordId], capabilities) }));
+  else if (mode === 'drill') queue = ids.map((wordId) => ({ kind: 'drill', wordId, steps: drillSteps(media[wordId], capabilities, { ready: readyForSignOff(words[wordId]) }) }));
   else if (mode === 'quiz') {
     // Same rule as a round's verify (spec §4 Round end, rule 3): familiar or
     // claimed, or notYetCarry — never new / introduced / notYet — and not

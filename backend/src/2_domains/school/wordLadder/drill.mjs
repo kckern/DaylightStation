@@ -11,10 +11,15 @@ import { hashString, seededShuffle } from './checkItem.mjs';
 export const DRILL_STEPS = Object.freeze(['look', 'copy', 'say-after', 'match', 'read-aloud', 'tiles', 'dictation', 'say-from-cue', 'type']);
 const NEEDS_MIC = new Set(['say-after', 'read-aloud', 'say-from-cue']);
 const NEEDS_AUDIO = new Set(['say-after', 'dictation']);
+// Typing from memory: only once the word is ready for its typed sign-off
+// (`readyForSignOff` — recognised twice, claimed, matched). Before that, copy
+// (the word visible) and tiles (scaffolded) are the drill's ceiling.
+const FROM_MEMORY = new Set(['dictation', 'type']);
 
-export function drillSteps(media = {}, capabilities = {}) {
+export function drillSteps(media = {}, capabilities = {}, { ready = false } = {}) {
   return DRILL_STEPS.filter((step) => (capabilities.microphone === true || !NEEDS_MIC.has(step))
-    && (media.audio === true || !NEEDS_AUDIO.has(step)));
+    && (media.audio === true || !NEEDS_AUDIO.has(step))
+    && (ready === true || !FROM_MEMORY.has(step)));
 }
 
 const syllables = (text) => [...String(text).normalize('NFC')].filter((ch) => /[가-힣]/u.test(ch));

@@ -35,6 +35,12 @@ describe('introPreview — today, read before any sitting opens', () => {
     expect(plan.newCount).toBe(2);
   });
 
+  it('a lone new word promises nothing: the planner never makes a round of fewer than 2 new words', () => {
+    const status = statusWith({ due: word({ state: 'mastered', stage: 1, dueDay: DAY, introducedDay: '2026-09-01' }) });
+    expect(introPreview({ status, dayFile: emptyDay(DAY), day: DAY, pool: ['n1'], settings }).newCount).toBe(0);
+    expect(introPreview({ status, dayFile: emptyDay(DAY), day: DAY, pool: ['n1', 'n2'], settings }).newCount).toBe(2);
+  });
+
   it('an opened day counts only the rechecks still pending', () => {
     const status = statusWith({ x: word({ state: 'mastered', stage: 1, dueDay: DAY }), y: word({ state: 'mastered', stage: 1, dueDay: DAY }) });
     const dayFile = { ...emptyDay(DAY), atOpen: { dueRechecks: ['x', 'y'], tricky: [], newAllowance: 0, settings }, rechecks: { order: ['x', 'y'], answered: { x: { correct: true } } }, activeMs: 60000 };
