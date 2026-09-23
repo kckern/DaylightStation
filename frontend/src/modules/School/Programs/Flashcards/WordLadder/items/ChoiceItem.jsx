@@ -30,11 +30,16 @@ export default function ChoiceItem({ item, langs, resolveAssetUrl, onRespond, re
     }
   }, [result, audio, item.id]);
   const choose = (choice) => { if (!busy && !result) onRespond({ choice }); };
+  // Tab = hear it again (H stays a silent alias — this is not a typing item).
+  const hear = result
+    ? () => audio && playClip(audio, 'term')
+    : () => (audio ?? glossAudio) && playClip(audio ?? glossAudio, audio ? 'term' : 'gloss');
   const keys = result
-    ? { ' ': onContinue, enter: onContinue, h: () => audio && playClip(audio, 'term') }
+    ? { ' ': onContinue, enter: onContinue, tab: hear, h: hear }
     : {
       0: () => !busy && onRespond({ dontKnow: true }),
-      h: () => (audio ?? glossAudio) && playClip(audio ?? glossAudio, audio ? 'term' : 'gloss'),
+      tab: hear,
+      h: hear,
       ...Object.fromEntries(item.choices.map((c, i) => [String(i + 1), () => choose(c)])),
     };
   useWordLadderKeys(keys);
@@ -45,11 +50,11 @@ export default function ChoiceItem({ item, langs, resolveAssetUrl, onRespond, re
         {item.task === '2.2' && item.channel === 'hear' && (
           result
             ? <FitText role="prompt" text={item.prompt} lang={langs.term} />
-            : <TouchButton variant="secondary" keyHint="H" onClick={() => audio && playClip(audio, 'term')}><Icon name="volume" /> Listen</TouchButton>
+            : <TouchButton variant="secondary" keyHint="Tab" onClick={() => audio && playClip(audio, 'term')}><Icon name="volume" /> Listen</TouchButton>
         )}
         {item.task === '3.1' && item.cue?.type === 'image' && <CuePicture item={item} src={image} lang={langs.gloss} />}
         {item.task === '3.1' && item.cue?.type === 'text' && <FitText role="prompt" text={item.cue.text} lang={langs.gloss} />}
-        {item.task === '3.1' && item.cue?.type === 'audio' && <TouchButton variant="secondary" keyHint="H" onClick={() => glossAudio && playClip(glossAudio, 'gloss')}><Icon name="volume" /> Listen</TouchButton>}
+        {item.task === '3.1' && item.cue?.type === 'audio' && <TouchButton variant="secondary" keyHint="Tab" onClick={() => glossAudio && playClip(glossAudio, 'gloss')}><Icon name="volume" /> Listen</TouchButton>}
       </div>
       <FitGroup>
         <div className="wl-choices" role="group" aria-label="Choices">

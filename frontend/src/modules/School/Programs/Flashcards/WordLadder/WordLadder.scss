@@ -27,12 +27,44 @@
 .wl-main { display: flex; align-items: center; justify-content: center; min-height: 0; padding: 0 1.5rem 1.5rem; }
 .wl-item { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1.25rem; width: 100%; height: 100%; min-height: 0; }
 
+// The card is the 3D stage: `perspective` here, the surface turns inside it.
+// Two sides back to back, each carrying the border/background (a hidden
+// backface takes its paint with it). Only `transform` animates — never filter,
+// shadow or layout (the Portal is an FKB Chrome WebView); `will-change` is set
+// only while a turn is in flight. The turned-away side is `visibility: hidden`
+// too, so the back of a Korean front is never seen or read: visibility is
+// transitioned on the same duration, and a transition between visible and
+// hidden holds `visible` for its whole length — the leaving side stays drawn
+// for the turn and goes only once it has turned away.
 .wl-card {
-  display: flex; align-items: center; justify-content: center;
-  width: min(760px, 100%); flex: 1 1 auto; min-height: 0; max-height: 440px; padding: 1.5rem;
-  border-radius: 20px; border: 2px solid var(--ds-border); background: var(--ds-surface); color: inherit;
-  font: inherit; cursor: pointer;
+  --wl-flip-duration: calc(var(--ds-motion-reveal) * 1.25);
+  position: relative; display: block;
+  width: min(760px, 100%); flex: 1 1 auto; min-height: 0; max-height: 440px; padding: 0;
+  border: 0; border-radius: 20px; background: none; color: inherit;
+  font: inherit; cursor: pointer; perspective: 1400px;
   &:focus-visible { outline: 3px solid var(--ds-accent); outline-offset: 3px; }
+}
+.wl-card__inner {
+  position: absolute; inset: 0; display: block;
+  transform-style: preserve-3d;
+  transition: transform var(--wl-flip-duration) var(--ds-motion-easing);
+}
+.wl-card.is-flipped .wl-card__inner { transform: rotateY(180deg); }
+.wl-card.is-flipping .wl-card__inner { will-change: transform; }
+.wl-card__side {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center; padding: 1.5rem;
+  border-radius: 20px; border: 2px solid var(--ds-border); background: var(--ds-surface);
+  backface-visibility: hidden;
+  transition: visibility var(--wl-flip-duration) var(--ds-motion-easing);
+}
+.wl-card__side--down { transform: rotateY(180deg); visibility: hidden; }
+.wl-card.is-flipped .wl-card__side--down { visibility: visible; }
+.wl-card.is-flipped .wl-card__side--up { visibility: hidden; }
+// Reduced motion (and the JS-side `wl-card--still`): an instant swap.
+.wl-card--still .wl-card__inner, .wl-card--still .wl-card__side { transition: none; }
+@media (prefers-reduced-motion: reduce) {
+  .wl-card__inner, .wl-card__side { transition: none; }
 }
 .wl-card__face { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1rem; width: 100%; height: 100%; min-height: 0; }
 .wl-card__face--front > .wl-fit { max-width: 100%; }
@@ -52,6 +84,16 @@
 .wl-controls { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 1rem; }
 .wl-controls--minor { gap: 0.75rem; opacity: 0.9; }
 
+// The on-screen keypad toggle: a last resort, not an option — a small
+// icon-only button pinned to the item's bottom-left, clear of the centred
+// keypad (≤920px on a 1280px stage). Hidden once a keyboard is known.
+.wl-typed { position: relative; }
+.wl-typed__keypad-toggle {
+  position: absolute; left: 0; bottom: 0;
+  min-width: 48px; width: 48px; min-height: 48px; height: 48px; padding: 0;
+  border-radius: 999px; opacity: 0.75;
+  svg { width: 24px; height: 24px; }
+}
 .wl-typed__field {
   width: min(640px, 100%); min-height: 80px; padding: 0.5rem 1rem;
   font-size: 2.5rem; text-align: center;

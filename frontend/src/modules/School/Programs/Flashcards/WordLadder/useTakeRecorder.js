@@ -19,10 +19,22 @@ import { SILENT_LEVEL, judgeTake } from '../../shared/speechFloor.js';
  * caller must feed the returned `onLevel(level)` into a `VoiceBand`'s
  * `onLevel` prop while `phase === 'recording'`. A caller that renders no
  * band still gets the length floor (`too-short`), just never `too-quiet`.
+ *
+ * `unavailable` is true when a take cannot happen: no microphone API on this
+ * device, or the last start was refused / failed (`onDenied`). The item uses
+ * it so Space never points at a Record that cannot record; a later start that
+ * succeeds clears it.
  */
+function micApiPresent() {
+  try {
+    return typeof navigator.mediaDevices?.getUserMedia === 'function' && typeof MediaRecorder !== 'undefined';
+  } catch { return false; }
+}
+
 export default function useTakeRecorder({ onTake } = {}) {
   const [phase, setPhase] = useState('idle'); // idle | recording | saving
   const [verdict, setVerdict] = useState(null);
+  const [unavailable, setUnavailable] = useState(() => !micApiPresent());
 
   const silenceRef = useRef({ heard: false, sampled: false });
   const handlerRef = useRef(onTake);
@@ -46,6 +58,7 @@ export default function useTakeRecorder({ onTake } = {}) {
 
   const onDenied = useCallback(() => {
     setPhase('idle');
+    setUnavailable(true);
   }, []);
 
   const {
@@ -56,7 +69,7 @@ export default function useTakeRecorder({ onTake } = {}) {
     setVerdict(null);
     silenceRef.current = { heard: false, sampled: false };
     const started = await startCapture();
-    if (started) setPhase('recording');
+    if (started) { setUnavailable(false); setPhase('recording'); }
   }, [startCapture]);
 
   const stop = useCallback(() => {
@@ -80,6 +93,6 @@ export default function useTakeRecorder({ onTake } = {}) {
   }, [cancel]);
 
   return {
-    start, stop, phase, verdict, stream, onLevel, release,
+    start, stop, phase, verdict, stream, onLevel, release, unavailable,
   };
 }

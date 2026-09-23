@@ -32,10 +32,13 @@ export default function TilesItem({ item, langs, resolveAssetUrl, onRespond, res
   const remove = (at) => { if (!locked) setAnswer((a) => a.filter((_, i) => i !== at)); };
   const check = () => { if (!locked && answer.length) onRespond({ tiles: answer.map((i) => tiles[i]) }); };
 
+  // Tab = hear the audio cue again (only when there is one).
+  const hearKeys = glossAudio && item.cue?.type === 'audio' ? { tab: () => playClip(glossAudio, 'gloss') } : {};
   useWordLadderKeys(pending
-    ? { ' ': onContinue, enter: onContinue }
+    ? { ' ': onContinue, enter: onContinue, ...hearKeys }
     : {
       enter: check,
+      ...hearKeys,
       backspace: () => remove(answer.length - 1),
       ...Object.fromEntries(tiles.map((_, i) => [String(i + 1), () => add(i)])),
     });
@@ -45,7 +48,7 @@ export default function TilesItem({ item, langs, resolveAssetUrl, onRespond, res
       <div className="wl-prompt">
         {item.cue?.type === 'image' && <CuePicture item={item} src={image} lang={langs.gloss} />}
         {item.cue?.type === 'text' && <FitText role="prompt" text={item.cue.text} lang={langs.gloss} />}
-        {item.cue?.type === 'audio' && <TouchButton variant="secondary" onClick={() => glossAudio && playClip(glossAudio, 'gloss')}><Icon name="volume" /> Listen</TouchButton>}
+        {item.cue?.type === 'audio' && <TouchButton variant="secondary" keyHint="Tab" onClick={() => glossAudio && playClip(glossAudio, 'gloss')}><Icon name="volume" /> Listen</TouchButton>}
       </div>
       <div className="wl-tiles__answer" role="group" aria-label="Your answer" lang={langs.term}>
         {answer.map((index, at) => (
