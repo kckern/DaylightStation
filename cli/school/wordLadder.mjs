@@ -20,7 +20,9 @@ import yaml from 'js-yaml';
 import { YamlLearningContentRepository } from '#adapters/school/catalog/YamlLearningContentRepository.mjs';
 import { YamlLexiconRepository } from '#adapters/school/catalog/YamlLexiconRepository.mjs';
 import { LexiconDeckLoader } from '#adapters/school/catalog/LexiconDeckLoader.mjs';
-import { buildWordQuizSource, hashString } from '#domains/school/wordLadder/index.mjs';
+import {
+  STATUS_SCHEMA_V3, buildLearnerQuizSource, buildWordQuizSource, emptyStatusV3, hashString, isoWeekOf, migrateStatusV2,
+} from '#domains/school/wordLadder/index.mjs';
 
 const ENTRYPOINT = fileURLToPath(import.meta.url);
 const DEFAULT_BASE_URL = process.env.SCHOOL_BASE_URL || 'http://localhost:3111/api/v1/school';
@@ -29,14 +31,22 @@ const HELP = `school word-ladder — word-ladder operations (any word package)
 Usage:
   school.mjs word-ladder quiz --deck <deckId|slug> [--seed N] [--force]
                               [--data-dir P] [--media-dir P] [--source-root P]
+  school.mjs word-ladder quiz --learner <id> --package <pkg> [--week <YYYY-Www>]
+                              [--rows N] [--seed N] [--force]
+                              [--data-dir P] [--media-dir P] [--source-root P]
   school.mjs word-ladder enroll-plan --learner <id> --deck <deckId|slug> --out <file>
                               [--title TEXT] [--base-url URL] [--data-dir P] [--media-dir P]
 
 A full deck id (containing '/') is used as-is. A bare slug resolves only when
 exactly one flashcard deck id ends with /<slug>; otherwise the matches are listed.
-quiz writes <source-root>/<deckId>-quiz.yml (default source root:
-content/school/learning-catalog/documents under --data-dir). An identical file
-is left alone; a different one is refused unless --force.
+quiz --deck writes <source-root>/<deckId>-quiz.yml — the WHOLE deck (an
+un-introduced word's miss is logged only, never demoted). quiz --learner
+writes <source-root>/<deckDir>/<pkg>-quiz-<learner>-<isoWeek>.yml — only
+words that learner has been introduced to, this ISO week's introductions
+first, then other unsettled words, then a seeded sample of mastered words
+(default source root: content/school/learning-catalog/documents under
+--data-dir). An identical file is left alone; a different one (e.g. a
+reprint after new introductions) is refused unless --force.
 enroll-plan reads GET <base-url>/lifecycle/assignments/<learner> and writes a
 plan for 'school ops assign' with the word-ladder program appended (or
 replacing that learner's existing word-ladder program). The tile title
@@ -89,13 +99,13 @@ async function loadDeck(argv) {
   return { deckId, deck, lexicon: lexicons.getLexicon(deck.lexicon) };
 }
 
-async function quiz(argv, io) {
-  const { sourceRoot } = roots(argv);
-  const { deckId, deck, lexicon } = await loadDeck(argv);
-  const seedFlag = option(argv, '--seed');
-  const seed = seedFlag !== undefined ? Number(seedFlag) : hashString(deckId) % 100000;
-  if (!Number.isInteger(seed) || seed < 0) throw new Error('--seed must be a whole number');
-  const source = buildWordQuizSource({ deck, lexicon, seed });
+/**
+ * Writes a `school.document-source/v1` quiz to `<sourceRoot>/<source.id>.yml`.
+ * An identical file is left alone; a different one (e.g. a reprint after new
+ * introductions) is refused unless `--force` — a republish must never pin the
+ * old card. Shared by both quiz forms so neither drifts from the other.
+ */
+function writeQuizSource(argv, io, sourceRoot, source, extraNextLine = '') {
   const file = path.join(sourceRoot, `${source.id}.yml`);
   const text = yaml.dump(source, { lineWidth: -1, noRefs: true });
   if (fs.existsSync(file)) {
@@ -104,8 +114,84 @@ async function quiz(argv, io) {
   }
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, text, 'utf8');
-  io.stdout.write(`wrote ${file}\nnext: node cli/school.mjs docs publish ${path.relative(sourceRoot, file)}\n`);
+  io.stdout.write(`wrote ${file}\nnext: node cli/school.mjs docs publish ${path.relative(sourceRoot, file)}\n${extraNextLine}`);
   return 0;
+}
+
+async function quizForDeck(argv, io) {
+  const { sourceRoot } = roots(argv);
+  const { deckId, deck, lexicon } = await loadDeck(argv);
+  const seedFlag = option(argv, '--seed');
+  const seed = seedFlag !== undefined ? Number(seedFlag) : hashString(deckId) % 100000;
+  if (!Number.isInteger(seed) || seed < 0) throw new Error('--seed must be a whole number');
+  const source = buildWordQuizSource({ deck, lexicon, seed });
+  return writeQuizSource(argv, io, sourceRoot, source);
+}
+
+/** The Monday ('YYYY-MM-DD') of an ISO-8601 week ('YYYY-Www') — the inverse of isoWeekOf. Pure UTC arithmetic. */
+function mondayOfIsoWeek(weekStr) {
+  const m = /^(\d{4})-W(\d{2})$/.exec(weekStr);
+  if (!m) throw new Error(`--week must look like YYYY-Www, got '${weekStr}'`);
+  const [, yearStr, weekNumStr] = m;
+  const jan4 = Date.UTC(Number(yearStr), 0, 4);
+  const jan4Weekday = new Date(jan4).getUTCDay() || 7; // Monday = 1 .. Sunday = 7
+  const week1Monday = jan4 - (jan4Weekday - 1) * 86_400_000;
+  return new Date(week1Monday + (Number(weekNumStr) - 1) * 7 * 86_400_000).toISOString().slice(0, 10);
+}
+
+/** `users/<id>/apps/school/word-ladder/<pkg>/status.yml`, migrating a v1 file. Missing/empty reads as a fresh status. */
+function loadLearnerStatus(dataDir, learnerId, pkg) {
+  const file = path.join(dataDir, 'users', learnerId, 'apps', 'school', 'word-ladder', pkg, 'status.yml');
+  if (!fs.existsSync(file)) return emptyStatusV3();
+  const raw = yaml.load(fs.readFileSync(file, 'utf8'));
+  if (raw == null) return emptyStatusV3();
+  if (raw.schema === STATUS_SCHEMA_V3) return { ...emptyStatusV3(), ...raw };
+  return migrateStatusV2(raw);
+}
+
+/** Every lexicon deck whose lexicon belongs to `pkg`, sorted by id for a deterministic deck order. */
+async function decksForPackage(argv, pkg) {
+  const { dataDir, mediaDir } = roots(argv);
+  const lexicons = new YamlLexiconRepository({ mediaRoot: path.join(mediaDir, 'school') });
+  const content = new YamlLearningContentRepository({
+    documentDirectories: [path.join(dataDir, 'content/school/learning-catalog/documents')],
+    bankDirectories: [path.join(dataDir, 'content/school/learning-catalog/question-banks')],
+    deckDirectories: [path.join(dataDir, 'content/school/learning-catalog/flashcard-decks')],
+  });
+  const all = await new LexiconDeckLoader({ content, lexicons }).listFlashcardDecks();
+  const decks = all
+    .filter((deck) => Array.isArray(deck?.words) && typeof deck?.lexicon === 'string')
+    .filter((deck) => { try { return lexicons.getLexicon(deck.lexicon).package === pkg; } catch { return false; } })
+    .sort((a, b) => a.id.localeCompare(b.id));
+  if (!decks.length) throw new Error(`no lexicon decks found for package '${pkg}'`);
+  return { decks, lexicon: lexicons.getLexicon(decks[0].lexicon) };
+}
+
+async function quizForLearner(argv, io) {
+  const { dataDir, sourceRoot } = roots(argv);
+  const learnerId = option(argv, '--learner');
+  const pkg = option(argv, '--package');
+  if (!pkg) throw new Error('--package is required with --learner');
+  const { decks, lexicon } = await decksForPackage(argv, pkg);
+  const status = loadLearnerStatus(dataDir, learnerId, pkg);
+  const weekFlag = option(argv, '--week');
+  const day = weekFlag ? mondayOfIsoWeek(weekFlag) : new Date().toISOString().slice(0, 10);
+  const rowsFlag = option(argv, '--rows');
+  const rowLimit = rowsFlag !== undefined ? Number(rowsFlag) : 20;
+  if (!Number.isInteger(rowLimit) || rowLimit <= 0) throw new Error('--rows must be a whole positive number');
+  const seedFlag = option(argv, '--seed');
+  const seed = seedFlag !== undefined ? Number(seedFlag) : hashString(`${pkg}|${learnerId}|${isoWeekOf(day)}`) % 100000;
+  if (!Number.isInteger(seed) || seed < 0) throw new Error('--seed must be a whole number');
+  const source = buildLearnerQuizSource({
+    status, lexicon, decks, learnerId, day, seed, rowLimit,
+  });
+  return writeQuizSource(argv, io, sourceRoot, source, 'then mint a fresh card: POST /api/v1/school/print/render (see docs/reference/school/print-documents.md)\n');
+}
+
+async function quiz(argv, io) {
+  const learnerId = option(argv, '--learner');
+  if (learnerId !== undefined) return quizForLearner(argv, io);
+  return quizForDeck(argv, io);
 }
 
 export function buildEnrollPlan(current, { deckId, title }) {
