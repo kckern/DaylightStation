@@ -152,7 +152,8 @@ export class WordLadderSittingService {
    * say-from-cue the cue (and tiles the syllables). Graded items carry cue asset
    * ids but never the answer: a 2.2 item's prompt is the term (its answer is
    * the gloss, among the choices); 3.1 / 3.3 carry no term, and never the
-   * term's audio. An image cue always carries the gloss as its text fallback.
+   * term's audio. An English-side cue is always the whole bundle — gloss text,
+   * plus picture and gloss-audio asset ids when they exist (ruling 2026-09-23).
    */
   #publicItem(item, ctx) {
     const { lexicon, media } = ctx;
@@ -163,9 +164,14 @@ export class WordLadderSittingService {
     };
     const assets = item.wordId ? assetsOf(item.wordId) : NO_ASSETS;
     const card = () => ({ wordId: entry.id, term: entry.term, gloss: entry.gloss, pronunciation: entry.pronunciation ?? null, kind: entry.kind, media: assets });
-    const withFallback = (cue) => (cue?.type === 'image' ? { ...cue, text: entry.gloss } : cue);
-    const cueAssets = (cue) => ({ image: cue?.type === 'image' ? assets.image : null, audio: null, glossAudio: cue?.type === 'audio' ? assets.glossAudio : null });
-    const cued = (cue) => ({ ...item, cue: withFallback(cue), assets: cueAssets(cue) });
+    // Every English-side cue goes out as the full bundle (ruling 2026-09-23:
+    // text + picture + gloss audio together), built from the entry and media
+    // as they are NOW — so an item stored under the old one-random-kind cue
+    // ({type:'image'|'text'|'audio'}) in a day file from before the ruling is
+    // served the new way too.
+    const englishCue = () => cueFor(entry, media[item.wordId] ?? {});
+    const cueAssets = () => ({ image: assets.image, audio: null, glossAudio: assets.glossAudio });
+    const cued = () => ({ ...item, cue: englishCue(), assets: cueAssets() });
     const board = (b) => ({
       ...b,
       pairs: b.pairs.map((pair) => {
@@ -187,24 +193,25 @@ export class WordLadderSittingService {
     }
     if (item.type === 'say' || item.type === 'drill') {
       if (speaking === 'read-aloud') return { ...item, word: { wordId: entry.id, term: entry.term, kind: entry.kind, media: NO_ASSETS } };
-      if (speaking === 'say-from-cue' || speaking === 'type') return cued(item.cue);
+      if (speaking === 'say-from-cue' || speaking === 'type') return cued();
       if (item.type === 'drill' && item.step === 'match') return { ...item, board: board(item.board) };
       if (item.type === 'drill' && item.step === 'dictation') return { ...item, assets: { ...NO_ASSETS, audio: assets.audio } };
       if (item.type === 'drill' && item.step === 'tiles') {
-        return cued(item.cue ?? cueFor(entry, media[item.wordId] ?? {}, `${ctx.learnerId}|${ctx.day}|${item.id}|tiles`));
+        return cued();
       }
       return { ...item, word: card() }; // look, copy, say-after
     }
     if (item.type === 'typed' || item.type === 'choice') {
+      // On 3.1 / 3.3 the gloss IS the cue (the term is the answer): the whole
+      // English bundle goes out, text always, picture and gloss clip when they
+      // exist. 2.2 carries only the term's audio on the hear channel.
+      const englishSide = item.task === '3.1' || item.task === '3.3';
       const graded = {
-        image: item.cue?.type === 'image' ? assets.image : null,
+        image: englishSide ? assets.image : null,
         audio: item.task === '2.2' && item.channel === 'hear' ? assets.audio : null,
-        glossAudio: item.cue?.type === 'audio' ? assets.glossAudio : null,
+        glossAudio: englishSide ? assets.glossAudio : null,
       };
-      // On 3.1 / 3.3 the gloss IS the cue (the term is the answer), so an image
-      // cue always carries it as text: the client falls back to it when the
-      // picture is missing or fails to load, rather than showing nothing.
-      const cue = item.task === '3.1' || item.task === '3.3' ? withFallback(item.cue) : item.cue;
+      const cue = englishSide ? englishCue() : item.cue;
       return { ...item, ...(item.task === '2.2' ? { prompt: entry.term } : {}), ...(cue ? { cue } : {}), assets: graded };
     }
     return item;

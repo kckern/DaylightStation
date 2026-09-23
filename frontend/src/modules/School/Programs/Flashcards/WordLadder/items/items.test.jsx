@@ -97,12 +97,13 @@ describe('image cues', () => {
   const imageChoice = { id: 'p1', type: 'choice', task: '3.1', cue: { type: 'image', text: 'Scissors' }, choices: ['가위', '풀', '책', '펜'], assets: { image: 'img-gawi' } };
   const imageTyped = { id: 'p2', type: 'typed', task: '3.3', cue: { type: 'image', text: 'Scissors' }, assets: { image: 'img-gawi' } };
 
-  it('ChoiceItem: an image that fails to load falls back to the text cue and logs', () => {
+  it('ChoiceItem: an image that fails to load drops out (the text stays) and logs', () => {
     const spy = vi.spyOn(wordLadderLog, 'mediaFailed').mockImplementation(() => {});
     const { container } = render(<ChoiceItem item={imageChoice} langs={langs} resolveAssetUrl={(x) => x} onRespond={() => {}} />);
     const img = container.querySelector('img.wl-cue-picture');
     expect(img).not.toBeNull();
-    expect(screen.queryByText('Scissors')).toBeNull();
+    // Ruling 2026-09-23: the English text shows WITH the picture, not only as its fallback.
+    expect(screen.getByText('Scissors')).toBeInTheDocument();
     fireEvent.error(img);
     expect(container.querySelector('img.wl-cue-picture')).toBeNull();
     expect(screen.getByText('Scissors')).toBeInTheDocument();

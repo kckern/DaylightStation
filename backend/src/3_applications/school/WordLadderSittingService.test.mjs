@@ -112,20 +112,28 @@ describe('WordLadderSittingService', () => {
     expect(JSON.stringify({ ...pickTerm, choices: [] })).not.toContain('가위');
   });
 
-  it('an image cue on 3.1 / 3.3 carries the gloss as its text fallback, never the term', async () => {
-    const noGlossAudio = (id) => !String(id).includes('gloss');
+  it('3.1 / 3.3 carry the whole English bundle (text + picture + gloss audio), never the term', async () => {
     const seen = {};
     for (const rechecks of [0, 1, 2]) {
-      const { service } = make({ store: dueStore(rechecks), media: noGlossAudio });
+      const { service } = make({ store: dueStore(rechecks), media: true });
       const { item } = await service.open({ userId: 'test-learner', deckId: DECK });
-      if (item.cue?.type === 'image') seen[item.task] = item;
+      if (item.task === '3.1' || item.task === '3.3') seen[item.task] = item;
     }
     expect(Object.keys(seen).sort()).toEqual(['3.1', '3.3']);
     for (const item of Object.values(seen)) {
-      expect(item.cue).toEqual({ type: 'image', text: 'Scissors' });
+      expect(item.cue).toEqual({ type: 'english', text: 'Scissors', image: true, audio: true });
       expect(item.assets.image).toEqual(expect.any(String));
+      expect(item.assets.glossAudio).toEqual(expect.stringContaining('gawi/gloss.mp3'));
       expect(JSON.stringify({ ...item, choices: [] })).not.toContain('가위');
     }
+  });
+
+  it('with no picture or gloss audio, the bundle is the text alone — never an empty prompt', async () => {
+    const termAudioOnly = (id) => !String(id).includes('gloss') && !String(id).includes('image');
+    const { service } = make({ store: dueStore(1), media: termAudioOnly });
+    const { item } = await service.open({ userId: 'test-learner', deckId: DECK });
+    expect(item.cue).toEqual({ type: 'english', text: 'Scissors', image: false, audio: false });
+    expect(item.assets).toMatchObject({ image: null, glossAudio: null });
   });
 
   it('a 3.3 recheck carries no term anywhere', async () => {
@@ -431,9 +439,11 @@ describe('WordLadderSittingService — drills, speaking, practice, My words', ()
     expect(steps.dictation.word).toBeUndefined();
     // tiles: syllables and a cue, never the joined term or its audio.
     expect(steps.tiles.tiles).toEqual(expect.arrayContaining(['가', '위']));
-    const cueCarried = (item) => (item.cue.type === 'audio'
-      ? expect(item.assets.glossAudio).toEqual(expect.stringContaining('gawi/gloss.mp3'))
-      : expect(item.cue.text).toBe('Scissors'));
+    const cueCarried = (item) => {
+      expect(item.cue).toEqual({ type: 'english', text: 'Scissors', image: true, audio: true });
+      expect(item.assets.glossAudio).toEqual(expect.stringContaining('gawi/gloss.mp3'));
+      expect(item.assets.image).toEqual(expect.stringContaining('gawi/image.jpg'));
+    };
     cueCarried(steps.tiles);
     expect(JSON.stringify(steps.tiles)).not.toContain('가위');
     expect(JSON.stringify(steps.tiles)).not.toContain(TERM_AUDIO);

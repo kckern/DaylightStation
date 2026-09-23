@@ -1,10 +1,8 @@
 import { useEffect, useState } from 'react';
 import { TouchButton } from '../../../../../../lib/ui/index.js';
-import Icon from '../../../../home/icons/Icon.jsx';
-import { FitText } from '../FitText.jsx';
 import { playClip } from '../wordLadderAudio.js';
 import { useWordLadderKeys } from '../useWordLadderKeys.js';
-import CuePicture from './CuePicture.jsx';
+import EnglishCue, { englishCueAudio } from './EnglishCue.jsx';
 
 /**
  * Drill step "tiles" (pick-spelling): the cue, and the term's syllables plus
@@ -19,7 +17,6 @@ import CuePicture from './CuePicture.jsx';
 export default function TilesItem({ item, langs, resolveAssetUrl, onRespond, result = null, pending = false, onContinue, busy = false }) {
   const tiles = item.tiles ?? [];
   const [answer, setAnswer] = useState([]); // indexes into `tiles` (syllables can repeat)
-  const image = item.assets?.image ? resolveAssetUrl(item.assets.image) : null;
   const glossAudio = item.assets?.glossAudio ? resolveAssetUrl(item.assets.glossAudio) : null;
   useEffect(() => {
     if (item.cue?.type === 'audio' && glossAudio) playClip(glossAudio, 'gloss');
@@ -33,7 +30,8 @@ export default function TilesItem({ item, langs, resolveAssetUrl, onRespond, res
   const check = () => { if (!locked && answer.length) onRespond({ tiles: answer.map((i) => tiles[i]) }); };
 
   // Tab = hear the audio cue again (only when there is one).
-  const hearKeys = glossAudio && item.cue?.type === 'audio' ? { tab: () => playClip(glossAudio, 'gloss') } : {};
+  const cueClip = englishCueAudio(item, resolveAssetUrl);
+  const hearKeys = cueClip ? { tab: () => playClip(cueClip, 'gloss') } : {};
   useWordLadderKeys(pending
     ? { ' ': onContinue, enter: onContinue, ...hearKeys }
     : {
@@ -46,9 +44,7 @@ export default function TilesItem({ item, langs, resolveAssetUrl, onRespond, res
   return (
     <section className="wl-item wl-tiles" aria-label="Spell it">
       <div className="wl-prompt">
-        {item.cue?.type === 'image' && <CuePicture item={item} src={image} lang={langs.gloss} />}
-        {item.cue?.type === 'text' && <FitText role="prompt" text={item.cue.text} lang={langs.gloss} />}
-        {item.cue?.type === 'audio' && <TouchButton variant="secondary" keyHint="Tab" onClick={() => glossAudio && playClip(glossAudio, 'gloss')}><Icon name="volume" /> Listen</TouchButton>}
+        <EnglishCue item={item} resolveAssetUrl={resolveAssetUrl} lang={langs.gloss} />
       </div>
       <div className="wl-tiles__answer" role="group" aria-label="Your answer" lang={langs.term}>
         {answer.map((index, at) => (
