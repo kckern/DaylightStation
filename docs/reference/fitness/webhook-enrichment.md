@@ -182,7 +182,9 @@ After the retries run out, `_createStravaOnlySession` writes a session built fro
 
 ### Title and notes pulled back from Strava
 
-`ActivityReconciliationService` (hourly sweep plus after each webhook, 10-day lookback) keeps two things current in the session:
+A rename on Strava arrives as an `activity/update` webhook carrying `updates.title`. `FitnessWebhookService` routes it to `handleTitleUpdate`, which calls `ActivityReconciliationService.applyTitle` to write the new title into the linked session right away. (Before 2026-09-22 every update event was dropped as "not enrichable".) Our own title pushes echo back the same way; applying them is harmless.
+
+`ActivityReconciliationService` also runs an hourly sweep (`fitness:strava-reconcile`) plus one after each webhook, over a 10-day lookback. It refreshes Strava auth before each sweep (`ensureAccess`). Before that fix, the scheduled sweep only worked in the ~6 hours after a webhook happened to refresh the token: it logged "No access token available" until then and 401s after. The sweep keeps two things current in the session:
 
 - `strava_notes` — the Strava description, pulled once, never overwritten.
 - `strava.name` — the Strava title. It is set when the session is created (often the auto-name "Morning Run") and refreshed whenever the title on Strava changes. Only a name the session already has is refreshed; home sessions carry a `strava` block without a name and are left alone. Emits `strava.reconciliation.title_synced`.
@@ -279,6 +281,8 @@ All log events are `info` level — visible in production.
 | `strava.enrichment.hr_from_api` | activityId, samples, spanSeconds | HR + time streams fetched for a Strava-only session |
 | `strava.enrichment.hr_time_stream_missing` | activityId | No usable time stream; falls back to per-second (warn) |
 | `strava.reconciliation.title_synced` | activityId, sessionId, from, to | Session title refreshed from Strava |
+| `strava.enrichment.title_update_received` | activityId, title | Rename webhook received |
+| `strava.reconciliation.auth_failed` | error | Could not refresh auth; sweep skipped (warn) |
 
 ### Bootstrap
 

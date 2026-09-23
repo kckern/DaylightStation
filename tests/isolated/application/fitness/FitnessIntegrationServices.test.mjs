@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { FitnessContentService } from '#apps/fitness/services/FitnessContentService.mjs';
 import { EmergencyAccessService } from '#apps/fitness/services/EmergencyAccessService.mjs';
 import { FitnessWebhookService } from '#apps/fitness/services/FitnessWebhookService.mjs';
+import { StravaWebhookAdapter } from '#adapters/strava/StravaWebhookAdapter.mjs';
 import { GetFitnessMenuMusic } from '#apps/fitness/usecases/GetFitnessMenuMusic.mjs';
 import { PrintFitnessReceipt } from '#apps/fitness/usecases/PrintFitnessReceipt.mjs';
 import { SaveDebugVoiceMemo } from '#apps/fitness/usecases/SaveDebugVoiceMemo.mjs';
@@ -95,5 +96,33 @@ describe('Fitness integration facades', () => {
     expect(identityRelay.consumePendingDetection).toHaveBeenCalledWith(42, 120000);
     expect(service.confirmAbort()).toEqual({ userId: 'alice' });
     expect(identityRelay.disarmCommit).toHaveBeenCalledTimes(1);
+  });
+
+  describe('Strava rename webhooks', () => {
+    const build = () => {
+      const enrichmentService = { handleEvent: vi.fn(), handleTitleUpdate: vi.fn() };
+      const adapter = new StravaWebhookAdapter({ verifyToken: 't', logger: { info() {}, warn() {} } });
+      adapter.identify = () => 'event';
+      const service = new FitnessWebhookService({
+        providerWebhookAdapters: { strava: adapter },
+        enrichmentService,
+        logger: { info() {}, warn() {} },
+      });
+      return { service, enrichmentService };
+    };
+
+    it('routes activity/update with a title to handleTitleUpdate', () => {
+      const { service, enrichmentService } = build();
+      service.event({ payload: { object_type: 'activity', object_id: 20245291061, aspect_type: 'update', updates: { title: 'Spartan Sprint' } } });
+      expect(enrichmentService.handleTitleUpdate).toHaveBeenCalledTimes(1);
+      expect(enrichmentService.handleTitleUpdate.mock.calls[0][0].updates.title).toBe('Spartan Sprint');
+      expect(enrichmentService.handleEvent).not.toHaveBeenCalled();
+    });
+
+    it('ignores updates that do not change the title', () => {
+      const { service, enrichmentService } = build();
+      service.event({ payload: { object_type: 'activity', object_id: 1, aspect_type: 'update', updates: { type: 'Run' } } });
+      expect(enrichmentService.handleTitleUpdate).not.toHaveBeenCalled();
+    });
   });
 });

@@ -28,6 +28,7 @@ export class ActivityReconciliationService {
   #logger;
   #historyRepository;
   #pause;
+  #ensureAccess;
 
   /**
    * @param {Object} config
@@ -36,9 +37,12 @@ export class ActivityReconciliationService {
    * @param {Object} config.selectionConfig - Primary-media selection config (from buildSelectionConfig)
    * @param {string} config.timezone - IANA timezone for the date-range sweep
    * @param {{list: Function, save: Function, remove: Function}} config.historyRepository - Fitness session persistence
+   * @param {Function} [config.ensureAccess] - Refresh provider auth before a sweep. The
+   *   hourly sweep runs on its own schedule; without this it only worked in the
+   *   hours after a webhook happened to refresh the token.
    * @param {Object} [config.logger]
    */
-  constructor({ activityGateway, lookbackDays, selectionConfig, timezone, historyRepository, pause = async () => {}, logger = console }) {
+  constructor({ activityGateway, lookbackDays, selectionConfig, timezone, historyRepository, pause = async () => {}, ensureAccess = async () => {}, logger = console }) {
     if (!historyRepository || typeof historyRepository.list !== 'function'
       || typeof historyRepository.save !== 'function' || typeof historyRepository.remove !== 'function') {
       throw new TypeError('ActivityReconciliationService requires historyRepository with list(), save(), and remove()');
@@ -50,6 +54,7 @@ export class ActivityReconciliationService {
     this.#historyRepository = historyRepository;
     this.#logger = logger;
     this.#pause = pause;
+    this.#ensureAccess = ensureAccess;
   }
 
   /**
@@ -62,6 +67,13 @@ export class ActivityReconciliationService {
 
     const dates = this.#buildDateRange(lookbackDays, tz);
     this.#logger.info?.('strava.reconciliation.start', { lookbackDays, dates: dates.length });
+
+    try {
+      await this.#ensureAccess();
+    } catch (err) {
+      this.#logger.warn?.('strava.reconciliation.auth_failed', { error: err?.message });
+      return;
+    }
 
     let sessionsProcessed = 0;
     let enriched = 0;
@@ -233,6 +245,28 @@ export class ActivityReconciliationService {
       textLength: desc.length,
     });
     return true;
+  }
+
+  /**
+   * Apply a title from a provider rename webhook to the session(s) linked to
+   * that activity within the lookback window.
+   * @param {string} activityId
+   * @param {string} title
+   * @returns {number} Sessions updated
+   */
+  applyTitle(activityId, title) {
+    const tz = this.#timezone || 'America/Los_Angeles';
+    let updated = 0;
+    for (const date of this.#buildDateRange(this.#lookbackDays, tz)) {
+      for (const { id: sessionId, data: session } of this.#historyRepository.list(date)) {
+        if (this.#extractActivityId(session) !== String(activityId)) continue;
+        if (this.#syncTitle(session, { id: activityId, name: title }, false)) {
+          this.#historyRepository.save(sessionId, session);
+          updated++;
+        }
+      }
+    }
+    return updated;
   }
 
   /**

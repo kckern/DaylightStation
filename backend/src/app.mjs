@@ -3581,6 +3581,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         timezone: stravaTimezone,
         historyRepository: fitnessHistoryRepository,
         pause: (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)),
+        ensureAccess: () => stravaActivityAccess.ensure(configService.getHeadOfHousehold?.() || 'user_1'),
         logger: rootLogger.child({ module: 'strava-reconciliation' }),
       });
 
