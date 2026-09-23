@@ -1,6 +1,6 @@
 # Word ladder — mastery redesign
 
-Status: rev 3 (2026-09-22) — second review round applied; awaiting owner review
+Status: rev 4 (2026-09-22) — third review (confirm pass) applied; cleared for planning
 Replaces: `docs/_archive/2026-09-22-word-ladder-test-mode-layout-observability-design.md`
 Benchmark: `docs/_wip/audits/2026-09-22-quizlet-benchmark-word-ladder.md`
 Current code: `docs/reference/school/word-ladder.md`
@@ -121,7 +121,8 @@ A stage-0 word's "recheck" the next study day is exactly the recheck above
   and of any deck the learner was enrolled in before (`status.decksSeen`,
   recorded at each open), oldest deck first, deck order within a deck. So a
   deck is a quota: its words keep coming until all are introduced, even after
-  a grown-up moves the enrollment on.
+  a grown-up moves the enrollment on. A grown-up can **drop a deck from the
+  pool** (§6 word controls) to stop its un-introduced words coming.
 - A Got-it spammer gains nothing: every Got-it word is quizzed at round end and
   stays unsettled until it survives a next-day recheck.
 
@@ -175,17 +176,27 @@ One graded task per due word:
   3. **No Hangul → score 1**, no model call. An answer with no Hangul syllable
      or jamo (English, digits, empty) is not an attempt at the word.
   4. **Different real word → score 2**, no model call. If the normalised
-     answer equals a *different* deck word or authored decoy, it fails — even
+     answer equals a *different* word the learner has been introduced to in
+     this package, or an authored decoy of the target, it fails — even
      one letter off (풀 → 불, 연필 → 색연필). This is the one deliberate
      exception to "not a spelling test": decoys are the confusable wrong
      answers by design, so typing and multiple choice stay consistent.
-  5. **Deterministic score** from jamo distance: decompose both sides to jamo
-     with `modules/School/ime/hangul.js`'s decomposition (ported to
-     `2_domains/school/wordLadder/jamo.mjs`, shared by client and server), then
-     Levenshtein over the jamo sequences (the existing code-point `editDistance`
-     in `2_domains/school/language/transcription.mjs`, applied to jamo, not
-     syllables). Band it: 0 → 10 · ≤ 10 % of target jamo → 8 · ≤ 25 % → 6 ·
-     ≤ 50 % → 4 · beyond → 2.
+  5. **Deterministic score** from jamo distance.
+     - *Decomposition:* each syllable → its jamo **as typed on a two-set
+       keyboard**: compound vowels and compound finals split into their
+       component keys (ㅟ → ㅜ ㅣ, ㅢ → ㅡ ㅣ, ㄳ → ㄱ ㅅ, ㄺ → ㄹ ㄱ); tense
+       consonants (ㄲ ㄸ ㅃ ㅆ ㅉ) and ㅒ ㅖ stay single (one Shift+key). So
+       distance counts wrong keystrokes. Built on `modules/School/ime/hangul.js`
+       (its `compoundHead` tables), ported to `2_domains/school/wordLadder/jamo.mjs`
+       and shared by client and server.
+     - *Distance:* Levenshtein over those jamo sequences (the existing
+       code-point `editDistance` in `2_domains/school/language/transcription.mjs`,
+       applied to jamo, not syllables). *L* = the target's jamo count, *d* = distance.
+     - *Bands:* d = 0 → 10. **Short targets (L ≤ 4**, e.g. 풀 책 종 불): d = 1 → 6 ·
+       d ≥ 2 → 2. **Longer targets:** d/L ≤ 10 % → 8 · ≤ 20 % → 6 · ≤ 33 % → 4 ·
+       beyond → 2.
+     - *Examples:* 풀 → 푸 (d 1, L 3) = 6 pass · 가위 → 가이 (d 1, L 5) = 6 pass ·
+       안녕히계세요 → 3 keys wrong of ~15 (20 %) = 6 pass · 7 wrong (47 %) = 2 fail.
   6. **Short words (≤ 2 syllables): the deterministic score is final.** No
      model call; a model adds nothing over distance on two syllables.
   7. **Longer words and phrases: a small, low-effort model** (configured, not
@@ -197,8 +208,9 @@ One graded task per due word:
      against fixed anchors: 10 exact · 8–9 spacing/one slip · 6–7 misspelled
      but clearly the intended word · 4–5 partly there (e.g. one syllable of
      three) · 1–3 a different word or unrelated. **The deterministic score is a
-     floor and the model may raise it by at most one band** (e.g. 4 → 6); it
-     can never lower it. Model failure or timeout → the deterministic score
+     floor; the model may raise it by at most one band, and only when the floor
+     is ≥ 4 and d/L ≤ 33 %** (e.g. 4 → 6); it can never lower it, and it cannot
+     rescue an attempt that is mostly wrong. Model failure or timeout → the deterministic score
      stands, logged `judge: fallback`.
   8. **Pass = score ≥ `typing.passScore`** (grown-up setting, default **6**).
   9. **Cached** by (package, word id, normalised answer) in
@@ -286,13 +298,22 @@ TASK  (given → produced)
 
 ### Rounds and piles
 
-A **round** is up to `round.size` (default 5) quizzable words. A **new round**
-introduces today's new words at its start and tops up with carry-over words
-when fewer new words fit; a **carry-over round** is unsettled words from
-earlier days (`notYet` and `familiar` first, then `claimed`). Words that failed
-verify today (`verifyFailedDay` = today) may appear in a round's stream as
-flashcards but **do not take a `round.size` slot** and are not quizzed again
-today.
+A **round** is up to `round.size` (default 5) quizzable words. **A word is a
+member of at most one round per study day.** Words that failed verify today
+(`verifyFailedDay` = today) may reappear in later rounds' streams as extra
+flashcards but **take no `round.size` slot** and are not quizzed again today.
+
+Rounds are planned when the sitting reaches step 3 (below), in this order:
+
+- **Carry-over rounds:** unsettled words from earlier days (`notYet` and
+  `familiar` first, then `claimed`), in rounds of `round.size`. A remainder
+  of fewer than 2 carry-over words is **held back** to top up the first new
+  round instead of forming a round of 1.
+- **New rounds:** today's new words, introduced at the round's start, plus the
+  held-back carry-over words.
+- **Every round is shrink-to-fit:** it takes the largest n its kind allows
+  (carry-over n ≥ 1, new n ≥ 2 new words) whose estimate fits the active time
+  left today; if the minimum does not fit, it does not start.
 
 In the round's **stream** (2.1 flashcards) the child sorts each card:
 
@@ -311,8 +332,9 @@ In the round's **stream** (2.1 flashcards) the child sorts each card:
   Familiar or Got it — plus every word whose **`notYetCarry`** is set — and
   whose `verifyFailedDay` is not today.
 - **Chronic Not yet:** a word whose latest sort at a round end is Not yet gets
-  `notYetCarry` set (cleared when it is next quizzed). At its next round end —
-  a later study day — it is **quizzed whatever the child sorts**. Honest "Not
+  `notYetCarry` set (cleared when it is next quizzed, and by a grown-up *reset to
+  new*). Because a word joins at most one round per day, its next round end is
+  on a later study day, where it is **quizzed whatever the child sorts**. Honest "Not
   yet" skips the quiz once; it cannot skip it twice in a row.
 - **Drill offer:** at most **one per round** — for the round's Not-yet word
   with the most Not-yet sorts: *"This one's tricky — want to practise it?"*
@@ -329,11 +351,11 @@ In the round's **stream** (2.1 flashcards) the child sorts each card:
 2. **Drill** for up to `drill.perSitting` (default 1) tricky words, oldest
    tricky first, if the drill estimate fits the remaining time; the rest wait
    for later sittings (FIFO).
-3. **Carry-over round(s):** unsettled words from earlier days.
-4. **New rounds**, **shrink-to-fit:** each new round introduces the largest
-   n ≥ 2 new words (n ≤ today's allowance, n ≤ `round.size`) whose estimate fits
-   the active time left; if even 2 do not fit, no round starts. The quiz is
-   therefore never the part the cap cuts off.
+3. **Carry-over rounds**, shrink-to-fit (above).
+4. **New rounds**, shrink-to-fit: each introduces the largest n ≥ 2 new words
+   (n ≤ today's allowance, n ≤ `round.size` minus held-back words) whose
+   estimate fits the active time left; if even 2 do not fit, no round starts.
+   The quiz is therefore never the part the cap cuts off.
 5. **Summary** (today's words by state, and how many were quizzed) →
    **practice menu**.
 
@@ -354,12 +376,16 @@ once 5 sittings exist.
 
 **Typical days at defaults (cap 15 min):**
 
-| Day | Rechecks | Drill | Carry-over | Time left | New words introduced |
-|---|---|---|---|---|---|
-| Quiet | 3 (≈ 1 min) | — | 2 (≈ 2 min) | 12 min | **4** (≈ 9.2 min; newPerDay cap) |
-| Typical | 5 (≈ 1.5 min) | — | 3 (≈ 3 min) | 10.5 min | **4** (≈ 9.2 min) |
-| Hard | 5 (≈ 1.5 min) | 1 (4 min) | 3 (≈ 3 min) | 6.5 min | **2** (≈ 4.6 min) |
-| Very hard | 8 (≈ 2.5 min) | 1 (4 min) | 5 (≈ 5 min) | 3.5 min | **0** — consolidation day |
+| Day | Rechecks | Drill | Carry-over | Unsettled → allowance (min(4, 7 − u)) | Time left | New words introduced |
+|---|---|---|---|---|---|---|
+| Quiet | 3 (≈ 1 min) | — | 2 (≈ 2 min) | 3 → 4 | 12 min | **4** (≈ 9.2 min) |
+| Typical | 5 (≈ 1.5 min) | — | 3 (≈ 3 min) | 3 → 4 | 10.5 min | **4** (≈ 9.2 min) |
+| Hard | 5 (≈ 1.5 min) | 1 (4 min) | 3 (≈ 3 min) | 4 → 3 | 6.5 min | **2** (≈ 4.6 min; time-limited) |
+| Crowded | 3 (≈ 1 min) | — | 6 (≈ 6 min) | 6 → 1 | 8 min | **0** (allowance 1 < minimum 2; the word is held for tomorrow) |
+| Very hard | 8 (≈ 2.5 min) | 1 (4 min) | 5 (≈ 5 min) | 5 → 2 | 3.5 min | **0** — consolidation day |
+
+Unsettled counts yesterday's stage-0 masters as well as carry-over words, so
+both time and the working set can be the limiter.
 
 A 19-word deck therefore takes roughly **1–2 weeks**. **The weekly deck is a
 quota, not a deadline:** its words carry over until introduced, and the next
@@ -369,13 +395,20 @@ learner has been introduced to** (§8 Printed quiz).
 
 ### Done for today (goal, with a time cap)
 
-**Goal** = every recheck in the sitting's at-open snapshot answered · the
-sitting's drill run, if the snapshot lists a tricky word and the drill fit ·
-every round started today finished (stream, quiz, drill offer settled).
-**Or** `session.capMinutes` (default 15) of **active** time — input within the
-last 45 s — has elapsed and the round in progress has finished (rounds are
-sized to fit, so overrun is bounded by estimate error). Credit (`doneToday`) is
-either; the practice menu unlocks at either. Unstarted material carries over.
+Goal and cap are **per study day, across all of that day's sittings** (idle
+close makes several sittings a day routine; walking away and reopening neither
+resets the clock nor strands the child).
+
+**Goal** = every recheck in the **day's first sitting's** at-open snapshot
+answered · the day's drill run, if that snapshot lists a tricky word and the
+drill fit · every round started today finished (stream, quiz, drill offer
+settled). **Cap** = cumulative `activeMs` of the day's sittings ≥
+`session.capMinutes` (default 15) — active means input within the last 45 s —
+with no round in progress (rounds are sized to fit the day's remaining time, so
+overrun is bounded by estimate error). `doneToday` = goal met, or cap reached.
+The practice menu unlocks at either. A later sitting on a done day opens
+straight to the summary and the practice menu. Unstarted material carries
+over.
 The summary and the day file record **how many words were quizzed**, so a day
 credited with zero graded items is visible to grown-ups and the tuner.
 
@@ -587,8 +620,9 @@ words.
 ### Grown-up word controls (teacher console, per learner, per package)
 
 Word list with state, stage, due, streak, tricky, and last graded answers
-with judge score and reason; actions: **reset to new**, **mark mastered (stage n)**, **exclude**
-(removed from rounds and rechecks), **re-grade** a logged answer (e.g. a judge
+with judge score and reason; actions: **reset to new** (also clears `notYetCarry`), **mark mastered (stage n)**,
+**exclude** (removed from rounds and rechecks), **drop deck from pool**
+(removes a deck from `decksSeen`; introduced words keep their state), **re-grade** a logged answer (e.g. a judge
 verdict a grown-up disagrees with). All logged `school.word-ladder.admin`.
 
 ---
@@ -662,12 +696,18 @@ The printed OMR quiz covers only words the learner has been introduced to.
   reads the learner's status and writes a quiz source over introduced,
   non-excluded words: this week's introductions first, then unsettled words,
   then a sample of mastered words, up to the sheet's row limit. Document id
-  `language/<lang>/<pkg>-quiz-<learner>-<iso-week>`; published and rendered
-  (`variety=omr`) as today.
-- The fold recognises any document whose id starts with
-  `language/<lang>/<pkg>-quiz-` as belonging to the package (replacing the
-  per-deck `quizDocumentIds` match), and applies the rows only to the learner
-  who was scanned.
+  `<deckDir>/<pkg>-quiz-<learner>-<iso-week>`, where `<deckDir>` is the
+  directory part of the package's deck ids (today `language/korean`); published
+  and rendered (`variety=omr`) as today.
+- **Reprints:** regenerating the same week after new introductions changes the
+  source, so it is published as a new revision and a fresh card is minted
+  (`POST /print/render`) — a republish must never pin the old card.
+- **The fold** recognises **both** (a) the legacy per-deck ids from
+  `quizDocumentIds` (every deck sharing the package's lexicon — so quizzes
+  already printed keep folding) **and** (b) any id starting with
+  `<deckDir>/<pkg>-quiz-`. A per-learner document folds **only** into the
+  learner named in its id; if the scanned learner differs (a sibling took the
+  wrong sheet), the fold is refused and logged `school.word-ladder.fold-refused`.
 - The existing per-deck quiz command stays for a grown-up who wants the whole
   deck on paper; its misses on un-introduced words are logged only (rule 3).
 
