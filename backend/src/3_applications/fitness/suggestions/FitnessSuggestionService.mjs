@@ -1,3 +1,5 @@
+import { isSuggestiblePlayable } from './suggestibleEpisode.mjs';
+
 /**
  * FitnessSuggestionService — orchestrates suggestion strategies to fill a grid.
  *
@@ -111,7 +113,13 @@ export class FitnessSuggestionService {
         const memoKey = `${showId}::${hhid ?? ''}`;
         if (!playableMemo.has(memoKey)) {
           playableStats.misses++;
-          playableMemo.set(memoKey, this.#fitnessPlayableService.getPlayableEpisodes(showId, hhid));
+          // Season-0 extras and short filler are never suggestible, so no
+          // strategy sees them — NextUp skips past them, Resume never offers them.
+          playableMemo.set(memoKey, this.#fitnessPlayableService.getPlayableEpisodes(showId, hhid)
+            .then(data => ({
+              ...data,
+              items: (data?.items || []).filter(ep => isSuggestiblePlayable(ep, suggestionPolicy)),
+            })));
         }
         return playableMemo.get(memoKey);
       },

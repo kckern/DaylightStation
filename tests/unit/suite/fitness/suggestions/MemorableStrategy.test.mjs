@@ -88,4 +88,24 @@ describe('MemorableStrategy', () => {
     const result = await strategy.suggest(makeContext(sessions, { memorable_max: 1 }), 4);
     expect(result).toHaveLength(1);
   });
+
+  test('skips season-0 extras and episodes under the minimum duration', async () => {
+    const sessions = [
+      makeSession('1001', '100', 'Show A', 'Intro', '2026-03-12', 180),
+      makeSession('2001', '200', 'Show B', 'Special', '2026-03-15', 170),
+      makeSession('3001', '300', 'Show C', 'Ep 1', '2026-03-20', 160),
+    ];
+    const episodes = {
+      'plex:1001': { duration: 300, seasonIndex: 1 },
+      'plex:2001': { duration: 1800, seasonIndex: 0 },
+      'plex:3001': { duration: 1800, seasonIndex: 1 },
+    };
+    const ctx = makeContext(sessions, { memorable_max: 3 });
+    ctx.suggestionPolicy.minimumDurationSeconds = 600;
+    ctx.contentCatalog.describeItem = async (cid) => episodes[cid] || { labels: [] };
+    const strategy = new MemorableStrategy({ ranker: new SufferScoreRanker() });
+    const result = await strategy.suggest(ctx, 4);
+
+    expect(result.map(r => r.contentId)).toEqual(['plex:3001']);
+  });
 });

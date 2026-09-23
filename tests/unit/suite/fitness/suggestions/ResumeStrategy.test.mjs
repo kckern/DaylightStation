@@ -17,7 +17,7 @@ function makeSession(showId, showTitle, contentId, episodeTitle, date) {
   };
 }
 
-function makeEpisode(id, index, { isWatched = false, percent = 0, playhead = 0, duration = 3600, labels = [] } = {}) {
+function makeEpisode(id, index, { isWatched = false, percent = 0, playhead = 0, duration = 3600, labels = [], watchedDate = null } = {}) {
   return {
     id: `plex:${id}`,
     localId: String(id),
@@ -26,6 +26,7 @@ function makeEpisode(id, index, { isWatched = false, percent = 0, playhead = 0, 
     isWatched,
     watchProgress: percent,
     watchSeconds: playhead,
+    watchedDate,
     resumable: labels.includes('Resumable'),
     metadata: {
       type: 'episode',
@@ -138,6 +139,42 @@ describe('ResumeStrategy', () => {
     };
     const showLabels = { '100': ['resumable'] };
     const ctx = makeContext(sessions, playables, {}, showLabels);
+    const result = await strategy.suggest(ctx, 4);
+    expect(result).toEqual([]);
+  });
+
+  test('resumes the most recently played episode, not a stale earlier partial', async () => {
+    // Game Cycling, 2026-09-22: ep 1 (Super Mario Kart) was finished in July and
+    // left at 10% by a one-second open on Sep 3. The household is midway through
+    // ep 25 (Sonic), played today. Walking the show in order surfaced ep 1.
+    const sessions = [makeSession('100', 'Game Cycling', '1025', 'Sonic', '2026-09-22')];
+    const playables = {
+      '100': [
+        makeEpisode(1001, 1, { isWatched: true, percent: 10, playhead: 279, duration: 2790, watchedDate: '2026-09-03 20:21:49' }),
+        makeEpisode(1011, 11, { isWatched: true, percent: 40, playhead: 3894, duration: 9735, watchedDate: '2026-08-28 22:07:39' }),
+        makeEpisode(1025, 25, { percent: 8, playhead: 1396, duration: 17450, watchedDate: '2026-09-22 22:34:12' }),
+        makeEpisode(1026, 26, { percent: 0 }),
+      ]
+    };
+    const ctx = makeContext(sessions, playables, {}, { '100': ['resumable'] });
+    const result = await strategy.suggest(ctx, 4);
+
+    expect(result).toHaveLength(1);
+    expect(result[0].contentId).toBe('plex:1025');
+    expect(result[0].progress.playhead).toBe(1396);
+  });
+
+  test('offers no resume when the most recently played episode was finished', async () => {
+    // A stale partial from weeks ago is abandoned, not in progress. Leave the
+    // show to NextUp instead of reviving it.
+    const sessions = [makeSession('100', 'Game Cycling', '1025', 'Sonic', '2026-09-22')];
+    const playables = {
+      '100': [
+        makeEpisode(1001, 1, { isWatched: true, percent: 10, playhead: 279, duration: 2790, watchedDate: '2026-09-03 20:21:49' }),
+        makeEpisode(1025, 25, { isWatched: true, percent: 100, playhead: 17450, duration: 17450, watchedDate: '2026-09-22 22:34:12' }),
+      ]
+    };
+    const ctx = makeContext(sessions, playables, {}, { '100': ['resumable'] });
     const result = await strategy.suggest(ctx, 4);
     expect(result).toEqual([]);
   });
