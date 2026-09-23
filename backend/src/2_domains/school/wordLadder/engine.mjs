@@ -206,18 +206,25 @@ function drillItem(ctx, drill, extra = {}) {
   return base;
 }
 
-// Nothing here grades. copy / dictation advance only on an exact (normalized)
-// match; tiles advance on a match or after the third try, revealing the answer
-// after the second miss. Mutates `drill`.
+// Nothing here grades. copy advances only on an exact (normalized) match;
+// dictation and tiles advance on a match or after the third try, revealing the
+// answer after the second miss. Mutates `drill`.
 function respondDrill(ctx, drill, response) {
   const stepName = drill.steps[drill.index];
   const term = ctx.lexicon.entries.get(drill.wordId).term;
   let result = { ok: true };
-  if (TYPED_DRILL_STEPS.has(stepName)) {
+  if (stepName === 'dictation') {
+    // Like tiles, never a dead end: the first miss hides the term (recalling it
+    // IS the step), the second reveals it (the step becomes a copy), and the
+    // third try advances regardless.
     const correct = normalizeAnswer(response.typed) === normalizeAnswer(term);
-    // A dictation miss never carries the term: recalling it IS the step (the
-    // retry would otherwise be a copy). A copy miss may — the term is on screen.
-    result = correct || stepName !== 'dictation' ? { correct, answer: term } : { correct };
+    if (!correct) drill.tries = (drill.tries ?? 0) + 1;
+    result = correct || drill.tries >= 2 ? { correct, answer: term } : { correct };
+    if (!correct && drill.tries < 3) return { result, advance: false };
+  } else if (TYPED_DRILL_STEPS.has(stepName)) {
+    // copy: the term is on screen, so a miss may carry it; must match to advance.
+    const correct = normalizeAnswer(response.typed) === normalizeAnswer(term);
+    result = { correct, answer: term };
     if (!correct) return { result, advance: false };
   } else if (stepName === 'tiles') {
     const correct = normalizeAnswer(response.tiles.join('')) === normalizeAnswer(term);

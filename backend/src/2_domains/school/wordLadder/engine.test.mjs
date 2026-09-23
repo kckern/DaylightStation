@@ -403,6 +403,36 @@ describe('engine — drill', () => {
     ({ ctx, result: r } = step(ctx, { typed: '가위' }));
     expect(r).toMatchObject({ correct: true });
   });
+  it('dictation: miss 1 hides the answer, miss 2 reveals it, the 3rd try advances regardless (stored)', () => {
+    let ctx = start(trickyStatus());
+    let guard = 0;
+    while (currentItem(ctx).step !== 'dictation' && guard++ < 20) ({ ctx } = step(ctx, drillAnswer(currentItem(ctx))));
+    const dictation = currentItem(ctx);
+    let r;
+    ({ ctx, result: r } = step(ctx, { typed: '가이' }));
+    expect(r).toEqual({ correct: false });
+    expect(currentItem(ctx).id).toBe(dictation.id);
+    ({ ctx, result: r } = step(ctx, { typed: '가이' }));
+    expect(r).toEqual({ correct: false, answer: '가위' });
+    expect(currentItem(ctx).id).toBe(dictation.id);
+    expect(ctx.dayFile.items[dictation.id]).toBeUndefined();
+    ({ ctx, result: r } = step(ctx, { typed: '가이' }));
+    expect(r).toEqual({ correct: false, answer: '가위' });
+    expect(currentItem(ctx).id).not.toBe(dictation.id);
+    expect(ctx.dayFile.items[dictation.id]).toBeDefined();
+  });
+  it('dictation: a correct answer after a miss advances, and the next step starts with fresh tries', () => {
+    let ctx = start(trickyStatus());
+    let guard = 0;
+    while (currentItem(ctx).step !== 'dictation' && guard++ < 20) ({ ctx } = step(ctx, drillAnswer(currentItem(ctx))));
+    const dictation = currentItem(ctx);
+    let r;
+    ({ ctx } = step(ctx, { typed: '가이' }));
+    ({ ctx, result: r } = step(ctx, { typed: '가위' }));
+    expect(r).toEqual({ correct: true, answer: '가위' });
+    expect(currentItem(ctx).id).not.toBe(dictation.id);
+    expect(ctx.dayFile.drills[0].tries).toBe(0);
+  });
   it('tiles: wrong stays, the answer is revealed after the 2nd miss, the 3rd try advances regardless', () => {
     let ctx = start(trickyStatus());
     let guard = 0;
