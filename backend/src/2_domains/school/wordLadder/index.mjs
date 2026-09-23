@@ -23,4 +23,5 @@ export { DEFAULT_SETTINGS, resolveSettings } from './settings.mjs';
 
 export {
   TUNABLE, TUNING_BOUNDS, GROWN_UP_SETTINGS, tunableValues, dayStats, buildTuningDigest, applyTuningProposal,
+  withTunedValues, TUNING_FILE_SCHEMA, TUNING_HISTORY_KEEP, emptyTuning,
 } from './tuning.mjs';

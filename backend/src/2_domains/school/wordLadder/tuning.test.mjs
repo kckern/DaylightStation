@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  TUNABLE, TUNING_BOUNDS, GROWN_UP_SETTINGS, tunableValues, buildTuningDigest, applyTuningProposal,
+  TUNABLE, TUNING_BOUNDS, GROWN_UP_SETTINGS, tunableValues, buildTuningDigest, applyTuningProposal, withTunedValues,
 } from './tuning.mjs';
 import { DEFAULT_SETTINGS } from './settings.mjs';
 import { emptyDay, emptyStatusV3 } from './statusV3.mjs';
@@ -216,5 +216,22 @@ describe('buildTuningDigest', () => {
     const a = buildTuningDigest(input);
     expect(buildTuningDigest(structuredClone(input))).toEqual(a);
     expect(JSON.stringify(a).length).toBeLessThan(8000);
+  });
+});
+
+describe('withTunedValues', () => {
+  it('overlays tuned values on resolved settings: tunables only, finite numbers only, clamped to bounds', () => {
+    const out = withTunedValues(DEFAULT_SETTINGS, {
+      'round.size': 6, 'review.gapScale': 1.1, 'session.capMinutes': 40, 'nope.key': 3, 'batch.newPerDay': 'x', 'batch.workingSet': 99,
+    });
+    expect(out.round).toEqual({ size: 6, maxPasses: 3 });
+    expect(out.review.gapScale).toBe(1.1);
+    expect(out.session.capMinutes).toBe(15);
+    expect(out.batch).toEqual({ newPerDay: 4, workingSet: 10 });
+    expect(out).not.toHaveProperty('nope');
+    expect(DEFAULT_SETTINGS.round.size).toBe(5);
+  });
+  it('no values → an equal copy', () => {
+    expect(withTunedValues(DEFAULT_SETTINGS, undefined)).toEqual(DEFAULT_SETTINGS);
   });
 });

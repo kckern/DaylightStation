@@ -7,6 +7,8 @@ const real = {
   readStatus() { return structuredClone(this.status); },
   readDay(u, p, d) { return emptyDay(d); },
   transact() { this.writes += 1; },
+  readTuning() { return { schema: 'school.word-ladder-tuning/v1', values: { 'round.size': 6 }, lastChanged: {}, lastTunedDay: '2026-09-21', history: [] }; },
+  writeTuning() { this.writes += 1; },
 };
 
 describe('ShadowWordLadderStores', () => {
@@ -26,5 +28,12 @@ describe('ShadowWordLadderStores', () => {
     expect(shadows.forToken(token).readStatus().lastFoldedDay).toBe('seeded');
     t = 11;
     expect(() => shadows.forToken(token)).toThrow(/test sitting/);
+  });
+  it('reads tuning from the real store and can never write it', () => {
+    const shadows = new ShadowWordLadderStores({ real, now: () => 0 });
+    const store = shadows.forToken(shadows.create('test-learner', 'korean-vocab', '2026-09-22'));
+    expect(store.readTuning('test-learner', 'korean-vocab').values).toEqual({ 'round.size': 6 });
+    expect(store.writeTuning).toBeUndefined();
+    expect(real.writes).toBe(0);
   });
 });
