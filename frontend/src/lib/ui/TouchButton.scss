@@ -1,0 +1,25 @@
+.ds-touch {
+  position: relative;
+  display: inline-flex; align-items: center; justify-content: center; gap: 0.75rem;
+  min-height: 64px; min-width: 9rem; padding: 0.75rem 1.5rem;
+  border-radius: 14px; border: 2px solid var(--ds-border);
+  background: var(--ds-surface); color: var(--ds-text-high);
+  font-size: 1.5rem; font-weight: 600; line-height: 1.1;
+  cursor: pointer;
+  transition: transform var(--ds-motion-fast) var(--ds-motion-easing), background var(--ds-motion-fast) var(--ds-motion-easing);
+  &:active:not(:disabled) { transform: scale(0.97); }
+  &:focus-visible { outline: 3px solid var(--ds-accent); outline-offset: 3px; }
+  &:disabled { opacity: 0.45; cursor: default; }
+
+  &--primary { background: var(--ds-accent); border-color: var(--ds-accent); color: var(--ds-background); }
+  &--secondary { background: transparent; }
+  &--choice { width: 100%; min-height: 88px; }
+  &--sort-notyet { border-color: var(--ds-danger); }
+  &--sort-familiar { border-color: var(--ds-warning); }
+  &--sort-gotit { border-color: var(--ds-success); }
+
+  &__key {
+    font-size: 0.85rem; font-weight: 700; padding: 0.1rem 0.45rem; border-radius: 6px;
+    background: var(--ds-surface-alt); color: var(--ds-text-mid);
+  }
+}
