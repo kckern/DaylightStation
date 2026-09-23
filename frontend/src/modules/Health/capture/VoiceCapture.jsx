@@ -23,14 +23,11 @@ const MicIcon = ({ active }) => (
  * which meal to submit against without needing its own per-instance closure
  * state.
  *
- * `labelPrefix` (Task 4.3) lets a second caller with its OWN meal-targeted
- * instance — QuickCaptureBar's global mic — read differently from a
- * per-meal header's ("Log by voice to Lunch") even though both target the
- * exact same bucket: e.g. "Quick voice log to Lunch". Without this, two
- * buttons on the page would carry the identical accessible name while doing
- * conceptually different things (one lives on the meal row, the other is
- * reachable from anywhere). `className` similarly lets QuickCaptureBar apply
- * its own sizing class instead of the meal-row default.
+ * `labelPrefix` names what the mic will do to its meal — a meal's add row
+ * reads "Speak foods to Lunch", or "Speak changes to 2 selected to Lunch"
+ * while foods are selected. Without one it reads "Log by voice to Lunch".
+ * `className` lets the caller apply its own sizing class instead of the
+ * meal-row default.
  */
 export function VoiceCapture({ active = true, onCapture, busy, bucket, mealLabel, labelPrefix, className, onHoldChange }) {
   const recRef = useRef(null);

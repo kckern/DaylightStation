@@ -30,7 +30,6 @@ import { ConfirmDialog } from './ConfirmDialog.jsx';
 import { deleteEntry, deleteConfirmBody, entryLabel } from './entryCommands.js';
 import { TemplatePicker } from './TemplatePicker.jsx';
 import { FoodCatalogManager } from './FoodCatalogManager.jsx';
-import { QuickCaptureBar } from './QuickCaptureBar.jsx';
 import { localTodayISO as todayISO, currentMealBucketId, bucketLabel } from './mealBuckets.js';
 import { useNutritionInput } from '../capture/useNutritionInput.js';
 import { BarcodeCapture } from '../capture/BarcodeCapture.jsx';
@@ -52,25 +51,13 @@ export function TodayView({ active = true, sidebarTarget, onSetupGoals, onCoachT
   const addedIds = useAddedRowHighlight(day.items);
   // Warm ±7 days and each meal's shortlist once the viewed day is on screen.
   useHealthDayPrefetch(date, { enabled: active, ready: !day.loading });
-  // The quick bar's + names a meal; that meal is shown (even if empty) and its
-  // add row takes focus. `n` makes a repeat tap on the same meal refocus.
-  // A request is spent once the user leaves its day. Sections remount per
-  // date, so a live request would refocus its add row (and pop the phone
-  // keyboard) on every visit back; leaving also drops the reveal of an empty
-  // meal. The render-time date check covers the one render before the
-  // effect clears it.
-  const [focusRequestState, setFocusRequest] = useState(null);
-  const focusRequest = focusRequestState?.date === date ? focusRequestState : null;
-  const revealMeal = bucket => setFocusRequest(prev => ({ bucket, date, n: (prev?.n || 0) + 1 }));
-  useEffect(() => { setFocusRequest(prev => (prev && prev.date !== date ? null : prev)); }, [date]);
   const [mealUndo, setMealUndo] = useState(null);
   const mealUndoOperation = useRef(null);   // bucketId | null — F5 renders the combobox here
   const [editingRow, setEditingRow] = useState(null); // row | null — F6 renders the edit sheet
   const [captureMode, setCaptureMode] = useState(null); // 'barcode' | null
-  // bucketId | null — which meal's header-row barcode button opened the
-  // sheet (null = an unlabeled launch; QuickCaptureBar always passes its
-  // own clock-derived default, never null). Forwarded to BarcodeCapture so
-  // it can hand the same id back on decode.
+  // bucketId | null — which meal's add-row barcode button opened the
+  // sheet (null = an unlabeled launch). Forwarded to BarcodeCapture so it
+  // can hand the same id back on decode.
   const [barcodeTargetBucket, setBarcodeTargetBucket] = useState(null);
   const [unknownUpc, setUnknownUpc] = useState(null);
   // bucketId | null — which meal's add row opened the template picker
@@ -288,8 +275,8 @@ export function TodayView({ active = true, sidebarTarget, onSetupGoals, onCoachT
   // placeholder: mark the bucket a new entry would land in NOW as pending
   // before the request goes out, always clear it afterward regardless of
   // outcome — a failed capture must not leave a stuck "Analyzing…" row.
-  // `bucket` is the explicit per-meal target (from a meal-row capture
-  // button, or QuickCaptureBar's own clock-derived default); when absent we
+  // `bucket` is the explicit per-meal target (from a meal's add-row capture
+  // button); when absent we
   // fall back to the same currentMealBucketId() guess as before — this is
   // ONLY where the placeholder shows, never the backend's actual
   // resolution.
@@ -320,11 +307,8 @@ export function TodayView({ active = true, sidebarTarget, onSetupGoals, onCoachT
     return () => setCapturePending(previous => { if (!previous.has(pendingId)) return previous; const next = new Map(previous); next.delete(pendingId); return next; });
   };
 
-  // Shared by QuickCaptureBar's global Voice/Photo triggers AND every
-  // per-meal header trigger LogTable renders — VoiceCapture/PhotoCapture
-  // forward `(dataUrl, bucket)`, with `bucket` always the clock-derived
-  // default for QuickCaptureBar's instances and the specific meal's id for
-  // LogTable's.
+  // Shared by every meal's add-row Voice/Photo trigger — VoiceCapture/
+  // PhotoCapture forward `(dataUrl, bucket)`, `bucket` being that meal's id.
   const handleVoiceOrPhotoCapture = async (type, dataUrl, bucket, context = {}) => {
     try {
       const result = await submitWithPending(type, dataUrl, { bucket, ...context });
@@ -360,9 +344,7 @@ export function TodayView({ active = true, sidebarTarget, onSetupGoals, onCoachT
   const onTextCapture = (text,bucket,context) => handleVoiceOrPhotoCapture('text',text,bucket,context);
   const onPhotoCapture = (dataUrl, bucket) => handleVoiceOrPhotoCapture('image', dataUrl, bucket);
 
-  // Opens the barcode sheet, pre-targeted at a meal's bucket — LogTable's
-  // per-meal trigger passes that meal's id; QuickCaptureBar passes its own
-  // clock-derived default.
+  // Opens the barcode sheet, pre-targeted at the meal whose add row asked.
   const openBarcode = (bucketId = null) => {
     setBarcodeTargetBucket(bucketId);
     setBarcodeDate(date);
@@ -409,8 +391,6 @@ export function TodayView({ active = true, sidebarTarget, onSetupGoals, onCoachT
         macroCoverage={nutrientSummary(preview.items)} microCoverage={preview.budget?.microCoverage}
         showIntake={false} showMacros={false} />
       {wideViewport && sidebarTarget ? createPortal(history, sidebarTarget) : null}
-      <QuickCaptureBar hideVoice active={active} onVoiceCapture={onVoiceCapture} onPhotoCapture={onPhotoCapture}
-        onOpenBarcode={openBarcode} onAddTo={revealMeal} busy={nutrition.busy} date={date} />
       {preview.control.draft?.validationError ? <div role="alert" className="health-portion-error">
         {preview.control.draft.validationError}<Button onClick={() => preview.control.cancel()}>Discard change</Button>
       </div> : null}
@@ -463,7 +443,6 @@ export function TodayView({ active = true, sidebarTarget, onSetupGoals, onCoachT
       <CleanupQuestions active={active} onChanged={day.reload} />
       <ObservationsSection observations={unmatched} onChanged={() => observations.reload()} />
       <LogTable clarifications={mealClarifications} onClearClarification={clearMealClarification} byBucket={preview.byBucket} date={date} sessions={preview.budget?.sessions || []}
-        active={active}
         exerciseAvailable={Boolean(day.budget)}
         coldLoading={coldLoading} capturePendingBuckets={[...capturePending.values()].filter(pending => pending.date === date).map(pending => pending.bucket)}
         onRowTap={setEditingRow} onConfirm={day.reload} onRequestDelete={row => { setDeleteError(null); setPendingDelete(row); }}
@@ -471,9 +450,8 @@ export function TodayView({ active = true, sidebarTarget, onSetupGoals, onCoachT
         onVoiceCapture={onVoiceCapture} onTextCapture={onTextCapture}
         onMealChanged={result=>handleCaptureResult(result)} captureTasks={[...capturePending.values()]}
         measuredByUuid={measuredByUuid} addedIds={addedIds}
-        revealedBucket={focusRequest?.bucket ?? null}
-        renderAddRow={(bucket, label) => <MealAddRow bucket={bucket} label={label} date={date} active={active} onVoiceCapture={onVoiceCapture}
-          focusRequest={focusRequest?.bucket === bucket ? focusRequest.n : 0} busy={nutrition.busy}
+        renderAddRow={(bucket, label, meal) => <MealAddRow bucket={bucket} label={label} date={date} active={active}
+          onVoiceCapture={meal?.onVoiceCapture} selectedCount={meal?.selectedIds?.length || 0} busy={nutrition.busy}
           onAdded={() => day.reload()} onSentencePending={text => beginSentencePending(bucket, text)} onPhotoCapture={onPhotoCapture} onOpenBarcode={openBarcode}
           onOpenTemplates={(target, templateId) => { setFocusTemplateId(templateId); setTemplatesFor(target); }}
           onManageFoods={() => setManageFoods(true)} />} />

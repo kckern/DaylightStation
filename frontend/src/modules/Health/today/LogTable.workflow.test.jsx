@@ -2,10 +2,14 @@ import { render,screen,fireEvent,waitFor,cleanup,act } from '@testing-library/re
 import { MantineProvider } from '@mantine/core';
 import { afterEach,it,expect,vi } from 'vitest';
 import { LogTable } from './LogTable.jsx';
+import { VoiceCapture } from '../capture/VoiceCapture.jsx';
 vi.mock('../capture/VoiceCapture.jsx',()=>({VoiceCapture:({onCapture,bucket,mealLabel})=><button onClick={()=>onCapture('audio',bucket)}>Speak to {mealLabel}</button>}));
 const rows=[{uuid:'broth',name:'Beef broth',mealTime:'evening',calories:90,grams:300},{uuid:'tomato',name:'Tomatoes',mealTime:'evening',calories:20,grams:100}];
 const buckets=new Map([['evening',rows]]);
-const renderLog=props=>render(<MantineProvider><LogTable date="2026-09-06" byBucket={buckets} onRowTap={()=>{}} onMealChanged={()=>{}} {...props}/></MantineProvider>);
+// The meal's mic lives in its add row; this stand-in row mounts the same
+// VoiceCapture with the capture its section hands it.
+const addRow=(bucket,label,meal)=>meal.onVoiceCapture?<VoiceCapture bucket={bucket} mealLabel={label} onCapture={meal.onVoiceCapture}/>:null;
+const renderLog=props=>render(<MantineProvider><LogTable date="2026-09-06" byBucket={buckets} onRowTap={()=>{}} onMealChanged={()=>{}} renderAddRow={addRow} {...props}/></MantineProvider>);
 afterEach(()=>{cleanup();vi.useRealTimers();});
 it('limits meal voice to selected foods and resolves ambiguity through selectable choices',async()=>{
  const voice=vi.fn(async()=>({instructionText:'the broth had potatoes',clarification:{question:'Which broth?',choices:[{id:'broth',label:'Beef broth'}]}}));

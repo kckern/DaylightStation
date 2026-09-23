@@ -19,26 +19,27 @@ const MealsIcon = () => (
 
 /** The add input at the foot of one meal: typing is the default, and the
  * voice / photo / barcode / saved-meal routes sit beside it for that same meal.
- * Voice here only ADDS: it carries no selection, so the parser treats what was
- * said as new food and splits "two eggs, toast and coffee" into its own rows.
- * (The header mic, with foods selected, is the one that edits a meal.) */
-export function MealAddRow({ bucket, label, date, focusRequest = 0, busy = false, active = true,
+ * It is the meal's only mic. With no foods selected, what is said is new food
+ * ("two eggs, toast and coffee" splits into its own rows); with foods selected
+ * (`selectedCount`), the section hands in a capture that carries the selection,
+ * so what is said edits those foods. The label says which. */
+export function MealAddRow({ bucket, label, date, focusRequest = 0, busy = false, active = true, selectedCount = 0,
   onAdded, onSentencePending, onVoiceCapture, onPhotoCapture, onOpenBarcode, onOpenTemplates, onManageFoods }) {
   const openBarcode = () => { logger.debug('barcode.open', { bucket }); onOpenBarcode(bucket); };
   const openTemplates = (templateId) => { logger.debug('templates.open', { bucket, templateId }); onOpenTemplates(bucket, templateId); };
-  return <div className="health-meal__add-row">
+  return <div className="health-meal__add-row" data-selecting={selectedCount ? 'true' : undefined}>
     <AddCombobox inline bucketId={bucket} label={label} date={date} focusRequest={focusRequest}
       onDone={onAdded} onManageFoods={onManageFoods} onSentencePending={onSentencePending}
       onTemplate={entry => openTemplates(entry.id)}
       actions={<span className="health-meal__add-actions">
-        {onVoiceCapture ? <VoiceCapture active={active} bucket={bucket} mealLabel={label} labelPrefix="Speak foods"
-          busy={busy} className="health-meal__add-action"
-          onCapture={(content, target, metadata) => onVoiceCapture(content, target, { date, ...metadata })} /> : null}
+        {onVoiceCapture ? <VoiceCapture active={active} bucket={bucket} mealLabel={label}
+          labelPrefix={selectedCount ? `Speak changes to ${selectedCount} selected` : 'Speak foods'}
+          busy={busy} className="health-meal__add-action" onCapture={onVoiceCapture} /> : null}
         <PhotoCapture bucket={bucket} mealLabel={label} labelPrefix="Photo" busy={busy}
           className="health-meal__add-action" onCapture={onPhotoCapture} />
-        <ActionIcon variant="subtle" className="health-meal__add-action" aria-label={`Scan barcode to ${label}`}
+        <ActionIcon variant="subtle" size="sm" className="health-meal__add-action" aria-label={`Scan barcode to ${label}`}
           onClick={openBarcode}><BarcodeIcon /></ActionIcon>
-        <ActionIcon variant="subtle" className="health-meal__add-action" aria-label={`Saved meals for ${label}`}
+        <ActionIcon variant="subtle" size="sm" className="health-meal__add-action" aria-label={`Saved meals for ${label}`}
           onClick={() => openTemplates(null)}><MealsIcon /></ActionIcon>
       </span>} />
   </div>;

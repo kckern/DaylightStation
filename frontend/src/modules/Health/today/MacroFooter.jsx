@@ -10,9 +10,8 @@ const sum = (items, key) => Math.round(sumCounted(items, key));
 
 /**
  * Macro summary + coach one-liner for Today. Used to also host the
- * mic/camera/barcode footer icons — Task 4.3 retires those in favor of
- * QuickCaptureBar.jsx (the one always-reachable capture surface), so this
- * component is purely informational now: no `children`/actions slot.
+ * mic/camera/barcode footer icons — those live in each meal's add row, so
+ * this component is purely informational now: no `children`/actions slot.
  */
 export function MacroFooter({ items = [], coachLine, onCoachTap }) {
   return (

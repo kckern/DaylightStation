@@ -4,10 +4,9 @@ import { LoadingState } from '@/lib/ui';
 import { sumCounted } from '@shared-contracts/nutrition/countedRows.mjs';
 import { MacroBadges } from './MacroBadges.jsx';
 import { ExerciseSection } from './ExerciseSection.jsx';
-import { BUCKETS, UNGROUPED, EARLY_COLUMN, LATE_COLUMN, PRIMARY_BUCKETS } from './mealBuckets.js';
+import { BUCKETS, UNGROUPED, EARLY_COLUMN, LATE_COLUMN } from './mealBuckets.js';
 import { EntryRow } from './EntryRow.jsx';
 import { groupRows, sortEntriesByCalories, calorieShares } from './groupRows.js';
-import { VoiceCapture } from '../capture/VoiceCapture.jsx';
 import { MealFoodControls } from './MealFoodControls.jsx';
 import { CaptureProgress } from './CaptureProgress.jsx';
 import { usePortionControl } from './usePortionDraft.js';
@@ -25,8 +24,8 @@ const SENTENCE_ESTIMATE_MS = 6000;
 const kcal = (rows) => Math.round(sumCounted(rows, 'calories'));
 
 function Section({
-  label, rows, addRow = null, onRowTap, onConfirm, onRequestDelete, headerAction, coldLoading, pending,
-  measuredByUuid, addedIds = null, date, bucket, active, onVoiceCapture, onTextCapture, onChanged, captureTasks = [], onHoldChange, externalClarification, onClearClarification,
+  label, rows, renderAddRow = null, onRowTap, onConfirm, onRequestDelete, headerAction, coldLoading, pending,
+  measuredByUuid, addedIds = null, date, bucket, onVoiceCapture, onTextCapture, onChanged, captureTasks = [], externalClarification, onClearClarification,
 }) {
   const [selecting, setSelecting] = useState(false);
   const [selection, setSelection] = useState([]);
@@ -73,6 +72,12 @@ function Section({
   // this — see LogTable's `coldLoading` prop, computed once by the caller
   // from `day.loading && !day.items.length`.
   const showShimmer = coldLoading && rows.length === 0;
+  // The meal's one mic lives in its add row. With foods selected it carries
+  // the selection, so what is said edits those foods; with none it adds.
+  const voiceCapture = onVoiceCapture
+    ? async (content, target, metadata) => captured(await onVoiceCapture(content, target, { selectedIds, date, ...metadata }))
+    : null;
+  const addRow = renderAddRow ? renderAddRow(bucket, label, { selectedIds, onVoiceCapture: voiceCapture }) : null;
 
   const toggle = (key) => setCollapsed((prev) => {
     const next = new Set(prev);
@@ -93,8 +98,6 @@ function Section({
         {rows.length ? <MacroBadges rows={rows} className="health-meal__macros" showLabels /> : null}
         <span className="health-meal__header-right">
           <span className="health-meal__kcal">{rows.length ? `${kcal(rows)} kcal` : '—'}</span>
-          {onVoiceCapture ? <VoiceCapture active={active} bucket={bucket} mealLabel={label} onHoldChange={onHoldChange}
-            onCapture={async (content,target,metadata)=>captured(await onVoiceCapture(content,target,{selectedIds,date,...metadata}))}/> : null}
         </span>
       </header>
       {bucket && rows.length && onChanged ? <MealFoodControls date={date} bucket={bucket} rows={rows} selectedIds={selectedIds} selecting={selecting}
@@ -170,39 +173,25 @@ function Section({
 export function LogTable({
   byBucket, date, sessions = [], exerciseAvailable = false, onRowTap, onConfirm, onRequestDelete,
   bucketHeaderAction, coldLoading = false, capturePendingBucket = null, capturePendingBuckets = [],
-  measuredByUuid = null, active = true, onVoiceCapture, onTextCapture, onMealChanged, captureTasks = [], clarifications, onClearClarification,
-  revealedBucket = null, renderAddRow = null, addedIds = null,
+  measuredByUuid = null, onVoiceCapture, onTextCapture, onMealChanged, captureTasks = [], clarifications, onClearClarification,
+  renderAddRow = null, addedIds = null,
 }) {
-  const [heldSections, setHeldSections] = useState(new Set());
-  const holdSection = (key, held) => setHeldSections(previous => {
-    if (previous.has(key) === held) return previous;
-    const next = new Set(previous);
-    if (held) next.add(key); else next.delete(key);
-    return next;
-  });
-  // Lunch and Dinner always show. Breakfast and Snacks show only while they
-  // hold food, have a capture or clarification in flight, or were asked for
-  // (the quick bar's +). The clock no longer opens an empty meal, and a cold
-  // start no longer forces every section open — the primaries already give
-  // the page its frame.
-  const visible = b => PRIMARY_BUCKETS.includes(b.id) || revealedBucket === b.id
-    || byBucket.get(b.id)?.length || heldSections.has(`${date}:${b.id}`) || clarifications?.has(`${date}:${b.id}`)
-    || capturePendingBucket === b.id || capturePendingBuckets.includes(b.id);
+  // All four meals always render: an empty one is its header and add row, so
+  // any meal can be added to in place without a separate "add to" control.
   const orphans = byBucket.get(null) || [];
   const renderBucket = (b) => {
     const rows = byBucket.get(b.id) || [];
     return (
       <div key={`${date}:${b.id}`}>
-        <Section label={b.label} rows={rows} date={date} bucket={b.id} active={active}
+        <Section label={b.label} rows={rows} date={date} bucket={b.id}
           onVoiceCapture={onVoiceCapture} onTextCapture={onTextCapture} onChanged={onMealChanged}
-          onHoldChange={held=>holdSection(`${date}:${b.id}`,held)}
           externalClarification={clarifications === undefined ? undefined : clarifications.get(`${date}:${b.id}`) || null}
           onClearClarification={()=>onClearClarification?.(`${date}:${b.id}`)}
           captureTasks={captureTasks.filter(task=>task.date===date && task.bucket===b.id)}
           onRowTap={onRowTap} onConfirm={onConfirm} onRequestDelete={onRequestDelete}
           headerAction={bucketHeaderAction ? bucketHeaderAction(b.id, rows, b.label) : null}
           coldLoading={coldLoading} pending={capturePendingBucket === b.id || capturePendingBuckets.includes(b.id)}
-          measuredByUuid={measuredByUuid} addedIds={addedIds} addRow={renderAddRow ? renderAddRow(b.id, b.label) : null} />
+          measuredByUuid={measuredByUuid} addedIds={addedIds} renderAddRow={renderAddRow} />
       </div>
     );
   };
@@ -210,7 +199,7 @@ export function LogTable({
     <div className="health-log">
       {[EARLY_COLUMN, LATE_COLUMN].map((ids, index) => (
         <div key={index} className="health-log__column">
-          {ids.map(id => BUCKETS.find(b => b.id === id)).filter(visible).map(renderBucket)}
+          {ids.map(id => BUCKETS.find(b => b.id === id)).map(renderBucket)}
         </div>
       ))}
       {/* Gated on `exerciseAvailable` (budget data has arrived), NOT on

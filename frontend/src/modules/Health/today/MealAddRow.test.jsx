@@ -26,12 +26,23 @@ describe('MealAddRow', () => {
     expect(onOpenTemplates).toHaveBeenCalledWith('afternoon', null);
   });
 
-  it('its mic adds what was said to this meal on the viewed day, with no selection', () => {
+  it('its mic hands the recording to the capture its meal gave it', () => {
     const onVoiceCapture = vi.fn();
     r(<MealAddRow bucket="evening" label="Dinner" date="2026-09-21" onAdded={() => {}} onVoiceCapture={onVoiceCapture}
       onPhotoCapture={() => {}} onOpenBarcode={() => {}} onOpenTemplates={() => {}} />);
     fireEvent.click(screen.getByText('Speak foods to Dinner'));
-    expect(onVoiceCapture).toHaveBeenCalledWith('data:audio', 'evening', expect.objectContaining({ date: '2026-09-21' }));
-    expect(onVoiceCapture.mock.calls[0][2].selectedIds).toBeUndefined();
+    expect(onVoiceCapture).toHaveBeenCalledWith('data:audio', 'evening', expect.objectContaining({ isDeparted: expect.any(Function) }));
+  });
+
+  it('with foods selected, the mic says it will change them', () => {
+    r(<MealAddRow bucket="evening" label="Dinner" date="2026-09-21" selectedCount={2} onAdded={() => {}} onVoiceCapture={() => {}}
+      onPhotoCapture={() => {}} onOpenBarcode={() => {}} onOpenTemplates={() => {}} />);
+    expect(screen.getByText('Speak changes to 2 selected to Dinner')).toBeTruthy();
+  });
+
+  it('has no mic when its meal gives it no voice capture', () => {
+    r(<MealAddRow bucket="evening" label="Dinner" date="2026-09-21" onAdded={() => {}}
+      onPhotoCapture={() => {}} onOpenBarcode={() => {}} onOpenTemplates={() => {}} />);
+    expect(screen.queryByText(/^Speak/)).toBeNull();
   });
 });

@@ -10,7 +10,7 @@ const ITEMS = [
   { protein: 5, carbs: 10, fat: 2 },
 ];
 
-describe('MacroFooter — Task 4.3: one capture surface (QuickCaptureBar owns it now)', () => {
+describe('MacroFooter — capture lives in the meal add rows, not here', () => {
   it('renders the macro summary line', () => {
     r(<MacroFooter items={ITEMS} coachLine={null} onCoachTap={() => {}} />);
     expect(screen.getByText('P 15g · C 30g · F 7g')).toBeTruthy();
@@ -22,8 +22,8 @@ describe('MacroFooter — Task 4.3: one capture surface (QuickCaptureBar owns it
   });
 
   // THE PIN: no mic/camera/barcode controls anywhere in the footer — those
-  // were retired to QuickCaptureBar so there is exactly ONE capture
-  // surface, not two. Assert by accessible name rather than DOM structure,
+  // live in each meal's add row, so there is exactly ONE capture surface
+  // per meal. Assert by accessible name rather than DOM structure,
   // so this fails if the icons come back under any wrapper.
   it('renders no capture controls (no mic, camera, or barcode buttons) — the one-surface pin', () => {
     r(<MacroFooter items={ITEMS} coachLine="Note" onCoachTap={() => {}} />);
