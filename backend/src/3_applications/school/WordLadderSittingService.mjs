@@ -24,7 +24,7 @@ import { GuestForbiddenError } from '#domains/school/errors.mjs';
 import { offsetMinutesFor, studyDayForInstant } from '#domains/school/studyDay.mjs';
 import { addDays } from '#domains/school/termVerdict.mjs';
 import {
-  addActiveTime, cueFor, currentItem, foldPaperAttempts, openDay, quizDocumentIdFor, respond, startPractice, wordAssetIds,
+  addActiveTime, cueFor, currentItem, deckDirOf, foldPaperAttempts, openDay, quizDocumentIdFor, respond, startPractice, wordAssetIds,
 } from '#domains/school/wordLadder/index.mjs';
 
 const FOLD_LOOKBACK_DAYS = 60;
@@ -315,13 +315,24 @@ export class WordLadderSittingService {
     return [...ids];
   }
 
-  #fold(status, { attempts, ok }, quizDocumentIds, today, settings) {
+  /**
+   * `{ learnerId, deckDir, pkg }` is passed through as `learner` to
+   * `foldPaperAttempts` (spec §8 Printed quiz), which parses a scanned row's
+   * `docId` under `{deckDir, pkg}` via `parseLearnerQuizId`: a parsed
+   * `learnerId` matching THIS learner's own is accepted, a parsed id for a
+   * different learnerId under the same package (a sibling's sheet) is
+   * refused rather than silently ignored.
+   */
+  #fold(status, { attempts, ok }, quizDocumentIds, today, settings, { learnerId, deckDir, pkg }) {
     const out = foldPaperAttempts({
-      status, attempts, quizDocumentIds,
+      status, attempts, quizDocumentIds, learner: { deckDir, pkg, learnerId },
       dayOf: (at) => studyDayForInstant(Date.parse(at), { timezone: this.#timezone }),
       settings: { afterMisses: settings.drill.afterMisses, gapScale: settings.review.gapScale },
     });
     if (ok) out.status.lastFoldedDay = today;
+    for (const row of out.refused) {
+      this.#logger.warn?.('school.word-ladder.fold-refused', { learnerId, package: pkg, mode: this.#mode, ...row });
+    }
     return out;
   }
 
@@ -358,7 +369,7 @@ export class WordLadderSittingService {
     let changes = { reopened: false, idleClosed: [] };
     const next = store.transact(userId, pkg, day, ({ status, dayFile }) => {
       const settings = this.#daySettings(dayFile);
-      const afterFold = this.#fold(status, read, quizDocumentIds, day, settings);
+      const afterFold = this.#fold(status, read, quizDocumentIds, day, settings, { learnerId: userId, deckDir: deckDirOf(deck.id), pkg });
       folded = afterFold.folded;
       const opened = openDay({ status: afterFold.status, dayFile, day, deckId, pool, settings, learnerId: userId, at: isoWithOffset(openedMs, this.#timezone), media, capabilities: caps, lexicon });
       changes = this.#housekeep(opened.dayFile, sittingId, openedMs, { reopen: false });
@@ -572,9 +583,10 @@ export class WordLadderSittingService {
       const { store } = this.#stores.open(learnerId, pkg, today, {});
       const read = this.#readAttempts(learnerId, store.readStatus(learnerId, pkg), today);
       const quizDocumentIds = await this.#quizDocumentIds(deck);
+      const deckDir = deckDirOf(deck.id);
       let folded = [];
       store.transact(learnerId, pkg, today, ({ status, dayFile }) => {
-        const out = this.#fold(status, read, quizDocumentIds, today, this.#daySettings(dayFile));
+        const out = this.#fold(status, read, quizDocumentIds, today, this.#daySettings(dayFile), { learnerId, deckDir, pkg });
         folded = out.folded;
         return { status: out.status, dayFile };
       });

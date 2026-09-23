@@ -1070,7 +1070,9 @@ header instruction and the `topics` come from the lexicon's `quiz` block
 (defaults: `Not sure of a word? Open <program.title> on the Portal and review
 the cards, then come back.` and `[<language>, vocabulary]`). Publish it with `school docs publish`, then
 render per learner with `variety=omr`. A scanned row's attempt carries the
-word id, and the word ladder folds it (see `word-ladder.md`).
+word id, and the word ladder folds it — id scheme, per-learner quiz, fold
+rules and the reprint rule are in
+[`word-ladder.md` → Printed quiz and the fold](./word-ladder.md#printed-quiz-and-the-fold-spec-8).
 
 ## 8. Scan-back: grading and the lifecycle
 

@@ -7,7 +7,7 @@ import { createMeasurementDocument, measureDocumentFragments } from '#rendering/
 import { createWorkbookTheme } from '#rendering/school/documents/workbookTheme.mjs';
 import { texToSvg } from '#rendering/school/documents/mathSvg.mjs';
 import {
-  DEFAULT_SETTINGS, buildWordQuizSource, emptyDay, emptyStatusV3, emptyWordV3, expandLexiconDeck, foldPaperAttempts, openDay, quizDocumentIdFor, validateLexicon,
+  DEFAULT_SETTINGS, buildLearnerQuizSource, buildWordQuizSource, emptyDay, emptyStatusV3, emptyWordV3, expandLexiconDeck, foldPaperAttempts, openDay, quizDocumentIdFor, validateLexicon,
 } from './index.mjs';
 
 const G = 'week-01-classroom';
@@ -141,5 +141,66 @@ describe('buildWordQuizSource', () => {
     expect(width).toBeLessThanOrEqual(contentWidthPt);
     const { pdf } = await createDocumentPdfRenderer({ theme, texToSvg }).render(published, { bank });
     expect(pdf.toString('latin1')).toMatch(/NotoSansKR-Regular/);
+  });
+});
+
+describe('buildLearnerQuizSource (plan 3, spec §8 per-learner quiz)', () => {
+  const { lexicon: LEARNER_LEXICON } = validateLexicon({
+    schema: 'school.word-lexicon/v2',
+    package: 'korean-vocab',
+    language: { code: 'ko', name: 'Korean' },
+    gloss: { code: 'en', name: 'English' },
+    program: { title: 'Korean words' },
+    entries: [
+      { id: 'a', kind: 'word', group: G, term: '가', gloss: 'A', pronunciation: null, decoys: { term: ['나', '다', '라'], gloss: ['B', 'C', 'D'] } },
+      { id: 'b', kind: 'word', group: G, term: '나', gloss: 'B', pronunciation: null, decoys: { term: ['가', '다', '라'], gloss: ['A', 'C', 'D'] } },
+      { id: 'c', kind: 'word', group: G, term: '다', gloss: 'C', pronunciation: null, decoys: { term: ['가', '나', '라'], gloss: ['A', 'B', 'D'] } },
+    ],
+  });
+  const deck = { id: 'language/korean/week-01-classroom', title: 'Korean — Classroom', words: ['a', 'b', 'c'] };
+
+  it('quizzes only introduced words, this week first, never new ones', () => {
+    const status = emptyStatusV3();
+    status.words.a = { ...emptyWordV3(), state: 'familiar', introducedDay: '2026-09-21' }; // introduced this week
+    status.words.b = { ...emptyWordV3(), state: 'mastered', stage: 2, dueDay: '2026-10-30', introducedDay: '2026-09-01' }; // settled, older
+    status.words.c = emptyWordV3(); // still new
+    const src = buildLearnerQuizSource({
+      status, lexicon: LEARNER_LEXICON, decks: [deck], learnerId: 'test-learner', day: '2026-09-22', seed: 1,
+    });
+    expect(src.blocks.map((b) => b.itemId)).toEqual(['a', 'b']);
+    // The id lowercases the ISO week (documentValidation's ID_PATTERN is
+    // lowercase-only kebab); the display title keeps the ISO-cased week.
+    expect(src.id).toBe('language/korean/korean-vocab-quiz-test-learner-2026-w39');
+    expect(src.title).toBe('Korean words — week 2026-W39');
+  });
+
+  it('the generated id passes the real document id validation (documentValidation.mjs, via validateDocumentSource)', () => {
+    const status = emptyStatusV3();
+    status.words.a = { ...emptyWordV3(), state: 'familiar', introducedDay: '2026-09-21' };
+    const src = buildLearnerQuizSource({
+      status, lexicon: LEARNER_LEXICON, decks: [deck], learnerId: 'test-learner', day: '2026-09-22', seed: 1,
+    });
+    expect(validateDocumentSource(src).errors).toEqual([]);
+  });
+
+  it('throws with nothing introduced', () => {
+    const status = emptyStatusV3();
+    status.words.a = emptyWordV3();
+    status.words.b = emptyWordV3();
+    status.words.c = emptyWordV3();
+    expect(() => buildLearnerQuizSource({
+      status, lexicon: LEARNER_LEXICON, decks: [deck], learnerId: 'test-learner', day: '2026-09-22', seed: 1,
+    })).toThrow(/no introduced words/);
+  });
+
+  it('caps rows at rowLimit, preferring this week\'s introductions', () => {
+    const status = emptyStatusV3();
+    status.words.a = { ...emptyWordV3(), state: 'familiar', introducedDay: '2026-09-21' };
+    status.words.b = { ...emptyWordV3(), state: 'familiar', introducedDay: '2026-09-21' };
+    status.words.c = { ...emptyWordV3(), state: 'familiar', introducedDay: '2026-09-21' };
+    const src = buildLearnerQuizSource({
+      status, lexicon: LEARNER_LEXICON, decks: [deck], learnerId: 'test-learner', day: '2026-09-22', seed: 1, rowLimit: 2,
+    });
+    expect(src.blocks).toHaveLength(2);
   });
 });
