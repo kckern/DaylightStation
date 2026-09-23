@@ -147,3 +147,56 @@ export function buildStravaSessionTimeline(hrStream, timeStream = null) {
     hrStats: computeHRStats(hrSamples),
   };
 }
+
+/**
+ * Write a built Strava timeline into a session record: the participant's
+ * hr/zone/rings series, global rings, tick_count, treasure box and summary.
+ * The single place a Strava-derived timeline is applied — the webhook's
+ * Strava-only session and the reconciliation repair both go through it, so the
+ * two can't drift apart. Other series and fields are left untouched.
+ *
+ * @param {Object} session - session record (hydrated: series as arrays)
+ * @param {Object} timeline - result of buildStravaSessionTimeline
+ * @param {string} username - participant key
+ * @returns {Object} new session record
+ */
+export function applyStravaTimeline(session, timeline, username) {
+  const buckets = timeline.buckets;
+  const summary = session.summary || {};
+  return {
+    ...session,
+    timeline: {
+      events: [],
+      encoding: 'rle',
+      ...(session.timeline || {}),
+      series: {
+        ...(session.timeline?.series || {}),
+        [`${username}:hr`]: timeline.hrSamples,
+        [`${username}:zone`]: timeline.zoneSeries,
+        [`${username}:rings`]: timeline.ringsSeries,
+        'global:rings': timeline.ringsSeries,
+      },
+      interval_seconds: INTERVAL_SECONDS,
+      tick_count: timeline.hrSamples.length,
+    },
+    treasureBox: { ...(session.treasureBox || {}), ringTimeUnitMs: INTERVAL_SECONDS * 1000, totalRings: timeline.totalRings, buckets },
+    summary: {
+      media: [],
+      challenges: { total: 0, succeeded: 0, failed: 0 },
+      voiceMemos: [],
+      ...summary,
+      participants: {
+        ...(summary.participants || {}),
+        [username]: {
+          ...(summary.participants?.[username] || {}),
+          rings: timeline.totalRings,
+          hr_avg: timeline.hrStats.hrAvg,
+          hr_max: timeline.hrStats.hrMax,
+          hr_min: timeline.hrStats.hrMin,
+          zone_minutes: timeline.zoneMinutes,
+        },
+      },
+      rings: { total: timeline.totalRings, buckets },
+    },
+  };
+}

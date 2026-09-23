@@ -1,7 +1,8 @@
 /** Identify provider webhooks and coordinate enrichment/coaching side effects. */
 export class FitnessWebhookService {
-  constructor({ providerWebhookAdapters = {}, enrichmentService = null, shouldSendExerciseReaction = () => false, getCoachingOrchestrator = () => null, getCoachingConversationId = () => null, logger = console }) {
+  constructor({ providerWebhookAdapters = {}, enrichmentService = null, syncHealth = null, shouldSendExerciseReaction = () => false, getCoachingOrchestrator = () => null, getCoachingConversationId = () => null, logger = console }) {
     this.adapters = providerWebhookAdapters;
+    this.syncHealth = syncHealth;
     this.enrichmentService = enrichmentService;
     this.shouldSendExerciseReaction = shouldSendExerciseReaction;
     this.getCoachingOrchestrator = getCoachingOrchestrator;
@@ -47,6 +48,9 @@ export class FitnessWebhookService {
       if (!shouldEnrich && adapter.isTitleUpdate?.(event) && this.enrichmentService?.handleTitleUpdate) {
         this.enrichmentService.handleTitleUpdate(event);
       } else if (!shouldEnrich) {
+        // Counted, so a class of events nobody handles shows up in the sync
+        // health report instead of only in an info log.
+        this.syncHealth?.recordDropped?.(`${event.objectType}/${event.aspectType}`);
         this.logger.info?.('fitness.provider.webhook.skip_enrich', {
           provider: name,
           objectId: event.objectId,

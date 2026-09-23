@@ -30,6 +30,9 @@ export class HarvesterService {
   /** @type {Object} */
   #logger;
 
+  /** @type {Array<Function>} result listeners — see onResult() */
+  #resultListeners = [];
+
   /**
    * @param {Object} deps - Dependencies
    * @param {Function} deps.resolveDefaultUserId
@@ -129,6 +132,7 @@ export class HarvesterService {
         error: result.error || null,
       });
 
+      this.#notify({ serviceId, username: resolvedUsername, result, error: null });
       return result;
 
     } catch (error) {
@@ -137,6 +141,7 @@ export class HarvesterService {
         username: resolvedUsername,
         error: error.message,
       });
+      this.#notify({ serviceId, username: resolvedUsername, result: null, error });
       throw error;
     }
   }
@@ -222,6 +227,26 @@ export class HarvesterService {
    * Log helper
    * @private
    */
+  /**
+   * Observe every harvest outcome, e.g. for a sync-health monitor. Listener
+   * receives { serviceId, username, result, error }; a throwing listener is
+   * logged and never affects the harvest.
+   * @param {Function} listener
+   * @returns {Function} unsubscribe
+   */
+  onResult(listener) {
+    this.#resultListeners.push(listener);
+    return () => { this.#resultListeners = this.#resultListeners.filter(l => l !== listener); };
+  }
+
+  #notify(outcome) {
+    for (const listener of this.#resultListeners) {
+      try { listener(outcome); } catch (error) {
+        this.#log('warn', 'harvester.result_listener.error', { serviceId: outcome.serviceId, error: error.message });
+      }
+    }
+  }
+
   #log(level, message, data = {}) {
     if (this.#logger[level]) {
       this.#logger[level](message, data);

@@ -191,6 +191,37 @@ A rename on Strava arrives as an `activity/update` webhook carrying `updates.tit
 
 The harvester also lets fresh list fields (title, description) win over the archived copy, so `lifelog/strava.yml` picks up renames too.
 
+### Integrity checks and repair
+
+Every session save runs `checkSessionIntegrity` (`2_domains/fitness/services/sessionIntegrity.mjs`), in both `YamlFitnessHistoryRepository.save()` (Strava pipeline) and `YamlSessionDatastore.save()` (home sessions):
+
+| Check | Applies to | Fails when |
+|---|---|---|
+| `coverage` | `source: strava` | `tick_count × interval` is more than 10% off `duration_seconds` |
+| `series-length` | sessions with a `tick_count` | a series decodes to a different length |
+| `rings` | when two or more totals exist | `summary.rings.total`, `treasureBox.totalRings` and the last `global:rings` disagree |
+
+A failing session is **still saved**, with `integrity: {ok: false, checkedAt, violations}` added. A clean save removes the stamp. The Strava repository logs `fitness.session.integrity_violation` at warn. The home datastore logs it at debug, because it autosaves during a workout.
+
+Measured on 2026-09-22 across 2965 sessions: 1 coverage hit, 2 series-length hits, 57 ring mismatches. The ring mismatches are all home sessions (the newest from 2026-09-07). They get stamped but never alert, because Pass 4 only repairs Strava-only sessions.
+
+**Pass 4 of the reconciliation sweep** rebuilds a flagged Strava-only session from `heartrate` + `time` through `applyStravaTimeline`, the same builder the webhook uses. It is **grow-only**: it writes only when the rebuild has more ticks than the stored file, after `snapshot()` copies that file to `fitness/log-backups/{date}/{id}.{timestamp}.timeline-rebuild.yml`. A rebuild that would shrink is recorded as unresolved and not written. At most 10 stream fetches per sweep.
+
+### Sync health
+
+`StravaSyncHealth` (`3_applications/fitness/StravaSyncHealth.mjs`) records the last success of each stage in `household/fitness/sync-health.yml`. The `fitness:strava-sync-health` task (every 15 min, no Strava calls) evaluates them:
+
+| Stage | Reported by | Stale when |
+|---|---|---|
+| `harvest` | `HarvesterService.onResult` for `strava` | no successful harvest in 3h |
+| `sweep` | `ActivityReconciliationService.reconcile()` (fails if auth fails or more than half its sessions error) | 3 failed sweeps in a row, or no success in 3h |
+| `webhook` | harvested activities (started within 48h) checked against the webhook job store | an activity has been visible for 1h with no webhook job |
+| `integrity` | the sweep's flagged list | a Strava-only session stays flagged for 24h |
+
+A healthy→stale transition sends one push to the head of household on **Household alerts**, tagged `strava-sync-{stage}`. The recovery push replaces that card with `alert_once`. The text comes from `composeStravaSyncPush` (`2_domains/fitness/notifications/stravaSyncPush.mjs`), which turns raw errors into plain reasons ("Strava sign-in expired"). Webhook event types nobody handles are counted in `dropped`.
+
+`GET /api/v1/fitness/strava/health` returns the stage records, stale verdicts, missing webhooks, flagged sessions and dropped counts.
+
 ---
 
 ## Enrichment Payload
@@ -283,6 +314,12 @@ All log events are `info` level — visible in production.
 | `strava.reconciliation.title_synced` | activityId, sessionId, from, to | Session title refreshed from Strava |
 | `strava.enrichment.title_update_received` | activityId, title | Rename webhook received |
 | `strava.reconciliation.auth_failed` | error | Could not refresh auth; sweep skipped (warn) |
+| `strava.reconciliation.timeline_rebuilt` | activityId, sessionId, fromTicks, toTicks, fromRings, toRings, backup | Pass 4 repaired a Strava-only timeline |
+| `strava.reconciliation.timeline_not_rebuilt` | activityId, sessionId, storedTicks, rebuiltTicks | Rebuild would shrink; left as is |
+| `fitness.session.integrity_violation` | sessionId, source, violations | Save-time check failed (warn for Strava, debug for home) |
+| `strava.sync_health.transition` | stage, from, to | A stage went stale or recovered (push sent) |
+| `strava.sync_health.push_failed` | stage, error | Push could not be delivered (warn) |
+| `strava.sync_health.no_push_target` | recipient | Head of household has no HA notify service (warn) |
 
 ### Bootstrap
 

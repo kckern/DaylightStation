@@ -30,6 +30,7 @@ import { sendInternalError } from '#api/utils/internalError.mjs';
  * - DELETE /api/fitness/simulate - Stop running simulation
  * - GET  /api/fitness/simulate/status - Get simulation status
  * - GET  /api/fitness/provider/webhook - Provider subscription validation
+ * - GET  /api/fitness/strava/health - Strava sync health report
  * - POST /api/fitness/provider/webhook - Provider webhook events
  * - POST /api/fitness/cycle-races - Save a cycle-game race record
  * - GET  /api/fitness/cycle-races/:raceId - Get one cycle-game race record
@@ -141,6 +142,7 @@ function sendFingerprintOutcome(res, outcome) {
  * @param {Object} config.fitnessContentService - Semantic content/config facade
  * @param {Object} config.fitnessHardwareService - Semantic room-hardware facade
  * @param {Object} config.fitnessWebhookService - Semantic provider-event facade
+ * @param {Object} [config.stravaSyncHealth] - Strava sync-health monitor (report())
  * @param {Object} [config.fitnessConfigService] - FitnessConfigService for config + playlist enrichment
  * @param {Object} [config.fitnessPlayableService] - FitnessPlayableService for show/playable orchestration
  * @param {Object} [config.fitnessSchoolCourseService] - School-requested Fitness attempt authority
@@ -171,6 +173,7 @@ export function createFitnessRouter(config) {
     fitnessContentService,
     fitnessHardwareService,
     fitnessWebhookService,
+    stravaSyncHealth = null,
     fitnessConfigService,
     fitnessPlayableService,
     fitnessSchoolCourseService,
@@ -1120,6 +1123,16 @@ export function createFitnessRouter(config) {
     }
     if (result.kind === 'accepted') return res.status(200).json({ ok: true });
     return res.status(200).json({ ok: true, skipped: true, reason: 'unknown-provider' });
+  });
+
+  /**
+   * GET /api/fitness/strava/health - Strava sync health: per-stage last
+   * success/failure, stale verdicts, missing webhooks, flagged sessions,
+   * dropped webhook event counts.
+   */
+  router.get('/strava/health', (req, res) => {
+    if (!stravaSyncHealth) return res.status(404).json({ error: 'strava sync health not configured' });
+    return res.json(stravaSyncHealth.report());
   });
 
   /**
