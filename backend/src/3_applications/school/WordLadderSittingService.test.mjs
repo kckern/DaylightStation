@@ -25,7 +25,7 @@ const lexicon = {
   entries: new Map([['gawi', { id: 'gawi', group: 'week-01', term: '가위', gloss: 'Scissors', kind: 'word', decoys: { term: ['a', 'b', 'c'], gloss: ['x', 'y', 'z'] } }],
     ['pul', { id: 'pul', group: 'week-01', term: '풀', gloss: 'Glue', kind: 'word', decoys: { term: ['d', 'e', 'f'], gloss: ['u', 'v', 'w'] } }]]),
 };
-function make({ recordings = null, mode = 'live', attempts = null, attemptsReader = null, teacherGate = null, judge = null, store = memoryStore(), media = false, decks = null } = {}) {
+function make({ judgementCache = null, recordings = null, mode = 'live', attempts = null, attemptsReader = null, teacherGate = null, judge = null, store = memoryStore(), media = false, decks = null } = {}) {
   let t = Date.parse('2026-09-22T16:00:00-07:00');
   const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
   const judgeFn = judge ?? vi.fn(async ({ typed, entry }) => ({ score: typed === entry.term ? 10 : 2, judge: 'exact', reason: null, pass: typed === entry.term }));
@@ -41,7 +41,7 @@ function make({ recordings = null, mode = 'live', attempts = null, attemptsReade
     attempts: attemptsReader ? { readAttemptsInRange: attemptsReader } : attempts ? { readAttemptsInRange: vi.fn(() => attempts) } : null,
     assets: { exists: typeof media === 'function' ? media : () => media },
     judge: { judge: judgeFn },
-    teacherGate, recordings,
+    teacherGate, recordings, judgementCache,
     settings: () => SETTINGS, timezone: 'America/Los_Angeles', now: () => (t += 4000), logger, mode,
   });
   return { service, store, logger, judge: judgeFn, advance: (ms) => { t += ms; } };
@@ -620,5 +620,147 @@ describe('WordLadderSittingService — graded and transition events (plan 4, spe
     expect(calls(logger, 'school.word-ladder.transition')).toEqual([expect.objectContaining({
       learnerId: 'test-learner', sittingId: null, mode: 'live', wordId: 'gawi', source: 'paper', to: { state: 'familiar', stage: null },
     })]);
+  });
+});
+
+describe('WordLadderSittingService — grown-up word controls (plan 4 task 4, spec §6)', () => {
+  const gate = () => ({ assert: vi.fn() });
+  const who = { learnerId: 'test-learner', deckId: DECK, actorId: 'parent', pin: '1234' };
+  function adminStore() {
+    const store = dueStore(2);
+    store.s.status.words.gawi = { ...store.s.status.words.gawi, lastGraded: { day: '2026-09-20', task: '3.3', correct: false } };
+    store.s.status.decksSeen = [DECK_OTHER, DECK];
+    return store;
+  }
+  const cacheMock = () => ({ get: vi.fn(() => null), set: vi.fn() });
+  const adminCalls = (service) => [
+    () => service.adminWords(who),
+    () => service.adminReset({ ...who, wordId: 'gawi' }),
+    () => service.adminMarkMastered({ ...who, wordId: 'gawi', stage: 1 }),
+    () => service.adminExclude({ ...who, wordId: 'gawi', excluded: true }),
+    () => service.adminDropDeck({ ...who, dropDeckId: DECK_OTHER }),
+    () => service.adminRegrade({ ...who, day: TODAY, itemId: 'rc:gawi', pass: true }),
+  ];
+
+  it('every admin call is teacher-gated, and a refusal changes nothing', async () => {
+    const teacherGate = { assert: vi.fn(() => { throw new Error('Only a grown-up can do this.'); }) };
+    const store = adminStore();
+    const { service } = make({ store, teacherGate, judgementCache: cacheMock() });
+    const before = structuredClone(store.s);
+    for (const call of adminCalls(service)) await expect(call()).rejects.toThrow(/grown-up/);
+    expect(teacherGate.assert).toHaveBeenCalledTimes(6);
+    for (const [args] of teacherGate.assert.mock.calls) {
+      expect(args).toEqual({ userId: 'parent', pin: '1234', action: 'word-ladder.admin', context: { learnerId: 'test-learner' } });
+    }
+    expect(store.s).toEqual(before);
+  });
+
+  it('is answered by the live service only', async () => {
+    const { service } = make({ mode: 'test', teacherGate: gate(), judgementCache: cacheMock() });
+    for (const call of adminCalls(service)) await expect(call()).rejects.toThrow(/live/);
+  });
+
+  it('adminWords lists every word with its state and the last 14 days of typed answers', async () => {
+    const store = adminStore();
+    store.s.days['2026-09-20'] = {
+      ...emptyDay('2026-09-20'),
+      items: {
+        'rc:gawi': { at: '2026-09-20T16:00:00-07:00', response: { typed: '가이' }, result: { correct: false, score: 5, judge: 'model' }, wordId: 'gawi', task: '3.3', source: 'recheck', reason: 'close' },
+        'r1:q:1': { at: '2026-09-20T16:01:00-07:00', response: { choice: 'Glue' }, result: { correct: true }, wordId: 'pul', task: '2.2', source: 'verify' },
+      },
+    };
+    store.s.days['2026-09-01'] = { ...emptyDay('2026-09-01'), items: { 'rc:gawi': { at: 'x', response: { typed: '가우' }, result: { score: 2, judge: 'distance' }, wordId: 'gawi', task: '3.3' } } };
+    const { service } = make({ store, teacherGate: gate(), judgementCache: cacheMock() });
+    const { words } = await service.adminWords(who);
+    expect(words.map((w) => w.wordId)).toEqual(['gawi', 'pul']);
+    expect(words.find((w) => w.wordId === 'gawi')).toEqual({
+      wordId: 'gawi', term: '가위', gloss: 'Scissors', state: 'mastered', stage: 0, dueDay: TODAY, missStreak: 0, tricky: false, excluded: false,
+      lastGraded: { day: '2026-09-20', task: '3.3', correct: false },
+      recentTyped: [{ day: '2026-09-20', itemId: 'rc:gawi', typed: '가이', score: 5, judge: 'model', reason: 'close', correct: false, source: 'recheck', regraded: null }],
+    });
+    expect(words.find((w) => w.wordId === 'pul').recentTyped).toEqual([]);
+  });
+
+  it('adminReset returns a word to new, clearing notYetCarry, and logs admin + transition', async () => {
+    const store = adminStore();
+    store.s.status.words.gawi.notYetCarry = true;
+    const { service, logger } = make({ store, teacherGate: gate(), judgementCache: cacheMock() });
+    await service.adminReset({ ...who, wordId: 'gawi' });
+    expect(store.s.status.words.gawi).toEqual(emptyWordV3());
+    expect(logger.info).toHaveBeenCalledWith('school.word-ladder.admin', expect.objectContaining({
+      actorId: 'parent', learnerId: 'test-learner', package: 'korean-vocab', wordId: 'gawi', action: 'reset',
+    }));
+    expect(logger.info).toHaveBeenCalledWith('school.word-ladder.transition', expect.objectContaining({
+      wordId: 'gawi', from: { state: 'mastered', stage: 0 }, to: { state: 'new', stage: null }, source: 'admin',
+    }));
+  });
+
+  it('adminMarkMastered sets the stage and its due day', async () => {
+    const store = adminStore();
+    const { service } = make({ store, teacherGate: gate(), judgementCache: cacheMock() });
+    await service.adminMarkMastered({ ...who, wordId: 'pul', stage: 2 });
+    expect(store.s.status.words.pul).toMatchObject({ state: 'mastered', stage: 2, dueDay: '2026-09-29' });
+    await expect(service.adminMarkMastered({ ...who, wordId: 'pul', stage: -2 })).rejects.toThrow(/stage/);
+    await expect(service.adminMarkMastered({ ...who, wordId: 'nope', stage: 1 })).rejects.toThrow(/nope/);
+  });
+
+  it('adminExclude flags the word and takes its pending recheck off today', async () => {
+    const store = adminStore();
+    const { service } = make({ store, teacherGate: gate(), judgementCache: cacheMock() });
+    const opened = await service.open({ userId: 'test-learner', deckId: DECK });
+    expect(opened.item).toMatchObject({ wordId: 'gawi' }); // the due recheck
+    await service.adminExclude({ ...who, wordId: 'gawi', excluded: true });
+    expect(store.s.status.words.gawi.excluded).toBe(true);
+    expect(store.s.days[TODAY].rechecks.order).toEqual([]);
+    const again = await service.get({ userId: 'test-learner', sittingId: opened.sittingId });
+    expect(again.item.wordId).not.toBe('gawi');
+    await service.adminExclude({ ...who, wordId: 'gawi', excluded: false });
+    expect(store.s.status.words.gawi.excluded).toBe(false);
+    await expect(service.adminExclude({ ...who, wordId: 'gawi', excluded: 'yes' })).rejects.toThrow(/excluded/);
+  });
+
+  it('adminDropDeck removes a deck from decksSeen and keeps introduced words', async () => {
+    const store = adminStore();
+    const { service, logger } = make({ store, teacherGate: gate(), judgementCache: cacheMock() });
+    await service.adminDropDeck({ ...who, dropDeckId: DECK_OTHER });
+    expect(store.s.status.decksSeen).toEqual([DECK]);
+    expect(store.s.status.words.pul.state).toBe('mastered');
+    expect(logger.info).toHaveBeenCalledWith('school.word-ladder.admin', expect.objectContaining({ action: 'drop-deck', deckId: DECK_OTHER, wordId: null }));
+  });
+
+  it('adminRegrade overwrites the judge cache for that answer, records it on the item, and leaves word state', async () => {
+    const store = adminStore();
+    store.s.days['2026-09-20'] = {
+      ...emptyDay('2026-09-20'),
+      items: {
+        'rc:gawi': { at: 'a', response: { typed: ' 가이 ' }, result: { correct: false, score: 5, judge: 'model' }, wordId: 'gawi', task: '3.3', source: 'recheck' },
+        'r1:q:1': { at: 'b', response: { choice: 'Glue' }, result: { correct: true }, wordId: 'pul', task: '2.2', source: 'verify' },
+      },
+    };
+    const judgementCache = cacheMock();
+    const { service, logger } = make({ store, teacherGate: gate(), judgementCache });
+    const wordBefore = structuredClone(store.s.status.words.gawi);
+    await service.adminRegrade({ ...who, day: '2026-09-20', itemId: 'rc:gawi', pass: true });
+    expect(judgementCache.set).toHaveBeenCalledWith('korean-vocab', 'gawi', '가이', { score: 6, judge: 'grown-up', reason: 'Re-graded by a grown-up' });
+    expect(store.s.days['2026-09-20'].items['rc:gawi'].regraded).toEqual({ at: expect.any(String), actorId: 'parent', pass: true });
+    expect(store.s.status.words.gawi).toEqual(wordBefore);
+    expect(logger.info).toHaveBeenCalledWith('school.word-ladder.admin', expect.objectContaining({ action: 'regrade', wordId: 'gawi', pass: true }));
+    await service.adminRegrade({ ...who, day: '2026-09-20', itemId: 'rc:gawi', pass: false });
+    expect(judgementCache.set).toHaveBeenLastCalledWith('korean-vocab', 'gawi', '가이', { score: 1, judge: 'grown-up', reason: 'Re-graded by a grown-up' });
+    await expect(service.adminRegrade({ ...who, day: '2026-09-20', itemId: 'r1:q:1', pass: true })).rejects.toThrow(/typed/);
+    await expect(service.adminRegrade({ ...who, day: '2026-09-20', itemId: 'rc:none', pass: true })).rejects.toThrow(/rc:none/);
+  });
+
+  it('adminRegrade needs a judgement cache', async () => {
+    const { service } = make({ store: adminStore(), teacherGate: gate() });
+    await expect(service.adminRegrade({ ...who, day: TODAY, itemId: 'rc:gawi', pass: true })).rejects.toThrow(/cache/);
+  });
+
+  it('My words never lists an excluded word', async () => {
+    const store = adminStore();
+    store.s.status.words.pul = { ...store.s.status.words.pul, excluded: true };
+    const { service } = make({ store });
+    const { words } = await service.words({ userId: 'test-learner', deckId: DECK });
+    expect(words.map((w) => w.wordId)).toEqual(['gawi']);
   });
 });

@@ -26,6 +26,9 @@ export class WordLadderTypedJudge {
   #verdict(score, judge, reason = null) { return { score, judge, reason, pass: score >= this.#passScore }; }
 
   async judge({ pkg, entry, typed, otherWords = [] }) {
+    // A grown-up's re-grade (spec §6) is the last word on this exact answer.
+    const overruled = this.#cache.get(pkg, entry.id, normalizeAnswer(typed));
+    if (overruled?.judge === 'grown-up') return this.#verdict(overruled.score, 'grown-up', overruled.reason ?? null);
     const base = scoreTypedDeterministic({ target: entry.term, typed, otherWords });
     if (base.judge !== 'distance') return this.#verdict(base.score, base.judge);
     if (isShortTarget(entry.term) || !modelMayRaise(base) || !this.#ai || !this.#model) return this.#verdict(base.score, 'distance');

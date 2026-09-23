@@ -3231,13 +3231,15 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     settings: wordLadderSettings, timezone: configService.getTimezone?.() || null, now: Date.now,
     logger: wordLadderLogger,
   };
+  // One cache for the live judge and the grown-up re-grade that overwrites it (spec §6).
+  const wordLadderJudgementCache = new YamlJudgementCache({ rootDir: path.join(dataDir, 'household', 'school', 'runtime', 'word-ladder') });
   const wordLadderStudy = schoolCatalog.content ? new WordLadderSittingService({
-    ...wordLadderShared, mode: 'live',
+    ...wordLadderShared, mode: 'live', judgementCache: wordLadderJudgementCache,
     stores: {
       open: () => ({ store: wordLadderStore, token: 'live' }),
       forToken: (token) => { if (token !== 'live') throw new Error('unknown sitting'); return wordLadderStore; },
     },
-    judge: wordLadderJudgeFor(new YamlJudgementCache({ rootDir: path.join(dataDir, 'household', 'school', 'runtime', 'word-ladder') })),
+    judge: wordLadderJudgeFor(wordLadderJudgementCache),
     // Spoken takes, kept for grown-ups: {package}/{learner}/{day}/{word}-{n}.{ext}.
     recordings: new FilesystemWordLadderRecordings({ rootDir: path.join(schoolMediaRoot, 'recordings', 'word-ladder') }),
   }) : null;

@@ -63,8 +63,28 @@ export function mountWordLadderRoutes({
     const { learnerId, actorId, pin = null } = req.body || {};
     noStore(res).json(await wordLadderStudy.fold({ learnerId, actorId, pin }));
   }));
+  // Grown-up word controls (spec §6): live only, teacher-gated in the service.
+  // `pin` may also be the console's cookie capability, which the school router
+  // injects into the body (a GET carries a literal pin in the query).
+  const live = () => { if (!wordLadderStudy) throw notConfigured('word-ladder'); return wordLadderStudy; };
+  router.get('/word-ladder/admin/words', wrap(async (req, res) => {
+    const { learnerId, deckId, actorId = null } = req.query;
+    const pin = req.query.pin ?? req.body?.pin ?? null;
+    noStore(res).json(await live().adminWords({ learnerId, deckId, actorId, pin }));
+  }));
+  const adminPost = (path, method, fields) => router.post(`/word-ladder/admin/${path}`, wrap(async (req, res) => {
+    const body = req.body || {};
+    const { learnerId, deckId, actorId = null, pin = null } = body;
+    const extra = Object.fromEntries(fields.map((key) => [key, body[key]]));
+    noStore(res).json(await live()[method]({ learnerId, deckId, actorId, pin, ...extra }));
+  }));
+  adminPost('reset', 'adminReset', ['wordId']);
+  adminPost('mastered', 'adminMarkMastered', ['wordId', 'stage']);
+  adminPost('exclude', 'adminExclude', ['wordId', 'excluded']);
+  adminPost('drop-deck', 'adminDropDeck', ['dropDeckId']);
+  adminPost('regrade', 'adminRegrade', ['day', 'itemId', 'pass']);
   // Order does not matter: every live route has a literal second segment
-  // (`open`, `sittings`, `words`, `stage`, `fold`) and every test route has `test`, so
+  // (`open`, `sittings`, `words`, `stage`, `fold`, `admin`) and every test route has `test`, so
   // the two sets are disjoint — no test path can match a live pattern.
   mount('/word-ladder/test', () => wordLadderTest, { test: true });
   mount('/word-ladder', () => wordLadderStudy, { test: false });

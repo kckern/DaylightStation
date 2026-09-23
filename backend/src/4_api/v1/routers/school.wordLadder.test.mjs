@@ -82,4 +82,28 @@ describe('word-ladder routes', () => {
     await request(a).get('/word-ladder/test/words?userId=u&deckId=d&sittingId=test.p.t.1').expect(200);
     expect(test.words).toHaveBeenCalledWith({ userId: 'u', deckId: 'd', sittingId: 'test.p.t.1' });
   });
+  it('grown-up word controls are live only and pass actorId + pin through', async () => {
+    const admin = Object.fromEntries(['adminWords', 'adminReset', 'adminMarkMastered', 'adminExclude', 'adminDropDeck', 'adminRegrade']
+      .map((name) => [name, vi.fn(async () => ({ ok: name }))]));
+    const { a, live } = app();
+    Object.assign(live, admin);
+    const who = { learnerId: 'k', deckId: 'd', actorId: 'p', pin: '1234' };
+    const res = await request(a).get('/word-ladder/admin/words?learnerId=k&deckId=d&actorId=p&pin=1234').expect(200);
+    expect(res.headers['cache-control']).toBe('private, no-store');
+    expect(admin.adminWords).toHaveBeenCalledWith(who);
+    await request(a).post('/word-ladder/admin/reset').send({ ...who, wordId: 'w' }).expect(200);
+    expect(admin.adminReset).toHaveBeenCalledWith({ ...who, wordId: 'w' });
+    await request(a).post('/word-ladder/admin/mastered').send({ ...who, wordId: 'w', stage: 2 }).expect(200);
+    expect(admin.adminMarkMastered).toHaveBeenCalledWith({ ...who, wordId: 'w', stage: 2 });
+    await request(a).post('/word-ladder/admin/exclude').send({ ...who, wordId: 'w', excluded: false }).expect(200);
+    expect(admin.adminExclude).toHaveBeenCalledWith({ ...who, wordId: 'w', excluded: false });
+    await request(a).post('/word-ladder/admin/drop-deck').send({ ...who, dropDeckId: 'x' }).expect(200);
+    expect(admin.adminDropDeck).toHaveBeenCalledWith({ ...who, dropDeckId: 'x' });
+    await request(a).post('/word-ladder/admin/regrade').send({ ...who, day: '2026-09-20', itemId: 'rc:w', pass: true }).expect(200);
+    expect(admin.adminRegrade).toHaveBeenCalledWith({ ...who, day: '2026-09-20', itemId: 'rc:w', pass: true });
+    await request(a).post('/word-ladder/test/admin/reset').send({ ...who, wordId: 'w' }).expect(404);
+    const { a: unwired } = app({ wordLadderStudy: null });
+    await request(unwired).post('/word-ladder/admin/reset').send({ ...who, wordId: 'w' }).expect(503);
+  });
 });
+

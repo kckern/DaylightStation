@@ -13,6 +13,7 @@ export { pickMeaningChoices, pickTermChoices, cueFor, channelFor } from './choic
 export { ESTIMATE_MS, newAllowance, planNextRound } from './rounds.mjs';
 export { openDay, currentItem, respond, addActiveTime, startPractice, wordTransitions, excludeWordFromDay } from './engine.mjs';
 export { foldPaperAttempts } from './foldPaperAttempts.mjs';
+export { markMastered, typedAnswers } from './admin.mjs';
 export {
   quizDocumentIdFor, deckDirOf, isoWeekOf, learnerQuizDocumentId, learnerQuizPrefix, parseLearnerQuizId,
 } from './quizId.mjs';
