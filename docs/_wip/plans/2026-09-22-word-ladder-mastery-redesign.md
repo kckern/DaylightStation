@@ -624,7 +624,9 @@ on `ResizeObserver` and `document.fonts.ready`.
 - **Audio autoplay:** the sitting starts with a **Start** tap, which unlocks
   audio for the page. FKB's autoplay setting is required on the Portal (listed
   in the School runbook). A blocked clip leaves the large speaker button and
-  logs `audio.played outcome: blocked` at info.
+  logs `audio.played outcome: blocked` — at warn since the observability sweep
+  (2026-09-23): after the Start tap a blocked clip means the child heard
+  nothing, which is a problem to see.
 - **Quiz feedback:** right → tick; wrong / Don't know → the correct answer with
   Korean audio; a typed pass below 10 → "Got it! Here's the spelling" with the diff.
 
@@ -770,6 +772,21 @@ event carries `traceId`, `sittingId`, `seq`, `t`, `learnerId`, `deckId`,
 `layout.clamped` (warn) · `sitting.closed` {reason, activeMs, remaining}.
 Backend: `school.word-ladder.{opened,graded,transition,folded,closed,tuning,admin}`
 with `mode`. Volume ≈ 6–8 events per item, ~300 per sitting.
+
+**Observability sweep (2026-09-23).** So a sitting can be evaluated from the
+logs alone, the backend also logs WHY each item is served (`item.served
+{reason}` — the engine returns the reason as data, `observe.mjs`), every plan
+change (`day.planned`, `round.planned`, `round.phase` with the quiz queue,
+`drill.started/finished`, `day.done`), a word's sign-off prerequisites
+(`word.prereqs`, and `prereqs` on `transition`), and `sitting.abandoned`
+(warn) for a sitting idle-closed without its client ever closing it. The
+frontend adds `input` (how the child acted) on `item.answered`,
+`result.shown/dismissed`, `item.skipped`, `showme.used`, `hint.shown`,
+`say.recording {phase}` (replacing `recording.*` / `mic.unavailable`),
+`audio.played {clip, trigger, outcome}` (replacing `kind`; failures at warn)
+and `visibility` / `screen` on `item.stalled`. The trace renders all of it
+(step sections, reasons, input, sub-lines, a summary footer). The full table
+is in `docs/reference/school/word-ladder.md` → Logs.
 
 ### `school word-ladder trace`
 

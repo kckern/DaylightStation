@@ -77,10 +77,12 @@ surface, including the guarded-write repair lanes (`ops abandon`,
 ## Word ladder trace
 
 `school word-ladder trace` prints one learner's word-ladder sittings as a
-timeline: a header per sitting trace, then one line per item (time, kind,
-word, task/layout, response, correct/score, ms), with state transitions and
-stalls called out and the item a sitting ended on marked when it did not end
-on the goal or the time cap. Use it when a child says a word "didn't count",
+timeline: a header per sitting trace, step sections, then one line per item
+(time, kind, word, task/layout, response, correct/score, ms, state
+transitions, why it was served, how it was answered) with what happened on
+it underneath (audio, takes, skips, verdicts, stalls, plan changes), the item
+a sitting ended on marked when it did not end on the goal or the time cap,
+and a summary footer. Use it when a child says a word "didn't count",
 a sitting stopped early, or a screen sat idle. The events it reads are listed
 in [word-ladder.md → Logs](../../reference/school/word-ladder.md#logs).
 
@@ -112,6 +114,51 @@ DAYLIGHT_LOGSTORE={env.log_store_url} \
   times but no per-item `ms` or stall detail, and the output says so.
 - A warning that the query hit its row limit means the output may be cut
   short: narrow it with `--day`, `--sitting` or `--mode`.
+
+### How to evaluate a sitting
+
+Read the trace top to bottom; each part answers one question.
+
+1. **The header** — `learner · package · day · live/test · trace · active
+   time · ending`. An ending of `unknown` means no close event reached the
+   store (a killed or slept tab). If a later sitting idle-closed it, the
+   block ends with `⚠ abandoned — idle m:ss, last answer …, on screen …`.
+2. **Section headers** (`── Learn · round 1 ──`, `── Review ──`,
+   `── Drill d1 ──`, `── Practice p1 ──`, `── Done ──`) — the order the day
+   ran in. Review comes first when rechecks are due; a round is Learn › Sort ›
+   Quiz › Match.
+3. **Why each item** — `· why <reason>` on the item line (from
+   `item.served`; the reasons are tabled in
+   [word-ladder.md → Logs](../../reference/school/word-ladder.md#logs)). A
+   sequencing question ("why was this word quizzed again?") is answered by
+   the reason plus the `⇢` plan lines under the answer before it: `⇢ round
+   r1: stream → quiz [word:task …]` is the exact quiz queue,
+   `⇢ <word> recognized 1 · matched (needs stage<1)` is a word's climb.
+4. **What the child did** — `· via key:Space` / `touch` on the line;
+   `↷ skipped`, `? show me`, `⟲ flipped`, `▣ verdict … shown` and `▣ next
+   via … after Ns` underneath. A long `▣ next … after` means the verdict
+   panel sat on screen, not the item.
+5. **What they heard** — `♪ term auto → ended`. `⚠ ♪ … → blocked` means the
+   browser refused autoplay; `error` means the clip failed to load. No `♪`
+   line at all on an item that should speak means no clip was ever started.
+6. **Recording** — `● take started / stopped / uploaded (Ns long)`. A say
+   step that ends in a few seconds with no `●` line and a `↷ skipped` was
+   skipped; a `⚠ ● take unavailable` means no microphone. Takes are never
+   graded.
+7. **Stalls** — `⚠ stalled 45s` / `120s`. `(tab hidden)` means the screen
+   was off or the app switched, so nobody was stuck; `(on the verdict)` means
+   the answer was in and the child had not pressed Next. `◐ tab hidden` /
+   `◑ tab visible` lines bracket the gap.
+8. **The footer** — counts (items, answered, wrong, skipped, show-me,
+   stalls with how many hidden, audio with failures, takes), `time:` per
+   step, the wrong answers, and each word that `climbed` or `slipped`.
+
+For the raw rows behind any line:
+
+```bash
+curl -s {env.log_store_url}/select/logsql/query \
+  -d 'query=_msg:~"school.word-ladder" AND data.sittingId:"<sittingId>" AND _time:1d' -d limit=2000
+```
 
 ## Opening a program without an access code
 
@@ -151,7 +198,7 @@ answer audio play without a tap-to-unlock gesture once the sitting's own
 **Start** button has run, but on the Portal itself FKB's autoplay setting
 still has to be **enabled** for that unlock to hold — a Portal with autoplay
 off leaves every clip behind a blocked-audio icon (`audio.played outcome:
-blocked` at info) instead of playing. Check it under FKB's own settings before
+blocked` at warn; the trace shows `⚠ ♪ term auto → blocked`) instead of playing. Check it under FKB's own settings before
 troubleshooting "no sound" as a code bug.
 
 **Testing the word ladder without touching a real learner's record**: open
