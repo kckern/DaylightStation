@@ -35,7 +35,7 @@ import GradedWorksheet from './panels/GradedWorksheet.jsx';
 import LearnerDayView from './panels/LearnerDayView.jsx';
 import ReadingShelfPanel from './panels/ReadingShelfPanel.jsx';
 import ReadingDetailPanel from './panels/ReadingDetailPanel.jsx';
-import WordLadderWordsPanel, { wordLadderEnrollments } from './panels/WordLadderWordsPanel.jsx';
+import CardLadderWordsPanel, { cardLadderEnrollments } from './panels/CardLadderWordsPanel.jsx';
 import { LessonIdentity, SubjectIdentity } from './CurriculumIdentity.jsx';
 import { teacherBaseFor, teacherDayPath } from './teacherUrl.js';
 import { curriculumTitles } from './curriculumTitles.js';
@@ -418,26 +418,26 @@ export function ReadingView({ learnerId, learnerName, kids = [] }) {
 }
 
 /**
- * WordsView — a grown-up's word-by-word controls, one `WordLadderWordsPanel`
- * per word-ladder deck the learner is enrolled in (`docs/reference/school/
- * word-ladder.md` "Grown-up word controls"). Enrollments come out of the same
+ * WordsView — a grown-up's word-by-word controls, one `CardLadderWordsPanel`
+ * per card-ladder deck the learner is enrolled in (`docs/reference/school/
+ * card-ladder.md` "Grown-up word controls"). Enrollments come out of the same
  * `programs` array `AssignmentsView` edits — a `flashcards` entry whose
- * `policy.mode` is `word-ladder`, each carrying its own `deckId` and `title`.
+ * `policy.mode` is `card-ladder`, each carrying its own `deckId` and `title`.
  */
 export function WordsView({ learnerId, learnerName }) {
   const assignment = usePanelFetch(() => schoolApi.assignments(learnerId), {
-    deps: [learnerId], panel: 'word-ladder-words-enrollments', notFoundAs: 'empty',
-    isEmpty: (d) => !wordLadderEnrollments(d?.programs).length,
+    deps: [learnerId], panel: 'card-ladder-words-enrollments', notFoundAs: 'empty',
+    isEmpty: (d) => !cardLadderEnrollments(d?.programs).length,
   });
-  const decks = wordLadderEnrollments(assignment.data?.programs);
+  const decks = cardLadderEnrollments(assignment.data?.programs);
   return (
     <div className="teacher-view">
-      <div className="teacher-view__heading"><div><p className="teacher-view__eyebrow">Words</p><h2>{learnerName}’s word ladder</h2><p>Every word this learner can meet, and the controls to reset, master, exclude, or re-grade one by hand.</p></div></div>
-      <PanelFrame title="Word-ladder decks" state={assignment.state} retry={assignment.retry}
-        emptyCopy={`${learnerName ?? learnerId} is not enrolled in a word-ladder deck.`}
+      <div className="teacher-view__heading"><div><p className="teacher-view__eyebrow">Words</p><h2>{learnerName}’s card ladder</h2><p>Every word this learner can meet, and the controls to reset, master, exclude, or re-grade one by hand.</p></div></div>
+      <PanelFrame title="Card-ladder decks" state={assignment.state} retry={assignment.retry}
+        emptyCopy={`${learnerName ?? learnerId} is not enrolled in a card-ladder deck.`}
         unavailableCopy="Assignments are not enabled on this install.">
         {decks.map((entry) => (
-          <WordLadderWordsPanel key={entry.deckId} learnerId={learnerId} deckId={entry.deckId} title={entry.title ?? entry.deckId} />
+          <CardLadderWordsPanel key={entry.deckId} learnerId={learnerId} deckId={entry.deckId} title={entry.title ?? entry.deckId} />
         ))}
       </PanelFrame>
     </div>

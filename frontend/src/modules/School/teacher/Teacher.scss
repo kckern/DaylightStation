@@ -2448,10 +2448,10 @@
   .teacher-agenda-dispatch__blocked button { background: transparent; color: #756d5f; }
 }
 
-// WordLadderWordsPanel — the Words tab's per-deck table (task-5-brief.md).
+// CardLadderWordsPanel — the Words tab's per-deck table (task-5-brief.md).
 // Same palette as .teacher-reading above: this is an observation-plus-repair
 // surface over the same kind of per-child record, not a card grid.
-.teacher-word-ladder {
+.teacher-card-ladder {
   display: flex;
   flex-direction: column;
   gap: 16px;

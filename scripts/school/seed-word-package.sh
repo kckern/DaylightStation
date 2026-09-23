@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # scripts/school/seed-word-package.sh <seed-dir>
 #
-# Install a word-ladder seed package (any language) into the running
+# Install a card-ladder seed package (any language) into the running
 # container's data and media volumes. CONTROLLER-ONLY, and only AFTER the
-# word-ladder code that reads school.word-lexicon/v2 is deployed.
+# card-ladder code that reads school.word-lexicon/v2 is deployed.
 #
 # A seed dir holds:
 #   lexicon.yml                 the package lexicon (school.word-lexicon/v2)

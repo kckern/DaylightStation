@@ -1,6 +1,6 @@
 /**
  * The floor a spoken take has to clear, shared by every School program that
- * asks a child to say something (Sentence Ladder recording rung, word ladder
+ * asks a child to say something (Sentence Ladder recording rung, card ladder
  * study card). One copy, so the two cannot drift.
  */
 

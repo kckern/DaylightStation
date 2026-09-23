@@ -27,7 +27,7 @@ export function createSchoolCatalog({
       actionDirectories: projection.actionDirectories,
     })
     : null;
-  // Word-ladder decks name a `media:` lexicon and list word ids; expanding
+  // Card-ladder decks name a `media:` lexicon and list word ids; expanding
   // them here — the content-repository seam — is what lets every existing
   // deck consumer (validation, FSRS, the deck browser) see ordinary cards.
   const mediaDir = configService.getMediaDir?.() ?? null;

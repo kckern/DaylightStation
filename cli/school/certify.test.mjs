@@ -502,7 +502,7 @@ describe('school-certify CLI', () => {
   });
 });
 
-describe('school-certify — word-ladder lexicon decks', () => {
+describe('school-certify — card-ladder lexicon decks', () => {
   const LEXICON = {
     schema: 'school.word-lexicon/v2',
     package: 'korean-vocab',

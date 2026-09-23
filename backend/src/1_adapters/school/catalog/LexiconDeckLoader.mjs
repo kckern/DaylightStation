@@ -1,5 +1,5 @@
 import { ILearningContentRepository } from '#apps/school/ports/ILearningContentRepository.mjs';
-import { expandLexiconDeck, isLexiconDeck } from '#domains/school/wordLadder/index.mjs';
+import { expandLexiconDeck, isLexiconDeck } from '#domains/school/cardLadder/index.mjs';
 
 /** A lexicon deck with ordinary cards; any other deck unchanged. Throws on an invalid deck. */
 export function expandDeckWithLexicons(raw, lexicons) {
@@ -12,7 +12,7 @@ export function expandDeckWithLexicons(raw, lexicons) {
 /**
  * Expands `words` decks BEFORE anyone validates them (validateFlashcardDeck
  * rejects a deck with no `cards`). Wraps get AND list, so the deck browser,
- * FlashcardStudyService, enrollment validation and the word ladder all see
+ * FlashcardStudyService, enrollment validation and the card ladder all see
  * the same cards.
  */
 export class LexiconDeckLoader extends ILearningContentRepository {
@@ -34,7 +34,7 @@ export class LexiconDeckLoader extends ILearningContentRepository {
     const decks = await this.#content.listFlashcardDecks();
     return decks.flatMap((raw) => {
       try { return [expandDeckWithLexicons(raw, this.#lexicons)]; } catch (error) {
-        this.#logger?.error?.('school.word-ladder.deck-unexpandable', { deckId: raw?.id ?? null, error: error.message });
+        this.#logger?.error?.('school.card-ladder.deck-unexpandable', { deckId: raw?.id ?? null, error: error.message });
         return [];
       }
     });
