@@ -1,5 +1,5 @@
-import { fireEvent, render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { act, fireEvent, render, screen } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import FlashcardItem from './FlashcardItem.jsx';
 import ChoiceItem from './ChoiceItem.jsx';
 import TypedItem from './TypedItem.jsx';
@@ -145,6 +145,74 @@ describe('TypedItem', () => {
     const button = screen.getByRole('button', { name: 'Enter' });
     fireEvent.click(button);
     expect(onRespond).toHaveBeenCalledWith({ typed: '가위' });
+  });
+});
+
+/**
+ * THE KEYPAD TOGGLE (spec §6). A toggle, not a detector: the field auto-opens
+ * it once per item after 10 s of idle focus, and a real keydown closes it —
+ * proof that a physical keyboard just spoke, so the keypad has nothing left
+ * to do here.
+ */
+describe('TypedItem keypad toggle', () => {
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('shows a Keypad toggle button, closed by default', () => {
+    render(<TypedItem item={{ id: 'k0', type: 'typed', task: '3.3', cue: { type: 'text', text: 'Scissors' }, assets: {} }} mode="graded" langs={langs} resolveAssetUrl={(x) => x} onRespond={() => {}} />);
+    expect(screen.getByRole('button', { name: /Keypad/ })).toBeInTheDocument();
+    expect(screen.queryByTestId('jamo-keypad')).toBeNull();
+  });
+
+  it('a click on the toggle opens the keypad, and a second click closes it', () => {
+    render(<TypedItem item={{ id: 'k1', type: 'typed', task: '3.3', cue: { type: 'text', text: 'Scissors' }, assets: {} }} mode="graded" langs={langs} resolveAssetUrl={(x) => x} onRespond={() => {}} />);
+    const toggle = screen.getByRole('button', { name: /Keypad/ });
+    fireEvent.click(toggle);
+    expect(screen.getByTestId('jamo-keypad')).toBeInTheDocument();
+    fireEvent.click(toggle);
+    expect(screen.queryByTestId('jamo-keypad')).toBeNull();
+  });
+
+  it('auto-opens once after 10 s of idle focus, and logs keypad.toggled {auto:true}', () => {
+    const spy = vi.spyOn(wordLadderLog, 'keypadToggled').mockImplementation(() => {});
+    vi.useFakeTimers();
+    render(<TypedItem item={{ id: 'k2', type: 'typed', task: '3.3', cue: { type: 'text', text: 'Scissors' }, assets: {} }} mode="graded" langs={langs} resolveAssetUrl={(x) => x} onRespond={() => {}} />);
+    expect(screen.queryByTestId('jamo-keypad')).toBeNull();
+    act(() => { vi.advanceTimersByTime(9999); });
+    expect(screen.queryByTestId('jamo-keypad')).toBeNull();
+    act(() => { vi.advanceTimersByTime(1); });
+    expect(screen.getByTestId('jamo-keypad')).toBeInTheDocument();
+    expect(spy).toHaveBeenCalledWith({ auto: true, open: true });
+    spy.mockRestore();
+  });
+
+  it('closes on the first physical keydown in the field', () => {
+    vi.useFakeTimers();
+    render(<TypedItem item={{ id: 'k3', type: 'typed', task: '3.3', cue: { type: 'text', text: 'Scissors' }, assets: {} }} mode="graded" langs={langs} resolveAssetUrl={(x) => x} onRespond={() => {}} />);
+    act(() => { vi.advanceTimersByTime(10_000); });
+    expect(screen.getByTestId('jamo-keypad')).toBeInTheDocument();
+    const input = screen.getByRole('textbox');
+    fireEvent.keyDown(input, { key: 'a', code: 'KeyA' });
+    expect(screen.queryByTestId('jamo-keypad')).toBeNull();
+  });
+
+  it('a physical keydown before 10 s cancels the auto-open — a keyboard is present', () => {
+    vi.useFakeTimers();
+    render(<TypedItem item={{ id: 'k4', type: 'typed', task: '3.3', cue: { type: 'text', text: 'Scissors' }, assets: {} }} mode="graded" langs={langs} resolveAssetUrl={(x) => x} onRespond={() => {}} />);
+    const input = screen.getByRole('textbox');
+    fireEvent.keyDown(input, { key: 'a', code: 'KeyA' });
+    act(() => { vi.advanceTimersByTime(10_000); });
+    expect(screen.queryByTestId('jamo-keypad')).toBeNull();
+  });
+
+  it('a new item re-arms the auto-open and starts the keypad closed', () => {
+    vi.useFakeTimers();
+    const { rerender } = render(<TypedItem item={{ id: 'k5', type: 'typed', task: '3.3', cue: { type: 'text', text: 'Scissors' }, assets: {} }} mode="graded" langs={langs} resolveAssetUrl={(x) => x} onRespond={() => {}} />);
+    act(() => { vi.advanceTimersByTime(10_000); });
+    expect(screen.getByTestId('jamo-keypad')).toBeInTheDocument();
+    rerender(<TypedItem item={{ id: 'k6', type: 'typed', task: '3.3', cue: { type: 'text', text: 'Glue' }, assets: {} }} mode="graded" langs={langs} resolveAssetUrl={(x) => x} onRespond={() => {}} />);
+    expect(screen.queryByTestId('jamo-keypad')).toBeNull();
+    act(() => { vi.advanceTimersByTime(10_000); });
+    expect(screen.getByTestId('jamo-keypad')).toBeInTheDocument();
   });
 });
 
