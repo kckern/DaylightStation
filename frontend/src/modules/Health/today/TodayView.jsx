@@ -308,6 +308,15 @@ export function TodayView({ active = true, sidebarTarget, onSetupGoals, onCoachT
     }
   };
 
+  // A typed sentence in a meal's add row: the same in-place pending row as a
+  // capture, labelled with the text, released by the add row once the parsed
+  // rows are on the day (or the parse failed).
+  const beginSentencePending = (bucket, text) => {
+    const pendingId = crypto.randomUUID();
+    setCapturePending(previous => new Map(previous).set(pendingId, { id: pendingId, bucket, date, startedAt: Date.now(), text }));
+    return () => setCapturePending(previous => { if (!previous.has(pendingId)) return previous; const next = new Map(previous); next.delete(pendingId); return next; });
+  };
+
   // Shared by QuickCaptureBar's global Voice/Photo triggers AND every
   // per-meal header trigger LogTable renders — VoiceCapture/PhotoCapture
   // forward `(dataUrl, bucket)`, with `bucket` always the clock-derived
@@ -461,7 +470,7 @@ export function TodayView({ active = true, sidebarTarget, onSetupGoals, onCoachT
         revealedBucket={focusRequest?.bucket ?? null}
         renderAddRow={(bucket, label) => <MealAddRow bucket={bucket} label={label} date={date} active={active} onVoiceCapture={onVoiceCapture}
           focusRequest={focusRequest?.bucket === bucket ? focusRequest.n : 0} busy={nutrition.busy}
-          onAdded={() => day.reload()} onPhotoCapture={onPhotoCapture} onOpenBarcode={openBarcode}
+          onAdded={() => day.reload()} onSentencePending={text => beginSentencePending(bucket, text)} onPhotoCapture={onPhotoCapture} onOpenBarcode={openBarcode}
           onOpenTemplates={(target, templateId) => { setFocusTemplateId(templateId); setTemplatesFor(target); }}
           onManageFoods={() => setManageFoods(true)} />} />
       <NeedsReviewSection pending={pendingLogs} onChanged={day.reload} />

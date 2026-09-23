@@ -23,12 +23,12 @@ const MealsIcon = () => (
  * said as new food and splits "two eggs, toast and coffee" into its own rows.
  * (The header mic, with foods selected, is the one that edits a meal.) */
 export function MealAddRow({ bucket, label, date, focusRequest = 0, busy = false, active = true,
-  onAdded, onVoiceCapture, onPhotoCapture, onOpenBarcode, onOpenTemplates, onManageFoods }) {
+  onAdded, onSentencePending, onVoiceCapture, onPhotoCapture, onOpenBarcode, onOpenTemplates, onManageFoods }) {
   const openBarcode = () => { logger.debug('barcode.open', { bucket }); onOpenBarcode(bucket); };
   const openTemplates = (templateId) => { logger.debug('templates.open', { bucket, templateId }); onOpenTemplates(bucket, templateId); };
   return <div className="health-meal__add-row">
     <AddCombobox inline bucketId={bucket} label={label} date={date} focusRequest={focusRequest}
-      onDone={onAdded} onManageFoods={onManageFoods}
+      onDone={onAdded} onManageFoods={onManageFoods} onSentencePending={onSentencePending}
       onTemplate={entry => openTemplates(entry.id)}
       actions={<span className="health-meal__add-actions">
         {onVoiceCapture ? <VoiceCapture active={active} bucket={bucket} mealLabel={label} labelPrefix="Speak foods"

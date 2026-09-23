@@ -8,6 +8,7 @@ vi.mock('../../../lib/api.mjs', () => ({ DaylightAPI: (...a) => apiMock(...a) })
 import { AddCombobox } from './AddCombobox.jsx';
 import { resetApiResourceCache, primeApiResource } from '../../../lib/hooks/useApiResource.js';
 import { shortlistPath } from '../healthResources.js';
+import { noteVisibleRows, resetAddFlow } from './addFlow.js';
 
 // The shortlist is cached module-wide; no case may inherit another's.
 beforeEach(() => resetApiResourceCache());
@@ -110,6 +111,42 @@ describe('AddCombobox', () => {
     await waitFor(() => expect(screen.getByText(/network down/)).toBeTruthy());
     expect(input.value).toBe('2 eggs and toast');
     expect(onDone).not.toHaveBeenCalled();
+  });
+
+  it('a sentence holds a pending "Adding" row until its parsed rows are on the day', async () => {
+    resetAddFlow();
+    apiMock.mockImplementation(async (path) => {
+      if (path.includes('suggest')) return { items: [] };
+      if (path.includes('nutrition/input')) return { committed: true, entryIds: ['n1', 'n2'] };
+      return {};
+    });
+    const release = vi.fn();
+    const onSentencePending = vi.fn(() => release);
+    const onDone = vi.fn();
+    r(<AddCombobox bucketId="morning" onDone={onDone} onCancel={() => {}} onSentencePending={onSentencePending} />);
+    const input = screen.getByRole('combobox');
+    fireEvent.change(input, { target: { value: ' 2 eggs and toast ' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(onSentencePending).toHaveBeenCalledWith('2 eggs and toast');
+    await waitFor(() => expect(onDone).toHaveBeenCalled());
+    expect(release).not.toHaveBeenCalled();
+    act(() => noteVisibleRows([{ uuid: 'n1' }, { uuid: 'n2' }]));
+    await waitFor(() => expect(release).toHaveBeenCalledTimes(1));
+  });
+
+  it('a failed sentence releases its pending row at once', async () => {
+    apiMock.mockImplementation(async (path) => {
+      if (path.includes('suggest')) return { items: [] };
+      if (path.includes('nutrition/input')) throw new Error('network down');
+      return {};
+    });
+    const release = vi.fn();
+    r(<AddCombobox bucketId="morning" onDone={() => {}} onCancel={() => {}} onSentencePending={() => release} />);
+    const input = screen.getByRole('combobox');
+    fireEvent.change(input, { target: { value: 'soup' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    await waitFor(() => expect(screen.getByText(/network down/)).toBeTruthy());
+    expect(release).toHaveBeenCalledTimes(1);
   });
 
   it('a slow older suggest response cannot overwrite a newer one (stale-response guard)', async () => {

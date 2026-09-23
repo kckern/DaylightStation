@@ -23,3 +23,7 @@ it('renders independent progress for simultaneous captures',()=>{
  renderLog({captureTasks:[{id:'a',date:'2026-09-06',bucket:'evening',startedAt:Date.now()},{id:'b',date:'2026-09-06',bucket:'evening',startedAt:Date.now()}]});
  expect(screen.getAllByRole('progressbar')).toHaveLength(2);
 });
+it('a typed sentence in flight shows its own "Adding" row in its meal',()=>{
+ renderLog({captureTasks:[{id:'s',date:'2026-09-06',bucket:'evening',startedAt:Date.now(),text:'bowl of chili'}]});
+ expect(screen.getByText('Adding “bowl of chili”…')).toBeTruthy();
+});
