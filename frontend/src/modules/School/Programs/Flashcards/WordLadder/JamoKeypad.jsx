@@ -28,8 +28,16 @@ const ROW_3 = [['ㅋ'], ['ㅌ'], ['ㅊ'], ['ㅍ'], ['ㅠ'], ['ㅜ'], ['ㅡ']];
  * on `document.activeElement` — losing focus mid-tap would land every key on
  * nothing. Backspace and Enter get the same treatment so a run of taps never
  * bounces focus off the field.
+ *
+ * `focusTarget`, when given, is called immediately before every `offerJamo` /
+ * `offerBackspace` — belt AND suspenders alongside `preventDefault()`. A tap
+ * elsewhere between opens (Hear it, the toggle itself, TypedItem's own
+ * auto-open refocus) can leave `document.activeElement` on something that is
+ * not the field; `offerJamo`/`offerBackspace` act on whatever IS focused, so
+ * without this a key can silently land on nothing even though the field is
+ * right there on screen with the keypad open over it.
  */
-export default function JamoKeypad({ open, onSubmit, onToggle }) {
+export default function JamoKeypad({ open, onSubmit, onToggle, focusTarget }) {
   const { offerJamo, offerBackspace } = useHangulTyping();
   const [shift, setShift] = useState(false);
 
@@ -43,12 +51,14 @@ export default function JamoKeypad({ open, onSubmit, onToggle }) {
   // Shift+letter does even when the letter has no capital worth pressing it for.
   const pressKey = (base, shifted) => (event) => {
     event.preventDefault();
+    focusTarget?.();
     offerJamo(jamoFor(base, shifted));
     if (shift) setShift(false);
   };
   const pressShift = (event) => { event.preventDefault(); setShift((s) => !s); };
   const pressBackspace = (event) => {
     event.preventDefault();
+    focusTarget?.();
     offerBackspace();
     if (shift) setShift(false);
   };

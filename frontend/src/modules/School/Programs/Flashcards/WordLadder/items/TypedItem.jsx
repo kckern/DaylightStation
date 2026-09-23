@@ -25,16 +25,28 @@ export default function TypedItem({ item, mode, langs, resolveAssetUrl, onRespon
   const image = item.assets?.image ? resolveAssetUrl(item.assets.image) : null;
   const glossAudio = item.assets?.glossAudio ? resolveAssetUrl(item.assets.glossAudio) : null;
   const termAudio = word?.media?.audio ? resolveAssetUrl(word.media.audio) : null;
+  const graded = mode === 'graded';
+  const fieldDisabled = busy || (graded && Boolean(result));
 
   // Auto-open bookkeeping. Refs, not state: read inside a timer callback and
   // a document listener, neither of which should re-run when the value they
-  // read changes.
+  // read changes. `fieldDisabledRef` and `itemIdRef` are updated on every
+  // render (plain assignment — cheap, and always current by the time an
+  // async callback reads them, well ahead of any real timer firing) so the
+  // 10 s timer sees whatever is true AT FIRE TIME, not what was true when it
+  // was scheduled: `busy`/`result` change without `item.id` changing, so the
+  // effect that scheduled the timer never re-runs to pick them up itself.
   const keypadOpenRef = useRef(false);
   const keypadUsedRef = useRef(false); // auto-open attempted (fired or cancelled) for this item
   const autoTimerRef = useRef(null);
+  const fieldDisabledRef = useRef(fieldDisabled);
+  const itemIdRef = useRef(item.id);
   useEffect(() => { keypadOpenRef.current = keypadOpen; }, [keypadOpen]);
+  fieldDisabledRef.current = fieldDisabled;
+  itemIdRef.current = item.id;
 
   useEffect(() => {
+    const thisItemId = item.id;
     setValue('');
     input.current?.focus();
     if (mode === 'copy' && termAudio) playClip(termAudio);
@@ -46,7 +58,16 @@ export default function TypedItem({ item, mode, langs, resolveAssetUrl, onRespon
     autoTimerRef.current = setTimeout(() => {
       if (keypadUsedRef.current) return;
       keypadUsedRef.current = true;
+      // Skip — never reschedule — if the item has since moved on, or the
+      // field is mid-submit / already answered. Opening the keypad (and
+      // stealing focus) over a "Checking…" state or a result already on
+      // screen would be a surprise, not a convenience.
+      if (itemIdRef.current !== thisItemId || fieldDisabledRef.current) return;
       setKeypadOpen(true);
+      // Mirrors toggleKeypad: the child may have tapped Hear it or another
+      // control in the idle window, and the keypad is useless if the field
+      // that lost focus never gets it back.
+      input.current?.focus();
       wordLadderLog.keypadToggled({ auto: true, open: true });
     }, KEYPAD_AUTO_OPEN_MS);
     return () => clearTimeout(autoTimerRef.current);
@@ -99,11 +120,13 @@ export default function TypedItem({ item, mode, langs, resolveAssetUrl, onRespon
     onRespond({ typed: value });
     if (mode === 'graded') { input.current?.blur(); stageRef?.current?.focus(); }
   };
-  const graded = mode === 'graded';
-  const fieldDisabled = busy || (graded && Boolean(result));
   useWordLadderKeys(result && graded ? { ' ': onContinue, enter: onContinue } : {}, { enabled: Boolean(result) && graded });
+  const keypadShowing = keypadOpen && !fieldDisabled;
   return (
-    <section className="wl-item wl-typed" aria-label={graded ? 'Type the word' : 'Copy the word'}>
+    <section
+      className={`wl-item wl-typed${keypadShowing ? ' wl-typed--keypad' : ''}`}
+      aria-label={graded ? 'Type the word' : 'Copy the word'}
+    >
       <div className="wl-prompt">
         {!graded && <FitText role="term" text={word.term} lang={langs.term} />}
         {graded && item.cue?.type === 'image' && <CuePicture item={item} src={image} lang={langs.gloss} />}
@@ -147,7 +170,12 @@ export default function TypedItem({ item, mode, langs, resolveAssetUrl, onRespon
         )}
         {graded && result && <TouchButton variant="primary" keyHint="Space" onClick={onContinue}>Next</TouchButton>}
       </div>
-      <JamoKeypad open={keypadOpen && !fieldDisabled} onToggle={toggleKeypad} onSubmit={submit} />
+      <JamoKeypad
+        open={keypadShowing}
+        onToggle={toggleKeypad}
+        onSubmit={submit}
+        focusTarget={() => input.current?.focus()}
+      />
     </section>
   );
 }

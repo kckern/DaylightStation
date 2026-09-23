@@ -70,3 +70,32 @@
 
 .wl-fit { display: block; max-width: 100%; text-align: center; line-height: 1.15; word-break: keep-all; overflow-wrap: normal; hyphens: none; }
 .wl-fit--clamped { overflow-wrap: anywhere; }
+
+// --- Keypad-open layout (Task 6 fix round 1) ----------------------------
+// The stage is a fixed 1280×800 (WordLadderStage scales it to fit, but the
+// LAYOUT itself has to fit at that resolution with no scroll). With the
+// on-screen keypad open, a typed item stacks five things top to bottom —
+// header, prompt, field, controls, keypad — and the default `.wl-prompt`
+// (220px, sized for a picture cue) is too tall to leave room for the last
+// one. Budget at 800px tall, keypad-open:
+//   wl-header                    ~74px  (padding + round/piles row + time bar)
+//   wl-main bottom padding        24px
+//   wl-item gaps (3 × 0.75rem)    36px
+//   wl-prompt (shrunk)           120px
+//   wl-typed__field               90px  (min-height 80px + padding)
+//   wl-controls                   64px  (one row of TouchButtons)
+//   wl-keypad (shrunk keys)      ~277px (3× 60px rows + Enter 60px + padding/border/gaps)
+//   ------------------------------------
+//   total                       ~685px  — leaves ~115px of margin in 800px.
+.wl-item.wl-typed--keypad { gap: 0.75rem; }
+.wl-typed--keypad .wl-prompt { height: 120px; }
+// Still well above the 56px touch-target floor; only shrunk from the
+// default 64px to buy back the last bit of the budget above.
+.wl-typed--keypad .wl-keypad {
+  gap: 0.35rem;
+  padding: 0.5rem;
+  .wl-keypad__row { gap: 0.3rem; }
+  .wl-keypad__key, .wl-keypad__shift, .wl-keypad__backspace, .wl-keypad__enter {
+    min-height: 60px;
+  }
+}

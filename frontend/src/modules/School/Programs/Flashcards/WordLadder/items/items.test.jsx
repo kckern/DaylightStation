@@ -7,6 +7,7 @@ import SummaryItem from './SummaryItem.jsx';
 import { playClip } from '../wordLadderAudio.js';
 import { wordLadderLog } from '../wordLadderLog.js';
 import { modeForLanguage } from '../../../../ime/languages.js';
+import HangulTypingProvider from '../../../../ime/HangulTypingProvider.jsx';
 
 vi.mock('../wordLadderAudio.js', () => ({ playClip: vi.fn(async () => true) }));
 const word = { wordId: 'gawi', term: '가위', gloss: 'Scissors', pronunciation: null, kind: 'word', media: { image: 'img', audio: 'aud', glossAudio: null } };
@@ -172,6 +173,16 @@ describe('TypedItem keypad toggle', () => {
     expect(screen.queryByTestId('jamo-keypad')).toBeNull();
   });
 
+  it('adds wl-typed--keypad to the item while the keypad is open, for the fit CSS (fix round 1)', () => {
+    render(<TypedItem item={{ id: 'k1b', type: 'typed', task: '3.3', cue: { type: 'text', text: 'Scissors' }, assets: {} }} mode="graded" langs={langs} resolveAssetUrl={(x) => x} onRespond={() => {}} />);
+    const section = screen.getByRole('region', { name: 'Type the word' });
+    expect(section.className).not.toMatch('wl-typed--keypad');
+    fireEvent.click(screen.getByRole('button', { name: /Keypad/ }));
+    expect(section.className).toMatch('wl-typed--keypad');
+    fireEvent.click(screen.getByRole('button', { name: /Keypad/ }));
+    expect(section.className).not.toMatch('wl-typed--keypad');
+  });
+
   it('auto-opens once after 10 s of idle focus, and logs keypad.toggled {auto:true}', () => {
     const spy = vi.spyOn(wordLadderLog, 'keypadToggled').mockImplementation(() => {});
     vi.useFakeTimers();
@@ -213,6 +224,66 @@ describe('TypedItem keypad toggle', () => {
     expect(screen.queryByTestId('jamo-keypad')).toBeNull();
     act(() => { vi.advanceTimersByTime(10_000); });
     expect(screen.getByTestId('jamo-keypad')).toBeInTheDocument();
+  });
+
+  // Fix round 1: the reviewer's repro. Hear it steals focus in the idle
+  // window; without a refocus, the auto-opened keypad sits over a field that
+  // isn't focused and every tap lands on nothing (offerJamo acts on
+  // document.activeElement).
+  it('Hear it moves focus away; auto-open still refocuses the field, and a keypad tap types into it (fix round 1)', () => {
+    vi.useFakeTimers();
+    render(
+      <HangulTypingProvider>
+        <TypedItem item={{ id: 'k7', type: 'typed', word, assets: {} }} mode="copy" langs={langs} resolveAssetUrl={(x) => x} onRespond={() => {}} />
+      </HangulTypingProvider>,
+    );
+    const field = screen.getByRole('textbox');
+    expect(document.activeElement).toBe(field); // mount already focused it
+    const hearIt = screen.getByRole('button', { name: /Hear it/ });
+    act(() => { hearIt.focus(); });
+    expect(document.activeElement).toBe(hearIt);
+    act(() => { vi.advanceTimersByTime(10_000); });
+    expect(screen.getByTestId('jamo-keypad')).toBeInTheDocument();
+    expect(document.activeElement).toBe(field); // auto-open refocused it
+    act(() => { fireEvent.pointerDown(document.querySelector('[data-jamo="ㄱ"]')); });
+    expect(field.value).toBe('ㄱ');
+  });
+
+  it('does not auto-open over a busy (submitting) field, and does not steal focus — and it stays closed once busy clears', () => {
+    // The render-time `open={keypadOpen && !fieldDisabled}` gate alone would
+    // hide this WHILE busy, but if the internal `keypadOpen` boolean had
+    // already flipped true underneath, the keypad would resurface the moment
+    // busy clears, unasked. The fix must stop that flip from happening at
+    // all — this is the assertion that actually distinguishes the two.
+    vi.useFakeTimers();
+    const props = { item: { id: 'k8', type: 'typed', task: '3.3', cue: { type: 'text', text: 'Scissors' }, assets: {} }, mode: 'graded', langs, resolveAssetUrl: (x) => x, onRespond: () => {} };
+    const { rerender } = render(<TypedItem {...props} busy={false} />);
+    const other = document.createElement('button');
+    document.body.appendChild(other);
+    // busy flips true without item.id changing — the scenario the timer's
+    // own closure cannot see without a live ref.
+    rerender(<TypedItem {...props} busy />);
+    act(() => { other.focus(); });
+    act(() => { vi.advanceTimersByTime(10_000); });
+    expect(screen.queryByTestId('jamo-keypad')).toBeNull();
+    expect(document.activeElement).toBe(other); // no surprise refocus either
+    rerender(<TypedItem {...props} busy={false} />); // busy clears, same item
+    expect(screen.queryByTestId('jamo-keypad')).toBeNull(); // still closed
+    document.body.removeChild(other);
+  });
+
+  it('does not auto-open once the item is already answered, and the state never flips underneath the render gate', () => {
+    vi.useFakeTimers();
+    const props = { item: { id: 'k9', type: 'typed', task: '3.3', cue: { type: 'text', text: 'Scissors' }, assets: {} }, mode: 'graded', langs, resolveAssetUrl: (x) => x, onRespond: () => {}, onContinue: () => {} };
+    const { rerender } = render(<TypedItem {...props} />);
+    rerender(<TypedItem {...props} result={{ correct: true, score: 10, answer: 'Scissors' }} />);
+    act(() => { vi.advanceTimersByTime(10_000); });
+    expect(screen.queryByTestId('jamo-keypad')).toBeNull();
+    // Not a real transition (a graded item never un-answers) — but it proves
+    // the internal boolean genuinely never flipped, not just that the render
+    // gate happened to hide it while `result` was present.
+    rerender(<TypedItem {...props} result={null} />);
+    expect(screen.queryByTestId('jamo-keypad')).toBeNull();
   });
 });
 

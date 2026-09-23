@@ -171,8 +171,15 @@ export class FieldComposer {
     return this.#offer(jamo, el, oracle);
   }
 
-  /** Offer a backspace from the keypad. The same peel as a physical Backspace. */
+  /**
+   * Offer a backspace from the keypad — the same peel as a physical
+   * Backspace. Self-validates `isComposableField(el)`, same as `offerJamo`:
+   * unlike `handleKey`, there is no upstream caller that already checked
+   * this, since the keypad can hand in whatever `document.activeElement`
+   * happens to be.
+   */
   offerBackspace(el) {
+    if (!isComposableField(el)) { this.end(); return false; }
     return this.#backspace(el);
   }
 

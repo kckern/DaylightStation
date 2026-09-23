@@ -120,6 +120,34 @@ describe('JamoKeypad', () => {
     expect(document.activeElement).toBe(input);
   });
 
+  it('a jamo tap calls focusTarget before offering — the field regains focus even if it had moved (fix round 1)', () => {
+    const order = [];
+    const focusTarget = vi.fn(() => order.push('focus'));
+    offerJamo.mockImplementation(() => order.push('offer'));
+    const { container } = render(<JamoKeypad open focusTarget={focusTarget} />);
+    fireEvent.pointerDown(keyFor(container, 'ㄱ'));
+    expect(focusTarget).toHaveBeenCalledTimes(1);
+    expect(order).toEqual(['focus', 'offer']);
+    offerJamo.mockReset();
+  });
+
+  it('⌫ also calls focusTarget before offerBackspace (fix round 1)', () => {
+    const order = [];
+    const focusTarget = vi.fn(() => order.push('focus'));
+    offerBackspace.mockImplementation(() => order.push('offer'));
+    render(<JamoKeypad open focusTarget={focusTarget} />);
+    fireEvent.pointerDown(screen.getByLabelText('Backspace'));
+    expect(focusTarget).toHaveBeenCalledTimes(1);
+    expect(order).toEqual(['focus', 'offer']);
+    offerBackspace.mockReset();
+  });
+
+  it('works with no focusTarget at all — optional, not required', () => {
+    const { container } = render(<JamoKeypad open />);
+    expect(() => fireEvent.pointerDown(keyFor(container, 'ㄱ'))).not.toThrow();
+    expect(offerJamo).toHaveBeenCalledWith('ㄱ');
+  });
+
   it('every jamo/shift/backspace key is a TouchButton at least 64px on a side', () => {
     render(<JamoKeypad open />);
     const keys = screen.getAllByRole('button').filter((b) => b.className.includes('wl-keypad__key'));
