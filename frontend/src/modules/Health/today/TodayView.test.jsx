@@ -194,7 +194,7 @@ describe('TodayView — photo/voice capture: no review phase, day reload instead
     await waitFor(() => {
       expect(screen.queryByText('NEEDS REVIEW')).toBeNull();
       expect(document.querySelector('.health-row__name')?.textContent).toBe('Salted Caramel Protein Shake');
-      expect(screen.getByLabelText('Under calories')).toHaveTextContent('1,840');
+      expect(screen.getByTestId('budget-headline')).toHaveTextContent('1,840 kcal left');
     });
   });
 });

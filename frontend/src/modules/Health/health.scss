@@ -8,57 +8,59 @@
 .health-equation {
   container-type: inline-size;
   display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center;
-  gap: 0.25rem 0.75rem;
-  padding: 0.25rem 0;
+  gap: 0.25rem 1rem;
+  padding: 0.5rem 0 0.75rem;
   border-bottom: 1px solid var(--ds-border);
 
-  &__math { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 0.3rem; min-width: 0; }
-  &__stale { font-size: 0.7rem; color: var(--ds-warning); }
+  &__math { display: grid; grid-template-columns: minmax(0, 1fr) minmax(12rem, 16rem); gap: 0.5rem 1.5rem; align-items: center; min-width: 0; }
+  &__macros { display: grid; gap: 0.3rem; }
+  &__stale { font-size: 0.7rem; color: var(--ds-warning); margin-left: 0.5rem; }
 }
 
-.health-daily-metric {
-  min-width: 0; padding: 0.25rem 0.35rem; border-radius: 6px;
-  border: 1px solid var(--ds-border); background: var(--ds-surface);
-  color: var(--ds-text-high); text-align: center;
+// The calorie budget as one bar (EquationStrip.BudgetBar).
+.health-budget {
+  display: grid; gap: 0.35rem; min-width: 0;
+
+  &__head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 0.15rem 1rem; }
+  &__headline { font-size: 0.9rem; color: var(--ds-text-mid); white-space: nowrap;
+    strong { font-size: 1.6rem; font-weight: 600; color: var(--ds-success); font-variant-numeric: tabular-nums; margin-right: 0.15rem; } }
+  &__terms { display: flex; flex-wrap: wrap; gap: 0 0.4rem; font-size: 0.78rem; color: var(--ds-text-mid); font-variant-numeric: tabular-nums; }
+  &__sep { color: var(--ds-text-low); }
+  &__exercise-term { color: var(--ds-warning); }
+  &__track {
+    position: relative; height: 12px; border-radius: 6px; overflow: hidden;
+    background: var(--ds-surface-alt); border: 1px solid var(--ds-border);
+  }
+  &__food, &__exercise, &__over { position: absolute; top: 0; bottom: 0; }
+  &__food { left: 0; background: var(--ds-text-high); opacity: 0.85; border-radius: 6px 0 0 6px; }
+  &__exercise { background: color-mix(in srgb, var(--ds-warning) 28%, transparent); }
+  &__over { background: var(--ds-danger); }
+  &__marker { position: absolute; top: -2px; bottom: -2px; width: 2px; margin-left: -1px; background: var(--ds-text-high); }
 }
-.health-daily-metric-label,
-.health-daily-metric-unit { display: block; font-size: 0.62rem; color: var(--ds-text-mid); }
-.health-daily-metric-label { text-transform: uppercase; letter-spacing: 0.04em; }
-.health-daily-metric-readout { display: flex; align-items: baseline; justify-content: center; gap: 0.15rem; white-space: nowrap; }
-.health-daily-metric-value {
-  font-size: clamp(19px, 2cqi, 24px);
-  font-weight: 600;
-  line-height: 1.1;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
+.health-equation--over .health-budget__headline strong { color: var(--ds-danger); }
+
+// One macro in the summary: grams, and a thin bar against its goal when set.
+.health-macro-meter {
+  display: grid; grid-template-columns: 3.8rem 1fr; align-items: center; column-gap: 0.5rem;
+  font-size: 0.8rem; font-variant-numeric: tabular-nums;
+
+  &__label { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--ds-text-mid); }
+  &__value { color: var(--health-macro-color); font-weight: 600; text-align: right; white-space: nowrap; }
+  &__target { color: var(--ds-text-mid); font-weight: 400; }
+  &__track { grid-column: 1 / -1; height: 4px; border-radius: 2px; background: var(--ds-surface-alt); overflow: hidden; margin-top: 2px; }
+  &__fill { display: block; height: 100%; background: var(--health-macro-color); }
+  &--over &__fill { background: var(--ds-warning); }
 }
-.health-daily-metric-number { display: inline-block; }
-.health-daily-metric-operator { width: 1ch; color: var(--ds-text-low); }
-.health-daily-metric-unit { display: inline; }
-.health-daily-metric--protein,
-.health-daily-metric--carbs,
-.health-daily-metric--fat { color: var(--health-macro-color); }
-.health-daily-metric--food { background: var(--ds-text-high); color: var(--ds-surface); }
-.health-daily-metric--food .health-daily-metric-label,
-.health-daily-metric--food .health-daily-metric-unit,
-.health-daily-metric--food .health-daily-metric-operator { color: var(--ds-surface-alt); }
-.health-daily-metric--exercise { color: var(--ds-warning); }
-.health-daily-metric--under { color: var(--ds-success); }
-.health-daily-metric--over { color: var(--ds-danger); }
 
 @media (max-width: 760px) {
   .health-equation { grid-template-columns: 1fr; }
-  .health-daily-metric-value { font-size: 19px; }
 }
-
-// Below the one-line width, keep macros together above the four equation terms.
+// Below the one-line width, macros share a row under the bar, label over value.
 @container (max-width: 1050px) {
-  .health-equation__math { grid-template-columns: repeat(12, minmax(0, 1fr)); }
-  .health-daily-metric:nth-child(-n + 3) { grid-column: span 4; }
-  .health-daily-metric:nth-child(n + 4) { grid-column: span 3; }
-}
-@container (max-width: 540px) {
-  .health-daily-metric:nth-child(n + 4) { grid-column: span 6; }
+  .health-equation__math { grid-template-columns: minmax(0, 1fr); }
+  .health-equation__macros { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.75rem; }
+  .health-macro-meter { grid-template-columns: minmax(0, 1fr); }
+  .health-macro-meter__value { text-align: left; }
 }
 
 // Week strip (Task 8.2) — seven per-day budget bars, plain CSS, no chart
@@ -651,7 +653,6 @@ $health-aside-gap: 1.5rem;
     &__actions button { padding-inline: 0.45rem; }
   }
 }
-.health-equation__math { flex-wrap: wrap; }
 .health-equation__math small { font-size: 0.7rem; color: var(--ds-text-mid); }
 .health-intakeburn__legend { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0; font-size: 0.7rem; color: var(--ds-text-mid); }
 

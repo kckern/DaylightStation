@@ -398,15 +398,16 @@ export function TodayView({ active = true, sidebarTarget, onSetupGoals, onCoachT
 
   return (
     <PortionContext.Provider value={preview.control}><div className="health-today">
-      <EquationStrip budget={preview.budget} budgetError={day.budgetError}
+      <EquationStrip budget={preview.budget} budgetError={day.budgetError} goals={preview.budget?.goals}
         macroCoverage={nutrientSummary(preview.items)} date={date} today={todayISO()}
         onDateChange={setDate} onSetupGoals={onSetupGoals} />
-      {/* Macro / watch-micro bars sit directly under the equation (F4.1). They
-          read the SAME day sums the equation does — BudgetService computes both
-          over one fold — so the bars and the kcal number can never disagree. */}
+      {/* Watch-micro bars sit directly under the summary (F4.1); the macros
+          moved into the summary itself. They read the SAME day sums the budget
+          does — BudgetService computes both over one fold — so the bars and the
+          kcal number can never disagree. */}
       <MacroBarRow macros={preview.budget?.macros} goals={preview.budget?.goals}
         macroCoverage={nutrientSummary(preview.items)} microCoverage={preview.budget?.microCoverage}
-        showIntake={false} />
+        showIntake={false} showMacros={false} />
       {wideViewport && sidebarTarget ? createPortal(history, sidebarTarget) : null}
       <QuickCaptureBar hideVoice active={active} onVoiceCapture={onVoiceCapture} onPhotoCapture={onPhotoCapture}
         onOpenBarcode={openBarcode} onAddTo={revealMeal} busy={nutrition.busy} date={date} />

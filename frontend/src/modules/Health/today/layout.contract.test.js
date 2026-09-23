@@ -92,12 +92,10 @@ describe('Today layout stylesheet', () => {
     expect(rule('.health-row__triangle')).toContain('height: 1cap');
   });
 
-  it('gives all daily metrics the same visible card and inline readout geometry', () => {
-    expect(rule('.health-daily-metric')).toContain('border: 1px solid');
-    expect(rule('.health-daily-metric')).toContain('background: var(--ds-surface)');
-    expect(rule('.health-daily-metric-readout')).toContain('display: flex');
-    expect(rule('.health-daily-metric-readout')).toContain('white-space: nowrap');
-    expect(rule('.health-daily-metric-value')).toContain('font-size: clamp(19px, 2cqi, 24px)');
+  it('draws the calorie budget as one bar with food, exercise, and overage segments', () => {
+    expect(rule('.health-budget__track')).toContain('position: relative');
+    expect(css).toMatch(/\.health-budget__over \{\s*background: var\(--ds-danger\)/);
+    expect(rule('.health-macro-meter__fill')).toContain('background: var(--health-macro-color)');
   });
 
   it('gives populated meals two equal desktop columns', () => {
