@@ -181,3 +181,132 @@ describe('word-ladder CLI', () => {
     ]);
   });
 });
+
+describe('word-ladder trace CLI', () => {
+  // The inverse of the CLI's own unflattenRow(): a log-store row is flat,
+  // dotted-key, all-string — this is what a real logsql query response line
+  // looks like (verified against the live store, see task-3 report).
+  function flatten(prefix, obj, out = {}) {
+    for (const [k, v] of Object.entries(obj)) {
+      if (v === undefined || v === null) continue;
+      const key = `${prefix}.${k}`;
+      if (typeof v === 'object' && !Array.isArray(v)) flatten(key, v, out);
+      else out[key] = String(v);
+    }
+    return out;
+  }
+  function row(msg, time, data) {
+    return { _msg: msg, _time: time, level: 'info', ...flatten('data', data) };
+  }
+  function ndjsonFetch(rows, ok = true) {
+    return vi.fn(async () => ({ ok, text: async () => rows.map((r) => JSON.stringify(r)).join('\n') }));
+  }
+
+  const TRACE_ROWS = [
+    row('school.word-ladder.sitting.opened', '2026-09-22T10:00:00Z', {
+      traceId: 'tr1', sittingId: 'korean-vocab.abc.1', seq: 1, t: 0, learnerId: 'learner-a', deckId: 'language/korean/week-01-classroom', package: 'korean-vocab', mode: 'live',
+    }),
+    row('school.word-ladder.item.shown', '2026-09-22T10:00:00Z', {
+      traceId: 'tr1', sittingId: 'korean-vocab.abc.1', seq: 2, t: 200, learnerId: 'learner-a', deckId: 'language/korean/week-01-classroom', package: 'korean-vocab', mode: 'live',
+      itemId: 'i1', type: 'flashcard', wordId: 'gawi', layout: 'flashcard-front',
+    }),
+    row('school.word-ladder.item.answered', '2026-09-22T10:00:03Z', {
+      traceId: 'tr1', sittingId: 'korean-vocab.abc.1', seq: 3, t: 3200, learnerId: 'learner-a', deckId: 'language/korean/week-01-classroom', package: 'korean-vocab', mode: 'live',
+      itemId: 'i1', type: 'flashcard', correct: true, ms: 3000,
+    }),
+    row('school.word-ladder.sitting.closed', '2026-09-22T10:00:03Z', {
+      traceId: 'tr1', sittingId: 'korean-vocab.abc.1', seq: 4, t: 3300, learnerId: 'learner-a', deckId: 'language/korean/week-01-classroom', package: 'korean-vocab', mode: 'live',
+      itemId: 'i1', reason: 'goal', activeMs: 3300,
+    }),
+  ];
+
+  it('queries the log store for the learner and prints the formatted trace', async () => {
+    const fetchImpl = ndjsonFetch(TRACE_ROWS);
+    const out = io();
+    const argv = ['trace', '--learner', 'learner-a', '--day', '2026-09-22'];
+    expect(await main(argv, out, { fetch: fetchImpl })).toBe(0);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchImpl.mock.calls[0];
+    expect(String(url)).toContain('/select/logsql/query');
+    const body = String(init.body);
+    expect(body).toContain('data.learnerId%3Alearner-a');
+    expect(body).toContain('school.word-ladder');
+    const printed = out.stdout.write.mock.calls[0][0];
+    expect(printed).toContain('learner-a · korean-vocab · ? · live · trace tr1');
+    expect(printed).toContain('0:00  flashcard gawi flashcard-front');
+    expect(printed).toContain('goal');
+  });
+
+  it('rejects --mode outside live|test|all', async () => {
+    const out = io();
+    expect(await main(['trace', '--learner', 'learner-a', '--mode', 'nope'], out, { fetch: ndjsonFetch([]) })).toBe(1);
+    expect(out.stderr.write).toHaveBeenCalledWith(expect.stringMatching(/--mode must be/));
+  });
+
+  it('rejects --day together with --sitting', async () => {
+    const out = io();
+    const argv = ['trace', '--learner', 'learner-a', '--day', '2026-09-22', '--sitting', 'korean-vocab.abc.1'];
+    expect(await main(argv, out, { fetch: ndjsonFetch([]) })).toBe(1);
+    expect(out.stderr.write).toHaveBeenCalledWith(expect.stringMatching(/not both/));
+  });
+
+  it('falls back to the day file when the store is unreachable, with the no-timing-detail header', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'word-ladder-trace-'));
+    try {
+      const dayFile = path.join(root, 'data/users/learner-a/apps/school/word-ladder/korean-vocab/days/2026-09-22.yml');
+      await mkdir(path.dirname(dayFile), { recursive: true });
+      await writeFile(dayFile, dump({
+        items: { i1: { at: '2026-09-22T10:00:03-07:00', wordId: 'gawi', task: null, response: { typed: '가위' }, result: { correct: true } } },
+      }));
+      const argv = ['trace', '--learner', 'learner-a', '--day', '2026-09-22', ...dirs(root)];
+      const out = io();
+      const fetchImpl = ndjsonFetch([], false); // store rejects
+      expect(await main(argv, out, { fetch: fetchImpl })).toBe(0);
+      const printed = out.stdout.write.mock.calls[0][0];
+      expect(printed).toContain('(from day file — no timing detail)');
+      expect(printed).toContain('가위');
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  it('falls back to the day file when the store returns nothing (empty result, not an error)', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'word-ladder-trace-empty-'));
+    try {
+      const dayFile = path.join(root, 'data/users/learner-a/apps/school/word-ladder/korean-vocab/days/2026-09-22.yml');
+      await mkdir(path.dirname(dayFile), { recursive: true });
+      await writeFile(dayFile, dump({ items: { i1: { at: '2026-09-22T10:00:00-07:00', wordId: 'gawi', task: null, response: {}, result: { ok: true } } } }));
+      const argv = ['trace', '--learner', 'learner-a', '--day', '2026-09-22', ...dirs(root)];
+      const out = io();
+      expect(await main(argv, out, { fetch: ndjsonFetch([]) })).toBe(0);
+      expect(out.stdout.write.mock.calls[0][0]).toContain('(from day file — no timing detail)');
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  it('fails with a clear message when neither the store nor a day file has anything', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'word-ladder-trace-missing-'));
+    try {
+      const argv = ['trace', '--learner', 'learner-a', '--day', '2026-09-22', ...dirs(root)];
+      const out = io();
+      expect(await main(argv, out, { fetch: ndjsonFetch([]) })).toBe(1);
+      expect(out.stderr.write).toHaveBeenCalledWith(expect.stringMatching(/no trace found for learner-a/));
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  it('a --sitting fallback scans every day file for the one whose sittings map has that id', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'word-ladder-trace-sitting-'));
+    try {
+      const daysDir = path.join(root, 'data/users/learner-a/apps/school/word-ladder/korean-vocab/days');
+      await mkdir(daysDir, { recursive: true });
+      await writeFile(path.join(daysDir, '2026-09-20.yml'), dump({ sittings: {}, items: {} }));
+      await writeFile(path.join(daysDir, '2026-09-22.yml'), dump({
+        sittings: { 'korean-vocab.abc.1': { openedAt: '2026-09-22T10:00:00-07:00', closedAt: null, reason: null } },
+        items: { i1: { at: '2026-09-22T10:00:00-07:00', wordId: 'gawi', task: null, response: {}, result: { ok: true } } },
+      }));
+      const argv = ['trace', '--learner', 'learner-a', '--sitting', 'korean-vocab.abc.1', ...dirs(root)];
+      const out = io();
+      expect(await main(argv, out, { fetch: ndjsonFetch([]) })).toBe(0);
+      const printed = out.stdout.write.mock.calls[0][0];
+      expect(printed).toContain('2026-09-22');
+      expect(printed).toContain('gawi');
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+});
