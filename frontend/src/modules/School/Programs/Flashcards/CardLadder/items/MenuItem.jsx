@@ -20,7 +20,7 @@ const HELP_MODES = new Set(['say', 'write']);
  * calls `api.practice` and hands the whole `{ok, status, data}` to
  * `onPractice` — the program shows the run's first item or recovers.
  */
-export default function MenuItem({ item, api, sittingId, userId, deckId, langs, onPractice, onExit }) {
+export default function MenuItem({ item, api, sittingId, userId, deckId, langs, onPractice, onExit, onLearnMore = null }) {
   const [view, setView] = useState({ name: 'menu' });
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState(null);
@@ -61,8 +61,19 @@ export default function MenuItem({ item, api, sittingId, userId, deckId, langs, 
   // Space/Enter (the forward action), Back on Backspace.
   const wordsKey = String(modes.length + 1);
   const toWords = () => { if (!busy) setView({ name: 'words' }); };
+  // Learn more words (ruling 2026-09-23: never block extra learning) — offered
+  // while the server says new words remain (`item.learnMore`), on the digit
+  // after My words.
+  const canLearnMore = Number(item.learnMore) > 0 && typeof onLearnMore === 'function';
+  const learnKey = String(modes.length + 2);
+  const learnMore = () => { if (!busy && canLearnMore) onLearnMore('menu'); };
   let keys = {};
-  if (view.name === 'menu') keys = { ...Object.fromEntries(modes.map((mode, i) => [String(i + 1), () => choose(mode)])), [wordsKey]: toWords, ' ': onExit, enter: onExit };
+  if (view.name === 'menu') {
+    keys = {
+      ...Object.fromEntries(modes.map((mode, i) => [String(i + 1), () => choose(mode)])), [wordsKey]: toWords,
+      ...(canLearnMore ? { [learnKey]: learnMore } : {}), ' ': onExit, enter: onExit,
+    };
+  }
   else if (view.name === 'help') keys = { ...Object.fromEntries(helpOptions(view.mode).flatMap((help, i) => (locked(view.mode, help) ? [] : [[String(i + 1), () => start({ mode: view.mode, help })]]))), backspace: back };
   else if (view.name === 'front') keys = { 1: () => start({ mode: 'flashcards', frontSide: 'term' }), 2: () => start({ mode: 'flashcards', frontSide: 'gloss' }), backspace: back };
   useCardLadderKeys(keys, { enabled: view.name === 'menu' || view.name === 'help' || view.name === 'front' });
@@ -112,6 +123,7 @@ export default function MenuItem({ item, api, sittingId, userId, deckId, langs, 
           <TouchButton key={mode} variant="choice" keyHint={String(i + 1)} disabled={busy} onClick={() => choose(mode)}>{LABELS[mode]}</TouchButton>
         ))}
         <TouchButton variant="secondary" keyHint={wordsKey} disabled={busy} onClick={toWords}>My words</TouchButton>
+        {canLearnMore && <TouchButton variant="secondary" keyHint={learnKey} disabled={busy} onClick={learnMore}>Learn more words</TouchButton>}
       </div>
       {notice && <p className="wl-say__notice" role="alert">{notice}</p>}
       <div className="wl-controls">

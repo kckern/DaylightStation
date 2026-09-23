@@ -63,6 +63,9 @@ export function createCardLadderApi({ test = false } = {}) {
       method: 'POST',
       body: Object.fromEntries(Object.entries({ userId, mode, help, filter, chosen, frontSide }).filter(([, v]) => v !== null && v !== undefined)),
     }),
+    /** Learn more words (ruling 2026-09-23): one more guided round over the
+     *  next new words, from the menu or the Done summary. */
+    learnMore: (sittingId, { userId }) => call(`/sittings/${enc(sittingId)}/learn-more`, { method: 'POST', body: { userId } }),
     /** "My words" (practice menu). `sittingId` is required on the test mount
      *  (it reads that sitting's shadow); live accepts it too. */
     words: ({ userId, deckId, sittingId = null }) => call(`/words?userId=${enc(userId)}&deckId=${enc(deckId)}${sittingId ? `&sittingId=${enc(sittingId)}` : ''}`),
