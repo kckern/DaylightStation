@@ -490,3 +490,4 @@ The corollary bit twice in this sweep: `feat/teacher-workspace-ia` and `feature/
 | 2026-09-23 | fix/book-manual-source | 512ae18058 | word/card ladder UX round + sentence ladder chunks/check-your-work + manual book records; merged to main (deployed c02f3285ee) |
 | 2026-09-23 | feat/health-today-refresh | 5a228505ae | Health Today refresh (budget bar, quiet add rows, drag food/meal between meals, day-wide kcal bars) + catalog serving/photo fix + artwork remediation queue; merged to main (deployed 5a228505ae) |
 | 2026-09-23 | feat/health-add-align | 429d1ba2d7 | Health add line indented under food names; suggestions show barcode product photos; merged to main |
+| 2026-09-23 | feat/card-ladder-script-rules | 5fa22bfe09 | card ladder per-script grading (latin/hangul/generic, numbers exact, script-normalized cache keys); deployed b789ded8a7 |
