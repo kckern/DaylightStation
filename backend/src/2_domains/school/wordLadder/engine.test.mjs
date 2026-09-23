@@ -761,6 +761,14 @@ describe('engine — transitions and graded records (plan 4, spec §8 events)', 
     expect(undone.out.transitions).toEqual([{ wordId, from: { state: 'notYet', stage: null }, to: { state: 'introduced', stage: null }, source: 'sort' }]);
   });
 
+  it('a plain sort (wordId, no task) still keeps its wordId in the day file — the trace day-file fallback needs it to show words for flashcards', () => {
+    let ctx = toStream(start());
+    const item = currentItem(ctx);
+    const sorted = stepOut(ctx, { sort: 'notYet' });
+    expect(sorted.ctx.dayFile.items[item.id]).toMatchObject({ wordId: item.wordId });
+    expect(sorted.ctx.dayFile.items[item.id].task).toBeUndefined();
+  });
+
   it('a verify pass yields claimed → mastered and a graded record per task', () => {
     let ctx = toStream(start());
     let guard = 0;
