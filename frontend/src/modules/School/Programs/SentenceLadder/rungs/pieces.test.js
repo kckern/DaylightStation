@@ -52,3 +52,20 @@ describe('pieceVerdict', () => {
     expect(pieceVerdict({ durationMs: MIN_PIECE_MS - 1, heard: true, measurable: true })).toBe('too-short');
   });
 });
+
+describe('pieceSpans — what the log carries for a cut', () => {
+  it('lists every piece as {from, to}, the last ending at the sentence when its length is known', async () => {
+    const { pieceSpans } = await import('./pieces.js');
+    const s = addCut(emptyPieces(), 3611);
+    expect(pieceSpans(s, 5400)).toEqual([{ from: 0, to: 3611 }, { from: 3611, to: 5400 }]);
+  });
+  it('leaves the last piece open (to: null) when the sentence length is unknown', async () => {
+    const { pieceSpans } = await import('./pieces.js');
+    expect(pieceSpans(addCut(emptyPieces(), 1100), null)).toEqual([{ from: 0, to: 1100 }, { from: 1100, to: null }]);
+  });
+  it('spanMs is to − from, or null for an open end', async () => {
+    const { spanMs } = await import('./pieces.js');
+    expect(spanMs({ fromMs: 3611, toMs: 5400 })).toBe(1789);
+    expect(spanMs({ fromMs: 3611, toMs: null })).toBeNull();
+  });
+});

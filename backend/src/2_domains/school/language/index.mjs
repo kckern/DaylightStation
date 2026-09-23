@@ -18,3 +18,4 @@ export { validateCorpus, indexBySeq } from './corpus.mjs';
 export { unitFor, unitProgress, normalizeUnits } from './units.mjs';
 export { validateProgramEnrollment } from './programEnrollment.mjs';
 export { RECORDING_FORMATS, isRecordingFormat } from './recordingFormats.mjs';
+export { formatSentenceTrace } from './trace.mjs';

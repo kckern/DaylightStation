@@ -668,12 +668,10 @@ tells the learner to say it in one go, and turns cutting off for that sentence
 so the rung cannot loop on it. A denied microphone drops the pieces and takes
 the ordinary denied path.
 
-Log events, all `school.language.capture.*`: `cut {seq, piece, rawMs, cutMs,
-snapped}`, `piece-stop`, `refused {…, piece}`, `piece-redo`, `compare {…,
-piece}`, `replay-restart {…, piece}`, `stitched {seq, pieces, durationMs,
-bytes}`, `stitch-failed`, `pieces-abandoned`, `piece-resume`. A `play()` cut
-short by our own stop or restart logs `audio.play-interrupted` and is not
-treated as a blocked sound.
+Log events, all `school.language.capture.*`, are listed with their fields in
+[§11 Recording observability](#recording-observability). A `play()` cut short
+by our own stop or restart logs `audio.play-interrupted` and is not treated as
+a blocked sound.
 
 ### Hearing a line again, on every rung
 
@@ -954,6 +952,66 @@ Request bodies and response payloads are never logged: they are the child's
 own sentences and answers. Per-sentence and per-request events sit at `debug`,
 reach the console only (`?debug=1` raises the level for the mount), and are
 dropped by the store at ingest — which is why `rung.landed` is at info.
+
+### Recording observability
+
+Added 2026-09-23, after a live test of one sentence (seq 16) could not be
+explained from its log: a cut and two short pieces, two redos, three Tab
+restarts in 5s, a 16.5s take, and a 19s gap before the join — with no record
+of which key did what, how long piece 1's span was, how much of the long take
+was voice, or whether the gap was sound playing or a child sitting.
+
+**Every event in a run is a trace line.** `languageLog` stamps each event with
+`traceId` (the run id — `data.traceId` equals `context.runId`), `traceSeq`
+(its order in the run), `t` (ms since the run began), `learnerId`, `corpus`
+and `day` (the ladder's day number, set when the day loads). The order field
+is `traceSeq`, not `seq`: on these events `seq` is the **sentence**. The stamp
+is the word ladder's (`Programs/shared/traceStamp.js`); a gap in `traceSeq`
+in the store is a `debug` event that never left the tablet.
+
+**Every capture line says what drove it.** `via` is `key:Space`,
+`key:Enter`, `key:Tab`, `key:Shift+Tab`, `key:Backspace`, `key:ArrowRight`,
+`touch`, or `auto` (the rung acting alone: the mic opening after the ding, a
+playback ending, the silent warning). It is set in one place — the rung's
+`dispatch`, which every key and tile goes through. `phase` is the rung's phase
+*before* the action (`idle`, `prompting`, `recording`, `playback`, `review`,
+`joining`).
+
+| Event (`school.language.capture.*`) | Fields beyond `seq`, `via`, `phase` |
+|---|---|
+| `cut` | `piece, rawMs, cutMs, snapped, sentenceMs, pieceSpans: [{from, to}]` — every piece's span of the model after this cut |
+| `start` | `piece?` — the mic opened (always `auto`) |
+| `piece-stop` | `piece, durationMs, heard, bytes, fromMs, toMs, spanMs, voicedMs, silentMs, endSilentMs` |
+| `stop` | `durationMs, heard, bytes, voicedMs, silentMs, endSilentMs` — a one-go take, or the joined take straight after `stitched` |
+| `refused` | `reason, durationMs, heard, measurable, piece?`, voice fields |
+| `playback` | `what: sentence\|span\|take\|compare, piece?, language?, ms, outcome: ended\|stopped\|blocked` — the ding alone is not logged |
+| `review-idle` | `piece?, ms, reviewMs` — logged when the learner acts on a review; `ms` excludes a compare/listen started from it |
+| `silent-warning` / `silent-cleared` | `piece?, afterMs` — once each per take, never per frame |
+| `piece-next` / `piece-redo` / `piece-resume` | `piece` |
+| `retake` | `joined?` |
+| `replay-restart` / `compare` | `from, piece?` |
+| `stitched` | `pieces, durationMs, bytes`, voice fields summed over the pieces |
+| `stitch-failed` / `pieces-abandoned` | `pieces, error?` |
+| `keep` | `joined, bytes` |
+
+`voicedMs`/`silentMs` add up the live level meter's samples against
+`SILENT_LEVEL` (`shared/speechFloor.js`, `createVoiceMeter`); `endSilentMs` is
+the trailing silence. They are `null`, not 0, on a device without Web Audio,
+and run a little under `durationMs` because time before the first sample is
+not charged.
+
+`school.language.rung.stalled {rung, seq, phase, ms, screen}` (warn) fires at
+45s and 120s with no key or touch on the sentence in front of the learner
+(`useRungStall`, sharing the word ladder's timer, `shared/useInputStall.js`).
+`screen` is `hidden` when the page was not visible.
+
+**Reading it back:** `node cli/school.mjs sentence-ladder trace --learner <id>
+--day YYYY-MM-DD [--corpus <id>]` prints each sitting per sentence and rung —
+cuts with their spans, takes with voice/silence, playbacks, review idle,
+restarts with `[via · phase]`, stalls — and a summary line per sentence. The
+formatter is pure (`2_domains/school/language/trace.mjs`) and is tested
+against the seq-16 sitting (`trace.fixture.mjs`). See the runbook's
+[How to read a recording sitting](../../runbooks/school/README.md#how-to-read-a-recording-sitting).
 
 ---
 

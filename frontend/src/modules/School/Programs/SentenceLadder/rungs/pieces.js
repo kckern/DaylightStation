@@ -49,3 +49,13 @@ export function pieceVerdict({ durationMs, heard, measurable }) {
 
 export const totalMs = (state) => state.takes.reduce((n, t) => n + (t?.durationMs || 0), 0);
 export const allHeard = (state) => state.takes.every((t) => t?.heard);
+
+/** Every piece's span as the log writes it: `{from, to}` in model ms, the
+ *  open-ended last piece ending at `sentenceMs` when that is known. */
+export function pieceSpans({ cuts }, sentenceMs = null) {
+  const ends = [...cuts, sentenceMs ?? null];
+  return ends.map((to, i) => ({ from: i === 0 ? 0 : cuts[i - 1], to }));
+}
+
+/** A span's length, or null while its end is unknown. */
+export const spanMs = ({ fromMs, toMs }) => (toMs == null ? null : toMs - fromMs);
