@@ -78,7 +78,11 @@ const NAMESPACES = {
   },
   'word-ladder': {
     module: './school/wordLadder.mjs',
-    blurb: 'word ladder: printed quiz source, enrollment plan',
+    blurb: 'word ladder: printed quiz source, enrollment plan, trace',
+  },
+  'sentence-ladder': {
+    module: './school/sentenceLadder.mjs',
+    blurb: 'sentence ladder: trace a sitting from the log store',
   },
   certify: {
     module: './school/certify.mjs',

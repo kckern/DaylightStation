@@ -60,6 +60,9 @@ vi.mock('./languageLog.js', () => ({
     programError: vi.fn(),
     rung: (...args) => rungLogMock(...args),
     rungLanded: (...args) => rungLandedMock(...args),
+    rungStalled: vi.fn(),
+    setTraceContext: vi.fn(),
+    interpretation: vi.fn(),
     attempt: vi.fn(),
     attemptError: vi.fn(),
     audio: vi.fn(),
@@ -2361,6 +2364,8 @@ describe('speaking the answer', () => {
     const input = screen.getByLabelText('Type what it means');
     await act(async () => { fireEvent.change(input, { target: { value: "it's cold today" } }); });
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Submit' })); });
+    // Check your work (2026-09-23): the answer is shown first, then Continue commits it.
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Continue' })); });
 
     expect(onComplete).toHaveBeenCalledWith({
       seq: 1, rung: 'interpretation', given: "it's cold today", method: 'spoken',
@@ -2372,6 +2377,8 @@ describe('speaking the answer', () => {
     const input = screen.getByLabelText('Type what it means');
     await act(async () => { fireEvent.change(input, { target: { value: 'typed by hand' } }); });
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Submit' })); });
+    // Check your work (2026-09-23): the answer is shown first, then Continue commits it.
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Continue' })); });
     expect(onComplete).toHaveBeenLastCalledWith({
       seq: 1, rung: 'interpretation', given: 'typed by hand', method: 'typed',
     });
@@ -2385,6 +2392,8 @@ describe('speaking the answer', () => {
     await act(async () => { fireEvent.change(input, { target: { value: '' } }); });
     await act(async () => { fireEvent.change(input, { target: { value: 'my own words' } }); });
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Submit' })); });
+    // Check your work (2026-09-23): the answer is shown first, then Continue commits it.
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Continue' })); });
 
     expect(onComplete).toHaveBeenLastCalledWith({
       seq: 1, rung: 'interpretation', given: 'my own words', method: 'typed',
@@ -2478,6 +2487,8 @@ describe('a spoken answer, end to end', () => {
     expect(blob).toBeInstanceOf(Blob);
 
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Submit' })); });
+    // Check your work (2026-09-23): the answer is shown first, then Continue commits it.
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Continue' })); });
     await waitFor(() => expect(logMock).toHaveBeenCalledWith('test-learner', {
       corpus: 'glossika-korean', seq: 1, rung: 'interpretation',
       given: 'it is cold today', method: 'spoken',
@@ -2557,24 +2568,28 @@ describe('hearing it again, from any rung, by key or by tap', () => {
       expect(navigator.mediaDevices.getUserMedia).not.toHaveBeenCalled();
     });
 
-    it('Tab mid-take throws the take away, plays the sentence again, then opens the mic', async () => {
+    // 2026-09-23 owner ruling: Tab is "hear it again" and never destroys.
+    // At a live mic it stops the take, KEEPS it, and plays the sentence then
+    // the take. Until then it threw the take away and reopened the mic —
+    // three times in 5s on seq 16.
+    it('Tab mid-take keeps the take: it stops, then plays the sentence and the take', async () => {
       const played = playsToEnd();
       fakeMic();
       recordingDay();
       program();
       const { languageApi } = await import('./languageApi.js');
       await screen.findByRole('button', { name: 'Listen, then record' });
+      let now = Date.now();
+      const clock = vi.spyOn(Date, 'now').mockImplementation(() => now);
       pressKey(' ');
       await screen.findByRole('button', { name: 'Stop' });
       const before = played.length;
-
+      now += 2000;
       pressKey('Tab');
-      // Back to recording, having heard it again — and the abandoned take was never judged or played.
-      await screen.findByRole('button', { name: 'Stop' });
-      expect(played.slice(before).map(path)).toEqual(['/audio/glossika-korean/1/KR', '/cue/record']);
-      expect(played).not.toContain('blob:take');
-      expect(screen.queryByRole('button', { name: 'Keep it' })).toBeNull();
-      expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledTimes(2);
+      clock.mockRestore();
+      await screen.findByRole('button', { name: 'Keep it' });
+      await waitFor(() => expect(played.slice(before).map(path)).toEqual(['/audio/glossika-korean/1/KR', 'blob:take']));
+      expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledTimes(1);
       expect(languageApi.recording).not.toHaveBeenCalled();
     });
 
@@ -3008,28 +3023,28 @@ describe('recording in pieces', () => {
     pressKey('Backspace');
     await sayPiece(1000);                             // take3 = part two again
     expect(model.played.slice(before)[0]).toEqual({ src: '/audio/glossika-korean/1/KR', atMs: 1500 });
-    expect(languageLog.capture).toHaveBeenCalledWith('piece-redo', { seq: 1, piece: 1 });
+    expect(languageLog.capture).toHaveBeenCalledWith('piece-redo', expect.objectContaining({ seq: 1, piece: 1 }));
     await screen.findByRole('button', { name: 'Finish' });
     pressKey(' ');
     await waitFor(() => expect(joinTakeMock).toHaveBeenCalled());
     expect(await Promise.all(joinTakeMock.mock.calls[0][0].map((b) => b.text()))).toEqual(['take1', 'take3']);
   });
 
-  it('Tab mid-part starts that part over and keeps the parts before it', async () => {
+  it('Tab mid-part keeps that part: its span, then its take, and nothing is lost', async () => {
     const model = modelPlayer(); fakeMic(); recordingDay(); program();
     await firstPiece(model);
     await screen.findByRole('button', { name: 'Next part' });
     pressKey(' ');
     await screen.findByRole('button', { name: 'Stop' });
     const before = model.played.length;
-    pressKey('Tab');                                  // abandons part two's take
-    await sayPiece(900);
-    expect(model.played.slice(before)[0]).toEqual({ src: '/audio/glossika-korean/1/KR', atMs: 1500 });
+    clock.advance(900);
+    pressKey('Tab');                                  // stops and keeps part two's take
     await screen.findByRole('button', { name: 'Finish' });
+    await waitFor(() => expect(model.played.slice(before).map((p) => p.src)).toEqual(['/audio/glossika-korean/1/KR', 'blob:take-2']));
+    expect(model.played.slice(before)[0].atMs).toBe(1500);
     pressKey(' ');
     await waitFor(() => expect(joinTakeMock).toHaveBeenCalled());
-    expect(joinTakeMock.mock.calls[0][0]).toHaveLength(2);
-    expect(await joinTakeMock.mock.calls[0][0][0].text()).toBe('take1');
+    expect(await Promise.all(joinTakeMock.mock.calls[0][0].map((b) => b.text()))).toEqual(['take1', 'take2']);
   });
 
   it('Tab in part review compares — its span, then its take — and deletes nothing', async () => {
@@ -3191,7 +3206,7 @@ describe('recording in pieces', () => {
     await screen.findByRole('button', { name: 'Next part' });
     unmount();
     expect(languageApi.recording).not.toHaveBeenCalled();
-    expect(languageLog.capture).toHaveBeenCalledWith('pieces-abandoned', { seq: 1, pieces: 1 });
+    expect(languageLog.capture).toHaveBeenCalledWith('pieces-abandoned', expect.objectContaining({ seq: 1, pieces: 1 }));
   });
 
   it('a join that never settles gives up and falls back to saying it in one go', async () => {
@@ -3212,7 +3227,7 @@ describe('recording in pieces', () => {
       vi.useRealTimers();
     }
     expect(await screen.findByText(/say it in one go/i)).toBeInTheDocument();
-    expect(languageLog.capture).toHaveBeenCalledWith('stitch-failed', { seq: 1, pieces: 2, error: 'timeout' });
+    expect(languageLog.capture).toHaveBeenCalledWith('stitch-failed', expect.objectContaining({ seq: 1, pieces: 2, error: 'timeout' }));
   });
 
   it('a join that fails falls back to saying it in one go', async () => {
@@ -3227,6 +3242,6 @@ describe('recording in pieces', () => {
     pressKey(' ');
     expect(await screen.findByText(/say it in one go/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Listen, then record' })).toBeTruthy();
-    expect(languageLog.capture).toHaveBeenCalledWith('stitch-failed', { seq: 1, pieces: 2, error: 'no-web-audio' });
+    expect(languageLog.capture).toHaveBeenCalledWith('stitch-failed', expect.objectContaining({ seq: 1, pieces: 2, error: 'no-web-audio' }));
   });
 });

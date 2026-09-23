@@ -5,44 +5,54 @@ import { bindMediaToMaster } from '../../../../../lib/volume/bindMediaToMaster.j
 import Icon from '../../../home/icons/Icon.jsx';
 import VoiceBand from './VoiceBand.jsx';
 import useVoiceCapture from './useVoiceCapture.js';
-import { SILENT_AFTER_MS, SILENT_LEVEL, judgeTake } from '../../shared/speechFloor.js';
+import {
+  createVoiceMeter, meterLevel, meterSummary, judgeTake,
+} from '../../shared/speechFloor.js';
 import useModelPauses from './useModelPauses.js';
 import { snapCut } from './pauses.js';
 import {
-  emptyPieces, spanOf, canCut, addCut, setTake as setPieceTake, isLast, pieceVerdict, totalMs, allHeard,
+  emptyPieces, spanOf, canCut, addCut, setTake as setPieceTake, pieceVerdict, totalMs, allHeard,
+  pieceSpans, spanMs, pieceCount, nextToSay, saidTakes, isPartial,
 } from './pieces.js';
 import { joinTake } from './joinTake.js';
 
 /**
- * Recording — say it yourself (design §1).
+ * Recording — say it yourself (design §1), in chunks the learner chooses.
  *
- * One gesture, then the rung runs itself until the learner has spoken:
+ * 2026-09-23 owner: Space pauses to chunk; Tab never destroys; ← start over;
+ * Backspace redo chunk; silence auto-stop.
  *
- *   tap / Space ─▶ the sentence sounds ─▶ the ding ─▶ the mic is live
- *   tap / Space ─▶ the take plays straight back ─▶ Keep it, or Record again
- *   Tab (with a take) ─▶ the sentence, then the take — compare, nothing lost
- *   → while the sentence plays ─▶ ding ─▶ say that much ─▶ Space ─▶ the rest
- *     plays from the cut ─▶ ding ─▶ say it ─▶ … ─▶ Finish joins them into one take
+ * Space is the one forward key and never destroys anything:
+ *
+ *   Space ─▶ the sentence plays
+ *   Space while it plays ─▶ pause HERE: that ends this chunk (snapped back to
+ *        the model's nearest pause) ─▶ the ding ─▶ the mic is live
+ *   Space while recording ─▶ stop; the chunk's take plays straight back
+ *   Space in review ─▶ the sentence goes on FROM WHERE IT PAUSED ─▶ …the same loop
+ *   the sentence plays to its end ─▶ ding ─▶ mic: that is the last chunk
+ *   Space after the last chunk ─▶ the chunks are joined into one take ─▶ Keep
+ *
+ * Said in one go, that is simply a single chunk: Space, let it finish, ding,
+ * mic, Space, Keep.
+ *
+ *   Tab        hear it again — the sentence, or the chunk's span; with a take,
+ *              the span then the take. At a live mic it STOPS AND KEEPS the take
+ *              and then plays span + take. Never throws anything away.
+ *   Backspace  redo this chunk (its span, the ding, the mic); others are kept
+ *   ←          start the whole sentence over: every chunk goes
+ *   Enter      done — join what has been said, even mid-sentence
+ *   →          pause here (the old key, kept as an alias of Space)
+ *   a segment  of the chunk bar, tapped: redo that chunk
+ *
+ * After speech has been heard, AUTO_STOP_SILENT_MS of silence ends a take by
+ * itself (`capture.auto-stop`, via `auto`). Leading silence never does; the
+ * "is the microphone on?" warning still covers that.
  *
  * The ding is the cue to speak, so nothing on screen has to say "listen" or
- * "now" — a child follows the sound, not the copy. Playback is automatic and
- * has no player: hearing yourself is the point of the rung, not an option in
- * it. The one moving thing is the voice band, the learner's own sound drawn
- * as it happens, which is also how they can see that the microphone hears
- * them at all.
- *
- * The result is never scored: the 2016 app didn't score it either, and a
- * recording is evidence for the learner's own review, not a graded artifact.
- * Speech scoring is a named deferral (§7).
- *
- * Every step has one key. Space or Enter is "go" — start, stop, keep —
- * because a child at a keyboard should never have to find a different key
- * for the next thing; Backspace is "record again". A focused control keeps
- * its own keys — a tabbed-to button's Enter, a menu field's Backspace — so
- * nobody is surprised by a rung acting from underneath the thing they hold.
- *
- * This rung only exists when a microphone was detected. It is never rendered
- * as a dead control — the queue simply omits it on a device without one.
+ * "now". Playback is automatic: hearing yourself is the point of the rung. The
+ * one moving thing is the voice band, the learner's own sound drawn as it
+ * happens. The result is never scored (§7). A focused control keeps its own
+ * keys. This rung only exists when a microphone was detected.
  */
 
 /** The take is kept as this many mono samples — plenty for a band a few
@@ -90,8 +100,27 @@ async function decodeTake(blob) {
   }
 }
 
+/** The rung's keys, as the log names them. */
+const KEY_VIA = {
+  ' ': 'key:Space',
+  Enter: 'key:Enter',
+  Tab: 'key:Tab',
+  Backspace: 'key:Backspace',
+  ArrowRight: 'key:ArrowRight',
+  ArrowLeft: 'key:ArrowLeft',
+};
+
+/** Voiced/silent time of a take joined from pieces: the sum, or null when any
+ *  piece could not be measured. Trailing silence is the last piece's. */
+function sumVoice(takes) {
+  const sum = (key) => (takes.every((t) => t?.[key] != null) ? takes.reduce((n, t) => n + t[key], 0) : null);
+  return { voicedMs: sum('voicedMs'), silentMs: sum('silentMs'), endSilentMs: takes.at(-1)?.endSilentMs ?? null };
+}
+
 export default function RecordingRung({
   entry, audioUrl, cueUrl = null, onComplete, saving, onDisableMicrophone, showShortcuts = false,
+  /** Told every phase change — the ladder's `rung.stalled` names the phase. */
+  onPhase = null,
 }) {
   // idle → prompting → recording → playback → review
   const [phase, setPhase] = useState('idle');
@@ -125,9 +154,122 @@ export default function RecordingRung({
   const takeUrlRef = useRef(null);
   const playbackRef = useRef(null);
   const unbindPlaybackRef = useRef(null);
-  const silenceRef = useRef({ since: null, heard: false, sampled: false });
+  /** The live level meter for the take in progress (`speechFloor.js`): the
+   *  silent warning, the too-quiet verdict, and the voiced/silent split. */
+  const silenceRef = useRef(createVoiceMeter(0));
   const phaseRef = useRef(phase);
-  useEffect(() => { phaseRef.current = phase; }, [phase]);
+  const onPhaseRef = useRef(onPhase);
+  onPhaseRef.current = onPhase;
+  useEffect(() => { phaseRef.current = phase; onPhaseRef.current?.(phase); }, [phase]);
+
+  /**
+   * OBSERVABILITY (2026-09-23). A stuck sitting has to be explainable from the
+   * capture lines alone — a live test of seq 16 had three Tab restarts in 5s
+   * and a 19s gap before a join, and the log could not say which key did what
+   * or what filled the gap. So every capture line carries:
+   *
+   *  - `via`: the key or touch that drove it (`key:Space`, `key:Tab`, …,
+   *    `touch`), or `auto` when the rung did it by itself (the mic opening
+   *    after the ding, a playback ending). Set ONCE, in `dispatch`, which every
+   *    key and every tile goes through — never guessed at a call site.
+   *  - `phase`: the rung's phase BEFORE the action.
+   *
+   * `intentRef` holds the gesture only while it is being dispatched. A stop is
+   * the exception: the recorder hands the take back later (asynchronously on a
+   * real MediaRecorder), so the gesture that asked for it is parked in
+   * `stopIntentRef` until the take arrives.
+   */
+  const intentRef = useRef(null);
+  const stopIntentRef = useRef(null);
+  const log = useCallback((detail, data = {}, intent = intentRef.current) => {
+    languageLog.capture(detail, {
+      seq: entry.seq, ...data, via: intent?.via ?? 'auto', phase: intent?.phase ?? phaseRef.current,
+    });
+  }, [entry.seq]);
+
+  /**
+   * TIME ON A REVIEW. From the moment a take (or piece) is ready to judge until
+   * the learner does something about it — `capture.review-idle` — so a gap
+   * before a Next or a Keep reads as sitting, not as a slow device. `ms` is the
+   * idle time only: a compare or a listen started from the review is its own
+   * `capture.playback`, and pauses the clock. `reviewMs` is the wall time.
+   */
+  const reviewRef = useRef(null);
+  const toReview = useCallback(() => {
+    if (!reviewRef.current) {
+      const now = Date.now();
+      reviewRef.current = { since: now, idleMs: 0, idleSince: now };
+    }
+    setPhase('review');
+  }, []);
+  useEffect(() => { if (phase !== 'review') reviewRef.current = null; }, [phase]);
+  const pauseReviewClock = () => {
+    const r = reviewRef.current;
+    if (r?.idleSince != null) { r.idleMs += Date.now() - r.idleSince; r.idleSince = null; }
+  };
+  const resumeReviewClock = () => {
+    const r = reviewRef.current;
+    if (r && r.idleSince == null) r.idleSince = Date.now();
+  };
+
+  /** Every key and tile goes through here — the one place `via` is decided. */
+  const dispatch = useCallback((via, action) => {
+    const intent = { via, phase: phaseRef.current };
+    const r = reviewRef.current;
+    if (intent.phase === 'review' && r) {
+      const now = Date.now();
+      const idle = r.idleMs + (r.idleSince != null ? now - r.idleSince : 0);
+      languageLog.capture('review-idle', {
+        seq: entry.seq,
+        ...(pieceRef.current != null ? { piece: pieceRef.current } : {}),
+        ms: idle,
+        reviewMs: now - r.since,
+        via,
+        phase: intent.phase,
+      });
+      reviewRef.current = { since: now, idleMs: 0, idleSince: r.idleSince != null ? now : null };
+    }
+    intentRef.current = intent;
+    try {
+      action();
+    } finally {
+      intentRef.current = null;
+    }
+  }, [entry.seq]);
+  // A tapped tile hands the keys straight back to the stage: left on the tile,
+  // the next Space would re-press it (a focused control owns its keys) instead
+  // of being the rung's forward key.
+  const onTap = (action) => () => {
+    dispatch('touch', action);
+    rootRef.current?.focus?.({ preventScroll: true });
+  };
+
+  /**
+   * PLAYBACK, one line per thing heard: `capture.playback {what, ms, outcome}`
+   * — the sentence (or a line of it), a piece's span of the model, the take,
+   * or a compare — and whether it `ended`, was `stopped`, or was `blocked`.
+   * Three players, one open record each; opening a new one closes the old as
+   * stopped, so nothing is left dangling. The ding alone is not logged.
+   */
+  const playsRef = useRef({ prompt: null, listen: null, take: null });
+  const openPlay = useCallback((slot, what, extra = {}) => {
+    const open = playsRef.current[slot];
+    if (open) {
+      languageLog.capture('playback', { seq: entry.seq, ...open.extra, what: open.what, ms: Date.now() - open.at, outcome: 'stopped', via: 'auto', phase: phaseRef.current });
+    }
+    playsRef.current[slot] = { what, extra, at: Date.now() };
+    if (slot === 'listen') pauseReviewClock();
+  }, [entry.seq]);
+  const closePlay = useCallback((slot, outcome) => {
+    const open = playsRef.current[slot];
+    if (!open) return;
+    playsRef.current[slot] = null;
+    languageLog.capture('playback', {
+      seq: entry.seq, ...open.extra, what: open.what, ms: Date.now() - open.at, outcome,
+      via: intentRef.current?.via ?? 'auto', phase: intentRef.current?.phase ?? phaseRef.current,
+    });
+    if (slot === 'listen') resumeReviewClock();
+  }, [entry.seq]);
   const rootRef = useRef(null);
   // The sentence being said, and its meaning. The meaning is shown for
   // reinforcement and can be heard on request; it is never played on its own.
@@ -147,6 +289,17 @@ export default function RecordingRung({
   const pieceRef = useRef(null);
   const piecesRef = useRef(emptyPieces());
   const pieceUrlRef = useRef(null);
+  /** The model's length, read at the cut — where the last piece's span ends. */
+  const sentenceMsRef = useRef(null);
+  /**
+   * What happens when the take now being recorded arrives, instead of the
+   * plain playback: `'compare'` (Tab stopped it — the learner wanted to HEAR
+   * it again, so they hear the model, then the take they just made, and keep
+   * it) or `'finish'` (Enter stopped it — join now). Null otherwise.
+   */
+  const afterTakeRef = useRef(null);
+  /** The helpers a take hands on to, defined further down; read at arrival. */
+  const routeRef = useRef({});
   /** Set when a join failed: this sentence is said in one go from then on. */
   const noPiecesRef = useRef(false);
   /** The kept take was joined from pieces, so "again" starts the sentence over. */
@@ -175,6 +328,7 @@ export default function RecordingRung({
   const pauses = useModelPauses(modelUrl, pausesFor === modelUrl);
 
   const stopPlayback = useCallback(() => {
+    closePlay('take', 'stopped');
     const el = playbackRef.current;
     if (el) {
       el.onended = null;
@@ -185,7 +339,7 @@ export default function RecordingRung({
     unbindPlaybackRef.current?.();
     unbindPlaybackRef.current = null;
     playbackRef.current = null;
-  }, []);
+  }, [closePlay]);
 
   const dropTake = useCallback(() => {
     if (takeUrlRef.current) URL.revokeObjectURL(takeUrlRef.current);
@@ -208,38 +362,40 @@ export default function RecordingRung({
    *  sentence too long to finish even in parts. */
   const abandonPieces = useCallback(() => {
     const pieces = piecesRef.current.takes.length;
-    if (pieces) languageLog.capture('pieces-abandoned', { seq: entry.seq, pieces });
+    if (pieces) log('pieces-abandoned', { pieces });
     dropPieces();
-  }, [dropPieces, entry.seq]);
+  }, [dropPieces, log]);
 
   /**
    * Straight into hearing it — a whole take or one piece. The Stop tap is the
    * gesture behind this play(), so autoplay policy is satisfied; if it still
    * refuses, the review controls appear and nothing is lost but the listen.
    */
-  const playBack = useCallback((url) => {
+  const playBack = useCallback((url, piece = null) => {
     setPhase('playback');
+    openPlay('take', 'take', piece != null ? { piece } : {});
     const el = new Audio(url);
     // The take plays back at the panel's master volume, like the prompt.
     unbindPlaybackRef.current = bindMediaToMaster(el);
     playbackRef.current = el;
-    const finish = () => {
+    const finish = (outcome) => () => {
+      closePlay('take', outcome);
       unbindPlaybackRef.current?.();
       unbindPlaybackRef.current = null;
       playbackRef.current = null;
-      setPhase('review');
+      toReview();
     };
-    el.onended = finish;
-    el.onerror = finish;
+    el.onended = finish('ended');
+    el.onerror = finish('blocked');
     const result = el.play();
     if (result?.catch) {
       result.catch((err) => {
         languageLog.audioError('play-blocked', { url: 'take', error: err?.message });
-        playbackRef.current = null;
-        setPhase('review');
+        // Through `finish`, so the master-volume binding is released too.
+        finish('blocked')();
       });
     }
-  }, []);
+  }, [closePlay, openPlay, toReview]);
 
   /**
    * A finished take. The mic is already closed by the time this runs (see
@@ -248,12 +404,14 @@ export default function RecordingRung({
    * A take joined from pieces arrives here too, as one ordinary take.
    */
   const receiveTake = useCallback(({
-    blob, durationMs, heard, measurable,
+    blob, durationMs, heard, measurable, voice, intent,
   }) => {
     blobRef.current = blob;
     if (takeUrlRef.current) URL.revokeObjectURL(takeUrlRef.current);
     takeUrlRef.current = URL.createObjectURL(blob);
-    languageLog.capture('stop', { seq: entry.seq, bytes: blob.size, heard, durationMs });
+    log('stop', {
+      bytes: blob.size, heard, durationMs, ...voice,
+    }, intent);
     // The same facts the log has always carried, now also enforced.
     // WE ONLY REFUSE ON WHAT WE COULD MEASURE. `heard` comes from a live
     // level meter that needs an AudioContext; a browser without one reports
@@ -270,14 +428,19 @@ export default function RecordingRung({
       // Logged as its own event: a run of these is what tells a grown-up the
       // rung is being tapped through rather than done, and it is not
       // recoverable from `capture.stop` without knowing these thresholds.
-      languageLog.capture('refused', { seq: entry.seq, reason: verdict, durationMs, bytes: blob.size, heard, measurable });
+      log('refused', {
+        reason: verdict, durationMs, bytes: blob.size, heard, measurable, ...voice,
+      }, intent);
     } else {
       setRefusals(0);
     }
 
-    playBack(takeUrlRef.current);
+    const after = afterTakeRef.current;
+    afterTakeRef.current = null;
+    if (after === 'compare') routeRef.current.compare?.(null, 'recording');
+    else playBack(takeUrlRef.current);
     decodeTake(blob).then((samples) => { if (blobRef.current === blob) setTake(samples); });
-  }, [entry.seq, playBack]);
+  }, [log, playBack]);
 
   /**
    * A finished PIECE: judged on its own floor (`pieceVerdict` — a phrase, not
@@ -285,24 +448,37 @@ export default function RecordingRung({
    * yet; the pieces become one only after the last of them.
    */
   const receivePiece = useCallback(({
-    blob, durationMs, heard, measurable,
+    blob, durationMs, heard, measurable, voice, intent,
   }) => {
     const i = pieceRef.current;
-    piecesRef.current = setPieceTake(piecesRef.current, i, { blob, durationMs, heard });
-    languageLog.capture('piece-stop', { seq: entry.seq, piece: i, durationMs, heard, bytes: blob.size });
+    piecesRef.current = setPieceTake(piecesRef.current, i, {
+      blob, durationMs, heard, ...voice,
+    });
+    // The piece's span of the model, beside the take: a take much shorter than
+    // its span is a piece that was cut off, and without the span it cannot be
+    // told from one that was simply said quickly.
+    const span = spanOf(piecesRef.current, i);
+    const toMs = span.toMs ?? sentenceMsRef.current;
+    log('piece-stop', {
+      piece: i, durationMs, heard, bytes: blob.size, fromMs: span.fromMs, toMs, spanMs: spanMs({ fromMs: span.fromMs, toMs }), ...voice,
+    }, intent);
     const verdict = pieceVerdict({ durationMs, heard, measurable });
     setTakeVerdict(verdict);
     if (verdict) {
       setRefusals((n) => n + 1);
-      languageLog.capture('refused', {
-        seq: entry.seq, piece: i, reason: verdict, durationMs, bytes: blob.size, heard, measurable,
-      });
+      log('refused', {
+        piece: i, reason: verdict, durationMs, bytes: blob.size, heard, measurable, ...voice,
+      }, intent);
     } else {
       setRefusals(0);
     }
     if (pieceUrlRef.current) URL.revokeObjectURL(pieceUrlRef.current);
     pieceUrlRef.current = URL.createObjectURL(blob);
-    playBack(pieceUrlRef.current);
+    const after = afterTakeRef.current;
+    afterTakeRef.current = null;
+    if (after === 'compare') routeRef.current.compare?.(i, 'recording');
+    else if (after === 'finish' && !verdict) routeRef.current.finish?.(intent);
+    else playBack(pieceUrlRef.current, i);
     // The decode is slow and the learner may already have moved on — to the
     // next piece, or a redo — so the picture lands only if this piece's take
     // is still the one being heard or reviewed.
@@ -312,7 +488,7 @@ export default function RecordingRung({
       if (phaseNow !== 'playback' && phaseNow !== 'review') return;
       setTake(samples);
     });
-  }, [entry.seq, playBack]);
+  }, [log, playBack]);
 
   // Whether a take is a piece is decided when it ARRIVES, from the ref: the
   // cut sets `pieceRef` synchronously, and the ding can end — and the mic
@@ -320,8 +496,14 @@ export default function RecordingRung({
   const onTake = useCallback(({ blob, durationMs }) => {
     const heard = silenceRef.current.heard;
     const measurable = silenceRef.current.sampled === true;
-    if (pieceRef.current != null) receivePiece({ blob, durationMs, heard, measurable });
-    else receiveTake({ blob, durationMs, heard, measurable });
+    const voice = meterSummary(silenceRef.current);
+    const intent = stopIntentRef.current ?? intentRef.current;
+    stopIntentRef.current = null;
+    const take = {
+      blob, durationMs, heard, measurable, voice, intent,
+    };
+    if (pieceRef.current != null) receivePiece(take);
+    else receiveTake(take);
   }, [receivePiece, receiveTake]);
 
   const onDenied = useCallback((err) => {
@@ -351,22 +533,44 @@ export default function RecordingRung({
     setError(null);
     setSilent(false);
     setTakeVerdict(null);
-    silenceRef.current = { since: null, heard: false, sampled: false };
+    silenceRef.current = createVoiceMeter(Date.now());
+    stopIntentRef.current = null;
+    afterTakeRef.current = null;
     if (!await startCapture()) return;
     setPhase('recording');
-    languageLog.capture('start', { seq: entry.seq });
-  }, [entry.seq, startCapture]);
+    log('start', pieceRef.current != null ? { piece: pieceRef.current } : {});
+  }, [log, startCapture]);
+
+  // The prompt player's sequence ran to its end (the sentence, or a span, and
+  // the ding): the playback ended, and the mic opens.
+  const onPromptEnd = useCallback(() => {
+    closePlay('prompt', 'ended');
+    beginCapture();
+  }, [beginCapture, closePlay]);
+  const onListenEnd = useCallback(() => closePlay('listen', 'ended'), [closePlay]);
 
   // The prompt plays, then the ding, then recording begins — one sequence,
   // one gesture. The learner shouldn't have to hunt for a second button
   // between hearing and speaking.
   const {
-    playSequence, stop, blocked, position,
-  } = useSentenceAudio({ onSequenceEnd: beginCapture, onClip: setSounding });
+    playSequence, stop: stopPromptPlayer, blocked, position,
+  } = useSentenceAudio({ onSequenceEnd: onPromptEnd, onClip: setSounding });
+  /** Stop the prompt player, closing its playback line as `outcome`. */
+  const stop = useCallback((outcome = 'stopped') => {
+    closePlay('prompt', outcome);
+    stopPromptPlayer();
+  }, [closePlay, stopPromptPlayer]);
   // HEARING IT AGAIN WITHOUT RECORDING. A second player, because the one above
   // opens the microphone when it finishes: a child who only wants to hear a
   // line once more must never find the mic live at the end of it.
-  const { playSequence: listenTo, stop: stopListening } = useSentenceAudio();
+  const {
+    playSequence: listenTo, stop: stopListenPlayer, blocked: listenBlocked,
+  } = useSentenceAudio({ onSequenceEnd: onListenEnd });
+  const stopListening = useCallback(() => {
+    closePlay('listen', 'stopped');
+    stopListenPlayer();
+  }, [closePlay, stopListenPlayer]);
+  useEffect(() => { if (listenBlocked) closePlay('listen', 'blocked'); }, [listenBlocked, closePlay]);
 
   useEffect(() => {
     setPhase('idle');
@@ -377,6 +581,7 @@ export default function RecordingRung({
     pieceRef.current = null;
     setPiece(null);
     setJoinFailed(false);
+    sentenceMsRef.current = null;
     languageLog.rung('enter', { rung: 'recording', seq: entry.seq });
     // Take the keyboard on arrival. The tap that brought the child here — the
     // ladder's Recording step, the previous sentence's Keep — leaves focus on
@@ -389,7 +594,9 @@ export default function RecordingRung({
       // far the learner got, because a run of these is a sentence too long to
       // finish even in parts.
       if (piecesRef.current.takes.length) {
-        languageLog.capture('pieces-abandoned', { seq: entry.seq, pieces: piecesRef.current.takes.length });
+        languageLog.capture('pieces-abandoned', {
+          seq: entry.seq, pieces: piecesRef.current.takes.length, via: 'auto', phase: phaseRef.current,
+        });
       }
       piecesRef.current = emptyPieces();
       joinRef.current = null;
@@ -418,8 +625,9 @@ export default function RecordingRung({
     setJoinFailed(false);
     setPausesFor(modelUrl);
     setPhase('prompting');
+    openPlay('prompt', 'sentence');
     playSequence([...clipsFor(entry, audioUrl), ...cue()]);
-  }, [entry, audioUrl, modelUrl, cue, playSequence, dropTake, abandonPieces, stopListening]);
+  }, [entry, audioUrl, modelUrl, cue, playSequence, dropTake, abandonPieces, stopListening, openPlay]);
 
   // Again means the ding and the mic — not the whole sentence over. Hearing
   // the prompt again is what the Repetition rung is for, and a retry that is
@@ -436,7 +644,7 @@ export default function RecordingRung({
     stopListening();
     if (joinedRef.current) {
       stopPlayback();
-      languageLog.capture('retake', { seq: entry.seq, joined: true });
+      log('retake', { joined: true });
       start();
       return;
     }
@@ -444,9 +652,9 @@ export default function RecordingRung({
     dropTake();
     setTakeVerdict(null);
     setPhase('prompting');
-    languageLog.capture('retake', { seq: entry.seq });
+    log('retake');
     playSequence(cue());
-  }, [entry.seq, cue, playSequence, stopPlayback, stopListening, dropTake, start]);
+  }, [log, cue, playSequence, stopPlayback, stopListening, dropTake, start]);
 
   /** Piece i's part of the model, as a clip: from its start to its cut, or to
    *  the end of the sentence for the open-ended last piece. */
@@ -464,8 +672,9 @@ export default function RecordingRung({
     dropTake();
     setTakeVerdict(null);
     setPhase('prompting');
+    openPlay('prompt', 'span', { piece: i });
     playSequence([spanClip(i), ...cue()]);
-  }, [cue, dropTake, playSequence, spanClip, stopListening, stopPlayback]);
+  }, [cue, dropTake, openPlay, playSequence, spanClip, stopListening, stopPlayback]);
 
   /** Backspace in piece review: this piece only — its span, the ding, the mic.
    *  The pieces before it are kept, and its old take stays until a new one
@@ -473,9 +682,10 @@ export default function RecordingRung({
   const redoPiece = useCallback(() => {
     const i = pieceRef.current;
     if (i == null) return;
-    languageLog.capture('piece-redo', { seq: entry.seq, piece: i });
+    if (phaseRef.current === 'recording') cancelCapture();
+    log('piece-redo', { piece: i });
     playPiece(i);
-  }, [entry.seq, playPiece]);
+  }, [cancelCapture, log, playPiece]);
 
   /**
    * GO FROM IDLE. Normally the sentence from the top — but idle with a piece
@@ -485,9 +695,9 @@ export default function RecordingRung({
   const begin = useCallback(() => {
     const i = pieceRef.current;
     if (i == null) { start(); return; }
-    languageLog.capture('piece-resume', { seq: entry.seq, piece: i });
+    log('piece-resume', { piece: i });
     playPiece(i);
-  }, [entry.seq, playPiece, start]);
+  }, [log, playPiece, start]);
 
   /**
    * → WHILE THE SENTENCE PLAYS: "that's enough — let me say this much". Only
@@ -509,11 +719,19 @@ export default function RecordingRung({
     // Synchronously: the ding can end, and the take arrive, before an effect.
     pieceRef.current = i;
     setPiece(i);
-    languageLog.capture('cut', {
-      seq: entry.seq, piece: i, rawMs: at.ms, cutMs, snapped: cutMs !== at.ms,
+    if (at.durationMs != null) sentenceMsRef.current = at.durationMs;
+    // Where every piece now lies in the model — so a take can be read against
+    // the span it was meant to cover.
+    log('cut', {
+      piece: i,
+      rawMs: at.ms,
+      cutMs,
+      snapped: cutMs !== at.ms,
+      sentenceMs: sentenceMsRef.current,
+      pieceSpans: pieceSpans(piecesRef.current, sentenceMsRef.current),
     });
     playSequence(cue());
-  }, [cue, entry.seq, pauses, playSequence, position, stop, targetLang]);
+  }, [cue, log, pauses, playSequence, position, stop, targetLang]);
 
   /**
    * After the last piece: join them into ONE take, which then goes through
@@ -526,17 +744,25 @@ export default function RecordingRung({
    * sentence: the pieces cannot become a recording, and offering the cut
    * again would fail the same way.
    */
-  const finishPieces = useCallback(async () => {
+  const finishPieces = useCallback(async (heldIntent = null) => {
     const state = piecesRef.current;
+    // ENTER JOINS WHAT HAS BEEN SAID, even mid-sentence: the child said "that
+    // much", and that much is the recording. The tail nobody said is simply
+    // not in it — `partial: true` on the stitched line says so, and the
+    // joined take still has to clear the one-go length floor.
+    const takes = saidTakes(state);
+    const partial = isPartial(state);
     const token = {};
     joinRef.current = token;
+    // The Finish press, held across the join: the stitched line is its.
+    const intent = heldIntent ?? intentRef.current;
     setPhase('joining');
     let blob;
     try {
-      blob = await withTimeout(joinTake(state.takes.map((t) => t.blob)), JOIN_TIMEOUT_MS);
+      blob = await withTimeout(joinTake(takes.map((t) => t.blob)), JOIN_TIMEOUT_MS);
     } catch (err) {
       if (joinRef.current !== token) return;
-      languageLog.capture('stitch-failed', { seq: entry.seq, pieces: state.takes.length, error: err?.message });
+      log('stitch-failed', { pieces: takes.length, error: err?.message }, intent);
       dropPieces();
       noPiecesRef.current = true;
       setJoinFailed(true);
@@ -545,33 +771,59 @@ export default function RecordingRung({
     }
     // Left, or started over, while the join ran: the result belongs to nothing.
     if (joinRef.current !== token) return;
-    const durationMs = totalMs(state);
-    languageLog.capture('stitched', {
-      seq: entry.seq, pieces: state.takes.length, durationMs, bytes: blob.size,
-    });
+    const said = { ...state, takes };
+    const durationMs = totalMs(said);
+    const voice = sumVoice(takes);
+    log('stitched', {
+      pieces: takes.length, durationMs, bytes: blob.size, ...voice, ...(partial ? { partial: true, of: pieceCount(state) } : {}),
+    }, intent);
     dropPieces();
     joinedRef.current = true;
     receiveTake({
-      blob, durationMs, heard: allHeard(state), measurable: false,
+      blob, durationMs, heard: allHeard(said), measurable: false, voice, intent,
     });
-  }, [dropPieces, entry.seq, receiveTake]);
+  }, [dropPieces, log, receiveTake]);
 
-  /** Space in piece review: the rest of the sentence, or — after the last
-   *  piece — the join. A refused piece goes nowhere; Backspace redoes it. */
+  /** Space in chunk review: on with the sentence FROM WHERE IT PAUSED — the
+   *  first later chunk not yet said — or, once every chunk has a take, the
+   *  join. A refused chunk goes nowhere; Backspace redoes it. */
   const nextPiece = useCallback(() => {
     if (takeVerdict) return;
     const i = pieceRef.current;
     if (i == null) return;
     stopPlayback();
     stopListening();
-    if (isLast(piecesRef.current, i)) {
+    const j = nextToSay(piecesRef.current, i);
+    if (j == null) {
       finishPieces();
       return;
     }
-    pieceRef.current = i + 1;
-    setPiece(i + 1);
-    playPiece(i + 1);
-  }, [finishPieces, playPiece, stopListening, stopPlayback, takeVerdict]);
+    pieceRef.current = j;
+    setPiece(j);
+    log('piece-next', { piece: j });
+    playPiece(j);
+  }, [finishPieces, log, playPiece, stopListening, stopPlayback, takeVerdict]);
+
+  /** ENTER: done — join what has been said, from wherever the rung is. With
+   *  no chunks it is the ordinary "go" (stop, keep). */
+  const done = useCallback(() => {
+    const current = phaseRef.current;
+    const inChunks = pieceRef.current != null;
+    if (!inChunks || current === 'idle' || current === 'joining') return false;
+    if (current === 'recording') {
+      afterTakeRef.current = 'finish';
+      stopIntentRef.current = intentRef.current;
+      stopCapture();
+      return true;
+    }
+    if (current === 'prompting' && !saidTakes(piecesRef.current).length) return true;
+    if ((current === 'playback' || current === 'review') && takeVerdict) return true;
+    stop();
+    stopPlayback();
+    stopListening();
+    finishPieces();
+    return true;
+  }, [finishPieces, stop, stopCapture, stopListening, stopPlayback, takeVerdict]);
 
   /**
    * Hear one line — the sentence or its meaning — without recording anything.
@@ -584,80 +836,117 @@ export default function RecordingRung({
     const current = phaseRef.current;
     if (current === 'recording' || current === 'prompting' || current === 'joining') return;
     stopPlayback();
-    if (current === 'playback') setPhase('review');
+    if (current === 'playback') toReview();
     languageLog.rung('hear', { rung: 'recording', seq: entry.seq, language });
+    openPlay('listen', 'sentence', { language });
     listenTo([{ url: audioUrl(entry.seq, language), language }]);
-  }, [audioUrl, entry.seq, listenTo, stopPlayback]);
+  }, [audioUrl, entry.seq, listenTo, openPlay, stopPlayback, toReview]);
+
+  /** The model against the take just made: a chunk's span then its take, or
+   *  the whole sentence then the whole take. Nothing is thrown away. */
+  const compare = useCallback((i, from) => {
+    const url = i != null ? pieceUrlRef.current : takeUrlRef.current;
+    if (!url) return;
+    stopPlayback();
+    toReview();
+    log('compare', { from, ...(i != null ? { piece: i } : {}) });
+    openPlay('listen', 'compare', i != null ? { piece: i } : {});
+    listenTo([
+      i != null ? spanClip(i) : { url: audioUrl(entry.seq, targetLang), language: targetLang },
+      { url, role: 'take', gapMs: 400 },
+    ]);
+  }, [audioUrl, entry.seq, listenTo, log, openPlay, spanClip, stopPlayback, targetLang, toReview]);
+  routeRef.current = { compare, finish: finishPieces };
 
   /**
-   * TAB ALWAYS BRINGS THE SENTENCE BACK. Before a take it is a listen. While
-   * the learner is recording it starts over: the take in progress is thrown
-   * away — never judged, never played back — the sentence sounds again, and
-   * the microphone opens when it has finished, exactly as the first press did.
-   * Nobody is sent into a recording having heard it only once.
+   * TAB = HEAR IT AGAIN, AND NEVER DESTROYS ANYTHING (owner ruling 2026-09-23).
    *
-   * ONCE A TAKE EXISTS, TAB IS A COMPARISON, NOT A RETAKE: the sentence, then
-   * the learner's own take, and the take is kept. Throwing a finished take away
-   * here is what happened on 2026-09-22 — Tab pressed 2.7s after a good take
-   * stopped (seq 13) and again 1.7s into its playback (seq 14), each time to
-   * hear the model against the take, each time deleting the take and opening
-   * the mic. Backspace is the retake key; Tab never is, once there is
-   * something to lose.
+   *  - before any take: the whole sentence (a chunk in hand: its span);
+   *  - while the sentence or a span sounds: that sound again from its start —
+   *    there is no take yet, so nothing is lost;
+   *  - WHILE RECORDING: the take is STOPPED AND KEPT, and the learner hears the
+   *    model then that take. Ignoring Tab at a live mic was the other option;
+   *    it was not chosen because a child who presses "hear it again" and hears
+   *    nothing presses it again — which is exactly the three presses in 5s
+   *    that, until this ruling, wiped the take three times on seq 16;
+   *  - with a take: a compare, as before.
+   *
+   * Backspace is the retake key. Tab never is.
    */
   const replaySentence = useCallback(() => {
     const current = phaseRef.current;
-    if (current === 'idle') { hear(targetLang); return; }
-    // The pieces are being joined; there is nothing to restart or compare yet.
+    const i = pieceRef.current;
     if (current === 'joining') return;
-    // IN PIECES, THE SAME RULES FOR THE PIECE IN HAND: with its take, Tab
-    // compares that piece's span with that take; otherwise it restarts that
-    // piece — its span, the ding, the mic. Earlier pieces are never touched.
-    if (pieceRef.current != null) {
-      const i = pieceRef.current;
-      if ((current === 'playback' || current === 'review') && pieceUrlRef.current) {
-        stopPlayback();
-        setPhase('review');
-        languageLog.capture('compare', { seq: entry.seq, from: current, piece: i });
-        listenTo([spanClip(i), { url: pieceUrlRef.current, role: 'take', gapMs: 400 }]);
-        return;
-      }
-      languageLog.capture('replay-restart', { seq: entry.seq, from: current, piece: i });
-      if (current === 'recording') cancelCapture();
+    if (current === 'idle') {
+      if (i == null) { hear(targetLang); return; }
+      log('hear', { from: current, piece: i, what: 'span' });
+      openPlay('listen', 'span', { piece: i });
+      listenTo([spanClip(i)]);
+      return;
+    }
+    if (current === 'recording') {
+      log('hear', { from: current, ...(i != null ? { piece: i } : {}) });
+      afterTakeRef.current = 'compare';
+      stopIntentRef.current = intentRef.current;
+      stopCapture();
+      return;
+    }
+    if (current === 'prompting') {
+      log('hear', { from: current, ...(i != null ? { piece: i, what: 'span' } : { what: 'sentence' }) });
       stop();
-      playPiece(i);
+      if (i != null) playPiece(i);
+      else start();
       return;
     }
-    if ((current === 'playback' || current === 'review') && takeUrlRef.current) {
-      stopPlayback();
-      setPhase('review');
-      languageLog.capture('compare', { seq: entry.seq, from: current });
-      listenTo([
-        { url: audioUrl(entry.seq, targetLang), language: targetLang },
-        { url: takeUrlRef.current, role: 'take', gapMs: 400 },
-      ]);
-      return;
-    }
-    languageLog.capture('replay-restart', { seq: entry.seq, from: current });
+    compare(i, current);
+  }, [compare, hear, listenTo, log, openPlay, playPiece, spanClip, start, stop, stopCapture, targetLang]);
+
+  /** ← START OVER: every chunk goes, and the sentence plays from the top. */
+  const startOver = useCallback(() => {
+    const current = phaseRef.current;
+    log('restart', { from: current, pieces: saidTakes(piecesRef.current).length });
     if (current === 'recording') cancelCapture();
+    stop();
     stopPlayback();
+    stopListening();
+    dropPieces();
+    joinedRef.current = false;
     setTakeVerdict(null);
     start();
-  }, [
-    audioUrl, cancelCapture, entry.seq, hear, listenTo, playPiece, spanClip, start, stop, stopPlayback, targetLang,
-  ]);
+  }, [cancelCapture, dropPieces, log, start, stop, stopListening, stopPlayback]);
+
+  /** Redo chunk j — Backspace on the chunk in hand, or a tap on its segment.
+   *  Its span, the ding, the mic; every other chunk is kept. */
+  const redoChunk = useCallback((j) => {
+    const current = phaseRef.current;
+    if (current === 'joining') return;
+    if (current === 'recording') cancelCapture();
+    stop();
+    stopPlayback();
+    stopListening();
+    pieceRef.current = j;
+    setPiece(j);
+    log('piece-redo', { piece: j });
+    playPiece(j);
+  }, [cancelCapture, log, playPiece, stop, stopListening, stopPlayback]);
 
   useEffect(() => {
     if (!blocked || phase !== 'prompting') return;
-    stop();
+    stop('blocked');
     setPhase('idle');
   }, [blocked, phase, stop]);
 
-  const stopRecording = stopCapture;
+  // The take arrives after the recorder stops — later, on a real device — so
+  // the gesture that stopped it is parked for `onTake` to put on the line.
+  const stopRecording = useCallback(() => {
+    stopIntentRef.current = intentRef.current;
+    stopCapture();
+  }, [stopCapture]);
 
   const skipPlayback = useCallback(() => {
     stopPlayback();
-    setPhase('review');
-  }, [stopPlayback]);
+    toReview();
+  }, [stopPlayback, toReview]);
 
   const accept = useCallback(() => {
     // THE GATE. A take that cleared neither floor is not an attempt, and the
@@ -666,74 +955,125 @@ export default function RecordingRung({
     if (takeVerdict) return;
     if (!blobRef.current || saving) return;
     stopPlayback();
+    log('keep', { joined: joinedRef.current, bytes: blobRef.current.size });
     languageLog.rung('complete', { rung: 'recording', seq: entry.seq });
     onComplete({ seq: entry.seq, rung: 'recording', blob: blobRef.current });
-  }, [entry.seq, onComplete, saving, stopPlayback, takeVerdict]);
+  }, [entry.seq, log, onComplete, saving, stopPlayback, takeVerdict]);
 
   // The band reports every live level; two seconds under the floor with
-  // nothing yet heard is the moment to say so in words.
+  // nothing yet heard is the moment to say so in words. A level arriving at
+  // all marks loudness as measurable on this device — see the verdict for why
+  // that is a precondition for refusing on it. The meter (`speechFloor.js`)
+  // decides; this only shows it, and logs the two moments it changes — never
+  // a line per frame.
   const onLevel = useCallback((level) => {
-    const s = silenceRef.current;
+    const m = silenceRef.current;
     const now = Date.now();
-    // A level arrived at all, so loudness is measurable on this device. See the
-    // verdict below for why that is a precondition for refusing on it.
-    s.sampled = true;
-    if (level >= SILENT_LEVEL) {
-      s.heard = true;
-      s.since = null;
-      setSilent(false);
+    const change = meterLevel(m, level, now);
+    if (!change) return;
+    if (change === 'auto-stop') {
+      // Speech was heard, then AUTO_STOP_SILENT_MS of nothing: the take ends
+      // itself, exactly as if Stop had been pressed.
+      const intent = { via: 'auto', phase: 'recording' };
+      log('auto-stop', {
+        ...(pieceRef.current != null ? { piece: pieceRef.current } : {}),
+        silentMs: Math.round(m.endSilentMs),
+        afterMs: now - m.startedAt,
+      }, intent);
+      stopIntentRef.current = intent;
+      stopCapture();
       return;
     }
-    if (s.heard) return;
-    if (s.since == null) s.since = now;
-    else if (now - s.since >= SILENT_AFTER_MS) setSilent(true);
-  }, []);
+    setSilent(change === 'silent-on');
+    log(change === 'silent-on' ? 'silent-warning' : 'silent-cleared', {
+      ...(pieceRef.current != null ? { piece: pieceRef.current } : {}),
+      afterMs: now - m.startedAt,
+    });
+  }, [log, stopCapture]);
 
-  // One key for "go", one for "again", the whole way through.
+  /** Backspace / the Again tile: redo the chunk in hand, or — with no chunks —
+   *  record again. A live take is thrown away first: that is what "again" is. */
+  const again = useCallback(() => {
+    if (pieceRef.current != null) { redoPiece(); return; }
+    if (phaseRef.current === 'recording') cancelCapture();
+    recordAgain();
+  }, [cancelCapture, recordAgain, redoPiece]);
+
+  /** Space / the forward tile, by phase. */
+  const forward = useCallback(() => {
+    const current = phaseRef.current;
+    if (current === 'idle') begin();
+    else if (current === 'prompting') cut();
+    else if (current === 'recording') stopRecording();
+    else if (current === 'playback') skipPlayback();
+    else if (current === 'review') {
+      if (pieceRef.current != null) nextPiece();
+      else accept();
+    }
+  }, [accept, begin, cut, nextPiece, skipPlayback, stopRecording]);
+
+  /**
+   * THE KEYS (owner ruling 2026-09-23):
+   *
+   *   Space      forward, never destructive — play / pause here / stop / next / join / keep
+   *   Tab        hear it again, never destructive (see `replaySentence`)
+   *   Backspace  redo this chunk (with no chunks: record again)
+   *   ←          start the whole sentence over
+   *   Enter      done — join what is said, even mid-sentence (no chunks: as Space)
+   *   →          pause here, kept as an alias of Space while the sentence plays
+   *
+   * Tab belongs to the rung whatever holds focus; every other key is left to a
+   * focused control that owns it (a tabbed-to button's Enter, a field's
+   * Backspace).
+   */
   useEffect(() => {
     const onKey = (e) => {
       if (e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey) return;
-      // Tab belongs to the rung whatever holds focus: it hears the sentence
-      // again (Shift+Tab, the meaning) and never moves focus off the stage.
       if (e.key === 'Tab') {
         e.preventDefault();
-        if (e.shiftKey) hear(sourceLang);
-        else replaySentence();
+        // Shift+Tab: the meaning — or, in chunk mode, where Tab is the chunk's
+        // span, the WHOLE sentence. A listen either way; nothing is lost.
+        if (e.shiftKey) dispatch('key:Shift+Tab', () => hear(pieceRef.current != null ? targetLang : sourceLang));
+        else dispatch('key:Tab', replaySentence);
         return;
       }
-      if (ownsKeys(e.target)) return;
+      const via = KEY_VIA[e.key];
+      if (!via || ownsKeys(e.target)) return;
       const current = phaseRef.current;
-      // → cuts the sentence while it plays (recording in pieces). Anywhere
-      // else the arrow is not the rung's, so it is left for the ladder.
+      const inChunks = pieceRef.current != null;
       if (e.key === 'ArrowRight') {
-        if (current === 'prompting') { e.preventDefault(); cut(); }
+        if (current === 'prompting') { e.preventDefault(); dispatch(via, cut); }
         return;
       }
-      const go = e.key === ' ' || e.key === 'Enter';
-      const again = e.key === 'Backspace';
-      if (!go && !again) return;
-      if (go) {
-        if (current === 'idle') { e.preventDefault(); begin(); }
-        else if (current === 'recording') { e.preventDefault(); stopRecording(); }
-        else if (current === 'playback') { e.preventDefault(); skipPlayback(); }
-        else if (current === 'review') {
+      if (e.key === 'ArrowLeft') {
+        // Nothing to start over from an untouched sentence: the arrow is left alone.
+        if (current === 'idle' && !inChunks) return;
+        e.preventDefault();
+        dispatch(via, startOver);
+        return;
+      }
+      if (e.key === 'Backspace') {
+        if (current === 'recording' || current === 'playback' || current === 'review') {
           e.preventDefault();
-          if (pieceRef.current != null) nextPiece();
-          else accept();
+          dispatch(via, again);
         }
         return;
       }
-      if (current === 'playback' || current === 'review') {
+      if (e.key === 'Enter' && inChunks && current !== 'idle') {
         e.preventDefault();
-        if (pieceRef.current != null) redoPiece();
-        else recordAgain();
+        dispatch(via, done);
+        return;
       }
+      // Space, or Enter with no chunks: forward. Enter never cuts — a cut is
+      // a pause, and Enter means done.
+      if (e.key === 'Enter' && current === 'prompting') return;
+      if (current === 'joining') return;
+      e.preventDefault();
+      dispatch(via, forward);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [
-    begin, stopRecording, skipPlayback, accept, recordAgain, hear, replaySentence, sourceLang, cut, nextPiece, redoPiece,
-  ]);
+  }, [again, cut, dispatch, done, forward, hear, replaySentence, sourceLang, startOver, targetLang]);
 
   const getPlayhead = useCallback(() => {
     const el = playbackRef.current;
@@ -744,12 +1084,12 @@ export default function RecordingRung({
   // A tapped line hands the keys straight back to the stage, so the next Space
   // is still the rung's rather than a second press of the line.
   const tapToHear = (language) => () => {
-    hear(language);
+    dispatch('touch', () => hear(language));
     rootRef.current?.focus?.({ preventScroll: true });
   };
   // The Pause tile is the touch twin of →; it hands the keys back the same way.
   const tapToCut = () => {
-    cut();
+    dispatch('touch', cut);
     rootRef.current?.focus?.({ preventScroll: true });
   };
   const inPieces = piece != null;
@@ -757,14 +1097,41 @@ export default function RecordingRung({
   // it, or the rest after the last cut), on a sentence that may still be cut.
   const cutOffered = phase === 'prompting' && !noPiecesRef.current
     && sounding?.language === targetLang && sounding?.endMs == null;
-  const lastPiece = inPieces && isLast(piecesRef.current, piece);
+  const chunks = piecesRef.current;
+  const lastPiece = inPieces && nextToSay(chunks, piece) == null;
+  const said = saidTakes(chunks).length;
   const hasTake = phase === 'playback' || phase === 'review';
-  const keysHint = inPieces && hasTake
-    ? `Space: ${lastPiece ? 'finish' : 'next part'} · Tab: compare · Backspace: redo this part`
-    : hasTake
-      ? 'Space: go · Tab: compare with the sentence · Shift+Tab: hear the meaning · Backspace: record again'
-      : `Space: go · Tab: hear it again · Shift+Tab: hear the meaning · Backspace: record again${
-        cutOffered ? ' · →: pause here' : ''}`;
+  const key = (hint) => (showShortcuts ? <kbd className="lang-tile__key" aria-hidden="true">{hint}</kbd> : null);
+
+  /**
+   * THE CHUNK BAR: the sentence as segments, one per chunk, sized by its span
+   * of the model when the sentence's length is known. Filled = said, lit = the
+   * chunk in hand, empty = still to do. A segment is a button: tapping it
+   * redoes that chunk (the touch twin of Backspace, for any chunk). Before any
+   * pause the whole sentence is one segment.
+   */
+  const segments = (() => {
+    const count = pieceCount(chunks);
+    const sentenceMs = sentenceMsRef.current;
+    return Array.from({ length: count }, (_, j) => {
+      const { fromMs, toMs } = spanOf(chunks, j);
+      const end = toMs ?? sentenceMs;
+      const grow = sentenceMs && end != null ? Math.max(1, end - fromMs) : 1;
+      const filled = count === 1 && !inPieces ? Boolean(take) || (hasTake && Boolean(blobRef.current)) : Boolean(chunks.takes[j]);
+      const current = inPieces ? j === piece : phase !== 'idle';
+      return {
+        j, grow, filled, current,
+      };
+    });
+  })();
+  const tapSegment = (j) => () => {
+    dispatch('touch', () => {
+      if (inPieces || pieceCount(chunks) > 1) { redoChunk(j); return; }
+      if (phaseRef.current === 'idle') begin();
+      else if (phaseRef.current !== 'prompting' && phaseRef.current !== 'joining') again();
+    });
+    rootRef.current?.focus?.({ preventScroll: true });
+  };
 
   return (
     <div ref={rootRef} tabIndex={-1} className={`lang-rung lang-rung--recording is-${phase}`}>
@@ -779,6 +1146,9 @@ export default function RecordingRung({
       <button type="button" tabIndex={-1} className="lang-rung__say lang-rung__target" onClick={tapToHear(targetLang)}>
         {entry.text?.[targetLang]}
       </button>
+      {showShortcuts && inPieces && (
+        <p className="lang-rung__keys" aria-hidden="true">Shift+Tab: whole sentence</p>
+      )}
 
       {/* Always on the stage — a bare line before anything has been said, so
           the sentence does not move when the voice starts filling it. */}
@@ -827,31 +1197,48 @@ export default function RecordingRung({
         </div>
       )}
 
+      <div className="lang-chunks" role="group" aria-label="The sentence, in parts">
+        {segments.map(({
+          j, grow, filled, current,
+        }) => (
+          <button
+            key={j}
+            type="button"
+            tabIndex={-1}
+            className={`lang-chunks__seg${filled ? ' is-filled' : ''}${current ? ' is-current' : ''}`}
+            style={{ flexGrow: grow }}
+            onClick={tapSegment(j)}
+            disabled={phase === 'joining'}
+            aria-label={`Part ${j + 1}${filled ? ', recorded' : ''}${current ? ', now' : ''}`}
+          />
+        ))}
+      </div>
       {inPieces && (phase === 'playback' || phase === 'review') && (
         <p className="lang-rung__part">Part {piece + 1}</p>
       )}
       <div className="lang-rung__controls">
         {phase === 'idle' && (
-          <button type="button" className="lang-tile lang-tile--primary" onClick={begin} aria-label="Listen, then record">
+          <button type="button" className="lang-tile lang-tile--primary" onClick={onTap(begin)} aria-label="Listen, then record">
             <Icon name="record" className="lang-tile__glyph" />
-            <span className="lang-tile__word" aria-hidden="true">Record</span>
+            <span className="lang-tile__word" aria-hidden="true">Play</span>
+            {key('Space')}
           </button>
         )}
-        {/* Sounding — the sentence and its ding, or the take. Not a control:
-            the same tile, quiet, so the stage does not rearrange itself. */}
-        {(phase === 'prompting' || phase === 'playback') && (
+        {/* THE FORWARD TILE while the sentence sounds: "Pause here" — stop it
+            there and say that much. Only while a cuttable part of the sentence
+            is sounding; during the ding or a bounded span it is a status. */}
+        {cutOffered && (
+          <button type="button" className="lang-tile lang-tile--primary" onClick={tapToCut} aria-label="Pause here">
+            <Icon name="pause" className="lang-tile__glyph" />
+            <span className="lang-tile__word" aria-hidden="true">Pause here</span>
+            {key('Space')}
+          </button>
+        )}
+        {((phase === 'prompting' && !cutOffered) || phase === 'playback') && (
           <span className="lang-tile lang-tile--status" role="status" aria-label={phase === 'prompting' ? 'Listen' : 'Playing your recording'}>
             <Icon name="volume" className="lang-tile__glyph" />
             <span className="lang-tile__word" aria-hidden="true">{phase === 'prompting' ? 'Listen' : 'Playing'}</span>
           </span>
-        )}
-        {/* RECORDING IN PIECES: "that's enough — let me say this much". Only
-            while a cuttable part of the sentence is sounding. */}
-        {cutOffered && (
-          <button type="button" className="lang-tile" onClick={tapToCut} aria-label="Pause here">
-            <Icon name="stop" className="lang-tile__glyph" />
-            <span className="lang-tile__word" aria-hidden="true">Pause</span>
-          </button>
         )}
         {phase === 'joining' && (
           <span className="lang-tile lang-tile--status" role="status" aria-label="Putting it together">
@@ -860,34 +1247,37 @@ export default function RecordingRung({
           </span>
         )}
         {phase === 'recording' && (
-          <button type="button" className="lang-tile lang-tile--live" onClick={stopRecording} aria-label="Stop">
+          <button type="button" className="lang-tile lang-tile--live" onClick={onTap(stopRecording)} aria-label="Stop">
             <Icon name="stop" className="lang-tile__glyph" />
             <span className="lang-tile__word" aria-hidden="true">Stop</span>
+            {key('Space')}
           </button>
         )}
         {phase === 'review' && inPieces && (
           <>
-            {/* A PIECE, not the take: Again redoes this part only, and the
-                primary tile goes on to the rest — or, after the last part,
-                joins them. A refused part goes nowhere, as a refused take. */}
+            {/* A CHUNK, not the take: Again redoes this chunk only, and the
+                primary tile goes on with the sentence — or, once every chunk
+                is said, joins them. A refused chunk goes nowhere. */}
             <button
               type="button"
               className={`lang-tile${takeVerdict ? ' lang-tile--primary' : ''}`}
-              onClick={redoPiece}
+              onClick={onTap(redoPiece)}
               aria-label="Redo this part"
             >
               <Icon name="record-again" className="lang-tile__glyph" />
-              <span className="lang-tile__word" aria-hidden="true">Again</span>
+              <span className="lang-tile__word" aria-hidden="true">Redo</span>
+              {key('⌫')}
             </button>
             <button
               type="button"
               className={`lang-tile${takeVerdict ? '' : ' lang-tile--primary'}`}
-              onClick={nextPiece}
+              onClick={onTap(nextPiece)}
               disabled={Boolean(takeVerdict)}
               aria-label={lastPiece ? 'Finish' : 'Next part'}
             >
-              <Icon name="keep" className="lang-tile__glyph" />
-              <span className="lang-tile__word" aria-hidden="true">{lastPiece ? 'Finish' : 'Next'}</span>
+              <Icon name={lastPiece ? 'keep' : 'next'} className="lang-tile__glyph" />
+              <span className="lang-tile__word" aria-hidden="true">{lastPiece ? 'Join' : 'Next'}</span>
+              {key('Space')}
             </button>
           </>
         )}
@@ -895,38 +1285,60 @@ export default function RecordingRung({
           <>
             {/* WHICH TILE IS PRIMARY FOLLOWS THE TAKE. A refused take means the
                 only thing to do is go again, so Again leads and Keep is
-                disabled outright — the rung does not move on something that was
-                not said. The way past a dead mic is the device-level escape in
-                the notice above, not a quiet take. */}
+                disabled outright. The way past a dead mic is the device-level
+                escape in the notice above, not a quiet take. */}
             <button
               type="button"
               className={`lang-tile${takeVerdict ? ' lang-tile--primary' : ''}`}
-              onClick={recordAgain}
+              onClick={onTap(recordAgain)}
               aria-label="Record again"
             >
               <Icon name="record-again" className="lang-tile__glyph" />
               <span className="lang-tile__word" aria-hidden="true">Again</span>
+              {key('⌫')}
             </button>
             <button
               type="button"
               className={`lang-tile${takeVerdict ? '' : ' lang-tile--primary'}`}
-              onClick={accept}
+              onClick={onTap(accept)}
               disabled={saving || Boolean(takeVerdict)}
               aria-label={saving ? 'Saving' : 'Keep it'}
             >
               <Icon name="keep" className="lang-tile__glyph" />
               <span className="lang-tile__word" aria-hidden="true">{saving ? 'Saving…' : 'Keep'}</span>
+              {key('Space')}
             </button>
           </>
         )}
+        {/* The secondary keys, as tiles: hear it again, start over, done. */}
+        {phase !== 'joining' && (
+          <button type="button" className="lang-tile lang-tile--minor" onClick={onTap(replaySentence)} aria-label="Hear it again">
+            <Icon name="volume" className="lang-tile__glyph" />
+            <span className="lang-tile__word" aria-hidden="true">Hear it</span>
+            {key('Tab')}
+          </button>
+        )}
+        {(inPieces || joinedRef.current) && phase !== 'joining' && (
+          <button type="button" className="lang-tile lang-tile--minor" onClick={onTap(startOver)} aria-label="Start over">
+            <Icon name="restart" className="lang-tile__glyph" />
+            <span className="lang-tile__word" aria-hidden="true">Start over</span>
+            {key('←')}
+          </button>
+        )}
+        {inPieces && said > 0 && phase !== 'joining' && !(phase === 'review' && lastPiece) && (
+          <button
+            type="button"
+            className="lang-tile lang-tile--minor"
+            onClick={onTap(done)}
+            disabled={hasTake && Boolean(takeVerdict)}
+            aria-label="Done"
+          >
+            <Icon name="keep" className="lang-tile__glyph" />
+            <span className="lang-tile__word" aria-hidden="true">Done</span>
+            {key('Enter')}
+          </button>
+        )}
       </div>
-      {/* The keys, where there are keys to press. A touch panel is not told
-          about a Tab it does not have. */}
-      {showShortcuts && (
-        <p className="lang-rung__keys" aria-hidden="true">
-          {keysHint}
-        </p>
-      )}
     </div>
   );
 }

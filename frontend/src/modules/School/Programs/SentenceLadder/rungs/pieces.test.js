@@ -52,3 +52,41 @@ describe('pieceVerdict', () => {
     expect(pieceVerdict({ durationMs: MIN_PIECE_MS - 1, heard: true, measurable: true })).toBe('too-short');
   });
 });
+
+describe('pieceSpans — what the log carries for a cut', () => {
+  it('lists every piece as {from, to}, the last ending at the sentence when its length is known', async () => {
+    const { pieceSpans } = await import('./pieces.js');
+    const s = addCut(emptyPieces(), 3611);
+    expect(pieceSpans(s, 5400)).toEqual([{ from: 0, to: 3611 }, { from: 3611, to: 5400 }]);
+  });
+  it('leaves the last piece open (to: null) when the sentence length is unknown', async () => {
+    const { pieceSpans } = await import('./pieces.js');
+    expect(pieceSpans(addCut(emptyPieces(), 1100), null)).toEqual([{ from: 0, to: 1100 }, { from: 1100, to: null }]);
+  });
+  it('spanMs is to − from, or null for an open end', async () => {
+    const { spanMs } = await import('./pieces.js');
+    expect(spanMs({ fromMs: 3611, toMs: 5400 })).toBe(1789);
+    expect(spanMs({ fromMs: 3611, toMs: null })).toBeNull();
+  });
+});
+
+describe('going on after a chunk (2026-09-23)', () => {
+  it('the next chunk to say is the first after i without a take; null once every chunk has one', async () => {
+    const { nextToSay, pieceCount, saidTakes } = await import('./pieces.js');
+    let s = addCut(emptyPieces(), 3611);                // two chunks
+    expect(pieceCount(s)).toBe(2);
+    s = setTake(s, 0, take(1200));
+    expect(nextToSay(s, 0)).toBe(1);
+    s = setTake(s, 1, take(1300));
+    expect(nextToSay(s, 1)).toBeNull();
+    // A redone earlier chunk goes on to the first unsaid one — none here.
+    expect(nextToSay(s, 0)).toBeNull();
+    expect(saidTakes(s)).toHaveLength(2);
+  });
+  it('partial: fewer takes than chunks', async () => {
+    const { isPartial } = await import('./pieces.js');
+    const s = setTake(addCut(emptyPieces(), 3611), 0, take(1200));
+    expect(isPartial(s)).toBe(true);
+    expect(isPartial(setTake(s, 1, take(900)))).toBe(false);
+  });
+});

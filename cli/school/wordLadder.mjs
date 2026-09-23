@@ -23,11 +23,12 @@ import { LexiconDeckLoader } from '#adapters/school/catalog/LexiconDeckLoader.mj
 import {
   STATUS_SCHEMA_V3, buildLearnerQuizSource, buildWordQuizSource, emptyStatusV3, formatTrace, hashString, isoWeekOf, migrateStatusV2,
 } from '#domains/school/wordLadder/index.mjs';
+import {
+  DEFAULT_LOGSTORE, LOG_QUERY_LIMIT, addDaysIso, parseLogLines, quoteLogsqlValue, todayIso, unflattenRow,
+} from './logStore.mjs';
 
 const ENTRYPOINT = fileURLToPath(import.meta.url);
 const DEFAULT_BASE_URL = process.env.SCHOOL_BASE_URL || 'http://localhost:3111/api/v1/school';
-const DEFAULT_LOGSTORE = process.env.DAYLIGHT_LOGSTORE || 'http://localhost:9428';
-const LOG_QUERY_LIMIT = 5000;
 const HELP = `school word-ladder — word-ladder operations (any word package)
 
 Usage:
@@ -245,26 +246,6 @@ async function enrollPlan(argv, io, fetchImpl = globalThis.fetch) {
 // events group into a trace, how a line is worded) lives in the domain; this
 // only fetches, un-flattens and prints.
 
-/** UTC today as YYYY-MM-DD — only used as the trace window's default when the
- * caller names neither --day nor --sitting; the query window is generous
- * (see `timeWindow`) so a few hours of local/UTC drift near midnight cannot
- * silently exclude the very events being asked for. */
-function todayIso() {
-  return new Date().toISOString().slice(0, 10);
-}
-
-function addDaysIso(day, n) {
-  const d = new Date(`${day}T00:00:00Z`);
-  d.setUTCDate(d.getUTCDate() + n);
-  return d.toISOString().slice(0, 10);
-}
-
-// Unquoted, VictoriaLogs tokenizes a value on `.` and `-`, so a learnerId or
-// sittingId containing either (a sitting id is always `<pkg>.<token>.<n>`)
-// matches far more than intended. Quoting makes it an exact-phrase match.
-function quoteLogsqlValue(value) {
-  return `"${String(value).replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
-}
 
 function traceQuery({ learnerId, mode, sittingId }) {
   const parts = ['_msg:~"school.word-ladder"', `data.learnerId:${quoteLogsqlValue(learnerId)}`];
@@ -284,55 +265,6 @@ function traceQuery({ learnerId, mode, sittingId }) {
 function timeWindow({ day, sittingId }) {
   if (day) return `_time:[${day}T00:00:00, ${addDaysIso(day, 2)}T00:00:00]`;
   return sittingId ? '_time:30d' : '_time:2d';
-}
-
-function parseLogLines(text) {
-  const rows = [];
-  for (const line of String(text ?? '').split('\n')) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-    try { rows.push(JSON.parse(trimmed)); } catch { /* one malformed line must not sink the whole trace */ }
-  }
-  return rows;
-}
-
-/** "true"/"false"/"null"/a numeric string/a JSON array -> its real type. VictoriaLogs stores every field as a string. */
-function coerceLogValue(value) {
-  if (value === 'true') return true;
-  if (value === 'false') return false;
-  if (value === 'null') return null;
-  if (typeof value === 'string' && value !== '' && /^-?\d+(\.\d+)?$/.test(value)) return Number(value);
-  // An array (a quiz queue, a round's word ids) is stored as its JSON text.
-  if (typeof value === 'string' && value.startsWith('[') && value.endsWith(']')) {
-    try { return JSON.parse(value); } catch { return value; }
-  }
-  return value;
-}
-
-function setPath(obj, parts, value) {
-  let cur = obj;
-  for (let i = 0; i < parts.length - 1; i += 1) {
-    if (typeof cur[parts[i]] !== 'object' || cur[parts[i]] === null) cur[parts[i]] = {};
-    cur = cur[parts[i]];
-  }
-  cur[parts[parts.length - 1]] = value;
-}
-
-/**
- * A log-store row is flat: `{_msg, _time, level, "data.itemId": "...", "data.to.state": "mastered", ...}`.
- * `formatTrace` wants nested, typed `{ msg, time, level, data }` — this is
- * the one place that un-flattening and string coercion happen, so the
- * domain formatter stays free of store-shape knowledge (and stays testable
- * against clean fixtures).
- */
-function unflattenRow(row) {
-  const data = {};
-  const context = {};
-  for (const [key, value] of Object.entries(row)) {
-    if (key.startsWith('data.')) setPath(data, key.slice('data.'.length).split('.'), coerceLogValue(value));
-    else if (key.startsWith('context.')) setPath(context, key.slice('context.'.length).split('.'), coerceLogValue(value));
-  }
-  return { msg: row._msg, time: row._time, level: row.level, data, context };
 }
 
 /** Every word package this learner has a word-ladder day file under, sorted for determinism. */
