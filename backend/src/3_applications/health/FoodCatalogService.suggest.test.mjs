@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { FoodCatalogService } from './FoodCatalogService.mjs';
 import { FoodCatalogEntry } from '#domains/health/entities/FoodCatalogEntry.mjs';
+import { iconVocabulary } from '#domains/nutrition/services/icons.mjs';
 
 const NOW = new Date('2026-09-02T12:00:00Z').getTime();
 const entry = (over) => new FoodCatalogEntry({
@@ -159,5 +160,43 @@ describe('FoodCatalogService.suggest — bucket-aware (Task 9.1)', () => {
       bucketed({ id: 'c', name: 'chickpeas', useCount: 8, lastUsed: '2026-09-01' }),
     ]);
     expect((await svc.suggest('chick', 'u')).map((e) => e.id)).toEqual(['b', 'a', 'c']);
+  });
+});
+
+describe('FoodCatalogService.suggest — icon fallback for entries with none', () => {
+  const withIcon = (over) => { const e = entry(over); e.icon = over.icon ?? null; return e; };
+  const build = (entries, extra = {}) => {
+    const store = makeStore(entries);
+    const svc = new FoodCatalogService({
+      catalogStore: store, clock: { now: () => NOW }, createId: () => 'x',
+      logger: { debug() {}, info() {}, warn() {}, error() {} },
+      iconOffered: (slug) => ['apple', 'banana', 'fried-eggs'].includes(slug),
+      iconVocabulary: () => iconVocabulary('apple banana fried-eggs'),
+      ...extra,
+    });
+    return { svc, store };
+  };
+
+  it('shows the closest offered icon for a null or default icon, without persisting it', async () => {
+    const { svc, store } = build([
+      withIcon({ id: 'a', name: 'Honeycrisp Apple', icon: null, useCount: 9 }),
+      withIcon({ id: 'b', name: 'Organic Bananas', icon: 'default', useCount: 8 }),
+      withIcon({ id: 'c', name: 'Fried Egg', icon: 'banana', useCount: 7 }),
+      withIcon({ id: 'd', name: 'Premier Protein Shake', icon: null, useCount: 6 }),
+    ]);
+    const byId = Object.fromEntries((await svc.suggest('', 'u', 10)).map((e) => [e.id, e.icon]));
+    expect(byId).toEqual({ a: 'apple', b: 'banana', c: 'banana', d: null });
+    expect((await store.getById('a')).icon).toBeNull();
+    expect((await store.getById('b')).icon).toBe('default');
+  });
+
+  it('a stored icon the manifest no longer offers is also replaced for display', async () => {
+    const { svc } = build([withIcon({ id: 'a', name: 'Fried Eggs', icon: 'retired_flat_egg' })]);
+    expect((await svc.suggest('', 'u', 5))[0].icon).toBe('fried-eggs');
+  });
+
+  it('without a vocabulary, suggestions are unchanged', async () => {
+    const { svc } = build([withIcon({ id: 'a', name: 'Apple', icon: null })], { iconVocabulary: undefined });
+    expect((await svc.suggest('', 'u', 5))[0].icon).toBeNull();
   });
 });
