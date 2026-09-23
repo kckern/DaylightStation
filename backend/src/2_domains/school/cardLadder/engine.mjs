@@ -12,7 +12,7 @@ import { DomainInvariantError, ValidationError } from '#domains/core/errors/inde
 import { hashString, seededShuffle } from './checkItem.mjs';
 import { PILES, applyGraded, applySort, emptyWordV3, introduce, isDue, isExcluded, markMatched, readyForSignOff } from './mastery.mjs';
 import { channelFor, cueFor, pickMeaningChoices, pickTermChoices } from './choices.mjs';
-import { newAllowance, planNextRound } from './rounds.mjs';
+import { extraNewWords, newAllowance, planNextRound } from './rounds.mjs';
 import { answersMatch } from './scriptRules.mjs';
 import { drillSteps, matchBoard, tilesFor } from './drill.mjs';
 import { PRACTICE_MODES, VERIFY_TASKS, buildPractice } from './practice.mjs';
@@ -108,7 +108,9 @@ function settleDay(ctx, at) {
     const upcoming = nextRound(ctx);
     if (upcoming) { ctx.dayFile.rounds.push(upcoming); return; }
   } else if (remainingMs(ctx) > 0) return;
-  ctx.dayFile.doneAt = ctx.dayFile.doneAt ?? at;
+  ctx.dayFile.doneAt = at;
+  // The active time at the credit: later practice or Learn more time is not the goal's (tuning).
+  ctx.dayFile.goalActiveMs = ctx.dayFile.activeMs;
 }
 
 function roundTouched(dayFile, round) {
@@ -279,7 +281,10 @@ function nextRound(ctx) {
     words: ctx.status.words, pool, day: ctx.day, roundedToday: roundedToday(ctx.dayFile),
     settings: ctx.settings, remainingMs: remainingMs(ctx), roundNumber: ctx.dayFile.rounds.length + 1,
   });
-  if (!planned) return null;
+  return planned ? roundFrom(ctx, planned) : null;
+}
+
+function roundFrom(ctx, planned) {
   return {
     ...planned,
     phase: planned.newWords.length ? 'intro' : 'stream',
@@ -378,7 +383,7 @@ export function currentItem(ctx) {
   if (drill) return drillItem(ctx, drill);
   const round = openRound(ctx);
   if (round) return itemForRound(ctx, round);
-  if (!ctx.dayFile.doneAt || !ctx.dayFile.summarySeen) return { id: 'summary', type: 'summary', quizzed: quizzedCount(ctx.dayFile), doneToday: true };
+  if (!ctx.dayFile.doneAt || !ctx.dayFile.summarySeen) return { id: 'summary', type: 'summary', quizzed: quizzedCount(ctx.dayFile), doneToday: true, learnMore: extraFor(ctx).length };
   const run = openPractice(ctx);
   if (run) return practiceItem(ctx, run);
   return menuItem(ctx);
@@ -408,7 +413,37 @@ function menuItem(ctx) {
   // ready for its sign-off; the menu shows it locked until then.
   const writeHelp = [true, false].filter((help) => runs({ mode: 'write', help }));
   const modes = PRACTICE_MODES.filter((mode) => (mode === 'say' ? sayHelp.length > 0 : runs({ mode })));
-  return { id: 'menu', type: 'menu', modes, sayHelp, writeHelp, quizzed: quizzedCount(ctx.dayFile) };
+  return { id: 'menu', type: 'menu', modes, sayHelp, writeHelp, quizzed: quizzedCount(ctx.dayFile), learnMore: extraFor(ctx).length };
+}
+
+// The words one more Learn more round would introduce (none left: []).
+function extraFor(ctx) {
+  return extraNewWords({ words: ctx.status.words, pool: ctx.pool ?? [], roundedToday: roundedToday(ctx.dayFile), settings: ctx.settings });
+}
+
+/**
+ * Learn more words (owner ruling 2026-09-23: never block extra learning;
+ * credit stays capped at the daily goal). Starts one more guided round —
+ * Learn › Sort › Quiz › Match — over the next new words, whenever nothing
+ * guided is open (a recheck, drill or round comes first). Allowed before or
+ * after the goal and past the session cap: the cap only stops the guided day
+ * continuing on its own. The words climb the ladder for real, flagged
+ * `introducedExtra` so they never count toward a day's newPerDay; `doneAt`
+ * never moves. Ends any practice run and passes the summary.
+ */
+export function learnMore(ctx, { at } = {}) {
+  if (typeof at !== 'string' || at.length === 0) throw new ValidationError('at is required');
+  if (hasPendingRecheck(ctx.dayFile) || openRound(ctx) || openDrill(ctx)) throw new ValidationError('finish what is on screen first');
+  const newWords = extraFor(ctx);
+  if (!newWords.length) throw new ValidationError('no new words left to learn');
+  const dayFile = clone(ctx.dayFile);
+  const planned = { id: `r${dayFile.rounds.length + 1}`, kind: 'new', extra: true, words: [...newWords], newWords };
+  dayFile.rounds.push(roundFrom({ ...ctx, dayFile }, planned));
+  if (dayFile.practice && dayFile.practice.index < dayFile.practice.queue.length) {
+    dayFile.practice = { ...dayFile.practice, index: dayFile.practice.queue.length, ended: 'learn-more' };
+  }
+  dayFile.summarySeen = true;
+  return { status: clone(ctx.status), dayFile };
 }
 
 // Practice item ids are p<run>:<index>, and p<run>:<index>:<step> inside a drill.
@@ -734,7 +769,8 @@ function applyResponse(ctx, item, itemId, response, { at, verdict }) {
     const round = openRound(ctx);
     if (!round) throw new ValidationError('stale item');
     if (item.type === 'flashcard' && item.mode === 'intro') {
-      ctx.status.words[item.wordId] = introduce(wordOf(ctx.status, item.wordId), ctx.day);
+      const met = introduce(wordOf(ctx.status, item.wordId), ctx.day);
+      ctx.status.words[item.wordId] = round.extra && wordOf(ctx.status, item.wordId).state === 'new' ? { ...met, introducedExtra: true } : met;
       round.intro.step = 'copy';
     } else if (item.type === 'copy') {
       const correct = answersMatch(response.typed, ctx.lexicon.entries.get(item.wordId).term, ctx.lexicon?.targetScript);

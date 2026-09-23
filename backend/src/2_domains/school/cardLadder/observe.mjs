@@ -58,8 +58,9 @@ export function servedWhy(ctx, item) {
   }
   const round = ctx.dayFile.rounds?.at(-1);
   if (!round) return { reason: null };
-  const base = { round: round.id };
-  if (round.phase === 'intro') return { ...base, reason: 'intro', step: round.intro?.step ?? null };
+  const base = { round: round.id, ...(round.extra ? { extra: true } : {}) };
+  // A Learn more round's words are extra (ruling 2026-09-23): `intro:extra`.
+  if (round.phase === 'intro') return { ...base, reason: round.extra ? 'intro:extra' : 'intro', step: round.intro?.step ?? null };
   if (item.type === 'drill-offer') return { ...base, reason: 'drill-offer', notYet: round.stream?.notYetCount?.[item.wordId] ?? null };
   if (item.type === 'match') return { ...base, reason: 'match-after-verify' };
   if (round.phase === 'stream') return { ...base, ...streamWhy(round, item.wordId) };
@@ -95,7 +96,7 @@ export function dayChanges(before, after) {
     if (!was) {
       const newIds = round.newWords ?? [];
       out.push({ event: 'round.planned', data: {
-        round: round.id, index, kind: round.kind ?? null, size: round.words.length, newIds,
+        round: round.id, index, kind: round.kind ?? null, extra: round.extra === true, size: round.words.length, newIds,
         carryIds: round.words.filter((id) => !newIds.includes(id)), hasMatch: roundHasMatch(round), phase: round.phase,
       } });
       continue;

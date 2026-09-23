@@ -29,7 +29,7 @@ import { addDays } from '#domains/school/termVerdict.mjs';
 import { curriculumPosterRef } from '#apps/common/resources/publicResourceRefs.mjs';
 import {
   addActiveTime, cueFor, currentItem, deckDirOf, deckProgress, emptyWordV3, introPlanLabel, introPreview, excludeWordFromDay, foldPaperAttempts, ladderLevel, markMastered, openDay,
-  quizDocumentIdFor, respond, roundHasMatch, startPractice, typedAnswers, withTunedValues, wordAssetIds, wordTransitions,
+  quizDocumentIdFor, respond, roundHasMatch, startPractice, learnMore, typedAnswers, withTunedValues, wordAssetIds, wordTransitions,
   servedWhy, dayChanges, prereqChanges, scriptFor, ruleForTarget,
 } from '#domains/school/cardLadder/index.mjs';
 
@@ -262,7 +262,7 @@ export class CardLadderSittingService {
       drill: drill ? { at: drill.index + 1, of: drill.steps.length } : null,
       practice: practicing ? { mode: run.mode, at: run.index + 1, of: run.queue.length } : null,
       round: round ? {
-        index: dayFile.rounds.indexOf(round) + 1, kind: round.kind, size: round.words.length, phase: round.phase,
+        index: dayFile.rounds.indexOf(round) + 1, kind: round.kind, extra: round.extra === true, size: round.words.length, phase: round.phase,
         remainingInStream: round.stream.queue.length, quizLeft: round.quiz.queue.length - round.quiz.index,
         // Learn › Sort › Quiz › Match: whether this round shows (or will show) the Match step.
         hasMatch: roundHasMatch(round),
@@ -682,6 +682,34 @@ export class CardLadderSittingService {
       size: out.dayFile.practice?.queue?.length ?? 0, first: item.type,
     });
     this.#logSequencing({ learnerId: userId, sittingId, pkg, day }, { ctx: nextCtx, item, via: 'practice' });
+    return { item: this.#publicItem(item, nextCtx), progress: this.#progress({ ...nextCtx, settings }) };
+  }
+
+  /**
+   * Learn more words (owner ruling 2026-09-23: never block extra learning;
+   * credit stays capped at the daily goal). One more guided round over the
+   * next new words, from the menu or the Done summary — past the session cap
+   * too. The day's credit (`doneAt`) never moves. Test mode writes its shadow.
+   */
+  async learnMore({ userId, sittingId } = {}) {
+    const { store, pkg, day, ctx, settings } = await this.#context(userId, sittingId);
+    const ms = this.#now();
+    const at = isoWithOffset(ms, this.#timezone);
+    let changes = null;
+    const out = store.transact(userId, pkg, day, ({ status, dayFile }) => {
+      if (!dayFile.sittings?.[sittingId]) throw new EntityNotFoundError('card-ladder sitting', sittingId);
+      changes = this.#housekeep(dayFile, sittingId, ms);
+      return learnMore({ ...ctx, status, dayFile: addActiveTime(dayFile, ms) }, { at });
+    });
+    const nextCtx = { ...ctx, status: out.status, dayFile: out.dayFile };
+    const item = currentItem(nextCtx);
+    const round = out.dayFile.rounds.at(-1);
+    this.#logHousekeeping(userId, sittingId, out.dayFile, changes, item);
+    this.#logger.info?.('school.card-ladder.learn-more', {
+      learnerId: userId, sittingId, mode: this.#mode, package: pkg, day, round: round?.id ?? null,
+      newIds: round?.newWords ?? [], doneAt: out.dayFile.doneAt ?? null, activeMs: out.dayFile.activeMs,
+    });
+    this.#logSequencing({ learnerId: userId, sittingId, pkg, day }, { ctx: nextCtx, item, via: 'learn-more', beforeDay: ctx.dayFile });
     return { item: this.#publicItem(item, nextCtx), progress: this.#progress({ ...nextCtx, settings }) };
   }
 

@@ -53,6 +53,11 @@ export function mountCardLadderRoutes({
           userId, sittingId: req.params.sittingId, mode, help, filter, chosen, frontSide,
         }));
       }));
+      // Learn more words (ruling 2026-09-23): one more guided round over the next new words.
+      router.post(`${base}/sittings/:sittingId/learn-more`, wrap(async (req, res) => {
+        const { userId } = req.body || {};
+        noStore(res).json(await service().learnMore({ userId, sittingId: req.params.sittingId }));
+      }));
       // My words. Test mode reads the named sitting's shadow (`sittingId`).
       router.get(`${base}/words`, wrap(async (req, res) => {
         const { userId, deckId, sittingId = null } = req.query;
