@@ -36,6 +36,18 @@ describe('WordLadderTypedJudge', () => {
     const { judge } = make(async () => { throw new Error('timeout'); });
     expect(await judge.judge({ pkg: 'p', entry: entry('안녕히계세요'), typed: '안녕히개새요', otherWords: [] })).toMatchObject({ judge: 'fallback' });
   });
+  it('a malformed reply (missing score) falls back and is not cached', async () => {
+    const { aiGateway, judge } = make(async () => ({}));
+    expect(await judge.judge({ pkg: 'p', entry: entry('안녕히계세요'), typed: '안녕히개새요', otherWords: [] })).toMatchObject({ judge: 'fallback' });
+    await judge.judge({ pkg: 'p', entry: entry('안녕히계세요'), typed: '안녕히개새요', otherWords: [] });
+    expect(aiGateway.chatWithJson).toHaveBeenCalledTimes(2);
+  });
+  it('a malformed reply (out-of-range score) falls back and is not cached', async () => {
+    const { aiGateway, judge } = make(async () => ({ score: 42 }));
+    expect(await judge.judge({ pkg: 'p', entry: entry('안녕히계세요'), typed: '안녕히개새요', otherWords: [] })).toMatchObject({ judge: 'fallback' });
+    await judge.judge({ pkg: 'p', entry: entry('안녕히계세요'), typed: '안녕히개새요', otherWords: [] });
+    expect(aiGateway.chatWithJson).toHaveBeenCalledTimes(2);
+  });
   it('caches by package, word and normalised answer', async () => {
     const { aiGateway, judge } = make(async () => ({ score: 8, reason: 'ok' }));
     await judge.judge({ pkg: 'p', entry: entry('안녕히계세요'), typed: '안녕히개새요', otherWords: [] });
