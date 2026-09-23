@@ -67,6 +67,15 @@ governance tick.
   throwaway `FitnessSession` and `GovernanceEngine` on every render (7 in one
   short test). Each throwaway wrote `phase: 'pending'` into
   `window.__fitnessGovernance`, which is what those two events read.
+- **The same overwrite hit other readers of `window.__fitnessGovernance`.**
+  `FitnessSimulationController` reads `activeChallenge` / `activeChallengeZone`
+  from it, and the sim panel reads `cycleState`, `videoLocked` and
+  `phaseProgressPct` (see the "Consumers" comment in
+  `GovernanceEngine._updateGlobalState`). Before `e9858ab10` those readers
+  flickered between real and reset values on every render, so a sim-panel oddity
+  from before 2026-09-22 should not be re-investigated. The throwaway sessions
+  leaked no timers, listeners or sockets (none of `FitnessSession`'s
+  sub-constructors start any); the cost was GC churn and the global overwrite.
 - **A second fitness client was open 19:38–19:40** (another browser), and its
   governance events are mixed into the log store. When investigating, filter by
   client (`context.userAgent`) before drawing conclusions from governance rows.
@@ -105,7 +114,7 @@ loaded before trusting a previous session as a baseline.
 | `e9858ab10` | Construct `FitnessSession` once per provider, not per render |
 | `458c627e4` | Restore `animationPlayState` in ProgressBar / ContentScroller, mangled by `b20273b9a` |
 
-Plus a revert of other identifiers mangled by `b20273b9a`.
+Plus `b89ab6bb1`, restoring `buildPlayTimeline` (piano), another identifier mangled by `b20273b9a`.
 
 ## Detecting a regression
 
