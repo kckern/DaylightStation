@@ -182,7 +182,7 @@ describe('buildTuningDigest', () => {
       failedByPile: { familiar: 1, claimed: 0, other: 0 },
       rechecks: { asked: 1, missed: 1 },
       dontKnow: 2, typedScores: [3, 7], judgeFallbacks: 1, stalls: null,
-      activeMin: 15, capHit: true, credited: true, newIntroduced: 2, drillsRun: 1, reachedGoal: true,
+      activeMin: 15, capHit: true, credited: true, newIntroduced: 2, extraIntroduced: 0, extraRounds: 0, drillsRun: 1, reachedGoal: true,
     });
     expect(digest.trailing7).toEqual({ days: 0 });
   });

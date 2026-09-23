@@ -6,7 +6,7 @@ import { mountCardLadderRoutes } from './school.cardLadder.mjs';
 const wrap = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 const notConfigured = (what) => Object.assign(new Error(`${what} not configured`), { status: 503 });
 function app(extra = {}) {
-  const live = { open: vi.fn(async () => ({ sittingId: 'p.live.1', item: { id: 'x' } })), respond: vi.fn(async () => ({ item: {} })), get: vi.fn(async () => ({})), close: vi.fn(async () => ({ closed: true })), fold: vi.fn(async () => ({})), saveRecording: vi.fn(async () => ({ take: 1 })), practice: vi.fn(async () => ({ item: { type: 'typed' } })), words: vi.fn(async () => ({ words: [] })), intro: vi.fn(async () => ({ course: { title: 'C' }, poster: { kind: 'curriculum-poster', scope: 'selfservice', courseId: 'program:card-ladder:korean-vocab' } })) };
+  const live = { open: vi.fn(async () => ({ sittingId: 'p.live.1', item: { id: 'x' } })), respond: vi.fn(async () => ({ item: {} })), get: vi.fn(async () => ({})), close: vi.fn(async () => ({ closed: true })), fold: vi.fn(async () => ({})), saveRecording: vi.fn(async () => ({ take: 1 })), practice: vi.fn(async () => ({ item: { type: 'typed' } })), learnMore: vi.fn(async () => ({ item: { type: 'flashcard' } })), words: vi.fn(async () => ({ words: [] })), intro: vi.fn(async () => ({ course: { title: 'C' }, poster: { kind: 'curriculum-poster', scope: 'selfservice', courseId: 'program:card-ladder:korean-vocab' } })) };
   const test = { ...live, intro: vi.fn(async () => ({ test: true })), open: vi.fn(async () => ({ sittingId: 'test.p.t.1' })), saveRecording: vi.fn(async () => ({ take: 1 })), practice: vi.fn(async () => ({ item: {} })), words: vi.fn(async () => ({ words: [] })), get: vi.fn(async () => ({ test: true })), close: vi.fn(async () => ({ closed: true })) };
   const a = express(); a.use(express.json()); const router = express.Router();
   mountCardLadderRoutes({ router, wrap, notConfigured, cardLadderStudy: live, cardLadderTest: test, stageScreen: 'portal', ...extra });
@@ -81,6 +81,14 @@ describe('card-ladder routes', () => {
     await request(a).post('/card-ladder/sittings/p.live.1/recordings/d1:2?userId=u').set('Content-Type', 'text/plain').send('hello').expect(200);
     expect(live.saveRecording).toHaveBeenCalledWith(expect.objectContaining({ buffer: null }));
   });
+  it('Learn more routes to the mount\'s service', async () => {
+    const { a, live, test } = app();
+    await request(a).post('/card-ladder/sittings/p.live.1/learn-more').send({ userId: 'u' }).expect(200);
+    expect(live.learnMore).toHaveBeenCalledWith({ userId: 'u', sittingId: 'p.live.1' });
+    await request(a).post('/card-ladder/test/sittings/test.p.t.1/learn-more').send({ userId: 'u' }).expect(200);
+    expect(test.learnMore).toHaveBeenLastCalledWith({ userId: 'u', sittingId: 'test.p.t.1' });
+  });
+
   it('practice and My words route to the mount\'s service', async () => {
     const { a, live, test } = app();
     await request(a).post('/card-ladder/sittings/p.live.1/practice').send({ userId: 'u', mode: 'write', help: false, filter: 'tricky', chosen: ['a'], frontSide: 'gloss' }).expect(200);

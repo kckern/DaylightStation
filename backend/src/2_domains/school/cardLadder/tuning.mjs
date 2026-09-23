@@ -111,7 +111,11 @@ export function dayStats(dayFile, settings) {
   const failedByPile = { familiar: 0, claimed: 0, other: 0 };
   let quizzed = 0;
   let passed = 0;
+  // Learn more rounds (ruling 2026-09-23) are extra: counted apart, never in the goal's numbers.
+  const extraRounds = (dayFile.rounds ?? []).filter((round) => round.extra === true);
+  const extraIds = new Set(extraRounds.map((round) => round.id));
   for (const round of dayFile.rounds ?? []) {
+    if (round.extra === true) continue;
     for (const id of round.quiz?.passed ?? []) { passedByPile[pileOf(round, id)] += 1; passed += 1; quizzed += 1; }
     for (const id of round.quiz?.failed ?? []) { failedByPile[pileOf(round, id)] += 1; quizzed += 1; }
   }
@@ -119,7 +123,12 @@ export function dayStats(dayFile, settings) {
   const items = Object.entries(dayFile.items ?? {});
   const typedScores = items.map(([, item]) => typedScoreOf(item, dayFile, settings)).filter((score) => typeof score === 'number');
   const activeMs = dayFile.activeMs ?? 0;
-  const capHit = activeMs >= capMinutesOf(dayFile, settings) * 60000;
+  // Time spent after the credit (practice, Learn more) says nothing about the
+  // goal: the cap is judged on the active time when the day was credited.
+  const goalMs = typeof dayFile.goalActiveMs === 'number' ? dayFile.goalActiveMs : activeMs;
+  const capHit = goalMs >= capMinutesOf(dayFile, settings) * 60000;
+  const introItems = items.filter(([id]) => id.includes(':i:') && id.endsWith(':flash'));
+  const isExtraItem = ([id]) => extraIds.has(id.split(':')[0]);
   const credited = Boolean(dayFile.doneAt);
   const goalSitting = Object.values(dayFile.sittings ?? {}).some((row) => row?.reason === 'goal');
   return {
@@ -135,7 +144,9 @@ export function dayStats(dayFile, settings) {
     activeMin: Math.round(activeMs / 6000) / 10,
     capHit,
     credited,
-    newIntroduced: items.filter(([id]) => id.includes(':i:') && id.endsWith(':flash')).length,
+    newIntroduced: introItems.filter((row) => !isExtraItem(row)).length,
+    extraIntroduced: introItems.filter(isExtraItem).length,
+    extraRounds: extraRounds.length,
     drillsRun: (dayFile.drills ?? []).length,
     // Done with the cap still unspent is a goal; at the cap it is a goal only
     // when a sitting closed on it.
@@ -164,6 +175,7 @@ function trailingAverage(stats) {
     activeMin: avg((s) => s.activeMin),
     capHit: rate(stats.map((s) => s.capHit)),
     newIntroduced: avg((s) => s.newIntroduced),
+    extraIntroduced: avg((s) => s.extraIntroduced ?? 0),
     drillsRun: avg((s) => s.drillsRun),
     reachedGoal: rate(stats.map((s) => s.reachedGoal)),
     creditedZeroQuizzed: stats.filter((s) => s.credited && s.quizzed === 0).length,

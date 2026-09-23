@@ -511,6 +511,14 @@ New words available to introduce today =
 sitting reaches introductions (so today's misses count first). The pool is
 every not-yet-introduced word of the current deck and any deck the learner was
 enrolled in before (`status.decksSeen`) — a deck is a quota, not a deadline.
+Words learned on request ([Learn more words](#learn-more-words-ruling-2026-09-23))
+carry `introducedExtra: true` and `newAllowance` skips them on both counts:
+they never use up a day's `newPerDay` and never fill the working set, so
+extra learning today never shrinks tomorrow's goal.
+
+The cap stops the **guided** day continuing on its own; it never locks a
+child out. Past the cap, the practice menu and Learn more stay available on
+request.
 
 ## Settings and bounds
 
@@ -673,6 +681,41 @@ and returns to the menu — disabled while a typing item's field has focus,
 so a Korean-layout keystroke (ㅡ, physically `M`) can't end the run by
 accident.
 
+### Learn more words (ruling 2026-09-23)
+
+> **2026-09-23 owner: never block extra learning; credit stays capped at the daily goal.**
+> ("If he wants to do more than four we should never block him … Getting
+> credit may be limited to four.")
+
+The Done summary and the practice menu offer **Learn more words** while the
+pool (batch order, as above) still holds a word that is new and not
+excluded — `item.learnMore` is how many the next round would introduce
+(0 hides the button). It starts one more guided round —
+**Learn › Sort › Quiz › Match**, exactly like a normal round — over the next
+`min(round.size, batch.newPerDay)` new words (`extraNewWords` in
+`rounds.mjs`; a lone leftover word is still a round). Engine:
+`learnMore(ctx, {at})` in `engine.mjs`; the round carries `extra: true`.
+
+- **Real progress.** The words climb the same ladder (introduced, sorted,
+  recognised, matched, …) and are saved; a word met in it is flagged
+  `introducedExtra: true`, and tomorrow it is carried like any other.
+- **Credit stays capped.** `doneAt` never moves, `dayStatus` / the agenda
+  keep reading done, and the goal's newPerDay counts only the goal's words.
+  An extra round never re-plans the guided day (a done day plans nothing).
+- **Never blocked by the cap.** Allowed past `session.capMinutes`; only the
+  drill offer (which needs the drill estimate to fit) is skipped then.
+- Refused (400) while guided work is open (a recheck, drill or round comes
+  first) or when no new word is left. It ends an open practice run and passes
+  the summary. After the round the child is back on the menu.
+- **Test mode** does the same against the sitting's shadow and writes nothing.
+- **Tuning** keeps the goal clean: `dayStats` leaves extra rounds out of
+  `quizzed` / `passed` / `newIntroduced` and reports `extraIntroduced` and
+  `extraRounds`; `capHit` is judged on `goalActiveMs` (the active time when
+  the day was credited), so time spent learning more never reads as a cap hit.
+
+Keys: on the menu the digit after My words; on the summary **2** (2 is Done
+there only when nothing is left to learn). Done stays on Space/Enter.
+
 ### My words
 
 Read-only from the practice menu ("My words", `items/WordsItem.jsx`) or as
@@ -735,6 +778,8 @@ at `/api/v1/school/card-ladder` (live) and `/api/v1/school/card-ladder/test`
   say-from-cue); never touches status. Test mode's sink keeps nothing.
 - `POST /card-ladder/sittings/:sittingId/practice {userId, mode, help, filter, chosen, frontSide}` → `{item, progress}`;
   400 before today's goal
+- `POST /card-ladder/sittings/:sittingId/learn-more {userId}` → `{item, progress}` (the round's first intro card;
+  `progress.round.extra: true`); 400 while guided work is open or no new word is left. Never refused by the cap
 - `GET /card-ladder/words?userId=&deckId=[&sittingId=]` → `{words: [{wordId, term, gloss, state, stage, tricky, dueDay}]}`
   in deck order (decks seen, then this one); test mode requires `sittingId` and reads that shadow
 
@@ -948,6 +993,8 @@ button that currently owns the key.
 | ← → ↑ ↓ | Move the cursor (four across) | word picker |
 | M | Menu | a practice item, not while typing |
 | next digit | My words | practice menu |
+| digit after My words | Learn more words (while new words remain) | practice menu |
+| 2 | Learn more words (while new words remain; else Done) | Done summary |
 
 H (and A on Listen) survive only as **silent aliases** on non-typing items;
 typing items bind **no letters at all** — on the Korean layout H is ㅗ, and
@@ -1066,7 +1113,7 @@ sequencing events) `package` and `day`:
 |-------|------|------------|
 | `opened` / `reopened` / `closed` | a sitting opens, resumes, ends | `package`, `day`, `first`, `phase`, `rechecks`, `microphone`; `closed` has `reason` (`goal`, `cap`, `leave`, `unmount`, `idle`), `activeMs`, `doneAt` |
 | `sitting.abandoned` (warn) | a sitting its client never closed is idle-closed at the next request on another sitting of the day | `lastItemId` (last answer), `onScreenItemId` / `onScreenType` (where the day stood), `idleMs`, `openedAt`, `closedAt`, `by` |
-| `item.served` | every item put on screen (open, answer, `get` resync, practice start) — **why** it came up | `itemId`, `type`, `task`, `source`, `wordId`, `reason`, `via: open\|respond\|get\|practice`, `after` (the answer that led here) and per-reason detail: `step` (intro), `pass` (stream), `round`, `notYet` (offer), `drillSource` (drill) |
+| `item.served` | every item put on screen (open, answer, `get` resync, practice start) — **why** it came up | `itemId`, `type`, `task`, `source`, `wordId`, `reason`, `via: open\|respond\|get\|practice\|learn-more`, `after` (the answer that led here) and per-reason detail: `step` (intro), `pass` (stream), `round`, `notYet` (offer), `drillSource` (drill) |
 | `day.planned` | the first open of a study day | `dueRechecks`, `tricky`, `newAllowance` |
 | `round.planned` | a round is planned | `round`, `index`, `kind: new\|carry`, `size`, `newIds`, `carryIds`, `hasMatch`, `phase`, `itemId` (the answer that caused it; null on open) |
 | `round.phase` | a round moves phase | `round`, `from`, `to`; `→ quiz` adds `queue` (`word:task` in order), `eligible`, `notQuizzed`; `→ match` adds `wordIds`; `→ offer` adds `wordId`; `→ done` adds `passed`, `failed` |
@@ -1077,6 +1124,7 @@ sequencing events) `package` and `day`:
 | `transition` | one per word whose state or stage changed | `wordId`, `from`, `to`, `source`, `itemId`, `prereqs {recognizedCount, matched, typedSignedOff}` after the move |
 | `word.prereqs` | a word's sign-off prerequisites moved (a recognition pass, a finished Match, a typed sign-off or its loss) | `wordId`, `changed`, `recognizedCount`, `matched`, `typedSignedOff`, `readyForSignOff`, `gaps` |
 | `recorded` / `practice` | a spoken take stored; a practice run built | `step`, `take`, `bytes`; `practice`, `help`, `filter`, `size`, `first` |
+| `learn-more` | a Learn more round started (ruling 2026-09-23) | `round`, `newIds`, `doneAt` (unchanged), `activeMs`; its `round.planned` carries `extra: true` |
 | `judge-fallback` (warn) | the typed judge's model failed or timed out | `wordId`, `error` |
 | `admin` | a grown-up word control (reset, mark mastered, exclude, drop deck, **regrade**) | `actorId`, `action`, `wordId`; a regrade adds `itemId`, `pass`, `score`, `was` |
 | `folded` / `fold-refused` / `fold-deck-skipped` | the printed quiz folded in (spec §8) | `source`, `count`, `demoted` |
@@ -1092,6 +1140,7 @@ sequencing events) `package` and `day`:
 | `reason` | Meaning |
 |----------|---------|
 | `intro` | a new word's Learn step (`step: flash\|copy\|say`) |
+| `intro:extra` | the same, in a Learn more round (`extra: true` on every item of that round) |
 | `stream` / `carry` | a Sort card: a new word of this round, or a word carried from an earlier day |
 | `stream:again-after-<pile>` / `carry:again-after-<pile>` | the card came back because it was sorted `notYet` or `familiar` (`pass` = which showing) |
 | `verify-recognition` | the round quiz (2.2 / 3.1) |
@@ -1142,6 +1191,7 @@ an Enter that submits a field. Nothing is logged per keystroke.
 | `card.flipped` / `card.sorted` / `card.undone` | flashcard actions | `ms`; `pile` |
 | `keypad.toggled` / `keyboard.detected` | the jamo keypad opens/closes; a physical keyboard is known (once per device) | `auto`, `open`, `via?` |
 | `match.completed` / `drill.offered` / `practice.started` | a Match board finished; the drill offer answered; a practice run chosen | `ms`, `misses`, `pairs`; `accepted`; `itemMode`, `help`, `filter` |
+| `learn-more.started` / `learn-more.failed` (warn) | Learn more words pressed; the request refused or failed | `from: menu\|summary`, `count`; `status`, `error` |
 | failures | `plan.failed`, `write.failed`, `api.rejected`, `api.failed`, `stage.failed`, `media.failed`, `item.prompt-fallback`, `layout.clamped`, `notice.shown`, `practice.failed`, `words.failed` | |
 
 Before 2026-09-23 the take events were `recording.uploaded` /

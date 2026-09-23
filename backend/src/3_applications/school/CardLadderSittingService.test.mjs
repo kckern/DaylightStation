@@ -272,6 +272,46 @@ describe('CardLadderSittingService', () => {
     await expect(b.service.dayStatus({ userId: 'test-learner', deckId: DECK })).resolves.toMatchObject({ doneToday: true });
   });
 
+  it('Learn more (ruling 2026-09-23): a credited day offers the next new words, runs a real round, and stays credited', async () => {
+    const store = memoryStore();
+    store.s.status.words.gawi = { ...emptyWordV3(), state: 'mastered', stage: 3, dueDay: '2026-10-30', introducedDay: '2026-09-01' };
+    store.s.status.decksSeen = [DECK];
+    const { service, logger } = make({ store });
+    const opened = await service.open({ userId: 'test-learner', deckId: DECK });
+    // One new word left (pul): too few for a guided round, so the day credited at open.
+    expect(opened.item).toMatchObject({ type: 'summary', learnMore: 1 });
+    const credited = store.s.days[TODAY].doneAt;
+    expect(credited).toEqual(expect.any(String));
+    let { item, progress } = await service.learnMore({ userId: 'test-learner', sittingId: opened.sittingId });
+    expect(item).toMatchObject({ type: 'flashcard', mode: 'intro', wordId: 'pul', word: { term: '풀' } });
+    expect(progress).toMatchObject({ phase: 'round', doneToday: true, round: { extra: true } });
+    expect(logger.info).toHaveBeenCalledWith('school.card-ladder.learn-more', expect.objectContaining({ newIds: ['pul'], sittingId: opened.sittingId }));
+    expect(logger.info).toHaveBeenCalledWith('school.card-ladder.item.served', expect.objectContaining({ reason: 'intro:extra', wordId: 'pul' }));
+    for (let i = 0; i < 40 && item.type !== 'menu'; i += 1) {
+      const entry = item.wordId ? lexicon.entries.get(item.wordId) : null;
+      const response = item.type === 'copy' ? { typed: item.word.term }
+        : item.type === 'flashcard' ? (item.mode === 'intro' ? { seen: true } : { sort: 'claimed' })
+          : item.type === 'choice' ? { choice: item.task === '2.2' ? entry.gloss : entry.term } : { done: true };
+      ({ item } = await service.respond({ userId: 'test-learner', sittingId: opened.sittingId, itemId: item.id, response }));
+    }
+    expect(item).toMatchObject({ type: 'menu', learnMore: 0 });
+    expect(store.s.status.words.pul).toMatchObject({ state: 'mastered', introducedExtra: true, matched: true });
+    expect(store.s.days[TODAY].doneAt).toBe(credited);
+    await expect(service.dayStatus({ userId: 'test-learner', deckId: DECK })).resolves.toMatchObject({ doneToday: true, progressLabel: 'Done for today' });
+    await expect(service.learnMore({ userId: 'test-learner', sittingId: opened.sittingId })).rejects.toThrow(/no new words/);
+  });
+
+  it('Learn more in test mode runs the same and writes only the shadow', async () => {
+    const store = memoryStore();
+    store.s.status.words.gawi = { ...emptyWordV3(), state: 'mastered', stage: 3, dueDay: '2026-10-30', introducedDay: '2026-09-01' };
+    store.s.status.decksSeen = [DECK];
+    const { service, logger } = make({ store, mode: 'test' });
+    const opened = await service.open({ userId: 'test-learner', deckId: DECK });
+    const { item } = await service.learnMore({ userId: 'test-learner', sittingId: opened.sittingId });
+    expect(item).toMatchObject({ type: 'flashcard', mode: 'intro', wordId: 'pul' });
+    expect(logger.info).toHaveBeenCalledWith('school.card-ladder.learn-more', expect.objectContaining({ mode: 'test' }));
+  });
+
   it('a day with nothing to do is done for today as soon as it is opened', async () => {
     const store = memoryStore();
     for (const id of ['gawi', 'pul']) store.s.status.words[id] = { ...emptyWordV3(), state: 'mastered', stage: 3, dueDay: '2026-10-30', introducedDay: '2026-09-01' };

@@ -71,6 +71,24 @@ describe('test mode never writes', () => {
     expect(snapshotFiles()).toEqual(before);
   });
 
+  it('Learn more on a done test day runs a real round and leaves every real file byte-identical', async () => {
+    const service = testService();
+    const before = snapshotFiles();
+    const opened = await service.open({ userId: 'test-learner', deckId: deck.id, scenario: 'done' });
+    expect(opened.item).toMatchObject({ type: 'summary', learnMore: 2 });
+    let { item } = await service.learnMore({ userId: 'test-learner', sittingId: opened.sittingId });
+    expect(item).toMatchObject({ type: 'flashcard', mode: 'intro' });
+    for (let i = 0; i < 80 && item.type !== 'menu'; i += 1) {
+      const entry = item.wordId ? lexicon.entries.get(item.wordId) : null;
+      const response = item.type === 'flashcard' ? (item.mode === 'intro' ? { seen: true } : { sort: 'claimed' })
+        : item.type === 'copy' ? { typed: item.word.term }
+          : item.type === 'choice' ? { choice: item.task === '2.2' ? entry.gloss : entry.term } : { done: true };
+      ({ item } = await service.respond({ userId: 'test-learner', sittingId: opened.sittingId, itemId: item.id, response }));
+    }
+    expect(item).toMatchObject({ type: 'menu', learnMore: 0 });
+    expect(snapshotFiles()).toEqual(before);
+  });
+
   it('a spoken take in a test sitting goes to the discarding sink: no file appears', async () => {
     const service = testService({ assets: { exists: () => true }, recordings: new DiscardingRecordings() });
     const before = snapshotFiles();

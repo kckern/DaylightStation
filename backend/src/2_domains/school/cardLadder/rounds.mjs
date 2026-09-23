@@ -10,7 +10,10 @@ const CARRY_STATES = ['notYet', 'introduced', 'familiar', 'claimed'];
 const CARRY_RANK = { notYet: 0, introduced: 1, familiar: 1, claimed: 2 };
 
 export function newAllowance({ words, day, settings }) {
-  const all = Object.values(words ?? {});
+  // A word learned on request (Learn more, ruling 2026-09-23) is extra: it
+  // never counts against the goal's newPerDay, today's or tomorrow's, nor
+  // fills the working set that would otherwise starve tomorrow's goal.
+  const all = Object.values(words ?? {}).filter((word) => word?.introducedExtra !== true);
   // A grown-up's Mark mastered is not an introduction the child did today.
   const introducedToday = all.filter((word) => word.introducedDay === day && word.introducedBy !== 'admin').length;
   const unsettled = all.filter(isUnsettled).length;
@@ -43,4 +46,16 @@ export function planNextRound({ words, pool = [], day, roundedToday = new Set(),
   if (n < 2) return null;
   const newWords = fresh.slice(0, n);
   return { id, kind: 'new', words: [...newWords, ...held], newWords };
+}
+
+/**
+ * Learn more words (owner ruling 2026-09-23: never block extra learning;
+ * credit stays capped at the daily goal). The next new words in pool (batch)
+ * order, at most round.size and newPerDay, for one guided round the child
+ * asked for. Neither the goal's allowance nor the session cap limits it, and a
+ * lone leftover word is still a round. Pure.
+ */
+export function extraNewWords({ words, pool = [], roundedToday = new Set(), settings }) {
+  const size = Math.max(1, Math.min(settings.round.size, settings.batch.newPerDay));
+  return pool.filter((id) => (words?.[id]?.state ?? 'new') === 'new' && !roundedToday.has(id) && !isExcluded(words?.[id])).slice(0, size);
 }
