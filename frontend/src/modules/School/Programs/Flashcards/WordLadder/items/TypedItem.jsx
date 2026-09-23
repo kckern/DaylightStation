@@ -171,7 +171,13 @@ export default function TypedItem({ item, mode, langs, resolveAssetUrl, onRespon
           <TouchButton variant="primary" keyHint="Enter" disabled={busy || !value.trim()} onClick={submit}>{busy && graded ? 'Checking…' : 'Enter'}</TouchButton>
         )}
         {!graded && result?.correct === false && (
-          <p className="wl-verdict" role="status">{dictation ? 'Not quite — listen again and have another go.' : 'Try again — copy it exactly.'}</p>
+          <p className="wl-verdict" role="status">
+            {!dictation && 'Try again — copy it exactly.'}
+            {/* Dictation reveals the term only after the second miss (the server
+                sends `answer` then) — from there the step is a copy. */}
+            {dictation && !result.answer && 'Not quite — listen again and have another go.'}
+            {dictation && result.answer && <>It&apos;s <span lang={langs.term}>{result.answer}</span> — type it</>}
+          </p>
         )}
         {graded && result && (
           <p className="wl-verdict" role="status">

@@ -285,6 +285,16 @@ describe('DrillItem', () => {
     expect(screen.getByText(/Step 6 of 9/)).toBeInTheDocument();
   });
 
+  it('a dictation miss without an answer keeps the term hidden; with one, shows it to copy and keeps the field + Enter', () => {
+    const { rerender } = render(<DrillItem item={dictation} langs={langs} resolveAssetUrl={id} onRespond={vi.fn()} result={{ correct: false }} />);
+    expect(screen.getByText(/Not quite/)).toBeInTheDocument();
+    expect(screen.queryByText('가위')).toBeNull();
+    rerender(<DrillItem item={dictation} langs={langs} resolveAssetUrl={id} onRespond={vi.fn()} result={{ correct: false, answer: '가위' }} />);
+    expect(screen.getByRole('status')).toHaveTextContent("It's 가위 — type it");
+    expect(screen.getByLabelText('Your answer')).not.toBeDisabled();
+    expect(screen.getByRole('button', { name: /enter/i })).toBeInTheDocument();
+  });
+
   it('dictation sends only {typed}', () => {
     const onRespond = vi.fn();
     render(<DrillItem item={dictation} langs={langs} resolveAssetUrl={id} onRespond={onRespond} />);
