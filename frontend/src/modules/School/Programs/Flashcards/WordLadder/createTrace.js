@@ -12,22 +12,12 @@
  * `wordLadderLog.setTrace`).
  */
 import getLogger from '../../../../../lib/logging/Logger.js';
+import { createTraceStamp } from '../../shared/traceStamp.js';
 
 let _logger;
 function logger() {
   if (!_logger) _logger = getLogger().child({ component: 'school-word-ladder' });
   return _logger;
-}
-
-function randomTraceId() {
-  if (globalThis.crypto?.getRandomValues) {
-    const bytes = new Uint8Array(6);
-    globalThis.crypto.getRandomValues(bytes);
-    return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
-  }
-  let id = '';
-  while (id.length < 12) id += Math.floor(Math.random() * 16).toString(16);
-  return id.slice(0, 12);
 }
 
 /**
@@ -47,29 +37,21 @@ function randomTraceId() {
  * `wordLadderLog.js`), since this stamp silently overwrites `data.mode`.
  */
 export function createTrace({ learnerId = null, deckId = null, mode = 'live' } = {}) {
-  const id = randomTraceId();
-  const startedAt = Date.now();
-  let sittingId = null;
-  let pkg = null;
-  let seq = 0;
+  // The id, counter and clock are the shared stamp's (`shared/traceStamp.js`);
+  // the word ladder's contract — the stamp wins over any colliding key — is
+  // its default.
+  const stamp = createTraceStamp({
+    fields: {
+      sittingId: null, learnerId, deckId, package: null, mode,
+    },
+  });
 
   return {
-    id,
-    setSitting(nextSittingId) { sittingId = nextSittingId ?? null; },
-    setPackage(nextPackage) { pkg = nextPackage ?? null; },
+    id: stamp.id,
+    setSitting(nextSittingId) { stamp.set({ sittingId: nextSittingId ?? null }); },
+    setPackage(nextPackage) { stamp.set({ package: nextPackage ?? null }); },
     event(name, data = {}, level = 'info') {
-      seq += 1;
-      const stamped = {
-        ...data,
-        traceId: id,
-        sittingId,
-        seq,
-        t: Date.now() - startedAt,
-        learnerId,
-        deckId,
-        package: pkg,
-        mode,
-      };
+      const stamped = stamp.stamp(data);
       logger()[level](`school.word-ladder.${name}`, stamped);
       return stamped;
     },

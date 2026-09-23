@@ -160,6 +160,56 @@ curl -s {env.log_store_url}/select/logsql/query \
   -d 'query=_msg:~"school.word-ladder" AND data.sittingId:"<sittingId>" AND _time:1d' -d limit=2000
 ```
 
+## How to read a recording sitting
+
+A child says the sentence ladder's Recording step "kept going wrong", or a
+sentence took minutes. `school sentence-ladder trace` prints that learner's
+sittings for a day from the log store, one block per sentence and rung:
+
+```bash
+node cli/school.mjs sentence-ladder trace --learner <learner-id> --day YYYY-MM-DD
+node cli/school.mjs sentence-ladder trace --learner <learner-id> --day YYYY-MM-DD --corpus <corpus-id>
+DAYLIGHT_LOGSTORE={env.log_store_url} node cli/school.mjs sentence-ladder trace --learner <learner-id>
+```
+
+A sentence said in pieces reads like this (trimmed; a sitting from before 2026-09-23):
+
+```
+seq 16 · recording
+  0:04.7  cut piece 0 at 3611ms (raw 3702, snapped) → pieces 0–3611 | 3611–5400 of 5400ms  [key:ArrowRight · prompting]
+  0:12.9  take piece 1 1.3s of span 1.8s · voiced 1.0s silent 0.2s end-silence 0.1s  [key:Space · recording]
+  0:24.1  restart piece 1 from recording  [key:Tab · recording]
+  0:47.8  take piece 1 16.5s of span 1.8s · voiced 2.1s silent 14.1s end-silence 11.3s  [key:Space · recording]
+  1:04.3  ▶ take piece 1 16.5s ended  [auto · playback]
+  1:06.8  idle on review 2.5s  [key:Space · review]
+  summary: pieces 2 · takes 4 (refused 0) · redos 2 · restarts 3 (key:Tab×3) · playback 55.3s · review idle 7.0s · stalls 0 · kept (joined)
+```
+
+What to look for:
+
+- **Take vs span.** A piece take much shorter than its `span` was cut off; one
+  close to it was said. `end-silence` is how long the mic ran after the child
+  stopped talking.
+- **`[via · phase]`** on every step names the key or `touch` that drove it and
+  where the rung was. `auto` means the rung acted alone.
+- **Sittings before 2026-09-23** (like the example above) can show a run of
+  `restart … [key:Tab · recording]`: a child pressing Tab to hear it again and
+  wiping the take each time. From 2026-09-23 Tab never destroys a take: a new
+  sitting shows `hear … [key:Tab · recording]` followed by the take that press
+  stopped and **kept** (`take piece N … [key:Tab · recording]`), then a
+  `▶ compare`. A `start over … [key:ArrowLeft]` line is the only way a chunked
+  sentence is thrown away, and `auto-stop` marks a take ended by 3s of silence.
+- **A gap** between two lines is either a `▶` playback (with `ended` /
+  `stopped` / `blocked`), `idle on review`, or a `STALLED 45s` line. If it is
+  none of those, the tablet was not logging — check `system` and `websocket`
+  events for the same window.
+- Lines are ordered by `traceSeq` within the run, never by `_time`. Only info
+  and above reach the store, so per-sentence `debug` detail (rung `enter`,
+  audio `play`) is not in it.
+
+The events and fields are listed in
+[sentence-ladder.md → Recording observability](../../reference/school/sentence-ladder.md#recording-observability).
+
 ## Opening a program without an access code
 
 For testing and admin. A child at the Portal still needs a code — the panel is a
