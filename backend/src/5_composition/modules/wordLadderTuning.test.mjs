@@ -1,0 +1,122 @@
+import { describe, expect, it, vi } from 'vitest';
+import { createWordLadderTuning } from './wordLadderTuning.mjs';
+
+const quiet = { info() {}, warn() {}, debug() {}, error() {} };
+
+// The service is replaced by a fake so the composition's own jobs are what
+// is tested: the tuner only with a model, the scheduled tick, the push.
+function fakeService() {
+  const calls = [];
+  let release = null;
+  return {
+    calls,
+    hold() { return new Promise((resolve) => { release = resolve; }); },
+    release: () => release?.(),
+    pending: vi.fn(async () => [
+      { learnerId: 'learner-a', pkg: 'pkg', deckId: 'deck', day: '2026-09-21' },
+      { learnerId: 'learner-b', pkg: 'pkg', deckId: 'deck', day: '2026-09-21' },
+    ]),
+    runFor: vi.fn(async (row) => { calls.push(row.learnerId); return { status: 'on-track' }; }),
+  };
+}
+
+function build(over = {}) {
+  const captured = {};
+  const service = over.service ?? fakeService();
+  const scheduler = { every: vi.fn((ms, task) => { captured.interval = ms; captured.task = task; return captured.stop = vi.fn(); }) };
+  const handle = createWordLadderTuning({
+    store: {}, assignments: {}, decks: { getFlashcardDeck: async () => ({ title: 'Korean Words' }) }, lexicons: {},
+    settings: () => ({}), logger: quiet, scheduler,
+    createService: (deps) => { captured.deps = deps; return service; },
+    createRuntime: vi.fn(() => ({ execute: vi.fn() })),
+    ...over,
+  });
+  return { handle, captured, service, scheduler };
+}
+
+describe('createWordLadderTuning', () => {
+  it('returns a stoppable handle; unscheduled, no timer is set', () => {
+    const { handle, scheduler } = build();
+    expect(typeof handle.stop).toBe('function');
+    expect(typeof handle.tick).toBe('function');
+    expect(handle.service).toBeTruthy();
+    expect(scheduler.every).not.toHaveBeenCalled();
+    handle.stop();
+  });
+
+  it('scheduled: ticks every 15 minutes and stop clears the timer (also on server close)', () => {
+    const server = { once: vi.fn() };
+    const { handle, captured } = build({ scheduled: true, server });
+    expect(captured.interval).toBe(15 * 60000);
+    expect(server.once).toHaveBeenCalledWith('close', handle.stop);
+    handle.stop();
+    expect(captured.stop).toHaveBeenCalled();
+  });
+
+  it('builds the tuner only when a model is configured', () => {
+    const off = build();
+    expect(off.captured.deps.tuner).toBeNull();
+    const createRuntime = vi.fn(() => ({ execute: vi.fn() }));
+    const on = build({ model: 'openai/gpt-4o-mini', createRuntime });
+    expect(on.captured.deps.tuner).not.toBeNull();
+    expect(typeof on.captured.deps.tuner.tune).toBe('function');
+    expect(createRuntime).toHaveBeenCalledWith(expect.objectContaining({ model: 'openai/gpt-4o-mini' }));
+  });
+
+  it('a tick runs pending() rows one at a time, and a tick during a tick is skipped', async () => {
+    const service = fakeService();
+    let inFlight = 0; let maxInFlight = 0;
+    service.runFor = vi.fn(async (row) => {
+      inFlight += 1; maxInFlight = Math.max(maxInFlight, inFlight);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      inFlight -= 1; service.calls.push(row.learnerId);
+    });
+    const { handle } = build({ service });
+    const first = handle.tick();
+    await handle.tick(); // overlapping tick: skipped
+    await first;
+    expect(service.pending).toHaveBeenCalledTimes(1);
+    expect(service.calls).toEqual(['learner-a', 'learner-b']);
+    expect(maxInFlight).toBe(1);
+  });
+
+  it('one learner\'s failure does not stop the tick', async () => {
+    const service = fakeService();
+    service.runFor = vi.fn(async (row) => { if (row.learnerId === 'learner-a') throw new Error('boom'); service.calls.push(row.learnerId); });
+    const { handle } = build({ service });
+    await handle.tick();
+    expect(service.calls).toEqual(['learner-b']);
+  });
+
+  it('a concern pushes each teacher with the push-standard copy and data block', async () => {
+    const send = vi.fn(async () => [{ delivered: true }]);
+    const { captured } = build({
+      notificationService: { send }, teachers: () => ['grown-up-1', 'grown-up-2'],
+      learnerName: async () => 'Learner4',
+    });
+    await captured.deps.notify({ learnerId: 'user_4', package: 'lang-basics', deckId: 'deck', day: '2026-09-21', status: 'concern', notes: ['Credited with no words quizzed.'] });
+    expect(send).toHaveBeenCalledTimes(2);
+    const intent = send.mock.calls[0][0];
+    expect(intent).toMatchObject({
+      title: '🔤 Learner4 — Korean Words', body: 'Credited with no words quizzed · Mon Sep 21',
+      category: 'school', urgency: 'high',
+      metadata: { username: 'grown-up-1', pushData: { tag: 'school-user_4-word-ladder-lang-basics', channel: 'School needs you' } },
+      dedupeKey: 'word-ladder-concern:grown-up-1:user_4:lang-basics:2026-09-21',
+    });
+  });
+
+  it('a failing label lookup still pushes, without the label', async () => {
+    const send = vi.fn(async () => []);
+    const { captured } = build({
+      notificationService: { send }, teachers: () => ['grown-up-1'],
+      learnerName: async () => { throw new Error('no roster'); },
+      decks: { getFlashcardDeck: async () => { throw new Error('no deck'); } },
+    });
+    await captured.deps.notify({ learnerId: 'user_4', package: 'lang-basics', deckId: 'deck', day: '2026-09-21', status: 'concern', notes: [] });
+    expect(send.mock.calls[0][0].title).toBe('🔤 Word practice');
+  });
+
+  it('no notification service: notify is null', () => {
+    expect(build().captured.deps.notify).toBeNull();
+  });
+});

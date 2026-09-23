@@ -23,6 +23,7 @@ export function createSchoolRouter({
   wordLadderStudy = null,
   // Test mode (`/word-ladder/test`) over read-only shadow stores; the stage screen id.
   wordLadderTest = null,
+  wordLadderTuning = null,
   wordLadderStageScreen = null,
   schoolResourceService = null,
   schoolPrintAccess = null,
@@ -553,7 +554,7 @@ export function createSchoolRouter({
   // word-ladder`. Its own module, like the teacher reading workspace.
   mountWordLadderRoutes({
     router, wrap, wordLadderStudy, wordLadderTest, stageScreen: wordLadderStageScreen, capabilityProof,
-    teacherCapabilitySessions,
+    teacherCapabilitySessions, wordLadderTuning,
     notConfigured: (what) => new EntityNotFoundError(what, 'not configured'),
   });
   router.post('/sessions/:sessionId/remediation-offer', wrap(async (req, res) => {

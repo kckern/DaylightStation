@@ -34,7 +34,7 @@ function memoryStore({ days = {}, tuning = emptyTuning() } = {}) {
   };
 }
 
-function make({ store = memoryStore(), tuner = undefined, notify = vi.fn(async () => {}), programs = null, bounds = null } = {}) {
+function make({ store = memoryStore(), tuner = undefined, notify = vi.fn(async () => {}), programs = null, bounds = null, teacherGate = null } = {}) {
   const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
   const rows = programs ?? [{ programId: 'flashcards', deckId: DECK, policy: { mode: 'word-ladder' } }];
   const service = new WordLadderTuningService({
@@ -48,7 +48,7 @@ function make({ store = memoryStore(), tuner = undefined, notify = vi.fn(async (
     tuner: tuner === undefined ? { tune: vi.fn(async () => ({ status: 'on-track', notes: ['Fine.'], changes: [] })) } : tuner,
     bounds,
     settings: () => structuredClone(DEFAULT_SETTINGS),
-    notify, timezone: 'America/Los_Angeles', now: () => NOW, logger,
+    notify, teacherGate, timezone: 'America/Los_Angeles', now: () => NOW, logger,
   });
   return { service, store, logger, notify };
 }
@@ -272,5 +272,110 @@ describe('WordLadderTuningService — races and bounds (fix round 1)', () => {
     const { service } = make({ store, tuner: { tune }, bounds: { 'round.size': [3, 6] } });
     await service.runFor(RUN);
     expect(tune.mock.calls[0][0].settings['round.size']).toBe(6);
+  });
+});
+
+describe('WordLadderTuningService — grown-up view and undo', () => {
+  const gate = () => ({ assert: vi.fn(({ userId }) => { if (userId !== 'grown-up') throw Object.assign(new Error('not a teacher'), { status: 403 }); }) });
+  const ADMIN = { learnerId: 'test-learner', deckId: DECK, actorId: 'grown-up', pin: null };
+  const applied = (setting, from, to, over = {}) => ({ setting, from, to, reason: 'r', ...over });
+  const tuned = () => ({
+    ...emptyTuning(),
+    values: { 'batch.newPerDay': 3, 'round.size': 6 },
+    lastChanged: { 'batch.newPerDay': '2026-09-21', 'round.size': '2026-09-10' },
+    lastTunedDay: '2026-09-21',
+    history: [
+      { day: '2026-09-10', status: 'coasting', notes: [], applied: [applied('round.size', 5, 6)], dropped: [] },
+      { day: '2026-09-21', status: 'stuck', notes: ['Cap hit.'], applied: [applied('batch.newPerDay', 4, 3)], dropped: [{ setting: 'round.size', to: 7, reason: 'r', brake: 'dwell' }] },
+    ],
+  });
+
+  it('the view is teacher-gated and shows current vs default, the last run and the history newest first', async () => {
+    const teacherGate = gate();
+    const { service } = make({ store: memoryStore({ tuning: tuned() }), teacherGate });
+    await expect(service.adminTuning({ ...ADMIN, actorId: 'someone' })).rejects.toThrow(/not a teacher/);
+    const view = await service.adminTuning(ADMIN);
+    expect(teacherGate.assert).toHaveBeenLastCalledWith(expect.objectContaining({ userId: 'grown-up', action: 'word-ladder.tuning' }));
+    expect(view.package).toBe(PKG);
+    expect(view.settings.find((row) => row.setting === 'batch.newPerDay')).toMatchObject({ current: 3, default: 4, min: 2, max: 6, tuned: true });
+    expect(view.settings.find((row) => row.setting === 'drill.afterMisses')).toMatchObject({ tuned: false });
+    expect(view.last).toMatchObject({ day: '2026-09-21', status: 'stuck', notes: ['Cap hit.'] });
+    expect(view.history.map((row) => row.day)).toEqual(['2026-09-21', '2026-09-10']);
+    expect(view.history[0].applied[0]).toMatchObject({ setting: 'batch.newPerDay', undoable: true });
+    expect(view.history[1].applied[0]).toMatchObject({ setting: 'round.size', undoable: true });
+  });
+
+  it('a learner not enrolled in the deck is refused', async () => {
+    const { service } = make({ store: memoryStore({ tuning: tuned() }), teacherGate: gate() });
+    await expect(service.adminTuning({ ...ADMIN, learnerId: 'other-learner' })).rejects.toThrow(/assignment/);
+  });
+
+  it('undo restores the previous value, marks the change undone, holds the dwell and logs a grown-up undo', async () => {
+    const store = memoryStore({ tuning: tuned() });
+    const { service, logger } = make({ store, teacherGate: gate() });
+    const out = await service.adminUndo({ ...ADMIN, setting: 'round.size' });
+    expect(out).toMatchObject({ setting: 'round.size', from: 6, to: 5 });
+    const written = store.s.tuning;
+    // Back to the default: the key is dropped so the setting follows config again.
+    expect(Object.hasOwn(written.values, 'round.size')).toBe(false);
+    expect(written.values['batch.newPerDay']).toBe(3);
+    expect(written.lastChanged['round.size']).toBe('2026-09-22');
+    expect(written.lastTunedDay).toBe('2026-09-21');
+    expect(written.history[0].applied[0].undone).toEqual({ day: '2026-09-22', actorId: 'grown-up' });
+    expect(written.history.at(-1)).toMatchObject({
+      day: '2026-09-22', undo: true, actorId: 'grown-up', applied: [{ setting: 'round.size', from: 6, to: 5, reason: 'grown-up undo' }],
+    });
+    expect(logger.info).toHaveBeenCalledWith('school.word-ladder.tuning', expect.objectContaining({
+      learnerId: 'test-learner', package: PKG, setting: 'round.size', from: 6, to: 5, reason: 'grown-up undo', actorId: 'grown-up',
+    }));
+    const view = await service.adminTuning(ADMIN);
+    const undone = view.history.find((row) => row.day === '2026-09-10').applied[0];
+    expect(undone).toMatchObject({ undoable: false, undone: { day: '2026-09-22' } });
+    expect(view.history[0]).toMatchObject({ undo: true });
+    expect(view.history[0].applied[0].undoable).toBe(false);
+    expect(view.last.day).toBe('2026-09-21');
+  });
+
+  it('undo to a value that is not the default keeps it as a tuned value', async () => {
+    const tuning = tuned();
+    tuning.values['batch.newPerDay'] = 2;
+    tuning.history.push({ day: '2026-09-22', status: 'stuck', notes: [], applied: [applied('batch.newPerDay', 3, 2)], dropped: [] });
+    tuning.values['batch.newPerDay'] = 2;
+    const store = memoryStore({ tuning });
+    const { service } = make({ store, teacherGate: gate() });
+    await service.adminUndo({ ...ADMIN, setting: 'batch.newPerDay' });
+    expect(store.s.tuning.values['batch.newPerDay']).toBe(3);
+  });
+
+  it('refuses an undo with nothing to undo, a value changed since, an unknown setting, or a non-teacher', async () => {
+    const teacherGate = gate();
+    const store = memoryStore({ tuning: tuned() });
+    const { service } = make({ store, teacherGate });
+    await expect(service.adminUndo({ ...ADMIN, setting: 'drill.afterMisses' })).rejects.toThrow(/nothing to undo/i);
+    await expect(service.adminUndo({ ...ADMIN, setting: 'session.capMinutes' })).rejects.toThrow(/not a tuned setting/i);
+    await expect(service.adminUndo({ ...ADMIN, actorId: 'someone', setting: 'round.size' })).rejects.toThrow(/not a teacher/);
+    store.s.tuning.values['round.size'] = 7;
+    await expect(service.adminUndo({ ...ADMIN, setting: 'round.size' })).rejects.toThrow(/changed since/i);
+    await service.adminUndo({ ...ADMIN, setting: 'batch.newPerDay' });
+    await expect(service.adminUndo({ ...ADMIN, setting: 'batch.newPerDay' })).rejects.toThrow(/nothing to undo/i);
+    expect(store.writeTuning).toHaveBeenCalledTimes(1);
+  });
+
+  it('an undo while a tuning run is in flight for the same learner package is refused', async () => {
+    let release;
+    const tune = vi.fn(() => new Promise((resolve) => { release = () => resolve({ status: 'on-track', notes: [], changes: [] }); }));
+    const store = memoryStore({ days: { [YESTERDAY]: studyDay(YESTERDAY) }, tuning: { ...tuned(), lastTunedDay: '2026-09-20' } });
+    const { service } = make({ store, tuner: { tune }, teacherGate: gate() });
+    const run = service.runFor(RUN);
+    await vi.waitFor(() => expect(tune).toHaveBeenCalled());
+    await expect(service.adminUndo({ ...ADMIN, setting: 'round.size' })).rejects.toThrow(/in progress/i);
+    release();
+    await run;
+    await expect(service.adminUndo({ ...ADMIN, setting: 'round.size' })).resolves.toMatchObject({ setting: 'round.size' });
+  });
+
+  it('no teacher gate: the grown-up routes are refused', async () => {
+    const { service } = make({ store: memoryStore({ tuning: tuned() }) });
+    await expect(service.adminTuning(ADMIN)).rejects.toThrow(/teacher gate/);
   });
 });

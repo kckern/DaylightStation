@@ -360,6 +360,46 @@ credited day quizzed no words) and nothing changes. A tuner failure changes
 nothing; it records `status: null, error` and marks the day. A `concern` calls
 the injected `notify` port.
 
+**Composition and schedule** (`5_composition/modules/wordLadderTuning.mjs`,
+wired in `app.mjs`). The service is built on the **live** store and the
+assignment store. The `WordLadderTuner` agent (a `MastraAdapter` runtime, one
+structured step, no tools) is built only when `word_ladder.tuner.model` is set
+in the household School config. With no model, the deterministic note above
+applies. Wherever the agent scheduler runs (`agentSchedulerEnabled`:
+production, a container, or `ENABLE_CRON=true`), a tick every 15 minutes asks
+`pending()` and tunes each row **one at a time**. A tick that finds the
+previous one still running is skipped. The service refuses a day that has not
+ended, so the first tick after the study-day rollover does the work. One
+learner's failure is logged (`tuning-run-failed`) and the tick goes on.
+
+**Concern push.** `notify` composes the copy with `composeSchoolPush({kind:
+'word-ladder'})` (push standard): `🔤 {Child} — {Deck title}`, the body is the
+tuner's first note when it reads cleanly (no ids, slugs or enums), else
+"Word practice needs a grown-up's look", then the study day. The channel is
+School needs you, and the tag `school-{learnerId}-word-ladder-{package}` means
+the next concern replaces the card. It goes to every `teachers:` id through the
+household `NotificationService` (`category: school`, `urgency: high`,
+`dedupeKey` per teacher, learner, package and day). A failed label lookup drops
+that label and still sends.
+
+**Console and undo** (`adminTuning`, `adminUndo`). Both are teacher-gated
+(`action: 'word-ladder.tuning'`), refuse a learner not enrolled in the deck,
+and exist only on the live service. The view lists each tunable with `current`
+(config plus tuned values, clamped), `default`, `min`/`max` (spec bounds
+narrowed by `word_ladder.bounds`), `tuned` and `lastChanged`, the last
+non-undo run, and the history newest first. An applied change is `undoable`
+when it is still that setting's latest change and still in force. Undo:
+
+- restores the change's `from`. If that equals the config default, the key is
+  removed so the setting follows config again;
+- stamps the undone change `undone: {day, actorId}` and appends a history row
+  `{day, undo: true, actorId, applied: [{setting, from, to, reason: 'grown-up undo'}]}`;
+- sets `lastChanged[setting]` to today, so the dwell brake holds the grown-up's
+  value for the next 5 study days. `lastTunedDay` is untouched;
+- logs `school.word-ladder.tuning` with `reason: 'grown-up undo'` and `actorId`;
+- is refused while a tuning run for that learner package is in flight, when
+  there is nothing to undo, or when the value has changed since.
+
 | Setting | Decides | Default |
 |---|---|---|
 | `round.size` | words per round | 5 |
@@ -487,6 +527,11 @@ no audio until the take; look / copy / say-after the full word card.
   `POST /word-ladder/admin/reset {learnerId, deckId, wordId, actorId, pin}`,
   `…/admin/mastered {…, wordId, stage}`, `…/admin/exclude {…, wordId, excluded}`,
   `…/admin/drop-deck {…, dropDeckId}`, `…/admin/regrade {…, day, itemId, pass}`
+- Tuning, **live mount only**, teacher-gated in `WordLadderTuningService`. The
+  acting teacher is the capability session's own user when the cookie holds
+  one, else the `actorId` given:
+  `GET /word-ladder/admin/tuning?learnerId=&deckId=` → `{learnerId, package, state, lastTunedDay, settings, last, history}`;
+  `POST /word-ladder/admin/tuning/undo {learnerId, deckId, setting, actorId, pin}` → `{learnerId, package, day, setting, from, to, reason}`
 
 Item ids make every response idempotent. A sitting belongs to its study day:
 after the day boundary it 404s and the client reopens. **Server idle close:** a
@@ -605,7 +650,7 @@ by hand.
 
 ## Logs
 
-Backend: `school.word-ladder.{opened,graded,reopened,closed,folded,attempts-unreadable,decks-unlisted,store-corrupt,tuning,tuned,tuning-failed,tuning-skipped,tuning-unreadable}` (`store-corrupt` carries `kind: status|day|tuning`; `tuning` is one line per applied or dropped change, `{setting, from, to, reason, dropped?}`),
+Backend: `school.word-ladder.{opened,graded,reopened,closed,folded,attempts-unreadable,decks-unlisted,store-corrupt,tuning,tuned,tuning-failed,tuning-skipped,tuning-unreadable}` (`store-corrupt` carries `kind: status|day|tuning`; `tuning` is one line per applied or dropped change, `{setting, from, to, reason, dropped?}`, plus `actorId` on a grown-up undo; the scheduler adds `tuning-wired`, `tuning-run-failed`, `tuning-tick-failed`, `tuning-deck-skipped`, `tuning-pending-failed`, `tuning-notify-failed`),
 all carrying `mode: live|test`. Frontend
 (`context.component: school-word-ladder`, events `school.word-ladder.*`):
 `started` (Start tapped), `plan.failed`, `stage-failed`, `media.failed`
@@ -621,15 +666,17 @@ speaking, on-screen keypad, practice menu)**:
 the spec is written but not implemented:
 
 - **Trace CLI and the console's Words view** — `docs/_wip/plans/2026-09-22-word-ladder-plan-4-observability-controls.md`.
-  The [grown-up word controls](#grown-up-word-controls-spec-6) exist in the
-  backend and API; the teacher console panel that calls them, and `school
-  word-ladder trace`, are still being built.
+  The [grown-up word controls](#grown-up-word-controls-spec-6) and the
+  tuning list are on the console's **Words** tab
+  ([`teacher.md`](teacher.md#2-the-navigation-graph)). `school word-ladder
+  trace` is described in the Plan 4 document until this page covers it.
 - **Practice flashcards prev/undo** — spec §6 describes a practice
   flashcard run with prev/next and undo; Plan 2 shipped it forward-only (see
   [The practice menu](#the-practice-menu-spec-6-post-goal)), by ruling.
 - **Tuning agent** — `docs/_wip/plans/2026-09-22-word-ladder-plan-5-tuning-agent.md`.
-  `word_ladder.settings` / `word_ladder.bounds` are static config; nothing
-  adjusts them automatically yet.
+  The service, schedule, console list and undo are built (see
+  [Tuning](#tuning-wordladdertuningservice-spec-7)). The agent changes values
+  only once `word_ladder.tuner.model` is set in the household School config.
 
 ## Printed quiz and the fold (spec §8)
 

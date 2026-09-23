@@ -148,5 +148,25 @@ describe('word-ladder routes', () => {
     await request(a).get('/word-ladder/admin/words?learnerId=k&deckId=d&actorId=q').expect(200);
     expect(adminWords).toHaveBeenLastCalledWith({ learnerId: 'k', deckId: 'd', actorId: 'q', pin: null });
   });
+  it('tuning GET and undo POST are live only, reach the tuning service, and take the acting teacher from the capability session', async () => {
+    const tuning = { adminTuning: vi.fn(async () => ({ history: [] })), adminUndo: vi.fn(async () => ({ undone: true })) };
+    const proof = { capabilityToken: 'cap-1', stepUpToken: null };
+    const capabilityProof = vi.fn((req) => (req.get('cookie') ? proof : null));
+    const teacherCapabilitySessions = { status: vi.fn((token) => (token === 'cap-1' ? { active: true, userId: 'p' } : { active: false })) };
+    const { a } = app({ wordLadderTuning: tuning, capabilityProof, teacherCapabilitySessions });
+    const res = await request(a).get('/word-ladder/admin/tuning?learnerId=k&deckId=d&actorId=someone-else')
+      .set('Cookie', 'daylight_teacher_session=cap-1').expect(200);
+    expect(res.headers['cache-control']).toBe('private, no-store');
+    expect(tuning.adminTuning).toHaveBeenLastCalledWith({ learnerId: 'k', deckId: 'd', actorId: 'p', pin: proof });
+    await request(a).post('/word-ladder/admin/tuning/undo').set('Cookie', 'daylight_teacher_session=cap-1')
+      .send({ learnerId: 'k', deckId: 'd', setting: 'round.size', actorId: 'someone-else' }).expect(200);
+    expect(tuning.adminUndo).toHaveBeenLastCalledWith({ learnerId: 'k', deckId: 'd', setting: 'round.size', actorId: 'p', pin: proof });
+    // No cookie: the body's actorId and pin (the CLI case).
+    await request(a).post('/word-ladder/admin/tuning/undo').send({ learnerId: 'k', deckId: 'd', setting: 'round.size', actorId: 'q', pin: '1234' }).expect(200);
+    expect(tuning.adminUndo).toHaveBeenLastCalledWith({ learnerId: 'k', deckId: 'd', setting: 'round.size', actorId: 'q', pin: '1234' });
+    await request(a).post('/word-ladder/test/admin/tuning/undo').send({ learnerId: 'k', setting: 'round.size' }).expect(404);
+    const { a: unwired } = app();
+    await request(unwired).get('/word-ladder/admin/tuning?learnerId=k&deckId=d').expect(503);
+    await request(unwired).post('/word-ladder/admin/tuning/undo').send({ learnerId: 'k', setting: 'round.size' }).expect(503);
+  });
 });
-
