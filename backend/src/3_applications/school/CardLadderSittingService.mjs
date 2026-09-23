@@ -28,9 +28,9 @@ import { offsetMinutesFor, studyDayForInstant } from '#domains/school/studyDay.m
 import { addDays } from '#domains/school/termVerdict.mjs';
 import { curriculumPosterRef } from '#apps/common/resources/publicResourceRefs.mjs';
 import {
-  addActiveTime, cueFor, currentItem, deckDirOf, deckProgress, emptyWordV3, introPlanLabel, introPreview, excludeWordFromDay, foldPaperAttempts, ladderLevel, markMastered, normalizeAnswer, openDay,
+  addActiveTime, cueFor, currentItem, deckDirOf, deckProgress, emptyWordV3, introPlanLabel, introPreview, excludeWordFromDay, foldPaperAttempts, ladderLevel, markMastered, openDay,
   quizDocumentIdFor, respond, roundHasMatch, startPractice, typedAnswers, withTunedValues, wordAssetIds, wordTransitions,
-  servedWhy, dayChanges, prereqChanges, scriptFor,
+  servedWhy, dayChanges, prereqChanges, scriptFor, ruleForTarget,
 } from '#domains/school/cardLadder/index.mjs';
 
 const FOLD_LOOKBACK_DAYS = 60;
@@ -930,7 +930,7 @@ export class CardLadderSittingService {
    * rewritten — reset / mark mastered do that.
    */
   async adminRegrade({ learnerId, deckId, day, itemId, pass, actorId = null, pin = null } = {}) {
-    const { pkg, store } = await this.#admin({ learnerId, deckId, actorId, pin });
+    const { pkg, store, lexicon } = await this.#admin({ learnerId, deckId, actorId, pin });
     if (!this.#judgementCache) throw new ValidationError('the judgement cache is not configured');
     if (typeof day !== 'string' || !DAY_PATTERN.test(day)) throw new ValidationError('day must be YYYY-MM-DD');
     if (typeof itemId !== 'string' || !itemId) throw new ValidationError('itemId is required');
@@ -940,7 +940,9 @@ export class CardLadderSittingService {
     const answer = typedAnswers(dayFile).find((row) => row.itemId === itemId);
     if (!answer) throw new ValidationError('only a typed (3.3) answer can be re-graded');
     const score = pass ? this.#settings().typing.passScore : 1;
-    this.#judgementCache.set(pkg, answer.wordId, normalizeAnswer(answer.typed), { score, judge: 'grown-up', reason: REGRADE_REASON });
+    // Keyed exactly as the judge looks it up: the target script's normalize.
+    const rule = ruleForTarget(lexicon.entries.get(answer.wordId)?.term ?? '', lexicon.targetScript ?? scriptFor(lexicon.language?.code));
+    this.#judgementCache.set(pkg, answer.wordId, rule.normalize(answer.typed), { score, judge: 'grown-up', reason: REGRADE_REASON });
     const regraded = { at: isoWithOffset(this.#now(), this.#timezone), actorId, pass };
     store.transact(learnerId, pkg, day, ({ status, dayFile: file }) => {
       if (file.items?.[itemId]) file.items[itemId] = { ...file.items[itemId], regraded };

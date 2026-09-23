@@ -417,7 +417,7 @@ script-specific grading plugs in:
 | Different real word | match, under the script's `normalize`, to another introduced word or an authored decoy | 2, `judge: guard` |
 | Numbers (every script) | the target's digit tokens (`1776`, `1215`) are not exactly the attempt's, same order | 2, `judge: number` |
 | Accent slip (Latin) | equal once diacritics are stripped, different with them (`cafe` for `café`) | 8, `judge: accent` |
-| Deterministic (short, L ≤ 4 jamo) | distance 1 → 6 · distance ≥ 2 → 2 | `judge: distance` |
+| Deterministic (short, L ≤ 4 units) | distance 1 → 6 · distance ≥ 2 → 2 | `judge: distance` |
 | Deterministic (longer) | d/L ≤ 10% → 8 · ≤ 20% → 6 · ≤ 33% → 4 · beyond → 2 | `judge: distance` |
 
 Distance is Levenshtein over the script's units (`keystrokeUnits(text,
@@ -450,7 +450,7 @@ mirrors the language table.
 
 | Script | Languages | `normalize` | Distance units | Wrong script (→ 1) | Short (≤ 2 → deterministic) | Keypad |
 |---|---|---|---|---|---|---|
-| `hangul` | ko | `normalizeAnswer`: NFC, whitespace and punctuation removed (unchanged) | keystroke jamo | no Hangul typed | syllables | jamo keypad |
+| `hangul` | ko | `normalizeAnswer`: NFC, whitespace and punctuation removed (unchanged) | keystroke jamo | no Hangul typed — only when the target itself has Hangul letters; a bare-number target (`1945`) is judged by the numbers rule | syllables | jamo keypad |
 | `latin` | en, es, fr, de, … | NFC, trim, collapse whitespace, strip punctuation, case-fold | letters, diacritics stripped (+ the accent-slip 8) | no Latin letter | graphemes | none |
 | `cyrillic`, `greek`, `arabic` | ru/uk/…, el, ar/fa/… | as Latin (case-fold where the script has case) | grapheme clusters (`Intl.Segmenter`, code points as fallback) | no letter of the target's script | graphemes | none |
 | `han`, `kana` | zh, ja (kana + kanji) | as Latin | grapheme clusters | no letter of the target's script | characters | none |
@@ -460,15 +460,20 @@ mirrors the language table.
 attempt's digit tokens, identically and in order — otherwise 2 (`judge:
 number`), a different answer and not a typo, however close the rest. A target
 that is only a number therefore passes only on the exact number (`1776`;
-`1,776` normalises to it). The wrong-script floor applies only when the target
+`1,776` normalises to it). An omitted number is a different answer too:
+`Declaration of Independence` for `Declaration of Independence (1776)` fails
+(2, `judge: number`). The wrong-script floor applies only when the target
 itself has letters of its script, so a bare-number target is never "wrong
 script". **Copy, dictation, tiles and the drill's type step** compare with the
 same `normalize` (spacing ignored), so `cat` copies `Cat` for a Latin target;
 accents still have to be copied. The judgement cache and a grown-up re-grade
-stay keyed by `normalizeAnswer` (identical to before for Hangul).
+are keyed by the script's `normalize` — the judge's lookups and writes and
+`adminRegrade` alike — so re-grading `Ephmeral` also covers `ephmeral`. The
+Hangul rule's `normalize` is `normalizeAnswer` itself, so Korean keys are
+byte-identical to before.
 
 Pass = score ≥ `typing.passScore` (default 6). Verdicts are cached by
-(package, word id, normalised answer) in
+(package, word id, answer under the script's `normalize`) in
 `data/household/school/runtime/card-ladder/<package>/judgements.yml`
 (`YamlJudgementCache`) — a reload or repeated typo gets the same verdict with
 no second call. A **grown-up's re-grade** overwrites that answer's entry with

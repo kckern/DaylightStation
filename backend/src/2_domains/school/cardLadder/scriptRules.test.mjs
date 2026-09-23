@@ -70,6 +70,7 @@ describe('numbers must match exactly, in every script — a history deck', () =>
     expect(score('latin', 'Magna Carta', 'magna carta')).toMatchObject({ score: 10 });
     expect(score('latin', 'Declaration of Independence (1776)', 'declaration of independence 1776')).toMatchObject({ score: 10 });
     expect(score('latin', 'Declaration of Independence (1776)', 'Declaration of Independence (1767)')).toMatchObject({ score: 2, judge: 'number' });
+    expect(score('latin', 'Declaration of Independence (1776)', 'Declaration of Independence')).toMatchObject({ score: 2, judge: 'number' });
     expect(score('latin', 'Declaration of Independance (1776)', 'Declaration of Independance (1776)').score).toBe(10);
     expect(score('latin', 'Declaration of Independence (1776)', 'Declaration of Independance (1776)').score).toBe(8);
   });
@@ -106,5 +107,13 @@ describe('answersMatch — copy steps use the script normalize', () => {
     expect(answersMatch('cafe', 'café', 'latin')).toBe(false);
     expect(answersMatch('가위 ', '가위', 'hangul')).toBe(true);
     expect(answersMatch('Cat', 'cat', null)).toBe(true);
+  });
+});
+
+describe('the hangul rule keeps Korean keys byte-identical', () => {
+  it('normalize IS normalizeAnswer', async () => {
+    const { normalizeAnswer } = await import('./jamo.mjs');
+    expect(ruleFor('hangul').normalize).toBe(normalizeAnswer);
+    for (const text of [' 가이 ', '이름이 뭐예요?', '안녕히개새요 ']) expect(ruleFor('hangul').normalize(text)).toBe(normalizeAnswer(text));
   });
 });
