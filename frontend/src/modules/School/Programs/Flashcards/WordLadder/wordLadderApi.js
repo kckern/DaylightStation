@@ -37,10 +37,4 @@ export function createWordLadderApi({ test = false } = {}) {
   };
 }
 
-// Backwards-compatible singleton for the (soon to be replaced) v2
-// WordLadderProgram: it imports this named/default object directly rather
-// than calling the factory. It talks to routes the v3 door no longer
-// serves — accepted until Task 18 rewrites the program against the new API.
-export const wordLadderApi = createWordLadderApi({ test: false });
-
 export default createWordLadderApi;

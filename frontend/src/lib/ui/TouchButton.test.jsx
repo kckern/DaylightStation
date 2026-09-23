@@ -13,3 +13,10 @@ describe('TouchButton', () => {
     expect(onClick).toHaveBeenCalled();
   });
 });
+
+describe('TouchButton type', () => {
+  it('is always type="button" — a caller cannot turn it into a submit', () => {
+    render(<TouchButton type="submit">Go</TouchButton>);
+    expect(screen.getByRole('button', { name: /go/i }).getAttribute('type')).toBe('button');
+  });
+});

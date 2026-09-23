@@ -676,7 +676,7 @@ describe('SchoolApp — word-ladder flashcards target', () => {
     expect(mounted).toBe(true);
     expect(await screen.findByTestId('word-ladder-stub')).toBeInTheDocument();
     const props = wordLadderProps.mock.calls.at(-1)[0];
-    expect(props.descriptor).toEqual({ deckId: 'language/korean/week-01-classroom', userId: 'kid1' });
+    expect(props.descriptor).toEqual({ deckId: 'language/korean/week-01-classroom', userId: 'kid1', test: false, scenario: null });
     expect(typeof props.onExit).toBe('function');
     expect(typeof props.resolveAssetUrl).toBe('function');
   });
@@ -688,5 +688,40 @@ describe('SchoolApp — word-ladder flashcards target', () => {
     await act(async () => { mounted = await launchHook.onLaunch({ ...TARGET, deckId: null }, 'kid1'); });
     expect(mounted).toBe(false);
     expect(screen.queryByTestId('word-ladder-stub')).toBeNull();
+  });
+});
+
+describe('SchoolApp — the /test door', () => {
+  const TARGET = { kind: 'program', program: 'flashcards', deckId: 'language/korean/week-01-classroom', policy: { mode: 'word-ladder' } };
+
+  it('/go/<learner>/word-ladder/test mounts a test sitting with the ?scenario= seed', async () => {
+    const oldUrl = window.location.pathname + window.location.search;
+    window.history.replaceState({}, '', '/school/go/test-learner/word-ladder/test?scenario=round-end');
+    schoolApi.roster.mockResolvedValue({ ok: true, status: 200, data: [{ id: 'kid1', name: 'Alpha', birthyear: 2016 }, { id: 'test-learner', name: 'Tester', birthyear: 2016 }] });
+    directLaunchMock.mockResolvedValue({ ok: true, status: 200, data: { target: TARGET } });
+    try {
+      render(<SchoolApp clear={() => {}} mode="open" />);
+      expect(await screen.findByTestId('word-ladder-stub')).toBeInTheDocument();
+      // The reserved final segment is a flag, never an instance.
+      expect(directLaunchMock).toHaveBeenCalledWith('test-learner', 'word-ladder', null);
+      expect(wordLadderProps.mock.calls.at(-1)[0].descriptor).toEqual({
+        deckId: 'language/korean/week-01-classroom', userId: 'test-learner', test: true, scenario: 'round-end',
+      });
+    } finally {
+      window.history.replaceState({}, '', oldUrl);
+      schoolApi.roster.mockResolvedValue({ ok: true, status: 200, data: [{ id: 'kid1', name: 'Alpha', birthyear: 2016 }] });
+    }
+  });
+
+  it('a /test URL for a program without test mode is refused before anything is minted', async () => {
+    const oldUrl = window.location.pathname + window.location.search;
+    window.history.replaceState({}, '', '/school/go/test-learner/book-log/test');
+    try {
+      render(<SchoolApp clear={() => {}} mode="open" />);
+      expect(await screen.findByText("Test mode isn't available for book-log.")).toBeInTheDocument();
+      expect(directLaunchMock).not.toHaveBeenCalled();
+    } finally {
+      window.history.replaceState({}, '', oldUrl);
+    }
   });
 });
