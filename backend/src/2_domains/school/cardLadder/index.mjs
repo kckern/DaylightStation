@@ -27,7 +27,7 @@ export {
 } from './quizId.mjs';
 export { buildWordQuizSource, buildLearnerQuizSource } from './quizSource.mjs';
 export { SCENARIOS, seedScenario } from './scenarios.mjs';
-export { DEFAULT_SETTINGS, resolveSettings } from './settings.mjs';
+export { DEFAULT_SETTINGS, resolveSettings, cardLadderConfigOf } from './settings.mjs';
 
 export {
   TUNABLE, TUNING_BOUNDS, GROWN_UP_SETTINGS, tunableValues, dayStats, buildTuningDigest, applyTuningProposal,

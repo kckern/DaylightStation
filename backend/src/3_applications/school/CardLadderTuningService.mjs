@@ -16,6 +16,7 @@
  * changes. A tuner failure changes nothing and still marks the day, so a
  * broken model costs one call per learner per day, not one per tick.
  */
+import { isCardLadderPolicy } from '#domains/school/flashcards/index.mjs';
 import { ValidationError, EntityNotFoundError, DomainInvariantError } from '#domains/core/errors/index.mjs';
 import { GuestForbiddenError } from '#domains/school/errors.mjs';
 import { studyDayForInstant } from '#domains/school/studyDay.mjs';
@@ -116,7 +117,7 @@ export class CardLadderTuningService {
       if (typeof learnerId !== 'string' || !learnerId) continue;
       const seen = new Set();
       for (const program of record.programs ?? []) {
-        if (program?.programId !== 'flashcards' || program.policy?.mode !== 'card-ladder') continue;
+        if (program?.programId !== 'flashcards' || !isCardLadderPolicy(program.policy)) continue;
         const deckId = program.deckId ?? program.corpusId;
         try {
           const deck = await this.#decks.getFlashcardDeck(deckId);
@@ -311,7 +312,7 @@ export class CardLadderTuningService {
     if (typeof deckId !== 'string' || !deckId) throw new ValidationError('deckId is required');
     const assignment = await this.#assignments.get(learnerId);
     const enrolled = (assignment?.programs ?? []).some((row) => row?.programId === 'flashcards'
-      && row.policy?.mode === 'card-ladder' && (row.deckId ?? row.corpusId) === deckId);
+      && isCardLadderPolicy(row.policy) && (row.deckId ?? row.corpusId) === deckId);
     if (!enrolled) throw new GuestForbiddenError(`'${learnerId}' has no card-ladder assignment for '${deckId}'`);
     const deck = await this.#decks.getFlashcardDeck(deckId);
     if (!deck || typeof deck.lexicon !== 'string') throw new EntityNotFoundError('card-ladder deck', deckId);

@@ -715,6 +715,22 @@ describe('SchoolApp — the /test door', () => {
     }
   });
 
+  it('the pre-rename /go/<learner>/word-ladder/test door opens the card ladder, even on a word-ladder policy', async () => {
+    const oldUrl = window.location.pathname + window.location.search;
+    window.history.replaceState({}, '', '/school/go/test-learner/word-ladder/test?scenario=round-end');
+    schoolApi.roster.mockResolvedValue({ ok: true, status: 200, data: [{ id: 'kid1', name: 'Alpha', birthyear: 2016 }, { id: 'test-learner', name: 'Tester', birthyear: 2016 }] });
+    directLaunchMock.mockResolvedValue({ ok: true, status: 200, data: { target: { ...TARGET, policy: { mode: 'word-ladder' } } } });
+    try {
+      render(<SchoolApp clear={() => {}} mode="open" />);
+      expect(await screen.findByTestId('card-ladder-stub')).toBeInTheDocument();
+      expect(directLaunchMock).toHaveBeenCalledWith('test-learner', 'card-ladder', null);
+      expect(cardLadderProps.mock.calls.at(-1)[0].descriptor).toMatchObject({ userId: 'test-learner', test: true, scenario: 'round-end' });
+    } finally {
+      window.history.replaceState({}, '', oldUrl);
+      schoolApi.roster.mockResolvedValue({ ok: true, status: 200, data: [{ id: 'kid1', name: 'Alpha', birthyear: 2016 }] });
+    }
+  });
+
   it('a /test URL for a program without test mode is refused before anything is minted', async () => {
     const oldUrl = window.location.pathname + window.location.search;
     window.history.replaceState({}, '', '/school/go/test-learner/book-log/test');

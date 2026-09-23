@@ -19,7 +19,8 @@ import { test, expect } from '@playwright/test';
 import { getAppPort } from '../../../_lib/configHelper.mjs';
 
 const BASE = `http://localhost:${getAppPort()}`;
-const LEARNER = process.env.CARD_LADDER_TEST_LEARNER;
+// WORD_LADDER_TEST_LEARNER is the pre-rename (2026-09-23) spelling, still honoured.
+const LEARNER = process.env.CARD_LADDER_TEST_LEARNER ?? process.env.WORD_LADDER_TEST_LEARNER;
 
 for (const scenario of ['fresh', 'due', 'round-end']) {
   test(`card ladder stage fits at 1280x800 — ${scenario}`, async ({ page }) => {

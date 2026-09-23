@@ -31,6 +31,7 @@ import LanguageReelsProgram from './Programs/LanguageReels/LanguageReelsProgram.
 import FlashcardProgram from './Programs/Flashcards/FlashcardProgram.jsx';
 import FlashcardDeckBrowser from './Programs/Flashcards/FlashcardDeckBrowser.jsx';
 import CardLadderProgram from './Programs/Flashcards/CardLadder/CardLadderProgram.jsx';
+import { isCardLadderPolicy } from './Programs/Flashcards/CardLadder/cardLadderMode.js';
 import RubiksCubeProgram from './Programs/RubiksCube/RubiksCubeProgram.jsx';
 import BookShelf from './books/BookShelf.jsx';
 import BookScanEntry from './books/BookScanEntry.jsx';
@@ -521,7 +522,7 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
     // A card-ladder enrollment is still program `flashcards`; its mode rides
     // the launch target's policy. The ladder loads its own day from the
     // server, so there is no deck or assessment to fetch here.
-    if (target?.kind === 'program' && target.program === 'flashcards' && target.policy?.mode === 'card-ladder') {
+    if (target?.kind === 'program' && target.program === 'flashcards' && isCardLadderPolicy(target.policy)) {
       const learnerId = launchedLearnerId ?? target.learnerId ?? null;
       if (!target.deckId || !learnerId) return false;
       setActive({ mode: 'card_ladder', descriptor: { deckId: target.deckId, userId: learnerId, test: target.test === true, scenario: target.test === true ? target.scenario ?? null : null } });
@@ -566,7 +567,9 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
   const directTail = section === 'direct-launch' ? materialPath.slice(2) : [];
   const directTest = directTail.at(-1) === 'test';
   const directLearnerId = section === 'direct-launch' ? (materialPath[0] ?? null) : null;
-  const directProgramId = section === 'direct-launch' ? (materialPath[1] ?? null) : null;
+  // `/school/go/<learner>/word-ladder…` is the pre-rename door (2026-09-23): same engine.
+  const directProgramRaw = section === 'direct-launch' ? (materialPath[1] ?? null) : null;
+  const directProgramId = directProgramRaw === 'word-ladder' ? 'card-ladder' : directProgramRaw;
   const directInstance = section === 'direct-launch' ? ((directTest ? directTail.slice(0, -1) : directTail).join('/') || null) : null;
   const [directError, setDirectError] = useState(null);
   // Fires once per URL. `onPortalLaunch` replaces `section`, so without this the
@@ -615,7 +618,7 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
       }
       // A test door mounts ONLY a card ladder. Anything else the backend hands
       // back would be a LIVE runner — refuse rather than fall through to it.
-      if (directTest && data.target?.policy?.mode !== 'card-ladder') {
+      if (directTest && !isCardLadderPolicy(data.target?.policy)) {
         schoolLog.bank('direct-launch-refused', { program: directProgramId, reason: 'no-test-mode', kind: data.target?.kind ?? null });
         setDirectError(`Test mode isn't available for ${directProgramId}.`);
         return;

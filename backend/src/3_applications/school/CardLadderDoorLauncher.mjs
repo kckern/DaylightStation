@@ -3,6 +3,7 @@
  * learner's CURRENT card-ladder enrollment so the URL follows weekly rollover.
  * It only mints the ordinary flashcards target; no authority is added.
  */
+import { isCardLadderPolicy } from '#domains/school/flashcards/index.mjs';
 import { ValidationError } from '#domains/core/errors/index.mjs';
 
 export class CardLadderDoorLauncher {
@@ -10,7 +11,7 @@ export class CardLadderDoorLauncher {
   constructor({ assignments, packageOf }) { this.#assignments = assignments; this.#packageOf = packageOf; }
   async issueLaunchTarget({ userId, programInstance = null }) {
     const programs = (await this.#assignments.get(userId))?.programs ?? [];
-    const rows = programs.filter((row) => row?.programId === 'flashcards' && row.policy?.mode === 'card-ladder');
+    const rows = programs.filter((row) => row?.programId === 'flashcards' && isCardLadderPolicy(row.policy));
     const withPkg = await Promise.all(rows.map(async (row) => ({ row, pkg: await this.#packageOf(row.deckId ?? row.corpusId) })));
     let chosen = null;
     if (programInstance) chosen = withPkg.find((x) => x.pkg === programInstance) ?? null;

@@ -6,7 +6,7 @@ import { mountCardLadderRoutes } from './school.cardLadder.mjs';
 const wrap = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 const notConfigured = (what) => Object.assign(new Error(`${what} not configured`), { status: 503 });
 function app(extra = {}) {
-  const live = { open: vi.fn(async () => ({ sittingId: 'p.live.1', item: { id: 'x' } })), respond: vi.fn(async () => ({ item: {} })), get: vi.fn(async () => ({})), close: vi.fn(async () => ({ closed: true })), fold: vi.fn(async () => ({})), saveRecording: vi.fn(async () => ({ take: 1 })), practice: vi.fn(async () => ({ item: { type: 'typed' } })), words: vi.fn(async () => ({ words: [] })), intro: vi.fn(async () => ({ course: { title: 'C' }, poster: { kind: 'curriculum-poster', scope: 'selfservice', courseId: 'program:word-ladder:korean-vocab' } })) };
+  const live = { open: vi.fn(async () => ({ sittingId: 'p.live.1', item: { id: 'x' } })), respond: vi.fn(async () => ({ item: {} })), get: vi.fn(async () => ({})), close: vi.fn(async () => ({ closed: true })), fold: vi.fn(async () => ({})), saveRecording: vi.fn(async () => ({ take: 1 })), practice: vi.fn(async () => ({ item: { type: 'typed' } })), words: vi.fn(async () => ({ words: [] })), intro: vi.fn(async () => ({ course: { title: 'C' }, poster: { kind: 'curriculum-poster', scope: 'selfservice', courseId: 'program:card-ladder:korean-vocab' } })) };
   const test = { ...live, intro: vi.fn(async () => ({ test: true })), open: vi.fn(async () => ({ sittingId: 'test.p.t.1' })), saveRecording: vi.fn(async () => ({ take: 1 })), practice: vi.fn(async () => ({ item: {} })), words: vi.fn(async () => ({ words: [] })), get: vi.fn(async () => ({ test: true })), close: vi.fn(async () => ({ closed: true })) };
   const a = express(); a.use(express.json()); const router = express.Router();
   mountCardLadderRoutes({ router, wrap, notConfigured, cardLadderStudy: live, cardLadderTest: test, stageScreen: 'portal', ...extra });
@@ -27,7 +27,7 @@ describe('card-ladder routes', () => {
     const res = await request(a).get('/card-ladder/intro?userId=u&deckId=d&scenario=fresh').expect(200);
     expect(res.headers['cache-control']).toBe('private, no-store');
     expect(live.intro).toHaveBeenCalledWith({ userId: 'u', deckId: 'd' });
-    expect(res.body.poster).toBe('/api/v1/school/self-service/programs/word-ladder/korean-vocab/poster.jpg');
+    expect(res.body.poster).toBe('/api/v1/school/self-service/programs/card-ladder/korean-vocab/poster.jpg');
     await request(a).get('/card-ladder/test/intro?userId=u&deckId=d&scenario=fresh').expect(200);
     expect(test.intro).toHaveBeenCalledWith({ userId: 'u', deckId: 'd', scenario: 'fresh' });
     // Never a write verb.

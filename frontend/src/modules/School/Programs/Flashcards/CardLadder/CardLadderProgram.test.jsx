@@ -92,9 +92,9 @@ describe('CardLadderProgram — Start screen', () => {
 
 const INTRO = {
   deckId: 'd', package: 'korean-vocab', day: '2026-09-23', test: false,
-  course: { id: 'program:word-ladder:korean-vocab', title: 'Test Class' },
+  course: { id: 'program:card-ladder:korean-vocab', title: 'Test Class' },
   unit: { id: 'd', title: 'Week 1: Classroom' },
-  poster: '/api/v1/school/self-service/programs/word-ladder/korean-vocab/poster.jpg',
+  poster: '/api/v1/school/self-service/programs/card-ladder/korean-vocab/poster.jpg',
   today: { newCount: 4, reviewCount: 3, estimatedMinutes: 10, doneToday: false, label: '4 new words · 3 to review', line: '4 new words · 3 to review · about 10 minutes' },
   progress: { learned: 1, recognised: 3, total: 19 },
 };

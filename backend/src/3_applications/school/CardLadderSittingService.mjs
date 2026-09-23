@@ -21,6 +21,7 @@
  * Speaking is never graded (spec §3): a take is kept for grown-ups through the
  * recordings sink (a discarding one in test mode) and never touches status.
  */
+import { isCardLadderPolicy } from '#domains/school/flashcards/index.mjs';
 import { ValidationError, EntityNotFoundError } from '#domains/core/errors/index.mjs';
 import { GuestForbiddenError } from '#domains/school/errors.mjs';
 import { offsetMinutesFor, studyDayForInstant } from '#domains/school/studyDay.mjs';
@@ -121,7 +122,7 @@ export class CardLadderSittingService {
 
   async #enrollments(userId) {
     const assignment = await this.#assignments.get(userId);
-    return (assignment?.programs ?? []).filter((row) => row?.programId === 'flashcards' && row.policy?.mode === 'card-ladder');
+    return (assignment?.programs ?? []).filter((row) => row?.programId === 'flashcards' && isCardLadderPolicy(row.policy));
   }
 
   async #assertAssigned(userId, deckId) {
@@ -946,8 +947,9 @@ export class CardLadderSittingService {
    * program's title is the CLASS ("UBKS 비둘기" — the lexicon's
    * `program.title`), the deck is the unit, today's plan is the lesson, and
    * the deck's two rungs (recognised · mastered) are the bar. The course id is a program id,
-   * `program:word-ladder:<package>`, so the poster resolves to
-   * `<media>/school/programs/word-ladder/<package>/poster.jpg` — the artwork
+   * `program:card-ladder:<package>`, so the poster resolves to
+   * `<media>/school/programs/card-ladder/<package>/poster.jpg` (falling back to
+   * the pre-rename `programs/word-ladder/` directory) — the artwork
    * belongs to the word package, not the program (one program, many languages).
    */
   async #card({ userId, store, day, deck, lexicon, pkg }) {
@@ -956,7 +958,7 @@ export class CardLadderSittingService {
     const settings = this.#daySettings(dayFile, { store, userId, pkg });
     const plan = introPreview({ status, dayFile, day, pool: await this.#pool(status, deck), settings });
     return {
-      course: { id: `program:word-ladder:${pkg}`, title: lexicon.program.title },
+      course: { id: `program:card-ladder:${pkg}`, title: lexicon.program.title },
       unit: { id: deck.id, title: typeof deck.title === 'string' && deck.title.trim() ? deck.title.trim() : deck.id },
       plan,
       progress: deckProgress({ status, deckWords: deck.words }),

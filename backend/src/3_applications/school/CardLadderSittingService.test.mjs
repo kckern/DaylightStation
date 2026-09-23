@@ -330,7 +330,7 @@ describe('CardLadderSittingService', () => {
     const { service } = make({ store });
     const status = await service.dayStatus({ userId: 'test-learner', deckId: DECK });
     expect(status.context).toEqual({
-      course: { id: 'program:word-ladder:korean-vocab', title: 'Korean words' },
+      course: { id: 'program:card-ladder:korean-vocab', title: 'Korean words' },
       unit: { id: DECK, title: 'Week 1: Classroom' },
       lesson: { id: `${DECK}:${TODAY}`, title: '1 to review' },
     });
@@ -354,9 +354,9 @@ describe('CardLadderSittingService', () => {
     const intro = await service.intro({ userId: 'test-learner', deckId: DECK });
     expect(intro).toEqual({
       deckId: DECK, package: 'korean-vocab', day: TODAY, test: false,
-      course: { id: 'program:word-ladder:korean-vocab', title: 'Korean words' },
+      course: { id: 'program:card-ladder:korean-vocab', title: 'Korean words' },
       unit: { id: DECK, title: 'Week 1: Classroom' },
-      poster: { kind: 'curriculum-poster', scope: 'selfservice', courseId: 'program:word-ladder:korean-vocab' },
+      poster: { kind: 'curriculum-poster', scope: 'selfservice', courseId: 'program:card-ladder:korean-vocab' },
       today: { newCount: 2, reviewCount: 0, estimatedMinutes: 5, doneToday: false, label: '2 new words', line: '2 new words · about 5 minutes' },
       progress: { learned: 0, recognised: 0, total: 2 },
     });

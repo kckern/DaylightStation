@@ -3215,9 +3215,10 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const { FilesystemCardLadderRecordings } = await import('#adapters/school/cardLadder/FilesystemCardLadderRecordings.mjs');
   const { DiscardingRecordings } = await import('#adapters/school/cardLadder/DiscardingRecordings.mjs');
   const { YamlLexiconRepository } = await import('#adapters/school/catalog/YamlLexiconRepository.mjs');
-  const { resolveSettings, seedScenario } = await import('#domains/school/cardLadder/index.mjs');
+  const { resolveSettings, seedScenario, cardLadderConfigOf } = await import('#domains/school/cardLadder/index.mjs');
   const cardLadderLogger = rootLogger.child({ module: 'school-card-ladder' });
-  const cardLadderConfig = schoolFullConfig.card_ladder ?? {};
+  // `card_ladder` in school.yml; the pre-rename `word_ladder` key is read when it is absent.
+  const cardLadderConfig = cardLadderConfigOf(schoolFullConfig);
   const cardLadderSettings = () => resolveSettings(cardLadderConfig);
   const cardLadderStore = new YamlCardLadderStore({ configService, logger: cardLadderLogger });
   const cardLadderLexicons = new YamlLexiconRepository({ mediaRoot: schoolMediaRoot });
