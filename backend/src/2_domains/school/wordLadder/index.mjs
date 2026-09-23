@@ -11,8 +11,10 @@ export { pickMeaningChoices, pickTermChoices, cueFor, channelFor } from './choic
 export { ESTIMATE_MS, newAllowance, planNextRound } from './rounds.mjs';
 export { openDay, currentItem, respond, addActiveTime } from './engine.mjs';
 export { foldPaperAttempts } from './foldPaperAttempts.mjs';
-export { quizDocumentIdFor } from './quizId.mjs';
-export { buildWordQuizSource } from './quizSource.mjs';
+export {
+  quizDocumentIdFor, deckDirOf, isoWeekOf, learnerQuizDocumentId, learnerQuizPrefix,
+} from './quizId.mjs';
+export { buildWordQuizSource, buildLearnerQuizSource } from './quizSource.mjs';
 export { SCENARIOS, seedScenario } from './scenarios.mjs';
 export { DEFAULT_SETTINGS, resolveSettings } from './settings.mjs';
 
