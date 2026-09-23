@@ -167,6 +167,10 @@ export function prefetchApiResources(paths, { onDone, onIdle } = {}) {
   const accepted = prefetchQueue.length;
   prefetchStats.queued += accepted;
   pumpPrefetch();
+  // Nothing to fetch and nothing in flight: this call's neighbourhood is
+  // already warm, so report now (with the caller's own context) rather than
+  // leave the callback waiting for a drain that will not come.
+  if (isPrefetchIdle() && prefetchOnIdle) { const onIdle = prefetchOnIdle; prefetchOnIdle = null; onIdle(getPrefetchStats()); }
   return accepted;
 }
 

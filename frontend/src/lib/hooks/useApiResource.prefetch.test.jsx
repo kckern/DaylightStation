@@ -38,6 +38,16 @@ describe('prefetchApiResources', () => {
     expect(getPrefetchStats()).toEqual({ queued: 0, completed: 0, failed: 0 });
   });
 
+  it('an already-warm neighbourhood reports at once, with that call\'s callback', async () => {
+    apiMock.mockResolvedValue({});
+    prefetchApiResources(['a']);
+    await flush(); await flush();
+    const onIdle = vi.fn();
+    expect(prefetchApiResources(['a'], { onIdle })).toBe(0);
+    expect(onIdle).toHaveBeenCalledTimes(1);
+    expect(onIdle).toHaveBeenCalledWith({ queued: 1, completed: 1, failed: 0 });
+  });
+
   it('runs at most two requests at once, in queue order', async () => {
     const calls = [];
     apiMock.mockImplementation(path => { const d = deferred(); calls.push({ path, d }); return d.promise; });
