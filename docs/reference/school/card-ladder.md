@@ -97,8 +97,10 @@ renames the two language blocks by role:
 An entry that gives both spellings of one side must give the same text
 (otherwise the lexicon is refused). The parsed lexicon carries `language` /
 `gloss` (as before) plus `targetLanguage`, `anchorLanguage` and
-`targetScript` (`scriptFor(targetLanguage.code)`: `ko` → `hangul`, anything
-else → `generic`). An English-to-English definitions package is a v3 lexicon
+`targetScript` (`scriptFor(targetLanguage.code)`: `ko` → `hangul`, `en`/`es`/…
+→ `latin`, `ru` → `cyrillic`, `el` → `greek`, `zh` → `han`, `ja` → `kana`,
+`ar`/`fa` → `arabic`, an unknown code → `generic`; see
+[Grading by script](#grading-by-script)). An English-to-English definitions package is a v3 lexicon
 with `target: {code: en}` and `anchor: {code: en}`.
 
 **`program.title` is the class name.** It is the course line of the launch
@@ -366,7 +368,7 @@ term audio — otherwise introduction goes straight from flash to copy.
 
 **Only a Hangul target has an on-screen keypad.** `keypadFor(langs.targetScript)`
 (`CardLadder/targetScript.js`) returns `JamoKeypad` for `hangul` and nothing
-for any other script: a generic target shows no toggle, never auto-opens and
+for any other script: a Latin, Cyrillic, kana (…) or generic target shows no toggle, never auto-opens and
 ignores the long-press, and is typed on the device's own keyboard.
 
 There is no web API that tells a page a Bluetooth keyboard is attached, so
@@ -403,25 +405,30 @@ the stage still fits at 1280×800.
 
 A mastery test, not a spelling test — grading is deliberately generous.
 `backend/src/3_applications/school/CardLadderTypedJudge.mjs` runs the
-deterministic half (`2_domains/school/cardLadder/{targetScript,jamo,typedScore}.mjs`) in
+deterministic half (`2_domains/school/cardLadder/{scriptRules,targetScript,jamo,typedScore}.mjs`) in
 order, first decision wins. The sitting passes the judge the target side's
 script and language (`targetScript`, `targetLanguage`) — the one seam where
 script-specific grading plugs in:
 
 | Step | Condition | Score |
 |---|---|---|
-| Exact | normalised match | 10, `judge: exact` |
-| Wrong script | **Hangul target only**: the attempt has no Hangul syllable/jamo | 1, `judge: wrong-script` (days before 2026-09-23 say `no-hangul`) |
-| Different real word | normalised match to another introduced word or an authored decoy | 2, `judge: guard` |
+| Exact | match under the script's `normalize` | 10, `judge: exact` |
+| Wrong script | the target has letters of its script and the attempt has none (a `generic` target has no floor) | 1, `judge: wrong-script` (days before 2026-09-23 say `no-hangul`) |
+| Different real word | match, under the script's `normalize`, to another introduced word or an authored decoy | 2, `judge: guard` |
+| Numbers (every script) | the target's digit tokens (`1776`, `1215`) are not exactly the attempt's, same order | 2, `judge: number` |
+| Accent slip (Latin) | equal once diacritics are stripped, different with them (`cafe` for `café`) | 8, `judge: accent` |
 | Deterministic (short, L ≤ 4 jamo) | distance 1 → 6 · distance ≥ 2 → 2 | `judge: distance` |
 | Deterministic (longer) | d/L ≤ 10% → 8 · ≤ 20% → 6 · ≤ 33% → 4 · beyond → 2 | `judge: distance` |
 
-Distance is Levenshtein over `keystrokeUnits(text, targetScript)`: for a
-Hangul target, **jamo as typed on a two-set keyboard** (compound
-vowels/finals split into component keys; tense consonants and ㅒ/ㅖ stay
-single); for any other target, code points, with no script floor. (Per-script
-normalizers — case folding, diacritics — are the next task.) The model's
-instructions name the target language (`typed Korean answer`). **Short words (≤ 2 syllables): the deterministic score is final** — no
+Distance is Levenshtein over the script's units (`keystrokeUnits(text,
+targetScript)`): for a Hangul target, **jamo as typed on a two-set keyboard**
+(compound vowels/finals split into component keys; tense consonants and ㅒ/ㅖ
+stay single); for Latin, letters after case-fold with diacritics stripped; for
+every other script, grapheme clusters. The model's instructions name the
+target language (the lexicon's name, `typed Korean answer` / `typed English
+answer`) and script, and its JSON carries `script` and `language`; nothing in
+them assumes Korean. **Short words (≤ 2 units — Hangul syllables, Han/kana
+characters, graphemes): the deterministic score is final** — no
 model call. **Longer words**: if `card_ladder.judge.model` is configured, a
 small low-effort model may raise an eligible floor (score ≥ 4 and d/L ≤ 33%) by
 **one band** (`judge: model`), never lower it; model failure or timeout falls
@@ -430,6 +437,35 @@ back to the deterministic score (`judge: fallback`). **On this household
 clears the deterministic floor can still gain the model's +1-band step;
 verdicts still land on `exact`, `wrong-script`, `guard`, `distance`, `cache` or
 `fallback` whenever the model doesn't apply or doesn't answer in time.
+
+### Grading by script
+
+**2026-09-23 owner: per-script grading — Latin case-insensitive, accents a small slip, numbers exact; Hangul unchanged.**
+
+Each script is a small pure rule object in
+`2_domains/school/cardLadder/scriptRules.mjs` (`ruleFor(script)`), selected by
+`scriptFor(target language)` or, with no language, read off the target text
+(`scriptOfText`). The client's `keypadFor(script)` (`CardLadder/targetScript.js`)
+mirrors the language table.
+
+| Script | Languages | `normalize` | Distance units | Wrong script (→ 1) | Short (≤ 2 → deterministic) | Keypad |
+|---|---|---|---|---|---|---|
+| `hangul` | ko | `normalizeAnswer`: NFC, whitespace and punctuation removed (unchanged) | keystroke jamo | no Hangul typed | syllables | jamo keypad |
+| `latin` | en, es, fr, de, … | NFC, trim, collapse whitespace, strip punctuation, case-fold | letters, diacritics stripped (+ the accent-slip 8) | no Latin letter | graphemes | none |
+| `cyrillic`, `greek`, `arabic` | ru/uk/…, el, ar/fa/… | as Latin (case-fold where the script has case) | grapheme clusters (`Intl.Segmenter`, code points as fallback) | no letter of the target's script | graphemes | none |
+| `han`, `kana` | zh, ja (kana + kanji) | as Latin | grapheme clusters | no letter of the target's script | characters | none |
+| `generic` | any unknown code | as Latin | grapheme clusters | none — any text is graded by distance | graphemes | none |
+
+**Numbers, every script:** the digit tokens of the target must be the
+attempt's digit tokens, identically and in order — otherwise 2 (`judge:
+number`), a different answer and not a typo, however close the rest. A target
+that is only a number therefore passes only on the exact number (`1776`;
+`1,776` normalises to it). The wrong-script floor applies only when the target
+itself has letters of its script, so a bare-number target is never "wrong
+script". **Copy, dictation, tiles and the drill's type step** compare with the
+same `normalize` (spacing ignored), so `cat` copies `Cat` for a Latin target;
+accents still have to be copied. The judgement cache and a grown-up re-grade
+stay keyed by `normalizeAnswer` (identical to before for Hangul).
 
 Pass = score ≥ `typing.passScore` (default 6). Verdicts are cached by
 (package, word id, normalised answer) in
