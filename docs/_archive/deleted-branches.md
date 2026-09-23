@@ -493,3 +493,4 @@ The corollary bit twice in this sweep: `feat/teacher-workspace-ia` and `feature/
 | 2026-09-23 | feat/card-ladder-script-rules | 5fa22bfe09 | card ladder per-script grading (latin/hangul/generic, numbers exact, script-normalized cache keys); deployed b789ded8a7 |
 | 2026-09-23 | feat/health-preview-singleton | cc0e84fb7d | Health row preview: one cursor-bound card for the page; merged to main |
 | 2026-09-23 | fix/fitness-map-tiles | 40f70a07b0 | Fitness route maps: OpenStreetMap tiles (CARTO now requires a key); merged to main |
+| 2026-09-23 | fix/health-quickadd-instant | 9a49244b46 | Health quick-add row shows from the response at once; writes stop re-requesting /dashboard; merged to main |
