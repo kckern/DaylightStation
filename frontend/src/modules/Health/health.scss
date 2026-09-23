@@ -492,7 +492,14 @@ $health-aside-gap: 1.5rem;
 .health-density-after .health-density-badge { order: 3; }
 .health-row__macros { grid-column: 3 / 6; }
 .health-row__portion-cell { grid-column: 6; text-align: right; }
-.health-row__kcal { grid-column: 7; }
+.health-row__kcal { grid-column: 7; position: relative; }
+// How heavy this entry is next to the largest in its meal (an ingredient:
+// in its dish). Right-anchored under the right-aligned number.
+.health-row__kcal-bar {
+  position: absolute; right: 0; bottom: 1px; height: 3px; border-radius: 2px;
+  width: calc(var(--kcal-share, 0) * 100%);
+  background: var(--ds-accent); opacity: 0.45; pointer-events: none;
+}
 .health-numeric-control { cursor: ew-resize; touch-action: pan-y; user-select: none; }
 .health-numeric-control:focus-visible { outline: 2px solid var(--ds-accent); outline-offset: 2px; }
 .health-row__action {
@@ -506,6 +513,17 @@ $health-aside-gap: 1.5rem;
   display: flex; align-items: center; justify-content: flex-end; gap: 0.15rem;
 }
 .health-row-line--group { background: var(--ds-surface); border-radius: 6px; font-weight: 600; }
+// A row just added from an add row (addFlow.js, ADDED_HIGHLIGHT_MS): a subtle
+// accent tint that fades in and back out, so the eye finds a new row the
+// heaviest-first sort may have placed mid-list.
+.health-row-line--added { background: color-mix(in srgb, var(--ds-accent) 16%, transparent); border-radius: 6px; }
+.health-row-line { transition: background-color var(--ds-motion-reveal) var(--ds-motion-easing); }
+// A meal entry gliding to its new place after a reorder (sectionOrder.js,
+// FLIP): the inline translate is set by the hook, this class animates it home.
+.health-flip-moving {
+  transition: transform var(--ds-motion-base) var(--ds-motion-easing), background-color var(--ds-motion-reveal) var(--ds-motion-easing);
+}
+@media (prefers-reduced-motion: reduce) { .health-row-line, .health-flip-moving { transition: none; } }
 .health-row-line--child .health-row__visual { opacity: 0.75; }
 .health-row-line--child .health-row-identity { box-sizing: border-box; padding-left: 16px; }
 .health-row-line--child .health-row__name { font-size: 0.78rem; }
@@ -530,13 +548,20 @@ $health-aside-gap: 1.5rem;
 }
 
 .health-exercise {
-  display: grid; grid-template-columns: 42px minmax(0, 1fr) auto; gap: 0.75rem; align-items: center; padding-block: 0.65rem;
+  display: grid; grid-template-columns: 42px minmax(0, 1fr) auto; gap: 0.75rem; align-items: start; padding-block: 0.65rem;
   &__art { width: 42px; height: 60px; border-radius: 5px; overflow: hidden; display: grid; place-items: center; background: var(--ds-surface); color: var(--ds-text-mid);
     img { width: 100%; height: 100%; object-fit: cover; }
   }
   &__title { color: var(--ds-text-high); font-size: 0.86rem; font-weight: 600; }
   &__meta { display: flex; flex-wrap: wrap; gap: 0.2rem 0.75rem; margin-top: 0.25rem; font-size: 0.73rem; color: var(--ds-text-mid);
     > span { display: inline-flex; align-items: center; gap: 0.2rem; white-space: nowrap; }
+  }
+  // What the person said after, and what the episode was — room the row already has.
+  &__memo { display: flex; gap: 0.3rem; margin: 0.35rem 0 0; font-size: 0.78rem; color: var(--ds-text-high); font-style: italic;
+    svg { flex: none; margin-top: 0.15rem; color: var(--ds-accent); }
+  }
+  &__description { margin: 0.3rem 0 0; font-size: 0.73rem; color: var(--ds-text-mid);
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
   }
   &__result { display: flex; flex-direction: column; align-items: flex-end; }
   &__link { display: inline-flex; align-items: center; gap: 0.15rem; min-height: 44px; color: var(--ds-accent); font-size: 0.75rem; text-decoration: none;
@@ -566,6 +591,31 @@ $health-aside-gap: 1.5rem;
   display: inline-block; position: relative; flex: none; color: var(--ds-text-mid);
   > img, > svg { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
 }
+// The row magnifier (RowPreview.jsx): a speech-bubble card beside a food row
+// (Popover with an arrow, portalled). The picture is the point — 5em square,
+// contained on a subtle surface — then the numbers the row carries.
+.health-row-preview__card {
+  background: var(--ds-surface); border: 1px solid var(--ds-border); color: var(--ds-text-high);
+  padding: 0.6rem; max-width: min(20rem, calc(100vw - 2rem));
+}
+.health-row-preview {
+  display: flex; gap: 0.7rem; align-items: flex-start;
+  &__hero {
+    width: 5em; height: 5em; flex: none; border-radius: 8px; overflow: hidden;
+    background: var(--ds-surface-alt); display: grid; place-items: center;
+    > img { width: 100%; height: 100%; object-fit: contain; }
+  }
+  &__icon { width: 100%; height: 100%; }
+  &__body { min-width: 0; display: flex; flex-direction: column; gap: 0.3rem; }
+  &__title { margin: 0; font-weight: 600; font-size: 0.9rem; line-height: 1.25; overflow-wrap: anywhere; }
+  &__facts {
+    margin: 0; display: flex; flex-wrap: wrap; gap: 0.15rem 0.6rem;
+    font-size: 0.78rem; color: var(--ds-text-mid); font-variant-numeric: tabular-nums;
+  }
+  &__kcal { color: var(--ds-text-high); font-weight: 600; }
+  &__density { margin: 0; font-size: 0.72rem; color: var(--ds-text-low); font-variant-numeric: tabular-nums; }
+}
+.health-row-artwork { cursor: zoom-in; }
 .health-review {
   display: grid; gap: 0.75rem; min-width: 0;
   &__intro { margin: 0; color: var(--ds-text-mid); font-size: 0.82rem; line-height: 1.4; }
@@ -681,7 +731,7 @@ $health-aside-gap: 1.5rem;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
   &__list {
     display: grid; grid-template-columns: minmax(0, 1fr);
-    gap: 0.15rem; list-style: none; margin: 0.3rem 0 0; padding: 0;
+    gap: 0.05rem 0.2rem; list-style: none; margin: 0.2rem 0 0; padding: 0;
     max-height: min(16rem, 45vh); overflow-y: auto;
   }
   @media (min-width: 480px) {
@@ -691,10 +741,12 @@ $health-aside-gap: 1.5rem;
     // `center`, not `baseline`: the row now carries a 24px image beside text,
     // and a baseline-aligned image hangs its whole box off the text baseline.
     display: flex; gap: 0.3rem; align-items: center; width: 100%;
-    padding: 0.25rem 0.35rem; border-radius: 6px; color: var(--ds-text-high);
+    padding: 0.1rem 0.3rem; border-radius: 6px; color: var(--ds-text-high);
     font-size: 0.78rem; text-align: left;
-    // A suggestion is a tap target on a phone (A2: >= 44px).
-    min-height: 44px;
+    // Compact under a mouse, so sixteen suggestions fit without much scroll;
+    // a real tap target under a finger (A2: >= 44px).
+    min-height: 32px;
+    @media (pointer: coarse) { min-height: 44px; padding: 0.25rem 0.35rem; }
     &--hi, &:hover { background: var(--ds-surface-alt); }
     &--fav .health-suggest__star { color: var(--ds-warning); }
   }
@@ -717,6 +769,24 @@ $health-aside-gap: 1.5rem;
     &:hover, &:focus-visible { background: var(--ds-surface-alt); }
     &:focus-visible { outline: 2px solid var(--ds-accent); outline-offset: 2px; }
   }
+}
+// Inline (a meal's add row): the popup floats OVER what follows instead of
+// sitting in flow. In flow, focusing the row pushed the page down by up to the
+// list's full height and blur/commit yanked it back — the add-row jostle that
+// `ui.layout-shift` reported. Full row width, same card look (the shadow is
+// inherited from the row's own card), scrolls inside its list's max-height.
+// No ancestor between here and the scrolling main clips overflow, so the
+// popup is never cut off; near the page end it extends the scroll area.
+// The sheet (non-inline) mode keeps its in-flow layout.
+.health-suggest--inline {
+  position: relative;
+  .health-suggest__popup {
+    position: absolute; top: calc(100% + 2px); left: -1px; right: -1px; z-index: 30;
+    padding: 0.25rem; border: 1px solid var(--ds-border); border-radius: 9px;
+    background: var(--ds-surface); box-shadow: inherit;
+  }
+  // No room below in the visible viewport (AddCombobox popupPlacement): open upward.
+  &.health-suggest--above .health-suggest__popup { top: auto; bottom: calc(100% + 2px); }
 }
 .health-pending {
   border: 1px solid var(--ds-border); border-left: 3px solid var(--ds-warning);

@@ -87,6 +87,16 @@ the new ledger's replay/tombstone contract; coordinate both deliberately.
   corrections); ml-labelled solids with a printed gram figure (`LABEL_GRAMS`)
   converted to grams, except where a person set the portion or the stored serving
   is not ml (both listed as `mlUnresolved`).
+- **Legacy quantities (`legacy-quantity`):** a row with no grams, no amount, known
+  calories and no person-set portion gets its quantity back from
+  `originalQuantity`. A metric volume (ml, cl, dl, L) is restored verbatim (the row
+  still shows ml; density uses 1 g/ml). Any other label is read as the old
+  nutribot's gram figure (`{134, cup}` of kale is 134 g) and written as
+  `grams`/`amount`/`unit: g` plus `quantityProvenance: {source: legacy-amount,
+  label: <old unit>}`. The gram reading needs an implied density within
+  0.05–9.5 kcal/g (or 0 kcal); a volume only needs to stay at or below 9.5 kcal/g
+  (black coffee is real, `{3 ml}` of a 480 kcal shake is not). Anything else, or a missing amount, is listed in
+  `legacyQuantityUnresolved` and left alone. No nutrient changes.
 - **Icons:** manifest aliases map to the offered icon sharing their path (same
   picture) and are otherwise kept; retired flat-set names are re-iconed from the
   reviewed name→slug table plus the `foodNames` file, else `default`. The report

@@ -89,4 +89,21 @@ describe('YamlSessionDatastore — primary media from timeline events (findByDat
     expect(sessions[0].media.primary.contentId).toBe('plex:1003');
     expect(sessions[0].media.primary.showTitle).toBe('Fitness Blender');
   });
+
+  it('carries the primary episode\'s own description, flattened and capped', async () => {
+    const base = 1_800_000_000_000;
+    const long = 'Sonic and an all-star Sega cast race\n\n  across tracks. ' + 'x'.repeat(600);
+    const withDescription = mediaEvent({ title: 'Main Strength Workout', grandparentTitle: 'Fitness Blender', contentId: 'plex:1003', start: base, durationSeconds: 1800 });
+    withDescription.data.description = long;
+    const sessionsDir = path.join(tmpDir, 'fitness/log', DATE);
+    fs.mkdirSync(sessionsDir, { recursive: true });
+    saveYaml(path.join(sessionsDir, SESSION_ID), {
+      sessionId: SESSION_ID, startTime: base, endTime: base + 1_800_000, durationMs: 1_800_000,
+      timezone: 'America/Los_Angeles', participants: {}, summary: { participants: {} },
+      timeline: { events: [withDescription] },
+    });
+    const [session] = await store.findByDate(DATE);
+    expect(session.media.primary.description.startsWith('Sonic and an all-star Sega cast race across tracks.')).toBe(true);
+    expect(session.media.primary.description.length).toBe(400);
+  });
 });

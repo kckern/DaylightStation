@@ -25,6 +25,7 @@ import { InfrastructureError } from '#system/utils/errors/index.mjs';
 import { ItemId } from '#domains/content/value-objects/ItemId.mjs';
 import { selectPrimaryMedia, selectPrimaryMediaSummary, buildSelectionConfig } from '#domains/fitness/services/selectPrimaryMedia.mjs';
 import { hydrateTimeline, dehydrateTimeline } from './SessionTimelineCodec.mjs';
+import { stampIntegrity } from '#domains/fitness/services/sessionIntegrity.mjs';
 
 // ── Session list index (derived read cache) ──────────────────────────────
 // The /sessions?since=Nd and /suggestions endpoints build per-session summaries
@@ -38,7 +39,8 @@ const INDEX_DIR_NAME = '_index';
 // (rebuilt on demand), so old shards never serve stale-shaped data.
 // v4: primary-media selection became longest-wins (near-tie recency tiebreak),
 //     so every cached list summary's title had to be re-derived.
-const INDEX_VERSION = 4;
+// v5: media.primary carries the episode's description (Health's exercise rows).
+const INDEX_VERSION = 5;
 
 /**
  * Derive session date from sessionId
@@ -111,6 +113,7 @@ export class YamlSessionDatastore extends ISessionDatastore {
       });
     this.configService = config.configService;
     this.mediaRoot = config.mediaRoot || path.join(process.cwd(), 'media');
+    this.logger = config.logger || null;
   }
 
   /**
@@ -202,7 +205,18 @@ export class YamlSessionDatastore extends ISessionDatastore {
     // Split the frame manifest out to media before the session hits data/.
     // `snapshots` is destructured off a shallow copy so the caller's entity is
     // not mutated by having been saved.
-    const { snapshots, ...history } = data;
+    const { snapshots, ...unstamped } = data;
+    // Integrity stamp (see sessionIntegrity.mjs). Home sessions autosave during
+    // the workout, so a violation logs at debug; the stamp in the file is the
+    // durable signal, recomputed on every save.
+    const history = stampIntegrity(unstamped, new Date());
+    if (history?.integrity) {
+      this.logger?.debug?.('fitness.session.integrity_violation', {
+        sessionId: data.sessionId,
+        source: 'home',
+        checks: history.integrity.violations.map(v => v.check),
+      });
+    }
     // Same predicate Session.toJSON uses to decide the field is worth emitting —
     // an empty captures array with an updatedAt still counts, so it must not be
     // dropped on the way to the sidecar.
@@ -524,6 +538,14 @@ export class YamlSessionDatastore extends ISessionDatastore {
             };
           }
         }
+      }
+
+      // The primary episode's own description, from its timeline media event —
+      // the summary block does not keep it. Flattened and capped for list use.
+      if (media?.primary?.contentId && !media.primary.description) {
+        const described = (data.timeline?.events || []).find(e => e?.type === 'media' && e.data?.description
+          && ItemId.normalize(e.data.contentId, ItemId.extractSource(e.data.contentId)) === media.primary.contentId);
+        if (described) media.primary.description = String(described.data.description).replace(/\s+/g, ' ').trim().slice(0, 400);
       }
 
       // Extract suffer scores and corresponding activityId across participants

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { UnstyledButton } from '@mantine/core';
-import { IconArrowUpRight, IconBarbell, IconHeart } from '@tabler/icons-react';
+import { IconArrowUpRight, IconBarbell, IconHeart, IconMicrophone } from '@tabler/icons-react';
 import { ContentDisplayUrl } from '../../../lib/api.mjs';
 import { useApiResource } from '../../../lib/hooks/useApiResource.js';
 import { createAppLogger } from '../../../lib/ui/createAppLogger.js';
@@ -16,6 +16,9 @@ function ExerciseRow({ workout, linked }) {
   const title = workout.title || workout.type || 'Workout';
   const minutes = workout.minutes ?? workout.duration_min;
   const href = linked ? `/fitness/home/session-${encodeURIComponent(linked.sessionId)}` : null;
+  // What was said after the workout, and what the episode was about.
+  const memos = (linked?.voiceMemos || []).map(memo => memo?.transcript?.trim()).filter(Boolean);
+  const description = media?.description || null;
   return <div className="health-exercise">
     <span className="health-exercise__art">
       {poster && brokenPoster !== poster ? <img src={poster} alt={media.showTitle ? `${media.showTitle} poster` : 'Workout program poster'} loading="lazy"
@@ -28,6 +31,9 @@ function ExerciseRow({ workout, linked }) {
         {minutes > 0 ? <span>{Math.round(minutes)} min</span> : null}
         {workout.avgHeartrate > 0 ? <span title="Average heart rate"><IconHeart size={13} aria-hidden="true" />{Math.round(workout.avgHeartrate)} bpm avg</span> : null}
       </div>
+      {memos.map((text, index) => <p key={index} className="health-exercise__memo">
+        <IconMicrophone size={13} aria-label="Voice memo" />“{text}”</p>)}
+      {description ? <p className="health-exercise__description" title={description}>{description}</p> : null}
     </div>
     <div className="health-exercise__result">
       <span className="health-row__kcal">+{Math.round(workout.calories || 0)}<small> kcal</small></span>

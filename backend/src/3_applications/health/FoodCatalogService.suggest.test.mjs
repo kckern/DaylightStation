@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { FoodCatalogService } from './FoodCatalogService.mjs';
 import { FoodCatalogEntry } from '#domains/health/entities/FoodCatalogEntry.mjs';
+import { iconVocabulary } from '#domains/nutrition/services/icons.mjs';
 
 const NOW = new Date('2026-09-02T12:00:00Z').getTime();
 const entry = (over) => new FoodCatalogEntry({
@@ -55,6 +56,19 @@ describe('FoodCatalogService.suggest', () => {
     const out = await svc.suggest('', 'u', 3);
     expect(out[0].id).toBe('b');
     expect(out).toHaveLength(3);
+  });
+
+  it('empty query blends in a recent-but-rare food; a typed query does not', async () => {
+    const svc2 = new FoodCatalogService({
+      catalogStore: makeStore([
+        entry({ id: 's1', name: 'staple one', useCount: 90, lastUsed: '2026-07-01' }),
+        entry({ id: 's2', name: 'staple two', useCount: 80, lastUsed: '2026-07-02' }),
+        entry({ id: 'n1', name: 'new soup', useCount: 1, lastUsed: '2026-09-02' }),
+      ]),
+      clock: { now: () => NOW }, createId: () => 'x', logger: { debug() {}, info() {}, warn() {}, error() {} },
+    });
+    expect((await svc2.suggest('', 'u', 2)).map((e) => e.id)).toEqual(['s1', 'n1']);
+    expect((await svc2.suggest('s', 'u', 2)).map((e) => e.id)).toEqual(['s1', 's2']);
   });
 
   it('setFavorite toggles and persists', async () => {
@@ -146,5 +160,43 @@ describe('FoodCatalogService.suggest — bucket-aware (Task 9.1)', () => {
       bucketed({ id: 'c', name: 'chickpeas', useCount: 8, lastUsed: '2026-09-01' }),
     ]);
     expect((await svc.suggest('chick', 'u')).map((e) => e.id)).toEqual(['b', 'a', 'c']);
+  });
+});
+
+describe('FoodCatalogService.suggest — icon fallback for entries with none', () => {
+  const withIcon = (over) => { const e = entry(over); e.icon = over.icon ?? null; return e; };
+  const build = (entries, extra = {}) => {
+    const store = makeStore(entries);
+    const svc = new FoodCatalogService({
+      catalogStore: store, clock: { now: () => NOW }, createId: () => 'x',
+      logger: { debug() {}, info() {}, warn() {}, error() {} },
+      iconOffered: (slug) => ['apple', 'banana', 'fried-eggs'].includes(slug),
+      iconVocabulary: () => iconVocabulary('apple banana fried-eggs'),
+      ...extra,
+    });
+    return { svc, store };
+  };
+
+  it('shows the closest offered icon for a null or default icon, without persisting it', async () => {
+    const { svc, store } = build([
+      withIcon({ id: 'a', name: 'Honeycrisp Apple', icon: null, useCount: 9 }),
+      withIcon({ id: 'b', name: 'Organic Bananas', icon: 'default', useCount: 8 }),
+      withIcon({ id: 'c', name: 'Fried Egg', icon: 'banana', useCount: 7 }),
+      withIcon({ id: 'd', name: 'Premier Protein Shake', icon: null, useCount: 6 }),
+    ]);
+    const byId = Object.fromEntries((await svc.suggest('', 'u', 10)).map((e) => [e.id, e.icon]));
+    expect(byId).toEqual({ a: 'apple', b: 'banana', c: 'banana', d: null });
+    expect((await store.getById('a')).icon).toBeNull();
+    expect((await store.getById('b')).icon).toBe('default');
+  });
+
+  it('a stored icon the manifest no longer offers is also replaced for display', async () => {
+    const { svc } = build([withIcon({ id: 'a', name: 'Fried Eggs', icon: 'retired_flat_egg' })]);
+    expect((await svc.suggest('', 'u', 5))[0].icon).toBe('fried-eggs');
+  });
+
+  it('without a vocabulary, suggestions are unchanged', async () => {
+    const { svc } = build([withIcon({ id: 'a', name: 'Apple', icon: null })], { iconVocabulary: undefined });
+    expect((await svc.suggest('', 'u', 5))[0].icon).toBeNull();
   });
 });

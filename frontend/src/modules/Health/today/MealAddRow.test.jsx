@@ -5,6 +5,10 @@ vi.mock('../../../lib/api.mjs', () => ({ DaylightAPI: vi.fn(async () => ({ items
 vi.mock('../capture/PhotoCapture.jsx', () => ({
   PhotoCapture: ({ bucket, labelPrefix, mealLabel }) => <button>{`${labelPrefix} to ${mealLabel} (${bucket})`}</button>,
 }));
+vi.mock('../capture/VoiceCapture.jsx', () => ({
+  VoiceCapture: ({ bucket, labelPrefix, mealLabel, onCapture }) =>
+    <button onClick={() => onCapture('data:audio', bucket, { isDeparted: () => false })}>{`${labelPrefix} to ${mealLabel}`}</button>,
+}));
 import { MealAddRow } from './MealAddRow.jsx';
 
 const r = ui => render(<MantineProvider>{ui}</MantineProvider>);
@@ -20,5 +24,14 @@ describe('MealAddRow', () => {
     expect(onOpenBarcode).toHaveBeenCalledWith('afternoon');
     fireEvent.click(screen.getByRole('button', { name: 'Saved meals for Lunch' }));
     expect(onOpenTemplates).toHaveBeenCalledWith('afternoon', null);
+  });
+
+  it('its mic adds what was said to this meal on the viewed day, with no selection', () => {
+    const onVoiceCapture = vi.fn();
+    r(<MealAddRow bucket="evening" label="Dinner" date="2026-09-21" onAdded={() => {}} onVoiceCapture={onVoiceCapture}
+      onPhotoCapture={() => {}} onOpenBarcode={() => {}} onOpenTemplates={() => {}} />);
+    fireEvent.click(screen.getByText('Speak foods to Dinner'));
+    expect(onVoiceCapture).toHaveBeenCalledWith('data:audio', 'evening', expect.objectContaining({ date: '2026-09-21' }));
+    expect(onVoiceCapture.mock.calls[0][2].selectedIds).toBeUndefined();
   });
 });

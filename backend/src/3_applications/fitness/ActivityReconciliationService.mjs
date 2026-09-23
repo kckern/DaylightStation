@@ -5,7 +5,8 @@
  * provider (via IActivityGateway; Strava is the current implementation):
  *   Pass 1 (Session → Provider): Re-enrich missed or stale activities
  *   Pass 2 (Provider → Session): Pull manually-entered provider descriptions
- *                                back as strava_notes
+ *                                back as strava_notes, and keep the session's
+ *                                copy of the activity title current
  *
  * Triggered non-blocking after each provider webhook enrichment.
  *
@@ -15,9 +16,13 @@
 import moment from 'moment-timezone';
 import { buildActivityDescription } from '#domains/fitness/services/buildActivityDescription.mjs';
 import { absorbOverlappingSlivers } from './sliverAbsorption.mjs';
+import { buildStravaSessionTimeline, applyStravaTimeline } from '#domains/fitness/services/StravaSessionBuilder.mjs';
+import { checkSessionIntegrity } from '#domains/fitness/services/sessionIntegrity.mjs';
 
 const RECONCILE_COOLDOWN_MS = 60 * 60 * 1000; // 1 hour
 const INTER_SESSION_DELAY_MS = 200;
+// Cap on Pass 4 stream fetches per sweep; any backlog waits for the next hour.
+const MAX_TIMELINE_REBUILDS_PER_SWEEP = 10;
 
 export class ActivityReconciliationService {
   #activityGateway;
@@ -27,6 +32,8 @@ export class ActivityReconciliationService {
   #logger;
   #historyRepository;
   #pause;
+  #ensureAccess;
+  #health;
 
   /**
    * @param {Object} config
@@ -35,9 +42,13 @@ export class ActivityReconciliationService {
    * @param {Object} config.selectionConfig - Primary-media selection config (from buildSelectionConfig)
    * @param {string} config.timezone - IANA timezone for the date-range sweep
    * @param {{list: Function, save: Function, remove: Function}} config.historyRepository - Fitness session persistence
+   * @param {Function} [config.ensureAccess] - Refresh provider auth before a sweep. The
+   *   hourly sweep runs on its own schedule; without this it only worked in the
+   *   hours after a webhook happened to refresh the token.
+   * @param {{recordSweep: Function}} [config.health] - sync-health monitor (StravaSyncHealth)
    * @param {Object} [config.logger]
    */
-  constructor({ activityGateway, lookbackDays, selectionConfig, timezone, historyRepository, pause = async () => {}, logger = console }) {
+  constructor({ activityGateway, lookbackDays, selectionConfig, timezone, historyRepository, pause = async () => {}, ensureAccess = async () => {}, health = null, logger = console }) {
     if (!historyRepository || typeof historyRepository.list !== 'function'
       || typeof historyRepository.save !== 'function' || typeof historyRepository.remove !== 'function') {
       throw new TypeError('ActivityReconciliationService requires historyRepository with list(), save(), and remove()');
@@ -49,6 +60,8 @@ export class ActivityReconciliationService {
     this.#historyRepository = historyRepository;
     this.#logger = logger;
     this.#pause = pause;
+    this.#ensureAccess = ensureAccess;
+    this.#health = health;
   }
 
   /**
@@ -62,9 +75,24 @@ export class ActivityReconciliationService {
     const dates = this.#buildDateRange(lookbackDays, tz);
     this.#logger.info?.('strava.reconciliation.start', { lookbackDays, dates: dates.length });
 
+    try {
+      await this.#ensureAccess();
+    } catch (err) {
+      this.#logger.warn?.('strava.reconciliation.auth_failed', { error: err?.message });
+      this.#health?.recordSweep?.({ ok: false, error: `sign-in failed: ${err?.message}` });
+      return;
+    }
+
     let sessionsProcessed = 0;
     let enriched = 0;
     let notesPulled = 0;
+    let titlesSynced = 0;
+    let sessionErrors = 0;
+    let lastError = null;
+    let timelinesRebuilt = 0;
+    let rebuildBudget = MAX_TIMELINE_REBUILDS_PER_SWEEP;
+    const flagged = new Set();
+    const unresolved = [];
     let sliversAbsorbed = 0;
 
     for (const date of dates) {
@@ -74,6 +102,11 @@ export class ActivityReconciliationService {
         // Find strava activityId from session or participants
         const activityId = this.#extractActivityId(session);
         if (!activityId) continue;
+
+        // Integrity is scanned for every Strava-only session, cooldown or not,
+        // so the health monitor sees a stable list (no API call involved).
+        const needsTimeline = session.session?.source === 'strava' && !checkSessionIntegrity(session).ok;
+        if (needsTimeline) flagged.add(sessionId);
 
         // Staleness check: skip if reconciled within the last hour
         const lastReconciled = session.strava?.last_reconciled_at;
@@ -93,13 +126,33 @@ export class ActivityReconciliationService {
           // Pass 2: Strava → Session (pull notes)
           const didPull = this.#pass2StravaToSession(session, activity);
           if (didPull) notesPulled++;
+          const didRetitle = this.#syncTitle(session, activity, didEnrich);
+          if (didRetitle) titlesSynced++;
+
+          // Pass 4: Strava-only timeline integrity (grow-only rebuild)
+          let didRebuild = false;
+          if (needsTimeline) {
+            const outcome = rebuildBudget > 0
+              ? await this.#pass4RebuildTimeline(sessionId, session, activityId)
+              : { rebuilt: false, reason: 'budget' };
+            if (outcome.rebuilt) {
+              rebuildBudget--;
+              timelinesRebuilt++;
+              didRebuild = true;
+              Object.assign(session, outcome.session);
+              flagged.delete(sessionId);
+            } else if (outcome.reason !== 'budget') {
+              if (outcome.fetched) rebuildBudget--;
+              unresolved.push({ sessionId, reason: outcome.reason });
+            }
+          }
 
           // Update staleness tracker
           if (!session.strava) session.strava = {};
           session.strava.last_reconciled_at = new Date().toISOString();
 
           // Save session if anything changed
-          if (didEnrich || didPull || !lastReconciled) {
+          if (didEnrich || didPull || didRetitle || didRebuild || !lastReconciled) {
             this.#historyRepository.save(sessionId, session);
           }
 
@@ -123,6 +176,8 @@ export class ActivityReconciliationService {
           // Rate limit: small delay between sessions
           await this.#pause(INTER_SESSION_DELAY_MS);
         } catch (err) {
+          sessionErrors++;
+          lastError = err?.message || String(err);
           this.#logger.warn?.('strava.reconciliation.session_error', {
             activityId,
             sessionId: session.sessionId || session.session?.id,
@@ -136,7 +191,21 @@ export class ActivityReconciliationService {
       sessionsProcessed,
       enriched,
       notesPulled,
+      titlesSynced,
+      timelinesRebuilt,
+      sessionErrors,
+      unresolved: unresolved.length,
       sliversAbsorbed,
+    });
+
+    const attempted = sessionsProcessed + sessionErrors;
+    this.#health?.recordSweep?.({
+      ok: attempted === 0 || sessionErrors * 2 <= attempted,
+      processed: sessionsProcessed,
+      errors: sessionErrors,
+      error: lastError,
+      flagged: [...flagged],
+      unresolved,
     });
   }
 
@@ -227,6 +296,90 @@ export class ActivityReconciliationService {
       sessionId: session.sessionId || session.session?.id,
       textLength: desc.length,
     });
+    return true;
+  }
+
+  /**
+   * Pass 4: rebuild a Strava-only session's timeline from the provider's
+   * heartrate + time streams. Grow-only: the rebuild is written only when it
+   * has more ticks than what is stored, so a provider stream that covers less
+   * than we already have (a strap that died mid-activity) never overwrites
+   * better data. The stored file is snapshotted first.
+   * @returns {Promise<{rebuilt: boolean, fetched?: boolean, reason?: string, session?: Object}>}
+   */
+  async #pass4RebuildTimeline(sessionId, session, activityId) {
+    const streams = await this.#activityGateway.getActivityStreams(activityId, ['heartrate', 'time']);
+    const heartrate = streams?.heartrate?.data;
+    const time = streams?.time?.data;
+    if (!heartrate || !time || heartrate.length !== time.length) {
+      return { rebuilt: false, fetched: true, reason: 'no-streams' };
+    }
+    const timeline = buildStravaSessionTimeline(heartrate, time);
+    const before = session.timeline?.tick_count || 0;
+    if (!timeline || timeline.hrSamples.length <= before) {
+      this.#logger.info?.('strava.reconciliation.timeline_not_rebuilt', {
+        activityId, sessionId, storedTicks: before, rebuiltTicks: timeline?.hrSamples.length ?? 0,
+      });
+      return { rebuilt: false, fetched: true, reason: 'would-shrink' };
+    }
+    const username = Object.keys(session.timeline?.series || {}).find(k => k.endsWith(':hr'))?.split(':')[0]
+      || Object.keys(session.participants || {})[0];
+    if (!username) return { rebuilt: false, fetched: true, reason: 'no-participant' };
+
+    const backup = this.#historyRepository.snapshot?.(sessionId, 'timeline-rebuild') ?? null;
+    const rebuilt = applyStravaTimeline(session, timeline, username);
+    this.#logger.info?.('strava.reconciliation.timeline_rebuilt', {
+      activityId, sessionId, fromTicks: before, toTicks: timeline.hrSamples.length,
+      fromRings: session.treasureBox?.totalRings ?? null, toRings: timeline.totalRings, backup,
+    });
+    return { rebuilt: true, session: rebuilt };
+  }
+
+  /**
+   * Apply a title from a provider rename webhook to the session(s) linked to
+   * that activity within the lookback window.
+   * @param {string} activityId
+   * @param {string} title
+   * @returns {number} Sessions updated
+   */
+  applyTitle(activityId, title) {
+    const tz = this.#timezone || 'America/Los_Angeles';
+    let updated = 0;
+    for (const date of this.#buildDateRange(this.#lookbackDays, tz)) {
+      for (const { id: sessionId, data: session } of this.#historyRepository.list(date)) {
+        if (this.#extractActivityId(session) !== String(activityId)) continue;
+        if (this.#syncTitle(session, { id: activityId, name: title }, false)) {
+          this.#historyRepository.save(sessionId, session);
+          updated++;
+        }
+      }
+    }
+    return updated;
+  }
+
+  /**
+   * Keep `session.strava.name` equal to the title Strava holds now. It is
+   * written once at session creation ("Morning Run") and would otherwise
+   * never pick up a rename made on Strava afterwards.
+   *
+   * Only refreshes a name the session already carries. Home sessions keep a
+   * `strava` block (activityId, provenance) without a name, and giving them
+   * one would make the session list render them as Strava activities.
+   * @param {boolean} justPushed - Pass 1 updated Strava this sweep; the
+   *   fetched `activity` is stale and the pushed name is current.
+   * @returns {boolean} Whether the session title changed
+   */
+  #syncTitle(session, activity, justPushed) {
+    const current = justPushed ? session.strava?.pushed?.name : activity.name;
+    if (!current?.trim() || !session.strava?.name || session.strava.name === current) return false;
+
+    this.#logger.info?.('strava.reconciliation.title_synced', {
+      activityId: activity.id,
+      sessionId: session.sessionId || session.session?.id,
+      from: session.strava.name ?? null,
+      to: current,
+    });
+    session.strava.name = current;
     return true;
   }
 

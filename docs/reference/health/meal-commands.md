@@ -73,11 +73,31 @@ capture has an estimated progress bar which switches to moving diagonal stripes
 after its estimate expires. Only the request outcome completes it. Obsolete bot
 status messages are not shown after committed success.
 
-Food-row density displays actual kcal/g to one decimal (including 0.0). Mass is the known grams, else a stored volume (ml, cl, L, fl oz) at 1 g/ml via `foodMass`; the row still shows its volume. A row with no calories, or only a count/serving, shows —. The nearest
+Food-row density displays actual kcal/g to one decimal (including 0.0). Mass is the known grams, else a stored weight (kg, oz, lb, exact) or volume (ml, cl, dl, L, fl oz, cup 240 ml, tbsp 14.787 ml, tsp 4.929 ml) at 1 g/ml via `foodMass`; the row still shows its stored unit. A row with no calories, or only a count unit (serving, piece, slice, can, bowl…), shows —; counts are never guessed into mass. The nearest
 of nine configured anchors chooses its color, with midpoint ties toward the higher
 anchor. Default identity order is density, artwork, name; the existing after-name
 preference remains available. Daily cards round numbers only for display and keep
 units inline; food data and daily sums retain precision.
+
+### Inline numeric edit — the order holds still
+
+Meals sort heaviest-first, and dragging a portion, calorie or macro value
+previews the new calories live. A section therefore **keeps the entry order it
+had when the draft began** for as long as the draft is live — `usePortionControl().draft`
+is non-null from `begin` through saving, saved-until-the-read-model-catches-up and
+error — so the dragged row never moves out from under the pointer. Values still
+update every frame; only the order (top-level entries and a group's children) is
+frozen, and an entry that appears meanwhile goes after the frozen ones. When the
+draft ends (commit caught up, cancel, Escape, discard), the real order returns.
+(`today/sectionOrder.js`: `useFrozenOrder`, `applyFrozenOrder`.)
+
+Whenever a section's top-level order changes — the unfreeze above, an add, an
+edit, a delete, a reload — the entries that moved glide from their old position
+to the new one (FLIP, `useFlipMoves`: positions measured relative to the section
+on every commit, animated only on a commit whose order changed, an inline translate, then the `health-flip-moving` class
+transitions it home on the `--ds-motion-base` / `--ds-motion-easing` tokens).
+Only rows whose position changed are touched, and nothing animates under
+`prefers-reduced-motion`.
 
 ## Verification
 

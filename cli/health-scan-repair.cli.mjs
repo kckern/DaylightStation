@@ -7,7 +7,12 @@
 //   ledger  - delete UPC re-fires (same day/meal/name/calories, <= 30 s apart)
 //             and person-chosen ids; clear placeholder photoRefs; normalize
 //             shouting UPC names (never a name a person set); fix mislabelled
-//             ml servings from label grams; re-icon retired or reviewed icons.
+//             ml servings from label grams; restore legacy quantities (rows
+//             with no grams/amount but calories: a metric volume from
+//             originalQuantity verbatim, else originalQuantity.amount as grams
+//             when the implied kcal/g is plausible, tagged
+//             quantityProvenance {source: legacy-amount}); re-icon retired or
+//             reviewed icons.
 //             Hot nutrilist.yml AND archives/nutrilist/*.yml.
 //   catalog - re-icon non-offered icons, clear non-offered pins, normalize
 //             names (skipping any that would collide).
@@ -215,6 +220,8 @@ export function summarize(report) {
     emptyUpc: report.report.emptyUpc.length,
     manualNamesKept: report.report.manualNamesKept.length,
     mlUnresolved: report.report.mlUnresolved.length,
+    legacyQuantityByKind: report.report.legacyQuantity.reduce((counts, entry) => ({ ...counts, [entry.kind]: (counts[entry.kind] || 0) + 1 }), {}),
+    legacyQuantityUnresolved: report.report.legacyQuantityUnresolved.length,
     catalogIconUpdates: report.catalog.iconUpdates.length,
     catalogRetiredFellThroughToNull: total(report.catalog.fellThroughToNull),
     catalogPinsCleared: total(report.catalog.pinsCleared),

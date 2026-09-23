@@ -35,7 +35,10 @@ vi.mock('../capture/PhotoCapture.jsx', () => ({
   ),
 }));
 vi.mock('../capture/VoiceCapture.jsx', () => ({
-  VoiceCapture: ({ onCapture, bucket }) => (
+  // The add row's mic carries a labelPrefix; the meal header's does not.
+  VoiceCapture: ({ onCapture, bucket, labelPrefix }) => labelPrefix ? (
+    <button onClick={() => onCapture('data:audio/webm;base64,zzz', bucket)}>MockAddRowVoice-{bucket}</button>
+  ) : (
     <><button onClick={() => onCapture('data:audio/webm;base64,zzz', bucket)}>
       {bucket ? `MockVoiceCapture-${bucket}` : 'MockVoiceCapture'}
     </button><button onClick={() => onCapture('data:audio/webm;base64,zzz', bucket, { departed:true }).catch(()=>{})}>
@@ -753,6 +756,14 @@ describe('TodayView — a barcode the person must hear about', () => {
     await act(async () => { await barcodeProps.current.onDecode('037000338369', 'afternoon'); });
     expect(await screen.findByText('Needs review — no calories found')).toBeTruthy();
     await waitFor(() => expect(pendingCalls()).toBeGreaterThan(before));
+  });
+  it('a label with no calories logged as an AI estimate says it is an estimate', async () => {
+    apiMock.mockImplementation(baseApi({ nutritionInput: { committed: true, outcome: 'committed', aiEstimate: true,
+      logId: 'L2', messages: [] } }));
+    r(<TodayView onSetupGoals={() => {}} onCoachTap={() => {}} />);
+    await waitFor(() => expect(barcodeProps.current).toBeTruthy());
+    await act(async () => { await barcodeProps.current.onDecode('037000338369', 'afternoon'); });
+    expect(await screen.findByText('No calories on the label — estimated for one serving. Check the row.')).toBeTruthy();
   });
 });
 

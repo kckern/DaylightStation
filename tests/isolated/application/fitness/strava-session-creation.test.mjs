@@ -236,6 +236,26 @@ describe('FitnessActivityEnrichmentService — Strava-only session creation', ()
     expect(data.summary.participants.testuser.rings).toBe(6);
   });
 
+  it('places smart-recording samples on the clock using the time stream', async () => {
+    // 15 samples, one every 5s → 15 ticks (a per-second read would give 3)
+    const hrData = Array(15).fill(130);
+    mockStravaClient.getActivityStreams = vi.fn().mockResolvedValue({
+      heartrate: { data: hrData },
+      time: { data: hrData.map((_, i) => i * 5) },
+    });
+    const activityWithHR = { ...stravaActivity, has_heartrate: true };
+    mockStravaClient.getActivity.mockResolvedValue(activityWithHR);
+
+    await service._attemptEnrichment(ACTIVITY_ID);
+
+    expect(mockStravaClient.getActivityStreams).toHaveBeenCalledWith(expect.anything(), ['heartrate', 'time']);
+    const dateDir = path.join(tmpDir, '2026-03-01');
+    const files = fs.readdirSync(dateDir).filter(f => f.endsWith('.yml'));
+    const data = loadYamlSafe(path.join(dateDir, files[0]));
+    expect(data.timeline.tick_count).toBe(15);
+    expect(data.treasureBox.totalRings).toBe(30);
+  });
+
   it('falls back to empty timeline when getActivityStreams fails', async () => {
     const activityWithHR = { ...stravaActivity, has_heartrate: true };
     mockStravaClient.getActivity.mockResolvedValue(activityWithHR);

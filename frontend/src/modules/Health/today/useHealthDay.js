@@ -1,20 +1,28 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { summarizeDayQuality } from './dayQuality.js';
-import { useApiResource } from '../../../lib/hooks/useApiResource.js';
+import { useApiResource, peekApiResource } from '../../../lib/hooks/useApiResource.js';
 import { createAppLogger } from '../../../lib/ui/createAppLogger.js';
 import { BUCKETS } from './mealBuckets.js';
-import { refreshHealthResources } from '../healthResources.js';
+import { noteVisibleRows } from './addFlow.js';
+import { refreshHealthResources, healthDayPath } from '../healthResources.js';
 
 const logger = createAppLogger('health').child('use-health-day');
 
 export function useHealthDay(date, { enabled = true } = {}) {
+  // `day.view`: once per viewed date, whether the day painted from the swr
+  // cache (a prefetch or an earlier visit) and how long it took to have data.
+  // The cache is peeked BEFORE the reader below runs, so a hit is a real hit.
+  const view = useRef(null);
+  if (enabled && view.current?.date !== date) {
+    view.current = { date, startedAt: performance.now(), fromCache: peekApiResource(healthDayPath(date)) !== undefined, logged: false };
+  }
   // swr:true — a cached day (nutrilist + budget) renders immediately with
   // loading:false on mount/date-change, and a mutation's reload() revalidates
   // quietly in the background rather than flipping `loading` back to true.
   // This is what lets TodayView keep its headings/section frames mounted
   // permanently: `loading` only goes true on a genuine cold start (no cache
   // for this date yet), never on a refetch of a date already seen.
-  const list = useApiResource(`api/v1/health/day?date=${date}`, { deps: [date], enabled, label: 'health-day', logger, swr: true });
+  const list = useApiResource(healthDayPath(date), { deps: [date], enabled, label: 'health-day', logger, swr: true });
 
   // The day's rows: the endpoint serves {message, data:[...], date, count};
   // also tolerate bare array or {items} for backward compatibility.
@@ -22,6 +30,9 @@ export function useHealthDay(date, { enabled = true } = {}) {
     const d = list.data;
     return Array.isArray(d) ? d : (Array.isArray(d?.data) ? d.data : (Array.isArray(d?.items) ? d.items : []));
   }, [list.data]);
+
+  // An add from the add row completes (add.flow) when its rows are here.
+  useEffect(() => { if (enabled) noteVisibleRows(items); }, [enabled, items]);
 
   const byBucket = useMemo(() => {
     const map = new Map([...BUCKETS.map((b) => [b.id, []]), [null, []]]);
@@ -31,6 +42,13 @@ export function useHealthDay(date, { enabled = true } = {}) {
     }
     return map;
   }, [items]);
+
+  useEffect(() => {
+    const current = view.current;
+    if (!enabled || !list.data || !current || current.logged || current.date !== date) return;
+    current.logged = true;
+    logger.info('day.view', { date, fromCache: current.fromCache, paintMs: Math.round(performance.now() - current.startedAt) });
+  }, [enabled, date, list.data]);
 
   // One data-quality census per (date, ledger revision) — not per poll — so
   // the log store can answer "which days render gaps, and why" without a
