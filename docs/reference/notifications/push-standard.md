@@ -69,7 +69,9 @@ clause; it never renders an id.
 - A word-ladder concern is tagged `school-{learnerId}-word-ladder-{package}`, so
   the next day's concern replaces the card. Its title is `🔤 {Child} — {Deck}`.
   The body is the tuner's first note only when `findPushTextDefects` passes it,
-  else a fixed line, then the study day (`Mon Sep 21`). It is sent to each
+  else a fixed line, then the study day (`Mon Sep 21`). Setting ids in a note
+  become plain words first. A push held by quiet hours is retried every 15
+  minutes for up to 48 hours, never dropped silently. It is sent to each
   teacher through `NotificationService`. `PushNotificationAdapter` relays an
   intent's `metadata.pushData` block (from `pushData`) as the HA `data:`, so the
   tag and channel reach the phone.

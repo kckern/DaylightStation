@@ -34,7 +34,7 @@ function memoryStore({ days = {}, tuning = emptyTuning() } = {}) {
   };
 }
 
-function make({ store = memoryStore(), tuner = undefined, notify = vi.fn(async () => {}), programs = null, bounds = null, teacherGate = null } = {}) {
+function make({ store = memoryStore(), tuner = undefined, notify = vi.fn(async () => ({ status: 'sent' })), programs = null, bounds = null, teacherGate = null, now = () => NOW } = {}) {
   const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
   const rows = programs ?? [{ programId: 'flashcards', deckId: DECK, policy: { mode: 'word-ladder' } }];
   const service = new WordLadderTuningService({
@@ -48,7 +48,7 @@ function make({ store = memoryStore(), tuner = undefined, notify = vi.fn(async (
     tuner: tuner === undefined ? { tune: vi.fn(async () => ({ status: 'on-track', notes: ['Fine.'], changes: [] })) } : tuner,
     bounds,
     settings: () => structuredClone(DEFAULT_SETTINGS),
-    notify, teacherGate, timezone: 'America/Los_Angeles', now: () => NOW, logger,
+    notify, teacherGate, timezone: 'America/Los_Angeles', now, logger,
   });
   return { service, store, logger, notify };
 }
@@ -151,19 +151,66 @@ describe('WordLadderTuningService', () => {
     expect((await service.runFor(RUN)).dropped).toEqual([expect.objectContaining({ setting: 'round.size', brake: 'dwell' })]);
   });
 
-  it('concern pushes through the notify port', async () => {
+  it('a concern is recorded as an outstanding push; deliverPushes sends it through the notify port once', async () => {
     const store = memoryStore({ days: { [YESTERDAY]: studyDay(YESTERDAY) } });
     const { service, notify } = make({ store, tuner: { tune: async () => ({ status: 'concern', notes: ['Guessing through quizzes.'], changes: [] }) } });
     await service.runFor(RUN);
+    expect(notify).not.toHaveBeenCalled();
+    expect(store.s.tuning.history.at(-1)).toMatchObject({ status: 'concern', notified: false, concernAt: new Date(NOW).toISOString() });
+    await service.deliverPushes();
     expect(notify).toHaveBeenCalledWith(expect.objectContaining({ learnerId: 'test-learner', package: PKG, deckId: DECK, day: YESTERDAY, status: 'concern', notes: ['Guessing through quizzes.'] }));
+    expect(store.s.tuning.history.at(-1)).toMatchObject({ notified: true });
+    await service.deliverPushes();
+    expect(notify).toHaveBeenCalledTimes(1);
   });
 
-  it('a failing notify is logged and never loses the tuning write', async () => {
+  it('a push suppressed by quiet hours stays pending and goes out on a later tick — exactly one push', async () => {
     const store = memoryStore({ days: { [YESTERDAY]: studyDay(YESTERDAY) } });
-    const { service, logger } = make({ store, notify: async () => { throw new Error('push down'); }, tuner: { tune: async () => ({ status: 'concern', notes: ['x'], changes: [] }) } });
+    const notify = vi.fn().mockResolvedValueOnce({ status: 'suppressed' }).mockResolvedValue({ status: 'sent' });
+    const { service, logger } = make({ store, notify, tuner: { tune: async () => ({ status: 'concern', notes: ['x'], changes: [] }) } });
     await service.runFor(RUN);
+    await service.deliverPushes();
+    expect(store.s.tuning.history.at(-1).notified).toBe(false);
+    expect(logger.info).toHaveBeenCalledWith('school.word-ladder.tuning-push', expect.objectContaining({ status: 'suppressed', day: YESTERDAY }));
+    await service.deliverPushes();
+    expect(store.s.tuning.history.at(-1).notified).toBe(true);
+    expect(logger.info).toHaveBeenCalledWith('school.word-ladder.tuning-push', expect.objectContaining({ status: 'sent' }));
+    await service.deliverPushes();
+    expect(notify.mock.calls.length).toBe(2); // one suppressed attempt + the one push that went out
+  });
+
+  it('a push that fails is warned and retried; the tuning write is never lost', async () => {
+    const store = memoryStore({ days: { [YESTERDAY]: studyDay(YESTERDAY) } });
+    const notify = vi.fn().mockRejectedValueOnce(new Error('push down')).mockResolvedValue({ status: 'sent' });
+    const { service, logger } = make({ store, notify, tuner: { tune: async () => ({ status: 'concern', notes: ['x'], changes: [] }) } });
+    await service.runFor(RUN);
+    await service.deliverPushes();
     expect(store.s.tuning.lastTunedDay).toBe(YESTERDAY);
-    expect(logger.warn).toHaveBeenCalledWith('school.word-ladder.tuning-notify-failed', expect.objectContaining({ error: 'push down' }));
+    expect(store.s.tuning.history.at(-1).notified).toBe(false);
+    expect(logger.warn).toHaveBeenCalledWith('school.word-ladder.tuning-push', expect.objectContaining({ status: 'failed', error: 'push down' }));
+    await service.deliverPushes();
+    expect(store.s.tuning.history.at(-1).notified).toBe(true);
+  });
+
+  it('a push still pending after 48h is dropped with a warn', async () => {
+    const store = memoryStore({ days: { [YESTERDAY]: studyDay(YESTERDAY) } });
+    let clock = NOW;
+    const notify = vi.fn(async () => ({ status: 'suppressed' }));
+    const { service, logger } = make({ store, notify, now: () => clock, tuner: { tune: async () => ({ status: 'concern', notes: ['x'], changes: [] }) } });
+    await service.runFor(RUN);
+    clock = NOW + 48 * 3600000 + 1;
+    await service.deliverPushes();
+    expect(notify).not.toHaveBeenCalled();
+    expect(store.s.tuning.history.at(-1).notified).toBe('dropped');
+    expect(logger.warn).toHaveBeenCalledWith('school.word-ladder.tuning-push', expect.objectContaining({ status: 'dropped' }));
+  });
+
+  it('without a notify port nothing is marked outstanding', async () => {
+    const store = memoryStore({ days: { [YESTERDAY]: studyDay(YESTERDAY) } });
+    const { service } = make({ store, notify: null, tuner: { tune: async () => ({ status: 'concern', notes: ['x'], changes: [] }) } });
+    await service.runFor(RUN);
+    expect(Object.hasOwn(store.s.tuning.history.at(-1), 'notified')).toBe(false);
+    await expect(service.deliverPushes()).resolves.toEqual([]);
   });
 
   it('model failure → no changes, logged, the day is marked so it is not retried every tick', async () => {
@@ -185,16 +232,20 @@ describe('WordLadderTuningService', () => {
       const out = await service.runFor(RUN);
       expect(out).toMatchObject({ status: 'on-track', applied: [], dropped: [] });
       expect(store.s.tuning).toMatchObject({ values: {}, lastChanged: {}, lastTunedDay: YESTERDAY });
-      const { notes } = store.s.tuning.history.at(-1);
-      expect(notes).toHaveLength(1);
-      expect(notes[0]).toMatch(/no model/i);
+      const entry = store.s.tuning.history.at(-1);
+      expect(entry.model).toBe(false);
+      expect(entry.notes.join(' ')).not.toMatch(/model/i);
+      await service.deliverPushes();
       expect(notify).not.toHaveBeenCalled();
     });
     it('a day credited with zero quizzed words is a concern, and pushes', async () => {
       const store = memoryStore({ days: { [YESTERDAY]: studyDay(YESTERDAY, { quizzed: 0 }) } });
       const { service, notify } = make({ store, tuner: null });
       expect(await service.runFor(RUN)).toMatchObject({ status: 'concern', applied: [] });
-      expect(notify).toHaveBeenCalledWith(expect.objectContaining({ status: 'concern' }));
+      // Plain copy for a parent: no word about the model.
+      expect(store.s.tuning.history.at(-1).notes).toEqual(['Credited with no words quizzed']);
+      await service.deliverPushes();
+      expect(notify).toHaveBeenCalledWith(expect.objectContaining({ status: 'concern', notes: ['Credited with no words quizzed'] }));
     });
   });
 

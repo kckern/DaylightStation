@@ -23,7 +23,7 @@ vi.mock('../wordLadderAdminApi.js', () => ({
   },
 }));
 vi.mock('../TeacherProfileContext.jsx', () => ({
-  useTeacherProfileOptional: () => ({ currentTeacher: { id: 'teacher_1' } }),
+  useTeacherProfileOptional: () => ({ currentTeacher: { id: 'teacher_1' }, teachers: [{ id: 'teacher_1', name: 'Grown-up One' }] }),
   useTeacherProfile: () => ({
     currentTeacher: { id: 'teacher_1', name: 'teacher_1' },
     openPicker: vi.fn(),
@@ -89,6 +89,16 @@ const tuningPayload = (over = {}) => ({
     {
       day: '2026-09-15', status: 'on-track', notes: [], error: null,
       applied: [{ setting: 'review.gapScale', from: 1, to: 1.1, reason: 'easy', undoable: false, undone: { day: '2026-09-16', actorId: 'teacher_1' } }],
+      dropped: [],
+    },
+    {
+      day: '2026-09-16', status: null, notes: [], undo: true, actorId: 'teacher_1',
+      applied: [{ setting: 'review.gapScale', from: 1.1, to: 1, reason: 'grown-up undo', undoable: false, undone: null }],
+      dropped: [],
+    },
+    {
+      day: '2026-09-12', status: null, notes: [], undo: true, actorId: 'someone_gone',
+      applied: [{ setting: 'round.size', from: 6, to: 5, reason: 'grown-up undo', undoable: false, undone: null }],
       dropped: [],
     },
   ],
@@ -304,7 +314,11 @@ describe('Tuning', () => {
     const section = await screen.findByRole('region', { name: 'Tuning' });
     expect(await within(section).findByRole('button', { name: 'Undo batch.newPerDay 4 → 3 on 2026-09-21' })).toBeTruthy();
     expect(within(section).queryByRole('button', { name: /Undo review\.gapScale/ })).toBeNull();
-    expect(within(section).getByText(/undone/i)).toBeTruthy();
+    expect(within(section).getByText(/undone 2026-09-16 by Grown-up One/)).toBeTruthy();
+    // The teacher's display name, never the raw id; an unknown id reads as "a grown-up".
+    expect(within(section).getByText(/grown-up undo by Grown-up One/)).toBeTruthy();
+    expect(within(section).getByText(/grown-up undo by a grown-up/)).toBeTruthy();
+    expect(within(section).queryByText(/teacher_1|someone_gone/)).toBeNull();
     expect(within(section).getByText(/dwell/)).toBeTruthy();
   });
 

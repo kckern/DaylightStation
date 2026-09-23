@@ -354,11 +354,14 @@ have a day file, which are the days the learner opened** (`listDays`). A day
 file is never created for a day the learner did not open, so calendar days
 off do not count toward the 5-day wait.
 
-History keeps 60 rows of `{day, status, notes[≤3], applied, dropped}`. With no
-model configured, a deterministic note is written instead (`concern` when a
-credited day quizzed no words) and nothing changes. A tuner failure changes
-nothing; it records `status: null, error` and marks the day. A `concern` calls
-the injected `notify` port.
+History keeps 60 rows of `{day, status, notes[≤3], applied, dropped, model}`.
+With no model configured (`model: false`), the rules write the status instead
+and nothing changes: `concern` with the note "Credited with no words quizzed"
+when a credited day quizzed no words, else `on-track` with no note. Notes are
+plain copy for a parent; they never mention the model. A tuner failure changes
+nothing; it records `status: null, error` and marks the day. A `concern` row
+also gets `notified: false` and `concernAt` (when a `notify` port is wired):
+an outstanding push that `deliverPushes` sends later, not `runFor`.
 
 **Composition and schedule** (`5_composition/modules/wordLadderTuning.mjs`,
 wired in `app.mjs`). The service is built on the **live** store and the
@@ -366,9 +369,12 @@ assignment store. The `WordLadderTuner` agent (a `MastraAdapter` runtime, one
 structured step, no tools) is built only when `word_ladder.tuner.model` is set
 in the household School config. With no model, the deterministic note above
 applies. Wherever the agent scheduler runs (`agentSchedulerEnabled`:
-production, a container, or `ENABLE_CRON=true`), a tick every 15 minutes asks
-`pending()` and tunes each row **one at a time**. A tick that finds the
-previous one still running is skipped. The service refuses a day that has not
+production, a container, or `ENABLE_CRON=true`), a tick runs **60 seconds
+after boot** (an unref'd one-shot timer, so a restart past the rollover does
+not wait a full interval) and then **every 15 minutes**. A tick asks
+`pending()`, tunes each row **one at a time**, then calls `deliverPushes()`
+for the outstanding concern pushes. A tick that finds the previous one still
+running is skipped. The service refuses a day that has not
 ended, so the first tick after the study-day rollover does the work. One
 learner's failure is logged (`tuning-run-failed`) and the tick goes on.
 
@@ -380,7 +386,21 @@ School needs you, and the tag `school-{learnerId}-word-ladder-{package}` means
 the next concern replaces the card. It goes to every `teachers:` id through the
 household `NotificationService` (`category: school`, `urgency: high`,
 `dedupeKey` per teacher, learner, package and day). A failed label lookup drops
-that label and still sends.
+that label and still sends. Tunable setting ids in a note become plain words
+("new words per day"); a note that still names a dotted setting is dropped for
+the fixed line.
+
+**Quiet hours defer, never drop.** The tuning pass runs just after the 4am
+rollover, inside the household's quiet hours, where `NotificationService`
+suppresses a non-critical push. `notify` answers `sent` (any copy delivered),
+`suppressed` (governance held every copy) or `failed`. `deliverPushes` marks a
+sent row `notified: true` (`notifiedAt`), leaves a suppressed or failed row
+pending for the next tick, and marks a row still pending after **48 hours**
+`notified: 'dropped'`. Each attempt logs `school.word-ladder.tuning-push
+{status}`: info for `sent` / `suppressed`, warn for `failed` / `dropped`. It
+takes the same per-learner-package guard as a tuning run and re-reads
+`tuning.yml` before writing. With a morning quiet-hours end at 07:00, the push
+arrives on the first tick after it.
 
 **Console and undo** (`adminTuning`, `adminUndo`). Both are teacher-gated
 (`action: 'word-ladder.tuning'`), refuse a learner not enrolled in the deck,
@@ -650,7 +670,7 @@ by hand.
 
 ## Logs
 
-Backend: `school.word-ladder.{opened,graded,reopened,closed,folded,attempts-unreadable,decks-unlisted,store-corrupt,tuning,tuned,tuning-failed,tuning-skipped,tuning-unreadable}` (`store-corrupt` carries `kind: status|day|tuning`; `tuning` is one line per applied or dropped change, `{setting, from, to, reason, dropped?}`, plus `actorId` on a grown-up undo; the scheduler adds `tuning-wired`, `tuning-run-failed`, `tuning-tick-failed`, `tuning-deck-skipped`, `tuning-pending-failed`, `tuning-notify-failed`),
+Backend: `school.word-ladder.{opened,graded,reopened,closed,folded,attempts-unreadable,decks-unlisted,store-corrupt,tuning,tuned,tuning-failed,tuning-skipped,tuning-unreadable}` (`store-corrupt` carries `kind: status|day|tuning`; `tuning` is one line per applied or dropped change, `{setting, from, to, reason, dropped?}`, plus `actorId` on a grown-up undo; the scheduler adds `tuning-wired`, `tuning-run-failed`, `tuning-tick-failed`, `tuning-deck-skipped`, `tuning-pending-failed`, `tuning-push {status: sent|suppressed|failed|dropped}`),
 all carrying `mode: live|test`. Frontend
 (`context.component: school-word-ladder`, events `school.word-ladder.*`):
 `started` (Start tapped), `plan.failed`, `stage-failed`, `media.failed`

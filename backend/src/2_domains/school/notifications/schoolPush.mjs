@@ -9,6 +9,7 @@
  */
 import { findPushTextDefects, formatStudyDay, pushData } from '#domains/notification/push/pushText.mjs';
 import { rowList } from '../documents/scanNotices.mjs';
+import { humanizeSettingIds } from '../wordLadder/settingLabels.mjs';
 
 const LANES = {
   progress: { channel: 'School progress', importance: 'low' },
@@ -30,6 +31,9 @@ const REVIEW_REASON = {
   ambiguous: 'two answers filled in',
   free_response: 'written answers to grade',
 };
+
+// A dotted setting name (`session.capMinutes`) left after humanizing.
+const DOTTED_ID = /\b[a-z]+\.[a-z][A-Za-z]*\b/;
 
 const isCount = (value) => Number.isInteger(value) && value >= 0;
 const scoreText = (earned, total) => (isCount(earned) && isCount(total) && total > 0
@@ -119,12 +123,13 @@ export function composeSchoolPush(event = {}) {
     }
     case 'word-ladder': {
       // The tuning agent read the day as a concern (word-ladder spec §7). Its
-      // notes are model text: one is shown only if it reads cleanly (no ids,
-      // slugs or enums), else the generic line. The tag is per learner per
+      // notes are model text: tunable setting ids become plain words, and a
+      // note is shown only if it then reads cleanly (no ids, dotted setting
+      // names, slugs or enums), else the generic line. The tag is per learner per
       // package, so the next day's concern replaces this card.
       const note = (Array.isArray(event.notes) ? event.notes : [])
-        .map((text) => (typeof text === 'string' ? text.trim().replace(/[.\s]+$/, '') : ''))
-        .find((text) => text && text.length <= 120 && findPushTextDefects(text).length === 0);
+        .map((text) => (typeof text === 'string' ? humanizeSettingIds(text).trim().replace(/[.\s]+$/, '') : ''))
+        .find((text) => text && text.length <= 120 && !DOTTED_ID.test(text) && findPushTextDefects(text).length === 0);
       const day = formatStudyDay(event.day);
       const subject = event.deck ?? 'Word practice';
       return {

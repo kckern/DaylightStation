@@ -33,6 +33,10 @@ const CASES = [
     { title: '🔤 Learner4 — Korean Words', message: 'Credited with no words quizzed · Mon Sep 21', channel: 'School needs you' }],
   ['word ladder concern, an unsafe note', { learnerId: 'user_4', child: 'Learner4', kind: 'word-ladder', package: 'lang-basics', deck: 'Korean Words', day: '2026-09-21', notes: ['batch.newPerDay hit its cap_hits'] },
     { title: '🔤 Learner4 — Korean Words', message: "Word practice needs a grown-up's look · Mon Sep 21" }],
+  ['word ladder concern, a note naming a setting id', { learnerId: 'user_4', child: 'Learner4', kind: 'word-ladder', package: 'lang-basics', deck: 'Korean Words', day: '2026-09-21', notes: ['Lowered batch.newPerDay after cap hits; review.gapScale held.'] },
+    { message: 'Lowered new words per day after cap hits; review spacing held · Mon Sep 21' }],
+  ['word ladder concern, a note naming an unknown dotted id', { learnerId: 'user_4', child: 'Learner4', kind: 'word-ladder', package: 'lang-basics', deck: 'Korean Words', notes: ['Raised session.capMinutes'] },
+    { message: "Word practice needs a grown-up's look" }],
   ['word ladder concern, no labels', { learnerId: 'user_4', kind: 'word-ladder', package: 'lang-basics', notes: [] },
     { title: '🔤 Word practice', message: "Word practice needs a grown-up's look" }],
 ];
