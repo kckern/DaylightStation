@@ -7,10 +7,16 @@ const setup = (initialLocked, extra = {}) => {
   const setVideoPlayerPaused = vi.fn();
   const logger = { sampled: vi.fn() };
   const hook = renderHook(
-    ({ governancePaused, getContext }) => useGovernanceProgressEnforcer({
-      governancePaused, pausePlayback, setVideoPlayerPaused, logger, getContext,
+    ({ governancePaused, getContext, isPauseHeldElsewhere }) => useGovernanceProgressEnforcer({
+      governancePaused, pausePlayback, setVideoPlayerPaused, logger, getContext, isPauseHeldElsewhere,
     }),
-    { initialProps: { governancePaused: initialLocked, getContext: extra.getContext } },
+    {
+      initialProps: {
+        governancePaused: initialLocked,
+        getContext: extra.getContext,
+        isPauseHeldElsewhere: extra.isPauseHeldElsewhere,
+      },
+    },
   );
   return { ...hook, pausePlayback, setVideoPlayerPaused, logger };
 };
@@ -68,6 +74,41 @@ describe('useGovernanceProgressEnforcer', () => {
     expect(setVideoPlayerPaused).not.toHaveBeenCalled();
     expect(pausePlayback).not.toHaveBeenCalled();
     expect(logger.sampled).not.toHaveBeenCalled();
+  });
+
+  describe('unmount clears a paused flag the enforcer left behind', () => {
+    it('clears it when the enforcer last wrote true', () => {
+      const { result, unmount, setVideoPlayerPaused } = setup(false);
+      result.current.enforce({ paused: true, currentTime: 3 }, 'tick');
+      setVideoPlayerPaused.mockClear();
+      unmount();
+      expect(setVideoPlayerPaused).toHaveBeenCalledTimes(1);
+      expect(setVideoPlayerPaused).toHaveBeenCalledWith(false);
+    });
+
+    it('leaves it alone when the enforcer last wrote false', () => {
+      const { result, unmount, setVideoPlayerPaused } = setup(false);
+      result.current.enforce({ paused: false, currentTime: 3 }, 'tick');
+      setVideoPlayerPaused.mockClear();
+      unmount();
+      expect(setVideoPlayerPaused).not.toHaveBeenCalled();
+    });
+
+    it('leaves it alone when the enforcer never wrote', () => {
+      const { unmount, setVideoPlayerPaused } = setup(true);
+      unmount();
+      expect(setVideoPlayerPaused).not.toHaveBeenCalled();
+    });
+
+    it('does not clear a pause another owner (voice memo, emergency) holds', () => {
+      let held = false;
+      const { result, unmount, setVideoPlayerPaused } = setup(false, { isPauseHeldElsewhere: () => held });
+      result.current.enforce({ paused: true, currentTime: 3 }, 'tick');
+      held = true;
+      setVideoPlayerPaused.mockClear();
+      unmount();
+      expect(setVideoPlayerPaused).not.toHaveBeenCalled();
+    });
   });
 
   it('logs pause-enforced with branch, currentTime and a live governance snapshot', () => {
