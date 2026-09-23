@@ -559,3 +559,66 @@ describe('WordLadderSittingService — drills, speaking, practice, My words', ()
     expect(words.map((w) => w.wordId)).toEqual(['gawi', 'pul']);
   });
 });
+
+describe('WordLadderSittingService — graded and transition events (plan 4, spec §8)', () => {
+  const calls = (logger, event) => logger.info.mock.calls.filter(([name]) => name === event).map(([, data]) => data);
+
+  it('an ordinary response logs answered and its transition, never graded', async () => {
+    const { service, logger } = make();
+    const { sittingId, item } = await service.open({ userId: 'test-learner', deckId: DECK });
+    await service.respond({ userId: 'test-learner', sittingId, itemId: item.id, response: { seen: true } });
+    expect(calls(logger, 'school.word-ladder.graded')).toEqual([]);
+    expect(calls(logger, 'school.word-ladder.answered')).toEqual([expect.objectContaining({ learnerId: 'test-learner', sittingId, mode: 'live', itemId: item.id, type: 'flashcard', wordId: 'gawi' })]);
+    expect(calls(logger, 'school.word-ladder.transition')).toEqual([{
+      learnerId: 'test-learner', sittingId, mode: 'live', package: 'korean-vocab', day: TODAY, itemId: item.id,
+      wordId: 'gawi', from: { state: 'new', stage: null }, to: { state: 'introduced', stage: null }, source: 'intro',
+    }]);
+  });
+
+  it('a graded recheck logs graded once and its transition, with mode', async () => {
+    const { service, logger } = make({ store: dueStore(1), mode: 'test' });
+    const { sittingId, item } = await service.open({ userId: 'test-learner', deckId: DECK });
+    expect(item).toMatchObject({ type: 'typed', source: 'recheck' });
+    await service.respond({ userId: 'test-learner', sittingId, itemId: item.id, response: { typed: '가비' } });
+    expect(calls(logger, 'school.word-ladder.graded')).toEqual([{
+      learnerId: 'test-learner', sittingId, mode: 'test', package: 'korean-vocab', day: TODAY, itemId: item.id,
+      wordId: 'gawi', task: '3.3', source: 'recheck', correct: false, score: 2, judge: 'exact',
+    }]);
+    expect(calls(logger, 'school.word-ladder.transition')).toEqual([expect.objectContaining({
+      mode: 'test', wordId: 'gawi', from: { state: 'mastered', stage: 0 }, to: { state: 'familiar', stage: null }, source: 'recheck',
+    })]);
+    expect(calls(logger, 'school.word-ladder.answered')).toHaveLength(1);
+  });
+
+  it('a replayed answer logs no second graded or transition', async () => {
+    const { service, logger } = make({ store: dueStore(1) });
+    const { sittingId, item } = await service.open({ userId: 'test-learner', deckId: DECK });
+    await service.respond({ userId: 'test-learner', sittingId, itemId: item.id, response: { typed: '가비' } });
+    await service.respond({ userId: 'test-learner', sittingId, itemId: item.id, response: { typed: '가비' } });
+    expect(calls(logger, 'school.word-ladder.graded')).toHaveLength(1);
+    expect(calls(logger, 'school.word-ladder.transition')).toHaveLength(1);
+  });
+
+  it('a paper fold on open logs its transitions with source paper', async () => {
+    const store = memoryStore();
+    store.s.status.words.pul = { ...emptyWordV3(), state: 'claimed', introducedDay: '2026-09-20' };
+    const attempts = [{ id: 'att_1', at: '2026-09-22T20:00:00.000Z', bankId: `${DECK}-quiz@abcdef`, itemId: 'pul', correct: false, transport: 'paper' }];
+    const { service, logger } = make({ store, attempts });
+    const { sittingId } = await service.open({ userId: 'test-learner', deckId: DECK });
+    expect(calls(logger, 'school.word-ladder.transition')).toEqual([{
+      learnerId: 'test-learner', sittingId, mode: 'live', package: 'korean-vocab', day: TODAY, itemId: null,
+      wordId: 'pul', from: { state: 'claimed', stage: null }, to: { state: 'familiar', stage: null }, source: 'paper',
+    }]);
+  });
+
+  it('a teacher fold logs its transitions with source paper and no sitting', async () => {
+    const store = memoryStore();
+    store.s.status.words.gawi = { ...emptyWordV3(), state: 'claimed', introducedDay: '2026-09-20' };
+    const attempts = [{ id: 'att_2', at: '2026-09-22T20:00:00.000Z', bankId: `${DECK}-quiz@abcdef`, itemId: 'gawi', correct: false, transport: 'paper' }];
+    const { service, logger } = make({ store, attempts, teacherGate: { assert: vi.fn() } });
+    await service.fold({ learnerId: 'test-learner', actorId: 'parent', pin: '1234' });
+    expect(calls(logger, 'school.word-ladder.transition')).toEqual([expect.objectContaining({
+      learnerId: 'test-learner', sittingId: null, mode: 'live', wordId: 'gawi', source: 'paper', to: { state: 'familiar', stage: null },
+    })]);
+  });
+});

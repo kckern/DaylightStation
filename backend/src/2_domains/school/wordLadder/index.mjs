@@ -11,7 +11,7 @@ export { normalizeAnswer, hasHangul, keystrokeJamo } from './jamo.mjs';
 export { BANDS, scoreTypedDeterministic, isShortTarget, modelMayRaise, raiseOneBand } from './typedScore.mjs';
 export { pickMeaningChoices, pickTermChoices, cueFor, channelFor } from './choices.mjs';
 export { ESTIMATE_MS, newAllowance, planNextRound } from './rounds.mjs';
-export { openDay, currentItem, respond, addActiveTime, startPractice } from './engine.mjs';
+export { openDay, currentItem, respond, addActiveTime, startPractice, wordTransitions } from './engine.mjs';
 export { foldPaperAttempts } from './foldPaperAttempts.mjs';
 export {
   quizDocumentIdFor, deckDirOf, isoWeekOf, learnerQuizDocumentId, learnerQuizPrefix, parseLearnerQuizId,
