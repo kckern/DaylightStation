@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { Hangul } from './hangul.js';
+import { Hangul, isJamo } from './hangul.js';
 
 /**
  * Drive the automaton with a QWERTY string, the way the keyboard would.
@@ -81,5 +81,36 @@ describe('두벌식 composition', () => {
     expect(Hangul.jamoFor('Digit1', false)).toBeNull();
     expect(Hangul.jamoFor('Space', false)).toBeNull();
     expect(Hangul.jamoFor('KeyQ', false)).toBe('ㅂ');
+  });
+});
+
+describe('isJamo', () => {
+  it('accepts every initial and medial a keypad key can send', () => {
+    for (const j of ['ㅂ','ㅃ','ㅈ','ㅉ','ㄷ','ㄸ','ㄱ','ㄲ','ㅅ','ㅆ','ㅁ','ㄴ','ㅇ','ㄹ','ㅎ','ㅋ','ㅌ','ㅊ','ㅍ']) {
+      expect(isJamo(j)).toBe(true);
+    }
+    for (const j of ['ㅛ','ㅕ','ㅑ','ㅐ','ㅒ','ㅔ','ㅖ','ㅗ','ㅓ','ㅏ','ㅣ','ㅠ','ㅜ','ㅡ']) {
+      expect(isJamo(j)).toBe(true);
+    }
+  });
+
+  it('refuses a compound final — never offered directly, only composed', () => {
+    expect(isJamo('ㄳ')).toBe(false);
+    expect(isJamo('ㄺ')).toBe(false);
+  });
+
+  it('refuses a compound vowel — also only composed, never offered directly', () => {
+    expect(isJamo('ㅘ')).toBe(false);
+    expect(isJamo('ㅢ')).toBe(false);
+  });
+
+  it('refuses anything that is not exactly one jamo', () => {
+    expect(isJamo('가위')).toBe(false);
+    expect(isJamo('가')).toBe(false); // a precomposed syllable
+    expect(isJamo('a')).toBe(false);
+    expect(isJamo('')).toBe(false);
+    expect(isJamo(null)).toBe(false);
+    expect(isJamo(undefined)).toBe(false);
+    expect(isJamo(1)).toBe(false);
   });
 });

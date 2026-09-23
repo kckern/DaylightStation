@@ -39,6 +39,10 @@ const HangulTypingContext = createContext({
   // Outside a provider there is no keydown listener to gate, so registering an
   // oracle is a no-op rather than an error.
   setTypingOracle: () => {},
+  // Outside a provider there is no composer to offer into — the keypad has
+  // nothing to type onto, so it reports every offer as refused.
+  offerJamo: () => false,
+  offerBackspace: () => false,
 });
 
 export function useHangulTyping() { return useContext(HangulTypingContext); }
@@ -157,6 +161,39 @@ export default function HangulTypingProvider({ children, enabled = true }) {
     oracleRef.current = el && oracle ? { el, oracle } : null;
   }, []);
 
+  /**
+   * THE KEYPAD SEAM. `JamoKeypad` has no `KeyboardEvent` to hand the composer
+   * — a tap is a jamo VALUE, not a `code` — so it calls these instead of
+   * relying on the document `keydown` listener below.
+   *
+   * Acts on `document.activeElement`, deliberately not a value this provider
+   * tracks itself: the keypad's own buttons fire on `pointerdown` with
+   * `preventDefault()` specifically so the field never loses focus, which
+   * means `document.activeElement` IS the field the physical keys would have
+   * landed on. Same composer instance as `onKeyDown` below, so a child
+   * switching between the Bluetooth keyboard and the keypad mid-syllable
+   * lands in the same session either way.
+   *
+   * Korean-mode-only and enabled-only, matching the physical path: a keypad
+   * left mounted over an English field, or one rendered while the provider is
+   * switched off, must not compose either.
+   */
+  const offerJamo = useCallback((jamo) => {
+    if (!enabled || modeRef.current !== 'KR') return false;
+    const el = document.activeElement;
+    if (!isComposableField(el)) return false;
+    const armed = oracleRef.current;
+    const oracle = armed && armed.el === el ? armed.oracle : undefined;
+    return composer.current.offerJamo(jamo, el, oracle);
+  }, [enabled]);
+
+  const offerBackspace = useCallback(() => {
+    if (!enabled || modeRef.current !== 'KR') return false;
+    const el = document.activeElement;
+    if (!isComposableField(el)) return false;
+    return composer.current.offerBackspace(el);
+  }, [enabled]);
+
   // A field may name its language; the nearest declaration wins and is released
   // when focus leaves it. `TypedRung` sets this from the rung's own response
   // language, so dictation and interpretation alternate without a keypress.
@@ -221,8 +258,8 @@ export default function HangulTypingProvider({ children, enabled = true }) {
   useEffect(() => { composer.current.end(); }, [mode]);
 
   const value = useMemo(
-    () => ({ mode, register, setMode, toggle, compositionState, setTypingOracle }),
-    [mode, register, setMode, toggle, compositionState, setTypingOracle],
+    () => ({ mode, register, setMode, toggle, compositionState, setTypingOracle, offerJamo, offerBackspace }),
+    [mode, register, setMode, toggle, compositionState, setTypingOracle, offerJamo, offerBackspace],
   );
 
   return (

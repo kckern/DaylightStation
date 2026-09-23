@@ -4,12 +4,14 @@ export {
 } from './lexicon.mjs';
 export { hashString, seededShuffle } from './checkItem.mjs';
 export { GAPS, STATES, PILES, emptyWordV3, introduce, applySort, applyGraded, isDue, isUnsettled } from './mastery.mjs';
+export { DRILL_STEPS, drillSteps, tilesFor, matchBoard } from './drill.mjs';
+export { PRACTICE_MODES, practiceWordIds, buildPractice } from './practice.mjs';
 export { STATUS_SCHEMA_V3, DAY_SCHEMA, emptyStatusV3, emptyDay, migrateStatusV2 } from './statusV3.mjs';
 export { normalizeAnswer, hasHangul, keystrokeJamo } from './jamo.mjs';
 export { BANDS, scoreTypedDeterministic, isShortTarget, modelMayRaise, raiseOneBand } from './typedScore.mjs';
 export { pickMeaningChoices, pickTermChoices, cueFor, channelFor } from './choices.mjs';
 export { ESTIMATE_MS, newAllowance, planNextRound } from './rounds.mjs';
-export { openDay, currentItem, respond, addActiveTime } from './engine.mjs';
+export { openDay, currentItem, respond, addActiveTime, startPractice } from './engine.mjs';
 export { foldPaperAttempts } from './foldPaperAttempts.mjs';
 export {
   quizDocumentIdFor, deckDirOf, isoWeekOf, learnerQuizDocumentId, learnerQuizPrefix, parseLearnerQuizId,

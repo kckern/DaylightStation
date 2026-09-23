@@ -58,6 +58,25 @@ export function compoundHead(jamo) {
 const isVowel = (j) => JUNG.includes(j);
 
 /**
+ * Whether `j` is a single 두벌식 compatibility jamo — one of the 19 initials or
+ * 14 BASE medials a physical key can produce directly in one stroke. Used to
+ * validate input that arrives with no `KeyboardEvent.code` to check against
+ * `LAYOUT` — the on-screen keypad offers jamo by value, not by key, so this
+ * is the only gate standing between it and the automaton.
+ *
+ * Deliberately excludes every COMPOUND: the 7 compound vowels (ㅘ, ㅢ, …) and
+ * every compound final (ㄳ, ㄵ, …). Both only ever arrive by composition
+ * inside `Hangul` itself — 과 is typed ㄱ, ㅗ, ㅏ, never ㄱ, ㅘ — so a single
+ * offered compound is not a keystroke a keypad can produce, on the keypad
+ * exactly as on a real keyboard.
+ */
+export function isJamo(j) {
+  if (typeof j !== 'string' || [...j].length !== 1) return false;
+  if (CHO.includes(j)) return true;
+  return JUNG.includes(j) && !(j in VOWEL_SPLIT);
+}
+
+/**
  * The inverse of the arithmetic in `Hangul#pending`: a precomposed syllable
  * back into the three jamo that built it.
  *
