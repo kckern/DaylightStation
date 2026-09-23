@@ -45,6 +45,9 @@ import { ICurriculumCatalog } from '#apps/school/ports/ICurriculumCatalog.mjs';
 import { SUBJECT_IDS } from '#domains/school/curriculum/unitValidation.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
+/** Program media directories kept under a pre-rename name: `card-ladder` was `word-ladder` until 2026-09-23. */
+const PROGRAM_MEDIA_ALIASES = Object.freeze({ 'card-ladder': Object.freeze(['word-ladder']) });
+
 /**
  * Curriculum ids are FLAT basenames — the subject folder above them is filing,
  * not addressing, so no '/' is allowed and traversal has nowhere to go. Dots are
@@ -392,14 +395,19 @@ export class YamlCurriculumDatastore extends ICurriculumCatalog {
     // the picture is the corpus's. Validated by the same id rule as the
     // program — an instance id is a path segment either way.
     if (instanceId !== null && (typeof instanceId !== 'string' || !CURRICULUM_ID_RE.test(instanceId))) return null;
-    const segments = instanceId ? [programId, instanceId] : [programId];
-    try {
-      const bytes = await readBinaryFromPathAsync(
-        path.join(this.#configService.getMediaDir(), 'school', 'programs', ...segments, 'poster.jpg'),
-      );
-      if (bytes.length < 4 || bytes[0] !== 0xff || bytes[1] !== 0xd8 || bytes[2] !== 0xff) return null;
-      return bytes;
-    } catch { return null; }
+    // A renamed program still finds artwork filed under its old name: the
+    // canonical directory first, then the pre-rename one (media is not moved).
+    for (const dirName of [programId, ...(PROGRAM_MEDIA_ALIASES[programId] ?? [])]) {
+      const segments = instanceId ? [dirName, instanceId] : [dirName];
+      try {
+        const bytes = await readBinaryFromPathAsync(
+          path.join(this.#configService.getMediaDir(), 'school', 'programs', ...segments, 'poster.jpg'),
+        );
+        if (bytes.length < 4 || bytes[0] !== 0xff || bytes[1] !== 0xd8 || bytes[2] !== 0xff) return null;
+        return bytes;
+      } catch { /* not here — try the next name */ }
+    }
+    return null;
   }
 
   /** @param {{ batch?: number }} [options] */

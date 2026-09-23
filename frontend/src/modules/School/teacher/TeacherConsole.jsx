@@ -38,7 +38,7 @@ const LEARNER_NAV = [
   { id: 'courses', label: 'Courses' },
   { id: 'history', label: 'History' },
   { id: 'reading', label: 'Reading' },
-  { id: 'words', label: 'Words' },
+  { id: 'words', label: 'Cards' }, // id kept: console links name the tab `words`
   { id: 'reports', label: 'Reports' },
   { id: 'operations', label: 'Operations' },
 ];

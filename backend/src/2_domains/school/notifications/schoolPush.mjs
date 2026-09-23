@@ -9,7 +9,7 @@
  */
 import { findPushTextDefects, formatStudyDay, pushData } from '#domains/notification/push/pushText.mjs';
 import { rowList } from '../documents/scanNotices.mjs';
-import { humanizeSettingIds } from '../wordLadder/settingLabels.mjs';
+import { humanizeSettingIds } from '../cardLadder/settingLabels.mjs';
 
 const LANES = {
   progress: { channel: 'School progress', importance: 'low' },
@@ -121,8 +121,8 @@ export function composeSchoolPush(event = {}) {
         data: metadata(event, 'progress', `piano-${event.studyDay ?? 'today'}`),
       };
     }
-    case 'word-ladder': {
-      // The tuning agent read the day as a concern (word-ladder spec §7). Its
+    case 'card-ladder': {
+      // The tuning agent read the day as a concern (card-ladder spec §7). Its
       // notes are model text: tunable setting ids become plain words, and a
       // note is shown only if it then reads cleanly (no ids, dotted setting
       // names, slugs or enums), else the generic line. The tag is per learner per
@@ -135,7 +135,7 @@ export function composeSchoolPush(event = {}) {
       return {
         title: event.child ? `🔤 ${event.child} — ${subject}` : `🔤 ${subject}`,
         message: [note ?? "Word practice needs a grown-up's look", day].filter(Boolean).join(' · '),
-        data: metadata(event, 'needsYou', `word-ladder-${event.package ?? 'words'}`),
+        data: metadata(event, 'needsYou', `card-ladder-${event.package ?? 'words'}`),
       };
     }
     default:

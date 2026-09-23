@@ -3204,91 +3204,102 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     rootDir: schoolFullConfig.flashcards?.assets?.dir ?? path.join(dataDir, 'content', 'assets'),
     mediaRootDir: schoolMediaRoot,
   });
-  // Word ladder v3 (mastery redesign rev 4). Two services over one engine:
-  // live on the real store, and test mode (`/word-ladder/test`) on in-memory
+  // Card ladder v3 (mastery redesign rev 4). Two services over one engine:
+  // live on the real store, and test mode (`/card-ladder/test`) on in-memory
   // shadow copies that can never reach disk (spec §8).
-  const { WordLadderSittingService } = await import('#apps/school/WordLadderSittingService.mjs');
-  const { WordLadderTypedJudge } = await import('#apps/school/WordLadderTypedJudge.mjs');
-  const { YamlWordLadderStore } = await import('#adapters/school/wordLadder/YamlWordLadderStore.mjs');
-  const { YamlJudgementCache, MemoryJudgementCache } = await import('#adapters/school/wordLadder/YamlJudgementCache.mjs');
-  const { ShadowWordLadderStores } = await import('#adapters/school/wordLadder/ShadowWordLadderStores.mjs');
-  const { FilesystemWordLadderRecordings } = await import('#adapters/school/wordLadder/FilesystemWordLadderRecordings.mjs');
-  const { DiscardingRecordings } = await import('#adapters/school/wordLadder/DiscardingRecordings.mjs');
+  const { CardLadderSittingService } = await import('#apps/school/CardLadderSittingService.mjs');
+  const { CardLadderTypedJudge } = await import('#apps/school/CardLadderTypedJudge.mjs');
+  const { YamlCardLadderStore } = await import('#adapters/school/cardLadder/YamlCardLadderStore.mjs');
+  const { YamlJudgementCache, MemoryJudgementCache } = await import('#adapters/school/cardLadder/YamlJudgementCache.mjs');
+  const { ShadowCardLadderStores } = await import('#adapters/school/cardLadder/ShadowCardLadderStores.mjs');
+  const { FilesystemCardLadderRecordings } = await import('#adapters/school/cardLadder/FilesystemCardLadderRecordings.mjs');
+  const { DiscardingRecordings } = await import('#adapters/school/cardLadder/DiscardingRecordings.mjs');
   const { YamlLexiconRepository } = await import('#adapters/school/catalog/YamlLexiconRepository.mjs');
-  const { resolveSettings, seedScenario } = await import('#domains/school/wordLadder/index.mjs');
-  const wordLadderLogger = rootLogger.child({ module: 'school-word-ladder' });
-  const wordLadderConfig = schoolFullConfig.word_ladder ?? {};
-  const wordLadderSettings = () => resolveSettings(wordLadderConfig);
-  const wordLadderStore = new YamlWordLadderStore({ configService, logger: wordLadderLogger });
-  const wordLadderLexicons = new YamlLexiconRepository({ mediaRoot: schoolMediaRoot });
-  const wordLadderJudgeFor = (cache) => new WordLadderTypedJudge({
-    aiGateway: sharedAiGateway, cache, model: wordLadderConfig.judge?.model ?? null,
-    passScore: wordLadderSettings().typing.passScore, logger: wordLadderLogger,
+  const { resolveSettings, seedScenario, cardLadderConfigOf } = await import('#domains/school/cardLadder/index.mjs');
+  const cardLadderLogger = rootLogger.child({ module: 'school-card-ladder' });
+  // `card_ladder` in school.yml; the pre-rename `word_ladder` key is read when it is absent.
+  const cardLadderConfig = cardLadderConfigOf(schoolFullConfig);
+  const cardLadderSettings = () => resolveSettings(cardLadderConfig);
+  const cardLadderStore = new YamlCardLadderStore({ configService, logger: cardLadderLogger });
+  const cardLadderLexicons = new YamlLexiconRepository({ mediaRoot: schoolMediaRoot });
+  const cardLadderJudgeFor = (cache) => new CardLadderTypedJudge({
+    aiGateway: sharedAiGateway, cache, model: cardLadderConfig.judge?.model ?? null,
+    passScore: cardLadderSettings().typing.passScore, logger: cardLadderLogger,
   });
-  const wordLadderShared = {
-    decks: schoolCatalog.content, lexicons: wordLadderLexicons, assignments: flashcardAssignments,
+  const cardLadderShared = {
+    decks: schoolCatalog.content, lexicons: cardLadderLexicons, assignments: flashcardAssignments,
     attempts: schoolDatastore, assets: flashcardAssets, teacherGate: schoolTeacherGate,
-    settings: wordLadderSettings, bounds: wordLadderConfig.bounds ?? null, timezone: configService.getTimezone?.() || null, now: Date.now,
-    logger: wordLadderLogger,
+    settings: cardLadderSettings, bounds: cardLadderConfig.bounds ?? null, timezone: configService.getTimezone?.() || null, now: Date.now,
+    logger: cardLadderLogger,
   };
   // One cache for the live judge and the grown-up re-grade that overwrites it (spec §6).
-  const wordLadderJudgementCache = new YamlJudgementCache({ rootDir: path.join(dataDir, 'household', 'school', 'runtime', 'word-ladder') });
-  const wordLadderStudy = schoolCatalog.content ? new WordLadderSittingService({
-    ...wordLadderShared, mode: 'live', judgementCache: wordLadderJudgementCache,
+  // `runtime/card-ladder`; a package's judgements still under the pre-rename
+  // `runtime/word-ladder` are copied over on first use (never moved).
+  const cardLadderJudgementCache = new YamlJudgementCache({
+    rootDir: path.join(dataDir, 'household', 'school', 'runtime', 'card-ladder'),
+    legacyRootDir: path.join(dataDir, 'household', 'school', 'runtime', 'word-ladder'),
+  });
+  const cardLadderStudy = schoolCatalog.content ? new CardLadderSittingService({
+    ...cardLadderShared, mode: 'live', judgementCache: cardLadderJudgementCache,
     stores: {
-      open: () => ({ store: wordLadderStore, token: 'live' }),
-      forToken: (token) => { if (token !== 'live') throw new Error('unknown sitting'); return wordLadderStore; },
-      // The start card's read (`intro`): the real store, read only.
-      peek: () => wordLadderStore,
+      open: () => ({ store: cardLadderStore, token: 'live' }),
+      forToken: (token) => { if (token !== 'live') throw new Error('unknown sitting'); return cardLadderStore; },
+      // The start card's read (`intro`): the real store's read-only view, which
+      // never writes — not even the one-time move of a pre-rename package.
+      peek: () => cardLadderStore.readOnlyView(),
     },
-    judge: wordLadderJudgeFor(wordLadderJudgementCache),
+    judge: cardLadderJudgeFor(cardLadderJudgementCache),
     // Spoken takes, kept for grown-ups: {package}/{learner}/{day}/{word}-{n}.{ext}.
-    recordings: new FilesystemWordLadderRecordings({ rootDir: path.join(schoolMediaRoot, 'recordings', 'word-ladder') }),
+    // (The pre-rename `recordings/word-ladder` is copied over per learner on first use.)
+    recordings: new FilesystemCardLadderRecordings({
+      rootDir: path.join(schoolMediaRoot, 'recordings', 'card-ladder'),
+      legacyRootDir: path.join(schoolMediaRoot, 'recordings', 'word-ladder'),
+    }),
   }) : null;
-  const wordLadderShadows = new ShadowWordLadderStores({ real: wordLadderStore });
+  const cardLadderShadows = new ShadowCardLadderStores({ real: cardLadderStore });
   // Test mode never writes attempts or takes, and cannot fold (no teacher gate).
-  const wordLadderTest = schoolCatalog.content ? new WordLadderSittingService({
-    ...wordLadderShared, mode: 'test', attempts: null, teacherGate: null, recordings: new DiscardingRecordings(),
+  const cardLadderTest = schoolCatalog.content ? new CardLadderSittingService({
+    ...cardLadderShared, mode: 'test', attempts: null, teacherGate: null, recordings: new DiscardingRecordings(),
     stores: {
       open: (userId, pkg, day, { scenario = null, deck = null } = {}) => {
-        const token = wordLadderShadows.create(userId, pkg, day,
+        const token = cardLadderShadows.create(userId, pkg, day,
           (snap) => seedScenario(scenario ?? 'today', snap, { deckWords: deck?.words ?? [], day }));
-        return { store: wordLadderShadows.forToken(token), token };
+        return { store: cardLadderShadows.forToken(token), token };
       },
-      forToken: (token) => wordLadderShadows.forToken(token),
+      forToken: (token) => cardLadderShadows.forToken(token),
       // The start card reads what Start would open on — seeded, never kept.
-      peek: (userId, pkg, day, { scenario = null, deck = null } = {}) => wordLadderShadows.peek(userId, pkg, day,
+      peek: (userId, pkg, day, { scenario = null, deck = null } = {}) => cardLadderShadows.peek(userId, pkg, day,
         (snap) => seedScenario(scenario ?? 'today', snap, { deckWords: deck?.words ?? [], day })),
     },
     // Reads through to the live cache (a grown-up's re-grade applies here too); writes stay in memory.
-    judge: wordLadderJudgeFor(new MemoryJudgementCache({ fallback: wordLadderJudgementCache })),
+    judge: cardLadderJudgeFor(new MemoryJudgementCache({ fallback: cardLadderJudgementCache })),
   }) : null;
   // The tuning pass (spec §7): on the REAL store only, the tuner agent only
-  // when `word_ladder.tuner.model` is set, a concern pushed to the teachers.
+  // when `card_ladder.tuner.model` is set, a concern pushed to the teachers.
   // Ticks every 15 min wherever the agent scheduler runs; the service itself
   // waits for the study day to end.
-  let wordLadderTuning = null;
+  let cardLadderTuning = null;
   if (schoolCatalog.content) {
     try {
-      const { createWordLadderTuning } = await import('#composition/modules/wordLadderTuning.mjs');
+      const { createCardLadderTuning } = await import('#composition/modules/cardLadderTuning.mjs');
       const { agentSchedulerEnabled } = await import('#composition/policies/agentSchedulerEnabled.mjs');
       const { isContainerRuntime } = await import('#system/runtime/runtimeEnvironment.mjs');
       const tuningNames = studentDisplayName(configService);
-      wordLadderTuning = createWordLadderTuning({
-        store: wordLadderStore, assignments: flashcardAssignments, decks: schoolCatalog.content, lexicons: wordLadderLexicons,
-        settings: wordLadderSettings, bounds: wordLadderConfig.bounds ?? null, teacherGate: schoolTeacherGate,
+      cardLadderTuning = createCardLadderTuning({
+        store: cardLadderStore, assignments: flashcardAssignments, decks: schoolCatalog.content, lexicons: cardLadderLexicons,
+        settings: cardLadderSettings, bounds: cardLadderConfig.bounds ?? null, teacherGate: schoolTeacherGate,
         timezone: configService.getTimezone?.() || null, now: Date.now,
-        model: wordLadderConfig.tuner?.model ?? null, mediaDir: configService.getMediaDir(),
+        model: cardLadderConfig.tuner?.model ?? null, mediaDir: configService.getMediaDir(),
         notificationService: notificationStack?.notificationService ?? null,
         teachers: () => (configService.getHouseholdAppConfig(null, 'school') || {}).teachers ?? [],
         learnerName: (id) => tuningNames(id),
-        logger: wordLadderLogger, server,
+        logger: cardLadderLogger, server,
         scheduled: enableScheduler && agentSchedulerEnabled({
           nodeEnv: process.env.NODE_ENV, enableCron: process.env.ENABLE_CRON, isContainer: isContainerRuntime(),
         }),
       });
     } catch (error) {
-      wordLadderLogger.error('school.word-ladder.tuning-unavailable', { error: error.message });
+      cardLadderLogger.error('school.card-ladder.tuning-unavailable', { error: error.message });
     }
   }
   const openCatalogLearningSession = schoolCatalog.query
@@ -4244,7 +4255,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       // only the chime is absent.
       pianoLessonHook,
       flashcardStudyService: flashcardStudy,
-      wordLadderStudyService: wordLadderStudy,
+      cardLadderStudyService: cardLadderStudy,
       rubiksCubeService,
       rubiksCubeGrants: schoolCubeGrants,
       // The reading shelf (book-log program): grants for the panel's /act
@@ -4738,10 +4749,10 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     schoolErrors,
     schoolService,
     flashcardStudy,
-    wordLadderStudy,
-    wordLadderTest,
-    wordLadderTuning: wordLadderTuning?.service ?? null,
-    wordLadderStageScreen: wordLadderConfig.stage?.screen ?? null,
+    cardLadderStudy,
+    cardLadderTest,
+    cardLadderTuning: cardLadderTuning?.service ?? null,
+    cardLadderStageScreen: cardLadderConfig.stage?.screen ?? null,
     flashcardAssets,
     getMaterialCatalog,
     getMaterialUnits,

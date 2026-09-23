@@ -30,7 +30,8 @@ import SentenceLadderProgram from './Programs/SentenceLadder/SentenceLadderProgr
 import LanguageReelsProgram from './Programs/LanguageReels/LanguageReelsProgram.jsx';
 import FlashcardProgram from './Programs/Flashcards/FlashcardProgram.jsx';
 import FlashcardDeckBrowser from './Programs/Flashcards/FlashcardDeckBrowser.jsx';
-import WordLadderProgram from './Programs/Flashcards/WordLadder/WordLadderProgram.jsx';
+import CardLadderProgram from './Programs/Flashcards/CardLadder/CardLadderProgram.jsx';
+import { isCardLadderPolicy } from './Programs/Flashcards/CardLadder/cardLadderMode.js';
 import RubiksCubeProgram from './Programs/RubiksCube/RubiksCubeProgram.jsx';
 import BookShelf from './books/BookShelf.jsx';
 import BookScanEntry from './books/BookScanEntry.jsx';
@@ -518,13 +519,13 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
       openSection('book-shelf');
       return true;
     }
-    // A word-ladder enrollment is still program `flashcards`; its mode rides
+    // A card-ladder enrollment is still program `flashcards`; its mode rides
     // the launch target's policy. The ladder loads its own day from the
     // server, so there is no deck or assessment to fetch here.
-    if (target?.kind === 'program' && target.program === 'flashcards' && target.policy?.mode === 'word-ladder') {
+    if (target?.kind === 'program' && target.program === 'flashcards' && isCardLadderPolicy(target.policy)) {
       const learnerId = launchedLearnerId ?? target.learnerId ?? null;
       if (!target.deckId || !learnerId) return false;
-      setActive({ mode: 'word_ladder', descriptor: { deckId: target.deckId, userId: learnerId, test: target.test === true, scenario: target.test === true ? target.scenario ?? null : null } });
+      setActive({ mode: 'card_ladder', descriptor: { deckId: target.deckId, userId: learnerId, test: target.test === true, scenario: target.test === true ? target.scenario ?? null : null } });
       openSection('flashcards');
       return true;
     }
@@ -561,12 +562,14 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
    * a broadcast lands in — so the mounted runner, its session and its grant are
    * indistinguishable from the ordinary path.
    */
-  // `/test` is a reserved final segment (word-ladder spec §8): a flag for a
+  // `/test` is a reserved final segment (card-ladder spec §8): a flag for a
   // read-only test sitting, never part of the instance.
   const directTail = section === 'direct-launch' ? materialPath.slice(2) : [];
   const directTest = directTail.at(-1) === 'test';
   const directLearnerId = section === 'direct-launch' ? (materialPath[0] ?? null) : null;
-  const directProgramId = section === 'direct-launch' ? (materialPath[1] ?? null) : null;
+  // `/school/go/<learner>/word-ladder…` is the pre-rename door (2026-09-23): same engine.
+  const directProgramRaw = section === 'direct-launch' ? (materialPath[1] ?? null) : null;
+  const directProgramId = directProgramRaw === 'word-ladder' ? 'card-ladder' : directProgramRaw;
   const directInstance = section === 'direct-launch' ? ((directTest ? directTail.slice(0, -1) : directTail).join('/') || null) : null;
   const [directError, setDirectError] = useState(null);
   // Fires once per URL. `onPortalLaunch` replaces `section`, so without this the
@@ -582,9 +585,9 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
     if (status !== 'ready' || !catalogLoaded) return;
     directAttempted.current = key;
     setDirectError(null);
-    // Only the word ladder has a test mode; a `/test` URL for anything else is
+    // Only the card ladder has a test mode; a `/test` URL for anything else is
     // refused from the URL alone, before a grant is asked for.
-    if (directTest && directProgramId !== 'word-ladder') {
+    if (directTest && directProgramId !== 'card-ladder') {
       schoolLog.bank('direct-launch-refused', { program: directProgramId, reason: 'no-test-mode' });
       setDirectError(`Test mode isn't available for ${directProgramId}.`);
       return;
@@ -613,9 +616,9 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
           : 'That could not be opened. Check the learner and program in the URL.');
         return;
       }
-      // A test door mounts ONLY a word ladder. Anything else the backend hands
+      // A test door mounts ONLY a card ladder. Anything else the backend hands
       // back would be a LIVE runner — refuse rather than fall through to it.
-      if (directTest && data.target?.policy?.mode !== 'word-ladder') {
+      if (directTest && !isCardLadderPolicy(data.target?.policy)) {
         schoolLog.bank('direct-launch-refused', { program: directProgramId, reason: 'no-test-mode', kind: data.target?.kind ?? null });
         setDirectError(`Test mode isn't available for ${directProgramId}.`);
         return;
@@ -1200,8 +1203,8 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
             onExit={() => setActive(null)}
           />
         )}
-        {active?.mode === 'word_ladder' && (
-          <WordLadderProgram
+        {active?.mode === 'card_ladder' && (
+          <CardLadderProgram
             descriptor={active.descriptor}
             resolveAssetUrl={schoolApi.flashcardAssetUrl ?? ((assetId) => assetId)}
             onExit={() => setActive(null)}

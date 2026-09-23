@@ -65,7 +65,7 @@ apply to every pack that doesn't set `themeExtras` (see below) unchanged.
 `character`, `primaryColor`, `accent`, and optional color overrides. Nothing
 else needs to change; `AppThemeProvider` picks up any registered pack by name.
 The `school` pack (green accent, `#51cf66`) is the study-desk direction for
-kiosk screens like the word-ladder stage — one calm accent for progress and
+kiosk screens like the card-ladder stage — one calm accent for progress and
 primary actions, no chrome to hunt through.
 
 ### `themeExtras` — the escape hatch

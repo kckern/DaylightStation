@@ -98,7 +98,7 @@ seam (both `getFlashcardDeck` and `listFlashcardDecks`), before any
 validation: the front is the picture (alt = gloss), the term, and `term.mp3`;
 the back is the gloss, plus the pronunciation for a phrase. Media is found by
 convention at `media:<package dir>/words/<group>/<id>/{image.jpg,term.mp3,gloss.mp3}`.
-Full schema and "adding a language": `word-ladder.md`.
+Full schema and "adding a language": `card-ladder.md`.
 
 `media:` asset ids resolve under `<media dir>/school`; bare ids keep resolving
 under the content asset dir. A 0-byte file is a placeholder and counts as
@@ -134,9 +134,9 @@ policy:
 ```
 
 `policy.mode` selects the study engine: `fsrs` (default, everything above) or
-`word-ladder` (see `word-ladder.md`). `mode` lives inside `policy` because
+`card-ladder` (see `card-ladder.md`). `mode` lives inside `policy` because
 `SetAssignments` persists only what the validator returns and `policy` is what
-rides the launch target. `word-ladder` rejects `newCardLimit`,
+rides the launch target. `card-ladder` rejects `newCardLimit`,
 `masteryPercent` and `minimumReviews`. An optional `title` names the agenda
 tile (default `Flashcards`).
 

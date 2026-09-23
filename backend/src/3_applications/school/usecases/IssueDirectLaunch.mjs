@@ -35,6 +35,13 @@ import { EntityNotFoundError, ValidationError } from '#domains/core/errors/index
 
 const ID_RE = /^[a-z0-9][a-z0-9_\-.:/]*$/i;
 
+/**
+ * Door program ids kept working after a rename, mapped to the launcher that
+ * now answers them. Not registered as launchers, so `available()` lists only
+ * the canonical id. `word-ladder` became `card-ladder` on 2026-09-23.
+ */
+export const DOOR_PROGRAM_ALIASES = Object.freeze({ 'word-ladder': 'card-ladder' });
+
 export class IssueDirectLaunch {
   #launchers; #roster; #logger;
 
@@ -63,7 +70,7 @@ export class IssueDirectLaunch {
         surface: launcher.surface ?? null,
         // Whether the program needs an instance naming WHICH corpus/deck/reel.
         // Reported rather than guessed at, so a caller can say so in a URL.
-        instanceRequired: !['book-log', 'story-time', 'rubiks-cube', 'word-ladder'].includes(id),
+        instanceRequired: !['book-log', 'story-time', 'rubiks-cube', 'card-ladder'].includes(id),
       }));
   }
 
@@ -76,7 +83,10 @@ export class IssueDirectLaunch {
    * @param {string|null} [args.unitId]
    * @returns {Promise<{target: object}>}
    */
-  async execute({ learnerId, programId, instance = null, unitId = null } = {}) {
+  async execute({ learnerId, programId: requestedProgramId, instance = null, unitId = null } = {}) {
+    const programId = Object.hasOwn(DOOR_PROGRAM_ALIASES, String(requestedProgramId))
+      ? DOOR_PROGRAM_ALIASES[requestedProgramId]
+      : requestedProgramId;
     if (!learnerId || !ID_RE.test(String(learnerId))) {
       throw new ValidationError('a learner id is required', { field: 'learnerId' });
     }
