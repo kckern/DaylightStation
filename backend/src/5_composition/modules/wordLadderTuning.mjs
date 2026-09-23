@@ -46,6 +46,18 @@ function defaultRuntime({ model, logger, mediaDir }) {
   });
 }
 
+/**
+ * Mastra resolves only a provider-qualified id (`openai/gpt-5-nano`); a bare
+ * `gpt-5-nano` fails with "Failed to resolve model configuration". A bare id
+ * in `word_ladder.tuner.model` is taken to be OpenAI's.
+ */
+export function qualifyModelId(model) {
+  if (typeof model !== 'string') return model;
+  const id = model.trim();
+  if (!id) return null;
+  return id.includes('/') ? id : `openai/${id}`;
+}
+
 /** A label lookup that throws or hangs must never cost the grown-up the push. */
 async function label(lookup) {
   try { return (await lookup()) || null; } catch { return null; }
@@ -60,6 +72,7 @@ export function createWordLadderTuning({
   createRuntime = defaultRuntime,
   createService = (deps) => new WordLadderTuningService(deps),
 } = {}) {
+  model = qualifyModelId(model);
   const tuner = model
     ? new WordLadderTuner({ agentRuntime: createRuntime({ model, logger, mediaDir: mediaDir ? path.resolve(mediaDir) : null }), logger })
     : null;

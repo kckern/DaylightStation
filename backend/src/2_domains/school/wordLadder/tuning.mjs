@@ -89,6 +89,19 @@ function capMinutesOf(dayFile, settings) {
   return dayFile.atOpen?.settings?.session?.capMinutes ?? settings?.session?.capMinutes ?? 15;
 }
 
+/**
+ * A typed answer's score as it now stands: a grown-up re-grade
+ * (`items[id].regraded = { at, actorId, pass }`) overrides the judge the way
+ * the re-grade rewrote the judge cache — pass → passScore, fail → 1.
+ */
+function typedScoreOf(item, dayFile, settings) {
+  if (typeof item?.regraded?.pass === 'boolean') {
+    if (!item.regraded.pass) return 1;
+    return settings?.typing?.passScore ?? dayFile.atOpen?.settings?.typing?.passScore ?? 6;
+  }
+  return item?.result?.score;
+}
+
 /** One day file's numbers. `stalls` is not recorded in the day file, so it is null. */
 export function dayStats(dayFile, settings) {
   const passedByPile = { familiar: 0, claimed: 0, other: 0 };
@@ -101,7 +114,7 @@ export function dayStats(dayFile, settings) {
   }
   const answered = Object.values(dayFile.rechecks?.answered ?? {});
   const items = Object.entries(dayFile.items ?? {});
-  const typedScores = items.map(([, item]) => item?.result?.score).filter((score) => typeof score === 'number');
+  const typedScores = items.map(([, item]) => typedScoreOf(item, dayFile, settings)).filter((score) => typeof score === 'number');
   const activeMs = dayFile.activeMs ?? 0;
   const capHit = activeMs >= capMinutesOf(dayFile, settings) * 60000;
   const credited = Boolean(dayFile.doneAt);

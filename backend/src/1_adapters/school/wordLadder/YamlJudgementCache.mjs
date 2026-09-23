@@ -17,9 +17,25 @@ export class YamlJudgementCache {
   }
 }
 
+/**
+ * In-memory judgements (test mode). With a `fallback` (the live cache), a
+ * miss reads through to it, so a grown-up's re-grade is honoured in test
+ * mode too; writes stay in memory and never reach the fallback. A fallback
+ * that throws reads as a miss.
+ */
 export class MemoryJudgementCache {
   #map = new Map();
-  get(pkg, wordId, normalized) { return this.#map.get(`${pkg}|${key(wordId, normalized)}`) ?? null; }
+  #fallback;
+  constructor({ fallback = null } = {}) { this.#fallback = fallback; }
+  get(pkg, wordId, normalized) {
+    const own = this.#map.get(`${pkg}|${key(wordId, normalized)}`);
+    if (own) return own;
+    if (!this.#fallback) return null;
+    try {
+      const live = this.#fallback.get(pkg, wordId, normalized);
+      return live ? { ...live } : null;
+    } catch { return null; }
+  }
   set(pkg, wordId, normalized, verdict) { this.#map.set(`${pkg}|${key(wordId, normalized)}`, { ...verdict }); }
 }
 export default YamlJudgementCache;

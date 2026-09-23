@@ -188,6 +188,14 @@ describe('buildTuningDigest', () => {
       .toMatchObject({ credited: false, reachedGoal: false });
   });
 
+  it('counts a grown-up re-grade over the judge score: pass → passScore, fail → 1', () => {
+    const d = fixtureDay('2026-09-20');
+    d.items['r1:q:0'].regraded = { at: 'b', actorId: 'teacher', pass: true };
+    d.items['r1:q:1'].regraded = { at: 'b', actorId: 'teacher', pass: false };
+    const settings = { ...DEFAULT_SETTINGS, typing: { passScore: 5 } };
+    expect(buildTuningDigest({ status: fixtureStatus(), days: [d], settings, lastChanged: {} }).today.typedScores).toEqual([5, 1]);
+  });
+
   it('uses the cap captured at open over the current settings', () => {
     const d = fixtureDay('2026-09-20', { activeMs: 12 * 60000 });
     d.atOpen.settings.session.capMinutes = 10;
