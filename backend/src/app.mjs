@@ -3529,6 +3529,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   let providerWebhookAdapters = {};
   let stravaEnrichmentService = null;
   let stravaReconciliationService = null;
+  let stravaSyncHealth = null;
   try {
     const stravaClientId = configService.getSystemAuth?.('strava', 'client_id');
     if (!stravaClientId) {
@@ -3567,12 +3568,45 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       });
       const fitnessHistoryRepository = new YamlFitnessHistoryRepository({
         root: configService.getHouseholdPath('fitness/log'),
+        logger: rootLogger.child({ module: 'fitness-history' }),
       });
       const stravaActivityAccess = new StravaActivityAccessGateway({
         client: stravaClient,
         configService,
       });
       const stravaRetryScheduler = new NodeApplicationScheduler();
+
+      // Sync health: every stage reports success; a separate 15-min task
+      // (below, "fitness:strava-sync-health") pushes when one goes stale.
+      const { StravaSyncHealth } = await import('./3_applications/fitness/StravaSyncHealth.mjs');
+      const { YamlSyncHealthStore } = await import('./1_adapters/fitness/YamlSyncHealthStore.mjs');
+      const stravaHealthHaGateway = householdAdapters?.has?.('home_automation') ? householdAdapters.get('home_automation') : null;
+      const stravaHealthLogger = rootLogger.child({ module: 'strava-sync-health' });
+      stravaSyncHealth = new StravaSyncHealth({
+        store: new YamlSyncHealthStore({ path: configService.getHouseholdPath('fitness/sync-health') }),
+        sendPush: async ({ title, message, data }) => {
+          const recipient = configService.getHeadOfHousehold?.();
+          const notifyService = recipient
+            ? userService.getProfile(recipient)?.identities?.homeassistant?.notify_service
+            : null;
+          if (!stravaHealthHaGateway || !notifyService) {
+            stravaHealthLogger.warn?.('strava.sync_health.no_push_target', { recipient: recipient || null });
+            return;
+          }
+          await stravaHealthHaGateway.callService('notify', notifyService, { title, message, data });
+        },
+        hasWebhookJob: (activityId) => !!jobStore.findById(activityId),
+        timezone: stravaTimezone,
+        logger: stravaHealthLogger,
+      });
+      harvesterServices.harvesterService.onResult(({ serviceId, result, error }) => {
+        if (serviceId !== 'strava') return;
+        stravaSyncHealth.recordHarvest({
+          ok: !error && result?.status === 'success',
+          error: error?.message || result?.reason || result?.error || null,
+          activities: result?.activities || [],
+        });
+      });
 
       stravaReconciliationService = new ActivityReconciliationService({
         activityGateway: stravaClient,
@@ -3581,6 +3615,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         timezone: stravaTimezone,
         historyRepository: fitnessHistoryRepository,
         pause: (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)),
+        ensureAccess: () => stravaActivityAccess.ensure(configService.getHeadOfHousehold?.() || 'user_1'),
+        health: stravaSyncHealth,
         logger: rootLogger.child({ module: 'strava-reconciliation' }),
       });
 
@@ -3699,6 +3735,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     printerRegistry: hardwareAdapters.printerRegistry,
     providerWebhookAdapters,
     enrichmentService: stravaEnrichmentService,
+    stravaSyncHealth,
     fingerprintProfileWriter,
     triggerEmergencyLockdown,
     releaseEmergencyLockdown,
@@ -6201,6 +6238,14 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   if (agentsServices.scheduler && stravaReconciliationService) {
     agentsServices.scheduler.registerTask('fitness:strava-reconcile', '23 * * * *', async () => {
       await stravaReconciliationService.reconcile();
+    });
+  }
+  // Strava sync health — reads recorded state only (no Strava calls); pushes
+  // on a healthy<->stale transition. Separate from the stages it watches, so a
+  // sweep that stops running is still noticed.
+  if (agentsServices.scheduler && stravaSyncHealth) {
+    agentsServices.scheduler.registerTask('fitness:strava-sync-health', '*/15 * * * *', async () => {
+      await stravaSyncHealth.evaluate();
     });
   }
 

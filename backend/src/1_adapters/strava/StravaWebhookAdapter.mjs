@@ -18,6 +18,7 @@
  * @property {string} objectType - 'activity' | 'athlete'
  * @property {string|number} objectId - Activity or athlete ID
  * @property {string} aspectType - 'create' | 'update' | 'delete'
+ * @property {Object} updates - Changed fields on an update event (e.g. { title })
  * @property {number} ownerId - Athlete ID
  * @property {number} eventTime - Unix timestamp
  * @property {number} subscriptionId - Webhook subscription ID
@@ -93,7 +94,7 @@ export class StravaWebhookAdapter {
   parseEvent(body) {
     if (!body || typeof body !== 'object') return null;
 
-    const { object_type, object_id, aspect_type, owner_id, event_time, subscription_id } = body;
+    const { object_type, object_id, aspect_type, owner_id, event_time, subscription_id, updates } = body;
 
     if (!object_type || object_id == null) {
       this.#logger.warn?.('strava.webhook.event.invalid_payload', { body });
@@ -108,6 +109,7 @@ export class StravaWebhookAdapter {
       ownerId: owner_id,
       eventTime: event_time,
       subscriptionId: subscription_id,
+      updates: updates && typeof updates === 'object' ? updates : {},
     };
   }
 
@@ -118,6 +120,17 @@ export class StravaWebhookAdapter {
    */
   shouldEnrich(event) {
     return event?.objectType === 'activity' && event?.aspectType === 'create';
+  }
+
+  /**
+   * A rename on Strava arrives as activity/update with `updates.title`.
+   * Our own title pushes echo back the same way; syncing those is harmless.
+   * @param {FitnessProviderEvent} event
+   * @returns {boolean}
+   */
+  isTitleUpdate(event) {
+    return event?.objectType === 'activity' && event?.aspectType === 'update'
+      && typeof event?.updates?.title === 'string' && event.updates.title.trim() !== '';
   }
 }
 
