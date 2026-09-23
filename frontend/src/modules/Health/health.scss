@@ -732,6 +732,22 @@ $health-aside-gap: 1.5rem;
     &:focus-visible { outline: 2px solid var(--ds-accent); outline-offset: 2px; }
   }
 }
+// Inline (a meal's add row): the popup floats OVER what follows instead of
+// sitting in flow. In flow, focusing the row pushed the page down by up to the
+// list's full height and blur/commit yanked it back — the add-row jostle that
+// `ui.layout-shift` reported. Full row width, same card look (the shadow is
+// inherited from the row's own card), scrolls inside its list's max-height.
+// No ancestor between here and the scrolling main clips overflow, so the
+// popup is never cut off; near the page end it extends the scroll area.
+// The sheet (non-inline) mode keeps its in-flow layout.
+.health-suggest--inline {
+  position: relative;
+  .health-suggest__popup {
+    position: absolute; top: calc(100% + 2px); left: -1px; right: -1px; z-index: 30;
+    padding: 0.35rem; border: 1px solid var(--ds-border); border-radius: 9px;
+    background: var(--ds-surface); box-shadow: inherit;
+  }
+}
 .health-pending {
   border: 1px solid var(--ds-border); border-left: 3px solid var(--ds-warning);
   border-radius: 9px; padding: 0.6rem 0.75rem; margin: 0.4rem 0;
