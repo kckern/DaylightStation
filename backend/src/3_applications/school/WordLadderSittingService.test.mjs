@@ -221,6 +221,33 @@ describe('WordLadderSittingService', () => {
     expect(store.s.status.lastFoldedDay).toBe(TODAY);
   });
 
+  it('open folds a per-learner quiz document addressed to this learner (plan 3, spec §8)', async () => {
+    const store = memoryStore();
+    store.s.status.words.pul = { ...emptyWordV3(), state: 'claimed', introducedDay: '2026-09-20' };
+    const attempts = [{ id: 'att_own', at: '2026-09-22T20:00:00.000Z', bankId: 'language/korean/korean-vocab-quiz-test-learner-2026-W39@1', itemId: 'pul', correct: false, transport: 'paper' }];
+    const { service } = make({ store, attempts });
+    await service.open({ userId: 'test-learner', deckId: DECK });
+    expect(store.s.status.words.pul.state).toBe('familiar');
+    expect(store.s.status.paperAttemptsFolded).toEqual(['att_own']);
+  });
+
+  it('open refuses a sibling\'s per-learner quiz document, logs it, never demotes, and does not re-log it (plan 3, spec §8)', async () => {
+    const store = memoryStore();
+    store.s.status.words.pul = { ...emptyWordV3(), state: 'claimed', introducedDay: '2026-09-20' };
+    const bankId = 'language/korean/korean-vocab-quiz-someone-else-2026-W39@1';
+    const attempts = [{ id: 'att_sibling', at: '2026-09-22T20:00:00.000Z', bankId, itemId: 'pul', correct: false, transport: 'paper' }];
+    const { service, logger, store: s } = make({ store, attempts });
+    await service.open({ userId: 'test-learner', deckId: DECK });
+    expect(s.s.status.words.pul.state).toBe('claimed'); // unchanged, never demoted
+    expect(s.s.status.paperAttemptsFolded).toEqual(['att_sibling']); // recorded so it is not re-evaluated
+    expect(logger.warn).toHaveBeenCalledWith('school.word-ladder.fold-refused', {
+      learnerId: 'test-learner', package: 'korean-vocab', mode: 'live', attemptId: 'att_sibling', bankId,
+    });
+    logger.warn.mockClear();
+    await service.open({ userId: 'test-learner', deckId: DECK });
+    expect(logger.warn).not.toHaveBeenCalledWith('school.word-ladder.fold-refused', expect.anything());
+  });
+
   it('an unreadable attempts log does not advance lastFoldedDay', async () => {
     const { service, store, logger } = make({ attemptsReader: () => { throw new Error('disk'); } });
     await service.open({ userId: 'test-learner', deckId: DECK });
