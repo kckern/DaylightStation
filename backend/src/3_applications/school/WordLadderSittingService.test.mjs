@@ -114,6 +114,7 @@ describe('WordLadderSittingService', () => {
     expect(progress).toMatchObject({ phase: 'round', round: { phase: 'match', hasMatch: true, quizLeft: 0 } });
     ({ item, progress } = await service.respond({ userId: 'test-learner', sittingId: opened.sittingId, itemId: item.id, response: { done: true } }));
     expect(item.type).toBe('summary');
+    expect(progress).toMatchObject({ phase: 'summary', matchToday: true });
   });
 
   it('hasMatch is false once a quiz ends with nothing verified', async () => {
@@ -275,13 +276,43 @@ describe('WordLadderSittingService', () => {
 
   it('progress carries the step trail\'s facts: rechecks total, rounds done, whether today has new words, done', async () => {
     const fresh = await make().service.open({ userId: 'test-learner', deckId: DECK });
-    expect(fresh.progress).toMatchObject({ rechecksTotal: 0, roundsDone: 0, learnToday: true, doneToday: false });
+    expect(fresh.progress).toMatchObject({ rechecksTotal: 0, roundsDone: 0, learnToday: true, doneToday: false, matchToday: false });
     const due = await make({ store: dueStore(0) }).service.open({ userId: 'test-learner', deckId: DECK });
     expect(due.progress).toMatchObject({ phase: 'rechecks', rechecksLeft: 1, rechecksTotal: 1, learnToday: false, doneToday: false });
     const store = memoryStore();
     for (const id of ['gawi', 'pul']) store.s.status.words[id] = { ...emptyWordV3(), state: 'mastered', stage: 3, dueDay: '2026-10-30', introducedDay: '2026-09-01' };
     const done = await make({ store }).service.open({ userId: 'test-learner', deckId: DECK });
     expect(done.progress).toMatchObject({ phase: 'summary', doneToday: true, roundsDone: 0 });
+  });
+
+  it('a mixed day (rechecks + new words) says learnToday from the start: Review never hides Learn', async () => {
+    const extra = { id: 'chaek', group: 'week-01', term: '책', gloss: 'Book', kind: 'word', decoys: { term: ['g', 'h', 'i'], gloss: ['r', 's', 't'] } };
+    lexicon.entries.set('chaek', extra);
+    try {
+      const words = ['gawi', 'pul', 'chaek'];
+      const decks = {
+        getFlashcardDeck: async (id) => (id === DECK ? { id: DECK, title: 'Week 1', words, lexicon: REF } : null),
+        listFlashcardDecks: async () => [{ id: DECK, words, lexicon: REF }],
+      };
+      const store = dueStore(0);
+      delete store.s.status.words.pul; // pul and chaek are new: a round of new words follows the recheck
+      const { service } = make({ store, decks });
+      const opened = await service.open({ userId: 'test-learner', deckId: DECK });
+      expect(opened.progress).toMatchObject({ phase: 'rechecks', rechecksLeft: 1, learnToday: true, doneToday: false });
+      const { item } = opened;
+      const right = item.task === '2.2' ? 'Scissors' : '가위';
+      const next = await service.respond({ userId: 'test-learner', sittingId: opened.sittingId, itemId: item.id, response: { choice: right } });
+      expect(next.progress).toMatchObject({ phase: 'round', learnToday: true, round: { phase: 'intro', hasMatch: true } });
+    } finally {
+      lexicon.entries.delete('chaek');
+    }
+  });
+
+  it('a day whose only new word cannot make a round (fewer than 2) never promises Learn', async () => {
+    const store = dueStore(0);
+    delete store.s.status.words.pul;
+    const opened = await make({ store }).service.open({ userId: 'test-learner', deckId: DECK });
+    expect(opened.progress).toMatchObject({ phase: 'rechecks', learnToday: false });
   });
 
   it('dayStatus: not opened, then in progress', async () => {
@@ -294,15 +325,20 @@ describe('WordLadderSittingService', () => {
   it('dayStatus carries the launch card: course, unit, today\'s plan and words learned — without writing', async () => {
     const store = memoryStore();
     store.s.status.words.pul = { ...emptyWordV3(), state: 'mastered', stage: 1, dueDay: '2026-10-30', introducedDay: '2026-09-01', typedSignedOff: '2026-09-20' };
+    // gawi: recognised, due today — a lone new word would make no round, so the day is its recheck.
+    store.s.status.words.gawi = { ...emptyWordV3(), state: 'mastered', stage: 1, dueDay: TODAY, introducedDay: '2026-09-01', recognizedCount: 1 };
     const { service } = make({ store });
     const status = await service.dayStatus({ userId: 'test-learner', deckId: DECK });
     expect(status.context).toEqual({
       course: { id: 'program:word-ladder:korean-vocab', title: 'Korean words' },
       unit: { id: DECK, title: 'Week 1: Classroom' },
-      lesson: { id: `${DECK}:${TODAY}`, title: '1 new word' },
+      lesson: { id: `${DECK}:${TODAY}`, title: '1 to review' },
     });
-    expect(status.progress).toEqual([{ scope: 'unit', label: 'Words learned', completed: 1, total: 2 }]);
-    expect(status.description).toBe('About 3 minutes');
+    // Both rungs on the agenda card: mastered is the solid segment, recognised
+    // the underway one (LaunchCard's ProgressRows draws `inProgress`), and the
+    // label says both — never "0 learned" for weeks while words are recognised.
+    expect(status.progress).toEqual([{ scope: 'unit', label: '1 recognised · 1 mastered', completed: 1, inProgress: 1, total: 2 }]);
+    expect(status.description).toBe('About 1 minute');
     expect(store.s.writes).toBe(0);
     expect(store.s.days[TODAY]).toBeUndefined();
   });
@@ -346,7 +382,8 @@ describe('WordLadderSittingService', () => {
     const { service, store } = make({ mode: 'test', peek });
     const intro = await service.intro({ userId: 'test-learner', deckId: DECK, scenario: 'rechecks' });
     expect(peek).toHaveBeenCalledWith('test-learner', 'korean-vocab', TODAY, expect.objectContaining({ scenario: 'rechecks' }));
-    expect(intro).toMatchObject({ test: true, today: { reviewCount: 1, newCount: 1 } });
+    // A lone new word makes no round (planNextRound needs 2), so none is promised.
+    expect(intro).toMatchObject({ test: true, today: { reviewCount: 1, newCount: 0 } });
     expect(store.s.writes).toBe(0);
   });
 
@@ -561,7 +598,10 @@ describe('WordLadderSittingService — drills, speaking, practice, My words', ()
   });
 
   it('drill steps carry exactly what the screen needs, and the unsupported ones never the term', async () => {
-    const { service } = make({ store: trickyStore(), media: true });
+    // Typing from memory (dictation, type) is in a drill only for a word ready for its sign-off.
+    const store = trickyStore();
+    store.s.status.words.gawi = { ...store.s.status.words.gawi, state: 'mastered', stage: 2, dueDay: '2026-10-30', recognizedCount: 2, matched: true };
+    const { service } = make({ store, media: true });
     const { steps } = await walkDrill(service);
     expect(Object.keys(steps)).toEqual(['look', 'copy', 'say-after', 'match', 'read-aloud', 'tiles', 'dictation', 'say-from-cue', 'type']);
     for (const step of ['look', 'copy', 'say-after']) {
@@ -651,6 +691,8 @@ describe('WordLadderSittingService — drills, speaking, practice, My words', ()
 
   it('practice after the goal: a type-from-cue item is judged but never grades', async () => {
     const store = doneStore();
+    // Write Without help types from memory: only over words ready for sign-off.
+    for (const id of ['gawi', 'pul']) store.s.status.words[id] = { ...store.s.status.words[id], state: 'mastered', stage: 1, dueDay: '2026-10-30', recognizedCount: 2, matched: true };
     const { service, judge } = make({ store });
     const opened = await service.open({ userId: 'test-learner', deckId: DECK });
     expect(opened.item.type).toBe('summary');

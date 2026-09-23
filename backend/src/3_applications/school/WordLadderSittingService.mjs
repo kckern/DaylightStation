@@ -244,7 +244,7 @@ export class WordLadderSittingService {
     return item;
   }
 
-  #progress(dayFile, settings) {
+  #progress({ dayFile, settings, status, day, pool }) {
     const round = dayFile.rounds.find((r) => r.phase !== 'done') ?? null;
     const rechecksLeft = dayFile.rechecks.order.filter((id) => !dayFile.rechecks.answered[id]).length;
     const drill = (dayFile.drills ?? []).find((d) => !d.done) ?? null;
@@ -275,9 +275,21 @@ export class WordLadderSittingService {
       // has no Learn), and whether the goal is met (Practice unlocks).
       rechecksTotal: dayFile.rechecks.order.length,
       roundsDone: dayFile.rounds.filter((r) => r.phase === 'done').length,
-      learnToday: round ? round.newWords?.length > 0 : dayFile.rounds.some((r) => r.newWords?.length > 0),
+      // Whether any round today held its guided Match (the trail keeps the step once past it).
+      matchToday: dayFile.rounds.some((r) => Boolean(r.match)),
+      learnToday: this.#learnToday({ dayFile, round, status, day, pool, settings }),
       doneToday: Boolean(dayFile.doneAt),
     };
+  }
+
+  // Whether today's round work includes new words (the trail's Learn step).
+  // With no round planned yet — Review runs first — the plan preview answers,
+  // so the trail keeps one shape from the first recheck to the last round.
+  #learnToday({ dayFile, round, status, day, pool, settings }) {
+    if (round) return round.newWords?.length > 0;
+    if (dayFile.rounds.some((r) => r.newWords?.length > 0)) return true;
+    if (dayFile.doneAt || !status) return false;
+    return introPreview({ status, dayFile, day, pool: pool ?? [], settings }).newCount > 0;
   }
 
   #parseSitting(sittingId) {
@@ -502,7 +514,7 @@ export class WordLadderSittingService {
     const ctx = { status: next.status, dayFile: next.dayFile, day, lexicon, media, pool, settings, learnerId: userId };
     const item = currentItem(ctx);
     this.#logHousekeeping(userId, sittingId, next.dayFile, changes, item);
-    const progress = this.#progress(next.dayFile, settings);
+    const progress = this.#progress(ctx);
     this.#logFold(userId, pkg, folded, 'open');
     this.#logTransitions({ learnerId: userId, sittingId, pkg, day }, foldTransitions, next.status.words);
     this.#logger.info?.('school.word-ladder.opened', {
@@ -575,7 +587,7 @@ export class WordLadderSittingService {
     this.#logSequencing({ learnerId: userId, sittingId, pkg, day, itemId }, {
       ctx: nextCtx, item: nextItem.id === itemId ? null : nextItem, via: 'respond', beforeDay: ctx.dayFile, beforeWords: ctx.status.words,
     });
-    return { result: this.#withAnswerAudio(out.result, out.dayFile.items?.[itemId]?.wordId ?? (item.id === itemId ? item.wordId : null), ctx), item: this.#publicItem(nextItem, nextCtx), progress: this.#progress(out.dayFile, ctx.settings) };
+    return { result: this.#withAnswerAudio(out.result, out.dayFile.items?.[itemId]?.wordId ?? (item.id === itemId ? item.wordId : null), ctx), item: this.#publicItem(nextItem, nextCtx), progress: this.#progress(nextCtx) };
   }
 
   /**
@@ -611,7 +623,7 @@ export class WordLadderSittingService {
     // A resync or reload re-serves whatever is current; logged so a trace
     // can tell a re-render from a new item.
     this.#logSequencing({ learnerId: userId, sittingId, pkg, day }, { ctx, item, via: 'get' });
-    return { item: this.#publicItem(item, ctx), progress: this.#progress(ctx.dayFile, settings) };
+    return { item: this.#publicItem(item, ctx), progress: this.#progress({ ...ctx, settings }) };
   }
 
   /**
@@ -661,7 +673,7 @@ export class WordLadderSittingService {
       size: out.dayFile.practice?.queue?.length ?? 0, first: item.type,
     });
     this.#logSequencing({ learnerId: userId, sittingId, pkg, day }, { ctx: nextCtx, item, via: 'practice' });
-    return { item: this.#publicItem(item, nextCtx), progress: this.#progress(out.dayFile, settings) };
+    return { item: this.#publicItem(item, nextCtx), progress: this.#progress({ ...nextCtx, settings }) };
   }
 
   /**
@@ -933,7 +945,7 @@ export class WordLadderSittingService {
    * THE LAUNCH CARD'S FACTS, read from a store without opening anything: the
    * program's title is the CLASS ("UBKS 비둘기" — the lexicon's
    * `program.title`), the deck is the unit, today's plan is the lesson, and
-   * words learned in this deck is the bar. The course id is a program id,
+   * the deck's two rungs (recognised · mastered) are the bar. The course id is a program id,
    * `program:word-ladder:<package>`, so the poster resolves to
    * `<media>/school/programs/word-ladder/<package>/poster.jpg` — the artwork
    * belongs to the word package, not the program (one program, many languages).
@@ -989,7 +1001,13 @@ export class WordLadderSittingService {
     return {
       context: { course: card.course, unit: card.unit, lesson: { id: `${card.unit.id}:${day}`, title: introPlanLabel(plan) } },
       description: !plan.doneToday && plan.estimatedMinutes ? `About ${plan.estimatedMinutes} minute${plan.estimatedMinutes === 1 ? '' : 's'}` : null,
-      progress: [{ scope: 'unit', label: 'Words learned', completed: progress.learned, total: progress.total }],
+      // Two rungs in one row: mastered (typed sign-off) is the finished
+      // segment, recognised the underway one (`inProgress`), and the label
+      // names both — a mastered-only count reads "0" for weeks.
+      progress: [{
+        scope: 'unit', label: `${progress.recognised} recognised · ${progress.learned} mastered`,
+        completed: progress.learned, inProgress: progress.recognised, total: progress.total,
+      }],
     };
   }
 
