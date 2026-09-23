@@ -613,6 +613,13 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
           : 'That could not be opened. Check the learner and program in the URL.');
         return;
       }
+      // A test door mounts ONLY a word ladder. Anything else the backend hands
+      // back would be a LIVE runner — refuse rather than fall through to it.
+      if (directTest && data.target?.policy?.mode !== 'word-ladder') {
+        schoolLog.bank('direct-launch-refused', { program: directProgramId, reason: 'no-test-mode', kind: data.target?.kind ?? null });
+        setDirectError(`Test mode isn't available for ${directProgramId}.`);
+        return;
+      }
       const target = directTest
         ? { ...data.target, test: true, scenario: new URLSearchParams(window.location.search).get('scenario') }
         : data.target;

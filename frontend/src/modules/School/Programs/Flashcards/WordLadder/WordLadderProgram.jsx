@@ -55,6 +55,10 @@ export default function WordLadderProgram({ descriptor, api: injected = null, re
   const generation = useRef(0);
   const live = useRef(true);
   const busyRef = useRef(false);
+  // The open sitting, and whether Leave/Done already closed it — an unmount
+  // closes anything still open (reason 'unmount').
+  const sittingRef = useRef(null);
+  const closedRef = useRef(false);
 
   const show = useCallback((nextItem, nextProgress) => {
     setItem(nextItem); setProgress(nextProgress); setResult(null); setPendingItem(null);
@@ -70,6 +74,8 @@ export default function WordLadderProgram({ descriptor, api: injected = null, re
       return;
     }
     setError(null);
+    sittingRef.current = data.sittingId;
+    closedRef.current = false;
     setSession({ id: data.sittingId, langs: { term: data.language?.code ?? null, gloss: data.gloss?.code ?? null } });
     show(data.item, data.progress ?? null);
     wordLadderLog.planLoaded({ userId, deckId, package: data.package ?? null, sittingId: data.sittingId, test, first: data.item.type, phase: data.progress?.phase ?? null });
@@ -79,8 +85,18 @@ export default function WordLadderProgram({ descriptor, api: injected = null, re
     live.current = true;
     wordLadderLog.mounted({ userId, deckId, test, scenario });
     open();
-    return () => { live.current = false; wordLadderLog.unmounted({ userId, deckId, test }); };
-  }, [open, userId, deckId, test, scenario]);
+    return () => {
+      live.current = false;
+      const openId = sittingRef.current;
+      if (openId && !closedRef.current) {
+        closedRef.current = true;
+        // Fire-and-forget: the component is gone; the client never throws.
+        api.close(openId, { userId, reason: 'unmount' });
+      }
+      sittingRef.current = null;
+      wordLadderLog.unmounted({ userId, deckId, test, sittingId: openId ?? null });
+    };
+  }, [api, open, userId, deckId, test, scenario]);
 
   useEffect(() => {
     if (item) wordLadderLog.itemShown({ itemId: item.id, type: item.type, task: item.task ?? null, mode: item.mode ?? null, wordId: item.wordId ?? item.word?.wordId ?? null, test });
@@ -126,11 +142,20 @@ export default function WordLadderProgram({ descriptor, api: injected = null, re
     setItem(pendingItem); setPendingItem(null); setResult(null);
   }, [pendingItem]);
 
-  const leave = useCallback(async () => {
-    wordLadderLog.sittingLeft({ userId, deckId, sittingId: session?.id ?? null, itemId: item?.id ?? null, test });
-    if (session) await api.close(session.id, { userId, reason: 'leave' });
+  /** Leave (header) closes as 'leave'; Done (summary) as 'cap' when the time cap was hit, else 'goal'. */
+  const closeAndExit = useCallback(async (reason) => {
+    wordLadderLog.sittingLeft({ userId, deckId, sittingId: session?.id ?? null, itemId: item?.id ?? null, reason, test });
+    if (session && !closedRef.current) {
+      closedRef.current = true;
+      await api.close(session.id, { userId, reason });
+    }
     onExit();
   }, [api, session, item, userId, deckId, test, onExit]);
+  const leave = useCallback(() => closeAndExit('leave'), [closeAndExit]);
+  const done = useCallback(
+    () => closeAndExit(progress?.capMs && progress.activeMs >= progress.capMs ? 'cap' : 'goal'),
+    [closeAndExit, progress],
+  );
 
   let body = <p className="wl-loading">Loading…</p>;
   if (error) {
@@ -141,12 +166,14 @@ export default function WordLadderProgram({ descriptor, api: injected = null, re
       </div>
     );
   } else if (item && session) {
+    // Item ids repeat across sittings: key by sitting too, so a reopen remounts the card.
+    const key = `${session.id}:${item.id}`;
     const common = { item, langs: session.langs, resolveAssetUrl, onRespond: respond, busy, result, onContinue: next };
-    if (item.type === 'flashcard') body = <FlashcardItem key={item.id} {...common} />;
-    else if (item.type === 'copy') body = <TypedItem key={item.id} {...common} mode="copy" />;
-    else if (item.type === 'typed') body = <TypedItem key={item.id} {...common} mode="graded" stageRef={stageRef} />;
-    else if (item.type === 'choice') body = <ChoiceItem key={item.id} {...common} />;
-    else body = <SummaryItem item={item} onExit={leave} />;
+    if (item.type === 'flashcard') body = <FlashcardItem key={key} {...common} />;
+    else if (item.type === 'copy') body = <TypedItem key={key} {...common} mode="copy" />;
+    else if (item.type === 'typed') body = <TypedItem key={key} {...common} mode="graded" stageRef={stageRef} />;
+    else if (item.type === 'choice') body = <ChoiceItem key={key} {...common} />;
+    else body = <SummaryItem key={key} item={item} onExit={done} />;
   }
   const pct = progress?.capMs ? Math.min(100, Math.round((progress.activeMs / progress.capMs) * 100)) : 0;
   const remaining = remainingLabel(progress);
