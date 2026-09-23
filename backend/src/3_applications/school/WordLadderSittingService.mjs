@@ -25,6 +25,7 @@ import { offsetMinutesFor, studyDayForInstant } from '#domains/school/studyDay.m
 import { addDays } from '#domains/school/termVerdict.mjs';
 import {
   addActiveTime, cueFor, currentItem, deckDirOf, foldPaperAttempts, openDay, quizDocumentIdFor, respond, startPractice, wordAssetIds,
+  wordTransitions,
 } from '#domains/school/wordLadder/index.mjs';
 
 const FOLD_LOOKBACK_DAYS = 60;
@@ -330,6 +331,7 @@ export class WordLadderSittingService {
       settings: { afterMisses: settings.drill.afterMisses, gapScale: settings.review.gapScale },
     });
     if (ok) out.status.lastFoldedDay = today;
+    out.transitions = wordTransitions(status.words, out.status.words, 'paper');
     for (const row of out.refused) {
       this.#logger.warn?.('school.word-ladder.fold-refused', { learnerId, package: pkg, mode: this.#mode, ...row });
     }
@@ -342,6 +344,16 @@ export class WordLadderSittingService {
       learnerId, package: pkg, source, mode: this.#mode, count: folded.length,
       demoted: folded.filter((row) => !row.correct).map((row) => row.wordId),
     });
+  }
+
+  /** One `transition` event per word whose state or stage changed (spec §8). */
+  #logTransitions({ learnerId, sittingId = null, pkg, day, itemId = null }, transitions) {
+    for (const row of transitions ?? []) {
+      this.#logger.info?.('school.word-ladder.transition', {
+        learnerId, sittingId, mode: this.#mode, package: pkg, day, itemId,
+        wordId: row.wordId, from: row.from, to: row.to, source: row.source,
+      });
+    }
   }
 
   #newSittingId(pkg, token) {
@@ -366,11 +378,13 @@ export class WordLadderSittingService {
     // so the new-word pool is the same before and after the fold.
     const pool = await this.#pool(before, deck);
     let folded = [];
+    let foldTransitions = [];
     let changes = { reopened: false, idleClosed: [] };
     const next = store.transact(userId, pkg, day, ({ status, dayFile }) => {
       const settings = this.#daySettings(dayFile);
       const afterFold = this.#fold(status, read, quizDocumentIds, day, settings, { learnerId: userId, deckDir: deckDirOf(deck.id), pkg });
       folded = afterFold.folded;
+      foldTransitions = afterFold.transitions;
       const opened = openDay({ status: afterFold.status, dayFile, day, deckId, pool, settings, learnerId: userId, at: isoWithOffset(openedMs, this.#timezone), media, capabilities: caps, lexicon });
       changes = this.#housekeep(opened.dayFile, sittingId, openedMs, { reopen: false });
       opened.dayFile.sittings[sittingId] = { deckId, openedAt: isoWithOffset(openedMs, this.#timezone), closedAt: null, reason: null };
@@ -382,6 +396,7 @@ export class WordLadderSittingService {
     const item = currentItem(ctx);
     const progress = this.#progress(next.dayFile, settings);
     this.#logFold(userId, pkg, folded, 'open');
+    this.#logTransitions({ learnerId: userId, sittingId, pkg, day }, foldTransitions);
     this.#logger.info?.('school.word-ladder.opened', {
       learnerId: userId, deckId, package: pkg, day, sittingId, mode: this.#mode, scenario, folded: folded.length, microphone: caps.microphone,
       first: item.type, phase: progress.phase, rechecks: next.dayFile.atOpen?.dueRechecks?.length ?? 0,
@@ -411,6 +426,8 @@ export class WordLadderSittingService {
     const ms = this.#now();
     const at = isoWithOffset(ms, this.#timezone);
     let changes = null;
+    let transitions = [];
+    let graded = null;
     const out = store.transact(userId, pkg, day, ({ status, dayFile }) => {
       if (!dayFile.sittings?.[sittingId]) throw new EntityNotFoundError('word-ladder sitting', sittingId);
       // Race: another request answered while this one was being prepared, so
@@ -423,17 +440,28 @@ export class WordLadderSittingService {
       changes = this.#housekeep(dayFile, sittingId, ms);
       const timed = addActiveTime(dayFile, ms);
       const step = respond({ ...ctx, status, dayFile: timed }, itemId, response, { at, verdict });
+      ({ transitions, graded } = step);
       return { status: step.status, dayFile: step.dayFile, result: step.result };
     });
     this.#logHousekeeping(userId, sittingId, out.dayFile, changes);
     const nextCtx = { ...ctx, status: out.status, dayFile: out.dayFile };
     const nextItem = currentItem(nextCtx);
-    this.#logger.info?.('school.word-ladder.graded', {
+    // Every response is `answered`; only a graded answer (verify, recheck,
+    // practice Quiz me) is also `graded` (spec §8 events).
+    this.#logger.info?.('school.word-ladder.answered', {
       learnerId: userId, sittingId, mode: this.#mode, itemId, type: item.id === itemId ? item.type : null,
       task: item.id === itemId ? item.task ?? null : null, wordId: item.id === itemId ? item.wordId ?? null : null,
       correct: out.result?.correct ?? null, score: verdict?.score ?? null, judge: verdict?.judge ?? null,
       next: nextItem.type, doneAt: out.dayFile.doneAt ?? null,
     });
+    if (graded) {
+      this.#logger.info?.('school.word-ladder.graded', {
+        learnerId: userId, sittingId, mode: this.#mode, package: pkg, day, itemId,
+        wordId: graded.wordId, task: graded.task, source: graded.source, correct: graded.correct,
+        score: graded.score ?? null, judge: graded.judge ?? null,
+      });
+    }
+    this.#logTransitions({ learnerId: userId, sittingId, pkg, day, itemId }, transitions);
     return { result: out.result, item: this.#publicItem(nextItem, nextCtx), progress: this.#progress(out.dayFile, ctx.settings) };
   }
 
@@ -585,12 +613,15 @@ export class WordLadderSittingService {
       const quizDocumentIds = await this.#quizDocumentIds(deck);
       const deckDir = deckDirOf(deck.id);
       let folded = [];
+      let transitions = [];
       store.transact(learnerId, pkg, today, ({ status, dayFile }) => {
         const out = this.#fold(status, read, quizDocumentIds, today, this.#daySettings(dayFile), { learnerId, deckDir, pkg });
         folded = out.folded;
+        transitions = out.transitions;
         return { status: out.status, dayFile };
       });
       this.#logFold(learnerId, pkg, folded, 'teacher');
+      this.#logTransitions({ learnerId, pkg, day: today }, transitions);
       all.push(...folded);
     }
     return { learnerId, folded: all.length, demoted: all.filter((row) => !row.correct).map((row) => row.wordId) };

@@ -536,13 +536,66 @@ function validateResponse(item, response) {
   if (!fits) throw new ValidationError(NOT_FIT);
 }
 
+const STATE_OF = (word) => ({ state: word?.state ?? 'new', stage: word?.stage ?? null });
+
+/**
+ * Every word whose `state` or `stage` differs between two `status.words` maps
+ * (spec §8 `transition` events), in word-id order. Pure; `source` labels them.
+ */
+export function wordTransitions(beforeWords = {}, afterWords = {}, source) {
+  const ids = [...new Set([...Object.keys(beforeWords ?? {}), ...Object.keys(afterWords ?? {})])].sort();
+  const out = [];
+  for (const wordId of ids) {
+    const from = STATE_OF(beforeWords?.[wordId]);
+    const to = STATE_OF(afterWords?.[wordId]);
+    if (from.state !== to.state || from.stage !== to.stage) out.push({ wordId, from, to, source });
+  }
+  return out;
+}
+
+// What moved a word on this item (spec §8 transition `source`).
+function transitionSource(item) {
+  if (item.source === 'practice') return 'practice';
+  if (item.source === 'recheck') return 'recheck';
+  if (item.source === 'verify') return 'verify';
+  if (item.type === 'flashcard' && item.mode === 'intro') return 'intro';
+  return 'sort';
+}
+
+// A graded answer (a verify, recheck or practice Quiz me task) as a record;
+// null for everything else, including an ended practice run.
+function gradedRecord(item, response, result, verdict) {
+  const graded = item.source === 'verify' || item.source === 'recheck' || (item.source === 'practice' && item.graded === true);
+  if (!graded || response?.menu === true || typeof result?.correct !== 'boolean') return null;
+  return {
+    wordId: item.wordId, task: item.task, source: item.source, correct: result.correct,
+    ...(verdict ? { score: verdict.score, judge: verdict.judge } : {}),
+  };
+}
+
+/**
+ * Applies one answer. Returns `{ status, dayFile, result, transitions, graded }`:
+ * `transitions` lists every word whose state or stage this answer changed, and
+ * `graded` is the graded record (or null). A replayed item reports neither.
+ */
 export function respond(inputCtx, itemId, response = {}, { at, verdict = null } = {}) {
   if (typeof at !== 'string' || at.length === 0) throw new ValidationError('at is required');
-  if (inputCtx.dayFile.items[itemId]) return { status: inputCtx.status, dayFile: inputCtx.dayFile, result: inputCtx.dayFile.items[itemId].result };
+  if (inputCtx.dayFile.items[itemId]) {
+    return { status: inputCtx.status, dayFile: inputCtx.dayFile, result: inputCtx.dayFile.items[itemId].result, transitions: [], graded: null };
+  }
   const ctx = { ...inputCtx, status: clone(inputCtx.status), dayFile: clone(inputCtx.dayFile) };
   const item = currentItem(ctx);
   if (item.id !== itemId) throw new ValidationError('stale item');
   validateResponse(item, response);
+  const out = applyResponse(ctx, item, itemId, response, { at, verdict });
+  return {
+    ...out,
+    transitions: wordTransitions(inputCtx.status.words, out.status.words, transitionSource(item)),
+    graded: gradedRecord(item, response, out.result, verdict),
+  };
+}
+
+function applyResponse(ctx, item, itemId, response, { at, verdict }) {
   let result = { ok: true };
 
   if (item.source === 'practice' || item.type === 'drill') {

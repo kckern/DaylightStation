@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import { emptyWordV3 } from './mastery.mjs';
 import { emptyDay, emptyStatusV3 } from './statusV3.mjs';
-import { addActiveTime, currentItem, openDay, respond, startPractice } from './engine.mjs';
+import { addActiveTime, currentItem, openDay, respond, startPractice, wordTransitions } from './engine.mjs';
 
 const D = '2026-09-22';
 const SET = {
@@ -714,3 +714,109 @@ function TYPING_OR_TILES(it) {
   if (it.step === 'tiles') return { tiles: [...term] };
   return { done: true };
 }
+
+describe('engine — transitions and graded records (plan 4, spec §8 events)', () => {
+  function stepOut(ctx, response, verdict = null) {
+    const item = currentItem(ctx);
+    const out = respond(ctx, item.id, response, { at: at(), verdict });
+    return { ctx: { ...ctx, status: out.status, dayFile: out.dayFile }, item, out };
+  }
+  function toStream(ctx) {
+    let guard = 0;
+    while (guard++ < 40) {
+      const item = currentItem(ctx);
+      if (item.type === 'flashcard' && item.mode === 'intro') ({ ctx } = stepOut(ctx, { seen: true }));
+      else if (item.type === 'copy') ({ ctx } = stepOut(ctx, { typed: lexicon.entries.get(item.wordId).term }));
+      else break;
+    }
+    return ctx;
+  }
+
+  it('wordTransitions diffs state and stage only', () => {
+    const before = { a: { ...emptyWordV3(), state: 'introduced' }, b: { ...emptyWordV3(), state: 'familiar', missStreak: 0 } };
+    const after = { a: { ...emptyWordV3(), state: 'notYet' }, b: { ...emptyWordV3(), state: 'familiar', missStreak: 1 }, c: { ...emptyWordV3(), state: 'introduced' } };
+    expect(wordTransitions(before, after, 'sort')).toEqual([
+      { wordId: 'a', from: { state: 'introduced', stage: null }, to: { state: 'notYet', stage: null }, source: 'sort' },
+      { wordId: 'c', from: { state: 'new', stage: null }, to: { state: 'introduced', stage: null }, source: 'sort' },
+    ]);
+  });
+
+  it('an intro flashcard is new → introduced (source intro); a copy transitions nothing and grades nothing', () => {
+    let ctx = start();
+    const intro = stepOut(ctx, { seen: true });
+    expect(intro.out.transitions).toEqual([{ wordId: 'gawi', from: { state: 'new', stage: null }, to: { state: 'introduced', stage: null }, source: 'intro' }]);
+    expect(intro.out.graded).toBeNull();
+    const copy = stepOut(intro.ctx, { typed: '가위' });
+    expect(copy.out.transitions).toEqual([]);
+    expect(copy.out.graded).toBeNull();
+  });
+
+  it('a sort yields introduced → notYet (source sort); an undo reverses it', () => {
+    let ctx = toStream(start());
+    const { wordId } = currentItem(ctx);
+    const sorted = stepOut(ctx, { sort: 'notYet' });
+    expect(sorted.out.transitions).toEqual([{ wordId, from: { state: 'introduced', stage: null }, to: { state: 'notYet', stage: null }, source: 'sort' }]);
+    expect(sorted.out.graded).toBeNull();
+    const undone = stepOut(sorted.ctx, { undo: true });
+    expect(undone.out.transitions).toEqual([{ wordId, from: { state: 'notYet', stage: null }, to: { state: 'introduced', stage: null }, source: 'sort' }]);
+  });
+
+  it('a verify pass yields claimed → mastered and a graded record per task', () => {
+    let ctx = toStream(start());
+    let guard = 0;
+    while (currentItem(ctx).type === 'flashcard' && guard++ < 30) ({ ctx } = stepOut(ctx, { sort: 'claimed' }));
+    const typed = currentItem(ctx);
+    expect(typed).toMatchObject({ type: 'typed', task: '3.3', source: 'verify' });
+    const first = stepOut(ctx, { typed: 'x' }, PASS);
+    expect(first.out.graded).toEqual({ wordId: typed.wordId, task: '3.3', source: 'verify', correct: true, score: 10, judge: 'exact' });
+    expect(first.out.transitions).toEqual([]); // the word passes on its last task
+    ctx = first.ctx;
+    while (currentItem(ctx).type === 'typed') ({ ctx } = stepOut(ctx, { typed: 'x' }, PASS));
+    const choice = currentItem(ctx);
+    expect(choice).toMatchObject({ type: 'choice', task: '2.2', wordId: typed.wordId });
+    const last = stepOut(ctx, { choice: lexicon.entries.get(choice.wordId).gloss });
+    expect(last.out.graded).toEqual({ wordId: choice.wordId, task: '2.2', source: 'verify', correct: true });
+    expect(last.out.transitions).toEqual([{ wordId: choice.wordId, from: { state: 'claimed', stage: null }, to: { state: 'mastered', stage: 0 }, source: 'verify' }]);
+  });
+
+  it('a recheck miss is graded (source recheck) and transitions mastered → familiar', () => {
+    const status = emptyStatusV3();
+    status.words.gawi = { ...emptyWordV3(), state: 'mastered', stage: 1, dueDay: D, introducedDay: '2026-09-10' };
+    const ctx = start(status);
+    const item = currentItem(ctx);
+    const answer = item.type === 'typed' ? { typed: 'zz' } : { dontKnow: true };
+    const verdict = { score: 2, judge: 'distance', pass: false };
+    const { out } = stepOut(ctx, answer, verdict);
+    expect(out.graded).toMatchObject({ wordId: 'gawi', task: item.task, source: 'recheck', correct: false });
+    expect(out.transitions).toEqual([{ wordId: 'gawi', from: { state: 'mastered', stage: 1 }, to: { state: 'familiar', stage: null }, source: 'recheck' }]);
+  });
+
+  it('practice: a Quiz me answer is graded (source practice); a practice sort transitions but is not graded; a replay reports nothing', () => {
+    const base = start();
+    const done = { ...base, dayFile: { ...base.dayFile, doneAt: 'x', rounds: [], rechecks: { order: [], answered: {} }, summarySeen: true } };
+    done.status.words.pul = { ...emptyWordV3(), state: 'familiar', introducedDay: '2026-09-01' };
+    let ctx = { ...done, ...startPractice(done, { mode: 'quiz' }) };
+    const q = stepOut(ctx, { typed: '풀' }, PASS);
+    expect(q.out.graded).toEqual({ wordId: 'pul', task: '3.3', source: 'practice', correct: true, score: 10, judge: 'exact' });
+    const q2 = stepOut(q.ctx, { choice: 'Glue' });
+    expect(q2.out.transitions).toEqual([{ wordId: 'pul', from: { state: 'familiar', stage: null }, to: { state: 'mastered', stage: 0 }, source: 'practice' }]);
+    const replay = respond(q2.ctx, q2.item.id, { choice: 'Glue' }, { at: at() });
+    expect(replay.transitions).toEqual([]);
+    expect(replay.graded).toBeNull();
+
+    ctx = { ...q2.ctx, ...startPractice(q2.ctx, { mode: 'flashcards' }) };
+    const sorted = stepOut(ctx, { sort: 'notYet' });
+    expect(sorted.out.graded).toBeNull();
+    expect(sorted.out.transitions).toEqual([{ wordId: 'pul', from: { state: 'mastered', stage: 0 }, to: { state: 'notYet', stage: null }, source: 'practice' }]);
+  });
+
+  it('write without help (type-practice) is never a graded record', () => {
+    const base = start();
+    const done = { ...base, dayFile: { ...base.dayFile, doneAt: 'x', rounds: [], rechecks: { order: [], answered: {} }, summarySeen: true } };
+    done.status.words.pul = { ...emptyWordV3(), state: 'familiar', introducedDay: '2026-09-01' };
+    const ctx = { ...done, ...startPractice(done, { mode: 'write', help: false }) };
+    const { out } = stepOut(ctx, { typed: '풀' }, PASS);
+    expect(out.graded).toBeNull();
+    expect(out.transitions).toEqual([]);
+  });
+});
