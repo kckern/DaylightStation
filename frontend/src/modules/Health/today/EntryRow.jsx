@@ -1,5 +1,5 @@
-import { useRef, useState } from 'react';
-import { Popover, UnstyledButton } from '@mantine/core';
+import { useMemo, useRef, useState } from 'react';
+import { UnstyledButton } from '@mantine/core';
 import { createAppLogger } from '../../../lib/ui/createAppLogger.js';
 import { MacroBadges } from './MacroBadges.jsx';
 import { DensityBadge } from './DensityBadge.jsx';
@@ -10,7 +10,7 @@ import { reportArtworkFailure } from './artworkLog.js';
 import { PortionControl } from './PortionControl.jsx';
 import { entryId, entryError, isEntryConflict, updateEntry } from './entryCommands.js';
 import { usePortionControl } from './usePortionDraft.js';
-import { RowPreviewContent, useRowPreview, logRowPreviewOpen } from './RowPreview.jsx';
+import { useRowPreview, logRowPreviewOpen } from './RowPreview.jsx';
 import { useDraggableRow } from './mealDrag.jsx';
 
 const logger = createAppLogger('health').child('entry-row');
@@ -27,7 +27,9 @@ export function EntryRow({ row, densityRow = row, onTap, onConfirm, onRequestDel
   const name = row.name || row.item || row.label || '';
   const displayKcal = isGroup ? rollupKcal : row.calories;
   // The magnifier card: held closed while a portion drag owns the pointer.
-  const preview = useRowPreview({ disabled: Boolean(portions?.draft), onOpen: () => logRowPreviewOpen(row) });
+  const previewContent = useMemo(() => ({ row, isGroup, kcal: displayKcal }), [row, isGroup, displayKcal]);
+  // The page's one preview card (RowPreviewProvider), at the cursor.
+  const preview = useRowPreview({ disabled: Boolean(portions?.draft), onOpen: () => logRowPreviewOpen(row), content: previewContent });
   // The row is its own drag handle (mealDrag.jsx): never an ingredient on its
   // own, never while a portion drag owns the pointer.
   const drag = useDraggableRow(row, child ? null : dragBucket, { disabled: Boolean(portions?.draft) });
@@ -53,23 +55,8 @@ export function EntryRow({ row, densityRow = row, onTap, onConfirm, onRequestDel
     </div>
     <div className={`health-row-identity health-row__identity health-row__visual health-density-${densityPlacement}`}>
       {densityPlacement === 'before' ? <DensityBadge row={densityRow} editRow={row} /> : null}
-      {/* The magnifier anchors on the ARTWORK, not the full-width row: a
-          row-wide anchor has no room on either side of a phone column. Above
-          it (below when there is no room) like a tooltip, so it never sits
-          on the row's own name and numbers; cross-axis shift keeps it on
-          screen. The name's hover/focus opens this same card. It portals into
-          the themed `.ds-root`, whose inline --ds-* tokens the card's surface,
-          border and text colours read — a body-level portal renders it
-          transparent. */}
-      <Popover opened={preview.opened} onChange={open => { if (!open) preview.close(); }}
-        position="top-start" transitionProps={{ duration: 0 }} middlewares={{ flip: true, shift: { crossAxis: true, padding: 8, limiter: undefined } }}
-        withArrow arrowSize={10} offset={8} radius="md" shadow="md" withinPortal portalProps={{ target: '.ds-root' }} withRoles={false} trapFocus={false} returnFocus={false}>
-      <Popover.Target><span className="health-row-artwork" {...preview.targetProps} onClick={preview.onArtworkClick}>{row.photoRef && brokenPhoto !== row.photoRef ? <img className="health-row__thumb"
-        src={nutritionPhotoUrl(row.photoRef, { thumb: true })} alt="" loading="lazy" onError={() => { setBrokenPhoto(row.photoRef); reportArtworkFailure('photo', row.photoRef, { uuid: entryId(row), name, icon: row.icon || null }); }} /> : <FoodIcon icon={row.icon} />}</span></Popover.Target>
-      <Popover.Dropdown className="health-row-preview__card" {...preview.cardProps}>
-        <RowPreviewContent row={row} isGroup={isGroup} kcal={displayKcal} />
-      </Popover.Dropdown>
-      </Popover>
+      <span className="health-row-artwork" {...preview.targetProps} onClick={preview.onArtworkClick}>{row.photoRef && brokenPhoto !== row.photoRef ? <img className="health-row__thumb"
+        src={nutritionPhotoUrl(row.photoRef, { thumb: true })} alt="" loading="lazy" onError={() => { setBrokenPhoto(row.photoRef); reportArtworkFailure('photo', row.photoRef, { uuid: entryId(row), name, icon: row.icon || null }); }} /> : <FoodIcon icon={row.icon} />}</span>
       <UnstyledButton className="health-row-name" disabled={Boolean(portions?.draft)} onClick={() => { preview.close(); onTap(row); }} aria-label={`Edit ${name}`}
         {...preview.targetProps} {...preview.focusProps}>
       <span className="health-row__description"><span className="health-row__name">{name}</span>{' '}
