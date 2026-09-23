@@ -358,10 +358,6 @@ spec is written but not implemented:
 - **Drill, practice menu, keypad, say-tasks** — `docs/_wip/plans/2026-09-22-word-ladder-plan-2-drill-practice.md`.
   `tricky` is flagged (§ States above) but never drilled yet; there is no
   practice menu, no on-screen jamo keypad, and no recorded speaking task.
-- **Per-learner printed quiz** — `docs/_wip/plans/2026-09-22-word-ladder-plan-3-printed-quiz.md`.
-  Only the whole-deck `school word-ladder quiz` CLI exists today (below); the
-  spec's per-learner introduced-words-only quiz and its fold-by-document-prefix
-  rule are not built.
 - **Trace CLI and grown-up word controls** — `docs/_wip/plans/2026-09-22-word-ladder-plan-4-observability-controls.md`.
   `school word-ladder trace` and the teacher console's per-word reset/exclude/
   re-grade controls do not exist; a word's state is visible only in
@@ -370,18 +366,89 @@ spec is written but not implemented:
   `word_ladder.settings` / `word_ladder.bounds` are static config; nothing
   adjusts them automatically yet.
 
-## Printed quiz and the fold (whole-deck, pre-Plan-3)
+## Printed quiz and the fold (spec §8)
+
+Two quiz sources share one row shape (`buildWordQuizSource` /
+`buildLearnerQuizSource`, `backend/src/2_domains/school/wordLadder/quizSource.mjs`):
+one `question` block per word, `itemId: <wordId>` (so a scanned row's attempt
+names the word the fold demotes), answer + three authored decoys, alternating
+term→gloss (`What does **<term>** mean?`) / gloss→term (`Which is **<gloss>**
+in <language.name>?`), deterministic from the seed, `fit.typeScale: young`.
+The header instruction and `topics` come from the lexicon's `quiz` block.
+
+### Whole-deck quiz (every word in one deck)
 
     node cli/school.mjs word-ladder quiz --deck week-01-classroom
     node cli/school.mjs docs publish language/korean/week-01-classroom-quiz.yml
 
-A bare `--deck` slug resolves only when exactly one deck id ends with
-`/<slug>`; otherwise the CLI lists the matches — pass the full id. Render per
-learner with `variety=omr`. A scan appends one paper attempt per graded row; a
-miss demotes per the transitions table above (rule: a paper row miss only ever
-demotes to `familiar`, and only from `familiar`/`claimed`/`mastered` — never a
-promotion). Only quizzes printed from decks of the **same lexicon** fold into a
-package.
+Writes `<deckId>-quiz.yml`, one question per word in the deck — including
+un-introduced words, whose miss is logged only, never demoted. A bare
+`--deck` slug resolves only when exactly one deck id ends with `/<slug>`;
+otherwise the CLI lists the matches — pass the full id.
+
+### Per-learner weekly quiz (only what the learner has been introduced to)
+
+    node cli/school.mjs word-ladder quiz --learner <id> --package korean-vocab [--week 2026-W39] [--rows 20] [--seed N] [--force]
+    node cli/school.mjs docs publish language/korean/korean-vocab-quiz-<id>-2026-w39.yml
+
+Writes `<deckDir>/<pkg>-quiz-<learnerId>-<isoWeek>.yml` (`quizId.mjs`
+`learnerQuizDocumentId`; `deckDir` is every deck sharing the package's
+lexicon, taken from the first deck's id). `isoWeek` is always lowercased in
+the id (`documentValidation.mjs`'s `ID_PATTERN` is lowercase-only) even
+though `isoWeekOf` and `--week` itself accept the display-cased `YYYY-Www`.
+Without `--week` the current day's ISO week is used.
+
+Row selection (`buildLearnerQuizSource`), up to `--rows` (default 20), in
+this order, until the cap is hit:
+
+1. every word `introducedDay` falls in this ISO week (deck order);
+2. every other unsettled word (`isUnsettled` — not `new`, not `mastered`);
+3. a seeded sample of `mastered` words filling whatever rows remain.
+
+If nothing qualifies (e.g. a fresh week with no introductions yet), the
+builder throws `no introduced words to quiz` rather than writing an empty
+sheet — this is correct behaviour, not a bug to route around.
+
+### Publishing and the reprint rule
+
+Both forms write through the same `writeQuizSource` in
+`cli/school/wordLadder.mjs`: an identical file (byte-for-byte) is left alone
+(`unchanged: <file>`); a **different** file — the ordinary case for a
+reprint after new introductions or a scan-side re-grade — is refused unless
+`--force`. **A changed source must be republished as a new revision and a
+fresh card minted, never pinned to the old one**: after `--force` overwrites
+the source, run `school docs publish` to bump the revision, then
+`POST /api/v1/school/print/render` to mint a fresh card — the old printed
+sheet keeps its own revision and stays gradable, but the next print run must
+carry the new one.
+
+### The fold
+
+A scan appends one paper attempt per graded row; a miss demotes per the
+transitions table above (a paper row miss only ever demotes to `familiar`,
+and only from `familiar`/`claimed`/`mastered` — never a promotion). The fold
+(`foldPaperAttempts.mjs`) reads a scanned row's `bankId` as `<docId>@<rev>`
+and accepts `docId` two ways:
+
+- **Legacy per-deck ids still fold, forever.** Any `docId` that exactly
+  matches `quizDocumentIdFor(deckId)` for a deck sharing the learner's
+  lexicon package is accepted — the whole-deck quiz keeps working
+  unconditionally, no learner scoping.
+- **A per-learner document folds only into the learner named in its id.**
+  `parseLearnerQuizId(docId, { deckDir, pkg })` parses the id from the
+  **end** — it anchors on the trailing `YYYY-wWW` week token, not the first
+  hyphen after the prefix — so a learner id containing hyphens is safe, and
+  sibling learner ids that are prefixes of each other (`a` vs. `a-b`) are
+  never confused (a raw `startsWith` prefix check would wrongly accept or
+  refuse the wrong one). A **sibling's sheet** — a `docId` that parses as a
+  per-learner id for this package but names a *different* `learnerId` — is
+  refused, not silently dropped: it is logged
+  `school.word-ladder.fold-refused` with the attempt id and bankId, and
+  recorded in `status.paperAttemptsFolded` so it is **never re-evaluated**
+  on a later fold.
+- **Paper never promotes.** Whichever id shape matched, only a demotion or a
+  logged-only pass/miss follows — folding a row can never raise a word's
+  state.
 
     curl -s -X POST {app}/api/v1/school/word-ladder/fold \
       -H 'Content-Type: application/json' -d '{"learnerId":"{learnerId}","actorId":"{teacherId}"}'
