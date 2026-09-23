@@ -122,7 +122,7 @@ describe('SayItem — say-after', () => {
       />,
     );
     expect(screen.getByText('가위')).toBeInTheDocument();
-    expect(playClip).toHaveBeenCalledWith('aud-gawi');
+    expect(playClip).toHaveBeenCalledWith('aud-gawi', 'term');
   });
 
   it('after a take, plays the take then the already-known native audio, even if the upload fails', async () => {
@@ -143,7 +143,7 @@ describe('SayItem — say-after', () => {
     playClip.mockClear();
     const blob = new Blob(['x'], { type: 'audio/webm' });
     await act(async () => { await captured.onTake({ blob, durationMs: 2000 }); });
-    expect(playSequence).toHaveBeenCalledWith(['blob:take', 'aud-gawi']);
+    expect(playSequence).toHaveBeenCalledWith([{ url: 'blob:take', kind: 'take' }, { url: 'aud-gawi', kind: 'term' }]);
     expect(spy).toHaveBeenCalledWith(expect.objectContaining({ itemId: 's3', status: 500 }));
     spy.mockRestore();
   });
@@ -186,7 +186,7 @@ describe('SayItem — read-aloud', () => {
     const blob = new Blob(['x'], { type: 'audio/webm' });
     await act(async () => { await captured.onTake({ blob, durationMs: 2000 }); });
     expect(api.uploadRecording).toHaveBeenCalledWith('sit1', { userId: 'kid', itemId: 's4', blob });
-    expect(playSequence).toHaveBeenCalledWith(['blob:take', 'aud-gawi']);
+    expect(playSequence).toHaveBeenCalledWith([{ url: 'blob:take', kind: 'take' }, { url: 'aud-gawi', kind: 'term' }]);
   });
 
   it('an upload failure plays only the take — no reveal, no native audio', async () => {
@@ -205,7 +205,7 @@ describe('SayItem — read-aloud', () => {
     );
     const blob = new Blob(['x'], { type: 'audio/webm' });
     await act(async () => { await captured.onTake({ blob, durationMs: 2000 }); });
-    expect(playSequence).toHaveBeenCalledWith(['blob:take']);
+    expect(playSequence).toHaveBeenCalledWith([{ url: 'blob:take', kind: 'take' }]);
   });
 });
 
@@ -248,7 +248,7 @@ describe('SayItem — say-from-cue', () => {
     const blob = new Blob(['x'], { type: 'audio/webm' });
     await act(async () => { await captured.onTake({ blob, durationMs: 2000 }); });
     expect(screen.getByText('가위')).toBeInTheDocument();
-    expect(playSequence).toHaveBeenCalledWith(['blob:take', 'resolved:aud-gawi']);
+    expect(playSequence).toHaveBeenCalledWith([{ url: 'blob:take', kind: 'take' }, { url: 'resolved:aud-gawi', kind: 'term' }]);
   });
 
   it('an upload failure never reveals the term — it has no other source', async () => {
@@ -269,7 +269,7 @@ describe('SayItem — say-from-cue', () => {
     const blob = new Blob(['x'], { type: 'audio/webm' });
     await act(async () => { await captured.onTake({ blob, durationMs: 2000 }); });
     expect(screen.queryByText('가위')).toBeNull();
-    expect(playSequence).toHaveBeenCalledWith(['blob:take']);
+    expect(playSequence).toHaveBeenCalledWith([{ url: 'blob:take', kind: 'take' }]);
     // The take still happened — Next replaces Skip even though nothing revealed.
     expect(screen.getByRole('button', { name: /next/i })).toBeInTheDocument();
     spy.mockRestore();

@@ -39,6 +39,7 @@ export default function MenuItem({ item, api, sittingId, userId, deckId, langs, 
     // the child on the menu, so say so rather than doing nothing.
     if (!out?.ok && out?.status !== 404) {
       setNotice("Couldn't start — try again");
+      wordLadderLog.noticeShown({ mode: body.mode, reason: 'practice-start-failed', status: out?.status ?? null });
       if (view.name !== 'menu') setView({ name: 'menu' });
     }
     onPractice(out);

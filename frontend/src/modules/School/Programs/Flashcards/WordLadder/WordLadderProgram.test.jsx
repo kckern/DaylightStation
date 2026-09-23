@@ -1,7 +1,8 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import WordLadderProgram from './WordLadderProgram.jsx';
 import { stopAudio } from './wordLadderAudio.js';
+import { wordLadderLog } from './wordLadderLog.js';
 
 vi.mock('./WordLadderStage.jsx', () => ({ default: ({ children }) => <div data-testid="stage">{children}</div> }));
 vi.mock('./wordLadderAudio.js', () => ({
@@ -345,5 +346,99 @@ describe('WordLadderProgram — dispatches every item type', () => {
     // The Menu button itself still works.
     fireEvent.click(screen.getByRole('button', { name: /^menu/i }));
     await waitFor(() => expect(api.respond).toHaveBeenCalledWith('s', { userId: 'test-learner', itemId: 'p1:0', response: { menu: true } }));
+  });
+});
+
+describe('WordLadderProgram — spec §8 trace and events', () => {
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('sitting.opened fires on open, item.shown carries a derived layout/media and fontPx:null', async () => {
+    const shownSpy = vi.spyOn(wordLadderLog, 'itemShown');
+    const openedSpy = vi.spyOn(wordLadderLog, 'sittingOpened');
+    const api = fakeApi();
+    api.open.mockResolvedValue(openWith(choice));
+    renderStarted(<WordLadderProgram descriptor={{ deckId: 'd', userId: 'test-learner' }} api={api} />);
+    await screen.findByText('Glue');
+    expect(openedSpy).toHaveBeenCalledWith(expect.objectContaining({ package: 'korean-vocab', first: 'choice' }));
+    expect(shownSpy).toHaveBeenCalledWith(expect.objectContaining({
+      itemId: 'r1:q:0', type: 'choice', layout: 'choice-text-cue', media: null, fontPx: null,
+    }));
+    shownSpy.mockRestore(); openedSpy.mockRestore();
+  });
+
+  it('sitting.closed on Leave carries the reason and the progress the sitting closed on', async () => {
+    const closedSpy = vi.spyOn(wordLadderLog, 'sittingClosed');
+    const api = fakeApi();
+    renderStarted(<WordLadderProgram descriptor={{ deckId: 'd', userId: 'test-learner' }} api={api} />);
+    await screen.findByText('가위');
+    fireEvent.click(screen.getByRole('button', { name: /leave/i }));
+    await waitFor(() => expect(closedSpy).toHaveBeenCalled());
+    expect(closedSpy).toHaveBeenCalledWith(expect.objectContaining({
+      sittingId: 's', reason: 'leave', activeMs: progress.activeMs, remaining: progress.capMs - progress.activeMs,
+    }));
+    closedSpy.mockRestore();
+  });
+
+  it('item.answered carries the response that was sent, and a numeric ms', async () => {
+    const answeredSpy = vi.spyOn(wordLadderLog, 'itemAnswered');
+    const api = fakeApi();
+    renderStarted(<WordLadderProgram descriptor={{ deckId: 'd', userId: 'test-learner' }} api={api} />);
+    await screen.findByText('가위');
+    act(() => { fireEvent.keyDown(window, { key: ' ' }); }); // flip
+    act(() => { fireEvent.keyDown(window, { key: ' ' }); }); // advance -> respond({seen:true})
+    await waitFor(() => expect(answeredSpy).toHaveBeenCalled());
+    expect(answeredSpy).toHaveBeenCalledWith(expect.objectContaining({
+      itemId: 'r1:i:gawi:flash', response: { seen: true }, judge: null,
+    }));
+    expect(typeof answeredSpy.mock.calls[0][0].ms).toBe('number');
+    answeredSpy.mockRestore();
+  });
+
+  it('round.started fires for the opening round, and round.ended/round.started fire again when progress.round.index advances', async () => {
+    const startedSpy = vi.spyOn(wordLadderLog, 'roundStarted');
+    const endedSpy = vi.spyOn(wordLadderLog, 'roundEnded');
+    const api = fakeApi();
+    api.open.mockResolvedValue(openWith(choice)); // progress.round.index === 1
+    const nextRoundProgress = { ...progress, round: { ...progress.round, index: 2, phase: 'intro' } };
+    api.respond.mockResolvedValue({ ok: true, status: 200, data: { result: { correct: true, answer: 'Scissors' }, item: stream, progress: nextRoundProgress } });
+    renderStarted(<WordLadderProgram descriptor={{ deckId: 'd', userId: 'test-learner' }} api={api} />);
+    await screen.findByText('Glue');
+    expect(startedSpy).toHaveBeenCalledWith(expect.objectContaining({ index: 1 }));
+    act(() => { fireEvent.keyDown(window, { key: '2' }); }); // choose 'Scissors', correct
+    await waitFor(() => expect(endedSpy).toHaveBeenCalledWith(expect.objectContaining({ index: 1, quizzed: 1, notYet: 0 })));
+    expect(startedSpy).toHaveBeenCalledWith(expect.objectContaining({ index: 2 }));
+    startedSpy.mockRestore(); endedSpy.mockRestore();
+  });
+
+  it('item.stalled fires at 45s of no input on the current item', async () => {
+    vi.useFakeTimers();
+    const stalledSpy = vi.spyOn(wordLadderLog, 'itemStalled');
+    const api = fakeApi();
+    render(<WordLadderProgram descriptor={{ deckId: 'd', userId: 'test-learner' }} api={api} />);
+    act(() => { fireEvent.click(screen.getByRole('button', { name: /start/i })); });
+    await vi.waitFor(() => expect(screen.queryByText('가위')).not.toBeNull());
+    act(() => { vi.advanceTimersByTime(45_000); });
+    expect(stalledSpy).toHaveBeenCalledWith({ itemId: 'r1:i:gawi:flash', ms: 45_000 });
+    stalledSpy.mockRestore();
+  });
+
+  it('item.prompt-fallback logs when a cue asks for an image but the server sent no asset for it', async () => {
+    const fallbackSpy = vi.spyOn(wordLadderLog, 'promptFallback').mockImplementation(() => {});
+    const api = fakeApi();
+    const noImageCue = { ...choice, task: '3.1', cue: { type: 'image', text: 'Scissors' }, assets: {} };
+    api.open.mockResolvedValue(openWith(noImageCue));
+    renderStarted(<WordLadderProgram descriptor={{ deckId: 'd', userId: 'test-learner' }} api={api} />);
+    await waitFor(() => expect(fallbackSpy).toHaveBeenCalledWith({ itemId: noImageCue.id, cue: 'image' }));
+    fallbackSpy.mockRestore();
+  });
+
+  it('visibility is logged on a document visibilitychange', async () => {
+    const visSpy = vi.spyOn(wordLadderLog, 'visibility');
+    const api = fakeApi();
+    renderStarted(<WordLadderProgram descriptor={{ deckId: 'd', userId: 'test-learner' }} api={api} />);
+    await screen.findByText('가위');
+    act(() => { document.dispatchEvent(new Event('visibilitychange')); });
+    expect(visSpy).toHaveBeenCalledWith({ state: document.visibilityState });
+    visSpy.mockRestore();
   });
 });

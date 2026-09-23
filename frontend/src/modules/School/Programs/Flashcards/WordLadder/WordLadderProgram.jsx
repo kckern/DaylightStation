@@ -12,7 +12,10 @@ import MatchItem from './items/MatchItem.jsx';
 import ListenItem from './items/ListenItem.jsx';
 import MenuItem from './items/MenuItem.jsx';
 import { createWordLadderApi } from './wordLadderApi.js';
-import { wordLadderLog } from './wordLadderLog.js';
+import { wordLadderLog, setTrace, clearTrace } from './wordLadderLog.js';
+import { createTrace } from './createTrace.js';
+import { useItemStall } from './useItemStall.js';
+import { layoutForItem, mediaForItem } from './itemLayout.js';
 import { stopAudio } from './wordLadderAudio.js';
 import { useWordLadderKeys } from './useWordLadderKeys.js';
 import './WordLadder.scss';
@@ -88,6 +91,11 @@ function remainingLabel(progress) {
 export default function WordLadderProgram({ descriptor, api: injected = null, resolveAssetUrl = (id) => id, onExit = () => {} }) {
   const { userId = null, deckId = null, test = false, scenario = null, title = null } = descriptor ?? {};
   const api = useMemo(() => injected ?? createWordLadderApi({ test }), [injected, test]);
+  // One trace per mount (spec §8) — created once, bound to the wordLadderLog
+  // facade for this component's lifetime so every event below (and every
+  // item's facade call, via the ambient binding) is stamped with it.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const trace = useMemo(() => createTrace({ learnerId: userId, deckId, mode: test ? 'test' : 'live' }), []);
   const [session, setSession] = useState(null);
   const [item, setItem] = useState(null);
   const [pendingItem, setPendingItem] = useState(null);
@@ -105,6 +113,11 @@ export default function WordLadderProgram({ descriptor, api: injected = null, re
   // closes anything still open (reason 'unmount').
   const sittingRef = useRef(null);
   const closedRef = useRef(false);
+  // When the CURRENT item was shown, for item.answered's `ms`.
+  const itemShownAtRef = useRef(null);
+  // Per-round tallies for round.ended {quizzed, notYet} — reset whenever
+  // progress.round.index changes (see the round-tracking effect below).
+  const roundRef = useRef({ index: null, quizzed: 0, notYet: 0 });
 
   const show = useCallback((nextItem, nextProgress) => {
     setItem(nextItem); setProgress(nextProgress); setResult(null); setPendingItem(null);
@@ -123,14 +136,19 @@ export default function WordLadderProgram({ descriptor, api: injected = null, re
     setError(null);
     sittingRef.current = data.sittingId;
     closedRef.current = false;
+    trace.setSitting(data.sittingId);
+    trace.setPackage(data.package ?? null);
     setSession({ id: data.sittingId, langs: { term: data.language?.code ?? null, gloss: data.gloss?.code ?? null } });
     show(data.item, data.progress ?? null);
-    wordLadderLog.planLoaded({ userId, deckId, package: data.package ?? null, sittingId: data.sittingId, test, first: data.item.type, phase: data.progress?.phase ?? null });
-  }, [api, userId, deckId, scenario, test, show]);
+    wordLadderLog.sittingOpened({ package: data.package ?? null, first: data.item.type, phase: data.progress?.phase ?? null });
+  }, [api, userId, deckId, scenario, test, show, trace]);
 
   useEffect(() => {
     live.current = true;
+    setTrace(trace);
     wordLadderLog.mounted({ userId, deckId, test, scenario });
+    const onVisibility = () => wordLadderLog.visibility({ state: document.visibilityState });
+    document.addEventListener('visibilitychange', onVisibility);
     return () => {
       live.current = false;
       const openId = sittingRef.current;
@@ -143,8 +161,10 @@ export default function WordLadderProgram({ descriptor, api: injected = null, re
       // Leaving mid-clip must not leave a word talking over whatever is next.
       stopAudio();
       wordLadderLog.unmounted({ userId, deckId, test, sittingId: openId ?? null });
+      document.removeEventListener('visibilitychange', onVisibility);
+      clearTrace(trace);
     };
-  }, [api, open, userId, deckId, test, scenario]);
+  }, [api, open, userId, deckId, test, scenario, trace]);
 
   const start = useCallback(() => {
     if (started) return;
@@ -155,8 +175,26 @@ export default function WordLadderProgram({ descriptor, api: injected = null, re
   useWordLadderKeys({ ' ': start, enter: start }, { enabled: !started });
 
   useEffect(() => {
-    if (item) wordLadderLog.itemShown({ itemId: item.id, type: item.type, task: item.task ?? null, mode: item.mode ?? null, wordId: item.wordId ?? item.word?.wordId ?? null, test });
-  }, [item, test]);
+    if (!item) return;
+    itemShownAtRef.current = Date.now();
+    const media = mediaForItem(item);
+    wordLadderLog.itemShown({
+      itemId: item.id, type: item.type, task: item.task ?? null, mode: item.mode ?? null,
+      wordId: item.wordId ?? item.word?.wordId ?? null, layout: layoutForItem(item), media, fontPx: null,
+    });
+    // A cue that asked for image/audio media but the server sent no asset for
+    // it: the prompt fell back to plain text before the child ever saw a
+    // picture or heard a sound (distinct from media.failed, which is an
+    // asset that DID resolve but then failed to load in the browser).
+    const assetMissing = (item.cue?.type === 'image' && !(item.assets?.image || item.word?.media?.image))
+      || (item.cue?.type === 'audio' && !(item.assets?.audio || item.assets?.glossAudio || item.word?.media?.audio));
+    if (assetMissing) wordLadderLog.promptFallback({ itemId: item.id, cue: item.cue.type });
+  }, [item]);
+
+  // spec §8 item.stalled — 45s / 120s of no input on the current item.
+  useItemStall(item?.id ?? null, (ms) => {
+    if (item) wordLadderLog.itemStalled({ itemId: item.id, ms });
+  });
 
   /** After a refused write, ask the server what is on screen now (a 404 there reopens too). */
   const resync = useCallback(async () => {
@@ -182,7 +220,17 @@ export default function WordLadderProgram({ descriptor, api: injected = null, re
       if (status !== 0) await resync();
       return;
     }
-    wordLadderLog.itemAnswered({ itemId: item.id, type: item.type, task: item.task ?? null, correct: data?.result?.correct ?? null, score: data?.result?.score ?? null, next: data?.item?.type ?? null, test });
+    wordLadderLog.itemAnswered({
+      itemId: item.id, type: item.type, task: item.task ?? null, response,
+      correct: data?.result?.correct ?? null, score: data?.result?.score ?? null,
+      judge: data?.result?.judge ?? null, next: data?.item?.type ?? null,
+      ms: itemShownAtRef.current != null ? Date.now() - itemShownAtRef.current : null,
+    });
+    // Best-effort per-round tally for round.ended {quizzed, notYet} — a
+    // sorted-to-notYet flashcard, or a graded quiz answer (choice/typed,
+    // which only ever carry a task once they're in a round's quiz phase).
+    if (response?.sort === 'notYet') roundRef.current.notYet += 1;
+    if ((item.type === 'choice' || item.type === 'typed') && item.task) roundRef.current.quizzed += 1;
     setProgress(data?.progress ?? null);
     // A retry: the server kept the same item (copy / dictation / tiles miss) — stay on it, say so.
     if (data?.result?.correct === false && (data?.item?.id === item.id || (item.type === 'copy' && !data?.item))) {
@@ -202,15 +250,32 @@ export default function WordLadderProgram({ descriptor, api: injected = null, re
     setItem(pendingItem); setPendingItem(null); setResult(null);
   }, [pendingItem]);
 
+  // round.started / round.ended (spec §8) — derived from progress.round.index
+  // changing, since the server doesn't send a dedicated transition event to
+  // the frontend. {quizzed, notYet} are the tallies `respond()` accumulated
+  // above for the round that just ended.
+  useEffect(() => {
+    const round = progress?.round ?? null;
+    const prevIndex = roundRef.current.index;
+    if (round?.index === prevIndex) return;
+    if (prevIndex != null) {
+      wordLadderLog.roundEnded({ index: prevIndex, quizzed: roundRef.current.quizzed, notYet: roundRef.current.notYet });
+    }
+    roundRef.current = { index: round?.index ?? null, quizzed: 0, notYet: 0 };
+    if (round) wordLadderLog.roundStarted({ index: round.index, size: round.size ?? null });
+  }, [progress?.round?.index]); // eslint-disable-line react-hooks/exhaustive-deps
+
   /** Leave (header) closes as 'leave'; Done (summary) as 'cap' when the time cap was hit, else 'goal'. */
   const closeAndExit = useCallback(async (reason) => {
-    wordLadderLog.sittingLeft({ userId, deckId, sittingId: session?.id ?? null, itemId: item?.id ?? null, reason, test });
+    const remaining = progress?.capMs != null && progress?.activeMs != null
+      ? Math.max(0, progress.capMs - progress.activeMs) : null;
+    wordLadderLog.sittingClosed({ sittingId: session?.id ?? null, itemId: item?.id ?? null, reason, activeMs: progress?.activeMs ?? null, remaining });
     if (session && !closedRef.current) {
       closedRef.current = true;
       await api.close(session.id, { userId, reason });
     }
     onExit();
-  }, [api, session, item, userId, deckId, test, onExit]);
+  }, [api, session, item, userId, test, onExit, progress]);
   const leave = useCallback(() => closeAndExit('leave'), [closeAndExit]);
   const done = useCallback(
     () => closeAndExit(progress?.capMs && progress.activeMs >= progress.capMs ? 'cap' : 'goal'),

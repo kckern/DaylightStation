@@ -19,9 +19,9 @@ function LookStep({ item, langs, resolveAssetUrl, onRespond, busy }) {
   const audio = word.media?.audio ? resolveAssetUrl(word.media.audio) : null;
   const image = word.media?.image ? resolveAssetUrl(word.media.image) : null;
   const [imageOk, setImageOk] = useState(true);
-  useEffect(() => { if (audio) playClip(audio); }, [item.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (audio) playClip(audio, 'term'); }, [item.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const next = () => { if (!busy) onRespond({ done: true }); };
-  useWordLadderKeys({ ' ': next, enter: next, h: () => audio && playClip(audio) });
+  useWordLadderKeys({ ' ': next, enter: next, h: () => audio && playClip(audio, 'term') });
   return (
     <section className="wl-item wl-look" aria-label="Look">
       <div className={`wl-card wl-look__card${image && imageOk ? ' has-picture' : ''}`}>
@@ -32,7 +32,7 @@ function LookStep({ item, langs, resolveAssetUrl, onRespond, busy }) {
         </div>
       </div>
       <div className="wl-controls">
-        {audio && <TouchButton variant="secondary" keyHint="H" onClick={() => playClip(audio)}><Icon name="volume" /> Hear it</TouchButton>}
+        {audio && <TouchButton variant="secondary" keyHint="H" onClick={() => playClip(audio, 'term')}><Icon name="volume" /> Hear it</TouchButton>}
         <TouchButton variant="primary" keyHint="Space" disabled={busy} onClick={next}>Next</TouchButton>
       </div>
     </section>
