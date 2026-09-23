@@ -820,3 +820,17 @@ describe('engine — transitions and graded records (plan 4, spec §8 events)', 
     expect(out.transitions).toEqual([]);
   });
 });
+
+describe('engine — graded item records (plan 4, grown-up controls)', () => {
+  it('a typed answer\'s record keeps its word, task, source and the judge reason', () => {
+    const status = emptyStatusV3();
+    status.words.gawi = { ...emptyWordV3(), state: 'mastered', stage: 2, dueDay: D, introducedDay: '2026-09-10' };
+    const ctx = start(status);
+    const item = currentItem(ctx);
+    expect(item).toMatchObject({ type: 'typed', task: '3.3', wordId: 'gawi' });
+    const out = respond(ctx, item.id, { typed: '가이' }, { at: at(), verdict: { score: 5, judge: 'model', reason: 'close', pass: false } });
+    expect(out.dayFile.items[item.id]).toMatchObject({
+      response: { typed: '가이' }, wordId: 'gawi', task: '3.3', source: 'recheck', reason: 'close', result: { correct: false, score: 5, judge: 'model' },
+    });
+  });
+});

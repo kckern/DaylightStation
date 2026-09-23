@@ -17,7 +17,7 @@ export function emptyWordV3() {
   return {
     state: 'new', stage: null, dueDay: null, missStreak: 0, tricky: false, trickySince: null,
     verifyFailedDay: null, lostMasteredDay: null, notYetCarry: false, introducedDay: null,
-    rechecks: 0, lastGraded: null,
+    rechecks: 0, lastGraded: null, excluded: false,
   };
 }
 
@@ -71,12 +71,18 @@ export function applyGraded(word, { source, correct, day, task, settings }) {
   return { ...miss(word, day, settings.afterMisses), lostMasteredDay: day, rechecks, lastGraded };
 }
 
+/** A grown-up removed this word from every round, recheck, drill, practice run and quiz (spec §6). */
+export function isExcluded(word) {
+  return word?.excluded === true;
+}
+
 export function isDue(word, day) {
+  if (isExcluded(word)) return false;
   return word?.state === 'mastered' && typeof word.dueDay === 'string' && word.dueDay <= day;
 }
 
 export function isUnsettled(word) {
-  if (!word) return false;
+  if (!word || isExcluded(word)) return false;
   if (['introduced', 'notYet', 'familiar', 'claimed'].includes(word.state)) return true;
   return word.state === 'mastered' && word.stage === 0;
 }

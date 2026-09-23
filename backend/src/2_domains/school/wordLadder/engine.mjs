@@ -10,7 +10,7 @@
  */
 import { DomainInvariantError, ValidationError } from '#domains/core/errors/index.mjs';
 import { hashString, seededShuffle } from './checkItem.mjs';
-import { PILES, applyGraded, applySort, emptyWordV3, introduce, isDue } from './mastery.mjs';
+import { PILES, applyGraded, applySort, emptyWordV3, introduce, isDue, isExcluded } from './mastery.mjs';
 import { channelFor, cueFor, pickMeaningChoices, pickTermChoices } from './choices.mjs';
 import { newAllowance, planNextRound } from './rounds.mjs';
 import { normalizeAnswer } from './jamo.mjs';
@@ -51,7 +51,7 @@ export function openDay({ status, dayFile, day, deckId, pool, settings, learnerI
     const due = Object.entries(nextStatus.words).filter(([, word]) => isDue(word, day)).map(([id]) => id).sort();
     nextDay.atOpen = {
       dueRechecks: due,
-      tricky: Object.entries(nextStatus.words).filter(([, word]) => word.tricky).map(([id]) => id).sort(),
+      tricky: Object.entries(nextStatus.words).filter(([, word]) => word.tricky && !isExcluded(word)).map(([id]) => id).sort(),
       newAllowance: newAllowance({ words: nextStatus.words, day, settings }),
       settings: clone(settings),
     };
@@ -68,6 +68,18 @@ export function openDay({ status, dayFile, day, deckId, pool, settings, learnerI
   // already spent) is credited here — `respond` would never run to do it.
   if (!nextDay.doneAt) settleDay(ctx, at);
   return { status: nextStatus, dayFile: nextDay };
+}
+
+/**
+ * Today's plan once a grown-up excludes `wordId` (spec §6): its pending
+ * recheck leaves the order and any unfinished drill on it ends. Answered
+ * rechecks and finished drills are history and stay. Pure.
+ */
+export function excludeWordFromDay(dayFile, wordId) {
+  const next = clone(dayFile);
+  next.rechecks.order = next.rechecks.order.filter((id) => id !== wordId || next.rechecks.answered[id]);
+  next.drills = (next.drills ?? []).map((drill) => (drill.wordId === wordId && !drill.done ? { ...drill, done: true, excluded: true } : drill));
+  return next;
 }
 
 function hasPendingRecheck(dayFile) {
@@ -109,7 +121,7 @@ function recheckTask(word, wordId, settings) {
 
 function introducedSameKind(ctx, entry) {
   return Object.entries(ctx.status.words)
-    .filter(([id, word]) => id !== entry.id && word.state !== 'new')
+    .filter(([id, word]) => id !== entry.id && word.state !== 'new' && !isExcluded(word))
     .map(([id]) => ctx.lexicon.entries.get(id))
     .filter((other) => other && other.kind === entry.kind);
 }
@@ -155,7 +167,7 @@ function hasEntry(ctx, id) {
 // Other introduced words a drill's match board can pair with the drill word.
 function matchPartners(ctx, wordId) {
   return Object.entries(ctx.status.words)
-    .filter(([id, word]) => id !== wordId && word.state !== 'new' && hasEntry(ctx, id))
+    .filter(([id, word]) => id !== wordId && word.state !== 'new' && !isExcluded(word) && hasEntry(ctx, id))
     .map(([id]) => id);
 }
 
@@ -183,7 +195,7 @@ function maybeStartTrickyDrill(ctx) {
   if (remainingMs(ctx) < DRILL_MS) return false;
   const since = (id) => String(wordOf(ctx.status, id).trickySince ?? '');
   const candidates = (ctx.dayFile.atOpen?.tricky ?? [])
-    .filter((id) => hasEntry(ctx, id) && wordOf(ctx.status, id).tricky && !drills.some((drill) => drill.wordId === id))
+    .filter((id) => hasEntry(ctx, id) && wordOf(ctx.status, id).tricky && !isExcluded(wordOf(ctx.status, id)) && !drills.some((drill) => drill.wordId === id))
     .sort((a, b) => since(a).localeCompare(since(b)) || a.localeCompare(b));
   if (!candidates.length) return false;
   drills.push(newDrill(ctx, candidates[0], 'tricky'));
@@ -249,7 +261,7 @@ function openRound(ctx) {
 
 function nextRound(ctx) {
   if (remainingMs(ctx) <= 0) return null;
-  const pool = ctx.pool.filter((id) => wordOf(ctx.status, id).state === 'new');
+  const pool = ctx.pool.filter((id) => wordOf(ctx.status, id).state === 'new' && !isExcluded(wordOf(ctx.status, id)));
   const planned = planNextRound({
     words: ctx.status.words, pool, day: ctx.day, roundedToday: roundedToday(ctx.dayFile),
     settings: ctx.settings, remainingMs: remainingMs(ctx), roundNumber: ctx.dayFile.rounds.length + 1,
@@ -385,7 +397,7 @@ function startQuiz(ctx, round, { quizNow = false } = {}) {
 function offerFor(ctx, round) {
   if (round.offerSettled || remainingMs(ctx) < DRILL_MS) return null;
   const ranked = round.words
-    .filter((id) => round.stream.latest[id] === 'notYet' && !round.quiz.passed.includes(id) && hasEntry(ctx, id))
+    .filter((id) => round.stream.latest[id] === 'notYet' && !round.quiz.passed.includes(id) && !isExcluded(wordOf(ctx.status, id)) && hasEntry(ctx, id))
     .map((id) => [id, round.stream.notYetCount?.[id] ?? 1])
     .sort(([a, x], [b, y]) => (y - x) || a.localeCompare(b));
   return ranked[0]?.[0] ?? null;
@@ -595,6 +607,13 @@ export function respond(inputCtx, itemId, response = {}, { at, verdict = null } 
   };
 }
 
+// A task item's record names its word, task and source (and a judged answer
+// its reason), so a grown-up can later list and re-grade it (spec §6).
+function itemMeta(item, verdict) {
+  if (!item.wordId || !item.task) return {};
+  return { wordId: item.wordId, task: item.task, source: item.source ?? null, ...(verdict ? { reason: verdict.reason ?? null } : {}) };
+}
+
 function applyResponse(ctx, item, itemId, response, { at, verdict }) {
   let result = { ok: true };
 
@@ -649,7 +668,7 @@ function applyResponse(ctx, item, itemId, response, { at, verdict }) {
       result = gradedResult(ctx, item, correct, verdict);
     }
   }
-  ctx.dayFile.items[itemId] = { at, response, result };
+  ctx.dayFile.items[itemId] = { at, response, result, ...itemMeta(item, verdict) };
   settleDay(ctx, at);
   return { status: ctx.status, dayFile: ctx.dayFile, result };
 }
