@@ -996,6 +996,23 @@ describe('CardLadderSittingService — grown-up word controls (plan 4 task 4, sp
     await expect(service.adminRegrade({ ...who, day: '2026-09-20', itemId: 'rc:none', pass: true })).rejects.toThrow(/rc:none/);
   });
 
+  it('adminRegrade keys a Latin-target answer by the script normalize (lower-cased), as the judge looks it up', async () => {
+    const store = adminStore();
+    store.s.days['2026-09-20'] = {
+      ...emptyDay('2026-09-20'),
+      items: { 'rc:gawi': { at: 'a', response: { typed: ' Ephmeral ' }, result: { correct: false, score: 4, judge: 'model' }, wordId: 'gawi', task: '3.3', source: 'recheck' } },
+    };
+    const judgementCache = cacheMock();
+    const { service } = make({ store, teacherGate: gate(), judgementCache });
+    lexicon.targetScript = 'latin';
+    try {
+      await service.adminRegrade({ ...who, day: '2026-09-20', itemId: 'rc:gawi', pass: true });
+    } finally {
+      delete lexicon.targetScript;
+    }
+    expect(judgementCache.set).toHaveBeenCalledWith('korean-vocab', 'gawi', 'ephmeral', { score: 6, judge: 'grown-up', reason: 'Re-graded by a grown-up' });
+  });
+
   it('adminRegrade needs a judgement cache', async () => {
     const { service } = make({ store: adminStore(), teacherGate: gate() });
     await expect(service.adminRegrade({ ...who, day: TODAY, itemId: 'rc:gawi', pass: true })).rejects.toThrow(/cache/);
