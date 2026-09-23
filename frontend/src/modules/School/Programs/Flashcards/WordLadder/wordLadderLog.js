@@ -31,6 +31,7 @@ export const wordLadderLog = {
   itemAnswered: (data) => emit('item.answered', data),
   sittingLeft: (data) => emit('sitting.left', data),
   audioPlayed: (data) => emit('audio.played', data),
+  keypadToggled: (data) => emit('keypad.toggled', data),   // {auto, open}
 };
 
 export default wordLadderLog;

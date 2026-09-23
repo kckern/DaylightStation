@@ -4,7 +4,14 @@ import Icon from '../../../../home/icons/Icon.jsx';
 import { FitText } from '../FitText.jsx';
 import { playClip } from '../wordLadderAudio.js';
 import { useWordLadderKeys } from '../useWordLadderKeys.js';
+import { wordLadderLog } from '../wordLadderLog.js';
+import JamoKeypad from '../JamoKeypad.jsx';
 import CuePicture from './CuePicture.jsx';
+
+// Spec §6: the field has had focus this long with no keydown before the
+// keypad opens itself. Once per item — a physical keyboard shows up as
+// keydowns, and once one has, there is nothing left to detect.
+const KEYPAD_AUTO_OPEN_MS = 10_000;
 
 /**
  * 1.1 copy-type (the Korean is on screen; must match to continue) and 3.3
@@ -12,28 +19,88 @@ import CuePicture from './CuePicture.jsx';
  */
 export default function TypedItem({ item, mode, langs, resolveAssetUrl, onRespond, result = null, onContinue, busy = false, stageRef = null }) {
   const [value, setValue] = useState('');
+  const [keypadOpen, setKeypadOpen] = useState(false);
   const input = useRef(null);
   const word = item.word;
   const image = item.assets?.image ? resolveAssetUrl(item.assets.image) : null;
   const glossAudio = item.assets?.glossAudio ? resolveAssetUrl(item.assets.glossAudio) : null;
   const termAudio = word?.media?.audio ? resolveAssetUrl(word.media.audio) : null;
+
+  // Auto-open bookkeeping. Refs, not state: read inside a timer callback and
+  // a document listener, neither of which should re-run when the value they
+  // read changes.
+  const keypadOpenRef = useRef(false);
+  const keypadUsedRef = useRef(false); // auto-open attempted (fired or cancelled) for this item
+  const autoTimerRef = useRef(null);
+  useEffect(() => { keypadOpenRef.current = keypadOpen; }, [keypadOpen]);
+
   useEffect(() => {
     setValue('');
     input.current?.focus();
     if (mode === 'copy' && termAudio) playClip(termAudio);
     if (item.cue?.type === 'audio' && glossAudio) playClip(glossAudio);
+    // Keypad: closed and re-armed to auto-open once per item.
+    setKeypadOpen(false);
+    keypadUsedRef.current = false;
+    clearTimeout(autoTimerRef.current);
+    autoTimerRef.current = setTimeout(() => {
+      if (keypadUsedRef.current) return;
+      keypadUsedRef.current = true;
+      setKeypadOpen(true);
+      wordLadderLog.keypadToggled({ auto: true, open: true });
+    }, KEYPAD_AUTO_OPEN_MS);
+    return () => clearTimeout(autoTimerRef.current);
   }, [item.id]); // eslint-disable-line react-hooks/exhaustive-deps
   // A copy mismatch starts the retry from an empty field. Never select-all: the
   // in-page composer inserts at the caret, so a selection would not be replaced.
   useEffect(() => {
     if (result && mode === 'copy' && result.correct === false) { setValue(''); input.current?.focus(); }
   }, [result, mode]);
+
+  /**
+   * "Closes on the first physical keydown" (spec §6). This has to be a
+   * `document` capture listener, not the field's own `onKeyDown`: in Korean
+   * mode `HangulTypingProvider` consumes a real jamo key and calls
+   * `stopPropagation()` on ITS OWN document-capture listener, which — since
+   * that listener is mounted once at the top of School, long before this
+   * item exists — halts propagation before it would ever reach a listener on
+   * the input itself. Two listeners on the SAME node (`document`) are not
+   * subject to that halt; only listeners further down the tree are. So this
+   * effect adds its own `document` capture listener rather than relying on
+   * bubbling to the field, and identifies "was this our field" by
+   * `event.target`, which is fixed at dispatch time regardless of which node
+   * is currently running listeners.
+   */
+  useEffect(() => {
+    const onPhysicalKeydown = (event) => {
+      if (event.target !== input.current) return;
+      clearTimeout(autoTimerRef.current);
+      keypadUsedRef.current = true;
+      if (keypadOpenRef.current) {
+        setKeypadOpen(false);
+        wordLadderLog.keypadToggled({ auto: true, open: false });
+      }
+    };
+    document.addEventListener('keydown', onPhysicalKeydown, true);
+    return () => document.removeEventListener('keydown', onPhysicalKeydown, true);
+  }, []);
+
+  const toggleKeypad = () => {
+    clearTimeout(autoTimerRef.current);
+    keypadUsedRef.current = true;
+    const next = !keypadOpen;
+    setKeypadOpen(next);
+    wordLadderLog.keypadToggled({ auto: false, open: next });
+    input.current?.focus();
+  };
+
   const submit = () => {
     if (busy || !value.trim()) return;
     onRespond({ typed: value });
     if (mode === 'graded') { input.current?.blur(); stageRef?.current?.focus(); }
   };
   const graded = mode === 'graded';
+  const fieldDisabled = busy || (graded && Boolean(result));
   useWordLadderKeys(result && graded ? { ' ': onContinue, enter: onContinue } : {}, { enabled: Boolean(result) && graded });
   return (
     <section className="wl-item wl-typed" aria-label={graded ? 'Type the word' : 'Copy the word'}>
@@ -53,13 +120,18 @@ export default function TypedItem({ item, mode, langs, resolveAssetUrl, onRespon
         autoCorrect="off"
         spellCheck={false}
         value={value}
-        disabled={busy || (graded && Boolean(result))}
+        disabled={fieldDisabled}
         aria-label="Your answer"
         onChange={(e) => setValue(e.target.value)}
         onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); submit(); } }}
       />
       <div className="wl-controls">
         {!graded && termAudio && <TouchButton variant="secondary" onClick={() => playClip(termAudio)}><Icon name="volume" /> Hear it</TouchButton>}
+        {!fieldDisabled && (
+          <TouchButton variant="secondary" aria-pressed={keypadOpen} onClick={toggleKeypad}>
+            <Icon name="writing" /> Keypad
+          </TouchButton>
+        )}
         {/* A copy mismatch is a retry, not a terminal result — only a GRADED
             result hides the submit button; copy mode keeps it for the retry. */}
         {(!result || (!graded && result?.correct === false)) && (
@@ -75,6 +147,7 @@ export default function TypedItem({ item, mode, langs, resolveAssetUrl, onRespon
         )}
         {graded && result && <TouchButton variant="primary" keyHint="Space" onClick={onContinue}>Next</TouchButton>}
       </div>
+      <JamoKeypad open={keypadOpen && !fieldDisabled} onToggle={toggleKeypad} onSubmit={submit} />
     </section>
   );
 }
