@@ -5,6 +5,8 @@
  */
 import { isExcluded, isUnsettled } from './mastery.mjs';
 
+import { hashString, seededShuffle } from './checkItem.mjs';
+
 export const ESTIMATE_MS = Object.freeze({ recheckChoice: 15000, recheckTyped: 30000, newWord: 138000, carryWord: 61000 });
 const CARRY_STATES = ['notYet', 'introduced', 'familiar', 'claimed'];
 const CARRY_RANK = { notYet: 0, introduced: 1, familiar: 1, claimed: 2 };
@@ -58,4 +60,21 @@ export function planNextRound({ words, pool = [], day, roundedToday = new Set(),
 export function extraNewWords({ words, pool = [], roundedToday = new Set(), settings }) {
   const size = Math.max(1, Math.min(settings.round.size, settings.batch.newPerDay));
   return pool.filter((id) => (words?.[id]?.state ?? 'new') === 'new' && !roundedToday.has(id) && !isExcluded(words?.[id])).slice(0, size);
+}
+
+/**
+ * The order new words are introduced in (config `batch.order`, owner ruling
+ * 2026-09-23: config-driven, random by default). `random` shuffles each deck's
+ * words once per learner — seeded by learner and deck, so the order is the same
+ * every day and every reopen, and two learners meet a deck differently. Decks
+ * keep their sequence (an earlier deck's words still come first); `deck` keeps
+ * the deck file's authored order. Pure.
+ */
+export function orderNewWords(groups = [], { order = 'random', learnerId = '' } = {}) {
+  const out = [];
+  for (const { deckId, ids = [] } of groups) {
+    const fresh = ids.filter((id) => !out.includes(id));
+    out.push(...(order === 'deck' ? fresh : seededShuffle(fresh, hashString(`${learnerId}|${deckId}|new-order`))));
+  }
+  return out;
 }

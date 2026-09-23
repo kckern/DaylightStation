@@ -20,7 +20,7 @@ export {
 export { ruleFor, ruleForTarget, digitTokens, numbersMatch, answersMatch, graphemes } from './scriptRules.mjs';
 export { BANDS, ACCENT_SLIP_SCORE, scoreTypedDeterministic, isShortTarget, modelMayRaise, raiseOneBand } from './typedScore.mjs';
 export { pickMeaningChoices, pickTermChoices, cueFor, channelFor } from './choices.mjs';
-export { ESTIMATE_MS, carryCandidates, extraNewWords, newAllowance, planNextRound } from './rounds.mjs';
+export { ESTIMATE_MS, carryCandidates, extraNewWords, newAllowance, orderNewWords, planNextRound } from './rounds.mjs';
 export { introPreview, introPlanLabel, deckProgress } from './intro.mjs';
 export {
   openDay, currentItem, respond, addActiveTime, startPractice, learnMore, wordTransitions, excludeWordFromDay, roundHasMatch,
