@@ -126,6 +126,14 @@ export function useCommonMediaController({
   // Debounce seek logging — DASH fires multiple seeked events per seek (audio+video tracks)
   const lastSeekedLogTsRef = useRef(0);
 
+  // Every onProgress call reads the CURRENT callback. The element-setup effect
+  // below re-runs on ~20 deps; a listener that outlives one run must never be
+  // able to call the onProgress it was created with. That is exactly how a dead
+  // FitnessPlayer closure (governance "locked") kept re-pausing the video on
+  // 2026-09-22 — see docs/_wip/plans/2026-09-22-fitness-play-means-play.md.
+  const onProgressRef = useRef(onProgress);
+  onProgressRef.current = onProgress;
+
   // Unique identity for this mount instance (used to scope the start-time guard)
   const mountIdRef = useRef(Symbol('mount'));
   const rendererOperation = remountDiagnostics?.remountClass === 'owner-operation'
@@ -969,9 +977,10 @@ export function useCommonMediaController({
       try { useCommonMediaController.__lastPosByKey[assetId] = lastPlaybackPosRef.current; } catch {}
       logProgress();
       const advanced = markProgress();
-      if (onProgress) {
+      const publishProgress = onProgressRef.current;
+      if (publishProgress) {
         const stallSnapshot = readStallState();
-        onProgress({
+        publishProgress({
           currentTime: segDuration ? Math.max(0, mediaEl.currentTime - segStart) : (mediaEl.currentTime || 0),
           duration: segDuration || (mediaEl.duration || 0),
           paused: mediaEl.paused,
@@ -1302,13 +1311,16 @@ export function useCommonMediaController({
       }
       setIsSeeking(true);
     };
-    const clearSeeking = () => {
-      const el = getMediaEl();
+    const finishSeekOperation = (el) => {
       const operationState = mountedPlaybackOperationRef.current;
       if (el && operationState?.awaitingSeek && operationState.sawSeeking
         && Math.abs(el.currentTime - operationState.targetSeconds) <= 0.75) {
         finishMountedPlaybackOperation(operationState);
       }
+    };
+    const onSeeked = () => {
+      const el = getMediaEl();
+      finishSeekOperation(el);
       const now = Date.now();
       if (el && now - lastSeekedLogTsRef.current > 200) {
         lastSeekedLogTsRef.current = now;
@@ -1325,13 +1337,14 @@ export function useCommonMediaController({
       // completed seek. Do not leave Player's resilience metrics reporting the
       // earlier seeking state until playback happens to resume: that stale
       // state is interpreted as an in-flight user seek and can arm recovery.
-      if (el && onProgress) {
+      const publishProgress = onProgressRef.current;
+      if (el && publishProgress) {
         const currentTime = segDuration
           ? Math.max(0, el.currentTime - segStart)
           : (el.currentTime || 0);
         const duration = segDuration || (el.duration || 0);
         const stallSnapshot = readStallState();
-        onProgress({
+        publishProgress({
           currentTime,
           duration,
           paused: el.paused,
@@ -1347,14 +1360,22 @@ export function useCommonMediaController({
       }
       requestAnimationFrame(() => setIsSeeking(false));
     };
+    // `playing` only ends a seek. It does NOT publish progress and does NOT log
+    // `playback.seek phase=seeked` — it is not a seek (timeupdate follows within
+    // one tick with the real state). Publishing here is what turned the leaked
+    // listener into a pauser.
+    const onPlayingClearsSeek = () => {
+      finishSeekOperation(getMediaEl());
+      requestAnimationFrame(() => setIsSeeking(false));
+    };
 
     mediaEl.addEventListener('timeupdate', onTimeUpdate);
     mediaEl.addEventListener('durationchange', onDurationChange);
     mediaEl.addEventListener('ended', onEnded);
     mediaEl.addEventListener('loadedmetadata', onLoadedMetadata);
     mediaEl.addEventListener('seeking', handleSeeking);
-    mediaEl.addEventListener('seeked', clearSeeking);
-    mediaEl.addEventListener('playing', clearSeeking);
+    mediaEl.addEventListener('seeked', onSeeked);
+    mediaEl.addEventListener('playing', onPlayingClearsSeek);
 
     // The element's own waiting/stalled events only arm this hook's detector;
     // what the element looked like at the time is reported by playback.stalled
@@ -1443,12 +1464,13 @@ export function useCommonMediaController({
       mediaEl.removeEventListener('pause', onPause);
       mediaEl.removeEventListener('play', onResume);
       mediaEl.removeEventListener('seeking', handleSeeking);
-      mediaEl.removeEventListener('seeked', clearSeeking);
+      mediaEl.removeEventListener('seeked', onSeeked);
+      mediaEl.removeEventListener('playing', onPlayingClearsSeek);
     };
     // 9-dependency media-listener effect in a file with hard-won "generation churn / storm"
     // caution comments elsewhere — already reviewed this session as too risky for a lint pass.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [onEnd, playbackRate, start, isVideo, meta, type, assetId, onProgress, isStalled, volume, getMediaEl, markProgress, scheduleStallDetection, clearTimers, readStallState, elementKey, remountDiagnostics, rendererOperation, applyMountedPlaybackOperation, finishMountedPlaybackOperation]);
+  }, [onEnd, playbackRate, start, isVideo, meta, type, assetId, isStalled, volume, getMediaEl, markProgress, scheduleStallDetection, clearTimers, readStallState, elementKey, remountDiagnostics, rendererOperation, applyMountedPlaybackOperation, finishMountedPlaybackOperation]);
 
   useEffect(() => {
     const mediaEl = getMediaEl();
