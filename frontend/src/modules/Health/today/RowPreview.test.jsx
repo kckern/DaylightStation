@@ -83,11 +83,42 @@ describe('EntryRow preview card', () => {
   it('keyboard focus on the name opens it; Escape closes it', () => {
     const { container } = r(<EntryRow row={apple} onTap={() => {}} />);
     const name = screen.getByRole('button', { name: 'Edit Apple' });
+    fireEvent.keyDown(document, { key: 'Tab' });
     fireEvent.focus(name);
     act(() => { vi.advanceTimersByTime(OPEN_DELAY_MS); });
     expect(isOpen(container)).toBe(true);
     fireEvent.keyDown(name, { key: 'Escape' });
     expect(isOpen(container)).toBe(false);
+  });
+
+  it('focus that did not come from Tab (a sheet returning focus, a tap) does not open it', () => {
+    const { container } = r(<EntryRow row={apple} onTap={() => {}} />);
+    const name = screen.getByRole('button', { name: 'Edit Apple' });
+    fireEvent.keyDown(document, { key: 'Escape' });
+    fireEvent.focus(name);
+    act(() => { vi.advanceTimersByTime(OPEN_DELAY_MS * 2); });
+    expect(isOpen(container)).toBe(false);
+    fireEvent.keyDown(document, { key: 'Tab' });
+    fireEvent.pointerDown(document.body);
+    fireEvent.focus(name);
+    act(() => { vi.advanceTimersByTime(OPEN_DELAY_MS * 2); });
+    expect(isOpen(container)).toBe(false);
+  });
+
+  it('anchors on the artwork, not the full-width row, and the card sits beside it', () => {
+    const { container } = r(<EntryRow row={apple} onTap={() => {}} />);
+    const artwork = container.querySelector('.health-row-artwork');
+    const line = container.querySelector('.health-row-line');
+    const artworkRect = vi.spyOn(artwork, 'getBoundingClientRect');
+    const lineRect = vi.spyOn(line, 'getBoundingClientRect');
+    fireEvent.pointerEnter(screen.getByRole('button', { name: 'Edit Apple' }));
+    act(() => { vi.advanceTimersByTime(OPEN_DELAY_MS); });
+    expect(isOpen(container)).toBe(true);
+    act(() => { vi.advanceTimersByTime(1000); });
+    expect(card()).toBeTruthy();
+    expect(artworkRect).toHaveBeenCalled();
+    expect(lineRect).not.toHaveBeenCalled();
+    expect(document.querySelector('.health-row-preview__card').dataset.position).toBe('right');
   });
 
   it('never opens while a portion draft is live', () => {
@@ -110,6 +141,9 @@ describe('EntryRow preview card', () => {
       fireEvent.click(container.querySelector('.health-row-artwork'));
       expect(isOpen(container)).toBe(true);
       expect(onTap).not.toHaveBeenCalled();
+      act(() => { vi.advanceTimersByTime(1000); });
+      // Below the artwork on touch: a phone column has no room beside it.
+      expect(document.querySelector('.health-row-preview__card').dataset.position).toMatch(/^(bottom|top)/);
     } finally { window.matchMedia = original; }
   });
 });
