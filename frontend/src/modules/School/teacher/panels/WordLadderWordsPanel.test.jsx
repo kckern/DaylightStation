@@ -34,19 +34,23 @@ vi.mock('../TeacherProfileContext.jsx', () => ({
 import { wordLadderAdminApi } from '../wordLadderAdminApi.js';
 
 const ok = (data) => ({ ok: true, status: 200, data });
+const fail = (error) => ({ ok: false, status: 500, data: { error } });
+
+const word1 = (over = {}) => ({
+  wordId: 'word_1', term: '사과', gloss: 'apple', state: 'learning', stage: 2,
+  dueDay: '2026-09-20', missStreak: 1, tricky: false, excluded: false, lastGraded: '2026-09-18',
+  recentTyped: [
+    { day: '2026-09-18', itemId: 'item_1', typed: 'sagwa', score: 10, judge: 'exact', reason: null, correct: true, source: 'typed', regraded: null },
+  ],
+  ...over,
+});
 
 const payload = (over = {}) => ({
   learnerId: 'learner_a', package: 'korean-vocab',
   decksSeen: ['language/korean/week-01-classroom', 'language/korean/week-02-food'],
   droppableDecks: ['language/korean/week-02-food'],
   words: [
-    {
-      wordId: 'word_1', term: '사과', gloss: 'apple', state: 'learning', stage: 2,
-      dueDay: '2026-09-20', missStreak: 1, tricky: false, excluded: false, lastGraded: '2026-09-18',
-      recentTyped: [
-        { day: '2026-09-18', itemId: 'item_1', typed: 'sagwa', score: 10, judge: 'exact', reason: null, correct: true, source: 'typed', regraded: null },
-      ],
-    },
+    word1(),
     {
       wordId: 'word_2', term: '배', gloss: 'pear', state: 'mastered', stage: 4,
       dueDay: '2026-10-01', missStreak: 0, tricky: true, excluded: true, lastGraded: '2026-09-10', recentTyped: [],
@@ -79,23 +83,26 @@ describe('rendering the word table', () => {
     expect(screen.getByText('apple')).toBeTruthy();
     expect(screen.getByText('배')).toBeTruthy();
     expect(screen.getByText('pear')).toBeTruthy();
-    expect(wordLadderAdminApi.words).toHaveBeenCalledWith('learner_a', 'language/korean/week-01-classroom');
+    // The GET is teacher-gated (TeacherGate.assert checks isAdult(userId)
+    // before it ever looks at the capability/pin), so the read must carry
+    // the acting teacher's id or the server refuses it with a 403.
+    expect(wordLadderAdminApi.words).toHaveBeenCalledWith('learner_a', 'language/korean/week-01-classroom', 'teacher_1');
   });
 
   it('an excluded word shows Include, not Exclude', async () => {
     mount();
     await screen.findByText('배');
     const row = screen.getByText('배').closest('tr');
-    expect(within(row).getByRole('button', { name: 'Include' })).toBeTruthy();
-    expect(within(row).queryByRole('button', { name: 'Exclude' })).toBeNull();
+    expect(within(row).getByRole('button', { name: 'Include 배' })).toBeTruthy();
+    expect(within(row).queryByRole('button', { name: 'Exclude 배' })).toBeNull();
   });
 
   it('a word that is not excluded shows Exclude, not Include', async () => {
     mount();
     await screen.findByText('사과');
     const row = screen.getByText('사과').closest('tr');
-    expect(within(row).getByRole('button', { name: 'Exclude' })).toBeTruthy();
-    expect(within(row).queryByRole('button', { name: 'Include' })).toBeNull();
+    expect(within(row).getByRole('button', { name: 'Exclude 사과' })).toBeTruthy();
+    expect(within(row).queryByRole('button', { name: 'Include 사과' })).toBeNull();
   });
 });
 
@@ -104,7 +111,7 @@ describe('Reset', () => {
     wordLadderAdminApi.reset.mockResolvedValue(ok({ learnerId: 'learner_a', package: 'korean-vocab', wordId: 'word_1', word: {} }));
     mount();
     const row = (await screen.findByText('사과')).closest('tr');
-    fireEvent.click(within(row).getByRole('button', { name: 'Reset' }));
+    fireEvent.click(within(row).getByRole('button', { name: 'Reset 사과' }));
     await waitFor(() => expect(wordLadderAdminApi.reset).toHaveBeenCalledWith(
       expect.objectContaining({ learnerId: 'learner_a', deckId: 'language/korean/week-01-classroom', wordId: 'word_1' }),
     ));
@@ -118,11 +125,27 @@ describe('Mark mastered', () => {
     wordLadderAdminApi.markMastered.mockResolvedValue(ok({ learnerId: 'learner_a', wordId: 'word_1', word: {} }));
     mount();
     const row = (await screen.findByText('사과')).closest('tr');
-    fireEvent.change(within(row).getByLabelText('Mastered stage'), { target: { value: '3' } });
-    fireEvent.click(within(row).getByRole('button', { name: 'Mark mastered' }));
+    fireEvent.change(within(row).getByLabelText('Mastered stage for 사과'), { target: { value: '3' } });
+    fireEvent.click(within(row).getByRole('button', { name: 'Mark 사과 mastered' }));
     await waitFor(() => expect(wordLadderAdminApi.markMastered).toHaveBeenCalledWith(
       expect.objectContaining({ learnerId: 'learner_a', deckId: 'language/korean/week-01-classroom', wordId: 'word_1', stage: 3 }),
     ));
+  });
+
+  it('re-syncs the stage picker to the server value after a refetch', async () => {
+    wordLadderAdminApi.words
+      .mockResolvedValueOnce(ok(payload({ words: [word1({ stage: 2 }), payload().words[1]] })))
+      .mockResolvedValueOnce(ok(payload({ words: [word1({ stage: 5 }), payload().words[1]] })));
+    wordLadderAdminApi.reset.mockResolvedValue(ok({ learnerId: 'learner_a', wordId: 'word_1', word: {} }));
+    mount();
+    const row = (await screen.findByText('사과')).closest('tr');
+    expect(within(row).getByLabelText('Mastered stage for 사과').value).toBe('2');
+    // Any write re-reads the table (ReadingShelfPanel's contract); the stage
+    // picker must follow the fresh server value, not the value it was
+    // seeded with on first mount.
+    fireEvent.click(within(row).getByRole('button', { name: 'Reset 사과' }));
+    await waitFor(() => expect(wordLadderAdminApi.words).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(within(row).getByLabelText('Mastered stage for 사과').value).toBe('5'));
   });
 });
 
@@ -131,7 +154,7 @@ describe('Exclude / Include', () => {
     wordLadderAdminApi.exclude.mockResolvedValue(ok({ learnerId: 'learner_a', wordId: 'word_1', word: {} }));
     mount();
     const row = (await screen.findByText('사과')).closest('tr');
-    fireEvent.click(within(row).getByRole('button', { name: 'Exclude' }));
+    fireEvent.click(within(row).getByRole('button', { name: 'Exclude 사과' }));
     await waitFor(() => expect(wordLadderAdminApi.exclude).toHaveBeenCalledWith(
       expect.objectContaining({ learnerId: 'learner_a', deckId: 'language/korean/week-01-classroom', wordId: 'word_1', excluded: true }),
     ));
@@ -141,7 +164,7 @@ describe('Exclude / Include', () => {
     wordLadderAdminApi.exclude.mockResolvedValue(ok({ learnerId: 'learner_a', wordId: 'word_2', word: {} }));
     mount();
     const row = (await screen.findByText('배')).closest('tr');
-    fireEvent.click(within(row).getByRole('button', { name: 'Include' }));
+    fireEvent.click(within(row).getByRole('button', { name: 'Include 배' }));
     await waitFor(() => expect(wordLadderAdminApi.exclude).toHaveBeenCalledWith(
       expect.objectContaining({ learnerId: 'learner_a', deckId: 'language/korean/week-01-classroom', wordId: 'word_2', excluded: false }),
     ));
@@ -155,7 +178,7 @@ describe('Re-grade', () => {
     mount();
     const row = (await screen.findByText('사과')).closest('tr');
     fireEvent.click(within(row).getByRole('button', { name: /sagwa/ }));
-    fireEvent.click(within(row).getByRole('button', { name: 'Pass' }));
+    fireEvent.click(within(row).getByRole('button', { name: 'Pass 사과 answer sagwa' }));
     await waitFor(() => expect(wordLadderAdminApi.regrade).toHaveBeenCalledWith(
       expect.objectContaining({
         learnerId: 'learner_a', deckId: 'language/korean/week-01-classroom', day: '2026-09-18', itemId: 'item_1', pass: true,
@@ -173,7 +196,7 @@ describe('Re-grade', () => {
     mount();
     const row = (await screen.findByText('사과')).closest('tr');
     fireEvent.click(within(row).getByRole('button', { name: /sagwa/ }));
-    fireEvent.click(within(row).getByRole('button', { name: 'Fail' }));
+    fireEvent.click(within(row).getByRole('button', { name: 'Fail 사과 answer sagwa' }));
     expect(confirmSpy).toHaveBeenCalled();
     await waitFor(() => expect(wordLadderAdminApi.regrade).toHaveBeenCalledWith(
       expect.objectContaining({ day: '2026-09-18', itemId: 'item_1', pass: false }),
@@ -185,46 +208,54 @@ describe('Re-grade', () => {
     mount();
     const row = (await screen.findByText('사과')).closest('tr');
     fireEvent.click(within(row).getByRole('button', { name: /sagwa/ }));
-    fireEvent.click(within(row).getByRole('button', { name: 'Fail' }));
+    fireEvent.click(within(row).getByRole('button', { name: 'Fail 사과 answer sagwa' }));
     expect(wordLadderAdminApi.regrade).not.toHaveBeenCalled();
   });
 
   it('Fail on a non-exact judge (e.g. model) needs no confirmation', async () => {
     const confirmSpy = stubConfirm(true);
     wordLadderAdminApi.words.mockResolvedValue(ok(payload({
-      words: [{
-        wordId: 'word_1', term: '사과', gloss: 'apple', state: 'learning', stage: 2,
-        dueDay: '2026-09-20', missStreak: 1, tricky: false, excluded: false, lastGraded: '2026-09-18',
+      words: [word1({
         recentTyped: [{ day: '2026-09-18', itemId: 'item_1', typed: 'sagwaa', score: 6, judge: 'model', reason: 'close', correct: false, source: 'typed', regraded: null }],
-      }],
+      })],
     })));
     wordLadderAdminApi.regrade.mockResolvedValue(ok({ learnerId: 'learner_a', wordId: 'word_1', day: '2026-09-18', itemId: 'item_1', regraded: {} }));
     mount();
     const row = (await screen.findByText('사과')).closest('tr');
     fireEvent.click(within(row).getByRole('button', { name: /sagwaa/ }));
-    fireEvent.click(within(row).getByRole('button', { name: 'Fail' }));
+    fireEvent.click(within(row).getByRole('button', { name: 'Fail 사과 answer sagwaa' }));
     expect(confirmSpy).not.toHaveBeenCalled();
     await waitFor(() => expect(wordLadderAdminApi.regrade).toHaveBeenCalled());
+  });
+
+  it('a failed re-grade surfaces the error against the typed answer', async () => {
+    stubConfirm(true);
+    wordLadderAdminApi.regrade.mockResolvedValue(fail('That answer could not be re-graded.'));
+    mount();
+    const row = (await screen.findByText('사과')).closest('tr');
+    fireEvent.click(within(row).getByRole('button', { name: /sagwa/ }));
+    fireEvent.click(within(row).getByRole('button', { name: 'Pass 사과 answer sagwa' }));
+    expect(await within(row).findByText('That answer could not be re-graded.')).toBeTruthy();
   });
 });
 
 describe('Deck pool', () => {
-  it('shows Drop from pool only for droppableDecks', async () => {
+  it('shows Drop from pool only for droppableDecks, row-qualified', async () => {
     wordLadderAdminApi.dropDeck.mockResolvedValue(ok({ learnerId: 'learner_a', decksSeen: ['language/korean/week-01-classroom'] }));
     mount();
     await screen.findByText('사과');
     const currentRow = screen.getByText('language/korean/week-01-classroom').closest('li');
     const droppableRow = screen.getByText('language/korean/week-02-food').closest('li');
-    expect(within(currentRow).queryByRole('button', { name: 'Drop from pool' })).toBeNull();
+    expect(within(currentRow).queryByRole('button', { name: /^Drop /})).toBeNull();
     expect(within(currentRow).getByText(/current/i)).toBeTruthy();
-    expect(within(droppableRow).getByRole('button', { name: 'Drop from pool' })).toBeTruthy();
+    expect(within(droppableRow).getByRole('button', { name: 'Drop language/korean/week-02-food from pool' })).toBeTruthy();
   });
 
   it('drops a droppable deck from the pool', async () => {
     wordLadderAdminApi.dropDeck.mockResolvedValue(ok({ learnerId: 'learner_a', decksSeen: ['language/korean/week-01-classroom'] }));
     mount();
     await screen.findByText('사과');
-    fireEvent.click(screen.getByRole('button', { name: 'Drop from pool' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Drop language/korean/week-02-food from pool' }));
     await waitFor(() => expect(wordLadderAdminApi.dropDeck).toHaveBeenCalledWith(
       expect.objectContaining({ learnerId: 'learner_a', deckId: 'language/korean/week-01-classroom', dropDeckId: 'language/korean/week-02-food' }),
     ));

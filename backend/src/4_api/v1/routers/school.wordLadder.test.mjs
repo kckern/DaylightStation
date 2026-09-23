@@ -118,5 +118,35 @@ describe('word-ladder routes', () => {
     await request(a).get('/word-ladder/admin/words?learnerId=k&deckId=d&actorId=p').expect(200);
     expect(adminWords).toHaveBeenLastCalledWith({ learnerId: 'k', deckId: 'd', actorId: 'p', pin: null });
   });
+  // TeacherGate.assert checks isAdult(userId) BEFORE it ever looks at the
+  // capability/pin (TeacherGate.mjs), so an actorId-less GET was refused with
+  // a 403 no matter how good the cookie was. The read must derive the acting
+  // teacher from the capability session itself — the same precedence
+  // school.teacherReading.mjs's `actor(req)` uses: the session's own userId
+  // outranks anything a client claims, because the cookie is what the console
+  // actually holds.
+  it('the admin words GET derives the acting teacher from the capability session when no actorId is given', async () => {
+    const adminWords = vi.fn(async () => ({ words: [] }));
+    const proof = { capabilityToken: 'cap-1', stepUpToken: null };
+    const capabilityProof = vi.fn((req) => (req.get('cookie') ? proof : null));
+    const teacherCapabilitySessions = { status: vi.fn((token) => (
+      token === 'cap-1' ? { active: true, userId: 'p' } : { active: false }
+    )) };
+    const { a, live } = app({ capabilityProof, teacherCapabilitySessions });
+    live.adminWords = adminWords;
+    // Cookie only — no actorId, no pin in the query — must still reach the
+    // service, gated as the session's own teacher.
+    await request(a).get('/word-ladder/admin/words?learnerId=k&deckId=d')
+      .set('Cookie', 'daylight_teacher_session=cap-1').expect(200);
+    expect(adminWords).toHaveBeenLastCalledWith({ learnerId: 'k', deckId: 'd', actorId: 'p', pin: proof });
+    // The session's identity outranks a query actorId a client supplied —
+    // never trust the caller's own claim of who they are over the cookie.
+    await request(a).get('/word-ladder/admin/words?learnerId=k&deckId=d&actorId=someone-else')
+      .set('Cookie', 'daylight_teacher_session=cap-1').expect(200);
+    expect(adminWords).toHaveBeenLastCalledWith({ learnerId: 'k', deckId: 'd', actorId: 'p', pin: proof });
+    // No cookie, no session: falls back to the query actorId (the CLI case).
+    await request(a).get('/word-ladder/admin/words?learnerId=k&deckId=d&actorId=q').expect(200);
+    expect(adminWords).toHaveBeenLastCalledWith({ learnerId: 'k', deckId: 'd', actorId: 'q', pin: null });
+  });
 });
 
