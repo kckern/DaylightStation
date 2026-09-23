@@ -143,7 +143,8 @@ queue item and is worked until it is fixed. No new art is generated.
 
 - the browser: `artworkLog.reportArtworkFailure` (FoodIcon load/decode failure, a
   row photo that will not load) posts once per key per page session;
-- a sweep of the last 7 days, hourly: rows with no working photo and an icon that is
+- a sweep of today and yesterday every 2 minutes (so a capture that lands on
+  `default` is queued within minutes), and of the last 7 days hourly: rows with no working photo and an icon that is
   missing, `default`, or not served by the manifest (a person's own icon choice —
   `manualFields: icon`, including an Undo of an artwork repair — is left alone);
 - the auditor, when it proposes art the manifest does not serve.
@@ -190,7 +191,7 @@ an attempt runs keep the item open.
 
 **Schedule.** From `5_composition/modules/nutritionCleanup.mjs`, behind the same
 `scheduled` gate and head-of-household owner as the cleanup tick, with its own
-non-overlapping guard: `tick` every 2 minutes (up to 20 due items), and a 7-day
+non-overlapping guard: a 1-day `sweep` + `tick` every 2 minutes (up to 20 due items), and a 7-day
 `sweep` + `tick` every hour and at startup. Each pass reads the ledger once from the
 oldest day its items need, and the catalog once.
 

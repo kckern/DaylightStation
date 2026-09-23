@@ -64,7 +64,8 @@ export function createNutritionCleanup({ dataService, configService, userIdentit
     catch (error) { logger.warn('nutrition.cleanup.tick_failed', { error: error.message }); }
     finally { ticking = false; }
   };
-  // Artwork: work due items every ~2 min, sweep the last week every ~hour. Same
+  // Artwork: sweep the last day and work due items every ~2 min, sweep the last
+  // week every ~hour. Same
   // gate, same owner and the same non-overlapping guard as the cleanup tick.
   let artworkBusy = false;
   const artworkRun = (label, work) => async () => {
@@ -74,7 +75,9 @@ export function createNutritionCleanup({ dataService, configService, userIdentit
     catch (error) { logger.warn('artwork.queue.' + label + '_failed', { error: error.message }); }
     finally { artworkBusy = false; }
   };
-  const artworkTick = artworkRun('tick', () => artwork.tick(userId));
+  // Each 2-minute tick first sweeps today and yesterday, so a capture that
+  // lands on `default` is queued within minutes rather than at the hourly sweep.
+  const artworkTick = artworkRun('tick', async () => { await artwork.sweep(userId, { sinceDays: 1 }); await artwork.tick(userId); });
   const artworkSweep = artworkRun('sweep', async () => { await artwork.sweep(userId, { sinceDays: 7 }); await artwork.tick(userId); });
   const scheduler = scheduled ? new NodeApplicationScheduler() : null;
   const stops = scheduler ? [scheduler.every(30000, tick), scheduler.every(2 * 60 * 1000, artworkTick), scheduler.every(60 * 60 * 1000, artworkSweep)] : [];
