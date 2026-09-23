@@ -302,7 +302,7 @@ export class WordLadderSittingService {
       const settings = this.#daySettings(dayFile);
       const afterFold = this.#fold(status, read, quizDocumentIds, day, settings);
       folded = afterFold.folded;
-      const opened = openDay({ status: afterFold.status, dayFile, day, deckId, pool, settings, learnerId: userId, at: isoWithOffset(openedMs, this.#timezone) });
+      const opened = openDay({ status: afterFold.status, dayFile, day, deckId, pool, settings, learnerId: userId, at: isoWithOffset(openedMs, this.#timezone), media, capabilities: null });
       changes = this.#housekeep(opened.dayFile, sittingId, openedMs, { reopen: false });
       opened.dayFile.sittings[sittingId] = { deckId, openedAt: isoWithOffset(openedMs, this.#timezone), closedAt: null, reason: null };
       return opened;
