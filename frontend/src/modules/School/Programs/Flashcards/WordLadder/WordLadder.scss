@@ -206,6 +206,7 @@
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.25rem;
   min-height: 88px; padding: 0.5rem; border-radius: 14px; border: 2px solid var(--ds-border); background: var(--ds-surface);
   &.is-selected { outline: 4px solid var(--ds-accent); outline-offset: 2px; }
+  &.is-cursor { border-color: var(--ds-accent); }
   .ds-touch__label { display: flex; flex-direction: column; align-items: center; gap: 0.25rem; }
 }
 .wl-words__term { font-size: 1.75rem; color: var(--ds-text-high); }

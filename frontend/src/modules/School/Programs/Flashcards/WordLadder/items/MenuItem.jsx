@@ -53,10 +53,14 @@ export default function MenuItem({ item, api, sittingId, userId, deckId, langs, 
   };
   const back = () => setView({ name: 'menu' });
 
+  // Every action has a key: modes by digit, My words the next digit, Done on
+  // Space/Enter (the forward action), Back on Backspace.
+  const wordsKey = String(modes.length + 1);
+  const toWords = () => { if (!busy) setView({ name: 'words' }); };
   let keys = {};
-  if (view.name === 'menu') keys = Object.fromEntries(modes.map((mode, i) => [String(i + 1), () => choose(mode)]));
-  else if (view.name === 'help') keys = Object.fromEntries(helpOptions(view.mode).map((help, i) => [String(i + 1), () => start({ mode: view.mode, help })]));
-  else if (view.name === 'front') keys = { 1: () => start({ mode: 'flashcards', frontSide: 'term' }), 2: () => start({ mode: 'flashcards', frontSide: 'gloss' }) };
+  if (view.name === 'menu') keys = { ...Object.fromEntries(modes.map((mode, i) => [String(i + 1), () => choose(mode)])), [wordsKey]: toWords, ' ': onExit, enter: onExit };
+  else if (view.name === 'help') keys = { ...Object.fromEntries(helpOptions(view.mode).map((help, i) => [String(i + 1), () => start({ mode: view.mode, help })])), backspace: back };
+  else if (view.name === 'front') keys = { 1: () => start({ mode: 'flashcards', frontSide: 'term' }), 2: () => start({ mode: 'flashcards', frontSide: 'gloss' }), backspace: back };
   useWordLadderKeys(keys, { enabled: view.name === 'menu' || view.name === 'help' || view.name === 'front' });
 
   if (view.name === 'words' || view.name === 'pick') {
@@ -87,7 +91,7 @@ export default function MenuItem({ item, api, sittingId, userId, deckId, langs, 
             </>
           )}
         </div>
-        <div className="wl-controls"><TouchButton variant="secondary" onClick={back}>Back</TouchButton></div>
+        <div className="wl-controls"><TouchButton variant="secondary" keyHint="⌫" onClick={back}>Back</TouchButton></div>
       </section>
     );
   }
@@ -98,11 +102,11 @@ export default function MenuItem({ item, api, sittingId, userId, deckId, langs, 
         {modes.map((mode, i) => (
           <TouchButton key={mode} variant="choice" keyHint={String(i + 1)} disabled={busy} onClick={() => choose(mode)}>{LABELS[mode]}</TouchButton>
         ))}
-        <TouchButton variant="secondary" disabled={busy} onClick={() => setView({ name: 'words' })}>My words</TouchButton>
+        <TouchButton variant="secondary" keyHint={wordsKey} disabled={busy} onClick={toWords}>My words</TouchButton>
       </div>
       {notice && <p className="wl-say__notice" role="alert">{notice}</p>}
       <div className="wl-controls">
-        <TouchButton variant="primary" onClick={onExit}>Done</TouchButton>
+        <TouchButton variant="primary" keyHint="Space" onClick={onExit}>Done</TouchButton>
       </div>
     </section>
   );

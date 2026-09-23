@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { TouchButton } from '../../../../../../lib/ui/index.js';
 import { useWordLadderKeys } from '../useWordLadderKeys.js';
 import { wordLadderLog } from '../wordLadderLog.js';
@@ -34,6 +34,8 @@ export default function WordsItem({ api, sittingId, userId, deckId, langs, pick 
   const [words, setWords] = useState(null);
   const [failed, setFailed] = useState(false);
   const [chosen, setChosen] = useState([]);
+  // Keyboard cursor over the pick grid: arrows move it, Space toggles the word under it.
+  const [cursor, setCursor] = useState(0);
   useEffect(() => {
     let live = true;
     (async () => {
@@ -47,23 +49,36 @@ export default function WordsItem({ api, sittingId, userId, deckId, langs, pick 
 
   const toggle = (wordId) => setChosen((c) => (c.includes(wordId) ? c.filter((x) => x !== wordId) : [...c, wordId]));
   const drill = () => { if (chosen.length && !busy) onDrill(chosen); };
-  useWordLadderKeys(pick ? { enter: drill } : { ' ': onBack, enter: onBack });
-
   const list = pick ? (words ?? []).filter((w) => w.state !== 'new') : (words ?? []);
+  const at = Math.min(cursor, Math.max(0, list.length - 1));
+  const move = (by) => setCursor(() => (list.length ? (((at + by) % list.length) + list.length) % list.length : 0));
+  useWordLadderKeys(pick
+    ? {
+      enter: drill,
+      ' ': () => list[at] && toggle(list[at].wordId),
+      // The grid is four across: up/down move a row.
+      arrowright: () => move(1), arrowleft: () => move(-1), arrowdown: () => move(4), arrowup: () => move(-4),
+      backspace: onBack,
+    }
+    : { ' ': onBack, enter: onBack, backspace: onBack });
+  const grid = useRef(null);
+  useEffect(() => { grid.current?.querySelector('.is-cursor')?.scrollIntoView?.({ block: 'nearest' }); }, [at, pick]);
+
   return (
     <section className="wl-item wl-words" aria-label={pick ? 'Pick words' : 'My words'}>
       <h2 className="wl-words__title">{pick ? 'Pick words to drill' : 'My words'}</h2>
       {failed && <p className="wl-verdict" role="alert">Your words could not be loaded right now.</p>}
       {!failed && !words && <p className="wl-loading">Loading…</p>}
       {words && (
-        <div className="wl-words__grid">
+        <div className="wl-words__grid" ref={grid}>
           {list.map((word) => (pick ? (
             <TouchButton
               key={word.wordId}
               variant="choice"
               lang={langs.term}
               aria-pressed={chosen.includes(word.wordId)}
-              className={`wl-words__word${chosen.includes(word.wordId) ? ' is-selected' : ''}`}
+              keyHint={list[at]?.wordId === word.wordId ? 'Space' : null}
+              className={`wl-words__word${chosen.includes(word.wordId) ? ' is-selected' : ''}${list[at]?.wordId === word.wordId ? ' is-cursor' : ''}`}
               onClick={() => toggle(word.wordId)}
             >
               <span className="wl-words__term" lang={langs.term}>{word.term}</span>
@@ -79,7 +94,7 @@ export default function WordsItem({ api, sittingId, userId, deckId, langs, pick 
         </div>
       )}
       <div className="wl-controls">
-        <TouchButton variant="secondary" onClick={onBack}>Back</TouchButton>
+        <TouchButton variant="secondary" keyHint={pick ? '⌫' : 'Space'} onClick={onBack}>Back</TouchButton>
         {pick && <TouchButton variant="primary" keyHint="Enter" disabled={busy || !chosen.length} onClick={drill}>Drill these</TouchButton>}
       </div>
     </section>
