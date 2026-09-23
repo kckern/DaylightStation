@@ -104,6 +104,10 @@ export function useCommonMediaController({
   const [seconds, setSeconds] = useState(0);
   const [duration, setDuration] = useState(0);
   const [isSeeking, setIsSeeking] = useState(false);
+  // isSeeking is not an element-setup effect dep, so a listener created in one
+  // run would publish the value from that run. Read the current one instead.
+  const isSeekingRef = useRef(isSeeking);
+  isSeekingRef.current = isSeeking;
   const lastLoggedTimeRef = useRef(0);
   const lastUpdatedTimeRef = useRef(0);
   // Track last known playback position from timeupdate events
@@ -980,6 +984,7 @@ export function useCommonMediaController({
       const publishProgress = onProgressRef.current;
       if (publishProgress) {
         const stallSnapshot = readStallState();
+        const seekingNow = isSeekingRef.current;
         publishProgress({
           currentTime: segDuration ? Math.max(0, mediaEl.currentTime - segStart) : (mediaEl.currentTime || 0),
           duration: segDuration || (mediaEl.duration || 0),
@@ -989,11 +994,11 @@ export function useCommonMediaController({
             ? getProgressPercent(mediaEl.currentTime - segStart, segDuration)
             : getProgressPercent(mediaEl.currentTime, mediaEl.duration),
           stalled: isStalled,
-          isSeeking,
+          isSeeking: seekingNow,
           // A fresh native `playing` event can be lost across a renderer
           // recovery. Forward, unpaused, non-seeking progress is the remaining
           // positive native evidence that the decoder has actually recovered.
-          playing: advanced === true && !mediaEl.paused && !isSeeking && !isStalled,
+          playing: advanced === true && !mediaEl.paused && !seekingNow && !isStalled,
           seekIntent: lastSeekIntentRef.current,
           lastStrategy: stallSnapshot.strategy,
           stallState: stallSnapshot
@@ -1058,14 +1063,15 @@ export function useCommonMediaController({
       onEnd();
     };
 
-    // Listeners that onLoadedMetadata attaches must die with THIS effect run.
-    // A stale playbackRate listener resets a newer rate; a pending DASH
-    // start-seek pair from an earlier run can seek a later load. Named here so
-    // the cleanup below can remove them by reference.
+    // The play/seeked rate listener onLoadedMetadata attaches must die with
+    // THIS effect run: a stale one resets a newer rate. Named here so the
+    // cleanup below can remove it by reference. The dedicated rate effects
+    // above (apply-on-change and the drift reassert) own the steady-state
+    // rate; this listener only covers play/seeked after loadedmetadata, so its
+    // absence between an effect re-run and the next loadedmetadata is intended.
     const applyPlaybackRate = () => {
       mediaEl.playbackRate = playbackRate;
     };
-    const pendingStartSeekTeardowns = [];
 
     const onLoadedMetadata = () => {
       const duration = mediaEl.duration || 0;
@@ -1197,10 +1203,6 @@ export function useCommonMediaController({
           };
           mediaEl.addEventListener('loadedmetadata', onLoaded);
           mediaEl.addEventListener('timeupdate', onTimeUpdate);
-          pendingStartSeekTeardowns.push(() => {
-            mediaEl.removeEventListener('loadedmetadata', onLoaded);
-            mediaEl.removeEventListener('timeupdate', onTimeUpdate);
-          });
           // If metadata already loaded (e.g. hardReset reload), seek immediately
           if (mediaEl.readyState >= 1) applySeek('immediate');
         }
@@ -1477,8 +1479,6 @@ export function useCommonMediaController({
       mediaEl.removeEventListener('playing', onPlayingClearsSeek);
       mediaEl.removeEventListener('play', applyPlaybackRate);
       mediaEl.removeEventListener('seeked', applyPlaybackRate);
-      // removeEventListener is a no-op when applySeek already detached them.
-      pendingStartSeekTeardowns.forEach((teardown) => teardown());
     };
     // 9-dependency media-listener effect in a file with hard-won "generation churn / storm"
     // caution comments elsewhere — already reviewed this session as too risky for a lint pass.
