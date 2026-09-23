@@ -59,3 +59,22 @@ export function pieceSpans({ cuts }, sentenceMs = null) {
 
 /** A span's length, or null while its end is unknown. */
 export const spanMs = ({ fromMs, toMs }) => (toMs == null ? null : toMs - fromMs);
+
+/** How many chunks the sentence is in now: one more than its cuts. */
+export const pieceCount = ({ cuts }) => cuts.length + 1;
+
+/**
+ * After chunk i: the first later chunk with no take yet, or null when every
+ * chunk has one (time to join). A chunk redone out of order goes on to the
+ * first unsaid one rather than re-asking for chunks already said.
+ */
+export function nextToSay(state, i) {
+  for (let j = i + 1; j < pieceCount(state); j += 1) if (!state.takes[j]) return j;
+  return null;
+}
+
+/** The takes said so far, in order — what Enter joins. */
+export const saidTakes = (state) => state.takes.filter(Boolean);
+
+/** Joined before every chunk had a take: the sentence's tail is not in it. */
+export const isPartial = (state) => saidTakes(state).length < pieceCount(state);

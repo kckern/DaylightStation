@@ -48,12 +48,34 @@ describe('voice meter', () => {
     expect(meterLevel(m, 0.5, 2600)).toBe('silent-off');
     expect(m.silent).toBe(false);
     // Heard once, never called silent again — the rung's rule, unchanged.
-    expect(meterLevel(m, 0, 9000)).toBeNull();
+    // (A long silence after speech is an auto-stop instead; see below.)
+    expect(meterLevel(m, 0, 9000)).not.toBe('silent-on');
+    expect(m.silent).toBe(false);
   });
 
   it('a level over the floor with no warning showing is not a transition', async () => {
     const { createVoiceMeter, meterLevel } = await import('./speechFloor.js');
     const m = createVoiceMeter(0);
     expect(meterLevel(m, 0.5, 10)).toBeNull();
+  });
+});
+
+describe('auto-stop on silence after speech', () => {
+  it('fires once, after AUTO_STOP_SILENT_MS of silence that follows speech', async () => {
+    const { createVoiceMeter, meterLevel, AUTO_STOP_SILENT_MS } = await import('./speechFloor.js');
+    expect(AUTO_STOP_SILENT_MS).toBe(3000);
+    const m = createVoiceMeter(0);
+    meterLevel(m, 0.3, 0);
+    meterLevel(m, 0.3, 500);
+    expect(meterLevel(m, 0, 3400)).toBeNull();      // 2900ms silent
+    expect(meterLevel(m, 0, 3500)).toBe('auto-stop'); // 3000ms
+    expect(meterLevel(m, 0, 4000)).toBeNull();      // once
+  });
+  it('never fires on leading silence, however long', async () => {
+    const { createVoiceMeter, meterLevel } = await import('./speechFloor.js');
+    const m = createVoiceMeter(0);
+    const seen = [];
+    for (let t = 0; t <= 20000; t += 100) seen.push(meterLevel(m, 0, t));
+    expect(seen).not.toContain('auto-stop');
   });
 });
