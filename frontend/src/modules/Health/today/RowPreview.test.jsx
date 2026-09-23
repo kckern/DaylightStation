@@ -14,7 +14,8 @@ import { RowPreviewContent, OPEN_DELAY_MS, CLOSE_DELAY_MS } from './RowPreview.j
 import { EntryRow } from './EntryRow.jsx';
 import { PortionContext } from './usePortionDraft.js';
 
-const r = ui => render(<MantineProvider>{ui}</MantineProvider>);
+// The app wraps everything in AppThemeProvider's .ds-root (inline --ds-* tokens).
+const r = ui => render(<MantineProvider><div className="ds-root">{ui}</div></MantineProvider>);
 const apple = { uuid: 'row-1', name: 'Apple', calories: 95, protein: 0.5, carbs: 25, fat: 0.3, grams: 182, unit: 'g', amount: 182, icon: 'apple' };
 
 describe('RowPreviewContent', () => {
@@ -118,7 +119,10 @@ describe('EntryRow preview card', () => {
     expect(card()).toBeTruthy();
     expect(artworkRect).toHaveBeenCalled();
     expect(lineRect).not.toHaveBeenCalled();
-    expect(document.querySelector('.health-row-preview__card').dataset.position).toBe('right');
+    // Below the artwork (or flipped above), never over the row's own name.
+    expect(document.querySelector('.health-row-preview__card').dataset.position).toMatch(/^(bottom|top)/);
+    // Portalled INTO the themed root, or its surface/border tokens are undefined.
+    expect(document.querySelector('.health-row-preview__card').closest('.ds-root')).toBeTruthy();
   });
 
   it('never opens while a portion draft is live', () => {
