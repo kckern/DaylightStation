@@ -979,8 +979,15 @@ it requires calories and clears the marker. The web reports it as `needs-review`
 **No calories, no per-100 basis: estimate before quarantining.** The classifier call that
 already picks the icon and Noom colour is asked, for such a product, whether it is food at
 all (`isFood`) and for one typical serving's `estimate: { servingGrams, calories, protein,
-carbs, fat }`. Food with calories a finite number in 0–2000 is logged as an **unconfirmed
-AI estimate** instead of quarantined: per-nutrient `nutrientProvenance` `{ source: 'ai' }`,
+carbs, fat }`. **Every number on the row shares one basis:** when the label names a
+measurable serving (`30 g`, `240 ml`) the model is asked for exactly that serving, the label's
+own values stay as facts and the estimate only fills what is missing; when it does not, the
+estimate is for a typical serving of the model's stated mass, and label-only values (which
+describe a serving of unknown mass) are dropped — null, no provenance, listed in
+`nutritionLookup.droppedLabelNutrients`; a rejected mass logs "1 serving", never a gram mass
+the numbers do not describe (`aiEstimateBasis: 'label-serving' | 'typical-serving'`). Food with
+calories a finite number in 0–2000 is logged as an **unconfirmed AI estimate** instead of
+quarantined: `nutrientProvenance` `{ source: 'ai' }` on the estimated nutrients only,
 `nutritionLookup.aiEstimate: true` (plus `servingEstimate` when the mass is usable: ≤ 500 g
 and ≤ the package), `captureEvidence.assumption: 'ai-nutrition-estimate'`, the usual
 provisional review, and it never seeds the catalog's UPC entry. The result carries

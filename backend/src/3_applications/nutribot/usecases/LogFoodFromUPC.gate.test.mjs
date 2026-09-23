@@ -289,6 +289,44 @@ describe('LogFoodFromUPC — no calories: estimate instead of quarantine', () =>
     expect(item.unit).toBe('serving');
   });
 
+  it('a label gram serving: the estimate is asked for THAT serving and only fills what the label lacks', async () => {
+    const bar = bare({ serving: { size: 30, unit: 'g' },
+      nutrition: { calories: null, protein: 2, carbs: null, fat: null, fiber: 3, sodium: 100 } });
+    const ai = answer({ isFood: true, estimate: { servingGrams: 30, calories: 140, protein: 9, carbs: 20, fat: 6 } });
+    const { uc, foodLogStore } = make(bar, { ai, icons: 'granola-bar' });
+    await uc.execute({ userId: 'u', conversationId: 'c', upc: '037000338369', headless: true });
+    const [system, user] = ai.chat.mock.calls[0][0].map(m => m.content);
+    expect(system).toContain('THE LABEL SERVING OF 30 g');
+    expect(user).toContain('Label serving: 30 g');
+    const log = foodLogStore.save.mock.calls[0][0];
+    const item = log.items[0];
+    expect([item.grams, item.calories, item.protein, item.carbs, item.fat, item.fiber, item.sodium]).toEqual([30, 140, 2, 20, 6, 3, 100]);
+    expect(Object.keys(item.nutrientProvenance).sort()).toEqual(['calories', 'carbs', 'fat']);
+    expect(log.metadata.nutritionLookup).toMatchObject({ aiEstimate: true, aiEstimateBasis: 'label-serving' });
+    expect(log.metadata.nutritionLookup.servingEstimate).toBeUndefined();
+  });
+
+  it('no measurable label serving: label-only values have no common basis and are dropped', async () => {
+    const odd = bare({ nutrition: { calories: null, protein: 5, carbs: null, fat: null, sodium: 200, sugar: 12 } });
+    const ai = answer({ isFood: true, estimate: { servingGrams: 50, calories: 220, protein: 6, carbs: 30, fat: 9 } });
+    const { uc, foodLogStore } = make(odd, { ai, icons: 'granola-bar' });
+    await uc.execute({ userId: 'u', conversationId: 'c', upc: '037000338369', headless: true });
+    const log = foodLogStore.save.mock.calls[0][0];
+    const item = log.items[0];
+    expect([item.grams, item.calories, item.protein, item.sodium, item.sugar]).toEqual([50, 220, 6, null, null]);
+    expect(item.nutrientProvenance.sodium).toBeUndefined();
+    expect(log.metadata.nutritionLookup).toMatchObject({ aiEstimateBasis: 'typical-serving', droppedLabelNutrients: ['sugar', 'sodium'] });
+    expect(log.metadata.nutritionLookup.missing).toEqual(expect.arrayContaining(['sodium', 'sugar', 'fiber']));
+  });
+
+  it('a rejected typical mass is one serving, never the label\'s gram mass', async () => {
+    const ai = answer({ isFood: true, estimate: { servingGrams: 0, calories: 150, protein: 1, carbs: 30, fat: 2 } });
+    const { uc, foodLogStore } = make(bare({ serving: { size: 1, unit: 'serving' } }), { ai, icons: 'granola-bar' });
+    await uc.execute({ userId: 'u', conversationId: 'c', upc: '037000338369', headless: true });
+    const item = foodLogStore.save.mock.calls[0][0].items[0];
+    expect([item.grams, item.unit, item.amount, item.calories]).toEqual([null, 'serving', 1, 150]);
+  });
+
   it('a per-100 product with no serving text is scaled to the AI\'s typical serving', async () => {
     const cheese = { upc: '037000338369', name: 'Shredded Cheddar', serving: { size: 100, unit: 'g' },
       nutrition: { calories: 393, protein: 24, carbs: 3, fat: 32 },
