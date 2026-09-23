@@ -213,7 +213,10 @@ export function applyTuningProposal({ current, proposal, bounds = TUNING_BOUNDS,
     if (touched.has(setting) || (typeof last === 'string' && studyDaysSince(last, day, studyDays) < dwellDays)) { drop('dwell'); continue; }
     const from = next[setting];
     if (typeof to !== 'number' || !Number.isFinite(to) || typeof from !== 'number') { drop('step'); continue; }
-    const [lo, hi] = bounds?.[setting] ?? TUNING_BOUNDS[setting];
+    const [specLo, specHi] = TUNING_BOUNDS[setting];
+    const household = bounds?.[setting];
+    const lo = Array.isArray(household) && Number.isFinite(household[0]) ? Math.max(specLo, household[0]) : specLo;
+    const hi = Array.isArray(household) && Number.isFinite(household[1]) ? Math.min(specHi, household[1]) : specHi;
     const clamped = tidy(Math.min(hi, Math.max(lo, to)));
     if (clamped !== tidy(to) && clamped === tidy(from)) { drop('bounds'); continue; }
     if (tidy(Math.abs(clamped - from)) !== TUNABLE[setting].step) { drop('step'); continue; }
