@@ -3,7 +3,11 @@ import { describe, expect, it, vi } from 'vitest';
 import WordLadderProgram from './WordLadderProgram.jsx';
 
 vi.mock('./WordLadderStage.jsx', () => ({ default: ({ children }) => <div data-testid="stage">{children}</div> }));
-vi.mock('./wordLadderAudio.js', () => ({ playClip: vi.fn(async () => true) }));
+vi.mock('./wordLadderAudio.js', () => ({
+  playClip: vi.fn(async () => true),
+  playSequence: vi.fn(async () => {}),
+  startClip: vi.fn(() => ({ done: Promise.resolve(true), stop: vi.fn() })),
+}));
 const logs = vi.hoisted(() => ({ sessionReopened: vi.fn() }));
 vi.mock('./wordLadderLog.js', async (importOriginal) => {
   const actual = await importOriginal();
@@ -295,5 +299,20 @@ describe('WordLadderProgram — dispatches every item type', () => {
     fireEvent.click(screen.getByRole('button', { name: /check/i }));
     expect(await screen.findByText(/Not quite/)).toBeInTheDocument();
     expect(api.respond).toHaveBeenCalledWith('s', { userId: 'test-learner', itemId: 'd1:6', response: { tiles: ['위'] } });
+  });
+
+  it('M never sends {menu:true} while a typing item is on screen (on 두벌식 M is ㅡ)', async () => {
+    const api = fakeApi();
+    const practiceCopy = { ...copy, id: 'p1:0', source: 'practice', word: { ...word, media: { image: null, audio: 'aud', glossAudio: null } } };
+    api.open.mockResolvedValue(openWith(practiceCopy));
+    renderStarted(<WordLadderProgram descriptor={{ deckId: 'd', userId: 'test-learner' }} api={api} />);
+    const hear = await screen.findByRole('button', { name: /hear it/i });
+    hear.focus();
+    act(() => { fireEvent.keyDown(hear, { key: 'ㅡ', code: 'KeyM' }); });
+    act(() => { fireEvent.keyDown(window, { key: 'm', code: 'KeyM' }); });
+    expect(api.respond).not.toHaveBeenCalled();
+    // The Menu button itself still works.
+    fireEvent.click(screen.getByRole('button', { name: /^menu/i }));
+    await waitFor(() => expect(api.respond).toHaveBeenCalledWith('s', { userId: 'test-learner', itemId: 'p1:0', response: { menu: true } }));
   });
 });

@@ -20,15 +20,23 @@ const HELP_MODES = new Set(['say', 'write']);
 export default function MenuItem({ item, api, sittingId, userId, deckId, langs, onPractice, onExit }) {
   const [view, setView] = useState({ name: 'menu' });
   const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState(null);
   const modes = (item.modes ?? []).filter((mode) => LABELS[mode]);
 
   const start = async (opts) => {
     if (busy) return;
     setBusy(true);
+    setNotice(null);
     const body = { userId, filter: 'introduced', ...opts };
     wordLadderLog.practiceStarted({ mode: body.mode, help: body.help ?? null, filter: body.filter, frontSide: body.frontSide ?? null, chosen: body.chosen?.length ?? null });
     const out = await api.practice(sittingId, body);
     setBusy(false);
+    // A 404 reopens the sitting (the program does that); anything else leaves
+    // the child on the menu, so say so rather than doing nothing.
+    if (!out?.ok && out?.status !== 404) {
+      setNotice("Couldn't start — try again");
+      if (view.name !== 'menu') setView({ name: 'menu' });
+    }
     onPractice(out);
   };
   const choose = (mode) => {
@@ -85,6 +93,7 @@ export default function MenuItem({ item, api, sittingId, userId, deckId, langs, 
         ))}
         <TouchButton variant="secondary" disabled={busy} onClick={() => setView({ name: 'words' })}>My words</TouchButton>
       </div>
+      {notice && <p className="wl-say__notice" role="alert">{notice}</p>}
       <div className="wl-controls">
         <TouchButton variant="primary" onClick={onExit}>Done</TouchButton>
       </div>

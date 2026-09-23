@@ -39,6 +39,7 @@ export const wordLadderLog = {
   drillOffered: (data) => emit('drill.offered', data),                   // {accepted}
   practiceStarted: (data) => emit('practice.started', data),             // {mode, help, filter}
   practiceFailed: (data) => emit('practice.failed', data, 'warn'),
+  wordsFailed: (data) => emit('words.failed', data, 'warn'),               // My words read refused/failed
 };
 
 export default wordLadderLog;

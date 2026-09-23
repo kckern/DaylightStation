@@ -27,10 +27,11 @@ export default function FlashcardItem({ item, langs, resolveAssetUrl, onRespond,
   const termShowing = glossFront ? flipped : !flipped;
   const soundOk = audio && (!glossFront || flipped);
   useEffect(() => { setFlipped(false); setImageOk(true); if (audio && !glossFront) playClip(audio); }, [item.id]); // eslint-disable-line react-hooks/exhaustive-deps
-  const flip = () => setFlipped((f) => {
-    if (!f && glossFront && audio) playClip(audio);
-    return !f;
-  });
+  const flip = () => {
+    // Turning a meaning-first card over reveals the Korean: its sound comes with it.
+    if (!flipped && glossFront && audio) playClip(audio);
+    setFlipped(!flipped);
+  };
   const act = (response) => { if (!busy) onRespond(response); };
   const advance = practice ? () => act({ next: true }) : () => act({ seen: true });
   useWordLadderKeys({

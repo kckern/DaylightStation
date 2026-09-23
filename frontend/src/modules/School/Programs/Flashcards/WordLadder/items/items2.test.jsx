@@ -10,8 +10,18 @@ import WordsItem from './WordsItem.jsx';
 import FlashcardItem from './FlashcardItem.jsx';
 import SummaryItem from './SummaryItem.jsx';
 import { wordLadderLog } from '../wordLadderLog.js';
+import { startClip } from '../wordLadderAudio.js';
 
-vi.mock('../wordLadderAudio.js', () => ({ playClip: vi.fn(async () => true), playSequence: vi.fn(async () => {}) }));
+const audio = vi.hoisted(() => ({ stop: null }));
+vi.mock('../wordLadderAudio.js', () => {
+  audio.stop = vi.fn();
+  return {
+    playClip: vi.fn(async () => true),
+    playSequence: vi.fn(async () => {}),
+    // A clip that never ends on its own: only stop() (or unmount) ends a Listen run early.
+    startClip: vi.fn(() => ({ done: new Promise(() => {}), stop: audio.stop })),
+  };
+});
 vi.mock('../useTakeRecorder.js', () => ({
   default: vi.fn(() => ({ start: vi.fn(), stop: vi.fn(), phase: 'idle', verdict: null, stream: null, onLevel: vi.fn() })),
 }));
@@ -228,7 +238,44 @@ describe('WordsItem', () => {
   });
 });
 
+describe('WordsItem failure', () => {
+  it('a failed read logs words.failed, not write.failed', async () => {
+    const spy = vi.spyOn(wordLadderLog, 'wordsFailed');
+    const write = vi.spyOn(wordLadderLog, 'writeFailed');
+    const api = { words: vi.fn(async () => ({ ok: false, status: 500, data: null })) };
+    render(<WordsItem api={api} sittingId="s" userId="kid" deckId="d" langs={langs} onBack={vi.fn()} />);
+    expect(await screen.findByRole('alert')).toBeInTheDocument();
+    expect(spy).toHaveBeenCalledWith(expect.objectContaining({ status: 500 }));
+    expect(write).not.toHaveBeenCalled();
+  });
+});
+
+describe('MenuItem failure', () => {
+  it("a failed start (network / non-404) says Couldn't start on the menu", async () => {
+    const api = menuApi();
+    api.practice.mockResolvedValue({ ok: false, status: 0, data: null });
+    const props = menuProps(api);
+    render(<MenuItem {...props} />);
+    fireEvent.click(screen.getByRole('button', { name: /match/i }));
+    expect(await screen.findByText(/Couldn.t start — try again/)).toBeInTheDocument();
+    expect(props.onPractice).toHaveBeenCalled();
+  });
+});
+
 describe('DrillItem', () => {
+  it('a hidden step says "Practising a word", never "tricky"', () => {
+    render(<DrillItem item={{ id: 'd1:5', type: 'drill', step: 'dictation', wordId: 'gawi', of: 9, at: 6, assets: { image: null, audio: 'aud', glossAudio: null } }} langs={langs} resolveAssetUrl={id} onRespond={vi.fn()} />);
+    expect(screen.getByText(/Practising a word/)).toBeInTheDocument();
+    expect(screen.queryByText(/tricky/)).toBeNull();
+  });
+
+  it('an unknown step offers Skip → {done:true}', () => {
+    const onRespond = vi.fn();
+    render(<DrillItem item={{ id: 'd1:9', type: 'drill', step: 'future-step', wordId: 'gawi', of: 9, at: 9 }} langs={langs} resolveAssetUrl={id} onRespond={onRespond} />);
+    fireEvent.click(screen.getByRole('button', { name: /skip/i }));
+    expect(onRespond).toHaveBeenCalledWith({ done: true });
+  });
+
   const dictation = { id: 'd1:5', type: 'drill', step: 'dictation', wordId: 'gawi', of: 9, at: 6, assets: { image: null, audio: 'aud', glossAudio: null } };
 
   it('hides the term on dictation and shows step progress', () => {
@@ -266,6 +313,25 @@ describe('DrillItem', () => {
 });
 
 describe('ListenItem', () => {
+  it('A does not restart a run that is still playing; Next stops the clip', () => {
+    startClip.mockClear(); audio.stop.mockClear();
+    const onRespond = vi.fn();
+    render(<ListenItem item={{ id: 'p1:9', type: 'listen', source: 'practice', words: [{ wordId: 'gawi', term: '가위', audio: 'a1' }, { wordId: 'b', term: '책', audio: 'a2' }] }} langs={langs} resolveAssetUrl={id} onRespond={onRespond} />);
+    expect(startClip).toHaveBeenCalledTimes(1);
+    fireEvent.keyDown(window, { key: 'a' });
+    expect(startClip).toHaveBeenCalledTimes(1);
+    fireEvent.keyDown(window, { key: ' ' });
+    expect(audio.stop).toHaveBeenCalled();
+    expect(onRespond).toHaveBeenCalledWith({ done: true });
+  });
+
+  it('unmounting stops the clip', () => {
+    audio.stop.mockClear();
+    const { unmount } = render(<ListenItem item={{ id: 'p1:8', type: 'listen', source: 'practice', words: [{ wordId: 'gawi', term: '가위', audio: 'a1' }] }} langs={langs} resolveAssetUrl={id} onRespond={vi.fn()} />);
+    unmount();
+    expect(audio.stop).toHaveBeenCalled();
+  });
+
   it('shows the words and Next sends {done:true}', async () => {
     const onRespond = vi.fn();
     render(<ListenItem item={{ id: 'p1:0', type: 'listen', source: 'practice', words: [{ wordId: 'gawi', term: '가위', audio: 'a1' }] }} langs={langs} resolveAssetUrl={id} onRespond={onRespond} />);
