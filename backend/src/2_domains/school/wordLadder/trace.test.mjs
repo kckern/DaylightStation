@@ -31,33 +31,36 @@ describe('formatTrace — intro, copy, sorts, verify miss, stall, leave', () => 
     // otherwise collide — see kindOf() in trace.mjs) carries a flashcard's
     // intro-vs-sort distinction into the rendered "kind".
     fe('item.shown', 200, 2, { itemId: 'r1:0:intro', type: 'flashcard', itemMode: 'intro', task: null, wordId: 'gawi', layout: 'flashcard-front', media: false, fontPx: null }),
-    fe('item.answered', 3200, 3, { itemId: 'r1:0:intro', type: 'flashcard', task: null, response: {}, correct: null, score: null, judge: null, next: 'copy', ms: 3000 }),
+    // The main FitText's first computed size for this item, once, as a follow-up
+    // to item.shown (whose own fontPx is always null — see wordLadderLog.js).
+    fe('item.layout', 250, 3, { itemId: 'r1:0:intro', fontPx: 64 }),
+    fe('item.answered', 3200, 4, { itemId: 'r1:0:intro', type: 'flashcard', task: null, response: {}, correct: null, score: null, judge: null, next: 'copy', ms: 3000 }),
     be('transition', { itemId: 'r1:0:intro', wordId: 'gawi', from: { state: 'new', stage: null }, to: { state: 'introduced', stage: null }, source: 'intro' }),
 
-    fe('item.shown', 3400, 4, { itemId: 'r1:0:copy', type: 'copy', mode: null, task: null, wordId: 'gawi', layout: 'copy', media: false, fontPx: null }),
-    fe('item.answered', 6400, 5, { itemId: 'r1:0:copy', type: 'copy', task: null, response: { typed: '가위' }, correct: true, score: null, judge: null, next: 'flashcard', ms: 3000 }),
+    fe('item.shown', 3400, 5, { itemId: 'r1:0:copy', type: 'copy', mode: null, task: null, wordId: 'gawi', layout: 'copy', media: false, fontPx: null }),
+    fe('item.answered', 6400, 6, { itemId: 'r1:0:copy', type: 'copy', task: null, response: { typed: '가위' }, correct: true, score: null, judge: null, next: 'flashcard', ms: 3000 }),
 
-    fe('item.shown', 6600, 6, { itemId: 'r1:s:1', type: 'flashcard', mode: null, task: null, wordId: 'gawi', layout: 'flashcard-front', media: false, fontPx: null }),
-    fe('item.answered', 8600, 7, { itemId: 'r1:s:1', type: 'flashcard', task: null, response: { sort: 'claimed' }, correct: null, score: null, judge: null, next: 'flashcard', ms: 2000 }),
+    fe('item.shown', 6600, 7, { itemId: 'r1:s:1', type: 'flashcard', mode: null, task: null, wordId: 'gawi', layout: 'flashcard-front', media: false, fontPx: null }),
+    fe('item.answered', 8600, 8, { itemId: 'r1:s:1', type: 'flashcard', task: null, response: { sort: 'claimed' }, correct: null, score: null, judge: null, next: 'flashcard', ms: 2000 }),
     be('transition', { itemId: 'r1:s:1', wordId: 'gawi', from: { state: 'introduced', stage: null }, to: { state: 'claimed', stage: null }, source: 'sort' }),
 
-    fe('item.shown', 8800, 8, { itemId: 'r1:q:0', type: 'typed', mode: null, task: '3.3', wordId: 'gawi', layout: 'typed', media: false, fontPx: null }),
+    fe('item.shown', 8800, 9, { itemId: 'r1:q:0', type: 'typed', mode: null, task: '3.3', wordId: 'gawi', layout: 'typed', media: false, fontPx: null }),
     // 40s to answer, wrong — no explicit item.stalled (that only fires at 45s), but the
     // gap is still ≥30s, so this must be flagged from the gap alone.
-    fe('item.answered', 48800, 9, { itemId: 'r1:q:0', type: 'typed', task: '3.3', response: { typed: '가방' }, correct: false, score: 2, judge: 'model', next: 'flashcard', ms: 40000 }),
+    fe('item.answered', 48800, 10, { itemId: 'r1:q:0', type: 'typed', task: '3.3', response: { typed: '가방' }, correct: false, score: 2, judge: 'model', next: 'flashcard', ms: 40000 }),
     be('graded', { itemId: 'r1:q:0', wordId: 'gawi', task: '3.3', source: 'verify', correct: false, score: 2, judge: 'model' }),
 
-    fe('item.shown', 49000, 10, { itemId: 'r1:rc:0', type: 'typed', mode: null, task: '3.3', wordId: 'pul', layout: 'typed', media: false, fontPx: null }),
-    fe('item.stalled', 94000, 11, { itemId: 'r1:rc:0', ms: 45000 }),
-    fe('sitting.closed', 120000, 12, { sittingId: 'korean-vocab.abc123.1', itemId: 'r1:rc:0', reason: 'leave', activeMs: 118000, remaining: 600000 }),
-    fe('unmounted', 120100, 13, { userId: 'learner-a', deckId: 'language/korean/week-01-classroom', test: false, sittingId: 'korean-vocab.abc123.1' }),
+    fe('item.shown', 49000, 11, { itemId: 'r1:rc:0', type: 'typed', mode: null, task: '3.3', wordId: 'pul', layout: 'typed', media: false, fontPx: null }),
+    fe('item.stalled', 94000, 12, { itemId: 'r1:rc:0', ms: 45000 }),
+    fe('sitting.closed', 120000, 13, { sittingId: 'korean-vocab.abc123.1', itemId: 'r1:rc:0', reason: 'leave', activeMs: 118000, remaining: 600000 }),
+    fe('unmounted', 120100, 14, { userId: 'learner-a', deckId: 'language/korean/week-01-classroom', test: false, sittingId: 'korean-vocab.abc123.1' }),
     be('closed', { reason: 'leave', activeMs: 118000, doneAt: null }),
   ];
 
   it('renders the exact timeline', () => {
     expect(formatTrace(events)).toBe([
       'learner-a · korean-vocab · 2026-09-22 · live · trace tr1 · 1:58 · leave',
-      '0:00  flashcard:intro gawi flashcard-front — — (3000ms) → introduced',
+      '0:00  flashcard:intro gawi flashcard-front 64px — — (3000ms) → introduced',
       '0:03  copy gawi copy 가위 ✓ (3000ms)',
       '0:07  flashcard gawi flashcard-front sort:claimed — (2000ms) → claimed',
       '0:09  typed gawi 3.3 가방 ✗ (40000ms)',
@@ -129,12 +132,13 @@ describe('formatTrace — endings and grouping', () => {
       // Every itemId below names an item this window's log rows never captured a `item.shown` for.
       fe('item.answered', 2000, 3, { itemId: 'ghost-answered', type: 'typed', task: '3.3', response: { typed: 'x' }, correct: false, ms: 500 }),
       fe('item.stalled', 3000, 4, { itemId: 'ghost-stalled', ms: 45000 }),
+      fe('item.layout', 3500, 5, { itemId: 'ghost-layout', fontPx: 40 }),
       be('transition', { itemId: 'ghost-transition', wordId: 'gawi', from: { state: 'new', stage: null }, to: { state: 'introduced', stage: null }, source: 'intro' }),
       be('graded', { itemId: 'ghost-graded', wordId: 'gawi', task: '3.3', source: 'verify', correct: true }),
-      fe('sitting.closed', 4000, 5, { sittingId: 'korean-vocab.abc123.1', itemId: 'i1', reason: 'goal', activeMs: 4000 }),
+      fe('sitting.closed', 4000, 6, { sittingId: 'korean-vocab.abc123.1', itemId: 'i1', reason: 'goal', activeMs: 4000 }),
     ];
     const out = formatTrace(events);
-    expect(out).toContain('⚠ 4 orphaned event(s) — log rows missing');
+    expect(out).toContain('⚠ 5 orphaned event(s) — log rows missing');
     // The real item is still rendered fine, undisturbed by the orphans.
     expect(out).toContain('0:00  typed gawi 3.3 가위 ✓ (1000ms)');
   });

@@ -32,6 +32,7 @@ const MSG = {
   ITEM_SHOWN: 'school.word-ladder.item.shown',
   ITEM_ANSWERED: 'school.word-ladder.item.answered',
   ITEM_STALLED: 'school.word-ladder.item.stalled',
+  ITEM_LAYOUT: 'school.word-ladder.item.layout',
   SITTING_CLOSED: 'school.word-ladder.sitting.closed',
   BACKEND_TRANSITION: 'school.word-ladder.transition',
   BACKEND_GRADED: 'school.word-ladder.graded',
@@ -100,11 +101,14 @@ function transitionsSuffix(transitions) {
 
 function itemLine(item, { isLeftHere }) {
   const taskOrLayout = item.task ?? item.layout ?? '—';
+  // Only from item.layout, so most lines carry no fontPx at all rather than
+  // a placeholder — that event is a once-per-item follow-up, not universal.
+  const fontPx = typeof item.fontPx === 'number' ? ` ${item.fontPx}px` : '';
   const response = formatResponse(item.answered?.response);
   const outcome = formatOutcome(item.answered);
   const ms = formatMs(item.answered);
   const left = isLeftHere ? ' ✗ left here' : '';
-  return `${mmss(item.tStart)}  ${kindOf(item)} ${item.wordId ?? '—'} ${taskOrLayout} ${response} ${outcome} (${ms})${transitionsSuffix(item.transitions)}${left}`;
+  return `${mmss(item.tStart)}  ${kindOf(item)} ${item.wordId ?? '—'} ${taskOrLayout}${fontPx} ${response} ${outcome} (${ms})${transitionsSuffix(item.transitions)}${left}`;
 }
 
 /**
@@ -170,6 +174,12 @@ function buildTrace(traceId, feEvents, backendEvents) {
       const item = d.itemId ? byItemId.get(d.itemId) : null;
       if (!item) orphaned += 1;
       else if (typeof d.ms === 'number') item.stalls.push({ ms: d.ms });
+    } else if (ev.msg === MSG.ITEM_LAYOUT) {
+      // The main FitText's first computed size for this item, once (a
+      // follow-up to item.shown, whose own fontPx is always null).
+      const item = d.itemId ? byItemId.get(d.itemId) : null;
+      if (!item) orphaned += 1;
+      else if (typeof d.fontPx === 'number') item.fontPx = d.fontPx;
     } else if (ev.msg === MSG.SITTING_CLOSED) {
       closeEvent = {
         reason: d.reason ?? null, activeMs: typeof d.activeMs === 'number' ? d.activeMs : null,
