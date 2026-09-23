@@ -250,7 +250,7 @@ describe('withTunedValues', () => {
     expect(out.round).toEqual({ size: 6, maxPasses: 3 });
     expect(out.review.gapScale).toBe(1.1);
     expect(out.session.capMinutes).toBe(15);
-    expect(out.batch).toEqual({ newPerDay: 4, workingSet: 10 });
+    expect(out.batch).toEqual({ newPerDay: 4, workingSet: 10, order: 'random' });
     expect(out).not.toHaveProperty('nope');
     expect(DEFAULT_SETTINGS.round.size).toBe(5);
   });

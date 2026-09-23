@@ -28,7 +28,7 @@ import { offsetMinutesFor, studyDayForInstant } from '#domains/school/studyDay.m
 import { addDays } from '#domains/school/termVerdict.mjs';
 import { curriculumPosterRef } from '#apps/common/resources/publicResourceRefs.mjs';
 import {
-  addActiveTime, cueFor, currentItem, deckDirOf, deckProgress, emptyWordV3, introPlanLabel, introPreview, excludeWordFromDay, foldPaperAttempts, ladderLevel, markMastered, openDay,
+  addActiveTime, cueFor, currentItem, deckDirOf, deckProgress, emptyWordV3, introPlanLabel, introPreview, excludeWordFromDay, foldPaperAttempts, ladderLevel, markMastered, openDay, orderNewWords,
   quizDocumentIdFor, respond, roundHasMatch, startPractice, typedAnswers, withTunedValues, wordAssetIds, wordTransitions,
   servedWhy, dayChanges, prereqChanges, scriptFor, ruleForTarget,
 } from '#domains/school/cardLadder/index.mjs';
@@ -154,21 +154,32 @@ export class CardLadderSittingService {
     return media;
   }
 
-  /** Word ids across every deck the learner has seen (in order) plus this one. */
-  async #deckOrder(status, deck) {
+  /** Each deck the learner has seen (in order) plus this one, with its word ids. */
+  async #deckGroups(status, deck) {
     const order = [...status.decksSeen];
     if (!order.includes(deck.id)) order.push(deck.id);
-    const ids = [];
+    const groups = [];
     for (const deckId of order) {
       const other = deckId === deck.id ? deck : await this.#decks.getFlashcardDeck(deckId).catch(() => null);
-      for (const id of other?.words ?? []) if (!ids.includes(id)) ids.push(id);
+      groups.push({ deckId, ids: [...(other?.words ?? [])] });
     }
-    return ids;
+    return groups;
   }
 
-  /** Words still new, across every deck the learner has seen (in order) plus this one. */
-  async #pool(status, deck) {
-    return (await this.#deckOrder(status, deck)).filter((id) => (status.words[id]?.state ?? 'new') === 'new');
+  /** Word ids across every deck the learner has seen (in order) plus this one — authored order. */
+  async #deckOrder(status, deck) {
+    return orderNewWords(await this.#deckGroups(status, deck), { order: 'deck' });
+  }
+
+  /**
+   * Words still new, across every deck the learner has seen plus this one, in
+   * the order they will be introduced: `batch.order` (config; random by
+   * default — a stable per-learner shuffle within each deck).
+   */
+  async #pool(status, deck, learnerId) {
+    const order = this.#settings().batch?.order ?? 'random';
+    const ids = orderNewWords(await this.#deckGroups(status, deck), { order, learnerId: learnerId ?? '' });
+    return ids.filter((id) => (status.words[id]?.state ?? 'new') === 'new');
   }
 
   /**
@@ -319,7 +330,7 @@ export class CardLadderSittingService {
     const status = store.readStatus(userId, pkg);
     const media = this.#media(deck, lexicon);
     const settings = this.#daySettings(dayFile, { store, userId, pkg });
-    const ctx = { status, dayFile, day, lexicon, media, pool: await this.#pool(status, deck), settings, learnerId: userId };
+    const ctx = { status, dayFile, day, lexicon, media, pool: await this.#pool(status, deck, userId), settings, learnerId: userId };
     return { store, pkg, lexicon, media, settings, ctx, day, sitting };
   }
 
@@ -495,7 +506,7 @@ export class CardLadderSittingService {
     const quizDocumentIds = read.attempts.length ? await this.#quizDocumentIds(deck) : [];
     // `#pool` includes this deck; a paper fold only demotes introduced words,
     // so the new-word pool is the same before and after the fold.
-    const pool = await this.#pool(before, deck);
+    const pool = await this.#pool(before, deck, userId);
     let folded = [];
     let foldTransitions = [];
     let changes = { reopened: false, idleClosed: [] };
@@ -889,7 +900,7 @@ export class CardLadderSittingService {
   async adminExclude({ learnerId, deckId, wordId, excluded = true, actorId = null, pin = null } = {}) {
     if (typeof excluded !== 'boolean') throw new ValidationError('excluded must be true or false');
     const prepare = async ({ deck, lexicon, pkg, store }) => ({
-      deck, lexicon, media: this.#media(deck, lexicon), pool: await this.#pool(store.readStatus(learnerId, pkg), deck),
+      deck, lexicon, media: this.#media(deck, lexicon), pool: await this.#pool(store.readStatus(learnerId, pkg), deck, learnerId),
     });
     return this.#adminWord({ learnerId, deckId, wordId, actorId, pin }, excluded ? 'exclude' : 'include', (word, ctx) => {
       const next = { ...word, excluded };
@@ -966,7 +977,7 @@ export class CardLadderSittingService {
     const status = store.readStatus(userId, pkg);
     const dayFile = store.readDay(userId, pkg, day);
     const settings = this.#daySettings(dayFile, { store, userId, pkg });
-    const plan = introPreview({ status, dayFile, day, pool: await this.#pool(status, deck), settings });
+    const plan = introPreview({ status, dayFile, day, pool: await this.#pool(status, deck, userId), settings });
     return {
       course: { id: `program:card-ladder:${pkg}`, title: lexicon.program.title },
       unit: { id: deck.id, title: typeof deck.title === 'string' && deck.title.trim() ? deck.title.trim() : deck.id },
