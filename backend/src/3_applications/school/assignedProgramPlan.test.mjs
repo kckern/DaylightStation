@@ -46,6 +46,25 @@ describe('appendAssignedProgramEntries — the sentence ladder', () => {
   });
 });
 
+describe('appendAssignedProgramEntries — flashcards subject', () => {
+  // Found live 2026-09-23: a Korean card-ladder enrolment hard-coded
+  // `subject: 'flashcards'`, which is not one of `SUBJECT_IDS`, so the
+  // agenda bucketed the card into 'other' instead of 'language'.
+  it('carries the enrollment subject onto the entry when one is authored', () => {
+    const out = appendAssignedProgramEntries(plan(), {
+      programs: [{ programId: 'flashcards', deckId: 'korean-1', subject: 'language' }],
+    });
+    expect(out.entries[0].subject).toBe('language');
+  });
+
+  it('defaults to flashcards when the enrollment names no subject', () => {
+    const out = appendAssignedProgramEntries(plan(), {
+      programs: [{ programId: 'flashcards', deckId: 'd1' }],
+    });
+    expect(out.entries[0].subject).toBe('flashcards');
+  });
+});
+
 describe('appendAssignedProgramEntries — optional programs', () => {
   it('marks an elective program entry elective and leaves others required', () => {
     const plan = appendAssignedProgramEntries({ entries: [] }, { programs: [
