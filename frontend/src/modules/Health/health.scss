@@ -277,8 +277,6 @@ $health-bar-box: 16px;
   &__macros { font-size: 0.8rem; color: var(--ds-text-mid); font-variant-numeric: tabular-nums; }
 }
 
-$health-quickbar-btn-size: 44px;
-
 // Task 8.4 layout. `$health-aside-breakpoint` is the SCSS half of a value that
 // also exists in JS (today/layout.js's ASIDE_MIN_WIDTH_PX) — the sidebar's
 // widgets are 30-day surfaces and must not FETCH on a phone, which the CSS
@@ -326,9 +324,22 @@ $health-aside-gap: 1.5rem;
 // two meals keep their places whether or not either has food yet.
 .health-log__column { display: grid; gap: 0.5rem; align-content: start; min-width: 0; }
 .health-log__wide { grid-column: 1 / -1; }
-.health-meal__add-row { margin-top: 0.25rem; }
+.health-meal__add-row { margin-top: 0.1rem; }
 .health-suggest__field { display: flex; align-items: center; gap: 4px; > :first-child { flex: 1; min-width: 0; } }
-.health-meal__add-actions { display: inline-flex; align-items: center; gap: 2px; color: var(--ds-text-mid); }
+.health-meal__add-actions { display: inline-flex; align-items: center; gap: 0; color: var(--ds-text-low); }
+.health-meal__add-action { color: inherit; }
+// Compact under a mouse only; touch keeps the 44px floor below.
+@media (pointer: fine) {
+  .health-meal__add-row .health-meal__capture-btn, .health-meal__add-row .health-meal__add-action { min-width: 26px; min-height: 26px; width: 26px; height: 26px; }
+  .health-meal__add-row svg { width: 15px; height: 15px; }
+}
+@media (hover: hover) {
+  .health-meal__add-actions { opacity: 0.45; transition: opacity var(--ds-motion-reveal) var(--ds-motion-easing); }
+  .health-meal:hover .health-meal__add-actions,
+  .health-meal__add-row:focus-within .health-meal__add-actions,
+  .health-meal__add-row[data-selecting] .health-meal__add-actions { opacity: 1; color: var(--ds-text-mid); }
+}
+@media (prefers-reduced-motion: reduce) { .health-meal__add-actions { transition: none; } }
 // Phone widths are touch-first: the add row's photo / barcode / saved-meals
 // icons get the same 44px floor as `.health-meal__capture-btn`.
 @media (max-width: 760px) {
@@ -372,28 +383,6 @@ $health-aside-gap: 1.5rem;
 // the same offset just reads as comfortable clearance from the screen edge
 // (the "mobile: always visible; desktop: same, unobtrusive" interface
 // note) — no breakpoint-specific rule needed.
-.health-quickbar {
-  position: relative; justify-self: stretch; max-width: 100%;
-  display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem;
-  padding: 0.4rem 0; margin-block: 0.35rem;
-  border-bottom: 1px solid var(--ds-border);
-  &__target { flex: 1 1 9rem; min-width: 8rem; max-width: 13rem; color: var(--ds-text-high); }
-  &__target input { min-height: 44px; }
-
-  // Same 44px-touch-target floor as `.health-meal__capture-btn` — see that
-  // rule's comment (min-width/min-height always win over ActionIcon's
-  // smaller default). Kept as its own class (not shared with
-  // `.health-meal__capture-btn`) since the two surfaces are conceptually
-  // distinct — this one is never nested inside a meal row.
-  &__btn {
-    min-width: $health-quickbar-btn-size; min-height: $health-quickbar-btn-size;
-    display: flex; align-items: center; justify-content: center;
-    border-radius: 50%; color: var(--ds-text-high);
-    &:hover { background: var(--ds-surface-alt); }
-    &:focus-visible { outline: 2px solid var(--ds-accent); outline-offset: 2px; }
-  }
-}
-
 .health-capture-error { color: var(--ds-danger); font-size: 0.75rem; max-width: 14rem; }
 .health-edit__advanced summary { cursor: pointer; color: var(--ds-text-mid); font-size: 0.8rem; padding: 0.5rem 0; }
 
@@ -788,6 +777,20 @@ $health-aside-gap: 1.5rem;
   }
   // No room below in the visible viewport (AddCombobox popupPlacement): open upward.
   &.health-suggest--above .health-suggest__popup { top: auto; bottom: calc(100% + 2px); }
+}
+// A meal's add row is a quiet line under its foods: no card, no border until
+// it is focused, and its capture icons muted until the row is reached. The
+// popup keeps its own card (below), so an open list still reads as a panel.
+.health-meal__add-row > .health-suggest {
+  margin: 0; padding: 0; border-color: transparent; background: transparent; box-shadow: none;
+  > .health-suggest__popup { box-shadow: 0 8px 24px color-mix(in srgb, var(--ds-text-high) 12%, transparent); }
+  .mantine-TextInput-input {
+    height: 30px; min-height: 30px; font-size: 0.8rem;
+    background: transparent; border-color: transparent;
+    &::placeholder { color: var(--ds-text-low); }
+    &:hover { background: var(--ds-surface-alt); }
+    &:focus { background: var(--ds-surface-alt); border-color: var(--ds-border); }
+  }
 }
 .health-pending {
   border: 1px solid var(--ds-border); border-left: 3px solid var(--ds-warning);

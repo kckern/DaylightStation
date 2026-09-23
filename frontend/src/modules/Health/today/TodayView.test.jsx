@@ -4,9 +4,6 @@ import { MantineProvider } from '@mantine/core';
 
 const apiMock = vi.fn();
 const departureState = vi.hoisted(()=>({departed:false}));
-// The latest props the QuickCaptureBar stub received, so a test can drive its
-// callbacks (e.g. the + that reveals a meal) without rendering the real bar.
-const quickBarProps = vi.hoisted(() => ({ current: null }));
 // The latest props the BarcodeCapture stub received, so a test can drive a decode.
 const barcodeProps = vi.hoisted(() => ({ current: null }));
 vi.mock('../../../lib/api.mjs', () => ({ DaylightAPI: (...a) => apiMock(...a) }));
@@ -15,30 +12,19 @@ vi.mock('../../../lib/api.mjs', () => ({ DaylightAPI: (...a) => apiMock(...a) })
 // thing under test is TodayView's handling of the /nutrition/input response,
 // not the capture widgets themselves (those have their own tests).
 //
-// LogTable mounts one PhotoCapture/VoiceCapture PER MEAL BUCKET (Task 4.2),
-// and this mock applies to ALL of them (module-level vi.mock, whole file's
-// import graph) — the mock label carries the received `bucket` prop so
-// each instance stays individually clickable/assertable. Every real caller
-// in this file's tree now always supplies a bucket (LogTable's per-meal
-// buttons pass that meal's id) — the bucket-less branch below is dead in
-// practice but kept so the mock still degrades sensibly if some future
-// caller omits it.
-//
-// Each meal's add row (MealAddRow) also mounts a PhotoCapture, with a
-// `labelPrefix`. Those get their own label so they never collide with the
-// QuickCaptureBar stub's `MockPhotoCapture-{bucket}` buttons below.
+// Each meal's add row mounts one PhotoCapture/VoiceCapture, and every meal
+// always renders, so there is exactly one of each per bucket. The mock label
+// carries the received `bucket` so each instance stays individually
+// clickable/assertable.
 vi.mock('../capture/PhotoCapture.jsx', () => ({
-  PhotoCapture: ({ onCapture, bucket, labelPrefix }) => (
+  PhotoCapture: ({ onCapture, bucket }) => (
     <button onClick={() => onCapture('data:image/png;base64,zzz', bucket)}>
-      {labelPrefix ? `MockAddRowPhoto-${bucket}` : bucket ? `MockPhotoCapture-${bucket}` : 'MockPhotoCapture'}
+      {bucket ? `MockPhotoCapture-${bucket}` : 'MockPhotoCapture'}
     </button>
   ),
 }));
 vi.mock('../capture/VoiceCapture.jsx', () => ({
-  // The add row's mic carries a labelPrefix; the meal header's does not.
-  VoiceCapture: ({ onCapture, bucket, labelPrefix }) => labelPrefix ? (
-    <button onClick={() => onCapture('data:audio/webm;base64,zzz', bucket)}>MockAddRowVoice-{bucket}</button>
-  ) : (
+  VoiceCapture: ({ onCapture, bucket }) => (
     <><button onClick={() => onCapture('data:audio/webm;base64,zzz', bucket)}>
       {bucket ? `MockVoiceCapture-${bucket}` : 'MockVoiceCapture'}
     </button><button onClick={() => onCapture('data:audio/webm;base64,zzz', bucket, { departed:true }).catch(()=>{})}>
@@ -50,23 +36,6 @@ vi.mock('../capture/VoiceCapture.jsx', () => ({
 }));
 vi.mock('../capture/BarcodeCapture.jsx', () => ({ BarcodeCapture: (props) => { barcodeProps.current = props; return null; } }));
 vi.mock('../capture/CustomFoodSheet.jsx', () => ({ CustomFoodSheet: () => null }));
-// QuickCaptureBar (Task 4.3) has its own dedicated test file
-// (QuickCaptureBar.test.jsx) covering its four affordances, the clock-derived
-// bucket, and the add-combobox trigger. Stub it out here rather than let it
-// render for real: it also mounts VoiceCapture/PhotoCapture (mocked above)
-// with a bucket computed from the ACTUAL wall-clock hour, which would (a) be
-// non-deterministic in this file's tests and (b) collide with whichever
-// per-meal instance happens to share that hour's bucket, since the mock's
-// label depends only on `bucket`, not on which caller rendered it.
-// Expose the toolbar callback seam deterministically; its real target UI has a separate suite.
-vi.mock('./QuickCaptureBar.jsx', () => ({ QuickCaptureBar: (props) => { quickBarProps.current = props;
-  const { bucketOverride, hideVoice, onPhotoCapture, onVoiceCapture } = props;
-  return bucketOverride ? null : <div>{['morning', 'afternoon', 'evening', 'night'].map(bucket => <div key={bucket}>
-    <button onClick={() => onPhotoCapture('data:image/png;base64,zzz', bucket)}>MockPhotoCapture-{bucket}</button>
-    {!hideVoice ? <button onClick={() => onVoiceCapture('data:audio/webm;base64,zzz', bucket)}>MockVoiceCapture-{bucket}</button> : null}
-  </div>)}</div>; }
-}));
-
 // Pin the capture-pending bucket target so the "which bucket does the
 // placeholder land in" tests are deterministic regardless of wall-clock
 // time — everything else in mealBuckets.js (BUCKETS, localTodayISO, …)
@@ -222,12 +191,9 @@ describe('TodayView — Task 3.2: permanent chrome, SWR day data, in-place captu
     r(<TodayView onSetupGoals={() => {}} onCoachTap={() => {}} />);
 
     // Synchronously, before anything resolves: structure is already there.
-    // Lunch and Dinner are permanent; Breakfast and Snacks wait for food.
-    expect(screen.getByText('Lunch')).toBeTruthy();
-    expect(screen.getByText('Dinner')).toBeTruthy();
-    expect(screen.queryByText('Breakfast')).toBeNull();
-    expect(screen.queryByText('Snacks')).toBeNull();
-    expect(screen.getAllByRole('combobox', { name: /^Add to / }).length).toBe(2);
+    // All four meals are permanent.
+    for (const meal of ['Breakfast', 'Lunch', 'Dinner', 'Snacks']) expect(screen.getByText(meal)).toBeTruthy();
+    expect(screen.getAllByRole('combobox', { name: /^Add to / }).length).toBe(4);
     // The shimmer lives INSIDE a section body, not as a page-level spinner.
     const shimmers = screen.getAllByLabelText(/^Loading /);
     expect(shimmers.length).toBeGreaterThan(0);
@@ -364,16 +330,6 @@ describe('TodayView — Task 4.2: per-meal capture buttons + the moved cue', () 
     });
   });
 
-  // Task 4.3 retired the footer's bucket-less global capture instance
-  // entirely — QuickCaptureBar is now the one always-reachable surface, and
-  // it ALWAYS supplies a clock-derived bucket (never omits one). That
-  // component's own bucket-forwarding contract is pinned in
-  // QuickCaptureBar.test.jsx; this file stubs QuickCaptureBar out (see the
-  // module mock above) since it shares TodayView's real
-  // onVoiceCapture/onPhotoCapture handlers with LogTable's per-meal
-  // buttons — the "a bucket is forwarded to the API body" behavior those
-  // handlers implement is already covered by the two tests above.
-
   it('a response with moved:true shows the moved-to cue naming the RESOLVED meal, reusing the existing captureNotice banner', async () => {
     apiMock.mockImplementation(baseApi({
       nutritionInput: { moved: true, mealTime: 'afternoon', messages: [] },
@@ -402,16 +358,17 @@ describe('TodayView — Task 4.2: per-meal capture buttons + the moved cue', () 
   });
 });
 
-describe('TodayView — Task 4.3: QuickCaptureBar wiring', () => {
+describe('TodayView — capture lives only in the meal add rows', () => {
   beforeEach(() => { apiMock.mockReset(); resetApiResourceCache(); });
 
-  it('does not render MacroFooter capture controls — QuickCaptureBar is the one capture surface', async () => {
+  it('renders no page-level capture bar and no footer capture controls', async () => {
     apiMock.mockImplementation(baseApi());
     r(<TodayView onSetupGoals={() => {}} onCoachTap={() => {}} />);
     await waitFor(() => screen.getByText('Lunch'));
-    // No BARE (bucket-less, footer-style) capture trigger exists anywhere —
-    // every remaining mocked instance carries a `-{bucket}` suffix, i.e.
-    // came from LogTable's per-meal header, never a page-level footer icon.
+    expect(screen.queryByRole('textbox', { name: 'Capture meal' })).toBeNull();
+    expect(screen.queryByRole('button', { name: /^Quick add to/ })).toBeNull();
+    // No BARE (bucket-less) capture trigger exists anywhere — every mocked
+    // instance carries a `-{bucket}` suffix, i.e. came from a meal's add row.
     expect(screen.queryByText('MockPhotoCapture')).toBeNull();
     expect(screen.queryByText('MockVoiceCapture')).toBeNull();
     expect(document.querySelector('.health-footer__actions')).toBeFalsy();
@@ -546,55 +503,26 @@ describe('TodayView — scale observations', () => {
     expect(screen.getByText('Rice')).toBeTruthy();
   });
 
-  // QuickCaptureBar is stubbed out at the top of this file (it has its own suite), so
-  // this guards the PER-MEAL capture trio LogTable renders — the surface this task's
-  // new section sits directly above.
+  // Guards the PER-MEAL capture controls LogTable renders — the surface this
+  // task's new section sits directly above.
   it('REGRESSION: the per-meal capture buttons still render alongside the new section', async () => {
     apiMock.mockImplementation(baseApi({ observations: { observations: [OPEN_WEIGHT] } }));
     r(<TodayView onSetupGoals={() => {}} onCoachTap={() => {}} />);
     await waitFor(() => screen.getByRole('combobox', { name: 'Add to Dinner' }));
     // Dinner's add row carries its own photo / barcode / saved-meals trio.
-    expect(screen.getByText('MockAddRowPhoto-evening')).toBeTruthy();
+    expect(screen.getByText('MockPhotoCapture-evening')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Scan barcode to Dinner' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Saved meals for Dinner' })).toBeTruthy();
-    // Breakfast is empty and unrevealed, so it has no add row at all.
-    expect(screen.queryByRole('button', { name: 'Scan barcode to Breakfast' })).toBeNull();
+    // An empty Breakfast still renders, as its header and add row.
+    expect(screen.getByRole('button', { name: 'Scan barcode to Breakfast' })).toBeTruthy();
   });
 
-  it('the quick bar + reveals a hidden meal and focuses its add row', async () => {
+  it('every meal renders its add row even when empty, and none grabs focus', async () => {
     apiMock.mockImplementation(baseApi({}));
     r(<TodayView onSetupGoals={() => {}} onCoachTap={() => {}} />);
-    await waitFor(() => screen.getByRole('combobox', { name: 'Add to Lunch' }));
-    expect(screen.queryByRole('combobox', { name: 'Add to Breakfast' })).toBeNull();
-    act(() => quickBarProps.current.onAddTo('morning'));
-    const input = await screen.findByRole('combobox', { name: 'Add to Breakfast' });
-    await waitFor(() => expect(document.activeElement).toBe(input));
-  });
-
-  // Sections remount per date. A reveal made on one day must not follow the
-  // user to another, where the remounted row would grab focus (and, on a
-  // phone, the keyboard) without being asked.
-  it('a reveal belongs to the day it was made on', async () => {
-    apiMock.mockImplementation(baseApi({}));
-    r(<TodayView onSetupGoals={() => {}} onCoachTap={() => {}} />);
-    await waitFor(() => screen.getByRole('combobox', { name: 'Add to Lunch' }));
-    act(() => quickBarProps.current.onAddTo('morning'));
-    await screen.findByRole('combobox', { name: 'Add to Breakfast' });
-    const today = new Date(); today.setDate(today.getDate() - 1);
-    const yesterday = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-    fireEvent.click(document.querySelector(`[data-date="${yesterday}"]`));
-    await waitFor(() => expect(apiMock.mock.calls.some(([p]) => p.includes(`health/day?date=${yesterday}`))).toBe(true));
-    await waitFor(() => expect(screen.queryByRole('combobox', { name: 'Add to Breakfast' })).toBeNull());
-    expect(document.activeElement?.getAttribute('role')).not.toBe('combobox');
-    // Coming back: the request was spent when the day was left, so the
-    // remounted rows neither refocus nor re-reveal the empty Breakfast.
-    const now = new Date();
-    const back = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-    fireEvent.click(document.querySelector(`[data-date="${back}"]`));
-    await waitFor(() => expect(document.querySelector(`[data-date="${back}"]`).getAttribute('aria-current')).toBe('date'));
-    await waitFor(() => screen.getByRole('combobox', { name: 'Add to Lunch' }));
-    await new Promise(res => setTimeout(res, 20));
-    expect(screen.queryByRole('combobox', { name: 'Add to Breakfast' })).toBeNull();
+    for (const meal of ['Breakfast', 'Lunch', 'Dinner', 'Snacks']) {
+      expect(await screen.findByRole('combobox', { name: `Add to ${meal}` })).toBeTruthy();
+    }
     expect(document.activeElement?.getAttribute('role')).not.toBe('combobox');
   });
 });

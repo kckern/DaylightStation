@@ -15,9 +15,8 @@ const CameraIcon = () => (
  *
  * See VoiceCapture.jsx's header comment for the `bucket`/`mealLabel`/
  * `labelPrefix`/`className` contract — same shape here: optional,
- * meal-scoped naming + forwarding, with `labelPrefix` letting
- * QuickCaptureBar's global instance read as "Quick photo log to X" instead
- * of the per-meal header's "Log by photo to X".
+ * meal-scoped naming + forwarding, with `labelPrefix` letting the add row
+ * read as "Photo to X" instead of the default "Log by photo to X".
  */
 export function PhotoCapture({ onCapture, busy, bucket, mealLabel, labelPrefix, className }) {
   const inputRef = useRef(null);

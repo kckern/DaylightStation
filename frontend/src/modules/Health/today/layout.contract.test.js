@@ -37,9 +37,8 @@ describe('Today layout stylesheet', () => {
 
   it('keeps capture controls in layout rather than floating over food', () => {
     // Regression guard: the grid rule is a SECOND `.health-today` block, and
-    // overwriting rather than extending it would silently drop the padding that
-    // stops the floating capture bar covering the last log row.
-    expect(rule('.health-quickbar')).toMatch(/position: relative/);
+    // overwriting rather than extending it would silently drop the padding
+    // that keeps the last add row clear of the page edge.
     expect(rule('.health-today')).toMatch(/padding-bottom: 0.75rem/);
   });
 

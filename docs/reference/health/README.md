@@ -459,14 +459,16 @@ no horizontal overflow, 44px targets, and first-food positions of ≤300px at
 Four ways to get a food onto the log — type, speak, photograph, or scan a barcode — start
 from one of two places on Today.
 
-Each populated meal header has a compact Add button for its inline picker.
-Empty meals expose the same action in the add strip.
+All four meals always render; an empty meal is its header and its add row. Each meal's
+add row (`MealAddRow.jsx`) is the one capture surface for that meal: a slim inline
+"Add to {meal}…" field with voice, photo, barcode and saved-meal actions beside it (muted
+until the row is hovered or focused on a mouse; always full strength on touch). There is
+no page-level capture bar and no mic in the meal header.
 
-A single compact quick-capture bar (`QuickCaptureBar.jsx`) sits in normal document flow
-above the day log, offering the four capture types with no meal of its own — it defaults to
-whichever meal the current time of day implies (the hour mapping in
-[Meal buckets](#meal-buckets) above). This is the day view's only such affordance: the
-footer below the log carries the macro summary and coach line, never capture controls.
+The add row's mic adds by default ("Speak foods to Lunch"). While foods in that meal are
+selected ("Select foods"), the same mic carries the selection and edits those foods
+("Speak changes to 2 selected to Lunch") — the route the header mic used to own.
+The footer below the log carries the macro summary and coach line, never capture controls.
 
 ### Quick add — suggestions before the first keystroke (`AddCombobox`)
 

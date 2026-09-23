@@ -26,8 +26,8 @@ describe('LogTable', () => {
     expect(screen.getByText('Breakfast')).toBeTruthy();
     expect(screen.getByText('Eggs')).toBeTruthy();
     expect(screen.getByText('140 kcal')).toBeTruthy();
-    // Breakfast (has food) + the two primaries; Snacks is empty so absent.
-    expect(screen.getAllByRole('textbox', { name: /^Add to / })).toHaveLength(BUCKETS.length - 1);
+    // Every meal renders, with food or without.
+    expect(screen.getAllByRole('textbox', { name: /^Add to / })).toHaveLength(BUCKETS.length);
   });
 
   it('hides UNGROUPED when empty, shows it when populated', () => {
@@ -52,7 +52,7 @@ describe('LogTable', () => {
   it('asks for each visible meal add row by bucket and label; row taps fire with the row', () => {
     const renderAddRow = vi.fn(addRow); const onRowTap = vi.fn();
     render(<LogTable byBucket={byBucket} sessions={[]} renderAddRow={renderAddRow} onRowTap={onRowTap} />, { wrapper });
-    expect(renderAddRow).toHaveBeenCalledWith('morning', 'Breakfast');
+    expect(renderAddRow).toHaveBeenCalledWith('morning', 'Breakfast', expect.objectContaining({ selectedIds: [] }));
     expect(screen.getByText('Breakfast').closest('section').querySelector('[data-bucket="morning"]')).toBeTruthy();
     fireEvent.click(screen.getByText('Eggs'));
     expect(onRowTap).toHaveBeenCalledWith(expect.objectContaining({ uuid: '1' }));
@@ -62,14 +62,10 @@ describe('LogTable', () => {
     it('renders the primary meal headings and add rows during a true cold start (coldLoading, no rows anywhere)', () => {
       render(<LogTable byBucket={emptyByBucket} sessions={[]} coldLoading
         renderAddRow={addRow} onRowTap={() => {}} />, { wrapper });
-      // Lunch and Dinner are permanent; a cold start no longer flashes the
-      // optional meals open as four shimmering sections.
-      expect(screen.getByText('Lunch')).toBeTruthy();
-      expect(screen.getByText('Dinner')).toBeTruthy();
-      expect(screen.queryByText('Breakfast')).toBeNull();
-      expect(screen.queryByText('Snacks')).toBeNull();
+      // All four meals are permanent structure.
+      for (const meal of ['Breakfast', 'Lunch', 'Dinner', 'Snacks']) expect(screen.getByText(meal)).toBeTruthy();
       // Structure is present alongside the shimmer, not instead of it.
-      expect(screen.getAllByRole('textbox', { name: /^Add to / })).toHaveLength(2);
+      expect(screen.getAllByRole('textbox', { name: /^Add to / })).toHaveLength(4);
       expect(screen.getAllByLabelText(/^Loading /).length).toBeGreaterThan(0);
     });
 
@@ -193,9 +189,9 @@ describe('LogTable', () => {
   });
 
   describe('per-meal capture controls (Task 4.2)', () => {
-    it('an empty day shows Lunch and Dinner, each ending in its own add row', () => {
+    it('an empty day shows all four meals, each ending in its own add row', () => {
       render(<LogTable byBucket={emptyByBucket} sessions={[]} renderAddRow={addRow} onRowTap={() => {}} />, { wrapper });
-      expect(screen.getAllByRole('heading', { level: 4 }).map(h => h.textContent)).toEqual(['Lunch', 'Dinner']);
+      expect(screen.getAllByRole('heading', { level: 4 }).map(h => h.textContent)).toEqual(['Breakfast', 'Lunch', 'Dinner', 'Snacks']);
       const lunch = screen.getByText('Lunch').closest('section');
       expect(lunch.querySelector('[aria-label="Add to Lunch"]')).toBeTruthy();
       expect(lunch.lastElementChild.getAttribute('aria-label')).toBe('Add to Lunch');
@@ -212,10 +208,6 @@ describe('LogTable', () => {
       expect([...late.querySelectorAll('h4')].map(h => h.textContent)).toEqual(['Dinner', 'Snacks']);
     });
 
-    it('a revealed meal shows even while empty', () => {
-      render(<LogTable byBucket={emptyByBucket} sessions={[]} revealedBucket="morning" renderAddRow={addRow} onRowTap={() => {}} />, { wrapper });
-      expect(screen.getByText('Breakfast')).toBeTruthy();
-    });
 
     it('the Ungrouped/orphans section carries NO capture controls (only real meal buckets do)', () => {
       const withOrphan = new Map(byBucket);
@@ -285,13 +277,11 @@ describe('LogTable — per-meal macro subtotal', () => {
 });
 
 
-describe('clock does not open empty meals', () => {
-  it('at 21:30 Snacks stays hidden and Dinner stays shown', () => {
-    vi.useFakeTimers(); vi.setSystemTime(new Date('2026-09-06T21:30:00'));
-    try {
-      render(<LogTable byBucket={new Map()} date="2026-09-06" onVoiceCapture={() => {}} onRowTap={() => {}} />, { wrapper });
-      expect(screen.getByRole('button', { name: 'Log by voice to Dinner' })).toBeTruthy();
-      expect(screen.queryByRole('button', { name: 'Log by voice to Snacks' })).toBeNull();
-    } finally { vi.useRealTimers(); }
+describe('meal headers carry no mic', () => {
+  it('the only voice control is the one the add row renders', () => {
+    const renderAddRow = vi.fn((bucket, label, meal) => <button onClick={() => meal.onVoiceCapture('audio', bucket, {})}>{`Speak to ${label}`}</button>);
+    render(<LogTable byBucket={new Map()} date="2026-09-06" onVoiceCapture={() => {}} renderAddRow={renderAddRow} onRowTap={() => {}} />, { wrapper });
+    expect(screen.queryByRole('button', { name: /^Log by voice/ })).toBeNull();
+    for (const meal of ['Breakfast', 'Lunch', 'Dinner', 'Snacks']) expect(screen.getByRole('button', { name: `Speak to ${meal}` })).toBeTruthy();
   });
 });

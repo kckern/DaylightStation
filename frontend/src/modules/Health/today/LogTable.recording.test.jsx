@@ -2,6 +2,7 @@ import { render,screen,fireEvent,act,cleanup } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
 import { afterEach,it,expect,vi } from 'vitest';
 import { LogTable } from './LogTable.jsx';
+import { VoiceCapture } from '../capture/VoiceCapture.jsx';
 let recorder;
 const stopTrack=vi.fn();
 function setup() {
@@ -14,7 +15,9 @@ function setup() {
  Object.defineProperty(navigator,'mediaDevices',{configurable:true,value:{getUserMedia:vi.fn(async()=>({getTracks:()=>[{stop:stopTrack}]}))}});
  vi.stubGlobal('FileReader',class {readAsDataURL(){this.result='data:audio/webm;base64,YQ==';this.onload?.();}});
 }
-const ui=(voice,date='2026-09-06')=><MantineProvider><LogTable date={date} byBucket={new Map()} onVoiceCapture={voice}/></MantineProvider>;
+// The meal's mic lives in its add row; mount the real VoiceCapture there.
+const addRow=(bucket,label,meal)=><VoiceCapture active bucket={bucket} mealLabel={label} onCapture={meal.onVoiceCapture}/>;
+const ui=(voice,date='2026-09-06')=><MantineProvider><LogTable date={date} byBucket={new Map()} onVoiceCapture={voice} renderAddRow={addRow}/></MantineProvider>;
 afterEach(()=>{cleanup();vi.useRealTimers();vi.unstubAllGlobals();});
 it('keeps a recording empty meal visible across its automatic retirement',async()=>{
  setup();const voice=vi.fn(async()=>({committed:true}));render(ui(voice));
