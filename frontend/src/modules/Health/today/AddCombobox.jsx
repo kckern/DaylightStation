@@ -11,7 +11,7 @@ import { addedRowIds, trackAddFlow } from './addFlow.js';
 const logger = createAppLogger('health').child('add-combobox');
 
 
-export function AddCombobox({ bucketId, date = null, onDone, onCancel, onMeals, onTemplate, onManageFoods,
+export function AddCombobox({ bucketId, date = null, onDone, onCancel, onMeals, onTemplate, onManageFoods, onSentencePending = null,
   inline = false, label = null, focusRequest = 0, actions = null }) {
   const [text, setText] = useState('');
   const [items, setItems] = useState([]);
@@ -153,6 +153,12 @@ export function AddCombobox({ bucketId, date = null, onDone, onCancel, onMeals, 
     setPhase('parsing'); setError(null);
     logger.info('sentence.submit', { length: text.length });
     const submittedAt = performance.now();
+    // The meal shows an "Adding …" row where the food will land, held until
+    // the parsed rows are actually on the day (not just committed), so the
+    // placeholder hands over to the real rows instead of leaving a gap.
+    let release = null;
+    try { release = onSentencePending?.(text.trim()) ?? null; } catch (err) { logger.warn('sentence.pending_failed', { error: err?.message }); }
+    const settle = () => { const done = release; release = null; done?.(); };
     try {
       // POST /nutrition/input now commits immediately ({ committed: true, ... }) —
       // no review phase. The rows are already logged (unsettled); the day
@@ -168,13 +174,16 @@ export function AddCombobox({ bucketId, date = null, onDone, onCancel, onMeals, 
     );
       logger.info('sentence.committed', { bucket: bucketId, surface });
       if (result?.noFood || result?.committed === false) {
+        settle();
         setError(new Error(result?.message || 'No food was logged. Tweak the sentence and try again.'));
         setPhase('typing');
       } else {
-        trackAddFlow({ ids: addedRowIds(result), bucket: bucketId ?? null, surface, kind: 'sentence', submitToCommittedMs: performance.now() - submittedAt });
+        trackAddFlow({ ids: addedRowIds(result), bucket: bucketId ?? null, surface, kind: 'sentence', submitToCommittedMs: performance.now() - submittedAt })
+          .then(settle);
         finish(result);
       }
     } catch (err) {
+      settle();
       logger.error('sentence.failed', { error: err?.message });
       setError(err); setPhase('typing'); // text preserved — input never lost
     } finally { submitting.current = false; }

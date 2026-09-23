@@ -17,6 +17,9 @@ import './mealWorkflow.scss';
 // zero nutrition BY DESIGN (its children carry the real values as siblings in
 // this same flat `rows` array), so summing every counted row already counts
 // each gram of food exactly once; `sumCounted` says so once, for everyone.
+// A typed sentence parses faster than a photo or a recording.
+const SENTENCE_ESTIMATE_MS = 6000;
+
 const kcal = (rows) => Math.round(sumCounted(rows, 'calories'));
 
 function Section({
@@ -143,7 +146,8 @@ function Section({
           bucket), never as a page-level spinner. `aria-busy` on the row
           itself, not the whole section — the heading/kcal/add-row above
           stay fully interactive while a capture is in flight. */}
-      {captureTasks.length ? captureTasks.map(task=><CaptureProgress key={task.id} startedAt={task.startedAt} label={`${label} food analysis`}/>) : pending ?
+      {captureTasks.length ? captureTasks.map(task=><CaptureProgress key={task.id} startedAt={task.startedAt} label={`${label} food analysis`}
+        text={task.text ?? null} estimateMs={task.text ? SENTENCE_ESTIMATE_MS : undefined}/>) : pending ?
         <CaptureProgress startedAt={Date.now()} label={`${label} food analysis`}/> : null}
       {/* The meal's add input is its last child, so a new food is typed right
           under the foods it joins. */}
