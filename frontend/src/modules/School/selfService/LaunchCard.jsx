@@ -63,9 +63,9 @@ const PLEX_ID = /^plex:(\d+)$/;
 // the catalog gate, the gradebook and enrollment would all try to believe in.
 // So `program:<id>` is a scheme here, beside `plex:`, and the backend presenter
 // carries the same branch for the refs it mints. Two shapes, as there:
-// `program:<id>` and `program:<id>:<instance>` (the sentence and word ladders,
+// `program:<id>` and `program:<id>:<instance>` (the sentence and card ladders,
 // whose artwork belongs to the corpus / word package). The instance is its own
-// path segment — encoding `word-ladder:korean-vocab` as one segment asked the
+// path segment — encoding `card-ladder:korean-vocab` as one segment asked the
 // route for a program that does not exist and every ladder card drew the
 // placeholder.
 const PROGRAM_ID = /^program:([^:]+)(?::(.+))?$/;

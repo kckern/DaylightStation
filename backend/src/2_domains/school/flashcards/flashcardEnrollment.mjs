@@ -1,6 +1,6 @@
 const ID = /^[a-z0-9][a-z0-9:._/-]{0,127}$/;
-export const FLASHCARD_MODES = Object.freeze(['fsrs', 'word-ladder']);
-/** FSRS pacing knobs a word ladder has no use for; accepting them silently would be a lie. */
+export const FLASHCARD_MODES = Object.freeze(['fsrs', 'card-ladder']);
+/** FSRS pacing knobs a card ladder has no use for; accepting them silently would be a lie. */
 const FSRS_ONLY = Object.freeze(['newCardLimit', 'masteryPercent', 'minimumReviews']);
 
 /** Validate the durable policy attached to a standalone flashcard assignment. */
@@ -17,7 +17,7 @@ export function validateFlashcardEnrollment(raw) {
   else {
     // `mode` lives INSIDE policy: SetAssignments persists only what this
     // validator returns, and policy is what already rides the launch target.
-    if (policy.mode !== undefined && !FLASHCARD_MODES.includes(policy.mode)) errors.push('policy.mode must be fsrs or word-ladder');
+    if (policy.mode !== undefined && !FLASHCARD_MODES.includes(policy.mode)) errors.push('policy.mode must be fsrs or card-ladder');
     else if (policy.mode !== undefined) mode = policy.mode;
     for (const field of ['activeMinutes', 'minimumReviews', 'newCardLimit', 'sessionLimit']) {
       if (policy[field] !== undefined && (!Number.isInteger(policy[field]) || policy[field] < 0)) errors.push(`policy.${field} must be an integer >= 0`);
@@ -29,8 +29,8 @@ export function validateFlashcardEnrollment(raw) {
     // made the same study set silently mean different tests for different
     // learners, and coupled card ids to quiz ids in the original design.
     if (policy.linkedQuizBankId !== undefined) errors.push('policy.linkedQuizBankId is no longer supported; set deck.assessment.bankId instead');
-    if (mode === 'word-ladder') {
-      FSRS_ONLY.filter((field) => policy[field] !== undefined).forEach((field) => errors.push(`policy.${field} is not used by word-ladder`));
+    if (mode === 'card-ladder') {
+      FSRS_ONLY.filter((field) => policy[field] !== undefined).forEach((field) => errors.push(`policy.${field} is not used by card-ladder`));
     }
   }
   if (errors.length) return { errors };

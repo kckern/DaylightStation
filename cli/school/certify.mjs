@@ -42,7 +42,7 @@ import {
 } from '#adapters/school/catalog/index.mjs';
 import { YamlLexiconRepository } from '#adapters/school/catalog/YamlLexiconRepository.mjs';
 import { expandDeckWithLexicons } from '#adapters/school/catalog/LexiconDeckLoader.mjs';
-import { parseMediaRef } from '#domains/school/wordLadder/index.mjs';
+import { parseMediaRef } from '#domains/school/cardLadder/index.mjs';
 import { PaperCertification } from '#adapters/school/paper/PaperCertification.mjs';
 import { ScreenCertification } from '#adapters/school/screen/ScreenCertification.mjs';
 import { Ti86SchoolCalcCodec } from '#adapters/schoolcalc/ti86/index.mjs';
@@ -257,7 +257,7 @@ function collectAssetKeys(assetsDirectory) {
       const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
       if (entry.isDirectory()) walk(path.join(dir, entry.name), rel);
       else {
-        // A 0-byte file is a placeholder, not an asset (word-ladder design:
+        // A 0-byte file is a placeholder, not an asset (card-ladder design:
         // "treat a 0-byte file as missing").
         let size = 0;
         try { size = fs.statSync(path.join(dir, entry.name)).size; } catch { return; }

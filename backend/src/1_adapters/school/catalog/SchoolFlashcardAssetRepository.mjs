@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { getStats } from '#system/utils/FileIO.mjs';
 import { createLocalFileResource } from '#system/http/streamFile.mjs';
-import { parseMediaRef } from '#domains/school/wordLadder/index.mjs';
+import { parseMediaRef } from '#domains/school/cardLadder/index.mjs';
 
 const MIME = Object.freeze({
   '.avif': 'image/avif', '.gif': 'image/gif', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
@@ -15,7 +15,7 @@ const MEDIA_PREFIX = 'media:';
  * Read-only, traversal-safe resolution of authored School flashcard assets.
  * Two named roots: bare ids resolve under the content asset dir, `media:` ids
  * under `<mediaDir>/school` (generated word packages) — the `media:` prefix
- * is parsed and traversal-refused by the word-ladder domain's parseMediaRef,
+ * is parsed and traversal-refused by the card-ladder domain's parseMediaRef,
  * not reimplemented here. A 0-byte file is a placeholder, i.e. missing: the
  * player renders around it.
  */
