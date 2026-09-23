@@ -141,8 +141,28 @@ export function sortEntriesByCalories(entries) {
     .map(entry => ({ ...entry, children: [...entry.children].sort(byCaloriesDesc(child => knownKcal(child.calories))) }));
 }
 
-/** Each calorie's share of the largest one in its list, 0–1 (null when unknown). */
-export function calorieShares(values) {
-  const max = Math.max(0, ...values.map(value => knownKcal(value) ?? 0));
-  return values.map(value => (knownKcal(value) === null || max <= 0 ? null : Math.max(0, value) / max));
+/**
+ * Each calorie as a share of `scale`, 0–1 (null when unknown). Without a
+ * scale, the largest value in the list is the scale.
+ *
+ * Today passes ONE scale for the whole day (`dayCalorieScale`), so a bar's
+ * length means the same number of kcal on every row, a dish's ingredients
+ * included — a list scaled to its own largest item makes a 100 kcal
+ * ingredient look as big as a 500 kcal dish.
+ */
+export function calorieShares(values, scale = null) {
+  const max = scale ?? Math.max(0, ...values.map(value => knownKcal(value) ?? 0));
+  return values.map(value => (knownKcal(value) === null || max <= 0 ? null : Math.min(1, Math.max(0, value) / max)));
+}
+
+/** The largest calorie figure any row shows on the day: entries (a dish by its rollup) and ingredients. */
+export function dayCalorieScale(rowLists) {
+  let max = 0;
+  for (const rows of rowLists) {
+    for (const { row, children, rollup } of groupRows(rows || [])) {
+      max = Math.max(max, knownKcal(children.length ? rollup.calories : row.calories) ?? 0);
+      for (const child of children) max = Math.max(max, knownKcal(child.calories) ?? 0);
+    }
+  }
+  return max;
 }

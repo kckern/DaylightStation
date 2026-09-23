@@ -6,7 +6,7 @@ import { MacroBadges } from './MacroBadges.jsx';
 import { ExerciseSection } from './ExerciseSection.jsx';
 import { BUCKETS, UNGROUPED, EARLY_COLUMN, LATE_COLUMN } from './mealBuckets.js';
 import { EntryRow } from './EntryRow.jsx';
-import { groupRows, sortEntriesByCalories, calorieShares } from './groupRows.js';
+import { groupRows, sortEntriesByCalories, calorieShares, dayCalorieScale } from './groupRows.js';
 import { MealFoodControls } from './MealFoodControls.jsx';
 import { CaptureProgress } from './CaptureProgress.jsx';
 import { usePortionControl } from './usePortionDraft.js';
@@ -26,7 +26,7 @@ const kcal = (rows) => Math.round(sumCounted(rows, 'calories'));
 
 function Section({
   label, rows, renderAddRow = null, onRowTap, onConfirm, onRequestDelete, headerAction, coldLoading, pending,
-  measuredByUuid, addedIds = null, date, bucket, onVoiceCapture, onTextCapture, onChanged, captureTasks = [], externalClarification, onClearClarification,
+  measuredByUuid, addedIds = null, kcalScale = null, date, bucket, onVoiceCapture, onTextCapture, onChanged, captureTasks = [], externalClarification, onClearClarification,
 }) {
   const [selecting, setSelecting] = useState(false);
   const [selection, setSelection] = useState([]);
@@ -67,7 +67,8 @@ function Section({
   const sectionRef = useRef(null);
   const drop = useMealDropTarget(bucket);
   useFlipMoves(sectionRef, entries.map(({ row }) => row.uuid ?? row.id).join('|'));
-  const entryShares = calorieShares(entries.map(({ row, children, rollup }) => (children.length ? rollup.calories : row.calories)));
+  // One scale for the whole day (LogTable's kcalScale): bars compare across rows, meals and ingredients.
+  const entryShares = calorieShares(entries.map(({ row, children, rollup }) => (children.length ? rollup.calories : row.calories)), kcalScale);
   // The section frame (heading + kcal + add row) is PERMANENT structure —
   // it never depends on whether data has arrived yet. Only the entry list
   // itself swaps for a shimmer, and only on a true cold start (this bucket
@@ -146,7 +147,7 @@ function Section({
           return renderRow({row,onTap:onRowTap,onConfirm,onRequestDelete,measured,kcalShare:entryShares[entryIndex],entryKey:String(key)});
         }
         const isOpen = !collapsed.has(key);
-        const childShares = calorieShares(children.map(child => child.calories));
+        const childShares = calorieShares(children.map(child => child.calories), kcalScale);
         return (
           <div key={key} className="health-group" data-entry-key={String(key)}>
             {/* `children` is attached to the row object here — not read
@@ -184,6 +185,7 @@ export function LogTable({
   // All four meals always render: an empty one is its header and add row, so
   // any meal can be added to in place without a separate "add to" control.
   const orphans = byBucket.get(null) || [];
+  const kcalScale = dayCalorieScale([...byBucket.values()]);
   const renderBucket = (b) => {
     const rows = byBucket.get(b.id) || [];
     return (
@@ -196,7 +198,7 @@ export function LogTable({
           onRowTap={onRowTap} onConfirm={onConfirm} onRequestDelete={onRequestDelete}
           headerAction={bucketHeaderAction ? bucketHeaderAction(b.id, rows, b.label) : null}
           coldLoading={coldLoading} pending={capturePendingBucket === b.id || capturePendingBuckets.includes(b.id)}
-          measuredByUuid={measuredByUuid} addedIds={addedIds} renderAddRow={renderAddRow} />
+          measuredByUuid={measuredByUuid} addedIds={addedIds} kcalScale={kcalScale} renderAddRow={renderAddRow} />
       </div>
     );
   };
@@ -218,7 +220,7 @@ export function LogTable({
       {orphans.length ? (
         <div className="health-log__wide">
           <Section label={UNGROUPED.label} rows={orphans} onRowTap={onRowTap} onConfirm={onConfirm} onRequestDelete={onRequestDelete}
-            measuredByUuid={measuredByUuid} />
+            measuredByUuid={measuredByUuid} kcalScale={kcalScale} />
         </div>
       ) : null}
     </div>

@@ -162,7 +162,7 @@ describe('groupRows', () => {
   });
 });
 
-import { sortEntriesByCalories, calorieShares } from './groupRows.js';
+import { sortEntriesByCalories, calorieShares, dayCalorieScale } from './groupRows.js';
 describe('heaviest first', () => {
   it('sorts entries by calories (dishes by rollup), unknown last, ties in logged order', () => {
     const rows = [
@@ -181,5 +181,20 @@ describe('heaviest first', () => {
   it('shares are relative to the largest known value', () => {
     expect(calorieShares([200, 50, null, 0])).toEqual([1, 0.25, null, 0]);
     expect(calorieShares([null, 0])).toEqual([null, null]);
+  });
+  it('with a day scale, every list shares one absolute scale', () => {
+    // A dish's ingredients no longer rescale to their own largest one.
+    expect(calorieShares([420, 100, 3], 523)).toEqual([420 / 523, 100 / 523, 3 / 523]);
+    expect(calorieShares([600], 523)).toEqual([1]);
+  });
+  it('the day scale is the largest figure any row shows, across meals and ingredients', () => {
+    const snacks = [
+      { uuid: 'g', kind: 'group', name: 'Croissant Sandwich', calories: 0 },
+      { uuid: 'c1', parentId: 'g', name: 'Croissant', calories: 420 },
+      { uuid: 'c2', parentId: 'g', name: 'Tuna', calories: 100 },
+    ];
+    const breakfast = [{ uuid: 'p', name: 'Pancakes', calories: 310 }];
+    expect(dayCalorieScale([breakfast, snacks])).toBe(520);
+    expect(dayCalorieScale([[], null])).toBe(0);
   });
 });
