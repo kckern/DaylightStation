@@ -13,6 +13,18 @@ import './WordLadder.scss';
 /** Items whose answer the server grades: the verdict stays on screen until Next. */
 const GRADED = new Set(['choice', 'typed']);
 
+/**
+ * Whether THIS device can offer a microphone, detected fresh for every open.
+ * A package-scoped `useCapabilities` (as Sentence Ladder has) needs the
+ * package name, which is only known from the FIRST open's response — so the
+ * very first open cannot wait for it. Existence, not permission: asking for
+ * permission here would prompt on mount, before the learner has chosen to
+ * record anything (spec §6, "at most tapped Record").
+ */
+function detectMicrophoneCapability() {
+  return Boolean(navigator.mediaDevices?.getUserMedia);
+}
+
 function roundLabel(progress) {
   if (!progress) return '';
   if (progress.phase === 'rechecks') return `Checking ${progress.rechecksLeft} ${progress.rechecksLeft === 1 ? 'word' : 'words'}`;
@@ -71,7 +83,8 @@ export default function WordLadderProgram({ descriptor, api: injected = null, re
 
   const open = useCallback(async () => {
     const mine = ++generation.current;
-    const { ok, status, data } = await api.open({ userId, deckId, scenario });
+    const capabilities = { microphone: detectMicrophoneCapability() };
+    const { ok, status, data } = await api.open({ userId, deckId, scenario, capabilities });
     if (!live.current || mine !== generation.current) return;
     if (!ok || !data?.item || !data?.sittingId) {
       setError('This word list is not ready right now.');

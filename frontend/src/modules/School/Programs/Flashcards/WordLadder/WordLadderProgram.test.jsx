@@ -109,7 +109,9 @@ describe('WordLadderProgram', () => {
     const api = fakeApi(true);
     renderStarted(<WordLadderProgram descriptor={{ deckId: 'd', userId: 'test-learner', test: true, scenario: 'round-end' }} api={api} />);
     await screen.findByText('가위');
-    expect(api.open).toHaveBeenCalledWith({ userId: 'test-learner', deckId: 'd', scenario: 'round-end' });
+    expect(api.open).toHaveBeenCalledWith({
+      userId: 'test-learner', deckId: 'd', scenario: 'round-end', capabilities: { microphone: false },
+    });
   });
 
   it('a graded result stays on the current item until Next, then swaps to the returned item', async () => {
