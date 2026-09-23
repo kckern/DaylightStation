@@ -39,7 +39,7 @@ import { planScanDataRepair, planCatalogIconRepair, manifestVocabulary } from '#
 import { YamlNutriListDatastore } from '#adapters/persistence/yaml/YamlNutriListDatastore.mjs';
 import { YamlFoodCatalogDatastore } from '#adapters/persistence/yaml/YamlFoodCatalogDatastore.mjs';
 import { isPlaceholderImage, PLACEHOLDER_IMAGE_SHA256 } from '#adapters/nutribot/UPCGateway.mjs';
-import { FoodCatalogEntry } from '#domains/health/entities/FoodCatalogEntry.mjs';
+import { FoodCatalogEntry, usableQuantity } from '#domains/health/entities/FoodCatalogEntry.mjs';
 import { normalizeIconFoodName } from '#domains/nutrition/services/icons.mjs';
 import { NUTRIENT_KEYS } from '#shared/contracts/health/foodQuantity.mjs';
 import { saveYamlToPathAtomic } from '#system/utils/FileIO.mjs';
@@ -329,7 +329,8 @@ export async function applyScanRepair(manifest, backupDirectory, { offline = fal
   for (const change of fresh.catalog.quantityUpdates) {
     const entry = await entryFor(change.id);
     const usage = entry.usageByBucket?.[change.bucket];
-    if (JSON.stringify(usage?.quantity) !== JSON.stringify(change.from)) throw new Error(`Catalog portion for ${change.id}/${change.bucket} changed; nothing was written`);
+    // Compared as the entity reads them: hydration turns a stored `grams: 0` into null.
+    if (JSON.stringify(usableQuantity(usage?.quantity)) !== JSON.stringify(usableQuantity(change.from))) throw new Error(`Catalog portion for ${change.id}/${change.bucket} changed; nothing was written`);
     usage.quantity = { ...change.to };
     await catalog.save(entry, OWNER);
   }
