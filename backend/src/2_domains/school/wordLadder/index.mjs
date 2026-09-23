@@ -18,6 +18,7 @@ export { introPreview, introPlanLabel, deckProgress } from './intro.mjs';
 export {
   openDay, currentItem, respond, addActiveTime, startPractice, wordTransitions, excludeWordFromDay, roundHasMatch,
 } from './engine.mjs';
+export { servedWhy, dayChanges, prereqChanges, signOffGaps } from './observe.mjs';
 export { foldPaperAttempts } from './foldPaperAttempts.mjs';
 export { formatTrace } from './trace.mjs';
 export { markMastered, typedAnswers } from './admin.mjs';
