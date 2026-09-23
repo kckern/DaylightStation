@@ -138,7 +138,7 @@ function itemLine(item, { isLeftHere }) {
   const outcome = formatOutcome(item.answered);
   const ms = formatMs(item.answered);
   const why = item.served?.reason ? ` · why ${item.served.reason}` : '';
-  const via = item.answered?.input ? ` · via ${item.answered.input}` : '';
+  const via = `${item.answered?.input ? ` · via ${item.answered.input}` : ''}${item.answered?.micOff ? ' (no mic)' : ''}`;
   const left = isLeftHere ? ' ✗ left here' : '';
   return `${mmss(item.tStart)}  ${kindOf(item)} ${item.wordId ?? '—'} ${taskOrLayout}${fontPx} ${response} ${outcome} (${ms})${transitionsSuffix(item.transitions)}${why}${via}${left}`;
 }
@@ -328,6 +328,8 @@ function buildTrace(traceId, feEvents, backendEvents) {
           response: d.response ?? null, correct: typeof d.correct === 'boolean' ? d.correct : null,
           score: typeof d.score === 'number' ? d.score : null, judge: d.judge ?? null,
           ms: typeof d.ms === 'number' ? d.ms : null, input: d.input ?? null,
+          // A say step moved past with no mic: an answer, not a skip.
+          micOff: d.micOff === true,
         };
       }
     } else if (ev.msg === MSG.ITEM_STALLED) {
