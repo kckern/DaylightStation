@@ -1,0 +1,46 @@
+import { describe, expect, it, vi } from 'vitest';
+import { WordLadderTypedJudge } from './WordLadderTypedJudge.mjs';
+
+function makeCache() {
+  const map = new Map();
+  return {
+    get(pkg, wordId, normalized) { return map.get(`${pkg}|${wordId}|${normalized}`) ?? null; },
+    set(pkg, wordId, normalized, verdict) { map.set(`${pkg}|${wordId}|${normalized}`, { ...verdict }); },
+  };
+}
+
+const entry = (term, gloss = 'Hello', kind = 'phrase') => ({ id: 'w', term, gloss, kind });
+const make = (reply) => {
+  const aiGateway = { chatWithJson: vi.fn(reply) };
+  return { aiGateway, judge: new WordLadderTypedJudge({ aiGateway, cache: makeCache(), model: 'small', logger: { info() {}, warn() {} } }) };
+};
+
+describe('WordLadderTypedJudge', () => {
+  it('exact, no-Hangul and short words never call the model', async () => {
+    const { aiGateway, judge } = make(async () => ({ score: 10 }));
+    expect(await judge.judge({ pkg: 'p', entry: entry('가위'), typed: '가위', otherWords: [] })).toMatchObject({ judge: 'exact', pass: true });
+    expect(await judge.judge({ pkg: 'p', entry: entry('가위'), typed: 'hi', otherWords: [] })).toMatchObject({ score: 1, pass: false });
+    expect(await judge.judge({ pkg: 'p', entry: entry('가위'), typed: '가이', otherWords: [] })).toMatchObject({ judge: 'distance', score: 6, pass: true });
+    expect(aiGateway.chatWithJson).not.toHaveBeenCalled();
+  });
+  it('model raises at most one band from an eligible floor, attempt passed as data', async () => {
+    const { aiGateway, judge } = make(async () => ({ score: 9, reason: 'clearly the phrase' }));
+    const r = await judge.judge({ pkg: 'p', entry: entry('안녕히계세요'), typed: '안녕히개새요', otherWords: [] });
+    expect(r.judge).toBe('model');
+    expect(r.score).toBeLessThanOrEqual(8);
+    const [messages] = aiGateway.chatWithJson.mock.calls[0];
+    expect(messages[0].content).not.toContain('안녕히개새요');
+    expect(JSON.parse(messages[1].content).attempt).toBe('안녕히개새요');
+  });
+  it('model failure falls back to the deterministic score', async () => {
+    const { judge } = make(async () => { throw new Error('timeout'); });
+    expect(await judge.judge({ pkg: 'p', entry: entry('안녕히계세요'), typed: '안녕히개새요', otherWords: [] })).toMatchObject({ judge: 'fallback' });
+  });
+  it('caches by package, word and normalised answer', async () => {
+    const { aiGateway, judge } = make(async () => ({ score: 8, reason: 'ok' }));
+    await judge.judge({ pkg: 'p', entry: entry('안녕히계세요'), typed: '안녕히개새요', otherWords: [] });
+    const again = await judge.judge({ pkg: 'p', entry: entry('안녕히계세요'), typed: '안녕히개새요 ', otherWords: [] });
+    expect(again.judge).toBe('cache');
+    expect(aiGateway.chatWithJson).toHaveBeenCalledTimes(1);
+  });
+});
