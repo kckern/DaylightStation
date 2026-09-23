@@ -1,6 +1,6 @@
 # Word ladder — mastery redesign
 
-Status: rev 2 (2026-09-22) — revised after adversarial review; awaiting re-review
+Status: rev 3 (2026-09-22) — second review round applied; awaiting owner review
 Replaces: `docs/_archive/2026-09-22-word-ladder-test-mode-layout-observability-design.md`
 Benchmark: `docs/_wip/audits/2026-09-22-quizlet-benchmark-word-ladder.md`
 Current code: `docs/reference/school/word-ladder.md`
@@ -25,7 +25,23 @@ audio travel together on cue sides, and decoding ("read it, no audio") is its
 own exercise. The kiosk is a 1280×800 Portal with a bonded Korean/English
 Bluetooth keyboard; no grown-up is present.
 
-### Rev 2 changes (from review)
+### Rev 3 changes (second review)
+
+Shrink-to-fit rounds with per-word time estimates and worked typical days; at
+most one drill offer per round and none after the cap; chronic Not yet is
+quizzed on its second consecutive round end (`notYetCarry`); an at-open
+snapshot persisted per sitting for credit and replay; verify = typed + hear-and-
+pick-meaning (pick-term dropped from verify); judge: no-Hangul short-circuit,
+40-char cap, attempt passed as data, deterministic jamo score final for ≤ 2
+syllables and a floor the model may raise one band, jamo decomposition
+defined, cache under `data/` and overwritten by re-grade; the different-word
+guard kept as a deliberate exception; recheck typed cadence resolved (always
+typed from stage 2); failed-today words take no round slot; new rounds top up
+with carry-over; "Relearned" label; decks are quotas and the printed quiz covers
+only introduced words; test mode snapshots `tuning.yml` and fakes the model in
+automated tests; keypad auto-open at 10 s, once per item.
+
+### Rev 2 changes (first review)
 
 Round-end quiz replaces claim-only quizzing and the Quiz-me/Keep-studying
 modal; the three piles now behave differently; hardest-first verify order with
@@ -100,8 +116,12 @@ A stage-0 word's "recheck" the next study day is exactly the recheck above
 - New words available to introduce today =
   `max(0, min(batch.newPerDay, batch.workingSet − unsettled))`, computed **when
   the sitting reaches introductions** (after rechecks and carry-over quizzes,
-  so today's misses count), in deck order. The weekly deck is the pool; earlier
-  decks' words stay on the ladder via rechecks and the working set.
+  so today's misses count).
+- **The pool** is every not-yet-introduced word of the current enrollment deck
+  and of any deck the learner was enrolled in before (`status.decksSeen`,
+  recorded at each open), oldest deck first, deck order within a deck. So a
+  deck is a quota: its words keep coming until all are introduced, even after
+  a grown-up moves the enrollment on.
 - A Got-it spammer gains nothing: every Got-it word is quizzed at round end and
   stays unsettled until it survives a next-day recheck.
 
@@ -111,25 +131,32 @@ A stage-0 word's "recheck" the next study day is exactly the recheck above
 
 ### The verify quiz (round end)
 
-Per word, three graded tasks, **hardest first**, stopping at the first miss:
+Per word, two graded tasks, **hardest first**, stopping at the first miss:
 
-1. **3.3 type-from-cue** (judged for meaning, §2 Typed input)
-2. **3.1 pick-term**
-3. **2.2 pick-meaning** (hear or read)
+1. **3.3 type-from-cue** (judged for meaning, §2 Typed input) — proves he can
+   produce the word from its meaning.
+2. **2.2 pick-meaning, *hear* channel** — proves he knows it by ear, the one
+   skill typing does not test. (A word with no term audio uses the *read*
+   channel.)
 
-Right → the next task; wrong → the correct answer is shown (Korean audio
-plays), the word **fails verify**, its remaining tasks are dropped. All three
-right → **passed**. Because production comes first and a miss ends the word,
-feedback never gives away a later task. Tasks of different words interleave;
-a single-word quiz is fine because of hardest-first order.
+3.1 pick-term is not asked in verify: a correct typed answer already shows he
+can find the Korean for the meaning, so a mis-tap there could only fail a word
+he just produced. Right → the next task; wrong → the correct answer is shown
+(Korean audio plays), the word **fails verify**, its remaining task is dropped.
+Both right → **passed**. Because production comes first and a miss ends the
+word, feedback never gives away a later task. Tasks of different words
+interleave; a single-word quiz is fine because of hardest-first order.
 
 Every graded choice task has a **Don't know** option (counts as a miss, shows
 the answer) — a guess is never forced.
 
 ### Rechecks
 
-One graded task per due word: `2.2` and `3.1` alternate; every
-`review.typedEvery`-th recheck of that word is `3.3`.
+One graded task per due word:
+
+- **Below stage 2:** `2.2` and `3.1` alternate; every `review.typedEvery`-th
+  recheck of that word is `3.3`.
+- **Stage 2 and above:** always `3.3`.
 
 ### Typed input
 
@@ -141,28 +168,44 @@ One graded task per due word: `2.2` and `3.1` alternate; every
 - **The typed-answer judge** (`WordLadderTypedJudge`, application layer, uses
   `IAIGateway.chatWithJson` — the port School already uses in
   `AdaptiveRemediationTutor`):
-  1. **Exact fast path, no model call.** NFC-normalise, strip all whitespace and
-     Unicode punctuation (`\p{P}`) from both sides; equal → score 10.
-  2. **Guard, no model call.** If the normalised answer equals a *different*
-     deck word or authored decoy → score 2 ("that's a different word"). A real
-     other word is never a misspelling.
-  3. **Otherwise a small, low-effort model** (configured, not hard-coded;
-     `reasoningEffort: minimal`, 3 s timeout) gets the target term, its gloss
-     and kind, the typed answer, and the deck's other terms + decoys, and
-     answers *"does this attempt show the learner produced the intended
-     word?"* as `{score: 1–10, reason}` against fixed anchors: 10 exact · 8–9
-     spacing/punctuation/one slip · 6–7 misspelled but clearly the intended word
-     · 4–5 partly there (e.g. one syllable of three) · 1–3 a different word,
-     English, or unrelated.
-  4. **Pass = score ≥ `typing.passScore`** (grown-up setting, default **6**).
-  5. **Fallback** when the model fails or times out: jamo `editDistance` (the
-     existing Levenshtein in `2_domains/school/language/transcription.mjs`) over
-     the normalised forms; pass when distance ≤ max(1, ⌊jamo length / 3⌋) and
-     step 2 did not fire. Logged `judge: fallback`; a slow network never blocks
-     the quiz.
-  6. **Cached** by (package, word id, normalised answer) in a small per-package
-     `judgements.yml`, so a reload, replay or repeated typo gets the same
-     verdict with no second call.
+  Steps run in order; the first that decides wins.
+  1. **Normalise.** Input is capped at 40 characters. NFC-normalise, strip all
+     whitespace and Unicode punctuation (`\p{P}`) from both sides.
+  2. **Exact → score 10**, no model call.
+  3. **No Hangul → score 1**, no model call. An answer with no Hangul syllable
+     or jamo (English, digits, empty) is not an attempt at the word.
+  4. **Different real word → score 2**, no model call. If the normalised
+     answer equals a *different* deck word or authored decoy, it fails — even
+     one letter off (풀 → 불, 연필 → 색연필). This is the one deliberate
+     exception to "not a spelling test": decoys are the confusable wrong
+     answers by design, so typing and multiple choice stay consistent.
+  5. **Deterministic score** from jamo distance: decompose both sides to jamo
+     with `modules/School/ime/hangul.js`'s decomposition (ported to
+     `2_domains/school/wordLadder/jamo.mjs`, shared by client and server), then
+     Levenshtein over the jamo sequences (the existing code-point `editDistance`
+     in `2_domains/school/language/transcription.mjs`, applied to jamo, not
+     syllables). Band it: 0 → 10 · ≤ 10 % of target jamo → 8 · ≤ 25 % → 6 ·
+     ≤ 50 % → 4 · beyond → 2.
+  6. **Short words (≤ 2 syllables): the deterministic score is final.** No
+     model call; a model adds nothing over distance on two syllables.
+  7. **Longer words and phrases: a small, low-effort model** (configured, not
+     hard-coded; `reasoningEffort: minimal`, 3 s timeout, via
+     `IAIGateway.chatWithJson`) gets the target term, its gloss and kind, the
+     deck's other terms + decoys, and the attempt **as a JSON data field,
+     never interpolated into instructions**, and answers *"does this attempt
+     show the learner produced the intended word?"* as `{score: 1–10, reason}`
+     against fixed anchors: 10 exact · 8–9 spacing/one slip · 6–7 misspelled
+     but clearly the intended word · 4–5 partly there (e.g. one syllable of
+     three) · 1–3 a different word or unrelated. **The deterministic score is a
+     floor and the model may raise it by at most one band** (e.g. 4 → 6); it
+     can never lower it. Model failure or timeout → the deterministic score
+     stands, logged `judge: fallback`.
+  8. **Pass = score ≥ `typing.passScore`** (grown-up setting, default **6**).
+  9. **Cached** by (package, word id, normalised answer) in
+     `data/household/apps/school/word-ladder/<package>/judgements.yml` (derived
+     data, shared across learners), so a reload, replay or repeated typo gets
+     the same verdict with no second call. A grown-up **re-grade** (§6)
+     overwrites the cache entry, so a wrong verdict is corrected everywhere.
 - **Feedback:** 10 → tick; pass below 10 → "Got it! Here's the spelling" with
   the diff (the misspelling is corrected, credit still given); fail → the
   correct answer with Korean audio. Grown-ups see score and reason.
@@ -243,16 +286,20 @@ TASK  (given → produced)
 
 ### Rounds and piles
 
-A **round** is up to `round.size` (default 5) words: today's new words
-(introduced at the start of their round) plus unsettled words carried from
-earlier days (`notYet` and `familiar` first, then `claimed`).
+A **round** is up to `round.size` (default 5) quizzable words. A **new round**
+introduces today's new words at its start and tops up with carry-over words
+when fewer new words fit; a **carry-over round** is unsettled words from
+earlier days (`notYet` and `familiar` first, then `claimed`). Words that failed
+verify today (`verifyFailedDay` = today) may appear in a round's stream as
+flashcards but **do not take a `round.size` slot** and are not quizzed again
+today.
 
 In the round's **stream** (2.1 flashcards) the child sorts each card:
 
 | Pile | Key | In the stream | At round end |
 |---|---|---|---|
-| **Not yet** | 1 | returns after 2 other cards | **not quizzed** this round; drill offer if still Not yet |
-| **Familiar** | 2 | returns after 5 other cards (or at stream end if fewer) | **quizzed** |
+| **Not yet** | 1 | returns after 2 other cards | **not quizzed** — unless its `notYetCarry` flag is set (below) |
+| **Familiar** | 2 | returns after 5 other cards, or last in the pass when the round is smaller | **quizzed** |
 | **Got it** | 3 | leaves the stream | **quizzed** |
 
 - The stream ends when no word's latest sort is Not yet, **or** after
@@ -261,48 +308,76 @@ In the round's **stream** (2.1 flashcards) the child sorts each card:
 - **Undo** (key **U**) reverses the last sort while its card is still the most
   recent.
 - **Round end:** the verify quiz (§2) on every round word whose latest sort is
-  Familiar or Got it and whose `verifyFailedDay` is not today. Then, for each
-  word still Not yet: *"This one's tricky — want to practise it?"* **Yes** runs
-  its drill now; **No** carries on. Either answer settles the offer.
-- A word failed in a round quiz stays in later rounds today as a flashcard (it
-  can be sorted and practised) but is not quizzed again today.
+  Familiar or Got it — plus every word whose **`notYetCarry`** is set — and
+  whose `verifyFailedDay` is not today.
+- **Chronic Not yet:** a word whose latest sort at a round end is Not yet gets
+  `notYetCarry` set (cleared when it is next quizzed). At its next round end —
+  a later study day — it is **quizzed whatever the child sorts**. Honest "Not
+  yet" skips the quiz once; it cannot skip it twice in a row.
+- **Drill offer:** at most **one per round** — for the round's Not-yet word
+  with the most Not-yet sorts: *"This one's tricky — want to practise it?"*
+  **Yes** runs its drill now; **No** carries on. No offer is made once the cap
+  has elapsed or when less than the drill estimate (4 min) of active time
+  remains.
+- A same-day verify pass for a word that lost `mastered` earlier today (a failed
+  recheck) is shown as **"Relearned"**, not ⭐; its state is `mastered` s0 as
+  usual and it must still pass tomorrow's recheck to settle.
 
 ### Order of a sitting
 
 1. **Rechecks** due today (shuffled).
 2. **Drill** for up to `drill.perSitting` (default 1) tricky words, oldest
-   tricky first; the rest wait for later sittings (FIFO).
-3. **Carry-over round(s):** unsettled words from earlier days, in rounds.
-4. **New rounds:** introductions (2.1 → 1.1 → 1.2) then stream then quiz, while
-   new words remain for today **and** the active time left ≥ the round
-   estimate. A round that would not fit is not started — its words wait for
-   tomorrow, so the quiz is never the part the cap cuts off.
-5. **Summary** (today's words by state) → **practice menu**.
+   tricky first, if the drill estimate fits the remaining time; the rest wait
+   for later sittings (FIFO).
+3. **Carry-over round(s):** unsettled words from earlier days.
+4. **New rounds**, **shrink-to-fit:** each new round introduces the largest
+   n ≥ 2 new words (n ≤ today's allowance, n ≤ `round.size`) whose estimate fits
+   the active time left; if even 2 do not fit, no round starts. The quiz is
+   therefore never the part the cap cuts off.
+5. **Summary** (today's words by state, and how many were quizzed) →
+   **practice menu**.
 
-### Honest time estimates (slow reader; used for cap-aware round starts)
+### Time estimates (slow reader)
 
 | Step | Estimate |
 |---|---|
 | Recheck (choice / typed) | 15 s / 30 s |
 | Introduction (flip + copy-type + say-after) | 75 s per word |
-| Stream sort | 8 s per card view |
-| Verify quiz | 60 s per word |
+| Stream | ~16 s per word (two views) |
+| Verify (type + hear-and-pick) | 45 s per word |
+| **New word, whole round** | **≈ 2.3 min** (intro + stream + verify) |
+| **Carry-over word, whole round** | **≈ 1 min** (stream + verify) |
 | Drill (9 steps) | 4 min per word |
 
-A typical day at defaults: 5 rechecks (~2 min) + 1 drill (4 min) + one
-carry-over round of 3 (~4 min) + one new round of 4 (~5 + 1 + 4 = 10 min) ≈
-20 min. The cap (15 min) therefore usually lands before the new round — which
-is why round starts are cap-aware and why `batch.newPerDay` defaults to **4**.
-The engine uses measured per-learner medians once 5 sittings exist.
+The engine starts from these and switches to the learner's measured medians
+once 5 sittings exist.
+
+**Typical days at defaults (cap 15 min):**
+
+| Day | Rechecks | Drill | Carry-over | Time left | New words introduced |
+|---|---|---|---|---|---|
+| Quiet | 3 (≈ 1 min) | — | 2 (≈ 2 min) | 12 min | **4** (≈ 9.2 min; newPerDay cap) |
+| Typical | 5 (≈ 1.5 min) | — | 3 (≈ 3 min) | 10.5 min | **4** (≈ 9.2 min) |
+| Hard | 5 (≈ 1.5 min) | 1 (4 min) | 3 (≈ 3 min) | 6.5 min | **2** (≈ 4.6 min) |
+| Very hard | 8 (≈ 2.5 min) | 1 (4 min) | 5 (≈ 5 min) | 3.5 min | **0** — consolidation day |
+
+A 19-word deck therefore takes roughly **1–2 weeks**. **The weekly deck is a
+quota, not a deadline:** its words carry over until introduced, and the next
+deck's words start only when the current deck is fully introduced (a grown-up
+can still bump the enrollment early). The printed quiz covers **only words the
+learner has been introduced to** (§8 Printed quiz).
 
 ### Done for today (goal, with a time cap)
 
-**Goal** = rechecks due at open all answered · the sitting's drill run (if any
-tricky word existed at open) · every round started today finished (stream,
-quiz, drill offers settled). **Or** `session.capMinutes` (default 15) of
-**active** time — input within the last 45 s — has elapsed and the round in
-progress has finished. Credit (`doneToday`) is either; the practice menu
-unlocks at either. Unstarted material carries over.
+**Goal** = every recheck in the sitting's at-open snapshot answered · the
+sitting's drill run, if the snapshot lists a tricky word and the drill fit ·
+every round started today finished (stream, quiz, drill offer settled).
+**Or** `session.capMinutes` (default 15) of **active** time — input within the
+last 45 s — has elapsed and the round in progress has finished (rounds are
+sized to fit, so overrun is bounded by estimate error). Credit (`doneToday`) is
+either; the practice menu unlocks at either. Unstarted material carries over.
+The summary and the day file record **how many words were quizzed**, so a day
+credited with zero graded items is visible to grown-ups and the tuner.
 
 ### Engine and API
 
@@ -341,13 +416,26 @@ schema: school.word-ladder-status/v3
 words:
   gawi: { state: mastered, stage: 1, dueDay: 2026-09-26, missStreak: 0,
           tricky: false, trickySince: null, verifyFailedDay: null,
-          introducedDay: 2026-09-22, lastGraded: { day, task, correct } }
+          notYetCarry: false, introducedDay: 2026-09-22,
+          lastGraded: { day, task, correct } }
+decksSeen: [language/korean/week-01-classroom]
 lastFoldedDay: 2026-09-22
 ```
 
 ```yaml
 # days/2026-09-22.yml — that day's append-only events + sittings
-sittings: { <id>: { openedAt, closedAt, reason, activeMs } }
+sittings:
+  <id>:
+    openedAt: ...
+    closedAt: ...
+    reason: goal|cap|leave|idle|unmount
+    activeMs: 812000
+    atOpen:                     # frozen snapshot; credit and replay read this
+      dueRechecks: [gawi, pul, ...]
+      tricky: [yeonpil]
+      newAllowance: 4           # informational; actual introductions are
+                                #   computed when the sitting reaches them
+      settings: { round.size: 5, ... }   # tuning values in force
 events:
   - { at, sitting, item, word: gawi, task: "2.1", event: sort, value: claimed }
   - { at, sitting, item, word: gawi, task: "3.3", event: graded, correct: true, typed: "가위", distance: 0 }
@@ -380,12 +468,13 @@ plans are dropped (the one live learner has a single unmarked plan).
    │   2 FAMILIAR ── returns after 5 ──┼─ loop until no Not yet     │
    │   3 GOT IT   ── leaves stream     │   or maxPasses, or Quiz me │
    └──────────────────────────────────┴───────────────────────────┘
-          │ latest sort Familiar / Got it          │ latest sort Not yet
+          │ Familiar / Got it, or Not yet with    │ latest sort Not yet
+          │ notYetCarry (2nd day in a row)        │ (first time) → notYetCarry set
           ▼                                        ▼
-   ╔══════════════════════════════════╗     drill offer ─(yes)─► DRILL ─► next round
+   ╔══════════════════════════════════╗     ≤1 drill offer/round ─(yes)─► DRILL ─► next round
    ║ ROUND-END VERIFY (graded)         ║     (no) ─► next round, still NOT YET
-   ║ 3.3 type (judged) → 3.1 →          ║
-   ║ 2.2 · stop at first miss          ║
+   ║ 3.3 type (judged) → 2.2 hear ·    ║
+   ║ stop at first miss                ║
    ╚══════════╤═══════════════╤════════╝
           passed            failed ─► FAMILIAR · streak+1 · not re-quizzed today
               ▼                          │ streak ≥ afterMisses ─► + TRICKY
@@ -473,7 +562,8 @@ on `ResizeObserver` and `document.fonts.ready`.
   captures it).
 - **On-screen jamo keypad:** there is no web API that detects a Bluetooth
   keyboard, so the keypad is a **toggle** on every typing item. It opens by
-  itself when the field has had focus 5 s with no keydown, and closes on the
+  itself — at most once per item — when the field has had focus 10 s with no
+  keydown, and closes on the
   first physical keydown. Two-set layout with a Shift key for ㄲ ㄸ ㅃ ㅆ ㅉ
   ㅒ ㅖ, backspace and submit; feeds a new `FieldComposer.offerJamo(jamo)` seam
   in `modules/School/ime/` (the composer today only consumes `KeyboardEvent.code`).
@@ -534,7 +624,7 @@ Grown-up settings only: `session.capMinutes` (15), `drill.perSitting` (1),
   per-word state/stage/streak/tricky/drill count; round-end pass rate by pile
   (Familiar vs Got it — calibration); Don't-know counts; judge score
   distribution and fallback rate; time per
-  step vs estimate; stalls; cap hits; today vs trailing 7 study days; the
+  step vs estimate; stalls; cap hits; days credited with zero quizzed words; today vs trailing 7 study days; the
   settings' last change dates.
 - **Model:** a small configured model via the agent framework
   (`3_applications/agents/word-ladder-tuner/`, `BaseAgent`, `MastraAdapter`), no
@@ -564,10 +654,28 @@ several packages a bare URL 404s listing them. `/test` is a reserved final
 segment parsed into a `test` flag; a program without test mode refuses a
 `/test` URL.
 
+### Printed quiz (per learner)
+
+The printed OMR quiz covers only words the learner has been introduced to.
+
+- `node cli/school.mjs word-ladder quiz --learner <id> --package <pkg> [--week <iso-week>]`
+  reads the learner's status and writes a quiz source over introduced,
+  non-excluded words: this week's introductions first, then unsettled words,
+  then a sample of mastered words, up to the sheet's row limit. Document id
+  `language/<lang>/<pkg>-quiz-<learner>-<iso-week>`; published and rendered
+  (`variety=omr`) as today.
+- The fold recognises any document whose id starts with
+  `language/<lang>/<pkg>-quiz-` as belonging to the package (replacing the
+  per-deck `quizDocumentIds` match), and applies the rows only to the learner
+  who was scanned.
+- The existing per-deck quiz command stays for a grown-up who wants the whole
+  deck on paper; its misses on un-introduced words are logged only (rule 3).
+
 ### Test mode
 
 A second service instance over a **shadow status store** (in-memory deep copy
-of the learner's real `status.yml` and today's day file, snapshotted at open)
+of the learner's real `status.yml`, `tuning.yml` and today's day file,
+snapshotted at open)
 and a discarding recordings sink, at `/api/v1/school/word-ladder/test/*`.
 The typed-answer judge still runs (so verdicts can be tested) but its cache is
 the shadow's, in memory — test mode never writes `judgements.yml`. Same
@@ -576,8 +684,11 @@ the live router and vice versa. 3 h TTL, max 20 sittings; eviction/restart →
 404 → reopen. Banner "TEST — nothing is saved". Seeds `?scenario=`: `today`,
 `fresh` (empty), `round-end` (every deck word Familiar/Got it → quiz),
 `due` (every word mastered and due → rechecks), `tricky` (streak at threshold →
-drill), `done` (goal met → menu), `typos` (seeded misspellings, a decoy word and English in
-typed answers → judge verdicts). The tuner never runs on test sittings. A backend test runs a full test
+drill), `done` (goal met → menu), `typos` (a round whose typed items the test harness answers with
+misspellings, a decoy word, English and empty input). Automated tests assert the
+exact, no-Hangul, different-word, deterministic and cache paths directly and
+drive the model path only through a fake `IAIGateway`; a live-model call happens
+only when a person types into a test sitting. The tuner never runs on test sittings. A backend test runs a full test
 sitting and asserts `status.yml` and the day file are byte-identical and no
 recording was written.
 
@@ -616,13 +727,14 @@ is the fallback source when the log store has aged out.
    URL: `/school/go/<learner>/word-ladder/test`).
 3. **Stage, button primitive, text fitting, keypad mock.**
 4. **Screens:** start, rechecks, introduce, stream, round-end quiz (choices,
-   typing, keypad, tiles), summary.
-5. **Drill + practice menu** (look, copy, say-after, read-aloud, dictation,
+   typing, keypad), summary.
+5. **Per-learner printed quiz** (CLI + fold by document prefix).
+6. **Drill + practice menu** (look, copy, say-after, read-aloud, dictation,
    pick-spelling, match, tiles, say-from-cue, listen, My words).
-6. **Observability + trace CLI.**
-7. **Grown-up word controls** in the teacher console.
-8. **Tuning agent** (scheduler, digest, brakes, console list + undo).
-9. **Docs:** rewrite `docs/reference/school/word-ladder.md`; teacher.md (door,
+7. **Observability + trace CLI.**
+8. **Grown-up word controls** in the teacher console.
+9. **Tuning agent** (scheduler, digest, brakes, console list + undo).
+10. **Docs:** rewrite `docs/reference/school/word-ladder.md`; teacher.md (door,
    word controls); School runbook (FKB autoplay).
 
 Each step is verified behind the test door at stage size (screenshots looked
