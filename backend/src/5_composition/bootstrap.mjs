@@ -893,7 +893,8 @@ export function createFitnessServices(config) {
   // Session store and service
   const sessionStore = new YamlSessionDatastore({
     configService,
-    mediaRoot
+    mediaRoot,
+    logger,
   });
 
   const sessionService = new SessionService({

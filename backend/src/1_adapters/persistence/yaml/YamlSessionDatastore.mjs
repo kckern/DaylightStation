@@ -25,6 +25,7 @@ import { InfrastructureError } from '#system/utils/errors/index.mjs';
 import { ItemId } from '#domains/content/value-objects/ItemId.mjs';
 import { selectPrimaryMedia, selectPrimaryMediaSummary, buildSelectionConfig } from '#domains/fitness/services/selectPrimaryMedia.mjs';
 import { hydrateTimeline, dehydrateTimeline } from './SessionTimelineCodec.mjs';
+import { stampIntegrity } from '#domains/fitness/services/sessionIntegrity.mjs';
 
 // ── Session list index (derived read cache) ──────────────────────────────
 // The /sessions?since=Nd and /suggestions endpoints build per-session summaries
@@ -112,6 +113,7 @@ export class YamlSessionDatastore extends ISessionDatastore {
       });
     this.configService = config.configService;
     this.mediaRoot = config.mediaRoot || path.join(process.cwd(), 'media');
+    this.logger = config.logger || null;
   }
 
   /**
@@ -203,7 +205,18 @@ export class YamlSessionDatastore extends ISessionDatastore {
     // Split the frame manifest out to media before the session hits data/.
     // `snapshots` is destructured off a shallow copy so the caller's entity is
     // not mutated by having been saved.
-    const { snapshots, ...history } = data;
+    const { snapshots, ...unstamped } = data;
+    // Integrity stamp (see sessionIntegrity.mjs). Home sessions autosave during
+    // the workout, so a violation logs at debug; the stamp in the file is the
+    // durable signal, recomputed on every save.
+    const history = stampIntegrity(unstamped, new Date());
+    if (history?.integrity) {
+      this.logger?.debug?.('fitness.session.integrity_violation', {
+        sessionId: data.sessionId,
+        source: 'home',
+        checks: history.integrity.violations.map(v => v.check),
+      });
+    }
     // Same predicate Session.toJSON uses to decide the field is worth emitting —
     // an empty captures array with an updatedAt still counts, so it must not be
     // dropped on the way to the sidecar.
