@@ -900,15 +900,25 @@ carries `mode: live|test`. `school word-ladder trace` (see the
 [School runbook](../../runbooks/school/README.md#word-ladder-trace)) turns one
 learner's events into a per-sitting timeline.
 
-**Backend** (`context.module: school-word-ladder`, service-side, no `seq`):
+**Backend** (`context.module: school-word-ladder`, service-side, no `seq`).
+Every sitting event carries `learnerId`, `sittingId`, `mode`, and (on the
+sequencing events) `package` and `day`:
 
 | Event | When | Key fields |
 |-------|------|------------|
-| `opened` / `reopened` / `closed` | a sitting opens, resumes, ends | `learnerId`, `sittingId`, `package`, `day`; `closed` has the reason |
+| `opened` / `reopened` / `closed` | a sitting opens, resumes, ends | `package`, `day`, `first`, `phase`, `rechecks`, `microphone`; `closed` has `reason` (`goal`, `cap`, `leave`, `unmount`, `idle`), `activeMs`, `doneAt` |
+| `sitting.abandoned` (warn) | a sitting its client never closed is idle-closed at the next request on another sitting of the day | `lastItemId` (last answer), `onScreenItemId` / `onScreenType` (where the day stood), `idleMs`, `openedAt`, `closedAt`, `by` |
+| `item.served` | every item put on screen (open, answer, `get` resync, practice start) — **why** it came up | `itemId`, `type`, `task`, `source`, `wordId`, `reason`, `via: open\|respond\|get\|practice`, `after` (the answer that led here) and per-reason detail: `step` (intro), `pass` (stream), `round`, `notYet` (offer), `drillSource` (drill) |
+| `day.planned` | the first open of a study day | `dueRechecks`, `tricky`, `newAllowance` |
+| `round.planned` | a round is planned | `round`, `index`, `kind: new\|carry`, `size`, `newIds`, `carryIds`, `hasMatch`, `phase`, `itemId` (the answer that caused it; null on open) |
+| `round.phase` | a round moves phase | `round`, `from`, `to`; `→ quiz` adds `queue` (`word:task` in order), `eligible`, `notQuizzed`; `→ match` adds `wordIds`; `→ offer` adds `wordId`; `→ done` adds `passed`, `failed` |
+| `drill.started` / `drill.finished` | a tricky or offered drill starts / ends | `drillId`, `wordId`, `source: tricky\|offer`, `steps`; `excluded` on finish |
+| `day.done` | today's goal is credited | `doneAt`, `activeMs` |
 | `answered` | **every** response the service accepts | `itemId`, `type`, `task`, `wordId`, `correct`, `score`, `judge`, `next`, `doneAt` |
 | `graded` | only a **graded** response (verify quiz, recheck, practice Quiz me) | `itemId`, `wordId`, `task`, `source`, `correct`, `score`, `judge` |
-| `transition` | one per word whose state or stage changed | `wordId`, `from`, `to`, `source`, `itemId` |
-| `recorded` / `practice` | a spoken take stored; a practice run built | |
+| `transition` | one per word whose state or stage changed | `wordId`, `from`, `to`, `source`, `itemId`, `prereqs {recognizedCount, matched, typedSignedOff}` after the move |
+| `word.prereqs` | a word's sign-off prerequisites moved (a recognition pass, a finished Match, a typed sign-off or its loss) | `wordId`, `changed`, `recognizedCount`, `matched`, `typedSignedOff`, `readyForSignOff`, `gaps` |
+| `recorded` / `practice` | a spoken take stored; a practice run built | `step`, `take`, `bytes`; `practice`, `help`, `filter`, `size`, `first` |
 | `judge-fallback` (warn) | the typed judge's model failed or timed out | `wordId`, `error` |
 | `admin` | a grown-up word control (reset, mark mastered, exclude, drop deck, **regrade**) | `actorId`, `action`, `wordId`; a regrade adds `itemId`, `pass`, `score`, `was` |
 | `folded` / `fold-refused` / `fold-deck-skipped` | the printed quiz folded in (spec §8) | `source`, `count`, `demoted` |
@@ -916,6 +926,23 @@ learner's events into a per-sitting timeline.
 | `tuned` / `tuning-skipped` / `tuning-failed` / `tuning-unreadable` | the outcome of one tuning run | `day`, `status` or `error` |
 | `tuning-push` | a concern push attempt | `status: sent\|suppressed\|failed\|dropped` |
 | `store-corrupt` | a YAML file could not be parsed | `kind: status\|day\|tuning` |
+
+**`item.served` reasons.** The engine gives the reason as data
+(`observe.mjs` `servedWhy`, pure); the service only logs it.
+
+| `reason` | Meaning |
+|----------|---------|
+| `intro` | a new word's Learn step (`step: flash\|copy\|say`) |
+| `stream` / `carry` | a Sort card: a new word of this round, or a word carried from an earlier day |
+| `stream:again-after-<pile>` / `carry:again-after-<pile>` | the card came back because it was sorted `notYet` or `familiar` (`pass` = which showing) |
+| `verify-recognition` | the round quiz (2.2 / 3.1) |
+| `match-after-verify` | the guided Match after a quiz that passed at least one word |
+| `drill-offer` | the one-per-round drill offer (`notYet` = how often the word was sorted Not yet) |
+| `recheck-typed-signoff` | a due recheck for a word with every prerequisite met: typed (3.3 / 1.4) |
+| `recheck-recognition:<gaps>` | a due recheck that stays recognition, and what the word still lacks: `not-mastered`, `recognized<2`, `unmatched`, `stage<1`, `typed-lapse` |
+| `drill:<step>` | a drill step (`drillSource: tricky\|offer`) |
+| `practice:<mode>` | a practice-run item |
+| `summary` / `menu` | the day's summary, then the practice menu |
 
 The tuning scheduler adds `tuning-wired`, `tuning-run-failed`,
 `tuning-tick-failed`, `tuning-deck-skipped`, `tuning-pending-failed` and
@@ -930,27 +957,37 @@ trace began), `learnerId`, `deckId`, `package` and `mode` (live/test). Order
 a trace by `seq`, never by `_time` (the store stamps local time as UTC). The
 stamp owns `mode`, so an item-level mode is sent as `itemMode`.
 
-- `sitting.opened`, `sitting.closed {reason, activeMs, remaining}`,
-  `session.reopened`, `started` (Start tapped), `mounted`/`unmounted`,
-  `visibility {state}`;
-- `intro.shown {hasPoster, newCount, reviewCount, learned, total}` (the start
-  card drew its facts), `intro.failed {status}` (warn — it fell back to the
-  title), `media.failed {kind: 'poster'}` when the poster fails to load;
-  `step.entered {step, round}` each time the header's current step changes;
-- `item.shown {task, wordId, itemMode, layout, media}`, `item.layout {fontPx}`
-  (the first fitted font size for that item, once), `item.answered {response,
-  correct?, score?, judge, ms}`, `item.stalled {ms: 45000|120000}` (warn),
-  `item.prompt-fallback` (warn);
-- `card.flipped {ms}`, `card.sorted {pile}`, `card.undone`, `round.started`,
-  `round.ended {quizzed, notYet}`, `match.completed {ms, misses, pairs}`,
-  `drill.offered {accepted}`, `practice.started {itemMode, help, filter}`;
-- `audio.played {kind, outcome: ended|error|blocked}`, `keypad.toggled
-  {auto, open, via?}`, `keyboard.detected` (once per device),
-  `recording.uploaded` / `recording.failed` / `recording.refused`,
-  `mic.unavailable` (warn — Space falls through to Skip);
-- failures: `plan.failed`, `write.failed`, `api.rejected`, `api.failed`,
-  `stage.failed`, `media.failed` (an image cue fell back to text),
-  `layout.clamped`, `notice.shown`, `practice.failed`, `words.failed`.
+**Input.** `input` / `via` name how the child acted: `key:Space`,
+`key:Enter`, `key:Tab`, `key:Backslash`, `key:ArrowLeft`, `key:<letter or
+digit>`, or `touch` (null = nothing the child did in the last 1.5 s). It is
+noted centrally (`inputVia.js`): `useWordLadderKeys` notes the key it acts
+on, and the program root's capture listeners note a touch on any button and
+an Enter that submits a field. Nothing is logged per keystroke.
+
+| Event | When | Key fields |
+|-------|------|------------|
+| `mounted` / `unmounted` / `started` | the program mounts / leaves; Start tapped | `userId`, `deckId`, `test`, `scenario` |
+| `intro.shown` / `intro.failed` (warn) | the start card drew its facts / fell back to the title | `hasPoster`, `newCount`, `reviewCount`, `learned`, `total`; `status` |
+| `sitting.opened` / `sitting.closed` / `session.reopened` | open, close (Leave, Done, unmount), a 404 reopen | `first`, `phase`; `reason`, `activeMs`, `remaining`, `itemId`; `from` |
+| `step.entered` / `hint.shown` | the header's current step changes / its first-time hint shows | `step`, `round` |
+| `round.started` / `round.ended` | `progress.round.index` changes | `index`, `size`; `quizzed`, `notYet` |
+| `item.shown` / `item.layout` | an item appears / its first fitted font size | `itemId`, `type`, `task`, `wordId`, `itemMode`, `layout`, `media`; `fontPx` |
+| `item.answered` | the service accepted a response | `itemId`, `type`, `task`, `response`, `correct`, `score`, `judge`, `next`, `ms`, **`input`** |
+| `result.shown` / `result.dismissed` | the verdict panel appears / Next past a held verdict | `itemId`, `correct`, `score`, `judge`, `held` (false = a retry on the same item); `via`, `ms` |
+| `item.skipped` | Skip on a say step with no take | `itemId`, `type`, `what: say`, `itemMode`, `via`, `ms`, `micOff` |
+| `showme.used` | Show me on a practice typing item | `itemId`, `via`, `ms` |
+| `item.stalled` (warn) | 45 s and 120 s with no key or pointer on the current item | `itemId`, `ms`, `visibility: visible\|hidden`, `screen: item\|result` |
+| `visibility` | the tab is hidden or shown | `state` |
+| `audio.played` | every clip that finished or failed (warn when `error`/`blocked`) | `clip: term\|gloss\|take`, `trigger: auto\|key\|touch`, `input` (for key/touch), `outcome: ended\|error\|blocked` |
+| `say.recording` | a spoken take (never graded) | `itemId`, `itemMode`, `phase: started\|stopped\|uploaded\|failed\|refused\|unavailable` (failed/unavailable warn), `ms` since the item was shown; `via`, `durationMs`, `bytes`, `status`, `reason` |
+| `card.flipped` / `card.sorted` / `card.undone` | flashcard actions | `ms`; `pile` |
+| `keypad.toggled` / `keyboard.detected` | the jamo keypad opens/closes; a physical keyboard is known (once per device) | `auto`, `open`, `via?` |
+| `match.completed` / `drill.offered` / `practice.started` | a Match board finished; the drill offer answered; a practice run chosen | `ms`, `misses`, `pairs`; `accepted`; `itemMode`, `help`, `filter` |
+| failures | `plan.failed`, `write.failed`, `api.rejected`, `api.failed`, `stage.failed`, `media.failed`, `item.prompt-fallback`, `layout.clamped`, `notice.shown`, `practice.failed`, `words.failed` | |
+
+Before 2026-09-23 the take events were `recording.uploaded` /
+`recording.failed` / `recording.refused` / `mic.unavailable` and
+`audio.played` carried `kind`; the trace still reads both.
 
 ## What is deferred
 
