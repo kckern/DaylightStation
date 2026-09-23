@@ -50,6 +50,7 @@ const swrCache = new Map();
 // path, not per request.
 const pathGenerations = new Map();
 const invalidationListeners = new Set();
+const patchListeners = new Set();
 
 /** Revalidate mounted readers together without blanking same-key snapshots. */
 export function invalidateApiResources(matches = () => true) {
@@ -157,6 +158,28 @@ export function primeApiResource(path, value) {
 }
 
 /**
+ * Write a change the server has already committed into a cached resource and
+ * show it on every mounted reader at once, instead of waiting for a refetch
+ * that can queue behind everything else the page has in flight. Each reader
+ * then revalidates, so the server's copy replaces the patch when it lands.
+ * Claiming a generation keeps a request issued BEFORE the patch (a poll, a
+ * prefetch) from writing the pre-write value back over it.
+ *
+ * `update(current)` returns the next value, or undefined to leave it alone.
+ * Returns false when nothing has loaded the path yet: there is nothing on
+ * screen to patch, and the reader's own load will include the change.
+ */
+export function patchApiResource(path, update) {
+  if (!swrCache.has(path)) return false;
+  const next = update(swrCache.get(path));
+  if (next === undefined) return false;
+  claimGeneration(path);
+  cacheSet(path, next);
+  for (const notify of patchListeners) notify(path, next);
+  return true;
+}
+
+/**
  * Replace the prefetch queue with `paths`, in priority order. Paths already
  * fresh in the cache are skipped; requests already in flight finish.
  * `onIdle(stats)` fires once, when the queue and in-flight set drain.
@@ -211,6 +234,20 @@ export function useApiResource(path, { deps = [], enabled = true, label, logger 
     invalidationListeners.add(notify);
     return () => invalidationListeners.delete(notify);
   }, [path, enabled, reload]);
+
+  // Adopt a patch now, then revalidate. The reload also retires this hook's
+  // in-flight request (its `live` flag), which predates the patch.
+  useEffect(() => {
+    if (!swr) return undefined;
+    const notify = (patched, value) => {
+      if (!enabled || patched !== path) return;
+      setData(value);
+      setResultPath(path);
+      reload();
+    };
+    patchListeners.add(notify);
+    return () => patchListeners.delete(notify);
+  }, [path, enabled, swr, reload]);
 
   useEffect(() => {
     if (!enabled || !path) { setLoading(false); return undefined; }
