@@ -83,7 +83,7 @@ test('scanner releases its media after its first result and acquires a fresh str
   const state = await installHealthFixtures(page, { foods: [{ id: 'food-a', name: 'Fixture oats', upc: 'fixture-upc', grams: 80, calories: 300 }] });
   await page.goto('/health');
   for (let count = 1; count <= 2; count++) {
-    await page.getByRole('button', { name: /^Quick scan barcode to / }).click();
+    await page.getByRole('button', { name: 'Scan barcode to Lunch', exact: true }).click();
     await expect.poll(() => state.items.length).toBe(count);
     await expect.poll(() => page.evaluate(() => window.fixtureStreams.length)).toBe(count);
     await expect.poll(() => page.evaluate(() => window.fixtureStreams.every(stream => stream.getTracks().every(track => track.readyState === 'ended')))).toBe(true);

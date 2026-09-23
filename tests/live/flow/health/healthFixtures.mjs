@@ -85,6 +85,8 @@ export async function installHealthFixtures(page, { items = [], foods = [], budg
         }
         const { portion, numericEdit, operationId, expectedVersion, expectedVersions, ...fields } = body;
         Object.assign(row, fields);
+        // As HealthOperations.updateNutritionItem: a dish's meal/date carry to its ingredients.
+        for (const key of ['mealTime', 'date']) if (Object.hasOwn(fields, key)) children.forEach(child => { child[key] = fields[key]; });
         for (const member of [row, ...children]) member.version++;
         return reply({ data: row, versions: Object.fromEntries([row, ...children].map(member => [member.uuid, member.version])), cascadedIds: children.map(child => child.uuid), affectedIds: [id] });
       }

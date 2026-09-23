@@ -24,7 +24,7 @@ const MealsIcon = () => (
  * (`selectedCount`), the section hands in a capture that carries the selection,
  * so what is said edits those foods. The label says which. */
 export function MealAddRow({ bucket, label, date, focusRequest = 0, busy = false, active = true, selectedCount = 0,
-  onAdded, onSentencePending, onVoiceCapture, onPhotoCapture, onOpenBarcode, onOpenTemplates, onManageFoods }) {
+  onOrphanedRetry, onAdded, onSentencePending, onVoiceCapture, onPhotoCapture, onOpenBarcode, onOpenTemplates, onManageFoods }) {
   const openBarcode = () => { logger.debug('barcode.open', { bucket }); onOpenBarcode(bucket); };
   const openTemplates = (templateId) => { logger.debug('templates.open', { bucket, templateId }); onOpenTemplates(bucket, templateId); };
   return <div className="health-meal__add-row" data-selecting={selectedCount ? 'true' : undefined}>
@@ -34,7 +34,8 @@ export function MealAddRow({ bucket, label, date, focusRequest = 0, busy = false
       actions={<span className="health-meal__add-actions">
         {onVoiceCapture ? <VoiceCapture active={active} bucket={bucket} mealLabel={label}
           labelPrefix={selectedCount ? `Speak changes to ${selectedCount} selected` : 'Speak foods'}
-          busy={busy} className="health-meal__add-action" onCapture={onVoiceCapture} /> : null}
+          busy={busy} className="health-meal__add-action" onCapture={onVoiceCapture}
+          onOrphanedRetry={onOrphanedRetry ? (run, meta) => onOrphanedRetry(run, { ...meta, date }) : undefined} /> : null}
         <PhotoCapture bucket={bucket} mealLabel={label} labelPrefix="Photo" busy={busy}
           className="health-meal__add-action" onCapture={onPhotoCapture} />
         <ActionIcon variant="subtle" size="sm" className="health-meal__add-action" aria-label={`Scan barcode to ${label}`}

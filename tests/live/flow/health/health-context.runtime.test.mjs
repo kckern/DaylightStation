@@ -52,8 +52,8 @@ test('failed voice capture keeps retry bytes and original day across tabs', asyn
     return attempts === 1 ? route.fulfill({ status: 503, json: { error: 'Please retry this recording' } }) : route.fallback();
   });
   await page.goto('/health?date=2026-09-01');
-  await page.getByRole('button', { name: 'Quick voice log to Breakfast on 2026-09-01', exact: true }).click();
-  await page.getByRole('button', { name: 'Stop recording — Breakfast on 2026-09-01', exact: true }).click();
+  await page.getByRole('button', { name: 'Speak foods to Breakfast', exact: true }).click();
+  await page.getByRole('button', { name: 'Stop recording — Breakfast', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Retry recording', exact: true })).toBeVisible();
   await page.getByRole('link', { name: 'Medical', exact: true }).click();
   await page.getByRole('link', { name: 'Today', exact: true }).click();

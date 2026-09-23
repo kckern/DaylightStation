@@ -18,6 +18,13 @@ describe('Auditor strict structured output', () => {
     audit.repairs[0].updates.push({ id: 'food', expectedVersion: 1, changes: { sugar: 8 } });
     expect(() => normalizeAuditRepairs(audit, { has: () => false })).toThrow('Conflicting');
   });
+  it('hands refused artwork to the remediation queue instead of dropping it', () => {
+    const audit = decodeAudit(result([{ field: 'icon', value: 'not-a-slug' }, { field: 'sugar', value: 4 }]));
+    const dropped = [];
+    const kept = normalizeAuditRepairs(audit, { has: () => false }, {}, drop => dropped.push(drop));
+    expect(kept.repairs[0].updates[0].changes).toEqual({ sugar: 4 });
+    expect(dropped).toEqual([{ entryId: 'food', icon: 'not-a-slug' }]);
+  });
   it('requires every object key without unsupported sparse-object constraints', () => {
     const walk = value => {
       if (!value || typeof value !== 'object') return;

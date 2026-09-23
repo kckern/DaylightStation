@@ -16,7 +16,8 @@ function setup() {
  vi.stubGlobal('FileReader',class {readAsDataURL(){this.result='data:audio/webm;base64,YQ==';this.onload?.();}});
 }
 // The meal's mic lives in its add row; mount the real VoiceCapture there.
-const addRow=(bucket,label,meal)=><VoiceCapture active bucket={bucket} mealLabel={label} onCapture={meal.onVoiceCapture}/>;
+const orphaned=vi.fn();
+const addRow=(bucket,label,meal)=><VoiceCapture active bucket={bucket} mealLabel={label} onCapture={meal.onVoiceCapture} onOrphanedRetry={orphaned}/>;
 const ui=(voice,date='2026-09-06')=><MantineProvider><LogTable date={date} byBucket={new Map()} onVoiceCapture={voice} renderAddRow={addRow}/></MantineProvider>;
 afterEach(()=>{cleanup();vi.useRealTimers();vi.unstubAllGlobals();});
 it('keeps a recording empty meal visible across its automatic retirement',async()=>{
@@ -58,4 +59,27 @@ it('reports departure dynamically when navigation occurs after an upload starts'
  expect(context.isDeparted()).toBe(true);
  await act(async()=>rejectUpload(new Error('Disconnected after navigation')));
  expect(voice).toHaveBeenCalledTimes(1);
+});
+
+it('hands a failed recording to its owner when the day changes, and the handed-on send keeps its day',async()=>{
+ setup();orphaned.mockReset();
+ const voice=vi.fn().mockRejectedValueOnce(new Error('Disconnected')).mockResolvedValueOnce({committed:true});const view=render(ui(voice));
+ await act(async()=>fireEvent.click(screen.getByRole('button',{name:'Log by voice to Dinner'})));
+ await act(async()=>fireEvent.click(screen.getByRole('button',{name:'Stop recording — Dinner'})));
+ expect(screen.getByRole('button',{name:'Retry recording'})).toBeTruthy();
+ await act(async()=>view.rerender(ui(voice,'2026-09-05')));
+ expect(orphaned).toHaveBeenCalledTimes(1);
+ const [run,meta]=orphaned.mock.calls[0];
+ expect(meta).toMatchObject({bucket:'evening',mealLabel:'Dinner'});
+ await act(async()=>{await run();});
+ expect(voice).toHaveBeenCalledTimes(2);
+ expect(voice.mock.calls[1][2]).toMatchObject({date:'2026-09-06'});
+});
+it('a recording that sent is not handed on',async()=>{
+ setup();orphaned.mockReset();
+ const voice=vi.fn(async()=>({committed:true}));const view=render(ui(voice));
+ await act(async()=>fireEvent.click(screen.getByRole('button',{name:'Log by voice to Dinner'})));
+ await act(async()=>fireEvent.click(screen.getByRole('button',{name:'Stop recording — Dinner'})));
+ await act(async()=>view.rerender(ui(voice,'2026-09-05')));
+ expect(orphaned).not.toHaveBeenCalled();
 });

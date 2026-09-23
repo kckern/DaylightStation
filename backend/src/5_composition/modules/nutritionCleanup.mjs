@@ -6,6 +6,8 @@ import { YamlFoodCatalogDatastore } from '#adapters/persistence/yaml/YamlFoodCat
 import { YamlSavedMealsDatastore } from '#adapters/persistence/yaml/YamlSavedMealsDatastore.mjs';
 import { YamlObservationStore } from '#adapters/persistence/yaml/YamlObservationStore.mjs';
 import { IconManifestStore } from '#adapters/persistence/IconManifestStore.mjs';
+import { PhotoStore } from '#adapters/persistence/PhotoStore.mjs';
+import { YamlArtworkQueueStore } from '#adapters/persistence/yaml/YamlArtworkQueueStore.mjs';
 import { TelegramNutribotIdentity } from '#adapters/nutribot/TelegramNutribotIdentity.mjs';
 import { NodeApplicationScheduler } from '#adapters/scheduling/NodeApplicationScheduler.mjs';
 import { AgentExecutionPolicy } from '#apps/agents/framework/AgentExecutionPolicy.mjs';
@@ -15,6 +17,7 @@ import { NutritionRepairService } from '#apps/nutrition/NutritionRepairService.m
 import { CleanupQuestionSurface } from '#apps/nutrition/CleanupQuestionSurface.mjs';
 import { NutritionStabilization } from '#apps/nutrition/NutritionStabilization.mjs';
 import { NutritionCaptureRecovery } from '#apps/nutrition/NutritionCaptureRecovery.mjs';
+import { ArtworkRemediation } from '#apps/nutrition/ArtworkRemediation.mjs';
 import { normalizeScaleNutribotConfig } from '#apps/nutribot/lib/scaleNutribotConfig.mjs';
 
 export function createNutritionCleanup({ dataService, configService, userIdentityService, nutribotServices, upcGateway, agentOrchestrator, logger, scheduled = false, server }) {
@@ -30,11 +33,19 @@ export function createNutritionCleanup({ dataService, configService, userIdentit
       transcriptStore: new AgentTranscriptFileStore({ mediaDir: configService.getMediaDir() }) }) });
   const dbDir = configService.getDataDir() + '/agents';
   const runs = new MastraRunAdapter({ dbPath: dbDir + '/cleanup-runs.db' });
+  const catalog = new YamlFoodCatalogDatastore({ dataService, logger });
   const auditor = new NutritionAuditor({ runtime, items, foodLogs, clock, timezoneFor, icons, upc: upcGateway,
     observations: new YamlObservationStore({ dataService, logger }),
-    catalog: new YamlFoodCatalogDatastore({ dataService, logger }), meals: new YamlSavedMealsDatastore({ dataService }) });
+    catalog, meals: new YamlSavedMealsDatastore({ dataService }) });
   agentOrchestrator?.register(NutritionAuditor, { ...auditor, runtime });
   const repairs = new NutritionRepairService({ items, foodLogs, review: container.getFoodLogReview(), icons, clock, timezoneFor });
+  // The artwork remediation queue (design 2026-09-23 §5): every icon or photo
+  // that cannot be shown is queued and worked until fixed. Row fixes go through
+  // the same repair service (audited, undoable); the nearest-icon pick uses the
+  // UPC use case's AI gateway, confined to the manifest.
+  const artwork = new ArtworkRemediation({ queue: new YamlArtworkQueueStore({ dataService }), items, repairs, catalog, icons,
+    aiGateway: container.getAIGateway?.() || null, upcGateway, photos: new PhotoStore({ dataService, logger }), clock, logger });
+  auditor.artwork = artwork;
   const stabilization = new NutritionStabilization({ items, review: container.getFoodLogReview(), clock, logger });
   const cleanup = new NutritionCleanup({ store, runs, auditor, repairs, items, foodLogs, clock, timezoneFor, logger, stabilization });
   cleanup.recovery = new NutritionCaptureRecovery({ review: container.getFoodLogReview(), items,
@@ -53,9 +64,24 @@ export function createNutritionCleanup({ dataService, configService, userIdentit
     catch (error) { logger.warn('nutrition.cleanup.tick_failed', { error: error.message }); }
     finally { ticking = false; }
   };
-  const stop = scheduled ? new NodeApplicationScheduler().every(30000, tick) : () => {};
+  // Artwork: work due items every ~2 min, sweep the last week every ~hour. Same
+  // gate, same owner and the same non-overlapping guard as the cleanup tick.
+  let artworkBusy = false;
+  const artworkRun = (label, work) => async () => {
+    if (artworkBusy || !userId) return;
+    artworkBusy = true;
+    try { await work(); }
+    catch (error) { logger.warn('artwork.queue.' + label + '_failed', { error: error.message }); }
+    finally { artworkBusy = false; }
+  };
+  const artworkTick = artworkRun('tick', () => artwork.tick(userId));
+  const artworkSweep = artworkRun('sweep', async () => { await artwork.sweep(userId, { sinceDays: 7 }); await artwork.tick(userId); });
+  const scheduler = scheduled ? new NodeApplicationScheduler() : null;
+  const stops = scheduler ? [scheduler.every(30000, tick), scheduler.every(2 * 60 * 1000, artworkTick), scheduler.every(60 * 60 * 1000, artworkSweep)] : [];
+  const stop = () => { for (const halt of stops) halt(); };
   server?.once?.('close', stop);
   cleanup.stop = stop;
-  if (scheduled) void tick();
+  cleanup.artwork = artwork;
+  if (scheduled) { void tick(); void artworkSweep(); }
   return cleanup;
 }
