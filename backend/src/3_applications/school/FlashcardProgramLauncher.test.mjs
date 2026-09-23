@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { FlashcardProgramLauncher } from './FlashcardProgramLauncher.mjs';
 import { findReopenableProgramEntry } from './usecases/continuationEntry.mjs';
+import { projectProgramEntry } from './assignedProgramPlan.mjs';
 
 function make({ policy = { activeMinutes: 1, minimumReviews: 2, masteryPercent: 50 } } = {}) {
   const dispatches = [];
@@ -82,6 +83,26 @@ describe('FlashcardProgramLauncher — word ladder', () => {
     expect(status).toMatchObject({ doneToday: true, progressLabel: 'Done for today', reopenable: true, servedWork: [{ unitId: `flashcards:${DECK}`, title: 'Flashcards' }] });
     expect(wordLadder.dayStatus).toHaveBeenCalledWith({ userId: 'kid', deckId: DECK, day: null });
     expect(studyService.summary).not.toHaveBeenCalled();
+  });
+  it('carries the launch card to the agenda: projectProgramEntry reads the course poster and the words-learned bar', async () => {
+    const card = {
+      context: {
+        course: { id: 'program:word-ladder:korean-vocab', title: 'Test Class' },
+        unit: { id: DECK, title: 'Week 1: Classroom' },
+        lesson: { id: `${DECK}:2026-09-23`, title: '4 new words · 3 to review' },
+      },
+      description: 'About 10 minutes',
+      progress: [{ scope: 'unit', label: 'Words learned', completed: 0, total: 19 }],
+    };
+    const { launcher } = makeLadder(async () => ({ doneToday: false, progressLabel: 'Not opened', remaining: null, ...card }));
+    const status = await launcher.status({ userId: 'kid', programInstance: DECK });
+    expect(status).toMatchObject(card);
+    const entry = { program: 'flashcards', programInstance: DECK, subject: 'language', unitId: `flashcards:${DECK}`, title: 'Flashcards' };
+    const projected = projectProgramEntry(entry, status);
+    expect(projected).toMatchObject({
+      title: '4 new words · 3 to review', courseId: 'program:word-ladder:korean-vocab', module: DECK,
+      description: 'About 10 minutes', programProgress: card.progress,
+    });
   });
   it('replays a past day through the word ladder', async () => {
     const { launcher, wordLadder } = makeLadder(async () => ({ doneToday: false, progressLabel: 'Not opened', remaining: null }));

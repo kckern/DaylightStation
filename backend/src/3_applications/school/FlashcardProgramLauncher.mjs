@@ -71,6 +71,10 @@ export class FlashcardProgramLauncher {
       doneToday: status.doneToday === true, progressLabel: status.progressLabel, score: null,
       reopenable: true, remaining: status.remaining ?? null,
       servedWork: status.doneToday === true ? [{ unitId: `flashcards:${deckId}`, title: 'Flashcards' }] : [],
+      // The launch card (`projectProgramEntry`): class › deck › today's plan,
+      // the words-learned bar, and a `program:word-ladder:<package>` course id
+      // that resolves the package's poster. Absent for a replayed past day.
+      ...(status.context ? { context: status.context, progress: status.progress ?? [], description: status.description ?? null } : {}),
     };
   }
   async issueLaunchTarget({ userId, programInstance, unitId }) {

@@ -25,8 +25,9 @@ import { ValidationError, EntityNotFoundError } from '#domains/core/errors/index
 import { GuestForbiddenError } from '#domains/school/errors.mjs';
 import { offsetMinutesFor, studyDayForInstant } from '#domains/school/studyDay.mjs';
 import { addDays } from '#domains/school/termVerdict.mjs';
+import { curriculumPosterRef } from '#apps/common/resources/publicResourceRefs.mjs';
 import {
-  addActiveTime, cueFor, currentItem, deckDirOf, emptyWordV3, excludeWordFromDay, foldPaperAttempts, markMastered, normalizeAnswer, openDay,
+  addActiveTime, cueFor, currentItem, deckDirOf, deckProgress, emptyWordV3, introPlanLabel, introPreview, excludeWordFromDay, foldPaperAttempts, markMastered, normalizeAnswer, openDay,
   quizDocumentIdFor, respond, startPractice, typedAnswers, withTunedValues, wordAssetIds, wordTransitions,
 } from '#domains/school/wordLadder/index.mjs';
 
@@ -814,17 +815,92 @@ export class WordLadderSittingService {
     return { learnerId, package: pkg, day, itemId, wordId: answer.wordId, regraded };
   }
 
+  /**
+   * THE LAUNCH CARD'S FACTS, read from a store without opening anything: the
+   * program's title is the CLASS ("UBKS 비둘기" — the lexicon's
+   * `program.title`), the deck is the unit, today's plan is the lesson, and
+   * words learned in this deck is the bar. The course id is a program id,
+   * `program:word-ladder:<package>`, so the poster resolves to
+   * `<media>/school/programs/word-ladder/<package>/poster.jpg` — the artwork
+   * belongs to the word package, not the program (one program, many languages).
+   */
+  async #card({ userId, store, day, deck, lexicon, pkg }) {
+    const status = store.readStatus(userId, pkg);
+    const dayFile = store.readDay(userId, pkg, day);
+    const settings = this.#daySettings(dayFile, { store, userId, pkg });
+    const plan = introPreview({ status, dayFile, day, pool: await this.#pool(status, deck), settings });
+    return {
+      course: { id: `program:word-ladder:${pkg}`, title: lexicon.program.title },
+      unit: { id: deck.id, title: typeof deck.title === 'string' && deck.title.trim() ? deck.title.trim() : deck.id },
+      plan,
+      progress: deckProgress({ status, deckWords: deck.words }),
+    };
+  }
+
+  /**
+   * The start screen's card (`GET /word-ladder[/test]/intro`). READ-ONLY: spec
+   * §6 opens nothing before Start, so this never opens a day or writes a file.
+   * Test mode reads a PEEKED shadow snapshot — the same seeded copy Start's
+   * open would take (`scenario`), built and thrown away, never kept.
+   */
+  async intro({ userId, deckId, scenario = null } = {}) {
+    await this.#assertAssigned(userId, deckId);
+    const { deck, lexicon, pkg } = await this.#load(deckId);
+    const day = this.#today();
+    let store;
+    if (typeof this.#stores.peek === 'function') store = this.#stores.peek(userId, pkg, day, { scenario, deck, lexicon });
+    else if (this.#mode === 'live') store = this.#stores.open(userId, pkg, day, { readOnly: true }).store;
+    else throw new ValidationError('test-mode intro needs a peekable store (stores.peek)');
+    const card = await this.#card({ userId, store, day, deck, lexicon, pkg });
+    const { plan } = card;
+    return {
+      deckId, package: pkg, day, test: this.#mode === 'test',
+      course: card.course, unit: card.unit,
+      poster: curriculumPosterRef('selfservice', card.course.id),
+      today: {
+        newCount: plan.newCount, reviewCount: plan.reviewCount, estimatedMinutes: plan.estimatedMinutes, doneToday: plan.doneToday,
+        label: introPlanLabel(plan), line: introPlanLabel(plan, { withTime: true }),
+      },
+      progress: card.progress,
+    };
+  }
+
+  /**
+   * `projectProgramEntry`'s seam (as `LanguageStudyService.#cardProjection`):
+   * context + progress for today's agenda card. A replayed past day gets none —
+   * a card is an offer, and nobody is offered yesterday.
+   */
+  #cardProjection(card, day) {
+    const { plan, progress } = card;
+    return {
+      context: { course: card.course, unit: card.unit, lesson: { id: `${card.unit.id}:${day}`, title: introPlanLabel(plan) } },
+      description: !plan.doneToday && plan.estimatedMinutes ? `About ${plan.estimatedMinutes} minute${plan.estimatedMinutes === 1 ? '' : 's'}` : null,
+      progress: [{ scope: 'unit', label: 'Words learned', completed: progress.learned, total: progress.total }],
+    };
+  }
+
   /** Read-only credit for the launcher: today (live) or a past study day (replay). Live only. */
   async dayStatus({ userId, deckId, day = null } = {}) {
     // Opening a test store snapshots a new shadow; credit never comes from test mode.
     if (this.#mode !== 'live') throw new ValidationError('dayStatus is answered by the live word ladder only');
-    const target = day ?? this.#today();
+    const today = this.#today();
+    const target = day ?? today;
     try {
-      const { pkg } = await this.#load(deckId);
+      const loaded = await this.#load(deckId);
+      const { pkg } = loaded;
       const { store } = this.#stores.open(userId, pkg, target, { readOnly: true });
       const dayFile = store.readDay(userId, pkg, target);
-      if (!dayFile.atOpen) return { doneToday: false, progressLabel: 'Not opened', remaining: null };
-      return { doneToday: Boolean(dayFile.doneAt), progressLabel: dayFile.doneAt ? 'Done for today' : 'In progress', remaining: null };
+      const credit = !dayFile.atOpen
+        ? { doneToday: false, progressLabel: 'Not opened', remaining: null }
+        : { doneToday: Boolean(dayFile.doneAt), progressLabel: dayFile.doneAt ? 'Done for today' : 'In progress', remaining: null };
+      if (target !== today) return credit;
+      try {
+        return { ...credit, ...this.#cardProjection(await this.#card({ userId, store, day: target, ...loaded }), target) };
+      } catch (error) {
+        // The card is decoration on the credit: a failure here must not cost the day its disc.
+        this.#logger.warn?.('school.word-ladder.card-unavailable', { learnerId: userId, deckId, day: target, error: error.message });
+        return credit;
+      }
     } catch (error) {
       // A broken deck answers like a day never opened; it must not throw
       // through the launcher and take the rest of the agenda with it.

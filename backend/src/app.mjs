@@ -3238,6 +3238,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     stores: {
       open: () => ({ store: wordLadderStore, token: 'live' }),
       forToken: (token) => { if (token !== 'live') throw new Error('unknown sitting'); return wordLadderStore; },
+      // The start card's read (`intro`): the real store, read only.
+      peek: () => wordLadderStore,
     },
     judge: wordLadderJudgeFor(wordLadderJudgementCache),
     // Spoken takes, kept for grown-ups: {package}/{learner}/{day}/{word}-{n}.{ext}.
@@ -3254,6 +3256,9 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         return { store: wordLadderShadows.forToken(token), token };
       },
       forToken: (token) => wordLadderShadows.forToken(token),
+      // The start card reads what Start would open on — seeded, never kept.
+      peek: (userId, pkg, day, { scenario = null, deck = null } = {}) => wordLadderShadows.peek(userId, pkg, day,
+        (snap) => seedScenario(scenario ?? 'today', snap, { deckWords: deck?.words ?? [], day })),
     },
     // Reads through to the live cache (a grown-up's re-grade applies here too); writes stay in memory.
     judge: wordLadderJudgeFor(new MemoryJudgementCache({ fallback: wordLadderJudgementCache })),
