@@ -6,10 +6,10 @@ const round = (phase, extra = {}) => ({ ...base, phase: 'round', round: { index:
 const states = (trail) => Object.fromEntries(trail.steps.map((s) => [s.id, s.state]));
 
 describe('stepTrail — the sitting header\'s Review › Learn › Sort › Quiz › Practice', () => {
-  it('rechecks: Review is lit, round steps ahead, Practice locked with its note', () => {
+  it('rechecks: Review is lit, round steps ahead (Match too), Practice locked with its note', () => {
     const trail = stepTrail({ ...base, phase: 'rechecks', rechecksLeft: 2, rechecksTotal: 3 });
     expect(trail.current).toBe('review');
-    expect(states(trail)).toEqual({ review: 'current', learn: 'todo', sort: 'todo', quiz: 'todo', practice: 'todo' });
+    expect(states(trail)).toEqual({ review: 'current', learn: 'todo', sort: 'todo', quiz: 'todo', match: 'todo', practice: 'todo' });
     expect(trail.steps.at(-1)).toMatchObject({ id: 'practice', locked: true, note: 'after today\'s words' });
   });
 
@@ -22,8 +22,10 @@ describe('stepTrail — the sitting header\'s Review › Learn › Sort › Quiz
     expect(states(stepTrail(round('intro', withReview)))).toEqual({ review: 'done', learn: 'current', sort: 'todo', quiz: 'todo', practice: 'todo' });
     expect(states(stepTrail(round('stream', withReview)))).toEqual({ review: 'done', learn: 'done', sort: 'current', quiz: 'todo', practice: 'todo' });
     expect(states(stepTrail(round('quiz', withReview)))).toEqual({ review: 'done', learn: 'done', sort: 'done', quiz: 'current', practice: 'todo' });
-    // The drill offer comes after the quiz: the quiz stays the lit step.
-    expect(stepTrail(round('offer')).current).toBe('quiz');
+    // The drill offer comes after the quiz AND the Match: nothing steps backwards.
+    const offer = round('offer');
+    offer.round.hasMatch = true;
+    expect(states(stepTrail(offer))).toEqual({ learn: 'done', sort: 'done', quiz: 'done', match: 'done', practice: 'todo' });
   });
 
   it('the guided Match after a round\'s quiz: lit in phase match, or on a round-sourced match item; absent otherwise', () => {
@@ -48,15 +50,26 @@ describe('stepTrail — the sitting header\'s Review › Learn › Sort › Quiz
   });
 
   it('a running tricky drill inserts a lit Drill step before Practice', () => {
-    const trail = stepTrail({ ...base, phase: 'drill', drill: { at: 2, of: 6 }, roundsDone: 1 });
+    const trail = stepTrail({ ...base, phase: 'drill', drill: { at: 2, of: 6 }, roundsDone: 1, matchToday: false });
     expect(trail.current).toBe('drill');
     expect(trail.steps.map((s) => [s.id, s.state])).toEqual([['learn', 'done'], ['sort', 'done'], ['quiz', 'done'], ['drill', 'current'], ['practice', 'todo']]);
+  });
+
+  it('a mixed day (rechecks + new words) keeps one trail shape from Review into the round', () => {
+    const ids = (trail) => trail.steps.map((s) => s.id);
+    const review = stepTrail({ ...base, phase: 'rechecks', rechecksLeft: 1, rechecksTotal: 2, learnToday: true });
+    const intro = round('intro', { rechecksTotal: 2, rechecksLeft: 0 });
+    intro.round.hasMatch = true;
+    expect(ids(review)).toEqual(['review', 'learn', 'sort', 'quiz', 'match', 'practice']);
+    expect(ids(stepTrail(intro))).toEqual(ids(review));
   });
 
   it('done for today: everything ticked, Practice unlocked but dim (no note)', () => {
     const trail = stepTrail({ ...base, phase: 'summary', roundsDone: 2, doneToday: true });
     expect(trail.current).toBe(null);
     expect(states(trail)).toEqual({ learn: 'done', sort: 'done', quiz: 'done', practice: 'todo' });
+    expect(states(stepTrail({ ...base, phase: 'summary', roundsDone: 2, doneToday: true, matchToday: true })))
+      .toEqual({ learn: 'done', sort: 'done', quiz: 'done', match: 'done', practice: 'todo' });
     expect(trail.steps.at(-1)).toMatchObject({ locked: false, note: null });
   });
 
@@ -79,6 +92,10 @@ describe('stepTrail — the sitting header\'s Review › Learn › Sort › Quiz
     expect(stepTrail({ ...base, phase: 'rechecks', rechecksLeft: 1, rechecksTotal: 1 }).subLine).toBe('Checking 1 word');
     expect(stepTrail({ ...base, phase: 'summary', doneToday: true }).subLine).toBe('Done for today');
     expect(stepTrail(null).subLine).toBe('');
+  });
+
+  it('the Learn hint does not promise a step that may not come', () => {
+    expect(STEP_HINTS.learn).toBe('Meet each new word.');
   });
 
   it('the Match hint', () => {

@@ -200,7 +200,7 @@ export default function WordLadderProgram({ descriptor, api: injected = null, re
       wordLadderLog.introShown({
         hasPoster: typeof data.poster === 'string' && data.poster.length > 0,
         newCount: data.today?.newCount ?? null, reviewCount: data.today?.reviewCount ?? null,
-        learned: data.progress?.learned ?? null, total: data.progress?.total ?? null,
+        learned: data.progress?.learned ?? null, recognised: data.progress?.recognised ?? null, total: data.progress?.total ?? null,
       });
     })();
     return () => { alive = false; };
@@ -291,7 +291,8 @@ export default function WordLadderProgram({ descriptor, api: injected = null, re
     if (status === 404) { wordLadderLog.sessionReopened({ userId, deckId, test, from: 'get' }); await open(); }
   }, [api, session, userId, deckId, test, open, show]);
 
-  const respond = useCallback(async (response) => {
+  // `meta` rides on item.answered only (e.g. SayItem's `micOff`); the server sees `response`.
+  const respond = useCallback(async (response, meta = null) => {
     if (!session || !item || busyRef.current) return;
     // Read now, before the round trip: how the child answered (spec §8 input).
     const input = currentInput();
@@ -314,6 +315,7 @@ export default function WordLadderProgram({ descriptor, api: injected = null, re
       correct: data?.result?.correct ?? null, score: data?.result?.score ?? null,
       judge: data?.result?.judge ?? null, next: data?.item?.type ?? null,
       ms: itemShownAtRef.current != null ? Date.now() - itemShownAtRef.current : null, input,
+      ...(meta && typeof meta === 'object' ? meta : {}),
     });
     // Best-effort per-round tally for round.ended {quizzed, notYet} — a
     // sorted-to-notYet flashcard, or a graded quiz answer (choice/typed,

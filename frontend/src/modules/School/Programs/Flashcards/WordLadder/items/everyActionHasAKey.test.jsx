@@ -154,6 +154,17 @@ describe('menus: every action has a key', () => {
     expect(await screen.findByRole('region', { name: 'My words' })).toBeInTheDocument();
   });
 
+  it('Write Without help stays locked, with a kid-readable note, until a word is ready (no key either)', () => {
+    const props = menu({ item: { id: 'menu', type: 'menu', modes: ['write'], writeHelp: [true] } });
+    render(<MenuItem {...props} />);
+    fireEvent.keyDown(window, { key: '1', code: 'Digit1' }); // Write → With help / Without help
+    expect(screen.getByRole('button', { name: /with help/i })).not.toBeDisabled();
+    expect(screen.getByRole('button', { name: /without help/i })).toBeDisabled();
+    expect(screen.getByText('Unlocks when a word is ready')).toBeInTheDocument();
+    fireEvent.keyDown(window, { key: '2', code: 'Digit2' });
+    expect(props.api.practice).not.toHaveBeenCalled();
+  });
+
   it('a sub-menu goes Back on Backspace', () => {
     render(<MenuItem {...menu()} />);
     fireEvent.keyDown(window, { key: '2', code: 'Digit2' }); // flashcards → which side first?

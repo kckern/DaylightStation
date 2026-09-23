@@ -210,9 +210,11 @@ export default function TypedItem({ item, mode, langs, resolveAssetUrl, onRespon
     : (mode === 'copy' || (hearsTerm && !answered)) && termAudio
     ? () => playClip(termAudio, 'term')
     : graded && englishCueAudio(item, resolveAssetUrl) ? () => playClip(englishCueAudio(item, resolveAssetUrl), 'gloss') : null;
+  // Tab is always mapped — a no-op when there is nothing to hear — so its
+  // preventDefault runs and focus never leaves the field.
   useWordLadderKeys({
     ...(result && graded ? { ' ': onContinue, enter: onContinue } : {}),
-    ...(hear ? { tab: hear } : {}),
+    tab: hear ?? (() => {}),
     ...(canShowMe && !answered ? { '\\': showMe } : {}),
   });
   const keypadShowing = keypadOpen && !answered;

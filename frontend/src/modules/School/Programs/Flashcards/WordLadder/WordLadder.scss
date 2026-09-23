@@ -171,7 +171,7 @@
 .wl-result__heading { margin: 0; font-size: 2rem; color: var(--ds-warning); }
 .wl-result__row { display: flex; align-items: center; justify-content: center; gap: 1rem; width: 100%; margin: 0; }
 .wl-result__label { flex: none; font-size: 1.25rem; color: var(--ds-text-mid); }
-.wl-result__typed { font-size: 1.75rem; color: var(--ds-text-mid); text-decoration: line-through; }
+.wl-result__typed { font-size: 1.75rem; color: var(--ds-text-low); }
 .wl-result__answer { display: flex; align-items: center; justify-content: center; flex: 1 1 0; min-width: 0; height: 88px; color: var(--ds-text-high); }
 .wl-result__listen { flex: none; }
 .wl-result__note { margin: 0; font-size: 1.125rem; color: var(--ds-text-mid); }
@@ -190,7 +190,7 @@
 .wl-typed { position: relative; }
 .wl-typed__keypad-toggle {
   position: absolute; left: 0; bottom: 0;
-  min-width: 48px; width: 48px; min-height: 48px; height: 48px; padding: 0;
+  min-width: 56px; width: 56px; min-height: 56px; height: 56px; padding: 0;
   border-radius: 999px; opacity: 0.75;
   svg { width: 24px; height: 24px; }
 }
@@ -235,13 +235,13 @@
 .wl-start__today { margin: 0; font-size: 1.375rem; color: var(--ds-text-mid); }
 .wl-start__progress { display: grid; gap: 0.4rem; width: 100%; }
 .wl-start__progress-label { font-size: 1.125rem; color: var(--ds-text-low); }
+// Two segments side by side: mastered (solid) then recognised (lighter).
 .wl-start__progress-track {
-  height: 10px; border-radius: 5px; background: var(--ds-surface); overflow: hidden;
-  > span {
-    display: block; width: 100%; height: 100%; border-radius: 5px; background: var(--ds-accent);
-    transform-origin: left center; transition: transform var(--ds-motion-base) var(--ds-motion-easing);
-  }
+  display: flex; height: 10px; border-radius: 5px; background: var(--ds-surface); overflow: hidden;
+  > span { display: block; flex: none; height: 100%; transition: width var(--ds-motion-base) var(--ds-motion-easing); }
 }
+.wl-start__progress-mastered { background: var(--ds-accent); }
+.wl-start__progress-recognised { background: color-mix(in srgb, var(--ds-accent) 40%, transparent); }
 .wl-start__action { margin-top: 0.75rem; }
 .wl-loading { font-size: 1.5rem; color: var(--ds-text-mid); }
 .wl-error p { margin: 0; font-size: 1.5rem; text-align: center; }
@@ -332,6 +332,9 @@
   .ds-touch { width: 100%; min-height: 88px; font-size: 1.5rem; }
 }
 .wl-menu__grid--two { grid-template-columns: repeat(2, minmax(0, 1fr)); width: min(700px, 100%); }
+// A variant not open yet (Write Without help before any word is ready): the button, dimmed, and why.
+.wl-menu__locked { display: grid; gap: 0.5rem; justify-items: center; }
+.wl-menu__note { margin: 0; font-size: 1.125rem; text-align: center; color: var(--ds-text-low); }
 
 .wl-words { justify-content: flex-start; gap: 1rem; }
 .wl-words__grid {

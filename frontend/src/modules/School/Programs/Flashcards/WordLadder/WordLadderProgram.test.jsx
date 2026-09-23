@@ -96,7 +96,7 @@ const INTRO = {
   unit: { id: 'd', title: 'Week 1: Classroom' },
   poster: '/api/v1/school/self-service/programs/word-ladder/korean-vocab/poster.jpg',
   today: { newCount: 4, reviewCount: 3, estimatedMinutes: 10, doneToday: false, label: '4 new words · 3 to review', line: '4 new words · 3 to review · about 10 minutes' },
-  progress: { learned: 0, total: 19 },
+  progress: { learned: 1, recognised: 3, total: 19 },
 };
 const introApi = (data = INTRO, ok = true) => ({ ...fakeApi(), intro: vi.fn(async () => ({ ok, status: ok ? 200 : 500, data: ok ? data : null })) });
 
@@ -110,10 +110,15 @@ describe('WordLadderProgram — the start screen is a launch card', () => {
     expect(screen.getByRole('img', { name: 'Test Class poster' })).toHaveAttribute('src', INTRO.poster);
     expect(screen.getByText('Week 1: Classroom')).toBeInTheDocument();
     expect(screen.getByText('4 new words · 3 to review · about 10 minutes')).toBeInTheDocument();
-    expect(screen.getByRole('progressbar', { name: '0 of 19 words learned' })).toHaveAttribute('aria-valuenow', '0');
+    // Both rungs, not "0 learned" for weeks: recognised words show from the first quiz.
+    const bar = screen.getByRole('progressbar', { name: '3 recognised · 1 mastered of 19' });
+    expect(bar).toHaveAttribute('aria-valuenow', '1');
+    expect(bar.querySelector('.wl-start__progress-mastered')).toHaveStyle({ width: `${(1 / 19) * 100}%` });
+    expect(bar.querySelector('.wl-start__progress-recognised')).toHaveStyle({ width: `${(3 / 19) * 100}%` });
+    expect(screen.getByText('3 recognised · 1 mastered of 19')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /start/i })).toBeInTheDocument();
     expect(api.open).not.toHaveBeenCalled();
-    expect(shown).toHaveBeenCalledWith({ hasPoster: true, newCount: 4, reviewCount: 3, learned: 0, total: 19 });
+    expect(shown).toHaveBeenCalledWith({ hasPoster: true, newCount: 4, reviewCount: 3, learned: 1, recognised: 3, total: 19 });
   });
 
   it('a poster that fails to load becomes the calm placeholder, never a substitute', async () => {
@@ -124,10 +129,10 @@ describe('WordLadderProgram — the start screen is a launch card', () => {
   });
 
   it('a done day says so on the card', async () => {
-    const done = { ...INTRO, today: { ...INTRO.today, doneToday: true, line: 'Done for today — practice anytime' }, progress: { learned: 7, total: 19 } };
+    const done = { ...INTRO, today: { ...INTRO.today, doneToday: true, line: 'Done for today — practice anytime' }, progress: { learned: 7, recognised: 0, total: 19 } };
     render(<WordLadderProgram descriptor={{ deckId: 'd', userId: 'test-learner' }} api={introApi(done)} />);
     expect(await screen.findByText('Done for today — practice anytime')).toBeInTheDocument();
-    expect(screen.getByRole('progressbar', { name: '7 of 19 words learned' })).toBeInTheDocument();
+    expect(screen.getByRole('progressbar', { name: '0 recognised · 7 mastered of 19' })).toBeInTheDocument();
   });
 
   it('when the card facts are unavailable it falls back to the title and Start still opens the day', async () => {
@@ -179,13 +184,13 @@ describe('WordLadderProgram — the sitting header', () => {
       .mockResolvedValueOnce({ ok: true, status: 200, data: { result: { ok: true }, item: { ...intro, id: 'r1:i:pul:flash' }, progress: introProgress } })
       .mockResolvedValueOnce({ ok: true, status: 200, data: { result: { ok: true }, item: stream, progress: sortProgress } });
     renderStarted(<WordLadderProgram descriptor={{ deckId: 'd', userId: 'test-learner' }} api={api} />);
-    expect(await screen.findByText('Meet each new word: flip it, then copy it.')).toBeInTheDocument();
+    expect(await screen.findByText('Meet each new word.')).toBeInTheDocument();
     expect(entered).toHaveBeenCalledWith({ step: 'learn', round: 1 });
     // The first input dismisses it; a second Learn card does not bring it back.
     act(() => { fireEvent.keyDown(window, { key: ' ' }); });
     act(() => { fireEvent.keyDown(window, { key: ' ' }); });
     await waitFor(() => expect(api.respond).toHaveBeenCalledTimes(1));
-    await waitFor(() => expect(screen.queryByText('Meet each new word: flip it, then copy it.')).toBeNull());
+    await waitFor(() => expect(screen.queryByText('Meet each new word.')).toBeNull());
     // A new step brings its own hint, once.
     act(() => { fireEvent.keyDown(window, { key: ' ' }); });
     act(() => { fireEvent.keyDown(window, { key: ' ' }); });
@@ -199,11 +204,11 @@ describe('WordLadderProgram — the sitting header', () => {
       const api = fakeApi();
       api.open.mockResolvedValue({ ...openWith(intro), data: { ...openWith(intro).data, progress: trailProgress('intro') } });
       renderStarted(<WordLadderProgram descriptor={{ deckId: 'd', userId: 'test-learner' }} api={api} />);
-      expect(await screen.findByText('Meet each new word: flip it, then copy it.')).toBeInTheDocument();
+      expect(await screen.findByText('Meet each new word.')).toBeInTheDocument();
       await act(async () => { vi.advanceTimersByTime(7000); });
       // Fading (opacity), then gone.
       await act(async () => { vi.advanceTimersByTime(1000); });
-      expect(screen.queryByText('Meet each new word: flip it, then copy it.')).toBeNull();
+      expect(screen.queryByText('Meet each new word.')).toBeNull();
     } finally { vi.useRealTimers(); }
   });
 

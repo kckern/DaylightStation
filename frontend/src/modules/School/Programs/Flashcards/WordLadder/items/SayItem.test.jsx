@@ -465,10 +465,10 @@ describe('SayItem — Space is the forward action, never a skip', () => {
     recorderState.unavailable = true;
     const onRespond = vi.fn();
     renderSay({ onRespond });
-    expect(hintOf(/skip/i)).toBe('Space');
+    expect(hintOf(/next/i)).toBe('Space');
     space();
     expect(recorderCalls.start).not.toHaveBeenCalled();
-    expect(onRespond).toHaveBeenCalledWith({ done: true });
+    expect(onRespond).toHaveBeenCalledWith({ done: true }, { micOff: true });
   });
 
   it('say-from-cue audio cue: Tab replays the cue, and its Listen hints Tab', () => {
@@ -507,5 +507,69 @@ describe('SayItem — ArrowLeft = Record again', () => {
     await takeArrives();
     fireEvent.keyDown(window, { key: 'ArrowLeft', code: 'ArrowLeft' });
     expect(recorderCalls.start).not.toHaveBeenCalled();
+  });
+});
+
+// Fable review (owner rulings 2026-09-23): Tab = hear it on every item with any
+// audio; Space never skips — with no mic the forward button is Next, and it is
+// an answer (item.answered, micOff), never a skip.
+describe('SayItem — Tab hears the model; no Space-Skip', () => {
+  const tab = () => fireEvent.keyDown(window, { key: 'Tab', code: 'Tab' });
+
+  it('say-after: Tab replays the term audio (prevented), and a Hear it button hints Tab', () => {
+    renderSay({ item: sayAfterItem, mode: 'say-after' });
+    playClip.mockClear();
+    expect(tab()).toBe(false);
+    expect(playClip).toHaveBeenCalledWith('aud-gawi', 'term');
+    expect(hintOf(/hear it/i)).toBe('Tab');
+    fireEvent.click(screen.getByRole('button', { name: /hear it/i }));
+    expect(playClip).toHaveBeenCalledTimes(2);
+  });
+
+  it('read-aloud: nothing to hear before the take; after the reveal Tab plays the revealed audio', async () => {
+    const api = makeApi({ uploadRecording: vi.fn(async () => ({ ok: true, status: 200, data: { take: 1, reveal: { term: '가위', audio: 'rev-aud' } } })) });
+    render(<SayItem item={readAloudItem} mode="read-aloud" langs={langs} resolveAssetUrl={(x) => x} onRespond={vi.fn()} api={api} sittingId="sit1" userId="kid" />);
+    expect(screen.queryByRole('button', { name: /hear it/i })).toBeNull();
+    await takeArrives();
+    playClip.mockClear();
+    expect(tab()).toBe(false);
+    expect(playClip).toHaveBeenCalledWith('rev-aud', 'term');
+    expect(hintOf(/hear it/i)).toBe('Tab');
+  });
+
+  it('Tab plays nothing while the mic is open', () => {
+    recorderState.phase = 'recording';
+    renderSay({ item: sayAfterItem, mode: 'say-after' });
+    playClip.mockClear();
+    tab();
+    expect(playClip).not.toHaveBeenCalled();
+  });
+
+  it('mic off: the Space button reads Next, logs item.answered-with-micOff (never item.skipped), and carries no Backslash', () => {
+    recorderState.unavailable = true;
+    const skipped = vi.spyOn(wordLadderLog, 'itemSkipped').mockImplementation(() => {});
+    const onRespond = vi.fn();
+    renderSay({ onRespond });
+    expect(screen.queryByRole('button', { name: /skip/i })).toBeNull();
+    expect(hintOf(/next/i)).toBe('Space');
+    fireEvent.keyDown(window, { key: '\\', code: 'Backslash' });
+    expect(onRespond).not.toHaveBeenCalled();
+    space();
+    expect(onRespond).toHaveBeenCalledWith({ done: true }, { micOff: true });
+    expect(skipped).not.toHaveBeenCalled();
+    skipped.mockRestore();
+  });
+
+  it('Backslash belongs to Skip only: a Next (recording again after a take) carries no key and Backslash does nothing', async () => {
+    const onRespond = vi.fn();
+    const props = { item: readAloudItem, mode: 'read-aloud', langs, resolveAssetUrl: (x) => x, onRespond, api: makeApi(), sittingId: 'sit1', userId: 'kid' };
+    const { rerender } = render(<SayItem {...props} />);
+    expect(hintOf(/skip/i)).toBe('\\');
+    await takeArrives();
+    recorderState.phase = 'recording';
+    rerender(<SayItem {...props} />);
+    expect(hintOf(/next/i)).toBeNull();
+    fireEvent.keyDown(window, { key: '\\', code: 'Backslash' });
+    expect(onRespond).not.toHaveBeenCalled();
   });
 });
