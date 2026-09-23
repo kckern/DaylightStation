@@ -22,8 +22,17 @@ const KEYPAD_AUTO_OPEN_MS = 10_000;
  *              the verdict stays until Next.
  *   practice   drill step "type" — cue only, verdict until Next like graded
  *              (the drill's result has no score: a pass is just "Right!").
+ *
+ * `pending` (dictation only): the program is HOLDING this result because the
+ * step already advanced — a match, or the third miss. That result is final,
+ * so it is shown like a graded one ("Right!" / "It's X") with Next, not as a
+ * retry prompt. Without `pending`, a dictation miss is a retry.
+ *
+ * Unjudged practice typing (the drill "type" step, and Write without help —
+ * a `typed` item with `graded: false`) also offers "Show me": it submits an
+ * empty answer, which the server scores as a miss and answers with the word.
  */
-export default function TypedItem({ item, mode, langs, resolveAssetUrl, onRespond, result = null, onContinue, busy = false, stageRef = null }) {
+export default function TypedItem({ item, mode, langs, resolveAssetUrl, onRespond, result = null, onContinue, busy = false, stageRef = null, pending = false }) {
   const [value, setValue] = useState('');
   const [keypadOpen, setKeypadOpen] = useState(false);
   const input = useRef(null);
@@ -34,8 +43,13 @@ export default function TypedItem({ item, mode, langs, resolveAssetUrl, onRespon
   const termAudioId = dictation ? item.assets?.audio : word?.media?.audio;
   const termAudio = termAudioId ? resolveAssetUrl(termAudioId) : null;
   // graded + practice: cue prompt, verdict held until Next. copy + dictation: retry until it matches.
-  const graded = mode === 'graded' || mode === 'practice';
-  const fieldDisabled = busy || (graded && Boolean(result));
+  const graded = mode === 'graded' || mode === 'practice' || (dictation && pending);
+  const canShowMe = mode === 'practice' || (mode === 'graded' && item.graded === false);
+  // Answered = a final verdict is on screen. Busy only disables the field: the
+  // keypad and its toggle stay mounted through a submit (no flicker, no lost
+  // open state), and go only once there is nothing left to type.
+  const answered = graded && Boolean(result);
+  const fieldDisabled = busy || answered;
 
   // Auto-open bookkeeping. Refs, not state: read inside a timer callback and
   // a document listener, neither of which should re-run when the value they
@@ -129,16 +143,21 @@ export default function TypedItem({ item, mode, langs, resolveAssetUrl, onRespon
     onRespond({ typed: value });
     if (graded) { input.current?.blur(); stageRef?.current?.focus(); }
   };
+  const showMe = () => {
+    if (busy || answered) return;
+    onRespond({ typed: '' });
+    input.current?.blur(); stageRef?.current?.focus();
+  };
   useWordLadderKeys(result && graded ? { ' ': onContinue, enter: onContinue } : {}, { enabled: Boolean(result) && graded });
-  const keypadShowing = keypadOpen && !fieldDisabled;
+  const keypadShowing = keypadOpen && !answered;
   return (
     <section
       className={`wl-item wl-typed${keypadShowing ? ' wl-typed--keypad' : ''}`}
-      aria-label={graded ? 'Type the word' : dictation ? 'Write what you hear' : 'Copy the word'}
+      aria-label={dictation ? 'Write what you hear' : graded ? 'Type the word' : 'Copy the word'}
     >
       <div className="wl-prompt">
         {mode === 'copy' && <FitText role="term" text={word?.term ?? ''} lang={langs.term} />}
-        {dictation && <TouchButton variant="secondary" onClick={() => termAudio && playClip(termAudio)}><Icon name="volume" /> Listen</TouchButton>}
+        {dictation && !answered && <TouchButton variant="secondary" onClick={() => termAudio && playClip(termAudio)}><Icon name="volume" /> Listen</TouchButton>}
         {graded && item.cue?.type === 'image' && <CuePicture item={item} src={image} lang={langs.gloss} />}
         {graded && item.cue?.type === 'text' && <FitText role="prompt" text={item.cue.text} lang={langs.gloss} />}
         {graded && item.cue?.type === 'audio' && <TouchButton variant="secondary" onClick={() => glossAudio && playClip(glossAudio)}><Icon name="volume" /> Listen</TouchButton>}
@@ -160,15 +179,18 @@ export default function TypedItem({ item, mode, langs, resolveAssetUrl, onRespon
       />
       <div className="wl-controls">
         {mode === 'copy' && termAudio && <TouchButton variant="secondary" onClick={() => playClip(termAudio)}><Icon name="volume" /> Hear it</TouchButton>}
-        {!fieldDisabled && (
-          <TouchButton variant="secondary" aria-pressed={keypadOpen} onClick={toggleKeypad}>
+        {!answered && (
+          <TouchButton variant="secondary" disabled={busy} aria-pressed={keypadOpen} onClick={toggleKeypad}>
             <Icon name="writing" /> Keypad
           </TouchButton>
         )}
         {/* A copy mismatch is a retry, not a terminal result — only a GRADED
             result hides the submit button; copy mode keeps it for the retry. */}
         {(!result || (!graded && result?.correct === false)) && (
-          <TouchButton variant="primary" keyHint="Enter" disabled={busy || !value.trim()} onClick={submit}>{busy && graded ? 'Checking…' : 'Enter'}</TouchButton>
+          <>
+            {canShowMe && <TouchButton variant="secondary" disabled={busy} onClick={showMe}>Show me</TouchButton>}
+            <TouchButton variant="primary" keyHint="Enter" disabled={busy || !value.trim()} onClick={submit}>{busy && graded ? 'Checking…' : 'Enter'}</TouchButton>
+          </>
         )}
         {!graded && result?.correct === false && (
           <p className="wl-verdict" role="status">

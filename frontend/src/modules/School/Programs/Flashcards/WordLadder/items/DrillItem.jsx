@@ -68,7 +68,7 @@ export default function DrillItem({
   let body;
   if (step === 'look') body = <LookStep {...common} />;
   else if (step === 'copy') body = <TypedItem {...common} mode="copy" />;
-  else if (step === 'dictation') body = <TypedItem {...common} mode="dictation" />;
+  else if (step === 'dictation') body = <TypedItem {...common} mode="dictation" pending={pending} />;
   else if (step === 'type') body = <TypedItem {...common} mode="practice" stageRef={stageRef} />;
   else if (SAY_STEPS.has(step)) body = <SayItem {...common} mode={step} api={api} sittingId={sittingId} userId={userId} />;
   else if (step === 'match') body = <MatchItem {...common} />;
@@ -83,7 +83,7 @@ export default function DrillItem({
         </p>
         <p className="wl-drill__steps">
           <span className="wl-drill__dots" aria-hidden="true">
-            {Array.from({ length: of }, (_, i) => <span key={i} className={`wl-drill__dot${i < item.at ? ' is-done' : ''}${i === item.at - 1 ? ' is-current' : ''}`} />)}
+            {Array.from({ length: of }, (_, i) => <span key={i} className={`wl-drill__dot${i < item.at - 1 ? ' is-done' : ''}${i === item.at - 1 ? ' is-current' : ''}`} />)}
           </span>
           <span className="wl-drill__count">Step {item.at} of {of}</span>
         </p>

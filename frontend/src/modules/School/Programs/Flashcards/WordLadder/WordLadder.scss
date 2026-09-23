@@ -80,16 +80,19 @@
 // (220px, sized for a picture cue) is too tall to leave room for the last
 // one. Budget at 800px tall, keypad-open:
 //   wl-header                    ~74px  (padding + round/piles row + time bar)
+//     + test banner              ~24px  (test sittings only: header padding-top 2.5rem)
 //   wl-main bottom padding        24px
 //   wl-item gaps (3 × 0.75rem)    36px
-//   wl-prompt (shrunk)           120px
+//   wl-prompt (shrunk)           100px
 //   wl-typed__field               90px  (min-height 80px + padding)
 //   wl-controls                   64px  (one row of TouchButtons)
 //   wl-keypad (shrunk keys)      ~277px (3× 60px rows + Enter 60px + padding/border/gaps)
 //   ------------------------------------
-//   total                       ~685px  — leaves ~115px of margin in 800px.
+//   total                       ~665px live / ~689px in a test sitting —
+//   ~110px of margin at 800px even with the test banner (final review: the
+//   120px prompt left a test sitting tighter than the live one it previews).
 .wl-item.wl-typed--keypad { gap: 0.75rem; }
-.wl-typed--keypad .wl-prompt { height: 120px; }
+.wl-typed--keypad .wl-prompt { height: 100px; }
 // Still well above the 56px touch-target floor; only shrunk from the
 // default 64px to buy back the last bit of the budget above.
 .wl-typed--keypad .wl-keypad {

@@ -27,8 +27,15 @@ export default function useTakeRecorder({ onTake } = {}) {
   const silenceRef = useRef({ heard: false, sampled: false });
   const handlerRef = useRef(onTake);
   handlerRef.current = onTake;
+  // False once the caller has unmounted. A take STOPPED just before unmount
+  // (Stop, then Next) is no longer "recording", so `cancel()` cannot mark it
+  // — but MediaRecorder still fires `onstop` afterwards. Without this guard
+  // that late take would reach a dead item: a stale upload, playback over the
+  // next item, and an object URL nobody revokes.
+  const liveRef = useRef(true);
 
   const receiveTake = useCallback(({ blob, durationMs }) => {
+    if (!liveRef.current) return;
     const { heard, sampled } = silenceRef.current;
     const result = judgeTake({ heard, sampled: sampled === true, durationMs });
     setVerdict(result);
@@ -66,7 +73,11 @@ export default function useTakeRecorder({ onTake } = {}) {
 
   // A take in progress when the caller unmounts (a new item arrived, the
   // learner left) is thrown away, not delivered — half a take is not a take.
-  useEffect(() => () => cancel(), [cancel]);
+  // The live flag drops first so a late `onstop` (see liveRef) is ignored too.
+  useEffect(() => {
+    liveRef.current = true;
+    return () => { liveRef.current = false; cancel(); };
+  }, [cancel]);
 
   return {
     start, stop, phase, verdict, stream, onLevel, release,
