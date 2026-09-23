@@ -194,7 +194,8 @@ The app does not require a pointing device for any operation. A user with a keyb
 ## Observability — artwork and day data quality
 
 Food artwork falls back to the bowl glyph, and unknown nutrients render as "—".
-Neither case is silent any more:
+Neither case is silent any more, and the add/paint/prefetch paths report their
+timing. Frontend events ship to the log store only at info and above:
 
 | Event | Level | Emitted by | When |
 |---|---|---|---|
@@ -203,6 +204,10 @@ Neither case is silent any more:
 | `add-row.focus` | debug | `today/AddCombobox.jsx` (inline mode) | a meal's add row takes focus. `{bucket}` |
 | `quickadd.done` / `sentence.committed` | info | `today/AddCombobox.jsx` | a food logged from the add surface. `{bucket, surface: 'inline' \| 'sheet'}` |
 | `row.preview.open` | info (sampled, ≤20/min) | `today/RowPreview.jsx` | the row magnifier opened. `{uuid, hasPhoto}` |
+| `ui.layout-shift` | info (sampled, ≤20/min) | `modules/Health/useLayoutShiftLog.js` (mounted in `Apps/HealthApp.jsx`) | one per 1 s burst of layout shifts not caused by input (`hadRecentInput`). `{value (summed CLS), count, sources (≤3 short selectors, tag.class.class), route, tab}`. Chromium only; browsers without the Layout Instability API log nothing. |
+| `add.flow` | info | `today/addFlow.js` (from `AddCombobox`, completed by `useHealthDay`) | an add from an add row, once its rows are on the day. `{bucket, surface, kind: 'pick' \| 'sentence', submitToCommittedMs, committedToVisibleMs, rows}`; `committedToVisibleMs: null` when the response carried no row ids, plus `timedOut: true` after 30 s unseen. |
+| `day.view` | info | `today/useHealthDay.js` | once per viewed date. `{date, fromCache (the day was in the swr cache — prefetch or earlier visit), paintMs (date change → data available)}` |
+| `prefetch.summary` | info (sampled, ≤6/min) | `today/useHealthDayPrefetch.js` (counters in `lib/hooks/useApiResource.js`) | when a prefetch pass drains. Cumulative since load: `{date, queued, completed, failed}`; `queued − completed − failed` is work replaced by a later move. |
 | `day.quality` | info | `today/useHealthDay.js` (`today/dayQuality.js`) | once per date + ledger revision, only when the day has gaps: `noArtwork`, `unknownCalories`, `noGrams`, `allCaps`, `duplicates`, each `{count, samples}`. |
 
 All carry `context.app: health`.
