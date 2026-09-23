@@ -474,3 +474,4 @@ The corollary bit twice in this sweep: `feat/teacher-workspace-ia` and `feature/
 | 2026-09-22 | refactor/word-ladder-language-neutral | 52481b0046 | Word ladder language-neutral (lexicon v2: term/gloss, language+labels from YAML, package-keyed state, media grouped words/<group>/<id>); merged as 65543bab18 |
 | 2026-09-22 | feat/recording-in-pieces | 863b518544 | Sentence Ladder recording in pieces (→ cut, per-piece redo/compare, joined WAV) + Tab-after-take compares; merged to main as 3f1ff3104 |
 | 2026-09-22 | feat/word-ladder-v3 | d28952e1b8 | Word ladder v3 core loop (Plan 1): mastery states, rounds + 3-pile stream, round-end verify, typed judge, day engine, door + /test mode, stage/TouchButton/FitText; merged to main as 2802647b89 |
+| 2026-09-22 | feat/word-ladder-p3 | 29a4a17d17 | Word ladder Plan 3: per-learner printed quiz (builder, lowercase-week ids, segment-bounded fold refusing siblings, CLI --learner); merged to main as 29a4a17d17 |
