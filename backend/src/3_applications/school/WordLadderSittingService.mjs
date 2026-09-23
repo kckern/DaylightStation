@@ -233,6 +233,15 @@ export class WordLadderSittingService {
       } : null,
       activeMs: dayFile.activeMs,
       capMs: settings.session.capMinutes * 60000,
+      // The sitting header's step trail (Review › Learn › Sort › Quiz ›
+      // Practice) reads these rather than guessing from item types: whether
+      // the day has a Review step at all, how many rounds are behind the
+      // child, whether today's round work includes new words (a carry round
+      // has no Learn), and whether the goal is met (Practice unlocks).
+      rechecksTotal: dayFile.rechecks.order.length,
+      roundsDone: dayFile.rounds.filter((r) => r.phase === 'done').length,
+      learnToday: round ? round.newWords?.length > 0 : dayFile.rounds.some((r) => r.newWords?.length > 0),
+      doneToday: Boolean(dayFile.doneAt),
     };
   }
 

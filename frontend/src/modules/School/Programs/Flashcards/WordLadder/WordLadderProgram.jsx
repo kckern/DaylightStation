@@ -18,6 +18,9 @@ import { useItemStall } from './useItemStall.js';
 import { layoutForItem, mediaForItem } from './itemLayout.js';
 import { stopAudio } from './wordLadderAudio.js';
 import { useWordLadderKeys } from './useWordLadderKeys.js';
+import WordLadderStartCard from './WordLadderStartCard.jsx';
+import WordLadderHeader from './WordLadderHeader.jsx';
+import { STEP_HINTS, stepTrail } from './stepTrail.js';
 import './WordLadder.scss';
 
 /** Items whose answer the server grades: the verdict stays on screen until Next. */
@@ -55,16 +58,9 @@ async function detectMicrophoneCapability() {
   }
 }
 
-function roundLabel(progress) {
-  if (!progress) return '';
-  if (progress.phase === 'rechecks') return `Checking ${progress.rechecksLeft} ${progress.rechecksLeft === 1 ? 'word' : 'words'}`;
-  if (progress.phase === 'drill') return 'Practising a tricky word';
-  if (progress.phase === 'practice') return progress.practice ? `Practice · ${progress.practice.at} of ${progress.practice.of}` : 'Practice';
-  if (progress.phase === 'summary' || !progress.round) return 'Done for today';
-  const { index, phase } = progress.round;
-  const what = { quiz: 'Quiz', intro: 'New words', offer: 'Tricky word' }[phase] ?? 'Cards';
-  return `Round ${index} · ${what}`;
-}
+/** How long a step's hint stays up if the child does nothing; and its fade-out (>= --ds-motion-base, 200ms). */
+const HINT_MS = 6000;
+const HINT_FADE_MS = 250;
 
 function remainingLabel(progress) {
   const round = progress?.phase === 'round' ? progress.round : null;
@@ -188,6 +184,28 @@ export default function WordLadderProgram({ descriptor, api: injected = null, re
     };
   }, [api, open, userId, deckId, test, scenario, trace]);
 
+  // The start card's facts (read-only GET …/intro): nothing opens before Start.
+  const [intro, setIntro] = useState(null);
+  useEffect(() => {
+    if (typeof api.intro !== 'function' || !userId || !deckId) return undefined;
+    let alive = true;
+    (async () => {
+      const { ok, status, data } = await api.intro({ userId, deckId, scenario });
+      if (!alive) return;
+      if (!ok || !data) { wordLadderLog.introFailed({ status, test }); return; }
+      setIntro(data);
+      wordLadderLog.introShown({
+        hasPoster: typeof data.poster === 'string' && data.poster.length > 0,
+        newCount: data.today?.newCount ?? null, reviewCount: data.today?.reviewCount ?? null,
+        learned: data.progress?.learned ?? null, total: data.progress?.total ?? null,
+      });
+    })();
+    return () => { alive = false; };
+  }, [api, userId, deckId, scenario, test]);
+  const posterFailed = useCallback(() => {
+    wordLadderLog.mediaFailed({ kind: 'poster', src: intro?.poster ?? null });
+  }, [intro]);
+
   const start = useCallback(() => {
     if (started) return;
     setStarted(true);
@@ -222,6 +240,39 @@ export default function WordLadderProgram({ descriptor, api: injected = null, re
     if (item) wordLadderLog.itemStalled({ itemId: item.id, ms });
   });
 
+  // The header's step trail, and each step's hint — once per step per sitting,
+  // gone on the first input or after HINT_MS (fade = opacity only).
+  const trail = useMemo(() => stepTrail(progress, item), [progress, item]);
+  const [hint, setHint] = useState(null);
+  const hintsSeenRef = useRef(new Set());
+  const lastStepRef = useRef(null);
+  useEffect(() => {
+    const step = trail.current;
+    if (step === lastStepRef.current) return;
+    lastStepRef.current = step;
+    if (!step) return;
+    wordLadderLog.stepEntered({ step, round: progress?.round?.index ?? null });
+    if (hintsSeenRef.current.has(step)) { setHint(null); return; }
+    hintsSeenRef.current.add(step);
+    setHint({ step, text: STEP_HINTS[step], leaving: false });
+  }, [trail.current]); // eslint-disable-line react-hooks/exhaustive-deps
+  const dismissHint = useCallback(() => setHint((h) => (h && !h.leaving ? { ...h, leaving: true } : h)), []);
+  useEffect(() => {
+    if (!hint) return undefined;
+    if (hint.leaving) {
+      const gone = setTimeout(() => setHint((h) => (h === hint ? null : h)), HINT_FADE_MS);
+      return () => clearTimeout(gone);
+    }
+    const timer = setTimeout(dismissHint, HINT_MS);
+    window.addEventListener('keydown', dismissHint, true);
+    window.addEventListener('pointerdown', dismissHint, true);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener('keydown', dismissHint, true);
+      window.removeEventListener('pointerdown', dismissHint, true);
+    };
+  }, [hint, dismissHint]);
+
   /** After a refused write, ask the server what is on screen now (a 404 there reopens too). */
   const resync = useCallback(async () => {
     if (!session) return;
@@ -233,6 +284,7 @@ export default function WordLadderProgram({ descriptor, api: injected = null, re
 
   const respond = useCallback(async (response) => {
     if (!session || !item || busyRef.current) return;
+    dismissHint();
     busyRef.current = true;
     setBusy(true);
     // The item's response goes to the server exactly as the item built it.
@@ -269,7 +321,7 @@ export default function WordLadderProgram({ descriptor, api: injected = null, re
     }
     setResult(null); setPendingItem(null);
     if (data?.item) setItem(data.item);
-  }, [api, session, item, userId, deckId, test, open, resync]);
+  }, [api, session, item, userId, deckId, test, open, resync, dismissHint]);
 
   const next = useCallback(() => {
     if (!pendingItem) return;
@@ -325,12 +377,7 @@ export default function WordLadderProgram({ descriptor, api: injected = null, re
 
   let body = <p className="wl-loading">Loading…</p>;
   if (!started) {
-    body = (
-      <div className="wl-item wl-start">
-        <h2 className="wl-start__title">{title || 'Words'}</h2>
-        <TouchButton variant="primary" keyHint="Space" onClick={start}>Start</TouchButton>
-      </div>
-    );
+    body = <WordLadderStartCard intro={intro} fallbackTitle={title} onStart={start} onPosterFailed={posterFailed} />;
   } else if (error) {
     body = (
       <div className="wl-item wl-error" role="alert">
@@ -367,14 +414,15 @@ export default function WordLadderProgram({ descriptor, api: injected = null, re
     <WordLadderStage>
       <div className="wl" ref={stageRef} tabIndex={-1}>
         {test && <div className="wl-test-banner" role="note">TEST — nothing is saved</div>}
-        <header className="wl-header">
-          <TouchButton variant="secondary" onClick={leave}>Leave</TouchButton>
-          <p className="wl-header__round" aria-label="Progress">{roundLabel(progress)}</p>
-          {inPractice
+        <WordLadderHeader
+          trail={trail}
+          onExit={leave}
+          timePct={pct}
+          hint={hint}
+          right={inPractice
             ? <TouchButton variant="secondary" keyHint="M" disabled={busy || Boolean(pendingItem)} onClick={toMenu}>Menu</TouchButton>
             : <p className="wl-header__piles">{remaining}</p>}
-          <div className="wl-header__time" aria-hidden="true"><div style={{ width: `${pct}%` }} /></div>
-        </header>
+        />
         <main className="wl-main">{body}</main>
       </div>
     </WordLadderStage>

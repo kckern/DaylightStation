@@ -29,6 +29,7 @@ drill, speaking, on-screen keypad, practice menu)** actually ship; see
 | Day file | `data/users/{learnerId}/apps/school/word-ladder/<package>/days/<studyDay>.yml` |
 | Judgement cache | `data/household/school/runtime/word-ladder/<package>/judgements.yml` (derived, shared across learners) |
 | Spoken takes | `media/school/recordings/word-ladder/<package>/<learnerId>/<studyDay>/<wordId>-<n>.<ext>` (for grown-ups; never graded) |
+| Program poster | `media/school/programs/word-ladder/<package>/poster.jpg` (JPEG, 2:3) — served at `/api/v1/school/self-service/programs/word-ladder/<package>/poster.jpg`; missing = 404 and the surface draws its own placeholder |
 | Code (domain) | `backend/src/2_domains/school/wordLadder/` — pure engine, states, choices, rounds, jamo scoring, settings, scenarios |
 | Code (application) | `backend/src/3_applications/school/{WordLadderSittingService,WordLadderTypedJudge,WordLadderDoorLauncher}.mjs` |
 | Code (adapters) | `backend/src/1_adapters/school/wordLadder/{YamlWordLadderStore,ShadowWordLadderStores,YamlJudgementCache,FilesystemWordLadderRecordings,DiscardingRecordings}.mjs` |
@@ -46,7 +47,7 @@ package: korean-vocab            # stable id — status and the capability key u
 language: { code: ko, name: Korean }    # the language being learned (BCP-47 code → lang= attributes)
 gloss:    { code: en, name: English }   # the learner's language the meanings are in
 program:
-  title: Korean words            # default tile title for an enrollment of a deck using this lexicon
+  title: UBKS 비둘기              # the CLASS: the course line of the launch card (start screen + agenda tile)
 entries:
   - id: gawi                     # permanent once studied
     kind: word                   # word | phrase
@@ -58,6 +59,11 @@ entries:
       term: [가지, 바위, 가방]      # ≥3, confusable, never the answer
       gloss: [Knife, Tape, Ruler]
 ```
+
+**`program.title` is the class name.** It is the course line of the launch
+card — the start screen's heading and the agenda tile's course — so set it to
+what the child calls the class ("UBKS 비둘기"), not to the language. A deck's
+own `title` (e.g. "Week 1: Classroom") is the unit line under it.
 
 `package`, `language`, `gloss`, `program.title` and every entry's `group` are
 required; `package`, `id` and `group` are strict lowercase slugs (path-safe).
@@ -519,6 +525,11 @@ Mounted by `mountWordLadderRoutes` (`backend/src/4_api/v1/routers/school.wordLad
 at `/api/v1/school/word-ladder` (live) and `/api/v1/school/word-ladder/test`
 (test mode, same shape). Every response is `Cache-Control: private, no-store`.
 
+- `GET /word-ladder/intro?userId=&deckId=` → the start card, **read-only** (opens no day, writes nothing):
+  `{deckId, package, day, test, course: {id, title}, unit: {id, title}, poster, today: {newCount, reviewCount,
+  estimatedMinutes, doneToday, label, line}, progress: {learned, total}}`. `poster` is the self-service URL
+  above. Test mode (`/test/intro?…&scenario=`) reads a **peeked** shadow — the same seeded snapshot Start's
+  open would take, built and thrown away, never kept (`ShadowWordLadderStores.peek`)
 - `POST /word-ladder/open {userId, deckId, capabilities?: {microphone}}` → `{sittingId, day, package, title, language, gloss, item, progress}`
   (no microphone → no speaking steps; test mode also takes `scenario`)
 - `POST /word-ladder/sittings/:sittingId/items/:itemId {userId, response}` → `{result, item, progress}`;
@@ -622,10 +633,81 @@ break inside a word, per-role min/max — and expose it as an `.wl-fit` element
 so a Playwright spec can assert none of them overflow their box (see
 `tests/live/flow/school/word-ladder-stage.runtime.test.mjs`).
 
-The sitting does not open on mount: the program first shows its title
-(`descriptor.title`, else "Words") and a **Start** button (Space/Enter). That
-tap is the page's user gesture, so the clips after it may autoplay; only then
-is `POST …/open` sent. The test banner shows on the Start screen too.
+### The start card (launch card)
+
+The sitting does not open on mount (spec §6). The program first shows the
+**launch card** (`WordLadderStartCard.jsx`), filled from `GET …/intro`:
+
+- the **poster** (2:3, left) — `programs/word-ladder/<package>/poster.jpg`;
+  missing or failing to load draws a calm blank placeholder, never a substitute;
+- the **course** = the lexicon's `program.title` (the class, "UBKS 비둘기");
+- the **unit** = the deck's `title` ("Week 1: Classroom");
+- **today**: "4 new words · 3 to review · about 10 minutes", or "Done for
+  today — practice anytime";
+- **words learned** in this deck: a bar, "0 of 19 words learned" (mastered —
+  a claim the quiz verified, or a passed recheck; excluded words leave both
+  sides of the count);
+- **Start** (Space/Enter). That tap is the page's user gesture, so the clips
+  after it may autoplay; only then is `POST …/open` sent.
+
+Today's counts are an estimate from `introPreview` (domain `intro.mjs`): due
+rechecks + unsettled words from earlier days are "to review", the new-word
+allowance (capped by the pool) is "new", and the minutes use the planner's own
+`ESTIMATE_MS`, clipped to the time left under the cap. If the intro cannot be
+read the card falls back to `descriptor.title` (else "Words") and Start still
+works. The test banner shows on the start card too.
+
+**The agenda tile carries the same card.** `WordLadderSittingService.dayStatus`
+(today only — a replayed past day gets none) returns `context: {course: {id:
+'program:word-ladder:<package>', title}, unit: {id: deckId, title}, lesson:
+{id, title: '4 new words · 3 to review'}}`, `description: 'About 10 minutes'`
+and `progress: [{scope: 'unit', label: 'Words learned', completed, total}]`;
+`FlashcardProgramLauncher` passes them through and `projectProgramEntry` turns
+them into the tile. The `program:<id>:<instance>` course id is what resolves
+the poster (the instance is the word package, as the sentence ladder's is its
+corpus).
+
+### The sitting header
+
+```
+[back] Exit   Review [tick] › LEARN › Sort › Quiz › Match › Practice   3 left
+              Round 1 · New words
+[time bar]
+Meet each new word: flip it, then copy it.        ← once per step
+```
+
+- **Exit** (house `back` icon + label, `TouchButton`) behaves exactly as Leave
+  did: closes the sitting with reason `leave` and exits.
+- **Step trail** (`stepTrail.js`, drawn by `WordLadderHeader.jsx`): today's
+  steps Review › Learn › Sort › Quiz › Match › Practice. The current step is
+  lit, finished ones ticked, later ones dim. A step the day does not have is
+  omitted: Review when no rechecks were due (`progress.rechecksTotal`), Learn
+  when the round work has no new words (`progress.learnToday`, false for a
+  carry round), Match unless the round is in its guided match (`round.phase:
+  'match'` or a round-sourced match item) or says it has one (`round.hasMatch`).
+  **Drill** is slotted in, lit, only while a tricky drill runs. **Practice**
+  is dim with "after today's words" until the goal is met
+  (`progress.doneToday`), and lit while practising (a practice run or the
+  menu). Everything is derived from `#progress()` — `phase`, `round`,
+  `rechecksLeft/Total`, `roundsDone`, `learnToday`, `doneToday` — plus the
+  item's `type`/`source` for practice and match; never from item types alone.
+  Mapping: rechecks → Review; intro flashcard/copy → Learn; stream sort →
+  Sort; quiz (2.2 / 3.3) and the drill offer after it → Quiz; guided match →
+  Match; drill steps → Drill; practice → Practice. On a narrow stage (a
+  container query under 900px) the trail collapses to the current step.
+- **Sub-line**: "Round N · New words / Sort / Quiz / Match / Tricky word", or
+  "Checking N words", "Practising a tricky word", "Practice · a of b", "Done
+  for today". No "of M": rounds are planned shrink-to-fit, so a total would
+  be a guess that changes under the child.
+- **Hint line**, once per step per sitting, in a reserved row under the
+  header (so nothing below moves), gone on the first input (any key or tap,
+  or a response) or after 6 s, fading by opacity/transform only:
+  Review "Words from before — show what you remember." · Learn "Meet each new
+  word: flip it, then copy it." · Sort "Flip, then sort: Not yet, Familiar,
+  or Got it." · Quiz "Quick check on the words you sorted." · Match "Match
+  each word to its meaning." · Drill "A short workout on a tricky word." ·
+  Practice "Free practice — pick anything."
+- The pile counter / Menu button and the time bar stay; the TEST banner stays.
 
 Items live today: flashcard front/back (`items/FlashcardItem.jsx`, intro and
 practice modes), choice (`items/ChoiceItem.jsx`), typed/copy/dictation/
@@ -699,7 +781,7 @@ learner's events into a per-sitting timeline.
 The tuning scheduler adds `tuning-wired`, `tuning-run-failed`,
 `tuning-tick-failed`, `tuning-deck-skipped`, `tuning-pending-failed` and
 `tuning-unavailable`; the service also logs `attempts-unreadable`,
-`decks-unlisted`, `deck-unexpandable` and `day-status-unloadable`.
+`decks-unlisted`, `deck-unexpandable`, `day-status-unloadable` and `card-unavailable` (warn — the agenda card could not be built; the day's credit is still returned).
 
 **Frontend trace** (`context.component: school-word-ladder`). The program
 creates one trace per mount (`createTrace.js`) and binds it to the logging
@@ -712,6 +794,10 @@ stamp owns `mode`, so an item-level mode is sent as `itemMode`.
 - `sitting.opened`, `sitting.closed {reason, activeMs, remaining}`,
   `session.reopened`, `started` (Start tapped), `mounted`/`unmounted`,
   `visibility {state}`;
+- `intro.shown {hasPoster, newCount, reviewCount, learned, total}` (the start
+  card drew its facts), `intro.failed {status}` (warn — it fell back to the
+  title), `media.failed {kind: 'poster'}` when the poster fails to load;
+  `step.entered {step, round}` each time the header's current step changes;
 - `item.shown {task, wordId, itemMode, layout, media}`, `item.layout {fontPx}`
   (the first fitted font size for that item, once), `item.answered {response,
   correct?, score?, judge, ms}`, `item.stalled {ms: 45000|120000}` (warn),

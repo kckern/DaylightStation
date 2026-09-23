@@ -6,7 +6,7 @@
 .wl-stage-frame { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: var(--ds-background); overflow: hidden; }
 .wl-stage { flex: none; transform-origin: center center; background: var(--ds-background); color: var(--ds-text-high); overflow: hidden; }
 
-.wl { position: relative; display: grid; grid-template-rows: auto 1fr; width: 100%; height: 100%; outline: none; }
+.wl { position: relative; display: grid; grid-template-rows: auto auto 1fr; width: 100%; height: 100%; outline: none; }
 .wl-test-banner {
   position: absolute; top: 0; left: 50%; transform: translateX(-50%); z-index: 2;
   padding: 0.25rem 1rem; border-radius: 0 0 10px 10px;
@@ -14,14 +14,70 @@
   font-weight: 700; letter-spacing: 0.05em; white-space: nowrap;
 }
 
-.wl-header { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 1rem; padding: 1rem 1.5rem 0.5rem; }
-// The test banner hangs from the top centre, over the round label: push the header below it.
+// --- Sitting header (owner-approved layout) --------------------------------
+//   [Exit]   Review ✓ › LEARN › Sort › Quiz › Match › Practice   [3 left]
+//            Round 1 · New words
+//   [time bar]
+// then the once-per-step hint row, which is RESERVED (fixed height) so a hint
+// arriving or fading never moves the item below it; the fade is opacity +
+// transform only. Header budget at 1280×800: ~112px (was ~74px before the
+// trail's sub-line) + the 1.75rem hint row — see the budget notes below.
+.wl-header {
+  container-type: inline-size;
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center;
+  column-gap: 1rem; row-gap: 0.25rem; padding: 0.75rem 1.5rem 0.25rem;
+}
+// The test banner hangs from the top centre, over the trail: push the header below it.
 .wl:has(.wl-test-banner) .wl-header { padding-top: 2.5rem; }
-.wl-header__round { margin: 0; text-align: center; font-size: 1.5rem; color: var(--ds-text-mid); }
+.wl-header__exit .school-icon { display: inline-flex; font-size: 1.25em; margin-right: 0.25rem; }
+.wl-header__right { justify-self: end; }
+.wl-header__round { grid-column: 2; margin: 0; text-align: center; font-size: 1.125rem; color: var(--ds-text-mid); }
 .wl-header__piles { margin: 0; font-size: 1.25rem; color: var(--ds-text-low); white-space: nowrap; }
 .wl-header__time {
   grid-column: 1 / -1; height: 6px; border-radius: 3px; background: var(--ds-surface); overflow: hidden;
-  > div { height: 100%; border-radius: 3px; background: var(--ds-accent); transition: width var(--ds-motion-base) var(--ds-motion-easing); }
+  > div {
+    width: 100%; height: 100%; border-radius: 3px; background: var(--ds-accent);
+    transform-origin: left center; transition: transform var(--ds-motion-base) var(--ds-motion-easing);
+  }
+}
+
+.wl-trail {
+  display: flex; align-items: center; justify-content: center; flex-wrap: nowrap; gap: 0.5rem;
+  min-width: 0; margin: 0; padding: 0; list-style: none;
+}
+.wl-trail__step {
+  display: inline-flex; align-items: center; gap: 0.3rem; white-space: nowrap;
+  font-size: 1.125rem; color: var(--ds-text-low); opacity: 0.6;
+  // The chevron between steps is drawn, not typed: a glyph renders as tofu on the Portal's WebView.
+  & + &::before {
+    content: ''; width: 0.45em; height: 0.45em; margin-right: 0.35rem;
+    border-top: 2px solid var(--ds-border); border-right: 2px solid var(--ds-border);
+    transform: rotate(45deg); opacity: 0.8;
+  }
+  &.is-done { opacity: 1; color: var(--ds-text-mid); }
+  &.is-current {
+    opacity: 1; color: var(--ds-text-high); font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em;
+    .wl-trail__label { padding: 0.15rem 0.6rem; border-radius: 999px; background: var(--ds-surface); box-shadow: inset 0 0 0 2px var(--ds-accent); }
+  }
+}
+.wl-trail__tick { display: inline-flex; color: var(--ds-success); }
+.wl-trail__note { font-size: 0.8rem; font-style: italic; color: var(--ds-text-low); }
+// A narrow stage keeps only the step the child is on.
+@container (max-width: 900px) {
+  .wl-trail__step:not(.is-current) { display: none; }
+  .wl-trail__step.is-current::before { display: none; }
+}
+
+.wl-hint { display: flex; align-items: center; justify-content: center; height: 1.75rem; padding: 0 1.5rem; overflow: hidden; }
+.wl-hint__text {
+  margin: 0; font-size: 1.125rem; color: var(--ds-text-mid); white-space: nowrap; text-overflow: ellipsis; overflow: hidden;
+  animation: wl-hint-in var(--ds-motion-base) var(--ds-motion-easing) both;
+  transition: opacity var(--ds-motion-base) var(--ds-motion-easing), transform var(--ds-motion-base) var(--ds-motion-easing);
+  &.is-leaving { opacity: 0; transform: translateY(-0.35rem); }
+}
+@keyframes wl-hint-in {
+  from { opacity: 0; transform: translateY(0.35rem); }
+  to { opacity: 1; transform: none; }
 }
 
 .wl-main { display: flex; align-items: center; justify-content: center; min-height: 0; padding: 0 1.5rem 1.5rem; }
@@ -64,8 +120,43 @@
 .wl-say__notice { margin: 0; font-size: 1.25rem; text-align: center; color: var(--ds-warning); }
 .wl-summary h2 { margin: 0; font-size: 2.5rem; }
 .wl-summary p { margin: 0; font-size: 1.5rem; color: var(--ds-text-mid); }
-.wl-start { gap: 2rem; }
-.wl-start__title { margin: 0; font-size: 3rem; text-align: center; color: var(--ds-text-high); }
+
+// --- Start screen: the launch card -----------------------------------------
+// Poster (2:3) left, copy right, centred in the stage. Sized from the stage's
+// own box (percentages of wl-main), never the viewport and never fixed px.
+.wl-item.wl-start {
+  display: grid; grid-template-columns: auto minmax(0, 34rem); grid-template-rows: minmax(0, 1fr);
+  align-items: center; justify-content: center; gap: 3rem;
+}
+// Height is a share of the stage's main area (a definite grid row), width follows from 2:3.
+.wl-start__poster {
+  display: flex; align-items: center; justify-content: center; box-sizing: border-box;
+  height: 82%; width: auto; aspect-ratio: 2 / 3; object-fit: cover; object-position: center top;
+  border: 1px solid var(--ds-border); border-radius: 16px; background: var(--ds-surface);
+  align-self: center;
+}
+// No poster (or one that failed): a calm, blank panel with a small mark — never a substitute image.
+.wl-start__poster--placeholder {
+  color: var(--ds-text-low); font-size: 3rem;
+  background:
+    radial-gradient(circle at 30% 22%, color-mix(in srgb, var(--ds-accent) 22%, transparent), transparent 45%),
+    var(--ds-surface);
+  .school-icon { display: inline-flex; opacity: 0.6; }
+}
+.wl-start__copy { display: flex; flex-direction: column; align-items: flex-start; gap: 1rem; min-width: 0; }
+.wl-start__course { margin: 0; font-size: 3rem; line-height: 1.05; font-weight: 800; color: var(--ds-text-high); word-break: keep-all; text-wrap: balance; }
+.wl-start__unit { margin: 0; font-size: 1.75rem; font-weight: 700; color: var(--ds-text-mid); text-wrap: balance; }
+.wl-start__today { margin: 0; font-size: 1.375rem; color: var(--ds-text-mid); }
+.wl-start__progress { display: grid; gap: 0.4rem; width: 100%; }
+.wl-start__progress-label { font-size: 1.125rem; color: var(--ds-text-low); }
+.wl-start__progress-track {
+  height: 10px; border-radius: 5px; background: var(--ds-surface); overflow: hidden;
+  > span {
+    display: block; width: 100%; height: 100%; border-radius: 5px; background: var(--ds-accent);
+    transform-origin: left center; transition: transform var(--ds-motion-base) var(--ds-motion-easing);
+  }
+}
+.wl-start__action { margin-top: 0.75rem; }
 .wl-loading { font-size: 1.5rem; color: var(--ds-text-mid); }
 .wl-error p { margin: 0; font-size: 1.5rem; text-align: center; }
 
@@ -79,7 +170,8 @@
 // header, prompt, field, controls, keypad — and the default `.wl-prompt`
 // (220px, sized for a picture cue) is too tall to leave room for the last
 // one. Budget at 800px tall, keypad-open:
-//   wl-header                    ~74px  (padding + round/piles row + time bar)
+//   wl-header                   ~104px  (padding + trail row + sub-line + time bar)
+//   wl-hint (reserved row)        28px
 //     + test banner              ~24px  (test sittings only: header padding-top 2.5rem)
 //   wl-main bottom padding        24px
 //   wl-item gaps (3 × 0.75rem)    36px
@@ -88,9 +180,9 @@
 //   wl-controls                   64px  (one row of TouchButtons)
 //   wl-keypad (shrunk keys)      ~277px (3× 60px rows + Enter 60px + padding/border/gaps)
 //   ------------------------------------
-//   total                       ~665px live / ~689px in a test sitting —
-//   ~110px of margin at 800px even with the test banner (final review: the
-//   120px prompt left a test sitting tighter than the live one it previews).
+//   total                       ~723px live / ~747px in a test sitting —
+//   ~50px of margin at 800px even with the test banner (the step-trail header
+//   of 2026-09-23 spent ~58px of the old ~110px margin).
 .wl-item.wl-typed--keypad { gap: 0.75rem; }
 .wl-typed--keypad .wl-prompt { height: 100px; }
 // Still well above the 56px touch-target floor; only shrunk from the
@@ -105,9 +197,9 @@
 }
 
 // --- Drill, match, tiles, listen, offer, menu, My words (Plan 2 task 8) ---
-// Budget at 1280×800: wl-header ~74px + wl-main bottom padding 24px leaves
-// ~700px. A drill adds its own ~52px header row, so every step below keeps
-// its default layout under ~640px (a 4-pair drill match: 4×72 + gaps + Next).
+// Budget at 1280×800: wl-header ~104px + hint row 28px + wl-main bottom
+// padding 24px leaves ~644px. A drill adds its own ~52px header row, so every step below keeps
+// its default layout under ~590px (a 4-pair drill match: 4×72 + gaps + Next ≈ 420px).
 
 .wl-drill { display: grid; grid-template-rows: auto minmax(0, 1fr); width: 100%; height: 100%; min-height: 0; gap: 0.5rem; }
 .wl-drill__header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; width: min(900px, 100%); justify-self: center; }
