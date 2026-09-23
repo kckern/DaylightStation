@@ -500,7 +500,12 @@ until the row is hovered or focused on a mouse; always full strength on touch). 
 no page-level capture bar and no mic in the meal header. The add line's text starts where the food
 names start (LogTable measures a top-level row's name and shares it as
 `--health-name-inset`, so an empty meal lines up too); its suggestion list keeps the
-meal's full width. A suggestion shows the barcode product photo when the saved food
+meal's full width. Hovering a row's picture or name shows the food's preview card. There is ONE
+card for the whole page (`RowPreviewProvider`, hosted by `LogTable`): it sits
+above-right of the cursor, follows it, never takes the pointer, and swaps content
+when you move to another row — two cards can never overlap. Keyboard focus anchors it
+to the name; on touch, a tap on the picture opens it and a tap elsewhere closes it.
+A suggestion shows the barcode product photo when the saved food
 has one (`photoRef`), else its icon, and a label serving ("325 ml") when it has no grams.
 
 The add row's mic adds by default ("Speak foods to Lunch"). While foods in that meal are

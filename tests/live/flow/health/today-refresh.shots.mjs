@@ -56,6 +56,15 @@ try {
       await page.getByText('Peanut Butter Spread', { exact: true }).hover();
       await page.waitForTimeout(150);
       await page.screenshot({ path: `${out}/desktop-hover.png`, clip: { x: 0, y: 0, width: 1440, height: 700 } });
+      // Sweep quickly across rows: there is only ever one card, at the cursor.
+      const counts = [];
+      for (const name of ['Pancakes', 'Applesauce', 'Peanut Butter Spread', 'Strawberry Milkshake', "Dave's killer bread"]) {
+        const box = await page.getByText(name, { exact: true }).boundingBox();
+        await page.mouse.move(box.x + 10, box.y + box.height / 2, { steps: 2 });
+        counts.push(await page.locator('.health-row-preview__card').count());
+      }
+      console.log('cards while sweeping:', JSON.stringify(counts));
+      await page.screenshot({ path: `${out}/desktop-hover-sweep.png`, clip: { x: 320, y: 140, width: 900, height: 560 } });
       // Mid-drag: Mexican cheese from Snacks toward Dinner.
       const cheese = page.getByText('Mexican Style 4 Cheese Blend', { exact: true });
       const from = await cheese.boundingBox();
