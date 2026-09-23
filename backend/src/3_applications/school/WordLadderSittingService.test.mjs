@@ -725,6 +725,7 @@ describe('WordLadderSittingService — graded and transition events (plan 4, spe
     expect(calls(logger, 'school.word-ladder.transition')).toEqual([{
       learnerId: 'test-learner', sittingId, mode: 'live', package: 'korean-vocab', day: TODAY, itemId: item.id,
       wordId: 'gawi', from: { state: 'new', stage: null }, to: { state: 'introduced', stage: null }, source: 'intro',
+      prereqs: { recognizedCount: 0, matched: false, typedSignedOff: null },
     }]);
   });
 
@@ -761,6 +762,7 @@ describe('WordLadderSittingService — graded and transition events (plan 4, spe
     expect(calls(logger, 'school.word-ladder.transition')).toEqual([{
       learnerId: 'test-learner', sittingId, mode: 'live', package: 'korean-vocab', day: TODAY, itemId: null,
       wordId: 'pul', from: { state: 'claimed', stage: null }, to: { state: 'familiar', stage: null }, source: 'paper',
+      prereqs: { recognizedCount: 0, matched: false, typedSignedOff: null },
     }]);
   });
 
@@ -1007,5 +1009,67 @@ describe('WordLadderSittingService — tuned settings (plan 5 task 3, spec §7)'
     await service.open({ userId: 'test-learner', deckId: DECK });
     expect(store.s.days[TODAY].atOpen.settings.round.size).toBe(4);
     expect(store.writeTuning).not.toHaveBeenCalled();
+  });
+});
+
+describe('WordLadderSittingService — sequencing observability (spec §8)', () => {
+  const calls = (logger, event) => logger.info.mock.calls.filter(([name]) => name === event).map(([, data]) => data);
+
+  it('open logs the day and round plan, and why the first item was served', async () => {
+    const { service, logger } = make();
+    const { sittingId, item } = await service.open({ userId: 'test-learner', deckId: DECK });
+    expect(calls(logger, 'school.word-ladder.day.planned')).toEqual([expect.objectContaining({ sittingId, dueRechecks: [], newAllowance: 4 })]);
+    expect(calls(logger, 'school.word-ladder.round.planned')).toEqual([expect.objectContaining({
+      sittingId, round: 'r1', index: 1, kind: 'new', size: 2, newIds: ['gawi', 'pul'], carryIds: [], hasMatch: true, itemId: null,
+    })]);
+    expect(calls(logger, 'school.word-ladder.item.served')).toEqual([expect.objectContaining({
+      learnerId: 'test-learner', sittingId, mode: 'live', package: 'korean-vocab', day: TODAY,
+      itemId: item.id, type: 'flashcard', wordId: 'gawi', reason: 'intro', step: 'flash', via: 'open',
+    })]);
+  });
+
+  it('each answer logs the next item served and every plan change it caused', async () => {
+    const { service, logger } = make();
+    const opened = await service.open({ userId: 'test-learner', deckId: DECK });
+    const quizItem = await walkToGraded(service, opened);
+    const served = calls(logger, 'school.word-ladder.item.served');
+    expect(served.at(-1)).toMatchObject({ itemId: quizItem.id, reason: 'verify-recognition', via: 'respond', source: 'verify' });
+    expect(served.some((s) => s.reason === 'stream')).toBe(true);
+    const phases = calls(logger, 'school.word-ladder.round.phase').map((p) => `${p.from}>${p.to}`);
+    expect(phases).toEqual(['intro>stream', 'stream>quiz']);
+    expect(calls(logger, 'school.word-ladder.round.phase').at(-1)).toMatchObject({ queue: expect.arrayContaining(['gawi:3.1']), itemId: expect.any(String) });
+  });
+
+  it('a recognition pass logs the word climbing its prerequisites, and transitions carry them', async () => {
+    const { service, logger } = make();
+    const opened = await service.open({ userId: 'test-learner', deckId: DECK });
+    let item = await walkToGraded(service, opened);
+    for (let i = 0; i < 8 && item.type === 'choice'; i += 1) {
+      const entry = lexicon.entries.get(item.wordId);
+      ({ item } = await service.respond({ userId: 'test-learner', sittingId: opened.sittingId, itemId: item.id, response: { choice: item.task === '2.2' ? entry.gloss : entry.term } }));
+    }
+    const climbs = calls(logger, 'school.word-ladder.word.prereqs');
+    expect(climbs).toEqual(expect.arrayContaining([expect.objectContaining({ wordId: 'gawi', changed: ['recognizedCount'], recognizedCount: 1, readyForSignOff: false })]));
+    const mastered = calls(logger, 'school.word-ladder.transition').find((t) => t.to.state === 'mastered');
+    expect(mastered.prereqs).toEqual({ recognizedCount: 1, matched: false, typedSignedOff: null });
+  });
+
+  it('a recheck is served with the prerequisites it still lacks', async () => {
+    const { service, logger } = make({ store: dueStore(1) });
+    await service.open({ userId: 'test-learner', deckId: DECK });
+    expect(calls(logger, 'school.word-ladder.item.served')[0]).toMatchObject({ source: 'recheck', reason: 'recheck-recognition:recognized<2,unmatched,stage<1' });
+  });
+
+  it('a sitting left open and then idle-closed is logged as abandoned with where it stopped', async () => {
+    const { service, logger, advance } = make();
+    const a = await service.open({ userId: 'test-learner', deckId: DECK });
+    await service.respond({ userId: 'test-learner', sittingId: a.sittingId, itemId: a.item.id, response: { seen: true } });
+    advance(6 * 60_000);
+    await service.open({ userId: 'test-learner', deckId: DECK });
+    const abandoned = logger.warn.mock.calls.filter(([name]) => name === 'school.word-ladder.sitting.abandoned').map(([, d]) => d);
+    expect(abandoned).toEqual([expect.objectContaining({
+      sittingId: a.sittingId, lastItemId: a.item.id, onScreenItemId: 'r1:i:gawi:copy', idleMs: expect.any(Number),
+    })]);
+    expect(abandoned[0].idleMs).toBeGreaterThanOrEqual(6 * 60_000);
   });
 });

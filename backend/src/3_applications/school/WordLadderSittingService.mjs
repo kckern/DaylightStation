@@ -29,6 +29,7 @@ import { curriculumPosterRef } from '#apps/common/resources/publicResourceRefs.m
 import {
   addActiveTime, cueFor, currentItem, deckDirOf, deckProgress, emptyWordV3, introPlanLabel, introPreview, excludeWordFromDay, foldPaperAttempts, ladderLevel, markMastered, normalizeAnswer, openDay,
   quizDocumentIdFor, respond, roundHasMatch, startPractice, typedAnswers, withTunedValues, wordAssetIds, wordTransitions,
+  servedWhy, dayChanges, prereqChanges,
 } from '#domains/school/wordLadder/index.mjs';
 
 const FOLD_LOOKBACK_DAYS = 60;
@@ -59,6 +60,17 @@ const NO_ASSETS = Object.freeze({ image: null, audio: null, glossAudio: null });
 const ADMIN_TYPED_DAYS = 14;
 const REGRADE_REASON = 'Re-graded by a grown-up';
 const DAY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+/** The id of the day's most recently answered item (by its `at`), or null. */
+function lastAnsweredItemId(dayFile) {
+  let best = null;
+  let bestMs = -Infinity;
+  for (const [id, rec] of Object.entries(dayFile?.items ?? {})) {
+    const ms = Date.parse(rec?.at ?? '');
+    if (Number.isFinite(ms) && ms >= bestMs) { best = id; bestMs = ms; }
+  }
+  return best;
+}
 
 /** An ISO instant carrying the household's own offset: `2026-09-22T16:05:12-07:00`. */
 function isoWithOffset(ms, timezone) {
@@ -306,7 +318,7 @@ export class WordLadderSittingService {
    * changed, for logging.
    */
   #housekeep(dayFile, sittingId, nowMs, { reopen = true } = {}) {
-    const changes = { reopened: false, idleClosed: [] };
+    const changes = { reopened: false, idleClosed: [], idleMs: null, lastItemId: null };
     const own = dayFile.sittings[sittingId];
     if (reopen && own?.closedAt) {
       dayFile.sittings[sittingId] = { ...own, closedAt: null, reason: null };
@@ -319,15 +331,56 @@ export class WordLadderSittingService {
         dayFile.sittings[id] = { ...row, closedAt, reason: 'idle' };
         changes.idleClosed.push(id);
       }
+      if (changes.idleClosed.length) {
+        changes.idleMs = nowMs - dayFile.lastInputAt;
+        changes.lastItemId = lastAnsweredItemId(dayFile);
+      }
     }
     return changes;
   }
 
-  #logHousekeeping(userId, sittingId, dayFile, changes) {
+  /**
+   * `onScreen` (optional) is the item the day is on now — what an abandoned
+   * sitting was left showing, since the day's state is shared by its sittings.
+   */
+  #logHousekeeping(userId, sittingId, dayFile, changes, onScreen = null) {
     if (changes.reopened) this.#logger.info?.('school.word-ladder.reopened', { learnerId: userId, sittingId, mode: this.#mode });
     for (const id of changes.idleClosed) {
       this.#logger.info?.('school.word-ladder.closed', {
         learnerId: userId, sittingId: id, mode: this.#mode, reason: 'idle', closedAt: dayFile.sittings[id]?.closedAt ?? null, by: sittingId,
+      });
+      // Never closed by its own client (no Leave, no Done, no unmount beacon):
+      // the tab was killed, slept or walked away from. Seen only now, at the
+      // next request on another sitting of the same day.
+      this.#logger.warn?.('school.word-ladder.sitting.abandoned', {
+        learnerId: userId, sittingId: id, mode: this.#mode, by: sittingId, lastItemId: changes.lastItemId ?? null,
+        onScreenItemId: onScreen?.id ?? null, onScreenType: onScreen?.type ?? null, idleMs: changes.idleMs ?? null,
+        openedAt: dayFile.sittings[id]?.openedAt ?? null, closedAt: dayFile.sittings[id]?.closedAt ?? null,
+      });
+    }
+  }
+
+  /**
+   * Sequencing (spec §8): why the item now on screen was chosen
+   * (`item.served`), every plan change between two day files (`day.planned`,
+   * `round.planned`, `round.phase`, `drill.started`, `drill.finished`,
+   * `day.done`), and every word whose sign-off prerequisites moved
+   * (`word.prereqs`). `itemId` is the answer that caused the change (null on open).
+   */
+  #logSequencing({ learnerId, sittingId, pkg, day, itemId = null }, { ctx, item = null, via = null, beforeDay = null, beforeWords = null }) {
+    const base = { learnerId, sittingId, mode: this.#mode, package: pkg, day };
+    for (const change of dayChanges(beforeDay, ctx.dayFile)) {
+      this.#logger.info?.(`school.word-ladder.${change.event}`, { ...base, itemId, ...change.data });
+    }
+    if (beforeWords) {
+      for (const row of prereqChanges(beforeWords, ctx.status.words)) {
+        this.#logger.info?.('school.word-ladder.word.prereqs', { ...base, itemId, ...row });
+      }
+    }
+    if (item) {
+      this.#logger.info?.('school.word-ladder.item.served', {
+        ...base, itemId: item.id, type: item.type, task: item.task ?? null, source: item.source ?? null,
+        wordId: item.wordId ?? null, ...servedWhy(ctx, item), via, after: itemId,
       });
     }
   }
@@ -397,11 +450,14 @@ export class WordLadderSittingService {
   }
 
   /** One `transition` event per word whose state or stage changed (spec §8). */
-  #logTransitions({ learnerId, sittingId = null, pkg, day, itemId = null }, transitions) {
+  #logTransitions({ learnerId, sittingId = null, pkg, day, itemId = null }, transitions, words = null) {
     for (const row of transitions ?? []) {
+      const word = words?.[row.wordId];
       this.#logger.info?.('school.word-ladder.transition', {
         learnerId, sittingId, mode: this.#mode, package: pkg, day, itemId,
         wordId: row.wordId, from: row.from, to: row.to, source: row.source,
+        // Where the word stands on the sign-off ladder after this move.
+        ...(word ? { prereqs: { recognizedCount: word.recognizedCount ?? 0, matched: word.matched === true, typedSignedOff: word.typedSignedOff ?? null } } : {}),
       });
     }
   }
@@ -430,7 +486,9 @@ export class WordLadderSittingService {
     let folded = [];
     let foldTransitions = [];
     let changes = { reopened: false, idleClosed: [] };
+    let beforeDay = null;
     const next = store.transact(userId, pkg, day, ({ status, dayFile }) => {
+      beforeDay = structuredClone(dayFile);
       const settings = this.#daySettings(dayFile, { store, userId, pkg });
       const afterFold = this.#fold(status, read, quizDocumentIds, day, settings, { learnerId: userId, deckDir: deckDirOf(deck.id), pkg });
       folded = afterFold.folded;
@@ -440,17 +498,18 @@ export class WordLadderSittingService {
       opened.dayFile.sittings[sittingId] = { deckId, openedAt: isoWithOffset(openedMs, this.#timezone), closedAt: null, reason: null };
       return opened;
     });
-    this.#logHousekeeping(userId, sittingId, next.dayFile, changes);
     const settings = this.#daySettings(next.dayFile, { store, userId, pkg });
     const ctx = { status: next.status, dayFile: next.dayFile, day, lexicon, media, pool, settings, learnerId: userId };
     const item = currentItem(ctx);
+    this.#logHousekeeping(userId, sittingId, next.dayFile, changes, item);
     const progress = this.#progress(next.dayFile, settings);
     this.#logFold(userId, pkg, folded, 'open');
-    this.#logTransitions({ learnerId: userId, sittingId, pkg, day }, foldTransitions);
+    this.#logTransitions({ learnerId: userId, sittingId, pkg, day }, foldTransitions, next.status.words);
     this.#logger.info?.('school.word-ladder.opened', {
       learnerId: userId, deckId, package: pkg, day, sittingId, mode: this.#mode, scenario, folded: folded.length, microphone: caps.microphone,
       first: item.type, phase: progress.phase, rechecks: next.dayFile.atOpen?.dueRechecks?.length ?? 0,
     });
+    this.#logSequencing({ learnerId: userId, sittingId, pkg, day }, { ctx, item, via: 'open', beforeDay, beforeWords: before.words });
     return {
       sittingId, day, package: pkg, title: lexicon.program.title,
       language: { code: lexicon.language.code, name: lexicon.language.name },
@@ -493,9 +552,9 @@ export class WordLadderSittingService {
       ({ transitions, graded } = step);
       return { status: step.status, dayFile: step.dayFile, result: step.result };
     });
-    this.#logHousekeeping(userId, sittingId, out.dayFile, changes);
     const nextCtx = { ...ctx, status: out.status, dayFile: out.dayFile };
     const nextItem = currentItem(nextCtx);
+    this.#logHousekeeping(userId, sittingId, out.dayFile, changes, nextItem);
     // Every response is `answered`; only a graded answer (verify, recheck,
     // practice Quiz me) is also `graded` (spec §8 events).
     this.#logger.info?.('school.word-ladder.answered', {
@@ -511,7 +570,11 @@ export class WordLadderSittingService {
         score: graded.score ?? null, judge: graded.judge ?? null,
       });
     }
-    this.#logTransitions({ learnerId: userId, sittingId, pkg, day, itemId }, transitions);
+    this.#logTransitions({ learnerId: userId, sittingId, pkg, day, itemId }, transitions, out.status.words);
+    // A retry keeps the same item on screen: nothing new was served.
+    this.#logSequencing({ learnerId: userId, sittingId, pkg, day, itemId }, {
+      ctx: nextCtx, item: nextItem.id === itemId ? null : nextItem, via: 'respond', beforeDay: ctx.dayFile, beforeWords: ctx.status.words,
+    });
     return { result: this.#withAnswerAudio(out.result, out.dayFile.items?.[itemId]?.wordId ?? (item.id === itemId ? item.wordId : null), ctx), item: this.#publicItem(nextItem, nextCtx), progress: this.#progress(out.dayFile, ctx.settings) };
   }
 
@@ -540,11 +603,15 @@ export class WordLadderSittingService {
         changes = this.#housekeep(dayFile, sittingId, nowMs);
         return { status, dayFile };
       });
-      this.#logHousekeeping(userId, sittingId, out.dayFile, changes);
       ctx.dayFile = out.dayFile;
       ctx.status = out.status;
+      this.#logHousekeeping(userId, sittingId, out.dayFile, changes, currentItem(ctx));
     }
-    return { item: this.#publicItem(currentItem(ctx), ctx), progress: this.#progress(ctx.dayFile, settings) };
+    const item = currentItem(ctx);
+    // A resync or reload re-serves whatever is current; logged so a trace
+    // can tell a re-render from a new item.
+    this.#logSequencing({ learnerId: userId, sittingId, pkg, day }, { ctx, item, via: 'get' });
+    return { item: this.#publicItem(item, ctx), progress: this.#progress(ctx.dayFile, settings) };
   }
 
   /**
@@ -586,13 +653,14 @@ export class WordLadderSittingService {
       changes = this.#housekeep(dayFile, sittingId, ms);
       return startPractice({ ...ctx, status, dayFile: addActiveTime(dayFile, ms) }, { mode, help, filter, chosen, frontSide });
     });
-    this.#logHousekeeping(userId, sittingId, out.dayFile, changes);
     const nextCtx = { ...ctx, status: out.status, dayFile: out.dayFile };
     const item = currentItem(nextCtx);
+    this.#logHousekeeping(userId, sittingId, out.dayFile, changes, item);
     this.#logger.info?.('school.word-ladder.practice', {
       learnerId: userId, sittingId, mode: this.#mode, practice: mode, help: help !== false, filter,
       size: out.dayFile.practice?.queue?.length ?? 0, first: item.type,
     });
+    this.#logSequencing({ learnerId: userId, sittingId, pkg, day }, { ctx: nextCtx, item, via: 'practice' });
     return { item: this.#publicItem(item, nextCtx), progress: this.#progress(out.dayFile, settings) };
   }
 
@@ -643,7 +711,7 @@ export class WordLadderSittingService {
       if (row && !row.closedAt) dayFile.sittings[sittingId] = { ...row, closedAt: at, reason: why };
       return { status, dayFile };
     });
-    this.#logHousekeeping(userId, sittingId, out.dayFile, changes);
+    this.#logHousekeeping(userId, sittingId, out.dayFile, changes, currentItem({ ...ctx, status: out.status, dayFile: out.dayFile }));
     this.#logger.info?.('school.word-ladder.closed', {
       learnerId: userId, sittingId, mode: this.#mode, reason: why, activeMs: ctx.dayFile.activeMs, doneAt: ctx.dayFile.doneAt ?? null,
     });
