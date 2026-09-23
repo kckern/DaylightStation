@@ -28,6 +28,7 @@ const FOLD_LOOKBACK_DAYS = 60;
 const FOLD_SKEW_DAYS = 2;
 const TEST_PREFIX = 'test.';
 const CLOSE_REASONS = new Set(['goal', 'cap', 'leave', 'idle', 'unmount']);
+const IDLE_CLOSE_MS = 5 * 60_000;
 
 /** An ISO instant carrying the household's own offset: `2026-09-22T16:05:12-07:00`. */
 function isoWithOffset(ms, timezone) {
@@ -180,7 +181,41 @@ export class WordLadderSittingService {
     const media = this.#media(deck, lexicon);
     const settings = this.#daySettings(dayFile);
     const ctx = { status, dayFile, day, lexicon, media, pool: await this.#pool(status, deck), settings, learnerId: userId };
-    return { store, pkg, lexicon, media, settings, ctx, day };
+    return { store, pkg, lexicon, media, settings, ctx, day, sitting };
+  }
+
+  /**
+   * Sitting bookkeeping for a request on `sittingId` (spec §4 server idle
+   * close). Mutates `dayFile`: a closed `sittingId` is reopened (a reload or a
+   * late answer must never 404), and when the day has had no input for 5 min
+   * every OTHER open sitting is closed as idle at the last input. Returns what
+   * changed, for logging.
+   */
+  #housekeep(dayFile, sittingId, nowMs, { reopen = true } = {}) {
+    const changes = { reopened: false, idleClosed: [] };
+    const own = dayFile.sittings[sittingId];
+    if (reopen && own?.closedAt) {
+      dayFile.sittings[sittingId] = { ...own, closedAt: null, reason: null };
+      changes.reopened = true;
+    }
+    if (typeof dayFile.lastInputAt === 'number' && nowMs - dayFile.lastInputAt >= IDLE_CLOSE_MS) {
+      const closedAt = isoWithOffset(dayFile.lastInputAt, this.#timezone);
+      for (const [id, row] of Object.entries(dayFile.sittings)) {
+        if (id === sittingId || row?.closedAt) continue;
+        dayFile.sittings[id] = { ...row, closedAt, reason: 'idle' };
+        changes.idleClosed.push(id);
+      }
+    }
+    return changes;
+  }
+
+  #logHousekeeping(userId, sittingId, dayFile, changes) {
+    if (changes.reopened) this.#logger.info?.('school.word-ladder.reopened', { learnerId: userId, sittingId, mode: this.#mode });
+    for (const id of changes.idleClosed) {
+      this.#logger.info?.('school.word-ladder.closed', {
+        learnerId: userId, sittingId: id, mode: this.#mode, reason: 'idle', closedAt: dayFile.sittings[id]?.closedAt ?? null, by: sittingId,
+      });
+    }
   }
 
   /**
@@ -249,23 +284,24 @@ export class WordLadderSittingService {
     const { store, token } = this.#stores.open(userId, pkg, day, { scenario, deck, lexicon });
     const sittingId = this.#newSittingId(pkg, token);
     const media = this.#media(deck, lexicon);
-    const read = this.#readAttempts(userId, store.readStatus(userId, pkg), day);
+    const before = store.readStatus(userId, pkg);
+    const read = this.#readAttempts(userId, before, day);
     const quizDocumentIds = read.attempts.length ? await this.#quizDocumentIds(deck) : [];
+    // `#pool` includes this deck; a paper fold only demotes introduced words,
+    // so the new-word pool is the same before and after the fold.
+    const pool = await this.#pool(before, deck);
     let folded = [];
-    const first = store.transact(userId, pkg, day, ({ status, dayFile }) => {
+    let changes = { reopened: false, idleClosed: [] };
+    const next = store.transact(userId, pkg, day, ({ status, dayFile }) => {
       const settings = this.#daySettings(dayFile);
       const afterFold = this.#fold(status, read, quizDocumentIds, day, settings);
       folded = afterFold.folded;
-      const opened = openDay({ status: afterFold.status, dayFile, day, deckId, pool: [], settings, learnerId: userId });
+      const opened = openDay({ status: afterFold.status, dayFile, day, deckId, pool, settings, learnerId: userId });
+      changes = this.#housekeep(opened.dayFile, sittingId, openedMs, { reopen: false });
       opened.dayFile.sittings[sittingId] = { deckId, openedAt: isoWithOffset(openedMs, this.#timezone), closedAt: null, reason: null };
       return opened;
     });
-    // Re-open with the real pool now that decksSeen includes this deck; openDay
-    // re-plans the untouched round the first pass planned without it.
-    const pool = await this.#pool(first.status, deck);
-    const next = store.transact(userId, pkg, day, ({ status, dayFile }) => openDay({
-      status, dayFile, day, deckId, pool, settings: this.#daySettings(dayFile), learnerId: userId,
-    }));
+    this.#logHousekeeping(userId, sittingId, next.dayFile, changes);
     const settings = this.#daySettings(next.dayFile);
     const ctx = { status: next.status, dayFile: next.dayFile, day, lexicon, media, pool, settings, learnerId: userId };
     const item = currentItem(ctx);
@@ -299,11 +335,22 @@ export class WordLadderSittingService {
     }
     const ms = this.#now();
     const at = isoWithOffset(ms, this.#timezone);
+    let changes = null;
     const out = store.transact(userId, pkg, day, ({ status, dayFile }) => {
+      if (!dayFile.sittings?.[sittingId]) throw new EntityNotFoundError('word-ladder sitting', sittingId);
+      // Race: another request answered while this one was being prepared, so
+      // the typed item now on screen was never judged here. Stale, not a
+      // missing verdict.
+      const fresh = currentItem({ ...ctx, status, dayFile });
+      if (verdict === null && fresh.type === 'typed' && fresh.id === itemId && !dayFile.items[itemId] && typeof response?.typed === 'string') {
+        throw new ValidationError('stale item');
+      }
+      changes = this.#housekeep(dayFile, sittingId, ms);
       const timed = addActiveTime(dayFile, ms);
       const step = respond({ ...ctx, status, dayFile: timed }, itemId, response, { at, verdict });
       return { status: step.status, dayFile: step.dayFile, result: step.result };
     });
+    this.#logHousekeeping(userId, sittingId, out.dayFile, changes);
     const nextCtx = { ...ctx, status: out.status, dayFile: out.dayFile };
     const nextItem = currentItem(nextCtx);
     this.#logger.info?.('school.word-ladder.graded', {
@@ -316,19 +363,37 @@ export class WordLadderSittingService {
   }
 
   async get({ userId, sittingId } = {}) {
-    const { lexicon, media, settings, ctx } = await this.#context(userId, sittingId);
+    const { store, pkg, day, lexicon, media, settings, ctx } = await this.#context(userId, sittingId);
+    const nowMs = this.#now();
+    // Only write when bookkeeping changes something: a reload is otherwise read-only.
+    const probe = this.#housekeep(structuredClone(ctx.dayFile), sittingId, nowMs);
+    if (probe.reopened || probe.idleClosed.length) {
+      let changes = null;
+      const out = store.transact(userId, pkg, day, ({ status, dayFile }) => {
+        changes = this.#housekeep(dayFile, sittingId, nowMs);
+        return { status, dayFile };
+      });
+      this.#logHousekeeping(userId, sittingId, out.dayFile, changes);
+      ctx.dayFile = out.dayFile;
+      ctx.status = out.status;
+    }
     return { item: this.#publicItem(currentItem(ctx), lexicon, media), progress: this.#progress(ctx.dayFile, settings) };
   }
 
   async close({ userId, sittingId, reason = 'leave' } = {}) {
-    const { store, pkg, day, ctx } = await this.#context(userId, sittingId);
+    const { store, pkg, day, ctx, sitting } = await this.#context(userId, sittingId);
+    if (sitting.closedAt) return { closed: true, already: true };
     const why = CLOSE_REASONS.has(reason) ? reason : 'leave';
-    const at = isoWithOffset(this.#now(), this.#timezone);
-    store.transact(userId, pkg, day, ({ status, dayFile }) => {
+    const nowMs = this.#now();
+    const at = isoWithOffset(nowMs, this.#timezone);
+    let changes = null;
+    const out = store.transact(userId, pkg, day, ({ status, dayFile }) => {
+      changes = this.#housekeep(dayFile, sittingId, nowMs, { reopen: false });
       const row = dayFile.sittings[sittingId];
       if (row && !row.closedAt) dayFile.sittings[sittingId] = { ...row, closedAt: at, reason: why };
       return { status, dayFile };
     });
+    this.#logHousekeeping(userId, sittingId, out.dayFile, changes);
     this.#logger.info?.('school.word-ladder.closed', {
       learnerId: userId, sittingId, mode: this.#mode, reason: why, activeMs: ctx.dayFile.activeMs, doneAt: ctx.dayFile.doneAt ?? null,
     });
