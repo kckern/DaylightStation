@@ -24,6 +24,8 @@ function makeFakeVideo({ currentTime = 100, duration = 1000 } = {}) {
     readyState: 4,
     networkState: 2,
     shadowRoot: null,
+    tagName: 'VIDEO',
+    dataset: {},
     buffered: { length: 1, start: () => 0, end: () => duration },
     play: vi.fn(() => Promise.resolve()),
     pause: vi.fn(() => { el.paused = true; }),
@@ -41,9 +43,10 @@ function makeFakeVideo({ currentTime = 100, duration = 1000 } = {}) {
   return el;
 }
 
-function Harness({ video, onProgress, volume = 100 }) {
+function Harness({ video, onProgress, volume = 100, meta = { assetId: 'plex:1', title: 'T' }, start }) {
   const api = useCommonMediaController({
-    meta: { assetId: 'plex:1', title: 'T' },
+    meta,
+    start,
     isVideo: true,
     onProgress,
     volume,
@@ -102,6 +105,49 @@ describe('useCommonMediaController listener lifetime', () => {
 
     expect(stale).not.toHaveBeenCalled();
     expect(live).toHaveBeenCalled();
+  });
+
+  it('keeps a constant number of play/seeked listeners when loadedmetadata fires on each effect run', () => {
+    // The video branch of onLoadedMetadata attaches playbackRate listeners to
+    // `play` and `seeked`. They must go away with the effect run that added them,
+    // or a stale one can reset a newer playbackRate.
+    const video = makeFakeVideo();
+    const onProgress = vi.fn();
+    const { rerender } = render(<Harness video={video} onProgress={onProgress} volume={100} />);
+    act(() => { video.fire('loadedmetadata'); });
+    const play = video.count('play');
+    const seeked = video.count('seeked');
+
+    for (let v = 90; v >= 50; v -= 10) {
+      rerender(<Harness video={video} onProgress={onProgress} volume={v} />);
+      act(() => { video.fire('loadedmetadata'); });
+    }
+
+    expect(video.count('play')).toBe(play);
+    expect(video.count('seeked')).toBe(seeked);
+  });
+
+  it('removes a pending DASH start-seek listener pair when the effect re-runs before the seek applies', () => {
+    const video = makeFakeVideo({ duration: 3600 });
+    video.readyState = 0; // metadata not ready: applySeek stays pending
+    const onProgress = vi.fn();
+    const meta = { assetId: 'plex:dash-pending', title: 'D', mediaType: 'dash_video' };
+    const { rerender } = render(
+      <Harness video={video} onProgress={onProgress} volume={100} meta={meta} start={600} />
+    );
+    const loaded = video.count('loadedmetadata');
+    const timeupdate = video.count('timeupdate');
+
+    // First loadedmetadata of the run: the DASH branch arms onLoaded + onTimeUpdate.
+    act(() => { video.fire('loadedmetadata'); });
+    expect(video.count('loadedmetadata')).toBe(loaded + 1);
+    expect(video.count('timeupdate')).toBe(timeupdate + 1);
+
+    // Effect re-runs before either fires.
+    rerender(<Harness video={video} onProgress={onProgress} volume={90} meta={meta} start={600} />);
+
+    expect(video.count('loadedmetadata')).toBe(loaded);
+    expect(video.count('timeupdate')).toBe(timeupdate);
   });
 
   it('does not publish progress from the playing event (only seeked/timeupdate do)', () => {
