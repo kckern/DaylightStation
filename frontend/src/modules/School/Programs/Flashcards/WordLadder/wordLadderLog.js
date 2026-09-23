@@ -27,12 +27,17 @@ export const wordLadderLog = {
   reviewStarted: (data) => emit('review.started', data),
   reviewViewed: (data) => emit('review.viewed', data, 'debug'),
   done: (data) => emit('day.done', data),
-  audioBlocked: (data) => emit('audio.blocked', data, 'debug'),
+  audioBlocked: (data) => emit('audio.blocked', data, 'info'),
   writeFailed: (data) => emit('write.failed', data, 'warn'),
   planRefetched: (data) => emit('plan.refetched', data),
   sessionReopened: (data) => emit('session.reopened', data),
   apiRejected: (data) => emit('api.rejected', data, 'warn'),
   apiFailed: (data) => emit('api.failed', data, 'error'),
+  layoutClamped: (data) => emit('layout.clamped', data, 'warn'),
+  stageFailed: (data) => emit('stage.failed', data, 'warn'),
+  itemShown: (data) => emit('item.shown', data),
+  itemAnswered: (data) => emit('item.answered', data),
+  audioPlayed: (data) => emit('audio.played', data),
 };
 
 export default wordLadderLog;
