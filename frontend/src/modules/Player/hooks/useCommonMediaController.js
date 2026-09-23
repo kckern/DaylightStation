@@ -104,8 +104,9 @@ export function useCommonMediaController({
   const [seconds, setSeconds] = useState(0);
   const [duration, setDuration] = useState(0);
   const [isSeeking, setIsSeeking] = useState(false);
-  // isSeeking is not an element-setup effect dep, so a listener created in one
-  // run would publish the value from that run. Read the current one instead.
+  // The element-setup effect's closure is refreshed only when one of its deps
+  // changes, and isSeeking is not one, so a value read inside it must come
+  // from a ref.
   const isSeekingRef = useRef(isSeeking);
   isSeekingRef.current = isSeeking;
   const lastLoggedTimeRef = useRef(0);
@@ -137,6 +138,13 @@ export function useCommonMediaController({
   // 2026-09-22 — see docs/_wip/plans/2026-09-22-fitness-play-means-play.md.
   const onProgressRef = useRef(onProgress);
   onProgressRef.current = onProgress;
+  // Same for onEnd. FitnessPlayer's close/next handlers are plain functions, so
+  // the onEnd chain it feeds (Player clear/advance -> useQueueController ->
+  // VideoPlayer onEnd) is a new function on every render. As an effect dep it
+  // re-ran the element-setup effect, and re-bound every media listener, on each
+  // parent render.
+  const onEndRef = useRef(onEnd);
+  onEndRef.current = onEnd;
 
   // Unique identity for this mount instance (used to scope the start-time guard)
   const mountIdRef = useRef(Symbol('mount'));
@@ -1015,7 +1023,7 @@ export function useCommonMediaController({
           setIsStalled(false);
         }
         logProgress();
-        onEnd();
+        onEndRef.current?.();
         return;
       }
     };
@@ -1029,7 +1037,7 @@ export function useCommonMediaController({
     const onEnded = () => {
       getMediaEl();
 
-      // THE TERMINAL EVENT, AND IT WAS SILENT UNTIL 2026-08-28. `onEnd()` below
+      // THE TERMINAL EVENT, AND IT WAS SILENT UNTIL 2026-08-28. `onEndRef.current?.()` below
       // is what advances a queue or clears a single item, so this is the branch
       // point for everything that happens after a story/track finishes — and it
       // emitted nothing at all. A read-along played to its end on the
@@ -1060,7 +1068,7 @@ export function useCommonMediaController({
       }
       
       logProgress();
-      onEnd();
+      onEndRef.current?.();
     };
 
     // The play/seeked rate listener onLoadedMetadata attaches must die with
@@ -1483,7 +1491,7 @@ export function useCommonMediaController({
     // 9-dependency media-listener effect in a file with hard-won "generation churn / storm"
     // caution comments elsewhere — already reviewed this session as too risky for a lint pass.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [onEnd, playbackRate, start, isVideo, meta, type, assetId, isStalled, volume, getMediaEl, markProgress, scheduleStallDetection, clearTimers, readStallState, elementKey, remountDiagnostics, rendererOperation, applyMountedPlaybackOperation, finishMountedPlaybackOperation]);
+  }, [playbackRate, start, isVideo, meta, type, assetId, isStalled, volume, getMediaEl, markProgress, scheduleStallDetection, clearTimers, readStallState, elementKey, remountDiagnostics, rendererOperation, applyMountedPlaybackOperation, finishMountedPlaybackOperation]);
 
   useEffect(() => {
     const mediaEl = getMediaEl();

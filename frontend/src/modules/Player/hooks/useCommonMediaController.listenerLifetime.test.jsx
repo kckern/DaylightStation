@@ -50,11 +50,11 @@ function makeFakeVideo({ currentTime = 100, duration = 1000 } = {}) {
 const DEFAULT_META = { assetId: 'plex:1', title: 'T' };
 const NOOP_END = () => {};
 
-function Harness({ video, onProgress, volume = 100, meta = DEFAULT_META, playbackRate }) {
+function Harness({ video, onProgress, volume = 100, meta = DEFAULT_META, playbackRate, onEnd = NOOP_END }) {
   const api = useCommonMediaController({
     meta,
     playbackRate,
-    onEnd: NOOP_END,
+    onEnd,
     isVideo: true,
     onProgress,
     volume,
@@ -169,6 +169,36 @@ describe('useCommonMediaController listener lifetime', () => {
 
     expect(onProgress).toHaveBeenCalled();
     expect(onProgress.mock.calls.at(-1)[0].isSeeking).toBe(false);
+  });
+
+  it('a new onEnd alone does not re-bind media listeners, and ended calls the latest onEnd', () => {
+    // FitnessPlayer passes a fresh onEnd chain on every render. That must not
+    // re-run the element-setup effect (which tears down and re-adds every
+    // listener), and `ended` must still reach the current callback.
+    const video = makeFakeVideo();
+    const onProgress = vi.fn();
+    const firstEnd = vi.fn();
+    const latestEnd = vi.fn();
+    const { rerender } = render(<Harness video={video} onProgress={onProgress} onEnd={firstEnd} />);
+    const playing = video.count('playing');
+    const timeupdate = video.count('timeupdate');
+    const addSpy = vi.spyOn(video, 'addEventListener');
+    const removeSpy = vi.spyOn(video, 'removeEventListener');
+
+    rerender(<Harness video={video} onProgress={onProgress} onEnd={latestEnd} />);
+
+    expect(video.count('playing')).toBe(playing);
+    expect(video.count('timeupdate')).toBe(timeupdate);
+    expect(addSpy).not.toHaveBeenCalled();
+    expect(removeSpy).not.toHaveBeenCalled();
+
+    act(() => {
+      video.ended = true;
+      video.fire('ended');
+    });
+
+    expect(latestEnd).toHaveBeenCalledTimes(1);
+    expect(firstEnd).not.toHaveBeenCalled();
   });
 
   it('does not publish progress from the playing event (only seeked/timeupdate do)', () => {
