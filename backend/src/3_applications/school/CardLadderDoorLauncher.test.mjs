@@ -21,3 +21,10 @@ describe('CardLadderDoorLauncher', () => {
     expect(await make([]).issueLaunchTarget({ userId: 'u', programInstance: null })).toBeNull();
   });
 });
+
+describe('CardLadderDoorLauncher — pre-rename enrollments', () => {
+  it('resolves an enrollment still written as policy.mode word-ladder', async () => {
+    const launcher = make([{ programId: 'flashcards', deckId: 'language/korean/week-02', policy: { mode: 'word-ladder' } }]);
+    expect((await launcher.issueLaunchTarget({ userId: 'u', programInstance: null })).deckId).toBe('language/korean/week-02');
+  });
+});

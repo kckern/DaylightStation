@@ -107,3 +107,15 @@ describe('IssueDirectLaunch', () => {
     expect(listed.find((p) => p.programId === 'book-log').instanceRequired).toBe(false);
   });
 });
+
+describe('IssueDirectLaunch — the pre-rename word-ladder door', () => {
+  it('opens card-ladder for /word-ladder and lists only the canonical id', async () => {
+    const cardLadder = { surface: 'portal', issueLaunchTarget: vi.fn(async ({ userId }) => ({ kind: 'program', program: 'flashcards', deckId: 'd', learner: userId })) };
+    const launch = new IssueDirectLaunch({ launchers: new Map([['card-ladder', cardLadder]]), roster: () => [{ id: 'kid1' }], logger: { warn: vi.fn() } });
+    const { target } = await launch.execute({ learnerId: 'kid1', programId: 'word-ladder' });
+    expect(target).toMatchObject({ program: 'flashcards', deckId: 'd' });
+    expect(cardLadder.issueLaunchTarget).toHaveBeenCalledTimes(1);
+    expect(launch.available().map((row) => row.programId)).toEqual(['card-ladder']);
+    expect(launch.available()[0].instanceRequired).toBe(false);
+  });
+});

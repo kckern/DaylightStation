@@ -87,7 +87,7 @@ describe('FlashcardProgramLauncher — card ladder', () => {
   it('carries the launch card to the agenda: projectProgramEntry reads the course poster and the words-learned bar', async () => {
     const card = {
       context: {
-        course: { id: 'program:word-ladder:korean-vocab', title: 'Test Class' },
+        course: { id: 'program:card-ladder:korean-vocab', title: 'Test Class' },
         unit: { id: DECK, title: 'Week 1: Classroom' },
         lesson: { id: `${DECK}:2026-09-23`, title: '4 new words · 3 to review' },
       },
@@ -100,7 +100,7 @@ describe('FlashcardProgramLauncher — card ladder', () => {
     const entry = { program: 'flashcards', programInstance: DECK, subject: 'language', unitId: `flashcards:${DECK}`, title: 'Flashcards' };
     const projected = projectProgramEntry(entry, status);
     expect(projected).toMatchObject({
-      title: '4 new words · 3 to review', courseId: 'program:word-ladder:korean-vocab', module: DECK,
+      title: '4 new words · 3 to review', courseId: 'program:card-ladder:korean-vocab', module: DECK,
       description: 'About 10 minutes', programProgress: card.progress,
     });
   });

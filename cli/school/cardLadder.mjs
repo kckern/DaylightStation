@@ -17,6 +17,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import yaml from 'js-yaml';
+import { isCardLadderPolicy } from '#domains/school/flashcards/index.mjs';
 import { YamlLearningContentRepository } from '#adapters/school/catalog/YamlLearningContentRepository.mjs';
 import { YamlLexiconRepository } from '#adapters/school/catalog/YamlLexiconRepository.mjs';
 import { LexiconDeckLoader } from '#adapters/school/catalog/LexiconDeckLoader.mjs';
@@ -214,7 +215,7 @@ async function quiz(argv, io) {
 
 export function buildEnrollPlan(current, { deckId, title }) {
   if (typeof title !== 'string' || !title.trim()) throw new Error('an enrollment needs a tile title');
-  const programs = (current?.programs ?? []).filter((row) => !(row?.programId === 'flashcards' && row.policy?.mode === 'card-ladder'));
+  const programs = (current?.programs ?? []).filter((row) => !(row?.programId === 'flashcards' && isCardLadderPolicy(row.policy)));
   programs.push({
     programId: 'flashcards', deckId, title: title.trim(),
     policy: { mode: 'card-ladder' }, schedule: { daysOfWeek: [1, 2, 3, 4, 5] },
@@ -267,7 +268,8 @@ function quoteLogsqlValue(value) {
 }
 
 function traceQuery({ learnerId, mode, sittingId }) {
-  const parts = ['_msg:~"school.card-ladder"', `data.learnerId:${quoteLogsqlValue(learnerId)}`];
+ // Both names: events from before the rename (2026-09-23) are `school.word-ladder.*`.
+  const parts = ['(_msg:~"school.card-ladder" OR _msg:~"school.word-ladder")', `data.learnerId:${quoteLogsqlValue(learnerId)}`];
   if (mode && mode !== 'all') parts.push(`data.mode:${quoteLogsqlValue(mode)}`);
   if (sittingId) parts.push(`data.sittingId:${quoteLogsqlValue(sittingId)}`);
   return parts.join(' AND ');

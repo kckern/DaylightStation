@@ -1,3 +1,4 @@
+import { isCardLadderPolicy } from '#domains/school/flashcards/index.mjs';
 import { UNKNOWABLE_STATUS } from './programStatusCollection.mjs';
 
 /** Portal lifecycle adapter for a standalone assigned flashcard deck. */
@@ -37,7 +38,7 @@ export class FlashcardProgramLauncher {
     if (!programInstance) return { doneToday: false, progressLabel: 'Choose a flashcard deck', score: null, servedWork: [] };
     const enrollment = await this.#enrollment(userId, programInstance);
     const policy = enrollment?.policy ?? {};
-    if (policy.mode === 'card-ladder') return this.#cardLadderStatus({ userId, deckId: programInstance, day });
+    if (isCardLadderPolicy(policy)) return this.#cardLadderStatus({ userId, deckId: programInstance, day });
     if (day != null) return { ...UNKNOWABLE_STATUS };
     const summary = await this.#study.summary({ userId, deckId: programInstance });
     const assessment = await this.#study.assessmentStatus?.({ userId, deckId: programInstance, policy }) ?? { passed: policy.quizRequired !== true };
@@ -72,7 +73,7 @@ export class FlashcardProgramLauncher {
       reopenable: true, remaining: status.remaining ?? null,
       servedWork: status.doneToday === true ? [{ unitId: `flashcards:${deckId}`, title: 'Flashcards' }] : [],
       // The launch card (`projectProgramEntry`): class › deck › today's plan,
-      // the words-learned bar, and a `program:word-ladder:<package>` course id
+      // the words-learned bar, and a `program:card-ladder:<package>` course id
       // that resolves the package's poster. Absent for a replayed past day.
       ...(status.context ? { context: status.context, progress: status.progress ?? [], description: status.description ?? null } : {}),
     };

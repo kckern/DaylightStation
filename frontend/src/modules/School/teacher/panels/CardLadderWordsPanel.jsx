@@ -25,6 +25,7 @@ import { useTeacherProfileOptional } from '../TeacherProfileContext.jsx';
 import { teacherLog } from '../teacherLog.js';
 import PanelFrame from './PanelFrame.jsx';
 import { cardLadderAdminApi } from '../cardLadderAdminApi.js';
+import { isCardLadderPolicy } from '../../Programs/Flashcards/CardLadder/cardLadderMode.js';
 
 const PANEL = 'card-ladder-words';
 
@@ -394,10 +395,11 @@ export default function CardLadderWordsPanel({ learnerId, deckId, title = null }
  * The learner's card-ladder enrollments, out of `GET /lifecycle/assignments`'s
  * `programs` array (same shape `AssignmentsView`/`readingPrograms.js` read):
  * `{programId: 'flashcards', deckId, title, policy: {mode: 'card-ladder'}, schedule}`.
- * A `flashcards` entry without `policy.mode === 'card-ladder'` is an ordinary
+ * A `flashcards` entry without `policy.mode === 'card-ladder'` (or its
+ * pre-rename alias `word-ladder`) is an ordinary
  * flashcard deck and does not belong on this tab.
  */
 export function cardLadderEnrollments(programs) {
   return (Array.isArray(programs) ? programs : [])
-    .filter((entry) => entry?.programId === 'flashcards' && entry?.policy?.mode === 'card-ladder' && entry?.deckId);
+    .filter((entry) => entry?.programId === 'flashcards' && isCardLadderPolicy(entry?.policy) && entry?.deckId);
 }

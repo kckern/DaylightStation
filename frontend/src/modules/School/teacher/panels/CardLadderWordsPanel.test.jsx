@@ -8,7 +8,7 @@
  */
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
-import CardLadderWordsPanel from './CardLadderWordsPanel.jsx';
+import CardLadderWordsPanel, { cardLadderEnrollments } from './CardLadderWordsPanel.jsx';
 
 vi.mock('../cardLadderAdminApi.js', () => ({
   cardLadderAdminApi: {
@@ -365,5 +365,17 @@ describe('Tuning', () => {
     mount();
     expect(await screen.findByText('사과')).toBeTruthy();
     expect(await screen.findByText(/Tuning is not available/)).toBeTruthy();
+  });
+});
+
+describe('cardLadderEnrollments', () => {
+  it('keeps card-ladder decks under either mode name and drops ordinary flashcards', () => {
+    const programs = [
+      { programId: 'flashcards', deckId: 'a', policy: { mode: 'card-ladder' } },
+      { programId: 'flashcards', deckId: 'b', policy: { mode: 'word-ladder' } },
+      { programId: 'flashcards', deckId: 'c', policy: { mode: 'fsrs' } },
+      { programId: 'sentence-ladder', deckId: 'd', policy: { mode: 'card-ladder' } },
+    ];
+    expect(cardLadderEnrollments(programs).map((row) => row.deckId)).toEqual(['a', 'b']);
   });
 });

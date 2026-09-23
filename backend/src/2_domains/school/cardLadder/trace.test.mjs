@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatTrace } from './trace.mjs';
+import { canonicalTraceMsg, formatTrace } from './trace.mjs';
 
 // A minimal frontend event: everything a bound `createTrace` stamps onto
 // every call (spec §8), plus whatever the caller wants in `data`.
@@ -300,5 +300,27 @@ describe('formatTrace — sections, reasons, input, sub-lines and the summary fo
     ]);
     expect(out).toContain('say:say-after gawi say done:true — (1500ms) · via key:Space (no mic)');
     expect(out).toContain('skipped 0');
+  });
+});
+
+describe('formatTrace — events logged under the pre-rename school.word-ladder.* names', () => {
+  const events = [
+    fe('sitting.opened', 0, 1, { package: 'korean-vocab', first: 'flashcard', phase: 'round' }),
+    fe('item.shown', 200, 2, { itemId: 'r1:0:intro', type: 'flashcard', itemMode: 'intro', task: null, wordId: 'gawi', layout: 'flashcard-front', media: false, fontPx: null }),
+    fe('item.answered', 3200, 3, { itemId: 'r1:0:intro', type: 'flashcard', task: null, response: {}, correct: null, score: null, judge: null, next: 'copy', ms: 3000 }),
+    be('transition', { itemId: 'r1:0:intro', wordId: 'gawi', from: { state: 'new', stage: null }, to: { state: 'introduced', stage: null }, source: 'intro' }),
+  ];
+  const legacy = (event) => ({ ...event, msg: event.msg.replace('school.card-ladder.', 'school.word-ladder.') });
+
+  it('renders the old names exactly as the new ones, and a mix of both', () => {
+    const expected = formatTrace(events);
+    expect(formatTrace(events.map(legacy))).toBe(expected);
+    expect(formatTrace(events.map((event, i) => (i % 2 ? legacy(event) : event)))).toBe(expected);
+  });
+  it('canonicalTraceMsg rewrites only the old prefix', () => {
+    expect(canonicalTraceMsg('school.word-ladder.item.shown')).toBe('school.card-ladder.item.shown');
+    expect(canonicalTraceMsg('school.card-ladder.item.shown')).toBe('school.card-ladder.item.shown');
+    expect(canonicalTraceMsg('school.sentence-ladder.item')).toBe('school.sentence-ladder.item');
+    expect(canonicalTraceMsg(undefined)).toBeUndefined();
   });
 });

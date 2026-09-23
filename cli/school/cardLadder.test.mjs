@@ -237,6 +237,34 @@ describe('card-ladder trace CLI', () => {
     expect(printed).toContain('goal');
   });
 
+  it('reads the pre-rename school.word-ladder.* events too, and prints them the same', async () => {
+    const legacyRows = TRACE_ROWS.map((r) => ({ ...r, _msg: r._msg.replace('school.card-ladder.', 'school.word-ladder.') }));
+    const current = io();
+    const legacy = io();
+    expect(await main(['trace', '--learner', 'learner-a', '--day', '2026-09-22'], current, { fetch: ndjsonFetch(TRACE_ROWS) })).toBe(0);
+    const fetchImpl = ndjsonFetch(legacyRows);
+    expect(await main(['trace', '--learner', 'learner-a', '--day', '2026-09-22'], legacy, { fetch: fetchImpl })).toBe(0);
+    expect(legacy.stdout.write.mock.calls[0][0]).toBe(current.stdout.write.mock.calls[0][0]);
+    const query = new URLSearchParams(String(fetchImpl.mock.calls[0][1].body)).get('query');
+    expect(query).toContain('_msg:~"school.card-ladder"');
+    expect(query).toContain('_msg:~"school.word-ladder"');
+  });
+
+  it('`school word-ladder …` is an alias of `school card-ladder …`, kept out of the help listing', async () => {
+    const { main: school } = await import('../school.mjs');
+    const write = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    try {
+      expect(await school(['word-ladder', '--help'])).toBe(0);
+      const aliasHelp = write.mock.calls.map((c) => String(c[0])).join('');
+      expect(aliasHelp).toContain('card-ladder trace --learner');
+      write.mockClear();
+      await school(['--help']);
+      const listing = write.mock.calls.map((c) => String(c[0])).join('');
+      expect(listing).toContain('card-ladder');
+      expect(listing).not.toMatch(/^\s+word-ladder\s/m);
+    } finally { write.mockRestore(); }
+  });
+
   it('parses the JSON-string arrays the store keeps (a round.phase quiz queue) and prints served reasons and input', async () => {
     const stamp = { traceId: 'tr1', sittingId: 'korean-vocab.abc.1', learnerId: 'learner-a', package: 'korean-vocab', mode: 'live' };
     const rows = [

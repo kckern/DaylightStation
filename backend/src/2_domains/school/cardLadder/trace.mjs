@@ -41,6 +41,14 @@ const MSG = {
   BACKEND_ABANDONED: 'school.card-ladder.sitting.abandoned',
 };
 const P = 'school.card-ladder.';
+// Events logged before the rename (2026-09-23) say `school.word-ladder.*`;
+// the log store keeps 7 days, so a trace can span both names.
+const LEGACY_P = 'school.word-ladder.';
+
+/** An event name with the pre-rename `school.word-ladder.` prefix rewritten to `school.card-ladder.`. */
+export function canonicalTraceMsg(msg) {
+  return typeof msg === 'string' && msg.startsWith(LEGACY_P) ? `${P}${msg.slice(LEGACY_P.length)}` : msg;
+}
 
 // A gap on one item at or above this is worth flagging even when no explicit
 // `item.stalled` fired — that event only fires at the 45s/120s thresholds
@@ -510,7 +518,8 @@ function formatDayFileFallback(dayFile) {
  */
 export function formatTrace(events = [], { dayFile } = {}) {
   if (dayFile) return formatDayFileFallback(dayFile);
-  return formatTraceFromEvents(Array.isArray(events) ? events : []);
+  return formatTraceFromEvents((Array.isArray(events) ? events : [])
+    .map((event) => (event && typeof event === 'object' ? { ...event, msg: canonicalTraceMsg(event.msg) } : event)));
 }
 
 export default formatTrace;

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { validateFlashcardEnrollment } from './index.mjs';
+import { validateFlashcardEnrollment, isCardLadderPolicy, canonicalizeProgramPolicy } from './index.mjs';
 import { createSchoolProgramEnrollmentValidators } from '#apps/school/SchoolProgramEnrollmentValidators.mjs';
 import { SetAssignments } from '#apps/school/usecases/SetAssignments.mjs';
 
@@ -46,5 +46,26 @@ describe('flashcard enrollment policy.mode', () => {
     // A grown-up saving again (the round trip that used to delete top-level keys) keeps it.
     await useCase.execute({ learnerId: 'learner-1', assignedBy: 'parent', programs: [reloaded] });
     expect((await assignments.get('learner-1')).programs[0].policy.mode).toBe('card-ladder');
+  });
+});
+
+describe('the pre-rename word-ladder mode', () => {
+  it('validates as card-ladder, so a grown-up save writes the canonical value', () => {
+    const { errors, enrollment } = validateFlashcardEnrollment({ programId: 'flashcards', deckId: DECK, policy: { mode: 'word-ladder' } });
+    expect(errors).toEqual([]);
+    expect(enrollment.policy).toEqual({ mode: 'card-ladder' });
+    expect(validateFlashcardEnrollment({ programId: 'flashcards', deckId: DECK, policy: { mode: 'word-ladder', newCardLimit: 3 } }).errors)
+      .toEqual(['policy.newCardLimit is not used by card-ladder']);
+  });
+  it('isCardLadderPolicy and canonicalizeProgramPolicy accept either name', () => {
+    expect(isCardLadderPolicy({ mode: 'word-ladder' })).toBe(true);
+    expect(isCardLadderPolicy({ mode: 'card-ladder' })).toBe(true);
+    expect(isCardLadderPolicy({ mode: 'fsrs' })).toBe(false);
+    expect(isCardLadderPolicy(undefined)).toBe(false);
+    const row = { programId: 'flashcards', deckId: DECK, policy: { mode: 'word-ladder', schedule: 1 } };
+    expect(canonicalizeProgramPolicy(row)).toEqual({ ...row, policy: { mode: 'card-ladder', schedule: 1 } });
+    expect(row.policy.mode).toBe('word-ladder');
+    const fsrs = { programId: 'flashcards', policy: { mode: 'fsrs' } };
+    expect(canonicalizeProgramPolicy(fsrs)).toBe(fsrs);
   });
 });

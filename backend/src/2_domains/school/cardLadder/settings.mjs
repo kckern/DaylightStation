@@ -28,3 +28,15 @@ export function resolveSettings(config = {}) {
   }
   return out;
 }
+
+/**
+ * The engine's block of school.yml: `card_ladder`, or — when that key is
+ * absent — the pre-rename `word_ladder` (2026-09-23). Never merged: the
+ * canonical key, when present, is the whole answer.
+ */
+export function cardLadderConfigOf(schoolConfig) {
+  if (!isMap(schoolConfig)) return {};
+  if (isMap(schoolConfig.card_ladder)) return schoolConfig.card_ladder;
+  if (isMap(schoolConfig.word_ladder)) return schoolConfig.word_ladder;
+  return {};
+}
