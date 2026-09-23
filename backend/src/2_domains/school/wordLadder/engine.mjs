@@ -182,10 +182,11 @@ function matchPartners(ctx, wordId) {
     .map(([id]) => id);
 }
 
-// Steps fixed at creation: mic/audio steps per drillSteps, and no match step
-// when the board would have fewer than 2 pairs.
+// Steps fixed at creation: mic/audio steps per drillSteps, typing from memory
+// only for a word ready for its sign-off, and no match step when the board
+// would have fewer than 2 pairs.
 function stepsFor(ctx, wordId, capabilities) {
-  const steps = drillSteps(ctx.media?.[wordId] ?? {}, capabilities ?? {});
+  const steps = drillSteps(ctx.media?.[wordId] ?? {}, capabilities ?? {}, { ready: readyForSignOff(wordOf(ctx.status, wordId)) });
   return matchPartners(ctx, wordId).length ? steps : steps.filter((name) => name !== 'match');
 }
 
@@ -288,20 +289,49 @@ function nextRound(ctx) {
   };
 }
 
-// The guided Match after a round's quiz (Learn › Sort › Quiz › Match): the
-// words just verified, padded to 3 with up to 2 already-known (mastered)
-// words. Skipped when the round verified nothing. Returns true when it starts.
+// A Match board for words just verified (a round's quiz or a practice Quiz
+// me): every one of them — a verified word must be matched before it can be
+// signed off — padded to 3 from other introduced, non-excluded words. The
+// pad prefers a recognised word still owed its match (so a word verified
+// where no board could be made is swept into the next one), then known
+// (mastered) words, then any introduced word. Null when nothing was verified
+// or the board would still be a single pair.
+function matchWordIds(ctx, passed, seed) {
+  const verified = [...new Set(passed)].filter((id) => hasEntry(ctx, id) && !isExcluded(wordOf(ctx.status, id)));
+  if (!verified.length) return null;
+  const others = matchPartners(ctx, null).filter((id) => !verified.includes(id)).sort();
+  const word = (id) => ctx.status.words[id];
+  const owed = others.filter((id) => word(id).state === 'mastered' && word(id).matched !== true);
+  const known = others.filter((id) => word(id).state === 'mastered' && !owed.includes(id));
+  const rest = others.filter((id) => word(id).state !== 'mastered');
+  const pad = [owed, known, rest].flatMap((ids, i) => seededShuffle(ids, hashString(`${seed}|${i}`)))
+    .slice(0, Math.max(0, 3 - verified.length));
+  const wordIds = [...verified, ...pad];
+  return wordIds.length >= 2 ? wordIds : null;
+}
+
+// The guided Match after a round's quiz (Learn › Sort › Quiz › Match), over
+// `matchWordIds`. Skipped when the round verified nothing or no board of 2
+// pairs can be made. Returns true when it starts.
 function startMatch(ctx, round) {
-  const verified = round.quiz.passed.filter((id) => hasEntry(ctx, id) && !isExcluded(wordOf(ctx.status, id)));
-  if (!verified.length) return false;
-  const known = Object.entries(ctx.status.words)
-    .filter(([id, word]) => word.state === 'mastered' && !isExcluded(word) && !verified.includes(id) && hasEntry(ctx, id))
-    .map(([id]) => id)
-    .sort();
-  const pad = seededShuffle(known, hashString(`${ctx.learnerId}|${ctx.day}|${round.id}|match`)).slice(0, Math.max(0, Math.min(2, 3 - verified.length)));
-  round.match = { wordIds: [...verified, ...pad] };
+  const wordIds = matchWordIds(ctx, round.quiz.passed, `${ctx.learnerId}|${ctx.day}|${round.id}|match`);
+  if (!wordIds) return false;
+  round.match = { wordIds };
   round.phase = 'match';
   return true;
+}
+
+// A practice Quiz me that verified words ends on a Match of them (a round's
+// quiz does the same), so a word verified in practice can still be signed
+// off. Mutates `run`.
+function appendPracticeMatch(ctx, run) {
+  if (run.mode !== 'quiz' || run.matchAdded) return;
+  run.matchAdded = true;
+  const seed = `${ctx.learnerId}|${ctx.day}|${run.id}|match`;
+  const wordIds = matchWordIds(ctx, run.passed, seed);
+  if (!wordIds) return;
+  const entries = wordIds.map((id) => ctx.lexicon.entries.get(id));
+  run.queue.push({ kind: 'match', board: matchBoard(entries, ctx.media ?? {}, seed) });
 }
 
 /**
@@ -374,8 +404,11 @@ function menuItem(ctx) {
   const seed = `${ctx.learnerId}|${ctx.day}|menu`;
   const runs = (opts) => buildRun(ctx, ctx.dayFile.capabilities, opts, seed).queue.length > 0;
   const sayHelp = [true, false].filter((help) => runs({ mode: 'say', help }));
+  // Write Without help types from memory, so it has a run only once a word is
+  // ready for its sign-off; the menu shows it locked until then.
+  const writeHelp = [true, false].filter((help) => runs({ mode: 'write', help }));
   const modes = PRACTICE_MODES.filter((mode) => (mode === 'say' ? sayHelp.length > 0 : runs({ mode })));
-  return { id: 'menu', type: 'menu', modes, sayHelp, quizzed: quizzedCount(ctx.dayFile) };
+  return { id: 'menu', type: 'menu', modes, sayHelp, writeHelp, quizzed: quizzedCount(ctx.dayFile) };
 }
 
 // Practice item ids are p<run>:<index>, and p<run>:<index>:<step> inside a drill.
@@ -532,7 +565,7 @@ function respondPractice(ctx, item, response, verdict) {
   const task = run.queue[run.index];
   if (task.kind === 'graded') {
     const correct = gradedCorrect(ctx, item, response, verdict);
-    gradeVerifyTask(ctx, run, task, correct);
+    if (gradeVerifyTask(ctx, run, task, correct)) appendPracticeMatch(ctx, run);
     return { result: gradedResult(ctx, item, correct, verdict), advance: true };
   }
   if (task.kind === 'match') matchWords(ctx, task.board.pairs.map((pair) => pair.wordId));

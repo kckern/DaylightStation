@@ -350,6 +350,13 @@ describe('engine — drill', () => {
     s.words.gawi = { ...emptyWordV3(), state: 'familiar', introducedDay: '2026-09-10', tricky: true, trickySince: '2026-09-20', missStreak: 2 };
     return s;
   };
+  // Dictation and type-from-cue are in a drill only for a word ready for its
+  // typed sign-off (recognised twice, matched) — a tricky one here.
+  const readyTrickyStatus = () => {
+    const s = emptyStatusV3();
+    s.words.gawi = { ...emptyWordV3(), state: 'mastered', stage: 2, dueDay: '2026-12-01', introducedDay: '2026-09-10', recognizedCount: 2, matched: true, tricky: true, trickySince: '2026-09-20' };
+    return s;
+  };
   const drillAnswer = (it) => (it.step === 'copy' || it.step === 'dictation' || it.step === 'type' ? { typed: lexicon.entries.get(it.wordId).term }
     : it.step === 'tiles' ? { tiles: [...lexicon.entries.get(it.wordId).term] } : { done: true });
   function finishDrills(c) {
@@ -394,7 +401,7 @@ describe('engine — drill', () => {
     expect(currentItem(c)).toMatchObject({ type: 'flashcard', mode: 'intro' });
   });
   it('a dictation miss never carries the answer (the term is what is being recalled); a copy miss may', () => {
-    let ctx = start(trickyStatus());
+    let ctx = start(readyTrickyStatus());
     let guard = 0;
     while (currentItem(ctx).step !== 'copy' && guard++ < 20) ({ ctx } = step(ctx, drillAnswer(currentItem(ctx))));
     let r;
@@ -411,7 +418,7 @@ describe('engine — drill', () => {
     expect(r).toMatchObject({ correct: true });
   });
   it('dictation: miss 1 hides the answer, miss 2 reveals it, the 3rd try advances regardless (stored)', () => {
-    let ctx = start(trickyStatus());
+    let ctx = start(readyTrickyStatus());
     let guard = 0;
     while (currentItem(ctx).step !== 'dictation' && guard++ < 20) ({ ctx } = step(ctx, drillAnswer(currentItem(ctx))));
     const dictation = currentItem(ctx);
@@ -429,7 +436,7 @@ describe('engine — drill', () => {
     expect(ctx.dayFile.items[dictation.id]).toBeDefined();
   });
   it('dictation: a correct answer after a miss advances, and the next step starts with fresh tries', () => {
-    let ctx = start(trickyStatus());
+    let ctx = start(readyTrickyStatus());
     let guard = 0;
     while (currentItem(ctx).step !== 'dictation' && guard++ < 20) ({ ctx } = step(ctx, drillAnswer(currentItem(ctx))));
     const dictation = currentItem(ctx);
@@ -661,7 +668,8 @@ describe('engine — practice', () => {
     expect(currentItem(ctx).type).toBe('menu');
   });
   it('write without help: typed practice needs a verdict and never grades', () => {
-    let ctx = practise(withWords(doneCtx(), { pul: familiar }), { mode: 'write', help: false });
+    const ready = { ...familiar, state: 'mastered', stage: 1, dueDay: '2026-12-01', recognizedCount: 2, matched: true };
+    let ctx = practise(withWords(doneCtx(), { pul: ready }), { mode: 'write', help: false });
     const before = structuredClone(ctx.status.words.pul);
     expect(currentItem(ctx)).toMatchObject({ id: 'p1:0', type: 'typed', task: '3.3', source: 'practice', graded: false, wordId: 'pul' });
     expect(() => step(ctx, { typed: '풀' })).toThrow(/judge verdict/);
@@ -826,7 +834,7 @@ describe('engine — transitions and graded records (plan 4, spec §8 events)', 
   it('write without help (type-practice) is never a graded record', () => {
     const base = start();
     const done = { ...base, dayFile: { ...base.dayFile, doneAt: 'x', rounds: [], rechecks: { order: [], answered: {} }, summarySeen: true } };
-    done.status.words.pul = { ...emptyWordV3(), state: 'familiar', introducedDay: '2026-09-01' };
+    done.status.words.pul = { ...emptyWordV3(), state: 'mastered', stage: 1, dueDay: '2026-12-01', introducedDay: '2026-09-01', recognizedCount: 2, matched: true };
     const ctx = { ...done, ...startPractice(done, { mode: 'write', help: false }) };
     const { out } = stepOut(ctx, { typed: '풀' }, PASS);
     expect(out.graded).toBeNull();

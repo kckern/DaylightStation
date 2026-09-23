@@ -9,14 +9,16 @@
  * sentence ladder's "6 new · 2 to review" does. The minutes come from the same
  * `ESTIMATE_MS` the planner uses, clipped to the time left under the cap.
  */
-import { isDue, isExcluded } from './mastery.mjs';
+import { isDue, isExcluded, readyForSignOff } from './mastery.mjs';
 import { ESTIMATE_MS, carryCandidates, newAllowance } from './rounds.mjs';
 import { ladderLevel } from './mastery.mjs';
 
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 
+// A recheck is typed only for a word ready for its sign-off (the engine's
+// `recheckTask`); every other recheck is a recognition choice.
 function recheckMs(word) {
-  return (word?.stage ?? 0) >= 2 ? ESTIMATE_MS.recheckTyped : ESTIMATE_MS.recheckChoice;
+  return readyForSignOff(word) ? ESTIMATE_MS.recheckTyped : ESTIMATE_MS.recheckChoice;
 }
 
 export function introPreview({ status, dayFile, day, pool = [], settings }) {
@@ -40,7 +42,10 @@ export function introPreview({ status, dayFile, day, pool = [], settings }) {
   const underwayNew = underway.filter((id) => (words[id]?.introducedDay ?? day) === day).length;
   const carry = carryCandidates(words, day, rounded).length + (underway.length - underwayNew);
   const fresh = pool.filter((id) => !rounded.has(id) && (words[id]?.state ?? 'new') === 'new' && !isExcluded(words[id])).length;
-  const newCount = underwayNew + Math.min(newAllowance({ words, day, settings }), fresh);
+  // `planNextRound` never makes a round of fewer than 2 new words, so a lone
+  // leftover word is not promised (the trail's Learn step reads this too).
+  const allowed = Math.min(newAllowance({ words, day, settings }), fresh);
+  const newCount = underwayNew + (allowed >= 2 ? allowed : 0);
   const reviewCount = rechecks.length + carry;
 
   const workMs = newCount * ESTIMATE_MS.newWord + carry * ESTIMATE_MS.carryWord

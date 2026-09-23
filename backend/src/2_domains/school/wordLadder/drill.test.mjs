@@ -2,12 +2,17 @@ import { describe, expect, it } from 'vitest';
 import { DRILL_STEPS, drillSteps, matchBoard, tilesFor } from './drill.mjs';
 
 describe('drill', () => {
-  it('full path with mic and audio', () => {
-    expect(drillSteps({ audio: true }, { microphone: true })).toEqual(DRILL_STEPS);
+  const ready = { ready: true };
+  it('full path with mic and audio, for a word ready for sign-off', () => {
+    expect(drillSteps({ audio: true }, { microphone: true }, ready)).toEqual(DRILL_STEPS);
   });
   it('no mic drops the speaking steps; no audio drops say-after and dictation', () => {
-    expect(drillSteps({ audio: true }, { microphone: false })).toEqual(['look', 'copy', 'match', 'tiles', 'dictation', 'type']);
-    expect(drillSteps({ audio: false }, { microphone: true })).toEqual(['look', 'copy', 'match', 'read-aloud', 'tiles', 'say-from-cue', 'type']);
+    expect(drillSteps({ audio: true }, { microphone: false }, ready)).toEqual(['look', 'copy', 'match', 'tiles', 'dictation', 'type']);
+    expect(drillSteps({ audio: false }, { microphone: true }, ready)).toEqual(['look', 'copy', 'match', 'read-aloud', 'tiles', 'say-from-cue', 'type']);
+  });
+  it('a word not ready for sign-off never types from memory: copy and tiles are the ceiling', () => {
+    expect(drillSteps({ audio: true }, { microphone: true })).toEqual(['look', 'copy', 'say-after', 'match', 'read-aloud', 'tiles', 'say-from-cue']);
+    expect(drillSteps({ audio: true }, { microphone: false })).toEqual(['look', 'copy', 'match', 'tiles']);
   });
   it('tiles are the answer syllables plus two decoys from other deck words', () => {
     const tiles = tilesFor({ term: '이름이 뭐예요?' }, ['이름', '가위', '책'], 's');
