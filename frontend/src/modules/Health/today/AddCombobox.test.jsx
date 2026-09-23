@@ -240,6 +240,28 @@ describe('AddCombobox — zero-keystroke suggestions', () => {
     expect(container.querySelectorAll('.health-suggest__icon svg')).toHaveLength(2);
   });
 
+  it('a food with a product photo shows the photo, not its icon, and its label serving', async () => {
+    apiMock.mockResolvedValue({ items: [
+      { id: 'shake', name: 'Strawberry Milkshake', icon: 'strawberry', photoRef: 'ph_shake', grams: null,
+        serving: { amount: 325, unit: 'ml', grams: null }, nutrients: { calories: 140 } },
+    ] });
+    const { container } = r(<AddCombobox bucketId="morning" onDone={() => {}} onCancel={() => {}} />);
+    await waitFor(() => expect(screen.getByText('Strawberry Milkshake')).toBeTruthy());
+    const imgs = [...container.querySelectorAll('.health-suggest__list img')];
+    expect(imgs.map(img => img.getAttribute('src'))).toEqual(['/api/v1/health/nutrition/photos/ph_shake?size=thumb']);
+    expect(screen.getByText('325 ml · 140 kcal')).toBeTruthy();
+  });
+
+  it('a photo that will not load falls back to the icon', async () => {
+    apiMock.mockResolvedValue({ items: [
+      { id: 'shake', name: 'Strawberry Milkshake', icon: 'strawberry', photoRef: 'ph_gone', nutrients: { calories: 140 } },
+    ] });
+    const { container } = r(<AddCombobox bucketId="morning" onDone={() => {}} onCancel={() => {}} />);
+    await waitFor(() => expect(screen.getByText('Strawberry Milkshake')).toBeTruthy());
+    fireEvent.error(container.querySelector('.health-suggest__photo'));
+    await waitFor(() => expect(container.querySelector('.health-suggest__list img')?.getAttribute('src')).toBe('/api/v1/health/nutrition/icons/strawberry'));
+  });
+
   it('the neutral sentinel is not a picture — it draws no icon and no request', async () => {
     apiMock.mockResolvedValue({ items: [
       { id: 'x', name: 'Something', icon: 'default', nutrients: { calories: 10 } },
