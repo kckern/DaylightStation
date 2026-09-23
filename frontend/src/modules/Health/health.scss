@@ -518,7 +518,12 @@ $health-aside-gap: 1.5rem;
 // heaviest-first sort may have placed mid-list.
 .health-row-line--added { background: color-mix(in srgb, var(--ds-accent) 16%, transparent); border-radius: 6px; }
 .health-row-line { transition: background-color var(--ds-motion-reveal) var(--ds-motion-easing); }
-@media (prefers-reduced-motion: reduce) { .health-row-line { transition: none; } }
+// A meal entry gliding to its new place after a reorder (sectionOrder.js,
+// FLIP): the inline translate is set by the hook, this class animates it home.
+.health-flip-moving {
+  transition: transform var(--ds-motion-base) var(--ds-motion-easing), background-color var(--ds-motion-reveal) var(--ds-motion-easing);
+}
+@media (prefers-reduced-motion: reduce) { .health-row-line, .health-flip-moving { transition: none; } }
 .health-row-line--child .health-row__visual { opacity: 0.75; }
 .health-row-line--child .health-row-identity { box-sizing: border-box; padding-left: 16px; }
 .health-row-line--child .health-row__name { font-size: 0.78rem; }
