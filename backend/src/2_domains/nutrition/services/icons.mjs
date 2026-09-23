@@ -44,9 +44,12 @@ const normalizeName = normalizeIconFoodName;
  * Names whose nearest-looking art is a known MISMATCH (see confineIcon): they
  * get their own exact slug or nothing, never a near neighbour.
  */
-const EXACT_ONLY_NAMES = new Set(['white fish', 'fish taco', 'ranch', 'ranch dressing', 'cream sauce', 'white sauce',
+export const EXACT_ONLY_NAMES = new Set(['white fish', 'fish taco', 'ranch', 'ranch dressing', 'cream sauce', 'white sauce',
   'diced ham', 'scrambled eggs', 'plain yogurt', 'oikos pro plain',
   'chia seeds', 'organic chia seed', 'organic chia seeds']);
+
+/** True for a name whose only acceptable art is its own exact slug (never a near neighbour). */
+export const isExactOnlyName = foodName => EXACT_ONLY_NAMES.has(normalizeName(foodName));
 
 /**
  * @param {unknown} icon - whatever the model put in the `icon` field

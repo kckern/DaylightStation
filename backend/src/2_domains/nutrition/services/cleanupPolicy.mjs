@@ -7,6 +7,43 @@ const fail = (message, code = 'CLEANUP_REVIEW_REQUIRED') => {
   throw Object.assign(new Error(message), { code, status: 409 });
 };
 export const entryKey = row => row.uuid || row.id;
+
+/**
+ * The only fields an ARTWORK repair may touch (the artwork remediation queue):
+ * the icon and the product photo. Nothing about what or how much was eaten.
+ */
+export const ARTWORK_FIELDS = Object.freeze(['icon', 'photoRef']);
+/** Every field an Undo may restore: cleanup fields plus the photo an artwork repair can set. */
+export const UNDOABLE_FIELDS = Object.freeze([...CLEANUP_FIELDS, 'photoRef']);
+
+/**
+ * Pure commit-time policy for an artwork repair. Unlike `validateCleanup` there
+ * is no date window: a picture is not a claim about consumption, and a broken
+ * one on last month's row is as broken as today's. What it does keep:
+ *   - the row exists, belongs to the owner and is at the expected version;
+ *   - only `icon` / `photoRef` change, to a slug string or a `ph_` ref (or null);
+ *   - a person's own icon choice (`manualFields: icon`, including an Undo of an
+ *     earlier artwork repair) is never overwritten;
+ *   - group headers are not decorated.
+ */
+export function validateArtworkRepair({ before, updates, userId }) {
+  const byId = new Map(before.flatMap(row => [[row.uuid, row], [row.id, row]]));
+  const seen = new Set();
+  for (const { id, changes, expectedVersion } of updates) {
+    const row = byId.get(id);
+    if (!row || (row.userId && row.userId !== userId)) fail('Entry is unavailable', 'NOT_FOUND');
+    if (seen.has(entryKey(row))) fail('Repeated food update');
+    seen.add(entryKey(row));
+    if (expectedVersion == null || expectedVersion !== (row.version ?? 1)) fail('Entry changed', 'VERSION_CONFLICT');
+    const fields = Object.keys(changes || {});
+    if (!fields.length || fields.some(key => !ARTWORK_FIELDS.includes(key))) fail('Artwork repairs change only icon and photo', 'CLEANUP_UNSUPPORTED_FIELD');
+    if (row.kind === 'group') fail('Group headers carry no artwork', 'CLEANUP_GROUP_PROTECTED');
+    if ('icon' in changes && (typeof changes.icon !== 'string' || !/^[a-z0-9][a-z0-9_-]*$/.test(changes.icon))) fail('Invalid icon');
+    if ('photoRef' in changes && changes.photoRef !== null && !/^ph_[A-Za-z0-9_-]+$/.test(String(changes.photoRef))) fail('Invalid photo');
+    if ('icon' in changes && changes.icon !== row.icon && row.manualFields?.includes('icon')) fail('Preserving your manual correction', 'CLEANUP_USER_PROTECTED');
+  }
+  return true;
+}
 export function cleanupDates(now, timezone) {
   const today = new Intl.DateTimeFormat('en-CA', { timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(now));
   const yesterday = new Date(today + 'T12:00:00Z');

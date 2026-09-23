@@ -1,12 +1,12 @@
 import { sha256Text } from '#system/utils/sha256.mjs';
-import { validateCleanup, entryKey, CLEANUP_FIELDS, CLEANUP_NUMBERS } from '#domains/nutrition/services/cleanupPolicy.mjs';
+import { validateCleanup, validateArtworkRepair, entryKey, UNDOABLE_FIELDS, CLEANUP_NUMBERS } from '#domains/nutrition/services/cleanupPolicy.mjs';
 
 const fail = (message, status = 409) => { throw Object.assign(new Error(message), { status }); };
 
 /** The only auditor mutation capability. Models never receive this service as a tool. */
 export class NutritionRepairService {
   constructor({ items, clock, timezoneFor, review, foodLogs, icons }) { Object.assign(this, { items, clock, timezoneFor, review, foodLogs, icons }); }
-  async apply({ userId, operationId, runId, proposal, evidence, userDirected = false, signal, fence = () => true, dryRun = false }) {
+  async apply({ userId, operationId, runId, proposal, evidence, userDirected = false, signal, fence = () => true, dryRun = false, actor = null }) {
     if (!/^[a-zA-Z0-9_-]{1,128}$/.test(operationId || '')) fail('Invalid operation ID', 400);
     const fingerprint = sha256Text(JSON.stringify({ proposal, evidence, userDirected }));
     const prior = await this.items.getCleanupAudit(userId, operationId);
@@ -15,6 +15,7 @@ export class NutritionRepairService {
       return prior.result;
     }
     if (!proposal.reason || !evidence.length) fail('Repair requires evidence and a reason');
+    if (proposal.mode === 'artwork') return this.#applyArtwork({ userId, operationId, runId, proposal, evidence, fingerprint, dryRun, actor });
     if (proposal.mode === 'complete') {
       if (!proposal.logUuid || proposal.updates?.length || proposal.createGroups?.length) fail('Completion must name one unmodified capture');
       return this.review.completeCapture({ userId, logUuid: proposal.logUuid, expectedVersion: proposal.expectedLogVersion,
@@ -92,6 +93,27 @@ export class NutritionRepairService {
     });
   }
 
+  /**
+   * An artwork repair (the artwork remediation queue): icon and photo only, on
+   * committed rows of any date, journaled with the same audit record — so it is
+   * listed in cleanup history and Undo restores it like any other repair.
+   */
+  async #applyArtwork({ userId, operationId, runId, proposal, evidence, fingerprint, dryRun, actor }) {
+    if (proposal.logUuid || proposal.createGroups?.length) fail('Artwork repairs change committed rows only');
+    const updates = structuredClone(proposal.updates || []);
+    for (const update of updates) {
+      const icon = update.changes?.icon;
+      if (icon !== undefined && (icon === 'default' || !this.icons?.has(icon) || (this.icons.resolve && !this.icons.resolve(icon)))) fail('Artwork is unavailable');
+    }
+    if (!updates.length) return { items: [], affectedIds: [], affectedDates: [] };
+    return this.items.mutateEntries(userId, {
+      updates, dryRun,
+      audit: { id: operationId, runId: runId ?? null, fingerprint, reason: proposal.reason, evidence,
+        actor: actor || 'artwork-remediation', at: new Date(this.clock.now()).toISOString() },
+      validate: ({ before }) => validateArtworkRepair({ before, updates, userId }),
+    });
+  }
+
   async undo({ userId, repairId, operationId }) {
     if (!/^[a-zA-Z0-9_-]{1,128}$/.test(operationId || '')) fail('Invalid operation ID', 400);
     const repair = await this.items.getCleanupAudit(userId, repairId);
@@ -102,11 +124,11 @@ export class NutritionRepairService {
     const before = new Map(repair.before.map(row => [entryKey(row), row]));
     const updates = repair.after.filter(row => before.has(entryKey(row))).map(row => {
       const original = before.get(entryKey(row));
-      const changes = Object.fromEntries(CLEANUP_FIELDS.filter(key => JSON.stringify(original[key]) !== JSON.stringify(row[key]))
+      const changes = Object.fromEntries(UNDOABLE_FIELDS.filter(key => JSON.stringify(original[key]) !== JSON.stringify(row[key]))
         .map(key => [key, original[key] ?? null]));
       if ('name' in changes) changes.name = original.name || original.label || original.item;
       // Undo is an explicit manual decision: prevent reapplying the same fix.
-      changes.manualFields = [...new Set([...(original.manualFields || []), ...CLEANUP_FIELDS.filter(key => JSON.stringify(original[key]) !== JSON.stringify(row[key]))])];
+      changes.manualFields = [...new Set([...(original.manualFields || []), ...UNDOABLE_FIELDS.filter(key => JSON.stringify(original[key]) !== JSON.stringify(row[key]))])];
       return { id: entryKey(row), expectedVersion: row.version ?? 1, changes };
     });
     const deleteIds = repair.after.filter(row => !before.has(entryKey(row))).map(entryKey);
