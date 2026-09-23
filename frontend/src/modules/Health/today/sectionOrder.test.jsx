@@ -82,6 +82,23 @@ describe('useFlipMoves', () => {
     expect(a.style.transform).toBe('');
   });
 
+  it('re-measures on every commit, so movement between reorders is not replayed', () => {
+    window.matchMedia = () => ({ matches: false });
+    const raf = vi.spyOn(window, 'requestAnimationFrame').mockImplementation(cb => { cb(); return 1; });
+    const { root, a, b, tops } = setup();
+    const { rerender } = renderHook(({ order, n }) => useFlipMoves({ current: root }, order), { initialProps: { order: 'a|b', n: 0 } });
+    // A row above grew: both shift down, same order — no animation.
+    tops.set(a, 10); tops.set(b, 40);
+    rerender({ order: 'a|b', n: 1 });
+    expect(raf).not.toHaveBeenCalled();
+    // Now swap: the deltas are from the latest positions, not the first ones.
+    const seen = [];
+    raf.mockImplementation(cb => { seen.push([a.style.transform, b.style.transform]); cb(); return 1; });
+    tops.set(a, 40); tops.set(b, 10);
+    rerender({ order: 'b|a', n: 2 });
+    expect(seen[0]).toEqual(['translateY(-30px)', 'translateY(30px)']);
+  });
+
   it('does nothing under prefers-reduced-motion', () => {
     window.matchMedia = query => ({ matches: query === '(prefers-reduced-motion: reduce)' });
     const raf = vi.spyOn(window, 'requestAnimationFrame');
