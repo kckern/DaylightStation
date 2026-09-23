@@ -53,6 +53,8 @@ Telemetry is distributed across governance, playback, and profiling:
 - `governance.*` events are emitted by `GovernanceEngine` for phase changes, lock triggers, and zone change detection.
 - `fitness.player.*` events are emitted by `FitnessPlayer` for seek and fullscreen interactions (sampled to avoid log flooding).
 - `fitness-profile` events are emitted by `FitnessApp` and include FPS, dropped frame, heap, and governance correlation data.
+- `fitness.governance.pause-enforced` is emitted by `FitnessPlayer` (via `useGovernanceProgressEnforcer`) each time governance pauses the video, with `branch` (`seek-intent` | `tick`), `currentTime`, `governanceStatus`, `videoLocked`. A `playback.paused source=controller` without it while governance is unlocked is a regression; see `governance-system-architecture.md` ("Enforcement invariant: play means play").
+- When reading governance rows in the log store, filter by client (`context.userAgent`): a second open fitness browser mixes its own governance events in. Before `e9858ab10`, `fitness-profile` / `fitness.render_thrashing` could report `phase: pending` from a throwaway engine while the live one was unlocked.
 
 Note: The FPS profiler uses a global `window.__fitnessVideoElement` reference (seeded by `FitnessPlayer`) to avoid `querySelector` misses during player transitions.
 
@@ -820,6 +822,7 @@ zones:
 
 - `docs/_wip/bugs/2026-02-03-governance-test-flakiness.md` - Bug investigation
 - `docs/_wip/bugs/2026-02-03-governance-test-skipped-items.md` - Skipped test details
+- `docs/_wip/bugs/2026-09-22-fitness-play-repaused-by-stale-governance-closure.md` - Play re-paused after unlock by a stale closure
 - `docs/plans/2026-02-03-governance-test-hysteresis-fix.md` - Implementation plan
 
 ## Cadence floor — holding a rider to the ride they started
