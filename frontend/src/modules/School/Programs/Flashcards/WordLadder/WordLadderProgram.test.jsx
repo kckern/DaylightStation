@@ -118,4 +118,59 @@ describe('WordLadderProgram', () => {
     render(<WordLadderProgram descriptor={{ deckId: 'd', userId: 'test-learner' }} api={api} />);
     expect(await screen.findByRole('alert')).toHaveTextContent('not ready');
   });
+
+  it('Leave closes once as leave — unmount afterwards sends nothing more', async () => {
+    const api = fakeApi();
+    const { unmount } = render(<WordLadderProgram descriptor={{ deckId: 'd', userId: 'test-learner' }} api={api} />);
+    await screen.findByText('가위');
+    fireEvent.click(screen.getByRole('button', { name: /leave/i }));
+    await waitFor(() => expect(api.close).toHaveBeenCalledTimes(1));
+    unmount();
+    expect(api.close).toHaveBeenCalledTimes(1);
+    expect(api.close).toHaveBeenCalledWith('s', { userId: 'test-learner', reason: 'leave' });
+  });
+
+  it('summary Done closes as goal when under the cap', async () => {
+    const api = fakeApi();
+    const onExit = vi.fn();
+    api.open.mockResolvedValue({ ...openWith({ id: 'summary', type: 'summary', quizzed: 4, doneToday: true }), data: { ...openWith(null).data, item: { id: 'summary', type: 'summary', quizzed: 4, doneToday: true }, progress: { phase: 'summary', rechecksLeft: 0, round: null, activeMs: 300000, capMs: 900000 } } });
+    render(<WordLadderProgram descriptor={{ deckId: 'd', userId: 'test-learner' }} api={api} onExit={onExit} />);
+    fireEvent.click(await screen.findByRole('button', { name: /done/i }));
+    await waitFor(() => expect(onExit).toHaveBeenCalled());
+    expect(api.close).toHaveBeenCalledWith('s', { userId: 'test-learner', reason: 'goal' });
+  });
+
+  it('summary Done closes as cap when the time cap was reached', async () => {
+    const api = fakeApi();
+    const onExit = vi.fn();
+    api.open.mockResolvedValue({ ...openWith(null), data: { ...openWith(null).data, item: { id: 'summary', type: 'summary', quizzed: 4, doneToday: true }, progress: { phase: 'summary', rechecksLeft: 0, round: null, activeMs: 900000, capMs: 900000 } } });
+    render(<WordLadderProgram descriptor={{ deckId: 'd', userId: 'test-learner' }} api={api} onExit={onExit} />);
+    fireEvent.click(await screen.findByRole('button', { name: /done/i }));
+    await waitFor(() => expect(onExit).toHaveBeenCalled());
+    expect(api.close).toHaveBeenCalledWith('s', { userId: 'test-learner', reason: 'cap' });
+    expect(api.close).toHaveBeenCalledTimes(1);
+  });
+
+  it('unmounting with an open sitting closes it as unmount', async () => {
+    const api = fakeApi();
+    const { unmount } = render(<WordLadderProgram descriptor={{ deckId: 'd', userId: 'test-learner' }} api={api} />);
+    await screen.findByText('가위');
+    unmount();
+    expect(api.close).toHaveBeenCalledWith('s', { userId: 'test-learner', reason: 'unmount' });
+  });
+
+  it('a reopened sitting remounts the card even when the item id repeats', async () => {
+    const api = fakeApi();
+    api.open.mockResolvedValueOnce(openWith(intro, 's-old')).mockResolvedValueOnce(openWith(intro, 's-new'));
+    api.respond.mockResolvedValueOnce({ ok: false, status: 404, data: null });
+    render(<WordLadderProgram descriptor={{ deckId: 'd', userId: 'test-learner' }} api={api} />);
+    await screen.findByText('가위');
+    act(() => { fireEvent.keyDown(window, { key: ' ' }); });
+    expect(screen.getByText('Scissors')).toBeInTheDocument();
+    act(() => { fireEvent.keyDown(window, { key: ' ' }); });
+    await waitFor(() => expect(api.open).toHaveBeenCalledTimes(2));
+    // Same item id, new sitting: the card starts on its front again.
+    await waitFor(() => expect(screen.queryByText('Scissors')).toBeNull());
+    expect(screen.getByText('가위')).toBeInTheDocument();
+  });
 });

@@ -89,6 +89,8 @@ vi.mock('./schoolApi.js', () => ({
     wallet: vi.fn(async () => ({ ok: false, status: 503, data: null })),
     teacherDay: vi.fn(async () => ({ ok: true, status: 200, data: { learners: [] } })),
     directLaunch: (...a) => directLaunchMock(...a),
+    // The live FSRS flashcards mount; a /test door must never reach it.
+    flashcardDeck: vi.fn(async () => ({ ok: false, status: 404, data: null })),
   },
 }));
 const directLaunchMock = vi.fn();
@@ -720,6 +722,22 @@ describe('SchoolApp — the /test door', () => {
       render(<SchoolApp clear={() => {}} mode="open" />);
       expect(await screen.findByText("Test mode isn't available for book-log.")).toBeInTheDocument();
       expect(directLaunchMock).not.toHaveBeenCalled();
+    } finally {
+      window.history.replaceState({}, '', oldUrl);
+    }
+  });
+
+  it('a /test door whose target is not a word ladder is refused, never mounted live', async () => {
+    const oldUrl = window.location.pathname + window.location.search;
+    window.history.replaceState({}, '', '/school/go/kid1/word-ladder/test');
+    directLaunchMock.mockResolvedValue({ ok: true, status: 200, data: { target: { kind: 'program', program: 'flashcards', deckId: 'deck-x', policy: { mode: 'fsrs' } } } });
+    schoolApi.flashcardDeck.mockClear();
+    try {
+      render(<SchoolApp clear={() => {}} mode="open" />);
+      expect(await screen.findByText("Test mode isn't available for word-ladder.")).toBeInTheDocument();
+      expect(directLaunchMock).toHaveBeenCalledWith('kid1', 'word-ladder', null);
+      expect(schoolApi.flashcardDeck).not.toHaveBeenCalled();
+      expect(screen.queryByTestId('word-ladder-stub')).toBeNull();
     } finally {
       window.history.replaceState({}, '', oldUrl);
     }
