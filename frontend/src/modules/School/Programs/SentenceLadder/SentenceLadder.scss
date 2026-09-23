@@ -332,7 +332,7 @@ $disc: 5.5rem;
   width: 100%; max-width: 40rem; margin: 0 auto; box-sizing: border-box;
 
   &__seg {
-    position: relative; flex: 1 1 0; min-width: 2rem; height: $touch-min; padding: 0;
+    position: relative; flex: 1 1 0; min-width: $touch-min; height: $touch-min; padding: 0;
     border: 0; background: transparent; cursor: pointer;
     // The bar, drawn inside the thumb-tall target.
     &::before {

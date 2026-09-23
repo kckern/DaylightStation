@@ -125,7 +125,7 @@ node cli/school.mjs sentence-ladder trace --learner <learner-id> --day YYYY-MM-D
 DAYLIGHT_LOGSTORE={env.log_store_url} node cli/school.mjs sentence-ladder trace --learner <learner-id>
 ```
 
-A sentence said in pieces reads like this (trimmed):
+A sentence said in pieces reads like this (trimmed; a sitting from before 2026-09-23):
 
 ```
 seq 16 · recording
@@ -144,9 +144,14 @@ What to look for:
   close to it was said. `end-silence` is how long the mic ran after the child
   stopped talking.
 - **`[via · phase]`** on every step names the key or `touch` that drove it and
-  where the rung was. `auto` means the rung acted alone. A run of `restart …
-  [key:Tab · recording]` is a child pressing Tab to hear it again and wiping
-  the take each time.
+  where the rung was. `auto` means the rung acted alone.
+- **Sittings before 2026-09-23** (like the example above) can show a run of
+  `restart … [key:Tab · recording]`: a child pressing Tab to hear it again and
+  wiping the take each time. From 2026-09-23 Tab never destroys a take: a new
+  sitting shows `hear … [key:Tab · recording]` followed by the take that press
+  stopped and **kept** (`take piece N … [key:Tab · recording]`), then a
+  `▶ compare`. A `start over … [key:ArrowLeft]` line is the only way a chunked
+  sentence is thrown away, and `auto-stop` marks a take ended by 3s of silence.
 - **A gap** between two lines is either a `▶` playback (with `ended` /
   `stopped` / `blocked`), `idle on review`, or a `STALLED 45s` line. If it is
   none of those, the tablet was not logging — check `system` and `websocket`

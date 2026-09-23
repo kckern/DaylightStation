@@ -484,3 +484,60 @@ describe('recording rung — chunks', () => {
     expect(lastLine('stitched').partial).toBeFalsy();
   });
 });
+
+describe('recording rung — review fixes (2026-09-23)', () => {
+  it('a tapped tile hands focus back to the stage, so the next Space is the rung\'s', async () => {
+    renderRung();
+    const hearIt = await screen.findByRole('button', { name: 'Hear it again' });
+    hearIt.focus();
+    fireEvent.click(hearIt);
+    expect(document.activeElement).not.toBe(hearIt);
+    // Space from wherever focus now is: the forward action (play), not a re-click.
+    fireEvent.keyDown(document.activeElement, { key: ' ' });
+    await waitFor(() => expect(heldModel).not.toBeNull());
+  });
+
+  it('a blocked take playback releases its master-volume binding', async () => {
+    const vol = await import('../../../../../lib/volume/bindMediaToMaster.js');
+    const unbind = vi.fn();
+    const spy = vi.spyOn(vol, 'bindMediaToMaster').mockImplementation(() => unbind);
+    window.HTMLMediaElement.prototype.play = vi.fn(function play() {
+      if (path(this.src).startsWith('blob:')) return Promise.reject(new Error('NotAllowedError'));
+      setTimeout(() => this.onended?.(), 0);
+      return Promise.resolve();
+    });
+    try {
+      renderRung();
+      await screen.findByRole('button', { name: 'Listen, then record' });
+      pressKey(' ');
+      await screen.findByRole('button', { name: 'Stop' });
+      speak({ voiced: 1500 });
+      const before = unbind.mock.calls.length;
+      pressKey(' ');
+      await screen.findByRole('button', { name: 'Keep it' });
+      expect(unbind.mock.calls.length).toBeGreaterThan(before);
+      expect(lastLine('playback')).toMatchObject({ what: 'take', outcome: 'blocked' });
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('in chunk mode Shift+Tab plays the WHOLE sentence, and destroys nothing', async () => {
+    renderRung({ showShortcuts: true });
+    await screen.findByRole('button', { name: 'Listen, then record' });
+    pressKey(' ');
+    await waitFor(() => expect(heldModel).not.toBeNull());
+    heldModel._t = 3.611; now += 3611;
+    pressKey(' ');
+    await screen.findByRole('button', { name: 'Stop' });
+    speak({ voiced: 1200 });
+    pressKey(' ');
+    await screen.findByRole('button', { name: 'Next part' });
+    expect(screen.getByText('Shift+Tab: whole sentence')).toBeTruthy();
+    const before = played.length;
+    fireEvent.keyDown(document.body, { key: 'Tab', shiftKey: true });
+    await waitFor(() => expect(played.slice(before)).toEqual([{ src: '/audio/16/KR', atMs: 0 }]));
+    expect(screen.getByRole('button', { name: 'Next part' })).toBeTruthy();
+    expect(lines('piece-stop')).toHaveLength(1);
+  });
+});
