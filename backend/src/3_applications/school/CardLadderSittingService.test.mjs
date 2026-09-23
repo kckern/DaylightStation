@@ -8,7 +8,7 @@ const DECK_OTHER = 'language/korean/week-00';
 const REF = 'media:language/korean-vocab/lexicon.yml';
 const TODAY = '2026-09-22';
 const SETTINGS = {
-  round: { size: 5, maxPasses: 3 }, batch: { newPerDay: 4, workingSet: 7 }, review: { gapScale: 1 },
+  round: { size: 5, maxPasses: 3 }, batch: { newPerDay: 4, workingSet: 7, order: 'deck' }, review: { gapScale: 1 },
   drill: { afterMisses: 2 }, session: { capMinutes: 15 }, typing: { passScore: 6 },
 };
 function memoryStore() {

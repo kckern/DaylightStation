@@ -1,13 +1,16 @@
 /** Engine thresholds (spec §7 table + grown-up settings). Defaults live here; school.yml card_ladder overrides. */
 export const DEFAULT_SETTINGS = Object.freeze({
   round: { size: 5, maxPasses: 3 },
-  batch: { newPerDay: 4, workingSet: 7 },
+  batch: { newPerDay: 4, workingSet: 7, order: 'random' },
   // review.typedEvery is retired (ruling 2026-09-23): typing is the sign-off, never a cadence.
   review: { gapScale: 1 },
   drill: { afterMisses: 2, perSitting: 1 },
   session: { capMinutes: 15 },
   typing: { passScore: 6 },
 });
+
+/** String settings and their allowed values; anything else keeps the default. */
+const ENUMS = Object.freeze({ order: ['random', 'deck'] });
 
 const isMap = (v) => v && typeof v === 'object' && !Array.isArray(v);
 
@@ -16,6 +19,7 @@ function merge(base, over) {
   for (const [k, v] of Object.entries(over ?? {})) {
     if (isMap(v) && isMap(out[k])) out[k] = merge(out[k], v);
     else if (typeof v === 'number' && Number.isFinite(v) && typeof out[k] === 'number') out[k] = v;
+    else if (typeof v === 'string' && ENUMS[k]?.includes(v)) out[k] = v;
   }
   return out;
 }
