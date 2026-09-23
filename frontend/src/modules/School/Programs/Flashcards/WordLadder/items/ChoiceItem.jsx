@@ -1,10 +1,11 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { TouchButton } from '../../../../../../lib/ui/index.js';
 import Icon from '../../../../home/icons/Icon.jsx';
 import { FitGroup, FitText } from '../FitText.jsx';
 import { playClip } from '../wordLadderAudio.js';
 import { useWordLadderKeys } from '../useWordLadderKeys.js';
-import CuePicture from './CuePicture.jsx';
+import EnglishCue, { englishCueAudio } from './EnglishCue.jsx';
+import ResultPanel from './ResultPanel.jsx';
 
 /**
  * 2.2 pick-meaning (hear | read) and 3.1 pick-term (cue → Korean). Graded
@@ -13,8 +14,7 @@ import CuePicture from './CuePicture.jsx';
  */
 export default function ChoiceItem({ item, langs, resolveAssetUrl, onRespond, result = null, onContinue, busy = false }) {
   const audio = item.assets?.audio ? resolveAssetUrl(item.assets.audio) : null;
-  const glossAudio = item.assets?.glossAudio ? resolveAssetUrl(item.assets.glossAudio) : null;
-  const image = item.assets?.image ? resolveAssetUrl(item.assets.image) : null;
+  const glossAudio = item.task === '3.1' ? englishCueAudio(item, resolveAssetUrl) : null;
   const choicesLang = item.task === '2.2' ? langs.gloss : langs.term;
   useEffect(() => {
     if (item.channel === 'hear' && audio) playClip(audio, 'term');
@@ -29,12 +29,23 @@ export default function ChoiceItem({ item, langs, resolveAssetUrl, onRespond, re
       playClip(audio, 'term');
     }
   }, [result, audio, item.id]);
-  const choose = (choice) => { if (!busy && !result) onRespond({ choice }); };
+  // The option the child picked, so a wrong result can show it beside the answer.
+  const [chosen, setChosen] = useState(null);
+  useEffect(() => { setChosen(null); }, [item.id]);
+  const choose = (choice) => { if (!busy && !result) { setChosen(choice); onRespond({ choice }); } };
+  // The result's Listen: the revealed Korean (3.1 — the server sends its clip
+  // with the result), else the term the 2.2 prompt already carried.
+  const answerAudio = result?.audio ? resolveAssetUrl(result.audio) : audio;
+  // Tab = hear it again (H stays a silent alias — this is not a typing item).
+  const hear = result
+    ? () => (answerAudio ? playClip(answerAudio, 'term') : glossAudio && playClip(glossAudio, 'gloss'))
+    : () => (audio ?? glossAudio) && playClip(audio ?? glossAudio, audio ? 'term' : 'gloss');
   const keys = result
-    ? { ' ': onContinue, enter: onContinue, h: () => audio && playClip(audio, 'term') }
+    ? { ' ': onContinue, enter: onContinue, tab: hear, h: hear }
     : {
       0: () => !busy && onRespond({ dontKnow: true }),
-      h: () => (audio ?? glossAudio) && playClip(audio ?? glossAudio, audio ? 'term' : 'gloss'),
+      tab: hear,
+      h: hear,
       ...Object.fromEntries(item.choices.map((c, i) => [String(i + 1), () => choose(c)])),
     };
   useWordLadderKeys(keys);
@@ -45,11 +56,9 @@ export default function ChoiceItem({ item, langs, resolveAssetUrl, onRespond, re
         {item.task === '2.2' && item.channel === 'hear' && (
           result
             ? <FitText role="prompt" text={item.prompt} lang={langs.term} />
-            : <TouchButton variant="secondary" keyHint="H" onClick={() => audio && playClip(audio, 'term')}><Icon name="volume" /> Listen</TouchButton>
+            : <TouchButton variant="secondary" keyHint="Tab" onClick={() => audio && playClip(audio, 'term')}><Icon name="volume" /> Listen</TouchButton>
         )}
-        {item.task === '3.1' && item.cue?.type === 'image' && <CuePicture item={item} src={image} lang={langs.gloss} />}
-        {item.task === '3.1' && item.cue?.type === 'text' && <FitText role="prompt" text={item.cue.text} lang={langs.gloss} />}
-        {item.task === '3.1' && item.cue?.type === 'audio' && <TouchButton variant="secondary" keyHint="H" onClick={() => glossAudio && playClip(glossAudio, 'gloss')}><Icon name="volume" /> Listen</TouchButton>}
+        {item.task === '3.1' && <EnglishCue item={item} resolveAssetUrl={resolveAssetUrl} lang={langs.gloss} keyHint={result && answerAudio ? null : 'Tab'} />}
       </div>
       <FitGroup>
         <div className="wl-choices" role="group" aria-label="Choices">
@@ -60,7 +69,7 @@ export default function ChoiceItem({ item, langs, resolveAssetUrl, onRespond, re
               keyHint={String(i + 1)}
               lang={choicesLang}
               disabled={busy || Boolean(result)}
-              className={result && choice === result.answer ? 'is-answer' : ''}
+              className={[result && choice === result.answer && 'is-answer', result && choice === chosen && choice !== result.answer && 'is-chosen'].filter(Boolean).join(' ')}
               onClick={() => choose(choice)}
             >
               <FitText role="choice" text={choice} lang={choicesLang} />
@@ -68,9 +77,19 @@ export default function ChoiceItem({ item, langs, resolveAssetUrl, onRespond, re
           ))}
         </div>
       </FitGroup>
-      <div className="wl-controls">
+      {result && (
+        <ResultPanel
+          itemId={item.id}
+          correct={Boolean(result.correct)}
+          score={result.score ?? null}
+          answer={result.answer}
+          answerLang={choicesLang}
+          reason={result.reason ?? null}
+          audio={answerAudio}
+        />
+      )}
+      <div className={`wl-controls${result ? ' has-result' : ''}`}>
         {!result && <TouchButton variant="secondary" keyHint="0" disabled={busy} onClick={() => onRespond({ dontKnow: true })}>Don&apos;t know</TouchButton>}
-        {result && <p className="wl-verdict" role="status">{result.correct ? 'Right!' : `It's ${result.answer}`}</p>}
         {result && <TouchButton variant="primary" keyHint="Space" onClick={onContinue}>Next</TouchButton>}
       </div>
     </section>

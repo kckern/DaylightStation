@@ -83,12 +83,44 @@
 .wl-main { display: flex; align-items: center; justify-content: center; min-height: 0; padding: 0 1.5rem 1.5rem; }
 .wl-item { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1.25rem; width: 100%; height: 100%; min-height: 0; }
 
+// The card is the 3D stage: `perspective` here, the surface turns inside it.
+// Two sides back to back, each carrying the border/background (a hidden
+// backface takes its paint with it). Only `transform` animates — never filter,
+// shadow or layout (the Portal is an FKB Chrome WebView); `will-change` is set
+// only while a turn is in flight. The turned-away side is `visibility: hidden`
+// too, so the back of a Korean front is never seen or read: visibility is
+// transitioned on the same duration, and a transition between visible and
+// hidden holds `visible` for its whole length — the leaving side stays drawn
+// for the turn and goes only once it has turned away.
 .wl-card {
-  display: flex; align-items: center; justify-content: center;
-  width: min(760px, 100%); flex: 1 1 auto; min-height: 0; max-height: 440px; padding: 1.5rem;
-  border-radius: 20px; border: 2px solid var(--ds-border); background: var(--ds-surface); color: inherit;
-  font: inherit; cursor: pointer;
+  --wl-flip-duration: calc(var(--ds-motion-reveal) * 1.25);
+  position: relative; display: block;
+  width: min(760px, 100%); flex: 1 1 auto; min-height: 0; max-height: 440px; padding: 0;
+  border: 0; border-radius: 20px; background: none; color: inherit;
+  font: inherit; cursor: pointer; perspective: 1400px;
   &:focus-visible { outline: 3px solid var(--ds-accent); outline-offset: 3px; }
+}
+.wl-card__inner {
+  position: absolute; inset: 0; display: block;
+  transform-style: preserve-3d;
+  transition: transform var(--wl-flip-duration) var(--ds-motion-easing);
+}
+.wl-card.is-flipped .wl-card__inner { transform: rotateY(180deg); }
+.wl-card.is-flipping .wl-card__inner { will-change: transform; }
+.wl-card__side {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center; padding: 1.5rem;
+  border-radius: 20px; border: 2px solid var(--ds-border); background: var(--ds-surface);
+  backface-visibility: hidden;
+  transition: visibility var(--wl-flip-duration) var(--ds-motion-easing);
+}
+.wl-card__side--down { transform: rotateY(180deg); visibility: hidden; }
+.wl-card.is-flipped .wl-card__side--down { visibility: visible; }
+.wl-card.is-flipped .wl-card__side--up { visibility: hidden; }
+// Reduced motion (and the JS-side `wl-card--still`): an instant swap.
+.wl-card--still .wl-card__inner, .wl-card--still .wl-card__side { transition: none; }
+@media (prefers-reduced-motion: reduce) {
+  .wl-card__inner, .wl-card__side { transition: none; }
 }
 .wl-card__face { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1rem; width: 100%; height: 100%; min-height: 0; }
 .wl-card__face--front > .wl-fit { max-width: 100%; }
@@ -99,15 +131,69 @@
 
 .wl-prompt { display: flex; align-items: center; justify-content: center; width: min(760px, 100%); height: 220px; flex: none; }
 .wl-cue-picture { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 12px; }
+// The English cue bundle (ruling 2026-09-23): picture beside the text, Listen
+// under the text. It fills the prompt box and never grows it — the keypad-open
+// layout shrinks the prompt to 100px and the picture shrinks with it.
+.wl-cue {
+  display: flex; align-items: center; justify-content: center; gap: 1.5rem;
+  width: 100%; height: 100%; min-height: 0;
+  > .wl-cue-picture { flex: 0 1 auto; max-width: 40%; height: 100%; }
+}
+.wl-cue__words {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.75rem;
+  flex: 1 1 0; min-width: 0; height: 100%; min-height: 0;
+}
+.wl-cue__text { display: flex; align-items: center; justify-content: center; width: 100%; flex: 1 1 0; min-height: 0; }
+.wl-typed--keypad .wl-cue__words { flex-direction: row; }
+
 
 .wl-choices {
   display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; width: min(900px, 100%);
   .is-answer { outline: 4px solid var(--ds-success); outline-offset: 2px; }
+  .is-chosen { outline: 4px dashed var(--ds-warning); outline-offset: 2px; }
+}
+
+// The result panel (items/ResultPanel.jsx): a large card under the prompt
+// that stays until Next. Warm, never red, for a miss; the success token for a
+// right answer. Enters on the shared DS keyframes, transform/opacity only
+// (wrong: ds-sheet-up on --ds-motion-base; right: ds-pop-in, a touch longer).
+.wl-result {
+  display: flex; flex-direction: column; align-items: center; gap: 0.5rem;
+  width: min(760px, 100%); padding: 0.75rem 1.5rem 1rem;
+  border-radius: 20px; border: 3px solid var(--ds-warning); background: var(--ds-surface);
+  animation: ds-sheet-up var(--ds-motion-base) var(--ds-motion-easing);
+  &--right {
+    border-color: var(--ds-success);
+    animation: ds-pop-in calc(var(--ds-motion-reveal) * 0.9) var(--ds-motion-easing);
+    .wl-result__heading { color: var(--ds-success); }
+  }
+}
+.wl-result__heading { margin: 0; font-size: 2rem; color: var(--ds-warning); }
+.wl-result__row { display: flex; align-items: center; justify-content: center; gap: 1rem; width: 100%; margin: 0; }
+.wl-result__label { flex: none; font-size: 1.25rem; color: var(--ds-text-mid); }
+.wl-result__typed { font-size: 1.75rem; color: var(--ds-text-mid); text-decoration: line-through; }
+.wl-result__answer { display: flex; align-items: center; justify-content: center; flex: 1 1 0; min-width: 0; height: 88px; color: var(--ds-text-high); }
+.wl-result__listen { flex: none; }
+.wl-result__note { margin: 0; font-size: 1.125rem; color: var(--ds-text-mid); }
+// A choice item with its verdict up: the prompt gives the panel its room.
+.wl-choice:has(.wl-result) .wl-prompt { height: 120px; }
+@media (prefers-reduced-motion: reduce) {
+  .wl-result, .wl-result--right { animation: none; }
 }
 
 .wl-controls { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 1rem; }
 .wl-controls--minor { gap: 0.75rem; opacity: 0.9; }
 
+// The on-screen keypad toggle: a last resort, not an option — a small
+// icon-only button pinned to the item's bottom-left, clear of the centred
+// keypad (≤920px on a 1280px stage). Hidden once a keyboard is known.
+.wl-typed { position: relative; }
+.wl-typed__keypad-toggle {
+  position: absolute; left: 0; bottom: 0;
+  min-width: 48px; width: 48px; min-height: 48px; height: 48px; padding: 0;
+  border-radius: 999px; opacity: 0.75;
+  svg { width: 24px; height: 24px; }
+}
 .wl-typed__field {
   width: min(640px, 100%); min-height: 80px; padding: 0.5rem 1rem;
   font-size: 2.5rem; text-align: center;
@@ -256,6 +342,7 @@
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.25rem;
   min-height: 88px; padding: 0.5rem; border-radius: 14px; border: 2px solid var(--ds-border); background: var(--ds-surface);
   &.is-selected { outline: 4px solid var(--ds-accent); outline-offset: 2px; }
+  &.is-cursor { border-color: var(--ds-accent); }
   .ds-touch__label { display: flex; flex-direction: column; align-items: center; gap: 0.25rem; }
 }
 .wl-words__term { font-size: 1.75rem; color: var(--ds-text-high); }

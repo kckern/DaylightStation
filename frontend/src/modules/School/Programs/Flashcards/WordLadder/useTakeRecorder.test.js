@@ -85,6 +85,22 @@ describe('useTakeRecorder', () => {
     expect(result.current.verdict).toBeNull();
   });
 
+  it('a denied (or failed) microphone marks the recorder unavailable; a later good start clears it', async () => {
+    const { result } = renderHook(() => useTakeRecorder({ onTake: vi.fn() }));
+    await act(async () => { captured.opts.onDenied(new Error('denied')); });
+    expect(result.current.unavailable).toBe(true);
+    await act(async () => { await result.current.start(); });
+    expect(result.current.unavailable).toBe(false);
+  });
+
+  it('a device with no microphone API is unavailable from the start', () => {
+    const original = navigator.mediaDevices;
+    Object.defineProperty(navigator, 'mediaDevices', { value: undefined, configurable: true });
+    const { result } = renderHook(() => useTakeRecorder({ onTake: vi.fn() }));
+    expect(result.current.unavailable).toBe(true);
+    Object.defineProperty(navigator, 'mediaDevices', { value: original, configurable: true });
+  });
+
   it('a take stopped, then unmounted, whose onstop fires late never reaches onTake', async () => {
     const onTake = vi.fn();
     const { result, unmount } = renderHook(() => useTakeRecorder({ onTake }));

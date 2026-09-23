@@ -51,4 +51,41 @@ describe('useWordLadderKeys', () => {
     fireEvent.keyDown(getByLabelText('field'), { key: 'ㅗ', code: 'KeyH' });
     expect(h).not.toHaveBeenCalled();
   });
+
+  it('matches Tab, Backslash and ArrowLeft by code, preventing the default (focus never moves)', () => {
+    const map = { tab: vi.fn(), '\\': vi.fn(), arrowleft: vi.fn() };
+    render(<Harness map={map} />);
+    expect(fireEvent.keyDown(window, { key: 'Tab', code: 'Tab' })).toBe(false);
+    // A Korean or other layout may report something else for the backslash key: code wins.
+    fireEvent.keyDown(window, { key: '₩', code: 'Backslash' });
+    fireEvent.keyDown(window, { key: 'ArrowLeft', code: 'ArrowLeft' });
+    expect(map.tab).toHaveBeenCalledTimes(1);
+    expect(map['\\']).toHaveBeenCalledTimes(1);
+    expect(map.arrowleft).toHaveBeenCalledTimes(1);
+  });
+
+  it('Tab still reaches the map from inside a typing field; nothing else does', () => {
+    const map = { tab: vi.fn(), '\\': vi.fn(), ' ': vi.fn() };
+    const { getByLabelText } = render(<Harness map={map} />);
+    const field = getByLabelText('field');
+    expect(fireEvent.keyDown(field, { key: 'Tab', code: 'Tab' })).toBe(false);
+    fireEvent.keyDown(field, { key: '\\', code: 'Backslash' });
+    fireEvent.keyDown(field, { key: ' ', code: 'Space' });
+    expect(map.tab).toHaveBeenCalledTimes(1);
+    expect(map['\\']).not.toHaveBeenCalled();
+    expect(map[' ']).not.toHaveBeenCalled();
+  });
+
+  it('leaves Tab alone when the map has no hear-it action (the browser keeps it)', () => {
+    render(<Harness map={{ ' ': vi.fn() }} />);
+    expect(fireEvent.keyDown(window, { key: 'Tab', code: 'Tab' })).toBe(true);
+  });
+
+  it('ignores Ctrl/Alt/Meta chords, Tab included', () => {
+    const tab = vi.fn();
+    render(<Harness map={{ tab }} />);
+    fireEvent.keyDown(window, { key: 'Tab', code: 'Tab', altKey: true });
+    fireEvent.keyDown(window, { key: 'Tab', code: 'Tab', ctrlKey: true });
+    expect(tab).not.toHaveBeenCalled();
+  });
 });

@@ -266,7 +266,10 @@ Say-after (drill, round intro, and the practice menu's Say mode),
 read-aloud and say-from-cue (spec §3 1.2 / 1.3 / 3.4) are never graded and
 never a gate: Skip/Next is available from the moment the item is on
 screen, and whatever button is pressed the response is always
-`{done:true}` — a take is never required, only offered.
+`{done:true}` — a take is never required, only offered. Skip is a touch
+(its only key is the hunted-for `\`); **Space never skips** — it records,
+stops, then goes Next (see Keys below), and falls through to Skip only when
+the mic is unavailable (`useTakeRecorder`'s `unavailable`).
 
 A **kept** take (one that passes the shared speech floor —
 `shared/speechFloor.js`, not too quiet, not too short) is uploaded via
@@ -306,13 +309,24 @@ term audio — otherwise introduction goes straight from flash to copy.
 There is no web API that tells a page a Bluetooth keyboard is attached, so
 the keypad (`JamoKeypad.jsx`) is a **toggle**, offered on every typing item
 (copy, dictation, graded typed, and a drill's copy/dictation/type steps).
+It is a **last resort, not an option** (owner, 2026-09-23): a small
+icon-only button pinned to the item's bottom-left (`aria-label` "Show / Hide
+Korean keypad"), out of the button row. It **hides once a hardware keyboard
+is known** — the shared heuristic in `lib/hardwareKeyboard.js` via
+`hooks/useHardwareKeyboard.js`: a real letter/digit/punctuation keydown
+(never `keyCode` 229, `Unidentified`, or a composing key), remembered per
+device in localStorage (`ds_hardware_keyboard`), or the fleet registry's
+declared keyboard. `keyboard.detected` is logged once per device. If the
+heuristic is wrong, a **long-press (600 ms) on the field** still opens the
+keypad (logged `keypad.toggled {via: 'long-press'}`) — invisible, so it costs
+the keyboard user nothing.
 Two-set (두벌식) layout: base rows plus a Shift key for ㅃ/ㅉ/ㄸ/ㄲ/ㅆ/ㅒ/ㅖ
 (Shift is one-shot — it releases after the next key press whether or not
 that key has a Shift form), backspace, and Enter/submit. Every key fires on
 `onPointerDown` (never `onClick`) and re-focuses the field first, so a tap
 never loses focus mid-run.
 
-It **auto-opens once per item**: once the field has had focus for 10 s with
+It **auto-opens once per item** — only while no keyboard is known: once the field has had focus for 10 s with
 no keydown, the keypad opens itself and refocuses the field
 (`KEYPAD_AUTO_OPEN_MS` in `TypedItem.jsx`) — skipped if the item has since
 moved on or the field is disabled (a held verdict, a submit in flight). It
@@ -784,14 +798,61 @@ renders that task, plus `items/TilesItem.jsx` for pick-spelling and
 read-aloud, say-from-cue), the practice menu's listen run
 (`items/ListenItem.jsx`), the practice menu and My words / word picker
 (`items/MenuItem.jsx`, `items/WordsItem.jsx`), and summary
-(`items/SummaryItem.jsx`). Keys: `useWordLadderKeys.js` (1/2/3 sort,
-Space/Enter continue, 1–4/0 choices, U undo, Q quiz me, H hear, match board
-digits (both columns hinted: a digit picks a word, the next picks its
-meaning), M menu — only
-while a practice item is on screen and no typing field has focus). Keys match the
-**physical** key (`event.code` — `KeyH`, `Digit1`, `Space`, `NumpadEnter`…)
-first and `event.key` second, because on a Korean keyboard layout `key` for H
-is `ㅗ`. Keys typed into an input are never taken as commands.
+(`items/SummaryItem.jsx`).
+
+### Keys (owner rulings, 2026-09-23)
+
+"Spacebar should be the way to progress through this in the least friction
+way possible … spacebar should never be a skip." One map per screen
+(`useWordLadderKeys.js`); the on-screen hint (`keyHint`) is always on the
+button that currently owns the key.
+
+| Key | Does | Where |
+|-----|------|-------|
+| **Space** | The forward action — **never a skip**: Flip, Next, Continue, Done, Start, Back (error screen), toggle the word under the cursor (word picker) | every item outside a typing field |
+| **Enter** | Mirrors Space everywhere outside typing; in a typing field it **submits**, and once graded goes Next | every item |
+| Space on **Say** | Record (before a take) → Stop (while recording) → Next (after a take). No mic (none, refused, errored) → Skip/Next, never a dead end | `SayItem.jsx` |
+| **←** (ArrowLeft) | Record again — only after a take, not while recording/saving, never without a mic | Say |
+| **Tab** | Hear it again — the term, the cue's gloss clip, or the result's revealed word; `preventDefault`, so focus never moves, and it works **inside a typing field** without typing or blurring | every item with audio |
+| **\** (Backslash) | Skip (Say) / Show me (typed) — the deliberately hunted-for give-up; Skip is touch-first | Say, typed practice |
+| 1 / 2 / 3 | Not yet / Familiar / Got it | flipped flashcard |
+| U / Q | Undo / Quiz me | stream flashcards |
+| 1–4, 0 | Choices, Don't know | choice |
+| digits | Pick a word, then its meaning (both columns hinted); tiles | match, tiles |
+| Backspace | Remove the last tile; Back in the practice sub-menus and word picker | tiles, menus |
+| ← → ↑ ↓ | Move the cursor (four across) | word picker |
+| M | Menu | a practice item, not while typing |
+| next digit | My words | practice menu |
+
+H (and A on Listen) survive only as **silent aliases** on non-typing items;
+typing items bind **no letters at all** — on the Korean layout H is ㅗ, and
+Space types a space (Korean phrases have them: 안녕히 계세요). Keys match the
+**physical** key (`event.code` — `KeyH`, `Digit1`, `Space`, `Tab`,
+`Backslash`, `ArrowLeft`, `NumpadEnter`…) first and `event.key` second;
+Ctrl/Alt/Meta chords are ignored. Keys typed into an input are never
+commands — Tab is the one exception. **Touch-only by design:** Leave (the
+header — leaving is not moving forward), the keypad toggle and the jamo keys
+themselves (a device with no keyboard).
+
+**The flashcard flip** is a real 3D turn: both faces mounted back to back
+(`backface-visibility: hidden`), `.wl-card__inner` rotates Y 0→180° over
+1.25 × `--ds-motion-reveal` on `--ds-motion-easing`, transform only,
+`will-change` only while turning. The turned-away face is `aria-hidden` and
+`visibility: hidden` (transitioned, so it stays drawn for the turn), so the
+back of a Korean front is never seen or read early. Reduced motion
+(`wl-card--still`) is an instant swap.
+
+**The result panel** (`items/ResultPanel.jsx`, typed and choice items): a
+large card under the prompt that stays until Next, `role="status"`. Wrong:
+"Not quite" (warm `--ds-warning`, never red), You typed (struck, muted) and
+The answer (large, in its own `lang`), Listen (Tab). Right: a deterministic
+cheer (Got it! / Nice! / Yes!) in `--ds-success` with the word; a near miss
+(score < 10) adds "Close! It's spelled:". A choice marks the chosen option
+beside the correct one. The server sends the revealed term's audio id with
+any result that names the term. Enters on the shared DS keyframes
+(`ds-sheet-up`; `ds-pop-in` for a right answer), transform/opacity only;
+reduced motion: none. A graded typed item swaps its finished field for the
+panel.
 
 The typed field declares the lexicon's BCP-47 code (`lang` / `data-ime-lang`,
 e.g. `ko`); `ime/languages.js` normalises it (`ko`, `ko-KR` → `KR`) so the
@@ -804,7 +865,20 @@ the lane on unmount. **A late take is dropped**: `useTakeRecorder` ignores a
 MediaRecorder `onstop` that lands after its item unmounted (Stop, then Next),
 so it is never uploaded or played over the next item.
 
-An **image cue** on 3.1 / 3.3 always arrives with the gloss as `cue.text` (the
+**Ruling 2026-09-23 (owner): English-side cues show text + picture + audio
+together; the prompt is never the test.** "We're not testing for English
+comprehension." `cueFor` (`choices.mjs`) no longer picks one kind at random;
+it returns one bundle `{type: 'english', text: gloss, image, audio}` (pure,
+deterministic), and the sitting service serves every English-side cue — 3.1,
+3.3, the drill's tiles / say-from-cue / type — as that bundle with the
+picture and gloss-clip asset ids, rebuilt at publish time so an item stored
+under the old kinds renders the new way. `items/EnglishCue.jsx` lays it out:
+the picture (via `CuePicture`, which simply drops out if it fails) beside the
+English text, and a **Listen (Tab)** for the gloss clip. No item renders an
+audio-only English prompt. The Korean side is unchanged: the picture never
+appears with the Korean on a learning front.
+
+(Before the ruling:) An **image cue** on 3.1 / 3.3 always arrives with the gloss as `cue.text` (the
 gloss is the cue there, never the answer). `items/CuePicture.jsx` renders the
 picture and falls back to that text when the image has no asset or fails to
 load (logging `media.failed` at warn).
@@ -871,8 +945,9 @@ stamp owns `mode`, so an item-level mode is sent as `itemMode`.
   `round.ended {quizzed, notYet}`, `match.completed {ms, misses, pairs}`,
   `drill.offered {accepted}`, `practice.started {itemMode, help, filter}`;
 - `audio.played {kind, outcome: ended|error|blocked}`, `keypad.toggled
-  {auto, open}`, `recording.uploaded` / `recording.failed` /
-  `recording.refused`;
+  {auto, open, via?}`, `keyboard.detected` (once per device),
+  `recording.uploaded` / `recording.failed` / `recording.refused`,
+  `mic.unavailable` (warn — Space falls through to Skip);
 - failures: `plan.failed`, `write.failed`, `api.rejected`, `api.failed`,
   `stage.failed`, `media.failed` (an image cue fell back to text),
   `layout.clamped`, `notice.shown`, `practice.failed`, `words.failed`.

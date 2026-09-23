@@ -4,14 +4,33 @@ import Icon from '../../../../home/icons/Icon.jsx';
 import { FitText } from '../FitText.jsx';
 import { playClip } from '../wordLadderAudio.js';
 import { useWordLadderKeys } from '../useWordLadderKeys.js';
+import { useHardwareKeyboard } from '../../../../../../hooks/useHardwareKeyboard.js';
 import { wordLadderLog } from '../wordLadderLog.js';
 import JamoKeypad from '../JamoKeypad.jsx';
-import CuePicture from './CuePicture.jsx';
+import EnglishCue, { englishCueAudio } from './EnglishCue.jsx';
+import ResultPanel from './ResultPanel.jsx';
 
 // Spec §6: the field has had focus this long with no keydown before the
 // keypad opens itself. Once per item — a physical keyboard shows up as
 // keydowns, and once one has, there is nothing left to detect.
 const KEYPAD_AUTO_OPEN_MS = 10_000;
+// A press this long on the field opens the keypad — the way back to it when a
+// keyboard was detected (and the corner toggle hidden) but the child has none.
+const LONG_PRESS_MS = 600;
+
+// `keyboard.detected` is logged once per device: a localStorage marker, and a
+// module flag for a browser with storage off (once per page load, then).
+const KEYBOARD_LOGGED_KEY = 'word-ladder.keyboard-detected';
+let keyboardLogged = false;
+function logKeyboardOnce(itemId) {
+  if (keyboardLogged) return;
+  keyboardLogged = true;
+  try {
+    if (window.localStorage.getItem(KEYBOARD_LOGGED_KEY) === '1') return;
+    window.localStorage.setItem(KEYBOARD_LOGGED_KEY, '1');
+  } catch { /* storage off: this page load's one line stands */ }
+  wordLadderLog.keyboardDetected({ itemId });
+}
 
 /**
  * Modes:
@@ -40,7 +59,6 @@ export default function TypedItem({ item, mode, langs, resolveAssetUrl, onRespon
   const [keypadOpen, setKeypadOpen] = useState(false);
   const input = useRef(null);
   const word = item.word;
-  const image = item.assets?.image ? resolveAssetUrl(item.assets.image) : null;
   const glossAudio = item.assets?.glossAudio ? resolveAssetUrl(item.assets.glossAudio) : null;
   const dictation = mode === 'dictation';
   // Graded dictation (the 1.4 sign-off): heard like a drill dictation, judged like 3.3.
@@ -56,6 +74,14 @@ export default function TypedItem({ item, mode, langs, resolveAssetUrl, onRespon
   // open state), and go only once there is nothing left to type.
   const answered = graded && Boolean(result);
   const fieldDisabled = busy || answered;
+  // A physical keyboard, on the shared evidence (`lib/hardwareKeyboard.js`:
+  // a real letter/digit keypress — never keyCode 229 / Unidentified / a
+  // composing key — remembered per device, or the fleet registry). Once
+  // known, the keypad toggle hides and never auto-opens.
+  const keyboard = useHardwareKeyboard();
+  const keyboardRef = useRef(keyboard);
+  keyboardRef.current = keyboard;
+  useEffect(() => { if (keyboard) logKeyboardOnce(item.id); }, [keyboard]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-open bookkeeping. Refs, not state: read inside a timer callback and
   // a document listener, neither of which should re-run when the value they
@@ -91,7 +117,7 @@ export default function TypedItem({ item, mode, langs, resolveAssetUrl, onRespon
       // field is mid-submit / already answered. Opening the keypad (and
       // stealing focus) over a "Checking…" state or a result already on
       // screen would be a surprise, not a convenience.
-      if (itemIdRef.current !== thisItemId || fieldDisabledRef.current) return;
+      if (itemIdRef.current !== thisItemId || fieldDisabledRef.current || keyboardRef.current) return;
       setKeypadOpen(true);
       // Mirrors toggleKeypad: the child may have tapped Hear it or another
       // control in the idle window, and the keypad is useless if the field
@@ -135,6 +161,22 @@ export default function TypedItem({ item, mode, langs, resolveAssetUrl, onRespon
     return () => document.removeEventListener('keydown', onPhysicalKeydown, true);
   }, []);
 
+  const longPress = useRef(null);
+  const endLongPress = () => { clearTimeout(longPress.current); longPress.current = null; };
+  const startLongPress = () => {
+    endLongPress();
+    if (keypadOpenRef.current || fieldDisabledRef.current) return;
+    longPress.current = setTimeout(() => {
+      longPress.current = null;
+      clearTimeout(autoTimerRef.current);
+      keypadUsedRef.current = true;
+      setKeypadOpen(true);
+      wordLadderLog.keypadToggled({ auto: false, open: true, via: 'long-press' });
+      input.current?.focus();
+    }, LONG_PRESS_MS);
+  };
+  useEffect(() => endLongPress, []);
+
   const toggleKeypad = () => {
     clearTimeout(autoTimerRef.current);
     keypadUsedRef.current = true;
@@ -154,7 +196,20 @@ export default function TypedItem({ item, mode, langs, resolveAssetUrl, onRespon
     onRespond({ typed: '' });
     input.current?.blur(); stageRef?.current?.focus();
   };
-  useWordLadderKeys(result && graded ? { ' ': onContinue, enter: onContinue } : {}, { enabled: Boolean(result) && graded });
+  // Tab = hear it again, the one key that works from inside the field (it
+  // types nothing). Never a letter here: on the Korean layout H is ㅗ.
+  // Answered: Tab replays the revealed word (the result carries its audio).
+  const answerAudio = answered && result?.audio ? resolveAssetUrl(result.audio) : null;
+  const hear = answerAudio
+    ? () => playClip(answerAudio, 'term')
+    : (mode === 'copy' || (hearsTerm && !answered)) && termAudio
+    ? () => playClip(termAudio, 'term')
+    : graded && englishCueAudio(item, resolveAssetUrl) ? () => playClip(englishCueAudio(item, resolveAssetUrl), 'gloss') : null;
+  useWordLadderKeys({
+    ...(result && graded ? { ' ': onContinue, enter: onContinue } : {}),
+    ...(hear ? { tab: hear } : {}),
+    ...(canShowMe && !answered ? { '\\': showMe } : {}),
+  });
   const keypadShowing = keypadOpen && !answered;
   return (
     <section
@@ -163,38 +218,54 @@ export default function TypedItem({ item, mode, langs, resolveAssetUrl, onRespon
     >
       <div className="wl-prompt">
         {mode === 'copy' && <FitText role="term" text={word?.term ?? ''} lang={langs.term} onFit={onLayout} />}
-        {hearsTerm && !answered && <TouchButton variant="secondary" onClick={() => termAudio && playClip(termAudio, 'term')}><Icon name="volume" /> Listen</TouchButton>}
-        {graded && item.cue?.type === 'image' && <CuePicture item={item} src={image} lang={langs.gloss} />}
-        {graded && item.cue?.type === 'text' && <FitText role="prompt" text={item.cue.text} lang={langs.gloss} />}
-        {graded && item.cue?.type === 'audio' && <TouchButton variant="secondary" onClick={() => glossAudio && playClip(glossAudio, 'gloss')}><Icon name="volume" /> Listen</TouchButton>}
+        {hearsTerm && !answered && <TouchButton variant="secondary" keyHint="Tab" onClick={() => termAudio && playClip(termAudio, 'term')}><Icon name="volume" /> Listen</TouchButton>}
+        {graded && !heardSignOff && <EnglishCue item={item} resolveAssetUrl={resolveAssetUrl} lang={langs.gloss} keyHint={answerAudio ? null : 'Tab'} />}
       </div>
-      <input
-        ref={input}
-        className="wl-typed__field"
-        type="text"
-        lang={langs.term}
-        data-ime-lang={langs.term}
-        autoComplete="off"
-        autoCorrect="off"
-        spellCheck={false}
-        value={value}
-        disabled={fieldDisabled}
-        aria-label="Your answer"
-        onChange={(e) => setValue(e.target.value)}
-        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); submit(); } }}
-      />
+      {!answered && (
+        <input
+          ref={input}
+          className="wl-typed__field"
+          type="text"
+          lang={langs.term}
+          data-ime-lang={langs.term}
+          autoComplete="off"
+          autoCorrect="off"
+          spellCheck={false}
+          value={value}
+          disabled={fieldDisabled}
+          aria-label="Your answer"
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') { e.preventDefault(); submit(); }
+            // Show me = give up and see the word: the hunted-for Backslash, like
+            // Skip elsewhere. Nobody types a backslash into a Korean answer.
+            else if (e.code === 'Backslash' && canShowMe && !answered) { e.preventDefault(); showMe(); }
+          }}
+          onPointerDown={startLongPress}
+          onPointerUp={endLongPress}
+          onPointerLeave={endLongPress}
+          onPointerCancel={endLongPress}
+        />
+      )}
+      {answered && (
+        <ResultPanel
+          itemId={item.id}
+          correct={Boolean(result.correct)}
+          score={result.score ?? null}
+          answer={result.answer}
+          answerLang={langs.term}
+          typed={value || null}
+          reason={result.reason ?? null}
+          audio={answerAudio}
+        />
+      )}
       <div className="wl-controls">
-        {mode === 'copy' && termAudio && <TouchButton variant="secondary" onClick={() => playClip(termAudio, 'term')}><Icon name="volume" /> Hear it</TouchButton>}
-        {!answered && (
-          <TouchButton variant="secondary" disabled={busy} aria-pressed={keypadOpen} onClick={toggleKeypad}>
-            <Icon name="writing" /> Keypad
-          </TouchButton>
-        )}
+        {mode === 'copy' && termAudio && <TouchButton variant="secondary" keyHint="Tab" onClick={() => playClip(termAudio, 'term')}><Icon name="volume" /> Hear it</TouchButton>}
         {/* A copy mismatch is a retry, not a terminal result — only a GRADED
             result hides the submit button; copy mode keeps it for the retry. */}
         {(!result || (!graded && result?.correct === false)) && (
           <>
-            {canShowMe && <TouchButton variant="secondary" disabled={busy} onClick={showMe}>Show me</TouchButton>}
+            {canShowMe && <TouchButton variant="secondary" keyHint="\\" disabled={busy} onClick={showMe}>Show me</TouchButton>}
             <TouchButton variant="primary" keyHint="Enter" disabled={busy || !value.trim()} onClick={submit}>{busy && graded ? 'Checking…' : 'Enter'}</TouchButton>
           </>
         )}
@@ -207,15 +278,22 @@ export default function TypedItem({ item, mode, langs, resolveAssetUrl, onRespon
             {dictation && result.answer && <>It&apos;s <span lang={langs.term}>{result.answer}</span> — type it</>}
           </p>
         )}
-        {graded && result && (
-          <p className="wl-verdict" role="status">
-            {result.correct && (result.score == null || result.score === 10) && 'Right!'}
-            {result.correct && result.score != null && result.score < 10 && <>Got it! Here&apos;s the spelling: <span lang={langs.term}>{result.answer}</span></>}
-            {!result.correct && <>It&apos;s <span lang={langs.term}>{result.answer}</span></>}
-          </p>
-        )}
         {graded && result && <TouchButton variant="primary" keyHint="Space" onClick={onContinue}>Next</TouchButton>}
       </div>
+      {/* A last resort, not an option: a small icon in the item's corner,
+          hidden once a keyboard is known (long-press the field instead). */}
+      {!answered && !keyboard && (
+        <TouchButton
+          variant="secondary"
+          className="wl-typed__keypad-toggle"
+          disabled={busy}
+          aria-pressed={keypadOpen}
+          aria-label={keypadOpen ? 'Hide Korean keypad' : 'Show Korean keypad'}
+          onClick={toggleKeypad}
+        >
+          <Icon name="writing" />
+        </TouchButton>
+      )}
       <JamoKeypad
         open={keypadShowing}
         onToggle={toggleKeypad}

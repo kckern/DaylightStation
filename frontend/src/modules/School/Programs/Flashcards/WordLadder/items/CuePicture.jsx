@@ -7,8 +7,11 @@ import { wordLadderLog } from '../wordLadderLog.js';
  * `cue.text` alongside an image cue — on these tasks the gloss IS the cue,
  * never the answer — so a missing or broken picture degrades to the word
  * rather than to a blank prompt the child cannot answer.
+ *
+ * `textFallback={false}` (EnglishCue, which always shows the text beside it):
+ * a missing or broken picture just drops out.
  */
-export default function CuePicture({ item, src, lang }) {
+export default function CuePicture({ item, src, lang, textFallback = true }) {
   const [failed, setFailed] = useState(false);
   useEffect(() => { setFailed(false); }, [item.id, src]);
   if (src && !failed) {
@@ -24,5 +27,6 @@ export default function CuePicture({ item, src, lang }) {
       />
     );
   }
+  if (!textFallback) return null;
   return item.cue?.text ? <FitText role="prompt" text={item.cue.text} lang={lang} /> : null;
 }

@@ -17,6 +17,8 @@ describe('layoutForItem', () => {
     expect(layoutForItem({ type: 'choice', cue: { type: 'image' } })).toBe('choice-picture-cue');
     expect(layoutForItem({ type: 'choice', cue: { type: 'audio' } })).toBe('choice-audio-cue');
     expect(layoutForItem({ type: 'choice' })).toBe('choice-text-cue');
+    expect(layoutForItem({ type: 'choice', cue: { type: 'english', text: 'x', image: true, audio: true } })).toBe('choice-picture-cue');
+    expect(layoutForItem({ type: 'choice', cue: { type: 'english', text: 'x', image: false, audio: true } })).toBe('choice-text-cue');
   });
 
   it('copy and typed both use the type layout', () => {
@@ -49,6 +51,8 @@ describe('mediaForItem', () => {
     expect(mediaForItem({ cue: { type: 'image' } })).toBe('image');
     expect(mediaForItem({ cue: { type: 'audio' } })).toBe('audio');
     expect(mediaForItem({ cue: { type: 'text' } })).toBe('text');
+    expect(mediaForItem({ cue: { type: 'english', text: 'x', image: true, audio: true } })).toBe('image');
+    expect(mediaForItem({ cue: { type: 'english', text: 'x', image: false, audio: true } })).toBe('text');
   });
 
   it('with no cue, falls back to the word/assets media presence', () => {

@@ -318,10 +318,10 @@ describe('DrillItem', () => {
     expect(screen.queryByText(/tricky/)).toBeNull();
   });
 
-  it('an unknown step offers Skip → {done:true}', () => {
+  it('an unknown step offers Continue → {done:true}', () => {
     const onRespond = vi.fn();
     render(<DrillItem item={{ id: 'd1:9', type: 'drill', step: 'future-step', wordId: 'gawi', of: 9, at: 9 }} langs={langs} resolveAssetUrl={id} onRespond={onRespond} />);
-    fireEvent.click(screen.getByRole('button', { name: /skip/i }));
+    fireEvent.click(screen.getByRole('button', { name: /continue/i }));
     expect(onRespond).toHaveBeenCalledWith({ done: true });
   });
 
@@ -344,12 +344,14 @@ describe('DrillItem', () => {
     expect(screen.getByRole('button', { name: /enter/i })).toBeInTheDocument();
   });
 
-  it('a held dictation result (third miss, step advanced) shows "It\'s X" and Next, not a retry', () => {
+  it('a held dictation result (third miss, step advanced) shows the result panel and Next, not a retry', () => {
     const onContinue = vi.fn();
     render(<DrillItem item={dictation} langs={langs} resolveAssetUrl={id} onRespond={vi.fn()} result={{ correct: false, answer: '가위' }} pending onContinue={onContinue} />);
-    expect(screen.getByRole('status')).toHaveTextContent("It's 가위");
-    expect(screen.getByRole('status')).not.toHaveTextContent('type it');
-    expect(screen.getByLabelText('Your answer')).toBeDisabled();
+    expect(screen.getByTestId('wl-result')).toHaveTextContent('The answer');
+    expect(screen.getByTestId('wl-result')).toHaveTextContent('가위');
+    expect(screen.getByTestId('wl-result')).not.toHaveTextContent('type it');
+    // The panel replaces the finished field: there is nothing left to type.
+    expect(screen.queryByLabelText('Your answer')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: /next/i }));
     expect(onContinue).toHaveBeenCalled();
   });
@@ -422,10 +424,11 @@ describe('FlashcardItem practice', () => {
   it('front gloss shows the meaning first and hides the Korean until flipped; Space then sends {next:true}', () => {
     const onRespond = vi.fn();
     render(<FlashcardItem item={{ id: 'p1:0', type: 'flashcard', mode: 'practice', source: 'practice', front: 'gloss', word }} langs={langs} resolveAssetUrl={id} onRespond={onRespond} />);
-    expect(screen.getByText('Scissors')).toBeInTheDocument();
-    expect(screen.queryByText('가위')).toBeNull();
+    expect(screen.getByText('Scissors').closest('[aria-hidden="true"]')).toBeNull();
+    // Both faces are mounted for the 3D flip; the Korean waits, hidden, on the back.
+    expect(screen.getByText('가위').closest('[aria-hidden="true"]')).not.toBeNull();
     fireEvent.keyDown(window, { key: ' ' });
-    expect(screen.getByText('가위')).toBeInTheDocument();
+    expect(screen.getByText('가위').closest('[aria-hidden="true"]')).toBeNull();
     fireEvent.keyDown(window, { key: ' ' });
     expect(onRespond).toHaveBeenCalledWith({ next: true });
   });
