@@ -700,23 +700,60 @@ describe('WordLadderSittingService — grown-up word controls (plan 4 task 4, sp
     const { service } = make({ store, teacherGate: gate(), judgementCache: cacheMock() });
     await service.adminMarkMastered({ ...who, wordId: 'pul', stage: 2 });
     expect(store.s.status.words.pul).toMatchObject({ state: 'mastered', stage: 2, dueDay: '2026-09-29' });
+    delete store.s.status.words.gawi;
+    await service.adminMarkMastered({ ...who, wordId: 'gawi', stage: 1 });
+    expect(store.s.status.words.gawi).toMatchObject({ state: 'mastered', stage: 1, introducedDay: TODAY });
     await expect(service.adminMarkMastered({ ...who, wordId: 'pul', stage: -2 })).rejects.toThrow(/stage/);
     await expect(service.adminMarkMastered({ ...who, wordId: 'nope', stage: 1 })).rejects.toThrow(/nope/);
   });
 
-  it('adminExclude flags the word and takes its pending recheck off today', async () => {
+  it('adminExclude flags the word, takes its pending recheck off today, and re-settles the day', async () => {
     const store = adminStore();
+    store.s.status.words.pul = { ...emptyWordV3(), state: 'familiar', introducedDay: '2026-09-01' };
     const { service } = make({ store, teacherGate: gate(), judgementCache: cacheMock() });
     const opened = await service.open({ userId: 'test-learner', deckId: DECK });
     expect(opened.item).toMatchObject({ wordId: 'gawi' }); // the due recheck
+    expect(store.s.days[TODAY].rounds).toHaveLength(0);
     await service.adminExclude({ ...who, wordId: 'gawi', excluded: true });
     expect(store.s.status.words.gawi.excluded).toBe(true);
     expect(store.s.days[TODAY].rechecks.order).toEqual([]);
+    // Not a false "done" summary: the carry round for pul is planned now.
+    expect(store.s.days[TODAY].doneAt).toBeNull();
+    expect(store.s.days[TODAY].rounds.map((round) => round.words)).toEqual([['pul']]);
     const again = await service.get({ userId: 'test-learner', sittingId: opened.sittingId });
+    expect(again.item.type).not.toBe('summary');
     expect(again.item.wordId).not.toBe('gawi');
     await service.adminExclude({ ...who, wordId: 'gawi', excluded: false });
     expect(store.s.status.words.gawi.excluded).toBe(false);
     await expect(service.adminExclude({ ...who, wordId: 'gawi', excluded: 'yes' })).rejects.toThrow(/excluded/);
+  });
+
+  it('adminMarkMastered applies the day\'s tuned gapScale', async () => {
+    const store = adminStore();
+    store.s.days[TODAY] = { ...emptyDay(TODAY), atOpen: { dueRechecks: [], tricky: [], newAllowance: 0, settings: { ...SETTINGS, review: { ...SETTINGS.review, gapScale: 2 } } } };
+    const { service } = make({ store, teacherGate: gate(), judgementCache: cacheMock() });
+    await service.adminMarkMastered({ ...who, wordId: 'pul', stage: 2 });
+    expect(store.s.status.words.pul.dueDay).toBe('2026-10-06');
+  });
+
+  it('word controls on a day never opened leave its day file empty (the store then writes status only)', async () => {
+    const store = adminStore();
+    const { service } = make({ store, teacherGate: gate(), judgementCache: cacheMock() });
+    await service.adminReset({ ...who, wordId: 'gawi' });
+    await service.adminMarkMastered({ ...who, wordId: 'gawi', stage: 1 });
+    await service.adminExclude({ ...who, wordId: 'pul', excluded: true });
+    await service.adminDropDeck({ ...who, dropDeckId: DECK_OTHER });
+    expect(store.s.days[TODAY]).toEqual(emptyDay(TODAY));
+  });
+
+  it('adminDropDeck refuses the current deck or any deck the learner is still enrolled in; adminWords lists the droppable ones', async () => {
+    const store = adminStore();
+    const { service } = make({ store, teacherGate: gate(), judgementCache: cacheMock() });
+    await expect(service.adminDropDeck({ ...who, dropDeckId: DECK })).rejects.toThrow(/enrolled/);
+    expect(store.s.status.decksSeen).toEqual([DECK_OTHER, DECK]);
+    const listed = await service.adminWords(who);
+    expect(listed.decksSeen).toEqual([DECK_OTHER, DECK]);
+    expect(listed.droppableDecks).toEqual([DECK_OTHER]);
   });
 
   it('adminDropDeck removes a deck from decksSeen and keeps introduced words', async () => {

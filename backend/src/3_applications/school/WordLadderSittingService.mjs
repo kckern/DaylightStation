@@ -656,17 +656,24 @@ export class WordLadderSittingService {
     });
   }
 
-  /** One word's record, changed by `change(word, ctx)` in today's transaction. */
-  async #adminWord(args, action, change, extra = {}) {
+  /**
+   * One word's record, changed by `change(word, ctx)` in today's transaction.
+   * `ctx.settings` is the day's tuning (its at-open snapshot, else current).
+   * `prepare(found)` runs after the gate, before the transaction, for the
+   * async reads a change needs (the pool, media).
+   */
+  async #adminWord(args, action, change, extra = {}, prepare = null) {
     const { learnerId, actorId, wordId } = args;
     const found = await this.#admin(args);
     const { lexicon, pkg, day, store } = found;
     if (typeof wordId !== 'string' || !lexicon.entries.has(wordId)) throw new EntityNotFoundError('word-ladder word', String(wordId));
+    const prepared = prepare ? await prepare(found) : {};
     let transitions = [];
     let word = null;
     store.transact(learnerId, pkg, day, ({ status, dayFile }) => {
       const before = status.words[wordId] ?? emptyWordV3();
-      const out = change(before, { status, dayFile, day });
+      const settings = this.#daySettings(dayFile, { store, userId: learnerId, pkg });
+      const out = change(before, { status, dayFile, day, settings, ...prepared });
       status.words[wordId] = out.word;
       word = out.word;
       transitions = wordTransitions({ [wordId]: before }, { [wordId]: out.word }, 'admin');
@@ -697,8 +704,12 @@ export class WordLadderSittingService {
     }
     const ids = await this.#deckOrder(status, deck);
     for (const id of lexicon.entries.keys()) if (!ids.includes(id) && status.words[id]) ids.push(id);
+    // A deck the learner is still enrolled in is re-added at every open, so
+    // only a deck they have left can be dropped from the pool.
+    const enrolled = new Set((await this.#enrollments(learnerId)).map((row) => row.deckId ?? row.corpusId));
     return {
       learnerId, package: pkg, decksSeen: [...status.decksSeen],
+      droppableDecks: status.decksSeen.filter((id) => !enrolled.has(id)),
       words: ids.filter((id) => lexicon.entries.has(id)).map((id) => {
         const entry = lexicon.entries.get(id);
         const word = status.words[id] ?? emptyWordV3();
@@ -716,23 +727,47 @@ export class WordLadderSittingService {
     return this.#adminWord({ learnerId, deckId, wordId, actorId, pin }, 'reset', () => ({ word: emptyWordV3() }));
   }
 
-  /** Mastered at `stage`, due after that stage's gap. */
+  /** Mastered at `stage`, due after that stage's gap scaled by the day's tuned `review.gapScale`. */
   async adminMarkMastered({ learnerId, deckId, wordId, stage, actorId = null, pin = null } = {}) {
     return this.#adminWord({ learnerId, deckId, wordId, actorId, pin }, 'mastered',
-      (word, { day }) => ({ word: markMastered(word, { stage, day }) }), { stage });
+      (word, { day, settings }) => ({ word: markMastered(word, { stage, day, gapScale: settings?.review?.gapScale ?? 1 }) }), { stage });
   }
 
-  /** Excluded words leave every round, recheck, drill, practice run and quiz; today's pending ones too. */
+  /**
+   * Excluded words leave every round, recheck, drill, practice run and quiz;
+   * today's pending ones too. An opened day is then re-settled, so taking away
+   * the only pending thing plans what comes next (or credits the day) instead
+   * of leaving the child on a "done" summary. A day never opened is untouched.
+   */
   async adminExclude({ learnerId, deckId, wordId, excluded = true, actorId = null, pin = null } = {}) {
     if (typeof excluded !== 'boolean') throw new ValidationError('excluded must be true or false');
-    return this.#adminWord({ learnerId, deckId, wordId, actorId, pin }, excluded ? 'exclude' : 'include',
-      (word, { dayFile }) => ({ word: { ...word, excluded }, dayFile: excluded ? excludeWordFromDay(dayFile, wordId) : dayFile }), { excluded });
+    const prepare = async ({ deck, lexicon, pkg, store }) => ({
+      deck, lexicon, media: this.#media(deck, lexicon), pool: await this.#pool(store.readStatus(learnerId, pkg), deck),
+    });
+    return this.#adminWord({ learnerId, deckId, wordId, actorId, pin }, excluded ? 'exclude' : 'include', (word, ctx) => {
+      const next = { ...word, excluded };
+      if (!excluded || !ctx.dayFile.atOpen) return { word: next };
+      const status = { ...ctx.status, words: { ...ctx.status.words, [wordId]: next } };
+      const dayFile = excludeWordFromDay(ctx.dayFile, wordId, {
+        status, day: ctx.day, pool: ctx.pool, settings: ctx.settings, learnerId, media: ctx.media, lexicon: ctx.lexicon,
+        at: isoWithOffset(this.#now(), this.#timezone),
+      });
+      return { word: next, dayFile };
+    }, { excluded }, prepare);
   }
 
-  /** Removes a deck from the new-word pool (`decksSeen`); words already introduced keep their state. */
+  /**
+   * Removes a deck from the new-word pool (`decksSeen`); words already
+   * introduced keep their state. The current deck and any deck the learner is
+   * still enrolled in are refused: the next open would silently re-add them.
+   */
   async adminDropDeck({ learnerId, deckId, dropDeckId, actorId = null, pin = null } = {}) {
     const { pkg, day, store } = await this.#admin({ learnerId, deckId, actorId, pin });
     if (typeof dropDeckId !== 'string' || !dropDeckId) throw new ValidationError('dropDeckId is required');
+    const enrolled = (await this.#enrollments(learnerId)).some((row) => (row.deckId ?? row.corpusId) === dropDeckId);
+    if (dropDeckId === deckId || enrolled) {
+      throw new ValidationError(`'${dropDeckId}' is a deck the learner is still enrolled in; end that assignment first`);
+    }
     const out = store.transact(learnerId, pkg, day, ({ status, dayFile }) => {
       if (!status.decksSeen.includes(dropDeckId)) throw new EntityNotFoundError('word-ladder deck in the pool', dropDeckId);
       return { status: { ...status, decksSeen: status.decksSeen.filter((id) => id !== dropDeckId) }, dayFile };

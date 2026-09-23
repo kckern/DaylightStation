@@ -404,13 +404,18 @@ refusal changes nothing. Each mutation logs `school.word-ladder.admin`
 `2_domains/school/wordLadder/admin.mjs`; the service methods are
 `WordLadderSittingService.admin*`.
 
+A control that does not touch the day's plan (reset, mark mastered, drop deck,
+or exclude on a day not yet opened) writes `status.yml` only: the store never
+creates a day file that would still be empty, so a day file exists only for a
+day the learner actually opened (`listDays` = their study days).
+
 | Action | Effect |
 |---|---|
 | **Words** (`adminWords`) | Every word the learner can meet (decks seen in order, this deck, then any other word with a record): state, stage, due, miss streak, tricky, excluded, `lastGraded`, and `recentTyped` — judged 3.3 answers from the last 14 study days' files, newest first, each with `itemId`, typed text, score, judge, reason and any `regraded` stamp |
-| **Reset** | The record becomes `emptyWordV3()` — nothing kept, `notYetCarry` included |
-| **Mark mastered (stage n)** | `mastered`, stage n, due today + `GAPS[min(n,5)]`; miss streak, tricky and `notYetCarry` cleared |
-| **Exclude / Include** | Sets `excluded`. An excluded word is never in the new-word pool or an intro, a carry round, a recheck (`isDue` is false), a tricky drill or drill offer, a practice run, a match board or 3.1 distractor, the printed learner quiz, or My words, and never counts toward the working set (`isUnsettled` is false). Excluding mid-day also drops its pending recheck and ends an unfinished drill on it (`excludeWordFromDay`); a round already under way keeps it until the round ends |
-| **Drop deck** | Removes the deck from `decksSeen` (the new-word pool); introduced words keep their state |
+| **Reset** | The record becomes `emptyWordV3()` — nothing kept, `notYetCarry` included. If a round under way still quizzes it, grading fills `introducedDay` with that day (`applyGraded` does this for any verify/recheck on a word without one), so a miss is carried |
+| **Mark mastered (stage n)** | `mastered`, stage n, due today + `max(1, round(GAPS[min(n,5)] × review.gapScale))` — the day's tuned scale, as a recheck pass uses (1 when absent); miss streak, tricky and `notYetCarry` cleared. A word never introduced gets `introducedDay` = today, so a later recheck miss (→ familiar) is carried like any other |
+| **Exclude / Include** | Sets `excluded`. An excluded word is never in the new-word pool or an intro, a carry round, a recheck (`isDue` is false), a tricky drill or drill offer, a practice run, a match board or 3.1 distractor, the printed learner quiz, or My words, and never counts toward the working set (`isUnsettled` is false). Excluding mid-day also drops its pending recheck and ends an unfinished drill on it (`excludeWordFromDay`, the drill marked `excluded: true` — it does not count toward `drill.perSitting`, so another tricky word may still be drilled); a round already under way keeps it until the round ends. An opened day is then **re-settled** in the same transaction: with nothing else pending, the next round or drill is planned, or the day is credited (`doneAt`) — the child never lands on a "done" summary for an uncredited day |
+| **Drop deck** | Removes the deck from `decksSeen` (the new-word pool); introduced words keep their state. Refused (400) for the current deck or any deck the learner is still enrolled in — the next open would re-add it; `adminWords.droppableDecks` lists the decks that can go |
 | **Re-grade** | For one logged typed (3.3) answer: overwrites the judge cache for `(package, word, normalised answer)` with `{score: pass ? typing.passScore : 1, judge: grown-up, reason: 'Re-graded by a grown-up'}` and stamps the item `regraded: {at, actorId, pass}`. **It does not change word state** — reset / mark mastered do that |
 
 ## API
@@ -443,8 +448,9 @@ no audio until the take; look / copy / say-after the full word card.
 - `POST /word-ladder/fold {learnerId, actorId, pin}` — teacher-gated: runs the paper-quiz fold for every
   word-ladder package the learner is enrolled in, on demand
 - Grown-up word controls, **live mount only**, teacher-gated (`pin` may be the
-  console's cookie capability):
-  `GET /word-ladder/admin/words?learnerId=&deckId=&actorId=&pin=` → `{learnerId, package, decksSeen, words}`;
+  console's cookie capability — the GET, which has no body, reads the
+  `daylight_teacher_session` cookie itself when no `pin` query is given):
+  `GET /word-ladder/admin/words?learnerId=&deckId=&actorId=&pin=` → `{learnerId, package, decksSeen, droppableDecks, words}`;
   `POST /word-ladder/admin/reset {learnerId, deckId, wordId, actorId, pin}`,
   `…/admin/mastered {…, wordId, stage}`, `…/admin/exclude {…, wordId, excluded}`,
   `…/admin/drop-deck {…, dropDeckId}`, `…/admin/regrade {…, day, itemId, pass}`
