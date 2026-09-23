@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import yaml from 'js-yaml';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { YamlWordLadderStore } from './YamlWordLadderStore.mjs';
 
 let dir;
@@ -64,12 +64,39 @@ describe('YamlWordLadderStore tuning + study days', () => {
     const back = store.readTuning('test-learner', 'korean-vocab');
     expect(back).toMatchObject({ values: { 'round.size': 6 }, lastChanged: { 'round.size': '2026-09-21' }, lastTunedDay: '2026-09-21' });
   });
-  it('a corrupt tuning.yml reads as empty and is never overwritten', () => {
+  it('a corrupt tuning.yml reads as empty, reports its state, logs per file kind and is never overwritten', () => {
     fs.mkdirSync(base(), { recursive: true });
     fs.writeFileSync(path.join(base(), 'tuning.yml'), 'values: [broken');
-    const store = new YamlWordLadderStore({ configService, logger: { error() {} } });
+    const logger = { error: vi.fn() };
+    const store = new YamlWordLadderStore({ configService, logger });
+    expect(store.tuningState('test-learner', 'korean-vocab')).toBe('corrupt');
     expect(store.readTuning('test-learner', 'korean-vocab').values).toEqual({});
+    expect(logger.error).toHaveBeenCalledWith('school.word-ladder.store-corrupt', expect.objectContaining({ kind: 'tuning', file: 'tuning', learnerId: 'test-learner' }));
     expect(() => store.writeTuning('test-learner', 'korean-vocab', { values: {} })).toThrow(/corrupt/);
+  });
+  it('tuningState is missing / ok', () => {
+    const store = new YamlWordLadderStore({ configService });
+    expect(store.tuningState('test-learner', 'korean-vocab')).toBe('missing');
+    store.writeTuning('test-learner', 'korean-vocab', { values: {} });
+    expect(store.tuningState('test-learner', 'korean-vocab')).toBe('ok');
+  });
+  it('coerces hand-edited unquoted dates to YYYY-MM-DD strings', () => {
+    fs.mkdirSync(base(), { recursive: true });
+    fs.writeFileSync(path.join(base(), 'tuning.yml'), [
+      'schema: school.word-ladder-tuning/v1', 'values: { round.size: 6 }', 'lastChanged: { round.size: 2026-09-20 }',
+      'lastTunedDay: 2026-09-21', 'history:', '  - { day: 2026-09-21, status: on-track, notes: [], applied: [], dropped: [] }', '',
+    ].join('\n'));
+    const t = new YamlWordLadderStore({ configService }).readTuning('test-learner', 'korean-vocab');
+    expect(t.lastTunedDay).toBe('2026-09-21');
+    expect(t.lastChanged).toEqual({ 'round.size': '2026-09-20' });
+    expect(t.history[0].day).toBe('2026-09-21');
+  });
+  it('a corrupt status logs store-corrupt with kind status', () => {
+    fs.mkdirSync(base(), { recursive: true });
+    fs.writeFileSync(path.join(base(), 'status.yml'), 'schema: [broken');
+    const logger = { error: vi.fn() };
+    new YamlWordLadderStore({ configService, logger }).readStatus('test-learner', 'korean-vocab');
+    expect(logger.error).toHaveBeenCalledWith('school.word-ladder.store-corrupt', expect.objectContaining({ kind: 'status', file: 'status' }));
   });
   it('an unknown learner reads empty tuning and cannot write', () => {
     const store = new YamlWordLadderStore({ configService });

@@ -231,6 +231,11 @@ describe('withTunedValues', () => {
     expect(out).not.toHaveProperty('nope');
     expect(DEFAULT_SETTINGS.round.size).toBe(5);
   });
+  it('also clamps to the household bounds (the narrower of the two)', () => {
+    const out = withTunedValues(DEFAULT_SETTINGS, { 'round.size': 7, 'batch.newPerDay': 2 }, { 'round.size': [3, 6], 'batch.newPerDay': [3, 9] });
+    expect(out.round.size).toBe(6);
+    expect(out.batch.newPerDay).toBe(3);
+  });
   it('no values → an equal copy', () => {
     expect(withTunedValues(DEFAULT_SETTINGS, undefined)).toEqual(DEFAULT_SETTINGS);
   });

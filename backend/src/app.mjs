@@ -3228,7 +3228,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const wordLadderShared = {
     decks: schoolCatalog.content, lexicons: wordLadderLexicons, assignments: flashcardAssignments,
     attempts: schoolDatastore, assets: flashcardAssets, teacherGate: schoolTeacherGate,
-    settings: wordLadderSettings, timezone: configService.getTimezone?.() || null, now: Date.now,
+    settings: wordLadderSettings, bounds: wordLadderConfig.bounds ?? null, timezone: configService.getTimezone?.() || null, now: Date.now,
     logger: wordLadderLogger,
   };
   // One cache for the live judge and the grown-up re-grade that overwrites it (spec §6).

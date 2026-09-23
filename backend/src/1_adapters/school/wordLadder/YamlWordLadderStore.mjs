@@ -9,6 +9,11 @@ import {
 
 const isMap = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
+// A hand-edited, unquoted `2026-09-21` loads as a Date; days are strings.
+const dayString = (value) => {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) return value.toISOString().slice(0, 10);
+  return typeof value === 'string' && DAY.test(value) ? value : null;
+};
 
 /**
  * `users/{id}/apps/school/word-ladder/{package}/status.yml` + `days/{day}.yml`
@@ -35,7 +40,8 @@ export class YamlWordLadderStore {
       const raw = loadYaml(base);
       return { state: 'ok', value: raw == null ? empty() : parse(raw) };
     } catch (error) {
-      this.#logger.error?.('school.word-ladder.status-corrupt', { ...context, error: error.message });
+      // One event for every file kind (`kind: status | day | tuning`).
+      this.#logger.error?.('school.word-ladder.store-corrupt', { ...context, error: error.message });
       return { state: 'corrupt', value: empty() };
     }
   }
@@ -45,7 +51,7 @@ export class YamlWordLadderStore {
     const loaded = this.#load(path.join(dir, 'status'), (raw) => {
       if (raw.schema === STATUS_SCHEMA_V3 && isMap(raw.words)) return { ...emptyStatusV3(), ...raw };
       return migrateStatusV2(raw);
-    }, emptyStatusV3, { learnerId: userId, package: pkg, file: 'status' });
+    }, emptyStatusV3, { learnerId: userId, package: pkg, file: 'status', kind: 'status' });
     return { ...loaded, file: path.join(dir, 'status.yml') };
   }
   #day(userId, pkg, day) {
@@ -55,7 +61,7 @@ export class YamlWordLadderStore {
     const loaded = this.#load(path.join(dir, 'days', day), (raw) => {
       if (raw.schema !== DAY_SCHEMA) throw new Error('invalid day shape');
       return { ...emptyDay(day), ...raw };
-    }, () => emptyDay(day), { learnerId: userId, package: pkg, file: `days/${day}` });
+    }, () => emptyDay(day), { learnerId: userId, package: pkg, file: `days/${day}`, kind: 'day' });
     return { ...loaded, file: path.join(dir, 'days', `${day}.yml`) };
   }
   #tuning(userId, pkg) {
@@ -64,17 +70,20 @@ export class YamlWordLadderStore {
     const loaded = this.#load(path.join(dir, 'tuning'), (raw) => {
       if (!isMap(raw)) throw new Error('invalid tuning shape');
       const base = emptyTuning();
+      const lastChanged = isMap(raw.lastChanged) ? raw.lastChanged : {};
       return {
         ...base,
         values: isMap(raw.values) ? raw.values : {},
-        lastChanged: isMap(raw.lastChanged) ? raw.lastChanged : {},
-        lastTunedDay: typeof raw.lastTunedDay === 'string' ? raw.lastTunedDay : null,
-        history: Array.isArray(raw.history) ? raw.history : [],
+        lastChanged: Object.fromEntries(Object.entries(lastChanged).map(([key, d]) => [key, dayString(d)]).filter(([, d]) => d)),
+        lastTunedDay: dayString(raw.lastTunedDay),
+        history: (Array.isArray(raw.history) ? raw.history : []).map((row) => (isMap(row) && row.day != null ? { ...row, day: dayString(row.day) } : row)),
       };
-    }, emptyTuning, { learnerId: userId, package: pkg, file: 'tuning' });
+    }, emptyTuning, { learnerId: userId, package: pkg, file: 'tuning', kind: 'tuning' });
     return { ...loaded, file: path.join(dir, 'tuning.yml') };
   }
   readTuning(userId, pkg) { return structuredClone(this.#tuning(userId, pkg).value); }
+  /** `missing | ok | corrupt` — a corrupt tuning.yml reads as empty, so callers that write must ask. */
+  tuningState(userId, pkg) { return this.#tuning(userId, pkg).state; }
   /** Replaces `tuning.yml`; history keeps the last 60 rows. A corrupt file is never overwritten. */
   writeTuning(userId, pkg, tuning) {
     const current = this.#tuning(userId, pkg);

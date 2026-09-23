@@ -56,12 +56,12 @@ function isoWithOffset(ms, timezone) {
 }
 
 export class WordLadderSittingService {
-  #stores; #decks; #lexicons; #assignments; #attempts; #assets; #judge; #judgementCache; #teacherGate; #recordings; #settings; #timezone; #now; #logger; #mode;
+  #stores; #decks; #lexicons; #assignments; #attempts; #assets; #judge; #judgementCache; #teacherGate; #recordings; #settings; #bounds; #timezone; #now; #logger; #mode;
   #counter = 0;
 
   constructor({
     stores, decks, lexicons, assignments, attempts = null, assets = null, judge, judgementCache = null, teacherGate = null, recordings = null,
-    settings, timezone = null, now, logger = console, mode = 'live',
+    settings, bounds = null, timezone = null, now, logger = console, mode = 'live',
   } = {}) {
     if (typeof stores?.open !== 'function' || typeof stores?.forToken !== 'function') throw new Error('WordLadderSittingService requires stores');
     if (typeof decks?.getFlashcardDeck !== 'function') throw new Error('WordLadderSittingService requires decks.getFlashcardDeck');
@@ -76,18 +76,18 @@ export class WordLadderSittingService {
     this.#judgementCache = judgementCache;
     this.#stores = stores; this.#decks = decks; this.#lexicons = lexicons; this.#assignments = assignments;
     this.#attempts = attempts; this.#assets = assets; this.#judge = judge; this.#teacherGate = teacherGate;
-    this.#settings = settings; this.#timezone = timezone; this.#now = now; this.#logger = logger; this.#mode = mode;
+    this.#settings = settings; this.#bounds = bounds; this.#timezone = timezone; this.#now = now; this.#logger = logger; this.#mode = mode;
   }
 
   #today(ms = this.#now()) { return studyDayForInstant(ms, { timezone: this.#timezone }); }
 
-  /** Current settings for a learner's package: config settings + their tuned values. */
+  /** Current settings for a learner's package: config settings + their tuned values (clamped to spec and household bounds). */
   #currentSettings(store, userId, pkg) {
     let values = null;
     try { values = store.readTuning?.(userId, pkg)?.values ?? null; } catch (error) {
       this.#logger.warn?.('school.word-ladder.tuning-unreadable', { learnerId: userId, package: pkg, error: error.message });
     }
-    return withTunedValues(this.#settings(), values);
+    return withTunedValues(this.#settings(), values, this.#bounds);
   }
 
   /** The tuning values in force for a day: its at-open snapshot, else current settings. */
