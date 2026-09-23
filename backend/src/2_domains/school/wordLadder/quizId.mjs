@@ -42,3 +42,23 @@ export function learnerQuizPrefix({ deckDir, pkg, learnerId = '' }) {
 export function learnerQuizDocumentId({ deckDir, pkg, learnerId, isoWeek }) {
   return `${learnerQuizPrefix({ deckDir, pkg, learnerId })}${String(isoWeek).toLowerCase()}`;
 }
+
+/**
+ * Parses a per-learner quiz document id under `{deckDir, pkg}` into
+ * `{ learnerId, isoWeek }`, or `null` when `docId` isn't a per-learner id for
+ * this package at all. SEGMENT-BOUNDED, unlike a raw `startsWith` prefix
+ * check: learner `a`'s bare `startsWith` prefix (`…-quiz-a-`) is ALSO a
+ * prefix of sibling `a-b`'s doc (`…-quiz-a-b-2026-w39`), which would wrongly
+ * accept — or refuse — the wrong learner's sheet. A learnerId may itself
+ * contain hyphens, so the split point is anchored on the trailing
+ * `YYYY-wWW` week token (always present, always this exact shape), not on
+ * the first hyphen after the prefix.
+ */
+export function parseLearnerQuizId(docId, { deckDir, pkg }) {
+  const prefix = `${deckDir}/${pkg}-quiz-`;
+  if (typeof docId !== 'string' || !docId.startsWith(prefix)) return null;
+  const rest = docId.slice(prefix.length);
+  const m = /^(.+)-(\d{4}-w\d{2})$/.exec(rest);
+  if (!m) return null;
+  return { learnerId: m[1], isoWeek: m[2] };
+}

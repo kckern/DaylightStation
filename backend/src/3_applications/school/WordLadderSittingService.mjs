@@ -21,7 +21,7 @@ import { GuestForbiddenError } from '#domains/school/errors.mjs';
 import { offsetMinutesFor, studyDayForInstant } from '#domains/school/studyDay.mjs';
 import { addDays } from '#domains/school/termVerdict.mjs';
 import {
-  addActiveTime, currentItem, deckDirOf, foldPaperAttempts, learnerQuizPrefix, openDay, quizDocumentIdFor, respond, wordAssetIds,
+  addActiveTime, currentItem, deckDirOf, foldPaperAttempts, openDay, quizDocumentIdFor, respond, wordAssetIds,
 } from '#domains/school/wordLadder/index.mjs';
 
 const FOLD_LOOKBACK_DAYS = 60;
@@ -266,9 +266,7 @@ export class WordLadderSittingService {
    */
   #fold(status, { attempts, ok }, quizDocumentIds, today, settings, { learnerId, deckDir, pkg }) {
     const out = foldPaperAttempts({
-      status, attempts, quizDocumentIds,
-      acceptPrefixes: [learnerQuizPrefix({ deckDir, pkg, learnerId })],
-      refusePrefixes: [learnerQuizPrefix({ deckDir, pkg })],
+      status, attempts, quizDocumentIds, learner: { deckDir, pkg, learnerId },
       dayOf: (at) => studyDayForInstant(Date.parse(at), { timezone: this.#timezone }),
       settings: { afterMisses: settings.drill.afterMisses, gapScale: settings.review.gapScale },
     });

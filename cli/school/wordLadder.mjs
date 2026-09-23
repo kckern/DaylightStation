@@ -80,8 +80,8 @@ function roots(argv, env = process.env) {
   return { dataDir, mediaDir, sourceRoot };
 }
 
-/** The lexicon deck `--deck` names, and its validated lexicon. */
-async function loadDeck(argv) {
+/** The lexicon + learning-content catalog, wired the same way for every command that needs it. */
+function catalog(argv) {
   const { dataDir, mediaDir } = roots(argv);
   const lexicons = new YamlLexiconRepository({ mediaRoot: path.join(mediaDir, 'school') });
   const content = new YamlLearningContentRepository({
@@ -89,6 +89,12 @@ async function loadDeck(argv) {
     bankDirectories: [path.join(dataDir, 'content/school/learning-catalog/question-banks')],
     deckDirectories: [path.join(dataDir, 'content/school/learning-catalog/flashcard-decks')],
   });
+  return { dataDir, mediaDir, lexicons, content };
+}
+
+/** The lexicon deck `--deck` names, and its validated lexicon. */
+async function loadDeck(argv) {
+  const { lexicons, content } = catalog(argv);
   const flag = option(argv, '--deck');
   const deckIds = typeof flag === 'string' && !flag.includes('/')
     ? (await content.listFlashcardDecks()).map((raw) => raw?.id)
@@ -156,13 +162,7 @@ function loadLearnerStatus(dataDir, learnerId, pkg) {
 
 /** Every lexicon deck whose lexicon belongs to `pkg`, sorted by id for a deterministic deck order. */
 async function decksForPackage(argv, pkg) {
-  const { dataDir, mediaDir } = roots(argv);
-  const lexicons = new YamlLexiconRepository({ mediaRoot: path.join(mediaDir, 'school') });
-  const content = new YamlLearningContentRepository({
-    documentDirectories: [path.join(dataDir, 'content/school/learning-catalog/documents')],
-    bankDirectories: [path.join(dataDir, 'content/school/learning-catalog/question-banks')],
-    deckDirectories: [path.join(dataDir, 'content/school/learning-catalog/flashcard-decks')],
-  });
+  const { lexicons, content } = catalog(argv);
   const all = await new LexiconDeckLoader({ content, lexicons }).listFlashcardDecks();
   const decks = all
     .filter((deck) => Array.isArray(deck?.words) && typeof deck?.lexicon === 'string')
