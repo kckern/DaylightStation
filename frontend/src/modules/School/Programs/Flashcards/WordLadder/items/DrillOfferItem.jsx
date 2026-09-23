@@ -19,7 +19,8 @@ export default function DrillOfferItem({ item, langs, resolveAssetUrl, onRespond
     wordLadderLog.drillOffered({ itemId: item.id, wordId: item.wordId ?? word.wordId ?? null, accepted });
     onRespond({ drill: accepted ? 'yes' : 'no' });
   };
-  useWordLadderKeys({ 1: () => answer(true), 2: () => answer(false), h: () => audio && playClip(audio, 'term') });
+  const hear = () => audio && playClip(audio, 'term');
+  useWordLadderKeys({ 1: () => answer(true), 2: () => answer(false), tab: hear, h: hear });
   return (
     <section className="wl-item wl-offer" aria-label="Tricky word">
       <h2 className="wl-offer__title">This one&apos;s tricky — want to practise it?</h2>
@@ -27,7 +28,7 @@ export default function DrillOfferItem({ item, langs, resolveAssetUrl, onRespond
         <FitText role="term" text={word.term ?? ''} lang={langs.term} onFit={onLayout} />
       </div>
       <div className="wl-controls">
-        {audio && <TouchButton variant="secondary" keyHint="H" onClick={() => playClip(audio, 'term')}><Icon name="volume" /> Hear it</TouchButton>}
+        {audio && <TouchButton variant="secondary" keyHint="Tab" onClick={hear}><Icon name="volume" /> Hear it</TouchButton>}
         <TouchButton variant="primary" keyHint="1" disabled={busy} onClick={() => answer(true)}>Practise</TouchButton>
         <TouchButton variant="secondary" keyHint="2" disabled={busy} onClick={() => answer(false)}>Not now</TouchButton>
       </div>

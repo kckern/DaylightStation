@@ -235,11 +235,11 @@ describe('WordLadderProgram', () => {
     renderStarted(<WordLadderProgram descriptor={{ deckId: 'd', userId: 'test-learner' }} api={api} />);
     await screen.findByText('가위');
     act(() => { fireEvent.keyDown(window, { key: ' ' }); });
-    expect(screen.getByText('Scissors')).toBeInTheDocument();
+    expect(screen.getByText('Scissors').closest('[aria-hidden="true"]')).toBeNull();
     act(() => { fireEvent.keyDown(window, { key: ' ' }); });
     await waitFor(() => expect(api.open).toHaveBeenCalledTimes(2));
-    // Same item id, new sitting: the card starts on its front again.
-    await waitFor(() => expect(screen.queryByText('Scissors')).toBeNull());
+    // Same item id, new sitting: the card starts on its front again (the back hidden).
+    await waitFor(() => expect(screen.getByText('Scissors').closest('[aria-hidden="true"]')).not.toBeNull());
     expect(screen.getByText('가위')).toBeInTheDocument();
   });
 });

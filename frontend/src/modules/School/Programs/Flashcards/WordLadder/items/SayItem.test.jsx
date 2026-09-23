@@ -17,15 +17,17 @@ vi.mock('../wordLadderAudio.js', () => {
 // here and its `onTake` captured so a test can fire a "take arrived" the same
 // way the real hook would, without touching a microphone.
 const captured = vi.hoisted(() => ({ onTake: null }));
-const recorderState = vi.hoisted(() => ({ phase: 'idle', verdict: null }));
+const recorderState = vi.hoisted(() => ({ phase: 'idle', verdict: null, unavailable: false }));
+const recorderCalls = vi.hoisted(() => ({ start: null, stop: null }));
 vi.mock('../useTakeRecorder.js', () => ({
   default: vi.fn((opts) => {
     captured.onTake = opts.onTake;
     return {
-      start: vi.fn(async () => {}),
-      stop: vi.fn(() => {}),
+      start: recorderCalls.start,
+      stop: recorderCalls.stop,
       phase: recorderState.phase,
       verdict: recorderState.verdict,
+      unavailable: recorderState.unavailable,
       stream: null,
       onLevel: vi.fn(),
     };
@@ -60,6 +62,9 @@ function makeApi(overrides = {}) {
 beforeEach(() => {
   recorderState.phase = 'idle';
   recorderState.verdict = null;
+  recorderState.unavailable = false;
+  recorderCalls.start = vi.fn(async () => {});
+  recorderCalls.stop = vi.fn(() => {});
   captured.onTake = null;
   window.URL.createObjectURL = vi.fn(() => 'blob:take');
   window.URL.revokeObjectURL = vi.fn();
@@ -88,22 +93,12 @@ describe('SayItem — Next is never a gate', () => {
     expect(onRespond).toHaveBeenCalledWith({ done: true });
   });
 
-  it('Space sends {done:true} with no take made', () => {
+  it('Backslash skips with no take made — the only key that does', () => {
     const onRespond = vi.fn();
-    render(
-      <SayItem
-        item={readAloudItem}
-        mode="read-aloud"
-        langs={langs}
-        resolveAssetUrl={(x) => x}
-        onRespond={onRespond}
-        api={makeApi()}
-        sittingId="sit1"
-        userId="kid"
-      />,
-    );
-    fireEvent.keyDown(window, { key: ' ' });
+    renderSay({ onRespond });
+    fireEvent.keyDown(window, { key: '\\', code: 'Backslash' });
     expect(onRespond).toHaveBeenCalledWith({ done: true });
+    expect(hintOf(/skip/i)).toBe('\\');
   });
 });
 
@@ -341,5 +336,123 @@ describe('SayItem — take object URL lifecycle', () => {
     expect(window.URL.revokeObjectURL).not.toHaveBeenCalled();
     unmount();
     expect(window.URL.revokeObjectURL).toHaveBeenCalledWith('blob:take');
+  });
+});
+
+function renderSay({ onRespond = vi.fn(), item = readAloudItem, mode = 'read-aloud' } = {}) {
+  return render(
+    <SayItem
+      item={item}
+      mode={mode}
+      langs={langs}
+      resolveAssetUrl={(x) => x}
+      onRespond={onRespond}
+      api={makeApi()}
+      sittingId="sit1"
+      userId="kid"
+    />,
+  );
+}
+const hintOf = (name) => screen.getByRole('button', { name }).querySelector('.ds-touch__key')?.textContent ?? null;
+const space = () => fireEvent.keyDown(window, { key: ' ', code: 'Space' });
+const takeArrives = async () => {
+  const blob = new Blob(['x'], { type: 'audio/webm' });
+  await act(async () => { await captured.onTake({ blob, durationMs: 2000 }); });
+};
+
+describe('SayItem — Space is the forward action, never a skip', () => {
+  it('before a take, Space starts recording — and never calls skip or next', () => {
+    const onRespond = vi.fn();
+    renderSay({ onRespond });
+    expect(hintOf(/^record/i)).toBe('Space');
+    space();
+    expect(recorderCalls.start).toHaveBeenCalledTimes(1);
+    expect(onRespond).not.toHaveBeenCalled();
+    fireEvent.keyDown(window, { key: 'Enter', code: 'Enter' });
+    expect(onRespond).not.toHaveBeenCalled();
+  });
+
+  it('while recording, Space stops the take', () => {
+    recorderState.phase = 'recording';
+    const onRespond = vi.fn();
+    renderSay({ onRespond });
+    expect(hintOf(/stop/i)).toBe('Space');
+    space();
+    expect(recorderCalls.stop).toHaveBeenCalledTimes(1);
+    expect(recorderCalls.start).not.toHaveBeenCalled();
+    expect(onRespond).not.toHaveBeenCalled();
+  });
+
+  it('after a take, Space goes Next; Record again is touch-only (no Space hint)', async () => {
+    const onRespond = vi.fn();
+    renderSay({ onRespond });
+    await takeArrives();
+    await waitFor(() => expect(screen.getByRole('button', { name: /next/i })).toBeInTheDocument());
+    expect(hintOf(/next/i)).toBe('Space');
+    expect(hintOf(/record again/i)).not.toBe('Space');
+    space();
+    expect(onRespond).toHaveBeenCalledWith({ done: true });
+    expect(recorderCalls.start).not.toHaveBeenCalled();
+  });
+
+  it('Skip is visible and clickable from the first render, with no recording, and while recording', () => {
+    const onRespond = vi.fn();
+    const { unmount } = renderSay({ onRespond });
+    const skip = screen.getByRole('button', { name: /skip/i });
+    expect(skip).not.toBeDisabled();
+    fireEvent.click(skip);
+    expect(onRespond).toHaveBeenCalledWith({ done: true });
+    unmount();
+    recorderState.phase = 'recording';
+    renderSay();
+    expect(screen.getByRole('button', { name: /skip/i })).not.toBeDisabled();
+  });
+
+  it('with the mic refused/unavailable, Space advances instead of a dead Record', () => {
+    recorderState.unavailable = true;
+    const onRespond = vi.fn();
+    renderSay({ onRespond });
+    expect(hintOf(/skip/i)).toBe('Space');
+    space();
+    expect(recorderCalls.start).not.toHaveBeenCalled();
+    expect(onRespond).toHaveBeenCalledWith({ done: true });
+  });
+
+  it('say-from-cue audio cue: Tab replays the cue, and its Listen hints Tab', () => {
+    const item = { ...sayFromCueItem, id: 's6', cue: { type: 'audio' }, assets: { image: null, audio: null, glossAudio: 'g-aud' } };
+    renderSay({ item, mode: 'say-from-cue' });
+    playClip.mockClear();
+    expect(fireEvent.keyDown(window, { key: 'Tab', code: 'Tab' })).toBe(false);
+    expect(playClip).toHaveBeenCalledWith('g-aud', 'gloss');
+    expect(hintOf(/listen/i)).toBe('Tab');
+  });
+});
+
+describe('SayItem — ArrowLeft = Record again', () => {
+  it('after a take, ArrowLeft starts a fresh recording; its button hints ←', async () => {
+    const onRespond = vi.fn();
+    renderSay({ onRespond });
+    await takeArrives();
+    await waitFor(() => expect(screen.getByRole('button', { name: /record again/i })).toBeInTheDocument());
+    expect(hintOf(/record again/i)).toBe('←');
+    fireEvent.keyDown(window, { key: 'ArrowLeft', code: 'ArrowLeft' });
+    expect(recorderCalls.start).toHaveBeenCalledTimes(1);
+    expect(onRespond).not.toHaveBeenCalled();
+  });
+
+  it('before any take, ArrowLeft does nothing', () => {
+    const onRespond = vi.fn();
+    renderSay({ onRespond });
+    fireEvent.keyDown(window, { key: 'ArrowLeft', code: 'ArrowLeft' });
+    expect(recorderCalls.start).not.toHaveBeenCalled();
+    expect(onRespond).not.toHaveBeenCalled();
+  });
+
+  it('with the mic unavailable, ArrowLeft does nothing even after a take', async () => {
+    recorderState.unavailable = true;
+    renderSay();
+    await takeArrives();
+    fireEvent.keyDown(window, { key: 'ArrowLeft', code: 'ArrowLeft' });
+    expect(recorderCalls.start).not.toHaveBeenCalled();
   });
 });

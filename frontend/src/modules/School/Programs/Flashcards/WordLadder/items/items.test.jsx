@@ -10,6 +10,11 @@ import { modeForLanguage } from '../../../../ime/languages.js';
 import HangulTypingProvider from '../../../../ime/HangulTypingProvider.jsx';
 
 vi.mock('../wordLadderAudio.js', () => ({ playClip: vi.fn(async () => true) }));
+// The keyboard-presence signal is module state that a keydown in one test
+// would leak into the next; these tests are about the keypad itself, so the
+// device is a touch panel with no keyboard known (see keypadToggle.test.jsx
+// for the detection itself).
+vi.mock('../../../../../../hooks/useHardwareKeyboard.js', () => ({ useHardwareKeyboard: () => false, default: () => false }));
 const word = { wordId: 'gawi', term: '가위', gloss: 'Scissors', pronunciation: null, kind: 'word', media: { image: 'img', audio: 'aud', glossAudio: null } };
 const langs = { term: 'ko', gloss: 'en' };
 
@@ -18,10 +23,11 @@ describe('FlashcardItem', () => {
     const onRespond = vi.fn();
     render(<FlashcardItem item={{ id: 'r1:s:0', type: 'flashcard', mode: 'stream', word }} langs={langs} resolveAssetUrl={(x) => x} onRespond={onRespond} />);
     expect(screen.getByText('가위')).toBeInTheDocument();
-    expect(screen.queryByText('Scissors')).toBeNull();
+    // Both faces are mounted for the 3D flip; the back is hidden from sight and the reader.
+    expect(screen.getByText('Scissors').closest('[aria-hidden="true"]')).not.toBeNull();
     expect(screen.queryByRole('img')).toBeNull();
     fireEvent.keyDown(window, { key: ' ' });
-    expect(screen.getByText('Scissors')).toBeInTheDocument();
+    expect(screen.getByText('Scissors').closest('[aria-hidden="true"]')).toBeNull();
     expect(screen.getByRole('img')).toBeInTheDocument();
     fireEvent.keyDown(window, { key: '3' });
     expect(onRespond).toHaveBeenCalledWith({ sort: 'claimed' });
@@ -173,15 +179,17 @@ describe('TypedItem', () => {
 describe('TypedItem keypad toggle', () => {
   afterEach(() => { vi.useRealTimers(); });
 
-  it('shows a Keypad toggle button, closed by default', () => {
+  it('shows a small icon-only keypad toggle (no text), closed by default', () => {
     render(<TypedItem item={{ id: 'k0', type: 'typed', task: '3.3', cue: { type: 'text', text: 'Scissors' }, assets: {} }} mode="graded" langs={langs} resolveAssetUrl={(x) => x} onRespond={() => {}} />);
-    expect(screen.getByRole('button', { name: /Keypad/ })).toBeInTheDocument();
+    const toggle = screen.getByRole('button', { name: 'Show Korean keypad' });
+    expect(toggle).toHaveTextContent(/^$/);
+    expect(toggle.querySelector('svg, .school-icon, [class*="icon"]')).not.toBeNull();
     expect(screen.queryByTestId('jamo-keypad')).toBeNull();
   });
 
   it('a click on the toggle opens the keypad, and a second click closes it', () => {
     render(<TypedItem item={{ id: 'k1', type: 'typed', task: '3.3', cue: { type: 'text', text: 'Scissors' }, assets: {} }} mode="graded" langs={langs} resolveAssetUrl={(x) => x} onRespond={() => {}} />);
-    const toggle = screen.getByRole('button', { name: /Keypad/ });
+    const toggle = screen.getByRole('button', { name: /korean keypad/i });
     fireEvent.click(toggle);
     expect(screen.getByTestId('jamo-keypad')).toBeInTheDocument();
     fireEvent.click(toggle);
@@ -192,9 +200,9 @@ describe('TypedItem keypad toggle', () => {
     render(<TypedItem item={{ id: 'k1b', type: 'typed', task: '3.3', cue: { type: 'text', text: 'Scissors' }, assets: {} }} mode="graded" langs={langs} resolveAssetUrl={(x) => x} onRespond={() => {}} />);
     const section = screen.getByRole('region', { name: 'Type the word' });
     expect(section.className).not.toMatch('wl-typed--keypad');
-    fireEvent.click(screen.getByRole('button', { name: /Keypad/ }));
+    fireEvent.click(screen.getByRole('button', { name: /korean keypad/i }));
     expect(section.className).toMatch('wl-typed--keypad');
-    fireEvent.click(screen.getByRole('button', { name: /Keypad/ }));
+    fireEvent.click(screen.getByRole('button', { name: /korean keypad/i }));
     expect(section.className).not.toMatch('wl-typed--keypad');
   });
 
@@ -308,13 +316,13 @@ describe('TypedItem — busy keeps the keypad, Show me', () => {
   it('an open keypad and its toggle stay mounted while a submit is in flight; only an answer removes them', () => {
     const props = { item: cueItem, mode: 'graded', langs, resolveAssetUrl: (x) => x, onRespond: () => {}, onContinue: () => {} };
     const { rerender } = render(<TypedItem {...props} />);
-    fireEvent.click(screen.getByRole('button', { name: /Keypad/ }));
+    fireEvent.click(screen.getByRole('button', { name: /korean keypad/i }));
     rerender(<TypedItem {...props} busy />);
     expect(screen.getByTestId('jamo-keypad')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Keypad/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /korean keypad/i })).toBeInTheDocument();
     rerender(<TypedItem {...props} result={{ correct: true, score: 10, answer: '가위' }} />);
     expect(screen.queryByTestId('jamo-keypad')).toBeNull();
-    expect(screen.queryByRole('button', { name: /Keypad/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /korean keypad/i })).toBeNull();
   });
 
   it('practice mode (drill type step) offers Show me → {typed:""}', () => {

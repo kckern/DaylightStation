@@ -21,7 +21,8 @@ function LookStep({ item, langs, resolveAssetUrl, onRespond, busy, onLayout }) {
   const [imageOk, setImageOk] = useState(true);
   useEffect(() => { if (audio) playClip(audio, 'term'); }, [item.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const next = () => { if (!busy) onRespond({ done: true }); };
-  useWordLadderKeys({ ' ': next, enter: next, h: () => audio && playClip(audio, 'term') });
+  const hear = () => audio && playClip(audio, 'term');
+  useWordLadderKeys({ ' ': next, enter: next, tab: hear, h: hear });
   return (
     <section className="wl-item wl-look" aria-label="Look">
       <div className={`wl-card wl-look__card${image && imageOk ? ' has-picture' : ''}`}>
@@ -32,21 +33,21 @@ function LookStep({ item, langs, resolveAssetUrl, onRespond, busy, onLayout }) {
         </div>
       </div>
       <div className="wl-controls">
-        {audio && <TouchButton variant="secondary" keyHint="H" onClick={() => playClip(audio, 'term')}><Icon name="volume" /> Hear it</TouchButton>}
+        {audio && <TouchButton variant="secondary" keyHint="Tab" onClick={hear}><Icon name="volume" /> Hear it</TouchButton>}
         <TouchButton variant="primary" keyHint="Space" disabled={busy} onClick={next}>Next</TouchButton>
       </div>
     </section>
   );
 }
 
-/** A step this client does not know yet: never a dead end — Skip moves on. */
+/** A step this client does not know yet: never a dead end — Continue moves on (Space, never "Skip"). */
 function UnknownStep({ onRespond, busy }) {
-  const skip = () => { if (!busy) onRespond({ done: true }); };
-  useWordLadderKeys({ ' ': skip, enter: skip });
+  const advance = () => { if (!busy) onRespond({ done: true }); };
+  useWordLadderKeys({ ' ': advance, enter: advance });
   return (
-    <section className="wl-item" aria-label="Skip step">
+    <section className="wl-item" aria-label="Step not ready">
       <p className="wl-verdict">This step isn&apos;t ready on this screen yet.</p>
-      <div className="wl-controls"><TouchButton variant="primary" keyHint="Space" disabled={busy} onClick={skip}>Skip</TouchButton></div>
+      <div className="wl-controls"><TouchButton variant="primary" keyHint="Space" disabled={busy} onClick={advance}>Continue</TouchButton></div>
     </section>
   );
 }

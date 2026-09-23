@@ -53,7 +53,8 @@ export default function ListenItem({ item, langs, resolveAssetUrl, onRespond, bu
   }, [item.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const next = () => { if (!busy) { halt(); onRespond({ done: true }); } };
-  useWordLadderKeys({ ' ': next, enter: next, a: play });
+  // Tab = hear it again; A stays a silent alias (not a typing item).
+  useWordLadderKeys({ ' ': next, enter: next, tab: play, a: play });
   const shown = current ?? 0;
   return (
     <section className="wl-item wl-listen" aria-label="Listen">
@@ -65,7 +66,7 @@ export default function ListenItem({ item, langs, resolveAssetUrl, onRespond, bu
       {words.length > 0 && <p className="wl-listen__count" aria-live="polite">{shown + 1} of {words.length}</p>}
       <div className="wl-controls">
         {words.length > 0 && (
-          <TouchButton variant="secondary" keyHint="A" disabled={playing} onClick={play}><Icon name="restart" /> Again</TouchButton>
+          <TouchButton variant="secondary" keyHint="Tab" disabled={playing} onClick={play}><Icon name="restart" /> Again</TouchButton>
         )}
         <TouchButton variant="primary" keyHint="Space" disabled={busy} onClick={next}>Next</TouchButton>
       </div>
