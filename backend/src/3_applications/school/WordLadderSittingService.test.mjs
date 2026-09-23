@@ -25,14 +25,14 @@ const lexicon = {
   entries: new Map([['gawi', { id: 'gawi', group: 'week-01', term: '가위', gloss: 'Scissors', kind: 'word', decoys: { term: ['a', 'b', 'c'], gloss: ['x', 'y', 'z'] } }],
     ['pul', { id: 'pul', group: 'week-01', term: '풀', gloss: 'Glue', kind: 'word', decoys: { term: ['d', 'e', 'f'], gloss: ['u', 'v', 'w'] } }]]),
 };
-function make({ mode = 'live', attempts = null, attemptsReader = null, teacherGate = null, judge = null, store = memoryStore(), media = false } = {}) {
+function make({ mode = 'live', attempts = null, attemptsReader = null, teacherGate = null, judge = null, store = memoryStore(), media = false, decks = null } = {}) {
   let t = Date.parse('2026-09-22T16:00:00-07:00');
   const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
   const judgeFn = judge ?? vi.fn(async ({ typed, entry }) => ({ score: typed === entry.term ? 10 : 2, judge: 'exact', reason: null, pass: typed === entry.term }));
   const token = mode === 'test' ? 'abc123' : 'live';
   const service = new WordLadderSittingService({
     stores: { open: () => ({ store, token }), forToken: (tk) => { if (tk !== token) throw new Error('unknown sitting'); return store; } },
-    decks: {
+    decks: decks ?? {
       getFlashcardDeck: async (id) => (id === DECK ? { id: DECK, words: ['gawi', 'pul'], lexicon: REF } : null),
       listFlashcardDecks: async () => [{ id: DECK, words: ['gawi', 'pul'], lexicon: REF }, { id: DECK_OTHER, words: ['pul'], lexicon: REF }, { id: 'biology/cells', cards: [] }],
     },
@@ -44,7 +44,7 @@ function make({ mode = 'live', attempts = null, attemptsReader = null, teacherGa
     teacherGate,
     settings: () => SETTINGS, timezone: 'America/Los_Angeles', now: () => (t += 4000), logger, mode,
   });
-  return { service, store, logger, judge: judgeFn };
+  return { service, store, logger, judge: judgeFn, advance: (ms) => { t += ms; } };
 }
 
 /** A store whose only word is `gawi`, mastered and due today with `rechecks` prior rechecks. */
@@ -223,5 +223,88 @@ describe('WordLadderSittingService', () => {
     expect(store.s.days[TODAY].sittings).toEqual({});
     expect(store.s.days[TODAY].atOpen).toBeNull();
     await expect(service.fold({ learnerId: 'test-learner', actorId: 'parent', pin: '1234' })).resolves.toEqual({ learnerId: 'test-learner', folded: 0, demoted: [] });
+  });
+
+  it('open writes once: fold, plan and sitting row in one transaction', async () => {
+    const { service, store } = make();
+    const opened = await service.open({ userId: 'test-learner', deckId: DECK });
+    expect(store.s.writes).toBe(1);
+    expect(store.s.days[TODAY].rounds).toHaveLength(1);
+    expect(store.s.days[TODAY].rounds[0].newWords).toEqual(['gawi', 'pul']);
+    expect(store.s.days[TODAY].sittings[opened.sittingId]).toMatchObject({ closedAt: null });
+  });
+
+  it('a closed sitting reopens on get and on respond instead of 404ing', async () => {
+    const { service, store } = make();
+    const opened = await service.open({ userId: 'test-learner', deckId: DECK });
+    await service.close({ userId: 'test-learner', sittingId: opened.sittingId, reason: 'unmount' });
+    expect(store.s.days[TODAY].sittings[opened.sittingId].reason).toBe('unmount');
+    await expect(service.get({ userId: 'test-learner', sittingId: opened.sittingId })).resolves.toMatchObject({ item: { id: opened.item.id } });
+    expect(store.s.days[TODAY].sittings[opened.sittingId]).toMatchObject({ closedAt: null, reason: null });
+    await service.close({ userId: 'test-learner', sittingId: opened.sittingId, reason: 'leave' });
+    const out = await service.respond({ userId: 'test-learner', sittingId: opened.sittingId, itemId: opened.item.id, response: { seen: true } });
+    expect(out.item.type).toBe('copy');
+    expect(store.s.days[TODAY].sittings[opened.sittingId]).toMatchObject({ closedAt: null, reason: null });
+  });
+
+  it('close skips the write when the sitting is already closed', async () => {
+    const { service, store } = make();
+    const opened = await service.open({ userId: 'test-learner', deckId: DECK });
+    await service.close({ userId: 'test-learner', sittingId: opened.sittingId, reason: 'leave' });
+    const writes = store.s.writes;
+    const closedAt = store.s.days[TODAY].sittings[opened.sittingId].closedAt;
+    await expect(service.close({ userId: 'test-learner', sittingId: opened.sittingId, reason: 'idle' })).resolves.toMatchObject({ closed: true });
+    expect(store.s.writes).toBe(writes);
+    expect(store.s.days[TODAY].sittings[opened.sittingId]).toMatchObject({ closedAt, reason: 'leave' });
+  });
+
+  it('a typed item answered by a request prepared before the previous answer landed is stale', async () => {
+    const store = dueStore(1);
+    store.s.status.words.pul = { ...emptyWordV3(), state: 'mastered', stage: 0, dueDay: TODAY, introducedDay: '2026-09-20', rechecks: 1 };
+    store.s.status.decksSeen = [DECK_OTHER, DECK];
+    let gate = null;
+    const decks = {
+      getFlashcardDeck: async (id) => {
+        if (id === DECK_OTHER && gate) { const wait = gate; gate = null; await wait; }
+        return id === DECK ? { id: DECK, words: ['gawi', 'pul'], lexicon: REF } : id === DECK_OTHER ? { id: DECK_OTHER, words: [], lexicon: REF } : null;
+      },
+      listFlashcardDecks: async () => [],
+    };
+    const { service, judge } = make({ store, decks });
+    const opened = await service.open({ userId: 'test-learner', deckId: DECK });
+    expect(opened.item).toMatchObject({ type: 'typed', task: '3.3' });
+    const secondId = opened.item.id === 'rc:gawi' ? 'rc:pul' : 'rc:gawi';
+    let release;
+    gate = new Promise((resolve) => { release = resolve; });
+    // Request 2 reads the day (item 1 still current), then stalls in #pool.
+    const late = service.respond({ userId: 'test-learner', sittingId: opened.sittingId, itemId: secondId, response: { typed: '풀' } });
+    await new Promise((resolve) => setImmediate(resolve));
+    // Request 1 answers item 1 and commits; item 2 is now current.
+    const first = await service.respond({ userId: 'test-learner', sittingId: opened.sittingId, itemId: opened.item.id, response: { typed: 'x' } });
+    expect(first.item.id).toBe(secondId);
+    release();
+    await expect(late).rejects.toThrow(/stale item/);
+    expect(judge).toHaveBeenCalledTimes(1);
+    expect(store.s.days[TODAY].items[secondId]).toBeUndefined();
+  });
+
+  it('idle close: after 5 min without input, other open sittings close as idle at the last input', async () => {
+    const { service, store, logger, advance } = make();
+    const a = await service.open({ userId: 'test-learner', deckId: DECK });
+    await service.respond({ userId: 'test-learner', sittingId: a.sittingId, itemId: a.item.id, response: { seen: true } });
+    const lastInputAt = store.s.days[TODAY].lastInputAt;
+    const b = await service.open({ userId: 'test-learner', deckId: DECK });
+    expect(store.s.days[TODAY].sittings[a.sittingId].closedAt).toBeNull();
+    advance(5 * 60_000);
+    await service.get({ userId: 'test-learner', sittingId: b.sittingId });
+    const rowA = store.s.days[TODAY].sittings[a.sittingId];
+    expect(rowA.reason).toBe('idle');
+    expect(Date.parse(rowA.closedAt)).toBe(lastInputAt);
+    expect(store.s.days[TODAY].sittings[b.sittingId]).toMatchObject({ closedAt: null, reason: null });
+    expect(logger.info).toHaveBeenCalledWith('school.word-ladder.closed', expect.objectContaining({ sittingId: a.sittingId, reason: 'idle' }));
+    // A quiet reload does not write.
+    const writes = store.s.writes;
+    await service.get({ userId: 'test-learner', sittingId: b.sittingId });
+    expect(store.s.writes).toBe(writes);
   });
 });
