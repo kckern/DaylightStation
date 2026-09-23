@@ -217,6 +217,15 @@ describe('MenuItem', () => {
     await waitFor(() => expect(api.practice).toHaveBeenCalledWith('s', expect.objectContaining({ mode: 'say', help: false })));
   });
 
+  it('Say offers only the help variants the server lists (no term audio → Without help only)', async () => {
+    const api = menuApi();
+    render(<MenuItem {...menuProps(api, { item: { id: 'menu', type: 'menu', modes: ['say'], sayHelp: [false], quizzed: 0 } })} />);
+    fireEvent.click(screen.getByRole('button', { name: /^say/i }));
+    expect(screen.queryByRole('button', { name: /^with help/i })).toBeNull();
+    fireEvent.keyDown(window, { key: '1', code: 'Digit1' });
+    await waitFor(() => expect(api.practice).toHaveBeenCalledWith('s', expect.objectContaining({ mode: 'say', help: false })));
+  });
+
   it('Flashcards asks for the front side', async () => {
     const api = menuApi();
     render(<MenuItem {...menuProps(api)} />);
