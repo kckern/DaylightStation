@@ -291,4 +291,14 @@ describe('formatTrace — sections, reasons, input, sub-lines and the summary fo
     expect(out).toContain('    ⚠ stalled 45s (on the verdict)');
     expect(out).toContain('takes 1');
   });
+
+  it('a say step moved past with no mic is an answer marked (no mic), never a skip', () => {
+    const out = formatTrace([
+      fe('item.shown', 0, 1, { itemId: 'r1:i:gawi:say', type: 'say', itemMode: 'say-after', wordId: 'gawi', layout: 'say' }),
+      fe('say.recording', 10, 2, { itemId: 'r1:i:gawi:say', phase: 'unavailable', ms: 10 }),
+      fe('item.answered', 1500, 3, { itemId: 'r1:i:gawi:say', type: 'say', response: { done: true }, ms: 1500, input: 'key:Space', micOff: true }),
+    ]);
+    expect(out).toContain('say:say-after gawi say done:true — (1500ms) · via key:Space (no mic)');
+    expect(out).toContain('skipped 0');
+  });
 });
