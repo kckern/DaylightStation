@@ -434,6 +434,19 @@ instructions) is drawn outside the run grammar and must stay Latin.
 `hangulFallback.render.test.mjs` asserts the glyphs exist and the font is
 embedded, so a Korean worksheet cannot silently print `.notdef` boxes.
 
+**The thermal receipt target is a separate font-resolution path** —
+`DocumentReceiptRenderer.mjs` draws with node-canvas, not pdfkit, so
+`measure.mjs#withScriptFont`/`SCRIPT_FALLBACKS` do not reach it.
+`documentReceiptTheme.fonts.hangulFamily`/`hangulFontPath` register the same
+Noto Sans KR face there, and every prose font string in the theme is a
+CSS-style family list — `'... "Roboto Condensed", "Noto Sans KR"'` — which
+node-canvas resolves per-glyph the way a browser does, so Latin still draws
+in Roboto Condensed and a Hangul run falls through to Noto Sans KR in the
+same string. This is what keeps a card-ladder agenda card's deck title from
+printing tofu (fixed 2026-09-23; `DocumentReceiptRenderer.hangul.render.test.mjs`
+covers it) — the two rendering targets had drifted, and adding a script to
+one does not add it to the other.
+
 **Which archetypes get alternating gutters — and what actually prints.** The
 3-hole-punch gutter alternates side by page parity (mirror margins) for the
 `worksheet` archetype only (`DUPLEX_ARCHETYPES` in `RenderPrintDocument.mjs`).

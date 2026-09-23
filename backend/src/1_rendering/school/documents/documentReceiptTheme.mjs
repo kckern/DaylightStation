@@ -51,25 +51,41 @@ export const documentReceiptTheme = Object.freeze({
      */
     codeFamily: 'Kongtext',
     codeFontPath: 'kongtext/kongtext.ttf',
-    heading: 'bold 34px "Roboto Condensed"',
-    header: 'bold 34px "Roboto Condensed"',
-    body: '24px "Roboto Condensed"',
-    label: 'bold 26px "Roboto Condensed"',
+    /**
+     * Hangul fallback. The house face (Roboto Condensed) has no Hangul
+     * glyphs — a Korean word printed .notdef tofu boxes (`UBKS 비둘기` on a
+     * card-ladder agenda card, 2026-09-23). node-canvas resolves a
+     * comma-separated CSS font-family list the same way a browser does: it
+     * tries `Roboto Condensed` per-glyph and falls through to the next
+     * family for any glyph the first doesn't cover — so every font string
+     * below carries `, "Noto Sans KR"` as a second family, and Latin text is
+     * unaffected because Roboto Condensed still wins every Latin glyph.
+     * Noto Sans KR (OFL) only ships a Regular weight; canvas synthesizes
+     * nothing extra for `bold` runs, but a bold Latin/Hangul mix still reads
+     * as bold because the Latin portion (usually the majority) IS the
+     * registered SemiBold.
+     */
+    hangulFamily: 'Noto Sans KR',
+    hangulFontPath: 'noto-sans-kr/NotoSansKR-Regular.otf',
+    heading: 'bold 34px "Roboto Condensed", "Noto Sans KR"',
+    header: 'bold 34px "Roboto Condensed", "Noto Sans KR"',
+    body: '24px "Roboto Condensed", "Noto Sans KR"',
+    label: 'bold 26px "Roboto Condensed", "Noto Sans KR"',
     // The lesson card's own title (e.g. "The United States") — bigger than
     // the generic `label` used for plain scan-action boxes so it stays the
     // clear high point of the card now that the taxonomy/description sizes
     // below have grown too (printed-copy feedback: keep the hierarchy, just
     // close the gap between the smallest and largest sizes).
-    lessonTitle: 'bold 30px "Roboto Condensed"',
+    lessonTitle: 'bold 30px "Roboto Condensed", "Noto Sans KR"',
     /** The catch-up rail's label. Small and bold — it names the card, it is
      *  not competing with the title. */
-    rail: 'bold 20px "Roboto Condensed"',
-    eyebrow: 'bold 20px "Roboto Condensed"',
+    rail: 'bold 20px "Roboto Condensed", "Noto Sans KR"',
+    eyebrow: 'bold 20px "Roboto Condensed", "Noto Sans KR"',
     // Was 18px — the printed copy showed this (the lesson description) as
     // one of the two hardest lines to read on thermal stock.
-    description: 'italic 21px "Roboto Condensed"',
-    summary: 'bold 28px "Roboto Condensed"',
-    code: '22px "Roboto Condensed"',
+    description: 'italic 21px "Roboto Condensed", "Noto Sans KR"',
+    summary: 'bold 28px "Roboto Condensed", "Noto Sans KR"',
+    code: '22px "Roboto Condensed", "Noto Sans KR"',
     // The six-digit panel code under a QR: bigger and bolder than the fallback
     // token, because it is read off paper and typed on a wall panel by a child.
     // Kongtext is already fixed-width and heavy; it needs no bold, and asking
@@ -83,11 +99,11 @@ export const documentReceiptTheme = Object.freeze({
     panelCode: '18px "Kongtext"',
     /** The unit line above a lesson title. NOT bold — it introduces the title,
      *  it does not compete with it; the marker block is what makes it distinct. */
-    unitLabel: '20px "Roboto Condensed"',
-    breadcrumb: '18px "Roboto Condensed"',
-    breadcrumbStrong: 'bold 20px "Roboto Condensed"',
-    identityLabel: 'bold 18px "Roboto Condensed"',
-    identityValue: '20px "Roboto Condensed"',
+    unitLabel: '20px "Roboto Condensed", "Noto Sans KR"',
+    breadcrumb: '18px "Roboto Condensed", "Noto Sans KR"',
+    breadcrumbStrong: 'bold 20px "Roboto Condensed", "Noto Sans KR"',
+    identityLabel: 'bold 18px "Roboto Condensed", "Noto Sans KR"',
+    identityValue: '20px "Roboto Condensed", "Noto Sans KR"',
     // The lesson card's Subject›Course / Unit taxonomy. Fixed sizes, not a
     // shrink-to-fit range: with vertical room to spare on 58mm tape, a long
     // breadcrumb should WRAP to more lines at a readable size rather than
@@ -96,8 +112,8 @@ export const documentReceiptTheme = Object.freeze({
     // receipt). `taxonomyTop` was the worst offender (down to 13px); it and
     // `taxonomyBottom` now match the general legibility bar the description
     // and label sizes sit at.
-    taxonomyTop: '21px "Roboto Condensed"',
-    taxonomyBottom: 'bold 23px "Roboto Condensed"',
+    taxonomyTop: '21px "Roboto Condensed", "Noto Sans KR"',
+    taxonomyBottom: 'bold 23px "Roboto Condensed", "Noto Sans KR"',
   },
 
   /** The standard header: a full-bleed black band with the title knocked out. */

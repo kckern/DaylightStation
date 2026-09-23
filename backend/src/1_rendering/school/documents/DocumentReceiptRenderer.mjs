@@ -659,6 +659,14 @@ export function createDocumentReceiptRenderer({
         ...(theme.fonts.codeFontPath
           ? [{ file: theme.fonts.codeFontPath, family: theme.fonts.codeFamily }]
           : []),
+        // Hangul fallback — see `documentReceiptTheme.fonts.hangulFamily`.
+        // Registered eagerly like the bold/code faces above: `registerFont`
+        // is process-global and must run before `wrapText`/`fillText`
+        // measure anything, and an English-only receipt paying for an unused
+        // face is a rounding error next to a Korean card printing tofu.
+        ...(theme.fonts.hangulFontPath
+          ? [{ file: theme.fonts.hangulFontPath, family: theme.fonts.hangulFamily }]
+          : []),
       ],
     };
     const { ctx: scratch } = await initCanvas({ width: 1, height: 1, ...fontConfig });
