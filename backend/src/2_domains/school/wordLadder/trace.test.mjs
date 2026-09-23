@@ -163,3 +163,16 @@ describe('formatTrace — day file fallback', () => {
     expect(formatTrace([], { dayFile: { items: {} } })).toBe('(from day file — no timing detail)');
   });
 });
+
+describe('formatTrace — item.layout before item.shown (real FitText order)', () => {
+  it('attaches the early size to its item and does not count it orphaned', () => {
+    const out = formatTrace([
+      fe('sitting.opened', 0, 1, { package: 'korean-vocab' }),
+      fe('item.layout', 300, 2, { itemId: 'r1:0:intro', fontPx: 120 }),
+      fe('item.shown', 301, 3, { itemId: 'r1:0:intro', type: 'flashcard', itemMode: 'intro', wordId: 'gawi', layout: 'flashcard-front', fontPx: null }),
+      fe('item.layout', 900, 4, { itemId: 'never-shown', fontPx: 40 }),
+    ]);
+    expect(out).toContain('120px');
+    expect(out).toContain('⚠ 1 orphaned event(s)');
+  });
+});

@@ -138,6 +138,9 @@ function buildTrace(traceId, feEvents, backendEvents) {
   let orphaned = 0; // answered/stalled/transition/graded events with no matching item.shown — the log window is missing rows, not that nothing happened
   const items = [];
   const byItemId = new Map();
+  // FitText measures in a layout effect, so an item's item.layout lands one
+  // seq BEFORE its item.shown. Hold it until the item appears.
+  const earlyLayout = new Map();
 
   for (const ev of ordered) {
     const d = ev.data ?? {};
@@ -159,7 +162,10 @@ function buildTrace(traceId, feEvents, backendEvents) {
         tStart: typeof d.t === 'number' ? d.t : null, answered: null, stalls: [], transitions: [],
       };
       items.push(item);
-      if (item.itemId) byItemId.set(item.itemId, item);
+      if (item.itemId) {
+        byItemId.set(item.itemId, item);
+        if (earlyLayout.has(item.itemId)) { item.fontPx = earlyLayout.get(item.itemId); earlyLayout.delete(item.itemId); }
+      }
     } else if (ev.msg === MSG.ITEM_ANSWERED) {
       const item = d.itemId ? byItemId.get(d.itemId) : null;
       if (!item) { orphaned += 1; }
@@ -178,8 +184,10 @@ function buildTrace(traceId, feEvents, backendEvents) {
       // The main FitText's first computed size for this item, once (a
       // follow-up to item.shown, whose own fontPx is always null).
       const item = d.itemId ? byItemId.get(d.itemId) : null;
-      if (!item) orphaned += 1;
-      else if (typeof d.fontPx === 'number') item.fontPx = d.fontPx;
+      const px = typeof d.fontPx === 'number' ? d.fontPx : null;
+      if (item) { if (px !== null) item.fontPx = px; }
+      else if (d.itemId) earlyLayout.set(d.itemId, px);
+      else orphaned += 1;
     } else if (ev.msg === MSG.SITTING_CLOSED) {
       closeEvent = {
         reason: d.reason ?? null, activeMs: typeof d.activeMs === 'number' ? d.activeMs : null,
@@ -232,6 +240,7 @@ function buildTrace(traceId, feEvents, backendEvents) {
     lines.push(itemLine(item, { isLeftHere: markLeftHere && item.itemId === endedOnItemId }));
     lines.push(...stallLines(item));
   }
+  orphaned += earlyLayout.size; // a layout whose item.shown never arrived
   if (orphaned > 0) lines.push(`⚠ ${orphaned} orphaned event(s) — log rows missing`);
   return lines.join('\n');
 }
