@@ -33,6 +33,12 @@ export function learnerQuizPrefix({ deckDir, pkg, learnerId = '' }) {
   return `${deckDir}/${pkg}-quiz-${learnerId ? `${learnerId}-` : ''}`;
 }
 
+/**
+ * `isoWeek` is lowercased before it is embedded: a document id is a kebab-case
+ * segment (`documentValidation.mjs`'s `ID_PATTERN` is lowercase-only), so
+ * `2026-W39` becomes `2026-w39` in the id while `isoWeekOf` itself keeps
+ * returning the display-cased `2026-W39` (also accepted on `--week`).
+ */
 export function learnerQuizDocumentId({ deckDir, pkg, learnerId, isoWeek }) {
-  return `${learnerQuizPrefix({ deckDir, pkg, learnerId })}${isoWeek}`;
+  return `${learnerQuizPrefix({ deckDir, pkg, learnerId })}${String(isoWeek).toLowerCase()}`;
 }

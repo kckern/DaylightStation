@@ -128,9 +128,14 @@ async function quizForDeck(argv, io) {
   return writeQuizSource(argv, io, sourceRoot, source);
 }
 
-/** The Monday ('YYYY-MM-DD') of an ISO-8601 week ('YYYY-Www') — the inverse of isoWeekOf. Pure UTC arithmetic. */
+/**
+ * The Monday ('YYYY-MM-DD') of an ISO-8601 week ('YYYY-Www') — the inverse of
+ * isoWeekOf. Accepts either case ('2026-W39' or '2026-w39'): the generated
+ * document id always lowercases the week, but a person typing --week by hand
+ * naturally reaches for the ISO-cased form. Pure UTC arithmetic.
+ */
 function mondayOfIsoWeek(weekStr) {
-  const m = /^(\d{4})-W(\d{2})$/.exec(weekStr);
+  const m = /^(\d{4})-W(\d{2})$/i.exec(weekStr);
   if (!m) throw new Error(`--week must look like YYYY-Www, got '${weekStr}'`);
   const [, yearStr, weekNumStr] = m;
   const jan4 = Date.UTC(Number(yearStr), 0, 4);
