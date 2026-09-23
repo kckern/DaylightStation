@@ -50,15 +50,15 @@ export function EntryRow({ row, densityRow = row, onTap, onConfirm, onRequestDel
     <div className={`health-row-identity health-row__identity health-row__visual health-density-${densityPlacement}`}>
       {densityPlacement === 'before' ? <DensityBadge row={densityRow} editRow={row} /> : null}
       {/* The magnifier anchors on the ARTWORK, not the full-width row: a
-          row-wide anchor has no room on either side of a phone column. Below
-          it (above when there is no room) like a hover card, so it never sits
+          row-wide anchor has no room on either side of a phone column. Above
+          it (below when there is no room) like a tooltip, so it never sits
           on the row's own name and numbers; cross-axis shift keeps it on
           screen. The name's hover/focus opens this same card. It portals into
           the themed `.ds-root`, whose inline --ds-* tokens the card's surface,
           border and text colours read — a body-level portal renders it
           transparent. */}
       <Popover opened={preview.opened} onChange={open => { if (!open) preview.close(); }}
-        position="bottom-start" middlewares={{ flip: true, shift: { crossAxis: true, padding: 8, limiter: undefined } }}
+        position="top-start" transitionProps={{ duration: 0 }} middlewares={{ flip: true, shift: { crossAxis: true, padding: 8, limiter: undefined } }}
         withArrow arrowSize={10} offset={8} radius="md" shadow="md" withinPortal portalProps={{ target: '.ds-root' }} withRoles={false} trapFocus={false} returnFocus={false}>
       <Popover.Target><span className="health-row-artwork" {...preview.targetProps} onClick={preview.onArtworkClick}>{row.photoRef && brokenPhoto !== row.photoRef ? <img className="health-row__thumb"
         src={nutritionPhotoUrl(row.photoRef, { thumb: true })} alt="" loading="lazy" onError={() => { setBrokenPhoto(row.photoRef); reportArtworkFailure('photo', row.photoRef, { uuid: entryId(row), name, icon: row.icon || null }); }} /> : <FoodIcon icon={row.icon} />}</span></Popover.Target>
@@ -68,7 +68,7 @@ export function EntryRow({ row, densityRow = row, onTap, onConfirm, onRequestDel
       </Popover>
       <UnstyledButton className="health-row-name" disabled={Boolean(portions?.draft)} onClick={() => { preview.close(); onTap(row); }} aria-label={`Edit ${name}`}
         {...preview.targetProps} {...preview.focusProps}>
-      <span className="health-row__description" title={name}><span className="health-row__name">{name}</span>{' '}
+      <span className="health-row__description"><span className="health-row__name">{name}</span>{' '}
         {measured ? <span className="health-row__scale" title={measured}> · Scale ✓</span> : null}
       </span>
       </UnstyledButton>

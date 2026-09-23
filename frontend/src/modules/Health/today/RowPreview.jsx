@@ -2,7 +2,7 @@
 // picture at a size that can be read (a UPC product photo is illegible at the
 // row's 24px) and its numbers.
 //
-// Opened by hovering the row's artwork or name (after OPEN_DELAY_MS, closed
+// Opened by hovering the row's artwork or name (at once, closed
 // CLOSE_DELAY_MS after the pointer leaves both the row and the card), by
 // keyboard (Tab) focus on the name, or — where there is no hover (coarse pointers) —
 // by tapping the artwork. Never while a portion/numeric drag owns the row.
@@ -17,7 +17,8 @@ import { nutritionPhotoUrl } from './photoUrl.js';
 
 const logger = createAppLogger('health').child('row-preview');
 
-export const OPEN_DELAY_MS = 350;
+// Hover opens at once; a delay read as the card lagging behind the pointer.
+export const OPEN_DELAY_MS = 0;
 export const CLOSE_DELAY_MS = 150;
 
 trackKeyboardModality();
@@ -47,7 +48,11 @@ export function useRowPreview({ disabled = false, onOpen } = {}) {
     setOpened(true);
   }, []);
   const close = useCallback(() => { clear(); if (openedRef.current) setOpened(false); }, []);
-  const scheduleOpen = useCallback(() => { clear(); if (!disabledRef.current) timer.current = setTimeout(show, OPEN_DELAY_MS); }, [show]);
+  const scheduleOpen = useCallback(() => {
+    clear();
+    if (disabledRef.current) return;
+    if (OPEN_DELAY_MS <= 0) show(); else timer.current = setTimeout(show, OPEN_DELAY_MS);
+  }, [show]);
   const scheduleClose = useCallback(() => { clear(); timer.current = setTimeout(close, CLOSE_DELAY_MS); }, [close]);
   useEffect(() => { if (disabled) close(); }, [disabled, close]);
   useEffect(() => clear, []);

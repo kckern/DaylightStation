@@ -11,6 +11,7 @@ vi.mock('../../../lib/ui/createAppLogger.js', () => {
 vi.mock('../../../lib/api.mjs', () => ({ DaylightAPI: vi.fn() }));
 
 import { RowPreviewContent, OPEN_DELAY_MS, CLOSE_DELAY_MS } from './RowPreview.jsx';
+
 import { EntryRow } from './EntryRow.jsx';
 import { PortionContext } from './usePortionDraft.js';
 
@@ -63,22 +64,24 @@ describe('EntryRow preview card', () => {
   const card = () => document.querySelector('.health-row-preview');
   const isOpen = container => container.querySelector('.health-row-line').dataset.preview === 'open';
 
-  it('opens after the hover delay, logs once, and closes after leaving', () => {
+  it('opens the moment the pointer arrives, logs once, and closes after leaving', () => {
     const { container } = r(<EntryRow row={apple} onTap={() => {}} />);
     const artwork = container.querySelector('.health-row-artwork');
     fireEvent.pointerEnter(artwork);
-    act(() => { vi.advanceTimersByTime(OPEN_DELAY_MS - 50); });
-    expect(card()).toBeNull();
-    act(() => { vi.advanceTimersByTime(60); });
     expect(isOpen(container)).toBe(true);
-    act(() => { vi.advanceTimersByTime(1000); }); // the card's fade-in
-    expect(card()).toBeTruthy();
+    expect(card()).toBeTruthy(); // no fade-in to wait out
+    expect(document.querySelector('.health-row-preview__card').dataset.position).toMatch(/^top/);
     expect(sampled).toHaveBeenCalledWith('row.preview.open', { uuid: 'row-1', hasPhoto: false }, { maxPerMinute: 20 });
     fireEvent.pointerLeave(artwork);
     act(() => { vi.advanceTimersByTime(CLOSE_DELAY_MS - 50); });
     expect(isOpen(container)).toBe(true);
     act(() => { vi.advanceTimersByTime(60); });
     expect(isOpen(container)).toBe(false);
+  });
+
+  it('the name carries no native title tooltip to compete with the card', () => {
+    const { container } = r(<EntryRow row={apple} onTap={() => {}} />);
+    expect(container.querySelector('.health-row__description').getAttribute('title')).toBeNull();
   });
 
   it('keyboard focus on the name opens it; Escape closes it', () => {
@@ -119,8 +122,8 @@ describe('EntryRow preview card', () => {
     expect(card()).toBeTruthy();
     expect(artworkRect).toHaveBeenCalled();
     expect(lineRect).not.toHaveBeenCalled();
-    // Below the artwork (or flipped above), never over the row's own name.
-    expect(document.querySelector('.health-row-preview__card').dataset.position).toMatch(/^(bottom|top)/);
+    // Above the artwork (or flipped below), never over the row's own name.
+    expect(document.querySelector('.health-row-preview__card').dataset.position).toMatch(/^(top|bottom)/);
     // Portalled INTO the themed root, or its surface/border tokens are undefined.
     expect(document.querySelector('.health-row-preview__card').closest('.ds-root')).toBeTruthy();
   });
