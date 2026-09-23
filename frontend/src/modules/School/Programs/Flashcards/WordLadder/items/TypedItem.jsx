@@ -7,7 +7,7 @@ import { useWordLadderKeys } from '../useWordLadderKeys.js';
 import { useHardwareKeyboard } from '../../../../../../hooks/useHardwareKeyboard.js';
 import { wordLadderLog } from '../wordLadderLog.js';
 import JamoKeypad from '../JamoKeypad.jsx';
-import CuePicture from './CuePicture.jsx';
+import EnglishCue, { englishCueAudio } from './EnglishCue.jsx';
 
 // Spec §6: the field has had focus this long with no keydown before the
 // keypad opens itself. Once per item — a physical keyboard shows up as
@@ -55,7 +55,6 @@ export default function TypedItem({ item, mode, langs, resolveAssetUrl, onRespon
   const [keypadOpen, setKeypadOpen] = useState(false);
   const input = useRef(null);
   const word = item.word;
-  const image = item.assets?.image ? resolveAssetUrl(item.assets.image) : null;
   const glossAudio = item.assets?.glossAudio ? resolveAssetUrl(item.assets.glossAudio) : null;
   const dictation = mode === 'dictation';
   const termAudioId = dictation ? item.assets?.audio : word?.media?.audio;
@@ -194,7 +193,7 @@ export default function TypedItem({ item, mode, langs, resolveAssetUrl, onRespon
   // types nothing). Never a letter here: on the Korean layout H is ㅗ.
   const hear = (mode === 'copy' || (dictation && !answered)) && termAudio
     ? () => playClip(termAudio, 'term')
-    : graded && item.cue?.type === 'audio' && glossAudio ? () => playClip(glossAudio, 'gloss') : null;
+    : graded && englishCueAudio(item, resolveAssetUrl) ? () => playClip(englishCueAudio(item, resolveAssetUrl), 'gloss') : null;
   useWordLadderKeys({
     ...(result && graded ? { ' ': onContinue, enter: onContinue } : {}),
     ...(hear ? { tab: hear } : {}),
@@ -209,9 +208,7 @@ export default function TypedItem({ item, mode, langs, resolveAssetUrl, onRespon
       <div className="wl-prompt">
         {mode === 'copy' && <FitText role="term" text={word?.term ?? ''} lang={langs.term} onFit={onLayout} />}
         {dictation && !answered && <TouchButton variant="secondary" keyHint="Tab" onClick={() => termAudio && playClip(termAudio, 'term')}><Icon name="volume" /> Listen</TouchButton>}
-        {graded && item.cue?.type === 'image' && <CuePicture item={item} src={image} lang={langs.gloss} />}
-        {graded && item.cue?.type === 'text' && <FitText role="prompt" text={item.cue.text} lang={langs.gloss} />}
-        {graded && item.cue?.type === 'audio' && <TouchButton variant="secondary" keyHint="Tab" onClick={() => glossAudio && playClip(glossAudio, 'gloss')}><Icon name="volume" /> Listen</TouchButton>}
+        {graded && <EnglishCue item={item} resolveAssetUrl={resolveAssetUrl} lang={langs.gloss} />}
       </div>
       <input
         ref={input}

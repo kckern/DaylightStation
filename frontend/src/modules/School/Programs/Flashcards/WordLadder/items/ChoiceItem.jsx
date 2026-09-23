@@ -4,7 +4,7 @@ import Icon from '../../../../home/icons/Icon.jsx';
 import { FitGroup, FitText } from '../FitText.jsx';
 import { playClip } from '../wordLadderAudio.js';
 import { useWordLadderKeys } from '../useWordLadderKeys.js';
-import CuePicture from './CuePicture.jsx';
+import EnglishCue, { englishCueAudio } from './EnglishCue.jsx';
 
 /**
  * 2.2 pick-meaning (hear | read) and 3.1 pick-term (cue → Korean). Graded
@@ -13,8 +13,7 @@ import CuePicture from './CuePicture.jsx';
  */
 export default function ChoiceItem({ item, langs, resolveAssetUrl, onRespond, result = null, onContinue, busy = false }) {
   const audio = item.assets?.audio ? resolveAssetUrl(item.assets.audio) : null;
-  const glossAudio = item.assets?.glossAudio ? resolveAssetUrl(item.assets.glossAudio) : null;
-  const image = item.assets?.image ? resolveAssetUrl(item.assets.image) : null;
+  const glossAudio = item.task === '3.1' ? englishCueAudio(item, resolveAssetUrl) : null;
   const choicesLang = item.task === '2.2' ? langs.gloss : langs.term;
   useEffect(() => {
     if (item.channel === 'hear' && audio) playClip(audio, 'term');
@@ -52,9 +51,7 @@ export default function ChoiceItem({ item, langs, resolveAssetUrl, onRespond, re
             ? <FitText role="prompt" text={item.prompt} lang={langs.term} />
             : <TouchButton variant="secondary" keyHint="Tab" onClick={() => audio && playClip(audio, 'term')}><Icon name="volume" /> Listen</TouchButton>
         )}
-        {item.task === '3.1' && item.cue?.type === 'image' && <CuePicture item={item} src={image} lang={langs.gloss} />}
-        {item.task === '3.1' && item.cue?.type === 'text' && <FitText role="prompt" text={item.cue.text} lang={langs.gloss} />}
-        {item.task === '3.1' && item.cue?.type === 'audio' && <TouchButton variant="secondary" keyHint="Tab" onClick={() => glossAudio && playClip(glossAudio, 'gloss')}><Icon name="volume" /> Listen</TouchButton>}
+        {item.task === '3.1' && <EnglishCue item={item} resolveAssetUrl={resolveAssetUrl} lang={langs.gloss} />}
       </div>
       <FitGroup>
         <div className="wl-choices" role="group" aria-label="Choices">

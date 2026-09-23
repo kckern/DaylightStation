@@ -7,7 +7,7 @@ import { playClip, playSequence } from '../wordLadderAudio.js';
 import { useWordLadderKeys } from '../useWordLadderKeys.js';
 import { wordLadderLog } from '../wordLadderLog.js';
 import useTakeRecorder from '../useTakeRecorder.js';
-import CuePicture from './CuePicture.jsx';
+import EnglishCue, { englishCueAudio } from './EnglishCue.jsx';
 
 /**
  * 1.2 say-after · 1.3 read-aloud · 3.4 say-from-cue (task catalogue §3).
@@ -48,7 +48,6 @@ export default function SayItem({
   const takeUrlRef = useRef(null);
 
   const word = item.word ?? null;
-  const image = item.assets?.image ? resolveAssetUrl(item.assets.image) : null;
   const glossAudio = item.assets?.glossAudio ? resolveAssetUrl(item.assets.glossAudio) : null;
   // Known upfront only when the server sent it (say-after; null on read-aloud).
   const termAudio = word?.media?.audio ? resolveAssetUrl(word.media.audio) : null;
@@ -151,7 +150,8 @@ export default function SayItem({
     else if (spaceOwner === 'next') next();
   };
   const canRecordAgain = hasTaken && !recording && !saving && !micOff;
-  const hearCue = showCue && item.cue?.type === 'audio' && glossAudio ? () => playClip(glossAudio, 'gloss') : null;
+  const cueClip = showCue ? englishCueAudio(item, resolveAssetUrl) : null;
+  const hearCue = cueClip ? () => playClip(cueClip, 'gloss') : null;
   useWordLadderKeys({
     ' ': forward,
     enter: forward,
@@ -163,11 +163,7 @@ export default function SayItem({
   return (
     <section className="wl-item wl-say" aria-label="Say it">
       <div className="wl-prompt">
-        {showCue && item.cue?.type === 'image' && <CuePicture item={item} src={image} lang={langs.gloss} />}
-        {showCue && item.cue?.type === 'text' && <FitText role="prompt" text={item.cue.text} lang={langs.gloss} />}
-        {showCue && item.cue?.type === 'audio' && (
-          <TouchButton variant="secondary" keyHint="Tab" onClick={() => glossAudio && playClip(glossAudio, 'gloss')}><Icon name="volume" /> Listen</TouchButton>
-        )}
+        {showCue && <EnglishCue item={item} resolveAssetUrl={resolveAssetUrl} lang={langs.gloss} />}
         {term && <FitText role="term" text={term} lang={langs.term} onFit={onLayout} />}
       </div>
 

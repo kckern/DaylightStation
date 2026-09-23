@@ -212,7 +212,7 @@ export default function WordLadderProgram({ descriptor, api: injected = null, re
     // it: the prompt fell back to plain text before the child ever saw a
     // picture or heard a sound (distinct from media.failed, which is an
     // asset that DID resolve but then failed to load in the browser).
-    const assetMissing = (item.cue?.type === 'image' && !(item.assets?.image || item.word?.media?.image))
+    const assetMissing = ((item.cue?.type === 'image' || (item.cue?.type === 'english' && item.cue.image)) && !(item.assets?.image || item.word?.media?.image))
       || (item.cue?.type === 'audio' && !(item.assets?.audio || item.assets?.glossAudio || item.word?.media?.audio));
     if (assetMissing) wordLadderLog.promptFallback({ itemId: item.id, cue: item.cue.type });
   }, [item]);
