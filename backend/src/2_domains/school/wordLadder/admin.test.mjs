@@ -1,10 +1,13 @@
 // backend/src/2_domains/school/wordLadder/admin.test.mjs
 import { describe, expect, it } from 'vitest';
-import { emptyWordV3 } from './mastery.mjs';
+import { applyGraded, emptyWordV3 } from './mastery.mjs';
+import { planNextRound } from './rounds.mjs';
+import { addDays } from '../termVerdict.mjs';
 import { emptyDay } from './statusV3.mjs';
 import { markMastered, typedAnswers } from './admin.mjs';
 
 const D = '2026-09-22';
+const SET = { round: { size: 5, maxPasses: 3 }, batch: { newPerDay: 4, workingSet: 7 } };
 
 describe('markMastered (grown-up control)', () => {
   it('sets mastered at the stage, due after that stage\'s gap, and clears miss flags', () => {
@@ -14,6 +17,19 @@ describe('markMastered (grown-up control)', () => {
     });
     expect(markMastered(word, { stage: 9, day: D }).dueDay).toBe('2026-11-21'); // GAPS[5] = 60
     expect(markMastered(word, { stage: 0, day: D }).dueDay).toBe('2026-09-23');
+  });
+  it('a never-introduced word gets today as its introduced day, so a later miss is carried', () => {
+    const marked = markMastered(emptyWordV3(), { stage: 1, day: D });
+    expect(marked.introducedDay).toBe(D);
+    const missed = applyGraded(marked, { source: 'recheck', correct: false, day: marked.dueDay, task: '3.3', settings: { afterMisses: 2, gapScale: 1 } });
+    expect(missed.state).toBe('familiar');
+    const round = planNextRound({ words: { gawi: missed }, pool: [], day: addDays(marked.dueDay, 1), settings: SET, remainingMs: 900000, roundNumber: 1 });
+    expect(round).toMatchObject({ kind: 'carry', words: ['gawi'] });
+  });
+  it('applies the day\'s tuned review.gapScale like a recheck pass does (1 when absent)', () => {
+    expect(markMastered(emptyWordV3(), { stage: 2, day: D, gapScale: 2 }).dueDay).toBe('2026-10-06'); // 7 * 2
+    expect(markMastered(emptyWordV3(), { stage: 0, day: D, gapScale: 0.2 }).dueDay).toBe('2026-09-23'); // never under a day
+    expect(markMastered(emptyWordV3(), { stage: 2, day: D, gapScale: null }).dueDay).toBe('2026-09-29');
   });
   it('refuses a stage that is not a non-negative integer', () => {
     expect(() => markMastered(emptyWordV3(), { stage: -1, day: D })).toThrow(/stage/);

@@ -73,12 +73,20 @@ export function openDay({ status, dayFile, day, deckId, pool, settings, learnerI
 /**
  * Today's plan once a grown-up excludes `wordId` (spec §6): its pending
  * recheck leaves the order and any unfinished drill on it ends. Answered
- * rechecks and finished drills are history and stay. Pure.
+ * rechecks and finished drills are history and stay. With `settle` (the
+ * engine context — status already carrying the exclusion — plus `at`), an
+ * opened day is re-settled: taking away the only pending thing plans the next
+ * round or drill, or credits the day, exactly as an answer would. Without it
+ * the child would land on a "done" summary on a day never credited. Pure.
  */
-export function excludeWordFromDay(dayFile, wordId) {
+export function excludeWordFromDay(dayFile, wordId, settle = null) {
   const next = clone(dayFile);
   next.rechecks.order = next.rechecks.order.filter((id) => id !== wordId || next.rechecks.answered[id]);
   next.drills = (next.drills ?? []).map((drill) => (drill.wordId === wordId && !drill.done ? { ...drill, done: true, excluded: true } : drill));
+  if (settle && next.atOpen && !next.doneAt) {
+    const { at, ...ctx } = settle;
+    settleDay({ ...ctx, status: clone(ctx.status), dayFile: next }, at);
+  }
   return next;
 }
 
@@ -191,7 +199,8 @@ function newDrill(ctx, wordId, source) {
 function maybeStartTrickyDrill(ctx) {
   const drills = ctx.dayFile.drills ?? (ctx.dayFile.drills = []);
   const perDay = ctx.settings.drill?.perSitting ?? 1;
-  if (drills.filter((drill) => drill.source === 'tricky').length >= perDay) return false;
+  // A drill a grown-up's exclusion ended never ran; it does not use up the day's drill.
+  if (drills.filter((drill) => drill.source === 'tricky' && drill.excluded !== true).length >= perDay) return false;
   if (remainingMs(ctx) < DRILL_MS) return false;
   const since = (id) => String(wordOf(ctx.status, id).trickySince ?? '');
   const candidates = (ctx.dayFile.atOpen?.tricky ?? [])

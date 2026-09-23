@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { isDeepStrictEqual } from 'node:util';
 import { listYamlFiles, loadYaml, resolveYamlPath, saveYamlToPathAtomic } from '#system/utils/FileIO.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 import { DomainInvariantError } from '#domains/core/errors/index.mjs';
@@ -108,7 +109,12 @@ export class YamlWordLadderStore {
     }
     const next = fn({ status: structuredClone(status.value), dayFile: structuredClone(dayFile.value) });
     if (next?.status?.schema !== STATUS_SCHEMA_V3 || next?.dayFile?.schema !== DAY_SCHEMA) throw new TypeError('word-ladder transaction returned an invalid shape');
-    saveYamlToPathAtomic(dayFile.file, next.dayFile, { noRefs: true });
+    // A day file exists only once the learner opened that day (`listDays` is
+    // their study days): a status-only change on a day with no file — a
+    // grown-up's word control, a teacher fold — must not create an empty one.
+    if (dayFile.state !== 'missing' || !isDeepStrictEqual(next.dayFile, dayFile.value)) {
+      saveYamlToPathAtomic(dayFile.file, next.dayFile, { noRefs: true });
+    }
     saveYamlToPathAtomic(status.file, next.status, { noRefs: true });
     return structuredClone(next);
   }

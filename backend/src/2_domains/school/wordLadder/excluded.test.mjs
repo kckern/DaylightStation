@@ -141,4 +141,39 @@ describe('excluded words', () => {
     const answered = excludeWordFromDay(dayFile, 'gawi');
     expect(answered.rechecks.order).toEqual(['gawi', 'pul']);
   });
+
+  it('excluding the last pending thing re-settles the day: the next round is planned, not a false done', () => {
+    const status = emptyStatusV3();
+    status.words.gawi = w('mastered', { stage: 1, dueDay: D });
+    const ctx = start(status, ['pul', 'chaek']);
+    expect(currentItem(ctx).wordId).toBe('gawi'); // the due recheck
+    expect(ctx.dayFile.rounds).toHaveLength(0);
+    const nextStatus = { ...ctx.status, words: { ...ctx.status.words, gawi: off(ctx.status.words.gawi) } };
+    const dayFile = excludeWordFromDay(ctx.dayFile, 'gawi', { ...ctx, status: nextStatus, at: at() });
+    expect(dayFile.doneAt).toBeNull();
+    expect(dayFile.rounds).toHaveLength(1);
+    expect(dayFile.rounds[0].newWords).toEqual(['pul', 'chaek']);
+    expect(currentItem({ ...ctx, status: nextStatus, dayFile }).type).not.toBe('summary');
+  });
+
+  it('excluding the last pending thing on a day with nothing else to do credits the day then', () => {
+    const status = emptyStatusV3();
+    status.words.gawi = w('mastered', { stage: 1, dueDay: D });
+    const ctx = start(status, []);
+    const nextStatus = { ...ctx.status, words: { ...ctx.status.words, gawi: off(ctx.status.words.gawi) } };
+    const settledAt = at();
+    const dayFile = excludeWordFromDay(ctx.dayFile, 'gawi', { ...ctx, status: nextStatus, at: settledAt });
+    expect(dayFile.doneAt).toBe(settledAt);
+  });
+
+  it('a drill ended by an exclusion does not use up the day\'s tricky drill', () => {
+    const status = emptyStatusV3();
+    status.words.gawi = w('familiar', { tricky: true, trickySince: '2026-09-01' });
+    status.words.pul = w('familiar', { tricky: true, trickySince: '2026-09-05' });
+    const ctx = start(status, []);
+    expect(ctx.dayFile.drills.map((d) => [d.wordId, d.done])).toEqual([['gawi', false]]);
+    const nextStatus = { ...ctx.status, words: { ...ctx.status.words, gawi: off(ctx.status.words.gawi) } };
+    const dayFile = excludeWordFromDay(ctx.dayFile, 'gawi', { ...ctx, status: nextStatus, at: at() });
+    expect(dayFile.drills.map((d) => [d.wordId, d.done, d.excluded === true])).toEqual([['gawi', true, true], ['pul', false, false]]);
+  });
 });
