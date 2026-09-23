@@ -11,7 +11,8 @@ const CARRY_RANK = { notYet: 0, introduced: 1, familiar: 1, claimed: 2 };
 
 export function newAllowance({ words, day, settings }) {
   const all = Object.values(words ?? {});
-  const introducedToday = all.filter((word) => word.introducedDay === day).length;
+  // A grown-up's Mark mastered is not an introduction the child did today.
+  const introducedToday = all.filter((word) => word.introducedDay === day && word.introducedBy !== 'admin').length;
   const unsettled = all.filter(isUnsettled).length;
   return Math.max(0, Math.min(settings.batch.newPerDay - introducedToday, settings.batch.workingSet - unsettled));
 }

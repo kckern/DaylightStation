@@ -1,7 +1,7 @@
 // backend/src/2_domains/school/wordLadder/admin.test.mjs
 import { describe, expect, it } from 'vitest';
 import { applyGraded, emptyWordV3 } from './mastery.mjs';
-import { planNextRound } from './rounds.mjs';
+import { newAllowance, planNextRound } from './rounds.mjs';
 import { addDays } from '../termVerdict.mjs';
 import { emptyDay } from './statusV3.mjs';
 import { markMastered, typedAnswers } from './admin.mjs';
@@ -25,6 +25,19 @@ describe('markMastered (grown-up control)', () => {
     expect(missed.state).toBe('familiar');
     const round = planNextRound({ words: { gawi: missed }, pool: [], day: addDays(marked.dueDay, 1), settings: SET, remainingMs: 900000, roundNumber: 1 });
     expect(round).toMatchObject({ kind: 'carry', words: ['gawi'] });
+  });
+  it('a grown-up\'s mark does not use up today\'s new-word allowance, and the word is still carried after a miss', () => {
+    const marked = markMastered(emptyWordV3(), { stage: 1, day: D });
+    expect(marked.introducedBy).toBe('admin');
+    const SETTINGS = { ...SET, batch: { newPerDay: 1, workingSet: 7 } };
+    expect(newAllowance({ words: { gawi: marked }, day: D, settings: SETTINGS })).toBe(1);
+    // A word already introduced by the child keeps its own record untouched.
+    const own = markMastered({ ...emptyWordV3(), state: 'familiar', introducedDay: D }, { stage: 1, day: D });
+    expect(own.introducedBy).toBeUndefined();
+    expect(newAllowance({ words: { pul: own }, day: D, settings: SETTINGS })).toBe(0);
+    const missed = applyGraded(marked, { source: 'recheck', correct: false, day: marked.dueDay, task: '3.3', settings: { afterMisses: 2, gapScale: 1 } });
+    expect(planNextRound({ words: { gawi: missed }, pool: [], day: addDays(marked.dueDay, 1), settings: SET, remainingMs: 900000, roundNumber: 1 }))
+      .toMatchObject({ kind: 'carry', words: ['gawi'] });
   });
   it('applies the day\'s tuned review.gapScale like a recheck pass does (1 when absent)', () => {
     expect(markMastered(emptyWordV3(), { stage: 2, day: D, gapScale: 2 }).dueDay).toBe('2026-10-06'); // 7 * 2
