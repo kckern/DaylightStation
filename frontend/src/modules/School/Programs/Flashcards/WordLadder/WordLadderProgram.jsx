@@ -17,12 +17,22 @@ const GRADED = new Set(['choice', 'typed']);
  * Whether THIS device can offer a microphone, detected fresh for every open.
  * A package-scoped `useCapabilities` (as Sentence Ladder has) needs the
  * package name, which is only known from the FIRST open's response — so the
- * very first open cannot wait for it. Existence, not permission: asking for
- * permission here would prompt on mount, before the learner has chosen to
- * record anything (spec §6, "at most tapped Record").
+ * very first open cannot wait for it; this mirrors that hook's own check
+ * (`SentenceLadder/useCapabilities.js` `detectMicrophone`) instead.
+ *
+ * Existence, not permission: `enumerateDevices()` reports device `kind`
+ * without ever prompting, so a device's mic can be found before the learner
+ * has chosen to record anything (spec §6, "at most tapped Record"). Labels
+ * are blank without permission, but `kind === 'audioinput'` is not.
  */
-function detectMicrophoneCapability() {
-  return Boolean(navigator.mediaDevices?.getUserMedia);
+async function detectMicrophoneCapability() {
+  try {
+    if (!navigator.mediaDevices?.enumerateDevices) return false;
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    return devices.some((d) => d.kind === 'audioinput');
+  } catch {
+    return false;
+  }
 }
 
 function roundLabel(progress) {
@@ -83,7 +93,7 @@ export default function WordLadderProgram({ descriptor, api: injected = null, re
 
   const open = useCallback(async () => {
     const mine = ++generation.current;
-    const capabilities = { microphone: detectMicrophoneCapability() };
+    const capabilities = { microphone: await detectMicrophoneCapability() };
     const { ok, status, data } = await api.open({ userId, deckId, scenario, capabilities });
     if (!live.current || mine !== generation.current) return;
     if (!ok || !data?.item || !data?.sittingId) {
