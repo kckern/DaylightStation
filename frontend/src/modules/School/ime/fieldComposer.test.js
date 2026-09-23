@@ -645,4 +645,26 @@ describe('FieldComposer.offerJamo / offerBackspace — the keypad seam', () => {
     expect(c.offerBackspace(el)).toBe(false);
     expect(el.value).toBe('abc');
   });
+
+  it('offerBackspace refuses into a non-composable field, same as offerJamo (fix round 1)', () => {
+    const el = field({ type: 'number', value: '123' });
+    const c = new FieldComposer();
+    expect(c.offerBackspace(el)).toBe(false);
+    expect(el.value).toBe('123');
+  });
+
+  it('offerBackspace refuses once its own field goes non-composable mid-session (fix round 1)', () => {
+    // `#continuous` only checks identity/caret/text — it has no opinion on
+    // `disabled`/`readOnly`/opt-out, so without offerBackspace's own check a
+    // field that went read-only mid-composition (busy, mid-submit) would
+    // still get peeled.
+    const el = field();
+    const c = new FieldComposer();
+    c.offerJamo('ㄱ', el);
+    c.offerJamo('ㅏ', el);
+    expect(el.value).toBe('가');
+    el.readOnly = true;
+    expect(c.offerBackspace(el)).toBe(false);
+    expect(el.value).toBe('가'); // refused, not peeled
+  });
 });
