@@ -14,7 +14,8 @@ const HELP_MODES = new Set(['say', 'write']);
  * modes the server listed (`item.modes` — a mode with nothing in it is not
  * sent), plus My words and Done. Say / Write ask With help / Without help —
  * Say offers only the variants the server says have a run (`item.sayHelp`:
- * With help needs term audio, Without help does not);
+ * With help needs term audio, Without help does not); Write shows Without
+ * help locked until a word is ready for its sign-off (`item.writeHelp`);
  * Flashcards asks which side faces up; Drill picks its words first. A choice
  * calls `api.practice` and hands the whole `{ok, status, data}` to
  * `onPractice` — the program shows the run's first item or recovers.
@@ -26,6 +27,9 @@ export default function MenuItem({ item, api, sittingId, userId, deckId, langs, 
   const modes = (item.modes ?? []).filter((mode) => LABELS[mode]);
   // Which help variants to offer for a mode. Older servers send no sayHelp: both.
   const helpOptions = (mode) => (mode === 'say' && Array.isArray(item.sayHelp) ? item.sayHelp : [true, false]);
+  // Write Without help types from memory, so it is shown LOCKED (with a note)
+  // until a word is ready for its sign-off (`item.writeHelp` lacks `false`).
+  const locked = (mode, help) => mode === 'write' && help === false && Array.isArray(item.writeHelp) && !item.writeHelp.includes(false);
 
   const start = async (opts) => {
     if (busy) return;
@@ -59,7 +63,7 @@ export default function MenuItem({ item, api, sittingId, userId, deckId, langs, 
   const toWords = () => { if (!busy) setView({ name: 'words' }); };
   let keys = {};
   if (view.name === 'menu') keys = { ...Object.fromEntries(modes.map((mode, i) => [String(i + 1), () => choose(mode)])), [wordsKey]: toWords, ' ': onExit, enter: onExit };
-  else if (view.name === 'help') keys = { ...Object.fromEntries(helpOptions(view.mode).map((help, i) => [String(i + 1), () => start({ mode: view.mode, help })])), backspace: back };
+  else if (view.name === 'help') keys = { ...Object.fromEntries(helpOptions(view.mode).flatMap((help, i) => (locked(view.mode, help) ? [] : [[String(i + 1), () => start({ mode: view.mode, help })]]))), backspace: back };
   else if (view.name === 'front') keys = { 1: () => start({ mode: 'flashcards', frontSide: 'term' }), 2: () => start({ mode: 'flashcards', frontSide: 'gloss' }), backspace: back };
   useWordLadderKeys(keys, { enabled: view.name === 'menu' || view.name === 'help' || view.name === 'front' });
 
@@ -79,11 +83,16 @@ export default function MenuItem({ item, api, sittingId, userId, deckId, langs, 
         <h2 className="wl-menu__title">{help ? LABELS[view.mode] : 'Flashcards — which side first?'}</h2>
         <div className="wl-menu__grid wl-menu__grid--two">
           {help ? (
-            helpOptions(view.mode).map((help, i) => (
+            helpOptions(view.mode).map((help, i) => (locked(view.mode, help) ? (
+              <div key={String(help)} className="wl-menu__locked">
+                <TouchButton variant="choice" disabled aria-describedby="wl-menu-locked-note">Without help</TouchButton>
+                <p id="wl-menu-locked-note" className="wl-menu__note">Unlocks when a word is ready</p>
+              </div>
+            ) : (
               <TouchButton key={String(help)} variant="choice" keyHint={String(i + 1)} disabled={busy} onClick={() => start({ mode: view.mode, help })}>
                 {help ? 'With help' : 'Without help'}
               </TouchButton>
-            ))
+            )))
           ) : (
             <>
               <TouchButton variant="choice" keyHint="1" disabled={busy} onClick={() => start({ mode: 'flashcards', frontSide: 'term' })}>Word first</TouchButton>

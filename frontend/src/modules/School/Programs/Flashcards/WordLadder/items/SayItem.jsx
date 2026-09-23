@@ -133,12 +133,15 @@ export default function SayItem({
 
   const next = useCallback(() => {
     if (busy) return;
-    // A Skip — moving on with no take — is logged apart from a Next after
-    // one, with how it was pressed (spec §8 item.skipped). Never graded either way.
+    // With no mic there is nothing to skip: moving on IS the answer, logged as
+    // item.answered with `micOff` (the program merges the meta). Only a Skip —
+    // moving on past a working mic with no take — is logged apart, with how it
+    // was pressed (spec §8 item.skipped). Never graded either way.
+    if (recorder.unavailable === true && !hasTaken) { onRespond({ done: true }, { micOff: true }); return; }
     if (!hasTaken) {
       wordLadderLog.itemSkipped({
         itemId: item.id, type: item.type, what: 'say', itemMode: mode, via: currentInput(),
-        ms: Date.now() - shownAtRef.current, micOff: recorder.unavailable === true,
+        ms: Date.now() - shownAtRef.current, micOff: false,
       });
     }
     onRespond({ done: true });
@@ -163,9 +166,10 @@ export default function SayItem({
    *   while recording   Space/Enter = Stop
    *   saving            Space/Enter = nothing (a beat; the take is landing)
    *   after a take      Space/Enter = Next;  ← = Record again
-   *   mic unavailable   Space/Enter = Skip/Next
-   * Skip is a touch; its only key is Backslash, which has to be hunted for.
-   * Tab = hear the cue again (never while the mic is open).
+   *   mic unavailable   Space/Enter = Next (an answer, not a skip)
+   * Skip is a touch; only a button that reads Skip has a key, the hunted-for
+   * Backslash. Tab = hear it: the model word (say-after's term, or the clip a
+   * take revealed), else the cue — never while the mic is open or saving.
    */
   let spaceOwner = 'none';
   if (recording) spaceOwner = 'stop';
@@ -180,12 +184,18 @@ export default function SayItem({
   const canRecordAgain = hasTaken && !recording && !saving && !micOff;
   const cueClip = showCue ? englishCueAudio(item, resolveAssetUrl) : null;
   const hearCue = cueClip ? () => playClip(cueClip, 'gloss') : null; // trigger: the key/touch that asked
+  // The model word: say-after knows it upfront; read-aloud / say-from-cue only once a take revealed it.
+  const model = revealed?.audio ?? termAudio;
+  const hearModel = model ? () => playClip(model, 'term') : null;
+  const micQuiet = !recording && !saving;
+  const hear = micQuiet ? (hearModel ?? hearCue) : null;
+  const isSkip = !hasTaken && !micOff;
   useWordLadderKeys({
     ' ': forward,
     enter: forward,
-    '\\': next,
+    ...(isSkip ? { '\\': next } : {}),
     ...(canRecordAgain ? { arrowleft: () => { if (!busy) record(); } } : {}),
-    ...(hearCue && !recording && !saving ? { tab: hearCue } : {}),
+    ...(hear ? { tab: hear } : {}),
   });
 
   return (
@@ -205,6 +215,11 @@ export default function SayItem({
       )}
 
       <div className="wl-controls">
+        {hearModel && micQuiet && (
+          <TouchButton variant="secondary" keyHint="Tab" onClick={hearModel}>
+            <Icon name="volume" /> Hear it
+          </TouchButton>
+        )}
         {!recording && !saving && (
           <TouchButton
             variant={spaceOwner === 'record' ? 'primary' : 'secondary'}
@@ -226,16 +241,17 @@ export default function SayItem({
           </span>
         )}
         {/* SPEAKING IS NEVER A GATE: this is enabled from the first render —
-            "Skip" before any take, "Next" once one exists — never disabled by
-            recording state. Space only lands here after a take (or with no
-            mic); otherwise its key is the hunted-for Backslash. */}
+            "Skip" before any take, "Next" once one exists or when there is no
+            mic — never disabled by recording state. Space only lands here
+            after a take (or with no mic); a Skip's key is the hunted-for
+            Backslash, and nothing else carries it. */}
         <TouchButton
           variant={spaceOwner === 'next' ? 'primary' : 'secondary'}
-          keyHint={spaceOwner === 'next' ? 'Space' : '\\'}
+          keyHint={spaceOwner === 'next' ? 'Space' : isSkip ? '\\' : undefined}
           onClick={next}
           disabled={busy}
         >
-          {hasTaken ? 'Next' : 'Skip'}
+          {isSkip ? 'Skip' : 'Next'}
         </TouchButton>
       </div>
     </section>

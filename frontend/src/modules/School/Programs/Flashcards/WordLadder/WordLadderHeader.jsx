@@ -7,7 +7,7 @@ import Icon from '../../../home/icons/Icon.jsx';
  *   [back] Exit   Review [tick] › LEARN › Sort › Quiz › Match › Practice   3 left
  *            Round 1 · New words
  *   [time bar]
- *   Meet each new word: flip it, then copy it.      ← once per step
+ *   Meet each new word.                              ← once per step
  *
  * The trail is `stepTrail()`'s output; this only draws it. On a narrow stage
  * the trail collapses to its current step (a container query in the SCSS).

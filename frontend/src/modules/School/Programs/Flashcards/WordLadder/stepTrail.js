@@ -7,9 +7,12 @@
  *
  * States: `done` (ticked), `current` (lit), `todo` (dim). A step the day does
  * not have is omitted: Review with no rechecks, Learn in a day whose round
- * work has no new words (a carry round), Match unless the round is in its
- * guided match (`round.phase === 'match'`, or a round-sourced match item) or
- * says it has one ahead (`round.hasMatch`). Practice unlocks only once today's
+ * work has no new words (a carry round — `learnToday`, which the server reads
+ * from the day's plan before any round exists, so Review never hides Learn),
+ * Match unless the round is in its guided match (`round.phase === 'match'`, or
+ * a round-sourced match item) or says it has one ahead (`round.hasMatch`); with
+ * no round running, rounds still to come show Match and a day past them shows
+ * it only when one was held (`matchToday`). Practice unlocks only once today's
  * goal is met (`doneToday`) and is lit only while practising.
  */
 
@@ -20,7 +23,7 @@ export const STEP_LABELS = Object.freeze({
 /** Shown once per step per sitting, under the header. Kid-readable: no "verify", "recheck" or "claimed". */
 export const STEP_HINTS = Object.freeze({
   review: 'Words from before — show what you remember.',
-  learn: 'Meet each new word: flip it, then copy it.',
+  learn: 'Meet each new word.',
   sort: 'Flip, then sort: Not yet, Familiar, or Got it.',
   quiz: 'Quick check on the words you sorted.',
   match: 'Match each word to its meaning.',
@@ -29,7 +32,9 @@ export const STEP_HINTS = Object.freeze({
 });
 
 const ROUND_STEPS = ['learn', 'sort', 'quiz', 'match'];
-const ROUND_PHASE_STEP = { intro: 'learn', stream: 'sort', quiz: 'quiz', offer: 'quiz', match: 'match' };
+// The drill offer comes after the quiz and the Match: no round step is lit,
+// and every one of them reads done (the trail never steps backwards).
+const ROUND_PHASE_STEP = { intro: 'learn', stream: 'sort', quiz: 'quiz', match: 'match' };
 const ROUND_PHASE_NAME = { intro: 'New words', stream: 'Sort', quiz: 'Quiz', offer: 'Tricky word', match: 'Match' };
 const isRoundMatch = (item) => item?.type === 'match' && item.source !== 'practice';
 
@@ -65,9 +70,16 @@ export function stepTrail(progress, item = null) {
   const roundsDone = progress.roundsDone ?? 0;
   const hasRounds = inRound || roundsDone > 0 || !progress.doneToday;
   if (hasRounds) {
-    const at = inRound ? ROUND_STEPS.indexOf(current === 'match' ? 'match' : ROUND_PHASE_STEP[progress.round.phase]) : -1;
+    const offer = inRound && progress.round.phase === 'offer';
+    const at = !inRound ? -1 : offer ? ROUND_STEPS.length
+      : ROUND_STEPS.indexOf(current === 'match' ? 'match' : ROUND_PHASE_STEP[progress.round.phase]);
     const afterRounds = !inRound && roundsDone > 0 && progress.phase !== 'rechecks';
-    const hasMatch = current === 'match' || (inRound && progress.round.hasMatch === true);
+    // Match: the round's own answer while one runs; with none running, a round
+    // still to come plans one (so Review shows the same shape the round will),
+    // and a day past its rounds shows it only if one was held (`matchToday`).
+    let hasMatch = current === 'match';
+    if (!hasMatch && inRound) hasMatch = progress.round.hasMatch === true;
+    else if (!hasMatch) hasMatch = roundsDone > 0 || progress.doneToday ? progress.matchToday === true : true;
     for (const [i, id] of ROUND_STEPS.entries()) {
       if (id === 'learn' && progress.learnToday === false) continue;
       if (id === 'match' && !hasMatch) continue;

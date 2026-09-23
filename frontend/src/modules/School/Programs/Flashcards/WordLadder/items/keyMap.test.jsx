@@ -87,6 +87,16 @@ describe('Tab = hear it again', () => {
     expect(hint(/listen/i)).toBe('Tab');
   });
 
+  it('typed with no audio at all: Tab is still prevented, so focus stays in the field', () => {
+    render(<TypedItem item={{ id: 't3', type: 'typed', task: '3.3', cue: { type: 'text', text: 'Scissors' }, assets: {} }} mode="graded" langs={langs} resolveAssetUrl={id} onRespond={vi.fn()} />);
+    const input = screen.getByRole('textbox', { name: /your answer/i });
+    input.focus();
+    playClip.mockClear();
+    expect(tab(input)).toBe(false);
+    expect(playClip).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(input);
+  });
+
   it('typed: H typed into the field is never a hear-it command (Korean IME: H is ㅗ)', () => {
     render(<TypedItem item={{ id: 't3', type: 'typed', word }} mode="copy" langs={langs} resolveAssetUrl={id} onRespond={vi.fn()} />);
     const input = screen.getByRole('textbox', { name: /your answer/i });
