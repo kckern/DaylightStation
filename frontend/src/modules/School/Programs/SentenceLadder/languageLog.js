@@ -111,6 +111,10 @@ export const languageLog = {
   // silent-warning | silent-cleared | pieces-abandoned | stitch-failed.
   capture: (detail, data) => emit('capture', detail, data),
   captureError: (detail, data) => emit('capture', detail, data, 'error'), // denied | failed
+  // Interpretation (2026-09-23): `checked` — an answer was submitted and the
+  // answer shown beside it (check your work); `gave-up` — Show the answer, no
+  // attempt. Two events on purpose: one is work, the other is not.
+  interpretation: (detail, data) => emit('interpretation', detail, data),
   pacing: (detail, data) => emit('pacing', detail, data),                // changed | rolled
   // A refusal is not a fault — the server is doing its job when it declines to
   // roll a day early — but it is the exact shape of "I pressed it and nothing

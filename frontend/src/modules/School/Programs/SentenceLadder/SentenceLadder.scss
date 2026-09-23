@@ -347,6 +347,21 @@ $disc: 5.5rem;
   }
 }
 
+// --- check your work: an interpretation beside its answer -------------------
+// Shown after every submitted interpretation (2026-09-23). The matching parts
+// are lit in the accent; what differs is left plain — "see how close you got",
+// not a red pen. In the place the field was, like the reveal.
+.lang-check {
+  display: flex; flex-direction: column; gap: 0.35rem;
+  width: 100%; max-width: 40rem; margin: 0 auto; text-align: left;
+
+  &__title { margin: 0 0 0.25rem; font-size: $body; font-weight: 700; color: var(--school-fg); }
+  &__label { margin: 0.5rem 0 0; font-size: $meta; color: var(--school-muted); }
+  &__text { margin: 0; font-size: $source; color: var(--school-fg); }
+  &__match { background: transparent; color: var(--school-accent); font-weight: 700; }
+  &__note { margin: 0.5rem 0 0; font-size: $meta; color: var(--school-muted); }
+}
+
 // --- popover: one dismissal behaviour for both menus ------------------------
 .lang-popover {
   position: relative;

@@ -7,6 +7,7 @@ import { typeableText } from '@shared-contracts/language/typeableText.mjs';
 import GlyphStrip from './GlyphStrip.jsx';
 import Icon from '../../../home/icons/Icon.jsx';
 import useVoiceCapture from './useVoiceCapture.js';
+import { matchParts } from '../textDiff.js';
 
 /**
  * The two typing rungs, which are one component (design §5).
@@ -242,6 +243,21 @@ export default function TypedRung({
   // Sticky, unlike `saving`: the answer is in, so nothing may start sounding
   // while the program works out which rung comes next.
   const [submitted, setSubmitted] = useState(false);
+  /**
+   * CHECK YOUR WORK (owner ruling 2026-09-23). On interpretation, Enter or
+   * Submit does not hand the answer in straight away: it FREEZES it and shows
+   * the answer beside it — typed or spoken, right or wrong — so the learner
+   * sees how close they got. The next Space/Enter/Continue commits exactly
+   * what they wrote. `{given, inputMode}` or null.
+   *
+   * The field goes away on check, as it does on a reveal: with the answer on
+   * screen, an editable field would let it be typed back in as theirs.
+   * "Show answer" stays the give-up — no attempt, recorded as shown.
+   */
+  const [checked, setChecked] = useState(null);
+  /** Set synchronously on commit: a focused Continue's own Enter and the
+   *  panel's key handler can both fire in one tick, before state re-renders. */
+  const committedRef = useRef(false);
   // Stop means QUIET, not "quiet for thirty seconds". A learner who silences
   // the sentence has told us the audio is in their way; bringing it back on a
   // timer would re-impose exactly the thing they just refused, which is the
@@ -351,11 +367,11 @@ export default function TypedRung({
   const meaningText = meaningLang ? entry.text?.[meaningLang] ?? '' : '';
   // Dictation has the peek; interpretation has this. Never both on one rung:
   // on dictation the model is help, on interpretation it is the answer.
-  const canReveal = !isDictation && answerText !== '' && !revealed;
+  const canReveal = !isDictation && answerText !== '' && !revealed && !checked;
   // See SPEAK_WORD. Interpretation only, and only where something can actually
   // listen — after a reveal there is nothing left to answer, by voice or
   // otherwise.
-  const canSpeak = !isDictation && typeof onTranscribe === 'function' && !revealed;
+  const canSpeak = !isDictation && typeof onTranscribe === 'function' && !revealed && !checked;
 
   /**
    * THE COPY-MODE GATE, wired up.
@@ -558,6 +574,9 @@ export default function TypedRung({
     languageLog.rung('reveal', {
       rung: entry.rung, seq: entry.seq, typed: Array.from(value).length,
     });
+    // THE GIVE-UP, as its own event beside `checked`: an answer shown with no
+    // attempt. The reveal has no key, so it is always a tap.
+    languageLog.interpretation('gave-up', { seq: entry.seq, via: 'touch', typed: Array.from(value).length });
     // Asking for the answer un-hushes, exactly as asking for the prompt does.
     setHushed(false);
     playSequence([{ url: audioUrl(entry.seq, responseLang) }], { loop: false });
@@ -689,7 +708,7 @@ export default function TypedRung({
     if (!Number.isFinite(idleReplayMs) || idleReplayMs <= 0) return undefined;
     // `revealed` counts as done here: the exercise is over, and a sentence
     // that starts offering itself again over the answer is talking to nobody.
-    if (playing || submitted || saving || revealed) return undefined;
+    if (playing || submitted || saving || revealed || checked) return undefined;
     // Nor while the learner is speaking, or waiting to hear what was heard.
     if (speaking !== 'idle') return undefined;
     // Silenced on purpose. See `hushed`.
@@ -705,10 +724,10 @@ export default function TypedRung({
       play();
     }, idleReplayMs);
     return () => window.clearTimeout(timer);
-  }, [idleReplayMs, playing, submitted, saving, blocked, hushed, revealed, speaking, value, play, entry.rung, entry.seq]);
+  }, [idleReplayMs, playing, submitted, saving, blocked, hushed, revealed, checked, speaking, value, play, entry.rung, entry.seq]);
 
-  const submit = useCallback(() => {
-    if (saving) return;
+  const submit = useCallback((via = 'touch') => {
+    if (saving || committedRef.current) return;
     /**
      * TWO ROWS, ONE BUTTON. A revealed sentence is committed through the same
      * path as an answered one — same guard against a double press, same stop,
@@ -720,13 +739,30 @@ export default function TypedRung({
      * accuracy on its side for the same reason.
      */
     if (revealed) {
+      committedRef.current = true;
       setSubmitted(true);
       stop();
       languageLog.rung('complete', { rung: entry.rung, seq: entry.seq, revealed: true });
       onComplete({ seq: entry.seq, rung: entry.rung, revealed: true });
       return;
     }
-    if (!value.trim()) return;
+    // CHECK FIRST, on interpretation: freeze the answer, show the model beside
+    // it, and wait for the learner to go on. Dictation commits as before.
+    if (!isDictation && !checked) {
+      if (!value.trim()) return;
+      const inputMode = spokenFrom ? 'voice' : 'typed';
+      setChecked({ given: value, inputMode });
+      setPeeking(false);
+      setSpeakNote(null);
+      languageLog.interpretation('checked', {
+        seq: entry.seq, via, inputMode, chars: Array.from(value).length,
+      });
+      window.setTimeout(() => commitRef.current?.focus?.({ preventScroll: true }), 0);
+      return;
+    }
+    const given = checked ? checked.given : value;
+    if (!given.trim()) return;
+    committedRef.current = true;
     setSubmitted(true);
     stop();
     /**
@@ -735,10 +771,31 @@ export default function TypedRung({
      * second kind of record, and it is what lets a grown-up reading the log
      * tell a spoken answer from a typed one instead of guessing.
      */
-    const method = spokenFrom ? 'spoken' : 'typed';
+    const method = (checked ? checked.inputMode === 'voice' : Boolean(spokenFrom)) ? 'spoken' : 'typed';
     languageLog.rung('complete', { rung: entry.rung, seq: entry.seq, method });
-    onComplete({ seq: entry.seq, rung: entry.rung, given: value, method });
-  }, [value, saving, revealed, spokenFrom, stop, entry, onComplete]);
+    onComplete({
+      seq: entry.seq, rung: entry.rung, given, method,
+    });
+  }, [value, saving, revealed, checked, isDictation, spokenFrom, stop, entry, onComplete]);
+
+  /**
+   * THE PANEL'S KEYS, while an answer is being checked (the field is gone, so
+   * its handler is too): Space or Enter goes on — commits what they wrote —
+   * and Tab plays the sentence again. Nothing here can change the answer.
+   */
+  useEffect(() => {
+    if (!checked || submitted) return undefined;
+    const onKey = (e) => {
+      if (e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey) return;
+      if (e.key === 'Tab') { e.preventDefault(); play(); return; }
+      if (e.key === ' ' || e.key === 'Enter') {
+        e.preventDefault();
+        submit(e.key === ' ' ? 'key:Space' : 'key:Enter');
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [checked, submitted, play, submit]);
 
   const onKeyDown = useCallback((e) => {
     if (e.key === 'Tab') {
@@ -773,7 +830,7 @@ export default function TypedRung({
       // the field held before it; and nothing is handed in mid-transcription.
       if (speaking === 'recording') { stopSpeaking(); return; }
       if (speaking === 'sending') return;
-      submit();
+      submit('key:Enter');
     }
   }, [play, submit, canPeek, togglePeek, canSpeak, speaking, speak, stopSpeaking, abandonSpeaking, hearMeaning]);
 
@@ -835,7 +892,22 @@ export default function TypedRung({
             so there is no field. It also says plainly what the record will
             say, because a child who does not know this counts differently will
             press it as if it were a hint. */}
-        {revealed ? (
+        {checked && !revealed ? (() => {
+          const parts = matchParts(answerText, checked.given);
+          const lit = (list) => list.map((p, k) => (p.match
+            ? <mark key={k} className="lang-check__match">{p.text}</mark>
+            : <span key={k}>{p.text}</span>));
+          return (
+            <div className="lang-check" role="group" aria-label="Check your work">
+              <p className="lang-check__title">Check your work</p>
+              <p className="lang-check__label">{checked.inputMode === 'voice' ? 'You said' : 'You typed'}</p>
+              <p className="lang-check__text" data-testid="check-given">{lit(parts.given)}</p>
+              <p className="lang-check__label">The answer</p>
+              <p className="lang-check__text" data-testid="check-answer">{lit(parts.answer)}</p>
+              <p className="lang-check__note">The matching parts are lit up. Close is good — see what is different.</p>
+            </div>
+          );
+        })() : revealed ? (
           <div className="lang-rung__answer">
             <p className="lang-rung__answer-text">{answerText}</p>
             <p className="lang-rung__answer-note">
@@ -1001,13 +1073,13 @@ export default function TypedRung({
             type="button"
             ref={commitRef}
             className="lang-btn lang-btn--primary"
-            onClick={submit}
-            disabled={(!revealed && !value.trim()) || saving}
+            onClick={() => submit('touch')}
+            disabled={(!revealed && !checked && !value.trim()) || saving}
           >
             {/* "Submit" is a word for work being handed in. After a reveal there
                 is nothing to hand in, so the button says what actually happens
                 next. */}
-            {saving ? 'Saving…' : revealed ? 'Continue' : 'Submit'}
+            {saving ? 'Saving…' : (revealed || checked) ? 'Continue' : 'Submit'}
           </button>
         </div>
       </div>

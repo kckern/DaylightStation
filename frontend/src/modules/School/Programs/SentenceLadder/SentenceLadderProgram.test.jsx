@@ -62,6 +62,7 @@ vi.mock('./languageLog.js', () => ({
     rungLanded: (...args) => rungLandedMock(...args),
     rungStalled: vi.fn(),
     setTraceContext: vi.fn(),
+    interpretation: vi.fn(),
     attempt: vi.fn(),
     attemptError: vi.fn(),
     audio: vi.fn(),
@@ -2363,6 +2364,8 @@ describe('speaking the answer', () => {
     const input = screen.getByLabelText('Type what it means');
     await act(async () => { fireEvent.change(input, { target: { value: "it's cold today" } }); });
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Submit' })); });
+    // Check your work (2026-09-23): the answer is shown first, then Continue commits it.
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Continue' })); });
 
     expect(onComplete).toHaveBeenCalledWith({
       seq: 1, rung: 'interpretation', given: "it's cold today", method: 'spoken',
@@ -2374,6 +2377,8 @@ describe('speaking the answer', () => {
     const input = screen.getByLabelText('Type what it means');
     await act(async () => { fireEvent.change(input, { target: { value: 'typed by hand' } }); });
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Submit' })); });
+    // Check your work (2026-09-23): the answer is shown first, then Continue commits it.
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Continue' })); });
     expect(onComplete).toHaveBeenLastCalledWith({
       seq: 1, rung: 'interpretation', given: 'typed by hand', method: 'typed',
     });
@@ -2387,6 +2392,8 @@ describe('speaking the answer', () => {
     await act(async () => { fireEvent.change(input, { target: { value: '' } }); });
     await act(async () => { fireEvent.change(input, { target: { value: 'my own words' } }); });
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Submit' })); });
+    // Check your work (2026-09-23): the answer is shown first, then Continue commits it.
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Continue' })); });
 
     expect(onComplete).toHaveBeenLastCalledWith({
       seq: 1, rung: 'interpretation', given: 'my own words', method: 'typed',
@@ -2480,6 +2487,8 @@ describe('a spoken answer, end to end', () => {
     expect(blob).toBeInstanceOf(Blob);
 
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Submit' })); });
+    // Check your work (2026-09-23): the answer is shown first, then Continue commits it.
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Continue' })); });
     await waitFor(() => expect(logMock).toHaveBeenCalledWith('test-learner', {
       corpus: 'glossika-korean', seq: 1, rung: 'interpretation',
       given: 'it is cold today', method: 'spoken',
