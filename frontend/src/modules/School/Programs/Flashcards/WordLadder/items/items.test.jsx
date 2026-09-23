@@ -4,6 +4,7 @@ import FlashcardItem from './FlashcardItem.jsx';
 import ChoiceItem from './ChoiceItem.jsx';
 import TypedItem from './TypedItem.jsx';
 import SummaryItem from './SummaryItem.jsx';
+import { playClip } from '../wordLadderAudio.js';
 
 vi.mock('../wordLadderAudio.js', () => ({ playClip: vi.fn(async () => true) }));
 const word = { wordId: 'gawi', term: '가위', gloss: 'Scissors', pronunciation: null, kind: 'word', media: { image: 'img', audio: 'aud', glossAudio: null } };
@@ -54,6 +55,18 @@ describe('ChoiceItem', () => {
     );
     expect(screen.getByText('가위')).toBeInTheDocument();
   });
+
+  it('a wrong result autoplays the Korean audio once, and H replays it', () => {
+    playClip.mockClear();
+    const onRespond = vi.fn();
+    const item = { id: 'q3', type: 'choice', task: '2.2', channel: 'read', prompt: '가위', choices: ['Glue', 'Scissors', 'Book', 'Pen'], assets: { audio: 'aud-gawi' } };
+    render(<ChoiceItem item={item} langs={langs} resolveAssetUrl={(x) => x} onRespond={onRespond} result={{ correct: false, answer: 'Scissors' }} onContinue={() => {}} />);
+    expect(playClip).toHaveBeenCalledTimes(1);
+    expect(playClip).toHaveBeenCalledWith('aud-gawi');
+    playClip.mockClear();
+    fireEvent.keyDown(window, { key: 'h' });
+    expect(playClip).toHaveBeenCalledWith('aud-gawi');
+  });
 });
 
 describe('TypedItem', () => {
@@ -63,6 +76,16 @@ describe('TypedItem', () => {
     const input = screen.getByRole('textbox');
     fireEvent.change(input, { target: { value: '가위' } });
     fireEvent.keyDown(input, { key: 'Enter' });
+    expect(onRespond).toHaveBeenCalledWith({ typed: '가위' });
+  });
+
+  it('a copy mismatch keeps the on-screen Enter button visible for a retry', () => {
+    const onRespond = vi.fn();
+    render(<TypedItem item={{ id: 'c1', type: 'typed', word, assets: {} }} mode="copy" langs={langs} resolveAssetUrl={(x) => x} onRespond={onRespond} result={{ correct: false }} />);
+    const input = screen.getByRole('textbox');
+    fireEvent.change(input, { target: { value: '가위' } });
+    const button = screen.getByRole('button', { name: 'Enter' });
+    fireEvent.click(button);
     expect(onRespond).toHaveBeenCalledWith({ typed: '가위' });
   });
 });

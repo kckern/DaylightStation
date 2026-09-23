@@ -55,7 +55,11 @@ export default function TypedItem({ item, mode, langs, resolveAssetUrl, onRespon
       />
       <div className="wl-controls">
         {!graded && termAudio && <TouchButton variant="secondary" onClick={() => playClip(termAudio)}><Icon name="volume" /> Hear it</TouchButton>}
-        {!result && <TouchButton variant="primary" keyHint="Enter" disabled={busy || !value.trim()} onClick={submit}>{busy && graded ? 'Checking…' : 'Enter'}</TouchButton>}
+        {/* A copy mismatch is a retry, not a terminal result — only a GRADED
+            result hides the submit button; copy mode keeps it for the retry. */}
+        {(!result || (!graded && result?.correct === false)) && (
+          <TouchButton variant="primary" keyHint="Enter" disabled={busy || !value.trim()} onClick={submit}>{busy && graded ? 'Checking…' : 'Enter'}</TouchButton>
+        )}
         {!graded && result?.correct === false && <p className="wl-verdict" role="status">Try again — copy it exactly.</p>}
         {graded && result && (
           <p className="wl-verdict" role="status">

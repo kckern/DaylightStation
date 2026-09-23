@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { TouchButton } from '../../../../../../lib/ui/index.js';
 import Icon from '../../../../home/icons/Icon.jsx';
 import { FitGroup, FitText } from '../FitText.jsx';
@@ -19,9 +19,18 @@ export default function ChoiceItem({ item, langs, resolveAssetUrl, onRespond, re
     if (item.channel === 'hear' && audio) playClip(audio);
     if (item.cue?.type === 'audio' && glossAudio) playClip(glossAudio);
   }, [item.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Spec §6: "wrong / Don't know → the correct answer with Korean audio."
+  // Plays once per item's result, not on every re-render the result stays set for.
+  const playedWrongFor = useRef(null);
+  useEffect(() => {
+    if (result && result.correct === false && audio && playedWrongFor.current !== item.id) {
+      playedWrongFor.current = item.id;
+      playClip(audio);
+    }
+  }, [result, audio, item.id]);
   const choose = (choice) => { if (!busy && !result) onRespond({ choice }); };
   const keys = result
-    ? { ' ': onContinue, enter: onContinue }
+    ? { ' ': onContinue, enter: onContinue, h: () => audio && playClip(audio) }
     : {
       0: () => !busy && onRespond({ dontKnow: true }),
       h: () => (audio ?? glossAudio) && playClip(audio ?? glossAudio),
