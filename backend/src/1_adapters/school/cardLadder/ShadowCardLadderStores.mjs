@@ -10,8 +10,12 @@ import { EntityNotFoundError } from '#domains/core/errors/index.mjs';
 export class ShadowCardLadderStores {
   #real; #ttlMs; #max; #now; #shadows = new Map();
   constructor({ real, ttlMs = 3 * 3600000, max = 20, now = Date.now } = {}) {
-    if (typeof real?.readStatus !== 'function' || typeof real?.readDay !== 'function') throw new Error('ShadowCardLadderStores requires a real store to read');
-    this.#real = real; this.#ttlMs = ttlMs; this.#max = max; this.#now = now;
+    // Read through the real store's read-only view when it has one: that view
+    // never migrates (copies) a pre-rename package, so a test sitting cannot
+    // write the learner's directory under either name.
+    const reader = typeof real?.readOnlyView === 'function' ? real.readOnlyView() : real;
+    if (typeof reader?.readStatus !== 'function' || typeof reader?.readDay !== 'function') throw new Error('ShadowCardLadderStores requires a real store to read');
+    this.#real = reader; this.#ttlMs = ttlMs; this.#max = max; this.#now = now;
   }
   #sweep() {
     const t = this.#now();

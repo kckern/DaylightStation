@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { dirExists, listEntries, writeBinary } from '#system/utils/FileIO.mjs';
+import { copyDirectoryOnce, dirExists, listEntries, writeBinary } from '#system/utils/FileIO.mjs';
 import { createLocalFileResource } from '#system/http/streamFile.mjs';
 
 const ID = /^[a-z0-9][a-z0-9_-]{0,63}$/i;
@@ -13,14 +13,23 @@ const MIME = Object.freeze({ webm: 'audio/webm', ogg: 'audio/ogg', m4a: 'audio/m
  * package). Presentation and review only: the credit is the status history.
  */
 export class FilesystemCardLadderRecordings {
-  #root;
-  constructor({ rootDir } = {}) {
+  #root; #legacyRoot;
+  /**
+   * `legacyRootDir` is the pre-rename (2026-09-23) `recordings/word-ladder`.
+   * The first time a learner's takes for a package are touched and only the
+   * old `{package}/{learnerId}` directory exists, it is COPIED here; the old
+   * one is never deleted or written again.
+   */
+  constructor({ rootDir, legacyRootDir = null } = {}) {
     if (typeof rootDir !== 'string' || !rootDir.trim()) throw new Error('FilesystemCardLadderRecordings requires rootDir');
     this.#root = path.resolve(rootDir);
+    this.#legacyRoot = typeof legacyRootDir === 'string' && legacyRootDir.trim() ? path.resolve(legacyRootDir) : null;
   }
   #dir(pkg, learnerId, day, wordId) {
     if (typeof pkg !== 'string' || !ID.test(pkg) || !ID.test(String(learnerId)) || !DAY.test(String(day)) || !ID.test(String(wordId))) return null;
-    return path.join(this.#root, pkg, learnerId, day);
+    const learnerDir = path.join(this.#root, pkg, learnerId);
+    if (this.#legacyRoot && !dirExists(learnerDir)) copyDirectoryOnce(path.join(this.#legacyRoot, pkg, learnerId), learnerDir);
+    return path.join(learnerDir, day);
   }
   #takes(dir, wordId) {
     if (!dirExists(dir)) return [];

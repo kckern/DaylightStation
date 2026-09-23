@@ -39,3 +39,40 @@ describe('judgement caches', () => {
     expect(test.get('p', 'w', 'x')).toBeNull();
   });
 });
+
+describe('YamlJudgementCache — the one-time move out of runtime/word-ladder', () => {
+  const seed = () => {
+    const runtime = fs.mkdtempSync(path.join(os.tmpdir(), 'jc-move-'));
+    const legacyRootDir = path.join(runtime, 'word-ladder');
+    const rootDir = path.join(runtime, 'card-ladder');
+    fs.mkdirSync(path.join(legacyRootDir, 'korean-vocab'), { recursive: true });
+    const legacyFile = path.join(legacyRootDir, 'korean-vocab', 'judgements.yml');
+    fs.writeFileSync(legacyFile, 'gawi|가이: { score: 6, judge: grown-up, reason: re-graded }\n');
+    return { runtime, rootDir, legacyRootDir, legacyFile, legacyBytes: fs.readFileSync(legacyFile, 'utf8') };
+  };
+  it('copies the package file on first read, reads and writes the copy after, and never touches the old one', () => {
+    const { runtime, rootDir, legacyRootDir, legacyFile, legacyBytes } = seed();
+    try {
+      const cache = new YamlJudgementCache({ rootDir, legacyRootDir });
+      expect(cache.get('korean-vocab', 'gawi', '가이')).toMatchObject({ score: 6, judge: 'grown-up' });
+      expect(fs.existsSync(path.join(rootDir, 'korean-vocab', 'judgements.yml'))).toBe(true);
+      cache.set('korean-vocab', 'pul', '푸', { score: 4, judge: 'distance', reason: null });
+      const again = new YamlJudgementCache({ rootDir, legacyRootDir });
+      expect(again.get('korean-vocab', 'gawi', '가이')).toMatchObject({ score: 6 });
+      expect(again.get('korean-vocab', 'pul', '푸')).toMatchObject({ score: 4 });
+      expect(fs.readFileSync(legacyFile, 'utf8')).toBe(legacyBytes);
+      expect(fs.readdirSync(path.join(rootDir, 'korean-vocab'))).toEqual(['judgements.yml']);
+    } finally { fs.rmSync(runtime, { recursive: true, force: true }); }
+  });
+  it('test mode (MemoryJudgementCache over the live cache) reads the old file in place and writes neither path', () => {
+    const { runtime, rootDir, legacyRootDir, legacyFile, legacyBytes } = seed();
+    try {
+      const test = new MemoryJudgementCache({ fallback: new YamlJudgementCache({ rootDir, legacyRootDir }) });
+      expect(test.get('korean-vocab', 'gawi', '가이')).toMatchObject({ score: 6, judge: 'grown-up' });
+      test.set('korean-vocab', 'gawi', '가위', { score: 9, judge: 'model', reason: null });
+      expect(fs.existsSync(rootDir)).toBe(false);
+      expect(fs.readFileSync(legacyFile, 'utf8')).toBe(legacyBytes);
+    } finally { fs.rmSync(runtime, { recursive: true, force: true }); }
+  });
+});
+

@@ -1,10 +1,13 @@
 import path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
-import { listYamlFiles, loadYaml, resolveYamlPath, saveYamlToPathAtomic } from '#system/utils/FileIO.mjs';
+import {
+  copyDirectoryOnce, dirExists, listYamlFiles, loadYaml, resolveYamlPath, saveYamlToPathAtomic,
+} from '#system/utils/FileIO.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 import { DomainInvariantError } from '#domains/core/errors/index.mjs';
 import {
-  DAY_SCHEMA, SLUG, STATUS_SCHEMA_V3, TUNING_FILE_SCHEMA, TUNING_HISTORY_KEEP, emptyDay, emptyStatusV3, emptyTuning, migrateStatusV2, normalizeStatusV3,
+  DAY_SCHEMA, SLUG, STATUS_SCHEMA_V3, TUNING_FILE_SCHEMA, TUNING_HISTORY_KEEP, emptyDay, emptyStatusV3, emptyTuning, isDaySchema, isStatusV3Schema,
+  migrateStatusV2, normalizeStatusV3,
 } from '#domains/school/cardLadder/index.mjs';
 
 const isMap = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -15,24 +18,60 @@ const dayString = (value) => {
   return typeof value === 'string' && DAY.test(value) ? value : null;
 };
 
+/** The store's directory under `users/{id}/apps/school/`, and its pre-rename (2026-09-23) name. */
+const STORE_DIR = 'card-ladder';
+const LEGACY_STORE_DIR = 'word-ladder';
+
 /**
- * `users/{id}/apps/school/word-ladder/{package}/status.yml` + `days/{day}.yml`
+ * `users/{id}/apps/school/card-ladder/{package}/status.yml` + `days/{day}.yml`
  * + `tuning.yml` (the tuning agent's values and history, spec §7)
  * (spec §4 Storage). A v1 status is migrated on read and written as v3 on the
  * next transaction. A corrupt file is never overwritten: it is a child's record.
+ *
+ * ONE-TIME MOVE. Until 2026-09-23 a package lived under `word-ladder/`. The
+ * first time a package is touched and only the old directory exists, the
+ * whole directory (status, days, tuning) is COPIED to `card-ladder/` and
+ * everything after reads and writes the copy. The old directory is never
+ * deleted or written again. `readOnlyView()` — what test mode's shadows and
+ * the start card read through — never copies: it reads the old directory in
+ * place until a live read has moved it.
  */
 export class YamlCardLadderStore {
-  #configService; #logger;
-  constructor({ configService, logger = console } = {}) {
+  #configService; #logger; #migrate;
+  constructor({ configService, logger = console, migrate = true } = {}) {
     if (typeof configService?.getUserDir !== 'function') {
       throw new InfrastructureError('YamlCardLadderStore requires configService.getUserDir()', { code: 'MISSING_DEPENDENCY' });
     }
-    this.#configService = configService; this.#logger = logger;
+    this.#configService = configService; this.#logger = logger; this.#migrate = migrate;
   }
   #dir(userId, pkg) {
-    if (typeof pkg !== 'string' || !SLUG.test(pkg)) throw new InfrastructureError(`invalid word package '${pkg}'`, { code: 'INVALID_WORD_PACKAGE' });
+    if (typeof pkg !== 'string' || !SLUG.test(pkg)) throw new InfrastructureError(`invalid card package '${pkg}'`, { code: 'INVALID_CARD_PACKAGE' });
     if (!this.#configService.getUserProfile?.(userId)) return null;
-    return path.join(this.#configService.getUserDir(userId), 'apps', 'school', 'word-ladder', pkg);
+    const root = path.join(this.#configService.getUserDir(userId), 'apps', 'school');
+    const current = path.join(root, STORE_DIR, pkg);
+    const legacy = path.join(root, LEGACY_STORE_DIR, pkg);
+    if (dirExists(current) || !dirExists(legacy)) return current;
+    if (!this.#migrate) return legacy;
+    if (copyDirectoryOnce(legacy, current)) {
+      this.#logger.info?.('school.card-ladder.store-migrated', { learnerId: userId, package: pkg, from: LEGACY_STORE_DIR, to: STORE_DIR });
+    }
+    return current;
+  }
+  /**
+   * The same files, read only and never migrated: no writer, and a package
+   * still under its pre-rename directory is read there in place.
+   */
+  readOnlyView() {
+    const view = this.#migrate
+      ? new YamlCardLadderStore({ configService: this.#configService, logger: this.#logger, migrate: false })
+      : this;
+    return {
+      readStatus: (userId, pkg) => view.readStatus(userId, pkg),
+      readDay: (userId, pkg, day) => view.readDay(userId, pkg, day),
+      readTuning: (userId, pkg) => view.readTuning(userId, pkg),
+      tuningState: (userId, pkg) => view.tuningState(userId, pkg),
+      listDays: (userId, pkg) => view.listDays(userId, pkg),
+    };
   }
   #load(base, parse, empty, context) {
     if (!resolveYamlPath(base)) return { state: 'missing', value: empty() };
@@ -49,7 +88,7 @@ export class YamlCardLadderStore {
     const dir = this.#dir(userId, pkg);
     if (!dir) return { state: 'missing', value: emptyStatusV3(), file: null };
     const loaded = this.#load(path.join(dir, 'status'), (raw) => {
-      if (raw.schema === STATUS_SCHEMA_V3 && isMap(raw.words)) return normalizeStatusV3(raw);
+      if (isStatusV3Schema(raw.schema) && isMap(raw.words)) return normalizeStatusV3(raw);
       return migrateStatusV2(raw);
     }, emptyStatusV3, { learnerId: userId, package: pkg, file: 'status', kind: 'status' });
     return { ...loaded, file: path.join(dir, 'status.yml') };
@@ -59,8 +98,8 @@ export class YamlCardLadderStore {
     const dir = this.#dir(userId, pkg);
     if (!dir) return { state: 'missing', value: emptyDay(day), file: null };
     const loaded = this.#load(path.join(dir, 'days', day), (raw) => {
-      if (raw.schema !== DAY_SCHEMA) throw new Error('invalid day shape');
-      return { ...emptyDay(day), ...raw };
+      if (!isDaySchema(raw.schema)) throw new Error('invalid day shape');
+      return { ...emptyDay(day), ...raw, schema: DAY_SCHEMA };
     }, () => emptyDay(day), { learnerId: userId, package: pkg, file: `days/${day}`, kind: 'day' });
     return { ...loaded, file: path.join(dir, 'days', `${day}.yml`) };
   }

@@ -1,6 +1,11 @@
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import yaml from 'js-yaml';
 import { describe, expect, it } from 'vitest';
 import { emptyDay, emptyStatusV3 } from '#domains/school/cardLadder/index.mjs';
 import { ShadowCardLadderStores } from './ShadowCardLadderStores.mjs';
+import { YamlCardLadderStore } from './YamlCardLadderStore.mjs';
 
 const real = {
   status: emptyStatusV3(), writes: 0,
@@ -48,3 +53,30 @@ describe('ShadowCardLadderStores', () => {
     expect(real.writes).toBe(0);
   });
 });
+
+describe('ShadowCardLadderStores over the real YAML store — test mode never writes either directory', () => {
+  it('reads a pre-rename package in place and never copies it to card-ladder/ or writes word-ladder/', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'shadow-'));
+    try {
+      const configService = { getUserDir: (id) => path.join(dir, id), getUserProfile: (id) => (id === 'test-learner' ? { id } : null) };
+      const school = path.join(dir, 'test-learner', 'apps', 'school');
+      const legacy = path.join(school, 'word-ladder', 'korean-vocab');
+      fs.mkdirSync(path.join(legacy, 'days'), { recursive: true });
+      fs.writeFileSync(path.join(legacy, 'status.yml'), yaml.dump({ schema: 'school.word-ladder-status/v3', decksSeen: ['deck'], words: {} }));
+      fs.writeFileSync(path.join(legacy, 'days', '2026-09-22.yml'), yaml.dump({ schema: 'school.word-ladder-day/v1', day: '2026-09-22', activeMs: 7, items: {} }));
+      const bytes = () => fs.readdirSync(legacy, { recursive: true }).map((f) => [f, fs.statSync(path.join(legacy, f)).isFile() ? fs.readFileSync(path.join(legacy, f), 'utf8') : null]);
+      const before = bytes();
+      const shadows = new ShadowCardLadderStores({ real: new YamlCardLadderStore({ configService }), now: () => 0 });
+      const peeked = shadows.peek('test-learner', 'korean-vocab', '2026-09-22');
+      expect(peeked.readStatus().decksSeen).toEqual(['deck']);
+      const token = shadows.create('test-learner', 'korean-vocab', '2026-09-22');
+      const store = shadows.forToken(token);
+      expect(store.readDay('test-learner', 'korean-vocab', '2026-09-22').activeMs).toBe(7);
+      store.transact('test-learner', 'korean-vocab', '2026-09-22', ({ status, dayFile }) => ({ status: { ...status, decksSeen: ['x'] }, dayFile: { ...dayFile, activeMs: 1 } }));
+      expect(store.readTuning('test-learner', 'korean-vocab')).toMatchObject({ values: {} });
+      expect(fs.existsSync(path.join(school, 'card-ladder'))).toBe(false);
+      expect(bytes()).toEqual(before);
+    } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  });
+});
+

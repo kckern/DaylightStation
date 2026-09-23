@@ -9,7 +9,10 @@ export {
 } from './mastery.mjs';
 export { DRILL_STEPS, drillSteps, tilesFor, matchBoard } from './drill.mjs';
 export { PRACTICE_MODES, practiceWordIds, buildPractice } from './practice.mjs';
-export { STATUS_SCHEMA_V3, DAY_SCHEMA, emptyStatusV3, emptyDay, migrateStatusV2, normalizeStatusV3 } from './statusV3.mjs';
+export {
+  STATUS_SCHEMA_V3, DAY_SCHEMA, LEGACY_STATUS_SCHEMA_V3, LEGACY_DAY_SCHEMA, isStatusV3Schema, isDaySchema,
+  emptyStatusV3, emptyDay, migrateStatusV2, normalizeStatusV3,
+} from './statusV3.mjs';
 export { normalizeAnswer, hasHangul, keystrokeJamo } from './jamo.mjs';
 export {
   HANGUL_SCRIPT, GENERIC_SCRIPT, scriptFor, scriptOfText, keystrokeUnits, writtenInScript,

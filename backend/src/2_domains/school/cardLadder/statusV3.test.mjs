@@ -33,3 +33,17 @@ describe('statusV3', () => {
     expect(() => migrateStatusV2({ schema: 'nope', words: {} })).toThrow(/cannot migrate/);
   });
 });
+
+describe('pre-rename schema names (2026-09-23)', () => {
+  it('reads school.word-ladder-status/v3 and -day/v1 as the current schemas and normalises to the card-ladder names', async () => {
+    const m = await import('./statusV3.mjs');
+    expect(m.STATUS_SCHEMA_V3).toBe('school.card-ladder-status/v3');
+    expect(m.DAY_SCHEMA).toBe('school.card-ladder-day/v1');
+    expect(m.isStatusV3Schema('school.word-ladder-status/v3')).toBe(true);
+    expect(m.isStatusV3Schema('school.card-ladder-status/v3')).toBe(true);
+    expect(m.isStatusV3Schema('school.word-ladder-status/v1')).toBe(false);
+    expect(m.isDaySchema('school.word-ladder-day/v1')).toBe(true);
+    expect(m.normalizeStatusV3({ schema: 'school.word-ladder-status/v3', words: {} }).schema).toBe('school.card-ladder-status/v3');
+  });
+});
+

@@ -22,7 +22,7 @@ import { YamlLearningContentRepository } from '#adapters/school/catalog/YamlLear
 import { YamlLexiconRepository } from '#adapters/school/catalog/YamlLexiconRepository.mjs';
 import { LexiconDeckLoader } from '#adapters/school/catalog/LexiconDeckLoader.mjs';
 import {
-  STATUS_SCHEMA_V3, buildLearnerQuizSource, buildWordQuizSource, emptyStatusV3, formatTrace, hashString, isoWeekOf, migrateStatusV2,
+  STATUS_SCHEMA_V3, isStatusV3Schema, buildLearnerQuizSource, buildWordQuizSource, emptyStatusV3, formatTrace, hashString, isoWeekOf, migrateStatusV2,
 } from '#domains/school/cardLadder/index.mjs';
 
 const ENTRYPOINT = fileURLToPath(import.meta.url);
@@ -63,7 +63,8 @@ response, correct/score, ms), transitions and stalls called out, and the
 item the sitting ended on marked when it didn't end on goal or the time cap.
 --day defaults to today when neither --day nor --sitting is given. When the
 store is unreachable or has nothing for the window, falls back to the day
-file(s) under <data-dir>/users/<learner>/apps/school/word-ladder/*/days/ —
+file(s) under <data-dir>/users/<learner>/apps/school/card-ladder/*/days/
+(or the pre-rename word-ladder/ directory for a package not yet moved) —
 that fallback has absolute timestamps but no per-item timing detail.
 `;
 
@@ -164,13 +165,28 @@ function mondayOfIsoWeek(weekStr) {
   return new Date(week1Monday + (Number(weekNumStr) - 1) * 7 * 86_400_000).toISOString().slice(0, 10);
 }
 
-/** `users/<id>/apps/school/word-ladder/<pkg>/status.yml`, migrating a v1 file. Missing/empty reads as a fresh status. */
+/**
+ * The learner's store directories, canonical first. `word-ladder` is the
+ * pre-rename (2026-09-23) name: the backend copies a package out of it on
+ * first use and never writes it again. This CLI only reads, and never copies.
+ */
+const STORE_DIRS = Object.freeze(['card-ladder', 'word-ladder']);
+const learnerSchoolDir = (dataDir, learnerId) => path.join(dataDir, 'users', learnerId, 'apps', 'school');
+
+/** A package's directory: the canonical one when it exists, else the pre-rename one, else the canonical path. */
+function packageDir(dataDir, learnerId, pkg) {
+  const root = learnerSchoolDir(dataDir, learnerId);
+  const found = STORE_DIRS.map((name) => path.join(root, name, pkg)).find((dir) => fs.existsSync(dir));
+  return found ?? path.join(root, STORE_DIRS[0], pkg);
+}
+
+/** `users/<id>/apps/school/card-ladder/<pkg>/status.yml`, migrating a v1 file. Missing/empty reads as a fresh status. */
 function loadLearnerStatus(dataDir, learnerId, pkg) {
-  const file = path.join(dataDir, 'users', learnerId, 'apps', 'school', 'word-ladder', pkg, 'status.yml');
+  const file = path.join(packageDir(dataDir, learnerId, pkg), 'status.yml');
   if (!fs.existsSync(file)) return emptyStatusV3();
   const raw = yaml.load(fs.readFileSync(file, 'utf8'));
   if (raw == null) return emptyStatusV3();
-  if (raw.schema === STATUS_SCHEMA_V3) return { ...emptyStatusV3(), ...raw };
+  if (isStatusV3Schema(raw.schema)) return { ...emptyStatusV3(), ...raw, schema: STATUS_SCHEMA_V3 };
   return migrateStatusV2(raw);
 }
 
@@ -339,7 +355,7 @@ function unflattenRow(row) {
 
 /** Every word package this learner has a card-ladder day file under, sorted for determinism. */
 function packageDirs(root) {
-  try { return fs.readdirSync(root, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name).sort(); }
+  try { return fs.readdirSync(root, { withFileTypes: true }).filter((d) => d.isDirectory() && !d.name.includes('.copying-')).map((d) => d.name).sort(); }
   catch { return []; }
 }
 
@@ -351,15 +367,17 @@ function packageDirs(root) {
  * every package for one whose `sittings` map contains that id.
  */
 function dayFileFallback(io, dataDir, learnerId, { day, sittingId }) {
-  const root = path.join(dataDir, 'users', learnerId, 'apps', 'school', 'word-ladder');
-  const pkgDirs = packageDirs(root);
+  // Every package under either name; each read from packageDir (canonical first).
+  const schoolDir = learnerSchoolDir(dataDir, learnerId);
+  const pkgDirs = [...new Set(STORE_DIRS.flatMap((name) => packageDirs(path.join(schoolDir, name))))].sort();
+  const dirOf = (pkg) => packageDir(dataDir, learnerId, pkg);
   const blocks = [];
   if (sittingId) {
     const bare = sittingId.startsWith('test.') ? sittingId.slice('test.'.length) : sittingId;
     const guessedPkg = bare.split('.')[0];
     const candidates = pkgDirs.includes(guessedPkg) ? [guessedPkg] : pkgDirs;
     for (const pkg of candidates) {
-      const daysDir = path.join(root, pkg, 'days');
+      const daysDir = path.join(dirOf(pkg), 'days');
       let files = [];
       try { files = fs.readdirSync(daysDir); } catch { continue; }
       for (const file of files.filter((f) => /\.ya?ml$/.test(f)).sort()) {
@@ -371,7 +389,7 @@ function dayFileFallback(io, dataDir, learnerId, { day, sittingId }) {
     }
   } else if (day) {
     for (const pkg of pkgDirs) {
-      const file = path.join(root, pkg, 'days', `${day}.yml`);
+      const file = path.join(dirOf(pkg), 'days', `${day}.yml`);
       if (!fs.existsSync(file)) continue;
       const raw = yaml.load(fs.readFileSync(file, 'utf8'));
       blocks.push(`# ${learnerId} · ${pkg} · ${day}\n${formatTrace([], { dayFile: raw })}`);
