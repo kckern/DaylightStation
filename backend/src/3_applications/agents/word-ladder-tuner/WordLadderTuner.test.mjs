@@ -57,6 +57,7 @@ describe('WordLadderTuner', () => {
     expect(systemPrompt).toMatch(/one step/i);
     expect(systemPrompt).toMatch(/5 study days/);
     expect(systemPrompt).toMatch(/single day/i);
+    expect(systemPrompt).toContain('other = quizzed words that were not sorted Familiar/Got it');
     expect(new WordLadderTuner({ agentRuntime: fakeRuntime(good) }).getSystemPrompt()).toBe(systemPrompt);
   });
 });
