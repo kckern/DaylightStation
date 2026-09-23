@@ -108,4 +108,17 @@ describe('MemorableStrategy', () => {
 
     expect(result.map(r => r.contentId)).toEqual(['plex:3001']);
   });
+
+  test('shows the episode length, not the session length', async () => {
+    // Max Out Power is a 33-minute episode; the card read 45m because it
+    // carried the whole session's duration.
+    const sessions = [makeSession('600760', '600751', 'Insanity Max:30', 'Max Out Power', '2026-09-10', 150)];
+    sessions[0].durationMs = 45 * 60000;
+    const ctx = makeContext(sessions);
+    ctx.contentCatalog.describeItem = async (cid) => (cid === 'plex:600760' ? { duration: 1980, seasonIndex: 1 } : { labels: [] });
+    const strategy = new MemorableStrategy({ ranker: new SufferScoreRanker() });
+    const result = await strategy.suggest(ctx, 4);
+
+    expect(result[0].durationMinutes).toBe(33);
+  });
 });

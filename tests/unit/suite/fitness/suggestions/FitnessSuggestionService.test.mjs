@@ -197,4 +197,35 @@ describe('FitnessSuggestionService', () => {
 
     expect(seen).toEqual(['plex:600436', 'plex:unknown-length']);
   });
+
+  test('never suggests shows in never_suggest collections, from any strategy', async () => {
+    // The Kids menu collection (387010) is its own world: no strategy, not even
+    // Resume or Favorite, may put one of its shows on the grid.
+    const service = new FitnessSuggestionService({
+      strategies: [stubStrategy('resume', ['603407']), stubStrategy('favorite', ['500', '603407'])],
+      sessionService: {
+        listSessionsInRange: async () => [],
+        resolveHouseholdId: (h) => h || 'default',
+      },
+      sessionDatastore: { findInRange: async () => [] },
+      fitnessConfigService: {
+        getSuggestionPolicy: () => ({
+          lookbackDays: 10, slots: 8, excludedCollectionIds: [], neverSuggestCollectionIds: ['387010'],
+        }),
+      },
+      fitnessPlayableService: { listFitnessShows: async () => ({ shows: [] }) },
+      contentCatalog: {
+        canonicalize: (value) => {
+          const localId = String(value).replace(/^plex:/, '');
+          return { source: 'plex', localId, contentId: `plex:${localId}` };
+        },
+        collectionShowIds: async (cid) => (cid === '387010' ? ['603407', '599927'] : []),
+      },
+      logger: { warn: () => {}, error: () => {}, info: () => {}, debug: () => {} },
+    });
+
+    const { suggestions, overflow } = await service.getSuggestions({ gridSize: 8 });
+
+    expect([...suggestions, ...overflow].map(c => c.showId)).toEqual(['plex:500']);
+  });
 });

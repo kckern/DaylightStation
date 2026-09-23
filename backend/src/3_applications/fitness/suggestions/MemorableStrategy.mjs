@@ -86,8 +86,8 @@ export class MemorableStrategy {
       // Fetch episode metadata for description + show-level labels for governance
       let description = null;
       let showLabels = [];
+      let item = null;
       if (contentCatalog) {
-        let item = null;
         try {
           item = await contentCatalog.describeItem(cid);
           description = item?.description || null;
@@ -112,7 +112,11 @@ export class MemorableStrategy {
         description,
         thumbnail: displayImageRef(contentRef.source, contentRef.localId),
         poster: showRef ? contentImageRef(showRef.source, showRef.localId) : null,
-        durationMinutes: session.durationMs ? Math.round(session.durationMs / 60000) : null,
+        // The episode's length, not the session's — a session also holds the
+        // warm-up, the voice memo and whatever else played around the workout.
+        durationMinutes: item?.duration
+          ? Math.round(item.duration / 60)
+          : (session.durationMs ? Math.round(session.durationMs / 60000) : null),
         orientation: 'landscape',
         labels: showLabels,
         metric: this.#ranker.getMetric(session),
