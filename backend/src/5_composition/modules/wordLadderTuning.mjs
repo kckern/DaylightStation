@@ -8,11 +8,14 @@
  * from `composeSchoolPush` (push standard), delivered through the household
  * NotificationService.
  *
- * Scheduled (when the agent scheduler is enabled) every 15 minutes: a tick
- * asks `pending()` and tunes each row one at a time, never in parallel, and a
+ * Scheduled (when the agent scheduler is enabled) every 15 minutes, plus one
+ * tick 60 s after boot (unref'd) so a restart does not wait a full interval:
+ * a tick asks `pending()` and tunes each row one at a time, never in
+ * parallel, then sends the outstanding concern pushes (`deliverPushes`). A
  * tick that finds the previous one still running is skipped. The service
- * itself refuses a day that has not ended, so the first tick after the
- * study-day rollover is the one that tunes.
+ * refuses a day that has not ended, so the first tick after the study-day
+ * rollover is the one that tunes. A push the NotificationService holds for
+ * quiet hours comes back `suppressed` and is retried on later ticks.
  */
 import path from 'node:path';
 import { NodeApplicationScheduler } from '#adapters/scheduling/NodeApplicationScheduler.mjs';
@@ -24,6 +27,14 @@ import { WordLadderTuningService } from '#apps/school/WordLadderTuningService.mj
 import { composeSchoolPush } from '#domains/school/notifications/schoolPush.mjs';
 
 export const TUNING_TICK_MS = 15 * 60000;
+export const FIRST_TICK_MS = 60000;
+
+/** A one-shot timer that never keeps the process alive. */
+function unrefTimer(ms, task) {
+  const timer = setTimeout(task, ms);
+  timer.unref?.();
+  return () => clearTimeout(timer);
+}
 
 function defaultRuntime({ model, logger, mediaDir }) {
   return new MastraAdapter({
@@ -45,7 +56,7 @@ export function createWordLadderTuning({
   teacherGate = null, model = null, mediaDir = null,
   notificationService = null, teachers = () => [], learnerName = null,
   logger = console, scheduled = false, server = null,
-  scheduler = new NodeApplicationScheduler(), intervalMs = TUNING_TICK_MS,
+  scheduler = new NodeApplicationScheduler(), intervalMs = TUNING_TICK_MS, firstTick = unrefTimer,
   createRuntime = defaultRuntime,
   createService = (deps) => new WordLadderTuningService(deps),
 } = {}) {
@@ -59,9 +70,12 @@ export function createWordLadderTuning({
       label(async () => (await decks.getFlashcardDeck(deckId))?.title),
     ]);
     const push = composeSchoolPush({ kind: 'word-ladder', learnerId, child, deck, package: pkg, day, notes });
-    for (const username of teachers() ?? []) {
+    const usernames = teachers() ?? [];
+    if (!usernames.length) return { status: 'failed', error: 'no teachers configured' };
+    const results = [];
+    for (const username of usernames) {
       // eslint-disable-next-line no-await-in-loop
-      await notificationService.send({
+      const sent = await notificationService.send({
         title: push.title,
         body: push.message,
         category: 'school',
@@ -70,7 +84,13 @@ export function createWordLadderTuning({
         metadata: { username, pushData: push.data },
         dedupeKey: `word-ladder-concern:${username}:${learnerId}:${pkg}:${day}`,
       });
+      results.push(...(Array.isArray(sent) ? sent : []));
     }
+    // Sent when any copy was delivered; suppressed (quiet hours, cooldown)
+    // when governance held it, so the service keeps it pending for a later tick.
+    if (results.some((row) => row?.delivered)) return { status: 'sent' };
+    if (results.some((row) => row?.suppressed)) return { status: 'suppressed' };
+    return { status: 'failed' };
   } : null;
 
   const service = createService({
@@ -91,6 +111,7 @@ export function createWordLadderTuning({
           logger.warn?.('school.word-ladder.tuning-run-failed', { learnerId: row.learnerId, package: row.pkg, day: row.day, error: error.message });
         }
       }
+      await service.deliverPushes();
     } catch (error) {
       logger.warn?.('school.word-ladder.tuning-tick-failed', { error: error.message });
     } finally {
@@ -98,7 +119,12 @@ export function createWordLadderTuning({
     }
   };
 
-  const stop = scheduled ? scheduler.every(intervalMs, tick) : () => {};
+  let stop = () => {};
+  if (scheduled) {
+    const stopEvery = scheduler.every(intervalMs, tick);
+    const cancelFirst = firstTick(FIRST_TICK_MS, tick);
+    stop = () => { stopEvery(); cancelFirst(); };
+  }
   server?.once?.('close', stop);
   logger.info?.('school.word-ladder.tuning-wired', { scheduled, model: model ?? null, notify: Boolean(notify) });
   return { service, tick, stop };

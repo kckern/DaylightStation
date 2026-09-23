@@ -17,6 +17,7 @@ function fakeService() {
       { learnerId: 'learner-b', pkg: 'pkg', deckId: 'deck', day: '2026-09-21' },
     ]),
     runFor: vi.fn(async (row) => { calls.push(row.learnerId); return { status: 'on-track' }; }),
+    deliverPushes: vi.fn(async () => { calls.push('pushes'); return []; }),
   };
 }
 
@@ -25,6 +26,7 @@ function build(over = {}) {
   const service = over.service ?? fakeService();
   const scheduler = { every: vi.fn((ms, task) => { captured.interval = ms; captured.task = task; return captured.stop = vi.fn(); }) };
   const handle = createWordLadderTuning({
+    firstTick: vi.fn((ms, task) => { captured.firstMs = ms; captured.firstTask = task; return captured.cancelFirst = vi.fn(); }),
     store: {}, assignments: {}, decks: { getFlashcardDeck: async () => ({ title: 'Korean Words' }) }, lexicons: {},
     settings: () => ({}), logger: quiet, scheduler,
     createService: (deps) => { captured.deps = deps; return service; },
@@ -48,9 +50,13 @@ describe('createWordLadderTuning', () => {
     const server = { once: vi.fn() };
     const { handle, captured } = build({ scheduled: true, server });
     expect(captured.interval).toBe(15 * 60000);
+    // A first tick shortly after boot, so a restart past 4am does not wait 15 min.
+    expect(captured.firstMs).toBe(60000);
+    expect(captured.firstTask).toBe(handle.tick);
     expect(server.once).toHaveBeenCalledWith('close', handle.stop);
     handle.stop();
     expect(captured.stop).toHaveBeenCalled();
+    expect(captured.cancelFirst).toHaveBeenCalled();
   });
 
   it('builds the tuner only when a model is configured', () => {
@@ -76,7 +82,8 @@ describe('createWordLadderTuning', () => {
     await handle.tick(); // overlapping tick: skipped
     await first;
     expect(service.pending).toHaveBeenCalledTimes(1);
-    expect(service.calls).toEqual(['learner-a', 'learner-b']);
+    // Tuning first, then the outstanding concern pushes.
+    expect(service.calls).toEqual(['learner-a', 'learner-b', 'pushes']);
     expect(maxInFlight).toBe(1);
   });
 
@@ -85,7 +92,18 @@ describe('createWordLadderTuning', () => {
     service.runFor = vi.fn(async (row) => { if (row.learnerId === 'learner-a') throw new Error('boom'); service.calls.push(row.learnerId); });
     const { handle } = build({ service });
     await handle.tick();
-    expect(service.calls).toEqual(['learner-b']);
+    expect(service.calls).toEqual(['learner-b', 'pushes']);
+  });
+
+  it('notify answers suppressed when quiet hours held every copy, failed when none went out', async () => {
+    const send = vi.fn(async () => [{ delivered: false, suppressed: true, reason: 'quiet_hours', channel: null }]);
+    const { captured } = build({ notificationService: { send }, teachers: () => ['grown-up-1'] });
+    const row = { learnerId: 'user_4', package: 'lang-basics', deckId: 'deck', day: '2026-09-21', status: 'concern', notes: [] };
+    expect(await captured.deps.notify(row)).toEqual({ status: 'suppressed' });
+    send.mockResolvedValue([{ delivered: false, channel: 'push', error: 'x' }]);
+    expect(await captured.deps.notify(row)).toEqual({ status: 'failed' });
+    const none = build({ notificationService: { send }, teachers: () => [] });
+    expect(await none.captured.deps.notify(row)).toEqual({ status: 'failed', error: 'no teachers configured' });
   });
 
   it('a concern pushes each teacher with the push-standard copy and data block', async () => {
@@ -94,7 +112,8 @@ describe('createWordLadderTuning', () => {
       notificationService: { send }, teachers: () => ['grown-up-1', 'grown-up-2'],
       learnerName: async () => 'Learner4',
     });
-    await captured.deps.notify({ learnerId: 'user_4', package: 'lang-basics', deckId: 'deck', day: '2026-09-21', status: 'concern', notes: ['Credited with no words quizzed.'] });
+    expect(await captured.deps.notify({ learnerId: 'user_4', package: 'lang-basics', deckId: 'deck', day: '2026-09-21', status: 'concern', notes: ['Credited with no words quizzed.'] }))
+      .toEqual({ status: 'sent' });
     expect(send).toHaveBeenCalledTimes(2);
     const intent = send.mock.calls[0][0];
     expect(intent).toMatchObject({

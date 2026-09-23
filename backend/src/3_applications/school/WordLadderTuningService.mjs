@@ -3,8 +3,9 @@
  * The word ladder's tuning pass (mastery redesign spec §7): once per learner
  * × word package per study day, after the day has ended — build the digest,
  * ask the tuner agent, let the domain brakes decide what actually changes,
- * persist `tuning.yml`, log every applied and dropped change, and push a
- * grown-up when the day reads as a concern.
+ * persist `tuning.yml`, log every applied and dropped change, and record an
+ * outstanding push when the day reads as a concern (`deliverPushes` sends
+ * it, waiting out quiet hours).
  *
  * The values written here take effect at the learner's NEXT day's first open
  * (the sitting service captures settings into `atOpen.settings` once a day).
@@ -67,14 +68,21 @@ function finishedDay(dayFile, settings) {
   return stats.credited || stats.reachedGoal || stats.capHit;
 }
 
-/** Tuner off: a status note from the digest alone. */
+/**
+ * Tuner off: a status from the digest alone. The note is plain copy for a
+ * parent (it can reach a phone); the history row's `model: false` says the
+ * rules, not a model, wrote it.
+ */
 function deterministicNote(digest) {
   const today = digest.today ?? {};
-  if (today.credited && today.quizzed === 0) {
-    return { status: 'concern', notes: ['Tuner has no model. The day was credited with no words quizzed.'] };
-  }
-  return { status: 'on-track', notes: ['Tuner has no model; settings unchanged.'] };
+  if (today.credited && today.quizzed === 0) return { status: 'concern', notes: ['Credited with no words quizzed'] };
+  return { status: 'on-track', notes: [] };
 }
+
+// A concern push waits out quiet hours (the NotificationService suppresses a
+// non-critical push overnight, and the tuning pass runs just after the 4am
+// rollover); one still undelivered after this long is stale news.
+const PUSH_MAX_AGE_MS = 48 * 3600000;
 
 export class WordLadderTuningService {
   #inFlight = new Set();
@@ -218,7 +226,11 @@ export class WordLadderTuningService {
     const values = { ...fresh.values };
     const lastChanged = { ...fresh.lastChanged };
     for (const row of applied) { values[row.setting] = row.to; lastChanged[row.setting] = day; }
-    const entry = { day, status, notes, applied, dropped, ...(error ? { error } : {}) };
+    const entry = {
+      day, status, notes, applied, dropped, model: Boolean(this.#tuner), ...(error ? { error } : {}),
+      // An outstanding push, delivered by `deliverPushes` (the scheduler's tick).
+      ...(status === 'concern' && this.#notify ? { notified: false, concernAt: new Date(this.#now()).toISOString() } : {}),
+    };
     this.#store.writeTuning(learnerId, pkg, {
       values, lastChanged, lastTunedDay: day, history: [...(fresh.history ?? []), entry],
     });
@@ -229,14 +241,64 @@ export class WordLadderTuningService {
       ...base, status, model: Boolean(this.#tuner), applied: applied.length, dropped: dropped.length, error,
     });
 
-    if (status === 'concern' && this.#notify) {
+    return { ...base, status, notes, applied, dropped, ...(error ? { error } : {}) };
+  }
+
+  /**
+   * Sends every outstanding concern push (history rows `notified: false`).
+   * `notify` answers `{status: 'sent'|'suppressed'|'failed'}`: sent marks the
+   * row `notified: true`; suppressed (quiet hours) leaves it pending for the
+   * next tick; a failure is warned and retried. A row pending for over 48h is
+   * marked `notified: 'dropped'` with a warn. Same in-flight guard and fresh
+   * read → write as a tuning run. Returns one row per attempt.
+   */
+  async deliverPushes() {
+    if (!this.#notify) return [];
+    const out = [];
+    for (const { learnerId, pkg, deckId } of await this.#enrolledPackages()) {
+      const key = `${learnerId}|${pkg}`;
+      if (this.#inFlight.has(key)) continue;
+      this.#inFlight.add(key);
       try {
-        await this.#notify({ learnerId, package: pkg, deckId, day, status, notes });
-      } catch (failure) {
-        this.#logger.warn?.('school.word-ladder.tuning-notify-failed', { ...base, error: failure.message });
+        if (this.#store.tuningState(learnerId, pkg) === 'corrupt') continue;
+        const outstanding = (this.#store.readTuning(learnerId, pkg).history ?? []).filter((row) => row?.notified === false);
+        if (!outstanding.length) continue;
+        const results = new Map();
+        for (const row of outstanding) {
+          const base = { learnerId, package: pkg, day: row.day };
+          const age = this.#now() - Date.parse(row.concernAt ?? '');
+          if (!(age <= PUSH_MAX_AGE_MS)) {
+            results.set(row.day, 'dropped');
+            this.#logger.warn?.('school.word-ladder.tuning-push', { ...base, status: 'dropped', concernAt: row.concernAt ?? null });
+            continue;
+          }
+          let status; let error = null;
+          try {
+            status = (await this.#notify({ learnerId, package: pkg, deckId, day: row.day, status: row.status, notes: row.notes ?? [] }))?.status ?? 'failed';
+          } catch (failure) {
+            status = 'failed'; error = failure.message;
+          }
+          if (status === 'sent') results.set(row.day, true);
+          if (status === 'sent' || status === 'suppressed') this.#logger.info?.('school.word-ladder.tuning-push', { ...base, status });
+          else this.#logger.warn?.('school.word-ladder.tuning-push', { ...base, status: 'failed', error });
+          out.push({ ...base, status });
+        }
+        if (!results.size) continue;
+        const fresh = this.#store.readTuning(learnerId, pkg);
+        for (const row of fresh.history ?? []) {
+          if (row?.notified === false && results.has(row.day)) {
+            row.notified = results.get(row.day);
+            if (row.notified === true) row.notifiedAt = new Date(this.#now()).toISOString();
+          }
+        }
+        this.#store.writeTuning(learnerId, pkg, fresh);
+      } catch (error) {
+        this.#logger.warn?.('school.word-ladder.tuning-push', { learnerId, package: pkg, status: 'failed', error: error.message });
+      } finally {
+        this.#inFlight.delete(key);
       }
     }
-    return { ...base, status, notes, applied, dropped, ...(error ? { error } : {}) };
+    return out;
   }
 
   // ── Grown-up view and undo (spec §7 "listed in the teacher console with

@@ -211,14 +211,14 @@ const fmt = (value) => (value === null || value === undefined ? '—' : String(v
  * server says the change is still the setting's latest and still in force
  * (`undoable`); an undone change says so instead.
  */
-function AppliedChange({ change, day, onUndo, busy, error }) {
+function AppliedChange({ change, day, onUndo, busy, error, nameOf }) {
   const what = `${change.setting} ${fmt(change.from)} → ${fmt(change.to)}`;
   return (
     <li className="teacher-word-ladder__tuning-change">
       <span>{what}</span>
       {change.reason ? <span className="teacher-muted"> — {change.reason}</span> : null}
       {change.undone ? (
-        <span className="teacher-muted"> · undone {change.undone.day}</span>
+        <span className="teacher-muted"> · undone {change.undone.day} by {nameOf(change.undone.actorId)}</span>
       ) : change.undoable ? (
         <button type="button" aria-label={`Undo ${what} on ${day}`} disabled={busy} onClick={() => onUndo(change)}>Undo</button>
       ) : null}
@@ -233,7 +233,7 @@ function AppliedChange({ change, day, onUndo, busy, error }) {
  * run's status and notes, and the history with Undo per applied change.
  * Its own fetch: a tuning read that fails must not take the word table with it.
  */
-function TuningSection({ learnerId, deckId, actorId, rawRun, busy, errors }) {
+function TuningSection({ learnerId, deckId, actorId, rawRun, busy, errors, nameOf }) {
   const record = usePanelFetch(() => wordLadderAdminApi.tuning(learnerId, deckId, actorId), {
     deps: [learnerId, deckId, actorId],
     panel: `${PANEL}:tuning`,
@@ -278,7 +278,7 @@ function TuningSection({ learnerId, deckId, actorId, rawRun, busy, errors }) {
           <ol className="teacher-word-ladder__tuning-history">
             {data.history.map((entry, index) => (
               <li key={`${entry.day}:${index}`}>
-                <span>{entry.day} · {entry.undo ? `grown-up undo${entry.actorId ? ` by ${entry.actorId}` : ''}` : (entry.status ?? (entry.error ? 'failed' : '—'))}</span>
+                <span>{entry.day} · {entry.undo ? `grown-up undo by ${nameOf(entry.actorId)}` : (entry.status ?? (entry.error ? 'failed' : '—'))}</span>
                 {entry.error ? <span className="teacher-muted"> — {entry.error}</span> : null}
                 {entry.applied?.length ? (
                   <ul>
@@ -290,6 +290,7 @@ function TuningSection({ learnerId, deckId, actorId, rawRun, busy, errors }) {
                         busy={busy === key(entry.day, change.setting)}
                         error={errors[key(entry.day, change.setting)]}
                         onUndo={(c) => undo(entry.day, c)}
+                        nameOf={nameOf}
                       />
                     ))}
                   </ul>
@@ -331,6 +332,10 @@ export default function WordLadderWordsPanel({ learnerId, deckId, title = null }
   // must not crash a screen it is mounted on outside the console.
   const profile = useTeacherProfileOptional();
   const actorId = profile?.currentTeacher?.id ?? null;
+  // Who undid a change, by the roster's display name — never the raw id.
+  const nameOf = (id) => (profile?.teachers ?? []).find((teacher) => teacher.id === id)?.name
+    ?? (profile?.currentTeacher?.id === id ? profile?.currentTeacher?.name : null)
+    ?? 'a grown-up';
   const record = usePanelFetch(() => wordLadderAdminApi.words(learnerId, deckId, actorId), {
     deps: [learnerId, deckId, actorId],
     panel: PANEL,
@@ -373,7 +378,7 @@ export default function WordLadderWordsPanel({ learnerId, deckId, title = null }
           </tbody>
         </table>
         <DeckPool decksSeen={decksSeen} droppableDecks={droppableDecks} learnerId={learnerId} deckId={deckId} run={run} busy={busy} errors={errors} />
-        <TuningSection learnerId={learnerId} deckId={deckId} actorId={actorId} rawRun={rawRun} busy={busy} errors={errors} />
+        <TuningSection learnerId={learnerId} deckId={deckId} actorId={actorId} rawRun={rawRun} busy={busy} errors={errors} nameOf={nameOf} />
       </div>
     </PanelFrame>
   );
