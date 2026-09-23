@@ -27,9 +27,10 @@ This page describes what **Plan 1 (core loop)** actually ships; see
 | Status (v3) | `data/users/{learnerId}/apps/school/word-ladder/<package>/status.yml` |
 | Day file | `data/users/{learnerId}/apps/school/word-ladder/<package>/days/<studyDay>.yml` |
 | Judgement cache | `data/household/school/runtime/word-ladder/<package>/judgements.yml` (derived, shared across learners) |
+| Spoken takes | `media/school/recordings/word-ladder/<package>/<learnerId>/<studyDay>/<wordId>-<n>.<ext>` (for grown-ups; never graded) |
 | Code (domain) | `backend/src/2_domains/school/wordLadder/` — pure engine, states, choices, rounds, jamo scoring, settings, scenarios |
 | Code (application) | `backend/src/3_applications/school/{WordLadderSittingService,WordLadderTypedJudge,WordLadderDoorLauncher}.mjs` |
-| Code (adapters) | `backend/src/1_adapters/school/wordLadder/{YamlWordLadderStore,ShadowWordLadderStores,YamlJudgementCache}.mjs` |
+| Code (adapters) | `backend/src/1_adapters/school/wordLadder/{YamlWordLadderStore,ShadowWordLadderStores,YamlJudgementCache,FilesystemWordLadderRecordings,DiscardingRecordings}.mjs` |
 | Code (API) | `backend/src/4_api/v1/routers/school.wordLadder.mjs` |
 | Code (frontend) | `frontend/src/modules/School/Programs/Flashcards/WordLadder/` |
 
@@ -217,12 +218,26 @@ Mounted by `mountWordLadderRoutes` (`backend/src/4_api/v1/routers/school.wordLad
 at `/api/v1/school/word-ladder` (live) and `/api/v1/school/word-ladder/test`
 (test mode, same shape). Every response is `Cache-Control: private, no-store`.
 
-- `POST /word-ladder/open {userId, deckId}` → `{sittingId, day, package, title, language, gloss, item, progress}`
+- `POST /word-ladder/open {userId, deckId, capabilities?: {microphone}}` → `{sittingId, day, package, title, language, gloss, item, progress}`
+  (no microphone → no speaking steps; test mode also takes `scenario`)
 - `POST /word-ladder/sittings/:sittingId/items/:itemId {userId, response}` → `{result, item, progress}`;
   `response` shape depends on the current item: `{seen:true}` (flashcard intro),
   `{sort}` (flashcard stream), `{typed}` (copy / typed), `{choice}` / `{dontKnow:true}` (choice)
 - `GET /word-ladder/sittings/:sittingId?userId=` → current item + progress (reload)
 - `POST /word-ladder/sittings/:sittingId/close {userId, reason}` — `reason` ∈ `goal|cap|leave|idle|unmount`
+- `POST /word-ladder/sittings/:sittingId/recordings/:itemId?userId=&ext=` — raw audio body
+  (`audio/webm|ogg|mp4`, `application/octet-stream`, ≤10 MB) → `{take}`, plus
+  `reveal: {term, audio}` for read-aloud / say-from-cue. Only for the current
+  item when it is a speaking step (`say`, or a drill's say-after / read-aloud /
+  say-from-cue); never touches status. Test mode's sink keeps nothing.
+- `POST /word-ladder/sittings/:sittingId/practice {userId, mode, help, filter, chosen, frontSide}` → `{item, progress}`;
+  400 before today's goal
+- `GET /word-ladder/words?userId=&deckId=[&sittingId=]` → `{words: [{wordId, term, gloss, state, stage, tricky, dueDay}]}`
+  in deck order (decks seen, then this one); test mode requires `sittingId` and reads that shadow
+
+Items never leak an answer: dictation carries only the term audio; tiles the
+syllables and a cue; type / say-from-cue only the cue; read-aloud the text with
+no audio until the take; look / copy / say-after the full word card.
 - `GET /word-ladder/stage` → `{screen}` (the configured stage screen id, see below)
 - `POST /word-ladder/fold {learnerId, actorId, pin}` — teacher-gated: runs the paper-quiz fold for every
   word-ladder package the learner is enrolled in, on demand
@@ -268,6 +283,8 @@ shadow 404s on next touch and the client reopens. The banner reads
 | `fresh` | empty status and day file — every word `new` |
 | `due` | every deck word `mastered` stage 1, due today — rechecks |
 | `round-end` | every deck word `familiar`, introduced yesterday — straight to round-end verify |
+| `tricky` | every deck word `familiar` (introduced 3 days ago); the first is tricky since yesterday — the day opens on its drill |
+| `typos` | every deck word `familiar`, introduced yesterday — a carry round whose quiz has typed items to misspell |
 | `done` | today already closed (`doneAt` = today) — straight to the summary/menu |
 
 A backend safety test

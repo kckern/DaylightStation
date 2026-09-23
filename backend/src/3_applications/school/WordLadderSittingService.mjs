@@ -15,13 +15,16 @@
  * The tuning values in force for a day are the day file's at-open snapshot
  * (`atOpen.settings`); current settings are only the fallback for a day that
  * has none.
+ *
+ * Speaking is never graded (spec §3): a take is kept for grown-ups through the
+ * recordings sink (a discarding one in test mode) and never touches status.
  */
 import { ValidationError, EntityNotFoundError } from '#domains/core/errors/index.mjs';
 import { GuestForbiddenError } from '#domains/school/errors.mjs';
 import { offsetMinutesFor, studyDayForInstant } from '#domains/school/studyDay.mjs';
 import { addDays } from '#domains/school/termVerdict.mjs';
 import {
-  addActiveTime, currentItem, foldPaperAttempts, openDay, quizDocumentIdFor, respond, wordAssetIds,
+  addActiveTime, cueFor, currentItem, foldPaperAttempts, openDay, quizDocumentIdFor, respond, startPractice, wordAssetIds,
 } from '#domains/school/wordLadder/index.mjs';
 
 const FOLD_LOOKBACK_DAYS = 60;
@@ -29,6 +32,12 @@ const FOLD_SKEW_DAYS = 2;
 const TEST_PREFIX = 'test.';
 const CLOSE_REASONS = new Set(['goal', 'cap', 'leave', 'idle', 'unmount']);
 const IDLE_CLOSE_MS = 5 * 60_000;
+// Speaking steps (spec §3 1.2 / 1.3 / 3.4): the only items a take is kept for.
+const SPEAKING = new Set(['say-after', 'read-aloud', 'say-from-cue']);
+// Unsupported speaking steps withhold the native model until the child's take.
+const REVEAL_AFTER_TAKE = new Set(['read-aloud', 'say-from-cue']);
+const RECORDING_EXTS = new Set(['webm', 'ogg', 'm4a', 'mp4', 'wav']);
+const NO_ASSETS = Object.freeze({ image: null, audio: null, glossAudio: null });
 
 /** An ISO instant carrying the household's own offset: `2026-09-22T16:05:12-07:00`. */
 function isoWithOffset(ms, timezone) {
@@ -40,11 +49,11 @@ function isoWithOffset(ms, timezone) {
 }
 
 export class WordLadderSittingService {
-  #stores; #decks; #lexicons; #assignments; #attempts; #assets; #judge; #teacherGate; #settings; #timezone; #now; #logger; #mode;
+  #stores; #decks; #lexicons; #assignments; #attempts; #assets; #judge; #teacherGate; #recordings; #settings; #timezone; #now; #logger; #mode;
   #counter = 0;
 
   constructor({
-    stores, decks, lexicons, assignments, attempts = null, assets = null, judge, teacherGate = null,
+    stores, decks, lexicons, assignments, attempts = null, assets = null, judge, teacherGate = null, recordings = null,
     settings, timezone = null, now, logger = console, mode = 'live',
   } = {}) {
     if (typeof stores?.open !== 'function' || typeof stores?.forToken !== 'function') throw new Error('WordLadderSittingService requires stores');
@@ -54,6 +63,8 @@ export class WordLadderSittingService {
     if (typeof judge?.judge !== 'function') throw new Error('WordLadderSittingService requires a judge');
     if (typeof settings !== 'function' || typeof now !== 'function') throw new Error('WordLadderSittingService requires settings() and now()');
     if (mode !== 'live' && mode !== 'test') throw new Error(`WordLadderSittingService mode must be live or test, got '${mode}'`);
+    if (recordings !== null && typeof recordings?.save !== 'function') throw new Error('WordLadderSittingService recordings must have save()');
+    this.#recordings = recordings;
     this.#stores = stores; this.#decks = decks; this.#lexicons = lexicons; this.#assignments = assignments;
     this.#attempts = attempts; this.#assets = assets; this.#judge = judge; this.#teacherGate = teacherGate;
     this.#settings = settings; this.#timezone = timezone; this.#now = now; this.#logger = logger; this.#mode = mode;
@@ -98,8 +109,8 @@ export class WordLadderSittingService {
     return media;
   }
 
-  /** Words still new, across every deck the learner has seen (in order) plus this one. */
-  async #pool(status, deck) {
+  /** Word ids across every deck the learner has seen (in order) plus this one. */
+  async #deckOrder(status, deck) {
     const order = [...status.decksSeen];
     if (!order.includes(deck.id)) order.push(deck.id);
     const ids = [];
@@ -107,29 +118,67 @@ export class WordLadderSittingService {
       const other = deckId === deck.id ? deck : await this.#decks.getFlashcardDeck(deckId).catch(() => null);
       for (const id of other?.words ?? []) if (!ids.includes(id)) ids.push(id);
     }
-    return ids.filter((id) => (status.words[id]?.state ?? 'new') === 'new');
+    return ids;
+  }
+
+  /** Words still new, across every deck the learner has seen (in order) plus this one. */
+  async #pool(status, deck) {
+    return (await this.#deckOrder(status, deck)).filter((id) => (status.words[id]?.state ?? 'new') === 'new');
   }
 
   /**
-   * What the client may see. Only ungraded items (flashcard, copy) carry the
-   * word card. Graded items carry cue asset ids but never the answer: a 2.2
-   * item's prompt is the term (its answer is the gloss, among the choices);
-   * 3.1 / 3.3 carry no term, and never the term's audio.
+   * What the client may see (spec §3). Supported and exposure tasks (look,
+   * copy, say-after, flashcards, the drill offer) carry the word card.
+   * Unsupported tasks carry only their given half: read-aloud the text (the
+   * native audio arrives with the take), dictation the audio, tiles / type /
+   * say-from-cue the cue (and tiles the syllables). Graded items carry cue asset
+   * ids but never the answer: a 2.2 item's prompt is the term (its answer is
+   * the gloss, among the choices); 3.1 / 3.3 carry no term, and never the
+   * term's audio. An image cue always carries the gloss as its text fallback.
    */
-  #publicItem(item, lexicon, media) {
+  #publicItem(item, ctx) {
+    const { lexicon, media } = ctx;
     const entry = item.wordId ? lexicon.entries.get(item.wordId) : null;
-    const m = media[item.wordId] ?? {};
-    const assets = {
-      image: m.image ? m.ids.image : null, audio: m.audio ? m.ids.audio : null, glossAudio: m.glossAudio ? m.ids.glossAudio : null,
+    const assetsOf = (wordId) => {
+      const m = media[wordId] ?? {};
+      return { image: m.image ? m.ids.image : null, audio: m.audio ? m.ids.audio : null, glossAudio: m.glossAudio ? m.ids.glossAudio : null };
     };
-    if (item.type === 'flashcard' || item.type === 'copy') {
+    const assets = item.wordId ? assetsOf(item.wordId) : NO_ASSETS;
+    const card = () => ({ wordId: entry.id, term: entry.term, gloss: entry.gloss, pronunciation: entry.pronunciation ?? null, kind: entry.kind, media: assets });
+    const withFallback = (cue) => (cue?.type === 'image' ? { ...cue, text: entry.gloss } : cue);
+    const cueAssets = (cue) => ({ image: cue?.type === 'image' ? assets.image : null, audio: null, glossAudio: cue?.type === 'audio' ? assets.glossAudio : null });
+    const cued = (cue) => ({ ...item, cue: withFallback(cue), assets: cueAssets(cue) });
+    const board = (b) => ({
+      ...b,
+      pairs: b.pairs.map((pair) => {
+        if (pair.right?.type !== 'image') return pair;
+        const other = lexicon.entries.get(pair.wordId);
+        return { ...pair, right: { type: 'image', image: assetsOf(pair.wordId).image, text: other?.gloss ?? null } };
+      }),
+    });
+    const speaking = item.type === 'say' ? item.mode : item.type === 'drill' ? item.step : null;
+
+    if (item.type === 'flashcard' || item.type === 'copy' || item.type === 'drill-offer') return { ...item, word: card() };
+    if (item.type === 'match') return { ...item, board: board(item.board) };
+    if (item.type === 'listen') {
       return {
         ...item,
-        word: { wordId: entry.id, term: entry.term, gloss: entry.gloss, pronunciation: entry.pronunciation ?? null, kind: entry.kind, media: assets },
+        words: (item.wordIds ?? []).map((id) => ({ id, entry: lexicon.entries.get(id), audio: assetsOf(id).audio }))
+          .filter((row) => row.entry && row.audio).map((row) => ({ wordId: row.id, term: row.entry.term, audio: row.audio })),
       };
     }
+    if (item.type === 'say' || item.type === 'drill') {
+      if (speaking === 'read-aloud') return { ...item, word: { wordId: entry.id, term: entry.term, kind: entry.kind, media: NO_ASSETS } };
+      if (speaking === 'say-from-cue' || speaking === 'type') return cued(item.cue);
+      if (item.type === 'drill' && item.step === 'match') return { ...item, board: board(item.board) };
+      if (item.type === 'drill' && item.step === 'dictation') return { ...item, assets: { ...NO_ASSETS, audio: assets.audio } };
+      if (item.type === 'drill' && item.step === 'tiles') {
+        return cued(item.cue ?? cueFor(entry, media[item.wordId] ?? {}, `${ctx.learnerId}|${ctx.day}|${item.id}|tiles`));
+      }
+      return { ...item, word: card() }; // look, copy, say-after
+    }
     if (item.type === 'typed' || item.type === 'choice') {
-      const cueAssets = {
+      const graded = {
         image: item.cue?.type === 'image' ? assets.image : null,
         audio: item.task === '2.2' && item.channel === 'hear' ? assets.audio : null,
         glossAudio: item.cue?.type === 'audio' ? assets.glossAudio : null,
@@ -137,10 +186,8 @@ export class WordLadderSittingService {
       // On 3.1 / 3.3 the gloss IS the cue (the term is the answer), so an image
       // cue always carries it as text: the client falls back to it when the
       // picture is missing or fails to load, rather than showing nothing.
-      const cue = item.cue?.type === 'image' && (item.task === '3.1' || item.task === '3.3')
-        ? { ...item.cue, text: entry.gloss }
-        : item.cue;
-      return { ...item, ...(item.task === '2.2' ? { prompt: entry.term } : {}), ...(cue ? { cue } : {}), assets: cueAssets };
+      const cue = item.task === '3.1' || item.task === '3.3' ? withFallback(item.cue) : item.cue;
+      return { ...item, ...(item.task === '2.2' ? { prompt: entry.term } : {}), ...(cue ? { cue } : {}), assets: graded };
     }
     return item;
   }
@@ -148,9 +195,19 @@ export class WordLadderSittingService {
   #progress(dayFile, settings) {
     const round = dayFile.rounds.find((r) => r.phase !== 'done') ?? null;
     const rechecksLeft = dayFile.rechecks.order.filter((id) => !dayFile.rechecks.answered[id]).length;
+    const drill = (dayFile.drills ?? []).find((d) => !d.done) ?? null;
+    const run = dayFile.practice;
+    const practicing = Boolean(dayFile.doneAt && dayFile.summarySeen && run && run.index < run.queue.length);
+    let phase = 'summary';
+    if (rechecksLeft) phase = 'rechecks';
+    else if (drill) phase = 'drill';
+    else if (round) phase = 'round';
+    else if (practicing) phase = 'practice';
     return {
-      phase: rechecksLeft ? 'rechecks' : round ? 'round' : 'summary',
+      phase,
       rechecksLeft,
+      drill: drill ? { at: drill.index + 1, of: drill.steps.length } : null,
+      practice: practicing ? { mode: run.mode, at: run.index + 1, of: run.queue.length } : null,
       round: round ? {
         index: dayFile.rounds.indexOf(round) + 1, kind: round.kind, size: round.words.length, phase: round.phase,
         remainingInStream: round.stream.queue.length, quizLeft: round.quiz.queue.length - round.quiz.index,
@@ -282,7 +339,8 @@ export class WordLadderSittingService {
   }
 
   /** Opens (or resumes) today's sitting. Paper attempts fold here — only here, never mid-sitting. */
-  async open({ userId, deckId, scenario = null } = {}) {
+  async open({ userId, deckId, scenario = null, capabilities = null } = {}) {
+    const caps = { microphone: capabilities?.microphone === true };
     await this.#assertAssigned(userId, deckId);
     const { deck, lexicon, pkg } = await this.#load(deckId);
     const openedMs = this.#now();
@@ -302,7 +360,7 @@ export class WordLadderSittingService {
       const settings = this.#daySettings(dayFile);
       const afterFold = this.#fold(status, read, quizDocumentIds, day, settings);
       folded = afterFold.folded;
-      const opened = openDay({ status: afterFold.status, dayFile, day, deckId, pool, settings, learnerId: userId, at: isoWithOffset(openedMs, this.#timezone), media, capabilities: null });
+      const opened = openDay({ status: afterFold.status, dayFile, day, deckId, pool, settings, learnerId: userId, at: isoWithOffset(openedMs, this.#timezone), media, capabilities: caps, lexicon });
       changes = this.#housekeep(opened.dayFile, sittingId, openedMs, { reopen: false });
       opened.dayFile.sittings[sittingId] = { deckId, openedAt: isoWithOffset(openedMs, this.#timezone), closedAt: null, reason: null };
       return opened;
@@ -314,20 +372,20 @@ export class WordLadderSittingService {
     const progress = this.#progress(next.dayFile, settings);
     this.#logFold(userId, pkg, folded, 'open');
     this.#logger.info?.('school.word-ladder.opened', {
-      learnerId: userId, deckId, package: pkg, day, sittingId, mode: this.#mode, scenario, folded: folded.length,
+      learnerId: userId, deckId, package: pkg, day, sittingId, mode: this.#mode, scenario, folded: folded.length, microphone: caps.microphone,
       first: item.type, phase: progress.phase, rechecks: next.dayFile.atOpen?.dueRechecks?.length ?? 0,
     });
     return {
       sittingId, day, package: pkg, title: lexicon.program.title,
       language: { code: lexicon.language.code, name: lexicon.language.name },
       gloss: { code: lexicon.gloss.code, name: lexicon.gloss.name },
-      item: this.#publicItem(item, lexicon, media), progress,
+      item: this.#publicItem(item, ctx), progress,
     };
   }
 
   /** The client's response object is passed to the engine unchanged (no default flags spread in). */
   async respond({ userId, sittingId, itemId, response } = {}) {
-    const { store, pkg, lexicon, media, ctx, day } = await this.#context(userId, sittingId);
+    const { store, pkg, lexicon, ctx, day } = await this.#context(userId, sittingId);
     if (typeof itemId !== 'string' || !itemId) throw new ValidationError('itemId is required');
     const item = currentItem(ctx);
     let verdict = null;
@@ -365,11 +423,11 @@ export class WordLadderSittingService {
       correct: out.result?.correct ?? null, score: verdict?.score ?? null, judge: verdict?.judge ?? null,
       next: nextItem.type, doneAt: out.dayFile.doneAt ?? null,
     });
-    return { result: out.result, item: this.#publicItem(nextItem, lexicon, media), progress: this.#progress(out.dayFile, ctx.settings) };
+    return { result: out.result, item: this.#publicItem(nextItem, nextCtx), progress: this.#progress(out.dayFile, ctx.settings) };
   }
 
   async get({ userId, sittingId } = {}) {
-    const { store, pkg, day, lexicon, media, settings, ctx } = await this.#context(userId, sittingId);
+    const { store, pkg, day, settings, ctx } = await this.#context(userId, sittingId);
     const nowMs = this.#now();
     // Only write when bookkeeping changes something: a reload is otherwise read-only.
     const probe = this.#housekeep(structuredClone(ctx.dayFile), sittingId, nowMs);
@@ -383,7 +441,89 @@ export class WordLadderSittingService {
       ctx.dayFile = out.dayFile;
       ctx.status = out.status;
     }
-    return { item: this.#publicItem(currentItem(ctx), lexicon, media), progress: this.#progress(ctx.dayFile, settings) };
+    return { item: this.#publicItem(currentItem(ctx), ctx), progress: this.#progress(ctx.dayFile, settings) };
+  }
+
+  /**
+   * Keeps one spoken take (spec §3: speaking is never graded) for the item on
+   * screen, which must be a speaking step — a `say` item, or a drill's
+   * say-after / read-aloud / say-from-cue. Reads the day, writes only the
+   * take: status and the day file are never touched. For the unsupported steps
+   * the native model is revealed now that the take exists.
+   */
+  async saveRecording({ userId, sittingId, itemId, buffer, ext = 'webm' } = {}) {
+    const { pkg, day, ctx, media } = await this.#context(userId, sittingId);
+    if (typeof itemId !== 'string' || !itemId) throw new ValidationError('itemId is required');
+    const item = currentItem(ctx);
+    if (item.id !== itemId) throw new ValidationError('stale item');
+    const step = item.type === 'say' ? item.mode : item.type === 'drill' ? item.step : null;
+    if (!SPEAKING.has(step)) throw new ValidationError('this item is not a speaking step');
+    if (!Buffer.isBuffer(buffer) || buffer.length === 0) throw new ValidationError('an audio recording is required');
+    const format = String(ext ?? 'webm').toLowerCase();
+    if (!RECORDING_EXTS.has(format)) throw new ValidationError(`unsupported recording format '${ext}'`);
+    if (!this.#recordings) throw new ValidationError('word-ladder recordings are not configured');
+    const saved = await this.#recordings.save({ package: pkg, learnerId: userId, day, wordId: item.wordId, buffer, ext: format });
+    const take = saved?.take ?? null;
+    this.#logger.info?.('school.word-ladder.recorded', {
+      learnerId: userId, sittingId, mode: this.#mode, itemId, wordId: item.wordId, step, take, bytes: buffer.length,
+    });
+    if (!REVEAL_AFTER_TAKE.has(step)) return { take };
+    const entry = ctx.lexicon.entries.get(item.wordId);
+    const m = media[item.wordId] ?? {};
+    return { take, reveal: { term: entry.term, audio: m.audio ? m.ids.audio : null } };
+  }
+
+  /** Opens a practice run (spec §6 practice menu); the engine refuses one before today's goal. */
+  async practice({ userId, sittingId, mode, help = true, filter = 'introduced', chosen = [], frontSide = 'term' } = {}) {
+    const { store, pkg, day, ctx, settings } = await this.#context(userId, sittingId);
+    const ms = this.#now();
+    let changes = null;
+    const out = store.transact(userId, pkg, day, ({ status, dayFile }) => {
+      if (!dayFile.sittings?.[sittingId]) throw new EntityNotFoundError('word-ladder sitting', sittingId);
+      changes = this.#housekeep(dayFile, sittingId, ms);
+      return startPractice({ ...ctx, status, dayFile: addActiveTime(dayFile, ms) }, { mode, help, filter, chosen, frontSide });
+    });
+    this.#logHousekeeping(userId, sittingId, out.dayFile, changes);
+    const nextCtx = { ...ctx, status: out.status, dayFile: out.dayFile };
+    const item = currentItem(nextCtx);
+    this.#logger.info?.('school.word-ladder.practice', {
+      learnerId: userId, sittingId, mode: this.#mode, practice: mode, help: help !== false, filter,
+      size: out.dayFile.practice?.queue?.length ?? 0, first: item.type,
+    });
+    return { item: this.#publicItem(item, nextCtx), progress: this.#progress(out.dayFile, settings) };
+  }
+
+  /**
+   * My words (spec §4 API): every word of the package the learner can meet —
+   * the decks seen, in order, then this deck — plus any other introduced word,
+   * with its ladder state. Test mode reads the named sitting's shadow.
+   */
+  async words({ userId, deckId, sittingId = null } = {}) {
+    await this.#assertAssigned(userId, deckId);
+    const { deck, lexicon, pkg } = await this.#load(deckId);
+    let status;
+    if (sittingId) {
+      const found = await this.#context(userId, sittingId);
+      if (found.pkg !== pkg) throw new ValidationError('the sitting belongs to another word package');
+      status = found.ctx.status;
+    } else if (this.#mode === 'test') {
+      throw new ValidationError('sittingId is required in test mode');
+    } else {
+      const { store } = this.#stores.open(userId, pkg, this.#today(), { readOnly: true });
+      status = store.readStatus(userId, pkg);
+    }
+    const ids = await this.#deckOrder(status, deck);
+    for (const id of lexicon.entries.keys()) if (!ids.includes(id) && (status.words[id]?.state ?? 'new') !== 'new') ids.push(id);
+    return {
+      words: ids.filter((id) => lexicon.entries.has(id)).map((id) => {
+        const entry = lexicon.entries.get(id);
+        const word = status.words[id] ?? {};
+        return {
+          wordId: id, term: entry.term, gloss: entry.gloss, state: word.state ?? 'new',
+          stage: word.stage ?? 0, tricky: word.tricky === true, dueDay: word.dueDay ?? null,
+        };
+      }),
+    };
   }
 
   async close({ userId, sittingId, reason = 'leave' } = {}) {
