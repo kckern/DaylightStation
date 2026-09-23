@@ -10,7 +10,7 @@ import { reportArtworkFailure } from './artworkLog.js';
 import { PortionControl } from './PortionControl.jsx';
 import { entryId, entryError, isEntryConflict, updateEntry } from './entryCommands.js';
 import { usePortionControl } from './usePortionDraft.js';
-import { RowPreviewContent, useRowPreview, logRowPreviewOpen } from './RowPreview.jsx';
+import { RowPreviewContent, useRowPreview, logRowPreviewOpen, isCoarsePointer } from './RowPreview.jsx';
 
 const logger = createAppLogger('health').child('entry-row');
 
@@ -26,6 +26,7 @@ export function EntryRow({ row, densityRow = row, onTap, onConfirm, onRequestDel
   const name = row.name || row.item || row.label || '';
   const displayKcal = isGroup ? rollupKcal : row.calories;
   // The magnifier card: held closed while a portion drag owns the pointer.
+  const coarse = isCoarsePointer();
   const preview = useRowPreview({ disabled: Boolean(portions?.draft), onOpen: () => logRowPreviewOpen(row) });
   const confirm = async () => {
     if (pending.current || confirmation === 'saved') return;
@@ -40,9 +41,7 @@ export function EntryRow({ row, densityRow = row, onTap, onConfirm, onRequestDel
       logger.warn('entry.confirm_failed', { uuid: entryId(row), error: err.message });
     } finally { pending.current = false; }
   };
-  return <Popover opened={preview.opened} onChange={open => { if (!open) preview.close(); }} position="right" withArrow arrowSize={10}
-    offset={8} radius="md" shadow="md" withinPortal withRoles={false} trapFocus={false} returnFocus={false}>
-  <Popover.Target><div className={['health-row-line', unsettled && confirmation !== 'saved' && 'health-row-line--unsettled', child && 'health-row-line--child', lastChild && 'health-row-line--last-child', isGroup && 'health-row-line--group', added && 'health-row-line--added'].filter(Boolean).join(' ')} data-preview={preview.opened ? 'open' : undefined} data-entry-key={entryKey}>
+  return <div className={['health-row-line', unsettled && confirmation !== 'saved' && 'health-row-line--unsettled', child && 'health-row-line--child', lastChild && 'health-row-line--last-child', isGroup && 'health-row-line--group', added && 'health-row-line--added'].filter(Boolean).join(' ')} data-preview={preview.opened ? 'open' : undefined} data-entry-key={entryKey}>
     <div className="health-row__branch">
       {isGroup ? <UnstyledButton className="health-row__expand" aria-expanded={expanded}
         aria-label={`${expanded ? 'Collapse' : 'Expand'} ${name}`} onClick={onToggle}><svg className="health-row__triangle" viewBox="0 0 10 10" aria-hidden="true" focusable="false">
@@ -51,8 +50,19 @@ export function EntryRow({ row, densityRow = row, onTap, onConfirm, onRequestDel
     </div>
     <div className={`health-row-identity health-row__identity health-row__visual health-density-${densityPlacement}`}>
       {densityPlacement === 'before' ? <DensityBadge row={densityRow} editRow={row} /> : null}
-      <span className="health-row-artwork" {...preview.targetProps} onClick={preview.onArtworkClick}>{row.photoRef && brokenPhoto !== row.photoRef ? <img className="health-row__thumb"
-        src={nutritionPhotoUrl(row.photoRef, { thumb: true })} alt="" loading="lazy" onError={() => { setBrokenPhoto(row.photoRef); reportArtworkFailure('photo', row.photoRef, { uuid: entryId(row), name, icon: row.icon || null }); }} /> : <FoodIcon icon={row.icon} />}</span>
+      {/* The magnifier anchors on the ARTWORK, not the full-width row: a
+          row-wide anchor has no room on either side of a phone column. Beside
+          it under a mouse; below it on touch; flip + cross-axis shift keep it
+          on screen. The name's hover/focus opens this same card. */}
+      <Popover opened={preview.opened} onChange={open => { if (!open) preview.close(); }}
+        position={coarse ? 'bottom-start' : 'right'} middlewares={{ flip: true, shift: { crossAxis: true, padding: 8, limiter: undefined } }}
+        withArrow arrowSize={10} offset={8} radius="md" shadow="md" withinPortal withRoles={false} trapFocus={false} returnFocus={false}>
+      <Popover.Target><span className="health-row-artwork" {...preview.targetProps} onClick={preview.onArtworkClick}>{row.photoRef && brokenPhoto !== row.photoRef ? <img className="health-row__thumb"
+        src={nutritionPhotoUrl(row.photoRef, { thumb: true })} alt="" loading="lazy" onError={() => { setBrokenPhoto(row.photoRef); reportArtworkFailure('photo', row.photoRef, { uuid: entryId(row), name, icon: row.icon || null }); }} /> : <FoodIcon icon={row.icon} />}</span></Popover.Target>
+      <Popover.Dropdown className="health-row-preview__card" {...preview.cardProps}>
+        <RowPreviewContent row={row} isGroup={isGroup} kcal={displayKcal} />
+      </Popover.Dropdown>
+      </Popover>
       <UnstyledButton className="health-row-name" disabled={Boolean(portions?.draft)} onClick={() => { preview.close(); onTap(row); }} aria-label={`Edit ${name}`}
         {...preview.targetProps} {...preview.focusProps}>
       <span className="health-row__description" title={name}><span className="health-row__name">{name}</span>{' '}
@@ -89,10 +99,6 @@ export function EntryRow({ row, densityRow = row, onTap, onConfirm, onRequestDel
       </UnstyledButton> : null}
     </div>
     {error ? <span role="alert" className="health-row__error">{error}</span> : null}
-  </div></Popover.Target>
-  <Popover.Dropdown className="health-row-preview__card" {...preview.cardProps}>
-    <RowPreviewContent row={row} isGroup={isGroup} kcal={displayKcal} />
-  </Popover.Dropdown>
-  </Popover>;
+  </div>;
 }
 export default EntryRow;

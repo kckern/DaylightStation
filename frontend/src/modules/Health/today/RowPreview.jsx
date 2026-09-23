@@ -4,12 +4,13 @@
 //
 // Opened by hovering the row's artwork or name (after OPEN_DELAY_MS, closed
 // CLOSE_DELAY_MS after the pointer leaves both the row and the card), by
-// keyboard focus on the name, or — where there is no hover (coarse pointers) —
+// keyboard (Tab) focus on the name, or — where there is no hover (coarse pointers) —
 // by tapping the artwork. Never while a portion/numeric drag owns the row.
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { formatFoodPortion } from '@shared-contracts/health/foodQuantity.mjs';
 import { foodDensity } from '@shared-contracts/health/foodDensity.mjs';
 import { createAppLogger } from '../../../lib/ui/createAppLogger.js';
+import { focusCameFromTab, trackKeyboardModality } from '../../../lib/ui/keyboardModality.js';
 import { MacroBadges } from './MacroBadges.jsx';
 import { FoodIcon } from './FoodIcon.jsx';
 import { nutritionPhotoUrl } from './photoUrl.js';
@@ -19,7 +20,9 @@ const logger = createAppLogger('health').child('row-preview');
 export const OPEN_DELAY_MS = 350;
 export const CLOSE_DELAY_MS = 150;
 
-const isCoarsePointer = () => {
+trackKeyboardModality();
+
+export const isCoarsePointer = () => {
   try { return Boolean(window.matchMedia?.('(pointer: coarse)').matches); } catch { return false; }
 };
 
@@ -57,7 +60,9 @@ export function useRowPreview({ disabled = false, onOpen } = {}) {
     /** Hover and focus on the artwork / name. */
     targetProps: { onPointerEnter, onPointerLeave },
     focusProps: {
-      onFocus: scheduleOpen,
+      // Keyboard navigation only: not a tap, and not a sheet handing focus
+      // back to the name it was opened from (that reopened the card by itself).
+      onFocus: () => { if (focusCameFromTab()) scheduleOpen(); },
       onBlur: scheduleClose,
       onKeyDown: event => { if (event.key === 'Escape' && opened) { event.stopPropagation(); close(); } },
     },

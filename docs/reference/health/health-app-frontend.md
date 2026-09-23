@@ -83,9 +83,10 @@ The hub is read-write for new entries, read-only for history. Quick edits happen
 **Inline interactions write back through the same input layer the rest of the system uses** — a meal logged from the hub lands in the same food log a meal logged from the messaging surface lands in, and the data pipeline folds it into the day's summary identically.
 
 **Row magnifier (Today, `today/RowPreview.jsx`).** A food row's artwork is 24px, too small to read a
-UPC product photo. Hovering the row's artwork or its name opens a speech-bubble card beside the
-row (Mantine `Popover`, controlled, portalled, arrow pointing at the row, flips to the side that
-has room). It opens after 350 ms and closes 150 ms after the pointer leaves both the row's targets
+UPC product photo. Hovering the row's artwork or its name opens a speech-bubble card anchored on the
+ARTWORK (Mantine `Popover`, controlled, portalled, arrow pointing at the picture): to its right
+under a mouse, below it on a coarse pointer, with `flip` and a cross-axis `shift` so it always
+lands on screen — a full-width row anchor had no room on either side of a phone column). It opens after 350 ms and closes 150 ms after the pointer leaves both the row's targets
 and the card, so passing over the list does not flash cards. The card shows:
 
 - a 5em-square hero: the full capture/product photo (`nutritionPhotoUrl(photoRef)`, not the
@@ -96,7 +97,9 @@ and the card, so passing over the list does not flash cards. The card shows:
   own macro colours) and the density in kcal/g when mass and calories are known;
 - for a group row: its total and the ingredient count.
 
-Keyboard focus on the row's name opens it and Escape closes it. Hover is mouse-only
+Keyboard focus on the row's name opens it — only when the focus came from Tab
+(`lib/ui/keyboardModality.js`), so a sheet handing focus back to the name, or a tap, does not
+reopen it — and Escape closes it. Hover is mouse-only
 (`pointerType`), because a touch "hover" is the start of a tap; on a coarse pointer, tapping the
 artwork opens the card instead (tapping the name still opens the editor). It never opens while a
 portion or numeric drag is live on the page, and tapping the name to edit closes it first. Each
