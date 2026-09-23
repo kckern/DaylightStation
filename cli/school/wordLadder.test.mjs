@@ -91,9 +91,11 @@ describe('word-ladder CLI', () => {
       }));
       const argv = ['quiz', '--learner', 'test-learner', '--package', 'korean-vocab', '--week', '2026-W39', ...dirs(root)];
       expect(await main(argv, io())).toBe(0);
-      const file = path.join(root, 'data/content/school/learning-catalog/documents/language/korean/korean-vocab-quiz-test-learner-2026-W39.yml');
+      // The id lowercases the ISO week (a document id is lowercase-kebab-only);
+      // the display title keeps the ISO-cased week.
+      const file = path.join(root, 'data/content/school/learning-catalog/documents/language/korean/korean-vocab-quiz-test-learner-2026-w39.yml');
       const source = load(await readFile(file, 'utf8'));
-      expect(source.id).toBe('language/korean/korean-vocab-quiz-test-learner-2026-W39');
+      expect(source.id).toBe('language/korean/korean-vocab-quiz-test-learner-2026-w39');
       // only 'gawi' is introduced; 'pul' has no status entry (still new) and is excluded.
       expect(source.blocks.map((b) => b.itemId)).toEqual(['gawi']);
       expect(source.title).toBe('Korean words — week 2026-W39');
@@ -125,10 +127,12 @@ describe('word-ladder CLI', () => {
       const sf = statusFile(root, 'test-learner', 'korean-vocab');
       await mkdir(path.dirname(sf), { recursive: true });
       await writeFile(sf, dump({ schema: 'school.word-ladder-status/v1', words: { gawi: { state: 'known', step: 2, nextCheckDay: '2026-10-01' } } }));
-      const argv = ['quiz', '--learner', 'test-learner', '--package', 'korean-vocab', '--week', '2026-W39', ...dirs(root)];
+      // Lowercase --week input, to prove it is accepted just like the ISO-cased form.
+      const argv = ['quiz', '--learner', 'test-learner', '--package', 'korean-vocab', '--week', '2026-w39', ...dirs(root)];
       expect(await main(argv, io())).toBe(0);
-      const file = path.join(root, 'data/content/school/learning-catalog/documents/language/korean/korean-vocab-quiz-test-learner-2026-W39.yml');
+      const file = path.join(root, 'data/content/school/learning-catalog/documents/language/korean/korean-vocab-quiz-test-learner-2026-w39.yml');
       const source = load(await readFile(file, 'utf8'));
+      expect(source.id).toBe('language/korean/korean-vocab-quiz-test-learner-2026-w39');
       expect(source.blocks.map((b) => b.itemId)).toEqual(['gawi']);
     } finally { await rm(root, { recursive: true, force: true }); }
   });

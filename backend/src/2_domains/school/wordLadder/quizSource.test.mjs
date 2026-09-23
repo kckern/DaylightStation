@@ -168,12 +168,19 @@ describe('buildLearnerQuizSource (plan 3, spec §8 per-learner quiz)', () => {
       status, lexicon: LEARNER_LEXICON, decks: [deck], learnerId: 'test-learner', day: '2026-09-22', seed: 1,
     });
     expect(src.blocks.map((b) => b.itemId)).toEqual(['a', 'b']);
-    expect(src.id).toBe('language/korean/korean-vocab-quiz-test-learner-2026-W39');
+    // The id lowercases the ISO week (documentValidation's ID_PATTERN is
+    // lowercase-only kebab); the display title keeps the ISO-cased week.
+    expect(src.id).toBe('language/korean/korean-vocab-quiz-test-learner-2026-w39');
     expect(src.title).toBe('Korean words — week 2026-W39');
-    // NOTE: this id embeds an uppercase 'W' (ISO-8601 week, spec §8's literal
-    // `<isoWeek>` shape), which documentValidation's ID_PATTERN (lowercase
-    // kebab only) rejects — see the plan-3 report for the flagged conflict.
-    // `validateDocumentSource` is intentionally NOT asserted here.
+  });
+
+  it('the generated id passes the real document id validation (documentValidation.mjs, via validateDocumentSource)', () => {
+    const status = emptyStatusV3();
+    status.words.a = { ...emptyWordV3(), state: 'familiar', introducedDay: '2026-09-21' };
+    const src = buildLearnerQuizSource({
+      status, lexicon: LEARNER_LEXICON, decks: [deck], learnerId: 'test-learner', day: '2026-09-22', seed: 1,
+    });
+    expect(validateDocumentSource(src).errors).toEqual([]);
   });
 
   it('throws with nothing introduced', () => {

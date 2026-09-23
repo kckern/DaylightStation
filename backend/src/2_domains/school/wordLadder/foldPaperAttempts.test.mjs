@@ -45,7 +45,7 @@ describe('foldPaperAttempts learns per-learner documents (plan 3, spec §8)', ()
   it('a per-learner document addressed to this learner folds', () => {
     const status = emptyStatusV3();
     status.words.a = { ...emptyWordV3(), state: 'claimed' };
-    const bankId = 'language/korean/korean-vocab-quiz-test-learner-2026-W39@1';
+    const bankId = 'language/korean/korean-vocab-quiz-test-learner-2026-w39@1';
     const out = foldPaperAttempts({
       status, attempts: [attempt('1', 'a', false, bankId)], quizDocumentIds: [], acceptPrefixes, refusePrefixes, dayOf: () => '2026-09-22', settings: S,
     });
@@ -57,7 +57,7 @@ describe('foldPaperAttempts learns per-learner documents (plan 3, spec §8)', ()
   it('a sibling\'s per-learner document is refused, never demotes, and is not re-evaluated', () => {
     const status = emptyStatusV3();
     status.words.a = { ...emptyWordV3(), state: 'claimed' };
-    const bankId = 'language/korean/korean-vocab-quiz-someone-else-2026-W39@1';
+    const bankId = 'language/korean/korean-vocab-quiz-someone-else-2026-w39@1';
     const run = (s) => foldPaperAttempts({
       status: s, attempts: [attempt('1', 'a', false, bankId)], quizDocumentIds: [], acceptPrefixes, refusePrefixes, dayOf: () => '2026-09-22', settings: S,
     });
