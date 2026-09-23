@@ -61,7 +61,7 @@ describe('Tab = hear it again', () => {
     startClip.mockClear();
     expect(tab()).toBe(false);
     await act(async () => {});
-    expect(startClip).toHaveBeenCalledWith('a1', 'term');
+    expect(startClip).toHaveBeenCalledWith('a1', 'term', { trigger: 'key' });
     expect(hint(/again/i)).toBe('Tab');
   });
 

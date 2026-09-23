@@ -3,6 +3,7 @@ import { TouchButton } from '../../../../../../lib/ui/index.js';
 import Icon from '../../../../home/icons/Icon.jsx';
 import { FitText } from '../FitText.jsx';
 import { startClip } from '../wordLadderAudio.js';
+import { currentInput } from '../inputVia.js';
 import { useWordLadderKeys } from '../useWordLadderKeys.js';
 
 const GAP_MS = 1500;
@@ -31,15 +32,19 @@ export default function ListenItem({ item, langs, resolveAssetUrl, onRespond, bu
     playingRef.current = false;
   }, []);
 
-  const play = useCallback(async () => {
+  // `auto` on arrival; a replay (Again / Tab) takes its trigger from the input
+  // that asked, and every word in that run keeps it (spec §8 audio.played).
+  const play = useCallback(async (auto = false) => {
     if (playingRef.current) return;
+    const asked = currentInput();
+    const trigger = auto === true || !asked ? 'auto' : asked === 'touch' ? 'touch' : 'key';
     const mine = ++run.current;
     playingRef.current = true;
     setPlaying(true);
     for (let i = 0; i < words.length; i += 1) {
       if (mine !== run.current) return;
       setCurrent(i);
-      clip.current = startClip(resolveAssetUrl(words[i].audio), 'term');
+      clip.current = startClip(resolveAssetUrl(words[i].audio), 'term', { trigger });
       await clip.current.done;
       if (mine !== run.current) return;
       if (i < words.length - 1) await new Promise((resolve) => { gap.current = setTimeout(resolve, GAP_MS); });
@@ -48,13 +53,14 @@ export default function ListenItem({ item, langs, resolveAssetUrl, onRespond, bu
   }, [words, resolveAssetUrl]);
 
   useEffect(() => {
-    play();
+    play(true);
     return halt;
   }, [item.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const next = () => { if (!busy) { halt(); onRespond({ done: true }); } };
   // Tab = hear it again; A stays a silent alias (not a typing item).
-  useWordLadderKeys({ ' ': next, enter: next, tab: play, a: play });
+  const again = () => play(false);
+  useWordLadderKeys({ ' ': next, enter: next, tab: again, a: again });
   const shown = current ?? 0;
   return (
     <section className="wl-item wl-listen" aria-label="Listen">
@@ -66,7 +72,7 @@ export default function ListenItem({ item, langs, resolveAssetUrl, onRespond, bu
       {words.length > 0 && <p className="wl-listen__count" aria-live="polite">{shown + 1} of {words.length}</p>}
       <div className="wl-controls">
         {words.length > 0 && (
-          <TouchButton variant="secondary" keyHint="Tab" disabled={playing} onClick={play}><Icon name="restart" /> Again</TouchButton>
+          <TouchButton variant="secondary" keyHint="Tab" disabled={playing} onClick={again}><Icon name="restart" /> Again</TouchButton>
         )}
         <TouchButton variant="primary" keyHint="Space" disabled={busy} onClick={next}>Next</TouchButton>
       </div>

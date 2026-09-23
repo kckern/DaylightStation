@@ -89,3 +89,22 @@ describe('useWordLadderKeys', () => {
     expect(tab).not.toHaveBeenCalled();
   });
 });
+
+describe('useWordLadderKeys — records the key it acted on (spec §8 input)', () => {
+  it('a mapped key is noted as key:<Name> before its action runs', async () => {
+    const { currentInput, resetInput } = await import('./inputVia.js');
+    resetInput();
+    let seen = null;
+    render(<Harness map={{ '\\': () => { seen = currentInput(); } }} />);
+    fireEvent.keyDown(window, { key: '\\', code: 'Backslash' });
+    expect(seen).toBe('key:Backslash');
+  });
+
+  it('an unmapped key is not noted', async () => {
+    const { currentInput, resetInput } = await import('./inputVia.js');
+    resetInput();
+    render(<Harness map={{ h: () => {} }} />);
+    fireEvent.keyDown(window, { key: 'q', code: 'KeyQ' });
+    expect(currentInput()).toBeNull();
+  });
+});

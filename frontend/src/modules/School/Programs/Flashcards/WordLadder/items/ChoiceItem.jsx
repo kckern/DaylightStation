@@ -17,8 +17,8 @@ export default function ChoiceItem({ item, langs, resolveAssetUrl, onRespond, re
   const glossAudio = item.task === '3.1' ? englishCueAudio(item, resolveAssetUrl) : null;
   const choicesLang = item.task === '2.2' ? langs.gloss : langs.term;
   useEffect(() => {
-    if (item.channel === 'hear' && audio) playClip(audio, 'term');
-    if (item.cue?.type === 'audio' && glossAudio) playClip(glossAudio, 'gloss');
+    if (item.channel === 'hear' && audio) playClip(audio, 'term', { trigger: 'auto' });
+    if (item.cue?.type === 'audio' && glossAudio) playClip(glossAudio, 'gloss', { trigger: 'auto' });
   }, [item.id]); // eslint-disable-line react-hooks/exhaustive-deps
   // Spec §6: "wrong / Don't know → the correct answer with Korean audio."
   // Plays once per item's result, not on every re-render the result stays set for.
@@ -26,7 +26,7 @@ export default function ChoiceItem({ item, langs, resolveAssetUrl, onRespond, re
   useEffect(() => {
     if (result && result.correct === false && audio && playedWrongFor.current !== item.id) {
       playedWrongFor.current = item.id;
-      playClip(audio, 'term');
+      playClip(audio, 'term', { trigger: 'auto' });
     }
   }, [result, audio, item.id]);
   // The option the child picked, so a wrong result can show it beside the answer.

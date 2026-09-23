@@ -18,6 +18,7 @@ import { useItemStall } from './useItemStall.js';
 import { layoutForItem, mediaForItem } from './itemLayout.js';
 import { stopAudio } from './wordLadderAudio.js';
 import { useWordLadderKeys } from './useWordLadderKeys.js';
+import { currentInput, noteInput, noteKeyEvent } from './inputVia.js';
 import WordLadderStartCard from './WordLadderStartCard.jsx';
 import WordLadderHeader from './WordLadderHeader.jsx';
 import { STEP_HINTS, stepTrail } from './stepTrail.js';
@@ -111,6 +112,8 @@ export default function WordLadderProgram({ descriptor, api: injected = null, re
   const closedRef = useRef(false);
   // When the CURRENT item was shown, for item.answered's `ms`.
   const itemShownAtRef = useRef(null);
+  // When the current verdict panel appeared, for result.dismissed's `ms`.
+  const resultShownAtRef = useRef(null);
   // Per-round tallies for round.ended {quizzed, notYet} — reset whenever
   // progress.round.index changes (see the round-tracking effect below).
   const roundRef = useRef({ index: null, quizzed: 0, notYet: 0 });
@@ -236,8 +239,13 @@ export default function WordLadderProgram({ descriptor, api: injected = null, re
   }, [item]);
 
   // spec §8 item.stalled — 45s / 120s of no input on the current item.
+  // `visibility` tells a child gone quiet from a hidden tab (screen off, app
+  // switched); `screen` says whether the item or a held verdict was up.
   useItemStall(item?.id ?? null, (ms) => {
-    if (item) wordLadderLog.itemStalled({ itemId: item.id, ms });
+    if (!item) return;
+    wordLadderLog.itemStalled({
+      itemId: item.id, ms, visibility: typeof document !== 'undefined' ? document.visibilityState : null, screen: pendingItem || result ? 'result' : 'item',
+    });
   });
 
   // The header's step trail, and each step's hint — once per step per sitting,
@@ -255,6 +263,7 @@ export default function WordLadderProgram({ descriptor, api: injected = null, re
     if (hintsSeenRef.current.has(step)) { setHint(null); return; }
     hintsSeenRef.current.add(step);
     setHint({ step, text: STEP_HINTS[step], leaving: false });
+    wordLadderLog.hintShown({ step });
   }, [trail.current]); // eslint-disable-line react-hooks/exhaustive-deps
   const dismissHint = useCallback(() => setHint((h) => (h && !h.leaving ? { ...h, leaving: true } : h)), []);
   useEffect(() => {
@@ -284,6 +293,8 @@ export default function WordLadderProgram({ descriptor, api: injected = null, re
 
   const respond = useCallback(async (response) => {
     if (!session || !item || busyRef.current) return;
+    // Read now, before the round trip: how the child answered (spec §8 input).
+    const input = currentInput();
     dismissHint();
     busyRef.current = true;
     setBusy(true);
@@ -302,7 +313,7 @@ export default function WordLadderProgram({ descriptor, api: injected = null, re
       itemId: item.id, type: item.type, task: item.task ?? null, response,
       correct: data?.result?.correct ?? null, score: data?.result?.score ?? null,
       judge: data?.result?.judge ?? null, next: data?.item?.type ?? null,
-      ms: itemShownAtRef.current != null ? Date.now() - itemShownAtRef.current : null,
+      ms: itemShownAtRef.current != null ? Date.now() - itemShownAtRef.current : null, input,
     });
     // Best-effort per-round tally for round.ended {quizzed, notYet} — a
     // sorted-to-notYet flashcard, or a graded quiz answer (choice/typed,
@@ -311,12 +322,20 @@ export default function WordLadderProgram({ descriptor, api: injected = null, re
     if ((item.type === 'choice' || item.type === 'typed') && item.task) roundRef.current.quizzed += 1;
     setProgress(data?.progress ?? null);
     // A retry: the server kept the same item (copy / dictation / tiles miss) — stay on it, say so.
+    const showResult = (held) => {
+      resultShownAtRef.current = Date.now();
+      wordLadderLog.resultShown({
+        itemId: item.id, correct: data.result.correct ?? null, score: data.result.score ?? null, judge: data.result.judge ?? null, held,
+      });
+    };
     if (data?.result?.correct === false && (data?.item?.id === item.id || (item.type === 'copy' && !data?.item))) {
       setResult(data.result); setPendingItem(null);
+      showResult(false); // a retry: the item stays, with its miss shown
       return;
     }
     if (holdsVerdict(item) && data?.result && 'correct' in data.result) {
       setResult(data.result); setPendingItem(data.item ?? null);
+      showResult(true); // held until Next
       return;
     }
     setResult(null); setPendingItem(null);
@@ -325,8 +344,11 @@ export default function WordLadderProgram({ descriptor, api: injected = null, re
 
   const next = useCallback(() => {
     if (!pendingItem) return;
+    wordLadderLog.resultDismissed({
+      itemId: item?.id ?? null, via: currentInput(), ms: resultShownAtRef.current != null ? Date.now() - resultShownAtRef.current : null,
+    });
     setItem(pendingItem); setPendingItem(null); setResult(null);
-  }, [pendingItem]);
+  }, [pendingItem, item]);
 
   // round.started / round.ended (spec §8) — derived from progress.round.index
   // changing, since the server doesn't send a dedicated transition event to
@@ -414,7 +436,14 @@ export default function WordLadderProgram({ descriptor, api: injected = null, re
   const remaining = remainingLabel(progress);
   return (
     <WordLadderStage>
-      <div className="wl" ref={stageRef} tabIndex={-1}>
+      {/* How the child acts, noted centrally (spec §8 input): a touch on any
+          button, or an Enter that submits a field (which useWordLadderKeys
+          never sees). Keys it maps note themselves. Nothing here logs. */}
+      <div
+        className="wl" ref={stageRef} tabIndex={-1}
+        onPointerDownCapture={() => noteInput('touch')}
+        onKeyDownCapture={(event) => { if (event.key === 'Enter') noteKeyEvent(event); }}
+      >
         {test && <div className="wl-test-banner" role="note">TEST — nothing is saved</div>}
         <WordLadderHeader
           trail={trail}

@@ -117,11 +117,11 @@ describe('SayItem — say-after', () => {
       />,
     );
     expect(screen.getByText('가위')).toBeInTheDocument();
-    expect(playClip).toHaveBeenCalledWith('aud-gawi', 'term');
+    expect(playClip).toHaveBeenCalledWith('aud-gawi', 'term', { trigger: 'auto' });
   });
 
   it('after a take, plays the take then the already-known native audio, even if the upload fails', async () => {
-    const spy = vi.spyOn(wordLadderLog, 'recordingFailed').mockImplementation(() => {});
+    const spy = vi.spyOn(wordLadderLog, 'sayRecording').mockImplementation(() => {});
     const api = makeApi({ uploadRecording: vi.fn(async () => ({ ok: false, status: 500, data: null })) });
     render(
       <SayItem
@@ -138,7 +138,7 @@ describe('SayItem — say-after', () => {
     playClip.mockClear();
     const blob = new Blob(['x'], { type: 'audio/webm' });
     await act(async () => { await captured.onTake({ blob, durationMs: 2000 }); });
-    expect(playSequence).toHaveBeenCalledWith([{ url: 'blob:take', kind: 'take' }, { url: 'aud-gawi', kind: 'term' }]);
+    expect(playSequence).toHaveBeenCalledWith([{ url: 'blob:take', kind: 'take' }, { url: 'aud-gawi', kind: 'term' }], { trigger: 'auto' });
     expect(spy).toHaveBeenCalledWith(expect.objectContaining({ itemId: 's3', status: 500 }));
     spy.mockRestore();
   });
@@ -181,7 +181,7 @@ describe('SayItem — read-aloud', () => {
     const blob = new Blob(['x'], { type: 'audio/webm' });
     await act(async () => { await captured.onTake({ blob, durationMs: 2000 }); });
     expect(api.uploadRecording).toHaveBeenCalledWith('sit1', { userId: 'kid', itemId: 's4', blob });
-    expect(playSequence).toHaveBeenCalledWith([{ url: 'blob:take', kind: 'take' }, { url: 'aud-gawi', kind: 'term' }]);
+    expect(playSequence).toHaveBeenCalledWith([{ url: 'blob:take', kind: 'take' }, { url: 'aud-gawi', kind: 'term' }], { trigger: 'auto' });
   });
 
   it('an upload failure plays only the take — no reveal, no native audio', async () => {
@@ -200,7 +200,7 @@ describe('SayItem — read-aloud', () => {
     );
     const blob = new Blob(['x'], { type: 'audio/webm' });
     await act(async () => { await captured.onTake({ blob, durationMs: 2000 }); });
-    expect(playSequence).toHaveBeenCalledWith([{ url: 'blob:take', kind: 'take' }]);
+    expect(playSequence).toHaveBeenCalledWith([{ url: 'blob:take', kind: 'take' }], { trigger: 'auto' });
   });
 });
 
@@ -243,11 +243,11 @@ describe('SayItem — say-from-cue', () => {
     const blob = new Blob(['x'], { type: 'audio/webm' });
     await act(async () => { await captured.onTake({ blob, durationMs: 2000 }); });
     expect(screen.getByText('가위')).toBeInTheDocument();
-    expect(playSequence).toHaveBeenCalledWith([{ url: 'blob:take', kind: 'take' }, { url: 'resolved:aud-gawi', kind: 'term' }]);
+    expect(playSequence).toHaveBeenCalledWith([{ url: 'blob:take', kind: 'take' }, { url: 'resolved:aud-gawi', kind: 'term' }], { trigger: 'auto' });
   });
 
   it('an upload failure never reveals the term — it has no other source', async () => {
-    const spy = vi.spyOn(wordLadderLog, 'recordingFailed').mockImplementation(() => {});
+    const spy = vi.spyOn(wordLadderLog, 'sayRecording').mockImplementation(() => {});
     const api = makeApi({ uploadRecording: vi.fn(async () => ({ ok: false, status: 500, data: null })) });
     render(
       <SayItem
@@ -264,7 +264,7 @@ describe('SayItem — say-from-cue', () => {
     const blob = new Blob(['x'], { type: 'audio/webm' });
     await act(async () => { await captured.onTake({ blob, durationMs: 2000 }); });
     expect(screen.queryByText('가위')).toBeNull();
-    expect(playSequence).toHaveBeenCalledWith([{ url: 'blob:take', kind: 'take' }]);
+    expect(playSequence).toHaveBeenCalledWith([{ url: 'blob:take', kind: 'take' }], { trigger: 'auto' });
     // The take still happened — Next replaces Skip even though nothing revealed.
     expect(screen.getByRole('button', { name: /next/i })).toBeInTheDocument();
     spy.mockRestore();
@@ -296,8 +296,8 @@ describe('SayItem — uploads and Next/Skip wording', () => {
     expect(onRespond).toHaveBeenCalledWith({ done: true });
   });
 
-  it('logs recording.uploaded on a successful upload', async () => {
-    const spy = vi.spyOn(wordLadderLog, 'recordingUploaded').mockImplementation(() => {});
+  it('logs say.recording uploaded on a successful upload', async () => {
+    const spy = vi.spyOn(wordLadderLog, 'sayRecording').mockImplementation(() => {});
     render(
       <SayItem
         item={sayAfterItem}
@@ -312,7 +312,60 @@ describe('SayItem — uploads and Next/Skip wording', () => {
     );
     const blob = new Blob(['x'], { type: 'audio/webm' });
     await act(async () => { await captured.onTake({ blob, durationMs: 2000 }); });
-    expect(spy).toHaveBeenCalledWith(expect.objectContaining({ itemId: 's3' }));
+    expect(spy).toHaveBeenCalledWith(expect.objectContaining({ itemId: 's3', phase: 'uploaded', bytes: 1, durationMs: 2000, ms: expect.any(Number) }));
+    spy.mockRestore();
+  });
+});
+
+describe('SayItem — spec §8 recording and skip events', () => {
+  const props = (over = {}) => ({
+    item: sayAfterItem, mode: 'say-after', langs, resolveAssetUrl: (x) => x, onRespond: vi.fn(), api: makeApi(), sittingId: 'sit1', userId: 'kid', ...over,
+  });
+
+  it('logs started when the mic opens and stopped when the take ends', () => {
+    const spy = vi.spyOn(wordLadderLog, 'sayRecording').mockImplementation(() => {});
+    const { rerender } = render(<SayItem {...props()} />);
+    recorderState.phase = 'recording';
+    rerender(<SayItem {...props()} />);
+    recorderState.phase = 'saving';
+    rerender(<SayItem {...props()} />);
+    expect(spy.mock.calls.map(([d]) => d.phase)).toEqual(['started', 'stopped']);
+    expect(spy).toHaveBeenCalledWith(expect.objectContaining({ itemId: 's3', itemMode: 'say-after', phase: 'started', ms: expect.any(Number) }));
+    spy.mockRestore();
+  });
+
+  it('logs failed with the status when the upload is refused', async () => {
+    const spy = vi.spyOn(wordLadderLog, 'sayRecording').mockImplementation(() => {});
+    render(<SayItem {...props({ api: makeApi({ uploadRecording: vi.fn(async () => ({ ok: false, status: 500, data: null })) }) })} />);
+    await act(async () => { await captured.onTake({ blob: new Blob(['x']), durationMs: 900 }); });
+    expect(spy).toHaveBeenCalledWith(expect.objectContaining({ phase: 'failed', status: 500 }));
+    spy.mockRestore();
+  });
+
+  it('logs refused with the reason, and unavailable when there is no mic', () => {
+    const spy = vi.spyOn(wordLadderLog, 'sayRecording').mockImplementation(() => {});
+    recorderState.verdict = 'too-quiet';
+    const { unmount } = render(<SayItem {...props()} />);
+    expect(spy).toHaveBeenCalledWith(expect.objectContaining({ phase: 'refused', reason: 'too-quiet' }));
+    unmount();
+    recorderState.verdict = null;
+    recorderState.unavailable = true;
+    render(<SayItem {...props()} />);
+    expect(spy).toHaveBeenCalledWith(expect.objectContaining({ phase: 'unavailable' }));
+    spy.mockRestore();
+  });
+
+  it('a Skip with no take logs item.skipped with how it was pressed; Next after a take does not', async () => {
+    const spy = vi.spyOn(wordLadderLog, 'itemSkipped').mockImplementation(() => {});
+    const { unmount } = render(<SayItem {...props()} />);
+    act(() => { fireEvent.keyDown(window, { key: '\\', code: 'Backslash' }); });
+    expect(spy).toHaveBeenCalledWith(expect.objectContaining({ itemId: 's3', type: 'say', what: 'say', via: 'key:Backslash', micOff: false, ms: expect.any(Number) }));
+    unmount();
+    spy.mockClear();
+    render(<SayItem {...props()} />);
+    await act(async () => { await captured.onTake({ blob: new Blob(['x']), durationMs: 900 }); });
+    fireEvent.click(screen.getByRole('button', { name: /next/i }));
+    expect(spy).not.toHaveBeenCalled();
     spy.mockRestore();
   });
 });

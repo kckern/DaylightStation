@@ -13,7 +13,7 @@ import { wordLadderLog } from '../wordLadderLog.js';
 export default function DrillOfferItem({ item, langs, resolveAssetUrl, onRespond, busy = false, onLayout }) {
   const word = item.word ?? {};
   const audio = word.media?.audio ? resolveAssetUrl(word.media.audio) : null;
-  useEffect(() => { if (audio) playClip(audio, 'term'); }, [item.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (audio) playClip(audio, 'term', { trigger: 'auto' }); }, [item.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const answer = (accepted) => {
     if (busy) return;
     wordLadderLog.drillOffered({ itemId: item.id, wordId: item.wordId ?? word.wordId ?? null, accepted });
