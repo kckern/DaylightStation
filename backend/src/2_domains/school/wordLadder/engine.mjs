@@ -4,7 +4,9 @@
  * `currentItem` derives what is on screen; `respond` applies one answer. All
  * sitting state lives in the day file, so reloads and idle-closed sittings
  * resume the same day. Drills (spec §3 drill path) walk one word from full
- * support to none and never change word state.
+ * support to none and never change word state. Once the day is done, the
+ * summary shows once and then the practice menu (spec §6); only a practice
+ * Quiz me grades, exactly like a round's verify.
  */
 import { ValidationError } from '#domains/core/errors/index.mjs';
 import { hashString, seededShuffle } from './checkItem.mjs';
@@ -13,6 +15,7 @@ import { channelFor, cueFor, pickMeaningChoices, pickTermChoices } from './choic
 import { newAllowance, planNextRound } from './rounds.mjs';
 import { normalizeAnswer } from './jamo.mjs';
 import { drillSteps, matchBoard, tilesFor } from './drill.mjs';
+import { PRACTICE_MODES, buildPractice } from './practice.mjs';
 
 const IDLE_CAP_MS = 45000;
 const NOT_YET_GAP = 2;
@@ -251,7 +254,65 @@ export function currentItem(ctx) {
   if (drill) return drillItem(ctx, drill);
   const round = openRound(ctx);
   if (round) return itemForRound(ctx, round);
-  return { id: 'summary', type: 'summary', quizzed: quizzedCount(ctx.dayFile), doneToday: true };
+  if (!ctx.dayFile.doneAt || !ctx.dayFile.summarySeen) return { id: 'summary', type: 'summary', quizzed: quizzedCount(ctx.dayFile), doneToday: true };
+  const run = openPractice(ctx);
+  if (run) return practiceItem(ctx, run);
+  return menuItem(ctx);
+}
+
+function openPractice(ctx) {
+  const run = ctx.dayFile.practice;
+  return run && run.index < run.queue.length ? run : null;
+}
+
+function menuItem(ctx) {
+  const mic = ctx.dayFile.capabilities?.microphone === true;
+  const heard = Object.entries(ctx.status.words).some(([id, word]) => word.state !== 'new' && ctx.media?.[id]?.audio === true);
+  const modes = PRACTICE_MODES.filter((mode) => (mode !== 'say' || mic) && (mode !== 'listen' || heard));
+  return { id: 'menu', type: 'menu', modes, quizzed: quizzedCount(ctx.dayFile) };
+}
+
+// Practice item ids are p<run>:<index>, and p<run>:<index>:<step> inside a drill.
+function practiceItem(ctx, run) {
+  const task = run.queue[run.index];
+  const id = `${run.id}:${run.index}`;
+  const source = 'practice';
+  const cue = () => cueFor(ctx.lexicon.entries.get(task.wordId), ctx.media?.[task.wordId] ?? {}, `${ctx.learnerId}|${ctx.day}|${id}`);
+  switch (task.kind) {
+    case 'flashcard': return { id, type: 'flashcard', mode: 'practice', source, wordId: task.wordId, front: task.front };
+    case 'match': return { id, type: 'match', source, board: task.board };
+    case 'say-after': return { id, type: 'say', mode: 'say-after', source, wordId: task.wordId };
+    case 'say-from-cue': return { id, type: 'say', mode: 'say-from-cue', source, wordId: task.wordId, cue: cue() };
+    case 'copy': return { id, type: 'copy', source, wordId: task.wordId };
+    case 'type-practice': return { id, type: 'typed', task: '3.3', source, graded: false, wordId: task.wordId, cue: cue() };
+    case 'listen': return { id, type: 'listen', source, wordIds: task.wordIds };
+    case 'drill': return drillItem(ctx, task.drill, { source });
+    default: return { ...gradedItem(ctx, id, task.wordId, task.task, source), graded: true };
+  }
+}
+
+/**
+ * Opens a practice run (spec §6 practice menu) once the day is done. Replaces
+ * any earlier run; starting one also passes the summary.
+ */
+export function startPractice(ctx, { mode, help = true, filter = 'introduced', chosen = [], frontSide = 'term' } = {}) {
+  if (!ctx.dayFile.doneAt) throw new ValidationError("practice opens after today's goal");
+  if (!PRACTICE_MODES.includes(mode)) throw new ValidationError(`unknown practice mode '${mode}'`);
+  const dayFile = clone(ctx.dayFile);
+  const runNumber = (dayFile.practiceRuns ?? 0) + 1;
+  const id = `p${runNumber}`;
+  const run = buildPractice({
+    mode, help: help !== false, filter, chosen: Array.isArray(chosen) ? chosen : [], frontSide,
+    words: ctx.status.words, entries: ctx.lexicon.entries, media: ctx.media ?? {}, day: ctx.day,
+    seed: `${ctx.learnerId}|${ctx.day}|${id}`, capabilities: dayFile.capabilities ?? {},
+  });
+  run.queue = run.queue.map((task, index) => (task.kind === 'drill'
+    ? { ...task, drill: { id: `${id}:${index}`, wordId: task.wordId, steps: task.steps, index: 0, tries: 0, done: false } }
+    : task));
+  dayFile.practice = { ...run, id };
+  dayFile.practiceRuns = runNumber;
+  dayFile.summarySeen = true;
+  return { status: clone(ctx.status), dayFile };
 }
 
 function quizzedCount(dayFile) {
@@ -323,19 +384,65 @@ function applyStreamSort(ctx, round, pile) {
   endStreamIfDone(ctx, round);
 }
 
-function gradeQuizTask(ctx, round, task, correct) {
+// One verify task graded over a holder { queue, index, passed, failed } — a
+// round's quiz or a practice Quiz me run. First-miss stop drops the word's
+// remaining tasks; a word passes on its last task. Returns true when the
+// holder's queue is exhausted.
+function gradeVerifyTask(ctx, holder, task, correct) {
   const word = wordOf(ctx.status, task.wordId);
-  const lastTaskOfWord = !round.quiz.queue.slice(round.quiz.index + 1).some((t) => t.wordId === task.wordId);
+  const lastTaskOfWord = !holder.queue.slice(holder.index + 1).some((t) => t.wordId === task.wordId);
   if (!correct) {
     ctx.status.words[task.wordId] = applyGraded(word, { source: 'verify', correct: false, day: ctx.day, task: task.task, settings: gradedSettings(ctx.settings) });
-    round.quiz.failed.push(task.wordId);
-    round.quiz.queue = [...round.quiz.queue.slice(0, round.quiz.index + 1), ...round.quiz.queue.slice(round.quiz.index + 1).filter((t) => t.wordId !== task.wordId)];
+    holder.failed.push(task.wordId);
+    holder.queue = [...holder.queue.slice(0, holder.index + 1), ...holder.queue.slice(holder.index + 1).filter((t) => t.wordId !== task.wordId)];
   } else if (lastTaskOfWord) {
     ctx.status.words[task.wordId] = applyGraded(word, { source: 'verify', correct: true, day: ctx.day, task: task.task, settings: gradedSettings(ctx.settings) });
-    round.quiz.passed.push(task.wordId);
+    holder.passed.push(task.wordId);
   }
-  round.quiz.index += 1;
-  if (round.quiz.index >= round.quiz.queue.length) endRound(ctx, round);
+  holder.index += 1;
+  return holder.index >= holder.queue.length;
+}
+
+function gradeQuizTask(ctx, round, task, correct) {
+  if (gradeVerifyTask(ctx, round.quiz, task, correct)) endRound(ctx, round);
+}
+
+function gradedResult(ctx, item, correct, verdict) {
+  return { correct, answer: answerFor(ctx, item), ...(verdict ? { score: verdict.score, judge: verdict.judge } : {}) };
+}
+
+// Practice never grades except a Quiz me task (rule 1). Sorts obey rule 2 via
+// applySort, so they never lift a word past claimed. Mutates ctx.
+function respondPractice(ctx, item, response, verdict) {
+  const run = ctx.dayFile.practice;
+  if (response.menu === true) {
+    run.index = run.queue.length;
+    run.ended = 'menu';
+    return { result: { ok: true, ended: true }, advance: true };
+  }
+  const task = run.queue[run.index];
+  if (task.kind === 'graded') {
+    const correct = gradedCorrect(ctx, item, response, verdict);
+    gradeVerifyTask(ctx, run, task, correct);
+    return { result: gradedResult(ctx, item, correct, verdict), advance: true };
+  }
+  if (task.kind === 'drill') {
+    const out = respondDrill(ctx, task.drill, response);
+    if (task.drill.done) run.index += 1;
+    return out;
+  }
+  let result = { ok: true };
+  if (task.kind === 'flashcard' && response.sort) {
+    ctx.status.words[task.wordId] = applySort(wordOf(ctx.status, task.wordId), response.sort, ctx.day);
+  } else if (task.kind === 'copy') {
+    const term = ctx.lexicon.entries.get(task.wordId).term;
+    result = { correct: normalizeAnswer(response.typed) === normalizeAnswer(term), answer: term };
+    if (!result.correct) return { result, advance: false };
+  } else if (task.kind === 'type-practice') {
+    result = gradedResult(ctx, item, gradedCorrect(ctx, item, response, verdict), verdict);
+  }
+  run.index += 1;
+  return { result, advance: true };
 }
 
 function gradedCorrect(ctx, item, response, verdict) {
@@ -362,8 +469,12 @@ function validateResponse(item, response) {
   const isStream = item.type === 'flashcard' && item.mode === 'stream';
   if (!isStream && keys.includes('undo')) throw new ValidationError('nothing to undo');
   const only = (key) => keys.length === 1 && keys[0] === key;
+  if (item.source === 'practice' && only('menu') && response.menu === true) return;
   let fits = false;
   if (item.type === 'flashcard' && item.mode === 'intro') fits = only('seen') && response.seen === true;
+  else if (item.type === 'flashcard' && item.mode === 'practice') {
+    fits = (only('sort') && PILES.includes(response.sort)) || (only('next') && response.next === true);
+  }
   else if (isStream) {
     fits = (only('sort') && PILES.includes(response.sort)) || (only('undo') && response.undo === true)
       || (only('quizNow') && response.quizNow === true);
@@ -374,7 +485,7 @@ function validateResponse(item, response) {
     if (TYPING_STEPS.has(item.step)) fits = only('typed') && typeof response.typed === 'string';
     else if (item.step === 'tiles') fits = only('tiles') && Array.isArray(response.tiles) && response.tiles.every((tile) => typeof tile === 'string');
     else fits = only('done') && response.done === true;
-  } else if (item.type === 'say') fits = only('done') && response.done === true;
+  } else if (['say', 'match', 'listen', 'summary'].includes(item.type)) fits = only('done') && response.done === true;
   else if (item.type === 'drill-offer') fits = only('drill') && (response.drill === 'yes' || response.drill === 'no');
   if (!fits) throw new ValidationError(NOT_FIT);
 }
@@ -388,16 +499,20 @@ export function respond(inputCtx, itemId, response = {}, { at, verdict = null } 
   validateResponse(item, response);
   let result = { ok: true };
 
-  if (item.type === 'drill') {
-    const { result: drillResult, advance } = respondDrill(ctx, openDrill(ctx), response);
+  if (item.source === 'practice' || item.type === 'drill') {
+    const { result: stepResult, advance } = item.source === 'practice'
+      ? respondPractice(ctx, item, response, verdict)
+      : respondDrill(ctx, openDrill(ctx), response);
     // A retry is not stored: the same item id must accept the next attempt.
-    if (!advance) return { status: ctx.status, dayFile: ctx.dayFile, result: drillResult };
-    result = drillResult;
+    if (!advance) return { status: ctx.status, dayFile: ctx.dayFile, result: stepResult };
+    result = stepResult;
+  } else if (item.type === 'summary') {
+    ctx.dayFile.summarySeen = true;
   } else if (item.id.startsWith('rc:')) {
     const correct = gradedCorrect(ctx, item, response, verdict);
     ctx.status.words[item.wordId] = applyGraded(wordOf(ctx.status, item.wordId), { source: 'recheck', correct, day: ctx.day, task: item.task, settings: gradedSettings(ctx.settings) });
     ctx.dayFile.rechecks.answered[item.wordId] = { task: item.task, correct };
-    result = { correct, answer: answerFor(ctx, item), ...(verdict ? { score: verdict.score, judge: verdict.judge } : {}) };
+    result = gradedResult(ctx, item, correct, verdict);
   } else {
     const round = openRound(ctx);
     if (!round) throw new ValidationError('stale item');
@@ -432,7 +547,7 @@ export function respond(inputCtx, itemId, response = {}, { at, verdict = null } 
     } else {
       const correct = gradedCorrect(ctx, item, response, verdict);
       gradeQuizTask(ctx, round, round.quiz.queue[round.quiz.index], correct);
-      result = { correct, answer: answerFor(ctx, item), ...(verdict ? { score: verdict.score, judge: verdict.judge } : {}) };
+      result = gradedResult(ctx, item, correct, verdict);
     }
   }
   ctx.dayFile.items[itemId] = { at, response, result };

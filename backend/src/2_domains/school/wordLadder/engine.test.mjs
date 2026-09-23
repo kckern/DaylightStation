@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import { emptyWordV3 } from './mastery.mjs';
 import { emptyDay, emptyStatusV3 } from './statusV3.mjs';
-import { addActiveTime, currentItem, openDay, respond } from './engine.mjs';
+import { addActiveTime, currentItem, openDay, respond, startPractice } from './engine.mjs';
 
 const D = '2026-09-22';
 const SET = {
@@ -10,7 +10,7 @@ const SET = {
   review: { gapScale: 1, typedEvery: 2 }, drill: { afterMisses: 2, perSitting: 1 }, session: { capMinutes: 15 }, typing: { passScore: 6 },
 };
 const E = (id, term, gloss) => [id, { id, term, gloss, kind: 'word', decoys: { term: ['x1', 'x2', 'x3'], gloss: ['g1', 'g2', 'g3'] } }];
-const lexicon = { entries: new Map([E('gawi', '가위', 'Scissors'), E('pul', '풀', 'Glue'), E('chaek', '책', 'Book')]) };
+const lexicon = { entries: new Map([E('gawi', '가위', 'Scissors'), E('pul', '풀', 'Glue'), E('chaek', '책', 'Book'), E('mul', '물', 'Water')]) };
 const media = { gawi: { image: true, audio: true, glossAudio: false }, pul: { image: true, audio: true }, chaek: { image: false, audio: false } };
 const pool = ['gawi', 'pul', 'chaek'];
 const PASS = { score: 10, judge: 'exact', pass: true };
@@ -487,3 +487,139 @@ describe('engine — drill', () => {
     expect(currentItem(ctx)).toMatchObject({ type: 'flashcard', mode: 'stream' });
   });
 });
+
+describe('engine — practice', () => {
+  function doneCtx({ microphone = false } = {}) {
+    const ctx = start();
+    return { ...ctx, dayFile: { ...ctx.dayFile, doneAt: 'x', rounds: [], rechecks: { order: [], answered: {} }, summarySeen: true, capabilities: { microphone } } };
+  }
+  const withWords = (ctx, words) => ({ ...ctx, status: { ...ctx.status, words: { ...ctx.status.words, ...words } } });
+  const familiar = { ...emptyWordV3(), state: 'familiar', introducedDay: '2026-09-01' };
+  function practise(ctx, opts) {
+    const out = startPractice(ctx, opts);
+    return { ...ctx, status: out.status, dayFile: out.dayFile };
+  }
+
+  it('menu appears after the goal; practice before it is refused', () => {
+    expect(() => startPractice(start(), { mode: 'match' })).toThrow(/after today/);
+    expect(currentItem(doneCtx())).toMatchObject({ type: 'menu' });
+  });
+  it('the summary shows once, then the menu', () => {
+    let ctx = { ...doneCtx(), dayFile: { ...doneCtx().dayFile, summarySeen: false } };
+    expect(currentItem(ctx)).toMatchObject({ id: 'summary', type: 'summary' });
+    ({ ctx } = step(ctx, { done: true }));
+    expect(ctx.dayFile.summarySeen).toBe(true);
+    expect(currentItem(ctx)).toMatchObject({ id: 'menu', type: 'menu' });
+  });
+  it('the menu offers say only with a mic and listen only when an introduced word has audio', () => {
+    const noAudio = withWords(doneCtx(), { chaek: familiar });
+    expect(currentItem(noAudio).modes).toEqual(['flashcards', 'match', 'write', 'drill', 'quiz']);
+    const all = withWords(doneCtx({ microphone: true }), { gawi: familiar });
+    expect(currentItem(all).modes).toEqual(['flashcards', 'match', 'say', 'write', 'listen', 'drill', 'quiz']);
+  });
+  it('the menu takes no responses; practice starts via startPractice', () => {
+    expect(() => step(doneCtx(), { done: true })).toThrow('response does not fit this item');
+    expect(() => startPractice(doneCtx(), { mode: 'nap' })).toThrow(/unknown practice mode/);
+  });
+  it('practice flashcards can lower a mastered word but not raise past claimed', () => {
+    let ctx = doneCtx();
+    ctx.status.words.gawi = { ...emptyWordV3(), state: 'mastered', stage: 2, introducedDay: '2026-09-01' };
+    ctx.status.words.pul = { ...emptyWordV3(), state: 'familiar', introducedDay: '2026-09-01' };
+    ({ status: ctx.status, dayFile: ctx.dayFile } = startPractice(ctx, { mode: 'flashcards', filter: 'introduced' }));
+    for (let i = 0; i < 2; i += 1) {
+      const it = currentItem(ctx);
+      expect(it).toMatchObject({ type: 'flashcard', mode: 'practice', source: 'practice', front: 'term' });
+      ({ ctx } = step(ctx, { sort: it.wordId === 'gawi' ? 'familiar' : 'claimed' }));
+    }
+    expect(ctx.status.words.gawi.state).toBe('familiar');
+    expect(ctx.status.words.pul.state).toBe('claimed');
+    expect(currentItem(ctx).type).toBe('menu');
+    expect(ctx.dayFile.rounds).toEqual([]);
+  });
+  it('a Got it sort leaves a mastered word mastered; next skips', () => {
+    let ctx = withWords(doneCtx(), { gawi: { ...emptyWordV3(), state: 'mastered', stage: 2, introducedDay: '2026-09-01' }, pul: familiar });
+    ctx = practise(ctx, { mode: 'flashcards' });
+    for (let i = 0; i < 2; i += 1) {
+      const it = currentItem(ctx);
+      ({ ctx } = step(ctx, it.wordId === 'gawi' ? { sort: 'claimed' } : { next: true }));
+    }
+    expect(ctx.status.words.gawi).toMatchObject({ state: 'mastered', stage: 2 });
+    expect(ctx.status.words.pul.state).toBe('familiar');
+  });
+  it('practice quiz grades like verify', () => {
+    let ctx = doneCtx();
+    ctx.status.words.pul = { ...emptyWordV3(), state: 'familiar', introducedDay: '2026-09-01' };
+    ({ status: ctx.status, dayFile: ctx.dayFile } = startPractice(ctx, { mode: 'quiz', filter: 'introduced' }));
+    expect(currentItem(ctx)).toMatchObject({ type: 'typed', task: '3.3', source: 'practice', graded: true });
+    expect(() => step(ctx, { typed: '풀' })).toThrow(/judge verdict/);
+    ({ ctx } = step(ctx, { typed: '풀' }, PASS));
+    ({ ctx } = step(ctx, { choice: 'Glue' }));
+    expect(ctx.status.words.pul).toMatchObject({ state: 'mastered', stage: 0 });
+    expect(ctx.dayFile.practice).toMatchObject({ passed: ['pul'], failed: [] });
+  });
+  it('practice quiz stops a word at its first miss', () => {
+    let ctx = practise(withWords(doneCtx(), { pul: familiar }), { mode: 'quiz' });
+    ({ ctx } = step(ctx, { typed: 'zz' }, { score: 2, judge: 'distance', pass: false }));
+    expect(ctx.status.words.pul).toMatchObject({ state: 'familiar', verifyFailedDay: D });
+    expect(currentItem(ctx).type).toBe('menu');
+  });
+  it('write without help: typed practice needs a verdict and never grades', () => {
+    let ctx = practise(withWords(doneCtx(), { pul: familiar }), { mode: 'write', help: false });
+    const before = structuredClone(ctx.status.words.pul);
+    expect(currentItem(ctx)).toMatchObject({ id: 'p1:0', type: 'typed', task: '3.3', source: 'practice', graded: false, wordId: 'pul' });
+    expect(() => step(ctx, { typed: '풀' })).toThrow(/judge verdict/);
+    let result;
+    ({ ctx, result } = step(ctx, { typed: 'zz' }, { score: 2, judge: 'distance', pass: false }));
+    expect(result).toMatchObject({ correct: false, answer: '풀' });
+    expect(ctx.status.words.pul).toEqual(before);
+    expect(currentItem(ctx).type).toBe('menu');
+  });
+  it('write with help: copy must match to advance', () => {
+    let ctx = practise(withWords(doneCtx(), { pul: familiar }), { mode: 'write' });
+    expect(currentItem(ctx)).toMatchObject({ type: 'copy', source: 'practice', wordId: 'pul' });
+    ({ ctx } = step(ctx, { typed: '불' }));
+    expect(currentItem(ctx).type).toBe('copy');
+    ({ ctx } = step(ctx, { typed: '풀' }));
+    expect(currentItem(ctx).type).toBe('menu');
+  });
+  it('match, listen and say items take done', () => {
+    let ctx = practise(withWords(doneCtx({ microphone: true }), { gawi: familiar, pul: familiar, chaek: familiar, mul: familiar }), { mode: 'match' });
+    expect(currentItem(ctx)).toMatchObject({ type: 'match', source: 'practice' });
+    expect(currentItem(ctx).board.pairs).toHaveLength(4);
+    ({ ctx } = step(ctx, { done: true }));
+    expect(currentItem(ctx).type).toBe('menu');
+    ctx = practise(withWords(ctx, { chaek: emptyWordV3(), mul: emptyWordV3() }), { mode: 'listen' });
+    expect(currentItem(ctx)).toMatchObject({ id: 'p2:0', type: 'listen' });
+    expect([...currentItem(ctx).wordIds].sort()).toEqual(['gawi', 'pul']);
+    ({ ctx } = step(ctx, { done: true }));
+    ctx = practise(ctx, { mode: 'say', help: false });
+    expect(currentItem(ctx)).toMatchObject({ type: 'say', mode: 'say-from-cue', cue: expect.any(Object) });
+    ({ ctx } = step(ctx, { done: true }));
+    ({ ctx } = step(ctx, { done: true }));
+    expect(currentItem(ctx).type).toBe('menu');
+  });
+  it('a practice drill walks the steps with p<run>:<index>:<step> ids', () => {
+    let ctx = practise(withWords(doneCtx(), { pul: familiar }), { mode: 'drill', filter: 'chosen', chosen: ['pul'] });
+    expect(currentItem(ctx)).toMatchObject({ id: 'p1:0:0', type: 'drill', step: 'look', source: 'practice', wordId: 'pul' });
+    let guard = 0;
+    while (currentItem(ctx).type === 'drill' && guard++ < 20) {
+      const it = currentItem(ctx);
+      ({ ctx } = step(ctx, TYPING_OR_TILES(it)));
+    }
+    expect(currentItem(ctx).type).toBe('menu');
+    expect(ctx.status.words.pul).toEqual(familiar);
+  });
+  it('menu:true on any practice item ends the run', () => {
+    let ctx = practise(withWords(doneCtx(), { gawi: familiar, pul: familiar }), { mode: 'flashcards' });
+    ({ ctx } = step(ctx, { menu: true }));
+    expect(currentItem(ctx).type).toBe('menu');
+    expect(ctx.dayFile.practiceRuns).toBe(1);
+  });
+});
+
+function TYPING_OR_TILES(it) {
+  const term = lexicon.entries.get(it.wordId).term;
+  if (['copy', 'dictation', 'type'].includes(it.step)) return { typed: term };
+  if (it.step === 'tiles') return { tiles: [...term] };
+  return { done: true };
+}
