@@ -6,8 +6,8 @@ const apiMock = vi.fn();
 vi.mock('../../../lib/api.mjs', () => ({ DaylightAPI: (...a) => apiMock(...a) }));
 
 import { AddCombobox, popupPlacement } from './AddCombobox.jsx';
-import { resetApiResourceCache, primeApiResource } from '../../../lib/hooks/useApiResource.js';
-import { shortlistPath } from '../healthResources.js';
+import { resetApiResourceCache, primeApiResource, peekApiResource } from '../../../lib/hooks/useApiResource.js';
+import { shortlistPath, healthDayPath } from '../healthResources.js';
 import { noteVisibleRows, resetAddFlow } from './addFlow.js';
 
 // The shortlist is cached module-wide; no case may inherit another's.
@@ -50,6 +50,30 @@ describe('AddCombobox', () => {
     await waitFor(() => expect(onDone).toHaveBeenCalled());
     const quickaddCall = apiMock.mock.calls.find(([p]) => p.includes('quickadd'));
     expect(quickaddCall[1]).toEqual({ catalogEntryId: 'a', mealTime: 'afternoon', operationId: expect.any(String) });
+  });
+
+  // The row is on the day the moment the quick-add answers — not after the
+  // day refetch, which on a busy page queued for seconds behind icons, photos
+  // and prefetches while the add row had already cleared (2026-09-23: Spinach
+  // "disappeared" until a manual reload).
+  it('a picked food is on its day as soon as the quick-add answers, before onDone reloads', async () => {
+    primeApiResource(healthDayPath('2026-09-23'), { date: '2026-09-23', items: [{ uuid: 'old', date: '2026-09-23' }] });
+    apiMock.mockImplementation(async (path) => {
+      if (path.includes('suggest')) return SUGGEST;
+      if (path.includes('quickadd')) return { logged: true, committed: true,
+        item: { uuid: 'row-1', name: 'Chicken breast', date: '2026-09-23', mealTime: 'evening' } };
+      return {};
+    });
+    let dayAtDone = null;
+    const onDone = vi.fn(() => { dayAtDone = peekApiResource(healthDayPath('2026-09-23')); });
+    r(<AddCombobox inline bucketId="evening" date="2026-09-23" label="Dinner" onDone={onDone} onCancel={() => {}} />);
+    const input = screen.getByRole('combobox', { name: 'Add to Dinner' });
+    input.focus();
+    fireEvent.change(input, { target: { value: 'chick' } });
+    await waitFor(() => screen.getByText('Chicken breast'));
+    fireEvent.click(screen.getByText('Chicken breast'));
+    await waitFor(() => expect(onDone).toHaveBeenCalled());
+    expect(dayAtDone.items.map(row => row.uuid)).toEqual(['old', 'row-1']);
   });
 
   // Task 9.2. The retired PUT was doing two things beyond moving the row, and

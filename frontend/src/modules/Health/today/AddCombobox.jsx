@@ -30,7 +30,7 @@ function portionLabel(entry) {
   return serving?.amount > 0 && serving.unit ? `${Math.round(serving.amount)} ${serving.unit} · ` : '';
 }
 import { peekApiResource, primeApiResource } from '../../../lib/hooks/useApiResource.js';
-import { shortlistPath } from '../healthResources.js';
+import { shortlistPath, showCommittedFoodRows } from '../healthResources.js';
 import { addedRowIds, trackAddFlow } from './addFlow.js';
 
 const logger = createAppLogger('health').child('add-combobox');
@@ -214,6 +214,9 @@ export function AddCombobox({ bucketId, date = null, onDone, onCancel, onMeals, 
         'POST',
       );
       logger.info('quickadd.done', { entry: entry.name, bucket: bucketId, surface });
+      // The response IS the saved row: show it now. Waiting for the day
+      // refetch left the add row cleared and the meal unchanged for seconds.
+      showCommittedFoodRows(response?.item ? [response.item] : []);
       trackAddFlow({ ids: addedRowIds(response), bucket: bucketId ?? null, surface, kind: 'pick', submitToCommittedMs: performance.now() - submittedAt });
       finish();
     } catch (err) {
