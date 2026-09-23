@@ -179,9 +179,16 @@ menu's Quiz me.
 **Match (guided)**: after the quiz, a round that verified at least one word
 serves one `match` item (`id: <round>:m`, `mode: 'round'`, answered
 `{done:true}`, the same `MatchItem` and board as practice Match) over the
-words just verified — padded to 3 with up to 2 already-known (`mastered`)
-words when fewer than 3 were verified. Finishing it sets `matched` on every
-word on the board. A round that verified nothing skips it. `round.phase` reads
+words just verified — padded to 3 from other introduced, non-excluded words
+when fewer than 3 were verified, preferring a recognised word still owed its
+match (`mastered`, not `matched`), then known (`mastered`) words, then any
+introduced word. Finishing it sets `matched` on every word on the board. A
+round that verified nothing skips it, and so does one whose board would still
+be a single pair (`matchWordIds` in `engine.mjs`) — that word is swept into
+the next board it can join, since the pad prefers it. A **practice Quiz me**
+that passes words ends the same way: one `match` task (same board rule) is
+appended to the run, so a word verified in practice can reach the typed
+sign-off too. `round.phase` reads
 `match` while it is on screen; `progress.round.hasMatch` (read-only) says
 whether the round shows or will show the step — true before the quiz ends
 unless the quiz can no longer pass anything, and after it only if a Match ran.
@@ -220,7 +227,10 @@ state**; it exists purely to walk one word from full support to none.
 Steps, fixed at creation and always in this order
 (`DRILL_STEPS` in `backend/src/2_domains/school/wordLadder/drill.mjs`) — the
 unsupported production steps (dictation, say-from-cue, type) come last, after
-the scaffolded tiles, so writing from sound or memory is never front-loaded:
+the scaffolded tiles, so writing from sound or memory is never front-loaded.
+**Typing from memory (dictation, type) is in a drill only for a word
+`readyForSignOff`** (recognised twice, claimed, matched — ruling 2026-09-23);
+for every other word copy (visible) and tiles (scaffolded) are the ceiling:
 
 | Step | What the child does | Skipped when |
 |---|---|---|
@@ -230,13 +240,14 @@ the scaffolded tiles, so writing from sound or memory is never front-loaded:
 | **match** | 4-pair picture/text match board (the drill word plus up to 3 other introduced words) | fewer than 2 other introduced words exist to pair with |
 | **read-aloud** | reads the term aloud and records; the native audio is revealed only after the take | no microphone capability |
 | **tiles** | taps syllable tiles (the term's syllables plus 2 decoys) to spell the term from a cue | never |
-| **dictation** | hears the term (no text shown), types what was heard | the word has no term audio |
+| **dictation** | hears the term (no text shown), types what was heard | the word has no term audio, or is not `readyForSignOff` |
 | **say-from-cue** | given only a cue (no term shown at all), records saying the term; the term is revealed only after the take | no microphone capability |
-| **type** | given only a cue, types the term | never |
+| **type** | given only a cue, types the term | the word is not `readyForSignOff` |
 
-A step needing a microphone or term audio is dropped from the walk when the
-drill is created (`stepsFor`/`drillSteps`) — never shown and blocked on, and
-never an error. **Tiles and dictation are never dead ends**: a miss retries
+A step needing a microphone or term audio — or, for dictation and type, a word
+ready for its sign-off — is dropped from the walk when the drill is created
+(`stepsFor`/`drillSteps(media, capabilities, {ready})`) — never shown and
+blocked on, and never an error. **Tiles and dictation are never dead ends**: a miss retries
 the same step in place — the term stays hidden through the first miss, is
 **revealed** (read-only, "It's 가위 — …", the step becomes copyable) after
 the **second** miss, and the step **advances regardless on the third try**.
@@ -267,9 +278,15 @@ read-aloud and say-from-cue (spec §3 1.2 / 1.3 / 3.4) are never graded and
 never a gate: Skip/Next is available from the moment the item is on
 screen, and whatever button is pressed the response is always
 `{done:true}` — a take is never required, only offered. Skip is a touch
-(its only key is the hunted-for `\`); **Space never skips** — it records,
-stops, then goes Next (see Keys below), and falls through to Skip only when
-the mic is unavailable (`useTakeRecorder`'s `unavailable`).
+(its only key is the hunted-for `\`, and only a button that reads Skip has
+it); **Space never skips** — it records, stops, then goes Next (see Keys
+below). With the mic unavailable (`useTakeRecorder`'s `unavailable`) there is
+nothing to skip: the forward button reads **Next**, Space presses it, and it
+is logged as `item.answered` with `micOff: true` — never `item.skipped`.
+**Tab = hear it** on every say item with audio: the model word (say-after's
+term, or the clip a take revealed on read-aloud / say-from-cue), else the
+cue's clip; a secondary **Hear it** button (hint Tab) shows whenever there is
+a model. Never while the mic is open or a take is saving.
 
 A **kept** take (one that passes the shared speech floor —
 `shared/speechFloor.js`, not too quiet, not too short) is uploaded via
@@ -529,7 +546,10 @@ say, write, listen, drill, quiz) — a mode whose default run (with help,
 every introduced word) would come up empty is not offered at all. **Say** is
 the exception: it is offered when EITHER variant has a run (Without help
 needs no term audio), and the menu item's `sayHelp` (`[true,false]` subset)
-lists the variants the With/Without help chooser offers. Only
+lists the variants the With/Without help chooser offers. **Write** lists
+its variants the same way (`writeHelp`): Without help types from memory, so
+its run holds only words `readyForSignOff`, and until one exists the chooser
+shows it **locked** ("Unlocks when a word is ready", no key). Only
 **Quiz me** grades (rule 1); every other mode is study and never changes a
 word's state except a sort (down freely, up only to Got it, same as the
 round stream).
@@ -539,10 +559,10 @@ round stream).
 | Flashcards | front side ("Word first" / "Meaning first") | term-first | meaning-first |
 | Match | starts directly | 4–6 pair picture/text boards over the practice word set; finishing a board sets `matched` on its words | — |
 | Say | With help / Without help | **1.2 say-after** — hears the term, says it after (dropped from the run if no microphone or the word has no term audio) | **3.4 say-from-cue** — cue only; there's no model to say after, so the native comparison at the end is simply skipped |
-| Write | With help (offered first) / Without help | **1.1 copy-type** — the term is on screen, type it | **3.3 type-from-cue** — free practice, never graded and never a sign-off; cue only, no reference to copy; a **Show me** button submits an empty answer and reveals the word (the drill's type step has it too). Typing from memory is never the first suggestion: With help is option 1 |
+| Write | With help (offered first) / Without help | **1.1 copy-type** — the term is on screen, type it | **3.3 type-from-cue** — only over words `readyForSignOff` (locked until one is); free practice, never graded and never a sign-off; cue only, no reference to copy; a **Show me** button submits an empty answer and reveals the word (the drill's type step has it too). Typing from memory is never the first suggestion: With help is option 1 |
 | Listen | starts directly | one run through every practice word that has term audio (`items/ListenItem.jsx`) | — |
 | Drill | word picker first (**My words**, multi-select, "Drill these") | the same drill walk as the tricky-word drill (look → … → type), over the chosen words | — |
-| Quiz me | starts directly | graded, recognition only (3.1 then 2.2, like the round quiz) — see below | — |
+| Quiz me | starts directly | graded, recognition only (3.1 then 2.2, like the round quiz), then a Match of the words it passed (see Match (guided)) — see below | — |
 
 **Quiz me eligibility** is the same rule as a round's verify (rule 3):
 `familiar` or `claimed` state, or `notYetCarry === true` — never `new`,
@@ -606,7 +626,7 @@ at `/api/v1/school/word-ladder` (live) and `/api/v1/school/word-ladder/test`
 
 - `GET /word-ladder/intro?userId=&deckId=` → the start card, **read-only** (opens no day, writes nothing):
   `{deckId, package, day, test, course: {id, title}, unit: {id, title}, poster, today: {newCount, reviewCount,
-  estimatedMinutes, doneToday, label, line}, progress: {learned, total}}`. `poster` is the self-service URL
+  estimatedMinutes, doneToday, label, line}, progress: {learned, recognised, total}}`. `poster` is the self-service URL
   above. Test mode (`/test/intro?…&scenario=`) reads a **peeked** shadow — the same seeded snapshot Start's
   open would take, built and thrown away, never kept (`ShadowWordLadderStores.peek`)
 - `POST /word-ladder/open {userId, deckId, capabilities?: {microphone}}` → `{sittingId, day, package, title, language, gloss, item, progress}`
@@ -723,16 +743,21 @@ The sitting does not open on mount (spec §6). The program first shows the
 - the **unit** = the deck's `title` ("Week 1: Classroom");
 - **today**: "4 new words · 3 to review · about 10 minutes", or "Done for
   today — practice anytime";
-- **words learned** in this deck: a bar, "0 of 19 words learned" (mastered —
-  a claim the quiz verified, or a passed recheck; excluded words leave both
-  sides of the count);
+- **the deck's two rungs**: a two-segment bar (mastered solid, recognised
+  lighter) and "3 recognised · 1 mastered of 19" — mastered is the typed
+  sign-off, which takes weeks, so a mastered-only count would read 0 long
+  after the child knows words; recognised is verified but not yet signed off
+  (`deckProgress`; excluded words leave every side of the count);
 - **Start** (Space/Enter). That tap is the page's user gesture, so the clips
   after it may autoplay; only then is `POST …/open` sent.
 
 Today's counts are an estimate from `introPreview` (domain `intro.mjs`): due
 rechecks + unsettled words from earlier days are "to review", the new-word
-allowance (capped by the pool) is "new", and the minutes use the planner's own
-`ESTIMATE_MS`, clipped to the time left under the cap. If the intro cannot be
+allowance (capped by the pool) is "new" — but never fewer than 2, since the
+planner makes no round of a lone new word — and the minutes use the planner's
+own `ESTIMATE_MS` (a recheck is estimated typed only for a word
+`readyForSignOff`, as `recheckTask` serves it), clipped to the time left under
+the cap. If the intro cannot be
 read the card falls back to `descriptor.title` (else "Words") and Start still
 works. The test banner shows on the start card too.
 
@@ -740,7 +765,9 @@ works. The test banner shows on the start card too.
 (today only — a replayed past day gets none) returns `context: {course: {id:
 'program:word-ladder:<package>', title}, unit: {id: deckId, title}, lesson:
 {id, title: '4 new words · 3 to review'}}`, `description: 'About 10 minutes'`
-and `progress: [{scope: 'unit', label: 'Words learned', completed, total}]`;
+and `progress: [{scope: 'unit', label: '3 recognised · 1 mastered', completed:
+mastered, inProgress: recognised, total}]` — the launch card's progress row
+draws `inProgress` as the second (underway) segment;
 `FlashcardProgramLauncher` passes them through and `projectProgramEntry` turns
 them into the tile. The `program:<id>:<instance>` course id is what resolves
 the poster (the instance is the word package, as the sentence ladder's is its
@@ -752,7 +779,7 @@ corpus).
 [back] Exit   Review [tick] › LEARN › Sort › Quiz › Match › Practice   3 left
               Round 1 · New words
 [time bar]
-Meet each new word: flip it, then copy it.        ← once per step
+Meet each new word.                               ← once per step
 ```
 
 - **Exit** (house `back` icon + label, `TouchButton`) behaves exactly as Leave
@@ -762,17 +789,23 @@ Meet each new word: flip it, then copy it.        ← once per step
   lit, finished ones ticked, later ones dim. A step the day does not have is
   omitted: Review when no rechecks were due (`progress.rechecksTotal`), Learn
   when the round work has no new words (`progress.learnToday`, false for a
-  carry round), Match unless the round is in its guided match (`round.phase:
-  'match'` or a round-sourced match item) or says it has one (`round.hasMatch`).
+  carry round; before any round is planned — Review runs first — the server
+  reads it from the day's plan, `introPreview(...).newCount > 0`, so the trail
+  keeps one shape from the first recheck into the round), Match unless the
+  round is in its guided match (`round.phase: 'match'` or a round-sourced match
+  item) or says it has one (`round.hasMatch`); with no round running, rounds
+  still to come show Match and a day past its rounds shows it only if one was
+  held (`progress.matchToday`).
   **Drill** is slotted in, lit, only while a tricky drill runs. **Practice**
   is dim with "after today's words" until the goal is met
   (`progress.doneToday`), and lit while practising (a practice run or the
   menu). Everything is derived from `#progress()` — `phase`, `round`,
-  `rechecksLeft/Total`, `roundsDone`, `learnToday`, `doneToday` — plus the
+  `rechecksLeft/Total`, `roundsDone`, `learnToday`, `matchToday`, `doneToday` — plus the
   item's `type`/`source` for practice and match; never from item types alone.
   Mapping: rechecks → Review; intro flashcard/copy → Learn; stream sort →
-  Sort; quiz (2.2 / 3.3) and the drill offer after it → Quiz; guided match →
-  Match; drill steps → Drill; practice → Practice. On a narrow stage (a
+  Sort; quiz (2.2 / 3.1) → Quiz; guided match → Match; the drill offer
+  (after the quiz and the Match) lights no step and reads every round step
+  done, so the trail never steps backwards; drill steps → Drill; practice → Practice. On a narrow stage (a
   container query under 900px) the trail collapses to the current step.
 - **Sub-line**: "Round N · New words / Sort / Quiz / Match / Tricky word", or
   "Checking N words", "Practising a tricky word", "Practice · a of b", "Done
@@ -782,7 +815,7 @@ Meet each new word: flip it, then copy it.        ← once per step
   header (so nothing below moves), gone on the first input (any key or tap,
   or a response) or after 6 s, fading by opacity/transform only:
   Review "Words from before — show what you remember." · Learn "Meet each new
-  word: flip it, then copy it." · Sort "Flip, then sort: Not yet, Familiar,
+  word." · Sort "Flip, then sort: Not yet, Familiar,
   or Got it." · Quiz "Quick check on the words you sorted." · Match "Match
   each word to its meaning." · Drill "A short workout on a tricky word." ·
   Practice "Free practice — pick anything."
@@ -811,10 +844,10 @@ button that currently owns the key.
 |-----|------|-------|
 | **Space** | The forward action — **never a skip**: Flip, Next, Continue, Done, Start, Back (error screen), toggle the word under the cursor (word picker) | every item outside a typing field |
 | **Enter** | Mirrors Space everywhere outside typing; in a typing field it **submits**, and once graded goes Next | every item |
-| Space on **Say** | Record (before a take) → Stop (while recording) → Next (after a take). No mic (none, refused, errored) → Skip/Next, never a dead end | `SayItem.jsx` |
+| Space on **Say** | Record (before a take) → Stop (while recording) → Next (after a take). No mic (none, refused, errored) → **Next** (an answer, logged `item.answered` with `micOff`), never a Skip and never a dead end | `SayItem.jsx` |
 | **←** (ArrowLeft) | Record again — only after a take, not while recording/saving, never without a mic | Say |
-| **Tab** | Hear it again — the term, the cue's gloss clip, or the result's revealed word; `preventDefault`, so focus never moves, and it works **inside a typing field** without typing or blurring | every item with audio |
-| **\** (Backslash) | Skip (Say) / Show me (typed) — the deliberately hunted-for give-up; Skip is touch-first | Say, typed practice |
+| **Tab** | Hear it again — the term (say-after's model and a take's revealed word on Say included), the cue's gloss clip, or the result's revealed word; `preventDefault`, so focus never moves, and it works **inside a typing field** without typing or blurring — a typed item with no audio still maps it, as a no-op, so focus stays put | every item with any audio (and every typed item) |
+| **\** (Backslash) | Skip (Say — only while the button reads Skip: a working mic, no take yet) / Show me (typed) — the deliberately hunted-for give-up; Skip is touch-first | Say, typed practice |
 | 1 / 2 / 3 | Not yet / Familiar / Got it | flipped flashcard |
 | U / Q | Undo / Quiz me | stream flashcards |
 | 1–4, 0 | Choices, Don't know | choice |
@@ -967,14 +1000,14 @@ an Enter that submits a field. Nothing is logged per keystroke.
 | Event | When | Key fields |
 |-------|------|------------|
 | `mounted` / `unmounted` / `started` | the program mounts / leaves; Start tapped | `userId`, `deckId`, `test`, `scenario` |
-| `intro.shown` / `intro.failed` (warn) | the start card drew its facts / fell back to the title | `hasPoster`, `newCount`, `reviewCount`, `learned`, `total`; `status` |
+| `intro.shown` / `intro.failed` (warn) | the start card drew its facts / fell back to the title | `hasPoster`, `newCount`, `reviewCount`, `learned`, `recognised`, `total`; `status` |
 | `sitting.opened` / `sitting.closed` / `session.reopened` | open, close (Leave, Done, unmount), a 404 reopen | `first`, `phase`; `reason`, `activeMs`, `remaining`, `itemId`; `from` |
 | `step.entered` / `hint.shown` | the header's current step changes / its first-time hint shows | `step`, `round` |
 | `round.started` / `round.ended` | `progress.round.index` changes | `index`, `size`; `quizzed`, `notYet` |
 | `item.shown` / `item.layout` | an item appears / its first fitted font size | `itemId`, `type`, `task`, `wordId`, `itemMode`, `layout`, `media`; `fontPx` |
-| `item.answered` | the service accepted a response | `itemId`, `type`, `task`, `response`, `correct`, `score`, `judge`, `next`, `ms`, **`input`** |
+| `item.answered` | the service accepted a response | `itemId`, `type`, `task`, `response`, `correct`, `score`, `judge`, `next`, `ms`, **`input`**; `micOff: true` on a say step moved past with no mic (the trace marks it "(no mic)") |
 | `result.shown` / `result.dismissed` | the verdict panel appears / Next past a held verdict | `itemId`, `correct`, `score`, `judge`, `held` (false = a retry on the same item); `via`, `ms` |
-| `item.skipped` | Skip on a say step with no take | `itemId`, `type`, `what: say`, `itemMode`, `via`, `ms`, `micOff` |
+| `item.skipped` | Skip on a say step with no take, past a working mic (with no mic it is an `item.answered`) | `itemId`, `type`, `what: say`, `itemMode`, `via`, `ms`, `micOff` (always false now; kept for older traces) |
 | `showme.used` | Show me on a practice typing item | `itemId`, `via`, `ms` |
 | `item.stalled` (warn) | 45 s and 120 s with no key or pointer on the current item | `itemId`, `ms`, `visibility: visible\|hidden`, `screen: item\|result` |
 | `visibility` | the tab is hidden or shown | `state` |
