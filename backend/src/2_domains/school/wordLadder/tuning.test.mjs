@@ -240,3 +240,16 @@ describe('withTunedValues', () => {
     expect(withTunedValues(DEFAULT_SETTINGS, undefined)).toEqual(DEFAULT_SETTINGS);
   });
 });
+
+describe('applyTuningProposal bounds', () => {
+  it('intersects a household bound wider than the spec with the spec bounds', () => {
+    const [specLo] = TUNING_BOUNDS['round.size'];
+    const out = applyTuningProposal({
+      current: { 'round.size': specLo }, proposal: [{ setting: 'round.size', to: specLo - 1, reason: 'x' }],
+      bounds: { 'round.size': [1, 99] }, day: '2026-09-22', lastChanged: {}, studyDays: ['2026-09-22'], dwellDays: 0,
+    });
+    expect(out.applied).toEqual([]);
+    expect(out.dropped.map(d => d.brake)).toEqual(['bounds']);
+    expect(out.next['round.size']).toBe(specLo);
+  });
+});
