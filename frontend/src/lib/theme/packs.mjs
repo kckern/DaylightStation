@@ -40,6 +40,13 @@ export const PACKS = Object.freeze({
     primaryColor: 'orange',
     accent: '#e5a00d', // AMBER[5] — was #f0a05a, drifted from the palette
   }),
+  school: Object.freeze({
+    name: 'school',
+    character: 'A child\'s study desk on a kiosk: big centred type, one calm '
+      + 'green accent for progress and primary actions, no chrome to hunt through.',
+    primaryColor: 'green',
+    accent: '#51cf66',
+  }),
 });
 
 export default PACKS;
