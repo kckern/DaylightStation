@@ -218,6 +218,13 @@ function launchTarget(action, effect) {
       // card ladder resolved, offered "Open", and then refused to mount.
       deckId: effect.deckId ?? null,
       policy: effect.policy ?? null,
+      // Language reels and the Rubik's cube mount on their own grants — the
+      // same by-name drop would refuse them from a keypad code too.
+      unitId: effect.unitId ?? null,
+      reelId: effect.reelId ?? null,
+      reelGrant: effect.reelGrant ?? null,
+      courseId: effect.courseId ?? null,
+      cubeGrant: effect.cubeGrant ?? null,
       studyGrant: effect.studyGrant ?? null,
       bookGrant: effect.bookGrant ?? null,
       learnerId: effect.learnerId ?? null,

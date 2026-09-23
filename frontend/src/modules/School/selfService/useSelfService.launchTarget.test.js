@@ -112,6 +112,23 @@ describe('useSelfService: a card-ladder (flashcards) effect keeps its deck and p
 });
 
 
+describe('useSelfService: reels and cube effects keep their grants', () => {
+  beforeEach(() => { h.act.mockReset(); h.resolve.mockReset(); log.error.mockReset(); });
+
+  it('language-reels keeps reelId, reelGrant and unitId', async () => {
+    const onLaunch = vi.fn(async () => true);
+    await drive({ effect: { kind: 'program', program: 'language-reels', programId: 'language-reels', unitId: 'reels:korean', reelId: 'r1', reelGrant: 'signed-reel', learnerId: 'kid1' }, onLaunch });
+    expect(onLaunch.mock.calls[0][0]).toMatchObject({ program: 'language-reels', unitId: 'reels:korean', reelId: 'r1', reelGrant: 'signed-reel' });
+  });
+
+  it('rubiks-cube keeps courseId and cubeGrant', async () => {
+    const onLaunch = vi.fn(async () => true);
+    await drive({ effect: { kind: 'program', program: 'rubiks-cube', programId: 'rubiks-cube', courseId: 'cube-101', cubeGrant: 'signed-cube', learnerId: 'kid1' }, onLaunch });
+    expect(onLaunch.mock.calls[0][0]).toMatchObject({ program: 'rubiks-cube', courseId: 'cube-101', cubeGrant: 'signed-cube' });
+  });
+});
+
+
 describe('reading code goes directly through the authenticated action', () => {
   beforeEach(() => { h.act.mockReset(); h.resolve.mockReset(); });
   const issuer = new HmacSchoolBookGrantIssuer({ key: 'isolated-test-key-for-reading-entry-32bytes' });
