@@ -16,6 +16,7 @@ import FitnessChart from '@/modules/Fitness/widgets/FitnessChart/index.jsx';
 import FitnessChartBackButton from './FitnessChartBackButton.jsx';
 import { resolvePostEpisodeRedirect } from './postEpisodeRedirect.js';
 import { makeCloseGuard } from './closeGuard.js';
+import { enforceGovernanceOnProgress } from './governanceProgressEnforcer.js';
 import { useCloseWatchdog } from '@/modules/Player/hooks/useCloseWatchdog.js';
 import { useMediaAmplifier } from '@/modules/Fitness/components/useMediaAmplifier.js';
 import { FitnessPlayerFrame } from './frames';
@@ -436,6 +437,13 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
   }), [isSeeking, effectiveGovernanceState?.videoLocked, resilienceState?.stalled, resilienceState?.waitingToPlay, isPaused]);
 
   const governancePaused = pauseDecision.reason === PAUSE_REASON.GATE && pauseDecision.gate === GATE_ID.GOVERNANCE && pauseDecision.paused;
+  // Live governance verdict for callbacks. Handlers handed to <Player> can
+  // outlive the render that created them; they must read this ref, never the
+  // captured `governancePaused` (2026-09-22: a dead closure kept pausing).
+  const governancePausedRef = useRef(governancePaused);
+  governancePausedRef.current = governancePaused;
+  const governanceVideoLockedRef = useRef(Boolean(effectiveGovernanceState?.videoLocked));
+  governanceVideoLockedRef.current = Boolean(effectiveGovernanceState?.videoLocked);
 
   // Drive the governance stall-pause off the live resilience state. GovernanceEngine
   // subscribes to playback:stalled/playback:recovered to pause its penalty timers
@@ -1660,6 +1668,18 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
     }
   }, []);
 
+  const governanceEnforcerDeps = useMemo(() => ({
+    isGovernanceLocked: () => governancePausedRef.current,
+    pausePlayback,
+    setVideoPlayerPaused,
+    onEnforced: () => {
+      logger.sampled('fitness.governance.pause-enforced', {
+        videoLocked: governanceVideoLockedRef.current,
+        governancePaused: governancePausedRef.current,
+      }, { maxPerMinute: 10, aggregate: true });
+    },
+  }), [pausePlayback, setVideoPlayerPaused, logger]);
+
   const handlePlayerProgress = useCallback(({ currentTime: ct, duration: d, paused }) => {
     // Throttle currentTime updates to ~4Hz
     const now = performance.now();
@@ -1677,12 +1697,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
           setDuration(d);
         }
         setIsPaused(paused);
-        if (governancePaused && !paused && pausePlayback) {
-          pausePlayback();
-        }
-        if (setVideoPlayerPaused) {
-          setVideoPlayerPaused(paused || governancePaused);
-        }
+        enforceGovernanceOnProgress({ paused }, governanceEnforcerDeps);
         return;
       } else {
         seekIntentRef.current = null; // Timeout
@@ -1703,16 +1718,10 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
     // isPaused reflects actual video state - governance is handled separately via pauseDecision
     setIsPaused(paused);
 
-    // Immediately pause if governed and locked
-    if (governancePaused && !paused && pausePlayback) {
-      pausePlayback();
-    }
-
-    // Update context so music player can sync (includes governance state)
-    if (setVideoPlayerPaused) {
-      setVideoPlayerPaused(paused || governancePaused);
-    }
-  }, [setVideoPlayerPaused, governancePaused, pausePlayback]);
+    // Pause only if governance is locked NOW (live ref), and keep the context's
+    // paused flag in sync for the music player / governance freeze.
+    enforceGovernanceOnProgress({ paused }, governanceEnforcerDeps);
+  }, [governanceEnforcerDeps]);
 
   useEffect(() => {
     if (!currentItem) return;
