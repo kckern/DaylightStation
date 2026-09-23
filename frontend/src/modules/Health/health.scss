@@ -519,6 +519,9 @@ $health-aside-gap: 1.5rem;
   .health-row-line--draggable:hover .health-row-name { cursor: pointer; }
 }
 .health-row-line--dragging { opacity: 0.35; }
+.health-meal__header--draggable { touch-action: manipulation; user-select: none; }
+@media (hover: hover) { .health-meal__header--draggable:hover { cursor: grab; } }
+.health-meal__header--dragging { opacity: 0.5; }
 .health-meal { border-radius: 8px; transition: background-color var(--ds-motion-reveal) var(--ds-motion-easing), box-shadow var(--ds-motion-reveal) var(--ds-motion-easing); }
 .health-meal--drop-candidate { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ds-border) 60%, transparent); }
 .health-meal--drop-over { background: color-mix(in srgb, var(--ds-accent) 9%, transparent); box-shadow: inset 0 0 0 1px var(--ds-accent); }
