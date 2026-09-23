@@ -13,8 +13,10 @@
  * calls find the right files without the client naming a deck.
  *
  * The tuning values in force for a day are the day file's at-open snapshot
- * (`atOpen.settings`); current settings are only the fallback for a day that
- * has none.
+ * (`atOpen.settings`); current settings — the School config's resolved
+ * settings with the learner's `tuning.yml` values laid over them (spec §7) —
+ * are only the fallback for a day that has none, so a tuning change lands at
+ * the next day's first open, never mid-day. This service only READS tuning.
  *
  * Speaking is never graded (spec §3): a take is kept for grown-ups through the
  * recordings sink (a discarding one in test mode) and never touches status.
@@ -25,7 +27,7 @@ import { offsetMinutesFor, studyDayForInstant } from '#domains/school/studyDay.m
 import { addDays } from '#domains/school/termVerdict.mjs';
 import {
   addActiveTime, cueFor, currentItem, deckDirOf, emptyWordV3, excludeWordFromDay, foldPaperAttempts, markMastered, normalizeAnswer, openDay,
-  quizDocumentIdFor, respond, startPractice, typedAnswers, wordAssetIds, wordTransitions,
+  quizDocumentIdFor, respond, startPractice, typedAnswers, withTunedValues, wordAssetIds, wordTransitions,
 } from '#domains/school/wordLadder/index.mjs';
 
 const FOLD_LOOKBACK_DAYS = 60;
@@ -79,8 +81,17 @@ export class WordLadderSittingService {
 
   #today(ms = this.#now()) { return studyDayForInstant(ms, { timezone: this.#timezone }); }
 
+  /** Current settings for a learner's package: config settings + their tuned values. */
+  #currentSettings(store, userId, pkg) {
+    let values = null;
+    try { values = store.readTuning?.(userId, pkg)?.values ?? null; } catch (error) {
+      this.#logger.warn?.('school.word-ladder.tuning-unreadable', { learnerId: userId, package: pkg, error: error.message });
+    }
+    return withTunedValues(this.#settings(), values);
+  }
+
   /** The tuning values in force for a day: its at-open snapshot, else current settings. */
-  #daySettings(dayFile) { return dayFile?.atOpen?.settings ?? this.#settings(); }
+  #daySettings(dayFile, { store, userId, pkg }) { return dayFile?.atOpen?.settings ?? this.#currentSettings(store, userId, pkg); }
 
   async #enrollments(userId) {
     const assignment = await this.#assignments.get(userId);
@@ -249,7 +260,7 @@ export class WordLadderSittingService {
     if (deckPkg !== pkg) throw new EntityNotFoundError('word-ladder sitting', sittingId);
     const status = store.readStatus(userId, pkg);
     const media = this.#media(deck, lexicon);
-    const settings = this.#daySettings(dayFile);
+    const settings = this.#daySettings(dayFile, { store, userId, pkg });
     const ctx = { status, dayFile, day, lexicon, media, pool: await this.#pool(status, deck), settings, learnerId: userId };
     return { store, pkg, lexicon, media, settings, ctx, day, sitting };
   }
@@ -387,7 +398,7 @@ export class WordLadderSittingService {
     let foldTransitions = [];
     let changes = { reopened: false, idleClosed: [] };
     const next = store.transact(userId, pkg, day, ({ status, dayFile }) => {
-      const settings = this.#daySettings(dayFile);
+      const settings = this.#daySettings(dayFile, { store, userId, pkg });
       const afterFold = this.#fold(status, read, quizDocumentIds, day, settings, { learnerId: userId, deckDir: deckDirOf(deck.id), pkg });
       folded = afterFold.folded;
       foldTransitions = afterFold.transitions;
@@ -397,7 +408,7 @@ export class WordLadderSittingService {
       return opened;
     });
     this.#logHousekeeping(userId, sittingId, next.dayFile, changes);
-    const settings = this.#daySettings(next.dayFile);
+    const settings = this.#daySettings(next.dayFile, { store, userId, pkg });
     const ctx = { status: next.status, dayFile: next.dayFile, day, lexicon, media, pool, settings, learnerId: userId };
     const item = currentItem(ctx);
     const progress = this.#progress(next.dayFile, settings);
@@ -622,7 +633,7 @@ export class WordLadderSittingService {
       let folded = [];
       let transitions = [];
       store.transact(learnerId, pkg, today, ({ status, dayFile }) => {
-        const out = this.#fold(status, read, quizDocumentIds, today, this.#daySettings(dayFile), { learnerId, deckDir, pkg });
+        const out = this.#fold(status, read, quizDocumentIds, today, this.#daySettings(dayFile, { store, userId: learnerId, pkg }), { learnerId, deckDir, pkg });
         folded = out.folded;
         transitions = out.transitions;
         return { status: out.status, dayFile };
