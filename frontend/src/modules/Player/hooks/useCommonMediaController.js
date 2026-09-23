@@ -1058,6 +1058,15 @@ export function useCommonMediaController({
       onEnd();
     };
 
+    // Listeners that onLoadedMetadata attaches must die with THIS effect run.
+    // A stale playbackRate listener resets a newer rate; a pending DASH
+    // start-seek pair from an earlier run can seek a later load. Named here so
+    // the cleanup below can remove them by reference.
+    const applyPlaybackRate = () => {
+      mediaEl.playbackRate = playbackRate;
+    };
+    const pendingStartSeekTeardowns = [];
+
     const onLoadedMetadata = () => {
       const duration = mediaEl.duration || 0;
       const snapshot = recoverySnapshotRef.current;
@@ -1188,6 +1197,10 @@ export function useCommonMediaController({
           };
           mediaEl.addEventListener('loadedmetadata', onLoaded);
           mediaEl.addEventListener('timeupdate', onTimeUpdate);
+          pendingStartSeekTeardowns.push(() => {
+            mediaEl.removeEventListener('loadedmetadata', onLoaded);
+            mediaEl.removeEventListener('timeupdate', onTimeUpdate);
+          });
           // If metadata already loaded (e.g. hardReset reload), seek immediately
           if (mediaEl.readyState >= 1) applySeek('immediate');
         }
@@ -1232,12 +1245,8 @@ export function useCommonMediaController({
       
       if (isVideo) {
         mediaEl.controls = false;
-        mediaEl.addEventListener('play', () => {
-          mediaEl.playbackRate = playbackRate;
-        }, { once: false });
-        mediaEl.addEventListener('seeked', () => {
-          mediaEl.playbackRate = playbackRate;
-        }, { once: false });
+        mediaEl.addEventListener('play', applyPlaybackRate);
+        mediaEl.addEventListener('seeked', applyPlaybackRate);
       } else {
         mediaEl.playbackRate = playbackRate;
       }
@@ -1466,6 +1475,10 @@ export function useCommonMediaController({
       mediaEl.removeEventListener('seeking', handleSeeking);
       mediaEl.removeEventListener('seeked', onSeeked);
       mediaEl.removeEventListener('playing', onPlayingClearsSeek);
+      mediaEl.removeEventListener('play', applyPlaybackRate);
+      mediaEl.removeEventListener('seeked', applyPlaybackRate);
+      // removeEventListener is a no-op when applySeek already detached them.
+      pendingStartSeekTeardowns.forEach((teardown) => teardown());
     };
     // 9-dependency media-listener effect in a file with hard-won "generation churn / storm"
     // caution comments elsewhere — already reviewed this session as too risky for a lint pass.
