@@ -316,7 +316,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
   // lock — it is cleared when the next item starts (see effect below), so one
   // unlock cannot silently disable governance for the rest of the session.
   const [bypassActive, setBypassActive] = useState(false);
-  const { registerUnlock, unlockState, unlockedUser, clearUnlock } = useIdentity();
+  const { registerUnlock, unlockState, unlockedUser, clearUnlock, phase: emergencyPhase } = useIdentity();
   const [unlockPromptOpen, setUnlockPromptOpen] = useState(false);
 
   // GovernanceEngine is the sole authority for lock decisions (SSoT). Governance
@@ -453,6 +453,10 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
       governanceStatus: effectiveGovernanceState?.status ?? null,
       videoLocked: Boolean(effectiveGovernanceState?.videoLocked),
     }),
+    // Other owners of videoPlayerPaused: on unmount the enforcer must not clear
+    // a pause the voice memo overlay or EmergencyPlaybackController still holds.
+    isPauseHeldElsewhere: () => Boolean(voiceMemoOverlayState?.open)
+      || Boolean(emergencyPhase && emergencyPhase !== 'normal'),
   });
 
   // Drive the governance stall-pause off the live resilience state. GovernanceEngine

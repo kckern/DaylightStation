@@ -40,12 +40,22 @@ export function enforceGovernanceOnProgress(progress, deps) {
  * FitnessPlayer, so a leaked listener on a dead element must not be able to
  * set videoPlayerPaused and freeze governance. `isLocked` reads false.
  *
+ * On unmount, if the value this hook last wrote to setVideoPlayerPaused was
+ * true, it writes false once, so FitnessContext's governance freeze and the
+ * music player do not stay paused until the next mount. Other owners also
+ * write that flag (voice memo overlay, EmergencyPlaybackController, module
+ * pause requests); `isPauseHeldElsewhere` lets the caller veto the clear while
+ * one of them holds a pause. The enforcer overwrites the flag on every tick
+ * while mounted, so "last value the enforcer wrote" plus that veto is the
+ * owner information available here.
+ *
  * @param {object} args
  * @param {boolean} args.governancePaused  this render's governance verdict
  * @param {() => void} [args.pausePlayback]
  * @param {(paused: boolean) => void} [args.setVideoPlayerPaused]
  * @param {object} [args.logger]  structured logger with .sampled()
  * @param {() => object} [args.getContext]  governance snapshot for telemetry, read at log time
+ * @param {() => boolean} [args.isPauseHeldElsewhere]  true while another owner holds a pause, read at unmount
  * @returns {{ enforce: (progress: {paused: boolean, currentTime?: number}, branch: string) => void, isLocked: () => boolean }}
  */
 export function useGovernanceProgressEnforcer({
@@ -54,12 +64,19 @@ export function useGovernanceProgressEnforcer({
   setVideoPlayerPaused,
   logger,
   getContext,
+  isPauseHeldElsewhere,
 }) {
   const lockedRef = useRef(Boolean(governancePaused));
   lockedRef.current = Boolean(governancePaused);
   const getContextRef = useRef(getContext);
   getContextRef.current = getContext;
+  const isPauseHeldElsewhereRef = useRef(isPauseHeldElsewhere);
+  isPauseHeldElsewhereRef.current = isPauseHeldElsewhere;
+  const setVideoPlayerPausedRef = useRef(setVideoPlayerPaused);
+  setVideoPlayerPausedRef.current = setVideoPlayerPaused;
   const mountedRef = useRef(true);
+  // Value this hook last passed to setVideoPlayerPaused (null = never wrote).
+  const lastWrittenRef = useRef(null);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -67,6 +84,12 @@ export function useGovernanceProgressEnforcer({
     // unmount/remount would otherwise leave the verdict false until next render.
     return () => {
       mountedRef.current = false;
+      if (lastWrittenRef.current !== true) return;
+      lastWrittenRef.current = null;
+      let heldElsewhere = false;
+      try { heldElsewhere = Boolean(isPauseHeldElsewhereRef.current?.()); } catch { heldElsewhere = false; }
+      if (heldElsewhere) return;
+      setVideoPlayerPausedRef.current?.(false);
     };
   }, []);
 
@@ -77,7 +100,9 @@ export function useGovernanceProgressEnforcer({
     enforceGovernanceOnProgress(progress, {
       isGovernanceLocked: isLocked,
       pausePlayback,
-      setVideoPlayerPaused,
+      setVideoPlayerPaused: setVideoPlayerPaused
+        ? (value) => { lastWrittenRef.current = value; setVideoPlayerPaused(value); }
+        : undefined,
       onEnforced: () => {
         let snapshot = null;
         try { snapshot = getContextRef.current?.() || null; } catch { snapshot = null; }
