@@ -130,6 +130,8 @@ A stage-0 word's "recheck" the next study day is exactly the recheck above
 
 ## 2. Grading
 
+> **Ruling 2026-09-23 (owner): English-side cues show text + picture + audio together; the prompt is never the test.** (Supersedes the one-random-cue design in §3's cue column; see `docs/reference/school/word-ladder.md`.)
+
 ### The verify quiz (round end)
 
 Per word, two graded tasks, **hardest first**, stopping at the first miss:
