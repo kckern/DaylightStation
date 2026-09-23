@@ -57,8 +57,10 @@ must be reviewed in Health instead of truncated Telegram choice buttons.
   checked **at commit time**, including delayed/restarted work. Legacy repairs
   retain the today/yesterday guard in the user's timezone and require explicit
   `settled: false`. Absent settlement metadata means legacy settled history and is
-  not reopened. Unsupported artwork is dropped independently of nutrient repairs;
-  compatible patches to one entry are merged, but conflicting values are rejected.
+  not reopened. Unsupported artwork is removed from the repair independently of
+  nutrient repairs, and the food is handed to the [artwork queue](#artwork-remediation-queue)
+  instead of being forgotten; compatible patches to one entry are merged, but
+  conflicting values are rejected.
 - Names, food identification, meal/date categorization, available artwork and flat
   groups are eligible. New headers have zero additive nutrition; children retain
   their existing quantities/nutrition. Groups cannot cross captures/days/meals.
@@ -129,6 +131,88 @@ question remains actionable in Health. Known message edits are retried.
 This dispatcher assumes **one backend writer**. Do not start another household
 backend or horizontally scale the YAML writer. SQLite workflow storage is not a
 distributed lock around nutrition YAML.
+
+## Artwork remediation queue
+
+Rule: a food whose icon or photo cannot be shown is never abandoned. It becomes a
+queue item and is worked until it is fixed. No new art is generated.
+
+**Intake.** Three sources, deduplicated by key (`food:{foodId}`, else
+`name:{normalized name}` for icon problems; `photo:{photoRef}` for photos; a bare
+`icon:{slug}` when the browser reports a slug with no row):
+
+- the browser: `artworkLog.reportArtworkFailure` (FoodIcon load/decode failure, a
+  row photo that will not load) posts once per key per page session;
+- a sweep of the last 7 days, hourly: rows with no working photo and an icon that is
+  missing, `default`, or not served by the manifest (a person's own icon choice —
+  `manualFields: icon`, including an Undo of an artwork repair — is left alone);
+- the auditor, when it proposes art the manifest does not serve.
+
+A new report on an open item adds its rows without resetting the wait; a report on a
+resolved item reopens it, due now.
+
+**Item shape** (`2_domains/nutrition/services/artworkQueue.mjs`):
+`{ key, kind: icon-missing | icon-failed | photo-failed, foodId, rowIds, earliestDate,
+name, icon, photoRef, attempts, nextAttemptAt, lastError, createdAt, updatedAt,
+resolvedAt, resolution }`. Stored per user in
+`users/{user}/lifelog/nutrition/artwork-queue.yml`.
+
+**Resolution ladder** (`3_applications/nutrition/ArtworkRemediation.mjs`), stopping at
+the first slug that the manifest serves and whose file resolves:
+
+1. the catalog entry's pin (`iconOverride`), then its learned `icon`;
+2. the manifest's reviewed `foodNames` map;
+3. `guessIconForName` — the longest run of the name's words that is a slug;
+4. an AI pick of the NEAREST slug, confined to the manifest vocabulary (the UPC
+   use case's `#selectIconFromList` prompt shape, same AI gateway).
+
+Exception: names in `EXACT_ONLY_NAMES`, and names the reviewed map sets to `null`
+("no suitable art"), never get a near neighbour and never reach the AI. They take
+their exact slug, else the barcode product photo when a row or the catalog entry has
+one, else the item stays open (listed in Settings) and keeps retrying.
+
+A `photo-failed` item whose row came from a barcode re-fetches the product image
+through the UPC gateway and stores it as a new `photoRef` (row and catalog entry).
+Without a barcode image, the row gets an icon by the ladder and the dead `photoRef`
+is cleared. A bare-slug report is checked against the manifest and, when the file is
+gone, fanned out into one item per food that uses the slug (last 30 days).
+
+**Applying.** Row fixes go through `NutritionRepairService.apply` in mode `artwork`,
+actor `artwork-remediation`, with a reason and evidence: icon and `photoRef` only,
+any date, never over `manualFields: icon`, never on a group header
+(`validateArtworkRepair`). They are journaled in `cleanup-audit.yml`, listed in
+Repair history, and Undo restores them (Undo covers `photoRef`). The chosen icon is
+also written onto the catalog entry when it has none; a pin is never touched.
+
+**Retry.** A failed attempt increments `attempts`, records `lastError`, and waits
+1 minute doubling to a 24-hour ceiling. There is no attempt cap. Rows reported while
+an attempt runs keep the item open.
+
+**Schedule.** From `5_composition/modules/nutritionCleanup.mjs`, behind the same
+`scheduled` gate and head-of-household owner as the cleanup tick, with its own
+non-overlapping guard: `tick` every 2 minutes (up to 20 due items), and a 7-day
+`sweep` + `tick` every hour and at startup. Each pass reads the ledger once from the
+oldest day its items need, and the catalog once.
+
+**One-time full-history sweep.** `node cli/health-artwork-sweep.cli.mjs --user ID`
+is a dry run: it prints broken rows, foods, and what the deterministic ladder would
+pick per food (`ai` = only the AI step is left; `stays-open` = exact-only with no
+art). `--apply` enqueues the findings for the server's tick to work; run it only
+where that server reads the same tree.
+
+**Logs.** `artwork.queue.enqueued` (info), `artwork.queue.resolved` (info, with `via`),
+`artwork.queue.retry` (warn, with `attempts`, `nextAttemptAt`, `error`),
+`artwork.queue.sweep` (info). Browser side: `artwork.{icon,photo}-failed` and
+`artwork.queue.report-failed`.
+
+| Method/path (under `/api/v1/health`) | Contract |
+|---|---|
+| `POST /nutrition/artwork-failures` | `{kind: icon-missing\|icon-failed\|photo-failed, key, uuid?, name?, icon?}` → 202 `{queued, key, attempts}`; 400 on a bad kind/key |
+| `GET /nutrition/artwork-queue` | `{open: [...], recentlyResolved: [...]}` |
+
+Both answer 503 when the queue is not composed. Health → Settings shows the
+**Artwork queue** card: open items (food, problem, attempts, next attempt, last error)
+and the most recent fixes.
 
 ## HTTP boundary
 

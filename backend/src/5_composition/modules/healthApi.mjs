@@ -222,6 +222,7 @@ export function createHealthApiRouter(config) {
 
   return createHealthRouter({
     cleanupProvider: config.cleanupProvider,
+    artworkProvider: config.artworkProvider,
     receiptPublisherProvider: config.receiptPublisherProvider,
     healthService: healthServices.healthService,
     healthOperations,

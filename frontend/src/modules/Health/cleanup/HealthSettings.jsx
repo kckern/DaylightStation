@@ -6,10 +6,11 @@ import { DaylightAPI } from '../../../lib/api.mjs';
 import { refreshHealthResources } from '../healthResources.js';
 import { cleanupPath, useCleanup, CleanupQuestions, RepairPreview } from './CleanupQuestions.jsx';
 import HealthDisplaySettings from '../display/HealthDisplaySettings.jsx';
+import { ArtworkQueue } from './ArtworkQueue.jsx';
 
 const keyOf = row => row.uuid || row.id;
 function Changes({ record }) {
-  const fields = ['name', 'label', 'kind', 'parentId', 'icon', 'foodId', 'date', 'mealTime', 'amount', 'unit', 'grams', 'calories', 'protein', 'carbs', 'fat', 'fiber', 'sugar', 'sodium', 'cholesterol'];
+  const fields = ['name', 'label', 'kind', 'parentId', 'icon', 'photoRef', 'foodId', 'date', 'mealTime', 'amount', 'unit', 'grams', 'calories', 'protein', 'carbs', 'fat', 'fiber', 'sugar', 'sodium', 'cholesterol'];
   const rows = [];
   for (const after of record.after || []) {
     const before = record.before?.find(row => keyOf(row) === keyOf(after));
@@ -52,6 +53,7 @@ export function CleanupSettings() {
       </Stack>
     </SectionCard>
     <CleanupQuestions />
+    <ArtworkQueue />
     <SectionCard title="Cleanup runs"><Stack gap="sm">
       <Text size="sm">{resource.data.runs[0]?.summary || 'No completed cleanup summary yet.'}</Text>
       <details><summary>Run history ({resource.data.runs.length})</summary>
