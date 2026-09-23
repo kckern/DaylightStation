@@ -320,6 +320,6 @@ describe('TeacherConsole workspace', () => {
     const strip = await screen.findByRole('navigation', { name: 'User_4 workspace' });
     const tabs = within(strip).getAllByRole('button');
     expect(tabs[0]).toHaveTextContent('Day');
-    expect(tabs.map((tab) => tab.textContent)).toEqual(['Day', 'Courses', 'History', 'Reading', 'Reports', 'Operations']);
+    expect(tabs.map((tab) => tab.textContent)).toEqual(['Day', 'Courses', 'History', 'Reading', 'Words', 'Reports', 'Operations']);
   });
 });

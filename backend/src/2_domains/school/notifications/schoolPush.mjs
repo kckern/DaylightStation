@@ -7,8 +7,9 @@
  * should hear nothing. The room siren is decided elsewhere (the HA script
  * branches on `result`), so a null here never silences the room.
  */
-import { formatStudyDay, pushData } from '#domains/notification/push/pushText.mjs';
+import { findPushTextDefects, formatStudyDay, pushData } from '#domains/notification/push/pushText.mjs';
 import { rowList } from '../documents/scanNotices.mjs';
+import { humanizeSettingIds } from '../wordLadder/settingLabels.mjs';
 
 const LANES = {
   progress: { channel: 'School progress', importance: 'low' },
@@ -30,6 +31,9 @@ const REVIEW_REASON = {
   ambiguous: 'two answers filled in',
   free_response: 'written answers to grade',
 };
+
+// A dotted setting name (`session.capMinutes`) left after humanizing.
+const DOTTED_ID = /\b[a-z]+\.[a-z][A-Za-z]*\b/;
 
 const isCount = (value) => Number.isInteger(value) && value >= 0;
 const scoreText = (earned, total) => (isCount(earned) && isCount(total) && total > 0
@@ -115,6 +119,23 @@ export function composeSchoolPush(event = {}) {
         title: event.child ? `🎹 ${event.child} — ${lesson}` : `🎹 ${lesson}`,
         message: ['Piano lesson done', where].filter(Boolean).join(' · '),
         data: metadata(event, 'progress', `piano-${event.studyDay ?? 'today'}`),
+      };
+    }
+    case 'word-ladder': {
+      // The tuning agent read the day as a concern (word-ladder spec §7). Its
+      // notes are model text: tunable setting ids become plain words, and a
+      // note is shown only if it then reads cleanly (no ids, dotted setting
+      // names, slugs or enums), else the generic line. The tag is per learner per
+      // package, so the next day's concern replaces this card.
+      const note = (Array.isArray(event.notes) ? event.notes : [])
+        .map((text) => (typeof text === 'string' ? humanizeSettingIds(text).trim().replace(/[.\s]+$/, '') : ''))
+        .find((text) => text && text.length <= 120 && !DOTTED_ID.test(text) && findPushTextDefects(text).length === 0);
+      const day = formatStudyDay(event.day);
+      const subject = event.deck ?? 'Word practice';
+      return {
+        title: event.child ? `🔤 ${event.child} — ${subject}` : `🔤 ${subject}`,
+        message: [note ?? "Word practice needs a grown-up's look", day].filter(Boolean).join(' · '),
+        data: metadata(event, 'needsYou', `word-ladder-${event.package ?? 'words'}`),
       };
     }
     default:

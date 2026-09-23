@@ -21,11 +21,13 @@ import { YamlLearningContentRepository } from '#adapters/school/catalog/YamlLear
 import { YamlLexiconRepository } from '#adapters/school/catalog/YamlLexiconRepository.mjs';
 import { LexiconDeckLoader } from '#adapters/school/catalog/LexiconDeckLoader.mjs';
 import {
-  STATUS_SCHEMA_V3, buildLearnerQuizSource, buildWordQuizSource, emptyStatusV3, hashString, isoWeekOf, migrateStatusV2,
+  STATUS_SCHEMA_V3, buildLearnerQuizSource, buildWordQuizSource, emptyStatusV3, formatTrace, hashString, isoWeekOf, migrateStatusV2,
 } from '#domains/school/wordLadder/index.mjs';
 
 const ENTRYPOINT = fileURLToPath(import.meta.url);
 const DEFAULT_BASE_URL = process.env.SCHOOL_BASE_URL || 'http://localhost:3111/api/v1/school';
+const DEFAULT_LOGSTORE = process.env.DAYLIGHT_LOGSTORE || 'http://localhost:9428';
+const LOG_QUERY_LIMIT = 5000;
 const HELP = `school word-ladder — word-ladder operations (any word package)
 
 Usage:
@@ -36,6 +38,8 @@ Usage:
                               [--data-dir P] [--media-dir P] [--source-root P]
   school.mjs word-ladder enroll-plan --learner <id> --deck <deckId|slug> --out <file>
                               [--title TEXT] [--base-url URL] [--data-dir P] [--media-dir P]
+  school.mjs word-ladder trace --learner <id> [--day YYYY-MM-DD | --sitting ID]
+                              [--mode live|test|all] [--data-dir P]
 
 A full deck id (containing '/') is used as-is. A bare slug resolves only when
 exactly one flashcard deck id ends with /<slug>; otherwise the matches are listed.
@@ -51,6 +55,15 @@ enroll-plan reads GET <base-url>/lifecycle/assignments/<learner> and writes a
 plan for 'school ops assign' with the word-ladder program appended (or
 replacing that learner's existing word-ladder program). The tile title
 defaults to the lexicon's program.title.
+trace reads $DAYLIGHT_LOGSTORE (default ${DEFAULT_LOGSTORE}) for that
+learner's school.word-ladder.* events and prints a timeline: one header line
+per sitting trace, one line per item (time, kind, word, task/layout,
+response, correct/score, ms), transitions and stalls called out, and the
+item the sitting ended on marked when it didn't end on goal or the time cap.
+--day defaults to today when neither --day nor --sitting is given. When the
+store is unreachable or has nothing for the window, falls back to the day
+file(s) under <data-dir>/users/<learner>/apps/school/word-ladder/*/days/ —
+that fallback has absolute timestamps but no per-item timing detail.
 `;
 
 /** A full deck id as-is; a bare slug only when exactly one known deck id ends with `/<slug>`. */
@@ -224,12 +237,194 @@ async function enrollPlan(argv, io, fetchImpl = globalThis.fetch) {
   return 0;
 }
 
+// ── trace (spec §8 "school word-ladder trace") ─────────────────────────────
+// Reads the log store for this learner's school.word-ladder.* events, turns
+// them into a timeline via the pure `formatTrace` (backend/…/wordLadder/trace.mjs),
+// and falls back to the day file(s) on disk when the store is unreachable or
+// empty. A composition root like the rest of this file: all the policy (how
+// events group into a trace, how a line is worded) lives in the domain; this
+// only fetches, un-flattens and prints.
+
+/** UTC today as YYYY-MM-DD — only used as the trace window's default when the
+ * caller names neither --day nor --sitting; the query window is generous
+ * (see `timeWindow`) so a few hours of local/UTC drift near midnight cannot
+ * silently exclude the very events being asked for. */
+function todayIso() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function addDaysIso(day, n) {
+  const d = new Date(`${day}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+
+// Unquoted, VictoriaLogs tokenizes a value on `.` and `-`, so a learnerId or
+// sittingId containing either (a sitting id is always `<pkg>.<token>.<n>`)
+// matches far more than intended. Quoting makes it an exact-phrase match.
+function quoteLogsqlValue(value) {
+  return `"${String(value).replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+}
+
+function traceQuery({ learnerId, mode, sittingId }) {
+  const parts = ['_msg:~"school.word-ladder"', `data.learnerId:${quoteLogsqlValue(learnerId)}`];
+  if (mode && mode !== 'all') parts.push(`data.mode:${quoteLogsqlValue(mode)}`);
+  if (sittingId) parts.push(`data.sittingId:${quoteLogsqlValue(sittingId)}`);
+  return parts.join(' AND ');
+}
+
+/**
+ * A `--day` window is generous (that day plus the next, i.e. up to 48h) — the
+ * log store's own `_time` is local time mislabeled as UTC (see CLAUDE.md
+ * "Reading Logs"), so a tight midnight-to-midnight window can miss events
+ * near either boundary. A `--sitting` with no `--day` doesn't know which day
+ * to look at, so it takes a 30-day lookback instead; with neither, 2 days is
+ * plenty for "what happened around today".
+ */
+function timeWindow({ day, sittingId }) {
+  if (day) return `_time:[${day}T00:00:00, ${addDaysIso(day, 2)}T00:00:00]`;
+  return sittingId ? '_time:30d' : '_time:2d';
+}
+
+function parseLogLines(text) {
+  const rows = [];
+  for (const line of String(text ?? '').split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    try { rows.push(JSON.parse(trimmed)); } catch { /* one malformed line must not sink the whole trace */ }
+  }
+  return rows;
+}
+
+/** "true"/"false"/"null"/a numeric string -> its real type. VictoriaLogs stores every field as a string. */
+function coerceLogValue(value) {
+  if (value === 'true') return true;
+  if (value === 'false') return false;
+  if (value === 'null') return null;
+  if (typeof value === 'string' && value !== '' && /^-?\d+(\.\d+)?$/.test(value)) return Number(value);
+  return value;
+}
+
+function setPath(obj, parts, value) {
+  let cur = obj;
+  for (let i = 0; i < parts.length - 1; i += 1) {
+    if (typeof cur[parts[i]] !== 'object' || cur[parts[i]] === null) cur[parts[i]] = {};
+    cur = cur[parts[i]];
+  }
+  cur[parts[parts.length - 1]] = value;
+}
+
+/**
+ * A log-store row is flat: `{_msg, _time, level, "data.itemId": "...", "data.to.state": "mastered", ...}`.
+ * `formatTrace` wants nested, typed `{ msg, time, level, data }` — this is
+ * the one place that un-flattening and string coercion happen, so the
+ * domain formatter stays free of store-shape knowledge (and stays testable
+ * against clean fixtures).
+ */
+function unflattenRow(row) {
+  const data = {};
+  const context = {};
+  for (const [key, value] of Object.entries(row)) {
+    if (key.startsWith('data.')) setPath(data, key.slice('data.'.length).split('.'), coerceLogValue(value));
+    else if (key.startsWith('context.')) setPath(context, key.slice('context.'.length).split('.'), coerceLogValue(value));
+  }
+  return { msg: row._msg, time: row._time, level: row.level, data, context };
+}
+
+/** Every word package this learner has a word-ladder day file under, sorted for determinism. */
+function packageDirs(root) {
+  try { return fs.readdirSync(root, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name).sort(); }
+  catch { return []; }
+}
+
+/**
+ * The fallback source (spec §8): the day file(s) on disk, when the log store
+ * is unreachable or has aged the events out. No `--package` flag exists, so
+ * a `--day` reads every package this learner has a matching day file under;
+ * a `--sitting` (no day known from the id alone) scans every day file of
+ * every package for one whose `sittings` map contains that id.
+ */
+function dayFileFallback(io, dataDir, learnerId, { day, sittingId }) {
+  const root = path.join(dataDir, 'users', learnerId, 'apps', 'school', 'word-ladder');
+  const pkgDirs = packageDirs(root);
+  const blocks = [];
+  if (sittingId) {
+    const bare = sittingId.startsWith('test.') ? sittingId.slice('test.'.length) : sittingId;
+    const guessedPkg = bare.split('.')[0];
+    const candidates = pkgDirs.includes(guessedPkg) ? [guessedPkg] : pkgDirs;
+    for (const pkg of candidates) {
+      const daysDir = path.join(root, pkg, 'days');
+      let files = [];
+      try { files = fs.readdirSync(daysDir); } catch { continue; }
+      for (const file of files.filter((f) => /\.ya?ml$/.test(f)).sort()) {
+        const raw = yaml.load(fs.readFileSync(path.join(daysDir, file), 'utf8'));
+        if (raw?.sittings?.[sittingId]) {
+          blocks.push(`# ${learnerId} · ${pkg} · ${file.replace(/\.ya?ml$/, '')} · sitting ${sittingId}\n${formatTrace([], { dayFile: raw })}`);
+        }
+      }
+    }
+  } else if (day) {
+    for (const pkg of pkgDirs) {
+      const file = path.join(root, pkg, 'days', `${day}.yml`);
+      if (!fs.existsSync(file)) continue;
+      const raw = yaml.load(fs.readFileSync(file, 'utf8'));
+      blocks.push(`# ${learnerId} · ${pkg} · ${day}\n${formatTrace([], { dayFile: raw })}`);
+    }
+  }
+  if (!blocks.length) {
+    const where = day ? ` on ${day}` : sittingId ? ` (sitting ${sittingId})` : '';
+    io.stderr.write(`no trace found for ${learnerId}${where} — the log store had nothing and no matching day file exists\n`);
+    return 1;
+  }
+  io.stdout.write(`${blocks.join('\n\n')}\n`);
+  return 0;
+}
+
+async function trace(argv, io, fetchImpl = globalThis.fetch) {
+  const { dataDir } = roots(argv);
+  const learnerId = option(argv, '--learner');
+  if (!learnerId) throw new Error('--learner is required');
+  const day = option(argv, '--day');
+  const sittingId = option(argv, '--sitting');
+  if (day && sittingId) throw new Error('pass --day or --sitting, not both');
+  const mode = option(argv, '--mode') ?? 'all';
+  if (!['live', 'test', 'all'].includes(mode)) throw new Error(`--mode must be live, test or all, got '${mode}'`);
+  const effectiveDay = day ?? (sittingId ? null : todayIso());
+
+  let rows = [];
+  let reachable = typeof fetchImpl === 'function';
+  if (reachable) {
+    try {
+      const query = `${traceQuery({ learnerId, mode, sittingId })} AND ${timeWindow({ day: effectiveDay, sittingId })}`;
+      const res = await fetchImpl(`${DEFAULT_LOGSTORE.replace(/\/$/, '')}/select/logsql/query`, {
+        method: 'POST',
+        body: new URLSearchParams({ query, limit: String(LOG_QUERY_LIMIT) }),
+      });
+      if (res?.ok) rows = parseLogLines(await res.text());
+      else reachable = false;
+    } catch { reachable = false; }
+  }
+  // Hitting the limit exactly means the window may hold more rows than were
+  // fetched — the trace below could be missing its tail (or head) silently
+  // otherwise. A count under the limit proves the query saw everything.
+  if (rows.length === LOG_QUERY_LIMIT) {
+    io.stderr.write(`warning: the log store returned ${LOG_QUERY_LIMIT} rows (the query limit) — results may be truncated; narrow --day/--sitting/--mode\n`);
+  }
+
+  if (reachable && rows.length) {
+    const output = formatTrace(rows.map(unflattenRow));
+    if (output) { io.stdout.write(`${output}\n`); return 0; }
+  }
+  return dayFileFallback(io, dataDir, learnerId, { day: effectiveDay, sittingId });
+}
+
 export async function main(argv = process.argv.slice(2), io = process, deps = {}) {
   const [command, ...rest] = argv;
   if (!command || command === '--help' || command === '-h') { io.stdout.write(HELP); return command ? 0 : 2; }
   try {
     if (command === 'quiz') return await quiz(rest, io);
     if (command === 'enroll-plan') return await enrollPlan(rest, io, deps.fetch);
+    if (command === 'trace') return await trace(rest, io, deps.fetch);
     io.stderr.write(HELP);
     return 2;
   } catch (error) {

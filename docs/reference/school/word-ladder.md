@@ -283,7 +283,15 @@ Pass = score ≥ `typing.passScore` (default 6). Verdicts are cached by
 (package, word id, normalised answer) in
 `data/household/school/runtime/word-ladder/<package>/judgements.yml`
 (`YamlJudgementCache`) — a reload or repeated typo gets the same verdict with
-no second call.
+no second call. A **grown-up's re-grade** overwrites that answer's entry with
+`judge: grown-up` (see [Grown-up word controls](#grown-up-word-controls-spec-6));
+the judge checks for one **before any band**, so it wins even for an exact,
+short or no-Hangul answer.
+
+Every task item's day-file record (`items[itemId]`) keeps `wordId`, `task`,
+`source` and, for a judged answer, the judge's `reason` — what the console
+lists and re-grades. Older records without them are resolved from the day's
+plan (`rc:<word>`, a round's quiz queue, the latest practice run).
 
 ## Goal, cap, and a study day
 
@@ -318,6 +326,101 @@ Defaults live in `backend/src/2_domains/school/wordLadder/settings.mjs`;
 (`resolveSettings`). **The tuning values in force for a study day are frozen
 at its first open** (`dayFile.atOpen.settings`) — a mid-day config edit never
 moves the goalposts under a child already partway through.
+
+A day's first open reads the settings as config settings with the learner's
+tuned values (`tuning.yml`, beside `status.yml`) laid over them. Only the six
+tunables are overlaid, and each is clamped to the spec bounds and to
+`word_ladder.bounds`. A tuning change therefore lands at the learner's **next
+day's first open**. Test mode reads the learner's tuned values but never
+writes them.
+
+### Tuning (`WordLadderTuningService`, spec §7)
+
+The tuner runs once per learner × word package for a study day that has
+ended. It skips a day in these cases:
+
+- the day is already tuned (`lastTunedDay ≥ day`);
+- `tuning.yml` is corrupt (skipped before any model call; the file is never overwritten);
+- another run for the same learner package is in flight;
+- the day never reached its goal or cap. A day qualifies when the server
+  credited it (`doneAt`), its active time reached the cap, or a sitting closed
+  `goal` / `cap`. A day that only closed idle, on unmount or on leave does not
+  qualify.
+
+The digest covers the last 8 study days. The proposal passes through the
+brakes (`applyTuningProposal`), and applied values merge onto a fresh read of
+`tuning.yml` just before the write. **Dwell counts study days: the dates that
+have a day file, which are the days the learner opened** (`listDays`). A day
+file is never created for a day the learner did not open, so calendar days
+off do not count toward the 5-day wait.
+
+History keeps 60 rows of `{day, status, notes[≤3], applied, dropped, model}`.
+With no model configured (`model: false`), the rules write the status instead
+and nothing changes: `concern` with the note "Credited with no words quizzed"
+when a credited day quizzed no words, else `on-track` with no note. Notes are
+plain copy for a parent; they never mention the model. A tuner failure changes
+nothing; it records `status: null, error` and marks the day. A `concern` row
+also gets `notified: false` and `concernAt` (when a `notify` port is wired):
+an outstanding push that `deliverPushes` sends later, not `runFor`.
+
+**Composition and schedule** (`5_composition/modules/wordLadderTuning.mjs`,
+wired in `app.mjs`). The service is built on the **live** store and the
+assignment store. The `WordLadderTuner` agent (a `MastraAdapter` runtime, one
+structured step, no tools) is built only when `word_ladder.tuner.model` is set
+in the household School config. A bare id (`gpt-5-nano`) is assumed to be
+OpenAI's and passed on as `openai/gpt-5-nano`; any id with a `/` (for example
+`anthropic/…`) is passed as-is, since Mastra resolves only provider-qualified
+ids. With no model, the deterministic note above applies. Wherever the agent scheduler runs (`agentSchedulerEnabled`:
+production, a container, or `ENABLE_CRON=true`), a tick runs **60 seconds
+after boot** (an unref'd one-shot timer, so a restart past the rollover does
+not wait a full interval) and then **every 15 minutes**. A tick asks
+`pending()`, tunes each row **one at a time**, then calls `deliverPushes()`
+for the outstanding concern pushes. A tick that finds the previous one still
+running is skipped. The service refuses a day that has not
+ended, so the first tick after the study-day rollover does the work. One
+learner's failure is logged (`tuning-run-failed`) and the tick goes on.
+
+**Concern push.** `notify` composes the copy with `composeSchoolPush({kind:
+'word-ladder'})` (push standard): `🔤 {Child} — {Deck title}`, the body is the
+tuner's first note when it reads cleanly (no ids, slugs or enums), else
+"Word practice needs a grown-up's look", then the study day. The channel is
+School needs you, and the tag `school-{learnerId}-word-ladder-{package}` means
+the next concern replaces the card. It goes to every `teachers:` id through the
+household `NotificationService` (`category: school`, `urgency: high`,
+`dedupeKey` per teacher, learner, package and day). A failed label lookup drops
+that label and still sends. Tunable setting ids in a note become plain words
+("new words per day"); a note that still names a dotted setting is dropped for
+the fixed line.
+
+**Quiet hours defer, never drop.** The tuning pass runs just after the 4am
+rollover, inside the household's quiet hours, where `NotificationService`
+suppresses a non-critical push. `notify` answers `sent` (any copy delivered),
+`suppressed` (governance held every copy) or `failed`. `deliverPushes` marks a
+sent row `notified: true` (`notifiedAt`), leaves a suppressed or failed row
+pending for the next tick, and marks a row still pending after **48 hours**
+`notified: 'dropped'`. Each attempt logs `school.word-ladder.tuning-push
+{status}`: info for `sent` / `suppressed`, warn for `failed` / `dropped`. It
+takes the same per-learner-package guard as a tuning run and re-reads
+`tuning.yml` before writing. With a morning quiet-hours end at 07:00, the push
+arrives on the first tick after it.
+
+**Console and undo** (`adminTuning`, `adminUndo`). Both are teacher-gated
+(`action: 'word-ladder.tuning'`), refuse a learner not enrolled in the deck,
+and exist only on the live service. The view lists each tunable with `current`
+(config plus tuned values, clamped), `default`, `min`/`max` (spec bounds
+narrowed by `word_ladder.bounds`), `tuned` and `lastChanged`, the last
+non-undo run, and the history newest first. An applied change is `undoable`
+when it is still that setting's latest change and still in force. Undo:
+
+- restores the change's `from`. If that equals the config default, the key is
+  removed so the setting follows config again;
+- stamps the undone change `undone: {day, actorId}` and appends a history row
+  `{day, undo: true, actorId, applied: [{setting, from, to, reason: 'grown-up undo'}]}`;
+- sets `lastChanged[setting]` to today, so the dwell brake holds the grown-up's
+  value for the next 5 study days. `lastTunedDay` is untouched;
+- logs `school.word-ladder.tuning` with `reason: 'grown-up undo'` and `actorId`;
+- is refused while a tuning run for that learner package is in flight, when
+  there is nothing to undo, or when the value has changed since.
 
 | Setting | Decides | Default |
 |---|---|---|
@@ -385,6 +488,31 @@ mastery stage) and a Tricky chip when set. `GET /word-ladder/words` in test
 mode **requires `sittingId`** — it reads that sitting's shadow; there is no
 "current" live status for it to fall back to.
 
+## Grown-up word controls (spec §6)
+
+Per learner, per word package, from the teacher console. **Live only** (the
+test service refuses them), and every call passes `TeacherGate.assert({userId:
+actorId, pin, action: 'word-ladder.admin', context: {learnerId}})` first — a
+refusal changes nothing. Each mutation logs `school.word-ladder.admin`
+`{actorId, learnerId, package, wordId, action}` and a `transition` (source
+`admin`) for any word whose state or stage it moved. Pure parts live in
+`2_domains/school/wordLadder/admin.mjs`; the service methods are
+`WordLadderSittingService.admin*`.
+
+A control that does not touch the day's plan (reset, mark mastered, drop deck,
+or exclude on a day not yet opened) writes `status.yml` only: the store never
+creates a day file that would still be empty, so a day file exists only for a
+day the learner actually opened (`listDays` = their study days).
+
+| Action | Effect |
+|---|---|
+| **Words** (`adminWords`) | Every word the learner can meet (decks seen in order, this deck, then any other word with a record): state, stage, due, miss streak, tricky, excluded, `lastGraded`, and `recentTyped` — judged 3.3 answers from the last 14 study days' files, newest first, each with `itemId`, typed text, score, judge, reason and any `regraded` stamp |
+| **Reset** | The record becomes `emptyWordV3()` — nothing kept, `notYetCarry` included. If a round under way still quizzes it, grading fills `introducedDay` with that day (`applyGraded` does this for any verify/recheck on a word without one), so a miss is carried |
+| **Mark mastered (stage n)** | `mastered`, stage n, due today + `max(1, round(GAPS[min(n,5)] × review.gapScale))` — the day's tuned scale, as a recheck pass uses (1 when absent); miss streak, tricky and `notYetCarry` cleared. A word never introduced gets `introducedDay` = today and `introducedBy: admin`, so a later recheck miss (→ familiar) is carried like any other, but it does not count toward today's `batch.newPerDay` intros (`newAllowance` skips it) |
+| **Exclude / Include** | Sets `excluded`. An excluded word is never in the new-word pool or an intro, a carry round, a recheck (`isDue` is false), a tricky drill or drill offer, a practice run, a match board or 3.1 distractor, the printed learner quiz, or My words, and never counts toward the working set (`isUnsettled` is false). Excluding mid-day also drops its pending recheck and ends an unfinished drill on it (`excludeWordFromDay`, the drill marked `excluded: true` — it does not count toward `drill.perSitting`, so another tricky word may still be drilled); a round already under way keeps it until the round ends. An opened day is then **re-settled** in the same transaction: with nothing else pending, the next round or drill is planned, or the day is credited (`doneAt`) — the child never lands on a "done" summary for an uncredited day |
+| **Drop deck** | Removes the deck from `decksSeen` (the new-word pool); introduced words keep their state. Refused (400) for the current deck or any deck the learner is still enrolled in — the next open would re-add it; `adminWords.droppableDecks` lists the decks that can go |
+| **Re-grade** | For one logged typed (3.3) answer: overwrites the judge cache for `(package, word, normalised answer)` with `{score: pass ? typing.passScore : 1, judge: grown-up, reason: 'Re-graded by a grown-up'}` and stamps the item `regraded: {at, actorId, pass}`; the tuner's digest counts that answer's score as the re-grade (`passScore` or 1), not the judge's. **It does not change word state** — reset / mark mastered do that |
+
 ## API
 
 Mounted by `mountWordLadderRoutes` (`backend/src/4_api/v1/routers/school.wordLadder.mjs`)
@@ -414,6 +542,18 @@ no audio until the take; look / copy / say-after the full word card.
 - `GET /word-ladder/stage` → `{screen}` (the configured stage screen id, see below)
 - `POST /word-ladder/fold {learnerId, actorId, pin}` — teacher-gated: runs the paper-quiz fold for every
   word-ladder package the learner is enrolled in, on demand
+- Grown-up word controls, **live mount only**, teacher-gated (`pin` may be the
+  console's cookie capability — the GET, which has no body, reads the
+  `daylight_teacher_session` cookie itself when no `pin` query is given):
+  `GET /word-ladder/admin/words?learnerId=&deckId=&actorId=&pin=` → `{learnerId, package, decksSeen, droppableDecks, words}`;
+  `POST /word-ladder/admin/reset {learnerId, deckId, wordId, actorId, pin}`,
+  `…/admin/mastered {…, wordId, stage}`, `…/admin/exclude {…, wordId, excluded}`,
+  `…/admin/drop-deck {…, dropDeckId}`, `…/admin/regrade {…, day, itemId, pass}`
+- Tuning, **live mount only**, teacher-gated in `WordLadderTuningService`. The
+  acting teacher is the capability session's own user when the cookie holds
+  one, else the `actorId` given:
+  `GET /word-ladder/admin/tuning?learnerId=&deckId=` → `{learnerId, package, state, lastTunedDay, settings, last, history}`;
+  `POST /word-ladder/admin/tuning/undo {learnerId, deckId, setting, actorId, pin}` → `{learnerId, package, day, setting, from, to, reason}`
 
 Item ids make every response idempotent. A sitting belongs to its study day:
 after the day boundary it 404s and the client reopens. **Server idle close:** a
@@ -440,7 +580,9 @@ URL from the URL alone, before any grant is asked for.
 **Test mode** runs the same engine over a `ShadowWordLadderStores` in-memory
 deep copy of the learner's real status + today's day file, snapshotted at
 open. The typed judge still runs (so verdicts can be tested) but its cache is
-an in-memory `MemoryJudgementCache` — test mode **never writes**
+an in-memory `MemoryJudgementCache` that reads through to the live
+`judgements.yml` on a miss (so a grown-up's re-grade applies in test mode
+too) and keeps its own verdicts in memory — test mode **never writes**
 `judgements.yml`, `status.yml` or the day file. Sitting ids are
 `test.<pkg>.<token>.<n>`, refused by the live router and vice versa. Shadows
 expire after a 3-hour TTL (max 20 live at once); an evicted or restarted
@@ -532,31 +674,73 @@ by hand.
 
 ## Logs
 
-Backend: `school.word-ladder.{opened,graded,reopened,closed,folded,attempts-unreadable,decks-unlisted,status-corrupt}`,
-all carrying `mode: live|test`. Frontend
-(`context.component: school-word-ladder`, events `school.word-ladder.*`):
-`started` (Start tapped), `plan.failed`, `stage-failed`, `media.failed`
-(image cue fell back to text), and the item/response events the program logs
-on each turn.
+Everything lands in the log store as `school.word-ladder.*`, and every event
+carries `mode: live|test`. `school word-ladder trace` (see the
+[School runbook](../../runbooks/school/README.md#word-ladder-trace)) turns one
+learner's events into a per-sitting timeline.
 
-## What is not yet built
+**Backend** (`context.module: school-word-ladder`, service-side, no `seq`):
 
-This page describes **Plan 1 (core loop)** and **Plan 2 (tricky-word drill,
-speaking, on-screen keypad, practice menu)**:
-`docs/_wip/plans/2026-09-22-word-ladder-plan-1-core-loop.md`,
-`docs/_wip/plans/2026-09-22-word-ladder-plan-2-drill-practice.md`. The rest of
-the spec is written but not implemented:
+| Event | When | Key fields |
+|-------|------|------------|
+| `opened` / `reopened` / `closed` | a sitting opens, resumes, ends | `learnerId`, `sittingId`, `package`, `day`; `closed` has the reason |
+| `answered` | **every** response the service accepts | `itemId`, `type`, `task`, `wordId`, `correct`, `score`, `judge`, `next`, `doneAt` |
+| `graded` | only a **graded** response (verify quiz, recheck, practice Quiz me) | `itemId`, `wordId`, `task`, `source`, `correct`, `score`, `judge` |
+| `transition` | one per word whose state or stage changed | `wordId`, `from`, `to`, `source`, `itemId` |
+| `recorded` / `practice` | a spoken take stored; a practice run built | |
+| `judge-fallback` (warn) | the typed judge's model failed or timed out | `wordId`, `error` |
+| `admin` | a grown-up word control (reset, mark mastered, exclude, drop deck, **regrade**) | `actorId`, `action`, `wordId`; a regrade adds `itemId`, `pass`, `score`, `was` |
+| `folded` / `fold-refused` / `fold-deck-skipped` | the printed quiz folded in (spec §8) | `source`, `count`, `demoted` |
+| `tuning` | one line per applied or dropped tuner change, and per grown-up undo | `setting`, `from`, `to`, `reason`, `dropped?`, `actorId` on an undo |
+| `tuned` / `tuning-skipped` / `tuning-failed` / `tuning-unreadable` | the outcome of one tuning run | `day`, `status` or `error` |
+| `tuning-push` | a concern push attempt | `status: sent\|suppressed\|failed\|dropped` |
+| `store-corrupt` | a YAML file could not be parsed | `kind: status\|day\|tuning` |
 
-- **Trace CLI and grown-up word controls** — `docs/_wip/plans/2026-09-22-word-ladder-plan-4-observability-controls.md`.
-  `school word-ladder trace` and the teacher console's per-word reset/exclude/
-  re-grade controls do not exist; a word's state is visible only in
-  `status.yml` today.
+The tuning scheduler adds `tuning-wired`, `tuning-run-failed`,
+`tuning-tick-failed`, `tuning-deck-skipped`, `tuning-pending-failed` and
+`tuning-unavailable`; the service also logs `attempts-unreadable`,
+`decks-unlisted`, `deck-unexpandable` and `day-status-unloadable`.
+
+**Frontend trace** (`context.component: school-word-ladder`). The program
+creates one trace per mount (`createTrace.js`) and binds it to the logging
+facade (`wordLadderLog.js`), so every event below is **stamped** with
+`traceId`, `sittingId`, `seq` (1, 2, 3 … within the trace), `t` (ms since the
+trace began), `learnerId`, `deckId`, `package` and `mode` (live/test). Order
+a trace by `seq`, never by `_time` (the store stamps local time as UTC). The
+stamp owns `mode`, so an item-level mode is sent as `itemMode`.
+
+- `sitting.opened`, `sitting.closed {reason, activeMs, remaining}`,
+  `session.reopened`, `started` (Start tapped), `mounted`/`unmounted`,
+  `visibility {state}`;
+- `item.shown {task, wordId, itemMode, layout, media}`, `item.layout {fontPx}`
+  (the first fitted font size for that item, once), `item.answered {response,
+  correct?, score?, judge, ms}`, `item.stalled {ms: 45000|120000}` (warn),
+  `item.prompt-fallback` (warn);
+- `card.flipped {ms}`, `card.sorted {pile}`, `card.undone`, `round.started`,
+  `round.ended {quizzed, notYet}`, `match.completed {ms, misses, pairs}`,
+  `drill.offered {accepted}`, `practice.started {itemMode, help, filter}`;
+- `audio.played {kind, outcome: ended|error|blocked}`, `keypad.toggled
+  {auto, open}`, `recording.uploaded` / `recording.failed` /
+  `recording.refused`;
+- failures: `plan.failed`, `write.failed`, `api.rejected`, `api.failed`,
+  `stage.failed`, `media.failed` (an image cue fell back to text),
+  `layout.clamped`, `notice.shown`, `practice.failed`, `words.failed`.
+
+## What is deferred
+
+Plans 1–5 are built: the core loop, the drill / speaking / keypad / practice
+menu, the printed quiz and fold, the trace CLI and the console's **Words**
+view ([`teacher.md`](teacher.md#2-the-navigation-graph)), and the tuning
+pass. The tuner agent changes values only once `word_ladder.tuner.model` is
+set in the household School config. What remains, by ruling or by the spec's
+own scope:
+
 - **Practice flashcards prev/undo** — spec §6 describes a practice
   flashcard run with prev/next and undo; Plan 2 shipped it forward-only (see
   [The practice menu](#the-practice-menu-spec-6-post-goal)), by ruling.
-- **Tuning agent** — `docs/_wip/plans/2026-09-22-word-ladder-plan-5-tuning-agent.md`.
-  `word_ladder.settings` / `word_ladder.bounds` are static config; nothing
-  adjusts them automatically yet.
+- **Out of scope in the spec**: speech-recognition scoring (speaking is never
+  graded), a trace viewer in the teacher console (the trace is a CLI), and
+  test mode for programs other than the word ladder.
 
 ## Printed quiz and the fold (spec §8)
 

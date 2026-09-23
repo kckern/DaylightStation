@@ -3228,16 +3228,18 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const wordLadderShared = {
     decks: schoolCatalog.content, lexicons: wordLadderLexicons, assignments: flashcardAssignments,
     attempts: schoolDatastore, assets: flashcardAssets, teacherGate: schoolTeacherGate,
-    settings: wordLadderSettings, timezone: configService.getTimezone?.() || null, now: Date.now,
+    settings: wordLadderSettings, bounds: wordLadderConfig.bounds ?? null, timezone: configService.getTimezone?.() || null, now: Date.now,
     logger: wordLadderLogger,
   };
+  // One cache for the live judge and the grown-up re-grade that overwrites it (spec §6).
+  const wordLadderJudgementCache = new YamlJudgementCache({ rootDir: path.join(dataDir, 'household', 'school', 'runtime', 'word-ladder') });
   const wordLadderStudy = schoolCatalog.content ? new WordLadderSittingService({
-    ...wordLadderShared, mode: 'live',
+    ...wordLadderShared, mode: 'live', judgementCache: wordLadderJudgementCache,
     stores: {
       open: () => ({ store: wordLadderStore, token: 'live' }),
       forToken: (token) => { if (token !== 'live') throw new Error('unknown sitting'); return wordLadderStore; },
     },
-    judge: wordLadderJudgeFor(new YamlJudgementCache({ rootDir: path.join(dataDir, 'household', 'school', 'runtime', 'word-ladder') })),
+    judge: wordLadderJudgeFor(wordLadderJudgementCache),
     // Spoken takes, kept for grown-ups: {package}/{learner}/{day}/{word}-{n}.{ext}.
     recordings: new FilesystemWordLadderRecordings({ rootDir: path.join(schoolMediaRoot, 'recordings', 'word-ladder') }),
   }) : null;
@@ -3253,8 +3255,37 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       },
       forToken: (token) => wordLadderShadows.forToken(token),
     },
-    judge: wordLadderJudgeFor(new MemoryJudgementCache()),
+    // Reads through to the live cache (a grown-up's re-grade applies here too); writes stay in memory.
+    judge: wordLadderJudgeFor(new MemoryJudgementCache({ fallback: wordLadderJudgementCache })),
   }) : null;
+  // The tuning pass (spec §7): on the REAL store only, the tuner agent only
+  // when `word_ladder.tuner.model` is set, a concern pushed to the teachers.
+  // Ticks every 15 min wherever the agent scheduler runs; the service itself
+  // waits for the study day to end.
+  let wordLadderTuning = null;
+  if (schoolCatalog.content) {
+    try {
+      const { createWordLadderTuning } = await import('#composition/modules/wordLadderTuning.mjs');
+      const { agentSchedulerEnabled } = await import('#composition/policies/agentSchedulerEnabled.mjs');
+      const { isContainerRuntime } = await import('#system/runtime/runtimeEnvironment.mjs');
+      const tuningNames = studentDisplayName(configService);
+      wordLadderTuning = createWordLadderTuning({
+        store: wordLadderStore, assignments: flashcardAssignments, decks: schoolCatalog.content, lexicons: wordLadderLexicons,
+        settings: wordLadderSettings, bounds: wordLadderConfig.bounds ?? null, teacherGate: schoolTeacherGate,
+        timezone: configService.getTimezone?.() || null, now: Date.now,
+        model: wordLadderConfig.tuner?.model ?? null, mediaDir: configService.getMediaDir(),
+        notificationService: notificationStack?.notificationService ?? null,
+        teachers: () => (configService.getHouseholdAppConfig(null, 'school') || {}).teachers ?? [],
+        learnerName: (id) => tuningNames(id),
+        logger: wordLadderLogger, server,
+        scheduled: enableScheduler && agentSchedulerEnabled({
+          nodeEnv: process.env.NODE_ENV, enableCron: process.env.ENABLE_CRON, isContainer: isContainerRuntime(),
+        }),
+      });
+    } catch (error) {
+      wordLadderLogger.error('school.word-ladder.tuning-unavailable', { error: error.message });
+    }
+  }
   const openCatalogLearningSession = schoolCatalog.query
     ? new OpenCatalogLearningSession({ catalog: schoolCatalog.query, grader: schoolService })
     : null;
@@ -4704,6 +4735,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     flashcardStudy,
     wordLadderStudy,
     wordLadderTest,
+    wordLadderTuning: wordLadderTuning?.service ?? null,
     wordLadderStageScreen: wordLadderConfig.stage?.screen ?? null,
     flashcardAssets,
     getMaterialCatalog,

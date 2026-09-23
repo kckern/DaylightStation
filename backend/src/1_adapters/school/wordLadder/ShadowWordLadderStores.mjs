@@ -4,7 +4,8 @@ import { EntityNotFoundError } from '#domains/core/errors/index.mjs';
 /**
  * Test mode's stores (spec §8 Test mode): an in-memory deep copy of one
  * learner's real status + day, snapshotted at open. Nothing here can reach
- * disk — the real store is only ever READ.
+ * disk — the real store is only ever READ. Tuning is read from the real
+ * store (so a test sitting plays with the learner's values) and has no writer.
  */
 export class ShadowWordLadderStores {
   #real; #ttlMs; #max; #now; #shadows = new Map();
@@ -39,6 +40,7 @@ export class ShadowWordLadderStores {
         shadow.status = next.status; shadow.days[day] = next.dayFile;
         return structuredClone(next);
       },
+      readTuning: (u, p) => this.#real.readTuning?.(u, p) ?? null,
     };
   }
 }

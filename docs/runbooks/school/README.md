@@ -74,6 +74,45 @@ See [`operations.md`](../../reference/school/operations.md) for the full CLI
 surface, including the guarded-write repair lanes (`ops abandon`,
 `ops rematerialize`, `ops grade-adjust`, `ops reassign`).
 
+## Word ladder trace
+
+`school word-ladder trace` prints one learner's word-ladder sittings as a
+timeline: a header per sitting trace, then one line per item (time, kind,
+word, task/layout, response, correct/score, ms), with state transitions and
+stalls called out and the item a sitting ended on marked when it did not end
+on the goal or the time cap. Use it when a child says a word "didn't count",
+a sitting stopped early, or a screen sat idle. The events it reads are listed
+in [word-ladder.md → Logs](../../reference/school/word-ladder.md#logs).
+
+```bash
+# Today's sittings, live and test
+node cli/school.mjs word-ladder trace --learner <learner-id>
+
+# One study day, live sittings only
+node cli/school.mjs word-ladder trace --learner <learner-id> --day YYYY-MM-DD --mode live
+
+# One sitting (the sittingId from a log line or the console's Words view)
+node cli/school.mjs word-ladder trace --learner <learner-id> --sitting <pkg>.<token>.<n>
+
+# A grown-up's /test run
+node cli/school.mjs word-ladder trace --learner <learner-id> --mode test
+
+# Point it at the log store explicitly (default: $DAYLIGHT_LOGSTORE)
+DAYLIGHT_LOGSTORE={env.log_store_url} \
+  node cli/school.mjs word-ladder trace --learner <learner-id> --day YYYY-MM-DD
+```
+
+- **Ordering is by `seq` within a trace**, never by the store's `_time`
+  (it stamps local time as UTC). Backend `graded` / `transition` events are
+  attached to the item they belong to by `sittingId` + `itemId`.
+- **Fallback:** when the log store is unreachable or has aged out (7 days),
+  the CLI reads the learner's day files under
+  `<data-dir>/users/<learner-id>/apps/school/word-ladder/<pkg>/days/`
+  (`--data-dir` to point at the data volume). A day file has absolute
+  times but no per-item `ms` or stall detail, and the output says so.
+- A warning that the query hit its row limit means the output may be cut
+  short: narrow it with `--day`, `--sitting` or `--mode`.
+
 ## Opening a program without an access code
 
 For testing and admin. A child at the Portal still needs a code — the panel is a

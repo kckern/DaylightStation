@@ -55,4 +55,13 @@ describe('WordLadderTypedJudge', () => {
     expect(again.judge).toBe('cache');
     expect(aiGateway.chatWithJson).toHaveBeenCalledTimes(1);
   });
+  it('a grown-up\'s re-grade in the cache wins over every band, even without a model', async () => {
+    const cache = makeCache();
+    const judge = new WordLadderTypedJudge({ cache, passScore: 6, logger: { info() {}, warn() {} } });
+    cache.set('p', 'w', '가이', { score: 1, judge: 'grown-up', reason: 'Re-graded by a grown-up' });
+    expect(await judge.judge({ pkg: 'p', entry: entry('가위'), typed: '가이', otherWords: [] }))
+      .toEqual({ score: 1, judge: 'grown-up', reason: 'Re-graded by a grown-up', pass: false });
+    cache.set('p', 'w', 'hi', { score: 6, judge: 'grown-up', reason: 'Re-graded by a grown-up' });
+    expect(await judge.judge({ pkg: 'p', entry: entry('가위'), typed: 'hi', otherWords: [] })).toMatchObject({ judge: 'grown-up', pass: true });
+  });
 });

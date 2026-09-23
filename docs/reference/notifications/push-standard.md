@@ -59,12 +59,22 @@ clause; it never renders an id.
 | Awaiting review | 👀 | School needs you (high) |
 | Rows blank or double-marked, unreadable/refused card, nothing marked | ⚠️ | School needs you (high) |
 | Unmarked old record on a card whose other work graded | none (logged `school.push.suppressed`) | — |
+| Word ladder: the tuning agent read a day as a concern | 🔤 | School needs you (high) |
 
 - `tag` is `school-{learnerId}-{sessionId ?? testId}`, so a rescan, or a Partial
   followed by the Pass for the same session, replaces one card. With no learner
   it is `school-card-{sessionId ?? testId}`.
 - `group` is `school-{learnerId}`: one stack per child.
 - A piano lesson is tagged `school-{learnerId}-piano-{studyDay}`.
+- A word-ladder concern is tagged `school-{learnerId}-word-ladder-{package}`, so
+  the next day's concern replaces the card. Its title is `🔤 {Child} — {Deck}`.
+  The body is the tuner's first note only when `findPushTextDefects` passes it,
+  else a fixed line, then the study day (`Mon Sep 21`). Setting ids in a note
+  become plain words first. A push held by quiet hours is retried every 15
+  minutes for up to 48 hours, never dropped silently. It is sent to each
+  teacher through `NotificationService`. `PushNotificationAdapter` relays an
+  intent's `metadata.pushData` block (from `pushData`) as the HA `data:`, so the
+  tag and channel reach the phone.
 - The piano body shows **unit** progress (`Folk Songs: 3 of 8 lessons`). The
   launcher's `score` is course completion, not a lesson score, and is never shown.
 

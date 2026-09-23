@@ -14,3 +14,4 @@ export { EchoAgent } from './echo/index.mjs';
 export { HealthCoachAgent } from './health-coach/index.mjs';
 export { NutritionAuditor } from './nutrition-auditor/NutritionAuditor.mjs';
 export { NutritionEvidenceToolFactory } from './nutrition-auditor/NutritionEvidenceToolFactory.mjs';
+export { WordLadderTuner } from './word-ladder-tuner/index.mjs';

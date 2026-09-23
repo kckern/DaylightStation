@@ -38,7 +38,7 @@ import CuePicture from './CuePicture.jsx';
  * Either way the take itself always plays.
  */
 export default function SayItem({
-  item, mode, langs, resolveAssetUrl, onRespond, api, sittingId, userId, busy = false,
+  item, mode, langs, resolveAssetUrl, onRespond, api, sittingId, userId, busy = false, onLayout,
 }) {
   const [hasTaken, setHasTaken] = useState(false);
   const [notice, setNotice] = useState(null);
@@ -66,7 +66,8 @@ export default function SayItem({
     // since that response is the only place either ever comes from.
     let nativeAudio = termAudio;
     if (ok) {
-      wordLadderLog.recordingUploaded({ itemId: item.id, mode, bytes: blob.size, durationMs });
+      // `itemMode`, not `mode` — the trace stamp overwrites a colliding `mode` key.
+      wordLadderLog.recordingUploaded({ itemId: item.id, itemMode: mode, bytes: blob.size, durationMs });
       if (data?.reveal) {
         const audio = data.reveal.audio ? resolveAssetUrl(data.reveal.audio) : null;
         setRevealed({ term: data.reveal.term, audio });
@@ -76,12 +77,12 @@ export default function SayItem({
       // An upload failure is logged and never blocks — the take was still
       // said and heard; only the grown-up review copy (and, for
       // read-aloud/say-from-cue, the reveal) is missing.
-      wordLadderLog.recordingFailed({ itemId: item.id, mode, status });
+      wordLadderLog.recordingFailed({ itemId: item.id, itemMode: mode, status });
       if (mode !== 'say-after') nativeAudio = null;
     }
 
     // Own take, then the native word — never the other order (spec §1 1.2).
-    await playSequence([takeUrl, ...(nativeAudio ? [nativeAudio] : [])]);
+    await playSequence([{ url: takeUrl, kind: 'take' }, ...(nativeAudio ? [{ url: nativeAudio, kind: 'term' }] : [])]);
   }, [api, sittingId, userId, item.id, mode, termAudio, resolveAssetUrl]);
 
   const recorder = useTakeRecorder({ onTake });
@@ -92,8 +93,8 @@ export default function SayItem({
   // cleanup revokes whatever take URL is still held when the item leaves —
   // not only when a NEXT take within this same item replaces it.
   useEffect(() => {
-    if (mode === 'say-after' && termAudio) playClip(termAudio);
-    if (item.cue?.type === 'audio' && glossAudio) playClip(glossAudio);
+    if (mode === 'say-after' && termAudio) playClip(termAudio, 'term');
+    if (item.cue?.type === 'audio' && glossAudio) playClip(glossAudio, 'gloss');
     return () => {
       if (takeUrlRef.current) { URL.revokeObjectURL(takeUrlRef.current); takeUrlRef.current = null; }
     };
@@ -101,7 +102,8 @@ export default function SayItem({
 
   useEffect(() => {
     if (!recorder.verdict) return;
-    wordLadderLog.recordingRefused({ itemId: item.id, mode, reason: recorder.verdict });
+    wordLadderLog.recordingRefused({ itemId: item.id, itemMode: mode, reason: recorder.verdict });
+    wordLadderLog.noticeShown({ itemId: item.id, itemMode: mode, reason: recorder.verdict });
     setNotice(recorder.verdict === 'too-quiet'
       ? "We didn't hear that one — say it out loud and have another go."
       : 'That was too quick — say the whole word.');
@@ -130,9 +132,9 @@ export default function SayItem({
         {showCue && item.cue?.type === 'image' && <CuePicture item={item} src={image} lang={langs.gloss} />}
         {showCue && item.cue?.type === 'text' && <FitText role="prompt" text={item.cue.text} lang={langs.gloss} />}
         {showCue && item.cue?.type === 'audio' && (
-          <TouchButton variant="secondary" onClick={() => glossAudio && playClip(glossAudio)}><Icon name="volume" /> Listen</TouchButton>
+          <TouchButton variant="secondary" onClick={() => glossAudio && playClip(glossAudio, 'gloss')}><Icon name="volume" /> Listen</TouchButton>
         )}
-        {term && <FitText role="term" text={term} lang={langs.term} />}
+        {term && <FitText role="term" text={term} lang={langs.term} onFit={onLayout} />}
       </div>
 
       <VoiceBand

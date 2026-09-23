@@ -17,7 +17,7 @@ export function emptyWordV3() {
   return {
     state: 'new', stage: null, dueDay: null, missStreak: 0, tricky: false, trickySince: null,
     verifyFailedDay: null, lostMasteredDay: null, notYetCarry: false, introducedDay: null,
-    rechecks: 0, lastGraded: null,
+    rechecks: 0, lastGraded: null, excluded: false,
   };
 }
 
@@ -55,6 +55,9 @@ export function applyGraded(word, { source, correct, day, task, settings }) {
     const lost = word.state === 'mastered' ? { lostMasteredDay: day } : {};
     return { ...miss(word, day, settings.afterMisses), ...lost, lastGraded };
   }
+  // A word reset to new mid-round can still be quizzed in that round; it
+  // counts as introduced the day it was graded, or a miss is never carried.
+  word = { ...word, introducedDay: word.introducedDay ?? day };
   if (source === 'verify') {
     if (correct === true) {
       return { ...word, ...passFlags, state: 'mastered', stage: 0, dueDay: addDays(day, GAPS[0]), lastGraded };
@@ -71,12 +74,18 @@ export function applyGraded(word, { source, correct, day, task, settings }) {
   return { ...miss(word, day, settings.afterMisses), lostMasteredDay: day, rechecks, lastGraded };
 }
 
+/** A grown-up removed this word from every round, recheck, drill, practice run and quiz (spec §6). */
+export function isExcluded(word) {
+  return word?.excluded === true;
+}
+
 export function isDue(word, day) {
+  if (isExcluded(word)) return false;
   return word?.state === 'mastered' && typeof word.dueDay === 'string' && word.dueDay <= day;
 }
 
 export function isUnsettled(word) {
-  if (!word) return false;
+  if (!word || isExcluded(word)) return false;
   if (['introduced', 'notYet', 'familiar', 'claimed'].includes(word.state)) return true;
   return word.state === 'mastered' && word.stage === 0;
 }

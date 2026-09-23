@@ -33,4 +33,16 @@ describe('FitText', () => {
     await Promise.resolve(); await Promise.resolve();
     expect(fitFontSize.mock.calls.length).toBe(calls);
   });
+
+  it('calls onFit with the shown px once it computes a fit', () => {
+    fitFontSize.mockImplementation(() => ({ px: 47, clamped: false }));
+    const onFit = vi.fn();
+    render(<div><FitText role="term" text="가위" lang="ko" onFit={onFit} /></div>);
+    expect(onFit).toHaveBeenCalledWith(47);
+  });
+
+  it('with no onFit passed, does not throw', () => {
+    fitFontSize.mockImplementation(() => ({ px: 47, clamped: false }));
+    expect(() => render(<div><FitText role="term" text="가위" lang="ko" /></div>)).not.toThrow();
+  });
 });
