@@ -104,7 +104,7 @@ export function appendAssignedProgramEntries(plan, assignment) {
       plan.entries.push(baseEntry({
         unitId: `flashcards:${deckId}`,
         title: enrollment.title ?? 'Flashcards',
-        subject: 'flashcards',
+        subject: enrollment.subject ?? 'flashcards',
         program: 'flashcards',
         programInstance: deckId,
         schedule: enrollment.schedule,
