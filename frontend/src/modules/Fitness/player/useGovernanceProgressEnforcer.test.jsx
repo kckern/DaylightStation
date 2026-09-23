@@ -58,6 +58,18 @@ describe('useGovernanceProgressEnforcer', () => {
     expect(capturedIsLocked()).toBe(false);
   });
 
+  it('a captured enforce does nothing at all after unmount, even when the dead element reports paused', () => {
+    const { result, unmount, pausePlayback, setVideoPlayerPaused, logger } = setup(true);
+    const capturedEnforce = result.current.enforce;
+    unmount();
+    setVideoPlayerPaused.mockClear();
+    capturedEnforce({ paused: true, currentTime: 5 }, 'tick');
+    capturedEnforce({ paused: false, currentTime: 6 }, 'seek-intent');
+    expect(setVideoPlayerPaused).not.toHaveBeenCalled();
+    expect(pausePlayback).not.toHaveBeenCalled();
+    expect(logger.sampled).not.toHaveBeenCalled();
+  });
+
   it('logs pause-enforced with branch, currentTime and a live governance snapshot', () => {
     let status = 'warning';
     const getContext = () => ({ governanceStatus: status, videoLocked: true });

@@ -35,8 +35,10 @@ export function enforceGovernanceOnProgress(progress, deps) {
  *
  * `enforce` and `isLocked` keep one identity across governance changes (they
  * change only if pausePlayback / setVideoPlayerPaused / logger change), and both
- * read the verdict at call time. After unmount the verdict reads false, so a
- * handler that outlives the component can never pause anything.
+ * read the verdict at call time. After unmount `enforce` does nothing at all:
+ * no pause, no setVideoPlayerPaused, no log. FitnessContext outlives
+ * FitnessPlayer, so a leaked listener on a dead element must not be able to
+ * set videoPlayerPaused and freeze governance. `isLocked` reads false.
  *
  * @param {object} args
  * @param {boolean} args.governancePaused  this render's governance verdict
@@ -71,6 +73,7 @@ export function useGovernanceProgressEnforcer({
   const isLocked = useCallback(() => mountedRef.current && lockedRef.current, []);
 
   const enforce = useCallback((progress, branch) => {
+    if (!mountedRef.current) return;
     enforceGovernanceOnProgress(progress, {
       isGovernanceLocked: isLocked,
       pausePlayback,
