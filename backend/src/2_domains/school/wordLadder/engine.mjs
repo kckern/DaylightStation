@@ -8,7 +8,7 @@
  * summary shows once and then the practice menu (spec §6); only a practice
  * Quiz me grades, exactly like a round's verify.
  */
-import { ValidationError } from '#domains/core/errors/index.mjs';
+import { DomainInvariantError, ValidationError } from '#domains/core/errors/index.mjs';
 import { hashString, seededShuffle } from './checkItem.mjs';
 import { PILES, applyGraded, applySort, emptyWordV3, introduce, isDue } from './mastery.mjs';
 import { channelFor, cueFor, pickMeaningChoices, pickTermChoices } from './choices.mjs';
@@ -21,6 +21,8 @@ const IDLE_CAP_MS = 45000;
 const NOT_YET_GAP = 2;
 const FAMILIAR_GAP = 5;
 const DRILL_MS = 240000;
+const PRACTICE_FILTERS = Object.freeze(['working', 'introduced', 'tricky', 'chosen']);
+const FRONT_SIDES = Object.freeze(['term', 'gloss']);
 const TYPED_DRILL_STEPS = new Set(['copy', 'dictation']);
 const TYPING_STEPS = new Set(['copy', 'dictation', 'type']);
 const clone = (value) => structuredClone(value);
@@ -34,7 +36,7 @@ export function addActiveTime(dayFile, atMs) {
   return next;
 }
 
-export function openDay({ status, dayFile, day, deckId, pool, settings, learnerId, at, media = {}, capabilities = null }) {
+export function openDay({ status, dayFile, day, deckId, pool, settings, learnerId, at, media = {}, capabilities = null, lexicon = null }) {
   if (typeof at !== 'string' || at.length === 0) throw new ValidationError('at is required');
   const nextStatus = clone(status);
   if (!nextStatus.decksSeen.includes(deckId)) nextStatus.decksSeen.push(deckId);
@@ -61,7 +63,7 @@ export function openDay({ status, dayFile, day, deckId, pool, settings, learnerI
   // stale plan behind.
   const last = nextDay.rounds.at(-1);
   if (last && last.phase !== 'done' && !roundTouched(nextDay, last)) nextDay.rounds.pop();
-  const ctx = { status: nextStatus, dayFile: nextDay, day, pool, settings, learnerId, media };
+  const ctx = { status: nextStatus, dayFile: nextDay, day, pool, settings, learnerId, media, ...(lexicon ? { lexicon } : {}) };
   // A day with nothing to do (everything mastered and not due, or the cap
   // already spent) is credited here — `respond` would never run to do it.
   if (!nextDay.doneAt) settleDay(ctx, at);
@@ -141,11 +143,32 @@ function openDrill(ctx) {
   return (ctx.dayFile.drills ?? []).find((drill) => !drill.done) ?? null;
 }
 
+// A word the engine can render. `openDay` may run without the lexicon; the
+// service's media map is keyed by exactly the lexicon's entries, so it stands in.
+function hasEntry(ctx, id) {
+  if (ctx.lexicon?.entries) return ctx.lexicon.entries.has(id);
+  return Object.prototype.hasOwnProperty.call(ctx.media ?? {}, id);
+}
+
+// Other introduced words a drill's match board can pair with the drill word.
+function matchPartners(ctx, wordId) {
+  return Object.entries(ctx.status.words)
+    .filter(([id, word]) => id !== wordId && word.state !== 'new' && hasEntry(ctx, id))
+    .map(([id]) => id);
+}
+
+// Steps fixed at creation: mic/audio steps per drillSteps, and no match step
+// when the board would have fewer than 2 pairs.
+function stepsFor(ctx, wordId, capabilities) {
+  const steps = drillSteps(ctx.media?.[wordId] ?? {}, capabilities ?? {});
+  return matchPartners(ctx, wordId).length ? steps : steps.filter((name) => name !== 'match');
+}
+
 function newDrill(ctx, wordId, source) {
   const drills = ctx.dayFile.drills ?? (ctx.dayFile.drills = []);
   return {
     id: `d${drills.length + 1}`, source, wordId,
-    steps: drillSteps(ctx.media?.[wordId] ?? {}, ctx.dayFile.capabilities ?? {}), index: 0, tries: 0, done: false,
+    steps: stepsFor(ctx, wordId, ctx.dayFile.capabilities), index: 0, tries: 0, done: false,
   };
 }
 
@@ -158,7 +181,7 @@ function maybeStartTrickyDrill(ctx) {
   if (remainingMs(ctx) < DRILL_MS) return false;
   const since = (id) => String(wordOf(ctx.status, id).trickySince ?? '');
   const candidates = (ctx.dayFile.atOpen?.tricky ?? [])
-    .filter((id) => wordOf(ctx.status, id).tricky && !drills.some((drill) => drill.wordId === id))
+    .filter((id) => hasEntry(ctx, id) && wordOf(ctx.status, id).tricky && !drills.some((drill) => drill.wordId === id))
     .sort((a, b) => since(a).localeCompare(since(b)) || a.localeCompare(b));
   if (!candidates.length) return false;
   drills.push(newDrill(ctx, candidates[0], 'tricky'));
@@ -175,9 +198,7 @@ function drillItem(ctx, drill, extra = {}) {
     return { ...base, tiles: tilesFor(entry, deckTerms, seed) };
   }
   if (stepName === 'match') {
-    const others = Object.entries(ctx.status.words)
-      .filter(([id, word]) => id !== drill.wordId && word.state !== 'new')
-      .map(([id]) => ctx.lexicon.entries.get(id)).filter(Boolean);
+    const others = matchPartners(ctx, drill.wordId).map((id) => ctx.lexicon.entries.get(id));
     const board = [entry, ...seededShuffle(others, hashString(`${seed}|others`)).slice(0, 3)];
     return { ...base, board: matchBoard(board, ctx.media ?? {}, seed) };
   }
@@ -265,10 +286,17 @@ function openPractice(ctx) {
   return run && run.index < run.queue.length ? run : null;
 }
 
+function buildRun(ctx, capabilities, { mode, help = true, filter = 'introduced', chosen = [], frontSide = 'term' }, seed) {
+  return buildPractice({
+    mode, help, filter, chosen, frontSide, words: ctx.status.words, entries: ctx.lexicon.entries,
+    media: ctx.media ?? {}, day: ctx.day, seed, capabilities: capabilities ?? {},
+  });
+}
+
+// A mode is offered only when its default run (with help, every introduced
+// word) would have something in it.
 function menuItem(ctx) {
-  const mic = ctx.dayFile.capabilities?.microphone === true;
-  const heard = Object.entries(ctx.status.words).some(([id, word]) => word.state !== 'new' && ctx.media?.[id]?.audio === true);
-  const modes = PRACTICE_MODES.filter((mode) => (mode !== 'say' || mic) && (mode !== 'listen' || heard));
+  const modes = PRACTICE_MODES.filter((mode) => buildRun(ctx, ctx.dayFile.capabilities, { mode }, `${ctx.learnerId}|${ctx.day}|menu`).queue.length > 0);
   return { id: 'menu', type: 'menu', modes, quizzed: quizzedCount(ctx.dayFile) };
 }
 
@@ -287,7 +315,8 @@ function practiceItem(ctx, run) {
     case 'type-practice': return { id, type: 'typed', task: '3.3', source, graded: false, wordId: task.wordId, cue: cue() };
     case 'listen': return { id, type: 'listen', source, wordIds: task.wordIds };
     case 'drill': return drillItem(ctx, task.drill, { source });
-    default: return { ...gradedItem(ctx, id, task.wordId, task.task, source), graded: true };
+    case 'graded': return { ...gradedItem(ctx, id, task.wordId, task.task, source), graded: true };
+    default: throw new DomainInvariantError(`unknown practice task kind '${task.kind}'`);
   }
 }
 
@@ -298,17 +327,18 @@ function practiceItem(ctx, run) {
 export function startPractice(ctx, { mode, help = true, filter = 'introduced', chosen = [], frontSide = 'term' } = {}) {
   if (!ctx.dayFile.doneAt) throw new ValidationError("practice opens after today's goal");
   if (!PRACTICE_MODES.includes(mode)) throw new ValidationError(`unknown practice mode '${mode}'`);
+  if (!PRACTICE_FILTERS.includes(filter)) throw new ValidationError(`unknown practice filter '${filter}'`);
+  if (!FRONT_SIDES.includes(frontSide)) throw new ValidationError(`unknown flashcard front side '${frontSide}'`);
   const dayFile = clone(ctx.dayFile);
   const runNumber = (dayFile.practiceRuns ?? 0) + 1;
   const id = `p${runNumber}`;
-  const run = buildPractice({
-    mode, help: help !== false, filter, chosen: Array.isArray(chosen) ? chosen : [], frontSide,
-    words: ctx.status.words, entries: ctx.lexicon.entries, media: ctx.media ?? {}, day: ctx.day,
-    seed: `${ctx.learnerId}|${ctx.day}|${id}`, capabilities: dayFile.capabilities ?? {},
+  const run = buildRun(ctx, dayFile.capabilities, { mode, help: help !== false, filter, chosen: Array.isArray(chosen) ? chosen : [], frontSide }, `${ctx.learnerId}|${ctx.day}|${id}`);
+  if (run.queue.length === 0) throw new ValidationError('nothing to practise');
+  run.queue = run.queue.map((task, index) => {
+    if (task.kind !== 'drill') return task;
+    const steps = stepsFor(ctx, task.wordId, dayFile.capabilities);
+    return { ...task, steps, drill: { id: `${id}:${index}`, wordId: task.wordId, steps, index: 0, tries: 0, done: false } };
   });
-  run.queue = run.queue.map((task, index) => (task.kind === 'drill'
-    ? { ...task, drill: { id: `${id}:${index}`, wordId: task.wordId, steps: task.steps, index: 0, tries: 0, done: false } }
-    : task));
   dayFile.practice = { ...run, id };
   dayFile.practiceRuns = runNumber;
   dayFile.summarySeen = true;
@@ -339,7 +369,7 @@ function startQuiz(ctx, round, { quizNow = false } = {}) {
 function offerFor(ctx, round) {
   if (round.offerSettled || remainingMs(ctx) < DRILL_MS) return null;
   const ranked = round.words
-    .filter((id) => round.stream.latest[id] === 'notYet' && !round.quiz.passed.includes(id))
+    .filter((id) => round.stream.latest[id] === 'notYet' && !round.quiz.passed.includes(id) && hasEntry(ctx, id))
     .map((id) => [id, round.stream.notYetCount?.[id] ?? 1])
     .sort(([a, x], [b, y]) => (y - x) || a.localeCompare(b));
   return ranked[0]?.[0] ?? null;

@@ -6,6 +6,8 @@ import { hashString, seededShuffle } from './checkItem.mjs';
 import { drillSteps, matchBoard } from './drill.mjs';
 import { isUnsettled } from './mastery.mjs';
 
+const QUIZZABLE = new Set(['familiar', 'claimed']);
+
 export const PRACTICE_MODES = Object.freeze(['flashcards', 'match', 'say', 'write', 'listen', 'drill', 'quiz']);
 
 /**
@@ -57,7 +59,10 @@ export function buildPractice({ mode, help = true, filter = 'introduced', chosen
   else if (mode === 'listen') { const heard = ids.filter((id) => media[id]?.audio); queue = heard.length ? [{ kind: 'listen', wordIds: heard }] : []; }
   else if (mode === 'drill') queue = ids.map((wordId) => ({ kind: 'drill', wordId, steps: drillSteps(media[wordId], capabilities) }));
   else if (mode === 'quiz') {
-    const eligible = ids.filter((id) => words[id].state !== 'mastered' && words[id].verifyFailedDay !== day);
+    // Same rule as a round's verify (spec §4 Round end, rule 3): familiar or
+    // claimed, or notYetCarry — never new / introduced / notYet — and not
+    // failed today.
+    const eligible = ids.filter((id) => (QUIZZABLE.has(words[id].state) || words[id].notYetCarry === true) && words[id].verifyFailedDay !== day);
     queue = [...eligible.map((wordId) => ({ kind: 'graded', task: '3.3', wordId })), ...eligible.map((wordId) => ({ kind: 'graded', task: '2.2', wordId }))];
   }
   return { mode, help, queue, index: 0, step: 0, passed: [], failed: [] };

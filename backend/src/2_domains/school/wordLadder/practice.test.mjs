@@ -60,4 +60,15 @@ describe('practice', () => {
       expect(size).toBeLessThanOrEqual(6);
     }));
   });
+  it('quiz eligibility is the round-verify rule: familiar/claimed or notYetCarry, not failed today', () => {
+    const w = {
+      f: { ...emptyWordV3(), state: 'familiar' }, c: { ...emptyWordV3(), state: 'claimed' },
+      i: { ...emptyWordV3(), state: 'introduced' }, n: { ...emptyWordV3(), state: 'notYet' },
+      nc: { ...emptyWordV3(), state: 'notYet', notYetCarry: true }, m: { ...emptyWordV3(), state: 'mastered', stage: 0 },
+      x: { ...emptyWordV3(), state: 'claimed', verifyFailedDay: D },
+    };
+    const ent = new Map(Object.keys(w).map((id) => [id, { id, term: `${id}어`, gloss: id }]));
+    const q = buildPractice({ mode: 'quiz', words: w, entries: ent, media: {}, day: D, seed: 's' }).queue;
+    expect([...new Set(q.map((t) => t.wordId))].sort()).toEqual(['c', 'f', 'nc']);
+  });
 });
