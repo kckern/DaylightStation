@@ -21,7 +21,7 @@ import { GuestForbiddenError } from '#domains/school/errors.mjs';
 import { offsetMinutesFor, studyDayForInstant } from '#domains/school/studyDay.mjs';
 import { addDays } from '#domains/school/termVerdict.mjs';
 import {
-  addActiveTime, currentItem, foldPaperAttempts, openDay, quizDocumentIdFor, respond, wordAssetIds,
+  addActiveTime, currentItem, deckDirOf, foldPaperAttempts, learnerQuizPrefix, openDay, quizDocumentIdFor, respond, wordAssetIds,
 } from '#domains/school/wordLadder/index.mjs';
 
 const FOLD_LOOKBACK_DAYS = 60;
@@ -258,13 +258,24 @@ export class WordLadderSittingService {
     return [...ids];
   }
 
-  #fold(status, { attempts, ok }, quizDocumentIds, today, settings) {
+  /**
+   * `{ learnerId, deckDir, pkg }` name the per-learner quiz prefixes (spec §8
+   * Printed quiz): `acceptPrefixes` is THIS learner's own sheet; `refusePrefixes`
+   * is the bare per-package prefix, so a sibling's sheet (same package,
+   * different learnerId) is refused rather than silently ignored.
+   */
+  #fold(status, { attempts, ok }, quizDocumentIds, today, settings, { learnerId, deckDir, pkg }) {
     const out = foldPaperAttempts({
       status, attempts, quizDocumentIds,
+      acceptPrefixes: [learnerQuizPrefix({ deckDir, pkg, learnerId })],
+      refusePrefixes: [learnerQuizPrefix({ deckDir, pkg })],
       dayOf: (at) => studyDayForInstant(Date.parse(at), { timezone: this.#timezone }),
       settings: { afterMisses: settings.drill.afterMisses, gapScale: settings.review.gapScale },
     });
     if (ok) out.status.lastFoldedDay = today;
+    for (const row of out.refused) {
+      this.#logger.warn?.('school.word-ladder.fold-refused', { learnerId, package: pkg, mode: this.#mode, ...row });
+    }
     return out;
   }
 
@@ -300,7 +311,7 @@ export class WordLadderSittingService {
     let changes = { reopened: false, idleClosed: [] };
     const next = store.transact(userId, pkg, day, ({ status, dayFile }) => {
       const settings = this.#daySettings(dayFile);
-      const afterFold = this.#fold(status, read, quizDocumentIds, day, settings);
+      const afterFold = this.#fold(status, read, quizDocumentIds, day, settings, { learnerId: userId, deckDir: deckDirOf(deck.id), pkg });
       folded = afterFold.folded;
       const opened = openDay({ status: afterFold.status, dayFile, day, deckId, pool, settings, learnerId: userId, at: isoWithOffset(openedMs, this.#timezone) });
       changes = this.#housekeep(opened.dayFile, sittingId, openedMs, { reopen: false });
@@ -432,9 +443,10 @@ export class WordLadderSittingService {
       const { store } = this.#stores.open(learnerId, pkg, today, {});
       const read = this.#readAttempts(learnerId, store.readStatus(learnerId, pkg), today);
       const quizDocumentIds = await this.#quizDocumentIds(deck);
+      const deckDir = deckDirOf(deck.id);
       let folded = [];
       store.transact(learnerId, pkg, today, ({ status, dayFile }) => {
-        const out = this.#fold(status, read, quizDocumentIds, today, this.#daySettings(dayFile));
+        const out = this.#fold(status, read, quizDocumentIds, today, this.#daySettings(dayFile), { learnerId, deckDir, pkg });
         folded = out.folded;
         return { status: out.status, dayFile };
       });
