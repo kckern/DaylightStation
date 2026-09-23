@@ -283,7 +283,15 @@ Pass = score ≥ `typing.passScore` (default 6). Verdicts are cached by
 (package, word id, normalised answer) in
 `data/household/school/runtime/word-ladder/<package>/judgements.yml`
 (`YamlJudgementCache`) — a reload or repeated typo gets the same verdict with
-no second call.
+no second call. A **grown-up's re-grade** overwrites that answer's entry with
+`judge: grown-up` (see [Grown-up word controls](#grown-up-word-controls-spec-6));
+the judge checks for one **before any band**, so it wins even for an exact,
+short or no-Hangul answer.
+
+Every task item's day-file record (`items[itemId]`) keeps `wordId`, `task`,
+`source` and, for a judged answer, the judge's `reason` — what the console
+lists and re-grades. Older records without them are resolved from the day's
+plan (`rc:<word>`, a round's quiz queue, the latest practice run).
 
 ## Goal, cap, and a study day
 
@@ -385,6 +393,26 @@ mastery stage) and a Tricky chip when set. `GET /word-ladder/words` in test
 mode **requires `sittingId`** — it reads that sitting's shadow; there is no
 "current" live status for it to fall back to.
 
+## Grown-up word controls (spec §6)
+
+Per learner, per word package, from the teacher console. **Live only** (the
+test service refuses them), and every call passes `TeacherGate.assert({userId:
+actorId, pin, action: 'word-ladder.admin', context: {learnerId}})` first — a
+refusal changes nothing. Each mutation logs `school.word-ladder.admin`
+`{actorId, learnerId, package, wordId, action}` and a `transition` (source
+`admin`) for any word whose state or stage it moved. Pure parts live in
+`2_domains/school/wordLadder/admin.mjs`; the service methods are
+`WordLadderSittingService.admin*`.
+
+| Action | Effect |
+|---|---|
+| **Words** (`adminWords`) | Every word the learner can meet (decks seen in order, this deck, then any other word with a record): state, stage, due, miss streak, tricky, excluded, `lastGraded`, and `recentTyped` — judged 3.3 answers from the last 14 study days' files, newest first, each with `itemId`, typed text, score, judge, reason and any `regraded` stamp |
+| **Reset** | The record becomes `emptyWordV3()` — nothing kept, `notYetCarry` included |
+| **Mark mastered (stage n)** | `mastered`, stage n, due today + `GAPS[min(n,5)]`; miss streak, tricky and `notYetCarry` cleared |
+| **Exclude / Include** | Sets `excluded`. An excluded word is never in the new-word pool or an intro, a carry round, a recheck (`isDue` is false), a tricky drill or drill offer, a practice run, a match board or 3.1 distractor, the printed learner quiz, or My words, and never counts toward the working set (`isUnsettled` is false). Excluding mid-day also drops its pending recheck and ends an unfinished drill on it (`excludeWordFromDay`); a round already under way keeps it until the round ends |
+| **Drop deck** | Removes the deck from `decksSeen` (the new-word pool); introduced words keep their state |
+| **Re-grade** | For one logged typed (3.3) answer: overwrites the judge cache for `(package, word, normalised answer)` with `{score: pass ? typing.passScore : 1, judge: grown-up, reason: 'Re-graded by a grown-up'}` and stamps the item `regraded: {at, actorId, pass}`. **It does not change word state** — reset / mark mastered do that |
+
 ## API
 
 Mounted by `mountWordLadderRoutes` (`backend/src/4_api/v1/routers/school.wordLadder.mjs`)
@@ -414,6 +442,12 @@ no audio until the take; look / copy / say-after the full word card.
 - `GET /word-ladder/stage` → `{screen}` (the configured stage screen id, see below)
 - `POST /word-ladder/fold {learnerId, actorId, pin}` — teacher-gated: runs the paper-quiz fold for every
   word-ladder package the learner is enrolled in, on demand
+- Grown-up word controls, **live mount only**, teacher-gated (`pin` may be the
+  console's cookie capability):
+  `GET /word-ladder/admin/words?learnerId=&deckId=&actorId=&pin=` → `{learnerId, package, decksSeen, words}`;
+  `POST /word-ladder/admin/reset {learnerId, deckId, wordId, actorId, pin}`,
+  `…/admin/mastered {…, wordId, stage}`, `…/admin/exclude {…, wordId, excluded}`,
+  `…/admin/drop-deck {…, dropDeckId}`, `…/admin/regrade {…, day, itemId, pass}`
 
 Item ids make every response idempotent. A sitting belongs to its study day:
 after the day boundary it 404s and the client reopens. **Server idle close:** a
@@ -547,10 +581,10 @@ speaking, on-screen keypad, practice menu)**:
 `docs/_wip/plans/2026-09-22-word-ladder-plan-2-drill-practice.md`. The rest of
 the spec is written but not implemented:
 
-- **Trace CLI and grown-up word controls** — `docs/_wip/plans/2026-09-22-word-ladder-plan-4-observability-controls.md`.
-  `school word-ladder trace` and the teacher console's per-word reset/exclude/
-  re-grade controls do not exist; a word's state is visible only in
-  `status.yml` today.
+- **Trace CLI and the console's Words view** — `docs/_wip/plans/2026-09-22-word-ladder-plan-4-observability-controls.md`.
+  The [grown-up word controls](#grown-up-word-controls-spec-6) exist in the
+  backend and API; the teacher console panel that calls them, and `school
+  word-ladder trace`, are still being built.
 - **Practice flashcards prev/undo** — spec §6 describes a practice
   flashcard run with prev/next and undo; Plan 2 shipped it forward-only (see
   [The practice menu](#the-practice-menu-spec-6-post-goal)), by ruling.
