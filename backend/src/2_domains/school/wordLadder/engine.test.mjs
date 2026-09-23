@@ -7,7 +7,7 @@ import { addActiveTime, currentItem, openDay, respond } from './engine.mjs';
 const D = '2026-09-22';
 const SET = {
   round: { size: 5, maxPasses: 3 }, batch: { newPerDay: 4, workingSet: 7 },
-  review: { gapScale: 1, typedEvery: 2 }, drill: { afterMisses: 2 }, session: { capMinutes: 15 }, typing: { passScore: 6 },
+  review: { gapScale: 1, typedEvery: 2 }, drill: { afterMisses: 2, perSitting: 1 }, session: { capMinutes: 15 }, typing: { passScore: 6 },
 };
 const E = (id, term, gloss) => [id, { id, term, gloss, kind: 'word', decoys: { term: ['x1', 'x2', 'x3'], gloss: ['g1', 'g2', 'g3'] } }];
 const lexicon = { entries: new Map([E('gawi', '가위', 'Scissors'), E('pul', '풀', 'Glue'), E('chaek', '책', 'Book')]) };
@@ -17,8 +17,8 @@ const PASS = { score: 10, judge: 'exact', pass: true };
 let clock = Date.parse(`${D}T16:00:00-07:00`);
 const at = () => new Date((clock += 5000)).toISOString();
 
-function start(status = emptyStatusV3()) {
-  const opened = openDay({ status, dayFile: emptyDay(D), day: D, deckId: 'deck', pool, settings: SET, learnerId: 'test-learner', at: at() });
+function start(status = emptyStatusV3(), { capabilities = null, dayFile = emptyDay(D) } = {}) {
+  const opened = openDay({ status, dayFile, day: D, deckId: 'deck', pool, settings: SET, learnerId: 'test-learner', at: at(), media, capabilities });
   return { ...opened, day: D, lexicon, media, pool, settings: SET, learnerId: 'test-learner' };
 }
 function step(ctx, response, verdict = null) {
@@ -109,6 +109,7 @@ describe('engine — rechecks and misses', () => {
       if (item.type === 'flashcard' && item.mode === 'intro') ({ ctx } = step(ctx, { seen: true }));
       else if (item.type === 'copy') ({ ctx } = step(ctx, { typed: lexicon.entries.get(item.wordId).term }));
       else if (item.type === 'flashcard') ({ ctx } = step(ctx, { sort: 'notYet' }));
+      else if (item.type === 'drill-offer') ({ ctx } = step(ctx, { drill: 'no' }));
       else ({ ctx } = step(ctx, { dontKnow: true }));
     }
     expect(Object.values(ctx.status.words).every((word) => word.notYetCarry === true)).toBe(true);
@@ -333,5 +334,156 @@ describe('engine — a day with nothing to do', () => {
   });
   it('requires at', () => {
     expect(() => openDay({ status: emptyStatusV3(), dayFile: emptyDay(D), day: D, deckId: 'deck', pool, settings: SET, learnerId: 'test-learner' })).toThrow('at is required');
+  });
+});
+
+describe('engine — drill', () => {
+  const trickyStatus = () => {
+    const s = emptyStatusV3();
+    s.words.gawi = { ...emptyWordV3(), state: 'familiar', introducedDay: '2026-09-10', tricky: true, trickySince: '2026-09-20', missStreak: 2 };
+    return s;
+  };
+  const drillAnswer = (it) => (it.step === 'copy' || it.step === 'dictation' || it.step === 'type' ? { typed: lexicon.entries.get(it.wordId).term }
+    : it.step === 'tiles' ? { tiles: [...lexicon.entries.get(it.wordId).term] } : { done: true });
+  function finishDrills(c) {
+    let guard = 0;
+    while (currentItem(c).type === 'drill' && guard++ < 40) ({ ctx: c } = step(c, drillAnswer(currentItem(c))));
+    return c;
+  }
+
+  it('a tricky word is drilled before rounds, skipping mic steps without a mic', () => {
+    const ctx0 = start(trickyStatus());
+    const item = currentItem(ctx0);
+    expect(item).toMatchObject({ type: 'drill', step: 'look', wordId: 'gawi' });
+    expect(ctx0.dayFile.drills[0].steps).not.toContain('say-after');
+    expect(ctx0.dayFile.capabilities).toEqual({ microphone: false });
+    expect(ctx0.dayFile.rounds).toEqual([]);
+  });
+  it('with a mic the drill keeps the speaking steps; the latest device wins', () => {
+    const ctx = start(trickyStatus(), { capabilities: { microphone: true } });
+    expect(ctx.dayFile.drills[0].steps).toContain('say-after');
+    const again = openDay({ status: ctx.status, dayFile: ctx.dayFile, day: D, deckId: 'deck', pool, settings: SET, learnerId: 'test-learner', at: at(), media, capabilities: {} });
+    expect(again.dayFile.capabilities).toEqual({ microphone: false });
+  });
+  it('drill never changes word state; copy must match to advance', () => {
+    let ctx = start(trickyStatus());
+    const before = structuredClone(ctx.status.words.gawi);
+    ({ ctx } = step(ctx, { done: true }));
+    const copyItem = currentItem(ctx);
+    const { ctx: stay, result } = step(ctx, { typed: '가이' });
+    expect(result.correct).toBe(false);
+    expect(currentItem(stay)).toMatchObject({ step: 'copy' });
+    expect(stay.dayFile.items[copyItem.id]).toBeUndefined();
+    let c = stay;
+    let guard = 0;
+    while (currentItem(c).type === 'drill' && guard++ < 20) {
+      const it = currentItem(c);
+      const r = it.step === 'copy' || it.step === 'dictation' || it.step === 'type' ? { typed: '가위' }
+        : it.step === 'tiles' ? { tiles: ['가', '위'] } : { done: true };
+      ({ ctx: c } = step(c, r));
+    }
+    expect(c.status.words.gawi).toEqual(before);
+    expect(c.dayFile.drills[0].done).toBe(true);
+    expect(currentItem(c)).toMatchObject({ type: 'flashcard', mode: 'intro' });
+  });
+  it('tiles: wrong stays, the answer is revealed after the 2nd miss, the 3rd try advances regardless', () => {
+    let ctx = start(trickyStatus());
+    let guard = 0;
+    while (currentItem(ctx).step !== 'tiles' && guard++ < 20) ({ ctx } = step(ctx, drillAnswer(currentItem(ctx))));
+    const tilesItem = currentItem(ctx);
+    expect(tilesItem.tiles).toEqual(expect.arrayContaining(['가', '위']));
+    let r;
+    ({ ctx, result: r } = step(ctx, { tiles: ['위', '가'] }));
+    expect(r).toMatchObject({ correct: false, answer: null });
+    ({ ctx, result: r } = step(ctx, { tiles: ['위', '가'] }));
+    expect(r).toMatchObject({ correct: false, answer: '가위' });
+    expect(currentItem(ctx).id).toBe(tilesItem.id);
+    ({ ctx, result: r } = step(ctx, { tiles: ['위'] }));
+    expect(r.correct).toBe(false);
+    expect(currentItem(ctx).id).not.toBe(tilesItem.id);
+  });
+  it('a match step carries a board with the drill word', () => {
+    let ctx = start(trickyStatus());
+    let guard = 0;
+    while (currentItem(ctx).step !== 'match' && guard++ < 20) ({ ctx } = step(ctx, drillAnswer(currentItem(ctx))));
+    expect(currentItem(ctx).board.pairs.map((p) => p.wordId)).toContain('gawi');
+  });
+  it('the tricky drill is skipped when its estimate does not fit', () => {
+    const tight = { ...emptyDay(D), activeMs: SET.session.capMinutes * 60000 - 200000 };
+    const ctx = start(trickyStatus(), { dayFile: tight });
+    expect(ctx.dayFile.drills).toEqual([]);
+  });
+  it('the goal waits for the tricky drill', () => {
+    const s = trickyStatus();
+    for (const id of ['pul', 'chaek']) s.words[id] = { ...emptyWordV3(), state: 'mastered', stage: 2, dueDay: '2026-10-30', introducedDay: '2026-09-01' };
+    s.words.gawi.state = 'mastered';
+    s.words.gawi.dueDay = '2026-10-30';
+    let ctx = start(s);
+    expect(ctx.dayFile.doneAt).toBeNull();
+    ctx = finishDrills(ctx);
+    expect(ctx.dayFile.doneAt).toEqual(expect.any(String));
+    expect(currentItem(ctx).type).toBe('summary');
+  });
+  it('rejects responses that do not fit a drill step', () => {
+    const ctx = start(trickyStatus());
+    expect(() => step(ctx, { typed: '가위' })).toThrow('response does not fit this item');
+    expect(() => step(ctx, { done: false })).toThrow('response does not fit this item');
+  });
+
+  function toOffer(ctx) {
+    let guard = 0;
+    while (currentItem(ctx).type !== 'drill-offer' && currentItem(ctx).type !== 'summary' && guard++ < 80) {
+      const item = currentItem(ctx);
+      if (item.type === 'flashcard' && item.mode === 'intro') ({ ctx } = step(ctx, { seen: true }));
+      else if (item.type === 'copy') ({ ctx } = step(ctx, { typed: lexicon.entries.get(item.wordId).term }));
+      else if (item.type === 'say') ({ ctx } = step(ctx, { done: true }));
+      else if (item.type === 'flashcard') ({ ctx } = step(ctx, { sort: item.wordId === 'pul' ? 'notYet' : 'claimed' }));
+      else if (item.type === 'typed') ({ ctx } = step(ctx, { typed: 'x' }, PASS));
+      else ({ ctx } = step(ctx, { choice: lexicon.entries.get(item.wordId).gloss }));
+    }
+    return ctx;
+  }
+  it('round end offers one drill for the chronic Not-yet word', () => {
+    let ctx = toOffer(start());
+    expect(currentItem(ctx)).toMatchObject({ type: 'drill-offer', wordId: 'pul' });
+    expect(() => step(ctx, { drill: 'maybe' })).toThrow('response does not fit this item');
+    ({ ctx } = step(ctx, { drill: 'no' }));
+    expect(currentItem(ctx).type).not.toBe('drill-offer');
+    expect(ctx.status.words.pul.notYetCarry).toBe(true);
+  });
+  it('yes runs the offered drill, then the day goes on', () => {
+    let ctx = toOffer(start());
+    ({ ctx } = step(ctx, { drill: 'yes' }));
+    expect(ctx.dayFile.drills).toEqual([expect.objectContaining({ source: 'offer', wordId: 'pul' })]);
+    expect(currentItem(ctx)).toMatchObject({ type: 'drill', wordId: 'pul', step: 'look' });
+    expect(ctx.dayFile.doneAt).toBeNull();
+    ctx = finishDrills(ctx);
+    expect(currentItem(ctx).type).toBe('summary');
+    expect(ctx.dayFile.doneAt).toEqual(expect.any(String));
+  });
+  it('no offer when less than the drill estimate remains', () => {
+    let ctx = start();
+    ctx = { ...ctx, dayFile: { ...ctx.dayFile, activeMs: SET.session.capMinutes * 60000 - 200000 } };
+    ctx = toOffer(ctx);
+    expect(currentItem(ctx).type).toBe('summary');
+  });
+  it('with a mic and audio the intro adds say-after after copy', () => {
+    let ctx = start(emptyStatusV3(), { capabilities: { microphone: true } });
+    ({ ctx } = step(ctx, { seen: true }));
+    ({ ctx } = step(ctx, { typed: '가위' }));
+    expect(currentItem(ctx)).toEqual({ id: 'r1:i:gawi:say', type: 'say', mode: 'say-after', wordId: 'gawi' });
+    ({ ctx } = step(ctx, { done: true }));
+    expect(currentItem(ctx)).toMatchObject({ type: 'flashcard', mode: 'intro', wordId: 'pul' });
+  });
+  it('no say-after for a word without audio', () => {
+    let ctx = start(emptyStatusV3(), { capabilities: { microphone: true } });
+    for (const id of ['gawi', 'pul']) {
+      ({ ctx } = step(ctx, { seen: true }));
+      ({ ctx } = step(ctx, { typed: lexicon.entries.get(id).term }));
+      ({ ctx } = step(ctx, { done: true }));
+    }
+    ({ ctx } = step(ctx, { seen: true }));
+    ({ ctx } = step(ctx, { typed: '책' }));
+    expect(currentItem(ctx)).toMatchObject({ type: 'flashcard', mode: 'stream' });
   });
 });
