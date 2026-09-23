@@ -45,7 +45,9 @@ export function enforceGovernanceOnProgress(progress, deps) {
  * music player do not stay paused until the next mount. Other owners also
  * write that flag (voice memo overlay, EmergencyPlaybackController, module
  * pause requests); `isPauseHeldElsewhere` lets the caller veto the clear while
- * one of them holds a pause. The enforcer overwrites the flag on every tick
+ * one of them holds a pause. FitnessPlayer's veto covers the voice memo overlay
+ * and the emergency phase only; module pause requests via useFitnessModule's
+ * `pauseVideo` (no callers today) are NOT vetoed. The enforcer overwrites the flag on every tick
  * while mounted, so "last value the enforcer wrote" plus that veto is the
  * owner information available here.
  *
@@ -56,6 +58,7 @@ export function enforceGovernanceOnProgress(progress, deps) {
  * @param {object} [args.logger]  structured logger with .sampled()
  * @param {() => object} [args.getContext]  governance snapshot for telemetry, read at log time
  * @param {() => boolean} [args.isPauseHeldElsewhere]  true while another owner holds a pause, read at unmount
+ *   (FitnessPlayer: voice memo open or emergency active; useFitnessModule `pauseVideo` is not covered)
  * @returns {{ enforce: (progress: {paused: boolean, currentTime?: number}, branch: string) => void, isLocked: () => boolean }}
  */
 export function useGovernanceProgressEnforcer({
