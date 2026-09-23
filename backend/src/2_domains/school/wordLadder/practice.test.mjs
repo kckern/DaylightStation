@@ -29,8 +29,35 @@ describe('practice', () => {
     expect(build('write').queue.every((t) => t.kind === 'copy')).toBe(true);
     expect(build('write', { help: false }).queue.every((t) => t.kind === 'type-practice')).toBe(true);
   });
-  it('match makes boards of up to six', () => {
-    expect(build('match').queue).toHaveLength(1);
-    expect(build('match').queue[0].board.pairs).toHaveLength(4);
+  it('say-after (help) needs term audio; say-from-cue (no help) does not', () => {
+    const mixedMedia = { ...media, a: { image: false, audio: false } };
+    const help = build('say', { media: mixedMedia }).queue;
+    expect(help.every((t) => t.kind === 'say-after')).toBe(true);
+    expect(help.map((t) => t.wordId)).not.toContain('a');
+    const noHelp = build('say', { help: false, media: mixedMedia }).queue;
+    expect(noHelp.every((t) => t.kind === 'say-from-cue')).toBe(true);
+    expect(noHelp.map((t) => t.wordId)).toContain('a');
+  });
+  it('match makes boards of 4-6, folding short remainders rather than dropping below 4', () => {
+    const wordsN = (n) => Object.fromEntries(Array.from({ length: n }, (_, i) => [`w${i}`, { ...emptyWordV3(), state: 'familiar' }]));
+    const entriesN = (n) => new Map(Array.from({ length: n }, (_, i) => [`w${i}`, { id: `w${i}`, term: `${i}어`, gloss: `${i}` }]));
+    const mediaN = (n) => Object.fromEntries(Array.from({ length: n }, (_, i) => [`w${i}`, { image: false, audio: true }]));
+    const sizesFor = (n) => buildPractice({
+      mode: 'match', help: true, filter: 'introduced', chosen: [], words: wordsN(n), entries: entriesN(n), media: mediaN(n),
+      day: D, seed: 's', capabilities: { microphone: true }, frontSide: 'term',
+    }).queue.map((t) => t.board.pairs.length);
+    expect(sizesFor(4)).toEqual([4]);
+    expect(sizesFor(5)).toEqual([5]);
+    expect(sizesFor(6)).toEqual([6]);
+    expect(sizesFor(7).sort((x, y) => y - x)).toEqual([4, 3]);
+    expect(sizesFor(8).sort((x, y) => y - x)).toEqual([4, 4]);
+    expect(sizesFor(9).sort((x, y) => y - x)).toEqual([5, 4]);
+    expect(sizesFor(12).sort((x, y) => y - x)).toEqual([6, 6]);
+    expect(sizesFor(13).sort((x, y) => y - x)).toEqual([5, 4, 4]);
+    sizesFor(13).forEach((size) => expect(size).toBeGreaterThanOrEqual(3));
+    [4, 5, 6, 8, 9, 12, 13].forEach((n) => sizesFor(n).forEach((size) => {
+      expect(size).toBeGreaterThanOrEqual(4);
+      expect(size).toBeLessThanOrEqual(6);
+    }));
   });
 });
