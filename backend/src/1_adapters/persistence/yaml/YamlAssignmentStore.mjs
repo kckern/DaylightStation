@@ -12,6 +12,7 @@ import path from 'path';
 import yaml from 'js-yaml';
 import { IAssignmentStore } from '#apps/school/ports/IAssignmentStore.mjs';
 import { DomainInvariantError } from '#domains/core/errors/index.mjs';
+import { canonicalizeProgramPolicy } from '#domains/school/flashcards/index.mjs';
 import { readDirectoryAsync, readTextFromPath, readTextFromPathAsync, writeFileAtomic } from '#system/utils/FileIO.mjs';
 
 // One flat segment starting alphanumeric: "..", "/", and hidden names cannot
@@ -32,7 +33,8 @@ const toDomainRecord = (raw, learnerId) => ({
   learnerId: typeof raw?.learnerId === 'string' ? raw.learnerId : learnerId,
   courses: (Array.isArray(raw?.enrollments) ? raw.enrollments : raw?.courses ?? []).map(normalizeEnrollment),
   units: Array.isArray(raw?.standaloneWork) ? raw.standaloneWork : raw?.units ?? [],
-  programs: Array.isArray(raw?.programs) ? raw.programs : [],
+  // A pre-rename `policy.mode: word-ladder` reads as `card-ladder` (the file is not rewritten).
+  programs: Array.isArray(raw?.programs) ? raw.programs.map(canonicalizeProgramPolicy) : [],
   updatedAt: typeof raw?.updatedAt === 'string' ? raw.updatedAt : null,
   assignedBy: typeof raw?.assignedBy === 'string' ? raw.assignedBy : null,
 });
@@ -162,8 +164,9 @@ export class YamlAssignmentStore extends IAssignmentStore {
     if (!isSafeLearnerId(learnerId)) return null;
     try {
       const raw = yaml.load(readTextFromPath(this.#fileFor(learnerId)));
-      return (Array.isArray(raw?.programs) ? raw.programs : [])
+      const found = (Array.isArray(raw?.programs) ? raw.programs : [])
         .find((entry) => entry?.corpusId === corpusId) ?? null;
+      return found ? canonicalizeProgramPolicy(found) : null;
     } catch { return null; }
   }
 

@@ -1,3 +1,5 @@
+> Renamed card ladder 2026-09-23 — current reference: `docs/reference/school/card-ladder.md`.
+
 # Word ladder — mastery redesign
 
 Status: rev 4 (2026-09-22) — third review (confirm pass) applied; cleared for planning

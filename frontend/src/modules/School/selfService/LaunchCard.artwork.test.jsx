@@ -98,9 +98,9 @@ describe('LaunchCard course artwork', () => {
   });
 
   it('an instance-scoped program poster (the word and sentence ladders) keeps its instance as its own path segment', () => {
-    renderCard({ id: 'program:word-ladder:korean-vocab', title: 'Test Class', artwork: { kind: 'course-poster', courseId: 'program:word-ladder:korean-vocab' } });
+    renderCard({ id: 'program:card-ladder:korean-vocab', title: 'Test Class', artwork: { kind: 'course-poster', courseId: 'program:card-ladder:korean-vocab' } });
     expect(screen.getByRole('img', { name: 'Test Class cover' }).getAttribute('src'))
-      .toBe('/api/v1/school/self-service/programs/word-ladder/korean-vocab/poster.jpg');
+      .toBe('/api/v1/school/self-service/programs/card-ladder/korean-vocab/poster.jpg');
   });
 
   it('falls back to the blank placeholder — not a substitute image — when artwork fails to load', () => {

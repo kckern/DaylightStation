@@ -79,7 +79,7 @@ import { ReceiptPrinting } from '#apps/school/ReceiptPrinting.mjs';
 import { SentenceLadderProgramLauncher } from '#apps/school/SentenceLadderProgramLauncher.mjs';
 import { LanguageReelsProgramLauncher } from '#apps/school/LanguageReelsProgramLauncher.mjs';
 import { FlashcardProgramLauncher } from '#apps/school/FlashcardProgramLauncher.mjs';
-import { WordLadderDoorLauncher } from '#apps/school/WordLadderDoorLauncher.mjs';
+import { CardLadderDoorLauncher } from '#apps/school/CardLadderDoorLauncher.mjs';
 import { RubiksCubeProgramLauncher } from '#apps/school/RubiksCubeProgramLauncher.mjs';
 import { RUBIKS_CUBE_COURSE_ID } from '#apps/school/rubiksCube/courseCatalog.mjs';
 import { createSchoolProgramEnrollmentValidators } from '#apps/school/SchoolProgramEnrollmentValidators.mjs';
@@ -262,7 +262,7 @@ export async function createSchoolLifecycle({
   // `SchoolGradingHookAdapter` bound to `piano_lesson_hook`; null with no HA.
   pianoLessonHook = null,
   flashcardStudyService = null,
-  wordLadderStudyService = null,
+  cardLadderStudyService = null,
   rubiksCubeService = null,
   rubiksCubeGrants = null,
   // The reading shelf. `bookGrants` signs the panel's launch target; the
@@ -598,16 +598,16 @@ export async function createSchoolLifecycle({
   if (flashcardStudyService) {
     launchers.set('flashcards', new FlashcardProgramLauncher({
       studyService: flashcardStudyService, assignments: stores.assignments, donow,
-      wordLadder: wordLadderStudyService,
+      cardLadder: cardLadderStudyService,
     }));
   }
-  // The learner door `/school/go/<learner>/word-ladder[/<package>]` (word
-  // ladder spec §8 Door): resolves the learner's CURRENT word-ladder
+  // The learner door `/school/go/<learner>/card-ladder[/<package>]` (word
+  // ladder spec §8 Door): resolves the learner's CURRENT card-ladder
   // enrollment and mints the ordinary flashcards target — no new authority.
-  if (wordLadderStudyService) {
-    launchers.set('word-ladder', new WordLadderDoorLauncher({
+  if (cardLadderStudyService) {
+    launchers.set('card-ladder', new CardLadderDoorLauncher({
       assignments: stores.assignments,
-      packageOf: (deckId) => wordLadderStudyService.packageOf(deckId),
+      packageOf: (deckId) => cardLadderStudyService.packageOf(deckId),
     }));
   }
   // RUBIKS_CUBE_COURSE_ID is null when course.yml hasn't been authored yet

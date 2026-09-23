@@ -74,9 +74,10 @@ See [`operations.md`](../../reference/school/operations.md) for the full CLI
 surface, including the guarded-write repair lanes (`ops abandon`,
 `ops rematerialize`, `ops grade-adjust`, `ops reassign`).
 
-## Word ladder trace
+## Card ladder trace
 
-`school word-ladder trace` prints one learner's word-ladder sittings as a
+`school card-ladder trace` (the pre-rename `school word-ladder trace` still
+works) prints one learner's card-ladder sittings as a
 timeline: a header per sitting trace, step sections, then one line per item
 (time, kind, word, task/layout, response, correct/score, ms, state
 transitions, why it was served, how it was answered) with what happened on
@@ -84,24 +85,24 @@ it underneath (audio, takes, skips, verdicts, stalls, plan changes), the item
 a sitting ended on marked when it did not end on the goal or the time cap,
 and a summary footer. Use it when a child says a word "didn't count",
 a sitting stopped early, or a screen sat idle. The events it reads are listed
-in [word-ladder.md → Logs](../../reference/school/word-ladder.md#logs).
+in [card-ladder.md → Logs](../../reference/school/card-ladder.md#logs).
 
 ```bash
 # Today's sittings, live and test
-node cli/school.mjs word-ladder trace --learner <learner-id>
+node cli/school.mjs card-ladder trace --learner <learner-id>
 
 # One study day, live sittings only
-node cli/school.mjs word-ladder trace --learner <learner-id> --day YYYY-MM-DD --mode live
+node cli/school.mjs card-ladder trace --learner <learner-id> --day YYYY-MM-DD --mode live
 
 # One sitting (the sittingId from a log line or the console's Words view)
-node cli/school.mjs word-ladder trace --learner <learner-id> --sitting <pkg>.<token>.<n>
+node cli/school.mjs card-ladder trace --learner <learner-id> --sitting <pkg>.<token>.<n>
 
 # A grown-up's /test run
-node cli/school.mjs word-ladder trace --learner <learner-id> --mode test
+node cli/school.mjs card-ladder trace --learner <learner-id> --mode test
 
 # Point it at the log store explicitly (default: $DAYLIGHT_LOGSTORE)
 DAYLIGHT_LOGSTORE={env.log_store_url} \
-  node cli/school.mjs word-ladder trace --learner <learner-id> --day YYYY-MM-DD
+  node cli/school.mjs card-ladder trace --learner <learner-id> --day YYYY-MM-DD
 ```
 
 - **Ordering is by `seq` within a trace**, never by the store's `_time`
@@ -109,7 +110,8 @@ DAYLIGHT_LOGSTORE={env.log_store_url} \
   attached to the item they belong to by `sittingId` + `itemId`.
 - **Fallback:** when the log store is unreachable or has aged out (7 days),
   the CLI reads the learner's day files under
-  `<data-dir>/users/<learner-id>/apps/school/word-ladder/<pkg>/days/`
+  `<data-dir>/users/<learner-id>/apps/school/card-ladder/<pkg>/days/` (or the
+  pre-rename `word-ladder/<pkg>/days/` for a package not yet moved)
   (`--data-dir` to point at the data volume). A day file has absolute
   times but no per-item `ms` or stall detail, and the output says so.
 - A warning that the query hit its row limit means the output may be cut
@@ -129,7 +131,7 @@ Read the trace top to bottom; each part answers one question.
    Quiz › Match.
 3. **Why each item** — `· why <reason>` on the item line (from
    `item.served`; the reasons are tabled in
-   [word-ladder.md → Logs](../../reference/school/word-ladder.md#logs)). A
+   [card-ladder.md → Logs](../../reference/school/card-ladder.md#logs)). A
    sequencing question ("why was this word quizzed again?") is answered by
    the reason plus the `⇢` plan lines under the answer before it: `⇢ round
    r1: stream → quiz [word:task …]` is the exact quiz queue,
@@ -157,7 +159,8 @@ For the raw rows behind any line:
 
 ```bash
 curl -s {env.log_store_url}/select/logsql/query \
-  -d 'query=_msg:~"school.word-ladder" AND data.sittingId:"<sittingId>" AND _time:1d' -d limit=2000
+  -d 'query=_msg:~"school.card-ladder" AND data.sittingId:"<sittingId>" AND _time:1d' -d limit=2000
+# (events before the 2026-09-23 rename say school.word-ladder.* — the trace CLI reads both)
 ```
 
 ## How to read a recording sitting
@@ -225,8 +228,9 @@ browser.
 | `/school/go/<learner>/sentence-ladder/<corpusId>` | that day's sentence queue |
 | `/school/go/<learner>/book-log` | the reading shelf |
 | `/school/go/<learner>/flashcards/<deck/with/slashes>` | a deck (the tail is kept whole) |
-| `/school/go/<learner>/word-ladder` | the learner's current word-ladder enrollment |
-| `/school/go/<learner>/word-ladder/test?scenario=fresh\|due\|round-end\|tricky\|typos\|done` | a **read-only** word-ladder sitting — nothing typed, sorted, spoken or recorded is saved |
+| `/school/go/<learner>/card-ladder` | the learner's current card-ladder enrollment |
+| `/school/go/<learner>/word-ladder[…]` | the pre-rename door (2026-09-23): opens the card ladder exactly as above |
+| `/school/go/<learner>/card-ladder/test?scenario=fresh\|due\|round-end\|tricky\|typos\|done` | a **read-only** card-ladder sitting — nothing typed, sorted, spoken or recorded is saved |
 
 `GET /api/v1/school/lifecycle/direct-launch/programs` lists what can be opened
 and which programs need an instance.
@@ -243,7 +247,7 @@ mounting path, so the runner, its session and its grant are indistinguishable
 from the ordinary route. It does NOT dispatch to the Portal: the work opens in
 the browser that asked, not on the tablet.
 
-**Word ladder needs FKB autoplay on the Portal.** The word ladder's cue and
+**Card ladder needs FKB autoplay on the Portal.** The card ladder's cue and
 answer audio play without a tap-to-unlock gesture once the sitting's own
 **Start** button has run, but on the Portal itself FKB's autoplay setting
 still has to be **enabled** for that unlock to hold — a Portal with autoplay
@@ -251,19 +255,19 @@ off leaves every clip behind a blocked-audio icon (`audio.played outcome:
 blocked` at warn; the trace shows `⚠ ♪ term auto → blocked`) instead of playing. Check it under FKB's own settings before
 troubleshooting "no sound" as a code bug.
 
-**Testing the word ladder without touching a real learner's record**: open
-`/school/go/<learner>/word-ladder/test`, optionally with
+**Testing the card ladder without touching a real learner's record**: open
+`/school/go/<learner>/card-ladder/test`, optionally with
 `?scenario=fresh|due|round-end|tricky|typos|done` to seed a specific state
 (`tricky` opens straight on the tricky-word drill; `typos` opens on
 typed sign-off rechecks worth misspelling to exercise the typed judge — the
 round-end quiz is recognition only and types nothing) — see
-[`word-ladder.md`](../../reference/school/word-ladder.md#the-door-and-test).
+[`card-ladder.md`](../../reference/school/card-ladder.md#the-door-and-test).
 The banner reads "TEST — nothing is saved", and a backend test
-(`WordLadderTestMode.test.mjs`) enforces that promise — every real file on
+(`CardLadderTestMode.test.mjs`) enforces that promise — every real file on
 disk is byte-identical before and after a full test sitting, including any
 spoken take: test mode's recordings sink (`DiscardingRecordings`) counts a
 take and drops it, never writing to
-`media/school/recordings/word-ladder/<package>/<learnerId>/<studyDay>/`.
+`media/school/recordings/card-ladder/<package>/<learnerId>/<studyDay>/`.
 
 **On-screen jamo keypad**: every typing item (copy, dictation, graded typed
 input, drill copy/dictation/type) offers a toggleable two-set (두벌식) jamo
