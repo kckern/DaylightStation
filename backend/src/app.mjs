@@ -3255,7 +3255,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       },
       forToken: (token) => wordLadderShadows.forToken(token),
     },
-    judge: wordLadderJudgeFor(new MemoryJudgementCache()),
+    // Reads through to the live cache (a grown-up's re-grade applies here too); writes stay in memory.
+    judge: wordLadderJudgeFor(new MemoryJudgementCache({ fallback: wordLadderJudgementCache })),
   }) : null;
   // The tuning pass (spec §7): on the REAL store only, the tuner agent only
   // when `word_ladder.tuner.model` is set, a concern pushed to the teachers.

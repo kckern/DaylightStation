@@ -69,6 +69,15 @@ describe('createWordLadderTuning', () => {
     expect(createRuntime).toHaveBeenCalledWith(expect.objectContaining({ model: 'openai/gpt-4o-mini' }));
   });
 
+  it('qualifies a bare model id as OpenAI and leaves a provider-qualified id alone', () => {
+    const bare = vi.fn(() => ({ execute: vi.fn() }));
+    build({ model: 'gpt-5-nano', createRuntime: bare });
+    expect(bare).toHaveBeenCalledWith(expect.objectContaining({ model: 'openai/gpt-5-nano' }));
+    const qualified = vi.fn(() => ({ execute: vi.fn() }));
+    build({ model: 'anthropic/x', createRuntime: qualified });
+    expect(qualified).toHaveBeenCalledWith(expect.objectContaining({ model: 'anthropic/x' }));
+  });
+
   it('a tick runs pending() rows one at a time, and a tick during a tick is skipped', async () => {
     const service = fakeService();
     let inFlight = 0; let maxInFlight = 0;
