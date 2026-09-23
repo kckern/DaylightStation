@@ -6,7 +6,7 @@ vi.mock('../api.mjs', () => ({ DaylightAPI: (...args) => apiMock(...args) }));
 
 import {
   useApiResource, resetApiResourceCache, prefetchApiResources, isApiResourceFresh,
-  peekApiResource, invalidateApiResources,
+  peekApiResource, invalidateApiResources, getPrefetchStats,
 } from './useApiResource.js';
 
 const deferred = () => { let resolve; const promise = new Promise(r => { resolve = r; }); return { promise, resolve }; };
@@ -24,6 +24,28 @@ describe('prefetchApiResources', () => {
     expect(result.current.loading).toBe(false);
     expect(result.current.data).toEqual({ day: 'd-1' });
     await waitFor(() => expect(result.current.revalidating).toBe(false));
+  });
+
+  it('counts queued / completed / failed, and reports once when the queue drains', async () => {
+    apiMock.mockImplementation(async path => { if (path === 'bad') throw new Error('nope'); return {}; });
+    const onIdle = vi.fn();
+    expect(prefetchApiResources(['a', 'bad', 'c'], { onIdle })).toBe(3);
+    await flush(); await flush();
+    expect(getPrefetchStats()).toEqual({ queued: 3, completed: 2, failed: 1 });
+    expect(onIdle).toHaveBeenCalledTimes(1);
+    expect(onIdle).toHaveBeenCalledWith({ queued: 3, completed: 2, failed: 1 });
+    resetApiResourceCache();
+    expect(getPrefetchStats()).toEqual({ queued: 0, completed: 0, failed: 0 });
+  });
+
+  it('an already-warm neighbourhood reports at once, with that call\'s callback', async () => {
+    apiMock.mockResolvedValue({});
+    prefetchApiResources(['a']);
+    await flush(); await flush();
+    const onIdle = vi.fn();
+    expect(prefetchApiResources(['a'], { onIdle })).toBe(0);
+    expect(onIdle).toHaveBeenCalledTimes(1);
+    expect(onIdle).toHaveBeenCalledWith({ queued: 1, completed: 1, failed: 0 });
   });
 
   it('runs at most two requests at once, in queue order', async () => {

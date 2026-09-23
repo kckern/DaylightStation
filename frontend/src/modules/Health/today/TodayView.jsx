@@ -12,6 +12,7 @@ import { useApiResource } from '../../../lib/hooks/useApiResource.js';
 import { useHealthDay } from './useHealthDay.js';
 import { pendingReviewPath, observationsPath } from '../healthResources.js';
 import { useHealthDayPrefetch } from './useHealthDayPrefetch.js';
+import { useAddedRowHighlight } from './addFlow.js';
 import { EquationStrip } from './EquationStrip.jsx';
 import { WeekStrip, addDays, weekEnd } from './WeekStrip.jsx';
 import { MacroBarRow } from './MacroBarRow.jsx';
@@ -47,6 +48,8 @@ export function TodayView({ active = true, sidebarTarget, onSetupGoals, onCoachT
   const viewportEnd = isISODate(weekParam) && weekParam <= weekEnd(todayISO()) ? weekEnd(weekParam) : weekEnd(date);
   const day = useHealthDay(date, { enabled: active });
   const preview = usePortionDraft(day, date);
+  // Rows just added from an add row, briefly highlighted once on screen.
+  const addedIds = useAddedRowHighlight(day.items);
   // Warm ±7 days and each meal's shortlist once the viewed day is on screen.
   useHealthDayPrefetch(date, { enabled: active, ready: !day.loading });
   // The quick bar's + names a meal; that meal is shown (even if empty) and its
@@ -308,6 +311,15 @@ export function TodayView({ active = true, sidebarTarget, onSetupGoals, onCoachT
     }
   };
 
+  // A typed sentence in a meal's add row: the same in-place pending row as a
+  // capture, labelled with the text, released by the add row once the parsed
+  // rows are on the day (or the parse failed).
+  const beginSentencePending = (bucket, text) => {
+    const pendingId = crypto.randomUUID();
+    setCapturePending(previous => new Map(previous).set(pendingId, { id: pendingId, bucket, date, startedAt: Date.now(), text }));
+    return () => setCapturePending(previous => { if (!previous.has(pendingId)) return previous; const next = new Map(previous); next.delete(pendingId); return next; });
+  };
+
   // Shared by QuickCaptureBar's global Voice/Photo triggers AND every
   // per-meal header trigger LogTable renders — VoiceCapture/PhotoCapture
   // forward `(dataUrl, bucket)`, with `bucket` always the clock-derived
@@ -457,11 +469,11 @@ export function TodayView({ active = true, sidebarTarget, onSetupGoals, onCoachT
         bucketHeaderAction={bucketHeaderAction}
         onVoiceCapture={onVoiceCapture} onTextCapture={onTextCapture}
         onMealChanged={result=>handleCaptureResult(result)} captureTasks={[...capturePending.values()]}
-        measuredByUuid={measuredByUuid}
+        measuredByUuid={measuredByUuid} addedIds={addedIds}
         revealedBucket={focusRequest?.bucket ?? null}
         renderAddRow={(bucket, label) => <MealAddRow bucket={bucket} label={label} date={date} active={active} onVoiceCapture={onVoiceCapture}
           focusRequest={focusRequest?.bucket === bucket ? focusRequest.n : 0} busy={nutrition.busy}
-          onAdded={() => day.reload()} onPhotoCapture={onPhotoCapture} onOpenBarcode={openBarcode}
+          onAdded={() => day.reload()} onSentencePending={text => beginSentencePending(bucket, text)} onPhotoCapture={onPhotoCapture} onOpenBarcode={openBarcode}
           onOpenTemplates={(target, templateId) => { setFocusTemplateId(templateId); setTemplatesFor(target); }}
           onManageFoods={() => setManageFoods(true)} />} />
       <NeedsReviewSection pending={pendingLogs} onChanged={day.reload} />
@@ -488,7 +500,12 @@ export function TodayView({ active = true, sidebarTarget, onSetupGoals, onCoachT
             pendingReview.reload();
             return;
           }
-          if (result?.moved) setCaptureNotice(`Moved to ${bucketLabel(result.mealTime)}`);
+          // No calories on the label: logged anyway as an unconfirmed AI
+          // estimate of one typical serving. Say so — it is a guess to check.
+          if (result?.aiEstimate) {
+            logger.info('barcode.ai-estimate', { logId: result.logId ?? null });
+            setCaptureNotice('No calories on the label — estimated for one serving. Check the row.');
+          } else if (result?.moved) setCaptureNotice(`Moved to ${bucketLabel(result.mealTime)}`);
           day.reload();
         }} />
       <CustomFoodSheet upc={unknownUpc} open={active && Boolean(unknownUpc)}
