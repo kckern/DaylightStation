@@ -39,6 +39,13 @@ describe('trackAddFlow', () => {
     expect(flows()).toHaveLength(1);
   });
 
+  it('rows the day already showed before the response complete at registration', async () => {
+    noteVisibleRows([{ uuid: 'early' }], 500);
+    const done = trackAddFlow({ ids: ['early'], bucket: 'morning', surface: 'inline', kind: 'pick', submitToCommittedMs: 40, at: 600 });
+    await expect(done).resolves.toBe(true);
+    expect(flows()[0]).toMatchObject({ committedToVisibleMs: 0 });
+  });
+
   it('with no ids it logs at once with no visible time', async () => {
     await expect(trackAddFlow({ ids: [], bucket: null, surface: 'inline', kind: 'pick', submitToCommittedMs: 80 })).resolves.toBe(false);
     expect(flows()).toEqual([{ bucket: null, surface: 'inline', kind: 'pick', submitToCommittedMs: 80, rows: 0, committedToVisibleMs: null }]);
