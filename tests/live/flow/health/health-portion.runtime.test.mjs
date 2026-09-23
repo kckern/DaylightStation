@@ -16,6 +16,9 @@ const start = async page => {
   await expect(page.getByRole('button', { name: 'Adjust portion of Chia seeds, 14 g' })).toBeVisible({ timeout: 20000 });
   return state;
 };
+// Every meal renders, empty or not (3f503e724), so the first `.health-meal` is
+// an empty Breakfast; pick meals by their heading.
+const meal = (page, label) => page.locator('.health-meal', { has: page.getByRole('heading', { name: label, exact: true }) });
 const writes = state => state.requests.filter(request => request.method === 'PUT');
 const drag = async page => {
   const button = page.getByRole('button', { name: /Adjust portion of Chia seeds/ });
@@ -29,11 +32,13 @@ test('pointer preview updates the whole day, release commits once, Escape cancel
   await page.setViewportSize({ width: 1366, height: 768 });
   const state = await start(page);
   await drag(page);
-  const row = page.getByRole('button', { name: 'Edit Chia seeds' }).locator('..');
+  // The whole row, not the name button's parent: since b3eea0c5c that parent is
+  // the identity cell (density badge + artwork + name), which holds no numbers.
+  const row = page.locator('.health-row-line', { has: page.getByRole('button', { name: 'Edit Chia seeds', exact: true }) });
   await expect(row).toContainText('140');
   await expect(page.locator('.health-equation')).toContainText('1,609');
   await expect(page.locator('.health-equation')).toContainText('526');
-  await expect(page.locator('.health-meal').first()).toContainText('941 kcal');
+  await expect(meal(page, 'Lunch')).toContainText('941 kcal');
   expect(writes(state)).toHaveLength(0);
   await page.keyboard.press('Escape');
   await page.mouse.up();
@@ -70,21 +75,46 @@ test('direct volume entry and keyboard adjustments do not invent grams or auto-c
   await expect.poll(() => writes(state).length).toBe(2);
 });
 
-for (const [width, height] of [[390, 844], [768, 1024], [1024, 768], [1366, 768], [1440, 900], [1920, 1080]]) {
-  test(`compact log at ${width}×${height}`, async ({ page }, testInfo) => {
-    await page.setViewportSize({ width, height });
-    await start(page);
-    const first = await page.locator('.health-row-line').first().boundingBox();
-    if (width === 390) expect(first.y).toBeLessThanOrEqual(350);
-    if (width >= 1200) {
-      expect(first.y).toBeLessThanOrEqual(300);
-      const meals = await page.locator('.health-meal').evaluateAll(nodes => nodes.map(node => ({ x: node.getBoundingClientRect().x, y: node.getBoundingClientRect().y })));
-      expect(meals[1].x).toBeGreaterThan(meals[0].x);
-      expect(meals[1].y).toBe(meals[0].y);
-    }
-    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(width);
-    const portion = await page.getByRole('button', { name: /Adjust portion of Chia seeds/ }).boundingBox();
-    expect(portion.width).toBeGreaterThanOrEqual(44); expect(portion.height).toBeGreaterThanOrEqual(44);
-    await page.screenshot({ path: testInfo.outputPath(`health-${width}.png`) });
+// Touch is emulated on the phone and tablet sizes: rows are compact (28px) for
+// a fine pointer by design (b3eea0c5c) and grow to 44px targets on a coarse
+// pointer or a phone-width column, which is what this pins.
+for (const [width, height, touch] of [[390, 844, true], [768, 1024, true], [1024, 768, true], [1366, 768, false], [1440, 900, false], [1920, 1080, false]]) {
+  test.describe(`compact log at ${width}×${height}`, () => {
+    test.use({ hasTouch: touch });
+    test(`compact log at ${width}×${height}${touch ? ' (touch)' : ''}`, async ({ page }, testInfo) => {
+      await page.setViewportSize({ width, height });
+      await start(page);
+      expect(await page.evaluate(() => matchMedia('(pointer: coarse)').matches)).toBe(touch);
+      // Budget bar above, then meals: the log starts high on the page. The first
+      // food sits below an always-shown empty Breakfast strip and its meal's
+      // toolbar (3f503e724, ab7eface9), which is why its bound is lower than the
+      // f81b295ae figures of 300/350 that predate both.
+      const firstMeal = await page.locator('.health-meal').first().boundingBox();
+      const first = await page.locator('.health-row-line').first().boundingBox();
+      if (width === 390) { expect(firstMeal.y).toBeLessThanOrEqual(280); expect(first.y).toBeLessThanOrEqual(430); }
+      if (width >= 1200) {
+        expect(firstMeal.y).toBeLessThanOrEqual(210);
+        expect(first.y).toBeLessThanOrEqual(360);
+        // Two meal columns, Breakfast→Lunch on the left and Dinner→Snacks on the
+        // right (ee47bcabf), their heads level with each other.
+        const breakfast = await meal(page, 'Breakfast').boundingBox();
+        const lunch = await meal(page, 'Lunch').boundingBox();
+        const dinner = await meal(page, 'Dinner').boundingBox();
+        expect(dinner.x).toBeGreaterThan(breakfast.x);
+        expect(dinner.y).toBe(breakfast.y);
+        expect(lunch.x).toBe(breakfast.x);
+        expect(lunch.y).toBeGreaterThan(breakfast.y);
+      }
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(width);
+      const minHeight = touch || width < 768 ? 44 : 28;
+      for (const name of [/Adjust portion of Chia seeds/, /^Delete entry: Chia seeds$/, /^Confirm entry: Chia seeds$/, /^Adjust density of Chia seeds/, /^Edit Chia seeds$/]) {
+        const box = await page.getByRole('button', { name }).boundingBox();
+        expect(box, String(name)).not.toBeNull();
+        expect(box.height, `${name} height`).toBeGreaterThanOrEqual(minHeight);
+      }
+      const portion = await page.getByRole('button', { name: /Adjust portion of Chia seeds/ }).boundingBox();
+      expect(portion.width).toBeGreaterThanOrEqual(44);
+      await page.screenshot({ path: testInfo.outputPath(`health-${width}.png`) });
+    });
   });
 }

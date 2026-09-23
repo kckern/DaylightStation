@@ -4,7 +4,9 @@ import { installHealthFixtures } from './healthFixtures.mjs';
 test('unknown barcode → gram-based custom food → known rescan, entirely fixture-owned', async ({ page }) => {
   const state = await installHealthFixtures(page);
   await page.goto('/health');
-  const scan = page.getByRole('button', { name: /^Quick scan barcode to / });
+  // The page-level quick-capture bar is gone (3f503e724); every meal's add row
+  // carries its own barcode button, which is the entry point now.
+  const scan = page.getByRole('button', { name: 'Scan barcode to Lunch', exact: true });
   await scan.click();
   await page.getByLabel('Manual UPC entry').fill('999999123456');
   await page.getByRole('button', { name: /look up/i }).click();

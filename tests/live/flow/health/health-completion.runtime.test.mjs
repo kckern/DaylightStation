@@ -33,7 +33,8 @@ test('coach shares identity, selected-entry context and visible history between 
   const row = page.locator('.health-row-line', { hasText: 'Fixture oats' });
   await expect(row).toBeVisible({ timeout: 30000 });
   expect(state.requests.filter(request => request.endpoint === '/mentions/all')).toHaveLength(0);
-  await row.locator('.health-row__identity').click();
+  const opener = row.getByRole('button', { name: 'Edit Fixture oats', exact: true });
+  await opener.click();
   await page.getByText('Nutrition, date & evidence', { exact: true }).click();
   await page.getByRole('button', { name: 'Ask coach about this entry' }).click();
   const overlay = page.getByRole('dialog', { name: 'Health Coach' });
@@ -44,7 +45,7 @@ test('coach shares identity, selected-entry context and visible history between 
   expect(calls[0].context).toMatchObject({ userId: 'health-fixture', selectedDate: '2026-09-01', selectedEntry: { id: 'a', name: 'Fixture oats', date: '2026-09-01' } });
   await page.keyboard.press('Escape');
   await expect(overlay).not.toBeVisible();
-  await expect(row.locator('.health-row__identity')).toBeFocused();
+  await expect(opener).toBeFocused();
   await page.getByRole('link', { name: 'Coach', exact: true }).click();
   await expect(page.getByText('Fixture coach answer', { exact: true })).toBeVisible();
   await page.reload();

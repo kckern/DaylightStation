@@ -245,9 +245,9 @@ length means the same kcal on every row in every meal, ingredients included.
 
 ## Loading and refresh
 
-Today's structure is permanent. Lunch and Dinner always render (Lunch heads
-the left column, Dinner the right); Breakfast joins above Lunch and Snacks
-below Dinner when they hold food. Every visible meal's heading, kcal subtotal
+Today's structure is permanent. All four meals always render, empty or not:
+Breakfast then Lunch in the left column, Dinner then Snacks in the right; an
+empty meal is its heading and add row. Every meal's heading, kcal subtotal
 and add row render regardless of
 whether the day's data has arrived, is mid-refresh, or failed to load; only a
 bucket's entry list can be swapped for a loading placeholder, and only on a
@@ -477,9 +477,14 @@ their existing 200px rail. Below 1200px the log uses one column and week/weight
 history is collapsed below it; month charts mount only on wide screens.
 Empty meals use an add strip, and exceptional uncounted captures have a closed
 disclosure below the log. Group expansion survives refresh, with the final
-child's tree connector ending at its own row. Six-viewport browser tests enforce
-no horizontal overflow, 44px targets, and first-food positions of ≤300px at
-1366×768 and ≤350px at 390×844.
+child's tree connector ending at its own row. Six-viewport browser tests
+(`health-portion.runtime.test.mjs`, touch emulated at 390, 768 and 1024 wide)
+enforce no horizontal overflow; 44px row targets on a coarse pointer or a
+phone-width column and the compact 28px rows on a fine pointer; the two meal
+columns with Breakfast and Dinner level at the top; and position bounds of the
+first meal (≤210px wide, ≤280px at 390×844) and first food (≤360px at 1366×768
+and wider, ≤430px at 390×844). The first food sits below the always-shown
+Breakfast strip, so those bounds are looser than the first meal's.
 
 ---
 

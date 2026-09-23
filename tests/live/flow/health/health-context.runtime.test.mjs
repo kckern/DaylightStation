@@ -30,8 +30,10 @@ test('entry dialog contains keyboard focus and restores it on Escape', async ({ 
   const state = await installHealthFixtures(page, { items: [{ uuid: 'row-a', name: 'Fixture oats', date: '2026-09-01', mealTime: 'morning', grams: 80, calories: 300 }] });
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto('/health?date=2026-09-01');
-  const row = page.locator('.health-row-line', { hasText: 'Fixture oats' });
-  await row.locator('.health-row__identity').click();
+  // The identity cell is a layout wrapper since b3eea0c5c; the name button
+  // inside it is what opens the editor and what focus must come back to.
+  const opener = page.getByRole('button', { name: 'Edit Fixture oats', exact: true });
+  await opener.click();
   await expect(page.getByLabel('Portion in g')).toBeFocused();
   for (let i = 0; i < 20; i++) {
     await page.keyboard.press('Tab');
@@ -40,7 +42,7 @@ test('entry dialog contains keyboard focus and restores it on Escape', async ({ 
   await page.screenshot({ path: test.info().outputPath('desktop-editor.png') });
   await page.keyboard.press('Escape');
   await expect(page.getByRole('dialog')).toHaveCount(0);
-  await expect(row.locator('.health-row__identity')).toBeFocused();
+  await expect(opener).toBeFocused();
   expect(state.unexpected).toEqual([]);
 });
 
