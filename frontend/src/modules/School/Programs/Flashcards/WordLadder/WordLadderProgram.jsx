@@ -230,7 +230,7 @@ export default function WordLadderProgram({ descriptor, api: injected = null, re
     // it: the prompt fell back to plain text before the child ever saw a
     // picture or heard a sound (distinct from media.failed, which is an
     // asset that DID resolve but then failed to load in the browser).
-    const assetMissing = (item.cue?.type === 'image' && !(item.assets?.image || item.word?.media?.image))
+    const assetMissing = ((item.cue?.type === 'image' || (item.cue?.type === 'english' && item.cue.image)) && !(item.assets?.image || item.word?.media?.image))
       || (item.cue?.type === 'audio' && !(item.assets?.audio || item.assets?.glossAudio || item.word?.media?.audio));
     if (assetMissing) wordLadderLog.promptFallback({ itemId: item.id, cue: item.cue.type });
   }, [item]);
@@ -374,6 +374,8 @@ export default function WordLadderProgram({ descriptor, api: injected = null, re
   // Not while a held verdict waits for Next: the server has already moved past that item.
   const toMenu = useCallback(() => { if (!pendingItem) respond({ menu: true }); }, [respond, pendingItem]);
   useWordLadderKeys({ m: toMenu }, { enabled: Boolean(inPractice) && !isTyping(item) });
+  // The error screen's only way out has a key too.
+  useWordLadderKeys({ ' ': onExit, enter: onExit }, { enabled: Boolean(started && error) });
 
   let body = <p className="wl-loading">Loading…</p>;
   if (!started) {
@@ -382,7 +384,7 @@ export default function WordLadderProgram({ descriptor, api: injected = null, re
     body = (
       <div className="wl-item wl-error" role="alert">
         <p>{error}</p>
-        <TouchButton variant="primary" onClick={onExit}>Back</TouchButton>
+        <TouchButton variant="primary" keyHint="Space" onClick={onExit}>Back</TouchButton>
       </div>
     );
   } else if (item && session) {

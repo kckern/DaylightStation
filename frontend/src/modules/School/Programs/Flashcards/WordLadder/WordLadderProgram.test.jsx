@@ -258,10 +258,12 @@ describe('WordLadderProgram', () => {
     renderStarted(<WordLadderProgram descriptor={{ deckId: 'd', userId: 'test-learner' }} api={api} />);
     await screen.findByText('Glue');
     act(() => { fireEvent.keyDown(window, { key: '1' }); });
-    expect(await screen.findByText("It's Scissors")).toBeInTheDocument();
+    const panel = await screen.findByTestId('wl-result');
+    expect(panel).toHaveTextContent('Not quite');
+    expect(panel).toHaveTextContent('Scissors');
     // The response is exactly what the item sent — no flags spread in.
     expect(api.respond).toHaveBeenCalledWith('s', { userId: 'test-learner', itemId: 'r1:q:0', response: { choice: 'Glue' } });
-    expect(screen.getByText('Glue')).toBeInTheDocument();
+    expect(screen.getAllByText('Glue').length).toBeGreaterThan(0);
     expect(screen.queryByRole('region', { name: 'Flashcard' })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: /next/i }));
     expect(await screen.findByRole('region', { name: 'Flashcard' })).toBeInTheDocument();
@@ -300,6 +302,24 @@ describe('WordLadderProgram', () => {
     fireEvent.click(screen.getByRole('button', { name: /exit/i }));
     await waitFor(() => expect(onExit).toHaveBeenCalled());
     expect(api.close).toHaveBeenCalledWith('s', { userId: 'test-learner', reason: 'leave' });
+  });
+
+  it('Enter starts, like Space', async () => {
+    const api = fakeApi();
+    render(<WordLadderProgram descriptor={{ deckId: 'd', userId: 'test-learner' }} api={api} />);
+    fireEvent.keyDown(window, { key: 'Enter', code: 'Enter' });
+    await screen.findByText('가위');
+    expect(api.open).toHaveBeenCalledTimes(1);
+  });
+
+  it('the error screen\'s Back has a key (Space/Enter)', async () => {
+    const api = fakeApi();
+    api.open.mockResolvedValue({ ok: false, status: 404, data: null });
+    const onExit = vi.fn();
+    renderStarted(<WordLadderProgram descriptor={{ deckId: 'd', userId: 'test-learner' }} api={api} onExit={onExit} />);
+    await screen.findByRole('alert');
+    fireEvent.keyDown(window, { key: 'Enter', code: 'Enter' });
+    expect(onExit).toHaveBeenCalledTimes(1);
   });
 
   it('an open failure says so and offers Back', async () => {
@@ -365,11 +385,11 @@ describe('WordLadderProgram', () => {
     renderStarted(<WordLadderProgram descriptor={{ deckId: 'd', userId: 'test-learner' }} api={api} />);
     await screen.findByText('가위');
     act(() => { fireEvent.keyDown(window, { key: ' ' }); });
-    expect(screen.getByText('Scissors')).toBeInTheDocument();
+    expect(screen.getByText('Scissors').closest('[aria-hidden="true"]')).toBeNull();
     act(() => { fireEvent.keyDown(window, { key: ' ' }); });
     await waitFor(() => expect(api.open).toHaveBeenCalledTimes(2));
-    // Same item id, new sitting: the card starts on its front again.
-    await waitFor(() => expect(screen.queryByText('Scissors')).toBeNull());
+    // Same item id, new sitting: the card starts on its front again (the back hidden).
+    await waitFor(() => expect(screen.getByText('Scissors').closest('[aria-hidden="true"]')).not.toBeNull());
     expect(screen.getByText('가위')).toBeInTheDocument();
   });
 });
@@ -457,7 +477,7 @@ describe('WordLadderProgram — dispatches every item type', () => {
     fireEvent.change(input, { target: { value: '가이' } });
     fireEvent.keyDown(input, { key: 'Enter' });
     await waitFor(() => expect(api.respond).toHaveBeenCalledWith('s', { userId: 'test-learner', itemId: 'd1:5', response: { typed: '가이' } }));
-    expect(await screen.findByText(/It's/)).toBeInTheDocument();
+    expect(await screen.findByTestId('wl-result')).toHaveTextContent('The answer');
     expect(screen.getByRole('region', { name: 'Write what you hear' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /next/i }));
     expect(await screen.findByRole('group', { name: 'Tiles' })).toBeInTheDocument();

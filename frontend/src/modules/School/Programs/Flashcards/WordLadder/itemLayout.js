@@ -44,6 +44,8 @@ export function layoutForItem(item) {
     }
     case 'choice': {
       const cueType = item.cue?.type;
+      // The English bundle (ruling 2026-09-23) lays out by its picture.
+      if (cueType === 'english') return item.cue.image ? 'choice-picture-cue' : 'choice-text-cue';
       if (cueType === 'image') return 'choice-picture-cue';
       if (cueType === 'audio') return 'choice-audio-cue';
       return 'choice-text-cue';
@@ -65,7 +67,9 @@ export function layoutForItem(item) {
 /** The media the item's own prompt/cue is built from — not the sound effects a Hear-it button can also reach. */
 export function mediaForItem(item) {
   if (!item) return null;
-  if (item.cue?.type) return item.cue.type; // 'image' | 'text' | 'audio'
+  // The English bundle names its richest visible part; legacy cues their one kind.
+  if (item.cue?.type === 'english') return item.cue.image ? 'image' : 'text';
+  if (item.cue?.type) return item.cue.type; // 'image' | 'text' | 'audio' (pre-2026-09-23 items)
   const media = item.word?.media ?? item.assets ?? {};
   if (media.image) return 'image';
   if (media.audio || media.glossAudio) return 'audio';

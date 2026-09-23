@@ -7,7 +7,7 @@ import { playClip, playSequence } from '../wordLadderAudio.js';
 import { useWordLadderKeys } from '../useWordLadderKeys.js';
 import { wordLadderLog } from '../wordLadderLog.js';
 import useTakeRecorder from '../useTakeRecorder.js';
-import CuePicture from './CuePicture.jsx';
+import EnglishCue, { englishCueAudio } from './EnglishCue.jsx';
 
 /**
  * 1.2 say-after · 1.3 read-aloud · 3.4 say-from-cue (task catalogue §3).
@@ -48,7 +48,6 @@ export default function SayItem({
   const takeUrlRef = useRef(null);
 
   const word = item.word ?? null;
-  const image = item.assets?.image ? resolveAssetUrl(item.assets.image) : null;
   const glossAudio = item.assets?.glossAudio ? resolveAssetUrl(item.assets.glossAudio) : null;
   // Known upfront only when the server sent it (say-after; null on read-aloud).
   const termAudio = word?.media?.audio ? resolveAssetUrl(word.media.audio) : null;
@@ -117,23 +116,54 @@ export default function SayItem({
 
   const next = useCallback(() => { if (!busy) onRespond({ done: true }); }, [busy, onRespond]);
 
-  useWordLadderKeys({ ' ': next, enter: next });
-
   const showCue = mode === 'say-from-cue';
   // say-after/read-aloud already carry the term; say-from-cue only ever
   // learns it from `reveal` — never render it a moment earlier than that.
   const term = showCue ? revealed?.term ?? null : word?.term ?? null;
   const recording = recorder.phase === 'recording';
   const saving = recorder.phase === 'saving';
+  // No mic (none, refused, or it errored on start): a take is impossible, so
+  // Space must not point at Record — it falls through to Skip. Never a dead end.
+  const micOff = recorder.unavailable === true;
+  useEffect(() => {
+    if (micOff) wordLadderLog.micUnavailable({ itemId: item.id, itemMode: mode });
+  }, [micOff, item.id, mode]);
+
+  /*
+   * THE KEY MAP (owner, binding): Space is the forward action and NEVER a skip.
+   *   before a take     Space/Enter = Record
+   *   while recording   Space/Enter = Stop
+   *   saving            Space/Enter = nothing (a beat; the take is landing)
+   *   after a take      Space/Enter = Next;  ← = Record again
+   *   mic unavailable   Space/Enter = Skip/Next
+   * Skip is a touch; its only key is Backslash, which has to be hunted for.
+   * Tab = hear the cue again (never while the mic is open).
+   */
+  let spaceOwner = 'none';
+  if (recording) spaceOwner = 'stop';
+  else if (saving) spaceOwner = 'none';
+  else if (hasTaken || micOff) spaceOwner = 'next';
+  else spaceOwner = 'record';
+  const forward = () => {
+    if (spaceOwner === 'stop') recorder.stop();
+    else if (spaceOwner === 'record') { if (!busy) record(); }
+    else if (spaceOwner === 'next') next();
+  };
+  const canRecordAgain = hasTaken && !recording && !saving && !micOff;
+  const cueClip = showCue ? englishCueAudio(item, resolveAssetUrl) : null;
+  const hearCue = cueClip ? () => playClip(cueClip, 'gloss') : null;
+  useWordLadderKeys({
+    ' ': forward,
+    enter: forward,
+    '\\': next,
+    ...(canRecordAgain ? { arrowleft: () => { if (!busy) record(); } } : {}),
+    ...(hearCue && !recording && !saving ? { tab: hearCue } : {}),
+  });
 
   return (
     <section className="wl-item wl-say" aria-label="Say it">
       <div className="wl-prompt">
-        {showCue && item.cue?.type === 'image' && <CuePicture item={item} src={image} lang={langs.gloss} />}
-        {showCue && item.cue?.type === 'text' && <FitText role="prompt" text={item.cue.text} lang={langs.gloss} />}
-        {showCue && item.cue?.type === 'audio' && (
-          <TouchButton variant="secondary" onClick={() => glossAudio && playClip(glossAudio, 'gloss')}><Icon name="volume" /> Listen</TouchButton>
-        )}
+        {showCue && <EnglishCue item={item} resolveAssetUrl={resolveAssetUrl} lang={langs.gloss} />}
         {term && <FitText role="term" text={term} lang={langs.term} onFit={onLayout} />}
       </div>
 
@@ -148,12 +178,17 @@ export default function SayItem({
 
       <div className="wl-controls">
         {!recording && !saving && (
-          <TouchButton variant="secondary" onClick={record} disabled={busy}>
+          <TouchButton
+            variant={spaceOwner === 'record' ? 'primary' : 'secondary'}
+            keyHint={spaceOwner === 'record' ? 'Space' : canRecordAgain ? '←' : undefined}
+            onClick={record}
+            disabled={busy}
+          >
             <Icon name="record" /> {hasTaken ? 'Record again' : 'Record'}
           </TouchButton>
         )}
         {recording && (
-          <TouchButton variant="secondary" onClick={record}>
+          <TouchButton variant="primary" keyHint="Space" onClick={record}>
             <Icon name="stop" /> Stop
           </TouchButton>
         )}
@@ -164,8 +199,14 @@ export default function SayItem({
         )}
         {/* SPEAKING IS NEVER A GATE: this is enabled from the first render —
             "Skip" before any take, "Next" once one exists — never disabled by
-            recording state. */}
-        <TouchButton variant="primary" keyHint="Space" onClick={next} disabled={busy}>
+            recording state. Space only lands here after a take (or with no
+            mic); otherwise its key is the hunted-for Backslash. */}
+        <TouchButton
+          variant={spaceOwner === 'next' ? 'primary' : 'secondary'}
+          keyHint={spaceOwner === 'next' ? 'Space' : '\\'}
+          onClick={next}
+          disabled={busy}
+        >
           {hasTaken ? 'Next' : 'Skip'}
         </TouchButton>
       </div>
