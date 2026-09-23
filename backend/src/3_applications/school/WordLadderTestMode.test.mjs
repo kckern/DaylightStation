@@ -14,6 +14,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { YamlWordLadderStore } from '#adapters/school/wordLadder/YamlWordLadderStore.mjs';
 import { ShadowWordLadderStores } from '#adapters/school/wordLadder/ShadowWordLadderStores.mjs';
 import { MemoryJudgementCache } from '#adapters/school/wordLadder/YamlJudgementCache.mjs';
+import { DiscardingRecordings } from '#adapters/school/wordLadder/DiscardingRecordings.mjs';
 import { seedScenario, DEFAULT_SETTINGS } from '#domains/school/wordLadder/index.mjs';
 import { WordLadderSittingService } from './WordLadderSittingService.mjs';
 import { WordLadderTypedJudge } from './WordLadderTypedJudge.mjs';
@@ -38,22 +39,26 @@ function snapshotFiles() {
   return out;
 }
 
+function testService({ assets = { exists: () => false }, recordings = null } = {}) {
+  const configService = { getUserDir: (id) => path.join(dir, id), getUserProfile: () => ({}) };
+  const real = new YamlWordLadderStore({ configService });
+  real.transact('test-learner', 'korean-vocab', '2026-09-20', (x) => x); // create real files
+  const shadows = new ShadowWordLadderStores({ real });
+  let t = Date.parse('2026-09-22T16:00:00-07:00');
+  return new WordLadderSittingService({
+    mode: 'test', recordings, assets,
+    stores: { open: (u, p, d, { scenario }) => { const token = shadows.create(u, p, d, (snap) => seedScenario(scenario ?? 'today', snap, { deckWords: deck.words, day: d })); return { store: shadows.forToken(token), token }; }, forToken: (tk) => shadows.forToken(tk) },
+    decks: { getFlashcardDeck: async () => deck, listFlashcardDecks: async () => [deck] }, lexicons: { getLexicon: () => lexicon },
+    assignments: { get: async () => ({ programs: [{ programId: 'flashcards', deckId: deck.id, policy: { mode: 'word-ladder' } }] }) },
+    judge: new WordLadderTypedJudge({ cache: new MemoryJudgementCache() }),
+    settings: () => DEFAULT_SETTINGS, timezone: 'America/Los_Angeles', now: () => (t += 3000), logger: { info() {}, warn() {}, error() {} },
+  });
+}
+
 describe('test mode never writes', () => {
   it('a full test sitting leaves every real file byte-identical', async () => {
-    const configService = { getUserDir: (id) => path.join(dir, id), getUserProfile: () => ({}) };
-    const real = new YamlWordLadderStore({ configService });
-    real.transact('test-learner', 'korean-vocab', '2026-09-20', (x) => x); // create real files
+    const service = testService();
     const before = snapshotFiles();
-    const shadows = new ShadowWordLadderStores({ real });
-    let t = Date.parse('2026-09-22T16:00:00-07:00');
-    const service = new WordLadderSittingService({
-      mode: 'test',
-      stores: { open: (u, p, d, { scenario }) => { const token = shadows.create(u, p, d, (snap) => seedScenario(scenario ?? 'today', snap, { deckWords: deck.words, day: d })); return { store: shadows.forToken(token), token }; }, forToken: (tk) => shadows.forToken(tk) },
-      decks: { getFlashcardDeck: async () => deck, listFlashcardDecks: async () => [deck] }, lexicons: { getLexicon: () => lexicon },
-      assignments: { get: async () => ({ programs: [{ programId: 'flashcards', deckId: deck.id, policy: { mode: 'word-ladder' } }] }) },
-      assets: { exists: () => false }, judge: new WordLadderTypedJudge({ cache: new MemoryJudgementCache() }),
-      settings: () => DEFAULT_SETTINGS, timezone: 'America/Los_Angeles', now: () => (t += 3000), logger: { info() {}, warn() {}, error() {} },
-    });
     let { sittingId, item } = await service.open({ userId: 'test-learner', deckId: deck.id, scenario: 'fresh' });
     expect(sittingId.startsWith('test.')).toBe(true);
     for (let i = 0; i < 80 && item.type !== 'summary'; i += 1) {
@@ -62,6 +67,23 @@ describe('test mode never writes', () => {
       ({ item } = await service.respond({ userId: 'test-learner', sittingId, itemId: item.id, response }));
     }
     expect(item.type).toBe('summary');
+    expect(snapshotFiles()).toEqual(before);
+  });
+
+  it('a spoken take in a test sitting goes to the discarding sink: no file appears', async () => {
+    const service = testService({ assets: { exists: () => true }, recordings: new DiscardingRecordings() });
+    const before = snapshotFiles();
+    let { sittingId, item } = await service.open({ userId: 'test-learner', deckId: deck.id, scenario: 'fresh', capabilities: { microphone: true } });
+    const takes = [];
+    for (let i = 0; i < 80 && item.type !== 'summary'; i += 1) {
+      if (item.type === 'say') takes.push(await service.saveRecording({ userId: 'test-learner', sittingId, itemId: item.id, buffer: Buffer.from('take'), ext: 'webm' }));
+      const response = item.type === 'flashcard' ? (item.mode === 'intro' ? { seen: true } : { sort: 'claimed' })
+        : item.type === 'copy' ? { typed: item.word.term } : item.type === 'typed' ? { typed: '가위' }
+          : item.type === 'say' ? { done: true } : { choice: item.choices[0] };
+      ({ item } = await service.respond({ userId: 'test-learner', sittingId, itemId: item.id, response }));
+    }
+    expect(item.type).toBe('summary');
+    expect(takes).toEqual([{ take: 1 }, { take: 1 }]);
     expect(snapshotFiles()).toEqual(before);
   });
 });

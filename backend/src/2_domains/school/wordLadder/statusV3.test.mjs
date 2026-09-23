@@ -5,6 +5,7 @@ describe('statusV3', () => {
   it('empty shapes', () => {
     expect(emptyStatusV3()).toEqual({ schema: STATUS_SCHEMA_V3, words: {}, decksSeen: [], lastFoldedDay: null, paperAttemptsFolded: [] });
     expect(emptyDay('2026-09-22')).toMatchObject({ schema: DAY_SCHEMA, day: '2026-09-22', rounds: [], activeMs: 0, doneAt: null });
+    expect(emptyDay('2026-09-22')).toMatchObject({ drills: [], practice: null, practiceRuns: 0, summarySeen: false, capabilities: { microphone: false } });
   });
   it('migrates every v2 state and drops v2 days/sessions', () => {
     const v2 = {

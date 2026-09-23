@@ -3212,6 +3212,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const { YamlWordLadderStore } = await import('#adapters/school/wordLadder/YamlWordLadderStore.mjs');
   const { YamlJudgementCache, MemoryJudgementCache } = await import('#adapters/school/wordLadder/YamlJudgementCache.mjs');
   const { ShadowWordLadderStores } = await import('#adapters/school/wordLadder/ShadowWordLadderStores.mjs');
+  const { FilesystemWordLadderRecordings } = await import('#adapters/school/wordLadder/FilesystemWordLadderRecordings.mjs');
+  const { DiscardingRecordings } = await import('#adapters/school/wordLadder/DiscardingRecordings.mjs');
   const { YamlLexiconRepository } = await import('#adapters/school/catalog/YamlLexiconRepository.mjs');
   const { resolveSettings, seedScenario } = await import('#domains/school/wordLadder/index.mjs');
   const wordLadderLogger = rootLogger.child({ module: 'school-word-ladder' });
@@ -3236,11 +3238,13 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       forToken: (token) => { if (token !== 'live') throw new Error('unknown sitting'); return wordLadderStore; },
     },
     judge: wordLadderJudgeFor(new YamlJudgementCache({ rootDir: path.join(dataDir, 'household', 'school', 'runtime', 'word-ladder') })),
+    // Spoken takes, kept for grown-ups: {package}/{learner}/{day}/{word}-{n}.{ext}.
+    recordings: new FilesystemWordLadderRecordings({ rootDir: path.join(schoolMediaRoot, 'recordings', 'word-ladder') }),
   }) : null;
   const wordLadderShadows = new ShadowWordLadderStores({ real: wordLadderStore });
-  // Test mode never writes attempts and cannot fold (no teacher gate).
+  // Test mode never writes attempts or takes, and cannot fold (no teacher gate).
   const wordLadderTest = schoolCatalog.content ? new WordLadderSittingService({
-    ...wordLadderShared, mode: 'test', attempts: null, teacherGate: null,
+    ...wordLadderShared, mode: 'test', attempts: null, teacherGate: null, recordings: new DiscardingRecordings(),
     stores: {
       open: (userId, pkg, day, { scenario = null, deck = null } = {}) => {
         const token = wordLadderShadows.create(userId, pkg, day,

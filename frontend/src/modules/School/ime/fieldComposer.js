@@ -13,7 +13,7 @@
  * a session boundary, which keeps the owned slice short and makes the field's
  * own text authoritative between words.
  */
-import { Hangul } from './hangul.js';
+import { Hangul, isJamo } from './hangul.js';
 import { isTraceableTarget, isViablePrefix } from './syllable.js';
 
 const TEXT_INPUT_TYPES = new Set(['text', 'search', '']);
@@ -148,6 +148,48 @@ export class FieldComposer {
     const jamo = Hangul.jamoFor(event.code, event.shiftKey);
     if (!jamo) { this.end(); return false; }
 
+    return this.#offer(jamo, el, oracle);
+  }
+
+  /**
+   * Offer one jamo from something that is not a `KeyboardEvent` — the
+   * on-screen keypad, which has no `code` to run through `Hangul.jamoFor` and
+   * no `LAYOUT` to validate against. Everything below this point is shared
+   * with `handleKey`: the same session, the same copy-mode gate, the same
+   * auto-lock, so a child can switch between the Bluetooth keyboard and the
+   * keypad mid-syllable and the run in flight does not notice.
+   *
+   * Refuses anything that is not a single compatibility jamo rather than
+   * handing it to the automaton, which has no defined behaviour for a whole
+   * word, Latin, or an empty string — those are keypad-caller bugs, not
+   * refused keystrokes, so they return `false` rather than looking like a
+   * normal gate refusal.
+   */
+  offerJamo(jamo, el, oracle) {
+    if (!isJamo(jamo)) return false;
+    if (!isComposableField(el)) { this.end(); return false; }
+    return this.#offer(jamo, el, oracle);
+  }
+
+  /**
+   * Offer a backspace from the keypad — the same peel as a physical
+   * Backspace. Self-validates `isComposableField(el)`, same as `offerJamo`:
+   * unlike `handleKey`, there is no upstream caller that already checked
+   * this, since the keypad can hand in whatever `document.activeElement`
+   * happens to be.
+   */
+  offerBackspace(el) {
+    if (!isComposableField(el)) { this.end(); return false; }
+    return this.#backspace(el);
+  }
+
+  /**
+   * The shared tail of `handleKey` and `offerJamo`: apply one jamo to the
+   * session in flight, honouring the copy-mode gate and auto-lock. By the
+   * time either caller reaches here, `jamo` is known-valid and `el` is a
+   * composable field — this method does not re-check either.
+   */
+  #offer(jamo, el, oracle) {
     // Before the gate, because judging the key needs the automaton this run is
     // holding. Starting a session writes nothing to the field and moves no
     // caret, so a key refused immediately after still leaves the field exactly

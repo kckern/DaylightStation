@@ -25,7 +25,7 @@ const lexicon = {
   entries: new Map([['gawi', { id: 'gawi', group: 'week-01', term: '가위', gloss: 'Scissors', kind: 'word', decoys: { term: ['a', 'b', 'c'], gloss: ['x', 'y', 'z'] } }],
     ['pul', { id: 'pul', group: 'week-01', term: '풀', gloss: 'Glue', kind: 'word', decoys: { term: ['d', 'e', 'f'], gloss: ['u', 'v', 'w'] } }]]),
 };
-function make({ mode = 'live', attempts = null, attemptsReader = null, teacherGate = null, judge = null, store = memoryStore(), media = false, decks = null } = {}) {
+function make({ recordings = null, mode = 'live', attempts = null, attemptsReader = null, teacherGate = null, judge = null, store = memoryStore(), media = false, decks = null } = {}) {
   let t = Date.parse('2026-09-22T16:00:00-07:00');
   const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
   const judgeFn = judge ?? vi.fn(async ({ typed, entry }) => ({ score: typed === entry.term ? 10 : 2, judge: 'exact', reason: null, pass: typed === entry.term }));
@@ -41,7 +41,7 @@ function make({ mode = 'live', attempts = null, attemptsReader = null, teacherGa
     attempts: attemptsReader ? { readAttemptsInRange: attemptsReader } : attempts ? { readAttemptsInRange: vi.fn(() => attempts) } : null,
     assets: { exists: typeof media === 'function' ? media : () => media },
     judge: { judge: judgeFn },
-    teacherGate,
+    teacherGate, recordings,
     settings: () => SETTINGS, timezone: 'America/Los_Angeles', now: () => (t += 4000), logger, mode,
   });
   return { service, store, logger, judge: judgeFn, advance: (ms) => { t += ms; } };
@@ -360,5 +360,202 @@ describe('WordLadderSittingService', () => {
     const writes = store.s.writes;
     await service.get({ userId: 'test-learner', sittingId: b.sittingId });
     expect(store.s.writes).toBe(writes);
+  });
+});
+
+/** gawi tricky since yesterday (streak at threshold), pul familiar: the day opens on gawi's drill. */
+function trickyStore() {
+  const store = memoryStore();
+  store.s.status.words.gawi = { ...emptyWordV3(), state: 'familiar', introducedDay: '2026-09-19', tricky: true, trickySince: '2026-09-21', missStreak: 2 };
+  store.s.status.words.pul = { ...emptyWordV3(), state: 'familiar', introducedDay: '2026-09-19' };
+  store.s.status.decksSeen = [DECK];
+  return store;
+}
+const DRILL_RESPONSE = {
+  copy: { typed: '가위' }, dictation: { typed: '가위' }, type: { typed: '가위' }, tiles: { tiles: ['가', '위'] },
+};
+const MIC = { microphone: true };
+const TERM_AUDIO = 'gawi/term.mp3';
+
+/** Opens the tricky day with a mic and every asset, walks the drill, and returns each step's public item. */
+async function walkDrill(service, { onStep = async () => {} } = {}) {
+  const opened = await service.open({ userId: 'test-learner', deckId: DECK, capabilities: MIC });
+  const steps = {};
+  let { item } = opened;
+  for (let i = 0; i < 20 && item.type === 'drill'; i += 1) {
+    steps[item.step] = item;
+    await onStep(item, opened.sittingId);
+    ({ item } = await service.respond({ userId: 'test-learner', sittingId: opened.sittingId, itemId: item.id, response: DRILL_RESPONSE[item.step] ?? { done: true } }));
+  }
+  return { opened, steps, after: item };
+}
+
+function doneStore() {
+  const store = memoryStore();
+  for (const id of ['gawi', 'pul']) store.s.status.words[id] = { ...emptyWordV3(), state: 'familiar', introducedDay: '2026-09-01' };
+  store.s.status.decksSeen = [DECK];
+  store.s.days[TODAY] = { ...emptyDay(TODAY), atOpen: { dueRechecks: [], tricky: [], newAllowance: 0, settings: null }, doneAt: '2026-09-22T15:00:00-07:00' };
+  return store;
+}
+
+describe('WordLadderSittingService — drills, speaking, practice, My words', () => {
+  it('open passes the microphone capability to the day: an intro word is said after its copy', async () => {
+    const { service, store } = make({ media: true });
+    const opened = await service.open({ userId: 'test-learner', deckId: DECK, capabilities: MIC });
+    expect(store.s.days[TODAY].capabilities).toEqual({ microphone: true });
+    let { item } = opened;
+    ({ item } = await service.respond({ userId: 'test-learner', sittingId: opened.sittingId, itemId: item.id, response: { seen: true } }));
+    ({ item } = await service.respond({ userId: 'test-learner', sittingId: opened.sittingId, itemId: item.id, response: { typed: '가위' } }));
+    expect(item).toMatchObject({ type: 'say', mode: 'say-after', word: { term: '가위', media: { audio: expect.stringContaining(TERM_AUDIO) } } });
+  });
+
+  it('without a microphone no say step is offered', async () => {
+    const { service, store } = make({ media: true });
+    await service.open({ userId: 'test-learner', deckId: DECK });
+    expect(store.s.days[TODAY].capabilities).toEqual({ microphone: false });
+  });
+
+  it('drill steps carry exactly what the screen needs, and the unsupported ones never the term', async () => {
+    const { service } = make({ store: trickyStore(), media: true });
+    const { steps } = await walkDrill(service);
+    expect(Object.keys(steps)).toEqual(['look', 'copy', 'say-after', 'match', 'read-aloud', 'dictation', 'tiles', 'say-from-cue', 'type']);
+    for (const step of ['look', 'copy', 'say-after']) {
+      expect(steps[step].word).toMatchObject({ term: '가위', gloss: 'Scissors', media: { audio: expect.stringContaining(TERM_AUDIO) } });
+    }
+    // read-aloud: the text, and no audio until the take.
+    expect(steps['read-aloud'].word.term).toBe('가위');
+    expect(JSON.stringify(steps['read-aloud'])).not.toContain(TERM_AUDIO);
+    // dictation: the audio, no text.
+    expect(steps.dictation.assets.audio).toEqual(expect.stringContaining(TERM_AUDIO));
+    expect(JSON.stringify(steps.dictation)).not.toContain('가위');
+    expect(steps.dictation.word).toBeUndefined();
+    // tiles: syllables and a cue, never the joined term or its audio.
+    expect(steps.tiles.tiles).toEqual(expect.arrayContaining(['가', '위']));
+    const cueCarried = (item) => (item.cue.type === 'audio'
+      ? expect(item.assets.glossAudio).toEqual(expect.stringContaining('gawi/gloss.mp3'))
+      : expect(item.cue.text).toBe('Scissors'));
+    cueCarried(steps.tiles);
+    expect(JSON.stringify(steps.tiles)).not.toContain('가위');
+    expect(JSON.stringify(steps.tiles)).not.toContain(TERM_AUDIO);
+    for (const step of ['say-from-cue', 'type']) {
+      cueCarried(steps[step]);
+      expect(JSON.stringify(steps[step])).not.toContain('가위');
+      expect(JSON.stringify(steps[step])).not.toContain(TERM_AUDIO);
+      expect(steps[step].word).toBeUndefined();
+    }
+    // match: Korean on the left, pictures (asset ids, gloss as fallback text) on the right.
+    const pairs = steps.match.board.pairs;
+    expect(pairs.map((pair) => pair.term).sort()).toEqual(['가위', '풀']);
+    expect(pairs.find((pair) => pair.wordId === 'gawi').right).toEqual({ type: 'image', image: expect.stringContaining('gawi/image.jpg'), text: 'Scissors' });
+  });
+
+  it('saveRecording keeps a take for the current speaking step only, and never touches status', async () => {
+    const recordings = { save: vi.fn(() => ({ take: 1, file: '/x' })) };
+    const { service, store } = make({ store: trickyStore(), media: true, recordings });
+    const takes = {};
+    await walkDrill(service, {
+      onStep: async (item, sittingId) => {
+        const upload = () => service.saveRecording({ userId: 'test-learner', sittingId, itemId: item.id, buffer: Buffer.from('audio'), ext: 'webm' });
+        if (!['say-after', 'read-aloud', 'say-from-cue'].includes(item.step)) {
+          await expect(upload()).rejects.toThrow(/speaking/);
+          return;
+        }
+        const status = structuredClone(store.s.status);
+        const writes = store.s.writes;
+        takes[item.step] = await upload();
+        expect(store.s.status).toEqual(status);
+        expect(store.s.writes).toBe(writes);
+        await expect(service.saveRecording({ userId: 'test-learner', sittingId, itemId: 'd1:99', buffer: Buffer.from('a') })).rejects.toThrow(/stale item/);
+      },
+    });
+    expect(recordings.save).toHaveBeenCalledTimes(3);
+    expect(recordings.save).toHaveBeenCalledWith({ package: 'korean-vocab', learnerId: 'test-learner', day: TODAY, wordId: 'gawi', buffer: Buffer.from('audio'), ext: 'webm' });
+    expect(takes['say-after']).toEqual({ take: 1 });
+    // After the take, the native model is revealed for the unsupported steps.
+    expect(takes['read-aloud']).toEqual({ take: 1, reveal: { term: '가위', audio: expect.stringContaining(TERM_AUDIO) } });
+    expect(takes['say-from-cue']).toEqual({ take: 1, reveal: { term: '가위', audio: expect.stringContaining(TERM_AUDIO) } });
+  });
+
+  it('saveRecording refuses an empty take, an unknown format, and a service without a sink', async () => {
+    const recordings = { save: vi.fn(() => ({ take: 1 })) };
+    const { service } = make({ store: trickyStore(), media: true, recordings });
+    const toSayAfter = async (svc) => {
+      const opened = await svc.open({ userId: 'test-learner', deckId: DECK, capabilities: MIC });
+      let { item } = opened;
+      while (item.step !== 'say-after') {
+        ({ item } = await svc.respond({ userId: 'test-learner', sittingId: opened.sittingId, itemId: item.id, response: DRILL_RESPONSE[item.step] ?? { done: true } }));
+      }
+      return { sittingId: opened.sittingId, itemId: item.id };
+    };
+    const at = await toSayAfter(service);
+    await expect(service.saveRecording({ userId: 'test-learner', ...at, buffer: Buffer.alloc(0) })).rejects.toThrow(/recording is required/);
+    await expect(service.saveRecording({ userId: 'test-learner', ...at, buffer: Buffer.from('a'), ext: 'exe' })).rejects.toThrow(/format/);
+    const bare = make({ store: trickyStore(), media: true });
+    const at2 = await toSayAfter(bare.service);
+    await expect(bare.service.saveRecording({ userId: 'test-learner', ...at2, buffer: Buffer.from('a') })).rejects.toThrow(/not configured/);
+    expect(recordings.save).not.toHaveBeenCalled();
+  });
+
+  it("practice is refused before today's goal", async () => {
+    const { service } = make();
+    const opened = await service.open({ userId: 'test-learner', deckId: DECK });
+    await expect(service.practice({ userId: 'test-learner', sittingId: opened.sittingId, mode: 'write' })).rejects.toThrow(/goal/);
+  });
+
+  it('practice after the goal: a type-from-cue item is judged but never grades', async () => {
+    const store = doneStore();
+    const { service, judge } = make({ store });
+    const opened = await service.open({ userId: 'test-learner', deckId: DECK });
+    expect(opened.item.type).toBe('summary');
+    const started = await service.practice({ userId: 'test-learner', sittingId: opened.sittingId, mode: 'write', help: false });
+    expect(started.item).toMatchObject({ type: 'typed', task: '3.3', source: 'practice', graded: false });
+    expect(JSON.stringify(started.item)).not.toMatch(/가위|풀/);
+    expect(started.progress).toMatchObject({ phase: 'practice' });
+    const before = structuredClone(store.s.status.words);
+    const out = await service.respond({ userId: 'test-learner', sittingId: opened.sittingId, itemId: started.item.id, response: { typed: 'zz' } });
+    expect(judge).toHaveBeenCalledTimes(1);
+    expect(out.result).toMatchObject({ correct: false, score: 2, judge: 'exact' });
+    expect(store.s.status.words).toEqual(before);
+  });
+
+  it('practice listen and match items carry their words', async () => {
+    const { service } = make({ store: doneStore(), media: true });
+    const opened = await service.open({ userId: 'test-learner', deckId: DECK });
+    const listen = await service.practice({ userId: 'test-learner', sittingId: opened.sittingId, mode: 'listen' });
+    expect(listen.item.type).toBe('listen');
+    expect(listen.item.words).toEqual(expect.arrayContaining([
+      { wordId: 'gawi', term: '가위', audio: expect.stringContaining(TERM_AUDIO) },
+      { wordId: 'pul', term: '풀', audio: expect.stringContaining('pul/term.mp3') },
+    ]));
+    const menu = await service.respond({ userId: 'test-learner', sittingId: opened.sittingId, itemId: listen.item.id, response: { done: true } });
+    expect(menu.item).toMatchObject({ type: 'menu', modes: expect.arrayContaining(['listen', 'write']) });
+    expect(menu.progress.phase).toBe('summary');
+  });
+
+  it('words lists every word of the package in deck order, with its ladder state', async () => {
+    const store = memoryStore();
+    store.s.status.words.pul = { ...emptyWordV3(), state: 'mastered', stage: 2, dueDay: '2026-10-01', introducedDay: '2026-09-01' };
+    store.s.status.words.gawi = { ...emptyWordV3(), state: 'familiar', tricky: true, trickySince: TODAY, introducedDay: '2026-09-10' };
+    store.s.status.decksSeen = [DECK_OTHER];
+    const decks = {
+      getFlashcardDeck: async (id) => (id === DECK ? { id: DECK, words: ['gawi', 'pul'], lexicon: REF } : id === DECK_OTHER ? { id: DECK_OTHER, words: ['pul'], lexicon: REF } : null),
+      listFlashcardDecks: async () => [],
+    };
+    const { service } = make({ store, decks });
+    await expect(service.words({ userId: 'test-learner', deckId: DECK })).resolves.toEqual({
+      words: [
+        { wordId: 'pul', term: '풀', gloss: 'Glue', state: 'mastered', stage: 2, tricky: false, dueDay: '2026-10-01' },
+        { wordId: 'gawi', term: '가위', gloss: 'Scissors', state: 'familiar', stage: 0, tricky: true, dueDay: null },
+      ],
+    });
+    await expect(service.words({ userId: 'someone-else', deckId: DECK })).rejects.toThrow(/assignment/);
+  });
+
+  it('words in test mode reads the sitting\'s shadow and needs its id', async () => {
+    const { service } = make({ mode: 'test' });
+    await expect(service.words({ userId: 'test-learner', deckId: DECK })).rejects.toThrow(/sittingId/);
+    const opened = await service.open({ userId: 'test-learner', deckId: DECK });
+    const { words } = await service.words({ userId: 'test-learner', deckId: DECK, sittingId: opened.sittingId });
+    expect(words.map((w) => w.wordId)).toEqual(['gawi', 'pul']);
   });
 });
