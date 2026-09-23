@@ -616,11 +616,21 @@ export function respond(inputCtx, itemId, response = {}, { at, verdict = null } 
   };
 }
 
-// A task item's record names its word, task and source (and a judged answer
-// its reason), so a grown-up can later list and re-grade it (spec §6).
+// A task item's record names its word (whenever it has one, e.g. a plain
+// flashcard sort) and its task (whenever it has one) independently — a
+// flashcard carries a wordId but never a task, and dropping it whenever task
+// was absent left the day file (and its trace fallback, spec §8) unable to
+// say which word a sort was ever about. Source/reason (for a grown-up to
+// re-grade, spec §6) only mean anything once there's a word or task to hang them on.
 function itemMeta(item, verdict) {
-  if (!item.wordId || !item.task) return {};
-  return { wordId: item.wordId, task: item.task, source: item.source ?? null, ...(verdict ? { reason: verdict.reason ?? null } : {}) };
+  const meta = {};
+  if (item.wordId) meta.wordId = item.wordId;
+  if (item.task) meta.task = item.task;
+  if (item.wordId || item.task) {
+    meta.source = item.source ?? null;
+    if (verdict) meta.reason = verdict.reason ?? null;
+  }
+  return meta;
 }
 
 function applyResponse(ctx, item, itemId, response, { at, verdict }) {
