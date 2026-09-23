@@ -3233,18 +3233,28 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: cardLadderLogger,
   };
   // One cache for the live judge and the grown-up re-grade that overwrites it (spec §6).
-  const cardLadderJudgementCache = new YamlJudgementCache({ rootDir: path.join(dataDir, 'household', 'school', 'runtime', 'word-ladder') });
+  // `runtime/card-ladder`; a package's judgements still under the pre-rename
+  // `runtime/word-ladder` are copied over on first use (never moved).
+  const cardLadderJudgementCache = new YamlJudgementCache({
+    rootDir: path.join(dataDir, 'household', 'school', 'runtime', 'card-ladder'),
+    legacyRootDir: path.join(dataDir, 'household', 'school', 'runtime', 'word-ladder'),
+  });
   const cardLadderStudy = schoolCatalog.content ? new CardLadderSittingService({
     ...cardLadderShared, mode: 'live', judgementCache: cardLadderJudgementCache,
     stores: {
       open: () => ({ store: cardLadderStore, token: 'live' }),
       forToken: (token) => { if (token !== 'live') throw new Error('unknown sitting'); return cardLadderStore; },
-      // The start card's read (`intro`): the real store, read only.
-      peek: () => cardLadderStore,
+      // The start card's read (`intro`): the real store's read-only view, which
+      // never writes — not even the one-time move of a pre-rename package.
+      peek: () => cardLadderStore.readOnlyView(),
     },
     judge: cardLadderJudgeFor(cardLadderJudgementCache),
     // Spoken takes, kept for grown-ups: {package}/{learner}/{day}/{word}-{n}.{ext}.
-    recordings: new FilesystemCardLadderRecordings({ rootDir: path.join(schoolMediaRoot, 'recordings', 'word-ladder') }),
+    // (The pre-rename `recordings/word-ladder` is copied over per learner on first use.)
+    recordings: new FilesystemCardLadderRecordings({
+      rootDir: path.join(schoolMediaRoot, 'recordings', 'card-ladder'),
+      legacyRootDir: path.join(schoolMediaRoot, 'recordings', 'word-ladder'),
+    }),
   }) : null;
   const cardLadderShadows = new ShadowCardLadderStores({ real: cardLadderStore });
   // Test mode never writes attempts or takes, and cannot fold (no teacher gate).

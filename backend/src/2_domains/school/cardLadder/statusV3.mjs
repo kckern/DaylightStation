@@ -2,9 +2,23 @@
 import { DomainInvariantError } from '#domains/core/errors/index.mjs';
 import { emptyWordV3 } from './mastery.mjs';
 
-export const STATUS_SCHEMA_V3 = 'school.word-ladder-status/v3';
-export const DAY_SCHEMA = 'school.word-ladder-day/v1';
+export const STATUS_SCHEMA_V3 = 'school.card-ladder-status/v3';
+export const DAY_SCHEMA = 'school.card-ladder-day/v1';
+// The engine was the word ladder until 2026-09-23. Files written before then
+// carry these names; they are read as the current schemas and written back
+// under the current ones. The v1 status only ever existed under its old name.
+export const LEGACY_STATUS_SCHEMA_V3 = 'school.word-ladder-status/v3';
+export const LEGACY_DAY_SCHEMA = 'school.word-ladder-day/v1';
 const V2_SCHEMA = 'school.word-ladder-status/v1';
+
+/** A v3 status schema under either name. */
+export function isStatusV3Schema(schema) {
+  return schema === STATUS_SCHEMA_V3 || schema === LEGACY_STATUS_SCHEMA_V3;
+}
+/** A day-file schema under either name. */
+export function isDaySchema(schema) {
+  return schema === DAY_SCHEMA || schema === LEGACY_DAY_SCHEMA;
+}
 
 export function emptyStatusV3() {
   return { schema: STATUS_SCHEMA_V3, words: {}, decksSeen: [], lastFoldedDay: null, paperAttemptsFolded: [] };
@@ -47,7 +61,7 @@ function withFlags(word) {
  */
 export function normalizeStatusV3(raw) {
   const words = Object.fromEntries(Object.entries(raw?.words ?? {}).map(([id, word]) => [id, withFlags(word)]));
-  return { ...emptyStatusV3(), ...raw, words };
+  return { ...emptyStatusV3(), ...raw, schema: STATUS_SCHEMA_V3, words };
 }
 
 export function migrateStatusV2(raw) {

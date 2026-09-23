@@ -32,3 +32,20 @@ describe('FilesystemCardLadderRecordings', () => {
     expect(() => recordings.save({ learnerId: 'kid', day: '2026-09-22', wordId: 'gawi', buffer: Buffer.from('x') })).toThrow(/invalid recording address/);
   });
 });
+
+describe('FilesystemCardLadderRecordings — the one-time move out of recordings/word-ladder', () => {
+  it('copies a learner\'s takes on first use, numbers new takes after them, and leaves the old ones alone', async () => {
+    const { mkdir, writeFile, readdir } = await import('node:fs/promises');
+    const legacyRootDir = path.join(root, 'word-ladder');
+    const rootDir = path.join(root, 'card-ladder');
+    await mkdir(path.join(legacyRootDir, 'korean-vocab/kid/2026-09-22'), { recursive: true });
+    await writeFile(path.join(legacyRootDir, 'korean-vocab/kid/2026-09-22/gawi-1.webm'), 'old');
+    const recordings = new FilesystemCardLadderRecordings({ rootDir, legacyRootDir });
+    expect(recordings.latest({ package: 'korean-vocab', learnerId: 'kid', day: '2026-09-22', wordId: 'gawi' })).toMatchObject({ contentType: 'audio/webm' });
+    expect(recordings.save({ package: 'korean-vocab', learnerId: 'kid', day: '2026-09-22', wordId: 'gawi', buffer: Buffer.from('new') })).toMatchObject({ take: 2 });
+    expect(await readFile(path.join(rootDir, 'korean-vocab/kid/2026-09-22/gawi-1.webm'), 'utf8')).toBe('old');
+    expect(await readdir(path.join(legacyRootDir, 'korean-vocab/kid/2026-09-22'))).toEqual(['gawi-1.webm']);
+    expect(await readFile(path.join(legacyRootDir, 'korean-vocab/kid/2026-09-22/gawi-1.webm'), 'utf8')).toBe('old');
+  });
+});
+

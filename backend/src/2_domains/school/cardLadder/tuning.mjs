@@ -71,7 +71,9 @@ export function withTunedValues(settings, values = {}, bounds = null) {
 
 // ---- tuning.yml -----------------------------------------------------------
 
-export const TUNING_FILE_SCHEMA = 'school.word-ladder-tuning/v1';
+export const TUNING_FILE_SCHEMA = 'school.card-ladder-tuning/v1';
+// A tuning.yml written before 2026-09-23 says school.word-ladder-tuning/v1: the
+// store reads tuning by shape, not schema name, and rewrites it under this one.
 export const TUNING_HISTORY_KEEP = 60;
 
 /** A learner × package's tuning record (`tuning.yml`, spec §7). */

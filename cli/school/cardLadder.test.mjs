@@ -47,7 +47,7 @@ async function learnerFixture(root) {
   }));
 }
 function statusFile(root, learnerId, pkg) {
-  return path.join(root, 'data/users', learnerId, 'apps/school/word-ladder', pkg, 'status.yml');
+  return path.join(root, 'data/users', learnerId, 'apps/school/card-ladder', pkg, 'status.yml');
 }
 
 describe('card-ladder CLI', () => {
@@ -324,7 +324,7 @@ describe('card-ladder trace CLI', () => {
   it('falls back to the day file when the store is unreachable, with the no-timing-detail header', async () => {
     const root = await mkdtemp(path.join(tmpdir(), 'card-ladder-trace-'));
     try {
-      const dayFile = path.join(root, 'data/users/learner-a/apps/school/word-ladder/korean-vocab/days/2026-09-22.yml');
+      const dayFile = path.join(root, 'data/users/learner-a/apps/school/card-ladder/korean-vocab/days/2026-09-22.yml');
       await mkdir(path.dirname(dayFile), { recursive: true });
       await writeFile(dayFile, dump({
         items: { i1: { at: '2026-09-22T10:00:03-07:00', wordId: 'gawi', task: null, response: { typed: '가위' }, result: { correct: true } } },
@@ -339,10 +339,31 @@ describe('card-ladder trace CLI', () => {
     } finally { await rm(root, { recursive: true, force: true }); }
   });
 
+  it('the day-file fallback reads a package not yet moved out of the pre-rename word-ladder/ directory, and prefers card-ladder/', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'card-ladder-trace-legacy-'));
+    try {
+      const legacyDay = path.join(root, 'data/users/learner-a/apps/school/word-ladder/korean-vocab/days/2026-09-22.yml');
+      await mkdir(path.dirname(legacyDay), { recursive: true });
+      await writeFile(legacyDay, dump({ items: { i1: { at: '2026-09-22T10:00:03-07:00', wordId: 'gawi', task: null, response: { typed: '가위' }, result: { correct: true } } } }));
+      const argv = ['trace', '--learner', 'learner-a', '--day', '2026-09-22', ...dirs(root)];
+      const legacyOut = io();
+      expect(await main(argv, legacyOut, { fetch: ndjsonFetch([], false) })).toBe(0);
+      expect(legacyOut.stdout.write.mock.calls[0][0]).toContain('가위');
+      const movedDay = path.join(root, 'data/users/learner-a/apps/school/card-ladder/korean-vocab/days/2026-09-22.yml');
+      await mkdir(path.dirname(movedDay), { recursive: true });
+      await writeFile(movedDay, dump({ items: { i1: { at: '2026-09-22T10:00:03-07:00', wordId: 'pul', task: null, response: { typed: '풀' }, result: { correct: true } } } }));
+      const movedOut = io();
+      expect(await main(argv, movedOut, { fetch: ndjsonFetch([], false) })).toBe(0);
+      const printed = movedOut.stdout.write.mock.calls[0][0];
+      expect(printed).toContain('풀');
+      expect(printed).not.toContain('가위');
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
   it('falls back to the day file when the store returns nothing (empty result, not an error)', async () => {
     const root = await mkdtemp(path.join(tmpdir(), 'card-ladder-trace-empty-'));
     try {
-      const dayFile = path.join(root, 'data/users/learner-a/apps/school/word-ladder/korean-vocab/days/2026-09-22.yml');
+      const dayFile = path.join(root, 'data/users/learner-a/apps/school/card-ladder/korean-vocab/days/2026-09-22.yml');
       await mkdir(path.dirname(dayFile), { recursive: true });
       await writeFile(dayFile, dump({ items: { i1: { at: '2026-09-22T10:00:00-07:00', wordId: 'gawi', task: null, response: {}, result: { ok: true } } } }));
       const argv = ['trace', '--learner', 'learner-a', '--day', '2026-09-22', ...dirs(root)];
@@ -365,7 +386,7 @@ describe('card-ladder trace CLI', () => {
   it('a --sitting fallback scans every day file for the one whose sittings map has that id', async () => {
     const root = await mkdtemp(path.join(tmpdir(), 'card-ladder-trace-sitting-'));
     try {
-      const daysDir = path.join(root, 'data/users/learner-a/apps/school/word-ladder/korean-vocab/days');
+      const daysDir = path.join(root, 'data/users/learner-a/apps/school/card-ladder/korean-vocab/days');
       await mkdir(daysDir, { recursive: true });
       await writeFile(path.join(daysDir, '2026-09-20.yml'), dump({ sittings: {}, items: {} }));
       await writeFile(path.join(daysDir, '2026-09-22.yml'), dump({
