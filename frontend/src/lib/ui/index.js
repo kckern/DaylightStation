@@ -9,3 +9,4 @@ export { default as Skeleton } from './Skeleton.jsx';
 export { DateStepper } from './DateStepper.jsx';
 export { AskAffordance } from './AskAffordance.jsx';
 export { createAppLogger } from './createAppLogger.js';
+export { TouchButton } from './TouchButton.jsx';

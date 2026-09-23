@@ -1,0 +1,337 @@
+// backend/src/2_domains/school/wordLadder/engine.test.mjs
+import { describe, expect, it } from 'vitest';
+import { emptyWordV3 } from './mastery.mjs';
+import { emptyDay, emptyStatusV3 } from './statusV3.mjs';
+import { addActiveTime, currentItem, openDay, respond } from './engine.mjs';
+
+const D = '2026-09-22';
+const SET = {
+  round: { size: 5, maxPasses: 3 }, batch: { newPerDay: 4, workingSet: 7 },
+  review: { gapScale: 1, typedEvery: 2 }, drill: { afterMisses: 2 }, session: { capMinutes: 15 }, typing: { passScore: 6 },
+};
+const E = (id, term, gloss) => [id, { id, term, gloss, kind: 'word', decoys: { term: ['x1', 'x2', 'x3'], gloss: ['g1', 'g2', 'g3'] } }];
+const lexicon = { entries: new Map([E('gawi', '가위', 'Scissors'), E('pul', '풀', 'Glue'), E('chaek', '책', 'Book')]) };
+const media = { gawi: { image: true, audio: true, glossAudio: false }, pul: { image: true, audio: true }, chaek: { image: false, audio: false } };
+const pool = ['gawi', 'pul', 'chaek'];
+const PASS = { score: 10, judge: 'exact', pass: true };
+let clock = Date.parse(`${D}T16:00:00-07:00`);
+const at = () => new Date((clock += 5000)).toISOString();
+
+function start(status = emptyStatusV3()) {
+  const opened = openDay({ status, dayFile: emptyDay(D), day: D, deckId: 'deck', pool, settings: SET, learnerId: 'test-learner', at: at() });
+  return { ...opened, day: D, lexicon, media, pool, settings: SET, learnerId: 'test-learner' };
+}
+function step(ctx, response, verdict = null) {
+  const item = currentItem(ctx);
+  const out = respond(ctx, item.id, response, { at: at(), verdict });
+  return { ctx: { ...ctx, status: out.status, dayFile: out.dayFile }, item, result: out.result };
+}
+
+describe('engine — a fresh day', () => {
+  it('introduces, copies, streams, quizzes, then summarises', () => {
+    let ctx = start();
+    expect(currentItem(ctx)).toMatchObject({ type: 'flashcard', mode: 'intro', wordId: 'gawi' });
+    for (const wordId of ['gawi', 'pul', 'chaek']) {
+      ({ ctx } = step(ctx, { seen: true }));
+      const copy = currentItem(ctx);
+      expect(copy).toMatchObject({ type: 'copy', wordId });
+      ({ ctx } = step(ctx, { typed: lexicon.entries.get(wordId).term }));
+    }
+    const sorts = { gawi: 'claimed', pul: 'familiar', chaek: 'notYet' };
+    let guard = 0;
+    while (currentItem(ctx).type === 'flashcard' && guard++ < 30) {
+      const { wordId } = currentItem(ctx);
+      ({ ctx } = step(ctx, { sort: wordId === 'chaek' && guard > 6 ? 'familiar' : sorts[wordId] }));
+    }
+    const first = currentItem(ctx);
+    expect(first).toMatchObject({ type: 'typed', source: 'verify' });
+    while (['typed', 'choice'].includes(currentItem(ctx).type)) {
+      const item = currentItem(ctx);
+      if (item.type === 'typed') ({ ctx } = step(ctx, { typed: 'x' }, PASS));
+      else ({ ctx } = step(ctx, { choice: lexicon.entries.get(item.wordId).gloss }));
+    }
+    expect(ctx.status.words.gawi).toMatchObject({ state: 'mastered', stage: 0 });
+    expect(currentItem(ctx)).toMatchObject({ type: 'summary', doneToday: true });
+    expect(ctx.dayFile.doneAt).toEqual(expect.any(String));
+  });
+
+  it('a copy mismatch keeps the copy item current', () => {
+    let ctx = start();
+    ({ ctx } = step(ctx, { seen: true }));
+    const { ctx: after, result } = step(ctx, { typed: '가이' });
+    expect(result).toMatchObject({ correct: false });
+    expect(currentItem(after)).toMatchObject({ type: 'copy', wordId: 'gawi' });
+  });
+
+  it('repeating an answered item returns the stored result; a stale id throws', () => {
+    let ctx = start();
+    const item = currentItem(ctx);
+    const out = respond(ctx, item.id, { seen: true }, { at: at() });
+    ctx = { ...ctx, status: out.status, dayFile: out.dayFile };
+    expect(respond(ctx, item.id, { seen: true }, { at: at() }).result).toEqual(out.result);
+    expect(() => respond(ctx, 'r9:s:99', { sort: 'claimed' }, { at: at() })).toThrow(/stale/);
+  });
+});
+
+describe('engine — rechecks and misses', () => {
+  it('rechecks come first; a failed recheck demotes to familiar (re-quizzable in a later carry round)', () => {
+    const status = emptyStatusV3();
+    status.words.gawi = { ...emptyWordV3(), state: 'mastered', stage: 1, dueDay: D, introducedDay: '2026-09-10' };
+    let ctx = start(status);
+    const item = currentItem(ctx);
+    expect(item).toMatchObject({ id: 'rc:gawi', source: 'recheck' });
+    const answer = item.type === 'typed' ? { typed: 'zz' } : { dontKnow: true };
+    ({ ctx } = step(ctx, answer, { score: 2, judge: 'distance', pass: false }));
+    expect(ctx.status.words.gawi).toMatchObject({ state: 'familiar', lostMasteredDay: D });
+  });
+
+  it('first-miss stop: a failed typed task drops the word\'s hear task', () => {
+    let ctx = start();
+    let guard = 0;
+    while (currentItem(ctx).type !== 'typed' && guard++ < 60) {
+      const item = currentItem(ctx);
+      if (item.type === 'flashcard' && item.mode === 'intro') ({ ctx } = step(ctx, { seen: true }));
+      else if (item.type === 'copy') ({ ctx } = step(ctx, { typed: lexicon.entries.get(item.wordId).term }));
+      else ({ ctx } = step(ctx, { sort: 'claimed' }));
+    }
+    const failedWord = currentItem(ctx).wordId;
+    ({ ctx } = step(ctx, { typed: 'zz' }, { score: 2, judge: 'distance', pass: false }));
+    const round = ctx.dayFile.rounds.at(-1);
+    expect(round.quiz.queue.slice(round.quiz.index).some((t) => t.wordId === failedWord)).toBe(false);
+    expect(ctx.status.words[failedWord]).toMatchObject({ state: 'familiar', verifyFailedDay: D });
+  });
+
+  it('Not yet at round end sets notYetCarry', () => {
+    let ctx = start();
+    let guard = 0;
+    while (currentItem(ctx).type !== 'summary' && guard++ < 80) {
+      const item = currentItem(ctx);
+      if (item.type === 'flashcard' && item.mode === 'intro') ({ ctx } = step(ctx, { seen: true }));
+      else if (item.type === 'copy') ({ ctx } = step(ctx, { typed: lexicon.entries.get(item.wordId).term }));
+      else if (item.type === 'flashcard') ({ ctx } = step(ctx, { sort: 'notYet' }));
+      else ({ ctx } = step(ctx, { dontKnow: true }));
+    }
+    expect(Object.values(ctx.status.words).every((word) => word.notYetCarry === true)).toBe(true);
+  });
+});
+
+describe('engine — cap and undo', () => {
+  it('undo restores the previous sort', () => {
+    let ctx = start();
+    for (let i = 0; i < 3; i += 1) { ({ ctx } = step(ctx, { seen: true })); const c = currentItem(ctx); ({ ctx } = step(ctx, { typed: lexicon.entries.get(c.wordId).term })); }
+    const before = currentItem(ctx);
+    ({ ctx } = step(ctx, { sort: 'claimed' }));
+    ({ ctx } = step(ctx, { undo: true }));
+    expect(currentItem(ctx)).toMatchObject({ type: 'flashcard', wordId: before.wordId });
+    expect(ctx.status.words[before.wordId].state).toBe('introduced');
+  });
+  it('addActiveTime caps idle gaps at 45 s', () => {
+    const d = addActiveTime({ ...emptyDay(D), lastInputAt: 0 }, 10000);
+    expect(addActiveTime(d, 10000 + 600000).activeMs).toBe(10000 + 45000);
+  });
+});
+
+describe('engine — undo actually undoes', () => {
+  it('sort → undo → sort the same card differently applies the new pile', () => {
+    let ctx = start();
+    for (let i = 0; i < 3; i += 1) { ({ ctx } = step(ctx, { seen: true })); const c = currentItem(ctx); ({ ctx } = step(ctx, { typed: lexicon.entries.get(c.wordId).term })); }
+    const card = currentItem(ctx);
+    ({ ctx } = step(ctx, { sort: 'claimed' }));
+    const undoItem = currentItem(ctx);
+    ({ ctx } = step(ctx, { undo: true }));
+    expect(ctx.dayFile.items[card.id]).toBeUndefined();
+    expect(ctx.dayFile.items[undoItem.id]).toBeUndefined();
+    const again = currentItem(ctx);
+    expect(again).toMatchObject({ id: card.id, wordId: card.wordId });
+    const { ctx: after, result } = step(ctx, { sort: 'notYet' });
+    expect(result).toEqual({ ok: true });
+    expect(after.status.words[card.wordId].state).toBe('notYet');
+    expect(after.dayFile.rounds.at(-1).stream.latest[card.wordId]).toBe('notYet');
+    expect(after.dayFile.items[card.id].response).toEqual({ sort: 'notYet' });
+  });
+
+  it('undo with nothing to undo is rejected', () => {
+    let ctx = start();
+    for (let i = 0; i < 3; i += 1) { ({ ctx } = step(ctx, { seen: true })); const c = currentItem(ctx); ({ ctx } = step(ctx, { typed: lexicon.entries.get(c.wordId).term })); }
+    expect(() => step(ctx, { undo: true })).toThrow(/nothing to undo/);
+  });
+});
+
+describe('engine — recheck task choice (spec §2 Rechecks)', () => {
+  const taskFor = (word) => {
+    const status = emptyStatusV3();
+    status.words.gawi = { ...emptyWordV3(), state: 'mastered', dueDay: D, introducedDay: '2026-09-01', ...word };
+    return currentItem(start(status)).task;
+  };
+  it('below stage 2, 2.2 and 3.1 alternate and every typedEvery-th recheck is 3.3', () => {
+    const tasks = [0, 1, 2, 3, 4].map((rechecks) => taskFor({ stage: 1, rechecks }));
+    expect(tasks[1]).toBe('3.3');
+    expect(tasks[3]).toBe('3.3');
+    expect(['2.2', '3.1']).toContain(tasks[0]);
+    expect(tasks[2]).not.toBe(tasks[0]);
+    expect(['2.2', '3.1']).toContain(tasks[2]);
+    expect(tasks[4]).toBe(tasks[0]);
+  });
+  it('stage 2 and above is always 3.3', () => {
+    expect([0, 2, 4].map((rechecks) => taskFor({ stage: 2, rechecks }))).toEqual(['3.3', '3.3', '3.3']);
+  });
+});
+
+describe('engine — openDay', () => {
+  it('records atOpen once and seeds shuffled rechecks', () => {
+    const status = emptyStatusV3();
+    status.words.gawi = { ...emptyWordV3(), state: 'mastered', stage: 1, dueDay: D, introducedDay: '2026-09-10' };
+    const ctx = start(status);
+    expect(ctx.status.decksSeen).toEqual(['deck']);
+    expect(ctx.dayFile.atOpen).toMatchObject({ dueRechecks: ['gawi'], tricky: [], newAllowance: 4 });
+    expect(ctx.dayFile.rounds).toEqual([]);
+    const again = openDay({ status: ctx.status, dayFile: ctx.dayFile, day: D, deckId: 'deck', pool, settings: SET, learnerId: 'test-learner', at: at() });
+    expect(again.status.decksSeen).toEqual(['deck']);
+    expect(again.dayFile.atOpen).toEqual(ctx.dayFile.atOpen);
+  });
+
+  it('an untouched first round is re-planned when the day is re-opened with the real pool', () => {
+    const status = emptyStatusV3();
+    status.words.chaek = { ...emptyWordV3(), state: 'familiar', introducedDay: '2026-09-20' };
+    const first = openDay({ status, dayFile: emptyDay(D), day: D, deckId: 'deck', pool: [], settings: SET, learnerId: 'test-learner', at: at() });
+    expect(first.dayFile.rounds).toHaveLength(1);
+    expect(first.dayFile.rounds[0]).toMatchObject({ kind: 'carry', words: ['chaek'] });
+    const second = openDay({ ...first, day: D, deckId: 'deck', pool: ['gawi', 'pul'], settings: SET, learnerId: 'test-learner', at: at() });
+    expect(second.dayFile.rounds).toHaveLength(1);
+    expect(second.dayFile.rounds[0]).toMatchObject({ id: 'r1', kind: 'new', newWords: ['gawi', 'pul'], words: ['gawi', 'pul', 'chaek'] });
+  });
+
+  it('a started round is never re-planned', () => {
+    let ctx = start();
+    ({ ctx } = step(ctx, { seen: true }));
+    const reopened = openDay({ status: ctx.status, dayFile: ctx.dayFile, day: D, deckId: 'deck', pool: ['pul'], settings: SET, learnerId: 'test-learner', at: at() });
+    expect(reopened.dayFile.rounds).toEqual(ctx.dayFile.rounds);
+  });
+});
+
+function introAll(ctx) {
+  for (let i = 0; i < 3; i += 1) {
+    ({ ctx } = step(ctx, { seen: true }));
+    const c = currentItem(ctx);
+    ({ ctx } = step(ctx, { typed: lexicon.entries.get(c.wordId).term }));
+  }
+  return ctx;
+}
+function toFirstQuizItem(ctx) {
+  ctx = introAll(ctx);
+  ({ ctx } = step(ctx, { quizNow: true }));
+  return ctx;
+}
+
+describe('engine — Quiz me before sorting', () => {
+  it('quizNow straight after the introductions quizzes every round word', () => {
+    const ctx = toFirstQuizItem(start());
+    const round = ctx.dayFile.rounds.at(-1);
+    expect(round.phase).toBe('quiz');
+    expect(new Set(round.quiz.queue.map((t) => t.wordId))).toEqual(new Set(pool));
+    expect(round.quiz.queue).toHaveLength(pool.length * 2);
+  });
+
+  it('quizNow still excludes a word that failed verify today', () => {
+    let ctx = introAll(start());
+    ctx = { ...ctx, status: { ...ctx.status, words: { ...ctx.status.words, pul: { ...ctx.status.words.pul, verifyFailedDay: D } } } };
+    ({ ctx } = step(ctx, { quizNow: true }));
+    const words = new Set(ctx.dayFile.rounds.at(-1).quiz.queue.map((t) => t.wordId));
+    expect(words.has('pul')).toBe(false);
+    expect(words.size).toBe(2);
+  });
+});
+
+describe('engine — responses must fit the item', () => {
+  const tryOn = (ctx, response, verdict = null) => () => respond(ctx, currentItem(ctx).id, response, { at: at(), verdict });
+
+  it('intro flashcard requires seen:true', () => {
+    const ctx = start();
+    expect(tryOn(ctx, {})).toThrow('response does not fit this item');
+    expect(tryOn(ctx, { seen: false })).toThrow('response does not fit this item');
+    expect(tryOn(ctx, { sort: 'claimed' })).toThrow('response does not fit this item');
+    expect(tryOn(ctx, { undo: true })).toThrow('nothing to undo');
+  });
+
+  it('copy requires a string typed', () => {
+    let ctx = start();
+    ({ ctx } = step(ctx, { seen: true }));
+    expect(tryOn(ctx, { typed: 5 })).toThrow('response does not fit this item');
+    expect(tryOn(ctx, { seen: true })).toThrow('response does not fit this item');
+  });
+
+  it('stream flashcard accepts only a valid sort, undo or quizNow', () => {
+    const ctx = introAll(start());
+    expect(tryOn(ctx, { sort: 'maybe' })).toThrow('response does not fit this item');
+    expect(tryOn(ctx, { seen: true })).toThrow('response does not fit this item');
+    expect(tryOn(ctx, { sort: 'claimed', quizNow: true })).toThrow('response does not fit this item');
+    expect(tryOn(ctx, { choice: 'Glue' })).toThrow('response does not fit this item');
+    expect(tryOn(ctx, { sort: 'familiar' })).not.toThrow();
+  });
+
+  it('typed accepts only a string typed; undo on a graded item is nothing to undo', () => {
+    const ctx = toFirstQuizItem(start());
+    expect(currentItem(ctx).type).toBe('typed');
+    expect(tryOn(ctx, { choice: 'Glue' }, PASS)).toThrow('response does not fit this item');
+    expect(tryOn(ctx, { dontKnow: true }, PASS)).toThrow('response does not fit this item');
+    expect(tryOn(ctx, {}, PASS)).toThrow('response does not fit this item');
+    expect(tryOn(ctx, { undo: true }, PASS)).toThrow('nothing to undo');
+    expect(tryOn(ctx, { typed: 'x' }, PASS)).not.toThrow();
+  });
+
+  it('choice accepts only choice or dontKnow', () => {
+    let ctx = toFirstQuizItem(start());
+    while (currentItem(ctx).type === 'typed') ({ ctx } = step(ctx, { typed: 'x' }, PASS));
+    expect(currentItem(ctx).type).toBe('choice');
+    expect(tryOn(ctx, { typed: 'x' })).toThrow('response does not fit this item');
+    expect(tryOn(ctx, { sort: 'claimed' })).toThrow('response does not fit this item');
+    expect(tryOn(ctx, { undo: true })).toThrow('nothing to undo');
+    expect(tryOn(ctx, { dontKnow: true })).not.toThrow();
+  });
+
+  it('respond requires at', () => {
+    const ctx = start();
+    const { id } = currentItem(ctx);
+    expect(() => respond(ctx, id, { seen: true }, {})).toThrow('at is required');
+    expect(() => respond(ctx, id, { seen: true }, { at: '' })).toThrow('at is required');
+    expect(() => respond(ctx, id, { seen: true })).toThrow('at is required');
+  });
+});
+
+describe('engine — cap-done', () => {
+  const CAP = SET.session.capMinutes * 60000;
+  const dueStatus = () => {
+    const status = emptyStatusV3();
+    status.words.gawi = { ...emptyWordV3(), state: 'mastered', stage: 1, dueDay: D, introducedDay: '2026-09-10' };
+    return status;
+  };
+  it('the cap with no round in progress is done even with a recheck pending', () => {
+    expect(start(dueStatus()).dayFile.doneAt).toBeNull();
+    const openedAt = at();
+    const capped = openDay({ status: dueStatus(), dayFile: { ...emptyDay(D), activeMs: CAP }, day: D, deckId: 'deck', pool, settings: SET, learnerId: 'test-learner', at: openedAt });
+    expect(currentItem({ ...capped, day: D, lexicon, media, pool, settings: SET, learnerId: 'test-learner' })).toMatchObject({ id: 'rc:gawi', source: 'recheck' });
+    expect(capped.dayFile.doneAt).toBe(openedAt);
+  });
+  it('the cap does not end a round in progress', () => {
+    let ctx = start();
+    ctx = { ...ctx, dayFile: { ...ctx.dayFile, activeMs: CAP } };
+    ({ ctx } = step(ctx, { seen: true }));
+    expect(ctx.dayFile.doneAt).toBeNull();
+  });
+});
+
+describe('engine — a day with nothing to do', () => {
+  it('is credited at open when every word is mastered and none is due', () => {
+    const status = emptyStatusV3();
+    for (const id of pool) status.words[id] = { ...emptyWordV3(), state: 'mastered', stage: 2, dueDay: '2026-10-01', introducedDay: '2026-09-01' };
+    const openedAt = at();
+    const opened = openDay({ status, dayFile: emptyDay(D), day: D, deckId: 'deck', pool, settings: SET, learnerId: 'test-learner', at: openedAt });
+    expect(opened.dayFile.rounds).toEqual([]);
+    expect(opened.dayFile.doneAt).toBe(openedAt);
+    const again = openDay({ ...opened, day: D, deckId: 'deck', pool, settings: SET, learnerId: 'test-learner', at: at() });
+    expect(again.dayFile.doneAt).toBe(openedAt);
+  });
+  it('requires at', () => {
+    expect(() => openDay({ status: emptyStatusV3(), dayFile: emptyDay(D), day: D, deckId: 'deck', pool, settings: SET, learnerId: 'test-learner' })).toThrow('at is required');
+  });
+});

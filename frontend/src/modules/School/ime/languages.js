@@ -13,8 +13,23 @@ export const COMPOSABLE_LANGUAGES = Object.freeze(['KR']);
 
 const SET = new Set(COMPOSABLE_LANGUAGES);
 
+/**
+ * Fields declare their language two ways: the sentence ladder uses the corpus
+ * code (`KR`), the word ladder uses BCP-47 (`ko`, `ko-KR`) because it goes on
+ * the `lang` attribute too. Both mean the same script, so normalise to the
+ * registry's code: upper-case the primary subtag and alias `KO` to `KR`.
+ */
+const ALIASES = Object.freeze({ KO: 'KR' });
+
+export function normalizeLanguage(code) {
+  if (typeof code !== 'string' || !code) return null;
+  const primary = code.toUpperCase().split('-')[0];
+  return ALIASES[primary] || primary;
+}
+
 export function canCompose(code) {
-  return typeof code === 'string' && SET.has(code.toUpperCase());
+  const norm = normalizeLanguage(code);
+  return norm !== null && SET.has(norm);
 }
 
 /**

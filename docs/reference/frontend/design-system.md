@@ -64,6 +64,9 @@ apply to every pack that doesn't set `themeExtras` (see below) unchanged.
 **To add a pack:** add one entry to `PACKS` in `packs.mjs` — `name`,
 `character`, `primaryColor`, `accent`, and optional color overrides. Nothing
 else needs to change; `AppThemeProvider` picks up any registered pack by name.
+The `school` pack (green accent, `#51cf66`) is the study-desk direction for
+kiosk screens like the word-ladder stage — one calm accent for progress and
+primary actions, no chrome to hunt through.
 
 ### `themeExtras` — the escape hatch
 
@@ -105,6 +108,7 @@ UI is built from these, not from raw Mantine or hand-rolled equivalents.
 | `DateStepper` | Paging a single day backward/forward with a "Today"/"Yesterday" label and a clamp at `max`. | A date *range* picker or multi-date selection — this is single-day stepping only. |
 | `AskAffordance` | The entry pill that opens an app's chat/coach overlay (pairs with `modules/Agent/AgentChatSurface`). | Any other kind of search or command input — this is scoped to the ask/chat affordance, not a generic search box. |
 | `createAppLogger` | The lazy per-app structured logger (`logger.debug/info/warn/error/sampled`, `.child()`), avoiding import-time logger races. One call per app module. | Ad hoc `console.*` calls anywhere — see the logging framework rules for the general policy this specializes. |
+| `TouchButton` | A kiosk-size (min 64px, `--choice` variant 88px), token-driven button for touch-first screens — `variant="primary"\|"secondary"\|"choice"\|"sort-notyet"\|"sort-familiar"\|"sort-gotit"`, optional `keyHint` badge for a paired physical key. Renders `ds-touch ds-touch--<variant>`. | A dense desktop control bar — this is sized for a finger, not a mouse; use a plain Mantine `Button` there instead. |
 
 ## Data fetching
 

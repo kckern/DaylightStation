@@ -1,23 +1,72 @@
-.word-ladder {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 1.25rem;
-  padding: 1.5rem;
-  min-height: 100%;
+// Word ladder v3 (spec §6). Colours and motion only via --ds-* (school pack,
+// set by WordLadderStage's AppThemeProvider). Sizes are relative to the fixed
+// stage, which is the target screen's resolution scaled to fit — never the viewport.
+// Buttons are the design-system TouchButton; no button CSS lives here.
+
+.wl-stage-frame { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: var(--ds-background); overflow: hidden; }
+.wl-stage { flex: none; transform-origin: center center; background: var(--ds-background); color: var(--ds-text-high); overflow: hidden; }
+
+.wl { position: relative; display: grid; grid-template-rows: auto 1fr; width: 100%; height: 100%; outline: none; }
+.wl-test-banner {
+  position: absolute; top: 0; left: 50%; transform: translateX(-50%); z-index: 2;
+  padding: 0.25rem 1rem; border-radius: 0 0 10px 10px;
+  background: var(--ds-warning); color: var(--ds-background);
+  font-weight: 700; letter-spacing: 0.05em; white-space: nowrap;
 }
-.word-ladder-header { align-self: stretch; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.75rem; }
-.word-ladder-header > p[aria-label='Today'] { margin: 0 0 0 auto; opacity: 0.75; }
-.word-ladder-notice { flex-basis: 100%; margin: 0; text-align: center; font-size: 1.25rem; }
-.word-ladder-card { display: flex; flex-direction: column; align-items: center; gap: 1rem; width: min(40rem, 100%); }
-.word-ladder-picture { max-width: 100%; max-height: 16rem; object-fit: contain; border-radius: 0.75rem; }
-.word-ladder-term { font-size: 3rem; font-weight: 700; margin: 0; }
-.word-ladder-gloss { font-size: 2.25rem; margin: 0; }
-.word-ladder-pronunciation { font-size: 1.25rem; opacity: 0.8; margin: 0; }
-.word-ladder-choices { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.75rem; width: 100%; }
-.word-ladder-choice { font-size: 1.5rem; padding: 1rem; }
-.word-ladder-choice.is-answer { outline: 3px solid currentColor; }
-.word-ladder-record, .word-ladder-marks { display: flex; flex-wrap: wrap; gap: 0.75rem; justify-content: center; }
-.word-ladder button { min-height: 3.5rem; min-width: 7rem; font-size: 1.25rem; border-radius: 0.75rem; }
-.word-ladder-tick { font-size: 1.75rem; }
-.word-ladder-done h2 { font-size: 2rem; }
+
+.wl-header { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 1rem; padding: 1rem 1.5rem 0.5rem; }
+// The test banner hangs from the top centre, over the round label: push the header below it.
+.wl:has(.wl-test-banner) .wl-header { padding-top: 2.5rem; }
+.wl-header__round { margin: 0; text-align: center; font-size: 1.5rem; color: var(--ds-text-mid); }
+.wl-header__piles { margin: 0; font-size: 1.25rem; color: var(--ds-text-low); white-space: nowrap; }
+.wl-header__time {
+  grid-column: 1 / -1; height: 6px; border-radius: 3px; background: var(--ds-surface); overflow: hidden;
+  > div { height: 100%; border-radius: 3px; background: var(--ds-accent); transition: width var(--ds-motion-base) var(--ds-motion-easing); }
+}
+
+.wl-main { display: flex; align-items: center; justify-content: center; min-height: 0; padding: 0 1.5rem 1.5rem; }
+.wl-item { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1.25rem; width: 100%; height: 100%; min-height: 0; }
+
+.wl-card {
+  display: flex; align-items: center; justify-content: center;
+  width: min(760px, 100%); flex: 1 1 auto; min-height: 0; max-height: 440px; padding: 1.5rem;
+  border-radius: 20px; border: 2px solid var(--ds-border); background: var(--ds-surface); color: inherit;
+  font: inherit; cursor: pointer;
+  &:focus-visible { outline: 3px solid var(--ds-accent); outline-offset: 3px; }
+}
+.wl-card__face { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1rem; width: 100%; height: 100%; min-height: 0; }
+.wl-card__face--front > .wl-fit { max-width: 100%; }
+.wl-card__face--back.has-picture { display: grid; grid-template-rows: minmax(0, 1fr) auto; }
+.wl-card__picture { max-width: 100%; max-height: 100%; min-height: 0; object-fit: contain; border-radius: 12px; justify-self: center; }
+.wl-card__gloss { display: flex; align-items: center; justify-content: center; width: 100%; min-height: 3.5rem; }
+.wl-card__pron { margin: 0; font-size: 1.25rem; color: var(--ds-text-mid); }
+
+.wl-prompt { display: flex; align-items: center; justify-content: center; width: min(760px, 100%); height: 220px; flex: none; }
+.wl-cue-picture { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 12px; }
+
+.wl-choices {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; width: min(900px, 100%);
+  .is-answer { outline: 4px solid var(--ds-success); outline-offset: 2px; }
+}
+
+.wl-controls { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 1rem; }
+.wl-controls--minor { gap: 0.75rem; opacity: 0.9; }
+
+.wl-typed__field {
+  width: min(640px, 100%); min-height: 80px; padding: 0.5rem 1rem;
+  font-size: 2.5rem; text-align: center;
+  border-radius: 14px; border: 2px solid var(--ds-border); background: var(--ds-surface); color: var(--ds-text-high);
+  &:focus { outline: 3px solid var(--ds-accent); }
+  &:disabled { opacity: 0.7; }
+}
+
+.wl-verdict { margin: 0; font-size: 1.5rem; text-align: center; }
+.wl-summary h2 { margin: 0; font-size: 2.5rem; }
+.wl-summary p { margin: 0; font-size: 1.5rem; color: var(--ds-text-mid); }
+.wl-start { gap: 2rem; }
+.wl-start__title { margin: 0; font-size: 3rem; text-align: center; color: var(--ds-text-high); }
+.wl-loading { font-size: 1.5rem; color: var(--ds-text-mid); }
+.wl-error p { margin: 0; font-size: 1.5rem; text-align: center; }
+
+.wl-fit { display: block; max-width: 100%; text-align: center; line-height: 1.15; word-break: keep-all; overflow-wrap: normal; hyphens: none; }
+.wl-fit--clamped { overflow-wrap: anywhere; }

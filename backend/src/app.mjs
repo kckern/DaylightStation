@@ -3204,28 +3204,53 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     rootDir: schoolFullConfig.flashcards?.assets?.dir ?? path.join(dataDir, 'content', 'assets'),
     mediaRootDir: schoolMediaRoot,
   });
-  const { WordLadderStudyService } = await import('#apps/school/WordLadderStudyService.mjs');
+  // Word ladder v3 (mastery redesign rev 4). Two services over one engine:
+  // live on the real store, and test mode (`/word-ladder/test`) on in-memory
+  // shadow copies that can never reach disk (spec §8).
+  const { WordLadderSittingService } = await import('#apps/school/WordLadderSittingService.mjs');
+  const { WordLadderTypedJudge } = await import('#apps/school/WordLadderTypedJudge.mjs');
   const { YamlWordLadderStore } = await import('#adapters/school/wordLadder/YamlWordLadderStore.mjs');
-  const { FilesystemWordLadderRecordings } = await import('#adapters/school/wordLadder/FilesystemWordLadderRecordings.mjs');
+  const { YamlJudgementCache, MemoryJudgementCache } = await import('#adapters/school/wordLadder/YamlJudgementCache.mjs');
+  const { ShadowWordLadderStores } = await import('#adapters/school/wordLadder/ShadowWordLadderStores.mjs');
   const { YamlLexiconRepository } = await import('#adapters/school/catalog/YamlLexiconRepository.mjs');
+  const { resolveSettings, seedScenario } = await import('#domains/school/wordLadder/index.mjs');
   const wordLadderLogger = rootLogger.child({ module: 'school-word-ladder' });
-  const wordLadderStudy = schoolCatalog.content
-    ? new WordLadderStudyService({
-      store: new YamlWordLadderStore({ configService, logger: wordLadderLogger }),
-      decks: schoolCatalog.content,
-      lexicons: new YamlLexiconRepository({ mediaRoot: schoolMediaRoot }),
-      assignments: flashcardAssignments,
-      attempts: schoolDatastore,
-      // Per word package: <rootDir>/<package>/<learner>/<day>/… (the package comes from each deck's lexicon).
-      recordings: new FilesystemWordLadderRecordings({ rootDir: path.join(schoolMediaRoot, 'recordings', 'word-ladder') }),
-      assets: flashcardAssets,
-      teacherGate: schoolTeacherGate,
-      timezone: configService.getTimezone?.() || null,
-      now: Date.now,
-      id: shortId,
-      logger: wordLadderLogger,
-    })
-    : null;
+  const wordLadderConfig = schoolFullConfig.word_ladder ?? {};
+  const wordLadderSettings = () => resolveSettings(wordLadderConfig);
+  const wordLadderStore = new YamlWordLadderStore({ configService, logger: wordLadderLogger });
+  const wordLadderLexicons = new YamlLexiconRepository({ mediaRoot: schoolMediaRoot });
+  const wordLadderJudgeFor = (cache) => new WordLadderTypedJudge({
+    aiGateway: sharedAiGateway, cache, model: wordLadderConfig.judge?.model ?? null,
+    passScore: wordLadderSettings().typing.passScore, logger: wordLadderLogger,
+  });
+  const wordLadderShared = {
+    decks: schoolCatalog.content, lexicons: wordLadderLexicons, assignments: flashcardAssignments,
+    attempts: schoolDatastore, assets: flashcardAssets, teacherGate: schoolTeacherGate,
+    settings: wordLadderSettings, timezone: configService.getTimezone?.() || null, now: Date.now,
+    logger: wordLadderLogger,
+  };
+  const wordLadderStudy = schoolCatalog.content ? new WordLadderSittingService({
+    ...wordLadderShared, mode: 'live',
+    stores: {
+      open: () => ({ store: wordLadderStore, token: 'live' }),
+      forToken: (token) => { if (token !== 'live') throw new Error('unknown sitting'); return wordLadderStore; },
+    },
+    judge: wordLadderJudgeFor(new YamlJudgementCache({ rootDir: path.join(dataDir, 'household', 'school', 'runtime', 'word-ladder') })),
+  }) : null;
+  const wordLadderShadows = new ShadowWordLadderStores({ real: wordLadderStore });
+  // Test mode never writes attempts and cannot fold (no teacher gate).
+  const wordLadderTest = schoolCatalog.content ? new WordLadderSittingService({
+    ...wordLadderShared, mode: 'test', attempts: null, teacherGate: null,
+    stores: {
+      open: (userId, pkg, day, { scenario = null, deck = null } = {}) => {
+        const token = wordLadderShadows.create(userId, pkg, day,
+          (snap) => seedScenario(scenario ?? 'today', snap, { deckWords: deck?.words ?? [], day }));
+        return { store: wordLadderShadows.forToken(token), token };
+      },
+      forToken: (token) => wordLadderShadows.forToken(token),
+    },
+    judge: wordLadderJudgeFor(new MemoryJudgementCache()),
+  }) : null;
   const openCatalogLearningSession = schoolCatalog.query
     ? new OpenCatalogLearningSession({ catalog: schoolCatalog.query, grader: schoolService })
     : null;
@@ -4637,6 +4662,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     schoolService,
     flashcardStudy,
     wordLadderStudy,
+    wordLadderTest,
+    wordLadderStageScreen: wordLadderConfig.stage?.screen ?? null,
     flashcardAssets,
     getMaterialCatalog,
     getMaterialUnits,
