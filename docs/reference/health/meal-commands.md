@@ -94,7 +94,7 @@ draft ends (commit caught up, cancel, Escape, discard), the real order returns.
 Whenever a section's top-level order changes — the unfreeze above, an add, an
 edit, a delete, a reload — the entries that moved glide from their old position
 to the new one (FLIP, `useFlipMoves`: positions measured relative to the section
-in a layout effect, an inline translate, then the `health-flip-moving` class
+on every commit, animated only on a commit whose order changed, an inline translate, then the `health-flip-moving` class
 transitions it home on the `--ds-motion-base` / `--ds-motion-easing` tokens).
 Only rows whose position changed are touched, and nothing animates under
 `prefers-reduced-motion`.

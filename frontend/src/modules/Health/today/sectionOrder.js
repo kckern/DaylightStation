@@ -61,23 +61,30 @@ export const FLIP_CLASS = 'health-flip-moving';
 
 /**
  * FLIP the direct children of `containerRef` that carry `data-entry-key`
- * whenever `orderKey` changes: each row that moved starts at its old offset
+ * when `orderKey` changes: each row that moved starts at its old offset
  * (inline translate) and transitions to its new place (FLIP_CLASS, token
- * motion). Only rows whose position changed are touched; none under
- * prefers-reduced-motion. Positions are relative to the container, so
- * scrolling between two reorders does not read as movement.
+ * motion). Positions are measured on EVERY commit (relative to the container,
+ * so scrolling is not movement, and a height change elsewhere is not either),
+ * but rows animate only on a commit whose order differs from the previous
+ * one. Only rows whose position changed are touched; none under
+ * prefers-reduced-motion. A new reorder mid-glide restarts from where the row
+ * is drawn.
  */
 export function useFlipMoves(containerRef, orderKey) {
   const positions = useRef(null);
+  const lastKey = useRef(orderKey);
+  const frame = useRef(0);
   useLayoutEffect(() => {
     const root = containerRef.current;
-    if (!root) return undefined;
+    if (!root) return;
     const base = root.getBoundingClientRect().top;
     const nodes = Array.from(root.children).filter(node => node.dataset?.entryKey);
     const next = new Map(nodes.map(node => [node.dataset.entryKey, node.getBoundingClientRect().top - base]));
     const before = positions.current;
+    const reordered = lastKey.current !== orderKey;
     positions.current = next;
-    if (!before || prefersReducedMotion()) return undefined;
+    lastKey.current = orderKey;
+    if (!reordered || !before || prefersReducedMotion()) return;
     const moved = [];
     for (const node of nodes) {
       const from = before.get(node.dataset.entryKey);
@@ -87,20 +94,20 @@ export function useFlipMoves(containerRef, orderKey) {
       node.style.transform = `translateY(${delta}px)`;
       moved.push(node);
     }
-    if (!moved.length) return undefined;
-    const frame = requestAnimationFrame(() => {
-      for (const node of moved) { node.classList.add(FLIP_CLASS); node.style.transform = ''; }
+    if (!moved.length) return;
+    cancelAnimationFrame(frame.current);
+    frame.current = requestAnimationFrame(() => {
+      for (const node of moved) {
+        node.classList.add(FLIP_CLASS);
+        node.style.transform = '';
+        const settle = event => {
+          if (event.propertyName !== 'transform') return;
+          node.classList.remove(FLIP_CLASS);
+          node.removeEventListener('transitionend', settle);
+        };
+        node.addEventListener('transitionend', settle);
+      }
     });
-    const settle = event => {
-      if (event.propertyName !== 'transform') return;
-      event.currentTarget.classList.remove(FLIP_CLASS);
-      event.currentTarget.removeEventListener('transitionend', settle);
-    };
-    for (const node of moved) node.addEventListener('transitionend', settle);
-    return () => {
-      cancelAnimationFrame(frame);
-      for (const node of moved) { node.removeEventListener('transitionend', settle); node.classList.remove(FLIP_CLASS); node.style.transform = ''; }
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [orderKey]);
+  });
+  useLayoutEffect(() => () => cancelAnimationFrame(frame.current), []);
 }
