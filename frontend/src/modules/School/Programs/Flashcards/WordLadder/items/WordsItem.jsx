@@ -7,12 +7,23 @@ const STATE_LABEL = {
   new: 'New', introduced: 'Just met', notYet: 'Not yet', familiar: 'Familiar', claimed: 'Got it', mastered: 'Mastered',
 };
 
+/**
+ * Ruling 2026-09-23: "Mastered" means signed off by a typed recheck. A word
+ * the quiz verified but typing has not yet signed off reads "Recognised".
+ * The server's `level` says which; an older server (no `level`) keeps the
+ * raw-state label.
+ */
+function labelOf(word) {
+  if (word.state === 'mastered' && word.level === 'recognised') return 'Recognised';
+  return STATE_LABEL[word.state] ?? word.state;
+}
+
 function StateChips({ word }) {
   const stars = word.state === 'mastered' ? Math.max(1, (word.stage ?? 0) + 1) : 0;
   return (
     <span className="wl-words__chips">
       <span className={`wl-chip wl-chip--${word.state}`}>
-        {STATE_LABEL[word.state] ?? word.state}
+        {labelOf(word)}
         {stars > 0 && (
           <span className="wl-chip__stars" role="img" aria-label={`stage ${stars}`}>
             {Array.from({ length: stars }, (_, i) => <span key={i} className="wl-chip__star" />)}

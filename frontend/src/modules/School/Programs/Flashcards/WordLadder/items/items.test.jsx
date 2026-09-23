@@ -153,6 +153,20 @@ describe('TypedItem', () => {
     expect(onRespond).toHaveBeenCalledWith({ typed: '가위' });
   });
 
+  it('a graded 1.4 dictation sign-off plays the term audio on show, offers Listen, shows no cue, and submits for judging', () => {
+    playClip.mockClear();
+    const onRespond = vi.fn();
+    render(<TypedItem item={{ id: 'rc:gawi', type: 'typed', task: '1.4', source: 'recheck', wordId: 'gawi', assets: { image: null, audio: 'aud', glossAudio: null } }} mode="graded" langs={langs} resolveAssetUrl={(x) => `u-${x}`} onRespond={onRespond} />);
+    expect(playClip).toHaveBeenCalledWith('u-aud', 'term');
+    expect(screen.getByRole('region', { name: 'Write what you hear' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Listen/ }));
+    expect(playClip).toHaveBeenCalledTimes(2);
+    const input = screen.getByRole('textbox');
+    fireEvent.change(input, { target: { value: '가위' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(onRespond).toHaveBeenCalledWith({ typed: '가위' });
+  });
+
   it('a copy mismatch keeps the on-screen Enter button visible for a retry', () => {
     const onRespond = vi.fn();
     render(<TypedItem item={{ id: 'c1', type: 'typed', word, assets: {} }} mode="copy" langs={langs} resolveAssetUrl={(x) => x} onRespond={onRespond} result={{ correct: false }} />);

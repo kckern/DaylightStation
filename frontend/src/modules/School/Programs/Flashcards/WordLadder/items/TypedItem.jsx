@@ -19,7 +19,10 @@ const KEYPAD_AUTO_OPEN_MS = 10_000;
  *   dictation  drill step — audio only (the item carries no term); must match
  *              to continue, like copy.
  *   graded     3.3 type-from-cue — judged by the server (meaning, not spelling);
- *              the verdict stays until Next.
+ *              the verdict stays until Next. A graded item with task 1.4 is
+ *              the dictation sign-off (ruling 2026-09-23): the term's audio is
+ *              the whole prompt (`item.assets.audio`), played on show, with
+ *              Listen to replay — judged exactly like 3.3.
  *   practice   drill step "type" — cue only, verdict until Next like graded
  *              (the drill's result has no score: a pass is just "Right!").
  *
@@ -40,7 +43,10 @@ export default function TypedItem({ item, mode, langs, resolveAssetUrl, onRespon
   const image = item.assets?.image ? resolveAssetUrl(item.assets.image) : null;
   const glossAudio = item.assets?.glossAudio ? resolveAssetUrl(item.assets.glossAudio) : null;
   const dictation = mode === 'dictation';
-  const termAudioId = dictation ? item.assets?.audio : word?.media?.audio;
+  // Graded dictation (the 1.4 sign-off): heard like a drill dictation, judged like 3.3.
+  const heardSignOff = mode === 'graded' && item.task === '1.4';
+  const hearsTerm = dictation || heardSignOff;
+  const termAudioId = hearsTerm ? item.assets?.audio : word?.media?.audio;
   const termAudio = termAudioId ? resolveAssetUrl(termAudioId) : null;
   // graded + practice: cue prompt, verdict held until Next. copy + dictation: retry until it matches.
   const graded = mode === 'graded' || mode === 'practice' || (dictation && pending);
@@ -72,7 +78,7 @@ export default function TypedItem({ item, mode, langs, resolveAssetUrl, onRespon
     const thisItemId = item.id;
     setValue('');
     input.current?.focus();
-    if ((mode === 'copy' || dictation) && termAudio) playClip(termAudio, 'term');
+    if ((mode === 'copy' || hearsTerm) && termAudio) playClip(termAudio, 'term');
     if (item.cue?.type === 'audio' && glossAudio) playClip(glossAudio, 'gloss');
     // Keypad: closed and re-armed to auto-open once per item.
     setKeypadOpen(false);
@@ -153,11 +159,11 @@ export default function TypedItem({ item, mode, langs, resolveAssetUrl, onRespon
   return (
     <section
       className={`wl-item wl-typed${keypadShowing ? ' wl-typed--keypad' : ''}`}
-      aria-label={dictation ? 'Write what you hear' : graded ? 'Type the word' : 'Copy the word'}
+      aria-label={hearsTerm ? 'Write what you hear' : graded ? 'Type the word' : 'Copy the word'}
     >
       <div className="wl-prompt">
         {mode === 'copy' && <FitText role="term" text={word?.term ?? ''} lang={langs.term} onFit={onLayout} />}
-        {dictation && !answered && <TouchButton variant="secondary" onClick={() => termAudio && playClip(termAudio, 'term')}><Icon name="volume" /> Listen</TouchButton>}
+        {hearsTerm && !answered && <TouchButton variant="secondary" onClick={() => termAudio && playClip(termAudio, 'term')}><Icon name="volume" /> Listen</TouchButton>}
         {graded && item.cue?.type === 'image' && <CuePicture item={item} src={image} lang={langs.gloss} />}
         {graded && item.cue?.type === 'text' && <FitText role="prompt" text={item.cue.text} lang={langs.gloss} />}
         {graded && item.cue?.type === 'audio' && <TouchButton variant="secondary" onClick={() => glossAudio && playClip(glossAudio, 'gloss')}><Icon name="volume" /> Listen</TouchButton>}

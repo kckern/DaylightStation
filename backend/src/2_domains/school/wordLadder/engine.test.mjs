@@ -7,7 +7,7 @@ import { addActiveTime, currentItem, openDay, respond, startPractice, wordTransi
 const D = '2026-09-22';
 const SET = {
   round: { size: 5, maxPasses: 3 }, batch: { newPerDay: 4, workingSet: 7 },
-  review: { gapScale: 1, typedEvery: 2 }, drill: { afterMisses: 2, perSitting: 1 }, session: { capMinutes: 15 }, typing: { passScore: 6 },
+  review: { gapScale: 1 }, drill: { afterMisses: 2, perSitting: 1 }, session: { capMinutes: 15 }, typing: { passScore: 6 },
 };
 const E = (id, term, gloss) => [id, { id, term, gloss, kind: 'word', decoys: { term: ['x1', 'x2', 'x3'], gloss: ['g1', 'g2', 'g3'] } }];
 const lexicon = { entries: new Map([E('gawi', '가위', 'Scissors'), E('pul', '풀', 'Glue'), E('chaek', '책', 'Book'), E('mul', '물', 'Water')]) };
@@ -21,6 +21,8 @@ function start(status = emptyStatusV3(), { capabilities = null, dayFile = emptyD
   const opened = openDay({ status, dayFile, day: D, deckId: 'deck', pool, settings: SET, learnerId: 'test-learner', at: at(), media, capabilities });
   return { ...opened, day: D, lexicon, media, pool, settings: SET, learnerId: 'test-learner' };
 }
+// The right answer to a recognition item: 2.2 picks the meaning, 3.1 the Korean.
+const right = (item) => ({ choice: item.task === '2.2' ? lexicon.entries.get(item.wordId).gloss : lexicon.entries.get(item.wordId).term });
 function step(ctx, response, verdict = null) {
   const item = currentItem(ctx);
   const out = respond(ctx, item.id, response, { at: at(), verdict });
@@ -43,14 +45,15 @@ describe('engine — a fresh day', () => {
       const { wordId } = currentItem(ctx);
       ({ ctx } = step(ctx, { sort: wordId === 'chaek' && guard > 6 ? 'familiar' : sorts[wordId] }));
     }
+    // Recognition only (ruling 2026-09-23): 3.1 for every word, then 2.2 — never typed.
     const first = currentItem(ctx);
-    expect(first).toMatchObject({ type: 'typed', source: 'verify' });
-    while (['typed', 'choice'].includes(currentItem(ctx).type)) {
-      const item = currentItem(ctx);
-      if (item.type === 'typed') ({ ctx } = step(ctx, { typed: 'x' }, PASS));
-      else ({ ctx } = step(ctx, { choice: lexicon.entries.get(item.wordId).gloss }));
-    }
-    expect(ctx.status.words.gawi).toMatchObject({ state: 'mastered', stage: 0 });
+    expect(first).toMatchObject({ type: 'choice', task: '3.1', source: 'verify' });
+    while (currentItem(ctx).type === 'choice') ({ ctx } = step(ctx, right(currentItem(ctx))));
+    expect(ctx.status.words.gawi).toMatchObject({ state: 'mastered', stage: 0, recognizedCount: 1, typedSignedOff: null });
+    // Then the guided Match over the verified words.
+    expect(currentItem(ctx)).toMatchObject({ type: 'match', id: 'r1:m' });
+    ({ ctx } = step(ctx, { done: true }));
+    expect(ctx.status.words.gawi.matched).toBe(true);
     expect(currentItem(ctx)).toMatchObject({ type: 'summary', doneToday: true });
     expect(ctx.dayFile.doneAt).toEqual(expect.any(String));
   });
@@ -80,22 +83,23 @@ describe('engine — rechecks and misses', () => {
     let ctx = start(status);
     const item = currentItem(ctx);
     expect(item).toMatchObject({ id: 'rc:gawi', source: 'recheck' });
-    const answer = item.type === 'typed' ? { typed: 'zz' } : { dontKnow: true };
-    ({ ctx } = step(ctx, answer, { score: 2, judge: 'distance', pass: false }));
+    expect(item.type).toBe('choice'); // prerequisites unmet: a recognition recheck
+    ({ ctx } = step(ctx, { dontKnow: true }));
     expect(ctx.status.words.gawi).toMatchObject({ state: 'familiar', lostMasteredDay: D });
   });
 
-  it('first-miss stop: a failed typed task drops the word\'s hear task', () => {
+  it('first-miss stop: a failed 3.1 drops the word\'s 2.2', () => {
     let ctx = start();
     let guard = 0;
-    while (currentItem(ctx).type !== 'typed' && guard++ < 60) {
+    while (currentItem(ctx).source !== 'verify' && guard++ < 60) {
       const item = currentItem(ctx);
       if (item.type === 'flashcard' && item.mode === 'intro') ({ ctx } = step(ctx, { seen: true }));
       else if (item.type === 'copy') ({ ctx } = step(ctx, { typed: lexicon.entries.get(item.wordId).term }));
       else ({ ctx } = step(ctx, { sort: 'claimed' }));
     }
     const failedWord = currentItem(ctx).wordId;
-    ({ ctx } = step(ctx, { typed: 'zz' }, { score: 2, judge: 'distance', pass: false }));
+    expect(currentItem(ctx).task).toBe('3.1');
+    ({ ctx } = step(ctx, { dontKnow: true }));
     const round = ctx.dayFile.rounds.at(-1);
     expect(round.quiz.queue.slice(round.quiz.index).some((t) => t.wordId === failedWord)).toBe(false);
     expect(ctx.status.words[failedWord]).toMatchObject({ state: 'familiar', verifyFailedDay: D });
@@ -158,23 +162,25 @@ describe('engine — undo actually undoes', () => {
   });
 });
 
-describe('engine — recheck task choice (spec §2 Rechecks)', () => {
-  const taskFor = (word) => {
+describe('engine — recheck task choice (ruling 2026-09-23: typed is the sign-off)', () => {
+  const taskFor = (word, id = 'gawi') => {
     const status = emptyStatusV3();
-    status.words.gawi = { ...emptyWordV3(), state: 'mastered', dueDay: D, introducedDay: '2026-09-01', ...word };
+    status.words[id] = { ...emptyWordV3(), state: 'mastered', dueDay: D, introducedDay: '2026-09-01', ...word };
     return currentItem(start(status)).task;
   };
-  it('below stage 2, 2.2 and 3.1 alternate and every typedEvery-th recheck is 3.3', () => {
-    const tasks = [0, 1, 2, 3, 4].map((rechecks) => taskFor({ stage: 1, rechecks }));
-    expect(tasks[1]).toBe('3.3');
-    expect(tasks[3]).toBe('3.3');
-    expect(['2.2', '3.1']).toContain(tasks[0]);
-    expect(tasks[2]).not.toBe(tasks[0]);
-    expect(['2.2', '3.1']).toContain(tasks[2]);
-    expect(tasks[4]).toBe(tasks[0]);
+  const ready = { recognizedCount: 2, matched: true };
+  it('recognition rechecks alternate 2.2 and 3.1 per word, at any stage, until the sign-off is due', () => {
+    const tasks = [0, 1, 2, 3].map((rechecks) => taskFor({ stage: 3, rechecks }));
+    expect(tasks.every((task) => ['2.2', '3.1'].includes(task))).toBe(true);
+    expect(tasks[1]).not.toBe(tasks[0]);
+    expect(tasks[2]).toBe(tasks[0]);
   });
-  it('stage 2 and above is always 3.3', () => {
-    expect([0, 2, 4].map((rechecks) => taskFor({ stage: 2, rechecks }))).toEqual(['3.3', '3.3', '3.3']);
+  it('the first recheck (stage 0) is recognition even when every other prerequisite is met', () => {
+    expect(['2.2', '3.1']).toContain(taskFor({ stage: 0, ...ready }));
+  });
+  it('recognised twice, matched, stage >= 1: typed — 3.3, alternating with 1.4 dictation only when term audio exists', () => {
+    expect(new Set([0, 1, 2, 3].map((rechecks) => taskFor({ stage: 1, rechecks, ...ready })))).toEqual(new Set(['3.3', '1.4']));
+    expect([0, 1, 2, 3].map((rechecks) => taskFor({ stage: 2, rechecks, ...ready }, 'chaek'))).toEqual(['3.3', '3.3', '3.3', '3.3']);
   });
 });
 
@@ -271,8 +277,10 @@ describe('engine — responses must fit the item', () => {
   });
 
   it('typed accepts only a string typed; undo on a graded item is nothing to undo', () => {
-    const ctx = toFirstQuizItem(start());
-    expect(currentItem(ctx).type).toBe('typed');
+    const status = emptyStatusV3();
+    status.words.chaek = { ...emptyWordV3(), state: 'mastered', stage: 1, dueDay: D, introducedDay: '2026-09-01', recognizedCount: 2, matched: true };
+    const ctx = start(status);
+    expect(currentItem(ctx)).toMatchObject({ type: 'typed', source: 'recheck' });
     expect(tryOn(ctx, { choice: 'Glue' }, PASS)).toThrow('response does not fit this item');
     expect(tryOn(ctx, { dontKnow: true }, PASS)).toThrow('response does not fit this item');
     expect(tryOn(ctx, {}, PASS)).toThrow('response does not fit this item');
@@ -281,8 +289,7 @@ describe('engine — responses must fit the item', () => {
   });
 
   it('choice accepts only choice or dontKnow', () => {
-    let ctx = toFirstQuizItem(start());
-    while (currentItem(ctx).type === 'typed') ({ ctx } = step(ctx, { typed: 'x' }, PASS));
+    const ctx = toFirstQuizItem(start());
     expect(currentItem(ctx).type).toBe('choice');
     expect(tryOn(ctx, { typed: 'x' })).toThrow('response does not fit this item');
     expect(tryOn(ctx, { sort: 'claimed' })).toThrow('response does not fit this item');
@@ -508,8 +515,8 @@ describe('engine — drill', () => {
       else if (item.type === 'copy') ({ ctx } = step(ctx, { typed: lexicon.entries.get(item.wordId).term }));
       else if (item.type === 'say') ({ ctx } = step(ctx, { done: true }));
       else if (item.type === 'flashcard') ({ ctx } = step(ctx, { sort: item.wordId === 'pul' ? 'notYet' : 'claimed' }));
-      else if (item.type === 'typed') ({ ctx } = step(ctx, { typed: 'x' }, PASS));
-      else ({ ctx } = step(ctx, { choice: lexicon.entries.get(item.wordId).gloss }));
+      else if (item.type === 'match') ({ ctx } = step(ctx, { done: true }));
+      else ({ ctx } = step(ctx, right(item)));
     }
     return ctx;
   }
@@ -641,16 +648,15 @@ describe('engine — practice', () => {
     let ctx = doneCtx();
     ctx.status.words.pul = { ...emptyWordV3(), state: 'familiar', introducedDay: '2026-09-01' };
     ({ status: ctx.status, dayFile: ctx.dayFile } = startPractice(ctx, { mode: 'quiz', filter: 'introduced' }));
-    expect(currentItem(ctx)).toMatchObject({ type: 'typed', task: '3.3', source: 'practice', graded: true });
-    expect(() => step(ctx, { typed: '풀' })).toThrow(/judge verdict/);
-    ({ ctx } = step(ctx, { typed: '풀' }, PASS));
+    expect(currentItem(ctx)).toMatchObject({ type: 'choice', task: '3.1', source: 'practice', graded: true });
+    ({ ctx } = step(ctx, { choice: '풀' }));
     ({ ctx } = step(ctx, { choice: 'Glue' }));
     expect(ctx.status.words.pul).toMatchObject({ state: 'mastered', stage: 0 });
     expect(ctx.dayFile.practice).toMatchObject({ passed: ['pul'], failed: [] });
   });
   it('practice quiz stops a word at its first miss', () => {
     let ctx = practise(withWords(doneCtx(), { pul: familiar }), { mode: 'quiz' });
-    ({ ctx } = step(ctx, { typed: 'zz' }, { score: 2, judge: 'distance', pass: false }));
+    ({ ctx } = step(ctx, { dontKnow: true }));
     expect(ctx.status.words.pul).toMatchObject({ state: 'familiar', verifyFailedDay: D });
     expect(currentItem(ctx).type).toBe('menu');
   });
@@ -773,15 +779,15 @@ describe('engine — transitions and graded records (plan 4, spec §8 events)', 
     let ctx = toStream(start());
     let guard = 0;
     while (currentItem(ctx).type === 'flashcard' && guard++ < 30) ({ ctx } = stepOut(ctx, { sort: 'claimed' }));
-    const typed = currentItem(ctx);
-    expect(typed).toMatchObject({ type: 'typed', task: '3.3', source: 'verify' });
-    const first = stepOut(ctx, { typed: 'x' }, PASS);
-    expect(first.out.graded).toEqual({ wordId: typed.wordId, task: '3.3', source: 'verify', correct: true, score: 10, judge: 'exact' });
+    const pick = currentItem(ctx);
+    expect(pick).toMatchObject({ type: 'choice', task: '3.1', source: 'verify' });
+    const first = stepOut(ctx, right(pick));
+    expect(first.out.graded).toEqual({ wordId: pick.wordId, task: '3.1', source: 'verify', correct: true });
     expect(first.out.transitions).toEqual([]); // the word passes on its last task
     ctx = first.ctx;
-    while (currentItem(ctx).type === 'typed') ({ ctx } = stepOut(ctx, { typed: 'x' }, PASS));
+    while (currentItem(ctx).task === '3.1') ({ ctx } = stepOut(ctx, right(currentItem(ctx))));
     const choice = currentItem(ctx);
-    expect(choice).toMatchObject({ type: 'choice', task: '2.2', wordId: typed.wordId });
+    expect(choice).toMatchObject({ type: 'choice', task: '2.2', wordId: pick.wordId });
     const last = stepOut(ctx, { choice: lexicon.entries.get(choice.wordId).gloss });
     expect(last.out.graded).toEqual({ wordId: choice.wordId, task: '2.2', source: 'verify', correct: true });
     expect(last.out.transitions).toEqual([{ wordId: choice.wordId, from: { state: 'claimed', stage: null }, to: { state: 'mastered', stage: 0 }, source: 'verify' }]);
@@ -792,9 +798,8 @@ describe('engine — transitions and graded records (plan 4, spec §8 events)', 
     status.words.gawi = { ...emptyWordV3(), state: 'mastered', stage: 1, dueDay: D, introducedDay: '2026-09-10' };
     const ctx = start(status);
     const item = currentItem(ctx);
-    const answer = item.type === 'typed' ? { typed: 'zz' } : { dontKnow: true };
-    const verdict = { score: 2, judge: 'distance', pass: false };
-    const { out } = stepOut(ctx, answer, verdict);
+    expect(item.type).toBe('choice');
+    const { out } = stepOut(ctx, { dontKnow: true });
     expect(out.graded).toMatchObject({ wordId: 'gawi', task: item.task, source: 'recheck', correct: false });
     expect(out.transitions).toEqual([{ wordId: 'gawi', from: { state: 'mastered', stage: 1 }, to: { state: 'familiar', stage: null }, source: 'recheck' }]);
   });
@@ -804,8 +809,8 @@ describe('engine — transitions and graded records (plan 4, spec §8 events)', 
     const done = { ...base, dayFile: { ...base.dayFile, doneAt: 'x', rounds: [], rechecks: { order: [], answered: {} }, summarySeen: true } };
     done.status.words.pul = { ...emptyWordV3(), state: 'familiar', introducedDay: '2026-09-01' };
     let ctx = { ...done, ...startPractice(done, { mode: 'quiz' }) };
-    const q = stepOut(ctx, { typed: '풀' }, PASS);
-    expect(q.out.graded).toEqual({ wordId: 'pul', task: '3.3', source: 'practice', correct: true, score: 10, judge: 'exact' });
+    const q = stepOut(ctx, { choice: '풀' });
+    expect(q.out.graded).toEqual({ wordId: 'pul', task: '3.1', source: 'practice', correct: true });
     const q2 = stepOut(q.ctx, { choice: 'Glue' });
     expect(q2.out.transitions).toEqual([{ wordId: 'pul', from: { state: 'familiar', stage: null }, to: { state: 'mastered', stage: 0 }, source: 'practice' }]);
     const replay = respond(q2.ctx, q2.item.id, { choice: 'Glue' }, { at: at() });
@@ -832,13 +837,13 @@ describe('engine — transitions and graded records (plan 4, spec §8 events)', 
 describe('engine — graded item records (plan 4, grown-up controls)', () => {
   it('a typed answer\'s record keeps its word, task, source and the judge reason', () => {
     const status = emptyStatusV3();
-    status.words.gawi = { ...emptyWordV3(), state: 'mastered', stage: 2, dueDay: D, introducedDay: '2026-09-10' };
+    status.words.chaek = { ...emptyWordV3(), state: 'mastered', stage: 2, dueDay: D, introducedDay: '2026-09-10', recognizedCount: 2, matched: true };
     const ctx = start(status);
     const item = currentItem(ctx);
-    expect(item).toMatchObject({ type: 'typed', task: '3.3', wordId: 'gawi' });
-    const out = respond(ctx, item.id, { typed: '가이' }, { at: at(), verdict: { score: 5, judge: 'model', reason: 'close', pass: false } });
+    expect(item).toMatchObject({ type: 'typed', task: '3.3', wordId: 'chaek' });
+    const out = respond(ctx, item.id, { typed: '착' }, { at: at(), verdict: { score: 5, judge: 'model', reason: 'close', pass: false } });
     expect(out.dayFile.items[item.id]).toMatchObject({
-      response: { typed: '가이' }, wordId: 'gawi', task: '3.3', source: 'recheck', reason: 'close', result: { correct: false, score: 5, judge: 'model' },
+      response: { typed: '착' }, wordId: 'chaek', task: '3.3', source: 'recheck', reason: 'close', result: { correct: false, score: 5, judge: 'model' },
     });
   });
 });

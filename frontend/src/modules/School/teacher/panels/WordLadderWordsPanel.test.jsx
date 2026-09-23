@@ -124,6 +124,25 @@ describe('rendering the word table', () => {
     expect(wordLadderAdminApi.words).toHaveBeenCalledWith('learner_a', 'language/korean/week-01-classroom', 'teacher_1');
   });
 
+  it('the state chip reads the sign-off level: Mastered only once signed off, Recognised before it (ruling 2026-09-23)', async () => {
+    wordLadderAdminApi.words.mockResolvedValue(ok(payload({
+      words: [
+        word1({ state: 'familiar', level: 'learning' }),
+        { ...word1({ wordId: 'word_2', term: '배', gloss: 'pear', state: 'mastered', stage: 3, level: 'recognised', recognizedCount: 2, matched: true, typedSignedOff: null }) },
+        { ...word1({ wordId: 'word_3', term: '물', gloss: 'water', state: 'mastered', stage: 4, level: 'mastered', recognizedCount: 3, matched: true, typedSignedOff: '2026-09-20' }) },
+        // An older server sends no level: the raw state still labels the chip.
+        { ...word1({ wordId: 'word_4', term: '책', gloss: 'book', state: 'introduced' }) },
+      ],
+    })));
+    mount();
+    await screen.findByText('배');
+    const chip = (term) => screen.getByText(term).closest('tr').querySelector('.teacher-word-ladder__chip');
+    expect(chip('사과').textContent).toBe('Learning');
+    expect(chip('배').textContent).toBe('Recognised');
+    expect(chip('물').textContent).toBe('Mastered');
+    expect(chip('책').textContent).toBe('Introduced');
+  });
+
   it('an excluded word shows Include, not Exclude', async () => {
     mount();
     await screen.findByText('배');
