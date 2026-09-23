@@ -330,6 +330,23 @@ Each piece of data has exactly one authoritative source. All other components mu
 | Audio cue / duck descriptor | **GovernanceEngine** (composed state) | Audio duck hook (plays the SFX, ducks/restores video volume) |
 | Effective (bypass-aware) state | **FitnessPlayer** (derived from raw state + bypass) | PlayerOverlay (lock screen), player autoplay/pause gating |
 
+### Enforcement invariant: play means play
+
+> If the play button is offered, pressing it plays. When governance locks, the
+> button becomes a lock, and pausing is governance's alone.
+
+Governance may pause the video only while the **live** governance state says
+locked. Callbacks handed to `<Player>` read governance through
+`useGovernanceProgressEnforcer`
+(`frontend/src/modules/Fitness/player/governanceProgressEnforcer.js`), never a
+captured value: a media listener can outlive the render that bound it, and a
+boolean captured during a lock keeps pausing after the unlock. After unmount the
+enforcer does nothing, so a listener on a dead element cannot call
+`setVideoPlayerPaused` and freeze the engine's timers. Every pause it makes emits
+`fitness.governance.pause-enforced`; a controller pause without that event while
+governance is unlocked is a regression. Incident:
+`docs/_wip/bugs/2026-09-22-fitness-play-repaused-by-stale-governance-closure.md`.
+
 ### Dual-Write Antipattern
 
 The system historically suffered from data being written to multiple stores independently, leading to contradictions. The primary vectors:
@@ -474,6 +491,27 @@ labels: response.labels || response.metadata?.labels || []
 
 **Fix:** Replace CSS filters on video with a semi-transparent tinted overlay using single `backdrop-filter`.
 
+### Pattern 7: Stale Closure on a Leaked Media Listener
+
+**Symptom:** After governance unlocks, every play press is re-paused within
+milliseconds (`playback.resumed` → `playback.seek phase=seeked` →
+`playback.paused source=controller`), and governance timers freeze.
+
+**Root cause:** `useCommonMediaController` added a `playing` listener on every
+element-setup run and never removed it; `onEnd` was an unmemoized effect dep, so
+that effect re-ran on every FitnessPlayer render. Each leaked listener held a
+`handlePlayerProgress` that had captured `governancePaused = true` during the
+startup lock. It paused the video and called `setVideoPlayerPaused(true)`,
+which froze the engine.
+
+**Fix:** listeners are removed on cleanup, `<Player>` callbacks are read through
+refs, and governance enforcement goes through `useGovernanceProgressEnforcer`
+(see "Enforcement invariant: play means play"). Detail:
+`docs/_wip/bugs/2026-09-22-fitness-play-repaused-by-stale-governance-closure.md`.
+
+**Lesson:** a callback handed to a media element must read live state. Anything
+it captures can outlive the render that made it.
+
 ---
 
 ## Resolved SSoT Violations
@@ -535,6 +573,7 @@ Payload is validated before API call (minimum 60s duration, valid roster, series
 | `frontend/src/hooks/fitness/UserManager.js` | Device → user mapping | User-device associations |
 | `frontend/src/context/FitnessContext.jsx` | React context, WebSocket → session bridge | Governed labels config |
 | `frontend/src/modules/Fitness/player/FitnessPlayer.jsx` | Video control, bypass-aware effective state | Playback state, effective governance state |
+| `frontend/src/modules/Fitness/player/governanceProgressEnforcer.js` | Live-read governance enforcement on progress ticks (`useGovernanceProgressEnforcer`) | Governance pause on progress ticks |
 | `frontend/src/modules/Fitness/player/FitnessPlayerOverlay.jsx` | Overlay host; honors `governanceStateOverride` | Overlay dispatch |
 | `frontend/src/modules/Fitness/player/overlays/GovernanceStateOverlay.jsx` | Lock / warning screen UI, zone display | Display rendering |
 | `frontend/src/modules/Fitness/player/hooks/useGovernanceAudioDuck.js` | Cue SFX + duck/restore lifecycle | Audio duck session |
@@ -548,3 +587,4 @@ Payload is validated before API call (minimum 60s duration, valid roster, series
 
 - `governance-engine.md` — API reference, configuration, testing patterns
 - `docs/_wip/bugs/2026-02-03-governance-test-flakiness.md` — Test flakiness investigation
+- `docs/_wip/bugs/2026-09-22-fitness-play-repaused-by-stale-governance-closure.md` — Play presses re-paused after unlock by a stale closure

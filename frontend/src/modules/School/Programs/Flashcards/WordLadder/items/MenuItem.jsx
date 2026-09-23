@@ -12,7 +12,9 @@ const HELP_MODES = new Set(['say', 'write']);
 /**
  * The practice menu (spec §6), after the day's goal or cap. Offers exactly the
  * modes the server listed (`item.modes` — a mode with nothing in it is not
- * sent), plus My words and Done. Say / Write ask With help / Without help;
+ * sent), plus My words and Done. Say / Write ask With help / Without help —
+ * Say offers only the variants the server says have a run (`item.sayHelp`:
+ * With help needs term audio, Without help does not);
  * Flashcards asks which side faces up; Drill picks its words first. A choice
  * calls `api.practice` and hands the whole `{ok, status, data}` to
  * `onPractice` — the program shows the run's first item or recovers.
@@ -22,6 +24,8 @@ export default function MenuItem({ item, api, sittingId, userId, deckId, langs, 
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState(null);
   const modes = (item.modes ?? []).filter((mode) => LABELS[mode]);
+  // Which help variants to offer for a mode. Older servers send no sayHelp: both.
+  const helpOptions = (mode) => (mode === 'say' && Array.isArray(item.sayHelp) ? item.sayHelp : [true, false]);
 
   const start = async (opts) => {
     if (busy) return;
@@ -49,7 +53,7 @@ export default function MenuItem({ item, api, sittingId, userId, deckId, langs, 
 
   let keys = {};
   if (view.name === 'menu') keys = Object.fromEntries(modes.map((mode, i) => [String(i + 1), () => choose(mode)]));
-  else if (view.name === 'help') keys = { 1: () => start({ mode: view.mode, help: true }), 2: () => start({ mode: view.mode, help: false }) };
+  else if (view.name === 'help') keys = Object.fromEntries(helpOptions(view.mode).map((help, i) => [String(i + 1), () => start({ mode: view.mode, help })]));
   else if (view.name === 'front') keys = { 1: () => start({ mode: 'flashcards', frontSide: 'term' }), 2: () => start({ mode: 'flashcards', frontSide: 'gloss' }) };
   useWordLadderKeys(keys, { enabled: view.name === 'menu' || view.name === 'help' || view.name === 'front' });
 
@@ -69,10 +73,11 @@ export default function MenuItem({ item, api, sittingId, userId, deckId, langs, 
         <h2 className="wl-menu__title">{help ? LABELS[view.mode] : 'Flashcards — which side first?'}</h2>
         <div className="wl-menu__grid wl-menu__grid--two">
           {help ? (
-            <>
-              <TouchButton variant="choice" keyHint="1" disabled={busy} onClick={() => start({ mode: view.mode, help: true })}>With help</TouchButton>
-              <TouchButton variant="choice" keyHint="2" disabled={busy} onClick={() => start({ mode: view.mode, help: false })}>Without help</TouchButton>
-            </>
+            helpOptions(view.mode).map((help, i) => (
+              <TouchButton key={String(help)} variant="choice" keyHint={String(i + 1)} disabled={busy} onClick={() => start({ mode: view.mode, help })}>
+                {help ? 'With help' : 'Without help'}
+              </TouchButton>
+            ))
           ) : (
             <>
               <TouchButton variant="choice" keyHint="1" disabled={busy} onClick={() => start({ mode: 'flashcards', frontSide: 'term' })}>Word first</TouchButton>

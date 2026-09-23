@@ -8,19 +8,38 @@ export function foodGrams(row) {
     ? row.amount : null;
 }
 
-// Millilitres per unit for the volumes captures store.
-const VOLUME_ML = { ml: 1, milliliter: 1, milliliters: 1, cl: 10, dl: 100, l: 1000, liter: 1000,
-  liters: 1000, 'fl oz': 29.5735, floz: 29.5735 };
+// Millilitres per metric volume unit. Captures store these as measured
+// quantities, so they are the only volumes a repair may restore verbatim.
+export const METRIC_VOLUME_ML = Object.freeze({ ml: 1, milliliter: 1, milliliters: 1, millilitre: 1,
+  millilitres: 1, cl: 10, dl: 100, l: 1000, liter: 1000, liters: 1000, litre: 1000, litres: 1000 });
 
-/** Mass for density: known grams, else a stored volume at 1 g/ml (drinks,
- * yogurts and sauces sit within a few percent of water). Never used to rewrite
- * the stored portion — a 414 ml shake still displays as 414 ml. */
+// Household volumes (US customary), in millilitres.
+const HOUSEHOLD_VOLUME_ML = { 'fl oz': 29.5735, floz: 29.5735, cup: 240, cups: 240,
+  tbsp: 14.787, tablespoon: 14.787, tablespoons: 14.787, tsp: 4.929, teaspoon: 4.929, teaspoons: 4.929 };
+
+// Grams per weight unit: exact mass, no density assumption.
+const WEIGHT_G = { g: 1, gram: 1, grams: 1, kg: 1000, oz: 28.3495, ounce: 28.3495, ounces: 28.3495,
+  lb: 453.592, lbs: 453.592, pound: 453.592, pounds: 453.592 };
+
+/** Grams per one unit (volumes at 1 g/ml), or null for count units such as
+ * servings, pieces, slices or cans — those have no mass without guessing. */
+export function gramsPerUnit(unit) {
+  const key = String(unit ?? '').trim().toLowerCase();
+  return WEIGHT_G[key] ?? METRIC_VOLUME_ML[key] ?? HOUSEHOLD_VOLUME_ML[key] ?? null;
+}
+
+/** Mass for density: known grams, else a stored weight (kg, oz, lb) or volume
+ * at 1 g/ml (drinks, yogurts and sauces sit within a few percent of water).
+ * Never used to rewrite the stored portion — a 414 ml shake still displays as
+ * 414 ml. */
 export function foodMass(row) {
   const grams = foodGrams(row);
   if (grams !== null) return grams;
-  const perMl = VOLUME_ML[String(row?.unit || '').toLowerCase()];
+  // Grams are foodGrams' call (an explicit `grams: null` outranks amount).
+  const perUnit = ['g', 'gram', 'grams'].includes(String(row?.unit ?? '').trim().toLowerCase())
+    ? null : gramsPerUnit(row?.unit);
   const amount = row?.amount;
-  return perMl && typeof amount === 'number' && Number.isFinite(amount) && amount > 0 ? amount * perMl : null;
+  return perUnit && typeof amount === 'number' && Number.isFinite(amount) && amount > 0 ? amount * perUnit : null;
 }
 
 /** The current ledger quantity wins over the historical capture quantity.

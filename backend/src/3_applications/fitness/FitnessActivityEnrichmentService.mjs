@@ -23,7 +23,7 @@ import moment from 'moment-timezone';
 import { buildActivityDescription } from '#domains/fitness/services/buildActivityDescription.mjs';
 import { evaluateActivitySessionMatch } from '#domains/fitness/services/activitySessionMatch.mjs';
 import { absorbOverlappingSlivers } from './sliverAbsorption.mjs';
-import { buildStravaSessionTimeline } from '../../2_domains/fitness/services/StravaSessionBuilder.mjs';
+import { buildStravaSessionTimeline, applyStravaTimeline } from '../../2_domains/fitness/services/StravaSessionBuilder.mjs';
 
 const MAX_RETRIES = 3;
 const MAX_TOTAL_ATTEMPTS = 10;            // hard cap before abandoning
@@ -71,6 +71,23 @@ export class FitnessActivityEnrichmentService {
     this.#historyRepository = historyRepository;
     this.#reconciliationService = reconciliationService || null;
     this.#logger = logger;
+  }
+
+  /**
+   * Handle a rename made on the provider (activity/update with updates.title).
+   * Fire-and-forget: copies the new title into the matching session.
+   * @param {Object} event - FitnessProviderEvent with updates.title
+   */
+  handleTitleUpdate(event) {
+    const activityId = String(event?.objectId ?? '');
+    const title = event?.updates?.title;
+    if (!activityId || !title || !this.#reconciliationService?.applyTitle) return;
+    this.#logger.info?.('strava.enrichment.title_update_received', { activityId, title });
+    try {
+      this.#reconciliationService.applyTitle(activityId, title);
+    } catch (err) {
+      this.#logger.warn?.('strava.enrichment.title_update_failed', { activityId, error: err?.message });
+    }
   }
 
   /**
@@ -468,30 +485,9 @@ export class FitnessActivityEnrichmentService {
 
     // Fetch HR data and build timeline
     let timelineData = null;
-    const hrPerSecond = await this._fetchHRData(activity, activityGateway);
-    if (hrPerSecond) {
-      timelineData = buildStravaSessionTimeline(hrPerSecond);
-    }
-
-    const timelineSeries = {};
-    let totalRings = 0;
-    let buckets = { blue: 0, green: 0, yellow: 0, orange: 0, red: 0 };
-    let participantSummary = {};
-
-    if (timelineData) {
-      timelineSeries[`${username}:hr`] = timelineData.hrSamples;
-      timelineSeries[`${username}:zone`] = timelineData.zoneSeries;
-      timelineSeries[`${username}:rings`] = timelineData.ringsSeries;
-      timelineSeries['global:rings'] = timelineData.ringsSeries;
-      totalRings = timelineData.totalRings;
-      buckets = timelineData.buckets;
-      participantSummary = {
-        rings: timelineData.totalRings,
-        hr_avg: timelineData.hrStats.hrAvg,
-        hr_max: timelineData.hrStats.hrMax,
-        hr_min: timelineData.hrStats.hrMin,
-        zone_minutes: timelineData.zoneMinutes,
-      };
+    const hrStreams = await this._fetchHRData(activity, activityGateway);
+    if (hrStreams) {
+      timelineData = buildStravaSessionTimeline(hrStreams.heartrate, hrStreams.time);
     }
 
     // Build map data if GPS exists
@@ -504,7 +500,7 @@ export class FitnessActivityEnrichmentService {
       };
     }
 
-    const sessionData = {
+    let sessionData = {
       version: 3,
       sessionId,
       session: {
@@ -545,21 +541,23 @@ export class FitnessActivityEnrichmentService {
         ...(mapData ? { map: mapData } : {}),
       },
       timeline: {
-        series: timelineSeries,
+        series: {},
         events: [],
         interval_seconds: 5,
-        tick_count: timelineData ? timelineData.hrSamples.length : Math.ceil(durationSeconds / 5),
+        tick_count: Math.ceil(durationSeconds / 5),
         encoding: 'rle',
       },
-      treasureBox: { ringTimeUnitMs: 5000, totalRings, buckets },
+      treasureBox: { ringTimeUnitMs: 5000, totalRings: 0, buckets: { blue: 0, green: 0, yellow: 0, orange: 0, red: 0 } },
       summary: {
-        participants: participantSummary.rings != null ? { [username]: participantSummary } : {},
+        participants: {},
         media: [],
-        rings: { total: totalRings, buckets },
+        rings: { total: 0, buckets: { blue: 0, green: 0, yellow: 0, orange: 0, red: 0 } },
         challenges: { total: 0, succeeded: 0, failed: 0 },
         voiceMemos: [],
       },
     };
+
+    if (timelineData) sessionData = applyStravaTimeline(sessionData, timelineData, username);
 
     // Write to fitness history
     const stored = this.#historyRepository.save(sessionId, sessionData);
@@ -589,22 +587,30 @@ export class FitnessActivityEnrichmentService {
 
   /**
    * @private
-   * Fetch per-second heart rate data from Strava activity streams.
+   * Fetch the heart rate stream and its time offsets from Strava.
+   * Strava samples are not per-second (smart recording), so the time stream
+   * is required to place them on the session clock.
    * @param {Object} activity - Strava activity object
    * @param {Object} activityGateway - IActivityGateway implementation
-   * @returns {number[]|null} Per-second HR array, or null
+   * @returns {{heartrate: number[], time: number[]|null}|null}
    */
   async _fetchHRData(activity, activityGateway) {
     if (!activityGateway || !activity.has_heartrate) return null;
 
     try {
-      const streams = await activityGateway.getActivityStreams(activity.id, ['heartrate']);
-      if (streams?.heartrate?.data?.length > 1) {
+      const streams = await activityGateway.getActivityStreams(activity.id, ['heartrate', 'time']);
+      const heartrate = streams?.heartrate?.data;
+      if (heartrate?.length > 1) {
+        const time = streams?.time?.data?.length === heartrate.length ? streams.time.data : null;
         this.#logger.info?.('strava.enrichment.hr_from_api', {
           activityId: activity.id,
-          samples: streams.heartrate.data.length,
+          samples: heartrate.length,
+          spanSeconds: time ? time[time.length - 1] : null,
         });
-        return streams.heartrate.data;
+        if (!time) {
+          this.#logger.warn?.('strava.enrichment.hr_time_stream_missing', { activityId: activity.id });
+        }
+        return { heartrate, time };
       }
     } catch (err) {
       this.#logger.warn?.('strava.enrichment.hr_fetch_failed', {

@@ -17,3 +17,7 @@ it('keeps each recording independently identified', () => {
   render(<><CaptureProgress startedAt={Date.now()} label="Dinner recording" /><CaptureProgress startedAt={Date.now()} label="Lunch recording" /></>);
   expect(screen.getAllByRole('progressbar')).toHaveLength(2);
 });
+it('a typed sentence reads as the food being added', () => {
+  render(<CaptureProgress startedAt={Date.now()} estimateMs={6000} text="two eggs and toast" />);
+  expect(screen.getByText('Adding “two eggs and toast”…')).toBeTruthy();
+});

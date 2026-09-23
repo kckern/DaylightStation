@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Button } from '@mantine/core';
 import { LoadingState } from '@/lib/ui';
 import { sumCounted } from '@shared-contracts/nutrition/countedRows.mjs';
@@ -6,10 +6,12 @@ import { MacroBadges } from './MacroBadges.jsx';
 import { ExerciseSection } from './ExerciseSection.jsx';
 import { BUCKETS, UNGROUPED, EARLY_COLUMN, LATE_COLUMN, PRIMARY_BUCKETS } from './mealBuckets.js';
 import { EntryRow } from './EntryRow.jsx';
-import { groupRows } from './groupRows.js';
+import { groupRows, sortEntriesByCalories, calorieShares } from './groupRows.js';
 import { VoiceCapture } from '../capture/VoiceCapture.jsx';
 import { MealFoodControls } from './MealFoodControls.jsx';
 import { CaptureProgress } from './CaptureProgress.jsx';
+import { usePortionControl } from './usePortionDraft.js';
+import { useFrozenOrder, useFlipMoves } from './sectionOrder.js';
 import './mealWorkflow.scss';
 
 // Bucket totals fold through the SHARED counted-rows contract — the same file
@@ -17,11 +19,14 @@ import './mealWorkflow.scss';
 // zero nutrition BY DESIGN (its children carry the real values as siblings in
 // this same flat `rows` array), so summing every counted row already counts
 // each gram of food exactly once; `sumCounted` says so once, for everyone.
+// A typed sentence parses faster than a photo or a recording.
+const SENTENCE_ESTIMATE_MS = 6000;
+
 const kcal = (rows) => Math.round(sumCounted(rows, 'calories'));
 
 function Section({
   label, rows, addRow = null, onRowTap, onConfirm, onRequestDelete, headerAction, coldLoading, pending,
-  measuredByUuid, date, bucket, active, onVoiceCapture, onTextCapture, onChanged, captureTasks = [], onHoldChange, externalClarification, onClearClarification,
+  measuredByUuid, addedIds = null, date, bucket, active, onVoiceCapture, onTextCapture, onChanged, captureTasks = [], onHoldChange, externalClarification, onClearClarification,
 }) {
   const [selecting, setSelecting] = useState(false);
   const [selection, setSelection] = useState([]);
@@ -36,18 +41,30 @@ function Section({
     else setClarification(null);
     return result;
   };
-  const renderRow = props => {
-    const id = props.row.uuid || props.row.id;
+  const renderRow = rowProps => {
+    const id = rowProps.row.uuid || rowProps.row.id;
+    // Just added from an add row: a brief highlight so the eye finds it even
+    // when the heaviest-first sort lands it mid-list.
+    const props = addedIds?.has(String(id)) ? { ...rowProps, added: true } : rowProps;
     if (!selecting) return <EntryRow key={id} {...props}/>;
     const ids = props.isGroup ? props.row.children.map(row=>row.uuid || row.id) : [id];
-    return <div key={id} className="health-meal-selection-row"><input type="checkbox" aria-label={`Select ${props.row.name || props.row.label || props.row.item}`}
+    return <div key={id} className="health-meal-selection-row" data-entry-key={props.entryKey}><input type="checkbox" aria-label={`Select ${props.row.name || props.row.label || props.row.item}`}
       checked={ids.every(id=>selectedIds.includes(id))} onChange={e=>setSelection(prev=>e.target.checked?[...new Set([...prev,...ids])]:prev.filter(id=>!ids.includes(id)))}/><EntryRow {...props}/></div>;
   };
   const [collapsed, setCollapsed] = useState(() => {
     try { return new Set(JSON.parse(sessionStorage.getItem('health:collapsed-dishes') || '[]')); }
     catch { return new Set(); }
   });
-  const entries = groupRows(rows);
+  // Heaviest first, and each calorie cell carries its share of the meal's
+  // largest entry (an ingredient: of its dish) for the inline bar.
+  // While a portion/numeric drag (or its save) is live, the order holds still
+  // so the dragged row stays under the pointer; values still update. When the
+  // order does change, rows glide to their new places (sectionOrder.js).
+  const portionDraft = Boolean(usePortionControl()?.draft);
+  const entries = useFrozenOrder(sortEntriesByCalories(groupRows(rows)), portionDraft);
+  const sectionRef = useRef(null);
+  useFlipMoves(sectionRef, entries.map(({ row }) => row.uuid ?? row.id).join('|'));
+  const entryShares = calorieShares(entries.map(({ row, children, rollup }) => (children.length ? rollup.calories : row.calories)));
   // The section frame (heading + kcal + add row) is PERMANENT structure —
   // it never depends on whether data has arrived yet. Only the entry list
   // itself swaps for a shimmer, and only on a true cold start (this bucket
@@ -70,7 +87,7 @@ function Section({
   });
 
   return (
-    <section className="health-meal">
+    <section className="health-meal" ref={sectionRef}>
       <header className="health-meal__header">
         <h4 className="health-meal__label">{label}</h4>
         {rows.length ? <MacroBadges rows={rows} className="health-meal__macros" showLabels /> : null}
@@ -93,7 +110,7 @@ function Section({
         }}>{choice.label}</Button>)}<Button size="compact-xs" variant="subtle" disabled={clarifying} onClick={()=>{setClarification(null);onClearClarification?.();}}>Cancel</Button></div>
         {clarifyError ? <span role="alert">{clarifyError}</span> : null}</div> : null}
       {showShimmer ? <LoadingState label={`${label} entries`} rows={2} /> : null}
-      {!showShimmer && entries.map(({ row, children, rollup }) => {
+      {!showShimmer && entries.map(({ row, children, rollup }, entryIndex) => {
         const key = row.uuid ?? row.id;
         // Render as a group whenever groupRows() actually attached
         // children — NEVER gate this on row.kind. groupRows() attaches a
@@ -118,19 +135,20 @@ function Section({
         // `id` for the same reason `key` does: not every row shape carries both.
         const measured = measuredByUuid?.get(row.uuid) ?? measuredByUuid?.get(row.id) ?? null;
         if (!isGroup) {
-          return renderRow({row,onTap:onRowTap,onConfirm,onRequestDelete,measured});
+          return renderRow({row,onTap:onRowTap,onConfirm,onRequestDelete,measured,kcalShare:entryShares[entryIndex],entryKey:String(key)});
         }
         const isOpen = !collapsed.has(key);
+        const childShares = calorieShares(children.map(child => child.calories));
         return (
-          <div key={key} className="health-group">
+          <div key={key} className="health-group" data-entry-key={String(key)}>
             {/* `children` is attached to the row object here — not read
                 by EntryRow's own rendering (which uses rollupKcal/isGroup
                 for display) — purely so the tap handler forwards them to
                 whatever opens next (EntryEditSheet's group mode needs the
                 full child list to scale/move/delete them together). */}
-            {renderRow({ row:{...row,children},densityRow:{kind:'group',children},onTap:onRowTap,onConfirm,onRequestDelete,measured,
+            {renderRow({ row:{...row,children},densityRow:{kind:'group',children},onTap:onRowTap,onConfirm,onRequestDelete,measured,kcalShare:entryShares[entryIndex],
               isGroup:true,expanded:isOpen,onToggle:()=>toggle(key),rollupKcal:rollup.calories })}
-            {isOpen ? children.map((c,index)=>renderRow({row:c,onTap:onRowTap,onConfirm,onRequestDelete,child:true,lastChild:index===children.length-1,
+            {isOpen ? children.map((c,index)=>renderRow({row:c,onTap:onRowTap,onConfirm,onRequestDelete,child:true,lastChild:index===children.length-1,kcalShare:childShares[index],
               measured:measuredByUuid?.get(c.uuid) ?? measuredByUuid?.get(c.id) ?? null})) : null}
           </div>
         );
@@ -139,7 +157,8 @@ function Section({
           bucket), never as a page-level spinner. `aria-busy` on the row
           itself, not the whole section — the heading/kcal/add-row above
           stay fully interactive while a capture is in flight. */}
-      {captureTasks.length ? captureTasks.map(task=><CaptureProgress key={task.id} startedAt={task.startedAt} label={`${label} food analysis`}/>) : pending ?
+      {captureTasks.length ? captureTasks.map(task=><CaptureProgress key={task.id} startedAt={task.startedAt} label={`${label} food analysis`}
+        text={task.text ?? null} estimateMs={task.text ? SENTENCE_ESTIMATE_MS : undefined}/>) : pending ?
         <CaptureProgress startedAt={Date.now()} label={`${label} food analysis`}/> : null}
       {/* The meal's add input is its last child, so a new food is typed right
           under the foods it joins. */}
@@ -152,7 +171,7 @@ export function LogTable({
   byBucket, date, sessions = [], exerciseAvailable = false, onRowTap, onConfirm, onRequestDelete,
   bucketHeaderAction, coldLoading = false, capturePendingBucket = null, capturePendingBuckets = [],
   measuredByUuid = null, active = true, onVoiceCapture, onTextCapture, onMealChanged, captureTasks = [], clarifications, onClearClarification,
-  revealedBucket = null, renderAddRow = null,
+  revealedBucket = null, renderAddRow = null, addedIds = null,
 }) {
   const [heldSections, setHeldSections] = useState(new Set());
   const holdSection = (key, held) => setHeldSections(previous => {
@@ -183,7 +202,7 @@ export function LogTable({
           onRowTap={onRowTap} onConfirm={onConfirm} onRequestDelete={onRequestDelete}
           headerAction={bucketHeaderAction ? bucketHeaderAction(b.id, rows, b.label) : null}
           coldLoading={coldLoading} pending={capturePendingBucket === b.id || capturePendingBuckets.includes(b.id)}
-          measuredByUuid={measuredByUuid} addRow={renderAddRow ? renderAddRow(b.id, b.label) : null} />
+          measuredByUuid={measuredByUuid} addedIds={addedIds} addRow={renderAddRow ? renderAddRow(b.id, b.label) : null} />
       </div>
     );
   };

@@ -201,6 +201,65 @@ describe('StravaHarvester', () => {
     });
   });
 
+  describe('stream + archive refresh', () => {
+    const today = new Date().toISOString();
+    const listActivity = {
+      id: 555, name: 'Spartan Sprint', type: 'Run', start_date: today,
+      has_heartrate: true, calories: 900,
+    };
+
+    async function build() {
+      const { StravaHarvester } = await import('#adapters/harvester/fitness/StravaHarvester.mjs');
+      mockStravaClient.refreshToken.mockResolvedValue({ access_token: 'a', refresh_token: 'r', expires_at: 1 });
+      mockStravaClient.getActivities.mockResolvedValue([{ ...listActivity }]);
+      return new StravaHarvester({
+        stravaClient: mockStravaClient,
+        lifelogStore: mockLifelogStore,
+        getUserAuth: mockConfigService.getUserAuth,
+        getUserDir: mockConfigService.getUserDir,
+        mediaDir: mockConfigService.getMediaDir(),
+        rateLimitDelayMs: 0,
+        logger: mockLogger,
+      });
+    }
+
+    const savedAt = (key) => mockLifelogStore.save.mock.calls.find(([, k]) => k === key)?.[2];
+    const archiveKey = () => mockLifelogStore.save.mock.calls.map(([, k]) => k).find(k => k.startsWith('strava/'));
+
+    it('fetches the time stream with heartrate and archives both', async () => {
+      mockStravaClient.getActivityStreams.mockResolvedValue({
+        heartrate: { data: [120, 130, 140] },
+        time: { data: [0, 4, 11] },
+      });
+      const h = await build();
+      await h.harvest('kc', { daysBack: 1 });
+
+      expect(mockStravaClient.getActivityStreams).toHaveBeenCalledWith(555, ['heartrate', 'time']);
+      const archive = savedAt(archiveKey());
+      expect(archive.data.heartRateOverTime).toEqual([120, 130, 140]);
+      expect(archive.data.heartRateTimes).toEqual([0, 4, 11]);
+    });
+
+    it('refreshes a title renamed on Strava even when HR is already archived', async () => {
+      mockLifelogStore.load.mockImplementation(async (_u, key) => (
+        key.startsWith('strava/')
+          ? { data: { ...listActivity, name: 'Morning Run', heartRateOverTime: [120, 130], homeSessionId: 'x' } }
+          : {}
+      ));
+      const h = await build();
+      await h.harvest('kc', { daysBack: 1 });
+
+      expect(mockStravaClient.getActivityStreams).not.toHaveBeenCalled();
+      const archive = savedAt(archiveKey());
+      expect(archive.data.name).toBe('Spartan Sprint');
+      expect(archive.data.heartRateOverTime).toEqual([120, 130]);
+      expect(archive.data.homeSessionId).toBe('x');
+      const summary = savedAt('strava');
+      const entry = Object.values(summary).flat().find(e => e.id === 555);
+      expect(entry.title).toBe('Spartan Sprint');
+    });
+  });
+
   describe('home session matching', () => {
     let StravaHarvester;
     let tmpDir;
