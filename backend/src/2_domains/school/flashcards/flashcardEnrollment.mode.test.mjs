@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { validateFlashcardEnrollment } from './index.mjs';
+import { validateFlashcardEnrollment, isCardLadderPolicy, canonicalizeProgramPolicy } from './index.mjs';
 import { createSchoolProgramEnrollmentValidators } from '#apps/school/SchoolProgramEnrollmentValidators.mjs';
 import { SetAssignments } from '#apps/school/usecases/SetAssignments.mjs';
 
@@ -11,23 +11,23 @@ describe('flashcard enrollment policy.mode', () => {
     expect(errors).toEqual([]);
     expect(enrollment.policy).toEqual({ mode: 'fsrs', minimumReviews: 2 });
   });
-  it('accepts word-ladder inside policy', () => {
-    const { errors, enrollment } = validateFlashcardEnrollment({ programId: 'flashcards', deckId: DECK, policy: { mode: 'word-ladder' } });
+  it('accepts card-ladder inside policy', () => {
+    const { errors, enrollment } = validateFlashcardEnrollment({ programId: 'flashcards', deckId: DECK, policy: { mode: 'card-ladder' } });
     expect(errors).toEqual([]);
-    expect(enrollment).toEqual({ programId: 'flashcards', corpusId: DECK, deckId: DECK, policy: { mode: 'word-ladder' } });
+    expect(enrollment).toEqual({ programId: 'flashcards', corpusId: DECK, deckId: DECK, policy: { mode: 'card-ladder' } });
   });
-  it('rejects an unknown mode and FSRS-only keys under word-ladder', () => {
+  it('rejects an unknown mode and FSRS-only keys under card-ladder', () => {
     expect(validateFlashcardEnrollment({ programId: 'flashcards', deckId: DECK, policy: { mode: 'leitner' } }).errors)
-      .toContain('policy.mode must be fsrs or word-ladder');
-    const { errors } = validateFlashcardEnrollment({ programId: 'flashcards', deckId: DECK, policy: { mode: 'word-ladder', newCardLimit: 5, masteryPercent: 80, minimumReviews: 3 } });
+      .toContain('policy.mode must be fsrs or card-ladder');
+    const { errors } = validateFlashcardEnrollment({ programId: 'flashcards', deckId: DECK, policy: { mode: 'card-ladder', newCardLimit: 5, masteryPercent: 80, minimumReviews: 3 } });
     expect(errors).toEqual([
-      'policy.newCardLimit is not used by word-ladder',
-      'policy.masteryPercent is not used by word-ladder',
-      'policy.minimumReviews is not used by word-ladder',
+      'policy.newCardLimit is not used by card-ladder',
+      'policy.masteryPercent is not used by card-ladder',
+      'policy.minimumReviews is not used by card-ladder',
     ]);
   });
   it('keeps an optional display title', () => {
-    const { enrollment } = validateFlashcardEnrollment({ programId: 'flashcards', deckId: DECK, title: '  Korean words ', policy: { mode: 'word-ladder' } });
+    const { enrollment } = validateFlashcardEnrollment({ programId: 'flashcards', deckId: DECK, title: '  Korean words ', policy: { mode: 'card-ladder' } });
     expect(enrollment.title).toBe('Korean words');
     expect(validateFlashcardEnrollment({ programId: 'flashcards', deckId: DECK, title: 7 }).errors).toContain('title must be a non-empty string when present');
   });
@@ -39,12 +39,33 @@ describe('flashcard enrollment policy.mode', () => {
       assignments, grownUps: { assert: vi.fn() }, programValidators,
       clock: () => new Date('2026-09-22T12:00:00.000Z'), logger: { info: vi.fn(), warn: vi.fn() },
     });
-    const raw = { programId: 'flashcards', deckId: DECK, title: 'Korean words', policy: { mode: 'word-ladder' }, schedule: { daysOfWeek: [1, 2, 3, 4, 5] } };
+    const raw = { programId: 'flashcards', deckId: DECK, title: 'Korean words', policy: { mode: 'card-ladder' }, schedule: { daysOfWeek: [1, 2, 3, 4, 5] } };
     await useCase.execute({ learnerId: 'learner-1', assignedBy: 'parent', programs: [raw] });
     const reloaded = (await assignments.get('learner-1')).programs[0];
-    expect(reloaded).toMatchObject({ policy: { mode: 'word-ladder' }, title: 'Korean words', schedule: { daysOfWeek: [1, 2, 3, 4, 5] } });
+    expect(reloaded).toMatchObject({ policy: { mode: 'card-ladder' }, title: 'Korean words', schedule: { daysOfWeek: [1, 2, 3, 4, 5] } });
     // A grown-up saving again (the round trip that used to delete top-level keys) keeps it.
     await useCase.execute({ learnerId: 'learner-1', assignedBy: 'parent', programs: [reloaded] });
-    expect((await assignments.get('learner-1')).programs[0].policy.mode).toBe('word-ladder');
+    expect((await assignments.get('learner-1')).programs[0].policy.mode).toBe('card-ladder');
+  });
+});
+
+describe('the pre-rename word-ladder mode', () => {
+  it('validates as card-ladder, so a grown-up save writes the canonical value', () => {
+    const { errors, enrollment } = validateFlashcardEnrollment({ programId: 'flashcards', deckId: DECK, policy: { mode: 'word-ladder' } });
+    expect(errors).toEqual([]);
+    expect(enrollment.policy).toEqual({ mode: 'card-ladder' });
+    expect(validateFlashcardEnrollment({ programId: 'flashcards', deckId: DECK, policy: { mode: 'word-ladder', newCardLimit: 3 } }).errors)
+      .toEqual(['policy.newCardLimit is not used by card-ladder']);
+  });
+  it('isCardLadderPolicy and canonicalizeProgramPolicy accept either name', () => {
+    expect(isCardLadderPolicy({ mode: 'word-ladder' })).toBe(true);
+    expect(isCardLadderPolicy({ mode: 'card-ladder' })).toBe(true);
+    expect(isCardLadderPolicy({ mode: 'fsrs' })).toBe(false);
+    expect(isCardLadderPolicy(undefined)).toBe(false);
+    const row = { programId: 'flashcards', deckId: DECK, policy: { mode: 'word-ladder', schedule: 1 } };
+    expect(canonicalizeProgramPolicy(row)).toEqual({ ...row, policy: { mode: 'card-ladder', schedule: 1 } });
+    expect(row.policy.mode).toBe('word-ladder');
+    const fsrs = { programId: 'flashcards', policy: { mode: 'fsrs' } };
+    expect(canonicalizeProgramPolicy(fsrs)).toBe(fsrs);
   });
 });

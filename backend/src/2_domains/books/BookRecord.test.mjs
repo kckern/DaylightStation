@@ -125,3 +125,29 @@ describe('mergeBookRecords', () => {
     expect(Object.isFrozen(mergeBookRecords([ol, google]))).toBe(true);
   });
 });
+
+describe('mergeBookRecords — a household correction (source "manual")', () => {
+  const provider = createBookRecord({
+    source: 'googlebooks', isbn13: '9780123456786', title: 'Novos Contextos', description: 'Caro estudante…',
+    pageCount: 244, authors: ['Apolenário Portugal'], coverUrl: 'https://books.google.com/x',
+  });
+  const manual = createBookRecord({
+    source: 'manual', isbn13: '9780123456786', title: 'Arthur and the Elephant', authors: ['Fiona Campbell'],
+  });
+
+  it('is the whole record: provider values never fill its fields, not even its deliberate blanks', () => {
+    for (const order of [[provider, manual], [manual, provider]]) {
+      const merged = mergeBookRecords(order);
+      expect(merged.title).toBe('Arthur and the Elephant');
+      expect(merged.authors).toEqual(['Fiona Campbell']);
+      expect(merged.description).toBeNull();
+      expect(merged.pageCount).toBeNull();
+      expect(merged.coverUrl).toBeNull();
+      expect(merged.sources).toEqual(['manual']);
+    }
+  });
+
+  it('without a manual record, merging is unchanged', () => {
+    expect(mergeBookRecords([provider]).title).toBe('Novos Contextos');
+  });
+});

@@ -76,9 +76,19 @@ const NAMESPACES = {
     module: './school/flashcards.mjs',
     blurb: 'install tracked rich-flashcard example decks',
   },
+  'card-ladder': {
+    module: './school/cardLadder.mjs',
+    blurb: 'card ladder: printed quiz source, enrollment plan, trace',
+  },
+  // The engine's pre-rename name (2026-09-23): `school word-ladder trace` still works. Not listed in help.
   'word-ladder': {
-    module: './school/wordLadder.mjs',
-    blurb: 'word ladder: printed quiz source, enrollment plan',
+    module: './school/cardLadder.mjs',
+    blurb: 'alias of card-ladder',
+    alias: true,
+  },
+  'sentence-ladder': {
+    module: './school/sentenceLadder.mjs',
+    blurb: 'sentence ladder: trace a sitting from the log store',
   },
   certify: {
     module: './school/certify.mjs',
@@ -116,7 +126,7 @@ Usage:
   node cli/school.mjs <namespace> <command> [options]
 
 Namespaces:
-${Object.entries(NAMESPACES).map(([name, { blurb }]) => `  ${name.padEnd(10)} ${blurb}`).join('\n')}
+${Object.entries(NAMESPACES).filter(([, { alias }]) => !alias).map(([name, { blurb }]) => `  ${name.padEnd(10)} ${blurb}`).join('\n')}
 
 Two pipelines — pick deliberately:
 

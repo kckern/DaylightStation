@@ -15,7 +15,7 @@ const SET = new Set(COMPOSABLE_LANGUAGES);
 
 /**
  * Fields declare their language two ways: the sentence ladder uses the corpus
- * code (`KR`), the word ladder uses BCP-47 (`ko`, `ko-KR`) because it goes on
+ * code (`KR`), the card ladder uses BCP-47 (`ko`, `ko-KR`) because it goes on
  * the `lang` attribute too. Both mean the same script, so normalise to the
  * registry's code: upper-case the primary subtag and alias `KO` to `KR`.
  */

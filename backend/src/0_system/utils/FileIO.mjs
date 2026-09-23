@@ -498,6 +498,52 @@ export function writeFileAtomic(filePath, content) {
   }
 }
 
+/**
+ * Copy a directory tree to a destination that does not exist yet — a one-time
+ * migration copy. Built beside the destination and renamed into place, so a
+ * crash mid-copy never leaves a half-populated destination. The source is
+ * never modified. Returns true when it copied; false when the source is not a
+ * directory or the destination already exists (including when another writer
+ * won the race to create it).
+ */
+export function copyDirectoryOnce(sourceDir, destinationDir) {
+  if (!dirExists(sourceDir) || fs.existsSync(destinationDir)) return false;
+  fs.mkdirSync(path.dirname(destinationDir), { recursive: true });
+  const staging = `${destinationDir}.copying-${process.pid}-${Date.now()}`;
+  try {
+    fs.cpSync(sourceDir, staging, { recursive: true, errorOnExist: true, force: false, preserveTimestamps: true });
+    if (fs.existsSync(destinationDir)) { fs.rmSync(staging, { recursive: true, force: true }); return false; }
+    fs.renameSync(staging, destinationDir);
+    return true;
+  } catch (error) {
+    fs.rmSync(staging, { recursive: true, force: true });
+    if (fs.existsSync(destinationDir)) return false;
+    throw error;
+  }
+}
+
+/**
+ * Copy one file to a destination that does not exist yet — a one-time
+ * migration copy. Staged beside the destination and hard-linked into place,
+ * which fails rather than overwrites if the destination appeared meanwhile.
+ * The source is never modified. Returns true when it copied.
+ */
+export function copyFileOnce(sourcePath, destinationPath) {
+  if (!fs.existsSync(sourcePath) || fs.existsSync(destinationPath)) return false;
+  fs.mkdirSync(path.dirname(destinationPath), { recursive: true });
+  const staging = `${destinationPath}.copying-${process.pid}-${Date.now()}`;
+  try {
+    fs.copyFileSync(sourcePath, staging, fs.constants.COPYFILE_EXCL);
+    fs.linkSync(staging, destinationPath);
+    return true;
+  } catch (error) {
+    if (error?.code === 'EEXIST' && fs.existsSync(destinationPath)) return false;
+    throw error;
+  } finally {
+    fs.rmSync(staging, { force: true });
+  }
+}
+
 /** Atomically move a prepared file into place on the same filesystem. */
 export function renameFile(sourcePath, destinationPath) {
   fs.renameSync(sourcePath, destinationPath);

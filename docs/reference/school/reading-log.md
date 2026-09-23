@@ -236,6 +236,22 @@ live now that the cards carry none.
 
 ---
 
+### Correcting a book's details (`source: manual`)
+
+Book metadata (title, author, page count, description) lives in the household
+book cache, `<household>/books/{isbn13}.yml`, filled from Google Books and
+OpenLibrary and refreshed in the background every 30 days. Some books carry a
+**placeholder ISBN** — `978-0-12-345678-6` is the common one — which a provider
+answers with an unrelated title (2026-09-23: *Arthur and the Elephant* showed as
+a Portuguese psychology textbook).
+
+To correct one, edit that file: set `sources: [manual]`, write the right fields,
+and set anything unknown to `null` (including `coverUrl` when the provider's
+link is someone else's cover — the cover route's provider ladder still finds the
+real art). A `manual` record is the **whole** record: `mergeBookRecords` returns
+it untouched and ignores every provider, so neither a lookup nor the 30-day
+refresh can refill a deliberate blank or undo the correction.
+
 ## 4. The printed card
 
 The card is no longer the only way in (see §3), but it is still the one that

@@ -1,3 +1,5 @@
+> Renamed card ladder 2026-09-23 — current reference: `docs/reference/school/card-ladder.md`.
+
 # Word Ladder Plan 4 — Observability, Trace, Grown-up Word Controls
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.

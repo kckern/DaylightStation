@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { languageApi } from './languageApi.js';
 import { languageLog } from './languageLog.js';
 import { useCapabilities } from './useCapabilities.js';
+import { useRungStall } from './useRungStall.js';
 import RepetitionRung from './rungs/RepetitionRung.jsx';
 import TypedRung from './rungs/TypedRung.jsx';
 import RecordingRung from './rungs/RecordingRung.jsx';
@@ -185,7 +186,10 @@ export default function SentenceLadderProgram({
   // start. `useMemo` runs during render, before any effect, which is the only
   // place early enough. Re-mints per learner/corpus: a different child or a
   // different course is a different run.
-  useMemo(() => languageLog.startRun(), [userId, corpusId]);
+  //
+  // The run is also the sitting's TRACE: its events carry learnerId, corpus
+  // and (once loaded) the day number, plus their order — see `languageLog`.
+  useMemo(() => languageLog.startRun({ learnerId: userId ?? null, corpus: corpusId ?? null }), [userId, corpusId]);
 
   const [day, setDay] = useState(null);
   const [status, setStatus] = useState('loading'); // loading | ready | error | empty
@@ -247,6 +251,7 @@ export default function SentenceLadderProgram({
       setStatus('error');
       return;
     }
+    languageLog.setTraceContext({ day: data.day ?? null });
     setDay(data);
     setStatus(data.queue.length === 0 ? 'empty' : 'ready');
     languageLog.program('day-loaded', {
@@ -370,6 +375,17 @@ export default function SentenceLadderProgram({
   // Whatever comes after what is on screen — so the preload stays a sentence
   // ahead while a finished one is being held.
   const nextEntry = (heldEntry ? pending[0] : pending[1]) || null;
+
+  // `rung.stalled` at 45s/120s of no key or touch on the sentence in front of
+  // the learner. The recording rung reports its own phase into the ref, so a
+  // stall says whether they sat at a live mic, a review, or an idle Record.
+  const rungPhaseRef = useRef(null);
+  useEffect(() => { rungPhaseRef.current = null; }, [activeRung, entry?.seq]);
+  useRungStall({
+    rung: tab === 'study' && entry ? activeRung : null,
+    seq: tab === 'study' && entry ? entry.seq : null,
+    phaseRef: rungPhaseRef,
+  });
 
   // A dimmed rung, recorded once per day it is dimmed on. This is the line that
   // answers "why did it not let me record" without anyone having to stand at
@@ -876,6 +892,7 @@ export default function SentenceLadderProgram({
             onComplete={onComplete} saving={saving}
             onDisableMicrophone={toggleMicrophone}
             showShortcuts={hasHardwareKeyboard}
+            onPhase={(p) => { rungPhaseRef.current = p; }}
           />
         )}
       </main>

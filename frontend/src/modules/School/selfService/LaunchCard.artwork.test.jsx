@@ -91,6 +91,18 @@ describe('LaunchCard course artwork', () => {
       .toHaveAttribute('src', '/api/v1/school/self-service/curriculum/fractions/poster.jpg');
   });
 
+  it('asks the program route for a program poster, one segment per id part', () => {
+    renderCard({ id: 'program:books', title: 'Reading log', artwork: { kind: 'course-poster', courseId: 'program:books' } });
+    expect(screen.getByRole('img', { name: 'Reading log cover' }).getAttribute('src'))
+      .toBe('/api/v1/school/self-service/programs/books/poster.jpg');
+  });
+
+  it('an instance-scoped program poster (the word and sentence ladders) keeps its instance as its own path segment', () => {
+    renderCard({ id: 'program:card-ladder:korean-vocab', title: 'Test Class', artwork: { kind: 'course-poster', courseId: 'program:card-ladder:korean-vocab' } });
+    expect(screen.getByRole('img', { name: 'Test Class cover' }).getAttribute('src'))
+      .toBe('/api/v1/school/self-service/programs/card-ladder/korean-vocab/poster.jpg');
+  });
+
   it('falls back to the blank placeholder — not a substitute image — when artwork fails to load', () => {
     renderCard({
       id: 'fractions',
