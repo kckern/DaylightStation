@@ -2477,7 +2477,8 @@
       white-space: nowrap;
     }
 
-    td { color: #2b2620; }
+    // keep-all: a Korean term wraps at spaces, never mid-word (안녕하 / 세요).
+    td { color: #2b2620; word-break: keep-all; }
   }
 
   &__row[data-excluded='true'] td { color: #a89d87; }
@@ -2544,7 +2545,15 @@
     font-size: 12px;
     color: #6b6255;
 
-    select { min-height: 32px; }
+    select {
+      min-height: 32px;
+      border: 1px solid #e0d8c8;
+      border-radius: 8px;
+      background: #fff;
+      color: #2b2620;
+      padding: 4px 8px;
+      font: inherit;
+    }
   }
 
   &__pool {
