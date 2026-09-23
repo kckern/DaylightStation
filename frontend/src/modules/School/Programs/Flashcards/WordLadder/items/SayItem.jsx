@@ -201,7 +201,7 @@ export default function SayItem({
   return (
     <section className="wl-item wl-say" aria-label="Say it">
       <div className="wl-prompt">
-        {showCue && <EnglishCue item={item} resolveAssetUrl={resolveAssetUrl} lang={langs.gloss} />}
+        {showCue && <EnglishCue item={item} resolveAssetUrl={resolveAssetUrl} lang={langs.gloss} keyHint={hearModel ? null : 'Tab'} />}
         {term && <FitText role="term" text={term} lang={langs.term} onFit={onLayout} />}
       </div>
 
