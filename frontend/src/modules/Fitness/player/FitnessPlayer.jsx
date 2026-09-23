@@ -455,6 +455,8 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
     }),
     // Other owners of videoPlayerPaused: on unmount the enforcer must not clear
     // a pause the voice memo overlay or EmergencyPlaybackController still holds.
+    // Module pause requests via useFitnessModule's `pauseVideo` (no callers
+    // today) are NOT vetoed here.
     isPauseHeldElsewhere: () => Boolean(voiceMemoOverlayState?.open)
       || Boolean(emergencyPhase && emergencyPhase !== 'normal'),
   });
@@ -642,7 +644,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
   const prevVideoPlayerPausedRef = useRef(false);
   useEffect(() => {
     const requested = Boolean(videoPlayerPaused);
-    const { action, wePausedIt } = decideVoiceMemoPause({
+    const { action, wePausedIt, nextPrev } = decideVoiceMemoPause({
       prevRequested: prevVideoPlayerPausedRef.current,
       requested,
       hasElement: Boolean(mediaElement),
@@ -657,14 +659,14 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
       // Debounced: leave the request unconsumed (prev stays false) so the next
       // run can still honour it, as the original effect did.
       if (elapsed < PAUSE_DEBOUNCE_MS) return;
-      prevVideoPlayerPausedRef.current = requested;
+      prevVideoPlayerPausedRef.current = nextPrev;
       lastPauseToggleRef.current = Date.now();
       wasPlayingBeforeVoiceMemoRef.current = wePausedIt;
       mediaElement.pause();
       return;
     }
 
-    prevVideoPlayerPausedRef.current = requested;
+    prevVideoPlayerPausedRef.current = nextPrev;
     wasPlayingBeforeVoiceMemoRef.current = wePausedIt;
     if (action === 'resume') {
       const elapsed = Date.now() - lastPauseToggleRef.current;
