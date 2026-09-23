@@ -9,7 +9,7 @@ export { normalizeAnswer, hasHangul, keystrokeJamo } from './jamo.mjs';
 export { BANDS, scoreTypedDeterministic, isShortTarget, modelMayRaise, raiseOneBand } from './typedScore.mjs';
 export { pickMeaningChoices, pickTermChoices, cueFor, channelFor } from './choices.mjs';
 export { ESTIMATE_MS, newAllowance, planNextRound } from './rounds.mjs';
-export { openDay, currentItem, respond, addActiveTime, dayDone } from './engine.mjs';
+export { openDay, currentItem, respond, addActiveTime } from './engine.mjs';
 export { foldPaperAttempts } from './foldPaperAttempts.mjs';
 export { quizDocumentIdFor } from './quizId.mjs';
 export { buildWordQuizSource } from './quizSource.mjs';

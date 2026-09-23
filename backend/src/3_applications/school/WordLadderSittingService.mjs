@@ -134,7 +134,13 @@ export class WordLadderSittingService {
         audio: item.task === '2.2' && item.channel === 'hear' ? assets.audio : null,
         glossAudio: item.cue?.type === 'audio' ? assets.glossAudio : null,
       };
-      return { ...item, ...(item.task === '2.2' ? { prompt: entry.term } : {}), assets: cueAssets };
+      // On 3.1 / 3.3 the gloss IS the cue (the term is the answer), so an image
+      // cue always carries it as text: the client falls back to it when the
+      // picture is missing or fails to load, rather than showing nothing.
+      const cue = item.cue?.type === 'image' && (item.task === '3.1' || item.task === '3.3')
+        ? { ...item.cue, text: entry.gloss }
+        : item.cue;
+      return { ...item, ...(item.task === '2.2' ? { prompt: entry.term } : {}), ...(cue ? { cue } : {}), assets: cueAssets };
     }
     return item;
   }
@@ -296,7 +302,7 @@ export class WordLadderSittingService {
       const settings = this.#daySettings(dayFile);
       const afterFold = this.#fold(status, read, quizDocumentIds, day, settings);
       folded = afterFold.folded;
-      const opened = openDay({ status: afterFold.status, dayFile, day, deckId, pool, settings, learnerId: userId });
+      const opened = openDay({ status: afterFold.status, dayFile, day, deckId, pool, settings, learnerId: userId, at: isoWithOffset(openedMs, this.#timezone) });
       changes = this.#housekeep(opened.dayFile, sittingId, openedMs, { reopen: false });
       opened.dayFile.sittings[sittingId] = { deckId, openedAt: isoWithOffset(openedMs, this.#timezone), closedAt: null, reason: null };
       return opened;

@@ -39,7 +39,7 @@ function make({ mode = 'live', attempts = null, attemptsReader = null, teacherGa
     lexicons: { getLexicon: () => lexicon },
     assignments: { get: async (u) => (u === 'test-learner' ? { programs: [{ programId: 'flashcards', deckId: DECK, policy: { mode: 'word-ladder' } }] } : { programs: [] }) },
     attempts: attemptsReader ? { readAttemptsInRange: attemptsReader } : attempts ? { readAttemptsInRange: vi.fn(() => attempts) } : null,
-    assets: { exists: () => media },
+    assets: { exists: typeof media === 'function' ? media : () => media },
     judge: { judge: judgeFn },
     teacherGate,
     settings: () => SETTINGS, timezone: 'America/Los_Angeles', now: () => (t += 4000), logger, mode,
@@ -112,6 +112,22 @@ describe('WordLadderSittingService', () => {
     expect(JSON.stringify({ ...pickTerm, choices: [] })).not.toContain('가위');
   });
 
+  it('an image cue on 3.1 / 3.3 carries the gloss as its text fallback, never the term', async () => {
+    const noGlossAudio = (id) => !String(id).includes('gloss');
+    const seen = {};
+    for (const rechecks of [0, 1, 2]) {
+      const { service } = make({ store: dueStore(rechecks), media: noGlossAudio });
+      const { item } = await service.open({ userId: 'test-learner', deckId: DECK });
+      if (item.cue?.type === 'image') seen[item.task] = item;
+    }
+    expect(Object.keys(seen).sort()).toEqual(['3.1', '3.3']);
+    for (const item of Object.values(seen)) {
+      expect(item.cue).toEqual({ type: 'image', text: 'Scissors' });
+      expect(item.assets.image).toEqual(expect.any(String));
+      expect(JSON.stringify({ ...item, choices: [] })).not.toContain('가위');
+    }
+  });
+
   it('a 3.3 recheck carries no term anywhere', async () => {
     const { service } = make({ store: dueStore(1), media: true });
     const { item } = await service.open({ userId: 'test-learner', deckId: DECK });
@@ -174,6 +190,17 @@ describe('WordLadderSittingService', () => {
     expect(opened.progress).toMatchObject({ phase: 'summary', round: null, capMs: 15 * 60000 });
     await expect(b.service.get({ userId: 'test-learner', sittingId: opened.sittingId })).resolves.toMatchObject({ item: { type: 'summary' } });
     await expect(b.service.dayStatus({ userId: 'test-learner', deckId: DECK })).resolves.toMatchObject({ doneToday: true });
+  });
+
+  it('a day with nothing to do is done for today as soon as it is opened', async () => {
+    const store = memoryStore();
+    for (const id of ['gawi', 'pul']) store.s.status.words[id] = { ...emptyWordV3(), state: 'mastered', stage: 3, dueDay: '2026-10-30', introducedDay: '2026-09-01' };
+    store.s.status.decksSeen = [DECK];
+    const { service } = make({ store });
+    const opened = await service.open({ userId: 'test-learner', deckId: DECK });
+    expect(opened.item.type).toBe('summary');
+    expect(store.s.days[TODAY].doneAt).toMatch(/^2026-09-22T16:00:0\d-07:00$/);
+    await expect(service.dayStatus({ userId: 'test-learner', deckId: DECK })).resolves.toMatchObject({ doneToday: true, progressLabel: 'Done for today' });
   });
 
   it('dayStatus: not opened, then in progress', async () => {
