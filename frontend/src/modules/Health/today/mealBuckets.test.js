@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { localTodayISO, bucketForHour, currentMealBucketId, bucketLabel, BUCKETS, PRIMARY_BUCKETS, EARLY_COLUMN, LATE_COLUMN } from './mealBuckets.js';
+import { localTodayISO, bucketForHour, currentMealBucketId, bucketLabel, BUCKETS, EARLY_COLUMN, LATE_COLUMN } from './mealBuckets.js';
 
 describe('localTodayISO', () => {
   afterEach(() => {
@@ -49,9 +49,6 @@ describe('bucketLabel', () => {
 });
 
 describe('meal columns', () => {
-  it('Lunch and Dinner are the always-shown meals', () => {
-    expect(PRIMARY_BUCKETS).toEqual(['afternoon', 'evening']);
-  });
   it('the columns cover every bucket once, in day order', () => {
     expect(EARLY_COLUMN).toEqual(['morning', 'afternoon']);
     expect(LATE_COLUMN).toEqual(['evening', 'night']);
