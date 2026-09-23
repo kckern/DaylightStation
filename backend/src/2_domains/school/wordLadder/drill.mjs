@@ -5,7 +5,10 @@
  */
 import { hashString, seededShuffle } from './checkItem.mjs';
 
-export const DRILL_STEPS = Object.freeze(['look', 'copy', 'say-after', 'match', 'read-aloud', 'dictation', 'tiles', 'say-from-cue', 'type']);
+// Unsupported production — writing from sound (dictation), saying and typing
+// from the cue — comes last (ruling 2026-09-23: never front-load it), so the
+// scaffolded tiles step (3.2) runs before dictation.
+export const DRILL_STEPS = Object.freeze(['look', 'copy', 'say-after', 'match', 'read-aloud', 'tiles', 'dictation', 'say-from-cue', 'type']);
 const NEEDS_MIC = new Set(['say-after', 'read-aloud', 'say-from-cue']);
 const NEEDS_AUDIO = new Set(['say-after', 'dictation']);
 

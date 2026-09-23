@@ -9,19 +9,34 @@ import { emptyWordV3 } from './mastery.mjs';
 const current = tunableValues(DEFAULT_SETTINGS);
 
 describe('TUNABLE', () => {
-  it('names exactly the six spec §7 tunables with their steps and bounds', () => {
+  it('names exactly the five tunables (spec §7, less the retired review.typedEvery) with their steps and bounds', () => {
     expect(TUNABLE).toEqual({
       'round.size': { step: 1 }, 'drill.afterMisses': { step: 1 }, 'batch.newPerDay': { step: 1 },
-      'batch.workingSet': { step: 1 }, 'review.gapScale': { step: 0.1 }, 'review.typedEvery': { step: 1 },
+      'batch.workingSet': { step: 1 }, 'review.gapScale': { step: 0.1 },
     });
     expect(TUNING_BOUNDS).toEqual({
       'round.size': [3, 7], 'drill.afterMisses': [1, 3], 'batch.newPerDay': [2, 6],
-      'batch.workingSet': [4, 10], 'review.gapScale': [0.5, 1.5], 'review.typedEvery': [1, 4],
+      'batch.workingSet': [4, 10], 'review.gapScale': [0.5, 1.5],
     });
     expect(GROWN_UP_SETTINGS).toEqual(['session.capMinutes', 'drill.perSitting', 'round.maxPasses', 'typing.passScore']);
     expect(current).toEqual({
-      'round.size': 5, 'drill.afterMisses': 2, 'batch.newPerDay': 4, 'batch.workingSet': 7, 'review.gapScale': 1, 'review.typedEvery': 2,
+      'round.size': 5, 'drill.afterMisses': 2, 'batch.newPerDay': 4, 'batch.workingSet': 7, 'review.gapScale': 1,
     });
+  });
+});
+
+describe('the retired review.typedEvery (ruling 2026-09-23)', () => {
+  it('a stored tuned value is ignored, a proposal naming it is dropped, and the digest never lists it', () => {
+    expect(withTunedValues(DEFAULT_SETTINGS, { 'review.typedEvery': 3, 'round.size': 4 }).review).toEqual({ gapScale: 1 });
+    const out = applyTuningProposal({
+      current, bounds: TUNING_BOUNDS, day: '2026-09-20', lastChanged: {}, studyDays: ['2026-09-20'],
+      proposal: [{ setting: 'review.typedEvery', to: 3, reason: 'old' }],
+    });
+    expect(out.applied).toEqual([]);
+    expect(out.dropped).toEqual([expect.objectContaining({ setting: 'review.typedEvery' })]);
+    const digest = buildTuningDigest({ status: emptyStatusV3(), days: [], settings: DEFAULT_SETTINGS, lastChanged: { 'review.typedEvery': '2026-09-01', 'round.size': '2026-09-02' } });
+    expect(digest.lastChanged).toEqual({ 'round.size': '2026-09-02' });
+    expect(digest.settings).not.toHaveProperty('review.typedEvery');
   });
 });
 
@@ -145,7 +160,7 @@ function fixtureStatus(n = 12) {
   const status = emptyStatusV3();
   const states = ['new', 'introduced', 'notYet', 'familiar', 'claimed', 'mastered'];
   for (let i = 0; i < n; i += 1) {
-    status.words[`w${i}`] = { ...emptyWordV3(), state: states[i % states.length], tricky: i === 7 };
+    status.words[`w${i}`] = { ...emptyWordV3(), state: states[i % states.length], tricky: i === 7, ...(i === 5 ? { typedSignedOff: '2026-09-18' } : {}) };
   }
   return status;
 }
@@ -159,7 +174,7 @@ describe('buildTuningDigest', () => {
     expect(digest.settings).toEqual(current);
     expect(digest.lastChanged).toEqual({ 'round.size': '2026-09-10' });
     expect(digest.words).toEqual({
-      total: 12, byState: { new: 2, introduced: 2, notYet: 2, familiar: 2, claimed: 2, mastered: 2 }, tricky: 1, excluded: 0,
+      total: 12, byState: { new: 2, introduced: 2, notYet: 2, familiar: 2, claimed: 2, mastered: 2 }, tricky: 1, excluded: 0, signedOff: 1,
     });
     expect(digest.today).toEqual({
       quizzed: 4, passed: 3,

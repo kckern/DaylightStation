@@ -26,11 +26,24 @@ import { GuestForbiddenError } from '#domains/school/errors.mjs';
 import { offsetMinutesFor, studyDayForInstant } from '#domains/school/studyDay.mjs';
 import { addDays } from '#domains/school/termVerdict.mjs';
 import {
-  addActiveTime, cueFor, currentItem, deckDirOf, emptyWordV3, excludeWordFromDay, foldPaperAttempts, markMastered, normalizeAnswer, openDay,
-  quizDocumentIdFor, respond, startPractice, typedAnswers, withTunedValues, wordAssetIds, wordTransitions,
+  addActiveTime, cueFor, currentItem, deckDirOf, emptyWordV3, excludeWordFromDay, foldPaperAttempts, ladderLevel, markMastered, normalizeAnswer, openDay,
+  quizDocumentIdFor, respond, roundHasMatch, startPractice, typedAnswers, withTunedValues, wordAssetIds, wordTransitions,
 } from '#domains/school/wordLadder/index.mjs';
 
 const FOLD_LOOKBACK_DAYS = 60;
+
+/**
+ * The sign-off fields a word row carries beside its raw `state` (ruling
+ * 2026-09-23). `level` is what to show: `mastered` only once a typed recheck
+ * signed the word off; a verified word before that is `recognised`. Added
+ * fields only — `state`/`stage` keep their meaning for older clients.
+ */
+function signOffFields(word) {
+  return {
+    level: ladderLevel(word), recognizedCount: word.recognizedCount ?? 0,
+    matched: word.matched === true, typedSignedOff: word.typedSignedOff ?? null,
+  };
+}
 const FOLD_SKEW_DAYS = 2;
 const TEST_PREFIX = 'test.';
 const CLOSE_REASONS = new Set(['goal', 'cap', 'leave', 'idle', 'unmount']);
@@ -198,7 +211,8 @@ export class WordLadderSittingService {
     if (item.type === 'typed' || item.type === 'choice') {
       const graded = {
         image: item.cue?.type === 'image' ? assets.image : null,
-        audio: item.task === '2.2' && item.channel === 'hear' ? assets.audio : null,
+        // 2.2 on the hear channel plays the term; so does a 1.4 graded dictation, whose whole prompt it is.
+        audio: (item.task === '2.2' && item.channel === 'hear') || item.task === '1.4' ? assets.audio : null,
         glossAudio: item.cue?.type === 'audio' ? assets.glossAudio : null,
       };
       // On 3.1 / 3.3 the gloss IS the cue (the term is the answer), so an image
@@ -229,6 +243,8 @@ export class WordLadderSittingService {
       round: round ? {
         index: dayFile.rounds.indexOf(round) + 1, kind: round.kind, size: round.words.length, phase: round.phase,
         remainingInStream: round.stream.queue.length, quizLeft: round.quiz.queue.length - round.quiz.index,
+        // Learn › Sort › Quiz › Match: whether this round shows (or will show) the Match step.
+        hasMatch: roundHasMatch(round),
       } : null,
       activeMs: dayFile.activeMs,
       capMs: settings.session.capMinutes * 60000,
@@ -577,7 +593,7 @@ export class WordLadderSittingService {
         const word = status.words[id] ?? {};
         return {
           wordId: id, term: entry.term, gloss: entry.gloss, state: word.state ?? 'new',
-          stage: word.stage ?? 0, tricky: word.tricky === true, dueDay: word.dueDay ?? null,
+          stage: word.stage ?? 0, tricky: word.tricky === true, dueDay: word.dueDay ?? null, ...signOffFields(word),
         };
       }),
     };
@@ -727,7 +743,7 @@ export class WordLadderSittingService {
         return {
           wordId: id, term: entry.term, gloss: entry.gloss, state: word.state ?? 'new', stage: word.stage ?? null,
           dueDay: word.dueDay ?? null, missStreak: word.missStreak ?? 0, tricky: word.tricky === true, excluded: word.excluded === true,
-          lastGraded: word.lastGraded ?? null, recentTyped: typed.get(id) ?? [],
+          lastGraded: word.lastGraded ?? null, recentTyped: typed.get(id) ?? [], ...signOffFields(word),
         };
       }),
     };

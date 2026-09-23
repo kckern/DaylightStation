@@ -16,7 +16,7 @@ import { buildLearnerQuizSource } from './quizSource.mjs';
 const D = '2026-09-22';
 const SET = {
   round: { size: 5, maxPasses: 3 }, batch: { newPerDay: 4, workingSet: 7 },
-  review: { gapScale: 1, typedEvery: 2 }, drill: { afterMisses: 2, perSitting: 1 }, session: { capMinutes: 15 }, typing: { passScore: 6 },
+  review: { gapScale: 1 }, drill: { afterMisses: 2, perSitting: 1 }, session: { capMinutes: 15 }, typing: { passScore: 6 },
 };
 const E = (id, term, gloss) => [id, { id, term, gloss, kind: 'word', decoys: { term: ['x1', 'x2', 'x3'], gloss: ['g1', 'g2', 'g3'] } }];
 const lexicon = {
@@ -93,8 +93,10 @@ describe('excluded words', () => {
         ({ ctx } = step(ctx, { sort: item.wordId === 'pul' ? 'notYet' : 'claimed' }));
         ctx.status.words.pul = off(ctx.status.words.pul);
       } else if (item.type === 'drill-offer') ({ ctx } = step(ctx, { drill: 'no' }));
-      else if (item.type === 'typed') ({ ctx } = step(ctx, { typed: 'x' }, { score: 10, judge: 'exact', pass: true }));
-      else ({ ctx } = step(ctx, { choice: lexicon.entries.get(item.wordId).gloss }));
+      else if (item.type === 'match') {
+        expect(JSON.stringify(item.board)).not.toContain('"pul"');
+        ({ ctx } = step(ctx, { done: true }));
+      } else ({ ctx } = step(ctx, { choice: item.task === '2.2' ? lexicon.entries.get(item.wordId).gloss : lexicon.entries.get(item.wordId).term }));
     }
     expect(currentItem(ctx).type).toBe('summary');
   });

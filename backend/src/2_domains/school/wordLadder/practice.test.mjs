@@ -19,10 +19,10 @@ describe('practice', () => {
     expect(practiceWordIds({ filter: 'tricky', words })).toEqual(['c']);
     expect(practiceWordIds({ filter: 'chosen', words, chosen: ['d', 'b'] })).toEqual(['b']);
   });
-  it('quiz is verify tasks over non-mastered introduced words not failed today', () => {
+  it('quiz is the recognition verify tasks over non-mastered introduced words not failed today', () => {
     const q = build('quiz').queue;
-    expect(q.map((t) => `${t.task}:${t.wordId}`).sort()).toEqual(['2.2:a', '2.2:c', '3.3:a', '3.3:c'].sort());
-    expect(q.slice(0, 2).every((t) => t.task === '3.3')).toBe(true);
+    expect(q.map((t) => `${t.task}:${t.wordId}`).sort()).toEqual(['2.2:a', '2.2:c', '3.1:a', '3.1:c'].sort());
+    expect(q.slice(0, 2).every((t) => t.task === '3.1')).toBe(true); // recognition only, 3.1 first
   });
   it('say needs a mic; write help = copy, no help = type-practice', () => {
     expect(build('say', { capabilities: { microphone: false } }).queue).toEqual([]);
