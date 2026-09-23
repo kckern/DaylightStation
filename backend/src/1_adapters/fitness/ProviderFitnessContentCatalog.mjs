@@ -92,6 +92,8 @@ export class ProviderFitnessContentCatalog extends IFitnessContentCatalog {
       title: item?.title ?? null,
       description: item?.metadata?.summary ?? null,
       labels: Array.isArray(info?.labels) ? info.labels : [],
+      duration: item?.duration ?? null,
+      seasonIndex: item?.metadata?.parentIndex ?? null,
     };
   }
 

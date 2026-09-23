@@ -159,4 +159,42 @@ describe('FitnessSuggestionService', () => {
     expect(callsByStrategy).toEqual(['a', 'b']); // both strategies ran
     expect(underlyingCalls).toBe(1);             // but the show was fetched once
   });
+
+  test('strategies never see season-0 extras or episodes under the minimum duration', async () => {
+    // 2026-09-22: "Cardio Meltdown" (Morning Meltdown 100, Specials) led the
+    // grid as Next Up. Season 0 is supplemental, and nothing under ten minutes
+    // is a workout worth suggesting.
+    let seen = null;
+    const service = new FitnessSuggestionService({
+      strategies: [{ suggest: async (ctx) => {
+        seen = (await ctx.fitnessPlayableService.getPlayableEpisodes('10404')).items.map(ep => ep.id);
+        return [];
+      } }],
+      sessionService: {
+        listSessionsInRange: async () => [],
+        resolveHouseholdId: (h) => h || 'default',
+      },
+      sessionDatastore: { findInRange: async () => [] },
+      fitnessConfigService: {
+        getSuggestionPolicy: () => ({ lookbackDays: 10, slots: 8, excludedCollectionIds: [], minimumDurationSeconds: 600 }),
+      },
+      fitnessPlayableService: {
+        getPlayableEpisodes: async () => ({
+          info: {},
+          items: [
+            { id: 'plex:600430', duration: 1170, metadata: { parentIndex: 0 } },
+            { id: 'plex:intro', duration: 240, metadata: { parentIndex: 1 } },
+            { id: 'plex:600436', duration: 1500, metadata: { parentIndex: 1 } },
+            { id: 'plex:unknown-length', metadata: { parentIndex: 1 } },
+          ],
+        }),
+        listFitnessShows: async () => ({ shows: [] }),
+      },
+      logger: { warn: () => {}, error: () => {}, info: () => {}, debug: () => {} },
+    });
+
+    await service.getSuggestions({ gridSize: 8 });
+
+    expect(seen).toEqual(['plex:600436', 'plex:unknown-length']);
+  });
 });
