@@ -50,3 +50,61 @@ export function judgeTake({ heard, sampled, durationMs }) {
   if (durationMs < MIN_TAKE_MS) return 'too-short';
   return null;
 }
+
+/**
+ * THE LIVE LEVEL METER, as data (observability, 2026-09-23). The recording
+ * rung already samples the mic level for the silent warning; this keeps the
+ * same decision — the same floor, the same SILENT_AFTER_MS, the same "once
+ * heard, never silent again" latch — and also adds up where the time went, so
+ * a take's log line can say how much of it was voice.
+ *
+ * Each sample closes the interval since the previous one and is charged to
+ * what THIS sample heard. Time before the first sample and after the last is
+ * not charged to anything, so voicedMs + silentMs runs a little under the
+ * take's durationMs; that is the honest reading of a meter that samples.
+ *
+ * Mutable on purpose: the rung holds one in a ref and feeds it per frame.
+ */
+export function createVoiceMeter(startedAt) {
+  return {
+    startedAt, last: null, since: null,
+    heard: false, sampled: false, silent: false,
+    voicedMs: 0, silentMs: 0, endSilentMs: 0,
+  };
+}
+
+/**
+ * Feed one level. Returns the warning's transition — `'silent-on'`,
+ * `'silent-off'` — or null, so a caller can log the moment it changes and
+ * nothing per frame.
+ */
+export function meterLevel(meter, level, now) {
+  const m = meter;
+  const dt = m.last == null ? 0 : Math.max(0, now - m.last);
+  m.last = now;
+  m.sampled = true;
+  if (level >= SILENT_LEVEL) {
+    m.voicedMs += dt;
+    m.endSilentMs = 0;
+    m.heard = true;
+    m.since = null;
+    if (m.silent) { m.silent = false; return 'silent-off'; }
+    return null;
+  }
+  m.silentMs += dt;
+  m.endSilentMs += dt;
+  if (m.heard) return null;
+  if (m.since == null) m.since = now;
+  else if (now - m.since >= SILENT_AFTER_MS && !m.silent) { m.silent = true; return 'silent-on'; }
+  return null;
+}
+
+/** What a take's log line carries. Null, not zero, when nothing was measured. */
+export function meterSummary(meter) {
+  if (!meter?.sampled) return { voicedMs: null, silentMs: null, endSilentMs: null };
+  return {
+    voicedMs: Math.round(meter.voicedMs),
+    silentMs: Math.round(meter.silentMs),
+    endSilentMs: Math.round(meter.endSilentMs),
+  };
+}

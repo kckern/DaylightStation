@@ -60,6 +60,8 @@ vi.mock('./languageLog.js', () => ({
     programError: vi.fn(),
     rung: (...args) => rungLogMock(...args),
     rungLanded: (...args) => rungLandedMock(...args),
+    rungStalled: vi.fn(),
+    setTraceContext: vi.fn(),
     attempt: vi.fn(),
     attemptError: vi.fn(),
     audio: vi.fn(),
@@ -3008,7 +3010,7 @@ describe('recording in pieces', () => {
     pressKey('Backspace');
     await sayPiece(1000);                             // take3 = part two again
     expect(model.played.slice(before)[0]).toEqual({ src: '/audio/glossika-korean/1/KR', atMs: 1500 });
-    expect(languageLog.capture).toHaveBeenCalledWith('piece-redo', { seq: 1, piece: 1 });
+    expect(languageLog.capture).toHaveBeenCalledWith('piece-redo', expect.objectContaining({ seq: 1, piece: 1 }));
     await screen.findByRole('button', { name: 'Finish' });
     pressKey(' ');
     await waitFor(() => expect(joinTakeMock).toHaveBeenCalled());
@@ -3191,7 +3193,7 @@ describe('recording in pieces', () => {
     await screen.findByRole('button', { name: 'Next part' });
     unmount();
     expect(languageApi.recording).not.toHaveBeenCalled();
-    expect(languageLog.capture).toHaveBeenCalledWith('pieces-abandoned', { seq: 1, pieces: 1 });
+    expect(languageLog.capture).toHaveBeenCalledWith('pieces-abandoned', expect.objectContaining({ seq: 1, pieces: 1 }));
   });
 
   it('a join that never settles gives up and falls back to saying it in one go', async () => {
@@ -3212,7 +3214,7 @@ describe('recording in pieces', () => {
       vi.useRealTimers();
     }
     expect(await screen.findByText(/say it in one go/i)).toBeInTheDocument();
-    expect(languageLog.capture).toHaveBeenCalledWith('stitch-failed', { seq: 1, pieces: 2, error: 'timeout' });
+    expect(languageLog.capture).toHaveBeenCalledWith('stitch-failed', expect.objectContaining({ seq: 1, pieces: 2, error: 'timeout' }));
   });
 
   it('a join that fails falls back to saying it in one go', async () => {
@@ -3227,6 +3229,6 @@ describe('recording in pieces', () => {
     pressKey(' ');
     expect(await screen.findByText(/say it in one go/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Listen, then record' })).toBeTruthy();
-    expect(languageLog.capture).toHaveBeenCalledWith('stitch-failed', { seq: 1, pieces: 2, error: 'no-web-audio' });
+    expect(languageLog.capture).toHaveBeenCalledWith('stitch-failed', expect.objectContaining({ seq: 1, pieces: 2, error: 'no-web-audio' }));
   });
 });
