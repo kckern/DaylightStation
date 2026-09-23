@@ -205,11 +205,11 @@ describe('AddCombobox — zero-keystroke suggestions', () => {
     expect(path).not.toContain('q=');
   });
 
-  it('keeps the opening list SHORT — the burst of icon requests it triggers is unprompted', async () => {
+  it('asks for a bounded opening list (16 compact rows, prefetched with the day)', async () => {
     apiMock.mockResolvedValue(OPEN);
     r(<AddCombobox bucketId="morning" onDone={() => {}} onCancel={() => {}} />);
     await waitFor(() => expect(apiMock).toHaveBeenCalled());
-    expect(apiMock.mock.calls[0][0]).toContain('limit=8');
+    expect(apiMock.mock.calls[0][0]).toContain('limit=16');
   });
 
   it('draws exactly one icon request per suggestion that HAS an icon, and none for one that does not', async () => {
@@ -348,7 +348,7 @@ describe('AddCombobox inline', () => {
     expect(apiMock).not.toHaveBeenCalled();
     expect(screen.queryByRole('listbox')).toBeNull();
     fireEvent.focus(input);
-    await waitFor(() => expect(apiMock).toHaveBeenCalledWith(expect.stringContaining('bucket=evening&limit=8')));
+    await waitFor(() => expect(apiMock).toHaveBeenCalledWith(expect.stringContaining('bucket=evening&limit=16')));
     expect(await screen.findByText('Chicken breast')).toBeTruthy();
   });
 

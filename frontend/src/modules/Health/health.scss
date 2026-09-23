@@ -701,7 +701,7 @@ $health-aside-gap: 1.5rem;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
   &__list {
     display: grid; grid-template-columns: minmax(0, 1fr);
-    gap: 0.15rem; list-style: none; margin: 0.3rem 0 0; padding: 0;
+    gap: 0.05rem 0.2rem; list-style: none; margin: 0.2rem 0 0; padding: 0;
     max-height: min(16rem, 45vh); overflow-y: auto;
   }
   @media (min-width: 480px) {
@@ -711,10 +711,12 @@ $health-aside-gap: 1.5rem;
     // `center`, not `baseline`: the row now carries a 24px image beside text,
     // and a baseline-aligned image hangs its whole box off the text baseline.
     display: flex; gap: 0.3rem; align-items: center; width: 100%;
-    padding: 0.25rem 0.35rem; border-radius: 6px; color: var(--ds-text-high);
+    padding: 0.1rem 0.3rem; border-radius: 6px; color: var(--ds-text-high);
     font-size: 0.78rem; text-align: left;
-    // A suggestion is a tap target on a phone (A2: >= 44px).
-    min-height: 44px;
+    // Compact under a mouse, so sixteen suggestions fit without much scroll;
+    // a real tap target under a finger (A2: >= 44px).
+    min-height: 32px;
+    @media (pointer: coarse) { min-height: 44px; padding: 0.25rem 0.35rem; }
     &--hi, &:hover { background: var(--ds-surface-alt); }
     &--fav .health-suggest__star { color: var(--ds-warning); }
   }
@@ -750,7 +752,7 @@ $health-aside-gap: 1.5rem;
   position: relative;
   .health-suggest__popup {
     position: absolute; top: calc(100% + 2px); left: -1px; right: -1px; z-index: 30;
-    padding: 0.35rem; border: 1px solid var(--ds-border); border-radius: 9px;
+    padding: 0.25rem; border: 1px solid var(--ds-border); border-radius: 9px;
     background: var(--ds-surface); box-shadow: inherit;
   }
 }
