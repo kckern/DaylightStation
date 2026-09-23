@@ -213,6 +213,11 @@ function launchTarget(action, effect) {
     return {
       kind: 'program', program: effect.programId ?? action.target ?? null,
       corpusId: effect.corpusId ?? null,
+      // A flashcards program (the card ladder included) mounts by its deck and
+      // its policy — dropped here until 2026-09-23, so a keypad code for the
+      // card ladder resolved, offered "Open", and then refused to mount.
+      deckId: effect.deckId ?? null,
+      policy: effect.policy ?? null,
       studyGrant: effect.studyGrant ?? null,
       bookGrant: effect.bookGrant ?? null,
       learnerId: effect.learnerId ?? null,

@@ -91,6 +91,27 @@ describe('useSelfService: the /act mount effect reaches onLaunch intact', () => 
 });
 
 
+describe('useSelfService: a card-ladder (flashcards) effect keeps its deck and policy', () => {
+  beforeEach(() => { h.act.mockReset(); h.resolve.mockReset(); log.error.mockReset(); });
+
+  it('deckId and policy reach onLaunch — without them SchoolApp refuses the mount (2026-09-23)', async () => {
+    const onLaunch = vi.fn(async () => true);
+    const result = await drive({
+      effect: {
+        kind: 'program', program: 'flashcards', programId: 'flashcards', unitId: 'flashcards:language/korean/week-01',
+        deckId: 'language/korean/week-01', policy: { mode: 'card-ladder' }, learnerId: 'kid1',
+      },
+      onLaunch,
+    });
+    expect(onLaunch.mock.calls[0][0]).toMatchObject({
+      kind: 'program', program: 'flashcards', deckId: 'language/korean/week-01', policy: { mode: 'card-ladder' }, learnerId: 'kid1',
+    });
+    expect(result.current.view).toBe('keypad');
+    expect(log.error).not.toHaveBeenCalledWith('mount.refused', expect.anything());
+  });
+});
+
+
 describe('reading code goes directly through the authenticated action', () => {
   beforeEach(() => { h.act.mockReset(); h.resolve.mockReset(); });
   const issuer = new HmacSchoolBookGrantIssuer({ key: 'isolated-test-key-for-reading-entry-32bytes' });
