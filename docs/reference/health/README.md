@@ -248,7 +248,10 @@ fresh entries skipped, a newer reader response never overwritten; mutations mark
 health paths stale so the next pass refreshes them). A cached day paints in the SAME
 render as the date change (the hook reads the cache during render, so there is no empty
 frame), and icons already decoded in the page session render at once instead of fading
-in from the placeholder. Days after today are never requested.
+in from the placeholder. Days after today are never requested. Each viewed date logs
+`day.view` once (`fromCache`, `paintMs`), and each drained prefetch pass logs
+`prefetch.summary` (cumulative `queued`/`completed`/`failed`) — see the observability
+table in [health-app-frontend.md](health-app-frontend.md#observability--artwork-and-day-data-quality).
 
 The Exercise section's header follows the same discipline for a different
 reason: it appears once the day's budget has loaded, whether or not any
@@ -270,7 +273,15 @@ their touch-target floor even though the surrounding chrome is tighter. The
 inline Add food surface is a bordered, height-capped panel rather than loose
 text; suggestions use one column on the narrowest screens and two from 480 px,
 with a real catalog icon or a reserved Noom-dot fallback on every row. It opens
-under a meal's add row only while that row has focus or text.
+under a meal's add row only while that row has focus or text, and **overlays** what
+follows (absolutely positioned under the input, full row width, the row card's look,
+scrolling inside its own max-height) rather than sitting in document flow — in flow,
+focusing a row pushed the page down by up to the list's height and blur/commit
+yanked it back. When the visible viewport (`visualViewport`, so a phone keyboard counts)
+has less room below the input than the popup needs and more above, it opens upward
+(`popupPlacement`, re-evaluated on viewport resize/scroll). The sheet (non-inline) mode
+keeps its in-flow layout. Suggestion rows
+are 32 px under a fine pointer and keep the 44 px floor under `(pointer: coarse)`.
 
 Food rows use the shared `foodPortion` contract: known mass first, otherwise the
 current amount/unit, never stale `originalQuantity`. Millilitres and servings
@@ -460,15 +471,29 @@ footer below the log carries the macro summary and coach line, never capture con
 ### Quick add — suggestions before the first keystroke (`AddCombobox`)
 
 Opening the add row shows a list immediately: the combobox fetches
-`GET /nutrition/catalog/suggest?bucket={bucketId}&limit=8` on mount, undebounced, so
-Breakfast's regulars are one tap away with nothing typed. Typing switches to
+`GET /nutrition/catalog/suggest?bucket={bucketId}&limit=16` on focus, undebounced (and
+the day prefetch has usually cached it already), so Breakfast's regulars are one tap
+away with nothing typed. Typing switches to
 `?q=` on a 250 ms debounce; clearing the text returns to the bucket list. Both share one
 request-id guard, so a slow response can never overwrite a newer one.
 
-The opening list is capped at **8** deliberately. It is the only fetch that happens with
-no user intent behind it, and every row it draws fires an icon request — a short list keeps
-that burst nowhere near the render-herd shape the icon route had to be bounded against.
-The typed list keeps the server default of 12; there the person is steering.
+The opening list is capped at **16** (`SHORTLIST_LIMIT`, `healthResources.js`). It was 8
+while it was the only fetch with no user intent behind it and every row fired a cold icon
+request; the shortlist is now prefetched with the day and its icons pre-decoded then, so
+opening a row no longer pays that burst. The typed list keeps the server default of 12;
+there the person is steering.
+
+**Icons for foods that have none.** A catalog entry with no offered icon (`null`,
+`'default'`, or a slug the manifest no longer offers — typically a UPC product) gets the
+closest OFFERED slug by name at suggest time (`guessIconForName`,
+`2_domains/nutrition/services/icons.mjs`): a reviewed `foodNames` alias or an exact-only
+name decides outright; otherwise the longest run of whole words that is a slug wins, head
+noun first ("Organic Fuji Apple" → `apple`). No substring matches (`shake` never finds
+`salt-and-pepper-shakers`), no lone modifier words, never an alias to retired flat art.
+The icon is display-only and **not persisted**, so a later real capture can still donate
+a better one. Nothing matching keeps the placeholder — "Premier Protein Shake" and
+"Scrambled Eggs" have no honest slug in today's manifest (the latter is exact-only on
+purpose); a manifest `foodNames` entry is how either gets a picture.
 
 Arrow keys move a `highlight` index over the results; **Enter with a suggestion
 highlighted** or a click both call `pick(entry)`. Rows show the food's icon (where the
@@ -480,7 +505,16 @@ count as a badge (see [Meal templates](#meal-templates)).
 
 `FoodCatalogService.suggest(query, userId, limit, { bucket })` filters by the query, then
 hands the candidates to `bucketSuggestRanking.mjs` — a pure domain module that takes the
-clock as an argument, because the domain layer forbids an ambient one. Three tiers:
+clock as an argument, because the domain layer forbids an ambient one.
+
+**Nothing typed: half common, half recent (`blendShortlist`).** The zero-keystroke list
+interleaves two lists — the ranking below ("what I usually have here") and a
+most-recently-used list ("what I had lately": entries with history in this bucket by that
+bucket's `lastUsed`, then the rest by global `lastUsed`) — common first, then recent,
+alternating, each skipping what the other already placed, until the limit. Frequency
+alone buried a food eaten twice this week under years of staples. Same admission rule as
+the ranking (the backfill stays out of both halves once the bucket is thick), ties on
+name, so the list is deterministic. A typed query uses the ranking alone. Three tiers:
 
 | Tier | Who | Ordered by |
 |---|---|---|
@@ -530,6 +564,15 @@ one-tap quick-add defaults to. A bucket the food has never been eaten in falls b
 catalog default of one serving.
 
 ### Deterministic paths — skip the funnel entirely
+
+**After an add.** A typed sentence shows an in-place "Adding “…”…" row in its meal (the
+same `captureTasks` placeholder voice and photo use, labelled with the text) from submit
+until the parsed rows are actually on the day, so they replace the placeholder instead of
+popping in seconds later. The new row(s) then carry a short accent highlight
+(`useAddedRowHighlight`, 1.5 s from first appearance), because the heaviest-first sort can
+land them mid-list. Both come from `today/addFlow.js`, which matches the add response's
+row ids (`item.uuid` for a quick-add, `entryIds` for a sentence) against the day's rows and
+logs `add.flow` (`submitToCommittedMs`, `committedToVisibleMs`).
 
 `pick(entry)` is the fast path: **one** request, `POST /nutrition/catalog/quickadd
 { catalogEntryId, mealTime }`, then done — no pending state, no confirmation step. The
@@ -936,13 +979,34 @@ It is saved as a **pending** log stamped `metadata.quarantined: true`
 does not hold back reports. It shows in Needs Review ("Calories need review"); confirming
 it requires calories and clears the marker. The web reports it as `needs-review`.
 
+**No calories, no per-100 basis: estimate before quarantining.** The classifier call that
+already picks the icon and Noom colour is asked, for such a product, whether it is food at
+all (`isFood`) and for one typical serving's `estimate: { servingGrams, calories, protein,
+carbs, fat }`. **Every number on the row shares one basis:** when the label names a
+measurable serving (`30 g`, `240 ml`) the model is asked for exactly that serving, the label's
+own values stay as facts and the estimate only fills what is missing; when it does not, the
+estimate is for a typical serving of the model's stated mass, and label-only values (which
+describe a serving of unknown mass) are dropped — null, no provenance, listed in
+`nutritionLookup.droppedLabelNutrients`; a rejected mass logs "1 serving", never a gram mass
+the numbers do not describe (`aiEstimateBasis: 'label-serving' | 'typical-serving'`). Food with
+calories a finite number in 0–2000 is logged as an **unconfirmed AI estimate** instead of
+quarantined: `nutrientProvenance` `{ source: 'ai' }` on the estimated nutrients only,
+`nutritionLookup.aiEstimate: true` (plus `servingEstimate` when the mass is usable: ≤ 500 g
+and ≤ the package), `captureEvidence.assumption: 'ai-nutrition-estimate'`, the usual
+provisional review, and it never seeds the catalog's UPC entry. The result carries
+`aiEstimate: true` and Health says "No calories on the label — estimated for one serving.
+Check the row." Not food (a magazine), or no usable number: quarantine as below.
+Logs `upc.nutrition.estimated` / `upc.nutrition.estimateRejected`.
+
 **Label data** (`normalizeProductNutrition`): a gram figure printed on the label ("1/4 cup
 (28 g)") beats Open Food Facts' `ml` unit guess; real volumes (ml, cl, L, fl oz, gallon,
 quart, pint — in the pack size or the serving text) stay volumes. With no usable serving
 but per-100 values, the capture logs 100 g/ml so known values (a diet soda's 0 kcal)
 stay known (`servingFallback: 'per100'`); for a gram fallback the classifier also estimates
-the label serving's mass ("2 tbsp"), accepted only up to 500 g and the pack mass, recorded
-as `servingEstimate: { source: 'ai' }` on an unconfirmed row. The gateway no longer stamps
+the label serving's mass ("2 tbsp") — or, when the label gives no serving text at all, the
+mass of one typical serving (shredded cheese ≈ 28 g, not 100 g = 393 kcal) — accepted only
+up to 500 g and the pack mass, recorded as `servingEstimate: { source: 'ai' }` on an
+unconfirmed row. The gateway no longer stamps
 an icon, so the classifier's manifest slug is used; barcodespider's "image coming soon"
 placeholder is refused by content hash (`upc.image.placeholder`); product names are
 normalized once at ingest (`shared/contracts/health/productName.mjs`: shouting words

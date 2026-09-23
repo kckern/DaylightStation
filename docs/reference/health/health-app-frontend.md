@@ -82,6 +82,29 @@ The hub is read-write for new entries, read-only for history. Quick edits happen
 
 **Inline interactions write back through the same input layer the rest of the system uses** — a meal logged from the hub lands in the same food log a meal logged from the messaging surface lands in, and the data pipeline folds it into the day's summary identically.
 
+**Row magnifier (Today, `today/RowPreview.jsx`).** A food row's artwork is 24px, too small to read a
+UPC product photo. Hovering the row's artwork or its name opens a speech-bubble card anchored on the
+ARTWORK (Mantine `Popover`, controlled, portalled, arrow pointing at the picture): to its right
+under a mouse, below it on a coarse pointer, with `flip` and a cross-axis `shift` so it always
+lands on screen — a full-width row anchor had no room on either side of a phone column). It opens after 350 ms and closes 150 ms after the pointer leaves both the row's targets
+and the card, so passing over the list does not flash cards. The card shows:
+
+- a 5em-square hero: the full capture/product photo (`nutritionPhotoUrl(photoRef)`, not the
+  thumbnail) when the row has one, else the hi-res icon through `FoodIcon` (so an icon already
+  decoded for the row paints at once), else the neutral placeholder; `object-fit: contain` on a
+  surface tint;
+- the name, the portion (`formatFoodPortion`), kcal, the P/C/F chips (`MacroBadges`, the log's
+  own macro colours) and the density in kcal/g when mass and calories are known;
+- for a group row: its total and the ingredient count.
+
+Keyboard focus on the row's name opens it — only when the focus came from Tab
+(`lib/ui/keyboardModality.js`), so a sheet handing focus back to the name, or a tap, does not
+reopen it — and Escape closes it. Hover is mouse-only
+(`pointerType`), because a touch "hover" is the start of a tap; on a coarse pointer, tapping the
+artwork opens the card instead (tapping the name still opens the editor). It never opens while a
+portion or numeric drag is live on the page, and tapping the name to edit closes it first. Each
+open logs `row.preview.open` (sampled).
+
 ---
 
 ## States
@@ -174,7 +197,8 @@ The app does not require a pointing device for any operation. A user with a keyb
 ## Observability — artwork and day data quality
 
 Food artwork falls back to the bowl glyph, and unknown nutrients render as "—".
-Neither case is silent any more:
+Neither case is silent any more, and the add/paint/prefetch paths report their
+timing. Frontend events ship to the log store only at info and above:
 
 | Event | Level | Emitted by | When |
 |---|---|---|---|
@@ -182,6 +206,11 @@ Neither case is silent any more:
 | `artwork.photo-failed` | warn | `today/EntryRow.jsx` via `today/artworkLog.js` | a row's `photoRef` thumbnail fails. Once per photoRef per page session. |
 | `add-row.focus` | debug | `today/AddCombobox.jsx` (inline mode) | a meal's add row takes focus. `{bucket}` |
 | `quickadd.done` / `sentence.committed` | info | `today/AddCombobox.jsx` | a food logged from the add surface. `{bucket, surface: 'inline' \| 'sheet'}` |
+| `row.preview.open` | info (sampled, ≤20/min) | `today/RowPreview.jsx` | the row magnifier opened. `{uuid, hasPhoto}` |
+| `ui.layout-shift` | info (sampled, ≤20/min) | `modules/Health/useLayoutShiftLog.js` (mounted in `Apps/HealthApp.jsx`) | one per 1 s burst of layout shifts not caused by input (`hadRecentInput`). `{value (summed CLS), count, sources (≤3 short selectors, tag.class.class), route, tab}`. Chromium only; browsers without the Layout Instability API log nothing. |
+| `add.flow` | info | `today/addFlow.js` (from `AddCombobox`, completed by `useHealthDay`) | an add from an add row, once its rows are on the day. `{bucket, surface, kind: 'pick' \| 'sentence', submitToCommittedMs, committedToVisibleMs, rows}`; `committedToVisibleMs: null` when the response carried no row ids, plus `timedOut: true` after 30 s unseen. |
+| `day.view` | info | `today/useHealthDay.js` | once per viewed date. `{date, fromCache (the day was in the swr cache — prefetch or earlier visit), paintMs (date change → data available)}` |
+| `prefetch.summary` | info (sampled, ≤6/min) | `today/useHealthDayPrefetch.js` (counters in `lib/hooks/useApiResource.js`) | when a prefetch pass drains. Cumulative since load: `{date, queued, completed, failed}`; `queued − completed − failed` is work replaced by a later move. |
 | `day.quality` | info | `today/useHealthDay.js` (`today/dayQuality.js`) | once per date + ledger revision, only when the day has gaps: `noArtwork`, `unknownCalories`, `noGrams`, `allCaps`, `duplicates`, each `{count, samples}`. |
 
 All carry `context.app: health`.

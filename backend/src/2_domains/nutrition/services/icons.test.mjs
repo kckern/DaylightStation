@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { confineIcon, iconVocabulary } from './icons.mjs';
+import { confineIcon, iconVocabulary, guessIconForName, NEUTRAL_ICON } from './icons.mjs';
 describe('reviewed food icon matches', () => {
   it('refuses the observed condiment and whipped-cream mismatches', () => {
     const vocabulary = iconVocabulary('condiments whipped-cream flour-tortilla');
@@ -20,5 +20,30 @@ describe('reviewed food icon matches', () => {
     expect(confineIcon('berry-chia-pudding', vocabulary, 'Organic chia seed')).toBe('default');
     const reviewed = iconVocabulary('scrambled-eggs', { 'scrambled eggs': 'scrambled-eggs' });
     expect(confineIcon('fried-eggs', reviewed, 'Scrambled Eggs')).toBe('scrambled-eggs');
+  });
+});
+
+describe('guessIconForName — the closest offered icon for a name', () => {
+  const vocab = iconVocabulary('apple banana fried-eggs strawberry-smoothie smoothie salt-and-pepper-shakers cheddar-wedge cola scrambled-toast',
+    { 'diet coke': 'cola', 'mystery bar': null });
+
+  it('matches the longest run of words, head noun first at equal length', () => {
+    expect(guessIconForName('Organic Fuji Apple', vocab)).toBe('apple');
+    expect(guessIconForName('Strawberry Smoothie', vocab)).toBe('strawberry-smoothie');
+    expect(guessIconForName('Fried Egg', vocab)).toBe('fried-eggs');
+    expect(guessIconForName('Bananas', vocab)).toBe('banana');
+  });
+
+  it('a reviewed alias decides, including an explicit "no suitable art"', () => {
+    expect(guessIconForName('Diet Coke', vocab)).toBe('cola');
+    expect(guessIconForName('Mystery Bar', vocab)).toBe(NEUTRAL_ICON);
+  });
+
+  it('never substring-matches, never matches a lone modifier, never guesses around an exact-only name', () => {
+    expect(guessIconForName('Premier Protein Vanilla Shake', vocab)).toBe(NEUTRAL_ICON);
+    expect(guessIconForName('Organic', vocab)).toBe(NEUTRAL_ICON);
+    expect(guessIconForName('Scrambled Eggs', vocab)).toBe(NEUTRAL_ICON);
+    expect(guessIconForName('', vocab)).toBe(NEUTRAL_ICON);
+    expect(guessIconForName('Apple', new Set())).toBe(NEUTRAL_ICON);
   });
 });

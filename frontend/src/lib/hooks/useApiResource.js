@@ -105,6 +105,10 @@ let prefetchQueue = [];
 let prefetchActive = 0;
 const prefetchInFlight = new Set();
 let prefetchEpoch = 0; // bumped by resetApiResourceCache so stale in-flight work can't hold slots
+// Cumulative since page load (or the last reset): what the prefetcher was
+// asked to warm, and how it went. Read by callers that report on it.
+const prefetchStats = { queued: 0, completed: 0, failed: 0 };
+let prefetchOnIdle = null; // the latest caller's "queue drained" callback
 
 function pumpPrefetch() {
   while (prefetchActive < PREFETCH_CONCURRENCY && prefetchQueue.length) {
@@ -117,11 +121,23 @@ function pumpPrefetch() {
       .then(result => {
         if (epoch !== prefetchEpoch) return;
         if (isNewestGeneration(path, generation)) { cacheSet(path, result); fetchedAt.set(path, Date.now()); }
+        prefetchStats.completed += 1;
         onDone?.(null, path);
       })
-      .catch(err => { if (epoch === prefetchEpoch) onDone?.(err, path); })
-      .finally(() => { if (epoch !== prefetchEpoch) return; prefetchActive -= 1; prefetchInFlight.delete(path); pumpPrefetch(); });
+      .catch(err => { if (epoch !== prefetchEpoch) return; prefetchStats.failed += 1; onDone?.(err, path); })
+      .finally(() => { if (epoch !== prefetchEpoch) return; prefetchActive -= 1; prefetchInFlight.delete(path); pumpPrefetch();
+        if (isPrefetchIdle() && prefetchOnIdle) { const onIdle = prefetchOnIdle; prefetchOnIdle = null; onIdle(getPrefetchStats()); } });
   }
+}
+
+/** Prefetch counters since load: `{ queued, completed, failed }` (a copy). */
+export function getPrefetchStats() {
+  return { ...prefetchStats };
+}
+
+/** True when nothing is queued or in flight. */
+export function isPrefetchIdle() {
+  return prefetchActive === 0 && prefetchQueue.length === 0;
 }
 
 /** True when the swr cache holds a payload for `path` fetched recently. */
@@ -143,11 +159,18 @@ export function primeApiResource(path, value) {
 /**
  * Replace the prefetch queue with `paths`, in priority order. Paths already
  * fresh in the cache are skipped; requests already in flight finish.
+ * `onIdle(stats)` fires once, when the queue and in-flight set drain.
  */
-export function prefetchApiResources(paths, { onDone } = {}) {
+export function prefetchApiResources(paths, { onDone, onIdle } = {}) {
+  prefetchOnIdle = typeof onIdle === 'function' ? onIdle : null;
   prefetchQueue = paths.filter(path => path && !isApiResourceFresh(path) && !prefetchInFlight.has(path)).map(path => ({ path, onDone }));
   const accepted = prefetchQueue.length;
+  prefetchStats.queued += accepted;
   pumpPrefetch();
+  // Nothing to fetch and nothing in flight: this call's neighbourhood is
+  // already warm, so report now (with the caller's own context) rather than
+  // leave the callback waiting for a drain that will not come.
+  if (isPrefetchIdle() && prefetchOnIdle) { const onIdle = prefetchOnIdle; prefetchOnIdle = null; onIdle(getPrefetchStats()); }
   return accepted;
 }
 
@@ -155,7 +178,7 @@ export function prefetchApiResources(paths, { onDone } = {}) {
 // invalidate a specific path after a write — call with a path to drop just
 // that entry, or with no argument to clear everything.
 export function resetApiResourceCache(path) {
-  if (path === undefined) { swrCache.clear(); pathGenerations.clear(); fetchedAt.clear(); prefetchQueue = []; prefetchActive = 0; prefetchInFlight.clear(); prefetchEpoch += 1; return; }
+  if (path === undefined) { swrCache.clear(); pathGenerations.clear(); fetchedAt.clear(); prefetchQueue = []; prefetchActive = 0; prefetchInFlight.clear(); prefetchEpoch += 1; prefetchOnIdle = null; Object.assign(prefetchStats, { queued: 0, completed: 0, failed: 0 }); return; }
   swrCache.delete(path);
   pathGenerations.delete(path);
 }
