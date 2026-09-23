@@ -20,7 +20,7 @@ import { humanDate, localDay } from './teacherDates.js';
 import TabErrorBoundary from './TabErrorBoundary.jsx';
 import {
   CoursesView, CurriculumView, DashboardView, HistoryView, LearnerDayScreen, LearnerOperationsView,
-  OperationsView, QueueView, ReadingView, ReportsView, SessionInspector,
+  OperationsView, QueueView, ReadingView, ReportsView, SessionInspector, WordsView,
 } from './WorkspaceViews.jsx';
 import './Teacher.scss';
 
@@ -38,6 +38,7 @@ const LEARNER_NAV = [
   { id: 'courses', label: 'Courses' },
   { id: 'history', label: 'History' },
   { id: 'reading', label: 'Reading' },
+  { id: 'words', label: 'Words' },
   { id: 'reports', label: 'Reports' },
   { id: 'operations', label: 'Operations' },
 ];
@@ -146,6 +147,7 @@ function TeacherShell() {
       history: <HistoryView learnerId={learner.id} learnerName={learner.name}
         onOpenSession={(sessionId) => goSession(sessionId, { from: 'history' })} />,
       reading: <ReadingView learnerId={learner.id} learnerName={learner.name} kids={kids} />,
+      words: <WordsView learnerId={learner.id} learnerName={learner.name} />,
       reports: <ReportsView learnerId={learner.id} kids={kids} />,
       operations: <LearnerOperationsView learnerId={learner.id} learnerName={learner.name} kids={kids} />,
     };

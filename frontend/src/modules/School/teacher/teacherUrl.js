@@ -12,7 +12,7 @@
 export const TEACHER_BASE = '/school/teacher';
 
 export const SECTIONS = ['dashboard', 'queue', 'curriculum', 'operations'];
-export const LEARNER_SECTIONS = ['day', 'courses', 'history', 'reading', 'reports', 'operations'];
+export const LEARNER_SECTIONS = ['day', 'courses', 'history', 'reading', 'words', 'reports', 'operations'];
 
 const decode = (value) => {
   try { return decodeURIComponent(value); } catch { return value; }
