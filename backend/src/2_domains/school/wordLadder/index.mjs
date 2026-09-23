@@ -4,6 +4,7 @@ export {
 } from './lexicon.mjs';
 export { hashString, seededShuffle } from './checkItem.mjs';
 export { GAPS, STATES, PILES, emptyWordV3, introduce, applySort, applyGraded, isDue, isUnsettled } from './mastery.mjs';
+export { DRILL_STEPS, drillSteps, tilesFor, matchBoard } from './drill.mjs';
 export { STATUS_SCHEMA_V3, DAY_SCHEMA, emptyStatusV3, emptyDay, migrateStatusV2 } from './statusV3.mjs';
 export { normalizeAnswer, hasHangul, keystrokeJamo } from './jamo.mjs';
 export { BANDS, scoreTypedDeterministic, isShortTarget, modelMayRaise, raiseOneBand } from './typedScore.mjs';
