@@ -27,6 +27,8 @@ for (const scenario of ['fresh', 'due', 'round-end']) {
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.goto(`${BASE}/school/go/${LEARNER}/word-ladder/test?scenario=${scenario}`);
     await expect(page.getByText('TEST — nothing is saved')).toBeVisible();
+    // The sitting opens on a Start tap (spec §6), which is also the audio unlock.
+    await page.getByRole('button', { name: 'Start' }).click();
     for (let i = 0; i < 25; i += 1) {
       await page.waitForTimeout(400);
       await page.screenshot({ path: `test-results/word-ladder-${scenario}-${String(i).padStart(2, '0')}.png` });
