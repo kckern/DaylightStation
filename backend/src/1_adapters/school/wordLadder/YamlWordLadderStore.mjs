@@ -4,7 +4,7 @@ import { listYamlFiles, loadYaml, resolveYamlPath, saveYamlToPathAtomic } from '
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 import { DomainInvariantError } from '#domains/core/errors/index.mjs';
 import {
-  DAY_SCHEMA, SLUG, STATUS_SCHEMA_V3, TUNING_FILE_SCHEMA, TUNING_HISTORY_KEEP, emptyDay, emptyStatusV3, emptyTuning, migrateStatusV2,
+  DAY_SCHEMA, SLUG, STATUS_SCHEMA_V3, TUNING_FILE_SCHEMA, TUNING_HISTORY_KEEP, emptyDay, emptyStatusV3, emptyTuning, migrateStatusV2, normalizeStatusV3,
 } from '#domains/school/wordLadder/index.mjs';
 
 const isMap = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -49,7 +49,7 @@ export class YamlWordLadderStore {
     const dir = this.#dir(userId, pkg);
     if (!dir) return { state: 'missing', value: emptyStatusV3(), file: null };
     const loaded = this.#load(path.join(dir, 'status'), (raw) => {
-      if (raw.schema === STATUS_SCHEMA_V3 && isMap(raw.words)) return { ...emptyStatusV3(), ...raw };
+      if (raw.schema === STATUS_SCHEMA_V3 && isMap(raw.words)) return normalizeStatusV3(raw);
       return migrateStatusV2(raw);
     }, emptyStatusV3, { learnerId: userId, package: pkg, file: 'status', kind: 'status' });
     return { ...loaded, file: path.join(dir, 'status.yml') };

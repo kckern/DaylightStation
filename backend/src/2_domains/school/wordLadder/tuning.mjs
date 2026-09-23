@@ -14,8 +14,10 @@ export const TUNABLE = Object.freeze({
   'batch.newPerDay': Object.freeze({ step: 1 }),
   'batch.workingSet': Object.freeze({ step: 1 }),
   'review.gapScale': Object.freeze({ step: 0.1 }),
-  'review.typedEvery': Object.freeze({ step: 1 }),
 });
+// `review.typedEvery` is retired (ruling 2026-09-23): a recheck is typed only
+// as the final sign-off, never on a cadence. A stored tuned value, a
+// lastChanged stamp or a proposal naming it is ignored like any unknown key.
 
 /** Spec §7 bounds; the household School config may narrow them. */
 export const TUNING_BOUNDS = Object.freeze({
@@ -24,7 +26,6 @@ export const TUNING_BOUNDS = Object.freeze({
   'batch.newPerDay': Object.freeze([2, 6]),
   'batch.workingSet': Object.freeze([4, 10]),
   'review.gapScale': Object.freeze([0.5, 1.5]),
-  'review.typedEvery': Object.freeze([1, 4]),
 });
 
 /** Grown-up only: never tuned. */
@@ -175,6 +176,8 @@ function wordSummary(status) {
     total: words.length,
     byState,
     tricky: words.filter((word) => word?.tricky === true).length,
+    // Mastered words the typed sign-off has passed (the rest of `mastered` are recognised only).
+    signedOff: words.filter((word) => word?.state === 'mastered' && Boolean(word?.typedSignedOff)).length,
     excluded: words.filter((word) => word?.excluded === true).length,
   };
 }
@@ -189,7 +192,7 @@ export function buildTuningDigest({ status, days = [], settings, lastChanged = {
   return {
     day: today?.day ?? null,
     settings: tunableValues(settings),
-    lastChanged: Object.fromEntries(Object.keys(lastChanged ?? {}).sort().map((key) => [key, lastChanged[key]])),
+    lastChanged: Object.fromEntries(Object.keys(lastChanged ?? {}).filter((key) => Object.hasOwn(TUNABLE, key)).sort().map((key) => [key, lastChanged[key]])),
     words: wordSummary(status),
     today: today ? dayStats(today, settings) : null,
     trailing7: trailingAverage(trailing.map((dayFile) => dayStats(dayFile, settings))),

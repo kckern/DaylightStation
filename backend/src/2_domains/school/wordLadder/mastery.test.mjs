@@ -44,8 +44,8 @@ describe('mastery', () => {
     expect(graded(mastered(5, D), 'recheck', true)).toMatchObject({ stage: 6, dueDay: '2026-11-21' });
     expect(GAPS).toEqual([1, 3, 7, 14, 30, 60]);
   });
-  it('recheck fail → familiar, stage cleared, lostMasteredDay set', () => {
-    expect(graded(mastered(3, D), 'recheck', false)).toMatchObject({
+  it('a recognition recheck fail → familiar, stage cleared, lostMasteredDay set (a typed miss: signOff.test)', () => {
+    expect(graded(mastered(3, D), 'recheck', false, D, '2.2')).toMatchObject({
       state: 'familiar', stage: null, dueDay: null, missStreak: 1, lostMasteredDay: D,
     });
   });

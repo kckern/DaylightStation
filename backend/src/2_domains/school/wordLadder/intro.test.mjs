@@ -70,11 +70,11 @@ describe('introPlanLabel', () => {
 });
 
 describe('deckProgress', () => {
-  it('learned = mastered words of this deck; excluded words leave both sides', () => {
+  it('learned = typed-signed-off words of this deck; recognised counted apart; excluded words leave both sides', () => {
     const status = statusWith({
-      a: word({ state: 'mastered', stage: 0 }), b: word({ state: 'claimed' }),
+      a: word({ state: 'mastered', stage: 1, typedSignedOff: '2026-09-20' }), r: word({ state: 'mastered', stage: 0 }), b: word({ state: 'claimed' }),
       c: word({ state: 'mastered', stage: 2, excluded: true }), z: word({ state: 'mastered', stage: 1 }),
     });
-    expect(deckProgress({ status, deckWords: ['a', 'b', 'c', 'd'] })).toEqual({ learned: 1, total: 3 });
+    expect(deckProgress({ status, deckWords: ['a', 'r', 'b', 'c', 'd'] })).toEqual({ learned: 1, recognised: 1, total: 4 });
   });
 });

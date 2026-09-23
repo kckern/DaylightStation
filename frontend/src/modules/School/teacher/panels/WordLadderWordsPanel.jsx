@@ -32,11 +32,17 @@ const PANEL = 'word-ladder-words';
 const STAGES = [0, 1, 2, 3, 4, 5];
 
 const STATE_LABEL = {
-  new: 'New', introduced: 'Introduced', learning: 'Learning', mastered: 'Mastered', tricky: 'Tricky',
+  new: 'New', introduced: 'Introduced', learning: 'Learning', recognised: 'Recognised', mastered: 'Mastered', tricky: 'Tricky',
 };
 
-function StateChip({ state }) {
-  const value = state ?? 'new';
+/**
+ * The chip shows the word's sign-off `level` (ruling 2026-09-23): Mastered
+ * only once a typed recheck signed it off; verified before that is
+ * Recognised; notYet / familiar / claimed read Learning. A server that sends
+ * no `level` falls back to the raw state.
+ */
+function StateChip({ level, state }) {
+  const value = level ?? state ?? 'new';
   return <span className={`teacher-word-ladder__chip teacher-word-ladder__chip--${value}`}>{STATE_LABEL[value] ?? value}</span>;
 }
 
@@ -123,7 +129,7 @@ function WordRow({ word, learnerId, deckId, run, busy, errors }) {
     <tr className="teacher-word-ladder__row" data-excluded={word.excluded ? 'true' : 'false'}>
       <td>{word.term}</td>
       <td>{word.gloss}</td>
-      <td><StateChip state={word.state} /></td>
+      <td><StateChip level={word.level} state={word.state} /></td>
       <td>{word.stage ?? '—'}</td>
       <td>{word.dueDay ?? '—'}</td>
       <td>{word.missStreak ?? 0}</td>

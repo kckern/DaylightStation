@@ -157,8 +157,9 @@ troubleshooting "no sound" as a code bug.
 **Testing the word ladder without touching a real learner's record**: open
 `/school/go/<learner>/word-ladder/test`, optionally with
 `?scenario=fresh|due|round-end|tricky|typos|done` to seed a specific state
-(`tricky` opens straight on the tricky-word drill; `typos` opens on a
-round-end quiz worth misspelling to exercise the typed judge) — see
+(`tricky` opens straight on the tricky-word drill; `typos` opens on
+typed sign-off rechecks worth misspelling to exercise the typed judge — the
+round-end quiz is recognition only and types nothing) — see
 [`word-ladder.md`](../../reference/school/word-ladder.md#the-door-and-test).
 The banner reads "TEST — nothing is saved", and a backend test
 (`WordLadderTestMode.test.mjs`) enforces that promise — every real file on

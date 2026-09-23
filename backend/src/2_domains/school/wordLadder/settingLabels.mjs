@@ -8,7 +8,6 @@ export const TUNABLE_LABELS = Object.freeze({
   'batch.newPerDay': 'new words per day',
   'batch.workingSet': 'words in progress',
   'review.gapScale': 'review spacing',
-  'review.typedEvery': 'typed review cadence',
 });
 
 const escape = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
