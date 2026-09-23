@@ -15,6 +15,7 @@ import { confineIcon, iconVocabulary } from '#domains/nutrition/services/icons.m
 import { parseGtin } from '#domains/nutrition/services/gtin.mjs';
 import { isQuarantined, quarantineMarker } from '#domains/nutrition/services/quarantine.mjs';
 import { InvalidInputError } from '#apps/common/errors/SemanticErrors.mjs';
+import { usableServing } from '#domains/health/entities/FoodCatalogEntry.mjs';
 
 // The largest mass one label serving can plausibly be; an AI estimate above it is refused.
 const MAX_ESTIMATED_SERVING_GRAMS = 500;
@@ -133,6 +134,8 @@ export class LogFoodFromUPC {
    * @private
    */
   async #persistProductPhoto({ userId, upc, product, foodItem }) {
+    // The catalog already holds this product's photo: reuse it, don't store a copy.
+    if (product?.photoRef) { foodItem.photoRef = product.photoRef; return; }
     if (!this.#photoStore || !this.#upcGateway?.fetchImage || !product?.imageUrl) return;
     const buffer = await this.#upcGateway.fetchImage(product.imageUrl);
     if (!buffer) return;
@@ -277,17 +280,24 @@ export class LogFoodFromUPC {
           const entry = await this.#catalogService.getByUpc(upc, userId);
           if (entry) {
             catalogEntry = entry;
+            // The mass the numbers describe, else the label serving an earlier
+            // scan kept (a 325 ml shake has no grams, and is still a known
+            // serving — not "one serving of unknown size").
+            const known = entry.canonicalGrams > 0 ? { size: entry.canonicalGrams, unit: 'g' }
+              : entry.serving?.grams > 0 ? { size: entry.serving.grams, unit: 'g' }
+                : entry.serving ? { size: entry.serving.amount, unit: entry.serving.unit } : null;
             product = {
               name: entry.name,
               brand: null,
               imageUrl: null,
-              serving: entry.canonicalGrams > 0 ? { size: entry.canonicalGrams, unit: 'g' } : { size: 1, unit: 'serving' },
+              serving: known || { size: 1, unit: 'serving' },
               icon: entry.icon,
               foodId: entry.id,
+              photoRef: entry.photoRef || null,
               nutrition: { ...entry.nutrients },
-              nutritionLookup: { source: 'catalog', basis: entry.canonicalGrams > 0 ? 'serving' : 'unknown',
+              nutritionLookup: { source: 'catalog', basis: known ? 'serving' : 'unknown',
                 missing: NUTRIENTS.filter(key => finiteNutrient(entry.nutrients?.[key]) === null),
-                warnings: entry.canonicalGrams > 0 ? [] : ['Catalog serving mass is unknown; using one serving.'] },
+                warnings: known ? [] : ['Catalog serving mass is unknown; using one serving.'] },
             };
             this.#logger.info?.('logUPC.catalogHit', { upc, name: entry.name });
           }
@@ -301,7 +311,8 @@ export class LogFoodFromUPC {
           const fresh = await this.#upcGateway.lookup(upc);
           if (fresh) product = { ...fresh, foodId: catalogEntry?.id || fresh.foodId,
             // Identity and explicit icon pins survive nutrition refreshes.
-            ...(catalogEntry?.iconOverride ? { icon: catalogEntry.iconOverride } : {}) };
+            ...(catalogEntry?.iconOverride ? { icon: catalogEntry.iconOverride } : {}),
+            ...(catalogEntry?.photoRef ? { photoRef: catalogEntry.photoRef } : {}) };
         } catch (error) {
           if (!product) throw error;
           this.#logger.warn?.('logUPC.refreshFailed', { upc, error: error.message });
@@ -531,6 +542,17 @@ export class LogFoodFromUPC {
             // freeze 84% of these foods at whichever row wrote first.
             source: 'upc',
             barcodeUpc: upc,
+            // What a later quick-add needs to reproduce THIS row: the label
+            // serving (325 ml, grams only when the label gave them), the
+            // product photo, and the picture. The resolved icon, never the
+            // neutral 'default' — donating that would pin the food to the dot.
+            serving: usableServing({ amount: product.serving?.size, unit: product.serving?.unit, grams }),
+            photoRef: foodItem.photoRef || null,
+            icon: foodItem.icon && foodItem.icon !== 'default' ? foodItem.icon : null,
+            // The meal this row landed in and the capture that wrote it, so the
+            // entry's bucket history advances and its observation is keyed.
+            mealTime: nutriLog.meal?.time,
+            logId: nutriLog.id,
           }, userId);
         } catch (err) {
           this.#logger.warn?.('nutribot.catalog.record_failed', { name: foodItem.label, error: err.message });

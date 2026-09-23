@@ -97,6 +97,11 @@ describe('food catalog stored YAML shape (characterization)', () => {
       // both UPC log paths, read it first). It has to survive a restart for
       // that choice to mean anything, so it is pinned here like the rest.
       iconOverride: null,
+      // The product photo and label serving a barcode capture carried
+      // (2026-09-23). Written as explicit nulls when unknown, so a quick-add of
+      // a 325 ml shake can log 325 ml with its photo after a restart.
+      photoRef: null,
+      serving: null,
       lastUsed: '2026-07-08',
       createdAt: '2026-07-01T00:00:00.000Z',
     }));

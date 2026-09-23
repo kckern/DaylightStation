@@ -10,7 +10,7 @@ describe('presentFoodCatalogEntry', () => {
   // own caller. An entry with no icon presents an explicit null rather than
   // omitting the key, so "no picture chosen" is stated rather than inferred
   // from an absence.
-  it('preserves the established API record, now fifteen fields', () => {
+  it('preserves the established API record, now seventeen fields', () => {
     const entry = new FoodCatalogEntry({
       id: 'food-1', name: 'Apple', normalizedName: 'apple', nutrients: { calories: 95 },
       source: 'manual', barcodeUpc: null, useCount: 2,
@@ -29,8 +29,19 @@ describe('presentFoodCatalogEntry', () => {
       // An entry with no observation that carries a mass says so — explicit
       // nulls and a zero count, never a guessed density.
       canonicalGrams: null, densityKcalPerGram: null, observationCount: 0,
+      // No barcode capture ever named a photo or a label serving: explicit nulls.
+      photoRef: null, serving: null,
       lastUsed: '2026-08-28', createdAt: '2026-08-01T00:00:00.000Z',
     });
+  });
+
+  it('presents the photo and label serving a barcode capture left on the entry', () => {
+    const entry = new FoodCatalogEntry({
+      id: 'shake', name: 'Strawberry Milkshake', photoRef: 'ph_2DyAMj3lb6osrZzr',
+      serving: { amount: 325, unit: 'ml', grams: null },
+      lastUsed: '2026-09-22', createdAt: '2026-09-17T17:42:48.717Z',
+    });
+    expect(presentFoodCatalogEntry(entry)).toMatchObject({ photoRef: 'ph_2DyAMj3lb6osrZzr', serving: { amount: 325, unit: 'ml', grams: null } });
   });
 
   it("carries a pinned icon out to the client, so the override's own response can be checked", () => {

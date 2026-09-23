@@ -7,6 +7,39 @@
 import { deriveCanonical, sortObservations, normalizeRing, OBSERVATION_LIMIT } from '#domains/health/services/catalogDensity.mjs';
 import { MICRO_KEYS, foodGrams } from '#shared/contracts/health/foodQuantity.mjs';
 
+const positive = value => (typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : null);
+const GRAM_UNITS = ['g', 'gram', 'grams'];
+
+/**
+ * A remembered portion, or null. A stored `{grams: 0, amount: 0}` is what the
+ * old quick-add wrote for a food with no mass (Number(null) is 0), and it is
+ * not a portion: read it as absent so it can never displace a real one.
+ */
+export function usableQuantity(quantity) {
+  if (!quantity || typeof quantity !== 'object') return null;
+  const grams = positive(quantity.grams);
+  const amount = positive(quantity.amount);
+  if (grams === null && amount === null) return null;
+  const unit = typeof quantity.unit === 'string' && quantity.unit ? quantity.unit : null;
+  return { grams, unit, amount };
+}
+
+/**
+ * The label serving a barcode capture carried (`325 ml`, `1 bar (60 g)`), or
+ * null. Grams only when the label gave them; a volume is never turned into mass.
+ */
+export function usableServing(serving) {
+  if (!serving || typeof serving !== 'object') return null;
+  const amount = positive(Number(serving.amount ?? serving.size));
+  const unit = typeof serving.unit === 'string' && serving.unit.trim() ? serving.unit.trim() : null;
+  if (amount === null || unit === null || ['serving', 'servings'].includes(unit.toLowerCase())) {
+    const grams = positive(Number(serving.grams));
+    return grams ? { amount: amount ?? 1, unit: unit ?? 'serving', grams } : null;
+  }
+  const grams = positive(Number(serving.grams)) ?? (GRAM_UNITS.includes(unit.toLowerCase()) ? amount : null);
+  return { amount, unit, grams };
+}
+
 export class FoodCatalogEntry {
   /**
    * What the entry holds on disk under `nutrients`. It is NOT the canonical
@@ -39,6 +72,13 @@ export class FoodCatalogEntry {
     // here and gets copied onto each quick-added row.
     this.icon = data.icon || null;
     this.iconOverride = data.iconOverride || null;
+    // The product's own photo (PhotoStore ref), kept from the barcode capture
+    // that named this food, so a quick-add shows the real product instead of
+    // re-fetching it or falling back to the neutral glyph.
+    this.photoRef = typeof data.photoRef === 'string' && data.photoRef ? data.photoRef : null;
+    // The label serving the canonical numbers describe when no mass is known
+    // (a 325 ml shake). `{amount, unit, grams|null}` or null.
+    this.serving = usableServing(data.serving);
     // Per-meal-bucket usage, keyed by bucket id (morning/afternoon/evening/
     // night): `{ count, lastUsed, quantity }`. This is what makes the
     // add-combobox's zero-query list bucket-aware (PRD F8.1) and what supplies
@@ -129,9 +169,39 @@ export class FoodCatalogEntry {
     return out;
   }
 
+  /**
+   * The portion a one-tap add defaults to, in this order: the portion last
+   * logged at this meal, the canonical mass, the label serving, one serving.
+   * `amount` is never null — a row with no quantity reads as "—" forever.
+   * @returns {{grams: number|null, amount: number, unit: string, nutrients: Object}}
+   */
   proposedPortion(bucket) {
-    const grams = foodGrams(this.usageByBucket?.[bucket]?.quantity) ?? this.canonicalGrams;
-    return { grams, nutrients: this.nutrientsForGrams(grams) || this.nutrients };
+    const remembered = usableQuantity(this.usageByBucket?.[bucket]?.quantity);
+    const byGrams = grams => ({ grams, amount: grams, unit: 'g', nutrients: this.nutrientsForGrams(grams) || this.nutrients });
+    const rememberedGrams = foodGrams(remembered);
+    if (rememberedGrams !== null) return byGrams(rememberedGrams);
+    if (remembered?.amount && remembered.unit && !GRAM_UNITS.includes(remembered.unit.toLowerCase())) {
+      return { grams: null, amount: remembered.amount, unit: remembered.unit, nutrients: this.#nutrientsForServings(remembered) };
+    }
+    const canonical = this.canonicalGrams;
+    if (canonical) return byGrams(canonical);
+    if (this.serving?.grams) return byGrams(this.serving.grams);
+    if (this.serving) return { grams: null, amount: this.serving.amount, unit: this.serving.unit, nutrients: this.nutrients };
+    return { grams: null, amount: 1, unit: 'serving', nutrients: this.nutrients };
+  }
+
+  /** Canonical numbers scaled by a same-unit multiple of the label serving; unscaled otherwise. */
+  #nutrientsForServings({ amount, unit }) {
+    const nutrients = this.nutrients;
+    if (!this.serving || this.serving.unit.toLowerCase() !== unit.toLowerCase()) return nutrients;
+    const factor = amount / this.serving.amount;
+    if (factor === 1) return nutrients;
+    const out = { ...nutrients };
+    for (const [key, value] of Object.entries(nutrients)) {
+      if (typeof value !== 'number') continue;
+      out[key] = key === 'calories' ? Math.round(value * factor) : Math.round(value * factor * 10) / 10;
+    }
+    return out;
   }
 
   /**
@@ -189,6 +259,7 @@ export class FoodCatalogEntry {
     for (const [bucket, usage] of Object.entries(raw)) {
       if (!usage || typeof usage !== 'object') continue;
       out[bucket] = { ...usage };
+      if ('quantity' in usage) out[bucket].quantity = usableQuantity(usage.quantity);
     }
     return out;
   }

@@ -64,6 +64,10 @@ export class YamlFoodCatalogDatastore extends IFoodCatalogDatastore {
       favorite: entry.favorite === true,
       icon: entry.icon ?? null,
       iconOverride: entry.iconOverride ?? null,
+      // The product photo and label serving a barcode capture carried. Same
+      // trap as above: absent here means gone after a restart.
+      photoRef: entry.photoRef ?? null,
+      serving: entry.serving ? { ...entry.serving } : null,
       lastUsed: entry.lastUsed,
       createdAt: entry.createdAt,
     };
