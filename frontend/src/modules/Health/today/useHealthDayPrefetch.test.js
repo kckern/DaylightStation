@@ -2,6 +2,12 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook } from '@testing-library/react';
 
 const prefetchApiResources = vi.fn(() => 0);
+const sampled = vi.fn();
+vi.mock('../../../lib/ui/createAppLogger.js', () => {
+  const log = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn(), sampled: (...a) => sampled(...a) };
+  log.child = () => log;
+  return { createAppLogger: () => log };
+});
 vi.mock('../../../lib/hooks/useApiResource.js', () => ({
   prefetchApiResources: (...args) => prefetchApiResources(...args), peekApiResource: () => undefined,
 }));
@@ -47,5 +53,13 @@ describe('useHealthDayPrefetch', () => {
     const { rerender } = renderHook(({ date }) => useHealthDayPrefetch(date), { initialProps: { date: '2026-09-20' } });
     rerender({ date: '2026-09-19' });
     expect(prefetchApiResources.mock.calls.at(-1)[0][0]).toBe('api/v1/health/day?date=2026-09-18');
+  });
+
+  it('logs prefetch.summary with the counters when the neighbourhood finishes warming', () => {
+    sampled.mockClear();
+    renderHook(() => useHealthDayPrefetch('2026-09-20'));
+    const { onIdle } = prefetchApiResources.mock.calls.at(-1)[1];
+    onIdle({ queued: 40, completed: 38, failed: 2 });
+    expect(sampled).toHaveBeenCalledWith('prefetch.summary', { date: '2026-09-20', queued: 40, completed: 38, failed: 2 }, { maxPerMinute: 6 });
   });
 });

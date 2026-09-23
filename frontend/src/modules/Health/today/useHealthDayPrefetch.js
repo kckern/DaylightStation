@@ -74,6 +74,9 @@ export function useHealthDayPrefetch(date, { enabled = true, ready = true } = {}
         if (error) { logger.debug('prefetch.failed', { path, error: error.message }); return; }
         if (path.includes('catalog/suggest') || path.includes('health/day?')) preloadIcons(peekApiResource(path));
       },
+      // One info line each time a neighbourhood finishes warming — cumulative
+      // counters since load, so the store can see the hit rate's cost.
+      onIdle: stats => logger.sampled('prefetch.summary', { date, ...stats }, { maxPerMinute: 6 }),
     });
     logger.debug('prefetch.queued', { date, direction: direction.current, queued, candidates: paths.length });
   }, [date, enabled, ready]);
