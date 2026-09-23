@@ -403,10 +403,24 @@ describe('engine — drill', () => {
     expect(currentItem(ctx).id).not.toBe(tilesItem.id);
   });
   it('a match step carries a board with the drill word', () => {
-    let ctx = start(trickyStatus());
+    const s = trickyStatus();
+    s.words.pul = { ...emptyWordV3(), state: 'mastered', stage: 2, dueDay: '2026-10-30', introducedDay: '2026-09-01' };
+    let ctx = start(s);
+    expect(ctx.dayFile.drills[0].steps).toContain('match');
     let guard = 0;
     while (currentItem(ctx).step !== 'match' && guard++ < 20) ({ ctx } = step(ctx, drillAnswer(currentItem(ctx))));
     expect(currentItem(ctx).board.pairs.map((p) => p.wordId)).toContain('gawi');
+  });
+  it('no match step when the board would have fewer than 2 pairs', () => {
+    expect(start(trickyStatus()).dayFile.drills[0].steps).not.toContain('match');
+  });
+  it('a tricky word missing from the lexicon is never drilled', () => {
+    const s = trickyStatus();
+    s.words.ghost = { ...s.words.gawi, trickySince: '2026-09-01' };
+    const ctx = start(s);
+    expect(ctx.dayFile.drills.map((d) => d.wordId)).toEqual(['gawi']);
+    const withLexicon = openDay({ status: s, dayFile: emptyDay(D), day: D, deckId: 'deck', pool, settings: SET, learnerId: 'test-learner', at: at(), media: {}, lexicon });
+    expect(withLexicon.dayFile.drills.map((d) => d.wordId)).toEqual(['gawi']);
   });
   it('the tricky drill is skipped when its estimate does not fit', () => {
     const tight = { ...emptyDay(D), activeMs: SET.session.capMinutes * 60000 - 200000 };
@@ -511,11 +525,28 @@ describe('engine — practice', () => {
     expect(ctx.dayFile.summarySeen).toBe(true);
     expect(currentItem(ctx)).toMatchObject({ id: 'menu', type: 'menu' });
   });
-  it('the menu offers say only with a mic and listen only when an introduced word has audio', () => {
-    const noAudio = withWords(doneCtx(), { chaek: familiar });
-    expect(currentItem(noAudio).modes).toEqual(['flashcards', 'match', 'write', 'drill', 'quiz']);
-    const all = withWords(doneCtx({ microphone: true }), { gawi: familiar });
+  it('the menu offers only modes whose default run is not empty', () => {
+    const noAudio = withWords(doneCtx({ microphone: true }), { chaek: familiar });
+    expect(currentItem(noAudio).modes).toEqual(['flashcards', 'write', 'drill', 'quiz']);
+    const all = withWords(doneCtx({ microphone: true }), { gawi: familiar, pul: familiar, chaek: familiar, mul: familiar });
     expect(currentItem(all).modes).toEqual(['flashcards', 'match', 'say', 'write', 'listen', 'drill', 'quiz']);
+    const noMic = withWords(doneCtx(), { gawi: familiar });
+    expect(currentItem(noMic).modes).toEqual(['flashcards', 'write', 'listen', 'drill', 'quiz']);
+    const nothingToQuiz = withWords(doneCtx(), { gawi: { ...emptyWordV3(), state: 'mastered', stage: 1, introducedDay: '2026-09-01' } });
+    expect(currentItem(nothingToQuiz).modes).not.toContain('quiz');
+  });
+  it('startPractice refuses an empty run, an unknown filter and an unknown front side', () => {
+    const ctx = withWords(doneCtx(), { gawi: familiar });
+    expect(() => startPractice(ctx, { mode: 'match' })).toThrow('nothing to practise');
+    expect(() => startPractice(ctx, { mode: 'say' })).toThrow('nothing to practise');
+    expect(() => startPractice(ctx, { mode: 'flashcards', filter: 'everything' })).toThrow(/unknown practice filter/);
+    expect(() => startPractice(ctx, { mode: 'flashcards', frontSide: 'back' })).toThrow(/unknown flashcard front side/);
+    expect(startPractice(ctx, { mode: 'flashcards', frontSide: 'gloss' }).dayFile.practice.queue[0].front).toBe('gloss');
+  });
+  it('an unknown practice task kind is an invariant failure', () => {
+    const ctx = practise(withWords(doneCtx(), { gawi: familiar }), { mode: 'flashcards' });
+    ctx.dayFile.practice.queue[0].kind = 'juggle';
+    expect(() => currentItem(ctx)).toThrow(/unknown practice task kind/);
   });
   it('the menu takes no responses; practice starts via startPractice', () => {
     expect(() => step(doneCtx(), { done: true })).toThrow('response does not fit this item');
