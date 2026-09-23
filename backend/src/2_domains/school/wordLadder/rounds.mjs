@@ -3,7 +3,7 @@
  * a round starts only if its estimate fits the day's remaining active time, so
  * the quiz at its end is never what the cap cuts off.
  */
-import { isUnsettled } from './mastery.mjs';
+import { isExcluded, isUnsettled } from './mastery.mjs';
 
 export const ESTIMATE_MS = Object.freeze({ recheckChoice: 15000, recheckTyped: 30000, newWord: 138000, carryWord: 61000 });
 const CARRY_STATES = ['notYet', 'introduced', 'familiar', 'claimed'];
@@ -18,7 +18,7 @@ export function newAllowance({ words, day, settings }) {
 
 function carryCandidates(words, day, roundedToday) {
   return Object.entries(words ?? {})
-    .filter(([id, word]) => CARRY_STATES.includes(word.state) && word.introducedDay && word.introducedDay < day
+    .filter(([id, word]) => !isExcluded(word) && CARRY_STATES.includes(word.state) && word.introducedDay && word.introducedDay < day
       && !roundedToday.has(id) && word.verifyFailedDay !== day)
     .sort(([a, x], [b, y]) => (CARRY_RANK[x.state] - CARRY_RANK[y.state]) || a.localeCompare(b))
     .map(([id]) => id);
@@ -28,7 +28,7 @@ export function planNextRound({ words, pool = [], day, roundedToday = new Set(),
   const size = settings.round.size;
   const carry = carryCandidates(words, day, roundedToday);
   const allowance = newAllowance({ words, day, settings });
-  const fresh = pool.filter((id) => !roundedToday.has(id)).slice(0, allowance);
+  const fresh = pool.filter((id) => !roundedToday.has(id) && !isExcluded(words?.[id])).slice(0, allowance);
   const id = `r${roundNumber}`;
 
   if (carry.length >= 2 || (carry.length >= 1 && fresh.length < 2)) {

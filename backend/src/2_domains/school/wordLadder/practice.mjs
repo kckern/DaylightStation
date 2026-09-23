@@ -4,7 +4,7 @@
  */
 import { hashString, seededShuffle } from './checkItem.mjs';
 import { drillSteps, matchBoard } from './drill.mjs';
-import { isUnsettled } from './mastery.mjs';
+import { isExcluded, isUnsettled } from './mastery.mjs';
 
 const QUIZZABLE = new Set(['familiar', 'claimed']);
 
@@ -26,7 +26,7 @@ function boardSizes(n) {
 }
 
 export function practiceWordIds({ filter = 'introduced', words = {}, chosen = [] }) {
-  const all = Object.entries(words);
+  const all = Object.entries(words).filter(([, w]) => !isExcluded(w));
   if (filter === 'working') return all.filter(([, w]) => isUnsettled(w)).map(([id]) => id);
   if (filter === 'tricky') return all.filter(([, w]) => w.tricky).map(([id]) => id);
   const introduced = all.filter(([, w]) => w.state !== 'new').map(([id]) => id);

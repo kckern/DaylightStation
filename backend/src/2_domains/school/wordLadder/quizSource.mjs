@@ -13,7 +13,7 @@
  *    across every deck in a package, addressed to that learner (per-learner id).
  */
 import { hashString, seededShuffle } from './checkItem.mjs';
-import { isUnsettled } from './mastery.mjs';
+import { isExcluded, isUnsettled } from './mastery.mjs';
 import { deckDirOf, isoWeekOf, learnerQuizDocumentId, quizDocumentIdFor } from './quizId.mjs';
 
 /** One question row for `entry` at `index` (alternates term→gloss / gloss→term). Pure. */
@@ -88,7 +88,7 @@ export function buildLearnerQuizSource({
   const mastered = [];
   for (const wordId of ids) {
     const word = status?.words?.[wordId];
-    if (!word || word.state === 'new') continue;
+    if (!word || word.state === 'new' || isExcluded(word)) continue;
     if (typeof word.introducedDay === 'string' && isoWeekOf(word.introducedDay) === isoWeek) introducedThisWeek.push(wordId);
     else if (isUnsettled(word)) unsettled.push(wordId);
     else if (word.state === 'mastered') mastered.push(wordId);
