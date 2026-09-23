@@ -23,7 +23,7 @@ import moment from 'moment-timezone';
 import { buildActivityDescription } from '#domains/fitness/services/buildActivityDescription.mjs';
 import { evaluateActivitySessionMatch } from '#domains/fitness/services/activitySessionMatch.mjs';
 import { absorbOverlappingSlivers } from './sliverAbsorption.mjs';
-import { buildStravaSessionTimeline } from '../../2_domains/fitness/services/StravaSessionBuilder.mjs';
+import { buildStravaSessionTimeline, applyStravaTimeline } from '../../2_domains/fitness/services/StravaSessionBuilder.mjs';
 
 const MAX_RETRIES = 3;
 const MAX_TOTAL_ATTEMPTS = 10;            // hard cap before abandoning
@@ -490,27 +490,6 @@ export class FitnessActivityEnrichmentService {
       timelineData = buildStravaSessionTimeline(hrStreams.heartrate, hrStreams.time);
     }
 
-    const timelineSeries = {};
-    let totalRings = 0;
-    let buckets = { blue: 0, green: 0, yellow: 0, orange: 0, red: 0 };
-    let participantSummary = {};
-
-    if (timelineData) {
-      timelineSeries[`${username}:hr`] = timelineData.hrSamples;
-      timelineSeries[`${username}:zone`] = timelineData.zoneSeries;
-      timelineSeries[`${username}:rings`] = timelineData.ringsSeries;
-      timelineSeries['global:rings'] = timelineData.ringsSeries;
-      totalRings = timelineData.totalRings;
-      buckets = timelineData.buckets;
-      participantSummary = {
-        rings: timelineData.totalRings,
-        hr_avg: timelineData.hrStats.hrAvg,
-        hr_max: timelineData.hrStats.hrMax,
-        hr_min: timelineData.hrStats.hrMin,
-        zone_minutes: timelineData.zoneMinutes,
-      };
-    }
-
     // Build map data if GPS exists
     let mapData = null;
     if (activity.map?.summary_polyline) {
@@ -521,7 +500,7 @@ export class FitnessActivityEnrichmentService {
       };
     }
 
-    const sessionData = {
+    let sessionData = {
       version: 3,
       sessionId,
       session: {
@@ -562,21 +541,23 @@ export class FitnessActivityEnrichmentService {
         ...(mapData ? { map: mapData } : {}),
       },
       timeline: {
-        series: timelineSeries,
+        series: {},
         events: [],
         interval_seconds: 5,
-        tick_count: timelineData ? timelineData.hrSamples.length : Math.ceil(durationSeconds / 5),
+        tick_count: Math.ceil(durationSeconds / 5),
         encoding: 'rle',
       },
-      treasureBox: { ringTimeUnitMs: 5000, totalRings, buckets },
+      treasureBox: { ringTimeUnitMs: 5000, totalRings: 0, buckets: { blue: 0, green: 0, yellow: 0, orange: 0, red: 0 } },
       summary: {
-        participants: participantSummary.rings != null ? { [username]: participantSummary } : {},
+        participants: {},
         media: [],
-        rings: { total: totalRings, buckets },
+        rings: { total: 0, buckets: { blue: 0, green: 0, yellow: 0, orange: 0, red: 0 } },
         challenges: { total: 0, succeeded: 0, failed: 0 },
         voiceMemos: [],
       },
     };
+
+    if (timelineData) sessionData = applyStravaTimeline(sessionData, timelineData, username);
 
     // Write to fitness history
     const stored = this.#historyRepository.save(sessionId, sessionData);

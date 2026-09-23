@@ -124,5 +124,19 @@ describe('Fitness integration facades', () => {
       service.event({ payload: { object_type: 'activity', object_id: 1, aspect_type: 'update', updates: { type: 'Run' } } });
       expect(enrichmentService.handleTitleUpdate).not.toHaveBeenCalled();
     });
+
+    it('counts event types nobody handles for the sync-health report', () => {
+      const syncHealth = { recordDropped: vi.fn() };
+      const adapter = new StravaWebhookAdapter({ verifyToken: 't', logger: { info() {}, warn() {} } });
+      adapter.identify = () => 'event';
+      const service = new FitnessWebhookService({
+        providerWebhookAdapters: { strava: adapter },
+        enrichmentService: { handleEvent: vi.fn(), handleTitleUpdate: vi.fn() },
+        syncHealth,
+        logger: { info() {}, warn() {} },
+      });
+      service.event({ payload: { object_type: 'activity', object_id: 1, aspect_type: 'delete' } });
+      expect(syncHealth.recordDropped).toHaveBeenCalledWith('activity/delete');
+    });
   });
 });

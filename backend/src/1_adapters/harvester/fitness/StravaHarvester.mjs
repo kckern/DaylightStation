@@ -232,7 +232,9 @@ export class StravaHarvester extends IHarvester {
         latestDate,
       });
 
-      return { count: enrichedActivities.length, status: 'success', dateCount, latestDate };
+      // Seen activities feed the sync-health webhook cross-check.
+      const seenActivities = enrichedActivities.map((a) => ({ id: a.id, name: a.name || null, startDate: a.start_date || null }));
+      return { count: enrichedActivities.length, status: 'success', dateCount, latestDate, activities: seenActivities };
 
     } catch (error) {
       const statusCode = error.response?.status;
