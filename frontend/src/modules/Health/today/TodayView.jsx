@@ -22,7 +22,7 @@ import { useBudgetRange } from './useBudgetRange.js';
 import { useIsWideViewport } from './layout.js';
 import { LogTable } from './LogTable.jsx';
 import { MealAddRow } from './MealAddRow.jsx';
-import { useMealMoves } from './mealDrag.jsx';
+import { useMealMoves, mealEntries } from './mealDrag.jsx';
 import { NeedsReviewSection } from './NeedsReviewSection.jsx';
 import { CleanupQuestions } from '../cleanup/CleanupQuestions.jsx';
 import { ObservationsSection } from './ObservationRow.jsx';
@@ -31,7 +31,7 @@ import { ConfirmDialog } from './ConfirmDialog.jsx';
 import { deleteEntry, deleteConfirmBody, entryLabel } from './entryCommands.js';
 import { TemplatePicker } from './TemplatePicker.jsx';
 import { FoodCatalogManager } from './FoodCatalogManager.jsx';
-import { localTodayISO as todayISO, currentMealBucketId, bucketLabel } from './mealBuckets.js';
+import { localTodayISO as todayISO, currentMealBucketId, bucketLabel, BUCKETS } from './mealBuckets.js';
 import { useNutritionInput } from '../capture/useNutritionInput.js';
 import { BarcodeCapture } from '../capture/BarcodeCapture.jsx';
 import { CustomFoodSheet } from '../capture/CustomFoodSheet.jsx';
@@ -364,6 +364,10 @@ export function TodayView({ active = true, sidebarTarget, onSetupGoals, onCoachT
       <Menu.Dropdown>
         {date !== todayISO() ? <Menu.Item onClick={() => copyMealToToday(rows, bucketId, label)}>Copy to today</Menu.Item> : null}
         <Menu.Item onClick={() => saveBucketAsMeal(rows, label)}>Save as meal</Menu.Item>
+        <Menu.Divider />
+        <Menu.Label>Move all to</Menu.Label>
+        {BUCKETS.filter(bucket => bucket.id !== bucketId).map(bucket => <Menu.Item key={bucket.id}
+          aria-label={`Move all of ${label} to ${bucket.label}`} onClick={() => moves.moveMeal(mealEntries(rows), bucket.id, bucketId)}>{bucket.label}</Menu.Item>)}
       </Menu.Dropdown>
     </Menu>;
   };
@@ -460,7 +464,7 @@ export function TodayView({ active = true, sidebarTarget, onSetupGoals, onCoachT
         bucketHeaderAction={bucketHeaderAction}
         onVoiceCapture={onVoiceCapture} onTextCapture={onTextCapture}
         onMealChanged={result=>handleCaptureResult(result)} captureTasks={[...capturePending.values()]}
-        measuredByUuid={measuredByUuid} addedIds={addedIds} onMoveEntry={moves.move}
+        measuredByUuid={measuredByUuid} addedIds={addedIds} onMoveEntry={moves.move} onMoveMeal={moves.moveMeal}
         renderAddRow={(bucket, label, meal) => <MealAddRow bucket={bucket} label={label} date={date} active={active}
           onVoiceCapture={meal?.onVoiceCapture} selectedCount={meal?.selectedIds?.length || 0} busy={nutrition.busy}
           onAdded={() => day.reload()} onSentencePending={text => beginSentencePending(bucket, text)} onPhotoCapture={onPhotoCapture} onOpenBarcode={openBarcode}

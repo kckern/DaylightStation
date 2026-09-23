@@ -11,7 +11,7 @@ import { MealFoodControls } from './MealFoodControls.jsx';
 import { CaptureProgress } from './CaptureProgress.jsx';
 import { usePortionControl } from './usePortionDraft.js';
 import { useFrozenOrder, useFlipMoves } from './sectionOrder.js';
-import { MealDragProvider, useMealDropTarget } from './mealDrag.jsx';
+import { MealDragProvider, useMealDropTarget, useDraggableMeal } from './mealDrag.jsx';
 import './mealWorkflow.scss';
 
 // Bucket totals fold through the SHARED counted-rows contract — the same file
@@ -66,6 +66,9 @@ function Section({
   const entries = useFrozenOrder(sortEntriesByCalories(groupRows(rows)), portionDraft);
   const sectionRef = useRef(null);
   const drop = useMealDropTarget(bucket);
+  // The header drags the whole meal: every top-level entry, dishes with their ingredients.
+  const mealRows = entries.map(({ row, children }) => (children.length ? { ...row, children } : row));
+  const mealDrag = useDraggableMeal(selecting ? null : bucket, mealRows);
   useFlipMoves(sectionRef, entries.map(({ row }) => row.uuid ?? row.id).join('|'));
   // One scale for the whole day (LogTable's kcalScale): bars compare across rows, meals and ingredients.
   const entryShares = calorieShares(entries.map(({ row, children, rollup }) => (children.length ? rollup.calories : row.calories)), kcalScale);
@@ -99,7 +102,8 @@ function Section({
   return (
     <section className={['health-meal', drop.dragging && 'health-meal--drop-candidate', drop.over && 'health-meal--drop-over'].filter(Boolean).join(' ')}
       ref={node => { sectionRef.current = node; drop.ref(node); }}>
-      <header className="health-meal__header">
+      <header ref={mealDrag.ref} {...mealDrag.handlers}
+        className={['health-meal__header', mealDrag.draggable && 'health-meal__header--draggable', mealDrag.dragging && 'health-meal__header--dragging'].filter(Boolean).join(' ')}>
         <h4 className="health-meal__label">{label}</h4>
         {rows.length ? <MacroBadges rows={rows} className="health-meal__macros" showLabels /> : null}
         <span className="health-meal__header-right">
@@ -180,7 +184,7 @@ export function LogTable({
   byBucket, date, sessions = [], exerciseAvailable = false, onRowTap, onConfirm, onRequestDelete,
   bucketHeaderAction, coldLoading = false, capturePendingBucket = null, capturePendingBuckets = [],
   measuredByUuid = null, onVoiceCapture, onTextCapture, onMealChanged, captureTasks = [], clarifications, onClearClarification,
-  renderAddRow = null, addedIds = null, onMoveEntry = null,
+  renderAddRow = null, addedIds = null, onMoveEntry = null, onMoveMeal = null,
 }) {
   // All four meals always render: an empty one is its header and add row, so
   // any meal can be added to in place without a separate "add to" control.
@@ -225,6 +229,6 @@ export function LogTable({
       ) : null}
     </div>
   );
-  return onMoveEntry ? <MealDragProvider onMove={onMoveEntry}>{log}</MealDragProvider> : log;
+  return onMoveEntry || onMoveMeal ? <MealDragProvider onMove={onMoveEntry} onMoveMeal={onMoveMeal}>{log}</MealDragProvider> : log;
 }
 export default LogTable;

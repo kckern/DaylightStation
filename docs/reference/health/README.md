@@ -132,7 +132,15 @@ It serves `/budget`, `/budget/range`, and the budget portion of `/day`. Today re
 one `/day?date=` snapshot containing entries, their ledger revision, and a budget
 computed from those exact entries. A budget setup error does not hide the food log. `EquationStrip.jsx` is proof by absence: it destructures `budget.budget`,
 `budget.food`, `budget.exercise`, `budget.remaining`, `budget.status`, `budget.stale` and
-renders them verbatim. During portion editing, `portionPreview.js` overlays the
+renders them verbatim — as one bar, not a row of cards. Capacity is budget + exercise;
+food fills it; the exercise share is a lighter end segment. The headline is
+"N kcal left" or "N kcal over" and the line under it reads "1,603 eaten of 2,022 ·
+budget 1,791 · +231 exercise", so no term is ever printed as a negative. Once food
+passes capacity the bar's scale becomes the food total, the capacity marker moves in
+and the overage draws past it in the danger tone. Protein, carbs and fat sit beside
+the bar (under it below ~1050px of column): grams, with a thin bar against
+`goals.macroGoals` when one is set; the partial "+" marker survives. `MacroBarRow`
+on Today now renders only the watch-micros. During portion editing, `portionPreview.js` overlays the
 shared counting contract's calorie delta on this server snapshot so the row, meal
 and remaining allowance move together. It does not recalculate goals, burn or the
 base budget. The overlay retires when the read model contains the saved versions.
@@ -211,6 +219,27 @@ The frontend's `today/mealBuckets.js` re-exports that contract.
 Explicitly named meals take precedence over the selected capture bucket;
 the clock is only a fallback. On a historical date, the default is Breakfast,
 not the current hour. The resolved bucket is stored on each entry.
+
+### Moving food between meals (`mealDrag.jsx`)
+
+- **One food:** drag its row onto another meal. The row is the handle except the
+  controls that already take the pointer — portion and kcal sliders, macro badges,
+  confirm/delete, the dish triangle (`DRAG_DEAD_ZONE`). Mouse/pen start after 6 px of
+  travel, touch after a 300 ms hold; a plain click still opens the editor. A dish
+  carries its ingredients (the backend cascades `mealTime`); an ingredient never
+  drags on its own. Rows are not draggable while "Select foods" is picking.
+- **A whole meal:** drag the meal's header onto another meal, or ⋯ → "Move all to".
+  Every top-level entry moves, one PUT each.
+- The move is optimistic (the row wears its new meal until the day reloads with it),
+  highlights briefly, and offers one Undo that restores every row it moved, using the
+  versions the move returned. A failure part-way keeps what moved and puts the rest
+  back. Logs: `entry.move`, `meal.move`, `*.undo`, `entry.move.failed`.
+
+### Calorie bars under each kcal figure
+
+One absolute scale for the whole day (`dayCalorieScale`, `groupRows.js`): the
+largest figure any row shows — an entry, a dish's rollup, or an ingredient. A bar's
+length means the same kcal on every row in every meal, ingredients included.
 
 ---
 

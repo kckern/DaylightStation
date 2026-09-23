@@ -563,6 +563,17 @@ describe('TodayView — saving a meal writes a template, and the picker is the o
     window.prompt = original;
   });
 
+  it('"Move all to" moves every food in the meal and offers one Undo', async () => {
+    apiMock.mockImplementation(dayApi());
+    r(<TodayView onSetupGoals={() => {}} onCoachTap={() => {}} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Breakfast actions' }));
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Move all of Breakfast to Dinner' }));
+    await waitFor(() => expect(apiMock.mock.calls.some(([p, , m]) => p.includes('nutrilist/') && m === 'PUT')).toBe(true));
+    const puts = apiMock.mock.calls.filter(([p, , m]) => p.includes('nutrilist/') && m === 'PUT');
+    expect(puts.map(([, body]) => body.mealTime)).toEqual(ROWS.data.filter(row => row.mealTime === 'morning' && !row.parentId).map(() => 'evening'));
+    expect(await screen.findByRole('button', { name: 'Undo move' })).toBeTruthy();
+  });
+
   it('the add row opens the template picker, which asks for proposals too', async () => {
     apiMock.mockImplementation(dayApi());
     r(<TodayView onSetupGoals={() => {}} onCoachTap={() => {}} />);

@@ -58,6 +58,15 @@ describe('dragging a row to another meal', () => {
   ]);
   afterEach(cleanup);
 
+  // First in this block: a finished drag leaves dnd-kit's one-shot click
+  // suppression on the document, which would swallow this test's click.
+  it('a click without travel still opens the editor', () => {
+    const onRowTap = vi.fn();
+    render(<LogTable byBucket={byBucket} date="2026-09-22" onRowTap={onRowTap} onMoveEntry={() => {}} />, { wrapper });
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Eggs' }));
+    expect(onRowTap).toHaveBeenCalledWith(expect.objectContaining({ uuid: 'eggs' }));
+  });
+
   it('drops onto another meal and reports row, target, and source once', async () => {
     const onMove = vi.fn();
     render(<LogTable byBucket={byBucket} date="2026-09-22" onRowTap={() => {}} onMoveEntry={onMove} />, { wrapper });
@@ -95,13 +104,6 @@ describe('dragging a row to another meal', () => {
     expect(onMove).not.toHaveBeenCalled();
   });
 
-  it('a click without travel still opens the editor', () => {
-    const onRowTap = vi.fn();
-    render(<LogTable byBucket={byBucket} date="2026-09-22" onRowTap={onRowTap} onMoveEntry={() => {}} />, { wrapper });
-    fireEvent.click(screen.getByRole('button', { name: 'Edit Eggs' }));
-    expect(onRowTap).toHaveBeenCalledWith(expect.objectContaining({ uuid: 'eggs' }));
-  });
-
   it('ingredients of a dish do not drag on their own; the dish does', () => {
     const dish = new Map([
       ['morning', [
@@ -112,6 +114,30 @@ describe('dragging a row to another meal', () => {
     render(<LogTable byBucket={dish} date="2026-09-22" onRowTap={() => {}} onMoveEntry={() => {}} />, { wrapper });
     expect(screen.getByText('Salad').closest('.health-row-line').className).toContain('health-row-line--draggable');
     expect(screen.getByText('Spinach').closest('.health-row-line').className).not.toContain('health-row-line--draggable');
+  });
+
+  it('the meal header drags the whole meal onto another', async () => {
+    const onMoveMeal = vi.fn();
+    const meal = new Map([
+      ['night', [
+        { uuid: 'g', kind: 'group', name: 'Salad', calories: 0, mealTime: 'night' },
+        { uuid: 'c', parentId: 'g', name: 'Spinach', calories: 16, mealTime: 'night' },
+        { uuid: 'cheese', name: 'Cheese', calories: 121, mealTime: 'night' },
+      ]], ['morning', []], ['afternoon', []], ['evening', []], [null, []],
+    ]);
+    render(<LogTable byBucket={meal} date="2026-09-22" onRowTap={() => {}} onMoveEntry={() => {}} onMoveMeal={onMoveMeal} />, { wrapper });
+    layOutSections();
+    const header = screen.getByText('Snacks').closest('header');
+    pointer('pointerDown', header, 20, 610);
+    await act(async () => { pointer('pointerMove', document, 30, 580); });
+    await act(async () => { pointer('pointerMove', document, 40, 450); });
+    await act(async () => { pointer('pointerUp', document, 40, 450); });
+    expect(onMoveMeal).toHaveBeenCalledTimes(1);
+    const [rows, to, from] = onMoveMeal.mock.calls[0];
+    expect([to, from]).toEqual(['evening', 'night']);
+    // Top-level entries only; the dish carries its ingredient.
+    expect(rows.map(row => row.uuid).sort()).toEqual(['cheese', 'g']);
+    expect(rows.find(row => row.uuid === 'g').children.map(child => child.uuid)).toEqual(['c']);
   });
 
   it('without a move handler rows are not draggable', () => {
@@ -164,6 +190,30 @@ describe('useMealMoves', () => {
     await act(async () => { await result.current.move(dish, 'night', 'morning'); });
     expect(result.current.items.map(row => row.mealTime)).toEqual(['night', 'night']);
     expect(apiMock.mock.calls[0][1].expectedVersions).toEqual({ g: 1, c: 1 });
+  });
+
+  it('a whole meal moves as one action with one Undo that moves it all back', async () => {
+    apiMock.mockImplementation(async path => ({ versions: { [path.split('/').pop()]: 9 } }));
+    const a = { uuid: 'a', name: 'A', mealTime: 'night', version: 1 };
+    const b = { uuid: 'b', name: 'B', mealTime: 'night', version: 1 };
+    const { result } = renderHook(() => useMealMoves({ items: [a, b], reload: () => {} }));
+    await act(async () => { await result.current.moveMeal([a, b], 'evening', 'night'); });
+    expect(result.current.items.map(row => row.mealTime)).toEqual(['evening', 'evening']);
+    expect(result.current.undo.label).toBe('Moved 2 foods from Snacks to Dinner');
+    await act(async () => { await result.current.undo.run(); });
+    const undoCalls = apiMock.mock.calls.slice(2);
+    expect(undoCalls.map(([, body]) => [body.mealTime, body.expectedVersion])).toEqual([['night', 9], ['night', 9]]);
+  });
+
+  it('a meal move that fails midway keeps what moved and puts back the rest', async () => {
+    apiMock.mockResolvedValueOnce({ versions: { a: 2 } }).mockRejectedValueOnce(new Error('conflict'));
+    const a = { uuid: 'a', name: 'A', mealTime: 'night' };
+    const b = { uuid: 'b', name: 'B', mealTime: 'night' };
+    const { result } = renderHook(() => useMealMoves({ items: [a, b], reload: () => {} }));
+    await act(async () => { await result.current.moveMeal([a, b], 'evening', 'night'); });
+    expect(result.current.items.map(row => row.mealTime)).toEqual(['evening', 'night']);
+    expect(result.current.error).toMatch(/^Couldn't move 1 of 2 foods/);
+    expect(result.current.undo.label).toBe('Moved A to Dinner');
   });
 
   it('the highlight fades after its moment', async () => {
