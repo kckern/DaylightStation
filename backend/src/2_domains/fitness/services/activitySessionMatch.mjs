@@ -52,11 +52,23 @@ export const MATCH_REJECTED = Object.freeze({
 });
 
 /**
+ * Provider sport types that are not distance sports. A watch left on GPS during
+ * one of these still records a start fix and some drift (activity 20267859667,
+ * a garage "Workout", logged 1.1 km standing in place), and neither says the
+ * work happened outdoors.
+ */
+const NON_DISTANCE_SPORT_TYPES = new Set([
+  'Workout', 'WeightTraining', 'Yoga', 'Pilates', 'Crossfit',
+  'HighIntensityIntervalTraining', 'StairStepper', 'Elliptical',
+  'VirtualRide', 'VirtualRun',
+]);
+
+/**
  * Classify where an activity happened.
  *
- * The trainer flag is checked before the GPS fix on purpose: mistaking an
- * indoor ride for an outdoor one would reject a legitimate match, which is the
- * more expensive error. Distance alone is the degraded signal for callers that
+ * The trainer flag and sport type are checked before the GPS fix on purpose:
+ * mistaking an indoor ride for an outdoor one would reject a legitimate match,
+ * which is the more expensive error. Distance alone is the degraded signal for callers that
  * rebuild activities from summary rows (no `start_latlng`, no `trainer`).
  *
  * @param {Object} activity - Provider activity
@@ -66,6 +78,7 @@ export const MATCH_REJECTED = Object.freeze({
 export function classifyActivityVenue(activity, policy = DEFAULT_MATCH_POLICY) {
   if (!activity) return 'unknown';
   if (activity.trainer === true) return 'indoor';
+  if (NON_DISTANCE_SPORT_TYPES.has(activity.sport_type ?? activity.type)) return 'indoor';
 
   const latlng = activity.start_latlng;
   const hasGpsFix = Array.isArray(latlng)

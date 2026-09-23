@@ -42,44 +42,58 @@ export class ResumeStrategy {
       );
       if (!isResumable) continue;
 
-      for (const ep of episodeData.items || []) {
-        if (results.length >= remainingSlots) break;
-
+      // For Resumable shows we replay intentionally, so we can't trust
+      // ep.isWatched (which stays true forever once a completed provider play or a
+      // local completedAt stamp is set). Use the current playhead percent
+      // instead: surface if it's in the "middle" of a replay, skip if the
+      // user has already almost finished this session's play.
+      const isPartial = (ep) => {
         const percent = ep.watchProgress ?? 0;
-        // For Resumable shows we replay intentionally, so we can't trust
-        // ep.isWatched (which stays true forever once a completed provider play or a
-        // local completedAt stamp is set). Use the current playhead percent
-        // instead: surface if it's in the "middle" of a replay, skip if the
-        // user has already almost finished this session's play.
-        if (percent <= 0 || percent >= 95) continue;
+        return percent > 0 && percent < 95;
+      };
 
-        const remainingSec = ep.duration - (ep.watchSeconds || 0);
-        const remainingMin = Math.floor(remainingSec / 60);
-        const remainingSecs = Math.floor(remainingSec % 60);
+      // Resume only what the household was last doing on this show. A show
+      // accumulates stale partials (an old episode opened for a second weeks
+      // ago), and walking in episode order picked the earliest of them over the
+      // episode actually in progress. If the most recently played episode is
+      // finished, the older partials are abandoned — NextUp owns the show.
+      // Without any watchedDate, fall back to the first partial in order.
+      const items = episodeData.items || [];
+      const lastPlayed = items.reduce(
+        (best, ep) => (ep.watchedDate && (!best || ep.watchedDate > best.watchedDate) ? ep : best),
+        null,
+      );
+      const ep = lastPlayed ?? items.find(isPartial);
+      if (!ep || !isPartial(ep)) continue;
 
-        const isShowLevel = ep.metadata?.type === 'show';
-        const episodeRef = contentCatalog.canonicalize(ep.id ?? ep.localId);
-        results.push({
-          type: 'resume',
-          action: 'play',
-          contentId: ep.id,
-          showId: show.showId,
-          title: ep.title,
-          showTitle: show.showTitle,
-          description: ep.metadata?.summary || null,
-          thumbnail: ep.thumbnail || displayImageRef(episodeRef.source, episodeRef.localId),
-          poster: contentImageRef(showRef.source, showRef.localId),
-          durationMinutes: ep.duration ? Math.round(ep.duration / 60) : null,
-          orientation: isShowLevel ? 'portrait' : 'landscape',
-          labels: showLabels,
-          lastSessionDate: show.lastSessionDate,
-          progress: {
-            percent,
-            remaining: `${remainingMin}:${String(remainingSecs).padStart(2, '0')}`,
-            playhead: ep.watchSeconds || 0,
-          },
-        });
-      }
+      const percent = ep.watchProgress ?? 0;
+
+      const remainingSec = ep.duration - (ep.watchSeconds || 0);
+      const remainingMin = Math.floor(remainingSec / 60);
+      const remainingSecs = Math.floor(remainingSec % 60);
+
+      const isShowLevel = ep.metadata?.type === 'show';
+      const episodeRef = contentCatalog.canonicalize(ep.id ?? ep.localId);
+      results.push({
+        type: 'resume',
+        action: 'play',
+        contentId: ep.id,
+        showId: show.showId,
+        title: ep.title,
+        showTitle: show.showTitle,
+        description: ep.metadata?.summary || null,
+        thumbnail: ep.thumbnail || displayImageRef(episodeRef.source, episodeRef.localId),
+        poster: contentImageRef(showRef.source, showRef.localId),
+        durationMinutes: ep.duration ? Math.round(ep.duration / 60) : null,
+        orientation: isShowLevel ? 'portrait' : 'landscape',
+        labels: showLabels,
+        lastSessionDate: show.lastSessionDate,
+        progress: {
+          percent,
+          remaining: `${remainingMin}:${String(remainingSecs).padStart(2, '0')}`,
+          playhead: ep.watchSeconds || 0,
+        },
+      });
     }
 
     return results;
