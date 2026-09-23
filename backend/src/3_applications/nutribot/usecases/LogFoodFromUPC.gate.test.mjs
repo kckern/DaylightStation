@@ -231,3 +231,76 @@ describe('LogFoodFromUPC icon and serving', () => {
     expect(item.amount).toBe(100);
   });
 });
+
+describe('LogFoodFromUPC — no calories: estimate instead of quarantine', () => {
+  const bare = (over = {}) => ({ upc: '037000338369', name: 'Mystery Snack', serving: { size: 1, unit: 'serving' },
+    nutrition: { calories: null, protein: null, carbs: null, fat: null },
+    nutritionLookup: { source: 'openfoodfacts', warnings: ['Nutrition unavailable'] }, ...over });
+  const answer = body => ({ chat: vi.fn(async () => JSON.stringify({ icon: 'granola-bar', noomColor: 'orange', ...body })) });
+
+  it('a magazine-like product the classifier says is not food stays quarantined', async () => {
+    const ai = answer({ isFood: false, estimate: { servingGrams: 50, calories: 200 } });
+    const { uc, reviewService, foodLogStore } = make(bare({ name: 'People Magazine' }), { ai, icons: 'granola-bar' });
+    const out = await uc.execute({ userId: 'u', conversationId: 'c', upc: '037000338369', headless: true });
+    expect(out).toMatchObject({ success: true, quarantined: true, committed: false });
+    expect(out.aiEstimate).toBeUndefined();
+    expect(reviewService.capture).not.toHaveBeenCalled();
+    expect(foodLogStore.save.mock.calls[0][0].metadata).toMatchObject({ quarantined: true, quarantineReason: 'no-calories' });
+    const [system] = ai.chat.mock.calls[0][0].map(m => m.content);
+    expect(system).toContain('"isFood"');
+    expect(system).toContain('"estimate"');
+  });
+
+  it('food with no nutrition is logged with the AI numbers, unconfirmed and committed', async () => {
+    const ai = answer({ isFood: true, estimate: { servingGrams: 40, calories: 190, protein: 4, carbs: 26, fat: 8 } });
+    const { uc, reviewService, foodLogStore } = make(bare(), { ai, icons: 'granola-bar' });
+    const out = await uc.execute({ userId: 'u', conversationId: 'c', upc: '037000338369', headless: true });
+    expect(out).toMatchObject({ success: true, quarantined: false, aiEstimate: true });
+    expect(reviewService.capture).toHaveBeenCalled();
+    const log = foodLogStore.save.mock.calls[0][0];
+    expect(log.metadata.quarantined).toBeUndefined();
+    expect(log.metadata.nutritionLookup).toMatchObject({ aiEstimate: true, servingEstimate: { source: 'ai', grams: 40 } });
+    expect(log.metadata.nutritionLookup.missing).not.toContain('calories');
+    const item = log.items[0];
+    expect([item.grams, item.calories, item.protein, item.carbs, item.fat]).toEqual([40, 190, 4, 26, 8]);
+    expect(item.nutrientProvenance).toMatchObject({ calories: { source: 'ai', grams: 40 }, fat: { source: 'ai', grams: 40 } });
+    expect(item.captureEvidence.assumption).toBe('ai-nutrition-estimate');
+  });
+
+  it.each([
+    ['no isFood', { estimate: { calories: 190 } }],
+    ['calories out of range', { isFood: true, estimate: { servingGrams: 40, calories: 5000 } }],
+    ['calories not a number', { isFood: true, estimate: { servingGrams: 40, calories: 'lots' } }],
+    ['no estimate', { isFood: true }],
+  ])('an unusable answer (%s) keeps the quarantine', async (_label, body) => {
+    const { uc, reviewService } = make(bare(), { ai: answer(body), icons: 'granola-bar' });
+    const out = await uc.execute({ userId: 'u', conversationId: 'c', upc: '037000338369', headless: true });
+    expect(out.quarantined).toBe(true);
+    expect(reviewService.capture).not.toHaveBeenCalled();
+  });
+
+  it('an out-of-bounds serving mass keeps the calories but not the grams', async () => {
+    const ai = answer({ isFood: true, estimate: { servingGrams: 900, calories: 300 } });
+    const { uc, foodLogStore } = make(bare(), { ai, icons: 'granola-bar' });
+    await uc.execute({ userId: 'u', conversationId: 'c', upc: '037000338369', headless: true });
+    const item = foodLogStore.save.mock.calls[0][0].items[0];
+    expect(item.calories).toBe(300);
+    expect(item.grams).toBeNull();
+    expect(item.unit).toBe('serving');
+  });
+
+  it('a per-100 product with no serving text is scaled to the AI\'s typical serving', async () => {
+    const cheese = { upc: '037000338369', name: 'Shredded Cheddar', serving: { size: 100, unit: 'g' },
+      nutrition: { calories: 393, protein: 24, carbs: 3, fat: 32 },
+      nutritionLookup: { source: 'openfoodfacts', servingFallback: 'per100', servingText: null, packageGrams: 226, warnings: ['x'] } };
+    const chat = vi.fn(async () => '{"icon":"cheddar-wedge","noomColor":"orange","servingGrams":28}');
+    const { uc, foodLogStore } = make(cheese, { ai: { chat }, icons: 'cheddar-wedge' });
+    await uc.execute({ userId: 'u', conversationId: 'c', upc: '037000338369', headless: true });
+    const [system] = chat.mock.calls[0][0].map(m => m.content);
+    expect(system).toContain('ONE TYPICAL SERVING');
+    const item = foodLogStore.save.mock.calls[0][0].items[0];
+    expect(item.grams).toBe(28);
+    expect(item.calories).toBeCloseTo(110, 0);
+    expect(item.captureEvidence.assumption).toBe('ai-serving-estimate');
+  });
+});

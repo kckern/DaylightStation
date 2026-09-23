@@ -500,7 +500,12 @@ export function TodayView({ active = true, sidebarTarget, onSetupGoals, onCoachT
             pendingReview.reload();
             return;
           }
-          if (result?.moved) setCaptureNotice(`Moved to ${bucketLabel(result.mealTime)}`);
+          // No calories on the label: logged anyway as an unconfirmed AI
+          // estimate of one typical serving. Say so — it is a guess to check.
+          if (result?.aiEstimate) {
+            logger.info('barcode.ai-estimate', { logId: result.logId ?? null });
+            setCaptureNotice('No calories on the label — estimated for one serving. Check the row.');
+          } else if (result?.moved) setCaptureNotice(`Moved to ${bucketLabel(result.mealTime)}`);
           day.reload();
         }} />
       <CustomFoodSheet upc={unknownUpc} open={active && Boolean(unknownUpc)}
