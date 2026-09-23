@@ -6,6 +6,7 @@
 
 import { FoodCatalogEntry } from '#domains/health/entities/FoodCatalogEntry.mjs';
 import { hasMicroData, pickMicros } from '#domains/nutrition/services/micros.mjs';
+import { guessIconForName } from '#domains/nutrition/services/icons.mjs';
 import { rankSuggestions, blendShortlist } from '#domains/health/services/bucketSuggestRanking.mjs';
 import { observationFromRow, DRIFT_RATIO, ratioApart } from '#domains/health/services/catalogDensity.mjs';
 import { formatLocalTimestamp } from '#system/utils/time.mjs';
@@ -59,6 +60,7 @@ export class FoodCatalogService {
   #clock;
   #createId;
   #iconOffered;
+  #iconVocabulary;
 
   /**
    * @param {Object} config
@@ -67,6 +69,9 @@ export class FoodCatalogService {
    * @param {Object} [config.logger]
    * @param {(slug: string) => boolean} [config.iconOffered] - true when the
    *   hi-res manifest offers this slug. Absent: every slug is accepted.
+   * @param {() => (Set<string>|null)} [config.iconVocabulary] - the OFFERED
+   *   vocabulary (iconVocabulary shape, with reviewed foodNames). Enables the
+   *   suggest-time icon fallback for entries that have none. Absent: none.
    */
   constructor(config) {
     if (!config.catalogStore) throw new Error('FoodCatalogService requires catalogStore');
@@ -77,6 +82,7 @@ export class FoodCatalogService {
     this.#clock = config.clock;
     this.#createId = config.createId;
     this.#iconOffered = typeof config.iconOffered === 'function' ? config.iconOffered : () => true;
+    this.#iconVocabulary = typeof config.iconVocabulary === 'function' ? config.iconVocabulary : null;
   }
 
   /**
@@ -408,11 +414,40 @@ export class FoodCatalogService {
     // Nothing typed: half most-used, half most-recent (blendShortlist). A
     // typed query keeps the pure ranking — there the person is steering.
     const rank = q ? rankSuggestions : blendShortlist;
-    return rank(candidates, {
+    const ranked = rank(candidates, {
       bucket: asBucket(options?.bucket),
       nowMs: this.#clock.now(),
       limit,
-    }).map(entry => ({ ...entry, ...entry.proposedPortion(options.bucket), canonicalGrams: entry.canonicalGrams }));
+    });
+    const icons = this.#suggestionIcons(ranked);
+    return ranked.map((entry, i) => ({ ...entry, ...entry.proposedPortion(options.bucket), canonicalGrams: entry.canonicalGrams,
+      ...(icons[i] ? { icon: icons[i] } : {}) }));
+  }
+
+  /**
+   * A picture for suggestions whose entry has no offered icon (a UPC product,
+   * a food the model gave none): the closest offered slug by name
+   * (guessIconForName — reviewed aliases, then whole-word runs, never
+   * aliases to flat art). Display-only: NOT persisted, so a later real
+   * capture can still donate a better icon through recordUsage's fill rule.
+   * @returns {Array<string|null>} per entry, the icon to show instead, or null
+   */
+  #suggestionIcons(entries) {
+    const missing = entries.map(entry => ![entry.iconOverride, entry.icon].some(slug => isRealIcon(slug) && this.#iconOffered(slug)));
+    if (!this.#iconVocabulary || !missing.some(Boolean)) return entries.map(() => null);
+    let vocabulary = null;
+    try { vocabulary = this.#iconVocabulary(); } catch (err) {
+      this.#logger.warn?.('health.catalog.icon_fallback_unavailable', { error: err.message });
+    }
+    if (!vocabulary?.size) return entries.map(() => null);
+    const guessed = entries.map((entry, i) => {
+      if (!missing[i]) return null;
+      const slug = guessIconForName(entry.name, vocabulary);
+      return isRealIcon(slug) && this.#iconOffered(slug) ? slug : null;
+    });
+    const filled = guessed.filter(Boolean).length;
+    if (filled) this.#logger.debug?.('health.catalog.icon_fallback', { missing: missing.filter(Boolean).length, filled });
+    return guessed;
   }
 
   /** Explicit future-food definition; historical entries and observation evidence stay untouched. */
