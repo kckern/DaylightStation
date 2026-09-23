@@ -21,7 +21,7 @@
  */
 
 import { normalizeProductName } from '#shared/contracts/health/productName.mjs';
-import { NUTRIENT_KEYS } from '#shared/contracts/health/foodQuantity.mjs';
+import { NUTRIENT_KEYS, METRIC_VOLUME_ML } from '#shared/contracts/health/foodQuantity.mjs';
 import { normalizeIconFoodName } from '#domains/nutrition/services/icons.mjs';
 import { FoodCatalogEntry } from '#domains/health/entities/FoodCatalogEntry.mjs';
 
@@ -31,6 +31,51 @@ const RETIRED_ART_PREFIX = 'img/icons/food/';
 export const REFIRE_WINDOW_MS = 30_000;
 /** Fields that mean a person set the portion; ml → g never overrides them. */
 const MANUAL_QUANTITY_FIELDS = ['amount', 'unit', 'grams'];
+
+/**
+ * Legacy grams: the old nutribot stored the portion's GRAMS in
+ * `originalQuantity.amount` under a household label ({134, cup} for 134 g of
+ * kale). The number is accepted as grams only when calories / amount is a
+ * physically possible food density (lettuce ~0.15 to oil ~9 kcal/g).
+ */
+export const LEGACY_DENSITY_RANGE = Object.freeze([0.05, 9.5]);
+const CANONICAL_VOLUME = { 1: 'ml', 10: 'cl', 100: 'dl', 1000: 'l' };
+/** The canonical spelling of a metric volume unit, or null for anything else. */
+const metricVolumeUnit = unit => {
+  const ml = METRIC_VOLUME_ML[String(unit ?? '').trim().toLowerCase()];
+  return ml ? CANONICAL_VOLUME[ml] : null;
+};
+const positive = value => typeof value === 'number' && Number.isFinite(value) && value > 0;
+
+/**
+ * The "legacy-quantity" rule: a row with no mass and no amount but known
+ * calories, whose portion a person never set, gets its quantity back from
+ * `originalQuantity` — a metric volume verbatim (display stays in ml; density
+ * uses 1 g/ml), anything else as grams with `quantityProvenance`. Either way
+ * the implied density must be plausible unless calories are 0. Returns { changes, kind } or { unresolved: reason }, or
+ * null when the rule does not apply. Nutrients are never touched.
+ */
+export function legacyQuantityFix(row) {
+  if (row?.kind === 'group' || positive(row?.grams) || positive(row?.amount)) return null;
+  const calories = row?.calories;
+  if (typeof calories !== 'number' || !Number.isFinite(calories) || calories < 0) return null;
+  if ((row.manualFields || []).some(field => MANUAL_QUANTITY_FIELDS.includes(field))) return null;
+  const oq = row.originalQuantity || {};
+  if (!positive(oq.amount)) return { unresolved: 'no original amount' };
+  const volume = metricVolumeUnit(oq.unit);
+  const mass = volume ? oq.amount * METRIC_VOLUME_ML[volume] : oq.amount;
+  const density = calories / mass;
+  const [low, high] = LEGACY_DENSITY_RANGE;
+  // Volumes (at 1 g/ml) get the ceiling only: {3 ml} of a 480 kcal shake is a
+  // typo and would show 160 kcal/g, but 500 ml of black coffee at 2 kcal is real.
+  if (volume && density > high) return { unresolved: `${round2(density)} kcal/g is above ${high} if the amount were ml` };
+  if (!volume && calories !== 0 && !(density >= low && density <= high)) {
+    return { unresolved: `${round2(density)} kcal/g is outside ${low}-${high} if the amount were grams` };
+  }
+  if (volume) return { kind: 'volume', changes: { amount: oq.amount, unit: volume } };
+  return { kind: 'grams', changes: { grams: oq.amount, amount: oq.amount, unit: 'g',
+    quantityProvenance: { source: 'legacy-amount', label: oq.unit ?? null } } };
+}
 
 const identity = row => row.uuid || row.id;
 const rowName = row => String(row.name ?? row.item ?? row.label ?? '');
@@ -188,7 +233,7 @@ export function planScanDataRepair(rows, {
   // ── Per-row updates ──────────────────────────────────────────────────────
   const updates = [];
   const report = { rows: unique.length, duplicates, explicitDeletes: [...chosen], placeholderPhotos: [], renames: [],
-    manualNamesKept: [], mlToGrams: [], mlUnresolved: [], icons: [], fellThroughToDefault: {}, emptyUpc: [],
+    manualNamesKept: [], mlToGrams: [], mlUnresolved: [], legacyQuantity: [], legacyQuantityUnresolved: [], icons: [], fellThroughToDefault: {}, emptyUpc: [],
     labelServingMl, labelServingAmbiguous, labelServingSeen };
   for (const row of unique) {
     const id = identity(row);
@@ -233,6 +278,19 @@ export function planScanDataRepair(rows, {
         reasons.push('ml-to-grams');
         report.mlToGrams.push({ id, name: finalName, from: `${amount} ml`, grams });
       }
+    }
+
+    const legacy = Object.hasOwn(changes, 'grams') ? null : legacyQuantityFix(row);
+    if (legacy?.unresolved) {
+      report.legacyQuantityUnresolved.push({ id, name: finalName, originalQuantity: row.originalQuantity ?? null,
+        calories: row.calories, reason: legacy.unresolved });
+    } else if (legacy) {
+      Object.assign(changes, legacy.changes);
+      reasons.push('legacy-quantity');
+      const mass = legacy.changes.grams ?? legacy.changes.amount * METRIC_VOLUME_ML[legacy.changes.unit];
+      report.legacyQuantity.push({ id, name: finalName, kind: legacy.kind, from: row.originalQuantity,
+        to: { amount: legacy.changes.amount, unit: legacy.changes.unit }, calories: row.calories,
+        density: round2(row.calories / mass) });
     }
 
     const stored = typeof row.icon === 'string' && row.icon ? row.icon : NEUTRAL_ICON;

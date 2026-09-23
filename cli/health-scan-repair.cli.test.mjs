@@ -180,3 +180,43 @@ describe('verification failures name the backup to restore', () => {
     expect(() => verifyLedger(fresh, { ...clean, updates: [{}] }, '/safe/backup')).toThrow(/converge.*\/safe\/backup/);
   });
 });
+
+describe('legacy quantities across the hot file and an archive month', () => {
+  const legacy = (id, item, originalQuantity, calories, date = '2026-09-21') => row(id, item, { date, unit: 'g', amount: null, grams: null,
+    originalQuantity, calories, review: { source: 'text', startedAt: `${date}T12:00:00.000Z` } });
+  const addLegacy = () => {
+    const hotPath = path.join(tree.root, 'nutrilist.yml');
+    const hot = yaml.load(fs.readFileSync(hotPath, 'utf8'));
+    hot.push(legacy('kale', 'Kale', { amount: 134, unit: 'cup' }, 45), legacy('odd', 'Rice', { amount: 1, unit: 'cup' }, 200));
+    fs.writeFileSync(hotPath, yaml.dump(hot));
+    fs.writeFileSync(path.join(tree.root, 'archives/nutrilist/2026-07.yml'), yaml.dump([
+      legacy('milk', 'Milk', { amount: 325, unit: 'ml' }, 150, '2026-07-04'),
+      legacy('chicken', 'Grilled Chicken', { amount: 313, unit: 'serving' }, 496, '2026-07-04'),
+    ]));
+  };
+
+  it('plans, applies with nutrients verified, and converges', async () => {
+    addLegacy();
+    const report = JSON.parse(JSON.stringify(inspectScanRepair(tree.root, tree.inputs)));
+    expect(report.archiveFilesTouched).toEqual(['archives/nutrilist/2026-07.yml', 'archives/nutrilist/2026-08.yml']);
+    expect(summarize(report)).toMatchObject({ updatesByReason: expect.objectContaining({ 'legacy-quantity': 3 }),
+      legacyQuantityByKind: { grams: 2, volume: 1 }, legacyQuantityUnresolved: 1 });
+    expect(report.report.legacyQuantityUnresolved).toEqual([expect.objectContaining({ id: 'odd', calories: 200 })]);
+
+    await applyScanRepair(report, path.join(tree.base, 'backup'), { offline: true });
+    const hot = yaml.load(fs.readFileSync(path.join(tree.root, 'nutrilist.yml'), 'utf8'));
+    expect(hot.find(r => r.id === 'kale')).toMatchObject({ grams: 134, amount: 134, unit: 'g', calories: 45, version: 2,
+      quantityProvenance: { source: 'legacy-amount', label: 'cup' }, originalQuantity: { amount: 134, unit: 'cup' } });
+    expect(hot.find(r => r.id === 'odd')).toMatchObject({ grams: null, amount: null, version: 1 });
+    const july = yaml.load(fs.readFileSync(path.join(tree.root, 'archives/nutrilist/2026-07.yml'), 'utf8'));
+    expect(july.find(r => r.id === 'milk')).toMatchObject({ grams: null, amount: 325, unit: 'ml', calories: 150 });
+    expect(july.find(r => r.id === 'milk')).not.toHaveProperty('quantityProvenance');
+    expect(july.find(r => r.id === 'chicken')).toMatchObject({ grams: 313, amount: 313, unit: 'g', calories: 496,
+      quantityProvenance: { source: 'legacy-amount', label: 'serving' } });
+    // Quantity fixes never change a day's totals.
+    expect(yaml.load(fs.readFileSync(path.join(tree.root, 'nutriday.yml'), 'utf8'))).not.toHaveProperty('2026-07-04');
+    const again = inspectScanRepair(tree.root, { ...tree.inputs, deleteIds: [] });
+    expect(again.updates).toEqual([]);
+    expect(again.report.legacyQuantityUnresolved.map(entry => entry.id)).toEqual(['odd']);
+  });
+});

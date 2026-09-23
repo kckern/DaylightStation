@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { IFitnessHistoryRepository } from '#apps/fitness/ports/IFitnessHistoryRepository.mjs';
-import { deleteFile, dirExists, ensureDir, listYamlFiles, loadYamlSafe, saveYaml } from '#system/utils/FileIO.mjs';
+import { deleteFile, dirExists, ensureDir, fileExists, listYamlFiles, loadYamlSafe, readFile, saveYaml, writeFile } from '#system/utils/FileIO.mjs';
+import { stampIntegrity } from '#domains/fitness/services/sessionIntegrity.mjs';
 
 const ID = /^\d{14}$/;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -51,9 +52,25 @@ export function dehydrateFitnessSessionRecord(data) {
   if (!data?.timeline) return data;
   return { ...data, timeline: { ...data.timeline, series: encodeSeries(data.timeline.series) } };
 }
+const dateOf = (sessionId) => `${sessionId.slice(0,4)}-${sessionId.slice(4,6)}-${sessionId.slice(6,8)}`;
+
 export class YamlFitnessHistoryRepository extends IFitnessHistoryRepository {
   #root;
-  constructor({ root }) { super(); this.#root = root; }
+  #backupRoot;
+  #logger;
+  /**
+   * @param {Object} deps
+   * @param {string} deps.root - fitness/log directory
+   * @param {string} [deps.backupRoot] - where snapshot() copies files before a
+   *   rewrite; defaults to a `log-backups` sibling of root
+   * @param {Object} [deps.logger]
+   */
+  constructor({ root, backupRoot = null, logger = null }) {
+    super();
+    this.#root = root;
+    this.#backupRoot = backupRoot || path.join(path.dirname(root), 'log-backups');
+    this.#logger = logger;
+  }
   isAvailable() { return dirExists(this.#root); }
   list(date) {
     if (!DATE.test(date)) return [];
@@ -72,8 +89,31 @@ export class YamlFitnessHistoryRepository extends IFitnessHistoryRepository {
     const date = `${sessionId.slice(0,4)}-${sessionId.slice(4,6)}-${sessionId.slice(6,8)}`;
     ensureDir(path.join(this.#root, date));
     const locator = path.join(this.#root, date, `${sessionId}.yml`);
-    saveYaml(locator, dehydrateFitnessSessionRecord(session));
-    return { locator };
+    const record = stampIntegrity(dehydrateFitnessSessionRecord(session), new Date());
+    if (record?.integrity) {
+      this.#logger?.warn?.('fitness.session.integrity_violation', {
+        sessionId,
+        source: record.session?.source || 'home',
+        violations: record.integrity.violations,
+      });
+    }
+    saveYaml(locator, record);
+    return { locator, integrity: record?.integrity || null };
+  }
+  /**
+   * Copy the current file aside before a rewrite. Returns the backup path, or
+   * null when there is nothing to back up.
+   */
+  snapshot(sessionId, reason = 'rewrite') {
+    if (!ID.test(sessionId)) return null;
+    const source = path.join(this.#root, dateOf(sessionId), `${sessionId}.yml`);
+    if (!fileExists(source)) return null;
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const dir = path.join(this.#backupRoot, dateOf(sessionId));
+    ensureDir(dir);
+    const target = path.join(dir, `${sessionId}.${stamp}.${reason}.yml`);
+    writeFile(target, readFile(source));
+    return target;
   }
   remove(sessionId) {
     if (!ID.test(sessionId)) return false;

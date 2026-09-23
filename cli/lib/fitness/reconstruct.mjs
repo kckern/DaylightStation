@@ -3,7 +3,7 @@
  *
  * Creates v3 fitness session files for unmatched Strava entries that have
  * heart-rate data in their archives. Resamples per-second HR to 5s intervals,
- * derives zones, calculates coins, matches media from Tautulli + fitness memory,
+ * derives zones, calculates rings, matches media from Tautulli + fitness memory,
  * and writes complete session files.
  *
  * Dry-run by default. Pass `--write` to persist files.
@@ -26,7 +26,7 @@ export const spec = {
 
 const TIMEZONE = 'America/Los_Angeles';
 const INTERVAL_SECONDS = 5;
-const COIN_TIME_UNIT_MS = 5000;
+const RING_TIME_UNIT_MS = 5000;
 
 // ------------------------------------------------------------------
 // Tautulli: fetch fitness library play history
@@ -267,8 +267,11 @@ export async function run(argv, ctx) {
     const dateStr = sessionIdMoment.format('YYYY-MM-DD');
     const startStr = sessionIdMoment.format('YYYY-MM-DD HH:mm:ss') + '.000';
 
-    // Compute duration from HR data length (per-second data)
-    const durationSeconds = hrData.length;
+    // Duration from Strava's elapsed time. The HR array length is NOT seconds:
+    // devices using smart recording write a sample every 1–10s.
+    const hrTimes = archive?.data?.heartRateTimes;
+    const durationSeconds = archive?.data?.elapsed_time
+      || (Array.isArray(hrTimes) ? hrTimes[hrTimes.length - 1] + 1 : hrData.length);
     const endMoment = sessionIdMoment.clone().add(durationSeconds, 'seconds');
     const endStr = endMoment.format('YYYY-MM-DD HH:mm:ss') + '.000';
 
@@ -281,13 +284,13 @@ export async function run(argv, ctx) {
       continue;
     }
 
-    const timeline = buildStravaSessionTimeline(hrData);
+    const timeline = buildStravaSessionTimeline(hrData, Array.isArray(hrTimes) ? hrTimes : null);
     if (!timeline) {
       console.log(`[SKIP]  ${date} ${entry.type} (${entry.title}) -- HR data too short`);
       skipped++;
       continue;
     }
-    const { hrSamples, zoneSeries, coinsSeries, totalCoins, zoneMinutes, buckets, hrStats } = timeline;
+    const { hrSamples, zoneSeries, ringsSeries, totalRings, zoneMinutes, buckets, hrStats } = timeline;
     const { hrAvg, hrMax, hrMin } = hrStats;
     const tickCount = hrSamples.length;
 
@@ -317,7 +320,7 @@ export async function run(argv, ctx) {
     // Encode series to RLE JSON strings
     const hrEncoded = encodeSingleSeries(hrSamples);
     const zoneEncoded = encodeSingleSeries(zoneSeries);
-    const coinsEncoded = encodeSingleSeries(coinsSeries);
+    const ringsEncoded = encodeSingleSeries(ringsSeries);
 
     // Build the v3 session file
     const sessionFile = {
@@ -349,8 +352,8 @@ export async function run(argv, ctx) {
         series: {
           [`${username}:hr`]: hrEncoded,
           [`${username}:zone`]: zoneEncoded,
-          [`${username}:coins`]: coinsEncoded,
-          'global:coins': coinsEncoded,
+          [`${username}:rings`]: ringsEncoded,
+          'global:rings': ringsEncoded,
         },
         events: timelineEvents,
         interval_seconds: INTERVAL_SECONDS,
@@ -358,14 +361,14 @@ export async function run(argv, ctx) {
         encoding: 'rle',
       },
       treasureBox: {
-        coinTimeUnitMs: COIN_TIME_UNIT_MS,
-        totalCoins,
+        ringTimeUnitMs: RING_TIME_UNIT_MS,
+        totalRings,
         buckets,
       },
       summary: {
         participants: {
           [username]: {
-            coins: totalCoins,
+            rings: totalRings,
             hr_avg: hrAvg,
             hr_max: hrMax,
             hr_min: hrMin,
@@ -373,8 +376,8 @@ export async function run(argv, ctx) {
           },
         },
         media: mediaSummary,
-        coins: {
-          total: totalCoins,
+        rings: {
+          total: totalRings,
           buckets,
         },
         challenges: {
@@ -389,19 +392,19 @@ export async function run(argv, ctx) {
     const mediaLabel = mediaMatches.length > 0
       ? `${mediaMatches.length} media (${mediaTitles.join(', ') || 'untitled'})`
       : 'no media';
-    const label = `${date} ${entry.type} (${entry.title}) -> ${sessionId} | ${mediaLabel} | ${totalCoins} coins`;
+    const label = `${date} ${entry.type} (${entry.title}) -> ${sessionId} | ${mediaLabel} | ${totalRings} rings`;
 
     if (writeMode) {
       saveYaml(sessionFilePath, sessionFile);
 
       entry.homeSessionId = sessionId;
-      entry.homeCoins = totalCoins;
+      entry.homeRings = totalRings;
       if (mediaTitles.length > 0) entry.homeMedia = mediaTitles.join(', ');
       summaryModified = true;
 
       if (archive?.data && archivePath) {
         archive.data.homeSessionId = sessionId;
-        archive.data.homeCoins = totalCoins;
+        archive.data.homeRings = totalRings;
         if (mediaTitles.length > 0) archive.data.homeMedia = mediaTitles.join(', ');
         saveYaml(archivePath, archive);
       }

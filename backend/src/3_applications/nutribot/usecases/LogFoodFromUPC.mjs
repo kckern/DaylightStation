@@ -18,6 +18,9 @@ import { InvalidInputError } from '#apps/common/errors/SemanticErrors.mjs';
 
 // The largest mass one label serving can plausibly be; an AI estimate above it is refused.
 const MAX_ESTIMATED_SERVING_GRAMS = 500;
+/** An AI calorie estimate for one serving outside this range is not used. */
+const MAX_ESTIMATED_SERVING_KCAL = 2000;
+const ESTIMATED_KEYS = ['calories', 'protein', 'carbs', 'fat'];
 const NUTRIENTS = ['calories', 'protein', 'carbs', 'fat', 'fiber', 'sugar', 'sodium', 'cholesterol'];
 // '' is unknown, not zero (`Number('')` is 0) — the same guard normalizeProductNutrition applies.
 const finiteNutrient = value => value != null && value !== '' && Number.isFinite(Number(value)) && Number(value) >= 0 ? Number(value) : null;
@@ -27,6 +30,40 @@ const storedUpc = raw => { const gtin = parseGtin(raw); return gtin.ok ? gtin.co
 
 /** Code on the error a malformed barcode raises; every entry point translates it. */
 export const UPC_REJECTED = 'NUTRIBOT_UPC_REJECTED';
+
+/**
+ * The label's own serving when it names a measurable one (`30 g`, `240 ml`),
+ * else null (`1 serving`). An estimate asked FOR this serving shares its basis
+ * with every other number the label gives.
+ */
+const measurableLabelServing = product => {
+  const size = Number(product?.serving?.size);
+  const unit = String(product?.serving?.unit || '').toLowerCase();
+  return Number.isFinite(size) && size > 0 && unit && !['serving', 'servings'].includes(unit) ? { size, unit } : null;
+};
+
+/** No calories and no per-100 basis: only an estimate can make this countable. */
+const needsNutritionEstimate = product => finiteNutrient(product?.nutrition?.calories) === null
+  && product?.nutritionLookup?.servingFallback !== 'per100';
+
+/**
+ * The classifier's nutrition estimate, if it is usable: the product is food and
+ * the calories are a finite number in 0–2000 for one serving. The serving mass
+ * is kept only within the same bounds as a label-serving estimate (0 < g ≤ 500
+ * and ≤ the package). Returns null when it cannot be used.
+ */
+export function usableNutritionEstimate(classification, { packageGrams = null } = {}) {
+  if (classification?.isFood !== true || !classification.estimate || typeof classification.estimate !== 'object') return null;
+  const { estimate } = classification;
+  const calories = finiteNutrient(estimate.calories);
+  if (calories === null || calories > MAX_ESTIMATED_SERVING_KCAL) return null;
+  const maxGrams = Math.min(MAX_ESTIMATED_SERVING_GRAMS, Number(packageGrams) > 0 ? Number(packageGrams) : Infinity);
+  const rawGrams = Number(estimate.servingGrams);
+  const grams = Number.isFinite(rawGrams) && rawGrams > 0 && rawGrams <= maxGrams ? rawGrams : null;
+  const values = { calories };
+  for (const key of ESTIMATED_KEYS.slice(1)) { const value = finiteNutrient(estimate[key]); if (value !== null) values[key] = value; }
+  return { grams, values };
+}
 // The message IS the sentence the person sees, on every transport.
 const REFUSALS = {
   'check-digit': "That isn't a food barcode (check digit).",
@@ -328,6 +365,52 @@ export class LogFoodFromUPC {
         }
       }
 
+      // 4c. No calories and no per-100 basis. Quarantine used to be the only
+      // outcome, which parks real food in Needs Review with a blank the person
+      // must look up. The classifier's estimate for one typical serving is
+      // logged instead, as an UNCONFIRMED AI estimate (per-nutrient provenance
+      // 'ai', provisional review like every capture). Not food, or no usable
+      // number: quarantine as before.
+      let aiNutrition = null;
+      if (this.#aiGateway && needsNutritionEstimate(product)) {
+        const estimate = usableNutritionEstimate(classification, { packageGrams: product.nutritionLookup?.packageGrams });
+        if (estimate) {
+          // ONE basis for every number on the row:
+          //  - the label names a measurable serving → the model was asked for
+          //    exactly that serving, so label values stay as facts and the
+          //    estimate only fills what the label lacks;
+          //  - it does not → the estimate is for a typical serving whose mass
+          //    the model gave. Label-only values describe a serving of unknown
+          //    mass, so there is no common basis: they are dropped (null, no
+          //    provenance). A rejected mass is "1 serving", never a gram mass
+          //    that the numbers do not describe.
+          const labelServing = measurableLabelServing(product);
+          const label = product.nutrition || {};
+          const nutrition = Object.fromEntries(NUTRIENTS.map(key => [key, labelServing ? finiteNutrient(label[key]) : null]));
+          const filled = [];
+          for (const [key, value] of Object.entries(estimate.values)) {
+            if (nutrition[key] === null) { nutrition[key] = value; filled.push(key); }
+          }
+          const dropped = labelServing ? [] : NUTRIENTS.filter(key => finiteNutrient(label[key]) !== null && !filled.includes(key));
+          const serving = labelServing
+            ? product.serving
+            : estimate.grams ? { size: estimate.grams, unit: 'g' } : { size: 1, unit: 'serving' };
+          aiNutrition = { filled, grams: labelServing ? null : estimate.grams };
+          product = { ...product, serving, nutrition,
+            nutritionLookup: { ...(product.nutritionLookup || {}), aiEstimate: true,
+              aiEstimateBasis: labelServing ? 'label-serving' : 'typical-serving',
+              missing: NUTRIENTS.filter(key => nutrition[key] === null),
+              ...(dropped.length ? { droppedLabelNutrients: dropped } : {}),
+              ...(aiNutrition.grams ? { servingEstimate: { source: 'ai', grams: aiNutrition.grams } } : {}) } };
+          servingAssumption = 'ai-nutrition-estimate';
+          this.#logger.info?.('upc.nutrition.estimated', { upc, name: product.name, basis: labelServing ? 'label-serving' : 'typical-serving',
+            grams: aiNutrition.grams, calories: nutrition.calories, dropped });
+        } else {
+          this.#logger.info?.('upc.nutrition.estimateRejected', { upc, name: product.name,
+            isFood: classification?.isFood ?? null, calories: classification?.estimate?.calories ?? null });
+        }
+      }
+
       // 5. Create food item from product
       const grams = ['g', 'gram', 'grams'].includes(String(product.serving?.unit).toLowerCase())
         && Number(product.serving?.size) > 0 ? Number(product.serving.size) : null;
@@ -358,6 +441,8 @@ export class LogFoodFromUPC {
         ...Object.fromEntries(NUTRIENTS.map(key => [key, finiteNutrient(product.nutrition?.[key])])),
         ...provisionalReview({}, this.#clock.now(), 'upc'),
         captureEvidence: { source: 'upc', upc, serving: product.serving, assumption: servingAssumption },
+        ...(aiNutrition ? { nutrientProvenance: Object.fromEntries(aiNutrition.filled
+          .map(key => [key, { source: 'ai', grams }])) } : {}),
       };
       if (this.#catalogService?.resolveIdentity) Object.assign(foodItem, await this.#catalogService.resolveIdentity(foodItem, userId));
       // Unknown calories (a known 0 is known) is not a food we can count. It stays
@@ -417,7 +502,8 @@ export class LogFoodFromUPC {
       if (quarantined) this.#logger.info?.('upc.quarantined', { upc, name: product.name, logUuid: nutriLog.id });
 
       // 7b. Record food item in catalog for quick-add
-      if (this.#catalogService && !product.nutritionLookup?.warnings?.length && !quarantined) {
+      // An AI estimate is not a label: it never seeds the catalog's UPC entry.
+      if (this.#catalogService && !product.nutritionLookup?.warnings?.length && !quarantined && !aiNutrition) {
         try {
           await this.#catalogService.recordUsage({
             foodId: foodItem.foodId,
@@ -480,6 +566,7 @@ export class LogFoodFromUPC {
         product,
         committed: nutriLog.status === 'accepted',
         quarantined,
+        ...(aiNutrition ? { aiEstimate: true } : {}),
         mealTime: nutriLog.meal.time,
       };
     } catch (error) {
@@ -553,12 +640,29 @@ Calories: ${product.nutrition?.calories ?? 'unknown'}`,
     // product keeps the original { icon, noomColor } contract. A volume is never
     // turned into grams, so a millilitre fallback is not asked.
     const askServing = product.nutritionLookup?.servingFallback === 'per100' && product.serving?.unit === 'g';
-    const example = askServing ? '{ "icon": "apple", "noomColor": "green", "servingGrams": 30 }' : '{ "icon": "apple", "noomColor": "green" }';
-    const servingRule = askServing
-      ? '\nThe calories given are per 100 g. Also estimate the mass in grams of the label serving as "servingGrams" (number, or null if unknowable).'
-      : '';
-    const caloriesLine = askServing
-      ? `Calories per 100 g: ${product.nutrition?.calories ?? 'unknown'}\nLabel serving: ${product.nutritionLookup.servingText || 'unknown'}`
+    const servingText = product.nutritionLookup?.servingText || null;
+    // No calories and no per-100 basis: nothing on the label can be counted.
+    // The same call also says whether this is food at all and, if so, what one
+    // typical serving holds — logged as an unconfirmed AI estimate, never a fact.
+    const askNutrition = needsNutritionEstimate(product);
+    const labelServing = askNutrition ? measurableLabelServing(product) : null;
+    const example = askNutrition
+      ? '{ "icon": "apple", "noomColor": "green", "isFood": true, "estimate": { "servingGrams": 30, "calories": 120, "protein": 3, "carbs": 20, "fat": 4 } }'
+      : askServing ? '{ "icon": "apple", "noomColor": "green", "servingGrams": 30 }' : '{ "icon": "apple", "noomColor": "green" }';
+    const servingRule = askNutrition
+      ? '\nThe label gives no calories. Set "isFood" to false if this product is not something people eat or drink (a magazine, soap, a gift card, pet supplies). '
+        + (labelServing
+          ? `If it is food, estimate for THE LABEL SERVING OF ${labelServing.size} ${labelServing.unit} as "estimate": its calories, protein, carbs and fat in grams for exactly that serving (numbers; "servingGrams" is ${labelServing.unit === 'g' ? labelServing.size : 'null'}).`
+          : 'If it is food, estimate one typical serving as "estimate": its mass in grams ("servingGrams") and its calories, protein, carbs and fat in grams for that serving (numbers).')
+      : askServing
+        ? (servingText
+          ? '\nThe calories given are per 100 g. Also estimate the mass in grams of the label serving as "servingGrams" (number, or null if unknowable).'
+          : '\nThe calories given are per 100 g and the label gives no serving size. Also estimate the mass in grams of ONE TYPICAL SERVING of this product as "servingGrams" (a number: e.g. shredded cheese is about 28, peanut butter about 32).')
+        : '';
+    const caloriesLine = askNutrition && labelServing
+      ? `Calories: unknown\nLabel serving: ${labelServing.size} ${labelServing.unit}`
+      : askServing
+      ? `Calories per 100 g: ${product.nutrition?.calories ?? 'unknown'}\nLabel serving: ${servingText || 'unknown'}`
       : `Calories: ${product.nutrition?.calories ?? 'unknown'}`;
     const prompt = [
       {
@@ -579,7 +683,7 @@ Respond ONLY in JSON: ${example}${servingRule}`,
       },
     ];
 
-    const response = await this.#aiGateway.chat(prompt, { maxTokens: 100 });
+    const response = await this.#aiGateway.chat(prompt, { maxTokens: askNutrition ? 200 : 100 });
     const match = response.match(/\{[\s\S]*\}/);
     if (match) {
       const parsed = JSON.parse(match[0]);

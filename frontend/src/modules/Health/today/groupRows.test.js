@@ -161,3 +161,25 @@ describe('groupRows', () => {
     expect(returnedIds.slice().sort()).toEqual(inputIds.slice().sort());
   });
 });
+
+import { sortEntriesByCalories, calorieShares } from './groupRows.js';
+describe('heaviest first', () => {
+  it('sorts entries by calories (dishes by rollup), unknown last, ties in logged order', () => {
+    const rows = [
+      { uuid: 'a', name: 'Carrots', calories: 30 },
+      { uuid: 'd', name: 'Diet coke', calories: null },
+      { uuid: 'g', kind: 'group', name: 'Plate', calories: 0 },
+      { uuid: 'g1', parentId: 'g', name: 'Rice', calories: 210 },
+      { uuid: 'g2', parentId: 'g', name: 'Chicken', calories: 320 },
+      { uuid: 'b', name: 'Oats', calories: 150 },
+      { uuid: 'c', name: 'Tea', calories: 30 },
+    ];
+    const sorted = sortEntriesByCalories(groupRows(rows));
+    expect(sorted.map(e => e.row.uuid)).toEqual(['g', 'b', 'a', 'c', 'd']);
+    expect(sorted[0].children.map(c => c.uuid)).toEqual(['g2', 'g1']);
+  });
+  it('shares are relative to the largest known value', () => {
+    expect(calorieShares([200, 50, null, 0])).toEqual([1, 0.25, null, 0]);
+    expect(calorieShares([null, 0])).toEqual([null, null]);
+  });
+});

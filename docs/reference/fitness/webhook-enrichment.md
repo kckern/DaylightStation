@@ -174,6 +174,54 @@ This creates the two-way link: the session now references the provider activity 
 
 If no match is found, the service retries up to 3 times at 5-minute intervals (the home session may not have been saved yet when the webhook arrives). After 3 failures, the job is marked `unmatched`. On container restart, `recoverPendingJobs()` retries all pending/unmatched jobs.
 
+### Strava-only sessions (no home match)
+
+After the retries run out, `_createStravaOnlySession` writes a session built from the activity itself (`session.source: strava`). Its HR timeline comes from `StravaSessionBuilder.buildStravaSessionTimeline(heartrate, time)`.
+
+**The `time` stream is required.** Strava's `heartrate` stream is not one sample per second: Garmin smart recording writes a point every 1–10s. Each sample is placed at its `time` offset. The previous value is held across gaps of up to 60s. Longer gaps stay null (no HR, no rings). Before 2026-09-22 the raw array was treated as per-second, so a session came out about 5x too short. For example, activity 20245291061 had 1039 samples over 4920s and was written as 208 ticks (17 min) for an 82-minute run. The harvester now archives the offsets alongside `heartRateOverTime` as `heartRateTimes`, and `fitness reconstruct` uses them.
+
+### Title and notes pulled back from Strava
+
+A rename on Strava arrives as an `activity/update` webhook carrying `updates.title`. `FitnessWebhookService` routes it to `handleTitleUpdate`, which calls `ActivityReconciliationService.applyTitle` to write the new title into the linked session right away. (Before 2026-09-22 every update event was dropped as "not enrichable".) Our own title pushes echo back the same way; applying them is harmless.
+
+`ActivityReconciliationService` also runs an hourly sweep (`fitness:strava-reconcile`) plus one after each webhook, over a 10-day lookback. It refreshes Strava auth before each sweep (`ensureAccess`). Before that fix, the scheduled sweep only worked in the ~6 hours after a webhook happened to refresh the token: it logged "No access token available" until then and 401s after. The sweep keeps two things current in the session:
+
+- `strava_notes` — the Strava description, pulled once, never overwritten.
+- `strava.name` — the Strava title. It is set when the session is created (often the auto-name "Morning Run") and refreshed whenever the title on Strava changes. Only a name the session already has is refreshed; home sessions carry a `strava` block without a name and are left alone. Emits `strava.reconciliation.title_synced`.
+
+The harvester also lets fresh list fields (title, description) win over the archived copy, so `lifelog/strava.yml` picks up renames too.
+
+### Integrity checks and repair
+
+Every session save runs `checkSessionIntegrity` (`2_domains/fitness/services/sessionIntegrity.mjs`), in both `YamlFitnessHistoryRepository.save()` (Strava pipeline) and `YamlSessionDatastore.save()` (home sessions):
+
+| Check | Applies to | Fails when |
+|---|---|---|
+| `coverage` | `source: strava` | `tick_count × interval` is more than 10% off `duration_seconds` |
+| `series-length` | sessions with a `tick_count` | a series decodes to a different length |
+| `rings` | when two or more totals exist | `summary.rings.total`, `treasureBox.totalRings` and the last `global:rings` disagree |
+
+A failing session is **still saved**, with `integrity: {ok: false, checkedAt, violations}` added. A clean save removes the stamp. The Strava repository logs `fitness.session.integrity_violation` at warn. The home datastore logs it at debug, because it autosaves during a workout.
+
+Measured on 2026-09-22 across 2965 sessions: 1 coverage hit, 2 series-length hits, 57 ring mismatches. The ring mismatches are all home sessions (the newest from 2026-09-07). They get stamped but never alert, because Pass 4 only repairs Strava-only sessions.
+
+**Pass 4 of the reconciliation sweep** rebuilds a flagged Strava-only session from `heartrate` + `time` through `applyStravaTimeline`, the same builder the webhook uses. It is **grow-only**: it writes only when the rebuild has more ticks than the stored file, after `snapshot()` copies that file to `fitness/log-backups/{date}/{id}.{timestamp}.timeline-rebuild.yml`. A rebuild that would shrink is recorded as unresolved and not written. At most 10 stream fetches per sweep.
+
+### Sync health
+
+`StravaSyncHealth` (`3_applications/fitness/StravaSyncHealth.mjs`) records the last success of each stage in `household/fitness/sync-health.yml`. The `fitness:strava-sync-health` task (every 15 min, no Strava calls) evaluates them:
+
+| Stage | Reported by | Stale when |
+|---|---|---|
+| `harvest` | `HarvesterService.onResult` for `strava` | no successful harvest in 3h |
+| `sweep` | `ActivityReconciliationService.reconcile()` (fails if auth fails or more than half its sessions error) | 3 failed sweeps in a row, or no success in 3h |
+| `webhook` | harvested activities (started within 48h) checked against the webhook job store | an activity has been visible for 1h with no webhook job |
+| `integrity` | the sweep's flagged list | a Strava-only session stays flagged for 24h |
+
+A healthy→stale transition sends one push to the head of household on **Household alerts**, tagged `strava-sync-{stage}`. The recovery push replaces that card with `alert_once`. The text comes from `composeStravaSyncPush` (`2_domains/fitness/notifications/stravaSyncPush.mjs`), which turns raw errors into plain reasons ("Strava sign-in expired"). Webhook event types nobody handles are counted in `dropped`.
+
+`GET /api/v1/fitness/strava/health` returns the stage records, stale verdicts, missing webhooks, flagged sessions and dropped counts.
+
 ---
 
 ## Enrichment Payload
@@ -261,6 +309,17 @@ All log events are `info` level — visible in production.
 | `strava.enrichment.success` | activityId, sessionId, fields | Done |
 | `strava.enrichment.error` | activityId, attempt, error | Failed |
 | `strava.enrichment.unmatched` | activityId, attempts | Max retries exhausted |
+| `strava.enrichment.hr_from_api` | activityId, samples, spanSeconds | HR + time streams fetched for a Strava-only session |
+| `strava.enrichment.hr_time_stream_missing` | activityId | No usable time stream; falls back to per-second (warn) |
+| `strava.reconciliation.title_synced` | activityId, sessionId, from, to | Session title refreshed from Strava |
+| `strava.enrichment.title_update_received` | activityId, title | Rename webhook received |
+| `strava.reconciliation.auth_failed` | error | Could not refresh auth; sweep skipped (warn) |
+| `strava.reconciliation.timeline_rebuilt` | activityId, sessionId, fromTicks, toTicks, fromRings, toRings, backup | Pass 4 repaired a Strava-only timeline |
+| `strava.reconciliation.timeline_not_rebuilt` | activityId, sessionId, storedTicks, rebuiltTicks | Rebuild would shrink; left as is |
+| `fitness.session.integrity_violation` | sessionId, source, violations | Save-time check failed (warn for Strava, debug for home) |
+| `strava.sync_health.transition` | stage, from, to | A stage went stale or recovered (push sent) |
+| `strava.sync_health.push_failed` | stage, error | Push could not be delivered (warn) |
+| `strava.sync_health.no_push_target` | recipient | Head of household has no HA notify service (warn) |
 
 ### Bootstrap
 

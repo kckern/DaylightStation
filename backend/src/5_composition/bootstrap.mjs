@@ -92,6 +92,7 @@ import { createQueriesRouter } from '#api/v1/routers/queries.mjs';
 // Fitness domain imports
 import { SessionService } from '#apps/fitness/services/SessionService.mjs';
 import { FitnessProgressClassifier } from '#domains/fitness/index.mjs';
+import { iconVocabulary } from '#domains/nutrition/services/icons.mjs';
 import { YamlSessionDatastore } from '#adapters/persistence/yaml/YamlSessionDatastore.mjs';
 import { YamlCycleRaceDatastore } from '#adapters/persistence/yaml/YamlCycleRaceDatastore.mjs';
 import { CycleRaceService } from '#apps/fitness/services/CycleRaceService.mjs';
@@ -892,7 +893,8 @@ export function createFitnessServices(config) {
   // Session store and service
   const sessionStore = new YamlSessionDatastore({
     configService,
-    mediaRoot
+    mediaRoot,
+    logger,
   });
 
   const sessionService = new SessionService({
@@ -2428,6 +2430,9 @@ export function createHealthServices(config) {
     createId: crypto.randomUUID,
     logger,
     iconOffered: catalogIcons ? slug => catalogIcons.list().includes(slug) : null,
+    // Offered slugs + reviewed food-name aliases, for the suggest-time icon
+    // fallback. Built per call: the store re-reads after an operator edit.
+    iconVocabulary: catalogIcons ? () => iconVocabulary(catalogIcons.list().join(' '), catalogIcons.foodNames()) : null,
   });
 
   return {

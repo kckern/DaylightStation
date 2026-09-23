@@ -12,7 +12,7 @@ import useReloadGuard from '../../useReloadGuard.js';
 import { buildTempoMap, buildStepTimeline, scaleTimeline } from '../../../../MusicNotation/scoreTimeline.js';
 import { useScoreTransport } from '../../score/useScoreTransport.js';
 import { tweenScrollTo, cancelScrollTween } from './scrollTween.js';
-import { partsOf, buildArcadeGameTimeline } from './playParts.js';
+import { partsOf, buildPlayTimeline } from './playParts.js';
 import { staffLabels, defaultActiveParts, expectedMidisAtStep } from './activeParts.js';
 import { rangeSteps, clampStepToRange, sectionToRange, homeStep } from './focusRange.js';
 import useLearnAssessmentProjection from './useLearnAssessmentProjection.js';
@@ -411,7 +411,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
     });
   }, [staffSig]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Roles feed Listen's audio timeline (buildArcadeGameTimeline's isAudible checks
+  // Roles feed Listen's audio timeline (buildPlayTimeline's isAudible checks
   // === 'play'): an active staff plays, an inactive one mutes — the single source
   // for Listen roles (audit J4), now the SAME source Learn/Polish practice from.
   const roles = useMemo(
@@ -436,7 +436,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // Polish is scaled too so its tempo control tracks the same knob.
   const playTimeline = useMemo(
     () => (mode === 'listen'
-      ? scaleTimeline(buildArcadeGameTimeline(events, layout.notes, tempoMap, roles), 1 / tempoMult)
+      ? scaleTimeline(buildPlayTimeline(events, layout.notes, tempoMap, roles), 1 / tempoMult)
       : scaleTimeline(stepTimeline, 1 / tempoMult)),
     [mode, events, layout.notes, tempoMap, roles, stepTimeline, tempoMult],
   );

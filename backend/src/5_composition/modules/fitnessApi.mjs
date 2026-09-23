@@ -89,6 +89,7 @@ export function createFitnessApiRouter(config) {
     printerRegistry,
     providerWebhookAdapters,
     enrichmentService,
+    stravaSyncHealth = null,
     fingerprintProfileWriter = null,
     triggerEmergencyLockdown = null,
     releaseEmergencyLockdown = null,
@@ -308,6 +309,7 @@ export function createFitnessApiRouter(config) {
   const fitnessWebhookService = new FitnessWebhookService({
     providerWebhookAdapters,
     enrichmentService,
+    syncHealth: stravaSyncHealth,
     shouldSendExerciseReaction,
     getCoachingConversationId: () => configService?.getNutribotConversationId?.() || null,
     logger,
@@ -398,6 +400,7 @@ export function createFitnessApiRouter(config) {
     defaultHouseholdId: configService?.getDefaultHouseholdId?.() ?? null,
     printFitnessReceipt,
     fitnessWebhookService,
+    stravaSyncHealth,
     emergencyOperations,
     getFitnessMenuMusic,
     saveDebugVoiceMemo,
