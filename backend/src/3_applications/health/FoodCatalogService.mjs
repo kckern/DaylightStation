@@ -6,7 +6,7 @@
 
 import { FoodCatalogEntry } from '#domains/health/entities/FoodCatalogEntry.mjs';
 import { hasMicroData, pickMicros } from '#domains/nutrition/services/micros.mjs';
-import { rankSuggestions } from '#domains/health/services/bucketSuggestRanking.mjs';
+import { rankSuggestions, blendShortlist } from '#domains/health/services/bucketSuggestRanking.mjs';
 import { observationFromRow, DRIFT_RATIO, ratioApart } from '#domains/health/services/catalogDensity.mjs';
 import { formatLocalTimestamp } from '#system/utils/time.mjs';
 import { defaultBucketForDate } from '#shared/contracts/health/isoDate.mjs';
@@ -385,7 +385,11 @@ export class FoodCatalogService {
   /**
    * One ranked suggestion list for the add-combobox.
    *
-   * Without a bucket this is exactly what it always was: favorites first, then
+   * With no query the list is `blendShortlist`: the ranking below interleaved
+   * with a most-recently-used list, so an occasional food eaten this week is
+   * not buried under the regulars.
+   *
+   * Without a bucket the ranking is exactly what it always was: favorites first, then
    * recency-weighted frequency, then name. With a bucket (PRD F8.1) the middle
    * tier becomes the per-bucket blend and the global ranking backfills only
    * while the bucket's history is thin — see `bucketSuggestRanking.mjs`, which
@@ -401,7 +405,10 @@ export class FoodCatalogService {
     const all = await this.#catalogStore.getAll(userId);
     const q = (query || '').toLowerCase().trim();
     const candidates = all.filter((e) => (q ? e.matchesSearch(q) : true));
-    return rankSuggestions(candidates, {
+    // Nothing typed: half most-used, half most-recent (blendShortlist). A
+    // typed query keeps the pure ranking — there the person is steering.
+    const rank = q ? rankSuggestions : blendShortlist;
+    return rank(candidates, {
       bucket: asBucket(options?.bucket),
       nowMs: this.#clock.now(),
       limit,

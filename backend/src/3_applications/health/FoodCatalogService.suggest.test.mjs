@@ -57,6 +57,19 @@ describe('FoodCatalogService.suggest', () => {
     expect(out).toHaveLength(3);
   });
 
+  it('empty query blends in a recent-but-rare food; a typed query does not', async () => {
+    const svc2 = new FoodCatalogService({
+      catalogStore: makeStore([
+        entry({ id: 's1', name: 'staple one', useCount: 90, lastUsed: '2026-07-01' }),
+        entry({ id: 's2', name: 'staple two', useCount: 80, lastUsed: '2026-07-02' }),
+        entry({ id: 'n1', name: 'new soup', useCount: 1, lastUsed: '2026-09-02' }),
+      ]),
+      clock: { now: () => NOW }, createId: () => 'x', logger: { debug() {}, info() {}, warn() {}, error() {} },
+    });
+    expect((await svc2.suggest('', 'u', 2)).map((e) => e.id)).toEqual(['s1', 'n1']);
+    expect((await svc2.suggest('s', 'u', 2)).map((e) => e.id)).toEqual(['s1', 's2']);
+  });
+
   it('setFavorite toggles and persists', async () => {
     await svc.setFavorite('a', 'u', true);
     expect((await store.getById('a')).favorite).toBe(true);

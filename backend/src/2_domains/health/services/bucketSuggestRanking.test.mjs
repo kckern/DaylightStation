@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   rankSuggestions,
+  blendShortlist,
   bucketScore,
   globalScore,
   recencyDecay,
@@ -179,5 +180,66 @@ describe('rankSuggestions — bucket-aware ordering', () => {
     ];
     expect(rankSuggestions(candidates, { bucket: 'morning', nowMs: NOW }).map((e) => e.id)).toEqual(['oatmeal', 'steak']);
     expect(rankSuggestions(candidates, { bucket: 'evening', nowMs: NOW }).map((e) => e.id)).toEqual(['steak', 'oatmeal']);
+  });
+});
+
+describe('blendShortlist — half common, half recent, interleaved', () => {
+  // Eight staples eaten for months but not lately, and eight foods eaten this
+  // week only once or twice. Pure frequency would show only staples.
+  const staples = Array.from({ length: 8 }, (_, i) => entry({
+    id: `staple${i}`, useCount: 200 - i, lastUsed: daysAgo(20 + i),
+  }));
+  const fresh = Array.from({ length: 8 }, (_, i) => entry({
+    id: `fresh${i}`, useCount: 1, lastUsed: daysAgo(i),
+  }));
+  const catalog = [...fresh, ...staples];
+
+  it('common-but-old and recent-but-rare foods both make the list, alternating', () => {
+    const out = blendShortlist(catalog, { nowMs: NOW, limit: 8 }).map((e) => e.id);
+    expect(out).toEqual(['staple0', 'fresh0', 'staple1', 'fresh1', 'staple2', 'fresh2', 'staple3', 'fresh3']);
+    // The pure ranking would have shown staples only.
+    expect(rankSuggestions(catalog, { nowMs: NOW, limit: 8 }).every((e) => e.id.startsWith('staple'))).toBe(true);
+  });
+
+  it('never repeats an entry that ranks high on both lists, and respects the limit', () => {
+    const both = entry({ id: 'both', useCount: 999, lastUsed: daysAgo(0) });
+    const out = blendShortlist([both, ...catalog], { nowMs: NOW, limit: 5 }).map((e) => e.id);
+    expect(out).toHaveLength(5);
+    expect(new Set(out).size).toBe(5);
+    expect(out[0]).toBe('both');
+    expect(out.filter((id) => id === 'both')).toHaveLength(1);
+  });
+
+  it('fills from the other list when one runs dry, and never exceeds the catalog', () => {
+    const out = blendShortlist(catalog, { nowMs: NOW, limit: 40 });
+    expect(out).toHaveLength(catalog.length);
+    expect(new Set(out.map((e) => e.id)).size).toBe(catalog.length);
+    expect(blendShortlist(catalog, { nowMs: NOW, limit: 0 })).toEqual([]);
+  });
+
+  it('with a bucket, recency means recency IN that bucket, then elsewhere', () => {
+    const oats = entry({ id: 'oats', useCount: 50, lastUsed: daysAgo(0), usageByBucket: { morning: used(40, daysAgo(10)) } });
+    const eggs = entry({ id: 'eggs', useCount: 3, lastUsed: daysAgo(1), usageByBucket: { morning: used(2, daysAgo(1)) } });
+    const pizza = entry({ id: 'pizza', useCount: 30, lastUsed: daysAgo(0) });
+    const out = blendShortlist([pizza, eggs, oats], { bucket: 'morning', nowMs: NOW, limit: 3 }).map((e) => e.id);
+    // common: oats (bucket score), eggs, then the backfill pizza; recent in
+    // the morning: eggs (1 day) — then oats, then pizza.
+    expect(out).toEqual(['oats', 'eggs', 'pizza']);
+  });
+
+  it('a thick bucket keeps the backfill out of BOTH halves', () => {
+    const regulars = Array.from({ length: BUCKET_HISTORY_MIN_ENTRIES }, (_, i) => entry({
+      id: `r${i}`, usageByBucket: { morning: used(5, daysAgo(3 + i)) },
+    }));
+    const other = entry({ id: 'dinner-only', useCount: 99, lastUsed: daysAgo(0) });
+    const out = blendShortlist([other, ...regulars], { bucket: 'morning', nowMs: NOW, limit: 10 }).map((e) => e.id);
+    expect(out).not.toContain('dinner-only');
+    expect(out).toHaveLength(BUCKET_HISTORY_MIN_ENTRIES);
+  });
+
+  it('is deterministic: input order does not matter', () => {
+    const a = blendShortlist(catalog, { nowMs: NOW, limit: 12 }).map((e) => e.id);
+    const b = blendShortlist([...catalog].reverse(), { nowMs: NOW, limit: 12 }).map((e) => e.id);
+    expect(b).toEqual(a);
   });
 });
