@@ -481,3 +481,4 @@ The corollary bit twice in this sweep: `feat/teacher-workspace-ia` and `feature/
 | 2026-09-22 | fix/strava-hr-time-axis | b27672b75 | Strava HR on the time stream (sessions ~5x short), title sync + rename webhooks, sweep auth refresh, save-time integrity check, grow-only repair, sync-health push; merged to main as 5835fca97 |
 | 2026-09-22 | fix/fitness-play-means-play | aea482f7f | Fitness play re-paused by stale governance closure (leaked media listener); merged 3246ec6b5 |
 | 2026-09-22 | feat/word-ladder-p2 | db6ffe08ae | Word ladder Plan 2: tricky drill + offer, say-it recording, jamo keypad, practice menu + My words; deployed as db6ffe08ae; merged to main as f63dc25e8f |
+| 2026-09-23 | feat/word-ladder-p45 | 949a0abfde | Word ladder Plans 4-5: frontend trace + trace CLI, grown-up word controls + teacher Words tab, tuning agent (brakes, 15-min scheduler, undo, deferred concern push); merged to main as 5a3bc70cc7 |
