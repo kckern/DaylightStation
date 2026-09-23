@@ -613,8 +613,12 @@ $health-aside-gap: 1.5rem;
 // The row magnifier (RowPreview.jsx): a speech-bubble card beside a food row
 // (Popover with an arrow, portalled). The picture is the point — 5em square,
 // contained on a subtle surface — then the numbers the row carries.
+// The page's one preview card (RowPreviewProvider): fixed to the viewport,
+// moved by transform to the cursor, and never under the pointer's control.
 .health-row-preview__card {
+  position: fixed; top: 0; left: 0; z-index: 400; pointer-events: none; will-change: transform;
   background: var(--ds-surface); border: 1px solid var(--ds-border); color: var(--ds-text-high);
+  border-radius: 8px; box-shadow: 0 8px 24px color-mix(in srgb, var(--ds-text-high) 14%, transparent);
   padding: 0.6rem; max-width: min(20rem, calc(100vw - 2rem));
 }
 .health-row-preview {

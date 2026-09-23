@@ -10,7 +10,7 @@ vi.mock('../../../lib/ui/createAppLogger.js', () => {
 });
 vi.mock('../../../lib/api.mjs', () => ({ DaylightAPI: vi.fn() }));
 
-import { RowPreviewContent, OPEN_DELAY_MS, CLOSE_DELAY_MS } from './RowPreview.jsx';
+import { RowPreviewContent, RowPreviewProvider, CLOSE_DELAY_MS, CURSOR_OFFSET_PX, placeCard } from './RowPreview.jsx';
 
 import { EntryRow } from './EntryRow.jsx';
 import { PortionContext } from './usePortionDraft.js';
@@ -58,99 +58,137 @@ describe('RowPreviewContent', () => {
   });
 });
 
-describe('EntryRow preview card', () => {
+
+// jsdom ships no PointerEvent, so fireEvent.pointer* would carry no coordinates.
+if (typeof window.PointerEvent === 'undefined') {
+  window.PointerEvent = class PointerEvent extends MouseEvent {
+    constructor(type, init = {}) { super(type, init); this.pointerType = init.pointerType ?? 'mouse'; this.isPrimary = true; }
+  };
+}
+
+describe('placeCard', () => {
+  const view = { innerWidth: 1000, innerHeight: 800 };
+  const size = { width: 300, height: 120 };
+  it('sits above and to the right of the cursor', () => {
+    expect(placeCard({ x: 100, y: 400 }, size, view)).toEqual({ left: 100 + CURSOR_OFFSET_PX, top: 400 - CURSOR_OFFSET_PX - 120, side: 'top' });
+  });
+  it('flips below the cursor when there is no room above', () => {
+    const at = placeCard({ x: 100, y: 60 }, size, view);
+    expect(at.side).toBe('bottom');
+    expect(at.top).toBeGreaterThan(60);
+  });
+  it('stays inside the viewport at the right edge', () => {
+    const at = placeCard({ x: 950, y: 400 }, size, view);
+    expect(at.left + size.width).toBeLessThanOrEqual(1000 - 8);
+  });
+});
+
+describe('EntryRow preview card — one card, at the cursor', () => {
   beforeEach(() => { vi.useFakeTimers(); sampled.mockReset(); });
   afterEach(() => { cleanup(); vi.useRealTimers(); });
-  const card = () => document.querySelector('.health-row-preview');
-  const isOpen = container => container.querySelector('.health-row-line').dataset.preview === 'open';
+  const cards = () => document.querySelectorAll('.health-row-preview__card');
+  const card = () => document.querySelector('.health-row-preview__card');
+  const pear = { ...apple, uuid: 'row-2', name: 'Pear', calories: 101 };
+  const rows = (...list) => r(<RowPreviewProvider>{list.map(row => <EntryRow key={row.uuid} row={row} onTap={() => {}} />)}</RowPreviewProvider>);
+  const lineOf = name => screen.getByRole('button', { name: `Edit ${name}` }).closest('.health-row-line');
+  const hover = (el, x, y) => fireEvent.pointerEnter(el, { pointerType: 'mouse', clientX: x, clientY: y });
 
   it('opens the moment the pointer arrives, logs once, and closes after leaving', () => {
-    const { container } = r(<EntryRow row={apple} onTap={() => {}} />);
-    const artwork = container.querySelector('.health-row-artwork');
-    fireEvent.pointerEnter(artwork);
-    expect(isOpen(container)).toBe(true);
-    expect(card()).toBeTruthy(); // no fade-in to wait out
-    expect(document.querySelector('.health-row-preview__card').dataset.position).toMatch(/^top/);
+    rows(apple);
+    const artwork = lineOf('Apple').querySelector('.health-row-artwork');
+    hover(artwork, 50, 300);
+    expect(lineOf('Apple').dataset.preview).toBe('open');
+    expect(card()).toBeTruthy();
+    expect(card().textContent).toContain('Apple');
     expect(sampled).toHaveBeenCalledWith('row.preview.open', { uuid: 'row-1', hasPhoto: false }, { maxPerMinute: 20 });
-    fireEvent.pointerLeave(artwork);
-    act(() => { vi.advanceTimersByTime(CLOSE_DELAY_MS - 50); });
-    expect(isOpen(container)).toBe(true);
-    act(() => { vi.advanceTimersByTime(60); });
-    expect(isOpen(container)).toBe(false);
+    fireEvent.pointerLeave(artwork, { pointerType: 'mouse' });
+    expect(card()).toBeTruthy(); // the short grace between artwork and name
+    act(() => { vi.advanceTimersByTime(CLOSE_DELAY_MS + 5); });
+    expect(card()).toBeNull();
+    expect(lineOf('Apple').dataset.preview).toBeUndefined();
+  });
+
+  it('is a singleton: moving to another row swaps the content, never adds a second card', () => {
+    rows(apple, pear);
+    hover(lineOf('Apple').querySelector('.health-row-artwork'), 50, 300);
+    fireEvent.pointerLeave(lineOf('Apple').querySelector('.health-row-artwork'), { pointerType: 'mouse' });
+    hover(screen.getByRole('button', { name: 'Edit Pear' }), 80, 330);
+    expect(cards()).toHaveLength(1);
+    expect(card().textContent).toContain('Pear');
+    expect(card().textContent).not.toContain('Apple');
+    expect(lineOf('Apple').dataset.preview).toBeUndefined();
+    expect(lineOf('Pear').dataset.preview).toBe('open');
+    act(() => { vi.advanceTimersByTime(1000); });
+    // Apple's pending close must not take down Pear's card.
+    expect(cards()).toHaveLength(1);
+  });
+
+  it('follows the cursor and never takes the pointer itself', () => {
+    rows(apple);
+    const name = screen.getByRole('button', { name: 'Edit Apple' });
+    hover(name, 120, 500);
+    const first = card().style.transform;
+    fireEvent.pointerMove(name, { pointerType: 'mouse', clientX: 300, clientY: 520 });
+    act(() => { vi.advanceTimersByTime(50); }); // the move lands on the next animation frame
+    expect(card().style.transform).not.toBe(first);
+    expect(card().style.transform).toContain(`${300 + CURSOR_OFFSET_PX}px`);
+    expect(card().getAttribute('role')).toBe('tooltip');
+    expect(card().closest('.ds-root')).toBeTruthy();
   });
 
   it('the name carries no native title tooltip to compete with the card', () => {
-    const { container } = r(<EntryRow row={apple} onTap={() => {}} />);
+    const { container } = rows(apple);
     expect(container.querySelector('.health-row__description').getAttribute('title')).toBeNull();
   });
 
   it('keyboard focus on the name opens it; Escape closes it', () => {
-    const { container } = r(<EntryRow row={apple} onTap={() => {}} />);
+    rows(apple);
     const name = screen.getByRole('button', { name: 'Edit Apple' });
     fireEvent.keyDown(document, { key: 'Tab' });
     fireEvent.focus(name);
-    act(() => { vi.advanceTimersByTime(OPEN_DELAY_MS); });
-    expect(isOpen(container)).toBe(true);
+    expect(lineOf('Apple').dataset.preview).toBe('open');
     fireEvent.keyDown(name, { key: 'Escape' });
-    expect(isOpen(container)).toBe(false);
+    expect(card()).toBeNull();
   });
 
   it('focus that did not come from Tab (a sheet returning focus, a tap) does not open it', () => {
-    const { container } = r(<EntryRow row={apple} onTap={() => {}} />);
+    rows(apple);
     const name = screen.getByRole('button', { name: 'Edit Apple' });
     fireEvent.keyDown(document, { key: 'Escape' });
     fireEvent.focus(name);
-    act(() => { vi.advanceTimersByTime(OPEN_DELAY_MS * 2); });
-    expect(isOpen(container)).toBe(false);
+    expect(card()).toBeNull();
     fireEvent.keyDown(document, { key: 'Tab' });
     fireEvent.pointerDown(document.body);
     fireEvent.focus(name);
-    act(() => { vi.advanceTimersByTime(OPEN_DELAY_MS * 2); });
-    expect(isOpen(container)).toBe(false);
-  });
-
-  it('anchors on the artwork, not the full-width row, and the card sits beside it', () => {
-    const { container } = r(<EntryRow row={apple} onTap={() => {}} />);
-    const artwork = container.querySelector('.health-row-artwork');
-    const line = container.querySelector('.health-row-line');
-    const artworkRect = vi.spyOn(artwork, 'getBoundingClientRect');
-    const lineRect = vi.spyOn(line, 'getBoundingClientRect');
-    fireEvent.pointerEnter(screen.getByRole('button', { name: 'Edit Apple' }));
-    act(() => { vi.advanceTimersByTime(OPEN_DELAY_MS); });
-    expect(isOpen(container)).toBe(true);
-    act(() => { vi.advanceTimersByTime(1000); });
-    expect(card()).toBeTruthy();
-    expect(artworkRect).toHaveBeenCalled();
-    expect(lineRect).not.toHaveBeenCalled();
-    // Above the artwork (or flipped below), never over the row's own name.
-    expect(document.querySelector('.health-row-preview__card').dataset.position).toMatch(/^(top|bottom)/);
-    // Portalled INTO the themed root, or its surface/border tokens are undefined.
-    expect(document.querySelector('.health-row-preview__card').closest('.ds-root')).toBeTruthy();
+    expect(card()).toBeNull();
   });
 
   it('never opens while a portion draft is live', () => {
-    const { container } = r(<PortionContext.Provider value={{ draft: { row: apple, status: 'editing' } }}>
-      <EntryRow row={apple} onTap={() => {}} />
+    r(<PortionContext.Provider value={{ draft: { row: apple, status: 'editing' } }}>
+      <RowPreviewProvider><EntryRow row={apple} onTap={() => {}} /></RowPreviewProvider>
     </PortionContext.Provider>);
-    fireEvent.pointerEnter(container.querySelector('.health-row-artwork'));
-    act(() => { vi.advanceTimersByTime(OPEN_DELAY_MS * 2); });
-    expect(isOpen(container)).toBe(false);
+    hover(document.querySelector('.health-row-artwork'), 50, 300);
     expect(card()).toBeNull();
     expect(sampled).not.toHaveBeenCalled();
   });
 
-  it('on a touch screen, tapping the artwork opens the card', () => {
+  it('on a touch screen, tapping the artwork opens the card; a tap elsewhere closes it', () => {
     const original = window.matchMedia;
     window.matchMedia = query => ({ matches: query === '(pointer: coarse)', addEventListener() {}, removeEventListener() {} });
     try {
       const onTap = vi.fn();
-      const { container } = r(<EntryRow row={apple} onTap={onTap} />);
-      fireEvent.click(container.querySelector('.health-row-artwork'));
-      expect(isOpen(container)).toBe(true);
+      r(<RowPreviewProvider><EntryRow row={apple} onTap={onTap} /></RowPreviewProvider>);
+      fireEvent.click(document.querySelector('.health-row-artwork'));
+      expect(card()).toBeTruthy();
       expect(onTap).not.toHaveBeenCalled();
-      act(() => { vi.advanceTimersByTime(1000); });
-      // Below the artwork on touch: a phone column has no room beside it.
-      expect(document.querySelector('.health-row-preview__card').dataset.position).toMatch(/^(bottom|top)/);
+      fireEvent.pointerDown(document.body);
+      expect(card()).toBeNull();
     } finally { window.matchMedia = original; }
+  });
+
+  it('without a provider, a row shows no card and nothing breaks', () => {
+    r(<EntryRow row={apple} onTap={() => {}} />);
+    hover(document.querySelector('.health-row-artwork'), 50, 300);
+    expect(card()).toBeNull();
   });
 });

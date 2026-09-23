@@ -12,6 +12,7 @@ import { CaptureProgress } from './CaptureProgress.jsx';
 import { usePortionControl } from './usePortionDraft.js';
 import { useFrozenOrder, useFlipMoves } from './sectionOrder.js';
 import { MealDragProvider, useMealDropTarget, useDraggableMeal } from './mealDrag.jsx';
+import { RowPreviewProvider } from './RowPreview.jsx';
 import './mealWorkflow.scss';
 
 // Bucket totals fold through the SHARED counted-rows contract — the same file
@@ -250,6 +251,8 @@ export function LogTable({
       ) : null}
     </div>
   );
-  return onMoveEntry || onMoveMeal ? <MealDragProvider onMove={onMoveEntry} onMoveMeal={onMoveMeal}>{log}</MealDragProvider> : log;
+  // One preview card for the whole day, at the cursor (RowPreview.jsx).
+  const withPreview = <RowPreviewProvider>{log}</RowPreviewProvider>;
+  return onMoveEntry || onMoveMeal ? <MealDragProvider onMove={onMoveEntry} onMoveMeal={onMoveMeal}>{withPreview}</MealDragProvider> : withPreview;
 }
 export default LogTable;
