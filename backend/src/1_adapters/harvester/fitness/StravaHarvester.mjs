@@ -415,7 +415,10 @@ export class StravaHarvester extends IHarvester {
         archived = await this.#lifelogStore.load(username, `archives/strava/${archiveName}`);
       }
       if (archived?.data?.heartRateOverTime) {
-        enriched.push(archived.data);
+        // Reuse the archived streams/detail, but let the fresh list fields
+        // win — otherwise a title or description edited on Strava after the
+        // first harvest never reaches the summary.
+        enriched.push({ ...archived.data, ...activity });
         continue;
       }
 
@@ -423,9 +426,14 @@ export class StravaHarvester extends IHarvester {
       try {
         await this.#delay(this.#rateLimitDelayMs);
 
-        const hrStream = await this.#stravaClient.getActivityStreams(activity.id, ['heartrate']);
+        // `time` is required: Strava samples are not per-second (smart
+        // recording), so the HR array is meaningless without its offsets.
+        const hrStream = await this.#stravaClient.getActivityStreams(activity.id, ['heartrate', 'time']);
         if (hrStream?.heartrate?.data) {
           activity.heartRateOverTime = hrStream.heartrate.data;
+          if (hrStream.time?.data?.length === hrStream.heartrate.data.length) {
+            activity.heartRateTimes = hrStream.time.data;
+          }
         } else {
           activity.heartRateOverTime = [0];
         }

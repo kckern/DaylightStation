@@ -468,9 +468,9 @@ export class FitnessActivityEnrichmentService {
 
     // Fetch HR data and build timeline
     let timelineData = null;
-    const hrPerSecond = await this._fetchHRData(activity, activityGateway);
-    if (hrPerSecond) {
-      timelineData = buildStravaSessionTimeline(hrPerSecond);
+    const hrStreams = await this._fetchHRData(activity, activityGateway);
+    if (hrStreams) {
+      timelineData = buildStravaSessionTimeline(hrStreams.heartrate, hrStreams.time);
     }
 
     const timelineSeries = {};
@@ -589,22 +589,30 @@ export class FitnessActivityEnrichmentService {
 
   /**
    * @private
-   * Fetch per-second heart rate data from Strava activity streams.
+   * Fetch the heart rate stream and its time offsets from Strava.
+   * Strava samples are not per-second (smart recording), so the time stream
+   * is required to place them on the session clock.
    * @param {Object} activity - Strava activity object
    * @param {Object} activityGateway - IActivityGateway implementation
-   * @returns {number[]|null} Per-second HR array, or null
+   * @returns {{heartrate: number[], time: number[]|null}|null}
    */
   async _fetchHRData(activity, activityGateway) {
     if (!activityGateway || !activity.has_heartrate) return null;
 
     try {
-      const streams = await activityGateway.getActivityStreams(activity.id, ['heartrate']);
-      if (streams?.heartrate?.data?.length > 1) {
+      const streams = await activityGateway.getActivityStreams(activity.id, ['heartrate', 'time']);
+      const heartrate = streams?.heartrate?.data;
+      if (heartrate?.length > 1) {
+        const time = streams?.time?.data?.length === heartrate.length ? streams.time.data : null;
         this.#logger.info?.('strava.enrichment.hr_from_api', {
           activityId: activity.id,
-          samples: streams.heartrate.data.length,
+          samples: heartrate.length,
+          spanSeconds: time ? time[time.length - 1] : null,
         });
-        return streams.heartrate.data;
+        if (!time) {
+          this.#logger.warn?.('strava.enrichment.hr_time_stream_missing', { activityId: activity.id });
+        }
+        return { heartrate, time };
       }
     } catch (err) {
       this.#logger.warn?.('strava.enrichment.hr_fetch_failed', {

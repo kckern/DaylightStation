@@ -174,6 +174,21 @@ This creates the two-way link: the session now references the provider activity 
 
 If no match is found, the service retries up to 3 times at 5-minute intervals (the home session may not have been saved yet when the webhook arrives). After 3 failures, the job is marked `unmatched`. On container restart, `recoverPendingJobs()` retries all pending/unmatched jobs.
 
+### Strava-only sessions (no home match)
+
+After the retries run out, `_createStravaOnlySession` writes a session built from the activity itself (`session.source: strava`). Its HR timeline comes from `StravaSessionBuilder.buildStravaSessionTimeline(heartrate, time)`.
+
+**The `time` stream is required.** Strava's `heartrate` stream is not one sample per second: Garmin smart recording writes a point every 1–10s. Each sample is placed at its `time` offset. The previous value is held across gaps of up to 60s. Longer gaps stay null (no HR, no rings). Before 2026-09-22 the raw array was treated as per-second, so a session came out about 5x too short. For example, activity 20245291061 had 1039 samples over 4920s and was written as 208 ticks (17 min) for an 82-minute run. The harvester now archives the offsets alongside `heartRateOverTime` as `heartRateTimes`, and `fitness reconstruct` uses them.
+
+### Title and notes pulled back from Strava
+
+`ActivityReconciliationService` (hourly sweep plus after each webhook, 10-day lookback) keeps two things current in the session:
+
+- `strava_notes` — the Strava description, pulled once, never overwritten.
+- `strava.name` — the Strava title. It is set when the session is created (often the auto-name "Morning Run") and refreshed whenever the title on Strava changes. Only a name the session already has is refreshed; home sessions carry a `strava` block without a name and are left alone. Emits `strava.reconciliation.title_synced`.
+
+The harvester also lets fresh list fields (title, description) win over the archived copy, so `lifelog/strava.yml` picks up renames too.
+
 ---
 
 ## Enrichment Payload
@@ -261,6 +276,9 @@ All log events are `info` level — visible in production.
 | `strava.enrichment.success` | activityId, sessionId, fields | Done |
 | `strava.enrichment.error` | activityId, attempt, error | Failed |
 | `strava.enrichment.unmatched` | activityId, attempts | Max retries exhausted |
+| `strava.enrichment.hr_from_api` | activityId, samples, spanSeconds | HR + time streams fetched for a Strava-only session |
+| `strava.enrichment.hr_time_stream_missing` | activityId | No usable time stream; falls back to per-second (warn) |
+| `strava.reconciliation.title_synced` | activityId, sessionId, from, to | Session title refreshed from Strava |
 
 ### Bootstrap
 
