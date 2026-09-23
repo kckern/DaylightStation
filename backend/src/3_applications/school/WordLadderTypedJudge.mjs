@@ -37,8 +37,10 @@ export class WordLadderTypedJudge {
         { role: 'system', content: SYSTEM },
         { role: 'user', content: JSON.stringify({ target: entry.term, gloss: entry.gloss, kind: entry.kind, otherWords, attempt: normalized }) },
       ], { model: this.#model, reasoningEffort: 'minimal', timeout: this.#timeoutMs, jsonMode: true });
-      const modelScore = Number.isInteger(reply?.score) ? reply.score : base.score;
-      const score = Math.max(base.score, Math.min(modelScore, raiseOneBand(base.score)));
+      if (!Number.isInteger(reply?.score) || reply.score < 1 || reply.score > 10) {
+        throw new Error('malformed reply');
+      }
+      const score = Math.max(base.score, Math.min(reply.score, raiseOneBand(base.score)));
       const reason = typeof reply?.reason === 'string' ? reply.reason.slice(0, 200) : null;
       this.#cache.set(pkg, entry.id, normalized, { score, judge: 'model', reason });
       return this.#verdict(score, 'model', reason);
