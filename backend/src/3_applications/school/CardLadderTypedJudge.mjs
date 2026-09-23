@@ -6,7 +6,7 @@
  * a JSON data field.
  */
 import {
-  isShortTarget, modelMayRaise, normalizeAnswer, raiseOneBand, ruleForTarget, scoreTypedDeterministic,
+  isShortTarget, modelMayRaise, raiseOneBand, ruleForTarget, scoreTypedDeterministic,
 } from '#domains/school/cardLadder/index.mjs';
 
 /** Script-specific leniency the model is told about (the deterministic judge already applies it). */
@@ -43,21 +43,21 @@ export class CardLadderTypedJudge {
    */
   async judge({ pkg, entry, typed, otherWords = [], targetScript = null, targetLanguage = null }) {
     // A grown-up's re-grade (spec §6) is the last word on this exact answer.
-    const overruled = this.#cache.get(pkg, entry.id, normalizeAnswer(typed));
-    if (overruled?.judge === 'grown-up') return this.#verdict(overruled.score, 'grown-up', overruled.reason ?? null);
+    // Every cache key is the target script's normalize (Hangul: normalizeAnswer, unchanged).
     const rule = ruleForTarget(entry.term, targetScript);
+    const normalized = rule.normalize(typed);
+    const overruled = this.#cache.get(pkg, entry.id, normalized);
+    if (overruled?.judge === 'grown-up') return this.#verdict(overruled.score, 'grown-up', overruled.reason ?? null);
     const base = scoreTypedDeterministic({ target: entry.term, typed, otherWords, targetScript: rule.script });
     if (base.judge !== 'distance') return this.#verdict(base.score, base.judge);
     if (isShortTarget(entry.term, rule.script) || !modelMayRaise(base) || !this.#ai || !this.#model) return this.#verdict(base.score, 'distance');
-    // Cache key: `normalizeAnswer`, the key a grown-up re-grade writes (unchanged for Hangul).
-    const normalized = normalizeAnswer(typed);
     const cached = this.#cache.get(pkg, entry.id, normalized);
     if (cached) return this.#verdict(cached.score, 'cache', cached.reason);
     try {
       const reply = await this.#ai.chatWithJson([
         { role: 'system', content: systemPrompt(targetLanguage, rule.script) },
         { role: 'user', content: JSON.stringify({
-          target: entry.term, gloss: entry.gloss, kind: entry.kind, otherWords, script: rule.script, language: targetLanguage, attempt: rule.normalize(typed),
+          target: entry.term, gloss: entry.gloss, kind: entry.kind, otherWords, script: rule.script, language: targetLanguage, attempt: normalized,
         }) },
       ], { model: this.#model, reasoningEffort: 'minimal', timeout: this.#timeoutMs, jsonMode: true });
       if (!Number.isInteger(reply?.score) || reply.score < 1 || reply.score > 10) {

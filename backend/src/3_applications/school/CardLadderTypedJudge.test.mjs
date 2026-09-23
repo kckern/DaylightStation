@@ -108,3 +108,23 @@ describe('CardLadderTypedJudge — per-script grading', () => {
     expect(aiGateway.chatWithJson).not.toHaveBeenCalled();
   });
 });
+
+describe('CardLadderTypedJudge — cache and re-grade keys use the script normalize', () => {
+  it('a grown-up re-grade of "Ephmeral" also covers "ephmeral" and "EPHMERAL"', async () => {
+    const { ruleFor } = await import('#domains/school/cardLadder/index.mjs');
+    const cache = makeCache();
+    const judge = new CardLadderTypedJudge({ cache, passScore: 6, logger: { info() {}, warn() {} } });
+    cache.set('defs', 'ephemeral', ruleFor('latin').normalize('Ephmeral'), { score: 6, judge: 'grown-up', reason: 'Re-graded by a grown-up' });
+    const ask = (typed) => judge.judge({ pkg: 'defs', entry: { id: 'ephemeral', term: 'ephemeral', gloss: 'lasting a very short time', kind: 'word' }, typed, otherWords: [], targetScript: 'latin', targetLanguage: 'English' });
+    expect(await ask('ephmeral')).toMatchObject({ judge: 'grown-up', pass: true });
+    expect(await ask('Ephmeral')).toMatchObject({ judge: 'grown-up', pass: true });
+    expect(await ask('EPHMERAL')).toMatchObject({ judge: 'grown-up', pass: true });
+  });
+  it('the model cache is keyed case-insensitively for Latin', async () => {
+    const { aiGateway, judge } = make(async () => ({ score: 8, reason: 'ok' }));
+    const ask = (typed) => judge.judge({ pkg: 'p', entry: entry('photosynthesis', 'how plants make food', 'word'), typed, otherWords: [], targetScript: 'latin', targetLanguage: 'English' });
+    await ask('Photosynthesys');
+    expect(await ask('photosynthesys')).toMatchObject({ judge: 'cache' });
+    expect(aiGateway.chatWithJson).toHaveBeenCalledTimes(1);
+  });
+});
