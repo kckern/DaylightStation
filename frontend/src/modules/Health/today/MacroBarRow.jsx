@@ -64,12 +64,12 @@ function Bar({ label, value, target, unit, tone, caption, ariaLabel }) {
  * implying a per-micro count; closing the gap properly needs per-key provenance
  * on the row, which the stored shape does not have.
  */
-export function MacroBarRow({ macros, goals, macroCoverage, microCoverage, showIntake = true }) {
+export function MacroBarRow({ macros, goals, macroCoverage, microCoverage, showIntake = true, showMacros = true }) {
   const macroGoals = goals?.macroGoals || null;
   const watchMicros = useMemo(() => (Array.isArray(goals?.watchMicros) ? goals.watchMicros : []), [goals?.watchMicros]);
 
   const macroBars = useMemo(() => {
-    if (!macros || !macroGoals) return [];
+    if (!showMacros || !macros || !macroGoals) return [];
     return MACROS
       .filter((m) => Number(macroGoals[m.goalKey]) > 0)
       .map((m) => {
@@ -88,7 +88,7 @@ export function MacroBarRow({ macros, goals, macroCoverage, microCoverage, showI
             : `${m.label} ${fmt(value)} of ${fmt(target)} ${m.unit} goal, ${truePct(value, target)} percent${over ? ', over goal' : ''}${coverage && coverage.covered < coverage.total ? ', partial data' : ''}`,
         };
       });
-  }, [macros, macroGoals, macroCoverage]);
+  }, [showMacros, macros, macroGoals, macroCoverage]);
 
   const microBars = useMemo(() => {
     if (!macros) return [];
@@ -145,7 +145,7 @@ export function MacroBarRow({ macros, goals, macroCoverage, microCoverage, showI
   }, [signature]);
 
   const withoutTargets = MACROS.filter(m => !macroBars.some(bar => bar.key === m.key));
-  const intake = showIntake && withoutTargets.length ? <div className="health-macro-intake" title="+ means some food has unknown macros">
+  const intake = showIntake && showMacros && withoutTargets.length ? <div className="health-macro-intake" title="+ means some food has unknown macros">
     {withoutTargets.map(m => { const coverage = macroCoverage?.[m.key];
       const value = coverage ? coverage.value : macros?.[m.key];
       return <span key={m.key} className={`health-macro-legend health-macro-tone--${m.key}`}>{m.label} {value == null ? '—' : `${fmt(value)}${coverage && coverage.covered < coverage.total ? '+' : ''} g`}</span>;
