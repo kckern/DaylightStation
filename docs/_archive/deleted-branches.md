@@ -475,3 +475,4 @@ The corollary bit twice in this sweep: `feat/teacher-workspace-ia` and `feature/
 | 2026-09-22 | feat/recording-in-pieces | 863b518544 | Sentence Ladder recording in pieces (→ cut, per-piece redo/compare, joined WAV) + Tab-after-take compares; merged to main as 3f1ff3104 |
 | 2026-09-22 | fix/density-units | 52ead8b9b | Density for volume/cup/spoon/imperial units; scan repair restores legacy quantities (grams from mislabeled legacy amounts, volumes restored) |
 | 2026-09-22 | feat/health-day-prefetch | 0bac5d2a9 | Health ±7-day prefetch, instant shortlists, no cached-day flicker, add-row mic, calorie sort + inline bar, exercise memos/descriptions |
+| 2026-09-22 | feat/health-add-polish | 6de6dae8e | Add-row overlay popup, pending/highlight rows, 16-row blended shortlist + icon fallback, AI estimate for calorie-less scans, row magnifier card, frozen order during drags + FLIP, new UI observability |
