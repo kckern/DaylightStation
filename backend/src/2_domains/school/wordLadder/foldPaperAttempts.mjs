@@ -3,17 +3,19 @@
  * Paper only demotes (rule 3); a pass is logged on the word. Idempotent by id.
  *
  * A scanned row's `bankId` is `<docId>@<rev>`. `docId` is accepted when it is
- * a legacy per-deck id (`quizDocumentIds`, exact match) OR starts with one of
- * `acceptPrefixes` (the per-learner quiz addressed to THIS learner, spec §8
- * Printed quiz). A `docId` starting with one of `refusePrefixes` — the bare,
- * no-learnerId per-learner prefix — but matching no accept prefix names a
- * DIFFERENT learner's sheet: it is refused, never folded, and recorded in
+ * a legacy per-deck id (`quizDocumentIds`, exact match) OR a per-learner id
+ * (spec §8 Printed quiz) parsed by `parseLearnerQuizId(docId, learner)` whose
+ * `learnerId` matches `learner.learnerId` — segment-bounded, so learner `a`'s
+ * doc never matches sibling `a-b`'s (a raw prefix `startsWith` would). A
+ * `docId` that parses as a per-learner id under `learner`'s package but for a
+ * DIFFERENT learner is refused, never folded, and recorded in
  * `paperAttemptsFolded` so it is not re-evaluated every day forever.
  */
 import { applyGraded, emptyWordV3 } from './mastery.mjs';
+import { parseLearnerQuizId } from './quizId.mjs';
 
 export function foldPaperAttempts({
-  status, attempts = [], quizDocumentIds = [], acceptPrefixes = [], refusePrefixes = [], dayOf, settings,
+  status, attempts = [], quizDocumentIds = [], learner = null, dayOf, settings,
 }) {
   const next = structuredClone(status);
   next.paperAttemptsFolded = [...(status?.paperAttemptsFolded ?? [])];
@@ -26,12 +28,20 @@ export function foldPaperAttempts({
     if (typeof attempt.bankId !== 'string') continue;
     const at = attempt.bankId.lastIndexOf('@');
     const docId = at >= 0 ? attempt.bankId.slice(0, at) : attempt.bankId;
-    const accepted = idSet.has(docId) || acceptPrefixes.some((prefix) => docId.startsWith(prefix));
+    let accepted = idSet.has(docId);
+    let refusedRow = null;
+    if (!accepted && learner) {
+      const parsed = parseLearnerQuizId(docId, learner);
+      if (parsed) {
+        if (parsed.learnerId === learner.learnerId) accepted = true;
+        else refusedRow = { attemptId: attempt.id, bankId: attempt.bankId };
+      }
+    }
     if (!accepted) {
-      if (refusePrefixes.some((prefix) => docId.startsWith(prefix))) {
+      if (refusedRow) {
         seen.add(attempt.id);
         next.paperAttemptsFolded.push(attempt.id);
-        refused.push({ attemptId: attempt.id, bankId: attempt.bankId });
+        refused.push(refusedRow);
       }
       continue;
     }
