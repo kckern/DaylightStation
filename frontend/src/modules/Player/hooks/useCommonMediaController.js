@@ -81,6 +81,11 @@ export function useCommonMediaController({
   // is rendered outside a ScreenVolumeProvider (e.g., Fitness, Feed, or any
   // other host), effectiveMaster = 1 and behavior is unchanged.
   const { effectiveMaster: masterVolume } = useScreenVolume();
+  // onLoadedMetadata (element-setup effect) applies the master volume, but
+  // masterVolume is not that effect's dep; read the current value from a ref.
+  // The dedicated volume effect below re-applies it on change.
+  const masterVolumeRef = useRef(masterVolume);
+  masterVolumeRef.current = masterVolume;
 
   // Global guards persisted across remounts (per assetId)
   if (!useCommonMediaController.__appliedStartByKey) useCommonMediaController.__appliedStartByKey = Object.create(null);
@@ -1037,8 +1042,9 @@ export function useCommonMediaController({
     const onEnded = () => {
       getMediaEl();
 
-      // THE TERMINAL EVENT, AND IT WAS SILENT UNTIL 2026-08-28. `onEndRef.current?.()` below
-      // is what advances a queue or clears a single item, so this is the branch
+      // THE TERMINAL EVENT, AND IT WAS SILENT UNTIL 2026-08-28.
+      // `onEndRef.current?.()` below is what advances a queue or clears a
+      // single item, so this is the branch
       // point for everything that happens after a story/track finishes — and it
       // emitted nothing at all. A read-along played to its end on the
       // living-room TV, the Player went away, and the only trace in the log
@@ -1234,7 +1240,7 @@ export function useCommonMediaController({
       // see shouldArmAutoplay for the failure chain (jolt-ladder remount unconditionally
       // resumed a paused-during-seek player ~10s later).
       mediaEl.autoplay = rendererOperation ? false : shouldArmAutoplay(remountDiagnostics);
-      mediaEl.volume = adjustedVolume * masterVolume;
+      mediaEl.volume = adjustedVolume * masterVolumeRef.current;
       
       // Loop logic — set the native HTMLMediaElement.loop attribute when the
       // caller has *explicitly* opted in. We must NOT loop just because the
@@ -1266,7 +1272,7 @@ export function useCommonMediaController({
           mediaEl.playbackRate = snapshot.playbackRate;
         }
         if (typeof snapshot.volume === 'number') {
-          mediaEl.volume = Math.min(1, Math.max(0, snapshot.volume * masterVolume));
+          mediaEl.volume = Math.min(1, Math.max(0, snapshot.volume * masterVolumeRef.current));
         }
         if (snapshot.wasPaused) {
           setTimeout(() => {

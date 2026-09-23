@@ -7,6 +7,7 @@ import React, { useLayoutEffect } from 'react';
 import { render, act } from '@testing-library/react';
 import { useCommonMediaController } from './useCommonMediaController.js';
 import * as Logger from '../../../lib/logging/Logger.js';
+import { ScreenVolumeContext } from '../../../lib/volume/ScreenVolumeContext.js';
 import { _setSharedLedgerForTests, createRecoveryLedger } from '../lib/recoveryLedger.js';
 
 vi.mock('../../../lib/api.mjs', () => ({
@@ -199,6 +200,24 @@ describe('useCommonMediaController listener lifetime', () => {
 
     expect(latestEnd).toHaveBeenCalledTimes(1);
     expect(firstEnd).not.toHaveBeenCalled();
+  });
+
+  it('loadedmetadata applies the CURRENT screen master volume, not the one from the effect run', () => {
+    const video = makeFakeVideo();
+    const onProgress = vi.fn();
+    const withMaster = (effectiveMaster) => (
+      <ScreenVolumeContext.Provider value={{ master: effectiveMaster, effectiveMaster, muted: false }}>
+        <Harness video={video} onProgress={onProgress} volume={100} />
+      </ScreenVolumeContext.Provider>
+    );
+    const { rerender } = render(withMaster(1));
+
+    // Master volume is not an element-setup effect dep: this rerender does not
+    // re-run the effect, so its onLoadedMetadata closure still holds master=1.
+    rerender(withMaster(0.5));
+    act(() => { video.fire('loadedmetadata'); });
+
+    expect(video.volume).toBeCloseTo(0.5);
   });
 
   it('does not publish progress from the playing event (only seeked/timeupdate do)', () => {
