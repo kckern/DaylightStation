@@ -13,6 +13,8 @@ export { openDay, currentItem, respond, addActiveTime, dayDone } from './engine.
 export { foldPaperAttempts } from './foldPaperAttempts.mjs';
 export { quizDocumentIdFor } from './quizId.mjs';
 export { buildWordQuizSource } from './quizSource.mjs';
+export { SCENARIOS, seedScenario } from './scenarios.mjs';
+export { DEFAULT_SETTINGS, resolveSettings } from './settings.mjs';
 
 // v2 — removed with WordLadderStudyService in Task 14
 export {
