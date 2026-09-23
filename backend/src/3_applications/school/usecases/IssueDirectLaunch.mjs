@@ -63,7 +63,7 @@ export class IssueDirectLaunch {
         surface: launcher.surface ?? null,
         // Whether the program needs an instance naming WHICH corpus/deck/reel.
         // Reported rather than guessed at, so a caller can say so in a URL.
-        instanceRequired: !['book-log', 'story-time', 'rubiks-cube'].includes(id),
+        instanceRequired: !['book-log', 'story-time', 'rubiks-cube', 'word-ladder'].includes(id),
       }));
   }
 

@@ -1,58 +1,46 @@
 /**
- * `/word-ladder/…` — the word ladder for any word package (word-ladder design
- * "Recording" and "Daily session"). Session ids are opaque here (they carry
- * their package: `<package>.<id>`). A thin shell: authorization (the learner's actual
- * word-ladder assignment, the open session, today's plan) and every grading
- * rule live in `WordLadderStudyService`. Responses are `private, no-store`:
- * a child's plan must not sit in a shared browser cache on a household screen.
+ * `/word-ladder/…` (mastery redesign §4 API, §8 test mode). Mounted twice:
+ * live, and `/word-ladder/test` over the read-only shadow service. A thin
+ * shell — every rule lives in WordLadderSittingService. Responses are
+ * `private, no-store`: a child's sitting must not sit in a shared cache.
  */
-import express from 'express';
-
-export function mountWordLadderRoutes({ router, wrap, notConfigured, wordLadderStudy = null, sendFileResource }) {
-  const service = () => {
-    if (!wordLadderStudy) throw notConfigured('word-ladder study');
-    return wordLadderStudy;
-  };
+export function mountWordLadderRoutes({
+  router, wrap, notConfigured, wordLadderStudy = null, wordLadderTest = null, stageScreen = null,
+}) {
   const noStore = (res) => res.set('Cache-Control', 'private, no-store');
-  const rawAudio = express.raw({
-    type: ['audio/webm', 'audio/ogg', 'audio/mp4', 'application/octet-stream'],
-    limit: '10mb',
-  });
-
-  router.post('/word-ladder/open', wrap(async (req, res) => {
-    const { userId, deckId } = req.body || {};
-    noStore(res).json(await service().open({ userId, deckId }));
-  }));
-  router.post('/word-ladder/fold', wrap(async (req, res) => {
-    const { learnerId, actorId, pin = null } = req.body || {};
-    noStore(res).json(await service().fold({ learnerId, actorId, pin }));
-  }));
-  router.get('/word-ladder/:sessionId/plan', wrap(async (req, res) => {
-    noStore(res).json(await service().plan({ userId: req.query.userId, sessionId: req.params.sessionId }));
-  }));
-  router.post('/word-ladder/:sessionId/checks/:wordId', wrap(async (req, res) => {
-    const { userId, choice } = req.body || {};
-    noStore(res).json(await service().answerCheck({ userId, sessionId: req.params.sessionId, wordId: req.params.wordId, choice }));
-  }));
-  router.post('/word-ladder/:sessionId/cards/:wordId/recording', rawAudio, wrap(async (req, res) => {
-    noStore(res).json(await service().saveRecording({
-      userId: req.query.userId, sessionId: req.params.sessionId, wordId: req.params.wordId,
-      buffer: Buffer.isBuffer(req.body) ? req.body : null, ext: req.query.ext ?? 'webm',
+  const mount = (base, getService, { test }) => {
+    const service = () => {
+      const s = getService();
+      if (!s) throw notConfigured(test ? 'word-ladder test mode' : 'word-ladder');
+      return s;
+    };
+    router.post(`${base}/open`, wrap(async (req, res) => {
+      const { userId, deckId, scenario = null } = req.body || {};
+      noStore(res).json(await service().open(test ? { userId, deckId, scenario } : { userId, deckId }));
     }));
+    router.post(`${base}/sittings/:sittingId/items/:itemId`, wrap(async (req, res) => {
+      const { userId, response = {} } = req.body || {};
+      noStore(res).json(await service().respond({
+        userId, sittingId: req.params.sittingId, itemId: req.params.itemId, response,
+      }));
+    }));
+    router.get(`${base}/sittings/:sittingId`, wrap(async (req, res) => {
+      noStore(res).json(await service().get({ userId: req.query.userId, sittingId: req.params.sittingId }));
+    }));
+    router.post(`${base}/sittings/:sittingId/close`, wrap(async (req, res) => {
+      const { userId, reason = 'leave' } = req.body || {};
+      noStore(res).json(await service().close({ userId, sittingId: req.params.sittingId, reason }));
+    }));
+  };
+  router.get('/word-ladder/stage', wrap(async (_req, res) => noStore(res).json({ screen: stageScreen })));
+  router.post('/word-ladder/fold', wrap(async (req, res) => {
+    if (!wordLadderStudy) throw notConfigured('word-ladder');
+    const { learnerId, actorId, pin = null } = req.body || {};
+    noStore(res).json(await wordLadderStudy.fold({ learnerId, actorId, pin }));
   }));
-  router.get('/word-ladder/:sessionId/cards/:wordId/recording/latest', wrap(async (req, res) => {
-    const found = await service().latestRecording({ userId: req.query.userId, sessionId: req.params.sessionId, wordId: req.params.wordId });
-    noStore(res).type(found.contentType);
-    return sendFileResource(req, res, found.resource);
-  }));
-  router.post('/word-ladder/:sessionId/cards/:wordId/mark', wrap(async (req, res) => {
-    const { userId, mark, recording = null } = req.body || {};
-    noStore(res).json(await service().markCard({ userId, sessionId: req.params.sessionId, wordId: req.params.wordId, mark, recording }));
-  }));
-  router.post('/word-ladder/:sessionId/review/:wordId', wrap(async (req, res) => {
-    const { userId } = req.body || {};
-    noStore(res).json(await service().viewReviewCard({ userId, sessionId: req.params.sessionId, wordId: req.params.wordId }));
-  }));
+  // Test routes first: '/word-ladder/test/open' must not be read as a live sitting id.
+  mount('/word-ladder/test', () => wordLadderTest, { test: true });
+  mount('/word-ladder', () => wordLadderStudy, { test: false });
 }
 
 export default mountWordLadderRoutes;
