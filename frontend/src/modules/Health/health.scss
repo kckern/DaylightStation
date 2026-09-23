@@ -771,6 +771,8 @@ $health-aside-gap: 1.5rem;
   // Same 24px as the log row's icon — one picture size for the food, wherever
   // it appears. `flex: none` so a wide glyph can never squeeze the name.
   &__icon { width: 24px; height: 24px; object-fit: contain; flex: none; }
+  // A product photo fills its square (a pack shot on a white card reads as a tile).
+  &__photo { object-fit: cover; border-radius: 4px; }
   &__dot {
     width: 10px; height: 10px; margin-inline: 7px; border-radius: 50%; flex: none;
     background: var(--ds-text-low);
@@ -779,7 +781,7 @@ $health-aside-gap: 1.5rem;
     &[data-color='orange'] { background: var(--ds-danger); }
   }
   &__name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  &__kcal { margin-left: auto; color: var(--ds-text-low); font-variant-numeric: tabular-nums; font-size: 0.7rem; }
+  &__kcal { margin-left: auto; color: var(--ds-text-low); font-variant-numeric: tabular-nums; font-size: 0.7rem; white-space: nowrap; flex: none; }
   &__error { color: var(--ds-danger); font-size: 0.8rem; margin: 0.25rem 0 0; }
   &__saved-meals {
     display: block; width: 100%; text-align: left; margin-top: 0.35rem;
@@ -809,11 +811,16 @@ $health-aside-gap: 1.5rem;
 // A meal's add row is a quiet line under its foods: no card, no border until
 // it is focused, and its capture icons muted until the row is reached. The
 // popup keeps its own card (below), so an open list still reads as a panel.
+// The field's text starts at --health-name-inset (LogTable measures where the
+// food names start); the input keeps a small inner padding so its focus fill
+// has a margin, and the row is shifted left by exactly that padding.
+.health-meal__add-row { --health-add-pad: 8px; padding-left: max(0px, calc(var(--health-name-inset, 0px) - var(--health-add-pad))); }
 .health-meal__add-row > .health-suggest {
   margin: 0; padding: 0; border-color: transparent; background: transparent; box-shadow: none;
-  > .health-suggest__popup { box-shadow: 0 8px 24px color-mix(in srgb, var(--ds-text-high) 12%, transparent); }
+  // The list keeps the meal's full width: reach back over the indent.
+  > .health-suggest__popup { left: calc(-1px - max(0px, calc(var(--health-name-inset, 0px) - var(--health-add-pad)))); box-shadow: 0 8px 24px color-mix(in srgb, var(--ds-text-high) 12%, transparent); }
   .mantine-TextInput-input {
-    height: 30px; min-height: 30px; font-size: 0.8rem;
+    height: 30px; min-height: 30px; font-size: 0.8rem; padding-inline-start: var(--health-add-pad);
     background: transparent; border-color: transparent;
     &::placeholder { color: var(--ds-text-low); }
     &:hover { background: var(--ds-surface-alt); }

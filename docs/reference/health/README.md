@@ -497,7 +497,11 @@ All four meals always render; an empty meal is its header and its add row. Each 
 add row (`MealAddRow.jsx`) is the one capture surface for that meal: a slim inline
 "Add to {meal}…" field with voice, photo, barcode and saved-meal actions beside it (muted
 until the row is hovered or focused on a mouse; always full strength on touch). There is
-no page-level capture bar and no mic in the meal header.
+no page-level capture bar and no mic in the meal header. The add line's text starts where the food
+names start (LogTable measures a top-level row's name and shares it as
+`--health-name-inset`, so an empty meal lines up too); its suggestion list keeps the
+meal's full width. A suggestion shows the barcode product photo when the saved food
+has one (`photoRef`), else its icon, and a label serving ("325 ml") when it has no grams.
 
 The add row's mic adds by default ("Speak foods to Lunch"). While foods in that meal are
 selected ("Select foods"), the same mic carries the selection and edits those foods
