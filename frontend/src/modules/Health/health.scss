@@ -785,6 +785,8 @@ $health-aside-gap: 1.5rem;
     padding: 0.25rem; border: 1px solid var(--ds-border); border-radius: 9px;
     background: var(--ds-surface); box-shadow: inherit;
   }
+  // No room below in the visible viewport (AddCombobox popupPlacement): open upward.
+  &.health-suggest--above .health-suggest__popup { top: auto; bottom: calc(100% + 2px); }
 }
 .health-pending {
   border: 1px solid var(--ds-border); border-left: 3px solid var(--ds-warning);

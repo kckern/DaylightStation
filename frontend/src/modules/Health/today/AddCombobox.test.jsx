@@ -5,7 +5,7 @@ import { MantineProvider } from '@mantine/core';
 const apiMock = vi.fn();
 vi.mock('../../../lib/api.mjs', () => ({ DaylightAPI: (...a) => apiMock(...a) }));
 
-import { AddCombobox } from './AddCombobox.jsx';
+import { AddCombobox, popupPlacement } from './AddCombobox.jsx';
 import { resetApiResourceCache, primeApiResource } from '../../../lib/hooks/useApiResource.js';
 import { shortlistPath } from '../healthResources.js';
 import { noteVisibleRows, resetAddFlow } from './addFlow.js';
@@ -523,5 +523,31 @@ describe('AddCombobox inline', () => {
     const { rerender } = inline({ focusRequest: 0 });
     rerender(<MantineProvider><AddCombobox inline bucketId="evening" label="Dinner" onDone={() => {}} focusRequest={1} /></MantineProvider>);
     expect(document.activeElement).toBe(screen.getByRole('combobox', { name: 'Add to Dinner' }));
+  });
+});
+
+describe('AddCombobox — popup placement', () => {
+  it('opens below unless the visible viewport lacks room below and has more above', () => {
+    const viewport = { offsetTop: 0, height: 700 };
+    expect(popupPlacement({ top: 100, bottom: 140 }, 300, viewport)).toBe('below');
+    expect(popupPlacement({ top: 560, bottom: 600 }, 300, viewport)).toBe('above');
+    // A shrunken viewport (keyboard up) counts, not the layout height.
+    expect(popupPlacement({ top: 300, bottom: 340 }, 300, { offsetTop: 0, height: 400 })).toBe('above');
+    // Too little room either way: stay below (the list scrolls inside).
+    expect(popupPlacement({ top: 60, bottom: 100 }, 300, { offsetTop: 0, height: 180 })).toBe('below');
+  });
+
+  it('flips the inline popup above the input near the bottom of the screen', async () => {
+    apiMock.mockResolvedValue({ items: [] });
+    const height = window.innerHeight;
+    const rect = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function () {
+      return { top: height - 60, bottom: height - 20, left: 0, right: 300, width: 300, height: 40 };
+    });
+    const offset = vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(250);
+    try {
+      const { container } = r(<AddCombobox inline bucketId="evening" label="Dinner" onDone={() => {}} />);
+      fireEvent.focus(screen.getByRole('combobox'));
+      await waitFor(() => expect(container.querySelector('.health-suggest--above')).toBeTruthy());
+    } finally { rect.mockRestore(); offset.mockRestore(); }
   });
 });

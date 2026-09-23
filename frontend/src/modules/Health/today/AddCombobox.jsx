@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { TextInput, UnstyledButton, Loader, Button } from '@mantine/core';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import { createAppLogger } from '../../../lib/ui/createAppLogger.js';
@@ -18,6 +18,23 @@ export function landedElsewhere(result, { date = null, bucketId = null } = {}) {
   const landedMeal = result?.mealTime ?? result?.bucket ?? null;
   return Boolean((date && landedDate && landedDate !== date) || (bucketId && landedMeal && landedMeal !== bucketId));
 }
+
+/**
+ * Where the inline popup fits: 'below' the input unless the visible viewport
+ * (visualViewport — a phone keyboard shrinks it) has less room below than the
+ * popup needs AND more room above.
+ */
+export function popupPlacement(fieldRect, popupHeight, viewport) {
+  const top = viewport?.offsetTop ?? 0;
+  const bottom = top + (viewport?.height ?? 0);
+  const below = bottom - fieldRect.bottom;
+  const above = fieldRect.top - top;
+  return below < popupHeight && above > below ? 'above' : 'below';
+}
+
+const visibleViewport = () => (typeof window === 'undefined' ? null
+  : window.visualViewport ? { offsetTop: window.visualViewport.offsetTop, height: window.visualViewport.height }
+    : { offsetTop: 0, height: window.innerHeight });
 
 export function AddCombobox({ bucketId, date = null, onDone, onCancel, onMeals, onTemplate, onManageFoods, onSentencePending = null,
   inline = false, label = null, focusRequest = 0, actions = null }) {
@@ -40,6 +57,9 @@ export function AddCombobox({ bucketId, date = null, onDone, onCancel, onMeals, 
   // draws its shortlist only while it is being used. Leaving the row closes
   // the list but keeps any typed text; coming back reopens it.
   const open = !inline || focused;
+  // Near the bottom of a phone screen (or above the keyboard) the overlay
+  // popup would run off the visible area: flip it above the input then.
+  const [placement, setPlacement] = useState('below');
   useEffect(() => { if (focusRequest) inputRef.current?.focus(); }, [focusRequest]);
   // Focus moving between the input and its own popup (suggestions, Log
   // sentence, the two links) is still "in the row" — a Tab onto "Manage saved
@@ -65,6 +85,28 @@ export function AddCombobox({ bucketId, date = null, onDone, onCancel, onMeals, 
     const active = document.activeElement;
     if (!active || active === document.body || (active !== inputRef.current && rootRef.current?.contains(active))) inputRef.current?.focus();
   }, [phase, inline]);
+
+  useLayoutEffect(() => {
+    if (!inline || !open) return undefined;
+    const place = () => {
+      const field = rootRef.current?.querySelector('.health-suggest__field') || rootRef.current;
+      const popup = popupRef.current;
+      if (!field || !popup) return;
+      setPlacement(popupPlacement(field.getBoundingClientRect(), popup.offsetHeight, visibleViewport()));
+    };
+    place();
+    const viewport = window.visualViewport;
+    viewport?.addEventListener('resize', place);
+    viewport?.addEventListener('scroll', place);
+    window.addEventListener('resize', place);
+    document.addEventListener('scroll', place, true);
+    return () => {
+      viewport?.removeEventListener('resize', place);
+      viewport?.removeEventListener('scroll', place);
+      window.removeEventListener('resize', place);
+      document.removeEventListener('scroll', place, true);
+    };
+  }, [inline, open, items.length, text]);
 
   // One effect for both lists. With text, it is the query path exactly as
   // before (debounced). Without, it is the bucket-aware zero-keystroke list
@@ -218,7 +260,7 @@ export function AddCombobox({ bucketId, date = null, onDone, onCancel, onMeals, 
   };
 
   return (
-    <div ref={rootRef} className={`health-suggest${inline ? ' health-suggest--inline' : ''}`}>
+    <div ref={rootRef} className={`health-suggest${inline ? ' health-suggest--inline' : ''}${inline && placement === 'above' ? ' health-suggest--above' : ''}`}>
       <div className="health-suggest__field">
         <TextInput ref={inputRef} autoFocus={!inline} size="sm" value={text}
           placeholder={inline ? `Add to ${label}…` : 'Food name, or a sentence to parse…'}
