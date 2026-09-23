@@ -7,7 +7,7 @@ import { createMeasurementDocument, measureDocumentFragments } from '#rendering/
 import { createWorkbookTheme } from '#rendering/school/documents/workbookTheme.mjs';
 import { texToSvg } from '#rendering/school/documents/mathSvg.mjs';
 import {
-  buildWordQuizSource, emptyStatus, expandLexiconDeck, foldPaperAttempts, planDay, quizDocumentIdFor, validateLexicon,
+  buildWordQuizSource, emptyStatus, emptyStatusV3, emptyWordV3, expandLexiconDeck, foldPaperAttempts, planDay, quizDocumentIdFor, validateLexicon,
 } from './index.mjs';
 
 const G = 'week-01-classroom';
@@ -115,9 +115,13 @@ describe('buildWordQuizSource', () => {
     expect(appended.map((a) => a.itemId)).toEqual(DECK.words);
     expect(appended.every((a) => a.transport === 'paper' && a.bankId === `${published.id}@${rev}`)).toBe(true);
 
-    const { status, folded } = foldPaperAttempts({ status: emptyStatus(), attempts: appended, quizDocumentIds: [quizDocumentIdFor(DECK.id)], dayOf: (at) => at.slice(0, 10) });
+    const seeded = emptyStatusV3();
+    seeded.words.gawi = { ...emptyWordV3(), state: 'claimed' };
+    const { status, folded } = foldPaperAttempts({
+      status: seeded, attempts: appended, quizDocumentIds: [quizDocumentIdFor(DECK.id)], dayOf: (at) => at.slice(0, 10), settings: { afterMisses: 2, gapScale: 1 },
+    });
     expect(folded.filter((row) => !row.correct).map((row) => row.wordId)).toEqual(['gawi']);
-    expect(status.words.gawi.state).toBe('learning');
+    expect(status.words.gawi.state).toBe('familiar');
     expect(status.words.annyeong.state).toBe('new');
   });
   it('renders the instruction line under the title, inside the content width, with Hangul embedded', async () => {
