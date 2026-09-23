@@ -634,6 +634,18 @@ logs `add.flow` (`submitToCommittedMs`, `committedToVisibleMs`).
 `pick(entry)` is the fast path: **one** request, `POST /nutrition/catalog/quickadd
 { catalogEntryId, mealTime }`, then done — no pending state, no confirmation step. The
 meal travels with the quick-add; there is no follow-up `PUT` to move the row afterwards.
+The response is the saved row, and it goes straight onto its day
+(`showCommittedFoodRows` in `healthResources.js`, over `patchApiResource` in
+`lib/hooks/useApiResource.js`). The row does not wait for the day refetch. On a busy
+page that refetch queued for seconds behind icons, photo thumbnails and neighbour-day
+prefetches on the browser's six HTTP/1.1 connections, while the add row had already
+cleared. The refetch still follows and brings the budget and totals. A request issued
+before the patch cannot write the pre-add day back over it.
+
+A write's refresh (`refreshHealthResources`) leaves `/dashboard` out. That endpoint
+re-aggregates 730 days and runs the 730-day reconciliation on every request, about 2 s of
+server work that blocks every other request, and a food write changes nothing Today reads
+from it (the coach line). A coach turn refreshes it (`refreshHealthResourcesWithDashboard`).
 The row lands `settled: true, settledBy: 'user'`, because a one-tap pick of a known food is
 a deliberate choice, not a machine estimate. Its portion is the last one logged for that
 food in that bucket, else its canonical gram portion, else its label serving, else one

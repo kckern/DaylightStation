@@ -4,7 +4,7 @@ import { ActionIcon } from '@mantine/core';
 import { localDateISO } from '@shared-contracts/health/isoDate.mjs';
 import { useApiResource } from '../lib/hooks/useApiResource.js';
 import { AgentConversationProvider, useAgentConversation } from '../modules/Agent/AgentChatSurface.jsx';
-import { refreshHealthResources } from '../modules/Health/healthResources.js';
+import { refreshHealthResourcesWithDashboard } from '../modules/Health/healthResources.js';
 import '@mantine/core/styles.css';
 import {
   AppThemeProvider, AppChrome, DismissStackProvider, LoadingState, ErrorState,
@@ -68,7 +68,7 @@ const HealthShell = ({ userId }) => {
   const conversation = useAgentConversation({ agentId: 'health-coach', userId,
     context: { selectedDate: new URLSearchParams(location.search).get('date') || localDateISO(new Date()),
       ...(coachEntry ? { selectedEntry: { id: coachEntry.uuid || coachEntry.id, date: coachEntry.date, name: coachEntry.name || coachEntry.item } } : {}) },
-    persistSession: true, onComplete: refreshHealthResources });
+    persistSession: true, onComplete: refreshHealthResourcesWithDashboard });
   useHotkey('mod+k', () => openCoach(null));
 
   const activeTab = tabForPath(location.pathname);
