@@ -142,6 +142,8 @@ function serializeHealthMetric(metric) {
  * @param {Object} [config.observationPairing] - ObservationPairingService: read/re-pair/
  *   dismiss kitchen-scale observations. Absent = the three observation routes are not
  *   mounted at all (same gating style as catalogService/photoStore above).
+ * @param {() => Object|null} [config.artworkProvider] - the ArtworkRemediation queue
+ *   (report / view). Absent or null = the artwork routes answer 503.
  * @param {Object} [config.logger] - Logger instance
  * @returns {express.Router}
  */
@@ -224,6 +226,32 @@ export function createHealthRouter(config) {
     const { expectedVersion, operationId, choiceId, text, dismiss } = req.body;
     res.json(await cleanup().interactions.answer({ userId: getDefaultUsername(req), id: req.params.id,
       expectedVersion, operationId, choiceId, text, dismiss }));
+  }));
+
+  // Artwork remediation queue (design 2026-09-23 §5). The browser reports an
+  // icon or photo that would not render; the queue works it until fixed.
+  const ARTWORK_REPORT_KINDS = ['icon-missing', 'icon-failed', 'photo-failed'];
+  const artwork = () => {
+    const service = config.artworkProvider?.() ?? config.cleanupProvider?.()?.artwork ?? null;
+    if (!service) throw Object.assign(new Error('Artwork repair is unavailable'), { status: 503 });
+    return service;
+  };
+  router.post('/nutrition/artwork-failures', asyncHandler(async (req, res) => {
+    const { kind, key, uuid = null, name = null, icon = null } = req.body || {};
+    if (!ARTWORK_REPORT_KINDS.includes(kind)) return res.status(400).json({ error: `kind must be one of ${ARTWORK_REPORT_KINDS.join(', ')}` });
+    if (typeof key !== 'string' || !key || key.length > 200) return res.status(400).json({ error: 'key is required' });
+    for (const [field, value] of Object.entries({ uuid, name, icon })) {
+      if (value !== null && (typeof value !== 'string' || value.length > 300)) return res.status(400).json({ error: `${field} must be a string` });
+    }
+    let service;
+    try { service = artwork(); } catch (error) { return res.status(error.status || 503).json({ error: error.message }); }
+    const item = await service.report(getDefaultUsername(req), { kind, key, uuid, name, icon });
+    return res.status(202).json({ queued: !!item, key: item?.key ?? null, attempts: item?.attempts ?? null });
+  }));
+  router.get('/nutrition/artwork-queue', asyncHandler(async (req, res) => {
+    let service;
+    try { service = artwork(); } catch (error) { return res.status(error.status || 503).json({ error: error.message }); }
+    return res.json(service.view(getDefaultUsername(req)));
   }));
 
   router.get('/day', asyncHandler(async (req, res) => {

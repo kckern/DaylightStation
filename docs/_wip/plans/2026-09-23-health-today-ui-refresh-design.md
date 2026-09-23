@@ -57,6 +57,16 @@ A review of the Today tab (yesterday's log) turned up three kinds of problem:
   The moved row gets the "added" highlight; an Undo toast offers the reverse
   move. Logged as `entry.move { uuid, from, to }`.
 
+- **Whole meal** (added during the session): drag the meal header onto another
+  meal, or ⋯ → "Move all to". Every top-level entry moves; one Undo moves all
+  back; a part-way failure keeps what moved and says how many did not.
+
+### 3b. Calorie bars on one scale (added during the session)
+
+- Every kcal bar on the day shares one absolute scale — the largest figure any
+  row shows (entry, dish rollup, or ingredient). Ingredients no longer rescale
+  to their own dish.
+
 ### 4. Row preview card
 
 - Drop `title={name}` from the name (the native tooltip).
@@ -86,6 +96,13 @@ A review of the Today tab (yesterday's log) turned up three kinds of problem:
   recorded as the real amount, never `0 g`.
 - Backfill: existing UPC-sourced catalog entries are repaired from their
   original scan rows.
+
+## Found along the way
+
+- A failed voice recording's Retry lived in the meal mic, which remounts on a
+  day change — so the retry was lost (true on main too, via the header mic).
+  The mic now hands a failed send to a page banner ("Retry recording") that
+  keeps its original meal, day and selection.
 
 ## Order of work
 

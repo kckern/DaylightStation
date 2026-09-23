@@ -591,8 +591,20 @@ picks the history up from the finished rows. A caller that cannot name a bucket 
 advances bucket history and never guesses one.
 
 `quantity` is the portion the food was last logged with in that bucket, which is what a
-one-tap quick-add defaults to. A bucket the food has never been eaten in falls back to the
-catalog default of one serving.
+one-tap quick-add defaults to. A quantity with neither grams nor an amount is never
+recorded (`null` is unknown, not `0`), and a stored `{grams: 0, amount: 0}` from before
+that fix reads as absent. A bucket the food has never been eaten in falls back to the
+canonical grams, then the label serving, then one serving — never a null amount.
+
+**Barcode foods keep their serving and photo.** A UPC capture records into the catalog
+the label `serving` (`{amount, unit, grams|null}` — a 325 ml shake keeps `325 ml` with
+no invented grams), the product `photoRef`, the resolved icon (never `default`), the
+meal and the capture id. These FILL an entry that lacks them and never overwrite. A
+quick-add of such a food logs that serving and carries the photo; with no icon, it
+takes the closest offered slug by name and persists it on the entry. A later scan of a
+known product reuses the stored serving and photo instead of re-fetching.
+`cli/health-catalog-serving-repair.cli.mjs` backfills older entries from their original
+scan rows (dry run by default; `--apply --backup NEW_DIR --offline`).
 
 ### Deterministic paths — skip the funnel entirely
 
@@ -610,7 +622,8 @@ logs `add.flow` (`submitToCommittedMs`, `committedToVisibleMs`).
 meal travels with the quick-add; there is no follow-up `PUT` to move the row afterwards.
 The row lands `settled: true, settledBy: 'user'`, because a one-tap pick of a known food is
 a deliberate choice, not a machine estimate. Its portion is the last one logged for that
-food in that bucket, else its canonical gram portion. The suggestion shows the
+food in that bucket, else its canonical gram portion, else its label serving, else one
+serving. The row carries the food's product photo when it has one. The suggestion shows the
 same proposed grams and scaled calories that the command will log. Unknown mass stays unknown.
 
 The same shape repeats everywhere a value is already known and doesn't need interpreting:
@@ -868,6 +881,8 @@ on an old catalog entry never outranks the capture's own icon, and `setIcon` ref
 non-offered slug (`400 ICON_NOT_OFFERED`). Reviewed manifest aliases and observed mismatch
 guards reject misleading art (such as diced ham → cheeseburger); absent suitable assets,
 the neutral symbol is intentional. A group shows its own photo or artwork, not both.
+Artwork that cannot be shown is not left that way: see the
+[artwork remediation queue](nutrition-cleanup.md#artwork-remediation-queue).
 
 **Override, and its two scopes.** The edit sheet's picker writes nothing when a picture is
 tapped; it asks first. *Just this entry* PUTs `icon` on the row alone. *Always for this
