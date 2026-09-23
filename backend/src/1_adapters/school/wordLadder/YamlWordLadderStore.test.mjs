@@ -27,6 +27,17 @@ describe('YamlWordLadderStore v3', () => {
     expect(yaml.load(fs.readFileSync(path.join(base(), 'status.yml'), 'utf8')).schema).toBe('school.word-ladder-status/v3');
     expect(yaml.load(fs.readFileSync(path.join(base(), 'days', '2026-09-22.yml'), 'utf8')).activeMs).toBe(5);
   });
+  it('a transaction that leaves a missing day file empty writes status only (a day file means the day was opened)', () => {
+    const store = new YamlWordLadderStore({ configService });
+    store.transact('test-learner', 'korean-vocab', '2026-09-22', ({ status, dayFile }) => ({ status: { ...status, decksSeen: ['deck'] }, dayFile }));
+    expect(yaml.load(fs.readFileSync(path.join(base(), 'status.yml'), 'utf8')).decksSeen).toEqual(['deck']);
+    expect(fs.existsSync(path.join(base(), 'days', '2026-09-22.yml'))).toBe(false);
+    expect(store.listDays('test-learner', 'korean-vocab')).toEqual([]);
+    // An existing day file is still rewritten, even unchanged.
+    store.transact('test-learner', 'korean-vocab', '2026-09-22', ({ status, dayFile }) => ({ status, dayFile: { ...dayFile, activeMs: 3 } }));
+    store.transact('test-learner', 'korean-vocab', '2026-09-22', (x) => x);
+    expect(yaml.load(fs.readFileSync(path.join(base(), 'days', '2026-09-22.yml'), 'utf8')).activeMs).toBe(3);
+  });
   it('refuses to overwrite a corrupt status', () => {
     fs.mkdirSync(base(), { recursive: true });
     fs.writeFileSync(path.join(base(), 'status.yml'), 'schema: [broken');
@@ -68,7 +79,7 @@ describe('YamlWordLadderStore tuning + study days', () => {
   it('lists the study days that have a day file, oldest first', () => {
     const store = new YamlWordLadderStore({ configService });
     expect(store.listDays('test-learner', 'korean-vocab')).toEqual([]);
-    for (const day of ['2026-09-22', '2026-09-19', '2026-09-20']) store.transact('test-learner', 'korean-vocab', day, (x) => x);
+    for (const day of ['2026-09-22', '2026-09-19', '2026-09-20']) store.transact('test-learner', 'korean-vocab', day, ({ status, dayFile }) => ({ status, dayFile: { ...dayFile, activeMs: 1 } }));
     fs.writeFileSync(path.join(base(), 'days', 'notes.yml'), 'x: 1');
     expect(store.listDays('test-learner', 'korean-vocab')).toEqual(['2026-09-19', '2026-09-20', '2026-09-22']);
     expect(store.listDays('nobody', 'korean-vocab')).toEqual([]);

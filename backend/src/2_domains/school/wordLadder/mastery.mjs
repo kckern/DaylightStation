@@ -55,6 +55,9 @@ export function applyGraded(word, { source, correct, day, task, settings }) {
     const lost = word.state === 'mastered' ? { lostMasteredDay: day } : {};
     return { ...miss(word, day, settings.afterMisses), ...lost, lastGraded };
   }
+  // A word reset to new mid-round can still be quizzed in that round; it
+  // counts as introduced the day it was graded, or a miss is never carried.
+  word = { ...word, introducedDay: word.introducedDay ?? day };
   if (source === 'verify') {
     if (correct === true) {
       return { ...word, ...passFlags, state: 'mastered', stage: 0, dueDay: addDays(day, GAPS[0]), lastGraded };

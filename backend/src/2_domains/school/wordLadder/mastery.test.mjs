@@ -20,6 +20,12 @@ describe('mastery', () => {
     expect(applySort(m, 'claimed', D)).toEqual(m);
     expect(applySort(m, 'familiar', D)).toMatchObject({ state: 'familiar', stage: null, dueDay: null });
   });
+  it('a graded word with no introduced day (reset mid-round) gets the graded day, so a miss can be carried', () => {
+    for (const [source, correct] of [['verify', true], ['verify', false], ['recheck', true], ['recheck', false]]) {
+      expect(graded({ ...emptyWordV3(), state: 'mastered', stage: 0 }, source, correct).introducedDay).toBe(D);
+    }
+    expect(graded(mastered(1, D), 'recheck', false).introducedDay).toBe('2026-09-01');
+  });
   it('verify pass → mastered s0 due next day, streak and flags cleared', () => {
     const w = { ...applySort(introduce(emptyWordV3(), D), 'claimed', D), missStreak: 1, tricky: true, notYetCarry: true };
     expect(graded(w, 'verify', true)).toMatchObject({

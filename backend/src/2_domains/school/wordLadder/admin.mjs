@@ -8,11 +8,17 @@ import { ValidationError } from '#domains/core/errors/index.mjs';
 import { addDays } from '../termVerdict.mjs';
 import { GAPS } from './mastery.mjs';
 
-/** Mastered at `stage`, due after that stage's gap; the miss flags a pass would clear are cleared. */
-export function markMastered(word, { stage, day }) {
+/**
+ * Mastered at `stage`, due after that stage's gap scaled by the day's tuned
+ * `gapScale` (as a recheck pass, never under a day); the miss flags a pass
+ * would clear are cleared. A word never introduced counts as introduced
+ * `day`, so a later recheck miss (→ familiar) is carried like any other.
+ */
+export function markMastered(word, { stage, day, gapScale = 1 }) {
   if (!Number.isInteger(stage) || stage < 0) throw new ValidationError('stage must be a whole number, 0 or more');
+  const gap = Math.max(1, Math.round(GAPS[Math.min(stage, GAPS.length - 1)] * (gapScale ?? 1)));
   return {
-    ...word, state: 'mastered', stage, dueDay: addDays(day, GAPS[Math.min(stage, GAPS.length - 1)]),
+    ...word, state: 'mastered', stage, dueDay: addDays(day, gap), introducedDay: word.introducedDay ?? day,
     missStreak: 0, tricky: false, trickySince: null, notYetCarry: false,
   };
 }
