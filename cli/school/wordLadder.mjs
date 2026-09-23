@@ -296,12 +296,16 @@ function parseLogLines(text) {
   return rows;
 }
 
-/** "true"/"false"/"null"/a numeric string -> its real type. VictoriaLogs stores every field as a string. */
+/** "true"/"false"/"null"/a numeric string/a JSON array -> its real type. VictoriaLogs stores every field as a string. */
 function coerceLogValue(value) {
   if (value === 'true') return true;
   if (value === 'false') return false;
   if (value === 'null') return null;
   if (typeof value === 'string' && value !== '' && /^-?\d+(\.\d+)?$/.test(value)) return Number(value);
+  // An array (a quiz queue, a round's word ids) is stored as its JSON text.
+  if (typeof value === 'string' && value.startsWith('[') && value.endsWith(']')) {
+    try { return JSON.parse(value); } catch { return value; }
+  }
   return value;
 }
 

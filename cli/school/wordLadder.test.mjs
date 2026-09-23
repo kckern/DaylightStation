@@ -237,6 +237,22 @@ describe('word-ladder trace CLI', () => {
     expect(printed).toContain('goal');
   });
 
+  it('parses the JSON-string arrays the store keeps (a round.phase quiz queue) and prints served reasons and input', async () => {
+    const stamp = { traceId: 'tr1', sittingId: 'korean-vocab.abc.1', learnerId: 'learner-a', package: 'korean-vocab', mode: 'live' };
+    const rows = [
+      row('school.word-ladder.item.shown', '2026-09-22T10:00:00Z', { ...stamp, seq: 1, t: 200, itemId: 'r1:s:0', type: 'flashcard', itemMode: 'stream', wordId: 'gawi', layout: 'flashcard-front' }),
+      row('school.word-ladder.item.answered', '2026-09-22T10:00:03Z', { ...stamp, seq: 2, t: 3200, itemId: 'r1:s:0', type: 'flashcard', response: { sort: 'claimed' }, ms: 3000, input: 'key:3' }),
+      row('school.word-ladder.item.served', '2026-09-22T10:00:00Z', { learnerId: 'learner-a', sittingId: 'korean-vocab.abc.1', mode: 'live', itemId: 'r1:s:0', reason: 'stream', via: 'respond' }),
+      { ...row('school.word-ladder.round.phase', '2026-09-22T10:00:03Z', { learnerId: 'learner-a', sittingId: 'korean-vocab.abc.1', mode: 'live', itemId: 'r1:s:0', round: 'r1', from: 'stream', to: 'quiz' }), 'data.queue': '["gawi:3.1","gawi:2.2"]' },
+    ];
+    const out = io();
+    expect(await main(['trace', '--learner', 'learner-a', '--day', '2026-09-22'], out, { fetch: ndjsonFetch(rows) })).toBe(0);
+    const printed = out.stdout.write.mock.calls[0][0];
+    expect(printed).toContain('── Sort · round 1 ──');
+    expect(printed).toContain('sort:claimed — (3000ms) · why stream · via key:3');
+    expect(printed).toContain('    ⇢ round r1: stream → quiz [gawi:3.1 gawi:2.2]');
+  });
+
   it('quotes learnerId/sittingId/mode in the LogsQL query — VictoriaLogs tokenizes an unquoted value on . and -', async () => {
     const fetchImpl = ndjsonFetch([]);
     const out = io();

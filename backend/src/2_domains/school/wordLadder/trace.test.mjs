@@ -62,11 +62,20 @@ describe('formatTrace — intro, copy, sorts, verify miss, stall, leave', () => 
       'learner-a · korean-vocab · 2026-09-22 · live · trace tr1 · 1:58 · leave',
       '0:00  flashcard:intro gawi flashcard-front 64px — — (3000ms) → introduced',
       '0:03  copy gawi copy 가위 ✓ (3000ms)',
+      // Section headers come from the item id (r<n>:s: Sort, r<n>:q: Quiz);
+      // these older-style intro/copy/recheck ids name no step, so no header.
+      '── Sort · round 1 ──',
       '0:07  flashcard gawi flashcard-front sort:claimed — (2000ms) → claimed',
+      '── Quiz · round 1 ──',
       '0:09  typed gawi 3.3 가방 ✗ (40000ms)',
       '    ⚠ stalled 40s',
       '0:49  typed pul 3.3 — — (—) ✗ left here',
       '    ⚠ stalled 45s',
+      '── summary ──',
+      'items 5 · answered 4 · wrong 1 · skipped 0 · show-me 0 · stalls 1 · audio 0 · takes 0',
+      'time: Sort 0:02 · Quiz 0:40',
+      'wrong: gawi 3.3 가방',
+      'climbed: gawi new→claimed',
     ].join('\n'));
   });
 });
@@ -174,5 +183,112 @@ describe('formatTrace — item.layout before item.shown (real FitText order)', (
     ]);
     expect(out).toContain('120px');
     expect(out).toContain('⚠ 1 orphaned event(s)');
+  });
+});
+
+describe('formatTrace — sections, reasons, input, sub-lines and the summary footer (observability sweep)', () => {
+  const events = [
+    be('round.planned', { itemId: null, round: 'r1', index: 1, kind: 'new', size: 2, newIds: ['gawi', 'pul'], carryIds: [], hasMatch: true }),
+    be('item.served', { itemId: 'r1:i:gawi:flash', type: 'flashcard', wordId: 'gawi', reason: 'intro', step: 'flash', via: 'open' }),
+    fe('sitting.opened', 0, 1, { package: 'korean-vocab', first: 'flashcard', phase: 'round' }),
+    fe('step.entered', 190, 2, { step: 'learn', round: 1 }),
+    fe('item.shown', 200, 3, { itemId: 'r1:i:gawi:flash', type: 'flashcard', itemMode: 'intro', wordId: 'gawi', layout: 'flashcard-front' }),
+    fe('audio.played', 1200, 4, { clip: 'term', trigger: 'auto', outcome: 'ended' }),
+    fe('card.flipped', 3200, 5, { itemId: 'r1:i:gawi:flash', ms: 3000 }),
+    fe('item.answered', 4200, 6, { itemId: 'r1:i:gawi:flash', type: 'flashcard', response: { seen: true }, ms: 4000, input: 'key:Space' }),
+    be('transition', { itemId: 'r1:i:gawi:flash', wordId: 'gawi', from: { state: 'new', stage: null }, to: { state: 'introduced', stage: null }, source: 'intro' }),
+
+    be('item.served', { itemId: 'r1:i:gawi:say', type: 'say', wordId: 'gawi', reason: 'intro', step: 'say', via: 'respond' }),
+    fe('item.shown', 4300, 7, { itemId: 'r1:i:gawi:say', type: 'say', itemMode: 'say-after', wordId: 'gawi', layout: 'say' }),
+    fe('audio.played', 4400, 8, { clip: 'term', trigger: 'auto', outcome: 'blocked' }),
+    fe('item.skipped', 5800, 9, { itemId: 'r1:i:gawi:say', type: 'say', what: 'say', via: 'key:Backslash', ms: 1500, micOff: false }),
+    fe('item.answered', 5800, 10, { itemId: 'r1:i:gawi:say', type: 'say', response: { done: true }, ms: 1500, input: 'key:Backslash' }),
+    be('round.phase', { itemId: 'r1:i:gawi:say', round: 'r1', index: 1, from: 'intro', to: 'stream' }),
+
+    be('item.served', { itemId: 'r1:s:0', type: 'flashcard', wordId: 'gawi', reason: 'stream', pass: 1, via: 'respond' }),
+    fe('step.entered', 5900, 11, { step: 'sort', round: 1 }),
+    fe('item.shown', 6000, 12, { itemId: 'r1:s:0', type: 'flashcard', itemMode: 'stream', wordId: 'gawi', layout: 'flashcard-front' }),
+    fe('visibility', 20000, 13, { state: 'hidden' }),
+    fe('item.stalled', 51000, 14, { itemId: 'r1:s:0', ms: 45000, visibility: 'hidden', screen: 'item' }),
+    fe('visibility', 55000, 15, { state: 'visible' }),
+    fe('item.answered', 56000, 16, { itemId: 'r1:s:0', type: 'flashcard', response: { sort: 'claimed' }, ms: 50000, input: 'touch' }),
+    be('transition', { itemId: 'r1:s:0', wordId: 'gawi', from: { state: 'introduced', stage: null }, to: { state: 'claimed', stage: null }, source: 'sort' }),
+    be('round.phase', { itemId: 'r1:s:0', round: 'r1', index: 1, from: 'stream', to: 'quiz', queue: ['gawi:3.1', 'gawi:2.2'] }),
+
+    be('item.served', { itemId: 'r1:q:0', type: 'choice', task: '3.1', wordId: 'gawi', reason: 'verify-recognition', via: 'respond' }),
+    fe('step.entered', 56100, 17, { step: 'quiz', round: 1 }),
+    fe('item.shown', 56200, 18, { itemId: 'r1:q:0', type: 'choice', task: '3.1', wordId: 'gawi', layout: 'choice-text-cue' }),
+    fe('item.answered', 59200, 19, { itemId: 'r1:q:0', type: 'choice', task: '3.1', response: { choice: '풀' }, correct: false, ms: 3000, input: 'key:1' }),
+    fe('result.shown', 59210, 20, { itemId: 'r1:q:0', correct: false, held: true }),
+    fe('result.dismissed', 61200, 21, { itemId: 'r1:q:0', via: 'key:Space', ms: 2000 }),
+    be('graded', { itemId: 'r1:q:0', wordId: 'gawi', task: '3.1', source: 'verify', correct: false }),
+    be('transition', { itemId: 'r1:q:0', wordId: 'gawi', from: { state: 'claimed', stage: null }, to: { state: 'familiar', stage: null }, source: 'verify' }),
+    be('day.done', { itemId: 'r1:q:0', doneAt: '2026-09-22T10:01:01-07:00' }),
+
+    be('item.served', { itemId: 'summary', type: 'summary', reason: 'summary', via: 'respond' }),
+    fe('item.shown', 61300, 22, { itemId: 'summary', type: 'summary', layout: 'summary' }),
+    fe('sitting.closed', 62000, 23, { sittingId: 'korean-vocab.abc123.1', itemId: 'summary', reason: 'goal', activeMs: 61000 }),
+    be('closed', { reason: 'goal', activeMs: 61000 }),
+  ];
+
+  it('renders the exact timeline with its footer', () => {
+    expect(formatTrace(events)).toBe([
+      'learner-a · korean-vocab · 2026-09-22 · live · trace tr1 · 1:01 · goal',
+      '    ⇢ round r1 planned (new): new gawi,pul',
+      '── Learn · round 1 ──',
+      '0:00  flashcard:intro gawi flashcard-front seen:true — (4000ms) → introduced · why intro · via key:Space',
+      '    ♪ term auto → ended',
+      '    ⟲ flipped after 3.0s',
+      '0:04  say:say-after gawi say done:true — (1500ms) · why intro · via key:Backslash',
+      '    ⚠ ♪ term auto → blocked',
+      '    ↷ skipped via key:Backslash after 1.5s',
+      '    ⇢ round r1: intro → stream',
+      '── Sort · round 1 ──',
+      '0:06  flashcard:stream gawi flashcard-front sort:claimed — (50000ms) → claimed · why stream · via touch',
+      '    ◐ tab hidden',
+      '    ⚠ stalled 45s (tab hidden)',
+      '    ◑ tab visible',
+      '    ⇢ round r1: stream → quiz [gawi:3.1 gawi:2.2]',
+      '── Quiz · round 1 ──',
+      '0:56  choice gawi 3.1 choice:풀 ✗ (3000ms) → familiar · why verify-recognition · via key:1',
+      '    ▣ verdict ✗ shown (held)',
+      '    ▣ next via key:Space after 2.0s',
+      '    ⇢ day done',
+      '── Done ──',
+      '1:01  summary — summary — — (—) · why summary',
+      '── summary ──',
+      'items 4 · answered 4 · wrong 1 · skipped 1 · show-me 0 · stalls 1 (1 hidden) · audio 2 (1 failed) · takes 0',
+      'time: Learn 0:06 · Sort 0:50 · Quiz 0:05 · Done 0:01',
+      'wrong: gawi 3.1 choice:풀',
+      'climbed: gawi new→familiar',
+    ].join('\n'));
+  });
+
+  it('a sitting abandoned (idle-closed, never closed by its client) says where it stopped', () => {
+    const out = formatTrace([
+      fe('item.shown', 200, 1, { itemId: 'r1:q:2', type: 'typed', task: '3.3', wordId: 'gawi', layout: 'type' }),
+      be('sitting.abandoned', { lastItemId: 'r1:q:2', onScreenItemId: 'r1:q:3', idleMs: 600000 }),
+    ]);
+    expect(out).toContain('⚠ abandoned — idle 10:00, last answer r1:q:2, on screen r1:q:3 (seen at the next request)');
+  });
+
+  it('say.recording, show-me, keypad and a stall on a held verdict render as sub-lines', () => {
+    const out = formatTrace([
+      fe('item.shown', 0, 1, { itemId: 'r1:i:gawi:say', type: 'say', itemMode: 'say-after', wordId: 'gawi', layout: 'say' }),
+      fe('say.recording', 2000, 2, { itemId: 'r1:i:gawi:say', phase: 'started', ms: 2000 }),
+      fe('say.recording', 5000, 3, { itemId: 'r1:i:gawi:say', phase: 'stopped', ms: 5000 }),
+      fe('say.recording', 5400, 4, { itemId: 'r1:i:gawi:say', phase: 'uploaded', ms: 5400, durationMs: 3000, bytes: 50000 }),
+      fe('item.shown', 6000, 5, { itemId: 'p1:0', type: 'typed', task: '3.3', wordId: 'gawi', layout: 'type' }),
+      fe('keypad.toggled', 6100, 6, { auto: true, open: true }),
+      fe('showme.used', 9000, 7, { itemId: 'p1:0', via: 'touch', ms: 3000 }),
+      fe('item.stalled', 60000, 8, { itemId: 'p1:0', ms: 45000, visibility: 'visible', screen: 'result' }),
+    ]);
+    expect(out).toContain('    ● take started at 2.0s');
+    expect(out).toContain('    ● take uploaded at 5.4s (3.0s long)');
+    expect(out).toContain('── Practice p1 ──');
+    expect(out).toContain('    ⌨ keypad open (auto)');
+    expect(out).toContain('    ? show me via touch after 3.0s');
+    expect(out).toContain('    ⚠ stalled 45s (on the verdict)');
+    expect(out).toContain('takes 1');
   });
 });
