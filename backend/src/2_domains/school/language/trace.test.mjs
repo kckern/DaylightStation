@@ -93,3 +93,22 @@ describe('formatSentenceTrace — the chunked flow (2026-09-23)', () => {
     expect(out).toContain('restarts 1 (key:ArrowLeft×1) · auto-stops 1');
   });
 });
+
+describe('formatSentenceTrace — interpretation: checked vs gave up (2026-09-23)', () => {
+  const e = (name, traceSeq, seq, data) => ({
+    msg: `school.language.interpretation.${name}`,
+    data: { traceId: 'run-3', learnerId: 'learner-a', corpus: 'c', day: 9, traceSeq, t: traceSeq * 1000, seq, ...data },
+  });
+  const out = formatSentenceTrace([
+    e('checked', 1, 4, { inputMode: 'voice', via: 'touch', detail: 'checked' }),
+    e('gave-up', 2, 5, { via: 'touch', detail: 'gave-up' }),
+  ]);
+  it('tells a checked answer from a give-up, each under its own sentence', () => {
+    expect(out).toContain('seq 4 · interpretation');
+    expect(out).toContain('checked (voice)  [touch]');
+    expect(out).toContain('seq 5 · interpretation');
+    expect(out).toContain('gave up — answer shown  [touch]');
+    expect(out).toContain('checked 1 · stalls 0');
+    expect(out).toContain('gave up 1 · stalls 0');
+  });
+});

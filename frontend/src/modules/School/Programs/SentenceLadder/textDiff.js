@@ -48,4 +48,51 @@ export function diffChars(expected, given) {
   return parts;
 }
 
+/**
+ * THE CHECK-YOUR-WORK PANEL (2026-09-23): which characters of the learner's
+ * attempt and of the answer are shared, so the matching parts can be LIT on
+ * both lines. Case-insensitive, because "it" and "It" are the same word to a
+ * child checking their work. Each line keeps its own letters and case.
+ *
+ * Only matches are marked. What differs is left plain rather than drawn in a
+ * warning colour: the panel is "see how close you got", not a red pen.
+ *
+ * @returns {{given: Array<{text: string, match: boolean}>, answer: Array<{text: string, match: boolean}>}}
+ */
+export function matchParts(answer, given) {
+  const a = [...String(answer ?? '')];
+  const b = [...String(given ?? '')];
+  // Fold case only where folding keeps each code point one code point, so a
+  // position in the folded string is a position in the original.
+  const fold = (chars) => chars.map((c) => {
+    const lower = c.toLowerCase();
+    return [...lower].length === 1 ? lower : c;
+  });
+  const parts = diffChars(fold(a).join(''), fold(b).join(''));
+  const out = { given: [], answer: [] };
+  const push = (list, text, match) => {
+    if (!text) return;
+    const last = list[list.length - 1];
+    if (last && last.match === match) last.text += text;
+    else list.push({ text, match });
+  };
+  let i = 0;
+  let j = 0;
+  for (const part of parts) {
+    const n = [...part.text].length;
+    if (part.type === 'same') {
+      push(out.answer, a.slice(i, i + n).join(''), true);
+      push(out.given, b.slice(j, j + n).join(''), true);
+      i += n; j += n;
+    } else if (part.type === 'removed') {
+      push(out.answer, a.slice(i, i + n).join(''), false);
+      i += n;
+    } else {
+      push(out.given, b.slice(j, j + n).join(''), false);
+      j += n;
+    }
+  }
+  return out;
+}
+
 export default diffChars;

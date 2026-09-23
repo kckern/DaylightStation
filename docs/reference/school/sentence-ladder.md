@@ -474,6 +474,26 @@ replace it, and it must not be recorded as one.
 A reveal **clears the rung like any other attempt** — accuracy gates nothing
 here and neither does this. What changes is only what the evidence says.
 
+**Check your work.** Ruling, 2026-09-23 owner: every submitted interpretation
+reveals the answer (check your work); Show the answer remains the give-up.
+
+On interpretation, Enter or Submit does not hand the answer in straight away.
+It freezes what the learner wrote (typed, or a transcript they spoke and maybe
+edited) and shows it beside the answer — *You typed* / *You said*, then *The
+answer* — right or wrong, with the characters they share lit in the accent
+(`textDiff.js` `matchParts`, case-insensitive). What differs is left plain:
+the panel is "see how close you got", not a red pen. Space, Enter or
+Continue then commits exactly what they wrote, with its `method`; Tab plays
+the sentence again. The field is gone once the answer is on screen, as after a
+reveal, so the answer can never be typed back in as theirs, and no key
+changes or discards what they wrote. The two are logged apart:
+`school.language.interpretation.checked {seq, via, inputMode: typed|voice,
+chars}` and `school.language.interpretation.gave-up {seq, via, typed}`; the
+trace CLI renders both. No verdict is shown on the panel, because the rung
+never produced one: accuracy is still computed by the server when the
+attempt is recorded, and gates nothing. Dictation is unchanged: its Enter
+commits.
+
 An answer is compared to the expected text after trimming, collapsing
 whitespace and casefolding — nothing cleverer, so a near miss is exactly what
 the learner should see in their diff. **Accuracy is recorded and gates
