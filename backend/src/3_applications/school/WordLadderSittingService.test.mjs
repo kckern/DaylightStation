@@ -25,7 +25,7 @@ const lexicon = {
   entries: new Map([['gawi', { id: 'gawi', group: 'week-01', term: '가위', gloss: 'Scissors', kind: 'word', decoys: { term: ['a', 'b', 'c'], gloss: ['x', 'y', 'z'] } }],
     ['pul', { id: 'pul', group: 'week-01', term: '풀', gloss: 'Glue', kind: 'word', decoys: { term: ['d', 'e', 'f'], gloss: ['u', 'v', 'w'] } }]]),
 };
-function make({ recordings = null, mode = 'live', attempts = null, attemptsReader = null, teacherGate = null, judge = null, store = memoryStore(), media = false, decks = null } = {}) {
+function make({ judgementCache = null, recordings = null, mode = 'live', attempts = null, attemptsReader = null, teacherGate = null, judge = null, store = memoryStore(), media = false, decks = null, bounds = null } = {}) {
   let t = Date.parse('2026-09-22T16:00:00-07:00');
   const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
   const judgeFn = judge ?? vi.fn(async ({ typed, entry }) => ({ score: typed === entry.term ? 10 : 2, judge: 'exact', reason: null, pass: typed === entry.term }));
@@ -41,8 +41,8 @@ function make({ recordings = null, mode = 'live', attempts = null, attemptsReade
     attempts: attemptsReader ? { readAttemptsInRange: attemptsReader } : attempts ? { readAttemptsInRange: vi.fn(() => attempts) } : null,
     assets: { exists: typeof media === 'function' ? media : () => media },
     judge: { judge: judgeFn },
-    teacherGate, recordings,
-    settings: () => SETTINGS, timezone: 'America/Los_Angeles', now: () => (t += 4000), logger, mode,
+    teacherGate, recordings, judgementCache,
+    settings: () => SETTINGS, bounds, timezone: 'America/Los_Angeles', now: () => (t += 4000), logger, mode,
   });
   return { service, store, logger, judge: judgeFn, advance: (ms) => { t += ms; } };
 }
@@ -557,5 +557,300 @@ describe('WordLadderSittingService — drills, speaking, practice, My words', ()
     const opened = await service.open({ userId: 'test-learner', deckId: DECK });
     const { words } = await service.words({ userId: 'test-learner', deckId: DECK, sittingId: opened.sittingId });
     expect(words.map((w) => w.wordId)).toEqual(['gawi', 'pul']);
+  });
+});
+
+describe('WordLadderSittingService — graded and transition events (plan 4, spec §8)', () => {
+  const calls = (logger, event) => logger.info.mock.calls.filter(([name]) => name === event).map(([, data]) => data);
+
+  it('an ordinary response logs answered and its transition, never graded', async () => {
+    const { service, logger } = make();
+    const { sittingId, item } = await service.open({ userId: 'test-learner', deckId: DECK });
+    await service.respond({ userId: 'test-learner', sittingId, itemId: item.id, response: { seen: true } });
+    expect(calls(logger, 'school.word-ladder.graded')).toEqual([]);
+    expect(calls(logger, 'school.word-ladder.answered')).toEqual([expect.objectContaining({ learnerId: 'test-learner', sittingId, mode: 'live', itemId: item.id, type: 'flashcard', wordId: 'gawi' })]);
+    expect(calls(logger, 'school.word-ladder.transition')).toEqual([{
+      learnerId: 'test-learner', sittingId, mode: 'live', package: 'korean-vocab', day: TODAY, itemId: item.id,
+      wordId: 'gawi', from: { state: 'new', stage: null }, to: { state: 'introduced', stage: null }, source: 'intro',
+    }]);
+  });
+
+  it('a graded recheck logs graded once and its transition, with mode', async () => {
+    const { service, logger } = make({ store: dueStore(1), mode: 'test' });
+    const { sittingId, item } = await service.open({ userId: 'test-learner', deckId: DECK });
+    expect(item).toMatchObject({ type: 'typed', source: 'recheck' });
+    await service.respond({ userId: 'test-learner', sittingId, itemId: item.id, response: { typed: '가비' } });
+    expect(calls(logger, 'school.word-ladder.graded')).toEqual([{
+      learnerId: 'test-learner', sittingId, mode: 'test', package: 'korean-vocab', day: TODAY, itemId: item.id,
+      wordId: 'gawi', task: '3.3', source: 'recheck', correct: false, score: 2, judge: 'exact',
+    }]);
+    expect(calls(logger, 'school.word-ladder.transition')).toEqual([expect.objectContaining({
+      mode: 'test', wordId: 'gawi', from: { state: 'mastered', stage: 0 }, to: { state: 'familiar', stage: null }, source: 'recheck',
+    })]);
+    expect(calls(logger, 'school.word-ladder.answered')).toHaveLength(1);
+  });
+
+  it('a replayed answer logs no second graded or transition', async () => {
+    const { service, logger } = make({ store: dueStore(1) });
+    const { sittingId, item } = await service.open({ userId: 'test-learner', deckId: DECK });
+    await service.respond({ userId: 'test-learner', sittingId, itemId: item.id, response: { typed: '가비' } });
+    await service.respond({ userId: 'test-learner', sittingId, itemId: item.id, response: { typed: '가비' } });
+    expect(calls(logger, 'school.word-ladder.graded')).toHaveLength(1);
+    expect(calls(logger, 'school.word-ladder.transition')).toHaveLength(1);
+  });
+
+  it('a paper fold on open logs its transitions with source paper', async () => {
+    const store = memoryStore();
+    store.s.status.words.pul = { ...emptyWordV3(), state: 'claimed', introducedDay: '2026-09-20' };
+    const attempts = [{ id: 'att_1', at: '2026-09-22T20:00:00.000Z', bankId: `${DECK}-quiz@abcdef`, itemId: 'pul', correct: false, transport: 'paper' }];
+    const { service, logger } = make({ store, attempts });
+    const { sittingId } = await service.open({ userId: 'test-learner', deckId: DECK });
+    expect(calls(logger, 'school.word-ladder.transition')).toEqual([{
+      learnerId: 'test-learner', sittingId, mode: 'live', package: 'korean-vocab', day: TODAY, itemId: null,
+      wordId: 'pul', from: { state: 'claimed', stage: null }, to: { state: 'familiar', stage: null }, source: 'paper',
+    }]);
+  });
+
+  it('a teacher fold logs its transitions with source paper and no sitting', async () => {
+    const store = memoryStore();
+    store.s.status.words.gawi = { ...emptyWordV3(), state: 'claimed', introducedDay: '2026-09-20' };
+    const attempts = [{ id: 'att_2', at: '2026-09-22T20:00:00.000Z', bankId: `${DECK}-quiz@abcdef`, itemId: 'gawi', correct: false, transport: 'paper' }];
+    const { service, logger } = make({ store, attempts, teacherGate: { assert: vi.fn() } });
+    await service.fold({ learnerId: 'test-learner', actorId: 'parent', pin: '1234' });
+    expect(calls(logger, 'school.word-ladder.transition')).toEqual([expect.objectContaining({
+      learnerId: 'test-learner', sittingId: null, mode: 'live', wordId: 'gawi', source: 'paper', to: { state: 'familiar', stage: null },
+    })]);
+  });
+});
+
+describe('WordLadderSittingService — grown-up word controls (plan 4 task 4, spec §6)', () => {
+  const gate = () => ({ assert: vi.fn() });
+  const who = { learnerId: 'test-learner', deckId: DECK, actorId: 'parent', pin: '1234' };
+  function adminStore() {
+    const store = dueStore(2);
+    store.s.status.words.gawi = { ...store.s.status.words.gawi, lastGraded: { day: '2026-09-20', task: '3.3', correct: false } };
+    store.s.status.decksSeen = [DECK_OTHER, DECK];
+    return store;
+  }
+  const cacheMock = () => ({ get: vi.fn(() => null), set: vi.fn() });
+  const adminCalls = (service) => [
+    () => service.adminWords(who),
+    () => service.adminReset({ ...who, wordId: 'gawi' }),
+    () => service.adminMarkMastered({ ...who, wordId: 'gawi', stage: 1 }),
+    () => service.adminExclude({ ...who, wordId: 'gawi', excluded: true }),
+    () => service.adminDropDeck({ ...who, dropDeckId: DECK_OTHER }),
+    () => service.adminRegrade({ ...who, day: TODAY, itemId: 'rc:gawi', pass: true }),
+  ];
+
+  it('every admin call is teacher-gated, and a refusal changes nothing', async () => {
+    const teacherGate = { assert: vi.fn(() => { throw new Error('Only a grown-up can do this.'); }) };
+    const store = adminStore();
+    const { service } = make({ store, teacherGate, judgementCache: cacheMock() });
+    const before = structuredClone(store.s);
+    for (const call of adminCalls(service)) await expect(call()).rejects.toThrow(/grown-up/);
+    expect(teacherGate.assert).toHaveBeenCalledTimes(6);
+    for (const [args] of teacherGate.assert.mock.calls) {
+      expect(args).toEqual({ userId: 'parent', pin: '1234', action: 'word-ladder.admin', context: { learnerId: 'test-learner' } });
+    }
+    expect(store.s).toEqual(before);
+  });
+
+  it('is answered by the live service only', async () => {
+    const { service } = make({ mode: 'test', teacherGate: gate(), judgementCache: cacheMock() });
+    for (const call of adminCalls(service)) await expect(call()).rejects.toThrow(/live/);
+  });
+
+  it('adminWords lists every word with its state and the last 14 days of typed answers', async () => {
+    const store = adminStore();
+    store.s.days['2026-09-20'] = {
+      ...emptyDay('2026-09-20'),
+      items: {
+        'rc:gawi': { at: '2026-09-20T16:00:00-07:00', response: { typed: '가이' }, result: { correct: false, score: 5, judge: 'model' }, wordId: 'gawi', task: '3.3', source: 'recheck', reason: 'close' },
+        'r1:q:1': { at: '2026-09-20T16:01:00-07:00', response: { choice: 'Glue' }, result: { correct: true }, wordId: 'pul', task: '2.2', source: 'verify' },
+      },
+    };
+    store.s.days['2026-09-01'] = { ...emptyDay('2026-09-01'), items: { 'rc:gawi': { at: 'x', response: { typed: '가우' }, result: { score: 2, judge: 'distance' }, wordId: 'gawi', task: '3.3' } } };
+    const { service } = make({ store, teacherGate: gate(), judgementCache: cacheMock() });
+    const { words } = await service.adminWords(who);
+    expect(words.map((w) => w.wordId)).toEqual(['gawi', 'pul']);
+    expect(words.find((w) => w.wordId === 'gawi')).toEqual({
+      wordId: 'gawi', term: '가위', gloss: 'Scissors', state: 'mastered', stage: 0, dueDay: TODAY, missStreak: 0, tricky: false, excluded: false,
+      lastGraded: { day: '2026-09-20', task: '3.3', correct: false },
+      recentTyped: [{ day: '2026-09-20', itemId: 'rc:gawi', typed: '가이', score: 5, judge: 'model', reason: 'close', correct: false, source: 'recheck', regraded: null }],
+    });
+    expect(words.find((w) => w.wordId === 'pul').recentTyped).toEqual([]);
+  });
+
+  it('adminReset returns a word to new, clearing notYetCarry, and logs admin + transition', async () => {
+    const store = adminStore();
+    store.s.status.words.gawi.notYetCarry = true;
+    const { service, logger } = make({ store, teacherGate: gate(), judgementCache: cacheMock() });
+    await service.adminReset({ ...who, wordId: 'gawi' });
+    expect(store.s.status.words.gawi).toEqual(emptyWordV3());
+    expect(logger.info).toHaveBeenCalledWith('school.word-ladder.admin', expect.objectContaining({
+      actorId: 'parent', learnerId: 'test-learner', package: 'korean-vocab', wordId: 'gawi', action: 'reset',
+    }));
+    expect(logger.info).toHaveBeenCalledWith('school.word-ladder.transition', expect.objectContaining({
+      wordId: 'gawi', from: { state: 'mastered', stage: 0 }, to: { state: 'new', stage: null }, source: 'admin',
+    }));
+  });
+
+  it('adminMarkMastered sets the stage and its due day', async () => {
+    const store = adminStore();
+    const { service } = make({ store, teacherGate: gate(), judgementCache: cacheMock() });
+    await service.adminMarkMastered({ ...who, wordId: 'pul', stage: 2 });
+    expect(store.s.status.words.pul).toMatchObject({ state: 'mastered', stage: 2, dueDay: '2026-09-29' });
+    delete store.s.status.words.gawi;
+    await service.adminMarkMastered({ ...who, wordId: 'gawi', stage: 1 });
+    expect(store.s.status.words.gawi).toMatchObject({ state: 'mastered', stage: 1, introducedDay: TODAY });
+    await expect(service.adminMarkMastered({ ...who, wordId: 'pul', stage: -2 })).rejects.toThrow(/stage/);
+    await expect(service.adminMarkMastered({ ...who, wordId: 'nope', stage: 1 })).rejects.toThrow(/nope/);
+  });
+
+  it('adminExclude flags the word, takes its pending recheck off today, and re-settles the day', async () => {
+    const store = adminStore();
+    store.s.status.words.pul = { ...emptyWordV3(), state: 'familiar', introducedDay: '2026-09-01' };
+    const { service } = make({ store, teacherGate: gate(), judgementCache: cacheMock() });
+    const opened = await service.open({ userId: 'test-learner', deckId: DECK });
+    expect(opened.item).toMatchObject({ wordId: 'gawi' }); // the due recheck
+    expect(store.s.days[TODAY].rounds).toHaveLength(0);
+    await service.adminExclude({ ...who, wordId: 'gawi', excluded: true });
+    expect(store.s.status.words.gawi.excluded).toBe(true);
+    expect(store.s.days[TODAY].rechecks.order).toEqual([]);
+    // Not a false "done" summary: the carry round for pul is planned now.
+    expect(store.s.days[TODAY].doneAt).toBeNull();
+    expect(store.s.days[TODAY].rounds.map((round) => round.words)).toEqual([['pul']]);
+    const again = await service.get({ userId: 'test-learner', sittingId: opened.sittingId });
+    expect(again.item.type).not.toBe('summary');
+    expect(again.item.wordId).not.toBe('gawi');
+    await service.adminExclude({ ...who, wordId: 'gawi', excluded: false });
+    expect(store.s.status.words.gawi.excluded).toBe(false);
+    await expect(service.adminExclude({ ...who, wordId: 'gawi', excluded: 'yes' })).rejects.toThrow(/excluded/);
+  });
+
+  it('adminMarkMastered applies the day\'s tuned gapScale', async () => {
+    const store = adminStore();
+    store.s.days[TODAY] = { ...emptyDay(TODAY), atOpen: { dueRechecks: [], tricky: [], newAllowance: 0, settings: { ...SETTINGS, review: { ...SETTINGS.review, gapScale: 2 } } } };
+    const { service } = make({ store, teacherGate: gate(), judgementCache: cacheMock() });
+    await service.adminMarkMastered({ ...who, wordId: 'pul', stage: 2 });
+    expect(store.s.status.words.pul.dueDay).toBe('2026-10-06');
+  });
+
+  it('word controls on a day never opened leave its day file empty (the store then writes status only)', async () => {
+    const store = adminStore();
+    const { service } = make({ store, teacherGate: gate(), judgementCache: cacheMock() });
+    await service.adminReset({ ...who, wordId: 'gawi' });
+    await service.adminMarkMastered({ ...who, wordId: 'gawi', stage: 1 });
+    await service.adminExclude({ ...who, wordId: 'pul', excluded: true });
+    await service.adminDropDeck({ ...who, dropDeckId: DECK_OTHER });
+    expect(store.s.days[TODAY]).toEqual(emptyDay(TODAY));
+  });
+
+  it('adminDropDeck refuses the current deck or any deck the learner is still enrolled in; adminWords lists the droppable ones', async () => {
+    const store = adminStore();
+    const { service } = make({ store, teacherGate: gate(), judgementCache: cacheMock() });
+    await expect(service.adminDropDeck({ ...who, dropDeckId: DECK })).rejects.toThrow(/enrolled/);
+    expect(store.s.status.decksSeen).toEqual([DECK_OTHER, DECK]);
+    const listed = await service.adminWords(who);
+    expect(listed.decksSeen).toEqual([DECK_OTHER, DECK]);
+    expect(listed.droppableDecks).toEqual([DECK_OTHER]);
+  });
+
+  it('adminDropDeck removes a deck from decksSeen and keeps introduced words', async () => {
+    const store = adminStore();
+    const { service, logger } = make({ store, teacherGate: gate(), judgementCache: cacheMock() });
+    await service.adminDropDeck({ ...who, dropDeckId: DECK_OTHER });
+    expect(store.s.status.decksSeen).toEqual([DECK]);
+    expect(store.s.status.words.pul.state).toBe('mastered');
+    expect(logger.info).toHaveBeenCalledWith('school.word-ladder.admin', expect.objectContaining({ action: 'drop-deck', deckId: DECK_OTHER, wordId: null }));
+  });
+
+  it('adminRegrade overwrites the judge cache for that answer, records it on the item, and leaves word state', async () => {
+    const store = adminStore();
+    store.s.days['2026-09-20'] = {
+      ...emptyDay('2026-09-20'),
+      items: {
+        'rc:gawi': { at: 'a', response: { typed: ' 가이 ' }, result: { correct: false, score: 5, judge: 'model' }, wordId: 'gawi', task: '3.3', source: 'recheck' },
+        'r1:q:1': { at: 'b', response: { choice: 'Glue' }, result: { correct: true }, wordId: 'pul', task: '2.2', source: 'verify' },
+      },
+    };
+    const judgementCache = cacheMock();
+    const { service, logger } = make({ store, teacherGate: gate(), judgementCache });
+    const wordBefore = structuredClone(store.s.status.words.gawi);
+    await service.adminRegrade({ ...who, day: '2026-09-20', itemId: 'rc:gawi', pass: true });
+    expect(judgementCache.set).toHaveBeenCalledWith('korean-vocab', 'gawi', '가이', { score: 6, judge: 'grown-up', reason: 'Re-graded by a grown-up' });
+    expect(store.s.days['2026-09-20'].items['rc:gawi'].regraded).toEqual({ at: expect.any(String), actorId: 'parent', pass: true });
+    expect(store.s.status.words.gawi).toEqual(wordBefore);
+    expect(logger.info).toHaveBeenCalledWith('school.word-ladder.admin', expect.objectContaining({ action: 'regrade', wordId: 'gawi', pass: true }));
+    await service.adminRegrade({ ...who, day: '2026-09-20', itemId: 'rc:gawi', pass: false });
+    expect(judgementCache.set).toHaveBeenLastCalledWith('korean-vocab', 'gawi', '가이', { score: 1, judge: 'grown-up', reason: 'Re-graded by a grown-up' });
+    await expect(service.adminRegrade({ ...who, day: '2026-09-20', itemId: 'r1:q:1', pass: true })).rejects.toThrow(/typed/);
+    await expect(service.adminRegrade({ ...who, day: '2026-09-20', itemId: 'rc:none', pass: true })).rejects.toThrow(/rc:none/);
+  });
+
+  it('adminRegrade needs a judgement cache', async () => {
+    const { service } = make({ store: adminStore(), teacherGate: gate() });
+    await expect(service.adminRegrade({ ...who, day: TODAY, itemId: 'rc:gawi', pass: true })).rejects.toThrow(/cache/);
+  });
+
+  it('My words never lists an excluded word', async () => {
+    const store = adminStore();
+    store.s.status.words.pul = { ...store.s.status.words.pul, excluded: true };
+    const { service } = make({ store });
+    const { words } = await service.words({ userId: 'test-learner', deckId: DECK });
+    expect(words.map((w) => w.wordId)).toEqual(['gawi']);
+  });
+});
+
+describe('WordLadderSittingService — tuned settings (plan 5 task 3, spec §7)', () => {
+  const DAY = 24 * 3600000;
+  function tunedStore(values = {}) {
+    const store = memoryStore();
+    store.s.tuning = { schema: 'school.word-ladder-tuning/v1', values, lastChanged: {}, lastTunedDay: null, history: [] };
+    store.readTuning = vi.fn(() => structuredClone(store.s.tuning));
+    return store;
+  }
+  it('a tuning change lands at the NEXT day\'s first open, never mid-day', async () => {
+    const store = tunedStore();
+    const { service, advance } = make({ store });
+    await service.open({ userId: 'test-learner', deckId: DECK });
+    expect(store.s.days[TODAY].atOpen.settings.round.size).toBe(5);
+    store.s.tuning.values = { 'round.size': 6, 'review.gapScale': 1.1 };
+    await service.open({ userId: 'test-learner', deckId: DECK });
+    expect(store.s.days[TODAY].atOpen.settings.round.size).toBe(5);
+    advance(DAY);
+    await service.open({ userId: 'test-learner', deckId: DECK });
+    expect(store.s.days['2026-09-23'].atOpen.settings.round).toEqual({ size: 6, maxPasses: 3 });
+    expect(store.s.days['2026-09-23'].atOpen.settings.review.gapScale).toBe(1.1);
+    expect(store.s.days[TODAY].atOpen.settings.round.size).toBe(5);
+  });
+  it('tuned values are clamped to the household word_ladder.bounds too', async () => {
+    const store = tunedStore({ 'round.size': 7 });
+    const { service } = make({ store, bounds: { 'round.size': [3, 6] } });
+    await service.open({ userId: 'test-learner', deckId: DECK });
+    expect(store.s.days[TODAY].atOpen.settings.round.size).toBe(6);
+  });
+  it('tuned values never touch grown-up settings', async () => {
+    const store = tunedStore({ 'session.capMinutes': 60, 'typing.passScore': 2 });
+    const { service } = make({ store });
+    await service.open({ userId: 'test-learner', deckId: DECK });
+    expect(store.s.days[TODAY].atOpen.settings.session.capMinutes).toBe(15);
+    expect(store.s.days[TODAY].atOpen.settings.typing.passScore).toBe(6);
+  });
+  it('a store with no tuning (or one that throws) opens on the defaults', async () => {
+    const store = memoryStore();
+    store.readTuning = () => { throw new Error('disk'); };
+    const { service, logger } = make({ store });
+    await service.open({ userId: 'test-learner', deckId: DECK });
+    expect(store.s.days[TODAY].atOpen.settings.round.size).toBe(5);
+    expect(logger.warn).toHaveBeenCalledWith('school.word-ladder.tuning-unreadable', expect.objectContaining({ learnerId: 'test-learner', package: 'korean-vocab' }));
+  });
+  it('test mode plays with the learner\'s tuned values (read-only)', async () => {
+    const store = tunedStore({ 'round.size': 4 });
+    store.writeTuning = vi.fn();
+    const { service } = make({ store, mode: 'test' });
+    await service.open({ userId: 'test-learner', deckId: DECK });
+    expect(store.s.days[TODAY].atOpen.settings.round.size).toBe(4);
+    expect(store.writeTuning).not.toHaveBeenCalled();
   });
 });

@@ -22,7 +22,7 @@ export default function TilesItem({ item, langs, resolveAssetUrl, onRespond, res
   const image = item.assets?.image ? resolveAssetUrl(item.assets.image) : null;
   const glossAudio = item.assets?.glossAudio ? resolveAssetUrl(item.assets.glossAudio) : null;
   useEffect(() => {
-    if (item.cue?.type === 'audio' && glossAudio) playClip(glossAudio);
+    if (item.cue?.type === 'audio' && glossAudio) playClip(glossAudio, 'gloss');
   }, [item.id]); // eslint-disable-line react-hooks/exhaustive-deps
   // A retry starts from an empty row.
   useEffect(() => { if (result && result.correct === false && !pending) setAnswer([]); }, [result, pending]);
@@ -45,7 +45,7 @@ export default function TilesItem({ item, langs, resolveAssetUrl, onRespond, res
       <div className="wl-prompt">
         {item.cue?.type === 'image' && <CuePicture item={item} src={image} lang={langs.gloss} />}
         {item.cue?.type === 'text' && <FitText role="prompt" text={item.cue.text} lang={langs.gloss} />}
-        {item.cue?.type === 'audio' && <TouchButton variant="secondary" onClick={() => glossAudio && playClip(glossAudio)}><Icon name="volume" /> Listen</TouchButton>}
+        {item.cue?.type === 'audio' && <TouchButton variant="secondary" onClick={() => glossAudio && playClip(glossAudio, 'gloss')}><Icon name="volume" /> Listen</TouchButton>}
       </div>
       <div className="wl-tiles__answer" role="group" aria-label="Your answer" lang={langs.term}>
         {answer.map((index, at) => (

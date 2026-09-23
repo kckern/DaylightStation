@@ -10,7 +10,7 @@
  */
 import { DomainInvariantError, ValidationError } from '#domains/core/errors/index.mjs';
 import { hashString, seededShuffle } from './checkItem.mjs';
-import { PILES, applyGraded, applySort, emptyWordV3, introduce, isDue } from './mastery.mjs';
+import { PILES, applyGraded, applySort, emptyWordV3, introduce, isDue, isExcluded } from './mastery.mjs';
 import { channelFor, cueFor, pickMeaningChoices, pickTermChoices } from './choices.mjs';
 import { newAllowance, planNextRound } from './rounds.mjs';
 import { normalizeAnswer } from './jamo.mjs';
@@ -51,7 +51,7 @@ export function openDay({ status, dayFile, day, deckId, pool, settings, learnerI
     const due = Object.entries(nextStatus.words).filter(([, word]) => isDue(word, day)).map(([id]) => id).sort();
     nextDay.atOpen = {
       dueRechecks: due,
-      tricky: Object.entries(nextStatus.words).filter(([, word]) => word.tricky).map(([id]) => id).sort(),
+      tricky: Object.entries(nextStatus.words).filter(([, word]) => word.tricky && !isExcluded(word)).map(([id]) => id).sort(),
       newAllowance: newAllowance({ words: nextStatus.words, day, settings }),
       settings: clone(settings),
     };
@@ -68,6 +68,26 @@ export function openDay({ status, dayFile, day, deckId, pool, settings, learnerI
   // already spent) is credited here — `respond` would never run to do it.
   if (!nextDay.doneAt) settleDay(ctx, at);
   return { status: nextStatus, dayFile: nextDay };
+}
+
+/**
+ * Today's plan once a grown-up excludes `wordId` (spec §6): its pending
+ * recheck leaves the order and any unfinished drill on it ends. Answered
+ * rechecks and finished drills are history and stay. With `settle` (the
+ * engine context — status already carrying the exclusion — plus `at`), an
+ * opened day is re-settled: taking away the only pending thing plans the next
+ * round or drill, or credits the day, exactly as an answer would. Without it
+ * the child would land on a "done" summary on a day never credited. Pure.
+ */
+export function excludeWordFromDay(dayFile, wordId, settle = null) {
+  const next = clone(dayFile);
+  next.rechecks.order = next.rechecks.order.filter((id) => id !== wordId || next.rechecks.answered[id]);
+  next.drills = (next.drills ?? []).map((drill) => (drill.wordId === wordId && !drill.done ? { ...drill, done: true, excluded: true } : drill));
+  if (settle && next.atOpen && !next.doneAt) {
+    const { at, ...ctx } = settle;
+    settleDay({ ...ctx, status: clone(ctx.status), dayFile: next }, at);
+  }
+  return next;
 }
 
 function hasPendingRecheck(dayFile) {
@@ -109,7 +129,7 @@ function recheckTask(word, wordId, settings) {
 
 function introducedSameKind(ctx, entry) {
   return Object.entries(ctx.status.words)
-    .filter(([id, word]) => id !== entry.id && word.state !== 'new')
+    .filter(([id, word]) => id !== entry.id && word.state !== 'new' && !isExcluded(word))
     .map(([id]) => ctx.lexicon.entries.get(id))
     .filter((other) => other && other.kind === entry.kind);
 }
@@ -155,7 +175,7 @@ function hasEntry(ctx, id) {
 // Other introduced words a drill's match board can pair with the drill word.
 function matchPartners(ctx, wordId) {
   return Object.entries(ctx.status.words)
-    .filter(([id, word]) => id !== wordId && word.state !== 'new' && hasEntry(ctx, id))
+    .filter(([id, word]) => id !== wordId && word.state !== 'new' && !isExcluded(word) && hasEntry(ctx, id))
     .map(([id]) => id);
 }
 
@@ -179,11 +199,12 @@ function newDrill(ctx, wordId, source) {
 function maybeStartTrickyDrill(ctx) {
   const drills = ctx.dayFile.drills ?? (ctx.dayFile.drills = []);
   const perDay = ctx.settings.drill?.perSitting ?? 1;
-  if (drills.filter((drill) => drill.source === 'tricky').length >= perDay) return false;
+  // A drill a grown-up's exclusion ended never ran; it does not use up the day's drill.
+  if (drills.filter((drill) => drill.source === 'tricky' && drill.excluded !== true).length >= perDay) return false;
   if (remainingMs(ctx) < DRILL_MS) return false;
   const since = (id) => String(wordOf(ctx.status, id).trickySince ?? '');
   const candidates = (ctx.dayFile.atOpen?.tricky ?? [])
-    .filter((id) => hasEntry(ctx, id) && wordOf(ctx.status, id).tricky && !drills.some((drill) => drill.wordId === id))
+    .filter((id) => hasEntry(ctx, id) && wordOf(ctx.status, id).tricky && !isExcluded(wordOf(ctx.status, id)) && !drills.some((drill) => drill.wordId === id))
     .sort((a, b) => since(a).localeCompare(since(b)) || a.localeCompare(b));
   if (!candidates.length) return false;
   drills.push(newDrill(ctx, candidates[0], 'tricky'));
@@ -249,7 +270,7 @@ function openRound(ctx) {
 
 function nextRound(ctx) {
   if (remainingMs(ctx) <= 0) return null;
-  const pool = ctx.pool.filter((id) => wordOf(ctx.status, id).state === 'new');
+  const pool = ctx.pool.filter((id) => wordOf(ctx.status, id).state === 'new' && !isExcluded(wordOf(ctx.status, id)));
   const planned = planNextRound({
     words: ctx.status.words, pool, day: ctx.day, roundedToday: roundedToday(ctx.dayFile),
     settings: ctx.settings, remainingMs: remainingMs(ctx), roundNumber: ctx.dayFile.rounds.length + 1,
@@ -385,7 +406,7 @@ function startQuiz(ctx, round, { quizNow = false } = {}) {
 function offerFor(ctx, round) {
   if (round.offerSettled || remainingMs(ctx) < DRILL_MS) return null;
   const ranked = round.words
-    .filter((id) => round.stream.latest[id] === 'notYet' && !round.quiz.passed.includes(id) && hasEntry(ctx, id))
+    .filter((id) => round.stream.latest[id] === 'notYet' && !round.quiz.passed.includes(id) && !isExcluded(wordOf(ctx.status, id)) && hasEntry(ctx, id))
     .map((id) => [id, round.stream.notYetCount?.[id] ?? 1])
     .sort(([a, x], [b, y]) => (y - x) || a.localeCompare(b));
   return ranked[0]?.[0] ?? null;
@@ -536,13 +557,83 @@ function validateResponse(item, response) {
   if (!fits) throw new ValidationError(NOT_FIT);
 }
 
+const STATE_OF = (word) => ({ state: word?.state ?? 'new', stage: word?.stage ?? null });
+
+/**
+ * Every word whose `state` or `stage` differs between two `status.words` maps
+ * (spec §8 `transition` events), in word-id order. Pure; `source` labels them.
+ */
+export function wordTransitions(beforeWords = {}, afterWords = {}, source) {
+  const ids = [...new Set([...Object.keys(beforeWords ?? {}), ...Object.keys(afterWords ?? {})])].sort();
+  const out = [];
+  for (const wordId of ids) {
+    const from = STATE_OF(beforeWords?.[wordId]);
+    const to = STATE_OF(afterWords?.[wordId]);
+    if (from.state !== to.state || from.stage !== to.stage) out.push({ wordId, from, to, source });
+  }
+  return out;
+}
+
+// What moved a word on this item (spec §8 transition `source`).
+function transitionSource(item) {
+  if (item.source === 'practice') return 'practice';
+  if (item.source === 'recheck') return 'recheck';
+  if (item.source === 'verify') return 'verify';
+  if (item.type === 'flashcard' && item.mode === 'intro') return 'intro';
+  return 'sort';
+}
+
+// A graded answer (a verify, recheck or practice Quiz me task) as a record;
+// null for everything else, including an ended practice run.
+function gradedRecord(item, response, result, verdict) {
+  const graded = item.source === 'verify' || item.source === 'recheck' || (item.source === 'practice' && item.graded === true);
+  if (!graded || response?.menu === true || typeof result?.correct !== 'boolean') return null;
+  return {
+    wordId: item.wordId, task: item.task, source: item.source, correct: result.correct,
+    ...(verdict ? { score: verdict.score, judge: verdict.judge } : {}),
+  };
+}
+
+/**
+ * Applies one answer. Returns `{ status, dayFile, result, transitions, graded }`:
+ * `transitions` lists every word whose state or stage this answer changed, and
+ * `graded` is the graded record (or null). A replayed item reports neither.
+ */
 export function respond(inputCtx, itemId, response = {}, { at, verdict = null } = {}) {
   if (typeof at !== 'string' || at.length === 0) throw new ValidationError('at is required');
-  if (inputCtx.dayFile.items[itemId]) return { status: inputCtx.status, dayFile: inputCtx.dayFile, result: inputCtx.dayFile.items[itemId].result };
+  if (inputCtx.dayFile.items[itemId]) {
+    return { status: inputCtx.status, dayFile: inputCtx.dayFile, result: inputCtx.dayFile.items[itemId].result, transitions: [], graded: null };
+  }
   const ctx = { ...inputCtx, status: clone(inputCtx.status), dayFile: clone(inputCtx.dayFile) };
   const item = currentItem(ctx);
   if (item.id !== itemId) throw new ValidationError('stale item');
   validateResponse(item, response);
+  const out = applyResponse(ctx, item, itemId, response, { at, verdict });
+  return {
+    ...out,
+    transitions: wordTransitions(inputCtx.status.words, out.status.words, transitionSource(item)),
+    graded: gradedRecord(item, response, out.result, verdict),
+  };
+}
+
+// A task item's record names its word (whenever it has one, e.g. a plain
+// flashcard sort) and its task (whenever it has one) independently — a
+// flashcard carries a wordId but never a task, and dropping it whenever task
+// was absent left the day file (and its trace fallback, spec §8) unable to
+// say which word a sort was ever about. Source/reason (for a grown-up to
+// re-grade, spec §6) only mean anything once there's a word or task to hang them on.
+function itemMeta(item, verdict) {
+  const meta = {};
+  if (item.wordId) meta.wordId = item.wordId;
+  if (item.task) meta.task = item.task;
+  if (item.wordId || item.task) {
+    meta.source = item.source ?? null;
+    if (verdict) meta.reason = verdict.reason ?? null;
+  }
+  return meta;
+}
+
+function applyResponse(ctx, item, itemId, response, { at, verdict }) {
   let result = { ok: true };
 
   if (item.source === 'practice' || item.type === 'drill') {
@@ -596,7 +687,7 @@ export function respond(inputCtx, itemId, response = {}, { at, verdict = null } 
       result = gradedResult(ctx, item, correct, verdict);
     }
   }
-  ctx.dayFile.items[itemId] = { at, response, result };
+  ctx.dayFile.items[itemId] = { at, response, result, ...itemMeta(item, verdict) };
   settleDay(ctx, at);
   return { status: ctx.status, dayFile: ctx.dayFile, result };
 }

@@ -186,6 +186,17 @@ describe('PushNotificationAdapter (Home Assistant)', () => {
     });
   });
 
+  it('relays the push-standard data block (tag, channel) when the intent carries one', async () => {
+    const callService = vi.fn().mockResolvedValue({});
+    const adapter = new PushNotificationAdapter({ haGateway: { callService }, resolveNotifyService: () => 'mobile_app_test_phone' });
+    await adapter.send(intent({ username: 'test-user', pushData: { tag: 't-1', channel: 'School needs you' } }));
+    expect(callService).toHaveBeenCalledWith('notify', 'mobile_app_test_phone', {
+      title: 'Weekly retrospective',
+      message: 'Your cycle retro ceremony is due.',
+      data: { tag: 't-1', channel: 'School needs you' },
+    });
+  });
+
   it('fails soft without a gateway or notify service', async () => {
     const noGateway = new PushNotificationAdapter({});
     expect((await noGateway.send(intent({ username: 'test-user' }))).delivered).toBe(false);

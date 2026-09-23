@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { TouchButton } from '../../../../../../lib/ui/index.js';
 import Icon from '../../../../home/icons/Icon.jsx';
 import { FitText } from '../FitText.jsx';
 import { playClip } from '../wordLadderAudio.js';
 import { useWordLadderKeys } from '../useWordLadderKeys.js';
+import { wordLadderLog } from '../wordLadderLog.js';
 
 /**
  * 2.1 flashcard. Front: the Korean only (text + sound) — never the picture or
@@ -13,7 +14,7 @@ import { useWordLadderKeys } from '../useWordLadderKeys.js';
  * `'gloss'` swaps the faces, so the Korean (and its sound) is the answer and
  * waits for the flip. Flipped: sort 1/2/3 as in the stream, or Next `{next:true}`.
  */
-export default function FlashcardItem({ item, langs, resolveAssetUrl, onRespond, busy = false }) {
+export default function FlashcardItem({ item, langs, resolveAssetUrl, onRespond, busy = false, onLayout }) {
   const { word } = item;
   const [flipped, setFlipped] = useState(false);
   const audio = word.media?.audio ? resolveAssetUrl(word.media.audio) : null;
@@ -26,22 +27,32 @@ export default function FlashcardItem({ item, langs, resolveAssetUrl, onRespond,
   // The term's sound is on the term's side: never before the flip on a meaning-first card.
   const termShowing = glossFront ? flipped : !flipped;
   const soundOk = audio && (!glossFront || flipped);
-  useEffect(() => { setFlipped(false); setImageOk(true); if (audio && !glossFront) playClip(audio); }, [item.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  const shownAt = useRef(Date.now());
+  useEffect(() => {
+    setFlipped(false); setImageOk(true); shownAt.current = Date.now();
+    if (audio && !glossFront) playClip(audio, 'term');
+  }, [item.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const flip = () => {
     // Turning a meaning-first card over reveals the Korean: its sound comes with it.
-    if (!flipped && glossFront && audio) playClip(audio);
+    if (!flipped && glossFront && audio) playClip(audio, 'term');
+    wordLadderLog.cardFlipped({ itemId: item.id, ms: Date.now() - shownAt.current });
     setFlipped(!flipped);
   };
-  const act = (response) => { if (!busy) onRespond(response); };
+  const act = (response) => {
+    if (busy) return;
+    if (response.sort) wordLadderLog.cardSorted({ itemId: item.id, pile: response.sort });
+    if (response.undo) wordLadderLog.cardUndone({ itemId: item.id });
+    onRespond(response);
+  };
   const advance = practice ? () => act({ next: true }) : () => act({ seen: true });
   useWordLadderKeys({
     ' ': flipped && !stream ? advance : flip,
     enter: flipped && !stream ? advance : flip,
-    h: () => soundOk && playClip(audio),
+    h: () => soundOk && playClip(audio, 'term'),
     ...(stream ? { u: () => act({ undo: true }), q: () => act({ quizNow: true }) } : {}),
     ...(sorts && flipped ? { 1: () => act({ sort: 'notYet' }), 2: () => act({ sort: 'familiar' }), 3: () => act({ sort: 'claimed' }) } : {}),
   });
-  const termFace = <div className="wl-card__face wl-card__face--front"><FitText role="term" text={word.term} lang={langs.term} /></div>;
+  const termFace = <div className="wl-card__face wl-card__face--front"><FitText role="term" text={word.term} lang={langs.term} onFit={onLayout} /></div>;
   const meaningFace = (
     <div className={`wl-card__face wl-card__face--back${image && imageOk ? ' has-picture' : ''}`}>
       {image && imageOk && <img className="wl-card__picture" src={image} alt={word.gloss} onError={() => setImageOk(false)} />}
@@ -55,7 +66,7 @@ export default function FlashcardItem({ item, langs, resolveAssetUrl, onRespond,
         {termShowing ? termFace : meaningFace}
       </button>
       <div className="wl-controls">
-        {soundOk && <TouchButton variant="secondary" keyHint="H" onClick={() => playClip(audio)}><Icon name="volume" /> Hear it</TouchButton>}
+        {soundOk && <TouchButton variant="secondary" keyHint="H" onClick={() => playClip(audio, 'term')}><Icon name="volume" /> Hear it</TouchButton>}
         {!flipped && <TouchButton variant="primary" keyHint="Space" onClick={flip}>Flip</TouchButton>}
         {flipped && !stream && <TouchButton variant={practice ? 'secondary' : 'primary'} keyHint="Space" disabled={busy} onClick={advance}>Next</TouchButton>}
         {flipped && sorts && (

@@ -3,7 +3,7 @@ export {
   isLexiconDeck, expandLexiconDeck,
 } from './lexicon.mjs';
 export { hashString, seededShuffle } from './checkItem.mjs';
-export { GAPS, STATES, PILES, emptyWordV3, introduce, applySort, applyGraded, isDue, isUnsettled } from './mastery.mjs';
+export { GAPS, STATES, PILES, emptyWordV3, introduce, applySort, applyGraded, isDue, isExcluded, isUnsettled } from './mastery.mjs';
 export { DRILL_STEPS, drillSteps, tilesFor, matchBoard } from './drill.mjs';
 export { PRACTICE_MODES, practiceWordIds, buildPractice } from './practice.mjs';
 export { STATUS_SCHEMA_V3, DAY_SCHEMA, emptyStatusV3, emptyDay, migrateStatusV2 } from './statusV3.mjs';
@@ -11,8 +11,10 @@ export { normalizeAnswer, hasHangul, keystrokeJamo } from './jamo.mjs';
 export { BANDS, scoreTypedDeterministic, isShortTarget, modelMayRaise, raiseOneBand } from './typedScore.mjs';
 export { pickMeaningChoices, pickTermChoices, cueFor, channelFor } from './choices.mjs';
 export { ESTIMATE_MS, newAllowance, planNextRound } from './rounds.mjs';
-export { openDay, currentItem, respond, addActiveTime, startPractice } from './engine.mjs';
+export { openDay, currentItem, respond, addActiveTime, startPractice, wordTransitions, excludeWordFromDay } from './engine.mjs';
 export { foldPaperAttempts } from './foldPaperAttempts.mjs';
+export { formatTrace } from './trace.mjs';
+export { markMastered, typedAnswers } from './admin.mjs';
 export {
   quizDocumentIdFor, deckDirOf, isoWeekOf, learnerQuizDocumentId, learnerQuizPrefix, parseLearnerQuizId,
 } from './quizId.mjs';
@@ -20,3 +22,7 @@ export { buildWordQuizSource, buildLearnerQuizSource } from './quizSource.mjs';
 export { SCENARIOS, seedScenario } from './scenarios.mjs';
 export { DEFAULT_SETTINGS, resolveSettings } from './settings.mjs';
 
+export {
+  TUNABLE, TUNING_BOUNDS, GROWN_UP_SETTINGS, tunableValues, dayStats, buildTuningDigest, applyTuningProposal,
+  withTunedValues, TUNING_FILE_SCHEMA, TUNING_HISTORY_KEEP, emptyTuning,
+} from './tuning.mjs';

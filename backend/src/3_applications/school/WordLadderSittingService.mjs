@@ -13,8 +13,10 @@
  * calls find the right files without the client naming a deck.
  *
  * The tuning values in force for a day are the day file's at-open snapshot
- * (`atOpen.settings`); current settings are only the fallback for a day that
- * has none.
+ * (`atOpen.settings`); current settings — the School config's resolved
+ * settings with the learner's `tuning.yml` values laid over them (spec §7) —
+ * are only the fallback for a day that has none, so a tuning change lands at
+ * the next day's first open, never mid-day. This service only READS tuning.
  *
  * Speaking is never graded (spec §3): a take is kept for grown-ups through the
  * recordings sink (a discarding one in test mode) and never touches status.
@@ -24,7 +26,8 @@ import { GuestForbiddenError } from '#domains/school/errors.mjs';
 import { offsetMinutesFor, studyDayForInstant } from '#domains/school/studyDay.mjs';
 import { addDays } from '#domains/school/termVerdict.mjs';
 import {
-  addActiveTime, cueFor, currentItem, deckDirOf, foldPaperAttempts, openDay, quizDocumentIdFor, respond, startPractice, wordAssetIds,
+  addActiveTime, cueFor, currentItem, deckDirOf, emptyWordV3, excludeWordFromDay, foldPaperAttempts, markMastered, normalizeAnswer, openDay,
+  quizDocumentIdFor, respond, startPractice, typedAnswers, withTunedValues, wordAssetIds, wordTransitions,
 } from '#domains/school/wordLadder/index.mjs';
 
 const FOLD_LOOKBACK_DAYS = 60;
@@ -38,6 +41,10 @@ const SPEAKING = new Set(['say-after', 'read-aloud', 'say-from-cue']);
 const REVEAL_AFTER_TAKE = new Set(['read-aloud', 'say-from-cue']);
 const RECORDING_EXTS = new Set(['webm', 'ogg', 'm4a', 'mp4', 'wav']);
 const NO_ASSETS = Object.freeze({ image: null, audio: null, glossAudio: null });
+// Grown-up word controls (spec §6): how far back a word's typed answers are listed.
+const ADMIN_TYPED_DAYS = 14;
+const REGRADE_REASON = 'Re-graded by a grown-up';
+const DAY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 /** An ISO instant carrying the household's own offset: `2026-09-22T16:05:12-07:00`. */
 function isoWithOffset(ms, timezone) {
@@ -49,12 +56,12 @@ function isoWithOffset(ms, timezone) {
 }
 
 export class WordLadderSittingService {
-  #stores; #decks; #lexicons; #assignments; #attempts; #assets; #judge; #teacherGate; #recordings; #settings; #timezone; #now; #logger; #mode;
+  #stores; #decks; #lexicons; #assignments; #attempts; #assets; #judge; #judgementCache; #teacherGate; #recordings; #settings; #bounds; #timezone; #now; #logger; #mode;
   #counter = 0;
 
   constructor({
-    stores, decks, lexicons, assignments, attempts = null, assets = null, judge, teacherGate = null, recordings = null,
-    settings, timezone = null, now, logger = console, mode = 'live',
+    stores, decks, lexicons, assignments, attempts = null, assets = null, judge, judgementCache = null, teacherGate = null, recordings = null,
+    settings, bounds = null, timezone = null, now, logger = console, mode = 'live',
   } = {}) {
     if (typeof stores?.open !== 'function' || typeof stores?.forToken !== 'function') throw new Error('WordLadderSittingService requires stores');
     if (typeof decks?.getFlashcardDeck !== 'function') throw new Error('WordLadderSittingService requires decks.getFlashcardDeck');
@@ -64,16 +71,27 @@ export class WordLadderSittingService {
     if (typeof settings !== 'function' || typeof now !== 'function') throw new Error('WordLadderSittingService requires settings() and now()');
     if (mode !== 'live' && mode !== 'test') throw new Error(`WordLadderSittingService mode must be live or test, got '${mode}'`);
     if (recordings !== null && typeof recordings?.save !== 'function') throw new Error('WordLadderSittingService recordings must have save()');
+    if (judgementCache !== null && typeof judgementCache?.set !== 'function') throw new Error('WordLadderSittingService judgementCache must have set()');
     this.#recordings = recordings;
+    this.#judgementCache = judgementCache;
     this.#stores = stores; this.#decks = decks; this.#lexicons = lexicons; this.#assignments = assignments;
     this.#attempts = attempts; this.#assets = assets; this.#judge = judge; this.#teacherGate = teacherGate;
-    this.#settings = settings; this.#timezone = timezone; this.#now = now; this.#logger = logger; this.#mode = mode;
+    this.#settings = settings; this.#bounds = bounds; this.#timezone = timezone; this.#now = now; this.#logger = logger; this.#mode = mode;
   }
 
   #today(ms = this.#now()) { return studyDayForInstant(ms, { timezone: this.#timezone }); }
 
+  /** Current settings for a learner's package: config settings + their tuned values (clamped to spec and household bounds). */
+  #currentSettings(store, userId, pkg) {
+    let values = null;
+    try { values = store.readTuning?.(userId, pkg)?.values ?? null; } catch (error) {
+      this.#logger.warn?.('school.word-ladder.tuning-unreadable', { learnerId: userId, package: pkg, error: error.message });
+    }
+    return withTunedValues(this.#settings(), values, this.#bounds);
+  }
+
   /** The tuning values in force for a day: its at-open snapshot, else current settings. */
-  #daySettings(dayFile) { return dayFile?.atOpen?.settings ?? this.#settings(); }
+  #daySettings(dayFile, { store, userId, pkg }) { return dayFile?.atOpen?.settings ?? this.#currentSettings(store, userId, pkg); }
 
   async #enrollments(userId) {
     const assignment = await this.#assignments.get(userId);
@@ -242,7 +260,7 @@ export class WordLadderSittingService {
     if (deckPkg !== pkg) throw new EntityNotFoundError('word-ladder sitting', sittingId);
     const status = store.readStatus(userId, pkg);
     const media = this.#media(deck, lexicon);
-    const settings = this.#daySettings(dayFile);
+    const settings = this.#daySettings(dayFile, { store, userId, pkg });
     const ctx = { status, dayFile, day, lexicon, media, pool: await this.#pool(status, deck), settings, learnerId: userId };
     return { store, pkg, lexicon, media, settings, ctx, day, sitting };
   }
@@ -330,6 +348,7 @@ export class WordLadderSittingService {
       settings: { afterMisses: settings.drill.afterMisses, gapScale: settings.review.gapScale },
     });
     if (ok) out.status.lastFoldedDay = today;
+    out.transitions = wordTransitions(status.words, out.status.words, 'paper');
     for (const row of out.refused) {
       this.#logger.warn?.('school.word-ladder.fold-refused', { learnerId, package: pkg, mode: this.#mode, ...row });
     }
@@ -342,6 +361,16 @@ export class WordLadderSittingService {
       learnerId, package: pkg, source, mode: this.#mode, count: folded.length,
       demoted: folded.filter((row) => !row.correct).map((row) => row.wordId),
     });
+  }
+
+  /** One `transition` event per word whose state or stage changed (spec §8). */
+  #logTransitions({ learnerId, sittingId = null, pkg, day, itemId = null }, transitions) {
+    for (const row of transitions ?? []) {
+      this.#logger.info?.('school.word-ladder.transition', {
+        learnerId, sittingId, mode: this.#mode, package: pkg, day, itemId,
+        wordId: row.wordId, from: row.from, to: row.to, source: row.source,
+      });
+    }
   }
 
   #newSittingId(pkg, token) {
@@ -366,22 +395,25 @@ export class WordLadderSittingService {
     // so the new-word pool is the same before and after the fold.
     const pool = await this.#pool(before, deck);
     let folded = [];
+    let foldTransitions = [];
     let changes = { reopened: false, idleClosed: [] };
     const next = store.transact(userId, pkg, day, ({ status, dayFile }) => {
-      const settings = this.#daySettings(dayFile);
+      const settings = this.#daySettings(dayFile, { store, userId, pkg });
       const afterFold = this.#fold(status, read, quizDocumentIds, day, settings, { learnerId: userId, deckDir: deckDirOf(deck.id), pkg });
       folded = afterFold.folded;
+      foldTransitions = afterFold.transitions;
       const opened = openDay({ status: afterFold.status, dayFile, day, deckId, pool, settings, learnerId: userId, at: isoWithOffset(openedMs, this.#timezone), media, capabilities: caps, lexicon });
       changes = this.#housekeep(opened.dayFile, sittingId, openedMs, { reopen: false });
       opened.dayFile.sittings[sittingId] = { deckId, openedAt: isoWithOffset(openedMs, this.#timezone), closedAt: null, reason: null };
       return opened;
     });
     this.#logHousekeeping(userId, sittingId, next.dayFile, changes);
-    const settings = this.#daySettings(next.dayFile);
+    const settings = this.#daySettings(next.dayFile, { store, userId, pkg });
     const ctx = { status: next.status, dayFile: next.dayFile, day, lexicon, media, pool, settings, learnerId: userId };
     const item = currentItem(ctx);
     const progress = this.#progress(next.dayFile, settings);
     this.#logFold(userId, pkg, folded, 'open');
+    this.#logTransitions({ learnerId: userId, sittingId, pkg, day }, foldTransitions);
     this.#logger.info?.('school.word-ladder.opened', {
       learnerId: userId, deckId, package: pkg, day, sittingId, mode: this.#mode, scenario, folded: folded.length, microphone: caps.microphone,
       first: item.type, phase: progress.phase, rechecks: next.dayFile.atOpen?.dueRechecks?.length ?? 0,
@@ -411,6 +443,8 @@ export class WordLadderSittingService {
     const ms = this.#now();
     const at = isoWithOffset(ms, this.#timezone);
     let changes = null;
+    let transitions = [];
+    let graded = null;
     const out = store.transact(userId, pkg, day, ({ status, dayFile }) => {
       if (!dayFile.sittings?.[sittingId]) throw new EntityNotFoundError('word-ladder sitting', sittingId);
       // Race: another request answered while this one was being prepared, so
@@ -423,17 +457,28 @@ export class WordLadderSittingService {
       changes = this.#housekeep(dayFile, sittingId, ms);
       const timed = addActiveTime(dayFile, ms);
       const step = respond({ ...ctx, status, dayFile: timed }, itemId, response, { at, verdict });
+      ({ transitions, graded } = step);
       return { status: step.status, dayFile: step.dayFile, result: step.result };
     });
     this.#logHousekeeping(userId, sittingId, out.dayFile, changes);
     const nextCtx = { ...ctx, status: out.status, dayFile: out.dayFile };
     const nextItem = currentItem(nextCtx);
-    this.#logger.info?.('school.word-ladder.graded', {
+    // Every response is `answered`; only a graded answer (verify, recheck,
+    // practice Quiz me) is also `graded` (spec §8 events).
+    this.#logger.info?.('school.word-ladder.answered', {
       learnerId: userId, sittingId, mode: this.#mode, itemId, type: item.id === itemId ? item.type : null,
       task: item.id === itemId ? item.task ?? null : null, wordId: item.id === itemId ? item.wordId ?? null : null,
       correct: out.result?.correct ?? null, score: verdict?.score ?? null, judge: verdict?.judge ?? null,
       next: nextItem.type, doneAt: out.dayFile.doneAt ?? null,
     });
+    if (graded) {
+      this.#logger.info?.('school.word-ladder.graded', {
+        learnerId: userId, sittingId, mode: this.#mode, package: pkg, day, itemId,
+        wordId: graded.wordId, task: graded.task, source: graded.source, correct: graded.correct,
+        score: graded.score ?? null, judge: graded.judge ?? null,
+      });
+    }
+    this.#logTransitions({ learnerId: userId, sittingId, pkg, day, itemId }, transitions);
     return { result: out.result, item: this.#publicItem(nextItem, nextCtx), progress: this.#progress(out.dayFile, ctx.settings) };
   }
 
@@ -526,7 +571,8 @@ export class WordLadderSittingService {
     const ids = await this.#deckOrder(status, deck);
     for (const id of lexicon.entries.keys()) if (!ids.includes(id) && (status.words[id]?.state ?? 'new') !== 'new') ids.push(id);
     return {
-      words: ids.filter((id) => lexicon.entries.has(id)).map((id) => {
+      // A word a grown-up excluded is gone from the child's view too (spec §6).
+      words: ids.filter((id) => lexicon.entries.has(id) && status.words[id]?.excluded !== true).map((id) => {
         const entry = lexicon.entries.get(id);
         const word = status.words[id] ?? {};
         return {
@@ -585,15 +631,187 @@ export class WordLadderSittingService {
       const quizDocumentIds = await this.#quizDocumentIds(deck);
       const deckDir = deckDirOf(deck.id);
       let folded = [];
+      let transitions = [];
       store.transact(learnerId, pkg, today, ({ status, dayFile }) => {
-        const out = this.#fold(status, read, quizDocumentIds, today, this.#daySettings(dayFile), { learnerId, deckDir, pkg });
+        const out = this.#fold(status, read, quizDocumentIds, today, this.#daySettings(dayFile, { store, userId: learnerId, pkg }), { learnerId, deckDir, pkg });
         folded = out.folded;
+        transitions = out.transitions;
         return { status: out.status, dayFile };
       });
       this.#logFold(learnerId, pkg, folded, 'teacher');
+      this.#logTransitions({ learnerId, pkg, day: today }, transitions);
       all.push(...folded);
     }
     return { learnerId, folded: all.length, demoted: all.filter((row) => !row.correct).map((row) => row.wordId) };
+  }
+
+  // ── Grown-up word controls (spec §6) ───────────────────────────────────
+  // Live only, teacher-gated, per learner per word package. Every mutation
+  // logs `school.word-ladder.admin` and a `transition` (source `admin`) for
+  // each word whose state or stage it changed.
+
+  async #admin({ learnerId, deckId, actorId, pin }) {
+    if (this.#mode !== 'live') throw new ValidationError('word-ladder admin is answered by the live word ladder only');
+    if (!this.#teacherGate) throw new ValidationError('teacher gate is not configured');
+    this.#teacherGate.assert({ userId: actorId, pin, action: 'word-ladder.admin', context: { learnerId } });
+    await this.#assertAssigned(learnerId, deckId);
+    const { deck, lexicon, pkg } = await this.#load(deckId);
+    const day = this.#today();
+    const { store } = this.#stores.open(learnerId, pkg, day, {});
+    return { deck, lexicon, pkg, day, store };
+  }
+
+  #logAdmin({ actorId, learnerId, pkg, day }, action, extra = {}) {
+    this.#logger.info?.('school.word-ladder.admin', {
+      actorId, learnerId, package: pkg, day, mode: this.#mode, action, wordId: null, ...extra,
+    });
+  }
+
+  /**
+   * One word's record, changed by `change(word, ctx)` in today's transaction.
+   * `ctx.settings` is the day's tuning (its at-open snapshot, else current).
+   * `prepare(found)` runs after the gate, before the transaction, for the
+   * async reads a change needs (the pool, media).
+   */
+  async #adminWord(args, action, change, extra = {}, prepare = null) {
+    const { learnerId, actorId, wordId } = args;
+    const found = await this.#admin(args);
+    const { lexicon, pkg, day, store } = found;
+    if (typeof wordId !== 'string' || !lexicon.entries.has(wordId)) throw new EntityNotFoundError('word-ladder word', String(wordId));
+    const prepared = prepare ? await prepare(found) : {};
+    let transitions = [];
+    let word = null;
+    store.transact(learnerId, pkg, day, ({ status, dayFile }) => {
+      const before = status.words[wordId] ?? emptyWordV3();
+      const settings = this.#daySettings(dayFile, { store, userId: learnerId, pkg });
+      const out = change(before, { status, dayFile, day, settings, ...prepared });
+      status.words[wordId] = out.word;
+      word = out.word;
+      transitions = wordTransitions({ [wordId]: before }, { [wordId]: out.word }, 'admin');
+      return { status, dayFile: out.dayFile ?? dayFile };
+    });
+    this.#logAdmin({ actorId, learnerId, pkg, day }, action, { wordId, ...extra });
+    this.#logTransitions({ learnerId, pkg, day }, transitions);
+    return { learnerId, package: pkg, wordId, word };
+  }
+
+  /**
+   * Every word of the package the learner can meet, with its ladder state and
+   * its judged typed answers from the last 14 study days, newest first.
+   */
+  async adminWords({ learnerId, deckId, actorId = null, pin = null } = {}) {
+    const { deck, lexicon, pkg, day, store } = await this.#admin({ learnerId, deckId, actorId, pin });
+    const status = store.readStatus(learnerId, pkg);
+    const typed = new Map();
+    for (let back = 0; back < ADMIN_TYPED_DAYS; back += 1) {
+      const rows = typedAnswers(store.readDay(learnerId, pkg, addDays(day, -back))).reverse();
+      for (const row of rows) {
+        if (!typed.has(row.wordId)) typed.set(row.wordId, []);
+        typed.get(row.wordId).push({
+          day: row.day, itemId: row.itemId, typed: row.typed, score: row.score, judge: row.judge, reason: row.reason,
+          correct: row.correct, source: row.source, regraded: row.regraded,
+        });
+      }
+    }
+    const ids = await this.#deckOrder(status, deck);
+    for (const id of lexicon.entries.keys()) if (!ids.includes(id) && status.words[id]) ids.push(id);
+    // A deck the learner is still enrolled in is re-added at every open, so
+    // only a deck they have left can be dropped from the pool.
+    const enrolled = new Set((await this.#enrollments(learnerId)).map((row) => row.deckId ?? row.corpusId));
+    return {
+      learnerId, package: pkg, decksSeen: [...status.decksSeen],
+      droppableDecks: status.decksSeen.filter((id) => !enrolled.has(id)),
+      words: ids.filter((id) => lexicon.entries.has(id)).map((id) => {
+        const entry = lexicon.entries.get(id);
+        const word = status.words[id] ?? emptyWordV3();
+        return {
+          wordId: id, term: entry.term, gloss: entry.gloss, state: word.state ?? 'new', stage: word.stage ?? null,
+          dueDay: word.dueDay ?? null, missStreak: word.missStreak ?? 0, tricky: word.tricky === true, excluded: word.excluded === true,
+          lastGraded: word.lastGraded ?? null, recentTyped: typed.get(id) ?? [],
+        };
+      }),
+    };
+  }
+
+  /** Reset to new: a fresh record — nothing kept, `notYetCarry` included. */
+  async adminReset({ learnerId, deckId, wordId, actorId = null, pin = null } = {}) {
+    return this.#adminWord({ learnerId, deckId, wordId, actorId, pin }, 'reset', () => ({ word: emptyWordV3() }));
+  }
+
+  /** Mastered at `stage`, due after that stage's gap scaled by the day's tuned `review.gapScale`. */
+  async adminMarkMastered({ learnerId, deckId, wordId, stage, actorId = null, pin = null } = {}) {
+    return this.#adminWord({ learnerId, deckId, wordId, actorId, pin }, 'mastered',
+      (word, { day, settings }) => ({ word: markMastered(word, { stage, day, gapScale: settings?.review?.gapScale ?? 1 }) }), { stage });
+  }
+
+  /**
+   * Excluded words leave every round, recheck, drill, practice run and quiz;
+   * today's pending ones too. An opened day is then re-settled, so taking away
+   * the only pending thing plans what comes next (or credits the day) instead
+   * of leaving the child on a "done" summary. A day never opened is untouched.
+   */
+  async adminExclude({ learnerId, deckId, wordId, excluded = true, actorId = null, pin = null } = {}) {
+    if (typeof excluded !== 'boolean') throw new ValidationError('excluded must be true or false');
+    const prepare = async ({ deck, lexicon, pkg, store }) => ({
+      deck, lexicon, media: this.#media(deck, lexicon), pool: await this.#pool(store.readStatus(learnerId, pkg), deck),
+    });
+    return this.#adminWord({ learnerId, deckId, wordId, actorId, pin }, excluded ? 'exclude' : 'include', (word, ctx) => {
+      const next = { ...word, excluded };
+      if (!excluded || !ctx.dayFile.atOpen) return { word: next };
+      const status = { ...ctx.status, words: { ...ctx.status.words, [wordId]: next } };
+      const dayFile = excludeWordFromDay(ctx.dayFile, wordId, {
+        status, day: ctx.day, pool: ctx.pool, settings: ctx.settings, learnerId, media: ctx.media, lexicon: ctx.lexicon,
+        at: isoWithOffset(this.#now(), this.#timezone),
+      });
+      return { word: next, dayFile };
+    }, { excluded }, prepare);
+  }
+
+  /**
+   * Removes a deck from the new-word pool (`decksSeen`); words already
+   * introduced keep their state. The current deck and any deck the learner is
+   * still enrolled in are refused: the next open would silently re-add them.
+   */
+  async adminDropDeck({ learnerId, deckId, dropDeckId, actorId = null, pin = null } = {}) {
+    const { pkg, day, store } = await this.#admin({ learnerId, deckId, actorId, pin });
+    if (typeof dropDeckId !== 'string' || !dropDeckId) throw new ValidationError('dropDeckId is required');
+    const enrolled = (await this.#enrollments(learnerId)).some((row) => (row.deckId ?? row.corpusId) === dropDeckId);
+    if (dropDeckId === deckId || enrolled) {
+      throw new ValidationError(`'${dropDeckId}' is a deck the learner is still enrolled in; end that assignment first`);
+    }
+    const out = store.transact(learnerId, pkg, day, ({ status, dayFile }) => {
+      if (!status.decksSeen.includes(dropDeckId)) throw new EntityNotFoundError('word-ladder deck in the pool', dropDeckId);
+      return { status: { ...status, decksSeen: status.decksSeen.filter((id) => id !== dropDeckId) }, dayFile };
+    });
+    this.#logAdmin({ actorId, learnerId, pkg, day }, 'drop-deck', { deckId: dropDeckId });
+    return { learnerId, package: pkg, decksSeen: out.status.decksSeen };
+  }
+
+  /**
+   * Re-grades one logged typed (3.3) answer: the judge cache for that exact
+   * answer is overwritten, so the same answer is judged the grown-up's way
+   * from now on, and the item records who re-graded it. Word state is NOT
+   * rewritten — reset / mark mastered do that.
+   */
+  async adminRegrade({ learnerId, deckId, day, itemId, pass, actorId = null, pin = null } = {}) {
+    const { pkg, store } = await this.#admin({ learnerId, deckId, actorId, pin });
+    if (!this.#judgementCache) throw new ValidationError('the judgement cache is not configured');
+    if (typeof day !== 'string' || !DAY_PATTERN.test(day)) throw new ValidationError('day must be YYYY-MM-DD');
+    if (typeof itemId !== 'string' || !itemId) throw new ValidationError('itemId is required');
+    if (typeof pass !== 'boolean') throw new ValidationError('pass must be true or false');
+    const dayFile = store.readDay(learnerId, pkg, day);
+    if (!dayFile.items?.[itemId]) throw new EntityNotFoundError('word-ladder answer', `${day} ${itemId}`);
+    const answer = typedAnswers(dayFile).find((row) => row.itemId === itemId);
+    if (!answer) throw new ValidationError('only a typed (3.3) answer can be re-graded');
+    const score = pass ? this.#settings().typing.passScore : 1;
+    this.#judgementCache.set(pkg, answer.wordId, normalizeAnswer(answer.typed), { score, judge: 'grown-up', reason: REGRADE_REASON });
+    const regraded = { at: isoWithOffset(this.#now(), this.#timezone), actorId, pass };
+    store.transact(learnerId, pkg, day, ({ status, dayFile: file }) => {
+      if (file.items?.[itemId]) file.items[itemId] = { ...file.items[itemId], regraded };
+      return { status, dayFile: file };
+    });
+    this.#logAdmin({ actorId, learnerId, pkg, day }, 'regrade', { wordId: answer.wordId, itemId, pass, score, was: answer.score });
+    return { learnerId, package: pkg, day, itemId, wordId: answer.wordId, regraded };
   }
 
   /** Read-only credit for the launcher: today (live) or a past study day (replay). Live only. */

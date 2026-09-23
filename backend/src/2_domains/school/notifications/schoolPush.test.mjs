@@ -29,6 +29,16 @@ const CASES = [
     { title: '🎹 Learner4 — How to Play “Lavender’s Blue”', message: 'Piano lesson done · Folk Songs: 3 of 8 lessons', channel: 'School progress' }],
   ['piano, lesson title ending in ?', { learnerId: 'user_4', child: 'Learner4', kind: 'piano', lesson: 'What Are Flats in Music?' },
     { title: '🎹 Learner4 — What Are Flats in Music?', message: 'Piano lesson done' }],
+  ['word ladder concern, with a note', { learnerId: 'user_4', child: 'Learner4', kind: 'word-ladder', package: 'lang-basics', deck: 'Korean Words', day: '2026-09-21', notes: ['Credited with no words quizzed.'] },
+    { title: '🔤 Learner4 — Korean Words', message: 'Credited with no words quizzed · Mon Sep 21', channel: 'School needs you' }],
+  ['word ladder concern, an unsafe note', { learnerId: 'user_4', child: 'Learner4', kind: 'word-ladder', package: 'lang-basics', deck: 'Korean Words', day: '2026-09-21', notes: ['batch.newPerDay hit its cap_hits'] },
+    { title: '🔤 Learner4 — Korean Words', message: "Word practice needs a grown-up's look · Mon Sep 21" }],
+  ['word ladder concern, a note naming a setting id', { learnerId: 'user_4', child: 'Learner4', kind: 'word-ladder', package: 'lang-basics', deck: 'Korean Words', day: '2026-09-21', notes: ['Lowered batch.newPerDay after cap hits; review.gapScale held.'] },
+    { message: 'Lowered new words per day after cap hits; review spacing held · Mon Sep 21' }],
+  ['word ladder concern, a note naming an unknown dotted id', { learnerId: 'user_4', child: 'Learner4', kind: 'word-ladder', package: 'lang-basics', deck: 'Korean Words', notes: ['Raised session.capMinutes'] },
+    { message: "Word practice needs a grown-up's look" }],
+  ['word ladder concern, no labels', { learnerId: 'user_4', kind: 'word-ladder', package: 'lang-basics', notes: [] },
+    { title: '🔤 Word practice', message: "Word practice needs a grown-up's look" }],
 ];
 
 describe('composeSchoolPush — catalog', () => {
@@ -77,6 +87,10 @@ describe('composeSchoolPush — delivery metadata', () => {
   it('falls back to the card id when there is no session', () => {
     expect(composeSchoolPush({ testId: '9', kind: 'unresolved', code: 'dead_card' }).data)
       .toMatchObject({ tag: 'school-card-9', group: 'school', channel: 'School needs you', importance: 'high' });
+  });
+  it('tags a word-ladder concern per learner per package, so a second day replaces the first', () => {
+    expect(composeSchoolPush({ learnerId: 'user_4', kind: 'word-ladder', package: 'lang-basics', day: '2026-09-21' }).data)
+      .toMatchObject({ tag: 'school-user_4-word-ladder-lang-basics', group: 'school-user_4', channel: 'School needs you' });
   });
   it('tags a piano lesson per learner per study day', () => {
     expect(composeSchoolPush({ learnerId: 'user_4', kind: 'piano', lesson: 'Sharps', studyDay: '2026-09-04' }).data.tag)
