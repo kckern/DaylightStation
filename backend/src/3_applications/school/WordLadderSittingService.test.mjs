@@ -801,3 +801,50 @@ describe('WordLadderSittingService — grown-up word controls (plan 4 task 4, sp
     expect(words.map((w) => w.wordId)).toEqual(['gawi']);
   });
 });
+
+describe('WordLadderSittingService — tuned settings (plan 5 task 3, spec §7)', () => {
+  const DAY = 24 * 3600000;
+  function tunedStore(values = {}) {
+    const store = memoryStore();
+    store.s.tuning = { schema: 'school.word-ladder-tuning/v1', values, lastChanged: {}, lastTunedDay: null, history: [] };
+    store.readTuning = vi.fn(() => structuredClone(store.s.tuning));
+    return store;
+  }
+  it('a tuning change lands at the NEXT day\'s first open, never mid-day', async () => {
+    const store = tunedStore();
+    const { service, advance } = make({ store });
+    await service.open({ userId: 'test-learner', deckId: DECK });
+    expect(store.s.days[TODAY].atOpen.settings.round.size).toBe(5);
+    store.s.tuning.values = { 'round.size': 6, 'review.gapScale': 1.1 };
+    await service.open({ userId: 'test-learner', deckId: DECK });
+    expect(store.s.days[TODAY].atOpen.settings.round.size).toBe(5);
+    advance(DAY);
+    await service.open({ userId: 'test-learner', deckId: DECK });
+    expect(store.s.days['2026-09-23'].atOpen.settings.round).toEqual({ size: 6, maxPasses: 3 });
+    expect(store.s.days['2026-09-23'].atOpen.settings.review.gapScale).toBe(1.1);
+    expect(store.s.days[TODAY].atOpen.settings.round.size).toBe(5);
+  });
+  it('tuned values never touch grown-up settings', async () => {
+    const store = tunedStore({ 'session.capMinutes': 60, 'typing.passScore': 2 });
+    const { service } = make({ store });
+    await service.open({ userId: 'test-learner', deckId: DECK });
+    expect(store.s.days[TODAY].atOpen.settings.session.capMinutes).toBe(15);
+    expect(store.s.days[TODAY].atOpen.settings.typing.passScore).toBe(6);
+  });
+  it('a store with no tuning (or one that throws) opens on the defaults', async () => {
+    const store = memoryStore();
+    store.readTuning = () => { throw new Error('disk'); };
+    const { service, logger } = make({ store });
+    await service.open({ userId: 'test-learner', deckId: DECK });
+    expect(store.s.days[TODAY].atOpen.settings.round.size).toBe(5);
+    expect(logger.warn).toHaveBeenCalledWith('school.word-ladder.tuning-unreadable', expect.objectContaining({ learnerId: 'test-learner', package: 'korean-vocab' }));
+  });
+  it('test mode plays with the learner\'s tuned values (read-only)', async () => {
+    const store = tunedStore({ 'round.size': 4 });
+    store.writeTuning = vi.fn();
+    const { service } = make({ store, mode: 'test' });
+    await service.open({ userId: 'test-learner', deckId: DECK });
+    expect(store.s.days[TODAY].atOpen.settings.round.size).toBe(4);
+    expect(store.writeTuning).not.toHaveBeenCalled();
+  });
+});
