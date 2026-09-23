@@ -1,6 +1,7 @@
 /** Browser journeys never mutate the household. HTTP persistence has its own isolated suite. */
 import { portionFactor, scaleFoodPortion } from '../../../../shared/contracts/health/foodQuantity.mjs';
 import { numericFoodPatches } from '../../../../shared/contracts/health/foodNumericEdit.mjs';
+const PIXEL_PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jN1kAAAAASUVORK5CYII=', 'base64');
 export async function installHealthFixtures(page, { items = [], foods = [], budgetBase = 2000, exercise = 0 } = {}) {
   const state = { items: structuredClone(items), foods: structuredClone(foods), requests: [], unexpected: [], deleted: new Map(), holdCapture: null };
   const budget = date => {
@@ -28,6 +29,11 @@ export async function installHealthFixtures(page, { items = [], foods = [], budg
     state.requests.push({ endpoint, method, body });
     const reply = json => route.fulfill({ json });
     if (method === 'GET') {
+      // Food icons are images. Answering them with JSON made every icon fail to
+      // load, and since ff1291158 each failure is POSTed to the artwork repair
+      // queue — a write the journeys would then report as unexpected. A test
+      // that wants a slow or missing icon registers its own route for it.
+      if (endpoint.startsWith('/nutrition/icons/')) return route.fulfill({ contentType: 'image/png', body: PIXEL_PNG });
       if (endpoint === '/context') return reply({ userId: 'health-fixture' });
       if (endpoint === '/goals') return reply({ goals: null });
       if (endpoint === '/day') return reply({ date: url.searchParams.get('date'), items: state.items.filter(row => row.date === url.searchParams.get('date')), budget: budget(url.searchParams.get('date')), revision: state.requests.length });

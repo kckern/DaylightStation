@@ -17,8 +17,16 @@ for (const width of [1440, 390]) test(`three provisional incident entries count 
     review: { state: 'provisional', stabilizesAt: '2026-09-08T19:48:16Z' } })) });
   await page.goto('/health?date=' + date);
   await expect(page.locator('.health-row-line')).toHaveCount(3);
-  await expect(page.getByText('Estimated', { exact: true })).toHaveCount(3);
-  await expect(page.getByText('Food 871', { exact: true })).toBeVisible();
+  // Provisional rows no longer carry an "Estimated" label (ab7eface9; plan
+  // 2026-09-06-health-meal-workflow: "Remove Estimated text only, retain confirm
+  // action"). Each one keeps its one-tap confirm instead, and all three count.
+  await expect(page.getByText('Estimated', { exact: true })).toHaveCount(0);
+  await expect(page.locator('.health-row-line--unsettled')).toHaveCount(3);
+  for (const name of ['Oikos plain yogurt', 'Chia seeds', 'Mixed food'])
+    await expect(page.getByRole('button', { name: `Confirm entry: ${name}`, exact: true })).toBeVisible();
+  // The budget bar replaced the summary cards (00b680f65); the eaten figure is
+  // where "Food 871" used to be.
+  await expect(page.getByText('871 eaten of 2,000', { exact: true })).toBeVisible();
   await expect(page.getByText(/needs settlement|unconfirmed|needs confirmation/i)).toHaveCount(0);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.screenshot({ path: testInfo.outputPath('three-provisional-entries.png'), fullPage: true });
@@ -45,7 +53,9 @@ for (const width of [1440, 390]) test(`group and review layout at ${width}px`, a
   await page.goto('/health?date=' + date);
   const group = page.getByRole('button', { name: 'Collapse Fish Taco', exact: true });
   await expect(group).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Edit Fish Taco', exact: true }).locator('..')).toContainText('197');
+  // The dish row carries its members' rollup (145 + 52). Matched on the whole
+  // row: the name button's parent is the identity cell since b3eea0c5c.
+  await expect(page.locator('.health-row-line', { has: page.getByRole('button', { name: 'Edit Fish Taco', exact: true }) })).toContainText('197');
   const tortilla = page.locator('.health-row-line', { hasText: 'Tortilla' });
   const before = await tortilla.boundingBox();
   release();
