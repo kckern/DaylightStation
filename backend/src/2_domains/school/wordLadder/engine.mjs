@@ -7,7 +7,7 @@
  */
 import { ValidationError } from '#domains/core/errors/index.mjs';
 import { hashString, seededShuffle } from './checkItem.mjs';
-import { applyGraded, applySort, emptyWordV3, introduce, isDue } from './mastery.mjs';
+import { PILES, applyGraded, applySort, emptyWordV3, introduce, isDue } from './mastery.mjs';
 import { channelFor, cueFor, pickMeaningChoices, pickTermChoices } from './choices.mjs';
 import { newAllowance, planNextRound } from './rounds.mjs';
 import { normalizeAnswer } from './jamo.mjs';
@@ -150,15 +150,22 @@ function quizzedCount(dayFile) {
   return dayFile.rounds.reduce((n, round) => n + round.quiz.passed.length + round.quiz.failed.length, 0);
 }
 
+// Spec §4 Done for today: goal met, or the day's cap reached with no round in
+// progress. A pending recheck stays answerable (currentItem still offers it),
+// but it no longer holds the day open once the cap has elapsed.
 export function dayDone(ctx) {
-  return currentItem(ctx).type === 'summary';
+  if (currentItem(ctx).type === 'summary') return true;
+  return remainingMs(ctx) <= 0 && !openRound(ctx);
 }
 
-function startQuiz(ctx, round) {
+// `quizNow`: the child asked to be quizzed, so words not yet sorted this round
+// are quizzed too. Words that failed verify today never are.
+function startQuiz(ctx, round, { quizNow = false } = {}) {
   const eligible = round.words.filter((id) => {
     const word = wordOf(ctx.status, id);
     const pile = round.stream.latest[id];
-    return word.verifyFailedDay !== ctx.day && (pile === 'familiar' || pile === 'claimed' || word.notYetCarry);
+    if (word.verifyFailedDay === ctx.day) return false;
+    return pile === 'familiar' || pile === 'claimed' || word.notYetCarry === true || (quizNow && !pile);
   });
   round.quiz.queue = [...eligible.map((wordId) => ({ wordId, task: '3.3' })), ...eligible.map((wordId) => ({ wordId, task: '2.2' }))];
   round.phase = round.quiz.queue.length ? 'quiz' : 'done';
@@ -221,11 +228,33 @@ function gradedCorrect(ctx, item, response, verdict) {
   return response.choice === answerFor(ctx, item);
 }
 
+const NOT_FIT = 'response does not fit this item';
+const keysOf = (response) => Object.keys(response ?? {}).filter((key) => response[key] !== undefined);
+
+function validateResponse(item, response) {
+  if (!response || typeof response !== 'object' || Array.isArray(response)) throw new ValidationError(NOT_FIT);
+  const keys = keysOf(response);
+  const isStream = item.type === 'flashcard' && item.mode === 'stream';
+  if (!isStream && keys.includes('undo')) throw new ValidationError('nothing to undo');
+  const only = (key) => keys.length === 1 && keys[0] === key;
+  let fits = false;
+  if (item.type === 'flashcard' && item.mode === 'intro') fits = only('seen') && response.seen === true;
+  else if (isStream) {
+    fits = (only('sort') && PILES.includes(response.sort)) || (only('undo') && response.undo === true)
+      || (only('quizNow') && response.quizNow === true);
+  } else if (item.type === 'choice') {
+    fits = (only('choice') && typeof response.choice === 'string') || (only('dontKnow') && response.dontKnow === true);
+  } else if (item.type === 'typed' || item.type === 'copy') fits = only('typed') && typeof response.typed === 'string';
+  if (!fits) throw new ValidationError(NOT_FIT);
+}
+
 export function respond(inputCtx, itemId, response = {}, { at, verdict = null } = {}) {
+  if (typeof at !== 'string' || at.length === 0) throw new ValidationError('at is required');
   if (inputCtx.dayFile.items[itemId]) return { status: inputCtx.status, dayFile: inputCtx.dayFile, result: inputCtx.dayFile.items[itemId].result };
   const ctx = { ...inputCtx, status: clone(inputCtx.status), dayFile: clone(inputCtx.dayFile) };
   const item = currentItem(ctx);
   if (item.id !== itemId) throw new ValidationError('stale item');
+  validateResponse(item, response);
   let result = { ok: true };
 
   if (item.id.startsWith('rc:')) {
@@ -256,7 +285,7 @@ export function respond(inputCtx, itemId, response = {}, { at, verdict = null } 
         delete ctx.dayFile.items[`${round.id}:s:${round.stream.views}`];
         return { status: ctx.status, dayFile: ctx.dayFile, result: { undone: true } };
       }
-      if (response.quizNow === true) startQuiz(ctx, round);
+      if (response.quizNow === true) startQuiz(ctx, round, { quizNow: true });
       else applyStreamSort(ctx, round, response.sort);
     } else {
       const correct = gradedCorrect(ctx, item, response, verdict);
