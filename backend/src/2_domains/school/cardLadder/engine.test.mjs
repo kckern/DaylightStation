@@ -855,3 +855,15 @@ describe('engine — graded item records (plan 4, grown-up controls)', () => {
     });
   });
 });
+
+describe('engine — copy steps compare under the target script', () => {
+  it('a Latin copy is case-insensitive ("cat" copies "Cat")', () => {
+    const latin = { targetScript: 'latin', entries: new Map([E('cat', 'Cat', 'a small pet'), E('dog', 'Dog', 'a loyal pet'), E('owl', 'Owl', 'a night bird')]) };
+    const opened = openDay({ status: emptyStatusV3(), dayFile: emptyDay(D), day: D, deckId: 'deck', pool: ['cat', 'dog', 'owl'], settings: SET, learnerId: 'test-learner', at: at(), media: {} });
+    let ctx = { ...opened, day: D, lexicon: latin, media: {}, pool: ['cat', 'dog', 'owl'], settings: SET, learnerId: 'test-learner' };
+    ({ ctx } = step(ctx, { seen: true }));
+    expect(currentItem(ctx)).toMatchObject({ type: 'copy', wordId: 'cat' });
+    const { result } = step(ctx, { typed: 'cat' });
+    expect(result).toMatchObject({ correct: true });
+  });
+});

@@ -13,7 +13,7 @@ import { hashString, seededShuffle } from './checkItem.mjs';
 import { PILES, applyGraded, applySort, emptyWordV3, introduce, isDue, isExcluded, markMatched, readyForSignOff } from './mastery.mjs';
 import { channelFor, cueFor, pickMeaningChoices, pickTermChoices } from './choices.mjs';
 import { newAllowance, planNextRound } from './rounds.mjs';
-import { normalizeAnswer } from './jamo.mjs';
+import { answersMatch } from './scriptRules.mjs';
 import { drillSteps, matchBoard, tilesFor } from './drill.mjs';
 import { PRACTICE_MODES, VERIFY_TASKS, buildPractice } from './practice.mjs';
 
@@ -244,22 +244,22 @@ function respondDrill(ctx, drill, response) {
     // Like tiles, never a dead end: the first miss hides the term (recalling it
     // IS the step), the second reveals it (the step becomes a copy), and the
     // third try advances regardless.
-    const correct = normalizeAnswer(response.typed) === normalizeAnswer(term);
+    const correct = answersMatch(response.typed, term, ctx.lexicon?.targetScript);
     if (!correct) drill.tries = (drill.tries ?? 0) + 1;
     result = correct || drill.tries >= 2 ? { correct, answer: term } : { correct };
     if (!correct && drill.tries < 3) return { result, advance: false };
   } else if (TYPED_DRILL_STEPS.has(stepName)) {
     // copy: the term is on screen, so a miss may carry it; must match to advance.
-    const correct = normalizeAnswer(response.typed) === normalizeAnswer(term);
+    const correct = answersMatch(response.typed, term, ctx.lexicon?.targetScript);
     result = { correct, answer: term };
     if (!correct) return { result, advance: false };
   } else if (stepName === 'tiles') {
-    const correct = normalizeAnswer(response.tiles.join('')) === normalizeAnswer(term);
+    const correct = answersMatch(response.tiles.join(''), term, ctx.lexicon?.targetScript);
     drill.tries = (drill.tries ?? 0) + 1;
     result = { correct, answer: correct || drill.tries >= 2 ? term : null };
     if (!correct && drill.tries < 3) return { result, advance: false };
   } else if (stepName === 'type') {
-    result = { correct: normalizeAnswer(response.typed) === normalizeAnswer(term), answer: term };
+    result = { correct: answersMatch(response.typed, term, ctx.lexicon?.targetScript), answer: term };
   }
   drill.index += 1;
   drill.tries = 0;
@@ -579,7 +579,7 @@ function respondPractice(ctx, item, response, verdict) {
     ctx.status.words[task.wordId] = applySort(wordOf(ctx.status, task.wordId), response.sort, ctx.day);
   } else if (task.kind === 'copy') {
     const term = ctx.lexicon.entries.get(task.wordId).term;
-    result = { correct: normalizeAnswer(response.typed) === normalizeAnswer(term), answer: term };
+    result = { correct: answersMatch(response.typed, term, ctx.lexicon?.targetScript), answer: term };
     if (!result.correct) return { result, advance: false };
   } else if (task.kind === 'type-practice') {
     result = gradedResult(ctx, item, gradedCorrect(ctx, item, response, verdict), verdict);
@@ -737,7 +737,7 @@ function applyResponse(ctx, item, itemId, response, { at, verdict }) {
       ctx.status.words[item.wordId] = introduce(wordOf(ctx.status, item.wordId), ctx.day);
       round.intro.step = 'copy';
     } else if (item.type === 'copy') {
-      const correct = normalizeAnswer(response.typed) === normalizeAnswer(ctx.lexicon.entries.get(item.wordId).term);
+      const correct = answersMatch(response.typed, ctx.lexicon.entries.get(item.wordId).term, ctx.lexicon?.targetScript);
       result = { correct, answer: ctx.lexicon.entries.get(item.wordId).term };
       if (!correct) return { status: ctx.status, dayFile: ctx.dayFile, result };
       if (ctx.dayFile.capabilities?.microphone === true && ctx.media?.[item.wordId]?.audio === true) round.intro.step = 'say';

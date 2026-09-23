@@ -94,7 +94,7 @@ describe('TypedItem keypad toggle — hardware keyboard heuristic', () => {
 });
 
 describe('TypedItem keypad — keyed by the target script', () => {
-  const generic = { target: 'en', anchor: 'en', targetScript: 'generic' };
+  const generic = { target: 'en', anchor: 'en', targetScript: 'latin' };
   it('a target with no on-screen keypad shows no toggle, never auto-opens and ignores a long-press', async () => {
     vi.useFakeTimers();
     const { toggled } = await load(generic);
