@@ -524,7 +524,7 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
     if (target?.kind === 'program' && target.program === 'flashcards' && target.policy?.mode === 'word-ladder') {
       const learnerId = launchedLearnerId ?? target.learnerId ?? null;
       if (!target.deckId || !learnerId) return false;
-      setActive({ mode: 'word_ladder', descriptor: { deckId: target.deckId, userId: learnerId } });
+      setActive({ mode: 'word_ladder', descriptor: { deckId: target.deckId, userId: learnerId, test: target.test === true, scenario: target.test === true ? target.scenario ?? null : null } });
       openSection('flashcards');
       return true;
     }
@@ -549,7 +549,7 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
   }, [courses, banks, openSection, start]);
 
   /**
-   * The code-free door: `/school/go/<learner>/<program>[/<instance>]`.
+   * The code-free door: `/school/go/<learner>/<program>[/<instance>][/test]`.
    *
    * For testing and admin from a grown-up's browser. The Portal is a kiosk with
    * no address bar, so a child at the panel cannot reach it; a code is still
@@ -561,9 +561,13 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
    * a broadcast lands in — so the mounted runner, its session and its grant are
    * indistinguishable from the ordinary path.
    */
+  // `/test` is a reserved final segment (word-ladder spec §8): a flag for a
+  // read-only test sitting, never part of the instance.
+  const directTail = section === 'direct-launch' ? materialPath.slice(2) : [];
+  const directTest = directTail.at(-1) === 'test';
   const directLearnerId = section === 'direct-launch' ? (materialPath[0] ?? null) : null;
   const directProgramId = section === 'direct-launch' ? (materialPath[1] ?? null) : null;
-  const directInstance = section === 'direct-launch' ? (materialPath.slice(2).join('/') || null) : null;
+  const directInstance = section === 'direct-launch' ? ((directTest ? directTail.slice(0, -1) : directTail).join('/') || null) : null;
   const [directError, setDirectError] = useState(null);
   // Fires once per URL. `onPortalLaunch` replaces `section`, so without this the
   // effect would re-enter on the way out and mint a second grant.
@@ -571,13 +575,20 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
 
   useEffect(() => {
     if (!directLearnerId || !directProgramId) return;
-    const key = `${directLearnerId}/${directProgramId}/${directInstance ?? ''}`;
+    const key = `${directLearnerId}/${directProgramId}/${directInstance ?? ''}/${directTest ? 'test' : ''}`;
     if (directAttempted.current === key) return;
     // The courses catalogue gates a sentence-ladder mount inside
     // `onPortalLaunch`; launching before it lands would be refused as unknown.
     if (status !== 'ready' || !catalogLoaded) return;
     directAttempted.current = key;
     setDirectError(null);
+    // Only the word ladder has a test mode; a `/test` URL for anything else is
+    // refused from the URL alone, before a grant is asked for.
+    if (directTest && directProgramId !== 'word-ladder') {
+      schoolLog.bank('direct-launch-refused', { program: directProgramId, reason: 'no-test-mode' });
+      setDirectError(`Test mode isn't available for ${directProgramId}.`);
+      return;
+    }
     // A learner the roster does not know can NEVER render. Every runner below
     // gates on `currentUser`, which is `roster.find(...)` — so claiming an
     // unknown id stores a claim nobody matches, the launch reports success, the
@@ -602,10 +613,13 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
           : 'That could not be opened. Check the learner and program in the URL.');
         return;
       }
-      const mounted = await onPortalLaunch(data.target, directLearnerId);
+      const target = directTest
+        ? { ...data.target, test: true, scenario: new URLSearchParams(window.location.search).get('scenario') }
+        : data.target;
+      const mounted = await onPortalLaunch(target, directLearnerId);
       if (!mounted) setDirectError(`${directProgramId} would not mount for ${directLearnerId}.`);
     })();
-  }, [directLearnerId, directProgramId, directInstance, status, catalogLoaded, roster, claim, onPortalLaunch]);
+  }, [directLearnerId, directProgramId, directInstance, directTest, status, catalogLoaded, roster, claim, onPortalLaunch]);
 
   // Lock mode is a NARROWING of a surface that is already terminal (the Portal
   // mounts School with no `clear`), not a new cage.
