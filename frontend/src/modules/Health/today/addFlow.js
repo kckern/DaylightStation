@@ -19,6 +19,7 @@ export const ADD_VISIBLE_TIMEOUT_MS = 30_000;
 export const ADDED_HIGHLIGHT_MS = 1500;
 
 const waiting = new Set();
+let lastSeen = new Set(); // row ids in the most recent day the view reported
 const listeners = new Set();
 const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
 const rowId = row => String(row?.uuid ?? row?.id ?? '');
@@ -55,13 +56,20 @@ export function trackAddFlow({ ids = [], bucket = null, surface, kind, submitToC
       resolve(false);
     }, ADD_VISIBLE_TIMEOUT_MS);
     waiting.add(pending);
+    // The day may already hold the rows (a reload that beat the response).
+    completeSeen(lastSeen, at);
   });
 }
 
 /** The day's current rows. Completes every registered add they now contain. */
 export function noteVisibleRows(rows, at = now()) {
-  if (!waiting.size || !Array.isArray(rows)) return;
-  const seen = new Set(rows.map(rowId));
+  if (!Array.isArray(rows)) return;
+  lastSeen = new Set(rows.map(rowId));
+  completeSeen(lastSeen, at);
+}
+
+function completeSeen(seen, at) {
+  if (!waiting.size) return;
   for (const pending of [...waiting]) {
     if (![...pending.ids].every(id => seen.has(id))) continue;
     waiting.delete(pending);
@@ -75,6 +83,7 @@ export function noteVisibleRows(rows, at = now()) {
 export function resetAddFlow() {
   for (const pending of waiting) clearTimeout(pending.timer);
   waiting.clear();
+  lastSeen = new Set();
 }
 
 /**

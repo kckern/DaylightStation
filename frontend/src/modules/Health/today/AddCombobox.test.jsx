@@ -134,6 +134,24 @@ describe('AddCombobox', () => {
     await waitFor(() => expect(release).toHaveBeenCalledTimes(1));
   });
 
+  it.each([
+    ['another meal', { committed: true, entryIds: ['m1'], mealTime: 'afternoon', moved: true }],
+    ['another day', { committed: true, entryIds: ['d1'], items: [{ uuid: 'd1', date: '2026-09-01' }] }],
+  ])('a sentence filed on %s releases its pending row at once, not after the timeout', async (_label, response) => {
+    resetAddFlow();
+    apiMock.mockImplementation(async (path) => {
+      if (path.includes('suggest')) return { items: [] };
+      if (path.includes('nutrition/input')) return response;
+      return {};
+    });
+    const release = vi.fn();
+    r(<AddCombobox bucketId="morning" date="2026-09-02" onDone={() => {}} onCancel={() => {}} onSentencePending={() => release} />);
+    const input = screen.getByRole('combobox');
+    fireEvent.change(input, { target: { value: 'soup for lunch' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    await waitFor(() => expect(release).toHaveBeenCalledTimes(1));
+  });
+
   it('a failed sentence releases its pending row at once', async () => {
     apiMock.mockImplementation(async (path) => {
       if (path.includes('suggest')) return { items: [] };

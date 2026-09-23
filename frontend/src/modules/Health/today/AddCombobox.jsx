@@ -11,6 +11,14 @@ import { addedRowIds, trackAddFlow } from './addFlow.js';
 const logger = createAppLogger('health').child('add-combobox');
 
 
+/** True when a committed sentence's rows were filed on a different day or meal than this row's. */
+export function landedElsewhere(result, { date = null, bucketId = null } = {}) {
+  if (result?.moved === true) return true;
+  const landedDate = result?.date ?? result?.affectedDates?.[0] ?? result?.items?.find(item => item?.date)?.date ?? null;
+  const landedMeal = result?.mealTime ?? result?.bucket ?? null;
+  return Boolean((date && landedDate && landedDate !== date) || (bucketId && landedMeal && landedMeal !== bucketId));
+}
+
 export function AddCombobox({ bucketId, date = null, onDone, onCancel, onMeals, onTemplate, onManageFoods, onSentencePending = null,
   inline = false, label = null, focusRequest = 0, actions = null }) {
   const [text, setText] = useState('');
@@ -178,8 +186,10 @@ export function AddCombobox({ bucketId, date = null, onDone, onCancel, onMeals, 
         setError(new Error(result?.message || 'No food was logged. Tweak the sentence and try again.'));
         setPhase('typing');
       } else {
-        trackAddFlow({ ids: addedRowIds(result), bucket: bucketId ?? null, surface, kind: 'sentence', submitToCommittedMs: performance.now() - submittedAt })
-          .then(settle);
+        const flow = trackAddFlow({ ids: addedRowIds(result), bucket: bucketId ?? null, surface, kind: 'sentence', submitToCommittedMs: performance.now() - submittedAt });
+        // Rows that landed on another day or meal ("…for lunch") will never
+        // appear here: drop the placeholder now rather than after the timeout.
+        if (landedElsewhere(result, { date, bucketId })) settle(); else flow.then(settle);
         finish(result);
       }
     } catch (err) {
