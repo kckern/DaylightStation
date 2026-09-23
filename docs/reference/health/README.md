@@ -277,7 +277,10 @@ under a meal's add row only while that row has focus or text, and **overlays** w
 follows (absolutely positioned under the input, full row width, the row card's look,
 scrolling inside its own max-height) rather than sitting in document flow — in flow,
 focusing a row pushed the page down by up to the list's height and blur/commit
-yanked it back. The sheet (non-inline) mode keeps its in-flow layout. Suggestion rows
+yanked it back. When the visible viewport (`visualViewport`, so a phone keyboard counts)
+has less room below the input than the popup needs and more above, it opens upward
+(`popupPlacement`, re-evaluated on viewport resize/scroll). The sheet (non-inline) mode
+keeps its in-flow layout. Suggestion rows
 are 32 px under a fine pointer and keep the 44 px floor under `(pointer: coarse)`.
 
 Food rows use the shared `foodPortion` contract: known mass first, otherwise the

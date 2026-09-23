@@ -135,6 +135,7 @@ describe('add-food suggestion panel', () => {
     expect(popup).toMatch(/top: calc\(100% \+ 2px\)/);
     expect(popup).toMatch(/z-index: \d+/);
     expect(popup).toMatch(/background: var\(--ds-surface\)/);
+    expect(css).toMatch(/\.health-suggest--inline\.health-suggest--above \.health-suggest__popup \{[^}]*bottom: calc\(100% \+ 2px\)/);
     // The sheet mode's popup stays in flow: no unscoped popup rule positions it.
     expect(css).not.toMatch(/\} \.health-suggest__popup \{[^}]*position: absolute/);
   });
