@@ -139,8 +139,10 @@ function remainingMs(ctx) {
   return ctx.settings.session.capMinutes * 60000 - ctx.dayFile.activeMs;
 }
 
+// A drill whose word has since left the lexicon (the deck was edited
+// mid-day) is treated as done: there is nothing left to render or grade.
 function openDrill(ctx) {
-  return (ctx.dayFile.drills ?? []).find((drill) => !drill.done) ?? null;
+  return (ctx.dayFile.drills ?? []).find((drill) => !drill.done && hasEntry(ctx, drill.wordId)) ?? null;
 }
 
 // A word the engine can render. `openDay` may run without the lexicon; the
@@ -303,10 +305,15 @@ function buildRun(ctx, capabilities, { mode, help = true, filter = 'introduced',
 }
 
 // A mode is offered only when its default run (with help, every introduced
-// word) would have something in it.
+// word) would have something in it. Say is the exception: With help
+// (say-after) needs term audio, Without help (say-from-cue) does not, so it
+// is offered when EITHER has a run, and `sayHelp` lists the ones that do.
 function menuItem(ctx) {
-  const modes = PRACTICE_MODES.filter((mode) => buildRun(ctx, ctx.dayFile.capabilities, { mode }, `${ctx.learnerId}|${ctx.day}|menu`).queue.length > 0);
-  return { id: 'menu', type: 'menu', modes, quizzed: quizzedCount(ctx.dayFile) };
+  const seed = `${ctx.learnerId}|${ctx.day}|menu`;
+  const runs = (opts) => buildRun(ctx, ctx.dayFile.capabilities, opts, seed).queue.length > 0;
+  const sayHelp = [true, false].filter((help) => runs({ mode: 'say', help }));
+  const modes = PRACTICE_MODES.filter((mode) => (mode === 'say' ? sayHelp.length > 0 : runs({ mode })));
+  return { id: 'menu', type: 'menu', modes, sayHelp, quizzed: quizzedCount(ctx.dayFile) };
 }
 
 // Practice item ids are p<run>:<index>, and p<run>:<index>:<step> inside a drill.

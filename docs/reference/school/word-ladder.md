@@ -170,6 +170,11 @@ never an error. **Tiles and dictation are never dead ends**: a miss retries
 the same step in place — the term stays hidden through the first miss, is
 **revealed** (read-only, "It's 가위 — …", the step becomes copyable) after
 the **second** miss, and the step **advances regardless on the third try**.
+When a tiles or dictation step advances (a match or the third miss) the
+program **holds** that verdict — "Right!" or "It's 가위" — with a Next
+button before the next step replaces it (`HELD_DRILL_STEPS`). An open drill
+whose word has since left the lexicon is treated as done (`openDrill`), never
+a 500.
 Copy and type must match exactly to advance (copy's miss carries the answer
 so the retry can be completed); say-after / read-aloud / say-from-cue are
 speaking and never graded at all (see [Speaking](#speaking-never-graded)).
@@ -334,7 +339,10 @@ Once the day is done (goal or cap) the summary shows once
 server lists in `item.modes` (`PRACTICE_MODES` in
 `backend/src/2_domains/school/wordLadder/practice.mjs`: flashcards, match,
 say, write, listen, drill, quiz) — a mode whose default run (with help,
-every introduced word) would come up empty is not offered at all. Only
+every introduced word) would come up empty is not offered at all. **Say** is
+the exception: it is offered when EITHER variant has a run (Without help
+needs no term audio), and the menu item's `sayHelp` (`[true,false]` subset)
+lists the variants the With/Without help chooser offers. Only
 **Quiz me** grades (rule 1); every other mode is study and never changes a
 word's state except a sort (down freely, up only to Got it, same as the
 round stream).
@@ -344,7 +352,7 @@ round stream).
 | Flashcards | front side ("Word first" / "Meaning first") | term-first | meaning-first |
 | Match | starts directly | 4–6 pair picture/text boards over the practice word set | — |
 | Say | With help / Without help | **1.2 say-after** — hears the term, says it after (dropped from the run if no microphone or the word has no term audio) | **3.4 say-from-cue** — cue only; there's no model to say after, so the native comparison at the end is simply skipped |
-| Write | With help / Without help | **1.1 copy-type** — the term is on screen, type it | **3.3 type-from-cue** — cue only, no reference to copy |
+| Write | With help / Without help | **1.1 copy-type** — the term is on screen, type it | **3.3 type-from-cue** — cue only, no reference to copy; a **Show me** button submits an empty answer and reveals the word (the drill's type step has it too) |
 | Listen | starts directly | one run through every practice word that has term audio (`items/ListenItem.jsx`) | — |
 | Drill | word picker first (**My words**, multi-select, "Drill these") | the same drill walk as the tricky-word drill (look → … → type), over the chosen words | — |
 | Quiz me | starts directly | graded — see below | — |
@@ -488,7 +496,9 @@ read-aloud, say-from-cue), the practice menu's listen run
 (`items/ListenItem.jsx`), the practice menu and My words / word picker
 (`items/MenuItem.jsx`, `items/WordsItem.jsx`), and summary
 (`items/SummaryItem.jsx`). Keys: `useWordLadderKeys.js` (1/2/3 sort,
-Space/Enter continue, 1–4/0 choices, U undo, Q quiz me, H hear, M menu — only
+Space/Enter continue, 1–4/0 choices, U undo, Q quiz me, H hear, match board
+digits (both columns hinted: a digit picks a word, the next picks its
+meaning), M menu — only
 while a practice item is on screen and no typing field has focus). Keys match the
 **physical** key (`event.code` — `KeyH`, `Digit1`, `Space`, `NumpadEnter`…)
 first and `event.key` second, because on a Korean keyboard layout `key` for H
@@ -498,6 +508,12 @@ The typed field declares the lexicon's BCP-47 code (`lang` / `data-ime-lang`,
 e.g. `ko`); `ime/languages.js` normalises it (`ko`, `ko-KR` → `KR`) so the
 in-page Hangul IME switches to Korean on focus. A copy mismatch clears the
 field for the retry.
+
+**One audio lane** (`wordLadderAudio.js`): every clip goes through
+`startClip`, and starting one stops whichever is playing; the program stops
+the lane on unmount. **A late take is dropped**: `useTakeRecorder` ignores a
+MediaRecorder `onstop` that lands after its item unmounted (Stop, then Next),
+so it is never uploaded or played over the next item.
 
 An **image cue** on 3.1 / 3.3 always arrives with the gloss as `cue.text` (the
 gloss is the cue there, never the answer). `items/CuePicture.jsx` renders the
