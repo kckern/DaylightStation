@@ -33,6 +33,15 @@ describe('wordLadderLog — trace binding', () => {
     expect(warn.mock.calls[0][1]).toMatchObject({ ms: 45000, traceId: trace.id });
   });
 
+  it('an item-level itemMode survives alongside the trace\'s own live/test mode — they no longer collide', async () => {
+    const { wordLadderLog, setTrace } = await import('./wordLadderLog.js');
+    const { createTrace } = await import('./createTrace.js');
+    const trace = createTrace({ learnerId: 'kid-1', deckId: 'd', mode: 'live' });
+    setTrace(trace);
+    wordLadderLog.itemShown({ itemId: 'i1', itemMode: 'intro' });
+    expect(info.mock.calls.at(-1)[1]).toMatchObject({ mode: 'live', itemMode: 'intro' });
+  });
+
   it('clearTrace(trace) only unbinds if it is still the active trace — a stale unmount cannot clobber a newer one', async () => {
     const { wordLadderLog, setTrace, clearTrace } = await import('./wordLadderLog.js');
     const { createTrace } = await import('./createTrace.js');

@@ -366,6 +366,37 @@ describe('WordLadderProgram — spec §8 trace and events', () => {
     shownSpy.mockRestore(); openedSpy.mockRestore();
   });
 
+  it('item.shown carries the item\'s own mode as itemMode — the trace\'s live/test mode is a separate field', async () => {
+    const shownSpy = vi.spyOn(wordLadderLog, 'itemShown');
+    const api = fakeApi();
+    renderStarted(<WordLadderProgram descriptor={{ deckId: 'd', userId: 'test-learner' }} api={api} />);
+    await screen.findByText('가위');
+    // `intro` is a flashcard with mode: 'intro' — this must survive as
+    // itemMode, not be clobbered by createTrace's own live/test mode stamp.
+    expect(shownSpy).toHaveBeenCalledWith(expect.objectContaining({ itemId: intro.id, itemMode: 'intro' }));
+    shownSpy.mockRestore();
+  });
+
+  it('item.layout follows item.shown once with the main FitText\'s computed fontPx', async () => {
+    const layoutSpy = vi.spyOn(wordLadderLog, 'itemLayout');
+    const api = fakeApi();
+    renderStarted(<WordLadderProgram descriptor={{ deckId: 'd', userId: 'test-learner' }} api={api} />);
+    await screen.findByText('가위');
+    expect(layoutSpy).toHaveBeenCalledTimes(1);
+    expect(layoutSpy).toHaveBeenCalledWith({ itemId: 'r1:i:gawi:flash', fontPx: expect.any(Number) });
+    layoutSpy.mockRestore();
+  });
+
+  it('an item with no main term FitText (choice) never logs item.layout', async () => {
+    const layoutSpy = vi.spyOn(wordLadderLog, 'itemLayout');
+    const api = fakeApi();
+    api.open.mockResolvedValue(openWith(choice));
+    renderStarted(<WordLadderProgram descriptor={{ deckId: 'd', userId: 'test-learner' }} api={api} />);
+    await screen.findByText('Glue');
+    expect(layoutSpy).not.toHaveBeenCalled();
+    layoutSpy.mockRestore();
+  });
+
   it('sitting.closed on Leave carries the reason and the progress the sitting closed on', async () => {
     const closedSpy = vi.spyOn(wordLadderLog, 'sittingClosed');
     const api = fakeApi();
@@ -376,6 +407,30 @@ describe('WordLadderProgram — spec §8 trace and events', () => {
     expect(closedSpy).toHaveBeenCalledWith(expect.objectContaining({
       sittingId: 's', reason: 'leave', activeMs: progress.activeMs, remaining: progress.capMs - progress.activeMs,
     }));
+    closedSpy.mockRestore();
+  });
+
+  it('sitting.closed also fires on the unmount close path, with reason unmount', async () => {
+    const closedSpy = vi.spyOn(wordLadderLog, 'sittingClosed');
+    const api = fakeApi();
+    const { unmount } = renderStarted(<WordLadderProgram descriptor={{ deckId: 'd', userId: 'test-learner' }} api={api} />);
+    await screen.findByText('가위');
+    unmount();
+    expect(closedSpy).toHaveBeenCalledWith(expect.objectContaining({
+      sittingId: 's', reason: 'unmount', activeMs: progress.activeMs, remaining: progress.capMs - progress.activeMs,
+    }));
+    closedSpy.mockRestore();
+  });
+
+  it('a sitting already closed by Leave does not log sitting.closed again on unmount', async () => {
+    const closedSpy = vi.spyOn(wordLadderLog, 'sittingClosed');
+    const api = fakeApi();
+    const { unmount } = renderStarted(<WordLadderProgram descriptor={{ deckId: 'd', userId: 'test-learner' }} api={api} />);
+    await screen.findByText('가위');
+    fireEvent.click(screen.getByRole('button', { name: /leave/i }));
+    await waitFor(() => expect(closedSpy).toHaveBeenCalledTimes(1));
+    unmount();
+    expect(closedSpy).toHaveBeenCalledTimes(1);
     closedSpy.mockRestore();
   });
 

@@ -32,7 +32,7 @@ const KEYPAD_AUTO_OPEN_MS = 10_000;
  * a `typed` item with `graded: false`) also offers "Show me": it submits an
  * empty answer, which the server scores as a miss and answers with the word.
  */
-export default function TypedItem({ item, mode, langs, resolveAssetUrl, onRespond, result = null, onContinue, busy = false, stageRef = null, pending = false }) {
+export default function TypedItem({ item, mode, langs, resolveAssetUrl, onRespond, result = null, onContinue, busy = false, stageRef = null, pending = false, onLayout }) {
   const [value, setValue] = useState('');
   const [keypadOpen, setKeypadOpen] = useState(false);
   const input = useRef(null);
@@ -156,7 +156,7 @@ export default function TypedItem({ item, mode, langs, resolveAssetUrl, onRespon
       aria-label={dictation ? 'Write what you hear' : graded ? 'Type the word' : 'Copy the word'}
     >
       <div className="wl-prompt">
-        {mode === 'copy' && <FitText role="term" text={word?.term ?? ''} lang={langs.term} />}
+        {mode === 'copy' && <FitText role="term" text={word?.term ?? ''} lang={langs.term} onFit={onLayout} />}
         {dictation && !answered && <TouchButton variant="secondary" onClick={() => termAudio && playClip(termAudio, 'term')}><Icon name="volume" /> Listen</TouchButton>}
         {graded && item.cue?.type === 'image' && <CuePicture item={item} src={image} lang={langs.gloss} />}
         {graded && item.cue?.type === 'text' && <FitText role="prompt" text={item.cue.text} lang={langs.gloss} />}

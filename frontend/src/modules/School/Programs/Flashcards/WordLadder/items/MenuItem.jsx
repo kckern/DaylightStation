@@ -32,14 +32,15 @@ export default function MenuItem({ item, api, sittingId, userId, deckId, langs, 
     setBusy(true);
     setNotice(null);
     const body = { userId, filter: 'introduced', ...opts };
-    wordLadderLog.practiceStarted({ mode: body.mode, help: body.help ?? null, filter: body.filter, frontSide: body.frontSide ?? null, chosen: body.chosen?.length ?? null });
+    // `itemMode`, not `mode` — the trace stamp overwrites a colliding `mode` key.
+    wordLadderLog.practiceStarted({ itemMode: body.mode, help: body.help ?? null, filter: body.filter, frontSide: body.frontSide ?? null, chosen: body.chosen?.length ?? null });
     const out = await api.practice(sittingId, body);
     setBusy(false);
     // A 404 reopens the sitting (the program does that); anything else leaves
     // the child on the menu, so say so rather than doing nothing.
     if (!out?.ok && out?.status !== 404) {
       setNotice("Couldn't start — try again");
-      wordLadderLog.noticeShown({ mode: body.mode, reason: 'practice-start-failed', status: out?.status ?? null });
+      wordLadderLog.noticeShown({ itemMode: body.mode, reason: 'practice-start-failed', status: out?.status ?? null });
       if (view.name !== 'menu') setView({ name: 'menu' });
     }
     onPractice(out);

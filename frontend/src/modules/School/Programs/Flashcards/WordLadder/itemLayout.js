@@ -3,13 +3,24 @@
  * itself rather than reported by each item component: every field either
  * function reads (`item.type`, `item.mode`/`item.step`, `item.front`,
  * `item.cue?.type`, `word.media`) is already on the item BEFORE it renders,
- * so no `onLayout` callback needs threading through the dozen item
- * components — the layout at `item.shown` time is exactly what the server's
- * item shape says it will be. `fontPx` is not derivable this way (it depends
- * on the stage's live measured box) and is logged `null` (spec §8 allows it:
- * "fontPx of the main FitText if easy, else null").
+ * so `layout`/`media` need no callback threaded through the dozen item
+ * components — they are exactly what the server's item shape says they will
+ * be. `fontPx` IS reported by a component (the main FitText depends on the
+ * stage's live measured box, which is not known until after it renders), so
+ * `item.shown.fontPx` is always logged `null` and the real value follows as
+ * a separate `item.layout {fontPx}` event once that FitText's first fit
+ * completes — see `onLayout`/`onFit` wiring in `FitText.jsx` and the item
+ * components, and `wordLadderLog.itemLayout`.
  *
- * Layout names are the closed set from spec §6 Layouts.
+ * Layout names are the closed set from spec §6 Layouts. Two are deliberate
+ * reuses, not omissions: `listen` maps to `'look'` (it is the same
+ * term-on-screen-while-audio-plays screen as the drill's look step) and
+ * `drill-offer` maps to `'flashcard-front'` (the tricky-word offer card is
+ * laid out identically to a flashcard's front face). `type-keypad` and
+ * `quiz-result` are never returned here because they are not layouts of
+ * their own — both are sub-states of an item ALREADY shown (the keypad
+ * opening under a `type` field; a graded verdict held on a `choice`/`typed`
+ * item until Next), so `item.shown` never fires again for them.
  */
 const DRILL_LAYOUT = {
   look: 'look',
