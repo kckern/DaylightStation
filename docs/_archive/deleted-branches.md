@@ -482,3 +482,9 @@ The corollary bit twice in this sweep: `feat/teacher-workspace-ia` and `feature/
 | 2026-09-22 | fix/fitness-play-means-play | aea482f7f | Fitness play re-paused by stale governance closure (leaked media listener); merged 3246ec6b5 |
 | 2026-09-22 | feat/word-ladder-p2 | db6ffe08ae | Word ladder Plan 2: tricky drill + offer, say-it recording, jamo keypad, practice menu + My words; deployed as db6ffe08ae; merged to main as f63dc25e8f |
 | 2026-09-23 | feat/word-ladder-p45 | 949a0abfde | Word ladder Plans 4-5: frontend trace + trace CLI, grown-up word controls + teacher Words tab, tuning agent (brakes, 15-min scheduler, undo, deferred concern push); merged to main as 5a3bc70cc7 |
+| 2026-09-23 | feat/word-ladder-ux | a7bdd34ee6 | word/card ladder UX round + sentence ladder chunks/check-your-work + manual book records; merged to main (deployed c02f3285ee) |
+| 2026-09-23 | feat/word-ladder-card | 78ce139221 | word/card ladder UX round + sentence ladder chunks/check-your-work + manual book records; merged to main (deployed c02f3285ee) |
+| 2026-09-23 | feat/word-ladder-keys | d0b85e6e78 | word/card ladder UX round + sentence ladder chunks/check-your-work + manual book records; merged to main (deployed c02f3285ee) |
+| 2026-09-23 | feat/word-ladder-ladder | 2b0ee7ee80 | word/card ladder UX round + sentence ladder chunks/check-your-work + manual book records; merged to main (deployed c02f3285ee) |
+| 2026-09-23 | feat/sentence-ladder-obs | ef0a3f873f | word/card ladder UX round + sentence ladder chunks/check-your-work + manual book records; merged to main (deployed c02f3285ee) |
+| 2026-09-23 | fix/book-manual-source | 512ae18058 | word/card ladder UX round + sentence ladder chunks/check-your-work + manual book records; merged to main (deployed c02f3285ee) |
