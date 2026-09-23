@@ -15,6 +15,10 @@ const row = (mealTime, name, calories, grams, protein, carbs, fat, extra = {}) =
   uuid: `r${++n}`, id: `r${n}`, version: 1, date, mealTime, name, item: name, calories, grams, amount: grams, unit: 'g',
   protein, carbs, fat, settled: true, icon: 'default', ...extra,
 });
+const foods = [
+  { id: 'shake', name: 'Strawberry Milkshake', icon: 'strawberry', photoRef: 'ph_shake', grams: null, serving: { amount: 325, unit: 'ml', grams: null }, calories: 140 },
+  { id: 'cheese', name: 'String Cheese', icon: 'string-cheese', grams: 30, calories: 86 },
+];
 const items = [
   row('morning', 'Pancakes', 310, 140, 7, 53, 7),
   row('morning', 'Applesauce', 15, 20, 0, 4, 0),
@@ -36,11 +40,17 @@ const browser = await chromium.launch();
 try {
   for (const [label, viewport] of [['desktop', { width: 1440, height: 1100 }], ['phone', { width: 390, height: 1400 }]]) {
     const page = await browser.newPage({ viewport });
-    const state = await installHealthFixtures(page, { items, budgetBase: 1791, exercise: 231 });
+    const state = await installHealthFixtures(page, { items, foods, budgetBase: 1791, exercise: 231 });
     await page.goto(`${base}/health?date=${date}`);
     await page.getByText('Pancakes', { exact: true }).waitFor();
     await page.waitForTimeout(400);
     await page.screenshot({ path: `${out}/${label}-today.png`, fullPage: true });
+    // The add line's text stacks under the food names; its list stays meal-wide.
+    await page.getByRole('combobox', { name: 'Add to Lunch' }).click();
+    await page.waitForTimeout(300);
+    await page.screenshot({ path: `${out}/${label}-add-open.png`, fullPage: true });
+    await page.keyboard.press('Escape');
+    await page.locator('body').click({ position: { x: 5, y: 5 } });
     if (label === 'desktop') {
       // Hover a row: full-row wash + the preview card above the artwork.
       await page.getByText('Peanut Butter Spread', { exact: true }).hover();
