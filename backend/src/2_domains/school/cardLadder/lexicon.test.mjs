@@ -156,7 +156,7 @@ describe('validateLexicon — side-neutral names (target / anchor)', () => {
     expect(lex.anchorLanguage).toEqual({ code: 'en', name: 'English' });
     expect(lex.targetScript).toBe('hangul');
   });
-  it('v3 names the language blocks target:/anchor:, and an English-to-English set is generic', () => {
+  it('v3 names the language blocks target:/anchor:, and an English-to-English set is latin', () => {
     const define = (id, target, anchor) => ({
       id, kind: 'word', group: 'unit-1', target, anchor, pronunciation: null,
       decoys: { target: ['alpha', 'beta', 'gamma'], anchor: ['one thing', 'another thing', 'a third thing'] },
@@ -168,7 +168,7 @@ describe('validateLexicon — side-neutral names (target / anchor)', () => {
       entries: [define('ephemeral', 'ephemeral', 'lasting a very short time')],
     });
     expect(errors).toEqual([]);
-    expect(lex).toMatchObject({ language: { code: 'en' }, gloss: { code: 'en' }, targetScript: 'generic' });
+    expect(lex).toMatchObject({ language: { code: 'en' }, gloss: { code: 'en' }, targetScript: 'latin' });
     expect(lex.entries.get('ephemeral')).toMatchObject({ term: 'ephemeral', gloss: 'lasting a very short time' });
   });
   it('v3 without target:/anchor: language blocks is refused', () => {

@@ -15,9 +15,10 @@ export {
 } from './statusV3.mjs';
 export { normalizeAnswer, hasHangul, keystrokeJamo } from './jamo.mjs';
 export {
-  HANGUL_SCRIPT, GENERIC_SCRIPT, scriptFor, scriptOfText, keystrokeUnits, writtenInScript,
+  HANGUL_SCRIPT, LATIN_SCRIPT, GENERIC_SCRIPT, SCRIPTS, scriptFor, scriptOfText, keystrokeUnits, writtenInScript,
 } from './targetScript.mjs';
-export { BANDS, scoreTypedDeterministic, isShortTarget, modelMayRaise, raiseOneBand } from './typedScore.mjs';
+export { ruleFor, ruleForTarget, digitTokens, numbersMatch, answersMatch, graphemes } from './scriptRules.mjs';
+export { BANDS, ACCENT_SLIP_SCORE, scoreTypedDeterministic, isShortTarget, modelMayRaise, raiseOneBand } from './typedScore.mjs';
 export { pickMeaningChoices, pickTermChoices, cueFor, channelFor } from './choices.mjs';
 export { ESTIMATE_MS, carryCandidates, newAllowance, planNextRound } from './rounds.mjs';
 export { introPreview, introPlanLabel, deckProgress } from './intro.mjs';
