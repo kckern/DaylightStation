@@ -215,7 +215,9 @@ function respondDrill(ctx, drill, response) {
   let result = { ok: true };
   if (TYPED_DRILL_STEPS.has(stepName)) {
     const correct = normalizeAnswer(response.typed) === normalizeAnswer(term);
-    result = { correct, answer: term };
+    // A dictation miss never carries the term: recalling it IS the step (the
+    // retry would otherwise be a copy). A copy miss may — the term is on screen.
+    result = correct || stepName !== 'dictation' ? { correct, answer: term } : { correct };
     if (!correct) return { result, advance: false };
   } else if (stepName === 'tiles') {
     const correct = normalizeAnswer(response.tiles.join('')) === normalizeAnswer(term);

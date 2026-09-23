@@ -39,6 +39,18 @@ function LookStep({ item, langs, resolveAssetUrl, onRespond, busy }) {
   );
 }
 
+/** A step this client does not know yet: never a dead end — Skip moves on. */
+function UnknownStep({ onRespond, busy }) {
+  const skip = () => { if (!busy) onRespond({ done: true }); };
+  useWordLadderKeys({ ' ': skip, enter: skip });
+  return (
+    <section className="wl-item" aria-label="Skip step">
+      <p className="wl-verdict">This step isn&apos;t ready on this screen yet.</p>
+      <div className="wl-controls"><TouchButton variant="primary" keyHint="Space" disabled={busy} onClick={skip}>Skip</TouchButton></div>
+    </section>
+  );
+}
+
 /**
  * One step of a drill (spec §3 drill path): one word walked from full support
  * to none. The header names the word only on steps where it is already on
@@ -61,13 +73,13 @@ export default function DrillItem({
   else if (SAY_STEPS.has(step)) body = <SayItem {...common} mode={step} api={api} sittingId={sittingId} userId={userId} />;
   else if (step === 'match') body = <MatchItem {...common} />;
   else if (step === 'tiles') body = <TilesItem {...common} pending={pending} />;
-  else body = <p className="wl-verdict">This step is not ready yet.</p>;
+  else body = <UnknownStep {...common} />;
   const of = item.of ?? 0;
   return (
     <section className="wl-drill" aria-label="Drill">
       <header className="wl-drill__header">
         <p className="wl-drill__title">
-          Practising{term ? <> <span lang={langs.term}>{term}</span></> : ' a tricky word'}
+          Practising{term ? <> <span lang={langs.term}>{term}</span></> : ' a word'}
         </p>
         <p className="wl-drill__steps">
           <span className="wl-drill__dots" aria-hidden="true">

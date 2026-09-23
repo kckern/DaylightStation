@@ -39,7 +39,7 @@ export default function WordsItem({ api, sittingId, userId, deckId, langs, pick 
     (async () => {
       const { ok, status, data } = await api.words({ userId, deckId, sittingId });
       if (!live) return;
-      if (!ok || !Array.isArray(data?.words)) { setFailed(true); wordLadderLog.writeFailed({ userId, what: 'words', status }); return; }
+      if (!ok || !Array.isArray(data?.words)) { setFailed(true); wordLadderLog.wordsFailed({ userId, deckId, sittingId, status }); return; }
       setWords(data.words);
     })();
     return () => { live = false; };

@@ -386,6 +386,23 @@ describe('engine — drill', () => {
     expect(c.dayFile.drills[0].done).toBe(true);
     expect(currentItem(c)).toMatchObject({ type: 'flashcard', mode: 'intro' });
   });
+  it('a dictation miss never carries the answer (the term is what is being recalled); a copy miss may', () => {
+    let ctx = start(trickyStatus());
+    let guard = 0;
+    while (currentItem(ctx).step !== 'copy' && guard++ < 20) ({ ctx } = step(ctx, drillAnswer(currentItem(ctx))));
+    let r;
+    ({ ctx, result: r } = step(ctx, { typed: '가이' }));
+    expect(r).toEqual({ correct: false, answer: '가위' });
+    guard = 0;
+    while (currentItem(ctx).step !== 'dictation' && guard++ < 20) ({ ctx } = step(ctx, drillAnswer(currentItem(ctx))));
+    expect(currentItem(ctx).step).toBe('dictation');
+    const dictationId = currentItem(ctx).id;
+    ({ ctx, result: r } = step(ctx, { typed: '가이' }));
+    expect(r).toEqual({ correct: false });
+    expect(currentItem(ctx).id).toBe(dictationId);
+    ({ ctx, result: r } = step(ctx, { typed: '가위' }));
+    expect(r).toMatchObject({ correct: true });
+  });
   it('tiles: wrong stays, the answer is revealed after the 2nd miss, the 3rd try advances regardless', () => {
     let ctx = start(trickyStatus());
     let guard = 0;

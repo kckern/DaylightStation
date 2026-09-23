@@ -20,6 +20,9 @@ import './WordLadder.scss';
 const GRADED = new Set(['choice', 'typed']);
 /** Drill steps whose verdict is also held until Next (type: the answer is shown; tiles: after the last try). */
 const HELD_DRILL_STEPS = new Set(['type', 'tiles']);
+/** Items with a text field: a letter shortcut there is a jamo (on 두벌식 M is ㅡ), never a command. */
+const TYPING_DRILL_STEPS = new Set(['copy', 'dictation', 'type']);
+const isTyping = (item) => item?.type === 'copy' || item?.type === 'typed' || (item?.type === 'drill' && TYPING_DRILL_STEPS.has(item.step));
 const holdsVerdict = (item) => GRADED.has(item.type) || (item.type === 'drill' && HELD_DRILL_STEPS.has(item.step));
 
 /**
@@ -220,7 +223,7 @@ export default function WordLadderProgram({ descriptor, api: injected = null, re
   const inPractice = item?.source === 'practice';
   // Not while a held verdict waits for Next: the server has already moved past that item.
   const toMenu = useCallback(() => { if (!pendingItem) respond({ menu: true }); }, [respond, pendingItem]);
-  useWordLadderKeys({ m: toMenu }, { enabled: Boolean(inPractice) });
+  useWordLadderKeys({ m: toMenu }, { enabled: Boolean(inPractice) && !isTyping(item) });
 
   let body = <p className="wl-loading">Loading…</p>;
   if (!started) {
