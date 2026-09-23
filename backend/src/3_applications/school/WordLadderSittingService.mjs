@@ -259,10 +259,12 @@ export class WordLadderSittingService {
   }
 
   /**
-   * `{ learnerId, deckDir, pkg }` name the per-learner quiz prefixes (spec §8
-   * Printed quiz): `acceptPrefixes` is THIS learner's own sheet; `refusePrefixes`
-   * is the bare per-package prefix, so a sibling's sheet (same package,
-   * different learnerId) is refused rather than silently ignored.
+   * `{ learnerId, deckDir, pkg }` is passed through as `learner` to
+   * `foldPaperAttempts` (spec §8 Printed quiz), which parses a scanned row's
+   * `docId` under `{deckDir, pkg}` via `parseLearnerQuizId`: a parsed
+   * `learnerId` matching THIS learner's own is accepted, a parsed id for a
+   * different learnerId under the same package (a sibling's sheet) is
+   * refused rather than silently ignored.
    */
   #fold(status, { attempts, ok }, quizDocumentIds, today, settings, { learnerId, deckDir, pkg }) {
     const out = foldPaperAttempts({
