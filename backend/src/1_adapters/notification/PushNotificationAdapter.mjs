@@ -36,9 +36,13 @@ export class PushNotificationAdapter {
     }
 
     try {
+      // `metadata.pushData` is the push-standard companion-app block (tag,
+      // group, channel) a producer composed with `pushData`; relayed as `data`.
+      const data = intent.metadata?.pushData;
       await this.#haGateway.callService('notify', service, {
         title: intent.title,
         message: intent.body,
+        ...(data && typeof data === 'object' ? { data } : {}),
       });
       this.#logger?.info?.('notification.push.sent', { username, service, category: intent.category });
       return { delivered: true, channelId: `ha-${service}` };

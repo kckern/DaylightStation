@@ -123,6 +123,7 @@ flowchart TD
         COURSES["/courses<br/>Courses and enrollment"]
         HIST["/history<br/>Sessions and feedback"]
         READING["/reading<br/>The reading shelf"]
+        WORDS["/words<br/>Word ladder: words and tuning"]
         REPORTS["/reports<br/>Records and grades"]
         LOPS["/operations<br/>Repair this child's record"]
     end
@@ -161,6 +162,19 @@ carries `baseRevisionCount` and a stale one is refused, never merged
 controls at all**, deep link included: a damaged year of evidence must never
 present as a shelf a grown-up starts "fixing". Full design:
 `docs/_wip/plans/2026-09-06-teacher-reading-admin-design.md`.
+
+**Words** is one panel per word-ladder deck the learner is enrolled in
+(`WordLadderWordsPanel`). The word table carries the grown-up word controls
+(reset, mark mastered, exclude, re-grade a typed answer, drop a deck from the
+pool). Under it, **Tuning** shows what the tuning agent has done for that word
+package: each tunable setting's current value against its default and bounds,
+the last run's status and notes, and the history, with changes the brakes held
+back. An applied change that is still the setting's latest and still in force
+has **Undo**, which puts the value back and holds it for the dwell (5 study
+days). Every control, reads included, is teacher-gated and live only; the
+acting teacher is the capability session's. Details:
+[`word-ladder.md`](word-ladder.md#grown-up-word-controls-spec-6) and its
+[tuning section](word-ladder.md#tuning-wordladdertuningservice-spec-7).
 
 `/students/:id` is the canonical short form for the Day; `/students/:id/overview`
 is a retired alias that the shell redirects there rather than 404ing (trim

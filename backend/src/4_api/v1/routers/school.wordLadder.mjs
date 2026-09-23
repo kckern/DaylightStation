@@ -11,7 +11,7 @@ const rawAudio = express.raw({ type: ['audio/webm', 'audio/ogg', 'audio/mp4', 'a
 
 export function mountWordLadderRoutes({
   router, wrap, notConfigured, wordLadderStudy = null, wordLadderTest = null, stageScreen = null, capabilityProof = () => null,
-  teacherCapabilitySessions = null,
+  teacherCapabilitySessions = null, wordLadderTuning = null,
 }) {
   const noStore = (res) => res.set('Cache-Control', 'private, no-store');
   const mount = (base, getService, { test }) => {
@@ -102,6 +102,22 @@ export function mountWordLadderRoutes({
   adminPost('exclude', 'adminExclude', ['wordId', 'excluded']);
   adminPost('drop-deck', 'adminDropDeck', ['dropDeckId']);
   adminPost('regrade', 'adminRegrade', ['day', 'itemId', 'pass']);
+  // Tuning (spec §7): the agent's current values vs defaults, its notes and
+  // history, and a grown-up undo of one setting. Live only, teacher-gated in
+  // WordLadderTuningService; the acting teacher is the capability session's.
+  const tuning = () => { if (!wordLadderTuning) throw notConfigured('word-ladder tuning'); return wordLadderTuning; };
+  router.get('/word-ladder/admin/tuning', wrap(async (req, res) => {
+    const { learnerId, deckId } = req.query;
+    const pin = req.query.pin ?? capabilityProof(req) ?? null;
+    const actorId = sessionActorId(req) ?? req.query.actorId ?? null;
+    noStore(res).json(await tuning().adminTuning({ learnerId, deckId, actorId, pin }));
+  }));
+  router.post('/word-ladder/admin/tuning/undo', wrap(async (req, res) => {
+    const { learnerId, deckId = null, setting } = req.body || {};
+    const pin = req.body?.pin ?? capabilityProof(req) ?? null;
+    const actorId = sessionActorId(req) ?? req.body?.actorId ?? null;
+    noStore(res).json(await tuning().adminUndo({ learnerId, deckId, setting, actorId, pin }));
+  }));
   // Order does not matter: every live route has a literal second segment
   // (`open`, `sittings`, `words`, `stage`, `fold`, `admin`) and every test route has `test`, so
   // the two sets are disjoint — no test path can match a live pattern.

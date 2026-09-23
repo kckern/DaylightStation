@@ -7,7 +7,7 @@
  * should hear nothing. The room siren is decided elsewhere (the HA script
  * branches on `result`), so a null here never silences the room.
  */
-import { formatStudyDay, pushData } from '#domains/notification/push/pushText.mjs';
+import { findPushTextDefects, formatStudyDay, pushData } from '#domains/notification/push/pushText.mjs';
 import { rowList } from '../documents/scanNotices.mjs';
 
 const LANES = {
@@ -115,6 +115,22 @@ export function composeSchoolPush(event = {}) {
         title: event.child ? `🎹 ${event.child} — ${lesson}` : `🎹 ${lesson}`,
         message: ['Piano lesson done', where].filter(Boolean).join(' · '),
         data: metadata(event, 'progress', `piano-${event.studyDay ?? 'today'}`),
+      };
+    }
+    case 'word-ladder': {
+      // The tuning agent read the day as a concern (word-ladder spec §7). Its
+      // notes are model text: one is shown only if it reads cleanly (no ids,
+      // slugs or enums), else the generic line. The tag is per learner per
+      // package, so the next day's concern replaces this card.
+      const note = (Array.isArray(event.notes) ? event.notes : [])
+        .map((text) => (typeof text === 'string' ? text.trim().replace(/[.\s]+$/, '') : ''))
+        .find((text) => text && text.length <= 120 && findPushTextDefects(text).length === 0);
+      const day = formatStudyDay(event.day);
+      const subject = event.deck ?? 'Word practice';
+      return {
+        title: event.child ? `🔤 ${event.child} — ${subject}` : `🔤 ${subject}`,
+        message: [note ?? "Word practice needs a grown-up's look", day].filter(Boolean).join(' · '),
+        data: metadata(event, 'needsYou', `word-ladder-${event.package ?? 'words'}`),
       };
     }
     default:

@@ -15,15 +15,44 @@
  * changes. A tuner failure changes nothing and still marks the day, so a
  * broken model costs one call per learner per day, not one per tick.
  */
-import { ValidationError } from '#domains/core/errors/index.mjs';
+import { ValidationError, EntityNotFoundError, DomainInvariantError } from '#domains/core/errors/index.mjs';
+import { GuestForbiddenError } from '#domains/school/errors.mjs';
 import { studyDayForInstant } from '#domains/school/studyDay.mjs';
 import {
-  applyTuningProposal, buildTuningDigest, dayStats, tunableValues, withTunedValues,
+  applyTuningProposal, buildTuningDigest, dayStats, tunableValues, withTunedValues, TUNABLE, TUNING_BOUNDS,
 } from '#domains/school/wordLadder/index.mjs';
 
 const DIGEST_DAYS = 8; // the day just ended + the 7-day trailing window
 const FINISHED = new Set(['goal', 'cap']);
 const DAY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+export const UNDO_REASON = 'grown-up undo';
+
+/** Spec bounds narrowed by the household's, as `withTunedValues` clamps. */
+function effectiveBounds(setting, household) {
+  let [lo, hi] = TUNING_BOUNDS[setting];
+  const own = household?.[setting];
+  if (Array.isArray(own) && own.length === 2 && own.every(Number.isFinite)) { lo = Math.max(lo, own[0]); hi = Math.min(hi, own[1]); }
+  return [lo, hi];
+}
+
+/**
+ * The applied change that is the latest word on `setting` in `history`
+ * (oldest first): `{ entry, row }`, or null. An undo entry counts — undoing
+ * an undo is not offered.
+ */
+function latestChange(history, setting) {
+  for (let i = history.length - 1; i >= 0; i -= 1) {
+    const row = (history[i]?.applied ?? []).find((change) => change?.setting === setting);
+    if (row) return { entry: history[i], row };
+  }
+  return null;
+}
+
+function undoableRow(tuning, entry, row) {
+  if (entry.undo || row.undone) return false;
+  const latest = latestChange(tuning.history ?? [], row.setting);
+  return latest?.row === row && tuning.values?.[row.setting] === row.to;
+}
 
 /**
  * A day is tuned only when it reached its goal or its time cap — as the
@@ -49,10 +78,10 @@ function deterministicNote(digest) {
 
 export class WordLadderTuningService {
   #inFlight = new Set();
-  #store; #assignments; #decks; #lexicons; #tuner; #settings; #bounds; #notify; #timezone; #now; #logger; #dwellDays;
+  #store; #assignments; #decks; #lexicons; #tuner; #settings; #bounds; #notify; #teacherGate; #timezone; #now; #logger; #dwellDays;
 
   constructor({
-    store, assignments, decks, lexicons, tuner = null, settings, bounds = null, notify = null,
+    store, assignments, decks, lexicons, tuner = null, settings, bounds = null, notify = null, teacherGate = null,
     timezone = null, now, logger = console, dwellDays = 5,
   } = {}) {
     for (const fn of ['readStatus', 'readDay', 'readTuning', 'tuningState', 'writeTuning', 'listDays']) {
@@ -65,7 +94,7 @@ export class WordLadderTuningService {
     if (notify !== null && typeof notify !== 'function') throw new Error('WordLadderTuningService notify must be a function');
     if (typeof settings !== 'function' || typeof now !== 'function') throw new Error('WordLadderTuningService requires settings() and now()');
     this.#store = store; this.#assignments = assignments; this.#decks = decks; this.#lexicons = lexicons;
-    this.#tuner = tuner; this.#settings = settings; this.#bounds = bounds; this.#notify = notify;
+    this.#tuner = tuner; this.#settings = settings; this.#bounds = bounds; this.#notify = notify; this.#teacherGate = teacherGate;
     this.#timezone = timezone; this.#now = now; this.#logger = logger; this.#dwellDays = dwellDays;
   }
 
@@ -208,6 +237,92 @@ export class WordLadderTuningService {
       }
     }
     return { ...base, status, notes, applied, dropped, ...(error ? { error } : {}) };
+  }
+
+  // ── Grown-up view and undo (spec §7 "listed in the teacher console with
+  // undo"). Live only by construction (the store writes tuning), teacher-gated.
+
+  async #adminScope({ learnerId, deckId, actorId, pin }) {
+    if (!this.#teacherGate) throw new ValidationError('teacher gate is not configured');
+    this.#teacherGate.assert({ userId: actorId, pin, action: 'word-ladder.tuning', context: { learnerId } });
+    if (typeof learnerId !== 'string' || !learnerId) throw new ValidationError('learnerId is required');
+    if (typeof deckId !== 'string' || !deckId) throw new ValidationError('deckId is required');
+    const assignment = await this.#assignments.get(learnerId);
+    const enrolled = (assignment?.programs ?? []).some((row) => row?.programId === 'flashcards'
+      && row.policy?.mode === 'word-ladder' && (row.deckId ?? row.corpusId) === deckId);
+    if (!enrolled) throw new GuestForbiddenError(`'${learnerId}' has no word-ladder assignment for '${deckId}'`);
+    const deck = await this.#decks.getFlashcardDeck(deckId);
+    if (!deck || typeof deck.lexicon !== 'string') throw new EntityNotFoundError('word-ladder deck', deckId);
+    return this.#lexicons.getLexicon(deck.lexicon).package;
+  }
+
+  /**
+   * One learner × package: each tunable's current value (config + tuned,
+   * clamped) against its default and bounds, the last tuning run, and the
+   * history newest first, each applied change flagged `undoable` when it is
+   * still the setting's latest change and still in force.
+   */
+  async adminTuning({ learnerId, deckId, actorId = null, pin = null } = {}) {
+    const pkg = await this.#adminScope({ learnerId, deckId, actorId, pin });
+    const tuning = this.#store.readTuning(learnerId, pkg);
+    const defaults = tunableValues(this.#settings());
+    const current = tunableValues(withTunedValues(this.#settings(), tuning.values, this.#bounds));
+    const history = tuning.history ?? [];
+    const last = [...history].reverse().find((entry) => !entry?.undo) ?? null;
+    return {
+      learnerId, package: pkg, state: this.#store.tuningState(learnerId, pkg), lastTunedDay: tuning.lastTunedDay ?? null,
+      settings: Object.keys(TUNABLE).map((setting) => {
+        const [min, max] = effectiveBounds(setting, this.#bounds);
+        return {
+          setting, current: current[setting] ?? null, default: defaults[setting] ?? null, min, max,
+          tuned: Object.hasOwn(tuning.values ?? {}, setting), lastChanged: tuning.lastChanged?.[setting] ?? null,
+        };
+      }),
+      last: last ? { day: last.day, status: last.status ?? null, notes: last.notes ?? [], error: last.error ?? null } : null,
+      history: [...history].reverse().map((entry) => ({
+        ...entry,
+        applied: (entry.applied ?? []).map((row) => ({ ...row, undone: row.undone ?? null, undoable: undoableRow(tuning, entry, row) })),
+        dropped: entry.dropped ?? [],
+      })),
+    };
+  }
+
+  /**
+   * Puts one setting back to its value before the agent's latest change to
+   * it. Back at the config default, the key is dropped so the setting
+   * follows config again. `lastChanged` becomes today, so the dwell brake
+   * holds the grown-up's choice for the next five study days. Same write
+   * path and in-flight guard as a tuning run; never touches `lastTunedDay`.
+   */
+  async adminUndo({ learnerId, deckId, setting, actorId = null, pin = null } = {}) {
+    const pkg = await this.#adminScope({ learnerId, deckId, actorId, pin });
+    if (typeof setting !== 'string' || !Object.hasOwn(TUNABLE, setting)) throw new ValidationError(`'${setting}' is not a tuned setting`);
+    const key = `${learnerId}|${pkg}`;
+    if (this.#inFlight.has(key)) throw new DomainInvariantError('a tuning run is in progress for this learner; try again in a minute', { code: 'WORD_LADDER_TUNING_BUSY' });
+    this.#inFlight.add(key);
+    try {
+      const tuning = this.#store.readTuning(learnerId, pkg);
+      const history = tuning.history ?? [];
+      const latest = latestChange(history, setting);
+      if (!latest || latest.entry.undo || latest.row.undone) throw new DomainInvariantError(`nothing to undo for ${setting}`, { code: 'WORD_LADDER_TUNING_NOTHING_TO_UNDO' });
+      const { row } = latest;
+      if (tuning.values?.[setting] !== row.to) {
+        throw new DomainInvariantError(`${setting} has changed since that change; nothing to undo`, { code: 'WORD_LADDER_TUNING_CHANGED' });
+      }
+      const day = this.#today();
+      const values = { ...tuning.values };
+      if (row.from === tunableValues(this.#settings())[setting]) delete values[setting]; else values[setting] = row.from;
+      row.undone = { day, actorId };
+      const change = { setting, from: row.to, to: row.from, reason: UNDO_REASON };
+      this.#store.writeTuning(learnerId, pkg, {
+        values, lastChanged: { ...tuning.lastChanged, [setting]: day }, lastTunedDay: tuning.lastTunedDay ?? null,
+        history: [...history, { day, status: null, notes: [], applied: [change], dropped: [], undo: true, actorId }],
+      });
+      this.#log({ learnerId, package: pkg, day }, change, { actorId });
+      return { learnerId, package: pkg, day, ...change };
+    } finally {
+      this.#inFlight.delete(key);
+    }
   }
 }
 

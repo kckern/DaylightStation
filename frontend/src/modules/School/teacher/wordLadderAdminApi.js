@@ -45,6 +45,16 @@ export const wordLadderAdminApi = {
   exclude: (body) => request('/exclude', { method: 'POST', body }),
   dropDeck: (body) => request('/drop-deck', { method: 'POST', body }),
   regrade: (body) => request('/regrade', { method: 'POST', body }),
+  // The tuning agent's values vs defaults, its last status + notes, and its
+  // history (word-ladder.md "Tuning"). A GET, so `actorId` rides the query
+  // like `words` above; the route derives the teacher from the cookie first.
+  tuning: (learnerId, deckId, actorId = null) => {
+    const query = new URLSearchParams({ learnerId, deckId });
+    if (actorId) query.set('actorId', actorId);
+    return request(`/tuning?${query}`);
+  },
+  // Restore one setting's value from before the agent's latest change to it.
+  undoTuning: (body) => request('/tuning/undo', { method: 'POST', body }),
 };
 
 export default wordLadderAdminApi;

@@ -10,6 +10,10 @@
  * afterward rather than guessing what the write changed, the same contract
  * `ReadingShelfPanel` uses.
  *
+ * Below the table, a **Tuning** section (`GET /word-ladder/admin/tuning`):
+ * the tuning agent's current values vs defaults, its last status and notes,
+ * and its history with Undo per applied change (word-ladder.md "Tuning").
+ *
  * `wordLadderAdminApi`, not `teacherWorkspaceApi` or `schoolApi`: the admin
  * routes are mounted at `/api/v1/school/word-ladder/admin`, a sibling base
  * neither existing client owns.
@@ -200,6 +204,116 @@ function DeckPool({ decksSeen, droppableDecks, learnerId, deckId, run, busy, err
   );
 }
 
+const fmt = (value) => (value === null || value === undefined ? '—' : String(value));
+
+/**
+ * One applied change in the tuning history. Undo is offered only when the
+ * server says the change is still the setting's latest and still in force
+ * (`undoable`); an undone change says so instead.
+ */
+function AppliedChange({ change, day, onUndo, busy, error }) {
+  const what = `${change.setting} ${fmt(change.from)} → ${fmt(change.to)}`;
+  return (
+    <li className="teacher-word-ladder__tuning-change">
+      <span>{what}</span>
+      {change.reason ? <span className="teacher-muted"> — {change.reason}</span> : null}
+      {change.undone ? (
+        <span className="teacher-muted"> · undone {change.undone.day}</span>
+      ) : change.undoable ? (
+        <button type="button" aria-label={`Undo ${what} on ${day}`} disabled={busy} onClick={() => onUndo(change)}>Undo</button>
+      ) : null}
+      {error && <p className="teacher-panel__error">{error}</p>}
+    </li>
+  );
+}
+
+/**
+ * The tuning agent for this learner × package (word-ladder.md "Tuning"):
+ * each tunable's current value against its default and bounds, the last
+ * run's status and notes, and the history with Undo per applied change.
+ * Its own fetch: a tuning read that fails must not take the word table with it.
+ */
+function TuningSection({ learnerId, deckId, actorId, rawRun, busy, errors }) {
+  const record = usePanelFetch(() => wordLadderAdminApi.tuning(learnerId, deckId, actorId), {
+    deps: [learnerId, deckId, actorId],
+    panel: `${PANEL}:tuning`,
+    notFoundAs: 'unavailable',
+  });
+  const data = record.data;
+  const key = (day, setting) => `undo:${day}:${setting}`;
+  const undo = (day, change) => rawRun(key(day, change.setting), ({ actorId: actor }) => wordLadderAdminApi.undoTuning({
+    learnerId, deckId, setting: change.setting, actorId: actor, pin: null,
+  }), {
+    onSuccess: () => { teacherLog.write('saved', { panel: PANEL, learnerId, deckId, key: key(day, change.setting) }); record.retry(); },
+  });
+  let body;
+  if (record.state === 'loading') body = <p className="teacher-muted">Loading tuning…</p>;
+  else if (!data) body = <p className="teacher-muted">Tuning is not available for this deck.</p>;
+  else {
+    const last = data.last;
+    body = (
+      <>
+        <p className="teacher-word-ladder__tuning-last">
+          {last ? (
+            <>Last tuned {last.day}: <strong>{last.status ?? (last.error ? 'failed' : '—')}</strong></>
+          ) : 'Not tuned yet.'}
+        </p>
+        {last?.notes?.length ? (
+          <ul className="teacher-word-ladder__tuning-notes">{last.notes.map((note) => <li key={note}>{note}</li>)}</ul>
+        ) : null}
+        <table className="teacher-word-ladder__table teacher-word-ladder__tuning-table">
+          <thead><tr><th>Setting</th><th>Current</th><th>Default</th><th>Bounds</th></tr></thead>
+          <tbody>
+            {(data.settings ?? []).map((row) => (
+              <tr key={row.setting} data-tuned={row.tuned ? 'true' : 'false'}>
+                <td>{row.setting}</td>
+                <td>{fmt(row.current)}</td>
+                <td>{fmt(row.default)}</td>
+                <td>{fmt(row.min)}–{fmt(row.max)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {data.history?.length ? (
+          <ol className="teacher-word-ladder__tuning-history">
+            {data.history.map((entry, index) => (
+              <li key={`${entry.day}:${index}`}>
+                <span>{entry.day} · {entry.undo ? `grown-up undo${entry.actorId ? ` by ${entry.actorId}` : ''}` : (entry.status ?? (entry.error ? 'failed' : '—'))}</span>
+                {entry.error ? <span className="teacher-muted"> — {entry.error}</span> : null}
+                {entry.applied?.length ? (
+                  <ul>
+                    {entry.applied.map((change) => (
+                      <AppliedChange
+                        key={change.setting}
+                        change={change}
+                        day={entry.day}
+                        busy={busy === key(entry.day, change.setting)}
+                        error={errors[key(entry.day, change.setting)]}
+                        onUndo={(c) => undo(entry.day, c)}
+                      />
+                    ))}
+                  </ul>
+                ) : null}
+                {entry.dropped?.length ? (
+                  <p className="teacher-muted">
+                    Held back: {entry.dropped.map((row) => `${row.setting} → ${fmt(row.to)} (${row.brake})`).join(', ')}
+                  </p>
+                ) : null}
+              </li>
+            ))}
+          </ol>
+        ) : <p className="teacher-muted">No tuning history yet.</p>}
+      </>
+    );
+  }
+  return (
+    <section className="teacher-word-ladder__tuning" aria-labelledby={`tuning-${deckId}`}>
+      <h3 id={`tuning-${deckId}`} className="teacher-word-ladder__pool-title">Tuning</h3>
+      {body}
+    </section>
+  );
+}
+
 /**
  * @param {object} props
  * @param {string} props.learnerId
@@ -259,6 +373,7 @@ export default function WordLadderWordsPanel({ learnerId, deckId, title = null }
           </tbody>
         </table>
         <DeckPool decksSeen={decksSeen} droppableDecks={droppableDecks} learnerId={learnerId} deckId={deckId} run={run} busy={busy} errors={errors} />
+        <TuningSection learnerId={learnerId} deckId={deckId} actorId={actorId} rawRun={rawRun} busy={busy} errors={errors} />
       </div>
     </PanelFrame>
   );

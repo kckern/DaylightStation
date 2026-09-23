@@ -3257,6 +3257,34 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     },
     judge: wordLadderJudgeFor(new MemoryJudgementCache()),
   }) : null;
+  // The tuning pass (spec §7): on the REAL store only, the tuner agent only
+  // when `word_ladder.tuner.model` is set, a concern pushed to the teachers.
+  // Ticks every 15 min wherever the agent scheduler runs; the service itself
+  // waits for the study day to end.
+  let wordLadderTuning = null;
+  if (schoolCatalog.content) {
+    try {
+      const { createWordLadderTuning } = await import('#composition/modules/wordLadderTuning.mjs');
+      const { agentSchedulerEnabled } = await import('#composition/policies/agentSchedulerEnabled.mjs');
+      const { isContainerRuntime } = await import('#system/runtime/runtimeEnvironment.mjs');
+      const tuningNames = studentDisplayName(configService);
+      wordLadderTuning = createWordLadderTuning({
+        store: wordLadderStore, assignments: flashcardAssignments, decks: schoolCatalog.content, lexicons: wordLadderLexicons,
+        settings: wordLadderSettings, bounds: wordLadderConfig.bounds ?? null, teacherGate: schoolTeacherGate,
+        timezone: configService.getTimezone?.() || null, now: Date.now,
+        model: wordLadderConfig.tuner?.model ?? null, mediaDir: configService.getMediaDir(),
+        notificationService: notificationStack?.notificationService ?? null,
+        teachers: () => (configService.getHouseholdAppConfig(null, 'school') || {}).teachers ?? [],
+        learnerName: (id) => tuningNames(id),
+        logger: wordLadderLogger, server,
+        scheduled: enableScheduler && agentSchedulerEnabled({
+          nodeEnv: process.env.NODE_ENV, enableCron: process.env.ENABLE_CRON, isContainer: isContainerRuntime(),
+        }),
+      });
+    } catch (error) {
+      wordLadderLogger.error('school.word-ladder.tuning-unavailable', { error: error.message });
+    }
+  }
   const openCatalogLearningSession = schoolCatalog.query
     ? new OpenCatalogLearningSession({ catalog: schoolCatalog.query, grader: schoolService })
     : null;
@@ -4706,6 +4734,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     flashcardStudy,
     wordLadderStudy,
     wordLadderTest,
+    wordLadderTuning: wordLadderTuning?.service ?? null,
     wordLadderStageScreen: wordLadderConfig.stage?.screen ?? null,
     flashcardAssets,
     getMaterialCatalog,

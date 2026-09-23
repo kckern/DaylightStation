@@ -18,6 +18,8 @@ vi.mock('../wordLadderAdminApi.js', () => ({
     exclude: vi.fn(),
     dropDeck: vi.fn(),
     regrade: vi.fn(),
+    tuning: vi.fn(),
+    undoTuning: vi.fn(),
   },
 }));
 vi.mock('../TeacherProfileContext.jsx', () => ({
@@ -71,9 +73,32 @@ const mount = (props = {}) => render(
   <WordLadderWordsPanel learnerId="learner_a" deckId="language/korean/week-01-classroom" title="Week 1 · Classroom" {...props} />,
 );
 
+const tuningPayload = (over = {}) => ({
+  learnerId: 'learner_a', package: 'korean-vocab', lastTunedDay: '2026-09-21',
+  settings: [
+    { setting: 'batch.newPerDay', current: 3, default: 4, min: 2, max: 6, tuned: true },
+    { setting: 'round.size', current: 5, default: 5, min: 3, max: 7, tuned: false },
+  ],
+  last: { day: '2026-09-21', status: 'stuck', notes: ['Cap hit three days running.'], error: null },
+  history: [
+    {
+      day: '2026-09-21', status: 'stuck', notes: ['Cap hit three days running.'], error: null,
+      applied: [{ setting: 'batch.newPerDay', from: 4, to: 3, reason: 'cap hits', undoable: true, undone: null }],
+      dropped: [{ setting: 'round.size', to: 6, reason: 'r', brake: 'dwell' }],
+    },
+    {
+      day: '2026-09-15', status: 'on-track', notes: [], error: null,
+      applied: [{ setting: 'review.gapScale', from: 1, to: 1.1, reason: 'easy', undoable: false, undone: { day: '2026-09-16', actorId: 'teacher_1' } }],
+      dropped: [],
+    },
+  ],
+  ...over,
+});
+
 beforeEach(() => {
   vi.clearAllMocks();
   wordLadderAdminApi.words.mockResolvedValue(ok(payload()));
+  wordLadderAdminApi.tuning.mockResolvedValue(ok(tuningPayload()));
 });
 
 describe('rendering the word table', () => {
@@ -259,5 +284,53 @@ describe('Deck pool', () => {
     await waitFor(() => expect(wordLadderAdminApi.dropDeck).toHaveBeenCalledWith(
       expect.objectContaining({ learnerId: 'learner_a', deckId: 'language/korean/week-01-classroom', dropDeckId: 'language/korean/week-02-food' }),
     ));
+  });
+});
+
+describe('Tuning', () => {
+  it('shows current values against defaults, the last status and notes, and reads as the acting teacher', async () => {
+    mount();
+    const section = (await screen.findByRole('region', { name: 'Tuning' }));
+    expect(wordLadderAdminApi.tuning).toHaveBeenCalledWith('learner_a', 'language/korean/week-01-classroom', 'teacher_1');
+    const newPerDay = (await within(section).findByText('batch.newPerDay', { selector: 'td' })).closest('tr');
+    expect(within(newPerDay).getByText('3')).toBeTruthy();
+    expect(within(newPerDay).getByText('4')).toBeTruthy();
+    expect(within(section).getAllByText(/stuck/i).length).toBeGreaterThan(0);
+    expect(within(section).getAllByText('Cap hit three days running.').length).toBeGreaterThan(0);
+  });
+
+  it('lists the history with Undo only on an undoable applied change', async () => {
+    mount();
+    const section = await screen.findByRole('region', { name: 'Tuning' });
+    expect(await within(section).findByRole('button', { name: 'Undo batch.newPerDay 4 → 3 on 2026-09-21' })).toBeTruthy();
+    expect(within(section).queryByRole('button', { name: /Undo review\.gapScale/ })).toBeNull();
+    expect(within(section).getByText(/undone/i)).toBeTruthy();
+    expect(within(section).getByText(/dwell/)).toBeTruthy();
+  });
+
+  it('Undo calls the write with the setting, then re-reads the tuning', async () => {
+    wordLadderAdminApi.undoTuning.mockResolvedValue(ok({ setting: 'batch.newPerDay', to: 4 }));
+    mount();
+    const section = await screen.findByRole('region', { name: 'Tuning' });
+    fireEvent.click(await within(section).findByRole('button', { name: 'Undo batch.newPerDay 4 → 3 on 2026-09-21' }));
+    await waitFor(() => expect(wordLadderAdminApi.undoTuning).toHaveBeenCalledWith(
+      expect.objectContaining({ learnerId: 'learner_a', deckId: 'language/korean/week-01-classroom', setting: 'batch.newPerDay', pin: null }),
+    ));
+    await waitFor(() => expect(wordLadderAdminApi.tuning).toHaveBeenCalledTimes(2));
+  });
+
+  it('a refused undo surfaces its error in the history row', async () => {
+    wordLadderAdminApi.undoTuning.mockResolvedValue(fail('That setting has changed since.'));
+    mount();
+    const section = await screen.findByRole('region', { name: 'Tuning' });
+    fireEvent.click(await within(section).findByRole('button', { name: 'Undo batch.newPerDay 4 → 3 on 2026-09-21' }));
+    expect(await within(section).findByText('That setting has changed since.')).toBeTruthy();
+  });
+
+  it('a tuning read that fails leaves the word table in place', async () => {
+    wordLadderAdminApi.tuning.mockResolvedValue({ ok: false, status: 404, data: null });
+    mount();
+    expect(await screen.findByText('사과')).toBeTruthy();
+    expect(await screen.findByText(/Tuning is not available/)).toBeTruthy();
   });
 });
