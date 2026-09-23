@@ -13,13 +13,18 @@ import ListenItem from './items/ListenItem.jsx';
 import MenuItem from './items/MenuItem.jsx';
 import { createWordLadderApi } from './wordLadderApi.js';
 import { wordLadderLog } from './wordLadderLog.js';
+import { stopAudio } from './wordLadderAudio.js';
 import { useWordLadderKeys } from './useWordLadderKeys.js';
 import './WordLadder.scss';
 
 /** Items whose answer the server grades: the verdict stays on screen until Next. */
 const GRADED = new Set(['choice', 'typed']);
-/** Drill steps whose verdict is also held until Next (type: the answer is shown; tiles: after the last try). */
-const HELD_DRILL_STEPS = new Set(['type', 'tiles']);
+/**
+ * Drill steps whose verdict is also held until Next once the step advances
+ * (type: the answer is shown; tiles and dictation: a match, or the third miss
+ * — "It's X" must be seen before the next step replaces it).
+ */
+const HELD_DRILL_STEPS = new Set(['type', 'tiles', 'dictation']);
 /** Items with a text field: a letter shortcut there is a jamo (on 두벌식 M is ㅡ), never a command. */
 const TYPING_DRILL_STEPS = new Set(['copy', 'dictation', 'type']);
 const isTyping = (item) => item?.type === 'copy' || item?.type === 'typed' || (item?.type === 'drill' && TYPING_DRILL_STEPS.has(item.step));
@@ -135,6 +140,8 @@ export default function WordLadderProgram({ descriptor, api: injected = null, re
         api.close(openId, { userId, reason: 'unmount' });
       }
       sittingRef.current = null;
+      // Leaving mid-clip must not leave a word talking over whatever is next.
+      stopAudio();
       wordLadderLog.unmounted({ userId, deckId, test, sittingId: openId ?? null });
     };
   }, [api, open, userId, deckId, test, scenario]);

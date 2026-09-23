@@ -84,4 +84,16 @@ describe('useTakeRecorder', () => {
     expect(result.current.phase).toBe('idle');
     expect(result.current.verdict).toBeNull();
   });
+
+  it('a take stopped, then unmounted, whose onstop fires late never reaches onTake', async () => {
+    const onTake = vi.fn();
+    const { result, unmount } = renderHook(() => useTakeRecorder({ onTake }));
+    await act(async () => { await result.current.start(); });
+    act(() => { result.current.onLevel(0.5); });
+    act(() => { result.current.stop(); });
+    unmount();
+    // MediaRecorder's onstop arrives after the item is gone (Stop -> Next).
+    captured.opts.onTake({ blob: new Blob(['x']), durationMs: 2000 });
+    expect(onTake).not.toHaveBeenCalled();
+  });
 });

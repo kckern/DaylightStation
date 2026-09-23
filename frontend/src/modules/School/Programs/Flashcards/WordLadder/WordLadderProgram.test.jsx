@@ -1,12 +1,14 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import WordLadderProgram from './WordLadderProgram.jsx';
+import { stopAudio } from './wordLadderAudio.js';
 
 vi.mock('./WordLadderStage.jsx', () => ({ default: ({ children }) => <div data-testid="stage">{children}</div> }));
 vi.mock('./wordLadderAudio.js', () => ({
   playClip: vi.fn(async () => true),
   playSequence: vi.fn(async () => {}),
   startClip: vi.fn(() => ({ done: Promise.resolve(true), stop: vi.fn() })),
+  stopAudio: vi.fn(),
 }));
 const logs = vi.hoisted(() => ({ sessionReopened: vi.fn() }));
 vi.mock('./wordLadderLog.js', async (importOriginal) => {
@@ -216,6 +218,15 @@ describe('WordLadderProgram', () => {
     expect(api.close).toHaveBeenCalledWith('s', { userId: 'test-learner', reason: 'unmount' });
   });
 
+  it('unmounting stops the audio lane', async () => {
+    const api = fakeApi();
+    const { unmount } = renderStarted(<WordLadderProgram descriptor={{ deckId: 'd', userId: 'test-learner' }} api={api} />);
+    await screen.findByText('가위');
+    stopAudio.mockClear();
+    unmount();
+    expect(stopAudio).toHaveBeenCalled();
+  });
+
   it('a reopened sitting remounts the card even when the item id repeats', async () => {
     const api = fakeApi();
     api.open.mockResolvedValueOnce(openWith(intro, 's-old')).mockResolvedValueOnce(openWith(intro, 's-new'));
@@ -299,6 +310,22 @@ describe('WordLadderProgram — dispatches every item type', () => {
     fireEvent.click(screen.getByRole('button', { name: /check/i }));
     expect(await screen.findByText(/Not quite/)).toBeInTheDocument();
     expect(api.respond).toHaveBeenCalledWith('s', { userId: 'test-learner', itemId: 'd1:6', response: { tiles: ['위'] } });
+  });
+
+  it('a dictation third miss that advances holds the verdict ("It\'s X") until Next', async () => {
+    const api = fakeApi();
+    const dict = { id: 'd1:5', type: 'drill', step: 'dictation', wordId: 'gawi', of: 9, at: 6, assets: { image: null, audio: null, glossAudio: null } };
+    const tilesNext = { id: 'd1:6', type: 'drill', step: 'tiles', wordId: 'gawi', of: 9, at: 7, tiles: ['위', '가'], cue: { type: 'text', text: 'Scissors' }, assets: { image: null, audio: null, glossAudio: null } };
+    api.open.mockResolvedValue(openWith(dict));
+    api.respond.mockResolvedValue({ ok: true, status: 200, data: { result: { correct: false, answer: '가위' }, item: tilesNext, progress } });
+    renderStarted(<WordLadderProgram descriptor={{ deckId: 'd', userId: 'test-learner' }} api={api} />);
+    const input = await screen.findByLabelText('Your answer');
+    fireEvent.change(input, { target: { value: '가이' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(await screen.findByText(/It's/)).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Write what you hear' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /next/i }));
+    expect(await screen.findByRole('group', { name: 'Tiles' })).toBeInTheDocument();
   });
 
   it('M never sends {menu:true} while a typing item is on screen (on 두벌식 M is ㅡ)', async () => {

@@ -40,7 +40,7 @@ const board = {
 };
 const matchItem = { id: 'p1:0', type: 'match', source: 'practice', board };
 
-const rightColumn = () => within(screen.getByRole('group', { name: 'Meanings' })).getAllByRole('button').map((b) => b.textContent);
+const rightColumn = () => within(screen.getByRole('group', { name: 'Meanings' })).getAllByRole('button').map((b) => b.querySelector('.ds-touch__label').textContent);
 
 describe('MatchItem', () => {
   it('shuffles the right column independently of the pair order', () => {
@@ -75,6 +75,24 @@ describe('MatchItem', () => {
     expect(spy).toHaveBeenCalledWith(expect.objectContaining({ misses: 1, pairs: 4 }));
     fireEvent.click(screen.getByRole('button', { name: /next/i }));
     expect(onRespond).toHaveBeenCalledTimes(1);
+    expect(onRespond).toHaveBeenCalledWith({ done: true });
+  });
+
+  it('keyboard only: a digit picks a word, the next digit picks its meaning — a 4-pair board completes', () => {
+    const onRespond = vi.fn();
+    render(<MatchItem item={matchItem} langs={langs} resolveAssetUrl={id} onRespond={onRespond} />);
+    const hints = (name) => within(screen.getByRole('group', { name })).getAllByRole('button')
+      .map((b) => b.querySelector('.ds-touch__key')?.textContent);
+    expect(hints('Words')).toEqual(['1', '2', '3', '4']);
+    expect(hints('Meanings')).toEqual(['1', '2', '3', '4']);
+    const meanings = rightColumn();
+    board.pairs.forEach((pair, i) => {
+      fireEvent.keyDown(window, { key: String(i + 1), code: `Digit${i + 1}` });
+      expect(within(screen.getByRole('group', { name: 'Words' })).getAllByRole('button')[i]).toHaveAttribute('aria-pressed', 'true');
+      const row = meanings.indexOf(pair.right.text) + 1;
+      fireEvent.keyDown(window, { key: String(row), code: `Digit${row}` });
+    });
+    fireEvent.keyDown(window, { key: ' ', code: 'Space' });
     expect(onRespond).toHaveBeenCalledWith({ done: true });
   });
 
@@ -293,6 +311,23 @@ describe('DrillItem', () => {
     expect(screen.getByRole('status')).toHaveTextContent("It's 가위 — type it");
     expect(screen.getByLabelText('Your answer')).not.toBeDisabled();
     expect(screen.getByRole('button', { name: /enter/i })).toBeInTheDocument();
+  });
+
+  it('a held dictation result (third miss, step advanced) shows "It\'s X" and Next, not a retry', () => {
+    const onContinue = vi.fn();
+    render(<DrillItem item={dictation} langs={langs} resolveAssetUrl={id} onRespond={vi.fn()} result={{ correct: false, answer: '가위' }} pending onContinue={onContinue} />);
+    expect(screen.getByRole('status')).toHaveTextContent("It's 가위");
+    expect(screen.getByRole('status')).not.toHaveTextContent('type it');
+    expect(screen.getByLabelText('Your answer')).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: /next/i }));
+    expect(onContinue).toHaveBeenCalled();
+  });
+
+  it('progress dots: steps before the current one are done, the current one is not', () => {
+    const { container } = render(<DrillItem item={{ ...dictation, of: 5, at: 3 }} langs={langs} resolveAssetUrl={id} onRespond={vi.fn()} />);
+    const dots = [...container.querySelectorAll('.wl-drill__dot')];
+    expect(dots.map((d) => d.classList.contains('is-done'))).toEqual([true, true, false, false, false]);
+    expect(dots[2].classList.contains('is-current')).toBe(true);
   });
 
   it('dictation sends only {typed}', () => {

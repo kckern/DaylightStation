@@ -48,6 +48,10 @@ function RightFace({ pair, resolveAssetUrl, lang }) {
  * English on the right. Tap a term, then its partner; a right pair locks, a
  * wrong one flashes. Client-side only — nothing is graded — and Next sends
  * `{done:true}` once every pair is locked.
+ *
+ * Keyboard: both columns carry digit hints (boards are at most 6 rows). With
+ * no word selected, digit n selects row n on the LEFT; with one selected,
+ * digit n answers with row n on the RIGHT.
  */
 export default function MatchItem({ item, langs, resolveAssetUrl, onRespond, busy = false }) {
   const pairs = item.board?.pairs ?? [];
@@ -77,8 +81,18 @@ export default function MatchItem({ item, langs, resolveAssetUrl, onRespond, bus
     clearTimeout(timer.current);
     timer.current = setTimeout(() => setWrong(null), WRONG_FLASH_MS);
   };
+  const pickLeft = (wordId) => { if (!matched.has(wordId)) setSelected(wordId); };
   const finish = () => { if (complete && !busy) onRespond({ done: true }); };
-  useWordLadderKeys({ ' ': finish, enter: finish }, { enabled: complete });
+  const digitKeys = {};
+  pairs.slice(0, 9).forEach((_, row) => {
+    digitKeys[String(row + 1)] = () => {
+      if (complete) return;
+      if (selected === null) pickLeft(pairs[row].wordId);
+      else if (order[row] !== undefined) pickRight(pairs[order[row]].wordId);
+    };
+  });
+  useWordLadderKeys({ ...digitKeys, ' ': finish, enter: finish });
+  const hint = (row) => (row < 9 ? String(row + 1) : null);
 
   const state = (wordId, side) => {
     if (matched.has(wordId)) return 'is-matched';
@@ -90,27 +104,29 @@ export default function MatchItem({ item, langs, resolveAssetUrl, onRespond, bus
     <section className="wl-item wl-match" aria-label="Match">
       <div className="wl-match__board">
         <div className="wl-match__column" role="group" aria-label="Words">
-          {pairs.map((pair) => (
+          {pairs.map((pair, row) => (
             <TouchButton
               key={pair.wordId}
               variant="choice"
+              keyHint={hint(row)}
               lang={langs.term}
               className={state(pair.wordId, 'left')}
               aria-pressed={selected === pair.wordId}
               disabled={matched.has(pair.wordId)}
-              onClick={() => setSelected(pair.wordId)}
+              onClick={() => pickLeft(pair.wordId)}
             >
               <FitText role="choice" text={pair.term} lang={langs.term} />
             </TouchButton>
           ))}
         </div>
         <div className="wl-match__column" role="group" aria-label="Meanings">
-          {order.map((index) => {
+          {order.map((index, row) => {
             const pair = pairs[index];
             return (
               <TouchButton
                 key={pair.wordId}
                 variant="choice"
+                keyHint={hint(row)}
                 lang={langs.gloss}
                 className={state(pair.wordId, 'right')}
                 disabled={matched.has(pair.wordId)}
