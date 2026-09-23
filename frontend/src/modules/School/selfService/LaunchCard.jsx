@@ -62,8 +62,13 @@ const PLEX_ID = /^plex:(\d+)$/;
 // course, and a course invented to carry a picture would be a unit-less entity
 // the catalog gate, the gradebook and enrollment would all try to believe in.
 // So `program:<id>` is a scheme here, beside `plex:`, and the backend presenter
-// carries the same branch for the refs it mints.
-const PROGRAM_ID = /^program:(.+)$/;
+// carries the same branch for the refs it mints. Two shapes, as there:
+// `program:<id>` and `program:<id>:<instance>` (the sentence and word ladders,
+// whose artwork belongs to the corpus / word package). The instance is its own
+// path segment — encoding `word-ladder:korean-vocab` as one segment asked the
+// route for a program that does not exist and every ladder card drew the
+// placeholder.
+const PROGRAM_ID = /^program:([^:]+)(?::(.+))?$/;
 
 function posterSrc(courseId) {
   const plex = PLEX_ID.exec(String(courseId));
@@ -72,7 +77,10 @@ function posterSrc(courseId) {
   }
   const program = PROGRAM_ID.exec(String(courseId));
   if (program) {
-    return `/api/v1/school/self-service/programs/${encodeURIComponent(program[1])}/poster.jpg`;
+    const [, programId, instanceId] = program;
+    return instanceId
+      ? `/api/v1/school/self-service/programs/${encodeURIComponent(programId)}/${encodeURIComponent(instanceId)}/poster.jpg`
+      : `/api/v1/school/self-service/programs/${encodeURIComponent(programId)}/poster.jpg`;
   }
   return `/api/v1/school/self-service/curriculum/${encodeURIComponent(courseId)}/poster.jpg`;
 }
