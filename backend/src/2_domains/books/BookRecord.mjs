@@ -64,6 +64,9 @@ const SCALAR_FIELDS = Object.freeze([
 /** Every field of the model, in a stable order. */
 export const BOOK_RECORD_FIELDS = Object.freeze([...SCALAR_FIELDS, ...LIST_FIELDS]);
 
+/** A grown-up's hand correction of a book record (see mergeBookRecords). */
+export const MANUAL_SOURCE = 'manual';
+
 /**
  * Which source wins which field, best first. MEASURED 2026-09-02, not guessed.
  *
@@ -152,6 +155,15 @@ export function createBookRecord(fields = {}) {
 export function mergeBookRecords(records = []) {
   const present = (Array.isArray(records) ? records : []).filter(Boolean);
   if (present.length === 0) return null;
+
+  // A household correction is the WHOLE record, not one more provider. Some
+  // books carry a placeholder ISBN (978-0-12-345678-6) that Google answers
+  // with an unrelated title; a field-by-field merge would let that provider
+  // refill every field the grown-up left blank on purpose, and the 30-day
+  // background refresh would undo the correction. So a `manual` record wins
+  // outright and provider records are ignored.
+  const manual = present.find((record) => (record.sources ?? []).includes(MANUAL_SOURCE));
+  if (manual) return createBookRecord({ ...manual, sources: [MANUAL_SOURCE] });
 
   const sources = [];
   for (const record of present) {
