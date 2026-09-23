@@ -44,7 +44,9 @@ export class FitnessWebhookService {
         aspectType: event.aspectType,
       });
       const shouldEnrich = adapter.shouldEnrich?.(event);
-      if (!shouldEnrich) {
+      if (!shouldEnrich && adapter.isTitleUpdate?.(event) && this.enrichmentService?.handleTitleUpdate) {
+        this.enrichmentService.handleTitleUpdate(event);
+      } else if (!shouldEnrich) {
         this.logger.info?.('fitness.provider.webhook.skip_enrich', {
           provider: name,
           objectId: event.objectId,

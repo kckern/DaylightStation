@@ -393,3 +393,57 @@ describe('ActivityReconciliationService — title sync (Strava → session)', ()
     expect(saved.strava.name).toBe('Morning Run');
   });
 });
+
+describe('ActivityReconciliationService — auth + rename webhook', () => {
+  const baseDeps = (overrides = {}) => ({
+    activityGateway: { getActivity: vi.fn().mockResolvedValue(null), updateActivity: vi.fn() },
+    lookbackDays: 3,
+    selectionConfig: {},
+    timezone: 'America/Los_Angeles',
+    historyRepository: historyRepository(),
+    logger: { info: vi.fn(), warn: vi.fn() },
+    ...overrides,
+  });
+
+  beforeEach(() => {
+    vi.resetAllMocks();
+    let firstDate = null;
+    dirExists.mockImplementation((p) => {
+      const date = p?.match(/(\d{4}-\d{2}-\d{2})/)?.[1];
+      if (!firstDate && date) firstDate = date;
+      return date === firstDate;
+    });
+    listYamlFiles.mockReturnValue(['s1']);
+  });
+
+  test('refreshes provider auth before sweeping', async () => {
+    const order = [];
+    const deps = baseDeps({ ensureAccess: vi.fn(async () => order.push('auth')) });
+    deps.activityGateway.getActivity.mockImplementation(async () => { order.push('fetch'); return null; });
+    loadYamlSafe.mockReturnValue({ sessionId: 's1', strava: { activityId: 5, name: 'x' } });
+    await new ActivityReconciliationService(deps).reconcile();
+    expect(order[0]).toBe('auth');
+    expect(order).toContain('fetch');
+  });
+
+  test('skips the sweep when auth fails instead of erroring per session', async () => {
+    const deps = baseDeps({ ensureAccess: vi.fn().mockRejectedValue(new Error('no refresh token')) });
+    loadYamlSafe.mockReturnValue({ sessionId: 's1', strava: { activityId: 5, name: 'x' } });
+    await new ActivityReconciliationService(deps).reconcile();
+    expect(deps.activityGateway.getActivity).not.toHaveBeenCalled();
+    expect(deps.logger.warn).toHaveBeenCalledWith('strava.reconciliation.auth_failed', expect.anything());
+  });
+
+  test('applyTitle writes a renamed title into the linked session', () => {
+    loadYamlSafe.mockReturnValue({ sessionId: 's1', strava: { activityId: 20245291061, name: 'Morning Run' } });
+    const updated = new ActivityReconciliationService(baseDeps()).applyTitle('20245291061', 'Spartan Sprint');
+    expect(updated).toBe(1);
+    expect(saveYaml.mock.calls[0][1].strava.name).toBe('Spartan Sprint');
+  });
+
+  test('applyTitle leaves other activities alone', () => {
+    loadYamlSafe.mockReturnValue({ sessionId: 's1', strava: { activityId: 999, name: 'Morning Run' } });
+    expect(new ActivityReconciliationService(baseDeps()).applyTitle('20245291061', 'Spartan Sprint')).toBe(0);
+    expect(saveYaml).not.toHaveBeenCalled();
+  });
+});

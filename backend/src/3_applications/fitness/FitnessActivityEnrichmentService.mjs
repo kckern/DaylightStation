@@ -74,6 +74,23 @@ export class FitnessActivityEnrichmentService {
   }
 
   /**
+   * Handle a rename made on the provider (activity/update with updates.title).
+   * Fire-and-forget: copies the new title into the matching session.
+   * @param {Object} event - FitnessProviderEvent with updates.title
+   */
+  handleTitleUpdate(event) {
+    const activityId = String(event?.objectId ?? '');
+    const title = event?.updates?.title;
+    if (!activityId || !title || !this.#reconciliationService?.applyTitle) return;
+    this.#logger.info?.('strava.enrichment.title_update_received', { activityId, title });
+    try {
+      this.#reconciliationService.applyTitle(activityId, title);
+    } catch (err) {
+      this.#logger.warn?.('strava.enrichment.title_update_failed', { activityId, error: err?.message });
+    }
+  }
+
+  /**
    * Handle a parsed webhook event. Returns immediately after queuing.
    * @param {Object} event - FitnessProviderEvent from adapter
    * @returns {boolean} Whether enrichment was queued
