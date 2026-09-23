@@ -1,10 +1,14 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import SayItem from './SayItem.jsx';
-import { playClip } from '../wordLadderAudio.js';
+import { playClip, playSequence } from '../wordLadderAudio.js';
 import { wordLadderLog } from '../wordLadderLog.js';
 
-vi.mock('../wordLadderAudio.js', () => ({ playClip: vi.fn(async () => true) }));
+vi.mock('../wordLadderAudio.js', () => {
+  const clip = vi.fn(async () => true);
+  const sequence = vi.fn(async (urls) => { for (const u of urls) await clip(u); });
+  return { playClip: clip, playSequence: sequence };
+});
 
 // SayItem talks to the real microphone through `useTakeRecorder`. The item's
 // own behaviour — what it shows before/after a take, that Next/Skip is never
@@ -28,11 +32,29 @@ vi.mock('../useTakeRecorder.js', () => ({
   }),
 }));
 
-const word = { wordId: 'gawi', term: '가위', gloss: 'Scissors', media: { audio: 'aud-gawi' } };
 const langs = { term: 'ko', gloss: 'en' };
 
+// Fixtures below are the ACTUAL server shapes from
+// `WordLadderSittingService#publicItem` (backend/src/3_applications/school/
+// WordLadderSittingService.mjs) — not a client guess. say-after alone gets a
+// full word card with real media ids; read-aloud gets a word but every media
+// id is null; say-from-cue gets NO `word` key at all, only the cue.
+const sayAfterItem = {
+  id: 's3', type: 'say', mode: 'say-after', wordId: 'gawi',
+  word: {
+    wordId: 'gawi', term: '가위', gloss: 'Scissors', pronunciation: null, kind: 'word', media: { image: 'img-gawi', audio: 'aud-gawi', glossAudio: null },
+  },
+};
+const readAloudItem = {
+  id: 's4', type: 'say', mode: 'read-aloud', wordId: 'gawi',
+  word: { wordId: 'gawi', term: '가위', kind: 'word', media: { image: null, audio: null, glossAudio: null } },
+};
+const sayFromCueItem = {
+  id: 's5', type: 'say', mode: 'say-from-cue', wordId: 'gawi', cue: { type: 'text', text: 'Scissors' }, assets: { image: null, audio: null, glossAudio: null },
+};
+
 function makeApi(overrides = {}) {
-  return { uploadRecording: vi.fn(async () => ({ ok: true, status: 200, data: { done: true } })), ...overrides };
+  return { uploadRecording: vi.fn(async () => ({ ok: true, status: 200, data: { take: 1 } })), ...overrides };
 }
 
 beforeEach(() => {
@@ -42,6 +64,7 @@ beforeEach(() => {
   window.URL.createObjectURL = vi.fn(() => 'blob:take');
   window.URL.revokeObjectURL = vi.fn();
   playClip.mockClear();
+  playSequence.mockClear();
 });
 
 describe('SayItem — Next is never a gate', () => {
@@ -49,7 +72,7 @@ describe('SayItem — Next is never a gate', () => {
     const onRespond = vi.fn();
     render(
       <SayItem
-        item={{ id: 's1', type: 'say', mode: 'say-after', wordId: 'gawi', word, assets: { audio: 'aud-gawi' } }}
+        item={sayAfterItem}
         mode="say-after"
         langs={langs}
         resolveAssetUrl={(x) => x}
@@ -69,7 +92,7 @@ describe('SayItem — Next is never a gate', () => {
     const onRespond = vi.fn();
     render(
       <SayItem
-        item={{ id: 's2', type: 'say', mode: 'read-aloud', wordId: 'gawi', word }}
+        item={readAloudItem}
         mode="read-aloud"
         langs={langs}
         resolveAssetUrl={(x) => x}
@@ -88,7 +111,7 @@ describe('SayItem — say-after', () => {
   it('shows the term and plays the native audio on arrival', () => {
     render(
       <SayItem
-        item={{ id: 's3', type: 'say', mode: 'say-after', wordId: 'gawi', word, assets: { audio: 'aud-gawi' } }}
+        item={sayAfterItem}
         mode="say-after"
         langs={langs}
         resolveAssetUrl={(x) => x}
@@ -101,13 +124,36 @@ describe('SayItem — say-after', () => {
     expect(screen.getByText('가위')).toBeInTheDocument();
     expect(playClip).toHaveBeenCalledWith('aud-gawi');
   });
+
+  it('after a take, plays the take then the already-known native audio, even if the upload fails', async () => {
+    const spy = vi.spyOn(wordLadderLog, 'recordingFailed').mockImplementation(() => {});
+    const api = makeApi({ uploadRecording: vi.fn(async () => ({ ok: false, status: 500, data: null })) });
+    render(
+      <SayItem
+        item={sayAfterItem}
+        mode="say-after"
+        langs={langs}
+        resolveAssetUrl={(x) => x}
+        onRespond={() => {}}
+        api={api}
+        sittingId="sit1"
+        userId="kid"
+      />,
+    );
+    playClip.mockClear();
+    const blob = new Blob(['x'], { type: 'audio/webm' });
+    await act(async () => { await captured.onTake({ blob, durationMs: 2000 }); });
+    expect(playSequence).toHaveBeenCalledWith(['blob:take', 'aud-gawi']);
+    expect(spy).toHaveBeenCalledWith(expect.objectContaining({ itemId: 's3', status: 500 }));
+    spy.mockRestore();
+  });
 });
 
 describe('SayItem — read-aloud', () => {
-  it('shows the term but plays no audio on arrival', () => {
+  it('shows the term but plays no audio on arrival (media is null until a take)', () => {
     render(
       <SayItem
-        item={{ id: 's4', type: 'say', mode: 'read-aloud', wordId: 'gawi', word }}
+        item={readAloudItem}
         mode="read-aloud"
         langs={langs}
         resolveAssetUrl={(x) => x}
@@ -120,17 +166,54 @@ describe('SayItem — read-aloud', () => {
     expect(screen.getByText('가위')).toBeInTheDocument();
     expect(playClip).not.toHaveBeenCalled();
   });
+
+  it('a successful take reveals the native audio via the upload response, not a locally-known clip', async () => {
+    const api = makeApi({
+      uploadRecording: vi.fn(async () => ({ ok: true, status: 200, data: { take: 1, reveal: { term: '가위', audio: 'aud-gawi' } } })),
+    });
+    render(
+      <SayItem
+        item={readAloudItem}
+        mode="read-aloud"
+        langs={langs}
+        resolveAssetUrl={(x) => x}
+        onRespond={() => {}}
+        api={api}
+        sittingId="sit1"
+        userId="kid"
+      />,
+    );
+    const blob = new Blob(['x'], { type: 'audio/webm' });
+    await act(async () => { await captured.onTake({ blob, durationMs: 2000 }); });
+    expect(api.uploadRecording).toHaveBeenCalledWith('sit1', { userId: 'kid', itemId: 's4', blob });
+    expect(playSequence).toHaveBeenCalledWith(['blob:take', 'aud-gawi']);
+  });
+
+  it('an upload failure plays only the take — no reveal, no native audio', async () => {
+    const api = makeApi({ uploadRecording: vi.fn(async () => ({ ok: false, status: 500, data: null })) });
+    render(
+      <SayItem
+        item={readAloudItem}
+        mode="read-aloud"
+        langs={langs}
+        resolveAssetUrl={(x) => x}
+        onRespond={() => {}}
+        api={api}
+        sittingId="sit1"
+        userId="kid"
+      />,
+    );
+    const blob = new Blob(['x'], { type: 'audio/webm' });
+    await act(async () => { await captured.onTake({ blob, durationMs: 2000 }); });
+    expect(playSequence).toHaveBeenCalledWith(['blob:take']);
+  });
 });
 
 describe('SayItem — say-from-cue', () => {
-  const item = {
-    id: 's5', type: 'say', mode: 'say-from-cue', wordId: 'gawi', word, cue: { type: 'text', text: 'Scissors' }, assets: { audio: 'aud-gawi' },
-  };
-
   it('renders no term before the take — only the cue', () => {
     render(
       <SayItem
-        item={item}
+        item={sayFromCueItem}
         mode="say-from-cue"
         langs={langs}
         resolveAssetUrl={(x) => x}
@@ -144,15 +227,19 @@ describe('SayItem — say-from-cue', () => {
     expect(screen.queryByText('가위')).toBeNull();
   });
 
-  it('reveals the term after a take, playing the take then the native word', async () => {
+  it('reveals the term ONLY from the upload response, playing the take then resolveAssetUrl(reveal.audio)', async () => {
+    const api = makeApi({
+      uploadRecording: vi.fn(async () => ({ ok: true, status: 200, data: { take: 1, reveal: { term: '가위', audio: 'aud-gawi' } } })),
+    });
+    const resolveAssetUrl = vi.fn((id) => `resolved:${id}`);
     render(
       <SayItem
-        item={item}
+        item={sayFromCueItem}
         mode="say-from-cue"
         langs={langs}
-        resolveAssetUrl={(x) => x}
+        resolveAssetUrl={resolveAssetUrl}
         onRespond={() => {}}
-        api={makeApi()}
+        api={api}
         sittingId="sit1"
         userId="kid"
       />,
@@ -161,7 +248,31 @@ describe('SayItem — say-from-cue', () => {
     const blob = new Blob(['x'], { type: 'audio/webm' });
     await act(async () => { await captured.onTake({ blob, durationMs: 2000 }); });
     expect(screen.getByText('가위')).toBeInTheDocument();
-    expect(playClip.mock.calls.map((c) => c[0])).toEqual(['blob:take', 'aud-gawi']);
+    expect(playSequence).toHaveBeenCalledWith(['blob:take', 'resolved:aud-gawi']);
+  });
+
+  it('an upload failure never reveals the term — it has no other source', async () => {
+    const spy = vi.spyOn(wordLadderLog, 'recordingFailed').mockImplementation(() => {});
+    const api = makeApi({ uploadRecording: vi.fn(async () => ({ ok: false, status: 500, data: null })) });
+    render(
+      <SayItem
+        item={sayFromCueItem}
+        mode="say-from-cue"
+        langs={langs}
+        resolveAssetUrl={(x) => x}
+        onRespond={() => {}}
+        api={api}
+        sittingId="sit1"
+        userId="kid"
+      />,
+    );
+    const blob = new Blob(['x'], { type: 'audio/webm' });
+    await act(async () => { await captured.onTake({ blob, durationMs: 2000 }); });
+    expect(screen.queryByText('가위')).toBeNull();
+    expect(playSequence).toHaveBeenCalledWith(['blob:take']);
+    // The take still happened — Next replaces Skip even though nothing revealed.
+    expect(screen.getByRole('button', { name: /next/i })).toBeInTheDocument();
+    spy.mockRestore();
   });
 });
 
@@ -171,7 +282,7 @@ describe('SayItem — uploads and Next/Skip wording', () => {
     const onRespond = vi.fn();
     render(
       <SayItem
-        item={{ id: 's6', type: 'say', mode: 'say-after', wordId: 'gawi', word, assets: { audio: 'aud-gawi' } }}
+        item={sayAfterItem}
         mode="say-after"
         langs={langs}
         resolveAssetUrl={(x) => x}
@@ -184,31 +295,51 @@ describe('SayItem — uploads and Next/Skip wording', () => {
     expect(screen.getByRole('button', { name: /skip/i })).toBeInTheDocument();
     const blob = new Blob(['x'], { type: 'audio/webm' });
     await act(async () => { await captured.onTake({ blob, durationMs: 2000 }); });
-    expect(api.uploadRecording).toHaveBeenCalledWith('sit1', { userId: 'kid', itemId: 's6', blob });
+    expect(api.uploadRecording).toHaveBeenCalledWith('sit1', { userId: 'kid', itemId: 's3', blob });
     await waitFor(() => expect(screen.getByRole('button', { name: /next/i })).toBeInTheDocument());
     fireEvent.click(screen.getByRole('button', { name: /next/i }));
     expect(onRespond).toHaveBeenCalledWith({ done: true });
   });
 
-  it('an upload failure logs recording.failed and never blocks Next', async () => {
-    const spy = vi.spyOn(wordLadderLog, 'recordingFailed').mockImplementation(() => {});
-    const api = makeApi({ uploadRecording: vi.fn(async () => ({ ok: false, status: 500, data: null })) });
+  it('logs recording.uploaded on a successful upload', async () => {
+    const spy = vi.spyOn(wordLadderLog, 'recordingUploaded').mockImplementation(() => {});
     render(
       <SayItem
-        item={{ id: 's7', type: 'say', mode: 'say-after', wordId: 'gawi', word, assets: { audio: 'aud-gawi' } }}
+        item={sayAfterItem}
         mode="say-after"
         langs={langs}
         resolveAssetUrl={(x) => x}
         onRespond={() => {}}
-        api={api}
+        api={makeApi()}
         sittingId="sit1"
         userId="kid"
       />,
     );
     const blob = new Blob(['x'], { type: 'audio/webm' });
     await act(async () => { await captured.onTake({ blob, durationMs: 2000 }); });
-    await waitFor(() => expect(spy).toHaveBeenCalledWith(expect.objectContaining({ itemId: 's7', status: 500 })));
-    expect(screen.getByRole('button', { name: /next/i })).not.toBeDisabled();
+    expect(spy).toHaveBeenCalledWith(expect.objectContaining({ itemId: 's3' }));
     spy.mockRestore();
+  });
+});
+
+describe('SayItem — take object URL lifecycle', () => {
+  it('revokes the take URL on unmount, not only when a later take replaces it', async () => {
+    const { unmount } = render(
+      <SayItem
+        item={sayAfterItem}
+        mode="say-after"
+        langs={langs}
+        resolveAssetUrl={(x) => x}
+        onRespond={() => {}}
+        api={makeApi()}
+        sittingId="sit1"
+        userId="kid"
+      />,
+    );
+    const blob = new Blob(['x'], { type: 'audio/webm' });
+    await act(async () => { await captured.onTake({ blob, durationMs: 2000 }); });
+    expect(window.URL.revokeObjectURL).not.toHaveBeenCalled();
+    unmount();
+    expect(window.URL.revokeObjectURL).toHaveBeenCalledWith('blob:take');
   });
 });

@@ -3,7 +3,7 @@ import { TouchButton } from '../../../../../../lib/ui/index.js';
 import Icon from '../../../../home/icons/Icon.jsx';
 import VoiceBand from '../../../SentenceLadder/rungs/VoiceBand.jsx';
 import { FitText } from '../FitText.jsx';
-import { playClip } from '../wordLadderAudio.js';
+import { playClip, playSequence } from '../wordLadderAudio.js';
 import { useWordLadderKeys } from '../useWordLadderKeys.js';
 import { wordLadderLog } from '../wordLadderLog.js';
 import useTakeRecorder from '../useTakeRecorder.js';
@@ -15,30 +15,43 @@ import CuePicture from './CuePicture.jsx';
  * moment the card is shown, whatever `onRespond` is called it always sends
  * `{done:true}` — a take is never required, only offered.
  *
- * What the child sees before a take differs by mode:
- *   say-after     the term + its native audio (played once on arrival — "see
- *                 and hear it, then say it").
- *   read-aloud    the term only — no audio until the take is in.
- *   say-from-cue  the cue only — the term is NOT shown until after a take,
- *                 so reading it off the card can't stand in for recalling it.
+ * What the child sees before a take differs by mode, and it follows what the
+ * SERVER actually sent (`WordLadderSittingService#publicItem`) — not just a
+ * local "don't render it yet":
+ *   say-after     the item carries the full word (`item.word.media.audio`),
+ *                 so the native audio plays once on arrival ("see and hear
+ *                 it, then say it"). `saveRecording` returns no `reveal` for
+ *                 this mode — nothing to reveal, it was already known.
+ *   read-aloud    the item carries `item.word.term` but `media` is all null
+ *                 — no audio until the take is in.
+ *   say-from-cue  the item carries NO `word` at all, only the cue. The term
+ *                 is learned for the first time from the take's response
+ *                 (`reveal.term`/`reveal.audio`), which is the whole point:
+ *                 reading it off the card can't stand in for recalling it.
  *
- * After ANY take (kept or not attempted-again): the take plays back, then the
- * native term audio if the word has one — and for say-from-cue this is also
- * the moment the term itself is revealed, so the child compares what they
- * said against the real word right after saying it.
+ * After a KEPT take, `api.uploadRecording` is awaited. On success its
+ * `reveal` (when present) is what unlocks read-aloud/say-from-cue's native
+ * audio and, for say-from-cue, the term text itself — there is no other copy
+ * of either on this device before that response lands. On failure nothing is
+ * revealed (logged, never blocking) — but say-after already knew its own
+ * native audio locally, so its playback is unaffected by the upload's fate.
+ * Either way the take itself always plays.
  */
 export default function SayItem({
   item, mode, langs, resolveAssetUrl, onRespond, api, sittingId, userId, busy = false,
 }) {
   const [hasTaken, setHasTaken] = useState(false);
   const [notice, setNotice] = useState(null);
+  // { term, audio } once `saveRecording`'s `reveal` lands — the ONLY source of
+  // the term for say-from-cue, and of the native clip for read-aloud/say-from-cue.
+  const [revealed, setRevealed] = useState(null);
   const takeUrlRef = useRef(null);
 
   const word = item.word ?? null;
   const image = item.assets?.image ? resolveAssetUrl(item.assets.image) : null;
   const glossAudio = item.assets?.glossAudio ? resolveAssetUrl(item.assets.glossAudio) : null;
-  const termAudio = (item.assets?.audio ? resolveAssetUrl(item.assets.audio) : null)
-    ?? (word?.media?.audio ? resolveAssetUrl(word.media.audio) : null);
+  // Known upfront only when the server sent it (say-after; null on read-aloud).
+  const termAudio = word?.media?.audio ? resolveAssetUrl(word.media.audio) : null;
 
   const onTake = useCallback(async ({ blob, durationMs }) => {
     setHasTaken(true);
@@ -46,28 +59,44 @@ export default function SayItem({
     const takeUrl = URL.createObjectURL(blob);
     takeUrlRef.current = takeUrl;
 
-    api.uploadRecording(sittingId, { userId, itemId: item.id, blob }).then(({ ok, status }) => {
-      if (ok) wordLadderLog.recordingUploaded({ itemId: item.id, mode, bytes: blob.size, durationMs });
+    const { ok, status, data } = await api.uploadRecording(sittingId, { userId, itemId: item.id, blob });
+
+    // say-after already has its own native audio; read-aloud/say-from-cue have
+    // none until `reveal` says otherwise — and only ON A SUCCESSFUL upload,
+    // since that response is the only place either ever comes from.
+    let nativeAudio = termAudio;
+    if (ok) {
+      wordLadderLog.recordingUploaded({ itemId: item.id, mode, bytes: blob.size, durationMs });
+      if (data?.reveal) {
+        const audio = data.reveal.audio ? resolveAssetUrl(data.reveal.audio) : null;
+        setRevealed({ term: data.reveal.term, audio });
+        nativeAudio = audio;
+      }
+    } else {
       // An upload failure is logged and never blocks — the take was still
-      // said and heard; only the grown-up review copy is missing.
-      else wordLadderLog.recordingFailed({ itemId: item.id, mode, status });
-    });
+      // said and heard; only the grown-up review copy (and, for
+      // read-aloud/say-from-cue, the reveal) is missing.
+      wordLadderLog.recordingFailed({ itemId: item.id, mode, status });
+      if (mode !== 'say-after') nativeAudio = null;
+    }
 
     // Own take, then the native word — never the other order (spec §1 1.2).
-    await playClip(takeUrl);
-    if (termAudio) await playClip(termAudio);
-  }, [api, sittingId, userId, item.id, mode, termAudio]);
+    await playSequence([takeUrl, ...(nativeAudio ? [nativeAudio] : [])]);
+  }, [api, sittingId, userId, item.id, mode, termAudio, resolveAssetUrl]);
 
   const recorder = useTakeRecorder({ onTake });
 
+  // Mount-only (WordLadderProgram keys each item to a fresh instance, so
+  // item.id never changes within one SayItem's life — this is really
+  // "on arrival" / "on the way out", not "on every item change"). The
+  // cleanup revokes whatever take URL is still held when the item leaves —
+  // not only when a NEXT take within this same item replaces it.
   useEffect(() => {
-    setHasTaken(false);
-    setNotice(null);
-    if (takeUrlRef.current) { URL.revokeObjectURL(takeUrlRef.current); takeUrlRef.current = null; }
-    // say-after: "see and hear it, then say it" — the native word plays once,
-    // unprompted, on arrival. read-aloud and say-from-cue give no audio yet.
     if (mode === 'say-after' && termAudio) playClip(termAudio);
     if (item.cue?.type === 'audio' && glossAudio) playClip(glossAudio);
+    return () => {
+      if (takeUrlRef.current) { URL.revokeObjectURL(takeUrlRef.current); takeUrlRef.current = null; }
+    };
   }, [item.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -88,10 +117,10 @@ export default function SayItem({
 
   useWordLadderKeys({ ' ': next, enter: next });
 
-  // The term is never shown ahead of a take on say-from-cue — that is the
-  // whole point of the mode. Every other mode shows it from the start.
-  const showTerm = mode !== 'say-from-cue' || hasTaken;
   const showCue = mode === 'say-from-cue';
+  // say-after/read-aloud already carry the term; say-from-cue only ever
+  // learns it from `reveal` — never render it a moment earlier than that.
+  const term = showCue ? revealed?.term ?? null : word?.term ?? null;
   const recording = recorder.phase === 'recording';
   const saving = recorder.phase === 'saving';
 
@@ -103,7 +132,7 @@ export default function SayItem({
         {showCue && item.cue?.type === 'audio' && (
           <TouchButton variant="secondary" onClick={() => glossAudio && playClip(glossAudio)}><Icon name="volume" /> Listen</TouchButton>
         )}
-        {showTerm && word?.term && <FitText role="term" text={word.term} lang={langs.term} />}
+        {term && <FitText role="term" text={term} lang={langs.term} />}
       </div>
 
       <VoiceBand
