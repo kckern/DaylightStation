@@ -90,7 +90,7 @@ browser.
 | `/school/go/<learner>/book-log` | the reading shelf |
 | `/school/go/<learner>/flashcards/<deck/with/slashes>` | a deck (the tail is kept whole) |
 | `/school/go/<learner>/word-ladder` | the learner's current word-ladder enrollment |
-| `/school/go/<learner>/word-ladder/test?scenario=fresh\|due\|round-end\|done` | a **read-only** word-ladder sitting — nothing typed or sorted is saved |
+| `/school/go/<learner>/word-ladder/test?scenario=fresh\|due\|round-end\|tricky\|typos\|done` | a **read-only** word-ladder sitting — nothing typed, sorted, spoken or recorded is saved |
 
 `GET /api/v1/school/lifecycle/direct-launch/programs` lists what can be opened
 and which programs need an instance.
@@ -117,11 +117,24 @@ troubleshooting "no sound" as a code bug.
 
 **Testing the word ladder without touching a real learner's record**: open
 `/school/go/<learner>/word-ladder/test`, optionally with
-`?scenario=fresh|due|round-end|done` to seed a specific state (see
-[`word-ladder.md`](../../reference/school/word-ladder.md#the-door-and-test)).
+`?scenario=fresh|due|round-end|tricky|typos|done` to seed a specific state
+(`tricky` opens straight on the tricky-word drill; `typos` opens on a
+round-end quiz worth misspelling to exercise the typed judge) — see
+[`word-ladder.md`](../../reference/school/word-ladder.md#the-door-and-test).
 The banner reads "TEST — nothing is saved", and a backend test
 (`WordLadderTestMode.test.mjs`) enforces that promise — every real file on
-disk is byte-identical before and after a full test sitting.
+disk is byte-identical before and after a full test sitting, including any
+spoken take: test mode's recordings sink (`DiscardingRecordings`) counts a
+take and drops it, never writing to
+`media/school/recordings/word-ladder/<package>/<learnerId>/<studyDay>/`.
+
+**On-screen jamo keypad**: every typing item (copy, dictation, graded typed
+input, drill copy/dictation/type) offers a toggleable two-set (두벌식) jamo
+keypad — there is no web API to detect a Bluetooth keyboard, so it is a
+manual toggle plus a 10-second auto-open (once per item, only while the
+field has had focus with no keydown) that closes itself on the first
+physical keystroke. If a child on the Portal seems unable to type Korean,
+check the keypad opened rather than assuming a missing IME.
 
 ## A worksheet says "We could not make that sheet"
 

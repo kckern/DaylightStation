@@ -1,5 +1,5 @@
-import { fireEvent, render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { act, fireEvent, render, screen } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import FlashcardItem from './FlashcardItem.jsx';
 import ChoiceItem from './ChoiceItem.jsx';
 import TypedItem from './TypedItem.jsx';
@@ -7,6 +7,7 @@ import SummaryItem from './SummaryItem.jsx';
 import { playClip } from '../wordLadderAudio.js';
 import { wordLadderLog } from '../wordLadderLog.js';
 import { modeForLanguage } from '../../../../ime/languages.js';
+import HangulTypingProvider from '../../../../ime/HangulTypingProvider.jsx';
 
 vi.mock('../wordLadderAudio.js', () => ({ playClip: vi.fn(async () => true) }));
 const word = { wordId: 'gawi', term: '가위', gloss: 'Scissors', pronunciation: null, kind: 'word', media: { image: 'img', audio: 'aud', glossAudio: null } };
@@ -145,6 +146,176 @@ describe('TypedItem', () => {
     const button = screen.getByRole('button', { name: 'Enter' });
     fireEvent.click(button);
     expect(onRespond).toHaveBeenCalledWith({ typed: '가위' });
+  });
+});
+
+/**
+ * THE KEYPAD TOGGLE (spec §6). A toggle, not a detector: the field auto-opens
+ * it once per item after 10 s of idle focus, and a real keydown closes it —
+ * proof that a physical keyboard just spoke, so the keypad has nothing left
+ * to do here.
+ */
+describe('TypedItem keypad toggle', () => {
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('shows a Keypad toggle button, closed by default', () => {
+    render(<TypedItem item={{ id: 'k0', type: 'typed', task: '3.3', cue: { type: 'text', text: 'Scissors' }, assets: {} }} mode="graded" langs={langs} resolveAssetUrl={(x) => x} onRespond={() => {}} />);
+    expect(screen.getByRole('button', { name: /Keypad/ })).toBeInTheDocument();
+    expect(screen.queryByTestId('jamo-keypad')).toBeNull();
+  });
+
+  it('a click on the toggle opens the keypad, and a second click closes it', () => {
+    render(<TypedItem item={{ id: 'k1', type: 'typed', task: '3.3', cue: { type: 'text', text: 'Scissors' }, assets: {} }} mode="graded" langs={langs} resolveAssetUrl={(x) => x} onRespond={() => {}} />);
+    const toggle = screen.getByRole('button', { name: /Keypad/ });
+    fireEvent.click(toggle);
+    expect(screen.getByTestId('jamo-keypad')).toBeInTheDocument();
+    fireEvent.click(toggle);
+    expect(screen.queryByTestId('jamo-keypad')).toBeNull();
+  });
+
+  it('adds wl-typed--keypad to the item while the keypad is open, for the fit CSS (fix round 1)', () => {
+    render(<TypedItem item={{ id: 'k1b', type: 'typed', task: '3.3', cue: { type: 'text', text: 'Scissors' }, assets: {} }} mode="graded" langs={langs} resolveAssetUrl={(x) => x} onRespond={() => {}} />);
+    const section = screen.getByRole('region', { name: 'Type the word' });
+    expect(section.className).not.toMatch('wl-typed--keypad');
+    fireEvent.click(screen.getByRole('button', { name: /Keypad/ }));
+    expect(section.className).toMatch('wl-typed--keypad');
+    fireEvent.click(screen.getByRole('button', { name: /Keypad/ }));
+    expect(section.className).not.toMatch('wl-typed--keypad');
+  });
+
+  it('auto-opens once after 10 s of idle focus, and logs keypad.toggled {auto:true}', () => {
+    const spy = vi.spyOn(wordLadderLog, 'keypadToggled').mockImplementation(() => {});
+    vi.useFakeTimers();
+    render(<TypedItem item={{ id: 'k2', type: 'typed', task: '3.3', cue: { type: 'text', text: 'Scissors' }, assets: {} }} mode="graded" langs={langs} resolveAssetUrl={(x) => x} onRespond={() => {}} />);
+    expect(screen.queryByTestId('jamo-keypad')).toBeNull();
+    act(() => { vi.advanceTimersByTime(9999); });
+    expect(screen.queryByTestId('jamo-keypad')).toBeNull();
+    act(() => { vi.advanceTimersByTime(1); });
+    expect(screen.getByTestId('jamo-keypad')).toBeInTheDocument();
+    expect(spy).toHaveBeenCalledWith({ auto: true, open: true });
+    spy.mockRestore();
+  });
+
+  it('closes on the first physical keydown in the field', () => {
+    vi.useFakeTimers();
+    render(<TypedItem item={{ id: 'k3', type: 'typed', task: '3.3', cue: { type: 'text', text: 'Scissors' }, assets: {} }} mode="graded" langs={langs} resolveAssetUrl={(x) => x} onRespond={() => {}} />);
+    act(() => { vi.advanceTimersByTime(10_000); });
+    expect(screen.getByTestId('jamo-keypad')).toBeInTheDocument();
+    const input = screen.getByRole('textbox');
+    fireEvent.keyDown(input, { key: 'a', code: 'KeyA' });
+    expect(screen.queryByTestId('jamo-keypad')).toBeNull();
+  });
+
+  it('a physical keydown before 10 s cancels the auto-open — a keyboard is present', () => {
+    vi.useFakeTimers();
+    render(<TypedItem item={{ id: 'k4', type: 'typed', task: '3.3', cue: { type: 'text', text: 'Scissors' }, assets: {} }} mode="graded" langs={langs} resolveAssetUrl={(x) => x} onRespond={() => {}} />);
+    const input = screen.getByRole('textbox');
+    fireEvent.keyDown(input, { key: 'a', code: 'KeyA' });
+    act(() => { vi.advanceTimersByTime(10_000); });
+    expect(screen.queryByTestId('jamo-keypad')).toBeNull();
+  });
+
+  it('a new item re-arms the auto-open and starts the keypad closed', () => {
+    vi.useFakeTimers();
+    const { rerender } = render(<TypedItem item={{ id: 'k5', type: 'typed', task: '3.3', cue: { type: 'text', text: 'Scissors' }, assets: {} }} mode="graded" langs={langs} resolveAssetUrl={(x) => x} onRespond={() => {}} />);
+    act(() => { vi.advanceTimersByTime(10_000); });
+    expect(screen.getByTestId('jamo-keypad')).toBeInTheDocument();
+    rerender(<TypedItem item={{ id: 'k6', type: 'typed', task: '3.3', cue: { type: 'text', text: 'Glue' }, assets: {} }} mode="graded" langs={langs} resolveAssetUrl={(x) => x} onRespond={() => {}} />);
+    expect(screen.queryByTestId('jamo-keypad')).toBeNull();
+    act(() => { vi.advanceTimersByTime(10_000); });
+    expect(screen.getByTestId('jamo-keypad')).toBeInTheDocument();
+  });
+
+  // Fix round 1: the reviewer's repro. Hear it steals focus in the idle
+  // window; without a refocus, the auto-opened keypad sits over a field that
+  // isn't focused and every tap lands on nothing (offerJamo acts on
+  // document.activeElement).
+  it('Hear it moves focus away; auto-open still refocuses the field, and a keypad tap types into it (fix round 1)', () => {
+    vi.useFakeTimers();
+    render(
+      <HangulTypingProvider>
+        <TypedItem item={{ id: 'k7', type: 'typed', word, assets: {} }} mode="copy" langs={langs} resolveAssetUrl={(x) => x} onRespond={() => {}} />
+      </HangulTypingProvider>,
+    );
+    const field = screen.getByRole('textbox');
+    expect(document.activeElement).toBe(field); // mount already focused it
+    const hearIt = screen.getByRole('button', { name: /Hear it/ });
+    act(() => { hearIt.focus(); });
+    expect(document.activeElement).toBe(hearIt);
+    act(() => { vi.advanceTimersByTime(10_000); });
+    expect(screen.getByTestId('jamo-keypad')).toBeInTheDocument();
+    expect(document.activeElement).toBe(field); // auto-open refocused it
+    act(() => { fireEvent.pointerDown(document.querySelector('[data-jamo="ㄱ"]')); });
+    expect(field.value).toBe('ㄱ');
+  });
+
+  it('does not auto-open over a busy (submitting) field, and does not steal focus — and it stays closed once busy clears', () => {
+    // The render-time `open={keypadOpen && !fieldDisabled}` gate alone would
+    // hide this WHILE busy, but if the internal `keypadOpen` boolean had
+    // already flipped true underneath, the keypad would resurface the moment
+    // busy clears, unasked. The fix must stop that flip from happening at
+    // all — this is the assertion that actually distinguishes the two.
+    vi.useFakeTimers();
+    const props = { item: { id: 'k8', type: 'typed', task: '3.3', cue: { type: 'text', text: 'Scissors' }, assets: {} }, mode: 'graded', langs, resolveAssetUrl: (x) => x, onRespond: () => {} };
+    const { rerender } = render(<TypedItem {...props} busy={false} />);
+    const other = document.createElement('button');
+    document.body.appendChild(other);
+    // busy flips true without item.id changing — the scenario the timer's
+    // own closure cannot see without a live ref.
+    rerender(<TypedItem {...props} busy />);
+    act(() => { other.focus(); });
+    act(() => { vi.advanceTimersByTime(10_000); });
+    expect(screen.queryByTestId('jamo-keypad')).toBeNull();
+    expect(document.activeElement).toBe(other); // no surprise refocus either
+    rerender(<TypedItem {...props} busy={false} />); // busy clears, same item
+    expect(screen.queryByTestId('jamo-keypad')).toBeNull(); // still closed
+    document.body.removeChild(other);
+  });
+
+  it('does not auto-open once the item is already answered, and the state never flips underneath the render gate', () => {
+    vi.useFakeTimers();
+    const props = { item: { id: 'k9', type: 'typed', task: '3.3', cue: { type: 'text', text: 'Scissors' }, assets: {} }, mode: 'graded', langs, resolveAssetUrl: (x) => x, onRespond: () => {}, onContinue: () => {} };
+    const { rerender } = render(<TypedItem {...props} />);
+    rerender(<TypedItem {...props} result={{ correct: true, score: 10, answer: 'Scissors' }} />);
+    act(() => { vi.advanceTimersByTime(10_000); });
+    expect(screen.queryByTestId('jamo-keypad')).toBeNull();
+    // Not a real transition (a graded item never un-answers) — but it proves
+    // the internal boolean genuinely never flipped, not just that the render
+    // gate happened to hide it while `result` was present.
+    rerender(<TypedItem {...props} result={null} />);
+    expect(screen.queryByTestId('jamo-keypad')).toBeNull();
+  });
+});
+
+describe('TypedItem — busy keeps the keypad, Show me', () => {
+  const cueItem = { id: 'b1', type: 'typed', task: '3.3', cue: { type: 'text', text: 'Scissors' }, assets: {} };
+
+  it('an open keypad and its toggle stay mounted while a submit is in flight; only an answer removes them', () => {
+    const props = { item: cueItem, mode: 'graded', langs, resolveAssetUrl: (x) => x, onRespond: () => {}, onContinue: () => {} };
+    const { rerender } = render(<TypedItem {...props} />);
+    fireEvent.click(screen.getByRole('button', { name: /Keypad/ }));
+    rerender(<TypedItem {...props} busy />);
+    expect(screen.getByTestId('jamo-keypad')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Keypad/ })).toBeInTheDocument();
+    rerender(<TypedItem {...props} result={{ correct: true, score: 10, answer: '가위' }} />);
+    expect(screen.queryByTestId('jamo-keypad')).toBeNull();
+    expect(screen.queryByRole('button', { name: /Keypad/ })).toBeNull();
+  });
+
+  it('practice mode (drill type step) offers Show me → {typed:""}', () => {
+    const onRespond = vi.fn();
+    render(<TypedItem item={cueItem} mode="practice" langs={langs} resolveAssetUrl={(x) => x} onRespond={onRespond} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Show me' }));
+    expect(onRespond).toHaveBeenCalledWith({ typed: '' });
+  });
+
+  it('Write without help (an unjudged typed item) offers Show me; a judged one and copy do not', () => {
+    const { rerender } = render(<TypedItem item={{ ...cueItem, graded: false }} mode="graded" langs={langs} resolveAssetUrl={(x) => x} onRespond={() => {}} />);
+    expect(screen.getByRole('button', { name: 'Show me' })).toBeInTheDocument();
+    rerender(<TypedItem item={{ ...cueItem, id: 'b2' }} mode="graded" langs={langs} resolveAssetUrl={(x) => x} onRespond={() => {}} />);
+    expect(screen.queryByRole('button', { name: 'Show me' })).toBeNull();
+    rerender(<TypedItem item={{ id: 'b3', type: 'copy', word, assets: {} }} mode="copy" langs={langs} resolveAssetUrl={(x) => x} onRespond={() => {}} />);
+    expect(screen.queryByRole('button', { name: 'Show me' })).toBeNull();
   });
 });
 

@@ -617,6 +617,11 @@ meaning; shuffle; prev/next; undo) · Match · Say (With help / Without help) ·
 Write (With help / Without help) · Listen · Drill (pick words) · Quiz me · My
 words.
 
+> **Plan 2 ruling:** practice Flashcards ship **forward-only** — prev/undo on
+> a practice flashcard run were not built (a deliberate ruling recorded
+> mid-build, not an oversight; cost if wrong: a child can't back up a card in
+> free practice). See `docs/reference/school/word-ladder.md#the-practice-menu-spec-6-post-goal`.
+
 ### Grown-up word controls (teacher console, per learner, per package)
 
 Word list with state, stage, due, streak, tricky, and last graded answers

@@ -2,23 +2,23 @@
 import { describe, expect, it } from 'vitest';
 import { emptyWordV3 } from './mastery.mjs';
 import { emptyDay, emptyStatusV3 } from './statusV3.mjs';
-import { addActiveTime, currentItem, openDay, respond } from './engine.mjs';
+import { addActiveTime, currentItem, openDay, respond, startPractice } from './engine.mjs';
 
 const D = '2026-09-22';
 const SET = {
   round: { size: 5, maxPasses: 3 }, batch: { newPerDay: 4, workingSet: 7 },
-  review: { gapScale: 1, typedEvery: 2 }, drill: { afterMisses: 2 }, session: { capMinutes: 15 }, typing: { passScore: 6 },
+  review: { gapScale: 1, typedEvery: 2 }, drill: { afterMisses: 2, perSitting: 1 }, session: { capMinutes: 15 }, typing: { passScore: 6 },
 };
 const E = (id, term, gloss) => [id, { id, term, gloss, kind: 'word', decoys: { term: ['x1', 'x2', 'x3'], gloss: ['g1', 'g2', 'g3'] } }];
-const lexicon = { entries: new Map([E('gawi', '가위', 'Scissors'), E('pul', '풀', 'Glue'), E('chaek', '책', 'Book')]) };
+const lexicon = { entries: new Map([E('gawi', '가위', 'Scissors'), E('pul', '풀', 'Glue'), E('chaek', '책', 'Book'), E('mul', '물', 'Water')]) };
 const media = { gawi: { image: true, audio: true, glossAudio: false }, pul: { image: true, audio: true }, chaek: { image: false, audio: false } };
 const pool = ['gawi', 'pul', 'chaek'];
 const PASS = { score: 10, judge: 'exact', pass: true };
 let clock = Date.parse(`${D}T16:00:00-07:00`);
 const at = () => new Date((clock += 5000)).toISOString();
 
-function start(status = emptyStatusV3()) {
-  const opened = openDay({ status, dayFile: emptyDay(D), day: D, deckId: 'deck', pool, settings: SET, learnerId: 'test-learner', at: at() });
+function start(status = emptyStatusV3(), { capabilities = null, dayFile = emptyDay(D) } = {}) {
+  const opened = openDay({ status, dayFile, day: D, deckId: 'deck', pool, settings: SET, learnerId: 'test-learner', at: at(), media, capabilities });
   return { ...opened, day: D, lexicon, media, pool, settings: SET, learnerId: 'test-learner' };
 }
 function step(ctx, response, verdict = null) {
@@ -109,6 +109,7 @@ describe('engine — rechecks and misses', () => {
       if (item.type === 'flashcard' && item.mode === 'intro') ({ ctx } = step(ctx, { seen: true }));
       else if (item.type === 'copy') ({ ctx } = step(ctx, { typed: lexicon.entries.get(item.wordId).term }));
       else if (item.type === 'flashcard') ({ ctx } = step(ctx, { sort: 'notYet' }));
+      else if (item.type === 'drill-offer') ({ ctx } = step(ctx, { drill: 'no' }));
       else ({ ctx } = step(ctx, { dontKnow: true }));
     }
     expect(Object.values(ctx.status.words).every((word) => word.notYetCarry === true)).toBe(true);
@@ -335,3 +336,381 @@ describe('engine — a day with nothing to do', () => {
     expect(() => openDay({ status: emptyStatusV3(), dayFile: emptyDay(D), day: D, deckId: 'deck', pool, settings: SET, learnerId: 'test-learner' })).toThrow('at is required');
   });
 });
+
+describe('engine — drill', () => {
+  const trickyStatus = () => {
+    const s = emptyStatusV3();
+    s.words.gawi = { ...emptyWordV3(), state: 'familiar', introducedDay: '2026-09-10', tricky: true, trickySince: '2026-09-20', missStreak: 2 };
+    return s;
+  };
+  const drillAnswer = (it) => (it.step === 'copy' || it.step === 'dictation' || it.step === 'type' ? { typed: lexicon.entries.get(it.wordId).term }
+    : it.step === 'tiles' ? { tiles: [...lexicon.entries.get(it.wordId).term] } : { done: true });
+  function finishDrills(c) {
+    let guard = 0;
+    while (currentItem(c).type === 'drill' && guard++ < 40) ({ ctx: c } = step(c, drillAnswer(currentItem(c))));
+    return c;
+  }
+
+  it('a tricky word is drilled before rounds, skipping mic steps without a mic', () => {
+    const ctx0 = start(trickyStatus());
+    const item = currentItem(ctx0);
+    expect(item).toMatchObject({ type: 'drill', step: 'look', wordId: 'gawi' });
+    expect(ctx0.dayFile.drills[0].steps).not.toContain('say-after');
+    expect(ctx0.dayFile.capabilities).toEqual({ microphone: false });
+    expect(ctx0.dayFile.rounds).toEqual([]);
+  });
+  it('with a mic the drill keeps the speaking steps; the latest device wins', () => {
+    const ctx = start(trickyStatus(), { capabilities: { microphone: true } });
+    expect(ctx.dayFile.drills[0].steps).toContain('say-after');
+    const again = openDay({ status: ctx.status, dayFile: ctx.dayFile, day: D, deckId: 'deck', pool, settings: SET, learnerId: 'test-learner', at: at(), media, capabilities: {} });
+    expect(again.dayFile.capabilities).toEqual({ microphone: false });
+  });
+  it('drill never changes word state; copy must match to advance', () => {
+    let ctx = start(trickyStatus());
+    const before = structuredClone(ctx.status.words.gawi);
+    ({ ctx } = step(ctx, { done: true }));
+    const copyItem = currentItem(ctx);
+    const { ctx: stay, result } = step(ctx, { typed: '가이' });
+    expect(result.correct).toBe(false);
+    expect(currentItem(stay)).toMatchObject({ step: 'copy' });
+    expect(stay.dayFile.items[copyItem.id]).toBeUndefined();
+    let c = stay;
+    let guard = 0;
+    while (currentItem(c).type === 'drill' && guard++ < 20) {
+      const it = currentItem(c);
+      const r = it.step === 'copy' || it.step === 'dictation' || it.step === 'type' ? { typed: '가위' }
+        : it.step === 'tiles' ? { tiles: ['가', '위'] } : { done: true };
+      ({ ctx: c } = step(c, r));
+    }
+    expect(c.status.words.gawi).toEqual(before);
+    expect(c.dayFile.drills[0].done).toBe(true);
+    expect(currentItem(c)).toMatchObject({ type: 'flashcard', mode: 'intro' });
+  });
+  it('a dictation miss never carries the answer (the term is what is being recalled); a copy miss may', () => {
+    let ctx = start(trickyStatus());
+    let guard = 0;
+    while (currentItem(ctx).step !== 'copy' && guard++ < 20) ({ ctx } = step(ctx, drillAnswer(currentItem(ctx))));
+    let r;
+    ({ ctx, result: r } = step(ctx, { typed: '가이' }));
+    expect(r).toEqual({ correct: false, answer: '가위' });
+    guard = 0;
+    while (currentItem(ctx).step !== 'dictation' && guard++ < 20) ({ ctx } = step(ctx, drillAnswer(currentItem(ctx))));
+    expect(currentItem(ctx).step).toBe('dictation');
+    const dictationId = currentItem(ctx).id;
+    ({ ctx, result: r } = step(ctx, { typed: '가이' }));
+    expect(r).toEqual({ correct: false });
+    expect(currentItem(ctx).id).toBe(dictationId);
+    ({ ctx, result: r } = step(ctx, { typed: '가위' }));
+    expect(r).toMatchObject({ correct: true });
+  });
+  it('dictation: miss 1 hides the answer, miss 2 reveals it, the 3rd try advances regardless (stored)', () => {
+    let ctx = start(trickyStatus());
+    let guard = 0;
+    while (currentItem(ctx).step !== 'dictation' && guard++ < 20) ({ ctx } = step(ctx, drillAnswer(currentItem(ctx))));
+    const dictation = currentItem(ctx);
+    let r;
+    ({ ctx, result: r } = step(ctx, { typed: '가이' }));
+    expect(r).toEqual({ correct: false });
+    expect(currentItem(ctx).id).toBe(dictation.id);
+    ({ ctx, result: r } = step(ctx, { typed: '가이' }));
+    expect(r).toEqual({ correct: false, answer: '가위' });
+    expect(currentItem(ctx).id).toBe(dictation.id);
+    expect(ctx.dayFile.items[dictation.id]).toBeUndefined();
+    ({ ctx, result: r } = step(ctx, { typed: '가이' }));
+    expect(r).toEqual({ correct: false, answer: '가위' });
+    expect(currentItem(ctx).id).not.toBe(dictation.id);
+    expect(ctx.dayFile.items[dictation.id]).toBeDefined();
+  });
+  it('dictation: a correct answer after a miss advances, and the next step starts with fresh tries', () => {
+    let ctx = start(trickyStatus());
+    let guard = 0;
+    while (currentItem(ctx).step !== 'dictation' && guard++ < 20) ({ ctx } = step(ctx, drillAnswer(currentItem(ctx))));
+    const dictation = currentItem(ctx);
+    let r;
+    ({ ctx } = step(ctx, { typed: '가이' }));
+    ({ ctx, result: r } = step(ctx, { typed: '가위' }));
+    expect(r).toEqual({ correct: true, answer: '가위' });
+    expect(currentItem(ctx).id).not.toBe(dictation.id);
+    expect(ctx.dayFile.drills[0].tries).toBe(0);
+  });
+  it('tiles: wrong stays, the answer is revealed after the 2nd miss, the 3rd try advances regardless', () => {
+    let ctx = start(trickyStatus());
+    let guard = 0;
+    while (currentItem(ctx).step !== 'tiles' && guard++ < 20) ({ ctx } = step(ctx, drillAnswer(currentItem(ctx))));
+    const tilesItem = currentItem(ctx);
+    expect(tilesItem.tiles).toEqual(expect.arrayContaining(['가', '위']));
+    let r;
+    ({ ctx, result: r } = step(ctx, { tiles: ['위', '가'] }));
+    expect(r).toMatchObject({ correct: false, answer: null });
+    ({ ctx, result: r } = step(ctx, { tiles: ['위', '가'] }));
+    expect(r).toMatchObject({ correct: false, answer: '가위' });
+    expect(currentItem(ctx).id).toBe(tilesItem.id);
+    ({ ctx, result: r } = step(ctx, { tiles: ['위'] }));
+    expect(r.correct).toBe(false);
+    expect(currentItem(ctx).id).not.toBe(tilesItem.id);
+  });
+  it('a match step carries a board with the drill word', () => {
+    const s = trickyStatus();
+    s.words.pul = { ...emptyWordV3(), state: 'mastered', stage: 2, dueDay: '2026-10-30', introducedDay: '2026-09-01' };
+    let ctx = start(s);
+    expect(ctx.dayFile.drills[0].steps).toContain('match');
+    let guard = 0;
+    while (currentItem(ctx).step !== 'match' && guard++ < 20) ({ ctx } = step(ctx, drillAnswer(currentItem(ctx))));
+    expect(currentItem(ctx).board.pairs.map((p) => p.wordId)).toContain('gawi');
+  });
+  it('no match step when the board would have fewer than 2 pairs', () => {
+    expect(start(trickyStatus()).dayFile.drills[0].steps).not.toContain('match');
+  });
+  it('a tricky word missing from the lexicon is never drilled', () => {
+    const s = trickyStatus();
+    s.words.ghost = { ...s.words.gawi, trickySince: '2026-09-01' };
+    const ctx = start(s);
+    expect(ctx.dayFile.drills.map((d) => d.wordId)).toEqual(['gawi']);
+    const withLexicon = openDay({ status: s, dayFile: emptyDay(D), day: D, deckId: 'deck', pool, settings: SET, learnerId: 'test-learner', at: at(), media: {}, lexicon });
+    expect(withLexicon.dayFile.drills.map((d) => d.wordId)).toEqual(['gawi']);
+  });
+  it('an open drill whose word has left the lexicon counts as done — no crash', () => {
+    const ctx = start(trickyStatus());
+    expect(currentItem(ctx)).toMatchObject({ type: 'drill', wordId: 'gawi' });
+    const without = new Map(lexicon.entries); without.delete('gawi');
+    const gone = { ...ctx, lexicon: { entries: without } };
+    const item = currentItem(gone);
+    expect(item.type).not.toBe('drill');
+    expect(() => respond(gone, item.id, item.type === 'flashcard' ? { seen: true } : {}, { at: at() })).not.toThrow(TypeError);
+  });
+  it('the tricky drill is skipped when its estimate does not fit', () => {
+    const tight = { ...emptyDay(D), activeMs: SET.session.capMinutes * 60000 - 200000 };
+    const ctx = start(trickyStatus(), { dayFile: tight });
+    expect(ctx.dayFile.drills).toEqual([]);
+  });
+  it('the goal waits for the tricky drill', () => {
+    const s = trickyStatus();
+    for (const id of ['pul', 'chaek']) s.words[id] = { ...emptyWordV3(), state: 'mastered', stage: 2, dueDay: '2026-10-30', introducedDay: '2026-09-01' };
+    s.words.gawi.state = 'mastered';
+    s.words.gawi.dueDay = '2026-10-30';
+    let ctx = start(s);
+    expect(ctx.dayFile.doneAt).toBeNull();
+    ctx = finishDrills(ctx);
+    expect(ctx.dayFile.doneAt).toEqual(expect.any(String));
+    expect(currentItem(ctx).type).toBe('summary');
+  });
+  it('rejects responses that do not fit a drill step', () => {
+    const ctx = start(trickyStatus());
+    expect(() => step(ctx, { typed: '가위' })).toThrow('response does not fit this item');
+    expect(() => step(ctx, { done: false })).toThrow('response does not fit this item');
+  });
+
+  function toOffer(ctx) {
+    let guard = 0;
+    while (currentItem(ctx).type !== 'drill-offer' && currentItem(ctx).type !== 'summary' && guard++ < 80) {
+      const item = currentItem(ctx);
+      if (item.type === 'flashcard' && item.mode === 'intro') ({ ctx } = step(ctx, { seen: true }));
+      else if (item.type === 'copy') ({ ctx } = step(ctx, { typed: lexicon.entries.get(item.wordId).term }));
+      else if (item.type === 'say') ({ ctx } = step(ctx, { done: true }));
+      else if (item.type === 'flashcard') ({ ctx } = step(ctx, { sort: item.wordId === 'pul' ? 'notYet' : 'claimed' }));
+      else if (item.type === 'typed') ({ ctx } = step(ctx, { typed: 'x' }, PASS));
+      else ({ ctx } = step(ctx, { choice: lexicon.entries.get(item.wordId).gloss }));
+    }
+    return ctx;
+  }
+  it('round end offers one drill for the chronic Not-yet word', () => {
+    let ctx = toOffer(start());
+    expect(currentItem(ctx)).toMatchObject({ type: 'drill-offer', wordId: 'pul' });
+    expect(() => step(ctx, { drill: 'maybe' })).toThrow('response does not fit this item');
+    ({ ctx } = step(ctx, { drill: 'no' }));
+    expect(currentItem(ctx).type).not.toBe('drill-offer');
+    expect(ctx.status.words.pul.notYetCarry).toBe(true);
+  });
+  it('yes runs the offered drill, then the day goes on', () => {
+    let ctx = toOffer(start());
+    ({ ctx } = step(ctx, { drill: 'yes' }));
+    expect(ctx.dayFile.drills).toEqual([expect.objectContaining({ source: 'offer', wordId: 'pul' })]);
+    expect(currentItem(ctx)).toMatchObject({ type: 'drill', wordId: 'pul', step: 'look' });
+    expect(ctx.dayFile.doneAt).toBeNull();
+    ctx = finishDrills(ctx);
+    expect(currentItem(ctx).type).toBe('summary');
+    expect(ctx.dayFile.doneAt).toEqual(expect.any(String));
+  });
+  it('no offer when less than the drill estimate remains', () => {
+    let ctx = start();
+    ctx = { ...ctx, dayFile: { ...ctx.dayFile, activeMs: SET.session.capMinutes * 60000 - 200000 } };
+    ctx = toOffer(ctx);
+    expect(currentItem(ctx).type).toBe('summary');
+  });
+  it('with a mic and audio the intro adds say-after after copy', () => {
+    let ctx = start(emptyStatusV3(), { capabilities: { microphone: true } });
+    ({ ctx } = step(ctx, { seen: true }));
+    ({ ctx } = step(ctx, { typed: '가위' }));
+    expect(currentItem(ctx)).toEqual({ id: 'r1:i:gawi:say', type: 'say', mode: 'say-after', wordId: 'gawi' });
+    ({ ctx } = step(ctx, { done: true }));
+    expect(currentItem(ctx)).toMatchObject({ type: 'flashcard', mode: 'intro', wordId: 'pul' });
+  });
+  it('no say-after for a word without audio', () => {
+    let ctx = start(emptyStatusV3(), { capabilities: { microphone: true } });
+    for (const id of ['gawi', 'pul']) {
+      ({ ctx } = step(ctx, { seen: true }));
+      ({ ctx } = step(ctx, { typed: lexicon.entries.get(id).term }));
+      ({ ctx } = step(ctx, { done: true }));
+    }
+    ({ ctx } = step(ctx, { seen: true }));
+    ({ ctx } = step(ctx, { typed: '책' }));
+    expect(currentItem(ctx)).toMatchObject({ type: 'flashcard', mode: 'stream' });
+  });
+});
+
+describe('engine — practice', () => {
+  function doneCtx({ microphone = false } = {}) {
+    const ctx = start();
+    return { ...ctx, dayFile: { ...ctx.dayFile, doneAt: 'x', rounds: [], rechecks: { order: [], answered: {} }, summarySeen: true, capabilities: { microphone } } };
+  }
+  const withWords = (ctx, words) => ({ ...ctx, status: { ...ctx.status, words: { ...ctx.status.words, ...words } } });
+  const familiar = { ...emptyWordV3(), state: 'familiar', introducedDay: '2026-09-01' };
+  function practise(ctx, opts) {
+    const out = startPractice(ctx, opts);
+    return { ...ctx, status: out.status, dayFile: out.dayFile };
+  }
+
+  it('menu appears after the goal; practice before it is refused', () => {
+    expect(() => startPractice(start(), { mode: 'match' })).toThrow(/after today/);
+    expect(currentItem(doneCtx())).toMatchObject({ type: 'menu' });
+  });
+  it('the summary shows once, then the menu', () => {
+    let ctx = { ...doneCtx(), dayFile: { ...doneCtx().dayFile, summarySeen: false } };
+    expect(currentItem(ctx)).toMatchObject({ id: 'summary', type: 'summary' });
+    ({ ctx } = step(ctx, { done: true }));
+    expect(ctx.dayFile.summarySeen).toBe(true);
+    expect(currentItem(ctx)).toMatchObject({ id: 'menu', type: 'menu' });
+  });
+  it('the menu offers only modes whose default run is not empty', () => {
+    // Say is offered without term audio: say-from-cue (Without help) needs none.
+    const noAudio = withWords(doneCtx({ microphone: true }), { chaek: familiar });
+    expect(currentItem(noAudio).modes).toEqual(['flashcards', 'say', 'write', 'drill', 'quiz']);
+    expect(currentItem(noAudio).sayHelp).toEqual([false]);
+    const all = withWords(doneCtx({ microphone: true }), { gawi: familiar, pul: familiar, chaek: familiar, mul: familiar });
+    expect(currentItem(all).modes).toEqual(['flashcards', 'match', 'say', 'write', 'listen', 'drill', 'quiz']);
+    expect(currentItem(all).sayHelp).toEqual([true, false]);
+    const noMic = withWords(doneCtx(), { gawi: familiar });
+    expect(currentItem(noMic).modes).toEqual(['flashcards', 'write', 'listen', 'drill', 'quiz']);
+    expect(currentItem(noMic).sayHelp).toEqual([]);
+    const nothingToQuiz = withWords(doneCtx(), { gawi: { ...emptyWordV3(), state: 'mastered', stage: 1, introducedDay: '2026-09-01' } });
+    expect(currentItem(nothingToQuiz).modes).not.toContain('quiz');
+  });
+  it('startPractice refuses an empty run, an unknown filter and an unknown front side', () => {
+    const ctx = withWords(doneCtx(), { gawi: familiar });
+    expect(() => startPractice(ctx, { mode: 'match' })).toThrow('nothing to practise');
+    expect(() => startPractice(ctx, { mode: 'say' })).toThrow('nothing to practise');
+    expect(() => startPractice(ctx, { mode: 'flashcards', filter: 'everything' })).toThrow(/unknown practice filter/);
+    expect(() => startPractice(ctx, { mode: 'flashcards', frontSide: 'back' })).toThrow(/unknown flashcard front side/);
+    expect(startPractice(ctx, { mode: 'flashcards', frontSide: 'gloss' }).dayFile.practice.queue[0].front).toBe('gloss');
+  });
+  it('an unknown practice task kind is an invariant failure', () => {
+    const ctx = practise(withWords(doneCtx(), { gawi: familiar }), { mode: 'flashcards' });
+    ctx.dayFile.practice.queue[0].kind = 'juggle';
+    expect(() => currentItem(ctx)).toThrow(/unknown practice task kind/);
+  });
+  it('the menu takes no responses; practice starts via startPractice', () => {
+    expect(() => step(doneCtx(), { done: true })).toThrow('response does not fit this item');
+    expect(() => startPractice(doneCtx(), { mode: 'nap' })).toThrow(/unknown practice mode/);
+  });
+  it('practice flashcards can lower a mastered word but not raise past claimed', () => {
+    let ctx = doneCtx();
+    ctx.status.words.gawi = { ...emptyWordV3(), state: 'mastered', stage: 2, introducedDay: '2026-09-01' };
+    ctx.status.words.pul = { ...emptyWordV3(), state: 'familiar', introducedDay: '2026-09-01' };
+    ({ status: ctx.status, dayFile: ctx.dayFile } = startPractice(ctx, { mode: 'flashcards', filter: 'introduced' }));
+    for (let i = 0; i < 2; i += 1) {
+      const it = currentItem(ctx);
+      expect(it).toMatchObject({ type: 'flashcard', mode: 'practice', source: 'practice', front: 'term' });
+      ({ ctx } = step(ctx, { sort: it.wordId === 'gawi' ? 'familiar' : 'claimed' }));
+    }
+    expect(ctx.status.words.gawi.state).toBe('familiar');
+    expect(ctx.status.words.pul.state).toBe('claimed');
+    expect(currentItem(ctx).type).toBe('menu');
+    expect(ctx.dayFile.rounds).toEqual([]);
+  });
+  it('a Got it sort leaves a mastered word mastered; next skips', () => {
+    let ctx = withWords(doneCtx(), { gawi: { ...emptyWordV3(), state: 'mastered', stage: 2, introducedDay: '2026-09-01' }, pul: familiar });
+    ctx = practise(ctx, { mode: 'flashcards' });
+    for (let i = 0; i < 2; i += 1) {
+      const it = currentItem(ctx);
+      ({ ctx } = step(ctx, it.wordId === 'gawi' ? { sort: 'claimed' } : { next: true }));
+    }
+    expect(ctx.status.words.gawi).toMatchObject({ state: 'mastered', stage: 2 });
+    expect(ctx.status.words.pul.state).toBe('familiar');
+  });
+  it('practice quiz grades like verify', () => {
+    let ctx = doneCtx();
+    ctx.status.words.pul = { ...emptyWordV3(), state: 'familiar', introducedDay: '2026-09-01' };
+    ({ status: ctx.status, dayFile: ctx.dayFile } = startPractice(ctx, { mode: 'quiz', filter: 'introduced' }));
+    expect(currentItem(ctx)).toMatchObject({ type: 'typed', task: '3.3', source: 'practice', graded: true });
+    expect(() => step(ctx, { typed: '풀' })).toThrow(/judge verdict/);
+    ({ ctx } = step(ctx, { typed: '풀' }, PASS));
+    ({ ctx } = step(ctx, { choice: 'Glue' }));
+    expect(ctx.status.words.pul).toMatchObject({ state: 'mastered', stage: 0 });
+    expect(ctx.dayFile.practice).toMatchObject({ passed: ['pul'], failed: [] });
+  });
+  it('practice quiz stops a word at its first miss', () => {
+    let ctx = practise(withWords(doneCtx(), { pul: familiar }), { mode: 'quiz' });
+    ({ ctx } = step(ctx, { typed: 'zz' }, { score: 2, judge: 'distance', pass: false }));
+    expect(ctx.status.words.pul).toMatchObject({ state: 'familiar', verifyFailedDay: D });
+    expect(currentItem(ctx).type).toBe('menu');
+  });
+  it('write without help: typed practice needs a verdict and never grades', () => {
+    let ctx = practise(withWords(doneCtx(), { pul: familiar }), { mode: 'write', help: false });
+    const before = structuredClone(ctx.status.words.pul);
+    expect(currentItem(ctx)).toMatchObject({ id: 'p1:0', type: 'typed', task: '3.3', source: 'practice', graded: false, wordId: 'pul' });
+    expect(() => step(ctx, { typed: '풀' })).toThrow(/judge verdict/);
+    let result;
+    ({ ctx, result } = step(ctx, { typed: 'zz' }, { score: 2, judge: 'distance', pass: false }));
+    expect(result).toMatchObject({ correct: false, answer: '풀' });
+    expect(ctx.status.words.pul).toEqual(before);
+    expect(currentItem(ctx).type).toBe('menu');
+  });
+  it('write with help: copy must match to advance', () => {
+    let ctx = practise(withWords(doneCtx(), { pul: familiar }), { mode: 'write' });
+    expect(currentItem(ctx)).toMatchObject({ type: 'copy', source: 'practice', wordId: 'pul' });
+    ({ ctx } = step(ctx, { typed: '불' }));
+    expect(currentItem(ctx).type).toBe('copy');
+    ({ ctx } = step(ctx, { typed: '풀' }));
+    expect(currentItem(ctx).type).toBe('menu');
+  });
+  it('match, listen and say items take done', () => {
+    let ctx = practise(withWords(doneCtx({ microphone: true }), { gawi: familiar, pul: familiar, chaek: familiar, mul: familiar }), { mode: 'match' });
+    expect(currentItem(ctx)).toMatchObject({ type: 'match', source: 'practice' });
+    expect(currentItem(ctx).board.pairs).toHaveLength(4);
+    ({ ctx } = step(ctx, { done: true }));
+    expect(currentItem(ctx).type).toBe('menu');
+    ctx = practise(withWords(ctx, { chaek: emptyWordV3(), mul: emptyWordV3() }), { mode: 'listen' });
+    expect(currentItem(ctx)).toMatchObject({ id: 'p2:0', type: 'listen' });
+    expect([...currentItem(ctx).wordIds].sort()).toEqual(['gawi', 'pul']);
+    ({ ctx } = step(ctx, { done: true }));
+    ctx = practise(ctx, { mode: 'say', help: false });
+    expect(currentItem(ctx)).toMatchObject({ type: 'say', mode: 'say-from-cue', cue: expect.any(Object) });
+    ({ ctx } = step(ctx, { done: true }));
+    ({ ctx } = step(ctx, { done: true }));
+    expect(currentItem(ctx).type).toBe('menu');
+  });
+  it('a practice drill walks the steps with p<run>:<index>:<step> ids', () => {
+    let ctx = practise(withWords(doneCtx(), { pul: familiar }), { mode: 'drill', filter: 'chosen', chosen: ['pul'] });
+    expect(currentItem(ctx)).toMatchObject({ id: 'p1:0:0', type: 'drill', step: 'look', source: 'practice', wordId: 'pul' });
+    let guard = 0;
+    while (currentItem(ctx).type === 'drill' && guard++ < 20) {
+      const it = currentItem(ctx);
+      ({ ctx } = step(ctx, TYPING_OR_TILES(it)));
+    }
+    expect(currentItem(ctx).type).toBe('menu');
+    expect(ctx.status.words.pul).toEqual(familiar);
+  });
+  it('menu:true on any practice item ends the run', () => {
+    let ctx = practise(withWords(doneCtx(), { gawi: familiar, pul: familiar }), { mode: 'flashcards' });
+    ({ ctx } = step(ctx, { menu: true }));
+    expect(currentItem(ctx).type).toBe('menu');
+    expect(ctx.dayFile.practiceRuns).toBe(1);
+  });
+});
+
+function TYPING_OR_TILES(it) {
+  const term = lexicon.entries.get(it.wordId).term;
+  if (['copy', 'dictation', 'type'].includes(it.step)) return { typed: term };
+  if (it.step === 'tiles') return { tiles: [...term] };
+  return { done: true };
+}

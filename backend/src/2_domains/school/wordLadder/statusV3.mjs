@@ -14,6 +14,7 @@ export function emptyDay(day) {
   return {
     schema: DAY_SCHEMA, day, atOpen: null, rechecks: { order: [], answered: {} }, rounds: [],
     activeMs: 0, lastInputAt: null, items: {}, sittings: {}, doneAt: null,
+    drills: [], practice: null, practiceRuns: 0, summarySeen: false, capabilities: { microphone: false },
   };
 }
 
