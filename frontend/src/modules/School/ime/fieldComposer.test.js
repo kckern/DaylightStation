@@ -575,3 +575,96 @@ describe('copy mode types compound jamo in halves — the only way 두벌식 can
     expect(el.value).toBe('ㄱ');
   });
 });
+
+/**
+ * THE KEYPAD SEAM. `offerJamo` / `offerBackspace` are the same automaton as
+ * `handleKey`, reached with no `KeyboardEvent` at all — the on-screen keypad
+ * has a jamo value, not a `code`. Every case here has a `handleKey` twin
+ * above; the point is that the two entry points land in the same place.
+ */
+describe('FieldComposer.offerJamo / offerBackspace — the keypad seam', () => {
+  it('composes 가위 from ㄱ ㅏ ㅇ ㅜ ㅣ, exactly like typing it', () => {
+    const el = field();
+    el.lang = 'ko';
+    const c = new FieldComposer();
+    for (const jamo of ['ㄱ', 'ㅏ', 'ㅇ', 'ㅜ', 'ㅣ']) expect(c.offerJamo(jamo, el)).toBe(true);
+    expect(el.value).toBe('가위');
+  });
+
+  it('offerBackspace removes the last jamo, peeling like a physical Backspace', () => {
+    const el = field();
+    const c = new FieldComposer();
+    c.offerJamo('ㄱ', el);
+    c.offerJamo('ㅏ', el);
+    c.offerJamo('ㅇ', el);
+    expect(el.value).toBe('강');
+    expect(c.offerBackspace(el)).toBe(true);
+    expect(el.value).toBe('가');
+  });
+
+  it('interleaves with physical keys mid-syllable — same session, same run', () => {
+    const el = field();
+    const c = new FieldComposer();
+    c.handleKey(key('KeyD'), el); // ㅇ
+    expect(c.offerJamo('ㅗ', el)).toBe(true); // keypad supplies the vowel
+    expect(el.value).toBe('오');
+    c.handleKey(key('KeyS'), el); // ㄴ, physical again
+    expect(el.value).toBe('온');
+  });
+
+  it('refuses a value that is not a single compatibility jamo, and touches nothing', () => {
+    const el = field();
+    const c = new FieldComposer();
+    expect(c.offerJamo('가위', el)).toBe(false);
+    expect(c.offerJamo('a', el)).toBe(false);
+    expect(c.offerJamo('', el)).toBe(false);
+    expect(c.offerJamo(null, el)).toBe(false);
+    expect(c.offerJamo('ㄳ', el)).toBe(false); // a compound final, never offered directly
+    expect(el.value).toBe('');
+  });
+
+  it('refuses into a non-composable field, same as handleKey', () => {
+    const el = field({ type: 'number' });
+    const c = new FieldComposer();
+    expect(c.offerJamo('ㄱ', el)).toBe(false);
+    expect(el.value).toBe('');
+  });
+
+  it('honours the copy-mode oracle exactly like handleKey', () => {
+    const el = field();
+    const c = new FieldComposer();
+    const { oracle, refused } = tracer(c, el, '오늘');
+    expect(c.offerJamo('ㅁ', el, oracle)).toBe(true); // wrong initial
+    expect(el.value).toBe('');
+    expect(refused).toEqual(['ㅁ']);
+  });
+
+  it('offerBackspace outside any run hands back false, same as a bare Backspace', () => {
+    const el = field({ value: 'abc' });
+    const c = new FieldComposer();
+    expect(c.offerBackspace(el)).toBe(false);
+    expect(el.value).toBe('abc');
+  });
+
+  it('offerBackspace refuses into a non-composable field, same as offerJamo (fix round 1)', () => {
+    const el = field({ type: 'number', value: '123' });
+    const c = new FieldComposer();
+    expect(c.offerBackspace(el)).toBe(false);
+    expect(el.value).toBe('123');
+  });
+
+  it('offerBackspace refuses once its own field goes non-composable mid-session (fix round 1)', () => {
+    // `#continuous` only checks identity/caret/text — it has no opinion on
+    // `disabled`/`readOnly`/opt-out, so without offerBackspace's own check a
+    // field that went read-only mid-composition (busy, mid-submit) would
+    // still get peeled.
+    const el = field();
+    const c = new FieldComposer();
+    c.offerJamo('ㄱ', el);
+    c.offerJamo('ㅏ', el);
+    expect(el.value).toBe('가');
+    el.readOnly = true;
+    expect(c.offerBackspace(el)).toBe(false);
+    expect(el.value).toBe('가'); // refused, not peeled
+  });
+});

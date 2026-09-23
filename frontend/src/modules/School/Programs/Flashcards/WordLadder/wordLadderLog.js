@@ -31,6 +31,15 @@ export const wordLadderLog = {
   itemAnswered: (data) => emit('item.answered', data),
   sittingLeft: (data) => emit('sitting.left', data),
   audioPlayed: (data) => emit('audio.played', data),
+  keypadToggled: (data) => emit('keypad.toggled', data),   // {auto, open}
+  recordingUploaded: (data) => emit('recording.uploaded', data),
+  recordingFailed: (data) => emit('recording.failed', data, 'warn'),
+  recordingRefused: (data) => emit('recording.refused', data, 'info'),
+  matchCompleted: (data) => emit('match.completed', data),               // {ms, misses, pairs}
+  drillOffered: (data) => emit('drill.offered', data),                   // {accepted}
+  practiceStarted: (data) => emit('practice.started', data),             // {mode, help, filter}
+  practiceFailed: (data) => emit('practice.failed', data, 'warn'),
+  wordsFailed: (data) => emit('words.failed', data, 'warn'),               // My words read refused/failed
 };
 
 export default wordLadderLog;

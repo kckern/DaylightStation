@@ -195,6 +195,73 @@ function ComposingField({ label = 'field' }) {
   );
 }
 
+/** Reads offerJamo/offerBackspace out of context, the way JamoKeypad will. */
+function KeypadStub() {
+  const { offerJamo, offerBackspace } = useHangulTyping();
+  return (
+    <>
+      <button type="button" onClick={() => offerJamo('ㄱ')}>send-ㄱ</button>
+      <button type="button" onClick={() => offerBackspace()}>send-backspace</button>
+    </>
+  );
+}
+
+describe('the keypad seam (offerJamo / offerBackspace)', () => {
+  it('composes into the focused field, acting on document.activeElement', () => {
+    render(<HangulTypingProvider><Field /><KeypadStub /></HangulTypingProvider>);
+    act(() => { pressF6(); });
+    const el = screen.getByLabelText('field');
+    act(() => { el.focus(); });
+    act(() => { fireEvent.click(screen.getByText('send-ㄱ')); });
+    expect(el.value).toBe('ㄱ');
+  });
+
+  it('offerBackspace peels the last jamo off the focused field', () => {
+    render(<HangulTypingProvider><Field /><KeypadStub /></HangulTypingProvider>);
+    act(() => { pressF6(); });
+    const el = screen.getByLabelText('field');
+    act(() => { el.focus(); });
+    act(() => { type(el, 'dks'); }); // 안
+    expect(el.value).toBe('안');
+    act(() => { fireEvent.click(screen.getByText('send-backspace')); });
+    expect(el.value).toBe('아');
+  });
+
+  it('interleaves with the physical path — same composer, same session', () => {
+    render(<HangulTypingProvider><Field /><KeypadStub /></HangulTypingProvider>);
+    act(() => { pressF6(); });
+    const el = screen.getByLabelText('field');
+    act(() => { el.focus(); });
+    act(() => { type(el, 'd'); }); // ㅇ, physical
+    act(() => { fireEvent.click(screen.getByText('send-ㄱ')); }); // keypad supplies ㄱ next — pushes ㅇ out standing alone
+    // ㅇ has no vowel yet, so a second consonant cannot join it: the run
+    // flushes ㅇ as a bare jamo and ㄱ starts fresh, same rule the physical
+    // path already obeys.
+    expect(el.value).toBe('ㅇㄱ');
+  });
+
+  it('is inert in English mode — no composer session starts', () => {
+    render(<HangulTypingProvider><Field /><KeypadStub /></HangulTypingProvider>);
+    const el = screen.getByLabelText('field');
+    act(() => { el.focus(); }); // English mode: F6 never pressed
+    act(() => { fireEvent.click(screen.getByText('send-ㄱ')); });
+    expect(el.value).toBe('');
+  });
+
+  it('does nothing when the focused element is not composable', () => {
+    render(<HangulTypingProvider><KeypadStub /></HangulTypingProvider>);
+    act(() => { pressF6(); });
+    // Nothing composable focused (default activeElement is <body>); must not throw.
+    expect(() => fireEvent.click(screen.getByText('send-ㄱ'))).not.toThrow();
+  });
+
+  it('is a safe no-op outside any provider', () => {
+    render(<KeypadStub />);
+    expect(() => fireEvent.click(screen.getByText('send-ㄱ'))).not.toThrow();
+    expect(() => fireEvent.click(screen.getByText('send-backspace'))).not.toThrow();
+  });
+});
+
 describe('the composition seam', () => {
   it('tells a consumer which syllable is still in flight', () => {
     render(<HangulTypingProvider><ComposingField /></HangulTypingProvider>);
