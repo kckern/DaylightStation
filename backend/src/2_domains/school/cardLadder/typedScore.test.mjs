@@ -7,9 +7,10 @@ describe('scoreTypedDeterministic', () => {
   it('exact after normalisation → 10', () => {
     expect(s('이름이 뭐예요?', '이름이뭐예요')).toMatchObject({ score: 10, judge: 'exact' });
   });
-  it('no Hangul → 1', () => {
-    expect(s('가위', 'scissors')).toMatchObject({ score: 1, judge: 'no-hangul' });
-    expect(s('가위', '')).toMatchObject({ score: 1, judge: 'no-hangul' });
+  it('no Hangul → 1 (a Hangul target, read off the text or given as targetScript)', () => {
+    expect(s('가위', 'scissors')).toMatchObject({ score: 1, judge: 'wrong-script' });
+    expect(s('가위', '')).toMatchObject({ score: 1, judge: 'wrong-script' });
+    expect(scoreTypedDeterministic({ target: '가위', typed: 'gawi', targetScript: 'hangul' })).toMatchObject({ score: 1, judge: 'wrong-script' });
   });
   it('a different real word → 2 even one letter off', () => {
     expect(s('풀', '불', ['불', '책'])).toMatchObject({ score: 2, judge: 'guard' });
@@ -32,5 +33,20 @@ describe('scoreTypedDeterministic', () => {
     expect(modelMayRaise({ score: 4, distance: 6, length: 15 })).toBe(false);
     expect(raiseOneBand(4)).toBe(6);
     expect(raiseOneBand(10)).toBe(10);
+  });
+});
+
+describe('scoreTypedDeterministic — a generic (non-Hangul) target', () => {
+  const g = (target, typed, otherWords = []) => scoreTypedDeterministic({ target, typed, otherWords, targetScript: 'generic' });
+  it('has no script floor: Latin text is graded by distance, in code points', () => {
+    expect(g('ephemeral', 'ephemeral')).toMatchObject({ score: 10, judge: 'exact', length: 9 });
+    expect(g('ephemeral', 'ephemeril')).toMatchObject({ judge: 'distance', distance: 1, length: 9, score: 6 });
+    expect(g('cat', 'cot')).toMatchObject({ judge: 'distance', distance: 1, length: 3, score: 6 });
+  });
+  it('keeps the other-word guard', () => {
+    expect(g('affect', 'effect', ['effect'])).toMatchObject({ score: 2, judge: 'guard' });
+  });
+  it('a Latin target with no targetScript is read as generic, never as missing Hangul', () => {
+    expect(s('ephemeral', 'ephemerel')).toMatchObject({ judge: 'distance', distance: 1 });
   });
 });

@@ -5,7 +5,7 @@ import { playClip } from '../cardLadderAudio.js';
 import CuePicture from './CuePicture.jsx';
 
 /**
- * What an English-side cue has to show, from the item as the server sent it.
+ * What an anchor-side cue has to show, from the item as the server sent it.
  * `english` is the bundle (ruling 2026-09-23: text + picture + gloss audio
  * together; the prompt is never the test). The old single kinds
  * (`image` | `text` | `audio`) are read too, so a stale item still renders.
@@ -13,12 +13,12 @@ import CuePicture from './CuePicture.jsx';
 export function anchorCueParts(item) {
   const cue = item?.cue;
   if (!cue) return null;
-  if (cue.type === 'english') return { text: cue.text ?? null, image: Boolean(cue.image), audio: Boolean(cue.audio) };
+  if (cue.type === 'anchor') return { text: cue.text ?? null, image: Boolean(cue.image), audio: Boolean(cue.audio) };
   return { text: cue.text ?? null, image: cue.type === 'image', audio: cue.type === 'audio' };
 }
 
 /**
- * The English-side prompt for 3.1 / 3.3 and the drill's tiles / say-from-cue /
+ * The anchor-side prompt for 3.1 / 3.3 and the drill's tiles / say-from-cue /
  * type: the picture (when there is one) beside the English text, with a
  * Listen button (Tab) for the gloss clip. Never an audio-only prompt: the text
  * is always on screen. The Korean is never here — it is the answer.
@@ -44,7 +44,7 @@ export default function AnchorCue({ item, resolveAssetUrl, lang, keyHint = 'Tab'
   );
 }
 
-/** The gloss clip an English cue offers, for the item's Tab key (null when none). */
+/** The gloss clip an anchor cue offers, for the item's Tab key (null when none). */
 export function anchorCueAudio(item, resolveAssetUrl) {
   const parts = anchorCueParts(item);
   return parts?.audio && item.assets?.glossAudio ? resolveAssetUrl(item.assets.glossAudio) : null;

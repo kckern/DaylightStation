@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { validateFlashcardDeck } from '#domains/school/flashcards/index.mjs';
 import {
-  LEXICON_SCHEMA, expandLexiconDeck, isLexiconDeck, parseMediaRef, validateLexicon, wordAssetIds, wordPackageDir,
+  LEXICON_SCHEMA, LEXICON_SCHEMA_V3, expandLexiconDeck, isLexiconDeck, parseMediaRef, validateLexicon, wordAssetIds, wordPackageDir,
 } from './index.mjs';
 
 // Korean is the worked example; the Spanish case below proves nothing is Korean-specific.
@@ -133,5 +133,46 @@ describe('expandLexiconDeck', () => {
     expect(expandLexiconDeck({ ...raw, words: ['nope'] }, lex).errors.join('\n')).toMatch(/'nope' is not in the lexicon/);
     expect(expandLexiconDeck({ ...raw, words: ['gawi', 'gawi'] }, lex).errors.join('\n')).toMatch(/duplicates 'gawi'/);
     expect(expandLexiconDeck({ ...raw, cards: [] }, lex).errors.join('\n')).toMatch(/must not also author cards/);
+  });
+});
+
+describe('validateLexicon — side-neutral names (target / anchor)', () => {
+  it('reads target:/anchor: entry fields and decoy sides as term/gloss', () => {
+    const neutral = {
+      id: 'gawi', kind: 'word', group: GROUP, target: '가위', anchor: 'Scissors', pronunciation: null,
+      decoys: { target: ['가지', '바위', '가방'], anchor: ['Knife', 'Tape', 'Ruler'] },
+    };
+    const { errors, lexicon: lex } = validateLexicon(lexicon([neutral, phrase(), hello()]));
+    expect(errors).toEqual([]);
+    expect(lex.entries.get('gawi')).toMatchObject({ term: '가위', gloss: 'Scissors', decoys: { term: ['가지', '바위', '가방'], gloss: ['Knife', 'Tape', 'Ruler'] } });
+  });
+  it('refuses a term and a target that disagree', () => {
+    const { errors } = validateLexicon(lexicon([entry({ target: '바위' }), phrase(), hello()]));
+    expect(errors).toContain('entries[0]: term and target name the same side and must agree');
+  });
+  it('v2 exposes the target and anchor languages and the target script', () => {
+    const { lexicon: lex } = validateLexicon(lexicon([entry(), phrase(), hello()]));
+    expect(lex.targetLanguage).toEqual({ code: 'ko', name: 'Korean' });
+    expect(lex.anchorLanguage).toEqual({ code: 'en', name: 'English' });
+    expect(lex.targetScript).toBe('hangul');
+  });
+  it('v3 names the language blocks target:/anchor:, and an English-to-English set is generic', () => {
+    const define = (id, target, anchor) => ({
+      id, kind: 'word', group: 'unit-1', target, anchor, pronunciation: null,
+      decoys: { target: ['alpha', 'beta', 'gamma'], anchor: ['one thing', 'another thing', 'a third thing'] },
+    });
+    const { errors, lexicon: lex } = validateLexicon({
+      schema: LEXICON_SCHEMA_V3, package: 'english-definitions',
+      target: { code: 'en', name: 'English' }, anchor: { code: 'en', name: 'English' },
+      program: { title: 'Definitions' },
+      entries: [define('ephemeral', 'ephemeral', 'lasting a very short time')],
+    });
+    expect(errors).toEqual([]);
+    expect(lex).toMatchObject({ language: { code: 'en' }, gloss: { code: 'en' }, targetScript: 'generic' });
+    expect(lex.entries.get('ephemeral')).toMatchObject({ term: 'ephemeral', gloss: 'lasting a very short time' });
+  });
+  it('v3 without target:/anchor: language blocks is refused', () => {
+    const { errors } = validateLexicon({ ...lexicon([entry(), phrase(), hello()]), schema: LEXICON_SCHEMA_V3 });
+    expect(errors).toEqual(expect.arrayContaining(['target: must be a mapping with code and name', 'anchor: must be a mapping with code and name']));
   });
 });

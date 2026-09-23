@@ -15,7 +15,7 @@ import ResultPanel from './ResultPanel.jsx';
 export default function ChoiceItem({ item, langs, resolveAssetUrl, onRespond, result = null, onContinue, busy = false }) {
   const audio = item.assets?.audio ? resolveAssetUrl(item.assets.audio) : null;
   const glossAudio = item.task === '3.1' ? anchorCueAudio(item, resolveAssetUrl) : null;
-  const choicesLang = item.task === '2.2' ? langs.gloss : langs.term;
+  const choicesLang = item.task === '2.2' ? langs.anchor : langs.target;
   useEffect(() => {
     if (item.channel === 'hear' && audio) playClip(audio, 'term', { trigger: 'auto' });
     if (item.cue?.type === 'audio' && glossAudio) playClip(glossAudio, 'gloss', { trigger: 'auto' });
@@ -52,13 +52,13 @@ export default function ChoiceItem({ item, langs, resolveAssetUrl, onRespond, re
   return (
     <section className="wl-item wl-choice" aria-label={item.source === 'recheck' ? 'Check' : 'Quiz'}>
       <div className="wl-prompt">
-        {item.task === '2.2' && item.channel === 'read' && <FitText role="prompt" text={item.prompt} lang={langs.term} />}
+        {item.task === '2.2' && item.channel === 'read' && <FitText role="prompt" text={item.prompt} lang={langs.target} />}
         {item.task === '2.2' && item.channel === 'hear' && (
           result
-            ? <FitText role="prompt" text={item.prompt} lang={langs.term} />
+            ? <FitText role="prompt" text={item.prompt} lang={langs.target} />
             : <TouchButton variant="secondary" keyHint="Tab" onClick={() => audio && playClip(audio, 'term')}><Icon name="volume" /> Listen</TouchButton>
         )}
-        {item.task === '3.1' && <AnchorCue item={item} resolveAssetUrl={resolveAssetUrl} lang={langs.gloss} keyHint={result && answerAudio ? null : 'Tab'} />}
+        {item.task === '3.1' && <AnchorCue item={item} resolveAssetUrl={resolveAssetUrl} lang={langs.anchor} keyHint={result && answerAudio ? null : 'Tab'} />}
       </div>
       <FitGroup>
         <div className="wl-choices" role="group" aria-label="Choices">

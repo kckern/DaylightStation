@@ -86,19 +86,19 @@ export default function WordsItem({ api, sittingId, userId, deckId, langs, pick 
             <TouchButton
               key={word.wordId}
               variant="choice"
-              lang={langs.term}
+              lang={langs.target}
               aria-pressed={chosen.includes(word.wordId)}
               keyHint={list[at]?.wordId === word.wordId ? 'Space' : null}
               className={`wl-words__word${chosen.includes(word.wordId) ? ' is-selected' : ''}${list[at]?.wordId === word.wordId ? ' is-cursor' : ''}`}
               onClick={() => toggle(word.wordId)}
             >
-              <span className="wl-words__term" lang={langs.term}>{word.term}</span>
-              <span className="wl-words__gloss" lang={langs.gloss}>{word.gloss}</span>
+              <span className="wl-words__term" lang={langs.target}>{word.term}</span>
+              <span className="wl-words__gloss" lang={langs.anchor}>{word.gloss}</span>
             </TouchButton>
           ) : (
             <div key={word.wordId} className="wl-words__word">
-              <span className="wl-words__term" lang={langs.term}>{word.term}</span>
-              <span className="wl-words__gloss" lang={langs.gloss}>{word.gloss}</span>
+              <span className="wl-words__term" lang={langs.target}>{word.term}</span>
+              <span className="wl-words__gloss" lang={langs.anchor}>{word.gloss}</span>
               <StateChips word={word} />
             </div>
           )))}

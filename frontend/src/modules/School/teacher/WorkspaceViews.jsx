@@ -432,7 +432,7 @@ export function WordsView({ learnerId, learnerName }) {
   const decks = cardLadderEnrollments(assignment.data?.programs);
   return (
     <div className="teacher-view">
-      <div className="teacher-view__heading"><div><p className="teacher-view__eyebrow">Words</p><h2>{learnerName}’s card ladder</h2><p>Every word this learner can meet, and the controls to reset, master, exclude, or re-grade one by hand.</p></div></div>
+      <div className="teacher-view__heading"><div><p className="teacher-view__eyebrow">Cards</p><h2>{learnerName}’s card ladder</h2><p>Every card this learner can meet, and the controls to reset, master, exclude, or re-grade one by hand.</p></div></div>
       <PanelFrame title="Card-ladder decks" state={assignment.state} retry={assignment.retry}
         emptyCopy={`${learnerName ?? learnerId} is not enrolled in a card-ladder deck.`}
         unavailableCopy="Assignments are not enabled on this install.">

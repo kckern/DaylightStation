@@ -109,13 +109,13 @@ export default function MatchItem({ item, langs, resolveAssetUrl, onRespond, bus
               key={pair.wordId}
               variant="choice"
               keyHint={hint(row)}
-              lang={langs.term}
+              lang={langs.target}
               className={state(pair.wordId, 'left')}
               aria-pressed={selected === pair.wordId}
               disabled={matched.has(pair.wordId)}
               onClick={() => pickLeft(pair.wordId)}
             >
-              <FitText role="choice" text={pair.term} lang={langs.term} />
+              <FitText role="choice" text={pair.term} lang={langs.target} />
             </TouchButton>
           ))}
         </div>
@@ -127,12 +127,12 @@ export default function MatchItem({ item, langs, resolveAssetUrl, onRespond, bus
                 key={pair.wordId}
                 variant="choice"
                 keyHint={hint(row)}
-                lang={langs.gloss}
+                lang={langs.anchor}
                 className={state(pair.wordId, 'right')}
                 disabled={matched.has(pair.wordId)}
                 onClick={() => pickRight(pair.wordId)}
               >
-                <RightFace pair={pair} resolveAssetUrl={resolveAssetUrl} lang={langs.gloss} />
+                <RightFace pair={pair} resolveAssetUrl={resolveAssetUrl} lang={langs.anchor} />
               </TouchButton>
             );
           })}

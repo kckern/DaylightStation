@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { TouchButton } from '../../../../../lib/ui/index.js';
+import { sidesFromOpen } from './targetScript.js';
 import CardLadderStage from './CardLadderStage.jsx';
 import FlashcardItem from './items/FlashcardItem.jsx';
 import ChoiceItem from './items/ChoiceItem.jsx';
@@ -154,7 +155,7 @@ export default function CardLadderProgram({ descriptor, api: injected = null, re
     closedRef.current = false;
     trace.setSitting(data.sittingId);
     trace.setPackage(data.package ?? null);
-    setSession({ id: data.sittingId, langs: { term: data.language?.code ?? null, gloss: data.gloss?.code ?? null } });
+    setSession({ id: data.sittingId, langs: sidesFromOpen(data) });
     show(data.item, data.progress ?? null);
     cardLadderLog.sittingOpened({ package: data.package ?? null, first: data.item.type, phase: data.progress?.phase ?? null });
   }, [api, userId, deckId, scenario, test, show, trace]);
@@ -233,7 +234,7 @@ export default function CardLadderProgram({ descriptor, api: injected = null, re
     // it: the prompt fell back to plain text before the child ever saw a
     // picture or heard a sound (distinct from media.failed, which is an
     // asset that DID resolve but then failed to load in the browser).
-    const assetMissing = ((item.cue?.type === 'image' || (item.cue?.type === 'english' && item.cue.image)) && !(item.assets?.image || item.word?.media?.image))
+    const assetMissing = ((item.cue?.type === 'image' || (item.cue?.type === 'anchor' && item.cue.image)) && !(item.assets?.image || item.word?.media?.image))
       || (item.cue?.type === 'audio' && !(item.assets?.audio || item.assets?.glossAudio || item.word?.media?.audio));
     if (assetMissing) cardLadderLog.promptFallback({ itemId: item.id, cue: item.cue.type });
   }, [item]);

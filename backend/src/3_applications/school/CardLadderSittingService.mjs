@@ -30,7 +30,7 @@ import { curriculumPosterRef } from '#apps/common/resources/publicResourceRefs.m
 import {
   addActiveTime, cueFor, currentItem, deckDirOf, deckProgress, emptyWordV3, introPlanLabel, introPreview, excludeWordFromDay, foldPaperAttempts, ladderLevel, markMastered, normalizeAnswer, openDay,
   quizDocumentIdFor, respond, roundHasMatch, startPractice, typedAnswers, withTunedValues, wordAssetIds, wordTransitions,
-  servedWhy, dayChanges, prereqChanges,
+  servedWhy, dayChanges, prereqChanges, scriptFor,
 } from '#domains/school/cardLadder/index.mjs';
 
 const FOLD_LOOKBACK_DAYS = 60;
@@ -179,7 +179,7 @@ export class CardLadderSittingService {
    * say-from-cue the cue (and tiles the syllables). Graded items carry cue asset
    * ids but never the answer: a 2.2 item's prompt is the term (its answer is
    * the gloss, among the choices); 3.1 / 3.3 carry no term, and never the
-   * term's audio. An English-side cue is always the whole bundle — gloss text,
+   * term's audio. An anchor-side cue is always the whole bundle — gloss text,
    * plus picture and gloss-audio asset ids when they exist (ruling 2026-09-23).
    */
   #publicItem(item, ctx) {
@@ -191,7 +191,7 @@ export class CardLadderSittingService {
     };
     const assets = item.wordId ? assetsOf(item.wordId) : NO_ASSETS;
     const card = () => ({ wordId: entry.id, term: entry.term, gloss: entry.gloss, pronunciation: entry.pronunciation ?? null, kind: entry.kind, media: assets });
-    // Every English-side cue goes out as the full bundle (ruling 2026-09-23:
+    // Every anchor-side cue goes out as the full bundle (ruling 2026-09-23:
     // text + picture + gloss audio together), built from the entry and media
     // as they are NOW — so an item stored under the old one-random-kind cue
     // ({type:'image'|'text'|'audio'}) in a day file from before the ruling is
@@ -230,7 +230,7 @@ export class CardLadderSittingService {
     }
     if (item.type === 'typed' || item.type === 'choice') {
       // On 3.1 / 3.3 the gloss IS the cue (the term is the answer): the whole
-      // English bundle goes out, text always, picture and gloss clip when they
+      // anchor bundle goes out, text always, picture and gloss clip when they
       // exist. 2.2 carries only the term's audio on the hear channel.
       const anchorSide = item.task === '3.1' || item.task === '3.3';
       const graded = {
@@ -525,8 +525,12 @@ export class CardLadderSittingService {
     this.#logSequencing({ learnerId: userId, sittingId, pkg, day }, { ctx, item, via: 'open', beforeDay, beforeWords: before.words });
     return {
       sittingId, day, package: pkg, title: lexicon.program.title,
+      // `language`/`gloss` are the pre-rename names of the two sides' languages;
+      // `target`/`anchor` say the same with the target's script (the keypad/IME seam).
       language: { code: lexicon.language.code, name: lexicon.language.name },
       gloss: { code: lexicon.gloss.code, name: lexicon.gloss.name },
+      target: { code: lexicon.language.code, name: lexicon.language.name, script: lexicon.targetScript ?? scriptFor(lexicon.language.code) },
+      anchor: { code: lexicon.gloss.code, name: lexicon.gloss.name },
       item: this.#publicItem(item, ctx), progress,
     };
   }
@@ -543,7 +547,11 @@ export class CardLadderSittingService {
         ...Object.entries(ctx.status.words).filter(([id, w]) => id !== entry.id && w.state !== 'new').map(([id]) => lexicon.entries.get(id)?.term),
         ...(entry.decoys?.term ?? []),
       ].filter(Boolean);
-      verdict = await this.#judge.judge({ pkg, entry, typed: response.typed, otherWords });
+      // The target side's script and language: the judge's one script seam.
+      verdict = await this.#judge.judge({
+        pkg, entry, typed: response.typed, otherWords,
+        targetScript: lexicon.targetScript ?? scriptFor(lexicon.language?.code), targetLanguage: (lexicon.targetLanguage ?? lexicon.language)?.name ?? null,
+      });
     }
     const ms = this.#now();
     const at = isoWithOffset(ms, this.#timezone);

@@ -157,7 +157,7 @@ describe('CardLadderSittingService', () => {
     expect(JSON.stringify({ ...pickTerm, choices: [] })).not.toContain('가위');
   });
 
-  it('3.1 / 3.3 carry the whole English bundle (text + picture + gloss audio), never the term', async () => {
+  it('3.1 / 3.3 carry the whole anchor bundle (text + picture + gloss audio), never the term', async () => {
     const seen = {};
     for (const store of [dueStore(0), dueStore(1), readyStore(0), readyStore(1)]) {
       const { service } = make({ store, media: true });
@@ -166,7 +166,7 @@ describe('CardLadderSittingService', () => {
     }
     expect(Object.keys(seen).sort()).toEqual(['3.1', '3.3']);
     for (const item of Object.values(seen)) {
-      expect(item.cue).toEqual({ type: 'english', text: 'Scissors', image: true, audio: true });
+      expect(item.cue).toEqual({ type: 'anchor', text: 'Scissors', image: true, audio: true });
       expect(item.assets.image).toEqual(expect.any(String));
       expect(item.assets.glossAudio).toEqual(expect.stringContaining('gawi/gloss.mp3'));
       expect(JSON.stringify({ ...item, choices: [] })).not.toContain('가위');
@@ -196,8 +196,17 @@ describe('CardLadderSittingService', () => {
     const termAudioOnly = (id) => !String(id).includes('gloss') && !String(id).includes('image');
     const { service } = make({ store: dueStore(1), media: termAudioOnly });
     const { item } = await service.open({ userId: 'test-learner', deckId: DECK });
-    expect(item.cue).toEqual({ type: 'english', text: 'Scissors', image: false, audio: false });
+    expect(item.cue).toEqual({ type: 'anchor', text: 'Scissors', image: false, audio: false });
     expect(item.assets).toMatchObject({ image: null, glossAudio: null });
+  });
+
+  it('open names both sides: target (with its script) and anchor, beside the pre-rename language/gloss', async () => {
+    const { service } = make({ store: dueStore(1) });
+    const opened = await service.open({ userId: 'test-learner', deckId: DECK });
+    expect(opened).toMatchObject({
+      language: { code: 'ko', name: 'Korean' }, gloss: { code: 'en', name: 'English' },
+      target: { code: 'ko', name: 'Korean', script: 'hangul' }, anchor: { code: 'en', name: 'English' },
+    });
   });
 
   it('judges a typed answer before the engine sees it, once per item', async () => {
@@ -206,7 +215,7 @@ describe('CardLadderSittingService', () => {
     const response = { typed: '가비' };
     const out = await service.respond({ userId: 'test-learner', sittingId, itemId: item.id, response });
     expect(judge).toHaveBeenCalledTimes(1);
-    expect(judge.mock.calls[0][0]).toMatchObject({ pkg: 'korean-vocab', typed: '가비', entry: { id: 'gawi' } });
+    expect(judge.mock.calls[0][0]).toMatchObject({ pkg: 'korean-vocab', typed: '가비', entry: { id: 'gawi' }, targetScript: 'hangul', targetLanguage: 'Korean' });
     expect(judge.mock.calls[0][0].otherWords).toEqual(expect.arrayContaining(['풀', 'a', 'b', 'c']));
     expect(out.result).toMatchObject({ correct: false, answer: '가위', score: 2, judge: 'exact' });
     const repeat = await service.respond({ userId: 'test-learner', sittingId, itemId: item.id, response });
@@ -617,7 +626,7 @@ describe('CardLadderSittingService — drills, speaking, practice, My words', ()
     // tiles: syllables and a cue, never the joined term or its audio.
     expect(steps.tiles.tiles).toEqual(expect.arrayContaining(['가', '위']));
     const cueCarried = (item) => {
-      expect(item.cue).toEqual({ type: 'english', text: 'Scissors', image: true, audio: true });
+      expect(item.cue).toEqual({ type: 'anchor', text: 'Scissors', image: true, audio: true });
       expect(item.assets.glossAudio).toEqual(expect.stringContaining('gawi/gloss.mp3'));
       expect(item.assets.image).toEqual(expect.stringContaining('gawi/image.jpg'));
     };

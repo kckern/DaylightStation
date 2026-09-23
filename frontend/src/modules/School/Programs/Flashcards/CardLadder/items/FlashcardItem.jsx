@@ -79,11 +79,11 @@ export default function FlashcardItem({ item, langs, resolveAssetUrl, onRespond,
     ...(stream ? { u: () => act({ undo: true }), q: () => act({ quizNow: true }) } : {}),
     ...(sorts && flipped ? { 1: () => act({ sort: 'notYet' }), 2: () => act({ sort: 'familiar' }), 3: () => act({ sort: 'claimed' }) } : {}),
   });
-  const termFace = <div className="wl-card__face wl-card__face--front"><FitText role="term" text={word.term} lang={langs.term} onFit={onLayout} /></div>;
+  const termFace = <div className="wl-card__face wl-card__face--front"><FitText role="term" text={word.term} lang={langs.target} onFit={onLayout} /></div>;
   const meaningFace = (
     <div className={`wl-card__face wl-card__face--back${image && imageOk ? ' has-picture' : ''}`}>
       {image && imageOk && <img className="wl-card__picture" src={image} alt={word.gloss} onError={() => setImageOk(false)} />}
-      <div className="wl-card__gloss"><FitText role="gloss" text={word.gloss} lang={langs.gloss} /></div>
+      <div className="wl-card__gloss"><FitText role="gloss" text={word.gloss} lang={langs.anchor} /></div>
       {word.pronunciation && !glossFront && <p className="wl-card__pron">{word.pronunciation}</p>}
     </div>
   );

@@ -28,8 +28,8 @@ function LookStep({ item, langs, resolveAssetUrl, onRespond, busy, onLayout }) {
       <div className={`wl-card wl-look__card${image && imageOk ? ' has-picture' : ''}`}>
         {image && imageOk && <img className="wl-card__picture" src={image} alt={word.gloss ?? ''} onError={() => setImageOk(false)} />}
         <div className="wl-look__words">
-          <FitText role="term" text={word.term ?? ''} lang={langs.term} onFit={onLayout} />
-          <FitText role="gloss" text={word.gloss ?? ''} lang={langs.gloss} />
+          <FitText role="term" text={word.term ?? ''} lang={langs.target} onFit={onLayout} />
+          <FitText role="gloss" text={word.gloss ?? ''} lang={langs.anchor} />
         </div>
       </div>
       <div className="wl-controls">
@@ -80,7 +80,7 @@ export default function DrillItem({
     <section className="wl-drill" aria-label="Drill">
       <header className="wl-drill__header">
         <p className="wl-drill__title">
-          Practising{term ? <> <span lang={langs.term}>{term}</span></> : ' a word'}
+          Practising{term ? <> <span lang={langs.target}>{term}</span></> : ' a word'}
         </p>
         <p className="wl-drill__steps">
           <span className="wl-drill__dots" aria-hidden="true">

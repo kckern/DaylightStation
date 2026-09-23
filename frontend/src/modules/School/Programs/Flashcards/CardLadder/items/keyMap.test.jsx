@@ -20,7 +20,7 @@ vi.mock('../useTakeRecorder.js', () => ({
   default: vi.fn(() => ({ start: vi.fn(), stop: vi.fn(), phase: 'idle', verdict: null, stream: null, onLevel: vi.fn(), unavailable: false })),
 }));
 
-const langs = { term: 'ko', gloss: 'en' };
+const langs = { target: 'ko', anchor: 'en', targetScript: 'hangul' };
 const id = (x) => x;
 const word = { wordId: 'gawi', term: '가위', gloss: 'Scissors', pronunciation: null, kind: 'word', media: { image: 'img', audio: 'aud', glossAudio: null } };
 const tab = (target = window) => fireEvent.keyDown(target, { key: 'Tab', code: 'Tab' });

@@ -16,7 +16,7 @@ vi.mock('../cardLadderAudio.js', () => ({ playClip: vi.fn(async () => true) }));
 // for the detection itself).
 vi.mock('../../../../../../hooks/useHardwareKeyboard.js', () => ({ useHardwareKeyboard: () => false, default: () => false }));
 const word = { wordId: 'gawi', term: '가위', gloss: 'Scissors', pronunciation: null, kind: 'word', media: { image: 'img', audio: 'aud', glossAudio: null } };
-const langs = { term: 'ko', gloss: 'en' };
+const langs = { target: 'ko', anchor: 'en', targetScript: 'hangul' };
 
 describe('FlashcardItem', () => {
   it('front shows only the Korean; Space flips to picture + gloss; 3 sorts Got it', () => {
@@ -196,7 +196,7 @@ describe('TypedItem keypad toggle', () => {
 
   it('shows a small icon-only keypad toggle (no text), closed by default', () => {
     render(<TypedItem item={{ id: 'k0', type: 'typed', task: '3.3', cue: { type: 'text', text: 'Scissors' }, assets: {} }} mode="graded" langs={langs} resolveAssetUrl={(x) => x} onRespond={() => {}} />);
-    const toggle = screen.getByRole('button', { name: 'Show Korean keypad' });
+    const toggle = screen.getByRole('button', { name: 'Show keypad' });
     expect(toggle).toHaveTextContent(/^$/);
     expect(toggle.querySelector('svg, .school-icon, [class*="icon"]')).not.toBeNull();
     expect(screen.queryByTestId('jamo-keypad')).toBeNull();
@@ -204,7 +204,7 @@ describe('TypedItem keypad toggle', () => {
 
   it('a click on the toggle opens the keypad, and a second click closes it', () => {
     render(<TypedItem item={{ id: 'k1', type: 'typed', task: '3.3', cue: { type: 'text', text: 'Scissors' }, assets: {} }} mode="graded" langs={langs} resolveAssetUrl={(x) => x} onRespond={() => {}} />);
-    const toggle = screen.getByRole('button', { name: /korean keypad/i });
+    const toggle = screen.getByRole('button', { name: /^(show|hide) keypad$/i });
     fireEvent.click(toggle);
     expect(screen.getByTestId('jamo-keypad')).toBeInTheDocument();
     fireEvent.click(toggle);
@@ -215,9 +215,9 @@ describe('TypedItem keypad toggle', () => {
     render(<TypedItem item={{ id: 'k1b', type: 'typed', task: '3.3', cue: { type: 'text', text: 'Scissors' }, assets: {} }} mode="graded" langs={langs} resolveAssetUrl={(x) => x} onRespond={() => {}} />);
     const section = screen.getByRole('region', { name: 'Type the word' });
     expect(section.className).not.toMatch('wl-typed--keypad');
-    fireEvent.click(screen.getByRole('button', { name: /korean keypad/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^(show|hide) keypad$/i }));
     expect(section.className).toMatch('wl-typed--keypad');
-    fireEvent.click(screen.getByRole('button', { name: /korean keypad/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^(show|hide) keypad$/i }));
     expect(section.className).not.toMatch('wl-typed--keypad');
   });
 
@@ -331,13 +331,13 @@ describe('TypedItem — busy keeps the keypad, Show me', () => {
   it('an open keypad and its toggle stay mounted while a submit is in flight; only an answer removes them', () => {
     const props = { item: cueItem, mode: 'graded', langs, resolveAssetUrl: (x) => x, onRespond: () => {}, onContinue: () => {} };
     const { rerender } = render(<TypedItem {...props} />);
-    fireEvent.click(screen.getByRole('button', { name: /korean keypad/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^(show|hide) keypad$/i }));
     rerender(<TypedItem {...props} busy />);
     expect(screen.getByTestId('jamo-keypad')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /korean keypad/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^(show|hide) keypad$/i })).toBeInTheDocument();
     rerender(<TypedItem {...props} result={{ correct: true, score: 10, answer: '가위' }} />);
     expect(screen.queryByTestId('jamo-keypad')).toBeNull();
-    expect(screen.queryByRole('button', { name: /korean keypad/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /^(show|hide) keypad$/i })).toBeNull();
   });
 
   it('practice mode (drill type step) offers Show me → {typed:""}', () => {

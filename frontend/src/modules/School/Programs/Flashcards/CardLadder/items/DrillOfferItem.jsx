@@ -25,7 +25,7 @@ export default function DrillOfferItem({ item, langs, resolveAssetUrl, onRespond
     <section className="wl-item wl-offer" aria-label="Tricky word">
       <h2 className="wl-offer__title">This one&apos;s tricky — want to practise it?</h2>
       <div className="wl-prompt">
-        <FitText role="term" text={word.term ?? ''} lang={langs.term} onFit={onLayout} />
+        <FitText role="term" text={word.term ?? ''} lang={langs.target} onFit={onLayout} />
       </div>
       <div className="wl-controls">
         {audio && <TouchButton variant="secondary" keyHint="Tab" onClick={hear}><Icon name="volume" /> Hear it</TouchButton>}

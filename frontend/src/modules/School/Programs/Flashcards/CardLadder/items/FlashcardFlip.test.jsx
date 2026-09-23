@@ -4,7 +4,7 @@ import FlashcardItem from './FlashcardItem.jsx';
 
 vi.mock('../cardLadderAudio.js', () => ({ playClip: vi.fn(async () => true) }));
 
-const langs = { term: 'ko', gloss: 'en' };
+const langs = { target: 'ko', anchor: 'en', targetScript: 'hangul' };
 const id = (x) => x;
 const word = { wordId: 'gawi', term: '가위', gloss: 'Scissors', pronunciation: null, kind: 'word', media: { image: 'img', audio: 'aud', glossAudio: null } };
 const card = () => screen.getByRole('button', { name: /flip (the card|back)/i });

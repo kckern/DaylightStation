@@ -10,9 +10,9 @@ import { playClip } from '../cardLadderAudio.js';
 vi.mock('../cardLadderAudio.js', () => ({ playClip: vi.fn(async () => true) }));
 vi.mock('../../../../../../hooks/useHardwareKeyboard.js', () => ({ useHardwareKeyboard: () => false, default: () => false }));
 
-const langs = { term: 'ko', gloss: 'en' };
+const langs = { target: 'ko', anchor: 'en', targetScript: 'hangul' };
 const id = (x) => x;
-const typedItem = { id: 't1', type: 'typed', task: '3.3', cue: { type: 'english', text: 'Scissors', image: false, audio: false }, assets: {} };
+const typedItem = { id: 't1', type: 'typed', task: '3.3', cue: { type: 'anchor', text: 'Scissors', image: false, audio: false }, assets: {} };
 const panel = () => screen.getByTestId('wl-result');
 
 function typedWith(result, typed = '가비') {
@@ -65,7 +65,7 @@ describe('TypedItem result panel', () => {
 });
 
 describe('ChoiceItem result panel', () => {
-  const item = { id: 'c1', type: 'choice', task: '3.1', cue: { type: 'english', text: 'Scissors', image: false, audio: false }, choices: ['가위', '풀', '책', '펜'], assets: {} };
+  const item = { id: 'c1', type: 'choice', task: '3.1', cue: { type: 'anchor', text: 'Scissors', image: false, audio: false }, choices: ['가위', '풀', '책', '펜'], assets: {} };
 
   it('wrong: highlights the chosen and the correct option, and says The answer', () => {
     const onRespond = vi.fn();

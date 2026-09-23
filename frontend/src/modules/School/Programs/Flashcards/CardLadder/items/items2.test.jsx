@@ -26,7 +26,7 @@ vi.mock('../useTakeRecorder.js', () => ({
   default: vi.fn(() => ({ start: vi.fn(), stop: vi.fn(), phase: 'idle', verdict: null, stream: null, onLevel: vi.fn() })),
 }));
 
-const langs = { term: 'ko', gloss: 'en' };
+const langs = { target: 'ko', anchor: 'en', targetScript: 'hangul' };
 const id = (x) => x;
 
 // Real shape: CardLadderSittingService#publicItem → board(b) — pairs pre-joined.

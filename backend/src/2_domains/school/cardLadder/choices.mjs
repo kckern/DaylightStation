@@ -31,11 +31,11 @@ export function pickTermChoices(entry, introducedSameKind = [], seed) {
 }
 
 /**
- * The English-side cue for a recall task (3.1 pick-term, 3.3 type-from-cue,
+ * The anchor-side cue for a recall task (3.1 pick-term, 3.3 type-from-cue,
  * the drill's tiles / say-from-cue / type): ONE bundle — the gloss as text,
  * plus whether a picture and a gloss clip exist to show and play with it.
  *
- * Ruling 2026-09-23 (owner): English-side cues show text + picture + audio
+ * Ruling 2026-09-23 (owner): anchor-side cues show text + picture + audio
  * together; the prompt is never the test. This replaced a seeded pick of one
  * kind (image | text | audio), which could leave a child with nothing on
  * screen but an English sound. Pure and deterministic; `seed` is accepted for
@@ -43,7 +43,7 @@ export function pickTermChoices(entry, introducedSameKind = [], seed) {
  */
 // eslint-disable-next-line no-unused-vars
 export function cueFor(entry, media = {}, seed) {
-  return { type: 'english', text: entry.gloss, image: Boolean(media.image), audio: Boolean(media.glossAudio) };
+  return { type: 'anchor', text: entry.gloss, image: Boolean(media.image), audio: Boolean(media.glossAudio) };
 }
 
 export function channelFor(media = {}) {
