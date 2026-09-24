@@ -3586,6 +3586,11 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const languageStudyService = createLanguageStudyService({
     datastore: new YamlLanguageStudyDatastore({ configService }),
     languageTranscription,
+    // Meaning score on interpretation answers (SentenceMeaningJudge). Null
+    // gateway → no field, rows unchanged. `language.meaning_judge.enabled:
+    // false` in the school config turns it off where a gateway exists.
+    decisionGateway,
+    meaningJudgeConfig: schoolFullConfig.language?.meaning_judge ?? null,
     readProgramEnrollment: (learnerId, corpusId) => languageAssignments.readProgramEnrollment(learnerId, corpusId),
     // Through the factory, so the bus is adapted to School's realtime port
     // rather than handed over raw under an option name the service does not
