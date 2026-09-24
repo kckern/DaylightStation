@@ -91,8 +91,11 @@ export function buildSegmentsPerDevice(entities, sessionEndTime) {
       durationMs,
       status: e.status || 'active',
       inSessionTransferred: e.status === 'transferred',
+      // A correction relabelled this stint in place: the person who made it
+      // already said who it was, so no effort/cycling rule may re-judge it.
+      relabeledFrom: Array.isArray(e.relabeledFrom) ? [...e.relabeledFrom] : [],
       // Flags filled in by passes below
-      honored: false,
+      honored: Array.isArray(e.relabeledFrom) && e.relabeledFrom.length > 0,
       absorbed: false,
       absorbedInto: null
     };
@@ -127,12 +130,18 @@ export function detectCyclingSegments(segments, thresholdMs) {
   for (let i = 0; i < segments.length; i++) {
     // Skip already-transferred segments — they're not in the analysis window.
     if (segments[i].inSessionTransferred) continue;
+    if (segments[i].relabeledFrom?.length || segments[i].status === 'series-only') continue;
 
     // Build maximal run of consecutive sub-T (non-transferred) segments starting at i.
     const run = [];
     let j = i;
+    // Relabelled stints were settled by the person who made the correction,
+    // and series-only ghosts have no real position in time — neither is
+    // evidence of turn-taking, so both end a run.
     while (j < segments.length
       && !segments[j].inSessionTransferred
+      && !(segments[j].relabeledFrom?.length)
+      && segments[j].status !== 'series-only'
       && segments[j].durationMs < t) {
       run.push(segments[j]);
       j++;
@@ -375,6 +384,12 @@ export function buildOccupancySegments({ entities, series, sessionEndTime, inter
   const s = series && typeof series === 'object' ? series : {};
   const entityOccupants = new Set();
   for (const segs of perDevice.values()) for (const seg of segs) entityOccupants.add(seg.occupantId);
+  // A name a correction relabelled away is not a ghost to reconcile — the
+  // live transfer already moved its stint to the right person.
+  const relabeledAway = new Set();
+  for (const segs of perDevice.values()) {
+    for (const seg of segs) for (const id of seg.relabeledFrom || []) relabeledAway.add(id);
+  }
 
   const seriesOccupants = new Set();
   for (const key of Object.keys(s)) {
@@ -384,7 +399,7 @@ export function buildOccupancySegments({ entities, series, sessionEndTime, inter
 
   const deviceIds = [...perDevice.keys()];
   for (const occ of seriesOccupants) {
-    if (entityOccupants.has(occ)) continue;
+    if (entityOccupants.has(occ) || relabeledAway.has(occ)) continue;
     // Successor-fallback: if exactly one device, use it; else the earliest-start device.
     const deviceId = deviceIds.length === 1
       ? deviceIds[0]
@@ -582,12 +597,19 @@ export function runSessionBackfill({ entities, series, thresholdMs, sessionEndTi
   const mergedFromIds = merges.map(m => m.fromOccupantId);
   const keptOccupants = collectKeptOccupants(perDevice);
   for (const id of mergedFromIds) keptOccupants.delete(id);
+  // Names a correction relabelled away are not participants unless they own
+  // a surviving stint elsewhere.
+  const relabeledAway = new Set();
+  for (const segs of perDevice.values()) {
+    for (const seg of segs) for (const id of seg.relabeledFrom || []) relabeledAway.add(id);
+  }
+  for (const id of keptOccupants) relabeledAway.delete(id);
   return {
     perDevice,
     transfers: dedupeTransfers(allTransfers),
     merges,
     keptOccupants,
-    removedOccupants: new Set([...collectFullyAbsorbedOccupants(perDevice), ...mergedFromIds])
+    removedOccupants: new Set([...collectFullyAbsorbedOccupants(perDevice), ...mergedFromIds, ...relabeledAway])
   };
 }
 
