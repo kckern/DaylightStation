@@ -60,6 +60,12 @@ The daily aggregate produces one record per user per date. For a given date, the
 
 A reconciliation pass runs alongside daily aggregation. Reconciliation reads a recent window of weight readings, tracked nutrition, exercise, and step calories, derives the user's effective metabolic rate from observed weight change against logged intake, and produces an *adjusted* version of each day's nutrition that reflects tracking-accuracy estimation, portion correction, and phantom calories — calories the body's response indicates were eaten beyond what was logged. The adjusted nutrition is stored alongside the raw logged nutrition; both views are available downstream. Reconciliation is best-effort: a failure to reconcile leaves the raw daily summary intact and is reported but never blocks aggregation.
 
+**Where the metabolic rate comes from.** When the user has a body-composition scan with a *measured* resting rate, that rate anchors reconciliation. That means a DEXA scan in `lifelog/archives/scans/` with `bmr_method: measured`. The rate is carried forward by fat-free mass (RMR × FFM now ÷ FFM at the scan), and the thermic effect of food (×1.1) is added on top. It is **never re-derived from logged intake**.
+
+Deriving it from logged intake is the fallback when there is no scan: Katch-McArdle on the scale's body fat, refined from "high-confidence" logged days. That path is badly biased by under-logging. With real data it pinned at the 30% clamp floor, about 1,164 kcal/day against a measured 1,622. Every implied intake, maintenance figure and phantom-calorie estimate came out about 460 kcal/day low as a result.
+
+Each record carries `bmr_source: dexa | derived`. Reconstructed calories (see [reconstruction](README.md#untracked-intake-reconstruction)) are excluded from `tracked_calories`: they are an estimate, not tracking.
+
 ### Longitudinal aggregate
 
 The longitudinal aggregate reads the user's daily summaries and produces time-bucketed series — daily, weekly, monthly — with statistical rollups attached to each bucket. The longitudinal layer is what the hub charts, what the coach quotes for long-view context, and what the weekly digest compares against. Like the daily aggregate, it is recomputed whenever the underlying daily summaries change, so the chart and the morning brief always see the same numbers. The tiered history view — recent days at daily grain, the surrounding months at weekly grain, the prior years at monthly grain — is a single read built from the same series.

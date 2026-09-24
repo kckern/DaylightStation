@@ -11,6 +11,10 @@ const LBS_TO_KG = 1 / 2.205;
 const DEFAULT_FAT_PERCENT = 25;
 const MIN_HIGH_CONFIDENCE_DAYS = 3;
 const BMR_CLAMP_FACTOR = 0.3;
+// A MEASURED resting rate (DEXA RMR) excludes digesting food; total burn at rest
+// is RMR + the thermic effect of food (~10%). A formula/derived "BMR" solved
+// from intake already absorbs it, so TEF applies only on the anchored path.
+const TEF_FACTOR = 1.1;
 
 export class CalorieReconciliationService {
   /**
@@ -42,6 +46,23 @@ export class CalorieReconciliationService {
     return Math.round(370 + 21.6 * leanMassKg);
   }
 
+  /**
+   * Resting rate anchored to a measured scan (DEXA RMR), carried forward by
+   * fat-free mass: RMR scales with lean tissue, so RMR(now) = RMR(scan) ×
+   * FFM(now) / FFM(scan). FFM(scan) is weight × (1 − body fat) from the scan
+   * itself; FFM(now) comes from the scale trend.
+   * @param {{bmr_kcal: number, weight_lbs: number, body_fat_percent: number}} scan
+   * @param {number|null} ffmNowLbs
+   * @returns {number|null}
+   */
+  static computeAnchoredBmr(scan, ffmNowLbs) {
+    const bmr = Number(scan?.bmr_kcal);
+    if (!Number.isFinite(bmr) || bmr <= 0) return null;
+    const ffmScan = Number(scan.weight_lbs) * (1 - Number(scan.body_fat_percent) / 100);
+    if (!Number.isFinite(ffmNowLbs) || !(ffmScan > 0)) return Math.round(bmr);
+    return Math.round(bmr * ffmNowLbs / ffmScan);
+  }
+
   static deriveRollingBmr(dailyRecords, seedBmr) {
     const highConfDays = dailyRecords.filter(
       d => d.confidence >= HIGH_CONFIDENCE_THRESHOLD && d.solvedBmr != null
@@ -62,7 +83,15 @@ export class CalorieReconciliationService {
     return { derivedBmr: clampedBmr, highConfidenceDayCount: highConfDays.length };
   }
 
-  static reconcile(windowData, seedBmr) {
+  /**
+   * @param {Array} windowData
+   * @param {number} seedBmr
+   * @param {{anchored?: boolean}} [options] - `anchored`: seedBmr is a MEASURED
+   *   resting rate (DEXA). It is used as-is — never re-derived from logged
+   *   intake, which under-logging drags down (it pinned at the 30% clamp floor,
+   *   ~460 kcal/day under the measured RMR) — and TEF is added on top.
+   */
+  static reconcile(windowData, seedBmr, { anchored = false } = {}) {
     if (!windowData?.length || !seedBmr) return [];
 
     // Step 1: Interpolate missing NEAT values
@@ -85,14 +114,18 @@ export class CalorieReconciliationService {
     });
 
     // Step 3: Derive rolling BMR from high-confidence days
-    const { derivedBmr } = CalorieReconciliationService.deriveRollingBmr(firstPass, seedBmr);
+    const { derivedBmr } = anchored
+      ? { derivedBmr: seedBmr }
+      : CalorieReconciliationService.deriveRollingBmr(firstPass, seedBmr);
+    // Resting burn including digestion: measured RMR × TEF; a derived BMR already includes it.
+    const restingBurn = anchored ? Math.round(derivedBmr * TEF_FACTOR) : derivedBmr;
 
     // Step 4: Compute window averages
     const totalNeat = interpolated.reduce((s, d) => s + (d.neatCalories || 0), 0);
     const totalExercise = interpolated.reduce((s, d) => s + (d.exerciseCalories || 0), 0);
     const avgNeat = Math.round(totalNeat / interpolated.length);
     const avgExercise = Math.round(totalExercise / interpolated.length);
-    const maintenanceCalories = derivedBmr + avgNeat + avgExercise;
+    const maintenanceCalories = restingBurn + avgNeat + avgExercise;
 
     // Step 5: Second pass — recompute with derived BMR
     const records = interpolated.map(day => {
@@ -103,7 +136,7 @@ export class CalorieReconciliationService {
       });
 
       const impliedIntake = Math.round(
-        (day.weightDelta * CALORIES_PER_LB) + derivedBmr + day.exerciseCalories + day.neatCalories
+        (day.weightDelta * CALORIES_PER_LB) + restingBurn + day.exerciseCalories + day.neatCalories
       );
 
       const calorieAdjustment = impliedIntake - day.trackedCalories;
@@ -125,6 +158,7 @@ export class CalorieReconciliationService {
         tracking_accuracy: trackingAccuracy,
         tracking_confidence: confidence,
         derived_bmr: derivedBmr,
+        bmr_source: anchored ? 'dexa' : 'derived',
         maintenance_calories: maintenanceCalories,
       };
     });

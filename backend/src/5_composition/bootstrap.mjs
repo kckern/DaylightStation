@@ -2398,6 +2398,8 @@ export function createHealthServices(config) {
   const reconciliationProcessor = new ReconciliationProcessor({
     healthStore,
     nutritionItemsReader: nutriListStore,
+    // DEXA scans (lifelog/archives/scans/) anchor the resting rate.
+    bodyScans: configService?.getDataDir ? new YamlHealthScanDatastore({ dataDir: configService.getDataDir(), logger }) : null,
     logger
   });
 

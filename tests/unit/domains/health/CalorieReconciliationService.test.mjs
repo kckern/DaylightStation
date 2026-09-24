@@ -228,4 +228,17 @@ describe('CalorieReconciliationService', () => {
       })).toBe(0);
     });
   });
+
+  describe('computeAnchoredBmr', () => {
+    const scan = { bmr_kcal: 1622, weight_lbs: 185.9, body_fat_percent: 27.2 };
+    it('scales the measured RMR by fat-free mass', () => {
+      expect(CalorieReconciliationService.computeAnchoredBmr(scan, 135.33)).toBe(1622);
+      expect(CalorieReconciliationService.computeAnchoredBmr(scan, 129)).toBe(1546);
+    });
+    it('falls back to the raw RMR without a current FFM, and null without an RMR', () => {
+      expect(CalorieReconciliationService.computeAnchoredBmr(scan, null)).toBe(1622);
+      expect(CalorieReconciliationService.computeAnchoredBmr({ weight_lbs: 180 }, 130)).toBeNull();
+    });
+  });
 });
+

@@ -8,7 +8,17 @@ export class ReconciliationProcessor {
   #healthStore;
   #logger;
   #nutritionItemsReader;
+  #bodyScans;
 
+  /**
+   * @param {Object} config
+   * @param {Object} config.healthStore
+   * @param {Object} [config.nutritionItemsReader]
+   * @param {{getLatestScan: (userId: string) => Promise<object|null>}} [config.bodyScans]
+   *   body-composition scans; the latest with a measured `bmr_kcal` (DEXA)
+   *   anchors the resting rate instead of a formula + intake-derived BMR.
+   * @param {Object} [config.logger]
+   */
   constructor(config) {
     if (!config.healthStore) {
       throw new Error('ReconciliationProcessor requires healthStore');
@@ -16,6 +26,7 @@ export class ReconciliationProcessor {
     this.#healthStore = config.healthStore;
     this.#logger = config.logger || console;
     this.#nutritionItemsReader = config.nutritionItemsReader || null;
+    this.#bodyScans = config.bodyScans || null;
   }
 
   async process(userId, options = {}) {
@@ -47,10 +58,17 @@ export class ReconciliationProcessor {
     }
 
     const latestWeight = weightData[windowDates[windowDates.length - 1]];
-    const seedBmr = CalorieReconciliationService.computeSeedBmr(
-      latestWeight?.lbs_adjusted_average,
-      latestWeight?.fat_percent_adjusted_average
-    );
+    // A measured resting rate (DEXA) anchors BMR, carried forward by the
+    // scale's fat-free mass. Without one, fall back to Katch-McArdle on the
+    // scale's body fat and let the service derive BMR from the window.
+    const scan = await this.#latestMeasuredScan(userId);
+    const ffmNow = latestWeight?.lbs_adjusted_average && latestWeight?.fat_percent_adjusted_average != null
+      ? latestWeight.lbs_adjusted_average * (1 - latestWeight.fat_percent_adjusted_average / 100) : null;
+    const anchored = !!scan;
+    const seedBmr = anchored
+      ? CalorieReconciliationService.computeAnchoredBmr(scan, ffmNow)
+      : CalorieReconciliationService.computeSeedBmr(latestWeight?.lbs_adjusted_average, latestWeight?.fat_percent_adjusted_average);
+    this.#logger.info?.('reconciliation.process.bmr', { userId, anchored, seedBmr, scanDate: scan?.date ?? null });
 
     if (!seedBmr) {
       this.#logger.warn?.('reconciliation.process.no_seed_bmr', { userId });
@@ -97,19 +115,21 @@ export class ReconciliationProcessor {
         return sum;
       }, 0);
 
+      // Reconstructed (weight-derived) calories are an estimate, not tracking.
+      const trackedCalories = Math.max(0, (nutrition?.calories || 0) - (nutrition?.reconstructed_calories || 0));
       return {
         date,
         weightDelta,
-        trackedCalories: nutrition?.calories || 0,
+        trackedCalories,
         exerciseCalories,
         neatCalories: fitness?.steps?.calories ?? null,
         hasWeight: currWeight != null,
-        hasNutrition: nutrition?.calories > 0,
+        hasNutrition: trackedCalories > 0,
         hasSteps: fitness?.steps?.calories != null,
       };
     });
 
-    const results = CalorieReconciliationService.reconcile(windowData, seedBmr);
+    const results = CalorieReconciliationService.reconcile(windowData, seedBmr, { anchored });
 
     const merged = { ...existingRecon };
     for (const record of results) {
@@ -133,6 +153,22 @@ export class ReconciliationProcessor {
     });
 
     return results;
+  }
+
+  /** Latest body scan carrying a measured BMR, or null. Never throws. */
+  async #latestMeasuredScan(userId) {
+    try {
+      const scan = await this.#bodyScans?.getLatestScan?.(userId);
+      const raw = scan?.toJSON ? scan.toJSON() : scan;
+      const bmr = raw?.bmr_kcal ?? raw?.bmrKcal;
+      const method = raw?.bmr_method ?? raw?.bmrMethod;
+      if (!(bmr > 0) || method !== 'measured') return null;
+      return { date: raw.date, bmr_kcal: bmr, weight_lbs: raw.weight_lbs ?? raw.weightLbs,
+        body_fat_percent: raw.body_fat_percent ?? raw.bodyFatPercent };
+    } catch (error) {
+      this.#logger.warn?.('reconciliation.process.scan_unavailable', { userId, error: error.message });
+      return null;
+    }
   }
 
   async #produceAdjustedNutrition(userId, reconciliationResults, windowDates) {
