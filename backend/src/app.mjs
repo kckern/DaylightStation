@@ -5427,6 +5427,9 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     onUnknownTag: (info) => readingSessionInterceptor?.noteUnknownTag(info),
     screenBroadcast: barcodeScreenBroadcast,
     commandResolver: resolveCommand,
+    // Voice transcripts (POST /trigger/:location/voice) match free text to a
+    // location's commands with this; null leaves voice exact-keyword only.
+    decisionGateway,
     logger: rootLogger.child({ module: 'trigger' }),
   });
   // The school reachability check can now answer for real (it has been

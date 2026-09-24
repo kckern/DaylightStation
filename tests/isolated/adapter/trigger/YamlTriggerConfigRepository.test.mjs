@@ -34,6 +34,7 @@ describe('YamlTriggerConfigRepository', () => {
       nfc: { locations: {}, tags: {} },
       state: { locations: {} },
       barcode: { locations: {} },
+      voice: { locations: {} },
       responses: {},
       endpoints: {},
     });
@@ -291,5 +292,14 @@ describe('YamlTriggerConfigRepository write methods', () => {
     repo.loadRegistry({ loadFile: () => null });
     await expect(repo.setNfcNote('aa', 'note', '2026-04-26 14:00:00'))
       .rejects.toThrow(/saveFile not configured/i);
+  });
+
+  it('passes onWarn through to the parsers', () => {
+    const onWarn = vi.fn();
+    const loadFile = (p) => p === 'triggers/sources'
+      ? { 'kitchen-voice': { modality: 'voice', location: 'kitchen', target: 't', commands: { stop: { action: 'clear' } } } }
+      : null;
+    new YamlTriggerConfigRepository().loadRegistry({ loadFile, onWarn });
+    expect(onWarn).toHaveBeenCalledWith(expect.objectContaining({ event: 'trigger.voice.unauthenticated', location: 'kitchen' }));
   });
 });

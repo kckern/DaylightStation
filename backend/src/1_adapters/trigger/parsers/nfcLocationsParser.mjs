@@ -18,6 +18,7 @@
  */
 
 import { ValidationError } from '#domains/core/errors/ValidationError.mjs';
+import { assertSafeKey } from './safeKey.mjs';
 
 const RESERVED = new Set(['target', 'action', 'auth_token', 'notify_unknown', 'end', 'end_location', 'learner_action']);
 export const ALLOWED_END_BEHAVIORS = new Set(['tv-off', 'clear', 'nothing']);
@@ -34,6 +35,7 @@ export function parseNfcLocations(raw) {
 
   const out = {};
   for (const [locationId, locConfig] of Object.entries(raw)) {
+    assertSafeKey(locationId, 'location');
     if (!isPlainObject(locConfig)) {
       throw new ValidationError(`location "${locationId}" must be an object`, { code: 'INVALID_LOCATION', field: locationId });
     }
@@ -70,7 +72,7 @@ export function parseNfcLocations(raw) {
     const defaults = {};
     for (const [k, v] of Object.entries(locConfig)) {
       if (RESERVED.has(k)) continue;
-      defaults[k] = v;
+      defaults[assertSafeKey(k, 'reader default', locationId)] = v;
     }
 
     out[locationId] = {

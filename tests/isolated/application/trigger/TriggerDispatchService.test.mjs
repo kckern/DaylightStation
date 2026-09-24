@@ -89,6 +89,21 @@ describe('TriggerDispatchService.handleTrigger', () => {
     );
   });
 
+  it.each([
+    ['nfc', 'constructor'], ['nfc', '__proto__'], ['nfc', 'toString'],
+    ['state', 'constructor'], ['state', '__proto__'], ['state', 'toString'],
+    ['barcode', 'constructor'], ['voice', 'toString'],
+  ])('a %s trigger at inherited-key location %s is LOCATION_NOT_FOUND', async (modality, location) => {
+    const service = makeService({
+      ...baseRegistry,
+      barcode: { locations: { ds: { target: 't', default_action: 'queue', actions: ['queue'] } } },
+      voice: { locations: { kitchen: { target: 't', auth_token: null, routing: { mode: 'off', confidenceFloor: null }, commands: { stop: { action: 'clear' } } } } },
+    });
+    const result = await service.handleTrigger(location, modality, 'off');
+    expect(result).toMatchObject({ ok: false, code: 'LOCATION_NOT_FOUND' });
+    expect(wakeAndLoadService.execute).not.toHaveBeenCalled();
+  });
+
   it('returns 404-ish error for unknown location', async () => {
     const service = makeService();
     const result = await service.handleTrigger('attic', 'nfc', '838e6806');

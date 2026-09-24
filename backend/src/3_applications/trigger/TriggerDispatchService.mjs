@@ -30,6 +30,14 @@ import { gatekeeperStrategies } from './guards/gatekeeperStrategies.mjs';
 import { createDebounce } from './guards/debounce.mjs';
 import { TriggerEvent } from '#domains/trigger/TriggerEvent.mjs';
 import { canonicalizeNfcUid } from '#domains/trigger/nfcUid.mjs';
+import { voiceKeyword } from '#domains/trigger/services/VoiceResolver.mjs';
+
+// Own-property lookup: a location called "constructor" or "toString" must be
+// LOCATION_NOT_FOUND, not an inherited Object member passed off as config.
+const ownLocation = (modalityConfig, location) => {
+  const locations = modalityConfig?.locations;
+  return locations && Object.hasOwn(locations, location) ? locations[location] : undefined;
+};
 import { assertTriggerActuationGateway } from './ports/ITriggerActuationGateway.mjs';
 import { pushData, titleCaseId } from '#domains/notification/push/pushText.mjs';
 
@@ -124,7 +132,7 @@ export class TriggerDispatchService {
   }
 
   #lookupAuthToken(modality, location) {
-    return this.#config?.[modality]?.locations?.[location]?.auth_token ?? null;
+    return ownLocation(this.#config?.[modality], location)?.auth_token ?? null;
   }
 
   // Fire-and-forget HA automation suppression. Disable the guard for the
@@ -161,9 +169,14 @@ export class TriggerDispatchService {
     // un-canonicalized, one card reported `04_66_9c…` by one reader and
     // `04669C…` by another produced two debounce keys, so a genuine double-tap
     // sailed through as two distinct triggers.
+    // Voice values fold to their keyword form ("Play Jazz" → play_jazz) for the
+    // same reason: GET /voice/play%20jazz and a transcript "play jazz" are one
+    // trigger and must share one debounce key.
     const normalizedValue = modality === 'nfc'
       ? canonicalizeNfcUid(value)
-      : String(value || '').toLowerCase();
+      : modality === 'voice'
+        ? voiceKeyword(value)
+        : String(value || '').toLowerCase();
 
     // Modality slice check — must come before auth so unknown modalities get
     // a clear error code rather than a misleading LOCATION_NOT_FOUND.
@@ -174,7 +187,7 @@ export class TriggerDispatchService {
     }
 
     // Location check within the modality slice.
-    const locationConfig = modalityConfig.locations?.[location];
+    const locationConfig = ownLocation(modalityConfig, location);
     if (!locationConfig) {
       this.#logger.warn?.('trigger.fired', { location, modality, value: normalizedValue, registered: false, error: 'location-not-found' });
       return { ok: false, code: 'LOCATION_NOT_FOUND', error: `Unknown location: ${location}`, location, modality, value: normalizedValue, dispatchId };
@@ -357,7 +370,7 @@ export class TriggerDispatchService {
       return { ok: false, code: 'UNSUPPORTED_MODALITY', error: `setNote only supports nfc modality (got "${modality}")` };
     }
 
-    const locationConfig = this.#config?.nfc?.locations?.[location];
+    const locationConfig = ownLocation(this.#config?.nfc, location);
     if (!locationConfig) {
       return { ok: false, code: 'LOCATION_NOT_FOUND', error: `Unknown location: ${location}` };
     }

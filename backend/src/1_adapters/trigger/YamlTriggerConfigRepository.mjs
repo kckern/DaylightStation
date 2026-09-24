@@ -82,14 +82,14 @@ export class YamlTriggerConfigRepository {
    * @returns {Object} unified registry: { nfc: { locations, tags }, state: { locations }, responses, endpoints }
    * @throws {ValidationError} if any YAML is malformed.
    */
-  loadRegistry({ loadFile, listDir = null, onSkip = null }) {
+  loadRegistry({ loadFile, listDir = null, onSkip = null, onWarn = null }) {
     const blobs = {
       sources: loadFile(this.#paths.sources),
       bindingsNfc: this.#loadNfcBindings({ loadFile, listDir }),
       responses: loadFile(this.#paths.responses),
       endpoints: loadFile(this.#paths.endpoints),
     };
-    this.#registry = buildTriggerRegistry(blobs, { onSkip });
+    this.#registry = buildTriggerRegistry(blobs, { onSkip, onWarn });
     return this.#registry;
   }
 
