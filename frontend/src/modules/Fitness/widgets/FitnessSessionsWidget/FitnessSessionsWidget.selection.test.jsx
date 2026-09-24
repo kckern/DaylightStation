@@ -5,6 +5,7 @@ import React from 'react';
 import { MantineProvider } from '@mantine/core';
 import { ScreenProvider, ScreenContext } from '@/screen-framework/providers/ScreenProvider.jsx';
 import { FitnessScreenProvider } from '@/modules/Fitness/FitnessScreenProvider.jsx';
+import { useFitnessScreen } from '@/modules/Fitness/useFitnessScreen.js';
 import FitnessSessionsWidget from './FitnessSessionsWidget.jsx';
 import { sessionDetailSeed, SESSION_DETAIL_NODE_ID } from './sessionDetailPane.js';
 
@@ -116,6 +117,13 @@ describe('FitnessSessionsWidget outside selection', () => {
     function RouterHandle() {
       nav.navigate = useNavigate();
       nav.path = useLocation().pathname;
+      // The real state the effect is supposed to clear — not a DOM proxy for
+      // it. This widget's own screen data is never seeded here (the sessions
+      // widget stays in `loading` and renders SessionsCardSkeleton's hardcoded
+      // rows), so a `.session-row--selected` query would find nothing whether
+      // or not the effect ever ran. Read the selection straight from
+      // FitnessScreenProvider instead.
+      nav.selected = useFitnessScreen().selectedSessionId;
       return null;
     }
     const utils = render(
@@ -133,14 +141,15 @@ describe('FitnessSessionsWidget outside selection', () => {
   }
 
   it('closes the pane and clears the selection when the URL drops the session (no-session redirect, browser Back)', () => {
-    const { states, nav, container } = renderSeededWithRouter();
+    const { states, nav } = renderSeededWithRouter();
     expect(states.at(-1)).toHaveLength(1);
+    expect(nav.selected).toBe('s1');
 
     act(() => nav.navigate('/fitness/home', { replace: true }));
 
     expect(states.at(-1)).toHaveLength(0);
     expect(nav.path).toBe('/fitness/home');
-    expect(container.querySelector('.session-row--selected')).toBeNull();
+    expect(nav.selected).toBe(null);
   });
 
   it('keeps the seeded pane open on mount at /fitness/home/session-s1', () => {
