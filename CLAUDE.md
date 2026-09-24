@@ -230,6 +230,7 @@ git rev-parse HEAD > docs/docs-last-updated.txt
 | State Gates (assertions, gate policy, entitlements, replay) | `docs/reference/state-gates/README.md` |
 | DoNow (household "start this, there, now" dispatch) | `docs/reference/donow/README.md` |
 | Nutrition (scan-enriched food logging) | `docs/reference/nutrition/README.md` |
+| Finance transaction categorization (rules, LLM naming, Jev category shadow/promote) | `docs/reference/finance/categorization.md` |
 | Health app (log-first food logging, budget, medical) | `docs/reference/health/README.md` |
 | OMR bubble-sheet reader (Chatsworth OMR-1100) | `docs/reference/omr/README.md` |
 | Journalist domain (journaling bot) | `docs/reference/journalist/journalist-domain.md` |
