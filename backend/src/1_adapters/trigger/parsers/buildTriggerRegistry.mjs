@@ -17,9 +17,10 @@ import { parseNamedMap } from './namedMapParser.mjs';
  * @param {Object} [options]
  * @param {Function} [options.onSkip] - per-entry isolation: a bad source or tag is
  *   reported and dropped instead of failing the whole registry (see sourcesParser)
+ * @param {Function} [options.onWarn] - config that loads but is probably wrong (see sourcesParser)
  */
-export function buildTriggerRegistry(blobs = {}, { onSkip = null } = {}) {
-  const { nfc, state, barcode, voice } = parseSources(blobs.sources, { onSkip });
+export function buildTriggerRegistry(blobs = {}, { onSkip = null, onWarn = null } = {}) {
+  const { nfc, state, barcode, voice } = parseSources(blobs.sources, { onSkip, onWarn });
   const knownNfcReaders = new Set(Object.keys(nfc.locations));
   const tags = parseNfcTags(blobs.bindingsNfc, knownNfcReaders, { onSkip });
   return {
