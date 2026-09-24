@@ -14,6 +14,12 @@
  * The boot path passes `onSkip`: one bad entry used to throw out of the whole
  * load and leave EVERY tag in the house unregistered.
  *
+ * WARNINGS. `onWarn({ event, ... })` hears about config that loads but is
+ * probably wrong: two sources of one modality at one location (the later one
+ * silently replaces the earlier: `trigger.config.location.shadowed`), and a
+ * voice source that routes transcripts with no secret
+ * (`trigger.voice.unauthenticated`).
+ *
  * Layer: ADAPTER (1_adapters/trigger/parsers).
  * @module adapters/trigger/parsers/sourcesParser
  */
@@ -53,7 +59,7 @@ export function isolateEntry(onSkip, kind, id, parse) {
   }
 }
 
-export function parseSources(raw, { onSkip = null } = {}) {
+export function parseSources(raw, { onSkip = null, onWarn = null } = {}) {
   if (!raw) return { nfc: { locations: {} }, state: { locations: {} }, barcode: { locations: {} }, voice: { locations: {} } };
   if (!isPlainObject(raw)) {
     throw new ValidationError('sources.yml root must be an object', { code: 'INVALID_CONFIG_ROOT' });
@@ -65,6 +71,7 @@ export function parseSources(raw, { onSkip = null } = {}) {
   const stateSourceOf = {};
   const voiceRaw = {};
   const voiceSourceOf = {};
+  const sourceAt = {};
   for (const [sourceId, entry] of Object.entries(raw)) {
     const accepted = isolateEntry(onSkip, 'source', sourceId, () => {
       if (!isPlainObject(entry)) {
@@ -77,6 +84,11 @@ export function parseSources(raw, { onSkip = null } = {}) {
     });
     if (!accepted) continue;
     const location = entry.location || sourceId;
+    const slot = `${entry.modality}:${location}`;
+    if (sourceAt[slot] !== undefined) {
+      onWarn?.({ event: 'trigger.config.location.shadowed', modality: entry.modality, location, source: sourceId, shadowed: sourceAt[slot] });
+    }
+    sourceAt[slot] = sourceId;
     if (entry.modality === 'nfc') { nfcRaw[location] = toLegacyEntry(entry); nfcSourceOf[location] = sourceId; }
     else if (entry.modality === 'state') { stateRaw[location] = toLegacyEntry(entry); stateSourceOf[location] = sourceId; }
     else if (entry.modality === 'voice') { voiceRaw[location] = toLegacyEntry(entry); voiceSourceOf[location] = sourceId; }
@@ -103,11 +115,17 @@ export function parseSources(raw, { onSkip = null } = {}) {
       delete nfcLocations[loc].defaults.debounce_ms;
     }
   }
+  const voiceLocations = perLocation(voiceRaw, voiceSourceOf, parseVoiceLocations);
+  for (const [location, cfg] of Object.entries(voiceLocations)) {
+    if (cfg.routing.mode !== 'off' && !cfg.auth_token) {
+      onWarn?.({ event: 'trigger.voice.unauthenticated', source: voiceSourceOf[location] || location, location, mode: cfg.routing.mode });
+    }
+  }
   return {
     nfc: { locations: nfcLocations },
     state: { locations: perLocation(stateRaw, stateSourceOf, parseStateLocations) },
     barcode: { locations: barcodeRaw },
-    voice: { locations: perLocation(voiceRaw, voiceSourceOf, parseVoiceLocations) },
+    voice: { locations: voiceLocations },
   };
 }
 

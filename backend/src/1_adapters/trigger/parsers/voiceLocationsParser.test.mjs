@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { parseVoiceLocations } from './voiceLocationsParser.mjs';
 import { parseSources } from './sourcesParser.mjs';
 import { buildTriggerRegistry } from './buildTriggerRegistry.mjs';
@@ -97,5 +97,37 @@ describe('prototype-named command ids', () => {
     const out = parseVoiceLocations({ k: { target: 't', commands } });
     expect(Object.keys(out.k.commands)).toEqual(['proto']);
     expect(Object.getPrototypeOf(out.k.commands)).toBe(Object.prototype);
+  });
+});
+
+describe('voice source warnings (onWarn)', () => {
+  it('warns when transcript routing is on and no secret guards the source', () => {
+    const warnings = [];
+    parseSources({
+      'kitchen-voice': { modality: 'voice', location: 'kitchen', ...kitchen },
+      'garage-voice': { modality: 'voice', location: 'garage', ...kitchen, guards: { authenticate: { secret: 's' } } },
+      'hall-voice': { modality: 'voice', location: 'hall', ...kitchen, routing: { mode: 'off' } },
+    }, { onWarn: (w) => warnings.push(w) });
+    expect(warnings).toEqual([
+      { event: 'trigger.voice.unauthenticated', source: 'kitchen-voice', location: 'kitchen', mode: 'confirm' },
+    ]);
+  });
+
+  it('warns when two sources of one modality share a location (the last one wins)', () => {
+    const warnings = [];
+    const out = parseSources({
+      'kitchen-a': { modality: 'voice', location: 'kitchen', ...kitchen, guards: { authenticate: { secret: 's' } } },
+      'kitchen-b': { modality: 'voice', location: 'kitchen', ...kitchen, target: 'other', guards: { authenticate: { secret: 's' } } },
+    }, { onWarn: (w) => warnings.push(w) });
+    expect(out.voice.locations.kitchen.target).toBe('other');
+    expect(warnings).toEqual([
+      { event: 'trigger.config.location.shadowed', modality: 'voice', location: 'kitchen', source: 'kitchen-b', shadowed: 'kitchen-a' },
+    ]);
+  });
+
+  it('buildTriggerRegistry passes onWarn through', () => {
+    const onWarn = vi.fn();
+    buildTriggerRegistry({ sources: { kitchen: { modality: 'voice', ...kitchen } } }, { onWarn });
+    expect(onWarn).toHaveBeenCalledWith(expect.objectContaining({ event: 'trigger.voice.unauthenticated' }));
   });
 });
