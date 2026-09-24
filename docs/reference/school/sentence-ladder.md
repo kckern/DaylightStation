@@ -501,6 +501,30 @@ nothing.** A wrong dictation still graduates the sentence; the diff waits on
 the Review shelf. School's rule is "no second gate anywhere", and this program
 keeps it.
 
+**Interpretation also gets a meaning score, which gates nothing either.** Edit
+distance cannot tell "today the weather is nice" from a wrong answer (it scores
+0.4 against "The weather's nice today."). Where a decision gateway is configured,
+`SentenceMeaningJudge` (`3_applications/school/`) asks it one Score question —
+different meaning / partly / same meaning but one detail wrong / same meaning in
+different words / the same words — and the row gets a `meaning` field beside
+`accuracy`. `meaning.score` is the model's probability-weighted level ÷ 4, so it
+can sit between levels; `meaning.level` is that level rounded.
+`language.meaning_judge.timeout_ms` is honoured within 100..5000 ms; anything
+else falls back to 1500 with one `school.language.meaning-judge.timeout-invalid`
+warning. Every refusal that needs no log read (guest, unknown corpus, rung or
+sentence, the physical gate, an unknown answer method) happens before the
+model call, so a refused request costs nothing; `school.language.meaning-failed`
+names the attempt (`learnerId`, `corpus`, `seq`). An exact copy (accuracy 1) and an answer with no letters are scored
+by rule without a call. The judge is awaited before the row is written
+(`submitAttempt`, which the log route uses; the synchronous `logAttempt` never
+judges), under a 1.5 s deadline; a failure, a timeout or no gateway writes the
+row exactly as before. Dictation is never meaning-scored: it answers in the
+target language and its diff is the lesson. Config (school household config):
+`language.meaning_judge.enabled` (default on where a gateway exists),
+`language.meaning_judge.timeout_ms`. Logs: `school.language.meaning` (info,
+after the row is stored: accuracy, meaning, level, confidence, judge, model,
+method, practice, ms) and `school.language.meaning-failed` (warn).
+
 **`copy` mode's input gate is not a second gate.** The target is on screen and
 the child is tracing it, so the IME refuses a keystroke that makes the syllable
 in flight stop being a viable prefix of the syllable being traced, and settles
@@ -808,6 +832,11 @@ Artwork keys to the corpus, not the program —
 `<media>/school/programs/sentence-ladder/<corpusId>/poster.jpg` — because one
 program with one picture would put a Korean cover on a Spanish card.
 
+The grown-up's course report carries the scores the child's card does not:
+**Typing accuracy** (mean `accuracy`, reveals excluded), **Answers shown**, and
+**Meaning understood** — the mean `meaning.score` over rows that carry one;
+grown-up only, absent until the first scored row.
+
 ---
 
 ## 8. Lifecycle, identity and credit
@@ -887,6 +916,12 @@ An attempt is one row in the day's log:
   given: 오늘 날씨가 좋아요   # text responses only
   accuracy: 0.92           # text responses only; recorded, never gating
   method: typed            # text responses only; typed | spoken
+  meaning:                 # interpretation only, when a meaning judge answered; never gating
+    score: 0.742           # probability-weighted level ÷ 4, 0..1 (same scale as accuracy)
+    level: 3               # score × 4, rounded: 0 different … 4 same words
+    confidence: 0.81
+    judge: model           # model | exact | no-words
+    model: jev-1.13.0      # judge: model only
 ```
 
 `method` says how the answer was produced — typed, or spoken and transcribed
@@ -894,6 +929,9 @@ into the field before the learner submitted it. It is **absent** on rows written
 before the question was asked, and on any client that does not send it: a
 guessed method in an append-only log outlives whoever guessed it. It changes
 nothing about scoring or credit.
+
+`meaning` is absent on reveals, on dictation, on rows written before it
+existed, and whenever the judge did not answer — absence is never a zero.
 
 A **revealed** attempt is the same row with one field instead of two:
 

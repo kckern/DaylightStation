@@ -12,7 +12,7 @@
 import {
   validateCorpus, indexBySeq, buildDayQueue, summarizeQueue,
   shouldRollDay, studyDayIndex, chainFor, creditChain, rungById, resolveRole, accuracy,
-  validateProgramEnrollment, unitFor, RUNG_IDS,
+  validateProgramEnrollment, unitFor, RUNG_IDS, ROLES,
 } from '#domains/school/language/index.mjs';
 import { resolveGate, capabilitiesUnder, allowsRung, gateMessage } from '#domains/school/accessGate.mjs';
 import { requirementFor } from '#domains/school/language/ladder.mjs';
@@ -31,7 +31,7 @@ const CREDIT_REANNOUNCE_MS = 10 * 60 * 1000;
 const TREND_BUCKETS = 12;
 
 export class SentenceLadderService {
-  #ds; #logger; #now; #timezone; #boundaryHour; #readGate; #readProgramEnrollment; #realtime; #voiceAnswer;
+  #ds; #logger; #now; #timezone; #boundaryHour; #readGate; #readProgramEnrollment; #realtime; #voiceAnswer; #meaningJudge;
   #corpusCache = new Map();
   // Which suppression reasons have already been announced this process. At
   // most one line per reason: the guard below runs on every saved attempt, so
@@ -67,6 +67,13 @@ export class SentenceLadderService {
      * which degrades; the other way round dead-ends a child.
      */
     voiceAnswer = false,
+    /**
+     * Optional SentenceMeaningJudge (anything with an async `judge()`). Scores
+     * how well an interpretation answer carries the sentence's meaning, beside
+     * the character-level `accuracy`. Recorded, never gating. Absent → the row
+     * is exactly what it was before this existed.
+     */
+    meaningJudge = null,
   }) {
     this.#ds = datastore;
     this.#logger = logger;
@@ -77,6 +84,7 @@ export class SentenceLadderService {
     this.#readProgramEnrollment = typeof readProgramEnrollment === 'function' ? readProgramEnrollment : null;
     this.#realtime = realtime;
     this.#voiceAnswer = voiceAnswer === true;
+    this.#meaningJudge = typeof meaningJudge?.judge === 'function' ? meaningJudge : null;
   }
 
   /**
@@ -506,21 +514,113 @@ export class SentenceLadderService {
    * asked to be shown the answer instead of producing one. It takes the place
    * of `given` rather than sitting beside it — see `#recordAttempt`.
    */
-  logAttempt({
+  logAttempt(args) {
+    return this.#logAttempt(args, null);
+  }
+
+  /**
+   * `logAttempt` plus a meaning score on a rung answered in the learner's own
+   * language (interpretation). The judge is awaited BEFORE the synchronous
+   * record, under its own deadline, so the score lands on the same
+   * append-only row; a missing, failing or slow judge yields no field, never
+   * an error. The meaning is logged only once the row is stored.
+   */
+  async submitAttempt(args) {
+    // Everything that can refuse without reading the log runs first, so a
+    // request that was never going to be stored spends no model call. The due
+    // check (a queue rebuild from the log) stays after the judge, as accepted.
+    this.#precheckAttempt(args);
+    const judged = await this.#judgeMeaning(args);
+    const event = this.#logAttempt(args, judged?.meaning ?? null);
+    if (judged) {
+      this.#log('info', 'school.language.meaning', {
+        ...judged.facts, practice: event.practice === true, ms: judged.ms,
+      }, args.runId ?? null);
+    }
+    return event;
+  }
+
+  /**
+   * The cheap refusals of `#recordAttempt`, in the same order and with the
+   * same errors: signed-in learner, known corpus/rung/sentence, the physical
+   * gate for this rung, a known answer method. No log read, no write.
+   */
+  #precheckAttempt({ userId, corpusId, seq, rung, capabilities = {}, method = null, given = null, revealed = false }) {
+    this.#requireUser(userId);
+    const corpus = this.#requireCorpus(corpusId);
+    const rungDef = rungById(rung);
+    if (!rungDef) throw new ValidationError(`unknown rung: ${rung}`, { field: 'rung', value: rung });
+    if (rung === 'recording') {
+      throw new ValidationError('recording evidence requires an audio upload', { field: 'rung' });
+    }
+    if (!corpus.index.get(Number(seq))) throw new EntityNotFoundError('sentence', `${corpusId}#${seq}`);
+    this.#assertGate(rungDef, corpus, capabilities);
+    if (rungDef.response?.modality === 'text' && revealed !== true
+      && typeof given === 'string' && given.trim() !== ''
+      && method != null && method !== 'typed' && method !== 'spoken') {
+      throw new ValidationError(`unknown answer method: ${method}`, { field: 'method', value: method });
+    }
+  }
+
+  async #judgeMeaning({ userId, corpusId, seq, rung, given = null, revealed = false, method = null }) {
+    if (!this.#meaningJudge || revealed === true || typeof given !== 'string' || given.trim() === '') return null;
+    const rungDef = rungById(rung);
+    // Only where the learner writes in their OWN language: there, different
+    // words can still be right. Dictation transcribes; its diff is the point.
+    if (rungDef?.response?.modality !== 'text' || rungDef.response.role !== ROLES.SOURCE) return null;
+    const corpus = this.#loadCorpus(corpusId);
+    const sentence = corpus?.index.get(Number(seq));
+    if (!sentence) return null; // #recordAttempt raises the real error
+    const language = resolveRole(rungDef.response.role, corpus.languages);
+    const expected = sentence.text[language] ?? '';
+    const typedAccuracy = accuracy(given, expected);
+    let result;
+    try {
+      result = await this.#meaningJudge.judge({
+        given: given.trim(), expected, language, accuracy: typedAccuracy,
+        attempt: { learnerId: userId, corpus: corpusId, seq: Number(seq) },
+      });
+    } catch (error) {
+      this.#logger.warn?.('school.language.meaning-failed', {
+        learnerId: userId, corpus: corpusId, seq: Number(seq), error: error.message,
+      });
+      return null;
+    }
+    if (!result || typeof result.score !== 'number') return null;
+    // Every value defined: yaml.dump throws on undefined.
+    const meaning = {
+      score: result.score,
+      level: result.level ?? null,
+      confidence: result.confidence ?? null,
+      judge: result.judge ?? null,
+      ...(result.judge === 'model' ? { model: result.model ?? null } : {}),
+    };
+    return {
+      meaning,
+      ms: result.ms ?? null,
+      facts: {
+        learnerId: userId, corpus: corpusId, seq: Number(seq), accuracy: typedAccuracy,
+        meaning: meaning.score, level: meaning.level, confidence: meaning.confidence,
+        judge: meaning.judge, model: meaning.model ?? null, method,
+      },
+    };
+  }
+
+  #logAttempt({
     userId, corpusId, seq, rung, given = null, revealed = false,
     source = null, capabilities = {}, runId = null, method = null,
-  }) {
+  }, meaning) {
     if (rung === 'recording') {
       throw new ValidationError('recording evidence requires an audio upload', { field: 'rung' });
     }
     return this.#recordAttempt({
-      userId, corpusId, seq, rung, given, revealed, source, capabilities, runId, method,
+      userId, corpusId, seq, rung, given, revealed, source, capabilities, runId, method, meaning,
     });
   }
 
   #recordAttempt({
     userId, corpusId, seq, rung, given = null, revealed = false, source = null, capabilities = {},
-    allowRecording = false, skipDueCheck = false, practice = false, runId = null, method = null,
+    allowRecording = false, skipDueCheck = false, practice = false, runId = null, method = null, meaning = null,
   }) {
     this.#requireUser(userId);
     const corpus = this.#requireCorpus(corpusId);
@@ -623,6 +723,9 @@ export class SentenceLadderService {
           }
           event.method = method;
         }
+        // Beside accuracy, never instead of it, and gating nothing. Present
+        // only when a meaning judge answered (see submitAttempt).
+        if (meaning) event.meaning = meaning;
       }
     }
 
@@ -646,13 +749,19 @@ export class SentenceLadderService {
     return event;
   }
 
-  #assertOutstanding({ userId, corpus, progress, seq, rung, capabilities }) {
-    const rungDef = rungById(rung);
+  /** Refuse a rung the physical gate does not allow; returns the allowed capabilities. */
+  #assertGate(rungDef, corpus, capabilities) {
     const gate = this.#gate();
     const allowed = capabilitiesUnder(gate, capabilities);
     if (!allowsRung(gate, this.#requirementFor(rungDef, corpus), allowed)) {
       throw new GateClosedError(gateMessage(gate) || 'That is unavailable right now', gate);
     }
+    return allowed;
+  }
+
+  #assertOutstanding({ userId, corpus, progress, seq, rung, capabilities }) {
+    const rungDef = rungById(rung);
+    const allowed = this.#assertGate(rungDef, corpus, capabilities);
     const policy = this.#queuePolicy(userId, corpus, progress);
     const queue = buildDayQueue({
       log: this.#ds.readAllEvents(userId, corpus.id),
@@ -1259,6 +1368,17 @@ export class SentenceLadderService {
       if (trend.length > 1) {
         metrics.push({ id: 'accuracy-trend', kind: 'trend', label: 'Accuracy over time', points: trend });
       }
+    }
+    // How much of the MEANING came through on interpretation, from the
+    // optional meaning judge — "wrote it differently" versus "did not
+    // understand". Grown-up only, like accuracy: it is unvalidated and it
+    // gates nothing. Absent until a row carries one.
+    const meant = log.filter((e) => typeof e.meaning?.score === 'number');
+    if (meant.length) {
+      metrics.push({
+        id: 'meaning', kind: 'score', label: 'Meaning understood',
+        value: meant.reduce((a, e) => a + e.meaning.score, 0) / meant.length,
+      });
     }
 
     return {
