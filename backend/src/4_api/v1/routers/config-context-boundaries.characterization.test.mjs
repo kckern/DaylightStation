@@ -10,6 +10,7 @@ import { createMediaRouter } from './media.mjs';
 import { createHomeDashboardRouter } from './home-dashboard.mjs';
 import { createJournalistRouter } from './journalist.mjs';
 import { createNutribotRouter } from './nutribot.mjs';
+import { CalendarReadContext } from '#apps/calendar/CalendarReadContext.mjs';
 
 const logger = { info() {}, warn() {}, error() {}, debug() {} };
 function mount(path, router, { json = true } = {}) {
@@ -41,19 +42,24 @@ describe('config-backed semantic API seams', () => {
   });
 
   it('preserves calendar household override, timezone policy, and date envelope', async () => {
-    const calendarReadContext = {
-      resolveHousehold: vi.fn((explicit) => explicit || 'default'),
+    // The router delegates household/timezone policy to CalendarReadContext; pin it through
+    // a real context over a fake household policy and event source.
+    const householdContext = {
+      resolve: vi.fn((explicit, fallback) => explicit || fallback),
       timezone: vi.fn(() => 'UTC'),
-      events: vi.fn(() => [{
-        id: 'event-1', summary: 'Breakfast',
-        start: { dateTime: '2026-08-28T08:00:00Z' }, end: { dateTime: '2026-08-28T09:00:00Z' },
-      }]),
     };
+    const loadEvents = vi.fn(() => [{
+      id: 'event-1', summary: 'Breakfast',
+      start: { dateTime: '2026-08-28T08:00:00Z' }, end: { dateTime: '2026-08-28T09:00:00Z' },
+    }]);
+    const calendarReadContext = new CalendarReadContext({ householdContext, loadEvents, logger });
     const app = mount('/calendar', createCalendarRouter({ calendarReadContext }));
     const response = await request(app).get('/calendar/events/2026-08-28?household=other');
     expect(response.status).toBe(200);
     expect(response.body).toMatchObject({ status: 'success', date: '2026-08-28', count: 1, _household: 'other' });
-    expect(calendarReadContext.resolveHousehold).toHaveBeenCalledWith('other');
+    expect(householdContext.resolve).toHaveBeenCalledWith('other', 'default');
+    expect(householdContext.timezone).toHaveBeenCalledWith('other');
+    expect(loadEvents).toHaveBeenCalledWith('other');
     expect(response.body.events[0]).toMatchObject({ id: 'event-1', time: '8:00 AM', allDay: false });
   });
 
@@ -66,7 +72,9 @@ describe('config-backed semantic API seams', () => {
     const app = mount('/entropy', createEntropyRouter({ entropyService, principalResolver, logger }));
     expect((await request(app).get('/entropy')).body).toEqual({ items: [], summary: {} });
     const status = await request(app).get('/entropy/status');
-    expect(status.body).toEqual({ source: 'status', status: 'fresh' });
+    // /:source is registered before /status, so /status is served as a source lookup.
+    // Items go through the public EntropyItem projection (id mirrors source).
+    expect(status.body).toEqual({ id: 'status', source: 'status', status: 'fresh' });
     expect(entropyService.getSourceEntropy).toHaveBeenCalledWith('head', 'status');
   });
 
@@ -77,12 +85,17 @@ describe('config-backed semantic API seams', () => {
       harvest: vi.fn(async () => ({ collected: 1 })),
     };
     const principalResolver = { resolve: vi.fn(() => 'head') };
-    const app = mount('/harvest', createHarvestRouter({ harvesterService, principalResolver, logger }));
+    const app = mount('/harvest', createHarvestRouter({
+      harvesterService, principalResolver, logger,
+      requestIds: { next: () => 'req-1' },
+      deadline: { run: vi.fn((promise) => promise) },
+      timeoutPolicy: () => 120000,
+    }));
     const response = await request(app).post('/harvest/demo?user=query-user&mode=quick')
       .send({ user: 'body-user', force: true });
     expect(response.status).toBe(200);
     expect(response.body).toMatchObject({ ok: true, harvester: 'demo', data: { collected: 1 } });
-    expect(response.body.requestId).toEqual(expect.any(String));
+    expect(response.body.requestId).toBe('req-1');
     expect(harvesterService.harvest).toHaveBeenCalledWith('demo', 'query-user', { mode: 'quick', force: true });
     expect(principalResolver.resolve).not.toHaveBeenCalled();
   });
