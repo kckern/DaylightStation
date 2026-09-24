@@ -499,3 +499,4 @@ The corollary bit twice in this sweep: `feat/teacher-workspace-ia` and `feature/
 | 2026-09-23 | feat/fitness-stint-attribution | bc62ddd193 | Strap reassignment moves stints completely; resume restores live keys; split-series heal; merged to main |
 | 2026-09-23 | fix/heal-keep-strava-only | 1fdeb39f20 | Heal never empties a Strava-imported session; merged to main |
 | 2026-09-23 | fix/heal-invalidate-index | e615a5859e | Heal drops the healed day from the session-list index; merged to main |
+| 2026-09-24 | feat/fitness-playlist-picker | 7aab477f4 | Fitness music playlist picker as full-screen modal with track counts |
