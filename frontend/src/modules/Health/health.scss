@@ -1008,9 +1008,10 @@ $health-aside-gap: 1.5rem;
   &--fasting &__icon { color: var(--ds-accent); }
   &__actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
   // A finger-sized target on the phone. Mantine writes `--button-height:
-  // var(--button-height-sm)` INLINE on each size="sm" Button, so an override
-  // of --button-height loses; redefine the size token on the row instead.
-  // (Measured 36px before this, 2026-09-24.)
-  --button-height-sm: 44px;
+  // var(--button-height-sm)` INLINE on each size="sm" Button, AND defines
+  // --button-height-sm on the Button's own class — so neither overriding
+  // --button-height nor setting the token on the row reaches it (both measured
+  // 36px in a real render, 2026-09-24). Redefine the token on the Button.
+  .mantine-Button-root { --button-height-sm: 44px; }
   &__error { flex-basis: 100%; color: var(--ds-danger); font-size: 0.8rem; }
 }
