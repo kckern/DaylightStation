@@ -76,4 +76,33 @@ describe('untracked-intake reconstruction', () => {
     expect(nutriday()['2025-09-16']).toMatchObject({ calories: 460, protein: 30 });
     expect(nutriday()['2025-09-16'].reconstructed_calories).toBeUndefined();
   });
+
+  it('the production shape: a partial day whose logged rows live in an ARCHIVE month', async () => {
+    // Every planned date is past retention, so the logged lunch sits in archives/nutrilist/YYYY-MM.yml.
+    const dir = path.join(root, 'lifelog/nutrition/archives/nutrilist');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, '2025-10.yml'), yaml.dump([{ id: 'a1', uuid: randomUUID(), item: 'Archived lunch', calories: 610, protein: 40,
+      date: '2025-10-08', mealTime: 'afternoon', logId: 'L2', log_uuid: 'L2', userId: 'kc', kind: 'item', schemaVersion: 2, version: 1 }]));
+    const res = await request(app).post('/api/v1/health/nutrition/reconstruction').send({ entries: [{ date: '2025-10-08', calories: 1400 }] });
+    expect(res.body.written).toBe(1);
+    expect(nutriday()['2025-10-08']).toMatchObject({ calories: 2010, protein: 40, reconstructed_calories: 1400 });
+
+    // The nightly archiver files the reconstruction row by date; DELETE still finds it there.
+    await store.archiveOldItems('kc', 30);
+    const archived = yaml.load(fs.readFileSync(path.join(dir, '2025-10.yml'), 'utf8'));
+    expect(archived.some(row => row.logId === 'untracked-reconstruction')).toBe(true);
+    const del = await request(app).delete('/api/v1/health/nutrition/reconstruction');
+    expect(del.body.removed).toBeGreaterThanOrEqual(1);
+    expect(nutriday()['2025-10-08']).toMatchObject({ calories: 610, protein: 40 });
+    expect(nutriday()['2025-10-08'].reconstructed_calories).toBeUndefined();
+  });
+
+  it('never fills a day the user closed (/done, /fast, the day view)', async () => {
+    const operations = new HealthOperations({ nutritionItems: store, resolveDefaultUsername: () => 'kc', today: () => '2026-09-24', newId: randomUUID,
+      healthData: { loadDayClosedData: async () => ({ '2025-11-02': { status: 'fasting', at: 'x' } }) } });
+    const result = await operations.applyReconstruction('kc', plan);
+    expect(result).toMatchObject({ written: 1, skippedClosed: ['2025-11-02'] });
+    expect(nutriday()['2025-11-02']).toBeUndefined();
+  });
 });
+

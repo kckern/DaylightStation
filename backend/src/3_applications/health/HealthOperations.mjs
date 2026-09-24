@@ -202,7 +202,11 @@ export class HealthOperations {
     const dates = [...seen].sort();
     const existing = await this.nutritionItems.findByDateRange(username, dates[0], dates.at(-1));
     const already = new Set(existing.filter(isReconstructedRow).map(row => row.date));
-    const toWrite = entries.filter(entry => !already.has(entry.date));
+    // A day the user closed (/done, /fast, the day view) is final — never filled.
+    let closures = {};
+    try { closures = (await this.healthData?.loadDayClosedData?.(username)) || {}; } catch { closures = {}; }
+    const closed = new Set(dates.filter(date => closureStatus(closures[date])));
+    const toWrite = entries.filter(entry => !already.has(entry.date) && !closed.has(entry.date));
     const rows = toWrite.map(entry => ({
       uuid: this.newId(), userId: username, date: entry.date, mealTime: null,
       item: RECONSTRUCTION_ITEM_NAME, name: RECONSTRUCTION_ITEM_NAME, icon: 'default', unit: 'g', amount: null,
@@ -213,7 +217,7 @@ export class HealthOperations {
       settled: true, settledBy: RECONSTRUCTION_LOG_ID, settledAt: new Date(this.clock.now()).toISOString(),
     }));
     if (!dryRun && rows.length) await this.nutritionItems.saveMany(rows);
-    return { dryRun, written: dryRun ? 0 : rows.length, planned: rows.length, skipped: [...already].sort(),
+    return { dryRun, written: dryRun ? 0 : rows.length, planned: rows.length, skipped: [...already].sort(), skippedClosed: [...closed].sort(),
       totalCalories: rows.reduce((sum, row) => sum + row.calories, 0) };
   }
 
