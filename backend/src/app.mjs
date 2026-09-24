@@ -6963,6 +6963,9 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     safeConfig,
     routers: v1Routers,
     plexProxyHandler: mediaLibProxyHandler,  // Key stays 'plexProxyHandler' for API compat
+    // POST /system/reload re-reads household app YAML through this. Omitting
+    // it (as the 2026-08-29 boundary refactor did) makes the route answer 503.
+    configReloadService: configService,
     logger: rootLogger.child({ module: 'api-v1' })
   });
 
