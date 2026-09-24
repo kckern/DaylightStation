@@ -100,14 +100,14 @@ So every day the coach reads is classified before anything else happens:
 | `incomplete` | Something logged, under the threshold, not confirmed | **no** — missing data |
 | `unlogged` | Nothing logged | **no** — missing data |
 
-The threshold is `logging_completeness.min_calories` in household `config/coaching.yml`, **default 1200**. A day is closed from the nutribot chat with `/done` or `/fast` (today, in the user's timezone), or `/done yesterday` / `/fast yesterday`. Closures live in `data/users/{username}/day_closed.yml` as `{date: {status, at}}`. A bare `true` is the legacy `/done` record and is read as `done`.
+The threshold is `logging_completeness.min_calories` in the household `coaching` config (`household/coaching/config.yml`, registered in `shared/contracts/householdConfig.mjs`), **default 1200**. Close a day from the nutribot chat with `/done` or `/fast`. With no argument it closes today in the user's timezone. It also takes `yesterday` or an explicit `YYYY-MM-DD` that is not in the future, and `/reopen` with the same arguments undoes it. The brief's hint prints the exact date, so it stays correct if read a day late. Closures live in `data/users/{username}/day_closed.yml` as `{date: {status, at}}`. A bare `true` is the legacy `/done` record and is read as `done`.
 
 Consequences:
 
 - **Days are calendar days.** The morning brief's "yesterday" is yesterday. An unlogged day reads "nothing logged". It is never skipped, so an earlier day's numbers never stand in for it.
 - **Averages cover trusted days only**, and the status block states the coverage ("3 of 7 days fully logged"). With no trusted days it says so instead of averaging.
 - **An incomplete yesterday is labelled as such** in the status block, with the command that would close it.
-- **Patterns and commentary never read an untrusted day as intake.** An untrusted day in the last three yields `missed_logging`, never `calorie_deficit`. The snapshot carries each day's `status` and the threshold, and the LLM is told to say nothing about an incomplete yesterday's intake and to stay silent when fewer than half the days are trusted.
+- **Patterns and commentary never read an untrusted day as intake.** An untrusted most-recent day yields `missed_logging`, never `calorie_deficit`. Older untrusted days are dropped and the trusted remainder is still evaluated. A confirmed fast is never `missed_logging`. The snapshot carries each day's `status` and the threshold, and the LLM is told to say nothing about an incomplete yesterday's intake and to stay silent when fewer than half the days are trusted.
 
 Implementation: `backend/src/3_applications/coaching/dayCompleteness.mjs`.
 
@@ -246,7 +246,7 @@ The unifying principle: **a problem in the coaching layer never blocks the data 
 ### Configuration and data
 
 - `data/household/config/integrations.yml` — household-level provider selection (LLM provider, messaging platform, model and mini-model).
-- `data/household/config/coaching.yml` — `morning_brief.schedule`, `weekly_digest.schedule`, `logging_completeness.min_calories` (default 1200).
+- `data/household/coaching/config.yml` — `morning_brief.schedule`, `weekly_digest.schedule`, `logging_completeness.min_calories` (default 1200).
 - `data/users/{username}/day_closed.yml` — per-day `/done` and `/fast` closures.
 - `data/users/{username}/health_coaching.yml` — per-user coaching history: every delivered message persisted with its assignment type and the date it covers.
 - `data/users/{username}/lifeplan.yml` — per-user goal configuration consumed for goal-relative framing.

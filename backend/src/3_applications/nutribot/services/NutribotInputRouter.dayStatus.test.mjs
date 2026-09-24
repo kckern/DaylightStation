@@ -9,7 +9,7 @@ import { NutribotInputRouter } from './NutribotInputRouter.mjs';
 const silent = { debug() {}, info: vi.fn(), warn() {}, error() {} };
 
 function harness() {
-  const healthStore = { markDayStatus: vi.fn(async () => {}) };
+  const healthStore = { markDayStatus: vi.fn(async () => {}), clearDayStatus: vi.fn(async () => {}) };
   const container = {
     getConversationStateStore: () => null,
     getFoodLogStore: () => null,
@@ -43,5 +43,25 @@ describe('NutribotInputRouter /done and /fast', () => {
     await router.handleCommand(cmd('fast', 'yesterday'), rc);
     expect(healthStore.markDayStatus).toHaveBeenCalledWith('kckern', '2026-09-22', 'fasting');
     expect(rc.sendMessage.mock.calls[0][0]).toContain('as a fast');
+  });
+
+  it('/done takes an explicit date so an older unlogged day can be closed', async () => {
+    const { router, rc, healthStore } = harness();
+    await router.handleCommand(cmd('done', '2026-09-20'), rc);
+    expect(healthStore.markDayStatus).toHaveBeenCalledWith('kckern', '2026-09-20', 'done');
+  });
+
+  it('refuses a future or malformed date without writing', async () => {
+    const { router, rc, healthStore } = harness();
+    await router.handleCommand(cmd('done', '2026-09-30'), rc);
+    await router.handleCommand(cmd('fast', 'last tuesday'), rc);
+    expect(healthStore.markDayStatus).not.toHaveBeenCalled();
+    expect(rc.sendMessage.mock.calls[0][0]).toContain('/done YYYY-MM-DD');
+  });
+
+  it('/reopen clears a closure', async () => {
+    const { router, rc, healthStore } = harness();
+    await router.handleCommand(cmd('reopen', 'yesterday'), rc);
+    expect(healthStore.clearDayStatus).toHaveBeenCalledWith('kckern', '2026-09-22');
   });
 });

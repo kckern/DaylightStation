@@ -55,18 +55,19 @@ describe('CoachingMessageBuilder', () => {
 
     it('flags an incomplete yesterday instead of reporting it as intake', () => {
       const html = CoachingMessageBuilder.buildMorningBriefBlock({
-        ...base, yesterday: { calories: 460, protein: 18, status: 'incomplete' },
+        ...base, yesterday: { date: '2026-09-16', calories: 460, protein: 18, status: 'incomplete' },
       });
       expect(html).toContain('460 cal · 18g protein logged — looks incomplete');
       expect(html).toContain('Under 1200 cal');
-      expect(html).toContain('/done yesterday');
+      expect(html).toContain('/done 2026-09-16');
     });
 
     it('says nothing logged for an unlogged yesterday', () => {
       const html = CoachingMessageBuilder.buildMorningBriefBlock({
-        ...base, yesterday: { calories: 0, protein: 0, status: 'unlogged' },
+        ...base, yesterday: { date: '2026-09-13', calories: 0, protein: 0, status: 'unlogged' },
       });
       expect(html).toContain('<b>Yesterday:</b> nothing logged');
+      expect(html).toContain('/fast 2026-09-13');
     });
 
     it('labels a confirmed fast', () => {

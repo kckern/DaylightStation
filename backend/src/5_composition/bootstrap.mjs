@@ -2818,7 +2818,7 @@ export async function createAgentsServices(config) {
       // The orchestrator needs the nutrition-goal contract, not the broad
       // ConfigService. This normalized config also supplies safe defaults.
       config: nutribotConfig,
-      // household config/coaching.yml `logging_completeness.min_calories`
+      // household coaching/config.yml `logging_completeness.min_calories`
       // (default 1200): unconfirmed days under it are missing data.
       completeness: configService?.getHouseholdAppConfig?.(null, 'coaching')?.logging_completeness,
       logger,
@@ -2831,7 +2831,7 @@ export async function createAgentsServices(config) {
     const coachingUserId = configService?.getHeadOfHousehold?.() || 'default';
 
     if (coachingConversationId) {
-      // Cron cadence is configurable via household config/coaching.yml
+      // Cron cadence is configurable via household coaching/config.yml
       // (`morning_brief.schedule` / `weekly_digest.schedule`), mirroring the
       // journalist morning-debrief pattern; the historical expressions remain
       // the defaults when unconfigured.

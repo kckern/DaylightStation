@@ -71,10 +71,13 @@ export class CoachingMessageBuilder {
       case 'incomplete':
         return [
           `\u{1F4CA} <b>Yesterday:</b> ${totals} logged \u{2014} looks incomplete`,
-          `\u{21B3} Under ${minCalories} cal. If that was everything, send /done yesterday (or /fast yesterday).`,
+          `\u{21B3} Under ${minCalories} cal. If that was everything, send /done ${day.date} (or /fast ${day.date}).`,
         ];
       case 'unlogged':
-        return [`\u{1F4CA} <b>Yesterday:</b> nothing logged`];
+        return [
+          `\u{1F4CA} <b>Yesterday:</b> nothing logged`,
+          `\u{21B3} If it was a fast, send /fast ${day.date}.`,
+        ];
       default:
         return [`\u{1F4CA} <b>Yesterday:</b> ${totals}`];
     }

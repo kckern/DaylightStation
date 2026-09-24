@@ -76,7 +76,7 @@ describe('detectPattern', () => {
 describe('detectPattern with completeness status', () => {
   const goals = { calories_min: 1600, calories_max: 2000, protein: 150 };
 
-  it('reports missed_logging, not calorie_deficit, for incomplete recent days', () => {
+  it('reports missed_logging, not calorie_deficit, when yesterday is incomplete', () => {
     const days = [
       { date: '2026-09-16', calories: 460, protein: 18, status: 'incomplete' },
       { date: '2026-09-15', calories: 603, protein: 50, status: 'incomplete' },
@@ -92,5 +92,23 @@ describe('detectPattern with completeness status', () => {
       { date: '2026-09-14', calories: 1700, protein: 150, status: 'complete' },
     ];
     expect(detectPattern(days, goals)).toBe('calorie_deficit');
+  });
+
+  it('does not let an older incomplete day mask a real pattern', () => {
+    const days = [
+      { date: '2026-09-16', calories: 2300, protein: 150, status: 'complete' },
+      { date: '2026-09-15', calories: 2400, protein: 150, status: 'complete' },
+      { date: '2026-09-14', calories: 500, protein: 20, status: 'incomplete' },
+    ];
+    expect(detectPattern(days, goals)).toBe('calorie_surplus');
+  });
+
+  it('never calls a confirmed fast missed logging', () => {
+    const days = [
+      { date: '2026-09-16', calories: 0, protein: 0, status: 'fasting' },
+      { date: '2026-09-15', calories: 1800, protein: 150, status: 'complete' },
+      { date: '2026-09-14', calories: 1700, protein: 150, status: 'complete' },
+    ];
+    expect(detectPattern(days, goals)).not.toBe('missed_logging');
   });
 });

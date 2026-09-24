@@ -55,8 +55,10 @@ export class HandleHelpCommand {
 /report - Today's nutrition report
 /review - Review and adjust entries
 /coach - Get personalized advice
-/done - Today's log is complete (add <i>yesterday</i> for yesterday)
-/fast - Today was a fast (add <i>yesterday</i> for yesterday)
+/done - Today's log is complete
+/fast - Today was a fast
+/reopen - Undo /done or /fast
+  (add <i>yesterday</i> or a date, e.g. /done 2026-09-20)
 
 <b>Tips:</b>
 • Be specific about portions (e.g., "2 cups of rice")
