@@ -98,6 +98,18 @@ export class VoiceTriggerService {
       return { ...result, voice };
     }
 
+    const description = VoiceResolver.commandOptions(locationConfig)[match.command];
+    if (options.dryRun) {
+      // A dry run shows what would be proposed but stores nothing, so it can
+      // never be confirmed, and it stays out of the proposed/confirmed ratio
+      // that decides promotion to `route`.
+      this.#logger.debug?.('trigger.voice.proposed.dry_run', { location, command: match.command, confidence: match.confidence });
+      return {
+        ok: true, confirm: true, dryRun: true, location,
+        proposal: { id: null, command: match.command, description, confidence: match.confidence, expiresInMs: PROPOSAL_TTL_MS },
+      };
+    }
+
     const now = this.#clock();
     this.#prune(now);
     const id = this.#createProposalId();
@@ -110,7 +122,7 @@ export class VoiceTriggerService {
       proposal: {
         id,
         command: match.command,
-        description: VoiceResolver.commandOptions(locationConfig)[match.command],
+        description,
         confidence: match.confidence,
         expiresInMs: PROPOSAL_TTL_MS,
       },

@@ -30,6 +30,7 @@ import { gatekeeperStrategies } from './guards/gatekeeperStrategies.mjs';
 import { createDebounce } from './guards/debounce.mjs';
 import { TriggerEvent } from '#domains/trigger/TriggerEvent.mjs';
 import { canonicalizeNfcUid } from '#domains/trigger/nfcUid.mjs';
+import { voiceKeyword } from '#domains/trigger/services/VoiceResolver.mjs';
 import { assertTriggerActuationGateway } from './ports/ITriggerActuationGateway.mjs';
 import { pushData, titleCaseId } from '#domains/notification/push/pushText.mjs';
 
@@ -161,9 +162,14 @@ export class TriggerDispatchService {
     // un-canonicalized, one card reported `04_66_9c…` by one reader and
     // `04669C…` by another produced two debounce keys, so a genuine double-tap
     // sailed through as two distinct triggers.
+    // Voice values fold to their keyword form ("Play Jazz" → play_jazz) for the
+    // same reason: GET /voice/play%20jazz and a transcript "play jazz" are one
+    // trigger and must share one debounce key.
     const normalizedValue = modality === 'nfc'
       ? canonicalizeNfcUid(value)
-      : String(value || '').toLowerCase();
+      : modality === 'voice'
+        ? voiceKeyword(value)
+        : String(value || '').toLowerCase();
 
     // Modality slice check — must come before auth so unknown modalities get
     // a clear error code rather than a misleading LOCATION_NOT_FOUND.
