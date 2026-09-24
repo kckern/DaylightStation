@@ -64,3 +64,10 @@ describe('ResolverRegistry voice', () => {
     expect(intent).toEqual({ action: 'clear', target: 'kitchen-display', params: {} });
   });
 });
+
+describe('prototype keys are never commands', () => {
+  it.each(['constructor', 'Constructor', '__proto__', 'toString', 'hasOwnProperty'])('%s resolves to null', (word) => {
+    expect(VoiceResolver.resolve({ location: 'kitchen', value: word, registry })).toBeNull();
+    expect(VoiceResolver.intentFor(kitchen, word)).toBeNull();
+  });
+});

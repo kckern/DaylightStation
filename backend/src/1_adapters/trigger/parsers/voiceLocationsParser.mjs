@@ -15,6 +15,8 @@ import { ValidationError } from '#domains/core/errors/ValidationError.mjs';
 import { voiceKeyword } from '#domains/trigger/services/VoiceResolver.mjs';
 
 const ROUTING_MODES = new Set(['off', 'confirm', 'route']);
+// 'none' is the model's no-command option. ('__proto__' needs no entry:
+// voiceKeyword trims the underscores, so it lands as the harmless 'proto'.)
 const RESERVED_COMMAND_IDS = new Set(['none']);
 
 function isPlainObject(v) {
@@ -59,7 +61,7 @@ export function parseVoiceLocations(raw) {
       if (!isPlainObject(entry) || typeof entry.action !== 'string' || entry.action.length === 0) {
         throw new ValidationError(`voice command "${rawId}" at "${locationId}" has no action`, { code: 'COMMAND_MISSING_ACTION', field: rawId });
       }
-      if (commands[id]) {
+      if (Object.hasOwn(commands, id)) {
         throw new ValidationError(`voice commands at "${locationId}" collide on "${id}"`, { code: 'DUPLICATE_COMMAND', field: rawId });
       }
       commands[id] = entry;

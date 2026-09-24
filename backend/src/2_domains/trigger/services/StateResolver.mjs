@@ -38,7 +38,11 @@ export class StateResolver {
     if (!locationConfig) return null;
 
     const stateValue = String(value || '').toLowerCase();
-    const stateEntry = locationConfig.states?.[stateValue];
+    const states = locationConfig.states ?? {};
+    // hasOwn: "constructor" / "__proto__" must not find an inherited Object
+    // member (which then threw STATE_MISSING_ACTION instead of "not registered").
+    if (!Object.hasOwn(states, stateValue)) return null;
+    const stateEntry = states[stateValue];
     if (!stateEntry) return null;
 
     if (!stateEntry.action) {

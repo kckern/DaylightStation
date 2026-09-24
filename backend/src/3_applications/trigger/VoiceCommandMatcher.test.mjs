@@ -78,3 +78,11 @@ describe('VoiceCommandMatcher', () => {
     expect(gw.evaluate).not.toHaveBeenCalled();
   });
 });
+
+describe('VoiceCommandMatcher prototype keys', () => {
+  it.each(['constructor', 'Constructor', '__proto__', 'toString'])('%s is not an exact match', async (word) => {
+    const m = new VoiceCommandMatcher({ decisionGateway: null, logger: logger() });
+    expect(await m.match({ location: 'kitchen', transcript: word, locationConfig: kitchen }))
+      .toMatchObject({ command: null, via: null });
+  });
+});

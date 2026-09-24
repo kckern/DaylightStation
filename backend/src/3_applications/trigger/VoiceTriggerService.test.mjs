@@ -143,3 +143,16 @@ describe('voice through the real dispatch pipeline', () => {
     expect(broadcast).toHaveBeenCalledWith(expect.objectContaining({ topic: 'trigger:kitchen:voice', value: 'lights_off', ok: true }));
   });
 });
+
+describe('prototype keys through the real matcher', () => {
+  it.each(['constructor', '__proto__', 'toString'])('%s answers VOICE_NO_MATCH and dispatches nothing', async (word) => {
+    const { VoiceCommandMatcher } = await import('./VoiceCommandMatcher.mjs');
+    const triggerDispatchService = dispatcher();
+    const service = new VoiceTriggerService({
+      config: configWith(kitchen('route')), triggerDispatchService, logger: silent(), createProposalId: () => 'p1',
+      matcher: new VoiceCommandMatcher({ decisionGateway: null, logger: silent() }),
+    });
+    expect((await service.handleTranscript('kitchen', word)).code).toBe('VOICE_NO_MATCH');
+    expect(triggerDispatchService.handleTrigger).not.toHaveBeenCalled();
+  });
+});
