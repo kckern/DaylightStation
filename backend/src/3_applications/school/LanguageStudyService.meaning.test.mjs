@@ -127,3 +127,21 @@ describe('submitAttempt — meaning on the interpretation row', () => {
     expect(event).not.toHaveProperty('meaning');
   });
 });
+
+describe('summarize — meaning metric', () => {
+  it('averages meaning for the grown-up, and is absent until a row has one', async () => {
+    const { svc, ds } = setup({ judge: null });
+    await svc.submitAttempt({ ...ARGS, rung: 'interpretation', given: 'today the weather is nice' });
+    let [course] = svc.summarize({ userId: 'kckern' });
+    expect(course.metrics.find((m) => m.id === 'meaning')).toBeUndefined();
+
+    ds.events.push(
+      { at: new Date(AT).toISOString(), day: 4, seq: 2, rung: 'interpretation', given: 'x', accuracy: 0.2, meaning: { score: 0.5, level: 2, confidence: 0.7, judge: 'model', model: 'm' } },
+      { at: new Date(AT).toISOString(), day: 4, seq: 2, rung: 'interpretation', given: 'y', accuracy: 1, meaning: { score: 1, level: 4, confidence: 1, judge: 'exact' } },
+    );
+    [course] = svc.summarize({ userId: 'kckern' });
+    const metric = course.metrics.find((m) => m.id === 'meaning');
+    expect(metric).toEqual({ id: 'meaning', kind: 'score', label: 'Meaning understood', value: 0.75 });
+    expect(metric).not.toHaveProperty('audience');
+  });
+});

@@ -1334,6 +1334,17 @@ export class SentenceLadderService {
         metrics.push({ id: 'accuracy-trend', kind: 'trend', label: 'Accuracy over time', points: trend });
       }
     }
+    // How much of the MEANING came through on interpretation, from the
+    // optional meaning judge — "wrote it differently" versus "did not
+    // understand". Grown-up only, like accuracy: it is unvalidated and it
+    // gates nothing. Absent until a row carries one.
+    const meant = log.filter((e) => typeof e.meaning?.score === 'number');
+    if (meant.length) {
+      metrics.push({
+        id: 'meaning', kind: 'score', label: 'Meaning understood',
+        value: meant.reduce((a, e) => a + e.meaning.score, 0) / meant.length,
+      });
+    }
 
     return {
       program: this.id,
