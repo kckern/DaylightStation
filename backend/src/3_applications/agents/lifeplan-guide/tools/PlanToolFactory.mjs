@@ -1,11 +1,12 @@
 import { ToolFactory } from '../../framework/ToolFactory.mjs';
 import { createTool } from '../../ports/ITool.mjs';
+import { LifeEventType } from '#domains/lifeplan/value-objects/LifeEventType.mjs';
 
 export class PlanToolFactory extends ToolFactory {
   static domain = 'lifeplan';
 
   createTools() {
-    const { lifePlanStore, goalStateService, beliefEvaluator, feedbackService, planAuthoringService, clock } = this.deps;
+    const { lifePlanStore, goalStateService, beliefEvaluator, feedbackService, planAuthoringService, lifeEventSuggester, clock } = this.deps;
 
     const CONFIRM_PREFIX = "Writes to the user's plan. Only call after the user has explicitly confirmed in conversation.";
 
@@ -187,6 +188,64 @@ export class PlanToolFactory extends ToolFactory {
         execute: async ({ userId, statement }) => {
           try {
             const created = planAuthoringService.setPurpose(userId, { statement });
+            return { created };
+          } catch (e) {
+            return { error: e.message };
+          }
+        },
+      }),
+
+      createTool({
+        name: 'suggest_life_events',
+        description: "Read-only. Scans the user's recent calendar for items that look like life events (a move, a job change, a wedding or funeral, surgery, a graduation, a major financial change). Returns suggestions only: offer them to the user in plain words, and call add_life_event only for the ones they confirm.",
+        parameters: {
+          type: 'object',
+          properties: {
+            userId: { type: 'string', description: 'User identifier' },
+            days: { type: 'number', description: 'How many days back to scan (default 14, max 60)' },
+          },
+          required: ['userId'],
+        },
+        execute: async ({ userId, days }) => {
+          if (!lifeEventSuggester) return { error: 'Life event suggestions are not available', suggestions: [] };
+          try {
+            const result = await lifeEventSuggester.suggest(userId, { days });
+            return { suggestions: result.suggestions, window: { start: result.startDate, end: result.endDate } };
+          } catch (e) {
+            return { error: e.message, suggestions: [] };
+          }
+        },
+      }),
+
+      createTool({
+        name: 'add_life_event',
+        description: `${CONFIRM_PREFIX} Records a life event in the plan. When it came from suggest_life_events, pass that suggestion as fromSuggestion unchanged.`,
+        parameters: {
+          type: 'object',
+          properties: {
+            userId: { type: 'string', description: 'User identifier' },
+            type: { type: 'string', enum: [...LifeEventType.values()] },
+            subtype: { type: 'string', description: 'Finer kind, e.g. relocation, job_change, family_event' },
+            name: { type: 'string', description: 'Short name, e.g. "Moved to Denver"' },
+            status: { type: 'string', enum: ['anticipated', 'occurred'] },
+            date: { type: 'string', description: 'YYYY-MM-DD' },
+            fromSuggestion: { type: 'object', description: 'The suggestion this came from, if any' },
+          },
+          required: ['userId', 'type', 'name', 'status'],
+        },
+        execute: async ({ userId, type, subtype, name, status, date, fromSuggestion }) => {
+          try {
+            // The calendar summary is kept alongside the date so a renamed event
+            // ("Moving day" recorded as "Moved to Denver") is not suggested again.
+            const confidence = Number(fromSuggestion?.confidence);
+            const signal = fromSuggestion
+              ? { source: fromSuggestion.source || 'calendar', date: fromSuggestion.date ?? date ?? null,
+                summary: fromSuggestion.name ?? null,
+                detector: fromSuggestion.detector ?? null,
+                confidence: fromSuggestion.confidence != null && Number.isFinite(confidence) ? confidence : null }
+              : null;
+            const created = planAuthoringService.addLifeEvent(userId, { type, subtype, name, status, date, signal });
+            lifeEventSuggester?.noteConfirmed?.(userId, created);
             return { created };
           } catch (e) {
             return { error: e.message };

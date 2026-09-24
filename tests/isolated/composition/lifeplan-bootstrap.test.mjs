@@ -50,4 +50,26 @@ describe('bootstrapLifeplan composition', () => {
     expect(result.dashboard.ceremonyAdherence).not.toBeNull();
     expect(result.dashboard.ceremonyAdherence.total).toBe(1);
   });
+
+  it('wires a LifeEventSuggester that falls back to keywords without a decision model', async () => {
+    const dataPath = tmpUserDir();
+    const aggregator = { aggregateRange: async () => ({ days: { '2026-09-20': { sources: { calendar: [{ summary: 'Moving day' }] } } } }) };
+    const clock = { now: () => new Date('2026-09-24T12:00:00Z') };
+    const { services } = bootstrapLifeplan({ dataPath, aggregator, clock, logger: null });
+    const result = await services.lifeEventSuggester.suggest('test-user');
+    expect(result.judge).toBe('keyword');
+    expect(result.suggestions.map((s) => s.subtype)).toEqual(['relocation']);
+  });
+
+  it('passes the decision gateway and mode through', async () => {
+    const dataPath = tmpUserDir();
+    const aggregator = { aggregateRange: async () => ({ days: { '2026-09-20': { sources: { calendar: [{ summary: 'Retirement party' }] } } } }) };
+    const decisionGateway = { isConfigured: () => true, evaluate: async () => ({ model: 'm', usage: {},
+      answers: { c0: { type: 'choice', choice: 'financial', confidence: 0.9, probabilities: {} } } }) };
+    const { services } = bootstrapLifeplan({ dataPath, aggregator, decisionGateway,
+      lifeEventSignals: { mode: 'decide', min_confidence: 0.5 }, clock: { now: () => new Date('2026-09-24T12:00:00Z') }, logger: null });
+    const result = await services.lifeEventSuggester.suggest('test-user');
+    expect(result.judge).toBe('model');
+    expect(result.suggestions[0].type).toBe('financial');
+  });
 });

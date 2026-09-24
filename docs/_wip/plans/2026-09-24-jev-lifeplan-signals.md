@@ -78,7 +78,7 @@ Answer used: `answers[id].choice` (a key of `LIFE_EVENT_OPTIONS`) and `answers[i
 
 ## Rollout
 
-Config: the household `agents` app config (`configService.getAppConfig('agents')`), key `lifeplan_guide.life_event_signals`:
+Config: the system-level `agents` app config (`system/config/agents.yml` in the data tree, read with `configService.getAppConfig('agents')`), key `lifeplan_guide.life_event_signals`:
 
 ```yaml
 lifeplan_guide:

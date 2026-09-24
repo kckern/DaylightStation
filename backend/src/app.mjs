@@ -1436,6 +1436,10 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     ),
     defaultUsername: configService.getHeadOfHousehold() || 'default',
     timezone: configService.getHouseholdTimezone(),
+    // Typed-decision model for the coach's life-event suggestions (shadow by default).
+    // agents config → lifeplan_guide.life_event_signals: { mode: shadow|decide|off, min_confidence }
+    decisionGateway,
+    lifeEventSignals: configService.getAppConfig?.('agents')?.lifeplan_guide?.life_event_signals || {},
     clock: null,
     logger: rootLogger.child({ module: 'lifeplan' }),
   });

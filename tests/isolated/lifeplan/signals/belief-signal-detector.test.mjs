@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest';
 import { BeliefSignalDetector } from '#domains/lifeplan/services/BeliefSignalDetector.mjs';
-import { LifeEventSignalDetector } from '#adapters/lifeplan/signals/LifeEventSignalDetector.mjs';
 
 describe('BeliefSignalDetector', () => {
   const detector = new BeliefSignalDetector();
@@ -83,40 +82,5 @@ describe('BeliefSignalDetector', () => {
   it('returns empty for belief without signals', () => {
     const belief = { id: 'b1' };
     expect(detector.detectSignals(belief, {})).toHaveLength(0);
-  });
-});
-
-describe('LifeEventSignalDetector', () => {
-  const detector = new LifeEventSignalDetector();
-
-  it('detects life events from calendar data', () => {
-    const days = {
-      '2025-06-15': {
-        sources: { calendar: [
-          { summary: 'Moving day - new apartment' },
-          { summary: 'Team meeting' },
-        ]},
-        categories: { calendar: { calendar: [
-          { summary: 'Moving day - new apartment' },
-        ]}},
-        summaries: [],
-      },
-    };
-
-    const suggestions = detector.detectFromLifelog(days);
-    expect(suggestions.length).toBeGreaterThanOrEqual(1);
-    expect(suggestions[0].type).toBe('relocation');
-  });
-
-  it('returns empty for no matching events', () => {
-    const days = {
-      '2025-06-15': {
-        sources: { calendar: [{ summary: 'Regular standup' }] },
-        categories: {},
-        summaries: [],
-      },
-    };
-
-    expect(detector.detectFromLifelog(days)).toHaveLength(0);
   });
 });
