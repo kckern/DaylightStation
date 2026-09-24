@@ -85,6 +85,7 @@ export class NutribotContainer {
   #processRevisionInput;
   #selectUPCPortion;
   #generateDailyReport;
+  #mealCoachingTrigger;
   #getReportAsJSON;
   #agentOrchestrator;
   #startAdjustmentFlow;
@@ -137,6 +138,7 @@ export class NutribotContainer {
     this.#foodIconsString = options.foodIconsString;
     this.#reconciliationReader = options.reconciliationReader || null;
     this.#agentOrchestrator = options.agentOrchestrator || null;
+    this.#mealCoachingTrigger = options.mealCoachingTrigger || null;
     this.#healthStore = options.healthStore || null;
     this.#catalogService = options.catalogService || null;
     this.#scaleConfig = options.scaleConfig || null;
@@ -154,6 +156,9 @@ export class NutribotContainer {
   getConfig() {
     return this.#config;
   }
+
+  /** Post-meal coaching trigger (`notify({userId, source})`), or null. */
+  getMealCoachingTrigger() { return this.#mealCoachingTrigger; }
 
   setReceiptPublisher(publisher) { this.#receiptPublisher = publisher; }
   getReceiptPublisher() { return this.#receiptPublisher; }
@@ -479,6 +484,11 @@ export class NutribotContainer {
         nutriListStore: this.#nutriListStore,
         conversationStateStore: this.#conversationStateStore,
         reportDelivery: this.#reportDelivery,
+        // A report is a meal checkpoint too: it arms the same quiet timer as a
+        // capture, so a /report right after logging yields one coaching message.
+        coachingOrchestrator: this.#mealCoachingTrigger ? {
+          sendPostReport: async ({ userId, date }) => { this.#mealCoachingTrigger.notify({ userId, date, source: 'report' }); },
+        } : null,
         config: this.#config,
         logger: this.#logger,
         pause: this.#pause,

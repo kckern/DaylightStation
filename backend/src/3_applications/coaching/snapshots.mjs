@@ -14,7 +14,7 @@
  * @param {number|null} opts.weightTrend7d
  * @param {Array<{type: string, hours_ago: number, text: string}>} opts.recentCoaching
  */
-export function buildPostReportSnapshot({ date, timeOfDay, calories, protein, items, recentPattern, weightTrend7d, recentCoaching }) {
+export function buildPostReportSnapshot({ date, timeOfDay, calories, protein, items, todayStatus = 'in_progress', recentPattern, weightTrend7d, recentCoaching, recentDays, minCalories }) {
   // Pick top 3 notable items by protein contribution, then calories
   const notable = (items || [])
     .filter(i => i.calories > 0)
@@ -30,11 +30,14 @@ export function buildPostReportSnapshot({ date, timeOfDay, calories, protein, it
     type: 'post-report',
     date,
     time_of_day: timeOfDay,
+    today_status: todayStatus,
+    logging: loggingContext(minCalories),
     calories: { consumed: calories.consumed, goal_min: calories.goal_min, goal_max: calories.goal_max, pct: calories.goal_max > 0 ? Math.round((calories.consumed / calories.goal_max) * 100) : 0 },
     protein: { consumed: protein.consumed, goal: protein.goal, pct: protein.goal > 0 ? Math.round((protein.consumed / protein.goal) * 100) : 0 },
     notable_items: notable,
     recent_pattern: recentPattern,
     weight_trend_7d: weightTrend7d,
+    recent_days: (recentDays || []).map(pickDay),
     recent_coaching: recentCoaching || [],
   };
 }
@@ -110,9 +113,10 @@ function loggingContext(minCalories) {
  * @param {{consumed: number, goal_max: number}} opts.todayCalories
  * @param {Array} opts.recentCoaching
  */
-export function buildExerciseReactionSnapshot({ activity, budgetImpact, todayCalories, recentCoaching }) {
+export function buildExerciseReactionSnapshot({ activity, budgetImpact, todayCalories, todayStatus = 'in_progress', recentCoaching }) {
   return {
     type: 'exercise-reaction',
+    today_status: todayStatus,
     activity,
     budget_impact: budgetImpact,
     today_calories: todayCalories,

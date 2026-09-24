@@ -110,7 +110,7 @@ function makeCaptureUseCase(foodLogStore, { items, mealTime, mealTimeExplicit } 
   };
 }
 
-function makeHarness({ conversationState = null, revisionUseCase, captureUseCase, scaleUseCase, foodLogStore, voiceUseCase, logger, receipts = { refresh: vi.fn(async () => {}) } } = {}) {
+function makeHarness({ conversationState = null, revisionUseCase, captureUseCase, scaleUseCase, foodLogStore, voiceUseCase, logger, receipts = { refresh: vi.fn(async () => {}) }, mealCoachingTrigger = null } = {}) {
   foodLogStore = foodLogStore || makeFoodLogStore();
   const nutriListStore = { saveMany: vi.fn(async () => {}), removeByLogId: vi.fn(async () => 2) };
   const messagingGateway = {
@@ -136,6 +136,7 @@ function makeHarness({ conversationState = null, revisionUseCase, captureUseCase
     getNutriListStore: () => nutriListStore,
     getMessagingGateway: () => messagingGateway,
     getReceiptPublisher: () => receipts,
+    getMealCoachingTrigger: () => mealCoachingTrigger,
     getAcceptFoodLog: () => acceptFoodLog,
     getLogFoodFromText: () => logFoodFromText,
     getLogFoodFromUPC: () => logFoodFromText,
@@ -300,6 +301,13 @@ describe('daily-report cadence', () => {
     // full report (image render + coaching kick) would fire inside every capture.
     expect(acceptSpy.mock.calls[0][0].autoReport).toBe(false);
     expect(generateDailyReport.execute).not.toHaveBeenCalled();
+  });
+
+  it('arms post-meal coaching instead, off the request path', async () => {
+    const mealCoachingTrigger = { notify: vi.fn(() => true) };
+    const { router } = makeHarness({ mealCoachingTrigger });
+    await router.handleText(textEvent, makeResponseContext());
+    expect(mealCoachingTrigger.notify).toHaveBeenCalledWith({ userId: 'kc', date: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/), source: 'text' });
   });
 });
 

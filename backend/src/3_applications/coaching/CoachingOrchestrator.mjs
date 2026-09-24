@@ -1,6 +1,6 @@
 import { CoachingMessageBuilder } from './CoachingMessageBuilder.mjs';
 import { detectPattern } from './patterns.mjs';
-import { buildCalendarDays, averageTrusted, resolveMinCalories } from './dayCompleteness.mjs';
+import { buildCalendarDays, averageTrusted, resolveMinCalories, closureStatus } from './dayCompleteness.mjs';
 import { buildPostReportSnapshot, buildMorningBriefSnapshot, buildWeeklyDigestSnapshot, buildExerciseReactionSnapshot, buildRecentCoaching, getTimeOfDay } from './snapshots.mjs';
 
 /**
@@ -31,8 +31,26 @@ export class CoachingOrchestrator {
     this.#logger = logger || console;
   }
 
+  /**
+   * Post-meal coaching. Today only: a back-dated log is not a meal that just
+   * happened. Today is in progress unless closed, so the snapshot says so and
+   * the day is never judged as low. Each send replaces the day's previous
+   * post-report message so a day of meals leaves one standing message.
+   *
+   * @param {Object} opts
+   * @param {string} opts.userId
+   * @param {string} opts.conversationId
+   * @param {string} [opts.date] - defaults to the user's today
+   * @param {{calories, protein}} [opts.totals] - defaults to the sum of the day's items
+   */
   async sendPostReport({ userId, conversationId, date, totals }) {
+    const today = this.#getToday(userId);
+    date = date || today;
     try {
+      if (date !== today) {
+        this.#logger.info?.('coaching.post_report.skipped', { userId, date, reason: 'not-today' });
+        return;
+      }
       const goals = this.#config.getUserGoals(userId);
       const [coachingData, nutritionData, weightData, closures, items] = await Promise.all([
         this.#healthStore.loadCoachingData(userId).catch(() => ({})),
@@ -42,31 +60,48 @@ export class CoachingOrchestrator {
         this.#nutriListStore.findByDate(userId, date).catch(() => []),
       ]);
 
+      const dayTotals = this.#roundTotals(totals || this.#sumItems(items));
+      if (!(dayTotals.calories > 0)) {
+        this.#logger.info?.('coaching.post_report.skipped', { userId, date, reason: 'nothing-logged' });
+        return;
+      }
+
       const recentCoaching = buildRecentCoaching(coachingData);
       const recentDays = this.#getRecentDays(nutritionData, closures, date, 5);
       const pattern = detectPattern(recentDays, goals);
       const weightTrend = this.#getWeightTrend7d(weightData, date);
       const timeOfDay = getTimeOfDay(this.#config.getUserTimezone?.(userId));
+      const calories = { consumed: dayTotals.calories, goal_min: goals.calories_min, goal_max: goals.calories_max || goals.calories };
+      const protein = { consumed: dayTotals.protein, goal: goals.protein };
 
-      const statusBlock = CoachingMessageBuilder.buildPostReportBlock({
-        calories: { consumed: totals.calories, goal_min: goals.calories_min, goal_max: goals.calories_max || goals.calories },
-        protein: { consumed: totals.protein, goal: goals.protein },
-      });
+      const todayStatus = closureStatus(closures[date]) || 'in_progress';
+      const statusBlock = CoachingMessageBuilder.buildPostReportBlock({ calories, protein, inProgress: todayStatus === 'in_progress' });
 
       const snapshot = buildPostReportSnapshot({
-        date, timeOfDay,
-        calories: { consumed: totals.calories, goal_min: goals.calories_min, goal_max: goals.calories_max || goals.calories },
-        protein: { consumed: totals.protein, goal: goals.protein },
-        items, recentPattern: pattern, weightTrend7d: weightTrend, recentCoaching,
+        date, timeOfDay, calories, protein, items,
+        todayStatus,
+        recentPattern: pattern, weightTrend7d: weightTrend, recentCoaching, recentDays,
+        minCalories: this.#minCalories,
       });
 
       const commentary = await this.#commentaryService.generate(snapshot).catch(() => '');
+      // The capture receipt already shows the totals; a post-meal message with
+      // nothing to say is just a second ping. Stay silent instead.
+      if (!commentary?.trim()) {
+        this.#logger.info?.('coaching.post_report.skipped', { userId, date, reason: 'no-commentary' });
+        return;
+      }
       const message = statusBlock + CoachingMessageBuilder.wrapCommentary(commentary);
 
-      await this.#messagingGateway.sendMessage(conversationId, message, { parseMode: 'HTML' });
-      await this.#persistCoaching(userId, date, 'post-report', message);
+      const previous = this.#lastEntry(coachingData, date, 'post-report');
+      const sent = await this.#messagingGateway.sendMessage(conversationId, message, { parseMode: 'HTML' });
+      await this.#persistCoaching(userId, date, 'post-report', message, { messageId: sent?.messageId ?? null });
+      if (previous?.messageId) {
+        await this.#messagingGateway.deleteMessage?.(conversationId, previous.messageId)
+          .catch(err => this.#logger.warn?.('coaching.post_report.supersede_failed', { userId, date, error: err.message }));
+      }
 
-      this.#logger.info?.('coaching.post_report.sent', { userId, date, hasCommentary: !!commentary });
+      this.#logger.info?.('coaching.post_report.sent', { userId, date, hasCommentary: !!commentary, superseded: !!previous?.messageId });
     } catch (err) {
       this.#logger.error?.('coaching.post_report.failed', { userId, date, error: err.message });
     }
@@ -148,16 +183,29 @@ export class CoachingOrchestrator {
     }
   }
 
+  /**
+   * @param {Object} opts
+   * @param {{id?, type, durationMin, caloriesBurned}} opts.activity - `id` dedupes:
+   *   the same activity never earns a second reaction.
+   */
   async sendExerciseReaction({ userId, conversationId, activity }) {
     try {
       const goals = this.#config.getUserGoals(userId);
       const today = this.#getToday(userId);
-      const [coachingData, nutritionData] = await Promise.all([
+      const [coachingData, closures, items] = await Promise.all([
         this.#healthStore.loadCoachingData(userId).catch(() => ({})),
-        this.#healthStore.loadNutritionData(userId).catch(() => ({})),
+        this.#loadClosures(userId),
+        this.#nutriListStore.findByDate(userId, today).catch(() => []),
       ]);
 
-      const todayNutrition = nutritionData[today] || { calories: 0 };
+      const activityId = activity.id != null ? String(activity.id) : null;
+      if (activityId && Object.values(coachingData || {}).flat()
+        .some(e => e?.type === 'exercise-reaction' && String(e.activityId) === activityId)) {
+        this.#logger.info?.('coaching.exercise_reaction.skipped', { userId, activityId, reason: 'already-sent' });
+        return;
+      }
+
+      const todayTotals = this.#roundTotals(this.#sumItems(items));
       const budgetImpact = Math.round(activity.caloriesBurned * 0.5);
       const recentCoaching = buildRecentCoaching(coachingData);
 
@@ -165,17 +213,18 @@ export class CoachingOrchestrator {
 
       const snapshot = buildExerciseReactionSnapshot({
         activity, budgetImpact,
-        todayCalories: { consumed: todayNutrition.calories, goal_max: goals.calories_max || goals.calories },
+        todayCalories: { consumed: todayTotals.calories, goal_max: goals.calories_max || goals.calories },
+        todayStatus: closureStatus(closures[today]) || 'in_progress',
         recentCoaching,
       });
 
       const commentary = await this.#commentaryService.generate(snapshot).catch(() => '');
       const message = statusBlock + CoachingMessageBuilder.wrapCommentary(commentary);
 
-      await this.#messagingGateway.sendMessage(conversationId, message, { parseMode: 'HTML' });
-      await this.#persistCoaching(userId, today, 'exercise-reaction', message);
+      const sent = await this.#messagingGateway.sendMessage(conversationId, message, { parseMode: 'HTML' });
+      await this.#persistCoaching(userId, today, 'exercise-reaction', message, { messageId: sent?.messageId ?? null, activityId });
 
-      this.#logger.info?.('coaching.exercise_reaction.sent', { userId, date: today, hasCommentary: !!commentary });
+      this.#logger.info?.('coaching.exercise_reaction.sent', { userId, date: today, activityId, hasCommentary: !!commentary });
     } catch (err) {
       this.#logger.error?.('coaching.exercise_reaction.failed', { userId, error: err.message });
     }
@@ -191,6 +240,22 @@ export class CoachingOrchestrator {
   /** Calendar days before `beforeDate`, each classified for logging completeness. */
   #getRecentDays(nutritionData, closures, beforeDate, count) {
     return buildCalendarDays({ nutritionData, closures, beforeDate, count, minCalories: this.#minCalories });
+  }
+
+  /** Sum a day's ledger rows; group parents store zero so children count once. */
+  #sumItems(items) {
+    return (items || []).filter(i => i?.kind !== 'group').reduce((acc, i) => ({
+      calories: acc.calories + (Number(i.calories) || 0),
+      protein: acc.protein + (Number(i.protein) || 0),
+    }), { calories: 0, protein: 0 });
+  }
+
+  #roundTotals(t) {
+    return { calories: Math.round(Number(t?.calories) || 0), protein: Math.round(Number(t?.protein) || 0) };
+  }
+
+  #lastEntry(coachingData, date, type) {
+    return (coachingData?.[date] || []).filter(e => e?.type === type).at(-1) || null;
   }
 
   async #loadClosures(userId) {
@@ -245,11 +310,11 @@ export class CoachingOrchestrator {
     return Math.abs((new Date(dateB) - new Date(dateA)) / (24 * 60 * 60 * 1000));
   }
 
-  async #persistCoaching(userId, date, type, text) {
+  async #persistCoaching(userId, date, type, text, extra = {}) {
     try {
       const data = await this.#healthStore.loadCoachingData(userId).catch(() => ({}));
       if (!data[date]) data[date] = [];
-      data[date].push({ type, text, timestamp: new Date().toISOString() });
+      data[date].push({ type, text, timestamp: new Date().toISOString(), ...extra });
       await this.#healthStore.saveCoachingData(userId, data);
     } catch (err) {
       this.#logger.warn?.('coaching.persist.failed', { userId, date, type, error: err.message });
