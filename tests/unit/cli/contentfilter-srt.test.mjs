@@ -82,13 +82,24 @@ describe('contentfilter srt-mutes / srt-review (fixture tree)', () => {
     const override = yaml.load(fs.readFileSync(overridePath(), 'utf8'));
     expect(override.addCues).toEqual([
       { id: 'manual1', effect: 'skip', in: 1, out: 2, source: 'manual' },
-      { id: 'srt10660', effect: 'mute', category: 'language/profanity/hell', channel: 'audio', severity: 'low',
+      { id: 'srt10000_2', effect: 'mute', category: 'language/profanity/hell', channel: 'audio', severity: 'low',
         in: 10.66, out: 10.71, label: 'hell', source: 'srt', precision: 'srt-line' },
-      { id: 'srt20000', effect: 'mute', category: 'language/blasphemy/goddamn', channel: 'audio', severity: 'medium',
+      { id: 'srt20000_0', effect: 'mute', category: 'language/blasphemy/goddamn', channel: 'audio', severity: 'medium',
         in: 20, out: 20.05, label: 'goddamn', source: 'srt', precision: 'srt-line' },
-      { id: 'srt20660', effect: 'mute', category: 'language/childish/jerk', channel: 'audio', severity: 'low',
+      { id: 'srt20000_2', effect: 'mute', category: 'language/childish/jerk', channel: 'audio', severity: 'low',
         in: 20.66, out: 20.71, label: 'jerk', source: 'srt', precision: 'srt-line' },
     ]);
+  });
+
+  it('srt-mutes --write warns about srt cueOverrides that no longer match an emitted cue', () => {
+    const override = yaml.load(fs.readFileSync(overridePath(), 'utf8'));
+    override.cueOverrides = { srt10000_2: { disabled: true }, srt99999_0: { disabled: true }, va1: { disabled: true } };
+    fs.writeFileSync(overridePath(), yaml.dump(override));
+    const res = run('srt-mutes', '123', '--srt', path.join(root, 'movie.srt'), '--write');
+    expect(res.status, res.stderr).toBe(0);
+    expect(res.stderr).toMatch(/srt99999_0/);
+    expect(res.stderr).not.toMatch(/orphan.*srt10000_2/);
+    expect(res.stderr).not.toMatch(/va1/);
   });
 
   it('srt-review with no Jev key writes a review file of unjudged cues and never touches the override', () => {
@@ -101,9 +112,9 @@ describe('contentfilter srt-mutes / srt-review (fixture tree)', () => {
     expect(doc).toMatchObject({ contentId: 'plex:123', model: null, wordList: 'fixture' });
     expect(doc.summary).toMatchObject({ cues: 3, agree: 0, review: 3, unavailable: 3 });
     expect(doc.items.map((i) => [i.cueId, i.word, i.category, i.reasons, i.decision])).toEqual([
-      ['srt10660', 'hell', 'language/profanity/hell', ['model-unavailable'], null],
-      ['srt20000', 'goddammit', 'language/blasphemy/goddamn', ['model-unavailable'], null],
-      ['srt20660', 'jerk', 'language/childish/jerk', ['model-unavailable'], null],
+      ['srt10000_2', 'hell', 'language/profanity/hell', ['model-unavailable'], null],
+      ['srt20000_0', 'goddammit', 'language/blasphemy/goddamn', ['model-unavailable'], null],
+      ['srt20000_2', 'jerk', 'language/childish/jerk', ['model-unavailable'], null],
     ]);
     expect(doc.items[1]).toMatchObject({ line: 'goddammit, you jerk.', before: 'what the hell is this?', after: 'hello, shell.' });
   });
