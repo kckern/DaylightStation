@@ -354,12 +354,19 @@ export function planHeal(sessionYamlObj, cfg = {}) {
     }
   }
 
-  // A listed participant with no stint and no significant effort anywhere is
-  // an empty entry (e.g. a strap owner whose strap was lent out seconds after
-  // the session began) — nothing to fold, just drop it.
-  for (const id of Object.keys(sessionYamlObj?.participants || {})) {
-    if (allOccupants.has(id) || kept.has(id)) continue;
-    if (isInsignificant(occupantEffort(decoded, id, intervalSeconds), mergedCfg)) removed.add(id);
+  // A listed participant with no stint and no significant effort is an empty
+  // entry (e.g. a strap owner whose strap was lent out seconds after the
+  // session began) — but only next to someone who actually rode. A session
+  // with no rider data (a Strava import) keeps its participants, and a
+  // Strava-linked participant is never dropped.
+  const listed = sessionYamlObj?.participants || {};
+  const someoneRode = Object.keys(listed).some((id) =>
+    !isInsignificant(occupantEffort(decoded, id, intervalSeconds), mergedCfg));
+  if (someoneRode) {
+    for (const [id, entry] of Object.entries(listed)) {
+      if (allOccupants.has(id) || kept.has(id) || entry?.strava) continue;
+      if (isInsignificant(occupantEffort(decoded, id, intervalSeconds), mergedCfg)) removed.add(id);
+    }
   }
 
   // Split cumulative series left by the pre-stint live transfer (planned on a

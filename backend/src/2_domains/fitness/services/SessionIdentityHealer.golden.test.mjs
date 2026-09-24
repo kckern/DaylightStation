@@ -100,3 +100,34 @@ describe('SessionIdentityHealer — reads the on-disk form', () => {
     expect(plan.transfers).toEqual([]);
   });
 });
+
+describe('SessionIdentityHealer — never empties a session', () => {
+  it('keeps the only participant of a Strava-imported session with no series', () => {
+    const obj = {
+      participants: { parent: { display_name: 'Parent', is_primary: true, strava: { activityId: 1, type: 'Canoeing' } } },
+      timeline: { interval_seconds: 5, series: {} },
+    };
+    const plan = planHeal(obj);
+    expect(plan.removedOccupants).toEqual([]);
+    expect(plan.needsHeal).toBe(false);
+  });
+
+  it('keeps an empty listed participant who carries a Strava link', () => {
+    const obj = {
+      participants: {
+        rider: { display_name: 'Rider', is_primary: true },
+        parent: { display_name: 'Parent', is_primary: true, strava: { activityId: 2 } },
+      },
+      timeline: { interval_seconds: 5, series: { 'rider:hr': '[[140,20]]', 'rider:rings': '[[0,1],[5,19]]' } },
+    };
+    expect(planHeal(obj).removedOccupants).toEqual([]);
+  });
+
+  it('still drops an empty listed participant next to someone who rode', () => {
+    const obj = {
+      participants: { rider: { display_name: 'Rider', is_primary: true }, ghost: { display_name: 'Ghost', is_primary: true } },
+      timeline: { interval_seconds: 5, series: { 'rider:hr': '[[140,20]]', 'rider:rings': '[[0,1],[5,19]]' } },
+    };
+    expect(planHeal(obj).removedOccupants).toEqual(['ghost']);
+  });
+});
