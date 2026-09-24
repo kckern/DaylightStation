@@ -29,6 +29,7 @@ import { resolveSessionStartMs, resolvePrimaryMediaKey } from '../FitnessSession
 import { getChallengeMarkerColor } from '@/modules/Fitness/lib/activities/challengeTypeRegistry.js';
 import { resolveHistoricalParticipant } from './resolveHistoricalParticipant.js';
 import { computeHistorySnapshotAction } from './historyMode.js';
+import { shouldMarkRejoin, hasHeartRateData } from './chartCache.js';
 import { assignIdentityColors } from '@/modules/Fitness/lib/participantColors.js';
 import { niceTicks } from '@/modules/Fitness/lib/chartScale.js';
 
@@ -434,7 +435,9 @@ const useRaceChartWithHistory = (roster, getSeries, timebase, historicalParticip
 				const nowActive = entry.isActive !== false;
 				const isRejoining = wasInactive && nowActive;
 
-				if (isRejoining && prevEntry.lastValue != null && (prevEntry.lastSeenTick ?? -1) >= 0) {
+				// Only where they really stopped broadcasting — a stint corrected
+				// back to them continuously is not a dropout.
+				if (isRejoining && shouldMarkRejoin(prevEntry, entry)) {
 					const firstNewIdx = findFirstFiniteAfter(entry.beats || [], prevEntry.lastSeenTick ?? -1);
 					if (firstNewIdx != null) {
 						const newMarker = {
@@ -475,6 +478,13 @@ const useRaceChartWithHistory = (roster, getSeries, timebase, historicalParticip
 
 			Object.keys(next).forEach((id) => {
 				if (!presentIds.has(id)) {
+					// A correction moved this person's stint to someone else: they own
+					// no heart-rate data now, so no absent badge or legend entry.
+					if (!hasHeartRateData(getSeries, id)) {
+						delete next[id];
+						changed = true;
+						return;
+					}
 					const ent = next[id];
 					if (ent && (ent.status !== ParticipantStatus.IDLE || ent.isActive !== false)) {
 						next[id] = {
@@ -491,7 +501,7 @@ const useRaceChartWithHistory = (roster, getSeries, timebase, historicalParticip
 			// Return previous state if nothing meaningful changed — prevents re-render
 			return changed ? next : prev;
 		});
-	}, [presentEntries]);
+	}, [presentEntries, getSeries]);
 
 	const allEntries = useMemo(() => Object.values(participantCache).filter((e) => e && (e.segments?.length || 0) > 0), [participantCache]);
 	
