@@ -1,3 +1,5 @@
+import { Rule } from '../entities/Rule.mjs';
+
 /**
  * Matches rules to situations based on trigger conditions.
  * Records follow/help outcomes for effectiveness tracking.
@@ -26,13 +28,7 @@ export class RuleMatchingService {
   }
 
   getEffectiveness(rule) {
-    if (!rule.times_triggered || rule.times_triggered === 0) return 'untested';
-    const followRate = (rule.times_followed || 0) / rule.times_triggered;
-    const helpRate = rule.times_followed > 0 ? (rule.times_helped || 0) / rule.times_followed : 0;
-    if (followRate >= 0.7 && helpRate >= 0.7) return 'effective';
-    if (followRate < 0.5) return 'not_followed';
-    if (helpRate < 0.5) return 'ineffective';
-    return 'mixed';
+    return Rule.effectivenessOf(rule);
   }
 
   #matchesTrigger(rule, context) {

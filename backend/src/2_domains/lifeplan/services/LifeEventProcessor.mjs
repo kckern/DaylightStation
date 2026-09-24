@@ -1,30 +1,48 @@
 /**
  * Processes life events and their impact on goals, beliefs, values.
+ *
+ * Reads the persisted model (LifeEvent / Dependency / YamlLifePlanStore): an
+ * event's `status` and `actual_date`, and top-level `plan.dependencies` of
+ * `type: 'life_event'` that name the goal they block (`blocked_goal`) and the
+ * event they await (`awaits_event`, an event id) - the same rule
+ * DependencyResolver applies. The older spellings (`state`, `occurred_date`,
+ * a dependency inside the goal matched by `event_type`) are still honoured.
  */
+const statusOf = event => event?.status ?? event?.state;
+const occurredOn = event => event.actual_date ?? event.occurred_date ?? event.date;
+
+function awaits(dep, event) {
+  if (dep?.type !== 'life_event') return false;
+  if (dep.awaits_event) return dep.awaits_event === event.id;
+  return dep.event_type != null && dep.event_type === event.type;
+}
+
 export class LifeEventProcessor {
   processEvent(lifeEvent, plan) {
     const impacts = [];
+    const goals = plan.goals || [];
+    const status = statusOf(lifeEvent);
 
-    // Check goal dependencies blocked by this event type
-    for (const goal of (plan.goals || [])) {
-      for (const dep of (goal.dependencies || [])) {
-        if (dep.type === 'life_event' && dep.event_type === lifeEvent.type) {
-          if (lifeEvent.state === 'occurred') {
-            impacts.push({
-              target: 'goal',
-              target_id: goal.id,
-              action: 'dependency_resolved',
-              description: `Life event "${lifeEvent.name}" resolved dependency for goal "${goal.name}"`,
-            });
-          } else if (lifeEvent.state === 'cancelled') {
-            impacts.push({
-              target: 'goal',
-              target_id: goal.id,
-              action: 'dependency_cancelled',
-              description: `Life event "${lifeEvent.name}" was cancelled, blocking goal "${goal.name}"`,
-            });
-          }
-        }
+    const blocking = [
+      ...(plan.dependencies || []).map(dep => [goals.find(g => g.id === dep.blocked_goal), dep]),
+      ...goals.flatMap(goal => (goal.dependencies || []).map(dep => [goal, dep])),
+    ];
+    for (const [goal, dep] of blocking) {
+      if (!goal || !awaits(dep, lifeEvent)) continue;
+      if (status === 'occurred') {
+        impacts.push({
+          target: 'goal',
+          target_id: goal.id,
+          action: 'dependency_resolved',
+          description: `Life event "${lifeEvent.name}" resolved dependency for goal "${goal.name}"`,
+        });
+      } else if (status === 'cancelled') {
+        impacts.push({
+          target: 'goal',
+          target_id: goal.id,
+          action: 'dependency_cancelled',
+          description: `Life event "${lifeEvent.name}" was cancelled, blocking goal "${goal.name}"`,
+        });
       }
     }
 
@@ -46,7 +64,7 @@ export class LifeEventProcessor {
   }
 
   getAnticipatedEvents(plan) {
-    return (plan.life_events || []).filter(e => e.state === 'anticipated');
+    return (plan.life_events || []).filter(e => statusOf(e) === 'anticipated');
   }
 
   getRecentEvents(plan, daysSince = 30, now) {
@@ -55,8 +73,8 @@ export class LifeEventProcessor {
     cutoff.setDate(cutoff.getDate() - daysSince);
 
     return (plan.life_events || []).filter(e => {
-      if (e.state !== 'occurred') return false;
-      return new Date(e.occurred_date || e.date) >= cutoff;
+      if (statusOf(e) !== 'occurred') return false;
+      return new Date(occurredOn(e)) >= cutoff;
     });
   }
 }

@@ -10,6 +10,17 @@ export class Rule {
     this.times_helped = data.times_helped || 0;
   }
 
+  /**
+   * Effectiveness is DERIVED from the counts; it is never stored. Quality
+   * rules are persisted as plain objects, so readers go through this rather
+   * than a (nonexistent) `effectiveness` field.
+   * @param {Object} data - a rule, entity or plain object
+   * @returns {'untested'|'effective'|'not_followed'|'ineffective'|'mixed'}
+   */
+  static effectivenessOf(data) {
+    return new Rule(data || {}).evaluateEffectiveness();
+  }
+
   evaluateEffectiveness() {
     if (this.times_triggered === 0) return 'untested';
     const followRate = this.times_followed / this.times_triggered;
