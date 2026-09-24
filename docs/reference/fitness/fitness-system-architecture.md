@@ -880,6 +880,24 @@ total. The top-right household total uses the canonical `RingIcon`. The sampled
 `momentum.render` event includes `householdRings` and `weekStartMs` so a stale or
 mis-bucketed home screen can be reconstructed from production logs.
 
+The widget computes from the home screen's `sessions` source, which FitnessApp
+persists in localStorage (see Screen Framework → Data Coordination), so the bars
+render from the last payload on mount and update when the fetch lands rather
+than showing skeletons on every return from the player.
+
+### Leaving the player → the session just finished
+
+Closing the player (X, Escape, end of queue, or the close watchdog) resolves a
+redirect via `player/postEpisodeRedirect.js`. A short browse-out with no memo
+returns to the still-mounted show; otherwise FitnessApp sets the home screen,
+records the session as pending, and navigates straight to
+`/fitness/home/session-{id}` — the same deep link a reload restores. The pending
+id seeds `ScreenProvider` `initialReplacements` with the session-detail pane, so
+home mounts already showing that session (the sessions widget adopts the seeded
+pane instead of pushing its own). After `whenFinalPersistSettled()` the player
+refetches `sessions` through FitnessApp's routed actions, so the final stats and
+voice memo appear without a manual re-navigation.
+
 ---
 
 ## Render Update Model

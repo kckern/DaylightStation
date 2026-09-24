@@ -166,3 +166,69 @@ describe('ScreenDataProvider', () => {
     expect(result.current.refetch).toBe(firstRefetch);
   });
 });
+
+describe('ScreenDataProvider persistence (stale-while-revalidate)', () => {
+  const sources = { sessions: { source: '/api/v1/fitness/sessions?since=95d' } };
+  const cacheKey = 'screenData:fitness:home:sessions';
+
+  function persistWrapper(extra = {}) {
+    return function Wrapper({ children }) {
+      return (
+        <ScreenDataProvider sources={sources} persistKey="fitness:home" persist={['sessions']} {...extra}>
+          {children}
+        </ScreenDataProvider>
+      );
+    };
+  }
+
+  beforeEach(() => {
+    mockFetch.mockReset();
+    localStorage.clear();
+  });
+
+  it('renders the cached payload on the first render, then replaces it with the fetch', async () => {
+    localStorage.setItem(cacheKey, JSON.stringify({ url: sources.sessions.source, savedAt: 1, data: { sessions: ['old'] } }));
+    mockFetch.mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({ sessions: ['new'] }) });
+
+    const { result } = renderHook(() => useScreenData('sessions'), { wrapper: persistWrapper() });
+
+    expect(result.current).toEqual({ sessions: ['old'] });
+    await waitFor(() => expect(result.current).toEqual({ sessions: ['new'] }));
+    expect(JSON.parse(localStorage.getItem(cacheKey)).data).toEqual({ sessions: ['new'] });
+  });
+
+  it('ignores a cached payload fetched from a different URL', () => {
+    localStorage.setItem(cacheKey, JSON.stringify({ url: '/api/v1/fitness/sessions?since=30d', savedAt: 1, data: { sessions: ['old'] } }));
+    mockFetch.mockReturnValue(new Promise(() => {}));
+
+    const { result } = renderHook(() => useScreenData('sessions'), { wrapper: persistWrapper() });
+
+    expect(result.current).toBeNull();
+  });
+
+  it('does not persist sources outside the persist list', async () => {
+    mockFetch.mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({ temp: 72 }) });
+    const Wrapper = ({ children }) => (
+      <ScreenDataProvider sources={{ weather: { source: '/w' } }} persistKey="fitness:home" persist={['sessions']}>
+        {children}
+      </ScreenDataProvider>
+    );
+    const { result } = renderHook(() => useScreenData('weather'), { wrapper: Wrapper });
+    await waitFor(() => expect(result.current).toEqual({ temp: 72 }));
+    expect(localStorage.getItem('screenData:fitness:home:weather')).toBeNull();
+  });
+
+  it('exposes refetch through actionsRef while mounted and clears it on unmount', async () => {
+    mockFetch.mockResolvedValue({ ok: true, json: () => Promise.resolve({ sessions: [] }) });
+    const actionsRef = { current: null };
+    const { unmount } = renderHook(() => useScreenData('sessions'), { wrapper: persistWrapper({ actionsRef }) });
+
+    await waitFor(() => expect(mockFetch).toHaveBeenCalledTimes(1));
+    expect(typeof actionsRef.current?.refetch).toBe('function');
+    await act(() => actionsRef.current.refetch('sessions'));
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+
+    unmount();
+    expect(actionsRef.current).toBeNull();
+  });
+});

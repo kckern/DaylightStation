@@ -30,10 +30,11 @@ import { useFitnessUrlParams } from '../hooks/fitness/useFitnessUrlParams.js';
 import { useFitnessLaunch } from '../hooks/fitness/useFitnessLaunch.js';
 import { computeVideoFpsSample, deriveVideoState } from '../hooks/fitness/videoFpsSample.js';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { ScreenDataProvider } from '../screen-framework/data/ScreenDataProvider.jsx';
+import { ScreenDataProvider, ScreenDataActionsContext } from '../screen-framework/data/ScreenDataProvider.jsx';
 import { ScreenProvider } from '../screen-framework/providers/ScreenProvider.jsx';
 import { PanelRenderer } from '../screen-framework/panels/PanelRenderer.jsx';
 import { FitnessScreenProvider } from '../modules/Fitness/FitnessScreenProvider.jsx';
+import { sessionDetailSeed } from '../modules/Fitness/widgets/FitnessSessionsWidget/sessionDetailPane.js';
 import { registerBuiltinWidgets } from '../screen-framework/widgets/builtins.js';
 // Ensure fitness modules are registered in widget registry
 import '../modules/Fitness/index.js';
@@ -47,6 +48,13 @@ import { FitnessFeedback, FeedbackCornerButton } from '../modules/Fitness/feedba
 import { installRingCelebrationAudioUnlock } from '../modules/Fitness/player/overlays/ringCelebrationAudio.js';
 
 registerBuiltinWidgets();
+
+// Screen data sources cached in localStorage (stale-while-revalidate) so they
+// render on the first frame instead of after a fetch. `sessions` feeds the
+// momentum chart, the sessions list and the calendar — all of which otherwise
+// showed skeletons on every return from the player. Deliberately NOT
+// `suggestions`: a stale "up next" flashing then changing is worse than a wait.
+const SCREEN_PERSISTED_SOURCES = ['sessions'];
 
 const FitnessApp = () => {
   useDocumentTitle('Fitness');
@@ -102,6 +110,14 @@ const FitnessApp = () => {
     return isFirefox;
   });
   const viewportRef = useRef(null);
+  // The player overlay renders beside the home screen's ScreenDataProvider, not
+  // inside it, so its useScreenDataRefetch() would get the no-op default. Route
+  // it through the mounted provider's actions instead (the provider may mount
+  // after the player closes; the refetch fires only after the final save).
+  const screenDataActionsRef = useRef(null);
+  const playerScreenDataActions = useMemo(() => ({
+    refetch: (key) => screenDataActionsRef.current?.refetch(key),
+  }), []);
   const logger = useMemo(() => getLogger().child({ app: 'fitness', sessionLog: true }), []);
 
   // URL-based navigation
@@ -1649,8 +1665,16 @@ const FitnessApp = () => {
                       compareWeeks={momentumCompareWeeks}
                       zoneRingRates={momentumZoneRingRates}
                     >
-                      <ScreenDataProvider sources={screenSources}>
-                        <ScreenProvider config={{ ...screensConfig[activeScreen].layout, theme: screensConfig[activeScreen].theme }}>
+                      <ScreenDataProvider
+                        sources={screenSources}
+                        persistKey={`fitness:${activeScreen}`}
+                        persist={SCREEN_PERSISTED_SOURCES}
+                        actionsRef={screenDataActionsRef}
+                      >
+                        <ScreenProvider
+                          config={{ ...screensConfig[activeScreen].layout, theme: screensConfig[activeScreen].theme }}
+                          initialReplacements={sessionDetailSeed(pendingSelectedSessionId)}
+                        >
                           <PanelRenderer />
                         </ScreenProvider>
                       </ScreenDataProvider>
@@ -1724,6 +1748,7 @@ const FitnessApp = () => {
                 backgroundColor: 'rgba(0,0,0,0.9)',
                 zIndex: 1000
               }}>
+                <ScreenDataActionsContext.Provider value={playerScreenDataActions}>
                 <FitnessPlayer
                   playQueue={fitnessPlayQueue}
                   setPlayQueue={setFitnessPlayQueue}
@@ -1749,15 +1774,27 @@ const FitnessApp = () => {
                     setCurrentView(redirect.view);
                     if (redirect.view === 'screen' && redirect.screenId) {
                       setActiveScreen(redirect.screenId);
+                      // Land directly on the session: the pending id seeds the home
+                      // layout's detail pane at mount (no default-content-then-swap),
+                      // and the URL is the same /session-{id} deep link a reload restores.
                       if (redirect.sessionId) {
                         setPendingSelectedSessionId(redirect.sessionId);
                       }
-                      navigate(`/fitness/${redirect.screenId}`, { replace: true });
+                      logger.info('fitness-post-session-redirect', {
+                        screenId: redirect.screenId, sessionId: redirect.sessionId ?? null,
+                      });
+                      navigate(
+                        redirect.sessionId
+                          ? `/fitness/${redirect.screenId}/session-${redirect.sessionId}`
+                          : `/fitness/${redirect.screenId}`,
+                        { replace: true },
+                      );
                     } else if (redirect.view === 'users') {
                       navigate('/fitness/users', { replace: true });
                     }
                   }}
                 />
+                </ScreenDataActionsContext.Provider>
               </div>
             )}
           </div>

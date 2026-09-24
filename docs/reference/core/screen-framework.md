@@ -125,6 +125,19 @@ All properties map 1:1 to CSS flexbox. No abstraction layer.
 
 Panels nest arbitrarily. The root `layout` node fills the screen container.
 
+### Replacing a node at runtime
+
+`useScreen()` returns `replace(nodeId, subtree)` → `{ revert }`, `restore(nodeId)`
+and `getNode(nodeId)`. A replacement swaps a node's content (`children`/`widget`/
+`props`) while keeping its layout props; replacements stack per node.
+
+To **land** on a screen already showing a replacement, pass
+`initialReplacements={{ [nodeId]: subtree }}` to `ScreenProvider`. It is read once
+at mount and applied from the first render, so the default content never mounts
+only to be swapped out a render later. Clear a seeded entry with `restore(nodeId)`.
+Fitness home uses this for the post-session landing and `/fitness/home/session-{id}`
+deep links (`modules/Fitness/widgets/FitnessSessionsWidget/sessionDetailPane.js`).
+
 ## Theme System
 
 Two layers: structural (flex layout, always the same) and visual (themeable via CSS custom properties).
@@ -185,6 +198,21 @@ data:
 ```
 
 Widgets consume via hook: `const data = useScreenData('weather')`. Returns `null` until data arrives. Two widgets referencing the same key share one fetch.
+
+**Stale-while-revalidate cache.** `persistKey` + `persist={['key', ...]}` cache
+those sources in localStorage (`screenData:{persistKey}:{key}`). The cached
+payload is the value on the first render; the fetch still runs and replaces it
+(and rewrites the cache). A cache entry is only used when its stored URL equals
+the source's current URL. Logs `screendataprovider.cache-hydrated` (with `ageMs`)
+on use and a sampled `screendataprovider.fetched` (with `ms`) per fetch. Pick
+persisted sources where a briefly stale value beats a skeleton — Fitness home
+persists `sessions` but not `suggestions`.
+
+**Refetch from outside the tree.** `useScreenDataRefetch()` only reaches a
+provider above the caller; outside one it gets a no-op default. A component
+rendered beside the provider (e.g. the Fitness player overlay) gets it via the
+`actionsRef` prop, which holds `{ refetch }` while the provider is mounted —
+FitnessApp re-provides `ScreenDataActionsContext` to the player from that ref.
 
 **Backward compatibility:** Weather widgets accept an optional `weatherData` prop. When rendered in OfficeApp (no provider), the prop is used. When rendered in the screen framework (provider present), the hook provides data.
 

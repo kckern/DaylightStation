@@ -12,6 +12,7 @@ import RecapChip from './RecapChip.jsx';
 import './FitnessSessionsWidget.scss';
 import { formatFitnessDate } from '@/modules/Fitness/lib/dateFormatter.js';
 import { resolveSessionTitle, resolveSessionActivity } from './sessionDisplay.js';
+import { SESSION_DETAIL_NODE_ID, sessionDetailSubtree, openSessionIdOf } from './sessionDetailPane.js';
 import RingIcon from '@/lib/icons/RingIcon.jsx';
 
 const StravaIcon = ({ size = 12, color = '#fff' }) => (
@@ -285,11 +286,14 @@ function SessionsCard({ sessions, loading, onSessionClick, selectedSessionId }) 
 
 export default function FitnessSessionsWidget() {
   const rawSessions = useScreenData('sessions');
-  const { replace } = useScreen();
+  const { replace, restore, getNode } = useScreen();
   const { scrollToDate, setScrollToDate, selectedSessionId, setSelectedSessionId } = useFitnessScreen();
   const navigate = useNavigate();
   const location = useLocation();
-  const revertRef = useRef(null);
+  // The detail pane currently open: { sessionId, revert }. Tracks WHICH session
+  // is shown so an outside selection change swaps the pane rather than leaving
+  // the previous session's detail up.
+  const openRef = useRef(null);
   const containerRef = useRef(null);
 
   const loading = rawSessions === null;
@@ -302,35 +306,40 @@ export default function FitnessSessionsWidget() {
     navigate(sessionId ? `${base}/session-${sessionId}` : base);
   }, [location.pathname, navigate]);
 
+  const openDetail = useCallback((sessionId) => {
+    openRef.current?.revert();
+    openRef.current = { sessionId, ...replace(SESSION_DETAIL_NODE_ID, sessionDetailSubtree(sessionId)) };
+  }, [replace]);
+
   const handleSessionClick = useCallback((sessionId) => {
     if (selectedSessionId === sessionId) {
-      revertRef.current?.revert();
-      revertRef.current = null;
+      openRef.current?.revert();
+      openRef.current = null;
       setSelectedSessionId(null);
       syncSessionUrl(null);
       return;
     }
-    revertRef.current?.revert();
     setSelectedSessionId(sessionId);
     syncSessionUrl(sessionId);
-    revertRef.current = replace('right-area', {
-      children: [{ widget: 'fitness:session-detail', props: { sessionId } }]
-    });
-  }, [selectedSessionId, setSelectedSessionId, replace, syncSessionUrl]);
+    openDetail(sessionId);
+  }, [selectedSessionId, setSelectedSessionId, syncSessionUrl, openDetail]);
 
-  // When a session is selected externally (e.g. post-session redirect set it on the
-  // provider) rather than via a row click, open its detail pane. handleSessionClick
-  // sets revertRef on click, so a set selection with no revertRef means it came from
-  // outside; the selected row scrolls itself into view via its ref. Re-runs once
-  // sessions finish loading so the detail widget has data to render.
+  // A selection made outside this widget (post-session redirect, /session-{id}
+  // deep link) opens its detail. When the screen mounted with the pane already
+  // seeded for this session (ScreenProvider initialReplacements), adopt it rather
+  // than pushing a duplicate. No wait on the sessions list: the detail widget
+  // fetches its own session, and the selected row scrolls itself into view.
   useEffect(() => {
-    if (loading) return;
     if (!selectedSessionId) return;
-    if (revertRef.current) return;
-    revertRef.current = replace('right-area', {
-      children: [{ widget: 'fitness:session-detail', props: { sessionId: selectedSessionId } }]
-    });
-  }, [selectedSessionId, loading, replace]);
+    if (openRef.current?.sessionId === selectedSessionId) return;
+    if (!openRef.current && openSessionIdOf(getNode(SESSION_DETAIL_NODE_ID)) === selectedSessionId) {
+      openRef.current = { sessionId: selectedSessionId, revert: () => restore(SESSION_DETAIL_NODE_ID) };
+      return;
+    }
+    openDetail(selectedSessionId);
+    // getNode changes identity on every replacement; only a selection change should re-run this.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedSessionId, openDetail, restore]);
 
   // When calendar sets scrollToDate, scroll to that date group and auto-select first session
   useEffect(() => {
