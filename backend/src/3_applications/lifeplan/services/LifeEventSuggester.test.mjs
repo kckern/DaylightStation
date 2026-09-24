@@ -38,6 +38,19 @@ describe('LifeEventSuggester (keyword path)', () => {
     expect((await suggester.suggest('kc')).suggestions).toEqual([]);
   });
 
+  it('skips items already recorded under another name (signal date + summary)', async () => {
+    const plan = { life_events: [{ name: 'Moved to Denver',
+      signals: [{ source: 'calendar', date: '2026-09-20', summary: 'Moving day', detector: 'keyword', confidence: 0.8 }] }] };
+    const { suggester } = setup({ plan });
+    expect((await suggester.suggest('kc')).suggestions).toEqual([]);
+  });
+
+  it('a recorded signal on another date does not hide a new item with the same summary', async () => {
+    const plan = { life_events: [{ name: 'Moved to Denver', signals: [{ date: '2025-01-05', summary: 'Moving day' }] }] };
+    const { suggester } = setup({ plan });
+    expect((await suggester.suggest('kc')).suggestions).toHaveLength(1);
+  });
+
   it('treats a gateway that reports not-configured as absent', async () => {
     const decisionGateway = { isConfigured: () => false, evaluate: vi.fn() };
     const { suggester } = setup({ decisionGateway });
@@ -91,10 +104,60 @@ describe('LifeEventSuggester (model judge)', () => {
     expect(questions.c0.instructions).toContain('`c0`');
     expect(questions.c0.options).toBe(LIFE_EVENT_OPTIONS);
 
-    expect(logger.info).toHaveBeenCalledWith('lifeplan.life-event.shadow',
-      { username: 'kc', date: '2026-09-20', keyword: 'relocation', model: 'relocation', confidence: 0.9, agreed: true });
-    expect(logger.info).toHaveBeenCalledWith('lifeplan.life-event.shadow-summary', expect.objectContaining(
-      { username: 'kc', mode: 'shadow', items: 2, keywordHits: 1, modelHits: 1, agreed: 2, disagreed: 0, model: 'jev-test-1' }));
+    await vi.waitFor(() => {
+      expect(logger.info).toHaveBeenCalledWith('lifeplan.life-event.shadow',
+        { username: 'kc', date: '2026-09-20', keyword: 'relocation', model: 'relocation', confidence: 0.9, agreed: true });
+      expect(logger.info).toHaveBeenCalledWith('lifeplan.life-event.shadow-summary', expect.objectContaining(
+        { username: 'kc', mode: 'shadow', items: 2, keywordHits: 1, modelHits: 1, agreed: 2, disagreed: 0, model: 'jev-test-1' }));
+    });
+  });
+
+  it('shadow: returns the keyword result without waiting for the model, then logs the shadow row', async () => {
+    let release;
+    const gate = new Promise((resolve) => { release = resolve; });
+    const decisionGateway = {
+      isConfigured: () => true,
+      evaluate: vi.fn(async (state) => {
+        await gate;
+        const answers = Object.fromEntries(Object.keys(state).map((id) => [id, { type: 'choice', choice: 'none', confidence: 0.9 }]));
+        return { model: 'slow', answers, usage: {} };
+      }),
+    };
+    const { suggester, logger } = setup({ decisionGateway });
+    const result = await suggester.suggest('kc');
+    expect(result.judge).toBe('keyword');
+    expect(result.suggestions).toHaveLength(1);
+    expect(decisionGateway.evaluate).toHaveBeenCalled();
+    expect(logger.info.mock.calls.some(([e]) => e === 'lifeplan.life-event.shadow')).toBe(false);
+    release();
+    await vi.waitFor(() => expect(logger.info).toHaveBeenCalledWith('lifeplan.life-event.shadow-summary',
+      expect.objectContaining({ model: 'slow', items: 2 })));
+  });
+
+  it('shadow: a detached model failure is logged and never rejects', async () => {
+    const decisionGateway = gateway({}, { fail: true });
+    const { suggester, logger } = setup({ decisionGateway });
+    expect((await suggester.suggest('kc')).judge).toBe('keyword');
+    await vi.waitFor(() => expect(logger.warn).toHaveBeenCalledWith('lifeplan.life-event.model-failed',
+      expect.objectContaining({ mode: 'shadow', error: 'jev down' })));
+  });
+
+  it('decide: evaluates chunks concurrently', async () => {
+    const summaries = Array.from({ length: 45 }, (_, i) => `Meeting ${i}`);
+    let inFlight = 0; let peak = 0;
+    const decisionGateway = {
+      isConfigured: () => true,
+      evaluate: vi.fn(async (state) => {
+        inFlight += 1; peak = Math.max(peak, inFlight);
+        await new Promise((r) => setTimeout(r, 5));
+        inFlight -= 1;
+        const answers = Object.fromEntries(Object.keys(state).map((id) => [id, { type: 'choice', choice: 'none', confidence: 0.9 }]));
+        return { model: 'm', answers, usage: {} };
+      }),
+    };
+    const { suggester } = setup({ days: Object.fromEntries([cal('2026-09-22', ...summaries)]), decisionGateway, mode: 'decide' });
+    expect((await suggester.suggest('kc')).judge).toBe('model');
+    expect(peak).toBe(3);
   });
 
   it('shadow: logs a short summary only on disagreement rows', async () => {
@@ -102,6 +165,7 @@ describe('LifeEventSuggester (model judge)', () => {
     const decisionGateway = gateway({});  // model says none
     const { suggester, logger } = setup({ days, decisionGateway });
     await suggester.suggest('kc');
+    await vi.waitFor(() => expect(logger.info.mock.calls.some(([e]) => e === 'lifeplan.life-event.shadow')).toBe(true));
     const row = logger.info.mock.calls.find(([e]) => e === 'lifeplan.life-event.shadow')[1];
     expect(row.agreed).toBe(false);
     expect(row.keyword).toBe('family_event');
@@ -114,6 +178,7 @@ describe('LifeEventSuggester (model judge)', () => {
     const decisionGateway = gateway({});
     const { suggester } = setup({ days: Object.fromEntries([cal('2026-09-22', ...summaries)]), decisionGateway });
     await suggester.suggest('kc');
+    await vi.waitFor(() => expect(decisionGateway.evaluate).toHaveBeenCalledTimes(3));
     expect(decisionGateway.evaluate.mock.calls.map(([state]) => Object.keys(state).length)).toEqual([20, 20, 5]);
   });
 
