@@ -382,6 +382,8 @@ export class LogFoodFromImage {
       let retryStateWritten = false;
       if (photoMsgId && this.#conversationStateStore) {
         try {
+          // Keyed to the failed photo's own message (a session), never the
+          // root flow: an open revision must survive a failed photo.
           await this.#conversationStateStore.set(conversationId, {
             activeFlow: 'image_retry',
             flowState: {
@@ -391,7 +393,7 @@ export class LogFoodFromImage {
               },
               retryMessageId: photoMsgId,
             },
-          });
+          }, String(photoMsgId));
           retryStateWritten = true;
         } catch (e) {
           this.#logger.warn?.('logImage.retryState.failed', {

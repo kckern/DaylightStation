@@ -136,7 +136,8 @@ describe('NutritionReceiptPublisher', () => {
   it('shows removals without resurrecting the original parser items', async () => {
     const f = fixture(); await f.publisher.publish('alice'); f.rows.length = 0;
     await f.publisher.refresh('alice', 'capture');
-    expect(f.deps.surface.updateMessage.mock.lastCall[2]).toEqual({ text: '↩️ Removed from food log', choices: [] });
+    expect(f.deps.surface.updateMessage.mock.lastCall[2]).toEqual({ text: '↩️ Removed from food log',
+      choices: [[{ text: '↩️ Restore', callback_data: JSON.stringify({ cmd: 'rs', id: 'capture' }) }]] });
     f.logs[0].status = 'deleted';
     f.rows.push({ uuid: 'food', logId: 'capture', name: 'Restored Yogurt', grams: 85, color: 'yellow' });
     await f.publisher.refresh('alice', 'capture');

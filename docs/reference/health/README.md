@@ -748,6 +748,14 @@ capture's reply opens with "Logged ✓ — *n* items, *k* kcal" rather than a qu
 words read as a confirmation and not just the buttons. This applies to every transport —
 web, Telegram, and the coach's `log_food` alike.
 
+**Recovering from failures (Telegram).**
+
+- **Undo is reversible.** An undone receipt reads "↩️ Removed from food log" and carries a **↩️ Restore** button (callback `rs`). `RestoreFoodLog` restores the log's tombstoned rows (`restoreByLogId`), marks the log `accepted`, refreshes the receipt and re-arms post-meal coaching. A second tap is harmless.
+- **A failed transcription offers 🔄 Retry** (callback `vr`). Telegram voice files stay fetchable by id, so the retry re-runs the same recording.
+- **Transient failures retry automatically first.** HTTP 429/5xx and network cuts are retried with backoff inside `retryTransient`, including raw axios errors, which carry the status on `error.response`.
+- **Retry state never replaces the conversation's root flow.** A photo retry (`ir`) and a voice retry (`vr`) are each stored in a *session keyed to their own failure message* (`conversationStateStore.set(id, state, messageId)`). A failure during an open revision leaves that revision open.
+- **Voice follows the open flow.** A voice note sent while a revision or a scale "describe it" is open is transcribed and routed exactly like typed text, so it revises the pending log rather than logging a new meal. Before 2026-09-24 voice bypassed the flow: a spoken revision would have been logged as a new meal.
+
 Two flows are deliberately exempt from the accept half of the seam:
 
 - **Scale** captures keep their multi-step composition flow (weight → tare → density) and

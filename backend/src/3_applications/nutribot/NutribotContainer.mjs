@@ -14,6 +14,7 @@ import {
   RetryImageDetection,
   AcceptFoodLog,
   DiscardFoodLog,
+  RestoreFoodLog,
   ReviseFoodLog,
   ProcessRevisionInput,
   SelectUPCPortion,
@@ -81,6 +82,7 @@ export class NutribotContainer {
   #logFoodFromUPC;
   #acceptFoodLog;
   #discardFoodLog;
+  #restoreFoodLog;
   #reviseFoodLog;
   #processRevisionInput;
   #selectUPCPortion;
@@ -422,6 +424,18 @@ export class NutribotContainer {
       });
     }
     return this.#discardFoodLog;
+  }
+
+  getRestoreFoodLog() {
+    if (!this.#restoreFoodLog) {
+      this.#restoreFoodLog = new RestoreFoodLog({
+        nutriListStore: this.#nutriListStore,
+        foodLogStore: this.#foodLogStore,
+        receipts: () => this.#receiptPublisher,
+        logger: this.#logger,
+      });
+    }
+    return this.#restoreFoodLog;
   }
 
   getReviseFoodLog() {

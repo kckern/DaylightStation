@@ -353,22 +353,68 @@ export class NutribotInputRouter extends BaseInputRouter {
       return this.#aiUnavailable(event, responseContext, 'Voice nutrition analysis is temporarily unavailable. Please describe the food instead.');
     }
     const useCase = this.container.getLogFoodFromVoice();
-    return await this.#capture(event, responseContext, { source: 'voice', commit: true }, (rc) =>
-      useCase.execute({
-        userId: this.#resolveUserId(event),
-        conversationId: event.conversationId,
-        voiceData: {
-          fileId: event.payload.fileId,
-          // Set only on the web path, where the bytes were written to the
-          // user's store before this call. It is what lets a failed
-          // transcription say "your recording is saved" truthfully.
-          audioRef: event.payload.fileId?.audioRef || null,
-        },
-        messageId: event.messageId,
-        asOfDate: event.payload.date || null,
-        interpretText: event.payload.interpretText,
-        responseContext: rc,
-      }));
+    // A Telegram voice file stays fetchable by id, so a failed transcription
+    // can be retried from a button without re-recording.
+    const retryable = event.platform === 'telegram' && typeof event.payload.fileId === 'string';
+    const input = (rc) => ({
+      userId: this.#resolveUserId(event),
+      conversationId: event.conversationId,
+      voiceData: {
+        fileId: event.payload.fileId,
+        // Set only on the web path, where the bytes were written to the
+        // user's store before this call. It is what lets a failed
+        // transcription say "your recording is saved" truthfully.
+        audioRef: event.payload.fileId?.audioRef || null,
+      },
+      messageId: event.messageId,
+      asOfDate: event.payload.date || null,
+      interpretText: event.payload.interpretText,
+      responseContext: rc,
+      offerRetry: retryable,
+    });
+
+    // An open flow (a revision, a scale "describe it") owns what is said next,
+    // spoken or typed. Voice used to bypass it and log a NEW meal, so a spoken
+    // revision never reached the log it was revising.
+    const flow = await this.#openTextFlow(event);
+    if (flow) {
+      this.logger.info?.('nutribot.handleVoice.flowRouted', { conversationId: event.conversationId, flow });
+      const result = await useCase.execute({ ...input(responseContext),
+        routeTranscript: (text) => this.handleText({ ...event, type: 'text', payload: { ...event.payload, text } }, responseContext) });
+      await this.#rememberVoiceRetry(event, result);
+      return result?.ok !== undefined ? result : { ok: true, result };
+    }
+
+    const captured = await this.#capture(event, responseContext, { source: 'voice', commit: true }, (rc) => useCase.execute(input(rc)));
+    await this.#rememberVoiceRetry(event, captured?.result);
+    return captured;
+  }
+
+  /** The open text flow for this conversation ('revision' | 'scale_describe'), or null. */
+  async #openTextFlow(event) {
+    if (event.platform === 'web') return null;
+    try {
+      const state = await this.container.getConversationStateStore?.()?.get(event.conversationId);
+      return ['revision', 'scale_describe'].includes(state?.activeFlow) && state?.flowState?.pendingLogUuid ? state.activeFlow : null;
+    } catch (e) {
+      this.logger.warn?.('nutribot.handleVoice.stateCheck.error', { conversationId: event.conversationId, error: e.message });
+      return null;
+    }
+  }
+
+  /**
+   * After a failed transcription that offered 🔄 Retry, remember the voice file
+   * under that message's own session — never the root flow, so an open
+   * revision survives the failure and the retry lands in it.
+   */
+  async #rememberVoiceRetry(event, result) {
+    if (result?.code !== 'TRANSCRIBE_FAILED' || !result.retryMessageId) return;
+    try {
+      await this.container.getConversationStateStore?.()?.set(event.conversationId,
+        { voiceRetry: { fileId: event.payload.fileId, at: new Date().toISOString() } }, String(result.retryMessageId));
+    } catch (e) {
+      this.logger.warn?.('nutribot.voiceRetry.saveFailed', { conversationId: event.conversationId, error: e.message });
+    }
   }
 
   async handleUpc(event, responseContext) {
@@ -421,6 +467,8 @@ export class NutribotInputRouter extends BaseInputRouter {
       r: CallbackActions.REVISE_ITEM,
       x: CallbackActions.REJECT_LOG,
       ir: CallbackActions.RETRY_IMAGE,
+      vr: CallbackActions.RETRY_VOICE,
+      rs: CallbackActions.RESTORE_LOG,
     };
     if (legacyActionMap[action]) {
       action = legacyActionMap[action];
@@ -534,8 +582,32 @@ export class NutribotInputRouter extends BaseInputRouter {
         return await useCase.execute({
           userId: this.#resolveUserId(event),
           conversationId: event.conversationId,
+          messageId: event.messageId,
           responseContext,
         });
+      }
+      case CallbackActions.RETRY_VOICE: {
+        const store = this.container.getConversationStateStore?.();
+        const session = await store?.get(event.conversationId, String(event.messageId));
+        const fileId = session?.voiceRetry?.fileId;
+        if (!fileId) {
+          await responseContext?.sendMessage?.('🚫 This retry is no longer available. Please send the voice message again.', {});
+          return { ok: false, code: 'RETRY_STALE' };
+        }
+        // One retry per button: consume it before the attempt.
+        await store.set(event.conversationId, { voiceRetry: null, consumedAt: new Date().toISOString() }, String(event.messageId));
+        try { await responseContext?.updateMessage?.(event.messageId, { text: '🔄 Retrying…', choices: [] }); }
+        catch (e) { this.logger.debug?.('nutribot.voiceRetry.updateFailed', { error: e.message }); }
+        this.logger.info?.('nutribot.voiceRetry.dispatch', { conversationId: event.conversationId });
+        return await this.handleVoice({ ...event, type: 'voice', messageId: null, payload: { ...event.payload, fileId } }, responseContext);
+      }
+      case CallbackActions.RESTORE_LOG: {
+        const userId = this.#resolveUserId(event);
+        const result = await this.container.getRestoreFoodLog().execute({
+          userId, conversationId: event.conversationId, logUuid: decoded.id, responseContext,
+        });
+        if (result.restored > 0) await this.#notifyMealCoaching(userId, decoded.id, 'restore');
+        return result;
       }
       case 'rx': {
         // Report Accept/Close - just remove the buttons

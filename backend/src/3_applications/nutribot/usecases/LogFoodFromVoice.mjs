@@ -67,7 +67,14 @@ export class LogFoodFromVoice {
    * @param {Object} [input.responseContext] - Bound response context for DDD-compliant messaging
    */
   async execute(input) {
-    const { userId, conversationId, voiceData, messageId, asOfDate = null, responseContext } = input;
+    const { userId, conversationId, voiceData, messageId, asOfDate = null, responseContext,
+      // Where the transcript goes. Absent: a new food log. The router passes one
+      // when a flow is open (a revision, a scale "describe it"), so a spoken
+      // reply lands in that flow exactly as a typed one would.
+      routeTranscript = null,
+      // Offer a 🔄 Retry button on a failed transcription (Telegram: the voice
+      // file stays fetchable by id, so a retry needs nothing re-recorded).
+      offerRetry = false } = input;
     // Set only where the bytes were written to the user's store before this
     // call (the web path). It is the difference between telling someone their
     // recording is safe and telling them it is gone.
@@ -130,22 +137,30 @@ export class LogFoodFromVoice {
           });
         }
 
+        const retryable = !missingConfig && offerRetry;
         const message = missingConfig
           ? '🎤 Voice messages are not fully supported yet. Please type what you ate.'
-          : (audioRef
-            ? "🎤 I couldn't reach the transcriber just now — your recording is saved, so try again in a moment."
-            : "🎤 I couldn't reach the transcriber just now. Please try again, or type what you ate.");
+          : retryable
+            ? "🎤 I couldn't reach the transcriber just now. Tap 🔄 Retry to try the same recording again, or type it instead."
+            : (audioRef
+              ? "🎤 I couldn't reach the transcriber just now — your recording is saved, so try again in a moment."
+              : "🎤 I couldn't reach the transcriber just now. Please try again, or type what you ate.");
+        const options = retryable
+          ? { choices: [[{ text: '🔄 Retry', callback_data: JSON.stringify({ cmd: 'vr' }) }]], inline: true }
+          : {};
 
+        let retryMessageId = null;
         if (status) {
-          await status.finish(message);
+          retryMessageId = await status.finish(message, options);
         } else {
-          await messaging.sendMessage(message, {});
+          retryMessageId = (await messaging.sendMessage(message, options))?.messageId ?? null;
         }
 
         return {
           success: false,
           code: missingConfig ? 'VOICE_UNAVAILABLE' : 'TRANSCRIBE_FAILED',
           audioRef,
+          retryMessageId: retryable ? retryMessageId : null,
           error: missingConfig ? 'Voice transcription not available' : transcribeError.message,
         };
       }
@@ -168,6 +183,12 @@ export class LogFoodFromVoice {
         conversationId,
         length: transcription.length,
       });
+
+      // 2a. An open flow owns the transcript (revision, scale describe).
+      if (routeTranscript) {
+        this.#logger.info?.('logVoice.routedToFlow', { conversationId, length: transcription.length });
+        return await routeTranscript(transcription);
+      }
 
       // 2. Delegate to LogFoodFromText
       const result = await this.#logFoodFromText.execute({
