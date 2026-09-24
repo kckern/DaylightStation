@@ -2,7 +2,8 @@
  * Trigger Router — maps GET /:location/:type/:value to
  * TriggerDispatchService.handleTrigger, plus POST /side-effect for end-of-queue
  * tail markers fired by the device Player when it advances onto a virtual
- * `mediaType: 'trigger/side-effect'` item.
+ * `mediaType: 'trigger/side-effect'` item. With a voiceTriggerService, also
+ * POST /:location/voice {transcript} and POST /:location/voice/confirm {proposal}.
  * @module api/v1/routers/trigger
  */
 
@@ -21,11 +22,15 @@ const STATUS_BY_CODE = {
   INVALID_NOTE: 400,
   UNSUPPORTED_MODALITY: 400,
   NOTE_WRITE_FAILED: 500,
+  INVALID_TRANSCRIPT: 400,
+  VOICE_NO_MATCH: 404,
+  PROPOSAL_NOT_FOUND: 410,
 };
 
 export function createTriggerRouter({
   triggerDispatchService,
   sideEffectExecutor,
+  voiceTriggerService = null,
   isUnknownSideEffectError = (error) => error?.name === 'UnknownSideEffectError',
   logger = console,
 }) {
@@ -89,6 +94,28 @@ export function createTriggerRouter({
       return res.status(status).json({ ok: false, error: err.message, elapsedMs });
     }
   }));
+
+  // Voice: a transcript, not a keyword. Mounted only when composition built a
+  // VoiceTriggerService. GET /:location/voice/:keyword (above) stays the
+  // exact-keyword path and never touches the decision model.
+  if (voiceTriggerService) {
+    const send = (res, result) => res.status(result.ok ? 200 : (STATUS_BY_CODE[result.code] || 500)).json(result);
+
+    router.post('/:location/voice', express.json(), asyncHandler(async (req, res) => {
+      const { location } = req.params;
+      const token = req.query.token ?? req.body?.token;
+      const options = { token };
+      if (req.query.dryRun === '1' || req.query.dryRun === 'true') options.dryRun = true;
+      logger.debug?.('trigger.router.voice', { location, chars: typeof req.body?.transcript === 'string' ? req.body.transcript.length : null });
+      return send(res, await voiceTriggerService.handleTranscript(location, req.body?.transcript, options));
+    }));
+
+    router.post('/:location/voice/confirm', express.json(), asyncHandler(async (req, res) => {
+      const { location } = req.params;
+      const token = req.query.token ?? req.body?.token;
+      return send(res, await voiceTriggerService.confirm(location, req.body?.proposal, { token }));
+    }));
+  }
 
   return router;
 }
