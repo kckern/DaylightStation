@@ -21,6 +21,12 @@ import { estimateCostUsd } from './aiPricing.mjs';
 const TYPESAFE_API_BASE = 'https://api.typesafe.ai/v1';
 const DEFAULT_MODEL = 'jev-latest';
 const DEFAULT_TIMEOUT_MS = 10000;
+// TypeSafe API limits (docs.typesafe.ai/api)
+const MAX_CHOICE_OPTIONS = 255;
+const MAX_SCORE_LEVELS = 10;
+// How many leaders each part of a split choice sends to the final round
+const FINALISTS_PER_PART = 3;
+const PART_SEPARATOR = '__part';
 
 export class JevAdapter extends IDecisionGateway {
   /**
@@ -80,39 +86,66 @@ export class JevAdapter extends IDecisionGateway {
       throw new InfrastructureError('evaluate() requires at least one question', { code: 'VALIDATION_ERROR', field: 'questions' });
     }
 
+    // Jev caps a choice at MAX_CHOICE_OPTIONS. A larger option set is split
+    // into balanced parts that ride along in the first request; a second
+    // request then picks among each part's leaders. Callers never see this.
     const wireQuestions = {};
-    for (const id of ids) wireQuestions[id] = toWireQuestion(id, questions[id]);
-
-    const result = await this.callApi('/systemone', {
-      model: options.model || this.model,
-      state,
-      questions: wireQuestions
-    }, { timeout: options.timeout });
-
-    const answers = {};
+    const narrowed = new Map(); // question id → part wire ids
     for (const id of ids) {
-      const wire = result.answers?.[id];
-      if (!wire) {
-        throw new InfrastructureError(`TypeSafe response missing answer for "${id}"`, {
-          code: 'EXTERNAL_SERVICE_ERROR',
-          service: 'TypeSafe'
+      const question = questions[id];
+      const optionKeys = question?.type === 'choice' ? Object.keys(question.options || {}) : [];
+      if (optionKeys.length > MAX_CHOICE_OPTIONS) {
+        const parts = splitBalanced(optionKeys, MAX_CHOICE_OPTIONS);
+        const partIds = parts.map((keys, i) => `${id}${PART_SEPARATOR}${i}`);
+        parts.forEach((keys, i) => {
+          wireQuestions[partIds[i]] = toWireQuestion(id, { ...question, options: pick(question.options, keys) });
         });
+        narrowed.set(id, partIds);
+      } else {
+        wireQuestions[id] = toWireQuestion(id, question);
       }
-      answers[id] = fromWireAnswer(wire);
     }
 
+    const model = options.model || this.model;
+    const first = await this.callApi('/systemone', { model, state, questions: wireQuestions }, { timeout: options.timeout });
+    const results = [first];
+    const wireAnswers = { ...(first.answers || {}) };
+
+    if (narrowed.size) {
+      const finals = {};
+      for (const [id, partIds] of narrowed) {
+        const finalists = partIds.flatMap(partId => leaders(requireAnswer(first, partId), FINALISTS_PER_PART));
+        finals[id] = toWireQuestion(id, { ...questions[id], options: pick(questions[id].options, finalists) });
+      }
+      // Pin the second round to the model that answered the first, so an alias
+      // moving between the two calls cannot mix versions in one answer
+      const second = await this.callApi('/systemone', { model: first.model || model, state, questions: finals }, { timeout: options.timeout });
+      results.push(second);
+      Object.assign(wireAnswers, second.answers || {});
+      this.logger.debug?.('jev.choice.narrowed', {
+        questions: [...narrowed.keys()],
+        parts: [...narrowed.values()].map(partIds => partIds.length),
+        finalists: Object.fromEntries(Object.entries(finals).map(([id, q]) => [id, Object.keys(q.criteria).length]))
+      });
+    }
+
+    const answers = {};
+    for (const id of ids) answers[id] = fromWireAnswer(requireAnswer({ answers: wireAnswers }, id));
+
+    const resultModel = results.at(-1).model || first.model || null;
     this.logger.debug?.('jev.evaluate', {
-      model: result.model,
+      model: resultModel,
       questions: ids.length,
+      calls: results.length,
       answers: summarizeAnswers(answers)
     });
 
     return {
-      model: result.model || null,
+      model: resultModel,
       answers,
       usage: {
-        inputTokens: result.usage?.input_tokens ?? null,
-        outputTokens: result.usage?.output_tokens ?? null
+        inputTokens: sumUsage(results, 'input_tokens'),
+        outputTokens: sumUsage(results, 'output_tokens')
       }
     };
   }
@@ -254,6 +287,13 @@ function toWireQuestion(id, question) {
     case 'choice':
       return { type: 'choice', instructions, criteria: question.options };
     case 'score':
+      // An ordered rubric cannot be split and recombined; fail loudly instead
+      if (question.levels?.length > MAX_SCORE_LEVELS) {
+        throw new InfrastructureError(`Jev accepts at most ${MAX_SCORE_LEVELS} score levels ("${id}" has ${question.levels.length})`, {
+          code: 'VALIDATION_ERROR',
+          field: `questions.${id}.levels`
+        });
+      }
       return { type: 'score', instructions, criteria: question.levels };
     default:
       throw new InfrastructureError(`Unknown decision question type "${type}" for "${id}"`, {
@@ -291,6 +331,41 @@ function fromWireAnswer(wire) {
         service: 'TypeSafe'
       });
   }
+}
+
+function requireAnswer(result, id) {
+  const wire = result.answers?.[id];
+  if (!wire) {
+    throw new InfrastructureError(`TypeSafe response missing answer for "${id}"`, {
+      code: 'EXTERNAL_SERVICE_ERROR',
+      service: 'TypeSafe'
+    });
+  }
+  return wire;
+}
+
+/** Split keys into the fewest parts of at most `max`, sized as evenly as possible. */
+function splitBalanced(keys, max) {
+  const partCount = Math.ceil(keys.length / max);
+  const size = Math.ceil(keys.length / partCount);
+  return Array.from({ length: partCount }, (_, i) => keys.slice(i * size, (i + 1) * size));
+}
+
+function pick(options, keys) {
+  return Object.fromEntries(keys.map(key => [key, options[key] ?? null]));
+}
+
+/** The part's chosen option first, then the next most probable ones. */
+function leaders(wireChoice, count) {
+  const ranked = Object.entries(wireChoice.probabilities || {})
+    .sort(([, a], [, b]) => b - a)
+    .map(([key]) => key);
+  return [...new Set([wireChoice.choice, ...ranked].filter(Boolean))].slice(0, count);
+}
+
+function sumUsage(results, field) {
+  const values = results.map(r => r.usage?.[field]).filter(v => v != null);
+  return values.length ? values.reduce((a, b) => a + b, 0) : null;
 }
 
 function summarizeAnswers(answers) {
