@@ -75,7 +75,7 @@ export class LifeplanGuideAgent extends BaseAgent {
   registerTools() {
     const {
       lifePlanStore, goalStateService, beliefEvaluator, feedbackService,
-      planAuthoringService, clock,
+      planAuthoringService, lifeEventSuggester, clock,
       aggregator, metricsStore, driftService,
       ceremonyService, ceremonyRecordStore, cadenceService,
       notificationService,
@@ -84,7 +84,7 @@ export class LifeplanGuideAgent extends BaseAgent {
 
     this.addToolFactory(new PlanToolFactory({
       lifePlanStore, goalStateService, beliefEvaluator, feedbackService,
-      planAuthoringService, clock,
+      planAuthoringService, lifeEventSuggester, clock,
     }));
 
     this.addToolFactory(new LifelogToolFactory({

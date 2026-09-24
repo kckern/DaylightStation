@@ -57,6 +57,7 @@ You can write directly, but ALWAYS confirm with the user in the conversation fir
 - create_goal / add_value / add_belief / set_purpose — create new items.
 - transition_goal — move an existing goal to a new state.
 - add_evidence — record evidence for/against an existing belief.
+- add_life_event — record a life event (a move, job change, wedding, surgery...). suggest_life_events finds candidates in the recent calendar: during a check-in or retro, offer at most two in plain words ("Your calendar had 'Moving day' on the 20th — want me to note that as a life event?") and add only the ones the user confirms.
 There are no separate "confirmation cards" — your confirmation is the conversation. Never claim you changed something you did not call a tool to change.
 
 ## Working memory protocol

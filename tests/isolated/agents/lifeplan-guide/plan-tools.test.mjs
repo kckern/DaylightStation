@@ -43,8 +43,8 @@ describe('PlanToolFactory', () => {
     tools = factory.createTools();
   });
 
-  it('creates 8 tools (read + confirmed-write)', () => {
-    expect(tools).toHaveLength(8);
+  it('creates 10 tools (read + confirmed-write)', () => {
+    expect(tools).toHaveLength(10);
     const names = tools.map(t => t.name);
     expect(names).toContain('get_plan');
     expect(names).toContain('record_feedback');
@@ -54,6 +54,8 @@ describe('PlanToolFactory', () => {
     expect(names).toContain('set_purpose');
     expect(names).toContain('transition_goal');
     expect(names).toContain('add_evidence');
+    expect(names).toContain('suggest_life_events');
+    expect(names).toContain('add_life_event');
     expect(names).not.toContain('propose_goal_transition');
     expect(names).not.toContain('propose_add_belief');
     expect(names).not.toContain('propose_reorder_values');
