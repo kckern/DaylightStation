@@ -689,7 +689,6 @@ export class FitnessSession {
       name: entity.name,
       deviceId: entity.deviceId,
       durationMs: entity.durationMs,
-      finalRings: entity.rings,
       status: entity.status,
       transferredTo: options.transferredTo || null
     });
@@ -759,7 +758,7 @@ export class FitnessSession {
         // Update destination entity's ring count
         const toAcc = this.treasureBox.perUser.get(toEntityId);
         if (toAcc) {
-          toEntity.setRings(toAcc.totalRings || 0);
+          toEntity.setRings?.(toAcc.totalRings || 0);
         }
       }
     }
@@ -885,20 +884,15 @@ export class FitnessSession {
   }
 
   /**
-   * Phase 3: Get aggregated ring total for a profile across all their entities.
-   * Excludes transferred entities (their rings were merged into successor).
-   * 
-   * @param {string} profileId - Profile ID to aggregate
-   * @returns {number} Total rings across all non-transferred entities
+   * Ring total for a profile (TreasureBox is the per-user ring ledger).
+   *
+   * @param {string} profileId
+   * @returns {number}
    */
   getProfileRingsTotal(profileId) {
     if (!profileId) return 0;
-    const entities = this.getEntitiesForProfile(profileId);
-    return entities.reduce((total, entity) => {
-      // Exclude transferred entities - their rings went to successor
-      if (entity.status === 'transferred') return total;
-      return total + (entity.rings || 0);
-    }, 0);
+    // Rings are accounted per user in TreasureBox; stints carry no totals.
+    return this.treasureBox?.perUser?.get(profileId)?.totalRings || 0;
   }
 
   /**

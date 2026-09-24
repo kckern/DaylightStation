@@ -3,7 +3,7 @@
  * 
  * A Session Entity is distinct from a User Profile:
  * - Profile: Identity (name, avatar, zones) - persists across sessions
- * - Entity: Session state (rings, start time, timeline) - per-device-assignment
+ * - Entity: one stint — one occupant on one strap over a time span
  * 
  * When a device is reassigned (guest switch), a new entity is created.
  * This enables fresh ring counts and session start times for each occupant.
@@ -42,7 +42,7 @@ export class SessionEntity {
    * @param {number} [options.startTime] - Session start timestamp (defaults to now)
    * @param {string} [options.entityId] - Explicit entity ID (auto-generated if not provided)
    */
-  constructor({ profileId, name, deviceId, startTime, entityId }) {
+  constructor({ profileId, name, deviceId, startTime, entityId, startTick }) {
     const now = Date.now();
     this.entityId = entityId || generateEntityId(startTime || now);
     this.profileId = profileId || null;
@@ -52,14 +52,14 @@ export class SessionEntity {
     this.endTime = null;
     this.status = 'active'; // active | dropped | transferred | ended
     
-    // Metrics snapshot - initialized at 0 for fresh entity
-    this.rings = 0;
-    this.cumulativeData = {
-      heartRate: { readings: [], avgHR: 0, maxHR: 0, minHR: 0 },
-      cadence: { readings: [], avgRPM: 0, totalRevolutions: 0 },
-      zoneBuckets: {}
-    };
-    
+    // Timeline tick this stint began at (series index before pruning). A
+    // correction moves this stint's data from here onward.
+    this.startTick = Number.isFinite(startTick) ? startTick : null;
+    // Why the stint closed: 'handover' | 'dropped' | 'session-end' | 'cleared'
+    this.endReason = null;
+    // Prior occupants, oldest first, when a correction relabelled this stint
+    this.relabeledFrom = [];
+
     // Transfer metadata (set when entity is transferred to successor)
     this.transferredTo = null;
     this.transferReason = null;
@@ -114,27 +114,23 @@ export class SessionEntity {
     }
     if (reason) {
       this.transferReason = reason;
+      this.endReason = reason;
     }
   }
 
-  /**
-   * Update rings count
-   * @param {number} rings - New total rings
-   */
-  setRings(rings) {
-    if (Number.isFinite(rings)) {
-      this.rings = rings;
-    }
-  }
 
   /**
-   * Add rings to current total
-   * @param {number} amount - Rings to add
+   * Relabel this stint in place (a correction: "this was actually X").
+   * The stint stays open; the prior occupant is appended to relabeledFrom.
+   * @param {{ profileId: string, name?: string }} next
+   * @returns {SessionEntity}
    */
-  addRings(amount) {
-    if (Number.isFinite(amount)) {
-      this.rings += amount;
-    }
+  relabel({ profileId, name } = {}) {
+    if (!profileId || profileId === this.profileId) return this;
+    if (this.profileId) this.relabeledFrom.push(this.profileId);
+    this.profileId = profileId;
+    if (name) this.name = name;
+    return this;
   }
 
   /**
@@ -149,9 +145,11 @@ export class SessionEntity {
       deviceId: this.deviceId,
       startTime: this.startTime,
       endTime: this.endTime,
+      startTick: this.startTick,
       durationMs: this.durationMs,
       status: this.status,
-      rings: this.rings,
+      endReason: this.endReason,
+      relabeledFrom: [...this.relabeledFrom],
       transferredTo: this.transferredTo || null,
       transferReason: this.transferReason || null
     };
@@ -169,11 +167,12 @@ export class SessionEntity {
       deviceId: this.deviceId,
       startTime: this.startTime,
       endTime: this.endTime,
+      startTick: this.startTick,
       status: this.status,
-      rings: this.rings,
+      endReason: this.endReason,
+      relabeledFrom: [...this.relabeledFrom],
       transferredTo: this.transferredTo,
-      transferReason: this.transferReason,
-      cumulativeData: this.cumulativeData
+      transferReason: this.transferReason
     };
   }
 
@@ -184,25 +183,23 @@ export class SessionEntity {
    */
   static fromJSON(data) {
     if (!data) return null;
-    
+
     const entity = new SessionEntity({
       entityId: data.entityId,
       profileId: data.profileId,
       name: data.name,
       deviceId: data.deviceId,
-      startTime: data.startTime
+      startTime: data.startTime,
+      startTick: data.startTick
     });
-    
+
     entity.endTime = data.endTime || null;
     entity.status = data.status || 'active';
-    entity.rings = Number.isFinite(data.rings) ? data.rings : 0;
+    entity.endReason = data.endReason || null;
+    entity.relabeledFrom = Array.isArray(data.relabeledFrom) ? [...data.relabeledFrom] : [];
     entity.transferredTo = data.transferredTo || null;
     entity.transferReason = data.transferReason || null;
-    
-    if (data.cumulativeData && typeof data.cumulativeData === 'object') {
-      entity.cumulativeData = { ...entity.cumulativeData, ...data.cumulativeData };
-    }
-    
+
     return entity;
   }
 }
@@ -299,6 +296,15 @@ export class SessionEntityRegistry {
    * @param {string} entityId
    * @param {Object} options - Options passed to entity.end()
    */
+  /**
+   * Relabel a stint in place (correction). Returns the entity or null.
+   */
+  relabel(entityId, { profileId, name } = {}) {
+    const entity = this.entities.get(entityId);
+    if (!entity) return null;
+    return entity.relabel({ profileId, name });
+  }
+
   endEntity(entityId, options = {}) {
     const entity = this.entities.get(entityId);
     if (!entity) return;
@@ -312,7 +318,6 @@ export class SessionEntityRegistry {
     
     console.log('[SessionEntityRegistry] Ended entity:', entityId, {
       status: entity.status,
-      rings: entity.rings,
       durationMs: entity.durationMs
     });
   }
