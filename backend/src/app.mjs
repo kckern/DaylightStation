@@ -1337,6 +1337,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     dataService,
     configService,
     freshrssHost: freshrssHost || null,
+    decisionGateway,
     logger: rootLogger.child({ module: 'feed' }),
   });
 
