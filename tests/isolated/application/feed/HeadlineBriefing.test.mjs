@@ -183,3 +183,56 @@ describe('HeadlineService harvest-time story review', () => {
     expect(briefing).toHaveLength(2);
   });
 });
+
+describe('HeadlineService review scheduling', () => {
+  // A gateway whose answers wait until release() so a review can be held "in flight".
+  const heldGateway = () => {
+    let release;
+    const gate = new Promise(resolve => { release = resolve; });
+    const evaluate = vi.fn(async (state, questions) => {
+      await gate;
+      if (questions.sameEvent) return { model: 'jev-test', answers: { sameEvent: { type: 'yesNo', probability: 0.9 } } };
+      return { model: 'jev-test', answers: { kind: { type: 'choice', choice: 'report', confidence: 0.9 } } };
+    });
+    return { gateway: { isConfigured: () => true, evaluate }, release: () => release() };
+  };
+  const flush = () => new Promise(resolve => setTimeout(resolve, 0));
+
+  test("review: 'background' returns the harvest result before the review finishes", async () => {
+    const { gateway, release } = heldGateway();
+    const judge = new HeadlineStoryJudge({ decisionGateway: gateway, logger: { info() {}, warn() {} } });
+    const { service, log } = paraphraseService({ storyJudge: judge });
+    const result = await service.harvestAll('alice', undefined, { review: 'background' });
+    expect(result).toMatchObject({ harvested: 2 });
+    await flush();
+    expect(gateway.evaluate).toHaveBeenCalledTimes(1);
+    expect(log.info).not.toHaveBeenCalledWith('feed.headlines.jev-review', expect.anything());
+    release();
+    await flush(); await flush();
+    expect(log.info).toHaveBeenCalledWith('feed.headlines.jev-review', expect.objectContaining({ page: 'daily' }));
+  });
+
+  test('a harvest during a running review does not start a second review for that user', async () => {
+    const { gateway, release } = heldGateway();
+    const judge = new HeadlineStoryJudge({ decisionGateway: gateway, logger: { info() {}, warn() {} } });
+    const { service, log } = paraphraseService({ storyJudge: judge });
+    await service.harvestAll('alice', undefined, { review: 'background' });
+    await flush();
+    await service.harvestAll('alice', undefined, { review: 'background' });
+    await flush();
+    expect(gateway.evaluate).toHaveBeenCalledTimes(1);
+    release();
+    await flush(); await flush();
+    const reviews = log.info.mock.calls.filter(([event]) => event === 'feed.headlines.jev-review');
+    expect(reviews).toHaveLength(1);
+  });
+
+  test('a background review that throws is logged, not raised', async () => {
+    const judge = new HeadlineStoryJudge({ decisionGateway: fakeGateway(), logger: { info() {}, warn() {} } });
+    judge.review = async () => { throw new Error('boom'); };
+    const { service, log } = paraphraseService({ storyJudge: judge });
+    await expect(service.harvestAll('alice', undefined, { review: 'background' })).resolves.toMatchObject({ harvested: 2 });
+    await flush();
+    expect(log.warn).toHaveBeenCalledWith('feed.headlines.jev-review-failed', expect.objectContaining({ error: 'boom' }));
+  });
+});

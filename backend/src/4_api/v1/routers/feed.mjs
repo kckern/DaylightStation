@@ -136,11 +136,12 @@ export function createFeedRouter(config) {
     res.json(headlineService.getPageList(username));
   }));
 
-  // Harvest all pages (or one page via ?page=ID)
+  // Harvest all pages (or one page via ?page=ID). The Jev story review runs in
+  // the background so the refresh responds as soon as the sources are saved.
   router.post('/headlines/harvest', asyncHandler(async (req, res) => {
     const username = getUsername(req);
     const pageId = req.query.page || undefined;
-    const result = await headlineService.harvestAll(username, pageId);
+    const result = await headlineService.harvestAll(username, pageId, { review: 'background' });
     res.json(result);
   }));
 
