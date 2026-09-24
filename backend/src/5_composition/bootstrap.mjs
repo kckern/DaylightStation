@@ -2910,6 +2910,7 @@ export async function createAgentsServices(config) {
       beliefEvaluator: config.lifeplanServices.container.getBeliefEvaluator(),
       feedbackService: config.lifeplanServices.services.feedbackService,
       planAuthoringService: config.lifeplanServices.services.planAuthoringService,
+      lifeEventSuggester: config.lifeplanServices.services.lifeEventSuggester,
       clock: { now: () => new Date() },
       aggregator: config.lifeplanServices.aggregator,
       metricsStore: config.lifeplanServices.container.getMetricsStore(),
