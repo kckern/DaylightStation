@@ -195,6 +195,67 @@ describe('TransactionCategorizationService', () => {
       expect(result.suggestions[0].suggestedName).toBe('Costco');
       expect(mockTransactionSource.updateTransaction).not.toHaveBeenCalled();
     });
+
+    it('previews a rule-tagged transaction once, without asking the LLM (as apply does)', async () => {
+      mockFinanceStore.getCategorizationConfig.mockReturnValue({
+        ...mockCategorizationConfig, descriptionRules: [{ pattern: 'CASH SWEEP', rename: 'Cash Sweep', tag: 'Transfer' }],
+      });
+      const transactions = [{ id: '1', date: '2026-01-01', description: 'FIDELITY CASH SWEEP Xx1234', tagNames: [] }];
+
+      const result = await service.preview(transactions);
+
+      expect(result.suggestions).toEqual([expect.objectContaining({ id: '1', source: 'rule', suggestedName: 'Cash Sweep', suggestedCategory: 'Transfer' })]);
+      expect(mockAIGateway.chatWithJson).not.toHaveBeenCalled();
+      expect(transactions[0].description).toBe('FIDELITY CASH SWEEP Xx1234');
+    });
+
+    it('a rule without a tag sends the renamed description to the LLM, as apply does', async () => {
+      mockFinanceStore.getCategorizationConfig.mockReturnValue({
+        ...mockCategorizationConfig, descriptionRules: [{ pattern: 'ACME', rename: 'Acme' }],
+      });
+      mockAIGateway.chatWithJson.mockResolvedValue({ category: 'Shopping', friendlyName: 'Acme' });
+
+      const result = await service.preview([{ id: '1', date: '2026-01-01', description: 'ACME STORE 42', tagNames: [] }]);
+
+      const messages = mockAIGateway.chatWithJson.mock.calls[0][0];
+      expect(messages.at(-1)).toEqual({ role: 'user', content: 'Acme' });
+      expect(result.suggestions.map(s => s.source ?? 'llm')).toEqual(['rule', 'llm']);
+    });
+
+    it('skips a settled row exactly as categorize does', async () => {
+      mockAIGateway.chatWithJson.mockResolvedValue({ category: 'Income', friendlyName: 'Direct Deposit' });
+      await service.categorize([{ id: 9, date: '2026-09-15', description: 'Direct Deposit Acme Payroll Ppd', tagNames: [] }]);
+      mockAIGateway.chatWithJson.mockClear();
+
+      const result = await service.preview([{ id: 9, date: '2026-09-15', description: 'Direct Deposit', tagNames: ['Income'] }]);
+
+      expect(mockAIGateway.chatWithJson).not.toHaveBeenCalled();
+      expect(result).toEqual({ suggestions: [], failed: [] });
+    });
+
+    it('asks the LLM about the same rows, with the same descriptions, as categorize', async () => {
+      const config = {
+        ...mockCategorizationConfig,
+        descriptionRules: [{ pattern: 'CASH SWEEP', rename: 'Cash Sweep', tag: 'Transfer' }, { pattern: 'ACME', rename: 'Acme' }],
+      };
+      mockFinanceStore.getCategorizationConfig.mockReturnValue(config);
+      mockAIGateway.chatWithJson.mockResolvedValue({ category: 'Shopping', friendlyName: 'Named' });
+      const rows = () => [
+        { id: '1', date: '2026-01-01', description: 'FIDELITY CASH SWEEP Xx1234', tagNames: [] },
+        { id: '2', date: '2026-01-01', description: 'ACME STORE 42', tagNames: [] },
+        { id: '3', date: '2026-01-01', description: 'Clean Row', tagNames: ['Dining'] },
+        { id: '4', date: '2026-01-01', description: 'SQ *COFFEE', tagNames: ['Dining'] },
+      ];
+      const asked = () => mockAIGateway.chatWithJson.mock.calls.map(([messages]) => messages.at(-1).content);
+
+      await service.preview(rows());
+      const previewAsked = asked();
+      mockAIGateway.chatWithJson.mockClear();
+      await service.categorize(rows());
+
+      expect(previewAsked).toEqual(['Acme', 'SQ *COFFEE']);
+      expect(asked()).toEqual(previewAsked);
+    });
   });
 
   describe('getUncategorized', () => {
