@@ -501,3 +501,4 @@ The corollary bit twice in this sweep: `feat/teacher-workspace-ia` and `feature/
 | 2026-09-23 | fix/heal-invalidate-index | e615a5859e | Heal drops the healed day from the session-list index; merged to main |
 | 2026-09-24 | feat/fitness-playlist-picker | 7aab477f4 | Fitness music playlist picker as full-screen modal with track counts |
 | 2026-09-24 | fix/fitness-landing-improve | 4595e29cd6 | Screen-data cache versioned per build; session-less URL closes the Fitness session detail pane |
+| 2026-09-24 | fix/coaching-logging-completeness | f0aa7df753 | Coach treats unconfirmed under-1200-cal days as missing data; /done /fast /reopen |
