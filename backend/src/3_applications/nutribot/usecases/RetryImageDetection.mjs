@@ -47,7 +47,7 @@ export class RetryImageDetection {
 
     try {
       // Consume only this retry; clearing the root would end an open revision.
-      if (fromSession) await this.#conversationStateStore.set(conversationId, { consumedAt: new Date().toISOString() }, String(messageId));
+      if (fromSession) await this.#conversationStateStore.delete(conversationId, String(messageId));
       else await this.#conversationStateStore.clear(conversationId);
     } catch (e) {
       this.#logger.warn?.('retryImage.clearState.failed', { conversationId, error: e.message });

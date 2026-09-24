@@ -18,6 +18,7 @@ function stateStore(root = null) {
     get: vi.fn(async (id, messageId) => (messageId ? sessions[messageId] ?? null : root)),
     set: vi.fn(async (id, value, messageId) => { if (messageId) sessions[messageId] = value; else root = value; }),
     clear: vi.fn(async () => { root = null; }),
+    delete: vi.fn(async (id, messageId) => { if (messageId) delete sessions[messageId]; else root = null; }),
   };
 }
 
@@ -69,6 +70,9 @@ describe('Nutribot resilience', () => {
 
     await h.router.handleCallback({ ...voice, type: 'callback', messageId: '11721', payload: { callbackData: JSON.stringify({ cmd: 'vr' }) } }, h.rc);
     expect(h.logFoodFromVoice.execute.mock.calls[1][0].voiceData.fileId).toBe('AwACAgEAAxkBAAIt');
+    // The failure message is cleared, and the ORIGINAL voice note's id rides along for tidy-up.
+    expect(h.rc.deleteMessage).toHaveBeenCalledWith('11721');
+    expect(h.logFoodFromVoice.execute.mock.calls[1][0].messageId).toBe('11720');
     expect(h.revision.execute).toHaveBeenCalledOnce();
     // One retry per button.
     await h.router.handleCallback({ ...voice, type: 'callback', messageId: '11721', payload: { callbackData: JSON.stringify({ cmd: 'vr' }) } }, h.rc);
@@ -82,4 +86,25 @@ describe('Nutribot resilience', () => {
     expect(h.restore.execute).toHaveBeenCalledWith(expect.objectContaining({ logUuid: 'gaEcGWCYfN', userId: 'kckern' }));
     expect(out.restored).toBe(9);
   });
+
+  it('a double tap on Retry transcribes once', async () => {
+    const h = harness({ state: REVISING, voiceResults: [
+      { success: false, code: 'TRANSCRIBE_FAILED', retryMessageId: '11721' },
+      { transcript: 'half the rice' }, { transcript: 'half the rice' },
+    ] });
+    await h.router.handleVoice(voice, h.rc);
+    const tap = () => h.router.handleCallback({ ...voice, type: 'callback', messageId: '11721', payload: { callbackData: JSON.stringify({ cmd: 'vr' }) } }, h.rc);
+    await Promise.all([tap(), tap()]);
+    expect(h.logFoodFromVoice.execute).toHaveBeenCalledTimes(2); // the failure + ONE retry
+    expect(h.revision.execute).toHaveBeenCalledOnce();
+  });
+
+  it('a Restore conflict is said out loud, not swallowed', async () => {
+    const h = harness({ state: null, voiceResults: [] });
+    h.restore.execute.mockRejectedValueOnce(Object.assign(new Error('Deleted entry is no longer available'), { status: 409 }));
+    const out = await h.router.handleCallback({ ...voice, type: 'callback', messageId: '11709', payload: { callbackData: JSON.stringify({ cmd: 'rs', id: 'gaEcGWCYfN' }) } }, h.rc);
+    expect(out.code).toBe('RESTORE_FAILED');
+    expect(h.rc.sendMessage.mock.calls.at(-1)[0]).toMatch(/couldn't restore/);
+  });
 });
+
