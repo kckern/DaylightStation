@@ -25,6 +25,15 @@ export const observationsPath = date => `api/v1/health/nutrition/observations?da
 export const healthDayPaths = date => [healthDayPath(date), pendingReviewPath(date), observationsPath(date)];
 
 /**
+ * Show a day's new closure (Done logging / Fasted / reopened) now, from the
+ * POST response, instead of waiting for the day refetch. Returns whether the
+ * day was loaded here to patch.
+ */
+export function showDayStatus(date, dayStatus) {
+  return patchApiResource(healthDayPath(date), day => (day && typeof day === 'object' ? { ...day, dayStatus } : undefined));
+}
+
+/**
  * Put food rows a write has just committed on their day now. The quick-add
  * response carries the saved row, so the row need not wait for the day
  * refetch — which, on a busy page, queues behind a dozen other requests on the
