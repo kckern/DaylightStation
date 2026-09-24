@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { SEVERITY_LEVELS, compileWordList, parseSrt } from './subtitleWords.mjs';
+import {
+  SEVERITY_LEVELS, compileWordList, findWordHits, hitToMuteCue, lineContext, parseSrt,
+} from './subtitleWords.mjs';
 
 const SRT = `1
 00:00:01,000 --> 00:00:03,500
@@ -58,5 +60,66 @@ describe('compileWordList', () => {
   });
   it('exposes the severity scale lowest first', () => {
     expect(SEVERITY_LEVELS).toEqual(['low', 'medium', 'high']);
+  });
+});
+
+
+describe('findWordHits', () => {
+  const list = compileWordList({ words: {
+    hell: { group: 'profanity', tier: 'strict', forms: ['hell'] },
+    damn: { group: 'profanity', tier: 'strict', forms: ['damn'] },
+    god: { group: 'blasphemy', tier: 'moderate', forms: ['god', 'gods'] },
+  } });
+
+  it('matches whole normalised tokens only (no Scunthorpe)', () => {
+    const lines = [{ start: 10, end: 12, text: 'hello shell hell-o' }];
+    expect(findWordHits(lines, list)).toEqual([]);
+  });
+  it('places word i at start + i*0.33, capped at the line end, with the srt-mutes id', () => {
+    const lines = [{ start: 10, end: 10.5, text: 'oh my god, what the hell' }];
+    const hits = findWordHits(lines, list);
+    // god is token 2 -> 10.66, capped to 10.5; hell is token 5 -> 11.65, capped to 10.5 -> same 0.5s key, deduped
+    expect(hits).toEqual([{
+      cueId: 'srt10500', lineIndex: 0, token: 'god', leaf: 'god', group: 'blasphemy',
+      category: 'language/blasphemy/god', severity: 'medium', in: 10.5, out: 10.55,
+    }]);
+  });
+  it('emits one hit per word when they are far enough apart, across lines', () => {
+    const lines = [
+      { start: 100, end: 104, text: 'god damn it' },
+      { start: 200, end: 202, text: "gods, that's hell" },
+    ];
+    expect(findWordHits(lines, list).map((h) => [h.cueId, h.lineIndex, h.token, h.in])).toEqual([
+      ['srt100000', 0, 'god', 100],
+      ['srt100330', 0, 'damn', 100.33],
+      ['srt200000', 1, 'gods', 200],
+      ['srt200660', 1, 'hell', 200.66],
+    ]);
+  });
+  it('does not collapse a word to t=0 when the end timestamp is unparseable', () => {
+    const hits = findWordHits([{ start: 50, end: null, text: 'x hell' }], list);
+    expect(hits[0].in).toBe(50.33);
+  });
+});
+
+describe('hitToMuteCue', () => {
+  it('builds the override addCue srt-mutes stores, now with severity and channel', () => {
+    const hit = { cueId: 'srt100330', lineIndex: 0, token: 'damn', leaf: 'damn', group: 'profanity',
+      category: 'language/profanity/damn', severity: 'low', in: 100.33, out: 100.38 };
+    expect(hitToMuteCue(hit)).toEqual({
+      id: 'srt100330', effect: 'mute', category: 'language/profanity/damn', channel: 'audio',
+      severity: 'low', in: 100.33, out: 100.38, label: 'damn', source: 'srt', precision: 'srt-line',
+    });
+  });
+});
+
+describe('lineContext', () => {
+  const lines = [{ text: 'a' }, { text: 'b' }, { text: 'c' }];
+  it('returns the line and its neighbours', () => {
+    expect(lineContext(lines, 1)).toEqual({ line: 'b', before: 'a', after: 'c' });
+  });
+  it('uses empty strings at the edges', () => {
+    expect(lineContext(lines, 0)).toEqual({ line: 'a', before: '', after: 'b' });
+    expect(lineContext(lines, 2)).toEqual({ line: 'c', before: 'b', after: '' });
   });
 });
