@@ -103,13 +103,25 @@ export class ProviderFitnessContentCatalog extends IFitnessContentCatalog {
    */
   async enrichConfiguredPlaylists(config) {
     const playlists = config?.plex?.music_playlists;
-    if (!Array.isArray(playlists) || playlists.length === 0 || !this.contentAdapter?.getThumbnail) {
+    const canSummarize = typeof this.contentAdapter?.getPlaylistSummary === 'function';
+    if (!Array.isArray(playlists) || playlists.length === 0 || (!canSummarize && !this.contentAdapter?.getThumbnail)) {
       return config;
     }
 
     const enrichment = Promise.all(playlists.map(async (playlist) => {
-      if (playlist.thumb || playlist.thumbnail || !playlist.id) return playlist;
+      if (!playlist.id) return playlist;
+      const hasThumb = Boolean(playlist.thumb || playlist.thumbnail);
       try {
+        if (canSummarize) {
+          const summary = await this.contentAdapter.getPlaylistSummary(playlist.id);
+          if (!summary) return playlist;
+          const enriched = { ...playlist };
+          if (!hasThumb && summary.thumb) enriched.thumb = summary.thumb;
+          if (summary.trackCount != null) enriched.trackCount = summary.trackCount;
+          if (summary.durationSeconds != null) enriched.durationSeconds = summary.durationSeconds;
+          return enriched;
+        }
+        if (hasThumb) return playlist;
         const thumb = await this.contentAdapter.getThumbnail(playlist.id);
         return { ...playlist, thumb };
       } catch {

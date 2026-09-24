@@ -71,6 +71,41 @@ describe('ProviderFitnessContentCatalog contract', () => {
     });
   });
 
+  it('adds track count and length to playlists when the provider can summarize them', async () => {
+    const getPlaylistSummary = vi.fn(async (id) => (id === '44'
+      ? null
+      : { thumb: `/api/v1/content/plex/${id}/image`, trackCount: 68, durationSeconds: 14605 }));
+    const catalog = new ProviderFitnessContentCatalog({
+      source: 'plex',
+      contentAdapter: { source: 'plex', getPlaylistSummary },
+    });
+    const config = {
+      plex: { music_playlists: [{ id: '42', name: 'Jock Jams' }, { id: '43', thumb: '/kept.jpg' }, { id: '44' }] },
+    };
+
+    await expect(catalog.enrichConfiguredPlaylists(config)).resolves.toEqual({
+      plex: {
+        music_playlists: [
+          { id: '42', name: 'Jock Jams', thumb: '/api/v1/content/plex/42/image', trackCount: 68, durationSeconds: 14605 },
+          { id: '43', thumb: '/kept.jpg', trackCount: 68, durationSeconds: 14605 },
+          { id: '44' },
+        ],
+      },
+    });
+  });
+
+  it('leaves playlists untouched when the summary lookup throws', async () => {
+    const catalog = new ProviderFitnessContentCatalog({
+      source: 'plex',
+      contentAdapter: { source: 'plex', getPlaylistSummary: vi.fn(async () => { throw new Error('plex down'); }) },
+    });
+    const config = { plex: { music_playlists: [{ id: '42', name: 'Cardio' }] } };
+
+    await expect(catalog.enrichConfiguredPlaylists(config)).resolves.toEqual({
+      plex: { music_playlists: [{ id: '42', name: 'Cardio' }] },
+    });
+  });
+
   it('keeps governed-label provider querying behind the fitness catalog', async () => {
     const getItemsByLabel = vi.fn(async () => [{ id: 'plex:1' }]);
     const catalog = new ProviderFitnessContentCatalog({

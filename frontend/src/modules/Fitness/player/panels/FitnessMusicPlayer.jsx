@@ -457,16 +457,6 @@ const FitnessMusicPlayer = forwardRef(({ selectedPlaylistId, videoPlayerRef, vid
     setPlaylistModalOpen(true);
   };
 
-  const handleMusicToggle = useCallback(() => {
-    if (setMusicOverride) {
-      setMusicOverride(!musicEnabled);
-      return;
-    }
-    if (setGlobalPlaylistId) {
-      setGlobalPlaylistId(null);
-    }
-  }, [setMusicOverride, musicEnabled, setGlobalPlaylistId]);
-
   const hasAutoSelectedRef = useRef(false);
   useEffect(() => {
     if (hasAutoSelectedRef.current) return;
@@ -671,34 +661,16 @@ const FitnessMusicPlayer = forwardRef(({ selectedPlaylistId, videoPlayerRef, vid
             </div>
             <div className="expanded-section">
               {playlists.length > 0 ? (
-                <>
-                  <button
-                    className="current-playlist-button"
-                    onPointerDown={(e) => { handlePlaylistButtonClick(e); scheduleCollapse(); }}
-                  >
-                    <span className="playlist-icon">🎵</span>
-                    <span className="playlist-name">
-                      {playlists.find(p => p.id === selectedPlaylistId)?.name || 'Select Playlist'}
-                    </span>
-                    <span className="playlist-arrow">▼</span>
-                  </button>
-
-                  <FitnessPlaylistSelector
-                    playlists={playlists}
-                    selectedPlaylistId={selectedPlaylistId}
-                    isOpen={playlistModalOpen}
-                    onSelect={(id) => {
-                      if (!id) {
-                        handleMusicToggle();
-                      } else if (setGlobalPlaylistId) {
-                        setGlobalPlaylistId(id);
-                      }
-                      setPlaylistModalOpen(false);
-                      setControlsOpen(false);
-                    }}
-                    onClose={() => setPlaylistModalOpen(false)}
-                  />
-                </>
+                <button
+                  className="current-playlist-button"
+                  onPointerDown={(e) => { handlePlaylistButtonClick(e); cancelCollapse(); }}
+                >
+                  <span className="playlist-icon">🎵</span>
+                  <span className="playlist-name">
+                    {playlists.find(p => p.id === selectedPlaylistId)?.name || 'Select Playlist'}
+                  </span>
+                  <span className="playlist-arrow">▼</span>
+                </button>
               ) : (
                 <div className="empty-state">No playlists configured.</div>
               )}
@@ -706,7 +678,28 @@ const FitnessMusicPlayer = forwardRef(({ selectedPlaylistId, videoPlayerRef, vid
           </div>
               )}
 
-              {/* Hidden Player Component - Player handles queue fetching and flattening */}
+      {/* Picker lives outside the collapsible panel: the 15s auto-collapse
+          would otherwise unmount it while someone is still choosing. */}
+      <FitnessPlaylistSelector
+        playlists={playlists}
+        selectedPlaylistId={selectedPlaylistId}
+        isOpen={playlistModalOpen}
+        onSelect={(id) => {
+          if (!id) {
+            if (setMusicOverride) setMusicOverride(false);
+            else if (setGlobalPlaylistId) setGlobalPlaylistId(null);
+          } else if (setGlobalPlaylistId) {
+            setGlobalPlaylistId(id);
+          }
+          setControlsOpen(false);
+        }}
+        onClose={() => {
+          setPlaylistModalOpen(false);
+          if (controlsOpen) scheduleCollapse();
+        }}
+      />
+
+      {/* Hidden Player Component - Player handles queue fetching and flattening */}
       <div style={{ position: 'absolute', left: '-9999px' }}>
         <Player
           ref={audioPlayerRef}
