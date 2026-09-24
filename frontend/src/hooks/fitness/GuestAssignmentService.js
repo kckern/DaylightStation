@@ -136,8 +136,6 @@ export class GuestAssignmentService {
     // there is intentionally no "is the previous occupant a guest?" gate.
     // See W1.C / OI-3 symmetric test for the regression guard.
     let isSegmentAbsorbed = false;
-    let transferredFromEntity = null;
-    let transferFromUserId = null; // For user-to-entity transfers (original user has no entity)
 
     if (previousEntry && previousOccupantId && previousOccupantId !== newOccupantId) {
       const previousStartTime = previousEntry.updatedAt || previousEntry.metadata?.startTime || 0;
@@ -174,22 +172,6 @@ export class GuestAssignmentService {
           type: previousEntityId ? 'entity-to-entity' : 'user-to-entity'
         });
         
-        // Close-on-reassign (fitness identity reconciliation, Task 5): stamp
-        // the prior entity now, unconditionally — don't rely solely on the
-        // entity-to-entity transfer below (which may not fire, e.g. if the
-        // successor entity fails to be created). Without this, a superseded
-        // entity can be left `status: active, endTime: null` and later get
-        // measured as spanning the whole session (the "parent-two" bug).
-        if (previousEntityId && session.closeEntity) {
-          session.closeEntity(previousEntityId, { endTime: now, status: 'transferred' });
-        }
-
-        if (previousEntityId) {
-          transferredFromEntity = previousEntityId;
-        } else {
-          // Original user (no entity) - transfer from userId accumulator
-          transferFromUserId = previousOccupantId;
-        }
       } else {
         // Normal replacement: previous segment exceeded the continuous-usage
         // threshold and is honored as a separate participant in the saved
@@ -213,89 +195,27 @@ export class GuestAssignmentService {
           thresholdMs: this.thresholdMs
         });
 
-        // Close-on-reassign (fitness identity reconciliation, Task 5): the
-        // previous segment exceeded the continuous-usage threshold, so it is
-        // honored as its own distinct participant — but its entity must still
-        // be closed (endTime + non-active status) now that the device has
-        // moved on, or the segment builder measures it as spanning the whole
-        // session (the "parent-two" bug).
-        if (previousEntityId && session.closeEntity) {
-          session.closeEntity(previousEntityId, { endTime: now, status: 'superseded' });
-        }
       }
     }
 
-    // Create a new session entity for this assignment
-    let entityId = null;
-    
-    getLogger().warn('guest_assignment.assignment_start', {
+    // Hand the strap over. A correction (inside the continuous-usage window)
+    // moves the open stint — timeline, rings, beats, activity — to the new
+    // occupant and relabels it; a handover closes it and opens a new one.
+    const mode = isSegmentAbsorbed ? 'correction' : 'handover';
+    let stint = null;
+    if (previousOccupantId && previousOccupantId !== newOccupantId && session.reassignStint) {
+      stint = session.reassignStint(key, newOccupantId, { mode, name: value.name })?.stint || null;
+    } else if (session.openStint) {
+      stint = session.openStint({ deviceId: key, profileId: newOccupantId, name: value.name });
+    }
+    const entityId = stint?.entityId || null;
+    getLogger().info('guest_assignment.assigned', {
       deviceId: key,
-      newOccupant: { id: newOccupantId, name: value.name },
-      previousOccupant: { id: previousOccupantId, entityId: previousEntityId },
-      isSegmentAbsorbed,
-      transferFromUserId,
-      hasCreateSessionEntity: !!session.createSessionEntity,
-      hasTreasureBox: !!session.treasureBox,
-      previousUserAccumulator: session.treasureBox ? session.treasureBox.perUser.get(previousOccupantId) : null
+      from: previousOccupantId || null,
+      to: newOccupantId,
+      mode,
+      entityId
     });
-
-    // For sub-threshold user-to-guest absorption, DON'T create entity:
-    // the guest takes over the original user's identity completely. Data
-    // flows through user:newOccupantId series (which gets backfilled with
-    // the original user's data).
-    const skipEntityCreation = isSegmentAbsorbed && transferFromUserId && !transferredFromEntity;
-
-    if (session.createSessionEntity && !skipEntityCreation) {
-      // Sub-threshold absorption: inherit start time from previous entity
-      // so the new participant's timeline starts at the original handoff.
-      let inheritedStartTime = now;
-      if (isSegmentAbsorbed && transferredFromEntity) {
-        const previousEntity = session.entityRegistry?.get?.(transferredFromEntity);
-        if (previousEntity?.startTime) {
-          inheritedStartTime = previousEntity.startTime;
-        }
-      }
-
-      const entity = session.createSessionEntity({
-        profileId: newOccupantId,
-        name: value.name,
-        deviceId: key,
-        startTime: inheritedStartTime
-      });
-      entityId = entity?.entityId || null;
-
-    }
-
-    // Execute transfer if previous segment was sub-threshold.
-    if (isSegmentAbsorbed) {
-      if (transferredFromEntity && entityId) {
-        // Entity-to-entity transfer
-        const transferResult = session.transferSessionEntity?.(transferredFromEntity, entityId);
-        if (transferResult?.ok) {
-          console.log('[GuestAssignmentService] Entity transfer complete:', {
-            from: transferredFromEntity,
-            to: entityId,
-            ringsTransferred: transferResult.ringsTransferred,
-            seriesTransferred: transferResult.seriesTransferred?.length || 0
-          });
-        }
-      } else if (transferFromUserId) {
-        // User-to-guest transfer (one configured user takes over another's series directly)
-        getLogger().warn('guest_assignment.user_series_transfer_start', { fromUserId: transferFromUserId, toUserId: newOccupantId });
-
-        // Orchestrate full transfer via session (Phase 4/5)
-        const transferResult = session.transferUserSeries?.(transferFromUserId, newOccupantId);
-        
-        if (transferResult?.ok) {
-          console.log('[GuestAssignmentService] User series transfer complete:', {
-            from: transferFromUserId,
-            to: newOccupantId,
-            ringsTransferred: transferResult.ringsTransferred,
-            seriesTransferred: transferResult.seriesTransferred
-          });
-        }
-      }
-    }
 
     // Build metadata for the new assignment
     const metadata = {

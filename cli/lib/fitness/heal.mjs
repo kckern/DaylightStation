@@ -5,9 +5,11 @@
  * Applies the backend's `SessionIdentityHealer.planHeal` plan to an on-disk
  * saved fitness session YAML: folds "ghost" occupants (near-zero effort
  * segments, or a known user recorded under a device-swap alias) into the
- * occupant that actually did the work, then recomputes the summary block the
- * same way the `merge` command does (via the shared
- * `cli/lib/fitnessSessionSummary.mjs` helpers).
+ * occupant that actually did the work, repairs cumulative series split by the
+ * pre-stint live transfer (a drop in one rider paired with a jump in another),
+ * rewrites participant flags from the household fitness config, and patches
+ * `summary.participants` — every other summary section (media, challenges,
+ * voice memos) is left exactly as the app wrote it.
  *
  * Dry-run by default — prints the plan without touching the file. Pass
  * `--apply` to write the healed YAML back.
@@ -29,7 +31,8 @@ import yaml from 'js-yaml';
 
 import { decodeStoredSeries, encodeStoredSeries } from './seriesWire.mjs';
 import { planHeal } from '#domains/fitness/services/SessionIdentityHealer.mjs';
-import { buildSummary, isCumulativeSeriesKey, getLastNonNull } from '../fitnessSessionSummary.mjs';
+import { repairCumulativeSplits } from '#domains/fitness/services/CumulativeSplitRepair.mjs';
+import { isCumulativeSeriesKey, getLastNonNull, computeHrStats } from '../fitnessSessionSummary.mjs';
 import { parseArgs, bool, str } from './argv.mjs';
 import { CliError, fitnessHistoryDir } from './context.mjs';
 
@@ -305,7 +308,8 @@ export async function sweep({ baseDir, sinceDays, apply = false, now = new Date(
           date,
           sessionId,
           removed: plan.removedOccupants,
-          merges: plan.merges
+          merges: plan.merges,
+          splitRepairs: plan.splitRepairs || []
         });
       }
     }
@@ -326,6 +330,101 @@ export async function sweep({ baseDir, sinceDays, apply = false, now = new Date(
 // heal()
 // ---------------------------------------------------------------------------
 
+const ZONE_NAMES = { r: 'rest', c: 'cool', a: 'active', w: 'warm', h: 'hot', f: 'fire' };
+
+/**
+ * Read the configured participant directory from the household fitness
+ * config (colocated `household/fitness/config.yml`, legacy
+ * `household/config/fitness.yml` fallback). `primary` entries are scalar
+ * profile references in the real file — resolved to display names through
+ * `users/<id>/profile.yml`; `family`/`friends` are inline. Missing config →
+ * null (flags are then left as they are).
+ *
+ * @param {string} [baseDir]
+ * @returns {Promise<{ primaryIds: Set<string>, familyIds: Set<string>, names: Object<string,string> }|null>}
+ */
+export async function loadParticipantDirectory(baseDir) {
+  const resolvedBaseDir = baseDir || process.env.DAYLIGHT_BASE_PATH || process.cwd();
+  const dataDir = path.join(resolvedBaseDir, 'data');
+  let cfg = null;
+  for (const file of [
+    path.join(dataDir, 'household', 'fitness', 'config.yml'),
+    path.join(dataDir, 'household', 'config', 'fitness.yml')
+  ]) {
+    try {
+      cfg = yaml.load(await fs.readFile(file, 'utf8'));
+      break;
+    } catch { /* try the next location */ }
+  }
+  if (!cfg) return null;
+  const users = cfg?.users || cfg?.fitness?.users || {};
+  const idOf = (u) => (typeof u === 'string' ? u : (u?.id || u?.profileId));
+  const list = (k) => (Array.isArray(users[k]) ? users[k] : []);
+  const names = {};
+  for (const u of [...list('primary'), ...list('secondary'), ...list('family'), ...list('friends')]) {
+    const id = idOf(u);
+    if (!id) continue;
+    if (typeof u === 'object' && u.name) { names[id] = u.name; continue; }
+    try {
+      const profile = yaml.load(await fs.readFile(path.join(dataDir, 'users', id, 'profile.yml'), 'utf8'));
+      if (profile?.display_name) names[id] = profile.display_name;
+    } catch { /* no profile — keep the saved display_name */ }
+  }
+  return {
+    primaryIds: new Set(list('primary').map(idOf).filter(Boolean)),
+    familyIds: new Set(list('family').map(idOf).filter(Boolean)),
+    names
+  };
+}
+
+/**
+ * Participant flags describe the person: is_primary iff configured primary,
+ * configured family is neither, is_guest otherwise, base_user only for guests (and only naming someone
+ * else), display_name from config.
+ */
+export function applyParticipantDirectory(participants, directory) {
+  if (!directory) return participants;
+  const out = {};
+  for (const [id, entry] of Object.entries(participants || {})) {
+    const next = { ...entry };
+    const displayName = directory.names[id] || entry.display_name || id;
+    next.display_name = displayName;
+    const isPrimary = directory.primaryIds.has(id);
+    const isFamily = directory.familyIds?.has(id) || false;
+    const isGuest = !isPrimary && !isFamily;
+    delete next.is_primary;
+    delete next.is_guest;
+    if (isPrimary) next.is_primary = true;
+    if (isGuest) next.is_guest = true;
+    if (!isGuest || !next.base_user || next.base_user === displayName) delete next.base_user;
+    out[id] = next;
+  }
+  return out;
+}
+
+/**
+ * Recompute one participant's summary block from decoded series, keeping any
+ * keys the heal does not own.
+ */
+export function summarizeParticipant(decoded, id, intervalSeconds, previous = {}) {
+  const isLegacyCoins = !decoded[`${id}:rings`] && Array.isArray(decoded[`${id}:coins`]);
+  const ringSeries = decoded[`${id}:rings`] || decoded[`${id}:coins`] || [];
+  const rings = getLastNonNull(ringSeries);
+  const hr = computeHrStats(decoded[`${id}:hr`] || []);
+  const zoneSeconds = {};
+  for (const z of decoded[`${id}:zone`] || []) {
+    if (z == null) continue;
+    const name = ZONE_NAMES[z] || z;
+    zoneSeconds[name] = (zoneSeconds[name] || 0) + intervalSeconds;
+  }
+  const zoneMinutes = Object.fromEntries(Object.entries(zoneSeconds)
+    .map(([zone, secs]) => [zone, Math.round((secs / 60) * 100) / 100]));
+  const next = { ...previous, rings, hr_avg: hr.avg, hr_max: hr.max, hr_min: hr.min, zone_minutes: zoneMinutes };
+  // Pre-rename sessions carry `coins`; keep that field alive for them.
+  if (isLegacyCoins || 'coins' in previous) next.coins = rings;
+  return next;
+}
+
 /**
  * Load a session YAML, plan the identity heal, and (if `apply`) rewrite the
  * file with ghost occupants folded away and the summary recomputed.
@@ -337,7 +436,7 @@ export async function sweep({ baseDir, sinceDays, apply = false, now = new Date(
  * @param {string} [opts.baseDir] - override the data-dir root (for tests)
  * @returns {Promise<{
  *   file: string,
- *   plan: {removedOccupants:string[], transfers:Array, merges:Array, needsHeal:boolean},
+ *   plan: {removedOccupants:string[], transfers:Array, merges:Array, splitRepairs:Array, unpairedDrops:Array, needsHeal:boolean},
  *   changed: boolean,
  *   out: (Object|null)
  * }>}
@@ -386,6 +485,10 @@ export async function heal(date, sessionId, { apply = false, baseDir } = {}) {
     : 5;
   const decoded = decodeStoredSeries(obj.timeline?.series || {});
 
+  // Undo splits first, so the rings are back with their owner before any
+  // ghost is folded.
+  repairCumulativeSplits(decoded, { hrOf: (id) => decoded[`${id}:hr`] || [] });
+
   for (const { from, to } of plan.transfers) {
     foldOccupantSeries(decoded, from, to, { cumulativeStrategy: 'max' });
   }
@@ -403,8 +506,9 @@ export async function heal(date, sessionId, { apply = false, baseDir } = {}) {
     }
   }
 
-  const participants = { ...(obj.participants || {}) };
+  let participants = { ...(obj.participants || {}) };
   for (const id of plan.removedOccupants) delete participants[id];
+  participants = applyParticipantDirectory(participants, await loadParticipantDirectory(baseDir));
 
   // Also drop the removed occupants' records from the `entities` array.
   // Otherwise an entity-backed ghost (one that had an entity but whose series
@@ -416,15 +520,14 @@ export async function heal(date, sessionId, { apply = false, baseDir } = {}) {
     ? obj.entities.filter((e) => !removedSet.has(e?.profileId))
     : obj.entities;
 
-  const events = Array.isArray(obj.timeline?.events) ? obj.timeline.events : [];
-
-  const summary = buildSummary({
-    participants,
-    series: decoded,
-    events,
-    treasureBox: obj.treasureBox,
-    intervalSeconds
-  });
+  const previousSummary = obj.summary || {};
+  const summaryParticipants = {};
+  for (const id of Object.keys(participants)) {
+    summaryParticipants[id] = summarizeParticipant(
+      decoded, id, intervalSeconds, previousSummary.participants?.[id] || {}
+    );
+  }
+  const summary = { ...previousSummary, participants: summaryParticipants };
 
   const out = {
     ...obj,
@@ -485,11 +588,12 @@ export async function run(argv, ctx) {
     console.log('=== Heal sweep ===');
     if (Number.isFinite(sinceDays)) console.log(`Window: last ${sinceDays}d (as of ${now.toISOString()})`);
     console.log('');
-    console.log('date        sessionId       removed              merges');
+    console.log('date        sessionId       removed              merges               split repairs');
     for (const c of candidates) {
       const removedStr = c.removed.join(',') || '(none)';
       const mergesStr = c.merges.map((m) => `${m.from}->${m.to}`).join(',') || '(none)';
-      console.log(`${c.date}  ${c.sessionId}  ${removedStr.padEnd(20)}  ${mergesStr}`);
+      const splitStr = (c.splitRepairs || []).map((r) => `${r.metric}:${r.from}->${r.to}(${r.amount})`).join(',') || '(none)';
+      console.log(`${c.date}  ${c.sessionId}  ${removedStr.padEnd(20)}  ${mergesStr.padEnd(20)}  ${splitStr}`);
     }
     console.log('');
     console.log(`${candidates.length} session(s) need healing`);
@@ -528,6 +632,10 @@ export async function run(argv, ctx) {
   for (const t of plan.transfers) console.log(`  - ${t.from} -> ${t.to}  (${t.reason})`);
   console.log(`Merges (${plan.merges.length}):`);
   for (const m of plan.merges) console.log(`  - ${m.from} -> ${m.to}  (${m.reason})`);
+  const splits = plan.splitRepairs || [];
+  console.log(`Split repairs (${splits.length}):`);
+  for (const r of splits) console.log(`  - ${r.metric}: ${r.amount} from ${r.from} back to ${r.to} at tick ${r.tick}`);
+  for (const u of plan.unpairedDrops || []) console.log(`  ! unpaired drop ${u.key} at tick ${u.tick} (-${u.drop}) — left as is`);
 
   if (!plan.needsHeal) {
     console.log('Nothing to heal — file left untouched.');
@@ -536,7 +644,7 @@ export async function run(argv, ctx) {
   } else {
     console.log('APPLIED — file rewritten.');
     for (const [slug, p] of Object.entries(result.out.summary.participants)) {
-      console.log(`  summary.participants.${slug}.coins=${p.coins}  hr_avg=${p.hr_avg}  hr_min=${p.hr_min}  hr_max=${p.hr_max}`);
+      console.log(`  summary.participants.${slug}.rings=${p.rings}  hr_avg=${p.hr_avg}  hr_min=${p.hr_min}  hr_max=${p.hr_max}`);
     }
   }
 

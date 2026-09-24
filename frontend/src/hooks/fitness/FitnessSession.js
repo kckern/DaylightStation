@@ -11,6 +11,8 @@ import { ZoneProfileStore } from './ZoneProfileStore.js';
 import { EventJournal } from './EventJournal.js';
 import { ActivityMonitor } from '../../modules/Fitness/domain/ActivityMonitor.js';
 import { SessionEntityRegistry } from './SessionEntity.js';
+import { moveStintSeries } from './stintTransfer.js';
+import { toLiveSeries } from './liveSeriesKeys.js';
 import { DeviceEventRouter } from './DeviceEventRouter.js';
 import { VibrationActivityTracker } from './VibrationActivityTracker.js';
 import { PressureMatActivityTracker, PRESSURE_MAT_STARTUP_WINDOW_MS } from './PressureMatActivityTracker.js';
@@ -516,11 +518,13 @@ export class FitnessSession {
         // Auto-assign device to user if not already assigned (for simulator/auto-mapping)
         if (!ledgerEntry && user && userId) {
           getLogger().warn('fitness.auto_assign', { deviceId: device.id, userName: user.name, userId });
+          const stint = this.openStint({ deviceId: device.id, profileId: user.id, name: user.name });
           this.userManager.assignGuest(device.id, user.name, {
             name: user.name,
             profileId: user.id,
             source: user.source || 'auto',
-            occupantType: user.source === 'Guest' ? 'guest' : 'member'
+            occupantType: user.source === 'Guest' ? 'guest' : 'member',
+            ...(stint ? { entityId: stint.entityId } : {})
           });
           this._log('device_auto_assigned', { deviceId: device.id, userName: user.name, userId });
         } else if (ledgerEntry) {
@@ -607,55 +611,115 @@ export class FitnessSession {
   }
 
   /**
-   * Create a new session entity for a device assignment.
-   * Called when a device is assigned to a user (guest switch, initial assignment, etc.)
-   * 
+   * Create a stint record: one occupant on one strap from now (startTick) on.
+   *
    * @param {Object} options
-   * @param {string} options.profileId - User profile ID
+   * @param {string} options.profileId - Occupant user id
    * @param {string} options.name - Display name
    * @param {string} options.deviceId - Heart rate device ID
-   * @param {number} [options.startTime] - Optional start time (defaults to now)
+   * @param {number} [options.startTime] - Start timestamp (defaults to now)
+   * @param {number} [options.startTick] - Timeline tick the stint begins at
+   *   (defaults to the next tick to be recorded)
    * @returns {import('./SessionEntity.js').SessionEntity}
-   * @see /docs/design/guest-switch-session-transition.md
    */
-  createSessionEntity({ profileId, name, deviceId, startTime }) {
+  createSessionEntity({ profileId, name, deviceId, startTime, startTick }) {
     const now = startTime || Date.now();
-    const entity = this.entityRegistry.create({
-      profileId,
-      name,
-      deviceId,
-      startTime: now
-    });
-    
-    getLogger().warn('fitness.entity_creation_diagnostic', {
-      entityId: entity.entityId,
-      profileId,
-      deviceId,
-      hasTreasureBox: !!this.treasureBox,
-      isActive: this.isActive
-    });
-    
-    if (this.treasureBox) {
-      this.treasureBox.initializeEntity(entity.entityId, now);
-      // Set this entity as active for the device
-      if (deviceId) {
-        this.treasureBox.setActiveEntity(deviceId, entity.entityId);
-        getLogger().warn('fitness.entity_mapping_set', { deviceId, entityId: entity.entityId });
-      }
-    } else {
-      getLogger().warn('fitness.treasure_box_unavailable', { entityId: entity.entityId });
+    const tick = Number.isFinite(startTick) ? startTick : (this.timeline?.timebase?.tickCount ?? 0);
+    const entity = this.entityRegistry.create({ profileId, name, deviceId, startTime: now, startTick: tick });
+    if (this.treasureBox && deviceId) {
+      this.treasureBox.setActiveEntity(deviceId, entity.entityId);
     }
-    
-    // Log entity creation
     this.eventJournal?.log('ENTITY_CREATED', {
       entityId: entity.entityId,
       profileId,
       name,
       deviceId,
-      startTime: now
+      startTime: now,
+      startTick: tick
     });
-    
     return entity;
+  }
+
+  /**
+   * Open the stint for a strap's current occupant. Idempotent for the same
+   * occupant; a different occupant closes the open stint as a handover.
+   * No-op before the session starts — ensureStarted opens stints then.
+   *
+   * @param {{ deviceId: string, profileId: string, name?: string }} options
+   * @returns {import('./SessionEntity.js').SessionEntity|null}
+   */
+  openStint({ deviceId, profileId, name } = {}) {
+    if (!this.sessionId || deviceId == null || !profileId) return null;
+    const open = this.entityRegistry.getByDevice(deviceId);
+    if (open && open.status === 'active') {
+      if (open.profileId === profileId) return open;
+      this.entityRegistry.endEntity(open.entityId, { status: 'superseded', reason: 'handover' });
+    }
+    return this.createSessionEntity({ profileId, name: name || profileId, deviceId: String(deviceId) });
+  }
+
+  /**
+   * Move a strap to a new occupant.
+   *  - correction: the open stint's data (from its startTick) moves to the new
+   *    person — timeline, rings, beats, activity — and the stint is relabelled
+   *    in place ("that was actually X").
+   *  - handover: nothing moves; the stint closes and a new one opens now.
+   *
+   * @param {string} deviceId
+   * @param {string} toUserId
+   * @param {{ mode?: 'correction'|'handover', name?: string }} [options]
+   * @returns {{ ok: boolean, mode?: string, reason?: string, stint: Object|null, ringsMoved?: number, beatsMoved?: number }}
+   */
+  reassignStint(deviceId, toUserId, { mode = 'handover', name } = {}) {
+    const key = String(deviceId);
+    const stint = this.entityRegistry.getByDevice(key);
+    if (!this.sessionId || !stint || stint.status !== 'active') {
+      return { ok: false, reason: 'no-open-stint', stint: this.openStint({ deviceId: key, profileId: toUserId, name }) };
+    }
+    const fromUserId = stint.profileId;
+    if (fromUserId === toUserId) return { ok: true, mode: 'noop', stint };
+
+    if (mode === 'correction') {
+      const moved = this._moveStintData(fromUserId, toUserId, stint.startTick);
+      this.entityRegistry.relabel(stint.entityId, { profileId: toUserId, name });
+      // The new occupant owns a live stint again — back on the chart.
+      this._transferredUsers?.delete(toUserId);
+      // Hide the previous name from the chart only if it no longer owns any stint.
+      if (this.entityRegistry.getByProfile(fromUserId).length === 0) {
+        this.markUserAsTransferred(fromUserId);
+      }
+      getLogger().info('fitness.stint.corrected', {
+        deviceId: key, fromUserId, toUserId, startTick: stint.startTick, ...moved
+      });
+      return { ok: true, mode, stint, ...moved };
+    }
+
+    this.entityRegistry.endEntity(stint.entityId, { status: 'superseded', reason: 'handover' });
+    const next = this.createSessionEntity({ profileId: toUserId, name: name || toUserId, deviceId: key });
+    getLogger().info('fitness.stint.handover', { deviceId: key, fromUserId, toUserId });
+    return { ok: true, mode: 'handover', stint: next };
+  }
+
+  /**
+   * Move everything one stint accumulated from one person to another: the
+   * timeline window, the ring and beat running totals (as deltas above the
+   * stint's base), and the activity periods. Nothing before startTick moves.
+   * @private
+   */
+  _moveStintData(fromUserId, toUserId, startTick) {
+    const start = Number.isFinite(startTick) ? startTick : 0;
+    const pruned = Number(this.timeline?.timebase?.prunedTickCount) || 0;
+    let bases = { rings_total: 0, heart_beats: 0 };
+    if (this.timeline?.series) {
+      ({ bases } = moveStintSeries(this.timeline.series, {
+        fromUserId, toUserId, startIndex: start - pruned
+      }));
+    }
+    const ringsMoved = this.treasureBox?.moveStint(fromUserId, toUserId, { baseRings: bases.rings_total }) ?? 0;
+    const beatsMoved = this._timelineRecorder?.moveStintBeats(fromUserId, toUserId, bases.heart_beats) ?? 0;
+    this.activityMonitor?.moveStintActivity(fromUserId, toUserId, start);
+    this.zoneProfileStore?.resetZoneState?.(toUserId);
+    return { ringsMoved, beatsMoved };
   }
 
   /**
@@ -689,7 +753,6 @@ export class FitnessSession {
       name: entity.name,
       deviceId: entity.deviceId,
       durationMs: entity.durationMs,
-      finalRings: entity.rings,
       status: entity.status,
       transferredTo: options.transferredTo || null
     });
@@ -719,160 +782,6 @@ export class FitnessSession {
   }
 
   /**
-   * Phase 4: Transfer session data from one entity to another.
-   * Used during grace period transfers when a brief session is merged into successor.
-   * 
-   * Transfers:
-   * - TreasureBox accumulator (rings, zone state)
-   * - Timeline series data (heart_rate, rings_total, zone_id)
-   * - Marks source entity as 'transferred'
-   * 
-   * @param {string} fromEntityId - Source entity ID (being transferred)
-   * @param {string} toEntityId - Destination entity ID (receiving transfer)
-   * @returns {{ ok: boolean, ringsTransferred?: number, seriesTransferred?: Array, error?: string }}
-   * @see /docs/design/guest-switch-session-transition.md
-   */
-  transferSessionEntity(fromEntityId, toEntityId) {
-    if (!fromEntityId || !toEntityId || fromEntityId === toEntityId) {
-      return { ok: false, error: 'Invalid entity IDs for transfer' };
-    }
-    
-    const fromEntity = this.entityRegistry.get(fromEntityId);
-    const toEntity = this.entityRegistry.get(toEntityId);
-    
-    if (!fromEntity) {
-      return { ok: false, error: `Source entity not found: ${fromEntityId}` };
-    }
-    if (!toEntity) {
-      return { ok: false, error: `Destination entity not found: ${toEntityId}` };
-    }
-    
-    const now = Date.now();
-    let ringsTransferred = 0;
-    let seriesTransferred = [];
-    
-    // 1. Transfer TreasureBox accumulator (rings, zone state)
-    if (this.treasureBox) {
-      const transferred = this.treasureBox.transferAccumulator(fromEntityId, toEntityId);
-      if (transferred) {
-        ringsTransferred = fromEntity.rings || 0;
-        // Update destination entity's ring count
-        const toAcc = this.treasureBox.perUser.get(toEntityId);
-        if (toAcc) {
-          toEntity.setRings(toAcc.totalRings || 0);
-        }
-      }
-    }
-    
-    // 2. Transfer timeline series (heart_rate, rings_total, zone_id, etc.)
-    if (this.timeline) {
-      const transferred = this.timeline.transferEntitySeries(fromEntityId, toEntityId);
-      seriesTransferred = transferred;
-    }
-
-    // 2.1 Transfer activity history (Phase 2)
-    if (this.activityMonitor) {
-      this.activityMonitor.transferActivity(fromEntityId, toEntityId);
-    }
-
-    // 2.2 Transfer cumulative metrics (Phase 4)
-    if (this._metricsRecorder) {
-      this._metricsRecorder.transferCumulativeMetrics(fromEntityId, toEntityId);
-    }
-    
-    // 3. Mark source entity as transferred (with reference to destination)
-    this.entityRegistry.endEntity(fromEntityId, {
-      status: 'transferred',
-      timestamp: now,
-      transferredTo: toEntityId,
-      reason: 'grace_period_transfer'
-    });
-
-    // Also mark as transferred for chart filtering
-    this.markUserAsTransferred(fromEntityId);
-    
-    // 4. Update destination entity's start time to match source (already done in createSessionEntity)
-    // This ensures the new participant "inherits" the session start time
-    
-    // 5. Log the transfer event
-    this.eventJournal?.log('ENTITY_TRANSFERRED', {
-      fromEntityId,
-      toEntityId,
-      fromProfileId: fromEntity.profileId,
-      toProfileId: toEntity.profileId,
-      ringsTransferred,
-      seriesTransferred: seriesTransferred.length,
-      durationMs: fromEntity.durationMs,
-      timestamp: now
-    });
-    
-    console.log('[FitnessSession] Entity transfer complete:', {
-      from: fromEntityId,
-      to: toEntityId,
-      ringsTransferred,
-      seriesCount: seriesTransferred.length
-    });
-    
-    return {
-      ok: true,
-      ringsTransferred,
-      seriesTransferred
-    };
-  }
-
-  /**
-   * Transfer all session data from one user ID to another.
-   * Used during grace period transfers when a user is replaced by a guest (or vice versa)
-   * and we want to maintain a continuous line on the chart.
-   * 
-   * @param {string} fromUserId - Source user ID
-   * @param {string} toUserId - Destination user ID
-   * @returns {Object} Transfer results
-   */
-  transferUserSeries(fromUserId, toUserId) {
-    if (!fromUserId || !toUserId || fromUserId === toUserId) {
-      return { ok: false, error: 'Invalid user IDs for transfer' };
-    }
-
-    console.log('[FitnessSession] Orchestrating user series transfer:', { fromUserId, toUserId });
-
-    // 1. Transfer timeline history
-    let seriesTransferred = [];
-    if (this.timeline) {
-      seriesTransferred = this.timeline.transferUserSeries(fromUserId, toUserId);
-    }
-
-    // 2. Transfer TreasureBox accumulator
-    let ringsTransferred = 0;
-    if (this.treasureBox) {
-      const transferred = this.treasureBox.transferAccumulator(fromUserId, toUserId);
-      if (transferred) {
-        const toAcc = this.treasureBox.perUser.get(toUserId);
-        ringsTransferred = toAcc?.totalRings || 0;
-      }
-    }
-
-    // 3. Transfer activity history
-    if (this.activityMonitor) {
-      this.activityMonitor.transferActivity(fromUserId, toUserId);
-    }
-
-    // 4. Transfer cumulative metrics
-    if (this._metricsRecorder) {
-      this._metricsRecorder.transferCumulativeMetrics(fromUserId, toUserId);
-    }
-
-    // 5. Mark source user as transferred
-    this.markUserAsTransferred(fromUserId);
-
-    return {
-      ok: true,
-      ringsTransferred,
-      seriesTransferred: seriesTransferred.length
-    };
-  }
-
-  /**
    * Phase 3: Get all entities for a profile ID.
    * A profile can have multiple entities (if they leave and rejoin, or use different devices).
    * 
@@ -885,20 +794,15 @@ export class FitnessSession {
   }
 
   /**
-   * Phase 3: Get aggregated ring total for a profile across all their entities.
-   * Excludes transferred entities (their rings were merged into successor).
-   * 
-   * @param {string} profileId - Profile ID to aggregate
-   * @returns {number} Total rings across all non-transferred entities
+   * Ring total for a profile (TreasureBox is the per-user ring ledger).
+   *
+   * @param {string} profileId
+   * @returns {number}
    */
   getProfileRingsTotal(profileId) {
     if (!profileId) return 0;
-    const entities = this.getEntitiesForProfile(profileId);
-    return entities.reduce((total, entity) => {
-      // Exclude transferred entities - their rings went to successor
-      if (entity.status === 'transferred') return total;
-      return total + (entity.rings || 0);
-    }, 0);
+    // Rings are accounted per user in TreasureBox; stints carry no totals.
+    return this.treasureBox?.perUser?.get(profileId)?.totalRings || 0;
   }
 
   /**
@@ -1691,11 +1595,12 @@ export class FitnessSession {
     // Set tick count to match saved data
     this.timeline.timebase.tickCount = savedTickCount;
 
-    // Restore series data
-    for (const [key, values] of Object.entries(savedSeries)) {
-      if (Array.isArray(values)) {
-        this.timeline.series[key] = [...values];
-      }
+    // Restore series data under the LIVE keys the recorders write. The saved
+    // file uses compact on-disk keys; left as-is, the live keys would restart
+    // empty and overwrite the restored history at the next save.
+    const liveSeries = toLiveSeries(savedSeries, { vibrationIds: [...this._vibrationTrackers.keys()] });
+    for (const [key, values] of Object.entries(liveSeries)) {
+      this.timeline.series[key] = values;
     }
 
     // Restore events
@@ -1731,6 +1636,13 @@ export class FitnessSession {
       this.treasureBox.restore(sessionData.treasureBox);
     }
 
+    // Continue every rider's running totals from where the saved file left
+    // them, so ring and beat lines carry on instead of dropping to zero.
+    this._restoreRunningTotals(liveSeries);
+    // Restore the stints, so a correction after the reload still moves the
+    // whole stint and the saved participant list keeps everyone who rode.
+    this.entityRegistry.restore(sessionData.entities);
+
     getLogger().info('fitness.session.resumed', {
       sessionId: this.sessionId,
       previousEndTime,
@@ -1741,6 +1653,37 @@ export class FitnessSession {
     });
 
     return true;
+  }
+
+  /**
+   * Seed TreasureBox ring totals and TimelineRecorder beat totals from the last
+   * value of each restored per-person cumulative series.
+   * @private
+   */
+  _restoreRunningTotals(liveSeries) {
+    const lastFinite = (arr) => {
+      for (let i = arr.length - 1; i >= 0; i -= 1) if (Number.isFinite(arr[i])) return arr[i];
+      return null;
+    };
+    for (const [key, values] of Object.entries(liveSeries || {})) {
+      const m = /^user:(.+):(rings_total|heart_beats)$/.exec(key);
+      if (!m) continue;
+      const last = lastFinite(values);
+      if (last == null) continue;
+      const [, userId, metric] = m;
+      if (metric === 'rings_total' && this.treasureBox) {
+        let acc = this.treasureBox.perUser.get(userId);
+        if (!acc) {
+          acc = this.treasureBox._createAccumulator(Date.now());
+          acc.profileId = userId;
+          this.treasureBox.perUser.set(userId, acc);
+        }
+        acc.totalRings = Math.max(acc.totalRings || 0, last);
+        this._timelineRecorder?.markRingsRecorded?.(userId);
+      } else if (metric === 'heart_beats' && this._timelineRecorder) {
+        this._timelineRecorder.seedCumulativeBeats(userId, last);
+      }
+    }
   }
 
   /**
@@ -2059,13 +2002,12 @@ export class FitnessSession {
     // Update TimelineRecorder with treasureBox reference after creation
     this._timelineRecorder.setTreasureBox(this.treasureBox);
 
-    // A guest can be assigned before the first HR packet arrives.  The roster
-    // is then reconstructed from the ledger, but a fresh session still needs a
-    // fresh entity for its rings and zone state.  Without this bridge the guest
-    // is visible as an unassigned "no zone" participant until reassigned.
-    const guestAssignments = this.userManager?.assignmentLedger?.snapshot?.() || [];
-    for (const assignment of guestAssignments) {
-      if (assignment?.occupantType !== 'guest' || !assignment.deviceId) continue;
+    // Every strap already assigned when the session starts gets a stint from
+    // tick 0 — members as well as guests — so each assignment is on record and
+    // a later correction knows where its window begins.
+    const ledgerAssignments = this.userManager?.assignmentLedger?.snapshot?.() || [];
+    for (const assignment of ledgerAssignments) {
+      if (!assignment?.deviceId) continue;
       const profileId = assignment.occupantId || assignment.metadata?.profileId;
       if (!profileId) continue;
       const entity = this.createSessionEntity({
@@ -2073,11 +2015,12 @@ export class FitnessSession {
         name: assignment.occupantName || assignment.metadata?.name || profileId,
         deviceId: assignment.deviceId,
         startTime: now,
+        startTick: 0,
       });
       this.userManager.assignGuest(assignment.deviceId, assignment.occupantName, {
         ...(assignment.metadata || {}),
         profileId,
-        occupantType: 'guest',
+        occupantType: assignment.occupantType || 'member',
         entityId: entity.entityId,
       });
     }
@@ -2571,6 +2514,10 @@ export class FitnessSession {
 
     this._collectTimelineTick({ timestamp: now });
     this._closeOpenMedia(now);
+    // Close every open stint so the saved segments carry real end times.
+    for (const stint of this.entityRegistry.getActive()) {
+      this.entityRegistry.endEntity(stint.entityId, { status: 'ended', timestamp: now, reason: 'session-end' });
+    }
     this._log('end', {
       sessionId: this.sessionId,
       durationMs,

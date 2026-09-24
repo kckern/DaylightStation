@@ -377,24 +377,79 @@ threshold; production code paths always provide a value.
 | **OI-2 — Cycling / turn-taking detection** | 3+ consecutive sub-T segments alternating between 2+ distinct occupants on one device | All segments honored as a "shared device" pattern — neither cascading forward-absorption nor the OI-1 backward rule applies. Both occupants survive in the saved YAML. |
 | **§5 — Late-tag untagged placeholder merge** | A synthetic untagged (untagged placeholder) occupant is followed by a configured user, regardless of duration | The untagged placeholder segment is absorbed into the configured user. Per Decision §5, late tagging means "I'm telling you now who this was" — duration is irrelevant. |
 
-### Live vs Save-Time Application
+### Correction vs Handover (live)
 
-| Layer | What it does | What it can't catch |
-|-------|--------------|---------------------|
-| **`GuestAssignmentService`** (live, per reassignment) | Compares `previousDuration` against `thresholdMs`; emits `SEGMENT_ABSORBED` (sub-T, calls `session.transferSessionEntity` / `session.transferUserSeries`) or `GUEST_REPLACED` (≥ T, calls `session.endSessionEntity({ status: 'dropped' })`). | Final-segment backward absorption (OI-1 — no further reassignment exists), cycling-detection (OI-2 — would already have cascaded), late untagged placeholder merges (Decision §5 — the in-session check sees them as already-expired). |
-| **`PersistenceManager._applyBackfill`** (session save time) | Walks every device's entity history with `runSessionBackfill({ entities, thresholdMs, sessionEndTime })`. Applies OI-1, OI-2, OI-3, and §5 against the full timeline. Mutates `sessionData.timeline.series` in place via `_mergeUserSeriesInPlace` (destination-wins cell-by-cell). | (Save-time is the final word — anything wrong at this layer is wrong on disk.) |
+Every strap assignment is a **stint** — one occupant on one strap from a
+`startTick` on (`SessionEntity`, see [Stints](#stints) below). When the strap is
+reassigned, `GuestAssignmentService` classifies the change and hands it to
+`FitnessSession.reassignStint(deviceId, toUserId, { mode })`:
 
-The save-time pass skips entities whose `status === 'transferred'` — those
-were already absorbed in-session and re-applying would null-out the merged
-destination data.
+| Mode | When | What happens |
+|------|------|--------------|
+| **correction** | The current occupant has held the strap for `< T` | "That was actually X." The open stint's data moves to X — timeline point series cell by cell, rings and beats **as the stint's delta above its starting value**, activity periods — and the stint is **relabelled in place** (prior occupant appended to `relabeledFrom`). Nothing before the stint's `startTick` moves. |
+| **handover** | `≥ T` | The strap changed hands. Nothing moves; the stint closes (`endReason: 'handover'`) and a new one opens now. |
+
+Why deltas: TreasureBox (rings) and TimelineRecorder (beats) keep running totals
+per person and write them into the timeline every tick. Moving history without
+moving the matching counter delta made the next tick overwrite it — one child's
+line fell off a cliff and another's spiked (session 2026-09-23). The invariant
+is: per-person cumulative series never decrease, and the sum of rings across
+people is unchanged by a reassignment. Pure helper: `stintTransfer.js`
+(`moveStintSeries`); store moves: `TreasureBox.moveStint`,
+`TimelineRecorder.moveStintBeats`, `ActivityMonitor.moveStintActivity`,
+`ZoneProfileStore.resetZoneState`.
+
+A chain of corrections on one strap (A → B → A) moves the whole stint each
+time, from its original `startTick`; `relabeledFrom` records `[A, B]`.
+
+The correction window is measured from the ledger entry's `updatedAt` (the
+last assignment of that strap), but a correction moves the **whole open
+stint**, not only the last `T` minutes: "that was actually X" is a claim about
+everything the strap recorded for that occupant.
+
+**Resume.** A kiosk reload resumes the session from its saved file:
+`_hydrateFromSession` re-keys the saved series to live keys
+(`liveSeriesKeys.js`, zone letters expanded), seeds each rider's ring and beat
+running totals from the last saved value, and restores the stints
+(`SessionEntityRegistry.restore`) — so lines continue and a post-reload
+correction still moves the whole stint.
+
+### Save-Time Application
+
+| Layer | What it does |
+|-------|--------------|
+| **`PersistenceManager._applyBackfill`** | `runSessionBackfill({ entities, series, … })`. A **relabelled stint is authoritative** — exempt from effort absorb and cycling detection; names in `relabeledFrom` are dropped unless they own another stint. The effort rule (≤1 ring, ≤5 s active zone, <3 HR samples → fold forward), known-user cross-device merge, late-tag placeholder merge and OI-2 cycling honour apply to stints nobody relabelled. Participants come from stints; sessions without stints keep the series-derived fallback. |
+| **`flattenCumulativeRegressions`** (`cumulativeGuard.js`) | After the backfill, any cumulative series (`rings_total`, `heart_beats`, `rotations`) that dips is flattened and logged as `fitness.persistence.cumulative_regressed` — a regression is visible in the log store, never drawn as a falling line. |
+
+### Retroactive heal (saved sessions)
+
+`node cli/fitness.cli.mjs session heal <date> <sessionId> [--apply]` and
+`… session heal --sweep [--since=Nd] [--apply]` re-reconcile saved YAML with the
+backend `SessionIdentityHealer` (dry run by default). It:
+
+- **repairs split cumulative series** (`CumulativeSplitRepair.mjs`) — the
+  signature the pre-stint transfer left: one rider's `rings`/`beats` drops by D
+  while another's jumps by ≈D within 3 ticks. Both steps are cancelled; the
+  rider whose HR covers the ticks before the drop keeps the rings. An unpaired
+  drop is reported, never guessed;
+- folds effortless ghosts and drops empty listed participants, honouring
+  relabelled stints;
+- rewrites participant flags from `data/household/config/fitness.yml` `users`
+  (same rules as save time);
+- patches `summary.participants` (rings, HR stats, zone minutes) and leaves
+  every other summary section as the app wrote it.
 
 ### Telemetry
 
 | Event | When emitted | Payload fields (key ones) |
 |-------|--------------|---------------------------|
-| `SEGMENT_ABSORBED` (live, in `GuestAssignmentService`) | Sub-T reassignment, segment absorbed forward | `deviceId`, `previousOccupantId`, `previousDurationMs`, `thresholdMs`, `newOccupantId`, `transferType` (`entity-to-entity` \| `user-to-entity`) |
-| `GUEST_REPLACED` (live, in `GuestAssignmentService`) | Reassignment ≥ T, previous segment dropped | Same shape as above, plus `thresholdMs` for diagnostic correlation |
-| `persist_backfill_applied` (save time, in `PersistenceManager`) | Backfill pass moved data or removed occupants | `sessionId`, `thresholdMs`, `transfers[]`, `removedOccupants[]` |
+| `SEGMENT_ABSORBED` (live, journal) | Reassignment `< T` — a correction | `deviceId`, `previousOccupantId`, `previousDurationMs`, `thresholdMs`, `newOccupantId` |
+| `GUEST_REPLACED` (live, journal) | Reassignment `≥ T` — a handover | Same shape |
+| `guest_assignment.assigned` (log store) | Every assignment | `deviceId`, `from`, `to`, `mode`, `entityId` |
+| `fitness.stint.corrected` / `fitness.stint.handover` (log store) | `reassignStint` | `deviceId`, `fromUserId`, `toUserId`, `startTick`, `ringsMoved`, `beatsMoved` |
+| `treasurebox.stint_moved` (log store) | Rings moved by a correction | `fromUserId`, `toUserId`, `baseRings`, `ringsMoved` |
+| `persist_backfill_applied` (save time) | Backfill moved data or removed occupants | `sessionId`, `thresholdMs`, `transfers[]`, `removedOccupants[]` |
+| `fitness.persistence.cumulative_regressed` (log store, warn) | A cumulative series dipped at save time | `sessionId`, `key`, `tick`, `drop` |
 
 > **Event rename note (W1.C):** The live event was previously named
 > `GRACE_PERIOD_TRANSFER`. It is now `SEGMENT_ABSORBED` to match the actual
@@ -434,10 +489,12 @@ This section documents the ideal flows and constraints for guest assignment stat
 │     - Session-end backfill catches OI-1 (final), OI-2 (cycling)    │
 │     - See "Continuous-Usage Threshold" section above for details   │
 │                                                                     │
-│  5. ENTITY LIFECYCLE                                                │
-│     - Each assignment creates a session entity                     │
-│     - Entity tracks coins/timeline for that assignment period      │
-│     - Entity ended when assignment cleared or replaced             │
+│  5. STINT LIFECYCLE                                                 │
+│     - Every assignment (auto-assigned members too) opens a stint   │
+│     - A correction (< T) relabels the open stint in place          │
+│     - A handover (>= T), clear, or session end closes it           │
+│     - A heart-rate dropout does NOT close it                       │
+│     - Stints hold no totals; data lives in the user-keyed stores   │
 │                                                                     │
 └─────────────────────────────────────────────────────────────────────┘
 ```
@@ -545,50 +602,38 @@ Timeline:
   t0:     Device #1 assigned to Bob
   t0+30s: Realize mistake, assign to Carol instead   (30s < T → absorb)
 
-Result: Carol inherits Bob's session data (coins, timeline, start time).
-        The live SEGMENT_ABSORBED event is emitted with thresholdMs in
-        the payload.
+Result: the strap's stint is relabelled Bob → Carol. Everything the strap
+        recorded since the stint began — HR, zones, rings and beats (as
+        deltas), activity — moves to Carol. Bob keeps anything he recorded
+        before this stint (e.g. on another strap). SEGMENT_ABSORBED is
+        journalled; fitness.stint.corrected is logged.
 
-Sub-Threshold Absorption Logic (GuestAssignmentService.js):
+Flow (GuestAssignmentService → FitnessSession.reassignStint):
 ┌─────────────────────────────────────────────────────────────────────┐
-│  // this.thresholdMs is injected at construction time from          │
-│  // fitness.yml → governance.usage_threshold_seconds                │
-│                                                                     │
-│  if (previousEntry && previousDuration < this.thresholdMs) {        │
-│    // Absorb mode: previous segment merged forward                  │
-│    isSegmentAbsorbed = true;                                        │
-│    transferredFromEntity = previousEntityId;                        │
-│                                                                     │
-│    // New entity inherits:                                          │
-│    // - Start time from previous entity                             │
-│    // - Coins via transferSessionEntity()                           │
-│    // - Timeline series via transferUserSeries()                    │
-│    // SEGMENT_ABSORBED event logged with thresholdMs                │
-│  } else {                                                           │
-│    // ≥ T: previous segment honored as separate participant         │
-│    // Previous entity marked as 'dropped'                           │
-│    // GUEST_REPLACED event logged with thresholdMs                  │
-│  }                                                                  │
+│  mode = previousDuration < thresholdMs ? 'correction' : 'handover'  │
+│  session.reassignStint(deviceId, newOccupantId, { mode })           │
+│    correction → _moveStintData(from, to, stint.startTick)           │
+│                   moveStintSeries   (timeline window)               │
+│                   treasureBox.moveStint   (rings delta)             │
+│                   timelineRecorder.moveStintBeats (beats delta)     │
+│                   activityMonitor.moveStintActivity                 │
+│                 registry.relabel(stint, to)                         │
+│    handover   → close stint (endReason 'handover'), open new stint  │
 └─────────────────────────────────────────────────────────────────────┘
 
-Data Transfer Flow:
-  Entity-to-Entity (guest → guest):
-    session.transferSessionEntity(oldEntityId, newEntityId)
-
-  User-to-Entity (owner → guest):
-    session.transferUserSeries(ownerUserId, guestUserId)
-
-Symmetric application (OI-3): the same absorption rule applies even when
-both occupants are configured household members (e.g. parent hands strap
-to child mid-session). There is no "previous occupant must be a guest"
-gate. See `PersistenceManager.symmetricTransitions.test.js`.
-
-Save-time catches what live misses: if the in-session pass doesn't fire
-(e.g. the final segment with no successor — OI-1, or 3+ alternating
-sub-T segments — OI-2, or late-tag untagged placeholder merges — Decision §5), the
-session-end backfill pass in PersistenceManager applies the same rules
-against the full timeline at save time.
+Symmetric: the same rule applies when both occupants are household members.
+A reassignment before the session starts moves no data; `ensureStarted`
+opens a stint (startTick 0) for every ledger entry.
 ```
+
+### Stints
+
+`SessionEntity` is a stint record: `entityId`, `profileId` (current occupant),
+`deviceId`, `startTime`, `startTick`, `endTime`, `status`, `endReason`
+(`handover` \| `dropped` \| `cleared`/`guest_cleared` \| …) and
+`relabeledFrom[]`. It has no live-accounting role — rings, beats and zones are
+all keyed by user id. Stints are persisted in the session YAML as `entities[]`
+and are what the save-time backfill and the backend healer reconcile.
 
 ### Scenario 5: Multi-Device Family Session
 
@@ -708,16 +753,15 @@ Assignment creates entity:
                            → entityId: "entity-123"
 
 Replacement (>= T) ends previous entity:
-  assignGuest(device, Carol) → endSessionEntity("entity-123", {status: 'dropped'})
-                             → createSessionEntity({profileId: Carol})
-                             → entityId: "entity-456"
+  assignGuest(device, Carol) → reassignStint(device, Carol, {mode: 'handover'})
+                             → stint "entity-123" closed (endReason 'handover')
+                             → new stint "entity-456" for Carol
                              → GUEST_REPLACED event (thresholdMs in payload)
 
-Replacement (< T) absorbs into new entity:
-  assignGuest(device, Carol) → createSessionEntity({profileId: Carol,
-                                                    startTime: inheritedFromBob})
-                             → transferSessionEntity("entity-123", "entity-456")
-                             → entityId: "entity-456"
+Replacement (< T) is a correction — same stint, relabelled:
+  assignGuest(device, Carol) → reassignStint(device, Carol, {mode: 'correction'})
+                             → stint data moved Bob → Carol (delta, from startTick)
+                             → stint "entity-123" relabelled; relabeledFrom [Bob]
                              → SEGMENT_ABSORBED event (thresholdMs in payload)
 
 Clear ends entity:
