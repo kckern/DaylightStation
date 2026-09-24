@@ -507,3 +507,5 @@ The corollary bit twice in this sweep: `feat/teacher-workspace-ia` and `feature/
 | 2026-09-24 | feat/nutrition-untracked-reconstruction | bab4fcdb46 | Weight-derived backfill of untracked intake (API, planner CLI, coach 'reconstructed' status) |
 | 2026-09-24 | fix/reconciliation-dexa-bmr | c3f47bac81 | Reconciliation BMR anchored to measured DEXA RMR |
 | 2026-09-24 | fix/workout-merge-start-time | b657378757 | mergeWorkouts pairs Strava/FitnessSyncer by start time |
+| 2026-09-24 | fix/transcribe-retry-5xx | 1e1b577bbb | Retry HTTP 5xx/429 from raw axios (Whisper 502) |
+| 2026-09-24 | feat/nutribot-retry-restore | c86009299e | Nutribot voice retry, restore after Undo, voice follows open flow |
