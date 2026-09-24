@@ -300,7 +300,7 @@ This means a guest is a **full first-class participant for the duration of the s
 participants:
   user-a:
     display_name: User A
-    is_primary: true            # default when neither flag is set
+    is_primary: true            # configured in users.primary
     hr_device: "11111"
   friend-b:
     display_name: Friend B
@@ -323,7 +323,7 @@ timeline:
     friend-b:coins: ...
 ```
 
-`is_guest` and `is_primary` are mutually exclusive; entries with neither flag default to `is_primary: true` (registered users aren't guests). `guest_profile` records the age-class profile (from `guest_profiles`) the guest rode under, so reports can interpret zone/coin data correctly. Occupants fully absorbed by the save-time backfill (sub-threshold segments, late-tagged untagged placeholders) are **excluded entirely** — no phantom rows.
+`is_guest` and `is_primary` are mutually exclusive and **describe the person, not how the strap was assigned**: `is_primary` iff the id is in the configured `users.primary` list; configured `users.family` members are neither (household, not primary); everyone else is `is_guest` (the directory is injected by `FitnessContext` via `PersistenceManager.setParticipantDirectory`). A household member given their own strap back is not a guest. `base_user` is written only for guests, and only when it names someone other than the guest. `display_name` is the configured name, not the slug. `guest_profile` records the age-class profile (from `guest_profiles`) the guest rode under, so reports can interpret zone/coin data correctly. Participants come from the session's stints whose strap produced heart rate, plus anyone with heart rate but no stint (e.g. a rider from before a kiosk reload); names a correction relabelled away, and occupants fully absorbed by the save-time backfill (sub-threshold segments, late-tagged untagged placeholders) are **excluded entirely** — no phantom rows.
 
 ### Session detail / history UI
 

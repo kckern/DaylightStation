@@ -377,3 +377,68 @@ describe('sweep() — --since filtering excludes out-of-window date dirs', () =>
     expect(candidates.some((c) => c.date === DATE)).toBe(true);
   });
 });
+
+describe('heal — 2026-09-23 split repair (session 20260923183528, scrubbed)', () => {
+  const SPLIT_FIXTURE = path.join(__dirname, '..', '..', '..',
+    'backend/src/2_domains/fitness/services/__fixtures__/session-20260923183528.yml');
+  const SPLIT_DATE = '2026-09-23';
+  const SPLIT_ID = '20260923183528';
+  let splitBase;
+
+  beforeEach(async () => {
+    splitBase = await mkdtemp(path.join(tmpdir(), 'heal-split-'));
+    const dir = path.join(splitBase, 'data', 'household', 'fitness', 'log', SPLIT_DATE);
+    await mkdir(dir, { recursive: true });
+    await copyFile(SPLIT_FIXTURE, path.join(dir, `${SPLIT_ID}.yml`));
+    // Real shape: the COLOCATED household/fitness/config.yml, `primary` as
+    // scalar profile references, `family`/`friends` inline.
+    const cfgDir = path.join(splitBase, 'data', 'household', 'fitness');
+    await mkdir(cfgDir, { recursive: true });
+    await writeFile(path.join(cfgDir, 'config.yml'), yaml.dump({
+      users: {
+        primary: ['kid-a', 'kid-d', 'kid-e', 'parent'],
+        family: [{ id: 'mom', name: 'Mom' }],
+        friends: [{ id: 'kid-b', name: 'Kid B' }, { id: 'guest-c', name: 'Guest C' }],
+      },
+    }));
+    for (const [id, name] of [['kid-a', 'Kid A'], ['kid-d', 'Kid D'], ['kid-e', 'Kid E'], ['parent', 'Parent']]) {
+      const userDir = path.join(splitBase, 'data', 'users', id);
+      await mkdir(userDir, { recursive: true });
+      await writeFile(path.join(userDir, 'profile.yml'), yaml.dump({ username: id, display_name: name }));
+    }
+  });
+  afterEach(async () => { await rm(splitBase, { recursive: true, force: true }); });
+
+  it('applies the split repair and patches the summary with rings', async () => {
+    const before = yaml.load(await readFile(SPLIT_FIXTURE, 'utf8')).summary.participants;
+    const res = await heal(SPLIT_DATE, SPLIT_ID, { apply: true, baseDir: splitBase });
+    const repair = res.plan.splitRepairs.find((r) => r.metric === 'rings');
+    const p = res.out.summary.participants;
+    expect(repair.amount).toBeGreaterThanOrEqual(87);
+    expect(p['kid-a'].rings).toBe(before['kid-a'].rings + repair.amount);
+    expect(p['kid-b'].rings).toBe(before['kid-b'].rings - repair.amount);
+    expect(p['guest-c'].rings).toBe(before['guest-c'].rings);
+    expect(p).not.toHaveProperty('kid-d');
+    expect(p).not.toHaveProperty('kid-e');
+    expect(res.out.participants).not.toHaveProperty('kid-d');
+    expect(res.out.participants['kid-a']).toMatchObject({ display_name: 'Kid A', is_primary: true });
+    expect(res.out.participants['kid-a']).not.toHaveProperty('is_guest');
+    expect(res.out.participants['kid-a']).not.toHaveProperty('base_user');
+    expect(res.out.participants['guest-c']).toMatchObject({ display_name: 'Guest C', is_guest: true });
+    expect(res.out.participants['guest-c']).not.toHaveProperty('is_primary');
+    // Sections the heal does not own survive untouched.
+    expect(res.out.summary.media).toEqual(yaml.load(await readFile(SPLIT_FIXTURE, 'utf8')).summary.media);
+  });
+
+  it('patched summary keeps rings (never reads :coins on a modern session)', async () => {
+    const res = await heal(SPLIT_DATE, SPLIT_ID, { apply: true, baseDir: splitBase });
+    expect(res.out.summary.participants.parent.rings).toBe(2);
+    expect(res.out.summary.participants['guest-c'].rings).toBe(508);
+  });
+
+  it('heal is idempotent', async () => {
+    await heal(SPLIT_DATE, SPLIT_ID, { apply: true, baseDir: splitBase });
+    const again = await heal(SPLIT_DATE, SPLIT_ID, { apply: false, baseDir: splitBase });
+    expect(again.plan.needsHeal).toBe(false);
+  });
+});

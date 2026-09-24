@@ -21,6 +21,7 @@ import { DaylightAPI } from '../../lib/api.mjs';
 import getLogger from '../../lib/logging/Logger.js';
 import { SessionSerializerV3 } from './SessionSerializerV3.js';
 import { buildSessionSummary } from './buildSessionSummary.js';
+import { flattenCumulativeRegressions } from './cumulativeGuard.js';
 import { getClientId } from '../../lib/clientId.js';
 import { runSessionBackfill } from './sessionBackfill.js';
 
@@ -244,22 +245,31 @@ const buildParticipantsForPersist = (roster, deviceAssignments, options = {}) =>
     // Determine guest vs primary status
     const isExplicitlyGuest = entry.isGuest === true;
     const isExplicitlyPrimary = entry.isPrimary === true;
+    const directory = options?.primaryIds instanceof Set ? options.primaryIds : null;
+    const configuredName = options?.names?.[participantId] || null;
+    const displayName = configuredName || name;
 
     // Default to primary user if neither is set (registered users aren't guests)
-    const isPrimary = isExplicitlyPrimary || (!isExplicitlyGuest && !isExplicitlyPrimary);
-    const isGuest = isExplicitlyGuest && !isExplicitlyPrimary;
+    const isPrimary = directory
+      ? directory.has(String(participantId))
+      : (isExplicitlyPrimary || (!isExplicitlyGuest && !isExplicitlyPrimary));
+    const isFamily = options?.familyIds instanceof Set && options.familyIds.has(String(participantId));
+    const isGuest = directory ? (!isPrimary && !isFamily) : (isExplicitlyGuest && !isExplicitlyPrimary);
+    const baseUser = isGuest && entry.baseUserName && String(entry.baseUserName) !== displayName
+      ? String(entry.baseUserName)
+      : null;
 
     // Audit N4: record which guest age-class profile (e.g. 'kid') the guest
     // rode under, sourced from the assignment ledger metadata.
     const guestAgeClass = assignment?.metadata?.ageClass || null;
 
     participants[participantId] = {
-      ...(name ? { display_name: name } : {}),
+      ...(displayName ? { display_name: displayName } : {}),
       ...(hrDevice != null ? { hr_device: String(hrDevice) } : {}),
       ...(isPrimary ? { is_primary: true } : {}),
       ...(isGuest ? { is_guest: true } : {}),
       ...(isGuest && guestAgeClass ? { guest_profile: guestAgeClass } : {}),
-      ...(entry.baseUserName ? { base_user: String(entry.baseUserName) } : {})
+      ...(baseUser ? { base_user: baseUser } : {})
     };
   });
 
@@ -742,6 +752,20 @@ export class PersistenceManager {
   }
 
   /**
+   * Set the configured participant directory used to decide saved participant
+   * flags: is_primary iff the id is in `primaryIds`; configured family
+   * (`familyIds`) is neither guest nor primary; everyone else is a guest.
+   * display_name from `names`. Sourced from fitness config `users`.
+   *
+   * @param {{ primaryIds?: string[], familyIds?: string[], names?: Object<string,string> }} directory
+   */
+  setParticipantDirectory({ primaryIds, familyIds, names } = {}) {
+    this._primaryIds = Array.isArray(primaryIds) ? new Set(primaryIds.map(String)) : null;
+    this._familyIds = Array.isArray(familyIds) ? new Set(familyIds.map(String)) : new Set();
+    this._configuredNames = names && typeof names === 'object' ? { ...names } : {};
+  }
+
+  /**
    * Record that a save succeeded for a given session.
    * @param {string} sessionId
    */
@@ -1084,7 +1108,13 @@ export class PersistenceManager {
       : null;
 
     const sanitizedRoster = sanitizeRosterForPersist(sessionData.roster);
-    this._augmentRosterFromSeries(sanitizedRoster, sessionData.timeline?.series, sessionData.deviceAssignments);
+    // Everyone who held a strap has a stint; a series name without one is not
+    // a participant. Legacy sessions (no stints) keep the series-derived path.
+    if (Array.isArray(sessionData.entities) && sessionData.entities.length > 0) {
+      this._augmentRosterFromStints(sanitizedRoster, sessionData.entities, sessionData.timeline?.series);
+    } else {
+      this._augmentRosterFromSeries(sanitizedRoster, sessionData.timeline?.series, sessionData.deviceAssignments);
+    }
 
     // W1.B — session-end backfill pass.
     // Walks per-device segment history (sessionData.entities) and resolves
@@ -1096,10 +1126,30 @@ export class PersistenceManager {
     // See sessionBackfill.js + audit Decision §7.
     const backfillResult = this._applyBackfill(sessionData);
 
+    // A cumulative series that dips means data moved without its counter.
+    // Keep the saved file monotonic and make the cause visible.
+    const regressions = flattenCumulativeRegressions(sessionData.timeline?.series);
+    if (!this._reportedRegressions) this._reportedRegressions = new Set();
+    for (const regression of regressions) {
+      // Autosave re-saves the same session every few seconds; say it once.
+      const reportKey = `${sessionData.sessionId}|${regression.key}`;
+      if (this._reportedRegressions.has(reportKey)) continue;
+      this._reportedRegressions.add(reportKey);
+      getLogger().warn('fitness.persistence.cumulative_regressed', {
+        sessionId: sessionData.sessionId,
+        ...regression
+      });
+    }
+
     const participants = buildParticipantsForPersist(
       sanitizedRoster,
       sessionData.deviceAssignments,
-      { excludeOccupantIds: backfillResult?.removedOccupants }
+      {
+        excludeOccupantIds: backfillResult?.removedOccupants,
+        primaryIds: this._primaryIds || null,
+        familyIds: this._familyIds || new Set(),
+        names: this._configuredNames || {}
+      }
     );
 
     const persistSessionData = {
@@ -1198,7 +1248,10 @@ export class PersistenceManager {
           startTime: entity.startTime || null,
           endTime: entity.endTime || null,
           status: entity.status || 'active',
-          rings: entity.rings || 0
+          ...(Number.isFinite(entity.startTick) ? { startTick: entity.startTick } : {}),
+          ...(entity.endReason ? { endReason: entity.endReason } : {}),
+          ...(Array.isArray(entity.relabeledFrom) && entity.relabeledFrom.length
+            ? { relabeledFrom: [...entity.relabeledFrom] } : {})
         };
       }).filter(Boolean);
     }
@@ -1345,7 +1398,7 @@ export class PersistenceManager {
    * backward absorption, OI-2 cycling, OI-3 forward absorption).
    *
    * The algorithm already skips segments whose status === 'transferred' (those
-   * were absorbed in-session via session.transferUserSeries/transferSessionEntity
+   * were relabelled in-session via session.reassignStint
    * — re-running the transfer here would double-move null arrays).
    *
    * Threshold source priority (mirrors the implementation at lines below):
@@ -1411,7 +1464,7 @@ export class PersistenceManager {
 
     // Apply timeline-series transfers AND cross-device known-user merges
     // in-place, through the same destination-wins cell-by-cell merge. Shares
-    // the key-rewrite shape with FitnessTimeline.transferUserSeries
+    // the key-rewrite shape of a user-series move
     // (`user:<id>:<metric>` → `user:<newId>:<metric>`, with source nulled out
     // so it doesn't appear on charts) — see _mergeUserSeriesInPlace for the
     // merge semantics used at save time.
@@ -1443,8 +1496,8 @@ export class PersistenceManager {
   }
 
   /**
-   * Save-time series merge. Differs from live FitnessTimeline.transferUserSeries
-   * (which overwrites the destination wholesale): here the destination may
+   * Save-time series merge. Unlike the live stint move (stintTransfer.js),
+   * this merges whole series: the destination may
    * already have data accumulated from its own ticks, so we merge cell-by-cell
    * with destination-wins semantics. Source fills only the cells where the
    * destination is null/undefined; source is then nulled out for tickCount
@@ -1492,7 +1545,7 @@ export class PersistenceManager {
       }
 
       // Empty the source: keep nulls for length parity with timeline tickCount,
-      // matching FitnessTimeline.transferUserSeries semantics.
+      // so the source no longer appears on charts.
       series[key] = fromArr.map(() => null);
     }
   }
@@ -1561,9 +1614,53 @@ export class PersistenceManager {
   }
 
   /**
-   * Augment roster with participants discovered in series data.
-   * The live roster only contains currently connected devices — participants
-   * who disconnected before persist time would be missing.
+   * Augment roster with every stint occupant. The live roster only contains
+   * currently connected devices — someone who dropped out before save would
+   * be missing — but everyone who held a strap has a stint.
+   * @param {Array} roster - Sanitized roster array (mutated in place)
+   * @param {Array} entities - Stint records
+   * @returns {Array} The augmented roster
+   */
+  _augmentRosterFromStints(roster, entities, seriesData) {
+    const rosterIds = new Set(roster.map(e => e.profileId || e.hrDeviceId).filter(Boolean));
+    const series = seriesData && typeof seriesData === 'object' ? seriesData : {};
+    const hasHeartRate = (id) => (series[`user:${id}:heart_rate`] || [])
+      .some((v) => Number.isFinite(v) && v > 0);
+    const relabeledAway = new Set();
+    const stintOccupants = new Set();
+    for (const stint of entities) {
+      if (stint?.profileId) stintOccupants.add(stint.profileId);
+      for (const id of stint?.relabeledFrom || []) relabeledAway.add(id);
+    }
+    const add = (userId, name, deviceId) => {
+      if (!userId || rosterIds.has(userId)) return;
+      roster.push({
+        profileId: userId,
+        name: name || userId,
+        ...(deviceId ? { hrDeviceId: String(deviceId) } : {})
+      });
+      rosterIds.add(userId);
+    };
+    // A stint whose strap never spoke this session (a stale ledger entry)
+    // is not a participant.
+    for (const stint of entities) {
+      if (stint?.profileId && hasHeartRate(stint.profileId)) add(stint.profileId, stint.name, stint.deviceId);
+    }
+    // Someone with real heart rate but no stint — e.g. rode before a kiosk
+    // reload — is still a participant, unless a correction relabelled them away.
+    for (const key of Object.keys(series)) {
+      const m = /^user:([^:]+):heart_rate$/.exec(key);
+      if (!m) continue;
+      const userId = m[1];
+      if (stintOccupants.has(userId) || relabeledAway.has(userId)) continue;
+      if (hasHeartRate(userId)) add(userId, userId, null);
+    }
+    return roster;
+  }
+
+  /**
+   * Legacy (pre-stint) sessions: augment roster with participants discovered
+   * in series data.
    * @param {Array} roster - Sanitized roster array (mutated in place)
    * @param {Object} seriesData - Timeline series keyed by e.g. 'user:user-a:heart_rate'
    * @param {Array} deviceAssignments - Device assignment entries

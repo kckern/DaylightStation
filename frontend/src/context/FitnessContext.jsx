@@ -610,6 +610,27 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     }
   }, [plexConfig]);
 
+  // Saved participant flags describe the person: is_primary iff the id is in
+  // the configured `primary` list, family is neither, everyone else a guest;
+  // display names from config.
+  useEffect(() => {
+    const pm = fitnessSessionRef.current?._persistenceManager;
+    if (!pm) return;
+    const configuredLists = ['primary', 'secondary', 'family', 'friends']
+      .flatMap((k) => (Array.isArray(usersConfig?.[k]) ? usersConfig[k] : []));
+    pm.setParticipantDirectory?.({
+      primaryIds: (Array.isArray(usersConfig?.primary) ? usersConfig.primary : [])
+        .map((u) => u?.id || u?.profileId)
+        .filter(Boolean),
+      familyIds: (Array.isArray(usersConfig?.family) ? usersConfig.family : [])
+        .map((u) => u?.id || u?.profileId)
+        .filter(Boolean),
+      names: Object.fromEntries(configuredLists
+        .filter((u) => (u?.id || u?.profileId) && u?.name)
+        .map((u) => [u.id || u.profileId, u.name])),
+    });
+  }, [usersConfig]);
+
   // Keep usersConfigRef in sync for simulation controller
   useEffect(() => {
     usersConfigRef.current = usersConfig;
@@ -776,6 +797,9 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     if (typeof window !== 'undefined') {
       window.__governanceEngine = session.governanceEngine;
       window.__fitnessSession = session;
+      // Test hook: drive a strap reassignment exactly as the sidebar does.
+      window.__fitnessAssignGuest = (deviceId, assignment) =>
+        guestAssignmentServiceRef.current?.assignGuest(deviceId, assignment) ?? null;
       
       // MEMORY LEAK FIX: Add debug helper for memory monitoring
       window.__fitnessMemoryStats = () => {
