@@ -1,6 +1,6 @@
 /**
  * Parser for triggers/sources.yml. One map keyed by source id; each entry
- * carries `modality` (nfc|state) and optional `location` (defaults to key).
+ * carries `modality` (nfc|state|barcode|voice) and optional `location` (defaults to key).
  * Partitions by modality and delegates per-entry validation to the existing
  * nfc/state location parsers by reconstructing their raw keyed-by-location shape.
  *
@@ -14,12 +14,22 @@
  * The boot path passes `onSkip`: one bad entry used to throw out of the whole
  * load and leave EVERY tag in the house unregistered.
  *
+ * WARNINGS. `onWarn({ event, ... })` hears about config that loads but is
+ * probably wrong: two sources of one modality at one location (the later one
+ * silently replaces the earlier: `trigger.config.location.shadowed`), and a
+ * voice source that routes transcripts with no secret
+ * (`trigger.voice.unauthenticated`).
+ *
  * Layer: ADAPTER (1_adapters/trigger/parsers).
  * @module adapters/trigger/parsers/sourcesParser
  */
 import { ValidationError } from '#domains/core/errors/ValidationError.mjs';
+import { assertSafeKey } from './safeKey.mjs';
 import { parseNfcLocations } from './nfcLocationsParser.mjs';
 import { parseStateLocations } from './stateLocationsParser.mjs';
+import { parseVoiceLocations } from './voiceLocationsParser.mjs';
+
+const MODALITIES = ['nfc', 'state', 'barcode', 'voice'];
 
 function isPlainObject(v) { return v !== null && typeof v === 'object' && !Array.isArray(v); }
 
@@ -50,8 +60,8 @@ export function isolateEntry(onSkip, kind, id, parse) {
   }
 }
 
-export function parseSources(raw, { onSkip = null } = {}) {
-  if (!raw) return { nfc: { locations: {} }, state: { locations: {} }, barcode: { locations: {} } };
+export function parseSources(raw, { onSkip = null, onWarn = null } = {}) {
+  if (!raw) return { nfc: { locations: {} }, state: { locations: {} }, barcode: { locations: {} }, voice: { locations: {} } };
   if (!isPlainObject(raw)) {
     throw new ValidationError('sources.yml root must be an object', { code: 'INVALID_CONFIG_ROOT' });
   }
@@ -60,20 +70,31 @@ export function parseSources(raw, { onSkip = null } = {}) {
   const barcodeRaw = {};
   const nfcSourceOf = {};
   const stateSourceOf = {};
+  const voiceRaw = {};
+  const voiceSourceOf = {};
+  const sourceAt = {};
   for (const [sourceId, entry] of Object.entries(raw)) {
     const accepted = isolateEntry(onSkip, 'source', sourceId, () => {
+      assertSafeKey(sourceId, 'source id');
+      if (isPlainObject(entry) && entry.location) assertSafeKey(entry.location, 'location', sourceId);
       if (!isPlainObject(entry)) {
         throw new ValidationError(`source "${sourceId}" must be an object`, { code: 'INVALID_SOURCE', field: sourceId });
       }
-      if (!['nfc', 'state', 'barcode'].includes(entry.modality)) {
+      if (!MODALITIES.includes(entry.modality)) {
         throw new ValidationError(`source "${sourceId}" has unknown modality "${entry.modality}"`, { code: 'UNKNOWN_MODALITY', field: sourceId });
       }
       return true;
     });
     if (!accepted) continue;
     const location = entry.location || sourceId;
+    const slot = `${entry.modality}:${location}`;
+    if (sourceAt[slot] !== undefined) {
+      onWarn?.({ event: 'trigger.config.location.shadowed', modality: entry.modality, location, source: sourceId, shadowed: sourceAt[slot] });
+    }
+    sourceAt[slot] = sourceId;
     if (entry.modality === 'nfc') { nfcRaw[location] = toLegacyEntry(entry); nfcSourceOf[location] = sourceId; }
     else if (entry.modality === 'state') { stateRaw[location] = toLegacyEntry(entry); stateSourceOf[location] = sourceId; }
+    else if (entry.modality === 'voice') { voiceRaw[location] = toLegacyEntry(entry); voiceSourceOf[location] = sourceId; }
     else if (entry.modality === 'barcode') {
       const legacy = toLegacyEntry(entry);
       barcodeRaw[location] = {
@@ -97,7 +118,18 @@ export function parseSources(raw, { onSkip = null } = {}) {
       delete nfcLocations[loc].defaults.debounce_ms;
     }
   }
-  return { nfc: { locations: nfcLocations }, state: { locations: perLocation(stateRaw, stateSourceOf, parseStateLocations) }, barcode: { locations: barcodeRaw } };
+  const voiceLocations = perLocation(voiceRaw, voiceSourceOf, parseVoiceLocations);
+  for (const [location, cfg] of Object.entries(voiceLocations)) {
+    if (cfg.routing.mode !== 'off' && !cfg.auth_token) {
+      onWarn?.({ event: 'trigger.voice.unauthenticated', source: voiceSourceOf[location] || location, location, mode: cfg.routing.mode });
+    }
+  }
+  return {
+    nfc: { locations: nfcLocations },
+    state: { locations: perLocation(stateRaw, stateSourceOf, parseStateLocations) },
+    barcode: { locations: barcodeRaw },
+    voice: { locations: voiceLocations },
+  };
 }
 
 export default parseSources;

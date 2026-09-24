@@ -55,4 +55,8 @@ describe('StateResolver', () => {
     expect(() => StateResolver.resolve({ location: 'livingroom', value: 'off', registry }))
       .toThrow(/state.*action/i);
   });
+
+  it.each(['constructor', 'Constructor', '__proto__', 'toString'])('prototype key %s is not a registered state', (value) => {
+    expect(StateResolver.resolve({ location: 'livingroom', value, registry: baseRegistry })).toBeNull();
+  });
 });

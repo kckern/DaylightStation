@@ -11,6 +11,7 @@ import { TriggerDispatchService } from '#apps/trigger/TriggerDispatchService.mjs
 import { broadcastEvent, createDeviceServices, createWakeAndLoadService } from '../bootstrap.mjs';
 import { NodeApplicationScheduler } from '#adapters/scheduling/NodeApplicationScheduler.mjs';
 import { randomUUID } from 'node:crypto';
+import { createVoiceTriggerService } from './voiceTrigger.mjs';
 
 /**
  * Create Trigger application service + API router
@@ -18,8 +19,10 @@ import { randomUUID } from 'node:crypto';
  * Trigger ties together the device dispatch surface (wakeAndLoadService for
  * play, deviceService for raw control, haGateway for HA scripts) with the
  * location-rooted trigger registry. The NFC modality source lives in
- * `data/household[-{hid}]/apps/nfc/config.yml`. Future modalities (barcode,
- * voice) feed the same registry under different `type` slots.
+ * `triggers/sources.yml`; every modality (nfc, state, barcode, voice) feeds
+ * the same registry under its own `type` slot. Voice transcripts
+ * (POST /:location/voice) are handled by a VoiceTriggerService that dispatches
+ * through the same TriggerDispatchService.
  *
  * Bootstrap is tolerant of stale/legacy YAML shapes: a parse failure logs a
  * warning and yields an empty registry (all triggers 404 with
@@ -40,6 +43,7 @@ import { randomUUID } from 'node:crypto';
  * @param {Function} [config.screenBroadcast] - Screen-targeted broadcast helper (targetScreen, payload) used by contentDispatcher-driven flows
  * @param {Function} [config.commandResolver] - Resolves a raw scan/value string to a known command (e.g. resolveCommand)
  * @param {Object} [config.learnerActions] - Registry of what a school learner card DOES per reader (createLearnerActions). Absent, a learner tap answers `no_handler` by name.
+ * @param {Object} [config.decisionGateway] - IDecisionGateway for voice transcripts (optional; null keeps voice exact-keyword only)
  * @param {Object} [config.logger] - Logger instance
  * @returns {{ triggerDispatchService: TriggerDispatchService, router: import('express').Router }}
  */
@@ -60,6 +64,7 @@ export function createTriggerApiRouter(config) {
     screenBroadcast = null,
     commandResolver = null,
     learnerActions = null,
+    decisionGateway = null,
     logger = console,
   } = config;
 
@@ -71,7 +76,9 @@ export function createTriggerApiRouter(config) {
     // One bad source or tag disables only itself; ERROR so it shows in a
     // `level:error` sweep, since that reader or card now does nothing.
     triggerConfig = triggerConfigRepository.loadRegistry({ loadFile, listDir,
-      onSkip: (skip) => logger.error?.('trigger.config.entry.skipped', skip) });
+      onSkip: (skip) => logger.error?.('trigger.config.entry.skipped', skip),
+      // Loads, but probably wrong: a shadowed source, an unguarded voice source.
+      onWarn: ({ event, ...data }) => logger.warn?.(event, data) });
     // Curated-out inbox stubs are swept AFTER the load, never during it: a read
     // must not depend on a write succeeding. Fire-and-forget — the registry in
     // memory is already correct, and a failed sweep only means the same stubs
@@ -87,7 +94,7 @@ export function createTriggerApiRouter(config) {
     // session all fail with "trigger-not-registered" and nothing on the surface
     // says why. It has to show up in a `level:error` sweep.
     logger.error?.('trigger.config.parse.failed', { error: err.message, impact: 'all-tags-unregistered' });
-    triggerConfig = { nfc: { locations: {}, tags: {} }, state: { locations: {} }, responses: {}, endpoints: {} };
+    triggerConfig = { nfc: { locations: {}, tags: {} }, state: { locations: {} }, barcode: { locations: {} }, voice: { locations: {} }, responses: {}, endpoints: {} };
   }
 
   const endpointGateway = new HttpEndpointGateway({ endpoints: triggerConfig.endpoints || {}, logger });
@@ -119,8 +126,17 @@ export function createTriggerApiRouter(config) {
     logger,
   });
 
+  const voiceTriggerService = createVoiceTriggerService({
+    config: triggerConfig,
+    decisionGateway,
+    triggerDispatchService,
+    createProposalId: randomUUID,
+    logger,
+  });
+
   const router = createTriggerRouter({
     triggerDispatchService,
+    voiceTriggerService,
     sideEffectExecutor: new TriggerSideEffectExecutor({
       dispatch: (request) => dispatchSideEffect(request, {
         tvControlAdapter,

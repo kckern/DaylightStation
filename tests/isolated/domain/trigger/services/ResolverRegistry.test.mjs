@@ -44,7 +44,7 @@ describe('ResolverRegistry.resolve', () => {
 
   it('throws UnknownModalityError for an unknown modality', () => {
     expect(() => ResolverRegistry.resolve({
-      modality: 'voice',
+      modality: 'telepathy',
       location: 'livingroom',
       value: 'play_jazz',
       registry: fakeRegistry,

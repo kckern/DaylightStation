@@ -11,7 +11,7 @@ describe('trigger registry per-entry isolation (onSkip)', () => {
 
   it('skips an unknown modality and keeps every other source', () => {
     const onSkip = vi.fn();
-    const out = parseSources({ ...good, kitchen: { modality: 'voice', target: 'kitchen' } }, { onSkip });
+    const out = parseSources({ ...good, kitchen: { modality: 'telepathy', target: 'kitchen' } }, { onSkip });
     expect(Object.keys(out.nfc.locations)).toEqual(['livingroom']);
     expect(onSkip).toHaveBeenCalledWith(expect.objectContaining({ kind: 'source', id: 'kitchen', code: 'UNKNOWN_MODALITY' }));
   });
@@ -48,7 +48,7 @@ describe('trigger registry per-entry isolation (onSkip)', () => {
   it('a skipped reader only drops the overrides that name it, via the tag rule above', () => {
     const onSkip = vi.fn();
     const registry = buildTriggerRegistry({
-      sources: { ...good, study: { modality: 'voice' } },
+      sources: { ...good, study: { modality: 'telepathy' } },
       bindingsNfc: { '04a1b2c3': { plex: 1 }, '04ffeedd': { plex: 2, study: { action: 'x' } } },
     }, { onSkip });
     expect(Object.keys(registry.nfc.locations)).toEqual(['livingroom']);
@@ -57,7 +57,7 @@ describe('trigger registry per-entry isolation (onSkip)', () => {
   });
 
   it('without onSkip the parsers stay strict (unchanged behaviour)', () => {
-    expect(() => parseSources({ a: { modality: 'voice', target: 't' } })).toThrow(/unknown modality/);
+    expect(() => parseSources({ a: { modality: 'telepathy', target: 't' } })).toThrow(/unknown modality/);
     expect(() => parseSources({ a: { modality: 'nfc' } })).toThrow();
     expect(() => parseNfcTags({ '04a1b2c3': 'x' }, new Set())).toThrow();
   });
