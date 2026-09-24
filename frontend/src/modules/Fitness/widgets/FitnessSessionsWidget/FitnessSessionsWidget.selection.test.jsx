@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, act } from '@testing-library/react';
+import { useLocation } from 'react-router-dom';
 import React from 'react';
 import { MemoryRouter } from 'react-router-dom';
 import { MantineProvider } from '@mantine/core';
@@ -72,5 +73,39 @@ describe('FitnessSessionsWidget outside selection', () => {
     const last = states.at(-1);
     expect(last).toHaveLength(1);
     expect(last[0].subtree.children[0].props.sessionId).toBe('s2');
+  });
+
+  it('clears the selection and URL when the pane is closed from outside (detail × button)', () => {
+    const states = [];
+    let restore;
+    let path;
+    function Closer() {
+      restore = React.useContext(ScreenContext).restore;
+      path = useLocation().pathname;
+      return null;
+    }
+    render(
+      <MantineProvider><MemoryRouter initialEntries={['/fitness/home/session-s1']}>
+        <FitnessScreenProvider initialSelectedSessionId="s1" onSelectedSessionConsumed={() => {}}>
+          <ScreenProvider config={layout} initialReplacements={sessionDetailSeed('s1')}>
+            <FitnessSessionsWidget />
+            <Probe onState={(s) => states.push(s)} />
+            <Closer />
+          </ScreenProvider>
+        </FitnessScreenProvider>
+      </MemoryRouter></MantineProvider>,
+    );
+    expect(states.at(-1)).toHaveLength(1);
+
+    act(() => restore(SESSION_DETAIL_NODE_ID));
+
+    expect(states.at(-1)).toHaveLength(0);
+    expect(path).toBe('/fitness/home');
+  });
+
+  it('does not treat a pane that has not rendered yet as closed', () => {
+    const { states } = renderHome({ selected: 's2', seed: undefined });
+    // Opened by the widget's own effect: the pane must survive its first commit.
+    expect(states.at(-1)).toHaveLength(1);
   });
 });
