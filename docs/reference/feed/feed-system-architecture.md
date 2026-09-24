@@ -291,6 +291,27 @@ Grid coordinates are zero-based and must fall within the declared row/column ind
 
 Headlines from sources marked with `paywall: true` in config are proxied through a configurable URL prefix to bypass paywalls.
 
+### Story Judge (typed decisions)
+
+`HeadlineStoryJudge` (`backend/src/3_applications/feed/services/`) gives the decision model (`IDecisionGateway`) two narrow questions the briefing cannot answer with string rules:
+
+- **Same event?** A yesNo for title pairs that pass the window/source/word guards and score in `[band_low, 0.72)`.
+- **Event kind.** A choice of `live | update | correction | analysis | report` for titles shown in a story timeline.
+
+It runs after every harvest (`harvestAll`, i.e. the hourly `feed-headlines` job or `POST /headlines/harvest`), never on a request. Verdicts are cached in memory by normalized title pair and by title (bounded, reset on restart); `GET /headlines` and the Scroll headline adapter only read that cache. No decision gateway, a failure, or a cache miss all mean the legacy result.
+
+```yaml
+# user config/feed.yml
+headlines:
+  jev:
+    mode: shadow          # shadow (default) | promote | off
+    band_low: 0.5         # similarity floor for asking (< 0.72)
+    same_threshold: 0.6   # probability to merge a band pair (promote)
+    label_confidence: 0.6 # confidence to replace the keyword label (promote)
+```
+
+Log events: `feed.headlines.jev-pair`, `feed.headlines.jev-label` (per new verdict, with legacy agreement), `feed.headlines.jev-review` (per page per harvest: `evaluated`, `cached`, `failed`, `skipped`, `multiSourceServed`, `multiSourceWithJev`), `feed.headlines.jev-pair-failed` / `jev-label-failed` / `jev-review-failed`. Shadow-to-promote criteria: `docs/_wip/plans/2026-09-24-jev-headlines-clustering.md` → Rollout.
+
 ---
 
 ## API Endpoints
@@ -317,7 +338,7 @@ Headlines from sources marked with `paywall: true` in config are proxied through
 | `POST` | `/api/v1/feed/headlines/harvest?page=ID` | Trigger harvest for all sources (or one page) |
 | `POST` | `/api/v1/feed/headlines/harvest/:source` | Harvest a single source by ID |
 
-`GET /headlines` returns both the configured outlet matrix and a deterministic `briefing`. Briefing clusters exact canonical URLs, then similar cross-outlet titles within 36 hours. Its displayed excerpt is always attributed source material; no generated claims are introduced. Each cluster includes chronological harvested coverage; titles containing update/developing/live or correction/corrected language receive an explicit deterministic event label. This is coverage chronology, not publisher-page revision tracking.
+`GET /headlines` returns both the configured outlet matrix and a `briefing`, built in `HeadlineService#buildBriefing` (backend; `Headlines.jsx` only renders it). Briefing clusters exact canonical URLs, then cross-outlet titles within 36 hours whose normalized form (≥ 5 words) scores ≥ 0.72 string similarity against the cluster's lead title. Its displayed excerpt is always attributed source material; no generated claims are introduced. Each cluster includes chronological harvested coverage; each timeline entry carries a `kind`: by default a keyword label (`correction`/`corrected` → `correction`; `update`/`updated`/`developing`/`live` → `update`; else `report`). With the story judge promoted (below), pairs scoring in the ambiguous band can also merge and `kind` can be `live`, `update`, `correction`, `analysis`, or `report`. This is coverage chronology, not publisher-page revision tracking.
 
 ### Reader & Other
 
