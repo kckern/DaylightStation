@@ -30,6 +30,7 @@ export class HeadlineService {
   #blockedImagePatterns;
   #logger;
   #storyJudge;
+  #reviewsInFlight = new Map();
 
   constructor({ headlineStore, harvester, configRepository, config = {}, webContentGateway, storyJudge = null, logger = console }) {
     if (!isFeedConfigRepository(configRepository)) throw new Error('HeadlineService requires configRepository');
@@ -108,9 +109,12 @@ export class HeadlineService {
    * Harvest all configured headline sources (optionally filtered to one page)
    * @param {string} username
    * @param {string} [pageId]
+   * @param {Object} [options]
+   * @param {'await'|'background'} [options.review='await'] - 'background' starts the story review
+   *   without waiting for it (manual refresh); scheduled harvests await it.
    * @returns {Promise<{ harvested, errors, totalItems }>}
    */
-  async harvestAll(username, pageId) {
+  async harvestAll(username, pageId, { review = 'await' } = {}) {
     const sources = this.#getSources(username, pageId);
     const config = this.#getUserConfig(username);
     const retentionHours = config.headlines?.retention_hours || this.#defaults.retentionHours;
@@ -174,7 +178,8 @@ export class HeadlineService {
       totalItems,
     });
 
-    await this.#reviewStories(username, pageId);
+    const reviewing = this.#startReview(username, pageId);
+    if (review !== 'background') await reviewing;
 
     return { harvested: sources.length, errors, totalItems };
   }
@@ -345,6 +350,20 @@ export class HeadlineService {
       .split(/\s+/)
       .filter(word => word.length > 1 && !stop.has(word))
       .join(' ');
+  }
+
+  /**
+   * Single-flight story review per user: a harvest that lands while a review is
+   * running joins it instead of starting a second one. Never rejects.
+   */
+  #startReview(username, pageId) {
+    const running = this.#reviewsInFlight.get(username);
+    if (running) return running;
+    const reviewing = this.#reviewStories(username, pageId)
+      .catch(error => this.#logger.warn?.('feed.headlines.jev-review-failed', { page: pageId || 'all', error: error.message }))
+      .finally(() => this.#reviewsInFlight.delete(username));
+    this.#reviewsInFlight.set(username, reviewing);
+    return reviewing;
   }
 
   /**
