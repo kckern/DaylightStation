@@ -26,6 +26,8 @@ export class TransactionCategorizationService {
   #financeStore;
   #logger;
   #categoryJudge;
+  // Bad jev policy configs already warned about (config is re-read every run)
+  #warnedJevPolicies = new Set();
 
   // id → the description this service wrote when that description still looks
   // raw to the patterns below (e.g. "Direct Deposit" vs /^Direct/). Without it
@@ -349,9 +351,24 @@ export class TransactionCategorizationService {
 
   #jevPolicy(config) {
     const jev = config?.jev || {};
+    const modeOk = jev.mode === undefined || JEV_MODES.has(jev.mode);
+    const floorOk = jev.confidenceFloor === undefined
+      || (Number.isFinite(jev.confidenceFloor) && jev.confidenceFloor >= 0 && jev.confidenceFloor <= 1);
+
+    if (!modeOk || !floorOk) {
+      const key = JSON.stringify([String(jev.mode), String(jev.confidenceFloor)]);
+      if (!this.#warnedJevPolicies.has(key)) {
+        this.#warnedJevPolicies.add(key);
+        this.#log('warn', 'categorization.jev.policy.invalid', {
+          mode: jev.mode ?? null,
+          confidenceFloor: jev.confidenceFloor ?? null,
+          using: { mode: modeOk ? (jev.mode ?? 'shadow') : 'shadow', floor: floorOk ? (jev.confidenceFloor ?? DEFAULT_JEV_FLOOR) : DEFAULT_JEV_FLOOR },
+        });
+      }
+    }
     return {
-      mode: JEV_MODES.has(jev.mode) ? jev.mode : 'shadow',
-      floor: Number.isFinite(jev.confidenceFloor) ? jev.confidenceFloor : DEFAULT_JEV_FLOOR,
+      mode: modeOk && jev.mode !== undefined ? jev.mode : 'shadow',
+      floor: floorOk && jev.confidenceFloor !== undefined ? jev.confidenceFloor : DEFAULT_JEV_FLOOR,
     };
   }
 
@@ -360,13 +377,15 @@ export class TransactionCategorizationService {
    * Jev independently picks a category from validTags, in parallel. Both
    * the apply and the preview path come through here, so they decide alike.
    *
-   * @returns {Promise<Object>} { success, friendlyName, category, categoryVia, memo, originalDescription } on success; { reason, originalDescription } with a falsy success otherwise
+   * @returns {Promise<Object>} { success, friendlyName, category, categoryVia, memo, originalDescription } on success; { success, reason, originalDescription } with success set to false otherwise
    */
   async #categorizeTransaction(transaction, validTags, chatTemplate, { policy, path }) {
     const { description, id } = transaction;
     const jevPending = policy.mode === 'off'
       ? Promise.resolve(null)
-      : this.#categoryJudge.judge(transaction, validTags);
+      // judge() is written never to reject; the catch keeps an unobserved
+      // rejection (while the LLM is awaited) from crashing the process if it ever does.
+      : this.#categoryJudge.judge(transaction, validTags).catch(() => null);
     const llm = await this.#askLlm(transaction, validTags, chatTemplate);
     const jev = await jevPending;
     const outcome = this.#decide(llm, jev, validTags, policy, description);
@@ -376,6 +395,7 @@ export class TransactionCategorizationService {
         id, path, mode: policy.mode, floor: policy.floor,
         llmCategory: llm.category ?? null,
         llmValid: validTags.includes(llm.category),
+        llmError: !!llm.error,
         jevCategory: jev.category,
         confidence: jev.confidence,
         agreed: jev.category != null && jev.category === llm.category,
@@ -406,6 +426,7 @@ export class TransactionCategorizationService {
     }
   }
 
+  // jev and policy are unused until the promote branch lands in Task 4.
   #decide(llm, jev, validTags, policy, originalDescription) {
     if (llm.error) return { success: false, reason: `AI error: ${llm.error}`, originalDescription };
     if (!llm.friendlyName) return { success: false, reason: 'AI did not provide a friendly name', originalDescription };
