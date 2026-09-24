@@ -139,3 +139,47 @@ describe('HeadlineService briefing with a story judge', () => {
     expect(gateway.evaluate).not.toHaveBeenCalled();
   });
 });
+
+describe('HeadlineService harvest-time story review', () => {
+  test('shadow: harvest asks about the band pair and the projected timeline, briefing unchanged', async () => {
+    const gateway = fakeGateway();
+    const judge = new HeadlineStoryJudge({ decisionGateway: gateway, logger: { info() {}, warn() {} } });
+    const { service, log } = paraphraseService({ storyJudge: judge });
+    await service.harvestAll('alice');
+    expect(log.info).toHaveBeenCalledWith('feed.headlines.jev-review', expect.objectContaining({
+      page: 'daily', mode: 'shadow', pairs: 1, titles: 2, evaluated: 3, failed: 0,
+      multiSourceServed: 0, multiSourceWithJev: 1,
+    }));
+    const { briefing } = await service.getAllHeadlines('alice', 'daily');
+    expect(briefing).toHaveLength(2);
+    await service.harvestAll('alice');
+    expect(gateway.evaluate).toHaveBeenCalledTimes(3); // second harvest is all cache hits
+  });
+
+  test('promote: after a harvest the served briefing uses the verdicts', async () => {
+    const judge = new HeadlineStoryJudge({ decisionGateway: fakeGateway({ kind: 'live' }), logger: { info() {}, warn() {} } });
+    const { service } = paraphraseService({ storyJudge: judge, jev: { mode: 'promote' } });
+    await service.harvestAll('alice');
+    const { briefing } = await service.getAllHeadlines('alice', 'daily');
+    expect(briefing).toHaveLength(1);
+    expect(briefing[0].timeline.map(item => item.kind)).toEqual(['live', 'live']);
+  });
+
+  test('off: harvest never asks the model', async () => {
+    const gateway = fakeGateway();
+    const judge = new HeadlineStoryJudge({ decisionGateway: gateway, logger: { info() {}, warn() {} } });
+    const { service } = paraphraseService({ storyJudge: judge, jev: { mode: 'off' } });
+    await service.harvestAll('alice');
+    expect(gateway.evaluate).not.toHaveBeenCalled();
+  });
+
+  test('a failing model never breaks harvest or the briefing', async () => {
+    const judgeLog = { info: vi.fn(), warn: vi.fn() };
+    const judge = new HeadlineStoryJudge({ decisionGateway: fakeGateway({ fail: true }), logger: judgeLog });
+    const { service } = paraphraseService({ storyJudge: judge, jev: { mode: 'promote' } });
+    await expect(service.harvestAll('alice')).resolves.toMatchObject({ harvested: 2 });
+    expect(judgeLog.warn).toHaveBeenCalledWith('feed.headlines.jev-pair-failed', expect.objectContaining({ error: 'jev down' }));
+    const { briefing } = await service.getAllHeadlines('alice', 'daily');
+    expect(briefing).toHaveLength(2);
+  });
+});
