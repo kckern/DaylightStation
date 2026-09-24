@@ -148,14 +148,14 @@ The coach speaks at a small, predictable set of moments. There is no continuous 
 
 | Trigger | Cadence | Why |
 |---|---|---|
-| Post-report | Inline after the daily food report renders | The user has just confirmed a batch of items and the totals are fresh; this is the moment to frame "where you are, what's left." |
+| Post-meal (post-report) | Once the food log has been quiet for `post_meal.quiet_minutes` (default 10) after a committed capture or a generated report. Today only. | A meal is several captures seconds apart. The quiet timer turns them into one message about where the day stands and what's left. Captures now commit directly, and the report rarely renders, so the capture itself is the trigger. |
 | Morning brief | Daily, mid-morning local time | Yesterday's totals have closed; today has not yet been shaped. The morning brief reflects on yesterday and the recent week. |
 | Weekly digest | Weekly, Sunday evening local time | The week's data has settled. The digest compares this week to the long-term average and the previous week. |
-| Exercise reaction | Triggered by a completed fitness session above a calorie threshold | A meaningful workout has just landed; the burned calories shift the day's budget and the week's session count. |
+| Exercise reaction | A new Strava activity, on its first successful fetch by the enrichment service, that started today (local) and burned more than `exercise_reaction.min_calories` (default 200) | A meaningful workout has just landed; the burned calories shift the day's budget. The webhook event itself carries no calories, so the rule is judged on the fetched activity. |
 | End-of-day completion | Triggered when no further logging is expected for the day | If the user has been logging and then stops, the coach surfaces a quiet summary. If the user never started logging, the coach does not pile on. |
 | On-demand | User asks via slash command, dashboard refresh, or explicit request | An on-demand request bypasses cadence rules entirely. |
 
-Each automatic trigger is **idempotent within its cadence**: the morning brief fires once per day per user, the weekly digest fires once per week per user, the post-report fires once per generated report. A scheduler that misfires or a code path that double-invokes does not result in duplicate user-visible messages. The coach checks its own recent history and skips a delivery whose key (assignment type, user, date or hour) has already been recorded.
+Each automatic trigger is **idempotent within its cadence**: the morning brief fires once per day per user, the weekly digest fires once per week per user, the post-meal message fires once per quiet period and **replaces** the day's previous post-meal message (its Telegram message id is stored with the history entry), and an exercise reaction fires once per activity (the Strava job records `activityNotifiedAt`, and the history entry records `activityId`). A scheduler that misfires or a code path that double-invokes does not result in duplicate user-visible messages. The coach checks its own recent history and skips a delivery whose key (assignment type, user, date or hour) has already been recorded.
 
 **Quiet hours suppress automatic deliveries.** If the user is inside their configured quiet-hours window (see `health-system-architecture.md` glossary), the morning brief, weekly digest, exercise reaction, and end-of-day completion do not deliver — the coach holds the message until the window closes and either delivers it then (if still relevant) or drops it (if a fresher trigger has superseded it). On-demand requests bypass quiet hours; the user pulled, so the user gets an answer.
 
@@ -232,6 +232,8 @@ The unifying principle: **a problem in the coaching layer never blocks the data 
 ### Backend
 
 - `backend/src/3_applications/coaching/` — coaching orchestration, deterministic message builder, pattern detection, snapshot composition, commentary service.
+- `backend/src/3_applications/coaching/MealCoachingTrigger.mjs` — the post-meal quiet timer. The nutribot capture commit (`NutribotInputRouter`) and `GenerateDailyReport` notify it. Only the coached user (head of household) is coached.
+- `backend/src/3_applications/fitness/webhookCoachingPolicy.mjs` — the exercise-reaction rule. `FitnessActivityEnrichmentService`'s `onActivityFetched` hook is wired in `app.mjs`.
 - `backend/src/3_applications/agents/health-coach/` — on-demand health coach agent, including its prompts, schemas, read-only data tools, messaging-channel delivery tool, and scheduled and event-triggered assignment definitions (post-report, morning brief, weekly digest, exercise reaction, note review, end-of-day report, daily dashboard).
 - `backend/src/3_applications/agents/framework/` — the agent scheduler with idempotency guard for cron-driven assignments.
 - `backend/src/1_adapters/messaging/` — messaging gateway adapters used to deliver coaching messages.
@@ -246,7 +248,7 @@ The unifying principle: **a problem in the coaching layer never blocks the data 
 ### Configuration and data
 
 - `data/household/config/integrations.yml` — household-level provider selection (LLM provider, messaging platform, model and mini-model).
-- `data/household/coaching/config.yml` — `morning_brief.schedule`, `weekly_digest.schedule`, `logging_completeness.min_calories` (default 1200).
+- `data/household/coaching/config.yml` — `morning_brief.schedule`, `weekly_digest.schedule`, `logging_completeness.min_calories` (default 1200), `post_meal.{enabled, quiet_minutes}` (default on, 10), `exercise_reaction.{enabled, min_calories}` (default on, 200).
 - `data/users/{username}/day_closed.yml` — per-day `/done` and `/fast` closures.
 - `data/users/{username}/health_coaching.yml` — per-user coaching history: every delivered message persisted with its assignment type and the date it covers.
 - `data/users/{username}/lifeplan.yml` — per-user goal configuration consumed for goal-relative framing.

@@ -228,6 +228,8 @@ export class NutribotInputRouter extends BaseInputRouter {
         logId,
         itemCount: accepted?.itemCount ?? null,
       });
+      try { this.container.getMealCoachingTrigger?.()?.notify({ userId, source }); }
+      catch (e) { this.logger.warn?.('nutribot.capture.coachingTriggerFailed', { source, logId, error: e.message }); }
       return true;
     } catch (e) {
       this.logger.error?.('nutribot.capture.commitFailed', { source, logId, error: e.message });

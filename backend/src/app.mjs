@@ -3617,6 +3617,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       const { StravaWebhookJobStore } = await import('./1_adapters/strava/StravaWebhookJobStore.mjs');
       const { StravaActivityAccessGateway } = await import('./1_adapters/fitness/StravaActivityAccessGateway.mjs');
       const { FitnessActivityEnrichmentService } = await import('./3_applications/fitness/FitnessActivityEnrichmentService.mjs');
+      const { shouldSendExerciseReaction, toReactionActivity } = await import('./3_applications/fitness/webhookCoachingPolicy.mjs');
       const { ActivityReconciliationService } = await import('./3_applications/fitness/ActivityReconciliationService.mjs');
       const { buildSelectionConfig } = await import('#domains/fitness/services/selectPrimaryMedia.mjs');
 
@@ -3710,6 +3711,24 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         resolveDisplayName: (slug) => userService.resolveDisplayName(slug),
         historyRepository: fitnessHistoryRepository,
         reconciliationService: stravaReconciliationService,
+        // Exercise reaction: the webhook event has no calories, so the policy is
+        // judged on the fetched activity. Coaching is built later — resolve lazily.
+        onActivityFetched: async (activity) => {
+          const coaching = v1Routers.agents?.coaching;
+          const orchestrator = v1Routers.agents?.coachingOrchestrator;
+          const reactionCfg = coaching?.config?.exercise_reaction || {};
+          if (!orchestrator || !coaching?.conversationId || reactionCfg.enabled === false) return;
+          const eligible = shouldSendExerciseReaction(activity, {
+            now: new Date(),
+            timezone: configService.getTimezone?.() || 'America/Los_Angeles',
+            ...(Number.isFinite(Number(reactionCfg.min_calories)) ? { minCalories: Number(reactionCfg.min_calories) } : {}),
+          });
+          rootLogger.info?.('strava.exercise_reaction.evaluated', { activityId: activity?.id, calories: activity?.calories ?? null, eligible });
+          if (!eligible) return;
+          await orchestrator.sendExerciseReaction({
+            userId: coaching.userId, conversationId: coaching.conversationId, activity: toReactionActivity(activity),
+          });
+        },
         logger: rootLogger.child({ module: 'strava-enrichment' }),
       });
 
@@ -5788,6 +5807,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     scaleRawConfig: configService.getHouseholdAppConfig(householdId, 'scales'),
     // Lazy proxy: agentOrchestrator is created later in createAgentsServices
     agentOrchestrator: { runAssignment: (...args) => v1Routers.agents?.orchestrator?.runAssignment(...args) },
+    // Lazy proxy: the coaching trigger is built later in createAgentsServices
+    mealCoachingTrigger: { notify: (args) => v1Routers.agents?.mealCoachingTrigger?.notify(args) ?? false },
     logger: rootLogger.child({ module: 'nutribot' })
   });
 
@@ -6366,6 +6387,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     workingMemory: agentsServices.workingMemory,
     scheduler: agentsServices.scheduler,
     coachingOrchestrator: agentsServices.coachingOrchestrator,
+    mealCoachingTrigger: agentsServices.mealCoachingTrigger,
+    coaching: agentsServices.coaching,
     healthAnalyticsService: agentsServices.healthAnalyticsService,
   };
 
