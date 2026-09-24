@@ -199,3 +199,12 @@ describe('voice values share one debounce key', () => {
     expect(actuationGateway.activateScene).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('inherited-key locations', () => {
+  it.each(['constructor', '__proto__', 'toString'])('%s is LOCATION_NOT_FOUND for transcripts and confirms', async (location) => {
+    const { service, matcher } = make();
+    expect((await service.handleTranscript(location, 'play jazz')).code).toBe('LOCATION_NOT_FOUND');
+    expect((await service.confirm(location, 'p1')).code).toBe('LOCATION_NOT_FOUND');
+    expect(matcher.match).not.toHaveBeenCalled();
+  });
+});

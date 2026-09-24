@@ -5,6 +5,7 @@
  * @module adapters/trigger/parsers/namedMapParser
  */
 import { ValidationError } from '#domains/core/errors/ValidationError.mjs';
+import { assertSafeKey } from './safeKey.mjs';
 
 function isPlainObject(v) { return v !== null && typeof v === 'object' && !Array.isArray(v); }
 
@@ -15,6 +16,7 @@ export function parseNamedMap(raw, label = 'named map') {
   }
   const out = {};
   for (const [name, spec] of Object.entries(raw)) {
+    assertSafeKey(name, `${label} entry`);
     if (!isPlainObject(spec)) {
       throw new ValidationError(`${label} entry "${name}" must be an object`, { code: 'INVALID_NAMED_ENTRY', field: name });
     }

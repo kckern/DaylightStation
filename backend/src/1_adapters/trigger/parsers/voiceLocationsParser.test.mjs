@@ -87,9 +87,9 @@ describe('voice sources under per-entry isolation (onSkip)', () => {
 });
 
 describe('prototype-named command ids', () => {
-  it('a command called constructor is a normal command, not a duplicate', () => {
-    const out = parseVoiceLocations({ k: { target: 't', commands: { constructor: { action: 'clear' } } } });
-    expect(Object.hasOwn(out.k.commands, 'constructor')).toBe(true);
+  it('a command called constructor is rejected as a reserved key (not reported as a duplicate)', () => {
+    expect(() => parseVoiceLocations({ k: { target: 't', commands: { constructor: { action: 'clear' } } } }))
+      .toThrow(expect.objectContaining({ code: 'RESERVED_KEY' }));
   });
 
   it('a __proto__ key normalizes to "proto" and leaves the commands prototype alone', () => {

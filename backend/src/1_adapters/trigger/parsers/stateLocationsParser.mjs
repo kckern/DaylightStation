@@ -13,6 +13,7 @@
  */
 
 import { ValidationError } from '#domains/core/errors/ValidationError.mjs';
+import { assertSafeKey } from './safeKey.mjs';
 
 function isPlainObject(v) {
   return v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -26,6 +27,7 @@ export function parseStateLocations(raw) {
 
   const out = {};
   for (const [locationId, locConfig] of Object.entries(raw)) {
+    assertSafeKey(locationId, 'location');
     if (!isPlainObject(locConfig)) {
       throw new ValidationError(`location "${locationId}" must be an object`, { code: 'INVALID_LOCATION', field: locationId });
     }
@@ -42,7 +44,7 @@ export function parseStateLocations(raw) {
         if (!isPlainObject(entry)) {
           throw new ValidationError(`state "${value}" must be an object`, { code: 'INVALID_STATE_ENTRY', field: value });
         }
-        states[value.toLowerCase()] = entry;
+        states[assertSafeKey(value.toLowerCase(), 'state value', locationId)] = entry;
       }
     }
 

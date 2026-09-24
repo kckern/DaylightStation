@@ -24,6 +24,7 @@
  */
 
 import { ValidationError } from '#domains/core/errors/ValidationError.mjs';
+import { assertSafeKey } from './safeKey.mjs';
 import { canonicalizeNfcUid } from '#domains/trigger/nfcUid.mjs';
 import { isolateEntry } from './sourcesParser.mjs';
 
@@ -69,6 +70,7 @@ export function parseNfcTags(raw, knownReaders, { onSkip = null } = {}) {
     const global = {};
     const overrides = {};
     for (const [k, v] of Object.entries(entry)) {
+      assertSafeKey(k, 'tag field', rawUid);
       if (isPlainObject(v)) {
         // Object value -> reader-override block. Key MUST be a registered reader.
         if (!knownReaders.has(k)) {
