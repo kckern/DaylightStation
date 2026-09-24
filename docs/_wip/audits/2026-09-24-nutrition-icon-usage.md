@@ -73,7 +73,7 @@ real-food icons.
 | Cut | Manifest size |
 |---|---|
 | A + B | ~452 |
-| A + B + C | ~366 |
+| A + B + C | 384 (A overlaps the coffee and tea packs) |
 
 Neither gets under Jev's 255-option cap, and neither needs to: the Jev adapter narrows
 a larger choice in two rounds. The gain from curation is **pick quality**: fewer
