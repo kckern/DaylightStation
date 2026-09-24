@@ -72,6 +72,14 @@ describe('SentenceMeaningJudge', () => {
     expect(await malformed.judge.judge(ARGS)).toBeNull();
   });
 
+  it('names the attempt in the failure log, so a failure is attributable', async () => {
+    const failing = make(async () => { throw new Error('429'); });
+    await failing.judge.judge({ ...ARGS, attempt: { learnerId: 'learner', corpus: 'korean', seq: 7 } });
+    expect(failing.logger.warn).toHaveBeenCalledWith('school.language.meaning-failed', {
+      learnerId: 'learner', corpus: 'korean', seq: 7, error: '429', ms: expect.any(Number),
+    });
+  });
+
   it('gives up at the deadline', async () => {
     const { judge, logger } = make(() => new Promise(() => {}), { timeoutMs: 20 });
     expect(await judge.judge(ARGS)).toBeNull();

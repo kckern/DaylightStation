@@ -6,6 +6,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { LanguageStudyService } from './LanguageStudyService.mjs';
 import { ValidationError } from '#domains/core/errors/index.mjs';
+import { GuestForbiddenError, GateClosedError } from '#domains/school/errors.mjs';
 
 const CORPUS = {
   id: 'test-korean',
@@ -47,12 +48,12 @@ function makeDue(ds, rung) {
 
 const MODEL_MEANING = { score: 0.8, level: 3, confidence: 0.81, judge: 'model', model: 'jev-1.13.0', ms: 212 };
 
-function setup({ judge = vi.fn(async () => MODEL_MEANING), rung = 'interpretation' } = {}) {
+function setup({ judge = vi.fn(async () => MODEL_MEANING), rung = 'interpretation', readGate = null } = {}) {
   const ds = new FakeDatastore();
   makeDue(ds, rung);
   const logger = { warn: vi.fn(), info: vi.fn(), debug: vi.fn(), error: vi.fn() };
   const meaningJudge = judge ? { judge } : null;
-  const svc = new LanguageStudyService({ datastore: ds, now: () => AT, timezone: 'UTC', logger, meaningJudge });
+  const svc = new LanguageStudyService({ datastore: ds, now: () => AT, timezone: 'UTC', logger, meaningJudge, readGate });
   return { ds, svc, logger, judge };
 }
 const ARGS = { userId: 'kckern', corpusId: CORPUS.id, seq: 1, capabilities: EQUIPPED };
@@ -63,6 +64,7 @@ describe('submitAttempt — meaning on the interpretation row', () => {
     const event = await svc.submitAttempt({ ...ARGS, rung: 'interpretation', given: ' today the weather is nice ', method: 'typed' });
     expect(judge).toHaveBeenCalledWith({
       given: 'today the weather is nice', expected: "The weather's nice today.", language: 'EN', accuracy: 0.4,
+      attempt: { learnerId: 'kckern', corpus: CORPUS.id, seq: 1 },
     });
     expect(event.accuracy).toBe(0.4);
     expect(event.meaning).toEqual({ score: 0.8, level: 3, confidence: 0.81, judge: 'model', model: 'jev-1.13.0' });
@@ -118,6 +120,28 @@ describe('submitAttempt — meaning on the interpretation row', () => {
       .rejects.toBeInstanceOf(ValidationError);
     expect(ds.events.length).toBe(before);
     expect(logger.info).not.toHaveBeenCalledWith('school.language.meaning', expect.anything(), expect.anything());
+  });
+
+  it('a request refused before any I/O never spends a judge call', async () => {
+    const closed = setup({ readGate: () => ({ level: 'disabled', reason: 'forced-closed', missing: [], stale: false }) });
+    await expect(closed.svc.submitAttempt({ ...ARGS, rung: 'interpretation', given: 'today the weather is nice' }))
+      .rejects.toBeInstanceOf(GateClosedError);
+    expect(closed.judge).not.toHaveBeenCalled();
+
+    const guest = setup();
+    await expect(guest.svc.submitAttempt({ ...ARGS, userId: null, rung: 'interpretation', given: 'today the weather is nice' }))
+      .rejects.toBeInstanceOf(GuestForbiddenError);
+    expect(guest.judge).not.toHaveBeenCalled();
+
+    const badMethod = setup();
+    await expect(badMethod.svc.submitAttempt({ ...ARGS, rung: 'interpretation', given: 'today the weather is nice', method: 'telepathy' }))
+      .rejects.toBeInstanceOf(ValidationError);
+    expect(badMethod.judge).not.toHaveBeenCalled();
+
+    const noSentence = setup();
+    await expect(noSentence.svc.submitAttempt({ ...ARGS, seq: 99, rung: 'interpretation', given: 'today the weather is nice' }))
+      .rejects.toThrow();
+    expect(noSentence.judge).not.toHaveBeenCalled();
   });
 
   it('the synchronous logAttempt never calls the judge', () => {

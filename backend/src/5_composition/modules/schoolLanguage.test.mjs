@@ -8,7 +8,7 @@ const CORPUS = {
   sentences: [{ seq: 1, text: { EN: "The weather's nice today.", KR: '오늘 날씨가 좋아요.' } }],
 };
 
-function build({ decisionGateway, meaningJudgeConfig } = {}) {
+function build({ decisionGateway, meaningJudgeConfig, logger = { info() {}, warn() {}, debug() {}, error() {} } } = {}) {
   const events = [];
   const now = Date.now();
   const chain = ['repetition', 'dictation', 'recording'];
@@ -25,7 +25,7 @@ function build({ decisionGateway, meaningJudgeConfig } = {}) {
   const service = createLanguageStudyService({
     datastore, eventBus: { publish: vi.fn(), subscribe: vi.fn() }, timezone: 'UTC',
     decisionGateway, meaningJudgeConfig,
-    logger: { info() {}, warn() {}, debug() {}, error() {} },
+    logger,
   });
   return (given) => service.submitAttempt({
     userId: 'learner', corpusId: CORPUS.id, seq: 1, rung: 'interpretation', given,
@@ -58,5 +58,24 @@ describe('createLanguageStudyService — meaning judge wiring', () => {
     const gateway = jev();
     await build({ decisionGateway: gateway, meaningJudgeConfig: { timeout_ms: 900 } })('today the weather is nice');
     expect(gateway.evaluate.mock.calls[0][2]).toEqual({ timeout: 900 });
+  });
+
+  it('clamps an out-of-range or non-numeric deadline to the default, with one warning', async () => {
+    for (const timeout_ms of [50, 60_000, 'soon', -1, Infinity]) {
+      const gateway = jev();
+      const logger = { info() {}, warn: vi.fn(), debug() {}, error() {} };
+      await build({ decisionGateway: gateway, meaningJudgeConfig: { timeout_ms }, logger })('today the weather is nice');
+      expect(gateway.evaluate.mock.calls[0][2]).toEqual({ timeout: 1500 });
+      const warns = logger.warn.mock.calls.filter(([event]) => event === 'school.language.meaning-judge.timeout-invalid');
+      expect(warns).toEqual([['school.language.meaning-judge.timeout-invalid', { timeout_ms, min: 100, max: 5000, using: 1500 }]]);
+    }
+  });
+
+  it('keeps an in-range deadline without warning', async () => {
+    const gateway = jev();
+    const logger = { info() {}, warn: vi.fn(), debug() {}, error() {} };
+    await build({ decisionGateway: gateway, meaningJudgeConfig: { timeout_ms: 100 }, logger })('today the weather is nice');
+    expect(gateway.evaluate.mock.calls[0][2]).toEqual({ timeout: 100 });
+    expect(logger.warn).not.toHaveBeenCalledWith('school.language.meaning-judge.timeout-invalid', expect.anything());
   });
 });
