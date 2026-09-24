@@ -2803,6 +2803,8 @@ export async function createAgentsServices(config) {
     }
   }
 
+  const coachingTimezone = configService?.getTimezone?.() || nutribotConfig.getUserTimezone?.() || 'America/Los_Angeles';
+
   // Create coaching orchestrator (new template-driven system)
   let coachingOrchestrator = null;
   if (healthStore && messagingGateway) {
@@ -2819,7 +2821,12 @@ export async function createAgentsServices(config) {
       nutriListStore,
       // The orchestrator needs the nutrition-goal contract, not the broad
       // ConfigService. This normalized config also supplies safe defaults.
-      config: nutribotConfig,
+      // Timezone is the ONE coaching timezone, shared with the meal trigger
+      // and the exercise-reaction policy so "today" never disagrees.
+      config: {
+        getUserGoals: (userId) => nutribotConfig.getUserGoals(userId),
+        getUserTimezone: () => coachingTimezone,
+      },
       // household coaching/config.yml `logging_completeness.min_calories`
       // (default 1200): unconfirmed days under it are missing data.
       completeness: configService?.getHouseholdAppConfig?.(null, 'coaching')?.logging_completeness,
@@ -2841,6 +2848,8 @@ export async function createAgentsServices(config) {
       conversationId: coachingConversationId,
       scheduler: { setTimeout, clearTimeout },
       config: coachingCfg.post_meal,
+      today: () => new Date().toLocaleDateString('en-CA', { timeZone: coachingTimezone }),
+      localTime: () => new Date().toLocaleTimeString('en-GB', { timeZone: coachingTimezone, hour: '2-digit', minute: '2-digit', hour12: false }),
       logger,
     })
     : null;
@@ -2956,7 +2965,7 @@ export async function createAgentsServices(config) {
     scheduler,
     coachingOrchestrator,
     mealCoachingTrigger,
-    coaching: { userId: coachingUserId, conversationId: coachingConversationId, config: coachingCfg },
+    coaching: { userId: coachingUserId, conversationId: coachingConversationId, config: coachingCfg, timezone: coachingTimezone },
     healthAnalyticsService: sharedHealthAnalyticsService,
   };
 }

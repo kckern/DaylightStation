@@ -74,16 +74,23 @@ export class CoachingOrchestrator {
       const calories = { consumed: dayTotals.calories, goal_min: goals.calories_min, goal_max: goals.calories_max || goals.calories };
       const protein = { consumed: dayTotals.protein, goal: goals.protein };
 
-      const statusBlock = CoachingMessageBuilder.buildPostReportBlock({ calories, protein });
+      const todayStatus = closureStatus(closures[date]) || 'in_progress';
+      const statusBlock = CoachingMessageBuilder.buildPostReportBlock({ calories, protein, inProgress: todayStatus === 'in_progress' });
 
       const snapshot = buildPostReportSnapshot({
         date, timeOfDay, calories, protein, items,
-        todayStatus: closureStatus(closures[date]) || 'in_progress',
+        todayStatus,
         recentPattern: pattern, weightTrend7d: weightTrend, recentCoaching, recentDays,
         minCalories: this.#minCalories,
       });
 
       const commentary = await this.#commentaryService.generate(snapshot).catch(() => '');
+      // The capture receipt already shows the totals; a post-meal message with
+      // nothing to say is just a second ping. Stay silent instead.
+      if (!commentary?.trim()) {
+        this.#logger.info?.('coaching.post_report.skipped', { userId, date, reason: 'no-commentary' });
+        return;
+      }
       const message = statusBlock + CoachingMessageBuilder.wrapCommentary(commentary);
 
       const previous = this.#lastEntry(coachingData, date, 'post-report');

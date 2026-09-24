@@ -487,7 +487,7 @@ export class NutribotContainer {
         // A report is a meal checkpoint too: it arms the same quiet timer as a
         // capture, so a /report right after logging yields one coaching message.
         coachingOrchestrator: this.#mealCoachingTrigger ? {
-          sendPostReport: async ({ userId }) => { this.#mealCoachingTrigger.notify({ userId, source: 'report' }); },
+          sendPostReport: async ({ userId, date }) => { this.#mealCoachingTrigger.notify({ userId, date, source: 'report' }); },
         } : null,
         config: this.#config,
         logger: this.#logger,
