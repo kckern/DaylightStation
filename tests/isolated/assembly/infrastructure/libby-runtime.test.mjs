@@ -223,7 +223,7 @@ describe('Libby runtime composition', () => {
     expect(opened.contentType).toBe('image/jpeg');
     expect(await new Response(opened.body).text()).toBe('image');
     await opened.cleanup();
-    await expect(runtime.client.openLoan({ cardId: '1', titleId: '2' })).rejects.toMatchObject({ code: 'LIBBY_ORIGIN_REJECTED' });
+    await expect(runtime.client.openLoan({ cardId: '1', titleId: '2' })).rejects.toMatchObject({ code: 'LIBRARY_MEDIA_ORIGIN_REJECTED' });
   });
 
   it('shares one lease registry and uses the selected user credential file', () => {
