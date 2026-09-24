@@ -14,6 +14,15 @@ export {
   assistantMessage
 } from './IAIGateway.mjs';
 
+export {
+  IDecisionGateway,
+  isDecisionGateway,
+  assertDecisionGateway,
+  yesNo,
+  choice,
+  score
+} from './IDecisionGateway.mjs';
+
 export { ITranscriptionService } from './ITranscriptionService.mjs';
 
 // Messaging ports
