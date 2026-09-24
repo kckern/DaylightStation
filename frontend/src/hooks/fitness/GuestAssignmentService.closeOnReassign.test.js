@@ -27,6 +27,8 @@ const makeService = () => {
   const ledger = new DeviceAssignmentLedger();
   session.userManager.setAssignmentLedger(ledger);
   const service = new GuestAssignmentService({ session, ledger, thresholdMs: 0 });
+  // Stints are session records: they open once the session has started.
+  session.ensureStarted({ force: true, reason: 'close-on-reassign-test' });
   return { session, ledger, service };
 };
 
@@ -62,14 +64,17 @@ describe('GuestAssignmentService — close-on-reassign', () => {
     expect(grannieEntity).toBeTruthy();
     expect(grannieEntity.status).toBe('active');
     expect(grannieEntity.endTime).toBeNull();
+    expect(learnerOneEntityAfter.endReason).toBe('handover');
+    session.reset();
   });
 
-  it('closes the superseded entity as "transferred" when the segment is absorbed (< thresholdMs)', () => {
+  it('relabels the open stint in place when the reassignment is a correction (< thresholdMs)', () => {
     const session = new FitnessSession();
     const ledger = new DeviceAssignmentLedger();
     session.userManager.setAssignmentLedger(ledger);
+    session.ensureStarted({ force: true, reason: 'close-on-reassign-test' });
     // Default constructor threshold (60s) — an immediate reassignment falls
-    // well under it, so this exercises the isSegmentAbsorbed branch instead.
+    // well under it, so this is a correction: "that was actually parent-two".
     const service = new GuestAssignmentService({ session, ledger });
 
     const first = service.assignGuest(DEVICE_ID, { name: 'learner1', profileId: 'learner1' });
@@ -77,11 +82,12 @@ describe('GuestAssignmentService — close-on-reassign', () => {
 
     const second = service.assignGuest(DEVICE_ID, { name: 'parent-two', profileId: 'parent-two' });
     expect(second.ok).toBe(true);
-    const parentTwoEntityId = second.data.entityId;
-    expect(parentTwoEntityId).not.toBe(learnerOneEntityId);
+    expect(second.data.entityId).toBe(learnerOneEntityId);
 
-    const learnerOneEntityAfter = session.entityRegistry.get(learnerOneEntityId);
-    expect(learnerOneEntityAfter.status).toBe('transferred');
-    expect(Number.isFinite(learnerOneEntityAfter.endTime)).toBe(true);
+    const stint = session.entityRegistry.get(learnerOneEntityId);
+    expect(stint.status).toBe('active');
+    expect(stint.profileId).toBe('parent-two');
+    expect(stint.relabeledFrom).toEqual(['learner1']);
+    session.reset();
   });
 });
