@@ -5,7 +5,7 @@
  *
  * Layer: DOMAIN service (2_domains/trigger/services). Stateless dispatch.
  *
- * To add a new modality (voice, barcode, etc.):
+ * To add a new modality:
  *   1. Add a parser under 1_adapters/trigger/parsers/ and wire it into
  *      buildTriggerRegistry.
  *   2. Add a resolver class under 2_domains/trigger/services/ that
@@ -22,6 +22,7 @@
 import { NfcResolver } from './NfcResolver.mjs';
 import { StateResolver } from './StateResolver.mjs';
 import { BarcodeResolver } from './BarcodeResolver.mjs';
+import { VoiceResolver } from './VoiceResolver.mjs';
 
 export class UnknownModalityError extends Error {
   constructor(modality) {
@@ -35,6 +36,7 @@ export const resolvers = {
   nfc: NfcResolver,
   state: StateResolver,
   barcode: BarcodeResolver,
+  voice: VoiceResolver,
 };
 
 /**
