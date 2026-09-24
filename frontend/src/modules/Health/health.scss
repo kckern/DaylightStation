@@ -1007,6 +1007,8 @@ $health-aside-gap: 1.5rem;
   &__icon { display: inline-flex; color: var(--ds-success); }
   &--fasting &__icon { color: var(--ds-accent); }
   &__actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
-  &__actions .mantine-Button-root, & > .mantine-Button-root { min-height: 44px; }
+  // A finger-sized target on the phone: Mantine sizes its Button from
+  // --button-height, so raise that rather than stretching the root.
+  .mantine-Button-root { --button-height: 44px; }
   &__error { flex-basis: 100%; color: var(--ds-danger); font-size: 0.8rem; }
 }
