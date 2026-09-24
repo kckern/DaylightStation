@@ -40,4 +40,19 @@ describe('HealthAggregator.mergeWorkouts', () => {
     expect(out).toHaveLength(1);
     expect(out[0].calories).toBe(220);
   });
+
+  it('closest start wins globally: an earlier Strava row cannot steal a later one\'s closer match', () => {
+    const strava = [
+      { title: 'Warm-up', minutes: 10, calories: 60, startTime: '12:50 pm' },
+      { title: 'Lunch Run', minutes: 42, calories: 517, startTime: '12:55 pm' },
+    ];
+    const fitness = [{ title: 'Running', minutes: 45, calories: 518, startTime: '12:54 pm' }];
+    expect(merged(strava, fitness)).toEqual([['Warm-up', 60], ['Lunch Run', 518]]);
+  });
+
+  it('falls back to duration when only ONE side has a start time', () => {
+    const out = HealthAggregator.mergeWorkouts([{ title: 'Ride', minutes: 30, calories: 200, startTime: '07:00 am' }], [{ title: 'Cycling', minutes: 31, calories: 220 }]);
+    expect(out).toHaveLength(1);
+  });
 });
+

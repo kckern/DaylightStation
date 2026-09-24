@@ -425,6 +425,20 @@ export class YamlNutriListDatastore extends INutriListDatastore {
   }
 
   /** Restore exactly the deleted snapshots; never reconstruct nutrition. */
+  /**
+   * Restore every tombstoned row of one log (the chat's ↩️ Restore after Undo).
+   * @returns {Promise<{committed: boolean, items: Object[], affectedIds: string[], affectedDates: string[]}>}
+   */
+  async restoreByLogId(userId, logId) {
+    const deleted = loadYaml(this.#tombstonePath(userId)) || {};
+    const ids = Object.entries(deleted)
+      // Group headers made by web grouping carry only `logUuid`.
+      .filter(([, row]) => row && (row.logId === logId || row.log_uuid === logId || row.logUuid === logId))
+      .map(([id]) => id);
+    if (!ids.length) return { committed: false, items: [], affectedIds: [], affectedDates: [] };
+    return this.restoreEntries(userId, ids);
+  }
+
   async restoreEntries(userId, entryIds) {
     if (!Array.isArray(entryIds) || !entryIds.length || entryIds.some(id => typeof id !== 'string')) {
       throw Object.assign(new Error('Entry IDs are required'), { status: 400 });

@@ -8,6 +8,7 @@
 // Food Logging
 export { AcceptFoodLog } from './AcceptFoodLog.mjs';
 export { DiscardFoodLog } from './DiscardFoodLog.mjs';
+export { RestoreFoodLog } from './RestoreFoodLog.mjs';
 export { LogFoodFromText } from './LogFoodFromText.mjs';
 export { LogFoodFromImage } from './LogFoodFromImage.mjs';
 export { LogFoodFromVoice } from './LogFoodFromVoice.mjs';

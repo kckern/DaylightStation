@@ -39,5 +39,7 @@ export const CallbackActions = {
   DATE_SELECT: 'date_select',
   PORTION_ADJUST: 'portion_adjust',
   CONFIRM_ALL: 'confirm_all',
-  RETRY_IMAGE: 'retry_image'
+  RETRY_IMAGE: 'retry_image',
+  RETRY_VOICE: 'retry_voice',
+  RESTORE_LOG: 'restore_log'
 };
