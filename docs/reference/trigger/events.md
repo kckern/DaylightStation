@@ -188,9 +188,22 @@ subscriptions:
 
 Tap the front-door tag → HA fires the welcome scene **and** the living-room TV PIPs the front-door camera for 30s. One trigger, two effects.
 
-### 4. Voice keyword routes to the Player overlay
+### 4. Voice routes to the Player overlay
 
-When the voice modality lands (`type: voice`), the same shape applies — no code changes in the trigger domain or the screen subscription handler. The reader fires `GET /api/v1/trigger/kitchen/voice/play_jazz`, which broadcasts on `trigger:kitchen:voice`. A kitchen-display screen subscribed to that topic shows whatever overlay you wire up. Modality-agnostic by construction.
+Voice is a live modality (`modality: voice` in `triggers/sources.yml`). Two ways in:
+
+- **Exact keyword:** `GET /api/v1/trigger/kitchen/voice/play_jazz` — the keyword must equal a
+  configured command id after normalization (lowercase, non-alphanumerics → `_`). No model involved.
+- **Transcript:** `POST /api/v1/trigger/kitchen/voice` with `{"transcript": "put some jazz on"}`.
+  The exact keyword is tried first; otherwise the decision model (Jev) picks one of the location's
+  commands or `none`. See [`schema.md` → Voice sources](./schema.md#voice-sources) for modes.
+
+Either way the dispatch broadcasts on `trigger:kitchen:voice` with `value` = the command id, so a
+kitchen-display screen subscribed to that topic shows whatever overlay you wire up. A proposal in
+`confirm` mode broadcasts nothing until it is confirmed.
+
+Speech-to-text is not part of the backend: the caller (HA Assist sentence trigger, a phone
+shortcut's dictation) sends text.
 
 ### 5. Dry-run for tag onboarding
 

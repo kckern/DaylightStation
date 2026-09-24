@@ -15,7 +15,7 @@ data/household/config/triggers/
     tags.yml           # universal tag UID registry
   state/
     locations.yml      # state-source locations + state-value action maps
-  # (future modalities live as siblings: voice/, barcode/, etc.)
+  # voice and barcode sources live only in sources.yml (see the note below)
 ```
 
 > **Path drift:** the live tree consolidates reader sources into `data/household/triggers/sources.yml` (one entry per source, each with a `modality:` key) and tag registries into `data/household/triggers/bindings/nfc/*.yml`. The per-modality *shapes* below are what the parsers still consume; only the file layout moved.
@@ -23,7 +23,7 @@ data/household/config/triggers/
 Each modality is self-contained. A modality may have:
 - A `locations.yml` (always — defines the trigger sources of that modality and their defaults)
 - One or more registry/resolver-data files (`tags.yml`, `intents.yml`, etc.)
-- A code-only resolver (some modalities, like voice, may need no static data file)
+- A code-only resolver (voice keeps its commands inline on the source; see [Voice sources](#voice-sources))
 
 ---
 
@@ -192,6 +192,43 @@ State events are inherently location-bound (every entity_id belongs to one locat
 
 ---
 
+## Voice sources
+
+```yaml
+kitchen-voice:
+  modality: voice
+  location: kitchen
+  target: kitchen-display
+  guards: { authenticate: { secret: <token> } }   # optional
+  routing:
+    mode: confirm            # off | confirm | route (default confirm)
+    confidence_floor: 0.6    # optional, 0..1
+  commands:
+    play_jazz:
+      description: Play jazz music on the kitchen display   # shown to the decision model
+      action: play
+      content: plex:12345
+```
+
+- Command ids are normalized (`Play Jazz` → `play_jazz`); two ids that normalize alike, and an id
+  of `none`, are boot errors. Every command needs an `action` (same actions as `state`).
+- `description` is what the decision model reads. Write it as the thing a person would ask for.
+- **Modes** (transcripts only; exact keywords always dispatch):
+  - `off` — exact keywords only.
+  - `confirm` — a model match returns `{confirm: true, proposal: {id, command, description, confidence, expiresInMs}}`
+    and dispatches nothing; `POST /trigger/<loc>/voice/confirm {"proposal": "<id>"}` within 120 s dispatches it once.
+  - `route` — a model match at or above the floor dispatches directly. Promote from `confirm` only on the evidence in
+    the log store (`trigger.voice.proposed` vs `trigger.voice.confirmed`, ≥ 30 proposals, ≥ 90 % confirmed).
+- The decision is one `choice` over the commands plus `none`, 1.5 s timeout. Below the floor, `none`, a timeout, or no
+  decision model configured → `404 VOICE_NO_MATCH` with `reason` (`low-confidence`, `none`, `decision-failed`,
+  `no-decision-model`, `model-off`). Near misses log as `trigger.voice.near_miss`.
+- The normal 30 s per-(location, modality, value) debounce applies: the same command twice within 30 s dispatches once.
+- Log events: `trigger.voice.match`, `trigger.voice.near_miss`, `trigger.voice.decision_failed`,
+  `trigger.voice.no_match`, `trigger.voice.proposed`, `trigger.voice.confirmed`, `trigger.voice.confirm_missed`,
+  then the usual `trigger.fired`.
+
+---
+
 ## Precedence chain
 
 For an NFC scan at reader `R` of tag `T`, the final load query is built by spread-merging in this order (later wins):
@@ -211,27 +248,27 @@ final = {}
 
 ## Adding a new modality
 
-To add `voice`, `barcode`, etc.:
+To add a modality (voice, below, is the most recent worked example):
 
 1. Create the data dir + files: `data/household/config/triggers/<modality>/locations.yml` (+ any registry files like `intents.yml`).
 2. Add a parser at `backend/src/1_adapters/trigger/parsers/<modality>LocationsParser.mjs` (and any registry parsers).
 3. Wire the parser into `buildTriggerRegistry` in `backend/src/1_adapters/trigger/parsers/buildTriggerRegistry.mjs`.
 4. Add a resolver class at `backend/src/2_domains/trigger/services/<Modality>Resolver.mjs` (PascalCase, with `static resolve(...)`).
 5. Register the resolver class in `backend/src/2_domains/trigger/services/ResolverRegistry.mjs` (`resolvers` map).
-6. Update `YamlTriggerConfigRepository` to load the new YAML blobs.
+6. Add the modality to the allowlist in `sourcesParser.mjs` and route it through `perLocation` so one bad source is skipped alone (`trigger.config.entry.skipped`) instead of emptying the registry.
 
-No changes needed to `TriggerDispatchService`, `actionHandlers`, the WebSocket broadcast, or the screen-framework subscription handler. The screen subscription topic (`trigger:<location>:<modality>`) generalizes for free.
+No changes needed to `TriggerDispatchService`, `responseHandlers`, the WebSocket broadcast, or the screen-framework subscription handler. The screen subscription topic (`trigger:<location>:<modality>`) generalizes for free.
 
 ---
 
 ## Files
 
-- **Adapter (parsers + I/O):** `backend/src/1_adapters/trigger/{YamlTriggerConfigRepository,parsers/{buildTriggerRegistry,nfcLocationsParser,nfcTagsParser,stateLocationsParser}}.mjs`
-- **Domain (resolvers):** `backend/src/2_domains/trigger/services/{NfcResolver,StateResolver,ResolverRegistry}.mjs`
-- **Application (dispatcher + actions):** `backend/src/3_applications/trigger/{TriggerDispatchService,actionHandlers}.mjs`
+- **Adapter (parsers + I/O):** `backend/src/1_adapters/trigger/{YamlTriggerConfigRepository,parsers/{buildTriggerRegistry,sourcesParser,nfcLocationsParser,nfcTagsParser,stateLocationsParser,voiceLocationsParser}}.mjs`
+- **Domain (resolvers):** `backend/src/2_domains/trigger/services/{NfcResolver,StateResolver,BarcodeResolver,VoiceResolver,ResolverRegistry}.mjs`
+- **Application:** `backend/src/3_applications/trigger/{TriggerDispatchService,mapIntentToResponse,responseHandlers,VoiceCommandMatcher,VoiceTriggerService}.mjs`
 - **API router:** `backend/src/4_api/v1/routers/trigger.mjs`
-- **Bootstrap wiring:** `createTriggerApiRouter` in `backend/src/5_composition/bootstrap.mjs`
-- **Tests:** `tests/isolated/{adapter,domain,application}/trigger/`
+- **Composition:** `backend/src/5_composition/modules/{triggerApi,voiceTrigger}.mjs`
+- **Tests:** `tests/isolated/{adapter,domain,application,api}/trigger/` plus colocated `*.test.mjs` for the voice modules
 
 ## See also
 
