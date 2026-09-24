@@ -1,11 +1,21 @@
+import { isTrusted } from './dayCompleteness.mjs';
+
 /**
  * Detect the most notable recent nutrition pattern.
+ * Days carrying a completeness `status` (see dayCompleteness.mjs) are judged
+ * on trusted days only: an untrusted day in the last three is missed logging,
+ * never a deficit.
  * @param {Array<{date: string, calories: number, protein: number}>} days - Recent daily data, most recent first
  * @param {{calories_min: number, calories_max: number, protein: number}} goals
  * @returns {string|null} Pattern identifier or null
  */
 export function detectPattern(days, goals) {
   if (!days || days.length === 0) return null;
+
+  if (days.some(d => d.status)) {
+    if (days.slice(0, 3).some(d => !isTrusted(d))) return 'missed_logging';
+    days = days.filter(isTrusted);
+  }
 
   const last3 = days.slice(0, 3);
   const last5 = days.slice(0, 5);

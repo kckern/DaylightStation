@@ -2818,6 +2818,9 @@ export async function createAgentsServices(config) {
       // The orchestrator needs the nutrition-goal contract, not the broad
       // ConfigService. This normalized config also supplies safe defaults.
       config: nutribotConfig,
+      // household config/coaching.yml `logging_completeness.min_calories`
+      // (default 1200): unconfirmed days under it are missing data.
+      completeness: configService?.getHouseholdAppConfig?.(null, 'coaching')?.logging_completeness,
       logger,
     });
   }

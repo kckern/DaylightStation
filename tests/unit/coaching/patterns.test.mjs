@@ -72,3 +72,25 @@ describe('detectPattern', () => {
     expect(detectPattern([], goals)).toBeNull();
   });
 });
+
+describe('detectPattern with completeness status', () => {
+  const goals = { calories_min: 1600, calories_max: 2000, protein: 150 };
+
+  it('reports missed_logging, not calorie_deficit, for incomplete recent days', () => {
+    const days = [
+      { date: '2026-09-16', calories: 460, protein: 18, status: 'incomplete' },
+      { date: '2026-09-15', calories: 603, protein: 50, status: 'incomplete' },
+      { date: '2026-09-14', calories: 1495, protein: 85, status: 'complete' },
+    ];
+    expect(detectPattern(days, goals)).toBe('missed_logging');
+  });
+
+  it('still reports a real deficit when the low days were closed by the user', () => {
+    const days = [
+      { date: '2026-09-16', calories: 900, protein: 60, status: 'done' },
+      { date: '2026-09-15', calories: 1000, protein: 70, status: 'done' },
+      { date: '2026-09-14', calories: 1700, protein: 150, status: 'complete' },
+    ];
+    expect(detectPattern(days, goals)).toBe('calorie_deficit');
+  });
+});
