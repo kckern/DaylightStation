@@ -253,7 +253,8 @@ const buildParticipantsForPersist = (roster, deviceAssignments, options = {}) =>
     const isPrimary = directory
       ? directory.has(String(participantId))
       : (isExplicitlyPrimary || (!isExplicitlyGuest && !isExplicitlyPrimary));
-    const isGuest = directory ? !isPrimary : (isExplicitlyGuest && !isExplicitlyPrimary);
+    const isFamily = options?.familyIds instanceof Set && options.familyIds.has(String(participantId));
+    const isGuest = directory ? (!isPrimary && !isFamily) : (isExplicitlyGuest && !isExplicitlyPrimary);
     const baseUser = isGuest && entry.baseUserName && String(entry.baseUserName) !== displayName
       ? String(entry.baseUserName)
       : null;
@@ -752,13 +753,15 @@ export class PersistenceManager {
 
   /**
    * Set the configured participant directory used to decide saved participant
-   * flags: is_primary iff the id is in `primaryIds`, is_guest otherwise, and
+   * flags: is_primary iff the id is in `primaryIds`; configured family
+   * (`familyIds`) is neither guest nor primary; everyone else is a guest.
    * display_name from `names`. Sourced from fitness config `users`.
    *
-   * @param {{ primaryIds?: string[], names?: Object<string,string> }} directory
+   * @param {{ primaryIds?: string[], familyIds?: string[], names?: Object<string,string> }} directory
    */
-  setParticipantDirectory({ primaryIds, names } = {}) {
+  setParticipantDirectory({ primaryIds, familyIds, names } = {}) {
     this._primaryIds = Array.isArray(primaryIds) ? new Set(primaryIds.map(String)) : null;
+    this._familyIds = Array.isArray(familyIds) ? new Set(familyIds.map(String)) : new Set();
     this._configuredNames = names && typeof names === 'object' ? { ...names } : {};
   }
 
@@ -1108,7 +1111,7 @@ export class PersistenceManager {
     // Everyone who held a strap has a stint; a series name without one is not
     // a participant. Legacy sessions (no stints) keep the series-derived path.
     if (Array.isArray(sessionData.entities) && sessionData.entities.length > 0) {
-      this._augmentRosterFromStints(sanitizedRoster, sessionData.entities);
+      this._augmentRosterFromStints(sanitizedRoster, sessionData.entities, sessionData.timeline?.series);
     } else {
       this._augmentRosterFromSeries(sanitizedRoster, sessionData.timeline?.series, sessionData.deviceAssignments);
     }
@@ -1126,7 +1129,12 @@ export class PersistenceManager {
     // A cumulative series that dips means data moved without its counter.
     // Keep the saved file monotonic and make the cause visible.
     const regressions = flattenCumulativeRegressions(sessionData.timeline?.series);
+    if (!this._reportedRegressions) this._reportedRegressions = new Set();
     for (const regression of regressions) {
+      // Autosave re-saves the same session every few seconds; say it once.
+      const reportKey = `${sessionData.sessionId}|${regression.key}`;
+      if (this._reportedRegressions.has(reportKey)) continue;
+      this._reportedRegressions.add(reportKey);
       getLogger().warn('fitness.persistence.cumulative_regressed', {
         sessionId: sessionData.sessionId,
         ...regression
@@ -1139,6 +1147,7 @@ export class PersistenceManager {
       {
         excludeOccupantIds: backfillResult?.removedOccupants,
         primaryIds: this._primaryIds || null,
+        familyIds: this._familyIds || new Set(),
         names: this._configuredNames || {}
       }
     );
@@ -1612,17 +1621,39 @@ export class PersistenceManager {
    * @param {Array} entities - Stint records
    * @returns {Array} The augmented roster
    */
-  _augmentRosterFromStints(roster, entities) {
+  _augmentRosterFromStints(roster, entities, seriesData) {
     const rosterIds = new Set(roster.map(e => e.profileId || e.hrDeviceId).filter(Boolean));
+    const series = seriesData && typeof seriesData === 'object' ? seriesData : {};
+    const hasHeartRate = (id) => (series[`user:${id}:heart_rate`] || [])
+      .some((v) => Number.isFinite(v) && v > 0);
+    const relabeledAway = new Set();
+    const stintOccupants = new Set();
     for (const stint of entities) {
-      const userId = stint?.profileId;
-      if (!userId || rosterIds.has(userId)) continue;
+      if (stint?.profileId) stintOccupants.add(stint.profileId);
+      for (const id of stint?.relabeledFrom || []) relabeledAway.add(id);
+    }
+    const add = (userId, name, deviceId) => {
+      if (!userId || rosterIds.has(userId)) return;
       roster.push({
         profileId: userId,
-        name: stint.name || userId,
-        ...(stint.deviceId ? { hrDeviceId: String(stint.deviceId) } : {})
+        name: name || userId,
+        ...(deviceId ? { hrDeviceId: String(deviceId) } : {})
       });
       rosterIds.add(userId);
+    };
+    // A stint whose strap never spoke this session (a stale ledger entry)
+    // is not a participant.
+    for (const stint of entities) {
+      if (stint?.profileId && hasHeartRate(stint.profileId)) add(stint.profileId, stint.name, stint.deviceId);
+    }
+    // Someone with real heart rate but no stint — e.g. rode before a kiosk
+    // reload — is still a participant, unless a correction relabelled them away.
+    for (const key of Object.keys(series)) {
+      const m = /^user:([^:]+):heart_rate$/.exec(key);
+      if (!m) continue;
+      const userId = m[1];
+      if (stintOccupants.has(userId) || relabeledAway.has(userId)) continue;
+      if (hasHeartRate(userId)) add(userId, userId, null);
     }
     return roster;
   }

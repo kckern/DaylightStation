@@ -63,7 +63,8 @@ describe('FitnessSession resume — v3 session window', () => {
     s._hydrateFromSession(v3('2026-09-01 15:47:46.102', '2026-09-01 17:21:16.000'));
     // The tail is null padding for the gap since the session's real end; what
     // matters is that the pre-reload values survived rather than being dropped.
-    expect(s.timeline.series['user_3:rings'].slice(0, 3)).toEqual([1, 2, 3]);
+    // Restored under the live key the recorders write (liveSeriesKeys.js).
+    expect(s.timeline.series['user:user_3:rings_total'].slice(0, 3)).toEqual([1, 2, 3]);
   });
 
   it('measures the resume gap from session.end, not from the start', () => {
@@ -72,7 +73,7 @@ describe('FitnessSession resume — v3 session window', () => {
     pinClockJustAfterSession();
     const s = new FitnessSession();
     s._hydrateFromSession(v3('2026-09-01 15:47:46.102', '2026-09-01 17:21:16.000'));
-    const paddedTo = s.timeline.series['user_3:rings'].length;
+    const paddedTo = s.timeline.series['user:user_3:rings_total'].length;
     const fromEnd = Math.floor((Date.now() - new Date('2026-09-01T17:21:16.000').getTime()) / 5000);
     expect(Math.abs(paddedTo - (3 + fromEnd))).toBeLessThanOrEqual(2);
   });

@@ -603,6 +603,25 @@ export class TimelineRecorder {
   }
 
   /**
+   * Continue a rider's running beat total from a restored (resumed) session.
+   * @param {string} userId
+   * @param {number} beats
+   */
+  seedCumulativeBeats(userId, beats) {
+    if (!userId || !Number.isFinite(beats)) return;
+    this._cumulativeBeats.set(userId, Math.max(this._cumulativeBeats.get(userId) || 0, beats));
+  }
+
+  /**
+   * A restored rider already has a rings_total series; don't write the
+   * first-sighting baseline 0 into it (that would be a dip).
+   * @param {string} userId
+   */
+  markRingsRecorded(userId) {
+    if (userId) this._usersWithRingsRecorded.add(userId);
+  }
+
+  /**
    * Move one stint's heart beats (a correction). `baseBeats` is the source's
    * running total just before the stint began.
    * @param {string} fromUserId

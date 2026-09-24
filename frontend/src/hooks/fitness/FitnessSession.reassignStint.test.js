@@ -151,3 +151,31 @@ describe('FitnessSession.reassignStint', () => {
     expect(FitnessSession.prototype.transferSessionEntity).toBeUndefined();
   });
 });
+
+describe('FitnessSession stints — lifecycle details', () => {
+  beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(1_790_213_728_000); });
+  afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
+
+  it('a person corrected back onto a strap is no longer marked transferred', () => {
+    const { session, svc } = build();
+    run(session, 3, { D2: 140 });
+    svc.assignGuest('D2', { name: 'Kid B', profileId: 'kid-b' });
+    expect(session.getTransferredUsers()).toContain('kid-a');
+    svc.assignGuest('D2', { name: 'Kid A', profileId: 'kid-a' });
+    expect(session.getTransferredUsers()).not.toContain('kid-a');
+    expect(session.getTransferredUsers()).toContain('kid-b');
+    session.reset();
+  });
+
+  it('closes every open stint at session end (endReason session-end)', () => {
+    const { session } = build();
+    run(session, 3, { D2: 140 });
+    const stint = session.entityRegistry.getByDevice('D2');
+    const summary = session.summary; // what the final save captures is taken inside endSession
+    expect(summary).toBeTruthy();
+    session.endSession('manual');
+    expect(stint.status).toBe('ended');
+    expect(stint.endReason).toBe('session-end');
+    expect(Number.isFinite(stint.endTime)).toBe(true);
+  });
+});
