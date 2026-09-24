@@ -33,32 +33,85 @@ describe('CoachingMessageBuilder', () => {
   });
 
   describe('buildMorningBriefBlock', () => {
-    it('builds yesterday + 7-day avg + weight', () => {
+    const base = {
+      weekAvg: { calories: 1450, protein: 112, trustedDays: 7, totalDays: 7 },
+      proteinGoal: 120,
+      weight: { current: 170.33, trend7d: -0.09 },
+      minCalories: 1200,
+    };
+
+    it('builds yesterday + 7-day avg + weight for a complete day', () => {
       const html = CoachingMessageBuilder.buildMorningBriefBlock({
-        yesterday: { calories: 1626, protein: 94 },
-        weekAvg: { calories: 1450, protein: 112 },
-        proteinGoal: 120,
-        weight: { current: 170.3, trend7d: -0.09 },
+        ...base, yesterday: { calories: 1626, protein: 94, status: 'complete' },
       });
       expect(html).toContain('<b>Yesterday:</b> 1626 cal');
       expect(html).toContain('94g protein');
       expect(html).toContain('<b>7-day avg:</b>');
       expect(html).toContain('target: 120g');
-      expect(html).toContain('170.3 lbs');
+      expect(html).toContain('170.3 lbs (-0.09/wk)');
+      expect(html).not.toContain('fully logged');
+      expect(html).not.toContain('incomplete');
+    });
+
+    it('flags an incomplete yesterday instead of reporting it as intake', () => {
+      const html = CoachingMessageBuilder.buildMorningBriefBlock({
+        ...base, yesterday: { date: '2026-09-16', calories: 460, protein: 18, status: 'incomplete' },
+      });
+      expect(html).toContain('460 cal · 18g protein logged — looks incomplete');
+      expect(html).toContain('Under 1200 cal');
+      expect(html).toContain('/done 2026-09-16');
+    });
+
+    it('says nothing logged for an unlogged yesterday', () => {
+      const html = CoachingMessageBuilder.buildMorningBriefBlock({
+        ...base, yesterday: { date: '2026-09-13', calories: 0, protein: 0, status: 'unlogged' },
+      });
+      expect(html).toContain('<b>Yesterday:</b> nothing logged');
+      expect(html).toContain('/fast 2026-09-13');
+    });
+
+    it('labels a confirmed fast', () => {
+      const html = CoachingMessageBuilder.buildMorningBriefBlock({
+        ...base, yesterday: { calories: 0, protein: 0, status: 'fasting' },
+      });
+      expect(html).toContain('<b>Yesterday:</b> fast');
+    });
+
+    it('shows coverage when some days are untrusted, and no average when none are', () => {
+      const partial = CoachingMessageBuilder.buildMorningBriefBlock({
+        ...base, yesterday: { calories: 1500, protein: 90, status: 'complete' },
+        weekAvg: { calories: 1500, protein: 90, trustedDays: 3, totalDays: 7 },
+      });
+      expect(partial).toContain('3 of 7 days fully logged');
+
+      const none = CoachingMessageBuilder.buildMorningBriefBlock({
+        ...base, yesterday: { calories: 400, protein: 20, status: 'incomplete' },
+        weekAvg: { calories: null, protein: null, trustedDays: 0, totalDays: 7 },
+      });
+      expect(none).toContain('<b>7-day avg:</b> no fully logged days');
+    });
+
+    it('omits the weight line when there is no weight data', () => {
+      const html = CoachingMessageBuilder.buildMorningBriefBlock({
+        ...base, weight: null, yesterday: { calories: 1500, protein: 90, status: 'complete' },
+      });
+      expect(html).not.toContain('Weight');
+      expect(html).not.toContain('0 lbs');
     });
   });
 
   describe('buildWeeklyDigestBlock', () => {
     it('builds week vs long-term comparison', () => {
       const html = CoachingMessageBuilder.buildWeeklyDigestBlock({
-        thisWeek: { avgCalories: 1453, avgProtein: 112 },
-        longTermAvg: { avgCalories: 1520, avgProtein: 105 },
+        thisWeek: { calories: 1453, protein: 112, trustedDays: 5, totalDays: 7 },
+        longTermAvg: { calories: 1520, protein: 105, trustedDays: 40, totalDays: 56 },
         weight: { weekStart: 170.4, weekEnd: 170.2, trend7d: -0.16 },
       });
       expect(html).toContain('<b>This week:</b>');
       expect(html).toContain('1453 avg cal');
+      expect(html).toContain('5 of 7 days fully logged');
       expect(html).toContain('<b>vs 8-wk avg:</b>');
-      expect(html).toContain('<b>Weight trend:</b>');
+      expect(html).toContain('<b>Weight trend:</b> -0.16 lbs this week · 170.4 → 170.2');
     });
   });
 

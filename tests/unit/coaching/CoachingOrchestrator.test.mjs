@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { CoachingOrchestrator } from '../../../backend/src/3_applications/coaching/CoachingOrchestrator.mjs';
 
 describe('CoachingOrchestrator', () => {
@@ -99,4 +99,89 @@ describe('CoachingOrchestrator', () => {
     const [, text] = mockMessaging.sendMessage.mock.calls[0];
     expect(text).toContain('<b>850 / 1600 cal</b>');
   });
+
+  describe('morning brief completeness', () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-09-17T17:00:00Z')); // 10am PDT
+    });
+    afterEach(() => vi.useRealTimers());
+
+    it('flags a partially logged yesterday and keeps it out of the average and commentary facts', async () => {
+      mockHealthStore.loadNutritionData.mockResolvedValue({
+        '2026-09-16': { calories: 460, protein: 18 },
+        '2026-09-15': { calories: 1495.4, protein: 85.2 },
+        '2026-09-14': { calories: 1605, protein: 91 },
+      });
+      await orchestrator.sendMorningBrief({ userId: 'kckern', conversationId: 'telegram:1' });
+
+      const [, text] = mockMessaging.sendMessage.mock.calls[0];
+      expect(text).toContain('460 cal · 18g protein logged — looks incomplete');
+      expect(text).toContain('1550 cal · 88g protein');
+      expect(text).toContain('2 of 7 days fully logged');
+
+      const snapshot = mockCommentary.generate.mock.calls[0][0];
+      expect(snapshot.yesterday.status).toBe('incomplete');
+      expect(snapshot.recent_pattern).toBe('missed_logging');
+      expect(snapshot.logging.min_calories).toBe(1200);
+    });
+
+    it('trusts a low yesterday the user marked done', async () => {
+      mockHealthStore.loadNutritionData.mockResolvedValue({ '2026-09-16': { calories: 900, protein: 80 } });
+      mockHealthStore.loadDayClosedData = vi.fn().mockResolvedValue({ '2026-09-16': { status: 'done' } });
+      await orchestrator.sendMorningBrief({ userId: 'kckern', conversationId: 'telegram:1' });
+
+      const [, text] = mockMessaging.sendMessage.mock.calls[0];
+      expect(text).toContain('<b>Yesterday:</b> 900 cal · 80g protein');
+      expect(text).not.toContain('incomplete');
+    });
+
+    it('honours a configured threshold', async () => {
+      const strict = new CoachingOrchestrator({
+        commentaryService: mockCommentary, messagingGateway: mockMessaging, healthStore: mockHealthStore,
+        nutriListStore: mockNutriListStore, config: mockConfig, completeness: { min_calories: 1500 },
+        logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+      });
+      mockHealthStore.loadNutritionData.mockResolvedValue({ '2026-09-16': { calories: 1300, protein: 80 } });
+      await strict.sendMorningBrief({ userId: 'kckern', conversationId: 'telegram:1' });
+      expect(mockMessaging.sendMessage.mock.calls[0][1]).toContain('Under 1500 cal');
+    });
+
+    it('reads weight from the lbs fields weight.yml actually carries', async () => {
+      mockHealthStore.loadNutritionData.mockResolvedValue({ '2026-09-16': { calories: 1500, protein: 120 } });
+      mockHealthStore.loadWeightData.mockResolvedValue({
+        '2026-09-10': { lbs: 171, lbs_adjusted_average: 170.8 },
+        '2026-09-17': { lbs: 170, lbs_adjusted_average: 170.2 },
+      });
+      await orchestrator.sendMorningBrief({ userId: 'kckern', conversationId: 'telegram:1' });
+      expect(mockMessaging.sendMessage.mock.calls[0][1]).toContain('170.2 lbs (-0.60/wk)');
+    });
+  });
+
+  describe('weekly digest completeness', () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-09-21T02:00:00Z')); // Sun 7pm PDT, 09-20
+    });
+    afterEach(() => vi.useRealTimers());
+
+    it('averages only trusted days and states the coverage', async () => {
+      mockHealthStore.loadNutritionData.mockResolvedValue({
+        '2026-09-19': { calories: 1800, protein: 120 },
+        '2026-09-18': { calories: 831, protein: 83 },
+        '2026-09-17': { calories: 630, protein: 64 },
+        '2026-09-16': { calories: 1600, protein: 100 },
+        '2026-09-15': { calories: 0, protein: 0 },
+      });
+      mockHealthStore.loadDayClosedData = vi.fn().mockResolvedValue({ '2026-09-15': { status: 'fasting' } });
+      await orchestrator.sendWeeklyDigest({ userId: 'kckern', conversationId: 'telegram:1' });
+
+      const [, text] = mockMessaging.sendMessage.mock.calls[0];
+      expect(text).toContain('1133 avg cal · 73g avg protein · 3 of 7 days fully logged');
+      const snapshot = mockCommentary.generate.mock.calls[0][0];
+      expect(snapshot.week_days.map(d => d.status)).toEqual(
+        ['complete', 'incomplete', 'incomplete', 'complete', 'fasting', 'unlogged', 'unlogged']);
+    });
+  });
 });
+
