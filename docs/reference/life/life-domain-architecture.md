@@ -21,7 +21,7 @@ Pure business logic — no I/O, no external dependencies.
 | Directory | Key Files | Purpose |
 |-----------|-----------|---------|
 | `entities/` | LifePlan, Goal, Belief, Value, Quality, Purpose | Core domain models with state machines |
-| `services/` | GoalStateService, BeliefEvaluator, BeliefCascadeProcessor, CadenceService, DependencyResolver, ValueDriftCalculator, CeremonyDueResolver, RuleMatchingService, ProgressCalculator, LifeEventProcessor, BiasCalibrationService, ShadowDetectionService, NightmareProximityService, PastProcessingService | Domain logic services |
+| `services/` | GoalStateService, BeliefEvaluator, BeliefCascadeProcessor, CadenceService, DependencyResolver, ValueDriftCalculator, CeremonyDueResolver, LifeEventSignalDetector, BeliefSignalDetector, RuleMatchingService, ProgressCalculator, LifeEventProcessor, BiasCalibrationService, ShadowDetectionService, NightmareProximityService, PastProcessingService | Domain logic services |
 | `value-objects/` | GoalState, BeliefState | Frozen enum-style state definitions |
 
 **State Machines:**
@@ -41,20 +41,17 @@ It has two consumers, deliberately sharing constants but not presentation:
 
 Not every service in the table above is reachable in production. Verified against `backend/src/5_composition/modules/lifeplan.mjs` (the only place lifeplan services are constructed) and `backend/src/3_applications/lifeplan/LifeplanContainer.mjs`:
 
-- **Wired and reachable:** GoalStateService, BeliefEvaluator, CadenceService, ValueDriftCalculator (via DriftService), CeremonyDueResolver.
+- **Wired and reachable:** GoalStateService, BeliefEvaluator, CadenceService, ValueDriftCalculator (via DriftService), CeremonyDueResolver, LifeEventSignalDetector (via `LifeEventSuggester`, see "Life event signals" below).
 - **Constructed by `LifeplanContainer.getRouterConfig()` but never read by any router** — `DependencyResolver` and `BeliefCascadeProcessor` are lazily instantiated and land in the config object passed to `createLifeRouter`, but no file under `4_api/v1/routers/life/` destructures or calls them. They exist and are unit-tested (e.g. `belief-cascade.test.mjs`) but do nothing at runtime today.
 - **Present, unit-tested, never constructed anywhere** — `RuleMatchingService`, `ProgressCalculator`, `LifeEventProcessor`, `BiasCalibrationService`, `ShadowDetectionService`, `NightmareProximityService`, `PastProcessingService`. All seven are exported from `services/index.mjs`, but that barrel file has no importer anywhere in `backend/` (`grep -rln "services/index" backend/` turns up nothing outside itself) — they're reachable only from their own test files. Since 2026-09-24 `LifeEventProcessor` reads the persisted model: event `status` / `actual_date`, and top-level `plan.dependencies` matched by `awaits_event` (event id), as `DependencyResolver` does. Before, it read `state` / `occurred_date` and goal-embedded `event_type`, so once wired it would never have resolved a dependency. Rule effectiveness is derived, never stored: `Rule.effectivenessOf(rule)` (also used by `RuleMatchingService.getEffectiveness`, `RetroService`, `CeremonyService` `cycle_retro`, and the plan presenter for `QualitiesView`). The retro views used to read a nonexistent `r.effectiveness`. In particular, `NightmareProximityService` computing `AntiGoal.proximity` is the exact re-enable condition for the suppressed `anti_goal_warning` priority (see AlignmentService below) — until something calls it on a schedule, `anti_goal_warning` stays off.
 
 ### 1_adapters/lifeplan/
 
-External integrations for the lifeplan domain.
+This directory no longer exists. The four metric adapters (Strava, Calendar, Todoist, SelfReport) and the `IMetricSource` port described in earlier revisions were removed in the DDD boundary remediation; `DriftService` computes value drift straight from the Lifelog aggregator.
 
-| Directory | Key Files | Purpose |
-|-----------|-----------|---------|
-| `metrics/` | StravaMetricAdapter, CalendarMetricAdapter, TodoistMetricAdapter, SelfReportMetricAdapter | Pull metrics from lifelog sources |
-| `signals/` | BeliefSignalDetector, LifeEventSignalDetector | Detect belief evidence and life events from lifelog |
-
-**Not wired.** None of the four metric adapters, the `IMetricSource` port they'd implement (`backend/src/3_applications/lifeplan/ports/IMetricSource.mjs`), or the two signal detectors are constructed anywhere under `5_composition/`. They exist with unit test coverage (e.g. `belief-signal-detector.test.mjs`) but have no production caller — `DriftService` computes value drift straight from the Lifelog aggregator, not through this metrics-adapter layer.
+The two signal detectors are pure judgment and live in the domain, `2_domains/lifeplan/services/`:
+- `LifeEventSignalDetector`, wired through `LifeEventSuggester` (see "Life event signals" below).
+- `BeliefSignalDetector`, unit-tested (`belief-signal-detector.test.mjs`) but with no production caller.
 
 ### 1_adapters/persistence/yaml/
 
@@ -69,7 +66,8 @@ External integrations for the lifeplan domain.
 | File | Purpose |
 |------|---------|
 | LifeplanContainer | DI container with lazy-loaded getters |
-| PlanAuthoringService | Plan genesis (creates the first empty `lifeplan.yml`) and section authoring (append/update goals, values, beliefs). Backs the `POST /plan`, `POST /plan/goals\|values\|beliefs` routes and the coach write-tools |
+| PlanAuthoringService | Plan genesis (creates the first empty `lifeplan.yml`) and section authoring (append/update goals, values, beliefs, purpose, life events). Backs the `POST /plan`, `POST /plan/goals\|values\|beliefs` routes and the coach write-tools (`addLifeEvent` backs `add_life_event`) |
+| LifeEventSuggester | Life-event suggestions from recent calendar items for the coach; keyword judge + Jev (shadow/decide/off). Writes nothing |
 | DriftService | Value drift computation + persistence |
 | AlignmentService | Priority alignment + dashboard model from plan + metrics (see below) |
 | CeremonyService | Ceremony content assembly + completion |
@@ -114,7 +112,7 @@ Default routing: `ceremony` → telegram+push+app, `drift_alert` → telegram+ap
 
 | Factory | File | Responsibility |
 |---------|------|-----------------|
-| PlanToolFactory | `tools/PlanToolFactory.mjs` | Read/write the plan: `get_plan`, `transition_goal`, `add_evidence`, `record_feedback`, `create_goal`, `add_value`, `add_belief`, `set_purpose` |
+| PlanToolFactory | `tools/PlanToolFactory.mjs` | Read/write the plan: `get_plan`, `transition_goal`, `add_evidence`, `record_feedback`, `create_goal`, `add_value`, `add_belief`, `set_purpose`, `suggest_life_events` (read-only), `add_life_event` |
 | LifelogToolFactory | `tools/LifelogToolFactory.mjs` | Lifelog aggregation + drift reads |
 | CeremonyToolFactory | `tools/CeremonyToolFactory.mjs` | Ceremony status/content, backed by the same `CeremonyDueResolver` as the dashboard |
 | NotificationToolFactory | `tools/NotificationToolFactory.mjs` | Sends action-message notifications (used by `CadenceCheck`) |
@@ -122,7 +120,7 @@ Default routing: `ceremony` → telegram+push+app, `drift_alert` → telegram+ap
 
 **Identity contract — tools cannot fabricate a user.** Every tool's JSON schema declares a `userId` parameter (so the model can reference it in reasoning), but the model's supplied value is never trusted: `MastraAdapter` wraps every tool through a decorator pipeline — `userIdInjector → callLimiter → transcriptRecorder` (`backend/src/1_adapters/agents/MastraAdapter.mjs:108,133`) — and `userIdInjector` (`backend/src/3_applications/agents/framework/decorators/UserIdInjector.mjs`) overwrites whatever `userId` the model passed with the real `context.userId` from the run. For scheduled (non-chat) runs, `BaseAgent.buildSystemPrompt` also appends an `"## Active User"` section naming the resolved user when `context.userId` is present (`backend/src/3_applications/agents/framework/BaseAgent.mjs:187,198-199`), so the model's own reasoning is grounded in the same identity the tools enforce.
 
-**Confirm-gated writer tools.** `create_goal`, `add_value`, `add_belief`, `set_purpose`, `transition_goal`, and `add_evidence` all carry a shared description prefix — "Writes to the user's plan. Only call after the user has explicitly confirmed in conversation." (`PlanToolFactory.mjs:10`) — instructing the model to confirm before calling. `record_feedback` is explicitly exempt ("Executes immediately (no confirmation needed)"). The earlier `propose_*` tool variants (a two-step propose/confirm pattern) have been removed entirely — there is no `propose_` prefix anywhere left in the agent's tool set.
+**Confirm-gated writer tools.** `create_goal`, `add_value`, `add_belief`, `set_purpose`, `transition_goal`, `add_evidence`, and `add_life_event` all carry a shared description prefix — "Writes to the user's plan. Only call after the user has explicitly confirmed in conversation." (`PlanToolFactory.mjs:10`) — instructing the model to confirm before calling. `record_feedback` is explicitly exempt ("Executes immediately (no confirmation needed)"). The earlier `propose_*` tool variants (a two-step propose/confirm pattern) have been removed entirely — there is no `propose_` prefix anywhere left in the agent's tool set.
 
 **Scheduled assignment.** `CadenceCheck` (`assignments/CadenceCheck.mjs`) runs on cron `'0 7 * * *'` (07:00). It gathers ceremony status, drift, and plan data via its own tool calls, skips the run entirely if nothing is overdue/due/drifting, otherwise has the model compose a single notification (message + action buttons) and sends it via the notification tool, also caching the result in agent memory (`pending_nudge`, 24h TTL) for frontend polling.
 
@@ -181,6 +179,17 @@ CadenceService resolves any date to its position in all levels.
 **Monday-default epoch.** The default cadence anchors cycles (weeks) to Monday, using the epoch **2024-12-30** (itself a Monday). Consequently `current.cycle.startDate` is always the most recent Monday on or before today (verified live: on Fri 2026-07-10 the cycle start resolved to Mon 2026-07-06). The era epoch is the Monday on/before Jan 1 (e.g. 2025-12-30 for 2026). This periodId scheme is a change from the earlier resolution; see the ceremony-record dedupe note under Scheduled tasks for the one-time reset it causes.
 
 **Per-ceremony delivery hours.** Each ceremony's local delivery hour comes from `plan.ceremonies.<type>.at` (0–23). Defaults when unset: **unit_intention 07**, **unit_capture 20**, all others **17**. The hourly `lifeplan:ceremony-check` task fires each ceremony when the local hour matches, which is why the task moved from a single 07:00 run to hourly.
+
+### Life event signals
+
+The coach can offer life events it finds in the recent calendar. Nothing is written without the user's confirmation in conversation.
+
+- `2_domains/lifeplan/services/LifeEventSignalDetector.mjs`: whole-word keyword policy, phrases only (no bare `exam`, `hospital`, `birth`, no anniversaries), first match wins with education checked before job_change. Emits `{ date, type (LifeEventType), subtype (signal kind), name, source: 'calendar', confidence, detector: 'keyword' }`, at most one per calendar item. Kinds: relocation→location, job_change→career, health_event→health, family_event→family, education→education, financial→financial. Travel is not a life event.
+- `3_applications/lifeplan/services/LifeEventSuggester.mjs`: reads `aggregateRange` over the last N days (default 14, max 60), skips names already in `plan.life_events`, and asks the decision gateway one `choice` per item (kind or `none`, 20 items per call; summary, calendar, all-day and location only, never the description).
+- Mode: the system-level agents config (`system/config/agents.yml`, `getAppConfig('agents')`) key `lifeplan_guide.life_event_signals.mode` = `shadow` (default; keyword answers at once, the model runs detached and is only logged) | `decide` (model answers at `min_confidence`, default 0.6; chunks evaluated in parallel) | `off`. No gateway or any model failure means keyword answers. Config is read at startup.
+- Coach tools: `suggest_life_events` (read-only) and `add_life_event` (confirm-gated, `PlanAuthoringService.addLifeEvent`; `type` must be a `LifeEventType`, `status` is `anticipated` or `occurred`, `date` lands on `expected_date` or `actual_date` accordingly, `date` must be a real YYYY-MM-DD, and the suggestion is kept in `signals[]` as `{ source, date, summary, detector, confidence }`; the suggester skips items whose name, or signal date + summary, is already recorded, so a renamed event is not offered again). The written event is what `LifeEventProcessor` reads (`status`, `actual_date`, id for `awaits_event`).
+- Logs: `lifeplan.life-event.shadow` (per item; `summary` only on disagreement), `.shadow-summary`, `.model-failed`, `.suggested`, `.confirmed`. Promotion criteria: `docs/_wip/plans/2026-09-24-jev-lifeplan-signals.md` (Rollout).
+- Source limit: the lifelog calendar extractor exposes past events only, so suggestions are events that already occurred.
 
 ### Belief Evidence Model
 
@@ -274,7 +283,9 @@ A small shared design system underpins every view, added alongside the "beautifu
 |----------|------|----------|
 | `tests/isolated/domain/lifeplan/` | Unit | Entities, services, state machines |
 | `tests/isolated/lifeplan/services/` | Unit | Application services |
-| `tests/isolated/lifeplan/signals/` | Unit | Signal detectors |
+| `tests/isolated/lifeplan/signals/` | Unit | BeliefSignalDetector |
+| `backend/src/2_domains/lifeplan/services/*.test.mjs` | Unit (colocated) | LifeEventSignalDetector |
+| `backend/src/3_applications/lifeplan/services/*.test.mjs` | Unit (colocated) | LifeEventSuggester |
 | `tests/isolated/lifeplan/lifecycle/` | Simulation | Longitudinal lifecycle scenarios |
 | `tests/isolated/api/routers/` | Unit | API router endpoints |
 | `tests/integrated/lifeplan/` | Integration | Aggregator, metrics persistence, ceremony delivery |

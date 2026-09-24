@@ -92,4 +92,38 @@ describe('PlanAuthoringService', () => {
     expect(belief.then).toBe('training happens');
     expect(belief.confidence).toBe(0.5);
   });
+
+  it('addLifeEvent appends a typed event with the date on the right field and keeps the signal', () => {
+    const ev = svc.addLifeEvent('test-user', {
+      type: 'location', subtype: 'relocation', name: 'Moving day', status: 'occurred', date: '2026-09-20',
+      signal: { source: 'calendar', date: '2026-09-20', detector: 'keyword', confidence: 0.8 },
+    });
+    expect(ev).toMatchObject({
+      id: 'moving-day', type: 'location', subtype: 'relocation', name: 'Moving day', status: 'occurred',
+      actual_date: '2026-09-20', expected_date: null,
+      signals: [{ source: 'calendar', date: '2026-09-20', detector: 'keyword', confidence: 0.8 }],
+    });
+    expect(saved.life_events).toHaveLength(1);
+    const next = svc.addLifeEvent('test-user', { type: 'career', name: 'Moving day', status: 'anticipated', date: '2026-10-01' });
+    expect(next.id).toBe('moving-day-2');
+    expect(next.expected_date).toBe('2026-10-01');
+    expect(next.signals).toEqual([]);
+  });
+
+  it('addLifeEvent rejects unknown types, bad status, and missing names', () => {
+    expect(() => svc.addLifeEvent('test-user', { type: 'travel', name: 'x', status: 'occurred' })).toThrow(/type/);
+    expect(() => svc.addLifeEvent('test-user', { type: 'family', name: 'x', status: 'cancelled' })).toThrow(/status/);
+    expect(() => svc.addLifeEvent('test-user', { type: 'family', status: 'occurred' })).toThrow(/name/);
+  });
+
+  it('addLifeEvent rejects dates that are not a real YYYY-MM-DD, and writes nothing', () => {
+    for (const date of ['2026-02-30', '2026-13-01', '09/20/2026', '2026-9-20', 'next week', '2026-09-20T10:00:00Z']) {
+      expect(() => svc.addLifeEvent('test-user', { type: 'family', name: 'x', status: 'occurred', date }))
+        .toThrow(/YYYY-MM-DD/);
+    }
+    expect(store.save).not.toHaveBeenCalled();
+    expect(svc.addLifeEvent('test-user', { type: 'family', name: 'Leap', status: 'occurred', date: '2028-02-29' }).actual_date)
+      .toBe('2028-02-29');
+    expect(svc.addLifeEvent('test-user', { type: 'family', name: 'Undated', status: 'anticipated' }).expected_date).toBeNull();
+  });
 });
