@@ -442,3 +442,19 @@ describe('heal — 2026-09-23 split repair (session 20260923183528, scrubbed)', 
     expect(again.plan.needsHeal).toBe(false);
   });
 });
+
+describe('heal — list index', () => {
+  it('drops the healed day from its month index shard so the session list re-reads it', async () => {
+    await setUpTempSession();
+    const indexDir = path.join(baseDir, 'data', 'household', 'fitness', 'log', '_index');
+    await mkdir(indexDir, { recursive: true });
+    const shardFile = path.join(indexDir, '2026-06.json');
+    await writeFile(shardFile, JSON.stringify({ version: 5, days: { [DATE]: { mtimeMs: 1, sessions: [{ id: 'stale' }] }, '2026-06-01': { mtimeMs: 2, sessions: [] } } }));
+    const res = await heal(DATE, SESSION_ID, { apply: true, baseDir });
+    expect(res.changed).toBe(true);
+    const shard = JSON.parse(await readFile(shardFile, 'utf8'));
+    expect(shard.days).not.toHaveProperty(DATE);
+    expect(shard.days).toHaveProperty('2026-06-01');
+    await rm(baseDir, { recursive: true, force: true });
+  });
+});
