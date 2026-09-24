@@ -272,23 +272,33 @@ export class HeadlineService {
     const windowMs = 36 * 60 * 60 * 1000;
     for (const item of candidates) {
       const normalizedTitle = this.#normalizeClusterTitle(item.title);
-      const match = clusters.find(cluster => {
+      // Stage 1: the legacy rule, unchanged (canonical URL, or similarity >= 0.72).
+      const inWindow = cluster => !cluster.sourceIds.has(item.sourceId)
+        && Math.abs(new Date(cluster.publishedAt || 0) - new Date(item.publishedAt || 0)) <= windowMs
+        && normalizedTitle.split(' ').length >= 5;
+      let match = clusters.find(cluster => {
         if (item.canonicalUrl && cluster.canonicalUrls.has(item.canonicalUrl)) return true;
-        if (cluster.sourceIds.has(item.sourceId)) return false;
-        const age = Math.abs(new Date(cluster.publishedAt || 0) - new Date(item.publishedAt || 0));
-        if (age > windowMs || normalizedTitle.split(' ').length < 5) return false;
-        const similarity = stringSimilarity.compareTwoStrings(cluster.normalizedTitle, normalizedTitle);
-        if (similarity >= LEGACY_MATCH) return true;
-        if (!judge || !settings || similarity < settings.bandLow) return false;
-        trace?.pairs.push({
-          similarity,
-          normA: cluster.normalizedTitle,
-          normB: normalizedTitle,
-          a: { title: cluster.title, source: cluster.leadSource, publishedAt: cluster.publishedAt },
-          b: { title: item.title, source: item.sourceLabel, publishedAt: item.publishedAt },
-        });
-        return judge.sameEvent(cluster.normalizedTitle, normalizedTitle, settings);
+        return inWindow(cluster)
+          && stringSimilarity.compareTwoStrings(cluster.normalizedTitle, normalizedTitle) >= LEGACY_MATCH;
       });
+      // Stage 2, only with no legacy match: ambiguous-band pairs. Traced for the
+      // judge; merged only on a cached promote-mode verdict. Skipped entirely
+      // unless tracing or promoting, so shadow/off requests run the legacy path.
+      if (!match && judge && settings && (trace || judge.promoting(settings))) {
+        match = clusters.find(cluster => {
+          if (!inWindow(cluster)) return false;
+          const similarity = stringSimilarity.compareTwoStrings(cluster.normalizedTitle, normalizedTitle);
+          if (similarity < settings.bandLow || similarity >= LEGACY_MATCH) return false;
+          trace?.pairs.push({
+            similarity,
+            normA: cluster.normalizedTitle,
+            normB: normalizedTitle,
+            a: { title: cluster.title, source: cluster.leadSource, publishedAt: cluster.publishedAt },
+            b: { title: item.title, source: item.sourceLabel, publishedAt: item.publishedAt },
+          });
+          return judge.sameEvent(cluster.normalizedTitle, normalizedTitle, settings);
+        });
+      }
       if (match) {
         match.coverage.push(item);
         match.sourceIds.add(item.sourceId);

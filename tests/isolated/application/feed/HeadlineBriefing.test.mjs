@@ -55,15 +55,20 @@ const fakeGateway = ({ same = 0.9, kind = 'live', confidence = 0.8, fail = false
   }),
 });
 
-function paraphraseService({ jev = null, storyJudge = null } = {}) {
+/**
+ * Two outlets carrying the paraphrase pair, plus optional `extra` sources:
+ * [{ id, title, minutesAgo }], each its own outlet.
+ */
+function paraphraseService({ jev = null, storyJudge = null, extra = [] } = {}) {
   const now = new Date().toISOString();
   const earlier = new Date(Date.now() - 60 * 60 * 1000).toISOString();
   const config = {
     headline_pages: [{
-      id: 'daily', label: 'Daily', grid: { rows: ['top'], cols: ['left', 'right'] },
+      id: 'daily', label: 'Daily', grid: { rows: ['top'], cols: ['c0', 'c1', 'c2', 'c3', 'c4'] },
       sources: [
         { id: 'one', label: 'One', row: 0, col: 0, url: 'https://one.example/rss' },
         { id: 'two', label: 'Two', row: 0, col: 1, url: 'https://two.example/rss' },
+        ...extra.map((source, i) => ({ id: source.id, label: source.id, row: 0, col: i + 2, url: `https://${source.id}.example/rss` })),
       ],
     }],
     headlines: jev ? { jev } : {},
@@ -71,6 +76,10 @@ function paraphraseService({ jev = null, storyJudge = null } = {}) {
   const cached = {
     one: { items: [{ id: 'one-a', title: PARAPHRASE_A, link: 'https://one.example/wh', timestamp: now }] },
     two: { items: [{ id: 'two-a', title: PARAPHRASE_B, link: 'https://two.example/wh', timestamp: earlier }] },
+    ...Object.fromEntries(extra.map(source => [source.id, { items: [{
+      id: `${source.id}-a`, title: source.title, link: `https://${source.id}.example/story`,
+      timestamp: new Date(Date.now() - source.minutesAgo * 60 * 1000).toISOString(),
+    }] }])),
   };
   const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
   const service = new HeadlineService({
@@ -247,3 +256,22 @@ describe('HeadlineService review call budget', () => {
     expect(log.info).toHaveBeenCalledWith('feed.headlines.jev-review', expect.objectContaining({ evaluated: 2, skipped: 1 }));
   });
 });
+
+describe('HeadlineService promote placement', () => {
+  test('a legacy match (>= 0.72) wins over an earlier cluster with a cached band "yes"', async () => {
+    // Clusters form newest first: A (One, now), then B (three, 30 min ago). X (Two, 60 min ago)
+    // is in the band against A (cached "same event") and >= 0.72 against B.
+    const B = 'CNN, MS NOW, Politico reporters regain White House entry';
+    expect(stringSimilarity.compareTwoStrings(norm(B), norm(PARAPHRASE_B))).toBeGreaterThanOrEqual(0.72);
+    const judge = new HeadlineStoryJudge({ decisionGateway: fakeGateway({ same: 0.9 }), logger: { info() {}, warn() {} } });
+    await judge.review({ pageId: 'daily', pairs: [{ similarity: 0.67, normA: norm(PARAPHRASE_A), normB: norm(PARAPHRASE_B),
+      a: { title: PARAPHRASE_A }, b: { title: PARAPHRASE_B } }], titles: [] }, HeadlineStoryJudge.settings({ mode: 'promote' }));
+    const { service } = paraphraseService({ storyJudge: judge, jev: { mode: 'promote' }, extra: [{ id: 'three', title: B, minutesAgo: 30 }] });
+    const { briefing } = await service.getAllHeadlines('alice', 'daily');
+    const storyB = briefing.find(story => story.title === B);
+    const storyA = briefing.find(story => story.title === PARAPHRASE_A);
+    expect(storyB.coverage.map(item => item.title)).toEqual([B, PARAPHRASE_B]);
+    expect(storyA.sourceCount).toBe(1);
+  });
+});
+
