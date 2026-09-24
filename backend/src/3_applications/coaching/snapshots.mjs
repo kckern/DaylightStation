@@ -102,7 +102,7 @@ function pickDay(d) {
 function loggingContext(minCalories) {
   return {
     min_calories: minCalories,
-    note: 'status complete|done|fasting = trustworthy totals. incomplete = under min_calories and not confirmed by the user: meals are missing, the total is NOT what was eaten. unlogged = no data. Averages cover trustworthy days only.',
+    note: 'status complete|done|fasting = trustworthy totals. reconstructed = an untracked day backfilled from weight: calories are an estimate, protein is UNKNOWN (ignore its protein figure) and there are no foods to mention. incomplete = under min_calories and not confirmed by the user: meals are missing, the total is NOT what was eaten. unlogged = no data. Averages cover trustworthy days only.',
   };
 }
 
