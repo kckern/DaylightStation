@@ -504,3 +504,4 @@ The corollary bit twice in this sweep: `feat/teacher-workspace-ia` and `feature/
 | 2026-09-24 | fix/trigger-registry-isolation | 731acf459 | One bad trigger source/tag disables only itself instead of emptying the registry |
 | 2026-09-24 | fix/lifeplan-retro-fixes | 1233cdaf3 | Derived rule effectiveness in retros; LifeEventProcessor reads status/awaits_event |
 | 2026-09-24 | feat/finance-categorization | a71349810 | Finance re-categorization loop fix; Jev category shadow/promote; preview parity; replay CLI |
+| 2026-09-24 | fix/config-boundary-tests | 520616468 | Config-boundary characterization tests refreshed to current router contracts (test drift since 76f2089c3) |
