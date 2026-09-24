@@ -591,8 +591,9 @@ export class ParticipantRoster {
     // Phase 4: Get entityId from ledger for entity-aware tracking
     const entityId = guestEntry?.entityId || null;
 
-    // Phase 4: Calculate trackingId for zone lookup (matches TreasureBox key scheme)
-    const trackingId = entityId || userId;
+    // Zone lookup is keyed by userId — TreasureBox and ZoneProfileStore are
+    // user-keyed; a stint's entityId never keys live data.
+    const trackingId = userId;
 
     // For grace period transfers: include timelineUserId so chart reads original user's data
     // (Note: The Transfer Path approach moves data, but this provides a fallback or metadata-driven path)
@@ -601,10 +602,8 @@ export class ParticipantRoster {
     // Phase 4: Use trackingId for zone lookup (matches TreasureBox key scheme)
     const zoneInfo = zoneLookup.get(trackingId) || null;
 
-    // Phase 5: Get entity-specific data (start time) if available
-    // Use registry start time if available, otherwise guestEntry update time
-    const registryStartTime = entityId ? this._session?.entityRegistry?.get?.(entityId)?.startTime : null;
-    let entityStartTime = registryStartTime || guestEntry?.updatedAt || null;
+    // When the current occupant took the strap (ledger update time)
+    let entityStartTime = guestEntry?.updatedAt || null;
 
     // Prefer the user's aggregated HR (min-HR arbitration across owned
     // devices). Fall back to the primary device's raw reading.

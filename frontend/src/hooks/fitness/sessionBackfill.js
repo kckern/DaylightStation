@@ -21,7 +21,7 @@
  *     occupants is "shared device" turn-taking — honor ALL segments.
  *
  * Pure function: no side effects. Returns a plan (segments + transfers) the
- * caller applies via the session's transferUserSeries / participant rebuild.
+ * caller applies via the save-time series merge / participant rebuild.
  *
  * @see /docs/_wip/audits/2026-05-26-guest-mode-ux-audit.md (Decisions §5 / §7)
  * @see /docs/_wip/plans/2026-05-26-guest-mode-redesign-spec.md (W1.B)
