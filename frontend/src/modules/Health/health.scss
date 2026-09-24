@@ -1007,8 +1007,10 @@ $health-aside-gap: 1.5rem;
   &__icon { display: inline-flex; color: var(--ds-success); }
   &--fasting &__icon { color: var(--ds-accent); }
   &__actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
-  // A finger-sized target on the phone: Mantine sizes its Button from
-  // --button-height, so raise that rather than stretching the root.
-  .mantine-Button-root { --button-height: 44px; }
+  // A finger-sized target on the phone. Mantine writes `--button-height:
+  // var(--button-height-sm)` INLINE on each size="sm" Button, so an override
+  // of --button-height loses; redefine the size token on the row instead.
+  // (Measured 36px before this, 2026-09-24.)
+  --button-height-sm: 44px;
   &__error { flex-basis: 100%; color: var(--ds-danger); font-size: 0.8rem; }
 }
