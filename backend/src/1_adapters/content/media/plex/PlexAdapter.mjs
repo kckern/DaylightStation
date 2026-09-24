@@ -365,6 +365,32 @@ export class PlexAdapter {
   }
 
   /**
+   * Summarize a container (e.g. a music playlist) from one metadata call:
+   * artwork plus track count and total length.
+   * @param {string} ratingKey - Plex rating key
+   * @returns {Promise<{thumb: string|null, trackCount: number|null, durationSeconds: number|null}|null>}
+   */
+  async getPlaylistSummary(ratingKey) {
+    try {
+      const metadata = await this.client.getMetadata(ratingKey);
+      const item = metadata?.MediaContainer?.Metadata?.[0];
+      if (!item) return null;
+
+      const thumbPath = plexArtPath(item);
+      const trackCount = Number(item.leafCount);
+      const durationMs = Number(item.duration);
+      return {
+        thumb: thumbPath ? `${this.proxyPath}${thumbPath}` : null,
+        trackCount: Number.isFinite(trackCount) && trackCount > 0 ? trackCount : null,
+        durationSeconds: Number.isFinite(durationMs) && durationMs > 0 ? Math.round(durationMs / 1000) : null,
+      };
+    } catch (err) {
+      this.logger.error?.('plex.getPlaylistSummary.exception', { error: err.message });
+      return null;
+    }
+  }
+
+  /**
    * Get a single item by ID
    * @param {string} id - Compound ID (plex:660440) or local ID
    * @param {Object} [opts] - Options
