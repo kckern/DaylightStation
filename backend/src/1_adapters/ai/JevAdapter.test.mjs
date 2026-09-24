@@ -171,12 +171,80 @@ describe('JevAdapter', () => {
   });
 });
 
+describe('JevAdapter large choices', () => {
+  const icons = Array.from({ length: 534 }, (_, i) => `icon-${String(i).padStart(3, '0')}`);
+
+  // Round 1: every part leans to its first option, with two runners-up.
+  // Round 2: answers over whatever finalists it was sent.
+  function narrowingPost() {
+    return vi.fn(async (url, body) => {
+      const answers = {};
+      for (const [id, q] of Object.entries(body.questions)) {
+        const keys = Object.keys(q.criteria || {});
+        if (id.includes('__part')) {
+          answers[id] = { type: 'choice', choice: keys[0], confidence: 0.5,
+            probabilities: { [keys[0]]: 0.6, [keys[1]]: 0.3, [keys[2]]: 0.1 } };
+        } else if (q.type === 'choice') {
+          answers[id] = { type: 'choice', choice: keys.at(-1), confidence: 0.9, probabilities: { [keys.at(-1)]: 0.95 } };
+        } else {
+          answers[id] = { type: 'noul', noul: 0.2 };
+        }
+      }
+      return { status: 200, headers: {}, data: { model: 'jev-1.13.0', answers, usage: { input_tokens: 1000, output_tokens: 10 } } };
+    });
+  }
+
+  it('splits a >255-option choice into balanced parts and runs a final round over the leaders', async () => {
+    const post = narrowingPost();
+    const adapter = new JevAdapter({ apiKey: 'k' }, makeDeps(post));
+    const result = await adapter.evaluate({ food: 'plain yogurt' }, {
+      icon: choice('Nearest icon?', icons),
+      isDrink: yesNo('Is this a drink?'),
+    });
+
+    expect(post).toHaveBeenCalledTimes(2);
+    const round1 = post.mock.calls[0][1].questions;
+    const partIds = Object.keys(round1).filter(id => id.startsWith('icon__part'));
+    expect(partIds).toHaveLength(3);
+    const sizes = partIds.map(id => Object.keys(round1[id].criteria).length);
+    expect(sizes.every(n => n <= 255)).toBe(true);
+    expect(sizes.reduce((a, b) => a + b, 0)).toBe(534);
+    expect(round1.isDrink.type).toBe('noul'); // other questions ride in round 1
+
+    const round2 = post.mock.calls[1][1];
+    expect(Object.keys(round2.questions)).toEqual(['icon']);
+    expect(Object.keys(round2.questions.icon.criteria)).toHaveLength(9); // 3 parts × 3 leaders
+    expect(round2.model).toBe('jev-1.13.0'); // pinned to the version that answered round 1
+
+    expect(result.answers.icon).toMatchObject({ type: 'choice', confidence: 0.9 });
+    expect(icons).toContain(result.answers.icon.choice);
+    expect(result.answers.isDrink).toEqual({ type: 'yesNo', probability: 0.2 });
+    expect(result.answers).not.toHaveProperty('icon__part0');
+    expect(result.usage).toEqual({ inputTokens: 2000, outputTokens: 20 });
+  });
+
+  it('keeps a <=255-option choice to one call', async () => {
+    const post = narrowingPost();
+    const adapter = new JevAdapter({ apiKey: 'k' }, makeDeps(post));
+    await adapter.evaluate('s', { icon: choice('Nearest icon?', icons.slice(0, 255)) });
+    expect(post).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects a score rubric over the provider cap before calling', async () => {
+    const post = vi.fn();
+    const adapter = new JevAdapter({ apiKey: 'k' }, makeDeps(post));
+    await expect(adapter.evaluate('s', { q: score('q', Array.from({ length: 11 }, (_, i) => `L${i}`)) }))
+      .rejects.toThrow(/at most 10 score levels/);
+    expect(post).not.toHaveBeenCalled();
+  });
+});
+
 describe('IDecisionGateway question builders', () => {
-  it('validates option and level counts', () => {
-    expect(() => choice('q', ['only'])).toThrow(/2–255 options/);
-    expect(() => score('q', ['one'])).toThrow(/2–10 levels/);
-    expect(() => score('q', Array.from({ length: 11 }, (_, i) => `L${i}`))).toThrow(/2–10 levels/);
+  it('enforces only logical minimums, not provider caps', () => {
+    expect(() => choice('q', ['only'])).toThrow(/at least 2 options/);
+    expect(() => score('q', ['one'])).toThrow(/at least 2 levels/);
     expect(() => yesNo('')).toThrow(/instructions/);
+    expect(() => choice('q', Array.from({ length: 600 }, (_, i) => `o${i}`))).not.toThrow();
   });
 
   it('accepts bare option keys for choice', () => {

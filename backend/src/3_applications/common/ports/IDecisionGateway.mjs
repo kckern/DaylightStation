@@ -37,7 +37,8 @@
  * @typedef {Object} ChoiceQuestion
  * @property {'choice'} type
  * @property {Describable} instructions
- * @property {Object<string, Describable|null>} options - option key → description (null = self-explanatory)
+ * @property {Object<string, Describable|null>} options - option key → description (null = self-explanatory).
+ *   Any number ≥ 2; adapters absorb provider option caps.
  */
 
 /**
@@ -60,7 +61,8 @@
  * @property {'choice'} type
  * @property {string} choice - The selected option key
  * @property {number} confidence - 0..1
- * @property {Object<string, number>} probabilities - option key → probability
+ * @property {Object<string, number>} probabilities - option key → probability. May cover only the
+ *   options still in contention (an adapter that narrows a large option set reports the finalists).
  */
 
 /**
@@ -111,9 +113,10 @@ export class IDecisionGateway {
   }
 }
 
-const MAX_CHOICE_OPTIONS = 255;
+// Only the logical minimums live here. Provider limits (e.g. how many options
+// one request may carry) are the adapter's problem, not the caller's.
+const MIN_CHOICE_OPTIONS = 2;
 const MIN_SCORE_LEVELS = 2;
-const MAX_SCORE_LEVELS = 10;
 
 /**
  * Build a yes/no question.
@@ -138,8 +141,8 @@ export function choice(instructions, options) {
     ? Object.fromEntries(options.map((key) => [key, null]))
     : options;
   const count = map && typeof map === 'object' ? Object.keys(map).length : 0;
-  if (count < 2 || count > MAX_CHOICE_OPTIONS) {
-    throw new Error(`choice() needs 2–${MAX_CHOICE_OPTIONS} options, got ${count}`);
+  if (count < MIN_CHOICE_OPTIONS) {
+    throw new Error(`choice() needs at least ${MIN_CHOICE_OPTIONS} options, got ${count}`);
   }
   return { type: 'choice', instructions, options: map };
 }
@@ -153,8 +156,8 @@ export function choice(instructions, options) {
 export function score(instructions, levels) {
   requireInstructions(instructions);
   const count = Array.isArray(levels) ? levels.length : 0;
-  if (count < MIN_SCORE_LEVELS || count > MAX_SCORE_LEVELS) {
-    throw new Error(`score() needs ${MIN_SCORE_LEVELS}–${MAX_SCORE_LEVELS} levels, got ${count}`);
+  if (count < MIN_SCORE_LEVELS) {
+    throw new Error(`score() needs at least ${MIN_SCORE_LEVELS} levels, got ${count}`);
   }
   return { type: 'score', instructions, levels };
 }
