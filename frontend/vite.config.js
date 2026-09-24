@@ -72,11 +72,17 @@ export default defineConfig(({ mode }) => {
   // Load env from root .env (one level up from frontend/)
   const env = loadEnv(mode, path.resolve(__dirname, '..'), '');
   const ports = getPortsFromConfig(env);
+  // One id per build, shared by the HTML asset busting and bundle code
+  // (ScreenDataProvider versions its localStorage cache with it).
+  const id = buildId(env);
 
   return {
+    define: {
+      'import.meta.env.VITE_BUILD_ID': JSON.stringify(id),
+    },
     plugins: [
       react(),
-      buildIdHtmlPlugin(buildId(env)),
+      buildIdHtmlPlugin(id),
     ],
     test: {
       environment: 'happy-dom',

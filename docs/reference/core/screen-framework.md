@@ -203,10 +203,15 @@ Widgets consume via hook: `const data = useScreenData('weather')`. Returns `null
 those sources in localStorage (`screenData:{persistKey}:{key}`). The cached
 payload is the value on the first render; the fetch still runs and replaces it
 (and rewrites the cache). A cache entry is only used when its stored URL equals
-the source's current URL. Logs `screendataprovider.cache-hydrated` (with `ageMs`)
-on use and a sampled `screendataprovider.fetched` (with `ms`) per fetch. Pick
-persisted sources where a briefly stale value beats a skeleton — Fitness home
-persists `sessions` but not `suggestions`.
+the source's current URL and its `version` equals the running build's
+(`cacheVersion` prop, defaulting to `import.meta.env.VITE_BUILD_ID`, which
+`frontend/vite.config.js` sets per build). So the first load after a deploy is a
+normal cold load — an old-shape payload never reaches a widget — and it rewrites
+the entry. The version lives in the entry, not the key: one entry per source, no
+orphans piling up per deploy. Logs `screendataprovider.cache-hydrated` (with
+`ageMs`) on use and a sampled `screendataprovider.fetched` (with `ms`) per fetch.
+Pick persisted sources where a briefly stale value beats a skeleton — Fitness
+home persists `sessions` but not `suggestions`.
 
 **Refetch from outside the tree.** `useScreenDataRefetch()` only reaches a
 provider above the caller; outside one it gets a no-op default. A component
