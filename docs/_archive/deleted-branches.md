@@ -501,3 +501,4 @@ The corollary bit twice in this sweep: `feat/teacher-workspace-ia` and `feature/
 | 2026-09-23 | fix/heal-invalidate-index | e615a5859e | Heal drops the healed day from the session-list index; merged to main |
 | 2026-09-24 | feat/fitness-playlist-picker | 7aab477f4 | Fitness music playlist picker as full-screen modal with track counts |
 | 2026-09-24 | feat/jev-decision-adapter | 3f0ddf291 | IDecisionGateway + Jev adapter, Jev-first icon chooser, nutrition audit triage and card-ladder shadow judge; icon manifest audit |
+| 2026-09-24 | fix/trigger-registry-isolation | 731acf459 | One bad trigger source/tag disables only itself instead of emptying the registry |
