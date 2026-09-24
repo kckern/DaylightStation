@@ -6,7 +6,8 @@ import { createPianoRouter } from './piano.mjs';
 const routeInventory = [
   ['get', '/users'],
   ['get', '/users/:userId/attempts'], ['post', '/users/:userId/attempts'],
-  ['get', '/users/:userId/game-budget'], ['post', '/users/:userId/game-budget/session'],
+  ['get', '/users/:userId/game-budget'], ['get', '/users/:userId/board-game-day'],
+  ['post', '/users/:userId/game-budget/session'],
   ['post', '/users/:userId/game-budget/session/:sessionId/settle'], ['post', '/users/:userId/game-budget/session/:sessionId/close'],
   ['post', '/users/:userId/game-budget/credits'], ['post', '/users/:userId/challenges/prepare'],
   ['get', '/users/:userId/piano-challenge-profile'], ['put', '/users/:userId/piano-challenge-profile'],
@@ -35,45 +36,53 @@ const routeInventory = [
   ['post', '/effect-audit/:runId/manifest'],
 ];
 
+// Fakes for the router's current dependency shape (see createPianoRouter's
+// signature and the production wiring in app.mjs): a PianoContainer-shaped
+// object carrying the studio datastore + composer song store + course use
+// cases, plus the injected idFactory/producerRecords and per-feature services.
+// Every fake answers with a 200-worthy value so the HEAD sweep below exercises
+// routing, not error branches.
 function subject() {
-  const pianoStudioService = {
-    isKnownUser: () => true, roster: () => [], loopManifest: () => [], listTakes: () => [], getTake: () => ({ id: 'take' }),
+  const studioDatastore = {
+    isKnownUser: () => true, getRoster: () => [], getLoopManifest: () => [],
+    listStudioTakes: () => [], getStudioTake: () => ({ id: 'take' }),
     getPreferences: () => ({}), getPreset: () => ({}), getPractice: () => ({}), getProgress: () => ({}),
-    lessonIndex: () => ({}), lessonDrill: () => ({}),
+    getLessonIndex: () => ({}), getLessonDrill: () => ({}),
+    listProducer: () => [], getProducer: (_family, id) => ({ id }),
   };
-  const pianoCompositionService = {
+  const composerSongStore = {
     list: () => [], get: () => ({}), listShared: () => [], isKnownUser: () => true,
   };
-  const pianoAttemptService = {
-    listAuthorized: () => ({ kind: 'listed', attempts: [] }),
-    submitAuthorized: () => ({ kind: 'saved', attempt: {} }),
-    authorizeUser: () => ({ kind: 'authorized' }),
-    acceptsPassedAssessment: () => true,
+  const pianoContainer = {
+    studioDatastore, composerSongStore,
+    isCourseServiceConfigured: () => true, isActivityConfigured: () => true,
+    getCourseProgress: () => ({ execute: async () => ({ courses: [] }) }),
+    getPlayableUnits: () => ({ execute: async () => ({ ok: true, result: {} }) }),
+    getRecentCourseActivity: () => ({ execute: async () => ({}) }),
   };
   const seed = { id: 'chords/triads' };
-  const pianoExerciseService = {
-    available: true, index: () => ({}), catalog: () => ({}), search: () => [],
-    getSeed: () => seed, seed: () => ({ ...seed, instances: 1 }), category: () => ({ seeds: [], categories: [] }),
-    instances: () => ({ seed_id: seed.id, total: 0, instance_ids: [] }), instance: () => ({}),
-  };
-  const pianoCourseService = {
-    coursesAvailable: true, activityAvailable: true, progress: async () => [],
-    playable: async () => ({ ok: true, result: {} }), activity: async () => ({}),
-  };
-  const pianoProducerService = {
-    list: () => ({ records: [], invalidRecords: [] }),
-    listLight: () => ({ records: [], invalidRecords: [] }),
-    get: () => ({ kind: 'found', data: {} }),
+  const exerciseBank = {
+    available: () => true, getIndex: () => ({}), listCategories: () => [], allSeeds: () => [],
+    getSeed: (id) => (id === seed.id ? seed : null), getCategory: () => ({}), listSeeds: () => [],
   };
   const router = createPianoRouter({
-    pianoStudioService, pianoCompositionService, pianoAttemptService, pianoExerciseService, pianoCourseService,
-    pianoCompletionNotifier: { schoolChallengeCompleted: vi.fn() }, pianoProducerService,
-    producerIdPattern: /^[a-z0-9-]+$/,
+    pianoContainer,
+    idFactory: () => 'id',
+    producerRecords: {
+      PRODUCER_ID_RE: /^[a-z0-9-]+$/,
+      validateProducerRecord: () => [],
+      normalizeProducerRecord: (_family, record) => record,
+    },
+    pianoAttemptStore: { list: () => [], save: (_userId, attempt) => attempt },
+    exerciseBank,
+    eventBus: { publish: vi.fn() },
     pianoGameBudgetService: { balance: async () => ({ enabled: true }) },
+    pianoBoardGameDayService: { current: () => ({}) },
     pianoChallengeProfileService: { get: () => ({}) },
     pianoLearningService: {
       programs: () => [], program: () => ({}), summary: () => ({}), assignment: () => ({}),
     },
+    logger: { info() {}, warn() {}, error() {}, debug() {} },
   });
   const app = express();
   app.use(express.json());
@@ -94,7 +103,7 @@ describe('piano route contract', () => {
   it('keeps every GET route reachable through HEAD with no response body', async () => {
     const { app } = subject();
     const paths = [
-      '/users', '/users/u/attempts', '/users/u/game-budget', '/users/u/piano-challenge-profile',
+      '/users', '/users/u/attempts', '/users/u/game-budget', '/users/u/board-game-day', '/users/u/piano-challenge-profile',
       '/programs', '/programs/p1', '/users/u/learning', '/users/u/program-assignments', '/loop-manifest',
       '/users/u/studio', '/users/u/studio/take', '/users/u/compositions', '/users/u/compositions/song',
       '/compositions/shared', '/producer/loops', '/producer/loops/id', '/producer/crate', '/producer/crate/id',
