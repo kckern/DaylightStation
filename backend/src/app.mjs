@@ -706,6 +706,16 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     rootLogger.debug('ai.adapter.fallback', { reason: 'Using hardcoded OpenAI adapter creation' });
   }
 
+  // Typed-decision model (IDecisionGateway, TypeSafe Jev). Config-driven when
+  // integrations.yml declares `decision`; otherwise system/auth/jev.yml.
+  let decisionGateway = householdAdapters?.has?.('decision') ? householdAdapters.get('decision') : null;
+  const jevApiKey = configService.getSystemAuth?.('jev', 'api_key');
+  if (!decisionGateway && jevApiKey) {
+    const { JevAdapter } = await import('#adapters/ai/JevAdapter.mjs');
+    decisionGateway = new JevAdapter({ apiKey: jevApiKey }, { httpClient: axios, logger: rootLogger.child({ module: 'jev' }), aiUsageLedger });
+  }
+  rootLogger.info('decision.gateway', { configured: !!decisionGateway });
+
   // ==========================================================================
   // Initialize Services
   // ==========================================================================
@@ -3224,7 +3234,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const cardLadderStore = new YamlCardLadderStore({ configService, logger: cardLadderLogger });
   const cardLadderLexicons = new YamlLexiconRepository({ mediaRoot: schoolMediaRoot });
   const cardLadderJudgeFor = (cache) => new CardLadderTypedJudge({
-    aiGateway: sharedAiGateway, cache, model: cardLadderConfig.judge?.model ?? null,
+    aiGateway: sharedAiGateway, decisionGateway, cache, model: cardLadderConfig.judge?.model ?? null,
     passScore: cardLadderSettings().typing.passScore, logger: cardLadderLogger,
   });
   const cardLadderShared = {
@@ -5777,6 +5787,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     dataService,
     telegramAdapter: nutribotTelegramAdapter,
     aiGateway: nutribotAiGateway,
+    decisionGateway,
     upcGateway,
     googleImageGateway: null,  // TODO: Add Google Image gateway when available
     conversationStateStore: nutribotStateStore,
@@ -5973,7 +5984,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
   try {
     const { createNutritionCleanup } = await import('#composition/modules/nutritionCleanup.mjs');
-    nutritionCleanup = createNutritionCleanup({ configService, userIdentityService, dataService, nutribotServices, upcGateway,
+    nutritionCleanup = createNutritionCleanup({ configService, userIdentityService, dataService, nutribotServices, upcGateway, decisionGateway,
       agentOrchestrator: agentsServices.agentOrchestrator,
       logger: rootLogger.child({ module: 'nutrition-cleanup' }), server,
       scheduled: enableScheduler && (process.env.NODE_ENV === 'production' || process.env.ENABLE_CRON === 'true') });

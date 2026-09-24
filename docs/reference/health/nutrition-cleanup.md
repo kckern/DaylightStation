@@ -128,6 +128,24 @@ not gate food saves. A Telegram send whose result
 is uncertain is not retried automatically (Telegram has no idempotent send); the
 question remains actionable in Health. Known message edits are retried.
 
+**Triage** (`NutritionAuditTriage`). Before a non-manual audit is queued, a cheap
+check decides whether the snapshot is worth the LLM: a pending capture always is
+(code rule); otherwise the typed decision model answers five yes/no gut-checks
+over compact rows (garbled name, implausible nutrition, mismatched icon, an
+ungrouped dish, an accidental duplicate). The highest probability is the score.
+Configured in `agents.yml` → `nutrition_auditor.triage: { mode, threshold }`:
+
+- `shadow` (default when a decision model is configured) — assess, store the
+  verdict on the run, audit anyway. `nutrition.cleanup.completed` carries
+  `changed` (repairs applied or proposed) beside `triageNeedsAudit` /
+  `triageScore`, which is the evaluation data for choosing a threshold.
+- `gate` — a clean verdict marks the fingerprint checked and logs
+  `nutrition.cleanup.skipped` instead of auditing. Manual scans and the daily
+  reconcile are never gated.
+- `off` — no triage.
+
+Any triage failure means "audit", as before triage existed.
+
 This dispatcher assumes **one backend writer**. Do not start another household
 backend or horizontally scale the YAML writer. SQLite workflow storage is not a
 distributed lock around nutrition YAML.
@@ -164,8 +182,16 @@ the first slug that the manifest serves and whose file resolves:
 1. the catalog entry's pin (`iconOverride`), then its learned `icon`;
 2. the manifest's reviewed `foodNames` map;
 3. `guessIconForName` — the longest run of the name's words that is a slug;
-4. an AI pick of the NEAREST slug, confined to the manifest vocabulary (the UPC
-   use case's `#selectIconFromList` prompt shape, same AI gateway).
+4. a pick of the NEAREST slug, confined to the manifest vocabulary, through
+   `NearestIconChooser` (`3_applications/nutrition/`): the typed decision model
+   (Jev, `IDecisionGateway`) answers one choice over the whole vocabulary; a pick
+   at or above confidence 0.5 stands (`via: 'jev'`), anything else falls back to
+   the LLM prompt (the UPC use case's `#selectIconFromList` shape, same AI
+   gateway, `via: 'ai'`). The UPC capture's own icon fallback uses the same
+   chooser. Every pick logs `nutrition.icon.pick` with Jev's candidate and
+   confidence beside the LLM's, so agreement can be measured before the floor
+   moves. The vocabulary may exceed Jev's 255-option cap; the adapter narrows
+   it in two rounds, invisible here.
 
 Exception: names in `EXACT_ONLY_NAMES`, and names the reviewed map sets to `null`
 ("no suitable art"), never get a near neighbour and never reach the AI. They take

@@ -166,6 +166,7 @@ Server-side presentation layer — renderers for thermal printer, PDF, and other
 |----------|---------------|
 | `ports/IAIGateway.mjs` | `_legacy/chatbots/infrastructure/ai/` |
 | `ports/ITranscriptionService.mjs` | New (port interface) |
+| `ports/IDecisionGateway.mjs` | New (port interface) |
 
 ### health/
 | New File | Legacy Source |
@@ -235,6 +236,7 @@ Server-side presentation layer — renderers for thermal printer, PDF, and other
 |----------|---------------|
 | `OpenAIAdapter.mjs` | `_legacy/lib/gpt.mjs`, `_legacy/chatbots/infrastructure/ai/` |
 | `AnthropicAdapter.mjs` | New |
+| `JevAdapter.mjs` | New |
 
 ### content/
 | New File | Legacy Source |

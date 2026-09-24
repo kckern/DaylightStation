@@ -52,13 +52,23 @@ export class NutritionCleanup {
     this.auditor.refreshReferences?.();
     const snapshot = await this.auditor.snapshot(userId);
     if (!manual && !reconcile && state.checkedFingerprint === snapshot.fingerprint) return null;
+    // Triage (NutritionAuditTriage): shadow records a verdict beside the run;
+    // gate lets a clean verdict skip the LLM audit. Manual and daily
+    // reconcile runs are never gated.
+    const triage = !manual && this.triage?.active ? await this.triage.assess(snapshot) : null;
+    if (triage && !triage.needsAudit && !reconcile && this.triage.gating) {
+      this.store.update(userId, current => { current.checkedFingerprint = snapshot.fingerprint; });
+      this.logger.info('nutrition.cleanup.skipped', { userId, fingerprint: snapshot.fingerprint, reason: triage.reason, score: triage.score });
+      return null;
+    }
     let id = 'audit_' + sha256Text(userId + snapshot.fingerprint + this.clock.now() + state.version).slice(0, 24);
     this.store.update(userId, current => {
       const queued = Object.values(current.runs).find(run => !terminal.has(run.status));
       if (queued) { id = queued.id; return; }
       if (!manual && !current.settings.enabled) { id = null; return; }
       current.runs[id] = { id, status: 'queued', attempt: 0, snapshot, dryRun: current.settings.dryRun,
-        createdAt: new Date(this.clock.now()).toISOString(), manual };
+        createdAt: new Date(this.clock.now()).toISOString(), manual,
+        ...(triage ? { triage: { needsAudit: triage.needsAudit, reason: triage.reason, score: triage.score } } : {}) };
     });
     if (!id) return null;
     this.#launch(userId, id);
@@ -132,7 +142,12 @@ export class NutritionCleanup {
       // every completed report back through this dispatch file on each poll.
       delete state.runs[id].snapshot; delete state.runs[id].result;
     });
-    this.logger.info('nutrition.cleanup.completed', { userId, runId: id, dryRun: run.dryRun, repairs: outcomes.length, questions: questions.length });
+    // `changed` counts repairs that landed (or would have, in dry run); with the
+    // triage verdict beside it, this line is the shadow-mode evaluation row.
+    const changed = outcomes.filter(o => o.status === 'applied' || o.status === 'proposed').length;
+    this.logger.info('nutrition.cleanup.completed', { userId, runId: id, dryRun: run.dryRun, repairs: outcomes.length, changed,
+      questions: questions.length, ...(run.triage ? { triageNeedsAudit: run.triage.needsAudit, triageReason: run.triage.reason,
+        triageScore: run.triage.score } : {}) });
   }
   async #answer(userId, question) {
     if (question.prepared) {

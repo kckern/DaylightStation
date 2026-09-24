@@ -37,6 +37,7 @@ import { ShowScaleDensityHelp } from './usecases/ShowScaleDensityHelp.mjs';
 import { RetractScaleLog } from './usecases/RetractScaleLog.mjs';
 import { LogScaleFoodFromText } from './usecases/LogScaleFoodFromText.mjs';
 import { FoodLogReview } from '#apps/nutrition/FoodLogReview.mjs';
+import { NearestIconChooser } from '#apps/nutrition/NearestIconChooser.mjs';
 import { createLocalNutritionResponse } from './services/LocalNutritionResponse.mjs';
 
 /**
@@ -48,6 +49,7 @@ import { createLocalNutritionResponse } from './services/LocalNutritionResponse.
 export class NutribotContainer {
   #config;
   #options;
+  #iconChooser;
   #logger;
 
   // Infrastructure
@@ -109,6 +111,7 @@ export class NutribotContainer {
    * @param {Object} [options] - Additional options
    * @param {Object} [options.messagingGateway] - Messaging gateway instance
    * @param {Object} [options.aiGateway] - AI gateway instance
+   * @param {Object} [options.decisionGateway] - IDecisionGateway (typed decisions, e.g. Jev)
    * @param {Object} [options.upcGateway] - UPC lookup gateway
    * @param {Object} [options.googleImageGateway] - Google Image Search gateway
    * @param {Object} [options.foodLogStore] - Food log store (IFoodLogStore)
@@ -165,6 +168,16 @@ export class NutribotContainer {
       throw new Error('messagingGateway not configured');
     }
     return this.#messagingGateway;
+  }
+
+  /**
+   * Shared nearest-icon chooser: decision model first, LLM fallback supplied per call.
+   */
+  getIconChooser() {
+    if (!this.#iconChooser) {
+      this.#iconChooser = new NearestIconChooser({ decisionGateway: this.#options.decisionGateway || null, logger: this.#logger });
+    }
+    return this.#iconChooser;
   }
 
   getAIGateway() {
@@ -275,6 +288,7 @@ export class NutribotContainer {
         messagingGateway: this.getMessagingGateway(),
         upcGateway: this.#upcGateway,
         aiGateway: this.#aiGateway,
+        iconChooser: this.getIconChooser(),
         googleImageGateway: this.#googleImageGateway,
         foodLogStore: this.#foodLogStore,
         conversationStateStore: this.#conversationStateStore,

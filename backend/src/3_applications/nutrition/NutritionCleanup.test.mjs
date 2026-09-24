@@ -184,6 +184,31 @@ describe('durable questions and worker', () => {
     expect((await f.items.findByUuid('alice', 'fish000001')).version).toBe(2);
     expect((await f.items.listCleanupAudit('alice')).total).toBe(1);
   });
+  it('gate mode skips the LLM audit on a clean triage verdict; shadow mode records it and audits anyway', async () => {
+    const clean = { active: true, gating: true, assess: vi.fn(async () => ({ needsAudit: false, reason: 'clean', score: 0.05 })) };
+    const f = await fixture();
+    f.store.update('alice', state => { state.settings.enabled = true; });
+    const runs = { register: vi.fn(), start: vi.fn(async () => ({ status: 'success', result: { summary: 'No changes', repairs: [], questions: [], evidence: [] } })) };
+    const gated = new NutritionCleanup({ ...f, runs, triage: clean });
+    expect(await gated.request('alice')).toBeNull();
+    expect(runs.start).not.toHaveBeenCalled();
+    expect(f.logger.info).toHaveBeenCalledWith('nutrition.cleanup.skipped', expect.objectContaining({ reason: 'clean' }));
+    // the skipped fingerprint counts as checked
+    expect(await gated.request('alice')).toBeNull();
+    // manual and reconcile runs are never gated
+    await gated.request('alice', { manual: true }); await gated.settled('alice');
+    expect(runs.start).toHaveBeenCalledTimes(1);
+
+    const g = await fixture();
+    g.store.update('alice', state => { state.settings.enabled = true; });
+    const shadowRuns = { register: vi.fn(), start: vi.fn(async () => ({ status: 'success', result: { summary: 'No changes', repairs: [], questions: [], evidence: [] } })) };
+    const shadow = { active: true, gating: false, assess: vi.fn(async () => ({ needsAudit: false, reason: 'clean', score: 0.05 })) };
+    const cleanup = new NutritionCleanup({ ...g, runs: shadowRuns, triage: shadow });
+    await cleanup.request('alice'); await cleanup.settled('alice');
+    expect(shadowRuns.start).toHaveBeenCalledTimes(1);
+    expect(g.logger.info).toHaveBeenCalledWith('nutrition.cleanup.completed', expect.objectContaining({
+      changed: 0, triageNeedsAudit: false, triageReason: 'clean', triageScore: 0.05 }));
+  });
   it('fences a paused run while reasoning is still in flight', async () => {
     const f = await fixture();
     f.store.update('alice', state => { state.settings = { enabled: true, dryRun: false, telegram: false }; });
