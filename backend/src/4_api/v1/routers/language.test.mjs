@@ -29,7 +29,7 @@ function appWith({
     listCourses: vi.fn(() => [{ id: 'korean' }]),
     previewDay: vi.fn(() => ({ schema: 'school.sentence-ladder-guest-preview/v1', day: 1, queue: [] })),
     getDay: vi.fn(() => ({ day: 1, queue: [] })),
-    logAttempt: vi.fn((value) => value), setPacing: vi.fn(() => ({})),
+    submitAttempt: vi.fn((value) => value), setPacing: vi.fn(() => ({})),
     rollDay: vi.fn(() => ({})), getHistory: vi.fn(() => ({ days: [] })),
     saveRecording: vi.fn(() => ({})),
   };
@@ -179,18 +179,35 @@ describe('Sentence Ladder study grant boundary', () => {
     expect(Buffer.isBuffer(buffer) && buffer.equals(bytes)).toBe(true);
   });
 
+  it('awaits the service, so an async record is answered with the stored row', async () => {
+    const { app, service } = appWith();
+    service.submitAttempt.mockImplementation(async (value) => ({ ...value, meaning: { score: 1, level: 4, confidence: 1, judge: 'exact' } }));
+    const res = await request(app)
+      .post('/api/v1/school/sentence-ladder/users/learner3/log')
+      .set('X-School-Study-Grant', 'signed')
+      .send({ corpus: 'korean', seq: 7, rung: 'interpretation', given: 'it is cold' });
+    expect(res.status).toBe(200);
+    expect(res.body.meaning).toEqual({ score: 1, level: 4, confidence: 1, judge: 'exact' });
+    // Nothing a client sends can set meaning: the body field is not passed through.
+    await request(app)
+      .post('/api/v1/school/sentence-ladder/users/learner3/log')
+      .set('X-School-Study-Grant', 'signed')
+      .send({ corpus: 'korean', seq: 7, rung: 'interpretation', given: 'it is cold', meaning: { score: 1 } });
+    expect(service.submitAttempt.mock.calls.at(-1)[0]).not.toHaveProperty('meaning');
+  });
+
   // A REVEAL IS A DIFFERENT RECORD, so the flag has to survive the wire. An
   // un-plumbed field on the service is not "recorded": the screen would draw
   // an honest reveal and the log would still say the child answered.
   it('carries a reveal through to the service, and never infers one', async () => {
     const { app, service } = appWith();
-    service.logAttempt.mockReturnValue({ rung: 'interpretation', seq: 7, revealed: true });
+    service.submitAttempt.mockReturnValue({ rung: 'interpretation', seq: 7, revealed: true });
 
     await request(app)
       .post('/api/v1/school/sentence-ladder/users/learner3/log')
       .set('X-School-Study-Grant', 'signed')
       .send({ corpus: 'korean', seq: 7, rung: 'interpretation', revealed: true });
-    expect(service.logAttempt).toHaveBeenCalledWith(expect.objectContaining({ revealed: true }));
+    expect(service.submitAttempt).toHaveBeenCalledWith(expect.objectContaining({ revealed: true }));
 
     // Anything that is not literally `true` is not a reveal. A body that says
     // `revealed: "false"` must not turn an answered sentence into a skip.
@@ -198,7 +215,7 @@ describe('Sentence Ladder study grant boundary', () => {
       .post('/api/v1/school/sentence-ladder/users/learner3/log')
       .set('X-School-Study-Grant', 'signed')
       .send({ corpus: 'korean', seq: 7, rung: 'interpretation', given: 'it is cold', revealed: 'false' });
-    expect(service.logAttempt).toHaveBeenLastCalledWith(expect.objectContaining({
+    expect(service.submitAttempt).toHaveBeenLastCalledWith(expect.objectContaining({
       revealed: false, given: 'it is cold',
     }));
   });
@@ -243,13 +260,13 @@ describe('run id correlation', () => {
       .send({ corpus: 'korean', seq: 7, rung: 'repetition' });
 
     expect(res.status).toBe(200);
-    expect(service.logAttempt).toHaveBeenCalledWith(expect.objectContaining({ runId: null }));
+    expect(service.submitAttempt).toHaveBeenCalledWith(expect.objectContaining({ runId: null }));
   });
 
   it('logs the run id on context, where the store indexes it', async () => {
     const warn = vi.fn();
     const service = {
-      listCourses: vi.fn(), previewDay: vi.fn(), getDay: vi.fn(), logAttempt: vi.fn(),
+      listCourses: vi.fn(), previewDay: vi.fn(), getDay: vi.fn(), submitAttempt: vi.fn(),
       setPacing: vi.fn(), rollDay: vi.fn(), getHistory: vi.fn(), saveRecording: vi.fn(),
     };
     const app = express();
@@ -449,7 +466,7 @@ describe('a spoken answer', () => {
       .post('/api/v1/school/sentence-ladder/users/test-learner/log')
       .set('X-School-Study-Grant', 'signed')
       .send({ corpus: 'korean', seq: 7, rung: 'interpretation', given: 'it is cold', method: 'spoken' });
-    expect(service.logAttempt).toHaveBeenCalledWith(expect.objectContaining({
+    expect(service.submitAttempt).toHaveBeenCalledWith(expect.objectContaining({
       given: 'it is cold', method: 'spoken',
     }));
 
@@ -459,7 +476,7 @@ describe('a spoken answer', () => {
       .post('/api/v1/school/sentence-ladder/users/test-learner/log')
       .set('X-School-Study-Grant', 'signed')
       .send({ corpus: 'korean', seq: 7, rung: 'interpretation', given: 'it is cold' });
-    expect(service.logAttempt).toHaveBeenLastCalledWith(expect.objectContaining({ method: null }));
+    expect(service.submitAttempt).toHaveBeenLastCalledWith(expect.objectContaining({ method: null }));
   });
 });
 
