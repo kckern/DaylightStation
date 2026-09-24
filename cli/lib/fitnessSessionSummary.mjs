@@ -29,9 +29,10 @@ export const ZONE_MAP = { c: 'cool', a: 'active', w: 'warm', h: 'hot', fire: 'fi
  * @returns {boolean}
  */
 export function isCumulativeSeriesKey(key) {
-  return /:coins(_total)?$/.test(key)
+  return /:(coins|rings)(_total)?$/.test(key)
     || /:beats$/.test(key)
-    || key === 'global:coins';
+    || key === 'global:coins'
+    || key === 'global:rings';
 }
 
 /**

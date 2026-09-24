@@ -24,6 +24,7 @@
  */
 
 import { readRingSeries } from './ringSeries.mjs';
+import { repairCumulativeSplits } from './CumulativeSplitRepair.mjs';
 
 import { decodeSeries } from '#domains/fitness/services/TimelineService.mjs';
 
@@ -130,6 +131,10 @@ function buildSegmentsPerDevice(entities) {
       startTime,
       endTime: Number.isFinite(e.endTime) ? e.endTime : null,
       status: e.status || 'active',
+      // A correction relabelled this stint in place — settled by the person
+      // who made it, so the effort rule never re-judges it.
+      relabeledFrom: Array.isArray(e.relabeledFrom) ? e.relabeledFrom.map(String) : [],
+      honored: Array.isArray(e.relabeledFrom) && e.relabeledFrom.length > 0,
       seriesOnly: false,
       absorbed: false,
       absorbedInto: null,
@@ -163,11 +168,16 @@ function attachSeriesOnlyOccupants(perDevice, rawSeries, decoded, intervalSecond
     for (const seg of segs) entityOccupants.add(seg.occupantId);
   }
 
+  const relabeledAway = new Set();
+  for (const segs of perDevice.values()) {
+    for (const seg of segs) for (const id of seg.relabeledFrom || []) relabeledAway.add(id);
+  }
+
   const seriesOccupantIds = discoverOccupantIds(rawSeries);
   const deviceIds = [...perDevice.keys()];
 
   for (const occ of seriesOccupantIds) {
-    if (entityOccupants.has(occ)) continue;
+    if (entityOccupants.has(occ) || relabeledAway.has(occ)) continue;
 
     const deviceId = deviceIds.length === 1
       ? deviceIds[0]
@@ -212,7 +222,7 @@ function absorbInsignificantSegments(perDevice, cfg) {
   for (const segments of perDevice.values()) {
     for (let i = 0; i < segments.length; i++) {
       const seg = segments[i];
-      if (seg.absorbed) continue;
+      if (seg.absorbed || seg.honored) continue;
       if (!isInsignificant(seg.effort, cfg)) continue;
 
       const next = segments.slice(i + 1).find((s) => s.occupantId !== seg.occupantId);
@@ -282,6 +292,8 @@ function mergeKnownUserDevices(perDevice, knownUserAliases) {
  *   removedOccupants: string[],
  *   transfers: Array<{from:string, to:string, reason:string}>,
  *   merges: Array<{from:string, to:string, reason:string}>,
+ *   splitRepairs: Array<{metric:string, from:string, to:string, tick:number, amount:number}>,
+ *   unpairedDrops: Array<{key:string, tick:number, drop:number}>,
  *   needsHeal: boolean
  * }}
  */
@@ -295,7 +307,17 @@ export function planHeal(sessionYamlObj, cfg = {}) {
   const timeline = sessionYamlObj?.timeline || {};
   const intervalSeconds = Number.isFinite(timeline.interval_seconds) ? timeline.interval_seconds : 5;
   const rawSeries = timeline.series || {};
-  const decoded = decodeSeries(rawSeries);
+  // On disk each series is a JSON string of RLE entries; decodeSeries only
+  // expands arrays. Parse first, or every rider reads as effortless.
+  const parsed = {};
+  for (const [key, value] of Object.entries(rawSeries)) {
+    if (typeof value !== 'string') { parsed[key] = value; continue; }
+    try {
+      const entries = JSON.parse(value);
+      if (Array.isArray(entries)) parsed[key] = entries;
+    } catch { /* unparseable series — skip it */ }
+  }
+  const decoded = decodeSeries(parsed);
 
   const perDevice = buildSegmentsPerDevice(sessionYamlObj?.entities);
 
@@ -324,11 +346,37 @@ export function planHeal(sessionYamlObj, cfg = {}) {
   const removed = new Set([...allOccupants].filter((id) => !kept.has(id)));
   for (const m of merges) removed.add(m.from);
 
+  // Names a correction relabelled away are not participants unless they own
+  // a surviving stint.
+  for (const segments of perDevice.values()) {
+    for (const seg of segments) {
+      for (const id of seg.relabeledFrom || []) if (!kept.has(id)) removed.add(id);
+    }
+  }
+
+  // A listed participant with no stint and no significant effort anywhere is
+  // an empty entry (e.g. a strap owner whose strap was lent out seconds after
+  // the session began) — nothing to fold, just drop it.
+  for (const id of Object.keys(sessionYamlObj?.participants || {})) {
+    if (allOccupants.has(id) || kept.has(id)) continue;
+    if (isInsignificant(occupantEffort(decoded, id, intervalSeconds), mergedCfg)) removed.add(id);
+  }
+
+  // Split cumulative series left by the pre-stint live transfer (planned on a
+  // copy; heal() applies it to the real series).
+  const scratch = Object.fromEntries(Object.entries(decoded)
+    .map(([k, v]) => [k, Array.isArray(v) ? [...v] : v]));
+  const { repairs: splitRepairs, unpaired: unpairedDrops } = repairCumulativeSplits(scratch, {
+    hrOf: (id) => decoded[`${id}:hr`] || []
+  });
+
   return {
     removedOccupants: [...removed].sort(),
     transfers,
     merges,
-    needsHeal: removed.size > 0 || merges.length > 0
+    splitRepairs,
+    unpairedDrops,
+    needsHeal: removed.size > 0 || merges.length > 0 || splitRepairs.length > 0
   };
 }
 
