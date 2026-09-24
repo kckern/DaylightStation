@@ -41,3 +41,10 @@ overrides:
   lifeplan-guide:
     memory:
       last_messages: 50
+
+# Life-plan coach: calendar-derived life-event suggestions (suggest_life_events).
+# Read by app.mjs at startup (not per-agent overrides); restart to apply.
+lifeplan_guide:
+  life_event_signals:
+    mode: shadow        # shadow (default) | decide | off
+    min_confidence: 0.6 # model suggestions below this count as `none`
