@@ -751,7 +751,8 @@ export class NutribotInputRouter extends BaseInputRouter {
         });
         return { ok: true, result };
       }
-      case 'done': {
+      case 'done':
+      case 'fast': {
         const healthStore = this.container.getHealthStore?.();
         if (!healthStore) {
           if (responseContext?.sendMessage) {
@@ -760,11 +761,16 @@ export class NutribotInputRouter extends BaseInputRouter {
           return { ok: true, handled: false };
         }
         const userId = this.#resolveUserId(event);
-        const today = new Date().toISOString().split('T')[0];
-        await healthStore.markDayClosed(userId, today);
-        this.logger.info?.('nutribot.command.done', { userId, date: today });
+        const which = String(event.payload?.text || '').trim().toLowerCase();
+        const date = this.#localDate(userId, which === 'yesterday' ? 1 : 0);
+        const status = command === 'fast' ? 'fasting' : 'done';
+        await healthStore.markDayStatus(userId, date, status);
+        this.logger.info?.('nutribot.command.day-status', { userId, date, status });
         if (responseContext?.sendMessage) {
-          await responseContext.sendMessage(`Day marked as done for ${today}. Coaching will treat today's totals as final.`, {});
+          const what = status === 'fasting'
+            ? `Marked ${date} as a fast.`
+            : `Marked ${date} as done.`;
+          await responseContext.sendMessage(`${what} Coaching will treat that day's totals as final.`, {});
         }
         return { ok: true, handled: true };
       }
@@ -785,6 +791,15 @@ export class NutribotInputRouter extends BaseInputRouter {
   }
 
   // ==================== Helpers ====================
+
+  /** The user's local calendar date, `daysAgo` days back (YYYY-MM-DD). */
+  #localDate(userId, daysAgo = 0) {
+    const tz = this.container.getConfig?.()?.getUserTimezone?.(userId) || 'America/Los_Angeles';
+    const today = new Date().toLocaleDateString('en-CA', { timeZone: tz });
+    const d = new Date(`${today}T12:00:00Z`);
+    d.setUTCDate(d.getUTCDate() - daysAgo);
+    return d.toISOString().slice(0, 10);
+  }
 
   /**
    * Resolve user ID from platform identity

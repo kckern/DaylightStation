@@ -251,8 +251,21 @@ export class YamlHealthDatastore extends IHealthDataDatastore {
    * @returns {Promise<void>}
    */
   async markDayClosed(userId, date) {
+    await this.markDayStatus(userId, date, 'done');
+  }
+
+  /**
+   * Record that a day's log is final: `done` (everything eaten is logged) or
+   * `fasting` (a fast — low or zero intake is real). Coaching trusts a closed
+   * day's totals even under the completeness threshold.
+   * @param {string} userId
+   * @param {string} date - YYYY-MM-DD
+   * @param {'done'|'fasting'} status
+   * @returns {Promise<void>}
+   */
+  async markDayStatus(userId, date, status) {
     const data = await this.loadDayClosedData(userId);
-    data[date] = true;
+    data[date] = { status, at: new Date().toISOString() };
     await this.saveDayClosedData(userId, data);
   }
 

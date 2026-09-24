@@ -1,5 +1,6 @@
 import { CoachingMessageBuilder } from './CoachingMessageBuilder.mjs';
 import { detectPattern } from './patterns.mjs';
+import { buildCalendarDays, averageTrusted, resolveMinCalories } from './dayCompleteness.mjs';
 import { buildPostReportSnapshot, buildMorningBriefSnapshot, buildWeeklyDigestSnapshot, buildExerciseReactionSnapshot, buildRecentCoaching, getTimeOfDay } from './snapshots.mjs';
 
 /**
@@ -11,29 +12,38 @@ export class CoachingOrchestrator {
   #healthStore;
   #nutriListStore;
   #config;
+  #minCalories;
   #logger;
 
-  constructor({ commentaryService, messagingGateway, healthStore, nutriListStore, config, logger }) {
+  /**
+   * @param {Object} deps
+   * @param {{min_calories?: number}} [deps.completeness] - household coaching.yml
+   *   `logging_completeness`; days under min_calories without /done or /fast
+   *   are treated as missing data, not low intake.
+   */
+  constructor({ commentaryService, messagingGateway, healthStore, nutriListStore, config, completeness, logger }) {
     this.#commentaryService = commentaryService;
     this.#messagingGateway = messagingGateway;
     this.#healthStore = healthStore;
     this.#nutriListStore = nutriListStore;
     this.#config = config;
+    this.#minCalories = resolveMinCalories(completeness);
     this.#logger = logger || console;
   }
 
   async sendPostReport({ userId, conversationId, date, totals }) {
     try {
       const goals = this.#config.getUserGoals(userId);
-      const [coachingData, nutritionData, weightData, items] = await Promise.all([
+      const [coachingData, nutritionData, weightData, closures, items] = await Promise.all([
         this.#healthStore.loadCoachingData(userId).catch(() => ({})),
         this.#healthStore.loadNutritionData(userId).catch(() => ({})),
         this.#healthStore.loadWeightData(userId).catch(() => ({})),
+        this.#loadClosures(userId),
         this.#nutriListStore.findByDate(userId, date).catch(() => []),
       ]);
 
       const recentCoaching = buildRecentCoaching(coachingData);
-      const recentDays = this.#getRecentDays(nutritionData, date, 5);
+      const recentDays = this.#getRecentDays(nutritionData, closures, date, 5);
       const pattern = detectPattern(recentDays, goals);
       const weightTrend = this.#getWeightTrend7d(weightData, date);
       const timeOfDay = getTimeOfDay(this.#config.getUserTimezone?.(userId));
@@ -66,26 +76,28 @@ export class CoachingOrchestrator {
     try {
       const goals = this.#config.getUserGoals(userId);
       const today = this.#getToday(userId);
-      const [coachingData, nutritionData, weightData] = await Promise.all([
+      const [coachingData, nutritionData, weightData, closures] = await Promise.all([
         this.#healthStore.loadCoachingData(userId).catch(() => ({})),
         this.#healthStore.loadNutritionData(userId).catch(() => ({})),
         this.#healthStore.loadWeightData(userId).catch(() => ({})),
+        this.#loadClosures(userId),
       ]);
 
       const recentCoaching = buildRecentCoaching(coachingData);
-      const recentDays = this.#getRecentDays(nutritionData, today, 7);
-      const yesterday = recentDays[0] || { calories: 0, protein: 0 };
-      const weekAvg = this.#computeAvg(recentDays);
+      const recentDays = this.#getRecentDays(nutritionData, closures, today, 7);
+      const yesterday = recentDays[0];
+      const weekAvg = averageTrusted(recentDays);
       const pattern = detectPattern(recentDays, goals);
       const weight = this.#getWeightSnapshot(weightData, today);
+      const minCalories = this.#minCalories;
 
       const statusBlock = CoachingMessageBuilder.buildMorningBriefBlock({
-        yesterday, weekAvg, proteinGoal: goals.protein, weight,
+        yesterday, weekAvg, proteinGoal: goals.protein, weight, minCalories,
       });
 
       const snapshot = buildMorningBriefSnapshot({
         date: today, yesterday, weekAvg, proteinGoal: goals.protein,
-        weight, recentPattern: pattern, recentCoaching, recentDays,
+        weight, recentPattern: pattern, recentCoaching, recentDays, minCalories,
       });
 
       const commentary = await this.#commentaryService.generate(snapshot).catch(() => '');
@@ -104,29 +116,24 @@ export class CoachingOrchestrator {
     try {
       const goals = this.#config.getUserGoals(userId);
       const today = this.#getToday(userId);
-      const [coachingData, nutritionData, weightData] = await Promise.all([
+      const [coachingData, nutritionData, weightData, closures] = await Promise.all([
         this.#healthStore.loadCoachingData(userId).catch(() => ({})),
         this.#healthStore.loadNutritionData(userId).catch(() => ({})),
         this.#healthStore.loadWeightData(userId).catch(() => ({})),
+        this.#loadClosures(userId),
       ]);
 
       const recentCoaching = buildRecentCoaching(coachingData);
-      const weekDays = this.#getRecentDays(nutritionData, today, 7);
-      const longTermDays = this.#getRecentDays(nutritionData, today, 56);
-      const thisWeek = this.#computeAvg(weekDays);
-      const longTermAvg = this.#computeAvg(longTermDays);
+      const weekDays = this.#getRecentDays(nutritionData, closures, today, 7);
+      const longTermDays = this.#getRecentDays(nutritionData, closures, today, 56);
+      const thisWeek = averageTrusted(weekDays);
+      const longTermAvg = averageTrusted(longTermDays);
       const weight = this.#getWeightSnapshotWeekly(weightData, today);
 
-      const statusBlock = CoachingMessageBuilder.buildWeeklyDigestBlock({
-        thisWeek: { avgCalories: thisWeek.calories, avgProtein: thisWeek.protein },
-        longTermAvg: { avgCalories: longTermAvg.calories, avgProtein: longTermAvg.protein },
-        weight,
-      });
+      const statusBlock = CoachingMessageBuilder.buildWeeklyDigestBlock({ thisWeek, longTermAvg, weight });
 
       const snapshot = buildWeeklyDigestSnapshot({
-        thisWeek: { avgCalories: thisWeek.calories, avgProtein: thisWeek.protein },
-        longTermAvg: { avgCalories: longTermAvg.calories, avgProtein: longTermAvg.protein },
-        weight, recentCoaching, weekDays,
+        thisWeek, longTermAvg, weight, recentCoaching, weekDays, minCalories: this.#minCalories,
       });
 
       const commentary = await this.#commentaryService.generate(snapshot).catch(() => '');
@@ -181,53 +188,57 @@ export class CoachingOrchestrator {
     return new Date().toLocaleDateString('en-CA', { timeZone: tz });
   }
 
-  #getRecentDays(nutritionData, beforeDate, count) {
-    return Object.keys(nutritionData || {})
-      .filter(d => d < beforeDate)
-      .sort()
-      .reverse()
-      .slice(0, count)
-      .map(d => ({
-        date: d,
-        calories: nutritionData[d]?.calories || 0,
-        protein: nutritionData[d]?.protein || 0,
-      }));
+  /** Calendar days before `beforeDate`, each classified for logging completeness. */
+  #getRecentDays(nutritionData, closures, beforeDate, count) {
+    return buildCalendarDays({ nutritionData, closures, beforeDate, count, minCalories: this.#minCalories });
   }
 
-  #computeAvg(days) {
-    if (!days.length) return { calories: 0, protein: 0 };
-    const sum = days.reduce((acc, d) => ({ calories: acc.calories + d.calories, protein: acc.protein + d.protein }), { calories: 0, protein: 0 });
-    return { calories: Math.round(sum.calories / days.length), protein: Math.round(sum.protein / days.length) };
+  async #loadClosures(userId) {
+    try {
+      return (await this.#healthStore.loadDayClosedData?.(userId)) || {};
+    } catch {
+      return {};
+    }
+  }
+
+  /**
+   * weight.yml rows carry `lbs` forward-filled every day and
+   * `lbs_adjusted_average` as the smoothed trend line; read the smoothed value
+   * so day-to-day water noise doesn't drive the weekly trend.
+   */
+  #weightValue(row) {
+    if (typeof row === 'number') return row;
+    const v = row?.lbs_adjusted_average ?? row?.lbs ?? row?.weight;
+    return typeof v === 'number' && Number.isFinite(v) ? v : null;
+  }
+
+  /** @returns {{start: number, end: number}|null} latest value and the value ~7 days earlier */
+  #weightSpan(weightData, today) {
+    const dates = Object.keys(weightData || {})
+      .filter(d => d <= today && this.#weightValue(weightData[d]) !== null)
+      .sort().reverse();
+    if (!dates.length) return null;
+    const end = this.#weightValue(weightData[dates[0]]);
+    const startDate = dates.find(d => this.#daysBetween(d, dates[0]) >= 6);
+    const start = startDate ? this.#weightValue(weightData[startDate]) : end;
+    return { start, end };
   }
 
   #getWeightTrend7d(weightData, date) {
-    const dates = Object.keys(weightData || {}).filter(d => d <= date).sort().reverse();
-    if (dates.length < 2) return null;
-    const recent = weightData[dates[0]]?.weight || weightData[dates[0]];
-    const weekAgo = dates.find((d, i) => i > 0 && this.#daysBetween(d, dates[0]) >= 6);
-    if (!weekAgo) return null;
-    const older = weightData[weekAgo]?.weight || weightData[weekAgo];
-    if (typeof recent !== 'number' || typeof older !== 'number') return null;
-    return Math.round((recent - older) * 100) / 100;
+    const span = this.#weightSpan(weightData, date);
+    return span ? Math.round((span.end - span.start) * 100) / 100 : null;
   }
 
   #getWeightSnapshot(weightData, today) {
-    const dates = Object.keys(weightData || {}).filter(d => d <= today).sort().reverse();
-    const current = dates[0] ? (weightData[dates[0]]?.weight || weightData[dates[0]]) : null;
-    const trend7d = this.#getWeightTrend7d(weightData, today);
-    return { current: typeof current === 'number' ? current : 0, trend7d: trend7d || 0 };
+    const span = this.#weightSpan(weightData, today);
+    if (!span) return null;
+    return { current: span.end, trend7d: Math.round((span.end - span.start) * 100) / 100 };
   }
 
   #getWeightSnapshotWeekly(weightData, today) {
-    const dates = Object.keys(weightData || {}).filter(d => d <= today).sort().reverse();
-    const weekEnd = dates[0] ? (weightData[dates[0]]?.weight || weightData[dates[0]]) : 0;
-    const weekStartDate = dates.find(d => this.#daysBetween(d, dates[0]) >= 6);
-    const weekStart = weekStartDate ? (weightData[weekStartDate]?.weight || weightData[weekStartDate]) : weekEnd;
-    return {
-      weekStart: typeof weekStart === 'number' ? weekStart : 0,
-      weekEnd: typeof weekEnd === 'number' ? weekEnd : 0,
-      trend7d: typeof weekEnd === 'number' && typeof weekStart === 'number' ? Math.round((weekEnd - weekStart) * 100) / 100 : 0,
-    };
+    const span = this.#weightSpan(weightData, today);
+    if (!span) return null;
+    return { weekStart: span.start, weekEnd: span.end, trend7d: Math.round((span.end - span.start) * 100) / 100 };
   }
 
   #daysBetween(dateA, dateB) {
