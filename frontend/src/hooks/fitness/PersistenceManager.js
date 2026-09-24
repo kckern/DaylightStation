@@ -1198,7 +1198,10 @@ export class PersistenceManager {
           startTime: entity.startTime || null,
           endTime: entity.endTime || null,
           status: entity.status || 'active',
-          rings: entity.rings || 0
+          ...(Number.isFinite(entity.startTick) ? { startTick: entity.startTick } : {}),
+          ...(entity.endReason ? { endReason: entity.endReason } : {}),
+          ...(Array.isArray(entity.relabeledFrom) && entity.relabeledFrom.length
+            ? { relabeledFrom: [...entity.relabeledFrom] } : {})
         };
       }).filter(Boolean);
     }
