@@ -275,3 +275,52 @@ describe('HeadlineService promote placement', () => {
   });
 });
 
+
+describe('HeadlineService shadow/off parity and review accounting', () => {
+  const KEYWORD = 'Live updates: markets fall as the Fed signals a pause on rate hikes';
+
+  test('shadow and off briefings equal the no-judge briefing, even with verdicts cached', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-09-24T12:00:00Z'));
+    try {
+      const primedJudge = async () => {
+        const judge = new HeadlineStoryJudge({ decisionGateway: fakeGateway({ same: 0.99, kind: 'analysis', confidence: 0.99 }), logger: { info() {}, warn() {} } });
+        await judge.review({ pageId: 'daily',
+          pairs: [{ similarity: 0.67, normA: norm(PARAPHRASE_A), normB: norm(PARAPHRASE_B), a: { title: PARAPHRASE_A }, b: { title: PARAPHRASE_B } }],
+          titles: [PARAPHRASE_A, PARAPHRASE_B, KEYWORD].map(title => ({ title, legacyKind: 'report' })) },
+        HeadlineStoryJudge.settings({ mode: 'promote' }));
+        return judge;
+      };
+      const extra = [{ id: 'three', title: KEYWORD, minutesAgo: 30 }];
+      const briefingOf = async options => (await paraphraseService({ extra, ...options }).service.getAllHeadlines('alice', 'daily')).briefing;
+
+      const legacy = await briefingOf({});
+      expect(legacy.find(story => story.title === KEYWORD).timeline[0].kind).toBe('update');
+      expect(await briefingOf({ storyJudge: await primedJudge() })).toEqual(legacy);
+      expect(await briefingOf({ storyJudge: await primedJudge(), jev: { mode: 'shadow' } })).toEqual(legacy);
+      expect(await briefingOf({ storyJudge: await primedJudge(), jev: { mode: 'off' } })).toEqual(legacy);
+      // Sanity: the same primed judge does change the briefing when promoted.
+      expect(await briefingOf({ storyJudge: await primedJudge(), jev: { mode: 'promote' } })).not.toEqual(legacy);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test('jev-review counts each cached pair and title once', async () => {
+    const judge = new HeadlineStoryJudge({ decisionGateway: fakeGateway(), logger: { info() {}, warn() {} } });
+    const { service, log } = paraphraseService({ storyJudge: judge });
+    await service.harvestAll('alice');
+    await service.harvestAll('alice');
+    const reviews = log.info.mock.calls.filter(([event]) => event === 'feed.headlines.jev-review').map(([, data]) => data);
+    expect(reviews[0]).toMatchObject({ evaluated: 3, cached: 0 });
+    expect(reviews[1]).toMatchObject({ evaluated: 0, cached: 3 });
+  });
+
+  test('a judge that throws outside a page review never breaks the harvest', async () => {
+    const judge = new HeadlineStoryJudge({ decisionGateway: fakeGateway(), logger: { info() {}, warn() {} } });
+    judge.active = () => { throw new Error('judge exploded'); };
+    const { service, log } = paraphraseService({ storyJudge: judge });
+    await expect(service.harvestAll('alice')).resolves.toMatchObject({ harvested: 2 });
+    expect(log.warn).toHaveBeenCalledWith('feed.headlines.jev-review-failed', expect.objectContaining({ error: 'judge exploded' }));
+  });
+});

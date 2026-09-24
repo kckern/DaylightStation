@@ -119,7 +119,7 @@ export class HeadlineStoryJudge {
    * @param {number} [budget] - Model calls allowed; defaults to maxCallsPerReview
    */
   beginPass(budget = this.#maxCalls) {
-    return { budget, consecutiveFailures: 0, breakerOpen: false, failedPairs: new Set() };
+    return { budget, consecutiveFailures: 0, breakerOpen: false, seenPairs: new Set() };
   }
 
   /**
@@ -137,13 +137,16 @@ export class HeadlineStoryJudge {
 
     for (const pair of pairs) {
       const key = HeadlineStoryJudge.pairKey(pair.normA, pair.normB);
+      // A pair already handled in this pass (cached, asked, or failed) is neither
+      // re-asked nor re-counted: the label pass re-sees the pair pass's pairs.
+      if (pass.seenPairs.has(key)) continue;
+      pass.seenPairs.add(key);
       if (this.#pairs.has(key)) { summary.cached++; continue; }
-      if (pass.failedPairs.has(key)) continue; // already failed earlier in this pass
       if (!this.#spend(pass)) { summary.skipped++; continue; }
       const got = await this.#ask({ a: pair.a, b: pair.b }, SAME_EVENT, pickSame,
         'feed.headlines.jev-pair-failed', { page, a: pair.a?.title, b: pair.b?.title });
       this.#settle(pass, !!got, page);
-      if (!got) { pass.failedPairs.add(key); summary.failed++; continue; }
+      if (!got) { summary.failed++; continue; }
       const record = { probability: got.answer.probability, model: got.model };
       this.#remember(this.#pairs, key, record);
       summary.evaluated++;

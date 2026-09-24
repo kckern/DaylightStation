@@ -383,44 +383,50 @@ export class HeadlineService {
    * Never throws; the harvest result is unaffected.
    */
   async #reviewStories(username, pageId) {
-    const judge = this.#storyJudge;
-    if (!judge) return;
-    const settings = HeadlineStoryJudge.settings(this.#getUserConfig(username).headlines?.jev);
-    if (!judge.active(settings)) return;
-    const pageIds = pageId ? [pageId] : this.#getPages(username).map(p => p.id);
-    const multiSource = result => (result?.briefing || []).filter(story => story.sourceCount > 1).length;
-
-    for (const id of pageIds) {
-      try {
-        const servedTrace = { pageId: id, pairs: [], titles: [] };
-        const served = await this.getAllHeadlines(username, id, { trace: servedTrace });
-        if (!served) continue;
-        const pass = judge.beginPass(); // one call budget and breaker for the whole page
-        const pairPass = await judge.review({ pageId: id, pairs: servedTrace.pairs, titles: [] }, settings, pass);
-
-        const projectedTrace = { pageId: id, pairs: [], titles: [] };
-        const projected = await this.getAllHeadlines(username, id, {
-          trace: projectedTrace, judgeSettings: { ...settings, mode: 'promote' },
-        });
-        const labelPass = await judge.review({ pageId: id, pairs: projectedTrace.pairs, titles: projectedTrace.titles }, settings, pass);
-
-        this.#logger.info?.('feed.headlines.jev-review', {
-          page: id,
-          mode: settings.mode,
-          pairs: servedTrace.pairs.length,
-          titles: projectedTrace.titles.length,
-          evaluated: pairPass.evaluated + labelPass.evaluated,
-          cached: pairPass.cached + labelPass.cached,
-          failed: pairPass.failed + labelPass.failed,
-          skipped: pairPass.skipped + labelPass.skipped,
-          multiSourceServed: multiSource(served),
-          multiSourceWithJev: multiSource(projected),
-        });
-      } catch (error) {
-        this.#logger.warn?.('feed.headlines.jev-review-failed', { page: id, error: error.message });
-      }
+    try {
+      const judge = this.#storyJudge;
+      if (!judge) return;
+      const settings = HeadlineStoryJudge.settings(this.#getUserConfig(username).headlines?.jev);
+      if (!judge.active(settings)) return;
+      const pageIds = pageId ? [pageId] : this.#getPages(username).map(p => p.id);
+      for (const id of pageIds) await this.#reviewPage(judge, settings, username, id);
+    } catch (error) {
+      this.#logger.warn?.('feed.headlines.jev-review-failed', { page: pageId || 'all', error: error.message });
     }
   }
+
+  async #reviewPage(judge, settings, username, id) {
+    const multiSource = result => (result?.briefing || []).filter(story => story.sourceCount > 1).length;
+    try {
+      const servedTrace = { pageId: id, pairs: [], titles: [] };
+      const served = await this.getAllHeadlines(username, id, { trace: servedTrace });
+      if (!served) return;
+      const pass = judge.beginPass(); // one call budget and breaker for the whole page
+      const pairPass = await judge.review({ pageId: id, pairs: servedTrace.pairs, titles: [] }, settings, pass);
+
+      const projectedTrace = { pageId: id, pairs: [], titles: [] };
+      const projected = await this.getAllHeadlines(username, id, {
+        trace: projectedTrace, judgeSettings: { ...settings, mode: 'promote' },
+      });
+      const labelPass = await judge.review({ pageId: id, pairs: projectedTrace.pairs, titles: projectedTrace.titles }, settings, pass);
+
+      this.#logger.info?.('feed.headlines.jev-review', {
+        page: id,
+        mode: settings.mode,
+        pairs: servedTrace.pairs.length,
+        titles: projectedTrace.titles.length,
+        evaluated: pairPass.evaluated + labelPass.evaluated,
+        cached: pairPass.cached + labelPass.cached,
+        failed: pairPass.failed + labelPass.failed,
+        skipped: pairPass.skipped + labelPass.skipped,
+        multiSourceServed: multiSource(served),
+        multiSourceWithJev: multiSource(projected),
+      });
+    } catch (error) {
+      this.#logger.warn?.('feed.headlines.jev-review-failed', { page: id, error: error.message });
+    }
+  }
+
 
   /**
    * Enrich imageless items by fetching og:image from their article pages.
