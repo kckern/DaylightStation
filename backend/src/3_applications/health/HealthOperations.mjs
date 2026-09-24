@@ -143,17 +143,19 @@ export class HealthOperations {
    * Whether the user has closed `date` — `done` (the log is complete) or
    * `fasting` — plus the logging-completeness threshold the coach applies to
    * an unclosed day (see coaching/dayCompleteness.mjs).
-   * @returns {Promise<{status: 'done'|'fasting'|null, minCalories: number}>}
+   * `today` is the SERVER's date, so the day view never offers to close a
+   * day the server would refuse as future (a phone in another timezone).
+   * @returns {Promise<{status: 'done'|'fasting'|null, minCalories: number, today: string}>}
    */
   async readDayStatus(username, date) {
     let closures = {};
     try { closures = (await this.healthData?.loadDayClosedData?.(username)) || {}; } catch { closures = {}; }
-    return { status: closureStatus(closures?.[date]), minCalories: resolveMinCalories(this.completeness()) };
+    return { status: closureStatus(closures?.[date]), minCalories: resolveMinCalories(this.completeness()), today: this.today() };
   }
 
   /**
    * Close (`done` / `fasting`) or reopen (`null`) a day. Future days refuse.
-   * @returns {Promise<{status: 'done'|'fasting'|null, minCalories: number}>}
+   * @returns {Promise<{status: 'done'|'fasting'|null, minCalories: number, today: string}>}
    */
   async setDayStatus(username, date, status) {
     if (status !== null && status !== DAY_STATUS.DONE && status !== DAY_STATUS.FASTING) {

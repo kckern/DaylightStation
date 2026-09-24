@@ -212,15 +212,17 @@ default 1200) as **missing data**: meals were not logged. It does not treat that
 tells it otherwise by closing the day, from either surface:
 
 - **Day view:** `today/DayCloseRow.jsx` sits after the meals.
-  - When the day is open, it offers **Done logging** and **Fasted**.
-  - A past day under the threshold is flagged ("Only 460 cal logged. The coach treats this day as incomplete unless you close it.").
-  - Today is never flagged, because an in-progress day is expected to be low.
-  - When the day is closed, it shows the state and a **Reopen** button.
+  - **Today:** always offers **Done logging** and **Fasted**. It is never flagged, because an in-progress day is expected to be low.
+  - **A past day under the threshold:** is flagged ("Only 460 cal logged." or "Nothing logged.") and offers the same two buttons.
+  - **A closed day:** shows its state and a **Reopen** button.
+  - **A complete past day:** shows nothing, because the coach already trusts it.
+  - "Today" is the server's date (`dayStatus.today`), so a phone in another timezone is never offered a day the server would refuse as future.
+  - The POST response patches the cached day (`showDayStatus`), so the row shows exactly what the server stored. A `/fast` sent from Telegram overrides it on the next refetch.
 - **Nutribot chat:** `/done`, `/fast` and `/reopen`, each taking an optional `yesterday` or `YYYY-MM-DD`.
 
 Both surfaces write the same record, `users/{id}/day_closed.yml`
 (`{date: {status: done|fasting, at}}`). `GET /api/v1/health/day` returns
-`dayStatus: {status, minCalories}`. `POST /api/v1/health/nutrition/day-status`
+`dayStatus: {status, minCalories, today}`. `POST /api/v1/health/nutrition/day-status`
 takes `{date, status: 'done'|'fasting'|null}`, where `null` reopens the day. It refuses a
 malformed date or a future day.
 
