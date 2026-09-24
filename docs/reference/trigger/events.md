@@ -208,7 +208,7 @@ shortcut's dictation) sends text.
 ### 5. Dry-run for tag onboarding
 
 ```bash
-curl "http://homeserver.local:3111/api/v1/trigger/livingroom/nfc/04a1b2c3d4?dryRun=1"
+curl "http://{env.prod_host}:{env.ports.app}/api/v1/trigger/livingroom/nfc/04a1b2c3d4?dryRun=1"
 ```
 
 Skips the action handler, but **still broadcasts** with `dryRun: true`. Useful for verifying tag UIDs land on the expected screen without actually waking the TV.

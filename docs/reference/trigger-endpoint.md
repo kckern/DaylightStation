@@ -152,9 +152,9 @@ http://<host>:<port>/api/v1/trigger/<location>/<type>/<uid>
 Server responds within ~50ms with JSON. Reader does not need to keep the connection open or parse the body — non-200 status is sufficient signal for an LED/buzzer feedback. Example:
 
 ```bash
-curl "http://homeserver.local:3111/api/v1/trigger/livingroom/nfc/04a1b2c3d4"
-curl "http://homeserver.local:3111/api/v1/trigger/frontdoor/nfc/04doorkey1?token=door-secret"
-curl "http://homeserver.local:3111/api/v1/trigger/livingroom/nfc/04a1b2c3d4?dryRun=1"
+curl "http://{env.prod_host}:{env.ports.app}/api/v1/trigger/livingroom/nfc/04a1b2c3d4"
+curl "http://{env.prod_host}:{env.ports.app}/api/v1/trigger/frontdoor/nfc/04doorkey1?token=door-secret"
+curl "http://{env.prod_host}:{env.ports.app}/api/v1/trigger/livingroom/nfc/04a1b2c3d4?dryRun=1"
 ```
 
 ## Voice
