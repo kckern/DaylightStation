@@ -128,7 +128,8 @@ describe('Feed Router', () => {
       const res = await request(app).post('/api/v1/feed/headlines/harvest');
       expect(res.status).toBe(200);
       expect(res.body.harvested).toBe(2);
-      expect(mockHeadlineService.harvestAll).toHaveBeenCalledWith('user_1', undefined);
+      // The story review runs in the background so a manual refresh never waits on Jev
+      expect(mockHeadlineService.harvestAll).toHaveBeenCalledWith('user_1', undefined, { review: 'background' });
     });
   });
 

@@ -2,6 +2,7 @@
 import stringSimilarity from 'string-similarity';
 import { canonicalizeFeedUrl } from '#domains/feed/feedItem.mjs';
 import { isFeedConfigRepository } from '../ports/IFeedConfigRepository.mjs';
+import { HeadlineStoryJudge, LEGACY_MATCH } from './HeadlineStoryJudge.mjs';
 
 /**
  * HeadlineService
@@ -12,6 +13,13 @@ import { isFeedConfigRepository } from '../ports/IFeedConfigRepository.mjs';
  * @module applications/feed/services
  */
 
+/** Keyword label used when no Jev verdict applies (and as the shadow baseline). */
+export function legacyEventKind(title) {
+  return /\b(correction|corrected)\b/i.test(title) ? 'correction'
+    : /\b(update|updated|developing|live)\b/i.test(title) ? 'update'
+      : 'report';
+}
+
 export class HeadlineService {
   #headlineStore;
   #harvester;
@@ -21,8 +29,10 @@ export class HeadlineService {
   #blockedImageUrls;
   #blockedImagePatterns;
   #logger;
+  #storyJudge;
+  #reviewsInFlight = new Map();
 
-  constructor({ headlineStore, harvester, configRepository, config = {}, webContentGateway, logger = console }) {
+  constructor({ headlineStore, harvester, configRepository, config = {}, webContentGateway, storyJudge = null, logger = console }) {
     if (!isFeedConfigRepository(configRepository)) throw new Error('HeadlineService requires configRepository');
     this.#headlineStore = headlineStore;
     this.#harvester = harvester;
@@ -41,6 +51,7 @@ export class HeadlineService {
       : new Set(config.blockedImageUrls || []);
     this.#blockedImagePatterns = config.blockedImagePatterns || [];
     this.#logger = logger;
+    this.#storyJudge = storyJudge;
   }
 
   /**
@@ -98,9 +109,12 @@ export class HeadlineService {
    * Harvest all configured headline sources (optionally filtered to one page)
    * @param {string} username
    * @param {string} [pageId]
+   * @param {Object} [options]
+   * @param {'await'|'background'} [options.review='await'] - 'background' starts the story review
+   *   without waiting for it (manual refresh); scheduled harvests await it.
    * @returns {Promise<{ harvested, errors, totalItems }>}
    */
-  async harvestAll(username, pageId) {
+  async harvestAll(username, pageId, { review = 'await' } = {}) {
     const sources = this.#getSources(username, pageId);
     const config = this.#getUserConfig(username);
     const retentionHours = config.headlines?.retention_hours || this.#defaults.retentionHours;
@@ -164,6 +178,9 @@ export class HeadlineService {
       totalItems,
     });
 
+    const reviewing = this.#startReview(username, pageId);
+    if (review !== 'background') await reviewing;
+
     return { harvested: sources.length, errors, totalItems };
   }
 
@@ -171,9 +188,12 @@ export class HeadlineService {
    * Get all cached headlines for a specific page, with grid layout metadata
    * @param {string} username
    * @param {string} pageId
+   * @param {Object} [options]
+   * @param {{ pairs: Object[], titles: Object[] }} [options.trace] - Collects band pairs and timeline titles for the story judge
+   * @param {Object} [options.judgeSettings] - Overrides the user's headlines.jev settings (harvest-time projection)
    * @returns {Promise<{ grid, col_colors, sources, lastHarvest, paywallProxy }|null>}
    */
-  async getAllHeadlines(username, pageId) {
+  async getAllHeadlines(username, pageId, { trace = null, judgeSettings = null } = {}) {
     const page = this.#getPage(username, pageId);
     if (!page) return null;
 
@@ -185,6 +205,7 @@ export class HeadlineService {
     const maxPerSource = headlineConfig.max_per_source || this.#defaults.maxPerSource;
     const dedupeWordCount = headlineConfig.dedupe_word_count || this.#defaults.dedupeWordCount;
     const excludePatterns = (headlineConfig.exclude_patterns || []).map(p => new RegExp(p, 'i'));
+    const storySettings = judgeSettings || HeadlineStoryJudge.settings(headlineConfig.jev);
 
     const paywallConfig = config.paywall_proxy || {};
     const paywallSources = new Set(paywallConfig.sources || []);
@@ -230,12 +251,13 @@ export class HeadlineService {
       sources,
       lastHarvest,
       paywallProxy: paywallConfig.url_prefix || null,
-      briefing: this.#buildBriefing(sources),
+      briefing: this.#buildBriefing(sources, { settings: storySettings, trace }),
       configWarnings,
     };
   }
 
-  #buildBriefing(sources) {
+  #buildBriefing(sources, { settings = null, trace = null } = {}) {
+    const judge = this.#storyJudge;
     const candidates = Object.entries(sources).flatMap(([sourceId, source]) =>
       (source.items || []).map(item => ({
         ...item,
@@ -250,14 +272,33 @@ export class HeadlineService {
     const windowMs = 36 * 60 * 60 * 1000;
     for (const item of candidates) {
       const normalizedTitle = this.#normalizeClusterTitle(item.title);
-      const match = clusters.find(cluster => {
+      // Stage 1: the legacy rule, unchanged (canonical URL, or similarity >= 0.72).
+      const inWindow = cluster => !cluster.sourceIds.has(item.sourceId)
+        && Math.abs(new Date(cluster.publishedAt || 0) - new Date(item.publishedAt || 0)) <= windowMs
+        && normalizedTitle.split(' ').length >= 5;
+      let match = clusters.find(cluster => {
         if (item.canonicalUrl && cluster.canonicalUrls.has(item.canonicalUrl)) return true;
-        if (cluster.sourceIds.has(item.sourceId)) return false;
-        const age = Math.abs(new Date(cluster.publishedAt || 0) - new Date(item.publishedAt || 0));
-        return age <= windowMs
-          && normalizedTitle.split(' ').length >= 5
-          && stringSimilarity.compareTwoStrings(cluster.normalizedTitle, normalizedTitle) >= 0.72;
+        return inWindow(cluster)
+          && stringSimilarity.compareTwoStrings(cluster.normalizedTitle, normalizedTitle) >= LEGACY_MATCH;
       });
+      // Stage 2, only with no legacy match: ambiguous-band pairs. Traced for the
+      // judge; merged only on a cached promote-mode verdict. Skipped entirely
+      // unless tracing or promoting, so shadow/off requests run the legacy path.
+      if (!match && judge && settings && (trace || judge.promoting(settings))) {
+        match = clusters.find(cluster => {
+          if (!inWindow(cluster)) return false;
+          const similarity = stringSimilarity.compareTwoStrings(cluster.normalizedTitle, normalizedTitle);
+          if (similarity < settings.bandLow || similarity >= LEGACY_MATCH) return false;
+          trace?.pairs.push({
+            similarity,
+            normA: cluster.normalizedTitle,
+            normB: normalizedTitle,
+            a: { title: cluster.title, source: cluster.leadSource, publishedAt: cluster.publishedAt },
+            b: { title: item.title, source: item.sourceLabel, publishedAt: item.publishedAt },
+          });
+          return judge.sameEvent(cluster.normalizedTitle, normalizedTitle, settings);
+        });
+      }
       if (match) {
         match.coverage.push(item);
         match.sourceIds.add(item.sourceId);
@@ -288,15 +329,16 @@ export class HeadlineService {
           sourceLabel: item.sourceLabel,
           publishedAt: item.publishedAt,
         }));
-        const timeline = [...coverage]
+        const dated = [...coverage]
           .filter(item => item.publishedAt)
-          .sort((a, b) => new Date(a.publishedAt) - new Date(b.publishedAt))
-          .map(item => ({
-            ...item,
-            kind: /\b(correction|corrected)\b/i.test(item.title) ? 'correction'
-              : /\b(update|updated|developing|live)\b/i.test(item.title) ? 'update'
-                : 'report',
-          }));
+          .sort((a, b) => new Date(a.publishedAt) - new Date(b.publishedAt));
+        const shown = dated.length > 1; // the frontend renders a timeline only past one entry
+        const timeline = dated.map(item => {
+          const legacyKind = legacyEventKind(item.title);
+          if (trace && shown) trace.titles.push({ title: item.title, source: item.sourceLabel, legacyKind });
+          const jevKind = judge && settings ? judge.eventKind(item.title, settings) : null;
+          return { ...item, kind: jevKind || legacyKind };
+        });
         return {
           id: cluster.id,
           title: cluster.title,
@@ -319,6 +361,72 @@ export class HeadlineService {
       .filter(word => word.length > 1 && !stop.has(word))
       .join(' ');
   }
+
+  /**
+   * Single-flight story review per user: a harvest that lands while a review is
+   * running joins it instead of starting a second one. Never rejects.
+   */
+  #startReview(username, pageId) {
+    const running = this.#reviewsInFlight.get(username);
+    if (running) return running;
+    const reviewing = this.#reviewStories(username, pageId)
+      .catch(error => this.#logger.warn?.('feed.headlines.jev-review-failed', { page: pageId || 'all', error: error.message }))
+      .finally(() => this.#reviewsInFlight.delete(username));
+    this.#reviewsInFlight.set(username, reviewing);
+    return reviewing;
+  }
+
+  /**
+   * Harvest-time Jev pass. Pass 1 asks about band pairs from the briefing as
+   * served; pass 2 labels the timeline titles of the briefing as it would look
+   * with Jev merges applied, so shadow mode sees the stories promote would show.
+   * Never throws; the harvest result is unaffected.
+   */
+  async #reviewStories(username, pageId) {
+    try {
+      const judge = this.#storyJudge;
+      if (!judge) return;
+      const settings = HeadlineStoryJudge.settings(this.#getUserConfig(username).headlines?.jev);
+      if (!judge.active(settings)) return;
+      const pageIds = pageId ? [pageId] : this.#getPages(username).map(p => p.id);
+      for (const id of pageIds) await this.#reviewPage(judge, settings, username, id);
+    } catch (error) {
+      this.#logger.warn?.('feed.headlines.jev-review-failed', { page: pageId || 'all', error: error.message });
+    }
+  }
+
+  async #reviewPage(judge, settings, username, id) {
+    const multiSource = result => (result?.briefing || []).filter(story => story.sourceCount > 1).length;
+    try {
+      const servedTrace = { pageId: id, pairs: [], titles: [] };
+      const served = await this.getAllHeadlines(username, id, { trace: servedTrace });
+      if (!served) return;
+      const pass = judge.beginPass(); // one call budget and breaker for the whole page
+      const pairPass = await judge.review({ pageId: id, pairs: servedTrace.pairs, titles: [] }, settings, pass);
+
+      const projectedTrace = { pageId: id, pairs: [], titles: [] };
+      const projected = await this.getAllHeadlines(username, id, {
+        trace: projectedTrace, judgeSettings: { ...settings, mode: 'promote' },
+      });
+      const labelPass = await judge.review({ pageId: id, pairs: projectedTrace.pairs, titles: projectedTrace.titles }, settings, pass);
+
+      this.#logger.info?.('feed.headlines.jev-review', {
+        page: id,
+        mode: settings.mode,
+        pairs: servedTrace.pairs.length,
+        titles: projectedTrace.titles.length,
+        evaluated: pairPass.evaluated + labelPass.evaluated,
+        cached: pairPass.cached + labelPass.cached,
+        failed: pairPass.failed + labelPass.failed,
+        skipped: pairPass.skipped + labelPass.skipped,
+        multiSourceServed: multiSource(served),
+        multiSourceWithJev: multiSource(projected),
+      });
+    } catch (error) {
+      this.#logger.warn?.('feed.headlines.jev-review-failed', { page: id, error: error.message });
+    }
+  }
+
 
   /**
    * Enrich imageless items by fetching og:image from their article pages.
