@@ -260,3 +260,46 @@ describe('PastProcessingService', () => {
     expect(result.suggestedBeliefs).toHaveLength(1);
   });
 });
+
+describe('LifeEventProcessor against the persisted model', () => {
+  const proc = new LifeEventProcessor();
+  const plan = {
+    goals: [{ id: 'g1', name: 'Join local gym' }],
+    // The shape LifeEvent / Dependency / YamlLifePlanStore actually persist:
+    // top-level dependencies keyed by blocked_goal, awaiting an event id.
+    dependencies: [{ type: 'life_event', blocked_goal: 'g1', awaits_event: 'le1' }],
+    values: [],
+  };
+
+  it('resolves a dependency when an event with status occurred arrives', () => {
+    const impacts = proc.processEvent({ id: 'le1', type: 'location', name: 'Move', status: 'occurred' }, plan);
+    expect(impacts).toEqual([expect.objectContaining({ target: 'goal', target_id: 'g1', action: 'dependency_resolved' })]);
+  });
+
+  it('reports a cancelled event as blocking, and ignores other events', () => {
+    expect(proc.processEvent({ id: 'le1', type: 'location', name: 'Move', status: 'cancelled' }, plan)[0].action).toBe('dependency_cancelled');
+    expect(proc.processEvent({ id: 'le2', type: 'location', name: 'Other', status: 'occurred' }, plan)).toEqual([]);
+  });
+
+  it('filters anticipated and recent events by status and actual_date', () => {
+    const withEvents = { life_events: [
+      { id: 'a', status: 'anticipated' },
+      { id: 'b', status: 'occurred', actual_date: '2026-09-20' },
+      { id: 'c', status: 'occurred', actual_date: '2026-01-01' },
+    ] };
+    expect(proc.getAnticipatedEvents(withEvents).map(e => e.id)).toEqual(['a']);
+    expect(proc.getRecentEvents(withEvents, 30, '2026-09-24').map(e => e.id)).toEqual(['b']);
+  });
+});
+
+describe('Rule.effectivenessOf', () => {
+  it('derives the label from raw counts, matching RuleMatchingService', async () => {
+    const { Rule } = await import('#domains/lifeplan/entities/Rule.mjs');
+    const svc = new RuleMatchingService();
+    for (const counts of [{}, { times_triggered: 10, times_followed: 8, times_helped: 7 },
+      { times_triggered: 5, times_followed: 2, times_helped: 1 }, { times_triggered: 10, times_followed: 8, times_helped: 2 }]) {
+      expect(Rule.effectivenessOf(counts)).toBe(svc.getEffectiveness(counts));
+    }
+    expect(Rule.effectivenessOf({})).toBe('untested');
+  });
+});
