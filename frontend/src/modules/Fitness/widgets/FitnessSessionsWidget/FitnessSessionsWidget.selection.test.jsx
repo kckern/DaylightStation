@@ -165,6 +165,17 @@ describe('FitnessSessionsWidget outside selection', () => {
     expect(states.at(-1)).toHaveLength(1);
   });
 
+  it('closes the pane when a video starts from home (/fitness/play/{id} names no session)', () => {
+    const { states, nav } = renderSeededWithRouter();
+    expect(states.at(-1)).toHaveLength(1);
+    expect(nav.selected).toBe('s1');
+
+    act(() => nav.navigate('/fitness/play/123', { replace: true }));
+
+    expect(states.at(-1)).toHaveLength(0);
+    expect(nav.selected).toBe(null);
+  });
+
   it('opening a row by click and toggling it off both survive the URL effect', async () => {
     const { ScreenDataContext } = await import('@/screen-framework/data/ScreenDataProvider.jsx');
     const sessions = { sessions: [{ sessionId: 's7', date: '2026-09-24', startTime: Date.now(), media: [], participants: {} }] };
