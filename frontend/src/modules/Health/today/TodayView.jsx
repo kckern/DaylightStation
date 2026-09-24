@@ -24,6 +24,7 @@ import { LogTable } from './LogTable.jsx';
 import { MealAddRow } from './MealAddRow.jsx';
 import { useMealMoves, mealEntries } from './mealDrag.jsx';
 import { NeedsReviewSection } from './NeedsReviewSection.jsx';
+import { DayCloseRow } from './DayCloseRow.jsx';
 import { CleanupQuestions } from '../cleanup/CleanupQuestions.jsx';
 import { ObservationsSection } from './ObservationRow.jsx';
 import { EntryEditor } from './EntryEditor.jsx';
@@ -484,6 +485,7 @@ export function TodayView({ active = true, sidebarTarget, onSetupGoals, onCoachT
           onOpenTemplates={(target, templateId) => { setFocusTemplateId(templateId); setTemplatesFor(target); }}
           onManageFoods={() => setManageFoods(true)} />} />
       <NeedsReviewSection pending={pendingLogs} onChanged={day.reload} />
+      {!coldLoading ? <DayCloseRow date={date} today={todayISO()} dayStatus={day.dayStatus} items={day.items} onChanged={day.reload} /> : null}
       {!wideViewport || !sidebarTarget ? <details className="health-history"><summary>Week &amp; weight history</summary>{history}</details> : null}
       {coachLine ? <Button variant="subtle" onClick={() => onCoachTap()}>{coachLine}</Button> : null}
       <BarcodeCapture open={active && captureMode === 'barcode'} busy={nutrition.busy} bucket={barcodeTargetBucket}

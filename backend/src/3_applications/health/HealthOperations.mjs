@@ -11,6 +11,7 @@ import { serializeNutriLog } from '../nutrition/NutriLogProjection.mjs';
 import { nutritionLookupFor } from '#shared/contracts/nutrition/nutritionLookup.mjs';
 import { DEFAULT_DENSITY_LEVELS } from '#shared-contracts/health/densityLevels.mjs';
 import { densityRevision } from '#shared-contracts/health/foodDensity.mjs';
+import { closureStatus, resolveMinCalories, DAY_STATUS } from '../coaching/dayCompleteness.mjs';
 
 const NUTRITION_UPDATE_FIELDS = new Set([
   'item', 'name', 'unit', 'amount', 'grams', 'noom_color', 'color',
@@ -53,6 +54,7 @@ export class HealthOperations {
     today,
     newId,
     clock = { now: () => Date.now() },
+    completeness = () => null,
   }) {
     this.healthData = healthData;
     this.nutritionItems = nutritionItems;
@@ -66,6 +68,7 @@ export class HealthOperations {
     this.today = today;
     this.newId = newId;
     this.clock = clock;
+    this.completeness = completeness;
   }
 
   defaultUsername() {
@@ -134,6 +137,33 @@ export class HealthOperations {
       ? this.nutritionItems.readDaySnapshot(username, date)
       : { date, items: await this.nutritionItems.findByDate(username, date), revision: null };
     return { ...snapshot, items: snapshot.items.map(row => ({ ...row, ...presentSettlement(row, this.today(), this.clock.now()) })) };
+  }
+
+  /**
+   * Whether the user has closed `date` — `done` (the log is complete) or
+   * `fasting` — plus the logging-completeness threshold the coach applies to
+   * an unclosed day (see coaching/dayCompleteness.mjs).
+   * @returns {Promise<{status: 'done'|'fasting'|null, minCalories: number}>}
+   */
+  async readDayStatus(username, date) {
+    let closures = {};
+    try { closures = (await this.healthData?.loadDayClosedData?.(username)) || {}; } catch { closures = {}; }
+    return { status: closureStatus(closures?.[date]), minCalories: resolveMinCalories(this.completeness()) };
+  }
+
+  /**
+   * Close (`done` / `fasting`) or reopen (`null`) a day. Future days refuse.
+   * @returns {Promise<{status: 'done'|'fasting'|null, minCalories: number}>}
+   */
+  async setDayStatus(username, date, status) {
+    if (status !== null && status !== DAY_STATUS.DONE && status !== DAY_STATUS.FASTING) {
+      throw Object.assign(new Error('status must be done, fasting, or null'), { status: 400 });
+    }
+    if (!isISODate(date)) throw Object.assign(new Error('Invalid date format. Use YYYY-MM-DD'), { status: 400 });
+    if (date > this.today()) throw Object.assign(new Error('A future day cannot be closed'), { status: 400 });
+    if (status === null) await this.healthData.clearDayStatus(username, date);
+    else await this.healthData.markDayStatus(username, date, status);
+    return this.readDayStatus(username, date);
   }
 
   findNutritionItem(username, id) {
