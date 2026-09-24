@@ -10,7 +10,9 @@
  *   1. the catalog entry's pin, then its learned icon (when it renders);
  *   2. the reviewed food-name → icon map in the manifest;
  *   3. guessIconForName — the longest run of the name's words that is a slug;
- *   4. an AI pick of the nearest slug, confined to the manifest vocabulary.
+ *   4. a pick of the nearest slug, confined to the manifest vocabulary: the
+ *      typed decision model first, the LLM when its confidence is low
+ *      (NearestIconChooser).
  *
  * Exception: a name in EXACT_ONLY_NAMES (or one the reviewed map explicitly
  * says has no suitable art) never gets a near neighbour. It takes its exact
@@ -41,7 +43,7 @@ const isoDate = ms => new Date(ms).toISOString().slice(0, 10);
 class ArtworkUnresolved extends Error {}
 
 export class ArtworkRemediation {
-  #queue; #items; #repairs; #catalog; #icons; #aiGateway; #upcGateway; #photos; #clock; #logger;
+  #queue; #items; #repairs; #catalog; #icons; #aiGateway; #iconChooser; #upcGateway; #photos; #clock; #logger;
 
   /**
    * @param {Object} deps
@@ -50,14 +52,15 @@ export class ArtworkRemediation {
    * @param {Object} deps.repairs - NutritionRepairService
    * @param {Object} [deps.catalog] - food catalog store (getById, findByNormalizedName, save)
    * @param {Object} deps.icons - IconManifestStore (list, foodNames, has, resolve)
-   * @param {Object} [deps.aiGateway] - `chat(messages, opts) => string`, for the nearest-icon pick
+   * @param {Object} [deps.aiGateway] - `chat(messages, opts) => string`, the LLM nearest-icon pick
+   * @param {Object} [deps.iconChooser] - NearestIconChooser; asked first, with the LLM pick as its fallback
    * @param {Object} [deps.upcGateway] - `lookup(upc)`, `fetchImage(url)`
    * @param {Object} [deps.photos] - PhotoStore (`save(userId, buffer)`, `resolvePath(userId, ref)`)
    */
-  constructor({ queue, items, repairs, catalog = null, icons, aiGateway = null, upcGateway = null, photos = null, clock, logger = console }) {
+  constructor({ queue, items, repairs, catalog = null, icons, aiGateway = null, iconChooser = null, upcGateway = null, photos = null, clock, logger = console }) {
     if (!queue || !items || !repairs || !icons || !clock?.now) throw new Error('ArtworkRemediation requires queue, items, repairs, icons and clock');
     this.#queue = queue; this.#items = items; this.#repairs = repairs; this.#catalog = catalog; this.#icons = icons;
-    this.#aiGateway = aiGateway; this.#upcGateway = upcGateway; this.#photos = photos; this.#clock = clock; this.#logger = logger;
+    this.#aiGateway = aiGateway; this.#iconChooser = iconChooser; this.#upcGateway = upcGateway; this.#photos = photos; this.#clock = clock; this.#logger = logger;
   }
 
   // ── Intake ────────────────────────────────────────────────────────────────
@@ -303,10 +306,16 @@ export class ArtworkRemediation {
       throw new ArtworkUnresolved(`"${name}" takes only its exact icon, which does not exist, and has no product photo`);
     }
     if (!allowAi) return { via: 'ai', icon: null };
-    if (!this.#aiGateway?.chat) throw new ArtworkUnresolved('no icon matches the name and no AI gateway is configured');
-    const icon = await this.#nearestIcon(name, vocabulary);
-    if (!art.iconWorks(icon)) throw new ArtworkUnresolved(`AI pick ${icon ? `"${icon}" ` : ''}is not a served icon`);
-    return { via: 'ai', icon };
+    const llm = this.#aiGateway?.chat ? () => this.#nearestIcon(name, vocabulary) : null;
+    if (!llm && !this.#iconChooser?.hasDecisionModel) {
+      throw new ArtworkUnresolved('no icon matches the name and no AI gateway is configured');
+    }
+    const picked = this.#iconChooser
+      ? await this.#iconChooser.choose({ name, vocabulary: [...vocabulary].filter(isReal), fallback: llm, source: 'artwork' })
+      : { icon: await llm(), via: 'fallback' };
+    const via = picked.via === 'jev' ? 'jev' : 'ai';
+    if (!art.iconWorks(picked.icon)) throw new ArtworkUnresolved(`${via === 'jev' ? 'Jev' : 'AI'} pick ${picked.icon ? `"${picked.icon}" ` : ''}is not a served icon`);
+    return { via, icon: picked.icon };
   }
 
   /** The LogFoodFromUPC #selectIconFromList prompt shape, asking for the NEAREST slug. */
@@ -426,6 +435,7 @@ Respond ONLY as JSON: { "icon": "<filename>" }` },
 function describe(choice) {
   if (choice.photoRef) return choice.via === 'upc-photo' ? 'the product photo was fetched again from its barcode' : 'the product photo stands in for an exact-only food';
   return { pin: 'the food\'s pinned icon', catalog: 'the food\'s catalog icon', reviewed: 'the reviewed icon for this name',
-    exact: 'the exact icon for this name', name: 'the closest icon by name', ai: 'the nearest existing icon (AI pick)' }[choice.via]
+    exact: 'the exact icon for this name', name: 'the closest icon by name', ai: 'the nearest existing icon (AI pick)',
+    jev: 'the nearest existing icon (Jev pick)' }[choice.via]
     + ` (${choice.icon})`;
 }

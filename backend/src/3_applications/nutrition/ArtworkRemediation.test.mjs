@@ -8,6 +8,7 @@ import { YamlArtworkQueueStore } from '#adapters/persistence/yaml/YamlArtworkQue
 import { FoodCatalogEntry } from '#domains/health/entities/FoodCatalogEntry.mjs';
 import { NutritionRepairService } from './NutritionRepairService.mjs';
 import { ArtworkRemediation } from './ArtworkRemediation.mjs';
+import { NearestIconChooser } from './NearestIconChooser.mjs';
 
 const NOW = Date.parse('2026-09-23T17:00:00Z');
 const roots = [];
@@ -17,7 +18,7 @@ const row = (uuid, name, over = {}) => ({ userId: 'alice', uuid, id: uuid, name,
   calories: 100, protein: 1, carbs: 1, fat: 1, amount: 1, unit: 'serving', icon: 'default', settled: true, settledBy: 'user', ...over });
 
 async function fixture({ rows = [], served = ['milkshake', 'strawberry', 'apple', 'yogurt'], foodNames = {}, ai = null, upc = null,
-  photos = ['ph_good'], entries = [] } = {}) {
+  photos = ['ph_good'], entries = [], decision = null } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'artwork-queue-')); roots.push(root);
   const logger = { info: vi.fn(), warn: vi.fn(), debug: vi.fn() };
   const dataService = { user: { resolveDir: (relative, id) => path.join(root, id, relative) } };
@@ -34,7 +35,8 @@ async function fixture({ rows = [], served = ['milkshake', 'strawberry', 'apple'
   };
   const photoStore = { resolvePath: (_u, ref) => (photos.includes(ref) ? `/p/${ref}.jpg` : null), save: vi.fn(async () => 'ph_fresh') };
   const queue = new YamlArtworkQueueStore({ dataService });
-  const remediation = new ArtworkRemediation({ queue, items, repairs, catalog, icons, aiGateway: ai, upcGateway: upc, photos: photoStore, clock, logger });
+  const iconChooser = decision ? new NearestIconChooser({ decisionGateway: decision, logger }) : null;
+  const remediation = new ArtworkRemediation({ queue, items, repairs, catalog, icons, aiGateway: ai, iconChooser, upcGateway: upc, photos: photoStore, clock, logger });
   return { root, items, repairs, remediation, queue, catalog, catalogMap, photoStore, logger, clock };
 }
 
@@ -94,6 +96,30 @@ describe('ArtworkRemediation.tick', () => {
     await f.remediation.tick('alice');
     expect((await f.items.findByUuid('alice', 'r1')).icon).toBe('yogurt');
     expect(ai.chat.mock.calls[0][0][0].content).toMatch(/NEAREST/);
+  });
+
+  it('takes a confident Jev pick without calling the LLM', async () => {
+    const ai = { chat: vi.fn(async () => '{ "icon": "apple" }') };
+    const decision = { isConfigured: () => true, evaluate: vi.fn(async () => ({ model: 'jev-1.13.0',
+      answers: { icon: { type: 'choice', choice: 'yogurt', confidence: 0.82, probabilities: { yogurt: 0.9 } } } })) };
+    const f = await fixture({ rows: [row('r1', 'Skyr Cup')], ai, decision });
+    await f.remediation.sweep('alice');
+    await f.remediation.tick('alice');
+    expect((await f.items.findByUuid('alice', 'r1')).icon).toBe('yogurt');
+    expect(ai.chat).not.toHaveBeenCalled();
+    expect(f.logger.info).toHaveBeenCalledWith('artwork.queue.resolved', expect.objectContaining({ via: 'jev', icon: 'yogurt' }));
+  });
+
+  it('falls back to the LLM when the Jev pick is not confident, and logs both candidates', async () => {
+    const ai = { chat: vi.fn(async () => '{ "icon": "yogurt" }') };
+    const decision = { isConfigured: () => true, evaluate: vi.fn(async () => ({ model: 'jev-1.13.0',
+      answers: { icon: { type: 'choice', choice: 'milkshake', confidence: 0.2, probabilities: {} } } })) };
+    const f = await fixture({ rows: [row('r1', 'Skyr Cup')], ai, decision });
+    await f.remediation.sweep('alice');
+    await f.remediation.tick('alice');
+    expect((await f.items.findByUuid('alice', 'r1')).icon).toBe('yogurt');
+    expect(f.logger.info).toHaveBeenCalledWith('nutrition.icon.pick', expect.objectContaining({
+      via: 'fallback', icon: 'yogurt', reason: 'low-confidence', jevIcon: 'milkshake', jevConfidence: 0.2, agreed: false }));
   });
 
   it('a failed attempt is kept, backed off and retried — never dropped', async () => {

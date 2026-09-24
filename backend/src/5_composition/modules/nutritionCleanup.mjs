@@ -18,9 +18,10 @@ import { CleanupQuestionSurface } from '#apps/nutrition/CleanupQuestionSurface.m
 import { NutritionStabilization } from '#apps/nutrition/NutritionStabilization.mjs';
 import { NutritionCaptureRecovery } from '#apps/nutrition/NutritionCaptureRecovery.mjs';
 import { ArtworkRemediation } from '#apps/nutrition/ArtworkRemediation.mjs';
+import { NutritionAuditTriage } from '#apps/nutrition/NutritionAuditTriage.mjs';
 import { normalizeScaleNutribotConfig } from '#apps/nutribot/lib/scaleNutribotConfig.mjs';
 
-export function createNutritionCleanup({ dataService, configService, userIdentityService, nutribotServices, upcGateway, agentOrchestrator, logger, scheduled = false, server }) {
+export function createNutritionCleanup({ dataService, configService, userIdentityService, nutribotServices, upcGateway, decisionGateway = null, agentOrchestrator, logger, scheduled = false, server }) {
   const clock = { now: () => Date.now() };
   const container = nutribotServices.nutribotContainer;
   const timezoneFor = userId => container.getConfig?.()?.getUserTimezone?.(userId) || 'America/Los_Angeles';
@@ -44,10 +45,14 @@ export function createNutritionCleanup({ dataService, configService, userIdentit
   // the same repair service (audited, undoable); the nearest-icon pick uses the
   // UPC use case's AI gateway, confined to the manifest.
   const artwork = new ArtworkRemediation({ queue: new YamlArtworkQueueStore({ dataService }), items, repairs, catalog, icons,
-    aiGateway: container.getAIGateway?.() || null, upcGateway, photos: new PhotoStore({ dataService, logger }), clock, logger });
+    aiGateway: container.getAIGateway?.() || null, iconChooser: container.getIconChooser?.() || null, upcGateway, photos: new PhotoStore({ dataService, logger }), clock, logger });
   auditor.artwork = artwork;
   const stabilization = new NutritionStabilization({ items, review: container.getFoodLogReview(), clock, logger });
-  const cleanup = new NutritionCleanup({ store, runs, auditor, repairs, items, foodLogs, clock, timezoneFor, logger, stabilization });
+  // agents.yml → nutrition_auditor.triage: { mode: shadow|gate|off, threshold }
+  const triageConfig = configService.getAppConfig?.('agents')?.nutrition_auditor?.triage || {};
+  const triage = new NutritionAuditTriage({ decisionGateway, mode: triageConfig.mode, threshold: triageConfig.threshold,
+    logger: logger.child?.({ module: 'nutrition-triage' }) || logger });
+  const cleanup = new NutritionCleanup({ store, runs, auditor, repairs, items, foodLogs, clock, timezoneFor, logger, stabilization, triage });
   cleanup.recovery = new NutritionCaptureRecovery({ review: container.getFoodLogReview(), items,
     observations: new YamlObservationStore({ dataService, logger }),
     scaleConfig: () => normalizeScaleNutribotConfig(configService.getHouseholdAppConfig?.(null, 'scales') || {}) });
