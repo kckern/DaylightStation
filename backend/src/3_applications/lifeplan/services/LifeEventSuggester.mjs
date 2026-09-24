@@ -2,7 +2,24 @@
  * LifeEventSuggester — suggests life events from recent calendar items for the
  * user to confirm. It writes nothing; the coach offers suggestions and records
  * only what the user confirms (add_life_event).
+ *
+ * Two judges:
+ *   keyword  the domain LifeEventSignalDetector. Always runs. It is the answer
+ *            when no decision model is configured, the mode is off, or the
+ *            model fails.
+ *   model    a typed-decision model (IDecisionGateway), asked one choice per
+ *            calendar item: which life-event kind, or none.
+ *
+ * Modes (agents config → lifeplan_guide.life_event_signals.mode):
+ *   shadow  (default) return keyword suggestions; ask the model too and log
+ *           per-item agreement (lifeplan.life-event.shadow);
+ *   decide  return the model's suggestions (confidence ≥ minConfidence);
+ *           keyword if any chunk fails;
+ *   off     keyword only.
+ *
+ * Model trouble never throws out of suggest().
  */
+import { choice } from '#apps/common/ports/IDecisionGateway.mjs';
 import {
   LifeEventSignalDetector, calendarItemsForDay, toSuggestion,
 } from '#domains/lifeplan/services/LifeEventSignalDetector.mjs';
@@ -11,8 +28,27 @@ const MODES = new Set(['shadow', 'decide', 'off']);
 const DEFAULT_DAYS = 14;
 const MAX_DAYS = 60;
 const DEFAULT_MIN_CONFIDENCE = 0.6;
+const CHUNK = 20;
+const LOGGED_SUMMARY_CHARS = 60;
+
+export const LIFE_EVENT_OPTIONS = Object.freeze({
+  none: 'Not a life event: routine meetings, appointments and checkups, errands, classes, social plans, trips, birthdays, holidays and yearly anniversaries',
+  relocation: 'Moving home: moving day, a house closing, moving into a new apartment',
+  job_change: 'Starting, leaving or losing a job, or a promotion: a first or last day at work, onboarding, a resignation',
+  health_event: 'A significant health event: surgery, a hospital stay, a serious diagnosis. Not a routine appointment',
+  family_event: 'A wedding, a birth, a death or funeral, a divorce, a child leaving home',
+  education: 'Starting or finishing a school or program: graduation, orientation, an enrolment, a final exam',
+  financial: 'A major financial event: retirement, buying a car, paying off a large debt, a bankruptcy',
+});
+
+const questionFor = (id) => choice(
+  `What kind of life event, if any, does the calendar item \`${id}\` mark? `
+  + 'Most calendar items are routine; answer none unless the item itself marks a lasting change in someone\'s life.',
+  LIFE_EVENT_OPTIONS,
+);
 
 const nameKey = (s) => String(s || '').trim().toLowerCase();
+const summaryOf = (item) => String(item.summary || item.name || '');
 
 function shiftDate(ymd, deltaDays) {
   const d = new Date(`${ymd}T00:00:00Z`);
@@ -29,6 +65,15 @@ function collectItems(days) {
   }
   return items;
 }
+
+/** What the model sees for one item. Never the description. */
+const modelView = ({ date, item }) => ({
+  date,
+  summary: summaryOf(item).slice(0, 200),
+  calendar: item.calendarName ?? null,
+  allDay: !!item.allday,
+  location: item.location ? String(item.location).slice(0, 100) : null,
+});
 
 export class LifeEventSuggester {
   #aggregator; #plans; #detector; #decision; #timezone; #clock; #timeoutMs; #logger;
@@ -60,6 +105,12 @@ export class LifeEventSuggester {
     this.#logger = logger;
   }
 
+  /** Whether the model is asked at all. */
+  get modelActive() { return !!this.#decision && this.mode !== 'off'; }
+
+  /**
+   * @returns {Promise<{ judge: 'keyword'|'model', startDate: string, endDate: string, suggestions: Object[] }>}
+   */
   async suggest(username, { days = DEFAULT_DAYS } = {}) {
     const span = Math.max(1, Math.min(Number.isFinite(days) ? Math.floor(days) : DEFAULT_DAYS, MAX_DAYS));
     const endDate = this.#today();
@@ -68,16 +119,90 @@ export class LifeEventSuggester {
     const items = collectItems(range?.days).map((it) => ({ ...it, keyword: this.#detector.classify(it.item) }));
     const known = new Set((this.#plans.load(username)?.life_events || []).map((e) => nameKey(e.name)).filter(Boolean));
 
-    const judge = 'keyword';
-    const suggestions = items
-      .filter((it) => it.keyword)
-      .map((it) => toSuggestion(it.date, it.item, it.keyword.kind, it.keyword.confidence, 'keyword'))
-      .filter((s) => !known.has(nameKey(s.name)));
+    let judge = 'keyword';
+    let verdicts = null;
+    if (this.modelActive && items.length) {
+      const asked = await this.#askModel(username, items);
+      if (asked) {
+        verdicts = asked.verdicts;
+        this.#logShadow(username, items, asked);
+        if (this.mode === 'decide') judge = 'model';
+      }
+    }
+
+    const suggestions = items.flatMap((it) => {
+      if (judge === 'model') {
+        const kind = this.#effectiveKind(verdicts[it.id]);
+        return kind === 'none' ? [] : [toSuggestion(it.date, it.item, kind, verdicts[it.id].confidence, 'model')];
+      }
+      return it.keyword ? [toSuggestion(it.date, it.item, it.keyword.kind, it.keyword.confidence, 'keyword')] : [];
+    }).filter((s) => !known.has(nameKey(s.name)));
 
     this.#logger?.info?.('lifeplan.life-event.suggested', {
       username, mode: this.mode, judge, items: items.length, suggestions: suggestions.length,
     });
     return { judge, startDate, endDate, suggestions };
+  }
+
+  /** Called by the coach's writer after the user confirmed an event. */
+  noteConfirmed(username, event) {
+    const signal = event?.signals?.[0] || {};
+    this.#logger?.info?.('lifeplan.life-event.confirmed', {
+      username, type: event?.type ?? null, subtype: event?.subtype ?? null,
+      detector: signal.detector ?? null, confidence: signal.confidence ?? null,
+    });
+  }
+
+  #effectiveKind(verdict) {
+    if (!verdict || verdict.kind === 'none' || verdict.confidence < this.minConfidence) return 'none';
+    return verdict.kind;
+  }
+
+  /** All chunks or nothing: any failure or missing answer returns null. */
+  async #askModel(username, items) {
+    const startedAt = Date.now();
+    const verdicts = {};
+    let model = null;
+    try {
+      for (let i = 0; i < items.length; i += CHUNK) {
+        const chunk = items.slice(i, i + CHUNK);
+        const state = Object.fromEntries(chunk.map((it) => [it.id, modelView(it)]));
+        const questions = Object.fromEntries(chunk.map((it) => [it.id, questionFor(it.id)]));
+        const result = await this.#decision.evaluate(state, questions, { timeout: this.#timeoutMs });
+        model = result?.model ?? model;
+        for (const it of chunk) {
+          const answer = result?.answers?.[it.id];
+          if (!answer || !Object.hasOwn(LIFE_EVENT_OPTIONS, answer.choice)) throw new Error(`no answer for ${it.id}`);
+          verdicts[it.id] = { kind: answer.choice, confidence: Number(answer.confidence) || 0 };
+        }
+      }
+      return { verdicts, model, ms: Date.now() - startedAt };
+    } catch (error) {
+      this.#logger?.warn?.('lifeplan.life-event.model-failed', {
+        username, mode: this.mode, items: items.length, error: error.message, ms: Date.now() - startedAt,
+      });
+      return null;
+    }
+  }
+
+  #logShadow(username, items, { verdicts, model, ms }) {
+    let agreed = 0; let keywordHits = 0; let modelHits = 0;
+    for (const it of items) {
+      const keyword = it.keyword?.kind ?? 'none';
+      const modelKind = this.#effectiveKind(verdicts[it.id]);
+      const same = keyword === modelKind;
+      if (same) agreed += 1;
+      if (keyword !== 'none') keywordHits += 1;
+      if (modelKind !== 'none') modelHits += 1;
+      this.#logger?.info?.('lifeplan.life-event.shadow', {
+        username, date: it.date, keyword, model: modelKind, confidence: verdicts[it.id].confidence, agreed: same,
+        ...(same ? {} : { summary: summaryOf(it.item).slice(0, LOGGED_SUMMARY_CHARS) }),
+      });
+    }
+    this.#logger?.info?.('lifeplan.life-event.shadow-summary', {
+      username, mode: this.mode, items: items.length, keywordHits, modelHits,
+      agreed, disagreed: items.length - agreed, model, ms,
+    });
   }
 
   #today() {
