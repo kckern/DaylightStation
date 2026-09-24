@@ -793,6 +793,9 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     if (typeof window !== 'undefined') {
       window.__governanceEngine = session.governanceEngine;
       window.__fitnessSession = session;
+      // Test hook: drive a strap reassignment exactly as the sidebar does.
+      window.__fitnessAssignGuest = (deviceId, assignment) =>
+        guestAssignmentServiceRef.current?.assignGuest(deviceId, assignment) ?? null;
       
       // MEMORY LEAK FIX: Add debug helper for memory monitoring
       window.__fitnessMemoryStats = () => {
