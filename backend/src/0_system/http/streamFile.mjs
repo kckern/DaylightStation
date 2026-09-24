@@ -68,6 +68,20 @@ export function streamMediaResourceWithRanges(req, res, resource, extraHeaders =
     throw new TypeError('streamMediaResourceWithRanges requires an opaque media resource');
   }
 
+  // A resource that knows its mtime gets validators, and a matching conditional
+  // request is answered 304 with no body. Without these, a revalidating cache
+  // policy would re-download the whole file every time.
+  if (Number.isFinite(resource.mtimeMs)) {
+    const etag = mediaResourceEtag(resource);
+    const lastModified = new Date(Math.floor(resource.mtimeMs / 1000) * 1000);
+    extraHeaders = { ...extraHeaders, ETag: etag, 'Last-Modified': lastModified.toUTCString() };
+    if (isNotModified(req, etag, lastModified)) {
+      res.writeHead(304, extraHeaders);
+      res.end();
+      return;
+    }
+  }
+
   const range = req.headers.range;
 
   if (range) {
@@ -95,6 +109,21 @@ export function streamMediaResourceWithRanges(req, res, resource, extraHeaders =
 
     resource.open().pipe(res);
   }
+}
+
+/** Weak ETag from size + mtime: changes whenever the file is replaced. */
+function mediaResourceEtag(resource) {
+  return `W/"${resource.size.toString(16)}-${Math.floor(resource.mtimeMs).toString(16)}"`;
+}
+
+/** RFC 7232: If-None-Match wins; If-Modified-Since only when it is absent. */
+function isNotModified(req, etag, lastModified) {
+  const ifNoneMatch = req.headers['if-none-match'];
+  if (ifNoneMatch) {
+    return ifNoneMatch.split(',').map((tag) => tag.trim()).some((tag) => tag === '*' || tag === etag);
+  }
+  const ifModifiedSince = Date.parse(req.headers['if-modified-since'] || '');
+  return Number.isFinite(ifModifiedSince) && lastModified.getTime() <= ifModifiedSince;
 }
 
 /**
