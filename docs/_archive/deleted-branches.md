@@ -495,3 +495,4 @@ The corollary bit twice in this sweep: `feat/teacher-workspace-ia` and `feature/
 | 2026-09-23 | fix/fitness-map-tiles | 40f70a07b0 | Fitness route maps: OpenStreetMap tiles (CARTO now requires a key); merged to main |
 | 2026-09-23 | fix/health-quickadd-instant | 9a49244b46 | Health quick-add row shows from the response at once; writes stop re-requesting /dashboard; merged to main |
 | 2026-09-23 | fix/media-cache-revalidate | 14f66e6eb0 | /api/v1/proxy/media revalidates (no-cache + size/mtime ETag, 304) instead of a 1-year max-age; merged to main |
+| 2026-09-23 | feat/plex-cli-playlists | 7998806ed0 | plex CLI playlist commands; /system/reload wiring fix; fitness Resume exempt from never_suggest; merged to main |
