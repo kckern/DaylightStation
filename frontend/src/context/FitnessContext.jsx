@@ -611,7 +611,8 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   }, [plexConfig]);
 
   // Saved participant flags describe the person: is_primary iff the id is in
-  // the configured `primary` list, display names from config.
+  // the configured `primary` list, family is neither, everyone else a guest;
+  // display names from config.
   useEffect(() => {
     const pm = fitnessSessionRef.current?._persistenceManager;
     if (!pm) return;
@@ -619,6 +620,9 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
       .flatMap((k) => (Array.isArray(usersConfig?.[k]) ? usersConfig[k] : []));
     pm.setParticipantDirectory?.({
       primaryIds: (Array.isArray(usersConfig?.primary) ? usersConfig.primary : [])
+        .map((u) => u?.id || u?.profileId)
+        .filter(Boolean),
+      familyIds: (Array.isArray(usersConfig?.family) ? usersConfig.family : [])
         .map((u) => u?.id || u?.profileId)
         .filter(Boolean),
       names: Object.fromEntries(configuredLists

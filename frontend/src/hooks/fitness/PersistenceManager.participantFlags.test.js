@@ -43,6 +43,8 @@ function sessionData() {
       { entityId: 'e4', profileId: 'parent', name: 'Parent', deviceId: 'D4', startTime: t0, endTime: null, status: 'active', startTick: 0 },
       // Dropped out before save — not in the live roster, but has a stint.
       { entityId: 'e5', profileId: 'kid-f', name: 'Kid F', deviceId: 'D5', startTime: t0, endTime: t0 + 200000, status: 'dropped', startTick: 0 },
+      // A stale ledger entry: stint opened at start, strap never broadcast.
+      { entityId: 'e6', profileId: 'guest-g', name: 'Guest G', deviceId: 'D6', startTime: t0, endTime: null, status: 'active', startTick: 0 },
     ],
     timeline: {
       timebase: { startTime: t0, intervalMs: 5000, tickCount: N },
@@ -56,6 +58,9 @@ function sessionData() {
         'user:kid-b:heart_rate': fill(N, null), 'user:kid-b:rings_total': fill(N, 0),
         'user:kid-d:heart_rate': fill(N, null), 'user:kid-d:rings_total': fill(N, 0),
         'user:stray:heart_rate': fill(N, null), 'user:stray:rings_total': fill(N, 0),
+        // Rode before a kiosk reload: real HR, no stint (stints were not restored).
+        'user:mom:heart_rate': [...fill(30, 120), ...fill(50, null)], 'user:mom:zone_id': [...fill(30, 'active'), ...fill(50, null)],
+        'user:mom:rings_total': Array.from({ length: N }, (_, i) => Math.min(i, 30)),
       },
       events: [],
     },
@@ -82,7 +87,8 @@ describe('PersistenceManager — participants describe the person', () => {
     pm.setUsageThresholdMs(300000);
     pm.setParticipantDirectory({
       primaryIds: ['kid-a', 'kid-d', 'kid-f', 'parent'],
-      names: { 'kid-a': 'Kid A', 'kid-d': 'Kid D', 'kid-f': 'Kid F', parent: 'Parent', 'guest-c': 'Guest C', 'kid-b': 'Kid B' },
+      familyIds: ['mom'],
+      names: { 'kid-a': 'Kid A', 'kid-d': 'Kid D', 'kid-f': 'Kid F', parent: 'Parent', 'guest-c': 'Guest C', 'kid-b': 'Kid B', mom: 'Mom' },
     });
   });
 
@@ -99,7 +105,21 @@ describe('PersistenceManager — participants describe the person', () => {
 
   it('takes participants from stints, not stray series names', async () => {
     const p = (await save(pm, sessionData())).participants;
-    expect(Object.keys(p).sort()).toEqual(['guest-c', 'kid-a', 'kid-f', 'parent']);
+    expect(Object.keys(p).sort()).toEqual(['guest-c', 'kid-a', 'kid-f', 'mom', 'parent']);
+  });
+
+  it('a configured family member is not a guest (and not primary)', async () => {
+    const p = (await save(pm, sessionData())).participants;
+    expect(p.mom).toMatchObject({ display_name: 'Mom' });
+    expect(p.mom).not.toHaveProperty('is_guest');
+    expect(p.mom).not.toHaveProperty('is_primary');
+  });
+
+  it('reports a cumulative dip once per series per session, not on every autosave', async () => {
+    await save(pm, sessionData());
+    await save(pm, sessionData());
+    const calls = warn.mock.calls.filter(([e]) => e === 'fitness.persistence.cumulative_regressed');
+    expect(calls).toHaveLength(1);
   });
 
   it('flattens a dipping cumulative series and reports it', async () => {

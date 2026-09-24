@@ -49,4 +49,26 @@ describe('repairCumulativeSplits', () => {
     repairCumulativeSplits(d, { hrOf: hrOf(d) });
     expect(repairCumulativeSplits(d, { hrOf: hrOf(d) })).toEqual({ repairs: [], unpaired: [] });
   });
+
+  it('does not charge a rider whose gain is an ordinary award while they were riding', () => {
+    // a has a 3-ring glitch; b legitimately earns 3 in the same interval while
+    // broadcasting HR. That is a coincidence, not a split.
+    const d = {
+      'a:hr': [150, 150, 150, 150], 'a:rings': [0, 10, 7, 9],
+      'b:hr': [140, 140, 140, 140], 'b:rings': [0, 3, 6, 9],
+    };
+    const { repairs, unpaired } = repairCumulativeSplits(d, { hrOf: hrOf(d) });
+    expect(repairs).toEqual([]);
+    expect(unpaired).toEqual([{ key: 'a:rings', tick: 2, drop: 3 }]);
+    expect(d['b:rings']).toEqual([0, 3, 6, 9]);
+  });
+
+  it('still pairs a large jump on a rider who was riding (the 2026-09-23 shape)', () => {
+    const d = {
+      'a:hr': [150, 150, 150, 150, 150], 'a:rings': [0, 40, 88, 1, 2],
+      'b:hr': [120, 120, 120, 120, 120], 'b:rings': [0, 0, 1, 89, 90],
+    };
+    const { repairs } = repairCumulativeSplits(d, { hrOf: hrOf(d) });
+    expect(repairs.map((r) => [r.from, r.to])).toEqual([['b', 'a']]);
+  });
 });

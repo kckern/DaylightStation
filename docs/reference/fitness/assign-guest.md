@@ -402,6 +402,18 @@ people is unchanged by a reassignment. Pure helper: `stintTransfer.js`
 A chain of corrections on one strap (A → B → A) moves the whole stint each
 time, from its original `startTick`; `relabeledFrom` records `[A, B]`.
 
+The correction window is measured from the ledger entry's `updatedAt` (the
+last assignment of that strap), but a correction moves the **whole open
+stint**, not only the last `T` minutes: "that was actually X" is a claim about
+everything the strap recorded for that occupant.
+
+**Resume.** A kiosk reload resumes the session from its saved file:
+`_hydrateFromSession` re-keys the saved series to live keys
+(`liveSeriesKeys.js`, zone letters expanded), seeds each rider's ring and beat
+running totals from the last saved value, and restores the stints
+(`SessionEntityRegistry.restore`) — so lines continue and a post-reload
+correction still moves the whole stint.
+
 ### Save-Time Application
 
 | Layer | What it does |
@@ -481,6 +493,7 @@ This section documents the ideal flows and constraints for guest assignment stat
 │     - Every assignment (auto-assigned members too) opens a stint   │
 │     - A correction (< T) relabels the open stint in place          │
 │     - A handover (>= T), clear, or session end closes it           │
+│     - A heart-rate dropout does NOT close it                       │
 │     - Stints hold no totals; data lives in the user-keyed stores   │
 │                                                                     │
 └─────────────────────────────────────────────────────────────────────┘

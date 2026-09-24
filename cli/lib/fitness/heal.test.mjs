@@ -390,17 +390,22 @@ describe('heal — 2026-09-23 split repair (session 20260923183528, scrubbed)', 
     const dir = path.join(splitBase, 'data', 'household', 'fitness', 'log', SPLIT_DATE);
     await mkdir(dir, { recursive: true });
     await copyFile(SPLIT_FIXTURE, path.join(dir, `${SPLIT_ID}.yml`));
-    const cfgDir = path.join(splitBase, 'data', 'household', 'config');
+    // Real shape: the COLOCATED household/fitness/config.yml, `primary` as
+    // scalar profile references, `family`/`friends` inline.
+    const cfgDir = path.join(splitBase, 'data', 'household', 'fitness');
     await mkdir(cfgDir, { recursive: true });
-    await writeFile(path.join(cfgDir, 'fitness.yml'), yaml.dump({
+    await writeFile(path.join(cfgDir, 'config.yml'), yaml.dump({
       users: {
-        primary: [
-          { id: 'kid-a', name: 'Kid A' }, { id: 'kid-d', name: 'Kid D' },
-          { id: 'kid-e', name: 'Kid E' }, { id: 'parent', name: 'Parent' },
-        ],
+        primary: ['kid-a', 'kid-d', 'kid-e', 'parent'],
+        family: [{ id: 'mom', name: 'Mom' }],
         friends: [{ id: 'kid-b', name: 'Kid B' }, { id: 'guest-c', name: 'Guest C' }],
       },
     }));
+    for (const [id, name] of [['kid-a', 'Kid A'], ['kid-d', 'Kid D'], ['kid-e', 'Kid E'], ['parent', 'Parent']]) {
+      const userDir = path.join(splitBase, 'data', 'users', id);
+      await mkdir(userDir, { recursive: true });
+      await writeFile(path.join(userDir, 'profile.yml'), yaml.dump({ username: id, display_name: name }));
+    }
   });
   afterEach(async () => { await rm(splitBase, { recursive: true, force: true }); });
 

@@ -227,9 +227,9 @@ export class SessionEntityRegistry {
       this._deviceEntityMap.set(entity.deviceId, entity.entityId);
     }
     
-    console.log('[SessionEntityRegistry] Created entity:', entity.entityId, {
+    getLogger().debug('fitness.stint.created', {
+      entityId: entity.entityId,
       profileId: entity.profileId,
-      name: entity.name,
       deviceId: entity.deviceId
     });
     
@@ -297,6 +297,31 @@ export class SessionEntityRegistry {
    * @param {Object} options - Options passed to entity.end()
    */
   /**
+   * Restore stints from a saved session (kiosk reload). A saved open stint
+   * replaces the fresh one ensureStarted opened for the same strap, so a
+   * correction after the reload still moves the whole stint.
+   * @param {Array<Object>} saved - persisted `entities[]`
+   * @returns {number} stints restored
+   */
+  restore(saved) {
+    if (!Array.isArray(saved)) return 0;
+    let count = 0;
+    for (const data of saved) {
+      const entity = SessionEntity.fromJSON(data);
+      if (!entity?.entityId || this.entities.has(entity.entityId)) continue;
+      if (entity.status === 'active' && entity.deviceId) {
+        const freshId = this._deviceEntityMap.get(entity.deviceId);
+        const fresh = freshId ? this.entities.get(freshId) : null;
+        if (fresh && fresh.relabeledFrom.length === 0) this.entities.delete(freshId);
+        this._deviceEntityMap.set(entity.deviceId, entity.entityId);
+      }
+      this.entities.set(entity.entityId, entity);
+      count += 1;
+    }
+    return count;
+  }
+
+  /**
    * Relabel a stint in place (correction). Returns the entity or null.
    */
   relabel(entityId, { profileId, name } = {}) {
@@ -316,8 +341,10 @@ export class SessionEntityRegistry {
       this._deviceEntityMap.delete(entity.deviceId);
     }
     
-    console.log('[SessionEntityRegistry] Ended entity:', entityId, {
+    getLogger().debug('fitness.stint.ended', {
+      entityId,
       status: entity.status,
+      endReason: entity.endReason,
       durationMs: entity.durationMs
     });
   }

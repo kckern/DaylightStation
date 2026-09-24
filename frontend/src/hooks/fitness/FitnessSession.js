@@ -12,6 +12,7 @@ import { EventJournal } from './EventJournal.js';
 import { ActivityMonitor } from '../../modules/Fitness/domain/ActivityMonitor.js';
 import { SessionEntityRegistry } from './SessionEntity.js';
 import { moveStintSeries } from './stintTransfer.js';
+import { toLiveSeries } from './liveSeriesKeys.js';
 import { DeviceEventRouter } from './DeviceEventRouter.js';
 import { VibrationActivityTracker } from './VibrationActivityTracker.js';
 import { PressureMatActivityTracker, PRESSURE_MAT_STARTUP_WINDOW_MS } from './PressureMatActivityTracker.js';
@@ -681,6 +682,8 @@ export class FitnessSession {
     if (mode === 'correction') {
       const moved = this._moveStintData(fromUserId, toUserId, stint.startTick);
       this.entityRegistry.relabel(stint.entityId, { profileId: toUserId, name });
+      // The new occupant owns a live stint again — back on the chart.
+      this._transferredUsers?.delete(toUserId);
       // Hide the previous name from the chart only if it no longer owns any stint.
       if (this.entityRegistry.getByProfile(fromUserId).length === 0) {
         this.markUserAsTransferred(fromUserId);
@@ -1592,11 +1595,12 @@ export class FitnessSession {
     // Set tick count to match saved data
     this.timeline.timebase.tickCount = savedTickCount;
 
-    // Restore series data
-    for (const [key, values] of Object.entries(savedSeries)) {
-      if (Array.isArray(values)) {
-        this.timeline.series[key] = [...values];
-      }
+    // Restore series data under the LIVE keys the recorders write. The saved
+    // file uses compact on-disk keys; left as-is, the live keys would restart
+    // empty and overwrite the restored history at the next save.
+    const liveSeries = toLiveSeries(savedSeries, { vibrationIds: [...this._vibrationTrackers.keys()] });
+    for (const [key, values] of Object.entries(liveSeries)) {
+      this.timeline.series[key] = values;
     }
 
     // Restore events
@@ -1632,6 +1636,13 @@ export class FitnessSession {
       this.treasureBox.restore(sessionData.treasureBox);
     }
 
+    // Continue every rider's running totals from where the saved file left
+    // them, so ring and beat lines carry on instead of dropping to zero.
+    this._restoreRunningTotals(liveSeries);
+    // Restore the stints, so a correction after the reload still moves the
+    // whole stint and the saved participant list keeps everyone who rode.
+    this.entityRegistry.restore(sessionData.entities);
+
     getLogger().info('fitness.session.resumed', {
       sessionId: this.sessionId,
       previousEndTime,
@@ -1642,6 +1653,37 @@ export class FitnessSession {
     });
 
     return true;
+  }
+
+  /**
+   * Seed TreasureBox ring totals and TimelineRecorder beat totals from the last
+   * value of each restored per-person cumulative series.
+   * @private
+   */
+  _restoreRunningTotals(liveSeries) {
+    const lastFinite = (arr) => {
+      for (let i = arr.length - 1; i >= 0; i -= 1) if (Number.isFinite(arr[i])) return arr[i];
+      return null;
+    };
+    for (const [key, values] of Object.entries(liveSeries || {})) {
+      const m = /^user:(.+):(rings_total|heart_beats)$/.exec(key);
+      if (!m) continue;
+      const last = lastFinite(values);
+      if (last == null) continue;
+      const [, userId, metric] = m;
+      if (metric === 'rings_total' && this.treasureBox) {
+        let acc = this.treasureBox.perUser.get(userId);
+        if (!acc) {
+          acc = this.treasureBox._createAccumulator(Date.now());
+          acc.profileId = userId;
+          this.treasureBox.perUser.set(userId, acc);
+        }
+        acc.totalRings = Math.max(acc.totalRings || 0, last);
+        this._timelineRecorder?.markRingsRecorded?.(userId);
+      } else if (metric === 'heart_beats' && this._timelineRecorder) {
+        this._timelineRecorder.seedCumulativeBeats(userId, last);
+      }
+    }
   }
 
   /**
@@ -2472,6 +2514,10 @@ export class FitnessSession {
 
     this._collectTimelineTick({ timestamp: now });
     this._closeOpenMedia(now);
+    // Close every open stint so the saved segments carry real end times.
+    for (const stint of this.entityRegistry.getActive()) {
+      this.entityRegistry.endEntity(stint.entityId, { status: 'ended', timestamp: now, reason: 'session-end' });
+    }
     this._log('end', {
       sessionId: this.sessionId,
       durationMs,

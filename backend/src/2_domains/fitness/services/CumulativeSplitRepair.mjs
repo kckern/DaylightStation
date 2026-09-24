@@ -23,6 +23,10 @@ const RESERVED_PREFIX = /^(device|bike|vib|global):/;
 const PAIR_WINDOW_TICKS = 3;
 const HR_LOOKBACK_TICKS = 10;
 const tolerance = (amount) => Math.max(2, amount * 0.05);
+// Largest step a rider can earn legitimately in one tick. Ring awards top out
+// at a handful per interval and beats at ~17 per 5 s (200 bpm); a jump above
+// this on a rider who was already broadcasting cannot be their own effort.
+const MAX_OWN_STEP = { rings: 10, coins: 10, beats: 20 };
 const round1 = (v) => Math.round(v * 10) / 10;
 
 const lastFiniteBefore = (arr, idx) => {
@@ -74,7 +78,16 @@ export function repairCumulativeSplits(decoded, { hrOf } = {}) {
           const jump = steps(decoded[`${from}${suffix}`]).find((s) => s.delta > 0
             && Math.abs(s.tick - drop.tick) <= PAIR_WINDOW_TICKS
             && Math.abs(s.delta - amount) <= tolerance(amount));
-          if (jump) { match = { from, tick: jump.tick }; break; }
+          if (!jump) continue;
+          // A split lands on someone who was NOT riding yet, or lands a jump
+          // no rider could earn in one tick. Anything else is a coincidence
+          // with an ordinary award and must not be charged.
+          const fromHr = typeof hrOf === 'function' ? (hrOf(from) || []) : [];
+          const fromWasRiding = fromHr.slice(Math.max(0, jump.tick - HR_LOOKBACK_TICKS), jump.tick)
+            .some((v) => Number.isFinite(v) && v > 0);
+          if (fromWasRiding && jump.delta <= MAX_OWN_STEP[metric]) continue;
+          match = { from, tick: jump.tick };
+          break;
         }
         if (!match || !hadHr) {
           unpaired.push({ key: toKey, tick: drop.tick, drop: round1(amount) });

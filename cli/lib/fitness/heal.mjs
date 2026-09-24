@@ -334,33 +334,52 @@ const ZONE_NAMES = { r: 'rest', c: 'cool', a: 'active', w: 'warm', h: 'hot', f: 
 
 /**
  * Read the configured participant directory from the household fitness
- * config. Missing file → null (flags are then left as they are).
+ * config (colocated `household/fitness/config.yml`, legacy
+ * `household/config/fitness.yml` fallback). `primary` entries are scalar
+ * profile references in the real file — resolved to display names through
+ * `users/<id>/profile.yml`; `family`/`friends` are inline. Missing config →
+ * null (flags are then left as they are).
  *
  * @param {string} [baseDir]
- * @returns {Promise<{ primaryIds: Set<string>, names: Object<string,string> }|null>}
+ * @returns {Promise<{ primaryIds: Set<string>, familyIds: Set<string>, names: Object<string,string> }|null>}
  */
 export async function loadParticipantDirectory(baseDir) {
   const resolvedBaseDir = baseDir || process.env.DAYLIGHT_BASE_PATH || process.cwd();
-  const file = path.join(resolvedBaseDir, 'data', 'household', 'config', 'fitness.yml');
-  let cfg;
-  try {
-    cfg = yaml.load(await fs.readFile(file, 'utf8'));
-  } catch {
-    return null;
+  const dataDir = path.join(resolvedBaseDir, 'data');
+  let cfg = null;
+  for (const file of [
+    path.join(dataDir, 'household', 'fitness', 'config.yml'),
+    path.join(dataDir, 'household', 'config', 'fitness.yml')
+  ]) {
+    try {
+      cfg = yaml.load(await fs.readFile(file, 'utf8'));
+      break;
+    } catch { /* try the next location */ }
   }
+  if (!cfg) return null;
   const users = cfg?.users || cfg?.fitness?.users || {};
-  const idOf = (u) => u?.id || u?.profileId;
-  const all = ['primary', 'secondary', 'family', 'friends']
-    .flatMap((k) => (Array.isArray(users[k]) ? users[k] : []));
+  const idOf = (u) => (typeof u === 'string' ? u : (u?.id || u?.profileId));
+  const list = (k) => (Array.isArray(users[k]) ? users[k] : []);
+  const names = {};
+  for (const u of [...list('primary'), ...list('secondary'), ...list('family'), ...list('friends')]) {
+    const id = idOf(u);
+    if (!id) continue;
+    if (typeof u === 'object' && u.name) { names[id] = u.name; continue; }
+    try {
+      const profile = yaml.load(await fs.readFile(path.join(dataDir, 'users', id, 'profile.yml'), 'utf8'));
+      if (profile?.display_name) names[id] = profile.display_name;
+    } catch { /* no profile — keep the saved display_name */ }
+  }
   return {
-    primaryIds: new Set((Array.isArray(users.primary) ? users.primary : []).map(idOf).filter(Boolean)),
-    names: Object.fromEntries(all.filter((u) => idOf(u) && u.name).map((u) => [idOf(u), u.name]))
+    primaryIds: new Set(list('primary').map(idOf).filter(Boolean)),
+    familyIds: new Set(list('family').map(idOf).filter(Boolean)),
+    names
   };
 }
 
 /**
  * Participant flags describe the person: is_primary iff configured primary,
- * is_guest otherwise, base_user only for guests (and only naming someone
+ * configured family is neither, is_guest otherwise, base_user only for guests (and only naming someone
  * else), display_name from config.
  */
 export function applyParticipantDirectory(participants, directory) {
@@ -371,11 +390,13 @@ export function applyParticipantDirectory(participants, directory) {
     const displayName = directory.names[id] || entry.display_name || id;
     next.display_name = displayName;
     const isPrimary = directory.primaryIds.has(id);
+    const isFamily = directory.familyIds?.has(id) || false;
+    const isGuest = !isPrimary && !isFamily;
     delete next.is_primary;
     delete next.is_guest;
     if (isPrimary) next.is_primary = true;
-    else next.is_guest = true;
-    if (isPrimary || !next.base_user || next.base_user === displayName) delete next.base_user;
+    if (isGuest) next.is_guest = true;
+    if (!isGuest || !next.base_user || next.base_user === displayName) delete next.base_user;
     out[id] = next;
   }
   return out;
