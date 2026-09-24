@@ -254,4 +254,90 @@ describe('TransactionCategorizationService', () => {
       expect(service.getUncategorized([{ id: '9', description: 'Direct Deposit', tagNames: ['Income'] }])).toEqual([]);
     });
   });
+
+  describe('Jev category shadow', () => {
+    let decisionGateway;
+    const jevSays = (category, confidence) => decisionGateway.evaluate.mockResolvedValue({
+      model: 'jev-test-1', usage: {},
+      answers: { category: { type: 'choice', choice: category, confidence, probabilities: { [category]: confidence } } },
+    });
+    const compareLogs = () => mockLogger.info.mock.calls
+      .filter(([event]) => event === 'categorization.jev.compare').map(([, data]) => data);
+    const walmart = () => [{ id: '1', date: '2026-01-01', description: 'WALMART #1234', tagNames: [] }];
+
+    beforeEach(() => {
+      decisionGateway = { isConfigured: () => true, evaluate: vi.fn() };
+      service = new TransactionCategorizationService({
+        aiGateway: mockAIGateway, transactionSource: mockTransactionSource,
+        financeStore: mockFinanceStore, decisionGateway, logger: mockLogger,
+      });
+    });
+
+    it('logs both picks and keeps the LLM category on the apply path', async () => {
+      mockAIGateway.chatWithJson.mockResolvedValue({ category: 'Groceries', friendlyName: 'Walmart' });
+      jevSays('Shopping', 0.95);
+
+      const result = await service.categorize(walmart());
+
+      expect(result.processed[0]).toMatchObject({ category: 'Groceries', categoryVia: 'llm' });
+      expect(mockTransactionSource.updateTransaction).toHaveBeenCalledWith('1', { description: 'Walmart', tags: 'Groceries', memo: null });
+      expect(compareLogs()).toEqual([expect.objectContaining({
+        id: '1', path: 'apply', mode: 'shadow', llmCategory: 'Groceries', llmValid: true,
+        jevCategory: 'Shopping', confidence: 0.95, agreed: false, via: 'llm', model: 'jev-test-1', cjk: false,
+      })]);
+    });
+
+    it('logs the same comparison on the preview path and writes nothing', async () => {
+      mockAIGateway.chatWithJson.mockResolvedValue({ category: 'Groceries', friendlyName: 'Walmart' });
+      jevSays('Groceries', 0.7);
+
+      const result = await service.preview(walmart());
+
+      expect(result.suggestions[0]).toMatchObject({ suggestedCategory: 'Groceries', categoryVia: 'llm' });
+      expect(mockTransactionSource.updateTransaction).not.toHaveBeenCalled();
+      expect(compareLogs()).toEqual([expect.objectContaining({ path: 'preview', agreed: true, confidence: 0.7 })]);
+    });
+
+    it('still compares when the LLM category is invalid, and the row still fails in shadow', async () => {
+      mockAIGateway.chatWithJson.mockResolvedValue({ category: '', friendlyName: 'PayPal' });
+      jevSays('Shopping', 0.9);
+
+      const result = await service.categorize(walmart());
+
+      expect(result.failed[0].reason).toBe('Invalid category: ');
+      expect(compareLogs()).toEqual([expect.objectContaining({ llmCategory: '', llmValid: false, jevCategory: 'Shopping', agreed: false, via: null })]);
+    });
+
+    it('a Jev failure leaves the legacy result untouched', async () => {
+      mockAIGateway.chatWithJson.mockResolvedValue({ category: 'Groceries', friendlyName: 'Walmart' });
+      decisionGateway.evaluate.mockRejectedValue(new Error('jev down'));
+
+      const result = await service.categorize(walmart());
+
+      expect(result.processed[0]).toMatchObject({ category: 'Groceries', categoryVia: 'llm' });
+      expect(compareLogs()).toEqual([]);
+      expect(mockLogger.warn).toHaveBeenCalledWith('categorization.jev.failed', expect.objectContaining({ error: 'jev down' }));
+    });
+
+    it('mode off asks Jev nothing', async () => {
+      mockFinanceStore.getCategorizationConfig.mockReturnValue({ ...mockCategorizationConfig, jev: { mode: 'off' } });
+      mockAIGateway.chatWithJson.mockResolvedValue({ category: 'Groceries', friendlyName: 'Walmart' });
+
+      await service.categorize(walmart());
+
+      expect(decisionGateway.evaluate).not.toHaveBeenCalled();
+    });
+
+    it('asks Jev while the LLM is still thinking', async () => {
+      let releaseLlm;
+      mockAIGateway.chatWithJson.mockReturnValue(new Promise((resolve) => { releaseLlm = resolve; }));
+      jevSays('Groceries', 0.9);
+
+      const pending = service.categorize(walmart());
+      await vi.waitFor(() => expect(decisionGateway.evaluate).toHaveBeenCalledTimes(1));
+      releaseLlm({ category: 'Groceries', friendlyName: 'Walmart' });
+
+      expect((await pending).processed).toHaveLength(1);
+    });
+  });
 });
