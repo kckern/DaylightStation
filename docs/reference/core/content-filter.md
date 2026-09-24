@@ -173,6 +173,8 @@ answer, `status: agree | review`, `reasons` (`not-offensive`,
 removes or edits a cue.** To act on a review, add
 `cueOverrides: { <cueId>: { disabled: true } }` to the title's override.
 With no model configured every item is listed as `model-unavailable`.
+Re-running the review keeps any filled-in `decision` whose cue id still names the
+same word. The command refuses an `--out` path inside the overrides folder.
 
 Run offline; concurrency defaults to 4 (`--concurrency`), the confidence floor
 to 0.7 (`--min-confidence`). The CLI's `content-filter.cue-review.summary` /
