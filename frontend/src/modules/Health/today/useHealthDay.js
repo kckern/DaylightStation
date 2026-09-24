@@ -92,6 +92,8 @@ export function useHealthDay(date, { enabled = true } = {}) {
     items,
     byBucket,
     budget: list.data?.budget ?? null,
+    // { status: 'done'|'fasting'|null, minCalories } — the day's closure for coaching.
+    dayStatus: list.data?.dayStatus ?? null,
     budgetError: list.data?.budgetError ?? null,
     revision: list.data?.revision ?? null,
     loading: list.loading,
