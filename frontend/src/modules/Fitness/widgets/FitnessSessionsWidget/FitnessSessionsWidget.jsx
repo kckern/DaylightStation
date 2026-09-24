@@ -290,9 +290,11 @@ export default function FitnessSessionsWidget() {
   const { scrollToDate, setScrollToDate, selectedSessionId, setSelectedSessionId } = useFitnessScreen();
   const navigate = useNavigate();
   const location = useLocation();
-  // The detail pane currently open: { sessionId, revert }. Tracks WHICH session
-  // is shown so an outside selection change swaps the pane rather than leaving
-  // the previous session's detail up.
+  // The detail pane currently open: { sessionId, revert, committed }. Tracks
+  // WHICH session is shown so an outside selection change swaps the pane rather
+  // than leaving the previous session's detail up. `committed` flips once the
+  // replacement is visible in the layout, so a pane that later disappears can be
+  // told apart from one that has not rendered yet.
   const openRef = useRef(null);
   const containerRef = useRef(null);
 
@@ -308,7 +310,7 @@ export default function FitnessSessionsWidget() {
 
   const openDetail = useCallback((sessionId) => {
     openRef.current?.revert();
-    openRef.current = { sessionId, ...replace(SESSION_DETAIL_NODE_ID, sessionDetailSubtree(sessionId)) };
+    openRef.current = { sessionId, committed: false, ...replace(SESSION_DETAIL_NODE_ID, sessionDetailSubtree(sessionId)) };
   }, [replace]);
 
   const handleSessionClick = useCallback((sessionId) => {
@@ -333,13 +335,29 @@ export default function FitnessSessionsWidget() {
     if (!selectedSessionId) return;
     if (openRef.current?.sessionId === selectedSessionId) return;
     if (!openRef.current && openSessionIdOf(getNode(SESSION_DETAIL_NODE_ID)) === selectedSessionId) {
-      openRef.current = { sessionId: selectedSessionId, revert: () => restore(SESSION_DETAIL_NODE_ID) };
+      openRef.current = { sessionId: selectedSessionId, committed: true, revert: () => restore(SESSION_DETAIL_NODE_ID) };
       return;
     }
     openDetail(selectedSessionId);
     // getNode changes identity on every replacement; only a selection change should re-run this.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedSessionId, openDetail, restore]);
+
+  // The detail pane closes itself (its × / back buttons call restore()). When the
+  // pane this widget opened is gone, drop the selection and the /session-{id} URL
+  // too — otherwise the row stays highlighted and a reload reopens the session.
+  useEffect(() => {
+    const open = openRef.current;
+    if (!open) return;
+    if (openSessionIdOf(getNode(SESSION_DETAIL_NODE_ID)) === open.sessionId) {
+      open.committed = true;
+      return;
+    }
+    if (!open.committed) return;
+    openRef.current = null;
+    setSelectedSessionId(null);
+    syncSessionUrl(null);
+  }, [getNode, setSelectedSessionId, syncSessionUrl]);
 
   // When calendar sets scrollToDate, scroll to that date group and auto-select first session
   useEffect(() => {
