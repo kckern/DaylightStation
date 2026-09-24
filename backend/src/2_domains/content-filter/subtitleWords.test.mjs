@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  SEVERITY_LEVELS, compileWordList, findWordHits, hitToMuteCue, lineContext, parseSrt,
+  SEVERITY_LEVELS, compileWordList, findWordHits, hitToMuteCue, lineContext, parseSrt, spokenStemsFor,
 } from './subtitleWords.mjs';
 
 const SRT = `1
@@ -134,5 +134,20 @@ describe('lineContext', () => {
   it('uses empty strings at the edges', () => {
     expect(lineContext(lines, 0)).toEqual({ line: 'a', before: '', after: 'b' });
     expect(lineContext(lines, 2)).toEqual({ line: 'c', before: 'b', after: '' });
+  });
+});
+
+describe('spokenStemsFor', () => {
+  const hasStem = (text, stems) => stems.some((s) => new RegExp(`\\b${s}`, 'i').test(text));
+  it('finds every goddamn form for a language/blasphemy/goddamn cue', () => {
+    const stems = spokenStemsFor('language/blasphemy/goddamn');
+    for (const w of ['goddamn', 'goddamned', 'goddammit', 'goddamnit']) expect(hasStem(`well ${w}!`, stems)).toBe(true);
+  });
+  it('finds the -a spelling of the n-word leaf', () => {
+    expect(hasStem('nigga', spokenStemsFor('language/racial/nigger'))).toBe(true);
+  });
+  it('keeps the VidAngel leaves and returns null for an unknown leaf', () => {
+    expect(spokenStemsFor('language/profanity/damn')).toContain('dammit');
+    expect(spokenStemsFor('language/profanity/nope')).toBeNull();
   });
 });
