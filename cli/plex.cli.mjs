@@ -127,14 +127,16 @@ const flags = {
     dryRun: args.includes('--dry-run'),
     section: null,
     fromYaml: null,
-    ids: null
+    ids: null,
+    idsFile: null
 };
 
 // Flags that consume the next argument as their value
 const valueFlags = {
     '--section': 'section',
     '--from-yaml': 'fromYaml',
-    '--ids': 'ids'
+    '--ids': 'ids',
+    '--ids-file': 'idsFile'
 };
 for (const f of SCALAR_FIELDS) valueFlags[`--${f}`] = f;
 for (const k of Object.keys(TAG_FIELDS)) valueFlags[`--${k}`] = k;
@@ -168,6 +170,20 @@ const PLEX_TYPE_NUM = {
     movie: 1, show: 2, season: 3, episode: 4, trailer: 5,
     artist: 8, album: 9, track: 10, photo: 13, collection: 18
 };
+
+/** Playlist `type` param, keyed by the type of the items going into it. */
+const PLAYLIST_TYPE_BY_ITEM = {
+    track: 'audio', episode: 'video', movie: 'video', clip: 'video', photo: 'photo'
+};
+
+/** Items per create/add request — keeps the `uri` query param a sane length. */
+const PLAYLIST_BATCH = 50;
+
+function chunk(list, size) {
+    const out = [];
+    for (let i = 0; i < list.length; i += size) out.push(list.slice(i, i + size));
+    return out;
+}
 
 /**
  * Plex API client for CLI operations
@@ -414,6 +430,98 @@ class PlexCLI {
      */
     async deleteCollection(id) {
         return this.del(`library/collections/${id}`);
+    }
+
+    /**
+     * `server://` URI for a batch of library items — the form playlist and
+     * collection create/add endpoints expect.
+     */
+    async itemsUri(ids) {
+        const machine = await this.getMachineIdentifier();
+        return `server://${machine}/com.plexapp.plugins.library/library/metadata/${ids.join(',')}`;
+    }
+
+    /**
+     * List playlists (all types), including smart ones.
+     */
+    async getPlaylists() {
+        const data = await this.fetch('playlists');
+        return (data?.MediaContainer?.Metadata || []).map(p => ({
+            id: p.ratingKey, title: p.title, type: p.playlistType,
+            count: p.leafCount, smart: !!p.smart, durationMs: p.duration
+        }));
+    }
+
+    /**
+     * Items of a playlist. Each carries `playlistItemID`, which (not the
+     * ratingKey) is what the remove endpoint takes.
+     */
+    async getPlaylistItems(id) {
+        const data = await this.fetch(`playlists/${id}/items`);
+        return data?.MediaContainer?.Metadata || [];
+    }
+
+    /**
+     * Create a regular (non-smart) playlist. The type (audio/video/photo) is
+     * inferred from the first item. Items beyond the first batch are appended,
+     * keeping every request URL a sane length.
+     */
+    async createPlaylist(name, ids) {
+        if (!ids.length) throw new Error('createPlaylist requires at least one item id');
+        const first = await this.getMetadata(ids[0]);
+        if (!first) throw new Error(`First item ${ids[0]} not found`);
+        const type = PLAYLIST_TYPE_BY_ITEM[first.type];
+        if (!type) throw new Error(`Unsupported item type "${first.type}" for a playlist`);
+        const [head, ...rest] = chunk(ids, PLAYLIST_BATCH);
+        const data = await this.post('playlists', {
+            type, title: name, smart: '0', uri: await this.itemsUri(head)
+        });
+        const created = data?.MediaContainer?.Metadata?.[0];
+        if (!created?.ratingKey) throw new Error('Plex did not return the new playlist');
+        for (const batch of rest) await this.addToPlaylist(created.ratingKey, batch);
+        return created;
+    }
+
+    /**
+     * Append item(s) to a playlist, in order.
+     */
+    async addToPlaylist(id, itemIds) {
+        for (const batch of chunk(itemIds, PLAYLIST_BATCH)) {
+            await this.put(`playlists/${id}/items`, { uri: await this.itemsUri(batch) });
+        }
+    }
+
+    /**
+     * Remove every occurrence of the given item ratingKeys from a playlist.
+     * Returns the ratingKeys that were not in it.
+     */
+    async removeFromPlaylist(id, itemIds) {
+        const wanted = new Set(itemIds.map(String));
+        const items = await this.getPlaylistItems(id);
+        for (const item of items) {
+            if (wanted.has(String(item.ratingKey))) {
+                await this.del(`playlists/${id}/items/${item.playlistItemID}`);
+            }
+        }
+        const present = new Set(items.map(i => String(i.ratingKey)));
+        return [...wanted].filter(k => !present.has(k));
+    }
+
+    /**
+     * Replace a playlist's contents, keeping its id (so config that points at
+     * it keeps working).
+     */
+    async setPlaylistItems(id, itemIds) {
+        await this.del(`playlists/${id}/items`);
+        await this.addToPlaylist(id, itemIds);
+    }
+
+    async renamePlaylist(id, name) {
+        await this.put(`playlists/${id}`, { title: name });
+    }
+
+    async deletePlaylist(id) {
+        return this.del(`playlists/${id}`);
     }
 
     /**
@@ -956,7 +1064,137 @@ async function cmdCollection(plex, sub, rest) {
     }
 }
 
-const CONTENT_TYPE_BY_EXT = { '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png' };
+/**
+ * Item IDs from --ids, --ids-file, and positional args, in that order.
+ * An ids file holds one id per line; anything after the id (and `#` comment
+ * lines) is ignored, so annotated track lists can be passed straight in.
+ */
+function collectIds(positional = []) {
+    const fromFile = flags.idsFile
+        ? readFileSync(flags.idsFile, 'utf8').split('\n')
+            .map(l => l.trim())
+            .filter(l => l && !l.startsWith('#'))
+            .map(l => l.split(/[\s|]/)[0])
+        : [];
+    return parseIdList(flags.ids, ...fromFile, ...positional);
+}
+
+async function cmdPlaylist(plex, sub, rest) {
+    switch (sub) {
+        case 'list':
+        case 'ls': {
+            const lists = await plex.getPlaylists();
+            if (flags.json) { console.log(JSON.stringify(lists, null, 2)); return; }
+            console.log(`\n${lists.length} playlist(s):`);
+            console.log('='.repeat(60));
+            for (const p of lists) {
+                const mins = p.durationMs ? `  ${Math.round(p.durationMs / 60000)} min` : '';
+                console.log(`  [${p.id}] ${p.title}  (${p.type}, ${p.count ?? '?'} items${mins}${p.smart ? ', smart' : ''})`);
+            }
+            console.log();
+            break;
+        }
+
+        case 'items': {
+            const id = rest[0];
+            if (!id) { console.error('Usage: plex playlist items <id>'); process.exit(1); }
+            const items = await plex.getPlaylistItems(id);
+            if (flags.json) { console.log(JSON.stringify(items, null, 2)); return; }
+            if (flags.idsOnly) { items.forEach(i => console.log(i.ratingKey)); return; }
+            console.log(`\n${items.length} item(s) in playlist ${id}:`);
+            console.log('='.repeat(60));
+            for (const i of items) {
+                const who = i.originalTitle || i.grandparentTitle;
+                console.log(`  [${i.ratingKey}] ${who ? `${who} — ` : ''}${i.title}${i.parentTitle ? `  (${i.parentTitle})` : ''}`);
+            }
+            console.log();
+            break;
+        }
+
+        case 'create': {
+            const name = flags.title || rest[0];
+            const ids = collectIds(rest.slice(name === rest[0] ? 1 : 0));
+            if (!name) { console.error('Usage: plex playlist create "<name>" --ids a,b,c | --ids-file <file>'); process.exit(1); }
+            if (!ids.length) { console.error('Error: provide item IDs via --ids, --ids-file, or positional args'); process.exit(1); }
+            if (flags.dryRun) {
+                console.log(`[dry-run] Would create playlist "${name}" with ${ids.length} item(s)`);
+                return;
+            }
+            const created = await plex.createPlaylist(name, ids);
+            const count = (await plex.getPlaylistItems(created.ratingKey)).length;
+            console.log(`\n✓ Created playlist [${created.ratingKey}] ${created.title} (${count}/${ids.length} items)`);
+            if (count !== ids.length) process.exitCode = 1;
+            break;
+        }
+
+        case 'add': {
+            const id = rest[0];
+            const itemIds = collectIds(rest.slice(1));
+            if (!id || !itemIds.length) { console.error('Usage: plex playlist add <id> <itemId> [...] | --ids-file <file>'); process.exit(1); }
+            if (flags.dryRun) { console.log(`[dry-run] Would append ${itemIds.length} item(s) to ${id}`); return; }
+            await plex.addToPlaylist(id, itemIds);
+            console.log(`\n✓ Appended ${itemIds.length} item(s) to playlist ${id}`);
+            break;
+        }
+
+        case 'remove':
+        case 'rm': {
+            const id = rest[0];
+            const itemIds = collectIds(rest.slice(1));
+            if (!id || !itemIds.length) { console.error('Usage: plex playlist remove <id> <itemId> [...]'); process.exit(1); }
+            if (flags.dryRun) { console.log(`[dry-run] Would remove ${itemIds.length} item(s) from ${id}`); return; }
+            const absent = await plex.removeFromPlaylist(id, itemIds);
+            console.log(`\n✓ Removed ${itemIds.length - absent.length} item(s) from playlist ${id}`);
+            if (absent.length) console.log(`  (not in playlist: ${absent.join(', ')})`);
+            break;
+        }
+
+        case 'set': {
+            const id = rest[0];
+            const itemIds = collectIds(rest.slice(1));
+            if (!id || !itemIds.length) { console.error('Usage: plex playlist set <id> --ids-file <file>   (replaces contents, keeps the id)'); process.exit(1); }
+            const before = (await plex.getPlaylistItems(id)).length;
+            if (flags.dryRun) { console.log(`[dry-run] Would replace ${before} item(s) in ${id} with ${itemIds.length}`); return; }
+            await plex.setPlaylistItems(id, itemIds);
+            const after = (await plex.getPlaylistItems(id)).length;
+            console.log(`\n✓ Playlist ${id}: ${before} → ${after}/${itemIds.length} items`);
+            if (after !== itemIds.length) process.exitCode = 1;
+            break;
+        }
+
+        case 'rename': {
+            const id = rest[0];
+            const newName = flags.title || rest.slice(1).join(' ');
+            if (!id || !newName) { console.error('Usage: plex playlist rename <id> "<newName>"'); process.exit(1); }
+            if (flags.dryRun) { console.log(`[dry-run] Would rename playlist ${id} → "${newName}"`); return; }
+            await plex.renamePlaylist(id, newName);
+            console.log(`\n✓ Renamed playlist [${id}] → ${(await plex.getMetadata(id))?.title}`);
+            break;
+        }
+
+        case 'delete': {
+            const id = rest[0];
+            if (!id) { console.error('Usage: plex playlist delete <id>'); process.exit(1); }
+            const meta = await plex.getMetadata(id);
+            if (!meta) { console.error(`No item found with ID: ${id}`); process.exit(1); }
+            if (meta.type !== 'playlist') {
+                console.error(`ID ${id} is a ${meta.type}, not a playlist. Aborting.`);
+                process.exit(1);
+            }
+            if (flags.dryRun) { console.log(`[dry-run] Would delete playlist [${id}] ${meta.title}`); return; }
+            await plex.deletePlaylist(id);
+            console.log(`\n✓ Deleted playlist [${id}] ${meta.title} (media untouched)`);
+            break;
+        }
+
+        default:
+            console.error(`Unknown playlist subcommand: ${sub || '(none)'}`);
+            console.error('Valid: list, items, create, add, remove, set, rename, delete');
+            process.exit(1);
+    }
+}
+
+const CONTENT_TYPE_BY_EXT ={ '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png' };
 
 function contentTypeFor(filePath) {
     const ext = String(filePath).toLowerCase().slice(String(filePath).lastIndexOf('.'));
@@ -1049,6 +1287,7 @@ Commands:
   set <id>                 Update metadata for a single item
   set-from-yaml <file>     Bulk-update metadata from a YAML manifest
   collection <subcommand>  Manage collections (see below)
+  playlist <subcommand>    Manage playlists (see below)
   poster <subcommand>      Upload poster images (see below)
 
 Collection subcommands:
@@ -1059,6 +1298,16 @@ Collection subcommands:
   collection add <id> <itemId> [...]      Add item(s) to a collection
   collection remove <id> <itemId> [...]   Remove item(s) from a collection
   collection delete <id>                  Delete a collection (media is untouched)
+
+Playlist subcommands (type audio/video inferred from the first item):
+  playlist list                           List all playlists
+  playlist items <id> [--ids-only]        List a playlist's items
+  playlist create "<name>" --ids a,b,c    Create a playlist (or --ids-file <file>)
+  playlist add <id> <itemId> [...]        Append item(s)
+  playlist remove <id> <itemId> [...]     Remove item(s) by ratingKey
+  playlist set <id> --ids-file <file>     Replace contents in place (the id is kept)
+  playlist rename <id> "<name>"           Rename a playlist
+  playlist delete <id>                    Delete a playlist (media is untouched)
 
 Poster subcommands:
   poster set <id> <file>                  Upload one image and set it as the item's poster
@@ -1083,7 +1332,8 @@ Options:
   --directors "a,b"        (set) Replace the director tag list
   --writers "a,b"          (set) Replace the writer tag list
   --producers "a,b"        (set) Replace the producer tag list
-  --ids <a,b,c>            (collection) Comma-separated item IDs for create/add/remove
+  --ids <a,b,c>            (collection/playlist) Comma-separated item IDs for create/add/remove
+  --ids-file <file>        (playlist) One ID per line; text after the ID and # lines are ignored
   --from-yaml <file>       (alt to positional) Manifest path for set-from-yaml
   --lock                   Also send .locked=1 (prevents agent overwrite — recommended for seasons)
   --dry-run                Show what would be sent without making the request
@@ -1157,6 +1407,11 @@ async function main() {
             case 'col':
             case 'coll':
                 await cmdCollection(plex, commandArgs[0], commandArgs.slice(1));
+                break;
+
+            case 'playlist':
+            case 'pl':
+                await cmdPlaylist(plex, commandArgs[0], commandArgs.slice(1));
                 break;
 
             case 'poster':
