@@ -1015,3 +1015,8 @@ $health-aside-gap: 1.5rem;
   .mantine-Button-root { --button-height-sm: 44px; }
   &__error { flex-basis: 100%; color: var(--ds-danger); font-size: 0.8rem; }
 }
+
+// A reconstructed (weight-derived) row: an estimate for an untracked day, not
+// logged food — quieter than a real entry and labelled as such (EntryRow).
+.health-row-line--reconstructed .health-row__name { color: var(--ds-text-mid); font-style: italic; }
+.health-row__estimate { color: var(--ds-text-low); font-size: 0.8em; }

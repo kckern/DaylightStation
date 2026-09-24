@@ -106,14 +106,14 @@ const PRIMITIVES = {
 
   // --- Nutrition primitives ---
   protein_avg_lt_g: (windows, threshold) => {
-    const last = nutritionTail(windows, 7);
+    const last = nutritionTail(windows, 7).filter(hasKnownProtein);
     if (!last.length) return null;
     const value = mean(last.map((d) => Number(d.protein) || 0));
     return matchLt(value, threshold, 'protein_avg_g', round(value, 1));
   },
 
   protein_avg_gt_g: (windows, threshold) => {
-    const last = nutritionTail(windows, 14);
+    const last = nutritionTail(windows, 14).filter(hasKnownProtein);
     if (!last.length) return null;
     const value = mean(last.map((d) => Number(d.protein) || 0));
     return matchGt(value, threshold, 'protein_avg_g', round(value, 1));
@@ -428,7 +428,16 @@ function weightDeltaOverDays(weightSeries, days) {
  * window. Returns the fractional drop ((earlier - recent) / earlier), or null
  * if insufficient data. Negative means protein actually rose.
  */
+/**
+ * A day backfilled from weight (`reconstructed_calories`) has calories but no
+ * known protein; a null protein is unknown too. Neither may read as 0g eaten.
+ */
+function hasKnownProtein(day) {
+  return day?.protein != null && !(Number(day.reconstructed_calories) > 0);
+}
+
 function proteinDropPct(nutritionDays) {
+  nutritionDays = Array.isArray(nutritionDays) ? nutritionDays.filter(hasKnownProtein) : nutritionDays;
   if (!Array.isArray(nutritionDays) || nutritionDays.length < 4) return null;
   const mid = Math.floor(nutritionDays.length / 2);
   const earlier = nutritionDays.slice(0, mid).map((d) => Number(d.protein) || 0);

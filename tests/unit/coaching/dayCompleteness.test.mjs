@@ -54,3 +54,15 @@ describe('dayCompleteness', () => {
     expect(shiftDate('2026-10-01', 1)).toBe('2026-09-30');
   });
 });
+
+describe('reconstructed days', () => {
+  it('trusts their calories but never averages their (unknown) protein', () => {
+    expect(classifyDay({ calories: 2000, protein: 30, reconstructed_calories: 1540 }, undefined, 1200)).toBe('reconstructed');
+    const avg = averageTrusted([
+      { calories: 1800, protein: 120, status: 'complete' },
+      { calories: 2000, protein: 30, status: 'reconstructed' },
+    ]);
+    expect(avg).toEqual({ calories: 1900, protein: 120, trustedDays: 2, totalDays: 2 });
+    expect(averageTrusted([{ calories: 2000, protein: 0, status: 'reconstructed' }]).protein).toBeNull();
+  });
+});

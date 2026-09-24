@@ -14,11 +14,12 @@ export const DAY_STATUS = Object.freeze({
   COMPLETE: 'complete',     // logged total at/above the threshold
   DONE: 'done',             // user said the day's log is final
   FASTING: 'fasting',       // user said the day was a fast
+  RECONSTRUCTED: 'reconstructed', // untracked intake backfilled from weight: calories trusted, protein unknown
   INCOMPLETE: 'incomplete', // something logged, under the threshold, not confirmed
   UNLOGGED: 'unlogged',     // nothing logged at all
 });
 
-const TRUSTED = new Set([DAY_STATUS.COMPLETE, DAY_STATUS.DONE, DAY_STATUS.FASTING]);
+const TRUSTED = new Set([DAY_STATUS.COMPLETE, DAY_STATUS.DONE, DAY_STATUS.FASTING, DAY_STATUS.RECONSTRUCTED]);
 
 export function isTrusted(day) {
   return TRUSTED.has(day?.status);
@@ -55,6 +56,7 @@ export function classifyDay(entry, closure, minCalories = DEFAULT_MIN_CALORIES) 
   const calories = Number(entry?.calories) || 0;
   const closed = closureStatus(closure);
   if (closed) return closed;
+  if (Number(entry?.reconstructed_calories) > 0) return DAY_STATUS.RECONSTRUCTED;
   if (!entry || calories <= 0) return DAY_STATUS.UNLOGGED;
   return calories >= minCalories ? DAY_STATUS.COMPLETE : DAY_STATUS.INCOMPLETE;
 }
@@ -86,17 +88,23 @@ export function buildCalendarDays({ nutritionData, closures, beforeDate, count, 
   return days;
 }
 
+/** A reconstructed day's protein is unknown, not zero — never average it in. */
+export function hasKnownProtein(day) {
+  return isTrusted(day) && day.status !== DAY_STATUS.RECONSTRUCTED;
+}
+
 /**
- * Averages over trusted days only.
+ * Averages over trusted days only. Protein averages over the trusted days whose
+ * protein is known (reconstructed days are excluded).
  * @returns {{calories: number|null, protein: number|null, trustedDays: number, totalDays: number}}
  */
 export function averageTrusted(days) {
   const trusted = (days || []).filter(isTrusted);
   if (!trusted.length) return { calories: null, protein: null, trustedDays: 0, totalDays: days?.length || 0 };
-  const sum = trusted.reduce((acc, d) => ({ calories: acc.calories + d.calories, protein: acc.protein + d.protein }), { calories: 0, protein: 0 });
+  const proteinDays = trusted.filter(hasKnownProtein);
   return {
-    calories: Math.round(sum.calories / trusted.length),
-    protein: Math.round(sum.protein / trusted.length),
+    calories: Math.round(trusted.reduce((s, d) => s + d.calories, 0) / trusted.length),
+    protein: proteinDays.length ? Math.round(proteinDays.reduce((s, d) => s + d.protein, 0) / proteinDays.length) : null,
     trustedDays: trusted.length,
     totalDays: days.length,
   };
