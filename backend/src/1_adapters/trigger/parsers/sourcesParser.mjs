@@ -1,6 +1,6 @@
 /**
  * Parser for triggers/sources.yml. One map keyed by source id; each entry
- * carries `modality` (nfc|state) and optional `location` (defaults to key).
+ * carries `modality` (nfc|state|barcode|voice) and optional `location` (defaults to key).
  * Partitions by modality and delegates per-entry validation to the existing
  * nfc/state location parsers by reconstructing their raw keyed-by-location shape.
  *
@@ -20,6 +20,9 @@
 import { ValidationError } from '#domains/core/errors/ValidationError.mjs';
 import { parseNfcLocations } from './nfcLocationsParser.mjs';
 import { parseStateLocations } from './stateLocationsParser.mjs';
+import { parseVoiceLocations } from './voiceLocationsParser.mjs';
+
+const MODALITIES = ['nfc', 'state', 'barcode', 'voice'];
 
 function isPlainObject(v) { return v !== null && typeof v === 'object' && !Array.isArray(v); }
 
@@ -51,7 +54,7 @@ export function isolateEntry(onSkip, kind, id, parse) {
 }
 
 export function parseSources(raw, { onSkip = null } = {}) {
-  if (!raw) return { nfc: { locations: {} }, state: { locations: {} }, barcode: { locations: {} } };
+  if (!raw) return { nfc: { locations: {} }, state: { locations: {} }, barcode: { locations: {} }, voice: { locations: {} } };
   if (!isPlainObject(raw)) {
     throw new ValidationError('sources.yml root must be an object', { code: 'INVALID_CONFIG_ROOT' });
   }
@@ -60,12 +63,14 @@ export function parseSources(raw, { onSkip = null } = {}) {
   const barcodeRaw = {};
   const nfcSourceOf = {};
   const stateSourceOf = {};
+  const voiceRaw = {};
+  const voiceSourceOf = {};
   for (const [sourceId, entry] of Object.entries(raw)) {
     const accepted = isolateEntry(onSkip, 'source', sourceId, () => {
       if (!isPlainObject(entry)) {
         throw new ValidationError(`source "${sourceId}" must be an object`, { code: 'INVALID_SOURCE', field: sourceId });
       }
-      if (!['nfc', 'state', 'barcode'].includes(entry.modality)) {
+      if (!MODALITIES.includes(entry.modality)) {
         throw new ValidationError(`source "${sourceId}" has unknown modality "${entry.modality}"`, { code: 'UNKNOWN_MODALITY', field: sourceId });
       }
       return true;
@@ -74,6 +79,7 @@ export function parseSources(raw, { onSkip = null } = {}) {
     const location = entry.location || sourceId;
     if (entry.modality === 'nfc') { nfcRaw[location] = toLegacyEntry(entry); nfcSourceOf[location] = sourceId; }
     else if (entry.modality === 'state') { stateRaw[location] = toLegacyEntry(entry); stateSourceOf[location] = sourceId; }
+    else if (entry.modality === 'voice') { voiceRaw[location] = toLegacyEntry(entry); voiceSourceOf[location] = sourceId; }
     else if (entry.modality === 'barcode') {
       const legacy = toLegacyEntry(entry);
       barcodeRaw[location] = {
@@ -97,7 +103,12 @@ export function parseSources(raw, { onSkip = null } = {}) {
       delete nfcLocations[loc].defaults.debounce_ms;
     }
   }
-  return { nfc: { locations: nfcLocations }, state: { locations: perLocation(stateRaw, stateSourceOf, parseStateLocations) }, barcode: { locations: barcodeRaw } };
+  return {
+    nfc: { locations: nfcLocations },
+    state: { locations: perLocation(stateRaw, stateSourceOf, parseStateLocations) },
+    barcode: { locations: barcodeRaw },
+    voice: { locations: perLocation(voiceRaw, voiceSourceOf, parseVoiceLocations) },
+  };
 }
 
 export default parseSources;

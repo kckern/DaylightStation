@@ -34,6 +34,7 @@ describe('YamlTriggerConfigRepository', () => {
       nfc: { locations: {}, tags: {} },
       state: { locations: {} },
       barcode: { locations: {} },
+      voice: { locations: {} },
       responses: {},
       endpoints: {},
     });
