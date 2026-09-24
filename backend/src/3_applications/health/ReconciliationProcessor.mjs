@@ -109,7 +109,7 @@ export class ReconciliationProcessor {
       const restPerMin = anchored ? (seedBmr * 1.1) / 1440 : 0;
       const exerciseCalories = mergedWorkouts.reduce((sum, w) => {
         const minutes = Number(w.duration || w.minutes || w.strava?.minutes || w.fitness?.minutes) || 0;
-        const net = (gross) => Math.max(0, gross - restPerMin * minutes);
+        const net = (gross) => Math.round(Math.max(0, gross - restPerMin * minutes));
         if (w.calories > 0) return sum + net(w.calories);
         // Fall back to HR-based estimation
         const hr = w.avgHr || w.strava?.avgHeartrate || w.fitness?.avgHeartrate;
