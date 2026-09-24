@@ -3,6 +3,7 @@
 **Date:** 2026-07-16
 **Status:** Approved shape (Approach 1, effort-based absorb) — pending spec review
 **Area:** `frontend/src/hooks/fitness/` (session-end backfill + in-session guest assignment)
+**Amended by:** [2026-09-23 Fitness Stint Attribution](./2026-09-23-fitness-stint-attribution-design.md) — an explicit relabel within the usage window is a correction; Rule A applies only to un-relabelled stints
 
 ---
 
