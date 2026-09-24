@@ -307,7 +307,7 @@ describe('daily-report cadence', () => {
     const mealCoachingTrigger = { notify: vi.fn(() => true) };
     const { router } = makeHarness({ mealCoachingTrigger });
     await router.handleText(textEvent, makeResponseContext());
-    expect(mealCoachingTrigger.notify).toHaveBeenCalledWith({ userId: 'kc', source: 'text' });
+    expect(mealCoachingTrigger.notify).toHaveBeenCalledWith({ userId: 'kc', date: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/), source: 'text' });
   });
 });
 

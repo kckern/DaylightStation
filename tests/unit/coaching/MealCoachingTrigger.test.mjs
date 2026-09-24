@@ -3,14 +3,17 @@ import { MealCoachingTrigger } from '../../../backend/src/3_applications/coachin
 
 describe('MealCoachingTrigger', () => {
   let orchestrator;
+  let clock;
   const make = (config) => new MealCoachingTrigger({
     getOrchestrator: () => orchestrator, userId: 'kckern', conversationId: 'telegram:b1_c2',
     scheduler: { setTimeout, clearTimeout }, config, logger: {},
+    today: () => clock.date, localTime: () => clock.time,
   });
 
   beforeEach(() => {
     vi.useFakeTimers();
     orchestrator = { sendPostReport: vi.fn(async () => {}) };
+    clock = { date: '2026-09-24', time: '12:30' };
   });
   afterEach(() => vi.useRealTimers());
 
@@ -39,4 +42,27 @@ describe('MealCoachingTrigger', () => {
     await vi.advanceTimersByTimeAsync(2 * 60_000);
     expect(orchestrator.sendPostReport).toHaveBeenCalledOnce();
   });
+
+  it("ignores a back-dated capture, but arms for today's", async () => {
+    const trigger = make();
+    expect(trigger.notify({ userId: 'kckern', date: '2026-09-23', source: 'text' })).toBe(false);
+    expect(trigger.notify({ userId: 'kckern', date: '2026-09-24', source: 'text' })).toBe(true);
+  });
+
+  it('drops a send that would land in overnight quiet hours', async () => {
+    const trigger = make();
+    trigger.notify({ userId: 'kckern' });
+    clock.time = '23:40';
+    await vi.advanceTimersByTimeAsync(10 * 60_000);
+    expect(orchestrator.sendPostReport).not.toHaveBeenCalled();
+  });
+
+  it('quiet_hours:false disables the window', async () => {
+    const trigger = make({ quiet_hours: false });
+    trigger.notify({ userId: 'kckern' });
+    clock.time = '23:40';
+    await vi.advanceTimersByTimeAsync(10 * 60_000);
+    expect(orchestrator.sendPostReport).toHaveBeenCalledOnce();
+  });
 });
+

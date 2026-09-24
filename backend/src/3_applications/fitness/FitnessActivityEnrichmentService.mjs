@@ -752,19 +752,24 @@ export class FitnessActivityEnrichmentService {
 
   /**
    * First successful fetch of a new activity: hand it to `onActivityFetched`
-   * (the exercise-reaction hook) exactly once. The job store records it, so
-   * retries and restart recovery never fire it twice.
+   * (the exercise-reaction hook). The hook resolves `false` when it could not
+   * decide yet (e.g. coaching not wired during startup recovery) — the job is
+   * then left unstamped so a later attempt retries. Any other result stamps
+   * `activityNotifiedAt`, so retries and restarts never fire it twice.
    */
   #notifyActivityFetched(activityId, activity) {
     if (!this.#onActivityFetched) return;
     if (this.#jobStore.findById(activityId)?.activityNotifiedAt) return;
-    this.#jobStore.update(activityId, { activityNotifiedAt: new Date().toISOString() });
-    try {
-      Promise.resolve(this.#onActivityFetched(activity)).catch(err =>
-        this.#logger.warn?.('strava.enrichment.on_activity_fetched_failed', { activityId, error: err?.message }));
-    } catch (err) {
-      this.#logger.warn?.('strava.enrichment.on_activity_fetched_failed', { activityId, error: err?.message });
-    }
+    Promise.resolve()
+      .then(() => this.#onActivityFetched(activity))
+      .then((handled) => {
+        if (handled === false) {
+          this.#logger.info?.('strava.enrichment.on_activity_fetched_deferred', { activityId });
+          return;
+        }
+        this.#jobStore.update(activityId, { activityNotifiedAt: new Date().toISOString() });
+      })
+      .catch(err => this.#logger.warn?.('strava.enrichment.on_activity_fetched_failed', { activityId, error: err?.message }));
   }
 }
 

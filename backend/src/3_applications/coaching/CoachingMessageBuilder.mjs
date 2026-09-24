@@ -8,9 +8,19 @@ export class CoachingMessageBuilder {
    * @param {{calories: {consumed, goal_min, goal_max}, protein: {consumed, goal}}} data
    * @returns {string} Telegram HTML
    */
-  static buildPostReportBlock({ calories, protein }) {
+  static buildPostReportBlock({ calories, protein, inProgress = false }) {
     const consumedCal = Math.round(calories.consumed);
     const consumedProt = Math.round(protein.consumed);
+    if (inProgress) {
+      // A day still being eaten is a running total, never a verdict: no
+      // percentage-of-goal, which reads as "25% — you're keeping it down".
+      const calLeft = Math.max(0, Math.round(calories.goal_max - consumedCal));
+      const protLeft = Math.max(0, Math.round(protein.goal - consumedProt));
+      return [
+        `\u{1F525} <b>${consumedCal} cal so far</b> \u{00B7} ${calLeft} left of ${calories.goal_max}`,
+        `\u{1F4AA} <b>${consumedProt}g protein so far</b> \u{00B7} ${protLeft}g to go`,
+      ].join('\n');
+    }
     const calPct = calories.goal_max > 0 ? Math.round((calories.consumed / calories.goal_max) * 100) : 0;
     const protPct = protein.goal > 0 ? Math.round((protein.consumed / protein.goal) * 100) : 0;
 

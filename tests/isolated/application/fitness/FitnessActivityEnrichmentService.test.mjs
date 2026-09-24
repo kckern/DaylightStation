@@ -502,9 +502,32 @@ describe('FitnessActivityEnrichmentService onActivityFetched (exercise-reaction 
     });
 
     await service._attemptEnrichment('55');
+    await new Promise(r => setTimeout(r, 0));
     await service._attemptEnrichment('55');
+    await new Promise(r => setTimeout(r, 0));
     expect(onActivityFetched).toHaveBeenCalledOnce();
     expect(onActivityFetched).toHaveBeenCalledWith(activity);
     expect(jobStore.jobs[55].activityNotifiedAt).toBeTruthy();
   });
+
+  test('leaves the job unstamped when the hook defers (coaching not wired yet)', async () => {
+    vi.resetAllMocks();
+    dirExists.mockReturnValue(false);
+    const jobStore = makeJobStore();
+    const onActivityFetched = vi.fn(async () => false);
+    const service = new FitnessActivityEnrichmentService({
+      activityGateway: { getActivity: vi.fn(async () => buildActivity({ id: 55, calories: 450 })) },
+      scheduleRetry: vi.fn(), jobStore,
+      userContext: { timezone: () => 'America/Los_Angeles', defaultUserId: () => 'test-user' },
+      historyRepository: historyRepository(), onActivityFetched,
+      logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
+    });
+    await service._attemptEnrichment('55');
+    await new Promise(r => setTimeout(r, 0));
+    expect(jobStore.jobs[55].activityNotifiedAt).toBeUndefined();
+    await service._attemptEnrichment('55');
+    await new Promise(r => setTimeout(r, 0));
+    expect(onActivityFetched).toHaveBeenCalledTimes(2);
+  });
 });
+
