@@ -121,6 +121,49 @@ describe('SubtitleCueReview', () => {
   });
 });
 
+describe('SubtitleCueReview never throws', () => {
+  it('returns an empty review for zero hits without calling the model', async () => {
+    const g = gateway(async () => answers());
+    const review = new SubtitleCueReview({ decisionGateway: g, logger: quietLogger() });
+    const { items, model, summary } = await review.review({ lines, hits: [], groups });
+    expect(items).toEqual([]);
+    expect(model).toBeNull();
+    expect(summary.cues).toBe(0);
+    expect(g.evaluate).not.toHaveBeenCalled();
+  });
+  it('lists every cue unjudged when the groups cannot form a question', async () => {
+    for (const bad of [[], undefined, null, 'profanity']) {
+      const g = gateway(async () => answers());
+      const review = new SubtitleCueReview({ decisionGateway: g, logger: quietLogger() });
+      const { items } = await review.review({ lines, hits: [hit()], groups: bad });
+      expect(items[0]).toMatchObject({ status: 'review', reasons: ['model-unavailable'], jev: null });
+      expect(g.evaluate).not.toHaveBeenCalled();
+    }
+  });
+  it('clamps concurrency to 1..16', async () => {
+    let inFlight = 0; let peak = 0;
+    const g = gateway(async () => {
+      inFlight += 1; peak = Math.max(peak, inFlight);
+      await new Promise((r) => setTimeout(r, 5));
+      inFlight -= 1;
+      return answers();
+    });
+    const hits = Array.from({ length: 40 }, (_, i) => hit({ cueId: `srt${i}` }));
+    await new SubtitleCueReview({ decisionGateway: g, concurrency: 500, logger: quietLogger() }).review({ lines, hits, groups });
+    expect(peak).toBe(16);
+  });
+  it('defaults to a silent logger, never the console', async () => {
+    const spies = ['log', 'info', 'warn', 'debug', 'error'].map((m) => vi.spyOn(console, m).mockImplementation(() => {}));
+    try {
+      const g = gateway(async () => { throw new Error('boom'); });
+      await new SubtitleCueReview({ decisionGateway: g }).review({ lines, hits: [hit()], groups });
+      for (const spy of spies) expect(spy).not.toHaveBeenCalled();
+    } finally {
+      spies.forEach((s) => s.mockRestore());
+    }
+  });
+});
+
 describe('carryForwardDecisions', () => {
   const item = (cueId, word, decision = null) => ({ cueId, word, decision, status: 'review', reasons: [] });
 
