@@ -68,7 +68,10 @@ export function createTriggerApiRouter(config) {
   const triggerConfigRepository = new YamlTriggerConfigRepository({ saveFile, observedStore });
   let triggerConfig;
   try {
-    triggerConfig = triggerConfigRepository.loadRegistry({ loadFile, listDir });
+    // One bad source or tag disables only itself; ERROR so it shows in a
+    // `level:error` sweep, since that reader or card now does nothing.
+    triggerConfig = triggerConfigRepository.loadRegistry({ loadFile, listDir,
+      onSkip: (skip) => logger.error?.('trigger.config.entry.skipped', skip) });
     // Curated-out inbox stubs are swept AFTER the load, never during it: a read
     // must not depend on a write succeeding. Fire-and-forget — the registry in
     // memory is already correct, and a failed sweep only means the same stubs

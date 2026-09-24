@@ -13,10 +13,15 @@ import { parseSources } from './sourcesParser.mjs';
 import { parseNfcTags } from './nfcTagsParser.mjs';
 import { parseNamedMap } from './namedMapParser.mjs';
 
-export function buildTriggerRegistry(blobs = {}) {
-  const { nfc, state, barcode } = parseSources(blobs.sources);
+/**
+ * @param {Object} [options]
+ * @param {Function} [options.onSkip] - per-entry isolation: a bad source or tag is
+ *   reported and dropped instead of failing the whole registry (see sourcesParser)
+ */
+export function buildTriggerRegistry(blobs = {}, { onSkip = null } = {}) {
+  const { nfc, state, barcode } = parseSources(blobs.sources, { onSkip });
   const knownNfcReaders = new Set(Object.keys(nfc.locations));
-  const tags = parseNfcTags(blobs.bindingsNfc, knownNfcReaders);
+  const tags = parseNfcTags(blobs.bindingsNfc, knownNfcReaders, { onSkip });
   return {
     nfc: { locations: nfc.locations, tags },
     state: { locations: state.locations },
