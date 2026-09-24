@@ -148,8 +148,14 @@ actual media release before being enabled, especially when the source is marked 
 `precision: srt-line`) in the title's override. The matcher lives in
 `backend/src/2_domains/content-filter/subtitleWords.mjs`: whole-word forms only,
 word *i* of a line placed at `start + i·0.33 s` (capped at the caption end),
-~0.5 s dedup, ids `srt<ms>`. Ids are deterministic, so `cueOverrides` keyed on
-them survive a re-run. Category is `language/<group>/<leaf>`; severity comes
+and every listed word gets its own cue, even when two land at the same instant
+(otherwise disabling one would unmute the other). Ids are
+`srt<line start ms>_<token index>`: they depend on the SRT alone, so they stay
+stable while the SRT is unchanged and survive word-list edits, and
+`cueOverrides` keyed on them keep naming the same spoken word. Only a repeated
+subtitle block (same start, index and word) is deduplicated. With `--write`,
+any `srt*` key in `cueOverrides` that no longer matches an emitted cue is
+printed as orphaned. Category is `language/<group>/<leaf>`; severity comes
 from the word's tier (`tolerant → high`, `moderate → medium`, `strict → low`).
 SRT cues carry an explicit `effect: mute`, so profiles do not change them —
 only `cueOverrides.<id>.disabled` does.

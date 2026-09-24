@@ -70,26 +70,32 @@ const normToken = (tok) => tok.toLowerCase().replace(/[^a-z]/g, '');
 
 /**
  * Find listed words in parsed SRT lines. Word i of a line is placed at
- * start + i*0.33s, never past the caption end; hits within ~0.5s of an
- * earlier hit are dropped. Ids are `srt<ms>`, the same ids srt-mutes has
- * always written, so overrides keyed on them keep working.
+ * start + i*0.33s, never past the caption end. Every listed word gets its own
+ * hit, even when two land at the same instant: collapsing them would let a
+ * grown-up's disable of one (a prayer's "god") unmute the other ("hell").
+ *
+ * The id is `srt<line start ms>_<token index>`. It depends on the SRT alone,
+ * so it is stable while the SRT is unchanged and survives word-list edits;
+ * `cueOverrides.<id>` keeps pointing at the same spoken word. Only true
+ * duplicates (a repeated subtitle block: same start, index and token) are dropped.
  */
 export function findWordHits(lines, wordList) {
   const hits = [];
   const seen = new Set();
   lines.forEach((line, lineIndex) => {
     const cap = Number.isFinite(line.end) ? line.end : Infinity;
+    const startMs = Math.round(line.start * 1000);
     String(line.text || '').split(/\s+/).filter(Boolean).forEach((tok, i) => {
       const token = normToken(tok);
       const leaf = wordList.byForm.get(token);
       if (!leaf) return;
-      const t = Math.min(line.start + i * SECS_PER_WORD, cap);
-      const key = Math.round(t * 2);
+      const key = `${startMs}_${i}_${token}`;
       if (seen.has(key)) return;
       seen.add(key);
+      const t = Math.min(line.start + i * SECS_PER_WORD, cap);
       const { group, severity } = wordList.leaves[leaf];
       hits.push({
-        cueId: `srt${Math.round(t * 1000)}`, lineIndex, token, leaf, group,
+        cueId: `srt${startMs}_${i}`, lineIndex, token, leaf, group,
         category: `language/${group}/${leaf}`, severity,
         in: Number(t.toFixed(2)), out: Number((t + 0.05).toFixed(2)),
       });

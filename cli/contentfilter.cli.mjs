@@ -1056,6 +1056,10 @@ async function main() {
       mkdirSync(path.dirname(overridePath), { recursive: true });
       writeFileSync(overridePath, yaml.dump(override, { lineWidth: 140 }));
       console.error(`\n✓ wrote ${newCues.length} srt mute addCues -> ${overridePath}`);
+      // A grown-up's srt cueOverride that no longer names an emitted cue does nothing.
+      const emitted = new Set(newCues.map((c) => c.id));
+      const orphans = Object.keys(override.cueOverrides || {}).filter((id) => /^srt/.test(id) && !emitted.has(id));
+      if (orphans.length) console.error(`⚠ ${orphans.length} srt cueOverrides match no emitted cue (orphaned): ${orphans.join(', ')}`);
     } else {
       console.error('\n(dry run — pass --write to add these mutes to the override)');
     }

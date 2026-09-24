@@ -75,25 +75,38 @@ describe('findWordHits', () => {
     const lines = [{ start: 10, end: 12, text: 'hello shell hell-o' }];
     expect(findWordHits(lines, list)).toEqual([]);
   });
-  it('places word i at start + i*0.33, capped at the line end, with the srt-mutes id', () => {
+  it('places word i at start + i*0.33, capped at the line end, id = line start ms + token index', () => {
     const lines = [{ start: 10, end: 10.5, text: 'oh my god, what the hell' }];
-    const hits = findWordHits(lines, list);
-    // god is token 2 -> 10.66, capped to 10.5; hell is token 5 -> 11.65, capped to 10.5 -> same 0.5s key, deduped
-    expect(hits).toEqual([{
-      cueId: 'srt10500', lineIndex: 0, token: 'god', leaf: 'god', group: 'blasphemy',
-      category: 'language/blasphemy/god', severity: 'medium', in: 10.5, out: 10.55,
-    }]);
+    // god is token 2 -> 10.66, hell is token 5 -> 11.65; both capped to 10.5.
+    // Both words get their own cue: disabling one (a prayer's "god") must never
+    // leave the other ("hell") without a mute.
+    expect(findWordHits(lines, list)).toEqual([
+      { cueId: 'srt10000_2', lineIndex: 0, token: 'god', leaf: 'god', group: 'blasphemy',
+        category: 'language/blasphemy/god', severity: 'medium', in: 10.5, out: 10.55 },
+      { cueId: 'srt10000_5', lineIndex: 0, token: 'hell', leaf: 'hell', group: 'profanity',
+        category: 'language/profanity/hell', severity: 'low', in: 10.5, out: 10.55 },
+    ]);
   });
-  it('emits one hit per word when they are far enough apart, across lines', () => {
+  it('keeps ids stable when the word list changes (ids depend on the SRT only)', () => {
+    const lines = [{ start: 10, end: 12, text: 'oh my god, what the hell' }];
+    const narrower = compileWordList({ words: { hell: { group: 'profanity', tier: 'strict', forms: ['hell'] } } });
+    expect(findWordHits(lines, narrower).map((h) => h.cueId)).toEqual(['srt10000_5']);
+    expect(findWordHits(lines, list).map((h) => h.cueId)).toEqual(['srt10000_2', 'srt10000_5']);
+  });
+  it('drops only true duplicates (a repeated subtitle block at the same start)', () => {
+    const line = { start: 10, end: 12, text: 'what the hell' };
+    expect(findWordHits([line, { ...line }], list).map((h) => [h.cueId, h.lineIndex])).toEqual([['srt10000_2', 0]]);
+  });
+  it('emits one hit per listed word, across lines', () => {
     const lines = [
       { start: 100, end: 104, text: 'god damn it' },
       { start: 200, end: 202, text: "gods, that's hell" },
     ];
     expect(findWordHits(lines, list).map((h) => [h.cueId, h.lineIndex, h.token, h.in])).toEqual([
-      ['srt100000', 0, 'god', 100],
-      ['srt100330', 0, 'damn', 100.33],
-      ['srt200000', 1, 'gods', 200],
-      ['srt200660', 1, 'hell', 200.66],
+      ['srt100000_0', 0, 'god', 100],
+      ['srt100000_1', 0, 'damn', 100.33],
+      ['srt200000_0', 1, 'gods', 200],
+      ['srt200000_2', 1, 'hell', 200.66],
     ]);
   });
   it('does not collapse a word to t=0 when the end timestamp is unparseable', () => {
@@ -104,10 +117,10 @@ describe('findWordHits', () => {
 
 describe('hitToMuteCue', () => {
   it('builds the override addCue srt-mutes stores, now with severity and channel', () => {
-    const hit = { cueId: 'srt100330', lineIndex: 0, token: 'damn', leaf: 'damn', group: 'profanity',
+    const hit = { cueId: 'srt100000_1', lineIndex: 0, token: 'damn', leaf: 'damn', group: 'profanity',
       category: 'language/profanity/damn', severity: 'low', in: 100.33, out: 100.38 };
     expect(hitToMuteCue(hit)).toEqual({
-      id: 'srt100330', effect: 'mute', category: 'language/profanity/damn', channel: 'audio',
+      id: 'srt100000_1', effect: 'mute', category: 'language/profanity/damn', channel: 'audio',
       severity: 'low', in: 100.33, out: 100.38, label: 'damn', source: 'srt', precision: 'srt-line',
     });
   });
