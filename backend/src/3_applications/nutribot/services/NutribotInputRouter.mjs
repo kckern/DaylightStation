@@ -752,7 +752,8 @@ export class NutribotInputRouter extends BaseInputRouter {
         return { ok: true, result };
       }
       case 'done':
-      case 'fast': {
+      case 'fast':
+      case 'reopen': {
         const healthStore = this.container.getHealthStore?.();
         if (!healthStore) {
           if (responseContext?.sendMessage) {
@@ -761,16 +762,27 @@ export class NutribotInputRouter extends BaseInputRouter {
           return { ok: true, handled: false };
         }
         const userId = this.#resolveUserId(event);
-        const which = String(event.payload?.text || '').trim().toLowerCase();
-        const date = this.#localDate(userId, which === 'yesterday' ? 1 : 0);
+        const date = this.#commandDate(userId, event.payload?.text);
+        if (!date) {
+          if (responseContext?.sendMessage) {
+            await responseContext.sendMessage(`Use /${command}, /${command} yesterday, or /${command} YYYY-MM-DD.`, {});
+          }
+          return { ok: true, handled: false };
+        }
+        if (command === 'reopen') {
+          await healthStore.clearDayStatus(userId, date);
+          this.logger.info?.('nutribot.command.day-status', { userId, date, status: null });
+          if (responseContext?.sendMessage) {
+            await responseContext.sendMessage(`Reopened ${date}. Coaching will judge it by its logged total again.`, {});
+          }
+          return { ok: true, handled: true };
+        }
         const status = command === 'fast' ? 'fasting' : 'done';
         await healthStore.markDayStatus(userId, date, status);
         this.logger.info?.('nutribot.command.day-status', { userId, date, status });
         if (responseContext?.sendMessage) {
-          const what = status === 'fasting'
-            ? `Marked ${date} as a fast.`
-            : `Marked ${date} as done.`;
-          await responseContext.sendMessage(`${what} Coaching will treat that day's totals as final.`, {});
+          const what = status === 'fasting' ? `Marked ${date} as a fast.` : `Marked ${date} as done.`;
+          await responseContext.sendMessage(`${what} Coaching will treat that day's totals as final. (/reopen ${date} to undo.)`, {});
         }
         return { ok: true, handled: true };
       }
@@ -791,6 +803,19 @@ export class NutribotInputRouter extends BaseInputRouter {
   }
 
   // ==================== Helpers ====================
+
+  /**
+   * Date argument of /done, /fast, /reopen: empty = today, `yesterday`, or an
+   * explicit YYYY-MM-DD not in the future. Null when unparseable.
+   */
+  #commandDate(userId, arg) {
+    const text = String(arg || '').trim().toLowerCase();
+    const today = this.#localDate(userId, 0);
+    if (!text || text === 'today') return today;
+    if (text === 'yesterday') return this.#localDate(userId, 1);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(text) && !Number.isNaN(Date.parse(`${text}T12:00:00Z`)) && text <= today) return text;
+    return null;
+  }
 
   /** The user's local calendar date, `daysAgo` days back (YYYY-MM-DD). */
   #localDate(userId, daysAgo = 0) {

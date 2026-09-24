@@ -48,6 +48,8 @@ export const HOUSEHOLD_APP_CONFIGS = Object.freeze({
   'barcode-relay':  'hardware/barcode/relay',
   'camera-archive': 'camera/archive',
   chess:            'gaming/chess',
+  // Health-coach Telegram cadence + logging-completeness threshold.
+  coaching:         'coaching/config',
   concierge:        'agents/concierge',
   donow:            'donow/config',
   entropy:          'entropy/config',

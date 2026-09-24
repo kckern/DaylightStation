@@ -270,6 +270,19 @@ export class YamlHealthDatastore extends IHealthDataDatastore {
   }
 
   /**
+   * Undo a /done or /fast: the day is judged by its logged total again.
+   * @param {string} userId
+   * @param {string} date - YYYY-MM-DD
+   * @returns {Promise<void>}
+   */
+  async clearDayStatus(userId, date) {
+    const data = await this.loadDayClosedData(userId);
+    if (!(date in data)) return;
+    delete data[date];
+    await this.saveDayClosedData(userId, data);
+  }
+
+  /**
    * Check if a specific date is marked as closed
    * @param {string} userId
    * @param {string} date - YYYY-MM-DD

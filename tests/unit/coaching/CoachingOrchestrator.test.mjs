@@ -157,5 +157,31 @@ describe('CoachingOrchestrator', () => {
       expect(mockMessaging.sendMessage.mock.calls[0][1]).toContain('170.2 lbs (-0.60/wk)');
     });
   });
+
+  describe('weekly digest completeness', () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-09-21T02:00:00Z')); // Sun 7pm PDT, 09-20
+    });
+    afterEach(() => vi.useRealTimers());
+
+    it('averages only trusted days and states the coverage', async () => {
+      mockHealthStore.loadNutritionData.mockResolvedValue({
+        '2026-09-19': { calories: 1800, protein: 120 },
+        '2026-09-18': { calories: 831, protein: 83 },
+        '2026-09-17': { calories: 630, protein: 64 },
+        '2026-09-16': { calories: 1600, protein: 100 },
+        '2026-09-15': { calories: 0, protein: 0 },
+      });
+      mockHealthStore.loadDayClosedData = vi.fn().mockResolvedValue({ '2026-09-15': { status: 'fasting' } });
+      await orchestrator.sendWeeklyDigest({ userId: 'kckern', conversationId: 'telegram:1' });
+
+      const [, text] = mockMessaging.sendMessage.mock.calls[0];
+      expect(text).toContain('1133 avg cal · 73g avg protein · 3 of 7 days fully logged');
+      const snapshot = mockCommentary.generate.mock.calls[0][0];
+      expect(snapshot.week_days.map(d => d.status)).toEqual(
+        ['complete', 'incomplete', 'incomplete', 'complete', 'fasting', 'unlogged', 'unlogged']);
+    });
+  });
 });
 
