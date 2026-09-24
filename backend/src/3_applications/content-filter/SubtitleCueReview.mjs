@@ -150,6 +150,22 @@ function summarize(items) {
   };
 }
 
+/**
+ * Carry a grown-up's filled-in `decision` from a previous review file onto a
+ * fresh review, by cue id, only when that id still names the same word.
+ * Returns new item objects; neither input is modified.
+ */
+export function carryForwardDecisions(items, previousItems) {
+  const prior = new Map();
+  for (const p of Array.isArray(previousItems) ? previousItems : []) {
+    if (p?.cueId && p.decision != null) prior.set(p.cueId, p);
+  }
+  return items.map((item) => {
+    const p = prior.get(item.cueId);
+    return p && p.word === item.word ? { ...item, decision: p.decision } : item;
+  });
+}
+
 /** Map with at most `limit` calls in flight; results keep input order. */
 async function mapBounded(items, limit, fn) {
   const out = new Array(items.length);

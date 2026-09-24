@@ -49,7 +49,7 @@ import { fileURLToPath } from 'url';
 import yaml from 'js-yaml';
 import axios from 'axios';
 import { compileWordList, findWordHits, hitToMuteCue, parseSrt } from '#domains/content-filter/subtitleWords.mjs';
-import { SubtitleCueReview } from '#apps/content-filter/SubtitleCueReview.mjs';
+import { SubtitleCueReview, carryForwardDecisions } from '#apps/content-filter/SubtitleCueReview.mjs';
 import { createLogger } from '#system/logging/logger.mjs';
 
 const VA_BASE = 'https://api.vidangel.com';
@@ -1070,6 +1070,13 @@ async function main() {
     const rk = String(cmdArgs[0] || '').replace(/[^0-9]/g, '');
     if (!rk) { console.error('Usage: contentfilter srt-review <plexRatingKey> [--srt file] [--out path] [--concurrency 4] [--min-confidence 0.7]'); process.exit(1); }
     if (!process.env.DAYLIGHT_BASE_PATH) process.env.DAYLIGHT_BASE_PATH = path.dirname(resolveDataDir());
+    const outPath = path.resolve(flags.out || path.join(filterCacheDir(), 'review', `${rk}.yml`));
+    // The review file must never land where playback reads overrides.
+    const overridesDir = path.resolve(filterCacheDir(), 'overrides');
+    if (outPath === overridesDir || outPath.startsWith(overridesDir + path.sep)) {
+      console.error(`Refusing to write a review file under ${overridesDir}: overrides are only edited by hand.`);
+      process.exit(1);
+    }
     const { getDecisionGateway } = await import('./_bootstrap.mjs');
     const logger = createLogger({ source: 'cli', app: 'content-filter', context: { module: 'cue-review' } });
 
@@ -1085,10 +1092,12 @@ async function main() {
       minConfidence: flags['min-confidence'] != null ? Number(flags['min-confidence']) : 0.7,
     });
     const contentId = `plex:${rk}`;
-    const { model, items, summary } = await review.review({ contentId, title, lines, hits, groups: wordList.groups });
+    const { model, items: fresh, summary } = await review.review({ contentId, title, lines, hits, groups: wordList.groups });
+    // A re-run keeps a grown-up's filled-in decisions (same cue id, same word).
+    const previous = existsSync(outPath) ? loadYaml(outPath) : null;
+    const items = carryForwardDecisions(fresh, previous?.items);
 
     // The review file only. This command never writes overrides/<rk>.yml.
-    const outPath = flags.out || path.join(filterCacheDir(), 'review', `${rk}.yml`);
     const doc = {
       contentId, title, generatedAt: new Date().toISOString(), model,
       wordList: wordList.source, summary,

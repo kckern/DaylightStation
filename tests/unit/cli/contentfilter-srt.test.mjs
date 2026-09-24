@@ -102,6 +102,31 @@ describe('contentfilter srt-mutes / srt-review (fixture tree)', () => {
     expect(res.stderr).not.toMatch(/va1/);
   });
 
+  it('srt-review keeps filled-in decisions on a re-run', () => {
+    const out = path.join(root, 'review.yml');
+    const args = ['srt-review', '123', '--srt', path.join(root, 'movie.srt'), '--out', out];
+    expect(run(...args).status).toBe(0);
+    const first = yaml.load(fs.readFileSync(out, 'utf8'));
+    first.items[0].decision = 'disable';
+    first.items[2].decision = 'keep';
+    fs.writeFileSync(out, yaml.dump(first));
+    const res = run(...args);
+    expect(res.status, res.stderr).toBe(0);
+    const second = yaml.load(fs.readFileSync(out, 'utf8'));
+    expect(second.items.map((i) => i.decision)).toEqual(['disable', null, 'keep']);
+  });
+
+  it('srt-review refuses to write its review file into the overrides folder', () => {
+    const before = fs.readFileSync(overridePath(), 'utf8');
+    for (const out of [overridePath(), path.join(root, 'data/household/content-filter/overrides/x.yml')]) {
+      const res = run('srt-review', '123', '--srt', path.join(root, 'movie.srt'), '--out', out);
+      expect(res.status).not.toBe(0);
+      expect(res.stderr).toMatch(/overrides/);
+    }
+    expect(fs.readFileSync(overridePath(), 'utf8')).toBe(before);
+    expect(fs.existsSync(path.join(root, 'data/household/content-filter/overrides/x.yml'))).toBe(false);
+  });
+
   it('srt-review with no Jev key writes a review file of unjudged cues and never touches the override', () => {
     const before = fs.readFileSync(overridePath(), 'utf8');
     const out = path.join(root, 'review.yml');
