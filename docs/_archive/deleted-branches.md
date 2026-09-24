@@ -509,3 +509,4 @@ The corollary bit twice in this sweep: `feat/teacher-workspace-ia` and `feature/
 | 2026-09-24 | feat/jev-headlines-clustering | b962d723f | Jev headline story clustering + labels (shadow at harvest, budget/breaker, legacy-first placement) |
 | 2026-09-24 | feat/jev-voice-trigger-routing | ac364c320 | Voice trigger modality: exact keywords + Jev routing (confirm default), prototype-key hardening |
 | 2026-09-24 | feat/jev-lifeplan-signals | 07e242e31 | Life event suggestions: domain keyword detector, Jev shadow/decide, confirm-gated coach tools |
+| 2026-09-24 | fix/stale-router-tests | 55692bff4 | Piano route contract + pianoGames composition tests refreshed (drift since 76f2089c3 / 402458f0c) |
