@@ -174,6 +174,8 @@ export class HeadlineService {
       totalItems,
     });
 
+    await this.#reviewStories(username, pageId);
+
     return { harvested: sources.length, errors, totalItems };
   }
 
@@ -343,6 +345,51 @@ export class HeadlineService {
       .split(/\s+/)
       .filter(word => word.length > 1 && !stop.has(word))
       .join(' ');
+  }
+
+  /**
+   * Harvest-time Jev pass. Pass 1 asks about band pairs from the briefing as
+   * served; pass 2 labels the timeline titles of the briefing as it would look
+   * with Jev merges applied, so shadow mode sees the stories promote would show.
+   * Never throws; the harvest result is unaffected.
+   */
+  async #reviewStories(username, pageId) {
+    const judge = this.#storyJudge;
+    if (!judge) return;
+    const settings = HeadlineStoryJudge.settings(this.#getUserConfig(username).headlines?.jev);
+    if (!judge.active(settings)) return;
+    const pageIds = pageId ? [pageId] : this.#getPages(username).map(p => p.id);
+    const multiSource = result => (result?.briefing || []).filter(story => story.sourceCount > 1).length;
+
+    for (const id of pageIds) {
+      try {
+        const servedTrace = { pageId: id, pairs: [], titles: [] };
+        const served = await this.getAllHeadlines(username, id, { trace: servedTrace });
+        if (!served) continue;
+        const pairPass = await judge.review({ pageId: id, pairs: servedTrace.pairs, titles: [] }, settings);
+
+        const projectedTrace = { pageId: id, pairs: [], titles: [] };
+        const projected = await this.getAllHeadlines(username, id, {
+          trace: projectedTrace, judgeSettings: { ...settings, mode: 'promote' },
+        });
+        const labelPass = await judge.review({ pageId: id, pairs: projectedTrace.pairs, titles: projectedTrace.titles }, settings);
+
+        this.#logger.info?.('feed.headlines.jev-review', {
+          page: id,
+          mode: settings.mode,
+          pairs: servedTrace.pairs.length,
+          titles: projectedTrace.titles.length,
+          evaluated: pairPass.evaluated + labelPass.evaluated,
+          cached: pairPass.cached + labelPass.cached,
+          failed: pairPass.failed + labelPass.failed,
+          skipped: pairPass.skipped + labelPass.skipped,
+          multiSourceServed: multiSource(served),
+          multiSourceWithJev: multiSource(projected),
+        });
+      } catch (error) {
+        this.#logger.warn?.('feed.headlines.jev-review-failed', { page: id, error: error.message });
+      }
+    }
   }
 
   /**
