@@ -29,6 +29,6 @@ describe('parseSources', () => {
   it('throws on non-object root, non-object entry, and unknown modality', () => {
     expect(() => parseSources('x')).toThrow();
     expect(() => parseSources({ a: 'x' })).toThrow();
-    expect(() => parseSources({ a: { modality: 'voice', target: 't' } })).toThrow();
+    expect(() => parseSources({ a: { modality: 'telepathy', target: 't' } })).toThrow();
   });
 });
