@@ -1,4 +1,5 @@
-# Example agents.yml — copy to data/household/config/agents.yml in the data volume.
+# Example agents.yml — copy to data/system/config/agents.yml in the data volume
+# (system-level app config, read with configService.getAppConfig('agents')).
 #
 # data/ is gitignored, so this file is the checked-in reference for what shape
 # the live config expects. Memory + processor configuration for all reflective
@@ -43,7 +44,7 @@ overrides:
       last_messages: 50
 
 # Life-plan coach: calendar-derived life-event suggestions (suggest_life_events).
-# Read by app.mjs at startup (not per-agent overrides); restart to apply.
+# A top-level key read by app.mjs at startup (not an `overrides` entry); restart to apply.
 lifeplan_guide:
   life_event_signals:
     mode: shadow        # shadow (default) | decide | off
