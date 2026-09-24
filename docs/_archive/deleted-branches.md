@@ -506,3 +506,4 @@ The corollary bit twice in this sweep: `feat/teacher-workspace-ia` and `feature/
 | 2026-09-24 | feat/health-day-close-button | 79df7fbf8e | Health day view Done logging / Fasted / Reopen row + day-status API |
 | 2026-09-24 | feat/nutrition-untracked-reconstruction | bab4fcdb46 | Weight-derived backfill of untracked intake (API, planner CLI, coach 'reconstructed' status) |
 | 2026-09-24 | fix/reconciliation-dexa-bmr | c3f47bac81 | Reconciliation BMR anchored to measured DEXA RMR |
+| 2026-09-24 | fix/workout-merge-start-time | b657378757 | mergeWorkouts pairs Strava/FitnessSyncer by start time |
