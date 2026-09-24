@@ -127,13 +127,25 @@ test('chess answers move/config/ladder/games/history through the composed contai
   const written = await module.container.writeConfig('chess', 'kid', { default_level: 3 });
   assert.equal(written.default_level, 3);
 
+  // Chess levels through the container are zero-based (the composition's
+  // positionFromLevel/levelFromPosition pair, 402458f0c): level 0 is the
+  // first rung, position 1.
   const moveResult = await module.container.chooseMove('chess', {
-    transcript: undefined, level: 1, gameSessionId: 'g1', userId: null,
+    transcript: undefined, level: 0, gameSessionId: 'g1', userId: null,
   });
   assert.ok(moveResult.move, 'expected the real engine to answer for a fresh game');
-  assert.equal(moveResult.opponent.level, 1);
+  assert.equal(moveResult.opponent.level, 0);
+  assert.equal(moveResult.opponent.position, 1);
 
-  const recordResult = await module.container.recordGame('chess', 'kid', { result: 'win', level: 1, help: {} });
+  // A fresh ladder has only the first rung unlocked, so asking for level 1
+  // (the second rung) clamps back to level 0 rather than skipping ahead.
+  const lockedResult = await module.container.chooseMove('chess', {
+    transcript: undefined, level: 1, gameSessionId: 'g1', userId: null,
+  });
+  assert.equal(lockedResult.opponent.level, 0);
+  assert.equal(lockedResult.opponent.position, 1);
+
+  const recordResult = await module.container.recordGame('chess', 'kid', { result: 'win', level: 0, help: {} });
   assert.equal(recordResult.saved, true);
 
   const archived = await module.container.archiveGame('chess', 'guest', { moves: ['e4'], completed: false });
