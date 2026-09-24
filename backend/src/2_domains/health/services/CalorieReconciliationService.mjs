@@ -50,15 +50,20 @@ export class CalorieReconciliationService {
    * Resting rate anchored to a measured scan (DEXA RMR), carried forward by
    * fat-free mass: RMR scales with lean tissue, so RMR(now) = RMR(scan) ×
    * FFM(now) / FFM(scan). FFM(scan) is weight × (1 − body fat) from the scan
-   * itself; FFM(now) comes from the scale trend.
-   * @param {{bmr_kcal: number, weight_lbs: number, body_fat_percent: number}} scan
-   * @param {number|null} ffmNowLbs
+   * itself; FFM(now) comes from the scale trend. When the scan records the
+   * SCALE's body fat for its week (`scale_body_fat_percent`), FFM(scan) uses it,
+   * so both sides of the ratio come from the same instrument (a DEXA reads
+   * body fat higher than a BIA scale).
+   * @param {{bmr_kcal: number, weight_lbs: number, body_fat_percent: number, scale_body_fat_percent?: number}} scan
+   * @param {number|null} ffmNowLbs - from the scale trend
    * @returns {number|null}
    */
   static computeAnchoredBmr(scan, ffmNowLbs) {
     const bmr = Number(scan?.bmr_kcal);
     if (!Number.isFinite(bmr) || bmr <= 0) return null;
-    const ffmScan = Number(scan.weight_lbs) * (1 - Number(scan.body_fat_percent) / 100);
+    const fat = Number.isFinite(Number(scan.scale_body_fat_percent)) && scan.scale_body_fat_percent != null
+      ? Number(scan.scale_body_fat_percent) : Number(scan.body_fat_percent);
+    const ffmScan = Number(scan.weight_lbs) * (1 - fat / 100);
     if (!Number.isFinite(ffmNowLbs) || !(ffmScan > 0)) return Math.round(bmr);
     return Math.round(bmr * ffmNowLbs / ffmScan);
   }
@@ -159,6 +164,7 @@ export class CalorieReconciliationService {
         tracking_confidence: confidence,
         derived_bmr: derivedBmr,
         bmr_source: anchored ? 'dexa' : 'derived',
+        resting_burn: restingBurn,
         maintenance_calories: maintenanceCalories,
       };
     });

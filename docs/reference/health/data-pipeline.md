@@ -64,7 +64,13 @@ A reconciliation pass runs alongside daily aggregation. Reconciliation reads a r
 
 Deriving it from logged intake is the fallback when there is no scan: Katch-McArdle on the scale's body fat, refined from "high-confidence" logged days. That path is badly biased by under-logging. With real data it pinned at the 30% clamp floor, about 1,164 kcal/day against a measured 1,622. Every implied intake, maintenance figure and phantom-calorie estimate came out about 460 kcal/day low as a result.
 
-Each record carries `bmr_source: dexa | derived`. Reconstructed calories (see [reconstruction](README.md#untracked-intake-reconstruction)) are excluded from `tracked_calories`: they are an estimate, not tracking.
+Details of the measured anchor:
+
+- **Which scan:** the latest scan that *has* a measured RMR. A newer scan without one, such as an InBody, never shadows it.
+- **Same-instrument ratio:** when the scan records the scale's own body-fat reading for its week (`scale_body_fat_percent`), FFM at the scan uses that reading, so both sides of the ratio come from the scale.
+- **Workouts:** count only the calories above resting for their minutes, because the measured RMR already covers resting burn.
+
+Each record carries `bmr_source: dexa | derived` and `resting_burn` (RMR × 1.1 when anchored), so `implied_intake = weight_delta × 3500 + resting_burn + exercise + neat` can be reproduced from the record. To rebuild history after a change, call `GET /api/v1/health/daily?days=<n>` twice. The first call re-aggregates and reconciles; the second picks up the new adjusted nutrition. Reconstructed calories (see [reconstruction](README.md#untracked-intake-reconstruction)) are excluded from `tracked_calories`: they are an estimate, not tracking.
 
 ### Longitudinal aggregate
 

@@ -104,13 +104,18 @@ export class ReconciliationProcessor {
 
       // Estimate calories from HR when calories are missing (common for Strava weight training)
       const weightKg = currWeight ? currWeight * LBS_TO_KG : null;
+      // With a MEASURED resting rate, a workout's gross calories include the
+      // resting burn already counted for those minutes — count only the net.
+      const restPerMin = anchored ? (seedBmr * 1.1) / 1440 : 0;
       const exerciseCalories = mergedWorkouts.reduce((sum, w) => {
-        if (w.calories > 0) return sum + w.calories;
+        const minutes = Number(w.duration || w.minutes || w.strava?.minutes || w.fitness?.minutes) || 0;
+        const net = (gross) => Math.max(0, gross - restPerMin * minutes);
+        if (w.calories > 0) return sum + net(w.calories);
         // Fall back to HR-based estimation
         const hr = w.avgHr || w.strava?.avgHeartrate || w.fitness?.avgHeartrate;
         const dur = w.duration || w.strava?.minutes || w.fitness?.minutes;
         if (hr && dur && weightKg) {
-          return sum + CalorieReconciliationService.estimateCaloriesFromHR(hr, dur, weightKg);
+          return sum + net(CalorieReconciliationService.estimateCaloriesFromHR(hr, dur, weightKg));
         }
         return sum;
       }, 0);
@@ -155,16 +160,26 @@ export class ReconciliationProcessor {
     return results;
   }
 
-  /** Latest body scan carrying a measured BMR, or null. Never throws. */
+  /**
+   * The latest scan carrying a MEASURED bmr — not simply the latest scan: a
+   * newer InBody/BIA scan without an RMR must not shadow the DEXA anchor.
+   * Never throws.
+   */
   async #latestMeasuredScan(userId) {
     try {
-      const scan = await this.#bodyScans?.getLatestScan?.(userId);
-      const raw = scan?.toJSON ? scan.toJSON() : scan;
-      const bmr = raw?.bmr_kcal ?? raw?.bmrKcal;
-      const method = raw?.bmr_method ?? raw?.bmrMethod;
-      if (!(bmr > 0) || method !== 'measured') return null;
-      return { date: raw.date, bmr_kcal: bmr, weight_lbs: raw.weight_lbs ?? raw.weightLbs,
-        body_fat_percent: raw.body_fat_percent ?? raw.bodyFatPercent };
+      const scans = this.#bodyScans?.listScans
+        ? await this.#bodyScans.listScans(userId)
+        : [await this.#bodyScans?.getLatestScan?.(userId)];
+      const measured = (scans || []).filter(Boolean).map(scan => ({
+        date: scan.date,
+        bmr_kcal: scan.bmr_kcal ?? scan.bmrKcal,
+        bmr_method: scan.bmr_method ?? scan.bmrMethod,
+        weight_lbs: scan.weight_lbs ?? scan.weightLbs,
+        body_fat_percent: scan.body_fat_percent ?? scan.bodyFatPercent,
+        scale_body_fat_percent: scan.scale_body_fat_percent ?? scan.scaleBodyFatPercent ?? null,
+      })).filter(scan => scan.bmr_kcal > 0 && scan.bmr_method === 'measured')
+        .sort((a, b) => String(a.date).localeCompare(String(b.date)));
+      return measured.at(-1) || null;
     } catch (error) {
       this.#logger.warn?.('reconciliation.process.scan_unavailable', { userId, error: error.message });
       return null;
