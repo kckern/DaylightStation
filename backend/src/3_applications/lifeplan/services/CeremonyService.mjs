@@ -1,3 +1,5 @@
+import { Rule } from '#domains/lifeplan/entities/Rule.mjs';
+
 const CEREMONY_TYPES = ['unit_intention', 'unit_capture', 'cycle_retro', 'phase_review', 'season_alignment', 'era_vision'];
 
 const CEREMONY_CADENCE_MAP = {
@@ -73,7 +75,7 @@ export class CeremonyService {
             id: v.id, name: v.name, alignment_state: v.alignment_state,
           })),
           ruleEffectiveness: this.#getAllRules(plan).map(r => ({
-            trigger: r.trigger, action: r.action, effectiveness: r.effectiveness,
+            trigger: r.trigger, action: r.action, effectiveness: Rule.effectivenessOf(r),
           })),
         };
 

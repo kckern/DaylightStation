@@ -92,7 +92,9 @@ describe('RetroService', () => {
       { id: 'b1', confidence: 0.8, state: 'confirmed', evidence_history: [{ type: 'confirmation' }] },
     ],
     values: [{ id: 'v1', name: 'Health', alignment_state: 'aligned' }],
-    qualities: [{ id: 'q1', name: 'Discipline', rules: [{ effectiveness: 'effective' }] }],
+    qualities: [{ id: 'q1', name: 'Discipline', rules: [
+      { trigger: 'feeling lazy', action: 'do 5 minutes', times_triggered: 5, times_followed: 2, times_helped: 1 },
+    ] }],
     toJSON() { return this; },
   };
 
@@ -115,6 +117,13 @@ describe('RetroService', () => {
       feedbackService: mockFeedbackService,
       driftService: mockDriftService,
     });
+  });
+
+  it('derives rule effectiveness from the rule counts', () => {
+    const retro = service.generateRetro('testuser', { start: '2025-06-01', end: '2025-06-15' });
+    expect(retro.ruleEffectiveness).toEqual([
+      { trigger: 'feeling lazy', action: 'do 5 minutes', effectiveness: 'not_followed', quality: 'Discipline' },
+    ]);
   });
 
   it('generates retrospective content', () => {

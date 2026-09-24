@@ -22,7 +22,11 @@ describe('CeremonyService', () => {
       { id: 'v2', name: 'Growth', rank: 2, alignment_state: 'drifting' },
     ],
     qualities: [
-      { id: 'q1', name: 'Discipline', rules: [{ trigger: 'alarm rings', action: 'get up immediately', effectiveness: 'effective' }] },
+      // Stored rules carry counts, never an `effectiveness` field — it is derived.
+      { id: 'q1', name: 'Discipline', rules: [
+        { trigger: 'alarm rings', action: 'get up immediately', times_triggered: 10, times_followed: 8, times_helped: 7 },
+        { trigger: 'feeling lazy', action: 'do 5 minutes' },
+      ] },
     ],
     ceremonies: {
       unit_intention: { enabled: true },
@@ -64,6 +68,14 @@ describe('CeremonyService', () => {
     expect(content.activeGoals).toHaveLength(2);
     expect(content.cadencePosition).toBeDefined();
     expect(content.rules).toBeDefined();
+  });
+
+  it('cycle_retro derives rule effectiveness from the rule counts', () => {
+    const content = service.getCeremonyContent('cycle_retro', 'testuser');
+    expect(content.ruleEffectiveness).toEqual([
+      { trigger: 'alarm rings', action: 'get up immediately', effectiveness: 'effective' },
+      { trigger: 'feeling lazy', action: 'do 5 minutes', effectiveness: 'untested' },
+    ]);
   });
 
   it('getCeremonyContent returns cycle_retro content', () => {
