@@ -10,8 +10,10 @@ describe('CoachingOrchestrator', () => {
   let mockConfig;
 
   beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-04-07T20:00:00Z')); // 1pm PDT on the post-report date
     mockCommentary = { generate: vi.fn().mockResolvedValue('Nice protein hit.') };
-    mockMessaging = { sendMessage: vi.fn().mockResolvedValue({ messageId: '123' }) };
+    mockMessaging = { sendMessage: vi.fn().mockResolvedValue({ messageId: '123' }), deleteMessage: vi.fn().mockResolvedValue(undefined) };
     mockHealthStore = {
       loadNutritionData: vi.fn().mockResolvedValue({}),
       loadWeightData: vi.fn().mockResolvedValue({}),
@@ -36,6 +38,64 @@ describe('CoachingOrchestrator', () => {
       nutriListStore: mockNutriListStore,
       config: mockConfig,
       logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+    });
+  });
+
+  afterEach(() => vi.useRealTimers());
+
+  describe('post-meal coaching', () => {
+    it('skips a back-dated report', async () => {
+      await orchestrator.sendPostReport({ userId: 'user_1', conversationId: 'telegram:123', date: '2026-04-05' });
+      expect(mockMessaging.sendMessage).not.toHaveBeenCalled();
+    });
+
+    it("sums today's items when no totals are given, and marks the day in progress", async () => {
+      await orchestrator.sendPostReport({ userId: 'user_1', conversationId: 'telegram:123' });
+      const [, text] = mockMessaging.sendMessage.mock.calls[0];
+      expect(text).toContain('<b>500 / 1600 cal</b>');
+      expect(text).toContain('<b>45 / 120g protein</b>');
+      const snapshot = mockCommentary.generate.mock.calls[0][0];
+      expect(snapshot.today_status).toBe('in_progress');
+      expect(snapshot.recent_days.every(d => d.status)).toBe(true);
+    });
+
+    it("replaces the day's previous post-report message", async () => {
+      mockHealthStore.loadCoachingData.mockResolvedValue({
+        '2026-04-07': [{ type: 'post-report', text: 'old', messageId: '77', timestamp: '2026-04-07T18:00:00Z' }],
+      });
+      await orchestrator.sendPostReport({ userId: 'user_1', conversationId: 'telegram:123' });
+      expect(mockMessaging.deleteMessage).toHaveBeenCalledWith('telegram:123', '77');
+      const [, data] = mockHealthStore.saveCoachingData.mock.calls[0];
+      expect(data['2026-04-07'].at(-1)).toMatchObject({ type: 'post-report', messageId: '123' });
+    });
+
+    it('stays silent when nothing is logged today', async () => {
+      mockNutriListStore.findByDate.mockResolvedValue([]);
+      await orchestrator.sendPostReport({ userId: 'user_1', conversationId: 'telegram:123' });
+      expect(mockMessaging.sendMessage).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('exercise reaction', () => {
+    const activity = { id: 987, type: 'Ride', durationMin: 45, caloriesBurned: 420 };
+
+    it('sends once per activity', async () => {
+      await orchestrator.sendExerciseReaction({ userId: 'user_1', conversationId: 'telegram:123', activity });
+      expect(mockMessaging.sendMessage).toHaveBeenCalledOnce();
+      const [, data] = mockHealthStore.saveCoachingData.mock.calls[0];
+      expect(data['2026-04-07'][0]).toMatchObject({ type: 'exercise-reaction', activityId: '987' });
+
+      mockHealthStore.loadCoachingData.mockResolvedValue(data);
+      await orchestrator.sendExerciseReaction({ userId: 'user_1', conversationId: 'telegram:123', activity });
+      expect(mockMessaging.sendMessage).toHaveBeenCalledOnce();
+    });
+
+    it("gives the model today's running total as in progress", async () => {
+      await orchestrator.sendExerciseReaction({ userId: 'user_1', conversationId: 'telegram:123', activity });
+      const snapshot = mockCommentary.generate.mock.calls[0][0];
+      expect(snapshot.today_calories.consumed).toBe(500);
+      expect(snapshot.today_status).toBe('in_progress');
+      expect(mockMessaging.sendMessage.mock.calls[0][1]).toContain('~210 extra cal earned');
     });
   });
 

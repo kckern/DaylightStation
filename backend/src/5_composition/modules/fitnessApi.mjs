@@ -56,7 +56,6 @@ import { SaveDebugVoiceMemo } from '#apps/fitness/usecases/SaveDebugVoiceMemo.mj
 import { ManageAccess } from '#apps/fitness/usecases/ManageAccess.mjs';
 import { RecapSweep } from '#apps/fitness/usecases/RecapSweep.mjs';
 import { TrashRetentionSweep } from '#apps/fitness/usecases/TrashRetentionSweep.mjs';
-import { shouldSendExerciseReaction } from '#apps/fitness/webhookCoachingPolicy.mjs';
 import { FitnessProgressClassifier } from '#domains/fitness/index.mjs';
 import { TimelapseFrameMapper } from '#domains/fitness/services/TimelapseFrameMapper.mjs';
 import { makeDeviceColorResolver } from '#domains/fitness/strapColors.mjs';
@@ -310,8 +309,6 @@ export function createFitnessApiRouter(config) {
     providerWebhookAdapters,
     enrichmentService,
     syncHealth: stravaSyncHealth,
-    shouldSendExerciseReaction,
-    getCoachingConversationId: () => configService?.getNutribotConversationId?.() || null,
     logger,
   });
   const printFitnessReceipt = new PrintFitnessReceipt({
