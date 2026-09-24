@@ -497,3 +497,4 @@ The corollary bit twice in this sweep: `feat/teacher-workspace-ia` and `feature/
 | 2026-09-23 | fix/media-cache-revalidate | 14f66e6eb0 | /api/v1/proxy/media revalidates (no-cache + size/mtime ETag, 304) instead of a 1-year max-age; merged to main |
 | 2026-09-23 | feat/plex-cli-playlists | 7998806ed0 | plex CLI playlist commands; /system/reload wiring fix; fitness Resume exempt from never_suggest; merged to main |
 | 2026-09-23 | feat/fitness-stint-attribution | bc62ddd193 | Strap reassignment moves stints completely; resume restores live keys; split-series heal; merged to main |
+| 2026-09-23 | fix/heal-keep-strava-only | 1fdeb39f20 | Heal never empties a Strava-imported session; merged to main |
