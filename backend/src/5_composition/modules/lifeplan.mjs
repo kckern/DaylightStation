@@ -12,6 +12,7 @@ import { YamlCeremonyRecordStore } from '#adapters/persistence/yaml/YamlCeremony
 import { CeremonyService } from '#apps/lifeplan/services/CeremonyService.mjs';
 import { FeedbackService } from '#apps/lifeplan/services/FeedbackService.mjs';
 import { PlanAuthoringService } from '#apps/lifeplan/services/PlanAuthoringService.mjs';
+import { LifeEventSuggester } from '#apps/lifeplan/services/LifeEventSuggester.mjs';
 import { RetroService } from '#apps/lifeplan/services/RetroService.mjs';
 import { DriftService } from '#apps/lifeplan/services/DriftService.mjs';
 import { AlignmentService } from '#apps/lifeplan/services/AlignmentService.mjs';
@@ -35,10 +36,13 @@ import { createNoOpNotificationService } from '#adapters/integrations/noops.mjs'
  * @param {string} [deps.timezone] - IANA household timezone for cadence math (defaults to UTC)
  * @param {Object} [deps.clock] - Injectable clock
  * @param {Object} [deps.logger] - Logger instance
+ * @param {Object} [deps.decisionGateway] - IDecisionGateway for the life-event judge (optional)
+ * @param {Object} [deps.lifeEventSignals] - { mode: shadow|decide|off, min_confidence }
  * @returns {Object} { router, container, ceremonyScheduler, services }
  */
 export function bootstrapLifeplan(deps) {
-  const { dataPath, aggregator, notificationService, userService, listHouseholdUsers, defaultUsername, timezone, clock, logger } = deps;
+  const { dataPath, aggregator, notificationService, userService, listHouseholdUsers, defaultUsername, timezone, clock, logger,
+    decisionGateway = null, lifeEventSignals = {} } = deps;
 
   // Validate the household timezone at the composition seam (the domain has no
   // logger; CadenceService itself falls back to UTC on an invalid zone).
@@ -81,6 +85,18 @@ export function bootstrapLifeplan(deps) {
     lifePlanStore: container.getLifePlanStore(),
     ceremonyRecordStore: container.getCeremonyRecordStore(),
     cadenceService: container.getCadenceService(),
+  });
+
+  // Life-event suggestions for the coach (keyword judge; Jev in shadow unless promoted)
+  const lifeEventSuggester = new LifeEventSuggester({
+    aggregator,
+    lifePlanStore: container.getLifePlanStore(),
+    decisionGateway,
+    mode: lifeEventSignals?.mode,
+    minConfidence: lifeEventSignals?.min_confidence,
+    timezone: timezone || 'UTC',
+    clock,
+    logger: logger?.child?.({ submodule: 'life-event-signals' }) || logger,
   });
 
   const retroService = new RetroService({
@@ -156,7 +172,7 @@ export function bootstrapLifeplan(deps) {
   const router = createLifeRouter(routerConfig);
 
   logger?.info('lifeplan.bootstrap.complete', {
-    services: ['ceremony', 'feedback', 'retro', 'drift', 'alignment'],
+    services: ['ceremony', 'feedback', 'retro', 'drift', 'alignment', 'life-event-signals'],
   });
 
   return {
@@ -167,6 +183,7 @@ export function bootstrapLifeplan(deps) {
       ceremonyService,
       feedbackService,
       planAuthoringService,
+      lifeEventSuggester,
       retroService,
       driftService,
       alignmentService,
