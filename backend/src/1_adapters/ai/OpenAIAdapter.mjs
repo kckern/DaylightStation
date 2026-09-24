@@ -124,8 +124,9 @@ export class OpenAIAdapter extends IAIGateway {
     // Rate limit
     if (error.code === 'RATE_LIMIT') return true;
 
-    // Server errors (5xx)
-    if (error.status >= 500 && error.status < 600) return true;
+    // Server errors (5xx) and throttling — `status` on HttpError, `response.status` on raw axios
+    const status = error.status ?? error.response?.status;
+    if (status === 429 || (status >= 500 && status < 600)) return true;
 
     return false;
   }
