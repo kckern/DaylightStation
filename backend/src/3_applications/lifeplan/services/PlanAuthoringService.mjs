@@ -3,6 +3,8 @@ import { Goal } from '#domains/lifeplan/entities/Goal.mjs';
 import { Value } from '#domains/lifeplan/entities/Value.mjs';
 import { Belief } from '#domains/lifeplan/entities/Belief.mjs';
 import { Purpose } from '#domains/lifeplan/entities/Purpose.mjs';
+import { LifeEvent } from '#domains/lifeplan/entities/LifeEvent.mjs';
+import { LifeEventType } from '#domains/lifeplan/value-objects/LifeEventType.mjs';
 
 /**
  * Slug an id from a display name. Lowercase, alnum-hyphen, trimmed, capped.
@@ -19,10 +21,11 @@ const serializeGoal = goal => ({ id: goal.id, name: goal.name, state: goal.state
 const serializeValue = value => ({ id: value.id, name: value.name, rank: value.rank, description: value.description, justified_by: value.justified_by, conflicts_with: value.conflicts_with, alignment: value.alignment, drift_history: value.drift_history });
 const serializeBelief = belief => ({ id: belief.id, if: belief.if, then: belief.then, state: belief.state, confidence: belief.confidence, foundational: belief.foundational, signals: belief.signals, evidence_history: belief.evidence_history, evidence_quality: belief.evidence_quality, depends_on: belief.depends_on, state_history: belief.state_history, origin: belief.origin });
 const serializePurpose = purpose => ({ statement: purpose.statement, adopted: purpose.adopted, last_reviewed: purpose.last_reviewed, review_cadence: purpose.review_cadence, notes: purpose.notes, grounded_in: purpose.grounded_in });
+const serializeLifeEvent = event => ({ id: event.id, type: event.type, subtype: event.subtype, name: event.name, status: event.status, impact_type: event.impact_type, duration_type: event.duration_type, expected_date: event.expected_date, actual_date: event.actual_date, impact: event.impact, resolution: event.resolution, signals: event.signals, notes: event.notes });
 
 /**
  * PlanAuthoringService — the single write path for creating a life plan and
- * appending its top-level entities (goals, values, beliefs, purpose).
+ * appending its top-level entities (goals, values, beliefs, purpose, life events).
  *
  * Shared by the REST authoring routes (Task C1) and, later, the coach's write
  * tools (Task C2). Genesis creates a minimal valid plan; each authoring method
@@ -138,5 +141,31 @@ export class PlanAuthoringService {
     });
     this.#lifePlanStore.save(username, plan);
     return serializePurpose(plan.purpose);
+  }
+
+  /**
+   * Append a life event. `date` lands on actual_date for an occurred event and
+   * on expected_date for an anticipated one. `signal` records where a
+   * confirmed suggestion came from ({ source, date, detector, confidence }).
+   * @returns {object} the created life event record
+   */
+  addLifeEvent(username, { type, subtype = null, name, status = 'occurred', date = null, signal = null } = {}) {
+    if (!name) throw new Error('Life event requires a name');
+    if (!LifeEventType.isValid(type)) throw new Error(`Unknown life event type: ${type}`);
+    if (!['anticipated', 'occurred'].includes(status)) throw new Error(`Unsupported life event status: ${status}`);
+    const plan = this.#loadOrCreate(username);
+    const event = new LifeEvent({
+      id: this.#uniqueId(name, plan.life_events),
+      type,
+      subtype,
+      name,
+      status,
+      expected_date: status === 'anticipated' ? date : null,
+      actual_date: status === 'occurred' ? date : null,
+      signals: signal ? [signal] : [],
+    });
+    plan.life_events.push(event);
+    this.#lifePlanStore.save(username, plan);
+    return serializeLifeEvent(event);
   }
 }
