@@ -224,4 +224,34 @@ describe('TransactionCategorizationService', () => {
       expect(result).toHaveLength(1);
     });
   });
+
+  describe('settled transactions', () => {
+    it('does not re-send a tagged transaction whose new name still matches a raw pattern', async () => {
+      mockAIGateway.chatWithJson.mockResolvedValue({ category: 'Income', friendlyName: 'Direct Deposit' });
+      await service.categorize([{ id: 9, date: '2026-09-15', description: 'Direct Deposit Acme Payroll Ppd', tagNames: [] }]);
+
+      // The next harvest re-reads the renamed, tagged transaction from the provider
+      const result = await service.categorize([{ id: 9, date: '2026-09-15', description: 'Direct Deposit', tagNames: ['Income'] }]);
+
+      expect(mockAIGateway.chatWithJson).toHaveBeenCalledTimes(1);
+      expect(mockTransactionSource.updateTransaction).toHaveBeenCalledTimes(1);
+      expect(result.skipped).toHaveLength(1);
+      expect(mockLogger.info).toHaveBeenCalledWith('categorization.settled', { id: 9, friendlyName: 'Direct Deposit' });
+    });
+
+    it('re-sends it when the provider description changes again', async () => {
+      mockAIGateway.chatWithJson.mockResolvedValue({ category: 'Income', friendlyName: 'Direct Deposit' });
+      await service.categorize([{ id: 9, date: '2026-09-15', description: 'Direct Deposit Acme Payroll Ppd', tagNames: [] }]);
+      await service.categorize([{ id: 9, date: '2026-09-15', description: 'Direct Deposit Pwp Xx12', tagNames: ['Income'] }]);
+
+      expect(mockAIGateway.chatWithJson).toHaveBeenCalledTimes(2);
+    });
+
+    it('getUncategorized agrees with categorize about settled rows', async () => {
+      mockAIGateway.chatWithJson.mockResolvedValue({ category: 'Income', friendlyName: 'Direct Deposit' });
+      await service.categorize([{ id: 9, date: '2026-09-15', description: 'Direct Deposit Acme Payroll Ppd', tagNames: [] }]);
+
+      expect(service.getUncategorized([{ id: '9', description: 'Direct Deposit', tagNames: ['Income'] }])).toEqual([]);
+    });
+  });
 });
