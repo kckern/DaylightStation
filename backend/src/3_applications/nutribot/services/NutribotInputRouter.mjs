@@ -13,6 +13,9 @@ import { UPC_REJECTED } from '../usecases/LogFoodFromUPC.mjs';
  * Routes IInputEvents to Nutribot use cases.
  * Transforms platform-agnostic events to use case input shapes.
  */
+/** Voice retries currently being processed, by `${conversationId}:${messageId}`. */
+const voiceRetriesInFlight = new Set();
+
 export class NutribotInputRouter extends BaseInputRouter {
   #userResolver;
   #userIdentityService;
@@ -411,7 +414,8 @@ export class NutribotInputRouter extends BaseInputRouter {
     if (result?.code !== 'TRANSCRIBE_FAILED' || !result.retryMessageId) return;
     try {
       await this.container.getConversationStateStore?.()?.set(event.conversationId,
-        { voiceRetry: { fileId: event.payload.fileId, at: new Date().toISOString() } }, String(result.retryMessageId));
+        { voiceRetry: { fileId: event.payload.fileId, voiceMessageId: event.messageId ?? null, at: new Date().toISOString() } },
+        String(result.retryMessageId));
     } catch (e) {
       this.logger.warn?.('nutribot.voiceRetry.saveFailed', { conversationId: event.conversationId, error: e.message });
     }
@@ -587,25 +591,44 @@ export class NutribotInputRouter extends BaseInputRouter {
         });
       }
       case CallbackActions.RETRY_VOICE: {
-        const store = this.container.getConversationStateStore?.();
-        const session = await store?.get(event.conversationId, String(event.messageId));
-        const fileId = session?.voiceRetry?.fileId;
-        if (!fileId) {
-          await responseContext?.sendMessage?.('🚫 This retry is no longer available. Please send the voice message again.', {});
-          return { ok: false, code: 'RETRY_STALE' };
+        // A double tap must not transcribe (and log) the same recording twice.
+        const key = `${event.conversationId}:${event.messageId}`;
+        if (voiceRetriesInFlight.has(key)) return { ok: true, handled: true, duplicate: true };
+        voiceRetriesInFlight.add(key);
+        try {
+          const store = this.container.getConversationStateStore?.();
+          const session = await store?.get(event.conversationId, String(event.messageId));
+          const retry = session?.voiceRetry;
+          if (!retry?.fileId) {
+            await responseContext?.sendMessage?.('🚫 This retry is no longer available. Please send the voice message again.', {});
+            return { ok: false, code: 'RETRY_STALE' };
+          }
+          // One retry per button: consume it before the attempt, then clear the
+          // failure message away — the attempt brings its own status line.
+          await store.delete?.(event.conversationId, String(event.messageId));
+          try { await responseContext?.deleteMessage?.(event.messageId); }
+          catch (e) { this.logger.debug?.('nutribot.voiceRetry.deleteFailed', { error: e.message }); }
+          this.logger.info?.('nutribot.voiceRetry.dispatch', { conversationId: event.conversationId });
+          // The ORIGINAL voice note's id travels on, so a successful retry tidies it too.
+          return await this.handleVoice({ ...event, type: 'voice', messageId: retry.voiceMessageId ?? null,
+            payload: { ...event.payload, fileId: retry.fileId } }, responseContext);
+        } finally {
+          voiceRetriesInFlight.delete(key);
         }
-        // One retry per button: consume it before the attempt.
-        await store.set(event.conversationId, { voiceRetry: null, consumedAt: new Date().toISOString() }, String(event.messageId));
-        try { await responseContext?.updateMessage?.(event.messageId, { text: '🔄 Retrying…', choices: [] }); }
-        catch (e) { this.logger.debug?.('nutribot.voiceRetry.updateFailed', { error: e.message }); }
-        this.logger.info?.('nutribot.voiceRetry.dispatch', { conversationId: event.conversationId });
-        return await this.handleVoice({ ...event, type: 'voice', messageId: null, payload: { ...event.payload, fileId } }, responseContext);
       }
       case CallbackActions.RESTORE_LOG: {
         const userId = this.#resolveUserId(event);
-        const result = await this.container.getRestoreFoodLog().execute({
-          userId, conversationId: event.conversationId, logUuid: decoded.id, responseContext,
-        });
+        let result;
+        try {
+          result = await this.container.getRestoreFoodLog().execute({
+            userId, conversationId: event.conversationId, logUuid: decoded.id, responseContext,
+          });
+        } catch (error) {
+          // 409: part of the entry changed or is gone. Say so; never go silent.
+          this.logger.warn?.('nutribot.restore.failed', { logUuid: decoded.id, status: error.status ?? null, error: error.message });
+          await responseContext?.sendMessage?.("⚠️ I couldn't restore that entry — part of it changed or is no longer available. You can log it again.", {});
+          return { ok: false, code: 'RESTORE_FAILED' };
+        }
         if (result.restored > 0) await this.#notifyMealCoaching(userId, decoded.id, 'restore');
         return result;
       }

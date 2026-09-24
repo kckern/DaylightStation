@@ -177,6 +177,9 @@ export class LogFoodFromVoice {
       // Cancel transcription status - LogFoodFromText will show its own "Analyzing..." status
       if (status) {
         await status.cancel();
+        // The message is gone: a later failure must SEND its explanation,
+        // not try to edit a deleted message and fail silently.
+        status = null;
       }
 
       this.#logger.debug?.('logVoice.transcribed', {

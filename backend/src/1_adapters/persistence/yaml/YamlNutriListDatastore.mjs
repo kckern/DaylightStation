@@ -432,7 +432,8 @@ export class YamlNutriListDatastore extends INutriListDatastore {
   async restoreByLogId(userId, logId) {
     const deleted = loadYaml(this.#tombstonePath(userId)) || {};
     const ids = Object.entries(deleted)
-      .filter(([, row]) => row && (row.logId === logId || row.log_uuid === logId))
+      // Group headers made by web grouping carry only `logUuid`.
+      .filter(([, row]) => row && (row.logId === logId || row.log_uuid === logId || row.logUuid === logId))
       .map(([id]) => id);
     if (!ids.length) return { committed: false, items: [], affectedIds: [], affectedDates: [] };
     return this.restoreEntries(userId, ids);
