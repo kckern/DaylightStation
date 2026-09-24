@@ -992,3 +992,21 @@ $health-aside-gap: 1.5rem;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+
+// End-of-day close row (DayCloseRow): "Done logging" / "Fasted" / "Reopen".
+// Quiet by default; the left rule turns warning-toned only for a PAST day
+// under the coach's completeness threshold, and success-toned once closed.
+.health-dayclose {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.75rem;
+  border: 1px solid var(--ds-border); border-left: 3px solid var(--ds-text-low);
+  border-radius: 9px; padding: 0.6rem 0.75rem; margin: 0.6rem 0 0.4rem;
+  &--flagged { border-left-color: var(--ds-warning); }
+  &--closed { border-left-color: var(--ds-success); }
+  &__line { flex: 1 1 14rem; font-size: 0.85rem; color: var(--ds-text-high); }
+  &__sub { color: var(--ds-text-mid); }
+  &__icon { display: inline-flex; color: var(--ds-success); }
+  &--fasting &__icon { color: var(--ds-accent); }
+  &__actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+  &__actions .mantine-Button-root, & > .mantine-Button-root { min-height: 44px; }
+  &__error { flex-basis: 100%; color: var(--ds-danger); font-size: 0.8rem; }
+}
