@@ -426,6 +426,25 @@ export function summarizeParticipant(decoded, id, intervalSeconds, previous = {}
 }
 
 /**
+ * Drop one day from the session-list index shard (`fitness/log/_index/
+ * YYYY-MM.json`). Missing shard or day → no-op.
+ * @param {string} date - YYYY-MM-DD
+ * @param {string} [baseDir]
+ */
+export async function invalidateIndexDay(date, baseDir) {
+  const shardFile = path.join(historyRoot(baseDir), '_index', `${date.slice(0, 7)}.json`);
+  let shard;
+  try {
+    shard = JSON.parse(await fs.readFile(shardFile, 'utf8'));
+  } catch {
+    return;
+  }
+  if (!shard?.days || !Object.prototype.hasOwnProperty.call(shard.days, date)) return;
+  delete shard.days[date];
+  await fs.writeFile(shardFile, JSON.stringify(shard), 'utf8');
+}
+
+/**
  * Load a session YAML, plan the identity heal, and (if `apply`) rewrite the
  * file with ghost occupants folded away and the summary recomputed.
  *
@@ -542,6 +561,12 @@ export async function heal(date, sessionId, { apply = false, baseDir } = {}) {
 
   const yamlText = yaml.dump(out, { lineWidth: -1, noRefs: true });
   await fs.writeFile(file, yamlText, 'utf8');
+
+  // The session-list index caches each day's summaries and only notices new or
+  // removed files (day-folder mtime). An in-place rewrite must drop the day
+  // from its month shard, as the app's own saves do, or the list keeps serving
+  // the pre-heal numbers.
+  await invalidateIndexDay(date, baseDir);
 
   return { file, plan, changed: true, out };
 }
