@@ -13,13 +13,13 @@
  *
  * Usage: node cli/finance-jev-replay.cli.mjs [--period YYYY-MM-DD] [--limit 200] [--floor 0.8] [--household <id>]
  *
- * Exit codes (cli/_output.mjs): 0 ok, 2 usage, 3 config (no Jev key, no
- * validTags, no period), 4 every judgement failed (bad key, Jev down).
+ * Exit codes (cli/_output.mjs): 0 ok, 1 unexpected failure, 2 usage, 3 config
+ * (no Jev key, no validTags, no period), 4 every judgement failed (bad key, Jev down).
  */
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { TransactionCategoryJudge } from '#apps/finance/TransactionCategoryJudge.mjs';
-import { EXIT_OK, EXIT_USAGE, EXIT_CONFIG, EXIT_BACKEND, printError } from './_output.mjs';
+import { EXIT_OK, EXIT_FAIL, EXIT_USAGE, EXIT_CONFIG, EXIT_BACKEND, printError } from './_output.mjs';
 
 const USAGE = 'Usage: node cli/finance-jev-replay.cli.mjs [--period YYYY-MM-DD] [--limit 200] [--floor 0.8] [--household <id>]\n'
   + '  --period     budget period (default: the latest one with transactions)\n'
@@ -42,6 +42,13 @@ export function summarize(rows, floor) {
     counts[key] = (counts[key] || 0) + 1;
   }
   const cjk = judged.filter(r => r.cjk);
+  // Which model was measured: the replay uses the adapter's default model,
+  // which may differ from a household `decision` integration's pin in prod.
+  const models = {};
+  for (const r of judged) {
+    const model = r.model ?? 'unknown';
+    models[model] = (models[model] || 0) + 1;
+  }
   return {
     total: rows.length,
     judged: judged.length,
@@ -51,6 +58,7 @@ export function summarize(rows, floor) {
     agreementAtFloor: rate(confident),
     cjk: { judged: cjk.length, agreement: rate(cjk) },
     disagreements: Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 15),
+    models,
   };
 }
 
@@ -64,6 +72,7 @@ export async function runReplay({ transactions, validTags, judge, floor = 0.8, l
     rows.push({
       id: txn.id, tag: txn.tagNames[0],
       jevCategory: verdict?.category ?? null, confidence: verdict?.confidence ?? null, cjk: verdict?.cjk ?? false,
+      model: verdict?.model ?? null,
     });
   }
   return summarize(rows, floor);
@@ -171,7 +180,7 @@ export async function main(argv, { loadRuntime = loadRealRuntime, stdout = proce
     return EXIT_OK;
   } catch (error) {
     printError(stderr, { error: error.message });
-    return error instanceof ConfigError ? EXIT_CONFIG : 1;
+    return error instanceof ConfigError ? EXIT_CONFIG : EXIT_FAIL;
   }
 }
 

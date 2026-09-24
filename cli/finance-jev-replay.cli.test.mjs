@@ -49,6 +49,20 @@ describe('finance-jev-replay', () => {
     expect(summary.cjk).toEqual({ judged: 2, agreement: 0.5 });
   });
 
+  it('reports which Jev models produced the judgements', async () => {
+    const models = { a: 'jev-2026-09', b: 'jev-2026-09', c: null };
+    const judge = { judge: vi.fn(async (txn) => (txn.id === 'd' ? null : { category: 'Fuel', confidence: 0.9, cjk: false, model: models[txn.id] })) };
+    const transactions = ['a', 'b', 'c', 'd'].map((id) => ({ id, description: 'Shell', tagNames: ['Fuel'] }));
+
+    const summary = await runReplay({ transactions, validTags: TAGS, judge });
+
+    expect(summary.models).toEqual({ 'jev-2026-09': 2, unknown: 1 });
+  });
+
+  it('models is empty when nothing was judged', () => {
+    expect(summarize([{ tag: 'Fuel', jevCategory: null, confidence: null, cjk: false, model: null }], 0.8).models).toEqual({});
+  });
+
   it('leaves the transactions it reads untouched', async () => {
     const judge = { judge: vi.fn(async () => ({ category: 'Fuel', confidence: 0.9, cjk: false })) };
     const transactions = [{ id: 1, description: 'Shell', tagNames: ['Fuel'], memo: 'x' }];
@@ -144,6 +158,13 @@ describe('finance-jev-replay', () => {
       expect(rt.store.getTransactions).not.toHaveBeenCalled();
     });
 
+    it('an unexpected runtime error exits 1', async () => {
+      const { out, ...streams } = io();
+      const loadRuntime = vi.fn(async () => { throw new Error('DAYLIGHT_BASE_PATH not set'); });
+      expect(await main([], { ...streams, loadRuntime })).toBe(1);
+      expect(JSON.parse(out.stderr).error).toBe('DAYLIGHT_BASE_PATH not set');
+    });
+
     it('missing validTags exits 3', async () => {
       const { out, ...streams } = io();
       expect(await main([], { ...streams, loadRuntime: runtime({ validTags: [] }).loadRuntime })).toBe(3);
@@ -166,6 +187,7 @@ describe('finance-jev-replay', () => {
       expect(await main(['--limit', '10'], { ...streams, loadRuntime: rt.loadRuntime })).toBe(0);
       const summary = JSON.parse(out.stdout);
       expect(summary).toMatchObject({ householdId: 'default', period: '2026-01-01', floor: 0.8, total: 1, judged: 1, agreement: 1 });
+      expect(summary.models).toEqual({ 'jev-test-1': 1 });
       expect(rt.store.getTransactions).toHaveBeenCalledWith('2026-01-01', 'default');
       expect(rt.store.saveTransactions).not.toHaveBeenCalled();
       expect(rt.store.saveMemo).not.toHaveBeenCalled();

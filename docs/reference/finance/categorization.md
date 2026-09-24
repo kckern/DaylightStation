@@ -57,6 +57,10 @@ apply would send: a rule-tagged row is suggested once (`source: 'rule'`) and not
 sent to the LLM, and a rule without a tag sends the renamed description. Preview
 never mutates its input and writes nothing.
 
+For a transaction a rule renamed but did not tag, the rule row carries the bank
+text as `originalDescription`, while the LLM row (in preview `suggestions[]` and
+in apply's `processed[]`) reports the post-rule name as `originalDescription`.
+
 **Settled rows.** Some good friendly names still look raw: the LLM names a
 payroll deposit `"Direct Deposit"`, which matches `^Direct`. Before this fix,
 every hourly harvest re-sent such a row to the LLM and rewrote Buxfer, and the
@@ -65,7 +69,8 @@ Now, when the service writes a friendly name that still matches a raw pattern,
 it remembers `id → friendlyName` and logs `categorization.settled`. A tagged row
 whose description still equals that name is skipped by apply, preview and
 `getUncategorized`. If the provider description changes again, the row is
-sent again.
+sent again. Only names the LLM wrote that still look raw are remembered;
+description-rule renames are never added to the settled map.
 
 ---
 
@@ -202,12 +207,21 @@ Runs the same judge over a budget period's already-tagged transactions (rows
 with exactly one tag that is in `validTags`; default period is the latest) and
 prints a JSON summary: `total`, `judged`, `agreement`, `confident`,
 `coverage` (confident / total), `agreementAtFloor`, `cjk { judged, agreement }`,
-the top `disagreements` (`"<tag> -> <jev pick>"`), and `judgeErrors`.
+the top `disagreements` (`"<tag> -> <jev pick>"`), `models` (each Jev model id
+that answered, with its count), and `judgeErrors`.
+
+**Which model is measured.** The replay builds its own `JevAdapter` from the
+system Jev auth (`api_key` via `getSystemAuth('jev', 'api_key')`) with the
+adapter's default model. It ignores a household `decision` integration and any
+model pin there. Before trusting a baseline, compare the summary's `models`
+with the `model` field of prod's `categorization.jev.compare` events; if they
+differ, the replay measured a different model than prod runs.
 
 - **Read-only.** Buxfer is never constructed, the finance store is reached only
   through its read methods, and Jev calls are not written to the AI usage
   ledger. Jev bills input tokens only.
-- **Exit codes:** `0` summary printed; `2` bad arguments; `3` config problem
+- **Exit codes:** `0` summary printed; `1` unexpected failure (for example no
+  data path); `2` bad arguments; `3` config problem
   (no Jev key, no `validTags`, no budget period); `4` every judgement failed
   (bad key, Jev down), with the error counts instead of a zero summary.
 - Rows are judged one at a time with a 5 s timeout each, so `--limit 200` can
