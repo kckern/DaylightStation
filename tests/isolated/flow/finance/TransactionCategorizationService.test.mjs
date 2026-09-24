@@ -466,5 +466,117 @@ describe('TransactionCategorizationService', () => {
 
       expect((await pending).processed).toHaveLength(1);
     });
+
+    describe('promote mode', () => {
+      beforeEach(() => {
+        mockFinanceStore.getCategorizationConfig.mockReturnValue({
+          ...mockCategorizationConfig, jev: { mode: 'promote', confidenceFloor: 0.8 },
+        });
+      });
+
+      it('Jev category wins at the floor; the LLM still names and memos', async () => {
+        mockAIGateway.chatWithJson.mockResolvedValue({ category: 'Groceries', friendlyName: 'Walmart', memo: 'Weekly' });
+        jevSays('Shopping', 0.8);
+
+        const result = await service.categorize(walmart());
+
+        expect(mockTransactionSource.updateTransaction).toHaveBeenCalledWith('1', { description: 'Walmart', tags: 'Shopping', memo: 'Weekly' });
+        expect(result.processed[0]).toMatchObject({ category: 'Shopping', categoryVia: 'jev' });
+        expect(compareLogs()).toEqual([expect.objectContaining({ mode: 'promote', via: 'jev', agreed: false })]);
+      });
+
+      it('below the floor the LLM category stands', async () => {
+        mockAIGateway.chatWithJson.mockResolvedValue({ category: 'Groceries', friendlyName: 'Walmart' });
+        jevSays('Shopping', 0.79);
+
+        const result = await service.categorize(walmart());
+
+        expect(result.processed[0]).toMatchObject({ category: 'Groceries', categoryVia: 'llm' });
+      });
+
+      it('rescues a blank LLM category when Jev is confident', async () => {
+        mockAIGateway.chatWithJson.mockResolvedValue({ category: '', friendlyName: 'PayPal' });
+        jevSays('Shopping', 0.9);
+
+        const result = await service.categorize(walmart());
+
+        expect(result.failed).toEqual([]);
+        expect(result.processed[0]).toMatchObject({ friendlyName: 'PayPal', category: 'Shopping', categoryVia: 'jev' });
+      });
+
+      it('cannot rescue a missing friendly name', async () => {
+        mockAIGateway.chatWithJson.mockResolvedValue({ category: 'Shopping' });
+        jevSays('Shopping', 0.99);
+
+        const result = await service.categorize(walmart());
+
+        expect(result.failed[0].reason).toBe('AI did not provide a friendly name');
+      });
+
+      it('preview promotes exactly as apply does', async () => {
+        mockAIGateway.chatWithJson.mockResolvedValue({ category: 'Groceries', friendlyName: 'Walmart' });
+        jevSays('Shopping', 0.9);
+
+        const result = await service.preview(walmart());
+
+        expect(result.suggestions[0]).toMatchObject({ suggestedCategory: 'Shopping', categoryVia: 'jev' });
+      });
+
+      it('an invalid confidenceFloor falls back to 0.8', async () => {
+        mockFinanceStore.getCategorizationConfig.mockReturnValue({ ...mockCategorizationConfig, jev: { mode: 'promote', confidenceFloor: 'high' } });
+        mockAIGateway.chatWithJson.mockResolvedValue({ category: 'Groceries', friendlyName: 'Walmart' });
+        jevSays('Shopping', 0.75);
+
+        const result = await service.categorize(walmart());
+
+        expect(result.processed[0].categoryVia).toBe('llm');
+        expect(compareLogs()[0].floor).toBe(0.8);
+      });
+
+      it('a null confidence never promotes, even at floor 0', async () => {
+        mockFinanceStore.getCategorizationConfig.mockReturnValue({ ...mockCategorizationConfig, jev: { mode: 'promote', confidenceFloor: 0 } });
+        mockAIGateway.chatWithJson.mockResolvedValue({ category: 'Groceries', friendlyName: 'Walmart' });
+        decisionGateway.evaluate.mockResolvedValue({
+          model: 'jev-test-1', usage: {}, answers: { category: { type: 'choice', choice: 'Shopping', confidence: null } },
+        });
+
+        const result = await service.categorize(walmart());
+
+        expect(result.processed[0]).toMatchObject({ category: 'Groceries', categoryVia: 'llm' });
+        expect(compareLogs()).toEqual([expect.objectContaining({ via: 'llm' })]);
+      });
+
+      it('a Jev pick outside validTags never promotes', async () => {
+        mockAIGateway.chatWithJson.mockResolvedValue({ category: '', friendlyName: 'PayPal' });
+        jevSays('Bogus', 0.99);
+
+        const result = await service.categorize(walmart());
+
+        expect(result.processed).toEqual([]);
+        expect(result.failed[0].reason).toBe('Invalid category: ');
+        expect(mockTransactionSource.updateTransaction).not.toHaveBeenCalled();
+      });
+
+      it('an LLM error is not rescued by Jev', async () => {
+        mockAIGateway.chatWithJson.mockRejectedValue(new Error('API timeout'));
+        jevSays('Shopping', 0.99);
+
+        const result = await service.categorize(walmart());
+
+        expect(result.failed[0].reason).toBe('AI error: API timeout');
+        expect(mockTransactionSource.updateTransaction).not.toHaveBeenCalled();
+      });
+
+      it('shadow mode with a confident Jev still applies the LLM category', async () => {
+        mockFinanceStore.getCategorizationConfig.mockReturnValue({ ...mockCategorizationConfig, jev: { mode: 'shadow', confidenceFloor: 0.8 } });
+        mockAIGateway.chatWithJson.mockResolvedValue({ category: 'Groceries', friendlyName: 'Walmart' });
+        jevSays('Shopping', 0.99);
+
+        const result = await service.categorize(walmart());
+
+        expect(result.processed[0]).toMatchObject({ category: 'Groceries', categoryVia: 'llm' });
+        expect(mockTransactionSource.updateTransaction).toHaveBeenCalledWith('1', { description: 'Walmart', tags: 'Groceries', memo: null });
+      });
+    });
   });
 });

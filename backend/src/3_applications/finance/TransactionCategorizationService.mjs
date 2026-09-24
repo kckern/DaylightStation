@@ -426,10 +426,19 @@ export class TransactionCategorizationService {
     }
   }
 
-  // jev and policy are unused until the promote branch lands in Task 4.
   #decide(llm, jev, validTags, policy, originalDescription) {
     if (llm.error) return { success: false, reason: `AI error: ${llm.error}`, originalDescription };
     if (!llm.friendlyName) return { success: false, reason: 'AI did not provide a friendly name', originalDescription };
+    // promote: a confident Jev pick from validTags wins, and rescues a blank or
+    // invalid LLM category. The LLM still names and memos. Number.isFinite keeps
+    // a null confidence from passing a floor of 0 (null >= 0 is true in JS).
+    if (policy.mode === 'promote' && jev && validTags.includes(jev.category)
+      && Number.isFinite(jev.confidence) && jev.confidence >= policy.floor) {
+      return {
+        success: true, friendlyName: llm.friendlyName, category: jev.category, categoryVia: 'jev',
+        memo: llm.memo || null, originalDescription,
+      };
+    }
     if (!validTags.includes(llm.category)) {
       return { success: false, reason: `Invalid category: ${llm.category}`, originalDescription };
     }
