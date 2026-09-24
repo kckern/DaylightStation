@@ -3234,7 +3234,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const cardLadderStore = new YamlCardLadderStore({ configService, logger: cardLadderLogger });
   const cardLadderLexicons = new YamlLexiconRepository({ mediaRoot: schoolMediaRoot });
   const cardLadderJudgeFor = (cache) => new CardLadderTypedJudge({
-    aiGateway: sharedAiGateway, cache, model: cardLadderConfig.judge?.model ?? null,
+    aiGateway: sharedAiGateway, decisionGateway, cache, model: cardLadderConfig.judge?.model ?? null,
     passScore: cardLadderSettings().typing.passScore, logger: cardLadderLogger,
   });
   const cardLadderShared = {
