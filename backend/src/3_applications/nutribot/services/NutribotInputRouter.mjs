@@ -228,6 +228,7 @@ export class NutribotInputRouter extends BaseInputRouter {
         logId,
         itemCount: accepted?.itemCount ?? null,
       });
+      await this.#notifyMealCoaching(userId, logId, source);
       return true;
     } catch (e) {
       this.logger.error?.('nutribot.capture.commitFailed', { source, logId, error: e.message });
@@ -443,13 +444,18 @@ export class NutribotInputRouter extends BaseInputRouter {
       }
       case CallbackActions.REJECT_LOG: {
         const useCase = this.container.getDiscardFoodLog();
-        return await useCase.execute({
-          userId: this.#resolveUserId(event),
+        const userId = this.#resolveUserId(event);
+        const result = await useCase.execute({
+          userId,
           conversationId: event.conversationId,
           logUuid: decoded.id,
           messageId: event.messageId,
           responseContext,
         });
+        // Undo changes today's totals: the pending (or standing) post-meal
+        // message is re-armed so it reflects what is actually left.
+        await this.#notifyMealCoaching(userId, decoded.id, 'undo');
+        return result;
       }
       case CallbackActions.REVISE_ITEM: {
         const useCase = this.container.getReviseFoodLog();
@@ -803,6 +809,22 @@ export class NutribotInputRouter extends BaseInputRouter {
   }
 
   // ==================== Helpers ====================
+
+  /**
+   * Tell the post-meal coaching trigger the log changed. Carries the log's meal
+   * date so a back-dated capture or an undo of yesterday's entry never arms a
+   * message about today. Never throws — coaching is not part of the capture.
+   */
+  async #notifyMealCoaching(userId, logId, source) {
+    const trigger = this.container.getMealCoachingTrigger?.();
+    if (!trigger) return;
+    try {
+      const log = await this.container.getFoodLogStore?.()?.findByUuid?.(logId, userId);
+      trigger.notify({ userId, date: log?.meal?.date || null, source });
+    } catch (e) {
+      this.logger.warn?.('nutribot.capture.coachingTriggerFailed', { source, logId, error: e.message });
+    }
+  }
 
   /**
    * Date argument of /done, /fast, /reopen: empty = today, `yesterday`, or an

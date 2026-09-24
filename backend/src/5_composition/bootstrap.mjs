@@ -292,7 +292,7 @@ import { CalibrationConstants } from '#apps/health/analytics/CalibrationConstant
 import { HealthAnalyticsService } from '#apps/health/analytics/HealthAnalyticsService.mjs';
 import { PeriodResolver } from '#apps/health/analytics/PeriodResolver.mjs';
 import { YamlHealthScanDatastore } from '#adapters/persistence/yaml/YamlHealthScanDatastore.mjs';
-import { CoachingOrchestrator, CoachingCommentaryService } from '#apps/coaching/index.mjs';
+import { CoachingOrchestrator, CoachingCommentaryService, MealCoachingTrigger } from '#apps/coaching/index.mjs';
 import { HealthQueryService }       from '#apps/agents/health-coach/services/HealthQueryService.mjs';
 import { ComputeSandboxAdapter }    from '#adapters/agents/health-coach/ComputeSandboxAdapter.mjs';
 import { PersonalConstantsService } from '#apps/agents/health-coach/services/PersonalConstantsService.mjs';
@@ -2238,6 +2238,7 @@ export async function createNutribotServices(config) {
     healthStore = null,
     catalogService = null,
     agentOrchestrator = null,
+    mealCoachingTrigger = null,
     scaleRawConfig = {},
     pause,
     logger = console
@@ -2339,6 +2340,7 @@ export async function createNutribotServices(config) {
     scaleConfig,
     pause,
     agentOrchestrator,
+    mealCoachingTrigger,
     imageDownloader: new FetchImageDownloader(),
     photoStore,
     logger
@@ -2801,6 +2803,8 @@ export async function createAgentsServices(config) {
     }
   }
 
+  const coachingTimezone = configService?.getTimezone?.() || nutribotConfig.getUserTimezone?.() || 'America/Los_Angeles';
+
   // Create coaching orchestrator (new template-driven system)
   let coachingOrchestrator = null;
   if (healthStore && messagingGateway) {
@@ -2817,7 +2821,12 @@ export async function createAgentsServices(config) {
       nutriListStore,
       // The orchestrator needs the nutrition-goal contract, not the broad
       // ConfigService. This normalized config also supplies safe defaults.
-      config: nutribotConfig,
+      // Timezone is the ONE coaching timezone, shared with the meal trigger
+      // and the exercise-reaction policy so "today" never disagrees.
+      config: {
+        getUserGoals: (userId) => nutribotConfig.getUserGoals(userId),
+        getUserTimezone: () => coachingTimezone,
+      },
       // household coaching/config.yml `logging_completeness.min_calories`
       // (default 1200): unconfirmed days under it are missing data.
       completeness: configService?.getHouseholdAppConfig?.(null, 'coaching')?.logging_completeness,
@@ -2825,17 +2834,33 @@ export async function createAgentsServices(config) {
     });
   }
 
+  // Who is coached, where, and how — shared by the scheduled briefs and the
+  // event-driven post-meal / exercise-reaction triggers.
+  const coachingConversationId = conversationId ?? configService?.getNutribotConversationId?.() ?? null;
+  const coachingUserId = configService?.getHeadOfHousehold?.() || 'default';
+  const coachingCfg = configService?.getHouseholdAppConfig?.(null, 'coaching') || {};
+
+  // Post-meal coaching: captures re-arm a quiet timer (coaching.yml `post_meal`).
+  const mealCoachingTrigger = coachingOrchestrator && coachingConversationId
+    ? new MealCoachingTrigger({
+      getOrchestrator: () => coachingOrchestrator,
+      userId: coachingUserId,
+      conversationId: coachingConversationId,
+      scheduler: { setTimeout, clearTimeout },
+      config: coachingCfg.post_meal,
+      today: () => new Date().toLocaleDateString('en-CA', { timeZone: coachingTimezone }),
+      localTime: () => new Date().toLocaleTimeString('en-GB', { timeZone: coachingTimezone, hour: '2-digit', minute: '2-digit', hour12: false }),
+      logger,
+    })
+    : null;
+
   // Register scheduler tasks for coaching orchestrator
   if (coachingOrchestrator && scheduler) {
-    const coachingConversationId = conversationId ?? configService?.getNutribotConversationId?.() ?? null;
-    const coachingUserId = configService?.getHeadOfHousehold?.() || 'default';
-
     if (coachingConversationId) {
       // Cron cadence is configurable via household coaching/config.yml
       // (`morning_brief.schedule` / `weekly_digest.schedule`), mirroring the
       // journalist morning-debrief pattern; the historical expressions remain
       // the defaults when unconfigured.
-      const coachingCfg = configService?.getHouseholdAppConfig?.(null, 'coaching') || {};
       const morningBriefSchedule = coachingCfg?.morning_brief?.schedule || '0 10 * * *';
       const weeklyDigestSchedule = coachingCfg?.weekly_digest?.schedule || '0 19 * * 0';
 
@@ -2939,6 +2964,8 @@ export async function createAgentsServices(config) {
     workingMemory,
     scheduler,
     coachingOrchestrator,
+    mealCoachingTrigger,
+    coaching: { userId: coachingUserId, conversationId: coachingConversationId, config: coachingCfg, timezone: coachingTimezone },
     healthAnalyticsService: sharedHealthAnalyticsService,
   };
 }

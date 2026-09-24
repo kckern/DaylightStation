@@ -41,6 +41,7 @@ export class FitnessActivityEnrichmentService {
   #selectionConfig;
   #resolveDisplayName;
   #reconciliationService;
+  #onActivityFetched;
   #logger;
   #historyRepository;
   #scheduleRetry;
@@ -60,7 +61,7 @@ export class FitnessActivityEnrichmentService {
    * @param {Object} [config.reconciliationService] - ActivityReconciliationService instance
    * @param {Object} [config.logger]
    */
-  constructor({ activityGateway, jobStore, userContext, ensureActivityAccess, scheduleRetry, selectionConfig, resolveDisplayName, historyRepository, reconciliationService, logger = console }) {
+  constructor({ activityGateway, jobStore, userContext, ensureActivityAccess, scheduleRetry, selectionConfig, resolveDisplayName, historyRepository, reconciliationService, onActivityFetched, logger = console }) {
     this.#activityGateway = activityGateway;
     this.#jobStore = jobStore;
     this.#userContext = userContext || { defaultUserId: () => 'user_1', timezone: () => 'America/Los_Angeles' };
@@ -70,6 +71,7 @@ export class FitnessActivityEnrichmentService {
     this.#resolveDisplayName = resolveDisplayName || ((userId) => userId);
     this.#historyRepository = historyRepository;
     this.#reconciliationService = reconciliationService || null;
+    this.#onActivityFetched = onActivityFetched || null;
     this.#logger = logger;
   }
 
@@ -198,6 +200,8 @@ export class FitnessActivityEnrichmentService {
         }
         return;
       }
+
+      this.#notifyActivityFetched(activityId, currentActivity);
 
       // Find matching home session (time-based)
       const match = this._findMatchingSession(currentActivity);
@@ -744,6 +748,28 @@ export class FitnessActivityEnrichmentService {
       if (participant?.strava?.activityId) return String(participant.strava.activityId);
     }
     return null;
+  }
+
+  /**
+   * First successful fetch of a new activity: hand it to `onActivityFetched`
+   * (the exercise-reaction hook). The hook resolves `false` when it could not
+   * decide yet (e.g. coaching not wired during startup recovery) — the job is
+   * then left unstamped so a later attempt retries. Any other result stamps
+   * `activityNotifiedAt`, so retries and restarts never fire it twice.
+   */
+  #notifyActivityFetched(activityId, activity) {
+    if (!this.#onActivityFetched) return;
+    if (this.#jobStore.findById(activityId)?.activityNotifiedAt) return;
+    Promise.resolve()
+      .then(() => this.#onActivityFetched(activity))
+      .then((handled) => {
+        if (handled === false) {
+          this.#logger.info?.('strava.enrichment.on_activity_fetched_deferred', { activityId });
+          return;
+        }
+        this.#jobStore.update(activityId, { activityNotifiedAt: new Date().toISOString() });
+      })
+      .catch(err => this.#logger.warn?.('strava.enrichment.on_activity_fetched_failed', { activityId, error: err?.message }));
   }
 }
 
