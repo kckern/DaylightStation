@@ -779,6 +779,20 @@ Flat segments = rest/cool zone (no rings).
 Steep segments = hot/fire zone (high ring rate).
 ```
 
+### Strap reassignment: stints move as deltas
+
+Rings, beats, zones and activity are all keyed by **user id**; a `SessionEntity`
+is only a **stint** record (one occupant on one strap from `startTick`). When a
+strap is corrected to another person (reassignment inside
+`governance.usage_threshold_seconds`), `FitnessSession.reassignStint` moves the
+open stint's data — timeline window via `stintTransfer.js`, rings via
+`TreasureBox.moveStint`, beats via `TimelineRecorder.moveStintBeats`, activity via
+`ActivityMonitor.moveStintActivity` — always as the stint's **delta** above its
+starting value, then relabels the stint. A handover moves nothing. Per-person
+cumulative series therefore never decrease; `cumulativeGuard.js` flattens and
+logs (`fitness.persistence.cumulative_regressed`) any that do at save time. See
+`assign-guest.md` → Correction vs Handover.
+
 ### Ring celebrations
 
 The UI calls these earned units **rings** (older config and saved sessions may

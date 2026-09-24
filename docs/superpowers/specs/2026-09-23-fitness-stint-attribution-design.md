@@ -1,7 +1,7 @@
 # Fitness Stint Attribution — Design
 
 **Date:** 2026-09-23
-**Status:** Design approved in conversation — pending spec review
+**Status:** Implemented (branch feat/fitness-stint-attribution, 2026-09-23)
 **Area:** `frontend/src/hooks/fitness/` (live reassignment, stint records, save-time
 reconciliation), `backend/src/2_domains/fitness/services/SessionIdentityHealer.mjs`
 (retroactive heal), `frontend/src/modules/Fitness/widgets/FitnessChart/` (verification only)
