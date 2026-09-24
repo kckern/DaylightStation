@@ -127,4 +127,60 @@ describe('CardLadderTypedJudge — cache and re-grade keys use the script normal
     expect(await ask('photosynthesys')).toMatchObject({ judge: 'cache' });
     expect(aiGateway.chatWithJson).toHaveBeenCalledTimes(1);
   });
+  describe('shadow judge (decision model)', () => {
+    const LONG = entry('안녕히계세요');
+    const TYPED = '안녕히개새요';
+    const shadowJudge = ({ llm = async () => ({ score: 9 }), jev }) => {
+      const logger = { info: vi.fn(), warn: vi.fn() };
+      const aiGateway = { chatWithJson: vi.fn(llm) };
+      const decisionGateway = { isConfigured: () => true, evaluate: vi.fn(jev) };
+      return { logger, aiGateway, decisionGateway,
+        judge: new CardLadderTypedJudge({ aiGateway, decisionGateway, cache: makeCache(), model: 'small', logger }) };
+    };
+    const jevScore = (score, confidence = 0.8) => async () => ({ model: 'jev-1.13.0',
+      answers: { match: { type: 'score', score, confidence, probabilities: [] } } });
+
+    it('scores the same answer beside the LLM, clamps it the same way, and never changes the verdict', async () => {
+      const { judge, logger, decisionGateway, aiGateway } = shadowJudge({ jev: jevScore(4) });
+      const verdict = await judge.judge({ pkg: 'p', entry: LONG, typed: TYPED, otherWords: [] });
+      const plain = await make(async () => ({ score: 9 })).judge.judge({ pkg: 'p', entry: LONG, typed: TYPED, otherWords: [] });
+      expect(verdict).toEqual(plain);
+      const [state, questions] = decisionGateway.evaluate.mock.calls[0];
+      expect(state).toEqual(JSON.parse(aiGateway.chatWithJson.mock.calls[0][0][1].content));
+      expect(questions.match.type).toBe('score');
+      expect(questions.match.levels).toHaveLength(5);
+      const row = logger.info.mock.calls.find(([event]) => event === 'school.card-ladder.judge-shadow')[1];
+      // level 4 = "Exact" = 10 raw, clamped to one band above the floor — same as the LLM's 9
+      expect(row).toMatchObject({ jevRaw: 10, jev: verdict.score, llm: verdict.score, agreed: true, passAgreed: true, jevConfidence: 0.8 });
+    });
+
+    it('logs disagreement when the decision model reads it as a different word', async () => {
+      const { judge, logger } = shadowJudge({ jev: jevScore(0.2) });
+      const verdict = await judge.judge({ pkg: 'p', entry: LONG, typed: TYPED, otherWords: [] });
+      const row = logger.info.mock.calls.find(([event]) => event === 'school.card-ladder.judge-shadow')[1];
+      expect(row.jevRaw).toBe(2);
+      expect(row.jev).toBe(row.base); // never below the deterministic floor
+      expect(row.agreed).toBe(row.base === verdict.score);
+    });
+
+    it('still logs when the LLM fails, and a shadow failure is only a warning', async () => {
+      const failingLlm = shadowJudge({ llm: async () => { throw new Error('timeout'); }, jev: jevScore(3) });
+      expect(await failingLlm.judge.judge({ pkg: 'p', entry: LONG, typed: TYPED, otherWords: [] })).toMatchObject({ judge: 'fallback' });
+      expect(failingLlm.logger.info).toHaveBeenCalledWith('school.card-ladder.judge-shadow', expect.objectContaining({ llm: null, agreed: null }));
+
+      const failingJev = shadowJudge({ jev: async () => { throw new Error('429'); } });
+      expect(await failingJev.judge.judge({ pkg: 'p', entry: LONG, typed: TYPED, otherWords: [] })).toMatchObject({ judge: 'model' });
+      expect(failingJev.logger.warn).toHaveBeenCalledWith('school.card-ladder.judge-shadow-failed', expect.objectContaining({ error: '429' }));
+    });
+
+    it('does not run where the LLM does not (short, exact, cached)', async () => {
+      const { judge, decisionGateway } = shadowJudge({ jev: jevScore(4) });
+      await judge.judge({ pkg: 'p', entry: entry('가위'), typed: '가이', otherWords: [] });
+      await judge.judge({ pkg: 'p', entry: LONG, typed: '안녕히계세요', otherWords: [] });
+      expect(decisionGateway.evaluate).not.toHaveBeenCalled();
+      await judge.judge({ pkg: 'p', entry: LONG, typed: TYPED, otherWords: [] });
+      await judge.judge({ pkg: 'p', entry: LONG, typed: TYPED, otherWords: [] });
+      expect(decisionGateway.evaluate).toHaveBeenCalledTimes(1);
+    });
+  });
 });

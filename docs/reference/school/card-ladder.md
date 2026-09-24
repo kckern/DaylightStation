@@ -438,6 +438,19 @@ clears the deterministic floor can still gain the model's +1-band step;
 verdicts still land on `exact`, `wrong-script`, `guard`, `distance`, `cache` or
 `fallback` whenever the model doesn't apply or doesn't answer in time.
 
+**Shadow judge (2026-09-24).** When a typed-decision model is configured
+(`IDecisionGateway`, TypeSafe Jev, key in `system/auth/jev.yml`), it scores the
+same answer in parallel whenever the model step above runs. It never runs for
+short, exact, guarded or cached answers. It answers one Score question over the
+same rubric as five levels (different word · partly there · misspelled but
+intended · one slip · exact → 2/4/6/8/10), clamped the same way (never below the
+floor, at most one band up). **It decides nothing.** Each run logs
+`school.card-ladder.judge-shadow` with `base`, `llm`, `jev`, `jevConfidence`,
+`jevMs`, `agreed` and `passAgreed`. That is the evidence for or against letting
+it replace the LLM step, and it matters here because the provider rates its CJK
+accuracy below English. A shadow failure logs `judge-shadow-failed` and does not
+affect the verdict.
+
 ### Grading by script
 
 **2026-09-23 owner: per-script grading — Latin case-insensitive, accents a small slip, numbers exact; Hangul unchanged.**
