@@ -22,6 +22,9 @@ const EXTENSION_FALLBACKS = ['mp3', 'm4a', 'mp4', 'wav', 'ogg', 'flac'];
 function resource(filePath, mimeType, stat = getFileStats(filePath)) {
   return Object.freeze({
     size: stat.size,
+    // Lets the HTTP layer emit a validator, so a file replaced in place under
+    // the same name is re-fetched instead of served from a stale browser cache.
+    mtimeMs: stat.mtimeMs,
     mimeType,
     open(options) { return createReadStream(filePath, options); },
   });
