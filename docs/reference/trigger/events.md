@@ -236,7 +236,9 @@ Subscribed dashboards become a free observability surface for the trigger system
 
 The trigger config is parsed once at boot from `data/household/config/triggers/`. There is **no in-process reload endpoint** today — picking up edits requires restarting the container (`sudo docker stop daylight-station && sudo docker rm daylight-station && sudo deploy-daylight`).
 
-If the YAML fails to parse at boot, the registry falls back to an empty shape (`{ nfc: { locations: {}, tags: {} }, state: { locations: {} } }`) and the failure is logged as `trigger.config.parse.failed` — the API stays up but no triggers will resolve.
+**One bad entry disables only itself** (2026-09-24). At boot each source in `sources.yml` and each NFC tag is parsed on its own. A source with an unknown `modality`, a source that fails its modality's validation (for example, no `target`), or a tag that is malformed, duplicates another spelling of the same uid, or names an override reader that did not load, is left out. Each one is logged at `error` as `trigger.config.entry.skipped` with `{ kind: 'source'|'tag', id, code, message }`, and everything else registers normally. Before this, any single bad entry emptied the whole registry.
+
+If a whole file is unusable (unreadable YAML, or a root that isn't a map), the registry still falls back to an empty shape (`{ nfc: { locations: {}, tags: {} }, state: { locations: {} } }`) and logs `trigger.config.parse.failed` (`impact: all-tags-unregistered`). The API stays up but no triggers will resolve.
 
 ## Files
 
