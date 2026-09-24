@@ -51,7 +51,10 @@ export class VoiceResolver {
    * @returns {Object|null}
    */
   static intentFor(locationConfig, commandId) {
-    const entry = locationConfig?.commands?.[commandId];
+    const commands = locationConfig?.commands ?? {};
+    // hasOwn: an inherited key ("constructor", "__proto__") is not a command.
+    if (!Object.hasOwn(commands, commandId)) return null;
+    const entry = commands[commandId];
     if (!entry) return null;
     const params = {};
     for (const [k, v] of Object.entries(entry)) {

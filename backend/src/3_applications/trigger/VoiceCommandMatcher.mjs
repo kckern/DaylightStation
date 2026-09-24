@@ -57,7 +57,9 @@ export class VoiceCommandMatcher {
    */
   async match({ location, transcript, locationConfig, useModel = true }) {
     const keyword = voiceKeyword(transcript);
-    if (keyword && locationConfig?.commands?.[keyword]) {
+    // hasOwn, not `commands[keyword]`: "constructor" or "__proto__" would
+    // otherwise find an inherited Object member and count as an exact match.
+    if (keyword && Object.hasOwn(locationConfig?.commands ?? {}, keyword)) {
       this.#logger.debug?.('trigger.voice.match', { location, command: keyword, via: 'exact' });
       return { command: keyword, via: 'exact', confidence: null, reason: null };
     }

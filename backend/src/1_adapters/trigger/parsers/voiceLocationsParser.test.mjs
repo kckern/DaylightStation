@@ -85,3 +85,17 @@ describe('voice sources under per-entry isolation (onSkip)', () => {
     expect(() => parseSources({ g: { modality: 'voice', target: 't' } })).toThrow(expect.objectContaining({ code: 'MISSING_COMMANDS' }));
   });
 });
+
+describe('prototype-named command ids', () => {
+  it('a command called constructor is a normal command, not a duplicate', () => {
+    const out = parseVoiceLocations({ k: { target: 't', commands: { constructor: { action: 'clear' } } } });
+    expect(Object.hasOwn(out.k.commands, 'constructor')).toBe(true);
+  });
+
+  it('a __proto__ key normalizes to "proto" and leaves the commands prototype alone', () => {
+    const commands = JSON.parse('{"__proto__": {"action": "clear"}}');
+    const out = parseVoiceLocations({ k: { target: 't', commands } });
+    expect(Object.keys(out.k.commands)).toEqual(['proto']);
+    expect(Object.getPrototypeOf(out.k.commands)).toBe(Object.prototype);
+  });
+});
