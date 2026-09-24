@@ -206,6 +206,7 @@ import { GOOGLE_NEWS_BLOCKED_IMAGE_PATTERNS } from '#adapters/feed/sources/Googl
 import { WebContentAdapter } from '#adapters/feed/WebContentAdapter.mjs';
 import { YamlHeadlineCacheStore } from '#adapters/persistence/yaml/YamlHeadlineCacheStore.mjs';
 import { HeadlineService } from '#apps/feed/services/HeadlineService.mjs';
+import { HeadlineStoryJudge } from '#apps/feed/services/HeadlineStoryJudge.mjs';
 import { DataServiceFeedConfigRepository } from '#adapters/feed/DataServiceFeedConfigRepository.mjs';
 
 // Finance domain imports
@@ -1119,11 +1120,12 @@ export const stopDeviceLivenessService   = stopDeviceLivenessServiceInstance;
  * @param {Object} config.dataService - DataService for YAML I/O
  * @param {Object} config.configService - ConfigService for user lookup
  * @param {string} config.freshrssHost - FreshRSS server URL
+ * @param {Object} [config.decisionGateway] - IDecisionGateway for the headline story judge
  * @param {Object} [config.logger]
- * @returns {{ freshRSSAdapter, headlineService, feedRouter, headlineHarvestJob }}
+ * @returns {{ freshRSSAdapter, headlineService, headlineStoryJudge, headlineHarvestJob, feedConfigRepository }}
  */
 export function createFeedServices(config) {
-  const { dataService, configService, freshrssHost, logger = console } = config;
+  const { dataService, configService, freshrssHost, decisionGateway = null, logger = console } = config;
 
   const freshRSSAdapter = new FreshRSSFeedAdapter({
     freshrssHost,
@@ -1146,6 +1148,8 @@ export function createFeedServices(config) {
   const webContentGateway = new WebContentAdapter({ httpClient: new HttpClient({ logger }), logger });
   const feedConfigRepository = new DataServiceFeedConfigRepository({ dataService });
 
+  const headlineStoryJudge = new HeadlineStoryJudge({ decisionGateway, logger });
+
   const headlineService = new HeadlineService({
     headlineStore,
     harvester,
@@ -1157,6 +1161,7 @@ export function createFeedServices(config) {
       blockedImagePatterns: GOOGLE_NEWS_BLOCKED_IMAGE_PATTERNS,
     },
     webContentGateway,
+    storyJudge: headlineStoryJudge,
     logger,
   });
 
@@ -1167,7 +1172,7 @@ export function createFeedServices(config) {
   };
 
   // Note: feedRouter is created in app.mjs after FeedAssemblyService is wired
-  return { freshRSSAdapter, headlineService, headlineHarvestJob, feedConfigRepository };
+  return { freshRSSAdapter, headlineService, headlineStoryJudge, headlineHarvestJob, feedConfigRepository };
 }
 
 /**

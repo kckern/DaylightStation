@@ -1,5 +1,6 @@
 // tests/unit/infrastructure/bootstrap.test.mjs
-import { createContentRegistry } from '#composition/bootstrap.mjs';
+import { createContentRegistry, createFeedServices } from '#composition/bootstrap.mjs';
+import { HeadlineStoryJudge } from '#apps/feed/services/HeadlineStoryJudge.mjs';
 
 describe('bootstrap', () => {
   describe('createContentRegistry', () => {
@@ -112,4 +113,25 @@ describe('bootstrap', () => {
     });
   });
 
+});
+
+describe('createFeedServices', () => {
+  const deps = extra => ({
+    dataService: { user: { read: () => ({}), write: () => true, resolvePath: () => null } },
+    configService: { getHeadOfHousehold: () => 'alice' },
+    freshrssHost: null,
+    logger: { info() {}, warn() {}, error() {}, debug() {} },
+    ...extra,
+  });
+
+  it('builds an active story judge when a decision gateway is supplied', () => {
+    const decisionGateway = { isConfigured: () => true, evaluate: async () => ({}) };
+    const { headlineStoryJudge } = createFeedServices(deps({ decisionGateway }));
+    expect(headlineStoryJudge.active(HeadlineStoryJudge.settings({}))).toBe(true);
+  });
+
+  it('builds an inactive story judge without one', () => {
+    const { headlineStoryJudge } = createFeedServices(deps());
+    expect(headlineStoryJudge.active(HeadlineStoryJudge.settings({}))).toBe(false);
+  });
 });
