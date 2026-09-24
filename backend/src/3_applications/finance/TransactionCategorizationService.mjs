@@ -198,33 +198,22 @@ export class TransactionCategorizationService {
     const { validTags, chat: chatTemplate, descriptionRules } = config;
     const policy = this.#jevPolicy(config);
 
-    // Preview deterministic rules (without updating external source)
+    // Simulate each rule on a copy, so the LLM step sees exactly the rows (and
+    // descriptions) that categorize() would send. Preview never mutates input.
+    const compiled = this.#compileRules(descriptionRules);
     const ruleMatches = [];
-    if (descriptionRules?.length) {
-      const compiled = descriptionRules.map(r => ({
-        pattern: new RegExp(r.pattern, 'i'),
-        rename: r.rename,
-        tag: r.tag
-      }));
-      for (const txn of transactions) {
-        const desc = txn.description || '';
-        for (const rule of compiled) {
-          if (rule.pattern.test(desc) && desc !== rule.rename) {
-            ruleMatches.push({
-              id: txn.id,
-              date: txn.date,
-              originalDescription: desc,
-              suggestedName: rule.rename,
-              suggestedCategory: rule.tag || txn.tagNames?.[0],
-              source: 'rule'
-            });
-            break;
-          }
-        }
-      }
-    }
+    const simulated = transactions.map(txn => {
+      const desc = txn.description || '';
+      const rule = this.#matchRule(desc, compiled);
+      if (!rule) return txn;
+      ruleMatches.push({
+        id: txn.id, date: txn.date, originalDescription: desc,
+        suggestedName: rule.rename, suggestedCategory: rule.tag || txn.tagNames?.[0], source: 'rule',
+      });
+      return { ...txn, description: rule.rename, ...(rule.tag ? { tagNames: [rule.tag], tags: rule.tag } : {}) };
+    });
 
-    const needsProcessing = transactions.filter(txn => this.#needsCategorization(txn));
+    const needsProcessing = simulated.filter(txn => this.#needsCategorization(txn));
 
     const suggestions = [];
     const failed = [];
@@ -274,55 +263,43 @@ export class TransactionCategorizationService {
    * @returns {Object[]} List of transactions that were updated by rules
    */
   #applyDescriptionRules(transactions, rules) {
-    if (!rules?.length) return [];
-
-    const compiled = rules.map(r => ({
-      pattern: new RegExp(r.pattern, 'i'),
-      rename: r.rename,
-      tag: r.tag
-    }));
-
+    const compiled = this.#compileRules(rules);
+    if (!compiled.length) return [];
     const applied = [];
 
     for (const txn of transactions) {
-      const desc = txn.description || '';
-      for (const rule of compiled) {
-        if (!rule.pattern.test(desc)) continue;
-        if (desc === rule.rename) break; // already renamed
+      const originalDescription = txn.description || '';
+      const rule = this.#matchRule(originalDescription, compiled);
+      if (!rule) continue;
 
-        const originalDescription = desc;
-        txn.description = rule.rename;
-        if (rule.tag) {
-          txn.tagNames = [rule.tag];
-          txn.tags = rule.tag;
-        }
-
-        // Update in external source (fire and forget)
-        const update = { description: rule.rename };
-        if (rule.tag) update.tags = rule.tag;
-        this.#transactionSource.updateTransaction(txn.id, update).catch(err => {
-          this.#log('error', 'categorization.rule.updateFailed', { id: txn.id, error: err.message });
-        });
-
-        applied.push({
-          id: txn.id,
-          date: txn.date,
-          originalDescription,
-          friendlyName: rule.rename,
-          category: rule.tag || txn.tagNames?.[0]
-        });
-
-        this.#log('info', 'categorization.rule.applied', {
-          id: txn.id,
-          from: originalDescription,
-          to: rule.rename
-        });
-
-        break; // first matching rule wins
+      txn.description = rule.rename;
+      if (rule.tag) {
+        txn.tagNames = [rule.tag];
+        txn.tags = rule.tag;
       }
+
+      // Update in external source (fire and forget)
+      const update = { description: rule.rename };
+      if (rule.tag) update.tags = rule.tag;
+      this.#transactionSource.updateTransaction(txn.id, update).catch(err => {
+        this.#log('error', 'categorization.rule.updateFailed', { id: txn.id, error: err.message });
+      });
+
+      applied.push({ id: txn.id, date: txn.date, originalDescription, friendlyName: rule.rename, category: rule.tag || txn.tagNames?.[0] });
+      this.#log('info', 'categorization.rule.applied', { id: txn.id, from: originalDescription, to: rule.rename });
     }
 
     return applied;
+  }
+
+  #compileRules(rules) {
+    return (rules || []).map(r => ({ pattern: new RegExp(r.pattern, 'i'), rename: r.rename, tag: r.tag }));
+  }
+
+  /** First matching rule wins; a description already equal to its rename matches nothing. */
+  #matchRule(description, compiled) {
+    const rule = compiled.find(r => r.pattern.test(description));
+    return rule && description !== rule.rename ? rule : null;
   }
 
   /**
