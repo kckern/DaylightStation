@@ -20,6 +20,12 @@ export class TransactionCategorizationService {
   #financeStore;
   #logger;
 
+  // id → the description this service wrote when that description still looks
+  // raw to the patterns below (e.g. "Direct Deposit" vs /^Direct/). Without it
+  // the next harvest re-sends the row to the LLM forever. In-process only: a
+  // restart costs one re-ask per such row.
+  #settled = new Map();
+
   // Patterns that indicate raw/unprocessed descriptions
   #rawDescriptionPatterns = [
     /^Direct/i,
@@ -103,6 +109,10 @@ export class TransactionCategorizationService {
           txn.tagNames = [result.category];
           txn.description = result.friendlyName;
           if (result.memo) txn.memo = result.memo;
+          if (this.#hasRawDescription(result.friendlyName)) {
+            this.#settled.set(String(txn.id), result.friendlyName);
+            this.#log('info', 'categorization.settled', { id: txn.id, friendlyName: result.friendlyName });
+          }
 
           processed.push({
             id: txn.id,
@@ -307,6 +317,7 @@ export class TransactionCategorizationService {
    */
   #needsCategorization(transaction) {
     const hasNoTag = !transaction.tagNames?.length;
+    if (!hasNoTag && this.#settled.get(String(transaction.id)) === transaction.description) return false;
     const hasRawDescription = this.#hasRawDescription(transaction.description);
     return hasNoTag || hasRawDescription;
   }
