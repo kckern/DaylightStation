@@ -16,12 +16,18 @@ export const LIFE_EVENT_SIGNAL_KINDS = Object.freeze({
   financial: LifeEventType.FINANCIAL,
 });
 
+// Order matters: the first matching pattern wins, so education comes before
+// job_change ("First day of school" is education, not a job start).
+// Keywords are phrases that mark a lasting change; routine lookalikes are
+// deliberately absent: anniversaries (yearly), bare "exam" (eye/physical
+// exams), bare "hospital" (volunteer shifts, visits), bare "birth" (birth
+// certificates), doctor follow-ups.
 const DEFAULT_PATTERNS = [
   { kind: 'relocation', keywords: ['moving day', 'new apartment', 'house closing'], confidence: 0.8 },
-  { kind: 'job_change', keywords: ['first day', 'onboarding', 'resignation', 'last day'], confidence: 0.7 },
-  { kind: 'health_event', keywords: ['surgery', 'hospital', 'doctor follow-up', 'diagnosis'], confidence: 0.8 },
-  { kind: 'family_event', keywords: ['wedding', 'birth', 'funeral', 'anniversary'], confidence: 0.9 },
-  { kind: 'education', keywords: ['graduation', 'orientation', 'first class', 'exam'], confidence: 0.7 },
+  { kind: 'education', keywords: ['graduation', 'orientation', 'first day of school', 'first day of class', 'first class', 'final exam', 'final exams', 'bar exam'], confidence: 0.7 },
+  { kind: 'job_change', keywords: ['first day at', 'last day at work', 'onboarding', 'resignation'], confidence: 0.7 },
+  { kind: 'health_event', keywords: ['surgery', 'hospital stay', 'admitted to hospital', 'hospitalized', 'diagnosis'], confidence: 0.8 },
+  { kind: 'family_event', keywords: ['wedding', 'birth of', 'baby born', 'funeral'], confidence: 0.9 },
 ];
 
 const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');

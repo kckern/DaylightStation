@@ -29,9 +29,34 @@ describe('LifeEventSignalDetector', () => {
   });
 
   it('emits at most one suggestion per calendar item (first matching pattern wins)', () => {
-    const out = detector.detectFromLifelog({ '2026-09-20': day('First day back after surgery') });
+    const out = detector.detectFromLifelog({ '2026-09-20': day('Surgery the week before the wedding') });
     expect(out).toHaveLength(1);
-    expect(out[0].subtype).toBe('job_change');
+    expect(out[0].subtype).toBe('health_event');
+  });
+
+  it.each([
+    'Our anniversary dinner',
+    'Work anniversary',
+    'Eye exam',
+    'Annual physical exam',
+    'Hospital volunteer shift',
+    'Pick up birth certificate',
+    'Doctor follow-up',
+    'First day back after vacation',
+  ])('routine item "%s" is not a life event', (summary) => {
+    expect(detector.classify({ summary })).toBeNull();
+  });
+
+  it.each([
+    ['First day of school', 'education'],
+    ['Final exam - Chem 101', 'education'],
+    ['Bar exam', 'education'],
+    ['First day at Acme', 'job_change'],
+    ['Last day at work', 'job_change'],
+    ['Hospital stay', 'health_event'],
+    ['Admitted to hospital', 'health_event'],
+  ])('"%s" is %s', (summary, kind) => {
+    expect(detector.classify({ summary })?.kind).toBe(kind);
   });
 
   it('does not treat travel as a life event', () => {
