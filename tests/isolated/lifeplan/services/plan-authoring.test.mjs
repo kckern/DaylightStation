@@ -115,4 +115,15 @@ describe('PlanAuthoringService', () => {
     expect(() => svc.addLifeEvent('test-user', { type: 'family', name: 'x', status: 'cancelled' })).toThrow(/status/);
     expect(() => svc.addLifeEvent('test-user', { type: 'family', status: 'occurred' })).toThrow(/name/);
   });
+
+  it('addLifeEvent rejects dates that are not a real YYYY-MM-DD, and writes nothing', () => {
+    for (const date of ['2026-02-30', '2026-13-01', '09/20/2026', '2026-9-20', 'next week', '2026-09-20T10:00:00Z']) {
+      expect(() => svc.addLifeEvent('test-user', { type: 'family', name: 'x', status: 'occurred', date }))
+        .toThrow(/YYYY-MM-DD/);
+    }
+    expect(store.save).not.toHaveBeenCalled();
+    expect(svc.addLifeEvent('test-user', { type: 'family', name: 'Leap', status: 'occurred', date: '2028-02-29' }).actual_date)
+      .toBe('2028-02-29');
+    expect(svc.addLifeEvent('test-user', { type: 'family', name: 'Undated', status: 'anticipated' }).expected_date).toBeNull();
+  });
 });
