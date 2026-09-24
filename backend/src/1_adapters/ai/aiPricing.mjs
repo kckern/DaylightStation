@@ -52,6 +52,9 @@ const DEFAULT_PRICING = Object.freeze({
   'claude-haiku-4-5': { input: 1.00, output: 5.00 },
   'claude-sonnet-4': { input: 3.00, output: 15.00 },
   'claude-opus-4': { input: 15.00, output: 75.00 },
+  // TypeSafe — Jev bills input only; output tokens are free. Prefix matches
+  // both the aliases (jev-latest, jev-preview) and versioned ids (jev-1.13.0).
+  'jev': { input: 0.042, output: 0 },
 });
 
 /**

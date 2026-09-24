@@ -12,6 +12,11 @@ export const createNoOpAIGateway = () => ({
   isConfigured() { return false; },
 });
 
+export const createNoOpDecisionGateway = () => ({
+  async evaluate() { throw new Error('Decision provider not configured'); },
+  isConfigured() { return false; },
+});
+
 export const createNoOpHomeAutomationGateway = () => ({
   async getState() { return null; },
   async callService() { return { ok: false, error: 'Not configured' }; },

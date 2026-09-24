@@ -90,6 +90,7 @@ export class LogFoodFromUPC {
   #logger;
   #encodeCallback;
   #foodIconsString;
+  #iconChooser;
   #iconVocabulary;
   #barcodeGenerator;
   #catalogService;
@@ -105,6 +106,7 @@ export class LogFoodFromUPC {
     this.#messagingGateway = deps.messagingGateway;
     this.#upcGateway = deps.upcGateway;
     this.#aiGateway = deps.aiGateway;
+    this.#iconChooser = deps.iconChooser || null;
     this.#googleImageGateway = deps.googleImageGateway;
     this.#foodLogStore = deps.foodLogStore;
     this.#conversationStateStore = deps.conversationStateStore;
@@ -624,6 +626,22 @@ export class LogFoodFromUPC {
    * @private
    */
   async #selectIconFromList(product) {
+    if (this.#iconChooser) {
+      const detail = { ...(product.brand ? { brand: product.brand } : {}),
+        ...(product.nutrition?.calories != null ? { calories: product.nutrition.calories } : {}) };
+      const { icon } = await this.#iconChooser.choose({ name: product.name, detail, source: 'upc',
+        vocabulary: this.#foodIconsString.split(' ').filter(slug => slug && slug !== 'default'),
+        fallback: this.#aiGateway ? () => this.#selectIconFromListLlm(product) : null });
+      return icon || 'default';
+    }
+    return this.#selectIconFromListLlm(product);
+  }
+
+  /**
+   * The LLM icon pick (the NearestIconChooser fallback)
+   * @private
+   */
+  async #selectIconFromListLlm(product) {
     if (!this.#aiGateway) return 'default';
 
     const availableIcons = this.#foodIconsString.split(' ');

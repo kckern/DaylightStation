@@ -14,6 +14,9 @@ export const PROVIDER_CAPABILITY_MAP = {
   openai: 'ai',
   anthropic: 'ai',
 
+  // Typed decisions (IDecisionGateway)
+  jev: 'decision',
+
   // Messaging
   telegram: 'messaging',
   discord: 'messaging',
@@ -25,7 +28,7 @@ export const PROVIDER_CAPABILITY_MAP = {
 /**
  * Keys that represent capability sections (not service entries).
  */
-export const CAPABILITY_KEYS = ['ai', 'messaging', 'media', 'home_automation', 'finance'];
+export const CAPABILITY_KEYS = ['ai', 'decision', 'messaging', 'media', 'home_automation', 'finance'];
 
 /**
  * Parse integrations.yml config into services and app routing.
