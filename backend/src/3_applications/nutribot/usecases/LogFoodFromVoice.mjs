@@ -120,7 +120,9 @@ export class LogFoodFromVoice {
         // (warn); anything else reaching here is a bug this friendly message
         // would otherwise hide, so it is logged at error and stays findable.
         const code = transcribeError.code || transcribeError.cause?.code || null;
-        const transient = transcribeError.isTransient === true || TRANSIENT_CODES.has(code);
+        const httpStatus = transcribeError.response?.status ?? transcribeError.status;
+        const transient = transcribeError.isTransient === true || TRANSIENT_CODES.has(code)
+          || httpStatus === 429 || (httpStatus >= 500 && httpStatus < 600);
         if (!missingConfig) {
           const level = transient ? 'warn' : 'error';
           this.#logger[level]?.('logVoice.transcribe.failed', {
