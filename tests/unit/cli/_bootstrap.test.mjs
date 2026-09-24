@@ -102,4 +102,18 @@ describe('cli/_bootstrap.mjs', () => {
     const b = await bootstrap.getHealthAnalytics();
     expect(a).toBe(b);
   });
+
+  it('getDecisionGateway() returns null when system/auth/jev.yml has no api_key', async () => {
+    expect(await bootstrap.getDecisionGateway()).toBeNull();
+  });
+
+  it('getDecisionGateway() builds a configured decision gateway when the Jev key exists', async () => {
+    const authDir = path.join(tmpRoot, 'data', 'system', 'auth');
+    await fs.mkdir(authDir, { recursive: true });
+    await fs.writeFile(path.join(authDir, 'jev.yml'), yaml.dump({ api_key: 'test-key' }));
+    const gateway = await bootstrap.getDecisionGateway();
+    expect(gateway?.isConfigured()).toBe(true);
+    expect(typeof gateway.evaluate).toBe('function');
+    expect(await bootstrap.getDecisionGateway()).toBe(gateway);
+  });
 });

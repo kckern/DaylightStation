@@ -13,9 +13,11 @@
 import path from 'node:path';
 import { existsSync } from 'node:fs';
 import { execSync } from 'node:child_process';
+import axios from 'axios';
 import { initConfigService, getConfigService as getInstance, resetConfigService } from '#system/config/index.mjs';
 import { HttpClient } from '#system/services/HttpClient.mjs';
 import { HomeAssistantAdapter } from '#adapters/home-automation/homeassistant/HomeAssistantAdapter.mjs';
+import { JevAdapter } from '#adapters/ai/JevAdapter.mjs';
 import { createSecretsProvider } from '#adapters/secrets/createSecretsProvider.mjs';
 import { DataService } from '#adapters/persistence/files/DataService.mjs';
 import { assertHomeAutomationGateway } from '#apps/home-automation/ports/IHomeAutomationGateway.mjs';
@@ -42,6 +44,7 @@ let _transcriptDir = null;
 let _financeDirect = null;
 let _healthAnalytics = null;
 let _healthAnalyticsInitPromise = null;
+let _decisionGateway;
 
 /**
  * Resolve the data directory the same way backend/index.js does:
@@ -98,6 +101,24 @@ export function getHttpClient() {
   if (_httpClient) return _httpClient;
   _httpClient = new HttpClient();
   return _httpClient;
+}
+
+/**
+ * The typed-decision model (IDecisionGateway, Jev), or null when
+ * system/auth/jev.yml has no api_key. Callers must treat null as
+ * "no model" and keep their non-model behaviour.
+ *
+ * Mirrors the fallback wiring in backend/src/app.mjs (decisionGateway).
+ *
+ * @param {{ logger?: Object }} [opts]
+ * @returns {Promise<import('#apps/common/ports/IDecisionGateway.mjs').IDecisionGateway|null>}
+ */
+export async function getDecisionGateway({ logger } = {}) {
+  if (_decisionGateway !== undefined) return _decisionGateway;
+  const configService = await getConfigService();
+  const apiKey = configService.getSystemAuth?.('jev', 'api_key');
+  _decisionGateway = apiKey ? new JevAdapter({ apiKey }, { httpClient: axios, logger }) : null;
+  return _decisionGateway;
 }
 
 /**
@@ -450,5 +471,6 @@ export function _resetForTests() {
   _financeDirect = null;
   _healthAnalytics = null;
   _healthAnalyticsInitPromise = null;
+  _decisionGateway = undefined;
   resetConfigService();
 }
