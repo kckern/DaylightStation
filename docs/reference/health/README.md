@@ -203,6 +203,27 @@ the source record. Explicit corrections are stamped as user-supplied per key.
 
 ---
 
+## Closing a day — Done logging / Fasted
+
+The health coach treats a day that is not closed and is under the logging-completeness
+threshold (household `coaching/config.yml` `logging_completeness.min_calories`,
+default 1200) as **missing data**: meals were not logged. It does not treat that day as low intake. See
+[coaching-system.md](coaching-system.md#logging-completeness). A person
+tells it otherwise by closing the day, from either surface:
+
+- **Day view:** `today/DayCloseRow.jsx` sits after the meals.
+  - When the day is open, it offers **Done logging** and **Fasted**.
+  - A past day under the threshold is flagged ("Only 460 cal logged. The coach treats this day as incomplete unless you close it.").
+  - Today is never flagged, because an in-progress day is expected to be low.
+  - When the day is closed, it shows the state and a **Reopen** button.
+- **Nutribot chat:** `/done`, `/fast` and `/reopen`, each taking an optional `yesterday` or `YYYY-MM-DD`.
+
+Both surfaces write the same record, `users/{id}/day_closed.yml`
+(`{date: {status: done|fasting, at}}`). `GET /api/v1/health/day` returns
+`dayStatus: {status, minCalories}`. `POST /api/v1/health/nutrition/day-status`
+takes `{date, status: 'done'|'fasting'|null}`, where `null` reopens the day. It refuses a
+malformed date or a future day.
+
 ## Meal buckets
 
 `shared/contracts/health/mealBuckets.mjs` owns both labels and clock defaults.

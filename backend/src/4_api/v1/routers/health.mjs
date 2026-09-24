@@ -260,12 +260,29 @@ export function createHealthRouter(config) {
     if (error) return res.status(400).json(error);
     const userId = getDefaultUsername(req);
     const snapshot = await healthOperations.readNutritionDay(userId, date);
+    // Whether the day is closed (/done, /fast, or the day view's buttons) and
+    // the threshold the coach applies to an unclosed one.
+    const dayStatus = await healthOperations.readDayStatus(userId, date).catch(() => null);
     try {
       const budget = await budgetService.getBudget(userId, date, { items: snapshot.items });
-      return res.json({ ...snapshot, budget });
+      return res.json({ ...snapshot, dayStatus, budget });
     } catch (err) {
       // Budget setup/availability must never conceal a valid food ledger.
-      return res.json({ ...snapshot, budget: null, budgetError: { message: err.message, code: err.code || 'BUDGET_UNAVAILABLE' } });
+      return res.json({ ...snapshot, dayStatus, budget: null, budgetError: { message: err.message, code: err.code || 'BUDGET_UNAVAILABLE' } });
+    }
+  }));
+
+  /**
+   * Close or reopen a day for coaching: `{ date, status: 'done'|'fasting'|null }`.
+   * A closed day's totals are trusted even under the completeness threshold.
+   */
+  router.post('/nutrition/day-status', asyncHandler(async (req, res) => {
+    const { date, status = null } = req.body || {};
+    try {
+      return res.json(await healthOperations.setDayStatus(getDefaultUsername(req), date, status));
+    } catch (err) {
+      if (err.status === 400) return res.status(400).json({ error: err.message });
+      throw err;
     }
   }));
 

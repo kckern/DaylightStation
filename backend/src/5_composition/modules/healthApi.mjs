@@ -109,6 +109,8 @@ export function createHealthApiRouter(config) {
     densityLevels: () => scaleConfig().densityLevels,
     today: nowDate,
     newId: uuidv4,
+    // Read per call so a coaching config reload is honoured.
+    completeness: () => configService?.getHouseholdAppConfig?.(null, 'coaching')?.logging_completeness ?? null,
   });
 
   const goalsStore = new YamlHealthGoalsDatastore({ dataService });
