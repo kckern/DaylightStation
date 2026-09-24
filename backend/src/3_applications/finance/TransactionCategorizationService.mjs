@@ -13,12 +13,19 @@
  */
 
 import { ValidationError } from '#apps/common/errors/SemanticErrors.mjs';
+import { TransactionCategoryJudge } from './TransactionCategoryJudge.mjs';
+
+// jev.mode in the categorization config: shadow (default) logs Jev beside the
+// LLM; promote lets Jev's category win at confidence >= confidenceFloor; off asks nothing.
+const JEV_MODES = new Set(['shadow', 'promote', 'off']);
+const DEFAULT_JEV_FLOOR = 0.8;
 
 export class TransactionCategorizationService {
   #aiGateway;
   #transactionSource;
   #financeStore;
   #logger;
+  #categoryJudge;
 
   // id → the description this service wrote when that description still looks
   // raw to the patterns below (e.g. "Direct Deposit" vs /^Direct/). Without it
@@ -42,9 +49,10 @@ export class TransactionCategorizationService {
    * @param {Object} deps.aiGateway - IAIGateway implementation
    * @param {Object} deps.transactionSource - ITransactionSource implementation
    * @param {Object} deps.financeStore - YamlFinanceStore instance
+   * @param {Object} [deps.decisionGateway] - IDecisionGateway (optional; Jev category shadow/promotion)
    * @param {Object} [deps.logger] - Logger instance
    */
-  constructor({ aiGateway, transactionSource, financeStore, logger }) {
+  constructor({ aiGateway, transactionSource, financeStore, decisionGateway = null, logger }) {
     if (!aiGateway) {
       throw new ValidationError('TransactionCategorizationService requires aiGateway', { field: 'aiGateway' });
     }
@@ -58,6 +66,7 @@ export class TransactionCategorizationService {
     this.#transactionSource = transactionSource;
     this.#financeStore = financeStore;
     this.#logger = logger || console;
+    this.#categoryJudge = new TransactionCategoryJudge({ decisionGateway, logger: this.#logger });
   }
 
   /**
@@ -75,6 +84,7 @@ export class TransactionCategorizationService {
     }
 
     const { validTags, chat: chatTemplate, descriptionRules } = config;
+    const policy = this.#jevPolicy(config);
 
     // Apply deterministic description rules before AI categorization
     const ruleResults = this.#applyDescriptionRules(transactions, descriptionRules);
@@ -95,7 +105,7 @@ export class TransactionCategorizationService {
 
     for (const txn of needsProcessing) {
       try {
-        const result = await this.#categorizeTransaction(txn, validTags, chatTemplate);
+        const result = await this.#categorizeTransaction(txn, validTags, chatTemplate, { policy, path: 'apply' });
 
         if (result.success) {
           // Update transaction in external system
@@ -119,14 +129,16 @@ export class TransactionCategorizationService {
             date: txn.date,
             originalDescription: result.originalDescription,
             friendlyName: result.friendlyName,
-            category: result.category
+            category: result.category,
+            categoryVia: result.categoryVia
           });
 
           this.#log('info', 'categorization.success', {
             id: txn.id,
             date: txn.date,
             friendlyName: result.friendlyName,
-            category: result.category
+            category: result.category,
+            categoryVia: result.categoryVia
           });
         } else {
           failed.push({
@@ -182,6 +194,7 @@ export class TransactionCategorizationService {
     }
 
     const { validTags, chat: chatTemplate, descriptionRules } = config;
+    const policy = this.#jevPolicy(config);
 
     // Preview deterministic rules (without updating external source)
     const ruleMatches = [];
@@ -216,7 +229,7 @@ export class TransactionCategorizationService {
 
     for (const txn of needsProcessing) {
       try {
-        const result = await this.#categorizeTransaction(txn, validTags, chatTemplate);
+        const result = await this.#categorizeTransaction(txn, validTags, chatTemplate, { policy, path: 'preview' });
 
         if (result.success) {
           suggestions.push({
@@ -225,7 +238,8 @@ export class TransactionCategorizationService {
             originalDescription: txn.description,
             suggestedName: result.friendlyName,
             suggestedCategory: result.category,
-            suggestedMemo: result.memo
+            suggestedMemo: result.memo,
+            categoryVia: result.categoryVia
           });
         } else {
           failed.push({
@@ -333,68 +347,75 @@ export class TransactionCategorizationService {
     return this.#rawDescriptionPatterns.some(pattern => pattern.test(description));
   }
 
-  /**
-   * Categorize a single transaction using AI
-   *
-   * @param {Object} transaction - Transaction to categorize
-   * @param {string[]} validTags - List of valid category tags
-   * @param {Object[]} chatTemplate - Chat template from config
-   * @returns {Promise<Object>}
-   */
-  async #categorizeTransaction(transaction, validTags, chatTemplate) {
-    const { description, id, date } = transaction;
+  #jevPolicy(config) {
+    const jev = config?.jev || {};
+    return {
+      mode: JEV_MODES.has(jev.mode) ? jev.mode : 'shadow',
+      floor: Number.isFinite(jev.confidenceFloor) ? jev.confidenceFloor : DEFAULT_JEV_FLOOR,
+    };
+  }
 
-    // Build chat messages from template
+  /**
+   * Categorize one transaction: the LLM names it (and proposes a category);
+   * Jev independently picks a category from validTags, in parallel. Both
+   * the apply and the preview path come through here, so they decide alike.
+   *
+   * @returns {Promise<Object>} { success, friendlyName, category, categoryVia, memo, originalDescription } on success; { reason, originalDescription } with a falsy success otherwise
+   */
+  async #categorizeTransaction(transaction, validTags, chatTemplate, { policy, path }) {
+    const { description, id } = transaction;
+    const jevPending = policy.mode === 'off'
+      ? Promise.resolve(null)
+      : this.#categoryJudge.judge(transaction, validTags);
+    const llm = await this.#askLlm(transaction, validTags, chatTemplate);
+    const jev = await jevPending;
+    const outcome = this.#decide(llm, jev, validTags, policy, description);
+
+    if (jev) {
+      this.#log('info', 'categorization.jev.compare', {
+        id, path, mode: policy.mode, floor: policy.floor,
+        llmCategory: llm.category ?? null,
+        llmValid: validTags.includes(llm.category),
+        jevCategory: jev.category,
+        confidence: jev.confidence,
+        agreed: jev.category != null && jev.category === llm.category,
+        via: outcome.success ? outcome.categoryVia : null,
+        cjk: jev.cjk, model: jev.model, jevMs: jev.ms,
+      });
+    }
+    return outcome;
+  }
+
+  async #askLlm(transaction, validTags, chatTemplate) {
     const messages = chatTemplate.map(msg => {
       if (msg.role === 'system' && msg.content.includes('__VALID_TAGS__')) {
-        return {
-          role: msg.role,
-          content: msg.content.replace('__VALID_TAGS__', JSON.stringify(validTags))
-        };
+        return { role: msg.role, content: msg.content.replace('__VALID_TAGS__', JSON.stringify(validTags)) };
       }
       return msg;
     });
-
-    // Add user message with transaction description
-    messages.push({ role: 'user', content: description });
+    messages.push({ role: 'user', content: transaction.description });
 
     try {
       const response = await this.#aiGateway.chatWithJson(messages);
-
+      // Plain destructure (no ?.): a null response stays an "AI error", as before.
       const { category, friendlyName, memo } = response;
-
-      // Validate response
-      if (!friendlyName) {
-        return {
-          success: false,
-          reason: 'AI did not provide a friendly name',
-          originalDescription: description
-        };
-      }
-
-      if (!validTags.includes(category)) {
-        return {
-          success: false,
-          reason: `Invalid category: ${category}`,
-          originalDescription: description
-        };
-      }
-
-      return {
-        success: true,
-        friendlyName,
-        category,
-        memo: memo || null,
-        originalDescription: description
-      };
+      return { category, friendlyName, memo };
     } catch (error) {
-      this.#logger.warn?.('categorization.ai.failed', { transactionId: id, error: error.message });
-      return {
-        success: false,
-        reason: `AI error: ${error.message}`,
-        originalDescription: description
-      };
+      this.#logger.warn?.('categorization.ai.failed', { transactionId: transaction.id, error: error.message });
+      return { error: error.message };
     }
+  }
+
+  #decide(llm, jev, validTags, policy, originalDescription) {
+    if (llm.error) return { success: false, reason: `AI error: ${llm.error}`, originalDescription };
+    if (!llm.friendlyName) return { success: false, reason: 'AI did not provide a friendly name', originalDescription };
+    if (!validTags.includes(llm.category)) {
+      return { success: false, reason: `Invalid category: ${llm.category}`, originalDescription };
+    }
+    return {
+      success: true, friendlyName: llm.friendlyName, category: llm.category, categoryVia: 'llm',
+      memo: llm.memo || null, originalDescription,
+    };
   }
 
   /**
