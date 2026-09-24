@@ -35,6 +35,8 @@ const S = path.resolve(args.export);
 const L = f => fs.existsSync(`${S}/${f}`) ? (yaml.load(fs.readFileSync(`${S}/${f}`, 'utf8')) || {}) : {};
 const byPrefix = prefix => Object.assign({}, ...fs.readdirSync(S).filter(f => f.startsWith(prefix) && f.endsWith('.yml')).sort().map(L));
 const withings = L('withings.yml'), nutriday = L('nutriday.yml'), health = L('health.yml');
+// Days the user closed with /done or /fast (or the day view) are final: never filled.
+const closures = L('day_closed.yml');
 const [corruptFrom, corruptTo] = (args['corrupt-fitness'] || ':').split(':');
 // A known sync window that duplicated activities and summed step totals is dropped, not trusted.
 const fitness = Object.fromEntries(Object.entries(byPrefix('fitness')).filter(([d]) => !(corruptFrom && d >= corruptFrom && d <= corruptTo)));
@@ -42,6 +44,11 @@ const garmin = byPrefix('garmin');
 const stravaArch = fs.existsSync(`${S}/strava_arch.yml`) ? yaml.loadAll(fs.readFileSync(`${S}/strava_arch.yml`, 'utf8')).filter(Boolean) : [];
 const START = args.from, END = args.to, MIN = Number(args.min || 1200), AGE = Number(args.age);
 const DEXA = { date: args['dexa-date'], rmr: Number(args['dexa-rmr']) };
+// 1.1 = RMR + thermic effect of food, with ALL movement counted explicitly
+// (steps, workouts). It is a deliberate LOWER bound: the user's well-logged
+// days imply 0.98 — below the DEXA-measured RMR, i.e. those days under-log
+// too — so calibrating on them would bake the under-logging back in.
+const FACTOR = 1.1;
 const day = (d, n) => { const x = new Date(d + 'T12:00:00Z'); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10); };
 const range = (a, b) => { const o = []; for (let d = a; d <= b; d = day(d, 1)) o.push(d); return o; };
 const mean = a => a.reduce((s, x) => s + x, 0) / a.length;
@@ -69,7 +76,15 @@ const exercise = (d, rmr, kg) => {
     .reduce((s, a) => s + net(a.calories || keytel(a.avgHeartrate, a.minutes, kg), a.minutes), 0);
   const sa = stravaArch.filter(x => x.date === d).reduce((s, x) => { const min = (x.data?.moving_time || 0) / 60; return s + net(x.data?.calories || keytel(x.data?.average_heartrate, min, kg), min); }, 0);
   const hw = (health[d]?.workouts || []).reduce((s, w) => { const min = w.duration || w.strava?.minutes || 0; return s + net(w.calories || keytel(w.avgHr || w.strava?.avgHeartrate, min, kg), min); }, 0);
-  return { total: Math.max(g, f, sa, hw), src: { garmin: g, fitness: f, stravaArchive: sa, health: hw } };
+  // Steps taken DURING workouts are already in the exercise figure; NEAT must
+  // exclude them. Garmin records them per activity; otherwise walks/runs are
+  // estimated at a cadence per minute.
+  const CADENCE = { Run: 160, Walk: 110, Hike: 100 };
+  const garminSteps = (garmin[d] || []).reduce((s, a) => s + (Number(a.steps) || 0), 0);
+  const cadenceSteps = [...stravaArch.filter(x => x.date === d).map(x => ({ type: x.type, min: (x.data?.moving_time || 0) / 60 })),
+    ...(health[d]?.workouts || []).map(w => ({ type: w.type || w.strava?.type, min: w.duration || w.strava?.minutes || 0 }))]
+    .reduce((s, w) => s + (CADENCE[w.type] || 0) * w.min, 0);
+  return { total: Math.max(g, f, sa, hw), workoutSteps: garminSteps || cadenceSteps, src: { garmin: g, fitness: f, stravaArchive: sa, health: hw } };
 };
 
 // ── steps → NEAT (≈0.0005 kcal per step per kg); invalid or missing days imputed from nearby valid days ──
@@ -85,12 +100,14 @@ for (const d of range(START, END)) {
   const rmr = DEXA.rmr * ffm[d] / scaleFfmAtScan;
   const ex = exercise(d, rmr, kg);
   const st = stepsFor(d);
-  const neat = st.steps * kg * 0.0005;
+  const neat = Math.max(0, st.steps - (st.imputed ? 0 : ex.workoutSteps)) * kg * 0.0005;
   const balance = (weightTrend[day(d, 7)] - weightTrend[day(d, -7)]) / 14 * 3500;
-  const estimate = Math.round(rmr * 1.1 + neat + ex.total + balance);
+  const estimate = Math.round(rmr * FACTOR + neat + ex.total + balance);
+  // A day with no usable weight or lean mass must stop the run, not vanish from the plan.
+  if (!Number.isFinite(estimate)) throw new Error(`${d}: estimate is not a number (rmr ${rmr}, neat ${neat}, exercise ${ex.total}, balance ${balance}) — check the export`);
   const logged = Math.round(Number(nutriday[d]?.calories) || 0);
-  const status = logged <= 0 ? 'unlogged' : logged < MIN ? 'incomplete' : 'complete';
-  rows.push({ date: d, status, logged, estimate, fill: status === 'complete' ? 0 : Math.max(0, estimate - logged),
+  const status = closures[d] ? 'closed' : logged <= 0 ? 'unlogged' : logged < MIN ? 'incomplete' : 'complete';
+  rows.push({ date: d, status, logged, estimate, fill: status === 'complete' || status === 'closed' ? 0 : Math.max(0, estimate - logged),
     rmr: Math.round(rmr), neat: Math.round(neat), steps: Math.round(st.steps), stepsImputed: st.imputed, exercise: Math.round(ex.total), exerciseSrc: ex.src,
     balance: Math.round(balance), weightTrend: +weightTrend[d].toFixed(1) });
 }
@@ -103,7 +120,7 @@ for (const [m, b] of Object.entries(by)) console.error(`${m}  ${String(b.unl).pa
 const filled = rows.filter(r => r.fill > 0); const fs2 = filled.map(r => r.fill).sort((x, y) => x - y);
 console.error(`filled ${filled.length} days; total ${fs2.reduce((s, x) => s + x, 0)} kcal; fill p50 ${fs2[Math.floor(fs2.length / 2)]} p95 ${fs2[Math.floor(fs2.length * 0.95)]} max ${fs2.at(-1)}`);
 const entries = rows.filter(r => r.fill > 0).map(r => ({ date: r.date, calories: r.fill, evidence: {
-  method: 'weight-derived-v1', estimate: r.estimate, logged: r.logged, status: r.status, rmr: r.rmr, neat: r.neat,
+  method: 'weight-derived-v1', factor: FACTOR, estimate: r.estimate, logged: r.logged, status: r.status, rmr: r.rmr, neat: r.neat,
   steps: r.steps, stepsImputed: r.stepsImputed, exercise: r.exercise, balance: r.balance, weightTrend: r.weightTrend,
   dexa: DEXA.date } }));
 fs.writeFileSync(args.out, JSON.stringify({ generatedFor: { from: START, to: END, min: MIN, dexa: DEXA }, entries }, null, 1));

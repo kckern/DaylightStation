@@ -16,6 +16,7 @@ L=data/users/<user>/lifelog
 for f in withings nutrition/nutriday health fitness; do
   sudo docker exec {env.docker_container} sh -c "cat $L/$f.yml" > $X/$(basename $f).yml; done
 mv $X/fitness.yml $X/fitness_current.yml
+sudo docker exec {env.docker_container} sh -c "cat data/users/<user>/day_closed.yml" > $X/day_closed.yml
 for y in 2025 2026; do
   sudo docker exec {env.docker_container} sh -c "cat $L/archives/fitness/$y.yml" > $X/fitness_$y.yml
   sudo docker exec {env.docker_container} sh -c "cat $L/archives/garmin/$y.yml" > $X/garmin_$y.yml; done
@@ -34,6 +35,9 @@ node cli/health-reconstruct-untracked.cli.mjs --export $X --from 2025-06-01 --to
 - **The formula and its inputs:** see the CLI header.
 - **The month table:** printed to stderr. Review it before applying.
 - **`--corrupt-fitness`:** names a window whose `fitness` step and activity data is known bad, so those days are ignored. The known window, 2025-12-23 to 2026-01-24, had 14–24 duplicate "activities" and 40k–114k "steps" a day.
+- **Days never filled:** a day closed with `/done`, `/fast` or the day view is final. The planner skips it, and the server refuses it again (`skippedClosed`).
+- **Workout steps:** steps taken during workouts are removed before step NEAT, so a walk or run isn't counted twice. Garmin supplies per-activity steps; Strava walks and runs use a per-minute cadence.
+- **Missing data stops the run:** a day with no usable weight or lean mass fails loudly instead of dropping out of the plan.
 - **Why the multiplier is fixed at 1.1 instead of calibrated from well-logged days:** the well-logged days imply less than the DEXA-measured RMR. That's impossible, so they under-log too, and calibrating on them would bake the under-logging back in.
 
 ## 3. Apply (through the app, in-process)
