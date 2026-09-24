@@ -210,10 +210,12 @@ export function createLanguageRouter({
     })));
   }));
 
-  router.post('/users/:userId/log', wrap((req, res) => {
+  router.post('/users/:userId/log', wrap(async (req, res) => {
     const { corpus, seq, rung, given = null, revealed = false, method = null } = req.body || {};
     if (!authorized(req, res, corpus)) return;
-    res.json(languageStudyService.logAttempt({
+    // Async since the interpretation rung may carry a meaning score; the
+    // service bounds that wait and never fails the record over it.
+    res.json(await languageStudyService.submitAttempt({
       userId: req.params.userId, corpusId: corpus, seq, rung, given,
       // HOW the answer was produced — typed, or spoken and transcribed. Passed
       // straight through and validated by the service: an older client sends
