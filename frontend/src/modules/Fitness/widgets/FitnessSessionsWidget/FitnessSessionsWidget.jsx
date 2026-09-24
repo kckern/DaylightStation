@@ -361,13 +361,14 @@ export default function FitnessSessionsWidget() {
 
   // The URL is authoritative for CLOSING: when it CHANGES to a path that names
   // no session while this widget's pane is open — a post-session redirect with
-  // no session id, or browser Back from /session-{id} — close the pane and drop
-  // the selection, so a reload shows what the screen shows. Opening stays
-  // selection-driven.
+  // no session id, browser Back from /session-{id}, or starting a video from home
+  // (/fitness/play/{id}) — close the pane and drop the selection, so a reload
+  // shows what the screen shows. Opening stays selection-driven.
   // Acts on a pathname CHANGE only, never on mount: at mount an outside
   // selection may open the pane (effect above, same commit) while the path is
   // still bare. A row click sets the selection and navigates in one batch, so a
-  // change to a bare path with the pane open only happens on a real close.
+  // change to a bare path with the pane open can happen on a real close or when
+  // a video starts from home.
   const prevPathRef = useRef(location.pathname);
   useEffect(() => {
     const prev = prevPathRef.current;
