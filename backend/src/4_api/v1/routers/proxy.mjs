@@ -6,6 +6,10 @@ import { splatPath } from '#api/utils/wildcard.mjs';
 
 const LONG_CACHE = 'public, max-age=31536000';
 const IMMUTABLE_CACHE = 'public, max-age=31536000, immutable';
+// The media tree holds hand-swapped UX assets (sounds, gifs, menu art) that
+// keep their filename when replaced. A year-long max-age pinned a replaced
+// fireball.mp3 in the garage kiosk's cache; revalidating costs a 304.
+const REVALIDATE_CACHE = 'public, no-cache';
 
 function waitForDrainOrClose(res) {
   if (res.destroyed) return Promise.resolve('close');
@@ -322,7 +326,7 @@ export function createProxyRouter(config = {}) {
     }
     if (result.kind === 'not_file') return res.status(400).json({ error: 'Path is not a file' });
     streamMediaResourceWithRanges(req, res, result.resource, {
-      'Cache-Control': LONG_CACHE,
+      'Cache-Control': REVALIDATE_CACHE,
       'X-Content-Type-Options': 'nosniff',
       'Access-Control-Allow-Origin': '*',
     });
