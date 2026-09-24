@@ -8,7 +8,17 @@ export class ReconciliationProcessor {
   #healthStore;
   #logger;
   #nutritionItemsReader;
+  #bodyScans;
 
+  /**
+   * @param {Object} config
+   * @param {Object} config.healthStore
+   * @param {Object} [config.nutritionItemsReader]
+   * @param {{getLatestScan: (userId: string) => Promise<object|null>}} [config.bodyScans]
+   *   body-composition scans; the latest with a measured `bmr_kcal` (DEXA)
+   *   anchors the resting rate instead of a formula + intake-derived BMR.
+   * @param {Object} [config.logger]
+   */
   constructor(config) {
     if (!config.healthStore) {
       throw new Error('ReconciliationProcessor requires healthStore');
@@ -16,6 +26,7 @@ export class ReconciliationProcessor {
     this.#healthStore = config.healthStore;
     this.#logger = config.logger || console;
     this.#nutritionItemsReader = config.nutritionItemsReader || null;
+    this.#bodyScans = config.bodyScans || null;
   }
 
   async process(userId, options = {}) {
@@ -47,10 +58,17 @@ export class ReconciliationProcessor {
     }
 
     const latestWeight = weightData[windowDates[windowDates.length - 1]];
-    const seedBmr = CalorieReconciliationService.computeSeedBmr(
-      latestWeight?.lbs_adjusted_average,
-      latestWeight?.fat_percent_adjusted_average
-    );
+    // A measured resting rate (DEXA) anchors BMR, carried forward by the
+    // scale's fat-free mass. Without one, fall back to Katch-McArdle on the
+    // scale's body fat and let the service derive BMR from the window.
+    const scan = await this.#latestMeasuredScan(userId);
+    const ffmNow = latestWeight?.lbs_adjusted_average && latestWeight?.fat_percent_adjusted_average != null
+      ? latestWeight.lbs_adjusted_average * (1 - latestWeight.fat_percent_adjusted_average / 100) : null;
+    const anchored = !!scan;
+    const seedBmr = anchored
+      ? CalorieReconciliationService.computeAnchoredBmr(scan, ffmNow)
+      : CalorieReconciliationService.computeSeedBmr(latestWeight?.lbs_adjusted_average, latestWeight?.fat_percent_adjusted_average);
+    this.#logger.info?.('reconciliation.process.bmr', { userId, anchored, seedBmr, scanDate: scan?.date ?? null });
 
     if (!seedBmr) {
       this.#logger.warn?.('reconciliation.process.no_seed_bmr', { userId });
@@ -86,30 +104,37 @@ export class ReconciliationProcessor {
 
       // Estimate calories from HR when calories are missing (common for Strava weight training)
       const weightKg = currWeight ? currWeight * LBS_TO_KG : null;
+      // With a MEASURED resting rate, a workout's gross calories include the
+      // resting burn already counted for those minutes — count only the net.
+      const restPerMin = anchored ? (seedBmr * 1.1) / 1440 : 0;
       const exerciseCalories = mergedWorkouts.reduce((sum, w) => {
-        if (w.calories > 0) return sum + w.calories;
+        const minutes = Number(w.duration || w.minutes || w.strava?.minutes || w.fitness?.minutes) || 0;
+        const net = (gross) => Math.max(0, gross - restPerMin * minutes);
+        if (w.calories > 0) return sum + net(w.calories);
         // Fall back to HR-based estimation
         const hr = w.avgHr || w.strava?.avgHeartrate || w.fitness?.avgHeartrate;
         const dur = w.duration || w.strava?.minutes || w.fitness?.minutes;
         if (hr && dur && weightKg) {
-          return sum + CalorieReconciliationService.estimateCaloriesFromHR(hr, dur, weightKg);
+          return sum + net(CalorieReconciliationService.estimateCaloriesFromHR(hr, dur, weightKg));
         }
         return sum;
       }, 0);
 
+      // Reconstructed (weight-derived) calories are an estimate, not tracking.
+      const trackedCalories = Math.max(0, (nutrition?.calories || 0) - (nutrition?.reconstructed_calories || 0));
       return {
         date,
         weightDelta,
-        trackedCalories: nutrition?.calories || 0,
+        trackedCalories,
         exerciseCalories,
         neatCalories: fitness?.steps?.calories ?? null,
         hasWeight: currWeight != null,
-        hasNutrition: nutrition?.calories > 0,
+        hasNutrition: trackedCalories > 0,
         hasSteps: fitness?.steps?.calories != null,
       };
     });
 
-    const results = CalorieReconciliationService.reconcile(windowData, seedBmr);
+    const results = CalorieReconciliationService.reconcile(windowData, seedBmr, { anchored });
 
     const merged = { ...existingRecon };
     for (const record of results) {
@@ -133,6 +158,32 @@ export class ReconciliationProcessor {
     });
 
     return results;
+  }
+
+  /**
+   * The latest scan carrying a MEASURED bmr — not simply the latest scan: a
+   * newer InBody/BIA scan without an RMR must not shadow the DEXA anchor.
+   * Never throws.
+   */
+  async #latestMeasuredScan(userId) {
+    try {
+      const scans = this.#bodyScans?.listScans
+        ? await this.#bodyScans.listScans(userId)
+        : [await this.#bodyScans?.getLatestScan?.(userId)];
+      const measured = (scans || []).filter(Boolean).map(scan => ({
+        date: scan.date,
+        bmr_kcal: scan.bmr_kcal ?? scan.bmrKcal,
+        bmr_method: scan.bmr_method ?? scan.bmrMethod,
+        weight_lbs: scan.weight_lbs ?? scan.weightLbs,
+        body_fat_percent: scan.body_fat_percent ?? scan.bodyFatPercent,
+        scale_body_fat_percent: scan.scale_body_fat_percent ?? scan.scaleBodyFatPercent ?? null,
+      })).filter(scan => scan.bmr_kcal > 0 && scan.bmr_method === 'measured')
+        .sort((a, b) => String(a.date).localeCompare(String(b.date)));
+      return measured.at(-1) || null;
+    } catch (error) {
+      this.#logger.warn?.('reconciliation.process.scan_unavailable', { userId, error: error.message });
+      return null;
+    }
   }
 
   async #produceAdjustedNutrition(userId, reconciliationResults, windowDates) {
