@@ -8,11 +8,18 @@ const TRANSIENT_CODES = new Set([
  * Check if an error is transient (retryable).
  * Supports both HttpError (isTransient flag) and raw network errors (code check).
  */
-function isTransientError(error) {
+export function isTransientError(error) {
+  if (!error) return false;
   if (error.isTransient) return true;
   // Raw axios/node errors carry code on error or error.cause
   const code = error.code || error.cause?.code;
   if (code && TRANSIENT_CODES.has(code)) return true;
+  // An HTTP 429 or 5xx is transient however it arrives. Raw axios reports one
+  // as code ERR_BAD_RESPONSE with the status on error.response — that shape
+  // went unrecognised, so a Whisper 502 (2026-09-24) was never retried and the
+  // person's voice revision was lost on the first attempt.
+  const status = error.response?.status ?? error.status;
+  if (status === 429 || (status >= 500 && status < 600)) return true;
   return false;
 }
 
