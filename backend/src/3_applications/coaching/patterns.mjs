@@ -1,4 +1,4 @@
-import { isTrusted } from './dayCompleteness.mjs';
+import { isTrusted, hasKnownProtein } from './dayCompleteness.mjs';
 
 /**
  * Detect the most notable recent nutrition pattern.
@@ -43,14 +43,14 @@ export function detectPattern(days, goals) {
 
   // protein_short: protein < 80% of goal for 3+ of last 5 days
   const proteinThreshold = goals.protein * 0.8;
-  const proteinShortDays = last5.filter(d => d.protein < proteinThreshold && d.calories > 0);
+  const proteinShortDays = last5.filter(d => d.protein < proteinThreshold && d.calories > 0 && (!d.status || hasKnownProtein(d)));
   if (proteinShortDays.length >= 3) return 'protein_short';
 
   // on_track: within goals for 3+ consecutive days from most recent
   const onTrackStreak = last3.filter(d =>
     d.calories >= goals.calories_min &&
     d.calories <= goals.calories_max &&
-    d.protein >= goals.protein
+    (d.status === 'reconstructed' || d.protein >= goals.protein)
   );
   if (onTrackStreak.length >= 3) return 'on_track';
 

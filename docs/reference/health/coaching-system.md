@@ -99,6 +99,7 @@ So every day the coach reads is classified before anything else happens:
 | `fasting` | The user said the day was a fast (`/fast`) | yes, whatever the total |
 | `incomplete` | Something logged, under the threshold, not confirmed | **no** — missing data |
 | `unlogged` | Nothing logged | **no** — missing data |
+| `reconstructed` | Untracked intake backfilled from weight ([reconstruction](README.md#untracked-intake-reconstruction)) | calories yes. Protein is **unknown** and never averaged |
 
 The threshold is `logging_completeness.min_calories` in the household `coaching` config (`household/coaching/config.yml`, registered in `shared/contracts/householdConfig.mjs`), **default 1200**. Close a day from the nutribot chat with `/done` or `/fast`. With no argument it closes today in the user's timezone. It also takes `yesterday` or an explicit `YYYY-MM-DD` that is not in the future, and `/reopen` with the same arguments undoes it. The brief's hint prints the exact date, so it stays correct if read a day late. Closures live in `data/users/{username}/day_closed.yml` as `{date: {status, at}}`. A bare `true` is the legacy `/done` record and is read as `done`.
 

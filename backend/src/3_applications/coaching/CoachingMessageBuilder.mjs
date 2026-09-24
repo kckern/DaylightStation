@@ -43,7 +43,7 @@ export class CoachingMessageBuilder {
     const lines = [...CoachingMessageBuilder.#yesterdayLines(yesterday, minCalories)];
 
     lines.push(weekAvg.trustedDays > 0
-      ? `\u{1F4C9} <b>7-day avg:</b> ${weekAvg.calories} cal \u{00B7} ${weekAvg.protein}g protein (target: ${proteinGoal}g)${CoachingMessageBuilder.#coverage(weekAvg)}`
+      ? `\u{1F4C9} <b>7-day avg:</b> ${weekAvg.calories} cal \u{00B7} ${CoachingMessageBuilder.#protein(weekAvg.protein)} (target: ${proteinGoal}g)${CoachingMessageBuilder.#coverage(weekAvg)}`
       : `\u{1F4C9} <b>7-day avg:</b> no fully logged days`);
 
     if (weight) {
@@ -61,11 +61,11 @@ export class CoachingMessageBuilder {
    */
   static buildWeeklyDigestBlock({ thisWeek, longTermAvg, weight }) {
     const lines = [thisWeek.trustedDays > 0
-      ? `\u{1F4CA} <b>This week:</b> ${thisWeek.calories} avg cal \u{00B7} ${thisWeek.protein}g avg protein${CoachingMessageBuilder.#coverage(thisWeek)}`
+      ? `\u{1F4CA} <b>This week:</b> ${thisWeek.calories} avg cal \u{00B7} ${CoachingMessageBuilder.#protein(thisWeek.protein, 'avg ')}${CoachingMessageBuilder.#coverage(thisWeek)}`
       : `\u{1F4CA} <b>This week:</b> no fully logged days`];
 
     if (longTermAvg.trustedDays > 0) {
-      lines.push(`\u{1F4C8} <b>vs 8-wk avg:</b> ${longTermAvg.calories} cal \u{00B7} ${longTermAvg.protein}g protein`);
+      lines.push(`\u{1F4C8} <b>vs 8-wk avg:</b> ${longTermAvg.calories} cal \u{00B7} ${CoachingMessageBuilder.#protein(longTermAvg.protein)}`);
     }
     if (weight) {
       lines.push(`\u{2696}\u{FE0F} <b>Weight trend:</b> ${CoachingMessageBuilder.#signed(weight.trend7d)} lbs this week \u{00B7} ${weight.weekStart.toFixed(1)} \u{2192} ${weight.weekEnd.toFixed(1)}`);
@@ -95,6 +95,11 @@ export class CoachingMessageBuilder {
 
   static #coverage({ trustedDays, totalDays }) {
     return trustedDays < totalDays ? ` \u{00B7} ${trustedDays} of ${totalDays} days fully logged` : '';
+  }
+
+  /** Protein is unknown (null) when every trusted day was reconstructed. */
+  static #protein(grams, prefix = '') {
+    return grams == null ? 'protein unknown' : `${grams}g ${prefix}protein`;
   }
 
   static #signed(n) {

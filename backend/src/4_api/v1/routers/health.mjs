@@ -276,6 +276,35 @@ export function createHealthRouter(config) {
    * Close or reopen a day for coaching: `{ date, status: 'done'|'fasting'|null }`.
    * A closed day's totals are trusted even under the completeness threshold.
    */
+  /**
+   * Untracked-intake reconstruction (docs/reference/health/README.md).
+   * POST `{ entries: [{date, calories, evidence}], dryRun }` writes one
+   * synthetic row per past day, skipping days already reconstructed.
+   * DELETE removes the whole backfill.
+   */
+  router.post('/nutrition/reconstruction', asyncHandler(async (req, res) => {
+    const { entries, dryRun = false, operationId } = req.body || {};
+    const userId = getDefaultUsername(req);
+    try {
+      const result = dryRun
+        ? await healthOperations.applyReconstruction(userId, entries, { dryRun: true })
+        : await runNutritionOperation(userId, operationId, { operation: 'untracked-reconstruction', entries },
+          () => healthOperations.applyReconstruction(userId, entries));
+      logger.info?.('health.reconstruction.applied', { userId, dryRun, written: result.written, planned: result.planned, skipped: result.skipped?.length ?? 0 });
+      return res.json(result);
+    } catch (err) {
+      if (err.status === 400) return res.status(400).json({ error: err.message });
+      throw err;
+    }
+  }));
+
+  router.delete('/nutrition/reconstruction', asyncHandler(async (req, res) => {
+    const userId = getDefaultUsername(req);
+    const result = await healthOperations.removeReconstruction(userId);
+    logger.info?.('health.reconstruction.removed', { userId, removed: result.removed });
+    return res.json(result);
+  }));
+
   router.post('/nutrition/day-status', asyncHandler(async (req, res) => {
     const { date, status = null } = req.body || {};
     try {

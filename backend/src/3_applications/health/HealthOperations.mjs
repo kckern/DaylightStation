@@ -12,6 +12,7 @@ import { nutritionLookupFor } from '#shared/contracts/nutrition/nutritionLookup.
 import { DEFAULT_DENSITY_LEVELS } from '#shared-contracts/health/densityLevels.mjs';
 import { densityRevision } from '#shared-contracts/health/foodDensity.mjs';
 import { closureStatus, resolveMinCalories, DAY_STATUS } from '../coaching/dayCompleteness.mjs';
+import { RECONSTRUCTION_LOG_ID, RECONSTRUCTION_ITEM_NAME, isReconstructedRow } from '#shared/contracts/nutrition/reconstruction.mjs';
 
 const NUTRITION_UPDATE_FIELDS = new Set([
   'item', 'name', 'unit', 'amount', 'grams', 'noom_color', 'color',
@@ -166,6 +167,59 @@ export class HealthOperations {
     if (status === null) await this.healthData.clearDayStatus(username, date);
     else await this.healthData.markDayStatus(username, date, status);
     return this.readDayStatus(username, date);
+  }
+
+  /**
+   * Backfill untracked intake: one synthetic row per past day, whose calories
+   * are a reviewed weight-derived estimate minus what was logged. The plan is
+   * computed and reviewed OUTSIDE the app (it reads scale, step and workout
+   * history); this only validates and writes it through the ledger, so daily
+   * summaries, archives and the operation journal stay consistent.
+   *
+   * Idempotent per day: a date that already carries a reconstruction row is
+   * skipped, never doubled. Rows carry no macros — protein on a reconstructed
+   * day is unknown, and coaching reads `reconstructed_calories` to know that.
+   *
+   * @param {string} username
+   * @param {Array<{date: string, calories: number, evidence?: object}>} entries
+   * @param {{dryRun?: boolean}} [options]
+   * @returns {Promise<{dryRun: boolean, written: number, skipped: string[], totalCalories: number}>}
+   */
+  async applyReconstruction(username, entries, { dryRun = false } = {}) {
+    const bad = (message) => Object.assign(new Error(message), { status: 400 });
+    if (!Array.isArray(entries) || !entries.length) throw bad('entries must be a non-empty array');
+    if (entries.length > 1000) throw bad('at most 1000 entries per request');
+    const today = this.today();
+    const seen = new Set();
+    for (const [i, entry] of entries.entries()) {
+      if (!isISODate(entry?.date)) throw bad(`entries[${i}].date must be YYYY-MM-DD`);
+      if (entry.date >= today) throw bad(`entries[${i}].date must be a past day`);
+      if (!Number.isInteger(entry.calories) || entry.calories < 1 || entry.calories > 5000) throw bad(`entries[${i}].calories must be an integer 1–5000`);
+      if (entry.evidence != null && (typeof entry.evidence !== 'object' || JSON.stringify(entry.evidence).length > 4000)) throw bad(`entries[${i}].evidence must be a small object`);
+      if (seen.has(entry.date)) throw bad(`entries[${i}].date ${entry.date} is repeated`);
+      seen.add(entry.date);
+    }
+    const dates = [...seen].sort();
+    const existing = await this.nutritionItems.findByDateRange(username, dates[0], dates.at(-1));
+    const already = new Set(existing.filter(isReconstructedRow).map(row => row.date));
+    const toWrite = entries.filter(entry => !already.has(entry.date));
+    const rows = toWrite.map(entry => ({
+      uuid: this.newId(), userId: username, date: entry.date, mealTime: null,
+      item: RECONSTRUCTION_ITEM_NAME, name: RECONSTRUCTION_ITEM_NAME, icon: 'default', unit: 'g', amount: null,
+      calories: entry.calories,
+      logId: RECONSTRUCTION_LOG_ID, log_uuid: RECONSTRUCTION_LOG_ID,
+      nutrientProvenance: { calories: { source: RECONSTRUCTION_LOG_ID } },
+      captureEvidence: { source: RECONSTRUCTION_LOG_ID, ...(entry.evidence || {}) },
+      settled: true, settledBy: RECONSTRUCTION_LOG_ID, settledAt: new Date(this.clock.now()).toISOString(),
+    }));
+    if (!dryRun && rows.length) await this.nutritionItems.saveMany(rows);
+    return { dryRun, written: dryRun ? 0 : rows.length, planned: rows.length, skipped: [...already].sort(),
+      totalCalories: rows.reduce((sum, row) => sum + row.calories, 0) };
+  }
+
+  /** Remove every reconstruction row (the whole backfill). */
+  async removeReconstruction(username) {
+    return { removed: await this.nutritionItems.removeByLogId(username, RECONSTRUCTION_LOG_ID) };
   }
 
   findNutritionItem(username, id) {
