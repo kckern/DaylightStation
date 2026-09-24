@@ -1,0 +1,117 @@
+// Playlist picker — an AppModal over the fitness player.
+// The shared modal layer (--app-z-modal: 200) sits under the player chrome
+// (1000–2001), so lift this one above it; FitnessFeedback (2100) stays on top.
+.app-modal-overlay:has(> .playlist-picker) {
+  z-index: 2050;
+}
+
+.app-modal.playlist-picker {
+  max-width: min(1400px, 94vw);
+  max-height: 92vh;
+
+  .app-modal__title {
+    font-size: 1.6rem;
+  }
+}
+
+.playlist-picker__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 20px;
+}
+
+.playlist-picker__tile {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  padding: 10px;
+  border-radius: 14px;
+  border: 2px solid transparent;
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.92);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
+  -webkit-tap-highlight-color: transparent;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.1);
+  }
+
+  &:active {
+    transform: scale(0.97);
+  }
+
+  &.is-selected {
+    border-color: #51cf66;
+    background: rgba(81, 207, 102, 0.14);
+
+    .playlist-picker__name {
+      color: #51cf66;
+    }
+  }
+}
+
+.playlist-picker__cover {
+  position: relative;
+  aspect-ratio: 1 / 1;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #2b2b2b;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+}
+
+.playlist-picker__placeholder {
+  font-size: 4rem;
+  line-height: 1;
+}
+
+.playlist-picker__check {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: #51cf66;
+  color: #0f0f0f;
+  font-size: 1.3rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+
+.playlist-picker__name {
+  font-size: 1.2rem;
+  font-weight: 600;
+  line-height: 1.25;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.playlist-picker__meta {
+  font-size: 0.95rem;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+// The shared close button is desktop-sized; this is a touchscreen.
+.app-modal.playlist-picker .app-modal__close {
+  width: 56px;
+  height: 56px;
+  font-size: 2rem;
+}

@@ -156,6 +156,20 @@ Track title containers measure overflow on every `currentTrack.title` / `current
 
 When the expanded panel is open, a 15-second inactivity timer (`INACTIVITY_MS`) collapses it. Every `onPointerDownCapture` inside the panel resets the timer via `scheduleCollapse`.
 
+The playlist picker is rendered **outside** the collapsible panel. Opening it cancels the timer (the panel would otherwise unmount the picker mid-choice); dismissing it without a choice restarts the timer; choosing a playlist collapses the panel.
+
+### Playlist picker
+
+`FitnessPlaylistSelector` is a shared `AppModal` (`size="xl"`, widened to `min(1400px, 94vw)`) portaled to `document.body`, so it is not confined to the sidebar's width. Every configured playlist plus a leading **No Music** tile sits on one scrollable grid (`repeat(auto-fill, minmax(200px, 1fr))`) — no paging. At the garage display's 1920×1080 all nine current entries fit in two rows.
+
+- Each tile shows the cover (falls back to a 🎵 placeholder on a missing or broken image), the name (two lines max), and `N tracks · Xh Ym` when the backend supplied `trackCount` / `durationSeconds`.
+- Tapping a tile selects and closes. Tapping the current playlist just closes (no restart). **No Music** calls `setMusicOverride(false)`.
+- Backdrop, × and Escape dismiss without changing anything.
+- The overlay is lifted to `z-index: 2050`: the shared modal layer (`--app-z-modal: 200`) sits under the player chrome (1000–2001). `FitnessFeedback` (2100) stays above it.
+- Logs `playlist-picker.open`, `.select {from, to}`, `.reselect`, `.dismiss` (component `playlist-picker`).
+
+`trackCount` and `durationSeconds` come from `ProviderFitnessContentCatalog.enrichConfiguredPlaylists`, which calls the content adapter's `getPlaylistSummary(id)` — the same single Plex metadata call that already supplied the cover (`leafCount`, `duration` in ms). A configured `thumb` is kept; the enrichment is bounded by the existing 1.5 s timeout, after which tiles simply show no counts.
+
 ### Interaction lock (BUG-04)
 
 `interactionLockRef` records a `performance.now()` timestamp at every major UI transition (expand/collapse, info tap, next). Subsequent pointer events that arrive **before** that timestamp are ignored. This guards newly-revealed UI from accidentally consuming the tap that revealed it.
@@ -201,7 +215,8 @@ A `fitness.music.stuck_loading` warning is emitted once per stuck episode (see [
 |------|------|
 | `frontend/src/modules/Player/Player.jsx` | The hidden queue-owning player |
 | `frontend/src/modules/Fitness/player/panels/TouchVolumeButtons.jsx` | The button-row volume control + `linearVolumeFromLevel` / `linearLevelFromVolume` / `snapToTouchLevel` helpers |
-| `frontend/src/modules/Fitness/player/panels/FitnessPlaylistSelector.jsx` | Modal playlist picker |
+| `frontend/src/modules/Fitness/player/panels/FitnessPlaylistSelector.jsx` | Modal playlist picker (see [Playlist picker](#playlist-picker)) |
+| `backend/src/1_adapters/fitness/ProviderFitnessContentCatalog.mjs` | Enriches `music_playlists` with cover, track count, length |
 | `frontend/src/modules/Fitness/player/panels/useStuckLoadingDetector.js` | The 15 s stuck-loading hook |
 | `frontend/src/modules/Fitness/nav/usePersistentVolume.js` | Persistent per-track/playlist volume |
 | `frontend/src/modules/Fitness/nav/VolumeProvider.jsx` | The volume store backing `usePersistentVolume` |
