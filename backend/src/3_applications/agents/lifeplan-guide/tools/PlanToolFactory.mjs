@@ -235,9 +235,14 @@ export class PlanToolFactory extends ToolFactory {
         },
         execute: async ({ userId, type, subtype, name, status, date, fromSuggestion }) => {
           try {
+            // The calendar summary is kept alongside the date so a renamed event
+            // ("Moving day" recorded as "Moved to Denver") is not suggested again.
+            const confidence = Number(fromSuggestion?.confidence);
             const signal = fromSuggestion
               ? { source: fromSuggestion.source || 'calendar', date: fromSuggestion.date ?? date ?? null,
-                detector: fromSuggestion.detector ?? null, confidence: fromSuggestion.confidence ?? null }
+                summary: fromSuggestion.name ?? null,
+                detector: fromSuggestion.detector ?? null,
+                confidence: fromSuggestion.confidence != null && Number.isFinite(confidence) ? confidence : null }
               : null;
             const created = planAuthoringService.addLifeEvent(userId, { type, subtype, name, status, date, signal });
             lifeEventSuggester?.noteConfirmed?.(userId, created);

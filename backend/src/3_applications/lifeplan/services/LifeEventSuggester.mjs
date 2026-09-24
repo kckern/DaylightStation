@@ -11,9 +11,11 @@
  *            calendar item: which life-event kind, or none.
  *
  * Modes (agents config → lifeplan_guide.life_event_signals.mode):
- *   shadow  (default) return keyword suggestions; ask the model too and log
+ *   shadow  (default) return keyword suggestions at once; ask the model detached
+ *           (the answer never waits on it) and log
  *           per-item agreement (lifeplan.life-event.shadow);
- *   decide  return the model's suggestions (confidence ≥ minConfidence);
+ *   decide  return the model's suggestions (confidence ≥ minConfidence),
+ *           chunks evaluated in parallel;
  *           keyword if any chunk fails;
  *   off     keyword only.
  *
@@ -48,6 +50,7 @@ const questionFor = (id) => choice(
 );
 
 const nameKey = (s) => String(s || '').trim().toLowerCase();
+const signalKey = (date, summary) => `${date}|${nameKey(summary)}`;
 const summaryOf = (item) => String(item.summary || item.name || '');
 
 function shiftDate(ymd, deltaDays) {
@@ -117,16 +120,28 @@ export class LifeEventSuggester {
     const startDate = shiftDate(endDate, -(span - 1));
     const range = await this.#aggregator.aggregateRange(username, startDate, endDate);
     const items = collectItems(range?.days).map((it) => ({ ...it, keyword: this.#detector.classify(it.item) }));
-    const known = new Set((this.#plans.load(username)?.life_events || []).map((e) => nameKey(e.name)).filter(Boolean));
+    const recorded = this.#plans.load(username)?.life_events || [];
+    const knownNames = new Set(recorded.map((e) => nameKey(e.name)).filter(Boolean));
+    const knownSignals = new Set(recorded.flatMap((e) => (e.signals || [])
+      .filter((sig) => sig?.date && sig?.summary)
+      .map((sig) => signalKey(sig.date, sig.summary))));
+    const isKnown = (s) => knownNames.has(nameKey(s.name)) || knownSignals.has(signalKey(s.date, s.name));
 
     let judge = 'keyword';
     let verdicts = null;
     if (this.modelActive && items.length) {
-      const asked = await this.#askModel(username, items);
-      if (asked) {
-        verdicts = asked.verdicts;
-        this.#logShadow(username, items, asked);
-        if (this.mode === 'decide') judge = 'model';
+      if (this.mode === 'shadow') {
+        // Shadow never delays the answer: the model runs detached and only logs.
+        void this.#askModel(username, items)
+          .then((asked) => asked && this.#logShadow(username, items, asked))
+          .catch(() => {});
+      } else {
+        const asked = await this.#askModel(username, items);
+        if (asked) {
+          verdicts = asked.verdicts;
+          this.#logShadow(username, items, asked);
+          judge = 'model';
+        }
       }
     }
 
@@ -136,7 +151,7 @@ export class LifeEventSuggester {
         return kind === 'none' ? [] : [toSuggestion(it.date, it.item, kind, verdicts[it.id].confidence, 'model')];
       }
       return it.keyword ? [toSuggestion(it.date, it.item, it.keyword.kind, it.keyword.confidence, 'keyword')] : [];
-    }).filter((s) => !known.has(nameKey(s.name)));
+    }).filter((s) => !isKnown(s));
 
     this.#logger?.info?.('lifeplan.life-event.suggested', {
       username, mode: this.mode, judge, items: items.length, suggestions: suggestions.length,
@@ -158,24 +173,28 @@ export class LifeEventSuggester {
     return verdict.kind;
   }
 
-  /** All chunks or nothing: any failure or missing answer returns null. */
+  /** All chunks (in parallel) or nothing: any failure or missing answer returns null. */
   async #askModel(username, items) {
     const startedAt = Date.now();
-    const verdicts = {};
-    let model = null;
     try {
-      for (let i = 0; i < items.length; i += CHUNK) {
-        const chunk = items.slice(i, i + CHUNK);
+      const chunks = [];
+      for (let i = 0; i < items.length; i += CHUNK) chunks.push(items.slice(i, i + CHUNK));
+      const results = await Promise.all(chunks.map((chunk) => {
         const state = Object.fromEntries(chunk.map((it) => [it.id, modelView(it)]));
         const questions = Object.fromEntries(chunk.map((it) => [it.id, questionFor(it.id)]));
-        const result = await this.#decision.evaluate(state, questions, { timeout: this.#timeoutMs });
+        return this.#decision.evaluate(state, questions, { timeout: this.#timeoutMs });
+      }));
+      const verdicts = {};
+      let model = null;
+      chunks.forEach((chunk, n) => {
+        const result = results[n];
         model = result?.model ?? model;
         for (const it of chunk) {
           const answer = result?.answers?.[it.id];
           if (!answer || !Object.hasOwn(LIFE_EVENT_OPTIONS, answer.choice)) throw new Error(`no answer for ${it.id}`);
           verdicts[it.id] = { kind: answer.choice, confidence: Number(answer.confidence) || 0 };
         }
-      }
+      });
       return { verdicts, model, ms: Date.now() - startedAt };
     } catch (error) {
       this.#logger?.warn?.('lifeplan.life-event.model-failed', {

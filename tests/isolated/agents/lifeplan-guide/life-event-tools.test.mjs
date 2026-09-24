@@ -41,17 +41,28 @@ describe('PlanToolFactory life-event tools', () => {
     const { deps, get } = tools();
     const tool = get('add_life_event');
     expect(tool.description).toMatch(/Only call after the user has explicitly confirmed/);
-    const suggestion = { date: '2026-09-20', source: 'calendar', detector: 'keyword', confidence: 0.8 };
+    const suggestion = { date: '2026-09-20', name: 'Moving day', source: 'calendar', detector: 'keyword', confidence: 0.8 };
     const out = await tool.execute({ userId: 'kc', type: 'location', subtype: 'relocation', name: 'Moving day',
       status: 'occurred', date: '2026-09-20', fromSuggestion: suggestion });
     expect(deps.planAuthoringService.addLifeEvent).toHaveBeenCalledWith('kc', {
       type: 'location', subtype: 'relocation', name: 'Moving day', status: 'occurred', date: '2026-09-20',
-      signal: { source: 'calendar', date: '2026-09-20', detector: 'keyword', confidence: 0.8 },
+      signal: { source: 'calendar', date: '2026-09-20', summary: 'Moving day', detector: 'keyword', confidence: 0.8 },
     });
     expect(deps.lifeEventSuggester.noteConfirmed).toHaveBeenCalledWith('kc', out.created);
   });
 
-  it('add_life_event returns an error payload when authoring rejects', async () => {
+  it('add_life_event keeps the calendar summary even when the event is renamed, and coerces confidence', async () => {
+    const { deps, get } = tools();
+    await get('add_life_event').execute({ userId: 'kc', type: 'location', name: 'Moved to Denver', status: 'occurred',
+      date: '2026-09-20', fromSuggestion: { date: '2026-09-20', name: 'Moving day', detector: 'model', confidence: '0.73' } });
+    expect(deps.planAuthoringService.addLifeEvent.mock.calls[0][1].signal)
+      .toEqual({ source: 'calendar', date: '2026-09-20', summary: 'Moving day', detector: 'model', confidence: 0.73 });
+    await get('add_life_event').execute({ userId: 'kc', type: 'location', name: 'x', status: 'occurred',
+      fromSuggestion: { date: '2026-09-20', name: 'x', confidence: 'high' } });
+    expect(deps.planAuthoringService.addLifeEvent.mock.calls[1][1].signal.confidence).toBeNull();
+  });
+
+    it('add_life_event returns an error payload when authoring rejects', async () => {
     const planAuthoringService = { addLifeEvent: vi.fn(() => { throw new Error('Unknown life event type: travel'); }) };
     const out = await tools({ planAuthoringService }).get('add_life_event')
       .execute({ userId: 'kc', type: 'travel', name: 'x', status: 'occurred' });
