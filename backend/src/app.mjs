@@ -1324,6 +1324,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     buxferAdapter: householdAdapters?.has?.('finance') ? householdAdapters.get('finance') : null,
     // AI gateway for transaction categorization
     aiGateway: householdAdapters?.has?.('ai') ? householdAdapters.get('ai') : null,
+    // Typed-decision model: Jev category judge (shadow unless the finance config promotes it)
+    decisionGateway,
     httpClient: axios,
     logger: rootLogger.child({ module: 'finance' })
   });

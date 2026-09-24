@@ -178,6 +178,10 @@ calibrated probabilities back, never text. The key lives in
 Enable it for a household with `decision: [{ provider: jev }]` in
 `integrations.yml`, then `adapters.get('decision')`; unconfigured households
 get a NoOp whose `evaluate()` throws. Jev bills input tokens only.
+Consumers today: nutrition icon choice and audit triage, the card-ladder typed
+judge (shadow), and finance transaction categorization (`TransactionCategoryJudge`,
+shadow by default; `jev.mode` in the household finance `gpt.yml`, see
+`docs/reference/finance/categorization.md`).
 
 Pricing is per 1M tokens and models four rates — `input`, `cachedInput`,
 `cacheWrite`, `output` — plus an optional `long` block for long-context rates.

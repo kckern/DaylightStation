@@ -1176,6 +1176,7 @@ export function createFeedServices(config) {
  * @param {Object} config.configService - ConfigService instance for path resolution
  * @param {Object} [config.buxferAdapter] - Buxfer adapter (from composition root)
  * @param {Object} [config.aiGateway] - AI gateway for transaction categorization
+ * @param {Object} [config.decisionGateway] - IDecisionGateway for the Jev category judge (optional)
  * @param {Object} [config.httpClient] - HTTP client for payroll sync
  * @param {Object} [config.logger] - Logger instance
  * @returns {Object} Finance services
@@ -1185,6 +1186,7 @@ export function createFinanceServices(config) {
     configService,
     buxferAdapter: preloadedBuxferAdapter,
     aiGateway,
+    decisionGateway = null,
     httpClient,
     defaultHouseholdId,
     logger = console
@@ -1213,9 +1215,13 @@ export function createFinanceServices(config) {
         aiGateway,
         transactionSource: buxferAdapter,
         financeStore,
+        decisionGateway,
         logger
       });
-      logger.info?.('finance.categorization.enabled', { validTags: categorizationConfig.validTags?.length || 0 });
+      logger.info?.('finance.categorization.enabled', {
+        validTags: categorizationConfig.validTags?.length || 0,
+        jev: !!decisionGateway && decisionGateway.isConfigured?.() !== false
+      });
     } else {
       logger.warn?.('finance.categorization.skipped', { reason: 'no_config', householdId: defaultHouseholdId });
     }
