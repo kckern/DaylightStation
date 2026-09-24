@@ -259,17 +259,53 @@ export class FitnessTreasureBox {
   }
 
   /**
-   * Phase 2: Transfer accumulator data from one entity to another.
-   * Used during grace period transfers when a brief session is merged into successor.
-   * 
-   * @param {string} fromEntityId - Source entity ID
-   * @param {string} toEntityId - Destination entity ID
-   * @returns {boolean} - True if transfer occurred
+   * Move one stint's rings from one person to another (a correction).
+   * `baseRings` is the source's total just before the stint began; everything
+   * above it was earned on the strap being relabelled. The in-flight interval
+   * (highest zone so far, last HR) belongs to whoever is wearing that strap, so
+   * it moves too — unless the destination is broadcasting on another strap.
+   * @param {string} fromUserId
+   * @param {string} toUserId
+   * @param {{ baseRings?: number }} [options]
+   * @returns {number} rings moved
    */
-  transferAccumulator(fromEntityId, toEntityId) {
-    // Strict userId mode: entities are not tracked.
-    this._log('transfer_disabled', { fromEntityId, toEntityId });
-    return false;
+  moveStint(fromUserId, toUserId, { baseRings = 0 } = {}) {
+    if (!fromUserId || !toUserId || fromUserId === toUserId) return 0;
+    const from = this.perUser.get(fromUserId);
+    if (!from) return 0;
+    const now = Date.now();
+    const base = Number.isFinite(baseRings) ? Math.max(0, baseRings) : 0;
+    const delta = Math.max(0, (from.totalRings || 0) - base);
+    let to = this.perUser.get(toUserId);
+    if (!to) {
+      to = this._createAccumulator(now);
+      to.profileId = toUserId;
+      this.perUser.set(toUserId, to);
+    }
+    to.totalRings = (to.totalRings || 0) + delta;
+    from.totalRings = (from.totalRings || 0) - delta;
+    const toBroadcasting = Number.isFinite(to._lastHRTimestamp)
+      && (now - to._lastHRTimestamp) < this.ringTimeUnitMs * 2;
+    if (!toBroadcasting) {
+      to.currentIntervalStart = from.currentIntervalStart;
+      to.highestZone = from.highestZone;
+      to.lastHR = from.lastHR;
+      to.currentColor = from.currentColor;
+      to.lastColor = from.lastColor;
+      to.lastZoneId = from.lastZoneId;
+      to._lastHRTimestamp = from._lastHRTimestamp;
+    }
+    Object.assign(from, {
+      currentIntervalStart: now,
+      highestZone: null,
+      lastHR: null,
+      currentColor: NO_ZONE_LABEL,
+      lastColor: NO_ZONE_LABEL,
+      lastZoneId: null
+    });
+    this._log('stint_moved', { fromUserId, toUserId, baseRings: base, ringsMoved: delta }, 'info');
+    this._notifyMutation();
+    return delta;
   }
 
   /**
@@ -300,20 +336,6 @@ export class FitnessTreasureBox {
   initializeEntity(entityId, startTime) {
     // Strict userId mode: do not create entity-keyed accumulators.
     this._log('entity_init_disabled', { entityId, startTime: startTime || Date.now() });
-  }
-
-  // Rename a user in the perUser map (used when guest assigned to preserve zone state)
-  // DEPRECATED: Use entity-based tracking instead
-  renameUser(oldName, newName) {
-    if (!oldName || !newName || oldName === newName) return false;
-    const acc = this.perUser.get(oldName);
-    if (!acc) return false;
-    // Copy the accumulator to the new name
-    this.perUser.set(newName, { ...acc });
-    // Remove the old entry
-    this.perUser.delete(oldName);
-    this._notifyMutation();
-    return true;
   }
 
   // Backfill highestZone from lastHR so already-on monitors immediately accrue rings

@@ -189,45 +189,67 @@ export class ActivityMonitor {
   }
 
   /**
-   * Transfer activity history from one participant to another.
-   * Used during grace period transfers to maintain a continuous line on the chart.
-   * 
-   * @param {string} fromId - Source participant ID
-   * @param {string} toId - Destination participant ID
+   * Hand every activity period at or after `startTick` from one participant to
+   * another (a stint correction). A period straddling `startTick` is split.
+   * @param {string} fromId
+   * @param {string} toId
+   * @param {number} startTick
    */
-  transferActivity(fromId, toId) {
-    if (!fromId || !toId || fromId === toId) return;
-
-    // 1. Transfer activity history
-    const fromHistory = this._activityHistory.get(fromId);
-    if (fromHistory) {
-      const toHistory = this._activityHistory.get(toId) || [];
-      // Merge and sort by startTick
-      const merged = [...toHistory, ...fromHistory].sort((a, b) => a.startTick - b.startTick);
-      this._activityHistory.set(toId, merged);
-      // Clear source history
-      this._activityHistory.delete(fromId);
+  moveStintActivity(fromId, toId, startTick) {
+    if (!fromId || !toId || fromId === toId || !Number.isFinite(startTick)) return;
+    const kept = [];
+    const moved = [];
+    for (const p of this._activityHistory.get(fromId) || []) {
+      if (p.endTick !== null && p.endTick < startTick) { kept.push(p); continue; }
+      if (p.startTick >= startTick) { moved.push(p); continue; }
+      kept.push({ ...p, endTick: startTick - 1 });
+      moved.push({ ...p, startTick });
     }
 
-    // 2. Transfer dropout events
-    const fromDropouts = this._dropoutEvents.get(fromId);
-    if (fromDropouts) {
-      const toDropouts = this._dropoutEvents.get(toId) || [];
-      const merged = [...toDropouts, ...fromDropouts].sort((a, b) => a.tick - b.tick);
+    const fromDropouts = this._dropoutEvents.get(fromId) || [];
+    const movedDropouts = fromDropouts.filter((e) => e.tick >= startTick);
+    if (movedDropouts.length) {
+      this._dropoutEvents.set(fromId, fromDropouts.filter((e) => e.tick < startTick));
+      const merged = [...(this._dropoutEvents.get(toId) || []), ...movedDropouts]
+        .sort((a, b) => a.tick - b.tick);
       this._dropoutEvents.set(toId, merged);
-      this._dropoutEvents.delete(fromId);
     }
 
-    // 3. Update participant state
+    if (moved.length) {
+      const merged = [...(this._activityHistory.get(toId) || []), ...moved]
+        .sort((a, b) => a.startTick - b.startTick);
+      this._activityHistory.set(toId, merged);
+    }
+
     const fromState = this._participants.get(fromId);
-    const toState = this._participants.get(toId);
     if (fromState) {
-      if (!toState || fromState.lastActiveTick > (toState.lastActiveTick || -1)) {
+      const toState = this._participants.get(toId);
+      if (!toState || (fromState.lastActiveTick ?? -1) > (toState.lastActiveTick ?? -1)) {
         this._participants.set(toId, {
           ...fromState,
-          participantId: toId
+          participantId: toId,
+          firstSeenTick: toState?.firstSeenTick ?? fromState.firstSeenTick
         });
       }
+    }
+
+    if (kept.length) {
+      this._activityHistory.set(fromId, kept);
+      if (fromState) {
+        this._participants.set(fromId, {
+          ...fromState,
+          status: ParticipantStatus.IDLE,
+          lastActiveTick: Math.min(fromState.lastActiveTick ?? -1, startTick - 1)
+        });
+      }
+    } else {
+      this._activityHistory.delete(fromId);
+      this._participants.delete(fromId);
+    }
+
+    if (this._previousTickActive.has(fromId)) {
+      this._previousTickActive.delete(fromId);
+      this._previousTickActive.add(toId);
     }
   }
 

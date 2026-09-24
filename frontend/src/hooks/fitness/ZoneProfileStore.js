@@ -78,6 +78,16 @@ export class ZoneProfileStore {
    * which is most of what syncFromUsers() reports as "changed".
    * @returns {number}
    */
+  /**
+   * Forget one user's zone smoothing state, so a new wearer of a relabelled
+   * strap starts clean instead of inheriting the previous wearer's hysteresis.
+   * @param {string} userId
+   */
+  resetZoneState(userId) {
+    if (userId == null) return;
+    this._hysteresis.delete(userId);
+  }
+
   getZoneConfigRevision() {
     return this._zoneConfigRevision;
   }
