@@ -1211,8 +1211,15 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
       if (setQueue) setQueue([]);
       setCurrentItem(null);
       if (typeof onSessionEndRedirect === 'function') {
+        // Same shape as the normal close: FitnessApp reads view/screenId, and a
+        // bare { to: 'home' } set currentView to undefined — a blank screen.
+        const sid = fitnessSessionInstance?.sessionId ?? null;
         try {
-          onSessionEndRedirect({ to: 'home', reason: 'close-watchdog-fired', context: ctx });
+          onSessionEndRedirect({
+            ...resolvePostEpisodeRedirect({ hasActiveSession: Boolean(sid), sessionId: sid }),
+            reason: 'close-watchdog-fired',
+            context: ctx,
+          });
         } catch (err) {
           // best effort; we're already in a recovery path
         }

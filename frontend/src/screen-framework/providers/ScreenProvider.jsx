@@ -100,11 +100,22 @@ function applyReplacements(tree, replacements) {
  * dynamic replacement at any level. Replaces ScreenSlotProvider.
  *
  * @param {Object} props.config - The layout tree object
+ * @param {Object} [props.initialReplacements] - `{ [nodeId]: subtree }` applied
+ *   from the first render, read once at mount. Lets a caller land on a screen
+ *   already showing a replacement (e.g. a session detail pane) instead of
+ *   mounting the default content and swapping it out a render later. A seeded
+ *   entry is cleared with `restore(nodeId)`.
  * @param {React.ReactNode} props.children - Child components
  */
-export function ScreenProvider({ config, children }) {
-  const [replacements, setReplacements] = useState({});
+export function ScreenProvider({ config, initialReplacements, children }) {
   const nextIdRef = useRef(1);
+  const [replacements, setReplacements] = useState(() => {
+    const seeded = {};
+    for (const [nodeId, subtree] of Object.entries(initialReplacements || {})) {
+      if (subtree) seeded[nodeId] = [{ subtree, id: nextIdRef.current++ }];
+    }
+    return seeded;
+  });
 
   // Annotate the config tree with auto-generated IDs (memoized)
   const annotatedConfig = useMemo(() => annotateIds(config), [config]);
