@@ -48,7 +48,9 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import yaml from 'js-yaml';
 import axios from 'axios';
-import { compileWordList, findWordHits, hitToMuteCue, parseSrt } from '#domains/content-filter/subtitleWords.mjs';
+import {
+  compileWordList, findWordHits, hitToMuteCue, parseSrt, spokenStemsFor,
+} from '#domains/content-filter/subtitleWords.mjs';
 import { SubtitleCueReview, carryForwardDecisions } from '#apps/content-filter/SubtitleCueReview.mjs';
 import { createLogger } from '#system/logging/logger.mjs';
 
@@ -529,22 +531,8 @@ function edlToMcf(edl) {
 // per-cue ms precision is a separate (Whisper) refinement.
 // ============================================================================
 
-// VidAngel category leaf -> spoken word stems (what the SRT/transcript contains).
-const WORD_STEMS = {
-  fuck: ['fuck', 'fuckin', 'fucking', 'fucked', 'motherfuck'],
-  shit: ['shit', 'bullshit', 'shitty'],
-  ass: ['ass', 'asshole', 'dumbass', 'jackass', 'badass'],
-  damn: ['damn', 'dammit', 'damnit', 'goddamn'],
-  hell: ['hell'],
-  bitch: ['bitch'],
-  god: ['god', 'goddamn', 'goddamnit'],
-  jesus: ['jesus'],
-  christ: ['christ'],
-  bastard: ['bastard'],
-};
-
 const leafOf = (category) => String(category || '').split('/').pop();
-const stemsFor = (category) => WORD_STEMS[leafOf(category)] || null;
+const stemsFor = spokenStemsFor;
 const textHasStem = (text, stems) => stems.some((s) => new RegExp(`\\b${s}`, 'i').test(text));
 
 /**

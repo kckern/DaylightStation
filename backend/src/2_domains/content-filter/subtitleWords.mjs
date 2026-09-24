@@ -120,3 +120,28 @@ export function lineContext(lines, index) {
     after: lines[index + 1]?.text ?? '',
   };
 }
+
+/**
+ * Category leaf -> spoken word stems (what the SRT/transcript contains), used to
+ * snap a mute cue onto its word. A stem matches as a word prefix (`\b<stem>`),
+ * so `goddam` covers goddamn, goddamned, goddammit and goddamnit.
+ */
+const SPOKEN_STEMS = Object.freeze({
+  fuck: ['fuck', 'fuckin', 'fucking', 'fucked', 'motherfuck'],
+  shit: ['shit', 'bullshit', 'shitty'],
+  ass: ['ass', 'asshole', 'dumbass', 'jackass', 'badass'],
+  damn: ['damn', 'dammit', 'damnit', 'goddamn'],
+  hell: ['hell'],
+  bitch: ['bitch'],
+  god: ['god', 'goddamn', 'goddamnit'],
+  goddamn: ['goddam'],
+  jesus: ['jesus'],
+  christ: ['christ'],
+  bastard: ['bastard'],
+  nigger: ['nigg'],
+});
+
+/** Spoken stems for a cue category (by its leaf), or null when none are known. */
+export function spokenStemsFor(category) {
+  return SPOKEN_STEMS[String(category || '').split('/').pop()] ?? null;
+}
