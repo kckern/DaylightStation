@@ -98,8 +98,10 @@ export class FitnessSuggestionService {
     const excludedShowIds = await this.#getExcludedShowIds(
       suggestionPolicy.excludedCollectionIds
     );
-    // `never_suggest_collections` (e.g. the Kids menu collection) is absolute:
-    // its shows are dropped from every strategy's cards, explicit signals included.
+    // `never_suggest_collections` (e.g. the Kids menu collection) drops its shows
+    // from every strategy's cards EXCEPT Resume. Resume is not a suggestion, it
+    // is the episode someone is partway through, and it owns the top-right slot:
+    // a kid mid-way through a Game Cycling ride must be able to pick it back up.
     const neverSuggestShowIds = await this.#getExcludedShowIds(
       suggestionPolicy.neverSuggestCollectionIds
     );
@@ -174,7 +176,7 @@ export class FitnessSuggestionService {
       for (const card of cards) {
         if (allCards.length >= maxCollect) break;
         if (card.showId && usedShowIds.has(card.showId)) continue;
-        if (card.showId && neverSuggestShowIds.size
+        if (card.type !== 'resume' && card.showId && neverSuggestShowIds.size
             && neverSuggestShowIds.has(this.#contentCatalog.canonicalize(card.showId).localId)) continue;
         allCards.push(card);
         if (card.showId) usedShowIds.add(card.showId);

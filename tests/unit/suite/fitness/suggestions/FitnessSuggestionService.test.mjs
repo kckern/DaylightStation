@@ -198,11 +198,17 @@ describe('FitnessSuggestionService', () => {
     expect(seen).toEqual(['plex:600436', 'plex:unknown-length']);
   });
 
-  test('never suggests shows in never_suggest collections, from any strategy', async () => {
-    // The Kids menu collection (387010) is its own world: no strategy, not even
-    // Resume or Favorite, may put one of its shows on the grid.
+  test('never suggests shows in never_suggest collections, except to resume them', async () => {
+    // The Kids menu collection (387010) is its own world: NextUp, Discovery,
+    // Favorite and Memorable may not put one of its shows on the grid. Resume
+    // may — it is the ride someone is partway through (Game Cycling, 603407),
+    // and it belongs in the top-right slot.
     const service = new FitnessSuggestionService({
-      strategies: [stubStrategy('resume', ['603407']), stubStrategy('favorite', ['500', '603407'])],
+      strategies: [
+        stubStrategy('resume', ['603407']),
+        stubStrategy('next_up', ['599927', '600', '700']),
+        stubStrategy('favorite', ['500', '603407', '599927']),
+      ],
       sessionService: {
         listSessionsInRange: async () => [],
         resolveHouseholdId: (h) => h || 'default',
@@ -226,6 +232,9 @@ describe('FitnessSuggestionService', () => {
 
     const { suggestions, overflow } = await service.getSuggestions({ gridSize: 8 });
 
-    expect([...suggestions, ...overflow].map(c => c.showId)).toEqual(['plex:500']);
+    const shown = [...suggestions, ...overflow];
+    expect(shown.map(c => c.showId).sort()).toEqual(['plex:500', 'plex:600', 'plex:603407', 'plex:700']);
+    expect(shown.find(c => c.showId === 'plex:603407').type).toBe('resume');
+    expect(suggestions[3]).toMatchObject({ type: 'resume', showId: 'plex:603407' });
   });
 });
