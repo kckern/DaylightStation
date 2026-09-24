@@ -62,3 +62,55 @@ export function compileWordList(doc) {
   const groups = [...new Set(Object.values(leaves).map((l) => l.group))];
   return { byForm, leaves, groups };
 }
+
+/** Speech-rate estimate: a caption's START tracks speech onset, its END does not. */
+const SECS_PER_WORD = 0.33;
+
+const normToken = (tok) => tok.toLowerCase().replace(/[^a-z]/g, '');
+
+/**
+ * Find listed words in parsed SRT lines. Word i of a line is placed at
+ * start + i*0.33s, never past the caption end; hits within ~0.5s of an
+ * earlier hit are dropped. Ids are `srt<ms>`, the same ids srt-mutes has
+ * always written, so overrides keyed on them keep working.
+ */
+export function findWordHits(lines, wordList) {
+  const hits = [];
+  const seen = new Set();
+  lines.forEach((line, lineIndex) => {
+    const cap = Number.isFinite(line.end) ? line.end : Infinity;
+    String(line.text || '').split(/\s+/).filter(Boolean).forEach((tok, i) => {
+      const token = normToken(tok);
+      const leaf = wordList.byForm.get(token);
+      if (!leaf) return;
+      const t = Math.min(line.start + i * SECS_PER_WORD, cap);
+      const key = Math.round(t * 2);
+      if (seen.has(key)) return;
+      seen.add(key);
+      const { group, severity } = wordList.leaves[leaf];
+      hits.push({
+        cueId: `srt${Math.round(t * 1000)}`, lineIndex, token, leaf, group,
+        category: `language/${group}/${leaf}`, severity,
+        in: Number(t.toFixed(2)), out: Number((t + 0.05).toFixed(2)),
+      });
+    });
+  });
+  return hits;
+}
+
+/** The local-time mute addCue for one hit (the resolver widens the point). */
+export function hitToMuteCue(hit) {
+  return {
+    id: hit.cueId, effect: 'mute', category: hit.category, channel: 'audio', severity: hit.severity,
+    in: hit.in, out: hit.out, label: hit.leaf, source: 'srt', precision: 'srt-line',
+  };
+}
+
+/** A subtitle line with its neighbours, for judging a word in context. */
+export function lineContext(lines, index) {
+  return {
+    line: lines[index]?.text ?? '',
+    before: lines[index - 1]?.text ?? '',
+    after: lines[index + 1]?.text ?? '',
+  };
+}
