@@ -1,6 +1,8 @@
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
+import stringSimilarity from 'string-similarity';
 import { HeadlineService } from '#apps/feed/services/HeadlineService.mjs';
 import { DataServiceFeedConfigRepository } from '#adapters/feed/DataServiceFeedConfigRepository.mjs';
+import { HeadlineStoryJudge } from '#apps/feed/services/HeadlineStoryJudge.mjs';
 
 describe('HeadlineService briefing', () => {
   test('clusters similar coverage and reports invalid zero-based placements', async () => {
@@ -35,5 +37,105 @@ describe('HeadlineService briefing', () => {
     expect(result.briefing[0].timeline).toHaveLength(2);
     expect(result.briefing[0].timeline.every(item => item.kind === 'report')).toBe(true);
     expect(result.configWarnings.map(warning => warning.code)).toEqual(['DUPLICATE_PLACEMENT', 'OUT_OF_RANGE']);
+  });
+});
+
+
+const PARAPHRASE_A = 'White House Restores Access for CNN, MS NOW and Politico';
+const PARAPHRASE_B = 'CNN, MS NOW and Politico reporters regain entry to White House';
+const STOP = new Set(['the', 'a', 'an', 'and', 'or', 'of', 'to', 'in', 'on', 'for', 'with', 'at', 'from']);
+const norm = t => t.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(w => w.length > 1 && !STOP.has(w)).join(' ');
+
+const fakeGateway = ({ same = 0.9, kind = 'live', confidence = 0.8, fail = false } = {}) => ({
+  isConfigured: () => true,
+  evaluate: vi.fn(async (state, questions) => {
+    if (fail) throw new Error('jev down');
+    if (questions.sameEvent) return { model: 'jev-test', answers: { sameEvent: { type: 'yesNo', probability: same } }, usage: {} };
+    return { model: 'jev-test', answers: { kind: { type: 'choice', choice: kind, confidence, probabilities: { [kind]: confidence } } }, usage: {} };
+  }),
+});
+
+function paraphraseService({ jev = null, storyJudge = null } = {}) {
+  const now = new Date().toISOString();
+  const earlier = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+  const config = {
+    headline_pages: [{
+      id: 'daily', label: 'Daily', grid: { rows: ['top'], cols: ['left', 'right'] },
+      sources: [
+        { id: 'one', label: 'One', row: 0, col: 0, url: 'https://one.example/rss' },
+        { id: 'two', label: 'Two', row: 0, col: 1, url: 'https://two.example/rss' },
+      ],
+    }],
+    headlines: jev ? { jev } : {},
+  };
+  const cached = {
+    one: { items: [{ id: 'one-a', title: PARAPHRASE_A, link: 'https://one.example/wh', timestamp: now }] },
+    two: { items: [{ id: 'two-a', title: PARAPHRASE_B, link: 'https://two.example/wh', timestamp: earlier }] },
+  };
+  const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
+  const service = new HeadlineService({
+    headlineStore: {
+      loadAllSources: async () => cached,
+      loadSource: async () => null,
+      saveSource: async () => true,
+      pruneOlderThan: async () => 0,
+    },
+    harvester: { harvest: async () => ({ items: [] }) },
+    configRepository: new DataServiceFeedConfigRepository({ dataService: { user: { read: () => config } } }),
+    storyJudge,
+    logger: log,
+  });
+  return { service, log };
+}
+
+describe('HeadlineService briefing with a story judge', () => {
+  test('the paraphrase fixture sits in the ambiguous band', () => {
+    const similarity = stringSimilarity.compareTwoStrings(norm(PARAPHRASE_A), norm(PARAPHRASE_B));
+    expect(similarity).toBeGreaterThanOrEqual(0.5);
+    expect(similarity).toBeLessThan(0.72);
+  });
+
+  test('without a judge, band pairs stay separate (legacy)', async () => {
+    const { service } = paraphraseService();
+    const { briefing } = await service.getAllHeadlines('alice', 'daily');
+    expect(briefing).toHaveLength(2);
+    expect(briefing.every(story => story.sourceCount === 1)).toBe(true);
+  });
+
+  test('traces band pairs and timeline titles without changing a shadow briefing', async () => {
+    const judge = new HeadlineStoryJudge({ decisionGateway: fakeGateway(), logger: { info() {}, warn() {} } });
+    const { service } = paraphraseService({ storyJudge: judge });
+    const trace = { pageId: 'daily', pairs: [], titles: [] };
+    const { briefing } = await service.getAllHeadlines('alice', 'daily', { trace });
+    expect(briefing).toHaveLength(2);
+    expect(trace.pairs).toHaveLength(1);
+    expect(trace.pairs[0]).toMatchObject({
+      normA: norm(PARAPHRASE_A), normB: norm(PARAPHRASE_B),
+      a: { title: PARAPHRASE_A, source: 'One' }, b: { title: PARAPHRASE_B, source: 'Two' },
+    });
+    expect(trace.titles).toEqual([]);
+  });
+
+  test('promote with cached verdicts merges the pair and relabels its timeline', async () => {
+    const judge = new HeadlineStoryJudge({ decisionGateway: fakeGateway({ kind: 'analysis' }), logger: { info() {}, warn() {} } });
+    const settings = HeadlineStoryJudge.settings({ mode: 'promote' });
+    await judge.review({ pageId: 'daily', pairs: [{ similarity: 0.67, normA: norm(PARAPHRASE_A), normB: norm(PARAPHRASE_B),
+      a: { title: PARAPHRASE_A }, b: { title: PARAPHRASE_B } }],
+    titles: [{ title: PARAPHRASE_A, legacyKind: 'report' }, { title: PARAPHRASE_B, legacyKind: 'report' }] }, settings);
+    const { service } = paraphraseService({ storyJudge: judge, jev: { mode: 'promote' } });
+    const { briefing } = await service.getAllHeadlines('alice', 'daily');
+    expect(briefing).toHaveLength(1);
+    expect(briefing[0].sourceCount).toBe(2);
+    expect(briefing[0].timeline.map(item => item.kind)).toEqual(['analysis', 'analysis']);
+  });
+
+  test('promote with an empty cache serves the legacy briefing and asks nothing', async () => {
+    const gateway = fakeGateway();
+    const judge = new HeadlineStoryJudge({ decisionGateway: gateway, logger: { info() {}, warn() {} } });
+    const { service } = paraphraseService({ storyJudge: judge, jev: { mode: 'promote' } });
+    const { briefing } = await service.getAllHeadlines('alice', 'daily');
+    expect(briefing).toHaveLength(2);
+    expect(briefing[0].timeline.every(item => item.kind === 'report')).toBe(true);
+    expect(gateway.evaluate).not.toHaveBeenCalled();
   });
 });
