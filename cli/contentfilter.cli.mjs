@@ -48,6 +48,9 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import yaml from 'js-yaml';
 import axios from 'axios';
+import { compileWordList, findWordHits, hitToMuteCue, parseSrt } from '#domains/content-filter/subtitleWords.mjs';
+import { SubtitleCueReview } from '#apps/content-filter/SubtitleCueReview.mjs';
+import { createLogger } from '#system/logging/logger.mjs';
 
 const VA_BASE = 'https://api.vidangel.com';
 
@@ -540,31 +543,6 @@ const WORD_STEMS = {
   bastard: ['bastard'],
 };
 
-const srtTimeToSec = (t) => {
-  const m = t.trim().match(/(\d{2}):(\d{2}):(\d{2})[,.](\d{3})/);
-  if (!m) return null;
-  return +m[1] * 3600 + +m[2] * 60 + +m[3] + +m[4] / 1000;
-};
-
-/** Parse an SRT string into [{ start, end, text }] (tags stripped, lowercased). */
-function parseSrt(text) {
-  const blocks = text.replace(/\r\n/g, '\n').split(/\n\s*\n/);
-  const out = [];
-  for (const b of blocks) {
-    const lines = b.split('\n').filter((l) => l.trim() !== '');
-    const tline = lines.find((l) => l.includes('-->'));
-    if (!tline) continue;
-    const [a, c] = tline.split('-->');
-    const start = srtTimeToSec(a);
-    const end = srtTimeToSec(c);
-    if (start == null) continue;
-    const body = lines.slice(lines.indexOf(tline) + 1).join(' ')
-      .replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').toLowerCase().trim();
-    out.push({ start, end, text: body });
-  }
-  return out;
-}
-
 const leafOf = (category) => String(category || '').split('/').pop();
 const stemsFor = (category) => WORD_STEMS[leafOf(category)] || null;
 const textHasStem = (text, stems) => stems.some((s) => new RegExp(`\\b${s}`, 'i').test(text));
@@ -726,7 +704,8 @@ const flags = {
 const VALUE_FLAGS = {
   '--limit': 'limit', '--out': 'out', '--section': 'section', '--delay': 'delay',
   '--content-id': 'content-id', '--method': 'method', '--samples': 'samples',
-  '--window': 'window', '--model': 'model', '--cover-window': 'cover-window'
+  '--window': 'window', '--model': 'model', '--cover-window': 'cover-window',
+  '--srt': 'srt', '--concurrency': 'concurrency', '--min-confidence': 'min-confidence',
 };
 for (const [flag, key] of Object.entries(VALUE_FLAGS)) {
   const i = args.indexOf(flag);
@@ -747,6 +726,26 @@ async function resolveTagSet(va, ref) {
   }
   const tagSet = await va.tagSet(tagSetId);
   return { movie, tagSet };
+}
+
+/** The household word list (bad-words.yml), compiled. Exits if it is missing. */
+function loadWordList() {
+  const p = path.join(filterCacheDir(), 'bad-words.yml');
+  const doc = existsSync(p) ? loadYaml(p) : null;
+  if (!doc?.words) { console.error(`No word list at ${p}`); process.exit(1); }
+  return { ...compileWordList(doc), source: doc.meta?.source ?? null };
+}
+
+/** English SRT for a Plex item, in LOCAL time, or --srt <file> when given. */
+async function loadSubtitles(rk) {
+  if (flags.srt) return { lines: parseSrt(readFileSync(flags.srt, 'utf8')), title: null };
+  const { token, host } = loadPlexConfig();
+  const meta = (await axios.get(`${host}/library/metadata/${rk}?X-Plex-Token=${token}`, { headers: { Accept: 'application/json' } })).data?.MediaContainer?.Metadata?.[0];
+  const part = meta?.Media?.[0]?.Part?.[0];
+  const srtStream = (part?.Stream || []).find((s) => s.streamType === 3 && s.codec === 'srt' && /^en/i.test(s.languageCode || s.language || ''));
+  if (!srtStream) { console.error('No English SRT on this Plex item (pass --srt <file>).'); process.exit(1); }
+  const srtRaw = (await axios.get(`${host}/library/streams/${srtStream.id}?X-Plex-Token=${token}`, { responseType: 'text' })).data;
+  return { lines: parseSrt(srtRaw), title: meta?.title ?? null };
 }
 
 async function main() {
@@ -1033,101 +1032,19 @@ async function main() {
 
   if (command === 'srt-mutes') {
     const rk = String(cmdArgs[0] || '').replace(/[^0-9]/g, '');
-    if (!rk) { console.error('Usage: contentfilter srt-mutes <plexRatingKey> [--window 1.5] [--write]'); process.exit(1); }
+    if (!rk) { console.error('Usage: contentfilter srt-mutes <plexRatingKey> [--srt file] [--write]'); process.exit(1); }
     const edlPath = path.join(filterMediaDir(), 'edl', `${rk}.edl.yml`);
+    // The EDL is not read any more, but a title with no filter is still refused.
     if (!existsSync(edlPath)) { console.error(`No EDL for ${rk}`); process.exit(1); }
-    const edl = yaml.load(readFileSync(edlPath, 'utf8'));
     const overridePath = path.join(filterCacheDir(), 'overrides', `${rk}.yml`);
     const override = existsSync(overridePath) ? (yaml.load(readFileSync(overridePath, 'utf8')) || {}) : {};
-    const off = override?.sync?.offsetSec || 0; // existing mutes are source-time; add off to compare in local time
-    // Coverage radius: how close an existing mute must be to count as covering this
-    // word. Default 1.5s — do NOT inherit the shared --window default (6s, meant for
-    // snap/calibrate), which would treat a DIFFERENT nearby swear's mute as covering
-    // this one and skip a real gap (e.g. George's "damn" 4.5s from another "damn").
-    const coverWin = args.includes('--cover-window') ? (Number(flags['cover-window']) || 1.5) : 1.5;
 
-    // EXACT whole-word forms — startsWith would false-match hello/christmas/assume
-    // (the Scunthorpe problem). Emitting mutes demands precision.
-    const BAD_WORDS = {
-      fuck: ['fuck', 'fucks', 'fuckin', 'fucking', 'fucked', 'fucker', 'motherfucker', 'motherfucking'],
-      shit: ['shit', 'shits', 'shitty', 'shithead', 'bullshit', 'shithole'],
-      ass: ['ass', 'asses', 'asshole', 'assholes', 'jackass', 'dumbass', 'badass', 'smartass'],
-      damn: ['damn', 'damned', 'damnit', 'dammit', 'goddamn', 'goddammit', 'goddamnit'],
-      hell: ['hell', 'hells'],
-      bitch: ['bitch', 'bitches', 'bitching', 'bitchy'],
-      bastard: ['bastard', 'bastards'],
-      god: ['god', 'gods'],
-      jesus: ['jesus'],
-      christ: ['christ'],
-      // Racial slurs — VidAngel tags these "other_racial" but misses some. spook
-      // is context-ambiguous (a ghost elsewhere); accepted as a rare over-mute
-      // since leaking a slur is far worse.
-      peckerwood: ['peckerwood'],
-      spook: ['spook', 'spooks'],
-      // Mild insult VidAngel tags "other_childish" (Biff's catchphrase).
-      butthead: ['butthead', 'buttheads'],
-    };
-    const STEM_GROUP = {};
-    for (const s of ['god', 'jesus', 'christ']) STEM_GROUP[s] = 'blasphemy';
-    for (const s of ['fuck', 'shit', 'ass', 'damn', 'hell', 'bitch', 'bastard']) STEM_GROUP[s] = 'profanity';
-    for (const s of ['peckerwood', 'spook']) STEM_GROUP[s] = 'other_racial';
-    STEM_GROUP.butthead = 'other_childish';
-    const FORM_TO_LEAF = {};
-    for (const [leaf, forms] of Object.entries(BAD_WORDS)) for (const f of forms) FORM_TO_LEAF[f] = leaf;
-    const matchLeaf = (tok) => FORM_TO_LEAF[tok.toLowerCase().replace(/[^a-z]/g, '')] || null;
-
-    // Existing mute cues in LOCAL time (for coverage checks).
-    const existingMutes = (edl.cues || [])
-      .filter((c) => c.type === 'mute' || c.effect === 'mute')
-      .map((c) => c.in + off);
-    const covered = (t) => existingMutes.some((m) => Math.abs(m - t) <= coverWin);
-
-    // Fetch the English SRT (LOCAL time).
-    const { token, host } = loadPlexConfig();
-    const meta = (await axios.get(`${host}/library/metadata/${rk}?X-Plex-Token=${token}`, { headers: { Accept: 'application/json' } })).data?.MediaContainer?.Metadata?.[0];
-    const part = meta?.Media?.[0]?.Part?.[0];
-    const srtStream = (part?.Stream || []).find((s) => s.streamType === 3 && s.codec === 'srt' && /^en/i.test(s.languageCode || s.language || ''));
-    if (!srtStream) { console.error('No English SRT on this Plex item.'); process.exit(1); }
-    const srtRaw = (await axios.get(`${host}/library/streams/${srtStream.id}?X-Plex-Token=${token}`, { responseType: 'text' })).data;
-    const srt = parseSrt(srtRaw);
-
-    const newCues = [];
-    const seen = new Set();
-    let found = 0;
-    for (const line of srt) {
-      const tokens = line.text.split(/\s+/).filter(Boolean);
-      tokens.forEach((tok, i) => {
-        const leaf = matchLeaf(tok);
-        if (!leaf) return;
-        found++;
-        // A subtitle line's START tracks speech onset, but its END is just when the
-        // caption clears — often long after the words. So DON'T spread words across
-        // the line span; anchor at line.start and advance at a normal speech rate,
-        // capped so we never place a word past the caption's end. The emitted cue is
-        // a point that the resolver widens — SRT end is never used as a duration.
-        const SECS_PER_WORD = 0.33;
-        const wt = Math.min(line.start + i * SECS_PER_WORD, line.end);
-        // The SRT is authoritative for WHAT is said and roughly WHEN. Emit a mute
-        // for EVERY profanity word — don't skip ones a VidAngel tag "covers", because
-        // that tag may be mis-timed/mis-snapped and land off the actual word (the
-        // clustered-"damn" leak). Overlapping mutes are harmless; a missed word is not.
-        const key = Math.round(wt * 2); // ~0.5s dedupe (avoid our own duplicates only)
-        if (seen.has(key)) return;
-        seen.add(key);
-        newCues.push({
-          id: `srt${Math.round(wt * 1000)}`,
-          effect: 'mute',
-          category: `language/${STEM_GROUP[leaf]}/${leaf}`,
-          in: Number(wt.toFixed(2)),
-          out: Number((wt + 0.05).toFixed(2)),
-          label: leaf,
-          source: 'srt',
-          precision: 'srt-line',
-        });
-      });
-    }
-
-    console.error(`SRT profanity words: ${found} | mute cues emitted (deduped): ${newCues.length} (authoritative — one per word, overlaps with VidAngel mutes are fine)`);
+    const wordList = loadWordList();
+    const { lines: srt } = await loadSubtitles(rk);
+    // The SRT is authoritative for WHAT is said and roughly WHEN. Emit a mute for
+    // EVERY listed word; overlaps with VidAngel mutes are harmless, a missed word is not.
+    const newCues = findWordHits(srt, wordList).map(hitToMuteCue);
+    console.error(`SRT listed words: mute cues emitted (deduped): ${newCues.length} (word list: ${wordList.source ?? 'bad-words.yml'})`);
     for (const c of newCues.slice(0, 12)) console.error(`  + ${c.label.padEnd(7)} @ ${c.in}s  (${c.category})`);
     if (newCues.length > 12) console.error(`  … +${newCues.length - 12} more`);
 
@@ -1142,6 +1059,42 @@ async function main() {
     } else {
       console.error('\n(dry run — pass --write to add these mutes to the override)');
     }
+    return;
+  }
+
+  if (command === 'srt-review') {
+    const rk = String(cmdArgs[0] || '').replace(/[^0-9]/g, '');
+    if (!rk) { console.error('Usage: contentfilter srt-review <plexRatingKey> [--srt file] [--out path] [--concurrency 4] [--min-confidence 0.7]'); process.exit(1); }
+    if (!process.env.DAYLIGHT_BASE_PATH) process.env.DAYLIGHT_BASE_PATH = path.dirname(resolveDataDir());
+    const { getDecisionGateway } = await import('./_bootstrap.mjs');
+    const logger = createLogger({ source: 'cli', app: 'content-filter', context: { module: 'cue-review' } });
+
+    const wordList = loadWordList();
+    const { lines, title } = await loadSubtitles(rk);
+    const hits = findWordHits(lines, wordList);
+    const decisionGateway = await getDecisionGateway({ logger: logger.child({ module: 'jev' }) });
+    if (!decisionGateway) console.error('No decision model configured: every cue will be listed unjudged.');
+
+    const review = new SubtitleCueReview({
+      decisionGateway, logger,
+      concurrency: Number(flags.concurrency) || 4,
+      minConfidence: flags['min-confidence'] != null ? Number(flags['min-confidence']) : 0.7,
+    });
+    const contentId = `plex:${rk}`;
+    const { model, items, summary } = await review.review({ contentId, title, lines, hits, groups: wordList.groups });
+
+    // The review file only. This command never writes overrides/<rk>.yml.
+    const outPath = flags.out || path.join(filterCacheDir(), 'review', `${rk}.yml`);
+    const doc = {
+      contentId, title, generatedAt: new Date().toISOString(), model,
+      wordList: wordList.source, summary,
+      // A grown-up sets `decision: keep|disable` per item; to act on a disable,
+      // add `cueOverrides: { <cueId>: { disabled: true } }` to overrides/<rk>.yml.
+      items,
+    };
+    mkdirSync(path.dirname(outPath), { recursive: true });
+    writeFileSync(outPath, yaml.dump(doc, { lineWidth: 140 }));
+    console.error(`✓ ${summary.cues} cues: ${summary.agree} agree, ${summary.review} for review (${summary.notOffensive} possibly innocent) -> ${outPath}`);
     return;
   }
 
@@ -1289,8 +1242,12 @@ Commands:
   export <slug>         Emit a normalized FilterEDL (YAML; --json for JSON)
   calibrate <ratingKey> Derive a per-file time sync (offset/scale) that aligns cues to your
                         Plex file, via SRT-snap (default) or --method whisper. --write saves it.
-  srt-mutes <ratingKey> Scan the Plex English SRT for profanity not covered by an existing
-                        mute and emit gap-filling mute cues into the override. --write saves.
+  srt-mutes <ratingKey> Scan the Plex English SRT (or --srt <file>) for every word in
+                        household bad-words.yml and emit one mute cue per word into the
+                        override. --write saves.
+  srt-review <ratingKey> Ask the decision model (Jev) how each word-list cue is used in context and
+                        write a review file for a grown-up (household/content-filter/review/<rk>.yml).
+                        Never edits cues. --srt <file>, --out, --concurrency 4, --min-confidence 0.7.
   snap <ratingKey>      Whisper-align every mute cue to its true audio word boundary (ms) and
                         write precise in/out into the override. --limit N, --model, --write.
   bulk-export           Export every mapped movie's EDL (token; resumable; --force --delay)
