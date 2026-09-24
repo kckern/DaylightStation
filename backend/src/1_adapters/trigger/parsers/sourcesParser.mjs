@@ -7,6 +7,13 @@
  * Guard mapping: guards.authenticate.secret -> auth_token;
  * guards.debounce.windowMs -> debounce_ms (carried, consumed later).
  *
+ * PER-SOURCE ISOLATION. With `onSkip`, a source that cannot be parsed (not an
+ * object, unknown modality, fails its modality's validation) is reported to
+ * `onSkip({ kind: 'source', id, code, message })` and left out; every other
+ * source still loads. Without it the parser is strict and throws, as before.
+ * The boot path passes `onSkip`: one bad entry used to throw out of the whole
+ * load and leave EVERY tag in the house unregistered.
+ *
  * Layer: ADAPTER (1_adapters/trigger/parsers).
  * @module adapters/trigger/parsers/sourcesParser
  */
@@ -28,7 +35,22 @@ function toLegacyEntry(entry) {
   return legacy;
 }
 
-export function parseSources(raw) {
+/**
+ * Run one entry's parse. Strict (no onSkip): errors propagate. Lenient: a
+ * ValidationError is reported and the entry dropped (returns undefined).
+ */
+export function isolateEntry(onSkip, kind, id, parse) {
+  if (!onSkip) return parse();
+  try {
+    return parse();
+  } catch (error) {
+    if (!(error instanceof ValidationError)) throw error;
+    onSkip({ kind, id, code: error.code || error.context?.code || null, message: error.message });
+    return undefined;
+  }
+}
+
+export function parseSources(raw, { onSkip = null } = {}) {
   if (!raw) return { nfc: { locations: {} }, state: { locations: {} }, barcode: { locations: {} } };
   if (!isPlainObject(raw)) {
     throw new ValidationError('sources.yml root must be an object', { code: 'INVALID_CONFIG_ROOT' });
@@ -36,13 +58,22 @@ export function parseSources(raw) {
   const nfcRaw = {};
   const stateRaw = {};
   const barcodeRaw = {};
+  const nfcSourceOf = {};
+  const stateSourceOf = {};
   for (const [sourceId, entry] of Object.entries(raw)) {
-    if (!isPlainObject(entry)) {
-      throw new ValidationError(`source "${sourceId}" must be an object`, { code: 'INVALID_SOURCE', field: sourceId });
-    }
+    const accepted = isolateEntry(onSkip, 'source', sourceId, () => {
+      if (!isPlainObject(entry)) {
+        throw new ValidationError(`source "${sourceId}" must be an object`, { code: 'INVALID_SOURCE', field: sourceId });
+      }
+      if (!['nfc', 'state', 'barcode'].includes(entry.modality)) {
+        throw new ValidationError(`source "${sourceId}" has unknown modality "${entry.modality}"`, { code: 'UNKNOWN_MODALITY', field: sourceId });
+      }
+      return true;
+    });
+    if (!accepted) continue;
     const location = entry.location || sourceId;
-    if (entry.modality === 'nfc') nfcRaw[location] = toLegacyEntry(entry);
-    else if (entry.modality === 'state') stateRaw[location] = toLegacyEntry(entry);
+    if (entry.modality === 'nfc') { nfcRaw[location] = toLegacyEntry(entry); nfcSourceOf[location] = sourceId; }
+    else if (entry.modality === 'state') { stateRaw[location] = toLegacyEntry(entry); stateSourceOf[location] = sourceId; }
     else if (entry.modality === 'barcode') {
       const legacy = toLegacyEntry(entry);
       barcodeRaw[location] = {
@@ -51,18 +82,22 @@ export function parseSources(raw) {
         actions: legacy.actions || ['queue', 'play', 'open'],
       };
     }
-    else throw new ValidationError(`source "${sourceId}" has unknown modality "${entry.modality}"`, { code: 'UNKNOWN_MODALITY', field: sourceId });
   }
+  // Lenient: validate each location on its own so one bad entry drops alone.
+  const perLocation = (rawMap, sourceOf, parse) => (onSkip
+    ? Object.assign({}, ...Object.entries(rawMap).map(([loc, legacy]) =>
+      isolateEntry(onSkip, 'source', sourceOf[loc] || loc, () => parse({ [loc]: legacy })) || {}))
+    : parse(rawMap));
   // parseNfcLocations strips unknown keys into `defaults`; debounce_ms lands there
   // harmlessly. Lift it back onto the location for later consumers.
-  const nfcLocations = parseNfcLocations(nfcRaw);
+  const nfcLocations = perLocation(nfcRaw, nfcSourceOf, parseNfcLocations);
   for (const loc of Object.keys(nfcLocations)) {
     if (nfcLocations[loc].defaults?.debounce_ms != null) {
       nfcLocations[loc].debounce_ms = nfcLocations[loc].defaults.debounce_ms;
       delete nfcLocations[loc].defaults.debounce_ms;
     }
   }
-  return { nfc: { locations: nfcLocations }, state: { locations: parseStateLocations(stateRaw) }, barcode: { locations: barcodeRaw } };
+  return { nfc: { locations: nfcLocations }, state: { locations: perLocation(stateRaw, stateSourceOf, parseStateLocations) }, barcode: { locations: barcodeRaw } };
 }
 
 export default parseSources;

@@ -6,6 +6,10 @@
  * (passed in as `knownReaders`). Unknown reader-id object keys throw —
  * this catches typos like `livingrm` instead of `livingroom`.
  *
+ * With `onSkip`, a bad tag (not an object, unusable uid, duplicate spelling,
+ * override naming an unknown reader) is reported and left out instead of
+ * failing every tag. Without it the parser throws, as before.
+ *
  * Layer: ADAPTER (1_adapters/trigger).
  *
  * Output shape:
@@ -21,12 +25,13 @@
 
 import { ValidationError } from '#domains/core/errors/ValidationError.mjs';
 import { canonicalizeNfcUid } from '#domains/trigger/nfcUid.mjs';
+import { isolateEntry } from './sourcesParser.mjs';
 
 function isPlainObject(v) {
   return v !== null && typeof v === 'object' && !Array.isArray(v);
 }
 
-export function parseNfcTags(raw, knownReaders) {
+export function parseNfcTags(raw, knownReaders, { onSkip = null } = {}) {
   if (!raw) return {};
   if (!isPlainObject(raw)) {
     throw new ValidationError('nfc/tags.yml root must be an object', { code: 'INVALID_CONFIG_ROOT' });
@@ -38,6 +43,11 @@ export function parseNfcTags(raw, knownReaders) {
   const out = {};
   const seen = new Map(); // canonical uid -> the raw key that claimed it first
   for (const [rawUid, entry] of Object.entries(raw)) {
+    isolateEntry(onSkip, 'tag', rawUid, () => parseTag(rawUid, entry));
+  }
+  return out;
+
+  function parseTag(rawUid, entry) {
     if (!isPlainObject(entry)) {
       throw new ValidationError(`tag "${rawUid}" must be an object`, { code: 'INVALID_TAG', field: rawUid });
     }
@@ -74,8 +84,8 @@ export function parseNfcTags(raw, knownReaders) {
       }
     }
     out[uid] = { global, overrides };
+    return true;
   }
-  return out;
 }
 
 export default parseNfcTags;
