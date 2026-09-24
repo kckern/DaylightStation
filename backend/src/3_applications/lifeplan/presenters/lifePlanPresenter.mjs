@@ -1,10 +1,16 @@
+import { Rule } from '#domains/lifeplan/entities/Rule.mjs';
+
 const pick = (value, fields) => Object.fromEntries(fields.map(field => [field, value[field]]));
 
 export const presentPurpose = value => pick(value, ['statement', 'adopted', 'last_reviewed', 'review_cadence', 'notes', 'grounded_in']);
 export const presentGoal = value => pick(value, ['id', 'name', 'state', 'quality', 'why', 'sacrifice', 'deadline', 'metrics', 'audacity', 'milestones', 'state_history', 'dependencies', 'avoids_nightmare', 'nightmare_proximity', 'retrospective', 'achieved_date', 'failed_date', 'abandoned_reason', 'paused_reason', 'resume_conditions']);
 export const presentBelief = value => pick(value, ['id', 'if', 'then', 'state', 'confidence', 'foundational', 'signals', 'evidence_history', 'evidence_quality', 'depends_on', 'state_history', 'origin']);
 export const presentValue = value => pick(value, ['id', 'name', 'rank', 'description', 'justified_by', 'conflicts_with', 'alignment', 'drift_history']);
-export const presentQuality = value => pick(value, ['id', 'name', 'description', 'principles', 'rules', 'grounded_in', 'shadow', 'shadow_state', 'last_shadow_check']);
+// Rules gain their derived effectiveness for display (QualitiesView); it is never stored.
+export const presentQuality = value => ({
+  ...pick(value, ['id', 'name', 'description', 'principles', 'rules', 'grounded_in', 'shadow', 'shadow_state', 'last_shadow_check']),
+  rules: (value.rules || []).map(rule => ({ ...rule, effectiveness: Rule.effectivenessOf(rule) })),
+});
 export const presentRule = value => pick(value, ['id', 'trigger', 'action', 'quality_id', 'state', 'times_triggered', 'times_followed', 'times_helped']);
 export const presentDependency = value => pick(value, ['type', 'blocked_goal', 'requires_goal', 'awaits_event', 'resource', 'threshold', 'current', 'status', 'reason', 'overridden']);
 export const presentLifeEvent = value => pick(value, ['id', 'type', 'subtype', 'name', 'status', 'impact_type', 'duration_type', 'expected_date', 'actual_date', 'impact', 'resolution', 'signals', 'notes']);

@@ -129,7 +129,7 @@ Each is answerable in one Telegram reply. Each answer is written into the plan a
 |------|-----|---------|------|------|--------|
 | **Morning intention** | 7:00 Telegram nudge [EXISTS] | Routine, 90 seconds with coffee | Active goals, yesterday's capture, today's calendar summary **[PARTIAL — no calendar in ceremony content yet]** | One line of intentions + energy level | Records; feeds evening comparison |
 | **Midday glance** | Self-initiated `/life/now` | "Am I on track?" (rare, optional) | Dashboard: cadence position, drift gauge, value allocation vs. declared ranks, goal progress bars, belief confidence chips [EXISTS] | Nothing — reads and closes | — |
-| **Evening capture** | ~9:00 nudge [EXISTS] | Honest, tired | This morning's intentions echoed back | "Did the intervals. Phone rule failed." | Capture recorded; failures are *data*, feeding belief evidence and rule effectiveness — never scolding |
+| **Evening capture** | ~9:00 nudge [EXISTS] | Honest, tired | This morning's intentions echoed back | "Did the intervals. Phone rule failed." | Capture recorded; failures are *data* — never scolding. **[PARTIAL]** The capture is stored as free text + mood; nothing yet turns it into rule outcomes, so rule counts stay at 0 (see the Jev life-plan signals plan, later phase) |
 | **Coach on demand** | She opens `/life/coach` [EXISTS] | Stuck, venting, or negotiating with herself | Chat with full plan/lifelog context; coach remembers prior conversations (working memory persists across threads) [EXISTS] | Talks | Coach can update goals, log feedback, propose transitions — each proposal confirmed, never silently applied |
 
 **Decision point D3 — the goal state machine surfaces in plain language.** When captures repeatedly contradict a goal ("blocked again"), the coach or Goal Detail view offers transitions: *pause it, shrink it, or let it go* (`paused` / milestone edit / `abandoned`). The nine-state machine is never shown as a diagram; it's shown as those verbs. Letting go is framed as a legitimate outcome that keeps the plan honest, not a failure. [PARTIAL — transitions exist in UI; coach-proposed transitions exist as tools; the plain-language framing is prompt work]
@@ -142,7 +142,7 @@ Each is answerable in one Telegram reply. Each answer is written into the plan a
 **Feeling:** Reflective; this is the one deliberate sit-down of the week.
 **Intent:** "Close the week. Notice what actually happened."
 
-**Sees (cycle retro flow [EXISTS]):** goal-by-goal progress, belief evidence collected this week, value drift for the cycle, rule effectiveness — each step asks for a short reaction, not an essay.
+**Sees (cycle retro flow [EXISTS]):** goal-by-goal progress, belief evidence collected this week, value drift for the cycle, rule effectiveness (derived from each rule's trigger/follow/help counts via `Rule.effectivenessOf`; `untested` until outcomes are recorded) — each step asks for a short reaction, not an essay.
 
 **The drift moment** is the emotional center of the week: declared value ranks vs. where time actually went (Spearman correlation, shown as a gauge, not a statistic). The three reactions and their affordances:
 

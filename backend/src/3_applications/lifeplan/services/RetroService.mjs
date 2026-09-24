@@ -1,3 +1,5 @@
+import { Rule } from '#domains/lifeplan/entities/Rule.mjs';
+
 export class RetroService {
   #lifePlanStore;
   #feedbackService;
@@ -38,7 +40,7 @@ export class RetroService {
     const rules = [];
     for (const q of (plan.qualities || [])) {
       for (const r of (q.rules || [])) {
-        rules.push({ trigger: r.trigger, action: r.action, effectiveness: r.effectiveness, quality: q.name });
+        rules.push({ trigger: r.trigger, action: r.action, effectiveness: Rule.effectivenessOf(r), quality: q.name });
       }
     }
 
