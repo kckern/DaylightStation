@@ -24,8 +24,12 @@ export class RetryImageDetection {
     this.#logger = deps.logger || console;
   }
 
-  async execute({ userId, conversationId, responseContext }) {
-    const state = await this.#conversationStateStore.get(conversationId);
+  async execute({ userId, conversationId, messageId = null, responseContext }) {
+    // Current: the retry lives in the failed photo's own session. Legacy: the
+    // root flow (written before sessions were used; still honoured).
+    const session = messageId ? await this.#conversationStateStore.get(conversationId, String(messageId)) : null;
+    const fromSession = session?.activeFlow === 'image_retry';
+    const state = fromSession ? session : await this.#conversationStateStore.get(conversationId);
     const flowState = state?.flowState;
 
     if (state?.activeFlow !== 'image_retry' || !flowState?.imageData?.fileId) {
@@ -42,7 +46,9 @@ export class RetryImageDetection {
     const { imageData, retryMessageId } = flowState;
 
     try {
-      await this.#conversationStateStore.clear(conversationId);
+      // Consume only this retry; clearing the root would end an open revision.
+      if (fromSession) await this.#conversationStateStore.set(conversationId, { consumedAt: new Date().toISOString() }, String(messageId));
+      else await this.#conversationStateStore.clear(conversationId);
     } catch (e) {
       this.#logger.warn?.('retryImage.clearState.failed', { conversationId, error: e.message });
       // Continue — the new LogFoodFromImage flow will overwrite state anyway
