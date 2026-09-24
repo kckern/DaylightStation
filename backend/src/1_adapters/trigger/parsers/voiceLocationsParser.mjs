@@ -12,6 +12,7 @@
  * @module adapters/trigger/parsers/voiceLocationsParser
  */
 import { ValidationError } from '#domains/core/errors/ValidationError.mjs';
+import { assertSafeKey } from './safeKey.mjs';
 import { voiceKeyword } from '#domains/trigger/services/VoiceResolver.mjs';
 
 const ROUTING_MODES = new Set(['off', 'confirm', 'route']);
@@ -43,6 +44,7 @@ export function parseVoiceLocations(raw) {
   }
   const out = {};
   for (const [locationId, loc] of Object.entries(raw)) {
+    assertSafeKey(locationId, 'voice location');
     if (!isPlainObject(loc)) {
       throw new ValidationError(`voice location "${locationId}" must be an object`, { code: 'INVALID_LOCATION', field: locationId });
     }
@@ -55,6 +57,7 @@ export function parseVoiceLocations(raw) {
     const commands = {};
     for (const [rawId, entry] of Object.entries(loc.commands)) {
       const id = voiceKeyword(rawId);
+      assertSafeKey(id, 'voice command id', locationId);
       if (!id || RESERVED_COMMAND_IDS.has(id)) {
         throw new ValidationError(`voice command "${rawId}" at "${locationId}" has a reserved or empty id`, { code: 'INVALID_COMMAND_ID', field: rawId });
       }

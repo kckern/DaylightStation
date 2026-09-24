@@ -24,6 +24,7 @@
  * @module adapters/trigger/parsers/sourcesParser
  */
 import { ValidationError } from '#domains/core/errors/ValidationError.mjs';
+import { assertSafeKey } from './safeKey.mjs';
 import { parseNfcLocations } from './nfcLocationsParser.mjs';
 import { parseStateLocations } from './stateLocationsParser.mjs';
 import { parseVoiceLocations } from './voiceLocationsParser.mjs';
@@ -74,6 +75,8 @@ export function parseSources(raw, { onSkip = null, onWarn = null } = {}) {
   const sourceAt = {};
   for (const [sourceId, entry] of Object.entries(raw)) {
     const accepted = isolateEntry(onSkip, 'source', sourceId, () => {
+      assertSafeKey(sourceId, 'source id');
+      if (isPlainObject(entry) && entry.location) assertSafeKey(entry.location, 'location', sourceId);
       if (!isPlainObject(entry)) {
         throw new ValidationError(`source "${sourceId}" must be an object`, { code: 'INVALID_SOURCE', field: sourceId });
       }

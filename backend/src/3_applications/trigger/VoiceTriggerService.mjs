@@ -48,7 +48,9 @@ export class VoiceTriggerService {
   }
 
   #locationConfig(location) {
-    return this.#config?.voice?.locations?.[location] ?? null;
+    const locations = this.#config?.voice?.locations;
+    // Own property only: "constructor" / "toString" are not voice locations.
+    return locations && Object.hasOwn(locations, location) ? locations[location] : null;
   }
 
   #guard(location, token) {
