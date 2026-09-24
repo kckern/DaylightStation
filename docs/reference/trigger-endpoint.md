@@ -2,7 +2,7 @@
 
 Generic HTTP entry point for any physical input device (NFC reader, barcode scanner, voice mic, button, door sensor, biometric reader). The reader fires a single GET; the server resolves the `(location, type, value)` tuple against a registry and dispatches a configured action.
 
-**Config layout:** Trigger configs live under `data/household/config/triggers/<modality>/`. See [`trigger/schema.md`](./trigger/schema.md) for the full schema reference.
+**Config layout:** Trigger config lives in `triggers/sources.yml` (one entry per source, keyed by source id, with `modality:`) plus `triggers/bindings/nfc/`, `responses.yml`, `endpoints.yml`. See [`trigger/schema.md`](./trigger/schema.md) for the full schema reference.
 
 ## URL Shape
 
@@ -34,6 +34,10 @@ GET /api/v1/trigger/<location>/<type>/<value>
 | 404 | `LOCATION_NOT_FOUND` | No top-level entry for `<location>` in the registry |
 | 404 | `TRIGGER_NOT_REGISTERED` | Location exists but `<value>` not in its entries |
 | 502 | `DISPATCH_FAILED` | Handler threw at runtime (HA down, target device unreachable, etc.) |
+| 200 | (`ok: true, confirm: true`) | Voice transcript matched in `confirm` mode; nothing dispatched yet |
+| 400 | `INVALID_TRANSCRIPT` | `POST …/voice` body had no transcript, or over 500 chars |
+| 404 | `VOICE_NO_MATCH` | Transcript matched no command (see `reason`) |
+| 410 | `PROPOSAL_NOT_FOUND` | `POST …/voice/confirm` with an unknown, used, or expired proposal |
 
 Successful response shape:
 
@@ -53,7 +57,9 @@ Successful response shape:
 
 ## Config Files
 
-Config is split across two files per modality under `data/household/config/triggers/`. Bootstrap is permissive: missing or malformed files log a warning and produce an empty registry — every trigger returns 404 `LOCATION_NOT_FOUND`, but the rest of the app boots normally.
+> The live tree keeps reader sources in `triggers/sources.yml` and tag bindings in `triggers/bindings/nfc/*.yml`; the per-file shapes below are what the parsers consume (see [`trigger/schema.md`](./trigger/schema.md)).
+
+Bootstrap is permissive: one bad source or tag is skipped and logged as `trigger.config.entry.skipped`; a file that cannot be read at all falls back to an empty registry, so every trigger returns 404 `LOCATION_NOT_FOUND`, but the rest of the app boots normally.
 
 **`triggers/nfc/locations.yml`** — reader locations and per-reader defaults:
 
@@ -151,6 +157,13 @@ curl "http://homeserver.local:3111/api/v1/trigger/frontdoor/nfc/04doorkey1?token
 curl "http://homeserver.local:3111/api/v1/trigger/livingroom/nfc/04a1b2c3d4?dryRun=1"
 ```
 
-## Future Modalities
+## Voice
 
-`barcode`, `voice`, etc. are reserved `type` values for when those readers come online. Each modality lives in its own subdirectory under `triggers/` (e.g. `triggers/barcode/`, `triggers/voice/`) with its own `locations.yml` and modality-specific registry file. See [`trigger/schema.md`](./trigger/schema.md) for the layout conventions.
+Voice is a live modality: `GET /api/v1/trigger/<location>/voice/<keyword>` fires a configured command by its exact id, and `POST /api/v1/trigger/<location>/voice` takes a transcript and lets the decision model pick a command (or none). Config, routing modes (`off` / `confirm` / `route`) and log events are in [`trigger/schema.md` → Voice sources](./trigger/schema.md#voice-sources).
+
+```bash
+curl -X POST "http://{env.prod_host}:{env.ports.app}/api/v1/trigger/kitchen/voice?token=…" \
+  -H 'Content-Type: application/json' -d '{"transcript":"put some jazz on"}'
+curl -X POST "http://{env.prod_host}:{env.ports.app}/api/v1/trigger/kitchen/voice/confirm?token=…" \
+  -H 'Content-Type: application/json' -d '{"proposal":"<id from the first call>"}'
+```
