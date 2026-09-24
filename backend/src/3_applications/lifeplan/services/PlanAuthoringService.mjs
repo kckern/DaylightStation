@@ -17,6 +17,13 @@ const slug = (s) =>
     .replace(/^-|-$/g, '')
     .slice(0, 48);
 
+/** A real calendar day in YYYY-MM-DD form (rejects 2026-02-30, 2026-9-20, timestamps). */
+const isCalendarDate = (s) => {
+  if (typeof s !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
+  const d = new Date(`${s}T00:00:00Z`);
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === s;
+};
+
 const serializeGoal = goal => ({ id: goal.id, name: goal.name, state: goal.state, quality: goal.quality, why: goal.why, sacrifice: goal.sacrifice, deadline: goal.deadline, metrics: goal.metrics, audacity: goal.audacity, milestones: goal.milestones, state_history: goal.state_history, dependencies: goal.dependencies, avoids_nightmare: goal.avoids_nightmare, nightmare_proximity: goal.nightmare_proximity, retrospective: goal.retrospective, achieved_date: goal.achieved_date, failed_date: goal.failed_date, abandoned_reason: goal.abandoned_reason, paused_reason: goal.paused_reason, resume_conditions: goal.resume_conditions });
 const serializeValue = value => ({ id: value.id, name: value.name, rank: value.rank, description: value.description, justified_by: value.justified_by, conflicts_with: value.conflicts_with, alignment: value.alignment, drift_history: value.drift_history });
 const serializeBelief = belief => ({ id: belief.id, if: belief.if, then: belief.then, state: belief.state, confidence: belief.confidence, foundational: belief.foundational, signals: belief.signals, evidence_history: belief.evidence_history, evidence_quality: belief.evidence_quality, depends_on: belief.depends_on, state_history: belief.state_history, origin: belief.origin });
@@ -153,6 +160,9 @@ export class PlanAuthoringService {
     if (!name) throw new Error('Life event requires a name');
     if (!LifeEventType.isValid(type)) throw new Error(`Unknown life event type: ${type}`);
     if (!['anticipated', 'occurred'].includes(status)) throw new Error(`Unsupported life event status: ${status}`);
+    if (date != null && !isCalendarDate(date)) {
+      throw new Error(`Life event date must be a real YYYY-MM-DD date, got: ${date}`);
+    }
     const plan = this.#loadOrCreate(username);
     const event = new LifeEvent({
       id: this.#uniqueId(name, plan.life_events),
