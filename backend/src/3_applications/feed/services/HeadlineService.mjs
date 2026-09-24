@@ -385,13 +385,14 @@ export class HeadlineService {
         const servedTrace = { pageId: id, pairs: [], titles: [] };
         const served = await this.getAllHeadlines(username, id, { trace: servedTrace });
         if (!served) continue;
-        const pairPass = await judge.review({ pageId: id, pairs: servedTrace.pairs, titles: [] }, settings);
+        const pass = judge.beginPass(); // one call budget and breaker for the whole page
+        const pairPass = await judge.review({ pageId: id, pairs: servedTrace.pairs, titles: [] }, settings, pass);
 
         const projectedTrace = { pageId: id, pairs: [], titles: [] };
         const projected = await this.getAllHeadlines(username, id, {
           trace: projectedTrace, judgeSettings: { ...settings, mode: 'promote' },
         });
-        const labelPass = await judge.review({ pageId: id, pairs: projectedTrace.pairs, titles: projectedTrace.titles }, settings);
+        const labelPass = await judge.review({ pageId: id, pairs: projectedTrace.pairs, titles: projectedTrace.titles }, settings, pass);
 
         this.#logger.info?.('feed.headlines.jev-review', {
           page: id,

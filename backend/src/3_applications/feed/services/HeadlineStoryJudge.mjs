@@ -26,6 +26,8 @@ export const LEGACY_MATCH = 0.72;
 export const EVENT_KINDS = ['live', 'update', 'correction', 'analysis', 'report'];
 const LEGACY_EQUIVALENT = { live: 'update', update: 'update', correction: 'correction', analysis: 'report', report: 'report' };
 const MODES = new Set(['shadow', 'promote', 'off']);
+/** Consecutive model failures after which a pass stops asking. */
+const BREAKER_FAILURES = 3;
 const DEFAULTS = Object.freeze({ mode: 'shadow', bandLow: 0.5, sameThreshold: 0.6, labelConfidence: 0.6 });
 
 const SAME_EVENT = {
@@ -59,7 +61,7 @@ export class HeadlineStoryJudge {
    * @param {Object} [deps.decisionGateway] - IDecisionGateway; absent/unconfigured = inactive
    * @param {Object} [deps.logger]
    * @param {number} [deps.timeoutMs=3000] - Per-question request timeout
-   * @param {number} [deps.maxCallsPerReview=80] - Model calls allowed per review() pass
+   * @param {number} [deps.maxCallsPerReview=80] - Model calls allowed per pass (see beginPass)
    * @param {number} [deps.cacheMax=5000] - Entries kept per cache (pairs, labels), oldest evicted first
    */
   constructor({ decisionGateway = null, logger = console, timeoutMs = 3000, maxCallsPerReview = 80, cacheMax = 5000 } = {}) {
@@ -112,26 +114,36 @@ export class HeadlineStoryJudge {
   }
 
   /**
+   * Start a pass: one call budget and one failure breaker shared by every
+   * review() call that receives it (a page's pair pass and label pass).
+   * @param {number} [budget] - Model calls allowed; defaults to maxCallsPerReview
+   */
+  beginPass(budget = this.#maxCalls) {
+    return { budget, consecutiveFailures: 0, breakerOpen: false, failedPairs: new Set() };
+  }
+
+  /**
    * Ask the model about uncached pairs and titles in a briefing trace. Never throws.
    * @param {{ pageId?: string, pairs: Object[], titles: Object[] }} trace
    * @param {ReturnType<typeof HeadlineStoryJudge.settings>} settings
+   * @param {ReturnType<HeadlineStoryJudge['beginPass']>} [pass] - Shared budget/breaker; a fresh pass by default
    */
-  async review(trace, settings) {
+  async review(trace, settings, pass = this.beginPass()) {
     const page = trace?.pageId ?? null;
     const pairs = trace?.pairs ?? [];
     const titles = trace?.titles ?? [];
     const summary = { page, mode: settings?.mode ?? null, pairs: pairs.length, titles: titles.length, evaluated: 0, cached: 0, failed: 0, skipped: 0 };
     if (!this.active(settings)) return summary;
-    let budget = this.#maxCalls;
 
     for (const pair of pairs) {
       const key = HeadlineStoryJudge.pairKey(pair.normA, pair.normB);
       if (this.#pairs.has(key)) { summary.cached++; continue; }
-      if (budget <= 0) { summary.skipped++; continue; }
-      budget--;
+      if (pass.failedPairs.has(key)) continue; // already failed earlier in this pass
+      if (!this.#spend(pass)) { summary.skipped++; continue; }
       const got = await this.#ask({ a: pair.a, b: pair.b }, SAME_EVENT, pickSame,
         'feed.headlines.jev-pair-failed', { page, a: pair.a?.title, b: pair.b?.title });
-      if (!got) { summary.failed++; continue; }
+      this.#settle(pass, !!got, page);
+      if (!got) { pass.failedPairs.add(key); summary.failed++; continue; }
       const record = { probability: got.answer.probability, model: got.model };
       this.#remember(this.#pairs, key, record);
       summary.evaluated++;
@@ -148,10 +160,10 @@ export class HeadlineStoryJudge {
       const key = HeadlineStoryJudge.labelKey(item.title);
       if (!key) continue;
       if (this.#labels.has(key)) { summary.cached++; continue; }
-      if (budget <= 0) { summary.skipped++; continue; }
-      budget--;
+      if (!this.#spend(pass)) { summary.skipped++; continue; }
       const got = await this.#ask({ title: item.title, source: item.source }, EVENT_KIND, pickKind,
         'feed.headlines.jev-label-failed', { page, title: item.title });
+      this.#settle(pass, !!got, page);
       if (!got) { summary.failed++; continue; }
       const record = { choice: got.answer.choice, confidence: Number.isFinite(got.answer.confidence) ? got.answer.confidence : 0, model: got.model };
       this.#remember(this.#labels, key, record);
@@ -165,6 +177,23 @@ export class HeadlineStoryJudge {
       });
     }
     return summary;
+  }
+
+  /** Take one call from the pass, or false when the budget is spent or the breaker is open. */
+  #spend(pass) {
+    if (pass.breakerOpen || pass.budget <= 0) return false;
+    pass.budget--;
+    return true;
+  }
+
+  /** Track consecutive failures; open the breaker (logged once) at BREAKER_FAILURES. */
+  #settle(pass, ok, page) {
+    if (ok) { pass.consecutiveFailures = 0; return; }
+    pass.consecutiveFailures++;
+    if (!pass.breakerOpen && pass.consecutiveFailures >= BREAKER_FAILURES) {
+      pass.breakerOpen = true;
+      this.#logger.warn?.('feed.headlines.jev-breaker-open', { page, failures: pass.consecutiveFailures });
+    }
   }
 
   async #ask(state, questions, pick, failEvent, context) {

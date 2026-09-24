@@ -124,4 +124,48 @@ describe('HeadlineStoryJudge', () => {
     expect(judge.cachedLabel('First headline')).toBeNull();
     expect(judge.cachedLabel('Second headline')).toMatchObject({ choice: 'live' });
   });
+
+  it('shares one call budget across the reviews of a pass', async () => {
+    const g = gateway();
+    const judge = new HeadlineStoryJudge({ decisionGateway: g, logger: logger() });
+    const pass = judge.beginPass(2);
+    expect(await judge.review(trace({ titles: [] }), SHADOW, pass)).toMatchObject({ evaluated: 1, skipped: 0 });
+    expect(await judge.review(trace({ pairs: [], titles: [title({ title: 'First headline' }), title({ title: 'Second headline' })] }), SHADOW, pass))
+      .toMatchObject({ evaluated: 1, skipped: 1 });
+    expect(g.evaluate).toHaveBeenCalledTimes(2);
+  });
+
+  it('opens the breaker after 3 consecutive failures and skips the rest of the pass', async () => {
+    const log = logger();
+    const g = gateway({ fail: true });
+    const judge = new HeadlineStoryJudge({ decisionGateway: g, logger: log });
+    const titles = ['One', 'Two', 'Three', 'Four', 'Five'].map(t => title({ title: `${t} headline` }));
+    const pass = judge.beginPass();
+    expect(await judge.review(trace({ pairs: [], titles }), SHADOW, pass)).toMatchObject({ evaluated: 0, failed: 3, skipped: 2 });
+    expect(await judge.review(trace({ pairs: [], titles: [title({ title: 'Six headline' })] }), SHADOW, pass)).toMatchObject({ failed: 0, skipped: 1 });
+    expect(g.evaluate).toHaveBeenCalledTimes(3);
+    const breakerLogs = log.warn.mock.calls.filter(([event]) => event === 'feed.headlines.jev-breaker-open');
+    expect(breakerLogs).toHaveLength(1);
+  });
+
+  it('a success resets the consecutive-failure count', async () => {
+    let n = 0;
+    const g = { isConfigured: () => true, evaluate: vi.fn(async () => {
+      n++;
+      if (n === 3) return { model: 'jev-test', answers: { kind: { type: 'choice', choice: 'report', confidence: 0.9 } } };
+      throw new Error('jev down');
+    }) };
+    const judge = new HeadlineStoryJudge({ decisionGateway: g, logger: logger() });
+    const titles = ['One', 'Two', 'Three', 'Four', 'Five'].map(t => title({ title: `${t} headline` }));
+    expect(await judge.review(trace({ pairs: [], titles }), SHADOW)).toMatchObject({ evaluated: 1, failed: 4, skipped: 0 });
+  });
+
+  it('does not re-ask a pair that already failed in the same pass', async () => {
+    const g = gateway({ fail: true });
+    const judge = new HeadlineStoryJudge({ decisionGateway: g, logger: logger() });
+    const pass = judge.beginPass();
+    expect(await judge.review(trace({ titles: [] }), SHADOW, pass)).toMatchObject({ failed: 1 });
+    expect(await judge.review(trace({ titles: [] }), SHADOW, pass)).toMatchObject({ evaluated: 0, failed: 0 });
+    expect(g.evaluate).toHaveBeenCalledTimes(1);
+  });
 });

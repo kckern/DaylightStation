@@ -236,3 +236,14 @@ describe('HeadlineService review scheduling', () => {
     expect(log.warn).toHaveBeenCalledWith('feed.headlines.jev-review-failed', expect.objectContaining({ error: 'boom' }));
   });
 });
+
+describe('HeadlineService review call budget', () => {
+  test('one budget covers both passes of a page review', async () => {
+    const gateway = fakeGateway();
+    const judge = new HeadlineStoryJudge({ decisionGateway: gateway, logger: { info() {}, warn() {} }, maxCallsPerReview: 2 });
+    const { service, log } = paraphraseService({ storyJudge: judge });
+    await service.harvestAll('alice');
+    expect(gateway.evaluate).toHaveBeenCalledTimes(2);
+    expect(log.info).toHaveBeenCalledWith('feed.headlines.jev-review', expect.objectContaining({ evaluated: 2, skipped: 1 }));
+  });
+});
