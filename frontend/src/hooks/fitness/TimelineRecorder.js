@@ -603,31 +603,22 @@ export class TimelineRecorder {
   }
 
   /**
-   * Transfer cumulative metrics from one user to another.
-   * Used during grace period transfers.
+   * Move one stint's heart beats (a correction). `baseBeats` is the source's
+   * running total just before the stint began.
    * @param {string} fromUserId
    * @param {string} toUserId
+   * @param {number} [baseBeats=0]
+   * @returns {number} beats moved
    */
-  transferCumulativeMetrics(fromUserId, toUserId) {
-    if (!fromUserId || !toUserId || fromUserId === toUserId) return;
-
-    // Transfer heart beats
-    const fromBeats = this._cumulativeBeats.get(fromUserId);
-    if (fromBeats != null) {
-      const toBeats = this._cumulativeBeats.get(toUserId) || 0;
-      this._cumulativeBeats.set(toUserId, toBeats + fromBeats);
-      this._cumulativeBeats.delete(fromUserId);
-    }
-
-    // Transfer rotations (if fromUserId was used as equipment key)
-    const fromRotations = this._cumulativeRotations.get(fromUserId);
-    if (fromRotations != null) {
-      const toRotations = this._cumulativeRotations.get(toUserId) || 0;
-      this._cumulativeRotations.set(toUserId, toRotations + fromRotations);
-      this._cumulativeRotations.delete(fromUserId);
-    }
-
-    console.log('[TimelineRecorder] Transferred cumulative metrics:', { fromUserId, toUserId });
+  moveStintBeats(fromUserId, toUserId, baseBeats = 0) {
+    if (!fromUserId || !toUserId || fromUserId === toUserId) return 0;
+    const fromTotal = this._cumulativeBeats.get(fromUserId);
+    if (!Number.isFinite(fromTotal)) return 0;
+    const base = Number.isFinite(baseBeats) ? Math.max(0, baseBeats) : 0;
+    const delta = Math.max(0, fromTotal - base);
+    this._cumulativeBeats.set(fromUserId, fromTotal - delta);
+    this._cumulativeBeats.set(toUserId, (this._cumulativeBeats.get(toUserId) || 0) + delta);
+    return delta;
   }
 
   // -------------------- Private Helpers --------------------

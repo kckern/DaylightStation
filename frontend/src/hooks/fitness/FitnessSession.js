@@ -752,7 +752,7 @@ export class FitnessSession {
     
     // 1. Transfer TreasureBox accumulator (rings, zone state)
     if (this.treasureBox) {
-      const transferred = this.treasureBox.transferAccumulator(fromEntityId, toEntityId);
+      const transferred = this.treasureBox.transferAccumulator?.(fromEntityId, toEntityId);
       if (transferred) {
         ringsTransferred = fromEntity.rings || 0;
         // Update destination entity's ring count
@@ -771,7 +771,7 @@ export class FitnessSession {
 
     // 2.1 Transfer activity history (Phase 2)
     if (this.activityMonitor) {
-      this.activityMonitor.transferActivity(fromEntityId, toEntityId);
+      this.activityMonitor.transferActivity?.(fromEntityId, toEntityId);
     }
 
     // 2.2 Transfer cumulative metrics (Phase 4)
@@ -844,7 +844,7 @@ export class FitnessSession {
     // 2. Transfer TreasureBox accumulator
     let ringsTransferred = 0;
     if (this.treasureBox) {
-      const transferred = this.treasureBox.transferAccumulator(fromUserId, toUserId);
+      const transferred = this.treasureBox.transferAccumulator?.(fromUserId, toUserId);
       if (transferred) {
         const toAcc = this.treasureBox.perUser.get(toUserId);
         ringsTransferred = toAcc?.totalRings || 0;
@@ -853,7 +853,7 @@ export class FitnessSession {
 
     // 3. Transfer activity history
     if (this.activityMonitor) {
-      this.activityMonitor.transferActivity(fromUserId, toUserId);
+      this.activityMonitor.transferActivity?.(fromUserId, toUserId);
     }
 
     // 4. Transfer cumulative metrics
