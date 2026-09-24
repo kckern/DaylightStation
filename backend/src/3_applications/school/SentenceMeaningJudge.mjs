@@ -51,10 +51,12 @@ export class SentenceMeaningJudge {
   get enabled() { return Boolean(this.#decision); }
 
   /**
-   * @param {{given: string, expected: string, language?: string|null, accuracy?: number|null}} args
+   * @param {{given: string, expected: string, language?: string|null, accuracy?: number|null,
+   *   attempt?: {learnerId?: string, corpus?: string, seq?: number}|null}} args
+   *   `attempt` identifies the row being judged; it is only logged, never sent.
    * @returns {Promise<null|{score:number, level:number, confidence:number|null, judge:string, model?:string|null, ms?:number}>}
    */
-  async judge({ given, expected, language = null, accuracy = null }) {
+  async judge({ given, expected, language = null, accuracy = null, attempt = null }) {
     if (!this.#decision) return null;
     if (accuracy === 1) return { score: 1, level: TOP, confidence: 1, judge: 'exact' };
     if (!/\p{L}/u.test(String(given ?? ''))) return { score: 0, level: 0, confidence: 1, judge: 'no-words' };
@@ -84,7 +86,9 @@ export class SentenceMeaningJudge {
         ms: Date.now() - startedAt,
       };
     } catch (error) {
-      this.#logger.warn?.('school.language.meaning-failed', { error: error.message, ms: Date.now() - startedAt });
+      this.#logger.warn?.('school.language.meaning-failed', {
+        ...(attempt ?? {}), error: error.message, ms: Date.now() - startedAt,
+      });
       return null;
     }
   }

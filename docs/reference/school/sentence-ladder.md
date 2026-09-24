@@ -507,7 +507,14 @@ distance cannot tell "today the weather is nice" from a wrong answer (it scores
 `SentenceMeaningJudge` (`3_applications/school/`) asks it one Score question —
 different meaning / partly / same meaning but one detail wrong / same meaning in
 different words / the same words — and the row gets a `meaning` field beside
-`accuracy`. An exact copy (accuracy 1) and an answer with no letters are scored
+`accuracy`. `meaning.score` is the model's probability-weighted level ÷ 4, so it
+can sit between levels; `meaning.level` is that level rounded.
+`language.meaning_judge.timeout_ms` is honoured within 100..5000 ms; anything
+else falls back to 1500 with one `school.language.meaning-judge.timeout-invalid`
+warning. Every refusal that needs no log read (guest, unknown corpus, rung or
+sentence, the physical gate, an unknown answer method) happens before the
+model call, so a refused request costs nothing; `school.language.meaning-failed`
+names the attempt (`learnerId`, `corpus`, `seq`). An exact copy (accuracy 1) and an answer with no letters are scored
 by rule without a call. The judge is awaited before the row is written
 (`submitAttempt`, which the log route uses; the synchronous `logAttempt` never
 judges), under a 1.5 s deadline; a failure, a timeout or no gateway writes the
@@ -910,8 +917,8 @@ An attempt is one row in the day's log:
   accuracy: 0.92           # text responses only; recorded, never gating
   method: typed            # text responses only; typed | spoken
   meaning:                 # interpretation only, when a meaning judge answered; never gating
-    score: 0.8             # level ÷ 4, 0..1 (same scale as accuracy)
-    level: 3               # 0 different … 4 same words
+    score: 0.742           # probability-weighted level ÷ 4, 0..1 (same scale as accuracy)
+    level: 3               # score × 4, rounded: 0 different … 4 same words
     confidence: 0.81
     judge: model           # model | exact | no-words
     model: jev-1.13.0      # judge: model only

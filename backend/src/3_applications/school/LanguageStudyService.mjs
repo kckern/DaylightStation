@@ -526,6 +526,10 @@ export class SentenceLadderService {
    * an error. The meaning is logged only once the row is stored.
    */
   async submitAttempt(args) {
+    // Everything that can refuse without reading the log runs first, so a
+    // request that was never going to be stored spends no model call. The due
+    // check (a queue rebuild from the log) stays after the judge, as accepted.
+    this.#precheckAttempt(args);
     const judged = await this.#judgeMeaning(args);
     const event = this.#logAttempt(args, judged?.meaning ?? null);
     if (judged) {
@@ -534,6 +538,28 @@ export class SentenceLadderService {
       }, args.runId ?? null);
     }
     return event;
+  }
+
+  /**
+   * The cheap refusals of `#recordAttempt`, in the same order and with the
+   * same errors: signed-in learner, known corpus/rung/sentence, the physical
+   * gate for this rung, a known answer method. No log read, no write.
+   */
+  #precheckAttempt({ userId, corpusId, seq, rung, capabilities = {}, method = null, given = null, revealed = false }) {
+    this.#requireUser(userId);
+    const corpus = this.#requireCorpus(corpusId);
+    const rungDef = rungById(rung);
+    if (!rungDef) throw new ValidationError(`unknown rung: ${rung}`, { field: 'rung', value: rung });
+    if (rung === 'recording') {
+      throw new ValidationError('recording evidence requires an audio upload', { field: 'rung' });
+    }
+    if (!corpus.index.get(Number(seq))) throw new EntityNotFoundError('sentence', `${corpusId}#${seq}`);
+    this.#assertGate(rungDef, corpus, capabilities);
+    if (rungDef.response?.modality === 'text' && revealed !== true
+      && typeof given === 'string' && given.trim() !== ''
+      && method != null && method !== 'typed' && method !== 'spoken') {
+      throw new ValidationError(`unknown answer method: ${method}`, { field: 'method', value: method });
+    }
   }
 
   async #judgeMeaning({ userId, corpusId, seq, rung, given = null, revealed = false, method = null }) {
@@ -550,7 +576,10 @@ export class SentenceLadderService {
     const typedAccuracy = accuracy(given, expected);
     let result;
     try {
-      result = await this.#meaningJudge.judge({ given: given.trim(), expected, language, accuracy: typedAccuracy });
+      result = await this.#meaningJudge.judge({
+        given: given.trim(), expected, language, accuracy: typedAccuracy,
+        attempt: { learnerId: userId, corpus: corpusId, seq: Number(seq) },
+      });
     } catch (error) {
       this.#logger.warn?.('school.language.meaning-failed', {
         learnerId: userId, corpus: corpusId, seq: Number(seq), error: error.message,
@@ -720,13 +749,19 @@ export class SentenceLadderService {
     return event;
   }
 
-  #assertOutstanding({ userId, corpus, progress, seq, rung, capabilities }) {
-    const rungDef = rungById(rung);
+  /** Refuse a rung the physical gate does not allow; returns the allowed capabilities. */
+  #assertGate(rungDef, corpus, capabilities) {
     const gate = this.#gate();
     const allowed = capabilitiesUnder(gate, capabilities);
     if (!allowsRung(gate, this.#requirementFor(rungDef, corpus), allowed)) {
       throw new GateClosedError(gateMessage(gate) || 'That is unavailable right now', gate);
     }
+    return allowed;
+  }
+
+  #assertOutstanding({ userId, corpus, progress, seq, rung, capabilities }) {
+    const rungDef = rungById(rung);
+    const allowed = this.#assertGate(rungDef, corpus, capabilities);
     const policy = this.#queuePolicy(userId, corpus, progress);
     const queue = buildDayQueue({
       log: this.#ds.readAllEvents(userId, corpus.id),
