@@ -1,6 +1,7 @@
 import {
   createNoOpMediaAdapter,
   createNoOpAIGateway,
+  createNoOpDecisionGateway,
   createNoOpHomeAutomationGateway,
   createNoOpMessagingGateway,
   createNoOpFinanceAdapter,
@@ -73,6 +74,7 @@ export class HouseholdAdapters {
     const noOps = {
       media: createNoOpMediaAdapter(),
       ai: createNoOpAIGateway(),
+      decision: createNoOpDecisionGateway(),
       home_automation: createNoOpHomeAutomationGateway(),
       messaging: createNoOpMessagingGateway(),
       finance: createNoOpFinanceAdapter(),

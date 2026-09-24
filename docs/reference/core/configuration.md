@@ -159,8 +159,8 @@ Unusable values (zero, negative, non-numeric) fall back to the defaults rather
 than producing a transport that rotates on every line. Read by
 `backend/src/0_system/logging/generalSinks.mjs`.
 
-**AI usage ledger.** Every OpenAI/Anthropic API call is recorded twice: an
-`openai.usage` / `anthropic.usage` info event in the structured log (model,
+**AI usage ledger.** Every OpenAI/Anthropic/Jev API call is recorded twice: an
+`openai.usage` / `anthropic.usage` / `jev.usage` info event in the structured log (model,
 tokens in/out, estimated `costUsd`, duration, status), and a durable JSONL row
 appended to `<dataDir>/system/history/ai-usage/YYYY-MM.jsonl` — the billing
 trail that outlives the log store's 7-day retention. Cost estimates come from
@@ -169,6 +169,15 @@ trail that outlives the log store's 7-day retention. Cost estimates come from
 on the provider's integration config. Written by
 `backend/src/1_adapters/ai/AiUsageLedger.mjs`; recording never breaks the call
 it observes.
+
+**Typed decisions (`decision` capability).** TypeSafe's Jev model sits behind
+`IDecisionGateway` (`3_applications/common/ports/`), not `IAIGateway`: callers
+send one `state` plus named `yesNo` / `choice` / `score` questions and get
+calibrated probabilities back, never text. The key lives in
+`system/auth/jev.yml` (`api_key`, read via `getSystemAuth('jev', 'api_key')`).
+Enable it for a household with `decision: [{ provider: jev }]` in
+`integrations.yml`, then `adapters.get('decision')`; unconfigured households
+get a NoOp whose `evaluate()` throws. Jev bills input tokens only.
 
 Pricing is per 1M tokens and models four rates — `input`, `cachedInput`,
 `cacheWrite`, `output` — plus an optional `long` block for long-context rates.

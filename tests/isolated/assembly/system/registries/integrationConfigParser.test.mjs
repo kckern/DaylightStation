@@ -20,6 +20,10 @@ describe('integrationConfigParser', () => {
       expect(PROVIDER_CAPABILITY_MAP.openai).toBe('ai');
     });
 
+    test('maps jev to decision', () => {
+      expect(PROVIDER_CAPABILITY_MAP.jev).toBe('decision');
+    });
+
     test('maps telegram to messaging', () => {
       expect(PROVIDER_CAPABILITY_MAP.telegram).toBe('messaging');
     });

@@ -45,6 +45,7 @@ Outbound communication with external services.
 | Purpose | Examples | Implements |
 |---------|----------|------------|
 | AI providers | `OpenAIAdapter`, `AnthropicAdapter` | `IAIGateway` |
+| Typed decisions | `JevAdapter` (TypeSafe) | `IDecisionGateway` |
 | Messaging | `TelegramMessagingAdapter`, `GmailAdapter` | `IMessagingGateway` |
 | Home automation | `HomeAssistantAdapter` | `IHomeAutomationGateway` |
 | Finance | `BuxferAdapter` | `ITransactionSource` |
@@ -157,6 +158,7 @@ Adapters import DOWN to system and domains, and SIDEWAYS to application ports on
 ├── ai/
 │   ├── OpenAIAdapter.mjs
 │   ├── AnthropicAdapter.mjs
+│   ├── JevAdapter.mjs
 │   └── index.mjs
 ├── telegram/
 │   ├── TelegramMessagingAdapter.mjs
