@@ -226,6 +226,35 @@ Both surfaces write the same record, `users/{id}/day_closed.yml`
 takes `{date, status: 'done'|'fasting'|null}`, where `null` reopens the day. It refuses a
 malformed date or a future day.
 
+## Untracked-intake reconstruction
+
+History has unlogged and partly logged days. They read as eating far less than was eaten, which skews every average, trend and coaching comparison built on the log.
+Past days can be backfilled with ONE synthetic row each:
+
+| Field | Value |
+|---|---|
+| name | `Untracked (reconstructed)` |
+| `logId` / `log_uuid` | `untracked-reconstruction` (the marker; `shared/contracts/nutrition/reconstruction.mjs`) |
+| calories | weight-derived estimate − logged |
+| macros | none. Protein is **unknown**, not zero |
+| `captureEvidence` | method and every input of that day's estimate |
+| `mealTime` | `null` (Ungrouped) |
+| `settled` | `true` |
+
+- **Daily summary:** a day's nutriday summary gains `reconstructed_calories`.
+- **Coaching** classifies such a day as `reconstructed`:
+  - its calories are trusted;
+  - its protein never enters an average (`hasKnownProtein`);
+  - the model is told there are no foods to mention.
+- **Longitudinal:** `protein` for the day is `null`.
+- **`PatternDetector`:** protein primitives skip it.
+
+`POST /api/v1/health/nutrition/reconstruction` writes a reviewed plan through the
+ledger, one row per day. It skips days already reconstructed and supports a dry run.
+`DELETE` removes the whole backfill. The plan comes from
+`cli/health-reconstruct-untracked.cli.mjs`. The procedure is in
+[the runbook](../../runbooks/health-untracked-reconstruction.md).
+
 ## Meal buckets
 
 `shared/contracts/health/mealBuckets.mjs` owns both labels and clock defaults.
