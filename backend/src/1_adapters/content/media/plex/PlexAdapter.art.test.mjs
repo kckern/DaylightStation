@@ -69,6 +69,24 @@ describe('PlexAdapter playlist art precedence', () => {
     );
   });
 
+  it('getPlaylistSummary returns the same art plus track count and length', async () => {
+    const plex = withMetadata(adapter(), { ...PLAYLIST_WITH_CUSTOM_POSTER, duration: 14605000 });
+
+    await expect(plex.getPlaylistSummary('672606')).resolves.toEqual({
+      thumb: '/api/v1/proxy/plex/library/metadata/672606/thumb/1788293999',
+      trackCount: 304,
+      durationSeconds: 14605,
+    });
+  });
+
+  it('getPlaylistSummary reports unknown counts as null and survives a Plex failure', async () => {
+    const plex = withMetadata(adapter(), { ratingKey: '1', type: 'playlist' });
+    await expect(plex.getPlaylistSummary('1')).resolves.toEqual({ thumb: null, trackCount: null, durationSeconds: null });
+
+    plex.client.getMetadata = vi.fn().mockRejectedValue(new Error('plex down'));
+    await expect(plex.getPlaylistSummary('1')).resolves.toBeNull();
+  });
+
   it('loadImgFromKey serves the custom poster as the primary thumb', async () => {
     const plex = withMetadata(adapter(), PLAYLIST_WITH_CUSTOM_POSTER);
 
