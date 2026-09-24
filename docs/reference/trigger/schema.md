@@ -199,7 +199,7 @@ kitchen-voice:
   modality: voice
   location: kitchen
   target: kitchen-display
-  guards: { authenticate: { secret: <token> } }   # optional
+  guards: { authenticate: { secret: <token> } }   # set it whenever mode is not off
   routing:
     mode: confirm            # off | confirm | route (default confirm)
     confidence_floor: 0.6    # optional, 0..1
@@ -213,16 +213,32 @@ kitchen-voice:
 - Command ids are normalized (`Play Jazz` → `play_jazz`); two ids that normalize alike, and an id
   of `none`, are boot errors. Every command needs an `action` (same actions as `state`).
 - `description` is what the decision model reads. Write it as the thing a person would ask for.
+- **Set `guards.authenticate.secret` whenever `routing.mode` is not `off`.** Without it, anyone who can
+  reach the endpoint can make the house act on free text, and every such call spends a decision-model
+  request. Boot logs `trigger.voice.unauthenticated` (warn) for each voice source in that state.
+- Two sources of the same modality at one `location` load, but the later one in the file replaces the
+  earlier; boot logs `trigger.config.location.shadowed` (warn) naming both.
 - **Modes** (transcripts only; exact keywords always dispatch):
   - `off` — exact keywords only.
   - `confirm` — a model match returns `{confirm: true, proposal: {id, command, description, confidence, expiresInMs}}`
     and dispatches nothing; `POST /trigger/<loc>/voice/confirm {"proposal": "<id>"}` within 120 s dispatches it once.
+    With `?dryRun=1` the response carries `dryRun: true` and `proposal.id: null`: nothing is stored, so it cannot be confirmed.
   - `route` — a model match at or above the floor dispatches directly. Promote from `confirm` only on the evidence in
     the log store (`trigger.voice.proposed` vs `trigger.voice.confirmed`, ≥ 30 proposals, ≥ 90 % confirmed).
-- The decision is one `choice` over the commands plus `none`, 1.5 s timeout. Below the floor, `none`, a timeout, or no
-  decision model configured → `404 VOICE_NO_MATCH` with `reason` (`low-confidence`, `none`, `decision-failed`,
-  `no-decision-model`, `model-off`). Near misses log as `trigger.voice.near_miss`.
+- The decision is one `choice` over the commands plus `none`, 1.5 s timeout. Anything short of an accepted match →
+  `404 VOICE_NO_MATCH` with a `reason`:
+  - `low-confidence` — the model picked a command below the floor (logged as `trigger.voice.near_miss`);
+  - `none` — the model answered `none`;
+  - `outside-options` — the model's answer was missing or not one of the offered ids;
+  - `decision-failed` — the model call threw or timed out;
+  - `no-decision-model` — no decision gateway is configured (no Jev key);
+  - `model-off` — the source's `routing.mode` is `off` and the transcript was not an exact keyword;
+  - `no-commands` — the location has no commands to offer (defensive; the parser rejects an empty `commands`).
 - The normal 30 s per-(location, modality, value) debounce applies: the same command twice within 30 s dispatches once.
+  Voice values are keyword-normalized before debouncing, so `GET …/voice/play%20jazz` and a transcript `"play jazz"`
+  count as the same trigger.
+- Transcripts are logged to the log store (first 200 characters, on `trigger.voice.match` and
+  `trigger.voice.near_miss`) so the floor can be tuned; treat the store as holding what people said.
 - Log events: `trigger.voice.match`, `trigger.voice.near_miss`, `trigger.voice.decision_failed`,
   `trigger.voice.no_match`, `trigger.voice.proposed`, `trigger.voice.confirmed`, `trigger.voice.confirm_missed`,
   then the usual `trigger.fired`.
