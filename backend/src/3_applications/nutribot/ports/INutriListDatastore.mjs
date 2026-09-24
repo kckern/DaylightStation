@@ -106,6 +106,16 @@ export class INutriListDatastore {
   }
 
   /**
+   * Restore every deleted (tombstoned) row of a log.
+   * @param {string} userId
+   * @param {string} logId
+   * @returns {Promise<{committed: boolean, items: Object[], affectedDates: string[]}>}
+   */
+  async restoreByLogId(userId, logId) {
+    throw new Error('INutriListDatastore.restoreByLogId must be implemented');
+  }
+
+  /**
    * Update portion by applying a multiplier
    * @param {string} userId - User identifier
    * @param {string} uuid - Item UUID

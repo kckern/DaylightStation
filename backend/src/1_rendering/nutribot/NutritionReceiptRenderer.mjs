@@ -15,7 +15,8 @@ const dateLabel = date => /^\d{4}-\d{2}-\d{2}$/.test(date || '')
  * stores, transport, clocks, inferred quantities, or lifecycle mutations. */
 export class NutritionReceiptRenderer {
   render(model, { limit = 4000 } = {}) {
-    if (model.status === 'removed') return { text: '↩️ Removed from food log', choices: [] };
+    // An Undo is one tap from being taken back: a mis-tap must not cost a meal.
+    if (model.status === 'removed') return { text: '↩️ Removed from food log', choices: [[button('↩️ Restore', 'rs', model.id)]] };
     const sections = model.sections.map(section => {
       const lines = [`${model.status === 'saved' ? '✅' : '📝'} ${dateLabel(section.date)} ${clean(section.mealTime || '')}`.trim(), ''];
       const emitted = new Set();
