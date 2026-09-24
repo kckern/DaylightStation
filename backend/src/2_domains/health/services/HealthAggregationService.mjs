@@ -131,8 +131,10 @@ export class HealthAggregator {
     const mergedWorkouts = [];
     const usedFitnessIds = new Set();
 
-    // Duration tolerance for matching (5 minutes)
+    // Duration tolerance for matching when start times are missing (5 minutes)
     const DURATION_TOLERANCE = 5;
+    // Start-time tolerance: the same activity starts within a few minutes on both services
+    const START_TOLERANCE = 10;
 
     // Process Strava activities and try to match with FitnessSyncer
     for (const s of stravaActivities) {
@@ -145,11 +147,24 @@ export class HealthAggregator {
         stravaData.heartRateTimes = stravaData.heartRateTimes.join('|');
       }
 
-      // Try to match with FitnessSyncer
-      const fitnessMatch = fitnessActivities.find((f, idx) => {
-        if (usedFitnessIds.has(idx)) return false;
+      // Match the SAME activity in FitnessSyncer. Start time decides when both
+      // sides carry one: duration alone paired an evening 35-min ride with an
+      // afternoon 38-min strength session (taking its calories), and missed a
+      // run logged as 42 min moving on Strava but 87 min elapsed on the watch
+      // (counting it twice). Duration is only the fallback without start times.
+      const sStart = clockMinutes(s.startTime);
+      let fitnessMatch = null;
+      let best = Infinity;
+      fitnessActivities.forEach((f, idx) => {
+        if (usedFitnessIds.has(idx)) return;
+        const fStart = clockMinutes(f.startTime);
+        if (sStart != null && fStart != null) {
+          const gap = Math.abs(sStart - fStart);
+          if (gap <= START_TOLERANCE && gap < best) { best = gap; fitnessMatch = f; }
+          return;
+        }
         const durationDiff = Math.abs((s.minutes || 0) - (f.minutes || 0));
-        return durationDiff < DURATION_TOLERANCE;
+        if (durationDiff < DURATION_TOLERANCE && START_TOLERANCE + durationDiff < best) { best = START_TOLERANCE + durationDiff; fitnessMatch = f; }
       });
 
       if (fitnessMatch) {
@@ -203,6 +218,17 @@ export class HealthAggregator {
     return mergedWorkouts;
   }
 
+}
+
+/** "02:45 pm" / "14:45" → minutes after midnight, or null. */
+function clockMinutes(value) {
+  const m = /^(\d{1,2}):(\d{2})\s*([ap]m)?$/i.exec(String(value ?? '').trim());
+  if (!m) return null;
+  let h = Number(m[1]) % 24;
+  const ampm = m[3]?.toLowerCase();
+  if (ampm === 'pm' && h < 12) h += 12;
+  if (ampm === 'am' && h === 12) h = 0;
+  return h * 60 + Number(m[2]);
 }
 
 export default HealthAggregator;
