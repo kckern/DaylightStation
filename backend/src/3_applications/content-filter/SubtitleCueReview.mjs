@@ -40,6 +40,9 @@ const REASONS = Object.freeze({
   lowConfidence: 'low-confidence', failed: 'model-failed', unavailable: 'model-unavailable',
 });
 
+const MAX_CONCURRENCY = 16;
+const NOOP_LOGGER = Object.freeze({ debug() {}, info() {}, warn() {}, error() {} });
+
 const round3 = (n) => (Number.isFinite(n) ? Math.round(n * 1000) / 1000 : null);
 
 export class SubtitleCueReview {
@@ -48,14 +51,14 @@ export class SubtitleCueReview {
   /**
    * @param {Object} deps
    * @param {Object} [deps.decisionGateway] - IDecisionGateway; absent or unconfigured = review everything unjudged
-   * @param {number} [deps.concurrency=4] - Max evaluations in flight
+   * @param {number} [deps.concurrency=4] - Max evaluations in flight, clamped to 1..16
    * @param {number} [deps.minConfidence=0.7] - Category confidence below this is flagged
    * @param {number} [deps.timeoutMs=5000]
    * @param {Object} [deps.logger]
    */
-  constructor({ decisionGateway = null, concurrency = 4, minConfidence = 0.7, timeoutMs = 5000, logger = console } = {}) {
+  constructor({ decisionGateway = null, concurrency = 4, minConfidence = 0.7, timeoutMs = 5000, logger = NOOP_LOGGER } = {}) {
     this.#gateway = decisionGateway?.isConfigured?.() === false ? null : decisionGateway;
-    this.#concurrency = Math.max(1, Math.floor(Number(concurrency)) || 1);
+    this.#concurrency = Math.min(MAX_CONCURRENCY, Math.max(1, Math.floor(Number(concurrency)) || 1));
     this.#minConfidence = Number.isFinite(minConfidence) ? minConfidence : 0.7;
     this.#timeoutMs = timeoutMs;
     this.#logger = logger;
@@ -77,7 +80,12 @@ export class SubtitleCueReview {
    */
   async review({ contentId = null, title = null, lines, hits, groups }) {
     const startedAt = Date.now();
-    const questions = this.#gateway ? SubtitleCueReview.questions(groups) : null;
+    if (!Array.isArray(hits) || hits.length === 0) {
+      const summary = summarize([]);
+      this.#logger.info?.('content-filter.cue-review.summary', { contentId, model: null, ms: Date.now() - startedAt, ...summary });
+      return { model: null, items: [], summary };
+    }
+    const questions = this.#gateway ? this.#questionsFor(groups, contentId) : null;
     let model = null;
     const items = await mapBounded(hits, this.#concurrency, async (hit) => {
       const { item, model: answeredBy } = await this.#reviewHit(hit, lines, questions, { contentId, title });
@@ -87,6 +95,20 @@ export class SubtitleCueReview {
     const summary = summarize(items);
     this.#logger.info?.('content-filter.cue-review.summary', { contentId, model, ms: Date.now() - startedAt, ...summary });
     return { model, items, summary };
+  }
+
+  /** The questions, or null (every item unjudged) when the groups cannot form one. */
+  #questionsFor(groups, contentId) {
+    if (!Array.isArray(groups) || groups.length === 0) {
+      this.#logger.warn?.('content-filter.cue-review.no-groups', { contentId });
+      return null;
+    }
+    try {
+      return SubtitleCueReview.questions(groups);
+    } catch (error) {
+      this.#logger.warn?.('content-filter.cue-review.questions-invalid', { contentId, error: error.message });
+      return null;
+    }
   }
 
   async #reviewHit(hit, lines, questions, { contentId, title }) {
