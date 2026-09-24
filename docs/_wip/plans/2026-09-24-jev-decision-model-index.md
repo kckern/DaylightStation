@@ -14,6 +14,21 @@ an existing decision; confirm or review wherever it adds a new capability; a Jev
 failure always means the legacy behaviour; questions live in the application layer
 and provider limits live in the adapter.
 
+## Status (2026-09-24, end of day)
+
+| Plan | State |
+|---|---|
+| Sentence Ladder meaning score | **Merged** (`5c220e26f`) |
+| Finance categorization | **Merged** (`bc16ac4d7`); Task 8 (live `gpt.yml` prompt fix) **pending a human**; replay baseline pending a Jev key |
+| Headlines clustering | **Merged** (`2b64a9f74`) |
+| Life events | **Merged** (`3174f432e`); evening captures remain a later phase |
+| Voice trigger routing | **Merged** (`8ffbbf97f`) plus prototype-key hardening across all trigger parsers |
+| Content filter cue review | Built and reviewed on `feat/jev-content-filter-cues`; **unmerged pending a decision** on moving `srt-mutes` to `bad-words.yml` (adds ~35 muted words; no currently muted form is un-muted) |
+
+Nothing reaches Jev until `system/auth/jev.yml` has an `api_key` (it is `null`). Every consumer runs its legacy path until then.
+
+Also fixed on main along the way: the life-plan retro effectiveness and `LifeEventProcessor` bugs, a stale Libby test, and stale config-boundary characterization tests.
+
 ## Build order
 
 | # | Plan | Tasks | Kind | Why this position |
