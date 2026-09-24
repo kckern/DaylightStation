@@ -108,7 +108,10 @@ export class ReconciliationProcessor {
       // resting burn already counted for those minutes — count only the net.
       const restPerMin = anchored ? (seedBmr * 1.1) / 1440 : 0;
       const exerciseCalories = mergedWorkouts.reduce((sum, w) => {
-        const minutes = Number(w.duration || w.minutes || w.strava?.minutes || w.fitness?.minutes) || 0;
+        // The calories of a merged workout can come from the watch's ELAPSED
+        // time while `duration` is Strava's MOVING time; subtract resting burn
+        // over the longer of the two so a paired run isn't over-credited.
+        const minutes = Math.max(Number(w.duration || w.minutes) || 0, Number(w.strava?.minutes) || 0, Number(w.fitness?.minutes) || 0);
         const net = (gross) => Math.round(Math.max(0, gross - restPerMin * minutes));
         if (w.calories > 0) return sum + net(w.calories);
         // Fall back to HR-based estimation
