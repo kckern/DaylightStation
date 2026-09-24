@@ -16,25 +16,31 @@ function cacheStorageKey(persistKey, key) {
   return `${CACHE_PREFIX}:${persistKey}:${key}`;
 }
 
-// A cached payload is only trusted for the exact URL it was fetched from, so a
-// source whose query changes (e.g. a new `since=` window) never shows the old shape.
-function readCache(persistKey, key, url) {
+// Changes once per build (vite.config.js defines it). A cached payload from an
+// older bundle may have an older response shape, so it is never trusted — the
+// first load after a deploy is an ordinary cold load, and it rewrites the entry.
+const DEFAULT_CACHE_VERSION = import.meta.env?.VITE_BUILD_ID || 'dev';
+
+// A cached payload is only trusted for the exact URL AND build it was written
+// by. The version lives inside the entry, not the key, so each source keeps a
+// single entry instead of one orphaned ~300 KB copy per deploy.
+function readCache(persistKey, key, url, version) {
   try {
     const raw = localStorage.getItem(cacheStorageKey(persistKey, key));
     if (!raw) return null;
     const entry = JSON.parse(raw);
-    if (!entry || entry.url !== url || entry.data === undefined) return null;
+    if (!entry || entry.url !== url || entry.version !== version || entry.data === undefined) return null;
     return entry;
   } catch {
     return null;
   }
 }
 
-function writeCache(persistKey, key, url, data) {
+function writeCache(persistKey, key, url, version, data) {
   try {
     localStorage.setItem(
       cacheStorageKey(persistKey, key),
-      JSON.stringify({ url, savedAt: Date.now(), data }),
+      JSON.stringify({ url, version, savedAt: Date.now(), data }),
     );
   } catch (err) {
     logger().warn('screendataprovider.cache-write-failed', { key, error: err?.message });
@@ -49,10 +55,12 @@ function writeCache(persistKey, key, url, data) {
  * @param {string} [props.persistKey] - Namespace for the localStorage cache.
  * @param {string[]} [props.persist] - Source keys to cache stale-while-revalidate:
  *   the last payload renders on the first frame, the fetch still runs and replaces it.
+ * @param {string} [props.cacheVersion] - Cache entries from any other version are
+ *   ignored. Defaults to the build id, so a deploy never renders an old-shape payload.
  * @param {{ current: any }} [props.actionsRef] - Receives `{ refetch }` while mounted,
  *   for callers outside this subtree (e.g. an overlay rendered beside the screen).
  */
-export function ScreenDataProvider({ sources = {}, persistKey, persist, actionsRef, children }) {
+export function ScreenDataProvider({ sources = {}, persistKey, persist, cacheVersion = DEFAULT_CACHE_VERSION, actionsRef, children }) {
   const persistSet = useMemo(
     () => new Set(persistKey && Array.isArray(persist) ? persist : []),
     // Joined so a fresh array literal each render doesn't churn the set.
@@ -63,7 +71,7 @@ export function ScreenDataProvider({ sources = {}, persistKey, persist, actionsR
     const initial = {};
     for (const key of persistSet) {
       const url = sources[key]?.source;
-      const entry = url ? readCache(persistKey, key, url) : null;
+      const entry = url ? readCache(persistKey, key, url, cacheVersion) : null;
       if (!entry) continue;
       initial[key] = entry.data;
       logger().info('screendataprovider.cache-hydrated', {
@@ -86,11 +94,11 @@ export function ScreenDataProvider({ sources = {}, persistKey, persist, actionsR
       logger().sampled('screendataprovider.fetched', {
         key, ms: Math.round(performance.now() - startedAt),
       }, { maxPerMinute: 20, aggregate: true });
-      if (persistSet.has(key)) writeCache(persistKey, key, url, data);
+      if (persistSet.has(key)) writeCache(persistKey, key, url, cacheVersion, data);
     } catch (err) {
       logger().warn('screendataprovider.fetch-failed', { key, url, error: err.message });
     }
-  }, [persistKey, persistSet]);
+  }, [persistKey, persistSet, cacheVersion]);
 
   useEffect(() => {
     const entries = Object.entries(sources);
