@@ -156,3 +156,46 @@ describe('prototype keys through the real matcher', () => {
     expect(triggerDispatchService.handleTrigger).not.toHaveBeenCalled();
   });
 });
+
+describe('dryRun in confirm mode', () => {
+  it('returns the would-be proposal marked dryRun and stores nothing', async () => {
+    const { service, triggerDispatchService, logger } = make();
+    const out = await service.handleTranscript('kitchen', 'put some jazz on', { dryRun: true });
+    expect(out).toEqual({
+      ok: true, confirm: true, dryRun: true, location: 'kitchen',
+      proposal: { id: null, command: 'play_jazz', description: 'Play jazz music', confidence: 0.8, expiresInMs: 120000 },
+    });
+    expect(logger.info).not.toHaveBeenCalledWith('trigger.voice.proposed', expect.anything());
+    // Nothing was stored: the id a real proposal would have taken is unused.
+    expect((await service.confirm('kitchen', 'p1')).code).toBe('PROPOSAL_NOT_FOUND');
+    expect(triggerDispatchService.handleTrigger).not.toHaveBeenCalled();
+  });
+});
+
+describe('voice values share one debounce key', () => {
+  it('GET "lights off" and a transcript "Lights Off" debounce as the same trigger', async () => {
+    const actuationGateway = {
+      clearDevice: vi.fn(), openDevice: vi.fn(), activateScene: vi.fn(async () => ({ ok: true })), invokeHomeAction: vi.fn(),
+      sendTransport: vi.fn(() => ({ handled: false })), sendNotification: vi.fn(),
+      disableAutomation: vi.fn(), enableAutomation: vi.fn(),
+    };
+    const broadcast = vi.fn();
+    const config = configWith(kitchen('route'));
+    const triggerDispatchService = new TriggerDispatchService({
+      config, contentIdResolver: { resolve: () => null }, wakeAndLoadService: { execute: vi.fn() },
+      actuationGateway, broadcast, logger: silent(),
+      createDispatchId: () => 'd1', scheduler: { after: () => () => {} },
+    });
+    const { VoiceCommandMatcher } = await import('./VoiceCommandMatcher.mjs');
+    const service = new VoiceTriggerService({
+      config, triggerDispatchService, logger: silent(), createProposalId: () => 'p1',
+      matcher: new VoiceCommandMatcher({ decisionGateway: null, logger: silent() }),
+    });
+
+    const first = await triggerDispatchService.handleTrigger('kitchen', 'voice', 'lights off');
+    expect(first).toMatchObject({ ok: true, value: 'lights_off' });
+    const second = await service.handleTranscript('kitchen', 'Lights Off');
+    expect(second).toMatchObject({ ok: true, debounced: true, value: 'lights_off' });
+    expect(actuationGateway.activateScene).toHaveBeenCalledTimes(1);
+  });
+});
