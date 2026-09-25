@@ -13,6 +13,7 @@ export const TRIGGER_LABELS = {
   manual: 'Run manually',
   unclassified: 'First check after update',
   unknown: 'Before tracking began',
+  answer: 'Answered a question',
 };
 export const triggerLabel = kind => TRIGGER_LABELS[kind] || kind;
 
@@ -90,13 +91,13 @@ export function formatDuration(from, to) {
 /** The enforced figure for today: the AI usage ledger (includes failed runs) when present. */
 export const spentToday = spend => (Number.isFinite(spend?.ledgerTodayUsd) ? spend.ledgerTodayUsd : spend?.today);
 
-/** One journal run row's outcome counts. Backfilled rows only have raw proposals. */
+/** One journal run row's outcome counts. Backfilled rows without recorded outcomes only have raw proposals. */
 export function runCounts(row) {
   const outcomes = row.outcomes || [];
   const count = (...statuses) => outcomes.filter(outcome => statuses.includes(outcome.status)).length;
   return {
     changed: count('applied'),
-    proposed: row.backfilled ? (row.proposals || []).length : count('proposed'),
+    proposed: row.backfilled && !Array.isArray(row.outcomes) ? (row.proposals || []).length : count('proposed'),
     rejected: count('rejected', 'skipped'),
     blocked: count('blocked'),
     asked: (row.questions || []).length,

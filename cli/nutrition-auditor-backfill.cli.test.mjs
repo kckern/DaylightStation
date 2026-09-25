@@ -3,7 +3,8 @@ import path from 'node:path';
 import { promises as fs } from 'node:fs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { estimateCostUsd } from '#adapters/ai/aiPricing.mjs';
-import { backfill, buildRows, parseArgs, runCli } from './nutrition-auditor-backfill.cli.mjs';
+import yaml from 'js-yaml';
+import { backfill, buildRows, defaultStateFile, parseArgs, runCli } from './nutrition-auditor-backfill.cli.mjs';
 
 const roots = [];
 
@@ -135,5 +136,86 @@ describe('nutrition-auditor-backfill CLI', () => {
     const t = transcript({ turnId: 't', runId: 'audit_F', startedAt: '2026-09-10T10:00:00.000Z', status: 'error', usage: null, output: null });
     const { rows } = buildRows([t]);
     expect(rows[0]).toMatchObject({ status: 'failed', costUsd: 0, summary: null, usage: { input: 0, cached: 0, output: 0 } });
+  });
+
+  it('labels answer turns with the answer trigger', () => {
+    const t = transcript({ turnId: 't', runId: 'answer_q1', startedAt: '2026-09-10T10:00:00.000Z', usage: usageB, output: '{}' });
+    expect(buildRows([t]).rows[0].trigger).toEqual(['answer']);
+  });
+
+  it('--state-file needs --user', () => {
+    expect(() => parseArgs(['--state-file', '/x.yml'])).toThrow(/--user/);
+    expect(parseArgs(['--state-file', '/x.yml', '--user', 'alice'])).toMatchObject({ 'state-file': '/x.yml' });
+  });
+
+  describe('with the cleanup state file', () => {
+    const appliedA = [{ status: 'applied', operationId: 'audit_A_0', affectedIds: ['e1'] }, { status: 'unchanged', operationId: 'audit_A_1', affectedIds: [] }];
+    const state = {
+      version: 7, settings: {}, questions: {},
+      runs: {
+        audit_A: { id: 'audit_A', status: 'completed', attempt: 2, dryRun: false, manual: true, createdAt: '2026-09-10T09:59:58.000Z',
+          completedAt: '2026-09-10T10:01:41.000Z', outcomes: appliedA, summary: 'Recorded summary.' },
+        audit_S: { id: 'audit_S', status: 'failed', attempt: 3, dryRun: true, manual: false, createdAt: '2026-09-10T11:00:00.000Z',
+          error: 'Your API key has been invalidated.', retryAt: 1, snapshot: { rows: [] } },
+        audit_Q: { id: 'audit_Q', status: 'queued', attempt: 0, createdAt: '2026-09-10T14:00:00.000Z' },
+        audit_OLDSTATE: { id: 'audit_OLDSTATE', status: 'completed', attempt: 1, createdAt: '2026-09-01T09:00:00.000Z', outcomes: [], summary: 'x' },
+      },
+    };
+    const writeState = async (file) => { await fs.mkdir(path.dirname(file), { recursive: true }); await fs.writeFile(file, yaml.dump(state)); };
+
+    it('reads the store path by default and prefers recorded outcomes', async () => {
+      const f = await fixture();
+      expect(defaultStateFile(f.dataDir, 'alice')).toBe(path.join(f.dataDir, 'users/alice/agents/nutrition-cleanup.yml'));
+      await writeState(defaultStateFile(f.dataDir, 'alice'));
+      const totals = await backfill({ mediaDir: f.mediaDir, dataDir: f.dataDir, out: () => {} });
+      expect(totals).toMatchObject({ runs: 3, written: 3, both: 1, stateOnly: 1, transcriptOnly: 1, stateRuns: 3 });
+
+      const { rows } = await readJournal(f.journalDir);
+      const a = rows.find(r => r.runId === 'audit_A');
+      expect(a).toMatchObject({ at: '2026-09-10T09:59:58.000Z', completedAt: '2026-09-10T10:01:41.000Z', status: 'completed',
+        outcomes: appliedA, summary: 'Recorded summary.', dryRun: false, manual: true, trigger: ['unknown'], backfilled: true,
+        model: 'gpt-4o', usage: { input: 3000, cached: 500, output: 300 }, questions: [{ question: 'Was it a large?', choices: ['Yes', 'No'] }] });
+      expect(a).not.toHaveProperty('proposals');
+      expect(a).not.toHaveProperty('__source');
+      expect(a.costUsd).toBeCloseTo(price(usageA1) + price(usageA2), 9);
+      expect(a.toolCalls).toHaveLength(2);
+
+      const s = rows.find(r => r.runId === 'audit_S');
+      expect(s).toMatchObject({ status: 'failed', error: 'Your API key has been invalidated.', dryRun: true, manual: false,
+        usage: null, costUsd: null, toolCalls: [], questions: [], trigger: ['unknown'], at: '2026-09-10T11:00:00.000Z', attempts: 3 });
+      expect(s).not.toHaveProperty('snapshot');
+
+      const b = rows.find(r => r.runId === 'audit_B');
+      expect(b).toMatchObject({ proposals: [] });
+      expect(b).not.toHaveProperty('outcomes');
+      expect(rows.map(r => r.runId)).not.toContain('audit_Q');
+      expect(rows.map(r => r.runId)).not.toContain('audit_OLDSTATE');
+
+      const again = await backfill({ mediaDir: f.mediaDir, dataDir: f.dataDir, out: () => {} });
+      expect(again).toMatchObject({ written: 0, skipped: 3 });
+    });
+
+    it('dry run prints the three counts and honours --state-file', async () => {
+      const f = await fixture();
+      const file = path.join(f.root, 'elsewhere/state.yml');
+      await writeState(file);
+      const lines = [];
+      const totals = await runCli(['--media-dir', f.mediaDir, '--data-dir', f.dataDir, '--user', 'alice', '--state-file', file, '--dry-run'], l => lines.push(l));
+      expect(totals).toMatchObject({ both: 1, stateOnly: 1, transcriptOnly: 1 });
+      const text = lines.join('\n');
+      expect(text).toMatch(/from state\+transcript: 1/);
+      expect(text).toMatch(/state only: +1 \(no transcript/);
+      expect(text).toMatch(/transcript only: +1/);
+      expect(text).toMatch(/audit_S .*\[state only\].*no usage/);
+      expect((await readJournal(f.journalDir)).rows).toEqual([]);
+    });
+
+    it('throws on an unreadable state file rather than dropping outcomes', async () => {
+      const f = await fixture();
+      const file = defaultStateFile(f.dataDir, 'alice');
+      await fs.mkdir(path.dirname(file), { recursive: true });
+      await fs.writeFile(file, 'runs: [unclosed');
+      await expect(backfill({ mediaDir: f.mediaDir, dataDir: f.dataDir, out: () => {} })).rejects.toThrow();
+    });
   });
 });
