@@ -528,3 +528,9 @@ The corollary bit twice in this sweep: `feat/teacher-workspace-ia` and `feature/
 | 2026-09-25 | worktree-fasting-cards | 051ad7e0e | Per-meal fasting (⊘), follow-up question card deck, plain cleanup questions |
 | 2026-09-25 | worktree-health-cache | b69a39db4 | Health load perf (IndexedDB SWR cache, dedupe, route split, shared tokens/fonts), follow-ups header bell, piano attempt-parse stall fix |
 | 2026-09-25 | worktree-mastra-upgrade | 05150667d | Mastra core 1.71.0, memory 1.32.1, libsql 1.23.3 |
+| 2026-09-25 | feat/adaptive-playback | d3d803e04 | Adaptive playback (merged; worktree removed) |
+| 2026-09-25 | homeserver-main | 73321703c | Local copy of homeserver main (merged) |
+| 2026-09-25 | wip/school-kiosk-layout-stash | 99e8a131f | School kiosk layout WIP recovered from stash 2026-08-24; superseded by later board rework (discarded) |
+| 2026-09-25 | feature/charades-real-history-static | a8fbf1584 | Charades real history + static decoder; superseded, main already holds equivalent content (merge taking main side = no diff) |
+| 2026-09-25 | feat/jev-content-filter-cues | f21b39b03 | Jev review queue for subtitle word-list cues (merged) |
+| 2026-09-25 | feat/arcade-session-overlay | b5b6b1408 | Unified arcade session overlay (merged, resolved onto ArcadeGameSession rename) |
