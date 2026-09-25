@@ -30,6 +30,34 @@ export const PERMISSION_LABELS = {
 };
 export const permissionLabel = kind => PERMISSION_LABELS[kind] || kind;
 
+/** One-line description of what each permission lets the auditor do. */
+export const PERMISSION_DESCRIPTIONS = {
+  naming: 'Rename foods',
+  identification: 'Match foods to known products',
+  mealPlacement: 'Move food between meals/days',
+  grouping: 'Group foods into meals',
+  artwork: 'Choose icons and photos',
+  portion: 'Change amounts and weights',
+  nutrients: 'Change nutrient values',
+  estimates: 'Estimate missing values',
+  completeCaptures: 'Finish stranded captures',
+  questions: 'Ask you questions',
+};
+
+/** Triggers a person can switch off ('manual', 'unclassified', 'unknown' are journal-only). */
+export const SWITCHABLE_TRIGGERS = ['captures', 'reviews', 'stabilization', 'scaleReconcile', 'artwork', 'dayRollover', 'edits', 'dailySweep'];
+
+export const AUDITOR_MODELS = ['gpt-4o', 'gpt-4.1', 'gpt-4.1-mini', 'gpt-5.6-luna'];
+
+/**
+ * The server's own message from a DaylightAPI error ("HTTP 400: Bad Request -
+ * {"error":"Invalid daily cap"}"), or the error message when there is none.
+ */
+export function serverMessage(error) {
+  const body = /^HTTP \d+: [^-]* - (.*)$/s.exec(error?.message || '')?.[1];
+  try { return JSON.parse(body).error || error.message; } catch { return body || error?.message || 'Something went wrong'; }
+}
+
 export const SUPPRESSED_REASONS = {
   'questions-off': 'Questions are switched off',
   blocked: "Every answer needed a change it isn't allowed to make",
