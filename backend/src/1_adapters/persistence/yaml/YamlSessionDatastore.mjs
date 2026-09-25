@@ -40,7 +40,8 @@ const INDEX_DIR_NAME = '_index';
 // v4: primary-media selection became longest-wins (near-tie recency tiebreak),
 //     so every cached list summary's title had to be re-derived.
 // v5: media.primary carries the episode's description (Health's exercise rows).
-const INDEX_VERSION = 5;
+// v6: each participant carries hrAvg (Health credits home sessions from it).
+const INDEX_VERSION = 6;
 
 /**
  * Derive session date from sessionId
@@ -436,6 +437,9 @@ export class YamlSessionDatastore extends ISessionDatastore {
           // clears it (cli/rings-migration.mjs). `?? null` distinguishes "no
           // ring data recorded" from a real zero.
           rings: p?.rings ?? p?.coins ?? null,
+          // Average heart rate over the session — what the Health budget needs
+          // to credit a workout Strava has not caught up with yet.
+          hrAvg: Number.isFinite(Number(p?.hr_avg)) && Number(p.hr_avg) > 0 ? Number(p.hr_avg) : null,
         };
       }
 

@@ -10,6 +10,7 @@ import { zoneFor, statusForZone } from '#shared/contracts/health/budgetZone.mjs'
 import { closureStatus, fastedMealsOf } from '#apps/coaching/dayCompleteness.mjs';
 import { isISODate } from '#shared/contracts/health/isoDate.mjs';
 import { isCountedRow } from '#shared/contracts/nutrition/countedRows.mjs';
+import { mergeHomeSessions } from './homeWorkouts.mjs';
 
 const STALE_WEIGHT_DAYS = 7;
 
@@ -126,13 +127,17 @@ const flattenGroup = (group) => {
 // whenever any workout was logged for the date; `fitness` is a plainer rollup that
 // exists even on watchless days, so it's the fallback for when `activity` is empty.
 // Pick ONE source — never both.
-const flattenWorkoutSessions = (workouts) => {
+//
+// `home` is the third input: home Fitness-app sessions the user was in. They
+// fill in only what the chosen ledger source does not already cover (see
+// homeWorkouts.mjs), so a workout Strava has not caught up with still counts.
+const flattenWorkoutSessions = (workouts, body) => {
   if (!workouts || typeof workouts !== 'object' || Array.isArray(workouts)) {
     return flattenGroup(workouts);
   }
   const activity = flattenGroup(workouts.activity);
-  if (activity.length > 0) return activity;
-  return flattenGroup(workouts.fitness);
+  const ledger = activity.length > 0 ? activity : flattenGroup(workouts.fitness);
+  return mergeHomeSessions(ledger, workouts.home, body);
 };
 
 // Tolerant calorie summer: count numeric `calories` (fallback `total_calories`)
@@ -249,7 +254,11 @@ export class BudgetService {
       budgetFloor: floor,
       deficit,
     });
-    return { maintenance, deficit, deficitSource, range: { floor, top: budget }, stale: daysOld > STALE_WEIGHT_DAYS };
+    return {
+      maintenance, deficit, deficitSource, range: { floor, top: budget }, stale: daysOld > STALE_WEIGHT_DAYS,
+      // The body a home-session calorie estimate needs; not part of the day contract.
+      body: { weightLbs, ageYears, sex: goals.sex },
+    };
   }
 
   // Day closures (done / fasting). A read failure is logged and treated as "not
@@ -338,7 +347,7 @@ export class BudgetService {
       this.#healthStore.getWorkoutsForDate(userId, date),
       this.#loadClosures(userId),
     ]);
-    const sessions = flattenWorkoutSessions(workouts);
+    const sessions = flattenWorkoutSessions(workouts, energy.body);
     const exercise = Math.round(sumExerciseCalories(sessions));
 
     return {
@@ -397,7 +406,7 @@ export class BudgetService {
         throw err;
       }
       const { food, macros, loggedEntries, loggingStatus, goalBasis } = this.#foldItems(itemsByDate.get(date) || []);
-      const exercise = Math.round(sumExerciseCalories(flattenWorkoutSessions(workoutsByDate[date])));
+      const exercise = Math.round(sumExerciseCalories(flattenWorkoutSessions(workoutsByDate[date], energy.body)));
       return {
         ...this.#dayContract({ date, energy, food, exercise, closure: closures[date] }),
         macros, loggedEntries, loggingStatus, goalBasis,

@@ -40,6 +40,15 @@ describe('exercise enrichment', () => {
     expect(screen.getByText('Sonic and an all-star Sega cast race.')).toHaveClass('health-exercise__description');
   });
 
+  it('marks a heart-rate estimate (home session not on Strava yet) as estimated', async () => {
+    api.mockResolvedValue({ sessions: [{ sessionId: 'home-1' }] });
+    show([{ id: 'home-home-1', source: 'home', estimated: true, homeSessionId: 'home-1', title: 'Game Cycling', calories: 179, minutes: 20.55 }]);
+    const kcal = document.querySelector('.health-exercise .health-row__kcal');
+    expect(kcal).toHaveTextContent('+~179 kcal est.');
+    expect(kcal).toHaveAttribute('title', 'Estimated from heart rate; not on Strava yet');
+    expect(await screen.findByRole('link', { name: 'View fitness session: Game Cycling' })).toHaveAttribute('href', '/fitness/home/session-home-1');
+  });
+
   it('leaves an unmatched workout readable without an invented session link', async () => {
     api.mockResolvedValue({ sessions: [{ sessionId: 'unrelated' }] });
     show([workout]);

@@ -243,7 +243,15 @@ reloaded day will. It does not recalculate goals, burn or the range. The overlay
 6. Builds `microCoverage` — `{ [micro]: { covered, total } }` — over the counted non-group
    rows. See [Micro coverage](#micro-coverage--why-a-stored-0-is-not-a-zero) below.
 7. Sums `exercise` from that date's workout sessions (`calories`, tolerant of an array or a
-   keyed object).
+   keyed object). The ledger is ONE source: Strava `activity`, else the Garmin `fitness`
+   rollup. Home Fitness-app sessions the user took part in (`home`, read from the fitness
+   session store by `YamlHealthDatastore`) are then added for any session no ledger row
+   covers — linked by `homeSessionId`, named by the session's `stravaActivityId`, or
+   overlapping in clock time. Such a row is `source: 'home'`, `estimated: true`, with
+   calories from the participant's average heart rate (Keytel, via
+   `CalorieReconciliationService.estimateCaloriesFromHR`, using the day's weight and the
+   goals' `birthYear`/`sex`). When Strava catches up and links the activity, the ledger
+   row replaces the estimate. Merge rules: `3_applications/health/homeWorkouts.mjs`.
 8. Reads the day's closure (`users/{id}/day_closed.yml`) for `declared`; an unreadable
    closure file logs `health.budget.closures_unreadable` and reads as not declared.
 9. Returns `{ date, budget, maintenance, deficit, deficitSource, range: {floor, top},
@@ -543,7 +551,8 @@ gram adjustments snap to positive integers. Stored nutrient precision is retaine
 for proportional scaling, and non-mass portions can still use fractional units.
 
 Exercise rows show a program poster, title, start time, duration, average heart
-rate when supplied, and calorie credit. One optional fitness session index request
+rate when supplied, and calorie credit. An estimated row (a home session not on
+Strava yet) shows its credit as `+~N kcal est.`. One optional fitness session index request
 for the selected date resolves `homeSessionId` against session and segment IDs.
 Matched rows use the primary video's program artwork and link to
 `/fitness/home/session-{id}`; unlinked workouts keep a neutral exercise icon.

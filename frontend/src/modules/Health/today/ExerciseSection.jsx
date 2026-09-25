@@ -36,7 +36,8 @@ function ExerciseRow({ workout, linked }) {
       {description ? <p className="health-exercise__description" title={description}>{description}</p> : null}
     </div>
     <div className="health-exercise__result">
-      <span className="health-row__kcal">+{Math.round(workout.calories || 0)}<small> kcal</small></span>
+      <span className="health-row__kcal" title={workout.estimated ? 'Estimated from heart rate; not on Strava yet' : undefined}>
+        +{workout.estimated ? '~' : ''}{Math.round(workout.calories || 0)}<small> kcal{workout.estimated ? ' est.' : ''}</small></span>
       {href ? <a className="health-exercise__link" href={href} aria-label={`View fitness session: ${title}`}
         onClick={() => logger.info('session_open', { sessionId: linked.sessionId })}>View session <IconArrowUpRight size={14} aria-hidden="true" /></a> : null}
     </div>
