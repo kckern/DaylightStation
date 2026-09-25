@@ -5,11 +5,26 @@ const TRANSIENT_CODES = new Set([
 ]);
 
 /**
+ * An exhausted balance / billing cap. The provider reports it as a 429, but no
+ * retry can succeed — the 2026-09-10 outage spent minutes per call waiting on
+ * "no credits remaining". Recognised on an adapter error (code
+ * QUOTA_EXHAUSTED, apiError) and on a raw axios error (response.data.error).
+ */
+export function isQuotaExhausted(error) {
+  if (!error) return false;
+  if (error.code === 'QUOTA_EXHAUSTED') return true;
+  const apiError = error.apiError || error.response?.data?.error || null;
+  if (!apiError || typeof apiError !== 'object') return false;
+  return apiError.type === 'insufficient_quota' || /credit|quota|billing/i.test(apiError.code || '');
+}
+
+/**
  * Check if an error is transient (retryable).
  * Supports both HttpError (isTransient flag) and raw network errors (code check).
  */
 export function isTransientError(error) {
   if (!error) return false;
+  if (isQuotaExhausted(error)) return false;
   if (error.isTransient) return true;
   // Raw axios/node errors carry code on error or error.cause
   const code = error.code || error.cause?.code;
