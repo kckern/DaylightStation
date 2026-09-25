@@ -119,8 +119,8 @@ describe('Health AI spend is attributed health/<feature>', () => {
     const { health, features } = harness();
     await attempt(() => container(health).getLogFoodFromUPC().execute({
       userId: 'alice', conversationId: 'c1', upc: '012345678905', messageId: 1 }));
-    expect(features().length).toBeGreaterThan(0);
-    expect(new Set(features())).toEqual(new Set(['health/upc-log']));
+    // classification bills upc-log; the LLM icon fallback it falls to bills icon-pick
+    expect(new Set(features())).toEqual(new Set(['health/upc-log', 'health/icon-pick']));
   });
 
   it('scale-log: LogScaleFoodFromText', async () => {
@@ -138,26 +138,21 @@ describe('Health AI spend is attributed health/<feature>', () => {
     expect(new Set(features())).toEqual(new Set(['health/revision']));
   });
 
-  it('meal-instruction and revision: the web services built by the nutribot API module', async () => {
+  it('meal-instruction and revision: the web services the nutribot API module builds', async () => {
     const { health, features } = harness();
-    const { MealInstructionService } = await import('#apps/health/MealInstructionService.mjs');
-    const { ReviseEntryService } = await import('#apps/health/ReviseEntryService.mjs');
-    // The module passes the container's gateway narrowed exactly like this.
-    const src = (await import('node:fs')).readFileSync(new URL('../../../backend/src/5_composition/modules/nutribotApi.mjs', import.meta.url), 'utf8');
-    expect(src).toContain("scopedGateway(nutribotServices.nutribotContainer.getAIGateway(), { feature: 'meal-instruction' })");
-    expect(src).toContain("scopedGateway(nutribotServices.nutribotContainer.getAIGateway(), { feature: 'revision' })");
-    const c = container(health);
-    const meal = new MealInstructionService({ logger: silent,
-      nutritionItems: anything({ findByDate: vi.fn(async () => [{ id: 'r1', uuid: 'r1', label: 'Oats', grams: 80, calories: 300, meal: { time: 'morning' }, bucket: 'breakfast' }]) }),
-      foodLogStore: anything(),
-      aiGateway: scopedGateway(c.getAIGateway(), { feature: 'meal-instruction' }), mealCommands: anything() });
-    const revise = new ReviseEntryService({ logger: silent,
-      nutritionItems: anything({ findByUuid: vi.fn(async () => ({ id: 'r1', uuid: 'r1', label: 'Oats', grams: 80, calories: 300, unit: 'g', amount: 80 })) }),
-      aiGateway: scopedGateway(c.getAIGateway(), { feature: 'revision' }) });
-    await attempt(() => meal.suggest('alice', { date: '2026-09-25', bucket: 'breakfast' }));
-    await attempt(() => revise.propose('alice', { entryUuid: 'r1', instruction: 'it was cauliflower rice' }));
-    expect(features()).toContain('health/meal-instruction');
-    expect(features()).toContain('health/revision');
+    const { createNutribotApiRouter } = await import('#composition/modules/nutribotApi.mjs');
+    const nutriListStore = anything({
+      findByDate: vi.fn(async () => [{ id: 'r1', uuid: 'r1', label: 'Oats', grams: 80, calories: 300, meal: { time: 'morning' }, bucket: 'breakfast' }]),
+      findByUuid: vi.fn(async () => ({ id: 'r1', uuid: 'r1', label: 'Oats', grams: 80, calories: 300, unit: 'g', amount: 80 })),
+    });
+    const { webNutribotAdapter } = createNutribotApiRouter({
+      nutribotServices: { nutribotContainer: container(health), nutriListStore, foodLogStore: anything() },
+      logger: silent,
+    });
+    await attempt(() => webNutribotAdapter.suggestMealGroups({ userId: 'alice', date: '2026-09-25', bucket: 'breakfast' }));
+    expect(features()).toEqual(['health/meal-instruction']);
+    await attempt(() => webNutribotAdapter.reviseEntry({ userId: 'alice', entryUuid: 'r1', instruction: 'it was cauliflower rice' }));
+    expect(features()).toEqual(['health/meal-instruction', 'health/revision']);
   });
 
   it('icon-pick: the nearest-icon chooser bills its decision model to icon-pick', async () => {

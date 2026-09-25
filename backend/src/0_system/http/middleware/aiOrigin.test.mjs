@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 import { aiOriginMiddleware, normalizeOriginPath } from './aiOrigin.mjs';
-import { currentOrigin } from '../../runtime/aiContext.mjs';
+import { currentOrigin, currentOriginSlot } from '../../runtime/aiContext.mjs';
 
 describe('normalizeOriginPath', () => {
   it.each([
@@ -92,6 +92,41 @@ describe('aiOriginMiddleware', () => {
     a.use((req, res) => res.json({ origin: currentOrigin() }));
     const res = await request(a).get('/api/v1/unrouted/12345?token=abc');
     expect(res.body.origin).toBe('http:GET /api/v1/unrouted/:id');
+  });
+
+  it('never carries a value a parent router bound, even without mergeParams', async () => {
+    const a = express();
+    a.use(aiOriginMiddleware());
+    const user = express.Router(); // no mergeParams: :username is invisible in its req.params
+    user.get('/prefs/:section', (req, res) => res.json({ origin: currentOrigin(), params: req.params }));
+    user.get(/^\/raw\/([a-z]+)$/, (req, res) => res.json({ origin: currentOrigin() }));
+    a.use('/api/v1/users/:username', user);
+
+    const routed = await request(a).get('/api/v1/users/alice/prefs/diet');
+    expect(routed.body.params).toEqual({ section: 'diet' });
+    expect(routed.body.origin).toBe('http:GET /api/v1/users/:username/prefs/:section');
+
+    const regex = await request(a).get('/api/v1/users/alice/raw/bob');
+    expect(regex.body.origin).not.toMatch(/alice|bob/);
+    expect(regex.body.origin).toBe('http:GET /api/v1/users/:username/raw/:param');
+  });
+
+  it('settles the origin when the response finishes, keeping a string and dropping the request', async () => {
+    const a = express();
+    a.use(aiOriginMiddleware());
+    let slot = null;
+    let later = null;
+    a.get('/api/v1/things/:thing', (req, res) => {
+      slot = currentOriginSlot();
+      later = new Promise((r) => setTimeout(() => r(currentOrigin()), 20));
+      res.json({ ok: true });
+    });
+    await request(a).get('/api/v1/things/alice');
+    await new Promise((r) => setImmediate(r));
+    expect(slot.resolve).toBeNull();
+    expect(slot.value).toBe('http:GET /api/v1/things/:thing');
+    expect(Object.values(slot).some((v) => v && typeof v === 'object')).toBe(false); // no req held
+    expect(await later).toBe('http:GET /api/v1/things/:thing');
   });
 
   it('leaves no origin behind once the request is done', async () => {

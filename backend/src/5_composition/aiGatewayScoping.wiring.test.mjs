@@ -1,12 +1,23 @@
 /**
- * Guard: no bare shared AI gateway is handed to a consumer. Every value that
- * composition passes as an AI dependency must be a scoped view — a
- * `.scoped({ … })` / `scopedGateway(…)` expression, or an identifier assigned
- * from one — so its spend is attributed to an app in the AI usage ledger.
+ * Guard: no AI spend leaves composition unattributed. Instead of checking the
+ * keys a gateway is handed out under (which misses positional arguments,
+ * spreads and renamed keys), this checks every reference to a ROOT — an
+ * unscoped provider gateway — in app.mjs and 5_composition/. Each reference
+ * must be one of:
  *
- * Scans the composition root (5_composition/) and app.mjs. An identifier that
- * is never assigned in the file is a parameter handed in by a caller, which
- * this same scan checks at its own call site, so it passes through.
+ *   - its declaration or an assignment to it;
+ *   - a truthiness / null check (`if (root)`, `!root`, `root ?`, `root &&`,
+ *     `root.isConfigured()`);
+ *   - the first argument of `scopedGateway(root, { app… })` or the receiver of
+ *     `root.scoped({ app… })`, with literal tags that name an `app`;
+ *   - a `return` from the factory that constructs it (a producer; its caller's
+ *     binding becomes the root there and is checked at that site).
+ *
+ * References inside a function that takes the same name as a parameter (or
+ * destructures it from its config) are that function's own binding, not the
+ * root, and are skipped. Roots are the app.mjs bindings named below, anything
+ * assigned from a provider adapter constructor, and the adapter-registry
+ * lookups for 'ai' / 'decision' plus the hardware TTS adapter.
  * Offenders are listed as file:line.
  */
 import { describe, it, expect } from 'vitest';
@@ -23,12 +34,14 @@ const sources = [
   path.join(srcRoot, 'app.mjs'),
 ];
 
-const KEYS = ['aiGateway', 'openaiAdapter', 'transcriptionService', 'decisionGateway', 'speechGateway', 'openai', 'anthropic', 'anthropicAdapter', 'anthropicGateway'];
-// `key: value`, or shorthand `{ key,` / `, key }` inside an object literal.
-const KEY_RE = new RegExp(`(^|[{,\\s])(${KEYS.join('|')})\\s*(:(?!:)|(?=\\s*[,}]))`, 'g');
-const SCOPED = /\bscoped(?:Gateway)?\s*(?:\?\.)?\s*\(/;
+const NAMED_ROOTS = ['sharedAiGateway', 'decisionGateway', 'aiAnthropicAdapter', 'voiceTranscriptionService'];
+const PROVIDER_CTOR = /\b([A-Za-z_$][\w$]*)\s*=\s*new\s+(?:OpenAIAdapter|AnthropicAdapter|JevAdapter|OpenAITTSAdapter|TelegramVoiceTranscriptionService)\s*\(/g;
+const MEMBER_ROOTS = [
+  /householdAdapters\s*\??\.\s*get\s*\??\.?\s*\(\s*'(?:ai|decision)'\s*\)/g,
+  /hardwareAdapters\s*\??\.\s*ttsAdapter\b/g,
+];
 
-/** Blank out comments and string contents, keeping offsets and newlines. */
+/** Blank out comments and string contents (quotes kept), preserving offsets and newlines. */
 export function stripNoise(text) {
   let out = '';
   for (let i = 0; i < text.length; i += 1) {
@@ -41,16 +54,38 @@ export function stripNoise(text) {
       const stop = end === -1 ? text.length : end + 2;
       out += text.slice(i, stop).replace(/[^\n]/g, ' ');
       i = stop - 1;
-    } else if (text[i] === '\'' || text[i] === '"' || text[i] === '`') {
-      const quote = text[i];
-      out += quote;
+    } else if (text[i] === '`') {
+      // template literals: keep ${…} code, blank the text
+      out += '`';
       i += 1;
-      while (i < text.length && text[i] !== quote) {
+      while (i < text.length && text[i] !== '`') {
         if (text[i] === '\\') { out += '  '; i += 2; continue; }
+        if (text[i] === '$' && text[i + 1] === '{') {
+          let depth = 0;
+          for (; i < text.length; i += 1) {
+            out += text[i];
+            if (text[i] === '{') depth += 1;
+            else if (text[i] === '}') { depth -= 1; if (depth === 0) break; }
+          }
+          i += 1;
+          continue;
+        }
         out += text[i] === '\n' ? '\n' : 'x';
         i += 1;
       }
-      out += quote;
+      out += '`';
+    } else if (text[i] === '\'' || text[i] === '"') {
+      const quote = text[i];
+      let j = i + 1;
+      let body = '';
+      while (j < text.length && text[j] !== quote && text[j] !== '\n') {
+        if (text[j] === '\\') { body += '  '; j += 2; continue; }
+        body += text[j];
+        j += 1;
+      }
+      // keep short literal tokens ('ai', 'decision') the member roots match on
+      out += quote + (/^(ai|decision)$/.test(body) ? body : body.replace(/[^\n]/g, 'x')) + (text[j] ?? '');
+      i = j;
     } else {
       out += text[i];
     }
@@ -58,122 +93,137 @@ export function stripNoise(text) {
   return out;
 }
 
-/** The value expression starting at `start`, up to a depth-0 `,` `}` `)` `;`. */
-function valueAt(text, start) {
+/** Index of the bracket matching the one at `open`. */
+function matchBracket(text, open) {
+  const pairs = { '(': ')', '{': '}', '[': ']' };
+  const close = pairs[text[open]];
   let depth = 0;
-  for (let i = start; i < text.length; i += 1) {
-    const ch = text[i];
-    if ('([{'.includes(ch)) depth += 1;
-    else if (')]}'.includes(ch)) {
-      if (depth === 0) return text.slice(start, i);
-      depth -= 1;
-    } else if ((ch === ',' || ch === ';') && depth === 0) return text.slice(start, i);
+  for (let i = open; i < text.length; i += 1) {
+    if (text[i] === text[open]) depth += 1;
+    else if (text[i] === close) { depth -= 1; if (depth === 0) return i; }
   }
-  return text.slice(start);
+  return text.length;
 }
 
-/** Right-hand sides of every `name = …` assignment of this identifier. */
-function assignmentsOf(text, name) {
-  const re = new RegExp(`(?:\\b(?:const|let|var)\\s+|[^.\\w$])${name}\\s*=(?![=>])`, 'g');
-  return [...text.matchAll(re)].map(m => valueAt(text, m.index + m[0].length));
+/** [start, end) body ranges of functions that bind `name` themselves. */
+function shadowRanges(text, name) {
+  const ranges = [];
+  const id = new RegExp(`(^|[^\\w$.])${name}(?![\\w$])`);
+  // function f(…) { … } / (…) => { … } / name(…) { … } — parameter lists
+  for (const m of text.matchAll(/\(/g)) {
+    const close = matchBracket(text, m.index);
+    const params = text.slice(m.index, close + 1);
+    if (!id.test(params)) continue;
+    const after = text.slice(close + 1, close + 8);
+    const arrow = /^\s*=>\s*\{/.exec(after);
+    const brace = /^\s*\{/.exec(after);
+    const before = text.slice(Math.max(0, m.index - 40), m.index);
+    const isFn = arrow || (brace && /(function\s*[\w$]*\s*|[\w$]+\s*)$/.test(before) && !/\b(if|for|while|switch|catch)\s*$/.test(before));
+    if (!isFn) continue;
+    const open = text.indexOf('{', close + 1);
+    ranges.push([m.index, matchBracket(text, open)]); // the parameter list and the body
+  }
+  // const { …name… } = config; inside a function body → the rest of that body
+  for (const m of text.matchAll(/\b(?:const|let)\s*\{/g)) {
+    const open = m.index + m[0].length - 1;
+    const close = matchBracket(text, open);
+    if (!/^\s*=/.test(text.slice(close + 1)) || !id.test(text.slice(open, close + 1))) continue;
+    // enclosing body: nearest unmatched `{` before
+    let depth = 0;
+    let start = -1;
+    for (let i = m.index; i >= 0; i -= 1) {
+      if (text[i] === '}') depth += 1;
+      else if (text[i] === '{') { if (depth === 0) { start = i; break; } depth -= 1; }
+    }
+    if (start >= 0) ranges.push([close, matchBracket(text, start)]);
+  }
+  return ranges;
 }
 
-/** Split at depth-0 occurrences of any of `seps` (checked longest first). */
-function splitTop(expr, seps) {
-  const parts = [];
-  let depth = 0;
-  let last = 0;
-  for (let i = 0; i < expr.length; i += 1) {
-    const ch = expr[i];
-    if ('([{'.includes(ch)) depth += 1;
-    else if (')]}'.includes(ch)) depth -= 1;
-    else if (depth === 0) {
-      const sep = seps.find(s => expr.startsWith(s, i) && !(s === '?' && (expr[i + 1] === '.' || expr[i + 1] === '?')));
-      if (sep) { parts.push(expr.slice(last, i)); i += sep.length - 1; last = i + 1; }
+const TAGS_WITH_APP = String.raw`\{[^{}]*\bapp\s*:[^{}]*\}`;
+
+/** Is the reference at [start, end) one of the allowed forms? */
+function allowed(text, start, end) {
+  const before = text.slice(Math.max(0, start - 200), start);
+  const after = text.slice(end, end + 200);
+  const lineStart = text.lastIndexOf('\n', start) + 1;
+  const stmt = text.slice(lineStart, start);
+  // declaration / assignment (to the root, or a member root on the right of one)
+  if (/\b(?:let|const|var)\s+$/.test(before) || /^\s*=(?![=>])/.test(after)) return true;
+  if (/^\s*(?:let|const|var)?\s*[\w$]+\s*=(?![=>])/.test(stmt) && NAMED_OR_BOUND.test(stmt.replace(/=.*$/, ''))) return true;
+  // checks
+  if (/!\s*$/.test(before) || /\bif\s*\(\s*$/.test(before) || /\bBoolean\(\s*$/.test(before)) return true;
+  if (/^\s*(\?(?![.?])|&&)/.test(after)) return true;
+  if (/^\s*\??\.\s*isConfigured\b/.test(after)) return true;
+  // scoped with an app
+  if (/\bscopedGateway\s*\(\s*$/.test(before) && new RegExp(String.raw`^\s*,\s*${TAGS_WITH_APP}`).test(after)) return true;
+  if (new RegExp(String.raw`^\s*\??\.\s*scoped\s*(?:\?\.)?\s*\(\s*${TAGS_WITH_APP}`).test(after)) return true;
+  // a producer's return
+  if (/\breturn\s*(\{[^;]*)?$/.test(before.slice(before.lastIndexOf(';') + 1))) return true;
+  return false;
+}
+
+let NAMED_OR_BOUND = /$^/;
+
+export function offendersIn(raw, label, { named = [] } = {}) {
+  const text = stripNoise(raw);
+  const bound = [...text.matchAll(PROVIDER_CTOR)].map(m => m[1]);
+  const names = [...new Set([...named, ...bound])];
+  NAMED_OR_BOUND = names.length ? new RegExp(`\\b(${names.join('|')})\\b`) : /$^/;
+  const found = [];
+  const lineOf = (i) => text.slice(0, i).split('\n').length;
+  for (const name of names) {
+    const shadows = shadowRanges(text, name);
+    for (const m of text.matchAll(new RegExp(`(^|[^\\w$.])(${name})(?![\\w$])`, 'g'))) {
+      const start = m.index + m[1].length;
+      const end = start + name.length;
+      if (/^\s*:(?!:)/.test(text.slice(end)) && /[{,]\s*$/.test(text.slice(0, start))) continue; // an object key
+      if (shadows.some(([a, b]) => start > a && start < b)) continue;
+      if (!allowed(text, start, end)) found.push(`${label}:${lineOf(start)} ${name}`);
     }
   }
-  parts.push(expr.slice(last));
-  return parts.map(p => p.trim());
-}
-
-/** The values an expression can hand over: both ternary branches, every `||`/`??` arm. */
-function handedOver(expr) {
-  const cond = splitTop(expr, ['?']);
-  // `test ? a : b` hands over a or b; the test only reads config.
-  const branches = cond.length > 1 ? splitTop(cond.slice(1).join('?'), [':']) : [expr];
-  return branches.flatMap(b => splitTop(b, ['||', '??']));
-}
-
-function judge(text, expr) {
-  const value = expr.trim();
-  if (!value) return null;
-  const bad = [];
-  for (const arm of handedOver(value)) {
-    if (!arm || /^(null|undefined|false|true|\d+|'[^']*'|"[^"]*"|`[^`]*`)$/.test(arm)) continue;
-    if (arm.startsWith('{')) continue; // an object literal: code, not a gateway
-    if (SCOPED.test(arm)) continue;
-    const ident = /^[A-Za-z_$][\w$]*$/.exec(arm)?.[0];
-    if (!ident) { bad.push(arm); continue; }
-    const rhs = assignmentsOf(text, ident);
-    if (rhs.length === 0) continue; // parameter: its caller is checked
-    if (!rhs.every(r => SCOPED.test(r) || /^\s*(null|undefined)\s*$/.test(r))) bad.push(arm);
-  }
-  return bad.length ? bad.join(' | ') : null;
-}
-
-function offendersIn(raw, label) {
-  const found = [];
-  {
-    const text = stripNoise(raw);
-    for (const m of text.matchAll(KEY_RE)) {
-      const key = m[2];
-      const keyEnd = m.index + m[0].length;
-      const shorthand = m[3] !== ':';
-      // Skip destructuring (`const { aiGateway } = …`, `({ aiGateway }) =>`):
-      // the object literal closes and is followed by `=` or `) =>` / `) {`.
-      const literal = valueAt(text, keyEnd);
-      const after = text.slice(keyEnd + literal.length).match(/^[\s\S]*?[}\)]\s*(\S{1,2})/);
-      if (after && /^(=[^=>]|=$|=>|\{)/.test(after[1])) {
-        // could still be a default parameter `{ aiGateway = null }` — no value to check
-        continue;
-      }
-      const expr = shorthand ? key : literal;
-      const problem = judge(text, expr);
-      if (problem) {
-        found.push(`${label}:${text.slice(0, m.index + m[1].length).split('\n').length} ${key}: ${problem.replace(/\s+/g, ' ').slice(0, 80)}`);
-      }
+  for (const re of MEMBER_ROOTS) {
+    for (const m of text.matchAll(re)) {
+      if (!allowed(text, m.index, m.index + m[0].length)) found.push(`${label}:${lineOf(m.index)} ${m[0].replace(/\s+/g, '')}`);
     }
   }
   return found;
 }
 
 function offenders() {
-  return sources.flatMap(file => offendersIn(fs.readFileSync(file, 'utf8'), path.relative(srcRoot, file)));
+  return sources.flatMap(file => offendersIn(fs.readFileSync(file, 'utf8'), path.relative(srcRoot, file),
+    { named: file.endsWith('app.mjs') ? NAMED_ROOTS : [] }));
 }
 
-describe('every AI gateway composition hands out is a scoped view', () => {
-  it('finds hand-off sites to check', () => {
-    const text = sources.map(f => fs.readFileSync(f, 'utf8')).join('\n');
-    expect((text.match(SCOPED.source ? new RegExp(SCOPED.source, 'g') : /x/g) || []).length).toBeGreaterThan(10);
-  });
-
-  it('catches bare hand-offs and accepts scoped ones (self-test)', () => {
+describe('every reference to an unscoped AI gateway is a declaration, a check, or a scope with an app', () => {
+  it('catches every way of handing a root out (self-test)', () => {
     const sample = [
-      "let sharedAiGateway = makeAdapter();",
-      "const healthAi = sharedAiGateway.scoped({ app: 'health' });",
-      "a({ aiGateway: sharedAiGateway });",                                  // bare
-      "b({ aiGateway: healthAi });",                                         // assigned from scoped
-      "c({ openaiAdapter: scopedGateway(sharedAiGateway, { app: 'x' }) });",
-      "d({ decisionGateway });",                                             // parameter pass-through
-      "e({ transcriptionService: container.getAIGateway() });",             // bare member call
-      "f({ aiGateway: flag ? sharedAiGateway : null });",                   // bare in a branch
-      "g({ aiGateway: flag ? healthAi : null, anthropic: 'ai' });",
-      "function h({ aiGateway }) { return aiGateway; }",                    // destructuring
+      "let sharedAiGateway = makeAdapter();",                                  // 1 declaration
+      "if (!sharedAiGateway) warn();",                                         // 2 check
+      "const health = scopedGateway(sharedAiGateway, { app: 'health' });",    // 3 ok
+      "a({ aiGateway: sharedAiGateway });",                                    // 4 bare hand-off
+      "b(sharedAiGateway, 1);",                                                // 5 positional
+      "c(...[sharedAiGateway]);",                                              // 6 spread
+      "d({ aiGateway: flag ? sharedAiGateway : null });",                     // 7 ternary branch
+      "e(scopedGateway(sharedAiGateway, {}));",                                // 8 empty tags
+      "f(sharedAiGateway.scoped({ feature: 'x' }));",                          // 9 tags without app
+      "g(sharedAiGateway?.scoped({ app: 'school' }), sharedAiGateway?.isConfigured());", // 10 ok
+      "const ok = sharedAiGateway ? 1 : 0;",                                   // 11 check
+      "function h({ sharedAiGateway }) { return use(sharedAiGateway); }",      // 12 its own parameter
+      "const tts = new OpenAITTSAdapter({}, {});",                             // 13 bound root
+      "speak(tts);",                                                           // 14 bare
+      "k(scopedGateway(householdAdapters.get('ai'), { app: 'x' }), householdAdapters.get('decision'));", // 15 member bare
     ].join('\n');
-    expect(offendersIn(sample, 'sample').map(o => o.split(' ')[0])).toEqual(['sample:3', 'sample:7', 'sample:8']);
+    expect(offendersIn(sample, 's', { named: ['sharedAiGateway'] }).map(o => o.split(' ')[0]).sort())
+      .toEqual(['s:14', 's:15', 's:4', 's:5', 's:6', 's:7', 's:8', 's:9'].sort());
   });
 
-  it('has no bare gateway hand-off', () => {
+  it('finds the roots it guards', () => {
+    const app = stripNoise(fs.readFileSync(path.join(srcRoot, 'app.mjs'), 'utf8'));
+    for (const name of NAMED_ROOTS) expect(app, name).toMatch(new RegExp(`\\blet\\s+${name}\\b`));
+  });
+
+  it('has no root reference outside the allowed forms', () => {
     expect(offenders()).toEqual([]);
   });
 });

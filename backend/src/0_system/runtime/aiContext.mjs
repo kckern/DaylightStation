@@ -18,6 +18,41 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 
 const storage = new AsyncLocalStorage();
 
+function readSlot(slot) {
+  if (!slot.resolve) return slot.value;
+  try {
+    const value = slot.resolve();
+    return value == null ? null : String(value);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * An origin slot: a fixed string, or a resolver read lazily until the slot is
+ * settled. settle() snapshots the resolver's current answer and drops the
+ * resolver, so whatever it closed over (an HTTP request) is released even if
+ * a timer or pending promise keeps the async context alive afterwards.
+ * @param {string|(() => string|null)|null} origin
+ * @returns {{ resolve: Function|null, value: string|null, settle: () => void }}
+ */
+export function originSlot(origin) {
+  const slot = typeof origin === 'function'
+    ? { resolve: origin, value: null }
+    : { resolve: null, value: origin == null ? null : String(origin) };
+  slot.settle = () => {
+    if (!slot.resolve) return;
+    slot.value = readSlot(slot);
+    slot.resolve = null;
+  };
+  return slot;
+}
+
+/** Run fn inside an existing slot (see originSlot). */
+export function runInOriginSlot(slot, fn) {
+  return storage.run(slot, fn);
+}
+
 /**
  * Run fn with `origin` as the current origin. Returns whatever fn returns
  * (a promise stays a promise; its continuations keep the origin).
@@ -28,23 +63,18 @@ const storage = new AsyncLocalStorage();
  * @returns {T}
  */
 export function runWithOrigin(origin, fn) {
-  const slot = typeof origin === 'function'
-    ? { resolve: origin }
-    : { resolve: null, value: origin == null ? null : String(origin) };
-  return storage.run(slot, fn);
+  return storage.run(originSlot(origin), fn);
 }
 
 /** The origin of the current async chain, or null outside any run. */
 export function currentOrigin() {
   const slot = storage.getStore();
-  if (!slot) return null;
-  if (!slot.resolve) return slot.value;
-  try {
-    const value = slot.resolve();
-    return value == null ? null : String(value);
-  } catch {
-    return null;
-  }
+  return slot ? readSlot(slot) : null;
 }
 
-export default { runWithOrigin, currentOrigin };
+/** The slot of the current async chain (diagnostics and tests). */
+export function currentOriginSlot() {
+  return storage.getStore() ?? null;
+}
+
+export default { runWithOrigin, runInOriginSlot, originSlot, currentOrigin, currentOriginSlot };
