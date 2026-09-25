@@ -15,6 +15,7 @@ import { AgentInteractions } from '#apps/agents/framework/AgentInteractions.mjs'
 import { cleanupDates, entryKey } from '#domains/nutrition/services/cleanupPolicy.mjs';
 import { sha256Text } from '#system/utils/sha256.mjs';
 import { JsonlAuditJournalStore } from '#adapters/persistence/yaml/JsonlAuditJournalStore.mjs';
+import { AgentTranscriptFileStore } from '#adapters/agents/AgentTranscriptFileStore.mjs';
 
 const roots = [];
 afterEach(() => { for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true }); });
@@ -554,7 +555,7 @@ describe('auditor journal and run gates', () => {
     f.store.update('alice', state => { state.settings = { enabled: true, dryRun: true, telegram: false, ...settings }; });
     const journal = new JsonlAuditJournalStore({ dataService: f.dataService, logger: f.logger });
     const start = vi.fn(async () => ({ status: 'success', result: noChanges }));
-    const make = () => new NutritionCleanup({ ...f, runs: { register: vi.fn(), start }, hash: sha256Text, journal, ...extra });
+    const make = () => new NutritionCleanup({ ...f, runs: { register: vi.fn(), start }, hash: sha256Text, journalStore: journal, ...extra });
     return { f, journal, start, cleanup: make(), make, advance: ms => { now += ms; }, now: () => now, at: time => { now = Date.parse(time); } };
   };
   const capture = async (f, date, label = 'Apple') => {
@@ -717,9 +718,77 @@ describe('auditor journal and run gates', () => {
     const run = f.store.load('alice').runs[runId];
     expect((await journal.list('alice'))[0]).toMatchObject({ runId, at: run.createdAt, status: 'failed', error: 'bad schema', attempt: 1, trigger: ['manual'], model: 'gpt-4.1-mini' });
     start.mockResolvedValue({ status: 'success', result: noChanges });
-    cleanup.journal = { append: vi.fn(async () => { throw new Error('disk full'); }), list: vi.fn(async () => []) };
+    cleanup.journalStore = { append: vi.fn(async () => { throw new Error('disk full'); }), list: vi.fn(async () => []) };
     const second = await cleanup.request('alice', { manual: true }); await cleanup.settled('alice');
     expect(f.store.load('alice').runs[second.runId].status).toBe('completed');
     expect(f.logger.warn).toHaveBeenCalledWith('nutrition.cleanup.journal_failed', expect.objectContaining({ runId: second.runId, error: 'disk full' }));
+  });
+});
+
+describe('auditor journal and spend views', () => {
+  const run = (runId, at, extra) => ({ runId, at, status: 'completed', model: 'gpt-4.1-mini', trigger: ['captures'], outcomes: [], ...extra });
+  const seeded = async () => {
+    const f = await fixture();
+    const journal = new JsonlAuditJournalStore({ dataService: f.dataService, logger: f.logger });
+    const store = new AgentTranscriptFileStore({ mediaDir: path.join(f.root, 'media') });
+    const transcripts = { find: args => store.find({ agentId: 'nutrition-auditor', ...args }) };
+    const spendSource = vi.fn(async () => [{ ts: '2026-09-04T18:00:00.000Z', costUsd: 0.03 }, { ts: '2026-09-03T18:00:00.000Z', costUsd: 9 }]);
+    for (const row of [
+      run('r4', '2026-08-20T18:00:00.000Z', { model: 'gpt-4o', costUsd: 0.1 }),
+      run('r3', '2026-09-01T06:00:00.000Z', { trigger: ['unclassified', 'dailySweep'], costUsd: 0.02, outcomes: [{ status: 'proposed' }] }),
+      run('r2', '2026-09-03T18:00:00.000Z', { model: 'gpt-4o', trigger: ['edits'], costUsd: 0.05, outcomes: [{ status: 'skipped' }], turnId: 'turnbbbb0000' }),
+      { runId: 'r5', at: '2026-09-04T16:00:00.000Z', status: 'failed', error: 'bad schema', attempt: 1, trigger: ['captures'], model: 'gpt-4.1-mini' },
+      { at: '2026-09-04T17:00:00.000Z', skipped: 'filtered', kinds: ['artwork'] },
+      run('r1', '2026-09-04T18:00:00.000Z', { costUsd: 0.01, outcomes: [{ status: 'applied' }], turnId: 'turnaaaa1111' }),
+    ]) await journal.append('alice', row);
+    await store.save({ agentId: 'nutrition-auditor', userId: 'alice', turnId: 'turnaaaa1111', startedAt: new Date('2026-09-04T18:00:02.500Z'), transcript: {
+      turnId: 'turnaaaa1111', systemPrompt: 'You audit nutrition records.',
+      input: { text: JSON.stringify({ snapshot: { rows: [{ id: 'a' }, { id: 'b' }], pending: [{ id: 'log', items: [{ id: 'c' }] }] } }), context: {} },
+      toolCalls: [{ ix: 0, name: 'find_food_art', args: { q: 'fish' }, result: { slugs: ['fish'] }, ok: true, latencyMs: 12, ts: 'x', linkedAttachments: [] }],
+    } });
+    const cleanup = new NutritionCleanup({ ...f, runs: { register: vi.fn() }, hash: sha256Text, journalStore: journal, transcripts, spendSource });
+    return { f, cleanup };
+  };
+  it('lists the last seven household days newest first, with trigger, changed and paging filters', async () => {
+    const { cleanup } = await seeded();
+    const all = await cleanup.journal('alice');
+    expect(all.total).toBe(5);
+    expect(all.rows.map(row => row.runId ?? row.skipped)).toEqual(['r1', 'filtered', 'r5', 'r2', 'r3']);
+    expect((await cleanup.journal('alice', { trigger: 'captures' })).rows.map(row => row.runId)).toEqual(['r1', 'r5']);
+    expect((await cleanup.journal('alice', { changed: true })).rows.map(row => row.runId)).toEqual(['r1', 'r3']);
+    expect(await cleanup.journal('alice', { offset: 1, limit: 2 })).toMatchObject({ total: 5, rows: [{ skipped: 'filtered' }, { runId: 'r5' }] });
+    // r3 started at 23:00 on 08-31 household time
+    expect((await cleanup.journal('alice', { from: '2026-08-31', to: '2026-08-31' })).rows.map(row => row.runId)).toEqual(['r3']);
+    expect((await cleanup.journal('alice', { from: '2026-08-20', to: '2026-08-20' })).total).toBe(1);
+  });
+  it('opens one run with its transcript, or marks the transcript expired', async () => {
+    const { cleanup } = await seeded();
+    expect(await cleanup.journalEntry('alice', 'r1')).toMatchObject({ runId: 'r1', costUsd: 0.01, transcriptExpired: false, transcript: {
+      toolCalls: [{ name: 'find_food_art', args: { q: 'fish' }, result: { slugs: ['fish'] }, ok: true, latencyMs: 12 }],
+      inputRows: 3, systemPromptChars: 'You audit nutrition records.'.length } });
+    expect(await cleanup.journalEntry('alice', 'r2')).toMatchObject({ runId: 'r2', transcript: null, transcriptExpired: true });
+    expect(await cleanup.journalEntry('alice', 'r3')).toMatchObject({ runId: 'r3', transcript: null, transcriptExpired: false });
+    expect(await cleanup.journalEntry('alice', 'nope')).toBeNull();
+  });
+  it('totals spend by household day, trigger and model, zero days included', async () => {
+    const { cleanup } = await seeded();
+    const spend = await cleanup.spend('alice', { days: 30 });
+    expect(spend.days).toHaveLength(30);
+    expect(spend.days[0]).toEqual({ date: '2026-08-06', costUsd: 0, runs: 0, changed: 0 });
+    const byDate = Object.fromEntries(spend.days.map(day => [day.date, day]));
+    expect(byDate['2026-09-04']).toEqual({ date: '2026-09-04', costUsd: 0.01, runs: 2, changed: 1 });
+    expect(byDate['2026-09-03']).toEqual({ date: '2026-09-03', costUsd: 0.05, runs: 1, changed: 0 });
+    expect(byDate['2026-08-31']).toEqual({ date: '2026-08-31', costUsd: 0.02, runs: 1, changed: 1 });
+    expect(byDate['2026-08-20'].costUsd).toBe(0.1);
+    expect(spend.days.at(-1).date).toBe('2026-09-04');
+    expect(spend).toMatchObject({ today: 0.01, week: 0.08, month: 0.06, capUsd: 1, cappedToday: false, ledgerTodayUsd: 0.03 });
+    expect(spend.byTrigger).toEqual([
+      { trigger: 'captures', runs: 3, costUsd: 0.11, avgUsd: 0.055 },
+      { trigger: 'edits', runs: 1, costUsd: 0.05, avgUsd: 0.05 },
+      { trigger: 'unclassified', runs: 1, costUsd: 0.02, avgUsd: 0.02 },
+      { trigger: 'dailySweep', runs: 1, costUsd: 0.02, avgUsd: 0.02 },
+    ]);
+    expect(spend.byModel).toEqual([{ model: 'gpt-4o', runs: 2, avgUsd: 0.075 }, { model: 'gpt-4.1-mini', runs: 3, avgUsd: 0.015 }]);
+    expect((await cleanup.spend('alice', { days: 1 })).days).toEqual([{ date: '2026-09-04', costUsd: 0.01, runs: 2, changed: 1 }]);
   });
 });
