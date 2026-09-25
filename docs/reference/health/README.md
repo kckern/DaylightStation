@@ -1738,4 +1738,9 @@ Health/Telegram questions, and conflict-safe repair history/Undo. See
 [rollout runbook](../../runbooks/nutrition-cleanup-rollout.md). Automatic cleanup is
 off by default; historical records are reference-only.
 
+The auditor itself (what starts a run, the trigger/gap/cap gates, permissions,
+the run journal, how its spend reaches the AI usage ledger) and the
+`/health/auditor` page with the Health AI usage card are in
+[Nutrition auditor](nutrition-auditor.md).
+
 Meal interaction and command contracts: [Meal food commands](meal-commands.md).

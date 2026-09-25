@@ -10,46 +10,11 @@ Health → Settings (`/health/settings`) shows a one-line auditor status (on /
 preview only / off, last run, spend today) with an **Open auditor** button, the
 compact **AI usage** card (today / 7 days / month, the top three features, and
 **See all** → `/health/auditor#ai-usage`), plus open questions and the artwork
-queue. Every auditor control lives on the auditor
-page (`/health/auditor`, `modules/Health/auditor/`), top to bottom:
-
-- **Header** — state, model, last run, next eligible run, spend today (the
-  enforced AI-ledger figure, which includes failed runs) against the cap, 7-day
-  and month totals.
-- **Run timeline** — journal rows newest first (filters: changed something,
-  trigger, minimum cost; Load more pages by 50). A row opens the **run detail**
-  sheet: why it ran, what it looked at (transcript tool calls while kept), what
-  it noticed (questions asked and suppressed), what it changed (reason and
-  before/after per repair, with Undo by the outcome's `operationId`, the repair
-  id; "Undone at …" once undone), rejected/blocked outcomes, tokens and cost.
-- **AI usage** (`modules/Health/ai-usage/AiUsageCard.jsx`) — what ALL of
-  Health's AI costs, not only the auditor: today / 7 days / month; a 30-day
-  daily-total strip (the same chart as Spend; a day's readout lists its
-  features by cost); and a per-feature table in plain words (Voice logging,
-  Photo logging, Text logging, Barcode logging, Scale logging, Corrections,
-  Meal suggestions, Icon matching, Coach, Coach commentary, Nutrition auditor,
-  Auditor triage, Other) with calls, average per call, cost and a single-hue
-  length bar. A feature whose calls were all unpriced reads "cost unknown".
-  Spend from before the ledger carried attribution shows as "Before tracking:
-  $X across all apps (not attributable)" — the household total, never
-  presented as Health's. The daily strip is one series on purpose: up to
-  thirteen features exceed a categorical palette, and stacked 30-day columns
-  are a few pixels wide at phone width, so features are identified by row
-  label and compared by bar length instead of by colour.
-- **Spend** — 30 daily cost columns with the cap as a reference line, and cost
-  per run by trigger and by model.
-- **Auditor settings** (`AuditorConfig.jsx`) — automatic cleanup, preview only,
-  Telegram, Run now; model (with the observed cost per run); daily cap (blank =
-  no cap, saved on blur/Enter); minimum gap (Off/15/30/60 min); which triggers
-  start a run; what it may change (the ten permissions). Each control is its own
-  `PATCH /settings` with the status `settingsVersion` as
-  `expectedSettingsVersion`, and the page adopts the status the PATCH returns,
-  so the next edit carries the new version. A 409 reads "Settings changed.
-  Reload first." and reloads.
-- **Settings changes** (`SettingsLog.jsx`) — `GET /settings/log`, newest first,
-  in plain words, ten until "Show all".
-- **Cleanup runs** and **Repair history** — recent scans, and every repair with
-  before/after values, evidence and Undo.
+queue. Every auditor control lives on the auditor page (`/health/auditor`):
+header, run timeline and run detail, the Health AI usage card, spend, auditor
+settings, the settings change log, and cleanup runs / repair history. The
+sections, what each shows and the API behind them are in
+[nutrition-auditor.md](nutrition-auditor.md#the-auditor-page).
 
 Automatic cleanup defaults **off** and
 preview-only defaults **on**. Preview evaluates the real policy without changing
@@ -73,7 +38,7 @@ not inherit the previous one's density or tare. Explicit clear/delete is respect
 
 For example, yogurt (160 kcal), chia (14 g / 70 kcal), then 458 g at 140 kcal/100 g
 produce three ingredient entries totaling 871 kcal. The scale contributes 641 kcal
-provisionally; unknown container tare is explicit, never silently invented, and
+provisionally; unknown container tare is explicit, never invented, and
 density alone does not imply any macro/micronutrient composition.
 
 `review.startedAt` and `review.stabilizesAt` are UTC instants exactly 72 elapsed
@@ -81,7 +46,7 @@ hours apart. `NutritionStabilization` persists `settledBy: auto` at the deadline
 the next scheduler tick, including after downtime. It does not change totals or
 send messages. Optional confirmation/edit records `settledBy: user` and immediately
 ends automatic review. Legacy date-only display behavior is retained without a
-bulk history migration. Health shows a muted “Estimated” label, not a settlement task.
+bulk history migration. Provisional rows carry no label and no settlement task; each keeps a one-tap confirm.
 
 Questions appear in Settings and in Today's follow-up tray (a one-line count under the macro bars that opens a sheet of question cards, one at a time; see the Health reference, *Feedback never moves the day*).
 
@@ -128,7 +93,7 @@ must be reviewed in Health instead of truncated Telegram choice buttons.
   confirmation. Cleanup shares the pending review/confirmation lock.
 - Protect user-set fields and previously ratified rows. Automatically repaired
   fields cannot oscillate through successive cleanups; further automatic changes
-  require genuinely new trusted evidence for that field. Label/name aliases share
+  require new trusted evidence for that field. Label/name aliases share
   the same protection. Unsupported repairs do not turn into synthetic questions.
 - Committed entries require expected row versions; pending captures require the
   complete capture version. Concurrent edits produce a skip/stale result.
@@ -150,37 +115,11 @@ scheduled reconciliation. Answer processing has the same three-attempt ceiling.
 Development scheduling is disabled unless explicitly enabled, and the app's global
 `enableScheduler` gate is respected.
 
-Automatic runs pass three gates from the auditor settings (`auditorPolicy`):
-- **Trigger filter.** A per-concern snapshot digest (`auditTrigger.snapshotDigest`)
-  classifies what changed (captures, reviews, stabilization, scale observations,
-  artwork, day rollover, edits). A sweep adds `dailySweep` to whatever changed, so
-  switching the sweep off never absorbs a pending change. With no earlier digest
-  (first check after deploy) the change is `unclassified`, which cannot be switched
-  off. A change whose kinds are all switched off is marked checked and journaled
-  once as `skipped: filtered`. A change of bookkeeping only (versions, timestamps)
-  is marked checked without a run. Deleting an entry does not start an audit
-  either: a removed row (deleted, or aged out of the review window; the digest
-  cannot tell these apart) leaves the remaining rows unchanged, and the daily
-  sweep still covers them.
-- **Minimum gap** between automatic runs (`minGapMinutes`). Waiting changes keep
-  accumulating; `status().nextEligibleAt` says when the next one may start.
-- **Daily spend cap** (`dailyCapUsd`, household day) summed from the AI usage
-  ledger's `nutrition-auditor` rows, so a turn billed before its run failed still
-  counts (the journal is the fallback without a ledger). Over the cap, automatic
-  runs stop, one `skipped: cap` row is written per day, and spend is not re-read
-  until the household day or the cap changes; pending changes and a due sweep wait
-  and run after that. Manual runs still go and carry `overCap: true`.
-
-A run fixes its model, permissions and trigger at queue time. After a run, the
-state it produced counts as checked when the only rows that moved are the ones it
-repaired itself, so a repair does not trigger another audit; a capture that lands
-mid-run keeps the audited input as checked and is audited next.
-
-Every completed or finally failed run appends one row to the run journal,
-`users/{user}/lifelog/nutrition/auditor-journal/YYYY-MM.<writer>.jsonl`, filed under
-the run's start time: trigger, model, token usage and cost, tool calls, outcomes,
-questions asked and suppressed. A journal write failure is logged
-(`nutrition.cleanup.journal_failed`) and never fails the run.
+What starts a run (trigger kinds, sweeps, why deletions and the auditor's own
+repairs do not), the gates an automatic run passes (trigger filter, minimum
+gap, daily cap from the AI usage ledger, triage), permissions, and the run
+journal (`users/{user}/lifelog/nutrition/auditor-journal/`) are documented in
+[nutrition-auditor.md](nutrition-auditor.md).
 
 Runs/checkpoints live in `data/agents/cleanup-runs.db`. Per-owner dispatch, settings
 and questions live in `users/{user}/agents/nutrition-cleanup.yml`. Committed repair
@@ -330,23 +269,16 @@ not add a new public authentication mechanism.
 | `GET /` | Settings, `version` (moves on every state write), `settingsVersion` (moves only on a settings change), active questions, recent scan summaries |
 | `GET /history?offset=0` | Paginated committed and pending repair receipts |
 | `PATCH /settings` | `expectedSettingsVersion` (required; 409 when stale, 400 when missing) plus any of `enabled`, `dryRun`, `telegram`, `model`, `dailyCapUsd` (0–50 or null), `minGapMinutes` (0/15/30/60), `triggers`, `permissions`; returns the new status |
+| `GET /settings/log`, `GET /journal`, `GET /journal/:runId`, `GET /spend` | Auditor change log, run journal, run detail and spend; see [nutrition-auditor.md](nutrition-auditor.md#api) |
 | `POST /run` | Explicit one-off scan using the current preview setting; 202/runId |
 | `POST /questions/:id/answer` | `expectedVersion`, `operationId`, one of `choiceId`, `text`, `dismiss` |
 | `POST /undo/:id` | Explicit Undo with `operationId`; conflict-safe and idempotent |
 
-`GET /api/v1/health/ai-usage?days=30` (1–90; 400 otherwise, repeated or
-bracketed params included) backs the AI usage card: `{ range, today, week,
-month, byFeature: [{ feature, calls, costUsd, avgUsd, unpriced }], days: [{
-date, total, byFeature }], beforeTracking: { costUsd, calls } | null }`, in
-household days, read from the AI usage ledger by `HealthAiUsageService`
-(through the `IAiUsageReader` port). Only rows attributed to `app: health`
-count; calls and averages count ok rows only (a retried call writes an error
-row too); a missing feature is `unspecified`. It reads the ledger only — the
-auditor's spend from before attribution stays on the Spend panel, which reads
-the run journal.
+`GET /api/v1/health/ai-usage?days=30` backs the Health AI usage card; its
+shape and counting rules are in [nutrition-auditor.md](nutrition-auditor.md#the-auditor-page).
 
 Unavailable service returns 503; changed versions and expired questions do not
-silently rewrite food. The generic agent registry exposes a read-only audit;
+rewrite food. The generic agent registry exposes a read-only audit;
 mutations remain behind Health's guarded cleanup service.
 
 ## Replay and selective recovery

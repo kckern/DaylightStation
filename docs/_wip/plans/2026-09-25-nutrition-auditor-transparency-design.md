@@ -1,6 +1,7 @@
 # Nutrition auditor transparency and control (design)
 
-**Status:** design approved 2026-09-25, not implemented.
+**Status:** implemented on branch `feat/nutrition-auditor-transparency`, pending deploy
+(design approved 2026-09-25). Reference: `docs/reference/health/nutrition-auditor.md`.
 **Owner surface:** Health app, new route `/health/auditor`, linked from Settings.
 
 ## Why
@@ -157,7 +158,8 @@ do the attribution; an automatic origin stamp makes any gap findable.
   into each call's usage record; nesting merges (app in composition, feature in
   the use case).
 - **Health features:** voice-log, photo-log, text-log, upc-log, scale-log,
-  revision, meal-instruction, icon-pick, coach, coach-commentary, auditor. Other
+  revision, meal-instruction, icon-pick, coach, coach-commentary, auditor,
+  auditor-triage (the Jev pre-audit screen). Other
   apps: app-level now; features where trivial, else null ("(no feature)").
 - **Origin** (`0_system` `aiContext`, AsyncLocalStorage): set by Express
   middleware (`http:METHOD route-pattern`), scheduler (`job:<id>`), Telegram
