@@ -55,6 +55,37 @@ export class ScreenshotService {
     });
     return stored;
   }
+
+  /**
+   * Save a whole-screen capture taken on a kiosk (the garage keypad's screenshot
+   * key), outside any workout session. Logged at info so the capture shows up
+   * in the log store beside whatever the kiosk was doing at that moment.
+   *
+   * @param {Object} params
+   * @param {string} params.image - Encoded image representation
+   * @param {string} [params.mediaType] - Declared media type
+   * @param {string} [params.deviceId] - Which kiosk took it (e.g. garage-tv)
+   * @param {number} [params.capturedAt] - Capture time in ms (defaults to now)
+   * @returns {Promise<Object>} Semantic capture receipt
+   * @throws {ScreenshotValidationError} If the image can't be decoded or no store root is configured
+   */
+  async saveKioskScreenshot({ image, mediaType, deviceId, capturedAt }) {
+    const stored = await this.#screenshotStore.saveKioskCapture({ image, mediaType, deviceId, capturedAt });
+    if (stored?.kind === 'invalid_encoding') {
+      throw new ScreenshotValidationError('Invalid image payload', stored.reason);
+    }
+    if (stored?.kind !== 'stored') {
+      throw new Error('Kiosk screenshot store is not configured');
+    }
+    this.#logger.info?.('fitness.kiosk_screenshot.saved', {
+      deviceId: stored.capture.deviceId,
+      filename: stored.capture.resourceName,
+      day: stored.capture.day,
+      path: stored.capture.resourcePath,
+      bytes: stored.capture.byteLength,
+    });
+    return stored;
+  }
 }
 
 /**
