@@ -34,7 +34,14 @@ export function attributeAgent(agentId) {
   return { app: null, feature: agentId ?? null };
 }
 
-export function createAgentUsageRecorder({ ledger = null, logger = console, pricing = null } = {}) {
+/**
+ * @param {Object} [options]
+ * @param {{ app: string, feature: string }} [options.attribution] - overrides
+ *   AGENT_ATTRIBUTION for every turn this recorder sees; for a caller that runs
+ *   a known agent on someone else's behalf (a CLI preview of the auditor is not
+ *   the auditor's spend).
+ */
+export function createAgentUsageRecorder({ ledger = null, logger = console, pricing = null, attribution = null } = {}) {
   return function recordAgentUsage({ agentId, runId = null, turnId = null, model, usage = null, durationMs = null, status = 'ok', error = null }) {
     try {
       const promptTokens = usage?.inputTokens ?? null;
@@ -43,7 +50,7 @@ export function createAgentUsageRecorder({ ledger = null, logger = console, pric
       const costUsd = usage ? estimateCostUsd(model?.name, { promptTokens, completionTokens, cachedTokens }, pricing) : 0;
       const entry = {
         provider: model?.provider || 'unknown', endpoint: 'agent', model: model?.name || null, requestedModel: model?.name || null,
-        agentId, ...attributeAgent(agentId), origin: currentOrigin() ?? null,
+        agentId, ...(attribution ? { app: attribution.app ?? null, feature: attribution.feature ?? null } : attributeAgent(agentId)), origin: currentOrigin() ?? null,
         runId, turnId, promptTokens, completionTokens,
         totalTokens: usage ? (promptTokens || 0) + (completionTokens || 0) : null,
         ...(cachedTokens != null ? { cachedTokens } : {}),

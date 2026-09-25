@@ -50,4 +50,13 @@ describe('agent usage recorder', () => {
     expect(ledger.record.mock.calls[0][0]).toMatchObject({ app: 'health', feature: 'auditor', origin: 'job:nutrition-audit' });
     expect(ledger.record.mock.calls[1][0]).toMatchObject({ app: null, feature: 'mystery', origin: null });
   });
+
+  it('an attribution override tags every turn with the caller, not the agent', () => {
+    const ledger = { record: vi.fn() };
+    const record = createAgentUsageRecorder({ ledger, logger: { info() {} }, attribution: { app: 'health', feature: 'reconciliation-preview' } });
+    const entry = runWithOrigin('cli:health-reconciliation-preview', () => record({ agentId: 'nutrition-auditor', model: { provider: 'openai', name: 'gpt-4o' },
+      usage: { inputTokens: 10, outputTokens: 1 } }));
+    expect(entry).toMatchObject({ agentId: 'nutrition-auditor', app: 'health', feature: 'reconciliation-preview', origin: 'cli:health-reconciliation-preview' });
+    expect(ledger.record).toHaveBeenCalledWith(expect.objectContaining({ feature: 'reconciliation-preview' }));
+  });
 });

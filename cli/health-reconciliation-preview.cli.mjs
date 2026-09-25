@@ -1,7 +1,10 @@
 #!/usr/bin/env node
 /** Isolated replay only: no household data, hardware subscriptions or messages.
  * --live-model sends the synthetic fixture to the configured model. All proposed
- * writes are validated against disposable real YAML stores before activation. */
+ * writes are validated against disposable real YAML stores before activation.
+ * A live-model turn is billed, so it is recorded in the real AI usage ledger
+ * (writer `cli`) as health/reconciliation-preview, origin
+ * cli:health-reconciliation-preview; that needs DAYLIGHT_BASE_PATH. */
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -16,6 +19,14 @@ import { MastraAdapter } from '../backend/src/1_adapters/agents/MastraAdapter.mj
 import { AgentExecutionPolicy } from '../backend/src/3_applications/agents/framework/AgentExecutionPolicy.mjs';
 import { createNutriLog } from '../backend/src/3_applications/nutribot/nutriLogRecords.mjs';
 import { provisionalReview } from '../shared/contracts/nutrition/reviewLifecycle.mjs';
+import { createAgentUsageRecorder } from '#composition/agentUsageRecorder.mjs';
+import { runWithOrigin } from '#system/runtime/aiContext.mjs';
+import { getConfigService } from './_bootstrap.mjs';
+import { createCliAiUsageLedger } from './_aiUsage.mjs';
+
+export const PREVIEW_ORIGIN = 'cli:health-reconciliation-preview';
+export const PREVIEW_ATTRIBUTION = Object.freeze({ app: 'health', feature: 'reconciliation-preview' });
+const liveModel = process.argv.includes('--live-model');
 
 const logger = createLogger({ app: 'health-reconciliation-preview' });
 // Keep transport exceptions from dumping request bodies or provider headers.
@@ -52,7 +63,11 @@ const rows = await items.findByDate('fixture', '2026-09-05');
 assert.equal(rows.length, 3);
 assert.deepEqual(rows.map(row => row.calories), [160, 70, 641]);
 const icons = { search: () => [], foodNames: () => ({}), has: slug => slug === 'default' };
-const runtime = new MastraAdapter({ model: process.env.NUTRITION_PREVIEW_MODEL || 'openai/gpt-4o', logger,
+// Only a live-model run spends; the fixture-only run needs no config.
+const usageRecorder = liveModel
+  ? createAgentUsageRecorder({ ledger: createCliAiUsageLedger(await getConfigService(), logger), logger, attribution: PREVIEW_ATTRIBUTION })
+  : null;
+const runtime = new MastraAdapter({ model: process.env.NUTRITION_PREVIEW_MODEL || 'openai/gpt-4o', logger, usageRecorder,
   maxToolCalls: 20, executionPolicy: new AgentExecutionPolicy({ logger, maxToolCalls: 20 }) });
 const auditor = new NutritionAuditor({ runtime, items, foodLogs, clock, timezoneFor, icons,
   catalog: { search: async () => [], getRecent: async () => [] }, meals: { list: async () => [] },
@@ -62,9 +77,9 @@ const auditor = new NutritionAuditor({ runtime, items, foodLogs, clock, timezone
       : { calories: 70, protein: 3, carbs: 4.5, fat: 4, fiber: 5.1 },
     nutritionLookup: { source: 'sanitized-fixture', servingVerified: true, conflicts: [], warnings: [], missing: [] } }) } });
 const repairs = new NutritionRepairService({ items, foodLogs, review, clock, timezoneFor, icons });
-if (process.argv.includes('--live-model')) {
+if (liveModel) {
   if (!process.env.OPENAI_API_KEY) throw new Error('OPENAI_API_KEY is required for a live model preview');
-  const result = await auditor.audit({}, { userId: 'fixture', runId: 'incident-preview' });
+  const result = await runWithOrigin(PREVIEW_ORIGIN, () => auditor.audit({}, { userId: 'fixture', runId: 'incident-preview' }));
   logger.info('nutrition.preview.proposed', { summary: result.summary, repairs: result.repairs, questions: result.questions });
   const evidence = new Map(result.evidence.map(source => [source.id, source]));
   const outcomes = [];
