@@ -51,4 +51,18 @@ describe('aiContext', () => {
     ]);
     expect([a, b]).toEqual(['a', 'b']);
   });
+
+  it('resolves a function origin lazily, each time it is read', () => {
+    let stage = 'before';
+    const seen = runWithOrigin(() => `http:GET ${stage}`, () => {
+      const first = currentOrigin();
+      stage = 'after';
+      return [first, currentOrigin()];
+    });
+    expect(seen).toEqual(['http:GET before', 'http:GET after']);
+  });
+
+  it('reads a throwing resolver as no origin', () => {
+    expect(runWithOrigin(() => { throw new Error('x'); }, () => currentOrigin())).toBeNull();
+  });
 });

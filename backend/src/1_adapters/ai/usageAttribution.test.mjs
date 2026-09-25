@@ -117,6 +117,22 @@ describe('OpenAIAdapter.scoped', () => {
     expect(adapter.usageTags).toBeUndefined();
   });
 
+  it('refuses writes through a view, leaving the shared adapter untouched', () => {
+    const { adapter } = openai();
+    const view = adapter.scoped({ app: 'health' });
+    expect(() => { view.model = 'gpt-3'; }).toThrow(/read-only/);
+    expect(() => { delete view.model; }).toThrow(/read-only/);
+    expect(() => Object.defineProperty(view, 'x', { value: 1 })).toThrow(/read-only/);
+    expect(adapter.model).toBe('gpt-4.1');
+  });
+
+  it('does not mutate the options object a caller passes', async () => {
+    const { adapter } = openai();
+    const options = { model: 'gpt-4.1' };
+    await adapter.scoped({ app: 'health' }).chat([{ role: 'user', content: 'x' }], options);
+    expect(options).toEqual({ model: 'gpt-4.1' });
+  });
+
   it('uses a method stubbed on the adapter after the view was made', async () => {
     const { adapter } = openai();
     const view = adapter.scoped({ app: 'health' });
@@ -189,5 +205,23 @@ describe('VoiceTranscriptionService.scoped', () => {
     expect(rows(ledger).map(r => [r.endpoint, r.app, r.feature])).toEqual([
       ['/audio/transcriptions', 'health', 'voice-log'], ['/chat/completions', 'health', 'voice-log'],
     ]);
+  });
+});
+
+describe('port defaults', () => {
+  it('scoped() on a port subclass that does not override it returns the gateway itself', async () => {
+    const { IAIGateway: Port, scopedGateway } = await import('#apps/common/ports/IAIGateway.mjs');
+    const { IDecisionGateway } = await import('#apps/common/ports/IDecisionGateway.mjs');
+    class Double extends Port {}
+    const double = new Double();
+    expect(double.scoped({ app: 'x' })).toBe(double);
+    const decision = new (class extends IDecisionGateway {})();
+    expect(decision.scoped({ app: 'x' })).toBe(decision);
+    // plain objects and missing gateways pass through scopedGateway untouched
+    const plain = { chat: async () => 'ok' };
+    expect(scopedGateway(plain, { feature: 'f' })).toBe(plain);
+    expect(scopedGateway(null, { feature: 'f' })).toBeNull();
+    const { adapter } = openai();
+    expect(scopedGateway(adapter, { app: 'health' }).usageTags).toEqual({ app: 'health' });
   });
 });

@@ -87,6 +87,18 @@ export class IAIGateway {
   }
 
   /**
+   * A view of this gateway whose calls are attributed to `tags`
+   * (`{ app, feature }`) in the AI usage ledger. Real adapters override this;
+   * the default is the gateway itself, so a double that extends the port can
+   * be scoped without doing anything.
+   * @param {{app?: string, feature?: string}} [tags]
+   * @returns {this}
+   */
+  scoped(tags = {}) {
+    return this;
+  }
+
+  /**
    * Check if gateway is configured
    * @returns {boolean}
    */
@@ -156,3 +168,16 @@ export function assistantMessage(content) {
 }
 
 export default IAIGateway;
+
+/**
+ * Narrow a gateway to `tags` for usage attribution. Tolerates a gateway (or a
+ * plain test double) without scoped(), and a missing gateway, returning it
+ * unchanged.
+ * @template T
+ * @param {T} gateway
+ * @param {{app?: string, feature?: string}} tags
+ * @returns {T}
+ */
+export function scopedGateway(gateway, tags) {
+  return typeof gateway?.scoped === 'function' ? gateway.scoped(tags) : gateway;
+}

@@ -53,7 +53,7 @@ describe('aiOriginMiddleware', () => {
 
   it('reaches handlers in mounted routers', async () => {
     const res = await request(app()).get('/api/v1/health/day/2026-09-25');
-    expect(res.body.origin).toBe('http:GET /api/v1/health/day/:id');
+    expect(res.body.origin).toBe('http:GET /api/v1/health/day/:date');
   });
 
   it('survives a route-level body parser that reads the stream after the middleware', async () => {
@@ -63,6 +63,35 @@ describe('aiOriginMiddleware', () => {
       (req, res) => res.json({ origin: currentOrigin(), bytes: req.body.length }));
     const res = await request(a).post('/api/v1/language/answer').set('content-type', 'audio/ogg').send(Buffer.alloc(300_000));
     expect(res.body).toEqual({ origin: 'http:POST /api/v1/language/answer', bytes: 300_000 });
+  });
+
+  it('records the matched route pattern, never the name in the URL', async () => {
+    const a = express();
+    a.use(aiOriginMiddleware());
+    const members = express.Router();
+    members.get('/members/:username', async (req, res) => {
+      await new Promise((r) => setTimeout(r, 1));
+      res.json({ origin: currentOrigin() });
+    });
+    members.get('/', (req, res) => res.json({ origin: currentOrigin() }));
+    const health = express.Router();
+    health.use('/household', members);
+    a.use('/api/v1/health', health);
+    a.get('/solo/:slug', (req, res) => res.json({ origin: currentOrigin() }));
+
+    const named = await request(a).get('/api/v1/health/household/members/alice?x=1');
+    expect(named.body.origin).toBe('http:GET /api/v1/health/household/members/:username');
+    expect(named.body.origin).not.toContain('alice');
+    expect((await request(a).get('/api/v1/health/household')).body.origin).toBe('http:GET /api/v1/health/household');
+    expect((await request(a).get('/solo/alice')).body.origin).toBe('http:GET /solo/:slug');
+  });
+
+  it('falls back to the normalized URL before any route has matched', async () => {
+    const a = express();
+    a.use(aiOriginMiddleware());
+    a.use((req, res) => res.json({ origin: currentOrigin() }));
+    const res = await request(a).get('/api/v1/unrouted/12345?token=abc');
+    expect(res.body.origin).toBe('http:GET /api/v1/unrouted/:id');
   });
 
   it('leaves no origin behind once the request is done', async () => {
