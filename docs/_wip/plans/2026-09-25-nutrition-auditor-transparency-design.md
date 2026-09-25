@@ -13,7 +13,10 @@ ledger. Hour-by-hour correlation against the log store tied every gpt-4o hour
 to a `nutrition-auditor` run.
 
 - The auditor is a Mastra agent (`5_composition/modules/nutritionCleanup.mjs`)
-  on `openai/gpt-4o` unless `agents.yml` sets `nutrition_auditor.model`.
+  that ran on `openai/gpt-4o` unless `agents.yml` set `nutrition_auditor.model`.
+  (As built, `agents.yml` → `nutrition_auditor.model` is no longer read: the
+  auditor settings own the model and every run passes its own. Only
+  `nutrition_auditor.triage` is still read from `agents.yml`.)
 - Mastra calls OpenAI through its own SDK client, never `OpenAIAdapter`, so no
   agent writes an `openai.usage` event or a ledger row, and
   `agent.execute.complete` logs no usage either.
@@ -57,10 +60,12 @@ Every change appends `{at, actor, field, from, to}` to the change log.
 
 - Existing: enabled, dryRun, telegram, Run now.
 - `model`: allowlist (gpt-4o, gpt-4.1, gpt-4.1-mini, gpt-5.6-luna), shown with
-  real average cost per run. Overrides `agents.yml`. `MastraAdapter.execute`
-  gains a per-call model option.
+  real average cost per run. The settings are the only source of the model
+  (`agents.yml` → `nutrition_auditor.model` is not read); a run fixes its model
+  when queued. `MastraAdapter.execute` gains a per-call model option.
 - `dailyCapUsd`: checked before each automatic run against today's journal
-  cost (household timezone). Over the cap, automatic runs pause until
+  cost, in the user's timezone (nutribot's per-user timezone, else the
+  household's; the Health AI usage card counts days the same way). Over the cap, automatic runs pause until
   midnight; Run now still works and is marked over-cap.
 - `minGapMinutes` (0 / 15 / 30 / 60): changes accumulate and are audited
   together once the gap passes.
@@ -94,8 +99,12 @@ After a run, `checkedFingerprint` becomes the fingerprint of the snapshot taken
 history. One row per run: `runId`, start/end, `trigger {classes, detail}`,
 `model`, `usage {input, cached, output}`, `costUsd`, tool-call digest
 (name, short args, ok, latency), `outcomes` (applied / proposed / rejected /
-blocked, with reason), `questions`, `summary`, `transcriptPath`. Skipped
-evaluations get a row too (`skipped: cap | gap | filtered | triage`).
+blocked, with reason), `questions`, `summary`, `transcriptPath`. As built,
+only two skips are journaled: `skipped: cap` (once per day and cap value) and
+`skipped: filtered` (once per fingerprint). A minimum-gap wait writes no row
+(changes accumulate and run together once the gap passes; `nextEligibleAt` on
+the status says when), and a triage skip writes no row either (it logs
+`nutrition.cleanup.skipped` with the reason and score).
 
 **Cost:** `MastraAdapter` reads `response.totalUsage` (execute and stream) and
 records it to `aiUsageLedger` with provider, model, `agentId` and `runId`,
@@ -113,8 +122,11 @@ the page.
 - `PATCH /nutrition/cleanup/settings` extended with validation
 
 **Backfill:** one-time CLI reading `media/logs/agents/nutrition-auditor/**`
-(from 2026-09-06) into journal rows, trigger `unknown (backfilled)`, outcomes
-from transcript output. Idempotent by `runId`.
+(from 2026-09-06) and the cleanup state file's `runs` into journal rows,
+trigger `unknown` (`answer` for answer turns). Outcomes, summary, status and
+timestamps come from the state where it has the run (the auditor recorded
+them); usage, cost and tool calls from the transcripts. Idempotent by
+`runId`. Run it before the pruning build drops all but 50 state runs.
 
 ## Logging
 
