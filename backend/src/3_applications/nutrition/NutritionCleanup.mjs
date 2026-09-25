@@ -26,7 +26,18 @@ const pruneRuns = state => {
 const questionExpired = (question, now, dates) => question.entryVersions.some(row => row.stabilizesAt
   ? !Number.isFinite(Date.parse(row.stabilizesAt)) || Date.parse(row.stabilizesAt) <= now : !dates.includes(row.date));
 
-/** What run detail shows of an agent transcript: full tool calls, how many rows went in, prompt size. */
+const RESULT_MAX_CHARS = 8192;
+const RESULT_PREVIEW_CHARS = 2048;
+/** A tool result small enough to send: long text is cut with a marker, a large object becomes a preview. */
+function capResult(result) {
+  if (typeof result === 'string') {
+    return result.length > RESULT_MAX_CHARS ? `${result.slice(0, RESULT_MAX_CHARS)}…[truncated ${result.length - RESULT_MAX_CHARS} chars]` : result;
+  }
+  if (result === null || typeof result !== 'object') return result;
+  const json = JSON.stringify(result);
+  return json.length > RESULT_MAX_CHARS ? { truncated: true, chars: json.length, preview: json.slice(0, RESULT_PREVIEW_CHARS) } : result;
+}
+/** What run detail shows of an agent transcript: tool calls (results capped), how many rows went in, prompt size. */
 function transcriptView(transcript) {
   let inputRows = null;
   try {
@@ -34,7 +45,7 @@ function transcriptView(transcript) {
     if (snapshot) inputRows = (snapshot.rows || []).length + (snapshot.pending || []).reduce((sum, log) => sum + (log.items || []).length, 0);
   } catch { /* an unparseable input has no row count */ }
   return {
-    toolCalls: (transcript.toolCalls || []).map(({ name, args, result, ok, latencyMs }) => ({ name, args, result, ok, latencyMs })),
+    toolCalls: (transcript.toolCalls || []).map(({ name, args, result, ok, latencyMs }) => ({ name, args, result: capResult(result), ok, latencyMs })),
     inputRows, systemPromptChars: typeof transcript.systemPrompt === 'string' ? transcript.systemPrompt.length : 0,
   };
 }
@@ -113,16 +124,25 @@ export class NutritionCleanup {
       .filter(row => !changed || (row.outcomes || []).some(changedOutcome));
     return { rows: rows.slice(offset, offset + limit), total: rows.length };
   }
-  /** One run's journal row, with a view of its agent transcript while that is still kept. Null for an unknown run. */
-  async journalEntry(userId, runId) {
-    const row = this.journalStore ? (await this.journalStore.list(userId)).find(entry => entry.runId === runId) : null;
+  /**
+   * One run's journal row, with a view of its agent transcript while that is
+   * still kept. Null for an unknown run. `at` (the run's start) narrows the
+   * read; a hint that misses falls back to the newest-first search.
+   */
+  async journalEntry(userId, runId, { at } = {}) {
+    if (!this.journalStore) return null;
+    const row = (at ? await this.journalStore.findRun(userId, runId, { around: at }) : null) ?? await this.journalStore.findRun(userId, runId);
     if (!row) return null;
-    let raw = null;
+    let raw = null, transcriptError = false;
     if (row.turnId && this.transcripts) {
       try { raw = await this.transcripts.find({ userId, startedAt: row.at, turnId: row.turnId }); }
-      catch (error) { this.logger.warn('nutrition.cleanup.transcript_read_failed', { userId, runId, error: error.message }); }
+      catch (error) {
+        transcriptError = true;
+        this.logger.warn('nutrition.cleanup.transcript_read_failed', { userId, runId, error: error.message });
+      }
     }
-    return { ...row, transcript: raw ? transcriptView(raw) : null, transcriptExpired: !!(row.turnId && this.transcripts && !raw) };
+    return { ...row, transcript: raw ? transcriptView(raw) : null,
+      transcriptExpired: !!(row.turnId && this.transcripts && !raw && !transcriptError), ...(transcriptError ? { transcriptError } : {}) };
   }
   /**
    * Auditor spend by household day. Totals come from the journal (completed
@@ -134,7 +154,9 @@ export class NutritionCleanup {
     const today = cleanupDates(this.clock.now(), this.timezoneFor(userId))[0];
     const first = addDays(today, 1 - days);
     const monthStart = today.slice(0, 8) + '01';
-    const rows = (await this.#journalRows(userId, first < monthStart ? first : monthStart, today)).filter(row => row.runId);
+    const weekStart = addDays(today, -6);
+    // Read back far enough for the day range, the calendar month and the week, whichever starts first.
+    const rows = (await this.#journalRows(userId, [first, monthStart, weekStart].sort()[0], today)).filter(row => row.runId);
     const byDate = new Map(Array.from({ length: days }, (_, i) => addDays(first, i)).map(date => [date, { date, costUsd: 0, runs: 0, changed: 0 }]));
     const triggers = new Map(), models = new Map();
     const tally = (map, key, row) => {
@@ -147,7 +169,7 @@ export class NutritionCleanup {
       const date = this.#householdDate(userId, row.at);
       const cost = Number.isFinite(row.costUsd) ? row.costUsd : 0;
       if (date >= monthStart) month += cost;
-      if (date >= addDays(today, -6)) week += cost;
+      if (date >= weekStart) week += cost;
       if (date === today) todayUsd += cost;
       const day = byDate.get(date);
       if (!day) continue;

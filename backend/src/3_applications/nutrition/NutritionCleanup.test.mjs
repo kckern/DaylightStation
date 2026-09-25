@@ -769,6 +769,23 @@ describe('auditor journal and spend views', () => {
     expect(await cleanup.journalEntry('alice', 'r2')).toMatchObject({ runId: 'r2', transcript: null, transcriptExpired: true });
     expect(await cleanup.journalEntry('alice', 'r3')).toMatchObject({ runId: 'r3', transcript: null, transcriptExpired: false });
     expect(await cleanup.journalEntry('alice', 'nope')).toBeNull();
+    expect(await cleanup.journalEntry('alice', 'r1', { at: '2026-09-04T18:00:00.000Z' })).toMatchObject({ runId: 'r1', transcriptExpired: false });
+  });
+  it('caps large tool results and reports an unreadable transcript apart from an expired one', async () => {
+    const { f, cleanup } = await seeded();
+    const big = 'x'.repeat(9000);
+    cleanup.transcripts = { find: vi.fn(async () => ({ systemPrompt: 'p', input: { text: '{}' }, toolCalls: [
+      { name: 'a', args: {}, result: big, ok: true, latencyMs: 1 },
+      { name: 'b', args: {}, result: { blob: big }, ok: true, latencyMs: 2 },
+      { name: 'c', args: {}, result: { small: 1 }, ok: true, latencyMs: 3 },
+    ] })) };
+    const { transcript } = await cleanup.journalEntry('alice', 'r1');
+    expect(transcript.toolCalls[0].result).toBe('x'.repeat(8192) + '…[truncated 808 chars]');
+    expect(transcript.toolCalls[1].result).toEqual({ truncated: true, chars: JSON.stringify({ blob: big }).length, preview: JSON.stringify({ blob: big }).slice(0, 2048) });
+    expect(transcript.toolCalls[2].result).toEqual({ small: 1 });
+    cleanup.transcripts = { find: vi.fn(async () => { throw new Error('EACCES'); }) };
+    expect(await cleanup.journalEntry('alice', 'r1')).toMatchObject({ transcript: null, transcriptError: true, transcriptExpired: false });
+    expect(f.logger.warn).toHaveBeenCalledWith('nutrition.cleanup.transcript_read_failed', expect.objectContaining({ runId: 'r1' }));
   });
   it('totals spend by household day, trigger and model, zero days included', async () => {
     const { cleanup } = await seeded();
@@ -789,6 +806,9 @@ describe('auditor journal and spend views', () => {
       { trigger: 'dailySweep', runs: 1, costUsd: 0.02, avgUsd: 0.02 },
     ]);
     expect(spend.byModel).toEqual([{ model: 'gpt-4o', runs: 2, avgUsd: 0.075 }, { model: 'gpt-4.1-mini', runs: 3, avgUsd: 0.015 }]);
-    expect((await cleanup.spend('alice', { days: 1 })).days).toEqual([{ date: '2026-09-04', costUsd: 0.01, runs: 2, changed: 1 }]);
+    const oneDay = await cleanup.spend('alice', { days: 1 });
+    expect(oneDay.days).toEqual([{ date: '2026-09-04', costUsd: 0.01, runs: 2, changed: 1 }]);
+    // near a month start the week reaches back past both the day range and the month
+    expect(oneDay).toMatchObject({ today: 0.01, week: 0.08, month: 0.06 });
   });
 });

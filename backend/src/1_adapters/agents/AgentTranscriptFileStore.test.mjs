@@ -27,5 +27,6 @@ describe('AgentTranscriptFileStore.find', () => {
     expect(await store.find({ agentId: '../etc', userId: 'alice', startedAt: '2026-09-04T18:00:00.000Z', turnId: 'turn1234' })).toBeNull();
     expect(await store.find({ agentId: 'nutrition-auditor', userId: 'alice', startedAt: 'not a date', turnId: 'turn1234' })).toBeNull();
     expect(await store.find({ agentId: 'nutrition-auditor', userId: 'alice', startedAt: '2026-09-04T18:00:00.000Z', turnId: '' })).toBeNull();
+    expect(await store.find({ agentId: 'nutrition-auditor', userId: 'alice', startedAt: '2026-09-04T18:00:00.000Z', turnId: ['turn1234'] })).toBeNull();
   });
 });

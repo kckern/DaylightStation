@@ -210,11 +210,18 @@ export function createHealthRouter(config) {
   }));
   router.patch('/nutrition/cleanup/settings', asyncHandler(async (req, res) => res.json(await cleanup().settings(getDefaultUsername(req), req.body))));
   router.get('/nutrition/cleanup/settings/log', asyncHandler(async (req, res) => res.json({ entries: cleanup().settingsLog(getDefaultUsername(req)) })));
+  // Auditor query params must be single plain strings. Depending on the query
+  // parser, a repeated param arrives as an array and `name[]` as an array or a
+  // literal `name[]` key; all of them are refused.
+  const plainQuery = (query, names) => names.every(name => (query[name] === undefined || typeof query[name] === 'string')
+    && !Object.keys(query).some(key => key.startsWith(name + '[')));
   // Auditor run journal. Dates are household days; the default range (last
   // seven) is the service's call, since only it knows the household timezone.
   router.get('/nutrition/cleanup/journal', asyncHandler(async (req, res) => {
     const service = cleanup();
     const { from, to, trigger, changed } = req.query;
+    // Repeated or bracketed params arrive as arrays or objects; only plain strings are accepted.
+    if (!plainQuery(req.query, ['from', 'to', 'trigger', 'changed', 'offset'])) return res.status(400).json({ error: 'Invalid query' });
     const offset = Number(req.query.offset ?? 0);
     if ((from !== undefined && !isISODate(from)) || (to !== undefined && !isISODate(to)) || (from && to && from > to)) return res.status(400).json({ error: 'Invalid date range' });
     if (!Number.isSafeInteger(offset) || offset < 0) return res.status(400).json({ error: 'Invalid offset' });
@@ -225,12 +232,16 @@ export function createHealthRouter(config) {
   router.get('/nutrition/cleanup/journal/:runId', asyncHandler(async (req, res) => {
     const service = cleanup();
     if (!/^[A-Za-z0-9_-]{1,64}$/.test(req.params.runId)) return res.status(400).json({ error: 'Invalid run id' });
-    const entry = await service.journalEntry(getDefaultUsername(req), req.params.runId);
+    // `at` (the run's start, from the list row) narrows the read to that part of the journal.
+    const { at } = req.query;
+    if (!plainQuery(req.query, ['at']) || (at !== undefined && !Number.isFinite(Date.parse(at)))) return res.status(400).json({ error: 'Invalid at' });
+    const entry = await service.journalEntry(getDefaultUsername(req), req.params.runId, { at });
     if (!entry) return res.status(404).json({ error: 'Run not found' });
     res.json(entry);
   }));
   router.get('/nutrition/cleanup/spend', asyncHandler(async (req, res) => {
     const service = cleanup();
+    if (!plainQuery(req.query, ['days'])) return res.status(400).json({ error: 'days must be 1 to 90' });
     const days = Number(req.query.days ?? 30);
     if (!Number.isSafeInteger(days) || days < 1 || days > 90) return res.status(400).json({ error: 'days must be 1 to 90' });
     res.json(await service.spend(getDefaultUsername(req), { days }));
