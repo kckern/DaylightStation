@@ -661,6 +661,13 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     source: process.env.DAYLIGHT_ENV || 'docker',
     logger: rootLogger.child({ module: 'ai-usage-ledger' }),
   });
+  // Agent (Mastra) turns price themselves and append to the same ledger; every
+  // MastraAdapter the composition builds receives this as `usageRecorder`.
+  const { createAgentUsageRecorder } = await import('#composition/agentUsageRecorder.mjs');
+  const agentUsageRecorder = createAgentUsageRecorder({
+    ledger: aiUsageLedger,
+    logger: rootLogger.child({ module: 'agent-usage' }),
+  });
 
   try {
     integrationSystem = await initializeIntegrations({
@@ -3307,7 +3314,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         store: cardLadderStore, assignments: flashcardAssignments, decks: schoolCatalog.content, lexicons: cardLadderLexicons,
         settings: cardLadderSettings, bounds: cardLadderConfig.bounds ?? null, teacherGate: schoolTeacherGate,
         timezone: configService.getTimezone?.() || null, now: Date.now,
-        model: cardLadderConfig.tuner?.model ?? null, mediaDir: configService.getMediaDir(),
+        model: cardLadderConfig.tuner?.model ?? null, mediaDir: configService.getMediaDir(), usageRecorder: agentUsageRecorder,
         notificationService: notificationStack?.notificationService ?? null,
         teachers: () => (configService.getHouseholdAppConfig(null, 'school') || {}).teachers ?? [],
         learnerName: (id) => tuningNames(id),
@@ -5995,6 +6002,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Agents services — build orchestrator + services without constructing a router
   const agentsServices = await createAgentsServices({
     logger: rootLogger.child({ module: 'agents-api' }),
+    agentUsageRecorder,
     healthStore: healthServices.healthStore,
     healthService: healthServices.healthService,
     fitnessPlayableService,
@@ -6028,7 +6036,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   try {
     const { createNutritionCleanup } = await import('#composition/modules/nutritionCleanup.mjs');
     nutritionCleanup = createNutritionCleanup({ configService, userIdentityService, dataService, nutribotServices, upcGateway, decisionGateway,
-      agentOrchestrator: agentsServices.agentOrchestrator,
+      agentOrchestrator: agentsServices.agentOrchestrator, usageRecorder: agentUsageRecorder,
       logger: rootLogger.child({ module: 'nutrition-cleanup' }), server,
       scheduled: enableScheduler && (process.env.NODE_ENV === 'production' || process.env.ENABLE_CRON === 'true') });
   } catch (error) {
@@ -6637,6 +6645,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     dataService,
     httpClient: axios,
     logger: rootLogger.child({ module: 'newsreporter' }),
+    agentUsageRecorder,
   });
 
   // Compose the canonical jobs.yml store with the newsreporter store. Order is
@@ -7042,6 +7051,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   try {
     const conciergeServices = await createConciergeServices({
       configService,
+      agentUsageRecorder,
       dataService,
       agentOrchestrator: v1Routers.agents?.orchestrator ?? null,
       workingMemory: v1Routers.agents?.workingMemory ?? null,

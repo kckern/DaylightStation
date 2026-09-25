@@ -69,6 +69,13 @@ describe('createCardLadderTuning', () => {
     expect(createRuntime).toHaveBeenCalledWith(expect.objectContaining({ model: 'openai/gpt-4o-mini' }));
   });
 
+  it('hands the usage recorder to the tuner runtime so its spend reaches the AI ledger', () => {
+    const usageRecorder = vi.fn();
+    const createRuntime = vi.fn(() => ({ execute: vi.fn() }));
+    build({ model: 'openai/gpt-4o-mini', usageRecorder, createRuntime });
+    expect(createRuntime).toHaveBeenCalledWith(expect.objectContaining({ usageRecorder }));
+  });
+
   it('qualifies a bare model id as OpenAI and leaves a provider-qualified id alone', () => {
     const bare = vi.fn(() => ({ execute: vi.fn() }));
     build({ model: 'gpt-5-nano', createRuntime: bare });

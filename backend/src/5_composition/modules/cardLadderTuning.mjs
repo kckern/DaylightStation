@@ -36,9 +36,9 @@ function unrefTimer(ms, task) {
   return () => clearTimeout(timer);
 }
 
-function defaultRuntime({ model, logger, mediaDir }) {
+function defaultRuntime({ model, logger, mediaDir, usageRecorder = null }) {
   return new MastraAdapter({
-    model, logger, maxToolCalls: 1, timeoutMs: 60000,
+    model, logger, usageRecorder, maxToolCalls: 1, timeoutMs: 60000,
     executionPolicy: new AgentExecutionPolicy({
       maxToolCalls: 1, logger,
       transcriptStore: mediaDir ? new AgentTranscriptFileStore({ mediaDir }) : null,
@@ -65,7 +65,7 @@ async function label(lookup) {
 
 export function createCardLadderTuning({
   store, assignments, decks, lexicons, settings, bounds = null, timezone = null, now = Date.now,
-  teacherGate = null, model = null, mediaDir = null,
+  teacherGate = null, model = null, mediaDir = null, usageRecorder = null,
   notificationService = null, teachers = () => [], learnerName = null,
   logger = console, scheduled = false, server = null,
   scheduler = new NodeApplicationScheduler(), intervalMs = TUNING_TICK_MS, firstTick = unrefTimer,
@@ -74,7 +74,7 @@ export function createCardLadderTuning({
 } = {}) {
   model = qualifyModelId(model);
   const tuner = model
-    ? new CardLadderTuner({ agentRuntime: createRuntime({ model, logger, mediaDir: mediaDir ? path.resolve(mediaDir) : null }), logger })
+    ? new CardLadderTuner({ agentRuntime: createRuntime({ model, logger, mediaDir: mediaDir ? path.resolve(mediaDir) : null, usageRecorder }), logger })
     : null;
 
   const notify = notificationService?.send ? async ({ learnerId, package: pkg, deckId, day, notes }) => {
