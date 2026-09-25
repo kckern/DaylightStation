@@ -80,13 +80,34 @@ describe('MastraAdapter usage recording', () => {
     expect(usageRecorder).toHaveBeenCalledWith(expect.objectContaining({ status: 'error', error: 'stream boom' }));
   });
 
-  it('records a turn once when the scope times out during evaluate', async () => {
+  it('records a turn aborted during evaluate once, as aborted, with the usage it spent', async () => {
     const usageRecorder = vi.fn(() => ({ costUsd: 0.0025 }));
-    const evaluate = () => new Promise(resolve => setTimeout(resolve, 200));
+    const controller = new AbortController();
+    const evaluate = () => { controller.abort(); };
     const runtime = adapter({ agentClass: FakeAgent, usageRecorder, hooks: { evaluate } });
-    await expect(runtime.execute({ agentId: 'a', input: 'x', tools: [], limits: { timeoutMs: 20 } }))
+    await expect(runtime.execute({ agentId: 'a', input: 'x', tools: [], signal: controller.signal }))
+      .rejects.toMatchObject({ name: 'AbortError' });
+    expect(usageRecorder).toHaveBeenCalledOnce();
+    expect(usageRecorder).toHaveBeenCalledWith(expect.objectContaining({ status: 'aborted',
+      usage: expect.objectContaining({ inputTokens: 1000 }) }));
+  });
+
+  it('records a suspended turn as suspended', async () => {
+    class Suspends { async generate() { return { text: '', finishReason: 'suspended', suspendPayload: { q: 1 }, totalUsage: { inputTokens: 5, outputTokens: 1 } }; } }
+    const usageRecorder = vi.fn(() => ({ costUsd: 0.0001 }));
+    const result = await adapter({ agentClass: Suspends, usageRecorder }).execute({ agentId: 'a', input: 'x', tools: [] });
+    expect(usageRecorder).toHaveBeenCalledOnce();
+    expect(usageRecorder).toHaveBeenCalledWith(expect.objectContaining({ status: 'suspended' }));
+    expect(result).toMatchObject({ status: 'suspended', costUsd: 0.0001 });
+  });
+
+  it('records a timed-out turn as timeout', async () => {
+    class Hangs { async generate() { return new Promise(() => {}); } }
+    const usageRecorder = vi.fn();
+    await expect(adapter({ agentClass: Hangs, usageRecorder }).execute({ agentId: 'a', input: 'x', tools: [], limits: { timeoutMs: 15 } }))
       .rejects.toMatchObject({ name: 'TimeoutError' });
     expect(usageRecorder).toHaveBeenCalledOnce();
+    expect(usageRecorder).toHaveBeenCalledWith(expect.objectContaining({ status: 'timeout', usage: null }));
   });
 
   it('records the spent usage when the output fails its schema', async () => {
