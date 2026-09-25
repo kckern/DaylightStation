@@ -29,7 +29,7 @@ export function createNutritionCleanup({ dataService, configService, userIdentit
   const store = new YamlAgentStateStore({ dataService });
   const items = nutribotServices.nutriListStore;
   const foodLogs = nutribotServices.foodLogStore;
-  const runtime = new MastraAdapter({ model: configService.getAppConfig?.('agents')?.nutrition_auditor?.model || 'openai/gpt-4o',
+  const runtime = new MastraAdapter({ model: configService.getAppConfig?.('agents')?.nutrition_auditor?.model || 'openai/gpt-4.1-mini',
     logger, usageRecorder, maxToolCalls: 20, timeoutMs: 120000, executionPolicy: new AgentExecutionPolicy({ maxToolCalls: 20, logger,
       transcriptStore: new AgentTranscriptFileStore({ mediaDir: configService.getMediaDir() }) }) });
   const dbDir = configService.getDataDir() + '/agents';
