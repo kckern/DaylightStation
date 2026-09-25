@@ -117,11 +117,31 @@ describe('budgetGeometry — ticks', () => {
 });
 
 describe('budgetGeometry — labels fit or drop', () => {
-  it('food is labelled at ≥70px, the hatch at ≥36px', () => {
+  it('food is labelled inside at ≥70px, the hatch at ≥36px', () => {
     const g = budgetGeometry(day(), { widthPx: 360 });
     expect(g.food.labelled).toBe(true);
+    expect(g.food.outside).toBe(false);
     expect(g.earned.labelled).toBe(false); // 247 kcal ≈ 31px
-    expect(budgetGeometry(day({ exercise: 0, food: 400, net: 400, zone: 'incomplete', remaining: 800 }), { widthPx: 280 }).food.labelled).toBe(false);
+  });
+
+  it('a food block too short for its label carries it just past the frontier', () => {
+    const g = budgetGeometry(day({ exercise: 0, food: 400, net: 400, zone: 'incomplete', remaining: 800 }), { widthPx: 280 });
+    expect(g.food.labelled).toBe(true);
+    expect(g.food.outside).toBe(true); // 400 kcal ≈ 44px
+  });
+
+  it('nothing eaten, no label', () => {
+    expect(budgetGeometry(day({ food: 0, net: -247, zone: 'incomplete', remaining: 2038 }), { widthPx: 360 }).food.labelled).toBe(false);
+  });
+
+  it('the hatch drops its "+N" where the eaten label would cover it', () => {
+    const base = { exercise: 311, maintenance: 2291, zone: 'in-range' };
+    // 360px: hatch 1791→2102 ≈ 221–260px, its label ≈ 222–258px.
+    const clear = budgetGeometry(day({ ...base, food: 558, net: 247, zone: 'incomplete', remaining: 1544 }), { widthPx: 360 });
+    expect(clear.food.outside).toBe(true); // label ≈ 69–139px
+    expect(clear.earned.labelled).toBe(true);
+    const inside = budgetGeometry(day({ ...base, food: 1950, net: 1639, remaining: 152 }), { widthPx: 360 });
+    expect(inside.earned.labelled).toBe(false); // eaten label ≈ 171–241px
   });
 });
 

@@ -103,21 +103,36 @@
       color-mix(in srgb, var(--ds-background) 55%, transparent) 0 3px,
       color-mix(in srgb, var(--ds-success) 35%, transparent) 3px 6px);
   }
-  // The label sits at the block's right end, by the frontier.
   &__food {
-    z-index: 2; display: flex; align-items: center; justify-content: flex-end; overflow: hidden;
+    z-index: 2;
     &--incomplete { background: var(--health-zone-incomplete); }
     &--in-range, &--declared { background: var(--health-zone-ok); }
     &--over { background: var(--health-zone-over); }
     &--past-even { background: var(--health-zone-past); }
   }
-  &__seg-label {
+  &__seg-label, &__food-label {
     padding: 0 0.3rem; font-size: 0.62rem; font-weight: 600; line-height: 1; white-space: nowrap;
-    color: var(--ds-background); font-variant-numeric: tabular-nums;
+    font-variant-numeric: tabular-nums;
   }
-  &__earned &__seg-label { color: var(--ds-text-high); }
+  // "N eaten" ends at the frontier, on the top layer: a solid pill in the zone
+  // colour, so a band edge, the hatch or break-even never cuts through the text.
+  &__food-label {
+    position: absolute; top: 2px; bottom: 2px; z-index: 5; display: flex; align-items: center;
+    border-radius: 3px; color: var(--ds-background);
+    &--incomplete { background: var(--health-zone-incomplete); }
+    &--in-range, &--declared { background: var(--health-zone-ok); }
+    &--over { background: var(--health-zone-over); }
+    &--past-even { background: var(--health-zone-past); }
+    // Past the frontier of a block too short to hold it: on the track, over the run.
+    &--outside { margin-left: 3px; background: var(--ds-surface-alt); color: var(--ds-text-high); }
+  }
+  // "+N" sits on a track-coloured pill: the dotted run passes under it.
+  &__earned &__seg-label {
+    color: var(--ds-text-high); background: var(--ds-surface-alt); border-radius: 3px; padding: 2px 0.3rem;
+  }
   // What the headline measures: a dotted run from the frontier to its mark.
-  &__run { z-index: 3; top: 50%; bottom: auto; height: 0; border-top: 2px dotted var(--ds-text-high); opacity: 0.85; }
+  // Above the food, below the hatch and band edges, so their labels stay clean.
+  &__run { z-index: 2; top: 50%; bottom: auto; height: 0; border-top: 2px dotted var(--ds-text-high); opacity: 0.85; }
   // Over / past break-even: the run lies INSIDE the food block's end, where the
   // "eaten" label is — so it runs along the bottom edge instead of through it.
   &__run--over, &__run--past-even { top: auto; bottom: 2px; }

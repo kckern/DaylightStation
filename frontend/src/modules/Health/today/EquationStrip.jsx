@@ -123,14 +123,17 @@ function RulerScale({ budget, spoken }) {
       <div className="health-budget__track health-budget__track--ruler" role="img" data-testid="budget-ruler"
         aria-label={`${n(food.value)} kcal eaten; ${band.label.toLowerCase()}${earned ? `, plus ${n(earned.value)} burned` : ''}${even ? `; break even ${n(even.value)}` : ''}; ${spoken}`}>
         {hasWidth ? <span className="health-budget__band" style={{ left: at(band.fromPct), width: at(band.toPct - band.fromPct) }} /> : null}
-        <span className={`health-budget__food health-budget__food--${zone}`} data-testid="budget-food" style={{ left: at(food.fromPct), width: at(food.widthPct) }}>
-          {food.labelled ? <span className="health-budget__seg-label">{n(food.value)} eaten</span> : null}</span>
+        <span className={`health-budget__food health-budget__food--${zone}`} data-testid="budget-food" style={{ left: at(food.fromPct), width: at(food.widthPct) }} />
         {earned ? <span className="health-budget__earned" data-testid="budget-earned" style={{ left: at(earned.fromPct), width: at(earned.widthPct) }}>
           {earned.labelled ? <span className="health-budget__seg-label">+{n(earned.value)}</span> : null}</span> : null}
         {run ? <span className={`health-budget__run health-budget__run--${zone}`} data-testid="budget-run" style={{ left: at(run.fromPct), width: at(run.widthPct) }} /> : null}
         {hasWidth
           ? <span className="health-budget__band-edges" style={{ left: at(band.fromPct), width: at(band.toPct - band.fromPct) }} />
           : <span className="health-budget__goal-line" style={{ left: at(band.toPct) }} />}
+        {/* Its own top layer, not a child of the food block: the band edges, the
+            hatch and break-even all stack above the food and would cut through it. */}
+        {food.labelled ? <span className={`health-budget__food-label health-budget__food-label--${food.outside ? 'outside' : zone}`} data-testid="budget-food-label"
+          style={food.outside ? { left: at(food.fromPct + food.widthPct) } : { right: at(100 - (food.fromPct + food.widthPct)) }}>{n(food.value)} eaten</span> : null}
         {even ? <span className="health-budget__even" style={{ left: at(even.pct) }} /> : null}
       </div>
       <div className="health-budget__rail health-budget__ticks" aria-hidden="true">

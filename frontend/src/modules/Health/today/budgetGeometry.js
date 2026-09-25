@@ -60,10 +60,21 @@ export function budgetGeometry(budget, { widthPx = 360 } = {}) {
     ticks.push({ value: v, pct: pct(v), label: v % labelEvery === 0 ? fmt(v) : null });
   }
 
+  // "N eaten" ends at the frontier; a block too short for it carries the label
+  // just past the frontier instead of dropping it.
+  const foodPx = food * pxPerKcal;
+  const outside = foodPx < FOOD_LABEL_PX;
+  const foodSeg = { ...segment(0, food), value: food, labelled: food > 0, outside };
+  const foodLabel = outside ? [foodPx, foodPx + FOOD_LABEL_PX] : [foodPx - FOOD_LABEL_PX, foodPx];
+
+  // "+N" is centred on the hatch and drops where the eaten label (drawn above
+  // it) would cover it.
+  const hatchMidPx = ((top + ceiling) / 2) * pxPerKcal;
+  const hatchLabel = [hatchMidPx - EARNED_LABEL_PX / 2, hatchMidPx + EARNED_LABEL_PX / 2];
+  const underFoodLabel = foodSeg.labelled && hatchLabel[0] < foodLabel[1] && foodLabel[0] < hatchLabel[1];
   const earned = exercise > 0
-    ? { ...segment(top, ceiling), value: exercise, labelled: exercise * pxPerKcal >= EARNED_LABEL_PX }
+    ? { ...segment(top, ceiling), value: exercise, labelled: exercise * pxPerKcal >= EARNED_LABEL_PX && !underFoodLabel }
     : null;
-  const foodSeg = { ...segment(0, food), value: food, labelled: food * pxPerKcal >= FOOD_LABEL_PX };
 
   const runEnds = {
     incomplete: [food, ceiling],
