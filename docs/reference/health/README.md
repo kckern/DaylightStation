@@ -179,28 +179,30 @@ computed from those exact entries. A budget setup error does not hide the food l
 **The bar is a labelled ruler** (`RulerScale` in `EquationStrip.jsx`, geometry in the
 pure `today/budgetGeometry.js`, pinned by `budgetGeometry.test.js`):
 
-- **Ruler.** `[left, right]` maps onto the whole track. `left = −ceil250(exercise)`
-  (0 with no exercise); `right = max(maintenance, net, top, floor) × 1.12`. On an
-  exercise day everything compresses slightly: marks keep their values, not their
-  pixels.
+- **Ruler of food eaten, from 0.** `right = max(maintenance + exercise, food,
+  top + exercise, floor) × 1.12`. Every block and label sits at the value it
+  names. The server compares the top and break-even against NET; on a food scale
+  that is the same comparison with exercise added to both sides, so exercise
+  **raises the ceiling** (`top + exercise`) and break-even
+  (`maintenance + exercise`) instead of moving anything left of zero.
 - **Ticks** every 250 kcal, numbered at 1,000s under 600 px of track and at 500s
-  above; none within 12 px of a named mark.
-- **Goal band** from `floor − exercise` to `top`, labelled "Goal 1,200–1,791" above
-  the track. Its left edge shifts by exercise because the floor measures food
-  (`food ≥ floor ⇔ net ≥ floor − exercise`). A band with no width collapses to one
-  Goal line. **Break even** is a line labelled below; it keeps only its number
-  when it sits within 40 px of the top.
-- **Exercise credit on the left.** A hatched "earned" block from −exercise to 0,
-  drawn over the first `exercise` kcal of the food block (the food it cancelled).
-- **Food block** from −exercise, length = food, labelled "N eaten" at its right
-  end when ≥ 70 px. Its right edge is **net — the one frontier** — and its colour is
-  the zone: info (incomplete, still working toward the floor), success (in range or
-  declared), warning (over the top), danger (past break-even). A negative net ends
-  left of 0; the hatch past it is unused credit.
+  above; none within 12 px of a named mark (floor, top, ceiling, break-even).
+- **Goal band** from `floor` to the ceiling, labelled "Goal 1,200–1,791" (the
+  configured floor and top) above the track at its left edge. With floor = top
+  and no exercise it is one Goal line. **Break even** is a line labelled below
+  with its food-scale value (`maintenance + exercise`); it keeps only its number
+  when it sits within 40 px of the ceiling.
+- **Exercise credit** is a hatched block from `top` to the ceiling, labelled
+  "+N" when ≥ 36 px. It is drawn above the food, so food eaten into the credit
+  shows through the hatch.
+- **Food block** from 0, length = food, labelled "N eaten" at its right end when
+  ≥ 70 px. Its right edge is **the one frontier**, and its colour is the zone:
+  info (incomplete, still working toward the floor), success (in range or
+  declared), warning (past the ceiling), danger (past break-even).
 - **Remaining run.** A dotted run from the frontier to the mark the headline
-  measures against (to the top while under or in range / from the top when over / from
-  break-even when past it); none when the day
-  is declared.
+  measures against: to the ceiling while under or in range, from the ceiling
+  when over, from break-even when past it. None when the day is declared. Its
+  length in kcal **is** `remaining`: `ceiling − food = top − net`.
 
 A budget without `range`/`zone` (an older server) still gets the previous two-mark
 bar. The terms line states the real net (with a minus sign when exercise exceeds
@@ -649,8 +651,9 @@ than left to be read as good days, and gaps are excluded from every average.
 
 **Week strip and month block.** Bar height is the day's **net** calories
 (`food − exercise`) as a fraction of that day's goal (`budget`) — the same
-quantity the Today bar fills and the same one the server's status judges, so
-height and hue can never disagree. The box is `cap` goals tall
+quantity the server's status judges, so height and hue can never disagree. (The
+Today ruler plots food instead, with exercise raising its ceiling; the zones are
+the same.) The box is `cap` goals tall
 (`dayBars.js` `barScale`): at least 1.25×, raised for the whole strip so its
 highest break-even (`maintenance / budget`) fits under the top, at most 2×. A
 solid line marks the goal at `1/cap` of the box; a dashed line marks break even.
