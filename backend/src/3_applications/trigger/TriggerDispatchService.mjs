@@ -131,6 +131,34 @@ export class TriggerDispatchService {
     this.#scheduler = scheduler;
   }
 
+  /**
+   * Re-read the tag bindings after a miss. Resolves true when the re-read
+   * succeeded, so the caller resolves again. That is not the same as "the uid
+   * is new": a tag named from the unknown-tag prompt already sits in memory as
+   * a note-only stub, and curating it into books.yml shows up as an UPDATE.
+   * Never throws: a failed re-read is logged and the tap carries on as unknown.
+   */
+  async #refreshNfcTags(uid, dispatchId) {
+    if (typeof this.#tagWriter?.refreshNfcTags !== 'function') return false;
+    try {
+      const { added = [], updated = 0 } = await this.#tagWriter.refreshNfcTags();
+      const known = !!this.#config?.nfc?.tags?.[uid];
+      this.#logger.info?.('trigger.registry.refreshed', { value: uid, known, added, updated, dispatchId });
+      // Curating a tag leaves its stub in the inbox; clear it now as boot would.
+      if (typeof this.#tagWriter.sweepInbox === 'function') {
+        Promise.resolve(this.#tagWriter.sweepInbox())
+          .then(({ swept = [] } = {}) => {
+            if (swept.length) this.#logger.info?.('trigger.inbox.swept', { uids: swept, count: swept.length });
+          })
+          .catch((err) => this.#logger.warn?.('trigger.inbox.sweep-failed', { error: err?.message }));
+      }
+      return true;
+    } catch (err) {
+      this.#logger.warn?.('trigger.registry.refresh-failed', { value: uid, error: err?.message, dispatchId });
+      return false;
+    }
+  }
+
   #lookupAuthToken(modality, location) {
     return ownLocation(this.#config?.[modality], location)?.auth_token ?? null;
   }
@@ -235,15 +263,23 @@ export class TriggerDispatchService {
       }
     }
 
+    const resolve = () => ResolverRegistry.resolve({
+      modality,
+      location,
+      value,
+      registry: this.#config,
+      contentIdResolver: this.#contentIdResolver,
+    });
     let intent;
     try {
-      intent = ResolverRegistry.resolve({
-        modality,
-        location,
-        value,
-        registry: this.#config,
-        contentIdResolver: this.#contentIdResolver,
-      });
+      intent = resolve();
+      // The registry is read at boot, so a tag named since then would miss until
+      // a restart. On an NFC miss, re-read the files once and try again. The
+      // refresh only ever adds, and a failed one leaves the registry as it was,
+      // so the worst case is the unknown-tag path below — same as without it.
+      if (!intent && modality === 'nfc' && await this.#refreshNfcTags(normalizedValue, dispatchId)) {
+        intent = resolve();
+      }
     } catch (err) {
       const code = err instanceof UnknownModalityError ? 'UNKNOWN_MODALITY' : 'INVALID_INTENT';
       this.#logger.error?.('trigger.fired', { location, modality, value: normalizedValue, error: err.message, dispatchId });

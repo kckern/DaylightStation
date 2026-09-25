@@ -149,6 +149,10 @@ A tag's lifecycle is **derived from its YAML fields**, not stored as a flag. `Nf
 
 **Promotion** is "add an intent field" (`plex`, `scene`, `service`, etc.) by editing the YAML directly. The leftover `scanned_at:` and `note:` are harmless and may be hand-cleaned at the user's discretion.
 
+**No restart needed to promote.** The registry is read at boot, but an NFC miss re-reads the trigger files once (`YamlTriggerConfigRepository.refreshNfcTags`) and resolves again, so the first tap after a tag is filed into `bindings/nfc/books.yml` plays it. The stub left in `unsorted.yml` is swept on that re-read, the same as at boot. Logged as `trigger.registry.refreshed` (`known`, `added`, `updated`) or `trigger.registry.refresh-failed` (warn).
+
+The re-read is additive: it adds new tags and updates existing ones, but **never removes** one, and a read that throws changes nothing. A file Dropbox is mid-sync on can read as missing without an error, and that must not unregister the house. Two consequences: **removing** a tag still needs a restart, and so does **changing** a tag that already resolves, since a tap that resolves never misses and never triggers the re-read.
+
 **`notify_unknown` field on `nfc/locations.yml`:**
 
 ```yaml

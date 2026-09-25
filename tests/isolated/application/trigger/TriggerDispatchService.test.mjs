@@ -1140,3 +1140,91 @@ describe('TriggerDispatchService — the unknown-tag observer', () => {
     expect(tagWriter.recordObserved).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('TriggerDispatchService.handleTrigger — re-read on an NFC miss', () => {
+  const makeRegistry = (tags = {}) => ({
+    nfc: {
+      locations: { livingroom: { target: 'livingroom-tv', action: 'play-next', auth_token: null, defaults: {} } },
+      tags,
+    },
+    state: { locations: {} },
+  });
+
+  function makeService(config, tagWriter, logger) {
+    return new TriggerDispatchService({
+      ...TEST_RUNTIME,
+      config,
+      contentIdResolver: makeResolver(),
+      wakeAndLoadService: { execute: vi.fn() },
+      actuationGateway: actuationFor({ haGateway: { callService: vi.fn().mockResolvedValue({ ok: true }) } }),
+      tagWriter,
+      broadcast: vi.fn(),
+      logger,
+    });
+  }
+
+  const makeLogger = () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() });
+
+  it('plays a tag that was added to the files after boot', async () => {
+    const registry = makeRegistry();
+    const logger = makeLogger();
+    const tagWriter = {
+      recordObserved: vi.fn().mockResolvedValue({ created: true }),
+      refreshNfcTags: vi.fn(async () => {
+        registry.nfc.tags['04499aa58b2681'] = { global: { plex: 621333 }, overrides: {} };
+        return { added: ['04499aa58b2681'], updated: 0 };
+      }),
+      sweepInbox: vi.fn().mockResolvedValue({ swept: [] }),
+    };
+    const service = makeService(registry, tagWriter, logger);
+
+    const result = await service.handleTrigger('livingroom', 'nfc', '04499aa58b2681', { dryRun: true });
+
+    expect(result.ok).toBe(true);
+    expect(result.response.expression.contentId).toBe('plex:621333');
+    expect(tagWriter.refreshNfcTags).toHaveBeenCalledTimes(1);
+    expect(tagWriter.recordObserved).not.toHaveBeenCalled();
+    expect(logger.info).toHaveBeenCalledWith('trigger.registry.refreshed', expect.objectContaining({ known: true }));
+  });
+
+  it('plays a note-only stub once it has been curated (an update, not an add)', async () => {
+    const registry = makeRegistry({ '04499aa58b2681': { global: { note: 'Goodnight moon' }, overrides: {} } });
+    const tagWriter = {
+      recordObserved: vi.fn().mockResolvedValue({ created: false }),
+      refreshNfcTags: vi.fn(async () => {
+        registry.nfc.tags['04499aa58b2681'] = { global: { note: 'Goodnight moon', plex: 621333 }, overrides: {} };
+        return { added: [], updated: 1 };
+      }),
+    };
+    const service = makeService(registry, tagWriter, makeLogger());
+
+    const result = await service.handleTrigger('livingroom', 'nfc', '04499aa58b2681', { dryRun: true });
+
+    expect(result.ok).toBe(true);
+    expect(result.response.expression.contentId).toBe('plex:621333');
+  });
+
+  it('falls through to the unknown-tag path when the re-read throws', async () => {
+    const logger = makeLogger();
+    const tagWriter = {
+      recordObserved: vi.fn().mockResolvedValue({ created: true }),
+      refreshNfcTags: vi.fn().mockRejectedValue(new Error('tag "aa" appears in both books.yml and cards.yml')),
+    };
+    const service = makeService(makeRegistry(), tagWriter, logger);
+
+    const result = await service.handleTrigger('livingroom', 'nfc', '04a1b2c3');
+
+    expect(result.code).toBe('TRIGGER_NOT_REGISTERED');
+    expect(tagWriter.recordObserved).toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalledWith('trigger.registry.refresh-failed', expect.objectContaining({ value: '04a1b2c3' }));
+  });
+
+  it('does not re-read for a tag that is already known', async () => {
+    const tagWriter = { recordObserved: vi.fn(), refreshNfcTags: vi.fn() };
+    const service = makeService(makeRegistry({ aa: { global: { plex: 1 }, overrides: {} } }), tagWriter, makeLogger());
+
+    await service.handleTrigger('livingroom', 'nfc', 'aa', { dryRun: true });
+
+    expect(tagWriter.refreshNfcTags).not.toHaveBeenCalled();
+  });
+});
