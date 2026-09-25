@@ -25,7 +25,7 @@ const SOURCE_ROOT = '/backend/src/';
 const DOMAIN_LEVELS = Object.freeze({
   core: 0,
   content: 1, common: 1, messaging: 1, notification: 1, scheduling: 1, entropy: 1, 'state-gates': 1,
-  ambient: 2, art: 2, automotive: 2, barcode: 2, camera: 2, concierge: 2, cost: 2,
+  ambient: 2, art: 2, automotive: 2, barcode: 2, camera: 2, concierge: 2, 'content-filter': 2, cost: 2,
   donow: 2, economy: 2, exercise: 2, feed: 2, finance: 2, fitness: 2, gaming: 2,
   gratitude: 2, 'home-automation': 2, journaling: 2, lifeplan: 2, livestream: 2,
   measures: 2, media: 2, midi: 2, nutrition: 2, piano: 2, pianoaudio: 2,

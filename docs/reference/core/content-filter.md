@@ -1,6 +1,9 @@
 # Content Filter
 
-**Status:** Implemented core model and API; player integration and authoring remain in progress.
+**Status:** Implemented core model and API; player integration in progress. Authoring is
+CLI-only today (`cli/contentfilter.cli.mjs`; there is no admin UI or API write path). A
+subtitle cue review queue (`srt-review`, below) gives a grown-up a model's second opinion
+on word-list mutes; it never edits cues.
 
 ## Purpose
 
@@ -49,7 +52,10 @@ cues:
 Required practical invariants:
 
 - `contentId` identifies the media item (`plex:{ratingKey}`).
-- Every cue has a stable `id`, category, channel, severity, and numeric `in`/`out`.
+- Every cue has a stable `id`, category and numeric `in`/`out`, and should carry a
+  channel.
+- `severity` is optional in practice: VidAngel EDLs never carry it; SRT word-list cues
+  do, derived from the word-list tier (see below). The resolver does not read it.
 - `out` is later than `in`; cues are sorted by start time when resolved.
 - `precision` records timing confidence. Approximate cues receive effect-specific
   safety widening; millisecond cues do not.
@@ -133,6 +139,48 @@ the filesystem adapter is replaceable without changing the use case.
 
 Always retain the source and precision metadata. A cue set must be checked against the
 actual media release before being enabled, especially when the source is marked unsynced.
+
+## Subtitle word-list cues and review
+
+`contentfilter srt-mutes <ratingKey>` scans the title's English SRT (Plex, or
+`--srt <file>`) for words in `household/content-filter/bad-words.yml` and, with
+`--write`, stores one local-time mute per word as `addCues` (`source: srt`,
+`precision: srt-line`) in the title's override. The matcher lives in
+`backend/src/2_domains/content-filter/subtitleWords.mjs`: whole-word forms only,
+word *i* of a line placed at `start + i·0.33 s` (capped at the caption end),
+and every listed word gets its own cue, even when two land at the same instant
+(otherwise disabling one would unmute the other). Ids are
+`srt<line start ms>_<token index>`: they depend on the SRT alone, so they stay
+stable while the SRT is unchanged and survive word-list edits, and
+`cueOverrides` keyed on them keep naming the same spoken word. Only a repeated
+subtitle block (same start, index and word) is deduplicated. With `--write`,
+any `srt*` key in `cueOverrides` that no longer matches an emitted cue is
+printed as orphaned. Category is `language/<group>/<leaf>`; severity comes
+from the word's tier (`tolerant → high`, `moderate → medium`, `strict → low`).
+SRT cues carry an explicit `effect: mute`, so profiles do not change them —
+only `cueOverrides.<id>.disabled` does.
+
+`contentfilter srt-review <ratingKey>` is a second opinion for a grown-up.
+For every word hit it asks the typed-decision model (`IDecisionGateway`, Jev)
+two questions about the line, with the previous and next subtitle lines as
+context: which word-list group the use belongs to, or `none` (an innocent use
+such as a place, an animal, a prayer, a ghost), and how severe it is on
+`low | medium | high`. It writes `household/content-filter/review/<ratingKey>.yml`
+(`--out` to redirect): each item is the word-list cue unchanged plus Jev's
+answer, `status: agree | review`, `reasons` (`not-offensive`,
+`category-differs`, `severity-differs`, `low-confidence`, `model-failed`,
+`model-unavailable`) and `decision: null` for the grown-up. **It never adds,
+removes or edits a cue.** To act on a review, add
+`cueOverrides: { <cueId>: { disabled: true } }` to the title's override.
+With no model configured every item is listed as `model-unavailable`.
+Re-running the review keeps any filled-in `decision` whose cue id still names the
+same word. The command refuses an `--out` path inside the overrides folder.
+
+Run offline; concurrency defaults to 4 (`--concurrency`), the confidence floor
+to 0.7 (`--min-confidence`). The CLI's `content-filter.cue-review.summary` /
+`.item` / `.failed` events print to the terminal and do not reach the log
+store; the review file is the record. There is no review UI yet; the next
+slice is an admin screen that reads the review file and writes `cueOverrides`.
 
 ## QA and current limitations
 
