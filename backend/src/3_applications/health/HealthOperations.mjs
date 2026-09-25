@@ -236,7 +236,8 @@ export class HealthOperations {
     // A day the user closed (/done, /fast, the day view) is final — never filled.
     let closures = {};
     try { closures = (await this.healthData?.loadDayClosedData?.(username)) || {}; } catch { closures = {}; }
-    const closed = new Set(dates.filter(date => closureStatus(closures[date])));
+    // A closed day, or one with a skipped meal, is trusted as logged: never filled.
+    const closed = new Set(dates.filter(date => closureStatus(closures[date]) || fastedMealsOf(closures[date]).length));
     const toWrite = entries.filter(entry => !already.has(entry.date) && !closed.has(entry.date));
     const rows = toWrite.map(entry => ({
       uuid: this.newId(), userId: username, date: entry.date, mealTime: null,

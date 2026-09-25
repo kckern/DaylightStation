@@ -40,6 +40,18 @@ describe('DayClosePill', () => {
     expect(screen.getByTestId('dayclose-pill').textContent).toMatch(/Nothing logged/);
   });
 
+  it('fasting lives on the meals: the menu offers only Done logging', async () => {
+    r(<DayClosePill date="2026-09-24" dayStatus={open()} items={rows(300)} />);
+    fireEvent.click(screen.getByTestId('dayclose-pill'));
+    expect(await screen.findByRole('menuitem', { name: /Done logging/ })).toBeTruthy();
+    expect(screen.queryByRole('menuitem', { name: /Fasted/ })).toBeNull();
+  });
+
+  it('a past day with a skipped meal is trusted: no flag, no pill', () => {
+    r(<DayClosePill date="2026-09-16" dayStatus={open({ fastedMeals: ['morning'] })} items={rows(460)} />);
+    expect(screen.queryByTestId('dayclose-pill')).toBeNull();
+  });
+
   it('shows nothing for a complete past day — the coach already trusts it', () => {
     r(<DayClosePill date="2026-09-22" dayStatus={open()} items={rows(1606)} />);
     expect(screen.queryByTestId('dayclose-pill')).toBeNull();
@@ -52,14 +64,14 @@ describe('DayClosePill', () => {
     expect(pill.className).not.toMatch(/--flagged/);
   });
 
-  it('Fasted posts the closure and patches the cached day with the server answer', async () => {
-    const answer = { status: 'fasting', minCalories: 1200, today: '2026-09-24' };
+  it('Done logging posts the closure and patches the cached day with the server answer', async () => {
+    const answer = { status: 'done', minCalories: 1200, today: '2026-09-24' };
     apiMock.mockResolvedValue(answer);
     const onChanged = vi.fn();
     r(<DayClosePill date="2026-09-16" dayStatus={open()} items={rows(0)} onChanged={onChanged} />);
-    await choose(/Fasted/);
+    await choose(/Done logging/);
     await waitFor(() => expect(onChanged).toHaveBeenCalled());
-    expect(apiMock).toHaveBeenCalledWith('api/v1/health/nutrition/day-status', { date: '2026-09-16', status: 'fasting' }, 'POST');
+    expect(apiMock).toHaveBeenCalledWith('api/v1/health/nutrition/day-status', { date: '2026-09-16', status: 'done' }, 'POST');
     expect(showDayStatus).toHaveBeenCalledWith('2026-09-16', answer);
   });
 
@@ -87,7 +99,7 @@ describe('DayClosePill', () => {
   it('asks for a retry on a network or server failure', async () => {
     apiMock.mockRejectedValue(Object.assign(new Error('HTTP 502: Bad Gateway - <html>'), { status: 502 }));
     r(<DayClosePill date="2026-09-16" dayStatus={open()} items={rows(500)} />);
-    await choose(/Fasted/);
+    await choose(/Done logging/);
     await waitFor(() => expect(screen.getByRole('alert').textContent).toBe('Could not save. Try again.'));
   });
 });

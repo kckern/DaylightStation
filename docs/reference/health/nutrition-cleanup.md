@@ -40,7 +40,9 @@ send messages. Optional confirmation/edit records `settledBy: user` and immediat
 ends automatic review. Legacy date-only display behavior is retained without a
 bulk history migration. Health shows a muted “Estimated” label, not a settlement task.
 
-Questions appear in Settings and in Today's follow-up tray (a one-line count under the macro bars that opens in place; see the Health reference, *Feedback never moves the day*). Each choice displays its proposed changes;
+Questions appear in Settings and in Today's follow-up tray (a one-line count under the macro bars that opens a sheet of question cards, one at a time; see the Health reference, *Feedback never moves the day*).
+
+**What a question must be** (enforced, not just requested): one plain sentence of at most 140 characters naming the food, never system words ("provisional", "group header", "nutrients"); 2–3 choices whose labels are the concrete outcome in at most 40 characters ("1 cup (186 g)"), each repair making exactly that change. The wire schema holds the lengths and the 2-choice minimum, and `normalizeAuditRepairs` drops any question whose choices change nothing but artwork or nothing at all — icons, layout and naming style are the auditor's own call, never a question (logged `nutrition.audit.question_dropped`). Each choice displays its proposed changes;
 free text and “Leave unchanged” are also supported. Free text is interpreted into a
 single bounded proposal; an answer that needs further guessing is left for manual
 editing. Telegram is an optional projection of the same question ID. Replies are

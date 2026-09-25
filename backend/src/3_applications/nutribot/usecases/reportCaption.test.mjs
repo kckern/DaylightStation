@@ -14,9 +14,9 @@ describe('buildReportCaption', () => {
       .toBe('🔥 700 / 1200–1791 cal • 1091 cal left');
   });
 
-  it('a declared day says so', () => {
+  it('a declared day still states what is left', () => {
     expect(buildReportCaption({ totals: { calories: 300 }, budget: budget({ food: 300, zone: 'declared', declared: 'fasting', remaining: 1491 }) }))
-      .toBe('🔥 300 / 1200–1791 cal • Fasted');
+      .toBe('🔥 300 / 1200–1791 cal • 1491 cal left');
   });
 
   it('over and past break-even', () => {
