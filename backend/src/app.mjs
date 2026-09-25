@@ -159,6 +159,7 @@ import { EventBusDeviceTransportGateway } from '#adapters/devices/EventBusDevice
 // HTTP middleware
 import { errorHandlerMiddleware, requestLoggerMiddleware, aiOriginMiddleware } from './0_system/http/middleware/index.mjs';
 import { runWithOrigin } from './0_system/runtime/aiContext.mjs';
+import { scopedGateway } from '#apps/common/ports/IAIGateway.mjs';
 import { createDevProxy } from '#api/v1/middleware/createDevProxy.mjs';
 import { DevRequestForwarder } from '#adapters/http/DevRequestForwarder.mjs';
 import { createEventBusRouter } from './4_api/v1/routers/admin/eventbus.mjs';
@@ -1335,9 +1336,9 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     // Config-driven adapter from integration system (use .has() to avoid NoOp)
     buxferAdapter: householdAdapters?.has?.('finance') ? householdAdapters.get('finance') : null,
     // AI gateway for transaction categorization
-    aiGateway: householdAdapters?.has?.('ai') ? householdAdapters.get('ai') : null,
+    aiGateway: householdAdapters?.has?.('ai') ? scopedGateway(householdAdapters.get('ai'), { app: 'finance' }) : null,
     // Typed-decision model: Jev category judge (shadow unless the finance config promotes it)
-    decisionGateway,
+    decisionGateway: scopedGateway(decisionGateway, { app: 'finance' }),
     httpClient: axios,
     logger: rootLogger.child({ module: 'finance' })
   });
@@ -1351,7 +1352,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     dataService,
     configService,
     freshrssHost: freshrssHost || null,
-    decisionGateway,
+    decisionGateway: scopedGateway(decisionGateway, { app: 'feed' }),
     logger: rootLogger.child({ module: 'feed' }),
   });
 
@@ -1450,7 +1451,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     timezone: configService.getHouseholdTimezone(),
     // Typed-decision model for the coach's life-event suggestions (shadow by default).
     // agents config → lifeplan_guide.life_event_signals: { mode: shadow|decide|off, min_confidence }
-    decisionGateway,
+    decisionGateway: scopedGateway(decisionGateway, { app: 'lifeplan' }),
     lifeEventSignals: configService.getAppConfig?.('agents')?.lifeplan_guide?.life_event_signals || {},
     clock: null,
     logger: rootLogger.child({ module: 'lifeplan' }),
@@ -1475,7 +1476,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     // Config-driven HA adapter (use .has() to avoid NoOp)
     haGateway: householdAdapters?.has?.('home_automation') ? householdAdapters.get('home_automation') : null,
     loadFitnessConfig,
-    openaiAdapter: sharedAiGateway,
+    openaiAdapter: scopedGateway(sharedAiGateway, { app: 'fitness' }),
     logger: rootLogger.child({ module: 'fitness' })
   });
 
@@ -2064,7 +2065,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     configService,
     dataService, // Required for YamlWeatherDatastore (sharedStore)
     todoistApi: null, // Will use httpClient directly
-    aiGateway: sharedAiGateway, // Shared OpenAI adapter
+    aiGateway: scopedGateway(sharedAiGateway, { app: 'harvester' }), // Shared OpenAI adapter
     // Reuse config-driven buxfer adapter from finance domain (use .has() to avoid NoOp)
     buxferAdapter: householdAdapters?.has?.('finance') ? householdAdapters.get('finance') : null,
     logger: rootLogger.child({ module: 'harvester' })
@@ -2188,7 +2189,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         itemsRoot: configService.getHouseholdPath('feedback'),
         mediaDir: mediaBasePath,
       }),
-      transcriptionService: sharedAiGateway || null,
+      transcriptionService: scopedGateway(sharedAiGateway, { app: 'feedback' }),
       notificationService: notificationStack?.notificationService || null,
       resourcePresenter: publicResourceUrl,
       logger: rootLogger.child({ module: 'feedback' }),
@@ -2233,7 +2234,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     drawingCheckpointsDir: configService.getHouseholdPath('gaming/drawing-checkpoints'),
     historyDir: configService.getHouseholdPath('gaming/history'),
     partyGamesCatalog,
-    aiGateway: partyGamesProfile.ai.commentary || partyGamesProfile.ai.advisory_judgment ? sharedAiGateway : null,
+    aiGateway: partyGamesProfile.ai.commentary || partyGamesProfile.ai.advisory_judgment ? scopedGateway(sharedAiGateway, { app: 'gaming' }) : null,
     aiConfig: partyGamesProfile.ai,
     printer: partyGamesPrinter,
     broadcastEvent,
@@ -2363,7 +2364,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'piano-games' }),
     nativeRouters: { chess: pianoChessRouter },
     boardGameDayService: pianoBoardGameDayService,
-    aiGateway: sharedAiGateway,
+    aiGateway: scopedGateway(sharedAiGateway, { app: 'piano-games' }),
   });
   server?.once?.('close', () => pianoGamesModule.container.dispose());
   v1Routers['piano-games'] = pianoGamesModule.router;
@@ -3128,7 +3129,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const schoolLearningLoop = createSchoolLearningLoop({
     configService,
     householdId,
-    aiGateway: sharedAiGateway,
+    aiGateway: scopedGateway(sharedAiGateway, { app: 'school' }),
     logger: rootLogger.child({ module: 'school-remediation' }),
     evidenceRepository: schoolLearningEvidence,
     learnerDirectory: schoolLearnerDirectory,
@@ -3253,7 +3254,9 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const cardLadderStore = new YamlCardLadderStore({ configService, logger: cardLadderLogger });
   const cardLadderLexicons = new YamlLexiconRepository({ mediaRoot: schoolMediaRoot });
   const cardLadderJudgeFor = (cache) => new CardLadderTypedJudge({
-    aiGateway: sharedAiGateway, decisionGateway, cache, model: cardLadderConfig.judge?.model ?? null,
+    aiGateway: scopedGateway(sharedAiGateway, { app: 'school', feature: 'card-ladder' }),
+    decisionGateway: scopedGateway(decisionGateway, { app: 'school', feature: 'card-ladder' }),
+    cache, model: cardLadderConfig.judge?.model ?? null,
     passScore: cardLadderSettings().typing.passScore, logger: cardLadderLogger,
   });
   const cardLadderShared = {
@@ -3597,7 +3600,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // all) and the router (which serves the transcribe route and tells the
   // client whether to draw a microphone). Two constructions could differ.
   const languageTranscription = createLanguageTranscriptionService({
-    openaiAdapter: sharedAiGateway,
+    openaiAdapter: scopedGateway(sharedAiGateway, { app: 'school', feature: 'language' }),
     logger: rootLogger.child({ module: 'school-language-transcription' }),
   });
   const languageStudyService = createLanguageStudyService({
@@ -3606,7 +3609,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     // Meaning score on interpretation answers (SentenceMeaningJudge). Null
     // gateway → no field, rows unchanged. `language.meaning_judge.enabled:
     // false` in the school config turns it off where a gateway exists.
-    decisionGateway,
+    decisionGateway: scopedGateway(decisionGateway, { app: 'school', feature: 'language' }),
     meaningJudgeConfig: schoolFullConfig.language?.meaning_judge ?? null,
     readProgramEnrollment: (learnerId, corpusId) => languageAssignments.readProgramEnrollment(learnerId, corpusId),
     // Through the factory, so the bus is adapted to School's realtime port
@@ -5471,7 +5474,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     commandResolver: resolveCommand,
     // Voice transcripts (POST /trigger/:location/voice) match free text to a
     // location's commands with this; null leaves voice exact-keyword only.
-    decisionGateway,
+    decisionGateway: scopedGateway(decisionGateway, { app: 'trigger' }),
     logger: rootLogger.child({ module: 'trigger' }),
   });
   // The school reachability check can now answer for real (it has been
@@ -5746,7 +5749,9 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     const { TelegramVoiceTranscriptionService } = await import('#adapters/messaging/TelegramVoiceTranscriptionService.mjs');
     const voiceHttpClient = new HttpClient({ logger: rootLogger.child({ module: 'voice-http' }) });
     voiceTranscriptionService = new TelegramVoiceTranscriptionService(
-      { openaiAdapter: sharedAiGateway },
+      // Base attribution only: SystemBotLoader narrows it per bot
+      // (nutribot → health/voice-log, journalist, homebot).
+      { openaiAdapter: scopedGateway(sharedAiGateway, { app: 'messaging' }) },
       { httpClient: voiceHttpClient, logger: rootLogger.child({ module: 'voice-transcription' }) }
     );
   }
@@ -5766,8 +5771,11 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     });
   }
 
-  // Alias for backward compatibility
-  const nutribotAiGateway = sharedAiGateway;
+  // Health's view of the shared gateway: its use cases narrow the feature
+  // (photo-log, text-log, …) so the ledger answers "what does Health spend on".
+  const nutribotAiGateway = scopedGateway(sharedAiGateway, { app: 'health' });
+  // Nutribot voice memos: the default messaging adapter and the web capture path.
+  const nutribotVoiceTranscription = scopedGateway(voiceTranscriptionService, { app: 'health', feature: 'voice-log' });
 
   // Default adapter uses nutribot token. Auth may be a string or an object
   // with a token property — passing the object through produced a broken
@@ -5782,7 +5790,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       credentials: gmailConfig.credentials,
       token: gmailConfig.token
     } : null,
-    transcriptionService: voiceTranscriptionService,  // Voice message transcription
+    transcriptionService: nutribotVoiceTranscription,  // Voice message transcription (nutribot token)
     httpClient: axios,  // Required for TelegramAdapter API calls
     logger: rootLogger.child({ module: 'messaging' })
   });
@@ -5832,15 +5840,15 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
   const nutribotServices = await createNutribotServices({
     transcribeAudio: async ({ buffer, mimeType }) => {
-      if (!voiceTranscriptionService) throw Object.assign(new Error('Transcription not configured'), { code: 'MISSING_CONFIG' });
+      if (!nutribotVoiceTranscription) throw Object.assign(new Error('Transcription not configured'), { code: 'MISSING_CONFIG' });
       const extension = { 'audio/webm': 'webm', 'audio/mp4': 'm4a', 'audio/mpeg': 'mp3', 'audio/wav': 'wav' }[mimeType] || 'ogg';
-      return (await voiceTranscriptionService.transcribe(buffer, { filename: `voice.${extension}`, contentType: mimeType })).text;
+      return (await nutribotVoiceTranscription.transcribe(buffer, { filename: `voice.${extension}`, contentType: mimeType })).text;
     },
     configService,
     dataService,
     telegramAdapter: nutribotTelegramAdapter,
     aiGateway: nutribotAiGateway,
-    decisionGateway,
+    decisionGateway: scopedGateway(decisionGateway, { app: 'health' }),
     upcGateway,
     googleImageGateway: null,  // TODO: Add Google Image gateway when available
     conversationStateStore: nutribotStateStore,
@@ -5926,8 +5934,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Journalist application
   const journalistConfig = configService.getAppConfig('journalist') || {};
 
-  // Reuse shared AI adapter (loaded from integration system or created above)
-  const journalistAiGateway = nutribotAiGateway;
+  // Journalist's view of the shared AI adapter
+  const journalistAiGateway = scopedGateway(sharedAiGateway, { app: 'journalist' });
 
   // Get journalist adapter from config-driven SystemBotLoader
   const journalistTelegramAdapter = getMessagingAdapter(householdId, 'journalist');
@@ -5968,8 +5976,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // HomeBot application
   const homebotConfig = configService.getAppConfig('homebot') || {};
 
-  // Reuse shared AI adapter (loaded from integration system or created above)
-  const homebotAiGateway = nutribotAiGateway || journalistAiGateway;
+  // HomeBot's view of the shared AI adapter
+  const homebotAiGateway = scopedGateway(sharedAiGateway, { app: 'homebot' });
 
   // Get homebot adapter from config-driven SystemBotLoader
   const homebotTelegramAdapter = getMessagingAdapter(householdId, 'homebot');
@@ -6015,7 +6023,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     mediaProgressMemory,
     dataService,
     configService,
-    aiGateway: sharedAiGateway,
+    aiGateway: scopedGateway(sharedAiGateway, { app: 'agents' }),
     httpClient: axios,
     messagingGateway: nutribotTelegramAdapter,
     // Nutribot chat ID for agent→Telegram delivery
@@ -6040,7 +6048,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
   try {
     const { createNutritionCleanup } = await import('#composition/modules/nutritionCleanup.mjs');
-    nutritionCleanup = createNutritionCleanup({ configService, userIdentityService, dataService, nutribotServices, upcGateway, decisionGateway,
+    nutritionCleanup = createNutritionCleanup({ configService, userIdentityService, dataService, nutribotServices, upcGateway,
+      decisionGateway: scopedGateway(decisionGateway, { app: 'health' }),
       agentOrchestrator: agentsServices.agentOrchestrator, usageRecorder: agentUsageRecorder,
       logger: rootLogger.child({ module: 'nutrition-cleanup' }), server,
       journalSource: process.env.DAYLIGHT_ENV || 'docker', usageLedger: aiUsageLedger,
@@ -6505,7 +6514,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const anthropicApiKey = configService.getSecret('ANTHROPIC_API_KEY') || '';
 
   // Reuse shared AI adapter for OpenAI (loaded from integration system)
-  const aiOpenaiAdapter = sharedAiGateway;
+  const aiOpenaiAdapter = scopedGateway(sharedAiGateway, { app: 'ai-console' });
 
   // Anthropic adapter - could be loaded from integration system if configured
   // For now, create directly if API key is available
@@ -6521,7 +6530,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const { AiGatewayService } = await import('#apps/ai/AiGatewayService.mjs');
   v1Routers.ai = createAIRouter({
     aiService: new AiGatewayService(
-      { openai: aiOpenaiAdapter, anthropic: aiAnthropicAdapter },
+      { openai: aiOpenaiAdapter, anthropic: scopedGateway(aiAnthropicAdapter, { app: 'ai-console' }) },
       { logger: rootLogger.child({ module: 'ai-api' }) },
     ),
     logger: rootLogger.child({ module: 'ai-api' })
@@ -6962,6 +6971,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   if (immichConfig) {
     const { ImmichClient } = await import('#adapters/content/gallery/immich/ImmichClient.mjs');
     const wrImmichClient = new ImmichClient(immichConfig, { httpClient: axios });
+    const weeklyReviewAi = scopedGateway(sharedAiGateway, { app: 'weekly-review' });
     const weeklyReviewImmichAdapter = new WeeklyReviewImmichAdapter(
       { priorityPeople: [], proxyPath: '/api/v1/proxy/immich' },
       { client: wrImmichClient, logger: rootLogger.child({ module: 'weekly-review-immich' }) }
@@ -6995,14 +7005,14 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         calendarData: weeklyReviewCalendarAdapter,
         sessionService: fitnessServices?.sessionService || null,
         weatherStore: wrWeatherStore,
-        transcriptionService: sharedAiGateway ? {
+        transcriptionService: weeklyReviewAi ? {
           transcribe: async (buffer, opts) => {
-            const raw = await sharedAiGateway.transcribe(buffer, {
+            const raw = await weeklyReviewAi.transcribe(buffer, {
               filename: 'weekly-review.webm',
               contentType: opts.mimeType,
               prompt: opts.prompt,
             });
-            const clean = await sharedAiGateway.chat(
+            const clean = await weeklyReviewAi.chat(
               [
                 { role: 'system', content: 'Clean up this family conversation transcript. Fix spelling, grammar, and punctuation. Preserve the natural conversational tone. Do not add or remove content.' },
                 { role: 'user', content: raw },

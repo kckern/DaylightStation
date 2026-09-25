@@ -178,6 +178,22 @@ in a use case — whose calls pass the tags down as a per-call `usageTags` optio
 `JevAdapter` and `VoiceTranscriptionService` all have `scoped()`; views are
 read-only, and the ports' default `scoped()` returns the gateway itself). Mastra agent
 rows get theirs from the agent map in `5_composition/agentUsageRecorder.mjs`.
+Composition hands every consumer a scoped view, never the bare adapter
+(`scopedGateway(sharedAiGateway, { app })` in `app.mjs`; the guard
+`5_composition/aiGatewayScoping.wiring.test.mjs` fails on any bare
+`aiGateway` / `openaiAdapter` / `transcriptionService` / `decisionGateway` /
+`openai` / `anthropic` hand-off, with file:line). Apps: `health`, `journalist`,
+`homebot`, `finance`, `feed`, `lifeplan`, `fitness` (feature `voice-memo`),
+`harvester` (`shopping`), `feedback`, `gaming`, `piano-games`, `school`
+(`card-ladder`, `language`), `trigger`, `agents` (paged-media-toc rows are
+`media/paged-media-toc`), `weekly-review`, `ai-console`. Telegram voice memos are
+billed per bot by `SystemBotLoader` (nutribot → `health/voice-log`, else the bot
+name). Health features: `photo-log`, `text-log`, `voice-log`, `upc-log`,
+`scale-log`, `revision` (bot revisions and web entry corrections),
+`meal-instruction`, `icon-pick` (artwork queue and the nearest-icon decision
+model), `auditor-triage`, plus the agent rows `auditor`, `coach`,
+`coach-commentary`; `tests/unit/composition/healthAiFeatures.test.mjs` drives
+each one.
 Untagged rows record `null`. `origin` is the entry point the call ran under
 (`http:METHOD /path`, `job:<id>`, `telegram:<bot>`, `tick:<name>`,
 `cli:<name>`), read from `0_system/runtime/aiContext.mjs`; it is for finding

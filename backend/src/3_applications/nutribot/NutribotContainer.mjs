@@ -39,6 +39,7 @@ import { RetractScaleLog } from './usecases/RetractScaleLog.mjs';
 import { LogScaleFoodFromText } from './usecases/LogScaleFoodFromText.mjs';
 import { FoodLogReview } from '#apps/nutrition/FoodLogReview.mjs';
 import { NearestIconChooser } from '#apps/nutrition/NearestIconChooser.mjs';
+import { scopedGateway } from '#apps/common/ports/IAIGateway.mjs';
 import { createLocalNutritionResponse } from './services/LocalNutritionResponse.mjs';
 
 /**
@@ -80,6 +81,7 @@ export class NutribotContainer {
   #logFoodFromImage;
   #retryImageDetection;
   #logFoodFromText;
+  #logFoodFromVoiceText;
   #logFoodFromVoice;
   #logFoodFromUPC;
   #acceptFoodLog;
@@ -185,7 +187,10 @@ export class NutribotContainer {
    */
   getIconChooser() {
     if (!this.#iconChooser) {
-      this.#iconChooser = new NearestIconChooser({ decisionGateway: this.#options.decisionGateway || null, logger: this.#logger });
+      this.#iconChooser = new NearestIconChooser({
+        decisionGateway: scopedGateway(this.#options.decisionGateway || null, { feature: 'icon-pick' }),
+        logger: this.#logger,
+      });
     }
     return this.#iconChooser;
   }
@@ -195,6 +200,15 @@ export class NutribotContainer {
       throw new Error('aiGateway not configured');
     }
     return this.#aiGateway;
+  }
+
+  /**
+   * The AI gateway narrowed to one Health feature, so its spend is
+   * attributed `health/<feature>` in the usage ledger (composition scopes the
+   * gateway to `{ app: 'health' }`). Throws like getAIGateway when absent.
+   */
+  #aiFor(feature) {
+    return scopedGateway(this.getAIGateway(), { feature });
   }
 
   getUPCGateway() {
@@ -243,7 +257,7 @@ export class NutribotContainer {
       this.#logFoodFromImage = new LogFoodFromImage({
         receipts: () => this.#receiptPublisher,
         messagingGateway: this.getMessagingGateway(),
-        aiGateway: this.getAIGateway(),
+        aiGateway: this.#aiFor('photo-log'),
         foodLogStore: this.#foodLogStore,
         conversationStateStore: this.#conversationStateStore,
         config: this.#config,
@@ -262,21 +276,36 @@ export class NutribotContainer {
 
   getLogFoodFromText() {
     if (!this.#logFoodFromText) {
-      this.#logFoodFromText = new LogFoodFromText({
-        receipts: () => this.#receiptPublisher,
-        messagingGateway: this.getMessagingGateway(),
-        aiGateway: this.getAIGateway(),
-        foodLogStore: this.#foodLogStore,
-        conversationStateStore: this.#conversationStateStore,
-        config: this.#config,
-        foodIconsString: this.#foodIconsString,
-        foodIconNames: this.#options.foodIconNames,
-        logger: this.#logger,
-        reconciliationReader: this.#reconciliationReader,
-        catalogService: this.#catalogService,
-      });
+      this.#logFoodFromText = this.#buildLogFoodFromText('text-log');
     }
     return this.#logFoodFromText;
+  }
+
+  /**
+   * Voice logs parse their transcript with the same use case as typed text,
+   * on its own instance so that spend is attributed to `voice-log`.
+   */
+  #getLogFoodFromVoiceText() {
+    if (!this.#logFoodFromVoiceText) {
+      this.#logFoodFromVoiceText = this.#buildLogFoodFromText('voice-log');
+    }
+    return this.#logFoodFromVoiceText;
+  }
+
+  #buildLogFoodFromText(feature) {
+    return new LogFoodFromText({
+      receipts: () => this.#receiptPublisher,
+      messagingGateway: this.getMessagingGateway(),
+      aiGateway: this.#aiFor(feature),
+      foodLogStore: this.#foodLogStore,
+      conversationStateStore: this.#conversationStateStore,
+      config: this.#config,
+      foodIconsString: this.#foodIconsString,
+      foodIconNames: this.#options.foodIconNames,
+      logger: this.#logger,
+      reconciliationReader: this.#reconciliationReader,
+      catalogService: this.#catalogService,
+    });
   }
 
   getLogFoodFromVoice() {
@@ -284,7 +313,7 @@ export class NutribotContainer {
       this.#logFoodFromVoice = new LogFoodFromVoice({
         transcribeAudio: this.#options.transcribeAudio,
         messagingGateway: this.getMessagingGateway(),
-        logFoodFromText: this.getLogFoodFromText(),
+        logFoodFromText: this.#getLogFoodFromVoiceText(),
         logger: this.#logger,
       });
     }
@@ -297,7 +326,7 @@ export class NutribotContainer {
         receipts: () => this.#receiptPublisher,
         messagingGateway: this.getMessagingGateway(),
         upcGateway: this.#upcGateway,
-        aiGateway: this.#aiGateway,
+        aiGateway: scopedGateway(this.#aiGateway, { feature: 'upc-log' }),
         iconChooser: this.getIconChooser(),
         googleImageGateway: this.#googleImageGateway,
         foodLogStore: this.#foodLogStore,
@@ -375,7 +404,7 @@ export class NutribotContainer {
       this.#logScaleFoodFromText = new LogScaleFoodFromText({
         receipts: () => this.#receiptPublisher,
         messagingGateway: this.getMessagingGateway(),
-        aiGateway: this.getAIGateway(),
+        aiGateway: this.#aiFor('scale-log'),
         foodLogStore: this.#foodLogStore,
         conversationStateStore: this.#conversationStateStore,
         logger: this.#logger,
@@ -473,7 +502,7 @@ export class NutribotContainer {
       this.#processRevisionInput = new ProcessRevisionInput({
         receipts: () => this.#receiptPublisher,
         messagingGateway: this.getMessagingGateway(),
-        aiGateway: this.getAIGateway(),
+        aiGateway: this.#aiFor('revision'),
         foodIconsString: this.#foodIconsString,
         foodIconNames: this.#options.foodIconNames,
         foodLogStore: this.#foodLogStore,
