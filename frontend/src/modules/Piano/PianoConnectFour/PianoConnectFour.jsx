@@ -120,7 +120,7 @@ export default function PianoConnectFour({ activeNotes = new Map(), currentUser 
     : game.status.draw ? 'draw' : game.status.winner === 1 ? 'win' : 'loss';
 
   const {
-    config, updateConfig, ladder, level, seed, gameSessionId, userId,
+    config, configSettled, updateConfig, ladder, level, seed, gameSessionId, userId,
     localPractice, noteLocalPractice, restart: resetSession, logger, archiveContextRef,
   } = useAddressedBoardGame({
     gameId: 'connect-four',
@@ -255,10 +255,11 @@ export default function PianoConnectFour({ activeNotes = new Map(), currentUser 
   useEffect(() => {
     // Same silent swallow as checkers had: a finished board re-entered from the
     // launcher eats every note and explains nothing. Sampled — evaluated per note.
-    if (game.status.gameOver || game.turn !== 1 || thinking) {
+    if (!configSettled || game.status.gameOver || game.turn !== 1 || thinking) {
       if (activeNotes.size > 0) {
         logger.sampled('connect-four.input-ignored', {
-          reason: game.status.gameOver ? 'game-over' : thinking ? 'opponent-thinking' : 'not-your-turn',
+          reason: !configSettled ? 'config-loading'
+            : game.status.gameOver ? 'game-over' : thinking ? 'opponent-thinking' : 'not-your-turn',
           turn: game.turn, ply: moves?.length ?? null,
         }, { maxPerMinute: 6, aggregate: true });
       }
@@ -288,7 +289,7 @@ export default function PianoConnectFour({ activeNotes = new Map(), currentUser 
     // A full column is a refused address, not a landed one.
     recordReading({ ok: !next.error });
     latchedRef.current = true;
-  }, [activeNotes, columns, commitColumn, deal, game, level, logger, moves, recordReading, thinking]);
+  }, [activeNotes, columns, commitColumn, configSettled, deal, game, level, logger, moves, recordReading, thinking]);
 
   // The gate is consulted HERE, above `resetAuthority()`, and not only inside
   // `resetSession()`. `resetAuthority()` closes the finished session and mints
