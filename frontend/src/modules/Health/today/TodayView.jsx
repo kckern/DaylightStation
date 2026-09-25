@@ -24,7 +24,7 @@ import { LogTable } from './LogTable.jsx';
 import { MealAddRow } from './MealAddRow.jsx';
 import { useMealMoves, mealEntries } from './mealDrag.jsx';
 import { NeedsReviewSection } from './NeedsReviewSection.jsx';
-import { DayCloseRow } from './DayCloseRow.jsx';
+import { DayClosePill } from './DayClosePill.jsx';
 import { FollowUpTray } from './FollowUpTray.jsx';
 import { EntryEditor } from './EntryEditor.jsx';
 import { ConfirmDialog } from './ConfirmDialog.jsx';
@@ -425,7 +425,8 @@ export function TodayView({ active = true, sidebarTarget, onSetupGoals, onCoachT
     <PortionContext.Provider value={portionControl}><div className="health-today">
       <EquationStrip budget={preview.budget} budgetError={day.budgetError} goals={preview.budget?.goals}
         macroCoverage={nutrientSummary(preview.items)} date={date} today={todayISO()}
-        onDateChange={setDate} onSetupGoals={onSetupGoals} />
+        onDateChange={setDate} onSetupGoals={onSetupGoals}
+        dayClose={!coldLoading ? <DayClosePill date={date} dayStatus={day.dayStatus} items={day.items} onChanged={day.reload} /> : null} />
       {/* Watch-micro bars sit directly under the summary (F4.1); the macros
           moved into the summary itself. They read the SAME day sums the budget
           does — BudgetService computes both over one fold — so the bars and the
@@ -464,7 +465,6 @@ export function TodayView({ active = true, sidebarTarget, onSetupGoals, onCoachT
           onOpenTemplates={(target, templateId) => { setFocusTemplateId(templateId); setTemplatesFor(target); }}
           onManageFoods={() => setManageFoods(true)} />} />
       <NeedsReviewSection pending={pendingLogs} onChanged={day.reload} />
-      {!coldLoading ? <DayCloseRow date={date} dayStatus={day.dayStatus} items={day.items} onChanged={day.reload} /> : null}
       {!wideViewport || !sidebarTarget ? <details className="health-history"><summary>Week &amp; weight history</summary>{history}</details> : null}
       {coachLine ? <Button variant="subtle" onClick={() => onCoachTap()}>{coachLine}</Button> : null}
       <BarcodeCapture open={active && captureMode === 'barcode'} busy={nutrition.busy} bucket={barcodeTargetBucket}

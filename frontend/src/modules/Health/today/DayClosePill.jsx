@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { Button } from '@mantine/core';
-import { IconCheck, IconMoon } from '@tabler/icons-react';
+import { Menu, UnstyledButton } from '@mantine/core';
+import { IconCheck, IconMoon, IconChevronDown } from '@tabler/icons-react';
 import { sumCounted } from '@shared-contracts/nutrition/countedRows.mjs';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import { createAppLogger } from '../../../lib/ui/createAppLogger.js';
@@ -21,8 +21,9 @@ function errorSentence(err) {
 }
 
 /**
- * End-of-day row: close the viewed day as "Done logging" or "Fasted", or
- * reopen it. The health coach treats an unclosed day under the completeness
+ * The day-close pill, in the budget headline: close the viewed day as "Done
+ * logging" or "Fasted", or reopen it — a small outline pill with a menu, not a
+ * banner (it used to be a full-width row under the meals). The health coach treats an unclosed day under the completeness
  * threshold as MISSING DATA (meals not logged), not low intake — this is the
  * web equivalent of the nutribot /done, /fast and /reopen commands, and writes
  * the same record they do.
@@ -40,7 +41,7 @@ function errorSentence(err) {
  * @param {Array} props.items - the day's rows (counted the same way the coach counts them)
  * @param {() => void} props.onChanged
  */
-export function DayCloseRow({ date, dayStatus, items = [], onChanged }) {
+export function DayClosePill({ date, dayStatus, items = [], onChanged }) {
   const [busy, setBusy] = useState(null); // 'done' | 'fasting' | 'reopen' | null
   const [error, setError] = useState(null);
   const [errorFor, setErrorFor] = useState(date);
@@ -72,41 +73,40 @@ export function DayCloseRow({ date, dayStatus, items = [], onChanged }) {
     }
   };
 
-  const errorLine = error ? <span className="health-dayclose__error" role="alert">{error}</span> : null;
-
-  if (status) {
-    return (
-      <div className={`health-dayclose health-dayclose--closed health-dayclose--${status}`} role="status">
-        <span className="health-dayclose__icon" aria-hidden="true">
-          {status === 'fasting' ? <IconMoon size={18} /> : <IconCheck size={18} />}
-        </span>
-        <span className="health-dayclose__line">
-          {status === 'fasting' ? 'Fasting day' : 'Logging done'}
-          <span className="health-dayclose__sub"> · coaching treats this day's totals as final.</span>
-        </span>
-        <Button size="sm" variant="subtle" loading={busy === 'reopen'} disabled={Boolean(busy)}
-          onClick={() => set(null)}>Reopen</Button>
-        {errorLine}
-      </div>
-    );
-  }
-
-  const line = flagged
-    ? `${calories > 0 ? `Only ${calories} cal logged.` : 'Nothing logged.'} Coaching treats this day as incomplete until you close it.`
-    : 'Finished eating for today?';
+  const Icon = status === 'fasting' ? IconMoon : IconCheck;
+  const text = status === 'fasting' ? 'Fasted'
+    : status === 'done' ? 'Logging done'
+      : flagged ? (calories > 0 ? `Only ${calories} cal logged` : 'Nothing logged')
+        : 'Close day';
+  const hint = flagged
+    ? 'Coaching treats this day as incomplete until you close it.'
+    : "Finished eating? Coaching then treats the day's totals as final.";
 
   return (
-    <div className={`health-dayclose${flagged ? ' health-dayclose--flagged' : ''}`}>
-      <span className="health-dayclose__line">{line}</span>
-      <div className="health-dayclose__actions">
-        <Button size="sm" variant="light" leftSection={<IconCheck size={16} />}
-          loading={busy === 'done'} disabled={Boolean(busy)} onClick={() => set('done')}>Done logging</Button>
-        <Button size="sm" variant="light" leftSection={<IconMoon size={16} />}
-          loading={busy === 'fasting'} disabled={Boolean(busy)} onClick={() => set('fasting')}>Fasted</Button>
-      </div>
-      {errorLine}
-    </div>
+    <span className="health-dayclose">
+      <Menu position="bottom-end" withinPortal>
+        <Menu.Target>
+          <UnstyledButton data-testid="dayclose-pill" aria-busy={Boolean(busy)}
+            className={['health-dayclose-pill', status && 'health-dayclose-pill--closed', flagged && 'health-dayclose-pill--flagged'].filter(Boolean).join(' ')}
+            aria-label={status ? `${text}. Change` : `${text}. Close this day`}>
+            <Icon size={13} aria-hidden="true" />
+            <span>{text}</span>
+            <IconChevronDown size={11} aria-hidden="true" />
+          </UnstyledButton>
+        </Menu.Target>
+        <Menu.Dropdown>
+          {status ? (
+            <Menu.Item onClick={() => set(null)}>Reopen day</Menu.Item>
+          ) : <>
+            <Menu.Label>{hint}</Menu.Label>
+            <Menu.Item leftSection={<IconCheck size={14} />} onClick={() => set('done')}>Done logging</Menu.Item>
+            <Menu.Item leftSection={<IconMoon size={14} />} onClick={() => set('fasting')}>Fasted</Menu.Item>
+          </>}
+        </Menu.Dropdown>
+      </Menu>
+      {error ? <span className="health-dayclose__error" role="alert">{error}</span> : null}
+    </span>
   );
 }
 
-export default DayCloseRow;
+export default DayClosePill;
