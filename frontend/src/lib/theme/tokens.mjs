@@ -27,6 +27,9 @@ export const DS_TOKENS = Object.freeze({
     reveal: '300ms',
     easing: 'cubic-bezier(0.4, 0, 0.2, 1)',
   }),
+  // The accent a surface gets when no pack names one (kiosk screens, auth,
+  // anything outside an AppThemeProvider). Packs override it.
+  accent: '#4a7bf7',
   // Mirrors frontend/src/styles/_breakpoints.scss — change both together.
   breakpoints: Object.freeze({ md: 768, lg: 1200 }),
 });
@@ -50,8 +53,20 @@ export function dsCssVars(pack = null) {
   vars['--ds-motion-base'] = DS_TOKENS.motion.base;
   vars['--ds-motion-reveal'] = DS_TOKENS.motion.reveal;
   vars['--ds-motion-easing'] = DS_TOKENS.motion.easing;
-  if (pack?.accent) vars['--ds-accent'] = pack.accent;
+  vars['--ds-accent'] = pack?.accent || DS_TOKENS.accent;
   return vars;
+}
+
+/**
+ * The base contract as one `:root { … }` rule — what every page gets before
+ * any app loads, so a component outside an AppThemeProvider (a kiosk screen,
+ * the login form) still reads real values. A provider's `.ds-root` restates
+ * them with its pack applied, and wins by nesting.
+ * @returns {string}
+ */
+export function dsRootCss() {
+  const body = Object.entries(dsCssVars()).map(([name, value]) => `${name}:${value};`).join('');
+  return `:root{${body}}`;
 }
 
 export default DS_TOKENS;

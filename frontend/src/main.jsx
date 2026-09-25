@@ -3,22 +3,58 @@ import ReactDOM from 'react-dom/client';
 import { BrowserRouter, Routes, Route, useParams, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { MantineProvider } from '@mantine/core';
 import '@mantine/core/styles.css';
+import { installRootTokens } from './lib/theme/installRootTokens.js';
 import { createAppTheme } from './lib/theme/createAppTheme.js';
 import { OfficeRedirect, TVRedirect, SchoolDeepLinkRedirect, TeacherNextRedirect } from './routeRedirects.jsx';
 import { WebSocketProvider } from './contexts/WebSocketContext.jsx';
-import HomeApp from './Apps/HomeApp.jsx';
-import FinanceApp from './Apps/FinanceApp.jsx';
-import HealthApp from './Apps/HealthApp.jsx';
-import AutoApp from './Apps/AutoApp.jsx';
-import LifeApp from './Apps/LifeApp.jsx';
-import FitnessApp from './Apps/FitnessApp.jsx';
-import FeedApp from './Apps/FeedApp.jsx';
-import AdminApp from './Apps/AdminApp.jsx';
-import CallApp from './Apps/CallApp.jsx';
-import MediaApp from './Apps/MediaApp.jsx';
-import LiveStreamApp from './Apps/LiveStreamApp.jsx';
-import PianoApp from './Apps/PianoApp.jsx';
-import AppContainer from './modules/AppContainer/AppContainer.jsx';
+// Every route is its own chunk: a page downloads the app it shows, not all
+// of them (the single bundle had grown past 11 MB). A long-lived tab whose
+// chunk hashes rotate under it on a deploy is recovered by chunkReload.js.
+const loadHomeApp = () => import('./Apps/HomeApp.jsx');
+const HomeApp = React.lazy(loadHomeApp);
+const loadFinanceApp = () => import('./Apps/FinanceApp.jsx');
+const FinanceApp = React.lazy(loadFinanceApp);
+const loadHealthApp = () => import('./Apps/HealthApp.jsx');
+const HealthApp = React.lazy(loadHealthApp);
+const loadAutoApp = () => import('./Apps/AutoApp.jsx');
+const AutoApp = React.lazy(loadAutoApp);
+const loadLifeApp = () => import('./Apps/LifeApp.jsx');
+const LifeApp = React.lazy(loadLifeApp);
+const loadFitnessApp = () => import('./Apps/FitnessApp.jsx');
+const FitnessApp = React.lazy(loadFitnessApp);
+const loadFeedApp = () => import('./Apps/FeedApp.jsx');
+const FeedApp = React.lazy(loadFeedApp);
+const loadAdminApp = () => import('./Apps/AdminApp.jsx');
+const AdminApp = React.lazy(loadAdminApp);
+const loadCallApp = () => import('./Apps/CallApp.jsx');
+const CallApp = React.lazy(loadCallApp);
+const loadMediaApp = () => import('./Apps/MediaApp.jsx');
+const MediaApp = React.lazy(loadMediaApp);
+const loadLiveStreamApp = () => import('./Apps/LiveStreamApp.jsx');
+const LiveStreamApp = React.lazy(loadLiveStreamApp);
+const loadPianoApp = () => import('./Apps/PianoApp.jsx');
+const PianoApp = React.lazy(loadPianoApp);
+const loadAppContainer = () => import('./modules/AppContainer/AppContainer.jsx');
+const AppContainer = React.lazy(loadAppContainer);
+const Blank = React.lazy(() => import('./modules/Blank/Blank.jsx'));
+const FilterPoc = React.lazy(() => import('./modules/Player/poc/FilterPoc.jsx'));
+const SetupWizard = React.lazy(() => import('./modules/Auth/SetupWizard.jsx'));
+const InviteAccept = React.lazy(() => import('./modules/Auth/InviteAccept.jsx'));
+const PartyGamesHost = React.lazy(() => import('./modules/Gaming/environments/party-games/surfaces/PartyGamesHost.jsx'));
+const PartyGamesVerifier = React.lazy(() => import('./modules/Gaming/environments/party-games/surfaces/PartyGamesVerifier.jsx'));
+const loadScreenRenderer = () => import('./screen-framework/index.js');
+const ScreenRenderer = React.lazy(() => loadScreenRenderer().then(module => ({ default: module.ScreenRenderer })));
+// Start this page's chunk NOW, not once SetupCheck's auth request has
+// answered and <Routes> first renders: the two then load side by side.
+// React.lazy's later import() of the same module reuses this download.
+const ROUTE_CHUNKS = [
+  [/^\/health(\/|$)/, loadHealthApp], [/^\/fitness(\/|$)/, loadFitnessApp], [/^\/piano(\/|$)/, loadPianoApp],
+  [/^\/screens?\//, loadScreenRenderer], [/^\/(budget|finances)$/, loadFinanceApp], [/^\/life(\/|$)/, loadLifeApp],
+  [/^\/auto(\/|$)/, loadAutoApp], [/^\/home$/, loadHomeApp], [/^\/media$/, loadMediaApp],
+  [/^\/media\/channels\//, loadLiveStreamApp], [/^\/feed(\/|$)/, loadFeedApp], [/^\/call$/, loadCallApp],
+  [/^\/(admin(\/|$)|$)/, loadAdminApp], [/^\/app\//, loadAppContainer],
+];
+ROUTE_CHUNKS.find(([pattern]) => pattern.test(window.location.pathname))?.[1]().catch(() => { /* the route's own lazy import surfaces the failure (chunkReload.js) */ });
 // Lazy: the teacher console is a parent's phone surface — its module and
 // styles must not ride in the bundle every kiosk loads.
 const TeacherConsole = React.lazy(() => import('./modules/School/teacher/TeacherConsole.jsx'));
@@ -29,13 +65,6 @@ const DecoderSwatches = React.lazy(() => import('./dev/DecoderSwatches/DecoderSw
 const TeacherConsoleRoute = () => (
   <React.Suspense fallback={<div />}> <TeacherConsole /> </React.Suspense>
 );
-import Blank from './modules/Blank/Blank.jsx';
-import FilterPoc from './modules/Player/poc/FilterPoc.jsx';
-import SetupWizard from './modules/Auth/SetupWizard.jsx';
-import InviteAccept from './modules/Auth/InviteAccept.jsx';
-import { ScreenRenderer } from './screen-framework/index.js';
-import PartyGamesHost from './modules/Gaming/environments/party-games/surfaces/PartyGamesHost.jsx';
-import PartyGamesVerifier from './modules/Gaming/environments/party-games/surfaces/PartyGamesVerifier.jsx';
 import { configurePlaybackLogger } from './modules/Player/lib/playbackLogger.js';
 import { configureDaylightLogger, getDaylightLogger } from './lib/logging/singleton.js';
 import { setupGlobalErrorHandlers } from './lib/logging/errorHandlers.js';
@@ -47,6 +76,10 @@ const getWebSocketUrl = () => {
   // With Vite proxy, WebSocket connects to same origin (proxy forwards /ws to backend)
   return `${protocol}//${window.location.host}/ws`;
 };
+
+// The design-system tokens on :root, before anything renders (see
+// lib/theme/installRootTokens.js).
+installRootTokens();
 
 // Bootstrap DaylightLogger and expose a shared frontend logger
 configureDaylightLogger({
@@ -146,6 +179,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
   <MantineProvider theme={createAppTheme(null)} defaultColorScheme="dark">
   <BrowserRouter>
     <SetupCheck>
+      <React.Suspense fallback={null}>
       <Routes>
         <Route path="/" element={<AdminApp />} />
         <Route path="/home" element={<HomeApp />} />
@@ -201,6 +235,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
         <Route path="/call" element={<CallApp />} />
         <Route path="*" element={<Blank />} />
       </Routes>
+      </React.Suspense>
     </SetupCheck>
   </BrowserRouter>
   </MantineProvider>,

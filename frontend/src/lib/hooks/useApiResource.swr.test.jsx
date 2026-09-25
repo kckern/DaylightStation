@@ -293,10 +293,16 @@ describe('useApiResource swr mode', () => {
     const a = renderHook(() => useApiResource('api/v1/thing', { swr: true }));
     expect(a.result.current.loading).toBe(true); // cold, nothing cached yet
 
+    // B mounts while A's request is in flight and joins it (one GET, not
+    // two). Its reload() then issues a request of its own — a reload never
+    // joins — which is the newer of the two.
     let resolveB;
     apiMock.mockReturnValueOnce(new Promise((r) => { resolveB = r; })); // B's request — issued SECOND
     const b = renderHook(() => useApiResource('api/v1/thing', { swr: true }));
     expect(b.result.current.loading).toBe(true); // also cold — A hasn't resolved/cached yet
+    expect(apiMock).toHaveBeenCalledTimes(1);
+    act(() => b.result.current.reload());
+    expect(apiMock).toHaveBeenCalledTimes(2);
 
     // B, issued SECOND, resolves FIRST with the fresh value.
     await act(async () => { resolveB({ from: 'B-fresh' }); await Promise.resolve(); });
