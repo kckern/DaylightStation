@@ -11,16 +11,30 @@ export { studyDayIndex };
  * rolls the day at 3am or 5am — silently handing out tomorrow's sentences
  * early, or refusing them for an hour.
  */
+// One formatter per timezone. The OFFSET is still computed per instant (see
+// above); only the formatter object is reused. Constructing it was the costly
+// part, and it showed up in backend event-loop stalls, where listings called
+// this once per record.
+const offsetFormatters = new Map();
+function offsetFormatter(timezone) {
+  let formatter = offsetFormatters.get(timezone);
+  if (!formatter) {
+    formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      hour12: false,
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit',
+    });
+    offsetFormatters.set(timezone, formatter);
+  }
+  return formatter;
+}
+
 export function offsetMinutesFor(timezone, epochMs) {
   if (!timezone) return 0;
   try {
     const parts = Object.fromEntries(
-      new Intl.DateTimeFormat('en-US', {
-        timeZone: timezone,
-        hour12: false,
-        year: 'numeric', month: '2-digit', day: '2-digit',
-        hour: '2-digit', minute: '2-digit', second: '2-digit',
-      }).formatToParts(new Date(epochMs)).map((p) => [p.type, p.value]),
+      offsetFormatter(timezone).formatToParts(new Date(epochMs)).map((p) => [p.type, p.value]),
     );
     const asUTC = Date.UTC(
       Number(parts.year), Number(parts.month) - 1, Number(parts.day),

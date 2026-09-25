@@ -89,4 +89,45 @@ describe('YamlPianoAttemptStore', () => {
     store.save('learner4', { attempt_id: 'attempt-1', status: 'completed' });
     expect(() => store.void('learner4', 'attempt-1', {})).toThrow(/reason/);
   });
+
+  describe('parse cache', () => {
+    const setup = () => {
+      const root = fs.mkdtempSync(path.join(os.tmpdir(), 'piano-attempts-'));
+      scratch.push(root);
+      const store = new YamlPianoAttemptStore({ usersDir: root, clock: () => new Date('2026-09-25T12:00:00.000Z') });
+      store.save('test-learner', { attempt_id: 'a1', status: 'completed', score: 1 });
+      const file = path.join(root, 'test-learner', 'apps', 'piano', 'attempts', '2026-09-25', 'a1.yml');
+      return { root, store, file };
+    };
+
+    it('a record mutated by a caller does not leak into the next listing', () => {
+      const { store } = setup();
+      store.listRecent('test-learner')[0].score = 99;
+      expect(store.listRecent('test-learner')[0].score).toBe(1);
+    });
+
+    it('a void is seen by the next listing', () => {
+      const { store } = setup();
+      expect(store.listRecent('test-learner')).toHaveLength(1);
+      store.void('test-learner', 'a1', { reason: 'grader wrong' });
+      expect(store.listRecent('test-learner')).toHaveLength(0);
+      expect(store.listRecent('test-learner', { includeVoided: true })[0].voided.reason).toBe('grader wrong');
+    });
+
+    it('a file changed on disk by someone else is re-read', () => {
+      const { store, file } = setup();
+      expect(store.listRecent('test-learner')[0].score).toBe(1);
+      fs.writeFileSync(file, fs.readFileSync(file, 'utf8').replace('score: 1', 'score: 0.25'));
+      const later = new Date(Date.now() + 5000);
+      fs.utimesSync(file, later, later);
+      expect(store.listRecent('test-learner')[0].score).toBe(0.25);
+    });
+
+    it('a deleted file drops out of the listing', () => {
+      const { store, file } = setup();
+      expect(store.listRecent('test-learner')).toHaveLength(1);
+      fs.rmSync(file);
+      expect(store.listRecent('test-learner')).toHaveLength(0);
+    });
+  });
 });

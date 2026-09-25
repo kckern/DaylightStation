@@ -262,7 +262,10 @@ describe('LogFoodFromImage — retry button on failure', () => {
           imageData: expect.objectContaining({ fileId: 'tg-file-abc' }),
           retryMessageId: 'photo-msg-1',
         }),
-      })
+      }),
+      // Keyed to the failed photo's own message (a session), never the root
+      // flow, so an open revision survives a failed photo (57e7298f).
+      'photo-msg-1',
     );
 
     const updateCalls = deps.responseContext.updateMessage.mock.calls;
