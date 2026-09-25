@@ -41,6 +41,54 @@ export function normalizeUsage(usage) {
 const usageOf = row => normalizeUsage(row?.usage);
 const withUsage = row => (row.runId ? { ...row, usage: usageOf(row) } : row);
 
+// The fields a person reads in "what it changed" (the same list the Health repair view shows).
+const CHANGE_FIELDS = ['name', 'label', 'kind', 'parentId', 'icon', 'photoRef', 'foodId', 'date', 'mealTime', 'amount', 'unit', 'grams',
+  'calories', 'protein', 'carbs', 'fat', 'fiber', 'sugar', 'sodium', 'cholesterol'];
+// A created row (a new group header) is described by what it is, not by its zeroed nutrients.
+const CREATED_FIELDS = ['name', 'kind', 'date', 'mealTime'];
+const CHANGE_LIMIT = 50;
+const sameRow = (a, b) => (a.uuid && a.uuid === b.uuid) || (a.id && (a.id === b.id || a.id === b.uuid)) || (b.id && b.id === a.uuid);
+/**
+ * Field-level before/after for the rows a repair touched: `[{ id, name, field,
+ * from, to }]`, at most 50, with `changesOmitted` when more. A label that moved
+ * with the name is not listed twice.
+ */
+export function changeDigest(beforeRows, afterRows) {
+  const changes = [];
+  for (const after of afterRows || []) {
+    const before = (beforeRows || []).find(row => sameRow(row, after));
+    const name = after.name || after.label || before?.name || before?.label || entryKey(after);
+    const fields = before ? CHANGE_FIELDS : CREATED_FIELDS;
+    const rowChanges = fields.map(field => ({ field, from: before?.[field] ?? null, to: after[field] ?? null }))
+      .filter(({ from, to }) => JSON.stringify(from) !== JSON.stringify(to));
+    const renamed = rowChanges.some(change => change.field === 'name');
+    for (const change of rowChanges) if (!(renamed && change.field === 'label')) changes.push({ id: entryKey(after), name, ...change });
+  }
+  return changes.length > CHANGE_LIMIT ? { changes: changes.slice(0, CHANGE_LIMIT), changesOmitted: changes.length - CHANGE_LIMIT } : { changes };
+}
+/** The rows a dry-run proposal would produce, from the audited snapshot: its updates, and any new group with its children. */
+function proposedRows(snapshotRows, proposal) {
+  const find = id => snapshotRows.find(row => row.uuid === id || row.id === id);
+  const after = new Map();
+  const edit = (id, changes) => {
+    const row = after.get(id) || find(id);
+    if (row) after.set(id, { ...row, ...changes });
+  };
+  for (const update of proposal.updates || []) {
+    const changes = { ...update.changes };
+    if (changes.label !== undefined) changes.name = changes.label;
+    edit(update.id, changes);
+  }
+  for (const group of proposal.createGroups || []) {
+    // The header has no id until it is written; the digest names it by its label.
+    const headerId = 'new-group:' + group.label;
+    const first = find(group.children?.[0]?.id);
+    after.set(headerId, { uuid: headerId, name: group.label, kind: 'group', date: first?.date ?? null, mealTime: first?.mealTime ?? null });
+    for (const child of group.children || []) edit(child.id, { parentId: headerId });
+  }
+  return [...after.values()];
+}
+
 const RESULT_MAX_CHARS = 8192;
 const RESULT_PREVIEW_CHARS = 2048;
 /** A tool result small enough to send: long text is cut with a marker, a large object becomes a preview. */
@@ -390,6 +438,7 @@ export class NutritionCleanup {
     const result = run.result;
     const { permissions } = this.#runPolicy(state, id);
     const evidenceById = new Map(result.evidence.map(source => [source.id, source]));
+    const snapshotRows = [...run.snapshot.rows, ...run.snapshot.pending.flatMap(log => log.items)];
     const outcomes = [];
     const questions = [...result.questions];
     for (const [index, proposal] of result.repairs.entries()) {
@@ -403,8 +452,12 @@ export class NutritionCleanup {
       }
       try {
         const applied = await this.repairs.apply({ userId, operationId: id + '_' + index, runId: id, proposal, evidence, fence, dryRun: run.dryRun });
-        outcomes.push(run.dryRun ? { status: 'proposed', proposal } : { status: applied.affectedIds?.length ? 'applied' : 'unchanged',
-          operationId: id + '_' + index, affectedIds: applied.affectedIds || [] });
+        // Before is the audited snapshot (versions were checked on write); after is what was written, or would be.
+        const described = { reason: proposal.reason, mode: proposal.mode || 'verified' };
+        if (run.dryRun) outcomes.push({ status: 'proposed', proposal, ...described, ...changeDigest(snapshotRows, proposedRows(snapshotRows, proposal)) });
+        else if (applied.affectedIds?.length) outcomes.push({ status: 'applied', operationId: id + '_' + index, affectedIds: applied.affectedIds,
+          ...described, ...changeDigest(snapshotRows, applied.items) });
+        else outcomes.push({ status: 'unchanged', operationId: id + '_' + index, affectedIds: [] });
       } catch (error) {
         if (error.status !== 409 && error.status !== 404) throw error;
         outcomes.push({ status: 'skipped', reason: error.message, ...(run.dryRun ? { proposal } : {}) });
@@ -415,13 +468,12 @@ export class NutritionCleanup {
     // Suppression is recorded the same way in dry run; only asking needs a live run.
     const suppressedQuestions = [];
     const suppress = (q, reason) => suppressedQuestions.push({ question: q.question, entryIds: q.entryIds, reason });
-    const allRows = [...run.snapshot.rows, ...run.snapshot.pending.flatMap(log => log.items)];
     const askable = [];
     for (const original of questions) {
       if (permissions.questions === false) { suppress(original, 'questions-off'); continue; }
       const q = { ...original, choices: original.choices.filter(choice => !blockedKinds(choice.repair, permissions).length) };
       if (q.choices.length < 2) { suppress(original, 'blocked'); continue; }
-      const entries = allRows.filter(row => q.entryIds.includes(row.uuid) || q.entryIds.includes(row.id));
+      const entries = snapshotRows.filter(row => q.entryIds.includes(row.uuid) || q.entryIds.includes(row.id));
       if (entries.length !== new Set(q.entryIds).size) { suppress(original, 'entries-missing'); continue; }
       askable.push({ q, entries });
     }
