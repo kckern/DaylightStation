@@ -7,6 +7,7 @@ import { IDeviceBlueprintFactory } from '#apps/devices/ports/IDeviceBlueprintFac
  */
 export class ConfigDeviceBlueprintFactory extends IDeviceBlueprintFactory {
   #haGateway; #httpClient; #wsBus; #remoteExec; #daylightHost; #configService; #logger; #factories;
+  #screenAddressResolver;
 
   constructor({
     haGateway = null,
@@ -16,6 +17,7 @@ export class ConfigDeviceBlueprintFactory extends IDeviceBlueprintFactory {
     daylightHost = null,
     configService = null,
     factories = {},
+    screenAddressResolver = null,
     logger = console,
   } = {}) {
     super();
@@ -26,7 +28,24 @@ export class ConfigDeviceBlueprintFactory extends IDeviceBlueprintFactory {
     this.#daylightHost = daylightHost;
     this.#configService = configService;
     this.#factories = factories;
+    this.#screenAddressResolver = screenAddressResolver;
     this.#logger = logger;
+  }
+
+  /**
+   * A device that loads content but declares no `screen_path` gets its screen
+   * from the resolver: a fuzzy match against the household's screens first,
+   * the legacy default last. Resolved here, once, so every consumer
+   * (wake-and-load, recovery, calls) agrees on the same screen.
+   */
+  #resolveScreenPath(deviceId, source) {
+    if (source.screen_path || !source.content_control || !this.#screenAddressResolver) {
+      return source.screen_path;
+    }
+    const resolved = this.#screenAddressResolver.resolve({ id: deviceId, location: source.location });
+    const log = resolved.source === 'default' ? this.#logger.warn : this.#logger.info;
+    log?.call(this.#logger, `deviceFactory.screenPath.${resolved.source}`, { deviceId, path: resolved.path });
+    return resolved.path;
   }
 
   async createBlueprint(deviceId, source = {}) {
@@ -81,7 +100,7 @@ export class ConfigDeviceBlueprintFactory extends IDeviceBlueprintFactory {
         // ungoverned, which is how every device behaved before this existed.
         volumeCap: source.volume?.cap ?? null,
         volumeBoostMax: source.volume?.boost_max ?? null,
-        screenPath: source.screen_path,
+        screenPath: this.#resolveScreenPath(deviceId, source),
         notifyService: source.notify_service ?? null,
         // Plex client identity for this surface, DECLARED in devices.yml the
         // same way `video_call` and `arcade_session_observation` are — never generated.

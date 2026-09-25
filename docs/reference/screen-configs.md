@@ -151,6 +151,28 @@ screensaver is silent by convention (e.g. `gallery-silent` has `music: null`).
 A screen with no `screensaver:` block has no passive screensaver — ad-hoc scenes
 (below) still work.
 
+## Exit — hand the device back to its own app
+
+A device whose home is an app rather than a screen (the piano tablet lives in
+`/piano`) can still receive dispatched content: it gets a screen of its own, and
+that screen declares `exit:` so the device goes home once the content is gone.
+
+```yaml
+exit:
+  to: /piano?device=yellow-room-tablet   # URL to navigate to
+  idleSeconds: 20                        # leave if nothing has opened this long after load (default 20)
+```
+
+`ScreenExit` navigates to `exit.to` when a fullscreen overlay (the player) closes
+and stays closed for 1.5 s (so a queue advancing between items does not count),
+or when no fullscreen overlay opens within `idleSeconds` of the page loading. It
+logs `screen-exit.armed` and `screen-exit.navigate` (with `reason:
+overlay-closed | idle`). A screensaver is also a fullscreen overlay, so do not
+combine `exit:` with `screensaver:`. Example: `screens/yellow-room.yml`.
+
+A device with no `screen_path` finds its screen by fuzzy match on its id or
+location (see `docs/reference/media/media-app-technical.md`, device load).
+
 ## Triggering an ArtMode scene (any screen, any target)
 
 ArtMode can be shown ad hoc — with music — by dispatching a **display** content

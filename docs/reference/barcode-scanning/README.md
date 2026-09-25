@@ -208,7 +208,7 @@ Persistence records what was scanned, before any routing. It is unaffected by th
 
 | File | Keys | Purpose |
 |------|------|---------|
-| `data/household/config/devices.yml` | `type: barcode-scanner`, `target_screen`, `policy_group`, `content_control.topic`, `device_control.displays.*.on_script` | Registers the scanner **by device id** (must match the relay's `device`) → pipeline acts on it. `on_script` wakes the TV via Home Assistant on approved content. Screen-path slugs and `content_control.topic` values are also the screen-name list the collision check runs against. |
+| `data/household/config/devices.yml` | `type: barcode-scanner`, `target_screen`, `policy_group`, `content_control.topic`, `device_control.displays.*.on_script` | Registers the scanner **by device id** (must match the relay's `device`) → pipeline acts on it. `on_script` wakes the TV via Home Assistant on approved content. Screen-path slugs and `content_control.topic` values are also the screen-name list the collision check runs against. The `loadFallback` screen→device map takes each declared `screen_path` first; a content device without one claims its fuzzy-matched screen (`office-tv` → `office`, see `ScreenAddressResolver`) if no device declared it. |
 | `data/household/config/barcode.yml` | `default_action`, `actions`, `persistence.dir` | Content actions + history root. |
 | `data/household/config/barcode-relay.yml` | `relays.<device>.route` (`content`\|`nutribot`), `relays.<device>.scale_id`, `relays.<device>.nutribot.*`, `nutribot.*` | Per-reader step-5 route, the scale a fridge-sheet scan applies to, and the nutribot user/conversation used for UPC lookups. |
 
