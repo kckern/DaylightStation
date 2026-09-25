@@ -140,9 +140,9 @@ describe('EquationStrip — the ruler', () => {
 describe('EquationStrip — the headline names its segment', () => {
   const ranged = { budget: 1791, maintenance: 2291, range: { floor: 1200, top: 1791 }, exercise: 0, declared: null };
 
-  it('an under-logged day reads "to floor", not "left"', () => {
-    strip({ budget: { ...ranged, food: 700, net: 700, zone: 'incomplete', remaining: 500, status: 'under' } });
-    expect(screen.getByTestId('budget-headline').textContent).toMatch(/500\s*kcal to floor/);
+  it('an under-logged day still reads what is left to the ceiling', () => {
+    strip({ budget: { ...ranged, food: 700, net: 700, zone: 'incomplete', remaining: 1091, status: 'under' } });
+    expect(screen.getByTestId('budget-headline').textContent).toMatch(/1,091\s*kcal left/);
   });
 
   it('a declared day says so instead of a number', () => {

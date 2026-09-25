@@ -5,8 +5,8 @@ const range = { floor: 1200, top: 1791 };
 const z = (food, exercise = 0, declared = null) => zoneFor({ food, exercise, maintenance: 2291, range, declared });
 
 describe('zoneFor', () => {
-  it('incomplete: under the floor, undeclared; remaining is food still to log', () => {
-    expect(z(700)).toEqual({ zone: 'incomplete', remaining: 500, complete: false, net: 700 });
+  it('incomplete: under the floor, undeclared; remaining is still what is left to the ceiling', () => {
+    expect(z(700)).toEqual({ zone: 'incomplete', remaining: 1091, complete: false, net: 700 });
   });
 
   it('floor compares FOOD, not net: a big workout does not make a full log incomplete', () => {
@@ -56,7 +56,7 @@ describe('statusForZone', () => {
 
 describe('headlineFor', () => {
   it('names the segment the number measures', () => {
-    expect(headlineFor({ zone: 'incomplete', remaining: 500 })).toEqual({ value: 500, text: 'to floor' });
+    expect(headlineFor({ zone: 'incomplete', remaining: 1091 })).toEqual({ value: 1091, text: 'left' });
     expect(headlineFor({ zone: 'in-range', remaining: 648 })).toEqual({ value: 648, text: 'left' });
     expect(headlineFor({ zone: 'over', remaining: 109 })).toEqual({ value: 109, text: 'over' });
     expect(headlineFor({ zone: 'past-even', remaining: 109 })).toEqual({ value: 109, text: 'past break even' });

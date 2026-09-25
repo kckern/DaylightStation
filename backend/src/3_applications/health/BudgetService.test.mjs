@@ -159,10 +159,10 @@ describe('BudgetService — range contract', () => {
     expect(b.remaining).toBe(1962 - 960);
   });
 
-  it('zone incomplete under the floor; remaining is food still to log', async () => {
+  it('zone incomplete under the floor; remaining is still what is left to the ceiling', async () => {
     const svc = makeService({ nutriListStore: nutriListFake([{ date: '2026-09-02', calories: 700 }]) });
     const b = await svc.getBudget('kckern', '2026-09-02');
-    expect(b).toMatchObject({ zone: 'incomplete', complete: false, remaining: 500, status: 'under' });
+    expect(b).toMatchObject({ zone: 'incomplete', complete: false, remaining: 1962 - 380, status: 'under' });
   });
 
   it('a declared day under the floor is complete', async () => {
