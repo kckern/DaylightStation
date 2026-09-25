@@ -19,6 +19,7 @@ import { MacroBarRow } from './MacroBarRow.jsx';
 import { WeightChip } from './WeightChip.jsx';
 import { MonthBlock } from './MonthBlock.jsx';
 import { useBudgetRange } from './useBudgetRange.js';
+import { useAfterFirstPaint } from './useAfterFirstPaint.js';
 import { useIsWideViewport } from './layout.js';
 import { LogTable } from './LogTable.jsx';
 import { MealAddRow } from './MealAddRow.jsx';
@@ -41,7 +42,7 @@ import { CustomFoodSheet } from '../capture/CustomFoodSheet.jsx';
 const logger = createAppLogger('health').child('today');
 const IntakeBurnChart = lazy(() => import('../progress/IntakeBurnChart.jsx').then(module => ({ default: module.IntakeBurnChart })));
 
-export function TodayView({ active = true, sidebarTarget, onSetupGoals, onCoachTap }) {
+export function TodayView({ active = true, sidebarTarget, followUpTarget = null, onSetupGoals, onCoachTap }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const dateParam = searchParams.get('date');
   const date = isISODate(dateParam) && dateParam <= todayISO() ? dateParam : todayISO();
@@ -57,8 +58,13 @@ export function TodayView({ active = true, sidebarTarget, onSetupGoals, onCoachT
   // Rows just added from an add row, briefly highlighted once on screen.
   const justAdded = useAddedRowHighlight(day.items);
   const addedIds = useMemo(() => (moves.recentIds.size ? new Set([...justAdded, ...moves.recentIds]) : justAdded), [justAdded, moves.recentIds]);
+  // The day on screen goes first. Everything it does not need — neighbouring
+  // days, the coach line, the sidebar's month — waits until the server has
+  // answered for the day and the browser has had an idle moment, so a slow
+  // request never holds the page or a connection the day is waiting on.
+  const settled = useAfterFirstPaint(!day.loading && !day.revalidating);
   // Warm ±7 days and each meal's shortlist once the viewed day is on screen.
-  useHealthDayPrefetch(date, { enabled: active, ready: !day.loading });
+  useHealthDayPrefetch(date, { enabled: active, ready: settled && !day.loading });
   const [mealUndo, setMealUndo] = useState(null);
   // A failed voice send whose mic unmounted (the day changed): { run, label, busy, error }.
   const [orphanRetry, setOrphanRetry] = useState(null);
@@ -131,12 +137,14 @@ export function TodayView({ active = true, sidebarTarget, onSetupGoals, onCoachT
   // month of budgets for a column it will never show.
   const wideViewport = useIsWideViewport();
   // ONE 30-day request, fetched here and handed to every sidebar widget that
-  // needs it. Each widget owning its own useBudgetRange would make the same
-  // request twice on one page load — the hook's cache dedupes the SECOND load,
-  // not two simultaneous mounts.
+  // needs it. The hook would share one in-flight request between two widgets
+  // anyway; owning it here keeps one `enabled` gate and one loading state.
   const monthEnd = date < todayISO() ? date : todayISO();
-  const monthRange = useBudgetRange(addDays(monthEnd, -29), monthEnd, { enabled: active && wideViewport });
-  const dash = useApiResource('api/v1/health/dashboard', { enabled: active, label: 'dashboard', logger });
+  const monthRange = useBudgetRange(addDays(monthEnd, -29), monthEnd, { enabled: active && wideViewport && settled });
+  // Waiting its turn with nothing cached reads as loading, not as an empty month.
+  const monthLoading = monthRange.loading || (!settled && !monthRange.days.length);
+  // Only the coach line reads this, and it is the slowest call Health makes.
+  const dash = useApiResource('api/v1/health/dashboard', { enabled: active && settled, label: 'dashboard', logger, swr: true });
   // Review belongs to the shared food log, regardless of capture surface.
   // In particular, scanner/Telegram UPC captures can remain pending until
   // a portion is confirmed. Health must offer confirmation for those too.
@@ -417,8 +425,8 @@ export function TodayView({ active = true, sidebarTarget, onSetupGoals, onCoachT
     <WeekStrip enabled={active} date={date} today={todayISO()} onDateChange={setDate} viewportEnd={viewportEnd}
       onViewportChange={value => setSearchParams(previous => { const next = new URLSearchParams(previous); next.set('week', value); return next; })} />
     {active ? <WeightChip asOf={date} /> : null}
-    {wideViewport ? <MonthBlock days={monthRange.days} loading={monthRange.loading} /> : null}
-    {wideViewport ? <Suspense fallback={null}><IntakeBurnChart days={monthRange.days} loading={monthRange.loading} /></Suspense> : null}
+    {wideViewport ? <MonthBlock days={monthRange.days} loading={monthLoading} /> : null}
+    {wideViewport ? <Suspense fallback={null}><IntakeBurnChart days={monthRange.days} loading={monthLoading} /></Suspense> : null}
   </>;
 
   return (
@@ -435,8 +443,9 @@ export function TodayView({ active = true, sidebarTarget, onSetupGoals, onCoachT
         macroCoverage={nutrientSummary(preview.items)} microCoverage={preview.budget?.microCoverage}
         showIntake={false} showMacros={false} />
       {/* Follow-ups arrive on their own schedule (a 15 s poll, a scale), so they
-          get a fixed one-line slot rather than a banner that moves the day. */}
-      <FollowUpTray active={active} observations={unmatched} onObservationsChanged={() => observations.reload()} onChanged={day.reload} />
+          take no room on the page: a bell in the header (followUpTarget). */}
+      <FollowUpTray active={active} target={followUpTarget} observations={unmatched}
+        onObservationsChanged={() => observations.reload()} onChanged={day.reload} />
       {wideViewport && sidebarTarget ? createPortal(history, sidebarTarget) : null}
       <TodayToasts captureNotice={captureNotice} captureRetry={captureRetry} retryBusy={nutrition.busy}
         onRetryCapture={retryVoiceCapture} onDismissCapture={() => { setCaptureNotice(null); setCaptureRetry(null); }}
