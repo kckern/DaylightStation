@@ -898,6 +898,13 @@ pane instead of pushing its own). After `whenFinalPersistSettled()` the player
 refetches `sessions` through FitnessApp's routed actions, so the final stats and
 voice memo appear without a manual re-navigation.
 
+The URL stays authoritative for closing: whenever the path changes to one with no
+`/session-{id}` segment while the sessions widget's pane is open — a close with
+no active session, browser Back from a session URL, or starting a video from home
+(`/fitness/play/{id}`) — the widget closes the pane and clears the selection.
+Opening stays selection-driven, so the guarantee is one-way: a closed pane never
+survives in a session-less URL.
+
 ---
 
 ## Render Update Model

@@ -18,6 +18,37 @@ trusted baselines. First scans have structural protection only; sparse or
 repetitive marks cannot establish alignment confidently. Personal incident
 evidence and grading records belong in application data, not this repository.
 
+## Key-alignment plausibility check
+
+The scan-vs-scan comparison above catches a card that physically fed
+differently between two passes. It cannot catch a worksheet that was wrong
+from the very first scan — a learner filling in the answer rows shifted by
+one or two positions against the printed number range, so every mark lands
+on the neighboring question. `omrKeyAlignmentSuspect` (in
+`backend/src/2_domains/school/omrKeyAlignment.mjs`) covers that case instead:
+it compares a worksheet's own marks against its own answer key, not against
+an earlier scan.
+
+For a worksheet scoring below 70% literally, it re-scores the same marks at
+row offsets of ±1 and ±2 against the key. If an offset improves the match
+count by at least 2 over the literal score, the offset with the best
+improvement is flagged. The check requires at least 5 graded rows and never
+runs on a passing worksheet — a learner who did fine needs no second look.
+
+This runs inside `ResolveCardScan`, once per section on a composed card
+(math/scripture/civilization sections sharing one physical card are scored
+independently, mirroring the existing `companionGate` pattern) rather than
+once for the whole card. A flagged section adds a synthetic entry to the
+review queue — reason `key-alignment-suspected`, `itemId: 'key-alignment'`
+— surfaced to a teacher via `RecordCardScanOutcome`. It never auto-corrects
+the grade; a human decides whether the shift is real. Because the entry
+doesn't correspond to a real answer-key item, every scoring and rendering
+path that walks review-queue entries filters it out via the shared
+`isSyntheticReviewItem` predicate in
+`backend/src/3_applications/school/ports/IReviewQueue.mjs` — see
+[Teacher flows](teacher.md) and [Print documents](print-documents.md) for
+the review-queue and denominator-exclusion details.
+
 ## Locating an extra scan column
 
 Read the relay's `/health` and `/recent` endpoints before restarting or flashing

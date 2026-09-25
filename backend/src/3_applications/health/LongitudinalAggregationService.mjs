@@ -65,7 +65,8 @@ export class LongitudinalAggregationService {
         exerciseMinutes,
         caloriesBurned: caloriesBurned || 0,
         steps: fitness[dateStr]?.steps?.steps_count ?? null,
-        protein: nutrition[dateStr]?.protein ?? null,
+        // A day backfilled from weight has unknown protein, not the logged part's.
+        protein: nutrition[dateStr]?.reconstructed_calories > 0 ? null : (nutrition[dateStr]?.protein ?? null),
         calorieBalance: reconciliation[dateStr]?.calorie_adjustment ?? null,
       });
     }

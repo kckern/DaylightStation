@@ -13,6 +13,9 @@ import { UPC_REJECTED } from '../usecases/LogFoodFromUPC.mjs';
  * Routes IInputEvents to Nutribot use cases.
  * Transforms platform-agnostic events to use case input shapes.
  */
+/** Voice retries currently being processed, by `${conversationId}:${messageId}`. */
+const voiceRetriesInFlight = new Set();
+
 export class NutribotInputRouter extends BaseInputRouter {
   #userResolver;
   #userIdentityService;
@@ -228,6 +231,7 @@ export class NutribotInputRouter extends BaseInputRouter {
         logId,
         itemCount: accepted?.itemCount ?? null,
       });
+      await this.#notifyMealCoaching(userId, logId, source);
       return true;
     } catch (e) {
       this.logger.error?.('nutribot.capture.commitFailed', { source, logId, error: e.message });
@@ -352,22 +356,69 @@ export class NutribotInputRouter extends BaseInputRouter {
       return this.#aiUnavailable(event, responseContext, 'Voice nutrition analysis is temporarily unavailable. Please describe the food instead.');
     }
     const useCase = this.container.getLogFoodFromVoice();
-    return await this.#capture(event, responseContext, { source: 'voice', commit: true }, (rc) =>
-      useCase.execute({
-        userId: this.#resolveUserId(event),
-        conversationId: event.conversationId,
-        voiceData: {
-          fileId: event.payload.fileId,
-          // Set only on the web path, where the bytes were written to the
-          // user's store before this call. It is what lets a failed
-          // transcription say "your recording is saved" truthfully.
-          audioRef: event.payload.fileId?.audioRef || null,
-        },
-        messageId: event.messageId,
-        asOfDate: event.payload.date || null,
-        interpretText: event.payload.interpretText,
-        responseContext: rc,
-      }));
+    // A Telegram voice file stays fetchable by id, so a failed transcription
+    // can be retried from a button without re-recording.
+    const retryable = event.platform === 'telegram' && typeof event.payload.fileId === 'string';
+    const input = (rc) => ({
+      userId: this.#resolveUserId(event),
+      conversationId: event.conversationId,
+      voiceData: {
+        fileId: event.payload.fileId,
+        // Set only on the web path, where the bytes were written to the
+        // user's store before this call. It is what lets a failed
+        // transcription say "your recording is saved" truthfully.
+        audioRef: event.payload.fileId?.audioRef || null,
+      },
+      messageId: event.messageId,
+      asOfDate: event.payload.date || null,
+      interpretText: event.payload.interpretText,
+      responseContext: rc,
+      offerRetry: retryable,
+    });
+
+    // An open flow (a revision, a scale "describe it") owns what is said next,
+    // spoken or typed. Voice used to bypass it and log a NEW meal, so a spoken
+    // revision never reached the log it was revising.
+    const flow = await this.#openTextFlow(event);
+    if (flow) {
+      this.logger.info?.('nutribot.handleVoice.flowRouted', { conversationId: event.conversationId, flow });
+      const result = await useCase.execute({ ...input(responseContext),
+        routeTranscript: (text) => this.handleText({ ...event, type: 'text', payload: { ...event.payload, text } }, responseContext) });
+      await this.#rememberVoiceRetry(event, result);
+      return result?.ok !== undefined ? result : { ok: true, result };
+    }
+
+    const captured = await this.#capture(event, responseContext, { source: 'voice', commit: true }, (rc) => useCase.execute(input(rc)));
+    await this.#rememberVoiceRetry(event, captured?.result);
+    return captured;
+  }
+
+  /** The open text flow for this conversation ('revision' | 'scale_describe'), or null. */
+  async #openTextFlow(event) {
+    if (event.platform === 'web') return null;
+    try {
+      const state = await this.container.getConversationStateStore?.()?.get(event.conversationId);
+      return ['revision', 'scale_describe'].includes(state?.activeFlow) && state?.flowState?.pendingLogUuid ? state.activeFlow : null;
+    } catch (e) {
+      this.logger.warn?.('nutribot.handleVoice.stateCheck.error', { conversationId: event.conversationId, error: e.message });
+      return null;
+    }
+  }
+
+  /**
+   * After a failed transcription that offered 🔄 Retry, remember the voice file
+   * under that message's own session — never the root flow, so an open
+   * revision survives the failure and the retry lands in it.
+   */
+  async #rememberVoiceRetry(event, result) {
+    if (result?.code !== 'TRANSCRIBE_FAILED' || !result.retryMessageId) return;
+    try {
+      await this.container.getConversationStateStore?.()?.set(event.conversationId,
+        { voiceRetry: { fileId: event.payload.fileId, voiceMessageId: event.messageId ?? null, at: new Date().toISOString() } },
+        String(result.retryMessageId));
+    } catch (e) {
+      this.logger.warn?.('nutribot.voiceRetry.saveFailed', { conversationId: event.conversationId, error: e.message });
+    }
   }
 
   async handleUpc(event, responseContext) {
@@ -420,6 +471,8 @@ export class NutribotInputRouter extends BaseInputRouter {
       r: CallbackActions.REVISE_ITEM,
       x: CallbackActions.REJECT_LOG,
       ir: CallbackActions.RETRY_IMAGE,
+      vr: CallbackActions.RETRY_VOICE,
+      rs: CallbackActions.RESTORE_LOG,
     };
     if (legacyActionMap[action]) {
       action = legacyActionMap[action];
@@ -443,13 +496,18 @@ export class NutribotInputRouter extends BaseInputRouter {
       }
       case CallbackActions.REJECT_LOG: {
         const useCase = this.container.getDiscardFoodLog();
-        return await useCase.execute({
-          userId: this.#resolveUserId(event),
+        const userId = this.#resolveUserId(event);
+        const result = await useCase.execute({
+          userId,
           conversationId: event.conversationId,
           logUuid: decoded.id,
           messageId: event.messageId,
           responseContext,
         });
+        // Undo changes today's totals: the pending (or standing) post-meal
+        // message is re-armed so it reflects what is actually left.
+        await this.#notifyMealCoaching(userId, decoded.id, 'undo');
+        return result;
       }
       case CallbackActions.REVISE_ITEM: {
         const useCase = this.container.getReviseFoodLog();
@@ -528,8 +586,51 @@ export class NutribotInputRouter extends BaseInputRouter {
         return await useCase.execute({
           userId: this.#resolveUserId(event),
           conversationId: event.conversationId,
+          messageId: event.messageId,
           responseContext,
         });
+      }
+      case CallbackActions.RETRY_VOICE: {
+        // A double tap must not transcribe (and log) the same recording twice.
+        const key = `${event.conversationId}:${event.messageId}`;
+        if (voiceRetriesInFlight.has(key)) return { ok: true, handled: true, duplicate: true };
+        voiceRetriesInFlight.add(key);
+        try {
+          const store = this.container.getConversationStateStore?.();
+          const session = await store?.get(event.conversationId, String(event.messageId));
+          const retry = session?.voiceRetry;
+          if (!retry?.fileId) {
+            await responseContext?.sendMessage?.('🚫 This retry is no longer available. Please send the voice message again.', {});
+            return { ok: false, code: 'RETRY_STALE' };
+          }
+          // One retry per button: consume it before the attempt, then clear the
+          // failure message away — the attempt brings its own status line.
+          await store.delete?.(event.conversationId, String(event.messageId));
+          try { await responseContext?.deleteMessage?.(event.messageId); }
+          catch (e) { this.logger.debug?.('nutribot.voiceRetry.deleteFailed', { error: e.message }); }
+          this.logger.info?.('nutribot.voiceRetry.dispatch', { conversationId: event.conversationId });
+          // The ORIGINAL voice note's id travels on, so a successful retry tidies it too.
+          return await this.handleVoice({ ...event, type: 'voice', messageId: retry.voiceMessageId ?? null,
+            payload: { ...event.payload, fileId: retry.fileId } }, responseContext);
+        } finally {
+          voiceRetriesInFlight.delete(key);
+        }
+      }
+      case CallbackActions.RESTORE_LOG: {
+        const userId = this.#resolveUserId(event);
+        let result;
+        try {
+          result = await this.container.getRestoreFoodLog().execute({
+            userId, conversationId: event.conversationId, logUuid: decoded.id, responseContext,
+          });
+        } catch (error) {
+          // 409: part of the entry changed or is gone. Say so; never go silent.
+          this.logger.warn?.('nutribot.restore.failed', { logUuid: decoded.id, status: error.status ?? null, error: error.message });
+          await responseContext?.sendMessage?.("⚠️ I couldn't restore that entry — part of it changed or is no longer available. You can log it again.", {});
+          return { ok: false, code: 'RESTORE_FAILED' };
+        }
+        if (result.restored > 0) await this.#notifyMealCoaching(userId, decoded.id, 'restore');
+        return result;
       }
       case 'rx': {
         // Report Accept/Close - just remove the buttons
@@ -751,7 +852,9 @@ export class NutribotInputRouter extends BaseInputRouter {
         });
         return { ok: true, result };
       }
-      case 'done': {
+      case 'done':
+      case 'fast':
+      case 'reopen': {
         const healthStore = this.container.getHealthStore?.();
         if (!healthStore) {
           if (responseContext?.sendMessage) {
@@ -760,11 +863,27 @@ export class NutribotInputRouter extends BaseInputRouter {
           return { ok: true, handled: false };
         }
         const userId = this.#resolveUserId(event);
-        const today = new Date().toISOString().split('T')[0];
-        await healthStore.markDayClosed(userId, today);
-        this.logger.info?.('nutribot.command.done', { userId, date: today });
+        const date = this.#commandDate(userId, event.payload?.text);
+        if (!date) {
+          if (responseContext?.sendMessage) {
+            await responseContext.sendMessage(`Use /${command}, /${command} yesterday, or /${command} YYYY-MM-DD.`, {});
+          }
+          return { ok: true, handled: false };
+        }
+        if (command === 'reopen') {
+          await healthStore.clearDayStatus(userId, date);
+          this.logger.info?.('nutribot.command.day-status', { userId, date, status: null });
+          if (responseContext?.sendMessage) {
+            await responseContext.sendMessage(`Reopened ${date}. Coaching will judge it by its logged total again.`, {});
+          }
+          return { ok: true, handled: true };
+        }
+        const status = command === 'fast' ? 'fasting' : 'done';
+        await healthStore.markDayStatus(userId, date, status);
+        this.logger.info?.('nutribot.command.day-status', { userId, date, status });
         if (responseContext?.sendMessage) {
-          await responseContext.sendMessage(`Day marked as done for ${today}. Coaching will treat today's totals as final.`, {});
+          const what = status === 'fasting' ? `Marked ${date} as a fast.` : `Marked ${date} as done.`;
+          await responseContext.sendMessage(`${what} Coaching will treat that day's totals as final. (/reopen ${date} to undo.)`, {});
         }
         return { ok: true, handled: true };
       }
@@ -785,6 +904,44 @@ export class NutribotInputRouter extends BaseInputRouter {
   }
 
   // ==================== Helpers ====================
+
+  /**
+   * Tell the post-meal coaching trigger the log changed. Carries the log's meal
+   * date so a back-dated capture or an undo of yesterday's entry never arms a
+   * message about today. Never throws — coaching is not part of the capture.
+   */
+  async #notifyMealCoaching(userId, logId, source) {
+    const trigger = this.container.getMealCoachingTrigger?.();
+    if (!trigger) return;
+    try {
+      const log = await this.container.getFoodLogStore?.()?.findByUuid?.(logId, userId);
+      trigger.notify({ userId, date: log?.meal?.date || null, source });
+    } catch (e) {
+      this.logger.warn?.('nutribot.capture.coachingTriggerFailed', { source, logId, error: e.message });
+    }
+  }
+
+  /**
+   * Date argument of /done, /fast, /reopen: empty = today, `yesterday`, or an
+   * explicit YYYY-MM-DD not in the future. Null when unparseable.
+   */
+  #commandDate(userId, arg) {
+    const text = String(arg || '').trim().toLowerCase();
+    const today = this.#localDate(userId, 0);
+    if (!text || text === 'today') return today;
+    if (text === 'yesterday') return this.#localDate(userId, 1);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(text) && !Number.isNaN(Date.parse(`${text}T12:00:00Z`)) && text <= today) return text;
+    return null;
+  }
+
+  /** The user's local calendar date, `daysAgo` days back (YYYY-MM-DD). */
+  #localDate(userId, daysAgo = 0) {
+    const tz = this.container.getConfig?.()?.getUserTimezone?.(userId) || 'America/Los_Angeles';
+    const today = new Date().toLocaleDateString('en-CA', { timeZone: tz });
+    const d = new Date(`${today}T12:00:00Z`);
+    d.setUTCDate(d.getUTCDate() - daysAgo);
+    return d.toISOString().slice(0, 10);
+  }
 
   /**
    * Resolve user ID from platform identity

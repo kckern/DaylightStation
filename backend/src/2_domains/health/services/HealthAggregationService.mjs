@@ -131,11 +131,41 @@ export class HealthAggregator {
     const mergedWorkouts = [];
     const usedFitnessIds = new Set();
 
-    // Duration tolerance for matching (5 minutes)
+    // Duration tolerance for matching when start times are missing (5 minutes)
     const DURATION_TOLERANCE = 5;
+    // Start-time tolerance: the same activity starts within a few minutes on both services
+    const START_TOLERANCE = 10;
 
-    // Process Strava activities and try to match with FitnessSyncer
-    for (const s of stravaActivities) {
+    // Match each Strava activity with the SAME activity in FitnessSyncer.
+    // Start time decides when both sides carry one: duration alone paired an
+    // evening 35-min ride with an afternoon 38-min strength session (taking its
+    // calories), and missed a run logged as 42 min moving on Strava but 87 min
+    // elapsed on the watch (counting it twice). Duration is only the fallback
+    // without start times. Pairing is GLOBAL and closest-first, so an earlier
+    // Strava activity can never steal a later one's closer match.
+    const candidates = [];
+    stravaActivities.forEach((s, si) => {
+      const sStart = clockMinutes(s.startTime);
+      fitnessActivities.forEach((f, fi) => {
+        const fStart = clockMinutes(f.startTime);
+        if (sStart != null && fStart != null) {
+          const gap = Math.abs(sStart - fStart);
+          if (gap <= START_TOLERANCE) candidates.push({ si, fi, score: gap });
+          return;
+        }
+        const durationDiff = Math.abs((s.minutes || 0) - (f.minutes || 0));
+        if (durationDiff < DURATION_TOLERANCE) candidates.push({ si, fi, score: START_TOLERANCE + durationDiff });
+      });
+    });
+    candidates.sort((a, b) => a.score - b.score || a.si - b.si || a.fi - b.fi);
+    const matchFor = new Map();
+    for (const { si, fi } of candidates) {
+      if (matchFor.has(si) || usedFitnessIds.has(fi)) continue;
+      matchFor.set(si, fi);
+      usedFitnessIds.add(fi);
+    }
+
+    stravaActivities.forEach((s, si) => {
       // Normalize heart rate data
       const stravaData = { ...s };
       if (Array.isArray(stravaData.heartRateOverTime)) {
@@ -144,17 +174,9 @@ export class HealthAggregator {
       if (Array.isArray(stravaData.heartRateTimes)) {
         stravaData.heartRateTimes = stravaData.heartRateTimes.join('|');
       }
-
-      // Try to match with FitnessSyncer
-      const fitnessMatch = fitnessActivities.find((f, idx) => {
-        if (usedFitnessIds.has(idx)) return false;
-        const durationDiff = Math.abs((s.minutes || 0) - (f.minutes || 0));
-        return durationDiff < DURATION_TOLERANCE;
-      });
+      const fitnessMatch = matchFor.has(si) ? fitnessActivities[matchFor.get(si)] : null;
 
       if (fitnessMatch) {
-        const idx = fitnessActivities.indexOf(fitnessMatch);
-        usedFitnessIds.add(idx);
         mergedWorkouts.push(new WorkoutEntry({
           source: WorkoutEntry.SOURCES.STRAVA_FITNESS,
           title: s.title || fitnessMatch.title,
@@ -166,7 +188,7 @@ export class HealthAggregator {
           strava: stravaData,
           fitness: fitnessMatch
         }));
-        continue;
+        return;
       }
 
       // No match - Strava only
@@ -180,7 +202,7 @@ export class HealthAggregator {
         maxHr: s.maxHeartrate,
         strava: stravaData
       }));
-    }
+    });
 
     // Add remaining FitnessSyncer activities
     fitnessActivities.forEach((f, idx) => {
@@ -203,6 +225,17 @@ export class HealthAggregator {
     return mergedWorkouts;
   }
 
+}
+
+/** "02:45 pm" / "14:45" → minutes after midnight, or null. */
+function clockMinutes(value) {
+  const m = /^(\d{1,2}):(\d{2})\s*([ap]m)?$/i.exec(String(value ?? '').trim());
+  if (!m) return null;
+  let h = Number(m[1]) % 24;
+  const ampm = m[3]?.toLowerCase();
+  if (ampm === 'pm' && h < 12) h += 12;
+  if (ampm === 'am' && h === 12) h = 0;
+  return h * 60 + Number(m[2]);
 }
 
 export default HealthAggregator;

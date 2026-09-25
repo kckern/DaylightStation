@@ -1,11 +1,24 @@
+import { isTrusted, hasKnownProtein } from './dayCompleteness.mjs';
+
 /**
  * Detect the most notable recent nutrition pattern.
+ * Days carrying a completeness `status` (see dayCompleteness.mjs) are judged
+ * on trusted days only: an untrusted most-recent day is missed logging, never a
+ * deficit; older untrusted days are dropped and the trusted remainder is
+ * evaluated. A confirmed fast or `/done` day is never "missed logging", even
+ * at zero calories.
  * @param {Array<{date: string, calories: number, protein: number}>} days - Recent daily data, most recent first
  * @param {{calories_min: number, calories_max: number, protein: number}} goals
  * @returns {string|null} Pattern identifier or null
  */
 export function detectPattern(days, goals) {
   if (!days || days.length === 0) return null;
+
+  const statusAware = days.some(d => d.status);
+  if (statusAware) {
+    if (!isTrusted(days[0])) return 'missed_logging';
+    days = days.filter(isTrusted);
+  }
 
   const last3 = days.slice(0, 3);
   const last5 = days.slice(0, 5);
@@ -18,7 +31,7 @@ export function detectPattern(days, goals) {
   }
 
   // missed_logging: 0 calories for 1+ of last 3 days
-  if (last3.some(d => d.calories === 0)) return 'missed_logging';
+  if (!statusAware && last3.some(d => d.calories === 0)) return 'missed_logging';
 
   // calorie_surplus: above goal_max for 2+ of last 3 days
   const surplusDays = last3.filter(d => d.calories > goals.calories_max);
@@ -30,14 +43,14 @@ export function detectPattern(days, goals) {
 
   // protein_short: protein < 80% of goal for 3+ of last 5 days
   const proteinThreshold = goals.protein * 0.8;
-  const proteinShortDays = last5.filter(d => d.protein < proteinThreshold && d.calories > 0);
+  const proteinShortDays = last5.filter(d => d.protein < proteinThreshold && d.calories > 0 && (!d.status || hasKnownProtein(d)));
   if (proteinShortDays.length >= 3) return 'protein_short';
 
   // on_track: within goals for 3+ consecutive days from most recent
   const onTrackStreak = last3.filter(d =>
     d.calories >= goals.calories_min &&
     d.calories <= goals.calories_max &&
-    d.protein >= goals.protein
+    (d.status === 'reconstructed' || d.protein >= goals.protein)
   );
   if (onTrackStreak.length >= 3) return 'on_track';
 

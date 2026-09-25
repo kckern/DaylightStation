@@ -174,7 +174,7 @@ describe('ScreenDataProvider persistence (stale-while-revalidate)', () => {
   function persistWrapper(extra = {}) {
     return function Wrapper({ children }) {
       return (
-        <ScreenDataProvider sources={sources} persistKey="fitness:home" persist={['sessions']} {...extra}>
+        <ScreenDataProvider sources={sources} persistKey="fitness:home" persist={['sessions']} cacheVersion="v1" {...extra}>
           {children}
         </ScreenDataProvider>
       );
@@ -187,7 +187,7 @@ describe('ScreenDataProvider persistence (stale-while-revalidate)', () => {
   });
 
   it('renders the cached payload on the first render, then replaces it with the fetch', async () => {
-    localStorage.setItem(cacheKey, JSON.stringify({ url: sources.sessions.source, savedAt: 1, data: { sessions: ['old'] } }));
+    localStorage.setItem(cacheKey, JSON.stringify({ url: sources.sessions.source, version: 'v1', savedAt: 1, data: { sessions: ['old'] } }));
     mockFetch.mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({ sessions: ['new'] }) });
 
     const { result } = renderHook(() => useScreenData('sessions'), { wrapper: persistWrapper() });
@@ -198,7 +198,7 @@ describe('ScreenDataProvider persistence (stale-while-revalidate)', () => {
   });
 
   it('ignores a cached payload fetched from a different URL', () => {
-    localStorage.setItem(cacheKey, JSON.stringify({ url: '/api/v1/fitness/sessions?since=30d', savedAt: 1, data: { sessions: ['old'] } }));
+    localStorage.setItem(cacheKey, JSON.stringify({ url: '/api/v1/fitness/sessions?since=30d', version: 'v1', savedAt: 1, data: { sessions: ['old'] } }));
     mockFetch.mockReturnValue(new Promise(() => {}));
 
     const { result } = renderHook(() => useScreenData('sessions'), { wrapper: persistWrapper() });
@@ -230,5 +230,28 @@ describe('ScreenDataProvider persistence (stale-while-revalidate)', () => {
 
     unmount();
     expect(actionsRef.current).toBeNull();
+  });
+
+  it('ignores a cached payload written by a different build, then rewrites it for this build', async () => {
+    localStorage.setItem(cacheKey, JSON.stringify({ url: sources.sessions.source, version: 'v0', savedAt: 1, data: { sessions: ['old-shape'] } }));
+    mockFetch.mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({ sessions: ['new'] }) });
+
+    const { result } = renderHook(() => useScreenData('sessions'), { wrapper: persistWrapper() });
+
+    expect(result.current).toBeNull();
+    await waitFor(() => expect(result.current).toEqual({ sessions: ['new'] }));
+    const entry = JSON.parse(localStorage.getItem(cacheKey));
+    expect(entry.version).toBe('v1');
+    expect(entry.data).toEqual({ sessions: ['new'] });
+  });
+
+  it('keeps exactly one storage entry per source across versions', async () => {
+    localStorage.setItem(cacheKey, JSON.stringify({ url: sources.sessions.source, version: 'v0', savedAt: 1, data: {} }));
+    mockFetch.mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({ sessions: [] }) });
+
+    renderHook(() => useScreenData('sessions'), { wrapper: persistWrapper() });
+
+    await waitFor(() => expect(JSON.parse(localStorage.getItem(cacheKey)).version).toBe('v1'));
+    expect(Object.keys(localStorage).filter((k) => k.startsWith('screenData:'))).toEqual([cacheKey]);
   });
 });

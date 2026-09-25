@@ -76,7 +76,7 @@ The **status block** is the deterministic, factual layer of every coaching messa
 Every status block carries:
 
 - **The day's headline numbers.** Calories consumed against the calorie band; protein consumed against the protein floor; the percentage of each goal reached.
-- **A comparison.** For the morning brief: yesterday vs. the seven-day average. For the weekly digest: this week vs. the eight-to-twelve-week average. For the exercise reaction: the activity's burned calories framed as expanded budget. For the post-report: today against today's targets.
+- **A comparison.** For the morning brief: yesterday vs. the seven-day average. For the weekly digest: this week vs. the eight-to-twelve-week average. For the exercise reaction: the activity's burned calories framed as expanded budget. For the post-meal message: today's running total as "so far" and "left", with no percentage-of-goal while the day is in progress, because a percentage reads as a verdict on an unfinished day.
 - **A trend signal.** The weight trend slope per week, signed; the change in this week's calorie average against last week's.
 - **Goal anchors.** Every comparison is presented against an explicit user-declared goal value, never a vague "where you usually are."
 
@@ -85,6 +85,32 @@ Numbers in the status block are **rounded** — calories to whole digits, protei
 The contract with the LLM is unconditional: **the LLM may cite the status block, paraphrase it, or build on it. The LLM may not contradict it, restate it verbatim, invent new numbers, or replace any value with a different one.** If the LLM emits a number, that number is in the snapshot. If a number is in the snapshot, it agrees with the status block.
 
 If commentary is empty, the status block is sent alone. The status block stands on its own.
+
+## Logging completeness
+
+A logged total is not the same as what was eaten. A day that reads 460 calories is almost always a day with meals missing from the log, not a day of restraint, and a coach that narrates it as "you really kept it down" is wrong in a way the user sees at once.
+
+So every day the coach reads is classified before anything else happens:
+
+| Status | Meaning | Trusted? |
+|---|---|---|
+| `complete` | Logged total at or above the threshold | yes |
+| `done` | The user said the day's log is final (`/done`) | yes, whatever the total |
+| `fasting` | The user said the day was a fast (`/fast`) | yes, whatever the total |
+| `incomplete` | Something logged, under the threshold, not confirmed | **no** — missing data |
+| `unlogged` | Nothing logged | **no** — missing data |
+| `reconstructed` | Untracked intake backfilled from weight ([reconstruction](README.md#untracked-intake-reconstruction)) | calories yes. Protein is **unknown** and never averaged |
+
+The threshold is `logging_completeness.min_calories` in the household `coaching` config (`household/coaching/config.yml`, registered in `shared/contracts/householdConfig.mjs`), **default 1200**. Close a day from the nutribot chat with `/done` or `/fast`. With no argument it closes today in the user's timezone. It also takes `yesterday` or an explicit `YYYY-MM-DD` that is not in the future, and `/reopen` with the same arguments undoes it. The brief's hint prints the exact date, so it stays correct if read a day late. Closures live in `data/users/{username}/day_closed.yml` as `{date: {status, at}}`. A bare `true` is the legacy `/done` record and is read as `done`.
+
+Consequences:
+
+- **Days are calendar days.** The morning brief's "yesterday" is yesterday. An unlogged day reads "nothing logged". It is never skipped, so an earlier day's numbers never stand in for it.
+- **Averages cover trusted days only**, and the status block states the coverage ("3 of 7 days fully logged"). With no trusted days it says so instead of averaging.
+- **An incomplete yesterday is labelled as such** in the status block, with the command that would close it.
+- **Patterns and commentary never read an untrusted day as intake.** An untrusted most-recent day yields `missed_logging`, never `calorie_deficit`. Older untrusted days are dropped and the trusted remainder is still evaluated. A confirmed fast is never `missed_logging`. The snapshot carries each day's `status` and the threshold, and the LLM is told to say nothing about an incomplete yesterday's intake and to stay silent when fewer than half the days are trusted.
+
+Implementation: `backend/src/3_applications/coaching/dayCompleteness.mjs`.
 
 ---
 
@@ -123,14 +149,14 @@ The coach speaks at a small, predictable set of moments. There is no continuous 
 
 | Trigger | Cadence | Why |
 |---|---|---|
-| Post-report | Inline after the daily food report renders | The user has just confirmed a batch of items and the totals are fresh; this is the moment to frame "where you are, what's left." |
+| Post-meal (post-report) | Once the food log has been quiet for `post_meal.quiet_minutes` (default 10) after a committed capture (text, voice, photo, barcode, or kitchen scale), an Undo, or a generated report. Only a change dated today arms it, and a send that would land inside `post_meal.quiet_hours` (default 22:00–07:00) is dropped. If the model has nothing to add, nothing is sent, because the capture receipt already shows the totals. | A meal is several captures seconds apart. The quiet timer turns them into one message about where the day stands and what's left. Captures now commit directly, and the report rarely renders, so the capture itself is the trigger. |
 | Morning brief | Daily, mid-morning local time | Yesterday's totals have closed; today has not yet been shaped. The morning brief reflects on yesterday and the recent week. |
 | Weekly digest | Weekly, Sunday evening local time | The week's data has settled. The digest compares this week to the long-term average and the previous week. |
-| Exercise reaction | Triggered by a completed fitness session above a calorie threshold | A meaningful workout has just landed; the burned calories shift the day's budget and the week's session count. |
+| Exercise reaction | A new Strava activity, on its first successful fetch by the enrichment service, that started today (local) and burned more than `exercise_reaction.min_calories` (default 200) | A meaningful workout has just landed; the burned calories shift the day's budget. The webhook event itself carries no calories, so the rule is judged on the fetched activity. |
 | End-of-day completion | Triggered when no further logging is expected for the day | If the user has been logging and then stops, the coach surfaces a quiet summary. If the user never started logging, the coach does not pile on. |
 | On-demand | User asks via slash command, dashboard refresh, or explicit request | An on-demand request bypasses cadence rules entirely. |
 
-Each automatic trigger is **idempotent within its cadence**: the morning brief fires once per day per user, the weekly digest fires once per week per user, the post-report fires once per generated report. A scheduler that misfires or a code path that double-invokes does not result in duplicate user-visible messages. The coach checks its own recent history and skips a delivery whose key (assignment type, user, date or hour) has already been recorded.
+Each automatic trigger is **idempotent within its cadence**: the morning brief fires once per day per user, the weekly digest fires once per week per user, the post-meal message fires once per quiet period and **replaces** the day's previous post-meal message (its Telegram message id is stored with the history entry), and an exercise reaction fires once per activity (the Strava job records `activityNotifiedAt` only once the hook has decided, and the history entry records `activityId`). Pending Strava jobs are recovered at startup only after the coach is wired, so a workout synced during a restart is still evaluated. A scheduler that misfires or a code path that double-invokes does not result in duplicate user-visible messages. The coach checks its own recent history and skips a delivery whose key (assignment type, user, date or hour) has already been recorded.
 
 **Quiet hours suppress automatic deliveries.** If the user is inside their configured quiet-hours window (see `health-system-architecture.md` glossary), the morning brief, weekly digest, exercise reaction, and end-of-day completion do not deliver — the coach holds the message until the window closes and either delivers it then (if still relevant) or drops it (if a fresher trigger has superseded it). On-demand requests bypass quiet hours; the user pulled, so the user gets an answer.
 
@@ -191,7 +217,7 @@ The coach degrades gracefully. No failure in any single stage blocks the daily r
 | LLM returns malformed or empty output | Treated as "nothing to say." The status block is delivered alone. |
 | LLM commentary contradicts the status block | The commentary is dropped before delivery. Contradiction is detected by re-checking emitted numbers against the snapshot. |
 | Sparse data (no recent food log, no weight, very thin window) | The coach defers commentary, delivers only the factual status block, and frames missing dimensions as such ("no weight reading in five days") rather than as zeros. |
-| Partial day (logging in progress, totals incomplete) | The status block frames the totals as in-progress; commentary, if any, acknowledges incompleteness without inventing the missing pieces. |
+| Partial day (under the completeness threshold, not closed with `/done` or `/fast`) | Classified `incomplete` (see Logging completeness): labelled in the status block, excluded from averages and patterns, and never narrated as low intake. |
 | Pattern detection finds nothing | The snapshot carries a null pattern. The LLM is free to find a smaller observation or to stay silent. |
 | Quiet hours active when an automatic trigger fires | The delivery is suppressed. If still relevant when the window closes, the message is delivered then; if a fresher trigger has superseded it, it is dropped. |
 | Messaging gateway fails to deliver | The coach retries on a short backoff. If retries exhaust, the message remains visible on the dashboard surface, marked with its delivery state, so the user can see it on next refresh. |
@@ -207,6 +233,8 @@ The unifying principle: **a problem in the coaching layer never blocks the data 
 ### Backend
 
 - `backend/src/3_applications/coaching/` — coaching orchestration, deterministic message builder, pattern detection, snapshot composition, commentary service.
+- `backend/src/3_applications/coaching/MealCoachingTrigger.mjs` — the post-meal quiet timer. The nutribot capture commit (`NutribotInputRouter`) and `GenerateDailyReport` notify it. Only the coached user (head of household) is coached.
+- `backend/src/3_applications/fitness/webhookCoachingPolicy.mjs` — the exercise-reaction rule. `FitnessActivityEnrichmentService`'s `onActivityFetched` hook is wired in `app.mjs`.
 - `backend/src/3_applications/agents/health-coach/` — on-demand health coach agent, including its prompts, schemas, read-only data tools, messaging-channel delivery tool, and scheduled and event-triggered assignment definitions (post-report, morning brief, weekly digest, exercise reaction, note review, end-of-day report, daily dashboard).
 - `backend/src/3_applications/agents/framework/` — the agent scheduler with idempotency guard for cron-driven assignments.
 - `backend/src/1_adapters/messaging/` — messaging gateway adapters used to deliver coaching messages.
@@ -221,6 +249,8 @@ The unifying principle: **a problem in the coaching layer never blocks the data 
 ### Configuration and data
 
 - `data/household/config/integrations.yml` — household-level provider selection (LLM provider, messaging platform, model and mini-model).
+- `data/household/coaching/config.yml` — `morning_brief.schedule`, `weekly_digest.schedule`, `logging_completeness.min_calories` (default 1200), `post_meal.{enabled, quiet_minutes, quiet_hours}` (default on, 10, `{start: '22:00', end: '07:00'}`; `false` disables the window), `exercise_reaction.{enabled, min_calories}` (default on, 200).
+- `data/users/{username}/day_closed.yml` — per-day `/done` and `/fast` closures.
 - `data/users/{username}/health_coaching.yml` — per-user coaching history: every delivered message persisted with its assignment type and the date it covers.
 - `data/users/{username}/lifeplan.yml` — per-user goal configuration consumed for goal-relative framing.
 - `data/users/{username}/agents/health-coach/` — per-user agent working memory: idempotency keys, alerts-sent counters, last-trigger timestamps.

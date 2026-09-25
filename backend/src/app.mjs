@@ -3639,6 +3639,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       const { StravaWebhookJobStore } = await import('./1_adapters/strava/StravaWebhookJobStore.mjs');
       const { StravaActivityAccessGateway } = await import('./1_adapters/fitness/StravaActivityAccessGateway.mjs');
       const { FitnessActivityEnrichmentService } = await import('./3_applications/fitness/FitnessActivityEnrichmentService.mjs');
+      const { shouldSendExerciseReaction, toReactionActivity } = await import('./3_applications/fitness/webhookCoachingPolicy.mjs');
       const { ActivityReconciliationService } = await import('./3_applications/fitness/ActivityReconciliationService.mjs');
       const { buildSelectionConfig } = await import('#domains/fitness/services/selectPrimaryMedia.mjs');
 
@@ -3732,13 +3733,38 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         resolveDisplayName: (slug) => userService.resolveDisplayName(slug),
         historyRepository: fitnessHistoryRepository,
         reconciliationService: stravaReconciliationService,
+        // Exercise reaction: the webhook event has no calories, so the policy is
+        // judged on the fetched activity. Coaching is built later — resolve lazily.
+        onActivityFetched: async (activity) => {
+          const coaching = v1Routers.agents?.coaching;
+          const orchestrator = v1Routers.agents?.coachingOrchestrator;
+          // Not wired yet: resolve false so the job is left unstamped and retried.
+          if (!orchestrator || !coaching) {
+            rootLogger.warn?.('strava.exercise_reaction.coaching_unavailable', { activityId: activity?.id });
+            return false;
+          }
+          const reactionCfg = coaching.config?.exercise_reaction || {};
+          if (!coaching.conversationId || reactionCfg.enabled === false) return true;
+          const eligible = shouldSendExerciseReaction(activity, {
+            now: new Date(),
+            timezone: coaching.timezone,
+            ...(Number.isFinite(Number(reactionCfg.min_calories)) ? { minCalories: Number(reactionCfg.min_calories) } : {}),
+          });
+          rootLogger.info?.('strava.exercise_reaction.evaluated', { activityId: activity?.id, calories: activity?.calories ?? null, eligible });
+          if (!eligible) return true;
+          await orchestrator.sendExerciseReaction({
+            userId: coaching.userId, conversationId: coaching.conversationId, activity: toReactionActivity(activity),
+          });
+          return true;
+        },
         logger: rootLogger.child({ module: 'strava-enrichment' }),
       });
 
       providerWebhookAdapters = { strava: stravaWebhookAdapter };
 
-      // Recover pending jobs on startup
-      stravaEnrichmentService.recoverPendingJobs();
+      // Pending-job recovery runs after the agents are wired (below), so a
+      // workout synced during a restart is judged for an exercise reaction
+      // against a live coach rather than silently skipped.
 
       rootLogger.info?.('strava.enrichment.initialized', {
         adapters: Object.keys(providerWebhookAdapters),
@@ -5814,6 +5840,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     scaleRawConfig: configService.getHouseholdAppConfig(householdId, 'scales'),
     // Lazy proxy: agentOrchestrator is created later in createAgentsServices
     agentOrchestrator: { runAssignment: (...args) => v1Routers.agents?.orchestrator?.runAssignment(...args) },
+    // Lazy proxy: the coaching trigger is built later in createAgentsServices
+    mealCoachingTrigger: { notify: (args) => v1Routers.agents?.mealCoachingTrigger?.notify(args) ?? false },
     logger: rootLogger.child({ module: 'nutribot' })
   });
 
@@ -6392,10 +6420,17 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     workingMemory: agentsServices.workingMemory,
     scheduler: agentsServices.scheduler,
     coachingOrchestrator: agentsServices.coachingOrchestrator,
+    mealCoachingTrigger: agentsServices.mealCoachingTrigger,
+    coaching: agentsServices.coaching,
     healthAnalyticsService: agentsServices.healthAnalyticsService,
   };
 
   healthAnalyticsService = v1Routers.agents?.healthAnalyticsService ?? null;
+
+  // Recover Strava enrichment jobs left pending by a restart — deliberately
+  // after v1Routers.agents exists (see onActivityFetched).
+  try { stravaEnrichmentService?.recoverPendingJobs(); }
+  catch (err) { rootLogger.error?.('strava.enrichment.recovery_failed', { error: err?.message }); }
 
   // Register morning debrief as a scheduled task (via agents scheduler)
   const agentsScheduler = v1Routers.agents?.scheduler;

@@ -44,6 +44,7 @@ export function serializeHealthScan(scan) {
   if (scan.bmrKcal !== null) { out.bmr_kcal = scan.bmrKcal; out.bmr_method = scan.bmrMethod; }
   if (scan.visceralFatLbs !== null) out.visceral_fat_lbs = scan.visceralFatLbs;
   if (scan.boneDensityZScore !== null) out.bone_density_z_score = scan.boneDensityZScore;
+  if (scan.scaleBodyFatPercent != null) out.scale_body_fat_percent = scan.scaleBodyFatPercent;
   if (scan.asymmetry !== null) out.asymmetry = { ...scan.asymmetry };
   if (scan.regional !== null) out.regional = { ...scan.regional };
   if (scan.notes) out.notes = scan.notes;
