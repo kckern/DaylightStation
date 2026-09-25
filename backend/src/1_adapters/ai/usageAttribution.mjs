@@ -49,12 +49,25 @@ export function createScopedView(target, tags, taggedArgs) {
   const wrap = (name, index) => (...args) => {
     const callArgs = [...args];
     while (callArgs.length <= index) callArgs.push(undefined);
+    // Every tagged method takes an options object at `index`. A caller that
+    // passed nothing (or a non-object, which none of those methods accept)
+    // gets a fresh object carrying just the tags; a real options object is
+    // copied, never mutated, so a caller reusing it cannot leak tags.
     const options = callArgs[index] && typeof callArgs[index] === 'object' ? callArgs[index] : {};
     callArgs[index] = { ...options, usageTags: { ...own, ...cleanTags(options.usageTags) } };
     return target[name](...callArgs);
   };
 
+  const readOnly = (action) => (_obj, prop) => {
+    throw new TypeError(`A scoped AI gateway view is read-only (tried to ${action} "${String(prop)}"); change the adapter itself`);
+  };
+
   return new Proxy(target, {
+    // Views are shared by one app's consumers and front an adapter every app
+    // shares; a write through a view would change behaviour for all of them.
+    set: readOnly('set'),
+    deleteProperty: readOnly('delete'),
+    defineProperty: readOnly('define'),
     get(obj, prop) {
       if (prop === 'scoped') {
         return (more = {}) => createScopedView(target, { ...own, ...cleanTags(more) }, taggedArgs);

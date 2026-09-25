@@ -105,6 +105,18 @@ export class IDecisionGateway {
   }
 
   /**
+   * A view of this gateway whose calls are attributed to `tags`
+   * (`{ app, feature }`) in the AI usage ledger. Real adapters override this;
+   * the default is the gateway itself, so a double that extends the port can
+   * be scoped without doing anything.
+   * @param {{app?: string, feature?: string}} [tags]
+   * @returns {this}
+   */
+  scoped(tags = {}) {
+    return this;
+  }
+
+  /**
    * Whether a provider is configured (NoOp returns false)
    * @returns {boolean}
    */

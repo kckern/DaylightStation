@@ -7,5 +7,4 @@ export { INutriLogDatastore, isNutriLogDatastore } from './INutriLogDatastore.mj
 
 // Gateway ports
 export { IResponseContext, isResponseContext } from './IResponseContext.mjs';
-export { IFoodParser, isFoodParser } from './IFoodParser.mjs';
 export { INutritionLookup, isNutritionLookup } from './INutritionLookup.mjs';

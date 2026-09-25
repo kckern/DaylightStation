@@ -11,7 +11,8 @@ export {
   assertAIGateway,
   systemMessage,
   userMessage,
-  assistantMessage
+  assistantMessage,
+  scopedGateway
 } from './IAIGateway.mjs';
 
 export {

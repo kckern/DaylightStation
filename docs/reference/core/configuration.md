@@ -175,14 +175,18 @@ are the attribution: one shared adapter serves every app, so consumers get a
 scoped view — `adapter.scoped({ app })` in composition, `.scoped({ feature })`
 in a use case — whose calls pass the tags down as a per-call `usageTags` option
 (`1_adapters/ai/usageAttribution.mjs`; `OpenAIAdapter`, `AnthropicAdapter`,
-`JevAdapter` and `VoiceTranscriptionService` all have `scoped()`). Mastra agent
+`JevAdapter` and `VoiceTranscriptionService` all have `scoped()`; views are
+read-only, and the ports' default `scoped()` returns the gateway itself). Mastra agent
 rows get theirs from the agent map in `5_composition/agentUsageRecorder.mjs`.
 Untagged rows record `null`. `origin` is the entry point the call ran under
 (`http:METHOD /path`, `job:<id>`, `telegram:<bot>`, `tick:<name>`,
 `cli:<name>`), read from `0_system/runtime/aiContext.mjs`; it is for finding
 untagged callers and is never used as attribution. It is set by
 `aiOriginMiddleware` (`0_system/http/middleware/aiOrigin.mjs`, mounted after the
-body parsers; ids in the path become `:id`, the query string is dropped), the
+body parsers). The HTTP origin is resolved lazily: once routing has matched it is
+the route pattern (`http:GET /api/v1/health/members/:username`), so no name or
+id from the URL is recorded; before a match it falls back to the URL with the
+query string dropped and id-like segments replaced by `:id`. Also set by the
 system scheduler (`runInJobContext` on `SchedulerOrchestrator`) and the agent
 scheduler, `createBotWebhookHandler`, the nutrition cleanup and artwork timers,
 and the AI-calling CLIs. `listCosts` filters by any of `agentId` / `app` /

@@ -1,12 +1,15 @@
 /**
  * aiOrigin middleware — runs the rest of a request under an AI-usage origin
- * of `http:METHOD /normalized/path`, so a ledger row written anywhere down the
+ * of `http:METHOD <route pattern>`, so a ledger row written anywhere down the
  * request's async chain says which endpoint paid for it.
  *
- * The matched route pattern is not known until routing finishes, so the path
- * is normalized instead: the query string is dropped and any segment that
- * looks like an identifier (digits, uuid, long hex, date, email, a long token
- * containing digits) becomes `:id`. Informational only — see aiContext.
+ * The origin is resolved lazily (see aiContext): once routing has matched, it
+ * is the pattern — `req.baseUrl + req.route.path`, e.g.
+ * `/api/v1/health/members/:username` — so no username, name slug or id from
+ * the URL is ever recorded. Before a match (middleware, or a route with a
+ * non-string path) it falls back to the URL normalized: query string dropped,
+ * id-looking segments (digits, uuid, long hex, date, email, a long token
+ * containing digits) replaced with `:id`. Informational only.
  *
  * Mount it AFTER the body parsers. A parser finishes on the request stream's
  * 'end' event, which fires outside any context this middleware opened; placed
@@ -44,14 +47,23 @@ export function normalizeOriginPath(url) {
   return normalized.length > MAX_LENGTH ? `${normalized.slice(0, MAX_LENGTH)}…` : normalized;
 }
 
-/** @returns {string} `http:METHOD /normalized/path` */
+/**
+ * @returns {string} `http:METHOD /route/:pattern` once routed, else
+ *   `http:METHOD /normalized/path`
+ */
 export function httpOrigin(req) {
-  return `http:${String(req.method || 'GET').toUpperCase()} ${normalizeOriginPath(req.originalUrl ?? req.url)}`;
+  const method = String(req.method || 'GET').toUpperCase();
+  const pattern = req.route?.path;
+  if (typeof pattern === 'string') {
+    const full = `${req.baseUrl || ''}${pattern === '/' && req.baseUrl ? '' : pattern}` || '/';
+    return `http:${method} ${full.length > MAX_LENGTH ? `${full.slice(0, MAX_LENGTH)}…` : full}`;
+  }
+  return `http:${method} ${normalizeOriginPath(req.originalUrl ?? req.url)}`;
 }
 
 export function aiOriginMiddleware() {
   return function aiOrigin(req, res, next) {
-    runWithOrigin(httpOrigin(req), () => next());
+    runWithOrigin(() => httpOrigin(req), () => next());
   };
 }
 
