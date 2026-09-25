@@ -104,32 +104,33 @@ const at = (p) => `${p.toFixed(2)}%`;
 const endAnchored = (p) => (p > 50 ? ' health-budget__label--end' : '');
 
 /**
- * The budget as a labelled ruler (budgetGeometry.js): the goal band from floor
- * to top, break-even, ticks, a hatched exercise credit on the LEFT, and the
- * food block whose right edge — net — is the one frontier, coloured by zone.
- * A dotted run carries the headline's number to the mark it measures against.
+ * The budget as a labelled ruler of FOOD eaten (budgetGeometry.js): the goal
+ * band from the floor to the ceiling (top + exercise), a hatched exercise
+ * credit from top to the ceiling, break-even, ticks, and the food block from 0
+ * whose right edge is the one frontier, coloured by zone. A dotted run carries
+ * the headline's number to the mark it measures against.
  */
 function RulerScale({ budget, spoken }) {
   const ref = useRef(null);
   const g = budgetGeometry(budget, { widthPx: useWidth(ref) });
   const { band, even, earned, food, run, zone } = g;
-  const labelAt = band.collapsed ? band.toPct : band.fromPct;
+  const hasWidth = band.toPct > band.fromPct;
   return (
     <div className="health-budget__ruler" ref={ref}>
       <div className="health-budget__rail health-budget__rail--above">
-        <span className={`health-budget__band-label${endAnchored(labelAt)}`} style={{ left: at(labelAt) }}>{band.label}</span>
+        <span className={`health-budget__band-label${endAnchored(band.fromPct)}`} style={{ left: at(band.fromPct) }}>{band.label}</span>
       </div>
       <div className="health-budget__track health-budget__track--ruler" role="img" data-testid="budget-ruler"
-        aria-label={`${n(budget.net)} net kcal; ${band.label.toLowerCase()}${even ? `; break even ${n(even.value)}` : ''}; ${spoken}`}>
-        {band.collapsed ? null : <span className="health-budget__band" style={{ left: at(band.fromPct), width: at(band.toPct - band.fromPct) }} />}
-        {earned ? <span className="health-budget__earned" data-testid="budget-earned" style={{ left: at(earned.fromPct), width: at(earned.widthPct) }}>
-          {earned.labelled ? <span className="health-budget__seg-label">{n(earned.value)}</span> : null}</span> : null}
+        aria-label={`${n(food.value)} kcal eaten; ${band.label.toLowerCase()}${earned ? `, plus ${n(earned.value)} burned` : ''}${even ? `; break even ${n(even.value)}` : ''}; ${spoken}`}>
+        {hasWidth ? <span className="health-budget__band" style={{ left: at(band.fromPct), width: at(band.toPct - band.fromPct) }} /> : null}
         <span className={`health-budget__food health-budget__food--${zone}`} data-testid="budget-food" style={{ left: at(food.fromPct), width: at(food.widthPct) }}>
           {food.labelled ? <span className="health-budget__seg-label">{n(food.value)} eaten</span> : null}</span>
+        {earned ? <span className="health-budget__earned" data-testid="budget-earned" style={{ left: at(earned.fromPct), width: at(earned.widthPct) }}>
+          {earned.labelled ? <span className="health-budget__seg-label">+{n(earned.value)}</span> : null}</span> : null}
         {run ? <span className={`health-budget__run health-budget__run--${zone}`} data-testid="budget-run" style={{ left: at(run.fromPct), width: at(run.widthPct) }} /> : null}
-        {band.collapsed ? null : <span className="health-budget__band-edges" style={{ left: at(band.fromPct), width: at(band.toPct - band.fromPct) }} />}
-        {band.collapsed ? <span className="health-budget__goal-line" style={{ left: at(band.toPct) }} /> : null}
-        {g.zero != null ? <span className="health-budget__zero" style={{ left: at(g.zero) }} /> : null}
+        {hasWidth
+          ? <span className="health-budget__band-edges" style={{ left: at(band.fromPct), width: at(band.toPct - band.fromPct) }} />
+          : <span className="health-budget__goal-line" style={{ left: at(band.toPct) }} />}
         {even ? <span className="health-budget__even" style={{ left: at(even.pct) }} /> : null}
       </div>
       <div className="health-budget__rail health-budget__ticks" aria-hidden="true">
