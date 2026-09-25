@@ -54,7 +54,14 @@ describe('estimateCostUsd', () => {
   });
 
   it('falls back to the input rate when a model publishes no cached rate', () => {
-    expect(estimateCostUsd('gpt-4.1', { promptTokens: 1000, completionTokens: 0, cachedTokens: 1000 }))
-      .toBeCloseTo(1000 * 2.00 / 1e6, 9);
+    expect(estimateCostUsd('claude-sonnet-4', { promptTokens: 1000, completionTokens: 0, cachedTokens: 1000 }))
+      .toBeCloseTo(1000 * 3.00 / 1e6, 9);
+  });
+
+  it('bills cached prompt tokens at the published cached rate for gpt-4o and gpt-4.1', () => {
+    expect(estimateCostUsd('gpt-4o-2024-08-06', { promptTokens: 1_000_000, cachedTokens: 1_000_000 })).toBe(1.25);
+    expect(estimateCostUsd('gpt-4.1-2025-04-14', { promptTokens: 1_000_000, cachedTokens: 1_000_000 })).toBe(0.5);
+    expect(estimateCostUsd('gpt-4.1-mini', { promptTokens: 1_000_000, cachedTokens: 1_000_000 })).toBe(0.1);
+    expect(estimateCostUsd('gpt-4o-mini', { promptTokens: 1_000_000, cachedTokens: 1_000_000 })).toBe(0.075);
   });
 });
