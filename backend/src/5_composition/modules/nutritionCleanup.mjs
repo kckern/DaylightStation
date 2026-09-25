@@ -13,6 +13,7 @@ import { NodeApplicationScheduler } from '#adapters/scheduling/NodeApplicationSc
 import { AgentExecutionPolicy } from '#apps/agents/framework/AgentExecutionPolicy.mjs';
 import { NutritionAuditor } from '#apps/agents/nutrition-auditor/NutritionAuditor.mjs';
 import { NutritionCleanup } from '#apps/nutrition/NutritionCleanup.mjs';
+import { DEFAULT_AUDITOR_SETTINGS } from '#domains/nutrition/services/auditorPolicy.mjs';
 import { NutritionRepairService } from '#apps/nutrition/NutritionRepairService.mjs';
 import { CleanupQuestionSurface } from '#apps/nutrition/CleanupQuestionSurface.mjs';
 import { NutritionStabilization } from '#apps/nutrition/NutritionStabilization.mjs';
@@ -29,7 +30,9 @@ export function createNutritionCleanup({ dataService, configService, userIdentit
   const store = new YamlAgentStateStore({ dataService });
   const items = nutribotServices.nutriListStore;
   const foodLogs = nutribotServices.foodLogStore;
-  const runtime = new MastraAdapter({ model: configService.getAppConfig?.('agents')?.nutrition_auditor?.model || 'openai/gpt-4.1-mini',
+  // Auditor settings own the model: every run passes its own. This default only
+  // covers a call made without one (a run queued before settings recorded a model).
+  const runtime = new MastraAdapter({ model: 'openai/' + DEFAULT_AUDITOR_SETTINGS.model,
     logger, usageRecorder, maxToolCalls: 20, timeoutMs: 120000, executionPolicy: new AgentExecutionPolicy({ maxToolCalls: 20, logger,
       transcriptStore: new AgentTranscriptFileStore({ mediaDir: configService.getMediaDir() }) }) });
   const dbDir = configService.getDataDir() + '/agents';

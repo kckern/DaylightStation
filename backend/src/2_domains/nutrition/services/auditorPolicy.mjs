@@ -3,6 +3,7 @@
  * how often and how expensively, which changes may start a run, and which
  * kinds of repair it may propose. Pure; persistence and clocks live upstream.
  */
+// OpenAI models only: NutritionAuditor sends each as 'openai/<name>'.
 export const AUDITOR_MODELS = ['gpt-4o', 'gpt-4.1', 'gpt-4.1-mini', 'gpt-5.6-luna'];
 export const TRIGGER_KINDS = ['captures', 'reviews', 'stabilization', 'scaleReconcile', 'artwork', 'dayRollover', 'edits', 'dailySweep'];
 export const PERMISSION_KINDS = ['naming', 'identification', 'mealPlacement', 'grouping', 'artwork', 'portion', 'nutrients', 'estimates', 'completeCaptures', 'questions'];
@@ -21,7 +22,7 @@ const KIND_LABEL = { naming: 'food names', identification: 'product matches', me
   grouping: 'food groupings', artwork: 'icons and photos', portion: 'portions', nutrients: 'nutrient values',
   estimates: 'estimated nutrients', completeCaptures: 'captures waiting for review' };
 
-const isPlain = value => value !== null && typeof value === 'object' && !Array.isArray(value);
+export const isPlain = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const pick = (stored, keys, defaults) => Object.fromEntries(keys.map(key =>
   [key, typeof stored?.[key] === 'boolean' ? stored[key] : defaults[key]]));
 const invalid = message => { throw Object.assign(new Error(message), { status: 400 }); };

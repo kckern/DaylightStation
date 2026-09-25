@@ -433,4 +433,79 @@ describe('auditor settings, permissions and history', () => {
     expect(f.auditor.audit.mock.calls[0][0]).toMatchObject({ model: 'gpt-4.1', permissions: { naming: false } });
     expect(answered).toMatchObject({ status: 'stale', outcome: { message: 'Not permitted by auditor settings' } });
   });
+  it('refuses a prepared answer the originating run did not permit', async () => {
+    const f = await fixture();
+    const cleanup = new NutritionCleanup({ ...f, runs: { register: vi.fn() } });
+    await seedQuestion(f, { id: 'audit_old', permissions: { ...cleanup.status('alice').settings.permissions, nutrients: false } }, []);
+    const row = await f.items.findByUuid('alice', 'fish000001');
+    f.store.update('alice', state => Object.assign(state.questions.q1, { status: 'answering', answerAttempts: 0,
+      answer: { operationId: 'op1', choiceId: null, text: '60 kcal', dismiss: false },
+      prepared: { proposal: f.proposal({ calories: 60 }), evidence: [{ id: 'panel', kind: 'product', facts: [{ entryId: row.uuid, field: 'calories', value: 60 }] }] } }));
+    await cleanup.interactions.recover('alice');
+    expect(f.store.load('alice').questions.q1).toMatchObject({ status: 'stale', outcome: { message: 'Not permitted by auditor settings' } });
+    expect((await f.items.findByUuid('alice', 'fish000001')).calories).toBe(52);
+  });
+  it('records blocked and unmatched questions in dry run too', async () => {
+    const f = await fixture();
+    f.store.update('alice', state => { state.settings = { enabled: true, dryRun: true, telegram: false, permissions: { nutrients: false } }; });
+    const blocked = { question: 'How many calories?', entryIds: ['fish000001'],
+      choices: [{ label: '60 kcal', repair: f.proposal({ calories: 60 }) }, { label: '70 kcal', repair: f.proposal({ calories: 70 }) }] };
+    const missing = { question: 'Which fish?', entryIds: ['gone000001'],
+      choices: [{ label: 'Cod', repair: f.proposal({ name: 'Cod' }) }, { label: 'Hake', repair: f.proposal({ name: 'Hake' }) }] };
+    const result = { summary: 'Unclear', repairs: [], questions: [blocked, missing], evidence: [{ id: 'source', kind: 'capture' }] };
+    const cleanup = new NutritionCleanup({ ...f, runs: { register: vi.fn(), start: vi.fn(async () => ({ status: 'success', result })) } });
+    await cleanup.request('alice', { manual: true }); await cleanup.settled('alice');
+    expect(cleanup.status('alice').runs[0].suppressedQuestions).toEqual([
+      { question: blocked.question, entryIds: ['fish000001'], reason: 'blocked' },
+      { question: missing.question, entryIds: ['gone000001'], reason: 'entries-missing' },
+    ]);
+  });
+  it('retries with the input fixed at queue time, even after a settings change', async () => {
+    const f = await fixture(); let now = f.clock.now(); f.clock.now = () => now;
+    f.store.update('alice', state => { state.settings = { enabled: true, dryRun: true, telegram: false }; });
+    const start = vi.fn().mockRejectedValueOnce(new Error('provider timeout')).mockResolvedValue({ status: 'success', result: noChanges });
+    const cleanup = new NutritionCleanup({ ...f, runs: { register: vi.fn(), start } });
+    await cleanup.request('alice', { manual: true }); await cleanup.settled('alice');
+    await cleanup.settings('alice', { expectedVersion: cleanup.status('alice').version, model: 'gpt-4o', permissions: { naming: false } });
+    now += 61000; await cleanup.tick('alice'); await cleanup.settled('alice');
+    expect(start).toHaveBeenCalledTimes(2);
+    expect(start.mock.calls[1][0]).toEqual(start.mock.calls[0][0]);
+    expect(start.mock.calls[1][0].input.model).toBe('gpt-4.1-mini');
+    expect(cleanup.status('alice').runs[0]).toMatchObject({ status: 'completed', model: 'gpt-4.1-mini' });
+  });
+  it('keeps the newest 500 settings changes', async () => {
+    const f = await fixture();
+    f.store.update('alice', state => { state.settingsLog = Array.from({ length: 499 }, (_, i) => ({ at: 'old', actor: 'user', field: 'dryRun', from: i, to: i })); });
+    const cleanup = new NutritionCleanup({ ...f, runs: { register: vi.fn() } });
+    await cleanup.settings('alice', { expectedVersion: cleanup.status('alice').version, model: 'gpt-4o', minGapMinutes: 30 });
+    const log = cleanup.settingsLog('alice');
+    expect(log).toHaveLength(500);
+    expect(log[0].field).toBe('minGapMinutes'); expect(log.at(-1).from).toBe(1);
+  });
+  it('reads and writes state saved before the settings log existed', async () => {
+    const f = await fixture();
+    f.store.update('alice', state => { delete state.settingsLog; });
+    expect(f.store.load('alice')).not.toHaveProperty('settingsLog');
+    const cleanup = new NutritionCleanup({ ...f, runs: { register: vi.fn() } });
+    expect(cleanup.settingsLog('alice')).toEqual([]);
+    await cleanup.settings('alice', { expectedVersion: cleanup.status('alice').version, dryRun: false });
+    expect(cleanup.settingsLog('alice')).toMatchObject([{ field: 'dryRun', from: true, to: false }]);
+  });
+  it('keeps the newest 50 finished runs and any run a question still points at', async () => {
+    const f = await fixture();
+    f.store.update('alice', state => {
+      for (let i = 0; i < 55; i++) {
+        const id = 'r' + String(i).padStart(2, '0');
+        state.runs[id] = { id, status: ['completed', 'failed', 'cancelled'][i % 3], createdAt: new Date(Date.parse('2026-09-01T00:00:00Z') + i * 60000).toISOString() };
+      }
+      state.questions.q1 = { id: 'q1', status: 'open', runId: 'r00', entryVersions: [], choices: [] };
+      state.questions.q2 = { id: 'q2', status: 'resolved', runId: 'r01', entryVersions: [], choices: [] };
+    });
+    const cleanup = new NutritionCleanup({ ...f, runs: { register: vi.fn(), start: vi.fn(async () => ({ status: 'success', result: noChanges })) } });
+    const { runId } = await cleanup.request('alice', { manual: true }); await cleanup.settled('alice');
+    const kept = Object.keys(f.store.load('alice').runs);
+    expect(kept).toHaveLength(51);
+    expect(kept).toEqual(expect.arrayContaining([runId, 'r00', 'r06', 'r54']));
+    expect(kept).not.toContain('r01'); expect(kept).not.toContain('r05');
+  });
 });
