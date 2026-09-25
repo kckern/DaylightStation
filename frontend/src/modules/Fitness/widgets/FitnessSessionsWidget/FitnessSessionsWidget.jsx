@@ -359,6 +359,31 @@ export default function FitnessSessionsWidget() {
     syncSessionUrl(null);
   }, [getNode, setSelectedSessionId, syncSessionUrl]);
 
+  // The URL is authoritative for CLOSING: when it CHANGES to a path that names
+  // no session while this widget's pane is open — a post-session redirect with
+  // no session id, browser Back from /session-{id}, or starting a video from home
+  // (/fitness/play/{id}) — close the pane and drop the selection, so a reload
+  // shows what the screen shows. Opening stays selection-driven.
+  // Acts on a pathname CHANGE only, never on mount: at mount an outside
+  // selection may open the pane (effect above, same commit) while the path is
+  // still bare. A row click sets the selection and navigates in one batch, so a
+  // change to a bare path with the pane open can happen on a real close or when
+  // a video starts from home.
+  const prevPathRef = useRef(location.pathname);
+  useEffect(() => {
+    const prev = prevPathRef.current;
+    prevPathRef.current = location.pathname;
+    if (prev === location.pathname) return;
+    if (/\/session-[^/]+$/.test(location.pathname)) return;
+    const open = openRef.current;
+    if (!open) return;
+    openRef.current = null;
+    open.revert();
+    setSelectedSessionId(null);
+    // Only a URL change should re-run this; the refs and setter are stable.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.pathname]);
+
   // When calendar sets scrollToDate, scroll to that date group and auto-select first session
   useEffect(() => {
     if (!scrollToDate || !containerRef.current) return;

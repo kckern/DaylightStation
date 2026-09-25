@@ -532,6 +532,9 @@ export function createObservationService({
       s.live = live;
       throw err;
     }
+    // A weighed meal is a meal: arm post-meal coaching like any other capture.
+    try { nutribotContainer.getMealCoachingTrigger?.()?.notify({ userId, source: 'scale' }); }
+    catch (err) { logger.warn?.('observation.commit.coaching_trigger_failed', { id, error: err?.message }); }
 
     // CONSUME the observations INTO the entry, and record the pairing. This is the
     // rows do not vanish, they point at what they became. AFTER the accept and on no

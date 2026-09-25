@@ -14,7 +14,7 @@
  * @param {number|null} opts.weightTrend7d
  * @param {Array<{type: string, hours_ago: number, text: string}>} opts.recentCoaching
  */
-export function buildPostReportSnapshot({ date, timeOfDay, calories, protein, items, recentPattern, weightTrend7d, recentCoaching }) {
+export function buildPostReportSnapshot({ date, timeOfDay, calories, protein, items, todayStatus = 'in_progress', recentPattern, weightTrend7d, recentCoaching, recentDays, minCalories }) {
   // Pick top 3 notable items by protein contribution, then calories
   const notable = (items || [])
     .filter(i => i.calories > 0)
@@ -30,57 +30,79 @@ export function buildPostReportSnapshot({ date, timeOfDay, calories, protein, it
     type: 'post-report',
     date,
     time_of_day: timeOfDay,
+    today_status: todayStatus,
+    logging: loggingContext(minCalories),
     calories: { consumed: calories.consumed, goal_min: calories.goal_min, goal_max: calories.goal_max, pct: calories.goal_max > 0 ? Math.round((calories.consumed / calories.goal_max) * 100) : 0 },
     protein: { consumed: protein.consumed, goal: protein.goal, pct: protein.goal > 0 ? Math.round((protein.consumed / protein.goal) * 100) : 0 },
     notable_items: notable,
     recent_pattern: recentPattern,
     weight_trend_7d: weightTrend7d,
+    recent_days: (recentDays || []).map(pickDay),
     recent_coaching: recentCoaching || [],
   };
 }
 
 /**
+ * Days carry a completeness `status` (dayCompleteness.mjs). Averages cover
+ * trusted days only; `logging.note` tells the model what the statuses mean so
+ * missing data is never narrated as low intake.
+ *
  * @param {Object} opts
  * @param {string} opts.date
- * @param {{calories: number, protein: number}} opts.yesterday
- * @param {{calories: number, protein: number}} opts.weekAvg
+ * @param {{date, calories, protein, status}} opts.yesterday
+ * @param {{calories, protein, trustedDays, totalDays}} opts.weekAvg
  * @param {number} opts.proteinGoal
- * @param {{current: number, trend7d: number}} opts.weight
+ * @param {{current: number, trend7d: number}|null} opts.weight
  * @param {string|null} opts.recentPattern
  * @param {Array} opts.recentCoaching
- * @param {Array<{date: string, calories: number, protein: number}>} opts.recentDays - Last 7 days for context
+ * @param {Array<{date, calories, protein, status}>} opts.recentDays
+ * @param {number} opts.minCalories
  */
-export function buildMorningBriefSnapshot({ date, yesterday, weekAvg, proteinGoal, weight, recentPattern, recentCoaching, recentDays }) {
+export function buildMorningBriefSnapshot({ date, yesterday, weekAvg, proteinGoal, weight, recentPattern, recentCoaching, recentDays, minCalories }) {
   return {
     type: 'morning-brief',
     date,
     time_of_day: 'morning',
+    logging: loggingContext(minCalories),
     yesterday,
     week_avg: weekAvg,
     protein_goal: proteinGoal,
-    weight: { current: weight.current, trend_7d: weight.trend7d },
+    weight: weight ? { current: weight.current, trend_7d: weight.trend7d } : null,
     recent_pattern: recentPattern,
-    recent_days: (recentDays || []).slice(0, 7).map(d => ({ date: d.date, calories: d.calories, protein: d.protein })),
+    recent_days: (recentDays || []).slice(0, 7).map(pickDay),
     recent_coaching: recentCoaching || [],
   };
 }
 
 /**
  * @param {Object} opts
- * @param {{avgCalories: number, avgProtein: number}} opts.thisWeek
- * @param {{avgCalories: number, avgProtein: number}} opts.longTermAvg
- * @param {{weekStart: number, weekEnd: number, trend7d: number}} opts.weight
+ * @param {{calories, protein, trustedDays, totalDays}} opts.thisWeek
+ * @param {{calories, protein, trustedDays, totalDays}} opts.longTermAvg
+ * @param {{weekStart: number, weekEnd: number, trend7d: number}|null} opts.weight
  * @param {Array} opts.recentCoaching
- * @param {Array<{date: string, calories: number, protein: number}>} opts.weekDays - This week's daily data
+ * @param {Array<{date, calories, protein, status}>} opts.weekDays
+ * @param {number} opts.minCalories
  */
-export function buildWeeklyDigestSnapshot({ thisWeek, longTermAvg, weight, recentCoaching, weekDays }) {
+export function buildWeeklyDigestSnapshot({ thisWeek, longTermAvg, weight, recentCoaching, weekDays, minCalories }) {
   return {
     type: 'weekly-digest',
+    logging: loggingContext(minCalories),
     this_week: thisWeek,
     long_term_avg: longTermAvg,
-    weight: { week_start: weight.weekStart, week_end: weight.weekEnd, trend_7d: weight.trend7d },
-    week_days: (weekDays || []).map(d => ({ date: d.date, calories: d.calories, protein: d.protein })),
+    weight: weight ? { week_start: weight.weekStart, week_end: weight.weekEnd, trend_7d: weight.trend7d } : null,
+    week_days: (weekDays || []).map(pickDay),
     recent_coaching: recentCoaching || [],
+  };
+}
+
+function pickDay(d) {
+  return { date: d.date, calories: d.calories, protein: d.protein, status: d.status };
+}
+
+function loggingContext(minCalories) {
+  return {
+    min_calories: minCalories,
+    note: 'status complete|done|fasting = trustworthy totals. reconstructed = an untracked day backfilled from weight: calories are an estimate, protein is UNKNOWN (ignore its protein figure) and there are no foods to mention. incomplete = under min_calories and not confirmed by the user: meals are missing, the total is NOT what was eaten. unlogged = no data. Averages cover trustworthy days only.',
   };
 }
 
@@ -91,9 +113,10 @@ export function buildWeeklyDigestSnapshot({ thisWeek, longTermAvg, weight, recen
  * @param {{consumed: number, goal_max: number}} opts.todayCalories
  * @param {Array} opts.recentCoaching
  */
-export function buildExerciseReactionSnapshot({ activity, budgetImpact, todayCalories, recentCoaching }) {
+export function buildExerciseReactionSnapshot({ activity, budgetImpact, todayCalories, todayStatus = 'in_progress', recentCoaching }) {
   return {
     type: 'exercise-reaction',
+    today_status: todayStatus,
     activity,
     budget_impact: budgetImpact,
     today_calories: todayCalories,

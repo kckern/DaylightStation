@@ -203,6 +203,58 @@ the source record. Explicit corrections are stamped as user-supplied per key.
 
 ---
 
+## Closing a day — Done logging / Fasted
+
+The health coach treats a day that is not closed and is under the logging-completeness
+threshold (household `coaching/config.yml` `logging_completeness.min_calories`,
+default 1200) as **missing data**: meals were not logged. It does not treat that day as low intake. See
+[coaching-system.md](coaching-system.md#logging-completeness). A person
+tells it otherwise by closing the day, from either surface:
+
+- **Day view:** `today/DayCloseRow.jsx` sits after the meals.
+  - **Today:** always offers **Done logging** and **Fasted**. It is never flagged, because an in-progress day is expected to be low.
+  - **A past day under the threshold:** is flagged ("Only 460 cal logged." or "Nothing logged.") and offers the same two buttons.
+  - **A closed day:** shows its state and a **Reopen** button.
+  - **A complete past day:** shows nothing, because the coach already trusts it.
+  - "Today" is the server's date (`dayStatus.today`), so a phone in another timezone is never offered a day the server would refuse as future.
+  - The POST response patches the cached day (`showDayStatus`), so the row shows exactly what the server stored. A `/fast` sent from Telegram overrides it on the next refetch.
+- **Nutribot chat:** `/done`, `/fast` and `/reopen`, each taking an optional `yesterday` or `YYYY-MM-DD`.
+
+Both surfaces write the same record, `users/{id}/day_closed.yml`
+(`{date: {status: done|fasting, at}}`). `GET /api/v1/health/day` returns
+`dayStatus: {status, minCalories, today}`. `POST /api/v1/health/nutrition/day-status`
+takes `{date, status: 'done'|'fasting'|null}`, where `null` reopens the day. It refuses a
+malformed date or a future day.
+
+## Untracked-intake reconstruction
+
+History has unlogged and partly logged days. They read as eating far less than was eaten, which skews every average, trend and coaching comparison built on the log.
+Past days can be backfilled with ONE synthetic row each:
+
+| Field | Value |
+|---|---|
+| name | `Untracked (reconstructed)` |
+| `logId` / `log_uuid` | `untracked-reconstruction` (the marker; `shared/contracts/nutrition/reconstruction.mjs`) |
+| calories | weight-derived estimate − logged |
+| macros | none. Protein is **unknown**, not zero |
+| `captureEvidence` | method and every input of that day's estimate |
+| `mealTime` | `null` (Ungrouped) |
+| `settled` | `true` |
+
+- **Daily summary:** a day's nutriday summary gains `reconstructed_calories`.
+- **Coaching** classifies such a day as `reconstructed`:
+  - its calories are trusted;
+  - its protein never enters an average (`hasKnownProtein`);
+  - the model is told there are no foods to mention.
+- **Longitudinal:** `protein` for the day is `null`.
+- **`PatternDetector`:** protein primitives skip it.
+
+`POST /api/v1/health/nutrition/reconstruction` writes a reviewed plan through the
+ledger, one row per day. It skips days already reconstructed and supports a dry run.
+`DELETE` removes the whole backfill. The plan comes from
+`cli/health-reconstruct-untracked.cli.mjs`. The procedure is in
+[the runbook](../../runbooks/health-untracked-reconstruction.md).
+
 ## Meal buckets
 
 `shared/contracts/health/mealBuckets.mjs` owns both labels and clock defaults.
@@ -695,6 +747,14 @@ and **Edit** — never Accept. Those two buttons reuse the existing `x` (discard
 capture's reply opens with "Logged ✓ — *n* items, *k* kcal" rather than a question, so the
 words read as a confirmation and not just the buttons. This applies to every transport —
 web, Telegram, and the coach's `log_food` alike.
+
+**Recovering from failures (Telegram).**
+
+- **Undo is reversible.** An undone receipt reads "↩️ Removed from food log" and carries a **↩️ Restore** button (callback `rs`). `RestoreFoodLog` restores the log's tombstoned rows (`restoreByLogId`), marks the log `accepted`, refreshes the receipt and re-arms post-meal coaching. A second tap is harmless.
+- **A failed transcription offers 🔄 Retry** (callback `vr`). Telegram voice files stay fetchable by id, so the retry re-runs the same recording.
+- **Transient failures retry automatically first.** HTTP 429/5xx and network cuts are retried with backoff inside `retryTransient`, including raw axios errors, which carry the status on `error.response`.
+- **Retry state never replaces the conversation's root flow.** A photo retry (`ir`) and a voice retry (`vr`) are each stored in a *session keyed to their own failure message* (`conversationStateStore.set(id, state, messageId)`). A failure during an open revision leaves that revision open.
+- **Voice follows the open flow.** A voice note sent while a revision or a scale "describe it" is open is transcribed and routed exactly like typed text, so it revises the pending log rather than logging a new meal. Before 2026-09-24 voice bypassed the flow: a spoken revision would have been logged as a new meal.
 
 Two flows are deliberately exempt from the accept half of the seam:
 

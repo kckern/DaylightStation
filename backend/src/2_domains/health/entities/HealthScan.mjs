@@ -19,6 +19,9 @@
  *   bmr_method: katch_mcardle          # measured | katch_mcardle | estimated
  *   visceral_fat_lbs: 0.7              # optional
  *   bone_density_z_score: 1.1          # optional
+ *   scale_body_fat_percent: 25.6       # optional: the household scale's reading in
+ *                                      # the scan week, so a scale-derived FFM can be
+ *                                      # compared to the scan on the same basis
  *   asymmetry: { left_arm_lean_lbs: 7.2, ... }   # optional, free-form object
  *   regional:  { trunk_fat_percent: 21.0, ... }  # optional, free-form object
  *   raw_image_path: /path/to/img.jpg   # optional
@@ -147,6 +150,7 @@ export class HealthScan {
       raw.bone_density_z_score,
       'bone_density_z_score'
     );
+    this.scaleBodyFatPercent = this.#optionalFiniteNumber(raw.scale_body_fat_percent, 'scale_body_fat_percent');
 
     // bmr_kcal + bmr_method coupling
     if (raw.bmr_kcal !== undefined && raw.bmr_kcal !== null) {

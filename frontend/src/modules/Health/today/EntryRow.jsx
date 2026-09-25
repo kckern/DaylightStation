@@ -12,6 +12,7 @@ import { entryId, entryError, isEntryConflict, updateEntry } from './entryComman
 import { usePortionControl } from './usePortionDraft.js';
 import { useRowPreview, logRowPreviewOpen } from './RowPreview.jsx';
 import { useDraggableRow } from './mealDrag.jsx';
+import { isReconstructedRow } from '@shared-contracts/nutrition/reconstruction.mjs';
 
 const logger = createAppLogger('health').child('entry-row');
 
@@ -25,6 +26,8 @@ export function EntryRow({ row, densityRow = row, onTap, onConfirm, onRequestDel
   const { densityPlacement } = useHealthDisplayPreferences();
   const unsettled = row.settled === false || (isGroup && row.children?.some(item => item.settled === false));
   const name = row.name || row.item || row.label || '';
+  // A weight-derived backfill of an untracked day, not food anyone logged.
+  const reconstructed = !isGroup && isReconstructedRow(row);
   const displayKcal = isGroup ? rollupKcal : row.calories;
   // The magnifier card: held closed while a portion drag owns the pointer.
   const previewContent = useMemo(() => ({ row, isGroup, kcal: displayKcal }), [row, isGroup, displayKcal]);
@@ -46,7 +49,7 @@ export function EntryRow({ row, densityRow = row, onTap, onConfirm, onRequestDel
       logger.warn('entry.confirm_failed', { uuid: entryId(row), error: err.message });
     } finally { pending.current = false; }
   };
-  return <div ref={drag.ref} {...drag.handlers} className={['health-row-line', unsettled && confirmation !== 'saved' && 'health-row-line--unsettled', child && 'health-row-line--child', lastChild && 'health-row-line--last-child', isGroup && 'health-row-line--group', added && 'health-row-line--added', drag.draggable && 'health-row-line--draggable', drag.dragging && 'health-row-line--dragging'].filter(Boolean).join(' ')} data-preview={preview.opened ? 'open' : undefined} data-entry-key={entryKey}>
+  return <div ref={drag.ref} {...drag.handlers} className={['health-row-line', unsettled && confirmation !== 'saved' && 'health-row-line--unsettled', child && 'health-row-line--child', lastChild && 'health-row-line--last-child', isGroup && 'health-row-line--group', added && 'health-row-line--added', reconstructed && 'health-row-line--reconstructed', drag.draggable && 'health-row-line--draggable', drag.dragging && 'health-row-line--dragging'].filter(Boolean).join(' ')} data-preview={preview.opened ? 'open' : undefined} data-entry-key={entryKey}>
     <div className="health-row__branch">
       {isGroup ? <UnstyledButton className="health-row__expand" aria-expanded={expanded}
         aria-label={`${expanded ? 'Collapse' : 'Expand'} ${name}`} onClick={onToggle}><svg className="health-row__triangle" viewBox="0 0 10 10" aria-hidden="true" focusable="false">
@@ -61,6 +64,7 @@ export function EntryRow({ row, densityRow = row, onTap, onConfirm, onRequestDel
         {...preview.targetProps} {...preview.focusProps}>
       <span className="health-row__description"><span className="health-row__name">{name}</span>{' '}
         {measured ? <span className="health-row__scale" title={measured}> · Scale ✓</span> : null}
+        {reconstructed ? <span className="health-row__estimate" title="Estimated from weight change, resting metabolism, steps and workouts. Not logged food."> · weight-derived estimate</span> : null}
       </span>
       </UnstyledButton>
       {densityPlacement === 'after' ? <DensityBadge row={densityRow} editRow={row} /> : null}

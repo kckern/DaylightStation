@@ -31,7 +31,10 @@ describe('NutritionReceiptRenderer — established Telegram receipt contract', (
   it('never substitutes old parser quantities for current ledger values', () => {
     const original = { ...log, items: [{ name: 'Old food', grams: 1 }] };
     expect(render([{ name: 'Corrected food', grams: 458, color: 'yellow' }], original).text).toContain('Corrected food 458g');
-    expect(render([], original)).toEqual({ text: '↩️ Removed from food log', choices: [] });
+    const removed = render([], original);
+    expect(removed.text).toBe('↩️ Removed from food log');
+    // One tap takes an Undo back.
+    expect(removed.choices.flat().map(c => [c.text, JSON.parse(c.callback_data).cmd])).toEqual([['↩️ Restore', 'rs']]);
   });
   it('does not turn unknown mass into grams or unknown portions into zero', () => {
     expect(render([{ name: 'Yogurt', grams: null, amount: 170, unit: 'ml' }]).text).toContain('Yogurt 170ml');

@@ -25,6 +25,7 @@ import {
 import { foodGrams, scaleFoodPortion } from '#shared/contracts/health/foodQuantity.mjs';
 import { isISODate } from '#shared/contracts/health/isoDate.mjs';
 import { isCountedRow } from '#shared/contracts/nutrition/countedRows.mjs';
+import { isReconstructedRow } from '#shared/contracts/nutrition/reconstruction.mjs';
 import { INutriListDatastore } from '#apps/nutribot/ports/INutriListDatastore.mjs';
 import { shortIdFromUuid } from '#system/utils/id.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
@@ -424,6 +425,20 @@ export class YamlNutriListDatastore extends INutriListDatastore {
   }
 
   /** Restore exactly the deleted snapshots; never reconstruct nutrition. */
+  /**
+   * Restore every tombstoned row of one log (the chat's ↩️ Restore after Undo).
+   * @returns {Promise<{committed: boolean, items: Object[], affectedIds: string[], affectedDates: string[]}>}
+   */
+  async restoreByLogId(userId, logId) {
+    const deleted = loadYaml(this.#tombstonePath(userId)) || {};
+    const ids = Object.entries(deleted)
+      // Group headers made by web grouping carry only `logUuid`.
+      .filter(([, row]) => row && (row.logId === logId || row.log_uuid === logId || row.logUuid === logId))
+      .map(([id]) => id);
+    if (!ids.length) return { committed: false, items: [], affectedIds: [], affectedDates: [] };
+    return this.restoreEntries(userId, ids);
+  }
+
   async restoreEntries(userId, entryIds) {
     if (!Array.isArray(entryIds) || !entryIds.length || entryIds.some(id => typeof id !== 'string')) {
       throw Object.assign(new Error('Entry IDs are required'), { status: 400 });
@@ -955,9 +970,14 @@ export class YamlNutriListDatastore extends INutriListDatastore {
     };
 
     const foodItemsList = [];
+    // Calories that are a weight-derived reconstruction, not logged food. Kept
+    // separately so coaching can trust the day's calories while never reading
+    // its protein/macros as eaten (they are unknown, not zero).
+    let reconstructedCalories = 0;
 
     for (const item of items) {
       if (!isCountedRow(item)) continue;
+      if (isReconstructedRow(item)) reconstructedCalories += Number.isFinite(item.calories) ? item.calories : 0;
       totals.calories += Number.isFinite(item.calories) ? item.calories : 0;
       totals.protein += Number.isFinite(item.protein) ? item.protein : 0;
       totals.carbs += Number.isFinite(item.carbs) ? item.carbs : 0;
@@ -983,7 +1003,7 @@ export class YamlNutriListDatastore extends INutriListDatastore {
       return calB - calA;
     });
 
-    return { ...totals, food_items: foodItemsList };
+    return { ...totals, ...(reconstructedCalories ? { reconstructed_calories: reconstructedCalories } : {}), food_items: foodItemsList };
   }
 
   // ==================== Archive Management ====================

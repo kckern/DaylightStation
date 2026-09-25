@@ -510,3 +510,12 @@ The corollary bit twice in this sweep: `feat/teacher-workspace-ia` and `feature/
 | 2026-09-24 | feat/jev-voice-trigger-routing | ac364c320 | Voice trigger modality: exact keywords + Jev routing (confirm default), prototype-key hardening |
 | 2026-09-24 | feat/jev-lifeplan-signals | 07e242e31 | Life event suggestions: domain keyword detector, Jev shadow/decide, confirm-gated coach tools |
 | 2026-09-24 | fix/stale-router-tests | 55692bff4 | Piano route contract + pianoGames composition tests refreshed (drift since 76f2089c3 / 402458f0c) |
+| 2026-09-24 | fix/fitness-landing-improve | 4595e29cd6 | Screen-data cache versioned per build; session-less URL closes the Fitness session detail pane |
+| 2026-09-24 | fix/coaching-logging-completeness | f0aa7df753 | Coach treats unconfirmed under-1200-cal days as missing data; /done /fast /reopen |
+| 2026-09-24 | fix/coaching-meal-exercise-triggers | bf7e0ac135 | Wire post-meal coaching (debounced capture trigger) + Strava exercise reactions |
+| 2026-09-24 | feat/health-day-close-button | 79df7fbf8e | Health day view Done logging / Fasted / Reopen row + day-status API |
+| 2026-09-24 | feat/nutrition-untracked-reconstruction | bab4fcdb46 | Weight-derived backfill of untracked intake (API, planner CLI, coach 'reconstructed' status) |
+| 2026-09-24 | fix/reconciliation-dexa-bmr | c3f47bac81 | Reconciliation BMR anchored to measured DEXA RMR |
+| 2026-09-24 | fix/workout-merge-start-time | b657378757 | mergeWorkouts pairs Strava/FitnessSyncer by start time |
+| 2026-09-24 | fix/transcribe-retry-5xx | 1e1b577bbb | Retry HTTP 5xx/429 from raw axios (Whisper 502) |
+| 2026-09-24 | feat/nutribot-retry-restore | c86009299e | Nutribot voice retry, restore after Undo, voice follows open flow |

@@ -11,6 +11,8 @@ import { serializeNutriLog } from '../nutrition/NutriLogProjection.mjs';
 import { nutritionLookupFor } from '#shared/contracts/nutrition/nutritionLookup.mjs';
 import { DEFAULT_DENSITY_LEVELS } from '#shared-contracts/health/densityLevels.mjs';
 import { densityRevision } from '#shared-contracts/health/foodDensity.mjs';
+import { closureStatus, resolveMinCalories, DAY_STATUS } from '../coaching/dayCompleteness.mjs';
+import { RECONSTRUCTION_LOG_ID, RECONSTRUCTION_ITEM_NAME, isReconstructedRow } from '#shared/contracts/nutrition/reconstruction.mjs';
 
 const NUTRITION_UPDATE_FIELDS = new Set([
   'item', 'name', 'unit', 'amount', 'grams', 'noom_color', 'color',
@@ -53,6 +55,7 @@ export class HealthOperations {
     today,
     newId,
     clock = { now: () => Date.now() },
+    completeness = () => null,
   }) {
     this.healthData = healthData;
     this.nutritionItems = nutritionItems;
@@ -66,6 +69,7 @@ export class HealthOperations {
     this.today = today;
     this.newId = newId;
     this.clock = clock;
+    this.completeness = completeness;
   }
 
   defaultUsername() {
@@ -134,6 +138,92 @@ export class HealthOperations {
       ? this.nutritionItems.readDaySnapshot(username, date)
       : { date, items: await this.nutritionItems.findByDate(username, date), revision: null };
     return { ...snapshot, items: snapshot.items.map(row => ({ ...row, ...presentSettlement(row, this.today(), this.clock.now()) })) };
+  }
+
+  /**
+   * Whether the user has closed `date` — `done` (the log is complete) or
+   * `fasting` — plus the logging-completeness threshold the coach applies to
+   * an unclosed day (see coaching/dayCompleteness.mjs).
+   * `today` is the SERVER's date, so the day view never offers to close a
+   * day the server would refuse as future (a phone in another timezone).
+   * @returns {Promise<{status: 'done'|'fasting'|null, minCalories: number, today: string}>}
+   */
+  async readDayStatus(username, date) {
+    let closures = {};
+    try { closures = (await this.healthData?.loadDayClosedData?.(username)) || {}; } catch { closures = {}; }
+    return { status: closureStatus(closures?.[date]), minCalories: resolveMinCalories(this.completeness()), today: this.today() };
+  }
+
+  /**
+   * Close (`done` / `fasting`) or reopen (`null`) a day. Future days refuse.
+   * @returns {Promise<{status: 'done'|'fasting'|null, minCalories: number, today: string}>}
+   */
+  async setDayStatus(username, date, status) {
+    if (status !== null && status !== DAY_STATUS.DONE && status !== DAY_STATUS.FASTING) {
+      throw Object.assign(new Error('status must be done, fasting, or null'), { status: 400 });
+    }
+    if (!isISODate(date)) throw Object.assign(new Error('Invalid date format. Use YYYY-MM-DD'), { status: 400 });
+    if (date > this.today()) throw Object.assign(new Error('A future day cannot be closed'), { status: 400 });
+    if (status === null) await this.healthData.clearDayStatus(username, date);
+    else await this.healthData.markDayStatus(username, date, status);
+    return this.readDayStatus(username, date);
+  }
+
+  /**
+   * Backfill untracked intake: one synthetic row per past day, whose calories
+   * are a reviewed weight-derived estimate minus what was logged. The plan is
+   * computed and reviewed OUTSIDE the app (it reads scale, step and workout
+   * history); this only validates and writes it through the ledger, so daily
+   * summaries, archives and the operation journal stay consistent.
+   *
+   * Idempotent per day: a date that already carries a reconstruction row is
+   * skipped, never doubled. Rows carry no macros — protein on a reconstructed
+   * day is unknown, and coaching reads `reconstructed_calories` to know that.
+   *
+   * @param {string} username
+   * @param {Array<{date: string, calories: number, evidence?: object}>} entries
+   * @param {{dryRun?: boolean}} [options]
+   * @returns {Promise<{dryRun: boolean, written: number, skipped: string[], totalCalories: number}>}
+   */
+  async applyReconstruction(username, entries, { dryRun = false } = {}) {
+    const bad = (message) => Object.assign(new Error(message), { status: 400 });
+    if (!Array.isArray(entries) || !entries.length) throw bad('entries must be a non-empty array');
+    if (entries.length > 1000) throw bad('at most 1000 entries per request');
+    const today = this.today();
+    const seen = new Set();
+    for (const [i, entry] of entries.entries()) {
+      if (!isISODate(entry?.date)) throw bad(`entries[${i}].date must be YYYY-MM-DD`);
+      if (entry.date >= today) throw bad(`entries[${i}].date must be a past day`);
+      if (!Number.isInteger(entry.calories) || entry.calories < 1 || entry.calories > 5000) throw bad(`entries[${i}].calories must be an integer 1–5000`);
+      if (entry.evidence != null && (typeof entry.evidence !== 'object' || JSON.stringify(entry.evidence).length > 4000)) throw bad(`entries[${i}].evidence must be a small object`);
+      if (seen.has(entry.date)) throw bad(`entries[${i}].date ${entry.date} is repeated`);
+      seen.add(entry.date);
+    }
+    const dates = [...seen].sort();
+    const existing = await this.nutritionItems.findByDateRange(username, dates[0], dates.at(-1));
+    const already = new Set(existing.filter(isReconstructedRow).map(row => row.date));
+    // A day the user closed (/done, /fast, the day view) is final — never filled.
+    let closures = {};
+    try { closures = (await this.healthData?.loadDayClosedData?.(username)) || {}; } catch { closures = {}; }
+    const closed = new Set(dates.filter(date => closureStatus(closures[date])));
+    const toWrite = entries.filter(entry => !already.has(entry.date) && !closed.has(entry.date));
+    const rows = toWrite.map(entry => ({
+      uuid: this.newId(), userId: username, date: entry.date, mealTime: null,
+      item: RECONSTRUCTION_ITEM_NAME, name: RECONSTRUCTION_ITEM_NAME, icon: 'default', unit: 'g', amount: null,
+      calories: entry.calories,
+      logId: RECONSTRUCTION_LOG_ID, log_uuid: RECONSTRUCTION_LOG_ID,
+      nutrientProvenance: { calories: { source: RECONSTRUCTION_LOG_ID } },
+      captureEvidence: { source: RECONSTRUCTION_LOG_ID, ...(entry.evidence || {}) },
+      settled: true, settledBy: RECONSTRUCTION_LOG_ID, settledAt: new Date(this.clock.now()).toISOString(),
+    }));
+    if (!dryRun && rows.length) await this.nutritionItems.saveMany(rows);
+    return { dryRun, written: dryRun ? 0 : rows.length, planned: rows.length, skipped: [...already].sort(), skippedClosed: [...closed].sort(),
+      totalCalories: rows.reduce((sum, row) => sum + row.calories, 0) };
+  }
+
+  /** Remove every reconstruction row (the whole backfill). */
+  async removeReconstruction(username) {
+    return { removed: await this.nutritionItems.removeByLogId(username, RECONSTRUCTION_LOG_ID) };
   }
 
   findNutritionItem(username, id) {

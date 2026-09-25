@@ -1,12 +1,9 @@
 /** Identify provider webhooks and coordinate enrichment/coaching side effects. */
 export class FitnessWebhookService {
-  constructor({ providerWebhookAdapters = {}, enrichmentService = null, syncHealth = null, shouldSendExerciseReaction = () => false, getCoachingOrchestrator = () => null, getCoachingConversationId = () => null, logger = console }) {
+  constructor({ providerWebhookAdapters = {}, enrichmentService = null, syncHealth = null, logger = console }) {
     this.adapters = providerWebhookAdapters;
     this.syncHealth = syncHealth;
     this.enrichmentService = enrichmentService;
-    this.shouldSendExerciseReaction = shouldSendExerciseReaction;
-    this.getCoachingOrchestrator = getCoachingOrchestrator;
-    this.getCoachingConversationId = getCoachingConversationId;
     this.logger = logger;
   }
 
@@ -61,26 +58,10 @@ export class FitnessWebhookService {
       } else {
         this.enrichmentService.handleEvent(event);
       }
-      if (shouldEnrich && this.shouldSendExerciseReaction(event)) this.#sendReaction(event);
       return { kind: 'accepted' };
     }
     this.logger.warn?.('fitness.provider.webhook.unknown', { bodyKeys: Object.keys(payload || {}) });
     return { kind: 'unknown' };
-  }
-
-  #sendReaction(event) {
-    const orchestrator = this.getCoachingOrchestrator();
-    const conversationId = this.getCoachingConversationId() || null;
-    if (!orchestrator || !conversationId) return;
-    orchestrator.sendExerciseReaction({
-      userId: event.ownerId,
-      conversationId,
-      activity: {
-        type: event.type || 'Workout',
-        durationMin: Math.round((event.duration || 0) / 60),
-        caloriesBurned: event.calories || 0,
-      },
-    }).catch((error) => this.logger.warn?.('strava.exerciseReaction.error', { error: error.message }));
   }
 }
 
