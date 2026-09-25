@@ -6,6 +6,7 @@ import { nutritionLogVersion } from '#apps/nutrition/FoodLogReview.mjs';
 import { cleanupDates, CLEANUP_FIELDS, CLEANUP_NUMBERS, entryKey } from '#domains/nutrition/services/cleanupPolicy.mjs';
 import { canAutoReview } from '#shared/contracts/nutrition/reviewLifecycle.mjs';
 import { withoutQuarantined } from '#domains/nutrition/services/quarantine.mjs';
+import { describeDisabled } from '#domains/nutrition/services/auditorPolicy.mjs';
 
 const nullableString = { type: ['string', 'null'] };
 const changes = { type: 'object', additionalProperties: false, minProperties: 1,
@@ -143,6 +144,13 @@ When an exceptional ambiguity really needs the user, ask ONE question they can a
 Only reference evidence IDs returned by tools or supplied in the snapshot. No fabricated source facts.
 Output the requested structured schema. Each update's changes is a list of {field,value} pairs; omit unchanged fields from that list. Use confidence=null for non-estimate repairs. Return empty repairs/questions if nothing needs changing.`;
 
+/** A short, storable record of what the model asked the tools for. */
+export function digestToolCalls(calls) {
+  if (!Array.isArray(calls)) return [];
+  return calls.map(call => ({ name: call?.toolName ?? call?.name ?? call?.payload?.toolName ?? 'unknown',
+    args: (JSON.stringify(call?.args ?? call?.payload?.args ?? {}) ?? '').slice(0, 200) }));
+}
+
 export class NutritionAuditor extends BaseAgent {
   #snapshotCache = new Map();
   static id = 'nutrition-auditor';
@@ -202,14 +210,20 @@ export class NutritionAuditor extends BaseAgent {
     const presented = { ...snapshot, rows: snapshot.rows.map(row => present(row)),
       pending: snapshot.pending.map(log => ({ ...log, items: log.items.map(row => present(row, log)) })) };
     const tools = new NutritionEvidenceToolFactory(this).createTools({ userId, snapshot, remember });
+    // Permissions are enforced again when repairs are applied; the prompt line
+    // only spares the model from proposing what would be refused.
+    const disabled = describeDisabled(input.permissions);
     const result = await this.runtime.execute({ agentId: NutritionAuditor.id, input: JSON.stringify({
       snapshot: presented, evidence: { id: initial.id, kind: initial.kind }, ...(input.answer ? { userAnswer: input.answer } : {}),
-    }), tools, systemPrompt: prompt, context: { userId, runId }, signal,
+    }), tools, systemPrompt: disabled ? prompt + '\n' + disabled : prompt, context: { userId, runId }, signal,
+      ...(input.model ? { model: 'openai/' + input.model } : {}),
       outputSchema: auditWireSchema, limits: { timeoutMs: 120000, maxToolCalls: 20, maxSteps: 20 } });
     const dropped = [];
     const normalized = normalizeAuditRepairs(decodeAudit(result.structured), this.icons, this.logger, drop => dropped.push(drop));
     this.#queueDroppedArt(userId, snapshot, dropped);
-    return { ...normalized, evidence: [...evidence.values()], fingerprint: snapshot.fingerprint };
+    return { ...normalized, evidence: [...evidence.values()], fingerprint: snapshot.fingerprint,
+      usage: result.usage ?? null, costUsd: result.costUsd ?? null, model: result.model ?? null, turnId: result.turnId ?? null,
+      toolCalls: digestToolCalls(result.toolCalls) };
   }
 
   /** The foods whose proposed art was refused go on the artwork queue instead of being forgotten. */
