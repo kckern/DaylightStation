@@ -37,7 +37,8 @@ export function createNutritionCleanup({ dataService, configService, userIdentit
     }
   };
   const container = nutribotServices.nutribotContainer;
-  const timezoneFor = userId => container.getConfig?.()?.getUserTimezone?.(userId) || 'America/Los_Angeles';
+  // Health's AI usage days read this same function (healthApi.healthUserTimezone via cleanup.timezoneFor).
+  const timezoneFor = userId => container.getConfig?.()?.getUserTimezone?.(userId) || configService.getHouseholdTimezone?.() || 'America/Los_Angeles';
   const icons = new IconManifestStore({ dataService, mediaRoot: configService.getMediaDir(), logger });
   const store = new YamlAgentStateStore({ dataService });
   const items = nutribotServices.nutriListStore;

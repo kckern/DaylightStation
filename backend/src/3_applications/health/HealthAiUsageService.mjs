@@ -36,7 +36,10 @@ export class HealthAiUsageService {
    * @param {Object} deps
    * @param {import('./ports/IAiUsageReader.mjs').IAiUsageReader} deps.reader
    * @param {{ now: () => number }} [deps.clock]
-   * @param {string|(() => string)} [deps.timezone] - household timezone
+   * @param {string|((userId: string|null) => string)} [deps.timezone] - the
+   *   user's timezone, or a lookup by user id. Composition passes the same
+   *   per-user source NutritionCleanup days are counted in (falling back to the
+   *   household), so "today" here and on the auditor's cap agree.
    * @param {Object} [deps.logger]
    */
   constructor({ reader, clock = { now: () => Date.now() }, timezone = 'America/Los_Angeles', logger = console } = {}) {
@@ -47,18 +50,20 @@ export class HealthAiUsageService {
     this.#logger = logger;
   }
 
-  #dateOf(ms) {
-    return new Intl.DateTimeFormat('en-CA', { timeZone: this.#timezone() || 'UTC', year: 'numeric', month: '2-digit', day: '2-digit' })
+  #dateOf(ms, timeZone) {
+    return new Intl.DateTimeFormat('en-CA', { timeZone: timeZone || 'UTC', year: 'numeric', month: '2-digit', day: '2-digit' })
       .format(new Date(ms));
   }
 
   /**
-   * @param {string} [_userId] - Health is household-wide; kept for the router's shape
-   * @param {{ days?: number }} [options] - 1..90 household days, today included
+   * @param {string} [userId] - whose days: dates are counted in this user's timezone
+   * @param {{ days?: number }} [options] - 1..90 days, today included
    */
-  async usage(_userId = null, { days = 30 } = {}) {
+  async usage(userId = null, { days = 30 } = {}) {
     const now = this.#clock.now();
-    const today = this.#dateOf(now);
+    const timeZone = this.#timezone(userId);
+    const dateOf = ms => this.#dateOf(ms, timeZone);
+    const today = dateOf(now);
     const first = addDays(today, 1 - days);
     const weekStart = addDays(today, -6);
     const monthStart = today.slice(0, 8) + '01';
@@ -78,7 +83,7 @@ export class HealthAiUsageService {
     for (const row of rows) {
       const ms = Date.parse(row.ts);
       if (!Number.isFinite(ms)) continue;
-      const date = this.#dateOf(ms);
+      const date = dateOf(ms);
       if (date > today) continue;
       const cost = Number.isFinite(row.costUsd) ? row.costUsd : 0;
       const ok = row.status !== 'error';

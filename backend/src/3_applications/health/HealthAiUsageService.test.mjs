@@ -11,6 +11,19 @@ function service(rows, { timezone = 'America/Los_Angeles' } = {}) {
 }
 
 describe('HealthAiUsageService', () => {
+  it('counts days in the asking user\'s timezone', async () => {
+    const timezone = vi.fn(userId => (userId === 'alice' ? 'Asia/Seoul' : 'America/Los_Angeles'));
+    // 2026-09-25T16:00Z is Sep 26 01:00 in Seoul, Sep 25 09:00 in LA; NOW is Sep 26 02:00 in Seoul.
+    const { svc } = service([row('2026-09-25T16:00:00Z', { feature: 'photo-log', costUsd: 0.02 }), row('2026-09-25T14:00:00Z', { costUsd: 0.03 })], { timezone });
+    const alice = await svc.usage('alice', { days: 2 });
+    expect(timezone).toHaveBeenCalledWith('alice');
+    expect(alice.range).toEqual({ from: '2026-09-25', to: '2026-09-26', days: 2 });
+    expect(alice.today).toBe(0.02);
+    const other = await svc.usage('bob', { days: 2 });
+    expect(other.range.to).toBe('2026-09-25');
+    expect(other.today).toBeCloseTo(0.05, 9);
+  });
+
   it('needs a reader', () => {
     expect(() => new HealthAiUsageService({})).toThrow(/reader/);
   });
