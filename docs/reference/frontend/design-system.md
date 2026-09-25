@@ -28,6 +28,39 @@ Two ways to consume the contract, both backed by the same values:
   `--ds-text-high`, `--ds-danger`, `--ds-motion-base`, …) onto a `.ds-root`
   wrapper. `AppThemeProvider` renders that wrapper, so any SCSS under the
   provider can read `var(--ds-surface)` directly.
+- **On every page, provider or not:** `installRootTokens()` (called first
+  thing in `main.jsx`) puts the base contract, with no pack applied, on
+  `:root` as the first stylesheet in `<head>`. A kiosk screen, the login form,
+  or anything else rendered outside a provider still reads real contract
+  values. A provider's `.ds-root` restates them with its pack applied and wins
+  by nesting.
+
+The base contract carries an `accent` (the blue a surface gets when no pack
+names one); a pack's `accent` replaces it.
+
+**Every route is its own chunk** (`main.jsx` lazy-loads each app), so a page
+gets only the CSS of the app it shows. Anything more than one app uses must
+therefore live in a shared place, never in whichever app happened to define
+it first:
+
+- **Tokens** belong in `lib/theme/tokens.mjs`.
+- **Web fonts used by more than one app** belong in the single font `<link>`
+  in `frontend/index.html`. Roboto Condensed, Inter, IBM Plex Sans and
+  JetBrains Mono are there. A font only one module uses (ArtMode's
+  Garamonds, the clock's Droid Sans Mono, School's Kongtext) stays with that
+  module.
+- **`modules/Admin/Admin.variables.scss` is Admin's own palette,** not part of
+  the design system. It is guaranteed only on Admin pages, where its later
+  `:root` rules override the contract. It also reaches a few other pages as a
+  side effect of which CSS chunks they happen to share, so it can seem to
+  work elsewhere. Nothing outside Admin may depend on a name defined only
+  there. A shared module that uses one of those names (the content combobox,
+  Auth) must carry a fallback value.
+
+Before route splitting, one 11 MB bundle loaded every app's CSS on every
+page. That hid these dependencies. Lib/ui, Life, Auto and Call had been
+reading Admin's tokens, and Piano, School, Fitness and Auto had been rendering
+in fonts that only Finance, Feed and Media loaded.
 
 A `--ds-*` name that isn't part of the contract is a bug, not a typo that
 silently degrades — an unknown custom property falls back to `inherit`, so it
@@ -118,8 +151,19 @@ error, revalidating, reload }` fetch hook — a GET-backed request wrapped in
 the loading/error bookkeeping every app needs, so no screen hand-rolls its
 own. In its default mode it behaves like any plain fetch-on-mount hook:
 `loading` starts `true` and clears once the request settles, and `reload()`
-always re-enters that same loading state. This mode is unaffected by anything
-below — no cache read, no cache write, nothing new to opt into.
+always re-enters that same loading state. This mode does no cache reads or
+writes, and there is nothing new to opt into.
+
+**One request per path in flight, in every mode.** A reader that mounts while
+a request for its path is already in flight (from another reader or from the
+prefetcher), issued within the last 3 s, joins that request instead of issuing
+its own. An older pending request may be stuck. A reader mounting later
+(navigating back) gets a fresh request rather than waiting on it. Two widgets
+mounting on the same path in one frame make one GET. An explicit `reload()`
+never joins. It exists because something changed after the in-flight request
+was issued, and joining would return the pre-change answer. The same applies
+to the reloads that an invalidation or a patch triggers. After a write,
+each mounted reader of a path still issues its own request.
 
 An opt-in stale-while-revalidate mode (`swr: true`) is for a view whose
 structure should survive a refetch rather than disappear behind a loading
@@ -142,6 +186,28 @@ path by the time it resolves. This covers both an overlapping reload on one
 component and two separately mounted components requesting the same path — in
 either case, a slower, superseded response can never clobber a fresher answer
 that already landed.
+
+**Persisting across page loads (opt-in, per app).**
+`attachApiResourcePersistence({ store, prefixes })` backs the `swr` cache
+with a store: `createIdbResourceStore(name)` in
+`lib/hooks/persistentResourceStore.js`, which uses IndexedDB and is capped by
+entry count and total bytes.
+
+- **On attach**, the paths under `prefixes` are restored into memory. An app
+  awaits this before its first render, so its readers start on a cache hit.
+- **Every later cache write** is written back to disk in batches, at most
+  every 400 ms and again on `pagehide`.
+- **Restored entries are stale by definition.** Every reader revalidates
+  them, and the prefetcher does not treat them as fresh.
+- **The disk copy belongs to one person.** `claimApiResourceOwner(id)`
+  records whose data it is. A different id drops everything that came from
+  disk, then refetches it.
+- **Failures degrade to a normal network load.** No IndexedDB, a blocked
+  open, a quota error, or a load slower than `timeoutMs` all do this.
+- **Bump `RECORD_VERSION`** when a persisted payload shape changes
+  incompatibly. Every old record is then ignored and pruned.
+
+Health is the first app to use this (`modules/Health/healthCache.js`).
 
 The Health app's day view is the primitive's first consumer of the `swr`
 mode; see

@@ -233,11 +233,14 @@ describe('TodayView — Task 3.2: permanent chrome, SWR day data, in-place captu
           : { pending: [] };
       }
       if (path.includes('health/day?')) {
-        if (phase === 'initial') return { items: NUTRILIST_WITH_ROW.data, budget: BUDGET };
+        // Only the VIEWED day's reload hangs. Neighbour-day prefetch also asks
+        // for health/day, and must not take over the resolver.
+        if (phase === 'initial' || !path.includes(`date=${viewed}`)) return { items: NUTRILIST_WITH_ROW.data, budget: BUDGET };
         return new Promise((res) => { resolveReload = () => res({ items: NUTRILIST_WITH_TWO_ROWS.data, budget: BUDGET }); });
       }
       return {};
     });
+    const viewed = new Date().toLocaleDateString('en-CA'); // local YYYY-MM-DD, as TodayView defaults to
 
     r(<TodayView onSetupGoals={() => {}} onCoachTap={() => {}} />);
     await waitFor(() => expect(screen.getByText('Bagel')).toBeTruthy());
@@ -410,8 +413,9 @@ describe('TodayView — scale observations', () => {
   it('an unmatched observation renders as a compact row with a dismiss affordance', async () => {
     apiMock.mockImplementation(baseApi({ observations: { observations: [OPEN_WEIGHT] } }));
     r(<TodayView onSetupGoals={() => {}} onCoachTap={() => {}} />);
-    // Unclaimed readings live behind the follow-up line, in its sheet.
-    fireEvent.click(await screen.findByText(/1 scale reading/));
+    // Unclaimed readings live behind the follow-ups bell, in its sheet.
+    fireEvent.click(await screen.findByRole('button', { name: /1 scale reading/ }));
+    fireEvent.click(await screen.findByRole('menuitem', { name: /1 scale reading to match/ }));
 
     await waitFor(() => expect(screen.getByText('82 g on the kitchen scale at 18:04')).toBeTruthy());
     expect(screen.getByRole('region', { name: 'Unmatched scale measurements' })).toBeTruthy();
@@ -444,7 +448,8 @@ describe('TodayView — scale observations', () => {
   it('dismissing an unmatched row POSTs the dismiss endpoint and reloads the observations', async () => {
     apiMock.mockImplementation(baseApi({ observations: { observations: [OPEN_WEIGHT] } }));
     r(<TodayView onSetupGoals={() => {}} onCoachTap={() => {}} />);
-    fireEvent.click(await screen.findByText(/1 scale reading/));
+    fireEvent.click(await screen.findByRole('button', { name: /1 scale reading/ }));
+    fireEvent.click(await screen.findByRole('menuitem', { name: /1 scale reading to match/ }));
     await waitFor(() => screen.getByRole('button', { name: /^Dismiss 82 g/ }));
 
     fireEvent.click(screen.getByRole('button', { name: /^Dismiss 82 g/ }));
