@@ -11,8 +11,10 @@ import { ConfigService } from './ConfigService.mjs';
 // copy leaves every other caller on boot-time values.
 test('reloadHouseholdAppConfig updates what getHouseholdAppConfig serves', () => {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cfg-reload-'));
-  fs.mkdirSync(path.join(dataDir, 'household', 'config'), { recursive: true });
-  fs.writeFileSync(path.join(dataDir, 'household', 'config', 'piano.yml'), 'videos:\n  progress_overlay:\n    recency_days: 7\n');
+  // Registry path (shared/contracts/householdConfig: piano -> piano/config);
+  // the flat household/config/<app>.yml fallback was retired in Phase E.
+  fs.mkdirSync(path.join(dataDir, 'household', 'piano'), { recursive: true });
+  fs.writeFileSync(path.join(dataDir, 'household', 'piano', 'config.yml'), 'videos:\n  progress_overlay:\n    recency_days: 7\n');
 
   const svc = new ConfigService({
     system: { dataDir, defaultHouseholdId: 'household' },
@@ -20,7 +22,7 @@ test('reloadHouseholdAppConfig updates what getHouseholdAppConfig serves', () =>
   });
   assert.equal(svc.getHouseholdAppConfig(null, 'piano').videos.progress_overlay.recency_days, 7);
 
-  fs.writeFileSync(path.join(dataDir, 'household', 'config', 'piano.yml'), 'videos:\n  progress_overlay:\n    recency_days: 90\n');
+  fs.writeFileSync(path.join(dataDir, 'household', 'piano', 'config.yml'), 'videos:\n  progress_overlay:\n    recency_days: 90\n');
   const fresh = svc.reloadHouseholdAppConfig(null, 'piano');
   assert.equal(fresh.videos.progress_overlay.recency_days, 90);
   assert.equal(svc.getHouseholdAppConfig(null, 'piano').videos.progress_overlay.recency_days, 90);
