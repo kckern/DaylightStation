@@ -9,6 +9,7 @@ import { IAIGateway } from '#apps/common/ports/IAIGateway.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 import { retryTransient } from '#system/utils/retryTransient.mjs';
 import { estimateCostUsd } from './aiPricing.mjs';
+import { isQuotaExhausted } from '#system/utils/retryTransient.mjs';
 
 const OPENAI_API_BASE = 'https://api.openai.com/v1';
 
@@ -115,6 +116,9 @@ export class OpenAIAdapter extends IAIGateway {
    * @private
    */
   #isRetryable(error) {
+    // An exhausted balance is a 429 no retry can fix
+    if (isQuotaExhausted(error)) return false;
+
     // Network-level failures
     if (error.cause?.code === 'ECONNRESET') return true;
     if (error.cause?.code === 'ETIMEDOUT') return true;
