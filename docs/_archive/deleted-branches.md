@@ -534,3 +534,4 @@ The corollary bit twice in this sweep: `feat/teacher-workspace-ia` and `feature/
 | 2026-09-25 | feature/charades-real-history-static | a8fbf1584 | Charades real history + static decoder; superseded, main already holds equivalent content (merge taking main side = no diff) |
 | 2026-09-25 | feat/jev-content-filter-cues | f21b39b03 | Jev review queue for subtitle word-list cues (merged) |
 | 2026-09-25 | feat/arcade-session-overlay | b5b6b1408 | Unified arcade session overlay (merged, resolved onto ArcadeGameSession rename) |
+| 2026-09-25 | feature/health-budget-food-axis | ce2a67941 | Health budget ruler on a food axis (merged) |

@@ -40,6 +40,9 @@ scales:
       # router's lease table and it isn't there. Read the truth off GET /status
       # (or the gateway) rather than trusting this field.
       mac: "aa:bb:cc:dd:ee:ff"
+    ota:                           # espota via tools/flash.mjs --ota (dual-slot image only)
+      enabled: true
+      password: "<random>"         # REQUIRED when enabled; gen-config refuses without it
     ble:
       match_name: "SENSSUN FOOD"     # scan target (KitchenIQ 50797 OEM name)
       service_uuid: "0000ffb0-0000-1000-8000-00805f9b34fb"

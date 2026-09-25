@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import AgendaStatusBoard from './AgendaStatusBoard.jsx';
 import { dayStatus, summarize, ringsByLearner, ringProgressByLearner, triangleRows } from './agendaStatusModel.js';
 
@@ -23,6 +23,10 @@ const ringGate = (learnerId, current, startsAt = 0, endsAt = 4_102_444_800_000) 
     progress: { current, target: 1, unit: 'rings' },
   },
 });
+
+// The board paints from a localStorage snapshot; one test's board must not
+// seed the next.
+beforeEach(() => { localStorage.clear(); });
 
 describe('AgendaStatusBoard model', () => {
   it('statuses read Not started / In progress / Done for the day', () => {
@@ -935,5 +939,101 @@ describe('the four partitions', () => {
     render(<AgendaStatusBoard kids={kids} day="2026-09-09" />);
     await waitFor(() => expect(screen.getByLabelText('0 of 1 done')).toBeTruthy());
     expect(screen.getByTestId('board-term').querySelector('.school-status-board__grid--skeleton')).toBeTruthy();
+  });
+});
+
+// 2026-09-25, from the wall: the board "keeps on spinning and shimmering". Every
+// bus event reset all four cards to skeletons and re-read the whole roster, and
+// those reads take seconds. Now it paints the last snapshot, refreshes in place,
+// and re-reads only what the event is about.
+describe('AgendaStatusBoard — cached, in-place refresh', () => {
+  const planWithMath = { ok: true, status: 200, data: { sections: [{ subject: 'math' }], entries: [] } };
+  const dayWith = (result) => ({ ok: true, status: 200, data: { studyDay: '2026-08-26', learners: [
+    { learnerId: 'learner1', sessions: [{ unitId: 'm.01', subject: 'math', outcome: result ? { result } : null }] },
+    { learnerId: 'learner2', sessions: [{ unitId: 'm.01', subject: 'math', outcome: null }] },
+  ] } });
+  const rowFor = (name) => screen.getByText(name).closest('.school-status-board__row');
+
+  beforeEach(() => {
+    vi.clearAllMocks(); wsHandlers.length = 0;
+    schoolApi.stateGates.mockResolvedValue({ ok: false, status: 0, data: null });
+    schoolApi.agendaPreview.mockResolvedValue(planWithMath);
+    schoolApi.teacherDay.mockResolvedValue(dayWith(null));
+  });
+
+  it('paints the cached board on mount — no skeletons — before any read lands', async () => {
+    render(<AgendaStatusBoard kids={KIDS} />);
+    await waitFor(() => expect(screen.getAllByLabelText('0 of 1 done')).toHaveLength(2));
+    cleanup();
+
+    // Second mount: the reads hang, yet both cards are already drawn.
+    schoolApi.teacherDay.mockReturnValue(new Promise(() => {}));
+    schoolApi.agendaPreview.mockReturnValue(new Promise(() => {}));
+    render(<AgendaStatusBoard kids={KIDS} />);
+    expect(screen.getAllByLabelText('0 of 1 done')).toHaveLength(2);
+    expect(document.querySelector('.school-status-board__pill--skeleton')).toBeNull();
+    expect(document.querySelector('[aria-busy="true"]')).toBeNull();
+  });
+
+  it('drops cached discs when the server names another study day', async () => {
+    render(<AgendaStatusBoard kids={KIDS} />);
+    await waitFor(() => expect(screen.getAllByLabelText('0 of 1 done')).toHaveLength(2));
+    cleanup();
+
+    let release;
+    schoolApi.teacherDay.mockReturnValue(new Promise((resolve) => { release = resolve; }));
+    schoolApi.agendaPreview.mockReturnValue(new Promise(() => {}));
+    render(<AgendaStatusBoard kids={KIDS} />);
+    expect(screen.getAllByLabelText('0 of 1 done')).toHaveLength(2);
+    await act(async () => release({ ok: true, status: 200, data: { studyDay: '2026-08-27', learners: [] } }));
+    expect(screen.queryAllByLabelText('0 of 1 done')).toHaveLength(0);
+    expect(document.querySelectorAll('[aria-busy="true"]')).toHaveLength(2);
+  });
+
+  it('a scan for one learner re-reads that learner only, and no card goes back to a skeleton', async () => {
+    render(<AgendaStatusBoard kids={KIDS} />);
+    await waitFor(() => expect(screen.getAllByLabelText('0 of 1 done')).toHaveLength(2));
+    schoolApi.agendaPreview.mockClear();
+
+    let releasePlan;
+    schoolApi.agendaPreview.mockReturnValue(new Promise((resolve) => { releasePlan = resolve; }));
+    schoolApi.teacherDay.mockResolvedValue(dayWith('passed'));
+    await act(async () => wsHandlers.filter((h) => h.topic === 'omr').at(-1).cb({ event: 'scan-graded', learnerId: 'learner1' }));
+
+    // In flight: both cards still show what they showed.
+    expect(document.querySelector('[aria-busy="true"]')).toBeNull();
+    expect(screen.getAllByLabelText('0 of 1 done')).toHaveLength(2);
+    expect(schoolApi.agendaPreview.mock.calls.map(([id]) => id)).toEqual(['learner1']);
+
+    await act(async () => releasePlan(planWithMath));
+    await waitFor(() => expect(rowFor('Learner One').dataset.complete).toBe('true'));
+    expect(rowFor('Learner Two').dataset.complete).toBe('false');
+  });
+
+  it("a ring observation re-reads the rings and that learner's card, nobody else's", async () => {
+    render(<AgendaStatusBoard kids={KIDS} />);
+    await waitFor(() => expect(screen.getAllByLabelText('0 of 1 done')).toHaveLength(2));
+    const plans = schoolApi.agendaPreview.mock.calls.length;
+    const days = schoolApi.teacherDay.mock.calls.length;
+    const gates = schoolApi.stateGates.mock.calls.length;
+
+    await act(async () => wsHandlers.filter((h) => h.topic === 'state-gates').at(-1).cb({
+      kind: 'StateObservation',
+      payload: { current: { gateId: 'fitness.weekly-rings', subject: { kind: 'learner', id: 'learner1' } } },
+    }));
+
+    expect(schoolApi.stateGates.mock.calls.length).toBe(gates + 1);
+    await waitFor(() => expect(schoolApi.agendaPreview.mock.calls.length).toBe(plans + 1));
+    expect(schoolApi.agendaPreview.mock.calls.at(-1)[0]).toBe('learner1');
+    expect(schoolApi.teacherDay.mock.calls.length).toBe(days + 1);
+    expect(document.querySelector('[aria-busy="true"]')).toBeNull();
+  });
+
+  it('a failed re-read keeps the card as it was', async () => {
+    render(<AgendaStatusBoard kids={KIDS} />);
+    await waitFor(() => expect(screen.getAllByLabelText('0 of 1 done')).toHaveLength(2));
+    schoolApi.agendaPreview.mockRejectedValue(new Error('offline'));
+    await act(async () => wsHandlers.filter((h) => h.topic === 'school').at(-1).cb({ event: 'session-issued', learnerId: 'learner1' }));
+    expect(screen.getAllByLabelText('0 of 1 done')).toHaveLength(2);
   });
 });

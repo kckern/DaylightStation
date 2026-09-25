@@ -15,12 +15,13 @@ Read-only:
   school ops completion <learner> [--base-url URL]
   school ops status <learner> [--base-url URL]
   school ops monitor <learner...> [--watch] [--interval 15]
-  school ops timeline <learner> --teacher ID --pin-env NAME [--limit 50] [--before ISO] [--unit ID]
-  school ops session <session> --teacher ID --pin-env NAME
+  school ops timeline <learner> --teacher ID [--pin-env NAME] [--limit 50] [--before ISO] [--unit ID]
+  school ops session <session> --teacher ID [--pin-env NAME]
   school ops gates <learner>
+  school ops review [session]
   school ops term <learner> [--term ID] [--grid]
   school ops audit [--since ISO]
-  school ops artifact <artifact> --teacher ID --pin-env NAME [--view manifest|original|postview] [--output FILE]
+  school ops artifact <artifact> --teacher ID [--pin-env NAME] [--view manifest|original|postview] [--output FILE]
   school ops agenda-preview <learner> [--name NAME] [--output agenda.png]
   school ops launch-preview <learner> --subject ID [--continue] [--resolve]
                                       [--origin URL] [--path /school]
@@ -31,18 +32,19 @@ default, add --apply):
                             [--pick ID] [--day YYYY-MM-DD] [--at ISO] [--apply]
 
 Dry-run/preview by default; add --apply to write:
-  school ops assign <learner> --file plan.yml --teacher ID --pin-env NAME [--apply]
-  school ops enroll <learner> --syllabus ID --teacher ID --pin-env NAME [--apply]
-  school ops rematerialize <learner> --syllabus ID --teacher ID --pin-env NAME [--apply]
-  school ops abandon <session> --learner ID --reason TEXT --teacher ID --pin-env NAME [--apply]
-  school ops agenda-dispatch <learner> --teacher ID --pin-env NAME [--name NAME] [--idempotency-key KEY] [--apply]
-  school ops grade-adjust <session> --percent N --reason TEXT --teacher ID --pin-env NAME [--base-revision N] [--apply]
-  school ops grade-retract <session> --adjustment ID --reason TEXT --teacher ID --pin-env NAME [--base-revision N] [--apply]
-  school ops completion-credit <learner> --unit ID --reason TEXT --teacher ID --pin-env NAME [--apply]
-  school ops completion-credit-retract <entry> --teacher ID --pin-env NAME [--apply]
-  school ops regrade <bank> --from-day YYYY-MM-DD --reason TEXT --teacher ID --pin-env NAME [--to-day YYYY-MM-DD] [--apply]
-  school ops reassign <assessment> --from ID --to ID --day YYYY-MM-DD --teacher ID --pin-env NAME [--apply]
-  school ops term-rebuild <learner|--all> --teacher ID --pin-env NAME [--term ID] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--force] [--apply]
+  school ops assign <learner> --file plan.yml --teacher ID [--pin-env NAME] [--apply]
+  school ops enroll <learner> --syllabus ID --teacher ID [--pin-env NAME] [--apply]
+  school ops rematerialize <learner> --syllabus ID --teacher ID [--pin-env NAME] [--apply]
+  school ops abandon <session> --learner ID --reason TEXT --teacher ID [--pin-env NAME] [--apply]
+  school ops agenda-dispatch <learner> --teacher ID [--pin-env NAME] [--name NAME] [--idempotency-key KEY] [--apply]
+  school ops grade-adjust <session> --percent N --reason TEXT --teacher ID [--pin-env NAME] [--base-revision N] [--apply]
+  school ops grade-retract <session> --adjustment ID --reason TEXT --teacher ID [--pin-env NAME] [--base-revision N] [--apply]
+  school ops completion-credit <learner> --unit ID --reason TEXT --teacher ID [--pin-env NAME] [--apply]
+  school ops completion-credit-retract <entry> --teacher ID [--pin-env NAME] [--apply]
+  school ops regrade <bank> --from-day YYYY-MM-DD --reason TEXT --teacher ID [--pin-env NAME] [--to-day YYYY-MM-DD] [--apply]
+  school ops review-resolve <session> --item ID --verdict correct|incorrect|void --teacher ID [--note TEXT] [--apply]
+  school ops reassign <assessment> --from ID --to ID --day YYYY-MM-DD --teacher ID [--pin-env NAME] [--apply]
+  school ops term-rebuild <learner|--all> --teacher ID [--pin-env NAME] [--term ID] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--force] [--apply]
 
 term prints one verdict per study day since the term began (the status
 board's grid); --grid draws it as weeks. term-rebuild recomputes the cached
@@ -58,6 +60,12 @@ a mis-scanned sticker. It needs no PIN and no running server: it appends
 straight to the study-day-sharded reading log the story-time launcher counts,
 which the server re-reads on every status call. Because there is no bus, it
 records the read WITHOUT the on-screen ceremony a real living-room finish gets.
+
+review lists every question waiting on a grown-up's mark (or one session's
+queue). A session with an unmarked question stays submitted and holds that
+subject's lane shut: the child cannot print the next page until it is ruled.
+review-resolve rules one question; ruling the last one grades and settles the
+session. void needs --note, because the child sees the question missing.
 
 launch-preview writes NOTHING and needs no PIN: it is a link generator. The
 URL it prints opens a learner's launch card exactly as the wall panel would
@@ -76,6 +84,7 @@ const VALUE_OPTIONS = new Set([
   '--missed', '--verdicts', '--base-revision', '--base-seq', '--adjustment',
   '--from-day', '--to-day', '--from', '--to', '--day',
   '--subject', '--origin', '--path', '--title', '--content', '--location', '--pick', '--at',
+  '--item', '--verdict', '--note',
 ]);
 
 export function option(argv, name, fallback = null) {
@@ -145,9 +154,12 @@ async function snapshot(fetchImpl, base, learnerId) {
   return { schema: 'school.ops-status/v1', learnerId, completion, assignment, sessions: sessions.sessions ?? sessions };
 }
 
+// The teacher PIN was retired 2026-09-11 (school.yml `teacher.pin: null`):
+// TeacherGate now identifies the grown-up by --teacher alone. --pin-env stays
+// for a household that puts a PIN back; omitted, the request carries none.
 function pinFrom(argv, env) {
   const name = option(argv, '--pin-env');
-  if (!name) throw new Error('--pin-env NAME is required for a teacher operation');
+  if (!name) return null;
   const pin = env[name];
   if (!pin) throw new Error(`environment variable ${name} is empty`);
   return pin;
@@ -219,6 +231,10 @@ export async function runOps({
   if (command === 'completion') {
     if (!args[0]) throw new Error('completion requires a learner id');
     print(await requestJson(fetchImpl, base.lifecycle, `/learners/${enc(args[0])}/completion`), stdout); return 0;
+  }
+  if (command === 'review') {
+    const requestPath = args[0] ? `/sessions/${enc(args[0])}/review` : '/review';
+    print(await requestJson(fetchImpl, base.lifecycle, requestPath), stdout); return 0;
   }
   if (command === 'status') {
     if (!args[0]) throw new Error('status requires a learner id');
@@ -532,6 +548,11 @@ export async function runOps({
     requestBase = base.school; requestPath = '/attempts/regrade'; previewViaApi = true;
     body = { bankId, fromDay: requiredOption(rest, '--from-day'), toDay: option(rest, '--to-day'),
       reason: requiredOption(rest, '--reason'), regradedBy: teacher, pin, apply };
+  } else if (command === 'review-resolve') {
+    const sessionId = args[0]; if (!sessionId) throw new Error('review-resolve requires a session id');
+    const itemId = requiredOption(rest, '--item');
+    requestPath = `/sessions/${enc(sessionId)}/review/${enc(itemId)}`;
+    body = { verdict: requiredOption(rest, '--verdict'), note: option(rest, '--note'), gradedBy: teacher, pin };
   } else if (command === 'reassign') {
     const assessmentId = args[0]; const fromLearnerId = option(rest, '--from'); const toLearnerId = option(rest, '--to');
     if (!assessmentId || !fromLearnerId || !toLearnerId) throw new Error('reassign requires assessment, --from ID, and --to ID');

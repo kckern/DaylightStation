@@ -34,6 +34,14 @@
 #include <esp_task_wdt.h>
 #include <esp_system.h>
 #include "config.h"
+// A config.h generated before OTA existed does not define these; default OFF so
+// an old config can never produce an unauthenticated flash endpoint.
+#ifndef OTA_ENABLED
+#define OTA_ENABLED 0
+#endif
+#if OTA_ENABLED
+#include <ArduinoOTA.h>
+#endif
 
 // ---- post-mortem --------------------------------------------------------
 // This board went dark 2026-07-31 and stayed dark 12 days, and afterwards there
@@ -54,6 +62,9 @@ static Preferences g_prefs;
 static uint32_t    g_bootCount = 0;
 static esp_reset_reason_t g_resetReason = ESP_RST_UNKNOWN;
 static uint32_t    g_wifiDrops = 0;    // WiFi (not WS) link losses since boot
+// Set for the duration of an OTA write. loop() does nothing else while it is
+// true: any stall past espota's timeout aborts the transfer (see setup()).
+static volatile bool g_otaActive = false;
 
 /** Human-readable esp_reset_reason. BROWNOUT is the one that fingers a bad supply. */
 static const char* resetReasonStr(esp_reset_reason_t r) {
@@ -751,6 +762,22 @@ static void startScan() {
 // CONNECTED the links coexisted indefinitely. None of it applies between two LE
 // connections. It applies again the day Classic BT returns.
 
+// A barcode scan means someone is standing at the counter, and a scale-card scan
+// (ct:/dl:/rs:) means a weighing is about to happen. On 2026-09-25 two cards were
+// scanned and the weight never arrived; the relay was in backoff at the time.
+// Backoff turned out not to be the cause there (see the note in loop()), but
+// "scale absent for 3+ minutes" is exactly the state a counter visit ends, so a
+// scan resets the absence clock -- the next 3 min run on the responsive
+// continuous scan with its stall watchdog -- and starts a FRESH scan now rather
+// than trusting whichever burst happens to be in flight.
+static void wakeScaleScan(const char* why) {
+  if (!g_bleScanEnabled || g_bleConnected || g_doConnect) return;
+  if (g_scaleAbsentSinceMs) g_scaleAbsentSinceMs = millis() ? millis() : 1;
+  if (g_scanActive) { NimBLEDevice::getScan()->stop(); g_scanActive = false; }
+  startScan();
+  relayLogf("[ble] scale scan woken by %s", why);
+}
+
 static void serviceScanWatchdog() {
   if (!g_bleScanEnabled || g_bleConnected || g_doConnect) return;
   uint32_t now = millis();
@@ -838,6 +865,10 @@ static void handleStatus() {
   boot["count"] = g_bootCount;
   boot["last_reset"] = resetReasonStr(g_resetReason);
   boot["wdt_s"] = WDT_TIMEOUT_S;
+  // Which image is running. After an OTA this is the only way to confirm the
+  // new build actually took, short of a serial cable.
+  doc["build"] = __DATE__ " " __TIME__;
+  doc["ota"] = (bool)OTA_ENABLED;
 
   // Heap: a leak is the most likely wedge mechanism, and it was invisible before
   // this. `min_free` is the low-water mark — the number that matters, since the
@@ -1152,6 +1183,45 @@ void setup() {
 
   startScan();
 
+#if OTA_ENABLED
+  // Over-the-air updates (ArduinoOTA / espota, UDP invitation on :3232). Needs
+  // the dual-slot partition table in platformio.ini; this board ran huge_app.csv
+  // (one slot, no OTA) until 2026-09-25, so every fix meant a USB cable.
+  // Password-gated: gen-config.mjs refuses to enable OTA without one, because
+  // the :80 control plane beside it is unauthenticated by design.
+  ArduinoOTA.setHostname(SCALE_ID);
+  ArduinoOTA.setPassword(OTA_PASSWORD);
+  ArduinoOTA.setMdnsEnabled(false);   // MDNS.begin(SCALE_ID) already ran above
+  ArduinoOTA.onStart([]() {
+    // Give the flash writer the board to itself: stop producing radio work
+    // before tearing down what consumes it. Same pattern as omr-relay.
+    g_otaActive = true;
+    g_bleScanEnabled = false;
+    if (g_scanActive) { NimBLEDevice::getScan()->stop(); g_scanActive = false; }
+    if (g_client) g_client->disconnect();
+#if BARCODE_ENABLED
+    if (g_hidClient) g_hidClient->disconnect();
+#endif
+    webSocket.disconnect();
+    http.stop();
+    relayLogLine("[ota] update starting; ble+ws+http quiesced");
+  });
+  // The one place the watchdog is fed outside loop(): the whole image arrives
+  // inside a single handle() call. Fed per chunk, so a STALLED transfer still
+  // reboots -- onto the old image, since a failed OTA never switches slots.
+  ArduinoOTA.onProgress([](unsigned int, unsigned int) { esp_task_wdt_reset(); });
+  ArduinoOTA.onEnd([]() { relayLogLine("[ota] update complete, rebooting"); });
+  ArduinoOTA.onError([](ota_error_t e) {
+    // Half-quiesced (no BLE, no WS, no HTTP) looks alive and does nothing.
+    // Reboot into the old image instead.
+    relayLogf("[ota] FAILED, error %u -- restarting", (unsigned)e);
+    delay(200);
+    ESP.restart();
+  });
+  ArduinoOTA.begin();
+  relayLogLine("[ota] listening (espota :3232)");
+#endif
+
   // Arm the task watchdog LAST. setup() blocks up to 20 s waiting for WiFi and
   // must not be watched, or a slow AP would reboot the board before it ever
   // reached loop(). panic=true so a wedge becomes a logged TASK_WDT reset
@@ -1168,6 +1238,10 @@ void loop() {
   // board that was merely busy.
   esp_task_wdt_reset();
 
+#if OTA_ENABLED
+  ArduinoOTA.handle();
+  if (g_otaActive) return;   // the writer owns the board until it reboots
+#endif
   webSocket.loop();
   http.handleClient();
   serviceButton();
@@ -1232,6 +1306,7 @@ void loop() {
     g_lastBarcodeMs = millis();
     relayLogf("[barcode] %s", code);
     flashLed(CRGB::Blue);
+    wakeScaleScan("barcode scan");
     uint32_t capturedMs = millis();
     if (!sendScan(code, capturedMs)) {
       queueScan(code, capturedMs);
@@ -1241,6 +1316,11 @@ void loop() {
   if (g_pendingCount && wsConnected) flushPendingScans();
 #endif  // BARCODE_ENABLED
 
+  // Note: this restarts a scan the moment serviceScanWatchdog() ends a backoff
+  // burst, so in practice the "10 s per 60 s" backoff is a 10 s restart cadence,
+  // not an idle duty cycle. Left that way on purpose: an idle radio would make
+  // the scale up to a minute slower to find, and between two LE links there is
+  // no Classic contention left for the idling to relieve.
   if (!g_bleConnected && !g_doConnect && !g_scanActive) startScan();
   serviceScanWatchdog();
 
