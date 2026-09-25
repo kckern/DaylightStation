@@ -26,6 +26,21 @@ const pruneRuns = state => {
 const questionExpired = (question, now, dates) => question.entryVersions.some(row => row.stabilizesAt
   ? !Number.isFinite(Date.parse(row.stabilizesAt)) || Date.parse(row.stabilizesAt) <= now : !dates.includes(row.date));
 
+const tokenCount = value => (Number.isFinite(value) ? value : null);
+/**
+ * Token usage in the journal's one shape, { input, cached, output } (numbers or
+ * null). Accepts that shape (backfilled rows and live rows from now on) and the
+ * runtime's raw { inputTokens, cachedInputTokens, outputTokens, raw } that live
+ * rows stored before; provider detail (`raw`) is dropped. Null without usage.
+ */
+export function normalizeUsage(usage) {
+  if (!usage || typeof usage !== 'object') return null;
+  return { input: tokenCount(usage.input ?? usage.inputTokens), cached: tokenCount(usage.cached ?? usage.cachedInputTokens),
+    output: tokenCount(usage.output ?? usage.outputTokens) };
+}
+const usageOf = row => normalizeUsage(row?.usage);
+const withUsage = row => (row.runId ? { ...row, usage: usageOf(row) } : row);
+
 const RESULT_MAX_CHARS = 8192;
 const RESULT_PREVIEW_CHARS = 2048;
 /** A tool result small enough to send: long text is cut with a marker, a large object becomes a preview. */
@@ -122,7 +137,7 @@ export class NutritionCleanup {
     const rows = (await this.#journalRows(userId, from, to))
       .filter(row => !trigger || (Array.isArray(row.trigger) && row.trigger.includes(trigger)))
       .filter(row => !changed || (row.outcomes || []).some(changedOutcome));
-    return { rows: rows.slice(offset, offset + limit), total: rows.length };
+    return { rows: rows.slice(offset, offset + limit).map(withUsage), total: rows.length };
   }
   /**
    * One run's journal row, with a view of its agent transcript while that is
@@ -141,7 +156,7 @@ export class NutritionCleanup {
         this.logger.warn('nutrition.cleanup.transcript_read_failed', { userId, runId, error: error.message });
       }
     }
-    return { ...row, transcript: raw ? transcriptView(raw) : null,
+    return { ...withUsage(row), transcript: raw ? transcriptView(raw) : null,
       transcriptExpired: !!(row.turnId && this.transcripts && !raw && !transcriptError), ...(transcriptError ? { transcriptError } : {}) };
   }
   /**
@@ -160,8 +175,10 @@ export class NutritionCleanup {
     const byDate = new Map(Array.from({ length: days }, (_, i) => addDays(first, i)).map(date => [date, { date, costUsd: 0, runs: 0, changed: 0 }]));
     const triggers = new Map(), models = new Map();
     const tally = (map, key, row) => {
-      const entry = map.get(key) || { runs: 0, priced: 0, costUsd: 0 };
+      const entry = map.get(key) || { runs: 0, priced: 0, costUsd: 0, tokens: { input: 0, cached: 0, output: 0 } };
       entry.runs++; if (Number.isFinite(row.costUsd)) { entry.priced++; entry.costUsd += row.costUsd; }
+      const usage = usageOf(row);
+      if (usage) for (const kind of ['input', 'cached', 'output']) entry.tokens[kind] += usage[kind] ?? 0;
       map.set(key, entry);
     };
     let week = 0, month = 0, todayUsd = 0;
@@ -193,7 +210,7 @@ export class NutritionCleanup {
       days: [...byDate.values()].map(day => ({ ...day, costUsd: round(day.costUsd) })),
       today: round(todayUsd), week: round(week), month: round(month),
       byTrigger: [...triggers].sort(byCost).map(([trigger, entry]) => ({ trigger, runs: entry.runs, costUsd: round(entry.costUsd), avgUsd: avg(entry) })),
-      byModel: [...models].sort(byCost).map(([model, entry]) => ({ model, runs: entry.runs, avgUsd: avg(entry) })),
+      byModel: [...models].sort(byCost).map(([model, entry]) => ({ model, runs: entry.runs, avgUsd: avg(entry), tokens: entry.tokens })),
       capUsd: settings.dailyCapUsd, cappedToday: this.#cappedToday(userId, state, settings), ledgerTodayUsd,
     };
   }
@@ -420,7 +437,7 @@ export class NutritionCleanup {
       });
     }
     // run.model stays the plain name in every state; the runtime reports {provider,name}.
-    const telemetry = { model: result.model?.name ?? run.model ?? null, usage: result.usage ?? null, costUsd: result.costUsd ?? null,
+    const telemetry = { model: result.model?.name ?? run.model ?? null, usage: normalizeUsage(result.usage), costUsd: result.costUsd ?? null,
       turnId: result.turnId ?? null, toolCalls: result.toolCalls ?? [] };
     // What counts as checked: the audited input, or the state after this run
     // when the only rows that moved are the ones it repaired itself. Anything
