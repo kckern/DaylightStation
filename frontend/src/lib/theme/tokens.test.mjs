@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { DS_TOKENS, dsCssVars } from './tokens.mjs';
+import { DS_TOKENS, dsCssVars, dsRootCss } from './tokens.mjs';
+import { installRootTokens } from './installRootTokens.js';
 import { PACKS } from './packs.mjs';
 import { createAppTheme } from './createAppTheme.js';
 
@@ -24,6 +25,29 @@ describe('DS token contract', () => {
     expect(vars['--ds-surface']).toBe(DS_TOKENS.colors.surface);
     expect(vars['--ds-danger']).toBe(DS_TOKENS.status.danger);
     expect(vars['--ds-motion-base']).toBe('200ms');
+  });
+
+  it('a surface with no pack still gets the base accent', () => {
+    expect(dsCssVars()['--ds-accent']).toBe(DS_TOKENS.accent);
+  });
+
+  it('dsRootCss states the whole base contract on :root', () => {
+    const css = dsRootCss();
+    expect(css.startsWith(':root{')).toBe(true);
+    for (const [name, value] of Object.entries(dsCssVars())) expect(css).toContain(`${name}:${value};`);
+  });
+
+  it('installRootTokens puts the contract FIRST in head, once, so app sheets can still override it', () => {
+    const later = document.createElement('style');
+    document.head.appendChild(later);
+    installRootTokens();
+    installRootTokens();
+    const installed = document.querySelectorAll('#ds-root-tokens');
+    expect(installed).toHaveLength(1);
+    expect(document.head.firstChild).toBe(installed[0]);
+    expect(installed[0].textContent).toBe(dsRootCss());
+    expect(document.documentElement.getAttribute('style')).toBeNull();
+    installed[0].remove(); later.remove();
   });
 
   it('pack color overrides flow into the CSS vars', () => {
