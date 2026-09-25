@@ -99,4 +99,28 @@ describe('AiUsageLedger', () => {
     // no filter at all lists every priced row
     expect(await ledger.listCosts(range)).toHaveLength(4);
   });
+
+  it('lists every row in range for the usage reader, marking rows written before attribution', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'ai-ledger-'));
+    const line = row => JSON.stringify(row);
+    await fs.writeFile(path.join(dir, '2026-09.docker.jsonl'), [
+      line({ ts: '2026-09-04T10:00:00.000Z', model: 'gpt-4o', costUsd: 0.5, status: 'ok' }),
+      line({ ts: '2026-09-04T11:00:00.000Z', app: 'health', feature: 'voice-log', model: 'whisper-1', costUsd: 0.006, audioSeconds: 60, status: 'ok' }),
+      line({ ts: '2026-09-04T12:00:00.000Z', app: null, feature: null, model: 'gpt-4.1', costUsd: null, status: 'error' }),
+      line({ ts: '2026-09-04T13:00:00.000Z', app: 'health', feature: null, model: 'tts-1', costUsd: 0.001, characters: 60, status: 'ok' }),
+      line({ ts: '2026-09-09T13:00:00.000Z', app: 'health', feature: 'x', costUsd: 1 }),
+      '{bad',
+    ].join('\n'));
+    const ledger = createAiUsageLedger({ dir });
+    const range = { from: '2026-09-04T00:00:00.000Z', to: '2026-09-05T00:00:00.000Z' };
+    const all = await ledger.listRows(range);
+    expect(all.map(r => [r.attributed, r.app, r.costUsd])).toEqual([[false, null, 0.5], [true, 'health', 0.006], [true, null, null], [true, 'health', 0.001]]);
+    expect(all[1]).toMatchObject({ feature: 'voice-log', model: 'whisper-1', status: 'ok', audioSeconds: 60 });
+    expect(all[3].characters).toBe(60);
+    expect(all[0]).not.toHaveProperty('audioSeconds');
+    expect((await ledger.listRows({ ...range, app: 'health' })).map(r => r.model)).toEqual(['whisper-1', 'tts-1']);
+    expect((await ledger.listRows({ ...range, app: null })).map(r => r.attributed)).toEqual([false, true]);
+    await expect(ledger.listRows({ from: 'x', to: 'y' })).rejects.toThrow(/ISO/);
+  });
 });
+

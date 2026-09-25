@@ -144,6 +144,8 @@ function serializeHealthMetric(metric) {
  *   mounted at all (same gating style as catalogService/photoStore above).
  * @param {() => Object|null} [config.artworkProvider] - the ArtworkRemediation queue
  *   (report / view). Absent or null = the artwork routes answer 503.
+ * @param {Object} [config.aiUsageService] - HealthAiUsageService: Health's AI spend
+ *   from the usage ledger. Absent = GET /ai-usage answers 503.
  * @param {Object} [config.logger] - Logger instance
  * @returns {express.Router}
  */
@@ -245,6 +247,16 @@ export function createHealthRouter(config) {
     const days = Number(req.query.days ?? 30);
     if (!Number.isSafeInteger(days) || days < 1 || days > 90) return res.status(400).json({ error: 'days must be 1 to 90' });
     res.json(await service.spend(getDefaultUsername(req), { days }));
+  }));
+  // Health's AI spend by feature, from the AI usage ledger (all Health AI, not
+  // only the auditor). Same `days` contract as the auditor's spend route.
+  router.get('/ai-usage', asyncHandler(async (req, res) => {
+    const service = config.aiUsageService;
+    if (!service) return res.status(503).json({ error: 'AI usage is unavailable' });
+    if (!plainQuery(req.query, ['days'])) return res.status(400).json({ error: 'days must be 1 to 90' });
+    const days = Number(req.query.days ?? 30);
+    if (!Number.isSafeInteger(days) || days < 1 || days > 90) return res.status(400).json({ error: 'days must be 1 to 90' });
+    res.json(await service.usage(getDefaultUsername(req), { days }));
   }));
   router.post('/nutrition/capture-recovery', asyncHandler(async (req, res) => {
     const { logUuid, expectedVersion, operationId, observationIds, dryRun } = req.body;

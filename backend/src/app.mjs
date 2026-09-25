@@ -1697,6 +1697,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     cleanupProvider: () => nutritionCleanup,
     artworkProvider: () => nutritionCleanup?.artwork ?? null,
     receiptPublisherProvider: () => nutritionReceiptPublisher,
+    aiUsageLedger,
     logger: rootLogger.child({ module: 'health-api' })
   });
 

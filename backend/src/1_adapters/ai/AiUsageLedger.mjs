@@ -27,6 +27,35 @@ const MONTH_FILE = /^(\d{4})-(\d{2})(?:\.[\w.-]+)?\.jsonl$/;
 export function createAiUsageLedger({ dir, source = null, logger = null }) {
   let tail = Promise.resolve();
 
+  /** Parsed rows with `ts` in [from, to) from every writer's month files. */
+  async function readRange(from, to) {
+    const fromMs = Date.parse(from);
+    const toMs = Date.parse(to);
+    if (!Number.isFinite(fromMs) || !Number.isFinite(toMs)) throw new Error('the ledger needs an ISO from and to');
+    let names;
+    try { names = await readDirectoryAsync(dir); } catch (error) {
+      if (error.code === 'ENOENT') return [];
+      throw error;
+    }
+    const files = names.filter((name) => {
+      const m = MONTH_FILE.exec(name);
+      return m && Date.UTC(Number(m[1]), Number(m[2]) - 1, 1) < toMs && Date.UTC(Number(m[1]), Number(m[2]), 1) > fromMs;
+    });
+    const rows = [];
+    for (const name of files) {
+      for (const raw of (await readTextFromPathAsync(path.join(dir, name))).split('\n')) {
+        if (!raw.trim()) continue;
+        let row;
+        try { row = JSON.parse(raw); } catch { continue; }
+        if (!row || typeof row !== 'object') continue;
+        const t = Date.parse(row.ts);
+        if (!Number.isFinite(t) || t < fromMs || t >= toMs) continue;
+        rows.push(row);
+      }
+    }
+    return rows;
+  }
+
   return {
     /**
      * @param {Object} entry
@@ -83,30 +112,36 @@ export function createAiUsageLedger({ dir, source = null, logger = null }) {
      */
     async listCosts({ agentId, app, feature, from, to }) {
       const wants = Object.entries({ agentId, app, feature }).filter(([, value]) => value !== undefined);
-      const fromMs = Date.parse(from);
-      const toMs = Date.parse(to);
-      if (!Number.isFinite(fromMs) || !Number.isFinite(toMs)) throw new Error('listCosts needs an ISO from and to');
-      let names;
-      try { names = await readDirectoryAsync(dir); } catch (error) {
-        if (error.code === 'ENOENT') return [];
-        throw error;
-      }
-      const files = names.filter((name) => {
-        const m = MONTH_FILE.exec(name);
-        return m && Date.UTC(Number(m[1]), Number(m[2]) - 1, 1) < toMs && Date.UTC(Number(m[1]), Number(m[2]), 1) > fromMs;
-      });
       const rows = [];
-      for (const name of files) {
-        for (const raw of (await readTextFromPathAsync(path.join(dir, name))).split('\n')) {
-          if (!raw.trim()) continue;
-          let row;
-          try { row = JSON.parse(raw); } catch { continue; }
-          const t = Date.parse(row?.ts);
-          if (!row || typeof row !== 'object') continue;
-          if (wants.some(([field, value]) => (row[field] ?? null) !== value)) continue;
-          if (!Number.isFinite(t) || t < fromMs || t >= toMs || !Number.isFinite(row.costUsd)) continue;
-          rows.push({ ts: row.ts, costUsd: row.costUsd, agentId: row.agentId ?? null, app: row.app ?? null, feature: row.feature ?? null });
-        }
+      for (const row of await readRange(from, to)) {
+        if (wants.some(([field, value]) => (row[field] ?? null) !== value)) continue;
+        if (!Number.isFinite(row.costUsd)) continue;
+        rows.push({ ts: row.ts, costUsd: row.costUsd, agentId: row.agentId ?? null, app: row.app ?? null, feature: row.feature ?? null });
+      }
+      return rows;
+    },
+
+    /**
+     * IAiUsageReader: every row with `ts` in [from, to), priced or not,
+     * optionally narrowed to one app (`null` = unscoped rows). `attributed`
+     * is false for rows written before the ledger carried an `app` field.
+     */
+    async listRows({ from, to, app }) {
+      const rows = [];
+      for (const row of await readRange(from, to)) {
+        if (app !== undefined && (row.app ?? null) !== app) continue;
+        rows.push({
+          ts: row.ts,
+          attributed: Object.hasOwn(row, 'app'),
+          app: row.app ?? null,
+          feature: row.feature ?? null,
+          agentId: row.agentId ?? null,
+          model: row.model ?? null,
+          costUsd: Number.isFinite(row.costUsd) ? row.costUsd : null,
+          status: row.status ?? null,
+          ...(Number.isFinite(row.audioSeconds) ? { audioSeconds: row.audioSeconds } : {}),
+          ...(Number.isFinite(row.characters) ? { characters: row.characters } : {}),
+        });
       }
       return rows;
     },

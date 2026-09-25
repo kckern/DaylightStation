@@ -22,6 +22,7 @@ import { CatalogReconcileJob } from '#apps/health/CatalogReconcileJob.mjs';
 import { CatalogAuditService } from '#apps/health/CatalogAuditService.mjs';
 import { YamlMedicalReadingsDatastore } from '#adapters/persistence/yaml/YamlMedicalReadingsDatastore.mjs';
 import { MedicalReadingsService } from '#apps/health/MedicalReadingsService.mjs';
+import { HealthAiUsageService } from '#apps/health/HealthAiUsageService.mjs';
 import { PhotoStore } from '#adapters/persistence/PhotoStore.mjs';
 import { IconManifestStore } from '#adapters/persistence/IconManifestStore.mjs';
 import { YamlObservationStore } from '#adapters/persistence/yaml/YamlObservationStore.mjs';
@@ -44,6 +45,7 @@ import { DataServiceHealthDashboardRepository } from '#adapters/persistence/file
  * @param {Object} [config.sessionService] - SessionService for fitness session history
  * @param {Object} [config.entropyService] - EntropyService for data freshness
  * @param {Object} [config.lifePlanRepository] - ILifePlanRepository for goal data
+ * @param {Object} [config.aiUsageLedger] - AI usage ledger (read for Health's AI spend)
  * @param {Object} [config.logger] - Logger instance
  * @returns {express.Router}
  */
@@ -228,8 +230,18 @@ export function createHealthApiRouter(config) {
     logger,
   });
 
+  // Health's AI spend by feature, read from the AI usage ledger in household time.
+  const aiUsageService = config.aiUsageLedger?.listRows
+    ? new HealthAiUsageService({
+      reader: config.aiUsageLedger,
+      timezone: () => configService?.getHouseholdTimezone?.() || 'America/Los_Angeles',
+      logger: logger.child?.({ module: 'health-ai-usage' }) || logger,
+    })
+    : null;
+
   return createHealthRouter({
     cleanupProvider: config.cleanupProvider,
+    aiUsageService,
     artworkProvider: config.artworkProvider,
     receiptPublisherProvider: config.receiptPublisherProvider,
     healthService: healthServices.healthService,
