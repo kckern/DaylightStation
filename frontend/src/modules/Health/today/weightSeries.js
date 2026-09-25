@@ -140,7 +140,7 @@ export function buildWeightSeries(weightData, { days = 30, trendDays = 7, asOf }
 /** Direction as a glyph. Shared by the chip and the Progress stat table so the
  *  two surfaces cannot describe the same day differently. Direction is never
  *  carried by colour alone (A1). */
-export const TREND_ARROWS = { up: '▲', down: '▼', flat: '■' };
+export const TREND_ARROWS = { up: '▲', down: '▼', flat: '▶' };
 
 /** "171.6" / "—". One decimal: a bathroom scale's real resolution. */
 export const fmtLbs = (v) => (v == null || !Number.isFinite(Number(v)) ? '—' : (Math.round(Number(v) * 10) / 10).toFixed(1));

@@ -1,21 +1,19 @@
-import { useMemo } from 'react';
+import { lazy, Suspense, useMemo } from 'react';
 import { useApiResource } from '../../../lib/hooks/useApiResource.js';
 import { createAppLogger } from '../../../lib/ui/createAppLogger.js';
-import { buildWeightSeries, fmtLbs, fmtDelta, TREND_ARROWS, VIEW_W, VIEW_H } from './weightSeries.js';
+import { buildWeightSeries, normalizeWeightEntries, fmtLbs, fmtDelta, TREND_ARROWS } from './weightSeries.js';
 import { ErrorState, StatCard, Skeleton } from '@/lib/ui';
 
 const logger = createAppLogger('health').child('weight-chip');
+// Highcharts is lazy: it stays out of the Today bundle (the intake/burn chart does the same).
+const WeightTrendChart = lazy(() => import('../progress/WeightTrendChart.jsx').then(m => ({ default: m.WeightTrendChart })));
+const CHART_HEIGHT = 150;
 
 /**
- * Weight + 7-day trend + a 30-day sparkline, as one compact row.
- *
- * The sparkline is two inline SVG polylines — the days actually weighed and the
- * adjusted average the budget is computed from — on ONE shared scale. The raw
- * line is `measurement`, never the forward-filled `lbs`: most days carry a
- * repeated `lbs` from the last weigh-in, and drawing those as readings turns
- * "nobody stepped on the scale" into a flat run that reads like stability.
- * No chart library for two polylines, and nothing here animates `filter`
- * (a known paint-cost trap in this repo: low fps with zero long tasks).
+ * Weight + 7-day trend, and the twelve-week trend chart: the same picture as the
+ * screen-framework weight widget (modules/Health/Weight.jsx) and the Progress
+ * tab — adjusted-average area, a dot for each day actually weighed (never the
+ * forward-filled `lbs`), and the average less water weight as a hairline.
  *
  * Direction is carried by an ARROW as well as by hue (accessibility A1: never
  * colour alone), and a history too short to have a 7-day delta says so instead
@@ -24,7 +22,9 @@ const logger = createAppLogger('health').child('weight-chip');
 export function WeightChip({ asOf }) {
   const res = useApiResource('api/v1/health/weight', { label: 'weight-chip', logger, swr: true });
   const series = useMemo(() => buildWeightSeries(res.data, { asOf }), [res.data, asOf]);
-  const { latestLbs, deltaLbs, direction, rawPoints, avgPoints, entries, latest, trendDays } = series;
+  const { latestLbs, deltaLbs, direction, entries, latest, trendDays } = series;
+  // The chart plots the full normalized history (it windows itself to 12 weeks, up to asOf).
+  const chartEntries = useMemo(() => normalizeWeightEntries(res.data).filter(e => !asOf || e.date <= asOf), [res.data, asOf]);
   if (res.error) return <ErrorState error={res.error} onRetry={res.reload} label="Weight unavailable" />;
 
   const deltaText = fmtDelta(deltaLbs);
@@ -46,24 +46,15 @@ export function WeightChip({ asOf }) {
             no 7-day trend yet
           </span>
         )}
-      spark={rawPoints || avgPoints ? (
-        <svg className="health-weightchip__spark" viewBox={`0 0 ${VIEW_W} ${VIEW_H}`}
-          preserveAspectRatio="none" role="img"
-          aria-label={`${entries.length} day weight sparkline ending ${latest?.date || ''}`}>
-          {rawPoints ? (
-            <polyline data-testid="spark-raw" className="health-weightchip__line health-weightchip__line--raw"
-              points={rawPoints} fill="none" vectorEffect="non-scaling-stroke" />
-          ) : null}
-          {avgPoints ? (
-            <polyline data-testid="spark-avg" className="health-weightchip__line health-weightchip__line--avg"
-              points={avgPoints} fill="none" vectorEffect="non-scaling-stroke" />
-          ) : null}
-        </svg>
+      />
+      {entries.length > 1 ? (
+        <Suspense fallback={<Skeleton height={CHART_HEIGHT} />}>
+          <WeightTrendChart entries={chartEntries} height={CHART_HEIGHT} />
+        </Suspense>
       ) : (
-        // One reading is not a line. Drawing a flat segment across the box
-        // would assert a month of stability nobody measured.
-        <span className="health-weightchip__spark health-weightchip__spark--empty" data-testid="spark-empty" aria-hidden="true" />
-      )} />
+        // One reading is not a line: say so rather than draw a flat month.
+        <span className="health-weightchip__empty" data-testid="spark-empty">Not enough weigh-ins for a trend yet</span>
+      )}
     </div>
   );
 }
