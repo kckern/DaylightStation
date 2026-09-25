@@ -1,7 +1,8 @@
 /**
  * YAML-backed trigger config repository. Public adapter entry — bootstrap
- * calls this. Owns the I/O boundary for both reads (boot-time config load)
- * and writes (note mutations to bindings/nfc.yml).
+ * calls this. Owns the I/O boundary for both reads (boot-time config load,
+ * plus the tag re-read on an unknown tap) and writes (note mutations to
+ * bindings/nfc.yml).
  *
  * Layer: ADAPTER (1_adapters/trigger). The dependency-injected `loadFile`
  * and `saveFile` helpers handle YAML I/O (provided by app.mjs); this class
@@ -69,6 +70,8 @@ export class YamlTriggerConfigRepository {
   // through these.
   #root = TRIGGER_ROOT;
   #paths = pathsFor(TRIGGER_ROOT);
+  // The readers loadRegistry was given, kept for refreshNfcTags().
+  #reader = null;
 
   constructor({ saveFile, observedStore } = {}) {
     this.#saveFile = typeof saveFile === 'function' ? saveFile : null;
@@ -83,14 +86,68 @@ export class YamlTriggerConfigRepository {
    * @throws {ValidationError} if any YAML is malformed.
    */
   loadRegistry({ loadFile, listDir = null, onSkip = null, onWarn = null }) {
+    const { registry, nfc } = this.#readRegistry({ loadFile, listDir, onSkip, onWarn });
+    this.#commitNfcBindings(nfc);
+    this.#registry = registry;
+    this.#reader = { loadFile, listDir, onSkip };
+    return this.#registry;
+  }
+
+  /**
+   * Re-read the trigger files and fold any tag bindings into the LIVE registry,
+   * in place — the dispatch service holds this same object, so a tag named after
+   * boot resolves on its next tap instead of waiting for a restart.
+   *
+   * Called on a miss, so a failure here must never cost a tag that already
+   * works. Two rules keep it that way:
+   *   - A read or parse that throws changes nothing. The caller logs it and the
+   *     tap falls through to the ordinary unknown-tag path.
+   *   - It adds and updates, never removes. A file Dropbox is halfway through
+   *     syncing can read as missing without throwing; treating that as "every
+   *     book was deleted" would unregister the house. Removing a tag still takes
+   *     a restart.
+   *
+   * Runs on the write queue so it cannot interleave with a note write.
+   *
+   * @returns {Promise<{added: string[], updated: number}>}
+   */
+  refreshNfcTags() {
+    return this.#enqueue(() => {
+      if (!this.#registry || !this.#reader) {
+        throw new Error('YamlTriggerConfigRepository: registry not loaded — call loadRegistry first');
+      }
+      const { registry: fresh, nfc } = this.#readRegistry(this.#reader);
+      const live = this.#registry.nfc.tags;
+      const added = [];
+      let updated = 0;
+      for (const [uid, entry] of Object.entries(fresh.nfc.tags)) {
+        if (live[uid]) updated += 1; else added.push(uid);
+        live[uid] = entry;
+        this.#tagSource.set(uid, nfc.tagSource.get(uid) ?? null);
+      }
+      if (nfc.mode === 'dir') {
+        for (const uid of nfc.promoted) this.#promotedFromInbox.add(uid);
+      }
+      return { added, updated };
+    });
+  }
+
+  /** Read and parse every trigger file. Pure with respect to this instance. */
+  #readRegistry({ loadFile, listDir = null, onSkip = null, onWarn = null }) {
+    const nfc = this.#loadNfcBindings({ loadFile, listDir });
     const blobs = {
       sources: loadFile(this.#paths.sources),
-      bindingsNfc: this.#loadNfcBindings({ loadFile, listDir }),
+      bindingsNfc: nfc.merged,
       responses: loadFile(this.#paths.responses),
       endpoints: loadFile(this.#paths.endpoints),
     };
-    this.#registry = buildTriggerRegistry(blobs, { onSkip, onWarn });
-    return this.#registry;
+    return { registry: buildTriggerRegistry(blobs, { onSkip, onWarn }), nfc };
+  }
+
+  #commitNfcBindings({ mode, tagSource, promoted }) {
+    this.#tagFileMode = mode;
+    this.#tagSource = tagSource;
+    this.#promotedFromInbox = promoted;
   }
 
   /** The root this registry was loaded from (and writes back to). */
@@ -123,6 +180,9 @@ export class YamlTriggerConfigRepository {
    *
    * Remembers which file each uid came from so a later note write goes back to
    * that file instead of collapsing every group into one.
+   *
+   * Touches no instance state: it returns what it found, and the caller commits
+   * it. A throw halfway through a re-read must leave the live bookkeeping alone.
    */
   #loadNfcBindings({ loadFile, listDir }) {
     const dirPath = this.#paths.bindingsNfc;
@@ -138,19 +198,17 @@ export class YamlTriggerConfigRepository {
       );
     }
 
+    const tagSource = new Map();
+    const promoted = new Set();
+
     // Legacy single-file mode: everything belongs to that one file.
     if (!files.length) {
-      this.#tagFileMode = 'single';
-      this.#tagSource.clear();
       for (const rawUid of Object.keys(single || {})) {
-        this.#tagSource.set(canonicalizeNfcUid(rawUid), null); // null => the single file
+        tagSource.set(canonicalizeNfcUid(rawUid), null); // null => the single file
       }
-      return single;
+      return { mode: 'single', merged: single, tagSource, promoted };
     }
 
-    this.#tagFileMode = 'dir';
-    this.#tagSource.clear();
-    this.#promotedFromInbox.clear();
     const merged = {};
     // Read the curated files FIRST and the inbox last, so "already curated" is
     // always a fact by the time an inbox stub is considered — independent of
@@ -163,13 +221,13 @@ export class YamlTriggerConfigRepository {
       const blob = loadFile(`${dirPath}/${file.replace(/\.ya?ml$/i, '')}`);
       for (const [rawUid, entry] of Object.entries(blob || {})) {
         const uid = canonicalizeNfcUid(rawUid);
-        const prior = this.#tagSource.get(uid);
+        const prior = tagSource.get(uid);
 
         if (prior !== undefined) {
           // The inbox never wins and never argues: the curated entry stands and
           // the stub is swept up below.
           if (file === DEFAULT_TAG_FILE) {
-            this.#promotedFromInbox.add(uid);
+            promoted.add(uid);
             continue;
           }
           // A curated file colliding with the inbox read earlier is impossible
@@ -181,12 +239,12 @@ export class YamlTriggerConfigRepository {
             { code: 'DUPLICATE_TAG_ACROSS_FILES', field: rawUid, files: [prior, file] }
           );
         }
-        this.#tagSource.set(uid, file);
+        tagSource.set(uid, file);
         rawKeyFor.set(uid, rawUid);
         merged[rawUid] = entry;
       }
     }
-    return merged;
+    return { mode: 'dir', merged, tagSource, promoted };
   }
 
   /**
