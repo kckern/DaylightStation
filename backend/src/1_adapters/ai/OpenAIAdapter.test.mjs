@@ -264,3 +264,40 @@ describe('OpenAIAdapter 429 handling', () => {
     }));
   });
 });
+
+describe('OpenAIAdapter Whisper pricing', () => {
+  it('asks for verbose_json, prices the reported duration, and still returns only the text', async () => {
+    const deps = makeDeps({ post: vi.fn() });
+    let sent = '';
+    deps.httpClient.postForm = vi.fn(async (_url, form) => {
+      sent = form.getBuffer().toString();
+      return { data: { text: 'two eggs and toast', duration: 45, language: 'english', segments: [] } };
+    });
+    const adapter = new OpenAIAdapter({ apiKey: 'test-key' }, deps);
+
+    await expect(adapter.transcribe(Buffer.from('audio'))).resolves.toBe('two eggs and toast');
+
+    expect(sent).toContain('name="response_format"');
+    expect(sent).toContain('verbose_json');
+    expect(deps.aiUsageLedger.record).toHaveBeenCalledWith(expect.objectContaining({
+      endpoint: '/audio/transcriptions', model: 'whisper-1', status: 'ok',
+      audioSeconds: 45, costUsd: 0.0045, audioBytes: 5,
+    }));
+  });
+
+  it('records a null cost when no duration comes back, and leaves error rows as they were', async () => {
+    const deps = makeDeps({ post: vi.fn() });
+    deps.httpClient.postForm = vi.fn(async () => ({ data: { text: 'hi' } }));
+    const adapter = new OpenAIAdapter({ apiKey: 'test-key' }, deps);
+    await adapter.transcribe(Buffer.from('a'));
+    expect(deps.aiUsageLedger.record.mock.calls[0][0]).toMatchObject({ costUsd: null, audioSeconds: null });
+
+    deps.httpClient.postForm = vi.fn(async () => { throw Object.assign(new Error('bad audio'), { status: 400 }); });
+    await expect(adapter.transcribe(Buffer.from('a'))).rejects.toThrow('bad audio');
+    const errorRow = deps.aiUsageLedger.record.mock.calls[1][0];
+    expect(errorRow).toMatchObject({ status: 'error', model: 'whisper-1', error: 'bad audio' });
+    expect(errorRow).not.toHaveProperty('audioSeconds');
+    expect(errorRow).not.toHaveProperty('costUsd');
+  });
+});
+

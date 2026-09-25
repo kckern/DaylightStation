@@ -24,6 +24,7 @@ import axios from 'axios';
 
 import { getConfigService } from './_bootstrap.mjs';
 import { runWithOrigin } from '#system/runtime/aiContext.mjs';
+import { createCliAiUsageLedger, cliUsageTags } from './_aiUsage.mjs';
 import { GenerateMorningDebrief } from '#backend/src/3_applications/journalist/usecases/GenerateMorningDebrief.mjs';
 import { SendMorningDebrief } from '#backend/src/3_applications/journalist/usecases/SendMorningDebrief.mjs';
 
@@ -118,7 +119,9 @@ async function main() {
   };
 
   const { OpenAIAdapter } = await import('#adapters/ai/OpenAIAdapter.mjs');
-  const aiGateway = new OpenAIAdapter({ apiKey }, { httpClient: axios });
+  // Spend lands in the AI usage ledger as journalist/cli.
+  const aiGateway = new OpenAIAdapter({ apiKey }, { httpClient: axios, aiUsageLedger: createCliAiUsageLedger(cfg) })
+    .scoped(cliUsageTags('journalist'));
 
   const useCase = new GenerateMorningDebrief({ lifelogAggregator, aiGateway, journalEntryRepository });
   const result = await useCase.execute({ username: USERNAME, date: targetDate, conversationId: 'preview' });

@@ -2,7 +2,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { promises as fs } from 'node:fs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { groupRows, readLedger, reconcileByDay } from './openai-usage.cli.mjs';
+import { groupRows, readLedger, reconcileByDay, summarizeLedger, runCli } from './openai-usage.cli.mjs';
 
 const roots = [];
 
@@ -81,4 +81,56 @@ describe('openai-usage CLI', () => {
     expect(sep9).toMatchObject({ billedUsd: 0, ledgerCalls: 1, ledgerErrors: 1 });
     expect(sep9.gapUsd).toBeCloseTo(-0.1, 9);
   });
+
+  describe('ledger by app and feature', () => {
+    const rows = [
+      { ts: 't', app: 'health', feature: 'photo-log', origin: 'telegram:nutribot', costUsd: 0.02, totalTokens: 900, status: 'ok' },
+      { ts: 't', app: 'health', feature: 'photo-log', origin: 'http:POST /api/v1/nutribot/image', costUsd: 0.01, totalTokens: 400, status: 'ok' },
+      { ts: 't', app: 'health', feature: null, origin: 'job:x', costUsd: 0.005, totalTokens: 10, status: 'ok' },
+      { ts: 't', app: 'journalist', feature: null, origin: 'telegram:journalist', costUsd: 0.1, totalTokens: 3000, status: 'ok' },
+      { ts: 't', app: null, feature: null, origin: 'http:GET /api/v1/ai/chat', costUsd: 0.3, totalTokens: 5000, status: 'ok' },
+      { ts: 't', app: null, feature: null, origin: 'http:GET /api/v1/ai/chat', costUsd: 0, totalTokens: null, status: 'error' },
+      { ts: 't', costUsd: 0.7, totalTokens: 7000, status: 'ok' }, // written before tagging existed
+    ];
+
+    it('groups by app,feature with readable labels for missing values', () => {
+      const { rows: out, columns } = summarizeLedger(rows, { by: 'app,feature' });
+      expect(columns).toEqual(['app', 'feature', 'calls', 'errors', 'tokens', 'usd', 'unpriced']);
+      const find = (app, feature) => out.find(r => r.app === app && r.feature === feature);
+      expect(find('health', 'photo-log')).toMatchObject({ calls: 2, tokens: 1300 });
+      expect(find('health', 'photo-log').usd).toBeCloseTo(0.03, 9);
+      expect(find('health', '(no feature)')).toMatchObject({ calls: 1 });
+      expect(find('(untagged)', '(no feature)')).toMatchObject({ calls: 3, errors: 1 });
+    });
+
+    it('--untagged keeps only rows no app claimed, grouped by origin', () => {
+      const { rows: out, columns, calls, total } = summarizeLedger(rows, { untagged: true });
+      expect(columns[0]).toBe('origin');
+      expect(calls).toBe(3);
+      expect(total).toBeCloseTo(1.0, 9);
+      expect(out).toEqual([
+        expect.objectContaining({ origin: '(no origin)', calls: 1 }),
+        expect.objectContaining({ origin: 'http:GET /api/v1/ai/chat', calls: 2, errors: 1 }),
+      ]);
+    });
+
+    it('runs end to end against a data dir', async () => {
+      const base = await fs.mkdtemp(path.join(os.tmpdir(), 'openai-usage-base-'));
+      roots.push(base);
+      const dir = path.join(base, 'data', 'system', 'history', 'ai-usage');
+      await fs.mkdir(dir, { recursive: true });
+      await fs.writeFile(path.join(dir, '2026-09.docker.jsonl'), rows.map(r => JSON.stringify({ ...r, ts: '2026-09-10T12:00:00.000Z' })).join('\n'));
+      vi.stubEnv('DAYLIGHT_BASE_PATH', base);
+      const lines = [];
+      await runCli(['ledger', '--untagged', '--since', '2026-09-01', '--json'], (line) => lines.push(line));
+      const parsed = JSON.parse(lines[0]);
+      expect(parsed.map(r => r.origin).sort()).toEqual(['(no origin)', 'http:GET /api/v1/ai/chat']);
+      lines.length = 0;
+      await runCli(['ledger', '--by', 'app,feature', '--since', '2026-09-01'], (line) => lines.push(line));
+      expect(lines.join('\n')).toContain('photo-log');
+      expect(lines.join('\n')).toContain('Ledger total');
+      vi.unstubAllEnvs();
+    });
+  });
 });
+

@@ -8,7 +8,7 @@
 import { IAIGateway } from '#apps/common/ports/IAIGateway.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 import { retryTransient } from '#system/utils/retryTransient.mjs';
-import { estimateCostUsd } from './aiPricing.mjs';
+import { estimateCostUsd, estimateTranscriptionCostUsd } from './aiPricing.mjs';
 import { createScopedView, usageAttribution } from './usageAttribution.mjs';
 import { isQuotaExhausted } from '#system/utils/retryTransient.mjs';
 
@@ -623,6 +623,9 @@ export class OpenAIAdapter extends IAIGateway {
       contentType: options.contentType || 'audio/ogg'
     });
     form.append('model', 'whisper-1');
+    // verbose_json carries the audio `duration`, which is what Whisper bills
+    // on. The text is still `response.text`, and that is all callers receive.
+    form.append('response_format', 'verbose_json');
 
     if (options.language) {
       form.append('language', options.language);
@@ -682,8 +685,9 @@ export class OpenAIAdapter extends IAIGateway {
         textLength: response.text?.length
       });
 
-      // Whisper bills per audio minute rather than per token; record the call
-      // and payload size so spend can be reconstructed from provider invoices.
+      // Whisper bills per audio minute rather than per token: price the
+      // duration verbose_json reports (null cost if it ever goes missing).
+      const audioSeconds = Number.isFinite(Number(response?.duration)) ? Number(response.duration) : null;
       const entry = {
         provider: 'openai',
         endpoint: '/audio/transcriptions',
@@ -692,7 +696,8 @@ export class OpenAIAdapter extends IAIGateway {
         promptTokens: null,
         completionTokens: null,
         totalTokens: null,
-        costUsd: null,
+        costUsd: estimateTranscriptionCostUsd('whisper-1', audioSeconds, this.pricing),
+        audioSeconds,
         audioBytes: audioBuffer.length,
         durationMs: Date.now() - startedAt,
         status: 'ok',
@@ -701,7 +706,7 @@ export class OpenAIAdapter extends IAIGateway {
       this.logger.info?.('openai.usage', entry);
       this.usageLedger?.record(entry);
 
-      return response.text;
+      return typeof response === 'string' ? response : (response?.text ?? '');
     } catch (error) {
       this.metrics.errors++;
       // Preserve the provider's classification without logging its request

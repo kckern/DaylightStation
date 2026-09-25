@@ -170,6 +170,19 @@ on the provider's integration config. Written by
 `backend/src/1_adapters/ai/AiUsageLedger.mjs`; recording never breaks the call
 it observes.
 
+Audio is priced too. Whisper asks for `verbose_json` and bills the returned
+`duration` (`audioSeconds` on the row) at the per-minute rate; callers still get
+plain text. Text-to-speech (`1_adapters/ai/OpenAITTSAdapter.mjs`, moved out of
+`hardware/` because it is an OpenAI API client) writes one row per synthesis
+with `characters`, priced per million characters (`tts-1`, `tts-1-hd`). Audio
+rates live in the same `aiPricing.mjs` and take the same `pricing:` overrides.
+The AI-calling CLIs (`backfill-toc-offset`, `journalist-debrief-preview`,
+`finance-jev-replay`) write to the same directory under their own writer file
+(`YYYY-MM.cli.jsonl`, via `cli/_aiUsage.mjs`), attributed `<app>/cli`.
+`node cli/openai-usage.cli.mjs ledger --by app,feature` splits spend by owner;
+`ledger --untagged` lists the rows no app claimed, grouped by origin — the
+place to look for a consumer that escaped scoping.
+
 Each row also carries **`app`**, **`feature`** and **`origin`**. `app`/`feature`
 are the attribution: one shared adapter serves every app, so consumers get a
 scoped view — `adapter.scoped({ app })` in composition, `.scoped({ feature })`

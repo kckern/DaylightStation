@@ -3,8 +3,9 @@
  * finance-jev-replay: measure the Jev category judge against transactions
  * the household has already tagged. Read-only: nothing is written to the
  * finance provider (Buxfer is never constructed) or the finance store (only
- * its read methods are exposed), and Jev calls are not recorded in the AI
- * usage ledger.
+ * its read methods are exposed). The Jev calls are real spend, so they are
+ * recorded in the AI usage ledger under the CLI's own writer file
+ * (`YYYY-MM.cli.jsonl`), attributed finance/cli.
  *
  * Prod shadow (categorization.jev.compare) sees ~26 decisions a week and the
  * log store keeps 7 days, so this replay is the main promotion evidence.
@@ -115,11 +116,12 @@ async function loadRealRuntime() {
   const { default: dotenv } = await import('dotenv');
   // _bootstrap reads DAYLIGHT_BASE_PATH but never loads .env; existing env wins.
   dotenv.config({ path: path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '.env'), quiet: true });
-  const [{ getConfigService }, { YamlFinanceDatastore }, { JevAdapter }, { default: axios }] = await Promise.all([
+  const [{ getConfigService }, { YamlFinanceDatastore }, { JevAdapter }, { default: axios }, { createCliAiUsageLedger, cliUsageTags }] = await Promise.all([
     import('./_bootstrap.mjs'),
     import('#adapters/persistence/yaml/YamlFinanceDatastore.mjs'),
     import('#adapters/ai/JevAdapter.mjs'),
     import('axios'),
+    import('./_aiUsage.mjs'),
   ]);
   const configService = await getConfigService();
   const datastore = new YamlFinanceDatastore({ configService });
@@ -128,8 +130,11 @@ async function loadRealRuntime() {
     listBudgetPeriods: (hid) => datastore.listBudgetPeriods(hid),
     getTransactions: (period, hid) => datastore.getTransactions(period, hid),
   };
-  // No aiUsageLedger: the replay must not write anywhere.
-  const createDecisionGateway = ({ apiKey, logger }) => new JevAdapter({ apiKey }, { httpClient: axios, logger });
+  // The replay writes no finance data. Its Jev calls are real spend, so they
+  // go to the AI usage ledger (the CLI's own writer file) as finance/cli.
+  const aiUsageLedger = createCliAiUsageLedger(configService);
+  const createDecisionGateway = ({ apiKey, logger }) => new JevAdapter({ apiKey }, { httpClient: axios, logger, aiUsageLedger })
+    .scoped(cliUsageTags('finance'));
   return { configService, store, createDecisionGateway };
 }
 
