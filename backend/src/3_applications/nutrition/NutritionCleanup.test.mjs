@@ -13,6 +13,8 @@ import { NutritionCleanup } from './NutritionCleanup.mjs';
 import { NutritionAuditor } from '#apps/agents/nutrition-auditor/NutritionAuditor.mjs';
 import { AgentInteractions } from '#apps/agents/framework/AgentInteractions.mjs';
 import { cleanupDates, entryKey } from '#domains/nutrition/services/cleanupPolicy.mjs';
+import { sha256Text } from '#system/utils/sha256.mjs';
+import { JsonlAuditJournalStore } from '#adapters/persistence/yaml/JsonlAuditJournalStore.mjs';
 
 const roots = [];
 afterEach(() => { for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true }); });
@@ -226,7 +228,8 @@ describe('durable questions and worker', () => {
   it('reconciles at startup and local 03:00, and debounces intermediate revisions', async () => {
     const f = await fixture(); let now = Date.parse('2026-09-04T08:00:00Z');
     f.clock.now = () => now;
-    f.store.update('alice', state => { state.settings.enabled = true; });
+    // minGapMinutes 0: this test is about the debounce, not the gap between runs.
+    f.store.update('alice', state => { state.settings.enabled = true; state.settings.minGapMinutes = 0; });
     const runs = { register: vi.fn(), start: vi.fn(async () => ({ status: 'success', result: { summary: 'No changes', repairs: [], questions: [], evidence: [] } })) };
     const cleanup = new NutritionCleanup({ ...f, runs });
     await cleanup.tick('alice'); await cleanup.settled('alice');
@@ -272,7 +275,7 @@ describe('durable questions and worker', () => {
     await new AgentInteractions({ ...f, onAnswer }).recover('alice');
     expect(onAnswer).toHaveBeenCalledOnce(); expect(f.store.load('alice').questions[q.id].status).toBe('resolved');
   });
-  it('deduplicates simultaneous requests, defaults to preview, and does not swallow a concurrent capture', async () => {
+  it('deduplicates simultaneous requests and defaults to preview', async () => {
     const f = await fixture();
     const result = { summary: 'Match art', repairs: [f.proposal({ icon: 'fish' })], questions: [], evidence: [{ id: 'source', kind: 'capture' }] };
     const runs = { register: vi.fn(), start: vi.fn(async () => ({ status: 'success', result })) };
@@ -283,11 +286,45 @@ describe('durable questions and worker', () => {
     expect((await f.items.findByUuid('alice', 'fish000001')).icon).toBe('default');
     expect(cleanup.status('alice').runs[0].outcomes[0].status).toBe('proposed');
     expect(cleanup.status('alice').runs[0].snapshot).toBeUndefined();
-    f.store.update('alice', state => { state.settings = { enabled: true, dryRun: false, telegram: false }; });
-    const snapshot = await f.auditor.snapshot('alice');
+  });
+  it('does not re-audit its own repair', async () => {
+    const f = await fixture();
+    f.store.update('alice', state => { state.settings = { enabled: true, dryRun: false, telegram: false, minGapMinutes: 0 }; });
+    const repair = { summary: 'Match art', repairs: [f.proposal({ icon: 'fish' })], questions: [], evidence: [{ id: 'source', kind: 'capture' }] };
+    const start = vi.fn().mockResolvedValueOnce({ status: 'success', result: { summary: 'No changes', repairs: [], questions: [], evidence: [] } })
+      .mockResolvedValue({ status: 'success', result: repair });
+    const cleanup = new NutritionCleanup({ ...f, runs: { register: vi.fn(), start }, hash: sha256Text });
+    await cleanup.tick('alice'); await cleanup.settled('alice');
+    const pre = await f.auditor.snapshot('alice');
     await cleanup.request('alice', { manual: true }); await cleanup.settled('alice');
-    expect(f.store.load('alice').checkedFingerprint).toBe(snapshot.fingerprint);
-    expect((await f.auditor.snapshot('alice')).fingerprint).not.toBe(snapshot.fingerprint);
+    expect((await f.items.findByUuid('alice', 'fish000001')).icon).toBe('fish');
+    const post = await f.auditor.snapshot('alice');
+    expect(post.fingerprint).not.toBe(pre.fingerprint);
+    expect(f.store.load('alice').checkedFingerprint).toBe(post.fingerprint);
+    f.clock.now = () => Date.parse('2026-09-04T19:05:00Z');
+    await cleanup.tick('alice'); await cleanup.settled('alice');
+    expect(start).toHaveBeenCalledTimes(2);
+  });
+  it('does not swallow a capture that lands while the audit is reasoning', async () => {
+    const f = await fixture(); let now = f.clock.now(); f.clock.now = () => now;
+    f.store.update('alice', state => { state.settings = { enabled: true, dryRun: false, telegram: false, minGapMinutes: 0 }; });
+    let release;
+    const start = vi.fn().mockResolvedValueOnce({ status: 'success', result: { summary: 'No changes', repairs: [], questions: [], evidence: [] } })
+      .mockImplementationOnce(() => new Promise(resolve => { release = resolve; }))
+      .mockResolvedValue({ status: 'success', result: { summary: 'No changes', repairs: [], questions: [], evidence: [] } });
+    const cleanup = new NutritionCleanup({ ...f, runs: { register: vi.fn(), start }, hash: sha256Text });
+    await cleanup.tick('alice'); await cleanup.settled('alice');
+    const pre = await f.auditor.snapshot('alice');
+    await cleanup.request('alice', { manual: true });
+    const log = createNutriLog({ userId: 'alice', meal: { date: '2026-09-04', time: 'afternoon' }, timezone: f.timezoneFor(), timestamp: new Date(now),
+      metadata: { source: 'voice' }, items: [{ id: 'apple00001', label: 'Apple', calories: 95, grams: 180, amount: 1, unit: 'each', icon: 'default', color: 'green', settled: false }] });
+    await f.foodLogs.save(log); await f.review.capture({ userId: 'alice', logUuid: log.id });
+    release({ status: 'success', result: { summary: 'Match art', repairs: [f.proposal({ icon: 'fish' })], questions: [], evidence: [{ id: 'source', kind: 'capture' }] } });
+    await cleanup.settled('alice');
+    expect(f.store.load('alice').checkedFingerprint).toBe(pre.fingerprint);
+    await cleanup.tick('alice'); now += 120000; await cleanup.tick('alice'); await cleanup.settled('alice');
+    expect(start).toHaveBeenCalledTimes(3);
+    expect(Object.values(f.store.load('alice').runs).find(run => !run.manual && run.trigger?.includes('captures'))).toBeTruthy();
   });
   it('closes stale questions at midnight and never writes beyond the new window', async () => {
     const f = await fixture();
@@ -507,5 +544,86 @@ describe('auditor settings, permissions and history', () => {
     expect(kept).toHaveLength(51);
     expect(kept).toEqual(expect.arrayContaining([runId, 'r00', 'r06', 'r54']));
     expect(kept).not.toContain('r01'); expect(kept).not.toContain('r05');
+  });
+});
+
+describe('auditor journal and run gates', () => {
+  const noChanges = { summary: 'No changes', repairs: [], questions: [], evidence: [] };
+  const gated = async (settings = {}) => {
+    const f = await fixture(); let now = f.clock.now(); f.clock.now = () => now;
+    f.store.update('alice', state => { state.settings = { enabled: true, dryRun: true, telegram: false, ...settings }; });
+    const journal = new JsonlAuditJournalStore({ dataService: f.dataService, logger: f.logger });
+    const start = vi.fn(async () => ({ status: 'success', result: noChanges }));
+    const cleanup = new NutritionCleanup({ ...f, runs: { register: vi.fn(), start }, hash: sha256Text, journal });
+    return { f, journal, start, cleanup, advance: ms => { now += ms; }, now: () => now };
+  };
+  it('holds automatic runs to the minimum gap while changes accumulate', async () => {
+    const { f, start, cleanup, advance, now } = await gated({ minGapMinutes: 15 });
+    const t0 = now();
+    await cleanup.tick('alice'); await cleanup.settled('alice');
+    expect(start).toHaveBeenCalledTimes(1);
+    expect(cleanup.status('alice').nextEligibleAt).toBe(new Date(t0 + 15 * 60000).toISOString());
+    advance(60000); await f.items.update('alice', 'fish000001', { name: 'Cod' }); await cleanup.tick('alice');
+    advance(120000); await cleanup.tick('alice');
+    advance(180000); await f.items.update('alice', 'tortilla01', { name: 'Corn Tortilla' }); await cleanup.tick('alice');
+    advance(180000); await cleanup.tick('alice'); await cleanup.settled('alice');
+    expect(start).toHaveBeenCalledTimes(1);
+    advance(t0 + 15 * 60000 - now()); await cleanup.tick('alice'); await cleanup.settled('alice');
+    expect(start).toHaveBeenCalledTimes(2);
+    const latest = Object.values(f.store.load('alice').runs).sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+    expect(latest.trigger).toEqual(['edits']);
+    expect(start.mock.calls[1][0].input.snapshot.rows.map(row => row.name)).toEqual(expect.arrayContaining(['Cod', 'Corn Tortilla']));
+  });
+  it('skips automatic runs once today is over the spend cap, noting it once; a manual run still goes', async () => {
+    const { f, journal, start, cleanup, advance, now } = await gated();
+    await journal.append('alice', { runId: 'audit_earlier', at: new Date(now() - 3600000).toISOString(), status: 'completed', costUsd: 1.2 });
+    await journal.append('alice', { runId: 'audit_yesterday', at: new Date(now() - 30 * 3600000).toISOString(), status: 'completed', costUsd: 5 });
+    await cleanup.tick('alice'); await cleanup.settled('alice');
+    advance(60000); await cleanup.tick('alice'); advance(120000); await cleanup.tick('alice'); await cleanup.settled('alice');
+    expect(start).not.toHaveBeenCalled();
+    const skips = (await journal.list('alice')).filter(row => row.skipped);
+    expect(skips).toEqual([expect.objectContaining({ skipped: 'cap', spentUsd: 1.2, capUsd: 1 })]);
+    const { runId } = await cleanup.request('alice', { manual: true }); await cleanup.settled('alice');
+    expect(start).toHaveBeenCalledTimes(1);
+    expect(f.store.load('alice').runs[runId]).toMatchObject({ status: 'completed', overCap: true, trigger: ['manual'] });
+  });
+  it('marks a change of a switched-off trigger as checked without a run', async () => {
+    const { f, journal, start, cleanup, advance } = await gated({ minGapMinutes: 0, triggers: { scaleReconcile: false } });
+    let observations = [];
+    f.auditor.observations = { listByDate: async (_userId, date) => observations.filter(o => o.date === date) };
+    await cleanup.tick('alice'); await cleanup.settled('alice');
+    expect(start).toHaveBeenCalledTimes(1);
+    observations = [{ id: 'scale1', date: '2026-09-04', grams: 180 }];
+    advance(60000); await cleanup.tick('alice'); advance(120000); await cleanup.tick('alice'); await cleanup.settled('alice');
+    expect(start).toHaveBeenCalledTimes(1);
+    expect(f.store.load('alice').checkedFingerprint).toBe((await f.auditor.snapshot('alice')).fingerprint);
+    expect((await journal.list('alice')).filter(row => row.skipped)).toEqual([expect.objectContaining({ skipped: 'filtered', kinds: ['scaleReconcile'] })]);
+  });
+  it('journals a completed run under its start time', async () => {
+    const { f, journal, start, cleanup } = await gated({ minGapMinutes: 0 });
+    const question = { question: 'Was the fish 55 g or 100 g?', entryIds: ['fish000001'],
+      choices: [{ label: '55 g', repair: f.proposal({ grams: 55 }) }, { label: '100 g', repair: f.proposal({ grams: 100 }) }] };
+    start.mockResolvedValue({ status: 'success', result: { summary: 'Match art', repairs: [f.proposal({ icon: 'fish' })], questions: [question],
+      evidence: [{ id: 'source', kind: 'capture' }], model: { provider: 'openai', name: 'gpt-4.1-mini' }, usage: { inputTokens: 900 }, costUsd: 0.002,
+      turnId: 'turn_9', toolCalls: [{ name: 'find_food_art', args: '{}' }] } });
+    const { runId } = await cleanup.request('alice', { manual: true }); await cleanup.settled('alice');
+    const run = f.store.load('alice').runs[runId];
+    const [row] = await journal.list('alice');
+    expect(row).toEqual({ runId, at: run.createdAt, completedAt: run.completedAt, status: 'completed', trigger: ['manual'], model: 'gpt-4.1-mini',
+      usage: { inputTokens: 900 }, costUsd: 0.002, turnId: 'turn_9', toolCalls: [{ name: 'find_food_art', args: '{}' }],
+      outcomes: [expect.objectContaining({ status: 'proposed' })], questions: [{ question: question.question, choices: ['55 g', '100 g'] }],
+      suppressedQuestions: [], summary: 'Match art', dryRun: true, manual: true, overCap: false });
+  });
+  it('journals a run that fails for good, and a journal failure never fails a run', async () => {
+    const { f, journal, start, cleanup } = await gated({ minGapMinutes: 0 });
+    start.mockRejectedValue(Object.assign(new Error('bad schema'), { code: 'AGENT_SCHEMA_INVALID' }));
+    const { runId } = await cleanup.request('alice', { manual: true }); await cleanup.settled('alice');
+    const run = f.store.load('alice').runs[runId];
+    expect((await journal.list('alice'))[0]).toMatchObject({ runId, at: run.createdAt, status: 'failed', error: 'bad schema', attempt: 1, trigger: ['manual'], model: 'gpt-4.1-mini' });
+    start.mockResolvedValue({ status: 'success', result: noChanges });
+    cleanup.journal = { append: vi.fn(async () => { throw new Error('disk full'); }), list: vi.fn(async () => []) };
+    const second = await cleanup.request('alice', { manual: true }); await cleanup.settled('alice');
+    expect(f.store.load('alice').runs[second.runId].status).toBe('completed');
+    expect(f.logger.warn).toHaveBeenCalledWith('nutrition.cleanup.journal_failed', expect.objectContaining({ runId: second.runId, error: 'disk full' }));
   });
 });

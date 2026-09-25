@@ -2,12 +2,15 @@ import { sha256Text } from '#system/utils/sha256.mjs';
 import { cleanupDates, entryKey } from '#domains/nutrition/services/cleanupPolicy.mjs';
 import { AgentInteractions } from '#apps/agents/framework/AgentInteractions.mjs';
 import { effectiveSettings, validateSettingsChange, blockedKinds, isPlain } from '#domains/nutrition/services/auditorPolicy.mjs';
+import { snapshotDigest, classifyChange, onlyOwnChanges } from '#domains/nutrition/services/auditTrigger.mjs';
 
 const fail = (message, status = 409) => { throw Object.assign(new Error(message), { status }); };
 const terminal = new Set(['completed', 'failed', 'cancelled']);
 const NESTED = ['triggers', 'permissions'];
 const SETTINGS_LOG_LIMIT = 500;
 const RUN_HISTORY_LIMIT = 50;
+const DAY_MS = 24 * 60 * 60 * 1000;
+const iso = ms => new Date(ms).toISOString();
 const notPermitted = (proposal, permissions) => { if (blockedKinds(proposal, permissions).length) fail('Not permitted by auditor settings'); };
 // Finished runs beyond the newest RUN_HISTORY_LIMIT are dropped, except one an
 // unresolved question still points at: its answer is judged by that run's settings.
@@ -30,7 +33,8 @@ export class NutritionCleanup {
   }
   status(userId) {
     const state = this.store.load(userId);
-    return { version: state.version, settings: effectiveSettings(state.settings),
+    const settings = effectiveSettings(state.settings);
+    return { version: state.version, settings, nextEligibleAt: state.lastAutoRunAt ? iso(state.lastAutoRunAt + settings.minGapMinutes * 60000) : null,
       questions: Object.values(state.questions).filter(q => ['open', 'answering'].includes(q.status)).map(({ snapshot, evidence, prepared, ...question }) => question),
       runs: Object.values(state.runs).reverse().slice(0, 20).map(({ snapshot, result, ...run }) => run) };
   }
@@ -69,7 +73,12 @@ export class NutritionCleanup {
   }
   /** Who changed which auditor setting, newest first. */
   settingsLog(userId) { return [...(this.store.load(userId).settingsLog || [])].reverse(); }
-  async request(userId, { manual = false, reconcile = false } = {}) {
+  /**
+   * Queue (or resume) an audit. `trigger` names why: ['manual'], ['dailySweep'],
+   * or the change kinds tick classified. Automatic requests pass the trigger
+   * filter and the daily spend cap first; manual ones only note being over cap.
+   */
+  async request(userId, { manual = false, reconcile = false, trigger } = {}) {
     const state = this.store.load(userId);
     if (!manual && !state.settings.enabled) return null;
     const existing = Object.values(state.runs).find(run => !terminal.has(run.status));
@@ -77,12 +86,27 @@ export class NutritionCleanup {
     this.auditor.refreshReferences?.();
     const snapshot = await this.auditor.snapshot(userId);
     if (!manual && !reconcile && state.checkedFingerprint === snapshot.fingerprint) return null;
+    const settings = effectiveSettings(state.settings);
+    const digest = this.#digest(snapshot);
+    const kinds = manual ? ['manual'] : reconcile ? ['dailySweep']
+      : trigger || (digest ? [...classifyChange(state.checkedDigest, digest)] : []);
+    if (!manual && await this.#filtered(userId, snapshot, digest, kinds, settings)) return null;
+    const spend = await this.#spend(userId, settings);
+    if (!manual && spend.over) {
+      const day = cleanupDates(this.clock.now(), this.timezoneFor(userId))[0];
+      if (this.store.load(userId).lastCapDay !== day) {
+        this.store.update(userId, current => { current.lastCapDay = day; });
+        await this.#journal(userId, { at: iso(this.clock.now()), skipped: 'cap', spentUsd: spend.spentUsd, capUsd: settings.dailyCapUsd });
+      }
+      this.logger.info('nutrition.cleanup.capped', { userId, spentUsd: spend.spentUsd, capUsd: settings.dailyCapUsd });
+      return null;
+    }
     // Triage (NutritionAuditTriage): shadow records a verdict beside the run;
     // gate lets a clean verdict skip the LLM audit. Manual and daily
     // reconcile runs are never gated.
     const triage = !manual && this.triage?.active ? await this.triage.assess(snapshot) : null;
     if (triage && !triage.needsAudit && !reconcile && this.triage.gating) {
-      this.store.update(userId, current => { current.checkedFingerprint = snapshot.fingerprint; });
+      this.store.update(userId, current => { current.checkedFingerprint = snapshot.fingerprint; current.checkedDigest = digest; });
       this.logger.info('nutrition.cleanup.skipped', { userId, fingerprint: snapshot.fingerprint, reason: triage.reason, score: triage.score });
       return null;
     }
@@ -95,29 +119,65 @@ export class NutritionCleanup {
       // the managed-run store the identical input, and a settings change mid-run
       // must not change what the run may do.
       const settings = effectiveSettings(current.settings);
+      if (!manual) current.lastAutoRunAt = this.clock.now();
       current.runs[id] = { id, status: 'queued', attempt: 0, snapshot, dryRun: settings.dryRun,
-        model: settings.model, permissions: settings.permissions,
-        createdAt: new Date(this.clock.now()).toISOString(), manual,
+        model: settings.model, permissions: settings.permissions, trigger: kinds,
+        createdAt: new Date(this.clock.now()).toISOString(), manual, ...(manual && spend.over ? { overCap: true } : {}),
         ...(triage ? { triage: { needsAudit: triage.needsAudit, reason: triage.reason, score: triage.score } } : {}) };
     });
     if (!id) return null;
     this.#launch(userId, id);
     return { runId: id };
   }
+  /** Per-concern digest of a snapshot; null without an injected hash (fingerprint-only checks). */
+  #digest(snapshot) { return this.hash ? snapshotDigest(snapshot, this.hash) : null; }
+  /** Every kind that changed is switched off: count the snapshot as checked, note it once, run nothing. */
+  async #filtered(userId, snapshot, digest, kinds, settings) {
+    if (!kinds.length || kinds.some(kind => settings.triggers[kind] !== false)) return false;
+    const noted = this.store.load(userId).lastFilteredFingerprint === snapshot.fingerprint;
+    this.store.update(userId, state => {
+      state.checkedFingerprint = snapshot.fingerprint; state.checkedDigest = digest; state.lastFilteredFingerprint = snapshot.fingerprint;
+    });
+    if (!noted) await this.#journal(userId, { at: iso(this.clock.now()), skipped: 'filtered', kinds });
+    this.logger.info('nutrition.cleanup.filtered', { userId, kinds });
+    return true;
+  }
+  /** Today's (household day) auditor spend from the journal, against the cap. No journal or no cap: never over. */
+  async #spend(userId, settings) {
+    if (!this.journal || settings.dailyCapUsd == null) return { over: false, spentUsd: null };
+    const now = this.clock.now(), tz = this.timezoneFor(userId);
+    const today = cleanupDates(now, tz)[0];
+    let rows;
+    try { rows = await this.journal.list(userId, { from: iso(now - 2 * DAY_MS), to: iso(now + DAY_MS) }); }
+    catch (error) { this.logger.warn('nutrition.cleanup.journal_read_failed', { userId, error: error.message }); return { over: false, spentUsd: null }; }
+    const spentUsd = rows.filter(row => Number.isFinite(row.costUsd) && cleanupDates(Date.parse(row.at), tz)[0] === today)
+      .reduce((sum, row) => sum + row.costUsd, 0);
+    return { over: spentUsd >= settings.dailyCapUsd, spentUsd: Math.round(spentUsd * 1e6) / 1e6 };
+  }
+  /** The journal is a record, not a gate: a failed write is logged and the run carries on. */
+  async #journal(userId, row) {
+    if (!this.journal) return;
+    try { await this.journal.append(userId, row); }
+    catch (error) { this.logger.warn('nutrition.cleanup.journal_failed', { userId, runId: row.runId ?? null, error: error.message }); }
+  }
   #launch(userId, id) {
     if (this.#active.has(userId)) return;
-    const promise = this.#execute(userId, id).catch(error => {
+    const promise = this.#execute(userId, id).catch(async error => {
       this.logger.warn('nutrition.cleanup.run_failed', { userId, runId: id, error: error.message });
-      this.store.update(userId, state => {
+      const failed = this.store.update(userId, state => {
         const run = state.runs[id];
-        if (run.status === 'cancelled') return;
+        if (run.status === 'cancelled') return null;
         const transient = ![400, 404, 409].includes(error.status) && error.code !== 'AGENT_SCHEMA_INVALID';
         run.status = transient && run.attempt <= 2 ? 'retry' : 'failed';
         run.error = error.message;
-        if (run.status === 'failed') state.checkedFingerprint = run.snapshot.fingerprint;
         run.retryAt = this.clock.now() + 30000 * Math.pow(2, run.attempt);
-        if (run.status === 'failed') pruneRuns(state);
+        if (run.status !== 'failed') return null;
+        state.checkedFingerprint = run.snapshot.fingerprint; state.checkedDigest = this.#digest(run.snapshot);
+        pruneRuns(state);
+        return { runId: id, at: run.createdAt || iso(this.clock.now()), status: 'failed', error: run.error, attempt: run.attempt,
+          trigger: run.trigger ?? null, model: run.model ?? null };
       });
+      if (failed) await this.#journal(userId, failed);
     }).finally(() => this.#active.delete(userId));
     this.#active.set(userId, promise);
   }
@@ -159,7 +219,8 @@ export class NutritionCleanup {
       }
       try {
         const applied = await this.repairs.apply({ userId, operationId: id + '_' + index, runId: id, proposal, evidence, fence, dryRun: run.dryRun });
-        outcomes.push(run.dryRun ? { status: 'proposed', proposal } : { status: applied.affectedIds?.length ? 'applied' : 'unchanged', operationId: id + '_' + index });
+        outcomes.push(run.dryRun ? { status: 'proposed', proposal } : { status: applied.affectedIds?.length ? 'applied' : 'unchanged',
+          operationId: id + '_' + index, affectedIds: applied.affectedIds || [] });
       } catch (error) {
         if (error.status !== 409 && error.status !== 404) throw error;
         outcomes.push({ status: 'skipped', reason: error.message, ...(run.dryRun ? { proposal } : {}) });
@@ -194,18 +255,37 @@ export class NutritionCleanup {
     // run.model stays the plain name in every state; the runtime reports {provider,name}.
     const telemetry = { model: result.model?.name ?? run.model ?? null, usage: result.usage ?? null, costUsd: result.costUsd ?? null,
       turnId: result.turnId ?? null, toolCalls: result.toolCalls ?? [] };
-    this.store.update(userId, state => {
-      if (state.runs[id].status !== 'running') return;
+    // What counts as checked: the audited input, or the state after this run
+    // when the only rows that moved are the ones it repaired itself. Anything
+    // else (a capture that landed mid-run) keeps the input, so it is audited next.
+    let checked = { fingerprint: run.snapshot.fingerprint, digest: this.#digest(run.snapshot) };
+    if (checked.digest) {
+      try {
+        this.auditor.refreshReferences?.();
+        const post = await this.auditor.snapshot(userId);
+        const postDigest = this.#digest(post);
+        if (onlyOwnChanges(checked.digest, postDigest, new Set(outcomes.flatMap(o => o.affectedIds || [])))) checked = { fingerprint: post.fingerprint, digest: postDigest };
+      } catch (error) {
+        this.logger.warn('nutrition.cleanup.post_snapshot_failed', { userId, runId: id, error: error.message });
+      }
+    }
+    const completed = this.store.update(userId, state => {
+      if (state.runs[id].status !== 'running') return null;
       Object.assign(state.runs[id], { status: 'completed', outcomes, summary: result.summary, completedAt: new Date(this.clock.now()).toISOString(),
         ...telemetry, ...(suppressedQuestions.length ? { suppressedQuestions } : {}) });
-      // Do not suppress a concurrent capture. Own repairs are the only permitted
-      // change between the audited input and this checked output.
-      state.checkedFingerprint = run.snapshot.fingerprint;
+      state.checkedFingerprint = checked.fingerprint; state.checkedDigest = checked.digest;
       // Full reasoning checkpoints live in the managed-run store; do not copy
       // every completed report back through this dispatch file on each poll.
       delete state.runs[id].snapshot; delete state.runs[id].result;
+      const done = state.runs[id];
       pruneRuns(state);
+      return done;
     });
+    // One journal row per run, filed under its start time (the journal months and dedupes by it).
+    if (completed) await this.#journal(userId, { runId: id, at: completed.createdAt || completed.completedAt, completedAt: completed.completedAt,
+      status: 'completed', trigger: completed.trigger ?? null, ...telemetry, outcomes, suppressedQuestions,
+      questions: askable.map(({ q }) => ({ question: q.question, choices: q.choices.map(choice => choice.label) })),
+      summary: result.summary, dryRun: run.dryRun, manual: !!run.manual, overCap: !!run.overCap });
     // `changed` counts repairs that landed (or would have, in dry run); with the
     // triage verdict beside it, this line is the shadow-mode evaluation row.
     const changed = outcomes.filter(o => o.status === 'applied' || o.status === 'proposed').length;
@@ -263,19 +343,33 @@ export class NutritionCleanup {
     if (!state.settings.enabled) return;
     const queued = Object.values(state.runs).find(r => !terminal.has(r.status));
     if (queued) { if (!queued.retryAt || queued.retryAt <= this.clock.now()) this.#launch(userId, queued.id); return; }
+    // Automatic runs keep the minimum gap; a waiting sweep or change is kept, not lost.
+    const settings = effectiveSettings(state.settings);
+    const waiting = state.lastAutoRunAt && this.clock.now() - state.lastAutoRunAt < settings.minGapMinutes * 60000;
     const hour = Number(new Intl.DateTimeFormat('en-US', { timeZone: this.timezoneFor(userId), hour: 'numeric', hourCycle: 'h23' }).format(new Date(this.clock.now())));
     if (!this.#started.has(userId) || (hour >= 3 && state.lastSweepDay !== dates[0])) {
+      if (waiting) return;
       this.#started.add(userId);
       if (hour >= 3) this.store.update(userId, current => { current.lastSweepDay = dates[0]; });
       await this.request(userId, { reconcile: true }); return;
     }
     const snapshot = await this.auditor.snapshot(userId);
     if (snapshot.fingerprint === state.checkedFingerprint) { this.#dirty.delete(userId); return; }
+    const digest = this.#digest(snapshot);
+    const kinds = digest ? [...classifyChange(state.checkedDigest, digest)] : null;
+    if (kinds && !kinds.length) {
+      // Only bookkeeping moved (versions, timestamps) or a row left the window.
+      this.store.update(userId, current => { current.checkedFingerprint = snapshot.fingerprint; current.checkedDigest = digest; });
+      this.#dirty.delete(userId); return;
+    }
+    if (kinds && await this.#filtered(userId, snapshot, digest, kinds, settings)) { this.#dirty.delete(userId); return; }
     const now = this.clock.now();
     const dirty = this.#dirty.get(userId) || { first: now, changed: now, fingerprint: snapshot.fingerprint };
     if (dirty.fingerprint !== snapshot.fingerprint) { dirty.changed = now; dirty.fingerprint = snapshot.fingerprint; }
     this.#dirty.set(userId, dirty);
-    if (now - dirty.changed >= 60000 || now - dirty.first >= 120000) { this.#dirty.delete(userId); await this.request(userId); }
+    if ((now - dirty.changed >= 60000 || now - dirty.first >= 120000) && !waiting) {
+      this.#dirty.delete(userId); await this.request(userId, kinds ? { trigger: kinds } : {});
+    }
   }
   async settled(userId) { await this.#active.get(userId); }
 }
