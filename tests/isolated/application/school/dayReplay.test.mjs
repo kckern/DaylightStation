@@ -165,11 +165,14 @@ describe('past-day replay: program launchers', () => {
       programs: [{ programId: 'flashcards', subject: 'language', title: 'Cards', deckId: 'd1' }],
     });
     const tuesday = await completion.execute({ learnerId: LEARNER, studyDay: TUE });
-    // `flashcards` is not one of the nine shelves; the agenda files it under `other`.
-    const section = tuesday.sections.find((s) => s.subject === 'other');
+    // The deck's entry keeps its enrollment subject (01983d776), so it sits on
+    // the `language` shelf. It is still the learner's only section, and on a
+    // past day it must read unknowable — not dropped, not no_work_today's blue.
+    expect(tuesday.sections).toHaveLength(1);
+    const section = tuesday.sections.find((s) => s.subject === 'language');
     expect(section).toMatchObject({ state: 'excused', reason: 'no_history', unknowable: true });
     expect(tuesday.state).toBe('no_work_today');
-    expect(tuesday.excused).toEqual([{ subject: 'other', reason: 'no_history' }]);
+    expect(tuesday.excused).toEqual([{ subject: 'language', reason: 'no_history' }]);
     // Live, the same learner is asked and served — the deck answered doneToday.
     const today = await completion.execute({ learnerId: LEARNER });
     expect(today.state).toBe('complete');
