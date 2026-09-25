@@ -526,3 +526,4 @@ The corollary bit twice in this sweep: `feat/teacher-workspace-ia` and `feature/
 | 2026-09-24 | worktree-health-notices | 8d1474537 | Health Today feedback out of the page flow: toasts, follow-up tray, row-level portion errors |
 | 2026-09-24 | worktree-budget-range | 9dc05c7b1 | Health budget as a range: contract, ruler bar, coach on the budget, meal fasts |
 | 2026-09-25 | worktree-fasting-cards | 051ad7e0e | Per-meal fasting (⊘), follow-up question card deck, plain cleanup questions |
+| 2026-09-25 | worktree-health-cache | b69a39db4 | Health load perf (IndexedDB SWR cache, dedupe, route split, shared tokens/fonts), follow-ups header bell, piano attempt-parse stall fix |
