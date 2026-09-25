@@ -263,6 +263,8 @@ import { FetchImageDownloader } from '#adapters/nutribot/FetchImageDownloader.mj
 import { PhotoStore } from '#adapters/persistence/PhotoStore.mjs';
 import { IconManifestStore } from '#adapters/persistence/IconManifestStore.mjs';
 import { LatestReconciliationReader } from '#apps/health/LatestReconciliationReader.mjs';
+import { BudgetService } from '#apps/health/BudgetService.mjs';
+import { YamlHealthGoalsDatastore } from '#adapters/persistence/yaml/YamlHealthGoalsDatastore.mjs';
 import { NodePromiseDeadline } from '#adapters/scheduling/NodePromiseDeadline.mjs';
 import { NodeApplicationScheduler } from '#adapters/scheduling/NodeApplicationScheduler.mjs';
 import crypto from 'node:crypto';
@@ -2356,6 +2358,8 @@ export async function createNutribotServices(config) {
     mealCoachingTrigger,
     imageDownloader: new FetchImageDownloader(),
     photoStore,
+    // The daily report states the health budget's range and zone.
+    budgetService: createHealthBudget({ dataService, healthStore, nutriListStore, logger }),
     logger
   });
 
@@ -2365,6 +2369,23 @@ export async function createNutribotServices(config) {
     nutribotContainer,
     scaleConfig
   };
+}
+
+/**
+ * One health budget per composition scope (the healthApi.mjs pattern): the
+ * SAME contract the Today bar reads — goal range, zone, completeness — built
+ * off the shared dataService and stores. Null when a store is missing, and
+ * every consumer then falls back to its configured goals.
+ */
+function createHealthBudget({ dataService, healthStore, nutriListStore, logger }) {
+  if (!dataService || !healthStore?.loadWeightData || !healthStore?.getWorkoutsForRange || !nutriListStore) return null;
+  return new BudgetService({
+    goalsStore: new YamlHealthGoalsDatastore({ dataService }),
+    healthStore,
+    nutriListStore,
+    clock: { now: () => Date.now() },
+    logger,
+  });
 }
 
 // =============================================================================
@@ -2579,6 +2600,11 @@ export async function createAgentsServices(config) {
   const nutribotConfig = createNutribotRuntimeConfig(
     rawNutribotConfig ?? configService?.getAppConfig?.('nutribot') ?? {},
   );
+
+  // The health budget contract for the coach: range, zone, completeness.
+  const healthBudget = createHealthBudget({ dataService, healthStore, nutriListStore, logger });
+  const coachToday = () => new Date().toLocaleDateString('en-CA',
+    { timeZone: configService?.getTimezone?.() || 'America/Los_Angeles' });
 
   const agentConfigProjection = new AgentConfigProjection({ configService });
 
@@ -2814,6 +2840,10 @@ export async function createAgentsServices(config) {
         // NutritionActionToolFactory's log_food tool — same WebNutribotAdapter
         // instance the health router uses (see healthApi.mjs / app.mjs proxy).
         nutritionInput: webNutribotAdapter,
+        // get_day_budget / get_budget_range (BudgetToolFactory).
+        budgetService: healthBudget,
+        nutriListStore,
+        today: coachToday,
       });
     }
   }
@@ -2842,8 +2872,10 @@ export async function createAgentsServices(config) {
         getUserGoals: (userId) => nutribotConfig.getUserGoals(userId),
         getUserTimezone: () => coachingTimezone,
       },
-      // household coaching/config.yml `logging_completeness.min_calories`
-      // (default 1200): unconfirmed days under it are missing data.
+      // The health budget: the ONE floor (completeness), top and counted food.
+      budgetService: healthBudget,
+      // household coaching/config.yml `logging_completeness.min_calories` —
+      // the FALLBACK threshold, used only when the budget is unavailable.
       completeness: configService?.getHouseholdAppConfig?.(null, 'coaching')?.logging_completeness,
       logger,
     });

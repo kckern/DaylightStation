@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   classifyDay, buildCalendarDays, averageTrusted, resolveMinCalories, shiftDate, DEFAULT_MIN_CALORIES,
+  closureStatus, fastedMealsOf,
 } from '../../../backend/src/3_applications/coaching/dayCompleteness.mjs';
 
 describe('dayCompleteness', () => {
@@ -22,6 +23,22 @@ describe('dayCompleteness', () => {
     expect(classifyDay({ calories: 800 }, { status: 'done' }, 1200)).toBe('done');
     expect(classifyDay({ calories: 800 }, true, 1200)).toBe('done');
     expect(classifyDay(undefined, { status: 'fasting' }, 1200)).toBe('fasting');
+  });
+
+  it('a record holding only meal fasts does NOT close the day', () => {
+    const mealsOnly = { meals: { morning: { status: 'fasting', at: 'x' } } };
+    expect(closureStatus(mealsOnly)).toBeNull();
+    expect(closureStatus({ status: 'done', at: 'x', meals: { morning: { status: 'fasting' } } })).toBe('done');
+    expect(closureStatus({ status: 'fasting' })).toBe('fasting');
+    expect(closureStatus(true)).toBe('done');
+    expect(closureStatus({ at: 'x' })).toBeNull();
+    expect(classifyDay({ calories: 800 }, mealsOnly, 1200)).toBe('incomplete');
+  });
+
+  it('lists the fasted meals of a record, in bucket order', () => {
+    expect(fastedMealsOf({ meals: { evening: { status: 'fasting' }, morning: { status: 'fasting' } } })).toEqual(['morning', 'evening']);
+    expect(fastedMealsOf(true)).toEqual([]);
+    expect(fastedMealsOf(undefined)).toEqual([]);
   });
 
   it('walks calendar days so an unlogged Sunday is not skipped', () => {

@@ -57,8 +57,9 @@ export class HandleHelpCommand {
 /coach - Get personalized advice
 /done - Today's log is complete
 /fast - Today was a fast
-/reopen - Undo /done or /fast
-  (add <i>yesterday</i> or a date, e.g. /done 2026-09-20)
+/fast breakfast - Just that meal was skipped (breakfast, lunch, dinner, snacks)
+/reopen - Undo /done or /fast (/reopen breakfast for a meal)
+  (add <i>yesterday</i> or a date, e.g. /done 2026-09-20, /fast lunch yesterday)
 
 <b>Tips:</b>
 • Be specific about portions (e.g., "2 cups of rice")

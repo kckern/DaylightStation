@@ -524,6 +524,9 @@ $health-aside-gap: 1.5rem;
   // that's the narrow-width regression this rule guards against. The
   // header-right cluster wraps around it instead; see that rule above.
   &__kcal { font-size: 0.78rem; color: var(--ds-text-mid); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  // A meal declared skipped (coach information): quiet, never a warning.
+  &__fasted-note { font-size: 0.68rem; color: var(--ds-text-low); white-space: nowrap; }
+  &__fast-error { font-size: 0.7rem; color: var(--ds-danger); }
   &__macros { grid-column: 3 / 6; }
   &__add { display: block; width: 100%; min-height: 44px; text-align: left; padding: 0.28rem 0.2rem; color: var(--ds-text-mid); font-size: 0.8rem; border-radius: 6px;
     &:focus-visible { outline: 2px solid var(--ds-accent); outline-offset: 2px; } }

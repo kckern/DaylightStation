@@ -90,6 +90,7 @@ export class NutribotContainer {
   #selectUPCPortion;
   #generateDailyReport;
   #mealCoachingTrigger;
+  #budgetService;
   #getReportAsJSON;
   #agentOrchestrator;
   #startAdjustmentFlow;
@@ -144,6 +145,8 @@ export class NutribotContainer {
     this.#reconciliationReader = options.reconciliationReader || null;
     this.#agentOrchestrator = options.agentOrchestrator || null;
     this.#mealCoachingTrigger = options.mealCoachingTrigger || null;
+    // The health budget contract (range + zone) for the daily report caption.
+    this.#budgetService = options.budgetService || null;
     this.#healthStore = options.healthStore || null;
     this.#catalogService = options.catalogService || null;
     this.#scaleConfig = options.scaleConfig || null;
@@ -518,6 +521,7 @@ export class NutribotContainer {
           sendPostReport: async ({ userId, date }) => { this.#mealCoachingTrigger.notify({ userId, date, source: 'report' }); },
         } : null,
         config: this.#config,
+        budgetService: this.#budgetService,
         logger: this.#logger,
         pause: this.#pause,
       });

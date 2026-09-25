@@ -8,6 +8,7 @@ import { BUCKETS, UNGROUPED, EARLY_COLUMN, LATE_COLUMN } from './mealBuckets.js'
 import { EntryRow } from './EntryRow.jsx';
 import { groupRows, sortEntriesByCalories, calorieShares, dayCalorieScale } from './groupRows.js';
 import { MealFoodControls } from './MealFoodControls.jsx';
+import { MealFastToggle } from './MealFastToggle.jsx';
 import { CaptureProgress } from './CaptureProgress.jsx';
 import { usePortionControl } from './usePortionDraft.js';
 import { useFrozenOrder, useFlipMoves } from './sectionOrder.js';
@@ -29,6 +30,7 @@ const kcal = (rows) => Math.round(sumCounted(rows, 'calories'));
 function Section({
   label, rows, renderAddRow = null, onRowTap, onConfirm, onRequestDelete, headerAction, coldLoading, pending,
   measuredByUuid, addedIds = null, kcalScale = null, date, bucket, onVoiceCapture, onTextCapture, onChanged, captureTasks = [], externalClarification, onClearClarification,
+  fasted = false, onFastChanged = null,
 }) {
   const [selecting, setSelecting] = useState(false);
   const [selection, setSelection] = useState([]);
@@ -112,7 +114,13 @@ function Section({
         <h4 className="health-meal__label">{label}</h4>
         {rows.length ? <MacroBadges rows={rows} className="health-meal__macros" showLabels /> : null}
         <span className="health-meal__header-right">
-          <span className="health-meal__kcal">{rows.length ? `${kcal(rows)} kcal` : '—'}</span>
+          <span className="health-meal__kcal">{rows.length ? `${kcal(rows)} kcal` : fasted ? 'Fasted' : '—'}</span>
+          {/* An empty meal can be declared skipped (coach information only). A
+              skipped meal that later gets food keeps its undo — and says so —
+              or the coach would go on being told not to ask about it. */}
+          {rows.length && fasted ? <span className="health-meal__fasted-note">marked skipped</span> : null}
+          {(!rows.length || fasted) && bucket && date && onFastChanged
+            ? <MealFastToggle date={date} bucket={bucket} label={label} fasted={fasted} onChanged={onFastChanged} /> : null}
         </span>
       </header>
       {bucket && rows.length && onChanged ? <MealFoodControls date={date} bucket={bucket} rows={rows} selectedIds={selectedIds} selecting={selecting}
@@ -216,6 +224,7 @@ export function LogTable({
   bucketHeaderAction, coldLoading = false, capturePendingBucket = null, capturePendingBuckets = [],
   measuredByUuid = null, onVoiceCapture, onTextCapture, onMealChanged, captureTasks = [], clarifications, onClearClarification,
   renderAddRow = null, addedIds = null, onMoveEntry = null, onMoveMeal = null,
+  fastedMeals = [], onMealFastChanged = null,
 }) {
   // All four meals always render: an empty one is its header and add row, so
   // any meal can be added to in place without a separate "add to" control.
@@ -254,7 +263,8 @@ export function LogTable({
           onRowTap={onRowTap} onConfirm={onConfirm} onRequestDelete={onRequestDelete}
           headerAction={bucketHeaderAction ? bucketHeaderAction(b.id, rows, b.label) : null}
           coldLoading={coldLoading} pending={capturePendingBucket === b.id || capturePendingBuckets.includes(b.id)}
-          measuredByUuid={measuredByUuid} addedIds={addedIds} kcalScale={kcalScale} renderAddRow={renderAddRow} />
+          measuredByUuid={measuredByUuid} addedIds={addedIds} kcalScale={kcalScale} renderAddRow={renderAddRow}
+          fasted={fastedMeals.includes(b.id)} onFastChanged={onMealFastChanged} />
       </div>
     );
   };

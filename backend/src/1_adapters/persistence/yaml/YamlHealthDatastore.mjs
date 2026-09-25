@@ -18,6 +18,9 @@ import { IHealthDataDatastore } from '#apps/health/ports/IHealthDataDatastore.mj
 import { dehydrateHealthDataRecord } from './HealthMetricRecordCodec.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
+// A day_closed record as an object: a legacy bare `true` is a `done` closure.
+const recordOf = (record) => (record === true ? { status: 'done' } : (record && typeof record === 'object' ? { ...record } : {}));
+
 export class YamlHealthDatastore extends IHealthDataDatastore {
   #dataService;
   #userResolver;
@@ -265,12 +268,15 @@ export class YamlHealthDatastore extends IHealthDataDatastore {
    */
   async markDayStatus(userId, date, status) {
     const data = await this.loadDayClosedData(userId);
-    data[date] = { status, at: new Date().toISOString() };
+    // MERGE: a day record may also carry meal fasts (`meals`), which closing
+    // the day must not wipe.
+    data[date] = { ...recordOf(data[date]), status, at: new Date().toISOString() };
     await this.saveDayClosedData(userId, data);
   }
 
   /**
-   * Undo a /done or /fast: the day is judged by its logged total again.
+   * Undo a /done or /fast: the day is judged by its logged total again. Meal
+   * fasts on the same date survive; the record goes only when nothing is left.
    * @param {string} userId
    * @param {string} date - YYYY-MM-DD
    * @returns {Promise<void>}
@@ -278,19 +284,45 @@ export class YamlHealthDatastore extends IHealthDataDatastore {
   async clearDayStatus(userId, date) {
     const data = await this.loadDayClosedData(userId);
     if (!(date in data)) return;
-    delete data[date];
+    const { status: _status, at: _at, ...rest } = recordOf(data[date]);
+    if (Object.keys(rest.meals || {}).length) data[date] = rest;
+    else delete data[date];
     await this.saveDayClosedData(userId, data);
   }
 
   /**
-   * Check if a specific date is marked as closed
+   * Declare one meal of a day fasted (or undo it). Information for the coach
+   * only: it says the meal was intentionally empty. It never closes the day.
+   * @param {string} userId
+   * @param {string} date - YYYY-MM-DD
+   * @param {string} meal - bucket id (morning|afternoon|evening|night)
+   * @param {boolean} fasted
+   * @returns {Promise<void>}
+   */
+  async setMealFast(userId, date, meal, fasted) {
+    const data = await this.loadDayClosedData(userId);
+    const record = recordOf(data[date]);
+    const meals = { ...(record.meals || {}) };
+    if (fasted) meals[meal] = { status: 'fasting', at: new Date().toISOString() };
+    else delete meals[meal];
+    const next = { ...record, meals };
+    if (!Object.keys(meals).length) delete next.meals;
+    if (Object.keys(next).length) data[date] = next;
+    else delete data[date];
+    await this.saveDayClosedData(userId, data);
+  }
+
+  /**
+   * Check if a specific date is closed (done or fasting). A record holding
+   * only meal fasts is NOT a closed day.
    * @param {string} userId
    * @param {string} date - YYYY-MM-DD
    * @returns {Promise<boolean>}
    */
   async isDayClosed(userId, date) {
     const data = await this.loadDayClosedData(userId);
-    return !!data[date];
+    const record = data[date];
+    return record === true || record?.status === 'done' || record?.status === 'fasting';
   }
 
   // ===========================================================================

@@ -3,6 +3,7 @@
 import { Assignment } from '../../framework/Assignment.mjs';
 import { OutputValidator } from '../../framework/OutputValidator.mjs';
 import { coachingMessageSchema } from '../schemas/coachingMessage.mjs';
+import { goalsWithRange, localDate } from './budgetContext.mjs';
 
 /**
  * WeeklyDigest - Scheduled assignment that sends a weekly nutrition and health trend summary.
@@ -46,7 +47,8 @@ export class WeeklyDigest extends Assignment {
       call('get_reconciliation_summary', { userId, days: 84 }),
       call('get_weight_trend',           { userId, days: 14 }),
       call('get_weight_trend',           { userId, days: 84 }),
-      call('get_nutrition_history',      { userId, days: 7 }),
+      // The budget contract per day: calories, protein, net, range, zone, COMPLETE.
+      call('get_budget_range',           { userId, days: 7 }),
       call('get_user_goals',             { userId }),
     ]);
 
@@ -91,19 +93,29 @@ export class WeeklyDigest extends Assignment {
         : [];
     if (days.length === 0) return null;
 
-    const calMax = goals?.goals?.nutrition?.calories_max;
     const proteinMin = goals?.goals?.nutrition?.protein_min;
-
-    const numericCalories = days.map(d => d?.calories).filter(v => typeof v === 'number');
-    const numericProtein = days.map(d => d?.protein).filter(v => typeof v === 'number');
-    const trackedDays = days.filter(d => typeof d?.calories === 'number' && d.calories > 0).length;
-
     const avg = (arr) => (arr.length === 0 ? null : arr.reduce((a, b) => a + b, 0) / arr.length);
 
+    // Budget days (they carry a range) are averaged over COMPLETE days only —
+    // an under-logged day is missing data, not a light day — and judged as the
+    // Today bar judges them: net against each day's own top. Plain history rows
+    // keep the configured calories_max.
+    const budgetRows = days.some(d => d?.range);
+    const trusted = budgetRows ? days.filter(d => d?.range && d.complete) : days;
+    const calMax = budgetRows ? avg(trusted.map(d => d.range.top)) : goals?.goals?.nutrition?.calories_max;
+    // Surplus is judged on NET (as the bar judges it); the similar-period
+    // signature keeps FOOD calories, the dimension SimilarPeriodFinder and the
+    // morning brief use.
+    const judgedCalories = trusted.map(d => (budgetRows ? d?.net : d?.calories)).filter(v => typeof v === 'number');
+    const numericCalories = trusted.map(d => d?.calories).filter(v => typeof v === 'number');
+    const numericProtein = trusted.map(d => d?.protein).filter(v => typeof v === 'number');
+    const trackedDays = trusted.filter(d => typeof d?.calories === 'number' && d.calories > 0).length;
+
+    const judgedAvg = avg(judgedCalories);
     const calorieAvg = avg(numericCalories);
     const proteinAvg = avg(numericProtein);
 
-    const calorieSurplus = typeof calMax === 'number' && calorieAvg !== null && calorieAvg > calMax;
+    const calorieSurplus = typeof calMax === 'number' && judgedAvg !== null && judgedAvg > calMax;
     const proteinShortfall = typeof proteinMin === 'number' && proteinAvg !== null && proteinAvg < proteinMin;
 
     if (!calorieSurplus && !proteinShortfall) return null;
@@ -164,14 +176,15 @@ export class WeeklyDigest extends Assignment {
    * The LLM uses this to produce the structured coaching message JSON.
    */
   buildPrompt(gathered, memory) {
-    const today = new Date().toISOString().split('T')[0];
+    const today = localDate(0);
     const sections = [`## Week ending: ${today}`];
 
     sections.push(`\n## Reconciliation Summary (12-week / 84-day window)\nNote: implied_intake and tracking_accuracy are ONLY present on mature days (14+ days old). Recent days only have tracked_calories and exercise_calories. This is by design.\n${JSON.stringify(gathered.reconciliation || {}, null, 2)}`);
     sections.push(`\n## Weight Trend (14 days — recent)\n${JSON.stringify(gathered.weight || {}, null, 2)}`);
     sections.push(`\n## Weight Trend (12 weeks — long-term)\n${JSON.stringify(gathered.weightLongTerm || {}, null, 2)}`);
     sections.push(`\n## This Week's Nutrition (7 days)\n${JSON.stringify(gathered.nutritionHistory || {}, null, 2)}`);
-    sections.push(`\n## User Goals\n${JSON.stringify(gathered.goals || {}, null, 2)}`);
+    const latestDay = (gathered.nutritionHistory?.days || []).filter(d => d?.range).at(-1);
+    sections.push(`\n## User Goals\n${JSON.stringify(goalsWithRange(gathered.goals, latestDay), null, 2)}`);
     sections.push(`\n## Working Memory\n${memory.serialize()}`);
 
     // Similar Period — historical analog when a sustained weekly trend signal
