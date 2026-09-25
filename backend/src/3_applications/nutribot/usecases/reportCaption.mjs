@@ -1,6 +1,6 @@
 // The daily report's caption line. With the health budget contract it states
 // what the Today bar states — the goal range and the zone's own words ("782
-// cal left", "500 cal to floor", "Fasted") — from the same counted food.
+// cal left", "109 cal over", "Fasted") — from the same counted food.
 // Without it (no goals/weight yet), the legacy min/max wording stands.
 import { headlineFor } from '#shared/contracts/health/budgetZone.mjs';
 

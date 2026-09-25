@@ -25,13 +25,15 @@ export function zoneFor({ food, exercise = 0, maintenance, range, declared = nul
   if (net > top) return out('over', net - top);
   if (eaten >= floor) return out('in-range', top - net);
   if (isDeclared) return out('declared', top - net);
-  return out('incomplete', floor - eaten);
+  // Still under the floor: the number is still what is LEFT to the ceiling;
+  // the zone (and its colour) is what says the log is not trustworthy yet.
+  return out('incomplete', top - net);
 }
 
 /** The compatibility `status` alias: over the plan or past break-even. */
 export const statusForZone = (zone) => (zone === 'over' || zone === 'past-even' ? 'over' : 'under');
 
-const HEADLINE = { incomplete: 'to floor', 'in-range': 'left', over: 'over', 'past-even': 'past break even' };
+const HEADLINE = { incomplete: 'left', 'in-range': 'left', over: 'over', 'past-even': 'past break even' };
 
 /** The headline's number and the words that say which segment it measures. */
 export function headlineFor({ zone, remaining, declared = null }) {

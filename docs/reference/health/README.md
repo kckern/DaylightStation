@@ -156,7 +156,7 @@ evaluated in this order:
 | `over` | net > top | net − top | "N kcal over" |
 | `in-range` | food ≥ floor | top − net | "N kcal left" |
 | `declared` | food < floor, day closed | top − net | "Fasted" / "Logging done" |
-| `incomplete` | food < floor, not closed | floor − food | "N kcal to floor" |
+| `incomplete` | food < floor, not closed | top − net | "N kcal left" (blue: the log is not trustworthy yet) |
 
 `remaining` is never negative. `over`/`past-even` win even on an under-logged day;
 `complete` reports the logging fact separately. With a big workout, net can be
@@ -198,13 +198,14 @@ pure `today/budgetGeometry.js`, pinned by `budgetGeometry.test.js`):
   declared), warning (over the top), danger (past break-even). A negative net ends
   left of 0; the hatch past it is unused credit.
 - **Remaining run.** A dotted run from the frontier to the mark the headline
-  measures against (band edge / top / from top / from break-even); none when the day
+  measures against (to the top while under or in range / from the top when over / from
+  break-even when past it); none when the day
   is declared.
 
 A budget without `range`/`zone` (an older server) still gets the previous two-mark
 bar. The terms line states the real net (with a minus sign when exercise exceeds
 food), and the deficit is counted from it. The headline comes from `headlineFor` in the shared zone rule and names the segment its
-number measures ("N kcal to floor", "N kcal left", "N kcal over", "N kcal past break
+number measures ("N kcal left" — to the ceiling, blue while still under the floor — "N kcal over", "N kcal past break
 even", or "Fasted"/"Logging done"); the week strip's cell labels use the same words.
 The line under it reads "1,603
 eaten · 231 burned · 1,372 net · 919 deficit" (deficit/surplus against break-even),

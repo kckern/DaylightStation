@@ -9,9 +9,9 @@ describe('buildReportCaption', () => {
       .toBe('🔥 1257 / 1200–1791 cal • 782 cal left');
   });
 
-  it('an under-logged day is "to floor", never "below minimum"', () => {
-    expect(buildReportCaption({ totals: { calories: 700 }, budget: budget({ food: 700, zone: 'incomplete', remaining: 500 }) }))
-      .toBe('🔥 700 / 1200–1791 cal • 500 cal to floor');
+  it('an under-logged day says what is left to the ceiling, never "below minimum"', () => {
+    expect(buildReportCaption({ totals: { calories: 700 }, budget: budget({ food: 700, zone: 'incomplete', remaining: 1091 }) }))
+      .toBe('🔥 700 / 1200–1791 cal • 1091 cal left');
   });
 
   it('a declared day says so', () => {

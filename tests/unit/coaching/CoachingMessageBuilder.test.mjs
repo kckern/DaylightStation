@@ -21,10 +21,10 @@ describe('CoachingMessageBuilder', () => {
       });
       expect(inRange).toContain('1400 cal so far</b> · 791 left of 1791'); // not 391
       const toFloor = CoachingMessageBuilder.buildPostReportBlock({
-        calories: { consumed: 700, net: 700, goal_min: 1200, goal_max: 1791, zone: 'incomplete', remaining: 500 },
+        calories: { consumed: 700, net: 700, goal_min: 1200, goal_max: 1791, zone: 'incomplete', remaining: 1091 },
         protein: { consumed: 40, goal: 120 }, inProgress: true,
       });
-      expect(toFloor).toContain('· 500 to floor (1200)');
+      expect(toFloor).toContain('· 1091 left of 1791');
       const closed = CoachingMessageBuilder.buildPostReportBlock({
         calories: { consumed: 1400, net: 1000, goal_min: 1200, goal_max: 2000, zone: 'in-range', remaining: 1000 },
         protein: { consumed: 60, goal: 120 },

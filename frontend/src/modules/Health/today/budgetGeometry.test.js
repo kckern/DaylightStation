@@ -116,9 +116,9 @@ describe('budgetGeometry — the remaining run', () => {
     close(g.run.fromPct + g.run.widthPct, g.pct(1791));
     expect(g.run.value).toBe(648);
   });
-  it('incomplete: frontier to the band edge', () => {
-    const g = run({ food: 700, net: 453, zone: 'incomplete', remaining: 500 });
-    close(g.run.fromPct + g.run.widthPct, g.pct(1200 - 247));
+  it('incomplete: frontier to the ceiling, like in range', () => {
+    const g = run({ food: 700, net: 453, zone: 'incomplete', remaining: 1338 });
+    close(g.run.fromPct + g.run.widthPct, g.pct(1791));
   });
   it('over: top to frontier; past break-even: break-even to frontier', () => {
     const over = run({ food: 2147, net: 1900, zone: 'over', remaining: 109 });

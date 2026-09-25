@@ -70,7 +70,7 @@ export function budgetGeometry(budget, { widthPx = 360 } = {}) {
   const foodSeg = { ...segment(-exercise, net), value: food, labelled: food * pxPerKcal >= FOOD_LABEL_PX };
 
   const runEnds = {
-    incomplete: [net, bandFrom],
+    incomplete: [net, top],
     'in-range': [net, top],
     over: [top, net],
     'past-even': [even, net],

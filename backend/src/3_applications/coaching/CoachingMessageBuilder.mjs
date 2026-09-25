@@ -6,13 +6,13 @@ import { headlineFor } from '#shared/contracts/health/budgetZone.mjs';
 export class CoachingMessageBuilder {
 
   // What is left, in the Today bar's own words when the budget contract is
-  // present ("600 to floor (1300)", "782 left of 1791", "109 over 1791"); the
+  // present ("782 left of 1791", "109 over 1791"); the
   // legacy "top − food" when it is not.
   static #calorieTail(calories, consumedCal) {
     if (calories.zone) {
       const h = headlineFor(calories);
       if (h.value == null) return h.text;
-      const of = { incomplete: ` (${calories.goal_min})`, 'in-range': ` of ${calories.goal_max}`, over: ` ${calories.goal_max}` }[calories.zone] || '';
+      const of = { incomplete: ` of ${calories.goal_max}`, 'in-range': ` of ${calories.goal_max}`, over: ` ${calories.goal_max}` }[calories.zone] || '';
       return `${h.value} ${h.text}${of}`;
     }
     return `${Math.max(0, Math.round(calories.goal_max - consumedCal))} left of ${calories.goal_max}`;
