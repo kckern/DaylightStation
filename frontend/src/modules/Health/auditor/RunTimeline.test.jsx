@@ -191,6 +191,7 @@ describe('Auditor page', () => {
     expect(await screen.findByText('from transcript')).toBeTruthy();
     expect(screen.getByText('Repair history')).toBeTruthy();
     expect(screen.getByText('Cleanup runs')).toBeTruthy();
+    expect(screen.getByText('Spend')).toBeTruthy();
   });
   it('refetches spend when the latest run changes', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });

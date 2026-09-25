@@ -1235,3 +1235,18 @@ $health-aside-gap: 1.5rem;
   &__danger { color: var(--ds-danger); }
   pre { max-height: 16rem; overflow: auto; background: var(--ds-surface-alt); padding: 0.4rem; border-radius: 0.35rem; font-size: 0.75rem; }
 }
+// Auditor spend chart: one series in the Health accent, cap line in the
+// warning token with its own text label, text in text tokens only.
+.health-auditor-spend {
+  &__chart { display: block; width: 100%; height: auto; overflow: visible; }
+  &__readout { color: var(--ds-text-mid); font-variant-numeric: tabular-nums; min-height: 1.4em; }
+  &__bar { fill: var(--ds-accent); opacity: 0.85; &.is-active { opacity: 1; } }
+  &__slot { fill: transparent; cursor: pointer; outline: none;
+    &:focus-visible { stroke: var(--ds-text-high); stroke-width: 1; } }
+  &__axis { stroke: var(--ds-border); stroke-width: 1; }
+  &__tick { fill: var(--ds-text-low); font-size: 9px; font-variant-numeric: tabular-nums; }
+  // The label sits over the bars; a surface-coloured halo keeps it legible.
+  &__cap { line { stroke: var(--ds-warning); stroke-width: 1; }
+    text { fill: var(--ds-text-high); font-size: 9px; paint-order: stroke; stroke: var(--ds-surface); stroke-width: 3px; stroke-linejoin: round; } }
+  &__table { font-variant-numeric: tabular-nums; }
+}
