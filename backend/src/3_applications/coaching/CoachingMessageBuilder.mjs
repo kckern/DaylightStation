@@ -1,8 +1,22 @@
+import { headlineFor } from '#shared/contracts/health/budgetZone.mjs';
 /**
  * Builds deterministic HTML status blocks for coaching messages.
  * No LLM involved — pure computation and formatting.
  */
 export class CoachingMessageBuilder {
+
+  // What is left, in the Today bar's own words when the budget contract is
+  // present ("600 to floor (1300)", "782 left of 1791", "109 over 1791"); the
+  // legacy "top − food" when it is not.
+  static #calorieTail(calories, consumedCal) {
+    if (calories.zone) {
+      const h = headlineFor(calories);
+      if (h.value == null) return h.text;
+      const of = { incomplete: ` (${calories.goal_min})`, 'in-range': ` of ${calories.goal_max}`, over: ` ${calories.goal_max}` }[calories.zone] || '';
+      return `${h.value} ${h.text}${of}`;
+    }
+    return `${Math.max(0, Math.round(calories.goal_max - consumedCal))} left of ${calories.goal_max}`;
+  }
 
   /**
    * @param {{calories: {consumed, goal_min, goal_max}, protein: {consumed, goal}}} data
@@ -14,14 +28,15 @@ export class CoachingMessageBuilder {
     if (inProgress) {
       // A day still being eaten is a running total, never a verdict: no
       // percentage-of-goal, which reads as "25% — you're keeping it down".
-      const calLeft = Math.max(0, Math.round(calories.goal_max - consumedCal));
       const protLeft = Math.max(0, Math.round(protein.goal - consumedProt));
       return [
-        `\u{1F525} <b>${consumedCal} cal so far</b> \u{00B7} ${calLeft} left of ${calories.goal_max}`,
+        `\u{1F525} <b>${consumedCal} cal so far</b> \u{00B7} ${CoachingMessageBuilder.#calorieTail(calories, consumedCal)}`,
         `\u{1F4AA} <b>${consumedProt}g protein so far</b> \u{00B7} ${protLeft}g to go`,
       ].join('\n');
     }
-    const calPct = calories.goal_max > 0 ? Math.round((calories.consumed / calories.goal_max) * 100) : 0;
+    // With the budget, the percentage is NET of the plan's top — the same
+    // quantity the bar fills.
+    const calPct = calories.goal_max > 0 ? Math.round(((calories.net ?? calories.consumed) / calories.goal_max) * 100) : 0;
     const protPct = protein.goal > 0 ? Math.round((protein.consumed / protein.goal) * 100) : 0;
 
     return [

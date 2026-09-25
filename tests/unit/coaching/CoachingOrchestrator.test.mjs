@@ -246,7 +246,7 @@ describe('CoachingOrchestrator', () => {
     it('post-report goals and totals come from the budget: floor, top, counted food, zone', async () => {
       await withBudget(vi.fn().mockResolvedValue(budget())).sendPostReport({ userId: 'user_1', conversationId: 'telegram:123' });
       const [, text] = mockMessaging.sendMessage.mock.calls[0];
-      expect(text).toContain('<b>700 cal so far</b> · 1091 left of 1791');
+      expect(text).toContain('<b>700 cal so far</b> · 600 to floor (1300)');
       const snapshot = mockCommentary.generate.mock.calls[0][0];
       expect(snapshot.calories).toMatchObject({ consumed: 700, goal_min: 1300, goal_max: 1791, zone: 'incomplete', complete: false, remaining: 600 });
       expect(snapshot.logging.min_calories).toBe(1300);

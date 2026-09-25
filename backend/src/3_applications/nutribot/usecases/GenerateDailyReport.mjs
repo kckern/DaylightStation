@@ -10,6 +10,7 @@ import { NOOM_COLOR_EMOJI } from '#domains/nutrition/entities/formatters.mjs';
 import { prepareDailyReportPresentation } from '../DailyReportPresentation.mjs';
 import { withoutQuarantined, isQuarantined } from '#domains/nutrition/services/quarantine.mjs';
 import { buildReportCaption } from './reportCaption.mjs';
+import { isCountedRow } from '#shared/contracts/nutrition/countedRows.mjs';
 
 /**
  * Decide which date a `/report` should render.
@@ -246,8 +247,9 @@ export class GenerateDailyReport {
       // 4. Get items for the report
       const items = syncSnapshot?.items ?? await this.#nutriListStore.findByDate(userId, date);
 
-      // 5. Calculate totals
-      const totals = items.reduce(
+      // 5. Calculate totals — the COUNTED rows only (the budget's fold), so the
+      // caption's total and the report body agree.
+      const totals = items.filter(isCountedRow).reduce(
         (acc, item) => {
           acc.calories += item.calories || 0;
           acc.protein += item.protein || 0;

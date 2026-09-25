@@ -14,6 +14,24 @@ describe('CoachingMessageBuilder', () => {
       expect(html).toContain('52%');
     });
 
+    it('with the budget, quotes the bar\'s own remaining (net of exercise), never top − food', () => {
+      const inRange = CoachingMessageBuilder.buildPostReportBlock({
+        calories: { consumed: 1400, net: 1000, goal_min: 1200, goal_max: 1791, zone: 'in-range', remaining: 791 },
+        protein: { consumed: 60, goal: 120 }, inProgress: true,
+      });
+      expect(inRange).toContain('1400 cal so far</b> · 791 left of 1791'); // not 391
+      const toFloor = CoachingMessageBuilder.buildPostReportBlock({
+        calories: { consumed: 700, net: 700, goal_min: 1200, goal_max: 1791, zone: 'incomplete', remaining: 500 },
+        protein: { consumed: 40, goal: 120 }, inProgress: true,
+      });
+      expect(toFloor).toContain('· 500 to floor (1200)');
+      const closed = CoachingMessageBuilder.buildPostReportBlock({
+        calories: { consumed: 1400, net: 1000, goal_min: 1200, goal_max: 2000, zone: 'in-range', remaining: 1000 },
+        protein: { consumed: 60, goal: 120 },
+      });
+      expect(closed).toContain('(50%)'); // net 1000 of 2000
+    });
+
     it('handles zero consumed', () => {
       const html = CoachingMessageBuilder.buildPostReportBlock({
         calories: { consumed: 0, goal_min: 1200, goal_max: 1600 },

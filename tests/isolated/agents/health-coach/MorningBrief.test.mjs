@@ -600,6 +600,19 @@ describe('MorningBrief', () => {
     expect(gathered.complianceCtas[0].message).toMatch(/cold exposure/);
   });
 
+  it('gather: budget-range streaks skip today\'s partial row and under-logged days', async () => {
+    const brief = new MorningBrief();
+    const fsp = vi.fn(async () => ({ matches: [] }));
+    const day = (offset, over) => ({
+      date: new Date(Date.now() - offset * 86400000).toLocaleDateString('en-CA', { timeZone: 'America/Los_Angeles' }),
+      calories: 1500, protein: 150, net: 1500, range: { floor: 1200, top: 1791 }, complete: true, ...over,
+    });
+    // Two real low-protein days + this morning's partial row (protein 10) must NOT make a 3-day streak.
+    const history = { days: [day(3), day(2, { protein: 90 }), day(1, { protein: 90 }), day(0, { protein: 10, calories: 200, net: 200, complete: false })] };
+    await brief.gather({ tools: makeStandardTools({ history, findSimilarPeriod: fsp }), userId: 'u', memory: { serialize: () => '', get: () => null, set: () => {} }, logger: { warn() {}, info() {} } });
+    expect(fsp).not.toHaveBeenCalled();
+  });
+
   it('buildPrompt: the budget\'s `complete` decides whether yesterday was under-logged, against its floor', () => {
     const brief = new MorningBrief();
     const yesterday = new Date(Date.now() - 86400000).toLocaleDateString('en-CA', { timeZone: 'America/Los_Angeles' });
