@@ -2,8 +2,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
 import { AuditorConfig } from './AuditorConfig.jsx';
+import { cleanupPath as statusPath, useCleanup } from '../cleanup/CleanupQuestions.jsx';
 import { SettingsLog } from './SettingsLog.jsx';
-import { cleanupPath } from '../cleanup/CleanupQuestions.jsx';
+const cleanupPath = statusPath;
 import { resetApiResourceCache } from '../../../lib/hooks/useApiResource.js';
 
 const api = vi.fn();
@@ -13,10 +14,10 @@ const TRIGGERS = ['captures', 'reviews', 'stabilization', 'scaleReconcile', 'art
 const PERMISSIONS = ['naming', 'identification', 'mealPlacement', 'grouping', 'artwork', 'portion', 'nutrients', 'estimates', 'completeCaptures', 'questions'];
 const all = keys => Object.fromEntries(keys.map(key => [key, true]));
 let status;
-const spend = { data: { byModel: [{ model: 'gpt-4.1-mini', runs: 12, avgUsd: 0.0123, costUsd: 0.15 }] } };
+const spend = { data: { byModel: [{ model: 'gpt-4.1-mini', runs: 12, avgUsd: 0.0123, costUsd: 0.15 }, { model: 'gpt-4o', runs: 2, avgUsd: null, costUsd: 0 }] }, reload: vi.fn() };
 beforeEach(() => {
   resetApiResourceCache(); api.mockReset();
-  status = { version: 7, settings: { enabled: false, dryRun: true, telegram: false, model: 'gpt-4.1-mini', dailyCapUsd: 1, minGapMinutes: 15,
+  status = { version: 7, settingsVersion: 3, settings: { enabled: false, dryRun: true, telegram: false, model: 'gpt-4.1-mini', dailyCapUsd: 1, minGapMinutes: 15,
     triggers: all(TRIGGERS), permissions: all(PERMISSIONS) }, runs: [], questions: [], nextEligibleAt: null };
   api.mockImplementation(async (path, body, method) => {
     if (method) return {};
@@ -35,43 +36,104 @@ describe('Auditor configuration', () => {
     expect(automatic.checked).toBe(false);
     expect(screen.getByLabelText('Preview only — do not change food or send questions').checked).toBe(true);
     fireEvent.click(automatic);
-    await waitFor(() => patched({ expectedVersion: 7, enabled: true }));
+    await waitFor(() => patched({ expectedSettingsVersion: 3, enabled: true }));
     await waitFor(() => expect(res.reload).toHaveBeenCalled());
   });
   it('turns one permission off', async () => {
     mount();
     fireEvent.click(screen.getByRole('switch', { name: /^Nutrient values/ }));
-    await waitFor(() => patched({ expectedVersion: 7, permissions: { nutrients: false } }));
+    await waitFor(() => patched({ expectedSettingsVersion: 3, permissions: { nutrients: false } }));
     expect(screen.getByText('Change nutrient values')).toBeTruthy();
   });
   it('turns one trigger off', async () => {
     mount();
     fireEvent.click(screen.getByLabelText('Scale readings updated'));
-    await waitFor(() => patched({ expectedVersion: 7, triggers: { scaleReconcile: false } }));
+    await waitFor(() => patched({ expectedSettingsVersion: 3, triggers: { scaleReconcile: false } }));
   });
   it('sends a blank daily cap as no cap, on blur only', async () => {
     mount();
-    const cap = screen.getByLabelText('Daily cap ($)');
+    const cap = screen.getByLabelText('Daily cap');
     fireEvent.change(cap, { target: { value: '' } });
     expect(api).not.toHaveBeenCalledWith(`${cleanupPath}/settings`, expect.anything(), 'PATCH');
     fireEvent.blur(cap);
-    await waitFor(() => patched({ expectedVersion: 7, dailyCapUsd: null }));
+    await waitFor(() => patched({ expectedSettingsVersion: 3, dailyCapUsd: null }));
   });
   it('commits a new cap on Enter', async () => {
     mount();
-    const cap = screen.getByLabelText('Daily cap ($)');
+    const cap = screen.getByLabelText('Daily cap');
     fireEvent.change(cap, { target: { value: '2.5' } });
     fireEvent.keyDown(cap, { key: 'Enter' });
-    await waitFor(() => patched({ expectedVersion: 7, dailyCapUsd: 2.5 }));
+    await waitFor(() => patched({ expectedSettingsVersion: 3, dailyCapUsd: 2.5 }));
   });
   it('sets the minimum gap', async () => {
     mount();
     fireEvent.click(screen.getByLabelText('60 min'));
-    await waitFor(() => patched({ expectedVersion: 7, minGapMinutes: 60 }));
+    await waitFor(() => patched({ expectedSettingsVersion: 3, minGapMinutes: 60 }));
   });
-  it('shows cost per run next to each model', () => {
+  it('shows cost per run next to each model, or why there is none', async () => {
     mount();
     expect(screen.getByDisplayValue('gpt-4.1-mini · ≈ $0.012 / run')).toBeTruthy();
+    fireEvent.click(screen.getByDisplayValue('gpt-4.1-mini · ≈ $0.012 / run'));
+    expect(await screen.findByText('gpt-4o · cost unknown')).toBeTruthy();
+    expect(screen.getByText('gpt-4.1 · no runs yet')).toBeTruthy();
+    expect(screen.getByText('gpt-5.6-luna · no runs yet')).toBeTruthy();
+  });
+  it('adopts the PATCH answer, so a second quick change carries the new settings version', async () => {
+    api.mockImplementation(async (path, body, method) => {
+      if (method === 'PATCH') {
+        status = { ...status, version: status.version + 5, settingsVersion: status.settingsVersion + 5,
+          settings: { ...status.settings, permissions: { ...status.settings.permissions, ...body.permissions }, triggers: { ...status.settings.triggers, ...body.triggers } } };
+        return structuredClone(status);
+      }
+      if (path.endsWith('/settings/log')) return { entries: [] };
+      return structuredClone(status);
+    });
+    function Live() { return <AuditorConfig resource={useCleanup()} spend={spend} />; }
+    render(<MantineProvider><Live /></MantineProvider>);
+    fireEvent.click(await screen.findByRole('switch', { name: /^Nutrient values/ }));
+    await waitFor(() => patched({ expectedSettingsVersion: 3, permissions: { nutrients: false } }));
+    await waitFor(() => expect(screen.getByRole('switch', { name: /^Nutrient values/ }).disabled).toBe(false));
+    expect(screen.getByRole('switch', { name: /^Nutrient values/ }).checked).toBe(false);
+    fireEvent.click(screen.getByLabelText('Food edited'));
+    await waitFor(() => patched({ expectedSettingsVersion: 8, triggers: { edits: false } }));
+  });
+  it('shows the value being saved and disables every control while the save is in flight', async () => {
+    let finish;
+    api.mockImplementation((path, body, method) => (method ? new Promise(resolve => { finish = resolve; }) : Promise.resolve(structuredClone(status))));
+    mount();
+    fireEvent.click(screen.getByRole('switch', { name: /^Nutrient values/ }));
+    await waitFor(() => expect(screen.getByRole('switch', { name: /^Nutrient values/ }).disabled).toBe(true));
+    expect(screen.getByRole('switch', { name: /^Nutrient values/ }).checked).toBe(false);
+    expect(screen.getByLabelText('Automatic cleanup').disabled).toBe(true);
+    expect(screen.getByLabelText('Food edited').disabled).toBe(true);
+    fireEvent.click(screen.getByLabelText('Food edited'));
+    finish(structuredClone(status));
+    await waitFor(() => expect(screen.getByLabelText('Automatic cleanup').disabled).toBe(false));
+    expect(api.mock.calls.filter(([, , method]) => method === 'PATCH').length).toBe(1);
+  });
+  it('refreshes the settings log and spend after a cap change', async () => {
+    const readLog = () => api.mock.calls.filter(([path]) => path.endsWith('/settings/log')).length;
+    render(<MantineProvider><AuditorConfig resource={resource()} spend={spend} /><SettingsLog /></MantineProvider>);
+    await screen.findByText('No settings changes yet.');
+    const before = readLog();
+    const cap = screen.getByLabelText('Daily cap');
+    fireEvent.change(cap, { target: { value: '4' } });
+    fireEvent.blur(cap);
+    await waitFor(() => patched({ expectedSettingsVersion: 3, dailyCapUsd: 4 }));
+    await waitFor(() => expect(readLog()).toBe(before + 1));
+    expect(spend.reload).toHaveBeenCalled();
+  });
+  it('puts the cap back when saving it fails', async () => {
+    api.mockImplementation(async (path, body, method) => {
+      if (method) throw Object.assign(new Error('HTTP 400: Bad Request - {"error":"Invalid daily cap"}'), { status: 400 });
+      return structuredClone(status);
+    });
+    mount();
+    const cap = screen.getByLabelText('Daily cap');
+    fireEvent.change(cap, { target: { value: '3' } });
+    fireEvent.blur(cap);
+    await screen.findByText('Invalid daily cap');
+    expect(cap.value).toBe('$1');
   });
   it('says settings changed and reloads on a version conflict', async () => {
     api.mockImplementation(async (path, body, method) => {
@@ -89,7 +151,7 @@ describe('Auditor configuration', () => {
       return structuredClone(status);
     });
     mount();
-    const cap = screen.getByLabelText('Daily cap ($)');
+    const cap = screen.getByLabelText('Daily cap');
     fireEvent.change(cap, { target: { value: '3' } });
     fireEvent.blur(cap);
     expect(await screen.findByText('Invalid daily cap')).toBeTruthy();
@@ -114,7 +176,7 @@ describe('Auditor settings log', () => {
   it('renders changes in plain words, collapsed after ten', async () => {
     api.mockImplementation(async () => ({ entries }));
     mountLog();
-    expect(await screen.findByText(/^Model: gpt-4\.1-mini → gpt-4o · Sep 25/)).toBeTruthy();
+    expect(await screen.findByText(/^Model: gpt-4\.1-mini → gpt-4o · \S/)).toBeTruthy();
     expect(screen.getByText(/^Nutrient values permission: On → Off/)).toBeTruthy();
     expect(screen.getByText(/^Scale readings updated trigger: On → Off/)).toBeTruthy();
     expect(screen.getByText(/^Daily cap: \$1\.00 → No cap/)).toBeTruthy();

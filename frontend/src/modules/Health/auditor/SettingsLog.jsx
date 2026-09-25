@@ -3,7 +3,7 @@ import { Button, Stack, Text } from '@mantine/core';
 import { SectionCard, LoadingState, ErrorState } from '../../../lib/ui';
 import { useApiResource } from '../../../lib/hooks/useApiResource.js';
 import { cleanupPath } from '../cleanup/CleanupQuestions.jsx';
-import { formatUsd, permissionLabel, triggerLabel } from './auditorFormat.js';
+import { formatUsd, formatWhen, permissionLabel, triggerLabel } from './auditorFormat.js';
 
 export const settingsLogPath = `${cleanupPath}/settings/log`;
 const COLLAPSED = 10;
@@ -26,13 +26,7 @@ function valueText(field, value) {
   return value == null ? '—' : String(value);
 }
 
-function when(iso) {
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return '—';
-  return `${date.toLocaleDateString([], { month: 'short', day: 'numeric' })} ${date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
-}
-
-export const logLine = entry => `${fieldLabel(entry.field)}: ${valueText(entry.field, entry.from)} → ${valueText(entry.field, entry.to)} · ${when(entry.at)}${entry.actor && entry.actor !== 'user' ? ` · by ${entry.actor}` : ''}`;
+export const logLine = entry => `${fieldLabel(entry.field)}: ${valueText(entry.field, entry.from)} → ${valueText(entry.field, entry.to)} · ${formatWhen(entry.at)}${entry.actor && entry.actor !== 'user' ? ` · by ${entry.actor}` : ''}`;
 
 /** Who changed which auditor setting, newest first; the first ten shown until "Show all". */
 export function SettingsLog() {

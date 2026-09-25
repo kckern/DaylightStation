@@ -26,7 +26,7 @@ export function AuditorPage() {
   return <Stack gap="md" className="health-auditor">
     <AuditorHeader resource={resource} spend={spend} />
     <RunTimeline onOpen={open} />
-    <SpendPanel spend={spend} />
+    <SpendPanel spend={spend} capUsd={resource.data ? (resource.data.settings?.dailyCapUsd ?? null) : undefined} />
     <AuditorConfig resource={resource} spend={spend} />
     <SettingsLog />
     <CleanupHistory resource={resource} />

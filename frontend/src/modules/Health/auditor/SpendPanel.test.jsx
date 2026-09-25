@@ -21,19 +21,53 @@ describe('Auditor spend panel', () => {
     expect(screen.getByText(/Last 30 days: \$1\.06 over 21 runs\. Highest day: .*\$0\.34/)).toBeTruthy();
   });
   it('draws the daily cap line only when there is a cap', () => {
-    const { unmount } = mount(spend);
-    expect(document.querySelector('.health-auditor-spend__cap')).toBeTruthy();
-    expect(screen.getByText('Cap $1.00')).toBeTruthy();
+    const { unmount } = mount({ ...spend, capUsd: 0.3 });
+    expect(document.querySelector('.health-auditor-spend__cap line')).toBeTruthy();
+    expect(screen.getByText('Cap $0.30')).toBeTruthy();
     unmount();
     mount({ ...spend, capUsd: null });
     expect(document.querySelector('.health-auditor-spend__cap')).toBeNull();
   });
-  it('reads out a day on focus', () => {
+  it('is one focusable chart; arrow keys, Home and End move the readout', () => {
     mount(spend);
-    const slots = screen.getAllByRole('button', { name: /runs/ });
-    expect(slots.length).toBe(30);
-    fireEvent.focus(slots[29]);
-    expect(screen.getByRole('status').textContent).toMatch(/\$0\.34 · 3 runs · 2 changed/);
+    const chart = screen.getByRole('img', { name: /Daily auditor cost/ });
+    expect(chart.getAttribute('tabindex')).toBe('0');
+    expect(document.querySelectorAll('.health-auditor-spend__slot[role], .health-auditor-spend__slot[tabindex], .health-auditor-spend__slot[aria-label]').length).toBe(0);
+    const readout = screen.getByRole('status');
+    fireEvent.focus(chart);
+    expect(readout.textContent).toMatch(/\$0\.34 · 3 runs · 2 changed/);
+    fireEvent.keyDown(chart, { key: 'ArrowLeft' });
+    expect(readout.textContent).toMatch(/\$0\.00 · 0 runs/);
+    fireEvent.keyDown(chart, { key: 'Home' });
+    expect(readout.textContent).toMatch(/\$0\.12 · 3 runs/);
+    fireEvent.keyDown(chart, { key: 'ArrowLeft' });
+    expect(readout.textContent).toMatch(/\$0\.12 · 3 runs/);
+    fireEvent.keyDown(chart, { key: 'End' });
+    expect(readout.textContent).toMatch(/\$0\.34/);
+  });
+  it('selects a day on tap', () => {
+    mount(spend);
+    fireEvent.click(document.querySelectorAll('.health-auditor-spend__slot')[5]);
+    expect(screen.getByRole('status').textContent).toMatch(/\$0\.12 · 3 runs/);
+  });
+  it('marks a cap far above the busiest day at the top edge instead of flattening the bars', () => {
+    mount({ ...spend, capUsd: 20 });
+    expect(document.querySelector('.health-auditor-spend__cap line')).toBeNull();
+    expect(screen.getByText('Cap $20.00 ↑')).toBeTruthy();
+    // The busiest day's bar still reaches 80% of the plot height (1.25× headroom).
+    const tallest = [...document.querySelectorAll('.health-auditor-spend__bar')].map(bar => Number(/V([\d.]+)/.exec(bar.getAttribute('d'))[1]));
+    expect(Math.min(...tallest)).toBeLessThan(40);
+  });
+  it('prefers the cap from the status poll over the spend summary', () => {
+    render(<MantineProvider><SpendPanel spend={{ data: spend }} capUsd={null} /></MantineProvider>);
+    expect(document.querySelector('.health-auditor-spend__cap')).toBeNull();
+  });
+  it('reads a day with only unpriced runs as cost unknown, with no second $0 tick', () => {
+    const unpriced = days.map(day => ({ ...day, costUsd: 0 }));
+    mount({ ...spend, days: unpriced, capUsd: null });
+    expect([...document.querySelectorAll('.health-auditor-spend__tick')].map(tick => tick.textContent).filter(text => text.startsWith('$'))).toEqual(['$0']);
+    fireEvent.focus(screen.getByRole('img', { name: /Daily auditor cost/ }));
+    expect(screen.getByRole('status').textContent).toMatch(/cost unknown · 3 runs/);
   });
   it('lists cost per run by trigger and by model', () => {
     mount(spend);

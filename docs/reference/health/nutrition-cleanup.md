@@ -26,8 +26,10 @@ page (`/health/auditor`, `modules/Health/auditor/`), top to bottom:
   Telegram, Run now; model (with the observed cost per run); daily cap (blank =
   no cap, saved on blur/Enter); minimum gap (Off/15/30/60 min); which triggers
   start a run; what it may change (the ten permissions). Each control is its own
-  `PATCH /settings` with the status `expectedVersion`; a 409 reads "Settings
-  changed. Reload first." and reloads.
+  `PATCH /settings` with the status `settingsVersion` as
+  `expectedSettingsVersion`, and the page adopts the status the PATCH returns,
+  so the next edit carries the new version. A 409 reads "Settings changed.
+  Reload first." and reloads.
 - **Settings changes** (`SettingsLog.jsx`) — `GET /settings/log`, newest first,
   in plain words, ten until "Show all".
 - **Cleanup runs** and **Repair history** — recent scans, and every repair with
@@ -309,9 +311,9 @@ not add a new public authentication mechanism.
 
 | Method/path | Contract |
 |---|---|
-| `GET /` | Settings, active questions, recent scan summaries |
+| `GET /` | Settings, `version` (moves on every state write), `settingsVersion` (moves only on a settings change), active questions, recent scan summaries |
 | `GET /history?offset=0` | Paginated committed and pending repair receipts |
-| `PATCH /settings` | `expectedVersion` and boolean `enabled`, `dryRun`, `telegram` |
+| `PATCH /settings` | `expectedSettingsVersion` (required; 409 when stale, 400 when missing) plus any of `enabled`, `dryRun`, `telegram`, `model`, `dailyCapUsd` (0–50 or null), `minGapMinutes` (0/15/30/60), `triggers`, `permissions`; returns the new status |
 | `POST /run` | Explicit one-off scan using the current preview setting; 202/runId |
 | `POST /questions/:id/answer` | `expectedVersion`, `operationId`, one of `choiceId`, `text`, `dismiss` |
 | `POST /undo/:id` | Explicit Undo with `operationId`; conflict-safe and idempotent |

@@ -26,7 +26,8 @@ export function AuditorHeader({ resource, spend, now = new Date() }) {
     : nextEligibleAt && Date.parse(nextEligibleAt) > now.getTime() ? formatWhen(nextEligibleAt, now) : 'now';
   const data = spend.data;
   const today = spentToday(data);
-  const cap = data?.capUsd ?? settings.dailyCapUsd ?? null;
+  // The cap comes from the status poll, which a settings save updates at once; spend may lag a moment.
+  const cap = settings.dailyCapUsd ?? null;
   const ledger = Number.isFinite(data?.ledgerTodayUsd);
   return <SectionCard title="Nutrition auditor" actions={<Group gap="xs">
     <Badge variant={state === 'On' ? 'filled' : 'light'} color={state === 'Off' ? 'gray' : undefined}>{state}</Badge>
