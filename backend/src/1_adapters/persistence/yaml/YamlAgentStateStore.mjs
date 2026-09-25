@@ -1,4 +1,4 @@
-import { loadYaml, saveYamlToPathAtomic } from '#system/utils/FileIO.mjs';
+import { loadYamlCached, saveYamlToPathAtomic } from '#system/utils/FileIO.mjs';
 import { IAgentStateStore } from '#apps/agents/ports/IAgentStateStore.mjs';
 
 /** Per-owner durable dispatch and interaction records. Updates are synchronous
@@ -15,7 +15,9 @@ export class YamlAgentStateStore extends IAgentStateStore {
     return this.dataService.user.resolveDir('agents/' + this.namespace, userId);
   }
   load(userId) {
-    return loadYaml(this.path(userId)) || { version: 0, settings: { enabled: false, dryRun: true, telegram: false }, runs: {}, questions: {} };
+    // Cached parse: the cleanup tick reads this ~1.9 MB file several times
+    // every 30 s and writes it rarely. Returns a clone, safe for update().
+    return loadYamlCached(this.path(userId)) || { version: 0, settings: { enabled: false, dryRun: true, telegram: false }, runs: {}, questions: {} };
   }
   update(userId, change) {
     const state = this.load(userId);
