@@ -87,7 +87,12 @@ export class EndOfDayReport extends Assignment {
     // Completeness is the budget's call — the floor was reached or the day was
     // declared done/fasted. The clock NEVER completes a day: an under-logged
     // evening is missing data, not a deficit. The hour only sets the tone.
-    const logComplete = gathered.todayNutrition?.complete === true;
+    // Without a budget answer (the tool failed), fall back to the floor rule.
+    const reported = gathered.todayNutrition?.complete;
+    const fallbackCals = gathered.todayNutrition?.calories ?? gathered.todayNutrition?.total_calories ?? null;
+    const logComplete = typeof reported === 'boolean'
+      ? reported
+      : !!gathered.todayClosed || (fallbackCals !== null && fallbackCals >= rangeOf(gathered.todayNutrition, gathered.goals).floor);
     const lateEvening = localHour(tz, now) >= 20;
     const sections = [`## Date: ${today}\n## Current Local Time: ${now.toLocaleString('en-US', { timeZone: tz, hour: 'numeric', minute: '2-digit', hour12: true })}\n## Logging Complete: ${logComplete}`];
 

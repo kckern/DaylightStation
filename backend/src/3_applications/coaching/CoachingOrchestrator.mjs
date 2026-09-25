@@ -108,7 +108,7 @@ export class CoachingOrchestrator {
       const fastedMeals = fastedMealsOf(closures[date]);
       const calories = {
         consumed: dayTotals.calories, goal_min: goals.calories_min, goal_max: goals.calories_max || goals.calories,
-        ...(budget?.zone ? { zone: budget.zone, complete: budget.complete, remaining: budget.remaining } : {}),
+        ...(budget?.zone ? { zone: budget.zone, complete: budget.complete, remaining: budget.remaining, net: budget.net } : {}),
         ...(fastedMeals.length ? { fasted_meals: fastedMeals } : {}),
       };
       const protein = { consumed: dayTotals.protein, goal: goals.protein };
@@ -260,8 +260,11 @@ export class CoachingOrchestrator {
         activity, budgetImpact,
         todayCalories: {
           consumed: todayTotals.calories, goal_max: goals.calories_max || goals.calories,
-          ...(budget?.zone ? { zone: budget.zone, complete: budget.complete, remaining: budget.remaining } : {}),
+          ...(budget?.zone ? { zone: budget.zone, complete: budget.complete, remaining: budget.remaining, net: budget.net } : {}),
         },
+        // The budget's `remaining` already nets every synced workout; the
+        // model must not add this burn on top of it a second time.
+        ...(budget?.zone ? { budgetImpactNote: 'today_calories.remaining already counts synced workouts (this one included once synced); budget_impact explains the change, do not add it again' } : {}),
         todayStatus: closureStatus(closures[today]) || 'in_progress',
         recentCoaching,
       });

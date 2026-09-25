@@ -34,7 +34,8 @@ export function buildPostReportSnapshot({ date, timeOfDay, calories, protein, it
     logging: loggingContext(minCalories),
     calories: {
       consumed: calories.consumed, goal_min: calories.goal_min, goal_max: calories.goal_max,
-      pct: calories.goal_max > 0 ? Math.round((calories.consumed / calories.goal_max) * 100) : 0,
+      // With the budget the percentage is NET of the plan's top, as the bar fills.
+      pct: calories.goal_max > 0 ? Math.round(((calories.net ?? calories.consumed) / calories.goal_max) * 100) : 0,
       // From the budget contract when available: the zone the Today bar shows,
       // whether the log is trustworthy yet, and the headline's number.
       ...(calories.zone ? { zone: calories.zone, complete: calories.complete, remaining: calories.remaining } : {}),
@@ -120,12 +121,13 @@ function loggingContext(minCalories) {
  * @param {{consumed: number, goal_max: number}} opts.todayCalories
  * @param {Array} opts.recentCoaching
  */
-export function buildExerciseReactionSnapshot({ activity, budgetImpact, todayCalories, todayStatus = 'in_progress', recentCoaching }) {
+export function buildExerciseReactionSnapshot({ activity, budgetImpact, todayCalories, todayStatus = 'in_progress', recentCoaching, budgetImpactNote = null }) {
   return {
     type: 'exercise-reaction',
     today_status: todayStatus,
     activity,
     budget_impact: budgetImpact,
+    ...(budgetImpactNote ? { budget_impact_note: budgetImpactNote } : {}),
     today_calories: todayCalories,
     recent_coaching: recentCoaching || [],
   };

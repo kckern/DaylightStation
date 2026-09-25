@@ -528,6 +528,17 @@ export class MorningBrief extends Assignment {
         ? nutritionHistory
         : [];
     if (days.length === 0) return null;
+    return this.#streakQuery({ tools, userId, days, weight, goals, logger });
+  }
+
+  // Streaks and the signature read JUDGED days only: finished (before today —
+  // this morning's partial row would zero a surplus streak and fake a protein
+  // shortfall) and, for budget rows, complete (an under-logged day is missing
+  // data, not a light one).
+  async #streakQuery({ tools, userId, days: allDays, weight, goals, logger }) {
+    const todayDate = localDate(0);
+    const days = allDays.filter(d => (d?.range ? d.date < todayDate && d.complete : true));
+    if (days.length === 0) return null;
 
     const calMax = goals?.goals?.nutrition?.calories_max;
     const proteinMin = goals?.goals?.nutrition?.protein_min;

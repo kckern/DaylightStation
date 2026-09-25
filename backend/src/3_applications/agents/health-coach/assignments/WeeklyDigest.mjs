@@ -3,7 +3,7 @@
 import { Assignment } from '../../framework/Assignment.mjs';
 import { OutputValidator } from '../../framework/OutputValidator.mjs';
 import { coachingMessageSchema } from '../schemas/coachingMessage.mjs';
-import { goalsWithRange } from './budgetContext.mjs';
+import { goalsWithRange, localDate } from './budgetContext.mjs';
 
 /**
  * WeeklyDigest - Scheduled assignment that sends a weekly nutrition and health trend summary.
@@ -103,14 +103,19 @@ export class WeeklyDigest extends Assignment {
     const budgetRows = days.some(d => d?.range);
     const trusted = budgetRows ? days.filter(d => d?.range && d.complete) : days;
     const calMax = budgetRows ? avg(trusted.map(d => d.range.top)) : goals?.goals?.nutrition?.calories_max;
-    const numericCalories = trusted.map(d => (budgetRows ? d?.net : d?.calories)).filter(v => typeof v === 'number');
+    // Surplus is judged on NET (as the bar judges it); the similar-period
+    // signature keeps FOOD calories, the dimension SimilarPeriodFinder and the
+    // morning brief use.
+    const judgedCalories = trusted.map(d => (budgetRows ? d?.net : d?.calories)).filter(v => typeof v === 'number');
+    const numericCalories = trusted.map(d => d?.calories).filter(v => typeof v === 'number');
     const numericProtein = trusted.map(d => d?.protein).filter(v => typeof v === 'number');
     const trackedDays = trusted.filter(d => typeof d?.calories === 'number' && d.calories > 0).length;
 
+    const judgedAvg = avg(judgedCalories);
     const calorieAvg = avg(numericCalories);
     const proteinAvg = avg(numericProtein);
 
-    const calorieSurplus = typeof calMax === 'number' && calorieAvg !== null && calorieAvg > calMax;
+    const calorieSurplus = typeof calMax === 'number' && judgedAvg !== null && judgedAvg > calMax;
     const proteinShortfall = typeof proteinMin === 'number' && proteinAvg !== null && proteinAvg < proteinMin;
 
     if (!calorieSurplus && !proteinShortfall) return null;
@@ -171,7 +176,7 @@ export class WeeklyDigest extends Assignment {
    * The LLM uses this to produce the structured coaching message JSON.
    */
   buildPrompt(gathered, memory) {
-    const today = new Date().toISOString().split('T')[0];
+    const today = localDate(0);
     const sections = [`## Week ending: ${today}`];
 
     sections.push(`\n## Reconciliation Summary (12-week / 84-day window)\nNote: implied_intake and tracking_accuracy are ONLY present on mature days (14+ days old). Recent days only have tracked_calories and exercise_calories. This is by design.\n${JSON.stringify(gathered.reconciliation || {}, null, 2)}`);

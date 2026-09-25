@@ -69,6 +69,13 @@ describe('LogTable', () => {
       expect(screen.getByText('Dinner').closest('section').textContent).not.toContain('Fasted');
       expect(screen.queryByRole('button', { name: 'Lunch skip options' })).toBeNull();
     });
+
+    it('a skipped meal that later gets food keeps its undo and says it is still marked', () => {
+      render(<LogTable byBucket={new Map([...emptyMeals, ['morning', [{ uuid: 'r1', name: 'Toast', calories: 90, mealTime: 'morning' }]]])}
+        date="2026-09-24" sessions={[]} onRowTap={() => {}} fastedMeals={['morning']} onMealFastChanged={() => {}} />, { wrapper });
+      expect(screen.getByText('marked skipped')).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Breakfast skip options' })).toBeTruthy();
+    });
   });
 
   describe('permanent chrome (Task 3.2)', () => {
