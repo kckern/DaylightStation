@@ -519,3 +519,4 @@ The corollary bit twice in this sweep: `feat/teacher-workspace-ia` and `feature/
 | 2026-09-24 | fix/workout-merge-start-time | b657378757 | mergeWorkouts pairs Strava/FitnessSyncer by start time |
 | 2026-09-24 | fix/transcribe-retry-5xx | 1e1b577bbb | Retry HTTP 5xx/429 from raw axios (Whisper 502) |
 | 2026-09-24 | feat/nutribot-retry-restore | c86009299e | Nutribot voice retry, restore after Undo, voice follows open flow |
+| 2026-09-24 | fix/quota-no-retry | 420612d5e | Never retry an exhausted-balance 429 (regression from 1e1b577bb) |
