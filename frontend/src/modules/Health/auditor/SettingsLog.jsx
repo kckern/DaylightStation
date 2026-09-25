@@ -3,7 +3,7 @@ import { Button, Stack, Text } from '@mantine/core';
 import { SectionCard, LoadingState, ErrorState } from '../../../lib/ui';
 import { useApiResource } from '../../../lib/hooks/useApiResource.js';
 import { cleanupPath } from '../cleanup/CleanupQuestions.jsx';
-import { formatUsd, formatWhen, permissionLabel, triggerLabel } from './auditorFormat.js';
+import { formatUsd, formatWhen, gapLabel, permissionLabel, triggerLabel } from './auditorFormat.js';
 
 export const settingsLogPath = `${cleanupPath}/settings/log`;
 const COLLAPSED = 10;
@@ -22,7 +22,7 @@ function fieldLabel(field) {
 function valueText(field, value) {
   if (typeof value === 'boolean') return value ? 'On' : 'Off';
   if (field === 'dailyCapUsd') return value == null ? 'No cap' : formatUsd(value, 2);
-  if (field === 'minGapMinutes') return value ? `${value} min` : 'Off';
+  if (field === 'minGapMinutes') return gapLabel(value);
   return value == null ? '—' : String(value);
 }
 

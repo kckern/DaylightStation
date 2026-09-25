@@ -1,7 +1,7 @@
 import { sha256Text } from '#system/utils/sha256.mjs';
 import { cleanupDates, entryKey } from '#domains/nutrition/services/cleanupPolicy.mjs';
 import { AgentInteractions } from '#apps/agents/framework/AgentInteractions.mjs';
-import { effectiveSettings, validateSettingsChange, blockedKinds, isPlain } from '#domains/nutrition/services/auditorPolicy.mjs';
+import { effectiveSettings, validateSettingsChange, blockedKinds, isPlain, AUDITOR_MODELS, TRIGGER_KINDS, PERMISSION_KINDS, MIN_GAP_CHOICES, MAX_DAILY_CAP_USD } from '#domains/nutrition/services/auditorPolicy.mjs';
 import { snapshotDigest, classifyChange, onlyOwnChanges } from '#domains/nutrition/services/auditTrigger.mjs';
 
 const fail = (message, status = 409) => { throw Object.assign(new Error(message), { status }); };
@@ -10,6 +10,10 @@ const NESTED = ['triggers', 'permissions'];
 const SETTINGS_LOG_LIMIT = 500;
 const RUN_HISTORY_LIMIT = 50;
 const DAY_MS = 24 * 60 * 60 * 1000;
+// The choices the settings accept, sent with the status so the page draws its
+// controls from the same lists the validator checks against.
+const settingsOptions = () => ({ models: [...AUDITOR_MODELS], triggers: [...TRIGGER_KINDS], permissions: [...PERMISSION_KINDS],
+  minGapMinutes: [...MIN_GAP_CHOICES], maxDailyCapUsd: MAX_DAILY_CAP_USD });
 const iso = ms => new Date(ms).toISOString();
 const round = usd => Math.round(usd * 1e6) / 1e6;
 const addDays = (date, n) => new Date(Date.parse(date + 'T12:00:00Z') + n * DAY_MS).toISOString().slice(0, 10);
@@ -127,7 +131,8 @@ export class NutritionCleanup {
     const state = this.store.load(userId);
     const settings = effectiveSettings(state.settings);
     // `settingsVersion` fences settings edits; `version` moves on every state write (runs, questions).
-    return { version: state.version, settingsVersion: state.settingsVersion ?? 0, settings, nextEligibleAt: state.lastAutoRunAt ? iso(state.lastAutoRunAt + settings.minGapMinutes * 60000) : null,
+    return { version: state.version, settingsVersion: state.settingsVersion ?? 0, settings,
+      options: settingsOptions(), nextEligibleAt: state.lastAutoRunAt ? iso(state.lastAutoRunAt + settings.minGapMinutes * 60000) : null,
       questions: Object.values(state.questions).filter(q => ['open', 'answering'].includes(q.status)).map(({ snapshot, evidence, prepared, ...question }) => question),
       runs: Object.values(state.runs).reverse().slice(0, 20).map(({ snapshot, result, ...run }) => run) };
   }

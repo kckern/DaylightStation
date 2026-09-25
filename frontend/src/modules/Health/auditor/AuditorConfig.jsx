@@ -8,11 +8,10 @@ import { refreshHealthResources } from '../healthResources.js';
 import { cleanupPath } from '../cleanup/CleanupQuestions.jsx';
 import { settingsLogPath } from './SettingsLog.jsx';
 import {
-  AUDITOR_MODELS, PERMISSION_DESCRIPTIONS, SWITCHABLE_TRIGGERS, formatUsd, permissionLabel, serverMessage, triggerLabel,
+  formatUsd, gapLabel, permissionDescription, permissionLabel, serverMessage, triggerLabel,
 } from './auditorFormat.js';
 
-const GAP_OPTIONS = [{ label: 'Off', value: '0' }, { label: '15 min', value: '15' }, { label: '30 min', value: '30' }, { label: '60 min', value: '60' }];
-const MAX_CAP = 50;
+const list = value => (Array.isArray(value) ? value : []);
 const capText = cap => (cap == null ? '' : cap);
 
 /** Settings with one change applied (triggers and permissions merge per kind). */
@@ -24,16 +23,19 @@ function withChange(settings, change) {
   return next;
 }
 
-/** The cap as typed: blank is no cap (null), a number 0–50 is a cap, anything else is not valid (undefined). */
-function parseCap(value) {
+/** The cap as typed: blank is no cap (null), a number 0–max is a cap, anything else is not valid (undefined). */
+function parseCap(value, max) {
   if (value === '' || value == null) return null;
   const n = typeof value === 'number' ? value : Number(value);
-  return Number.isFinite(n) && n >= 0 && n <= MAX_CAP ? Math.round(n * 100) / 100 : undefined;
+  return Number.isFinite(n) && n >= 0 && n <= max ? Math.round(n * 100) / 100 : undefined;
 }
 
 /**
  * Every auditor setting, each saved on its own as a versioned PATCH. `resource`
  * is the cleanup status poll, `spend` the spend summary (for cost per model).
+ * Which models, triggers, permissions and gaps exist comes from the status's
+ * `options` (the lists the server validates against); labels come from
+ * auditorFormat, and a kind it has no label for shows its key.
  */
 export function AuditorConfig({ resource, spend }) {
   const logger = useMemo(() => getLogger().child({ component: 'health-auditor' }), []);
@@ -82,9 +84,11 @@ export function AuditorConfig({ resource, spend }) {
       logger.warn('health-auditor.run-now.failed', { error: err.message });
     } finally { setBusy(null); resource.reload(); }
   };
+  const options = resource.data?.options || {};
+  const maxCap = Number.isFinite(options.maxDailyCapUsd) ? options.maxDailyCapUsd : 0;
   const commitCap = () => {
-    const next = parseCap(cap);
-    if (next === undefined) { setError(`Daily cap must be between $0 and $${MAX_CAP}.`); setCap(capText(saved.dailyCapUsd)); return; }
+    const next = parseCap(cap, maxCap);
+    if (next === undefined) { setError(`Daily cap must be between $0 and $${maxCap}.`); setCap(capText(saved.dailyCapUsd)); return; }
     if (next === (saved.dailyCapUsd ?? null)) return;
     save('dailyCapUsd', { dailyCapUsd: next });
   };
@@ -93,7 +97,8 @@ export function AuditorConfig({ resource, spend }) {
   const disabled = !!busy;
   const running = (resource.data.runs || []).some(run => ['queued', 'running', 'retry'].includes(run.status));
   const byModel = Object.fromEntries((spend?.data?.byModel || []).map(row => [row.model, row]));
-  const models = AUDITOR_MODELS.map(model => ({
+  const modelChoices = list(options.models).includes(settings.model) || !settings.model ? list(options.models) : [...list(options.models), settings.model];
+  const models = modelChoices.map(model => ({
     value: model,
     label: `${model} · ${!byModel[model]?.runs ? 'no runs yet' : byModel[model].avgUsd == null ? 'cost unknown' : `≈ ${formatUsd(byModel[model].avgUsd, 3)} / run`}`,
   }));
@@ -112,25 +117,25 @@ export function AuditorConfig({ resource, spend }) {
       <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
         <Select label="Model" data={models} value={settings.model} allowDeselect={false} disabled={disabled}
           onChange={value => { if (value && value !== settings.model) save('model', { model: value }); }} />
-        <NumberInput label="Daily cap" description="Blank for no cap" value={cap} min={0} max={MAX_CAP} clampBehavior="none" decimalScale={2} step={0.25}
+        <NumberInput label="Daily cap" description="Blank for no cap" value={cap} min={0} max={maxCap} clampBehavior="none" decimalScale={2} step={0.25}
           prefix="$" disabled={disabled} onChange={setCap} onBlur={commitCap}
           onKeyDown={event => { if (event.key === 'Enter') commitCap(); }} />
       </SimpleGrid>
       <Stack gap={4}>
         <Text size="sm" fw={500}>Minimum gap between automatic runs</Text>
-        <SegmentedControl data={GAP_OPTIONS} value={String(settings.minGapMinutes ?? 0)} disabled={disabled} fullWidth
+        <SegmentedControl data={list(options.minGapMinutes).map(minutes => ({ label: gapLabel(minutes), value: String(minutes) }))} value={String(settings.minGapMinutes ?? 0)} disabled={disabled} fullWidth
           onChange={value => save('minGapMinutes', { minGapMinutes: Number(value) })} />
       </Stack>
 
       <Stack gap={6}>
         <Text size="sm" fw={500}>Run automatically when</Text>
-        {SWITCHABLE_TRIGGERS.map(kind => <Checkbox key={kind} label={triggerLabel(kind)} checked={settings.triggers?.[kind] !== false} disabled={disabled}
+        {list(options.triggers).map(kind => <Checkbox key={kind} label={triggerLabel(kind)} checked={settings.triggers?.[kind] !== false} disabled={disabled}
           onChange={event => save(`triggers.${kind}`, { triggers: { [kind]: event.currentTarget.checked } })} />)}
       </Stack>
 
       <Stack gap={6}>
         <Text size="sm" fw={500}>What it may change</Text>
-        {Object.keys(PERMISSION_DESCRIPTIONS).map(kind => <Switch key={kind} label={permissionLabel(kind)} description={PERMISSION_DESCRIPTIONS[kind]}
+        {list(options.permissions).map(kind => <Switch key={kind} label={permissionLabel(kind)} description={permissionDescription(kind)}
           checked={settings.permissions?.[kind] !== false} disabled={disabled}
           onChange={event => save(`permissions.${kind}`, { permissions: { [kind]: event.currentTarget.checked } })} />)}
       </Stack>
