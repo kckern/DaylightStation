@@ -110,14 +110,20 @@ Development scheduling is disabled unless explicitly enabled, and the app's glob
 Automatic runs pass three gates from the auditor settings (`auditorPolicy`):
 - **Trigger filter.** A per-concern snapshot digest (`auditTrigger.snapshotDigest`)
   classifies what changed (captures, reviews, stabilization, scale observations,
-  artwork, day rollover, edits; the daily sweep). A change whose kinds are all
-  switched off is marked checked and journaled once as `skipped: filtered`. A change
-  of bookkeeping only (versions, timestamps) is marked checked without a run.
+  artwork, day rollover, edits). A sweep adds `dailySweep` to whatever changed, so
+  switching the sweep off never absorbs a pending change. With no earlier digest
+  (first check after deploy) the change is `unclassified`, which cannot be switched
+  off. A change whose kinds are all switched off is marked checked and journaled
+  once as `skipped: filtered`. A change of bookkeeping only (versions, timestamps)
+  is marked checked without a run.
 - **Minimum gap** between automatic runs (`minGapMinutes`). Waiting changes keep
   accumulating; `status().nextEligibleAt` says when the next one may start.
-- **Daily spend cap** (`dailyCapUsd`, household day) summed from the run journal.
-  Over the cap, automatic runs stop and one `skipped: cap` row is written per day.
-  Manual runs still go and carry `overCap: true`.
+- **Daily spend cap** (`dailyCapUsd`, household day) summed from the AI usage
+  ledger's `nutrition-auditor` rows, so a turn billed before its run failed still
+  counts (the journal is the fallback without a ledger). Over the cap, automatic
+  runs stop, one `skipped: cap` row is written per day, and spend is not re-read
+  until the household day or the cap changes; pending changes and a due sweep wait
+  and run after that. Manual runs still go and carry `overCap: true`.
 
 A run fixes its model, permissions and trigger at queue time. After a run, the
 state it produced counts as checked when the only rows that moved are the ones it

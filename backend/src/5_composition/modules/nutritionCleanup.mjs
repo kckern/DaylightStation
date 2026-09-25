@@ -24,7 +24,7 @@ import { ArtworkRemediation } from '#apps/nutrition/ArtworkRemediation.mjs';
 import { NutritionAuditTriage } from '#apps/nutrition/NutritionAuditTriage.mjs';
 import { normalizeScaleNutribotConfig } from '#apps/nutribot/lib/scaleNutribotConfig.mjs';
 
-export function createNutritionCleanup({ dataService, configService, userIdentityService, nutribotServices, upcGateway, decisionGateway = null, agentOrchestrator, logger, usageRecorder = null, scheduled = false, server, journalSource = null }) {
+export function createNutritionCleanup({ dataService, configService, userIdentityService, nutribotServices, upcGateway, decisionGateway = null, agentOrchestrator, logger, usageRecorder = null, scheduled = false, server, journalSource = null, usageLedger = null }) {
   const clock = { now: () => Date.now() };
   const container = nutribotServices.nutribotContainer;
   const timezoneFor = userId => container.getConfig?.()?.getUserTimezone?.(userId) || 'America/Los_Angeles';
@@ -61,7 +61,10 @@ export function createNutritionCleanup({ dataService, configService, userIdentit
   // ledger uses), since prod and a dev machine share the Dropbox data tree.
   const journal = new JsonlAuditJournalStore({ dataService, source: journalSource, logger });
   const cleanup = new NutritionCleanup({ store, runs, auditor, repairs, items, foodLogs, clock, timezoneFor, logger, stabilization, triage,
-    journal, hash: sha256Text });
+    journal, hash: sha256Text,
+    // The spend cap reads billed agent turns from the AI usage ledger, so a
+    // run that failed after the model was paid for still counts.
+    spendSource: usageLedger ? ({ from, to }) => usageLedger.listCosts({ agentId: NutritionAuditor.id, from, to }) : null });
   cleanup.recovery = new NutritionCaptureRecovery({ review: container.getFoodLogReview(), items,
     observations: new YamlObservationStore({ dataService, logger }),
     scaleConfig: () => normalizeScaleNutribotConfig(configService.getHouseholdAppConfig?.(null, 'scales') || {}) });

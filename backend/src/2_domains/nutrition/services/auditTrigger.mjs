@@ -52,12 +52,14 @@ export function classifyChange(prev, next) {
   return kinds;
 }
 
-/** True when every row difference is one of `ownIds` and nothing else moved. */
+/**
+ * True when every row difference is one of `ownIds` and nothing else moved. A
+ * row that left the window is ignored, as classifyChange ignores it.
+ */
 export function onlyOwnChanges(prev, next, ownIds) {
   if (!prev || prev.dates !== next.dates || prev.observations !== next.observations) return false;
-  const keys = new Set([...Object.keys(prev.rows), ...Object.keys(next.rows)]);
-  for (const key of keys) {
-    if (JSON.stringify(prev.rows[key]) !== JSON.stringify(next.rows[key]) && !ownIds.has(key)) return false;
+  for (const [key, row] of Object.entries(next.rows)) {
+    if (JSON.stringify(prev.rows[key]) !== JSON.stringify(row) && !ownIds.has(key)) return false;
   }
   return true;
 }

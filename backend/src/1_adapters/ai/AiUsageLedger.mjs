@@ -11,7 +11,9 @@
  */
 
 import path from 'path';
-import { appendTextFile } from '#system/utils/FileIO.mjs';
+import { appendTextFile, listFiles, readTextFromPathAsync } from '#system/utils/FileIO.mjs';
+
+const MONTH_FILE = /^(\d{4})-(\d{2})(?:\.[\w.-]+)?\.jsonl$/;
 
 /**
  * @param {Object} config
@@ -53,6 +55,34 @@ export function createAiUsageLedger({ dir, source = null, logger = null }) {
           logger?.warn?.('ai.usage.ledger-write-failed', { file, error: error.message });
         });
       return tail;
+    },
+
+    /**
+     * One agent's recorded costs with `ts` in [from, to), from every writer's
+     * month files. Spend caps read this rather than their own records, so a
+     * turn that failed after it was billed still counts. Malformed lines skip.
+     * @returns {Promise<Array<{ts: string, costUsd: number}>>}
+     */
+    async listCosts({ agentId, from, to }) {
+      const fromMs = Date.parse(from);
+      const toMs = Date.parse(to);
+      if (!Number.isFinite(fromMs) || !Number.isFinite(toMs)) throw new Error('listCosts needs an ISO from and to');
+      const files = listFiles(dir).filter((name) => {
+        const m = MONTH_FILE.exec(name);
+        return m && Date.UTC(Number(m[1]), Number(m[2]) - 1, 1) < toMs && Date.UTC(Number(m[1]), Number(m[2]), 1) > fromMs;
+      });
+      const rows = [];
+      for (const name of files) {
+        for (const raw of (await readTextFromPathAsync(path.join(dir, name))).split('\n')) {
+          if (!raw.trim()) continue;
+          let row;
+          try { row = JSON.parse(raw); } catch { continue; }
+          const t = Date.parse(row?.ts);
+          if (row?.agentId !== agentId || !Number.isFinite(t) || t < fromMs || t >= toMs || !Number.isFinite(row.costUsd)) continue;
+          rows.push({ ts: row.ts, costUsd: row.costUsd });
+        }
+      }
+      return rows;
     },
   };
 }

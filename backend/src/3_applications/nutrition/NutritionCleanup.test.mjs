@@ -549,14 +549,74 @@ describe('auditor settings, permissions and history', () => {
 
 describe('auditor journal and run gates', () => {
   const noChanges = { summary: 'No changes', repairs: [], questions: [], evidence: [] };
-  const gated = async (settings = {}) => {
+  const gated = async (settings = {}, extra = {}) => {
     const f = await fixture(); let now = f.clock.now(); f.clock.now = () => now;
     f.store.update('alice', state => { state.settings = { enabled: true, dryRun: true, telegram: false, ...settings }; });
     const journal = new JsonlAuditJournalStore({ dataService: f.dataService, logger: f.logger });
     const start = vi.fn(async () => ({ status: 'success', result: noChanges }));
-    const cleanup = new NutritionCleanup({ ...f, runs: { register: vi.fn(), start }, hash: sha256Text, journal });
-    return { f, journal, start, cleanup, advance: ms => { now += ms; }, now: () => now };
+    const make = () => new NutritionCleanup({ ...f, runs: { register: vi.fn(), start }, hash: sha256Text, journal, ...extra });
+    return { f, journal, start, cleanup: make(), make, advance: ms => { now += ms; }, now: () => now, at: time => { now = Date.parse(time); } };
   };
+  const capture = async (f, date, label = 'Apple') => {
+    const log = createNutriLog({ userId: 'alice', meal: { date, time: 'morning' }, timezone: f.timezoneFor(), timestamp: new Date(f.clock.now()),
+      metadata: { source: 'voice' }, items: [{ id: label.toLowerCase().padEnd(10, '0').slice(0, 10), label, calories: 95, grams: 180, amount: 1, unit: 'each', icon: 'default', color: 'green', settled: false }] });
+    await f.foodLogs.save(log); await f.review.capture({ userId: 'alice', logUuid: log.id });
+  };
+  const latestRun = f => Object.values(f.store.load('alice').runs).sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+  it('a 03:00 sweep with the daily sweep off still audits a capture that landed just before it', async () => {
+    const { f, journal, start, cleanup, at } = await gated({ minGapMinutes: 0, triggers: { dailySweep: false } });
+    at('2026-09-05T09:00:00Z');
+    await cleanup.tick('alice'); await cleanup.settled('alice');
+    expect(start).toHaveBeenCalledTimes(1);
+    expect(latestRun(f).trigger).toEqual(['unclassified', 'dailySweep']);
+    at('2026-09-05T09:59:30Z'); await capture(f, '2026-09-05'); await cleanup.tick('alice');
+    at('2026-09-05T10:00:00Z'); await cleanup.tick('alice'); await cleanup.settled('alice');
+    expect(start).toHaveBeenCalledTimes(2);
+    expect(latestRun(f).trigger).toEqual(expect.arrayContaining(['captures', 'dailySweep']));
+    expect((await journal.list('alice')).filter(row => row.skipped)).toEqual([]);
+  });
+  it('a restart while a capture is debouncing still audits it with the daily sweep off', async () => {
+    const { f, start, cleanup, make, advance } = await gated({ minGapMinutes: 0, triggers: { dailySweep: false } });
+    await cleanup.tick('alice'); await cleanup.settled('alice');
+    advance(60000); await capture(f, '2026-09-04'); await cleanup.tick('alice');
+    const restarted = make();
+    advance(10000); await restarted.tick('alice'); await restarted.settled('alice');
+    expect(start).toHaveBeenCalledTimes(2);
+    expect(latestRun(f).trigger).toEqual(expect.arrayContaining(['captures', 'dailySweep']));
+  });
+  it('caps on ledger spend, reads it once while capped, and lifts when the cap is raised', async () => {
+    const spendSource = vi.fn(async () => [{ ts: '2026-09-04T18:00:00.000Z', costUsd: 1.5 }, { ts: 'garbage', costUsd: 9 }, { ts: '2026-09-03T18:00:00.000Z', costUsd: 9 }]);
+    const { f, journal, start, cleanup, advance } = await gated({ minGapMinutes: 0 }, { spendSource });
+    for (let i = 0; i < 10; i++) {
+      if (i === 3) await f.items.update('alice', 'fish000001', { name: 'Cod' });
+      await cleanup.tick('alice'); await cleanup.settled('alice'); advance(60000);
+    }
+    expect(start).not.toHaveBeenCalled();
+    expect(spendSource).toHaveBeenCalledTimes(1);
+    expect(f.logger.info.mock.calls.filter(([event]) => event === 'nutrition.cleanup.capped')).toHaveLength(1);
+    expect((await journal.list('alice')).filter(row => row.skipped)).toEqual([expect.objectContaining({ skipped: 'cap', spentUsd: 1.5, capUsd: 1 })]);
+    await cleanup.settings('alice', { expectedVersion: cleanup.status('alice').version, dailyCapUsd: 5 });
+    await cleanup.tick('alice'); await cleanup.settled('alice');
+    expect(start).toHaveBeenCalledTimes(1);
+  });
+  it('a capped sweep is retried once the household day turns over', async () => {
+    const spendSource = vi.fn(async () => [{ ts: '2026-09-04T18:00:00.000Z', costUsd: 1.5 }]);
+    const { f, start, cleanup, at } = await gated({ minGapMinutes: 0 }, { spendSource });
+    await cleanup.tick('alice'); await cleanup.settled('alice');
+    expect(start).not.toHaveBeenCalled();
+    expect(f.store.load('alice').lastSweepDay).toBeUndefined();
+    at('2026-09-05T11:00:00Z');
+    await cleanup.tick('alice'); await cleanup.settled('alice');
+    expect(start).toHaveBeenCalledTimes(1);
+    expect(latestRun(f).trigger).toContain('dailySweep');
+    expect(f.store.load('alice').lastSweepDay).toBe('2026-09-05');
+  });
+  it('never fails a request over an unreadable spend source', async () => {
+    const spendSource = vi.fn(async () => { throw new Error('ledger unreadable'); });
+    const { start, cleanup } = await gated({ minGapMinutes: 0 }, { spendSource });
+    await cleanup.tick('alice'); await cleanup.settled('alice');
+    expect(start).toHaveBeenCalledTimes(1);
+  });
   it('holds automatic runs to the minimum gap while changes accumulate', async () => {
     const { f, start, cleanup, advance, now } = await gated({ minGapMinutes: 15 });
     const t0 = now();
