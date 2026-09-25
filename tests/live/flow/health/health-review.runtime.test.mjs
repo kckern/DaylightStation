@@ -105,7 +105,7 @@ for (const width of [1440, 390]) test(`compact review food modal at ${width}px`,
 for (const width of [1440, 390]) test(`cleanup questions and settings at ${width}px`, async ({ page }, testInfo) => {
   await page.setViewportSize({ width, height: 1000 });
   const fixture = await installHealthFixtures(page, { items });
-  let state = { version: 1, settings: { enabled: false, dryRun: true, telegram: false }, runs: [], questions: [
+  let state = { version: 1, settingsVersion: 0, settings: { enabled: false, dryRun: true, telegram: false }, runs: [], nextEligibleAt: null, questions: [
     { id: 'q1', version: 1, status: 'open', question: 'Was the white fish cod?', entryNames: { fish: 'White Fish' },
       choices: [{ id: '0', label: 'Yes, cod', repair: { updates: [{ id: 'fish', changes: { name: 'Cod' } }], createGroups: [] } }] },
   ] };
@@ -115,7 +115,13 @@ for (const width of [1440, 390]) test(`cleanup questions and settings at ${width
     if (url.pathname.endsWith('/history')) return route.fulfill({ json: { records: [{ id: 'repair', at: '2026-09-04T19:00:00Z', actor: 'nutrition-auditor', reason: 'Matched fish artwork',
       before: [{ uuid: 'fish', name: 'White Fish', icon: 'default' }], after: [{ uuid: 'fish', name: 'White Fish', icon: 'fish' }], evidence: [{ kind: 'icons' }] }], total: 1 } });
     if (url.pathname.endsWith('/answer')) { answer = route.request().postDataJSON(); state.questions = []; return route.fulfill({ json: { status: 'resolved' } }); }
-    if (url.pathname.endsWith('/settings')) { Object.assign(state.settings, route.request().postDataJSON()); state.version++; }
+    if (url.pathname.endsWith('/settings/log')) return route.fulfill({ json: { entries: [] } });
+    if (url.pathname.endsWith('/journal')) return route.fulfill({ json: { rows: [], total: 0 } });
+    if (url.pathname.endsWith('/spend')) return route.fulfill({ json: { days: [], today: 0, week: 0, month: 0, byTrigger: [], byModel: [], capUsd: null, cappedToday: false, ledgerTodayUsd: null } });
+    if (url.pathname.endsWith('/settings')) {
+      const { expectedSettingsVersion, ...change } = route.request().postDataJSON();
+      Object.assign(state.settings, change); state.version++; state.settingsVersion++;
+    }
     return route.fulfill({ json: state });
   });
   await page.goto('/health?date=' + date);
@@ -125,6 +131,8 @@ for (const width of [1440, 390]) test(`cleanup questions and settings at ${width
   expect(answer).toMatchObject({ choiceId: '0', expectedVersion: 1 });
   await page.getByRole('button', { name: 'Health settings', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Nutrition cleanup', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Open auditor', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Auditor settings', exact: true })).toBeVisible();
   await expect(page.getByLabel('Automatic cleanup', { exact: true })).not.toBeChecked();
   await expect(page.getByLabel('Preview only — do not change food or send questions', { exact: true })).toBeChecked();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
