@@ -934,7 +934,13 @@ $health-aside-gap: 1.5rem;
 .health-followups {
   margin-block: 0.15rem;
   > summary, &--empty { min-height: 44px; display: flex; align-items: center; font-size: 0.85rem; }
-  > summary { cursor: pointer; color: var(--ds-warning); font-weight: 600; }
+  > summary {
+    cursor: pointer; color: var(--ds-warning); font-weight: 600; gap: 0.4rem; list-style: none;
+    &::-webkit-details-marker { display: none; }
+    // The disclosure cue display:flex removes: a chevron that turns when open.
+    &::after { content: '›'; font-size: 1.1rem; line-height: 1; transition: transform var(--ds-motion-fast) var(--ds-motion-easing); }
+  }
+  &[open] > summary::after { transform: rotate(90deg); }
   &--empty { color: var(--ds-text-low); }
   &__body { display: flex; flex-direction: column; gap: 0.5rem; padding-bottom: 0.5rem; }
 }
