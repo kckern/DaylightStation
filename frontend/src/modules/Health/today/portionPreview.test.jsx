@@ -15,6 +15,27 @@ const items = [chia, yogurt, scale, dinner];
 const budget = { food: 1539, remaining: 596, macros: { protein: 65 } };
 const day = () => ({ items, budget, reload: vi.fn() });
 
+describe('projectPortion — zone (the server\'s rule, live)', () => {
+  const ranged = { food: 1150, exercise: 0, maintenance: 2291, range: { floor: 1200, top: 1791 },
+    declared: null, zone: 'incomplete', remaining: 50, status: 'under', macros: {} };
+
+  it('a drag that crosses the floor moves the day from incomplete to in range', () => {
+    const { budget: b } = projectPortion(items, ranged, { row: chia, portion: { value: 28, unit: 'g' } }); // +70
+    expect(b).toMatchObject({ food: 1220, zone: 'in-range', remaining: 571, status: 'under', complete: true });
+  });
+
+  it('a drag past the top turns the day over', () => {
+    const { budget: b } = projectPortion(items, ranged, { row: chia, portion: { value: 154, unit: 'g' } }); // +700
+    expect(b).toMatchObject({ food: 1850, zone: 'over', remaining: 59, status: 'over' });
+  });
+
+  it('a budget without a range (older server) keeps the old arithmetic', () => {
+    const { budget: b } = projectPortion(items, budget, { row: chia, portion: { value: 28, unit: 'g' } });
+    expect(b).toMatchObject({ food: 1609, remaining: 526, status: 'under' });
+    expect(b.zone).toBeUndefined();
+  });
+});
+
 describe('shared portion draft', () => {
   it('previews a macro correction and sends one semantic numeric command', async () => {
     api.mockReset().mockResolvedValue({ data: { version: 2 }, versions: { chia: 2 } });

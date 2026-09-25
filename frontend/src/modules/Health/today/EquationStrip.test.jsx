@@ -105,3 +105,22 @@ describe('EquationStrip — macros', () => {
     expect(screen.getByLabelText(/^Protein/)).toHaveTextContent('— g');
   });
 });
+
+describe('EquationStrip — the headline names its segment', () => {
+  const ranged = { budget: 1791, maintenance: 2291, range: { floor: 1200, top: 1791 }, exercise: 0, declared: null };
+
+  it('an under-logged day reads "to floor", not "left"', () => {
+    strip({ budget: { ...ranged, food: 700, net: 700, zone: 'incomplete', remaining: 500, status: 'under' } });
+    expect(screen.getByTestId('budget-headline').textContent).toMatch(/500\s*kcal to floor/);
+  });
+
+  it('a declared day says so instead of a number', () => {
+    strip({ budget: { ...ranged, food: 600, net: 600, zone: 'declared', declared: 'fasting', remaining: 1191, status: 'under' } });
+    expect(screen.getByTestId('budget-headline').textContent).toBe('Fasted');
+  });
+
+  it('past break-even says so', () => {
+    strip({ budget: { ...ranged, food: 2400, net: 2400, zone: 'past-even', remaining: 109, status: 'over' } });
+    expect(screen.getByTestId('budget-headline').textContent).toMatch(/109\s*kcal past break even/);
+  });
+});
