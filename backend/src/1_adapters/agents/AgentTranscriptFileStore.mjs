@@ -44,7 +44,7 @@ export class AgentTranscriptFileStore {
    */
   async find({ agentId, userId, startedAt, turnId }) {
     const at = Date.parse(startedAt);
-    if (!SAFE_SEGMENT.test(agentId || '') || !SAFE_SEGMENT.test(userId || 'anonymous') || !turnId || !Number.isFinite(at)) return null;
+    if (!SAFE_SEGMENT.test(agentId || '') || !SAFE_SEGMENT.test(userId || 'anonymous') || typeof turnId !== 'string' || !turnId || !Number.isFinite(at)) return null;
     const suffix = `-${turnId.slice(0, 8)}.json`;
     for (const day of [at, at + DAY_MS].map(ms => new Date(ms).toISOString().slice(0, 10))) {
       const dir = path.join(this.mediaDir, 'logs', 'agents', agentId, day, userId || 'anonymous');

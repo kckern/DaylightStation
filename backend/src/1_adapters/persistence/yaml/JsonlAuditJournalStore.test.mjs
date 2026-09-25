@@ -90,4 +90,35 @@ describe('JsonlAuditJournalStore', () => {
     await store.append('alice', { runId: 'r2', at: '2026-10-01T00:00:00.000Z' });
     expect(fs.readFileSync(path.join(journalDir(root), '2026-10.jsonl'), 'utf8')).toContain('"r2"');
   });
+
+  it('finds one run near a time hint, or newest month first without one', async () => {
+    const root = makeRoot();
+    const prod = makeStore(root, 'prod');
+    const dev = makeStore(root, 'dev');
+    await prod.append('alice', { runId: 'r1', at: '2026-08-31T23:00:00.000Z', status: 'running' });
+    await dev.append('alice', { runId: 'r1', at: '2026-08-31T23:00:00.000Z', status: 'completed' });
+    await prod.append('alice', { runId: 'r2', at: '2026-09-10T08:00:00.000Z', status: 'completed' });
+    await prod.append('alice', { at: '2026-09-10T09:00:00.000Z', skipped: 'cap' });
+    expect(await prod.findRun('alice', 'r1', { around: '2026-08-31T23:00:00.000Z' })).toMatchObject({ runId: 'r1' });
+    expect(await prod.findRun('alice', 'r2')).toMatchObject({ runId: 'r2', status: 'completed' });
+    expect(await prod.findRun('alice', 'r1')).toMatchObject({ runId: 'r1' });
+    // a hint far from the run finds nothing in its window
+    expect(await prod.findRun('alice', 'r2', { around: '2026-07-01T00:00:00.000Z' })).toBeNull();
+    expect(await prod.findRun('alice', 'missing')).toBeNull();
+    expect(await makeStore(makeRoot()).findRun('alice', 'r1')).toBeNull();
+  });
+
+  it('reads only the newest month when the run is there', async () => {
+    const root = makeRoot();
+    const store = makeStore(root);
+    await store.append('alice', { runId: 'old', at: '2026-08-01T00:00:00.000Z' });
+    await store.append('alice', { runId: 'new', at: '2026-09-01T12:00:00.000Z' });
+    // An unreadable older month proves the newer month answered on its own.
+    const older = path.join(journalDir(root), '2026-08.jsonl');
+    fs.chmodSync(older, 0o000);
+    try {
+      expect(await store.findRun('alice', 'new')).toMatchObject({ runId: 'new' });
+      await expect(store.findRun('alice', 'old')).rejects.toThrow();
+    } finally { fs.chmodSync(older, 0o644); }
+  });
 });

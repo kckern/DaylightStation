@@ -111,4 +111,33 @@ export class JsonlAuditJournalStore extends IAuditJournalStore {
       .sort((a, b) => b.t - a.t)
       .map((e) => e.row);
   }
+
+  /** The latest row for `runId` (last line in file order wins, as in `list`), or null. */
+  async findRun(userId, runId, { around } = {}) {
+    if (around != null) {
+      const t = parseTime(around, 'around');
+      const rows = await this.list(userId, { from: new Date(t - DAY_MS).toISOString(), to: new Date(t + DAY_MS).toISOString() });
+      return rows.find((row) => row.runId === runId) ?? null;
+    }
+    // Every row of a run carries the run's start as `at`, so one month holds them all.
+    const dir = this.dir(userId);
+    const months = new Map();
+    for (const name of listFiles(dir).sort()) {
+      const m = FILE_RE.exec(name);
+      if (m) months.set(`${m[1]}-${m[2]}`, [...(months.get(`${m[1]}-${m[2]}`) || []), name]);
+    }
+    for (const month of [...months.keys()].sort().reverse()) {
+      let found = null;
+      for (const name of months.get(month)) {
+        for (const raw of (await readTextFromPathAsync(path.join(dir, name))).split('\n')) {
+          if (!raw.includes(runId)) continue;
+          let row;
+          try { row = JSON.parse(raw); } catch { continue; }
+          if (row?.runId === runId && typeof row.at === 'string' && Number.isFinite(Date.parse(row.at))) found = row;
+        }
+      }
+      if (found) return found;
+    }
+    return null;
+  }
 }

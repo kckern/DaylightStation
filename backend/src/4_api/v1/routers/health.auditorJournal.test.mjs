@@ -30,7 +30,7 @@ describe('auditor journal and spend HTTP contract', () => {
   });
   it('rejects bad journal filters', async () => {
     const service = serviceStub();
-    for (const query of ['from=2026-02-31', 'to=yesterday', 'from=2026-09-05&to=2026-09-01', 'offset=-1', 'offset=1.5', 'trigger=cap%20tures', 'trigger=' + 'x'.repeat(40), 'changed=yes']) {
+    for (const query of ['trigger[]=captures', 'trigger=captures&trigger=edits', 'offset[]=1', 'offset=1&offset=2', 'from[]=2026-09-01', 'changed[]=1', 'from=2026-02-31', 'to=yesterday', 'from=2026-09-05&to=2026-09-01', 'offset=-1', 'offset=1.5', 'trigger=cap%20tures', 'trigger=' + 'x'.repeat(40), 'changed=yes']) {
       expect((await request(appFor(service)).get('/nutrition/cleanup/journal?' + query)).status, query).toBe(400);
     }
     expect(service.journal).not.toHaveBeenCalled();
@@ -40,7 +40,11 @@ describe('auditor journal and spend HTTP contract', () => {
     const found = await request(appFor(service)).get('/nutrition/cleanup/journal/audit_1?userId=impostor');
     expect(found.status).toBe(200);
     expect(found.body).toEqual({ runId: 'audit_1', transcript: null, transcriptExpired: true });
-    expect(service.journalEntry).toHaveBeenCalledWith('owner', 'audit_1');
+    expect(service.journalEntry).toHaveBeenCalledWith('owner', 'audit_1', { at: undefined });
+    await request(appFor(service)).get('/nutrition/cleanup/journal/audit_1?at=2026-09-04T18:00:00.000Z');
+    expect(service.journalEntry).toHaveBeenLastCalledWith('owner', 'audit_1', { at: '2026-09-04T18:00:00.000Z' });
+    expect((await request(appFor(service)).get('/nutrition/cleanup/journal/audit_1?at=soon')).status).toBe(400);
+    expect((await request(appFor(service)).get('/nutrition/cleanup/journal/audit_1?at[]=x')).status).toBe(400);
     expect((await request(appFor(service)).get('/nutrition/cleanup/journal/audit_missing')).status).toBe(404);
     expect((await request(appFor(service)).get('/nutrition/cleanup/journal/' + 'a'.repeat(65))).status).toBe(400);
     expect((await request(appFor(service)).get('/nutrition/cleanup/journal/bad.id')).status).toBe(400);
@@ -54,6 +58,8 @@ describe('auditor journal and spend HTTP contract', () => {
     expect(service.spend).toHaveBeenCalledWith('owner', { days: 14 });
     await request(appFor(service)).get('/nutrition/cleanup/spend');
     expect(service.spend).toHaveBeenLastCalledWith('owner', { days: 30 });
+    expect((await request(appFor(service)).get('/nutrition/cleanup/spend?days[]=3')).status).toBe(400);
+    expect((await request(appFor(service)).get('/nutrition/cleanup/spend?days=3&days=4')).status).toBe(400);
     for (const days of ['0', '91', '7.5', 'many']) expect((await request(appFor(service)).get('/nutrition/cleanup/spend?days=' + days)).status, days).toBe(400);
   });
   it('returns the settings change log for the owner', async () => {
