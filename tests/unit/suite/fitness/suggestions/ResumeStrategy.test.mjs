@@ -84,6 +84,32 @@ describe('ResumeStrategy', () => {
     expect(result[0].progress.percent).toBe(55);
   });
 
+  test('carries the launch context the player needs (thumbId, season, show title)', async () => {
+    const sessions = [makeSession('100', 'VG Cycling', '1001', 'Ep 14', '2026-04-06')];
+    const episode = {
+      ...makeEpisode(1001, 14, { percent: 22, playhead: 3886, duration: 17505 }),
+      thumbId: 739161,
+      parentId: 606444,
+      parentTitle: 'Various Racing Games',
+      grandparentTitle: 'Game Cycling',
+    };
+    const ctx = makeContext(sessions, { '100': [episode] }, {}, { '100': ['resumable'] });
+    ctx.fitnessPlayableService.getPlayableEpisodes = async () => ({
+      items: [episode],
+      parents: { 606444: { title: 'Various Racing Games', thumbnail: '/api/v1/proxy/plex/library/metadata/606444/thumb/1' } },
+      info: { labels: ['resumable'] },
+    });
+
+    const [card] = await strategy.suggest(ctx, 4);
+
+    expect(card.thumbId).toBe(739161);
+    expect(card.parentId).toBe(606444);
+    expect(card.parentTitle).toBe('Various Racing Games');
+    expect(card.grandparentTitle).toBe('Game Cycling');
+    expect(card.seasonImage).toBe('/api/v1/proxy/plex/library/metadata/606444/thumb/1');
+    expect(card.progress.playhead).toBe(3886);
+  });
+
   test('skips non-resumable shows', async () => {
     const sessions = [makeSession('100', 'Regular Show', '1001', 'Ep 5', '2026-04-06')];
     const playables = {

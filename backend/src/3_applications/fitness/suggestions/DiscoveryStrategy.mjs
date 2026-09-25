@@ -174,6 +174,7 @@ export class DiscoveryStrategy {
         orientation: 'landscape',
         labels: infoLabels,
         reason: daysSince != null ? `Last done ${daysSince} days ago` : 'New to you',
+        ...episodeLaunchFields(ep, episodeData),
       });
     }
 
@@ -181,3 +182,4 @@ export class DiscoveryStrategy {
   }
 }
 import { contentImageRef, displayImageRef } from '#apps/common/resources/publicResourceRefs.mjs';
+import { episodeLaunchFields } from './episodeLaunchFields.mjs';

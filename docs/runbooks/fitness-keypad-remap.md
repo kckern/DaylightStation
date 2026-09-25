@@ -7,8 +7,8 @@ the app is wedged or showing stale assets there is no touch gesture that means
 "get me underneath you". The pad replaces a full-size Dell keyboard that lived at
 the TV for months for exactly these four keystrokes.
 
-A daemon on the box rewrites four of its keys into system-level chords, scoped by
-USB serial so no other keyboard is affected.
+A daemon on the box rewrites six of its keys into system-level chords or commands,
+scoped by USB serial so no other keyboard is affected.
 
 > **Host placeholder.** `{garage_host}` below is the garage box's SSH alias — see
 > `CLAUDE.local.md` for the actual value. The pad's serial appears verbatim in the
@@ -37,13 +37,21 @@ previous key did not fix it.
 | 3 | Yellow | `ctrl+esc` | xfwm4 — main menu | Yes |
 | 4 | Red | `alt+f4` | The process — force the window closed | **No** |
 | 5 | White | `exec` restart script | Relaunches the kiosk as on cold boot | n/a — it *is* the recovery |
+| 6 | — | `exec` screenshot script | Photographs the kiosk and files it with the logs | Harmless |
 
 Key 5 sits outside the escalation ladder. It is what brings the kiosk back after
 key 4, which matters because nothing else does: the autostart entry only fires at
 session start, so an `alt+f4` on the kiosk leaves a black screen until someone
 SSHes in. Key 5 is what makes key 4 safe to reach for.
 
-The other 19 keys are unbound and unstickered, and pass through untouched.
+Key 6 is not a fix at all: it is evidence. Press it the moment the kiosk looks
+wrong (a missing thumbnail strip, a stray cursor, a stuck overlay) and carry on.
+It captures the whole display, keeps a copy on the box, and uploads it to the
+backend, which files it under `media/logs/fitness/screenshots/<YYYY-MM-DD>/<HHMMSS>_garage-tv.jpg`
+and logs `fitness.kiosk_screenshot.saved` (with the stored path) — so the log
+store shows the picture's timestamp next to whatever the app was doing.
+
+The other 18 keys are unbound and unstickered, and pass through untouched.
 
 ## What is installed where
 
@@ -52,6 +60,9 @@ The other 19 keys are unbound and unstickered, and pass through untouched.
 | `/opt/daylight-keypad/keypad.py` | The daemon |
 | `/etc/daylight-keypad/keymap.yml` | Live mapping — edit this to change bindings |
 | `/etc/systemd/system/daylight-keypad.service` | Unit, enabled at boot |
+| `/usr/local/bin/restart-browser-kiosk.sh` | Key 5 — kiosk restart wrapper |
+| `/usr/local/bin/kiosk-screenshot.sh` | Key 6 — capture + upload |
+| `/var/tmp/kiosk-screenshots/` | Key 6 local copies, pruned after 14 days |
 
 ## Rebuild from scratch
 
@@ -371,6 +382,13 @@ bindings:
   # cold boot cannot diverge.
   KEY_5:
     exec: /usr/local/bin/restart-browser-kiosk.sh
+
+  # Evidence, not recovery: photographs the kiosk as it looks right now, keeps
+  # a copy in /var/tmp/kiosk-screenshots and uploads it to the backend, which
+  # files it under media/logs/fitness/screenshots/<date>/ beside the session
+  # logs. Press it the moment something looks wrong, then keep going.
+  KEY_6:
+    exec: /usr/local/bin/kiosk-screenshot.sh
 ```
 
 ### 5. The kiosk restart wrapper (key 5)
@@ -461,6 +479,66 @@ Better on both paths: ~7ms on a warm restart where X is already up, and 10s of
 headroom at cold boot instead of 5s, where the old fixed sleep would have
 launched into a dead display if X had ever been slow.
 
+### 5b. The screenshot script (key 6)
+
+Needs `scrot` (`apt-get install -y scrot`) and `curl`. Write
+`/usr/local/bin/kiosk-screenshot.sh`, then `chmod 755`:
+
+```bash
+#!/bin/bash
+# Screenshot the fitness kiosk exactly as it looks right now.
+#
+# Bound to key 6 on the break-glass keypad. Captures the whole X display as the
+# desktop user, keeps a copy on this box (so it is never lost to a dead network
+# or a backend mid-deploy), then uploads it to the backend, which files it under
+# media/logs/fitness/screenshots/<date>/ and logs fitness.kiosk_screenshot.saved
+# -- so the picture sits beside the session logs from the same moment.
+#
+# Runs as root (the keypad daemon needs root for the input grab), so the capture
+# itself drops to the desktop user on their X display.
+
+set -u
+
+KIOSK_USER=kckern
+DEVICE=garage-tv
+UPLOAD_URL=https://{app_host}/api/v1/fitness/kiosk_screenshot
+LOCAL_DIR=/var/tmp/kiosk-screenshots
+KEEP_DAYS=14
+
+install -d -m 0755 -o "$KIOSK_USER" -g "$KIOSK_USER" "$LOCAL_DIR"
+FILE="$LOCAL_DIR/$(date +%Y%m%d-%H%M%S).jpg"
+
+if ! runuser -u "$KIOSK_USER" -- env DISPLAY=:0 XAUTHORITY="/home/$KIOSK_USER/.Xauthority" \
+        scrot --overwrite --quality 85 "$FILE"; then
+    echo "capture failed"
+    exit 1
+fi
+echo "captured $FILE ($(stat -c %s "$FILE") bytes)"
+
+# JSON body built on disk: a 1080p JPEG is ~1 MB of base64, too big for argv.
+BODY=$(mktemp)
+trap 'rm -f "$BODY"' EXIT
+printf '{"deviceId":"%s","mimeType":"image/jpeg","timestamp":%s,"imageBase64":"' \
+    "$DEVICE" "$(date +%s%3N)" > "$BODY"
+base64 -w0 "$FILE" >> "$BODY"
+printf '"}' >> "$BODY"
+
+if RESPONSE=$(curl -sS --fail-with-body --max-time 30 \
+        -H 'Content-Type: application/json' --data-binary @"$BODY" "$UPLOAD_URL"); then
+    echo "uploaded: $RESPONSE"
+else
+    echo "upload failed (kept locally): $RESPONSE"
+fi
+
+find "$LOCAL_DIR" -name '*.jpg' -mtime +"$KEEP_DAYS" -delete
+```
+
+`{app_host}` is the kiosk's own app hostname — the one in
+`start-browser-kiosk.sh`. The script's output goes to the keypad journal
+(`journalctl -u daylight-keypad`), so a failed upload is visible there, and the
+local copy survives it. Pull local copies with
+`scp {garage_host}:/var/tmp/kiosk-screenshots/*.jpg .`.
+
 ### 6. The unit
 
 Write `/etc/systemd/system/daylight-keypad.service`:
@@ -501,7 +579,7 @@ ssh {garage_host} 'systemctl is-active daylight-keypad; journalctl -u daylight-k
 Healthy output names both keyboard nodes:
 
 ```
-watching for serial 037F… (4 bindings)
+watching for serial 037F… (6 bindings)
 grabbed /dev/input/event18 (SayoDevice SayoDevice 6x4M Keyboard)
 grabbed /dev/input/event6 (SayoDevice SayoDevice 6x4M)
 ```

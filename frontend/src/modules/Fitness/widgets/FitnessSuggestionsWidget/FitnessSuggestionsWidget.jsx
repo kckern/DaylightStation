@@ -1,16 +1,9 @@
 import React, { useCallback, useState, useEffect, useRef } from 'react';
 import { useScreenData } from '@/screen-framework/data/useScreenData.js';
 import { useFitnessScreen } from '@/modules/Fitness/useFitnessScreen.js';
-import { DaylightMediaPath } from '@/lib/api.mjs';
 import SuggestionCard from './SuggestionCard.jsx';
+import { buildSuggestionPlayItem, parseContentId } from './buildSuggestionPlayItem.js';
 import './FitnessSuggestionsWidget.scss';
-
-function parseContentId(contentId) {
-  if (!contentId) return { source: 'plex', localId: '' };
-  const colonIdx = contentId.indexOf(':');
-  if (colonIdx === -1) return { source: 'plex', localId: contentId };
-  return { source: contentId.slice(0, colonIdx), localId: contentId.slice(colonIdx + 1) };
-}
 
 function SuggestionsGridSkeleton() {
   return (
@@ -114,18 +107,7 @@ export default function FitnessSuggestionsWidget() {
     // Track which card was played for swap-on-return
     setLastPlayedContentId?.(suggestion.contentId);
 
-    const { source, localId } = parseContentId(suggestion.contentId);
-    onPlay({
-      id: localId,
-      contentSource: source,
-      type: 'episode',
-      title: suggestion.title,
-      videoUrl: DaylightMediaPath(`api/v1/play/${source}/${localId}`),
-      image: DaylightMediaPath(suggestion.thumbnail?.replace(/^\//, '') || `api/v1/display/${source}/${localId}`),
-      duration: suggestion.durationMinutes,
-      labels: suggestion.labels || [],
-      ...(suggestion.progress ? { resumePosition: suggestion.progress.playhead } : {}),
-    });
+    onPlay(buildSuggestionPlayItem(suggestion));
   }, [onPlay, setLastPlayedContentId]);
 
   const handleBrowse = useCallback((suggestion) => {
