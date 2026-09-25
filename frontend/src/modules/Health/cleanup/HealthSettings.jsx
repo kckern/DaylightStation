@@ -6,6 +6,7 @@ import { formatUsd, formatWhen, spentToday } from '../auditor/auditorFormat.js';
 import { useAuditorSpend } from '../auditor/useAuditorSpend.js';
 import HealthDisplaySettings from '../display/HealthDisplaySettings.jsx';
 import { ArtworkQueue } from './ArtworkQueue.jsx';
+import { AiUsageCard } from '../ai-usage/AiUsageCard.jsx';
 
 /** Settings' view of the nutrition auditor: a status line and the way into the auditor page, where its controls live. */
 export function CleanupSettings() {
@@ -29,6 +30,7 @@ export function CleanupSettings() {
         <Text size="sm">Scans count immediately as estimates. Cleanup can refine provisional entries for 72 hours using capture evidence and older meals as reference. It preserves your corrections and never invents consumption. Its switches, spend and every change it made are in the auditor.</Text>
       </Stack>
     </SectionCard>
+    <AiUsageCard compact />
     <CleanupQuestions />
     <ArtworkQueue />
   </Stack>;

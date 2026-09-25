@@ -34,9 +34,12 @@ export function chartScale(days, capUsd) {
 
 /**
  * One focusable chart: arrow keys (and Home/End) move between days, a tap or
- * hover picks one, and the readout line above announces it.
+ * hover picks one, and the readout line above announces it. Days carry
+ * `{ date, costUsd }`; `describe(day)` is the readout text and `label` the
+ * chart's accessible name. Shared with the Health AI usage card.
  */
-function DailyChart({ days, capUsd }) {
+export function DailyChart({ days, capUsd = null, describe = dayText,
+  label = 'Daily auditor cost, last 30 days. Arrow keys move between days.' }) {
   const [active, setActive] = useState(null);
   const { peak, top, cap } = chartScale(days, capUsd);
   const baseline = TOP + PLOT_H;
@@ -58,10 +61,10 @@ function DailyChart({ days, capUsd }) {
   };
   return <Stack gap={4}>
     <Text size="sm" role="status" className="health-auditor-spend__readout">
-      {active == null ? 'Tap a bar, or focus the chart and use the arrow keys, to read a day.' : dayText(days[active])}
+      {active == null ? 'Tap a bar, or focus the chart and use the arrow keys, to read a day.' : describe(days[active])}
     </Text>
     <svg className="health-auditor-spend__chart" viewBox={`0 0 ${W} ${H}`} role="img" tabIndex={0}
-      aria-label="Daily auditor cost, last 30 days. Arrow keys move between days."
+      aria-label={label}
       onKeyDown={onKeyDown} onFocus={() => setActive(current => current ?? last)} onBlur={() => setActive(null)}
       onMouseLeave={() => setActive(null)}>
       <line className="health-auditor-spend__axis" x1={LEFT} x2={W - RIGHT} y1={baseline} y2={baseline} />
