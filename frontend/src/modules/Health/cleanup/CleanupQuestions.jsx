@@ -63,8 +63,11 @@ function Question({ question, onChanged, onFeedback }) {
   </SectionCard>;
 }
 
-export function CleanupQuestions({ active = true, onChanged = () => {} }) {
-  const resource = useCleanup(active);
+// `resource` lets a host that already polls (the Today follow-up tray, which
+// needs the count) share its poll instead of starting a second one.
+export function CleanupQuestions({ active = true, onChanged = () => {}, resource: shared = null }) {
+  const own = useCleanup(active && !shared);
+  const resource = shared || own;
   const [feedback, setFeedback] = useState(null);
   if (!resource.data?.questions?.length && !feedback) return null;
   return <section aria-label="Cleanup questions"><Stack gap="sm">

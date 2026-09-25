@@ -95,6 +95,7 @@ describe('TodayView — photo/voice capture: no review phase, day reload instead
     await waitFor(() => expect(apiMock.mock.calls.length).toBeGreaterThan(callsBefore + 1));
 
     expect(document.querySelector('.health-pending')).toBeFalsy();
+    expect(document.querySelector('.ds-toast')).toBeFalsy();
     expect(screen.queryByText(/350 kcal/)).toBeFalsy();
     expect(screen.queryByRole('button', { name: /undo/i })).toBeNull();
     expect(screen.queryByRole('button', { name: /accept/i })).toBeNull();
@@ -339,9 +340,11 @@ describe('TodayView — Task 4.2: per-meal capture buttons + the moved cue', () 
     fireEvent.click(screen.getByText('MockPhotoCapture-morning'));
 
     await waitFor(() => expect(screen.getByText('Moved to Lunch')).toBeTruthy());
-    // Reuses the SAME banner element captureNotice already renders elsewhere
-    // in this file (health-pending), not a second bespoke notice mechanism.
-    expect(document.querySelector('.health-pending')).toBeTruthy();
+    // It floats in the toast region, OUT of the day's flow: a notice arriving
+    // must not push the meals down the page.
+    const toast = screen.getByText('Moved to Lunch').closest('.ds-toast');
+    expect(toast).toBeTruthy();
+    expect(toast.closest('.health-today')).toBeNull();
   });
 
   it('a response WITHOUT moved shows no moved-to cue', async () => {
