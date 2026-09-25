@@ -35,5 +35,9 @@ rather than a local patch.
    is shared by every app. A TTL on the report does not help: it is requested
    about every 5 minutes.
 
-The ~600 ms peak about every 5 minutes after the two fixes is these two
-landing in the same window.
+Correction (Fable review, 2026-09-25): State Gates writes measure 70–126 ms
+in the container, not 0.6–0.9 s. They inflate the minutes that contain
+commits (550–1175 ms worst lag during a workout, against a ~200 ms floor).
+The ~600 ms peak about every 5 minutes contains no State Gates commit: it is
+the entropy report. The State Gates fix is specified in
+`docs/_wip/plans/2026-09-25-state-gates-json-persistence-design.md`.
