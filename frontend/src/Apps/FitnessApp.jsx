@@ -143,6 +143,14 @@ const FitnessApp = () => {
   useEffect(() => {
     logger.info('fitness-kiosk-state', { kiosk: kioskUI });
   }, [kioskUI, logger]);
+  // Toasts, modals and overlays portal to <body> or render beside the app
+  // container, so the container's cursor rule never reaches them. Mark <body>
+  // too (FitnessApp.scss hides the cursor under it).
+  useEffect(() => {
+    if (!kioskUI) return undefined;
+    document.body.classList.add('fitness-kiosk-ui');
+    return () => document.body.classList.remove('fitness-kiosk-ui');
+  }, [kioskUI]);
 
   // Reload diagnostics - capture what triggers page unloads
   useEffect(() => {

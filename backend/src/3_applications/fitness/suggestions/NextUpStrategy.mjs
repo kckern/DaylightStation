@@ -106,6 +106,7 @@ export class NextUpStrategy {
         orientation: isShow ? 'portrait' : 'landscape',
         labels: showLabels,
         lastSessionDate: show.lastSessionDate,
+        ...episodeLaunchFields(nextEp, episodeData),
       });
     }
 
@@ -113,3 +114,4 @@ export class NextUpStrategy {
   }
 }
 import { contentImageRef, displayImageRef } from '#apps/common/resources/publicResourceRefs.mjs';
+import { episodeLaunchFields } from './episodeLaunchFields.mjs';

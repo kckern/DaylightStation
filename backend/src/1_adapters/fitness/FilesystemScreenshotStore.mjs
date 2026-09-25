@@ -4,23 +4,61 @@ import { ensureDir, writeBinary, fileExists, readBinary, readDirectory } from '#
 
 export class FilesystemScreenshotStore extends IScreenshotStore {
   #sessionService;
+  #kioskScreenshotDir;
   #logger;
-  constructor({ sessionService, logger } = {}) {
+  /**
+   * @param {Object} deps
+   * @param {Object} deps.sessionService
+   * @param {string} [deps.kioskScreenshotDir] - root for keypad screenshots, e.g. media/logs/fitness/screenshots
+   * @param {Object} [deps.logger]
+   */
+  constructor({ sessionService, kioskScreenshotDir = null, logger } = {}) {
     super();
     this.#sessionService = sessionService;
+    this.#kioskScreenshotDir = kioskScreenshotDir;
     this.#logger = logger || console;
+  }
+
+  /**
+   * Write a whole-screen kiosk capture to `<root>/<YYYY-MM-DD>/<HHMMSS>_<device>.<ext>`,
+   * dated in the server's local time so it lines up with the session logs beside it.
+   */
+  async saveKioskCapture({ deviceId, image, mediaType, capturedAt }) {
+    if (!this.#kioskScreenshotDir) return { kind: 'unconfigured' };
+    const { bytes, reason } = decodeImage(image);
+    if (!bytes) return { kind: 'invalid_encoding', reason };
+    const normalizedMime = typeof mediaType === 'string' ? mediaType.toLowerCase() : '';
+    const extension = extensionFor(normalizedMime);
+    const device = /^[a-z0-9_-]{1,64}$/i.test(String(deviceId || '')) ? String(deviceId) : 'unknown';
+    const when = new Date(Number.isFinite(capturedAt) ? capturedAt : Date.now());
+    const pad = (n) => String(n).padStart(2, '0');
+    const day = `${when.getFullYear()}-${pad(when.getMonth() + 1)}-${pad(when.getDate())}`;
+    const clock = `${pad(when.getHours())}${pad(when.getMinutes())}${pad(when.getSeconds())}`;
+    const dir = path.join(this.#kioskScreenshotDir, day);
+    ensureDir(dir);
+    // Two presses inside one second must not overwrite each other.
+    let filename = `${clock}_${device}.${extension}`;
+    for (let n = 2; fileExists(path.join(dir, filename)); n += 1) {
+      filename = `${clock}_${device}-${n}.${extension}`;
+    }
+    const fullPath = path.join(dir, filename);
+    writeBinary(fullPath, bytes);
+    return {
+      kind: 'stored',
+      capture: {
+        resourceName: filename, day, resourcePath: fullPath,
+        capturedAt: when.getTime(), byteLength: bytes.length, deviceId: device,
+        mediaType: normalizedMime || 'image/jpeg',
+      },
+    };
   }
   async saveCapture({ sessionId, householdId, role, index, image, mediaType, timestamp }) {
     const layout = this.#sessionService.getStoragePaths(sessionId, householdId);
     if (!layout) return null;
-    const encoded = typeof image === 'string' ? image.replace(/^data:[^;]+;base64,/, '') : '';
-    if (!encoded) return { kind: 'invalid_encoding', reason: 'empty' };
-    const bytes = Buffer.from(encoded, 'base64');
-    if (!bytes.length) return { kind: 'invalid_encoding', reason: 'decode_failed' };
+    const { bytes, reason } = decodeImage(image);
+    if (!bytes) return { kind: 'invalid_encoding', reason };
     const normalizedMime = typeof mediaType === 'string' ? mediaType.toLowerCase() : '';
-    const extension = normalizedMime.includes('png') ? 'png'
-      : normalizedMime.includes('webp') ? 'webp'
-      : 'jpg';
+    const extension = extensionFor(normalizedMime);
     const indexValue = Number.isFinite(index) ? Number(index) : null;
     const indexFragment = indexValue != null ? String(indexValue).padStart(4, '0') : Date.now().toString(36);
     const rolePrefix = role === 'player' ? 'player_' : '';
@@ -79,6 +117,20 @@ export class FilesystemScreenshotStore extends IScreenshotStore {
     }
     return max + 1;
   }
+}
+
+function decodeImage(image) {
+  const encoded = typeof image === 'string' ? image.replace(/^data:[^;]+;base64,/, '') : '';
+  if (!encoded) return { bytes: null, reason: 'empty' };
+  const bytes = Buffer.from(encoded, 'base64');
+  if (!bytes.length) return { bytes: null, reason: 'decode_failed' };
+  return { bytes, reason: null };
+}
+
+function extensionFor(normalizedMime) {
+  return normalizedMime.includes('png') ? 'png'
+    : normalizedMime.includes('webp') ? 'webp'
+    : 'jpg';
 }
 
 function escapeRe(s) { return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }

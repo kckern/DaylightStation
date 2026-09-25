@@ -81,3 +81,13 @@
   -webkit-touch-callout: none !important;
   -webkit-user-select: none !important;
 }
+
+// The container rule never reaches what renders outside it: FitnessToast
+// (challenge / ring toasts), AppModal, the rider-swap modal, the lockdown and
+// voice-memo overlays are portaled to <body> or mounted beside the container.
+// FitnessApp marks <body> in kiosk mode. Cursor only: user-select stays on so
+// inputs inside those modals keep working.
+body.fitness-kiosk-ui,
+body.fitness-kiosk-ui * {
+  cursor: none !important;
+}
