@@ -347,9 +347,19 @@ export function PianoChessGame({
       // vocabulary, which the player never chose. Gating on `origin` here kept a
       // staff reader on chord symbols for a whole game (2026-09-25) because he
       // touched a pawn 250ms before a slow config read came back.
+      //
+      // COMPARE THE BASE SCHEME, NEVER THE DEALT ONE. On a shuffled board
+      // `scheme` is the per-turn deal (`<base>:shuffled:<seed>`) while the loaded
+      // addressing is the base, so comparing `scheme` never matched: every
+      // re-run rebuilt the board, and the kiosk re-runs this on every note
+      // because Games builds `addressingPolicy` inline. Each rebuild put the
+      // lifted piece back, so no child could make a first move (2026-09-25,
+      // 75 `addressing.adopted-over-lift` in one afternoon).
       const { scheme: loadedScheme, shuffleEachTurn: nextShuffle } = loadedAddressing;
+      const adopted = (state) => state.shuffleEachTurn === nextShuffle
+        && (state.baseScheme ?? state.scheme)?.id === loadedScheme.id;
       const pending = gameRef.current;
-      if (pending.origin && pending.history.length === 0 && pending.scheme?.id !== loadedScheme.id) {
+      if (pending.origin && pending.history.length === 0 && !adopted(pending)) {
         logger().info('addressing.adopted-over-lift', {
           origin: pending.origin, from: pending.scheme?.id ?? null, to: loadedScheme.id,
         });
@@ -358,7 +368,7 @@ export function PianoChessGame({
         const canAdopt = current.history.length === 0
           || (!current.origin && managedAddressing && isPlayerTurn(current));
         if (!canAdopt) return current;
-        if (current.shuffleEachTurn === nextShuffle && current.scheme?.id === loadedScheme.id) return current;
+        if (adopted(current)) return current;
         if (current.history.length === 0) {
           return createChessGameState({
             fen: fen ?? undefined, playerColor, scheme: loadedScheme, seed: gameSeed, shuffleEachTurn: nextShuffle,
