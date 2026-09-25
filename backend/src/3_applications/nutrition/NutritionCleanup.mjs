@@ -1,13 +1,22 @@
 import { sha256Text } from '#system/utils/sha256.mjs';
 import { cleanupDates, entryKey } from '#domains/nutrition/services/cleanupPolicy.mjs';
 import { AgentInteractions } from '#apps/agents/framework/AgentInteractions.mjs';
-import { effectiveSettings, validateSettingsChange, blockedKinds } from '#domains/nutrition/services/auditorPolicy.mjs';
+import { effectiveSettings, validateSettingsChange, blockedKinds, isPlain } from '#domains/nutrition/services/auditorPolicy.mjs';
 
 const fail = (message, status = 409) => { throw Object.assign(new Error(message), { status }); };
 const terminal = new Set(['completed', 'failed', 'cancelled']);
 const NESTED = ['triggers', 'permissions'];
 const SETTINGS_LOG_LIMIT = 500;
+const RUN_HISTORY_LIMIT = 50;
 const notPermitted = (proposal, permissions) => { if (blockedKinds(proposal, permissions).length) fail('Not permitted by auditor settings'); };
+// Finished runs beyond the newest RUN_HISTORY_LIMIT are dropped, except one an
+// unresolved question still points at: its answer is judged by that run's settings.
+const pruneRuns = state => {
+  const referenced = new Set(Object.values(state.questions || {}).filter(q => ['open', 'answering'].includes(q.status)).map(q => q.runId));
+  const finished = Object.values(state.runs).filter(run => terminal.has(run.status))
+    .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+  for (const run of finished.slice(RUN_HISTORY_LIMIT)) if (!referenced.has(run.id)) delete state.runs[run.id];
+};
 const questionExpired = (question, now, dates) => question.entryVersions.some(row => row.stabilizesAt
   ? !Number.isFinite(Date.parse(row.stabilizesAt)) || Date.parse(row.stabilizesAt) <= now : !dates.includes(row.date));
 
@@ -46,8 +55,7 @@ export class NutritionCleanup {
       for (const [key, value] of Object.entries(changes)) {
         if (!NESTED.includes(key)) { record(key, before[key], value); state.settings[key] = value; continue; }
         for (const [kind, on] of Object.entries(value)) record(key + '.' + kind, before[key][kind], on);
-        const stored = state.settings[key];
-        state.settings[key] = { ...(stored && typeof stored === 'object' && !Array.isArray(stored) ? stored : {}), ...value };
+        state.settings[key] = { ...(isPlain(state.settings[key]) ? state.settings[key] : {}), ...value };
       }
       if (logged.length) state.settingsLog = [...(state.settingsLog || []), ...logged].slice(-SETTINGS_LOG_LIMIT);
       if (changes.enabled === false) for (const run of Object.values(state.runs)) if (!terminal.has(run.status)) run.status = 'cancelled';
@@ -108,9 +116,16 @@ export class NutritionCleanup {
         run.error = error.message;
         if (run.status === 'failed') state.checkedFingerprint = run.snapshot.fingerprint;
         run.retryAt = this.clock.now() + 30000 * Math.pow(2, run.attempt);
+        if (run.status === 'failed') pruneRuns(state);
       });
     }).finally(() => this.#active.delete(userId));
     this.#active.set(userId, promise);
+  }
+  /** The model and permissions a run was queued with; the current settings for a run from before they were recorded, or one that is gone. */
+  #runPolicy(state, runId) {
+    const run = state.runs[runId];
+    const current = effectiveSettings(state.settings);
+    return { model: run?.model || current.model, permissions: run?.permissions || current.permissions };
   }
   async #execute(userId, id) {
     let run = this.store.load(userId).runs[id];
@@ -125,10 +140,11 @@ export class NutritionCleanup {
       if (!fence()) return;
       this.store.update(userId, state => { state.runs[id].result = result.result; });
     }
-    run = this.store.load(userId).runs[id];
-    if (!fence()) return;
+    const state = this.store.load(userId);
+    run = state.runs[id];
+    if (run?.status !== 'running') return;
     const result = run.result;
-    const permissions = run.permissions || effectiveSettings(this.store.load(userId).settings).permissions;
+    const { permissions } = this.#runPolicy(state, id);
     const evidenceById = new Map(result.evidence.map(source => [source.id, source]));
     const outcomes = [];
     const questions = [...result.questions];
@@ -151,15 +167,20 @@ export class NutritionCleanup {
     }
     // A choice the settings forbid is not offered; a question left without a
     // real choice is not asked. #answer checks the same permissions again.
+    // Suppression is recorded the same way in dry run; only asking needs a live run.
     const suppressedQuestions = [];
     const suppress = (q, reason) => suppressedQuestions.push({ question: q.question, entryIds: q.entryIds, reason });
-    if (permissions.questions === false) questions.forEach(q => suppress(q, 'questions-off'));
-    else if (!run.dryRun && fence()) for (const original of questions) {
+    const allRows = [...run.snapshot.rows, ...run.snapshot.pending.flatMap(log => log.items)];
+    const askable = [];
+    for (const original of questions) {
+      if (permissions.questions === false) { suppress(original, 'questions-off'); continue; }
       const q = { ...original, choices: original.choices.filter(choice => !blockedKinds(choice.repair, permissions).length) };
       if (q.choices.length < 2) { suppress(original, 'blocked'); continue; }
-      const allRows = [...run.snapshot.rows, ...run.snapshot.pending.flatMap(log => log.items)];
       const entries = allRows.filter(row => q.entryIds.includes(row.uuid) || q.entryIds.includes(row.id));
-      if (entries.length !== new Set(q.entryIds).size) continue;
+      if (entries.length !== new Set(q.entryIds).size) { suppress(original, 'entries-missing'); continue; }
+      askable.push({ q, entries });
+    }
+    if (!run.dryRun && fence()) for (const { q, entries } of askable) {
       this.interactions.ask(userId, {
         dedupeIssue: true,
         issueKey: sha256Text(JSON.stringify([q.entryIds.slice().sort(), [...new Set(q.choices.flatMap(choice => choice.repair.updates.flatMap(update => Object.keys(update.changes))))].sort()])),
@@ -170,18 +191,20 @@ export class NutritionCleanup {
         snapshot: run.snapshot,
       });
     }
+    // run.model stays the plain name in every state; the runtime reports {provider,name}.
+    const telemetry = { model: result.model?.name ?? run.model ?? null, usage: result.usage ?? null, costUsd: result.costUsd ?? null,
+      turnId: result.turnId ?? null, toolCalls: result.toolCalls ?? [] };
     this.store.update(userId, state => {
       if (state.runs[id].status !== 'running') return;
       Object.assign(state.runs[id], { status: 'completed', outcomes, summary: result.summary, completedAt: new Date(this.clock.now()).toISOString(),
-        model: result.model?.name ?? run.model ?? null, usage: result.usage ?? null, costUsd: result.costUsd ?? null,
-        turnId: result.turnId ?? null, toolCalls: result.toolCalls ?? [],
-        ...(suppressedQuestions.length ? { suppressedQuestions } : {}) });
+        ...telemetry, ...(suppressedQuestions.length ? { suppressedQuestions } : {}) });
       // Do not suppress a concurrent capture. Own repairs are the only permitted
       // change between the audited input and this checked output.
       state.checkedFingerprint = run.snapshot.fingerprint;
       // Full reasoning checkpoints live in the managed-run store; do not copy
       // every completed report back through this dispatch file on each poll.
       delete state.runs[id].snapshot; delete state.runs[id].result;
+      pruneRuns(state);
     });
     // `changed` counts repairs that landed (or would have, in dry run); with the
     // triage verdict beside it, this line is the shadow-mode evaluation row.
@@ -192,6 +215,7 @@ export class NutritionCleanup {
   }
   async #answer(userId, question) {
     if (question.prepared) {
+      notPermitted(question.prepared.proposal, this.#runPolicy(this.store.load(userId), question.runId).permissions);
       const result = await this.repairs.apply({ userId, operationId: 'answer_' + question.id, runId: question.runId,
         ...question.prepared, userDirected: true });
       return { status: 'resolved', result };
@@ -204,17 +228,14 @@ export class NutritionCleanup {
       const row = rows.find(row => entryKey(row) === expected.id);
       if (!row || (row.version ?? 1) !== expected.version) fail('The food changed while this question was open.');
     }
-    // The originating run's settings govern its question; runs are pruned, so
-    // fall back to what the auditor is allowed to do now.
-    const state = this.store.load(userId);
-    const origin = state.runs[question.runId];
-    const effective = effectiveSettings(state.settings);
-    const permissions = origin?.permissions || effective.permissions;
+    // The originating run's settings govern its question. Pruning keeps a run
+    // an open question points at; older records fall back to the current settings.
+    const { model, permissions } = this.#runPolicy(this.store.load(userId), question.runId);
     let proposal = question.choices.find(choice => choice.id === question.answer.choiceId)?.repair;
     let evidence = question.evidence;
     if (!proposal) {
       const result = await this.auditor.audit({ snapshot: current, answer: { question: question.question, text: question.answer.text },
-        model: origin?.model || effective.model, permissions }, { userId, runId: 'answer_' + question.id });
+        model, permissions }, { userId, runId: 'answer_' + question.id });
       if (result.questions.length || result.repairs.length !== 1) return { status: 'stale', message: 'The answer needs a manual edit to avoid guessing.' };
       proposal = result.repairs[0]; evidence = result.evidence;
     }
