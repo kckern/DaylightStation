@@ -16,9 +16,12 @@ vi.mock('../modules/CameraFeed/CameraFeed.jsx', () => ({
 }));
 
 import HomeApp from './HomeApp.jsx';
+import { resetApiResourceCache } from '../lib/hooks/useApiResource.js';
 
 describe('HomeApp — data-state rendering', () => {
-  beforeEach(() => { apiMock.mockReset(); });
+  // The fetch hook keeps module state (a request in flight is shared), so a
+  // test's never-resolving request must not carry into the next test.
+  beforeEach(() => { apiMock.mockReset(); resetApiResourceCache(); });
 
   it('shows a loading skeleton while cameras are in flight', async () => {
     apiMock.mockImplementation(() => new Promise(() => {})); // never resolves

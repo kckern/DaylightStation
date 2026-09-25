@@ -1078,19 +1078,27 @@ $health-aside-gap: 1.5rem;
 // under the toasts' 350). Other sheets keep them on top on purpose.
 .ds-root:has(.chat-overlay__body) .ds-toasts { display: none; }
 
-// The Today follow-up tray (FollowUpTray.jsx): a reserved one-line slot, the
-// same height whether it says "No follow-ups" or "2 follow-up questions", so a
-// poll that finds a question changes words, not layout.
+// The follow-ups bell (FollowUpTray.jsx), in the app header next to settings.
+// The slot is a fixed size whether or not the bell has mounted yet, and the red
+// count floats over the icon, so nothing in the header or the page ever moves
+// when a follow-up arrives or is answered.
+.health-followups-slot { display: inline-flex; width: 36px; height: 36px; }
 .health-followups {
-  margin-block: 0.15rem;
-  &__line {
-    min-height: 44px; display: flex; align-items: center; gap: 0.4rem; font-size: 0.85rem;
-    color: var(--ds-warning); font-weight: 600;
-    &:focus-visible { outline: 2px solid var(--ds-accent); outline-offset: 2px; border-radius: 6px; }
+  position: relative; display: inline-flex;
+  &__button { color: var(--ds-text-high); }
+  &--empty &__button { color: var(--ds-text-low); }
+  &__badge {
+    position: absolute; top: 1px; right: 1px; min-width: 16px; height: 16px; padding: 0 4px;
+    border-radius: 8px; background: var(--ds-danger); color: var(--ds-text-high);
+    font-size: 0.65rem; font-weight: 700; line-height: 16px; text-align: center;
+    font-variant-numeric: tabular-nums; pointer-events: none;
   }
-  &__line::after { content: '›'; font-size: 1.1rem; line-height: 1; }
-  &--empty &__line { cursor: default; &::after { content: none; } }
-  &--empty &__line { color: var(--ds-text-low); font-weight: 400; }
+  &__menu .mantine-Menu-itemLabel { display: flex; flex-direction: column; gap: 0.1rem; min-width: 0; }
+  &__item-subject { font-size: 0.8rem; font-weight: 600; color: var(--ds-text-high); }
+  &__item-text {
+    font-size: 0.75rem; color: var(--ds-text-mid);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
   &__feedback { margin: 0 0 0.5rem; font-size: 0.8rem; color: var(--ds-text-mid); }
 }
 

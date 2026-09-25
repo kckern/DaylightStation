@@ -36,7 +36,7 @@ vi.mock('./chessApi.js', () => ({
   fetchLadder: vi.fn(async () => null),
 }));
 
-import { OPPONENT_DELAY_MS, PianoChessGame } from './PianoChessGame.jsx';
+import { ADDRESSING_WAIT_MS, OPPONENT_DELAY_MS, PianoChessGame } from './PianoChessGame.jsx';
 import { promptFor } from './chessRailViewModel.js';
 import {
   archiveGame, fetchChessConfig, fetchLadder, requestBestMove, requestOpponentMove,
@@ -50,6 +50,11 @@ import { GESTURE_SETTLE_MS } from './useSettledGesture.js';
 const sourceOutlines = (container) => container.querySelectorAll('.chess-board__square--source').length;
 
 beforeEach(() => localStorage.clear());
+
+// The board takes no input until the player's config has resolved and been
+// applied, as on the kiosk. The mocked read answers on a microtask; this lets
+// it land before a test starts playing.
+const boardReady = () => act(async () => {});
 
 describe('the takeback prompt', () => {
   const playing = {
@@ -520,6 +525,7 @@ describe('PianoChessGame chord read-out wiring', () => {
 
   it('reaches "not a square" once a held chord settles and fails to map to any square', async () => {
     render(<PianoChessGame />);
+    await boardReady();
     // 140ms settle window plus headroom for a couple of 25ms ticks either side.
     await act(async () => { await vi.advanceTimersByTimeAsync(400); });
     expect(screen.getByText(/not a square/i)).toBeTruthy();
@@ -540,12 +546,13 @@ describe('narrowing on the board', () => {
     mockUsePianoMidiNotes.mockReturnValue({ activeNotes: new Map(), noteHistory: [] });
   });
 
-  it('a held partial chord lights the squares it could still become', () => {
+  it('a held partial chord lights the squares it could still become', async () => {
     // Use two notes from e2's address: e2 is a playable opening source, so it
     // remains lit while unavailable squares carrying compatible chords do not.
     const notes = squareToChord('e2', DEFAULT_CHORD_SCHEME).pitch_classes.slice(0, 2).map((pc) => 60 + pc);
     mockUsePianoMidiNotes.mockReturnValue({ activeNotes: new Map(notes.map((note) => [note, {}])), noteHistory: [] });
     const { container } = render(<PianoChessGame gameConfig={{ addressing: { shuffle: 'never' } }} />);
+    await boardReady();
     const lit = [...container.querySelectorAll('.chess-board__square--candidate')]
       .map((square) => square.getAttribute('data-square'));
     expect(lit).toContain('e2');
@@ -625,6 +632,7 @@ describe('hint gestures', () => {
     try {
       holdNotes(HINT_CLUSTER);
       const { container, rerender } = render(<PianoChessGame />);
+      await boardReady();
       // Past the settle window, so the cursor has read the cluster...
       await act(async () => { await vi.advanceTimersByTimeAsync(400); });
       // ...and now the hands come off. A cluster is a request, not a chord, so
@@ -771,6 +779,50 @@ describe('hover before commit', () => {
     rerender(staffElement());
     await act(async () => { await vi.advanceTimersByTimeAsync(120); });
     expect(windowBar(container)).not.toBeNull();
+  });
+
+  // 2026-09-25, a staff reader: the board mounted on the chord fallback, his `staff`
+  // config took 2s to arrive, and the b2 pawn was lifted 250ms before it did.
+  // The lift pinned the fallback for the whole game, so a child who reads notes
+  // was handed chord symbols. The board now takes nothing from the piano, and
+  // shows no addresses, until the player's own vocabulary is in place.
+  const axisLabels = (container, axis) => [...container.querySelectorAll(`.chess-board__${axis}-axis .chess-board__axis-label`)]
+    .map((el) => el.textContent);
+
+  it('takes no input and shows no addresses until the player\'s config has arrived', async () => {
+    let resolveConfig;
+    fetchChessConfig.mockImplementation(() => new Promise((resolve) => { resolveConfig = resolve; }));
+    try {
+      const { container, rerender } = render(makeElement());
+      expect(axisLabels(container, 'file').every((label) => label === '')).toBe(true);
+      expect(screen.getAllByText(/setting up your board/i).length).toBeGreaterThan(0);
+      await playChord(rerender, notesFor('e2'));
+      await playChord(rerender, notesFor('e2'));
+      expect(heldSquares(container)).toHaveLength(0);
+
+      await act(async () => { resolveConfig({ addressing: { vocabulary: 'staff', shuffle: 'never' } }); });
+
+      const fileAxis = axisLabels(container, 'file');
+      expect(fileAxis).toHaveLength(8);
+      expect(fileAxis).not.toEqual([...DEFAULT_CHORD_SCHEME.roots]);
+      expect(screen.queryAllByText(/setting up your board/i)).toHaveLength(0);
+    } finally {
+      fetchChessConfig.mockImplementation(async () => null);
+    }
+  });
+
+  it('opens on the house fallback when the config read never answers', async () => {
+    fetchChessConfig.mockImplementation(() => new Promise(() => {}));
+    try {
+      const { container, rerender } = render(makeElement());
+      await act(async () => { await vi.advanceTimersByTimeAsync(ADDRESSING_WAIT_MS); });
+      expect(axisLabels(container, 'file')).toEqual([...DEFAULT_CHORD_SCHEME.roots]);
+      await playChord(rerender, notesFor('e2'));
+      await playChord(rerender, notesFor('e2'));
+      expect(heldSquares(container)).toHaveLength(1);
+    } finally {
+      fetchChessConfig.mockImplementation(async () => null);
+    }
   });
 
   it('never refuses while exploring with a piece in hand', async () => {
@@ -993,6 +1045,7 @@ describe('the game record', () => {
       <PianoChessGame fen={MATE_IN_ONE_FEN} currentUser="kckern" gameConfig={{ addressing: { shuffle: 'never' } }} />
     );
     const { rerender } = render(makeElement());
+    await boardReady();
 
     const play = async (notes) => {
       mockUsePianoMidiNotes.mockReturnValue({
@@ -1025,6 +1078,7 @@ describe('the game record', () => {
     // Play again must reset the once-only guard AND the tallies — without it
     // the second game never records, and help would carry over between games.
     fireEvent.click(screen.getByRole('button', { name: /play again/i }));
+    await boardReady(); // a new game waits for its own config read
 
     // Game 2: ask for the best move, but the server never produces one.
     await play([60, 61, 62, 63]); // best cluster — request fails, no charge

@@ -8,11 +8,10 @@
 // two mounted components asking for the same range and letting the slower,
 // older answer win the cache (useApiResource.js).
 //
-// It does NOT dedupe two simultaneous mounts of the same range into one HTTP
-// request — the hook has no in-flight registry. The fix for that is structural
-// and is applied by the callers: a range that more than one widget shows is
-// fetched ONCE, high in the tree, and handed down as `days`. This hook is for
-// the widget that genuinely owns its range.
+// Two widgets mounting on one range share the hook's in-flight request, but a
+// range more than one widget shows is still fetched ONCE, high in the tree,
+// and handed down as `days`: one `enabled` gate, one loading state. This hook
+// is for the widget that genuinely owns its range.
 import { useMemo } from 'react';
 import { useApiResource } from '../../../lib/hooks/useApiResource.js';
 import { createAppLogger } from '../../../lib/ui/createAppLogger.js';

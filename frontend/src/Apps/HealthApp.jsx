@@ -1,10 +1,11 @@
 import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
-import { lazy, Suspense, useLayoutEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { ActionIcon } from '@mantine/core';
 import { localDateISO } from '@shared-contracts/health/isoDate.mjs';
 import { useApiResource } from '../lib/hooks/useApiResource.js';
 import { AgentConversationProvider, useAgentConversation } from '../modules/Agent/AgentChatSurface.jsx';
 import { refreshHealthResourcesWithDashboard } from '../modules/Health/healthResources.js';
+import { claimHealthCacheOwner, healthCacheHeldByOther, hydrateHealthCache, useHealthCacheHydrated } from '../modules/Health/healthCache.js';
 import '@mantine/core/styles.css';
 import {
   AppThemeProvider, AppChrome, DismissStackProvider, LoadingState, ErrorState,
@@ -51,9 +52,27 @@ function tabForPath(pathname) {
   return 'today';
 }
 
-const HealthApp = () => {
+// Start reading the disk cache while the bundle is still evaluating.
+hydrateHealthCache();
+
+// Restore the disk cache before the first read, so a reopened page paints its
+// last-seen data on the first frame (healthCache.js).
+const HealthApp = () => (useHealthCacheHydrated() ? <HealthGate />
+  : <AppThemeProvider pack="health"><LoadingState label="Health" /></AppThemeProvider>);
+
+const HealthGate = () => {
   const context = useApiResource('api/v1/health/context', { swr: true });
-  return context.data?.userId ? <HealthDisplayPreferencesProvider key={context.data.userId} userId={context.data.userId}
+  const confirmedUserId = !context.revalidating && !context.loading && !context.error ? context.data?.userId : null;
+  const [, setClaimedUserId] = useState(null);
+  useEffect(() => {
+    if (!confirmedUserId) return;
+    claimHealthCacheOwner(confirmedUserId);
+    setClaimedUserId(confirmedUserId); // re-render once the cache is theirs
+  }, [confirmedUserId]);
+  // The server named someone other than whose snapshots the cache holds: do
+  // not mount their shell on the other person's data; the claim above clears it.
+  const heldByOther = healthCacheHeldByOther(context.data?.userId);
+  return context.data?.userId && !heldByOther ? <HealthDisplayPreferencesProvider key={context.data.userId} userId={context.data.userId}
     densityLevels={context.data.densityLevels} densityRevision={context.data.densityRevision}>
     <HealthShell userId={context.data.userId} />
   </HealthDisplayPreferencesProvider>
@@ -67,6 +86,8 @@ const HealthShell = ({ userId }) => {
   const [overlayOpen, setOverlayOpen] = useState(false);
   const [coachEntry, setCoachEntry] = useState(null);
   const [sidebarTarget, setSidebarTarget] = useState(null);
+  // The follow-ups bell's slot in the header (FollowUpTray portals into it).
+  const [followUpTarget, setFollowUpTarget] = useState(null);
   const openCoach = entry => { setCoachEntry(entry || null); setOverlayOpen(true); };
   const conversation = useAgentConversation({ agentId: 'health-coach', userId,
     context: { selectedDate: new URLSearchParams(location.search).get('date') || localDateISO(new Date()),
@@ -95,12 +116,15 @@ const HealthShell = ({ userId }) => {
           }}>
           <AppChrome title="Health" tabs={TABS} activeTab={activeTab}
             sidebarRef={setSidebarTarget} sidebarActive={activeTab === 'today'}
-            headerActions={<ActionIcon aria-label="Health settings" variant="subtle" onClick={() => navigate('/health/settings')}><Icon d="M4 5h12M4 10h12M4 15h12M7 3v4M13 8v4M9 13v4" /></ActionIcon>}
+            headerActions={[
+              <span key="follow-ups" ref={setFollowUpTarget} className="health-followups-slot" />,
+              <ActionIcon key="settings" aria-label="Health settings" variant="subtle" onClick={() => navigate('/health/settings')}><Icon d="M4 5h12M4 10h12M4 15h12M7 3v4M13 8v4M9 13v4" /></ActionIcon>,
+            ]}
             onTabChange={(id) => navigate(`${TAB_PATH[id] || '/health'}${location.search}`)}>
             {/* Keep the logging session (drafts, pending requests, retry bytes)
                 alive between tabs; hidden views do not poll or acquire media. */}
             {visitedToday.current ? <div hidden={activeTab !== 'today'}>
-              <TodayView active={activeTab === 'today'} sidebarTarget={sidebarTarget} onSetupGoals={() => navigate(`/health/progress${location.search}`)} onCoachTap={openCoach} />
+              <TodayView active={activeTab === 'today'} sidebarTarget={sidebarTarget} followUpTarget={followUpTarget} onSetupGoals={() => navigate(`/health/progress${location.search}`)} onCoachTap={openCoach} />
             </div> : null}
             <Suspense fallback={<LoadingState label="Health" />}><Routes>
               <Route index element={null} />

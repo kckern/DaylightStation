@@ -5,6 +5,12 @@ import MatchGateContext from '../../../PianoKiosk/modes/Games/MatchGateContext.j
 // How long a result waits for the ladder before being filed against the
 // fallback rung. A slow network must not cost a child their record.
 const LADDER_SETTLE_TIMEOUT_MS = 5000;
+/**
+ * The longest a board waits for the player's own config before it takes notes
+ * on the defaults. Until then the addresses on screen may not be the player's
+ * vocabulary, and a first move made in the wrong one is a move they never read.
+ */
+export const CONFIG_SETTLE_TIMEOUT_MS = 6000;
 
 let localSessionSequence = 0;
 
@@ -55,6 +61,11 @@ export function useAddressedBoardGame({
   // is filed against a rung nobody is on. See the level:1 fingerprint in
   // docs/_wip/bugs/2026-09-01-connect-four-rematch-resumes-lost-game.md.
   const [ladderSettled, setLadderSettled] = useState(false);
+  // Whether the config read has ANSWERED. Games take no input before it does:
+  // the defaults are the house's vocabulary, not this player's (2026-09-25 —
+  // a staff reader got a chess board in chords because his first touch beat
+  // his config).
+  const [configSettled, setConfigSettled] = useState(false);
   const [localPractice, setLocalPractice] = useState(false);
   const [seed, setSeed] = useState(() => Date.now() >>> 0);
   const [gameSessionId, setGameSessionId] = useState(() => createLocalSessionId(gameId));
@@ -87,11 +98,24 @@ export function useAddressedBoardGame({
     let cancelled = false;
     // `game.mount` is the HOST's event now (Games.jsx), so it covers every
     // game rather than this one family.
-    client.readConfig(userId).then((value) => {
-      if (cancelled || !value) return;
-      setConfig((old) => ({ ...old, ...value }));
-      logger.debug('game.config-loaded', { gameId });
-    });
+    setConfigSettled(false);
+    const configWait = setTimeout(() => {
+      if (cancelled) return;
+      logger.warn('game.config-read-slow', { gameId, timeoutMs: CONFIG_SETTLE_TIMEOUT_MS });
+      setConfigSettled(true);
+    }, CONFIG_SETTLE_TIMEOUT_MS);
+    Promise.resolve(client.readConfig(userId))
+      .then((value) => {
+        if (cancelled || !value) return;
+        setConfig((old) => ({ ...old, ...value }));
+        logger.debug('game.config-loaded', { gameId });
+      })
+      .catch((error) => logger.warn('game.config-read-failed', { gameId, error: error?.message }))
+      .finally(() => {
+        if (cancelled) return;
+        clearTimeout(configWait);
+        setConfigSettled(true);
+      });
     setLadderSettled(false);
     // FAIL OPEN. A read that never answers must cost a level, never a record —
     // so the wait is bounded and the result files against the fallback rung.
@@ -114,7 +138,7 @@ export function useAddressedBoardGame({
         clearTimeout(settle);
         setLadderSettled(true);
       });
-    return () => { cancelled = true; clearTimeout(settle); };
+    return () => { cancelled = true; clearTimeout(settle); clearTimeout(configWait); };
   }, [client, gameId, logger, userId]);
 
   // HOW FAR THIS COMPONENT ACTUALLY WATCHED THE GAME GET, while it was still
@@ -376,6 +400,7 @@ export function useAddressedBoardGame({
     userId,
     logger,
     config,
+    configSettled,
     updateConfig,
     ladder,
     level,

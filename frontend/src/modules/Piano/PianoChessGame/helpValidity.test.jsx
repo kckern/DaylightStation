@@ -90,6 +90,7 @@ describe('help validity: seams the per-task tests could not see', () => {
     requestBestMove.mockImplementation(() => new Promise((resolve) => { resolveBest = resolve; }));
     requestOpponentMove.mockResolvedValue({ from: 'e2', to: 'e4', san: 'e4', engine: 'stockfish' });
     const { container, rerender } = render(<PianoChessGame playerColor="b" seed={1} />);
+    await act(async () => {}); // the board opens once the player's config has resolved
     // Ask for the best move while the opponent is thinking. The cluster must
     // hold still for GESTURE_SETTLE_MS before it counts as a request (see
     // useSettledGesture.js); 140ms sits far inside the 1200ms opponent delay,
@@ -153,6 +154,7 @@ describe('help validity: seams the per-task tests could not see', () => {
       <PianoChessGame fen={MATE_IN_ONE_FEN} currentUser="kckern" gameConfig={{ addressing: { shuffle: 'never' } }} />
     );
     const { container, rerender } = render(makeElement());
+    await act(async () => {}); // the board opens once the player's config has resolved
     const play = async (notes) => {
       holdNotes(notes);
       rerender(makeElement());

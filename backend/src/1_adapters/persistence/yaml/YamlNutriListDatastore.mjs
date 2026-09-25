@@ -19,6 +19,7 @@ import {
   dirExists,
   listYamlFiles,
   loadYaml,
+  loadYamlCached,
   resolveYamlPath,
   saveYamlToPathAtomic
 } from '#system/utils/FileIO.mjs';
@@ -464,7 +465,9 @@ export class YamlNutriListDatastore extends INutriListDatastore {
 
   #readFile(basePath) {
     try {
-      const data = loadYaml(basePath);
+      // Cached parse (clone per call): the cleanup tick and every Health view
+      // re-read the same unchanged month archive.
+      const data = loadYamlCached(basePath);
       // Handle both array and legacy object format
       if (Array.isArray(data)) return data;
       if (data && typeof data === 'object') return Object.values(data);
@@ -483,7 +486,7 @@ export class YamlNutriListDatastore extends INutriListDatastore {
 
   #readNutriday(userId) {
     const basePath = this.#getNutridayPath(userId);
-    return loadYaml(basePath) || {};
+    return loadYamlCached(basePath) || {};
   }
 
   #loadArchive(userId, yearMonth) {
