@@ -56,6 +56,7 @@ export class HealthOperations {
     newId,
     clock = { now: () => Date.now() },
     completeness = () => null,
+    budgetFloor = async () => null,
   }) {
     this.healthData = healthData;
     this.nutritionItems = nutritionItems;
@@ -70,6 +71,16 @@ export class HealthOperations {
     this.newId = newId;
     this.clock = clock;
     this.completeness = completeness;
+    this.budgetFloor = budgetFloor;
+  }
+
+  // The completeness threshold is the user's budget floor (the goal range's
+  // lower edge). The coaching config's min_calories is the fallback until the
+  // coach moves onto the budget contract.
+  async minCaloriesFor(username) {
+    let floor = null;
+    try { floor = await this.budgetFloor(username); } catch { floor = null; }
+    return Number.isFinite(floor) && floor > 0 ? floor : resolveMinCalories(this.completeness());
   }
 
   defaultUsername() {
@@ -151,7 +162,7 @@ export class HealthOperations {
   async readDayStatus(username, date) {
     let closures = {};
     try { closures = (await this.healthData?.loadDayClosedData?.(username)) || {}; } catch { closures = {}; }
-    return { status: closureStatus(closures?.[date]), minCalories: resolveMinCalories(this.completeness()), today: this.today() };
+    return { status: closureStatus(closures?.[date]), minCalories: await this.minCaloriesFor(username), today: this.today() };
   }
 
   /**

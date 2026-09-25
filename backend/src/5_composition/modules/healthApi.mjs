@@ -96,6 +96,7 @@ export function createHealthApiRouter(config) {
     configService?.getHouseholdAppConfig?.(null, 'scales') || {},
   );
 
+  const goalsStore = new YamlHealthGoalsDatastore({ dataService });
   const healthOperations = new HealthOperations({
     healthData: healthServices.healthStore,
     nutritionItems: healthServices.nutriListStore,
@@ -111,9 +112,14 @@ export function createHealthApiRouter(config) {
     newId: uuidv4,
     // Read per call so a coaching config reload is honoured.
     completeness: () => configService?.getHouseholdAppConfig?.(null, 'coaching')?.logging_completeness ?? null,
+    // The day status's completeness threshold is the per-user budget floor.
+    budgetFloor: async (username) => {
+      const goals = await goalsStore.load(username);
+      const floor = Number(goals?.budgetFloor);
+      return Number.isFinite(floor) && floor > 0 ? floor : null;
+    },
   });
 
-  const goalsStore = new YamlHealthGoalsDatastore({ dataService });
   const budgetService = new BudgetService({
     goalsStore,
     healthStore: healthServices.healthStore,

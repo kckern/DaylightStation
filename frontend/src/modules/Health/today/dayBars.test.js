@@ -132,3 +132,14 @@ describe('fmtKcal', () => {
     expect(fmtKcal(undefined)).toBe('—');
   });
 });
+
+describe('barCellLabel — names the zone segment', () => {
+  it('an under-logged day is "to floor"', () => {
+    const d = day({ food: 700, zone: 'incomplete', remaining: 500, status: 'under', range: { floor: 1200, top: 2000 } });
+    expect(barCellLabel(d, barModel(d), 'Mon')).toMatch(/500 kcal to floor$/);
+  });
+  it('a fasted day says Fasted', () => {
+    const d = day({ food: 300, zone: 'declared', declared: 'fasting', remaining: 1700, status: 'under', range: { floor: 1200, top: 2000 } });
+    expect(barCellLabel(d, barModel(d), 'Mon')).toMatch(/Fasted$/);
+  });
+});
