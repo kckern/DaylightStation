@@ -9,7 +9,7 @@ import { YamlAgentStateStore } from '#adapters/persistence/yaml/YamlAgentStateSt
 import { createNutriLog } from '#apps/nutribot/nutriLogRecords.mjs';
 import { FoodLogReview, nutritionLogVersion } from './FoodLogReview.mjs';
 import { NutritionRepairService } from './NutritionRepairService.mjs';
-import { NutritionCleanup } from './NutritionCleanup.mjs';
+import { NutritionCleanup, changeDigest } from './NutritionCleanup.mjs';
 import { NutritionAuditor } from '#apps/agents/nutrition-auditor/NutritionAuditor.mjs';
 import { AgentInteractions } from '#apps/agents/framework/AgentInteractions.mjs';
 import { cleanupDates, entryKey } from '#domains/nutrition/services/cleanupPolicy.mjs';
@@ -820,5 +820,57 @@ describe('auditor journal and spend views', () => {
     expect(oneDay.days).toEqual([{ date: '2026-09-04', costUsd: 0.01, runs: 2, changed: 1 }]);
     // near a month start the week reaches back past both the day range and the month
     expect(oneDay).toMatchObject({ today: 0.01, week: 0.08, month: 0.06 });
+  });
+});
+
+describe('what an auditor outcome changed', () => {
+  it('records before and after of an applied repair on the run and in the journal', async () => {
+    const f = await fixture();
+    f.store.update('alice', state => { state.settings = { enabled: true, dryRun: false, telegram: false }; });
+    const row = await f.items.findByUuid('alice', 'fish000001');
+    const proposal = { ...f.proposal({ name: 'Cod', calories: 60 }), reason: 'Panel says cod, 60 kcal' };
+    const result = { summary: 'Cod', repairs: [proposal], questions: [],
+      evidence: [{ id: 'source', kind: 'product', facts: [{ entryId: row.uuid, field: 'calories', value: 60 }] }] };
+    const journal = new JsonlAuditJournalStore({ dataService: f.dataService, logger: f.logger });
+    const cleanup = new NutritionCleanup({ ...f, runs: { register: vi.fn(), start: vi.fn(async () => ({ status: 'success', result })) }, journalStore: journal });
+    const { runId } = await cleanup.request('alice', { manual: true }); await cleanup.settled('alice');
+    const [outcome] = f.store.load('alice').runs[runId].outcomes;
+    expect(outcome).toMatchObject({ status: 'applied', operationId: runId + '_0', reason: 'Panel says cod, 60 kcal', mode: 'verified' });
+    expect(outcome.changes).toEqual(expect.arrayContaining([
+      { id: row.uuid, name: 'Cod', field: 'name', from: row.name, to: 'Cod' },
+      { id: row.uuid, name: 'Cod', field: 'calories', from: 52, to: 60 },
+    ]));
+    expect(outcome.changes.map(change => change.field)).not.toContain('version');
+    expect((await journal.list('alice'))[0].outcomes[0].changes).toEqual(outcome.changes);
+  });
+  it('records what a dry run would change, from the audited snapshot', async () => {
+    const f = await fixture();
+    const row = await f.items.findByUuid('alice', 'fish000001');
+    const result = { summary: 'Art', repairs: [{ ...f.proposal({ icon: 'fish' }), mode: 'verified' }], questions: [], evidence: [{ id: 'source', kind: 'capture' }] };
+    const cleanup = new NutritionCleanup({ ...f, runs: { register: vi.fn(), start: vi.fn(async () => ({ status: 'success', result })) } });
+    await cleanup.request('alice', { manual: true }); await cleanup.settled('alice');
+    const [outcome] = cleanup.status('alice').runs[0].outcomes;
+    expect(outcome).toMatchObject({ status: 'proposed', reason: 'Original capture identifies white fish', mode: 'verified',
+      changes: [{ id: row.uuid, name: row.name, field: 'icon', from: 'default', to: 'fish' }] });
+    expect((await f.items.findByUuid('alice', 'fish000001')).icon).toBe('default');
+  });
+  it('keeps at most 50 changes and says how many were left out', () => {
+    const fields = ['name', 'amount', 'unit', 'grams', 'calories', 'protein', 'carbs', 'fat', 'fiber', 'sugar', 'sodium', 'cholesterol', 'date', 'mealTime', 'icon', 'foodId', 'kind', 'parentId', 'photoRef'];
+    const before = Array.from({ length: 3 }, (_, i) => ({ uuid: 'row' + i, ...Object.fromEntries(fields.map(field => [field, 'a'])) }));
+    const after = before.map(row => ({ ...row, ...Object.fromEntries(fields.map(field => [field, 'b'])) }));
+    const digest = changeDigest(before, after);
+    expect(digest.changes).toHaveLength(50);
+    expect(digest.changesOmitted).toBe(3 * fields.length - 50);
+    expect(changeDigest(before, before)).toEqual({ changes: [] });
+  });
+  it('shows a new group header and its children joining it', () => {
+    const before = [{ uuid: 'c1', name: 'Rice', parentId: null }];
+    const after = [{ uuid: 'c1', name: 'Rice', parentId: 'g1' }, { uuid: 'g1', name: 'Poke Bowl', kind: 'group', date: '2026-09-04', calories: 0 }];
+    expect(changeDigest(before, after).changes).toEqual([
+      { id: 'c1', name: 'Rice', field: 'parentId', from: null, to: 'g1' },
+      { id: 'g1', name: 'Poke Bowl', field: 'name', from: null, to: 'Poke Bowl' },
+      { id: 'g1', name: 'Poke Bowl', field: 'kind', from: null, to: 'group' },
+      { id: 'g1', name: 'Poke Bowl', field: 'date', from: null, to: '2026-09-04' },
+    ]);
   });
 });
