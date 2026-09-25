@@ -95,6 +95,13 @@
   display: flex; flex-direction: column; gap: 0.5rem;
   pointer-events: none;
   &:empty { display: none; }
+  // Desktop has no bottom tab bar, and the top of the main column is where an
+  // app puts its headline number: toasts go bottom-right instead.
+  @include bp.tablet-up {
+    top: auto; bottom: 1.25rem; left: auto; right: 1.25rem; transform: none;
+    width: min(26rem, calc(100vw - 2.5rem));
+    flex-direction: column-reverse;
+  }
 }
 .ds-toast {
   pointer-events: auto;
@@ -104,6 +111,7 @@
   color: var(--ds-text-high);
   border: 1px solid var(--ds-border);
   border-radius: 10px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3); /* data-color: elevation alpha, not a palette color */
   font-size: 0.875rem;
   animation: ds-toast-in var(--ds-motion-base) var(--ds-motion-easing);
 
