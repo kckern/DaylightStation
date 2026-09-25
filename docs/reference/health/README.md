@@ -346,6 +346,41 @@ reason: it appears once the day's budget has loaded, whether or not any
 workout is logged, so a workout-free day gets a stable header rather than one
 that pops in and out as sessions come and go.
 
+### Feedback never moves the day
+
+Nothing on Today may push the meal log down on its own schedule. Every message
+has one of three homes, chosen by what it is about:
+
+| Kind | Examples | Home |
+|---|---|---|
+| **Reaction to what you just did** | "Moved to Lunch", "Breakfast copied to today", a capture that found no food, Undo for a move / meal change / delete, a move that failed, a recording that didn't send | A **toast** (`TodayToasts.jsx` over `lib/ui` `Toast`): floats out of flow, top of the screen on a phone, bottom-right on desktop. |
+| **Waiting on you, arrived on its own** | Nutrition-cleanup follow-up questions (15 s poll), unmatched kitchen-scale readings | The **follow-up tray** (`FollowUpTray.jsx`): one line under the macro bars that is *always there* — "No follow-ups", or "2 follow-up questions · 1 scale reading" — and opens in place when tapped. A new item changes its words, not the layout. |
+| **About one entry** | A portion/number edit that failed or is invalid | **On that entry's row** (`PortionDraftAlert` in `EntryRow`). Only a draft whose entry has left the day falls back to a toast. |
+
+Section load failures (`ErrorState` for the day, review queue, measurements) stay
+in flow: a section that failed should occupy its space.
+
+Toast rules:
+
+- **Information retires itself** after 6 s (paused while pointed at or focused).
+- **Anything with an action stays** until used or dismissed. Delete's confirmation
+  promises "You can undo this straight after"; an Undo that expired while the phone
+  was in a pocket breaks that promise.
+- **One Undo at a time.** A move, an AI meal change and a delete can each hold an
+  Undo; the newest supersedes and *retires* the older ones, so dismissing it never
+  brings back a stale Undo for something else.
+- A move that half-failed shows its error and the Undo for the part that moved
+  side by side.
+
+The toast region portals into the app's `.ds-root` (where the theme's `--ds-*`
+colours are set), not `<body>`.
+
+Why: `ui.layout-shift` (`useLayoutShiftLog.js`) showed `div.health-log`, the whole
+meal list, moving with no user input, in bursts about 10 s apart, while notices and
+questions came and went above it. Those events name the elements that *moved*, not
+the cause; `.health-suggest--inline` shows up there only because the add rows
+ride along with the list.
+
 ---
 
 ## Viz and layout
@@ -773,7 +808,7 @@ Two flows are deliberately exempt from the accept half of the seam:
   never completed — a weight with no density scanned, which nothing can price. A pending
   row never syncs into the day's NutriList, so it doesn't appear among Today's normal rows
   and doesn't count toward the budget; `GET /nutrition/pending?date=` surfaces it
-  separately, and Today renders it in a **NEEDS REVIEW** banner above the meal buckets,
+  separately, and Today renders it in a **NEEDS REVIEW** banner below the meal buckets,
   with its own Accept/Discard. Both the endpoint and the banner include pending logs
   from every capture surface, including scanner/Telegram barcode entries awaiting
   portion confirmation. Health can accept the stored portion or discard the entry
@@ -809,8 +844,9 @@ failed outright.
 There is no post-capture review card on web. A response's messages carry choices (the
 Undo/Edit keyboard) only when food was actually detected — `TodayView` reloads the day
 when it sees any choices, and otherwise (an empty detection, e.g. "no food found")
-surfaces the message text as a one-line notice instead, so a miss is still visible rather
-than silently dropped. `AddCombobox`'s sentence submit follows the same shape directly:
+surfaces the message text as a toast instead (see
+[Feedback never moves the day](#feedback-never-moves-the-day)), so a miss is still
+visible rather than silently dropped. `AddCombobox`'s sentence submit follows the same shape directly:
 on success it just reloads — no confirmation step of its own.
 
 A captured entry appears in the day's log (`GET /nutrilist/:date` returns every status,
@@ -1418,7 +1454,8 @@ scanned container tare, a scanned barcode — is a durable row in the OBSERVATIO
 what the automatic scale path composes food-log entries from; the day view is where a
 person sees and corrects them.
 
-- **Unmatched signals appear at the top of the day** ("82 g on the kitchen scale at
+- **Unmatched signals appear in the Today follow-up tray** — counted on its one line
+  ("1 scale reading"), listed when it is opened ("82 g on the kitchen scale at
   18:04"), each with a **Dismiss** action. Nothing in the automatic path resolves a signal
   that aged out of the 900 s composition window, and an unresolved row is never archived —
   so dismissing is also what keeps the ledger's hot file, which sits on the scale's own
