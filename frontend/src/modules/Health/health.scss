@@ -1220,11 +1220,15 @@ $health-aside-gap: 1.5rem;
   display: flex; flex-direction: column; gap: 0.25rem; width: 100%;
   padding: 0.5rem 0.6rem; border: 1px solid var(--ds-border); border-radius: 0.5rem;
   background: var(--ds-surface); color: var(--ds-text-high); text-align: left;
+  &__head { display: flex; justify-content: space-between; gap: 0.5rem; }
+  &__chips { display: flex; flex-wrap: wrap; gap: 0.25rem; }
+  &__line { display: block; overflow-wrap: anywhere; }
   &__meta { color: var(--ds-text-mid); }
   &__failed { color: var(--ds-danger); font-weight: 600; }
   &__cost { font-variant-numeric: tabular-nums; }
   &--skipped { background: transparent; border-style: dashed; color: var(--ds-text-low); }
 }
+.health-auditor__error { color: var(--ds-danger); }
 .health-auditor-detail {
   &__section { display: flex; flex-direction: column; gap: 0.4rem; }
   &__muted { color: var(--ds-text-low); }

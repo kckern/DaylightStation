@@ -17,6 +17,12 @@ const live = {
     { status: 'applied', operationId: 'run-a_0', affectedIds: ['fish'] },
     { status: 'applied', operationId: 'run-a_1', before: [{ id: 'rice', name: 'Rice', grams: 100 }], after: [{ id: 'rice', name: 'Rice', grams: 150 }] },
     { status: 'proposed', proposal: { updates: [{ id: 'soup', changes: { name: 'Miso soup' } }] } },
+    { status: 'applied', operationId: 'run-a_7', affectedIds: ['egg'], reason: 'Egg weighed on the scale', mode: 'update',
+      changes: [{ id: 'egg', name: 'Egg', field: 'grams', from: 40, to: 55 }], changesOmitted: 3 },
+    { status: 'applied', operationId: 'run-a_8', affectedIds: ['tea'], reason: 'Tea named', mode: 'update',
+      changes: [{ id: 'tea', name: 'Tea', field: 'name', from: 'Drink', to: 'Green tea' }], undoneAt: '2026-09-25T16:10:00.000Z' },
+    { status: 'proposed', reason: 'Group breakfast', mode: 'update', proposal: { updates: [] },
+      changes: [{ id: 'jam', name: 'Jam', field: 'parentId', from: null, to: 'breakfast' }] },
     { status: 'unchanged', operationId: 'run-a_3', affectedIds: [] },
     { status: 'rejected', reason: 'Unknown evidence' },
     { status: 'skipped', reason: 'Entry changed since the snapshot' },
@@ -82,6 +88,7 @@ describe('Auditor run detail', () => {
     expect(screen.getByText('150')).toBeTruthy();
     expect(screen.getByText('soup: name: Miso soup')).toBeTruthy();
     expect(screen.getByText('1 repair had nothing left to change.')).toBeTruthy();
+    expect(screen.getByText(/Changed 1 food entry/)).toBeTruthy(); // no changes recorded: count fallback
     expect(screen.getByText('Rejected: Unknown evidence')).toBeTruthy();
     expect(screen.getByText('Skipped: Entry changed since the snapshot')).toBeTruthy();
     expect(screen.getByText('Blocked: not allowed to change Portions, Nutrient values')).toBeTruthy();
@@ -89,12 +96,34 @@ describe('Auditor run detail', () => {
     expect(screen.getByText('Input 12,000 · cached 3,000 · output 450 tokens')).toBeTruthy();
     expect(screen.getByText('$0.0123')).toBeTruthy();
   });
-  it('undoes an applied change by its repair id', async () => {
+  it('shows recorded changes with their reason, applied and proposed', async () => {
+    mount({ runId: 'run-a', at });
+    expect(await screen.findByText('Egg weighed on the scale')).toBeTruthy();
+    expect(screen.getByText('Egg · grams')).toBeTruthy();
+    expect(screen.getByText('40')).toBeTruthy();
+    expect(screen.getByText('55')).toBeTruthy();
+    expect(screen.getByText('and 3 more')).toBeTruthy();
+    expect(screen.getByText('Group breakfast')).toBeTruthy();
+    expect(screen.getByText('Jam · parentId')).toBeTruthy();
+    expect(screen.getByText('breakfast')).toBeTruthy();
+  });
+  it('shows when a change was undone instead of the Undo button', async () => {
+    mount({ runId: 'run-a', at });
+    const undone = await screen.findByText(/^Undone at /);
+    const block = undone.parentElement;
+    expect(block.textContent).toContain('Green tea');
+    expect(block.querySelector('button')).toBeNull();
+  });
+  it('undoes an applied change by its repair id, then reloads the detail', async () => {
     mount({ runId: 'run-a', at });
     await screen.findByText('Tidied lunch');
+    const reads = () => api.mock.calls.filter(([path, , method]) => !method && path.includes('/journal/run-a')).length;
+    const before = reads();
+    rows['run-a'] = { ...live, outcomes: live.outcomes.map(o => (o.operationId === 'run-a_0' ? { ...o, undoneAt: '2026-09-25T16:30:00.000Z' } : o)) };
     fireEvent.click(screen.getAllByRole('button', { name: 'Undo this change' })[0]);
     await waitFor(() => expect(api).toHaveBeenCalledWith(`${cleanupPath}/undo/run-a_0`, { operationId: expect.any(String) }, 'POST'));
-    expect(await screen.findByText('Undone')).toBeTruthy();
+    await waitFor(() => expect(reads()).toBe(before + 1));
+    await waitFor(() => expect(screen.getAllByText(/^Undone at /).length).toBe(2));
   });
   it('reports an undo failure and keeps the button', async () => {
     api.mockImplementation(async (path, body, method) => {

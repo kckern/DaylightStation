@@ -54,7 +54,7 @@ export function CleanupHistory({ resource }) {
       <RepairChanges record={selected} />
       <details><summary>Evidence</summary><pre className="health-cleanup-evidence">{JSON.stringify(selected.evidence, null, 2)}</pre></details>
       <Text size="sm">Undo is available even for older repairs, unless a later edit conflicts. Confirmed captures must be edited from the food log.</Text>
-      {error ? <Text c="red" role="alert">{error}</Text> : null}
+      {error ? <Text className="health-auditor__error" role="alert">{error}</Text> : null}
       {!selected.undoOf ? <Button disabled={busy} loading={busy} onClick={() => undo(selected)}>Undo this repair</Button> : null}
     </Stack></Sheet> : null}
   </>;

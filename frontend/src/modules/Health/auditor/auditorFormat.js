@@ -50,6 +50,15 @@ export function formatWhen(iso, now = new Date()) {
   return `${date.toLocaleDateString([], { month: 'short', day: 'numeric' })}, ${time}`;
 }
 
+/** Run length from start to finish: "42 s", "1 m", "3 m 5 s"; "—" when either end is missing. */
+export function formatDuration(from, to) {
+  const ms = Date.parse(to) - Date.parse(from);
+  if (!Number.isFinite(ms) || ms < 0) return '—';
+  const seconds = Math.round(ms / 1000);
+  if (seconds < 60) return `${seconds} s`;
+  return `${Math.floor(seconds / 60)} m${seconds % 60 ? ` ${seconds % 60} s` : ''}`;
+}
+
 /** The enforced figure for today: the AI usage ledger (includes failed runs) when present. */
 export const spentToday = spend => (Number.isFinite(spend?.ledgerTodayUsd) ? spend.ledgerTodayUsd : spend?.today);
 
