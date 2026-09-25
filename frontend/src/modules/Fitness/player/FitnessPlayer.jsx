@@ -64,7 +64,10 @@ const generateThumbnailUrl = (plexObj, timeInSeconds) => {
     if (thumbId) {
       // Ensure thumbId is treated as a number not a string for consistency
       const numericThumbId = parseInt(thumbId, 10);
-      return DaylightMediaPath(`/api/v1/proxy/plex/photo/:/transcode?width=240&height=135&minSize=1&upscale=1&url=/library/parts/${numericThumbId}/indexes/sd/${timeInMillis}`);
+      // The raw index frame, not photo/:/transcode. Plex's frames are already
+      // 320x180, and the transcoder 400s on some parts whose frames serve fine
+      // raw (part 739161, Sonic & Sega All Stars Racing, 2026-09-25).
+      return DaylightMediaPath(`/api/v1/proxy/plex/library/parts/${numericThumbId}/indexes/sd/${timeInMillis}`);
     }
 
     // Option 2: If we have plexId, use library/metadata pattern

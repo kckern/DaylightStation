@@ -107,4 +107,52 @@ describe('FilesystemScreenshotStore', () => {
     expect(b.capture.resourceName).toBe(a.capture.resourceName);
     expect(fs.readdirSync(screenshotsDir)).toEqual(['2026-08-28_0003.jpg']);
   });
+
+  describe('saveKioskCapture', () => {
+    const makeStore = () => {
+      const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kiosk-shot-'));
+      roots.push(root);
+      return { root, store: new FilesystemScreenshotStore({ sessionService: {}, kioskScreenshotDir: root }) };
+    };
+    // Local-time clock, matching how the store dates files.
+    const at = new Date(2026, 8, 25, 14, 5, 49).getTime();
+
+    it('writes <day>/<HHMMSS>_<device>.<ext> under the configured root', async () => {
+      const { root, store } = makeStore();
+      const result = await store.saveKioskCapture({
+        deviceId: 'garage-tv', image: 'YWJj', mediaType: 'image/jpeg', capturedAt: at,
+      });
+      expect(result.kind).toBe('stored');
+      expect(result.capture).toMatchObject({
+        resourceName: '140549_garage-tv.jpg', day: '2026-09-25', byteLength: 3, deviceId: 'garage-tv',
+      });
+      expect(fs.readFileSync(path.join(root, '2026-09-25', '140549_garage-tv.jpg')).toString()).toBe('abc');
+    });
+
+    it('never overwrites a second press inside the same second', async () => {
+      const { root, store } = makeStore();
+      await store.saveKioskCapture({ deviceId: 'garage-tv', image: 'YWJj', mediaType: 'image/png', capturedAt: at });
+      const second = await store.saveKioskCapture({ deviceId: 'garage-tv', image: 'ZGVm', mediaType: 'image/png', capturedAt: at });
+      expect(second.capture.resourceName).toBe('140549_garage-tv-2.png');
+      expect(fs.readdirSync(path.join(root, '2026-09-25')).sort()).toEqual(['140549_garage-tv-2.png', '140549_garage-tv.png']);
+    });
+
+    it('refuses a device id that could escape the directory', async () => {
+      const { store } = makeStore();
+      const result = await store.saveKioskCapture({ deviceId: '../../etc', image: 'YWJj', capturedAt: at });
+      expect(result.capture.deviceId).toBe('unknown');
+      expect(result.capture.resourceName).toBe('140549_unknown.jpg');
+    });
+
+    it('reports an empty payload instead of writing a file', async () => {
+      const { root, store } = makeStore();
+      expect(await store.saveKioskCapture({ deviceId: 'garage-tv', image: '' })).toEqual({ kind: 'invalid_encoding', reason: 'empty' });
+      expect(fs.readdirSync(root)).toEqual([]);
+    });
+
+    it('says so when no root is configured', async () => {
+      const store = new FilesystemScreenshotStore({ sessionService: {} });
+      expect(await store.saveKioskCapture({ image: 'YWJj' })).toEqual({ kind: 'unconfigured' });
+    });
+  });
 });

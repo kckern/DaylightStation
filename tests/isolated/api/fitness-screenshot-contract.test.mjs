@@ -56,4 +56,31 @@ describe('fitness screenshot HTTP contract', () => {
     expect(response.status).toBe(400);
     expect(response.body).toEqual({ ok: false, error: 'Invalid base64 payload' });
   });
+
+  it('saves a keypad kiosk screenshot and returns where it landed', async () => {
+    const saveKioskScreenshot = vi.fn(async () => ({
+      kind: 'stored',
+      capture: {
+        resourceName: '140549_garage-tv.jpg', day: '2026-09-25', resourcePath: '/media/logs/fitness/screenshots/2026-09-25/140549_garage-tv.jpg',
+        capturedAt: 1234, byteLength: 3, deviceId: 'garage-tv', mediaType: 'image/jpeg',
+      },
+    }));
+    const response = await request(appFor({ saveKioskScreenshot })).post('/fitness/kiosk_screenshot').send({
+      imageBase64: 'YWJj', mimeType: 'image/jpeg', deviceId: 'garage-tv',
+    });
+    expect(response.status).toBe(200);
+    // The absolute media path stays server-side (it is in the log event), not in the response.
+    expect(response.body).toEqual({
+      ok: true, filename: '140549_garage-tv.jpg', day: '2026-09-25', deviceId: 'garage-tv', size: 3, timestamp: 1234,
+    });
+    expect(saveKioskScreenshot).toHaveBeenCalledWith({
+      image: 'YWJj', mediaType: 'image/jpeg', deviceId: 'garage-tv', capturedAt: undefined,
+    });
+  });
+
+  it('rejects a kiosk screenshot with no image', async () => {
+    const response = await request(appFor({ saveKioskScreenshot: vi.fn() })).post('/fitness/kiosk_screenshot').send({ deviceId: 'garage-tv' });
+    expect(response.status).toBe(400);
+    expect(response.body).toEqual({ ok: false, error: 'imageBase64 is required' });
+  });
 });

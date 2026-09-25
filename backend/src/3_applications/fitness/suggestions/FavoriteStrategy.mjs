@@ -55,6 +55,7 @@ export class FavoriteStrategy {
         durationMinutes: ep.duration ? Math.round(ep.duration / 60) : null,
         orientation: 'landscape',
         labels: showLabels,
+        ...episodeLaunchFields(ep, episodeData),
       });
     }
 
@@ -62,3 +63,4 @@ export class FavoriteStrategy {
   }
 }
 import { contentImageRef, displayImageRef } from '#apps/common/resources/publicResourceRefs.mjs';
+import { episodeLaunchFields } from './episodeLaunchFields.mjs';

@@ -62,6 +62,7 @@ import { makeDeviceColorResolver } from '#domains/fitness/strapColors.mjs';
 import { createTimelapseFrameRenderer } from '#rendering/fitness/TimelapseFrameRenderer.mjs';
 import { HttpClient } from '#system/services/HttpClient.mjs';
 import path from 'path';
+import { runtimeLogDirectory } from '#system/boot/runtimePaths.mjs';
 import { createFitnessServices } from '../bootstrap.mjs';
 
 /**
@@ -132,7 +133,12 @@ export function createFitnessApiRouter(config) {
 
   // Create ScreenshotService for session screenshot handling
   const screenshotService = new ScreenshotService({
-    screenshotStore: new FilesystemScreenshotStore({ sessionService: fitnessServices.sessionService, logger }),
+    screenshotStore: new FilesystemScreenshotStore({
+      sessionService: fitnessServices.sessionService,
+      // Keypad screenshots sit beside the fitness session logs they explain.
+      kioskScreenshotDir: path.join(runtimeLogDirectory(configService.getMediaDir()), 'fitness', 'screenshots'),
+      logger,
+    }),
     logger
   });
 

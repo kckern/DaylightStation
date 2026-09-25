@@ -16,6 +16,7 @@ import { sendInternalError } from '#api/utils/internalError.mjs';
  * - POST /api/fitness/save_session - Save session data
  * - POST /api/fitness/sessions/:sessionId/strength - Log a finished strength run onto a session
  * - POST /api/fitness/save_screenshot - Save session screenshot
+ * - POST /api/fitness/kiosk_screenshot - Save a kiosk (keypad) screenshot
  * - POST /api/fitness/voice_memo - Transcribe voice memo
  * - POST /api/fitness/debug/voice-memo - Debug: save raw audio to data/_debug/
  * - POST /api/fitness/unlock - Request a fingerprint unlock for a named lock
@@ -789,6 +790,36 @@ export function createFitnessRouter(config) {
       if (isScreenshotValidationError(error)) {
         const message = error.reason === 'decode_failed' ? 'Failed to decode image data'
           : (error.reason === 'empty' ? 'Invalid base64 payload' : error.message);
+        return res.status(400).json({ ok: false, error: message });
+      }
+      throw error;
+    }
+  }));
+
+  /**
+   * POST /api/fitness/kiosk_screenshot - Save a whole-screen kiosk capture
+   * (garage keypad screenshot key) under media/logs/fitness/screenshots/<date>/.
+   */
+  router.post('/kiosk_screenshot', asyncHandler(async (req, res) => {
+    const { imageBase64, mimeType, deviceId, timestamp } = req.body || {};
+    if (!imageBase64) {
+      return res.status(400).json({ ok: false, error: 'imageBase64 is required' });
+    }
+    try {
+      const { capture } = await screenshotService.saveKioskScreenshot({
+        image: imageBase64, mediaType: mimeType, deviceId, capturedAt: timestamp,
+      });
+      return res.json({
+        ok: true,
+        filename: capture.resourceName,
+        day: capture.day,
+        deviceId: capture.deviceId,
+        size: capture.byteLength,
+        timestamp: capture.capturedAt,
+      });
+    } catch (error) {
+      if (isScreenshotValidationError(error)) {
+        const message = error.reason === 'decode_failed' ? 'Failed to decode image data' : 'Invalid base64 payload';
         return res.status(400).json({ ok: false, error: message });
       }
       throw error;

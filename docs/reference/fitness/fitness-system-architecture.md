@@ -956,6 +956,7 @@ All endpoints are under `GET/POST /api/fitness/...` (router: `backend/src/4_api/
 | `GET` | `/api/fitness/show/:id/playable` | Playable episodes with watch state and progress classification |
 | `POST` | `/api/fitness/save_session` | Save session data (handles v2/v3 format normalization) |
 | `POST` | `/api/fitness/save_screenshot` | Store base64 session screenshot |
+| `POST` | `/api/fitness/kiosk_screenshot` | Store a whole-screen kiosk capture (garage keypad key 6) under `media/logs/fitness/screenshots/<date>/`; logs `fitness.kiosk_screenshot.saved` |
 | `GET` | `/api/fitness/sessions/dates` | List all dates with saved sessions |
 | `GET` | `/api/fitness/sessions` | Query sessions by date or date range |
 | `GET` | `/api/fitness/sessions/:sessionId` | Session detail with decoded timeline |

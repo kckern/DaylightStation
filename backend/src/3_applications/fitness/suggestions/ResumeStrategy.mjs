@@ -88,6 +88,7 @@ export class ResumeStrategy {
         orientation: isShowLevel ? 'portrait' : 'landscape',
         labels: showLabels,
         lastSessionDate: show.lastSessionDate,
+        ...episodeLaunchFields(ep, episodeData),
         progress: {
           percent,
           remaining: `${remainingMin}:${String(remainingSecs).padStart(2, '0')}`,
@@ -100,3 +101,4 @@ export class ResumeStrategy {
   }
 }
 import { contentImageRef, displayImageRef } from '#apps/common/resources/publicResourceRefs.mjs';
+import { episodeLaunchFields } from './episodeLaunchFields.mjs';
