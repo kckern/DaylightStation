@@ -1,9 +1,12 @@
 import { sha256Text } from '#system/utils/sha256.mjs';
 import { cleanupDates, entryKey } from '#domains/nutrition/services/cleanupPolicy.mjs';
 import { AgentInteractions } from '#apps/agents/framework/AgentInteractions.mjs';
+import { effectiveSettings, validateSettingsChange, blockedKinds } from '#domains/nutrition/services/auditorPolicy.mjs';
 
 const fail = (message, status = 409) => { throw Object.assign(new Error(message), { status }); };
 const terminal = new Set(['completed', 'failed', 'cancelled']);
+const NESTED = ['triggers', 'permissions'];
+const SETTINGS_LOG_LIMIT = 500;
 const questionExpired = (question, now, dates) => question.entryVersions.some(row => row.stabilizesAt
   ? !Number.isFinite(Date.parse(row.stabilizesAt)) || Date.parse(row.stabilizesAt) <= now : !dates.includes(row.date));
 
@@ -17,7 +20,7 @@ export class NutritionCleanup {
   }
   status(userId) {
     const state = this.store.load(userId);
-    return { version: state.version, settings: state.settings,
+    return { version: state.version, settings: effectiveSettings(state.settings),
       questions: Object.values(state.questions).filter(q => ['open', 'answering'].includes(q.status)).map(({ snapshot, evidence, prepared, ...question }) => question),
       runs: Object.values(state.runs).reverse().slice(0, 20).map(({ snapshot, result, ...run }) => run) };
   }
@@ -30,11 +33,22 @@ export class NutritionCleanup {
     return { records: records.slice(offset, offset + limit), total: ledger.total + pending.length };
   }
   async settings(userId, { expectedVersion, ...changes }) {
-    const allowed = ['enabled', 'dryRun', 'telegram'];
-    if (Object.entries(changes).some(([key, value]) => !allowed.includes(key) || typeof value !== 'boolean')) fail('Invalid settings', 400);
+    validateSettingsChange(changes);
     this.store.update(userId, state => {
       if (state.version !== expectedVersion) fail('Settings changed. Reload first.');
-      Object.assign(state.settings, changes);
+      // Compare against what the auditor was actually using, so a first explicit
+      // choice of a default value is not recorded as a change.
+      const before = effectiveSettings(state.settings);
+      const at = new Date(this.clock.now()).toISOString();
+      const logged = [];
+      const record = (field, from, to) => { if (from !== to) logged.push({ at, actor: 'user', field, from, to }); };
+      for (const [key, value] of Object.entries(changes)) {
+        if (!NESTED.includes(key)) { record(key, before[key], value); state.settings[key] = value; continue; }
+        for (const [kind, on] of Object.entries(value)) record(key + '.' + kind, before[key][kind], on);
+        const stored = state.settings[key];
+        state.settings[key] = { ...(stored && typeof stored === 'object' && !Array.isArray(stored) ? stored : {}), ...value };
+      }
+      if (logged.length) state.settingsLog = [...(state.settingsLog || []), ...logged].slice(-SETTINGS_LOG_LIMIT);
       if (changes.enabled === false) for (const run of Object.values(state.runs)) if (!terminal.has(run.status)) run.status = 'cancelled';
     });
     if (changes.enabled === false) {
@@ -44,6 +58,8 @@ export class NutritionCleanup {
     }
     return this.status(userId);
   }
+  /** Who changed which auditor setting, newest first. */
+  settingsLog(userId) { return [...(this.store.load(userId).settingsLog || [])].reverse(); }
   async request(userId, { manual = false, reconcile = false } = {}) {
     const state = this.store.load(userId);
     if (!manual && !state.settings.enabled) return null;
@@ -66,7 +82,12 @@ export class NutritionCleanup {
       const queued = Object.values(current.runs).find(run => !terminal.has(run.status));
       if (queued) { id = queued.id; return; }
       if (!manual && !current.settings.enabled) { id = null; return; }
-      current.runs[id] = { id, status: 'queued', attempt: 0, snapshot, dryRun: current.settings.dryRun,
+      // Model and permissions are fixed at queue time: a retried run must send
+      // the managed-run store the identical input, and a settings change mid-run
+      // must not change what the run may do.
+      const settings = effectiveSettings(current.settings);
+      current.runs[id] = { id, status: 'queued', attempt: 0, snapshot, dryRun: settings.dryRun,
+        model: settings.model, permissions: settings.permissions,
         createdAt: new Date(this.clock.now()).toISOString(), manual,
         ...(triage ? { triage: { needsAudit: triage.needsAudit, reason: triage.reason, score: triage.score } } : {}) };
     });
@@ -96,7 +117,9 @@ export class NutritionCleanup {
     this.store.update(userId, state => { state.runs[id].status = 'running'; state.runs[id].attempt++; });
     const fence = () => this.store.load(userId).runs[id]?.status === 'running';
     if (!run.result) {
-      const result = await this.runs.start({ workflowId: 'nutrition-audit', userId, runId: id, input: { snapshot: run.snapshot } });
+      // A run queued before model/permissions were recorded resumes with its original input.
+      const input = { snapshot: run.snapshot, ...(run.model ? { model: run.model, permissions: run.permissions } : {}) };
+      const result = await this.runs.start({ workflowId: 'nutrition-audit', userId, runId: id, input });
       if (result.status !== 'success') throw new Error(result.error?.message || 'Audit reasoning did not complete');
       if (!fence()) return;
       this.store.update(userId, state => { state.runs[id].result = result.result; });
@@ -104,12 +127,19 @@ export class NutritionCleanup {
     run = this.store.load(userId).runs[id];
     if (!fence()) return;
     const result = run.result;
+    const permissions = run.permissions || effectiveSettings(this.store.load(userId).settings).permissions;
     const evidenceById = new Map(result.evidence.map(source => [source.id, source]));
     const outcomes = [];
     const questions = [...result.questions];
     for (const [index, proposal] of result.repairs.entries()) {
       const evidence = proposal.evidenceIds.map(key => evidenceById.get(key)).filter(Boolean);
       if (evidence.length !== proposal.evidenceIds.length) { outcomes.push({ status: 'rejected', reason: 'Unknown evidence' }); continue; }
+      const blocked = blockedKinds(proposal, permissions);
+      if (blocked.length) {
+        outcomes.push({ status: 'blocked', kinds: blocked, proposal });
+        this.logger.info('nutrition.cleanup.blocked', { userId, runId: id, kinds: blocked });
+        continue;
+      }
       try {
         const applied = await this.repairs.apply({ userId, operationId: id + '_' + index, runId: id, proposal, evidence, fence, dryRun: run.dryRun });
         outcomes.push(run.dryRun ? { status: 'proposed', proposal } : { status: applied.affectedIds?.length ? 'applied' : 'unchanged', operationId: id + '_' + index });
@@ -118,7 +148,9 @@ export class NutritionCleanup {
         outcomes.push({ status: 'skipped', reason: error.message, ...(run.dryRun ? { proposal } : {}) });
       }
     }
-    if (!run.dryRun && fence()) for (const q of questions) {
+    const asking = permissions.questions !== false;
+    const suppressedQuestions = asking ? [] : questions.map(q => ({ question: q.question, entryIds: q.entryIds }));
+    if (asking && !run.dryRun && fence()) for (const q of questions) {
       const allRows = [...run.snapshot.rows, ...run.snapshot.pending.flatMap(log => log.items)];
       const entries = allRows.filter(row => q.entryIds.includes(row.uuid) || q.entryIds.includes(row.id));
       if (entries.length !== new Set(q.entryIds).size) continue;
@@ -134,7 +166,10 @@ export class NutritionCleanup {
     }
     this.store.update(userId, state => {
       if (state.runs[id].status !== 'running') return;
-      Object.assign(state.runs[id], { status: 'completed', outcomes, summary: result.summary, completedAt: new Date(this.clock.now()).toISOString() });
+      Object.assign(state.runs[id], { status: 'completed', outcomes, summary: result.summary, completedAt: new Date(this.clock.now()).toISOString(),
+        model: result.model ?? (run.model ? { provider: 'openai', name: run.model } : null), usage: result.usage ?? null, costUsd: result.costUsd ?? null,
+        turnId: result.turnId ?? null, toolCalls: result.toolCalls ?? [],
+        ...(suppressedQuestions.length ? { suppressedQuestions } : {}) });
       // Do not suppress a concurrent capture. Own repairs are the only permitted
       // change between the audited input and this checked output.
       state.checkedFingerprint = run.snapshot.fingerprint;

@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { auditWireSchema, decodeAudit, normalizeAuditRepairs } from './NutritionAuditor.mjs';
+import { describe, expect, it, vi } from 'vitest';
+import { auditWireSchema, decodeAudit, normalizeAuditRepairs, NutritionAuditor } from './NutritionAuditor.mjs';
 import { assertSchema } from '#adapters/agents/standardSchema.mjs';
 
 const result = changes => ({ summary: 'Verified panel', repairs: [{
@@ -82,5 +82,32 @@ describe('Auditor strict structured output', () => {
     expect(() => decodeAudit(result([{ field: 'grams', value: 170 }, { field: 'grams', value: 14 }]))).toThrow('repeated');
     expect(() => assertSchema(result([]), auditWireSchema)).toThrow();
     expect(() => assertSchema(result([{ field: 'grams', value: 'unknown' }]), auditWireSchema)).toThrow();
+  });
+});
+
+describe('Auditor run settings', () => {
+  it('runs the chosen model, tells it what it may not touch, and reports usage and tool calls', async () => {
+    const execute = vi.fn(async () => ({ structured: { summary: 'Nothing to do', repairs: [], questions: [] },
+      usage: { inputTokens: 900, outputTokens: 40 }, costUsd: 0.0005, model: { provider: 'openai', name: 'gpt-4.1-mini' }, turnId: 't1',
+      toolCalls: [{ toolName: 'lookup_barcode_product', args: { upc: '0'.repeat(300) } }, { payload: { toolName: 'find_food_art', args: { q: 'fish' } } }, {}] }));
+    const auditor = new NutritionAuditor({ runtime: { execute }, clock: { now: () => 0 }, timezoneFor: () => 'UTC' });
+    const out = await auditor.audit({ snapshot: { rows: [], pending: [], fingerprint: 'fp' }, model: 'gpt-4.1-mini',
+      permissions: { nutrients: false, questions: false } }, { userId: 'alice', runId: 'r1' });
+    const call = execute.mock.calls[0][0];
+    expect(call.model).toBe('openai/gpt-4.1-mini');
+    expect(call.systemPrompt).toContain('\nYou are not permitted to change: nutrient values.');
+    expect(call.systemPrompt).toContain('Do not ask questions.');
+    expect(out).toMatchObject({ usage: { inputTokens: 900 }, costUsd: 0.0005, model: { name: 'gpt-4.1-mini' }, turnId: 't1' });
+    expect(out.toolCalls.map(c => c.name)).toEqual(['lookup_barcode_product', 'find_food_art', 'unknown']);
+    expect(out.toolCalls[0].args.length).toBe(200);
+    expect(out.toolCalls[1].args).toBe('{"q":"fish"}');
+  });
+  it('keeps the base prompt and the runtime default model when nothing is set', async () => {
+    const execute = vi.fn(async () => ({ structured: { summary: '', repairs: [], questions: [] } }));
+    const auditor = new NutritionAuditor({ runtime: { execute }, clock: { now: () => 0 }, timezoneFor: () => 'UTC' });
+    const out = await auditor.audit({ snapshot: { rows: [], pending: [], fingerprint: 'fp' } }, { userId: 'alice', runId: 'r1' });
+    expect(execute.mock.calls[0][0]).not.toHaveProperty('model');
+    expect(execute.mock.calls[0][0].systemPrompt).toBe(auditor.getSystemPrompt());
+    expect(out).toMatchObject({ usage: null, costUsd: null, model: null, turnId: null, toolCalls: [] });
   });
 });

@@ -298,3 +298,74 @@ describe('durable questions and worker', () => {
     expect(f.store.load('alice').questions[q.id].status).toBe('stale');
   });
 });
+
+describe('auditor settings, permissions and history', () => {
+  const noChanges = { summary: 'No changes', repairs: [], questions: [], evidence: [] };
+  it('rejects an unknown model with 400 and leaves state unchanged; still 409 on a stale version', async () => {
+    const f = await fixture();
+    const cleanup = new NutritionCleanup({ ...f, runs: { register: vi.fn() } });
+    const before = f.store.load('alice');
+    await expect(cleanup.settings('alice', { expectedVersion: before.version, model: 'gpt-9' })).rejects.toMatchObject({ status: 400 });
+    expect(f.store.load('alice')).toEqual(before);
+    await expect(cleanup.settings('alice', { expectedVersion: before.version + 7, model: 'gpt-4o' })).rejects.toMatchObject({ status: 409 });
+  });
+  it('logs each changed leaf once, newest first, and nothing for a no-op', async () => {
+    const f = await fixture();
+    const cleanup = new NutritionCleanup({ ...f, runs: { register: vi.fn() } });
+    await cleanup.settings('alice', { expectedVersion: cleanup.status('alice').version, model: 'gpt-4.1-mini', permissions: { nutrients: true } });
+    expect(cleanup.settingsLog('alice')).toEqual([]);
+    await cleanup.settings('alice', { expectedVersion: cleanup.status('alice').version, model: 'gpt-4o' });
+    await cleanup.settings('alice', { expectedVersion: cleanup.status('alice').version, permissions: { nutrients: false } });
+    const log = cleanup.settingsLog('alice');
+    expect(log).toHaveLength(2);
+    expect(log[0]).toMatchObject({ field: 'permissions.nutrients', from: true, to: false, actor: 'user' });
+    expect(log[1]).toEqual({ at: '2026-09-04T19:00:00.000Z', actor: 'user', field: 'model', from: 'gpt-4.1-mini', to: 'gpt-4o' });
+    const status = cleanup.status('alice').settings;
+    expect(status.model).toBe('gpt-4o');
+    expect(status.permissions).toMatchObject({ nutrients: false, naming: true });
+  });
+  it('exposes effective defaults for a fresh user beside the existing switches', async () => {
+    const f = await fixture();
+    const settings = new NutritionCleanup({ ...f, runs: { register: vi.fn() } }).status('alice').settings;
+    expect(settings).toMatchObject({ enabled: false, dryRun: true, telegram: false, model: 'gpt-4.1-mini' });
+    expect(Object.values(settings.permissions).every(Boolean)).toBe(true);
+  });
+  it('blocks a nutrient repair when nutrients are switched off, without writing', async () => {
+    const f = await fixture();
+    f.store.update('alice', state => { state.settings = { enabled: true, dryRun: false, telegram: false, permissions: { nutrients: false } }; });
+    const row = await f.items.findByUuid('alice', 'fish000001');
+    const result = { summary: 'Panel', repairs: [f.proposal({ calories: 60 })], questions: [],
+      evidence: [{ id: 'source', kind: 'product', facts: [{ entryId: row.uuid, field: 'calories', value: 60 }] }] };
+    const cleanup = new NutritionCleanup({ ...f, runs: { register: vi.fn(), start: vi.fn(async () => ({ status: 'success', result })) } });
+    await cleanup.request('alice', { manual: true }); await cleanup.settled('alice');
+    expect(cleanup.status('alice').runs[0].outcomes[0]).toMatchObject({ status: 'blocked', kinds: ['nutrients'] });
+    expect((await f.items.findByUuid('alice', 'fish000001')).calories).toBe(52);
+    expect(f.logger.info).toHaveBeenCalledWith('nutrition.cleanup.blocked', expect.objectContaining({ userId: 'alice', kinds: ['nutrients'] }));
+  });
+  it('keeps questions off the cards when questions are switched off', async () => {
+    const f = await fixture();
+    f.store.update('alice', state => { state.settings = { enabled: true, dryRun: false, telegram: false, permissions: { questions: false } }; });
+    const question = { question: 'Was the fish 55 g or 100 g?', entryIds: ['fish000001'],
+      choices: [{ label: '55 g', repair: f.proposal({ grams: 55 }) }, { label: '100 g', repair: f.proposal({ grams: 100 }) }] };
+    const result = { summary: 'Portion unclear', repairs: [], questions: [question], evidence: [{ id: 'source', kind: 'capture' }] };
+    const cleanup = new NutritionCleanup({ ...f, runs: { register: vi.fn(), start: vi.fn(async () => ({ status: 'success', result })) } });
+    const ask = vi.spyOn(cleanup.interactions, 'ask');
+    await cleanup.request('alice', { manual: true }); await cleanup.settled('alice');
+    expect(ask).not.toHaveBeenCalled();
+    expect(cleanup.status('alice').runs[0].suppressedQuestions).toEqual([{ question: question.question, entryIds: ['fish000001'] }]);
+  });
+  it('runs the chosen model and keeps its usage and cost on the completed run', async () => {
+    const f = await fixture();
+    f.store.update('alice', state => { state.settings = { enabled: true, dryRun: true, telegram: false, model: 'gpt-4o' }; });
+    const result = { ...noChanges, model: { provider: 'openai', name: 'gpt-4o' }, usage: { inputTokens: 1200, outputTokens: 80 },
+      costUsd: 0.0038, turnId: 'turn_1', toolCalls: [{ name: 'find_food_art', args: '{"q":"fish"}' }] };
+    const runs = { register: vi.fn(), start: vi.fn(async () => ({ status: 'success', result })) };
+    const cleanup = new NutritionCleanup({ ...f, runs });
+    await cleanup.request('alice', { manual: true }); await cleanup.settled('alice');
+    expect(runs.start.mock.calls[0][0].input).toMatchObject({ model: 'gpt-4o', permissions: { nutrients: true, questions: true } });
+    const [run] = Object.values(f.store.load('alice').runs);
+    expect(run).toMatchObject({ status: 'completed', model: { name: 'gpt-4o' }, usage: { inputTokens: 1200 }, costUsd: 0.0038, turnId: 'turn_1',
+      toolCalls: [{ name: 'find_food_art' }] });
+    expect(run.result).toBeUndefined();
+  });
+});
