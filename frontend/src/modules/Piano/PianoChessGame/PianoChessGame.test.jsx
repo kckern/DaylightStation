@@ -44,6 +44,10 @@ import {
 } from './chessApi.js';
 import { DEFAULT_CHORD_SCHEME, squareToChord } from './chordAddress.js';
 import { DEFAULT_STAFF_SCHEME } from './staffAddress.js';
+import { createChessGameState } from './chessGameState.js';
+import { chessAddressingFor } from './chessAddressingModel.js';
+import { addressingPolicyFor } from '../game-platform/addressing/addressingPolicy.js';
+import { managedAddressingAt } from '../game-platform/addressing/managedAddressing.js';
 import { DOUBLE_WINDOW_MS } from './chordSelection.js';
 import { GESTURE_SETTLE_MS } from './useSettledGesture.js';
 
@@ -833,6 +837,48 @@ describe('hover before commit', () => {
     expect(container.querySelectorAll('.chess-board__square--rejected')).toHaveLength(0);
     // Exploring costs nothing: the piece is still in hand after the wander.
     expect(heldSquares(container)).toHaveLength(1);
+  });
+
+  // 2026-09-25, two children on the kiosk: every first-move lift was dropped a
+  // moment later by `addressing.adopted-over-lift`. On a shuffled board the game
+  // carries the DEALT scheme (`…:shuffled:<seed>`) while the config hands back
+  // the BASE scheme, so the "is this already adopted?" check never matched, and
+  // every re-render of the parent rebuilt the board with the piece put back.
+  it('keeps a lifted piece on a shuffled board when the parent re-renders', async () => {
+    const config = { addressing: { vocabulary: 'chords', shuffle: 'each_turn' } };
+    fetchChessConfig.mockImplementation(async () => config);
+    const policy = () => addressingPolicyFor({
+      config: { enabled: true, users: { 'test-learner': { vocabulary: 'chords' } } },
+      learnerId: 'test-learner',
+    });
+    const loaded = chessAddressingFor(config, DEFAULT_CHORD_SCHEME, 7, managedAddressingAt(policy().config, policy()));
+    expect(loaded.shuffleEachTurn).toBe(true);
+    const dealt = createChessGameState({ scheme: loaded.scheme, seed: 7, shuffleEachTurn: true }).scheme;
+    expect(dealt.id).not.toBe(loaded.scheme.id);
+    const dealtNotes = (square) => squareToChord(square, dealt).pitch_classes.map((pc) => 60 + pc);
+    // A FRESH policy object per render, exactly as the kiosk's Games mode
+    // builds it inline — so the loaded addressing is a new object every render.
+    const shuffledElement = () => <PianoChessGame seed={7} addressingPolicy={policy()} />;
+    const play = async (rerender, notes) => {
+      holdNotes(notes);
+      rerender(shuffledElement());
+      await act(async () => { await vi.advanceTimersByTimeAsync(400); });
+      holdNotes([]);
+      rerender(shuffledElement());
+      await act(async () => { await vi.advanceTimersByTimeAsync(120); });
+    };
+    try {
+      const { container, rerender } = render(shuffledElement());
+      await boardReady();
+      await play(rerender, dealtNotes('e2'));
+      await play(rerender, dealtNotes('e2'));
+      expect(heldSquares(container)).toHaveLength(1);
+      rerender(shuffledElement());
+      await act(async () => { await vi.advanceTimersByTimeAsync(50); });
+      expect(heldSquares(container)).toHaveLength(1);
+    } finally {
+      fetchChessConfig.mockImplementation(async () => null);
+    }
   });
 });
 

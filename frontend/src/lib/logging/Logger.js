@@ -16,6 +16,11 @@ import {
 } from './jankProbes.js';
 
 const LEVELS = ['debug', 'info', 'warn', 'error'];
+
+// Which bundle wrote the event (vite.config.js `buildId`: the commit when the
+// build has one, else the build time in base36). Without it the log store
+// cannot say whether a misbehaving screen was running current code.
+const BUILD_ID = import.meta.env?.VITE_BUILD_ID || 'dev';
 const LEVEL_PRIORITY = LEVELS.reduce((acc, level, idx) => ({ ...acc, [level]: idx }), {});
 
 const DEFAULT_OPTIONS = Object.freeze({
@@ -113,7 +118,7 @@ const emit = (level, eventName, data = {}, options = {}) => {
     message: options.message,
     data: data || {},
     source: options.source || config.name,
-    context: { ...config.context, ...(options.context || {}) },
+    context: { build: BUILD_ID, ...config.context, ...(options.context || {}) },
     tags: options.tags || []
   };
 

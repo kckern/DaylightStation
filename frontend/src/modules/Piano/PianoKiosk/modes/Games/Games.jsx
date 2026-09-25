@@ -217,6 +217,13 @@ function GameHost() {
   const learnerId = pianoUser?.currentUser ?? null;
   const challengeProfile = usePianoChallengeProfile(learnerId);
   const boardGameDay = useBoardGameDay(learnerId, logger);
+  // Memoized like the office screen's: an inline object here was new on every
+  // note, and chess re-ran its config adoption each time (2026-09-25).
+  const addressingPolicy = useMemo(() => addressingPolicyFor({
+    config: config.gameAddressing,
+    learnerId,
+    completedGames: boardGameDay.completedGames,
+  }), [config.gameAddressing, learnerId, boardGameDay.completedGames]);
   // Which physical kiosk this browser IS, not which app it is running. A shared
   // literal ('piano-kiosk') cannot tell a wall tablet from a dev laptop, so two
   // clients stamp the same id: every per-device log query merges them, and the
@@ -421,11 +428,7 @@ function GameHost() {
               activeNotes={activeNotes}
               noteHistory={noteHistory}
               gameConfig={config.games?.[gameId]}
-              addressingPolicy={addressingPolicyFor({
-                config: config.gameAddressing,
-                learnerId,
-                completedGames: boardGameDay.completedGames,
-              })}
+              addressingPolicy={addressingPolicy}
               subRoute={subRoute ?? null}
               onSubRoute={goSubRoute}
               currentUser={currentUser}
