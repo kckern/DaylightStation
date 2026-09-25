@@ -105,6 +105,64 @@ describe('BudgetService.getBudget', () => {
     expect(b.sessions[0]).toMatchObject({ id: 1, calories: 517, minutes: 42.47 });
   });
 
+  // 2026-09-25: two home workouts, only the first on Strava. The second (a group
+  // game-cycling ride, no watch activity) must still count — and the first must
+  // not count twice.
+  it('credits a home session Strava has not caught up with, and never double-counts a linked one', async () => {
+    const tz = 'America/Los_Angeles';
+    const at = (iso) => new Date(iso).getTime();
+    const svc = makeService({
+      healthStore: {
+        getWorkoutsForDate: async () => ({
+          activity: [{ id: 20328539546, title: 'Max Built—Arms 1', startTime: '01:20 pm', minutes: 38.87,
+            calories: 187, homeSessionId: '20260925132040' }],
+          fitness: [],
+          home: [
+            { sessionId: '20260925132040', startTime: at('2026-09-25T13:20:40-07:00'), durationMs: 2463000,
+              timezone: tz, title: 'Max Built—Arms 1', stravaActivityId: 20328539546, avgHeartrate: 96 },
+            { sessionId: '20260925140616', startTime: at('2026-09-25T14:06:16-07:00'), durationMs: 1233000,
+              timezone: tz, title: 'Game Cycling—Sonic & Sega All Stars Racing', stravaActivityId: null, avgHeartrate: 107 },
+          ],
+        }),
+      },
+    });
+    const b = await svc.getBudget('kckern', '2026-09-02');
+    expect(b.sessions).toHaveLength(2);
+    const est = b.sessions[1];
+    expect(est).toMatchObject({ source: 'home', estimated: true, homeSessionId: '20260925140616',
+      title: 'Game Cycling—Sonic & Sega All Stars Racing', startTime: '02:06 pm', minutes: 20.55, avgHeartrate: 107 });
+    expect(est.calories).toBeGreaterThan(100);
+    expect(b.exercise).toBe(187 + est.calories);
+  });
+
+  it('drops the home estimate once an unlinked ledger row overlaps it in time', async () => {
+    const svc = makeService({
+      healthStore: {
+        getWorkoutsForDate: async () => ({
+          activity: [],
+          fitness: [{ title: 'Cardio Training', calories: 149, startTime: '02:07 pm', minutes: 20 }],
+          home: [{ sessionId: 's1', startTime: new Date('2026-09-25T14:06:16-07:00').getTime(), durationMs: 1233000,
+            timezone: 'America/Los_Angeles', title: 'Game Cycling', avgHeartrate: 107 }],
+        }),
+      },
+    });
+    const b = await svc.getBudget('kckern', '2026-09-02');
+    expect(b.sessions).toHaveLength(1);
+    expect(b.exercise).toBe(149);
+  });
+
+  it('counts home sessions in the range fold too', async () => {
+    const svc = makeService({
+      healthStore: {
+        getWorkoutsForRange: async () => ({ '2026-09-02': { activity: [], fitness: [],
+          home: [{ sessionId: 's1', startTime: new Date('2026-09-02T14:00:00-07:00').getTime(), durationMs: 1800000,
+            timezone: 'America/Los_Angeles', avgHeartrate: 120 }] } }),
+      },
+    });
+    const [day] = await svc.getBudgetRange('kckern', '2026-09-02', '2026-09-02');
+    expect(day.exercise).toBeGreaterThan(0);
+  });
+
   it('falls back to the fitness group when activity is empty for the date (watchless / home-workout days)', async () => {
     const svc = makeService({
       healthStore: {

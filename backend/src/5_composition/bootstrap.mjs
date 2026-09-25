@@ -1687,6 +1687,7 @@ export function createCameraServices({ configService, householdId, haGateway, lo
  * @param {Object} [config.remoteExec] - Remote execution service (for SSH)
  * @param {string} [config.daylightHost] - Base URL for content loading
  * @param {Object} [config.configService] - ConfigService for auth lookups
+ * @param {Array<{id: string, route?: string}>} [config.screens] - Household screens, for fuzzy screen_path matching
  * @param {Object} [config.logger] - Logger instance
  * @returns {Promise<Object>} Device services { deviceService, deviceFactory }
  */
@@ -1699,6 +1700,7 @@ export async function createDeviceServices(config) {
     remoteExec,
     daylightHost,
     configService,
+    screens = [],
     logger = console
   } = config;
 
@@ -1709,6 +1711,7 @@ export async function createDeviceServices(config) {
     remoteExec,
     daylightHost,
     configService,
+    screenAddressResolver: new ScreenAddressResolver({ screens }),
     factories: {
       deviceControl: (adapterConfig, deps) => new HomeAssistantDeviceAdapter(adapterConfig, deps),
       sshOs: (adapterConfig, deps) => new SshOsAdapter(adapterConfig, deps),
@@ -2417,6 +2420,10 @@ export function createHealthServices(config) {
     dataService,
     userResolver,
     configService,
+    // Home Fitness-app sessions count as exercise before Strava catches up.
+    homeSessionStore: configService?.getHouseholdPath
+      ? new YamlSessionDatastore({ configService, logger })
+      : null,
     logger
   });
 

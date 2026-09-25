@@ -25,6 +25,7 @@ export class YamlHealthDatastore extends IHealthDataDatastore {
   #dataService;
   #userResolver;
   #configService;
+  #homeSessionStore;
   #logger;
 
   /**
@@ -32,6 +33,9 @@ export class YamlHealthDatastore extends IHealthDataDatastore {
    * @param {Object} config.dataService - DataService instance for YAML I/O
    * @param {Object} [config.userResolver] - UserResolver for ID to username mapping
    * @param {Object} [config.configService] - ConfigService for default user lookup
+   * @param {Object} [config.homeSessionStore] - fitness session store
+   *   (`findInRange(from, to)`); home sessions the user was in join the
+   *   workout views as `home`
    * @param {Object} [config.logger] - Logger instance
    */
   constructor(config) {
@@ -45,6 +49,7 @@ export class YamlHealthDatastore extends IHealthDataDatastore {
     this.#dataService = config.dataService;
     this.#userResolver = config.userResolver;
     this.#configService = config.configService;
+    this.#homeSessionStore = config.homeSessionStore || null;
     this.#logger = config.logger || console;
   }
 
@@ -344,7 +349,7 @@ export class YamlHealthDatastore extends IHealthDataDatastore {
    * Get all workouts for a specific date
    * @param {string} userId
    * @param {string} date - YYYY-MM-DD
-   * @returns {Promise<Object>} { activity: [], fitness: [] }
+   * @returns {Promise<Object>} { activity: [], fitness: [], home: [] }
    */
   async getWorkoutsForDate(userId, date) {
     const [activity, fitness] = await Promise.all([
@@ -352,10 +357,49 @@ export class YamlHealthDatastore extends IHealthDataDatastore {
       this.loadFitnessData(userId)
     ]);
 
+    const home = await this.#homeSessionsByDate(userId, date, date);
     return {
       activity: activity[date] || [],
-      fitness: fitness[date]?.activities || []
+      fitness: fitness[date]?.activities || [],
+      home: home[date] || [],
     };
+  }
+
+  /**
+   * Home Fitness-app sessions this user took part in, keyed by date, in the
+   * shape the budget's merge expects. The fitness store is optional and never
+   * allowed to take the workout views down: a failure logs and reads as none.
+   * @private
+   */
+  async #homeSessionsByDate(userId, startDate, endDate) {
+    if (!this.#homeSessionStore?.findInRange) return {};
+    const username = userId ? this.#resolveUsername(userId) : this.#getDefaultUsername();
+    let sessions;
+    try {
+      sessions = await this.#homeSessionStore.findInRange(startDate, endDate);
+    } catch (err) {
+      this.#logger.warn?.('health.store.home_sessions_unreadable', { userId, startDate, endDate, error: err.message });
+      return {};
+    }
+    const out = {};
+    for (const s of sessions || []) {
+      const me = s?.participants?.[username];
+      if (!me || !s.date) continue;
+      const media = s.media?.primary;
+      const title = media?.showTitle && media?.title ? `${media.showTitle}—${media.title}`
+        : (media?.title || media?.showTitle || null);
+      (out[s.date] ||= []).push({
+        sessionId: s.sessionId,
+        segmentIds: (s.segments || []).map((seg) => seg.sessionId).filter(Boolean),
+        startTime: s.startTime,
+        durationMs: s.durationMs,
+        timezone: s.timezone,
+        title,
+        stravaActivityId: s.stravaActivityId ?? null,
+        avgHeartrate: me.hrAvg ?? null,
+      });
+    }
+    return out;
   }
 
   /**
@@ -369,7 +413,7 @@ export class YamlHealthDatastore extends IHealthDataDatastore {
    * @param {string} userId
    * @param {string} startDate - YYYY-MM-DD (inclusive)
    * @param {string} endDate - YYYY-MM-DD (inclusive)
-   * @returns {Promise<Object>} { [date]: { activity: [], fitness: [] } }
+   * @returns {Promise<Object>} { [date]: { activity: [], fitness: [], home: [] } }
    */
   async getWorkoutsForRange(userId, startDate, endDate) {
     const [activity, fitness] = await Promise.all([
@@ -377,12 +421,17 @@ export class YamlHealthDatastore extends IHealthDataDatastore {
       this.loadFitnessData(userId)
     ]);
 
+    const home = await this.#homeSessionsByDate(userId, startDate, endDate);
     const out = {};
     const slot = (date) => {
       if (date < startDate || date > endDate) return null;
-      if (!out[date]) out[date] = { activity: [], fitness: [] };
+      if (!out[date]) out[date] = { activity: [], fitness: [], home: [] };
       return out[date];
     };
+    for (const [date, list] of Object.entries(home)) {
+      const bucket = slot(date);
+      if (bucket) bucket.home = list;
+    }
     for (const [date, list] of Object.entries(activity || {})) {
       const bucket = slot(date);
       if (bucket) bucket.activity = list || [];
