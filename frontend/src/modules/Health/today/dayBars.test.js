@@ -133,6 +133,32 @@ describe('fmtKcal', () => {
   });
 });
 
+describe('barModel — the server zone and the goal band', () => {
+  const ranged = (over = {}) => day({ budget: 1791, maintenance: 2291, range: { floor: 1200, top: 1791 }, ...over });
+
+  it('takes the zone from the server when it has one', () => {
+    for (const zone of ['incomplete', 'declared', 'in-range', 'over', 'past-even']) {
+      expect(barModel(ranged({ zone })).zone).toBe(zone);
+    }
+  });
+
+  it('places the floor at floor − exercise in the same box as the goal line', () => {
+    const m = barModel(ranged({ food: 1400, exercise: 300, zone: 'in-range' }), 1.25);
+    expect(m.floorPct).toBeCloseTo(((900 / 1791) / 1.25) * 100, 0);
+    expect(m.floorPct).toBeLessThan(m.goalPct);
+  });
+
+  it('a floor below zero (exercise past it) sits at the bottom of the box', () => {
+    expect(barModel(ranged({ food: 1400, exercise: 1500, zone: 'in-range' })).floorPct).toBe(0);
+  });
+
+  it('a day without a range keeps the legacy zones and has no band', () => {
+    const m = barModel(day({ budget: 2000, food: 1000 }));
+    expect(m.zone).toBe('under');
+    expect(m.floorPct).toBeNull();
+  });
+});
+
 describe('barCellLabel — names the zone segment', () => {
   it('an under-logged day is "to floor"', () => {
     const d = day({ food: 700, zone: 'incomplete', remaining: 500, status: 'under', range: { floor: 1200, top: 2000 } });

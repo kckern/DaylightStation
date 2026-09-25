@@ -174,15 +174,36 @@ It serves `/budget`, `/budget/range`, and the budget portion of `/day`. Today re
 one `/day?date=` snapshot containing entries, their ledger revision, and a budget
 computed from those exact entries. A budget setup error does not hide the food log. `EquationStrip.jsx` is proof by absence: it destructures `budget.budget`,
 `budget.food`, `budget.exercise`, `budget.maintenance`, `budget.remaining`, `budget.status`,
-`budget.stale` and renders them verbatim — as one bar, not a row of cards. The bar has a
-fixed scale (the largest of goal, break-even and food, plus 12% headroom) and two marks
-that do not move with the day: **Goal** (`budget`, labelled above the bar) and **Break
-even** (`maintenance` = BMR × activity baseline, the burn at which weight holds;
-labelled below, so the two labels never collide). When there is no planned deficit
-the two coincide and one mark reads "Goal · break even". The fill is **net** calories
-(food − exercise): success tone up to the goal, warning between goal and break-even,
-danger past break-even; exercise is a light band from net up to what was eaten. The
-headline comes from `headlineFor` in the shared zone rule and names the segment its
+`budget.stale` and renders them verbatim — as one bar, not a row of cards.
+
+**The bar is a labelled ruler** (`RulerScale` in `EquationStrip.jsx`, geometry in the
+pure `today/budgetGeometry.js`, pinned by `budgetGeometry.test.js`):
+
+- **Ruler.** `[left, right]` maps onto the whole track. `left = −ceil250(exercise)`
+  (0 with no exercise); `right = max(maintenance, net, top, floor) × 1.12`. On an
+  exercise day everything compresses slightly: marks keep their values, not their
+  pixels.
+- **Ticks** every 250 kcal, numbered at 1,000s under 600 px of track and at 500s
+  above; none within 12 px of a named mark.
+- **Goal band** from `floor − exercise` to `top`, labelled "Goal 1,200–1,791" above
+  the track. Its left edge shifts by exercise because the floor measures food
+  (`food ≥ floor ⇔ net ≥ floor − exercise`). A band with no width collapses to one
+  Goal line. **Break even** is a line labelled below; it keeps only its number
+  when it sits within 40 px of the top.
+- **Exercise credit on the left.** A hatched "earned" block from −exercise to 0,
+  drawn over the first `exercise` kcal of the food block (the food it cancelled).
+- **Food block** from −exercise, length = food, labelled "N eaten" at its right
+  end when ≥ 70 px. Its right edge is **net — the one frontier** — and its colour is
+  the zone: info (incomplete, still working toward the floor), success (in range or
+  declared), warning (over the top), danger (past break-even). A negative net ends
+  left of 0; the hatch past it is unused credit.
+- **Remaining run.** A dotted run from the frontier to the mark the headline
+  measures against (band edge / top / from top / from break-even); none when the day
+  is declared.
+
+A budget without `range`/`zone` (an older server) still gets the previous two-mark
+bar. The terms line states the real net (with a minus sign when exercise exceeds
+food), and the deficit is counted from it. The headline comes from `headlineFor` in the shared zone rule and names the segment its
 number measures ("N kcal to floor", "N kcal left", "N kcal over", "N kcal past break
 even", or "Fasted"/"Logging done"); the week strip's cell labels use the same words.
 The line under it reads "1,603
@@ -586,9 +607,15 @@ highest break-even (`maintenance / budget`) fits under the top, at most 2×. A
 solid line marks the goal at `1/cap` of the box; a dashed line marks break even.
 Both positions are set inline and shared by every cell, so they sit level.
 
-Hue is the zone: success up to the goal, warning past the goal but under break
-even (still losing, just slower), danger past break even — or past the goal
-when no break even is known. A day you ate 114% of goal and trained off is drawn
+Hue is the server's zone (`day.zone`, the shared budgetZone rule): info for an
+under-logged (`incomplete`) day, success in range or declared, warning over the
+top, danger past break-even. A shaded **goal band** runs from `floor − exercise`
+(`barModel.floorPct`) up to the goal line, so each cell shows where "logged
+enough" starts. The month block's caption counts days over plan, past break-even
+and under-logged separately; an under-logged day is not a deficit. A day from an
+older payload without a zone keeps the legacy hue: success up to the goal,
+warning past the goal but under break even (still losing, just slower), danger
+past break even — or past the goal when no break even is known. A day you ate 114% of goal and trained off is drawn
 at its net, under the line, green: the old food-height encoding needed an extra
 "offset by exercise" cue to explain that, and it is gone. The accessible name
 still states every term as one claim ("ate 2040, burned 530, 1510 net of 1791
