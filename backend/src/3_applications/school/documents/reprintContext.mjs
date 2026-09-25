@@ -36,7 +36,14 @@ export function deriveIssueDate(isoTimestamp, timeZone = DEFAULT_TIMEZONE) {
 /**
  * The render context a card-attached worksheet instance needs to reproduce its
  * semantic paper through the current engine: same cardId/row range, learner
- * identity, printed name, and date.
+ * identity, printed name, date, and the START/KEEP card banner.
+ *
+ * The instance does not record whether its print started a new answer sheet,
+ * so `reprintFirstUse` is inferred the same way RenderIssuedWorksheetArtifact
+ * does for legacy manifests: `instance.omr` is the ORIGINAL issue's
+ * allocation, and the allocator only ever starts a card at row 1 when it
+ * mints it. Without this a reprint of a first-use sheet drew KEEP where the
+ * original said START.
  */
 export function buildReprintContext(instance) {
   if (!instance?.omr?.cardId || !instance?.omr?.rowRange) {
@@ -53,5 +60,6 @@ export function buildReprintContext(instance) {
     learnerName: deriveLearnerName(instance.learnerId),
     date: deriveIssueDate(instance.issuedAt),
     sessionId: instance.sessionId ?? null,
+    reprintFirstUse: instance.omr.rowRange.start === 1,
   };
 }
