@@ -126,7 +126,8 @@ export class NutritionCleanup {
   status(userId) {
     const state = this.store.load(userId);
     const settings = effectiveSettings(state.settings);
-    return { version: state.version, settings, nextEligibleAt: state.lastAutoRunAt ? iso(state.lastAutoRunAt + settings.minGapMinutes * 60000) : null,
+    // `settingsVersion` fences settings edits; `version` moves on every state write (runs, questions).
+    return { version: state.version, settingsVersion: state.settingsVersion ?? 0, settings, nextEligibleAt: state.lastAutoRunAt ? iso(state.lastAutoRunAt + settings.minGapMinutes * 60000) : null,
       questions: Object.values(state.questions).filter(q => ['open', 'answering'].includes(q.status)).map(({ snapshot, evidence, prepared, ...question }) => question),
       runs: Object.values(state.runs).reverse().slice(0, 20).map(({ snapshot, result, ...run }) => run) };
   }
@@ -138,10 +139,17 @@ export class NutritionCleanup {
     const records = [...ledger.records, ...pending].sort((a, b) => b.at.localeCompare(a.at));
     return { records: records.slice(offset, offset + limit), total: ledger.total + pending.length };
   }
-  async settings(userId, { expectedVersion, ...changes }) {
+  /**
+   * Change auditor settings. `expectedSettingsVersion` is the settings revision
+   * the caller saw; it moves only here, so run and question activity in
+   * between does not turn an edit into a conflict.
+   */
+  async settings(userId, { expectedSettingsVersion, expectedVersion, ...changes }) {
+    if (!Number.isSafeInteger(expectedSettingsVersion)) fail('expectedSettingsVersion is required', 400);
     validateSettingsChange(changes);
     this.store.update(userId, state => {
-      if (state.version !== expectedVersion) fail('Settings changed. Reload first.');
+      if ((state.settingsVersion ?? 0) !== expectedSettingsVersion) fail('Settings changed. Reload first.');
+      state.settingsVersion = (state.settingsVersion ?? 0) + 1;
       // Compare against what the auditor was actually using, so a first explicit
       // choice of a default value is not recorded as a change.
       const before = effectiveSettings(state.settings);
@@ -261,7 +269,8 @@ export class NutritionCleanup {
       for (const kind of new Set(row.trigger || [])) tally(triggers, kind, row);
       tally(models, row.model || 'unknown', row);
     }
-    const avg = entry => (entry.priced ? round(entry.costUsd / entry.priced) : 0);
+    // No priced run, no average: null reads as "cost unknown", not free.
+    const avg = entry => (entry.priced ? round(entry.costUsd / entry.priced) : null);
     const byCost = (a, b) => b[1].costUsd - a[1].costUsd;
     const state = this.store.load(userId);
     const settings = effectiveSettings(state.settings);

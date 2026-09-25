@@ -220,7 +220,7 @@ describe('durable questions and worker', () => {
     const runs = { register: vi.fn(), cancel: vi.fn(), start: vi.fn(() => gate) };
     const cleanup = new NutritionCleanup({ ...f, runs });
     await cleanup.request('alice');
-    await cleanup.settings('alice', { expectedVersion: cleanup.status('alice').version, enabled: false });
+    await cleanup.settings('alice', { expectedSettingsVersion: cleanup.status('alice').settingsVersion, enabled: false });
     release({ status: 'success', result: { summary: 'Fish artwork', repairs: [f.proposal({ icon: 'fish' })], questions: [], evidence: [{ id: 'source', kind: 'capture' }] } });
     await cleanup.settled('alice');
     expect(cleanup.status('alice').runs[0].status).toBe('cancelled');
@@ -343,17 +343,38 @@ describe('auditor settings, permissions and history', () => {
     const f = await fixture();
     const cleanup = new NutritionCleanup({ ...f, runs: { register: vi.fn() } });
     const before = f.store.load('alice');
-    await expect(cleanup.settings('alice', { expectedVersion: before.version, model: 'gpt-9' })).rejects.toMatchObject({ status: 400 });
+    await expect(cleanup.settings('alice', { expectedSettingsVersion: 0, model: 'gpt-9' })).rejects.toMatchObject({ status: 400 });
     expect(f.store.load('alice')).toEqual(before);
-    await expect(cleanup.settings('alice', { expectedVersion: before.version + 7, model: 'gpt-4o' })).rejects.toMatchObject({ status: 409 });
+    await expect(cleanup.settings('alice', { expectedSettingsVersion: 7, model: 'gpt-4o' })).rejects.toMatchObject({ status: 409 });
+  });
+  it('versions settings on their own: run and question writes between two changes do not conflict', async () => {
+    const f = await fixture();
+    const cleanup = new NutritionCleanup({ ...f, runs: { register: vi.fn() } });
+    const first = cleanup.status('alice');
+    expect(first.settingsVersion).toBe(0);
+    const after = await cleanup.settings('alice', { expectedSettingsVersion: first.settingsVersion, model: 'gpt-4o' });
+    expect(after.settingsVersion).toBe(1);
+    // A run's status write bumps the state version, not the settings version.
+    f.store.update('alice', state => { state.runs.r1 = { id: 'r1', status: 'running', createdAt: '2026-09-04T19:00:00.000Z' }; });
+    f.store.update('alice', state => { state.runs.r1.status = 'completed'; });
+    expect(cleanup.status('alice').version).toBeGreaterThan(after.version);
+    const second = await cleanup.settings('alice', { expectedSettingsVersion: after.settingsVersion, permissions: { nutrients: false } });
+    expect(second.settingsVersion).toBe(2);
+    expect(second.settings.permissions.nutrients).toBe(false);
+    await expect(cleanup.settings('alice', { expectedSettingsVersion: after.settingsVersion, model: 'gpt-4.1' })).rejects.toMatchObject({ status: 409 });
+  });
+  it('requires the settings version', async () => {
+    const f = await fixture();
+    const cleanup = new NutritionCleanup({ ...f, runs: { register: vi.fn() } });
+    await expect(cleanup.settings('alice', { expectedVersion: cleanup.status('alice').version, model: 'gpt-4o' })).rejects.toMatchObject({ status: 400 });
   });
   it('logs each changed leaf once, newest first, and nothing for a no-op', async () => {
     const f = await fixture();
     const cleanup = new NutritionCleanup({ ...f, runs: { register: vi.fn() } });
-    await cleanup.settings('alice', { expectedVersion: cleanup.status('alice').version, model: 'gpt-4.1-mini', permissions: { nutrients: true } });
+    await cleanup.settings('alice', { expectedSettingsVersion: cleanup.status('alice').settingsVersion, model: 'gpt-4.1-mini', permissions: { nutrients: true } });
     expect(cleanup.settingsLog('alice')).toEqual([]);
-    await cleanup.settings('alice', { expectedVersion: cleanup.status('alice').version, model: 'gpt-4o' });
-    await cleanup.settings('alice', { expectedVersion: cleanup.status('alice').version, permissions: { nutrients: false } });
+    await cleanup.settings('alice', { expectedSettingsVersion: cleanup.status('alice').settingsVersion, model: 'gpt-4o' });
+    await cleanup.settings('alice', { expectedSettingsVersion: cleanup.status('alice').settingsVersion, permissions: { nutrients: false } });
     const log = cleanup.settingsLog('alice');
     expect(log).toHaveLength(2);
     expect(log[0]).toMatchObject({ field: 'permissions.nutrients', from: true, to: false, actor: 'user' });
@@ -504,7 +525,7 @@ describe('auditor settings, permissions and history', () => {
     const start = vi.fn().mockRejectedValueOnce(new Error('provider timeout')).mockResolvedValue({ status: 'success', result: noChanges });
     const cleanup = new NutritionCleanup({ ...f, runs: { register: vi.fn(), start } });
     await cleanup.request('alice', { manual: true }); await cleanup.settled('alice');
-    await cleanup.settings('alice', { expectedVersion: cleanup.status('alice').version, model: 'gpt-4o', permissions: { naming: false } });
+    await cleanup.settings('alice', { expectedSettingsVersion: cleanup.status('alice').settingsVersion, model: 'gpt-4o', permissions: { naming: false } });
     now += 61000; await cleanup.tick('alice'); await cleanup.settled('alice');
     expect(start).toHaveBeenCalledTimes(2);
     expect(start.mock.calls[1][0]).toEqual(start.mock.calls[0][0]);
@@ -515,7 +536,7 @@ describe('auditor settings, permissions and history', () => {
     const f = await fixture();
     f.store.update('alice', state => { state.settingsLog = Array.from({ length: 499 }, (_, i) => ({ at: 'old', actor: 'user', field: 'dryRun', from: i, to: i })); });
     const cleanup = new NutritionCleanup({ ...f, runs: { register: vi.fn() } });
-    await cleanup.settings('alice', { expectedVersion: cleanup.status('alice').version, model: 'gpt-4o', minGapMinutes: 30 });
+    await cleanup.settings('alice', { expectedSettingsVersion: cleanup.status('alice').settingsVersion, model: 'gpt-4o', minGapMinutes: 30 });
     const log = cleanup.settingsLog('alice');
     expect(log).toHaveLength(500);
     expect(log[0].field).toBe('minGapMinutes'); expect(log.at(-1).from).toBe(1);
@@ -526,7 +547,7 @@ describe('auditor settings, permissions and history', () => {
     expect(f.store.load('alice')).not.toHaveProperty('settingsLog');
     const cleanup = new NutritionCleanup({ ...f, runs: { register: vi.fn() } });
     expect(cleanup.settingsLog('alice')).toEqual([]);
-    await cleanup.settings('alice', { expectedVersion: cleanup.status('alice').version, dryRun: false });
+    await cleanup.settings('alice', { expectedSettingsVersion: cleanup.status('alice').settingsVersion, dryRun: false });
     expect(cleanup.settingsLog('alice')).toMatchObject([{ field: 'dryRun', from: true, to: false }]);
   });
   it('keeps the newest 50 finished runs and any run a question still points at', async () => {
@@ -597,11 +618,11 @@ describe('auditor journal and run gates', () => {
     expect(f.logger.info.mock.calls.filter(([event]) => event === 'nutrition.cleanup.capped')).toHaveLength(1);
     expect((await journal.list('alice')).filter(row => row.skipped)).toEqual([expect.objectContaining({ skipped: 'cap', spentUsd: 1.5, capUsd: 1 })]);
     // A raised cap that is still exceeded is its own event.
-    await cleanup.settings('alice', { expectedVersion: cleanup.status('alice').version, dailyCapUsd: 1.25 });
+    await cleanup.settings('alice', { expectedSettingsVersion: cleanup.status('alice').settingsVersion, dailyCapUsd: 1.25 });
     await cleanup.tick('alice'); await cleanup.settled('alice'); advance(1000);
     expect(start).not.toHaveBeenCalled();
     expect((await journal.list('alice')).filter(row => row.skipped).map(row => row.capUsd)).toEqual([1.25, 1]);
-    await cleanup.settings('alice', { expectedVersion: cleanup.status('alice').version, dailyCapUsd: 5 });
+    await cleanup.settings('alice', { expectedSettingsVersion: cleanup.status('alice').settingsVersion, dailyCapUsd: 5 });
     await cleanup.tick('alice'); await cleanup.settled('alice');
     expect(start).toHaveBeenCalledTimes(1);
   });
@@ -749,7 +770,7 @@ describe('auditor journal and spend views', () => {
       toolCalls: [{ ix: 0, name: 'find_food_art', args: { q: 'fish' }, result: { slugs: ['fish'] }, ok: true, latencyMs: 12, ts: 'x', linkedAttachments: [] }],
     } });
     const cleanup = new NutritionCleanup({ ...f, runs: { register: vi.fn() }, hash: sha256Text, journalStore: journal, transcripts, spendSource });
-    return { f, cleanup };
+    return { f, cleanup, journal };
   };
   it('lists the last seven household days newest first, with trigger, changed and paging filters', async () => {
     const { cleanup } = await seeded();
@@ -791,6 +812,13 @@ describe('auditor journal and spend views', () => {
     cleanup.transcripts = { find: vi.fn(async () => { throw new Error('EACCES'); }) };
     expect(await cleanup.journalEntry('alice', 'r1')).toMatchObject({ transcript: null, transcriptError: true, transcriptExpired: false });
     expect(f.logger.warn).toHaveBeenCalledWith('nutrition.cleanup.transcript_read_failed', expect.objectContaining({ runId: 'r1' }));
+  });
+  it('reports no average cost for a model or trigger with no priced runs', async () => {
+    const { cleanup, journal } = await seeded();
+    await journal.append('alice', run('r6', '2026-09-04T19:00:00.000Z', { model: 'gpt-4.1', trigger: ['artwork'], costUsd: null }));
+    const spend = await cleanup.spend('alice', { days: 30 });
+    expect(spend.byModel.find(row => row.model === 'gpt-4.1')).toMatchObject({ runs: 1, costUsd: 0, avgUsd: null });
+    expect(spend.byTrigger.find(row => row.trigger === 'artwork')).toMatchObject({ runs: 1, costUsd: 0, avgUsd: null });
   });
   it('totals spend by household day, trigger and model, zero days included', async () => {
     const { cleanup } = await seeded();
