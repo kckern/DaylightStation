@@ -136,3 +136,43 @@ Backend: `nutrition.cleanup.skipped {reason}`, `nutrition.cleanup.blocked
 - Component test for the timeline and detail sheet.
 - Playwright: load `/health/auditor`, open a run, toggle a permission, see it
   in the change log.
+
+## Addendum (2026-09-25): AI spend attribution by app and feature
+
+**Problem.** Every non-Mastra call goes through one shared `OpenAIAdapter`
+handed to ~20 consumers (health/nutribot, journalist, homebot, finance,
+school, weekly review, party games, card ladder…). Ledger rows say model and
+cost but not who called, so Health's total AI spend and its split (photo log vs
+icon pick vs auditor) cannot be answered. Granularity chosen: **app + feature**.
+
+**Approach (chosen over ambient-only context).** Explicit scoped gateway views
+do the attribution; an automatic origin stamp makes any gap findable.
+
+- **Ledger row** gains `app`, `feature`, `origin`. Mastra rows keep `agentId`;
+  the recorder maps agents → app/feature (nutrition-auditor → health/auditor,
+  health-coach → health/coach, health-coach-commentary → health/coach-commentary,
+  newsreporter-consolidator → news/consolidator, …).
+- **`scoped(tags)`** on `OpenAIAdapter` (and `AnthropicAdapter`, `JevAdapter`,
+  `VoiceTranscriptionService`, `OpenAITTSAdapter`): same methods, merges `tags`
+  into each call's usage record; nesting merges (app in composition, feature in
+  the use case).
+- **Health features:** voice-log, photo-log, text-log, upc-log, scale-log,
+  revision, meal-instruction, icon-pick, coach, coach-commentary, auditor. Other
+  apps: app-level now; features where trivial, else null ("(no feature)").
+- **Origin** (`0_system` `aiContext`, AsyncLocalStorage): set by Express
+  middleware (`http:METHOD route-pattern`), scheduler (`job:<id>`), Telegram
+  webhook (`telegram:<bot>`), timers (`tick:nutrition-cleanup`, `tick:artwork`),
+  CLIs (`cli:<name>`). Informational only; never used as attribution.
+- **Pricing gaps:** Whisper `verbose_json` duration × $0.006/min; gpt-5-nano
+  added; TTS rows (tts-1, $15/1M chars); the three ledger-less CLIs get the
+  ledger.
+- **Guards:** composition guard — no bare shared gateway handed to a consumer
+  (`aiGateway:`/`openaiAdapter:`/`transcriptionService:` values must be
+  `.scoped({ app })`); Health feature test asserts each Health use case records
+  `health/<feature>`; `openai-usage ledger --by app,feature` lists untagged rows
+  with origins.
+- **Display:** `GET /api/v1/health/ai-usage?days=30` (app-layer service over a
+  ledger reader port, filtered to app=health) → totals, `byFeature`, daily bars
+  stacked by feature. Health app "AI usage" card on the auditor page and in
+  Settings; auditor line links to its timeline. Pre-tagging rows show as
+  "Before tracking" — not guessed.
