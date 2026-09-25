@@ -23,6 +23,8 @@ const frontendNodeModules = candidates.find((p) => existsSync(p)) || frontendNod
 // Load React plugin from frontend's node_modules (it's not installed at the root).
 const { default: react } = await import(path.join(frontendNodeModules, '@vitejs/plugin-react/dist/index.mjs'));
 
+const RUNNING_IN_WORKTREE = /[\\/]\.(claude[\\/]|claire[\\/])?worktrees[\\/]/.test(__dirname);
+
 export default {
   // React plugin enables automatic JSX runtime so test files don't need `import React`.
   plugins: [react()],
@@ -90,9 +92,9 @@ export default {
       '**/node_modules/**',
       '**/dist/**',
       '**/.{idea,git,cache,output,temp}/**',
-      '**/.claude/worktrees/**',
-      '**/.claire/worktrees/**',
-      '**/.worktrees/**',
+      // Skipped when this config IS a worktree: the globs also match the
+      // worktree's own path, which excluded every test in it.
+      ...(RUNNING_IN_WORKTREE ? [] : ['**/.claude/worktrees/**', '**/.claire/worktrees/**', '**/.worktrees/**']),
       // Scratch that is on its way out (CLAUDE.md: "can't delete? move to
       // _deleteme/"). A probe test parked here still got collected, inflating
       // counts and tearing down noisily mid-sweep.
