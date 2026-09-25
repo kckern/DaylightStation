@@ -38,6 +38,7 @@ export function buildPostReportSnapshot({ date, timeOfDay, calories, protein, it
       // From the budget contract when available: the zone the Today bar shows,
       // whether the log is trustworthy yet, and the headline's number.
       ...(calories.zone ? { zone: calories.zone, complete: calories.complete, remaining: calories.remaining } : {}),
+      ...(calories.fasted_meals ? { fasted_meals: calories.fasted_meals } : {}),
     },
     protein: { consumed: protein.consumed, goal: protein.goal, pct: protein.goal > 0 ? Math.round((protein.consumed / protein.goal) * 100) : 0 },
     notable_items: notable,
@@ -102,13 +103,13 @@ export function buildWeeklyDigestSnapshot({ thisWeek, longTermAvg, weight, recen
 }
 
 function pickDay(d) {
-  return { date: d.date, calories: d.calories, protein: d.protein, status: d.status };
+  return { date: d.date, calories: d.calories, protein: d.protein, status: d.status, ...(d.fastedMeals ? { fasted_meals: d.fastedMeals } : {}) };
 }
 
 function loggingContext(minCalories) {
   return {
     min_calories: minCalories,
-    note: 'status complete|done|fasting = trustworthy totals. reconstructed = an untracked day backfilled from weight: calories are an estimate, protein is UNKNOWN (ignore its protein figure) and there are no foods to mention. incomplete = under min_calories and not confirmed by the user: meals are missing, the total is NOT what was eaten. unlogged = no data. Averages cover trustworthy days only.',
+    note: 'status complete|done|fasting = trustworthy totals. reconstructed = an untracked day backfilled from weight: calories are an estimate, protein is UNKNOWN (ignore its protein figure) and there are no foods to mention. incomplete = under min_calories and not confirmed by the user: meals are missing, the total is NOT what was eaten. unlogged = no data. Averages cover trustworthy days only. fasted_meals = meals the user declared intentionally skipped: those meals are really empty (never ask about them), but the day is still incomplete unless it is closed or reaches min_calories — say which meals are still unlogged instead.',
   };
 }
 

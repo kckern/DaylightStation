@@ -16,6 +16,15 @@ import { UPC_REJECTED } from '../usecases/LogFoodFromUPC.mjs';
 /** Voice retries currently being processed, by `${conversationId}:${messageId}`. */
 const voiceRetriesInFlight = new Set();
 
+// Meal words for /fast and /reopen, mapped to the day's meal buckets.
+const MEAL_WORDS = Object.freeze({
+  breakfast: { id: 'morning', label: 'Breakfast' },
+  lunch: { id: 'afternoon', label: 'Lunch' },
+  dinner: { id: 'evening', label: 'Dinner' },
+  snacks: { id: 'night', label: 'Snacks' },
+  snack: { id: 'night', label: 'Snacks' },
+});
+
 export class NutribotInputRouter extends BaseInputRouter {
   #userResolver;
   #userIdentityService;
@@ -863,12 +872,27 @@ export class NutribotInputRouter extends BaseInputRouter {
           return { ok: true, handled: false };
         }
         const userId = this.#resolveUserId(event);
-        const date = this.#commandDate(userId, event.payload?.text);
-        if (!date) {
+        // /fast and /reopen also take a meal (`/fast breakfast yesterday`);
+        // /done is for the whole day only.
+        const args = this.#commandArgs(userId, event.payload?.text, { allowMeal: command !== 'done' });
+        if (!args) {
           if (responseContext?.sendMessage) {
-            await responseContext.sendMessage(`Use /${command}, /${command} yesterday, or /${command} YYYY-MM-DD.`, {});
+            const meal = command === 'done' ? '' : ` Add a meal to mark just that meal: /${command} breakfast, /${command} lunch yesterday.`;
+            await responseContext.sendMessage(`Use /${command}, /${command} yesterday, or /${command} YYYY-MM-DD.${meal}`, {});
           }
           return { ok: true, handled: false };
+        }
+        const { date, meal } = args;
+        if (meal) {
+          const fasted = command === 'fast';
+          await healthStore.setMealFast(userId, date, meal.id, fasted);
+          this.logger.info?.('nutribot.command.meal-fast', { userId, date, meal: meal.id, fasted });
+          if (responseContext?.sendMessage) {
+            await responseContext.sendMessage(fasted
+              ? `Marked ${meal.label} on ${date} as skipped. Coaching won't ask about it. (/reopen ${meal.word} ${date} to undo.)`
+              : `Unmarked ${meal.label} on ${date}.`, {});
+          }
+          return { ok: true, handled: true };
         }
         if (command === 'reopen') {
           await healthStore.clearDayStatus(userId, date);
@@ -932,6 +956,27 @@ export class NutribotInputRouter extends BaseInputRouter {
     if (text === 'yesterday') return this.#localDate(userId, 1);
     if (/^\d{4}-\d{2}-\d{2}$/.test(text) && !Number.isNaN(Date.parse(`${text}T12:00:00Z`)) && text <= today) return text;
     return null;
+  }
+
+  /**
+   * Arguments of /done, /fast, /reopen: an optional meal word and an optional
+   * date, in either order. Null when a word is neither (or a meal is given
+   * where only a day makes sense).
+   * @returns {{date: string, meal: {id, label, word}|null}|null}
+   */
+  #commandArgs(userId, arg, { allowMeal }) {
+    const words = String(arg || '').trim().toLowerCase().split(/\s+/).filter(Boolean);
+    let meal = null;
+    const rest = [];
+    for (const word of words) {
+      const found = MEAL_WORDS[word];
+      if (found && !meal) meal = { ...found, word };
+      else rest.push(word);
+    }
+    if (meal && !allowMeal) return null;
+    if (rest.length > 1) return null;
+    const date = this.#commandDate(userId, rest[0] || '');
+    return date ? { date, meal } : null;
   }
 
   /** The user's local calendar date, `daysAgo` days back (YYYY-MM-DD). */

@@ -315,6 +315,20 @@ export function createHealthRouter(config) {
     }
   }));
 
+  /**
+   * Declare one meal fasted, or undo it: `{ date, meal, fasted }`. Coach
+   * information only — it never closes the day or changes the budget.
+   */
+  router.post('/nutrition/meal-fast', asyncHandler(async (req, res) => {
+    const { date, meal, fasted = true } = req.body || {};
+    try {
+      return res.json(await healthOperations.setMealFast(getDefaultUsername(req), date, meal, fasted));
+    } catch (err) {
+      if (err.status === 400) return res.status(400).json({ error: err.message });
+      throw err;
+    }
+  }));
+
   router.post('/nutrition/copy', asyncHandler(async (req, res) => {
     const { operationId, ...payload } = req.body || {};
     const userId = getDefaultUsername(req);

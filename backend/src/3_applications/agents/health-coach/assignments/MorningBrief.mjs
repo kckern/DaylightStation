@@ -733,7 +733,7 @@ INCOMPLETE LOGGING DETECTED — OVERRIDE NORMAL COACHING:
 Yesterday's tracked calories (~${Math.round((yesterdayCals || 0) / 50) * 50}) are below the logging floor (${calorieFloor}), and the user did NOT mark the day as done via /done or fasted via /fast. This almost certainly means the user forgot to log one or more meals — NOT that they actually ate this little. DO NOT lecture about missed goals or undereating. Instead:
 1. Note what WAS logged yesterday (name the specific items)
 2. Point out the total looks incomplete — "looks like dinner didn't get logged" or similar
-3. Ask the user what they had for the missing meal(s) so it can be logged
+3. Ask the user what they had for the missing meal(s) so it can be logged — never a meal listed in yesterday's fastedMeals (declared intentionally skipped)
 4. Keep it brief and helpful, not judgmental
 This takes priority over ALL other coaching rules below.
 ` : ''}

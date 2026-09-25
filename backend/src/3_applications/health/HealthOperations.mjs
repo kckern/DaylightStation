@@ -11,7 +11,8 @@ import { serializeNutriLog } from '../nutrition/NutriLogProjection.mjs';
 import { nutritionLookupFor } from '#shared/contracts/nutrition/nutritionLookup.mjs';
 import { DEFAULT_DENSITY_LEVELS } from '#shared-contracts/health/densityLevels.mjs';
 import { densityRevision } from '#shared-contracts/health/foodDensity.mjs';
-import { closureStatus, resolveMinCalories, DAY_STATUS } from '../coaching/dayCompleteness.mjs';
+import { closureStatus, fastedMealsOf, resolveMinCalories, DAY_STATUS } from '../coaching/dayCompleteness.mjs';
+import { MEAL_BUCKETS } from '#shared/contracts/health/mealBuckets.mjs';
 import { RECONSTRUCTION_LOG_ID, RECONSTRUCTION_ITEM_NAME, isReconstructedRow } from '#shared/contracts/nutrition/reconstruction.mjs';
 
 const NUTRITION_UPDATE_FIELDS = new Set([
@@ -162,7 +163,26 @@ export class HealthOperations {
   async readDayStatus(username, date) {
     let closures = {};
     try { closures = (await this.healthData?.loadDayClosedData?.(username)) || {}; } catch { closures = {}; }
-    return { status: closureStatus(closures?.[date]), minCalories: await this.minCaloriesFor(username), today: this.today() };
+    return {
+      status: closureStatus(closures?.[date]), minCalories: await this.minCaloriesFor(username), today: this.today(),
+      fastedMeals: fastedMealsOf(closures?.[date]),
+    };
+  }
+
+  /**
+   * Declare one meal of a day fasted, or undo it. Information for the coach —
+   * the meal was intentionally empty — and never a closure: it does not
+   * change the floor, the zone or the bar. Future days refuse.
+   * @returns {Promise<{status, minCalories, today, fastedMeals: string[]}>}
+   */
+  async setMealFast(username, date, meal, fasted) {
+    if (!MEAL_BUCKETS.some(bucket => bucket.id === meal)) {
+      throw Object.assign(new Error(`meal must be one of ${MEAL_BUCKETS.map(b => b.id).join(', ')}`), { status: 400 });
+    }
+    if (!isISODate(date)) throw Object.assign(new Error('Invalid date format. Use YYYY-MM-DD'), { status: 400 });
+    if (date > this.today()) throw Object.assign(new Error('A future day cannot be marked'), { status: 400 });
+    await this.healthData.setMealFast(username, date, meal, Boolean(fasted));
+    return this.readDayStatus(username, date);
   }
 
   /**

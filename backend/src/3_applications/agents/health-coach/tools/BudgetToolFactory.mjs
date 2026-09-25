@@ -38,6 +38,9 @@ export function dayView(b) {
     zone: b.zone,
     complete: b.complete,
     declared: b.declared,
+    // Meals the user declared intentionally skipped: a gap in them is a real
+    // deficit, not missing data — never ask about them.
+    fastedMeals: b.fastedMeals || [],
     remaining: b.remaining,
   };
 }

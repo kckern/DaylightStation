@@ -269,6 +269,14 @@ describe('CoachingOrchestrator', () => {
       expect(mockCommentary.generate.mock.calls[0][0].today_calories).toMatchObject({ consumed: 700, goal_max: 1791, zone: 'incomplete' });
     });
 
+    it('tells the model which meals were declared fasted, without closing the day', async () => {
+      mockHealthStore.loadDayClosedData = vi.fn().mockResolvedValue({ '2026-04-07': { meals: { morning: { status: 'fasting', at: 'x' } } } });
+      await withBudget(vi.fn().mockResolvedValue(budget())).sendPostReport({ userId: 'user_1', conversationId: 'telegram:123' });
+      const snapshot = mockCommentary.generate.mock.calls[0][0];
+      expect(snapshot.today_status).toBe('in_progress');
+      expect(snapshot.calories.fasted_meals).toEqual(['morning']);
+    });
+
     it('falls back to the configured goals when the budget is unavailable', async () => {
       await withBudget(vi.fn().mockRejectedValue(Object.assign(new Error('NO_WEIGHT_DATA'), { code: 'NO_WEIGHT_DATA' })))
         .sendPostReport({ userId: 'user_1', conversationId: 'telegram:123' });

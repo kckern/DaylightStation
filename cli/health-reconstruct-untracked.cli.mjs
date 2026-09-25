@@ -106,7 +106,11 @@ for (const d of range(START, END)) {
   // A day with no usable weight or lean mass must stop the run, not vanish from the plan.
   if (!Number.isFinite(estimate)) throw new Error(`${d}: estimate is not a number (rmr ${rmr}, neat ${neat}, exercise ${ex.total}, balance ${balance}) — check the export`);
   const logged = Math.round(Number(nutriday[d]?.calories) || 0);
-  const status = closures[d] ? 'closed' : logged <= 0 ? 'unlogged' : logged < MIN ? 'incomplete' : 'complete';
+  // Closed = a DAY status (done/fasting, or the legacy bare `true`); a record
+  // that only lists fasted meals does not close the day.
+  const rec = closures[d];
+  const dayClosed = rec === true || rec?.status === 'done' || rec?.status === 'fasting';
+  const status = dayClosed ? 'closed' : logged <= 0 ? 'unlogged' : logged < MIN ? 'incomplete' : 'complete';
   rows.push({ date: d, status, logged, estimate, fill: status === 'complete' || status === 'closed' ? 0 : Math.max(0, estimate - logged),
     rmr: Math.round(rmr), neat: Math.round(neat), steps: Math.round(st.steps), stepsImputed: st.imputed, exercise: Math.round(ex.total), exerciseSrc: ex.src,
     balance: Math.round(balance), weightTrend: +weightTrend[d].toFixed(1) });
