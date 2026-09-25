@@ -135,6 +135,21 @@ describe('EquationStrip — the ruler', () => {
     strip({ budget: { budget: 1791, maintenance: 2291, food: 1000, exercise: 0, remaining: 791, status: 'under' } });
     expect(screen.queryByTestId('budget-ruler')).toBeNull();
   });
+
+  it('labels sit at their values: +N on the hatch, break even at maintenance + exercise, no zero line', () => {
+    const { container } = strip({ budget: { ...ranged, food: 558, exercise: 311, net: 247, zone: 'incomplete', remaining: 1544, status: 'under' } });
+    expect(screen.getByTestId('budget-earned').textContent).toBe('+311');
+    expect(container.querySelector('.health-budget__even-label').textContent).toBe('Break even 2,602');
+    expect(screen.getByText('Goal 1,200–1,791')).toBeTruthy();
+    expect(container.querySelector('.health-budget__zero')).toBeNull();
+    expect(screen.getByTestId('budget-ruler').getAttribute('aria-label')).toMatch(/^558 kcal eaten; goal 1,200–1,791, plus 311 burned; break even 2,602; 1,544 left$/);
+  });
+
+  it('floor = top with no exercise draws one goal line, not a band', () => {
+    const { container } = strip({ budget: { ...ranged, range: { floor: 1791, top: 1791 }, food: 900, exercise: 0, net: 900, zone: 'incomplete', remaining: 891, status: 'under' } });
+    expect(container.querySelector('.health-budget__goal-line')).toBeTruthy();
+    expect(container.querySelector('.health-budget__band')).toBeNull();
+  });
 });
 
 describe('EquationStrip — the headline names its segment', () => {
