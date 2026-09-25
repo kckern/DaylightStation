@@ -23,7 +23,7 @@ const sources = [
   path.join(srcRoot, 'app.mjs'),
 ];
 
-const KEYS = ['aiGateway', 'openaiAdapter', 'transcriptionService', 'decisionGateway', 'openai', 'anthropic', 'anthropicAdapter', 'anthropicGateway'];
+const KEYS = ['aiGateway', 'openaiAdapter', 'transcriptionService', 'decisionGateway', 'speechGateway', 'openai', 'anthropic', 'anthropicAdapter', 'anthropicGateway'];
 // `key: value`, or shorthand `{ key,` / `, key }` inside an object literal.
 const KEY_RE = new RegExp(`(^|[{,\\s])(${KEYS.join('|')})\\s*(:(?!:)|(?=\\s*[,}]))`, 'g');
 const SCOPED = /\bscoped(?:Gateway)?\s*(?:\?\.)?\s*\(/;

@@ -27,6 +27,7 @@ import { hydrateProcessEnvFromConfigs } from '#system/logging/config.mjs';
 import { DataService } from '#adapters/persistence/files/DataService.mjs';
 import { OpenAIAdapter } from '#adapters/ai/OpenAIAdapter.mjs';
 import { runWithOrigin } from '#system/runtime/aiContext.mjs';
+import { createCliAiUsageLedger, cliUsageTags } from './_aiUsage.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: join(__dirname, '..', '.env') });
@@ -56,10 +57,11 @@ if (!openaiApiKey) {
 }
 
 const axios = (await import('axios')).default;
+// Spend lands in the AI usage ledger as media/cli.
 const aiGateway = new OpenAIAdapter(
   { apiKey: openaiApiKey },
-  { httpClient: axios, logger: console }
-);
+  { httpClient: axios, logger: console, aiUsageLedger: createCliAiUsageLedger(configService) }
+).scoped(cliUsageTags('media'));
 
 const komgaAuth = configService.getHouseholdAuth('komga');
 const komgaHost = configService.resolveServiceUrl('komga');

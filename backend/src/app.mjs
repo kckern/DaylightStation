@@ -2573,6 +2573,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       // selection: { selectorId, equipmentId, userId, action }
       broadcastEvent({ topic: 'rider_select', ...selection });
     },
+    aiUsageLedger,
     logger: hardwareLogger
   });
 

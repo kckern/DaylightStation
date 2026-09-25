@@ -11,13 +11,18 @@ import { fileURLToPath } from 'node:url';
 const here = path.dirname(fileURLToPath(import.meta.url));
 
 describe.each([
-  ['backfill-toc-offset.cli.mjs', 'cli:backfill-toc-offset'],
-  ['journalist-debrief-preview.cli.mjs', 'cli:journalist-debrief-preview'],
-])('%s', (file, origin) => {
+  ['backfill-toc-offset.cli.mjs', 'cli:backfill-toc-offset', 'media'],
+  ['journalist-debrief-preview.cli.mjs', 'cli:journalist-debrief-preview', 'journalist'],
+])('%s', (file, origin, app) => {
   const source = readFileSync(path.join(here, file), 'utf8');
 
   it('imports runWithOrigin from the AI context', () => {
     expect(source).toMatch(/import \{ runWithOrigin \} from '#system\/runtime\/aiContext\.mjs';/);
+  });
+
+  it(`records its AI calls in the usage ledger as ${app}/cli`, () => {
+    expect(source).toContain('aiUsageLedger: createCliAiUsageLedger(');
+    expect(source).toContain(`.scoped(cliUsageTags('${app}'))`);
   });
 
   it(`enters main under ${origin}, and never calls main bare`, () => {
@@ -25,3 +30,13 @@ describe.each([
     expect(source).not.toMatch(/^main\(\)/m);
   });
 });
+
+describe('finance-jev-replay.cli.mjs', () => {
+  const source = readFileSync(path.join(here, 'finance-jev-replay.cli.mjs'), 'utf8');
+  it('records its Jev calls in the usage ledger as finance/cli', () => {
+    expect(source).toContain('createCliAiUsageLedger(configService)');
+    expect(source).toContain("new JevAdapter({ apiKey }, { httpClient: axios, logger, aiUsageLedger })");
+    expect(source).toContain(".scoped(cliUsageTags('finance'))");
+  });
+});
+

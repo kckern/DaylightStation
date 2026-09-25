@@ -7,11 +7,16 @@
  * - Custom voice instructions
  * - Audio streaming response
  *
- * @module adapters/hardware/tts
+ * @module adapters/ai
  */
 
 import { Readable } from 'node:stream';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
+import { estimateSpeechCostUsd } from './aiPricing.mjs';
+import { createScopedView, usageAttribution } from './usageAttribution.mjs';
+
+/** Methods a scoped view tags, and the index of each one's options argument. */
+const SCOPED_METHODS = Object.freeze({ generateSpeech: 1, generateSpeechBuffer: 1 });
 
 /**
  * @typedef {Object} TTSConfig
@@ -31,12 +36,15 @@ export class OpenAITTSAdapter {
   #logger;
   #httpClient;
   #apiUrl;
+  #usageLedger;
+  #pricing;
 
   /**
    * @param {TTSConfig} config
    * @param {Object} deps
    * @param {import('#system/services/HttpClient.mjs').HttpClient} deps.httpClient
    * @param {Object} [deps.logger] - Logger instance
+   * @param {Object} [deps.aiUsageLedger] - AI usage ledger; one row per call
    */
   constructor(config, deps = {}) {
     if (!deps.httpClient) {
@@ -51,6 +59,43 @@ export class OpenAITTSAdapter {
     this.#httpClient = deps.httpClient;
     this.#logger = deps.logger || console;
     this.#apiUrl = 'https://api.openai.com/v1/audio/speech';
+    this.#usageLedger = deps.aiUsageLedger || null;
+    this.#pricing = config.pricing || null;
+  }
+
+  /**
+   * A view of this adapter whose speech calls are attributed to `tags`
+   * (`{ app, feature }`) in the AI usage ledger. Views nest and are read-only.
+   * @param {{ app?: string, feature?: string }} tags
+   */
+  scoped(tags = {}) {
+    return createScopedView(this, tags, SCOPED_METHODS);
+  }
+
+  /**
+   * One ledger row per synthesis. TTS bills per input character. Never throws.
+   * @private
+   */
+  #recordUsage({ model, characters, durationMs, error = null, usageTags = null }) {
+    try {
+      this.#usageLedger?.record({
+        provider: 'openai',
+        endpoint: '/audio/speech',
+        model,
+        requestedModel: model,
+        promptTokens: null,
+        completionTokens: null,
+        totalTokens: null,
+        characters,
+        costUsd: error ? 0 : estimateSpeechCostUsd(model, characters, this.#pricing),
+        durationMs,
+        status: error ? 'error' : 'ok',
+        ...(error ? { httpStatus: error.status ?? null, error: error.message } : {}),
+        ...usageAttribution(usageTags),
+      });
+    } catch (recordError) {
+      this.#logger.warn?.('tts.usage.record-failed', { error: recordError.message });
+    }
   }
 
   /**
@@ -111,6 +156,7 @@ export class OpenAITTSAdapter {
       model
     });
 
+    const startedAt = Date.now();
     try {
       const requestBody = {
         model,
@@ -140,6 +186,7 @@ export class OpenAITTSAdapter {
         voice,
         model
       });
+      this.#recordUsage({ model, characters: text.length, durationMs: Date.now() - startedAt, usageTags: options.usageTags });
 
       // Convert buffer to stream for backward compatibility
       return Readable.from(buffer);
@@ -149,6 +196,7 @@ export class OpenAITTSAdapter {
         error: error.message,
         code: error.code
       });
+      this.#recordUsage({ model, characters: text.length, durationMs: Date.now() - startedAt, error, usageTags: options.usageTags });
       const err = new Error('TTS generation failed');
       err.code = error.code || 'TTS_ERROR';
       err.isTransient = error.isTransient || false;

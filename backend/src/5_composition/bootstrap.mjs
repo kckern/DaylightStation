@@ -186,7 +186,7 @@ import { createTriggerRouter } from '#api/v1/routers/trigger.mjs';
 
 // Hardware adapter imports
 // Note: ThermalPrinterAdapter/Registry are constructed directly in app.mjs; bootstrap no longer imports them.
-import { OpenAITTSAdapter } from '#adapters/hardware/tts/OpenAITTSAdapter.mjs';
+import { OpenAITTSAdapter } from '#adapters/ai/OpenAITTSAdapter.mjs';
 import { MQTTSensorAdapter } from '#adapters/hardware/mqtt-sensor/MQTTSensorAdapter.mjs';
 import { MQTTSelectorAdapter } from '#adapters/hardware/mqtt-selector/MQTTSelectorAdapter.mjs';
 import { KNOWN_COMMANDS } from '#domains/barcode/BarcodeCommandMap.mjs';
@@ -1871,8 +1871,8 @@ export function createTranscodePrewarmService(config) {
  * @returns {OpenAITTSAdapter}
  */
 export function createTTSAdapterInstance(config) {
-  const { logger = console, httpClient, ...ttsConfig } = config;
-  return new OpenAITTSAdapter(ttsConfig, { httpClient, logger });
+  const { logger = console, httpClient, aiUsageLedger = null, ...ttsConfig } = config;
+  return new OpenAITTSAdapter(ttsConfig, { httpClient, logger, aiUsageLedger });
 }
 
 /**
@@ -1905,11 +1905,12 @@ export function createMQTTSensorAdapterInstance(config) {
  * @param {number} [config.mqtt.port] - MQTT broker port
  * @param {Function} [config.onMqttMessage] - MQTT message callback
  * @param {Object} [config.httpClient] - HTTP client for API requests
+ * @param {Object} [config.aiUsageLedger] - AI usage ledger for TTS rows
  * @param {Object} [config.logger] - Logger instance
  * @returns {Object} Hardware adapters (ttsAdapter, mqttAdapter, barcodeAdapter)
  */
 export function createHardwareAdapters(config) {
-  const { logger = console, httpClient } = config;
+  const { logger = console, httpClient, aiUsageLedger = null } = config;
 
   // TTS adapter (optional - requires OpenAI API key and httpClient)
   let ttsAdapter = null;
@@ -1920,7 +1921,7 @@ export function createHardwareAdapters(config) {
         model: config.tts.model,
         defaultVoice: config.tts.defaultVoice
       },
-      { httpClient, logger }
+      { httpClient, logger, aiUsageLedger }
     );
   }
 

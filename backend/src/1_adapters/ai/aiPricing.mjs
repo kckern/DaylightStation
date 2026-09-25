@@ -38,6 +38,8 @@ const DEFAULT_PRICING = Object.freeze({
     input: 0.20, cachedInput: 0.02, cacheWrite: 0.25, output: 1.20,
     long: { input: 0.40, cachedInput: 0.04, cacheWrite: 0.50, output: 1.80 },
   },
+  // OpenAI — gpt-5 (the card ladder judge runs gpt-5-nano)
+  'gpt-5-nano': { input: 0.05, cachedInput: 0.005, output: 0.40 },
   // OpenAI — earlier families
   'gpt-4.1': { input: 2.00, cachedInput: 0.50, output: 8.00 },
   'gpt-4.1-mini': { input: 0.40, cachedInput: 0.10, output: 1.60 },
@@ -58,12 +60,24 @@ const DEFAULT_PRICING = Object.freeze({
 });
 
 /**
+ * Audio models bill by duration or characters, not tokens.
+ *   perMinute         transcription, USD per audio minute
+ *   perMillionChars   speech synthesis, USD per 1M input characters
+ * The same `pricing:` overrides map can carry these fields.
+ */
+const AUDIO_PRICING = Object.freeze({
+  'whisper-1': { perMinute: 0.006 },
+  'tts-1': { perMillionChars: 15.00 },
+  'tts-1-hd': { perMillionChars: 30.00 },
+});
+
+/**
  * Find the price entry whose key is the longest prefix of the model id, so
  * dated ids like `gpt-4o-2024-08-06` match `gpt-4o` while `gpt-4o-mini-…`
  * still prefers `gpt-4o-mini`.
  */
-function priceFor(model, overrides) {
-  const table = { ...DEFAULT_PRICING, ...(overrides || {}) };
+function priceFor(model, overrides, base = DEFAULT_PRICING) {
+  const table = { ...base, ...(overrides || {}) };
   if (typeof model !== 'string' || !model) return null;
   if (table[model]) return table[model];
   let best = null;
@@ -120,4 +134,34 @@ export function estimateCostUsd(model, usage = {}, overrides = null) {
   return Math.round(cost * 1e9) / 1e9;
 }
 
-export default { estimateCostUsd };
+const nano = (usd) => Math.round(usd * 1e9) / 1e9;
+
+/**
+ * Cost of one transcription: audio minutes × the model's per-minute rate.
+ * @param {string} model - e.g. 'whisper-1'
+ * @param {number} audioSeconds - billed audio duration
+ * @param {Object} [overrides]
+ * @returns {number|null} null when the model is unpriced or the duration unknown
+ */
+export function estimateTranscriptionCostUsd(model, audioSeconds, overrides = null) {
+  const rate = priceFor(model, overrides, AUDIO_PRICING)?.perMinute;
+  const seconds = Number(audioSeconds);
+  if (!Number.isFinite(rate) || audioSeconds == null || !Number.isFinite(seconds) || seconds < 0) return null;
+  return nano((seconds / 60) * rate);
+}
+
+/**
+ * Cost of one speech synthesis: input characters × the per-1M-character rate.
+ * @param {string} model - e.g. 'tts-1', 'tts-1-hd'
+ * @param {number} characters
+ * @param {Object} [overrides]
+ * @returns {number|null} null when the model is unpriced
+ */
+export function estimateSpeechCostUsd(model, characters, overrides = null) {
+  const rate = priceFor(model, overrides, AUDIO_PRICING)?.perMillionChars;
+  const chars = Number(characters);
+  if (!Number.isFinite(rate) || !Number.isFinite(chars) || chars < 0) return null;
+  return nano((chars / 1_000_000) * rate);
+}
+
+export default { estimateCostUsd, estimateTranscriptionCostUsd, estimateSpeechCostUsd };

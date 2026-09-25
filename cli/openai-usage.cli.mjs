@@ -31,7 +31,11 @@
  *   --since YYYY-MM-DD     Start date (default: first of the current month)
  *   --until YYYY-MM-DD     End date, exclusive (default: now)
  *   --by <keys>            Comma list. costs: project,line_item,key,day
- *                          usage: project,model,key,day   ledger: model,endpoint,status,day
+ *                          usage: project,model,key,day
+ *                          ledger: any row field — model,endpoint,status,day,
+ *                          app,feature,origin,agentId,writer
+ *   --untagged             ledger: only rows no app claimed (app null),
+ *                          grouped by origin — where the untagged spend came from
  *   --project <id>         Limit org reports / reconcile to one project
  *   --json                 Raw JSON output
  *
@@ -48,6 +52,8 @@
  *   node cli/openai-usage.cli.mjs costs --since 2026-09-01 --by project,line_item
  *   node cli/openai-usage.cli.mjs usage --by day,key,model
  *   node cli/openai-usage.cli.mjs reconcile --since 2026-09-01
+ *   node cli/openai-usage.cli.mjs ledger --by app,feature
+ *   node cli/openai-usage.cli.mjs ledger --untagged
  *
  * @module cli/openai-usage
  */
@@ -144,6 +150,32 @@ export function reconcileByDay(costRows, ledgerRows) {
   return [...days.values()]
     .map(d => ({ ...d, gapUsd: d.billedUsd - d.ledgerUsd }))
     .sort((a, b) => a.day.localeCompare(b.day));
+}
+
+const LEDGER_EMPTY_LABEL = Object.freeze({ app: '(untagged)', feature: '(no feature)', origin: '(no origin)' });
+
+/**
+ * Group ledger rows for the `ledger` command.
+ * @param {Object[]} rows - from readLedger
+ * @param {Object} opts
+ * @param {string[]} [opts.by] - row fields to group by (default model; `--untagged` defaults to origin)
+ * @param {boolean} [opts.untagged] - keep only rows with no app, grouped by origin
+ * @returns {{ rows: Object[], columns: string[], total: number, calls: number }}
+ */
+export function summarizeLedger(rows, { by = null, untagged = false } = {}) {
+  const list = (by || (untagged ? 'origin' : 'model')).split(',').map(s => s.trim()).filter(Boolean);
+  const picked = untagged ? rows.filter(r => r.app == null) : rows;
+  const label = (k) => (r) => r[k] ?? LEDGER_EMPTY_LABEL[k] ?? null;
+  const grouped = groupRows(picked, Object.fromEntries(list.map(k => [k, label(k)])), {
+    calls: () => 1, errors: r => r.status === 'error', tokens: r => r.totalTokens, usd: r => r.costUsd,
+    unpriced: r => r.status === 'ok' && r.costUsd == null,
+  }).sort((a, b) => list[0] === 'day' ? String(a.day).localeCompare(String(b.day)) : b.usd - a.usd || b.calls - a.calls);
+  return {
+    rows: grouped,
+    columns: [...list, 'calls', 'errors', 'tokens', 'usd', 'unpriced'],
+    total: grouped.reduce((sum, r) => sum + r.usd, 0),
+    calls: picked.length,
+  };
 }
 
 export function formatTable(rows, columns) {
@@ -351,15 +383,11 @@ export async function runCli(argv, out = console.log) {
     }
 
     case 'ledger': {
-      const list = (flags.by || 'model').split(',').map(s => s.trim());
       const rows = readLedger(path.join(dataDir(), 'system/history/ai-usage'), since, until);
-      const grouped = groupRows(rows, Object.fromEntries(list.map(k => [k, r => r[k]])), {
-        calls: () => 1, errors: r => r.status === 'error', tokens: r => r.totalTokens, usd: r => r.costUsd,
-        unpriced: r => r.status === 'ok' && r.costUsd == null,
-      }).sort((a, b) => list[0] === 'day' ? String(a.day).localeCompare(String(b.day)) : b.usd - a.usd);
-      const total = grouped.reduce((s, r) => s + r.usd, 0);
-      return emit(grouped, [...list, 'calls', 'errors', 'tokens', 'usd', 'unpriced'],
-        `\nLedger total ${since} → ${until || 'now'}: $${total.toFixed(2)} over ${rows.length} calls (unpriced rows count $0)`);
+      const summary = summarizeLedger(rows, { by: flags.by, untagged: !!flags.untagged });
+      const what = flags.untagged ? 'Untagged (no app)' : 'Ledger total';
+      return emit(summary.rows, summary.columns,
+        `\n${what} ${since} → ${until || 'now'}: $${summary.total.toFixed(2)} over ${summary.calls} calls (unpriced rows count $0)`);
     }
 
     case 'reconcile': {
