@@ -193,10 +193,13 @@ pure `today/budgetGeometry.js`, pinned by `budgetGeometry.test.js`):
   with its food-scale value (`maintenance + exercise`); it keeps only its number
   when it sits within 40 px of the ceiling.
 - **Exercise credit** is a hatched block from `top` to the ceiling, labelled
-  "+N" when ≥ 36 px. It is drawn above the food, so food eaten into the credit
-  shows through the hatch.
-- **Food block** from 0, length = food, labelled "N eaten" at its right end when
-  ≥ 70 px. Its right edge is **the one frontier**, and its colour is the zone:
+  "+N" when ≥ 36 px and the eaten label would not cover it. It is drawn above
+  the food, so food eaten into the credit shows through the hatch.
+- **Food block** from 0, length = food. "N eaten" is its own top-layer pill (not
+  a child of the block, so no band edge, hatch or break-even line cuts it): in
+  the zone colour, ending at the frontier, when the block is ≥ 70 px; otherwise
+  on the track just past the frontier. Its right edge is **the one frontier**,
+  and its colour is the zone:
   info (incomplete, still working toward the floor), success (in range or
   declared), warning (past the ceiling), danger (past break-even).
 - **Remaining run.** A dotted run from the frontier to the mark the headline

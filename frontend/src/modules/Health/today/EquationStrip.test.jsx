@@ -118,6 +118,26 @@ describe('EquationStrip — the ruler', () => {
     expect(screen.getByTestId('budget-ruler').getAttribute('aria-label')).toMatch(/648 left$/);
   });
 
+  it('the eaten label rides above every mark, its right edge on the frontier', () => {
+    strip({ budget: { ...ranged, food: 1390, exercise: 247, net: 1143, zone: 'in-range', remaining: 648, status: 'under' } });
+    const label = screen.getByTestId('budget-food-label');
+    expect(label.textContent).toBe('1,390 eaten');
+    expect(label.className).toMatch(/food-label--in-range/);
+    // Outside the food block, so the band edges and the hatch cannot stack over it.
+    expect(screen.getByTestId('budget-food').textContent).toBe('');
+    const food = screen.getByTestId('budget-food');
+    const frontier = parseFloat(food.style.left) + parseFloat(food.style.width);
+    expect(parseFloat(label.style.right)).toBeCloseTo(100 - frontier, 1);
+  });
+
+  it('a short food block carries its label just past the frontier', () => {
+    strip({ budget: { ...ranged, food: 558, exercise: 311, net: 247, zone: 'incomplete', remaining: 1544, status: 'under' } });
+    const label = screen.getByTestId('budget-food-label');
+    expect(label.className).toMatch(/food-label--outside/);
+    const food = screen.getByTestId('budget-food');
+    expect(parseFloat(label.style.left)).toBeCloseTo(parseFloat(food.style.left) + parseFloat(food.style.width), 1);
+  });
+
   it('no exercise, no hatch; a declared day has no run', () => {
     strip({ budget: { ...ranged, food: 600, exercise: 0, net: 600, zone: 'declared', declared: 'done', remaining: 1191, status: 'under' } });
     expect(screen.queryByTestId('budget-earned')).toBeNull();
