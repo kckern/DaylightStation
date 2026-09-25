@@ -242,6 +242,22 @@ export function fileExists(filePath) {
 }
 
 /**
+ * A cheap "has this file changed" key: modification time plus size, or null
+ * when the file cannot be stat'ed. For caching a parse of a file that is
+ * rewritten in place (every write changes the mtime).
+ * @param {string} filePath - File path
+ * @returns {string|null}
+ */
+export function fileSignature(filePath) {
+  try {
+    const stat = fs.statSync(filePath);
+    return `${stat.mtimeMs}:${stat.size}`;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Ensure a directory exists, creating it if necessary
  * @param {string} dirPath - Directory path
  */

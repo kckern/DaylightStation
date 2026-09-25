@@ -220,6 +220,17 @@ the same payload returns the stored record. Reusing an id with changed evidence
 returns HTTP 409. The store adds `user_id` and `created_at`; clients cannot use
 those storage fields to change the idempotency comparison.
 
+Every listing reads a learner's whole history: one YAML file per attempt,
+hundreds per learner. `YamlPianoAttemptStore` keeps each parsed record in
+memory, keyed by the file's mtime and size, and parses again only when the
+file changes (`save` and `void` both rewrite it). It hands out clones.
+
+Before this cache, every kiosk poll that reached `requirementStatuses` (via
+`GetPlayableUnits`) parsed every file again. On 2026-09-25 a CPU profile showed
+that holding the backend's event loop for 2–6 s about once a minute. That was
+the steady ~1.2 s `system.event-loop.lag` floor, and it stalled every other
+request in the house.
+
 Learn and ordinary Exercise practice skip non-persistent guest contexts. The
 game challenge provider may use the explicit guest exception above. Native
 arcade/control input does not create attempt evidence.
