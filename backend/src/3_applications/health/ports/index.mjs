@@ -5,3 +5,4 @@
 
 export { IHealthDataDatastore } from './IHealthDataDatastore.mjs';
 export { IHealthScanDatastore } from './IHealthScanDatastore.mjs';
+export { IAiUsageReader, isAiUsageReader } from './IAiUsageReader.mjs';
