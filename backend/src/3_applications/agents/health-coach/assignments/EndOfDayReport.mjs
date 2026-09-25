@@ -3,6 +3,7 @@
 import { Assignment } from '../../framework/Assignment.mjs';
 import { OutputValidator } from '../../framework/OutputValidator.mjs';
 import { coachingMessageSchema } from '../schemas/coachingMessage.mjs';
+import { DEFAULT_TZ, localDate, localHour, goalsWithRange, rangeOf } from './budgetContext.mjs';
 
 /**
  * EndOfDayReport - Event-triggered assignment that produces coaching commentary
@@ -41,7 +42,8 @@ export class EndOfDayReport extends Assignment {
       });
     };
 
-    const todayDate = new Date().toISOString().split('T')[0];
+    // The user's LOCAL date: a UTC date is already tomorrow after 5pm Pacific.
+    const todayDate = localDate(0);
 
     const [
       todayNutrition,
@@ -50,15 +52,14 @@ export class EndOfDayReport extends Assignment {
       coachingHistory,
       goals,
       nutritionHistory,
-      todayClosed,
     ] = await Promise.all([
-      call('get_today_nutrition',        { userId }),
+      // The budget contract: totals, range, zone and COMPLETE (floor or declared).
+      call('get_day_budget',             { userId, date: todayDate }),
       call('get_weight_trend',           { userId, days: 7 }),
       call('get_recent_workouts',        { userId }),
       call('get_coaching_history',       { userId, days: 7 }),
       call('get_user_goals',             { userId }),
-      call('get_nutrition_history',      { userId, days: 7 }),
-      call('is_day_closed',             { userId, date: todayDate }),
+      call('get_budget_range',           { userId, days: 7 }),
     ]);
 
     logger?.info?.('gather.complete', {
@@ -68,10 +69,11 @@ export class EndOfDayReport extends Assignment {
       hasCoachingHistory:   !!coachingHistory,
       hasGoals:             !!goals,
       hasNutritionHistory:  !!nutritionHistory,
-      todayClosed:          !!todayClosed?.closed,
+      todayComplete:        todayNutrition?.complete ?? null,
+      todayDeclared:        todayNutrition?.declared ?? null,
     });
 
-    return { todayNutrition, weight, workouts, coachingHistory, goals, nutritionHistory, todayClosed: !!todayClosed?.closed };
+    return { todayNutrition, weight, workouts, coachingHistory, goals, nutritionHistory, todayClosed: !!todayNutrition?.declared };
   }
 
   /**
@@ -80,26 +82,29 @@ export class EndOfDayReport extends Assignment {
    */
   buildPrompt(gathered, memory) {
     const now = new Date();
-    const today = now.toISOString().split('T')[0];
-    // User timezone from nutrilog or default to Pacific
-    const tz = gathered.todayNutrition?.timezone || 'America/Los_Angeles';
-    const localHour = parseInt(now.toLocaleString('en-US', { timeZone: tz, hour: 'numeric', hour12: false }));
-    const dayComplete = localHour >= 20; // 8 PM — day is essentially over
-    const sections = [`## Date: ${today}\n## Current Local Time: ${now.toLocaleString('en-US', { timeZone: tz, hour: 'numeric', minute: '2-digit', hour12: true })}\n## Day Complete: ${dayComplete}`];
+    const tz = gathered.todayNutrition?.timezone || DEFAULT_TZ;
+    const today = gathered.todayNutrition?.date || localDate(0, tz);
+    // Completeness is the budget's call — the floor was reached or the day was
+    // declared done/fasted. The clock NEVER completes a day: an under-logged
+    // evening is missing data, not a deficit. The hour only sets the tone.
+    const logComplete = gathered.todayNutrition?.complete === true;
+    const lateEvening = localHour(tz, now) >= 20;
+    const sections = [`## Date: ${today}\n## Current Local Time: ${now.toLocaleString('en-US', { timeZone: tz, hour: 'numeric', minute: '2-digit', hour12: true })}\n## Logging Complete: ${logComplete}`];
 
     sections.push(`\n## Tracked Nutrition (today so far)\n${JSON.stringify(gathered.todayNutrition || {}, null, 2)}`);
     sections.push(`\n## Nutrition History (last 7 days — for trend context)\n${JSON.stringify(gathered.nutritionHistory || {}, null, 2)}`);
-    sections.push(`\n## User Goals\n${JSON.stringify(gathered.goals || {}, null, 2)}`);
+    sections.push(`\n## User Goals\n${JSON.stringify(goalsWithRange(gathered.goals, gathered.todayNutrition), null, 2)}`);
     sections.push(`\n## Weight Trend (7 days)\n${JSON.stringify(gathered.weight || {}, null, 2)}`);
     sections.push(`\n## Today's Workouts\n${JSON.stringify(gathered.workouts || {}, null, 2)}`);
     sections.push(`\n## Recent Coaching History (last 7 days — for dedup)\n${JSON.stringify(gathered.coachingHistory || {}, null, 2)}`);
     sections.push(`\n## Working Memory\n${memory.serialize()}`);
 
-    // Detect likely incomplete logging — under calorie min = incomplete, unless user marked day as done
-    const calorieFloor = gathered.goals?.goals?.nutrition?.calories_min || 1200;
+    // Under the floor and not declared = the log is incomplete. Late in the
+    // evening that almost certainly means a missed meal, so ask about it.
+    const { floor: calorieFloor, top: calorieTop } = rangeOf(gathered.todayNutrition, gathered.goals);
     const todayNutrition = gathered.todayNutrition || {};
     const todayCals = todayNutrition.calories ?? todayNutrition.total_calories ?? null;
-    const incompleteLogging = dayComplete && todayCals !== null && todayCals < calorieFloor && !gathered.todayClosed;
+    const incompleteLogging = lateEvening && !logComplete && todayCals !== null && !gathered.todayClosed;
 
     sections.push(`\n## Instructions
 Produce a JSON object matching the coachingMessageSchema:
@@ -108,22 +113,22 @@ Produce a JSON object matching the coachingMessageSchema:
 - parse_mode: "HTML"
 ${incompleteLogging ? `
 INCOMPLETE LOGGING DETECTED — OVERRIDE NORMAL COACHING:
-Today's tracked calories (~${Math.round((todayCals || 0) / 50) * 50}) are below the daily minimum target (${calorieFloor}), and the day is over but the user did NOT mark it as done via /done. This almost certainly means the user forgot to log one or more meals — NOT that they actually ate this little. DO NOT lecture about missed goals or undereating. Instead:
+Today's tracked calories (~${Math.round((todayCals || 0) / 50) * 50}) are below the logging floor (${calorieFloor}), it is late in the evening, and the user did NOT mark the day as done via /done or fasted via /fast. This almost certainly means the user forgot to log one or more meals — NOT that they actually ate this little. DO NOT lecture about missed goals or undereating. Instead:
 1. Note what WAS logged today (name the specific items)
 2. Point out the total looks incomplete — "looks like a meal or two didn't get logged" or similar
 3. Ask the user what they had for the missing meal(s) so it can be logged retroactively
 4. Keep it brief and helpful, not judgmental
 This takes priority over ALL other coaching rules below.
 ` : ''}
-Critical context — time of day:
-- CHECK THE TIME. If "Day Complete" is false, today's totals are PARTIAL — the user is still eating.
-- When the day is incomplete, your PRIMARY job is remaining-budget coaching:
+Critical context — completeness:
+- "Logging Complete" is the ONLY signal that today's totals are final. It is true only when food reached the floor (${calorieFloor} cal) or the user declared the day done/fasted. The time of day NEVER makes a day complete, and a low total on an incomplete day is missing data, never a deficit to praise or criticise.
+- When logging is NOT complete, today's totals are PARTIAL — your PRIMARY job is remaining-budget coaching:
   1. State what's been consumed so far (cal + protein)
-  2. Calculate the remaining budget: calories left to ceiling (round to nearest 50), protein still needed (round to nearest 5g)
+  2. Calculate the remaining budget: calories left to the plan's top${calorieTop ? ` (${calorieTop} cal net of exercise)` : ''} (round to nearest 50), protein still needed (round to nearest 5g)
   3. Prescribe the rest of the day in macro terms: "You've got ~700-1100 cal and ~90g protein left — that's a protein shake + a chicken-heavy dinner"
   4. Reference what worked on similar good days from nutrition history to suggest a concrete plan for the remaining meals (e.g., "a Premier Protein + salmon dinner like the 24th would close the protein gap at ~650 cal")
   5. If yesterday was an overshoot, factor that in: "after yesterday's 1628, aim for the low end tonight — keep it under 700 cal for dinner"
-- When the day IS complete, evaluate the full day against goals and the 7-day trend
+- When logging IS complete, evaluate the full day against goals and the 7-day trend (use complete days only for averages)
 
 Weight-loss context:
 - The user's objective is weight_loss. A low-calorie day after an overshoot is CORRECTIVE, not alarming

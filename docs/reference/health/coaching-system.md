@@ -101,7 +101,11 @@ So every day the coach reads is classified before anything else happens:
 | `unlogged` | Nothing logged | **no** — missing data |
 | `reconstructed` | Untracked intake backfilled from weight ([reconstruction](README.md#untracked-intake-reconstruction)) | calories yes. Protein is **unknown** and never averaged |
 
-The threshold is `logging_completeness.min_calories` in the household `coaching` config (`household/coaching/config.yml`, registered in `shared/contracts/householdConfig.mjs`), **default 1200**. Close a day from the nutribot chat with `/done` or `/fast`. With no argument it closes today in the user's timezone. It also takes `yesterday` or an explicit `YYYY-MM-DD` that is not in the future, and `/reopen` with the same arguments undoes it. The brief's hint prints the exact date, so it stays correct if read a day late. Closures live in `data/users/{username}/day_closed.yml` as `{date: {status, at}}`. A bare `true` is the legacy `/done` record and is read as `done`.
+**The threshold is the health budget's floor** — the user's `budgetFloor` in `users/{id}/apps/health/goals.yml` (default 1200), the lower edge of the goal range the Today bar draws ([budget equation](README.md#the-budget-equation--one-server-side-home)). The coach reads it through the budget contract (`BudgetService`), the same one that computes the day's zone and `complete` flag, so the coach and the bar can never disagree about whether a day is trustworthy. `logging_completeness.min_calories` in the household `coaching` config (`household/coaching/config.yml`) is now only the **fallback**, used when the budget cannot be computed (no goals or no weight yet).
+
+**Completeness never comes from the clock.** A day is complete when food reached the floor or the user declared it done/fasted — nothing else. In particular the end-of-day report no longer treats "after 8 PM" as a complete day: late in the evening an under-floor, undeclared day is still missing data, and the report asks about the missing meals instead of judging the intake. The hour only sets tone and pacing.
+
+Close a day from the nutribot chat with `/done` or `/fast`. With no argument it closes today in the user's timezone. It also takes `yesterday` or an explicit `YYYY-MM-DD` that is not in the future, and `/reopen` with the same arguments undoes it. The brief's hint prints the exact date, so it stays correct if read a day late. Closures live in `data/users/{username}/day_closed.yml` as `{date: {status, at}}`. A bare `true` is the legacy `/done` record and is read as `done`.
 
 Consequences:
 
@@ -110,7 +114,20 @@ Consequences:
 - **An incomplete yesterday is labelled as such** in the status block, with the command that would close it.
 - **Patterns and commentary never read an untrusted day as intake.** An untrusted most-recent day yields `missed_logging`, never `calorie_deficit`. Older untrusted days are dropped and the trusted remainder is still evaluated. A confirmed fast is never `missed_logging`. The snapshot carries each day's `status` and the threshold, and the LLM is told to say nothing about an incomplete yesterday's intake and to stay silent when fewer than half the days are trusted.
 
-Implementation: `backend/src/3_applications/coaching/dayCompleteness.mjs`.
+Implementation: `backend/src/3_applications/coaching/dayCompleteness.mjs` (classification), with the floor from the budget contract.
+
+### One budget, every surface
+
+Every surface that judges a day takes the goal range and zone from the health budget contract — the Today bar's numbers — instead of its own sums and thresholds:
+
+| Surface | Reads from the budget |
+|---|---|
+| `CoachingOrchestrator` (post-meal, morning brief, weekly digest, exercise reaction) | floor (completeness), top (the plan, shown as "left of {top}"), counted food and protein, `zone`, `complete`, `remaining`. Exercise is credited **in full** (the range compares net), matching the bar. |
+| Health-coach agent tools `get_day_budget` / `get_budget_range` (`tools/BudgetToolFactory.mjs`) | one day (with its counted foods) or the last N days: calories, protein, net, range, zone, `complete`, `declared`. They replace the retired `get_today_nutrition` / `get_nutrition_history` / `is_day_closed`, which no factory defined any more (the assignments were silently getting nothing). |
+| `EndOfDayReport`, `MorningBrief`, `WeeklyDigest` | "Logging Complete" from `complete`; floor/top from the range; the goals shown to the model carry the range, not the stale `nutrition.calories_min/max`; dates are the user's local dates, not UTC. A budget day is "over plan" when net passes its own top; weekly averages use complete days only. |
+| Nutribot daily report caption (`nutribot/usecases/reportCaption.mjs`) | "🔥 1257 / 1200–1791 cal • 782 cal left" — the range and the zone's own words ("to floor", "left", "over", "past break even", "Fasted"). |
+
+Each composition scope builds its own `BudgetService` over the shared stores (`createHealthBudget` in `bootstrap.mjs`, the `healthApi.mjs` pattern). When the budget is unavailable every surface falls back to its configured goals (`nutrition.calories_min/max`, `coaching.logging_completeness.min_calories`) and logs `coaching.budget.unavailable` / `report.budget.unavailable`.
 
 ---
 
@@ -184,7 +201,7 @@ The practical rules:
 - **Midday.** The coach frames remaining budget as *what is still possible* — calories left, protein gap, what a typical lunch or dinner from the food catalog would do to the totals.
 - **Late in the day.** The coach frames remaining budget as *what is still appropriate* — a snack-sized window, a protein-shake-sized gap, or the day already closed against goal.
 - **After the day's calorie ceiling is met.** The coach does not pile on. It does not nag, does not remind, does not suggest restriction. The status block reports the situation factually; commentary, if any, is brief and forward-looking.
-- **After a workout.** The exercise reaction frames burned calories as *expanded budget* — what the burn buys for the rest of the day in user-meaningful terms ("a snack, not a meal"; "room for the dinner you were already planning"). It does not double-count: the system does not credit a burned calorie as expanding the day's eat-budget beyond the goal ceiling.
+- **After a workout.** The exercise reaction frames burned calories as *expanded budget* — what the burn buys for the rest of the day in user-meaningful terms ("a snack, not a meal"; "room for the dinner you were already planning"). With the budget contract the burn is credited in full, exactly as the Today bar nets it off food (the range is judged on net); only without the budget does the legacy half-credit estimate apply.
 
 The coach also respects **source freshness**: if a source has gone silent (no scale reading in many days, no fitness session recorded in a week), the coach does not pretend the absence is data. A weight-plateau pattern requires recent weight readings; without them, the pattern is suppressed.
 
@@ -249,7 +266,7 @@ The unifying principle: **a problem in the coaching layer never blocks the data 
 ### Configuration and data
 
 - `data/household/config/integrations.yml` — household-level provider selection (LLM provider, messaging platform, model and mini-model).
-- `data/household/coaching/config.yml` — `morning_brief.schedule`, `weekly_digest.schedule`, `logging_completeness.min_calories` (default 1200), `post_meal.{enabled, quiet_minutes, quiet_hours}` (default on, 10, `{start: '22:00', end: '07:00'}`; `false` disables the window), `exercise_reaction.{enabled, min_calories}` (default on, 200).
+- `data/household/coaching/config.yml` — `morning_brief.schedule`, `weekly_digest.schedule`, `logging_completeness.min_calories` (default 1200; fallback only — the user's `budgetFloor` is the threshold), `post_meal.{enabled, quiet_minutes, quiet_hours}` (default on, 10, `{start: '22:00', end: '07:00'}`; `false` disables the window), `exercise_reaction.{enabled, min_calories}` (default on, 200).
 - `data/users/{username}/day_closed.yml` — per-day `/done` and `/fast` closures.
 - `data/users/{username}/health_coaching.yml` — per-user coaching history: every delivered message persisted with its assignment type and the date it covers.
 - `data/users/{username}/lifeplan.yml` — per-user goal configuration consumed for goal-relative framing.
