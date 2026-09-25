@@ -1,6 +1,8 @@
+import { useEffect, useRef, useState } from 'react';
 import { Button } from '@mantine/core';
 import { DateStepper } from '@/lib/ui';
 import { headlineFor } from '@shared-contracts/health/budgetZone.mjs';
+import { budgetGeometry } from './budgetGeometry.js';
 
 const n = (v) => Math.round(Number(v || 0)).toLocaleString();
 const pct = (part, whole) => (whole > 0 ? `${(Math.max(0, part) / whole) * 100}%` : '0%');
@@ -28,7 +30,10 @@ function BudgetBar({ budget }) {
   const breakEven = Number(budget.maintenance) || 0;
   const exercise = Math.max(0, Number(budget.exercise) || 0);
   const food = Math.max(0, Number(budget.food) || 0);
+  // The legacy bar paints from 0; the terms line states the real net, which a
+  // big workout can take below zero.
   const net = Math.max(0, food - exercise);
+  const realNet = food - exercise;
   const over = budget.status === 'over';
   const scale = Math.max(goal, breakEven, food) * HEADROOM;
   const band = (from, to) => ({ left: pct(from, scale), width: pct(Math.max(0, to - from), scale) });
@@ -36,7 +41,7 @@ function BudgetBar({ budget }) {
   const mark = (value, cls, label) => <span className={`health-budget__mark health-budget__mark--${cls}${value / scale > 0.5 ? ' health-budget__mark--end' : ''}`}
     style={{ left: pct(value, scale) }}><span className="health-budget__mark-label">{label} <b>{n(value)}</b></span></span>;
   const sameMark = breakEven > 0 && Math.round(breakEven) === Math.round(goal);
-  const balance = breakEven > 0 ? breakEven - net : null;
+  const balance = breakEven > 0 ? breakEven - realNet : null;
   // The headline names the segment its number measures (the shared zone rule).
   // A legacy budget without a zone keeps the old two-way wording.
   const headline = budget.zone
@@ -46,7 +51,7 @@ function BudgetBar({ budget }) {
   return (
     <div className="health-budget">
       <div className="health-budget__head">
-        <span className="health-budget__headline" data-testid="budget-headline">
+        <span className={`health-budget__headline${budget.zone ? ` health-budget__headline--${budget.zone}` : ''}`} data-testid="budget-headline">
           {headline.value == null ? headline.text : <><strong>{n(headline.value)}</strong> kcal {headline.text}</>}
         </span>
         <span className="health-budget__terms" data-testid="budget-terms">
@@ -54,12 +59,13 @@ function BudgetBar({ budget }) {
           {exercise > 0 ? <><span className="health-budget__sep" aria-hidden="true">·</span>
             <span className="health-budget__exercise-term">{n(exercise)} burned</span>
             <span className="health-budget__sep" aria-hidden="true">·</span>
-            <span>{n(net)} net</span></> : null}
+            <span>{realNet < 0 ? `−${n(-realNet)}` : n(realNet)} net</span></> : null}
           {balance != null ? <><span className="health-budget__sep" aria-hidden="true">·</span>
             <span className={balance >= 0 ? 'health-budget__deficit' : 'health-budget__surplus'}>{balance >= 0 ? `${n(balance)} deficit` : `${n(-balance)} surplus`}</span></> : null}
           {budget.stale ? <span className="health-equation__stale" title="Latest weigh-in is over a week old">stale wt</span> : null}
         </span>
       </div>
+      {budget.range && budget.zone ? <RulerScale budget={budget} spoken={spoken} /> : (
       <div className="health-budget__scale">
         <div className="health-budget__track" role="img"
           aria-label={`${n(net)} net kcal of ${n(goal)} goal${breakEven ? `, break even ${n(breakEven)}` : ''}, ${spoken}`}>
@@ -71,6 +77,68 @@ function BudgetBar({ budget }) {
         {mark(goal, 'goal', sameMark ? 'Goal · break even' : 'Goal')}
         {breakEven > 0 && !sameMark ? mark(breakEven, 'even', 'Break even') : null}
       </div>
+      )}
+    </div>
+  );
+}
+
+// The track's rendered width, for tick density and label fit. jsdom (and any
+// browser without ResizeObserver) keeps the phone default.
+function useWidth(ref, fallback = 360) {
+  const [width, setWidth] = useState(fallback);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || typeof ResizeObserver === 'undefined') return undefined;
+    const observer = new ResizeObserver(([entry]) => {
+      const w = Math.round(entry.contentRect.width);
+      if (w > 0) setWidth(w);
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [ref]);
+  return width;
+}
+
+const at = (p) => `${p.toFixed(2)}%`;
+const endAnchored = (p) => (p > 50 ? ' health-budget__label--end' : '');
+
+/**
+ * The budget as a labelled ruler (budgetGeometry.js): the goal band from floor
+ * to top, break-even, ticks, a hatched exercise credit on the LEFT, and the
+ * food block whose right edge — net — is the one frontier, coloured by zone.
+ * A dotted run carries the headline's number to the mark it measures against.
+ */
+function RulerScale({ budget, spoken }) {
+  const ref = useRef(null);
+  const g = budgetGeometry(budget, { widthPx: useWidth(ref) });
+  const { band, even, earned, food, run, zone } = g;
+  const labelAt = band.collapsed ? band.toPct : band.fromPct;
+  return (
+    <div className="health-budget__ruler" ref={ref}>
+      <div className="health-budget__rail health-budget__rail--above">
+        <span className={`health-budget__band-label${endAnchored(labelAt)}`} style={{ left: at(labelAt) }}>{band.label}</span>
+      </div>
+      <div className="health-budget__track health-budget__track--ruler" role="img" data-testid="budget-ruler"
+        aria-label={`${n(budget.net)} net kcal; ${band.label.toLowerCase()}${even ? `; break even ${n(even.value)}` : ''}; ${spoken}`}>
+        {band.collapsed ? null : <span className="health-budget__band" style={{ left: at(band.fromPct), width: at(band.toPct - band.fromPct) }} />}
+        {earned ? <span className="health-budget__earned" data-testid="budget-earned" style={{ left: at(earned.fromPct), width: at(earned.widthPct) }}>
+          {earned.labelled ? <span className="health-budget__seg-label">{n(earned.value)}</span> : null}</span> : null}
+        <span className={`health-budget__food health-budget__food--${zone}`} data-testid="budget-food" style={{ left: at(food.fromPct), width: at(food.widthPct) }}>
+          {food.labelled ? <span className="health-budget__seg-label">{n(food.value)} eaten</span> : null}</span>
+        {run ? <span className={`health-budget__run health-budget__run--${zone}`} data-testid="budget-run" style={{ left: at(run.fromPct), width: at(run.widthPct) }} /> : null}
+        {band.collapsed ? null : <span className="health-budget__band-edges" style={{ left: at(band.fromPct), width: at(band.toPct - band.fromPct) }} />}
+        {band.collapsed ? <span className="health-budget__goal-line" style={{ left: at(band.toPct) }} /> : null}
+        {g.zero != null ? <span className="health-budget__zero" style={{ left: at(g.zero) }} /> : null}
+        {even ? <span className="health-budget__even" style={{ left: at(even.pct) }} /> : null}
+      </div>
+      <div className="health-budget__rail health-budget__ticks" aria-hidden="true">
+        {g.ticks.map(t => <span key={t.value} className="health-budget__tick" style={{ left: at(t.pct) }}>
+          {t.label ? <span className="health-budget__tick-label">{t.label}</span> : null}</span>)}
+      </div>
+      {even ? <div className="health-budget__rail health-budget__rail--below">
+        <span className={`health-budget__even-label${endAnchored(even.pct)}`} style={{ left: at(even.pct) }}>
+          {even.wordless ? null : 'Break even '}<b>{n(even.value)}</b></span>
+      </div> : null}
     </div>
   );
 }
@@ -96,7 +164,9 @@ function MacroMeter({ label, tone, value, partial, target }) {
 export function EquationStrip({ budget, budgetError, macroCoverage, goals, date, today, onDateChange, onSetupGoals }) {
   const macroGoals = goals?.macroGoals || budget?.goals?.macroGoals || {};
   return (
-    <div className={`health-equation${budget?.status === 'over' ? ' health-equation--over' : ''}`}>
+    // A zoned budget colours its own headline; the legacy "over" tint is only
+    // for a budget without a zone.
+    <div className={`health-equation${budget?.status === 'over' && !budget?.zone ? ' health-equation--over' : ''}`}>
       <DateStepper date={date} onChange={onDateChange} max={today} />
       {budget ? (
         <div className="health-equation__math" aria-label="Daily nutrition summary">

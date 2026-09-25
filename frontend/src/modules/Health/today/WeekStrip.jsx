@@ -109,6 +109,8 @@ export function WeekStrip({ date, today, onDateChange, viewportEnd, onViewportCh
             <span className="health-weekstrip__dow">{WEEKDAY_SHORT[dt.getDay()]}</span>
             <span className="health-weekstrip__num">{dt.getDate()}</span>
             <span className="health-weekstrip__barbox" aria-hidden="true">
+              {bar.kind === 'day' && bar.floorPct != null ? <span className="health-weekstrip__band"
+                style={{ bottom: `${bar.floorPct}%`, height: `${Math.max(0, bar.goalPct - bar.floorPct)}%` }} /> : null}
               <span className="health-weekstrip__goalline" style={{ bottom: `${(100 / cap).toFixed(1)}%` }} />
               {bar.breakEvenPct != null ? <span className="health-weekstrip__evenline" style={{ bottom: `${bar.breakEvenPct}%` }} /> : null}
               {bar.kind === 'gap' ? (
