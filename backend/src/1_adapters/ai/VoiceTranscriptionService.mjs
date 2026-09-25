@@ -32,6 +32,7 @@ export class VoiceTranscriptionService {
   #openaiAdapter;
   #profile;
   #logger;
+  #usageTags;
 
   /**
    * @param {Object} config
@@ -40,6 +41,8 @@ export class VoiceTranscriptionService {
    *   cleanupPrompt, cleanupOptions?, emptyMarker? }`. Required — see the class
    *   comment for why a default would be dangerous.
    * @param {Object} [config.logger] - Logger instance
+   * @param {Object} [config.usageTags] - Ledger attribution (`{ app, feature }`)
+   *   for both the Whisper call and the cleanup chat. Set via scoped().
    */
   constructor(config) {
     if (!config?.openaiAdapter) {
@@ -63,6 +66,27 @@ export class VoiceTranscriptionService {
     this.#openaiAdapter = config.openaiAdapter;
     this.#profile = config.profile;
     this.#logger = config.logger || console;
+    this.#usageTags = config.usageTags ? { ...config.usageTags } : null;
+  }
+
+  /**
+   * The same service with its AI calls attributed to `tags` in the usage
+   * ledger. Tags ride each call as a `usageTags` option, so they merge with
+   * any tags a scoped adapter view already carries (later wins per key).
+   * @param {{ app?: string, feature?: string }} tags
+   */
+  scoped(tags = {}) {
+    return new VoiceTranscriptionService({
+      openaiAdapter: this.#openaiAdapter,
+      profile: this.#profile,
+      logger: this.#logger,
+      usageTags: { ...(this.#usageTags || {}), ...tags },
+    });
+  }
+
+  /** Options fragment carrying this instance's attribution, or nothing. */
+  #tagOptions() {
+    return this.#usageTags ? { usageTags: { ...this.#usageTags } } : {};
   }
 
   /** The profile this instance was bound to. Handy for assertions and logs. */
@@ -122,7 +146,8 @@ export class VoiceTranscriptionService {
       sessionId,
       filename: `${slug}.${ext}`,
       contentType: mimeType || 'audio/ogg',
-      prompt: whisperPrompt
+      prompt: whisperPrompt,
+      ...this.#tagOptions(),
     });
 
     // Lengths, never contents. A transcript is what somebody said out loud —
@@ -145,7 +170,7 @@ export class VoiceTranscriptionService {
             { role: 'system', content: this.#profile.cleanupPrompt },
             { role: 'user', content: transcriptRaw }
           ],
-          this.#profile.cleanupOptions || DEFAULT_CLEANUP_OPTIONS
+          { ...(this.#profile.cleanupOptions || DEFAULT_CLEANUP_OPTIONS), ...this.#tagOptions() }
         );
 
         // Trim whitespace

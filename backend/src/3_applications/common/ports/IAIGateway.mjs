@@ -19,12 +19,15 @@
  * @property {'none'|'minimal'|'low'|'medium'|'high'} [reasoningEffort] - Model reasoning budget
  * @property {boolean} [jsonMode=false] - Request JSON response format
  * @property {number} [timeout] - Request timeout in ms
+ * @property {{app?: string, feature?: string}} [usageTags] - Usage-ledger
+ *   attribution. Normally set by a scoped gateway view, not by callers.
  */
 
 /**
  * @typedef {Object} TranscriptionOptions
  * @property {string} [language] - Language hint (ISO 639-1)
  * @property {string} [prompt] - Prompt to guide transcription
+ * @property {{app?: string, feature?: string}} [usageTags] - Usage-ledger attribution
  */
 
 /**
@@ -76,9 +79,10 @@ export class IAIGateway {
   /**
    * Generate text embedding vector
    * @param {string} text - Text to embed
+   * @param {{usageTags?: Object}} [options]
    * @returns {Promise<number[]>} - Embedding vector
    */
-  async embed(text) {
+  async embed(text, options = {}) {
     throw new Error('IAIGateway.embed must be implemented');
   }
 
