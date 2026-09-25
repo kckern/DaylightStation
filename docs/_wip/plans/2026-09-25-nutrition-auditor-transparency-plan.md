@@ -542,3 +542,32 @@ Never start a second backend (CLAUDE.local.md). Commit.
 3. `docker exec daylight-station node cli/nutrition-auditor-backfill.cli.mjs --since 2026-09-06 --dry-run`, then without `--dry-run`.
 4. Verify: within an hour `node cli/openai-usage.cli.mjs ledger --since <today> --by agentId,model` shows `nutrition-auditor` rows on gpt-4.1-mini; `/health/auditor` shows new runs with a trigger; the log store has `agent.usage` events.
 5. After 24 h compare the OpenAI usage export for that day against `ledger --by model` for the same day (gpt-4o should be ~0; totals should agree within a few percent). Record the result in the reference doc.
+
+---
+
+## Phase F: AI spend attribution (added 2026-09-25, see design addendum)
+
+Run after Phase D's frontend tasks land (same worktree; one implementer at a time).
+
+### Task 21: Ledger fields, scoped views, origin context
+- `0_system/.../aiContext.mjs`: `runWithOrigin(origin, fn)`, `currentOrigin()` (AsyncLocalStorage). Tests.
+- `OpenAIAdapter.scoped(tags)`, same for Anthropic, Jev, VoiceTranscriptionService, OpenAITTSAdapter; `#recordUsage` merges `{ app, feature }` + `origin: currentOrigin()`. Tests: nested scoping merges; unscoped rows have app/feature null.
+- `agentUsageRecorder`: agent → app/feature map; `origin`.
+- Commit.
+
+### Task 22: Origin wiring
+- Express middleware (route pattern, not URL), scheduler job runner, Telegram webhook handler, nutrition-cleanup tick + artwork timers, CLIs. Tests per wiring point (origin reaches a fake ledger).
+- Commit.
+
+### Task 23: Scope every consumer + guard
+- `app.mjs`/composition: every consumer gets `sharedAiGateway.scoped({ app })`. Health/nutribot use cases narrow `feature` (list in design addendum). Other apps: app only.
+- Guard test (extend `agentUsageRecorder.wiring.test.mjs` pattern) — no bare gateway handed out.
+- Health feature test: each Health use case with a spy gateway records `health/<feature>`.
+- Commit.
+
+### Task 24: Pricing gaps
+- Whisper `verbose_json` → duration → $0.006/min (callers still get text); gpt-5-nano price; TTS ledger rows; ledger for `backfill-toc-offset`, `journalist-debrief-preview`, `finance-jev-replay` with `cli:` origins. `openai-usage ledger --by app,feature` prints untagged origins. Tests; commit.
+
+### Task 25: Health AI usage API + card
+- App-layer `HealthAiUsageService` over a ledger reader port (adapter wraps `AiUsageLedger` reads) → `GET /api/v1/health/ai-usage?days=30`: `{ today, week, month, byFeature: [{ feature, calls, costUsd, avgUsd }], days: [{ date, byFeature }] }`, household tz, pre-tag rows as `feature: 'before-tracking'`.
+- Frontend `AiUsageCard` on the auditor page + Settings; auditor row links to the timeline. Tests; commit.
