@@ -18,6 +18,11 @@ describe('zoneFor', () => {
     expect(z(600, 0, 'done')).toMatchObject({ zone: 'declared', complete: true });
   });
 
+  it('a skipped (fasted) meal makes an under-floor day trustworthy, like a declaration', () => {
+    const r = zoneFor({ food: 600, exercise: 0, maintenance: 2291, range, fastedMeals: ['morning'] });
+    expect(r).toMatchObject({ zone: 'declared', complete: true, remaining: 1191 });
+  });
+
   it('in-range boundary: food exactly at the floor, net exactly at the top', () => {
     expect(z(1200)).toMatchObject({ zone: 'in-range', remaining: 591 });
     expect(z(1791)).toMatchObject({ zone: 'in-range', remaining: 0 });
@@ -60,7 +65,6 @@ describe('headlineFor', () => {
     expect(headlineFor({ zone: 'in-range', remaining: 648 })).toEqual({ value: 648, text: 'left' });
     expect(headlineFor({ zone: 'over', remaining: 109 })).toEqual({ value: 109, text: 'over' });
     expect(headlineFor({ zone: 'past-even', remaining: 109 })).toEqual({ value: 109, text: 'past break even' });
-    expect(headlineFor({ zone: 'declared', remaining: 1191, declared: 'fasting' })).toEqual({ value: null, text: 'Fasted' });
-    expect(headlineFor({ zone: 'declared', remaining: 1191, declared: 'done' })).toEqual({ value: null, text: 'Logging done' });
+    expect(headlineFor({ zone: 'declared', remaining: 1191, declared: 'fasting' })).toEqual({ value: 1191, text: 'left' });
   });
 });

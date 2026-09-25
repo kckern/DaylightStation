@@ -74,7 +74,8 @@ export function fastedMealsOf(record) {
  */
 export function classifyDay(entry, closure, minCalories = DEFAULT_MIN_CALORIES) {
   const calories = Number(entry?.calories) || 0;
-  const closed = closureStatus(closure);
+  // A skipped (fasted) meal confirms the log is what was eaten: trusted, as a fast.
+  const closed = closureStatus(closure) || (fastedMealsOf(closure).length ? DAY_STATUS.FASTING : null);
   if (closed) return closed;
   if (Number(entry?.reconstructed_calories) > 0) return DAY_STATUS.RECONSTRUCTED;
   if (!entry || calories <= 0) return DAY_STATUS.UNLOGGED;

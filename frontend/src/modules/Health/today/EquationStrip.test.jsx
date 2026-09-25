@@ -145,9 +145,9 @@ describe('EquationStrip — the headline names its segment', () => {
     expect(screen.getByTestId('budget-headline').textContent).toMatch(/1,091\s*kcal left/);
   });
 
-  it('a declared day says so instead of a number', () => {
+  it('a declared day still reads the number to the ceiling (the pill carries the status)', () => {
     strip({ budget: { ...ranged, food: 600, net: 600, zone: 'declared', declared: 'fasting', remaining: 1191, status: 'under' } });
-    expect(screen.getByTestId('budget-headline').textContent).toBe('Fasted');
+    expect(screen.getByTestId('budget-headline').textContent).toMatch(/1,191\s*kcal left/);
   });
 
   it('past break-even says so', () => {

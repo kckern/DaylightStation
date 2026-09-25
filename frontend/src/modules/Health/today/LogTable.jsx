@@ -114,7 +114,7 @@ function Section({
         <h4 className="health-meal__label">{label}</h4>
         {rows.length ? <MacroBadges rows={rows} className="health-meal__macros" showLabels /> : null}
         <span className="health-meal__header-right">
-          <span className="health-meal__kcal">{rows.length ? `${kcal(rows)} kcal` : fasted ? 'Fasted' : '—'}</span>
+          <span className="health-meal__kcal">{rows.length ? `${kcal(rows)} kcal` : fasted ? 'Skipped' : '—'}</span>
           {/* An empty meal can be declared skipped (coach information only). A
               skipped meal that later gets food keeps its undo — and says so —
               or the coach would go on being told not to ask about it. */}

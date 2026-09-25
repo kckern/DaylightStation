@@ -1,15 +1,16 @@
 import { useMemo, useState } from 'react';
-import { ActionIcon, Menu } from '@mantine/core';
+import { ActionIcon, Tooltip } from '@mantine/core';
+import { IconCircleOff } from '@tabler/icons-react';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import { createAppLogger } from '../../../lib/ui/createAppLogger.js';
 import { showDayStatus } from '../healthResources.js';
 
 /**
- * An EMPTY meal's ⋯ menu: mark it skipped (a meal-level fast) or undo that.
- * Information for the coach only — "this meal was intentionally empty, don't
- * ask about it". It never closes the day and never moves the budget bar; the
- * day is still judged by its floor or a day-level Done/Fasted
- * (docs/reference/health/README.md, "Closing a day").
+ * A meal's "didn't eat anything here" toggle: one small ⊘ icon beside the
+ * meal heading. Marking a meal skipped (a meal-level fast) closes that meal —
+ * the empty slot is intentional — and makes the day's total trusted, like
+ * "Done logging" (docs/reference/health/README.md, "Closing a day"). Tapping
+ * it again undoes the skip.
  */
 export function MealFastToggle({ date, bucket, label, fasted = false, onChanged }) {
   const logger = useMemo(() => createAppLogger('health').child('meal-fast'), []);
@@ -34,13 +35,14 @@ export function MealFastToggle({ date, bucket, label, fasted = false, onChanged 
     }
   };
 
+  const action = fasted ? `Undo skipped ${label}` : `Skipped ${label} — didn't eat anything`;
   return <>
-    <Menu position="bottom-end">
-      <Menu.Target><ActionIcon className="health-meal__capture-btn" variant="subtle" aria-label={`${label} skip options`} loading={busy}>⋯</ActionIcon></Menu.Target>
-      <Menu.Dropdown>
-        <Menu.Item onClick={toggle}>{fasted ? `Undo skipped ${label}` : `Mark ${label} as skipped (fasted)`}</Menu.Item>
-      </Menu.Dropdown>
-    </Menu>
+    <Tooltip label={action} withinPortal openDelay={400}>
+      <ActionIcon className={`health-meal__skip${fasted ? ' health-meal__skip--on' : ''}`} variant="subtle" size="sm"
+        aria-label={action} aria-pressed={fasted} loading={busy} onClick={toggle}>
+        <IconCircleOff size={15} aria-hidden="true" />
+      </ActionIcon>
+    </Tooltip>
     {error ? <span className="health-meal__fast-error" role="alert">{error}</span> : null}
   </>;
 }

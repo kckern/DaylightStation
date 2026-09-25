@@ -25,14 +25,15 @@ describe('dayCompleteness', () => {
     expect(classifyDay(undefined, { status: 'fasting' }, 1200)).toBe('fasting');
   });
 
-  it('a record holding only meal fasts does NOT close the day', () => {
+  it('a record holding only meal fasts does not close the day, but is trusted', () => {
     const mealsOnly = { meals: { morning: { status: 'fasting', at: 'x' } } };
     expect(closureStatus(mealsOnly)).toBeNull();
     expect(closureStatus({ status: 'done', at: 'x', meals: { morning: { status: 'fasting' } } })).toBe('done');
     expect(closureStatus({ status: 'fasting' })).toBe('fasting');
     expect(closureStatus(true)).toBe('done');
     expect(closureStatus({ at: 'x' })).toBeNull();
-    expect(classifyDay({ calories: 800 }, mealsOnly, 1200)).toBe('incomplete');
+    // ...but a skipped meal makes the day's total trusted.
+    expect(classifyDay({ calories: 800 }, mealsOnly, 1200)).toBe('fasting');
   });
 
   it('lists the fasted meals of a record, in bucket order', () => {

@@ -529,6 +529,9 @@ $health-aside-gap: 1.5rem;
   // A meal declared skipped (coach information): quiet, never a warning.
   &__fasted-note { font-size: 0.68rem; color: var(--ds-text-low); white-space: nowrap; }
   &__fast-error { font-size: 0.7rem; color: var(--ds-danger); }
+  // The ⊘ skip toggle: faint until used; accent once the meal is marked skipped.
+  &__skip { color: var(--ds-text-low); &:hover { color: var(--ds-text-mid); } }
+  &__skip--on { color: var(--ds-accent); }
   &__macros { grid-column: 3 / 6; }
   &__add { display: block; width: 100%; min-height: 44px; text-align: left; padding: 0.28rem 0.2rem; color: var(--ds-text-mid); font-size: 0.8rem; border-radius: 6px;
     &:focus-visible { outline: 2px solid var(--ds-accent); outline-offset: 2px; } }

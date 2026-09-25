@@ -19,8 +19,7 @@ describe('MealFastToggle', () => {
     api.mockResolvedValue(result);
     const onChanged = vi.fn();
     mount({ fasted: false, onChanged });
-    fireEvent.click(screen.getByRole('button', { name: 'Breakfast skip options' }));
-    fireEvent.click(await screen.findByRole('menuitem', { name: /Mark Breakfast as skipped/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Skipped Breakfast/ }));
     await waitFor(() => expect(api).toHaveBeenCalledWith('api/v1/health/nutrition/meal-fast', { date: '2026-09-24', meal: 'morning', fasted: true }, 'POST'));
     expect(show).toHaveBeenCalledWith('2026-09-24', result);
     expect(onChanged).toHaveBeenCalled();
@@ -29,16 +28,16 @@ describe('MealFastToggle', () => {
   it('offers the undo when the meal is already fasted', async () => {
     api.mockResolvedValue({ status: null, fastedMeals: [] });
     mount({ fasted: true });
-    fireEvent.click(screen.getByRole('button', { name: 'Breakfast skip options' }));
-    fireEvent.click(await screen.findByRole('menuitem', { name: /Undo skipped Breakfast/ }));
+    const button = screen.getByRole('button', { name: /Undo skipped Breakfast/ });
+    expect(button.getAttribute('aria-pressed')).toBe('true');
+    fireEvent.click(button);
     await waitFor(() => expect(api).toHaveBeenCalledWith('api/v1/health/nutrition/meal-fast', { date: '2026-09-24', meal: 'morning', fasted: false }, 'POST'));
   });
 
   it('says so when the save fails', async () => {
     api.mockRejectedValue(new Error('offline'));
     mount({ fasted: false });
-    fireEvent.click(screen.getByRole('button', { name: 'Breakfast skip options' }));
-    fireEvent.click(await screen.findByRole('menuitem', { name: /Mark Breakfast as skipped/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Skipped Breakfast/ }));
     expect(await screen.findByRole('alert')).toHaveTextContent(/Could not save/);
   });
 });

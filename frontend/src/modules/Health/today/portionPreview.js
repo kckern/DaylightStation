@@ -21,7 +21,7 @@ export function projectPortion(items, budget, draft) {
   // the reloaded day will. A budget from an older server (no range) keeps the
   // old arithmetic.
   const zoned = budget.range
-    ? zoneFor({ food, exercise: budget.exercise, maintenance: budget.maintenance, range: budget.range, declared: budget.declared })
+    ? zoneFor({ food, exercise: budget.exercise, maintenance: budget.maintenance, range: budget.range, declared: budget.declared, fastedMeals: budget.fastedMeals })
     : null;
   return { items: projected, budget: { ...budget,
     food,
