@@ -209,6 +209,32 @@ export function createHealthRouter(config) {
     res.json(await cleanup().history(getDefaultUsername(req), { offset, limit: 30 }));
   }));
   router.patch('/nutrition/cleanup/settings', asyncHandler(async (req, res) => res.json(await cleanup().settings(getDefaultUsername(req), req.body))));
+  router.get('/nutrition/cleanup/settings/log', asyncHandler(async (req, res) => res.json({ entries: cleanup().settingsLog(getDefaultUsername(req)) })));
+  // Auditor run journal. Dates are household days; the default range (last
+  // seven) is the service's call, since only it knows the household timezone.
+  router.get('/nutrition/cleanup/journal', asyncHandler(async (req, res) => {
+    const service = cleanup();
+    const { from, to, trigger, changed } = req.query;
+    const offset = Number(req.query.offset ?? 0);
+    if ((from !== undefined && !isISODate(from)) || (to !== undefined && !isISODate(to)) || (from && to && from > to)) return res.status(400).json({ error: 'Invalid date range' });
+    if (!Number.isSafeInteger(offset) || offset < 0) return res.status(400).json({ error: 'Invalid offset' });
+    if (trigger !== undefined && !/^[A-Za-z]{1,32}$/.test(trigger)) return res.status(400).json({ error: 'Invalid trigger' });
+    if (changed !== undefined && !['0', '1'].includes(changed)) return res.status(400).json({ error: 'Invalid changed filter' });
+    res.json(await service.journal(getDefaultUsername(req), { from, to, trigger, changed: changed === '1', offset, limit: 50 }));
+  }));
+  router.get('/nutrition/cleanup/journal/:runId', asyncHandler(async (req, res) => {
+    const service = cleanup();
+    if (!/^[A-Za-z0-9_-]{1,64}$/.test(req.params.runId)) return res.status(400).json({ error: 'Invalid run id' });
+    const entry = await service.journalEntry(getDefaultUsername(req), req.params.runId);
+    if (!entry) return res.status(404).json({ error: 'Run not found' });
+    res.json(entry);
+  }));
+  router.get('/nutrition/cleanup/spend', asyncHandler(async (req, res) => {
+    const service = cleanup();
+    const days = Number(req.query.days ?? 30);
+    if (!Number.isSafeInteger(days) || days < 1 || days > 90) return res.status(400).json({ error: 'days must be 1 to 90' });
+    res.json(await service.spend(getDefaultUsername(req), { days }));
+  }));
   router.post('/nutrition/capture-recovery', asyncHandler(async (req, res) => {
     const { logUuid, expectedVersion, operationId, observationIds, dryRun } = req.body;
     try {

@@ -34,9 +34,10 @@ export function createNutritionCleanup({ dataService, configService, userIdentit
   const foodLogs = nutribotServices.foodLogStore;
   // Auditor settings own the model: every run passes its own. This default only
   // covers a call made without one (a run queued before settings recorded a model).
+  const transcriptStore = new AgentTranscriptFileStore({ mediaDir: configService.getMediaDir() });
   const runtime = new MastraAdapter({ model: 'openai/' + DEFAULT_AUDITOR_SETTINGS.model,
     logger, usageRecorder, maxToolCalls: 20, timeoutMs: 120000, executionPolicy: new AgentExecutionPolicy({ maxToolCalls: 20, logger,
-      transcriptStore: new AgentTranscriptFileStore({ mediaDir: configService.getMediaDir() }) }) });
+      transcriptStore }) });
   const dbDir = configService.getDataDir() + '/agents';
   const runs = new MastraRunAdapter({ dbPath: dbDir + '/cleanup-runs.db' });
   const catalog = new YamlFoodCatalogDatastore({ dataService, logger });
@@ -61,7 +62,9 @@ export function createNutritionCleanup({ dataService, configService, userIdentit
   // ledger uses), since prod and a dev machine share the Dropbox data tree.
   const journal = new JsonlAuditJournalStore({ dataService, source: journalSource, logger });
   const cleanup = new NutritionCleanup({ store, runs, auditor, repairs, items, foodLogs, clock, timezoneFor, logger, stabilization, triage,
-    journal, hash: sha256Text,
+    journalStore: journal, hash: sha256Text,
+    // Run detail reads the auditor turn's transcript while it is still kept.
+    transcripts: { find: args => transcriptStore.find({ agentId: NutritionAuditor.id, ...args }) },
     // The spend cap reads billed agent turns from the AI usage ledger, so a
     // run that failed after the model was paid for still counts.
     spendSource: usageLedger ? ({ from, to }) => usageLedger.listCosts({ agentId: NutritionAuditor.id, from, to }) : null });

@@ -11,6 +11,9 @@ const SETTINGS_LOG_LIMIT = 500;
 const RUN_HISTORY_LIMIT = 50;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const iso = ms => new Date(ms).toISOString();
+const round = usd => Math.round(usd * 1e6) / 1e6;
+const addDays = (date, n) => new Date(Date.parse(date + 'T12:00:00Z') + n * DAY_MS).toISOString().slice(0, 10);
+const changedOutcome = outcome => outcome?.status === 'applied' || outcome?.status === 'proposed';
 const notPermitted = (proposal, permissions) => { if (blockedKinds(proposal, permissions).length) fail('Not permitted by auditor settings'); };
 // Finished runs beyond the newest RUN_HISTORY_LIMIT are dropped, except one an
 // unresolved question still points at: its answer is judged by that run's settings.
@@ -23,10 +26,25 @@ const pruneRuns = state => {
 const questionExpired = (question, now, dates) => question.entryVersions.some(row => row.stabilizesAt
   ? !Number.isFinite(Date.parse(row.stabilizesAt)) || Date.parse(row.stabilizesAt) <= now : !dates.includes(row.date));
 
+/** What run detail shows of an agent transcript: full tool calls, how many rows went in, prompt size. */
+function transcriptView(transcript) {
+  let inputRows = null;
+  try {
+    const snapshot = JSON.parse(transcript.input?.text || 'null')?.snapshot;
+    if (snapshot) inputRows = (snapshot.rows || []).length + (snapshot.pending || []).reduce((sum, log) => sum + (log.items || []).length, 0);
+  } catch { /* an unparseable input has no row count */ }
+  return {
+    toolCalls: (transcript.toolCalls || []).map(({ name, args, result, ok, latencyMs }) => ({ name, args, result, ok, latencyMs })),
+    inputRows, systemPromptChars: typeof transcript.systemPrompt === 'string' ? transcript.systemPrompt.length : 0,
+  };
+}
+
 /** Durable dispatcher and application phase gates around read-only AI reasoning. */
 export class NutritionCleanup {
   #active = new Map(); #dirty = new Map(); #started = new Set(); #sweepBackoff = new Map();
   constructor(deps) {
+    // `journal` is a method here; the run journal store is `journalStore`.
+    if ('journal' in deps) throw new Error('NutritionCleanup takes journalStore, not journal');
     Object.assign(this, deps);
     this.interactions = new AgentInteractions({ store: this.store, clock: this.clock, onAnswer: (userId, q) => this.#answer(userId, q) });
     this.runs.register({ id: 'nutrition-audit', execute: (input, context) => this.auditor.audit(input, context) });
@@ -70,6 +88,92 @@ export class NutritionCleanup {
       }
     }
     return this.status(userId);
+  }
+  /** The household date of an instant (ISO string), or null when unparseable. */
+  #householdDate(userId, at) {
+    const t = Date.parse(at);
+    return Number.isFinite(t) ? cleanupDates(t, this.timezoneFor(userId))[0] : null;
+  }
+  /** Journal rows whose household date of `at` is in [from, to], newest first. */
+  async #journalRows(userId, from, to) {
+    if (!this.journalStore) return [];
+    const rows = await this.journalStore.list(userId, { from: iso(Date.parse(from + 'T00:00:00Z') - DAY_MS), to: iso(Date.parse(to + 'T00:00:00Z') + 2 * DAY_MS) });
+    return rows.filter(row => { const date = this.#householdDate(userId, row.at); return date && date >= from && date <= to; });
+  }
+  /**
+   * Run journal page. Dates are household days; the default is the last seven.
+   * `trigger` keeps runs whose trigger includes it; `changed` keeps runs where a
+   * repair was applied or proposed (skip rows have no outcomes, so it drops them).
+   */
+  async journal(userId, { from, to, trigger, changed = false, offset = 0, limit = 50 } = {}) {
+    const today = cleanupDates(this.clock.now(), this.timezoneFor(userId))[0];
+    to ??= today; from ??= addDays(to, -6);
+    const rows = (await this.#journalRows(userId, from, to))
+      .filter(row => !trigger || (Array.isArray(row.trigger) && row.trigger.includes(trigger)))
+      .filter(row => !changed || (row.outcomes || []).some(changedOutcome));
+    return { rows: rows.slice(offset, offset + limit), total: rows.length };
+  }
+  /** One run's journal row, with a view of its agent transcript while that is still kept. Null for an unknown run. */
+  async journalEntry(userId, runId) {
+    const row = this.journalStore ? (await this.journalStore.list(userId)).find(entry => entry.runId === runId) : null;
+    if (!row) return null;
+    let raw = null;
+    if (row.turnId && this.transcripts) {
+      try { raw = await this.transcripts.find({ userId, startedAt: row.at, turnId: row.turnId }); }
+      catch (error) { this.logger.warn('nutrition.cleanup.transcript_read_failed', { userId, runId, error: error.message }); }
+    }
+    return { ...row, transcript: raw ? transcriptView(raw) : null, transcriptExpired: !!(row.turnId && this.transcripts && !raw) };
+  }
+  /**
+   * Auditor spend by household day. Totals come from the journal (completed
+   * runs); a turn billed before its run failed is only in the AI usage ledger,
+   * which the cap enforces on, so `ledgerTodayUsd` gives that enforced figure.
+   * `changed` counts repairs applied or proposed; averages are over priced runs.
+   */
+  async spend(userId, { days = 30 } = {}) {
+    const today = cleanupDates(this.clock.now(), this.timezoneFor(userId))[0];
+    const first = addDays(today, 1 - days);
+    const monthStart = today.slice(0, 8) + '01';
+    const rows = (await this.#journalRows(userId, first < monthStart ? first : monthStart, today)).filter(row => row.runId);
+    const byDate = new Map(Array.from({ length: days }, (_, i) => addDays(first, i)).map(date => [date, { date, costUsd: 0, runs: 0, changed: 0 }]));
+    const triggers = new Map(), models = new Map();
+    const tally = (map, key, row) => {
+      const entry = map.get(key) || { runs: 0, priced: 0, costUsd: 0 };
+      entry.runs++; if (Number.isFinite(row.costUsd)) { entry.priced++; entry.costUsd += row.costUsd; }
+      map.set(key, entry);
+    };
+    let week = 0, month = 0, todayUsd = 0;
+    for (const row of rows) {
+      const date = this.#householdDate(userId, row.at);
+      const cost = Number.isFinite(row.costUsd) ? row.costUsd : 0;
+      if (date >= monthStart) month += cost;
+      if (date >= addDays(today, -6)) week += cost;
+      if (date === today) todayUsd += cost;
+      const day = byDate.get(date);
+      if (!day) continue;
+      day.costUsd += cost; day.runs++; day.changed += (row.outcomes || []).filter(changedOutcome).length;
+      for (const kind of new Set(row.trigger || [])) tally(triggers, kind, row);
+      tally(models, row.model || 'unknown', row);
+    }
+    const avg = entry => (entry.priced ? round(entry.costUsd / entry.priced) : 0);
+    const byCost = (a, b) => b[1].costUsd - a[1].costUsd;
+    const state = this.store.load(userId);
+    const settings = effectiveSettings(state.settings);
+    let ledgerTodayUsd = null;
+    if (this.spendSource) {
+      try {
+        const now = this.clock.now();
+        const ledger = await this.spendSource({ from: iso(now - 2 * DAY_MS), to: iso(now + DAY_MS) });
+        ledgerTodayUsd = round((ledger || []).reduce((sum, row) => sum + (this.#householdDate(userId, row?.ts) === today && Number.isFinite(row.costUsd) ? row.costUsd : 0), 0));
+      } catch (error) { this.logger.warn('nutrition.cleanup.spend_read_failed', { userId, error: error.message }); }
+    }
+    return {
+      days: [...byDate.values()].map(day => ({ ...day, costUsd: round(day.costUsd) })),
+      today: round(todayUsd), week: round(week), month: round(month),
+      byTrigger: [...triggers].sort(byCost).map(([trigger, entry]) => ({ trigger, runs: entry.runs, costUsd: round(entry.costUsd), avgUsd: avg(entry) })),
+      byModel: [...models].sort(byCost).map(([model, entry]) => ({ model, runs: entry.runs, avgUsd: avg(entry) })),
+      capUsd: settings.dailyCapUsd, cappedToday: this.#cappedToday(userId, state, settings), ledgerTodayUsd,
+    };
   }
   /** Who changed which auditor setting, newest first. */
   settingsLog(userId) { return [...(this.store.load(userId).settingsLog || [])].reverse(); }
@@ -175,14 +279,14 @@ export class NutritionCleanup {
    */
   async #spend(userId, settings) {
     const none = { over: false, spentUsd: null };
-    if (settings.dailyCapUsd == null || (!this.spendSource && !this.journal)) return none;
+    if (settings.dailyCapUsd == null || (!this.spendSource && !this.journalStore)) return none;
     try {
       const now = this.clock.now(), tz = this.timezoneFor(userId);
       const today = cleanupDates(now, tz)[0];
       // Wider than any household day; rows are then kept by their household date.
       const range = { from: iso(now - 2 * DAY_MS), to: iso(now + DAY_MS) };
       const rows = this.spendSource ? await this.spendSource(range)
-        : (await this.journal.list(userId, range)).map(row => ({ ts: row.at, costUsd: row.costUsd }));
+        : (await this.journalStore.list(userId, range)).map(row => ({ ts: row.at, costUsd: row.costUsd }));
       let spent = 0;
       for (const row of rows || []) {
         const t = Date.parse(row?.ts);
@@ -197,8 +301,8 @@ export class NutritionCleanup {
   }
   /** The journal is a record, not a gate: a failed write is logged and the run carries on. */
   async #journal(userId, row) {
-    if (!this.journal) return;
-    try { await this.journal.append(userId, row); }
+    if (!this.journalStore) return;
+    try { await this.journalStore.append(userId, row); }
     catch (error) { this.logger.warn('nutrition.cleanup.journal_failed', { userId, runId: row.runId ?? null, error: error.message }); }
   }
   #launch(userId, id) {
