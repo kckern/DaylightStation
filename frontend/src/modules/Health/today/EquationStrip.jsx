@@ -25,7 +25,7 @@ const MACROS = [
  */
 // Room past the furthest mark, so the break-even label and a small surplus fit.
 const HEADROOM = 1.12;
-function BudgetBar({ budget }) {
+function BudgetBar({ budget, dayClose = null }) {
   const goal = Number(budget.budget) || 0;
   const breakEven = Number(budget.maintenance) || 0;
   const exercise = Math.max(0, Number(budget.exercise) || 0);
@@ -64,6 +64,7 @@ function BudgetBar({ budget }) {
             <span className={balance >= 0 ? 'health-budget__deficit' : 'health-budget__surplus'}>{balance >= 0 ? `${n(balance)} deficit` : `${n(-balance)} surplus`}</span></> : null}
           {budget.stale ? <span className="health-equation__stale" title="Latest weigh-in is over a week old">stale wt</span> : null}
         </span>
+        {dayClose}
       </div>
       {budget.range && budget.zone ? <RulerScale budget={budget} spoken={spoken} /> : (
       <div className="health-budget__scale">
@@ -161,7 +162,7 @@ function MacroMeter({ label, tone, value, partial, target }) {
 }
 
 /** Today's summary: the calorie budget as a bar, macros beside it. */
-export function EquationStrip({ budget, budgetError, macroCoverage, goals, date, today, onDateChange, onSetupGoals }) {
+export function EquationStrip({ budget, budgetError, macroCoverage, goals, date, today, onDateChange, onSetupGoals, dayClose = null }) {
   const macroGoals = goals?.macroGoals || budget?.goals?.macroGoals || {};
   return (
     // A zoned budget colours its own headline; the legacy "over" tint is only
@@ -170,7 +171,7 @@ export function EquationStrip({ budget, budgetError, macroCoverage, goals, date,
       <DateStepper date={date} onChange={onDateChange} max={today} />
       {budget ? (
         <div className="health-equation__math" aria-label="Daily nutrition summary">
-          <BudgetBar budget={budget} />
+          <BudgetBar budget={budget} dayClose={dayClose} />
           <div className="health-equation__macros">
             {MACROS.map(m => {
               const coverage = macroCoverage?.[m.key];

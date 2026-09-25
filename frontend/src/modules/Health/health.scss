@@ -1159,28 +1159,23 @@ $health-aside-gap: 1.5rem;
   overflow-wrap: anywhere;
 }
 
-// End-of-day close row (DayCloseRow): "Done logging" / "Fasted" / "Reopen".
-// Quiet by default; the left rule turns warning-toned only for a PAST day
-// under the coach's completeness threshold, and success-toned once closed.
-.health-dayclose {
-  display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.75rem;
-  border: 1px solid var(--ds-border); border-left: 3px solid var(--ds-text-low);
-  border-radius: 9px; padding: 0.6rem 0.75rem; margin: 0.6rem 0 0.4rem;
-  &--flagged { border-left-color: var(--ds-warning); }
-  &--closed { border-left-color: var(--ds-success); }
-  &__line { flex: 1 1 14rem; font-size: 0.85rem; color: var(--ds-text-high); }
-  &__sub { color: var(--ds-text-mid); }
-  &__icon { display: inline-flex; color: var(--ds-success); }
-  &--fasting &__icon { color: var(--ds-accent); }
-  &__actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
-  // A finger-sized target on the phone. Mantine writes `--button-height:
-  // var(--button-height-sm)` INLINE on each size="sm" Button, AND defines
-  // --button-height-sm on the Button's own class — so neither overriding
-  // --button-height nor setting the token on the row reaches it (both measured
-  // 36px in a real render, 2026-09-24). Redefine the token on the Button.
-  .mantine-Button-root { --button-height-sm: 44px; }
-  &__error { flex-basis: 100%; color: var(--ds-danger); font-size: 0.8rem; }
+.health-dayclose { display: inline-flex; flex-direction: column; align-items: flex-end; gap: 0.2rem; }
+// The day-close pill (DayClosePill) in the budget headline: quiet outline, one
+// line, no height of its own. Tinted blue (the under-logged zone colour) on a
+// past day still under the floor; green-edged once the day is closed.
+.health-dayclose-pill {
+  display: inline-flex; align-items: center; gap: 0.25rem;
+  padding: 0.15rem 0.5rem; border: 1px solid var(--ds-border); border-radius: 999px;
+  font-size: 0.72rem; line-height: 1.2; color: var(--ds-text-mid); white-space: nowrap;
+  &:hover { color: var(--ds-text-high); border-color: var(--ds-text-low); }
+  &:focus-visible { outline: 2px solid var(--ds-accent); outline-offset: 2px; }
+  &--flagged { color: var(--ds-info); border-color: color-mix(in srgb, var(--ds-info) 55%, transparent); }
+  &--closed { color: var(--ds-success); border-color: color-mix(in srgb, var(--ds-success) 45%, transparent); }
+  // A finger-sized target on a phone without a taller pill: the hit area grows.
+  @media (pointer: coarse) { position: relative;
+    &::after { content: ''; position: absolute; inset: -12px -4px; } }
 }
+.health-dayclose__error { color: var(--ds-danger); font-size: 0.72rem; }
 
 // A reconstructed (weight-derived) row: an estimate for an untracked day, not
 // logged food — quieter than a real entry and labelled as such (EntryRow).

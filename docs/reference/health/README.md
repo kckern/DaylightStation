@@ -297,10 +297,11 @@ default 1200) as **missing data**: meals were not logged. It does not treat that
 [coaching-system.md](coaching-system.md#logging-completeness). A person
 tells it otherwise by closing the day, from either surface:
 
-- **Day view:** `today/DayCloseRow.jsx` sits after the meals.
-  - **Today:** always offers **Done logging** and **Fasted**. It is never flagged, because an in-progress day is expected to be low.
-  - **A past day under the threshold:** is flagged ("Only 460 cal logged." or "Nothing logged.") and offers the same two buttons.
-  - **A closed day:** shows its state and a **Reopen** button.
+- **Day view:** `today/DayClosePill.jsx`, a small outline pill at the right of the budget
+  headline (not a row under the meals). It opens a two-item menu.
+  - **Today:** reads "Close day" and offers **Done logging** and **Fasted**. It is never flagged, because an in-progress day is expected to be low.
+  - **A past day under the threshold:** the pill is tinted blue (the under-logged zone colour) and reads "Only 460 cal logged" or "Nothing logged", with the same two choices.
+  - **A closed day:** the pill reads "Logging done" / "Fasted" (green) and its menu offers **Reopen day**.
   - **A complete past day:** shows nothing, because the coach already trusts it.
   - "Today" is the server's date (`dayStatus.today`), so a phone in another timezone is never offered a day the server would refuse as future.
   - The POST response patches the cached day (`showDayStatus`), so the row shows exactly what the server stored. A `/fast` sent from Telegram overrides it on the next refetch.
