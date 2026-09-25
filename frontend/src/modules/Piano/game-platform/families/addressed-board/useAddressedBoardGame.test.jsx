@@ -1,6 +1,6 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { act, render } from '@testing-library/react';
-import { useAddressedBoardGame, userIdOf } from './useAddressedBoardGame.js';
+import { CONFIG_SETTLE_TIMEOUT_MS, useAddressedBoardGame, userIdOf } from './useAddressedBoardGame.js';
 import MatchGateContext from '../../../PianoKiosk/modes/Games/MatchGateContext.js';
 
 function makeClient() {
@@ -47,6 +47,35 @@ describe('useAddressedBoardGame', () => {
     });
     expect(client.readConfig).toHaveBeenCalledWith('ada');
     expect(client.readLadder).toHaveBeenCalledWith('ada');
+  });
+
+  // Games take no notes before this is true: the defaults are the house's
+  // vocabulary, not the player's, and a first move made in them is a move the
+  // player never read (2026-09-25).
+  it('is not settled until the player\'s config read answers', async () => {
+    let resolveConfig;
+    client.readConfig = vi.fn(() => new Promise((resolve) => { resolveConfig = resolve; }));
+    let seen;
+    await act(async () => { ({ seen } = harness({ gameId: 'checkers', client, currentUser: { id: 'ada' }, defaultConfig: { a: 1 } })); });
+    expect(seen.current.configSettled).toBe(false);
+    await act(async () => { resolveConfig({ a: 2 }); });
+    expect(seen.current.configSettled).toBe(true);
+    expect(seen.current.config.a).toBe(2);
+  });
+
+  it('settles on the defaults when the config read never answers', async () => {
+    vi.useFakeTimers();
+    try {
+      client.readConfig = vi.fn(() => new Promise(() => {}));
+      let seen;
+      await act(async () => { ({ seen } = harness({ gameId: 'checkers', client, currentUser: { id: 'ada' }, defaultConfig: { a: 1 } })); });
+      expect(seen.current.configSettled).toBe(false);
+      await act(async () => { await vi.advanceTimersByTimeAsync(CONFIG_SETTLE_TIMEOUT_MS); });
+      expect(seen.current.configSettled).toBe(true);
+      expect(seen.current.config.a).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('treats a guest as no user — a guest plays and is not recorded', async () => {
