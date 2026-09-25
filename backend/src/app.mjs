@@ -6038,6 +6038,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     nutritionCleanup = createNutritionCleanup({ configService, userIdentityService, dataService, nutribotServices, upcGateway, decisionGateway,
       agentOrchestrator: agentsServices.agentOrchestrator, usageRecorder: agentUsageRecorder,
       logger: rootLogger.child({ module: 'nutrition-cleanup' }), server,
+      journalSource: process.env.DAYLIGHT_ENV || 'docker',
       scheduled: enableScheduler && (process.env.NODE_ENV === 'production' || process.env.ENABLE_CRON === 'true') });
   } catch (error) {
     rootLogger.error('nutrition.cleanup.unavailable', { error: error.message });

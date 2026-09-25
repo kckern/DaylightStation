@@ -107,6 +107,29 @@ scheduled reconciliation. Answer processing has the same three-attempt ceiling.
 Development scheduling is disabled unless explicitly enabled, and the app's global
 `enableScheduler` gate is respected.
 
+Automatic runs pass three gates from the auditor settings (`auditorPolicy`):
+- **Trigger filter.** A per-concern snapshot digest (`auditTrigger.snapshotDigest`)
+  classifies what changed (captures, reviews, stabilization, scale observations,
+  artwork, day rollover, edits; the daily sweep). A change whose kinds are all
+  switched off is marked checked and journaled once as `skipped: filtered`. A change
+  of bookkeeping only (versions, timestamps) is marked checked without a run.
+- **Minimum gap** between automatic runs (`minGapMinutes`). Waiting changes keep
+  accumulating; `status().nextEligibleAt` says when the next one may start.
+- **Daily spend cap** (`dailyCapUsd`, household day) summed from the run journal.
+  Over the cap, automatic runs stop and one `skipped: cap` row is written per day.
+  Manual runs still go and carry `overCap: true`.
+
+A run fixes its model, permissions and trigger at queue time. After a run, the
+state it produced counts as checked when the only rows that moved are the ones it
+repaired itself, so a repair does not trigger another audit; a capture that lands
+mid-run keeps the audited input as checked and is audited next.
+
+Every completed or finally failed run appends one row to the run journal,
+`users/{user}/lifelog/nutrition/auditor-journal/YYYY-MM.<writer>.jsonl`, filed under
+the run's start time: trigger, model, token usage and cost, tool calls, outcomes,
+questions asked and suppressed. A journal write failure is logged
+(`nutrition.cleanup.journal_failed`) and never fails the run.
+
 Runs/checkpoints live in `data/agents/cleanup-runs.db`. Per-owner dispatch, settings
 and questions live in `users/{user}/agents/nutrition-cleanup.yml`. Committed repair
 receipts live alongside the nutrition ledger in `cleanup-audit.yml`; they commit in

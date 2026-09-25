@@ -2,6 +2,8 @@ import { MastraAdapter } from '#adapters/agents/MastraAdapter.mjs';
 import { MastraRunAdapter } from '#adapters/agents/MastraRunAdapter.mjs';
 import { AgentTranscriptFileStore } from '#adapters/agents/AgentTranscriptFileStore.mjs';
 import { YamlAgentStateStore } from '#adapters/persistence/yaml/YamlAgentStateStore.mjs';
+import { JsonlAuditJournalStore } from '#adapters/persistence/yaml/JsonlAuditJournalStore.mjs';
+import { sha256Text } from '#system/utils/sha256.mjs';
 import { YamlFoodCatalogDatastore } from '#adapters/persistence/yaml/YamlFoodCatalogDatastore.mjs';
 import { YamlSavedMealsDatastore } from '#adapters/persistence/yaml/YamlSavedMealsDatastore.mjs';
 import { YamlObservationStore } from '#adapters/persistence/yaml/YamlObservationStore.mjs';
@@ -22,7 +24,7 @@ import { ArtworkRemediation } from '#apps/nutrition/ArtworkRemediation.mjs';
 import { NutritionAuditTriage } from '#apps/nutrition/NutritionAuditTriage.mjs';
 import { normalizeScaleNutribotConfig } from '#apps/nutribot/lib/scaleNutribotConfig.mjs';
 
-export function createNutritionCleanup({ dataService, configService, userIdentityService, nutribotServices, upcGateway, decisionGateway = null, agentOrchestrator, logger, usageRecorder = null, scheduled = false, server }) {
+export function createNutritionCleanup({ dataService, configService, userIdentityService, nutribotServices, upcGateway, decisionGateway = null, agentOrchestrator, logger, usageRecorder = null, scheduled = false, server, journalSource = null }) {
   const clock = { now: () => Date.now() };
   const container = nutribotServices.nutribotContainer;
   const timezoneFor = userId => container.getConfig?.()?.getUserTimezone?.(userId) || 'America/Los_Angeles';
@@ -55,7 +57,11 @@ export function createNutritionCleanup({ dataService, configService, userIdentit
   const triageConfig = configService.getAppConfig?.('agents')?.nutrition_auditor?.triage || {};
   const triage = new NutritionAuditTriage({ decisionGateway, mode: triageConfig.mode, threshold: triageConfig.threshold,
     logger: logger.child?.({ module: 'nutrition-triage' }) || logger });
-  const cleanup = new NutritionCleanup({ store, runs, auditor, repairs, items, foodLogs, clock, timezoneFor, logger, stabilization, triage });
+  // Run journal: one file per writer (journalSource, the same id the AI usage
+  // ledger uses), since prod and a dev machine share the Dropbox data tree.
+  const journal = new JsonlAuditJournalStore({ dataService, source: journalSource, logger });
+  const cleanup = new NutritionCleanup({ store, runs, auditor, repairs, items, foodLogs, clock, timezoneFor, logger, stabilization, triage,
+    journal, hash: sha256Text });
   cleanup.recovery = new NutritionCaptureRecovery({ review: container.getFoodLogReview(), items,
     observations: new YamlObservationStore({ dataService, logger }),
     scaleConfig: () => normalizeScaleNutribotConfig(configService.getHouseholdAppConfig?.(null, 'scales') || {}) });
