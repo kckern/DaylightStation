@@ -1,13 +1,22 @@
 import { describe, expect, it } from 'vitest';
+import { createHash } from 'node:crypto';
 import { classifyChange, onlyOwnChanges, snapshotDigest } from './auditTrigger.mjs';
 
-const hash = s => s;
+const hash = s => createHash('sha256').update(s).digest('hex');
 const row = (uuid, extra = {}) => ({ uuid, id: uuid, name: 'Apple', icon: 'apple', photoRef: null, date: '2026-09-05',
   calories: 95, settled: false, settledBy: null, review: { status: 'provisional', stabilizesAt: '2026-09-08T00:00:00Z' }, version: 1, ...extra });
 const snap = ({ rows = [row('a'), row('b')], pending = [], dates = ['2026-09-05', '2026-09-04'], observations = [] } = {}) =>
   ({ dates, rows, pending, observations, fingerprint: 'ignored' });
 const digest = options => snapshotDigest(snap(options), hash);
 const kinds = (before, after) => [...classifyChange(digest(before), digest(after))].sort();
+
+describe('snapshotDigest', () => {
+  it('keeps 16 hex characters per row hash', () => {
+    const { rows } = digest({});
+    expect(rows.a.body).toMatch(/^[0-9a-f]{16}$/);
+    expect(rows.a.art).toMatch(/^[0-9a-f]{16}$/);
+  });
+});
 
 describe('classifyChange', () => {
   it('reports nothing when nothing moved', () => {

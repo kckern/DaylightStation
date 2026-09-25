@@ -25,7 +25,7 @@ const questionExpired = (question, now, dates) => question.entryVersions.some(ro
 
 /** Durable dispatcher and application phase gates around read-only AI reasoning. */
 export class NutritionCleanup {
-  #active = new Map(); #dirty = new Map(); #started = new Set();
+  #active = new Map(); #dirty = new Map(); #started = new Set(); #sweepBackoff = new Map();
   constructor(deps) {
     Object.assign(this, deps);
     this.interactions = new AgentInteractions({ store: this.store, clock: this.clock, onAnswer: (userId, q) => this.#answer(userId, q) });
@@ -79,11 +79,15 @@ export class NutritionCleanup {
    * Automatic requests pass the trigger filter and the daily spend cap first;
    * manual ones only note being over cap.
    */
-  async request(userId, options = {}) {
-    const outcome = await this.#request(userId, options);
+  async request(userId, { manual = false, reconcile = false } = {}) {
+    const outcome = await this.#request(userId, { manual, reconcile });
     return outcome?.runId ? { runId: outcome.runId } : null;
   }
-  /** request() that also says why nothing was queued: { runId } | { skipped } | null. */
+  /**
+   * request() that also says why nothing was queued: { runId } | { skipped } | null.
+   * `trigger` is tick's classification; it is joined with what this fresh
+   * snapshot shows, since more may have changed while the change debounced.
+   */
   async #request(userId, { manual = false, reconcile = false, trigger } = {}) {
     const state = this.store.load(userId);
     if (!manual && !state.settings.enabled) return null;
@@ -135,19 +139,18 @@ export class NutritionCleanup {
    * can switch off. A sweep adds 'dailySweep' to the real kinds, so switching the
    * sweep off never absorbs a change that happened to be pending at sweep time.
    */
-  #kinds(state, digest, { reconcile = false, trigger } = {}) {
-    const changed = trigger || (digest && state.checkedDigest ? [...classifyChange(state.checkedDigest, digest)] : ['unclassified']);
-    return reconcile ? [...new Set([...changed, 'dailySweep'])] : changed;
+  #kinds(state, digest, { reconcile = false, trigger = [] } = {}) {
+    const fresh = digest && state.checkedDigest ? [...classifyChange(state.checkedDigest, digest)] : ['unclassified'];
+    return [...new Set([...trigger, ...fresh, ...(reconcile ? ['dailySweep'] : [])])];
   }
   /** Over today's cap at this cap value: nothing automatic runs, and spend is not re-read, until the day or the cap changes. */
   #cappedToday(userId, state, settings) {
     return state.capped?.day === cleanupDates(this.clock.now(), this.timezoneFor(userId))[0] && state.capped.capUsd === settings.dailyCapUsd;
   }
+  /** Record being over the cap. Called only when not already capped for this (day, cap), so each is journaled and logged once. */
   async #capped(userId, spend, settings) {
     const day = cleanupDates(this.clock.now(), this.timezoneFor(userId))[0];
-    const firstToday = this.store.load(userId).capped?.day !== day;
     this.store.update(userId, state => { state.capped = { day, capUsd: settings.dailyCapUsd, spentUsd: spend.spentUsd }; });
-    if (!firstToday) return;
     await this.#journal(userId, { at: iso(this.clock.now()), skipped: 'cap', spentUsd: spend.spentUsd, capUsd: settings.dailyCapUsd });
     this.logger.info('nutrition.cleanup.capped', { userId, spentUsd: spend.spentUsd, capUsd: settings.dailyCapUsd });
   }
@@ -158,8 +161,10 @@ export class NutritionCleanup {
     this.store.update(userId, state => {
       state.checkedFingerprint = snapshot.fingerprint; state.checkedDigest = digest; state.lastFilteredFingerprint = snapshot.fingerprint;
     });
-    if (!noted) await this.#journal(userId, { at: iso(this.clock.now()), skipped: 'filtered', kinds });
-    this.logger.info('nutrition.cleanup.filtered', { userId, kinds });
+    if (!noted) {
+      await this.#journal(userId, { at: iso(this.clock.now()), skipped: 'filtered', kinds });
+      this.logger.info('nutrition.cleanup.filtered', { userId, kinds });
+    }
     return true;
   }
   /**
@@ -382,40 +387,69 @@ export class NutritionCleanup {
     if (!state.settings.enabled) return;
     const queued = Object.values(state.runs).find(r => !terminal.has(r.status));
     if (queued) { if (!queued.retryAt || queued.retryAt <= this.clock.now()) this.#launch(userId, queued.id); return; }
-    // Automatic runs keep the minimum gap; a waiting sweep or change is kept, not lost.
+    // Gates, in order:
+    //  1. A due sweep (startup, or local 03:00) runs when automatic runs may run
+    //     (gap and cap), and is only marked done once it ran or was filtered.
+    //  2. A change of bookkeeping only, or of switched-off kinds, is absorbed at
+    //     once (marked checked), before the gap, so it never sits dirty.
+    //  3. A real change debounces (60 s quiet, 120 s max), then waits for the gap
+    //     and cap, and stays dirty until it may run.
     const settings = effectiveSettings(state.settings);
-    const waiting = state.lastAutoRunAt && this.clock.now() - state.lastAutoRunAt < settings.minGapMinutes * 60000;
-    // While capped nothing automatic runs and spend is not re-read; pending
-    // changes stay dirty and the sweep stays due until the day or the cap changes.
-    const capped = this.#cappedToday(userId, state, settings);
     const hour = Number(new Intl.DateTimeFormat('en-US', { timeZone: this.timezoneFor(userId), hour: 'numeric', hourCycle: 'h23' }).format(new Date(this.clock.now())));
-    if (!this.#started.has(userId) || (hour >= 3 && state.lastSweepDay !== dates[0])) {
-      if (waiting || capped) return;
-      const outcome = await this.#request(userId, { reconcile: true });
-      // Only a sweep that ran or was filtered is done; a capped one is retried.
-      if (outcome?.runId || outcome?.skipped === 'filtered') {
-        this.#started.add(userId);
-        if (hour >= 3) this.store.update(userId, current => { current.lastSweepDay = dates[0]; });
-      }
-      return;
-    }
+    if (this.#sweepDue(userId, state, hour, dates)) return this.#sweep(userId, state, settings, hour, dates);
     const snapshot = await this.auditor.snapshot(userId);
     if (snapshot.fingerprint === state.checkedFingerprint) { this.#dirty.delete(userId); return; }
-    const digest = this.#digest(snapshot);
-    const kinds = digest ? this.#kinds(state, digest) : null;
-    if (kinds && !kinds.length) {
-      // Only bookkeeping moved (versions, timestamps) or a row left the window.
-      this.store.update(userId, current => { current.checkedFingerprint = snapshot.fingerprint; current.checkedDigest = digest; });
-      this.#dirty.delete(userId); return;
-    }
-    if (kinds && await this.#filtered(userId, snapshot, digest, kinds, settings)) { this.#dirty.delete(userId); return; }
+    const kinds = await this.#absorbIfNothingToAudit(userId, state, snapshot, settings);
+    if (!kinds) { this.#dirty.delete(userId); return; }
     const now = this.clock.now();
     const dirty = this.#dirty.get(userId) || { first: now, changed: now, fingerprint: snapshot.fingerprint };
     if (dirty.fingerprint !== snapshot.fingerprint) { dirty.changed = now; dirty.fingerprint = snapshot.fingerprint; }
     this.#dirty.set(userId, dirty);
-    if ((now - dirty.changed >= 60000 || now - dirty.first >= 120000) && !waiting && !capped) {
-      this.#dirty.delete(userId); await this.request(userId, kinds ? { trigger: kinds } : {});
+    if ((now - dirty.changed >= 60000 || now - dirty.first >= 120000) && this.#mayRunAutomatically(userId, state, settings)) {
+      this.#dirty.delete(userId); await this.#request(userId, { trigger: kinds });
     }
+  }
+  #sweepDue(userId, state, hour, dates) {
+    return !this.#started.has(userId) || (hour >= 3 && state.lastSweepDay !== dates[0]);
+  }
+  async #sweep(userId, state, settings, hour, dates) {
+    if ((this.#sweepBackoff.get(userId) || 0) > this.clock.now() || !this.#mayRunAutomatically(userId, state, settings)) return;
+    let outcome;
+    try { outcome = await this.#request(userId, { reconcile: true }); }
+    catch (error) {
+      // A sweep that cannot even read its snapshot is retried in ten minutes, not on every tick.
+      this.#sweepBackoff.set(userId, this.clock.now() + 10 * 60000);
+      this.logger.warn('nutrition.cleanup.sweep_failed', { userId, error: error.message });
+      return;
+    }
+    this.#sweepBackoff.delete(userId);
+    // Only a sweep that ran or was filtered is done; a capped one stays due.
+    if (outcome?.runId || outcome?.skipped === 'filtered') {
+      this.#started.add(userId);
+      if (hour >= 3) this.store.update(userId, current => { current.lastSweepDay = dates[0]; });
+    }
+  }
+  /**
+   * Marks the snapshot checked when there is nothing to audit and returns null;
+   * otherwise returns the change kinds. Nothing to audit means only bookkeeping
+   * moved (versions, timestamps), or rows were removed: a removed row (a person
+   * deleting an entry, or a row leaving the review window; the digest cannot tell
+   * them apart) starts no audit, and the rows that remain are unchanged. Also
+   * nothing to audit: every kind that changed is switched off.
+   */
+  async #absorbIfNothingToAudit(userId, state, snapshot, settings) {
+    const digest = this.#digest(snapshot);
+    const kinds = this.#kinds(state, digest);
+    if (digest && !kinds.length) {
+      this.store.update(userId, current => { current.checkedFingerprint = snapshot.fingerprint; current.checkedDigest = digest; });
+      return null;
+    }
+    return await this.#filtered(userId, snapshot, digest, kinds, settings) ? null : kinds;
+  }
+  /** Automatic runs keep the minimum gap and stop while capped for today at this cap. */
+  #mayRunAutomatically(userId, state, settings) {
+    const waiting = state.lastAutoRunAt && this.clock.now() - state.lastAutoRunAt < settings.minGapMinutes * 60000;
+    return !waiting && !this.#cappedToday(userId, state, settings);
   }
   async settled(userId) { await this.#active.get(userId); }
 }

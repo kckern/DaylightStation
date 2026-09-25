@@ -11,7 +11,7 @@
  */
 
 import path from 'path';
-import { appendTextFile, listFiles, readTextFromPathAsync } from '#system/utils/FileIO.mjs';
+import { appendTextFile, readDirectoryAsync, readTextFromPathAsync } from '#system/utils/FileIO.mjs';
 
 const MONTH_FILE = /^(\d{4})-(\d{2})(?:\.[\w.-]+)?\.jsonl$/;
 
@@ -67,7 +67,12 @@ export function createAiUsageLedger({ dir, source = null, logger = null }) {
       const fromMs = Date.parse(from);
       const toMs = Date.parse(to);
       if (!Number.isFinite(fromMs) || !Number.isFinite(toMs)) throw new Error('listCosts needs an ISO from and to');
-      const files = listFiles(dir).filter((name) => {
+      let names;
+      try { names = await readDirectoryAsync(dir); } catch (error) {
+        if (error.code === 'ENOENT') return [];
+        throw error;
+      }
+      const files = names.filter((name) => {
         const m = MONTH_FILE.exec(name);
         return m && Date.UTC(Number(m[1]), Number(m[2]) - 1, 1) < toMs && Date.UTC(Number(m[1]), Number(m[2]), 1) > fromMs;
       });
