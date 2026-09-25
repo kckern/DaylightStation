@@ -1,16 +1,23 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import './ds.scss';
 
 /**
  * Where post-action feedback lives: a fixed region under the app header,
- * portalled to <body> so a notice appearing or retiring never moves the page
- * beneath it. Always mounted, even empty, so screen readers already know the
- * live region when the first toast arrives.
+ * portalled out of the page flow so a notice appearing or retiring never moves
+ * the page beneath it. It portals to the app's `.ds-root` (not <body>): the
+ * theme's --ds-* colors are set on that element, and outside it a toast has
+ * no background. A hidden anchor finds it. Always mounted, even empty, so
+ * screen readers already know the live region when the first toast arrives.
  */
 export function ToastRegion({ label = 'Notifications', children }) {
-  if (typeof document === 'undefined') return null;
-  return createPortal(<div className="ds-toasts" role="region" aria-label={label}>{children}</div>, document.body);
+  const anchor = useRef(null);
+  const [host, setHost] = useState(null);
+  useLayoutEffect(() => { setHost(anchor.current?.closest('.ds-root') || document.body); }, []);
+  return <>
+    <span ref={anchor} hidden />
+    {host ? createPortal(<div className="ds-toasts" role="region" aria-label={label}>{children}</div>, host) : null}
+  </>;
 }
 
 /**

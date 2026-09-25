@@ -14,6 +14,13 @@ describe('Toast', () => {
     expect(screen.getByRole('region', { name: 'Log' })).toBeTruthy();
   });
 
+  it('portals into the themed .ds-root when there is one, so it has the theme colors', () => {
+    const { container } = render(<div className="ds-root"><main><ToastRegion><Toast message="Copied" /></ToastRegion></main></div>);
+    const region = screen.getByText('Copied').closest('.ds-toasts');
+    expect(region.parentElement).toBe(container.querySelector('.ds-root'));
+    expect(container.querySelector('main').contains(region)).toBe(false);
+  });
+
   it('an error is an alert; information is a status', () => {
     render(<><Toast tone="error" message="Couldn't move" /><Toast message="Copied" /></>);
     expect(screen.getByRole('alert').textContent).toContain("Couldn't move");
