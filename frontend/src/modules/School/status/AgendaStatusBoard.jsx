@@ -44,7 +44,7 @@
  * day digest (what's done). Exported for reuse by adult surfaces that may
  * mount a more interactive variant later.
  */
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useWebSocketSubscription } from '../../../hooks/useWebSocket.js';
 import ProfileAvatar from '../../../lib/identity/ProfileAvatar.jsx';
 import RingIcon from '../../../lib/icons/RingIcon.jsx';
@@ -55,6 +55,7 @@ import { schoolLog } from '../schoolLog.js';
 import DayGrid from '../shared/dayGrid/DayGrid.jsx';
 import { weekStart, addDays } from '../shared/dayGrid/dayGridModel.js';
 import { dayStatus, summarize, ringProgressByLearner, triangleRows } from './agendaStatusModel.js';
+import { readBoardCache, writeBoardCache } from './boardCache.js';
 
 const REFRESH_MS = 5 * 60_000;
 const SCHOOL_REFRESH_EVENTS = new Set([
@@ -331,19 +332,40 @@ function DayMeter({ summary }) {
  *   flag this component could be handed by mistake.
  */
 export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null }) {
+  // Seeded ONCE from the last snapshot this browser painted (see boardCache.js):
+  // a reload shows the board as it last stood, then each card is re-read and
+  // replaced in place. A pinned `day` only trusts a snapshot of that same day.
+  const [seed] = useState(() => {
+    const cached = readBoardCache();
+    return cached && (!day || cached.studyDay === day) ? cached : null;
+  });
   const [rows, setRows] = useState(null);
-  const [nonce, setNonce] = useState(0);
-  const [studyDay, setStudyDay] = useState(day ?? null);
+  const [studyDay, setStudyDay] = useState(day ?? seed?.studyDay ?? null);
   // Kept out of `rows` on purpose: the plan reads settle per-card and this one
   // covers the whole roster, so folding it in would mean re-settling every
   // card when it lands — and a slow State Gates read would hold the plans back.
-  const [rings, setRings] = useState({});
+  const [rings, setRings] = useState(() => seed?.rings ?? {});
   // The term grid, per learner: `undefined` while in flight, `null` when the
   // read failed (the card then simply has no term), else the term read model.
   // Settles independently, like the rings — the server replays today and
   // yesterday on every read and serves the rest from its cache.
-  const [terms, setTerms] = useState({});
+  const [terms, setTerms] = useState(() => Object.fromEntries(
+    Object.entries(seed?.learners ?? {}).filter(([, entry]) => entry.term !== undefined)
+      .map(([id, entry]) => [id, entry.term]),
+  ));
   const rosterIds = useMemo(() => new Set(kids.map((kid) => kid.id)), [kids]);
+  // The study day the discs on screen belong to. When a read names another
+  // (the 4am rollover, or a snapshot from yesterday), every card's discs are
+  // dropped back to skeletons rather than standing in for today's.
+  const shownDayRef = useRef(seed?.studyDay ?? null);
+  // Per-learner read generation: a slow read that a newer one has overtaken
+  // must not land on top of it.
+  const generationRef = useRef({});
+  // Which cards have something on them (a settled read or a cached one), so a
+  // failed re-read can tell "keep what is showing" from "nothing to keep".
+  const settledRef = useRef(new Set());
+  const aliveRef = useRef(true);
+  useEffect(() => { aliveRef.current = true; return () => { aliveRef.current = false; }; }, []);
 
   /**
    * ONE CARD PER KID FROM THE FIRST PAINT, filled in as each read lands.
@@ -357,21 +379,63 @@ export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null
    * seconds, nothing on screen to say the panel was even working.
    *
    * The roster is known synchronously, so the cards, their rails, and their
-   * disc rows are drawn immediately as skeletons and each one swaps its own
-   * contents in place. Nothing moves when a plan arrives — the card was
-   * already the size it is going to be — and one slow learner no longer holds
-   * the other three hostage. It also stops being all-or-nothing: a single
-   * failed read now costs that learner's card, not the board.
+   * disc rows are drawn immediately — from the cached snapshot when there is
+   * one, as skeletons when there is not — and each one swaps its own contents
+   * in place. Nothing moves when a plan arrives — the card was already the size
+   * it is going to be — and one slow learner no longer holds the other three
+   * hostage. It also stops being all-or-nothing: a single failed read now costs
+   * that learner's card, not the board.
+   *
+   * A CARD THAT HAS DATA NEVER GOES BACK TO A SKELETON (2026-09-25). Every
+   * refresh used to reset all four cards to shimmering placeholders and wipe
+   * every term grid, and any bus event triggered one — a fitness ring update
+   * for any child blanked the whole board for the ~9 s the reads take. Now a
+   * refresh re-reads only what it was asked about and replaces the values when
+   * they land; until then the card keeps showing what it showed.
    */
   useEffect(() => {
-    if (!kids.length) return undefined;
-    let alive = true;
-    setRows(kids.map((kid) => ({ kid, summary: null, loading: true })));
+    if (!kids.length) return;
+    setRows((current) => kids.map((kid) => {
+      const existing = current?.find((row) => row.kid.id === kid.id);
+      if (existing) return { ...existing, kid };
+      const cached = seed?.learners?.[kid.id];
+      if (cached && cached.summary !== undefined) {
+        settledRef.current.add(kid.id);
+        return { kid, summary: cached.summary, loading: false };
+      }
+      return { kid, summary: null, loading: true };
+    }));
+  }, [kids, seed]);
 
-    const settle = (kidId, summary) => {
-      if (!alive) return;
+  const refreshRings = useCallback(() => {
+    if (!schoolApi.stateGates) return;
+    // Fired alongside the plans, never awaited by them. A failed or slow
+    // State Gates read costs the ring numbers and nothing else — and a failed
+    // RE-read keeps the numbers already on the card.
+    schoolApi.stateGates({ gateId: 'fitness.weekly-rings', periodKind: 'interval' })
+      .then((res) => {
+        if (!aliveRef.current) return;
+        if (res?.ok) setRings(ringProgressByLearner(res.data));
+      })
+      .catch((error) => {
+        schoolLog.selfServiceError?.('status-board.state-gates-failed', { error: error?.message });
+      });
+  }, []);
+
+  /**
+   * Re-read the given learners (all of them when `learnerIds` is omitted).
+   * Every value is replaced in place as its read lands.
+   */
+  const refresh = useCallback((learnerIds = null) => {
+    if (!kids.length) return;
+    const scope = learnerIds ? kids.filter((kid) => learnerIds.includes(kid.id)) : kids;
+    if (!scope.length) return;
+
+    const settle = (kidId, generation, patch) => {
+      if (!aliveRef.current || generationRef.current[kidId] !== generation) return;
+      settledRef.current.add(kidId);
       setRows((current) => (current ?? []).map((row) => (
-        row.kid.id === kidId ? { ...row, summary, loading: false } : row
+        row.kid.id === kidId ? { ...row, ...patch, loading: false } : row
       )));
     };
 
@@ -383,71 +447,102 @@ export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null
         return { ok: false };
       });
 
-    // Fired alongside the plans, never awaited by them. A failed or slow
-    // State Gates read costs the ring numbers and nothing else.
-    if (schoolApi.stateGates) {
-      schoolApi.stateGates({ gateId: 'fitness.weekly-rings', periodKind: 'interval' })
-        .then((res) => {
-          if (!alive) return;
-          setRings(res?.ok ? ringProgressByLearner(res.data) : {});
-        })
-        .catch((error) => {
-          if (alive) setRings({});
-          schoolLog.selfServiceError?.('status-board.state-gates-failed', { error: error?.message });
-        });
-    }
+    const readLearner = (kid) => {
+      const generation = (generationRef.current[kid.id] ?? 0) + 1;
+      generationRef.current[kid.id] = generation;
 
-    // The term, one read per learner, never awaited by the plan. A failed
-    // read costs that card's grid and nothing else.
-    setTerms({});
-    if (schoolApi.learnerTerm) {
-      kids.forEach((kid) => {
+      // The term, one read per learner, never awaited by the plan. A failed
+      // read costs that card's grid (or, on a re-read, nothing at all).
+      if (schoolApi.learnerTerm) {
         schoolApi.learnerTerm(kid.id)
           .then((res) => {
-            if (!alive) return;
-            setTerms((current) => ({ ...current, [kid.id]: res?.ok ? res.data : null }));
+            if (!aliveRef.current || generationRef.current[kid.id] !== generation) return;
+            setTerms((current) => ({ ...current, [kid.id]: res?.ok ? res.data : (current[kid.id] ?? null) }));
           })
           .catch((error) => {
-            if (alive) setTerms((current) => ({ ...current, [kid.id]: null }));
+            if (aliveRef.current) setTerms((current) => ({ ...current, [kid.id]: current[kid.id] ?? null }));
             schoolLog.selfServiceError?.('status-board.term-failed', { learnerId: kid.id, error: error?.message });
           });
-      });
-    }
-
-    // A live board uses the household study day, including its pre-4am
-    // boundary. Each learner settles independently after the shared digest.
-    kids.forEach(async (kid) => {
-      const dayResponse = await digest;
-      if (!alive) return;
-      const effectiveDay = day ?? dayResponse?.data?.studyDay;
-      setStudyDay(effectiveDay ?? null);
-      const learner = dayResponse?.ok
-        ? dayResponse.data?.learners?.find((row) => row.learnerId === kid.id) : null;
-      const readingActivity = learner?.readingActivity ?? null;
-      const fitnessActivity = learner?.fitnessActivity ?? null;
-      const settleWithoutPlan = () => {
-        const summary = summarize([], [], [], readingActivity, fitnessActivity);
-        settle(kid.id, summary.segments.length ? summary : null);
-      };
-      try {
-        const plan = await schoolApi.agendaPreview(kid.id, effectiveDay);
-        if (!plan?.ok) return settleWithoutPlan();
-        settle(kid.id, summarize(plan.data?.sections, learner?.sessions ?? [], plan.data?.entries, readingActivity, fitnessActivity));
-      } catch (error) {
-        schoolLog.selfServiceError?.('status-board.load-failed', { learnerId: kid.id, error: error?.message });
-        settleWithoutPlan();
       }
+
+      // A live board uses the household study day, including its pre-4am
+      // boundary. Each learner settles independently after the shared digest.
+      (async () => {
+        const dayResponse = await digest;
+        if (!aliveRef.current || generationRef.current[kid.id] !== generation) return;
+        const effectiveDay = day ?? dayResponse?.data?.studyDay;
+        const learner = dayResponse?.ok
+          ? dayResponse.data?.learners?.find((row) => row.learnerId === kid.id) : null;
+        const readingActivity = learner?.readingActivity ?? null;
+        const fitnessActivity = learner?.fitnessActivity ?? null;
+        const settleWithoutPlan = () => {
+          const summary = summarize([], [], [], readingActivity, fitnessActivity);
+          settle(kid.id, generation, { summary: summary.segments.length ? summary : null });
+        };
+        try {
+          const plan = await schoolApi.agendaPreview(kid.id, effectiveDay);
+          if (!plan?.ok) return settleWithoutPlan();
+          settle(kid.id, generation, {
+            summary: summarize(plan.data?.sections, learner?.sessions ?? [], plan.data?.entries, readingActivity, fitnessActivity),
+          });
+        } catch (error) {
+          schoolLog.selfServiceError?.('status-board.load-failed', { learnerId: kid.id, error: error?.message });
+          // A failed RE-read keeps the card as it was; only a card with nothing
+          // on it yet falls back to the plan-less summary.
+          if (!settledRef.current.has(kid.id)) settleWithoutPlan();
+        }
+      })();
+    };
+
+    scope.forEach(readLearner);
+
+    digest.then((dayResponse) => {
+      if (!aliveRef.current) return;
+      const effectiveDay = day ?? dayResponse?.data?.studyDay ?? null;
+      if (!effectiveDay) return;
+      setStudyDay(effectiveDay);
+      if (shownDayRef.current && shownDayRef.current !== effectiveDay) {
+        // The day turned over under the board: nothing on it is about today.
+        // Every card goes back to a skeleton, and the ones this refresh was
+        // not reading are read now.
+        schoolLog.selfService('status-board.day-rolled', { from: shownDayRef.current, to: effectiveDay });
+        const outOfScope = kids.filter((kid) => !scope.includes(kid));
+        settledRef.current.clear();
+        setRows((current) => (current ?? []).map((row) => ({ ...row, summary: null, loading: true })));
+        shownDayRef.current = effectiveDay;
+        outOfScope.forEach(readLearner);
+        return;
+      }
+      shownDayRef.current = effectiveDay;
     });
-    return () => { alive = false; };
-  }, [kids, day, nonce]);
+  }, [kids, day]);
+
+  // First read, and again whenever the roster or the pinned day changes.
+  useEffect(() => {
+    refresh();
+    refreshRings();
+  }, [refresh, refreshRings]);
 
   // Periodic refresh — minutes, not seconds; a hidden panel refreshes nothing.
   useEffect(() => {
     const timer = setInterval(() => {
-      if (document.visibilityState !== 'hidden') setNonce((n) => n + 1);
+      if (document.visibilityState !== 'hidden') { refresh(); refreshRings(); }
     }, REFRESH_MS);
     return () => clearInterval(timer);
-  }, []);
+  }, [refresh, refreshRings]);
+
+  // Persist what has settled, so the next mount paints it immediately.
+  useEffect(() => {
+    if (!studyDay || !rows?.length || studyDay !== shownDayRef.current) return;
+    const learners = {};
+    for (const row of rows) {
+      learners[row.kid.id] = {
+        summary: row.loading ? undefined : row.summary,
+        term: terms[row.kid.id],
+      };
+    }
+    writeBoardCache({ studyDay, learners, rings });
+  }, [rows, terms, rings, studyDay]);
 
   /**
    * COMPLETED WORK CHANGES THE BOARD NOW, not in up to five minutes.
@@ -466,6 +561,11 @@ export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null
    * display a score even by accident. It also means one code path produces the
    * discs, so a pushed update and a polled one can never disagree.
    *
+   * It re-reads ONLY the learner the event names (every learner when a scan
+   * names none), so one child's scan flips that child's disc and leaves the
+   * other three cards untouched. A ring update re-reads the rings and the
+   * learner it names (the workout disc comes from the same moment).
+   *
    * Any terminal scan outcome triggers it, not just a pass — a failed sheet
    * turns a disc yellow and that is just as much news. School events are scoped
    * to the displayed roster; story reads are also scoped to this study day.
@@ -473,11 +573,13 @@ export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null
   const onScan = useCallback((payload) => {
     const event = payload?.event;
     if (!event || !String(event).startsWith('scan-')) return;
+    const learnerId = payload.learnerId ?? null;
+    if (learnerId && !rosterIds.has(learnerId)) return;
     schoolLog.scan('status-board.refresh', {
-      source: 'omr', event, learnerId: payload.learnerId ?? null, studyDay,
+      source: 'omr', event, learnerId, studyDay,
     });
-    setNonce((n) => n + 1);
-  }, [studyDay]);
+    refresh(learnerId ? [learnerId] : null);
+  }, [studyDay, rosterIds, refresh]);
   useWebSocketSubscription('omr', onScan, [onScan]);
 
   const onSchool = useCallback((payload) => {
@@ -492,8 +594,8 @@ export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null
     schoolLog.selfService('status-board.refresh', {
       source: 'school', event, learnerId, studyDay: eventStudyDay ?? studyDay,
     });
-    setNonce((n) => n + 1);
-  }, [studyDay, rosterIds]);
+    refresh([learnerId]);
+  }, [studyDay, rosterIds, refresh]);
   useWebSocketSubscription('school', onSchool, [onSchool]);
 
   const onStateGates = useCallback((event) => {
@@ -505,8 +607,11 @@ export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null
     schoolLog.selfService('status-board.refresh', {
       source: 'state-gates', event: event?.kind ?? null, learnerId,
     });
-    setNonce((n) => n + 1);
-  }, [rosterIds]);
+    // The rings, and that learner's card: closing a workout is what moves the
+    // gate, and the day digest's Fitness disc rides on the same event.
+    refreshRings();
+    refresh(learnerId ? [learnerId] : null);
+  }, [rosterIds, refreshRings, refresh]);
   useWebSocketSubscription('state-gates', onStateGates, [onStateGates]);
 
   const visible = useMemo(() => rows ?? [], [rows]);

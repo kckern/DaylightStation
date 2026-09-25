@@ -5,18 +5,24 @@
 // Usage:
 //   node tools/flash.mjs <path-to>/config/scales.yml [scale-id] [--port /dev/cu.xxx]
 //   DAYLIGHT_SCALES_CONFIG=<path> node tools/flash.mjs [scale-id] [--port ...]
+//   node tools/flash.mjs <path-to>/scales.yml [scale-id] --ota [--port <ip>]
 //
-// Port autodetects the first /dev/cu.usbserial-* (FTDI) if --port omitted.
+// USB: port autodetects the first /dev/cu.usbserial-* (FTDI) if --port omitted.
+// --ota: espota to the scale's `device.ip` (or --port <ip>), authenticated with
+// `ota.password` from scales.yml. The password goes through the environment
+// (PLATFORMIO_UPLOAD_FLAGS), never onto a command line or into shell history.
 // =============================================================================
 import { execFileSync } from 'node:child_process';
-import { readdirSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const firmwareDir = path.join(__dirname, '..');
 
-const argv = process.argv.slice(2);
+const argv0 = process.argv.slice(2);
+const ota = argv0.includes('--ota');
+const argv = argv0.filter((a) => a !== '--ota');
 const portIdx = argv.indexOf('--port');
 let port = portIdx !== -1 ? argv[portIdx + 1] : null;
 // Drop the `--port <dev>` pair, but ONLY when it is actually present. This used
@@ -31,7 +37,20 @@ const scaleId = rest[1] || '';
 
 if (!src) { console.error('ERROR: pass scales.yml path or set DAYLIGHT_SCALES_CONFIG.'); process.exit(1); }
 
-if (!port) {
+let otaPassword = '';
+if (ota) {
+  const { default: yaml } = await import('js-yaml');
+  const cfg = yaml.load(readFileSync(src, 'utf8')) || {};
+  const id = scaleId || Object.keys(cfg.scales || {})[0];
+  const sc = cfg.scales?.[id] || {};
+  if (sc.ota?.enabled !== true || !sc.ota?.password) {
+    console.error(`ERROR: scales.${id}.ota is not enabled with a password; the board would refuse the upload.`);
+    process.exit(1);
+  }
+  otaPassword = String(sc.ota.password);
+  port ||= sc.device?.ip;
+  if (!port) { console.error(`ERROR: scales.${id}.device.ip missing; pass --port <ip>.`); process.exit(1); }
+} else if (!port) {
   const dev = readdirSync('/dev').filter((f) => /^cu\.usbserial-/.test(f));
   if (!dev.length) { console.error('ERROR: no /dev/cu.usbserial-* found; pass --port.'); process.exit(1); }
   port = `/dev/${dev[0]}`;
@@ -50,5 +69,10 @@ run('node', ['tools/gen-config.mjs', src, ...(scaleId ? [scaleId] : [])]);
 // src/idf_component.yml (`idf: '>=5.1'`) that was the reason to prefer it over
 // this one. Nothing here needs ESP-IDF 5 any more: NimBLE 1.4.x wants Arduino
 // core 2.x, which is what espressif32@6.5.0 pins.
-run('pio', ['run', '-e', 'm5-atom', '-t', 'upload', '--upload-port', port]);
+if (ota) {
+  run('pio', ['run', '-e', 'm5-atom-ota', '-t', 'upload', '--upload-port', port],
+    { env: { ...process.env, PLATFORMIO_UPLOAD_FLAGS: `--auth=${otaPassword}` } });
+} else {
+  run('pio', ['run', '-e', 'm5-atom', '-t', 'upload', '--upload-port', port]);
+}
 console.log(`\n[flash] done → ${port}`);

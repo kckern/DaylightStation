@@ -10,12 +10,14 @@ node cli/school.mjs ops completion learner3
 node cli/school.mjs ops status learner3
 node cli/school.mjs ops monitor learner3 learner4
 node cli/school.mjs ops monitor learner3 learner4 --watch --interval 15
-node cli/school.mjs ops timeline learner3 --limit 50 --teacher parent --pin-env SCHOOL_PIN
-node cli/school.mjs ops session ses_123 --teacher parent --pin-env SCHOOL_PIN
+node cli/school.mjs ops timeline learner3 --limit 50 --teacher parent
+node cli/school.mjs ops session ses_123 --teacher parent
 node cli/school.mjs ops gates learner3
+node cli/school.mjs ops review            # every question waiting on a mark
+node cli/school.mjs ops review ses_123    # one session's queue
 node cli/school.mjs ops audit --since 2026-08-01T00:00:00Z
 node cli/school.mjs ops agenda-preview learner3 --output /tmp/learner3-agenda.png
-node cli/school.mjs ops artifact art_123 --view manifest --teacher parent --pin-env SCHOOL_PIN
+node cli/school.mjs ops artifact art_123 --view manifest --teacher parent
 node cli/school.mjs ops launch-preview learner3 --subject arts
 ```
 
@@ -25,7 +27,7 @@ learners once or continuously.
 
 `timeline` and `session` are the incident-investigation pair. These teacher
 record reads, artifact manifest/original reads, and postview reads first unlock
-with `--teacher ID --pin-env NAME`; only postview additionally requires a
+with `--teacher ID`; only postview additionally requires a
 one-use scoped step-up. `gates` joins the
 current completion, assignment, milestone, and pass-override projections.
 `agenda-preview` renders without minting sessions or tokens. Artifact manifest
@@ -33,6 +35,31 @@ reads identify the durable worksheet recipe; PDF reads project that recipe
 through the current rendering engine.
 
 Use `--base-url URL` or `SCHOOL_BASE_URL` to target another lifecycle API.
+
+**The teacher PIN is retired (2026-09-11, `school.yml` `teacher.pin: null`).**
+The gate identifies the grown-up by `--teacher ID` alone, which must be an adult
+listed in `teachers:`. Every command's `--pin-env NAME` is now optional and only
+matters if a household puts a PIN back; the examples below omit it.
+
+### A subject that will not turn green
+
+`review` is the first thing to check when a child says they did the work. A
+paper sheet with an unmarked question (two bubbles filled after the eraser
+leniency budget is spent, an ungradeable free answer) stays `submitted`. That
+holds the subject's lane shut: the kiosk offers only "exit" and will not print
+the next page, and rescanning the card changes nothing (`scan-already-recorded`).
+Rule each item; ruling the last one grades and settles the session:
+
+```bash
+node cli/school.mjs ops review
+node cli/school.mjs ops review-resolve ses_123 --item north-dakota-statehood \
+  --verdict correct --note "two marks, one right" --teacher kckern --apply
+```
+
+`--verdict` is `correct`, `incorrect`, or `void`; `void` requires `--note`,
+because the child sees that question missing from their score. The hourly
+`school.teacher-nudge` push is meant to surface this queue; it failed on every
+run until 2026-09-25 (`Invalid notification category: "school"`).
 
 ## Answer-sheet identity rollout and incident recovery
 
@@ -214,51 +241,51 @@ hardware-simulation surface. Use simulation for scenarios; use `ops status` and
 
 ```bash
 # Preview an assignment write
-SCHOOL_PIN=... node cli/school.mjs ops assign learner3 \
-  --file plan.yml --teacher kckern --pin-env SCHOOL_PIN
+node cli/school.mjs ops assign learner3 \
+  --file plan.yml --teacher kckern
 
 # Apply enrollment
-SCHOOL_PIN=... node cli/school.mjs ops enroll learner3 \
+node cli/school.mjs ops enroll learner3 \
   --syllabus come-follow-me-ot-2026-lower \
-  --teacher kckern --pin-env SCHOOL_PIN --apply
+  --teacher kckern --apply
 
 # Rebuild a frozen enrollment snapshot
-SCHOOL_PIN=... node cli/school.mjs ops rematerialize learner3 \
+node cli/school.mjs ops rematerialize learner3 \
   --syllabus come-follow-me-ot-2026-lower \
-  --teacher kckern --pin-env SCHOOL_PIN --apply
+  --teacher kckern --apply
 
 # Resolve a ghost session explicitly
-SCHOOL_PIN=... node cli/school.mjs ops abandon ses_123 \
+node cli/school.mjs ops abandon ses_123 \
   --learner learner3 --reason "worksheet lost" \
-  --teacher kckern --pin-env SCHOOL_PIN --apply
+  --teacher kckern --apply
 
 # Preview, then dispatch one durable agenda print
-SCHOOL_PIN=... node cli/school.mjs ops agenda-dispatch learner3 \
-  --teacher kckern --pin-env SCHOOL_PIN
-SCHOOL_PIN=... node cli/school.mjs ops agenda-dispatch learner3 \
-  --teacher kckern --pin-env SCHOOL_PIN --idempotency-key agenda-learner3-20260824 --apply
+node cli/school.mjs ops agenda-dispatch learner3 \
+  --teacher kckern
+node cli/school.mjs ops agenda-dispatch learner3 \
+  --teacher kckern --idempotency-key agenda-learner3-20260824 --apply
 
 # Preview, then append a grade correction (never overwrite machine evidence)
-SCHOOL_PIN=... node cli/school.mjs ops grade-adjust ses_123 \
+node cli/school.mjs ops grade-adjust ses_123 \
   --percent 92 --reason "scanner read an erased bubble" \
-  --teacher kckern --pin-env SCHOOL_PIN
-SCHOOL_PIN=... node cli/school.mjs ops grade-adjust ses_123 \
+  --teacher kckern
+node cli/school.mjs ops grade-adjust ses_123 \
   --percent 92 --reason "scanner read an erased bubble" \
-  --teacher kckern --pin-env SCHOOL_PIN --base-revision 7 --apply
+  --teacher kckern --base-revision 7 --apply
 
 # Other dry-run-first repair lanes
-SCHOOL_PIN=... node cli/school.mjs ops grade-retract ses_123 --adjustment adj_1 \
-  --reason "correction applied to wrong session" --teacher kckern --pin-env SCHOOL_PIN
-SCHOOL_PIN=... node cli/school.mjs ops regrade science/how-chemistry-surrounds-you/01-checkpoint \
+node cli/school.mjs ops grade-retract ses_123 --adjustment adj_1 \
+  --reason "correction applied to wrong session" --teacher kckern
+node cli/school.mjs ops regrade science/how-chemistry-surrounds-you/01-checkpoint \
   --from-day 2026-08-01 --to-day 2026-08-24 --reason "bank answer-key correction" \
-  --teacher kckern --pin-env SCHOOL_PIN
-SCHOOL_PIN=... node cli/school.mjs ops reassign assessment_123 --from learner3 --to learner4 \
-  --day 2026-08-24 --teacher kckern --pin-env SCHOOL_PIN
+  --teacher kckern
+node cli/school.mjs ops reassign assessment_123 --from learner3 --to learner4 \
+  --day 2026-08-24 --teacher kckern
 ```
 
 Without `--apply`, commands either call a server preview endpoint or print the
-exact redacted request and do not mutate School. PINs are read only from the
-named environment variable and never printed. Assignment/enrollment operations
+exact redacted request and do not mutate School. A PIN, if one is configured
+again, is read only from the `--pin-env` variable and never printed. Assignment/enrollment operations
 read the current assignment revision; grade correction/retraction accept the
 session base revision. Agenda dispatch sends one caller-selected idempotency key
 in both header and body. A retry with the same payload replays its receipt; a

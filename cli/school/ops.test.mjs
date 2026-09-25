@@ -322,4 +322,25 @@ describe('school ops option parsing', () => {
     expect(option(['--from-day=2026-08-26'], '--from-day')).toBe('2026-08-26');
     expect(option(['--base-revision=3'], '--base')).toBe(null);
   });
+
+  it('lists the review queue, all of it or one session', async () => {
+    const fetchImpl = vi.fn(async () => response({ items: [{ itemId: 'q24' }] }));
+    await runOps({ argv: ['review', '--base-url', 'http://school'], fetchImpl, stdout: { write() {} } });
+    await runOps({ argv: ['review', 'ses 1', '--base-url', 'http://school'], fetchImpl, stdout: { write() {} } });
+    expect(fetchImpl.mock.calls.map(([url]) => url)).toEqual([
+      'http://school/lifecycle/review', 'http://school/lifecycle/sessions/ses%201/review',
+    ]);
+  });
+
+  it('rules a review item without a PIN, dry-run until --apply', async () => {
+    const fetchImpl = vi.fn(async () => response({ verdict: 'correct', sessionFinished: { result: 'passed' } }));
+    let output = '';
+    await runOps({ argv: ['review-resolve', 'ses1', '--item', 'q24', '--verdict', 'correct', '--teacher', 'dad', '--base-url', 'http://school'],
+      fetchImpl, env: {}, stdout: { write: (s) => { output += s; } } });
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(JSON.parse(output).request.url).toBe('http://school/lifecycle/sessions/ses1/review/q24');
+    await runOps({ argv: ['review-resolve', 'ses1', '--item', 'q24', '--verdict', 'correct', '--note', 'eraser', '--teacher', 'dad', '--apply', '--base-url', 'http://school'],
+      fetchImpl, env: {}, stdout: { write() {} } });
+    expect(JSON.parse(fetchImpl.mock.calls[0][1].body)).toEqual({ verdict: 'correct', note: 'eraser', gradedBy: 'dad', pin: null });
+  });
 });

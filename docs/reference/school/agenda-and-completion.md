@@ -199,8 +199,33 @@ workout wrong. On a day with no qualifying session it is simply absent.
 Fitness therefore appears twice on a card, deliberately: the ring chip in the
 readout is the week's cumulative count, the circle is today's yes or no. The
 board needs no new subscription for it — closing a session prompts the
-`fitness.weekly-rings` State Gate producer, and the board already reloads on
-that gate's events.
+`fitness.weekly-rings` State Gate producer, and the board re-reads the rings
+and that learner's card on that gate's events.
+
+## How the status board loads and refreshes
+
+The board paints from a localStorage snapshot of the last board it showed
+(`status/boardCache.js`, key `daylight.school.status-board.v1`), then re-reads
+everything. The snapshot is a paint cache, not a source of truth: each card is
+replaced in place as its read lands, and a card that has data never goes back
+to a skeleton. Skeletons appear only on a cold browser, and at the study-day
+rollover: when the digest names a different `studyDay` than the snapshot, every
+card's discs are dropped (yesterday's greens must not stand in for today) while
+the term grids and ring count stay until their own reads replace them.
+
+Refreshes are scoped to what changed:
+
+| Trigger | Re-reads |
+| --- | --- |
+| Mount, 5-minute poll (visible tab only) | Every learner + rings |
+| `omr` scan event naming a learner | That learner (digest, plan, term) |
+| `omr` scan event naming nobody | Every learner |
+| `school` event (`session-issued`, `story-read`, …) | That learner |
+| `fitness.weekly-rings` State Gate event | Rings + that learner |
+
+A failed re-read keeps what the card already shows; only a card with nothing on
+it falls back to the plan-less summary or an absent term grid. A per-learner
+generation counter drops a slow read that a newer one has overtaken.
 
 ## Learner-day completion
 

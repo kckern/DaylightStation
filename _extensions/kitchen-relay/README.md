@@ -17,7 +17,7 @@ DS2278 ────BLE HID/HOGP───▶┘   │ button GPIO39              
 ```
 
 No host daemon — **firmware only**, config-driven from the household SSOT
-(`data/household/config/scales.yml`). Nothing is hardcoded.
+(`data/household/hardware/scales.yml`). Nothing is hardcoded.
 
 > **Both peripherals are LE, and that is the whole design.** This board briefly
 > split in two (2026-07-23 → 2026-07-28) because the *previous* scanner, a Zebra
@@ -175,24 +175,58 @@ subscribes to both.
 
 ## Build & flash
 
-Prereqs: PlatformIO (`pio`), Node, the ATOM on USB (FTDI `/dev/cu.usbserial-*`).
+Prereqs: PlatformIO (`pio`), Node. The SSOT is
+`$DAYLIGHT_BASE_PATH/data/household/hardware/scales.yml`.
+
+### Over the air (normal path)
 
 ```bash
 cd firmware
-# one shot: gen config from SSOT, build, upload (autodetects port)
-node tools/flash.mjs "$DAYLIGHT_BASE_PATH/data/household/config/scales.yml" kitchen-food-scale
-
-# or step by step
-node tools/gen-config.mjs "$DAYLIGHT_BASE_PATH/data/household/config/scales.yml" kitchen-food-scale
-pio run -e m5-atom -t upload --upload-port /dev/cu.usbserial-XXXX
+node tools/flash.mjs "$DAYLIGHT_BASE_PATH/data/household/hardware/scales.yml" kitchen-food-scale --ota
 ```
 
-`m5-atom` is the **only** environment. `platform = espressif32@6.5.0` is pinned
-because NimBLE-Arduino 1.4.x needs Arduino core 2.x — newer platforms pull core
-3.x and NimBLE faults at `esp_bt_controller_init` (`INVALID_STATE`).
-`upload_speed=115200` (the FTDI link corrupts at high baud),
-`huge_app.csv` partitions. Free the port first if held:
+Regenerates `config.h`, builds, and pushes via espota to `device.ip`,
+authenticated with the scale's `ota.password`. The password travels through
+`PLATFORMIO_UPLOAD_FLAGS`, never on a command line. Confirm the new image took
+with `GET /status` → `build` (compile timestamp) and `ota: true`.
+
+- The espota invitation port **3232 is UDP**. A TCP probe always fails and
+  means nothing.
+- During the transfer the board quiesces BLE, the WebSocket and `:80`, so a
+  weighing or scan in those seconds is lost. A failed transfer reboots into the
+  old image (the boot slot only switches on success).
+
+### Over USB (first flash, or rescue)
+
+```bash
+cd firmware
+node tools/flash.mjs "$DAYLIGHT_BASE_PATH/data/household/hardware/scales.yml" kitchen-food-scale  # autodetects /dev/cu.usbserial-*
+```
+
+**Partition table: `min_spiffs.csv`** (two 1.92 MB app slots; the image is
+~1.3 MB). Until 2026-09-25 this was `huge_app.csv`, one slot and no OTA. The
+table lives at 0x8000 outside any app slot, so changing it always needs USB,
+and a board still on `huge_app.csv` cannot take an OTA upload.
+
+`m5-atom` is the build environment; `m5-atom-ota` only changes the upload
+protocol. `platform = espressif32@6.5.0` is pinned because NimBLE-Arduino 1.4.x
+needs Arduino core 2.x; newer platforms pull core 3.x and NimBLE faults at
+`esp_bt_controller_init` (`INVALID_STATE`). `upload_speed=115200` (the FTDI link
+corrupts at high baud). Free the port first if held:
 `kill $(lsof -t /dev/cu.usbserial-*)`.
+
+### Scale discovery
+
+The scale powers itself off between uses and is re-found by BLE scan. After
+3 min without it the relay drops to 10 s scan bursts, but `loop()` restarts a
+scan as soon as a burst ends, so in practice discovery is near-continuous. Any
+barcode scan also resets the absence clock and starts a fresh scan
+(`[ble] scale scan woken by barcode scan` in `recent_logs`), since a card scan
+means a weighing is coming.
+
+The scale zeroes itself at power-on. Switch it on **before** putting the
+container down, or it will report 0 g for the whole session and the scanned
+`ct:`/`dl:` cards stay pending without a weight.
 
 > Do **not** hold the serial port open to watch logs while debugging. Opening
 > *or* closing `/dev/cu.usbserial-*` toggles DTR and resets the ESP32, which
@@ -272,7 +306,7 @@ briefly flashes when something is emitted.
 The button: a quick press logs the current weight; a 3 s hold clears the BLE
 bond and forces a re-pair.
 
-## Config — `data/household/config/scales.yml`
+## Config — `data/household/hardware/scales.yml`
 
 Keyed by scale id (plural, so a second scale is just another key + another ATOM).
 Each scale entry may also carry a `barcode:` block; that scanner shares the same
