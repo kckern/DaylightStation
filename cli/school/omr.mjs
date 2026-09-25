@@ -228,12 +228,15 @@ async function replay(argv) {
   if (marks.length < FULL_CARD_COLUMNS) {
     // Say this plainly rather than let a short frame look like a clean read. The
     // decoder OMITS unmarked questions, so a truncated frame is indistinguishable
-    // from a card the student left blank once it reaches the record.
+    // from a card the student left blank — which is why decodeQuizSheet refuses
+    // any frame that is not a full card (omrFrameError, OMR_COLUMN_COUNT) and
+    // the live consumer answers it with scan-unresolved instead of a grade.
     const lostFrom = Math.max(0, marks.length - 7) + 1;
     console.log('');
     console.log(`⚠ PARTIAL FRAME — only columns 1-${marks.length} survive.`);
     console.log(`  Questions ${lostFrom}-25 and ${lostFrom + 25}-50 are NOT missing answers, they are UNKNOWN.`);
-    console.log('  Grading is still correct IF the live allocation falls inside the recovered range.');
+    console.log(`  The backend refuses frames that are not ${FULL_CARD_COLUMNS} columns (scan-unresolved, OMR_COLUMN_COUNT);`);
+    console.log('  --apply will not grade this. Re-feed the card if it still exists.');
   }
 
   if (testId) {

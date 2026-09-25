@@ -924,6 +924,11 @@ record — recover with `release-card`. Accepted at household scale.
   later still prints its ORIGINAL date — it stands in for the paper generated
   that day, rather than claiming to be new work.
 
+  The card banner follows the same rule: a reprint of a sheet whose allocation
+  starts at row 1 (the allocator only starts a card there when it mints it)
+  prints **START A NEW ANSWER SHEET** like the original did, not the **KEEP
+  USING** banner a fresh render against an existing card would draw.
+
   It refuses rather than guessing: an unsafe instance id, a malformed instance
   file, a missing `documentRevision` (which would otherwise silently resolve to
   the latest published revision — a different sheet under the original's name),
