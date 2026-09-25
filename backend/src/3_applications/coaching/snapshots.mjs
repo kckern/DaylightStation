@@ -32,7 +32,15 @@ export function buildPostReportSnapshot({ date, timeOfDay, calories, protein, it
     time_of_day: timeOfDay,
     today_status: todayStatus,
     logging: loggingContext(minCalories),
-    calories: { consumed: calories.consumed, goal_min: calories.goal_min, goal_max: calories.goal_max, pct: calories.goal_max > 0 ? Math.round((calories.consumed / calories.goal_max) * 100) : 0 },
+    calories: {
+      consumed: calories.consumed, goal_min: calories.goal_min, goal_max: calories.goal_max,
+      // With the budget the percentage is NET of the plan's top, as the bar fills.
+      pct: calories.goal_max > 0 ? Math.round(((calories.net ?? calories.consumed) / calories.goal_max) * 100) : 0,
+      // From the budget contract when available: the zone the Today bar shows,
+      // whether the log is trustworthy yet, and the headline's number.
+      ...(calories.zone ? { zone: calories.zone, complete: calories.complete, remaining: calories.remaining } : {}),
+      ...(calories.fasted_meals ? { fasted_meals: calories.fasted_meals } : {}),
+    },
     protein: { consumed: protein.consumed, goal: protein.goal, pct: protein.goal > 0 ? Math.round((protein.consumed / protein.goal) * 100) : 0 },
     notable_items: notable,
     recent_pattern: recentPattern,
@@ -96,13 +104,13 @@ export function buildWeeklyDigestSnapshot({ thisWeek, longTermAvg, weight, recen
 }
 
 function pickDay(d) {
-  return { date: d.date, calories: d.calories, protein: d.protein, status: d.status };
+  return { date: d.date, calories: d.calories, protein: d.protein, status: d.status, ...(d.fastedMeals ? { fasted_meals: d.fastedMeals } : {}) };
 }
 
 function loggingContext(minCalories) {
   return {
     min_calories: minCalories,
-    note: 'status complete|done|fasting = trustworthy totals. reconstructed = an untracked day backfilled from weight: calories are an estimate, protein is UNKNOWN (ignore its protein figure) and there are no foods to mention. incomplete = under min_calories and not confirmed by the user: meals are missing, the total is NOT what was eaten. unlogged = no data. Averages cover trustworthy days only.',
+    note: 'status complete|done|fasting = trustworthy totals. reconstructed = an untracked day backfilled from weight: calories are an estimate, protein is UNKNOWN (ignore its protein figure) and there are no foods to mention. incomplete = under min_calories and not confirmed by the user: meals are missing, the total is NOT what was eaten. unlogged = no data. Averages cover trustworthy days only. fasted_meals = meals the user declared intentionally skipped: those meals are really empty (never ask about them), but the day is still incomplete unless it is closed or reaches min_calories — say which meals are still unlogged instead.',
   };
 }
 
@@ -113,12 +121,13 @@ function loggingContext(minCalories) {
  * @param {{consumed: number, goal_max: number}} opts.todayCalories
  * @param {Array} opts.recentCoaching
  */
-export function buildExerciseReactionSnapshot({ activity, budgetImpact, todayCalories, todayStatus = 'in_progress', recentCoaching }) {
+export function buildExerciseReactionSnapshot({ activity, budgetImpact, todayCalories, todayStatus = 'in_progress', recentCoaching, budgetImpactNote = null }) {
   return {
     type: 'exercise-reaction',
     today_status: todayStatus,
     activity,
     budget_impact: budgetImpact,
+    ...(budgetImpactNote ? { budget_impact_note: budgetImpactNote } : {}),
     today_calories: todayCalories,
     recent_coaching: recentCoaching || [],
   };

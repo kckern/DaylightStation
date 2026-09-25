@@ -37,14 +37,34 @@ export function resolveMinCalories(cfg) {
 
 /**
  * Normalize a day-closed record. Legacy records are a bare `true` (from the
- * original `/done`); current ones are `{ status: 'done'|'fasting', at }`.
+ * original `/done`); current ones are `{ status?: 'done'|'fasting', at?,
+ * meals?: { <bucketId>: { status: 'fasting', at } } }`. Only a DAY status
+ * closes a day: a record that holds meal fasts alone is not a closure (a
+ * fasted breakfast says that meal was intentionally empty, not that the
+ * day's log is final).
  * @returns {'done'|'fasting'|null}
  */
 export function closureStatus(record) {
   if (!record) return null;
   if (record === true) return DAY_STATUS.DONE;
   if (record.status === DAY_STATUS.FASTING) return DAY_STATUS.FASTING;
-  return DAY_STATUS.DONE;
+  if (record.status === DAY_STATUS.DONE) return DAY_STATUS.DONE;
+  return null;
+}
+
+const MEAL_ORDER = ['morning', 'afternoon', 'evening', 'night'];
+
+/**
+ * The meals a record declares fasted, in bucket order. Information for the
+ * coach only — a fasted meal never changes the floor, the zone or the bar.
+ * @returns {string[]}
+ */
+export function fastedMealsOf(record) {
+  const meals = record && typeof record === 'object' ? record.meals : null;
+  if (!meals || typeof meals !== 'object') return [];
+  const fasted = id => meals[id]?.status === DAY_STATUS.FASTING;
+  const known = MEAL_ORDER.filter(fasted);
+  return [...known, ...Object.keys(meals).filter(id => !MEAL_ORDER.includes(id) && fasted(id))];
 }
 
 /**
@@ -83,6 +103,8 @@ export function buildCalendarDays({ nutritionData, closures, beforeDate, count, 
       calories: Math.round(Number(entry?.calories) || 0),
       protein: Math.round(Number(entry?.protein) || 0),
       status: classifyDay(entry, closures?.[date], minCalories),
+      // Meals the user declared skipped: coach context, never a status change.
+      ...(fastedMealsOf(closures?.[date]).length ? { fastedMeals: fastedMealsOf(closures?.[date]) } : {}),
     });
   }
   return days;

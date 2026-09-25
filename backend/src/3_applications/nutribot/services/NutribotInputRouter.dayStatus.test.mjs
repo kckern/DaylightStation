@@ -9,7 +9,7 @@ import { NutribotInputRouter } from './NutribotInputRouter.mjs';
 const silent = { debug() {}, info: vi.fn(), warn() {}, error() {} };
 
 function harness() {
-  const healthStore = { markDayStatus: vi.fn(async () => {}), clearDayStatus: vi.fn(async () => {}) };
+  const healthStore = { markDayStatus: vi.fn(async () => {}), clearDayStatus: vi.fn(async () => {}), setMealFast: vi.fn(async () => {}) };
   const container = {
     getConversationStateStore: () => null,
     getFoodLogStore: () => null,
@@ -49,6 +49,48 @@ describe('NutribotInputRouter /done and /fast', () => {
     const { router, rc, healthStore } = harness();
     await router.handleCommand(cmd('done', '2026-09-20'), rc);
     expect(healthStore.markDayStatus).toHaveBeenCalledWith('kckern', '2026-09-20', 'done');
+  });
+
+  describe('meal fasts: /fast [meal] [date], /reopen [meal] [date]', () => {
+    it('/fast breakfast marks today\'s breakfast fasted without closing the day', async () => {
+      const { router, rc, healthStore } = harness();
+      await router.handleCommand(cmd('fast', 'breakfast'), rc);
+      expect(healthStore.setMealFast).toHaveBeenCalledWith('kckern', '2026-09-23', 'morning', true);
+      expect(healthStore.markDayStatus).not.toHaveBeenCalled();
+      expect(rc.sendMessage.mock.calls[0][0]).toContain('Breakfast on 2026-09-23');
+    });
+
+    it('takes meal and date in either order', async () => {
+      const { router, rc, healthStore } = harness();
+      await router.handleCommand(cmd('fast', 'lunch yesterday'), rc);
+      await router.handleCommand(cmd('fast', 'yesterday Dinner'), rc);
+      expect(healthStore.setMealFast).toHaveBeenNthCalledWith(1, 'kckern', '2026-09-22', 'afternoon', true);
+      expect(healthStore.setMealFast).toHaveBeenNthCalledWith(2, 'kckern', '2026-09-22', 'evening', true);
+    });
+
+    it('/reopen snacks undoes a meal fast, leaving the day alone', async () => {
+      const { router, rc, healthStore } = harness();
+      await router.handleCommand(cmd('reopen', 'snacks'), rc);
+      expect(healthStore.setMealFast).toHaveBeenCalledWith('kckern', '2026-09-23', 'night', false);
+      expect(healthStore.clearDayStatus).not.toHaveBeenCalled();
+    });
+
+    it('/fast with no meal still fasts the whole day', async () => {
+      const { router, rc, healthStore } = harness();
+      await router.handleCommand(cmd('fast'), rc);
+      expect(healthStore.markDayStatus).toHaveBeenCalledWith('kckern', '2026-09-23', 'fasting');
+      expect(healthStore.setMealFast).not.toHaveBeenCalled();
+    });
+
+    it('refuses an unknown word, or a meal on /done, with the grammar', async () => {
+      const { router, rc, healthStore } = harness();
+      await router.handleCommand(cmd('fast', 'brunch'), rc);
+      await router.handleCommand(cmd('done', 'breakfast'), rc);
+      expect(healthStore.setMealFast).not.toHaveBeenCalled();
+      expect(healthStore.markDayStatus).not.toHaveBeenCalled();
+      expect(rc.sendMessage.mock.calls[0][0]).toContain('/fast breakfast');
+      expect(rc.sendMessage.mock.calls[1][0]).toContain('/done YYYY-MM-DD');
+    });
   });
 
   it('refuses a future or malformed date without writing', async () => {

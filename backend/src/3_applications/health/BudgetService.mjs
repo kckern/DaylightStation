@@ -7,7 +7,7 @@
 // client-side except through that same shared rule.
 import { computeDailyEnergy, solveDailyDeficit } from '#domains/health/services/BudgetMath.mjs';
 import { zoneFor, statusForZone } from '#shared/contracts/health/budgetZone.mjs';
-import { closureStatus } from '#apps/coaching/dayCompleteness.mjs';
+import { closureStatus, fastedMealsOf } from '#apps/coaching/dayCompleteness.mjs';
 import { isISODate } from '#shared/contracts/health/isoDate.mjs';
 import { isCountedRow } from '#shared/contracts/nutrition/countedRows.mjs';
 
@@ -264,12 +264,16 @@ export class BudgetService {
   }
 
   // The per-day contract, assembled ONE way for getBudget and getBudgetRange.
-  #dayContract({ date, energy, food, exercise, declared }) {
+  // `closure` is the day's day_closed record: its day status is `declared`,
+  // and its meal fasts are coach information (they never move the zone).
+  #dayContract({ date, energy, food, exercise, closure }) {
     const { maintenance, deficit, deficitSource, range, stale } = energy;
+    const declared = closureStatus(closure);
     const { zone, remaining, complete, net } = zoneFor({ food, exercise, maintenance, range, declared });
     return {
       date, budget: range.top, maintenance, deficit, deficitSource, range,
-      food, exercise, net, zone, complete, declared, remaining, status: statusForZone(zone), stale,
+      food, exercise, net, zone, complete, declared, fastedMeals: fastedMealsOf(closure),
+      remaining, status: statusForZone(zone), stale,
     };
   }
 
@@ -337,7 +341,7 @@ export class BudgetService {
     const exercise = Math.round(sumExerciseCalories(sessions));
 
     return {
-      ...this.#dayContract({ date, energy, food, exercise, declared: closureStatus(closures[date]) }),
+      ...this.#dayContract({ date, energy, food, exercise, closure: closures[date] }),
       sessions, goals, macros, microCoverage, loggedEntries, loggingStatus, goalBasis,
     };
   }
@@ -394,7 +398,7 @@ export class BudgetService {
       const { food, macros, loggedEntries, loggingStatus, goalBasis } = this.#foldItems(itemsByDate.get(date) || []);
       const exercise = Math.round(sumExerciseCalories(flattenWorkoutSessions(workoutsByDate[date])));
       return {
-        ...this.#dayContract({ date, energy, food, exercise, declared: closureStatus(closures[date]) }),
+        ...this.#dayContract({ date, energy, food, exercise, closure: closures[date] }),
         macros, loggedEntries, loggingStatus, goalBasis,
       };
     });

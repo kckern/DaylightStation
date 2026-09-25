@@ -9,6 +9,8 @@
 import { NOOM_COLOR_EMOJI } from '#domains/nutrition/entities/formatters.mjs';
 import { prepareDailyReportPresentation } from '../DailyReportPresentation.mjs';
 import { withoutQuarantined, isQuarantined } from '#domains/nutrition/services/quarantine.mjs';
+import { buildReportCaption } from './reportCaption.mjs';
+import { isCountedRow } from '#shared/contracts/nutrition/countedRows.mjs';
 
 /**
  * Decide which date a `/report` should render.
@@ -69,6 +71,7 @@ export class GenerateDailyReport {
   #reportDelivery;
   #coachingOrchestrator;
   #pause;
+  #budgetService;
 
   constructor(deps) {
     if (!deps.messagingGateway) throw new Error('messagingGateway is required');
@@ -86,6 +89,19 @@ export class GenerateDailyReport {
     this.#reportDelivery = deps.reportDelivery; // Optional: reports degrade to text-only
     this.#coachingOrchestrator = deps.coachingOrchestrator || null;
     this.#pause = deps.pause || (async () => {});
+    this.#budgetService = deps.budgetService || null; // Optional: health budget contract
+  }
+
+  // The day's health budget, or null (no service, goals or weight): the report
+  // then falls back to the configured calorie goals.
+  async #dayBudget(userId, date) {
+    if (!this.#budgetService || !date) return null;
+    try {
+      return await this.#budgetService.getBudget(userId, date);
+    } catch (err) {
+      this.#logger.warn?.('report.budget.unavailable', { userId, date, error: err.message, code: err.code || null });
+      return null;
+    }
   }
 
   /**
@@ -231,8 +247,9 @@ export class GenerateDailyReport {
       // 4. Get items for the report
       const items = syncSnapshot?.items ?? await this.#nutriListStore.findByDate(userId, date);
 
-      // 5. Calculate totals
-      const totals = items.reduce(
+      // 5. Calculate totals — the COUNTED rows only (the budget's fold), so the
+      // caption's total and the report body agree.
+      const totals = items.filter(isCountedRow).reduce(
         (acc, item) => {
           acc.calories += item.calories || 0;
           acc.protein += item.protein || 0;
@@ -243,10 +260,16 @@ export class GenerateDailyReport {
         { calories: 0, protein: 0, carbs: 0, fat: 0 }
       );
 
-      const goals = syncSnapshot?.goals ?? this.#config.getUserGoals?.(userId);
-      if (!goals) {
+      const configGoals = syncSnapshot?.goals ?? this.#config.getUserGoals?.(userId);
+      if (!configGoals) {
         throw new Error(`getUserGoals returned null for user ${userId}`);
       }
+      // The health budget contract (range floor/top, zone) replaces the
+      // configured calorie min/max wherever it can be computed.
+      const budget = await this.#dayBudget(userId, date);
+      const goals = budget?.range
+        ? { ...configGoals, calories_min: budget.range.floor, calories_max: budget.range.top }
+        : configGoals;
 
       // 6. Build history for chart
       const history = syncSnapshot?.history ?? await this.#buildHistory(userId, anchorDateForHistory);
@@ -279,23 +302,9 @@ export class GenerateDailyReport {
         }
       }
 
-      // 9. Build caption
-      const calorieMin = goals.calories_min || Math.round(goals.calories * 0.8);
-      const calorieMax = goals.calories_max || goals.calories;
-
-      let budgetStatus;
-      if (totals.calories < calorieMin) {
-        budgetStatus = `${calorieMin - totals.calories} cal below minimum`;
-      } else if (totals.calories > calorieMax) {
-        budgetStatus = `${totals.calories - calorieMax} cal over budget`;
-      } else {
-        const remaining = calorieMax - totals.calories;
-        budgetStatus = remaining > 0 ? `${remaining} cal remaining` : 'at goal ✓';
-      }
-
-      const caloriePercent = Math.round((totals.calories / calorieMax) * 100);
-      const goalDisplay = calorieMin !== calorieMax ? `${calorieMin}-${calorieMax}` : `${calorieMax}`;
-      const caption = `🔥 ${totals.calories} / ${goalDisplay} cal (${caloriePercent}%) • ${budgetStatus}`;
+      // 9. Build caption — the health budget's range and zone when available,
+      // so the chat states exactly what the Today bar states.
+      const caption = buildReportCaption({ totals, goals, budget });
 
       // 10. Build action buttons
       const buttons = [

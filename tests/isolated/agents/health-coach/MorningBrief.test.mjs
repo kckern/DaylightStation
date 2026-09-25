@@ -16,7 +16,7 @@ describe('MorningBrief', () => {
       { name: 'get_reconciliation_summary', execute: async (p) => { calls.push('recon'); return { avgAccuracy: 0.53, days: [] }; } },
       { name: 'get_weight_trend', execute: async (p) => { calls.push('weight'); return { current: { lbs: 185 } }; } },
       { name: 'get_user_goals', execute: async (p) => { calls.push('goals'); return { goals: { calories: 2000 } }; } },
-      { name: 'get_today_nutrition', execute: async (p) => { calls.push('today'); return { logged: false }; } },
+      { name: 'get_day_budget', execute: async (p) => { calls.push('today'); return { logged: false }; } },
     ];
     const gathered = await brief.gather({ tools: mockTools, userId: 'user_1', memory: { serialize: () => '' }, logger: console });
     expect(calls.sort()).toEqual(['goals', 'recon', 'today', 'weight']);
@@ -155,8 +155,8 @@ describe('MorningBrief', () => {
       { name: 'get_user_goals', execute: async () => ({
         goals: { nutrition: { calories_min: 1400, calories_max: 1800, protein_min: 140 } },
       }) },
-      { name: 'get_today_nutrition', execute: async () => ({ logged: true }) },
-      { name: 'get_nutrition_history', execute: async () => extras.history ?? buildHistory() },
+      { name: 'get_day_budget', execute: async () => ({ logged: true }) },
+      { name: 'get_budget_range', execute: async () => extras.history ?? buildHistory() },
       { name: 'is_day_closed', execute: async () => ({ closed: false }) },
       ...(extras.findSimilarPeriod
         ? [{ name: 'find_similar_period', execute: extras.findSimilarPeriod }]
@@ -598,6 +598,34 @@ describe('MorningBrief', () => {
     expect(gathered.complianceCtas.length).toBe(1);
     expect(gathered.complianceCtas[0].dimension).toBe('cold_exposure');
     expect(gathered.complianceCtas[0].message).toMatch(/cold exposure/);
+  });
+
+  it('gather: budget-range streaks skip today\'s partial row and under-logged days', async () => {
+    const brief = new MorningBrief();
+    const fsp = vi.fn(async () => ({ matches: [] }));
+    const day = (offset, over) => ({
+      date: new Date(Date.now() - offset * 86400000).toLocaleDateString('en-CA', { timeZone: 'America/Los_Angeles' }),
+      calories: 1500, protein: 150, net: 1500, range: { floor: 1200, top: 1791 }, complete: true, ...over,
+    });
+    // Two real low-protein days + this morning's partial row (protein 10) must NOT make a 3-day streak.
+    const history = { days: [day(3), day(2, { protein: 90 }), day(1, { protein: 90 }), day(0, { protein: 10, calories: 200, net: 200, complete: false })] };
+    await brief.gather({ tools: makeStandardTools({ history, findSimilarPeriod: fsp }), userId: 'u', memory: { serialize: () => '', get: () => null, set: () => {} }, logger: { warn() {}, info() {} } });
+    expect(fsp).not.toHaveBeenCalled();
+  });
+
+  it('buildPrompt: the budget\'s `complete` decides whether yesterday was under-logged, against its floor', () => {
+    const brief = new MorningBrief();
+    const yesterday = new Date(Date.now() - 86400000).toLocaleDateString('en-CA', { timeZone: 'America/Los_Angeles' });
+    const entry = (over) => ({ date: yesterday, calories: 1250, protein: 80, range: { floor: 1300, top: 1791 }, net: 1250, ...over });
+    const prompt = (e) => brief.buildPrompt({
+      reconciliation: {}, weight: {}, goals: { goals: { nutrition: { calories_min: 1600, calories_max: 2000 } } },
+      todayNutrition: {}, nutritionHistory: { days: [e] }, yesterdayClosed: false, similarPeriod: null,
+    }, { serialize: () => '' });
+    const underLogged = prompt(entry({ complete: false }));
+    expect(underLogged).toContain('INCOMPLETE LOGGING DETECTED');
+    expect(underLogged).toContain('below the logging floor (1300)');
+    // Same calories, but the budget calls it complete (e.g. declared done): no override.
+    expect(prompt(entry({ complete: true }))).not.toContain('INCOMPLETE LOGGING DETECTED');
   });
 
   it('buildPrompt: includes "## Compliance" section with the CTAs when triggered', () => {

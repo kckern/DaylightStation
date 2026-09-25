@@ -27,6 +27,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import yaml from 'js-yaml';
+// Only a DAY status closes a day; a record holding only meal fasts does not.
+import { closureStatus } from '#apps/coaching/dayCompleteness.mjs';
 
 const args = {};
 process.argv.slice(2).forEach((a, i, all) => { if (a.startsWith('--')) args[a.slice(2)] = all[i + 1]; });
@@ -106,7 +108,9 @@ for (const d of range(START, END)) {
   // A day with no usable weight or lean mass must stop the run, not vanish from the plan.
   if (!Number.isFinite(estimate)) throw new Error(`${d}: estimate is not a number (rmr ${rmr}, neat ${neat}, exercise ${ex.total}, balance ${balance}) — check the export`);
   const logged = Math.round(Number(nutriday[d]?.calories) || 0);
-  const status = closures[d] ? 'closed' : logged <= 0 ? 'unlogged' : logged < MIN ? 'incomplete' : 'complete';
+  // Closed = a DAY status (done/fasting, or the legacy bare `true`); a record
+  // that only lists fasted meals does not close the day.
+  const status = closureStatus(closures[d]) ? 'closed' : logged <= 0 ? 'unlogged' : logged < MIN ? 'incomplete' : 'complete';
   rows.push({ date: d, status, logged, estimate, fill: status === 'complete' || status === 'closed' ? 0 : Math.max(0, estimate - logged),
     rmr: Math.round(rmr), neat: Math.round(neat), steps: Math.round(st.steps), stepsImputed: st.imputed, exercise: Math.round(ex.total), exerciseSrc: ex.src,
     balance: Math.round(balance), weightTrend: +weightTrend[d].toFixed(1) });

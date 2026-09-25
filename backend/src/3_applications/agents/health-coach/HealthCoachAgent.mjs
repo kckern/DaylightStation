@@ -4,6 +4,7 @@ import { BaseAgent } from '../framework/BaseAgent.mjs';
 import { formatHealthAttachment } from './formatAttachment.mjs';
 import { FitnessContentToolFactory } from './tools/FitnessContentToolFactory.mjs';
 import { DashboardToolFactory } from './tools/DashboardToolFactory.mjs';
+import { BudgetToolFactory } from './tools/BudgetToolFactory.mjs';
 import { MessagingChannelToolFactory } from './tools/MessagingChannelToolFactory.mjs';
 import { LongitudinalToolFactory } from './tools/LongitudinalToolFactory.mjs';
 import { PeriodToolFactory } from './tools/PeriodToolFactory.mjs';
@@ -260,6 +261,9 @@ export class HealthCoachAgent extends BaseAgent {
       personalContextLoader,
       notesArchive,
       healthAnalyticsService,
+      budgetService,
+      nutriListStore,
+      today,
     } = this.deps;
 
     this.addToolFactory(new FitnessContentToolFactory({ fitnessPlayableService, workspaceRepository }));
@@ -267,6 +271,11 @@ export class HealthCoachAgent extends BaseAgent {
       workspaceRepository,
       healthStore,
     }));
+    // The health budget contract: the same floor/top/zone/completeness the
+    // Today bar shows (get_day_budget, get_budget_range).
+    if (budgetService) {
+      this.addToolFactory(new BudgetToolFactory({ budgetService, nutriListStore, today }));
+    }
 
     // Messaging channel delivery (only if gateway available)
     if (messagingGateway && conversationId) {

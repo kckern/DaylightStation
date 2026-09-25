@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 
 import { EndOfDayReport } from '../../../../backend/src/3_applications/agents/health-coach/assignments/EndOfDayReport.mjs';
 
@@ -13,7 +13,7 @@ describe('EndOfDayReport', () => {
     const report = new EndOfDayReport();
     const calls = [];
     const mockTools = [
-      { name: 'get_today_nutrition',       execute: async () => { calls.push('today_nutrition');      return { calories: 1800 }; } },
+      { name: 'get_day_budget',            execute: async () => { calls.push('today_nutrition');      return { calories: 1800 }; } },
       { name: 'get_weight_trend',          execute: async () => { calls.push('weight');               return { current: { lbs: 183 } }; } },
       { name: 'get_recent_workouts',       execute: async () => { calls.push('workouts');             return { workouts: [] }; } },
       { name: 'get_coaching_history',      execute: async () => { calls.push('coaching_history');     return { history: [] }; } },
@@ -41,8 +41,8 @@ describe('EndOfDayReport', () => {
   it('gather returns null for missing tools gracefully', async () => {
     const report = new EndOfDayReport();
     const mockTools = [
-      { name: 'get_today_nutrition', execute: async () => ({ calories: 1800 }) },
-      { name: 'get_weight_trend',    execute: async () => ({ current: { lbs: 183 } }) },
+      { name: 'get_day_budget',   execute: async () => ({ calories: 1800 }) },
+      { name: 'get_weight_trend', execute: async () => ({ current: { lbs: 183 } }) },
     ];
     const gathered = await report.gather({
       tools: mockTools,
@@ -54,6 +54,47 @@ describe('EndOfDayReport', () => {
     expect(gathered.weight).toBeTruthy();
     expect(gathered.workouts).toBe(null);
     expect(gathered.coachingHistory).toBe(null);
+  });
+
+  describe('completeness comes from the budget, never the clock', () => {
+    const day = (over = {}) => ({ date: '2026-09-24', calories: 700, protein: 40, range: { floor: 1200, top: 1791 },
+      zone: 'incomplete', complete: false, declared: null, remaining: 500, items: [{ name: 'Chili', calories: 319 }], ...over });
+    afterEach(() => vi.useRealTimers());
+
+    it('gathers today by the user\'s LOCAL date (not UTC, which is tomorrow after 5pm Pacific)', async () => {
+      vi.useFakeTimers(); vi.setSystemTime(new Date('2026-09-25T03:30:00Z')); // 8:30pm PDT on the 24th
+      const seen = [];
+      await new EndOfDayReport().gather({
+        tools: [{ name: 'get_day_budget', execute: async (p) => { seen.push(p.date); return day(); } }],
+        userId: 'kc', memory: { serialize: () => '' }, logger: { warn: () => {}, info: () => {} },
+      });
+      expect(seen).toEqual(['2026-09-24']);
+    });
+
+    it('a late evening does NOT make an under-logged day complete; it asks about missing meals', () => {
+      vi.useFakeTimers(); vi.setSystemTime(new Date('2026-09-25T04:00:00Z')); // 9pm PDT
+      const prompt = new EndOfDayReport().buildPrompt({ todayNutrition: day() }, { serialize: () => '' });
+      expect(prompt).toContain('## Logging Complete: false');
+      expect(prompt).toContain('INCOMPLETE LOGGING DETECTED');
+      expect(prompt).not.toContain('CHECK THE TIME');
+      expect(prompt).not.toMatch(/Day Complete: true/);
+    });
+
+    it('a complete day is evaluated in full, whatever the hour', () => {
+      vi.useFakeTimers(); vi.setSystemTime(new Date('2026-09-24T22:00:00Z')); // 3pm PDT
+      const prompt = new EndOfDayReport().buildPrompt({ todayNutrition: day({ calories: 1500, zone: 'in-range', complete: true, remaining: 291 }) }, { serialize: () => '' });
+      expect(prompt).toContain('## Logging Complete: true');
+      expect(prompt).not.toContain('INCOMPLETE LOGGING DETECTED');
+    });
+
+    it('shows the goals with the budget range, not the stale config numbers', () => {
+      const prompt = new EndOfDayReport().buildPrompt({
+        todayNutrition: day(), goals: { goals: { nutrition: { calories_min: 1600, calories_max: 2000, protein: 120 } } },
+      }, { serialize: () => '' });
+      expect(prompt).toContain('"calories_min": 1200');
+      expect(prompt).toContain('"calories_max": 1791');
+      expect(prompt).not.toContain('"calories_max": 2000');
+    });
   });
 
   it('buildPrompt focuses on tracked nutrition vs goals, not implied intake', () => {
