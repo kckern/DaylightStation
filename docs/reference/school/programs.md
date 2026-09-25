@@ -296,6 +296,37 @@ ordinary obligation policy can excuse the program on non-school days. Unlike a
 course enrollment, a program takes its schedule directly from the assignment;
 there is no syllabus snapshot between them.
 
+**An `except` span dates a program enrollment.** On a day a program's own
+`except` covers, the agenda treats that enrollment as absent from its subject:
+it is not offered, not owed, and cannot fault the section (`agenda.mjs`,
+`programExceptedOn`). That is how a learner switches programs mid-term without
+losing the old one's history — keep both entries, retire the old one from the
+switchover on and start the new one there:
+
+```yaml
+- programId: sentence-ladder
+  corpusId: glossika-korean
+  subject: language
+  schedule:
+    daysOfWeek: [1, 2, 3, 4, 5]
+    except: [{ from: '2026-09-24', to: '2099-12-31' }]   # retired; earlier days keep their credit
+- programId: flashcards
+  deckId: language/korean/week-01-classroom
+  policy: { mode: card-ladder }
+  subject: language
+  schedule:
+    daysOfWeek: [1, 2, 3, 4, 5]
+    except: [{ from: '2026-01-01', to: '2026-09-23' }]   # starts at the switchover
+```
+
+`UnenrollLearner` is the wrong tool for this: removing the entry erases the
+old program from every replayed past day. Two limits: a weekday the program
+does not meet is NOT absence (weekend work may still be offered), and when
+every entry in a subject is excepted (a vacation written into each enrollment)
+the section keeps them all and is excused as `not_a_school_day`. Until
+2026-09-24 the agenda read `except` only for that excuse, so a retired sentence
+ladder kept winning the Language slot and kept being owed.
+
 **The target lives on the enrollment, never in `school.yml`.** How many stories
 a child owes is a per-learner teaching decision; a household-wide default would
 force two children onto one number. `validateStoryTimeEnrollment`

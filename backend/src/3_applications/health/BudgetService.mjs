@@ -3,7 +3,7 @@
 //   remaining = budget - food + exercise
 // The UI and the coach both read this — budget math is never computed
 // client-side (spec, Data model §1).
-import { computeDailyBudget } from '#domains/health/services/BudgetMath.mjs';
+import { computeDailyEnergy } from '#domains/health/services/BudgetMath.mjs';
 import { isISODate } from '#shared/contracts/health/isoDate.mjs';
 import { isCountedRow } from '#shared/contracts/nutrition/countedRows.mjs';
 
@@ -225,7 +225,7 @@ export class BudgetService {
     const now = new Date(this.#clock.now());
     const ageYears = now.getUTCFullYear() - Number(goals.birthYear);
 
-    const budget = computeDailyBudget({
+    const { budget, maintenance } = computeDailyEnergy({
       weightLbs,
       heightIn: Number(goals.heightIn),
       ageYears,
@@ -234,7 +234,7 @@ export class BudgetService {
       weeklyRateLbs: Number(goals.weeklyRateLbs ?? 1),
       budgetFloor: Number(goals.budgetFloor ?? 1200),
     });
-    return { budget, stale: daysOld > STALE_WEIGHT_DAYS };
+    return { budget, maintenance, stale: daysOld > STALE_WEIGHT_DAYS };
   }
 
   // THE fold. One COUNTED filter, one pass, feeding kcal, macros, micros and
@@ -282,7 +282,7 @@ export class BudgetService {
   async getBudget(userId, date, { items: snapshotItems } = {}) {
     const goals = await this.#loadGoalsOrThrow(userId);
     const weightData = await this.#healthStore.loadWeightData(userId) || {};
-    const { budget, stale } = this.#budgetForDate({
+    const { budget, maintenance, stale } = this.#budgetForDate({
       goals, weightData, sortedWeightDates: Object.keys(weightData).sort(), date,
     });
 
@@ -299,7 +299,7 @@ export class BudgetService {
 
     const remaining = budget - food + exercise;
     return {
-      date, budget, food, exercise, net: food - exercise,
+      date, budget, maintenance, food, exercise, net: food - exercise,
       remaining, status: remaining >= 0 ? 'under' : 'over', stale, sessions, goals,
       macros, microCoverage, loggedEntries, loggingStatus, goalBasis,
     };
@@ -346,9 +346,9 @@ export class BudgetService {
     }
 
     return dates.map((date) => {
-      let budget; let stale;
+      let budget; let maintenance; let stale;
       try {
-        ({ budget, stale } = this.#budgetForDate({ goals, weightData, sortedWeightDates, date }));
+        ({ budget, maintenance, stale } = this.#budgetForDate({ goals, weightData, sortedWeightDates, date }));
       } catch (err) {
         if (err.code === 'NO_WEIGHT_DATA') return { date, error: 'NO_WEIGHT_DATA' };
         throw err;
@@ -357,7 +357,7 @@ export class BudgetService {
       const exercise = Math.round(sumExerciseCalories(flattenWorkoutSessions(workoutsByDate[date])));
       const remaining = budget - food + exercise;
       return {
-        date, budget, food, exercise, net: food - exercise,
+        date, budget, maintenance, food, exercise, net: food - exercise,
         remaining, status: remaining >= 0 ? 'under' : 'over', stale, macros, loggedEntries, loggingStatus, goalBasis,
       };
     });

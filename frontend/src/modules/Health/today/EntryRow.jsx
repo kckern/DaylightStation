@@ -17,7 +17,7 @@ import { isReconstructedRow } from '@shared-contracts/nutrition/reconstruction.m
 
 const logger = createAppLogger('health').child('entry-row');
 
-export function EntryRow({ row, densityRow = row, onTap, onConfirm, onRequestDelete, isGroup = false, expanded = false, onToggle, rollupKcal, child = false, lastChild = false, measured = null, kcalShare = null, added = false, entryKey = undefined, dragBucket = null }) {
+export function EntryRow({ row, densityRow = row, onTap, onConfirm, onRequestDelete, isGroup = false, expanded = false, onToggle, rollupKcal, child = false, lastChild = false, measured = null, kcalShare = null, added = false, entryKey = undefined, dragBucket = null, onRemoveFromDish = null, dishName = '', dishBusy = false }) {
   const [error, setError] = useState(null);
   const [confirmation, setConfirmation] = useState(null);
   const pending = useRef(false);
@@ -88,12 +88,18 @@ export function EntryRow({ row, densityRow = row, onTap, onConfirm, onRequestDel
           NOT ON CHILD ROWS. A dish's members are deleted with the dish; giving
           each one its own X puts four more destructive controls inside one
           expanded group and makes the list harder to read than the mis-parse it
-          would fix. Removing a single wrong ingredient is a trip through the
-          edit sheet, which is the rarer case. */}
+          would fix. An ingredient gets the gentler control below instead:
+          it leaves the dish and stays in the meal, where its own X can delete it. */}
       {onRequestDelete && !child ? <UnstyledButton className="health-row__delete" aria-label={`Delete entry: ${name}`} title="Delete this entry"
         disabled={Boolean(portions?.draft)} onClick={() => onRequestDelete(row)}>
         <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true" focusable="false">
           <path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+        </svg>
+      </UnstyledButton> : null}
+      {onRemoveFromDish && child ? <UnstyledButton className="health-row__unnest" aria-label={`Take ${name} out of ${dishName || 'the dish'}`}
+        title="Take out of the dish (stays in this meal)" disabled={dishBusy || Boolean(portions?.draft)} onClick={() => onRemoveFromDish(row)}>
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true" focusable="false">
+          <path d="M2.5 6h7" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
         </svg>
       </UnstyledButton> : null}
     </div>
