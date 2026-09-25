@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Badge, Button, Group, Stack, Text } from '@mantine/core';
 import { Sheet, LoadingState, ErrorState } from '../../../lib/ui';
 import { useApiResource } from '../../../lib/hooks/useApiResource.js';
@@ -45,35 +45,47 @@ function LookedAt({ row }) {
   </Stack>;
 }
 
+/** What one applied or proposed repair changed: its reason, then the change table (or, for backfilled rows without one, the raw proposal). */
+function OutcomeChanges({ outcome }) {
+  return <>
+    {outcome.reason ? <Text size="sm">{outcome.reason}</Text> : null}
+    {outcome.changes?.length || outcome.before || outcome.after ? <RepairChanges record={outcome} />
+      : outcome.proposal ? <RepairPreview repair={outcome.proposal} />
+      : <Text size="sm">Changed {outcome.affectedIds?.length || 0} food {outcome.affectedIds?.length === 1 ? 'entry' : 'entries'}. The before and after are in Repair history below.</Text>}
+  </>;
+}
+
 function AppliedOutcome({ outcome, undo }) {
   const id = outcome.operationId;
   return <Stack gap="xs">
-    {outcome.before || outcome.after ? <RepairChanges record={outcome} />
-      : outcome.proposal ? <RepairPreview repair={outcome.proposal} />
-      : <Text size="sm">Changed {outcome.affectedIds?.length || 0} food {outcome.affectedIds?.length === 1 ? 'entry' : 'entries'}. The before and after are in Repair history below.</Text>}
-    {id ? <Group gap="xs">
-      {undo.done[id] ? <Text size="sm" role="status">Undone</Text>
-        : <Button size="xs" variant="light" loading={undo.busy === id} disabled={!!undo.busy} onClick={() => undo.run(id)}>Undo this change</Button>}
-      {undo.errors[id] ? <Text size="sm" className="health-auditor-detail__danger" role="alert">{undo.errors[id]}</Text> : null}
-    </Group> : null}
+    <OutcomeChanges outcome={outcome} />
+    {outcome.undoneAt ? <Text size="sm" role="status">Undone at {formatWhen(outcome.undoneAt)}</Text>
+      : id ? <Group gap="xs">
+        {undo.done[id] ? <Text size="sm" role="status">Undone</Text>
+          : <Button size="xs" variant="light" loading={undo.busy === id} disabled={!!undo.busy} onClick={() => undo.run(id)}>Undo this change</Button>}
+        {undo.errors[id] ? <Text size="sm" className="health-auditor-detail__danger" role="alert">{undo.errors[id]}</Text> : null}
+      </Group> : null}
   </Stack>;
 }
 
-function useUndo({ runId, logger, onUndone }) {
+/**
+ * Undo one applied repair. The server records the undo under the fixed id
+ * `undo_<repairId>`, so a repeated request returns the first result; the
+ * operation id only satisfies the endpoint's contract. On success the detail
+ * reloads and the server's `undoneAt` takes over from the local "Undone".
+ */
+function useUndo({ runId, logger, onUndone, reload }) {
   const [busy, setBusy] = useState(null);
   const [done, setDone] = useState({});
   const [errors, setErrors] = useState({});
-  const operations = useRef({});
   const run = async repairId => {
     if (busy) return;
     setBusy(repairId); setErrors(current => ({ ...current, [repairId]: null }));
-    // One operation id per repair, so a retry after a dropped response is idempotent.
-    operations.current[repairId] ||= crypto.randomUUID();
     try {
-      await DaylightAPI(`${cleanupPath}/undo/${repairId}`, { operationId: operations.current[repairId] }, 'POST');
+      await DaylightAPI(`${cleanupPath}/undo/${repairId}`, { operationId: crypto.randomUUID() }, 'POST');
       setDone(current => ({ ...current, [repairId]: true }));
       logger.info('health-auditor.undo.success', { runId, repairId });
-      refreshHealthResources(); onUndone();
+      refreshHealthResources(); reload(); onUndone();
     } catch (error) {
       setErrors(current => ({ ...current, [repairId]: error.message }));
       logger.warn('health-auditor.undo.failed', { runId, repairId, error: error.message });
@@ -82,8 +94,8 @@ function useUndo({ runId, logger, onUndone }) {
   return { run, busy, done, errors };
 }
 
-function Detail({ row, logger, onUndone }) {
-  const undo = useUndo({ runId: row.runId, logger, onUndone });
+function Detail({ row, logger, onUndone, reload }) {
+  const undo = useUndo({ runId: row.runId, logger, onUndone, reload });
   const outcomes = row.outcomes || [];
   const applied = outcomes.filter(o => o.status === 'applied');
   const proposed = outcomes.filter(o => o.status === 'proposed');
@@ -120,7 +132,7 @@ function Detail({ row, logger, onUndone }) {
       {applied.map((outcome, i) => <AppliedOutcome key={outcome.operationId || i} outcome={outcome} undo={undo} />)}
       {proposed.map((outcome, i) => <Stack gap={2} key={`p${i}`}>
         <Text size="xs" className="health-auditor-detail__muted">Would change (preview)</Text>
-        <RepairPreview repair={outcome.proposal} />
+        <OutcomeChanges outcome={outcome} />
       </Stack>)}
       {row.backfilled ? (row.proposals || []).map((proposal, i) => <Stack gap={2} key={`b${i}`}>
         <Text size="xs" className="health-auditor-detail__muted">Proposed (from transcript){proposal.reason ? `: ${proposal.reason}` : ''}</Text>
@@ -152,7 +164,7 @@ export function RunDetail({ run, onClose, onUndone = () => {} }) {
   const path = `${cleanupPath}/journal/${encodeURIComponent(run.runId)}${run.at ? `?at=${encodeURIComponent(run.at)}` : ''}`;
   const entry = useApiResource(path, { swr: true });
   return <Sheet open title={`Run at ${formatWhen(run.at)}`} onClose={onClose}>
-    {entry.data ? <Detail row={entry.data} logger={logger} onUndone={onUndone} />
+    {entry.data ? <Detail row={entry.data} logger={logger} onUndone={onUndone} reload={entry.reload} />
       : entry.error ? <ErrorState error={entry.error} onRetry={entry.reload} label="Run detail" />
       : <LoadingState label="Run detail" />}
   </Sheet>;

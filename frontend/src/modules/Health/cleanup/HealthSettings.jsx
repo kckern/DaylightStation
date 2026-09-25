@@ -2,17 +2,17 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button, Group, Stack, Switch, Text } from '@mantine/core';
 import { SectionCard, LoadingState, ErrorState } from '../../../lib/ui';
-import { useApiResource } from '../../../lib/hooks/useApiResource.js';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import { refreshHealthResources } from '../healthResources.js';
 import { cleanupPath, useCleanup, CleanupQuestions } from './CleanupQuestions.jsx';
 import { formatUsd, formatWhen, spentToday } from '../auditor/auditorFormat.js';
+import { useAuditorSpend } from '../auditor/useAuditorSpend.js';
 import HealthDisplaySettings from '../display/HealthDisplaySettings.jsx';
 import { ArtworkQueue } from './ArtworkQueue.jsx';
 
 export function CleanupSettings() {
   const resource = useCleanup();
-  const spend = useApiResource(`${cleanupPath}/spend?days=30`, { swr: true });
+  const spend = useAuditorSpend(resource);
   const navigate = useNavigate();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);

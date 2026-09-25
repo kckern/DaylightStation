@@ -21,7 +21,9 @@ export function AuditorHeader({ resource, spend, now = new Date() }) {
   const { settings, runs = [], nextEligibleAt } = resource.data;
   const state = stateOf(settings);
   const lastRun = runs[0];
-  const next = nextEligibleAt && Date.parse(nextEligibleAt) > now.getTime() ? formatWhen(nextEligibleAt, now) : 'now';
+  // Off: nothing is eligible. Never run: no gap to wait out yet, and no history to measure from.
+  const next = !settings.enabled ? 'Off' : !lastRun && !nextEligibleAt ? '—'
+    : nextEligibleAt && Date.parse(nextEligibleAt) > now.getTime() ? formatWhen(nextEligibleAt, now) : 'now';
   const data = spend.data;
   const today = spentToday(data);
   const cap = data?.capUsd ?? settings.dailyCapUsd ?? null;
