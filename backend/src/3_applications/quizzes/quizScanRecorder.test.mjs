@@ -137,6 +137,7 @@ describe('createQuizScanRecorder', () => {
   let outRoot;
   let bus;
   let recorder;
+  let inFlight;
 
   beforeEach(async () => {
     dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'quiz-scan-'));
@@ -151,9 +152,18 @@ describe('createQuizScanRecorder', () => {
   });
 
   function start({ dedupWindowMs = 2000 } = {}) {
+    const store = new YamlDecodedQuizScanStore({ decodedRoot: outRoot });
+    const append = store.append.bind(store);
+    inFlight = new Set();
+    store.append = (...args) => {
+      const p = append(...args);
+      inFlight.add(p);
+      p.finally(() => inFlight.delete(p)).catch(() => {});
+      return p;
+    };
     recorder = createQuizScanRecorder({
       scanSource: new EventBusEventInputSource({ eventBus: bus, topics: ['omr'] }),
-      decodedScanStore: new YamlDecodedQuizScanStore({ decodedRoot: outRoot }),
+      decodedScanStore: store,
       dedupWindowMs,
       logger: NOOP_LOGGER,
     });
@@ -166,8 +176,16 @@ describe('createQuizScanRecorder', () => {
   }
 
   async function flush() {
-    // appends are serialized on a promise chain; yield until it drains
-    await new Promise((r) => setTimeout(r, 25));
+    // Appends are serialized on a promise chain whose links are scheduled as
+    // microtasks, so after a macrotask turn the next append (if any) has
+    // started. Wait on the real writes until none is in flight rather than
+    // sleeping a fixed 25 ms, which lost the race under a loaded test run.
+    const turn = () => new Promise((r) => setImmediate(r));
+    await turn();
+    while (inFlight.size) {
+      await Promise.allSettled([...inFlight]);
+      await turn();
+    }
   }
 
   it('decodes a broadcast sheet into the quizzes day file', async () => {
