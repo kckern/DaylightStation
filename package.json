@@ -2,9 +2,9 @@
   "engines": { "node": ">=22.13.0" },
   "dependencies": {
     "@extractus/article-extractor": "^8.0.20",
-    "@mastra/core": "1.64.0",
-    "@mastra/libsql": "1.22.3",
-    "@mastra/memory": "1.28.2",
+    "@mastra/core": "1.71.0",
+    "@mastra/libsql": "1.23.3",
+    "@mastra/memory": "1.32.1",
     "@napi-rs/canvas": "^0.1.93",
     "@resvg/resvg-js": "^2.6.2",
     "@tabler/icons-react": "^3.36.1",
