@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, act } from '@testing-library/react';
 import { useState } from 'react';
 import { MantineProvider } from '@mantine/core';
 import { TodayToasts } from './TodayToasts.jsx';
@@ -41,6 +41,19 @@ describe('TodayToasts', () => {
     render(<MantineProvider><TodayToasts moves={moves} /></MantineProvider>);
     expect(screen.getByRole('alert').textContent).toContain("Couldn't move 1 of 2 foods");
     expect(screen.getByRole('button', { name: 'Undo move' })).toBeTruthy();
+  });
+
+  it('a long model reply stays until dismissed; a short cue retires itself', () => {
+    vi.useFakeTimers();
+    const onDismiss = vi.fn();
+    const long = 'I could not find any food in that photo. Try again with the plate centred and in good light, or type what you ate.';
+    const view = render(<MantineProvider><TodayToasts moves={noMoves} captureNotice={long} onDismissCapture={onDismiss} /></MantineProvider>);
+    act(() => vi.advanceTimersByTime(60000));
+    expect(onDismiss).not.toHaveBeenCalled();
+    view.rerender(<MantineProvider><TodayToasts moves={noMoves} captureNotice="Moved to Lunch" onDismissCapture={onDismiss} /></MantineProvider>);
+    act(() => vi.advanceTimersByTime(6000));
+    expect(onDismiss).toHaveBeenCalledTimes(1);
+    vi.useRealTimers();
   });
 
   it('a capture notice with a saved recording keeps its Try again until used', () => {

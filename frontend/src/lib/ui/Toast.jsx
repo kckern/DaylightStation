@@ -42,7 +42,7 @@ export function Toast({ tone = 'info', message, children, autoCloseMs = null, on
   return <div className={`ds-toast ds-toast--${tone}`} role={tone === 'error' ? 'alert' : 'status'}
     onPointerEnter={() => setHeld(true)} onPointerLeave={() => setHeld(false)}
     onFocus={() => setHeld(true)} onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) setHeld(false); }}>
-    <span className="ds-toast__message">{message}</span>
+    <div className="ds-toast__message">{message}</div>
     {children ? <span className="ds-toast__actions">{children}</span> : null}
   </div>;
 }

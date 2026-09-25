@@ -65,10 +65,15 @@ function Question({ question, onChanged, onFeedback }) {
 
 // `resource` lets a host that already polls (the Today follow-up tray, which
 // needs the count) share its poll instead of starting a second one.
-export function CleanupQuestions({ active = true, onChanged = () => {}, resource: shared = null }) {
+// `feedback`/`onFeedback` let that host hold the "entry changed" message too:
+// answering the last question empties the list, and a host that unmounts the
+// questions when there are none would otherwise take the message with it.
+export function CleanupQuestions({ active = true, onChanged = () => {}, resource: shared = null, feedback: heldFeedback, onFeedback }) {
   const own = useCleanup(active && !shared);
   const resource = shared || own;
-  const [feedback, setFeedback] = useState(null);
+  const [ownFeedback, setOwnFeedback] = useState(null);
+  const feedback = onFeedback ? heldFeedback : ownFeedback;
+  const setFeedback = onFeedback || setOwnFeedback;
   if (!resource.data?.questions?.length && !feedback) return null;
   return <section aria-label="Cleanup questions"><Stack gap="sm">
     {feedback ? <Text role="status">{feedback}</Text> : null}

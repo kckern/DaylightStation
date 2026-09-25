@@ -6,6 +6,10 @@ import { PortionDraftAlert } from './PortionDraftAlert.jsx';
 // Pure information ("Moved to Lunch", "copied to today") retires on its own.
 // Anything carrying an action stays until it is used or dismissed.
 export const INFO_TOAST_MS = 6000;
+// A capture can answer with the model's own paragraph. Past this length it is
+// something to read, not a glance, so it stays until dismissed.
+export const INFO_TOAST_MAX_CHARS = 80;
+const infoAutoClose = text => (typeof text === 'string' && text.length <= INFO_TOAST_MAX_CHARS ? INFO_TOAST_MS : null);
 
 /**
  * Only the newest undo is offered. Three things can each hold one (a meal
@@ -47,7 +51,7 @@ export function TodayToasts({
   const kind = newestUndo?.key.split(':')[0];
 
   return <ToastRegion label="Food log notifications">
-    {strandedPortion ? <Toast tone="error" message={<PortionDraftAlert control={strandedPortion} className="health-portion-error" />} /> : null}
+    {strandedPortion ? <Toast tone="error" message={<PortionDraftAlert control={strandedPortion} role={null} className="health-portion-error" />} /> : null}
     {moves.error ? <Toast tone="error" message={moves.error}>
       <Button size="compact-xs" variant="subtle" onClick={moves.clearError}>Dismiss</Button>
     </Toast> : null}
@@ -56,7 +60,7 @@ export function TodayToasts({
       <Button size="compact-xs" loading={orphanRetry.busy} onClick={onRetryOrphan}>Retry recording</Button>
       <Button size="compact-xs" variant="subtle" disabled={orphanRetry.busy} onClick={onDismissOrphan}>Dismiss</Button>
     </Toast> : null}
-    {captureNotice ? <Toast message={captureNotice} autoCloseMs={captureRetry ? null : INFO_TOAST_MS} onAutoClose={onDismissCapture}>
+    {captureNotice ? <Toast message={captureNotice} autoCloseMs={captureRetry ? null : infoAutoClose(captureNotice)} onAutoClose={onDismissCapture}>
       {captureRetry ? <Button size="compact-xs" loading={retryBusy} disabled={retryBusy} onClick={onRetryCapture}>Try again</Button> : null}
       <Button size="compact-xs" variant="subtle" onClick={onDismissCapture}>Dismiss</Button>
     </Toast> : null}

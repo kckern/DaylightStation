@@ -82,25 +82,24 @@
   &__title { margin: 0; font-size: 1rem; color: var(--ds-text-high); }
 }
 
-// Post-action feedback (Toast.jsx). Fixed under the chrome header and out of
-// flow, so a toast arriving or retiring never shifts the page. Above a sheet's
-// scrim (a toast raised from inside a sheet must be seen), below full-screen
-// capture overlays (z 1000). Top, not bottom: the phone's bottom edge is the
-// tab bar, the add rows and the safe-area inset.
+// Post-action feedback (Toast.jsx). Fixed and out of flow, so a toast
+// arriving or retiring never shifts the page. Above a sheet's scrim (a toast
+// raised from inside a sheet must be seen), below full-screen capture
+// overlays (z 1000). Bottom, never top: the top of the main column is where an
+// app puts its headline number. On a phone it sits just above the bottom tab
+// bar (and its safe-area inset), where the thumb already is for an Undo;
+// tablet-up has no bottom bar, so bottom-right. Newest nearest the edge.
 .ds-toasts {
   position: fixed; z-index: 350;
-  top: calc(3.25rem + env(safe-area-inset-top));
+  bottom: calc(4.5rem + env(safe-area-inset-bottom));
   left: 50%; transform: translateX(-50%);
   width: min(30rem, calc(100vw - 2rem));
-  display: flex; flex-direction: column; gap: 0.5rem;
+  display: flex; flex-direction: column-reverse; gap: 0.5rem;
   pointer-events: none;
   &:empty { display: none; }
-  // Desktop has no bottom tab bar, and the top of the main column is where an
-  // app puts its headline number: toasts go bottom-right instead.
   @include bp.tablet-up {
-    top: auto; bottom: 1.25rem; left: auto; right: 1.25rem; transform: none;
+    bottom: 1.25rem; left: auto; right: 1.25rem; transform: none;
     width: min(26rem, calc(100vw - 2.5rem));
-    flex-direction: column-reverse;
   }
 }
 .ds-toast {
@@ -120,7 +119,7 @@
   &__actions { display: flex; gap: 0.25rem; margin-left: auto; }
 }
 @keyframes ds-toast-in {
-  from { transform: translateY(-8px); opacity: 0; }
+  from { transform: translateY(8px); opacity: 0; }
   to { transform: translateY(0); opacity: 1; }
 }
 @media (prefers-reduced-motion: reduce) {

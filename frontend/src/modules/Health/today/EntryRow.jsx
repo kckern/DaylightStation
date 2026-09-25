@@ -53,7 +53,11 @@ export function EntryRow({ row, densityRow = row, onTap, onConfirm, onRequestDel
   return <div ref={drag.ref} {...drag.handlers} className={['health-row-line', unsettled && confirmation !== 'saved' && 'health-row-line--unsettled', child && 'health-row-line--child', lastChild && 'health-row-line--last-child', isGroup && 'health-row-line--group', added && 'health-row-line--added', reconstructed && 'health-row-line--reconstructed', drag.draggable && 'health-row-line--draggable', drag.dragging && 'health-row-line--dragging'].filter(Boolean).join(' ')} data-preview={preview.opened ? 'open' : undefined} data-entry-key={entryKey}>
     <div className="health-row__branch">
       {isGroup ? <UnstyledButton className="health-row__expand" aria-expanded={expanded}
-        aria-label={`${expanded ? 'Collapse' : 'Expand'} ${name}`} onClick={onToggle}><svg className="health-row__triangle" viewBox="0 0 10 10" aria-hidden="true" focusable="false">
+        aria-label={`${expanded ? 'Collapse' : 'Expand'} ${name}`} onClick={onToggle}
+        // A draft may be sitting on one of this dish's members, with its error
+        // and Discard on that member's row; collapsing would hide both while
+        // the draft still locks the day.
+        disabled={Boolean(portions?.draft)}><svg className="health-row__triangle" viewBox="0 0 10 10" aria-hidden="true" focusable="false">
           <path d={expanded ? 'M0 0H10L5 10Z' : 'M0 0L10 5L0 10Z'} fill="currentColor" />
         </svg></UnstyledButton> : null}
     </div>
