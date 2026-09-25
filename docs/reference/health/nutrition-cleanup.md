@@ -40,7 +40,7 @@ send messages. Optional confirmation/edit records `settledBy: user` and immediat
 ends automatic review. Legacy date-only display behavior is retained without a
 bulk history migration. Health shows a muted “Estimated” label, not a settlement task.
 
-Questions appear in Today and Settings. Each choice displays its proposed changes;
+Questions appear in Settings and in Today's follow-up tray (a one-line count under the macro bars that opens in place; see the Health reference, *Feedback never moves the day*). Each choice displays its proposed changes;
 free text and “Leave unchanged” are also supported. Free text is interpreted into a
 single bounded proposal; an answer that needs further guessing is left for manual
 editing. Telegram is an optional projection of the same question ID. Replies are

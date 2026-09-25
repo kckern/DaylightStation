@@ -6,6 +6,7 @@ const apiMock = vi.fn();
 vi.mock('../../../lib/api.mjs', () => ({ DaylightAPI: (...a) => apiMock(...a) }));
 
 import { EntryRow } from './EntryRow.jsx';
+import { PortionContext } from './usePortionDraft.js';
 import { HealthDisplayPreferencesProvider } from '../display/HealthDisplayPreferences.jsx';
 
 function r(ui) { return render(<MantineProvider>{ui}</MantineProvider>); }
@@ -336,5 +337,27 @@ describe('EntryRow', () => {
         expect(dot()).toBeTruthy();
       });
     });
+  });
+
+  it('shows a failed portion edit on the entry it was about, not on its neighbours', () => {
+    const control = { draft: { row: baseRow, status: 'error', error: 'Offline.', portion: { value: 2, unit: 'medium' } },
+      retry: vi.fn(), cancel: vi.fn(), reloadDay: vi.fn(), begin: () => false, preview: () => {} };
+    r(<PortionContext.Provider value={control}>
+      <EntryRow row={baseRow} onTap={() => {}} />
+      <EntryRow row={{ ...baseRow, uuid: 'row-2', name: 'Pear' }} onTap={() => {}} />
+    </PortionContext.Provider>);
+    const alert = screen.getByRole('alert');
+    expect(alert.textContent).toContain('Intended portion: 2 medium');
+    expect(alert.closest('.health-row-line').querySelector('.health-row__name').textContent).toBe('Apple');
+  });
+
+  it('a dish cannot be collapsed while a draft is open (it could hide a member\'s error)', () => {
+    const control = { draft: { row: { uuid: 'child' }, status: 'editing' }, begin: () => false, preview: () => {} };
+    const onToggle = vi.fn();
+    r(<PortionContext.Provider value={control}>
+      <EntryRow row={{ ...baseRow, uuid: 'dish', name: 'Stew', kind: 'group', children: [] }} isGroup expanded onToggle={onToggle} rollupKcal={300} onTap={() => {}} />
+    </PortionContext.Provider>);
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse Stew' }));
+    expect(onToggle).not.toHaveBeenCalled();
   });
 });

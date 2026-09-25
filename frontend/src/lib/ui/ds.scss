@@ -82,6 +82,50 @@
   &__title { margin: 0; font-size: 1rem; color: var(--ds-text-high); }
 }
 
+// Post-action feedback (Toast.jsx). Fixed and out of flow, so a toast
+// arriving or retiring never shifts the page. Above a sheet's scrim (a toast
+// raised from inside a sheet must be seen), below full-screen capture
+// overlays (z 1000). Bottom, never top: the top of the main column is where an
+// app puts its headline number. On a phone it sits just above the bottom tab
+// bar (and its safe-area inset), where the thumb already is for an Undo;
+// tablet-up has no bottom bar, so bottom-right. Newest nearest the edge.
+.ds-toasts {
+  position: fixed; z-index: 350;
+  bottom: calc(4.5rem + env(safe-area-inset-bottom));
+  left: 50%; transform: translateX(-50%);
+  width: min(30rem, calc(100vw - 2rem));
+  display: flex; flex-direction: column-reverse; gap: 0.5rem;
+  pointer-events: none;
+  &:empty { display: none; }
+  @include bp.tablet-up {
+    bottom: 1.25rem; left: auto; right: 1.25rem; transform: none;
+    width: min(26rem, calc(100vw - 2.5rem));
+  }
+}
+.ds-toast {
+  pointer-events: auto;
+  display: flex; align-items: center; flex-wrap: wrap; gap: 0.25rem 0.75rem;
+  padding: 0.55rem 0.75rem;
+  background: var(--ds-surface-alt, var(--ds-surface));
+  color: var(--ds-text-high);
+  border: 1px solid var(--ds-border);
+  border-radius: 10px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3); /* data-color: elevation alpha, not a palette color */
+  font-size: 0.875rem;
+  animation: ds-toast-in var(--ds-motion-base) var(--ds-motion-easing);
+
+  &--error { border-color: var(--ds-danger); }
+  &__message { flex: 1 1 12rem; min-width: 0; }
+  &__actions { display: flex; gap: 0.25rem; margin-left: auto; }
+}
+@keyframes ds-toast-in {
+  from { transform: translateY(8px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ds-toast { animation: none; }
+}
+
 @keyframes ds-sheet-up {
   from { transform: translateY(24px); opacity: 0; }
   to { transform: translateY(0); opacity: 1; }
