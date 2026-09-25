@@ -4,6 +4,7 @@ import { AgentTranscriptFileStore } from '#adapters/agents/AgentTranscriptFileSt
 import { YamlAgentStateStore } from '#adapters/persistence/yaml/YamlAgentStateStore.mjs';
 import { JsonlAuditJournalStore } from '#adapters/persistence/yaml/JsonlAuditJournalStore.mjs';
 import { sha256Text } from '#system/utils/sha256.mjs';
+import { runWithOrigin } from '#system/runtime/aiContext.mjs';
 import { YamlFoodCatalogDatastore } from '#adapters/persistence/yaml/YamlFoodCatalogDatastore.mjs';
 import { YamlSavedMealsDatastore } from '#adapters/persistence/yaml/YamlSavedMealsDatastore.mjs';
 import { YamlObservationStore } from '#adapters/persistence/yaml/YamlObservationStore.mjs';
@@ -77,28 +78,30 @@ export function createNutritionCleanup({ dataService, configService, userIdentit
   cleanup.handleTelegram = (...args) => surface.handle(...args);
   const userId = configService.getHeadOfHousehold();
   let ticking = false;
-  const tick = async () => {
+  const tick = () => runWithOrigin('tick:nutrition-cleanup', async () => {
     if (ticking || !userId) return;
     ticking = true;
     try { await cleanup.tick(userId); await surface.sync(userId); }
     catch (error) { logger.warn('nutrition.cleanup.tick_failed', { error: error.message }); }
     finally { ticking = false; }
-  };
+  });
   // Artwork: sweep the last day and work due items every ~2 min, sweep the last
   // week every ~hour. Same
   // gate, same owner and the same non-overlapping guard as the cleanup tick.
   let artworkBusy = false;
-  const artworkRun = (label, work) => async () => {
+  // Each run is stamped with its own origin in the AI usage ledger
+  // (tick:artwork / tick:artwork-sweep) — the icon pick spends from here.
+  const artworkRun = (label, origin, work) => () => runWithOrigin(origin, async () => {
     if (artworkBusy || !userId) return;
     artworkBusy = true;
     try { await work(); }
     catch (error) { logger.warn('artwork.queue.' + label + '_failed', { error: error.message }); }
     finally { artworkBusy = false; }
-  };
+  });
   // Each 2-minute tick first sweeps today and yesterday, so a capture that
   // lands on `default` is queued within minutes rather than at the hourly sweep.
-  const artworkTick = artworkRun('tick', async () => { await artwork.sweep(userId, { sinceDays: 1 }); await artwork.tick(userId); });
-  const artworkSweep = artworkRun('sweep', async () => { await artwork.sweep(userId, { sinceDays: 7 }); await artwork.tick(userId); });
+  const artworkTick = artworkRun('tick', 'tick:artwork', async () => { await artwork.sweep(userId, { sinceDays: 1 }); await artwork.tick(userId); });
+  const artworkSweep = artworkRun('sweep', 'tick:artwork-sweep', async () => { await artwork.sweep(userId, { sinceDays: 7 }); await artwork.tick(userId); });
   const scheduler = scheduled ? new NodeApplicationScheduler() : null;
   const stops = scheduler ? [scheduler.every(30000, tick), scheduler.every(2 * 60 * 1000, artworkTick), scheduler.every(60 * 60 * 1000, artworkSweep)] : [];
   const stop = () => { for (const halt of stops) halt(); };

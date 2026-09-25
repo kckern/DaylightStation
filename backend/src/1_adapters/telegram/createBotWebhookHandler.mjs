@@ -4,6 +4,7 @@ import { toInputEvent } from './IInputEvent.mjs';
 import { TelegramChatRef } from './TelegramChatRef.mjs';
 import { TelegramResponseContext } from './TelegramResponseContext.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
+import { runWithOrigin } from '#system/runtime/aiContext.mjs';
 
 /**
  * Factory for creating standardized Telegram webhook handlers.
@@ -37,7 +38,13 @@ export function createBotWebhookHandler(config) {
         dependency: 'inputRouter'
       });
 
-  return async (req, res) => {
+  // Every AI call an update causes is stamped `telegram:<bot>` in the usage
+  // ledger — the more specific origin than the HTTP route it arrived on.
+  const origin = `telegram:${botName || 'unknown'}`;
+
+  return (req, res) => runWithOrigin(origin, () => handle(req, res));
+
+  async function handle(req, res) {
     try {
       // 1. Parse Telegram update
       const parsed = parser.parse(req.body);
@@ -89,7 +96,7 @@ export function createBotWebhookHandler(config) {
       // Always return 200 to prevent Telegram retry loops
       res.sendStatus(200);
     }
-  };
+  }
 }
 
 export default createBotWebhookHandler;

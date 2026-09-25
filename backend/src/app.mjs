@@ -157,7 +157,8 @@ import { WakeScreenForBroadcast } from '#apps/devices/services/WakeScreenForBroa
 import { EventBusDeviceTransportGateway } from '#adapters/devices/EventBusDeviceTransportGateway.mjs';
 
 // HTTP middleware
-import { errorHandlerMiddleware, requestLoggerMiddleware } from './0_system/http/middleware/index.mjs';
+import { errorHandlerMiddleware, requestLoggerMiddleware, aiOriginMiddleware } from './0_system/http/middleware/index.mjs';
+import { runWithOrigin } from './0_system/runtime/aiContext.mjs';
 import { createDevProxy } from '#api/v1/middleware/createDevProxy.mjs';
 import { DevRequestForwarder } from '#adapters/http/DevRequestForwarder.mjs';
 import { createEventBusRouter } from './4_api/v1/routers/admin/eventbus.mjs';
@@ -543,6 +544,10 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   app.use(cors());
   app.use(express.json({ limit: '50mb' }));
   app.use(express.urlencoded({ limit: '50mb', extended: true }));
+  // AI usage origin (`http:METHOD /path`) for every ledger row a request
+  // causes. After the body parsers on purpose: they finish on a stream event
+  // outside any context opened before them.
+  app.use(aiOriginMiddleware());
 
   // Skip WebSocket paths from Express middleware
   app.use((req, res, next) => {
@@ -6704,7 +6709,9 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     applicationExecutor: applicationJobExecutor,
     mediaExecutor,
     newsReporterExecutor: newsReporter.executor,
-    schoolExecutor: schoolMaintenanceExecutor
+    schoolExecutor: schoolMaintenanceExecutor,
+    // AI spend a job causes is stamped `job:<id>` in the usage ledger.
+    runInJobContext: (jobId, work) => runWithOrigin(`job:${jobId}`, work)
   });
 
   const scheduler = new Scheduler({

@@ -28,7 +28,8 @@ export class SchedulerOrchestrator {
     applicationExecutor = null,
     mediaExecutor = null,
     newsReporterExecutor = null,
-    schoolExecutor = null
+    schoolExecutor = null,
+    runInJobContext = null
   }) {
     this.schedulerService = schedulerService;
     if (!timestampCodec || typeof timestampCodec.format !== 'function') throw new Error('SchedulerOrchestrator requires timestampCodec');
@@ -49,6 +50,9 @@ export class SchedulerOrchestrator {
     this.newsReporterExecutor = newsReporterExecutor;
     this.schoolExecutor = schoolExecutor;
     this.runningJobs = new Map();
+    // Composition supplies this to run each job's work under a `job:<id>`
+    // context (the AI usage ledger's origin). Identity when absent.
+    this.runInJobContext = typeof runInJobContext === 'function' ? runInJobContext : (_jobId, work) => work();
   }
 
   /**
@@ -146,57 +150,7 @@ export class SchedulerOrchestrator {
     execution.start(timestamp);
 
     try {
-      // Check newsreporter executor FIRST. Reporter jobs have no `module`, so if
-      // they fell through to the legacy dynamic-import branch they would throw
-      // INVALID_MODULE.
-      if (this.newsReporterExecutor?.canHandle(job.id)) {
-        await this.#runWithinDeadline(this.newsReporterExecutor.execute(job.id, job.options || {}, { executionId }), job);
-
-        execution.succeed(timestamp);
-      } else if (this.harvesterExecutor?.canHandle(job.id)) {
-        await this.#runWithinDeadline(this.harvesterExecutor.execute(job.id, job.options || {}, { executionId }), job);
-
-        execution.succeed(timestamp);
-      } else if (this.applicationExecutor?.canHandle(job.id)) {
-        await this.#runWithinDeadline(this.applicationExecutor.execute(job.id, job.options || {}, { executionId }), job);
-
-        execution.succeed(timestamp);
-      } else if (this.schoolExecutor?.canHandle(job.id)) {
-        // School housekeeping (the stale-session sweep). Its own slot rather
-        // than a registration on `mediaExecutor`: that registry is generic
-        // enough to have accepted it, and naming a school job "media" is the
-        // kind of small lie that makes the next person hunt.
-        await this.#runWithinDeadline(this.schoolExecutor.execute(job.id, job.options || {}, { executionId }), job);
-
-        execution.succeed(timestamp);
-      } else if (this.mediaExecutor?.canHandle(job.id)) {
-        // Check if media executor can handle this job (youtube, etc.)
-        await this.#runWithinDeadline(this.mediaExecutor.execute(job.id, job.options || {}, { executionId }), job);
-
-        execution.succeed(timestamp);
-      } else {
-        // Fall back to dynamic module import (legacy)
-        const resolvedPath = this.resolveModulePath(job.module);
-        const module = await this.moduleLoader.load(job.module);
-        const handler = module.default;
-
-        if (typeof handler !== 'function') {
-          throw new ValidationError(`Job module ${job.module} (resolved: ${resolvedPath}) does not export a default function`, { code: 'INVALID_MODULE', field: 'module' });
-        }
-
-        // Execute with timeout - legacy handlers may expect (logger, executionId) or just (executionId)
-        // Provide no-op logger to prevent crashes if legacy handlers call logger methods
-        const noopLogger = { info: () => {}, debug: () => {}, warn: () => {}, error: () => {}, child: () => noopLogger };
-        const promise = handler.length >= 2
-          ? handler(noopLogger, executionId)
-          : handler.length === 1
-            ? handler(executionId)
-            : handler(noopLogger, executionId);
-
-        await this.#runWithinDeadline(promise, job);
-
-        execution.succeed(timestamp);
-      }
+      await this.runInJobContext(job.id, () => this.#dispatch(job, executionId, execution, timestamp));
     } catch (err) {
       if (err.message?.includes('timeout')) {
         execution.timeout(timestamp);
@@ -208,6 +162,64 @@ export class SchedulerOrchestrator {
     }
 
     return execution;
+  }
+
+  /**
+   * Hand a job to the executor that owns it (or the legacy module import) and
+   * mark the execution succeeded. Errors propagate to executeJob.
+   */
+  async #dispatch(job, executionId, execution, timestamp) {
+    // Check newsreporter executor FIRST. Reporter jobs have no `module`, so if
+    // they fell through to the legacy dynamic-import branch they would throw
+    // INVALID_MODULE.
+    if (this.newsReporterExecutor?.canHandle(job.id)) {
+      await this.#runWithinDeadline(this.newsReporterExecutor.execute(job.id, job.options || {}, { executionId }), job);
+
+      execution.succeed(timestamp);
+    } else if (this.harvesterExecutor?.canHandle(job.id)) {
+      await this.#runWithinDeadline(this.harvesterExecutor.execute(job.id, job.options || {}, { executionId }), job);
+
+      execution.succeed(timestamp);
+    } else if (this.applicationExecutor?.canHandle(job.id)) {
+      await this.#runWithinDeadline(this.applicationExecutor.execute(job.id, job.options || {}, { executionId }), job);
+
+      execution.succeed(timestamp);
+    } else if (this.schoolExecutor?.canHandle(job.id)) {
+      // School housekeeping (the stale-session sweep). Its own slot rather
+      // than a registration on `mediaExecutor`: that registry is generic
+      // enough to have accepted it, and naming a school job "media" is the
+      // kind of small lie that makes the next person hunt.
+      await this.#runWithinDeadline(this.schoolExecutor.execute(job.id, job.options || {}, { executionId }), job);
+
+      execution.succeed(timestamp);
+    } else if (this.mediaExecutor?.canHandle(job.id)) {
+      // Check if media executor can handle this job (youtube, etc.)
+      await this.#runWithinDeadline(this.mediaExecutor.execute(job.id, job.options || {}, { executionId }), job);
+
+      execution.succeed(timestamp);
+    } else {
+      // Fall back to dynamic module import (legacy)
+      const resolvedPath = this.resolveModulePath(job.module);
+      const module = await this.moduleLoader.load(job.module);
+      const handler = module.default;
+
+      if (typeof handler !== 'function') {
+        throw new ValidationError(`Job module ${job.module} (resolved: ${resolvedPath}) does not export a default function`, { code: 'INVALID_MODULE', field: 'module' });
+      }
+
+      // Execute with timeout - legacy handlers may expect (logger, executionId) or just (executionId)
+      // Provide no-op logger to prevent crashes if legacy handlers call logger methods
+      const noopLogger = { info: () => {}, debug: () => {}, warn: () => {}, error: () => {}, child: () => noopLogger };
+      const promise = handler.length >= 2
+        ? handler(noopLogger, executionId)
+        : handler.length === 1
+          ? handler(executionId)
+          : handler(noopLogger, executionId);
+
+      await this.#runWithinDeadline(promise, job);
+
+      execution.succeed(timestamp);
+    }
   }
 
   #runWithinDeadline(work, job) {

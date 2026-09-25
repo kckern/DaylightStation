@@ -1,6 +1,7 @@
 // Infrastructure scheduler for agent assignments.
 
 import { CronExpressionParser } from 'cron-parser';
+import { runWithOrigin } from '#system/runtime/aiContext.mjs';
 
 /**
  * Scheduler - In-process scheduler that triggers agent assignments on configured schedules.
@@ -128,15 +129,14 @@ export class Scheduler {
           this.#recentRuns.set(dedupKey, now.getTime());
           this.#logger.info?.('scheduler.trigger', { jobKey });
           try {
-            if (job.handler) {
-              await job.handler();
-            } else {
-              await job.orchestrator.runAssignment(
+            // AI spend a scheduled run causes is stamped `job:<jobKey>`.
+            await runWithOrigin(`job:${jobKey}`, () => (job.handler
+              ? job.handler()
+              : job.orchestrator.runAssignment(
                 job.agentId,
                 job.assignmentId,
                 { triggeredBy: 'scheduler' }
-              );
-            }
+              )));
           } catch (err) {
             this.#logger.error?.('scheduler.failed', { jobKey, error: err.message });
           }
@@ -169,7 +169,7 @@ export class Scheduler {
    */
   async trigger(jobKey, orchestrator) {
     const [agentId, assignmentId] = jobKey.split(':');
-    return orchestrator.runAssignment(agentId, assignmentId, { triggeredBy: 'manual' });
+    return runWithOrigin(`job:${jobKey}`, () => orchestrator.runAssignment(agentId, assignmentId, { triggeredBy: 'manual' }));
   }
 
   /**

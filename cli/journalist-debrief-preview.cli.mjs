@@ -23,6 +23,7 @@ import yaml from 'js-yaml';
 import axios from 'axios';
 
 import { getConfigService } from './_bootstrap.mjs';
+import { runWithOrigin } from '#system/runtime/aiContext.mjs';
 import { GenerateMorningDebrief } from '#backend/src/3_applications/journalist/usecases/GenerateMorningDebrief.mjs';
 import { SendMorningDebrief } from '#backend/src/3_applications/journalist/usecases/SendMorningDebrief.mjs';
 
@@ -138,7 +139,8 @@ async function main() {
   }
 }
 
-main().catch((err) => {
+// AI spend from this run is stamped `cli:journalist-debrief-preview` in the usage ledger.
+runWithOrigin('cli:journalist-debrief-preview', main).catch((err) => {
   console.error('preview failed:', err.message);
   process.exit(1);
 });
