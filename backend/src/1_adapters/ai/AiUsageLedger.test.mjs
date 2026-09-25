@@ -68,8 +68,35 @@ describe('AiUsageLedger', () => {
     const ledger = createAiUsageLedger({ dir });
     const rows = await ledger.listCosts({ agentId: 'nutrition-auditor', from: '2026-09-04T00:00:00.000Z', to: '2026-09-05T00:00:00.000Z' });
     expect(rows.sort((a, b) => a.ts.localeCompare(b.ts))).toEqual([
-      { ts: '2026-09-04T10:00:00.000Z', costUsd: 0.5 }, { ts: '2026-09-04T13:00:00.000Z', costUsd: 0.25 },
+      { ts: '2026-09-04T10:00:00.000Z', costUsd: 0.5, agentId: 'nutrition-auditor', app: null, feature: null },
+      { ts: '2026-09-04T13:00:00.000Z', costUsd: 0.25, agentId: 'nutrition-auditor', app: null, feature: null },
     ]);
     expect(await createAiUsageLedger({ dir: path.join(dir, 'missing') }).listCosts({ agentId: 'nutrition-auditor', from: '2026-09-04T00:00:00.000Z', to: '2026-09-05T00:00:00.000Z' })).toEqual([]);
+  });
+
+  it('filters costs by app and feature and returns them on each row', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'ai-ledger-'));
+    const line = row => JSON.stringify(row);
+    await fs.writeFile(path.join(dir, '2026-09.jsonl'), [
+      line({ ts: '2026-09-04T10:00:00.000Z', app: 'health', feature: 'photo-log', costUsd: 0.1 }),
+      line({ ts: '2026-09-04T10:05:00.000Z', app: 'health', feature: 'auditor', agentId: 'nutrition-auditor', costUsd: 0.2 }),
+      line({ ts: '2026-09-04T10:10:00.000Z', app: 'journalist', feature: null, costUsd: 0.4 }),
+      line({ ts: '2026-09-04T10:15:00.000Z', costUsd: 0.8 }),
+    ].join('\n'));
+    const ledger = createAiUsageLedger({ dir });
+    const range = { from: '2026-09-04T00:00:00.000Z', to: '2026-09-05T00:00:00.000Z' };
+
+    const health = await ledger.listCosts({ ...range, app: 'health' });
+    expect(health.map(r => [r.feature, r.costUsd])).toEqual([['photo-log', 0.1], ['auditor', 0.2]]);
+
+    const auditor = await ledger.listCosts({ ...range, app: 'health', feature: 'auditor' });
+    expect(auditor).toEqual([{ ts: '2026-09-04T10:05:00.000Z', costUsd: 0.2, agentId: 'nutrition-auditor', app: 'health', feature: 'auditor' }]);
+
+    // agentId still narrows on its own
+    expect((await ledger.listCosts({ ...range, agentId: 'nutrition-auditor' })).map(r => r.costUsd)).toEqual([0.2]);
+    // null asks for untagged rows
+    expect((await ledger.listCosts({ ...range, app: null })).map(r => r.costUsd)).toEqual([0.8]);
+    // no filter at all lists every priced row
+    expect(await ledger.listCosts(range)).toHaveLength(4);
   });
 });

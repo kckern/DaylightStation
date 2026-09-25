@@ -9,6 +9,7 @@ import { IAIGateway } from '#apps/common/ports/IAIGateway.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 import { retryTransient } from '#system/utils/retryTransient.mjs';
 import { estimateCostUsd } from './aiPricing.mjs';
+import { createScopedView, usageAttribution } from './usageAttribution.mjs';
 import { isQuotaExhausted } from '#system/utils/retryTransient.mjs';
 
 const OPENAI_API_BASE = 'https://api.openai.com/v1';
@@ -19,6 +20,11 @@ const OPENAI_API_BASE = 'https://api.openai.com/v1';
  * variants — `gpt-5.6-luna`, `o3-mini-2025-01-31` — are covered.
  */
 const COMPLETION_TOKEN_PREFIXES = ['gpt-5', 'o1', 'o3', 'o4'];
+
+/** Methods a scoped view tags, and the index of each one's options argument. */
+const SCOPED_METHODS = Object.freeze({
+  chat: 1, chatWithImage: 2, chatWithJson: 1, transcribe: 1, embed: 1, callCompletions: 1, callApi: 2,
+});
 
 export class OpenAIAdapter extends IAIGateway {
   /**
@@ -295,7 +301,7 @@ export class OpenAIAdapter extends IAIGateway {
         return result;
       });
 
-      this.#recordUsage({ endpoint, requestedModel: data.model, result, durationMs: Date.now() - startedAt });
+      this.#recordUsage({ endpoint, requestedModel: data.model, result, durationMs: Date.now() - startedAt, usageTags: options.usageTags });
       return result;
     } catch (error) {
       if (!error.code) {
@@ -308,7 +314,7 @@ export class OpenAIAdapter extends IAIGateway {
         error: error.message,
         apiError: error.apiError || null,
       });
-      this.#recordUsage({ endpoint, requestedModel: data.model, durationMs: Date.now() - startedAt, error });
+      this.#recordUsage({ endpoint, requestedModel: data.model, durationMs: Date.now() - startedAt, error, usageTags: options.usageTags });
       throw error;
     }
   }
@@ -319,7 +325,7 @@ export class OpenAIAdapter extends IAIGateway {
    * Never throws; observing a call must not break it.
    * @private
    */
-  #recordUsage({ endpoint, requestedModel, result = null, durationMs, error = null }) {
+  #recordUsage({ endpoint, requestedModel, result = null, durationMs, error = null, usageTags = null }) {
     try {
       const usage = result?.usage || {};
       const model = result?.model || requestedModel || null;
@@ -348,6 +354,7 @@ export class OpenAIAdapter extends IAIGateway {
         durationMs,
         status: error ? 'error' : 'ok',
         ...(error ? { httpStatus: error.status ?? null, error: error.message } : {}),
+        ...usageAttribution(usageTags),
       };
       this.logger.info?.('openai.usage', entry);
       this.usageLedger?.record(entry);
@@ -689,6 +696,7 @@ export class OpenAIAdapter extends IAIGateway {
         audioBytes: audioBuffer.length,
         durationMs: Date.now() - startedAt,
         status: 'ok',
+        ...usageAttribution(options.usageTags),
       };
       this.logger.info?.('openai.usage', entry);
       this.usageLedger?.record(entry);
@@ -716,6 +724,7 @@ export class OpenAIAdapter extends IAIGateway {
         durationMs: Date.now() - startedAt,
         status: 'error',
         error: error.message,
+        ...usageAttribution(options.usageTags),
       });
       throw error;
     }
@@ -739,17 +748,28 @@ export class OpenAIAdapter extends IAIGateway {
   /**
    * Generate text embedding
    */
-  async embed(text) {
+  async embed(text, options = {}) {
     const data = {
       model: 'text-embedding-3-small',
       input: text
     };
 
-    const response = await this.callApi('/embeddings', data);
+    const response = await this.callApi('/embeddings', data, options);
     return response.data[0].embedding;
   }
 
   // ============ Utilities ============
+
+  /**
+   * A view of this adapter whose calls are attributed to `tags` in the usage
+   * ledger (`{ app }` from composition, `{ feature }` from a use case). Views
+   * nest: `adapter.scoped({ app: 'health' }).scoped({ feature: 'photo-log' })`.
+   * Later tags win per key; a call's own `usageTags` option wins over both.
+   * @param {{ app?: string, feature?: string }} tags
+   */
+  scoped(tags = {}) {
+    return createScopedView(this, tags, SCOPED_METHODS);
+  }
 
   /**
    * Check if adapter is configured

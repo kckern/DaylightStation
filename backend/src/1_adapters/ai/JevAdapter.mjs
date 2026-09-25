@@ -17,6 +17,7 @@
 import { IDecisionGateway } from '#apps/common/ports/IDecisionGateway.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 import { estimateCostUsd } from './aiPricing.mjs';
+import { createScopedView, usageAttribution } from './usageAttribution.mjs';
 
 const TYPESAFE_API_BASE = 'https://api.typesafe.ai/v1';
 const DEFAULT_MODEL = 'jev-latest';
@@ -27,6 +28,9 @@ const MAX_SCORE_LEVELS = 10;
 // How many leaders each part of a split choice sends to the final round
 const FINALISTS_PER_PART = 3;
 const PART_SEPARATOR = '__part';
+
+/** Methods a scoped view tags, and the index of each one's options argument. */
+const SCOPED_METHODS = Object.freeze({ evaluate: 2, callApi: 2 });
 
 export class JevAdapter extends IDecisionGateway {
   /**
@@ -107,7 +111,7 @@ export class JevAdapter extends IDecisionGateway {
     }
 
     const model = options.model || this.model;
-    const first = await this.callApi('/systemone', { model, state, questions: wireQuestions }, { timeout: options.timeout });
+    const first = await this.callApi('/systemone', { model, state, questions: wireQuestions }, { timeout: options.timeout, usageTags: options.usageTags });
     const results = [first];
     const wireAnswers = { ...(first.answers || {}) };
 
@@ -119,7 +123,7 @@ export class JevAdapter extends IDecisionGateway {
       }
       // Pin the second round to the model that answered the first, so an alias
       // moving between the two calls cannot mix versions in one answer
-      const second = await this.callApi('/systemone', { model: first.model || model, state, questions: finals }, { timeout: options.timeout });
+      const second = await this.callApi('/systemone', { model: first.model || model, state, questions: finals }, { timeout: options.timeout, usageTags: options.usageTags });
       results.push(second);
       Object.assign(wireAnswers, second.answers || {});
       this.logger.debug?.('jev.choice.narrowed', {
@@ -152,6 +156,15 @@ export class JevAdapter extends IDecisionGateway {
 
   isConfigured() {
     return !!this.apiKey;
+  }
+
+  /**
+   * A view of this adapter whose calls are attributed to `tags` in the usage
+   * ledger. Views nest; later tags win per key. See usageAttribution.mjs.
+   * @param {{ app?: string, feature?: string }} tags
+   */
+  scoped(tags = {}) {
+    return createScopedView(this, tags, SCOPED_METHODS);
   }
 
   getMetrics() {
@@ -219,7 +232,7 @@ export class JevAdapter extends IDecisionGateway {
 
       const result = response.data || {};
       this.metrics.inputTokens += result.usage?.input_tokens || 0;
-      this.#recordUsage({ endpoint, requestedModel: data.model, result, durationMs: Date.now() - startedAt });
+      this.#recordUsage({ endpoint, requestedModel: data.model, result, durationMs: Date.now() - startedAt, usageTags: options.usageTags });
       return result;
     } catch (error) {
       if (!error.status) this.metrics.errors++;
@@ -230,7 +243,7 @@ export class JevAdapter extends IDecisionGateway {
         error: error.message,
         apiError: error.apiError || null
       });
-      this.#recordUsage({ endpoint, requestedModel: data.model, durationMs: Date.now() - startedAt, error });
+      this.#recordUsage({ endpoint, requestedModel: data.model, durationMs: Date.now() - startedAt, error, usageTags: options.usageTags });
       throw error;
     }
   }
@@ -240,7 +253,7 @@ export class JevAdapter extends IDecisionGateway {
    * observing a call must not break it.
    * @private
    */
-  #recordUsage({ endpoint, requestedModel, result = null, durationMs, error = null }) {
+  #recordUsage({ endpoint, requestedModel, result = null, durationMs, error = null, usageTags = null }) {
     try {
       const usage = result?.usage || {};
       const model = result?.model || requestedModel || null;
@@ -259,7 +272,8 @@ export class JevAdapter extends IDecisionGateway {
         costUsd: error ? 0 : estimateCostUsd(model, { promptTokens, completionTokens }, this.pricing),
         durationMs,
         status: error ? 'error' : 'ok',
-        ...(error ? { httpStatus: error.status ?? null, error: error.message } : {})
+        ...(error ? { httpStatus: error.status ?? null, error: error.message } : {}),
+        ...usageAttribution(usageTags),
       };
       this.logger.info?.('jev.usage', entry);
       this.usageLedger?.record(entry);

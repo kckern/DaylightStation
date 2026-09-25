@@ -170,6 +170,19 @@ on the provider's integration config. Written by
 `backend/src/1_adapters/ai/AiUsageLedger.mjs`; recording never breaks the call
 it observes.
 
+Each row also carries **`app`**, **`feature`** and **`origin`**. `app`/`feature`
+are the attribution: one shared adapter serves every app, so consumers get a
+scoped view — `adapter.scoped({ app })` in composition, `.scoped({ feature })`
+in a use case — whose calls pass the tags down as a per-call `usageTags` option
+(`1_adapters/ai/usageAttribution.mjs`; `OpenAIAdapter`, `AnthropicAdapter`,
+`JevAdapter` and `VoiceTranscriptionService` all have `scoped()`). Mastra agent
+rows get theirs from the agent map in `5_composition/agentUsageRecorder.mjs`.
+Untagged rows record `null`. `origin` is the entry point the call ran under
+(`http:METHOD /path`, `job:<id>`, `telegram:<bot>`, `tick:<name>`,
+`cli:<name>`), read from `0_system/runtime/aiContext.mjs`; it is for finding
+untagged callers and is never used as attribution. `listCosts` filters by any of
+`agentId` / `app` / `feature`.
+
 **Typed decisions (`decision` capability).** TypeSafe's Jev model sits behind
 `IDecisionGateway` (`3_applications/common/ports/`), not `IAIGateway`: callers
 send one `state` plus named `yesNo` / `choice` / `score` questions and get

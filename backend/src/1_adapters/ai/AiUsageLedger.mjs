@@ -42,6 +42,16 @@ export function createAiUsageLedger({ dir, source = null, logger = null }) {
      * @param {'ok'|'error'} [entry.status]
      * @param {number} [entry.httpStatus]
      * @param {string} [entry.error]
+     * @param {string|null} [entry.app] - App the spend belongs to ('health',
+     *   'journalist', …), from the caller's scoped gateway view or the agent
+     *   map. null = untagged.
+     * @param {string|null} [entry.feature] - Feature within the app
+     *   ('photo-log', 'auditor', …). null = no feature.
+     * @param {string|null} [entry.origin] - Entry point the call ran under
+     *   ('http:POST /api/v1/…', 'job:<id>', 'telegram:<bot>', 'tick:…',
+     *   'cli:<name>'). Informational, for finding untagged callers; never
+     *   used as attribution.
+     * @param {string} [entry.agentId] - Mastra agent rows only
      * @returns {Promise<void>} resolves once the append settles (never rejects)
      */
     record(entry) {
@@ -58,12 +68,21 @@ export function createAiUsageLedger({ dir, source = null, logger = null }) {
     },
 
     /**
-     * One agent's recorded costs with `ts` in [from, to), from every writer's
-     * month files. Spend caps read this rather than their own records, so a
-     * turn that failed after it was billed still counts. Malformed lines skip.
-     * @returns {Promise<Array<{ts: string, costUsd: number}>>}
+     * Recorded costs with `ts` in [from, to), from every writer's month
+     * files, narrowed by whichever of `agentId`, `app`, `feature` are given
+     * (omitted = any; `null` = rows without that field). Spend caps read this
+     * rather than their own records, so a turn that failed after it was
+     * billed still counts. Malformed lines and rows without a cost skip.
+     * @param {Object} query
+     * @param {string} query.from - ISO start (inclusive)
+     * @param {string} query.to - ISO end (exclusive)
+     * @param {string|null} [query.agentId]
+     * @param {string|null} [query.app]
+     * @param {string|null} [query.feature]
+     * @returns {Promise<Array<{ts: string, costUsd: number, agentId: string|null, app: string|null, feature: string|null}>>}
      */
-    async listCosts({ agentId, from, to }) {
+    async listCosts({ agentId, app, feature, from, to }) {
+      const wants = Object.entries({ agentId, app, feature }).filter(([, value]) => value !== undefined);
       const fromMs = Date.parse(from);
       const toMs = Date.parse(to);
       if (!Number.isFinite(fromMs) || !Number.isFinite(toMs)) throw new Error('listCosts needs an ISO from and to');
@@ -83,8 +102,10 @@ export function createAiUsageLedger({ dir, source = null, logger = null }) {
           let row;
           try { row = JSON.parse(raw); } catch { continue; }
           const t = Date.parse(row?.ts);
-          if (row?.agentId !== agentId || !Number.isFinite(t) || t < fromMs || t >= toMs || !Number.isFinite(row.costUsd)) continue;
-          rows.push({ ts: row.ts, costUsd: row.costUsd });
+          if (!row || typeof row !== 'object') continue;
+          if (wants.some(([field, value]) => (row[field] ?? null) !== value)) continue;
+          if (!Number.isFinite(t) || t < fromMs || t >= toMs || !Number.isFinite(row.costUsd)) continue;
+          rows.push({ ts: row.ts, costUsd: row.costUsd, agentId: row.agentId ?? null, app: row.app ?? null, feature: row.feature ?? null });
         }
       }
       return rows;

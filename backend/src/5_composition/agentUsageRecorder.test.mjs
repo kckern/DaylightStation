@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
-import { createAgentUsageRecorder } from './agentUsageRecorder.mjs';
+import { createAgentUsageRecorder, attributeAgent, AGENT_ATTRIBUTION } from './agentUsageRecorder.mjs';
+import { runWithOrigin } from '#system/runtime/aiContext.mjs';
 
 describe('agent usage recorder', () => {
   it('prices Mastra usage and writes one ledger row per agent turn', () => {
@@ -20,5 +21,33 @@ describe('agent usage recorder', () => {
     const ledger = { record: vi.fn(() => { throw new Error('disk'); }) };
     const record = createAgentUsageRecorder({ ledger, logger: { info() {}, warn: vi.fn() } });
     expect(() => record({ agentId: 'a', model: { provider: 'openai', name: 'gpt-4o' }, status: 'error', error: 'boom' })).not.toThrow();
+  });
+
+  it('attributes each known agent to its app and feature', () => {
+    expect(attributeAgent('nutrition-auditor')).toEqual({ app: 'health', feature: 'auditor' });
+    expect(attributeAgent('health-coach')).toEqual({ app: 'health', feature: 'coach' });
+    expect(attributeAgent('health-coach-commentary')).toEqual({ app: 'health', feature: 'coach-commentary' });
+    expect(attributeAgent('newsreporter-consolidator')).toEqual({ app: 'news', feature: 'consolidator' });
+    expect(attributeAgent('lifeplan-guide')).toEqual({ app: 'lifeplan', feature: 'guide' });
+    expect(attributeAgent('card-ladder-tuner')).toEqual({ app: 'school', feature: 'card-ladder-tuner' });
+    expect(attributeAgent('concierge.media-judge')).toEqual({ app: 'concierge', feature: 'media-judge' });
+    expect(attributeAgent('paged-media-toc')).toEqual({ app: 'media', feature: 'paged-media-toc' });
+    expect(attributeAgent('echo')).toEqual({ app: 'dev', feature: 'echo' });
+    // the map is not mutable through the returned object
+    attributeAgent('echo').app = 'x';
+    expect(AGENT_ATTRIBUTION.echo.app).toBe('dev');
+  });
+
+  it('leaves an unknown agent untagged with its id as the feature', () => {
+    expect(attributeAgent('brand-new-agent')).toEqual({ app: null, feature: 'brand-new-agent' });
+  });
+
+  it('stamps app, feature and the current origin on the ledger row', () => {
+    const ledger = { record: vi.fn() };
+    const record = createAgentUsageRecorder({ ledger, logger: { info() {}, warn() {} } });
+    runWithOrigin('job:nutrition-audit', () => record({ agentId: 'nutrition-auditor', model: { provider: 'openai', name: 'gpt-4o' } }));
+    record({ agentId: 'mystery', model: { provider: 'openai', name: 'gpt-4o' } });
+    expect(ledger.record.mock.calls[0][0]).toMatchObject({ app: 'health', feature: 'auditor', origin: 'job:nutrition-audit' });
+    expect(ledger.record.mock.calls[1][0]).toMatchObject({ app: null, feature: 'mystery', origin: null });
   });
 });

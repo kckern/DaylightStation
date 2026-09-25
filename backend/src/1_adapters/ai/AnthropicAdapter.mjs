@@ -9,9 +9,13 @@
 import { IAIGateway } from '#apps/common/ports/IAIGateway.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 import { estimateCostUsd } from './aiPricing.mjs';
+import { createScopedView, usageAttribution } from './usageAttribution.mjs';
 
 const ANTHROPIC_API_BASE = 'https://api.anthropic.com/v1';
 const ANTHROPIC_VERSION = '2023-06-01';
+
+/** Methods a scoped view tags, and the index of each one's options argument. */
+const SCOPED_METHODS = Object.freeze({ chat: 1, chatWithImage: 2, chatWithJson: 1, transcribe: 1, embed: 1, callApi: 2 });
 
 export class AnthropicAdapter extends IAIGateway {
   /**
@@ -117,7 +121,7 @@ export class AnthropicAdapter extends IAIGateway {
         this.metrics.outputTokens += result.usage.output_tokens || 0;
       }
 
-      this.#recordUsage({ endpoint, requestedModel: data.model, result, durationMs: Date.now() - startedAt });
+      this.#recordUsage({ endpoint, requestedModel: data.model, result, durationMs: Date.now() - startedAt, usageTags: options.usageTags });
       return result;
     } catch (error) {
       if (!error.code) {
@@ -130,7 +134,7 @@ export class AnthropicAdapter extends IAIGateway {
         error: error.message,
         apiError: error.apiError || null,
       });
-      this.#recordUsage({ endpoint, requestedModel: data.model, durationMs: Date.now() - startedAt, error });
+      this.#recordUsage({ endpoint, requestedModel: data.model, durationMs: Date.now() - startedAt, error, usageTags: options.usageTags });
       throw error;
     }
   }
@@ -140,7 +144,7 @@ export class AnthropicAdapter extends IAIGateway {
    * billing trail. Never throws; observing a call must not break it.
    * @private
    */
-  #recordUsage({ endpoint, requestedModel, result = null, durationMs, error = null }) {
+  #recordUsage({ endpoint, requestedModel, result = null, durationMs, error = null, usageTags = null }) {
     try {
       const usage = result?.usage || {};
       const model = result?.model || requestedModel || null;
@@ -169,6 +173,7 @@ export class AnthropicAdapter extends IAIGateway {
         durationMs,
         status: error ? 'error' : 'ok',
         ...(error ? { httpStatus: error.status ?? null, error: error.message } : {}),
+        ...usageAttribution(usageTags),
       };
       this.logger.info?.('anthropic.usage', entry);
       this.usageLedger?.record(entry);
@@ -479,6 +484,15 @@ export class AnthropicAdapter extends IAIGateway {
   }
 
   // ============ Utilities ============
+
+  /**
+   * A view of this adapter whose calls are attributed to `tags` in the usage
+   * ledger. Views nest; later tags win per key. See usageAttribution.mjs.
+   * @param {{ app?: string, feature?: string }} tags
+   */
+  scoped(tags = {}) {
+    return createScopedView(this, tags, SCOPED_METHODS);
+  }
 
   /**
    * Check if adapter is configured
