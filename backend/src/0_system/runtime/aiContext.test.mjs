@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { runWithOrigin, currentOrigin } from './aiContext.mjs';
+import { runWithOrigin, currentOrigin, originSlot, runInOriginSlot, currentOriginSlot } from './aiContext.mjs';
 
 describe('aiContext', () => {
   it('is null outside any run', () => {
@@ -65,4 +65,19 @@ describe('aiContext', () => {
   it('reads a throwing resolver as no origin', () => {
     expect(runWithOrigin(() => { throw new Error('x'); }, () => currentOrigin())).toBeNull();
   });
+
+  it('settles a resolver slot to its current answer and drops the resolver', async () => {
+    const holder = { path: '/a/:id' };
+    const slot = originSlot(() => `http:GET ${holder.path}`);
+    const later = runInOriginSlot(slot, () => new Promise((r) => setTimeout(() => r(currentOrigin()), 5)));
+    slot.settle();
+    holder.path = '/changed';
+    expect(await later).toBe('http:GET /a/:id');
+    expect(slot.resolve).toBeNull();
+    expect(slot.value).toBe('http:GET /a/:id');
+    slot.settle(); // idempotent
+    expect(slot.value).toBe('http:GET /a/:id');
+    expect(runInOriginSlot(slot, () => currentOriginSlot())).toBe(slot);
+  });
 });
+

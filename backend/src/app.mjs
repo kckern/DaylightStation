@@ -5762,7 +5762,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   try {
     const botsLoaded = loadSystemBots({
       httpClient: axios,
-      transcriptionService: voiceTranscriptionService
+      // Base app only; SystemBotLoader narrows it per bot (later tags win).
+      transcriptionService: scopedGateway(voiceTranscriptionService, { app: 'messaging' })
     });
     rootLogger.info('system.bots.loaded', { count: botsLoaded });
   } catch (err) {

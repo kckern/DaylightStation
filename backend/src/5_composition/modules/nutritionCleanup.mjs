@@ -28,6 +28,14 @@ import { normalizeScaleNutribotConfig } from '#apps/nutribot/lib/scaleNutribotCo
 
 export function createNutritionCleanup({ dataService, configService, userIdentityService, nutribotServices, upcGateway, decisionGateway = null, agentOrchestrator, logger, usageRecorder = null, scheduled = false, server, journalSource = null, usageLedger = null }) {
   const clock = { now: () => Date.now() };
+  // getAIGateway() throws when no AI provider is configured. The artwork queue
+  // only loses its LLM icon pick then; the rest of the cleanup must still run.
+  const optionalAiGateway = () => {
+    try { return container.getAIGateway?.() || null; } catch (error) {
+      logger.warn?.('nutrition.cleanup.no_ai_gateway', { error: error.message });
+      return null;
+    }
+  };
   const container = nutribotServices.nutribotContainer;
   const timezoneFor = userId => container.getConfig?.()?.getUserTimezone?.(userId) || 'America/Los_Angeles';
   const icons = new IconManifestStore({ dataService, mediaRoot: configService.getMediaDir(), logger });
@@ -53,7 +61,7 @@ export function createNutritionCleanup({ dataService, configService, userIdentit
   // the same repair service (audited, undoable); the nearest-icon pick uses the
   // UPC use case's AI gateway, confined to the manifest.
   const artwork = new ArtworkRemediation({ queue: new YamlArtworkQueueStore({ dataService }), items, repairs, catalog, icons,
-    aiGateway: scopedGateway(container.getAIGateway?.() || null, { feature: 'icon-pick' }), iconChooser: container.getIconChooser?.() || null, upcGateway, photos: new PhotoStore({ dataService, logger }), clock, logger });
+    aiGateway: scopedGateway(optionalAiGateway(), { feature: 'icon-pick' }), iconChooser: container.getIconChooser?.() || null, upcGateway, photos: new PhotoStore({ dataService, logger }), clock, logger });
   auditor.artwork = artwork;
   const stabilization = new NutritionStabilization({ items, review: container.getFoodLogReview(), clock, logger });
   // agents.yml → nutrition_auditor.triage: { mode: shadow|gate|off, threshold }

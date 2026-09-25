@@ -188,14 +188,21 @@ are the attribution: one shared adapter serves every app, so consumers get a
 scoped view — `adapter.scoped({ app })` in composition, `.scoped({ feature })`
 in a use case — whose calls pass the tags down as a per-call `usageTags` option
 (`1_adapters/ai/usageAttribution.mjs`; `OpenAIAdapter`, `AnthropicAdapter`,
-`JevAdapter` and `VoiceTranscriptionService` all have `scoped()`; views are
+`JevAdapter`, `OpenAITTSAdapter`, `VoiceTranscriptionService` and
+`TelegramVoiceTranscriptionService` all have `scoped()`; views are
 read-only, and the ports' default `scoped()` returns the gateway itself). Mastra agent
 rows get theirs from the agent map in `5_composition/agentUsageRecorder.mjs`.
 Composition hands every consumer a scoped view, never the bare adapter
-(`scopedGateway(sharedAiGateway, { app })` in `app.mjs`; the guard
-`5_composition/aiGatewayScoping.wiring.test.mjs` fails on any bare
-`aiGateway` / `openaiAdapter` / `transcriptionService` / `decisionGateway` /
-`openai` / `anthropic` hand-off, with file:line). Apps: `health`, `journalist`,
+(`scopedGateway(sharedAiGateway, { app })` in `app.mjs`). The guard
+`5_composition/aiGatewayScoping.wiring.test.mjs` checks every reference to a
+root — `sharedAiGateway`, the `decisionGateway` binding, `aiAnthropicAdapter`,
+`voiceTranscriptionService`, `householdAdapters.get('ai'|'decision')`,
+`hardwareAdapters.ttsAdapter`, and anything assigned from a provider adapter
+constructor — in `app.mjs` and `5_composition/`: each must be its declaration,
+a null/truthiness check, a producer's `return`, or the first argument of
+`scopedGateway(…)` / `.scoped(…)` with literal tags naming an `app`. Anything
+else (a bare key, a positional argument, a spread, a ternary branch, tags
+without an app) fails with file:line. Apps: `health`, `journalist`,
 `homebot`, `finance`, `feed`, `lifeplan`, `fitness` (feature `voice-memo`),
 `harvester` (`shopping`), `feedback`, `gaming`, `piano-games`, `school`
 (`card-ladder`, `language`), `trigger`, `agents` (paged-media-toc rows are
@@ -203,19 +210,31 @@ Composition hands every consumer a scoped view, never the bare adapter
 billed per bot by `SystemBotLoader` (nutribot → `health/voice-log`, else the bot
 name). Health features: `photo-log`, `text-log`, `voice-log`, `upc-log`,
 `scale-log`, `revision` (bot revisions and web entry corrections),
-`meal-instruction`, `icon-pick` (artwork queue and the nearest-icon decision
-model), `auditor-triage`, plus the agent rows `auditor`, `coach`,
-`coach-commentary`; `tests/unit/composition/healthAiFeatures.test.mjs` drives
+`meal-instruction`, `icon-pick` (artwork queue, the nearest-icon decision
+model, and the barcode log's LLM icon fallback), `auditor-triage` (the Jev
+pre-audit screen), plus the agent rows `auditor`, `coach`, `coach-commentary`.
+`health/voice-log` is all nutribot speech-to-text — every Whisper call for a
+nutribot memo, including a spoken correction or a spoken scale description —
+plus the parse of a voice food log; the parse of a spoken correction is billed
+to the flow it lands in (`revision`, `scale-log`). `tests/unit/composition/healthAiFeatures.test.mjs` drives
 each one.
 Untagged rows record `null`. `origin` is the entry point the call ran under
 (`http:METHOD /path`, `job:<id>`, `telegram:<bot>`, `tick:<name>`,
 `cli:<name>`), read from `0_system/runtime/aiContext.mjs`; it is for finding
 untagged callers and is never used as attribution. It is set by
 `aiOriginMiddleware` (`0_system/http/middleware/aiOrigin.mjs`, mounted after the
-body parsers). The HTTP origin is resolved lazily: once routing has matched it is
-the route pattern (`http:GET /api/v1/health/members/:username`), so no name or
-id from the URL is recorded; before a match it falls back to the URL with the
-query string dropped and id-like segments replaced by `:id`. Also set by the
+body parsers). The HTTP origin is resolved lazily. The guarantee is narrower
+than "no URL value": no value routing bound to a route parameter, at any
+router level (a parent router's `:username` included), ever appears — the
+middleware records every params object the router assigns, and a path segment
+equal to one of those values becomes `:<name>`. Once a string-path route has
+matched, the origin is that redacted `baseUrl` plus the route pattern
+(`http:GET /api/v1/users/:username/prefs/:section`). Before a match, or for a
+regex route, it is the URL with the query string dropped, param values
+redacted and id-looking segments replaced by `:id`; a literal segment no
+router bound and that does not look like an id is kept. The slot settles when
+the response finishes or closes (the string is kept, the request released).
+Also set by the
 system scheduler (`runInJobContext` on `SchedulerOrchestrator`) and the agent
 scheduler, `createBotWebhookHandler`, the nutrition cleanup and artwork timers,
 and the AI-calling CLIs. `listCosts` filters by any of `agentId` / `app` /

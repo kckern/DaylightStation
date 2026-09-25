@@ -15,6 +15,7 @@ import { confineIcon, iconVocabulary } from '#domains/nutrition/services/icons.m
 import { parseGtin } from '#domains/nutrition/services/gtin.mjs';
 import { isQuarantined, quarantineMarker } from '#domains/nutrition/services/quarantine.mjs';
 import { InvalidInputError } from '#apps/common/errors/SemanticErrors.mjs';
+import { scopedGateway } from '#apps/common/ports/IAIGateway.mjs';
 import { usableServing } from '#domains/health/entities/FoodCatalogEntry.mjs';
 
 // The largest mass one label serving can plausibly be; an AI estimate above it is refused.
@@ -661,7 +662,9 @@ Calories: ${product.nutrition?.calories ?? 'unknown'}`,
       },
     ];
 
-    const response = await this.#aiGateway.chat(prompt, { maxTokens: 40 });
+    // An icon pick, whichever capture asked for it: billed health/icon-pick,
+    // not to the barcode log it happens inside.
+    const response = await scopedGateway(this.#aiGateway, { feature: 'icon-pick' }).chat(prompt, { maxTokens: 40 });
     const match = response.match(/\{[\s\S]*\}/);
     if (!match) return 'default';
     const parsed = JSON.parse(match[0]);
