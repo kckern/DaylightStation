@@ -9,6 +9,7 @@ import { MemoryRouter, Routes, Route, useLocation } from 'react-router-dom';
 vi.mock('../modules/Health/today/TodayView.jsx', () => ({ TodayView: () => <div>TodayStub</div> }));
 vi.mock('../modules/Health/progress/ProgressView.jsx', () => ({ ProgressView: () => <div>ProgressStub</div> }));
 vi.mock('../modules/Health/medical/MedicalView.jsx', () => ({ MedicalView: () => <div>MedicalStub</div> }));
+vi.mock('../modules/Health/auditor/AuditorPage.jsx', () => ({ AuditorPage: () => <div>AuditorStub</div> }));
 vi.mock('../modules/Health/CoachChat', () => ({ default: () => <div>CoachStub</div> }));
 vi.mock('../modules/Health/ChatOverlay/index.jsx', () => ({ ChatOverlay: () => null }));
 vi.mock('../lib/api.mjs', () => ({ DaylightAPI: vi.fn(async () => ({ userId: 'health-fixture' })) }));
@@ -57,6 +58,13 @@ describe('HealthApp routed tabs', () => {
     renderApp('/health/coach');
     expect(await screen.findByText('CoachStub')).toBeTruthy();
     expect(document.querySelector('.ds-chrome__tab--active')?.textContent).toContain('Coach');
+  });
+
+  it('/health/auditor renders the auditor page (deep link)', async () => {
+    renderApp('/health/auditor');
+    expect(await screen.findByText('AuditorStub')).toBeTruthy();
+    expect(lastPath).toBe('/health/auditor');
+    expect(document.querySelector('.ds-chrome__tab--active')).toBeNull();
   });
 
   it('an unknown /health subpath renders Today rather than a blank/404 tab', async () => {
