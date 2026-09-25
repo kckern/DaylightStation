@@ -80,13 +80,13 @@ An automatic run passes these in order. A manual run skips all of them.
 2. **Minimum gap** (`minGapMinutes`: 0, 15, 30 or 60). Changes keep
    accumulating while it runs out and are audited together. `nextEligibleAt` on
    the status says when.
-3. **Daily cap** (`dailyCapUsd`, household day, 0–50 or `null` for none). Spend
+3. **Daily cap** (`dailyCapUsd`, per local day, 0–50 or `null` for none). Spend
    is read from the AI usage ledger's `nutrition-auditor` rows (`spendSource` in
    `5_composition/modules/nutritionCleanup.mjs`), so a turn billed before its
    run failed still counts. Without a ledger the journal is the fallback. At or
    over the cap: one `skipped: cap` row is written, `state.capped` records the
    day and cap, and nothing automatic runs (and spend is not re-read) until the
-   household day or the cap value changes. Pending changes and a due sweep then
+   local day or the cap value changes. Pending changes and a due sweep then
    run. A manual run over the cap still goes and is marked `overCap: true`.
 4. **Triage** (`NutritionAuditTriage`, `agents.yml` →
    `nutrition_auditor.triage`). In `gate` mode a clean verdict marks the
@@ -246,7 +246,7 @@ Top to bottom:
 - **Header**: state (On / Preview only / Off, and Over cap), model, last run,
   next eligible run, daily cap, spend today against the cap (the ledger figure,
   which includes failed runs), 7 days, month.
-- **Runs**: journal rows newest first, the last seven household days, 50 per
+- **Runs**: journal rows newest first, the last seven local days, 50 per
   page with Load more. Filters: changed something, trigger, minimum cost. Each
   row: time, cost, trigger chips, Preview / "from transcript" badges, status,
   model, duration, outcome counts, and the first change ("Rice · grams 100 →
@@ -280,7 +280,7 @@ A feature whose calls were all unpriced reads "cost unknown", never $0.
 Settings shows a compact version (totals, top three features, See all →
 `/health/auditor#ai-usage`).
 
-The response (`days` 1–90, household days, 400 on a repeated or bracketed
+The response (`days` 1–90, local days, 400 on a repeated or bracketed
 param, 503 when the service is not composed):
 `{ range, today, week, month, byFeature: [{ feature, calls, costUsd, avgUsd,
 unpriced }], days: [{ date, total, byFeature }], beforeTracking: { costUsd,
@@ -293,6 +293,13 @@ before the ledger carried attribution show once as "Before tracking: $X across
 all apps", the household total, never presented as Health's. The auditor's
 spend from before attribution stays on the Spend panel, which reads the
 journal.
+
+**Local days.** Every day boundary here (the cap, the journal's date filter,
+the spend panel and the Health AI usage card) is counted in the user's
+timezone: `NutritionCleanup.timezoneFor(userId)`, the user's nutribot timezone,
+else the household timezone. The AI usage service reads that same function
+through `healthUserTimezone` (`5_composition/modules/healthApi.mjs`), so
+"today" on the card and on the cap agree.
 
 The daily strip is one series on purpose: a dozen features exceed a
 categorical palette, and stacked 30-day columns are a few pixels wide at phone
@@ -310,7 +317,7 @@ Under `/api/v1/health/nutrition/cleanup`:
 | `GET /` | `{ version, settingsVersion, settings, options, nextEligibleAt, questions, runs }`; `options` is `{ models, triggers, permissions, minGapMinutes, maxDailyCapUsd }` from `auditorPolicy`, and the settings page draws its controls from it |
 | `PATCH /settings` | `expectedSettingsVersion` plus a partial of the settings; returns the status |
 | `GET /settings/log` | `{ entries: [{ at, actor, field, from, to }] }`, newest first |
-| `GET /journal?from&to&trigger&changed=1&offset` | `{ rows, total }`, household dates, default the last seven days, 50 per page |
+| `GET /journal?from&to&trigger&changed=1&offset` | `{ rows, total }`, local dates, default the last seven days, 50 per page |
 | `GET /journal/:runId?at=` | one row with `undoneAt` marks and the transcript view; 404 for an unknown run |
 | `GET /spend?days=30` | `{ days: [{ date, costUsd, runs, changed }], today, week, month, byTrigger, byModel, capUsd, cappedToday, ledgerTodayUsd }` |
 | `POST /run` | manual run (202) |

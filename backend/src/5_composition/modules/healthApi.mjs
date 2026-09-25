@@ -49,6 +49,16 @@ import { DataServiceHealthDashboardRepository } from '#adapters/persistence/file
  * @param {Object} [config.logger] - Logger instance
  * @returns {express.Router}
  */
+/**
+ * userId → timezone for Health's day boundaries: the nutrition cleanup's own
+ * `timezoneFor` (the user's nutribot timezone) once cleanup is composed, else
+ * the household timezone. Late-bound because cleanup is built after this router.
+ */
+export function healthUserTimezone({ cleanupProvider = null, configService = null } = {}) {
+  return userId => (userId && cleanupProvider?.()?.timezoneFor?.(userId))
+    || configService?.getHouseholdTimezone?.() || 'America/Los_Angeles';
+}
+
 export function createHealthApiRouter(config) {
   const {
     healthServices,
@@ -230,11 +240,12 @@ export function createHealthApiRouter(config) {
     logger,
   });
 
-  // Health's AI spend by feature, read from the AI usage ledger in household time.
+  // Health's AI spend by feature, read from the AI usage ledger, with days
+  // counted in the same per-user timezone as the nutrition cleanup's cap.
   const aiUsageService = config.aiUsageLedger?.listRows
     ? new HealthAiUsageService({
       reader: config.aiUsageLedger,
-      timezone: () => configService?.getHouseholdTimezone?.() || 'America/Los_Angeles',
+      timezone: healthUserTimezone({ cleanupProvider: config.cleanupProvider, configService }),
       logger: logger.child?.({ module: 'health-ai-usage' }) || logger,
     })
     : null;
