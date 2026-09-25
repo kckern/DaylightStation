@@ -22,9 +22,10 @@ export function snapshotDigest(snapshot, hash) {
   for (const row of [...(snapshot.rows || []), ...(snapshot.pending || []).flatMap(log => log.items || [])]) {
     const body = Object.fromEntries(Object.entries(row).filter(([key]) => !OMIT.has(key)));
     if (body.review) body.review = { ...body.review, status: undefined };
+    // 16 hex characters is plenty to tell one row's versions apart and keeps the stored digest small.
     rows[rowKey(row)] = {
-      body: hash(JSON.stringify(body)),
-      art: hash(JSON.stringify([row.icon ?? null, row.photoRef ?? null])),
+      body: hash(JSON.stringify(body)).slice(0, 16),
+      art: hash(JSON.stringify([row.icon ?? null, row.photoRef ?? null])).slice(0, 16),
       settled: row.settled ?? null, settledBy: row.settledBy ?? null, review: row.review?.status ?? null,
     };
   }

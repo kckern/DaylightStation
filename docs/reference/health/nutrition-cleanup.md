@@ -115,7 +115,10 @@ Automatic runs pass three gates from the auditor settings (`auditorPolicy`):
   (first check after deploy) the change is `unclassified`, which cannot be switched
   off. A change whose kinds are all switched off is marked checked and journaled
   once as `skipped: filtered`. A change of bookkeeping only (versions, timestamps)
-  is marked checked without a run.
+  is marked checked without a run. Deleting an entry does not start an audit
+  either: a removed row (deleted, or aged out of the review window; the digest
+  cannot tell these apart) leaves the remaining rows unchanged, and the daily
+  sweep still covers them.
 - **Minimum gap** between automatic runs (`minGapMinutes`). Waiting changes keep
   accumulating; `status().nextEligibleAt` says when the next one may start.
 - **Daily spend cap** (`dailyCapUsd`, household day) summed from the AI usage

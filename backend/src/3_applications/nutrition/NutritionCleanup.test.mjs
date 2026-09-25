@@ -586,7 +586,7 @@ describe('auditor journal and run gates', () => {
   });
   it('caps on ledger spend, reads it once while capped, and lifts when the cap is raised', async () => {
     const spendSource = vi.fn(async () => [{ ts: '2026-09-04T18:00:00.000Z', costUsd: 1.5 }, { ts: 'garbage', costUsd: 9 }, { ts: '2026-09-03T18:00:00.000Z', costUsd: 9 }]);
-    const { f, journal, start, cleanup, advance } = await gated({ minGapMinutes: 0 }, { spendSource });
+    const { f, journal, start, cleanup, advance } = await gated({ minGapMinutes: 0, dailyCapUsd: 1 }, { spendSource });
     for (let i = 0; i < 10; i++) {
       if (i === 3) await f.items.update('alice', 'fish000001', { name: 'Cod' });
       await cleanup.tick('alice'); await cleanup.settled('alice'); advance(60000);
@@ -595,9 +595,46 @@ describe('auditor journal and run gates', () => {
     expect(spendSource).toHaveBeenCalledTimes(1);
     expect(f.logger.info.mock.calls.filter(([event]) => event === 'nutrition.cleanup.capped')).toHaveLength(1);
     expect((await journal.list('alice')).filter(row => row.skipped)).toEqual([expect.objectContaining({ skipped: 'cap', spentUsd: 1.5, capUsd: 1 })]);
+    // A raised cap that is still exceeded is its own event.
+    await cleanup.settings('alice', { expectedVersion: cleanup.status('alice').version, dailyCapUsd: 1.25 });
+    await cleanup.tick('alice'); await cleanup.settled('alice'); advance(1000);
+    expect(start).not.toHaveBeenCalled();
+    expect((await journal.list('alice')).filter(row => row.skipped).map(row => row.capUsd)).toEqual([1.25, 1]);
     await cleanup.settings('alice', { expectedVersion: cleanup.status('alice').version, dailyCapUsd: 5 });
     await cleanup.tick('alice'); await cleanup.settled('alice');
     expect(start).toHaveBeenCalledTimes(1);
+  });
+  it('a sweep due while the gap holds runs once the gap ends', async () => {
+    const { f, start, cleanup, advance, now } = await gated({ minGapMinutes: 15 });
+    f.store.update('alice', state => { state.lastAutoRunAt = now() - 5 * 60000; });
+    await cleanup.tick('alice'); await cleanup.settled('alice');
+    expect(start).not.toHaveBeenCalled();
+    advance(9 * 60000); await cleanup.tick('alice'); await cleanup.settled('alice');
+    expect(start).not.toHaveBeenCalled();
+    advance(60000); await cleanup.tick('alice'); await cleanup.settled('alice');
+    expect(start).toHaveBeenCalledTimes(1);
+    expect(latestRun(f).trigger).toContain('dailySweep');
+  });
+  it('backs a failing sweep off for ten minutes instead of failing every tick', async () => {
+    const { f, start, cleanup, advance } = await gated({ minGapMinutes: 0 });
+    const snapshot = vi.spyOn(f.auditor, 'snapshot').mockRejectedValueOnce(new Error('food log unreadable'));
+    await expect(cleanup.tick('alice')).resolves.toBeUndefined();
+    expect(f.logger.warn).toHaveBeenCalledWith('nutrition.cleanup.sweep_failed', expect.objectContaining({ userId: 'alice', error: 'food log unreadable' }));
+    advance(60000); await cleanup.tick('alice');
+    advance(8 * 60000); await cleanup.tick('alice');
+    expect(snapshot).toHaveBeenCalledTimes(1);
+    advance(60000); await cleanup.tick('alice'); await cleanup.settled('alice');
+    expect(start).toHaveBeenCalledTimes(1);
+  });
+  it('does not audit a deleted entry; the remaining rows are unchanged', async () => {
+    const { f, journal, start, cleanup, advance } = await gated({ minGapMinutes: 0 });
+    await cleanup.tick('alice'); await cleanup.settled('alice');
+    const tortilla = await f.items.findByUuid('alice', 'tortilla01');
+    await f.items.deleteById('alice', tortilla.uuid);
+    advance(60000); await cleanup.tick('alice'); advance(120000); await cleanup.tick('alice'); await cleanup.settled('alice');
+    expect(start).toHaveBeenCalledTimes(1);
+    expect(f.store.load('alice').checkedFingerprint).toBe((await f.auditor.snapshot('alice')).fingerprint);
+    expect((await journal.list('alice')).filter(row => row.skipped)).toEqual([]);
   });
   it('a capped sweep is retried once the household day turns over', async () => {
     const spendSource = vi.fn(async () => [{ ts: '2026-09-04T18:00:00.000Z', costUsd: 1.5 }]);
@@ -630,12 +667,11 @@ describe('auditor journal and run gates', () => {
     expect(start).toHaveBeenCalledTimes(1);
     advance(t0 + 15 * 60000 - now()); await cleanup.tick('alice'); await cleanup.settled('alice');
     expect(start).toHaveBeenCalledTimes(2);
-    const latest = Object.values(f.store.load('alice').runs).sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
-    expect(latest.trigger).toEqual(['edits']);
+    expect(latestRun(f).trigger).toEqual(['edits']);
     expect(start.mock.calls[1][0].input.snapshot.rows.map(row => row.name)).toEqual(expect.arrayContaining(['Cod', 'Corn Tortilla']));
   });
   it('skips automatic runs once today is over the spend cap, noting it once; a manual run still goes', async () => {
-    const { f, journal, start, cleanup, advance, now } = await gated();
+    const { f, journal, start, cleanup, advance, now } = await gated({ dailyCapUsd: 1 });
     await journal.append('alice', { runId: 'audit_earlier', at: new Date(now() - 3600000).toISOString(), status: 'completed', costUsd: 1.2 });
     await journal.append('alice', { runId: 'audit_yesterday', at: new Date(now() - 30 * 3600000).toISOString(), status: 'completed', costUsd: 5 });
     await cleanup.tick('alice'); await cleanup.settled('alice');
