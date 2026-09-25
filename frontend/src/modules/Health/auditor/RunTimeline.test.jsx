@@ -42,6 +42,7 @@ const spend = { days: [], today: 0.3, week: 1.5, month: 4.25, byTrigger: [], byM
 beforeEach(() => {
   resetApiResourceCache(); api.mockReset();
   api.mockImplementation(async path => {
+    if (path.endsWith('/settings/log')) return { entries: [] };
     if (path.includes('/journal/')) return { ...run, transcript: null, transcriptExpired: true };
     if (path.includes('/journal')) {
       if (path.includes('changed=1')) return { rows: [run], total: 1 };
@@ -192,6 +193,8 @@ describe('Auditor page', () => {
     expect(screen.getByText('Repair history')).toBeTruthy();
     expect(screen.getByText('Cleanup runs')).toBeTruthy();
     expect(screen.getByText('Spend')).toBeTruthy();
+    expect(screen.getByText('Auditor settings')).toBeTruthy();
+    expect(await screen.findByText('No settings changes yet.')).toBeTruthy();
   });
   it('refetches spend when the latest run changes', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });

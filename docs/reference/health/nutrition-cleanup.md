@@ -6,16 +6,34 @@ mutation tool. `NutritionEvidenceToolFactory` can be reused by other agents.
 
 ## User controls
 
-Health → Settings (`/health/settings`) contains automatic-cleanup, preview-only,
-and optional Telegram switches, Run now, and a one-line status (last run, spend
-today) with an **Open auditor** button. The auditor page (`/health/auditor`,
-`modules/Health/auditor/`) shows the state and spend header, the run timeline
-from the journal (filters: changed something, trigger, minimum cost; Load more
-pages by 50), a run detail sheet per run (why it ran, the transcript's tool
-calls while kept, questions asked and suppressed, applied changes with Undo by
-the outcome's `operationId` — the repair id — proposals, rejected/blocked
-outcomes, tokens and cost), and below them recent scans and repair history with
-before/after values, evidence, and Undo. Automatic cleanup defaults **off** and
+Health → Settings (`/health/settings`) shows a one-line auditor status (on /
+preview only / off, last run, spend today) with an **Open auditor** button, plus
+open questions and the artwork queue. Every auditor control lives on the auditor
+page (`/health/auditor`, `modules/Health/auditor/`), top to bottom:
+
+- **Header** — state, model, last run, next eligible run, spend today (the
+  enforced AI-ledger figure, which includes failed runs) against the cap, 7-day
+  and month totals.
+- **Run timeline** — journal rows newest first (filters: changed something,
+  trigger, minimum cost; Load more pages by 50). A row opens the **run detail**
+  sheet: why it ran, what it looked at (transcript tool calls while kept), what
+  it noticed (questions asked and suppressed), what it changed (reason and
+  before/after per repair, with Undo by the outcome's `operationId`, the repair
+  id; "Undone at …" once undone), rejected/blocked outcomes, tokens and cost.
+- **Spend** — 30 daily cost columns with the cap as a reference line, and cost
+  per run by trigger and by model.
+- **Auditor settings** (`AuditorConfig.jsx`) — automatic cleanup, preview only,
+  Telegram, Run now; model (with the observed cost per run); daily cap (blank =
+  no cap, saved on blur/Enter); minimum gap (Off/15/30/60 min); which triggers
+  start a run; what it may change (the ten permissions). Each control is its own
+  `PATCH /settings` with the status `expectedVersion`; a 409 reads "Settings
+  changed. Reload first." and reloads.
+- **Settings changes** (`SettingsLog.jsx`) — `GET /settings/log`, newest first,
+  in plain words, ten until "Show all".
+- **Cleanup runs** and **Repair history** — recent scans, and every repair with
+  before/after values, evidence and Undo.
+
+Automatic cleanup defaults **off** and
 preview-only defaults **on**. Preview evaluates the real policy without changing
 food or sending questions. Telegram defaults off. Successful automatic repairs do
 not show notifications. Disabling the auditor does not disable capture or the

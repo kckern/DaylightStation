@@ -48,13 +48,11 @@ describe('Health cleanup controls', () => {
     mount(<CleanupQuestions active={false} />);
     expect(api).not.toHaveBeenCalled();
   });
-  it('uses preview defaults and sends settings with the current revision', async () => {
+  it('leaves the auditor switches to the auditor page', async () => {
     state.questions = []; mount(<HealthSettings />);
-    const automatic = await screen.findByLabelText('Automatic cleanup');
-    expect(automatic.checked).toBe(false);
-    expect(screen.getByLabelText('Preview only — do not change food or send questions').checked).toBe(true);
-    fireEvent.click(automatic);
-    await waitFor(() => expect(api).toHaveBeenCalledWith(`${cleanupPath}/settings`, { expectedVersion: 1, enabled: true }, 'PATCH'));
+    await screen.findByRole('button', { name: 'Open auditor' });
+    expect(screen.queryByLabelText('Automatic cleanup')).toBeNull();
+    expect(screen.queryByRole('button', { name: /cleanup now/ })).toBeNull();
   });
   it('shows a one-line auditor status and opens the auditor page', async () => {
     state.questions = [];
@@ -63,7 +61,7 @@ describe('Health cleanup controls', () => {
       <Route path="/health/settings" element={<HealthSettings />} />
       <Route path="/health/auditor" element={<Where />} />
     </Routes>);
-    await screen.findByText(/Last run .* · \$0\.04 today/);
+    await screen.findByText(/^Off · Last run .* · \$0\.04 today/);
     expect(screen.queryByText('Repair history')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Open auditor' }));
     expect((await screen.findByTestId('where')).textContent).toBe('/health/auditor');
