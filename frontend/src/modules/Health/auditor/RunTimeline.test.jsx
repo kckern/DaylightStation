@@ -7,6 +7,7 @@ import { AuditorHeader } from './AuditorHeader.jsx';
 import { AuditorPage } from './AuditorPage.jsx';
 import { cleanupPath } from '../cleanup/CleanupQuestions.jsx';
 import { resetApiResourceCache } from '../../../lib/hooks/useApiResource.js';
+import { DismissStackProvider } from '../../../lib/ui';
 
 const api = vi.fn();
 vi.mock('../../../lib/api.mjs', () => ({ DaylightAPI: (...args) => api(...args) }));
@@ -39,6 +40,7 @@ const spend = { days: [], today: 0.3, week: 1.5, month: 4.25, byTrigger: [], byM
 beforeEach(() => {
   resetApiResourceCache(); api.mockReset();
   api.mockImplementation(async path => {
+    if (path.includes('/journal/')) return { ...run, transcript: null, transcriptExpired: true };
     if (path.includes('/journal')) {
       if (path.includes('changed=1')) return { rows: [run], total: 1 };
       if (path.includes('offset=50')) return { rows: [{ ...run, runId: 'run-z', at: '2026-09-20T10:00:00.000Z' }], total: 51 };
@@ -49,7 +51,7 @@ beforeEach(() => {
     return structuredClone(status);
   });
 });
-const mount = component => render(<MantineProvider><MemoryRouter>{component}</MemoryRouter></MantineProvider>);
+const mount = component => render(<MantineProvider><MemoryRouter><DismissStackProvider>{component}</DismissStackProvider></MemoryRouter></MantineProvider>);
 
 describe('Auditor run timeline', () => {
   it('counts a run row\'s outcomes in plain words', async () => {
@@ -127,5 +129,12 @@ describe('Auditor page', () => {
     expect(await screen.findByText('from transcript')).toBeTruthy();
     expect(screen.getByText('Repair history')).toBeTruthy();
     expect(screen.getByText('Cleanup runs')).toBeTruthy();
+  });
+  it('opens the run detail sheet from a timeline row', async () => {
+    mount(<AuditorPage />);
+    await screen.findByText('from transcript');
+    fireEvent.click(screen.getAllByRole('button', { name: /^Run at / })[0]);
+    expect(await screen.findByText('Transcript expired')).toBeTruthy();
+    expect(api).toHaveBeenCalledWith(`${cleanupPath}/journal/run-a?at=${encodeURIComponent(run.at)}`);
   });
 });

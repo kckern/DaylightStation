@@ -7,7 +7,14 @@ mutation tool. `NutritionEvidenceToolFactory` can be reused by other agents.
 ## User controls
 
 Health → Settings (`/health/settings`) contains automatic-cleanup, preview-only,
-and optional Telegram switches; Run now; recent scans; and repair history with
+and optional Telegram switches, Run now, and a one-line status (last run, spend
+today) with an **Open auditor** button. The auditor page (`/health/auditor`,
+`modules/Health/auditor/`) shows the state and spend header, the run timeline
+from the journal (filters: changed something, trigger, minimum cost; Load more
+pages by 50), a run detail sheet per run (why it ran, the transcript's tool
+calls while kept, questions asked and suppressed, applied changes with Undo by
+the outcome's `operationId` — the repair id — proposals, rejected/blocked
+outcomes, tokens and cost), and below them recent scans and repair history with
 before/after values, evidence, and Undo. Automatic cleanup defaults **off** and
 preview-only defaults **on**. Preview evaluates the real policy without changing
 food or sending questions. Telegram defaults off. Successful automatic repairs do

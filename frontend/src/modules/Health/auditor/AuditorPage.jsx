@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Stack } from '@mantine/core';
 import getLogger from '../../../lib/logging/Logger.js';
-import { useApiResource } from '../../../lib/hooks/useApiResource.js';
+import { useApiResource, invalidateApiResources } from '../../../lib/hooks/useApiResource.js';
 import { cleanupPath, useCleanup } from '../cleanup/CleanupQuestions.jsx';
 import { AuditorHeader } from './AuditorHeader.jsx';
 import { RunTimeline } from './RunTimeline.jsx';
 import { CleanupHistory } from './CleanupHistory.jsx';
+import { RunDetail } from './RunDetail.jsx';
 
 /**
  * /health/auditor: what the nutrition auditor did, why, and what it cost.
@@ -26,6 +27,7 @@ export function AuditorPage() {
     {/* AuditorConfig slot (settings, triggers, permissions). */}
     {null}
     <CleanupHistory resource={resource} />
+    {selected ? <RunDetail run={selected} onClose={() => setSelected(null)} onUndone={() => { resource.reload(); invalidateApiResources(path => path.startsWith(`${cleanupPath}/history`)); }} /> : null}
   </Stack>;
 }
 
