@@ -54,6 +54,15 @@ const ANIM_DURATION_MS = 1000;
 const PAIR_DURATION_MS = 30000;
 const PAIR_ENDPOINT = '/api/v1/emulator/bt/pair';
 
+// Session badge field → format + overlayData source. `player` reuses the
+// existing player_card rendering and reads from the pre-existing
+// `session.current_player` key; `timer` is the new countdown format;
+// `system_label` needs no format at all (resolveOverlayValue's generic
+// overlayData branch already returns a plain string, which formatOverlayValue's
+// default branch renders as text) and reads its own `session.system_label` key.
+const SESSION_FORMATS = { player: 'player_card', timer: 'countdown' };
+const SESSION_SOURCES = { player: 'current_player' };
+
 const DEFAULT_FACTORIES = {
   createEngine: createEmulatorEngine,
   createMixer: createAudioMixer,
@@ -113,10 +122,15 @@ export function EmulatorConsole({
   // Interval in seconds to auto-persist the resume blob while playing.
   // Keyed on persistence?.persist/userId so claiming post-mount starts it.
   autosaveSeconds = 15,
-  // Now-playing person ({ name, avatarSrc }) for the player overlay, and the
-  // launch timestamp for the count-up play timer.
+  // Now-playing person ({ name, avatarSrc }) for the player overlay.
   nowPlaying = null,
-  playStartedAt = null,
+  // Console/system label (e.g. "Game Boy Color") and the pre-computed
+  // {text, urgency, stale} clock for the unified session badge.
+  systemLabel = null,
+  sessionTimer = null,
+  // Resolved arcade-overlay.yml config for THIS system: {anchor, offsetX,
+  // offsetY, scale, fields}. Absent/empty fields ⇒ no session badge at all.
+  sessionOverlayConfig = null,
   factories,
   // Controller panel
   controllers = [],
@@ -192,16 +206,6 @@ export function EmulatorConsole({
     onArcadeGameSessionStateChange?.(effectiveArcadeGameSessionState);
   }, [effectiveArcadeGameSessionState, onArcadeGameSessionStateChange]);
 
-  // Count-up play timer (seconds since launch), ticked every 1s.
-  const [elapsedSec, setElapsedSec] = useState(0);
-  useEffect(() => {
-    if (!playStartedAt) return undefined;
-    const tick = () => setElapsedSec(Math.max(0, Math.floor((Date.now() - playStartedAt) / 1000)));
-    tick();
-    const id = setInterval(tick, 1000);
-    return () => clearInterval(id);
-  }, [playStartedAt]);
-
   // Continuous autosave: once the session is save-enabled AND user-scoped,
   // capture + persist the resume blob(s) every autosaveSeconds. Re-runs when
   // persistence flips active (the claim path), so saving starts without remount.
@@ -223,17 +227,19 @@ export function EmulatorConsole({
     return () => clearInterval(id);
   }, [autosaveSeconds, persistence?.persist, persistence?.userId, persistence?.saveMode, logger]);
 
-  // Merge host overlayData with the live now-playing person, play timer, and the
-  // coin placeholder so the bezel's player/timer/coins slots resolve.
+  // Merge host overlayData with the live now-playing person, system label,
+  // session timer, and the coin placeholder so the bezel's unified session
+  // badge slots resolve.
   const overlayData = useMemo(() => ({
     ...overlayDataProp,
     'session.current_player': nowPlaying
       ? { name: nowPlaying.name, avatar: nowPlaying.avatarSrc }
       : (overlayDataProp['session.current_player'] ?? null),
-    'session.play_seconds': elapsedSec,
+    'session.system_label': systemLabel ?? overlayDataProp['session.system_label'] ?? null,
+    'session.timer': sessionTimer ?? overlayDataProp['session.timer'] ?? null,
     // Coins economy not built yet — render a literal placeholder.
     'session.coins': overlayDataProp['session.coins'] ?? '—',
-  }), [overlayDataProp, nowPlaying, elapsedSec]);
+  }), [overlayDataProp, nowPlaying, systemLabel, sessionTimer]);
 
   // Controller panel: visibility + console-managed local pairing state.
   const [panelOpen, setPanelOpen] = useState(false);
@@ -969,6 +975,21 @@ export function EmulatorConsole({
     [gameState, status, overlayData],
   );
 
+  // Synthesize the unified session badge as a `session`-kind overlay from the
+  // resolved arcade-overlay.yml config. Empty/absent fields ⇒ no badge at all.
+  const sessionFields = sessionOverlayConfig?.fields || [];
+  const allOverlays = sessionFields.length
+    ? [...overlays, { id: 'session', kind: 'session', ...sessionOverlayConfig }]
+    : overlays;
+
+  const resolveSessionField = useCallback(
+    (field) => formatOverlayValue(
+      SESSION_FORMATS[field],
+      resolveOverlayValue(`session.${SESSION_SOURCES[field] ?? field}`, { gameState, governance: status, overlayData }),
+    ),
+    [gameState, status, overlayData],
+  );
+
   return (
     <div
       ref={consoleRef}
@@ -1003,7 +1024,7 @@ export function EmulatorConsole({
       >
         {hasPixelGrid && <canvas ref={gridCanvasRef} className="emulator-shader-grid" aria-hidden="true" />}
       </div>
-      <OverlayLayer overlays={overlays} resolve={resolveOverlay} />
+      <OverlayLayer overlays={allOverlays} resolve={resolveOverlay} resolveField={resolveSessionField} />
       <HotspotLayer hotspots={hotspots} onActivate={(h) => controllerRef.current?.activate(h)} />
       {showInputActivity && (
         <ControllerIndicator

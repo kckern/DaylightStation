@@ -57,6 +57,16 @@ export function formatOverlayValue(format, value) {
     const text = h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`;
     return { kind: 'stat', text, unit: '' };
   }
+  // Session countdown/count-up clock. Unlike `timer`/`clock` (raw elapsed
+  // SECONDS, always count-up), this trusts an already-formatted text plus
+  // urgency/staleness computed by useArcadeGameBudget's deriveArcadeGameBudget — keeping
+  // that clock math in exactly one place.
+  if (format === 'countdown') {
+    const text = (value && typeof value === 'object') ? String(value.text ?? '--:--') : String(value);
+    const urgency = (value && typeof value === 'object') ? (value.urgency ?? null) : null;
+    const stale = !!(value && typeof value === 'object' && value.stale);
+    return { kind: 'stat', text, unit: '', urgency, stale };
+  }
   if (Object.prototype.hasOwnProperty.call(STAT_UNITS, format)) {
     // Numeric stats round; a non-numeric value (e.g. the coin placeholder "—")
     // passes through as text so placeholders render literally instead of "NaN".

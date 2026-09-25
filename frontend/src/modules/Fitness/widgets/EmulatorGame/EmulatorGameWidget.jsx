@@ -398,13 +398,24 @@ export default function EmulatorGameWidget({ fitnessContext, deviceId = null, on
     };
   }, [activeGate, logger]);
 
-  // Overlay data bag for the console's `session.coins` slot. Only supplied for a
-  // live coin gate; undefined otherwise so EmulatorConsole keeps its '—' fallback.
+  // Session overlay data: the coin placeholder (only while a coin gate is
+  // live) plus nothing else here — player/system_label/timer are passed as
+  // their own props below so EmulatorConsole can merge them consistently
+  // whether they come from this widget or a future non-Fitness host.
   const overlayData = useMemo(() => (
     activeGate?.mode === 'coin-metered' && coins != null
       ? { 'session.coins': coins }
       : undefined
   ), [activeGate, coins]);
+
+  // Pre-formatted for the session badge — clock TEXT plus urgency/staleness,
+  // computed once here from the same useArcadeGameBudget derivation the deleted
+  // box used, never recomputed inside EmulatorConsole.
+  const sessionTimer = useMemo(() => (
+    arcadeGameBudget.visible
+      ? { text: formatClock(arcadeGameBudget.ms), urgency: arcadeGameBudget.urgency ?? null, stale: arcadeGameBudget.stale }
+      : null
+  ), [arcadeGameBudget.visible, arcadeGameBudget.ms, arcadeGameBudget.urgency, arcadeGameBudget.stale]);
 
   if (error) return <div className="fitness-emulator__error">Video games unavailable: {error}</div>;
   if (!library) return <div className="fitness-emulator__loading">Loading…</div>;
@@ -455,24 +466,14 @@ export default function EmulatorGameWidget({ fitnessContext, deviceId = null, on
             overlayData={overlayData}
             autosaveSeconds={autosaveSeconds}
             nowPlaying={launch.person}
-            playStartedAt={launch.startedAt}
+            systemLabel={arcadeGameBudget.systemLabel}
+            sessionTimer={sessionTimer}
+            sessionOverlayConfig={arcadeGameBudget.overlayConfig}
             resolveMediaUrl={(p) => DaylightMediaPath(p)}
             showInputActivity={settings.inputActivityLed !== false}
             onArcadeGameSessionStateChange={handleArcadeGameSessionStateChange}
             onExit={handleExitGame}
           />
-          {arcadeGameBudget.visible && (
-            <div
-              className={`fitness-emulator-play-budget${arcadeGameBudget.urgency ? ` is-${arcadeGameBudget.urgency}` : ''}${arcadeGameBudget.stale ? ' is-stale' : ''}`}
-              data-testid="play-budget"
-              role="status"
-              aria-live="polite"
-            >
-              <strong>{formatClock(arcadeGameBudget.ms)}</strong>
-              <span>{arcadeGameBudget.stale ? 'meter offline' : arcadeGameBudget.label}</span>
-              {arcadeGameBudget.warning && <small>{arcadeGameBudget.warning}</small>}
-            </div>
-          )}
           {anonymousSaveGame && (
             <PlayerSelect
               visible={playerSelectOpen}

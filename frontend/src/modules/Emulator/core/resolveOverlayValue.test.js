@@ -69,4 +69,25 @@ describe('formatOverlayValue', () => {
     expect(formatOverlayValue('coins', '—')).toEqual({ kind: 'stat', text: '—', unit: '' });
     expect(formatOverlayValue('coins', 12)).toEqual({ kind: 'stat', text: '12', unit: '' });
   });
+
+  it('formats a countdown from a pre-computed {text, urgency, stale} value', () => {
+    expect(formatOverlayValue('countdown', { text: '11:49', urgency: null, stale: false }))
+      .toEqual({ kind: 'stat', text: '11:49', unit: '', urgency: null, stale: false });
+    expect(formatOverlayValue('countdown', { text: '00:45', urgency: 'crit', stale: false }))
+      .toEqual({ kind: 'stat', text: '00:45', unit: '', urgency: 'crit', stale: false });
+    expect(formatOverlayValue('countdown', { text: '--:--', urgency: null, stale: true }))
+      .toEqual({ kind: 'stat', text: '--:--', unit: '', urgency: null, stale: true });
+  });
+
+  it('defaults missing countdown fields rather than rendering undefined', () => {
+    expect(formatOverlayValue('countdown', {}))
+      .toEqual({ kind: 'stat', text: '--:--', unit: '', urgency: null, stale: false });
+    expect(formatOverlayValue('countdown', { text: '5:00' }))
+      .toEqual({ kind: 'stat', text: '5:00', unit: '', urgency: null, stale: false });
+  });
+
+  it('stringifies a non-object countdown value rather than crashing', () => {
+    expect(formatOverlayValue('countdown', '5:00'))
+      .toEqual({ kind: 'stat', text: '5:00', unit: '', urgency: null, stale: false });
+  });
 });

@@ -20,6 +20,7 @@ import { RetroArchArcadeGameObservationSource } from '#adapters/gaming/RetroArch
 import { RetroArchSessionLogReader } from '#adapters/gaming/RetroArchSessionLogReader.mjs';
 import { EventBusArcadeGameSessionAnnouncer } from '#adapters/eventbus/EventBusArcadeGameSessionAnnouncer.mjs';
 import { parseBezel, choosePlacement } from '#domains/gaming/value-objects/OverlayPlacement.mjs';
+import { resolveOverlayConfig } from '#domains/gaming/value-objects/OverlaySessionFields.mjs';
 import { FleetArcadeGameSessionAnnouncer } from '#adapters/eventbus/FleetArcadeGameSessionAnnouncer.mjs';
 import { CompositeArcadeGameSessionAnnouncer } from '#adapters/eventbus/CompositeArcadeGameSessionAnnouncer.mjs';
 import { FullyKioskArcadeGameOverlay } from '#adapters/devices/FullyKioskArcadeGameOverlay.mjs';
@@ -126,7 +127,7 @@ export function buildBezelTable(gamesConfig = null, logger = console) {
  */
 export function createArcadeGameSessionTracking(config) {
   const {
-    devicesConfig, gamesConfig, gamesCatalog = null, configService, eventBus, httpClient,
+    devicesConfig, gamesConfig, gamesCatalog = null, arcadeOverlayConfig = null, configService, eventBus, httpClient,
     daylightHost = null, overlayPath = '/arcade-film.html',
     grants = null, haGateway = null, profileFor = null, assertionsFor = null,
     intervalMs = DEFAULT_INTERVAL_MS,
@@ -213,6 +214,11 @@ export function createArcadeGameSessionTracking(config) {
     return bezel ? choosePlacement(bezel) : null;
   };
 
+  // System id → resolved overlay config (anchor, offsets, scale, fields). The
+  // household's arcade-overlay.yml plus its per-system overrides, merged once
+  // per call so a missing config still yields the safe "show nothing" default.
+  const overlayConfigFor = (systemId) => resolveOverlayConfig(arcadeOverlayConfig, systemId);
+
   // Who the countdown is addressed to. A slug is an identifier, not a name; the
   // surface a child reads should say "Robin", not "robin".
   const identify = profileFor
@@ -236,7 +242,7 @@ export function createArcadeGameSessionTracking(config) {
   // itself out of this inner fan-out to avoid recursively announcing to it.
   const sessionProjections = new CompositeArcadeGameSessionAnnouncer({
     announcers: [
-      new EventBusArcadeGameSessionAnnouncer({ eventBus, placementFor, identify, sessions, logger }),
+      new EventBusArcadeGameSessionAnnouncer({ eventBus, placementFor, overlayConfigFor, identify, sessions, logger }),
       new FleetArcadeGameSessionAnnouncer({ eventBus, logger }),
       overlayAnnouncer,
     ],
