@@ -123,7 +123,11 @@ export function goalDate(fromDate, days) {
  * four identities. They are one measure (pounds) shown four ways, so mark shape
  * carries the difference and the legend names it.
  */
-export function buildWeightChartOptions({ entries, tokens, goalLbs = null, height = 260 }) {
+// `compact` is the Today weight card: the same series and axes as the Progress
+// chart and the screen-framework widget (modules/Health/Weight.jsx), shrunk for
+// a ~300px card — no legend (the card's label names the measure), unrotated
+// fortnightly date ticks, bare pound labels, tighter spacing.
+export function buildWeightChartOptions({ entries, tokens, goalLbs = null, height = 260, compact = false }) {
   if (!tokens || !entries?.length) return null;
   const windowed = windowEntries(entries);
   const range = axisRange(windowed, goalLbs != null ? [goalLbs] : []);
@@ -141,13 +145,14 @@ export function buildWeightChartOptions({ entries, tokens, goalLbs = null, heigh
   };
 
   return {
-    chart: { backgroundColor: 'transparent', height, spacingBottom: 8 },
+    chart: { backgroundColor: 'transparent', height, spacingBottom: 8,
+      ...(compact ? { spacing: [6, 4, 4, 2] } : {}) },
     title: { text: null },
     credits: { enabled: false },
     // Four marks means identity cannot ride on shape alone any more than on
     // colour alone — the legend names each one.
     legend: {
-      enabled: true,
+      enabled: !compact,
       itemStyle: { color: tokens.textMid, fontSize: '0.7rem', fontWeight: '400' },
       itemHoverStyle: { color: tokens.textHigh },
       symbolHeight: 8,
@@ -164,11 +169,11 @@ export function buildWeightChartOptions({ entries, tokens, goalLbs = null, heigh
       opposite: true,
       offset: -8,
       title: { enabled: false },
-      labels: { style: { color: tokens.textMid, fontSize: '0.8rem' }, format: '{value} lbs' },
+      labels: { style: { color: tokens.textMid, fontSize: compact ? '0.65rem' : '0.8rem' }, format: compact ? '{value}' : '{value} lbs' },
     },
     xAxis: {
       type: 'datetime',
-      tickInterval: 7 * 86400000,
+      tickInterval: (compact ? 14 : 7) * 86400000,
       gridLineColor: tokens.border,
       gridLineWidth: 1,
       lineColor: tokens.border,
@@ -177,8 +182,8 @@ export function buildWeightChartOptions({ entries, tokens, goalLbs = null, heigh
       // off the canvas and renders as a clipped fragment (", 15"). Dropping it
       // costs one date; keeping it prints garbage.
       labels: {
-        rotation: -35,
-        style: { color: tokens.textMid, fontSize: '0.7rem' },
+        rotation: compact ? 0 : -35,
+        style: { color: tokens.textMid, fontSize: compact ? '0.62rem' : '0.7rem' },
         formatter() { return this.isFirst ? null : formatTickDate(this.value); },
       },
       plotLines: monthBoundaries(windowed, tokens.textLow),

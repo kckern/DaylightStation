@@ -15,6 +15,7 @@ import { goalSaveMessage } from './goalSaveError.js';
 import { addDays } from '../today/WeekStrip.jsx';
 import { normalizeWeightEntries, buildWeightSeries, fmtDelta, fmtLbs, TREND_ARROWS } from '../today/weightSeries.js';
 import { buildWeightChartOptions, daysToGoal, goalDate, DEFAULT_TARGET_BODY_FAT_PCT } from './weightChart.js';
+import { readTokens } from './WeightTrendChart.jsx';
 
 const logger = createAppLogger('health').child('progress');
 
@@ -26,25 +27,7 @@ const PROJECTION_BLOCKED = {
   diverging: 'not on track',
 };
 
-// Reads the --ds-* custom properties off a mounted DS-themed element — the
-// chart config is ported from Weight.jsx's Highcharts usage, but hardcoded
-// hex colors are swapped for the live token values (getComputedStyle, not
-// Highcharts' CSS-styled mode: styled mode needs a stylesheet keyed to
-// Highcharts' own class names, which is more machinery than one chart needs).
-// The chart itself is built in weightChart.js; this only supplies the paint.
-function readTokens(el) {
-  const cs = getComputedStyle(el);
-  const get = (name) => cs.getPropertyValue(name).trim();
-  return {
-    textHigh: get('--ds-text-high'),
-    textMid: get('--ds-text-mid'),
-    textLow: get('--ds-text-low'),
-    border: get('--ds-border'),
-    surface: get('--ds-surface'),
-    accent: get('--ds-accent') || get('--ds-info'),
-  };
-}
-
+// Token reading (readTokens) lives with the shared chart component.
 const emptyGoals = () => ({ sex: 'male', targetWeightLbs: '', weeklyRateLbs: 0,
   activityBaseline: 1.2, budgetFloor: '', heightIn: '', birthYear: '', targetBodyFatPct: '' });
 

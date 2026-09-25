@@ -167,6 +167,15 @@ describe('buildWeightChartOptions', () => {
     row('2026-09-02', { measurement: 170, lbs_adjusted_average: 171.4, water_weight: 3.5 }),
   );
 
+  it('compact (the Today weight card): same three series, no legend, plain axis labels', () => {
+    const options = buildWeightChartOptions({ entries: sample, tokens, compact: true, height: 150 });
+    expect(options.chart.height).toBe(150);
+    expect(options.legend.enabled).toBe(false);
+    expect(options.series.map(s => s.name)).toEqual(['Adjusted average', 'Measured', 'Less water weight']);
+    expect(options.xAxis.labels.rotation).toBe(0);
+    expect(options.yAxis.labels.format).toBe('{value}');
+  });
+
   it('plots a dot only where someone actually weighed in', () => {
     const options = buildWeightChartOptions({ entries: sample, tokens });
     expect(seriesNamed(options, 'Measured').data).toHaveLength(3); // not 4
