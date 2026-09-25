@@ -51,7 +51,9 @@ export function DayClosePill({ date, dayStatus, items = [], onChanged }) {
   const { status, minCalories } = dayStatus;
   const calories = Math.round(sumCounted(items, 'calories'));
   const isToday = date === dayStatus.today;
-  const flagged = !status && !isToday && calories < minCalories;
+  // A skipped (fasted) meal already makes the day trusted — nothing to flag.
+  const skippedMeal = (dayStatus.fastedMeals || []).length > 0;
+  const flagged = !status && !skippedMeal && !isToday && calories < minCalories;
   if (!status && !isToday && !flagged) return null;
 
   const set = async (next) => {
@@ -80,7 +82,7 @@ export function DayClosePill({ date, dayStatus, items = [], onChanged }) {
         : 'Close day';
   const hint = flagged
     ? 'Coaching treats this day as incomplete until you close it.'
-    : "Finished eating? Coaching then treats the day's totals as final.";
+    : "Finished eating? Coaching then treats the day's totals as final. (Skipped a meal? Use its ⊘ icon.)";
 
   return (
     <span className="health-dayclose">
@@ -100,7 +102,6 @@ export function DayClosePill({ date, dayStatus, items = [], onChanged }) {
           ) : <>
             <Menu.Label>{hint}</Menu.Label>
             <Menu.Item leftSection={<IconCheck size={14} />} onClick={() => set('done')}>Done logging</Menu.Item>
-            <Menu.Item leftSection={<IconMoon size={14} />} onClick={() => set('fasting')}>Fasted</Menu.Item>
           </>}
         </Menu.Dropdown>
       </Menu>

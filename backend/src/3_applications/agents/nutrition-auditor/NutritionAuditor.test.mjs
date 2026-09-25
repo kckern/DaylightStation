@@ -8,6 +8,42 @@ const result = changes => ({ summary: 'Verified panel', repairs: [{
   updates: [{ id: 'food', expectedVersion: 1, changes }],
 }], questions: [] });
 
+describe('Auditor questions worth asking', () => {
+  const choice = (label, updates = [], createGroups = []) => ({ label, repair: {
+    mode: updates.length || createGroups.length ? 'verified' : 'complete', confidence: null, reason: 'r', evidenceIds: ['e'],
+    logUuid: null, expectedLogVersion: null, createGroups, updates } });
+  const q = (question, choices) => ({ question, entryIds: ['food'], choices });
+  const icons = { has: () => true, resolve: () => true };
+
+  it('drops a question whose answers change nothing (the auditor decides, it does not ask)', () => {
+    const audit = normalizeAuditRepairs({ summary: '', repairs: [], questions: [
+      q('Which icon fits the Poke Bowl group picture best?', [choice('🐟'), choice('🥗')]),
+      q('Is the White Rice 1 cup or ¾ cup?', [
+        choice('1 cup (186 g)', [{ id: 'food', expectedVersion: 1, changes: { grams: 186 } }]),
+        choice('¾ cup (140 g)', [{ id: 'food', expectedVersion: 1, changes: { grams: 140 } }]),
+      ]),
+    ] }, icons);
+    expect(audit.questions.map(x => x.question)).toEqual(['Is the White Rice 1 cup or ¾ cup?']);
+  });
+
+  it("drops an artwork-only question: icons are the auditor's call", () => {
+    const audit = normalizeAuditRepairs({ summary: '', repairs: [], questions: [
+      q('Which icon?', [
+        choice('Rice bowl', [{ id: 'food', expectedVersion: 1, changes: { icon: 'rice-bowl' } }]),
+        choice('Lantern', [{ id: 'food', expectedVersion: 1, changes: { icon: 'lantern' } }]),
+      ]),
+    ] }, icons);
+    expect(audit.questions).toEqual([]);
+  });
+
+  it('the wire schema holds questions short, with 2–3 concrete choices', () => {
+    const qs = auditWireSchema.properties.questions.items.properties;
+    expect(qs.question.maxLength).toBeLessThanOrEqual(140);
+    expect(qs.choices.minItems).toBe(2);
+    expect(qs.choices.items.properties.label.maxLength).toBeLessThanOrEqual(40);
+  });
+});
+
 describe('Auditor strict structured output', () => {
   it('keeps supported nutrients when a separate cosmetic suggestion is unavailable', () => {
     const audit = decodeAudit(result([{ field: 'sugar', value: 4 }]));

@@ -164,8 +164,8 @@ describe('barCellLabel — names the zone segment', () => {
     const d = day({ food: 700, zone: 'incomplete', remaining: 1300, status: 'under', range: { floor: 1200, top: 2000 } });
     expect(barCellLabel(d, barModel(d), 'Mon')).toMatch(/1300 kcal left$/);
   });
-  it('a fasted day says Fasted', () => {
+  it('a declared day still says what is left', () => {
     const d = day({ food: 300, zone: 'declared', declared: 'fasting', remaining: 1700, status: 'under', range: { floor: 1200, top: 2000 } });
-    expect(barCellLabel(d, barModel(d), 'Mon')).toMatch(/Fasted$/);
+    expect(barCellLabel(d, barModel(d), 'Mon')).toMatch(/1700 kcal left$/);
   });
 });

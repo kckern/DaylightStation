@@ -264,15 +264,16 @@ export class BudgetService {
   }
 
   // The per-day contract, assembled ONE way for getBudget and getBudgetRange.
-  // `closure` is the day's day_closed record: its day status is `declared`,
-  // and its meal fasts are coach information (they never move the zone).
+  // `closure` is the day's day_closed record: its day status is `declared`;
+  // a skipped (fasted) meal also makes the day complete (the log is trusted).
   #dayContract({ date, energy, food, exercise, closure }) {
     const { maintenance, deficit, deficitSource, range, stale } = energy;
     const declared = closureStatus(closure);
-    const { zone, remaining, complete, net } = zoneFor({ food, exercise, maintenance, range, declared });
+    const fastedMeals = fastedMealsOf(closure);
+    const { zone, remaining, complete, net } = zoneFor({ food, exercise, maintenance, range, declared, fastedMeals });
     return {
       date, budget: range.top, maintenance, deficit, deficitSource, range,
-      food, exercise, net, zone, complete, declared, fastedMeals: fastedMealsOf(closure),
+      food, exercise, net, zone, complete, declared, fastedMeals,
       remaining, status: statusForZone(zone), stale,
     };
   }

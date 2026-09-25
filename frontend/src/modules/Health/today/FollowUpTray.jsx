@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
+import { UnstyledButton } from '@mantine/core';
+import { Sheet } from '@/lib/ui';
 import { createAppLogger } from '../../../lib/ui/createAppLogger.js';
-import { CleanupQuestions, useCleanup } from '../cleanup/CleanupQuestions.jsx';
+import { useCleanup } from '../cleanup/CleanupQuestions.jsx';
+import { QuestionDeck } from '../cleanup/QuestionDeck.jsx';
 import { ObservationsSection } from './ObservationRow.jsx';
 
 const logger = createAppLogger('health').child('follow-ups');
@@ -10,53 +13,57 @@ const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 /**
  * Things waiting on the person that nobody just asked for: cleanup follow-up
  * questions (polled every 15 s) and kitchen-scale readings nothing has claimed.
- * Both arrive on their own schedule, so rendering them in the page flow moved
- * the whole day down mid-read. They live in ONE line that is always there — a
- * reserved slot, so a new item changes its words, never the layout — and open
- * in place only when tapped.
- *
- * One persistent <details> (never swapped for another element), so the live
- * region on its summary text survives and a new count is announced.
+ * They arrive on their own schedule, so the page gives them ONE line that is
+ * always there — a reserved slot: a new item changes its words, never the
+ * layout. Tapping it opens a sheet with the questions as a card deck (one at a
+ * time, swipe or tap through) and any unclaimed scale readings.
  */
 export function FollowUpTray({ active = true, observations = [], onObservationsChanged, onChanged }) {
   const cleanup = useCleanup(active);
-  // Held here, not in CleanupQuestions: a stale answer to the LAST question
-  // empties the list, and the message must outlive it.
+  const [open, setOpen] = useState(false);
+  // Held here: a stale answer to the LAST question empties the list, and the
+  // message must outlive it.
   const [feedback, setFeedback] = useState(null);
-  const questions = cleanup.data?.questions?.length || 0;
+  const questions = cleanup.data?.questions || [];
   const readings = observations.length;
-  const parts = [questions ? plural(questions, 'follow-up question', 'follow-up questions') : null,
+  const parts = [questions.length ? plural(questions.length, 'follow-up question', 'follow-up questions') : null,
     readings ? plural(readings, 'scale reading', 'scale readings') : null,
-    feedback && !questions ? 'A follow-up needs a look' : null].filter(Boolean);
+    feedback && !questions.length ? 'A follow-up needs a look' : null].filter(Boolean);
   const empty = parts.length === 0;
-
-  // Emptied while open (the last question answered): close, so the NEXT item
-  // arrives as a new count on the line rather than expanding the page.
-  const tray = useRef(null);
-  useEffect(() => { if (empty && tray.current) tray.current.open = false; }, [empty]);
 
   const last = useRef({ questions: 0, readings: 0 });
   useEffect(() => {
-    if (last.current.questions === questions && last.current.readings === readings) return;
-    last.current = { questions, readings };
-    logger.debug('counts', { questions, readings });
-  }, [questions, readings]);
+    if (last.current.questions === questions.length && last.current.readings === readings) return;
+    last.current = { questions: questions.length, readings };
+    logger.debug('counts', { questions: questions.length, readings });
+  }, [questions.length, readings]);
 
-  return <details ref={tray} className={`health-followups${empty ? ' health-followups--empty' : ''}`}
-    onToggle={event => {
-      const open = event.currentTarget.open;
-      if (!open) setFeedback(null);
-      if (!empty) logger.info(open ? 'open' : 'close', { questions, readings });
-    }}>
-    <summary aria-disabled={empty || undefined} tabIndex={empty ? -1 : undefined}
-      onClick={event => { if (empty) event.preventDefault(); }}>
-      <span aria-live="polite">{empty ? 'No follow-ups' : parts.join(' · ')}</span>
-    </summary>
-    {empty ? null : <div className="health-followups__body">
-      <CleanupQuestions active={active} resource={cleanup} onChanged={onChanged} feedback={feedback} onFeedback={setFeedback} />
-      <ObservationsSection observations={observations} onChanged={onObservationsChanged} />
-    </div>}
-  </details>;
+  const show = (next) => {
+    setOpen(next);
+    if (!next) setFeedback(null);
+    logger.info(next ? 'open' : 'close', { questions: questions.length, readings });
+  };
+
+  return (
+    <div className={`health-followups${empty ? ' health-followups--empty' : ''}`}>
+      {/* ONE persistent element, so its live region is updated (and announced),
+          never replaced by a newly inserted one. */}
+      <UnstyledButton className="health-followups__line" aria-haspopup="dialog"
+        aria-disabled={empty || undefined} tabIndex={empty ? -1 : undefined}
+        onClick={() => { if (!empty) show(true); }}>
+        <span aria-live="polite">{empty ? 'No follow-ups' : parts.join(' · ')}</span>
+      </UnstyledButton>
+      <Sheet open={open} onClose={() => show(false)} title="Follow-ups">
+        {feedback ? <p className="health-followups__feedback" role="status">{feedback}</p> : null}
+        {questions.length ? (
+          <QuestionDeck questions={questions} onFeedback={setFeedback}
+            onChanged={() => { cleanup.reload(); onChanged?.(); }} />
+        ) : null}
+        {readings ? <ObservationsSection observations={observations} onChanged={onObservationsChanged} /> : null}
+        {!questions.length && !readings && !feedback ? <p className="health-qdeck__done">All caught up.</p> : null}
+      </Sheet>
+    </div>
+  );
 }
 
 export default FollowUpTray;
