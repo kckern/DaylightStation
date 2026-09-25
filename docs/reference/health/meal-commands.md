@@ -60,6 +60,23 @@ and a new operation ID. Smart grouping is always a preview; selected IDs limit i
 otherwise all meal foods are eligible. The preview supports naming and membership
 adjustments, then applies all groups atomically.
 
+### Editing a dish in place
+
+An open dish can be edited from its own rows, without the "Edit groups" panel
+(`today/dishMembership.js`, wired in `LogTable.jsx`):
+
+- Each ingredient row has a **take out** control (−) next to its confirm. The food
+  leaves the dish and stays in the meal as a loose food. It is not deleted; its own
+  X deletes it after that. Taking out the last ingredient retires the dish header.
+- The dish's last line is an **Add food to {dish}…** picker listing every other food
+  in the meal. An ingredient of another dish is labelled `(from {dish})`; picking it
+  moves it, and a dish emptied that way is retired.
+
+Both send `action: "membership"` with the dish's complete next member list and
+every row's version, so a stale view is rejected (409) and the change gets the
+usual meal Undo. The error shows under the dish it belongs to. Neither control
+appears in the Ungrouped section or while foods are being selected.
+
 Lunch and Dinner are always shown, in the left and right columns. Breakfast and
 Snacks appear when they hold food, when a recording, retryable task or
 clarification is in flight for them, or when chosen in the quick bar; the clock

@@ -12,39 +12,57 @@ const MACROS = [
 ];
 
 /**
- * The day's calories as one bar. Capacity is budget + exercise; food fills it.
- * Once food passes capacity the scale becomes the food total, so the capacity
- * marker moves in and the overage is drawn past it rather than off the end.
- * Nothing here is shown as a negative: "eaten of", "left", "over".
+ * The day's calories as one bar on a fixed scale, with two marks that never
+ * move with the day: the Goal (the budget — break-even less the planned
+ * deficit) and Break even (the estimated burn, `maintenance`). The fill is NET
+ * calories (eaten − burned): green up to the goal, amber between goal and
+ * break-even, red past break-even. Exercise is a light band from net up to what
+ * was eaten, so both numbers read off the same scale.
+ * Nothing here is shown as a negative: "eaten", "burned", "left", "over".
  */
+// Room past the furthest mark, so the break-even label and a small surplus fit.
+const HEADROOM = 1.12;
 function BudgetBar({ budget }) {
-  const allowance = Number(budget.budget) || 0;
+  const goal = Number(budget.budget) || 0;
+  const breakEven = Number(budget.maintenance) || 0;
   const exercise = Math.max(0, Number(budget.exercise) || 0);
   const food = Math.max(0, Number(budget.food) || 0);
-  const capacity = allowance + exercise;
+  const net = Math.max(0, food - exercise);
   const over = budget.status === 'over';
-  const scale = Math.max(capacity, food);
-  const within = Math.min(food, capacity);
+  const scale = Math.max(goal, breakEven, food) * HEADROOM;
+  const band = (from, to) => ({ left: pct(from, scale), width: pct(Math.max(0, to - from), scale) });
+  // A mark's label hangs off the side of its line with more room.
+  const mark = (value, cls, label) => <span className={`health-budget__mark health-budget__mark--${cls}${value / scale > 0.5 ? ' health-budget__mark--end' : ''}`}
+    style={{ left: pct(value, scale) }}><span className="health-budget__mark-label">{label} <b>{n(value)}</b></span></span>;
+  const sameMark = breakEven > 0 && Math.round(breakEven) === Math.round(goal);
+  const balance = breakEven > 0 ? breakEven - net : null;
   return (
     <div className="health-budget">
       <div className="health-budget__head">
         <span className="health-budget__headline" data-testid="budget-headline">
-          <strong>{n(Math.abs(budget.remaining))}</strong> kcal {over ? 'over' : 'left'}
+          <strong>{n(Math.abs(budget.remaining))}</strong> kcal {over ? 'over goal' : 'left'}
         </span>
         <span className="health-budget__terms" data-testid="budget-terms">
-          <span>{n(food)} eaten of {n(capacity)}</span>
-          <span className="health-budget__sep" aria-hidden="true">·</span>
-          <span>budget {n(allowance)}</span>
+          <span>{n(food)} eaten</span>
           {exercise > 0 ? <><span className="health-budget__sep" aria-hidden="true">·</span>
-            <span className="health-budget__exercise-term">+{n(exercise)} exercise</span></> : null}
+            <span className="health-budget__exercise-term">{n(exercise)} burned</span>
+            <span className="health-budget__sep" aria-hidden="true">·</span>
+            <span>{n(net)} net</span></> : null}
+          {balance != null ? <><span className="health-budget__sep" aria-hidden="true">·</span>
+            <span className={balance >= 0 ? 'health-budget__deficit' : 'health-budget__surplus'}>{balance >= 0 ? `${n(balance)} deficit` : `${n(-balance)} surplus`}</span></> : null}
           {budget.stale ? <span className="health-equation__stale" title="Latest weigh-in is over a week old">stale wt</span> : null}
         </span>
       </div>
-      <div className="health-budget__track" role="img" aria-label={`${n(food)} of ${n(capacity)} kcal${over ? `, ${n(food - capacity)} over` : `, ${n(capacity - food)} left`}`}>
-        {exercise > 0 ? <span className="health-budget__exercise" style={{ left: pct(allowance, scale), width: pct(exercise, scale) }} /> : null}
-        <span className="health-budget__food" style={{ width: pct(within, scale) }} />
-        {food > capacity ? <span className="health-budget__over" style={{ left: pct(capacity, scale), width: pct(food - capacity, scale) }} /> : null}
-        {food > capacity ? <span className="health-budget__marker" style={{ left: pct(capacity, scale) }} /> : null}
+      <div className="health-budget__scale">
+        <div className="health-budget__track" role="img"
+          aria-label={`${n(net)} net kcal of ${n(goal)} goal${breakEven ? `, break even ${n(breakEven)}` : ''}${over ? `, ${n(Math.abs(budget.remaining))} over goal` : `, ${n(budget.remaining)} left`}`}>
+          {exercise > 0 ? <span className="health-budget__burned" style={band(net, food)} /> : null}
+          <span className="health-budget__net" style={band(0, Math.min(net, goal))} />
+          {net > goal ? <span className="health-budget__over-goal" style={band(goal, breakEven > goal ? Math.min(net, breakEven) : net)} /> : null}
+          {breakEven > goal && net > breakEven ? <span className="health-budget__surplus-fill" style={band(breakEven, net)} /> : null}
+        </div>
+        {mark(goal, 'goal', sameMark ? 'Goal · break even' : 'Goal')}
+        {breakEven > 0 && !sameMark ? mark(breakEven, 'even', 'Break even') : null}
       </div>
     </div>
   );

@@ -25,9 +25,11 @@ for (const { width, mainWidth } of [{ width: 390, mainWidth: 358 }, { width: 800
         <div style="width:194px">September 6, 2026</div>
         <div class="health-equation__math"><div class="health-budget">
           <div class="health-budget__head"><span class="health-budget__headline"><strong>10,000</strong> kcal left</span>
-            <span class="health-budget__terms"><span>12,345 eaten of 22,345</span><span class="health-budget__sep">·</span>
-            <span>budget 20,000</span><span class="health-budget__sep">·</span><span>+2,345 exercise</span></span></div>
-          <div class="health-budget__track"><span class="health-budget__food" style="width:55%"></span></div>
+            <span class="health-budget__terms"><span>12,345 eaten</span><span class="health-budget__sep">·</span>
+            <span>2,345 burned</span><span class="health-budget__sep">·</span><span>10,000 net</span><span class="health-budget__sep">·</span><span>12,345 deficit</span></span></div>
+          <div class="health-budget__scale"><div class="health-budget__track"><span class="health-budget__net" style="left:0%;width:44%"></span></div>
+            <span class="health-budget__mark health-budget__mark--goal health-budget__mark--end" style="left:72%"><span class="health-budget__mark-label">Goal <b>20,000</b></span></span>
+            <span class="health-budget__mark health-budget__mark--even health-budget__mark--end" style="left:89%"><span class="health-budget__mark-label">Break even <b>22,345</b></span></span></div>
         </div><div class="health-equation__macros">${macro('Protein', '999+', '1,400')}${macro('Carbs', '1,200', '1,800')}${macro('Fat', '999', '700')}</div></div>
       </div></div>`);
       if (process.env.HEALTH_SUMMARY_SCREENSHOTS) {
@@ -41,7 +43,7 @@ for (const { width, mainWidth } of [{ width: 390, mainWidth: 358 }, { width: 800
         return {
           overflow: document.documentElement.scrollWidth > innerWidth,
           height: document.querySelector('.health-equation').getBoundingClientRect().height,
-          contained: [...document.querySelectorAll('.health-budget__head > *, .health-macro-meter__value')].every(inside),
+          contained: [...document.querySelectorAll('.health-budget__head > *, .health-budget__mark-label, .health-macro-meter__value')].every(inside),
           barWidth: bar.width, mathWidth: math.width, barBottom: bar.bottom,
           macroTops: macros.map(r => r.top), macroLefts: macros.map(r => r.left),
         };

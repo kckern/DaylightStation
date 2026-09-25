@@ -27,15 +27,33 @@
   &__terms { display: flex; flex-wrap: wrap; gap: 0 0.4rem; font-size: 0.78rem; color: var(--ds-text-mid); font-variant-numeric: tabular-nums; }
   &__sep { color: var(--ds-text-low); }
   &__exercise-term { color: var(--ds-warning); }
+  &__deficit { color: var(--ds-success); }
+  &__surplus { color: var(--ds-danger); }
+  // Goal label rides above the bar, Break even below it, so the two never
+  // collide however close the marks sit.
+  &__scale { position: relative; padding: 0.8rem 0; }
   &__track {
     position: relative; height: 12px; border-radius: 6px; overflow: hidden;
     background: var(--ds-surface-alt); border: 1px solid var(--ds-border);
   }
-  &__food, &__exercise, &__over { position: absolute; top: 0; bottom: 0; }
-  &__food { left: 0; background: var(--ds-text-high); opacity: 0.85; border-radius: 6px 0 0 6px; }
-  &__exercise { background: color-mix(in srgb, var(--ds-warning) 28%, transparent); }
-  &__over { background: var(--ds-danger); }
-  &__marker { position: absolute; top: -2px; bottom: -2px; width: 2px; margin-left: -1px; background: var(--ds-text-high); }
+  &__net, &__burned, &__over-goal, &__surplus-fill { position: absolute; top: 0; bottom: 0; }
+  &__net { background: var(--ds-success); }
+  &__over-goal { background: var(--ds-warning); }
+  &__surplus-fill { background: var(--ds-danger); }
+  &__burned { background: color-mix(in srgb, var(--ds-success) 30%, transparent); }
+  &__mark {
+    position: absolute; top: 0.6rem; height: calc(12px + 0.4rem); width: 2px; margin-left: -1px;
+    background: var(--ds-text-high); pointer-events: none;
+  }
+  &__mark--even { background: var(--ds-text-mid); }
+  &__mark-label {
+    position: absolute; left: 4px; white-space: nowrap; line-height: 1;
+    font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--ds-text-mid);
+    b { font-weight: 600; color: var(--ds-text-high); font-variant-numeric: tabular-nums; }
+  }
+  &__mark--goal &__mark-label { bottom: calc(100% + 2px); }
+  &__mark--even &__mark-label { top: calc(100% + 2px); }
+  &__mark--end &__mark-label { left: auto; right: 4px; }
 }
 .health-equation--over .health-budget__headline strong { color: var(--ds-danger); }
 
@@ -64,11 +82,11 @@
 }
 
 // Week strip (Task 8.2) — seven per-day budget bars, plain CSS, no chart
-// library for seven rectangles. The box is `$health-bar-cap` tall and the
-// budget reference line sits at 1/cap of it (80% for a 1.25 cap), so a day
-// exactly on budget lands ON the line and the space above it is the overshoot
-// headroom. The 80% is derived from the cap in one place — the JS half of the
-// same arithmetic is dayBars.js's OVERSHOOT_CAP.
+// library for seven rectangles. The box is `cap` goals tall (dayBars.js
+// barScale: at least $health-bar-cap, raised so the week's break-even fits);
+// the goal line sits at 1/cap of it and the dashed break-even line above it.
+// Both positions are set inline from dayBars.js; the SCSS value below is only
+// the fallback for the minimum cap.
 //
 // NOTHING here animates `filter`: it is a known paint-cost trap in this repo
 // (low fps with zero long tasks). Hue changes are flat background swaps.
@@ -134,6 +152,11 @@ $health-bar-box: 16px;
     position: absolute; left: 0; right: 0; bottom: math.percentage(math.div(1, $health-bar-cap));
     height: 1px; background: var(--ds-text-low); opacity: 0.5; z-index: 2;
   }
+  // Break even: dashed, so it never reads as a second goal.
+  &__evenline {
+    position: absolute; left: 0; right: 0; height: 0; z-index: 2;
+    border-top: 1px dashed var(--ds-text-mid); opacity: 0.7;
+  }
   // The track: present only for a day the server COULD compute. Its mere
   // existence is what separates "0 kcal logged" from "no data".
   &__bar {
@@ -148,13 +171,9 @@ $health-bar-box: 16px;
   &__fill {
     display: block; width: 100%; border-radius: 3px 3px 0 0;
     background: var(--ds-success);
-    &--over { background: var(--ds-danger); }
-    // A day that ate PAST budget and still came in under, because exercise
-    // covered it. Without this the cell is just "a green bar above the
-    // reference line", which reads as a mistake; the capped top edge says the
-    // overshoot is real and something offset it. Non-colour cue, and the
-    // accessible name states the same thing in words (barCellLabel).
-    &--offset { border-top: 2px solid var(--ds-warning); }
+    // Past the goal but under break-even: still losing, just slower.
+    &--deficit { background: var(--ds-warning); }
+    &--surplus { background: var(--ds-danger); }
   }
 }
 
@@ -364,6 +383,9 @@ $health-aside-gap: 1.5rem;
   }
   &__bars { display: flex; align-items: flex-end; gap: 2px; height: 44px; }
   &__slot { position: relative; flex: 1 1 0; height: 100%; min-width: 0; }
+  &__goalline, &__evenline { position: absolute; left: 0; right: 0; z-index: 2; pointer-events: none; }
+  &__goalline { height: 1px; background: var(--ds-text-low); opacity: 0.5; }
+  &__evenline { height: 0; border-top: 1px dashed var(--ds-text-mid); opacity: 0.6; }
   &__bar {
     position: absolute; inset: 0; display: flex; align-items: flex-end;
     border-radius: 2px; background: var(--ds-surface-alt); overflow: hidden;
@@ -371,9 +393,8 @@ $health-aside-gap: 1.5rem;
   &__bar--gap { background: none; border: 1px dashed var(--ds-border); opacity: 0.7; }
   &__fill {
     display: block; width: 100%; border-radius: 2px 2px 0 0; background: var(--ds-success);
-    &--over { background: var(--ds-danger); }
-    // Same encoding at a month's zoom — see the week strip's note.
-    &--offset { border-top: 2px solid var(--ds-warning); }
+    &--deficit { background: var(--ds-warning); }
+    &--surplus { background: var(--ds-danger); }
   }
   &__caption { margin: 0; font-size: 0.65rem; color: var(--ds-text-low); font-variant-numeric: tabular-nums; }
 }
@@ -566,7 +587,7 @@ $health-aside-gap: 1.5rem;
   .health-row__kcal small { display: none; }
   .health-row__identity { gap: 0.25rem; }
   .health-row-line, .health-row-identity, .health-row-name, .health-portion,
-  .health-row__confirm, .health-row__delete, .health-row__expand, .health-density-badge { min-height: 44px; }
+  .health-row__confirm, .health-row__delete, .health-row__unnest, .health-row__expand, .health-density-badge { min-height: 44px; }
 }
 
 .health-exercise {
@@ -704,6 +725,31 @@ $health-aside-gap: 1.5rem;
   &:disabled { opacity: 0.2; }
 }
 
+// Takes an ingredient out of its dish (it stays in the meal). Same muted
+// geometry as the delete, but not a destructive colour: nothing is lost.
+.health-row__unnest {
+  display: flex; align-items: center; justify-content: center; flex: 0 0 auto;
+  min-width: 28px; min-height: 28px;
+  border: 1px solid transparent; border-radius: 8px;
+  color: var(--ds-text-mid); opacity: 0.45;
+  &:focus-visible { outline: 2px solid var(--ds-accent); outline-offset: 2px; opacity: 1; color: var(--ds-accent); }
+  &:hover { background: var(--ds-surface-alt); opacity: 1; color: var(--ds-accent); }
+  &:disabled { opacity: 0.2; }
+}
+// The last line of an open dish: a picker that folds another food into it.
+.health-dish-add {
+  &__field { grid-column: 2 / -1; display: flex; align-items: center; gap: 0.4rem; padding-left: 16px; min-width: 0; color: var(--ds-text-mid); font-size: 0.78rem; }
+  &__plus { width: 1rem; text-align: center; }
+  .mantine-NativeSelect-root { min-width: 0; flex: 0 1 auto; }
+  select {
+    min-width: 0; max-width: 100%; height: auto; min-height: 0; padding: 2px 1.6rem 2px 4px; font: inherit; color: inherit; cursor: pointer;
+    border: 1px solid transparent; border-radius: 6px;
+    &:hover:not(:disabled), &:focus-visible { border-color: var(--ds-border); color: var(--ds-text-high); outline: none; }
+    &:disabled { cursor: default; opacity: 0.6; }
+    option { color: var(--ds-text-high); background: var(--ds-surface); }
+  }
+}
+
 // Expand/collapse control for a group row — a sibling of the row button
 // (see .health-row-line comment: never nested inside it). Real button,
 // The button fills its branch cell; mobile rules increase its height. State uses
@@ -721,7 +767,7 @@ $health-aside-gap: 1.5rem;
 
 @media (pointer: coarse) {
   .health-row-line, .health-row-identity, .health-row-name, .health-portion,
-  .health-row__confirm, .health-row__delete, .health-row__expand, .health-density-badge { min-height: 44px; }
+  .health-row__confirm, .health-row__delete, .health-row__unnest, .health-row__expand, .health-density-badge { min-height: 44px; }
 }
 
 .health-display-settings {

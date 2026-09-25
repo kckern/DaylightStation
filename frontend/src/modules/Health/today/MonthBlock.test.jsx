@@ -22,7 +22,7 @@ describe('MonthBlock', () => {
     expect(screen.getByTestId(`monthbar-fill-${iso(0)}`).style.height).toBe('40%');  // 50% of budget
     expect(screen.getByTestId(`monthbar-fill-${iso(1)}`).style.height).toBe('80%');  // on budget
     expect(screen.getByTestId(`monthbar-fill-${iso(2)}`).style.height).toBe('100%'); // clamped
-    expect(screen.getByTestId(`monthbar-fill-${iso(2)}`).className).toMatch(/fill--over/);
+    expect(screen.getByTestId(`monthbar-fill-${iso(2)}`).className).toMatch(/fill--surplus/);
   });
 
   // The same honesty rule as the strip, at a month's zoom.
@@ -64,13 +64,15 @@ describe('MonthBlock', () => {
     }
   });
 
-  it('carries the exercise-offset cue, same encoding as the week strip', () => {
+  it('draws net calories in zones, with goal and break-even lines, same as the week strip', () => {
     render(<MonthBlock days={[
-      { date: iso(0), budget: 1791, food: 2040, exercise: 530, remaining: 281, status: 'under' },
-      day(iso(1), 1000),
+      { date: iso(0), budget: 2000, maintenance: 2500, food: 2600, exercise: 500, remaining: -100, status: 'over' },
+      { date: iso(1), budget: 2000, maintenance: 2500, food: 2700, exercise: 0, remaining: -700, status: 'over' },
     ]} />);
-    expect(screen.getByTestId(`monthbar-fill-${iso(0)}`).className).toMatch(/fill--offset/);
-    expect(screen.getByTestId(`monthbar-fill-${iso(1)}`).className).not.toMatch(/fill--offset/);
+    expect(screen.getByTestId(`monthbar-fill-${iso(0)}`).className).toMatch(/fill--deficit/); // 2100 net
+    expect(screen.getByTestId(`monthbar-fill-${iso(1)}`).className).toMatch(/fill--surplus/);
+    expect(document.querySelectorAll('.health-monthblock__goalline')).toHaveLength(2);
+    expect(document.querySelectorAll('.health-monthblock__evenline')).toHaveLength(2);
   });
 
   it('renders an empty, non-crashing block before anything has loaded', () => {

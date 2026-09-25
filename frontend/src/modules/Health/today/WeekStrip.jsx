@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { UnstyledButton } from '@mantine/core';
 import { localTodayISO } from './mealBuckets.js';
 import { useBudgetRange } from './useBudgetRange.js';
-import { barModel, barCellLabel, fmtKcal } from './dayBars.js';
+import { barModel, barScale, barCellLabel, fmtKcal } from './dayBars.js';
 
 export const addDays = (iso, n) => {
   const d = new Date(`${iso}T12:00:00`); // noon anchor avoids DST edge shifts
@@ -32,8 +32,11 @@ export const weekEnd = (iso) => {
  * date plus the viewed date itself, capped at `today` (so the strip never
  * reaches past today even if `date` somehow did).
  *
- * Each cell is a per-day BUDGET BAR — height is the day's food as a fraction of
- * that day's budget, hue is under/over. That is the whole encoding, on purpose:
+ * Each cell is a per-day BUDGET BAR — height is the day's NET calories (food −
+ * exercise) against its goal, hue is the zone: under goal, past goal but under
+ * break-even, past break-even. A solid line marks the goal, a dashed one
+ * break-even; the box's headroom is shared across the strip (barScale) so the
+ * lines sit level from cell to cell. That is the whole encoding, on purpose:
  * NO macro segments here (PRD F7.1). A stacked bar in a 40px cell invites
  * reading composition off four pixels of colour, and macros already have an
  * honest home in the tapped day.
@@ -55,6 +58,7 @@ export function WeekStrip({ date, today, onDateChange, viewportEnd, onViewportCh
   const from = addDays(end, -6);
   const { byDate, loading } = useBudgetRange(from, end, { enabled });
   const dates = Array.from({ length: 7 }, (_, i) => addDays(end, -6 + i));
+  const cap = barScale(dates.map(d => byDate.get(d)));
 
   useEffect(() => {
     const capped = earlier(date, today);
@@ -79,15 +83,12 @@ export function WeekStrip({ date, today, onDateChange, viewportEnd, onViewportCh
       {dates.map((d, i) => {
         const dt = new Date(`${d}T12:00:00`);
         const day = byDate.get(d) || null;
-        const bar = barModel(day);
+        const bar = barModel(day, cap);
         const isActive = d === date;
         const isToday = d === today;
         const dayName = dt.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
         // The accessible name announces the TRUE percentage, never the clamped
-        // paint — a spoken "100%" for a 140% day would be a false statement —
-        // and it names exercise, because the height's denominator (food/budget)
-        // and the hue's (budget − food + exercise) are different and a sentence
-        // asserting both without the reconciling term contradicts itself.
+        // paint — a spoken "100%" for a 140% day would be a false statement.
         const label = barCellLabel(day, bar, dayName);
         const startsMonth = i === 0 || monthKey(d) !== monthKey(dates[i - 1]);
         const crossesMonth = i > 0 && startsMonth;
@@ -108,13 +109,14 @@ export function WeekStrip({ date, today, onDateChange, viewportEnd, onViewportCh
             <span className="health-weekstrip__dow">{WEEKDAY_SHORT[dt.getDay()]}</span>
             <span className="health-weekstrip__num">{dt.getDate()}</span>
             <span className="health-weekstrip__barbox" aria-hidden="true">
-              <span className="health-weekstrip__goalline" />
+              <span className="health-weekstrip__goalline" style={{ bottom: `${(100 / cap).toFixed(1)}%` }} />
+              {bar.breakEvenPct != null ? <span className="health-weekstrip__evenline" style={{ bottom: `${bar.breakEvenPct}%` }} /> : null}
               {bar.kind === 'gap' ? (
                 <span className="health-weekstrip__bar health-weekstrip__bar--gap" data-testid={`weekbar-gap-${d}`} />
               ) : (
                 <span className="health-weekstrip__bar">
                   <span
-                    className={`health-weekstrip__fill health-weekstrip__fill--${bar.status}${bar.offsetByExercise ? ' health-weekstrip__fill--offset' : ''}`}
+                    className={`health-weekstrip__fill health-weekstrip__fill--${bar.zone}`}
                     data-testid={`weekbar-fill-${d}`}
                     data-height-pct={bar.heightPct}
                     style={{ height: `${bar.heightPct}%` }} />

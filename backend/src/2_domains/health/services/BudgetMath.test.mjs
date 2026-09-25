@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeDailyBudget } from './BudgetMath.mjs';
+import { computeDailyBudget, computeDailyEnergy } from './BudgetMath.mjs';
 
 const base = {
   weightLbs: 200, heightIn: 70, ageYears: 40, sex: 'male',
@@ -31,5 +31,15 @@ describe('computeDailyBudget', () => {
 
   it('rejects unknown sex', () => {
     expect(() => computeDailyBudget({ ...base, sex: 'x' })).toThrow(/INVALID_BUDGET_INPUT/);
+  });
+});
+
+describe('computeDailyEnergy', () => {
+  it('keeps break-even (TDEE) beside the budget', () => {
+    expect(computeDailyEnergy(base)).toEqual({ maintenance: 2462, budget: 1962 });
+  });
+
+  it('the floor raises the budget, never break-even', () => {
+    expect(computeDailyEnergy({ ...base, weightLbs: 100, weeklyRateLbs: 3 })).toEqual({ maintenance: 1849, budget: 1200 });
   });
 });
