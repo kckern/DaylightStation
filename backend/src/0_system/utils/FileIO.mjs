@@ -75,6 +75,42 @@ export function loadYaml(basePath) {
   return yaml.load(content);
 }
 
+// resolved path -> { signature, value }, least-recently-used first.
+const yamlParseCache = new Map();
+const YAML_PARSE_CACHE_MAX = 64;
+
+/**
+ * loadYaml for a file read far more often than it changes (a background tick
+ * polling state). The parse is kept and reused until the file's signature
+ * (mtime, size, inode) changes, and every call returns a CLONE, so a caller
+ * may mutate the result as freely as a fresh loadYaml. Every write path here
+ * (atomic rename, in-place write) changes the signature.
+ *
+ * Why it exists: the nutrition-cleanup tick re-parsed a 1.9 MB agent-state
+ * file and the month's food archive every 30 s, holding the backend event
+ * loop about 0.7 s each time (CPU profile, 2026-09-25).
+ * @param {string} basePath - Path without extension
+ * @returns {any|null} Parsed YAML content (a clone), or null if the file doesn't exist
+ */
+export function loadYamlCached(basePath) {
+  const resolvedPath = resolveYamlPath(basePath);
+  if (!resolvedPath) return null;
+  const signature = fileSignature(resolvedPath);
+  const cached = yamlParseCache.get(resolvedPath);
+  if (signature && cached?.signature === signature) {
+    yamlParseCache.delete(resolvedPath);
+    yamlParseCache.set(resolvedPath, cached);
+    return structuredClone(cached.value);
+  }
+  const value = yaml.load(fs.readFileSync(resolvedPath, 'utf8'));
+  if (signature) {
+    yamlParseCache.delete(resolvedPath);
+    yamlParseCache.set(resolvedPath, { signature, value: structuredClone(value) });
+    if (yamlParseCache.size > YAML_PARSE_CACHE_MAX) yamlParseCache.delete(yamlParseCache.keys().next().value);
+  }
+  return value;
+}
+
 /**
  * Load a YAML file with error handling (returns null on parse error)
  * @param {string} basePath - Path without extension
@@ -239,6 +275,23 @@ export function dirExists(dirPath) {
  */
 export function fileExists(filePath) {
   return fs.existsSync(filePath);
+}
+
+/**
+ * A cheap "has this file changed" key: modification time plus size, or null
+ * when the file cannot be stat'ed. For caching a parse of a file that is
+ * rewritten in place (every write changes the mtime).
+ * @param {string} filePath - File path
+ * @returns {string|null}
+ */
+export function fileSignature(filePath) {
+  try {
+    const stat = fs.statSync(filePath);
+    // The inode too: an atomic write renames a new file into place.
+    return `${stat.mtimeMs}:${stat.size}:${stat.ino}`;
+  } catch {
+    return null;
+  }
 }
 
 /**

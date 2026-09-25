@@ -126,6 +126,11 @@ and questions live in `users/{user}/agents/nutrition-cleanup.yml`. Committed rep
 receipts live alongside the nutrition ledger in `cleanup-audit.yml`; they commit in
 the same recoverable ledger journal as the food and daily summary. Pending receipts
 live in the capture's `metadata.cleanupAudit`, in the same atomic capture write.
+The tick reads that state file several times a pass, and it was 1.9 MB with 448
+runs as of 2026-09-25. `YamlAgentStateStore.load` and the nutrition list/archive
+reads therefore go through `FileIO.loadYamlCached`, which re-parses only when a
+file's mtime, size or inode changes and hands each caller a clone. Re-parsing on
+every 30 s tick had held the backend's event loop about 0.7 s each time.
 Completed dispatch records discard duplicate full report payloads; the managed
 workflow checkpoint and repair receipts remain durable. Transcripts use the existing
 private agent transcript store. Do not publish these files: they contain food history

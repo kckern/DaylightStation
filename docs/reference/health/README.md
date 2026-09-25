@@ -423,6 +423,26 @@ stale-while-revalidate mode; see
 [`docs/reference/frontend/design-system.md`](../frontend/design-system.md#data-fetching)
 for how the primitive itself works.
 
+**Reopening Health paints from disk.** Every `api/v1/health/*` read is also kept in
+IndexedDB (`healthCache.js`, database `daylight-health-cache`). Before its first render
+the app restores those entries into the in-memory cache. That takes tens of
+milliseconds, and it gives up after 400 ms, so a slow disk just means a normal network
+load. The context gate, the day, the budget headline, weight and the coach line
+therefore paint from the last visit on the first frame, and each one revalidates
+quietly. Restored entries are always treated as stale: every reader refetches them and
+the prefetcher does not skip them. The snapshots belong to one person. When the
+server's `/context` names a different user than the one recorded on disk, everything
+restored is dropped and refetched (`claimApiResourceOwner`). Measured on the LAN: a
+warm reopen went from 4.2 s to 0.2 s until the day's rows appeared.
+
+**The day on screen goes first.** On opening, the coach line's `/dashboard`
+(Health's slowest call, about 2.8 s), the sidebar's 30-day range and the
+neighbouring-day prefetch all wait until the viewed day has come back from the
+server and the browser has had an idle moment (`useAfterFirstPaint`). A snapshot
+already cached still shows in the meantime. After that, each date flip starts its
+prefetch pass only once the new day has loaded. A slow request therefore never holds the page, and never takes one of the
+browser's six connections while the day is still waiting for one.
+
 **Days around the viewed day are already loaded.** Once the viewed day is on screen,
 `useHealthDayPrefetch` warms a ±7-day buffer of the per-day resources (`/day`,
 `/nutrition/pending`, `/nutrition/observations`), nearest first and, at equal
@@ -452,7 +472,7 @@ has one of three homes, chosen by what it is about:
 | Kind | Examples | Home |
 |---|---|---|
 | **Reaction to what you just did** | "Moved to Lunch", "Breakfast copied to today", a capture that found no food, Undo for a move / meal change / delete, a move that failed, a recording that didn't send | A **toast** (`TodayToasts.jsx` over `lib/ui` `Toast`): floats out of flow, just above the tab bar on a phone, bottom-right on desktop, never over the headline number. Hidden while the coach chat is open. |
-| **Waiting on you, arrived on its own** | Nutrition-cleanup follow-up questions (15 s poll), unmatched kitchen-scale readings | The **follow-up tray** (`FollowUpTray.jsx`): one line under the macro bars that is *always there* — "No follow-ups", or "2 follow-up questions · 1 scale reading" — and opens a **sheet** when tapped: the questions as a card deck (`cleanup/QuestionDeck.jsx`) — ONE compact card at a time, headed by the food it is about, choices as big buttons (with the auditor's one-line reason), swipe / arrow keys / Back–Skip to move, answering moves on by itself, free text behind "Other answer…", "Leave as is" to dismiss — plus any unclaimed scale readings. Nothing expands on the page: a new item changes the line's words, not the layout. |
+| **Waiting on you, arrived on its own** | Nutrition-cleanup follow-up questions (15 s poll), unmatched kitchen-scale readings | The **follow-ups bell** (`FollowUpTray.jsx`) in the app header, next to settings. It takes no space on the page at all. The header slot is a fixed size (`followUpTarget`, portalled into from TodayView), and when something is waiting a red count floats over the bell, so an arrival moves nothing. Tapping the bell drops down a short list: each question by the food it is about (up to five, then "N more"), and "N scale readings to match". Picking an item opens a **sheet**. Questions come as a card deck (`cleanup/QuestionDeck.jsx`), opened on the question you picked: ONE compact card at a time, headed by the food, choices as big buttons (with the auditor's one-line reason), swipe / arrow keys / Back–Skip to move, answering moves on by itself, free text behind "Other answer…", "Leave as is" to dismiss. The sheet also holds any unclaimed scale readings. With nothing waiting, the bell is muted and its dropdown says "Nothing waiting". The dropdown has no focus trap: its aria-hider raced the sheet a pick opens and left the page, sheet included, `aria-hidden`. |
 | **About one entry** | A portion/number edit that failed or is invalid | **On that entry's row** (`PortionDraftAlert` in `EntryRow`). A dish cannot be collapsed while a draft is open, so a member's error cannot be hidden. Only a draft whose entry has left the day falls back to a toast. |
 
 Section load failures (`ErrorState` for the day, review queue, measurements) stay
@@ -568,10 +588,11 @@ anything else is `400 { code: 'RANGE_INVALID' }`. Unset goals are a property of
 the account rather than of a day, so they fail the whole range with
 `409 { code: 'GOALS_NOT_CONFIGURED' }`, matching `GET /budget`.
 
-A surface shown more than once on a page does **not** fetch more than once. The
-shared fetch hook's cache dedupes a second page *load*, not two simultaneous
-mounts, so a range that several widgets need is fetched once high in the tree
-and handed down as `days`. The desktop sidebar's month block and its
+A surface shown more than once on a page does **not** fetch more than once. Two
+readers that mount together on one path share one in-flight request (and a
+prefetch in flight is joined, not repeated); an explicit `reload()` never
+joins. A range several widgets need is still fetched once high in the tree and
+handed down as `days`. The desktop sidebar's month block and its
 intake-vs-burn chart share one 30-day request this way.
 
 ### One rule for which day a row belongs to

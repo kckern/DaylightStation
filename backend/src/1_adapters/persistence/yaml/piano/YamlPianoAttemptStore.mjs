@@ -1,6 +1,6 @@
 import path from 'node:path';
 import YAML from 'yaml';
-import { ensureDir, fileExists, readDirectory, readTextFromPath, writeFileAtomic, writeFileExclusive } from '#system/utils/FileIO.mjs';
+import { ensureDir, fileExists, fileSignature, readDirectory, readTextFromPath, writeFileAtomic, writeFileExclusive } from '#system/utils/FileIO.mjs';
 
 const SEGMENT_RE = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/;
 
@@ -28,9 +28,38 @@ function idempotencyConflict(attemptId) {
 }
 
 export class YamlPianoAttemptStore {
+  // file path -> { signature, record }. Every listing reads a user's WHOLE
+  // attempt history (hundreds of files) and the kiosk asks for it on every
+  // poll. Re-parsing it each time held the backend's event loop for 2-6 s,
+  // about once a minute, and stalled every other request in the house. A
+  // record is re-parsed only when its file's mtime or size changes, and save()
+  // and void() both rewrite the file. Listings hand out clones, so a caller
+  // that mutates a record cannot corrupt the cache.
+  #parsed = new Map();
+
   constructor({ usersDir, clock = () => new Date() }) {
     this.usersDir = usersDir;
     this.clock = clock;
+  }
+
+  #read(file) {
+    const signature = fileSignature(file);
+    const cached = this.#parsed.get(file);
+    if (signature && cached?.signature === signature) return structuredClone(cached.record);
+    const record = YAML.parse(readTextFromPath(file), { uniqueKeys: true });
+    if (signature) this.#parsed.set(file, { signature, record: structuredClone(record) });
+    return record;
+  }
+
+  // Drop entries for one user's files that are no longer listed, so the
+  // cache cannot outgrow what is on disk.
+  #forgetMissing(files) {
+    if (!files.length) return;
+    const userRoot = path.dirname(path.dirname(files[0]));
+    const listed = new Set(files);
+    for (const file of this.#parsed.keys()) {
+      if (file.startsWith(userRoot + path.sep) && !listed.has(file)) this.#parsed.delete(file);
+    }
   }
 
   save(userId, attempt) {
@@ -102,8 +131,9 @@ export class YamlPianoAttemptStore {
       .flatMap((day) => readDirectory(path.join(root, day.name))
         .filter((name) => name.endsWith('.yml'))
         .map((name) => path.join(root, day.name, name)));
+    this.#forgetMissing(files);
     return files
-      .map((file) => YAML.parse(readTextFromPath(file), { uniqueKeys: true }))
+      .map((file) => this.#read(file))
       .filter((attempt) => includeVoided || !attempt?.voided)
       .sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')))
       .slice(0, Math.max(0, limit));

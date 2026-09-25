@@ -107,6 +107,16 @@ const REPLAY_MOVE_MS = 840;
 
 const EMPTY_ARRAY = Object.freeze([]);
 const EMPTY_OBJECT = Object.freeze({});
+const BLANK_AXIS = Object.freeze(Array(8).fill(''));
+
+/**
+ * The longest the board waits for the player's own addressing before it opens
+ * on the house fallback. A config read that never answers must not leave a
+ * child staring at a board that ignores the piano; a late answer is still
+ * adopted if nothing has been played.
+ */
+export const ADDRESSING_WAIT_MS = 6000;
+const SETTING_UP_PROMPT = 'Setting up your board…';
 
 let cachedLogger;
 function logger() {
@@ -163,6 +173,7 @@ export function PianoChessGame({
 
   const {
     chessConfig,
+    configReady,
     ladder,
     ladderReady,
     rungId,
@@ -299,15 +310,53 @@ export function PianoChessGame({
   // under the loaded preference so the saved setting is real from the first
   // move; once a chord or move has landed the board must not rearrange under
   // them, and the captured value stands until the next game.
+  // THE BOARD IS NOT PLAYABLE UNTIL IT SPEAKS THE PLAYER'S VOCABULARY. The
+  // game is built before the player's config can arrive, on the house chord
+  // fallback, and for six weeks the first touch could land on that fallback
+  // and pin it for the whole game — a staff reader handed chord symbols
+  // (2026-09-25). Input now stays closed until this effect has applied the
+  // loaded addressing, or the read has answered with nothing, or the wait
+  // runs out. `addressingReadyFor` is keyed by game so a restart closes it
+  // again until the next game's config has resolved.
+  const [addressingReadyFor, setAddressingReadyFor] = useState(null);
+  const [addressingWaitExpiredFor, setAddressingWaitExpiredFor] = useState(null);
+  const addressingReady = addressingReadyFor === gameId || addressingWaitExpiredFor === gameId;
+
   useEffect(() => {
-      if (!loadedAddressing) return;
+    if (addressingReadyFor === gameId) return undefined;
+    const timer = setTimeout(() => {
+      logger().warn('addressing.wait-expired', { gameId, waitedMs: ADDRESSING_WAIT_MS });
+      setAddressingWaitExpiredFor(gameId);
+    }, ADDRESSING_WAIT_MS);
+    return () => clearTimeout(timer);
+  }, [addressingReadyFor, gameId]);
+
+  useEffect(() => {
+      if (!configReady) return;
+      if (!loadedAddressing) {
+        setAddressingReadyFor(gameId);
+        return;
+      }
       // The addressing vocabulary is a per-player setting, so it can only be
       // known once that player's config layer has resolved — after the game was
       // built. Same rule as the shuffle: adopt it while the game is untouched,
       // never rearrange the board under a player mid-move.
+      //
+      // A LIFTED PIECE IS NOT A PLAYED MOVE. Before any move lands, the game is
+      // rebuilt even with a piece in hand: that lift was made in the fallback
+      // vocabulary, which the player never chose. Gating on `origin` here kept a
+      // staff reader on chord symbols for a whole game (2026-09-25) because he
+      // touched a pawn 250ms before a slow config read came back.
       const { scheme: loadedScheme, shuffleEachTurn: nextShuffle } = loadedAddressing;
+      const pending = gameRef.current;
+      if (pending.origin && pending.history.length === 0 && pending.scheme?.id !== loadedScheme.id) {
+        logger().info('addressing.adopted-over-lift', {
+          origin: pending.origin, from: pending.scheme?.id ?? null, to: loadedScheme.id,
+        });
+      }
       setGame((current) => {
-        const canAdopt = !current.origin && (current.history.length === 0 || (managedAddressing && isPlayerTurn(current)));
+        const canAdopt = current.history.length === 0
+          || (!current.origin && managedAddressing && isPlayerTurn(current));
         if (!canAdopt) return current;
         if (current.shuffleEachTurn === nextShuffle && current.scheme?.id === loadedScheme.id) return current;
         if (current.history.length === 0) {
@@ -318,9 +367,15 @@ export function PianoChessGame({
         const next = { ...current, baseScheme: loadedScheme, shuffleEachTurn: nextShuffle };
         return { ...next, scheme: schemeForPly(next, current.history.length) };
       });
-  }, [loadedAddressing, fen, gameSeed, managedAddressing, playerColor, game.history.length, game.status?.turn]);
+      setAddressingReadyFor(gameId);
+  }, [configReady, loadedAddressing, fen, gameId, gameSeed, managedAddressing, playerColor, game.history.length, game.status?.turn]);
 
-  const heldNotes = useMemo(() => [...activeNotes.keys()].sort((a, b) => a - b), [activeNotes]);
+  // Notes reach the game only once the board is addressed in the player's own
+  // vocabulary. The keyboard strip still draws them (it reads `activeNotes`).
+  const heldNotes = useMemo(
+    () => (addressingReady ? [...activeNotes.keys()].sort((a, b) => a - b) : EMPTY_ARRAY),
+    [activeNotes, addressingReady],
+  );
 
   /**
    * Every legal move in this position, generated ONCE.
@@ -870,8 +925,8 @@ export function PianoChessGame({
     mood,
     opponentLine,
     onboardStep,
-    onboardCopy,
-    prompt,
+    onboardCopy: railOnboardCopy,
+    prompt: railPrompt,
     pickupDeadline,
     turnColour,
     turnLabel,
@@ -894,6 +949,11 @@ export function PianoChessGame({
     matchCounts,
     demotionArmed,
   });
+  // Before the player's config is in, `seen_intro` reads false and the
+  // vocabulary is the fallback, so neither the walkthrough nor the prompt can
+  // be trusted to describe the board they are about to get.
+  const onboardCopy = addressingReady ? railOnboardCopy : null;
+  const prompt = addressingReady ? railPrompt : SETTING_UP_PROMPT;
   return (
     <BoardGameFrame
       gameId="chess"
@@ -1086,9 +1146,9 @@ export function PianoChessGame({
           fen={replay?.phase === 'rewind' ? replay.fen : game.game.fen}
           status={game.status}
           orientation={playerColor === 'b' ? 'black' : 'white'}
-          fileLabels={fileLabels}
-          rankLabels={rankLabels}
-          corner={fileClef}
+          fileLabels={addressingReady ? fileLabels : BLANK_AXIS}
+          rankLabels={addressingReady ? rankLabels : BLANK_AXIS}
+          corner={addressingReady ? fileClef : null}
           selected={game.origin}
           heldSquare={game.origin}
           /* Shape as well as text. The board has always had a dot-and-ring

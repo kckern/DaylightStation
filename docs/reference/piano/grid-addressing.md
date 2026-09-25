@@ -697,3 +697,13 @@ distinct MIDI notes within a perfect fifth, and the two board axes must occupy d
 Recognition requires the exact union of the file and rank shapes. This keeps every shape playable
 by one hand, correctly placed on its staff, and unambiguous about the selected square. Chess adopts
 a new map only at a safe human-turn boundary; the map cannot change underneath a held selection.
+
+**No input before the player's config.** A board is built before the player's config can arrive,
+on the house defaults, so every addressed board game ignores the piano until that read has
+answered. Chess also blanks its axis labels and shows "Setting up your board…" until the loaded
+addressing has been applied to the game. The wait is bounded (`ADDRESSING_WAIT_MS` in chess,
+`CONFIG_SETTLE_TIMEOUT_MS` in `useAddressedBoardGame`) and logs `addressing.wait-expired` /
+`game.config-read-slow` when it runs out; the board then opens on the defaults, and a config that
+arrives later is still adopted if no move has been played (`addressing.adopted-over-lift` if a
+piece was in hand). Before this, a staff reader got a chess board in chord symbols for a whole
+game because his first touch beat a 2-second config read (2026-09-25).

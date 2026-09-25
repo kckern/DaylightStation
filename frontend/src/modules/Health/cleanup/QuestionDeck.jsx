@@ -6,7 +6,7 @@ import { useQuestionAnswer } from './CleanupQuestions.jsx';
 const SWIPE_PX = 60;
 
 /** The foods a question is about, as the card's heading. */
-const subjectOf = (question) => {
+export const subjectOf = (question) => {
   // entryNames is keyed by both a row's id and its uuid: dedupe the names.
   const names = [...new Set(Object.values(question.entryNames || {}).filter(Boolean))];
   return names.length ? names.join(' · ') : 'Your food log';
@@ -79,10 +79,11 @@ function QuestionCard({ question, index, total, onAnswered, onPrev, onNext, onFe
  * Back/Skip move between cards; answering moves on by itself. Free text is
  * there ("Other answer…") but out of the way.
  */
-export function QuestionDeck({ questions = [], onChanged = () => {}, onFeedback = () => {} }) {
+export function QuestionDeck({ questions = [], startId = null, onChanged = () => {}, onFeedback = () => {} }) {
   const logger = useMemo(() => createAppLogger('health').child('question-deck'), []);
   const [answered, setAnswered] = useState(() => new Set());
-  const [index, setIndex] = useState(0);
+  // Opens on the question picked from the notifications list, if any.
+  const [index, setIndex] = useState(() => Math.max(0, questions.findIndex((question) => question.id === startId)));
   const visible = questions.filter((question) => !answered.has(question.id));
   const at = Math.min(index, Math.max(0, visible.length - 1));
 

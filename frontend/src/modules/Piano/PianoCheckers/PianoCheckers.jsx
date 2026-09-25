@@ -120,7 +120,7 @@ export default function PianoCheckers({ activeNotes = new Map(), currentUser = n
     : game.status.draw ? 'draw' : game.status.winner === 1 ? 'win' : 'loss';
 
   const {
-    config, updateConfig, ladder, level, seed, gameSessionId, userId,
+    config, configSettled, updateConfig, ladder, level, seed, gameSessionId, userId,
     localPractice, noteLocalPractice, restart: resetSession, logger, archiveContextRef,
   } = useAddressedBoardGame({
     gameId: 'checkers',
@@ -246,10 +246,11 @@ export default function PianoCheckers({ activeNotes = new Map(), currentUser = n
     // finished board re-entered from the launcher looks identical to a working
     // one, and "I can't move" produced not a single log line to explain it.
     // Sampled because it is evaluated on every note event.
-    if (game.status.gameOver || game.turn !== 1 || thinking) {
+    if (!configSettled || game.status.gameOver || game.turn !== 1 || thinking) {
       if (activeNotes.size > 0) {
         logger.sampled('checkers.input-ignored', {
-          reason: game.status.gameOver ? 'game-over' : thinking ? 'opponent-thinking' : 'not-your-turn',
+          reason: !configSettled ? 'config-loading'
+            : game.status.gameOver ? 'game-over' : thinking ? 'opponent-thinking' : 'not-your-turn',
           turn: game.turn, ply: game.moves?.length ?? null,
         }, { maxPerMinute: 6, aggregate: true });
       }
@@ -324,7 +325,7 @@ export default function PianoCheckers({ activeNotes = new Map(), currentUser = n
       }
     }
     latchedRef.current = true;
-  }, [activeNotes, commitMove, game, level, logger, notes, recordReading, selected, thinking]);
+  }, [activeNotes, commitMove, configSettled, game, level, logger, notes, recordReading, selected, thinking]);
 
   // The gate is consulted HERE, above `resetAuthority()`, and not only inside
   // `resetSession()`. `resetAuthority()` closes the finished session and mints
