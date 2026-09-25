@@ -395,14 +395,14 @@ describe('auditor settings, permissions and history', () => {
   it('runs the chosen model and keeps its usage and cost on the completed run', async () => {
     const f = await fixture();
     f.store.update('alice', state => { state.settings = { enabled: true, dryRun: true, telegram: false, model: 'gpt-4o' }; });
-    const result = { ...noChanges, model: { provider: 'openai', name: 'gpt-4o' }, usage: { inputTokens: 1200, outputTokens: 80 },
+    const result = { ...noChanges, model: { provider: 'openai', name: 'gpt-4o' }, usage: { inputTokens: 1200, outputTokens: 80, cachedInputTokens: 1024, raw: { prompt_tokens: 1200 } },
       costUsd: 0.0038, turnId: 'turn_1', toolCalls: [{ name: 'find_food_art', args: '{"q":"fish"}' }] };
     const runs = { register: vi.fn(), start: vi.fn(async () => ({ status: 'success', result })) };
     const cleanup = new NutritionCleanup({ ...f, runs });
     await cleanup.request('alice', { manual: true }); await cleanup.settled('alice');
     expect(runs.start.mock.calls[0][0].input).toMatchObject({ model: 'gpt-4o', permissions: { nutrients: true, questions: true } });
     const [run] = Object.values(f.store.load('alice').runs);
-    expect(run).toMatchObject({ status: 'completed', model: 'gpt-4o', usage: { inputTokens: 1200 }, costUsd: 0.0038, turnId: 'turn_1',
+    expect(run).toMatchObject({ status: 'completed', model: 'gpt-4o', usage: { input: 1200, cached: 1024, output: 80 }, costUsd: 0.0038, turnId: 'turn_1',
       toolCalls: [{ name: 'find_food_art' }] });
     expect(run.result).toBeUndefined();
   });
@@ -701,13 +701,13 @@ describe('auditor journal and run gates', () => {
     const question = { question: 'Was the fish 55 g or 100 g?', entryIds: ['fish000001'],
       choices: [{ label: '55 g', repair: f.proposal({ grams: 55 }) }, { label: '100 g', repair: f.proposal({ grams: 100 }) }] };
     start.mockResolvedValue({ status: 'success', result: { summary: 'Match art', repairs: [f.proposal({ icon: 'fish' })], questions: [question],
-      evidence: [{ id: 'source', kind: 'capture' }], model: { provider: 'openai', name: 'gpt-4.1-mini' }, usage: { inputTokens: 900 }, costUsd: 0.002,
+      evidence: [{ id: 'source', kind: 'capture' }], model: { provider: 'openai', name: 'gpt-4.1-mini' }, usage: { inputTokens: 900, outputTokens: 40, raw: { any: 'provider detail' } }, costUsd: 0.002,
       turnId: 'turn_9', toolCalls: [{ name: 'find_food_art', args: '{}' }] } });
     const { runId } = await cleanup.request('alice', { manual: true }); await cleanup.settled('alice');
     const run = f.store.load('alice').runs[runId];
     const [row] = await journal.list('alice');
     expect(row).toEqual({ runId, at: run.createdAt, completedAt: run.completedAt, status: 'completed', trigger: ['manual'], model: 'gpt-4.1-mini',
-      usage: { inputTokens: 900 }, costUsd: 0.002, turnId: 'turn_9', toolCalls: [{ name: 'find_food_art', args: '{}' }],
+      usage: { input: 900, cached: null, output: 40 }, costUsd: 0.002, turnId: 'turn_9', toolCalls: [{ name: 'find_food_art', args: '{}' }],
       outcomes: [expect.objectContaining({ status: 'proposed' })], questions: [{ question: question.question, choices: ['55 g', '100 g'] }],
       suppressedQuestions: [], summary: 'Match art', dryRun: true, manual: true, overCap: false });
   });
@@ -736,10 +736,12 @@ describe('auditor journal and spend views', () => {
     for (const row of [
       run('r4', '2026-08-20T18:00:00.000Z', { model: 'gpt-4o', costUsd: 0.1 }),
       run('r3', '2026-09-01T06:00:00.000Z', { trigger: ['unclassified', 'dailySweep'], costUsd: 0.02, outcomes: [{ status: 'proposed' }] }),
-      run('r2', '2026-09-03T18:00:00.000Z', { model: 'gpt-4o', trigger: ['edits'], costUsd: 0.05, outcomes: [{ status: 'skipped' }], turnId: 'turnbbbb0000' }),
+      run('r2', '2026-09-03T18:00:00.000Z', { model: 'gpt-4o', trigger: ['edits'], costUsd: 0.05, outcomes: [{ status: 'skipped' }], turnId: 'turnbbbb0000',
+        usage: { inputTokens: 5000, outputTokens: 300, cachedInputTokens: 0, raw: { prompt_tokens: 5000 } } }),
       { runId: 'r5', at: '2026-09-04T16:00:00.000Z', status: 'failed', error: 'bad schema', attempt: 1, trigger: ['captures'], model: 'gpt-4.1-mini' },
       { at: '2026-09-04T17:00:00.000Z', skipped: 'filtered', kinds: ['artwork'] },
-      run('r1', '2026-09-04T18:00:00.000Z', { costUsd: 0.01, outcomes: [{ status: 'applied' }], turnId: 'turnaaaa1111' }),
+      run('r1', '2026-09-04T18:00:00.000Z', { costUsd: 0.01, outcomes: [{ status: 'applied' }], turnId: 'turnaaaa1111', usage: { input: 1000, cached: 512, output: 50 } }),
+      run('r4b', '2026-08-21T18:00:00.000Z', { model: 'gpt-4o', costUsd: null, usage: { input: 100, cached: 0, output: 10 } }),
     ]) await journal.append('alice', row);
     await store.save({ agentId: 'nutrition-auditor', userId: 'alice', turnId: 'turnaaaa1111', startedAt: new Date('2026-09-04T18:00:02.500Z'), transcript: {
       turnId: 'turnaaaa1111', systemPrompt: 'You audit nutrition records.',
@@ -769,6 +771,9 @@ describe('auditor journal and spend views', () => {
     expect(await cleanup.journalEntry('alice', 'r2')).toMatchObject({ runId: 'r2', transcript: null, transcriptExpired: true });
     expect(await cleanup.journalEntry('alice', 'r3')).toMatchObject({ runId: 'r3', transcript: null, transcriptExpired: false });
     expect(await cleanup.journalEntry('alice', 'nope')).toBeNull();
+    expect((await cleanup.journalEntry('alice', 'r2')).usage).toEqual({ input: 5000, cached: 0, output: 300 });
+    expect((await cleanup.journal('alice', { from: '2026-09-03', to: '2026-09-04' })).rows.filter(row => row.runId).map(row => row.usage))
+      .toEqual([{ input: 1000, cached: 512, output: 50 }, null, { input: 5000, cached: 0, output: 300 }]);
     expect(await cleanup.journalEntry('alice', 'r1', { at: '2026-09-04T18:00:00.000Z' })).toMatchObject({ runId: 'r1', transcriptExpired: false });
   });
   it('caps large tool results and reports an unreadable transcript apart from an expired one', async () => {
@@ -800,12 +805,17 @@ describe('auditor journal and spend views', () => {
     expect(spend.days.at(-1).date).toBe('2026-09-04');
     expect(spend).toMatchObject({ today: 0.01, week: 0.08, month: 0.06, capUsd: 1, cappedToday: false, ledgerTodayUsd: 0.03 });
     expect(spend.byTrigger).toEqual([
-      { trigger: 'captures', runs: 3, costUsd: 0.11, avgUsd: 0.055 },
+      { trigger: 'captures', runs: 4, costUsd: 0.11, avgUsd: 0.055 },
       { trigger: 'edits', runs: 1, costUsd: 0.05, avgUsd: 0.05 },
       { trigger: 'unclassified', runs: 1, costUsd: 0.02, avgUsd: 0.02 },
       { trigger: 'dailySweep', runs: 1, costUsd: 0.02, avgUsd: 0.02 },
     ]);
-    expect(spend.byModel).toEqual([{ model: 'gpt-4o', runs: 2, avgUsd: 0.075 }, { model: 'gpt-4.1-mini', runs: 3, avgUsd: 0.015 }]);
+    // Rows written live before usage was normalized (inputTokens/…) and backfilled rows ({ input, cached, output }) total together.
+    expect(spend.byModel).toEqual([
+      { model: 'gpt-4o', runs: 3, avgUsd: 0.075, tokens: { input: 5100, cached: 0, output: 310 } },
+      { model: 'gpt-4.1-mini', runs: 3, avgUsd: 0.015, tokens: { input: 1000, cached: 512, output: 50 } },
+    ]);
+    expect(byDate['2026-08-21']).toEqual({ date: '2026-08-21', costUsd: 0, runs: 1, changed: 0 });
     const oneDay = await cleanup.spend('alice', { days: 1 });
     expect(oneDay.days).toEqual([{ date: '2026-09-04', costUsd: 0.01, runs: 2, changed: 1 }]);
     // near a month start the week reaches back past both the day range and the month
