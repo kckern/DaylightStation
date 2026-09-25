@@ -35,6 +35,7 @@ export class MastraAdapter extends IAgentRuntime {
   #outputProcessors;
   #executionPolicy;
   #hooks;
+  #usageRecorder;
 
   /**
    * @param {Object} deps
@@ -47,6 +48,10 @@ export class MastraAdapter extends IAgentRuntime {
    * @param {import('@mastra/memory').Memory|null} [deps.memory] - Mastra Memory instance for cross-session persistence
    * @param {Array|null} [deps.inputProcessors] - Mastra input processors (e.g. ObservationalMemory)
    * @param {Array|null} [deps.outputProcessors] - Mastra output processors (e.g. ObservationalMemory)
+   * @param {Function|null} [deps.usageRecorder] - Called once per turn (execute and stream, success
+   *   and failure) with { agentId, runId, turnId, model, usage, durationMs, status, error }. Returns
+   *   the ledger entry (with costUsd) or null. Mastra calls the provider through its own client, so
+   *   this is the only path by which agent spend reaches the usage ledger.
    */
   constructor(deps = {}) {
     super();
@@ -64,6 +69,7 @@ export class MastraAdapter extends IAgentRuntime {
     this.#outputProcessors = deps.outputProcessors || null;
     this.#executionPolicy = deps.executionPolicy;
     this.#hooks = deps.hooks || {};
+    this.#usageRecorder = deps.usageRecorder || null;
   }
 
   /**
@@ -166,7 +172,8 @@ export class MastraAdapter extends IAgentRuntime {
    * Execute an agent synchronously
    * @implements IAgentRuntime.execute
    */
-  async execute({ agent, agentId, input, messages = [], tools, systemPrompt, context = {}, ...options }) {
+  async execute({ agent, agentId, input, messages = [], tools, systemPrompt, context = {}, model: modelOverride, ...options }) {
+    const model = modelOverride || this.#model;
     const scope = this.#executionScope(options, context);
     context = scope.context;
     tools = this.#allowedTools(tools, options.toolAllowlist);
@@ -182,7 +189,7 @@ export class MastraAdapter extends IAgentRuntime {
       input,
       context,
       systemPrompt,
-      model: parseModelDescriptor(this.#model),
+      model: parseModelDescriptor(model),
     });
 
     const callCounter = { count: 0 };
@@ -204,7 +211,7 @@ export class MastraAdapter extends IAgentRuntime {
         // application prompt is valid, so adapt it to the SDK's safe string
         // shape instead of passing undefined across the boundary.
         instructions: systemPrompt ?? '',
-        model: this.#model,
+        model,
         tools: mastraTools,
         // Workaround for Mastra issue #16179 — autoResumeSuspendedTools
         // mutates schemas across Zod v3/v4 and crashes prepare-tools-step.
@@ -244,11 +251,17 @@ export class MastraAdapter extends IAgentRuntime {
       });
       transcript?.setStatus(suspended ? 'suspended' : 'ok');
 
+      const usage = response.totalUsage ?? response.usage ?? null;
+      const recorded = this.#recordUsage({ agentId: name, runId: context.runId ?? null, turnId,
+        model: parseModelDescriptor(model), usage, durationMs: Date.now() - startedAt, status: 'ok' });
+
       this.#logger.info?.('agent.execute.complete', {
         agentId: name,
         turnId,
         status: 'ok',
         durationMs: Date.now() - startedAt,
+        usage,
+        costUsd: recorded?.costUsd ?? null,
       });
 
       const result = {
@@ -258,7 +271,9 @@ export class MastraAdapter extends IAgentRuntime {
         runId: response.runId ?? context.runId ?? turnId,
         status: suspended ? 'suspended' : 'completed',
         structured: response.object,
-        usage: response.totalUsage ?? response.usage ?? null,
+        usage,
+        model: parseModelDescriptor(model),
+        costUsd: recorded?.costUsd ?? null,
         finishReason: response.finishReason,
         ...(response.suspendPayload ? { interaction: response.suspendPayload } : {}),
       };
@@ -270,6 +285,8 @@ export class MastraAdapter extends IAgentRuntime {
       transcript?.setError(error, { toolCallsBeforeError: callCounter.count });
       transcript?.setStatus(error?.name === 'AbortError' ? 'aborted' : error?.name === 'TimeoutError' ? 'timeout' : 'error');
       await this.#emitHook('onError', { agentId: name, userId, turnId, error });
+      this.#recordUsage({ agentId: name, runId: context.runId ?? null, turnId, model: parseModelDescriptor(model),
+        usage: null, durationMs: Date.now() - startedAt, status: 'error', error: error?.message });
 
       this.#logger.error?.('agent.execute.error', {
         agentId: name,
@@ -289,7 +306,8 @@ export class MastraAdapter extends IAgentRuntime {
    * Yields normalized chunks: text-delta, tool-start, tool-end, finish.
    * @implements IAgentRuntime.streamExecute
    */
-  async *streamExecute({ agent, agentId, input, messages = [], tools, systemPrompt, context = {}, ...options }) {
+  async *streamExecute({ agent, agentId, input, messages = [], tools, systemPrompt, context = {}, model: modelOverride, ...options }) {
+    const model = modelOverride || this.#model;
     const scope = this.#executionScope(options, context);
     context = scope.context;
     tools = this.#allowedTools(tools, options.toolAllowlist);
@@ -305,7 +323,7 @@ export class MastraAdapter extends IAgentRuntime {
       input,
       context,
       systemPrompt,
-      model: parseModelDescriptor(this.#model),
+      model: parseModelDescriptor(model),
     });
 
     const callCounter = { count: 0 };
@@ -330,7 +348,7 @@ export class MastraAdapter extends IAgentRuntime {
         id: name,
         name,
         instructions: systemPrompt,
-        model: this.#model,
+        model,
         tools: mastraTools,
         // Workaround for Mastra issue #16179 — autoResumeSuspendedTools
         // mutates schemas across Zod v3/v4 and crashes prepare-tools-step.
@@ -405,17 +423,23 @@ export class MastraAdapter extends IAgentRuntime {
       transcript?.setOutput({ text: accumulatedText, finishReason, usage });
       transcript?.setStatus('ok');
       await this.#emitHook('onResult', { agentId: name, userId, turnId, output: accumulatedText, finishReason, usage });
+      const recorded = this.#recordUsage({ agentId: name, runId: context.runId ?? null, turnId,
+        model: parseModelDescriptor(model), usage, durationMs: Date.now() - startedAt, status: 'ok' });
 
       this.#logger.info?.('agent.stream.complete', {
         agentId: name,
         turnId,
         status: 'ok',
         durationMs: Date.now() - startedAt,
+        usage,
+        costUsd: recorded?.costUsd ?? null,
       });
     } catch (error) {
       transcript?.setError(error, { toolCallsBeforeError: callCounter.count });
       transcript?.setStatus(error?.name === 'AbortError' ? 'aborted' : error?.name === 'TimeoutError' ? 'timeout' : 'error');
       await this.#emitHook('onError', { agentId: name, userId, turnId, error });
+      this.#recordUsage({ agentId: name, runId: context.runId ?? null, turnId, model: parseModelDescriptor(model),
+        usage, durationMs: Date.now() - startedAt, status: 'error', error: error?.message });
 
       this.#logger.error?.('agent.stream.error', {
         agentId: name,
@@ -511,6 +535,14 @@ export class MastraAdapter extends IAgentRuntime {
         controller.abort(new DOMException('Execution scope closed', 'AbortError'));
       },
     };
+  }
+
+  // The recorder is documented never-throw; the guard keeps a broken ledger
+  // from replacing a turn's result or masking the turn's own error.
+  #recordUsage(entry) {
+    if (!this.#usageRecorder) return null;
+    try { return this.#usageRecorder(entry) || null; }
+    catch (error) { this.#logger.warn?.('agent.usage.record_failed', { agentId: entry.agentId, error: error?.message }); return null; }
   }
 
   async #emitHook(name, value) {
