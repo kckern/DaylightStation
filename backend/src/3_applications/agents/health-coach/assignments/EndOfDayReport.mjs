@@ -126,7 +126,7 @@ Today's tracked calories (~${Math.round((todayCals || 0) / 50) * 50}) are below 
 This takes priority over ALL other coaching rules below.
 ` : ''}
 Critical context — completeness:
-- "Logging Complete" is the ONLY signal that today's totals are final. It is true only when food reached the floor (${calorieFloor} cal) or the user declared the day done/fasted. The time of day NEVER makes a day complete, and a low total on an incomplete day is missing data, never a deficit to praise or criticise.
+- "Logging Complete" is the ONLY signal that today's totals are final. It is true only when food reached the floor (${calorieFloor} cal), the user declared the day done/fasted, or the user marked a meal skipped. The time of day NEVER makes a day complete, and a low total on an incomplete day is missing data, never a deficit to praise or criticise.
 - "fastedMeals" lists meals the user declared intentionally skipped: those meals really were empty — never ask about them or call them missing. A day with any skipped meal counts as complete: the user confirmed the log, so its total is what was eaten.
 - When logging is NOT complete, today's totals are PARTIAL — your PRIMARY job is remaining-budget coaching:
   1. State what's been consumed so far (cal + protein)

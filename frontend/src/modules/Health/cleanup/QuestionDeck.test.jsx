@@ -78,6 +78,30 @@ describe('QuestionDeck', () => {
       expect.objectContaining({ dismiss: true }), 'POST'));
   });
 
+  it('names each food once, though entryNames keys it by both id and uuid', () => {
+    render(<MantineProvider><QuestionDeck questions={[q('A', { entryNames: { 'row-1': 'White Rice', 'uuid-1': 'White Rice' } })]} onChanged={() => {}} /></MantineProvider>);
+    expect(screen.getByText('White Rice')).toBeTruthy();
+  });
+
+  it('focuses the new card after moving, so the arrow keys keep working', () => {
+    mount();
+    fireEvent.click(screen.getByRole('button', { name: /Skip/ }));
+    expect(document.activeElement).toBe(screen.getByTestId('question-card'));
+  });
+
+  it('a drag that starts on a button is not a swipe', () => {
+    mount();
+    const button = screen.getByRole('button', { name: /Rice bowl/ });
+    const pointer = (target, type, clientX) => {
+      const event = new Event(type, { bubbles: true });
+      Object.assign(event, { clientX, pointerId: 1 });
+      act(() => { target.dispatchEvent(event); });
+    };
+    pointer(button, 'pointerdown', 300);
+    pointer(screen.getByTestId('question-card'), 'pointerup', 100);
+    expect(screen.getByText('1 of 3')).toBeTruthy();
+  });
+
   it('says so when every question is done', () => {
     render(<MantineProvider><QuestionDeck questions={[]} onChanged={() => {}} /></MantineProvider>);
     expect(screen.getByText(/All caught up/)).toBeTruthy();
