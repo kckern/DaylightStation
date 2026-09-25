@@ -12,7 +12,7 @@ export class CoachingMessageBuilder {
     if (calories.zone) {
       const h = headlineFor(calories);
       if (h.value == null) return h.text;
-      const of = { incomplete: ` of ${calories.goal_max}`, 'in-range': ` of ${calories.goal_max}`, over: ` ${calories.goal_max}` }[calories.zone] || '';
+      const of = { incomplete: ` of ${calories.goal_max}`, declared: ` of ${calories.goal_max}`, 'in-range': ` of ${calories.goal_max}`, over: ` ${calories.goal_max}` }[calories.zone] || '';
       return `${h.value} ${h.text}${of}`;
     }
     return `${Math.max(0, Math.round(calories.goal_max - consumedCal))} left of ${calories.goal_max}`;

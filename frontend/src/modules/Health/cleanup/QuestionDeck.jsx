@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Textarea, UnstyledButton } from '@mantine/core';
 import { createAppLogger } from '../../../lib/ui/createAppLogger.js';
 import { useQuestionAnswer } from './CleanupQuestions.jsx';
@@ -7,7 +7,8 @@ const SWIPE_PX = 60;
 
 /** The foods a question is about, as the card's heading. */
 const subjectOf = (question) => {
-  const names = Object.values(question.entryNames || {}).filter(Boolean);
+  // entryNames is keyed by both a row's id and its uuid: dedupe the names.
+  const names = [...new Set(Object.values(question.entryNames || {}).filter(Boolean))];
   return names.length ? names.join(' · ') : 'Your food log';
 };
 
@@ -16,16 +17,21 @@ function QuestionCard({ question, index, total, onAnswered, onPrev, onNext, onFe
   const [text, setText] = useState('');
   const { answer, busy, error, disabled } = useQuestionAnswer({ question, onChanged: () => {}, onFeedback });
   const start = useRef(null);
+  const card = useRef(null);
+  // Each card is a fresh element: take focus so the arrow keys keep working.
+  useEffect(() => { card.current?.focus({ preventScroll: true }); }, []);
   const send = async (payload) => { if (await answer(payload)) onAnswered(question.id); };
 
   return (
-    <article className="health-qcard" data-testid="question-card" tabIndex={0} aria-label={`Question ${index + 1} of ${total}`}
+    <article ref={card} className="health-qcard" data-testid="question-card" tabIndex={0} aria-label={`Question ${index + 1} of ${total}`}
       onKeyDown={(event) => {
         if (event.target.tagName === 'TEXTAREA') return;
         if (event.key === 'ArrowRight') { event.preventDefault(); onNext(); }
         if (event.key === 'ArrowLeft') { event.preventDefault(); onPrev(); }
       }}
-      onPointerDown={(event) => { start.current = event.clientX; }}
+      // Swipe only from the card itself — never a drag that starts in the
+      // text box (selecting text) or on a button (a missed click).
+      onPointerDown={(event) => { start.current = event.target.closest?.('textarea, input, button') ? null : event.clientX; }}
       onPointerUp={(event) => {
         if (start.current == null) return;
         const dx = event.clientX - start.current;

@@ -46,13 +46,13 @@ export function FollowUpTray({ active = true, observations = [], onObservationsC
 
   return (
     <div className={`health-followups${empty ? ' health-followups--empty' : ''}`}>
-      {empty ? (
-        <span className="health-followups__line"><span aria-live="polite">No follow-ups</span></span>
-      ) : (
-        <UnstyledButton className="health-followups__line" onClick={() => show(true)} aria-haspopup="dialog">
-          <span aria-live="polite">{parts.join(' · ')}</span>
-        </UnstyledButton>
-      )}
+      {/* ONE persistent element, so its live region is updated (and announced),
+          never replaced by a newly inserted one. */}
+      <UnstyledButton className="health-followups__line" aria-haspopup="dialog"
+        aria-disabled={empty || undefined} tabIndex={empty ? -1 : undefined}
+        onClick={() => { if (!empty) show(true); }}>
+        <span aria-live="polite">{empty ? 'No follow-ups' : parts.join(' · ')}</span>
+      </UnstyledButton>
       <Sheet open={open} onClose={() => show(false)} title="Follow-ups">
         {feedback ? <p className="health-followups__feedback" role="status">{feedback}</p> : null}
         {questions.length ? (

@@ -1088,7 +1088,8 @@ $health-aside-gap: 1.5rem;
     color: var(--ds-warning); font-weight: 600;
     &:focus-visible { outline: 2px solid var(--ds-accent); outline-offset: 2px; border-radius: 6px; }
   }
-  button.health-followups__line::after { content: '›'; font-size: 1.1rem; line-height: 1; }
+  &__line::after { content: '›'; font-size: 1.1rem; line-height: 1; }
+  &--empty &__line { cursor: default; &::after { content: none; } }
   &--empty &__line { color: var(--ds-text-low); font-weight: 400; }
   &__feedback { margin: 0 0 0.5rem; font-size: 0.8rem; color: var(--ds-text-mid); }
 }

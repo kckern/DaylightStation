@@ -119,7 +119,7 @@ function Section({
               skipped meal that later gets food keeps its undo — and says so —
               or the coach would go on being told not to ask about it. */}
           {rows.length && fasted ? <span className="health-meal__fasted-note">marked skipped</span> : null}
-          {(!rows.length || fasted) && bucket && date && onFastChanged
+          {(!rows.length || fasted) && !coldLoading && bucket && date && onFastChanged
             ? <MealFastToggle date={date} bucket={bucket} label={label} fasted={fasted} onChanged={onFastChanged} /> : null}
         </span>
       </header>
