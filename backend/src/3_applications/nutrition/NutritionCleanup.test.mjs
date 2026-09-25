@@ -812,8 +812,8 @@ describe('auditor journal and spend views', () => {
     ]);
     // Rows written live before usage was normalized (inputTokens/…) and backfilled rows ({ input, cached, output }) total together.
     expect(spend.byModel).toEqual([
-      { model: 'gpt-4o', runs: 3, avgUsd: 0.075, tokens: { input: 5100, cached: 0, output: 310 } },
-      { model: 'gpt-4.1-mini', runs: 3, avgUsd: 0.015, tokens: { input: 1000, cached: 512, output: 50 } },
+      { model: 'gpt-4o', runs: 3, costUsd: 0.15, avgUsd: 0.075, tokens: { input: 5100, cached: 0, output: 310 } },
+      { model: 'gpt-4.1-mini', runs: 3, costUsd: 0.03, avgUsd: 0.015, tokens: { input: 1000, cached: 512, output: 50 } },
     ]);
     expect(byDate['2026-08-21']).toEqual({ date: '2026-08-21', costUsd: 0, runs: 1, changed: 0 });
     const oneDay = await cleanup.spend('alice', { days: 1 });

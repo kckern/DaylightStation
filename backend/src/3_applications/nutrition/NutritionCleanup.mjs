@@ -277,7 +277,7 @@ export class NutritionCleanup {
       days: [...byDate.values()].map(day => ({ ...day, costUsd: round(day.costUsd) })),
       today: round(todayUsd), week: round(week), month: round(month),
       byTrigger: [...triggers].sort(byCost).map(([trigger, entry]) => ({ trigger, runs: entry.runs, costUsd: round(entry.costUsd), avgUsd: avg(entry) })),
-      byModel: [...models].sort(byCost).map(([model, entry]) => ({ model, runs: entry.runs, avgUsd: avg(entry), tokens: entry.tokens })),
+      byModel: [...models].sort(byCost).map(([model, entry]) => ({ model, runs: entry.runs, costUsd: round(entry.costUsd), avgUsd: avg(entry), tokens: entry.tokens })),
       capUsd: settings.dailyCapUsd, cappedToday: this.#cappedToday(userId, state, settings), ledgerTodayUsd,
     };
   }

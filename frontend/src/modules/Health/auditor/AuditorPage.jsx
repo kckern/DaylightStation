@@ -8,6 +8,7 @@ import { AuditorHeader } from './AuditorHeader.jsx';
 import { RunTimeline } from './RunTimeline.jsx';
 import { CleanupHistory } from './CleanupHistory.jsx';
 import { RunDetail } from './RunDetail.jsx';
+import { SpendPanel } from './SpendPanel.jsx';
 
 /**
  * /health/auditor: what the nutrition auditor did, why, and what it cost.
@@ -23,7 +24,8 @@ export function AuditorPage() {
   return <Stack gap="md" className="health-auditor">
     <AuditorHeader resource={resource} spend={spend} />
     <RunTimeline onOpen={open} />
-    {/* SpendPanel and AuditorConfig go here, in that order. */}
+    <SpendPanel spend={spend} />
+    {/* AuditorConfig goes here. */}
     <CleanupHistory resource={resource} />
     {selected ? <RunDetail run={selected} onClose={() => setSelected(null)} onUndone={() => { resource.reload(); invalidateApiResources(path => path.startsWith(`${cleanupPath}/history`)); }} /> : null}
   </Stack>;
