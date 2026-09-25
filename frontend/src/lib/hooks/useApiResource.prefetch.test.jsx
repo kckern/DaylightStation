@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 
 const apiMock = vi.fn();
 vi.mock('../api.mjs', () => ({ DaylightAPI: (...args) => apiMock(...args) }));
@@ -80,12 +80,27 @@ describe('prefetchApiResources', () => {
     expect(prefetchApiResources(['p'])).toBe(1);
   });
 
+  it('a reader mounting during a prefetch joins it instead of requesting again', async () => {
+    const slow = deferred();
+    apiMock.mockReturnValueOnce(slow.promise);
+    prefetchApiResources(['j']);
+    const { result } = renderHook(() => useApiResource('j', { swr: true }));
+    expect(result.current.loading).toBe(true);
+    slow.resolve({ v: 'shared' });
+    await waitFor(() => expect(result.current.data).toEqual({ v: 'shared' }));
+    expect(apiMock).toHaveBeenCalledTimes(1);
+    expect(peekApiResource('j')).toEqual({ v: 'shared' });
+  });
+
   it('never overwrites a newer reader response', async () => {
     const slow = deferred();
     apiMock.mockReturnValueOnce(slow.promise).mockResolvedValueOnce({ v: 'reader' });
     prefetchApiResources(['q']);
     const { result } = renderHook(() => useApiResource('q', { swr: true }));
+    // The mount joins the prefetch; an explicit reload never joins.
+    act(() => result.current.reload());
     await waitFor(() => expect(result.current.data).toEqual({ v: 'reader' }));
+    expect(apiMock).toHaveBeenCalledTimes(2);
     slow.resolve({ v: 'prefetch' });
     await flush();
     expect(peekApiResource('q')).toEqual({ v: 'reader' });

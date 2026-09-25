@@ -1,5 +1,11 @@
-// DaylightStation Admin — Design Tokens
+// DaylightStation Admin — Admin's own palette
 // Mission Control aesthetic: deep blue-black backgrounds, blue accent, monospace technical feel
+//
+// NOT the shared design system. The shared --ds-* contract lives in
+// lib/theme/tokens.mjs and is on :root for every page (installRootTokens).
+// This sheet loads only with Admin, and its :root rules come after the
+// contract's, so on Admin pages Admin's values win. Nothing outside Admin may
+// depend on a name defined only here: other apps do not load this file.
 
 :root {
   // Background layers (darkest → lightest)
