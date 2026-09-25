@@ -350,4 +350,14 @@ describe('EntryRow', () => {
     expect(alert.textContent).toContain('Intended portion: 2 medium');
     expect(alert.closest('.health-row-line').querySelector('.health-row__name').textContent).toBe('Apple');
   });
+
+  it('a dish cannot be collapsed while a draft is open (it could hide a member\'s error)', () => {
+    const control = { draft: { row: { uuid: 'child' }, status: 'editing' }, begin: () => false, preview: () => {} };
+    const onToggle = vi.fn();
+    r(<PortionContext.Provider value={control}>
+      <EntryRow row={{ ...baseRow, uuid: 'dish', name: 'Stew', kind: 'group', children: [] }} isGroup expanded onToggle={onToggle} rollupKcal={300} onTap={() => {}} />
+    </PortionContext.Provider>);
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse Stew' }));
+    expect(onToggle).not.toHaveBeenCalled();
+  });
 });

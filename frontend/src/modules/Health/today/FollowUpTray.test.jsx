@@ -33,6 +33,29 @@ describe('FollowUpTray', () => {
     expect(tray.contains(screen.getAllByText('Which fish?')[0])).toBe(true);
   });
 
+  it('keeps the "entry changed" message after a stale answer to the LAST question', async () => {
+    questions = [question];
+    api.mockImplementation(async (path, body, method) => {
+      if (method === 'POST') { questions = []; return { status: 'stale', outcome: { message: 'The entry changed. Please review it manually.' } }; }
+      return { version: 1, questions };
+    });
+    const { container } = mount({});
+    await screen.findByText('1 follow-up question');
+    container.querySelector('details').open = true;
+    screen.getByRole('button', { name: 'Cod' }).click();
+    expect(await screen.findByText('The entry changed. Please review it manually.')).toBeTruthy();
+    // Once the reload finds no questions, the line still has something to say.
+    expect(await screen.findByText('A follow-up needs a look')).toBeTruthy();
+    expect(screen.getByText('The entry changed. Please review it manually.')).toBeTruthy();
+  });
+
+  it('is one persistent element whose summary text is the live region', async () => {
+    const { container } = mount({});
+    await waitFor(() => expect(api).toHaveBeenCalled());
+    const tray = container.querySelector('details.health-followups');
+    expect(tray.querySelector('summary [aria-live="polite"]').textContent).toBe('No follow-ups');
+  });
+
   it('polls the cleanup endpoint once, shared with the questions it renders', async () => {
     questions = [question];
     mount({});

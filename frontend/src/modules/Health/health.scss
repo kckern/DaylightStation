@@ -974,12 +974,16 @@ $health-aside-gap: 1.5rem;
 }
 
 .health-goals-summary { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.5rem; }
+// Toasts over the coach chat would sit on the conversation (a Sheet, z 300,
+// under the toasts' 350). Other sheets keep them on top on purpose.
+.ds-root:has(.chat-overlay__body) .ds-toasts { display: none; }
+
 // The Today follow-up tray (FollowUpTray.jsx): a reserved one-line slot, the
 // same height whether it says "No follow-ups" or "2 follow-up questions", so a
 // poll that finds a question changes words, not layout.
 .health-followups {
   margin-block: 0.15rem;
-  > summary, &--empty { min-height: 44px; display: flex; align-items: center; font-size: 0.85rem; }
+  > summary { min-height: 44px; display: flex; align-items: center; font-size: 0.85rem; }
   > summary {
     cursor: pointer; color: var(--ds-warning); font-weight: 600; gap: 0.4rem; list-style: none;
     &::-webkit-details-marker { display: none; }
@@ -987,7 +991,7 @@ $health-aside-gap: 1.5rem;
     &::after { content: '›'; font-size: 1.1rem; line-height: 1; transition: transform var(--ds-motion-fast) var(--ds-motion-easing); }
   }
   &[open] > summary::after { transform: rotate(90deg); }
-  &--empty { color: var(--ds-text-low); }
+  &--empty > summary { color: var(--ds-text-low); font-weight: 400; cursor: default; &::after { content: none; } }
   &__body { display: flex; flex-direction: column; gap: 0.5rem; padding-bottom: 0.5rem; }
 }
 .health-pending--needs-review { padding: 0; margin-block: 0.25rem; background: none; border: none; }

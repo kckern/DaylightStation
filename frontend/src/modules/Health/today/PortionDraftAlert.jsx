@@ -19,14 +19,15 @@ export const portionAlertFor = (control, row) => draftHasAlert(control?.draft)
  * below it down the page. TodayView keeps a toast fallback for a draft whose
  * entry is no longer on the day — it has no row to sit on.
  */
-export function PortionDraftAlert({ control, onReload, className = 'health-portion-error' }) {
+// `role={null}` inside a container that is already the alert (a toast).
+export function PortionDraftAlert({ control, onReload, className = 'health-portion-error', role = 'alert' }) {
   const draft = control?.draft;
   if (!draftHasAlert(draft)) return null;
-  if (draft.validationError) return <div role="alert" className={className}>
+  if (draft.validationError) return <div role={role || undefined} className={className}>
     <span>{draft.validationError}</span>
     <Button size="compact-xs" onClick={() => control.cancel()}>Discard change</Button>
   </div>;
-  return <div role="alert" className={className}>
+  return <div role={role || undefined} className={className}>
     <span>{draft.error} Intended {draft.numericEdit ? `${draft.numericEdit.field}: ${draft.numericEdit.value}` : `portion: ${draft.portion.value} ${draft.portion.unit}`}.</span>
     <Button size="compact-xs" onClick={() => control.retry()}>{draft.conflict ? 'Reload & apply intended change' : 'Retry same change'}</Button>
     <Button size="compact-xs" variant="subtle" onClick={() => { control.cancel(); (onReload || control.reloadDay)?.(); }}>Discard draft &amp; reload</Button>
