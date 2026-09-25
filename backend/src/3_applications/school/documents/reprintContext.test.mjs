@@ -44,7 +44,14 @@ describe('buildReprintContext', () => {
       learnerName: 'Learner4',
       date: '14 Aug 2026',
       sessionId: 'ses_f6Buxumv',
+      reprintFirstUse: false,
     });
+  });
+
+  it('marks a row-1 original as a first-use (START) sheet', () => {
+    const rowOne = instance();
+    rowOne.omr.rowRange = { start: 1, end: 6 };
+    expect(buildReprintContext(rowOne).reprintFirstUse).toBe(true);
   });
 
   it('throws a ValidationError when the instance has no card allocation', () => {

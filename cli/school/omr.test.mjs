@@ -29,7 +29,13 @@ describe('marksFromHex', () => {
   });
 
   it('decodes to the test id and answers that were actually graded', () => {
-    const { testId, answers } = decodeQuizSheet(marksFromHex(REAL_FRAME));
+    // The decoder now refuses anything but a full 32-column card
+    // (omrFrameError, OMR_COLUMN_COUNT), so the surviving 16 columns are
+    // padded with blank columns. Decoding is column-local, so this still
+    // checks exactly the bit mapping the incident graded against.
+    const marks = marksFromHex(REAL_FRAME);
+    const padded = [...marks, ...new Array(32 - marks.length).fill(0)];
+    const { testId, answers } = decodeQuizSheet(padded);
     expect(testId).toBe('4071314');
     // The live allocation was rows 31-33; these three are what produced a 3/3.
     expect(answers[31]).toBe('A');
@@ -37,6 +43,14 @@ describe('marksFromHex', () => {
     expect(answers[33]).toBe('D');
     // A double-marked question keeps every letter rather than guessing.
     expect(answers[7]).toEqual(['A', 'B']);
+  });
+
+  it('the truncated frame itself is refused, not graded as blanks', () => {
+    expect(decodeQuizSheet(marksFromHex(REAL_FRAME))).toMatchObject({
+      testId: null,
+      answers: {},
+      error: { code: 'OMR_COLUMN_COUNT', expected: 32, actual: 16 },
+    });
   });
 
   it('tolerates the ellipsis /recent appends to a truncated preview', () => {

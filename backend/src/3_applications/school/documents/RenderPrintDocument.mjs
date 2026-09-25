@@ -751,7 +751,7 @@ export class RenderPrintDocument {
    * @param {string} [args.id] - looked up via `repository` when `document` is not given
    * @param {{learnerName?: string, date?: string, gutter?: boolean|number, teacher?: boolean,
    *   cardId?: string, startRow?: number, freshCard?: boolean, learnerId?: string,
-   *   historicalCard?: boolean, historicalFirstUse?: boolean,
+   *   historicalCard?: boolean, historicalFirstUse?: boolean, reprintFirstUse?: boolean,
    *   tokens?: Object<string,string>, passPercent?: number}} [args.context] -
    *   `learnerName`/`date` prefill the header's Name/Date lines (blank ruled lines
    *   when absent); `gutter` overrides the default 3-hole-punch reservation
@@ -1209,7 +1209,7 @@ export class RenderPrintDocument {
   #resolveCardContext(context) {
     const {
       cardId, freshCard, automaticCard, answerSheetPolicy, startRow, learnerId, sessionId,
-      sectionAttribution, historicalCard, historicalFirstUse,
+      sectionAttribution, historicalCard, historicalFirstUse, reprintFirstUse,
     } = context;
     if (cardId === undefined && freshCard !== true && automaticCard !== true) return null;
     if (historicalCard === true && (typeof cardId !== 'string' || freshCard === true)) {
@@ -1224,6 +1224,11 @@ export class RenderPrintDocument {
       answerSheetPolicy: answerSheetPolicy ?? null,
       historical: historicalCard === true,
       historicalFirstUse: historicalFirstUse === true,
+      // A reprint of an issued sheet through the live store (the `school
+      // docs reprint` CLI) lands on the card's existing record, which carries
+      // no first-use fact of its own. The caller states what the ORIGINAL
+      // print said so the reprint draws the same START/KEEP banner.
+      reprintFirstUse: reprintFirstUse === true,
       startRow: startRow ?? 1,
       learnerId: learnerId ?? null,
       // Work-session lineage (review wave B1): IssueDocument's tracked-quiz
@@ -1257,6 +1262,7 @@ export class RenderPrintDocument {
    */
   async #allocateCard(document, bank, {
     cardId, freshCard, automaticCard, answerSheetPolicy, startRow, learnerId, sessionId, sectionAttribution,
+    reprintFirstUse,
   }) {
     if (!this.#allocationStore) {
       throw new ValidationError(
@@ -1345,7 +1351,7 @@ export class RenderPrintDocument {
       return { record: allocated.record, rows: shiftedPlan.rows, firstUse: allocated.firstUse };
     }
     const record = await this.#allocationStore.allocate({ cardId: freshCard ? undefined : cardId, request });
-    return { record, rows: plan.rows, firstUse: freshCard === true };
+    return { record, rows: plan.rows, firstUse: freshCard === true || reprintFirstUse === true };
   }
 
   /** Build the card geometry for a historical replay without touching storage. */
