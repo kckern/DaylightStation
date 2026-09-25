@@ -7,6 +7,7 @@ const fail = (message, status = 409) => { throw Object.assign(new Error(message)
 const terminal = new Set(['completed', 'failed', 'cancelled']);
 const NESTED = ['triggers', 'permissions'];
 const SETTINGS_LOG_LIMIT = 500;
+const notPermitted = (proposal, permissions) => { if (blockedKinds(proposal, permissions).length) fail('Not permitted by auditor settings'); };
 const questionExpired = (question, now, dates) => question.entryVersions.some(row => row.stabilizesAt
   ? !Number.isFinite(Date.parse(row.stabilizesAt)) || Date.parse(row.stabilizesAt) <= now : !dates.includes(row.date));
 
@@ -148,9 +149,14 @@ export class NutritionCleanup {
         outcomes.push({ status: 'skipped', reason: error.message, ...(run.dryRun ? { proposal } : {}) });
       }
     }
-    const asking = permissions.questions !== false;
-    const suppressedQuestions = asking ? [] : questions.map(q => ({ question: q.question, entryIds: q.entryIds }));
-    if (asking && !run.dryRun && fence()) for (const q of questions) {
+    // A choice the settings forbid is not offered; a question left without a
+    // real choice is not asked. #answer checks the same permissions again.
+    const suppressedQuestions = [];
+    const suppress = (q, reason) => suppressedQuestions.push({ question: q.question, entryIds: q.entryIds, reason });
+    if (permissions.questions === false) questions.forEach(q => suppress(q, 'questions-off'));
+    else if (!run.dryRun && fence()) for (const original of questions) {
+      const q = { ...original, choices: original.choices.filter(choice => !blockedKinds(choice.repair, permissions).length) };
+      if (q.choices.length < 2) { suppress(original, 'blocked'); continue; }
       const allRows = [...run.snapshot.rows, ...run.snapshot.pending.flatMap(log => log.items)];
       const entries = allRows.filter(row => q.entryIds.includes(row.uuid) || q.entryIds.includes(row.id));
       if (entries.length !== new Set(q.entryIds).size) continue;
@@ -167,7 +173,7 @@ export class NutritionCleanup {
     this.store.update(userId, state => {
       if (state.runs[id].status !== 'running') return;
       Object.assign(state.runs[id], { status: 'completed', outcomes, summary: result.summary, completedAt: new Date(this.clock.now()).toISOString(),
-        model: result.model ?? (run.model ? { provider: 'openai', name: run.model } : null), usage: result.usage ?? null, costUsd: result.costUsd ?? null,
+        model: result.model?.name ?? run.model ?? null, usage: result.usage ?? null, costUsd: result.costUsd ?? null,
         turnId: result.turnId ?? null, toolCalls: result.toolCalls ?? [],
         ...(suppressedQuestions.length ? { suppressedQuestions } : {}) });
       // Do not suppress a concurrent capture. Own repairs are the only permitted
@@ -198,14 +204,21 @@ export class NutritionCleanup {
       const row = rows.find(row => entryKey(row) === expected.id);
       if (!row || (row.version ?? 1) !== expected.version) fail('The food changed while this question was open.');
     }
+    // The originating run's settings govern its question; runs are pruned, so
+    // fall back to what the auditor is allowed to do now.
+    const state = this.store.load(userId);
+    const origin = state.runs[question.runId];
+    const effective = effectiveSettings(state.settings);
+    const permissions = origin?.permissions || effective.permissions;
     let proposal = question.choices.find(choice => choice.id === question.answer.choiceId)?.repair;
     let evidence = question.evidence;
     if (!proposal) {
-      const result = await this.auditor.audit({ snapshot: current, answer: { question: question.question, text: question.answer.text } },
-        { userId, runId: 'answer_' + question.id });
+      const result = await this.auditor.audit({ snapshot: current, answer: { question: question.question, text: question.answer.text },
+        model: origin?.model || effective.model, permissions }, { userId, runId: 'answer_' + question.id });
       if (result.questions.length || result.repairs.length !== 1) return { status: 'stale', message: 'The answer needs a manual edit to avoid guessing.' };
       proposal = result.repairs[0]; evidence = result.evidence;
     }
+    notPermitted(proposal, permissions);
     const allowed = new Set(rows.filter(row => question.entryVersions.some(expected => expected.id === entryKey(row))).flatMap(row => [row.id, row.uuid]).filter(Boolean));
     const ids = [...proposal.updates.map(u => u.id), ...proposal.createGroups.flatMap(g => g.children.map(c => c.id))];
     if (ids.some(id => !allowed.has(id))) fail('Answer proposed unrelated changes');

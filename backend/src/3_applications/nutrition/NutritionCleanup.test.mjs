@@ -12,7 +12,7 @@ import { NutritionRepairService } from './NutritionRepairService.mjs';
 import { NutritionCleanup } from './NutritionCleanup.mjs';
 import { NutritionAuditor } from '#apps/agents/nutrition-auditor/NutritionAuditor.mjs';
 import { AgentInteractions } from '#apps/agents/framework/AgentInteractions.mjs';
-import { cleanupDates } from '#domains/nutrition/services/cleanupPolicy.mjs';
+import { cleanupDates, entryKey } from '#domains/nutrition/services/cleanupPolicy.mjs';
 
 const roots = [];
 afterEach(() => { for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true }); });
@@ -352,7 +352,7 @@ describe('auditor settings, permissions and history', () => {
     const ask = vi.spyOn(cleanup.interactions, 'ask');
     await cleanup.request('alice', { manual: true }); await cleanup.settled('alice');
     expect(ask).not.toHaveBeenCalled();
-    expect(cleanup.status('alice').runs[0].suppressedQuestions).toEqual([{ question: question.question, entryIds: ['fish000001'] }]);
+    expect(cleanup.status('alice').runs[0].suppressedQuestions).toEqual([{ question: question.question, entryIds: ['fish000001'], reason: 'questions-off' }]);
   });
   it('runs the chosen model and keeps its usage and cost on the completed run', async () => {
     const f = await fixture();
@@ -364,8 +364,73 @@ describe('auditor settings, permissions and history', () => {
     await cleanup.request('alice', { manual: true }); await cleanup.settled('alice');
     expect(runs.start.mock.calls[0][0].input).toMatchObject({ model: 'gpt-4o', permissions: { nutrients: true, questions: true } });
     const [run] = Object.values(f.store.load('alice').runs);
-    expect(run).toMatchObject({ status: 'completed', model: { name: 'gpt-4o' }, usage: { inputTokens: 1200 }, costUsd: 0.0038, turnId: 'turn_1',
+    expect(run).toMatchObject({ status: 'completed', model: 'gpt-4o', usage: { inputTokens: 1200 }, costUsd: 0.0038, turnId: 'turn_1',
       toolCalls: [{ name: 'find_food_art' }] });
     expect(run.result).toBeUndefined();
+  });
+  it('keeps the model as its plain name on a completed run', async () => {
+    const f = await fixture();
+    f.store.update('alice', state => { state.settings = { enabled: true, dryRun: true, telegram: false, model: 'gpt-4o' }; });
+    const result = { ...noChanges, model: { provider: 'openai', name: 'gpt-4o' } };
+    const cleanup = new NutritionCleanup({ ...f, runs: { register: vi.fn(), start: vi.fn(async () => ({ status: 'success', result })) } });
+    await cleanup.request('alice', { manual: true }); await cleanup.settled('alice');
+    expect(Object.values(f.store.load('alice').runs)[0]).toMatchObject({ status: 'completed', model: 'gpt-4o' });
+  });
+  it('drops choices the settings forbid and does not ask a question left with one answer', async () => {
+    const f = await fixture();
+    f.store.update('alice', state => { state.settings = { enabled: true, dryRun: false, telegram: false, permissions: { nutrients: false } }; });
+    const tortilla = changes => ({ ...f.proposal({}), updates: [{ id: 'tortilla01', expectedVersion: 1, changes }] });
+    const fish = { question: 'Was the fish 55 g or 60 kcal?', entryIds: ['fish000001'],
+      choices: [{ label: '55 g', repair: f.proposal({ grams: 55 }) }, { label: '60 kcal', repair: f.proposal({ calories: 60 }) }] };
+    const wrap = { question: 'Was it corn or flour?', entryIds: ['tortilla01'], choices: [{ label: 'Corn', repair: tortilla({ name: 'Corn Tortilla' }) },
+      { label: 'Flour', repair: tortilla({ name: 'Flour Tortilla' }) }, { label: '99 kcal', repair: tortilla({ calories: 99 }) }] };
+    const result = { summary: 'Unclear', repairs: [], questions: [fish, wrap], evidence: [{ id: 'source', kind: 'capture' }] };
+    const cleanup = new NutritionCleanup({ ...f, runs: { register: vi.fn(), start: vi.fn(async () => ({ status: 'success', result })) } });
+    const ask = vi.spyOn(cleanup.interactions, 'ask');
+    await cleanup.request('alice', { manual: true }); await cleanup.settled('alice');
+    expect(ask).toHaveBeenCalledTimes(1);
+    expect(ask.mock.calls[0][1].choices.map(c => [c.id, c.label])).toEqual([['0', 'Corn'], ['1', 'Flour']]);
+    expect(cleanup.status('alice').runs[0].suppressedQuestions).toEqual([{ question: fish.question, entryIds: ['fish000001'], reason: 'blocked' }]);
+  });
+  const seedQuestion = async (f, run, choices) => {
+    const row = await f.items.findByUuid('alice', 'fish000001');
+    f.store.update('alice', state => {
+      state.runs[run.id] = { status: 'completed', ...run };
+      state.questions.q1 = { id: 'q1', userId: 'alice', version: 1, status: 'open', runId: run.id, question: 'How much fish?',
+        entryVersions: [{ id: entryKey(row), version: row.version ?? 1, date: '2026-09-04' }], choices, evidence: [{ id: 'source', kind: 'capture' }] };
+    });
+  };
+  it('refuses a chosen answer whose repair the originating run did not permit', async () => {
+    const f = await fixture();
+    const row = await f.items.findByUuid('alice', 'fish000001');
+    const cleanup = new NutritionCleanup({ ...f, runs: { register: vi.fn() } });
+    const repair = { ...f.proposal({ calories: 60 }), evidenceIds: ['source'] };
+    await seedQuestion(f, { id: 'audit_old', permissions: { ...cleanup.status('alice').settings.permissions, nutrients: false } }, [{ id: '0', label: '60 kcal', repair }]);
+    const answered = await cleanup.interactions.answer({ userId: 'alice', id: 'q1', expectedVersion: 1, operationId: 'op1', choiceId: '0' });
+    expect(answered).toMatchObject({ status: 'stale', outcome: { message: 'Not permitted by auditor settings' } });
+    expect((await f.items.findByUuid('alice', row.uuid)).calories).toBe(52);
+    expect((await f.items.listCleanupAudit('alice')).total).toBe(0);
+  });
+  it('re-audits a typed answer with the originating run model and permissions, and refuses a forbidden result', async () => {
+    const f = await fixture();
+    const cleanup = new NutritionCleanup({ ...f, runs: { register: vi.fn() } });
+    const permissions = { ...cleanup.status('alice').settings.permissions, nutrients: false };
+    await seedQuestion(f, { id: 'audit_old', model: 'gpt-4o', permissions }, []);
+    f.auditor.audit = vi.fn(async () => ({ summary: '', questions: [], repairs: [f.proposal({ calories: 60 })], evidence: [{ id: 'source', kind: 'capture' }] }));
+    const answered = await cleanup.interactions.answer({ userId: 'alice', id: 'q1', expectedVersion: 1, operationId: 'op1', text: 'it was 60 kcal' });
+    expect(f.auditor.audit.mock.calls[0][0]).toMatchObject({ model: 'gpt-4o', permissions, answer: { text: 'it was 60 kcal' } });
+    expect(answered).toMatchObject({ status: 'stale', outcome: { message: 'Not permitted by auditor settings' } });
+    expect((await f.items.findByUuid('alice', 'fish000001')).calories).toBe(52);
+  });
+  it('falls back to current settings when the originating run is gone', async () => {
+    const f = await fixture();
+    f.store.update('alice', state => { state.settings = { enabled: false, dryRun: true, telegram: false, model: 'gpt-4.1', permissions: { naming: false } }; });
+    const cleanup = new NutritionCleanup({ ...f, runs: { register: vi.fn() } });
+    await seedQuestion(f, { id: 'pruned' }, []);
+    f.store.update('alice', state => { delete state.runs.pruned; });
+    f.auditor.audit = vi.fn(async () => ({ summary: '', questions: [], repairs: [f.proposal({ name: 'Cod' })], evidence: [{ id: 'source', kind: 'capture' }] }));
+    const answered = await cleanup.interactions.answer({ userId: 'alice', id: 'q1', expectedVersion: 1, operationId: 'op1', text: 'cod' });
+    expect(f.auditor.audit.mock.calls[0][0]).toMatchObject({ model: 'gpt-4.1', permissions: { naming: false } });
+    expect(answered).toMatchObject({ status: 'stale', outcome: { message: 'Not permitted by auditor settings' } });
   });
 });
