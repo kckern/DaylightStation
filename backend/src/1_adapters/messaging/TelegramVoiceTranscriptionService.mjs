@@ -42,6 +42,17 @@ export class TelegramVoiceTranscriptionService extends ITranscriptionService {
   }
 
   /**
+   * The same service with its Whisper calls attributed to `tags` in the AI
+   * usage ledger (the adapter is replaced by its scoped view). One base
+   * service is shared by every bot; SystemBotLoader narrows it per bot.
+   * @param {{app?: string, feature?: string}} tags
+   */
+  scoped(tags = {}) {
+    const adapter = typeof this.#openaiAdapter.scoped === 'function' ? this.#openaiAdapter.scoped(tags) : this.#openaiAdapter;
+    return new TelegramVoiceTranscriptionService({ openaiAdapter: adapter }, { httpClient: this.#httpClient, logger: this.#logger });
+  }
+
+  /**
    * Transcribe audio buffer to text
    * @param {Buffer} audioBuffer - Audio data (ogg, mp3, wav, etc.)
    * @param {Object} [options] - Transcription options

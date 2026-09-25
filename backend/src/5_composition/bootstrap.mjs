@@ -1,5 +1,6 @@
 // backend/src/5_composition/bootstrap.mjs
 
+import { scopedGateway } from '#apps/common/ports/IAIGateway.mjs';
 import path from 'path';
 import yaml from 'js-yaml';
 import { fileURLToPath } from 'url';
@@ -962,7 +963,7 @@ export function createFitnessServices(config) {
       openaiAdapter,
       profile: fitnessTranscriptionProfile,
       logger
-    });
+    }).scoped({ feature: 'voice-memo' });
   }
 
   return {
@@ -2941,7 +2942,7 @@ export async function createAgentsServices(config) {
       const tocCacheDatastore = new YamlTocCacheDatastore({ dataService, configService });
       agentOrchestrator.register(PagedMediaTocAgent, {
         workingMemory,
-        aiGateway,
+        aiGateway: scopedGateway(aiGateway, { app: 'media', feature: 'paged-media-toc' }),
         pagedMediaGateway,
         tocCacheDatastore,
       });
@@ -3444,7 +3445,8 @@ export function createHarvesterServices(config) {
     || new GoogleGmailClientFactory({ configService }).create;
 
   // AI gateway (provided by composition root)
-  const effectiveAiGateway = aiGateway ?? null;
+  // Only the shopping harvester spends from it.
+  const effectiveAiGateway = scopedGateway(aiGateway ?? null, { feature: 'shopping' });
 
   // Create harvester service
   const harvesterService = new HarvesterService({

@@ -1,3 +1,4 @@
+import { scopedGateway } from '#apps/common/ports/IAIGateway.mjs';
 import { MastraAdapter } from '#adapters/agents/MastraAdapter.mjs';
 import { MastraRunAdapter } from '#adapters/agents/MastraRunAdapter.mjs';
 import { AgentTranscriptFileStore } from '#adapters/agents/AgentTranscriptFileStore.mjs';
@@ -52,12 +53,12 @@ export function createNutritionCleanup({ dataService, configService, userIdentit
   // the same repair service (audited, undoable); the nearest-icon pick uses the
   // UPC use case's AI gateway, confined to the manifest.
   const artwork = new ArtworkRemediation({ queue: new YamlArtworkQueueStore({ dataService }), items, repairs, catalog, icons,
-    aiGateway: container.getAIGateway?.() || null, iconChooser: container.getIconChooser?.() || null, upcGateway, photos: new PhotoStore({ dataService, logger }), clock, logger });
+    aiGateway: scopedGateway(container.getAIGateway?.() || null, { feature: 'icon-pick' }), iconChooser: container.getIconChooser?.() || null, upcGateway, photos: new PhotoStore({ dataService, logger }), clock, logger });
   auditor.artwork = artwork;
   const stabilization = new NutritionStabilization({ items, review: container.getFoodLogReview(), clock, logger });
   // agents.yml → nutrition_auditor.triage: { mode: shadow|gate|off, threshold }
   const triageConfig = configService.getAppConfig?.('agents')?.nutrition_auditor?.triage || {};
-  const triage = new NutritionAuditTriage({ decisionGateway, mode: triageConfig.mode, threshold: triageConfig.threshold,
+  const triage = new NutritionAuditTriage({ decisionGateway: scopedGateway(decisionGateway, { feature: 'auditor-triage' }), mode: triageConfig.mode, threshold: triageConfig.threshold,
     logger: logger.child?.({ module: 'nutrition-triage' }) || logger });
   // Run journal: one file per writer (journalSource, the same id the AI usage
   // ledger uses), since prod and a dev machine share the Dropbox data tree.

@@ -15,6 +15,21 @@
  * - Bot tokens: system/auth/{platform}.yml via configService.getSystemAuth(platform, appName)
  * - Household platform: configService.getHouseholdMessagingPlatform(householdId, appName)
  */
+import { scopedGateway } from '#apps/common/ports/IAIGateway.mjs';
+
+/**
+ * Which app (and feature) a bot's voice transcription is billed to in the AI
+ * usage ledger. Nutribot's voice memos are Health food logs; other bots bill
+ * to their own app name.
+ */
+const BOT_USAGE_TAGS = Object.freeze({
+  nutribot: { app: 'health', feature: 'voice-log' },
+});
+
+export function botUsageTags(appName) {
+  return BOT_USAGE_TAGS[appName] ? { ...BOT_USAGE_TAGS[appName] } : { app: appName };
+}
+
 export class SystemBotLoader {
   #configService;
   #logger;
@@ -193,7 +208,7 @@ export class SystemBotLoader {
       token,
       secretToken: auth?.secret_token,
       httpClient: deps.httpClient,
-      transcriptionService: deps.transcriptionService,
+      transcriptionService: scopedGateway(deps.transcriptionService, botUsageTags(appName)),
       logger: this.#logger
     });
   }
