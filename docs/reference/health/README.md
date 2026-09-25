@@ -123,9 +123,51 @@ weight data.
 
 ## The budget equation — one server-side home
 
+Each day has a goal **range**, not a single goal:
+
 ```
-remaining = budget − food + exercise
+floor = budgetFloor                        compared against FOOD eaten (logging completeness)
+top   = max(floor, maintenance − deficit)  compared against NET (food − exercise)
+even  = maintenance (break-even, TDEE)     compared against NET
 ```
+
+**The floor is a trust check, not a nutrition target.** Logs under-report, so a day
+logged below the floor is presumed **incomplete**, not a deficit. A day is
+**complete** when food ≥ floor, or when it was declared **Done logging** or
+**Fasted** (see [Closing a day](#closing-a-day--done-logging--fasted)). Nothing
+infers completeness from the time of day.
+
+**The deficit** (`solveDailyDeficit` in `BudgetMath.mjs`) is solved per day, from
+that day's resolved weight:
+
+| `deficitSource` | When | Deficit |
+|---|---|---|
+| `at-target` | weight ≤ `targetWeightLbs` | 0 (eat at break-even) |
+| `target-date` | `targetDate` is set and the day is before it | (weight − target) × 3500 ÷ days left, capped at `maxWeeklyRateLbs` × 3500 ÷ 7 (default 2 lb/week) |
+| `weekly-rate` | otherwise (no date, date passed or reached) | `weeklyRateLbs` × 3500 ÷ 7 (500 per lb/week) |
+
+**Zones** come from one shared rule, `shared/contracts/health/budgetZone.mjs`
+(`zoneFor`), used by the server and by the client's drag preview. They are
+evaluated in this order:
+
+| Zone | Condition | `remaining` (the headline value) | Headline |
+|---|---|---|---|
+| `past-even` | net > maintenance | net − maintenance | "N kcal past break even" |
+| `over` | net > top | net − top | "N kcal over" |
+| `in-range` | food ≥ floor | top − net | "N kcal left" |
+| `declared` | food < floor, day closed | top − net | "Fasted" / "Logging done" |
+| `incomplete` | food < floor, not closed | floor − food | "N kcal to floor" |
+
+`remaining` is never negative. `over`/`past-even` win even on an under-logged day;
+`complete` reports the logging fact separately. With a big workout, net can be
+negative and an in-range `remaining` can exceed the top (that much really is left).
+
+**Compatibility aliases:** `budget` = `range.top`, and `status` = `'over'` for
+`over`/`past-even`, else `'under'`. Both are kept until the bar and the coach read
+`range`/`zone` directly.
+
+**History:** goals apply as *current* to every day (`goalBasis: 'current'`), so
+changing `targetDate` or `targetWeightLbs` recolours past days.
 
 `backend/src/3_applications/health/BudgetService.mjs` is the only calculation owner.
 It serves `/budget`, `/budget/range`, and the budget portion of `/day`. Today reads
@@ -140,7 +182,10 @@ labelled below, so the two labels never collide). When there is no planned defic
 the two coincide and one mark reads "Goal · break even". The fill is **net** calories
 (food − exercise): success tone up to the goal, warning between goal and break-even,
 danger past break-even; exercise is a light band from net up to what was eaten. The
-headline is "N kcal left" or "N kcal over goal" and the line under it reads "1,603
+headline comes from `headlineFor` in the shared zone rule and names the segment its
+number measures ("N kcal to floor", "N kcal left", "N kcal over", "N kcal past break
+even", or "Fasted"/"Logging done"); the week strip's cell labels use the same words.
+The line under it reads "1,603
 eaten · 231 burned · 1,372 net · 919 deficit" (deficit/surplus against break-even),
 so no term is ever printed as a negative. `maintenance` comes from
 `computeDailyEnergy` in `BudgetMath.mjs`, which `/budget`, `/budget/range` and `/day`
@@ -148,9 +193,9 @@ all carry; a response without it draws only the goal mark. Protein, carbs and fa
 the bar (under it below ~1050px of column): grams, with a thin bar against
 `goals.macroGoals` when one is set; the partial "+" marker survives. `MacroBarRow`
 on Today now renders only the watch-micros. During portion editing, `portionPreview.js` overlays the
-shared counting contract's calorie delta on this server snapshot so the row, meal
-and remaining allowance move together. It does not recalculate goals, burn or the
-base budget. The overlay retires when the read model contains the saved versions.
+shared counting contract's calorie delta on this server snapshot and re-runs
+`zoneFor` on it, so the row, meal, zone and remaining allowance move exactly as the
+reloaded day will. It does not recalculate goals, burn or the range. The overlay retires when the read model contains the saved versions.
 
 `BudgetService.getBudget(userId, date)`:
 
@@ -158,8 +203,11 @@ base budget. The overlay retires when the read model contains the saved versions
 2. Finds the latest known adjusted-average weight at or before `date` from weight history.
    No usable weight → `409 { code: 'NO_WEIGHT_DATA' }`. A reading older than 7 days sets
    `stale: true` but the budget still computes from it (a week-old weight beats no weight).
-3. Computes `budget` via `computeDailyBudget` (Mifflin-St Jeor, see [Goals](#goals) below),
-   using that weight and the goals' height/sex/activity/rate/floor.
+3. Solves the day's `deficit` (`solveDailyDeficit`), then computes `maintenance` and the
+   range top via `computeDailyEnergy` (Mifflin-St Jeor, see [Goals](#goals) below), using
+   that weight and the goals' height/sex/activity/floor. Goal keys: `budgetFloor`
+   (default 1200), `targetWeightLbs`, `targetDate` (`YYYY-MM-DD`), `weeklyRateLbs`
+   (> 0, default 1), `maxWeeklyRateLbs` (> 0, default 2).
 4. Sums `food` from that date's NutriList rows, **excluding** any row with
    `status: 'pending' | 'rejected' | 'deleted'`. AI captures are committed
    `accepted` the moment they are parsed (see [Capture funnels](#capture-funnels)),
@@ -174,8 +222,17 @@ base budget. The overlay retires when the read model contains the saved versions
    rows. See [Micro coverage](#micro-coverage--why-a-stored-0-is-not-a-zero) below.
 7. Sums `exercise` from that date's workout sessions (`calories`, tolerant of an array or a
    keyed object).
-8. Returns `{ date, budget, food, exercise, net, remaining, status, stale, sessions, goals,
-   macros, microCoverage }` — `status` is `'under'` when `remaining >= 0`, else `'over'`.
+8. Reads the day's closure (`users/{id}/day_closed.yml`) for `declared`; an unreadable
+   closure file logs `health.budget.closures_unreadable` and reads as not declared.
+9. Returns `{ date, budget, maintenance, deficit, deficitSource, range: {floor, top},
+   food, exercise, net, zone, complete, declared, remaining, status, stale, sessions,
+   goals, macros, microCoverage }`. `/budget/range` returns the same per-day fields
+   (minus `sessions`/`goals`), from the same private assembler.
+
+A one-off CLI, `cli/health-budget-settings-migrate.cli.mjs --user <id> [--apply]`,
+reports every legacy floor/target setting (profile `calories_min/max`, the coach's
+`goals.yml`, the coaching `min_calories`) and their conflicts. `--apply` only fills an
+**unset** `budgetFloor`; it never sets a `targetDate`.
 
 Both 409 codes are UI signal, not failure: `EquationStrip` shows a "Set up goals" button
 on `GOALS_NOT_CONFIGURED`/`NO_WEIGHT_DATA` rather than an error state.
@@ -229,7 +286,8 @@ tells it otherwise by closing the day, from either surface:
 
 Both surfaces write the same record, `users/{id}/day_closed.yml`
 (`{date: {status: done|fasting, at}}`). `GET /api/v1/health/day` returns
-`dayStatus: {status, minCalories, today}`. `POST /api/v1/health/nutrition/day-status`
+`dayStatus: {status, minCalories, today}`, where `minCalories` is the user's
+`budgetFloor` (falling back to the coaching `min_calories` when goals have none). `POST /api/v1/health/nutrition/day-status`
 takes `{date, status: 'done'|'fasting'|null}`, where `null` reopens the day. It refuses a
 malformed date or a future day.
 
