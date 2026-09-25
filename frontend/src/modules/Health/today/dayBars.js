@@ -13,6 +13,8 @@
 // fill, the gap day has neither and renders hollow.
 
 /** The least headroom past the goal a bar box gets. */
+import { headlineFor } from '@shared-contracts/health/budgetZone.mjs';
+
 export const OVERSHOOT_CAP = 1.25;
 /** Room above the highest break-even mark, and the most headroom a box ever gets. */
 const BREAK_EVEN_HEADROOM = 1.1;
@@ -90,9 +92,12 @@ export function barCellLabel(day, bar, dayName) {
   const burned = bar.exercise > 0 ? `burned ${int(bar.exercise)}` : 'no exercise logged';
   const net = `${int(bar.net)} net of ${int(day.budget)} kcal goal, ${Math.round(bar.ratio * 100)}%`;
   const even = finiteOr(day.maintenance) > 0 ? `, break even ${int(day.maintenance)}` : '';
-  const outcome = day.status === 'over'
-    ? `${Math.abs(int(day.remaining))} kcal over goal`
-    : `${Math.abs(int(day.remaining))} kcal left`;
+  // Name the segment the number measures (shared zone rule); a legacy day
+  // without a zone keeps the old two-way wording.
+  const h = day.zone
+    ? headlineFor(day)
+    : { value: Math.abs(int(day.remaining)), text: day.status === 'over' ? 'over goal' : 'left' };
+  const outcome = h.value == null ? h.text : `${int(h.value)} kcal ${h.text}`;
   return `${dayName}, ate ${int(day.food)}, ${burned}, ${net}${even}, ${outcome}`;
 }
 

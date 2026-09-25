@@ -81,7 +81,9 @@ describe('BudgetService.getBudget', () => {
     });
     const b = await svc.getBudget('kckern', '2026-09-02');
     expect(b.status).toBe('over');
-    expect(b.remaining).toBeLessThan(0);
+    // remaining is the zone's headline value: the overrun, never negative.
+    expect(b.zone).toMatch(/^(over|past-even)$/);
+    expect(b.remaining).toBeGreaterThan(0);
   });
 
   it('counts an overlapping workout ONCE — activity and fitness are two views of the same session, not two sessions (real getWorkoutsForDate shape)', async () => {
@@ -118,17 +120,88 @@ describe('BudgetService.getBudget', () => {
     expect(b.sessions[0]).toMatchObject({ calories: 320, minutes: 42 });
   });
 
-  it('rounds food once so remaining === budget - food + exercise exactly, even with fractional-calorie rows', async () => {
+  it('rounds food once so an in-range remaining === top − net exactly, even with fractional-calorie rows', async () => {
     const svc = makeService({
       nutriListStore: { findByDate: async () => ([
-        { calories: 100.4, status: 'accepted' },
-        { calories: 100.4, status: 'accepted' },
+        { calories: 700.4, status: 'accepted' },
+        { calories: 700.4, status: 'accepted' },
       ]) },
     });
     const b = await svc.getBudget('kckern', '2026-09-02');
-    expect(b.food).toBe(201); // Math.round(100.4 + 100.4) = Math.round(200.8) = 201
-    expect(b.remaining).toBe(b.budget - b.food + b.exercise);
+    expect(b.food).toBe(1401); // Math.round(700.4 + 700.4) = Math.round(1400.8) = 1401
+    expect(b.zone).toBe('in-range');
+    expect(b.remaining).toBe(b.range.top - b.net);
     expect(b.net).toBe(b.food - b.exercise);
+  });
+});
+
+describe('BudgetService — range contract', () => {
+  const closures = (map) => ({ healthStore: { loadDayClosedData: async () => map } });
+
+  it('returns the range, the deficit and its source', async () => {
+    const b = await makeService().getBudget('kckern', '2026-09-02');
+    expect(b.range).toEqual({ floor: 1200, top: 1962 });
+    expect(b.budget).toBe(b.range.top);
+    expect(b).toMatchObject({ deficit: 500, deficitSource: 'weekly-rate' });
+  });
+
+  it('solves the deficit from targetDate', async () => {
+    const svc = makeService({ goalsStore: { load: async () => ({ ...GOALS, targetDate: '2026-12-11' }) } });
+    const b = await svc.getBudget('kckern', '2026-09-02');
+    // 200 → 180 lb over 100 days = 700/day
+    expect(b).toMatchObject({ deficit: 700, deficitSource: 'target-date' });
+    expect(b.range.top).toBe(b.maintenance - 700);
+  });
+
+  it('zone in-range: food 1280 ≥ floor, net 960 ≤ top; remaining equals the old value', async () => {
+    const b = await makeService().getBudget('kckern', '2026-09-02');
+    expect(b).toMatchObject({ zone: 'in-range', complete: true, declared: null, net: 960, status: 'under' });
+    expect(b.remaining).toBe(1962 - 960);
+  });
+
+  it('zone incomplete under the floor; remaining is food still to log', async () => {
+    const svc = makeService({ nutriListStore: nutriListFake([{ date: '2026-09-02', calories: 700 }]) });
+    const b = await svc.getBudget('kckern', '2026-09-02');
+    expect(b).toMatchObject({ zone: 'incomplete', complete: false, remaining: 500, status: 'under' });
+  });
+
+  it('a declared day under the floor is complete', async () => {
+    const svc = makeService({
+      nutriListStore: nutriListFake([{ date: '2026-09-02', calories: 700 }]),
+      ...closures({ '2026-09-02': { status: 'fasting', at: 'x' } }),
+    });
+    const b = await svc.getBudget('kckern', '2026-09-02');
+    expect(b).toMatchObject({ zone: 'declared', complete: true, declared: 'fasting' });
+  });
+
+  it('a failing closure read never fails the budget', async () => {
+    const svc = makeService({ healthStore: { loadDayClosedData: async () => { throw new Error('corrupt'); } } });
+    const b = await svc.getBudget('kckern', '2026-09-02');
+    expect(b).toMatchObject({ declared: null, zone: 'in-range' });
+  });
+
+  it('range days carry the same fields as the single day', async () => {
+    const svc = makeService({ healthStore: { getWorkoutsForRange: async () => ({ '2026-09-02': [{ calories: 320 }] }) } });
+    const [day] = await svc.getBudgetRange('kckern', '2026-09-02', '2026-09-02');
+    const single = await svc.getBudget('kckern', '2026-09-02');
+    for (const key of ['range', 'deficit', 'deficitSource', 'zone', 'complete', 'declared', 'remaining', 'status', 'net']) {
+      expect(day[key]).toEqual(single[key]);
+    }
+  });
+});
+
+describe('BudgetService.setGoals — range settings', () => {
+  it('accepts targetDate and maxWeeklyRateLbs', async () => {
+    const goals = { ...GOALS, targetDate: '2027-03-01', maxWeeklyRateLbs: 2 };
+    await expect(makeService().setGoals('kckern', goals)).resolves.toEqual(goals);
+  });
+  it('rejects a malformed targetDate', async () => {
+    await expect(makeService().setGoals('kckern', { ...GOALS, targetDate: '03/01/2027' })).rejects.toMatchObject({ code: 'GOALS_INVALID' });
+  });
+  it('rejects a non-positive maxWeeklyRateLbs or weeklyRateLbs', async () => {
+    await expect(makeService().setGoals('kckern', { ...GOALS, maxWeeklyRateLbs: 0 })).rejects.toMatchObject({ code: 'GOALS_INVALID' });
+    await expect(makeService().setGoals('kckern', { ...GOALS, weeklyRateLbs: 0 })).rejects.toMatchObject({ code: 'GOALS_INVALID' });
+    await expect(makeService().setGoals('kckern', { ...GOALS, weeklyRateLbs: -1 })).rejects.toMatchObject({ code: 'GOALS_INVALID' });
   });
 });
 

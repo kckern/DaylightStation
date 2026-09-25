@@ -1,5 +1,6 @@
 import { Button } from '@mantine/core';
 import { DateStepper } from '@/lib/ui';
+import { headlineFor } from '@shared-contracts/health/budgetZone.mjs';
 
 const n = (v) => Math.round(Number(v || 0)).toLocaleString();
 const pct = (part, whole) => (whole > 0 ? `${(Math.max(0, part) / whole) * 100}%` : '0%');
@@ -36,11 +37,17 @@ function BudgetBar({ budget }) {
     style={{ left: pct(value, scale) }}><span className="health-budget__mark-label">{label} <b>{n(value)}</b></span></span>;
   const sameMark = breakEven > 0 && Math.round(breakEven) === Math.round(goal);
   const balance = breakEven > 0 ? breakEven - net : null;
+  // The headline names the segment its number measures (the shared zone rule).
+  // A legacy budget without a zone keeps the old two-way wording.
+  const headline = budget.zone
+    ? headlineFor(budget)
+    : { value: Math.abs(budget.remaining), text: over ? 'over goal' : 'left' };
+  const spoken = headline.value == null ? headline.text : `${n(headline.value)} ${headline.text}`;
   return (
     <div className="health-budget">
       <div className="health-budget__head">
         <span className="health-budget__headline" data-testid="budget-headline">
-          <strong>{n(Math.abs(budget.remaining))}</strong> kcal {over ? 'over goal' : 'left'}
+          {headline.value == null ? headline.text : <><strong>{n(headline.value)}</strong> kcal {headline.text}</>}
         </span>
         <span className="health-budget__terms" data-testid="budget-terms">
           <span>{n(food)} eaten</span>
@@ -55,7 +62,7 @@ function BudgetBar({ budget }) {
       </div>
       <div className="health-budget__scale">
         <div className="health-budget__track" role="img"
-          aria-label={`${n(net)} net kcal of ${n(goal)} goal${breakEven ? `, break even ${n(breakEven)}` : ''}${over ? `, ${n(Math.abs(budget.remaining))} over goal` : `, ${n(budget.remaining)} left`}`}>
+          aria-label={`${n(net)} net kcal of ${n(goal)} goal${breakEven ? `, break even ${n(breakEven)}` : ''}, ${spoken}`}>
           {exercise > 0 ? <span className="health-budget__burned" style={band(net, food)} /> : null}
           <span className="health-budget__net" style={band(0, Math.min(net, goal))} />
           {net > goal ? <span className="health-budget__over-goal" style={band(goal, breakEven > goal ? Math.min(net, breakEven) : net)} /> : null}

@@ -27,6 +27,22 @@ beforeEach(() => {
   app.use((err, req, res, next) => res.status(err.status || 500).json({ error: err.message }));
 });
 
+describe('day status threshold', () => {
+  it('minCalories is the per-user budget floor when goals set one', async () => {
+    const operations = new HealthOperations({ healthData: { loadDayClosedData: async () => ({}) },
+      resolveDefaultUsername: () => 'kc', today: () => '2026-09-24',
+      completeness: () => ({ min_calories: 1300 }), budgetFloor: async () => 1100 });
+    expect((await operations.readDayStatus('kc', '2026-09-24')).minCalories).toBe(1100);
+  });
+
+  it('falls back to the coaching threshold when the floor is missing or unreadable', async () => {
+    const base = { healthData: { loadDayClosedData: async () => ({}) }, resolveDefaultUsername: () => 'kc',
+      today: () => '2026-09-24', completeness: () => ({ min_calories: 1300 }) };
+    expect((await new HealthOperations({ ...base, budgetFloor: async () => null }).readDayStatus('kc', '2026-09-24')).minCalories).toBe(1300);
+    expect((await new HealthOperations({ ...base, budgetFloor: async () => { throw new Error('x'); } }).readDayStatus('kc', '2026-09-24')).minCalories).toBe(1300);
+  });
+});
+
 describe('day status', () => {
   it('GET /day reports the closure (legacy `true` reads as done) and the threshold', async () => {
     const res = await request(app).get('/api/v1/health/day?date=2026-09-20');
