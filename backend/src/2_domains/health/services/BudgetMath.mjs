@@ -16,7 +16,16 @@ const finite = (v, name) => {
   return v;
 };
 
-export function computeDailyBudget({
+export function computeDailyBudget(input) {
+  return computeDailyEnergy(input).budget;
+}
+
+/**
+ * The same equation with its break-even kept: `maintenance` is the day's
+ * estimated burn (BMR x activity baseline) — eating exactly that holds weight —
+ * and `budget` is maintenance less the weekly-rate deficit, floored.
+ */
+export function computeDailyEnergy({
   weightLbs, heightIn, ageYears, sex,
   activityBaseline = 1.35, weeklyRateLbs = 1, budgetFloor = 1200,
 }) {
@@ -37,7 +46,7 @@ export function computeDailyBudget({
   const bmr = 10 * kg + 6.25 * cm - 5 * ageYears + (sex === 'male' ? 5 : -161);
   const tdee = bmr * activityBaseline;
   const budget = Math.round(tdee - (weeklyRateLbs * KCAL_PER_LB) / 7);
-  return Math.max(budget, Math.round(budgetFloor));
+  return { maintenance: Math.round(tdee), budget: Math.max(budget, Math.round(budgetFloor)) };
 }
 
 export default computeDailyBudget;

@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef, useState } from 'react';
-import { Button } from '@mantine/core';
+import { Button, NativeSelect } from '@mantine/core';
 import { LoadingState } from '@/lib/ui';
 import { sumCounted } from '@shared-contracts/nutrition/countedRows.mjs';
 import { MacroBadges } from './MacroBadges.jsx';
@@ -13,6 +13,7 @@ import { usePortionControl } from './usePortionDraft.js';
 import { useFrozenOrder, useFlipMoves } from './sectionOrder.js';
 import { MealDragProvider, useMealDropTarget, useDraggableMeal } from './mealDrag.jsx';
 import { RowPreviewProvider } from './RowPreview.jsx';
+import { useDishMembership, dishCandidates } from './dishMembership.js';
 import './mealWorkflow.scss';
 
 // Bucket totals fold through the SHARED counted-rows contract — the same file
@@ -88,6 +89,9 @@ function Section({
     : null;
   const addRow = renderAddRow ? renderAddRow(bucket, label, { selectedIds, onVoiceCapture: voiceCapture }) : null;
 
+  // Add/remove an ingredient in place — only in a real meal, not while picking foods.
+  const dish = useDishMembership({ date, bucket, rows, onChanged });
+  const dishEditable = Boolean(bucket && onChanged && !selecting);
   const toggle = (key) => setCollapsed((prev) => {
     const next = new Set(prev);
     if (next.has(key)) next.delete(key); else next.add(key);
@@ -162,8 +166,11 @@ function Section({
                 full child list to scale/move/delete them together). */}
             {renderRow({ row:{...row,children},densityRow:{kind:'group',children},onTap:onRowTap,onConfirm,onRequestDelete,measured,kcalShare:entryShares[entryIndex],
               isGroup:true,expanded:isOpen,onToggle:()=>toggle(key),rollupKcal:rollup.calories })}
-            {isOpen ? children.map((c,index)=>renderRow({row:c,onTap:onRowTap,onConfirm,onRequestDelete,child:true,lastChild:index===children.length-1,kcalShare:childShares[index],
-              measured:measuredByUuid?.get(c.uuid) ?? measuredByUuid?.get(c.id) ?? null})) : null}
+            {isOpen ? children.map((c,index)=>renderRow({row:c,onTap:onRowTap,onConfirm,onRequestDelete,child:true,lastChild:index===children.length-1 && !dishEditable,kcalShare:childShares[index],
+              measured:measuredByUuid?.get(c.uuid) ?? measuredByUuid?.get(c.id) ?? null,
+              ...(dishEditable ? { onRemoveFromDish:child=>dish.remove(key,child.uuid ?? child.id), dishName:row.name || row.item || row.label, dishBusy:dish.busy === key } : {})})) : null}
+            {isOpen && dishEditable ? <DishAddRow dishName={row.name || row.item || row.label} candidates={dishOptions(rows, key)}
+              busy={dish.busy === key} error={dish.error?.groupId === key ? dish.error.message : null} onAdd={foodId=>dish.add(key,foodId)}/> : null}
           </div>
         );
       })}
@@ -179,6 +186,29 @@ function Section({
       {addRow}
     </section>
   );
+}
+
+const rowName = row => row.name || row.item || row.label;
+// An ingredient of another dish says where it comes from: picking it moves it.
+const dishOptions = (rows, groupId) => dishCandidates(rows, groupId).map(row => {
+  const from = row.parentId ? rows.find(other => (other.uuid ?? other.id) === row.parentId) : null;
+  return { id: row.uuid ?? row.id, label: from ? `${rowName(row)} (from ${rowName(from)})` : rowName(row) };
+});
+
+// The last line of an open dish: fold another food of this meal into it.
+// Foods from another dish move over (the old dish retires if emptied).
+function DishAddRow({ dishName, candidates, busy, error, onAdd }) {
+  return <div className="health-row-line health-row-line--child health-row-line--last-child health-dish-add">
+    <div className="health-row__branch" />
+    <label className="health-dish-add__field">
+      <span className="health-dish-add__plus" aria-hidden="true">+</span>
+      <NativeSelect size="xs" variant="unstyled" aria-label={`Add a food to ${dishName}`} value="" disabled={busy || !candidates.length}
+        onChange={event=>{ if (event.currentTarget.value) onAdd(event.currentTarget.value); }}
+        data={[{ value: '', label: busy ? 'Saving…' : candidates.length ? `Add food to ${dishName}…` : 'No other foods in this meal' },
+          ...candidates.map(({ id, label }) => ({ value: id, label }))]} />
+    </label>
+    {error ? <span role="alert" className="health-row__error">{error}</span> : null}
+  </div>;
 }
 
 export function LogTable({

@@ -131,13 +131,20 @@ remaining = budget − food + exercise
 It serves `/budget`, `/budget/range`, and the budget portion of `/day`. Today reads
 one `/day?date=` snapshot containing entries, their ledger revision, and a budget
 computed from those exact entries. A budget setup error does not hide the food log. `EquationStrip.jsx` is proof by absence: it destructures `budget.budget`,
-`budget.food`, `budget.exercise`, `budget.remaining`, `budget.status`, `budget.stale` and
-renders them verbatim — as one bar, not a row of cards. Capacity is budget + exercise;
-food fills it; the exercise share is a lighter end segment. The headline is
-"N kcal left" or "N kcal over" and the line under it reads "1,603 eaten of 2,022 ·
-budget 1,791 · +231 exercise", so no term is ever printed as a negative. Once food
-passes capacity the bar's scale becomes the food total, the capacity marker moves in
-and the overage draws past it in the danger tone. Protein, carbs and fat sit beside
+`budget.food`, `budget.exercise`, `budget.maintenance`, `budget.remaining`, `budget.status`,
+`budget.stale` and renders them verbatim — as one bar, not a row of cards. The bar has a
+fixed scale (the largest of goal, break-even and food, plus 12% headroom) and two marks
+that do not move with the day: **Goal** (`budget`, labelled above the bar) and **Break
+even** (`maintenance` = BMR × activity baseline, the burn at which weight holds;
+labelled below, so the two labels never collide). When there is no planned deficit
+the two coincide and one mark reads "Goal · break even". The fill is **net** calories
+(food − exercise): success tone up to the goal, warning between goal and break-even,
+danger past break-even; exercise is a light band from net up to what was eaten. The
+headline is "N kcal left" or "N kcal over goal" and the line under it reads "1,603
+eaten · 231 burned · 1,372 net · 919 deficit" (deficit/surplus against break-even),
+so no term is ever printed as a negative. `maintenance` comes from
+`computeDailyEnergy` in `BudgetMath.mjs`, which `/budget`, `/budget/range` and `/day`
+all carry; a response without it draws only the goal mark. Protein, carbs and fat sit beside
 the bar (under it below ~1050px of column): grams, with a thin bar against
 `goals.macroGoals` when one is set; the partial "+" marker survives. `MacroBarRow`
 on Today now renders only the watch-micros. During portion editing, `portionPreview.js` overlays the
@@ -475,23 +482,23 @@ than left to be read as good days, and gaps are excluded from every average.
 
 ### Encodings
 
-**Week strip and month block.** Bar height is the day's food as a fraction of
-that day's budget, clamped at 1.25×; the reference line sits at 1/1.25 of the
-box, so a day exactly on budget lands on the line and the space above it is
-overshoot headroom. Hue is under/over.
+**Week strip and month block.** Bar height is the day's **net** calories
+(`food − exercise`) as a fraction of that day's goal (`budget`) — the same
+quantity the Today bar fills and the same one the server's status judges, so
+height and hue can never disagree. The box is `cap` goals tall
+(`dayBars.js` `barScale`): at least 1.25×, raised for the whole strip so its
+highest break-even (`maintenance / budget`) fits under the top, at most 2×. A
+solid line marks the goal at `1/cap` of the box; a dashed line marks break even.
+Both positions are set inline and shared by every cell, so they sit level.
 
-These are **two different denominators, deliberately**: the height is
-`food / budget`, the hue is the outcome of `budget − food + exercise`. That is
-informative — a day you ate 114% of budget and trained off really is an under
-day, and collapsing the hue onto the food-only denominator would throw the
-exercise offset away — but it means a cell can sit above the reference line and
-still be green. Two things therefore always name the reconciling term. The
-accessible name states intake, exercise and outcome as one claim ("ate 2040 of
-1791 kcal, 114% of budget, with 530 kcal exercise, 281 kcal left"), saying "with
-no exercise logged" rather than dropping the term; and such a cell carries a
-capped top edge, a non-colour cue that the overshoot is real and something
-offset it. A sentence asserting "114% of budget" and "under budget" with nothing
-between them is a self-contradiction, not a summary.
+Hue is the zone: success up to the goal, warning past the goal but under break
+even (still losing, just slower), danger past break even — or past the goal
+when no break even is known. A day you ate 114% of goal and trained off is drawn
+at its net, under the line, green: the old food-height encoding needed an extra
+"offset by exercise" cue to explain that, and it is gone. The accessible name
+still states every term as one claim ("ate 2040, burned 530, 1510 net of 1791
+kcal goal, 84%, break even 2291, 281 kcal left"), saying "no exercise logged"
+rather than dropping the term.
 
 The accessible name announces the *true*
 percentage — 140%, not the clamped paint — because a spoken clamped number is a

@@ -20,7 +20,7 @@ const GAP_DATE = '2026-09-03';
 const ZERO_DATE = '2026-09-04';
 const OVER_DATE = '2026-09-01';
 // A day that ate PAST budget (2040 / 1791 = 114%) and still finished UNDER,
-// because 530 kcal of exercise covered it. Taken from live data (Jul 25).
+// because 530 kcal of exercise covered it (1510 net). Live data (Jul 25).
 const OFFSET_DATE = '2026-07-25';
 const OFFSET_TODAY = '2026-07-25';
 
@@ -28,7 +28,7 @@ const dayFor = (date) => {
   if (date === GAP_DATE) return { date, error: 'NO_WEIGHT_DATA' };
   if (date === OFFSET_DATE) {
     return {
-      date, budget: 1791, food: 2040, exercise: 530, net: 1510,
+      date, budget: 1791, maintenance: 2291, food: 2040, exercise: 530, net: 1510,
       remaining: 281, status: 'under', stale: false, macros: {},
     };
   }
@@ -76,11 +76,12 @@ describe('WeekStrip', () => {
     expect(screen.getByTestId(`weekbar-fill-${OVER_DATE}`).style.height).toBe('100%');
   });
 
-  it('hues the bar by status — under vs over', async () => {
+  it('hues the bar by zone — under goal vs past it', async () => {
     strip();
     await screen.findByTestId('weekbar-fill-2026-08-31');
     expect(screen.getByTestId('weekbar-fill-2026-08-31').className).toMatch(/fill--under/);
-    expect(screen.getByTestId(`weekbar-fill-${OVER_DATE}`).className).toMatch(/fill--over/);
+    // No break even in this fixture, so past the goal is surplus.
+    expect(screen.getByTestId(`weekbar-fill-${OVER_DATE}`).className).toMatch(/fill--surplus/);
   });
 
   // PRD F7.1, the phase's stated Critical risk: no stacked macro segments in the
@@ -103,11 +104,13 @@ describe('WeekStrip', () => {
     }
 
     // And no cell smuggles extra marks in beside the bar: a cell's bar box holds
-    // the reference line and the bar, and nothing else.
+    // the goal line, a break-even line when one is known, and the bar.
     for (const box of document.querySelectorAll('.health-weekstrip__barbox')) {
-      expect(box.children.length).toBe(2);
-      expect(box.children[0].className).toMatch(/goalline/);
-      expect(box.children[1].className).toMatch(/health-weekstrip__bar/);
+      const names = [...box.children].map(child => child.className);
+      expect(names[0]).toMatch(/goalline/);
+      expect(names.at(-1)).toMatch(/health-weekstrip__bar/);
+      expect(names.slice(1, -1).every(name => /evenline/.test(name))).toBe(true);
+      expect(names.length).toBeLessThanOrEqual(3);
     }
   });
 
@@ -136,40 +139,37 @@ describe('WeekStrip', () => {
     const zeroCell = cells.find(cell => cell.dataset.date === ZERO_DATE);
     expect(gapCell.getAttribute('aria-label')).toMatch(/no data/);
     expect(gapCell.textContent).toContain('—');
-    expect(zeroCell.getAttribute('aria-label')).toMatch(/ate 0 of 2000 kcal/);
+    expect(zeroCell.getAttribute('aria-label')).toMatch(/ate 0, no exercise logged, 0 net of 2000 kcal goal/);
     expect(zeroCell.getAttribute('aria-label')).not.toMatch(/no data/);
   });
 
-  it('announces the TRUE percentage even when the paint is clamped, and reconciles it with exercise', async () => {
+  it('announces the TRUE percentage even when the paint is clamped, and names exercise', async () => {
     strip();
     await screen.findByTestId(`weekbar-fill-${OVER_DATE}`);
     const overCell = [...document.querySelectorAll('.health-weekstrip__cell')]
       .find((c) => c.getAttribute('aria-label')?.includes('2800'));
     const label = overCell.getAttribute('aria-label');
-    expect(label).toMatch(/140% of budget/);
-    expect(label).toMatch(/over budget/);
-    // The reconciling term is always present — the height's denominator and the
-    // hue's are different, and a sentence must not assert both without it.
+    expect(label).toMatch(/2800 net of 2000 kcal goal, 140%/);
+    expect(label).toMatch(/over goal/);
     expect(label).toMatch(/exercise/);
   });
 
-  // I1. The bar's height says food/budget; its hue says the outcome after
-  // exercise. A day that ate 114% and still came in under is GREEN above the
-  // reference line, which reads as a mistake unless something says otherwise.
-  it('marks a cell whose overshoot was offset by exercise, in the cue AND the words', async () => {
+  // The bar is net: a day that ate 114% and trained it off sits UNDER the goal
+  // line, green, and the dashed break-even line is drawn above it.
+  it('draws an exercise-offset day as its net, with the break-even line', async () => {
     strip({ date: OFFSET_TODAY, today: OFFSET_TODAY });
     const fill = await screen.findByTestId(`weekbar-fill-${OFFSET_DATE}`);
     expect(fill.className).toMatch(/fill--under/);
-    expect(fill.className).toMatch(/fill--offset/);
+    const cap = 2291 / 1791 * 1.1;
+    expect(parseFloat(fill.style.height)).toBeCloseTo((1510 / 1791 / cap) * 100, 0);
+    const box = fill.closest('.health-weekstrip__barbox');
+    expect(parseFloat(box.querySelector('.health-weekstrip__goalline').style.bottom)).toBeCloseTo(100 / cap, 0);
+    expect(parseFloat(box.querySelector('.health-weekstrip__evenline').style.bottom)).toBeCloseTo((2291 / 1791 / cap) * 100, 0);
 
-    const cell = fill.closest('.health-weekstrip__cell');
-    const label = cell.getAttribute('aria-label');
-    expect(label).toMatch(/114% of budget/);
-    expect(label).toMatch(/530 kcal exercise/);
+    const label = fill.closest('.health-weekstrip__cell').getAttribute('aria-label');
+    expect(label).toMatch(/burned 530, 1510 net of 1791 kcal goal/);
+    expect(label).toMatch(/break even 2291/);
     expect(label).toMatch(/281 kcal left/);
-
-    // An ordinary under day in the SAME strip carries no offset cue.
-    expect(screen.getByTestId('weekbar-fill-2026-07-24').className).not.toMatch(/fill--offset/);
   });
 
   // The window always ENDS at the viewed date, so today is in the strip only
