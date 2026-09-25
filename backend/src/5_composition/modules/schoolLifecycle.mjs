@@ -824,7 +824,7 @@ export async function createSchoolLifecycle({
     curriculum, assignments: stores.assignments, sessions: stores.sessions,
     attestations, curriculumExceptions: curriculumExceptionStore,
     launchers, timezone, clock, logger,
-    declaredEntryActions, householdSchedule,
+    declaredEntryActions, householdSchedule, dayBypasses: programDayBypassStore,
   });
 
   // --- use cases -------------------------------------------------------------
@@ -880,7 +880,7 @@ export async function createSchoolLifecycle({
   const previewPlanProjection = new PlanProjection({
     curriculum, assignments: stores.assignments, sessions: previewSessions,
     attestations, curriculumExceptions: curriculumExceptionStore,
-    launchers, timezone, clock, householdSchedule,
+    launchers, timezone, clock, householdSchedule, dayBypasses: programDayBypassStore,
     planErrorEvent: 'school.agenda.plan-errors',
     launcherFailedEvent: 'school.agenda.launcher-failed',
     logger: logger.child ? logger.child({ preview: true }) : logger,

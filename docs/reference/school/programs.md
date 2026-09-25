@@ -267,6 +267,18 @@ broadcast `program-day-bypass-changed` on the `school` topic — the same topic
 `PianoLessonCeremonyBridge` uses — so a bypass granted on a laptop clears the
 kiosk within a beat instead of waiting out its 15s poll.
 
+**Any program, not only piano.** The ledger always accepted any enrolled
+`programId`, but until 2026-09-24 only the piano launcher read it, so a bypass
+for a card-ladder day was filed and changed nothing. `collectProgramStatuses`
+now reads it for every program (`withDayBypass`), given the store through
+`PlanProjection`'s `dayBypasses`. The same order holds: a day the launcher
+already reports done keeps its own status, a program reporting `error` stays
+faulted, and otherwise the day reads `doneToday: true, excused: true,
+bypassed: true` with the label `Credited today by <actor> · <launcher label>`.
+A replayed day with a bypass on file reads credited rather than unknowable,
+since the ledger is itself a record of that day. Piano still checks inside its
+own `status()` too, which is what its kiosk gate relies on.
+
 ## Story time — a program with no course at all
 
 `story-time` is the first program whose obligation is a plain daily COUNT:
