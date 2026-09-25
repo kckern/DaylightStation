@@ -42,6 +42,7 @@ the run and its journal row as `trigger` (a list of kinds):
 | `manual` | Run manually | **Run now** (`POST /run`) |
 | `unclassified` | First check after update | no earlier digest to compare with (first check after deploy) |
 | `unknown` | Before tracking began | backfilled rows (see [Journal](#journal)) |
+| `answer` | Answered a question | backfilled turns that interpreted a free-text answer (runId `answer_<questionId>`) |
 
 Classification is `auditTrigger.classifyChange` (`2_domains/nutrition/services/`)
 over two snapshot digests. A digest keeps, per row, one hash of the content
@@ -199,11 +200,20 @@ nutrition ledger or the capture's metadata), and adds a view of the agent
 transcript while it is still kept: tool calls with results capped at 8 KB,
 rows in scope. `transcriptExpired` / `transcriptError` say why there is none.
 
-**Backfilled rows.** Runs from before the journal were rebuilt from agent
-transcripts by the backfill CLI (below). They carry `backfilled: true`,
-`trigger: ['unknown']`, summed usage and cost across retried turns, and the
-last transcript's repairs as `proposals` (outcomes were not recorded). They are
-written with writer `backfill`, never into a live writer's file.
+**Backfilled rows.** Runs from before the journal were rebuilt by the backfill
+CLI (below) from the cleanup state file's `runs` and the agent transcripts.
+For a run in both, the state's recorded `outcomes`, `summary`, `status`,
+`error`, `dryRun`, `manual`, `createdAt` (as `at`) and `completedAt` win, and
+the transcripts supply usage and cost (summed across retried turns), tool
+calls, model and questions. A state run whose transcripts are gone has `usage`
+and `costUsd` null. A transcript with no state run keeps its last turn's
+repairs as `proposals`, because its outcomes were not recorded. All carry
+`backfilled: true` and `trigger: ['unknown']` (`['answer']` for answer turns),
+and are written with writer `backfill`, never into a live writer's file.
+
+The state keeps only the newest 50 finished runs (`RUN_HISTORY_LIMIT`), so the
+first run completed after deploying the pruning build drops the older runs'
+outcomes. Run the backfill before that, or right after deploy.
 
 ## Cost path
 
@@ -309,10 +319,13 @@ when none were priced.
 
 ## CLIs
 
-- `node cli/nutrition-auditor-backfill.cli.mjs [--since YYYY-MM-DD] [--user ID] [--dry-run]`
-  rebuilds journal rows from `<mediaDir>/logs/agents/nutrition-auditor/`
-  transcripts. Idempotent by `runId`: runs already in any writer's file are
-  skipped. Run it where the data tree is (inside `{env.docker_container}` on
+- `node cli/nutrition-auditor-backfill.cli.mjs [--since YYYY-MM-DD] [--user ID] [--state-file PATH] [--dry-run]`
+  rebuilds journal rows from the cleanup state file
+  (`users/{user}/agents/nutrition-cleanup.yml`, or `--state-file` with
+  `--user`) and `<mediaDir>/logs/agents/nutrition-auditor/` transcripts. The
+  summary counts rows from state and transcript, state only and transcript only.
+  Idempotent by `runId`: runs already in any writer's file are skipped. Run it
+  where the data tree is (inside `{env.docker_container}` on
   `{env.prod_host}`), `--dry-run` first.
 - `node cli/openai-usage.cli.mjs ledger --since YYYY-MM-DD --by agentId,model`
   shows the auditor's ledger rows; `--by app,feature` splits all spend by owner;

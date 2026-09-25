@@ -1,16 +1,27 @@
 #!/usr/bin/env node
 
 /**
- * Nutrition auditor journal backfill — rebuilds run-journal rows from the
- * agent transcripts, for runs that finished before the journal existed.
+ * Nutrition auditor journal backfill — rebuilds run-journal rows for runs that
+ * finished before the journal existed, from two sources:
  *
- * Every nutrition-auditor turn since 2026-09-06 left a transcript at
- *   <mediaDir>/logs/agents/nutrition-auditor/<YYYY-MM-DD>/<userId>/<HHMMSS-mmm>-<turnId8>.json
- * A run that retried left several transcripts under one `input.context.runId`;
- * each one is a billed turn, so usage and cost are summed across them. The
- * run's summary, proposed repairs and questions come from its last transcript.
- * Outcomes were not recorded, so repairs are written as `proposals`, and the
- * trigger is unknown.
+ * 1. The cleanup state file (YamlAgentStateStore,
+ *    <dataDir>/users/<userId>/agents/nutrition-cleanup.yml). Its `runs` hold what
+ *    the auditor recorded: outcomes, summary, status, error, dry run, manual,
+ *    timestamps. The state keeps only the newest 50 finished runs once the
+ *    pruning build is deployed, so backfill before (or right after) deploying.
+ * 2. The agent transcripts, one per billed turn, at
+ *    <mediaDir>/logs/agents/nutrition-auditor/<YYYY-MM-DD>/<userId>/<HHMMSS-mmm>-<turnId8>.json
+ *    A run that retried left several under one `input.context.runId`, so usage
+ *    and cost are summed across them. Model, tool calls and questions come from
+ *    the transcripts.
+ *
+ * For a runId in both, the state's recorded values win (outcomes, summary,
+ * trigger, dryRun, manual, createdAt as `at`, completedAt, status, error) and
+ * the transcripts supply usage, cost, tool calls and model. A state run with no
+ * transcript still gets a row, with usage and cost null. A transcript with no
+ * state run keeps its repairs as `proposals` (outcomes were not recorded).
+ * Runs recorded before trigger tracking carry `trigger: ['unknown']`; turns that
+ * interpreted a free-text answer (runId `answer_<questionId>`) carry ['answer'].
  *
  * Rows go through JsonlAuditJournalStore with source `backfill`, i.e. to
  *   <dataDir>/users/<userId>/lifelog/nutrition/auditor-journal/YYYY-MM.backfill.jsonl
@@ -25,6 +36,8 @@
  *   --user <id>            One user (default: every user dir in the transcript tree)
  *   --media-dir <path>     Media root (default: $DAYLIGHT_BASE_PATH/media)
  *   --data-dir <path>      Data root (default: $DAYLIGHT_BASE_PATH/data)
+ *   --state-file <path>    Cleanup state file for --user (required with it; default:
+ *                          <dataDir>/users/<userId>/agents/nutrition-cleanup.yml)
  *   --dry-run              Print the rows that would be written; write nothing
  *
  * DAYLIGHT_BASE_PATH is read from the environment, else from the repo .env.
@@ -43,6 +56,8 @@ import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { estimateCostUsd } from '#adapters/ai/aiPricing.mjs';
 import { JsonlAuditJournalStore } from '#adapters/persistence/yaml/JsonlAuditJournalStore.mjs';
+import { YamlAgentStateStore } from '#adapters/persistence/yaml/YamlAgentStateStore.mjs';
+import yaml from 'js-yaml';
 
 const AGENT_ID = 'nutrition-auditor';
 const DEFAULT_SINCE = '2026-09-06';
@@ -55,7 +70,7 @@ const USER_RE = /^[a-zA-Z0-9_-]+$/;
 
 export function parseArgs(argv) {
   const flags = { 'dry-run': false, since: DEFAULT_SINCE };
-  const withValue = new Set(['since', 'user', 'media-dir', 'data-dir']);
+  const withValue = new Set(['since', 'user', 'media-dir', 'data-dir', 'state-file']);
   for (let i = 0; i < argv.length; i++) {
     const tok = argv[i];
     if (!tok.startsWith('--')) throw new Error(`Unexpected argument: ${tok}`);
@@ -72,6 +87,7 @@ export function parseArgs(argv) {
   }
   if (!DAY_RE.test(flags.since)) throw new Error(`Bad --since: ${flags.since} (want YYYY-MM-DD)`);
   if (flags.user && !USER_RE.test(flags.user)) throw new Error(`Bad --user: ${flags.user}`);
+  if (flags['state-file'] && !flags.user) throw new Error('--state-file needs --user (a state file belongs to one user)');
   return flags;
 }
 
@@ -179,7 +195,7 @@ export function buildRows(transcripts) {
       at: new Date(time(turns[0])).toISOString(),
       completedAt,
       status: last.status === 'ok' ? 'completed' : 'failed',
-      trigger: ['unknown'],
+      trigger: runId.startsWith('answer_') ? ['answer'] : ['unknown'],
       backfilled: true,
       model: last.model?.name ?? null,
       usage,
@@ -199,19 +215,106 @@ export function buildRows(transcripts) {
   return { rows, withoutRunId, unpriced };
 }
 
+const STATE_FINISHED = new Set(['completed', 'failed', 'cancelled']);
+
+/**
+ * The finished runs in one user's cleanup state file, keyed by run id. A
+ * missing file is no runs; an unreadable one throws (a silent empty read would
+ * write rows without their outcomes).
+ * @returns {Map<string, object>}
+ */
+export function readStateRuns(stateFile) {
+  if (!existsSync(stateFile)) return new Map();
+  const state = yaml.load(readFileSync(stateFile, 'utf8')) || {};
+  const runs = state.runs && typeof state.runs === 'object' ? Object.values(state.runs) : [];
+  return new Map(runs.filter(run => run?.id && STATE_FINISHED.has(run.status)).map(run => [String(run.id), run]));
+}
+
+/** The state file YamlAgentStateStore reads for a user. */
+export function defaultStateFile(dataDir, userId) {
+  const dataService = { user: { resolveDir: (rel, id) => path.join(dataDir, 'users', id, rel) } };
+  return new YamlAgentStateStore({ dataService }).path(userId) + '.yml';
+}
+
+/**
+ * Merge a user's transcript rows with their state runs. The state's recorded
+ * values win; transcripts keep usage, cost, tool calls, model and questions.
+ * @returns {{ rows: object[], counts: { both: number, stateOnly: number, transcriptOnly: number } }}
+ */
+export function mergeRows(transcriptRows, stateRuns, { since = DEFAULT_SINCE } = {}) {
+  const counts = { both: 0, stateOnly: 0, transcriptOnly: 0 };
+  const rows = [];
+  const seen = new Set();
+  for (const row of transcriptRows) {
+    const run = stateRuns.get(row.runId);
+    seen.add(row.runId);
+    if (!run) { counts.transcriptOnly++; rows.push(row); continue; }
+    counts.both++;
+    rows.push(fromState(run, row));
+  }
+  for (const [runId, run] of stateRuns) {
+    if (seen.has(runId)) continue;
+    const at = Date.parse(run.createdAt);
+    if (Number.isFinite(at) && new Date(at).toISOString().slice(0, 10) < since) continue;
+    counts.stateOnly++;
+    rows.push(fromState(run, null));
+  }
+  rows.sort((a, b) => (Date.parse(a.at) || 0) - (Date.parse(b.at) || 0));
+  return { rows, counts };
+}
+
+function fromState(run, transcriptRow) {
+  const { proposals, ...base } = transcriptRow || {
+    runId: String(run.id), backfilled: true, model: run.model ?? null, usage: null, costUsd: null,
+    turnId: null, attempts: Number(run.attempt) || 0, toolCalls: [], questions: [],
+  };
+  const row = { ...base, runId: String(run.id), backfilled: true, __source: transcriptRow ? 'both' : 'state' };
+  const trigger = Array.isArray(run.trigger) && run.trigger.length ? run.trigger : null;
+  row.trigger = trigger ?? base.trigger ?? (row.runId.startsWith('answer_') ? ['answer'] : ['unknown']);
+  const at = Date.parse(run.createdAt);
+  if (Number.isFinite(at)) row.at = new Date(at).toISOString();
+  row.completedAt = run.completedAt ?? base.completedAt ?? null;
+  row.status = run.status;
+  if (run.error != null) row.error = run.error; else delete row.error;
+  if (Array.isArray(run.outcomes)) row.outcomes = run.outcomes;
+  else if (proposals?.length) row.proposals = proposals;
+  row.summary = typeof run.summary === 'string' ? run.summary : (base.summary ?? null);
+  if (typeof run.dryRun === 'boolean') row.dryRun = run.dryRun;
+  if (typeof run.manual === 'boolean') row.manual = run.manual;
+  if (run.overCap) row.overCap = true;
+  if (!row.model && run.model) row.model = run.model;
+  return row;
+}
+
 /**
  * Backfill every user found. Returns the totals; writes nothing when dryRun.
  */
-export async function backfill({ mediaDir, dataDir, since = DEFAULT_SINCE, user = null, dryRun = false, out = console.log }) {
+export async function backfill({ mediaDir, dataDir, since = DEFAULT_SINCE, user = null, stateFile = null, dryRun = false, out = console.log }) {
+  if (stateFile && !user) throw new Error('stateFile needs a user');
   const dataService = { user: { resolveDir: (rel, id) => path.join(dataDir, 'users', id, rel) } };
   const store = new JsonlAuditJournalStore({ dataService, source: 'backfill' });
   const { byUser, unreadable } = readTranscripts(mediaDir, { since, user });
-  const totals = { users: 0, transcripts: 0, runs: 0, written: 0, skipped: 0, withoutRunId: 0, unreadable: unreadable.length, costUsd: 0, unpriced: [] };
+  const totals = { users: 0, transcripts: 0, runs: 0, written: 0, skipped: 0, withoutRunId: 0, unreadable: unreadable.length, costUsd: 0, unpriced: [],
+    stateRuns: 0, both: 0, stateOnly: 0, transcriptOnly: 0, stateFiles: [] };
 
-  for (const [userId, transcripts] of byUser) {
+  // Users with transcripts, plus users whose state file has runs.
+  const users = new Set(byUser.keys());
+  if (user) users.add(user);
+  else for (const id of listDirs(path.join(dataDir, 'users'))) if (USER_RE.test(id) && existsSync(defaultStateFile(dataDir, id))) users.add(id);
+
+  for (const userId of [...users].sort()) {
+    const transcripts = byUser.get(userId) || [];
+    const file = stateFile ?? defaultStateFile(dataDir, userId);
+    const stateRuns = readStateRuns(file);
+    totals.stateFiles.push(`${userId}: ${file} (${existsSync(file) ? `${stateRuns.size} finished runs` : 'missing'})`);
+    if (!transcripts.length && !stateRuns.size) continue;
     totals.users++;
     totals.transcripts += transcripts.length;
-    const { rows, withoutRunId, unpriced } = buildRows(transcripts);
+    totals.stateRuns += stateRuns.size;
+    const built = buildRows(transcripts);
+    const { withoutRunId, unpriced } = built;
+    const { rows, counts } = mergeRows(built.rows, stateRuns, { since });
+    totals.both += counts.both; totals.stateOnly += counts.stateOnly; totals.transcriptOnly += counts.transcriptOnly;
     totals.runs += rows.length;
     totals.withoutRunId += withoutRunId;
     totals.unpriced.push(...unpriced.map(runId => `${userId}/${runId}`));
@@ -221,10 +324,14 @@ export async function backfill({ mediaDir, dataDir, since = DEFAULT_SINCE, user 
       totals.written++;
       totals.costUsd += row.costUsd ?? 0;
       if (dryRun) {
-        out(`${userId}  ${row.at}  ${row.runId}  ${row.status}  attempts=${row.attempts}  ${row.costUsd == null ? 'unpriced' : `$${row.costUsd.toFixed(4)}`}  `
-          + `tools=${row.toolCalls.length} proposals=${row.proposals.length} questions=${row.questions.length}`);
+        const source = { both: 'state+transcript', state: 'state only' }[row.__source] ?? 'transcript only';
+        const cost = row.costUsd == null ? (row.usage ? 'unpriced' : 'no usage') : `$${row.costUsd.toFixed(4)}`;
+        const result = Array.isArray(row.outcomes) ? `outcomes=${row.outcomes.length}` : `proposals=${(row.proposals || []).length}`;
+        out(`${userId}  ${row.at}  ${row.runId}  ${row.status}  [${source}]  attempts=${row.attempts}  ${cost}  `
+          + `tools=${row.toolCalls.length} ${result} questions=${row.questions.length}`);
       } else {
-        await store.append(userId, row);
+        const { __source, ...stored } = row;
+        await store.append(userId, stored);
       }
     }
   }
@@ -237,7 +344,11 @@ export function formatSummary(t, { dryRun = false } = {}) {
     `${dryRun ? 'DRY RUN — nothing written' : 'Backfill complete'}`,
     `  users:                   ${t.users}`,
     `  transcripts read:        ${t.transcripts}`,
+    `  state runs read:         ${t.stateRuns}`,
     `  runs found:              ${t.runs}`,
+    `    from state+transcript: ${t.both}`,
+    `    state only:            ${t.stateOnly} (no transcript: usage and cost left empty)`,
+    `    transcript only:       ${t.transcriptOnly} (no state run: repairs kept as proposals)`,
     `  ${dryRun ? 'would write' : 'written'}:${dryRun ? '             ' : '                 '}${t.written}`,
     `  skipped (in journal):    ${t.skipped}`,
     `  transcripts w/o runId:   ${t.withoutRunId}`,
@@ -273,8 +384,10 @@ export async function runCli(argv, out = console.log) {
   }
   const mediaDir = flags['media-dir'] ?? path.join(basePath(), 'media');
   const dataDir = flags['data-dir'] ?? path.join(basePath(), 'data');
-  const totals = await backfill({ mediaDir, dataDir, since: flags.since, user: flags.user ?? null, dryRun: flags['dry-run'], out });
+  const totals = await backfill({ mediaDir, dataDir, since: flags.since, user: flags.user ?? null, stateFile: flags['state-file'] ?? null,
+    dryRun: flags['dry-run'], out });
   out(formatSummary(totals, { dryRun: flags['dry-run'] }));
+  for (const line of totals.stateFiles) out(`  state file ${line}`);
   for (const file of totals.unreadableFiles) out(`  unreadable: ${file}`);
   return totals;
 }
