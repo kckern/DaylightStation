@@ -1,9 +1,13 @@
 //
-// The one home of the daily calorie equation:
-//   remaining = budget - food + exercise
-// The UI and the coach both read this — budget math is never computed
-// client-side (spec, Data model §1).
-import { computeDailyEnergy } from '#domains/health/services/BudgetMath.mjs';
+// The one home of the daily calorie budget. Each day gets a goal RANGE —
+// floor (budgetFloor, a logging-completeness check on FOOD) to top
+// (break-even − the day's planned deficit, on NET) — and a zone from the
+// shared rule in shared/contracts/health/budgetZone.mjs. `budget` (= range.top)
+// and `status` are compatibility aliases. Budget math is never computed
+// client-side except through that same shared rule.
+import { computeDailyEnergy, solveDailyDeficit } from '#domains/health/services/BudgetMath.mjs';
+import { zoneFor, statusForZone } from '#shared/contracts/health/budgetZone.mjs';
+import { closureStatus } from '#apps/coaching/dayCompleteness.mjs';
 import { isISODate } from '#shared/contracts/health/isoDate.mjs';
 import { isCountedRow } from '#shared/contracts/nutrition/countedRows.mjs';
 
@@ -53,10 +57,12 @@ function assertGoalsShape(goals) {
     if (typeof goals[key] !== 'number' || !Number.isFinite(goals[key]) || goals[key] <= 0) goalsInvalid(`${key} must be a positive number`);
   }
   if (!Number.isInteger(goals.birthYear) || goals.birthYear < 1900 || goals.birthYear > new Date().getFullYear()) goalsInvalid('birthYear must be a valid year');
-  for (const key of ['targetWeightLbs', 'activityBaseline', 'budgetFloor', 'targetBodyFatPct']) {
+  for (const key of ['targetWeightLbs', 'activityBaseline', 'budgetFloor', 'targetBodyFatPct', 'maxWeeklyRateLbs']) {
     if (goals[key] !== undefined && (typeof goals[key] !== 'number' || !Number.isFinite(goals[key]) || goals[key] <= 0)) goalsInvalid(`${key} must be positive`);
   }
-  if (goals.weeklyRateLbs !== undefined && (typeof goals.weeklyRateLbs !== 'number' || !Number.isFinite(goals.weeklyRateLbs))) goalsInvalid('weeklyRateLbs must be numeric');
+  // Losing only: a zero or negative rate would turn the "deficit" into a surplus.
+  if (goals.weeklyRateLbs !== undefined && (typeof goals.weeklyRateLbs !== 'number' || !Number.isFinite(goals.weeklyRateLbs) || goals.weeklyRateLbs <= 0)) goalsInvalid('weeklyRateLbs must be positive');
+  if (goals.targetDate !== undefined && goals.targetDate !== null && !isISODate(goals.targetDate)) goalsInvalid('targetDate must be YYYY-MM-DD');
   // A body-fat target is a percentage, and one at or above 100 divides by zero
   // (or flips sign) in the lean-mass projection that consumes it.
   if (goals.targetBodyFatPct !== undefined && goals.targetBodyFatPct >= 100) goalsInvalid('targetBodyFatPct must be below 100');
@@ -225,16 +231,46 @@ export class BudgetService {
     const now = new Date(this.#clock.now());
     const ageYears = now.getUTCFullYear() - Number(goals.birthYear);
 
+    const floor = Math.round(Number(goals.budgetFloor ?? 1200));
+    const { deficit, deficitSource } = solveDailyDeficit({
+      weightLbs,
+      targetWeightLbs: goals.targetWeightLbs == null ? null : Number(goals.targetWeightLbs),
+      targetDate: goals.targetDate ?? null,
+      day: date,
+      weeklyRateLbs: Number(goals.weeklyRateLbs ?? 1),
+      maxWeeklyRateLbs: Number(goals.maxWeeklyRateLbs ?? 2),
+    });
     const { budget, maintenance } = computeDailyEnergy({
       weightLbs,
       heightIn: Number(goals.heightIn),
       ageYears,
       sex: goals.sex,
       activityBaseline: Number(goals.activityBaseline ?? 1.35),
-      weeklyRateLbs: Number(goals.weeklyRateLbs ?? 1),
-      budgetFloor: Number(goals.budgetFloor ?? 1200),
+      budgetFloor: floor,
+      deficit,
     });
-    return { budget, maintenance, stale: daysOld > STALE_WEIGHT_DAYS };
+    return { maintenance, deficit, deficitSource, range: { floor, top: budget }, stale: daysOld > STALE_WEIGHT_DAYS };
+  }
+
+  // Day closures (done / fasting). A read failure is logged and treated as "not
+  // declared": it must never take the budget — and the day view — down with it.
+  async #loadClosures(userId) {
+    try {
+      return (await this.#healthStore.loadDayClosedData?.(userId)) || {};
+    } catch (err) {
+      this.#logger.warn?.('health.budget.closures_unreadable', { userId, error: err.message });
+      return {};
+    }
+  }
+
+  // The per-day contract, assembled ONE way for getBudget and getBudgetRange.
+  #dayContract({ date, energy, food, exercise, declared }) {
+    const { maintenance, deficit, deficitSource, range, stale } = energy;
+    const { zone, remaining, complete, net } = zoneFor({ food, exercise, maintenance, range, declared });
+    return {
+      date, budget: range.top, maintenance, deficit, deficitSource, range,
+      food, exercise, net, zone, complete, declared, remaining, status: statusForZone(zone), stale,
+    };
   }
 
   // THE fold. One COUNTED filter, one pass, feeding kcal, macros, micros and
@@ -282,7 +318,7 @@ export class BudgetService {
   async getBudget(userId, date, { items: snapshotItems } = {}) {
     const goals = await this.#loadGoalsOrThrow(userId);
     const weightData = await this.#healthStore.loadWeightData(userId) || {};
-    const { budget, maintenance, stale } = this.#budgetForDate({
+    const energy = this.#budgetForDate({
       goals, weightData, sortedWeightDates: Object.keys(weightData).sort(), date,
     });
 
@@ -293,15 +329,16 @@ export class BudgetService {
     const items = snapshotItems ?? await this.#nutriListStore.findByDate(userId, date) ?? [];
     const { food, macros, microCoverage, loggedEntries, loggingStatus, goalBasis } = this.#foldItems(items);
 
-    const workouts = await this.#healthStore.getWorkoutsForDate(userId, date);
+    const [workouts, closures] = await Promise.all([
+      this.#healthStore.getWorkoutsForDate(userId, date),
+      this.#loadClosures(userId),
+    ]);
     const sessions = flattenWorkoutSessions(workouts);
     const exercise = Math.round(sumExerciseCalories(sessions));
 
-    const remaining = budget - food + exercise;
     return {
-      date, budget, maintenance, food, exercise, net: food - exercise,
-      remaining, status: remaining >= 0 ? 'under' : 'over', stale, sessions, goals,
-      macros, microCoverage, loggedEntries, loggingStatus, goalBasis,
+      ...this.#dayContract({ date, energy, food, exercise, declared: closureStatus(closures[date]) }),
+      sessions, goals, macros, microCoverage, loggedEntries, loggingStatus, goalBasis,
     };
   }
 
@@ -328,10 +365,11 @@ export class BudgetService {
     }
 
     const goals = await this.#loadGoalsOrThrow(userId);
-    const [weightData, allItems, workoutsByDate] = await Promise.all([
+    const [weightData, allItems, workoutsByDate, closures] = await Promise.all([
       this.#healthStore.loadWeightData(userId).then((w) => w || {}),
       this.#nutriListStore.findByDateRange(userId, from, to).then((i) => i || []),
       this.#healthStore.getWorkoutsForRange(userId, from, to).then((w) => w || {}),
+      this.#loadClosures(userId),
     ]);
     const sortedWeightDates = Object.keys(weightData).sort();
 
@@ -346,19 +384,18 @@ export class BudgetService {
     }
 
     return dates.map((date) => {
-      let budget; let maintenance; let stale;
+      let energy;
       try {
-        ({ budget, maintenance, stale } = this.#budgetForDate({ goals, weightData, sortedWeightDates, date }));
+        energy = this.#budgetForDate({ goals, weightData, sortedWeightDates, date });
       } catch (err) {
         if (err.code === 'NO_WEIGHT_DATA') return { date, error: 'NO_WEIGHT_DATA' };
         throw err;
       }
       const { food, macros, loggedEntries, loggingStatus, goalBasis } = this.#foldItems(itemsByDate.get(date) || []);
       const exercise = Math.round(sumExerciseCalories(flattenWorkoutSessions(workoutsByDate[date])));
-      const remaining = budget - food + exercise;
       return {
-        date, budget, maintenance, food, exercise, net: food - exercise,
-        remaining, status: remaining >= 0 ? 'under' : 'over', stale, macros, loggedEntries, loggingStatus, goalBasis,
+        ...this.#dayContract({ date, energy, food, exercise, declared: closureStatus(closures[date]) }),
+        macros, loggedEntries, loggingStatus, goalBasis,
       };
     });
   }
