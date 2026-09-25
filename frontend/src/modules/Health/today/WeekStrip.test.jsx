@@ -118,7 +118,8 @@ describe('WeekStrip', () => {
   // nothing are different statements and must not render the same way.
   it('a GAP day is hollow — no track, no fill — while a genuine ZERO day keeps a real track and an empty fill', async () => {
     strip();
-    await screen.findByTestId(`weekbar-gap-${GAP_DATE}`);
+    // Wait for a FILLED day: before the range arrives every cell renders as a gap.
+    await screen.findByTestId(`weekbar-fill-${ZERO_DATE}`);
 
     // Gap: a hollow outlined bar, and NO fill element exists for it at all.
     expect(screen.getByTestId(`weekbar-gap-${GAP_DATE}`).className).toMatch(/bar--gap/);
@@ -133,7 +134,8 @@ describe('WeekStrip', () => {
 
   it('says "no data" for a gap and a real kcal reading for a zero day', async () => {
     strip();
-    await screen.findByTestId(`weekbar-gap-${GAP_DATE}`);
+    // Wait for a FILLED day: before the range arrives every cell renders as a gap.
+    await screen.findByTestId(`weekbar-fill-${ZERO_DATE}`);
     const cells = [...document.querySelectorAll('.health-weekstrip__cell')];
     const gapCell = cells.find(cell => cell.dataset.date === GAP_DATE);
     const zeroCell = cells.find(cell => cell.dataset.date === ZERO_DATE);
@@ -220,7 +222,8 @@ describe('WeekStrip', () => {
       return <WeekStrip date={date} today="2026-09-06" onDateChange={setDate} />;
     }
     r(<Harness />);
-    await waitFor(() => expect(document.querySelectorAll('.health-weekstrip__cell')).toHaveLength(7));
+    // Loaded, not just mounted: the loading render labels every cell "no data".
+    await screen.findByTestId(`weekbar-fill-${ZERO_DATE}`);
     const before = [...document.querySelectorAll('.health-weekstrip__cell')].map((cell) => cell.getAttribute('aria-label'));
     fireEvent.click(document.querySelectorAll('.health-weekstrip__cell')[2]);
     await waitFor(() => expect(document.querySelector('.health-weekstrip__cell--active')).toBe(document.querySelectorAll('.health-weekstrip__cell')[2]));
