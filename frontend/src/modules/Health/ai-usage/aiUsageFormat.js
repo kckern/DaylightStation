@@ -13,6 +13,7 @@ export const FEATURE_LABELS = {
   'coach-commentary': 'Coach commentary',
   auditor: 'Nutrition auditor',
   'auditor-triage': 'Auditor triage',
+  'reconciliation-preview': 'Auditor preview (CLI)',
   unspecified: 'Other',
 };
 

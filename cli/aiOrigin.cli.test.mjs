@@ -40,3 +40,17 @@ describe('finance-jev-replay.cli.mjs', () => {
   });
 });
 
+
+describe('health-reconciliation-preview.cli.mjs', () => {
+  const source = readFileSync(path.join(here, 'health-reconciliation-preview.cli.mjs'), 'utf8');
+  it('records its live-model agent turns in the usage ledger as health/reconciliation-preview', () => {
+    expect(source).toContain("createAgentUsageRecorder({ ledger: createCliAiUsageLedger(await getConfigService(), logger), logger, attribution: PREVIEW_ATTRIBUTION })");
+    expect(source).toContain("PREVIEW_ATTRIBUTION = Object.freeze({ app: 'health', feature: 'reconciliation-preview' })");
+    expect(source).toMatch(/new MastraAdapter\(\{[^}]*usageRecorder,/);
+  });
+  it('runs the audit under cli:health-reconciliation-preview', () => {
+    expect(source).toContain("PREVIEW_ORIGIN = 'cli:health-reconciliation-preview'");
+    expect(source).toContain('runWithOrigin(PREVIEW_ORIGIN, () => auditor.audit(');
+    expect(source).not.toMatch(/await auditor\.audit\(/);
+  });
+});

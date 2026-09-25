@@ -212,7 +212,10 @@ name). Health features: `photo-log`, `text-log`, `voice-log`, `upc-log`,
 `scale-log`, `revision` (bot revisions and web entry corrections),
 `meal-instruction`, `icon-pick` (artwork queue, the nearest-icon decision
 model, and the barcode log's LLM icon fallback), `auditor-triage` (the Jev
-pre-audit screen), plus the agent rows `auditor`, `coach`, `coach-commentary`.
+pre-audit screen), plus the agent rows `auditor`, `coach`, `coach-commentary`
+and `reconciliation-preview` (the `health-reconciliation-preview` CLI's
+`--live-model` auditor turns, tagged by its recorder's `attribution` override
+rather than `AGENT_ATTRIBUTION`, which would bill them to `auditor`).
 `health/voice-log` is all nutribot speech-to-text — every Whisper call for a
 nutribot memo, including a spoken correction or a spoken scale description —
 plus the parse of a voice food log; the parse of a spoken correction is billed
