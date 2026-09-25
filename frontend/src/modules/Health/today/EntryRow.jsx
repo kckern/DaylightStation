@@ -10,6 +10,7 @@ import { reportArtworkFailure } from './artworkLog.js';
 import { PortionControl } from './PortionControl.jsx';
 import { entryId, entryError, isEntryConflict, updateEntry } from './entryCommands.js';
 import { usePortionControl } from './usePortionDraft.js';
+import { PortionDraftAlert, portionAlertFor } from './PortionDraftAlert.jsx';
 import { useRowPreview, logRowPreviewOpen } from './RowPreview.jsx';
 import { useDraggableRow } from './mealDrag.jsx';
 import { isReconstructedRow } from '@shared-contracts/nutrition/reconstruction.mjs';
@@ -97,6 +98,7 @@ export function EntryRow({ row, densityRow = row, onTap, onConfirm, onRequestDel
       </UnstyledButton> : null}
     </div>
     {error ? <span role="alert" className="health-row__error">{error}</span> : null}
+    {portionAlertFor(portions, row) ? <PortionDraftAlert control={portions} className="health-portion-error health-portion-error--row" /> : null}
   </div>;
 }
 export default EntryRow;
