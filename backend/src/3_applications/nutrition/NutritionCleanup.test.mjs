@@ -874,3 +874,21 @@ describe('what an auditor outcome changed', () => {
     ]);
   });
 });
+
+describe('run detail shows undone repairs', () => {
+  it.each([false, true])('marks an applied repair the person undid (pending=%s)', async pending => {
+    const f = await fixture({ pending });
+    f.store.update('alice', state => { state.settings = { enabled: true, dryRun: false, telegram: false }; });
+    const result = { summary: 'Art', repairs: [f.proposal({ icon: 'fish' })], questions: [], evidence: [{ id: 'source', kind: 'capture' }] };
+    const journal = new JsonlAuditJournalStore({ dataService: f.dataService, logger: f.logger });
+    const cleanup = new NutritionCleanup({ ...f, runs: { register: vi.fn(), start: vi.fn(async () => ({ status: 'success', result })) }, journalStore: journal });
+    const { runId } = await cleanup.request('alice', { manual: true }); await cleanup.settled('alice');
+    expect((await cleanup.journalEntry('alice', runId)).outcomes[0]).toMatchObject({ status: 'applied' });
+    expect((await cleanup.journalEntry('alice', runId)).outcomes[0].undoneAt).toBeUndefined();
+    f.clock.now = () => Date.parse('2026-09-04T20:00:00Z');
+    await f.repairs.undo({ userId: 'alice', repairId: runId + '_0', operationId: 'undo1' });
+    const [outcome] = (await cleanup.journalEntry('alice', runId)).outcomes;
+    expect(outcome).toMatchObject({ status: 'applied', undoneAt: '2026-09-04T20:00:00.000Z', changes: [expect.objectContaining({ field: 'icon', to: 'fish' })] });
+    expect((await cleanup.journal('alice')).rows[0].outcomes[0].undoneAt).toBeUndefined();
+  });
+});

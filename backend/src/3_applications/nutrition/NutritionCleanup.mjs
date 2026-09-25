@@ -204,8 +204,27 @@ export class NutritionCleanup {
         this.logger.warn('nutrition.cleanup.transcript_read_failed', { userId, runId, error: error.message });
       }
     }
-    return { ...withUsage(row), transcript: raw ? transcriptView(raw) : null,
+    const outcomes = Array.isArray(row.outcomes) ? await Promise.all(row.outcomes.map(outcome => this.#withUndo(userId, outcome))) : row.outcomes;
+    return { ...withUsage(row), ...(outcomes ? { outcomes } : {}), transcript: raw ? transcriptView(raw) : null,
       transcriptExpired: !!(row.turnId && this.transcripts && !raw && !transcriptError), ...(transcriptError ? { transcriptError } : {}) };
+  }
+  /**
+   * An applied outcome gains `undoneAt` once a person undid it. Undo receipts are
+   * `undo_<operationId>`: in the nutrition ledger for committed rows, in the
+   * capture's metadata for a pending capture. A failed lookup leaves it unmarked.
+   */
+  async #withUndo(userId, outcome) {
+    if (outcome?.status !== 'applied' || !outcome.operationId) return outcome;
+    const undoId = 'undo_' + outcome.operationId;
+    try {
+      const receipt = outcome.logUuid
+        ? (await this.foodLogs.findById(userId, outcome.logUuid))?.metadata?.cleanupAudit?.[undoId]
+        : await this.items.getCleanupAudit(userId, undoId);
+      return receipt?.at ? { ...outcome, undoneAt: receipt.at } : outcome;
+    } catch (error) {
+      this.logger.warn('nutrition.cleanup.undo_lookup_failed', { userId, operationId: outcome.operationId, error: error.message });
+      return outcome;
+    }
   }
   /**
    * Auditor spend by household day. Totals come from the journal (completed
@@ -456,7 +475,7 @@ export class NutritionCleanup {
         const described = { reason: proposal.reason, mode: proposal.mode || 'verified' };
         if (run.dryRun) outcomes.push({ status: 'proposed', proposal, ...described, ...changeDigest(snapshotRows, proposedRows(snapshotRows, proposal)) });
         else if (applied.affectedIds?.length) outcomes.push({ status: 'applied', operationId: id + '_' + index, affectedIds: applied.affectedIds,
-          ...described, ...changeDigest(snapshotRows, applied.items) });
+          ...(applied.logUuid ? { logUuid: applied.logUuid } : {}), ...described, ...changeDigest(snapshotRows, applied.items) });
         else outcomes.push({ status: 'unchanged', operationId: id + '_' + index, affectedIds: [] });
       } catch (error) {
         if (error.status !== 409 && error.status !== 404) throw error;
