@@ -466,8 +466,9 @@ export class WakeAndLoadService {
     }
 
     // --- Step 6: Load Content (or Adopt) ---
-    // Fallback for a device without an explicit screen_path. The legacy /tv app
-    // is retired; default to the living-room screen-framework screen.
+    // Composition resolves a missing screen_path (fuzzy match, then default)
+    // when the device is built; this guard only covers a device constructed
+    // without that resolver. The legacy /tv app is retired.
     const screenPath = device.screenPath || '/screen/living-room';
     if (stopIfCancelled('prewarm')) return result;
 

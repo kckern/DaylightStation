@@ -331,6 +331,17 @@ Dispatches content to a remote surface.
 | `open` | path | Route the target to a specific app surface before dispatching. |
 | `dispatchId` | UUID | **(amended)** Correlates WS `wake-progress` events. |
 
+**Which screen loads.** A kiosk-driven target is navigated to its screen route
+(`/screen/<name>`). The route comes from the device's `screen_path` in
+`devices.yml`. A content device without one is resolved once, at boot, by
+`ScreenAddressResolver`: first a fuzzy match of the device id or location
+against `household/screens/*.yml` (`office-tv` → `/screen/office`; e-ink screens
+are excluded), then the `living-room` default. The boot log records the choice
+as `deviceFactory.screenPath.fuzzy` (info) or `deviceFactory.screenPath.default`
+(warn). A default means the device will run the living-room screen, with that
+screen's widgets and guardrails, so give such a device its own screen or an
+explicit `screen_path`.
+
 **Response (200):**
 ```json
 {

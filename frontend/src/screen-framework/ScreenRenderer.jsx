@@ -20,6 +20,7 @@ import { useScreenSubscriptions } from './subscriptions/useScreenSubscriptions.j
 import { useScreenCommands } from './commands/useScreenCommands.js';
 import { ScreenSessionPublishers } from './ScreenSessionPublishers.jsx';
 import { ScreenScreensaver } from './ScreenScreensaver.jsx';
+import { ScreenExit } from './ScreenExit.jsx';
 import { ScreenPresencePublisher } from './publishers/ScreenPresencePublisher.jsx';
 import { SessionSourceProvider } from './publishers/SessionSourceContext.jsx';
 import { createRegistrySessionSource } from './publishers/registrySessionSource.js';
@@ -458,6 +459,7 @@ export function ScreenRenderer({ screenId: propScreenId }) {
                   <ScreenSessionPublishers wsConfig={config.websocket} />
                   <ScreenSubscriptionHandler subscriptions={config.subscriptions} />
                   <ScreenScreensaver config={config.screensaver} />
+                  <ScreenExit config={config.exit} />
                   <ScreenPresencePublisher deviceId={config.websocket?.guardrails?.device} />
                   <ScreenProvider config={config.layout}>
                     {suppressLayout ? <ActionLoadingShell /> : <PanelRenderer />}

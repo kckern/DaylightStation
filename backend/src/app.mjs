@@ -286,6 +286,7 @@ import { FilesystemCanvasImageRepository } from '#adapters/persistence/files/Fil
 import { createScreensRouter } from './4_api/v1/routers/screens.mjs';
 import { ScreensQueryService } from '#apps/screens/ScreensQueryService.mjs';
 import { FilesystemScreensRepository } from '#adapters/persistence/files/FilesystemScreensRepository.mjs';
+import { ScreenAddressResolver } from '#adapters/devices/ScreenAddressResolver.mjs';
 import { FilesystemWeeklyReviewStore } from '#adapters/persistence/files/FilesystemWeeklyReviewStore.mjs';
 import { NodeCommandRunner } from '#adapters/process/NodeCommandRunner.mjs';
 
@@ -2614,6 +2615,22 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // scripts, screen→device map) and builds the ContentDispatcher those
   // derivations feed; the BLE relay itself is wired further down, after
   // createTriggerApiRouter() hands back a live triggerDispatchService.
+  // Known screens, so a content device without a screen_path fuzzy-matches one
+  // (office-tv → /screen/office) before falling back to living-room. One
+  // resolver serves the barcode screen→device map below and the device
+  // builder, so a scan and a load agree on which device owns which screen.
+  let deviceScreens = [];
+  try {
+    const { entries } = await new FilesystemScreensRepository({ householdDir, logger: rootLogger })
+      .listScreenDocuments();
+    deviceScreens = entries
+      .filter(({ document }) => document)
+      .map(({ id, document }) => ({ id: document.screen || id, route: document.route }));
+  } catch (err) {
+    rootLogger.warn('devices.screens.list_failed', { error: err?.message });
+  }
+  const screenAddressResolver = new ScreenAddressResolver({ screens: deviceScreens });
+
   let barcodeContentDispatcher = null;
   let barcodeScreenBroadcast = null;
   let barcodeLogger = null;
@@ -2653,6 +2670,9 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     // BarcodeScanService.setLoadFallback; now built here so ContentDispatcher's
     // loadFallback can close over it directly). Reuses the same device config
     // source (getHouseholdDevices) the scanner map above reads from.
+    // A declared screen_path claims its screen first; a content device without
+    // one takes its fuzzy-matched screen only if nobody declared it. The
+    // living-room default never claims a screen here.
     const screenToDevice = {};
     for (const [id, device] of Object.entries(barcodeDevices)) {
       const screenPath = device.screen_path; // e.g. "/screen/living-room"
@@ -2660,6 +2680,11 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         const screenName = screenPath.replace(/^\/screen\//, '');
         screenToDevice[screenName] = id;
       }
+    }
+    for (const [id, device] of Object.entries(barcodeDevices)) {
+      if (device.screen_path || !device.content_control) continue;
+      const matched = screenAddressResolver.match({ id, location: device.location });
+      if (matched && !screenToDevice[matched.name]) screenToDevice[matched.name] = id;
     }
 
     barcodeLogger = rootLogger.child({ module: 'barcode' });
@@ -4013,6 +4038,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const daylightHost = devicesConfig.daylightHost || `http://localhost:${appPort}`;
   const deviceServices = await createDeviceServices({
     devicesConfig: devicesConfig.devices || {},
+    screenAddressResolver,
     haGateway: homeAutomationAdapters.haGateway,
     httpClient: axios,
     wsBus: eventBus,
