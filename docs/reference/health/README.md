@@ -305,9 +305,24 @@ tells it otherwise by closing the day, from either surface:
   - The POST response patches the cached day (`showDayStatus`), so the row shows exactly what the server stored. A `/fast` sent from Telegram overrides it on the next refetch.
 - **Nutribot chat:** `/done`, `/fast` and `/reopen`, each taking an optional `yesterday` or `YYYY-MM-DD`.
 
+**Meal fasts.** A single meal can be declared skipped: an empty meal's ⋯ menu offers
+"Mark Breakfast as skipped (fasted)" / "Undo skipped Breakfast" (`today/MealFastToggle.jsx`,
+the meal then reads "Fasted" instead of "—"), and Nutribot takes `/fast breakfast`,
+`/fast lunch yesterday` (meal and date in either order; breakfast, lunch, dinner, snacks)
+and `/reopen breakfast`. `/done` is day-only. A meal fast is **information for the coach
+only** — "this meal was intentionally empty, don't ask about it". It never closes the
+day and never changes the floor, the zone or the bar: the day is still judged by the
+floor or a day-level Done/Fasted. The budget reports it as `fastedMeals`; the coach sees
+it as `fasted_meals` and asks only about meals that are neither logged nor fasted.
+
 Both surfaces write the same record, `users/{id}/day_closed.yml`
-(`{date: {status: done|fasting, at}}`). `GET /api/v1/health/day` returns
-`dayStatus: {status, minCalories, today}`, where `minCalories` is the user's
+(`{date: {status?: done|fasting, at?, meals?: {<bucketId>: {status: fasting, at}}}}`).
+**Only a day `status` closes a day** (`closureStatus`, `isDayClosed`, the reconstruction
+skip and CLI all apply this): a record holding only `meals` is not a closure. Closing a
+day merges into the record and keeps its meal fasts; reopening clears only the day status
+(the record goes when nothing is left). `POST /api/v1/health/nutrition/meal-fast` takes
+`{date, meal, fasted}`. `GET /api/v1/health/day` returns
+`dayStatus: {status, minCalories, today, fastedMeals}`, where `minCalories` is the user's
 `budgetFloor` (falling back to the coaching `min_calories` when goals have none). `POST /api/v1/health/nutrition/day-status`
 takes `{date, status: 'done'|'fasting'|null}`, where `null` reopens the day. It refuses a
 malformed date or a future day.

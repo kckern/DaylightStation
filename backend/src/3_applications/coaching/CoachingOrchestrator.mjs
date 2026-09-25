@@ -1,6 +1,6 @@
 import { CoachingMessageBuilder } from './CoachingMessageBuilder.mjs';
 import { detectPattern } from './patterns.mjs';
-import { buildCalendarDays, averageTrusted, resolveMinCalories, closureStatus } from './dayCompleteness.mjs';
+import { buildCalendarDays, averageTrusted, resolveMinCalories, closureStatus, fastedMealsOf } from './dayCompleteness.mjs';
 import { buildPostReportSnapshot, buildMorningBriefSnapshot, buildWeeklyDigestSnapshot, buildExerciseReactionSnapshot, buildRecentCoaching, getTimeOfDay } from './snapshots.mjs';
 
 /**
@@ -105,9 +105,11 @@ export class CoachingOrchestrator {
       const pattern = detectPattern(recentDays, goals);
       const weightTrend = this.#getWeightTrend7d(weightData, date);
       const timeOfDay = getTimeOfDay(this.#config.getUserTimezone?.(userId));
+      const fastedMeals = fastedMealsOf(closures[date]);
       const calories = {
         consumed: dayTotals.calories, goal_min: goals.calories_min, goal_max: goals.calories_max || goals.calories,
         ...(budget?.zone ? { zone: budget.zone, complete: budget.complete, remaining: budget.remaining } : {}),
+        ...(fastedMeals.length ? { fasted_meals: fastedMeals } : {}),
       };
       const protein = { consumed: dayTotals.protein, goal: goals.protein };
 

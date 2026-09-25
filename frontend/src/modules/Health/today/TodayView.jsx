@@ -451,6 +451,7 @@ export function TodayView({ active = true, sidebarTarget, onSetupGoals, onCoachT
       {observations.error ? <ErrorState error={observations.error} onRetry={observations.reload} label="Measurements unavailable" /> : null}
       <LogTable clarifications={mealClarifications} onClearClarification={clearMealClarification} byBucket={preview.byBucket} date={date} sessions={preview.budget?.sessions || []}
         exerciseAvailable={Boolean(day.budget)}
+        fastedMeals={day.dayStatus?.fastedMeals || []} onMealFastChanged={day.reload}
         coldLoading={coldLoading} capturePendingBuckets={[...capturePending.values()].filter(pending => pending.date === date).map(pending => pending.bucket)}
         onRowTap={setEditingRow} onConfirm={day.reload} onRequestDelete={row => { setDeleteError(null); setPendingDelete(row); }}
         bucketHeaderAction={bucketHeaderAction}

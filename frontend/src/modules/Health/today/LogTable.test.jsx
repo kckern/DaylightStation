@@ -58,6 +58,19 @@ describe('LogTable', () => {
     expect(onRowTap).toHaveBeenCalledWith(expect.objectContaining({ uuid: '1' }));
   });
 
+  describe('meal fasts', () => {
+    const emptyMeals = new Map([['morning', []], ['afternoon', []], ['evening', []], ['night', []], [null, []]]);
+    it('an empty fasted meal reads "Fasted" and offers the undo; a meal with food offers no fast', () => {
+      render(<LogTable byBucket={new Map([...emptyMeals, ['afternoon', [{ uuid: 'r1', name: 'Soup', calories: 200, mealTime: 'afternoon' }]]])}
+        date="2026-09-24" sessions={[]} onRowTap={() => {}} fastedMeals={['morning']} onMealFastChanged={() => {}} />, { wrapper });
+      const breakfast = screen.getByText('Breakfast').closest('section');
+      expect(breakfast.textContent).toContain('Fasted');
+      expect(screen.getByRole('button', { name: 'Breakfast skip options' })).toBeTruthy();
+      expect(screen.getByText('Dinner').closest('section').textContent).not.toContain('Fasted');
+      expect(screen.queryByRole('button', { name: 'Lunch skip options' })).toBeNull();
+    });
+  });
+
   describe('permanent chrome (Task 3.2)', () => {
     it('renders the primary meal headings and add rows during a true cold start (coldLoading, no rows anywhere)', () => {
       render(<LogTable byBucket={emptyByBucket} sessions={[]} coldLoading
