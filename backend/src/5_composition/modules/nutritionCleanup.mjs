@@ -21,7 +21,7 @@ import { ArtworkRemediation } from '#apps/nutrition/ArtworkRemediation.mjs';
 import { NutritionAuditTriage } from '#apps/nutrition/NutritionAuditTriage.mjs';
 import { normalizeScaleNutribotConfig } from '#apps/nutribot/lib/scaleNutribotConfig.mjs';
 
-export function createNutritionCleanup({ dataService, configService, userIdentityService, nutribotServices, upcGateway, decisionGateway = null, agentOrchestrator, logger, scheduled = false, server }) {
+export function createNutritionCleanup({ dataService, configService, userIdentityService, nutribotServices, upcGateway, decisionGateway = null, agentOrchestrator, logger, usageRecorder = null, scheduled = false, server }) {
   const clock = { now: () => Date.now() };
   const container = nutribotServices.nutribotContainer;
   const timezoneFor = userId => container.getConfig?.()?.getUserTimezone?.(userId) || 'America/Los_Angeles';
@@ -30,7 +30,7 @@ export function createNutritionCleanup({ dataService, configService, userIdentit
   const items = nutribotServices.nutriListStore;
   const foodLogs = nutribotServices.foodLogStore;
   const runtime = new MastraAdapter({ model: configService.getAppConfig?.('agents')?.nutrition_auditor?.model || 'openai/gpt-4o',
-    logger, maxToolCalls: 20, timeoutMs: 120000, executionPolicy: new AgentExecutionPolicy({ maxToolCalls: 20, logger,
+    logger, usageRecorder, maxToolCalls: 20, timeoutMs: 120000, executionPolicy: new AgentExecutionPolicy({ maxToolCalls: 20, logger,
       transcriptStore: new AgentTranscriptFileStore({ mediaDir: configService.getMediaDir() }) }) });
   const dbDir = configService.getDataDir() + '/agents';
   const runs = new MastraRunAdapter({ dbPath: dbDir + '/cleanup-runs.db' });

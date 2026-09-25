@@ -2577,6 +2577,7 @@ export function createLifelogServices(config) {
 export async function createAgentsServices(config) {
   const {
     logger = console,
+    agentUsageRecorder = null,
     healthStore,
     healthService,
     fitnessPlayableService,
@@ -2647,6 +2648,7 @@ export async function createAgentsServices(config) {
   const maxToolCalls = 50;
   const agentRuntime = new MastraAdapter({
     logger,
+    usageRecorder: agentUsageRecorder,
     mediaDir,
     memory: mastraMemory,
     maxToolCalls,
@@ -2854,7 +2856,7 @@ export async function createAgentsServices(config) {
   let coachingOrchestrator = null;
   if (healthStore && messagingGateway) {
     const commentaryService = new CoachingCommentaryService({
-      runtime: new MastraAdapter({ model: 'openai/gpt-4o-mini', logger, maxToolCalls: 1, timeoutMs: 30000,
+      runtime: new MastraAdapter({ model: 'openai/gpt-4o-mini', logger, usageRecorder: agentUsageRecorder, maxToolCalls: 1, timeoutMs: 30000,
         executionPolicy: new AgentExecutionPolicy({ maxToolCalls: 1, logger, transcriptStore }) }),
       logger,
     });
@@ -3062,6 +3064,7 @@ export async function createConciergeServices(config) {
     devicesConfig = {},
     mediaLogsDir,
     logger = console,
+    agentUsageRecorder = null,
   } = config;
 
   if (!configService) throw new Error('createConciergeServices: configService required');
@@ -3187,6 +3190,7 @@ export async function createConciergeServices(config) {
         const judgeRuntime = new MastraAdapter({
           model: judgeModel,
           logger: judgeLogger,
+          usageRecorder: agentUsageRecorder,
           maxToolCalls: 1,
           timeoutMs: 8000,
           mediaDir: conciergeMediaDir,
@@ -3339,6 +3343,7 @@ export function createNewsReporterServices(config) {
     model = null,
     mediaDir = null,
     logger = console,
+    agentUsageRecorder = null,
   } = config;
 
   const agentsConfig = configService?.getAppConfig?.('agents') || {};
@@ -3354,6 +3359,7 @@ export function createNewsReporterServices(config) {
       runtimeCache.set(key, new MastraAdapter({
         model: key,
         logger,
+        usageRecorder: agentUsageRecorder,
         mediaDir,
         executionPolicy: new AgentExecutionPolicy({ logger, transcriptStore: runtimeTranscriptStore }),
       }));
