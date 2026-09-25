@@ -12,9 +12,9 @@
 // distinguishable from a hole: the zero day has a real track and a real (empty)
 // fill, the gap day has neither and renders hollow.
 
-/** The least headroom past the goal a bar box gets. */
 import { headlineFor } from '@shared-contracts/health/budgetZone.mjs';
 
+/** The least headroom past the goal a bar box gets. */
 export const OVERSHOOT_CAP = 1.25;
 /** Room above the highest break-even mark, and the most headroom a box ever gets. */
 const BREAK_EVEN_HEADROOM = 1.1;
@@ -59,8 +59,15 @@ export function barModel(day, cap = OVERSHOOT_CAP) {
   const net = Math.max(0, food - exercise);
   const ratio = net / goal;
   const even = breakEvenRatio(day);
-  const zone = ratio <= 1 ? 'under' : even > 1 && ratio <= even ? 'deficit' : 'surplus';
+  // The server's zone (the shared budgetZone rule) when the day carries one;
+  // an older payload keeps the legacy under/deficit/surplus reading.
+  const zone = day.zone
+    || (ratio <= 1 ? 'under' : even > 1 && ratio <= even ? 'deficit' : 'surplus');
+  // The goal band's lower edge: the floor measures FOOD, so on the net scale it
+  // sits at floor − exercise (never below the box).
+  const floorEff = day.range ? Math.max(0, finiteOr(day.range.floor) - exercise) : null;
   return {
+    floorPct: floorEff == null ? null : pct1(Math.min(floorEff / goal, cap) / cap),
     kind: 'day',
     ratio,
     clamped: ratio > cap,

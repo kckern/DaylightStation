@@ -106,6 +106,37 @@ describe('EquationStrip — macros', () => {
   });
 });
 
+describe('EquationStrip — the ruler', () => {
+  const ranged = { budget: 1791, maintenance: 2291, range: { floor: 1200, top: 1791 }, declared: null };
+
+  it('draws the band, the zone-coloured food block, the hatch and the run', () => {
+    strip({ budget: { ...ranged, food: 1390, exercise: 247, net: 1143, zone: 'in-range', remaining: 648, status: 'under' } });
+    expect(screen.getByText('Goal 1,200–1,791')).toBeTruthy();
+    expect(screen.getByTestId('budget-food').className).toMatch(/food--in-range/);
+    expect(screen.getByTestId('budget-earned')).toBeTruthy();
+    expect(screen.getByTestId('budget-run')).toBeTruthy();
+    expect(screen.getByTestId('budget-ruler').getAttribute('aria-label')).toMatch(/648 left$/);
+  });
+
+  it('no exercise, no hatch; a declared day has no run', () => {
+    strip({ budget: { ...ranged, food: 600, exercise: 0, net: 600, zone: 'declared', declared: 'done', remaining: 1191, status: 'under' } });
+    expect(screen.queryByTestId('budget-earned')).toBeNull();
+    expect(screen.queryByTestId('budget-run')).toBeNull();
+    expect(screen.getByTestId('budget-food').className).toMatch(/food--declared/);
+  });
+
+  it('a negative net is stated with a minus, and the deficit counts it', () => {
+    strip({ budget: { ...ranged, food: 100, exercise: 400, net: -300, zone: 'incomplete', remaining: 1100, status: 'under' } });
+    expect(screen.getByTestId('budget-terms').textContent).toMatch(/−300 net/);
+    expect(screen.getByTestId('budget-terms').textContent).toMatch(/2,591 deficit/);
+  });
+
+  it('a budget without a range keeps the legacy bar', () => {
+    strip({ budget: { budget: 1791, maintenance: 2291, food: 1000, exercise: 0, remaining: 791, status: 'under' } });
+    expect(screen.queryByTestId('budget-ruler')).toBeNull();
+  });
+});
+
 describe('EquationStrip — the headline names its segment', () => {
   const ranged = { budget: 1791, maintenance: 2291, range: { floor: 1200, top: 1791 }, exercise: 0, declared: null };
 

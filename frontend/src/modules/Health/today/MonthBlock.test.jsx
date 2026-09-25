@@ -9,6 +9,24 @@ const gap = (date) => ({ date, error: 'NO_WEIGHT_DATA' });
 
 const iso = (i) => new Date(Date.UTC(2026, 7, 6 + i)).toISOString().slice(0, 10);
 
+describe('MonthBlock — zones', () => {
+  const zoned = (date, zone) => ({ ...day(date, 1500), range: { floor: 1200, top: 2000 }, maintenance: 2500, zone });
+
+  it('counts over-plan, past-break-even and under-logged days separately', () => {
+    render(<MonthBlock days={[zoned(iso(0), 'over'), zoned(iso(1), 'past-even'), zoned(iso(2), 'incomplete'), zoned(iso(3), 'incomplete'), zoned(iso(4), 'in-range')]} />);
+    const caption = document.querySelector('.health-monthblock__caption').textContent;
+    expect(caption).toContain('1 over plan');
+    expect(caption).toContain('1 past break even');
+    expect(caption).toContain('2 under-logged');
+  });
+
+  it('colours each day by its server zone and draws the goal band', () => {
+    render(<MonthBlock days={[zoned(iso(0), 'incomplete')]} />);
+    expect(screen.getByTestId(`monthbar-fill-${iso(0)}`).className).toMatch(/fill--incomplete/);
+    expect(document.querySelector('.health-monthblock__band')).toBeTruthy();
+  });
+});
+
 describe('MonthBlock', () => {
   it('renders one slot per day it is given, and fetches nothing itself', () => {
     const days = Array.from({ length: 30 }, (_, i) => day(iso(i), 1000));
@@ -40,7 +58,7 @@ describe('MonthBlock', () => {
     expect(caption).toContain('1 over current budget');
     expect(caption).toContain('2 without data');
     expect(document.querySelector('.health-monthblock__bars').getAttribute('aria-label'))
-      .toBe('2 days with data, 1 over budget, 2 without data');
+      .toBe('2 days with data, 1 over current budget, 2 without data');
   });
 
   it('says "no data yet" rather than "0 over budget" when the whole month is holes', () => {
