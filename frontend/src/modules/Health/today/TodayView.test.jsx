@@ -410,6 +410,8 @@ describe('TodayView — scale observations', () => {
   it('an unmatched observation renders as a compact row with a dismiss affordance', async () => {
     apiMock.mockImplementation(baseApi({ observations: { observations: [OPEN_WEIGHT] } }));
     r(<TodayView onSetupGoals={() => {}} onCoachTap={() => {}} />);
+    // Unclaimed readings live behind the follow-up line, in its sheet.
+    fireEvent.click(await screen.findByText(/1 scale reading/));
 
     await waitFor(() => expect(screen.getByText('82 g on the kitchen scale at 18:04')).toBeTruthy());
     expect(screen.getByRole('region', { name: 'Unmatched scale measurements' })).toBeTruthy();
@@ -442,6 +444,7 @@ describe('TodayView — scale observations', () => {
   it('dismissing an unmatched row POSTs the dismiss endpoint and reloads the observations', async () => {
     apiMock.mockImplementation(baseApi({ observations: { observations: [OPEN_WEIGHT] } }));
     r(<TodayView onSetupGoals={() => {}} onCoachTap={() => {}} />);
+    fireEvent.click(await screen.findByText(/1 scale reading/));
     await waitFor(() => screen.getByRole('button', { name: /^Dismiss 82 g/ }));
 
     fireEvent.click(screen.getByRole('button', { name: /^Dismiss 82 g/ }));

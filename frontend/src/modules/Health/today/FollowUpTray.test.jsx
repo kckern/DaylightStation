@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
 import { FollowUpTray } from './FollowUpTray.jsx';
 import { resetApiResourceCache } from '../../../lib/hooks/useApiResource.js';
@@ -23,14 +23,21 @@ describe('FollowUpTray', () => {
     expect(container.querySelector('.health-followups--empty').textContent).toBe('No follow-ups');
   });
 
-  it('summarises questions and scale readings in one collapsed line', async () => {
+  it('summarises questions and scale readings in one line; the questions are NOT on the page', async () => {
     questions = [question, { ...question, id: 'q2' }];
-    const { container } = mount({ observations: [{ id: 'o1', kind: 'weight', value: 82, unit: 'g', status: 'open' }] });
+    mount({ observations: [{ id: 'o1', kind: 'weight', value: 82, unit: 'g', status: 'open' }] });
     expect(await screen.findByText('2 follow-up questions · 1 scale reading')).toBeTruthy();
-    const tray = container.querySelector('details.health-followups');
-    expect(tray.open).toBe(false);
-    // The questions are inside the tray, not in the page flow above the log.
-    expect(tray.contains(screen.getAllByText('Which fish?')[0])).toBe(true);
+    expect(screen.queryByText('Which fish?')).toBeNull();
+  });
+
+  it('tapping the line opens a sheet with ONE question card at a time', async () => {
+    questions = [question, { ...question, id: 'q2', question: 'Which bread?' }];
+    mount({});
+    fireEvent.click(await screen.findByText('2 follow-up questions'));
+    const dialog = await screen.findByRole('dialog', { name: 'Follow-ups' });
+    expect(dialog.textContent).toContain('Which fish?');
+    expect(dialog.textContent).toContain('1 of 2');
+    expect(dialog.textContent).not.toContain('Which bread?');
   });
 
   it('keeps the "entry changed" message after a stale answer to the LAST question', async () => {
@@ -39,21 +46,17 @@ describe('FollowUpTray', () => {
       if (method === 'POST') { questions = []; return { status: 'stale', outcome: { message: 'The entry changed. Please review it manually.' } }; }
       return { version: 1, questions };
     });
-    const { container } = mount({});
-    await screen.findByText('1 follow-up question');
-    container.querySelector('details').open = true;
-    screen.getByRole('button', { name: 'Cod' }).click();
+    mount({});
+    fireEvent.click(await screen.findByText('1 follow-up question'));
+    fireEvent.click(await screen.findByRole('button', { name: /Cod/ }));
     expect(await screen.findByText('The entry changed. Please review it manually.')).toBeTruthy();
-    // Once the reload finds no questions, the line still has something to say.
     expect(await screen.findByText('A follow-up needs a look')).toBeTruthy();
-    expect(screen.getByText('The entry changed. Please review it manually.')).toBeTruthy();
   });
 
-  it('is one persistent element whose summary text is the live region', async () => {
+  it('is one persistent line whose text is the live region', async () => {
     const { container } = mount({});
     await waitFor(() => expect(api).toHaveBeenCalled());
-    const tray = container.querySelector('details.health-followups');
-    expect(tray.querySelector('summary [aria-live="polite"]').textContent).toBe('No follow-ups');
+    expect(container.querySelector('.health-followups [aria-live="polite"]').textContent).toBe('No follow-ups');
   });
 
   it('polls the cleanup endpoint once, shared with the questions it renders', async () => {

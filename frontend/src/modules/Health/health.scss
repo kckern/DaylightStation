@@ -1083,16 +1083,45 @@ $health-aside-gap: 1.5rem;
 // poll that finds a question changes words, not layout.
 .health-followups {
   margin-block: 0.15rem;
-  > summary { min-height: 44px; display: flex; align-items: center; font-size: 0.85rem; }
-  > summary {
-    cursor: pointer; color: var(--ds-warning); font-weight: 600; gap: 0.4rem; list-style: none;
-    &::-webkit-details-marker { display: none; }
-    // The disclosure cue display:flex removes: a chevron that turns when open.
-    &::after { content: '›'; font-size: 1.1rem; line-height: 1; transition: transform var(--ds-motion-fast) var(--ds-motion-easing); }
+  &__line {
+    min-height: 44px; display: flex; align-items: center; gap: 0.4rem; font-size: 0.85rem;
+    color: var(--ds-warning); font-weight: 600;
+    &:focus-visible { outline: 2px solid var(--ds-accent); outline-offset: 2px; border-radius: 6px; }
   }
-  &[open] > summary::after { transform: rotate(90deg); }
-  &--empty > summary { color: var(--ds-text-low); font-weight: 400; cursor: default; &::after { content: none; } }
-  &__body { display: flex; flex-direction: column; gap: 0.5rem; padding-bottom: 0.5rem; }
+  button.health-followups__line::after { content: '›'; font-size: 1.1rem; line-height: 1; }
+  &--empty &__line { color: var(--ds-text-low); font-weight: 400; }
+  &__feedback { margin: 0 0 0.5rem; font-size: 0.8rem; color: var(--ds-text-mid); }
+}
+
+// Follow-up questions as a card deck (cleanup/QuestionDeck.jsx), inside the
+// follow-ups sheet: ONE compact card, headed by the food it is about, choices
+// as big tap targets, the free-text box tucked behind "Other answer…".
+.health-qdeck { display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 0.75rem; }
+.health-qdeck__done { margin: 0.5rem 0; font-size: 0.85rem; color: var(--ds-text-mid); }
+.health-qcard {
+  display: flex; flex-direction: column; gap: 0.55rem;
+  max-width: 28rem; margin-inline: auto; width: 100%;
+  padding: 0.75rem; border: 1px solid var(--ds-border); border-radius: 12px;
+  background: var(--ds-surface-alt); touch-action: pan-y; user-select: none;
+  &:focus-visible { outline: 2px solid var(--ds-accent); outline-offset: 2px; }
+  &__head { display: flex; justify-content: space-between; align-items: baseline; gap: 0.5rem; }
+  &__subject { font-size: 0.95rem; font-weight: 600; color: var(--ds-text-high); }
+  &__count { font-size: 0.7rem; color: var(--ds-text-low); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  &__question { margin: 0; font-size: 0.85rem; color: var(--ds-text-mid); line-height: 1.35; }
+  &__choices { display: grid; gap: 0.4rem; }
+  &__choice {
+    display: flex; flex-direction: column; gap: 0.1rem; min-height: 48px; padding: 0.5rem 0.7rem;
+    border: 1px solid var(--ds-border); border-radius: 10px; background: var(--ds-surface); text-align: left;
+    &:hover:not(:disabled) { border-color: var(--ds-accent); }
+    &:focus-visible { outline: 2px solid var(--ds-accent); outline-offset: 2px; }
+    &:disabled { opacity: 0.6; }
+  }
+  &__choice-label { font-size: 0.9rem; font-weight: 600; color: var(--ds-text-high); }
+  &__choice-why { font-size: 0.72rem; color: var(--ds-text-low); }
+  &__other { display: flex; flex-direction: column; align-items: flex-end; gap: 0.35rem; }
+  &__foot { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0.25rem; }
+  &__note, &__hint { margin: 0; font-size: 0.68rem; color: var(--ds-text-low); }
+  &__error { margin: 0; font-size: 0.75rem; color: var(--ds-danger); }
 }
 .health-pending--needs-review { padding: 0; margin-block: 0.25rem; background: none; border: none; }
 .health-pending--needs-review > summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; color: var(--ds-text-mid); }

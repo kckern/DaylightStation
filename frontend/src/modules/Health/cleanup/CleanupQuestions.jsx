@@ -25,13 +25,18 @@ export function RepairPreview({ repair, entryNames = {} }) {
   </Stack>;
 }
 
-function Question({ question, onChanged, onFeedback }) {
-  const [text, setText] = useState('');
+/**
+ * Answer one cleanup question: a choice (`{choiceId}`), free text (`{text}`)
+ * or leave it unchanged (`{dismiss: true}`). One operation id per distinct
+ * payload, so a retry of the same answer is idempotent. Shared by the Settings
+ * list and the Today card deck.
+ */
+export function useQuestionAnswer({ question, onChanged = () => {}, onFeedback = () => {} }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const operation = useRef(null);
   const answer = async payload => {
-    if (busy) return;
+    if (busy) return false;
     setBusy(true); setError(null);
     const signature = JSON.stringify(payload);
     if (operation.current?.signature !== signature) operation.current = { signature, id: crypto.randomUUID() };
@@ -41,10 +46,16 @@ function Question({ question, onChanged, onFeedback }) {
       }, 'POST');
       if (result.status === 'stale') onFeedback(result.outcome?.message || 'The entry changed. Please review it manually.');
       refreshHealthResources(); onChanged();
-    } catch (err) { setError(err.message); }
+      return true;
+    } catch (err) { setError(err.message); return false; }
     finally { setBusy(false); }
   };
-  const disabled = busy || question.status === 'answering';
+  return { answer, busy, error, disabled: busy || question.status === 'answering' };
+}
+
+function Question({ question, onChanged, onFeedback }) {
+  const [text, setText] = useState('');
+  const { answer, busy, error, disabled } = useQuestionAnswer({ question, onChanged, onFeedback });
   return <SectionCard title={question.question}>
     <Stack gap="sm">
       <Text size="sm" c="dimmed">Optional: your current estimate already counts. Without an answer, it stabilizes automatically after its 72-hour review window.</Text>

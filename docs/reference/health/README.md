@@ -452,7 +452,7 @@ has one of three homes, chosen by what it is about:
 | Kind | Examples | Home |
 |---|---|---|
 | **Reaction to what you just did** | "Moved to Lunch", "Breakfast copied to today", a capture that found no food, Undo for a move / meal change / delete, a move that failed, a recording that didn't send | A **toast** (`TodayToasts.jsx` over `lib/ui` `Toast`): floats out of flow, just above the tab bar on a phone, bottom-right on desktop, never over the headline number. Hidden while the coach chat is open. |
-| **Waiting on you, arrived on its own** | Nutrition-cleanup follow-up questions (15 s poll), unmatched kitchen-scale readings | The **follow-up tray** (`FollowUpTray.jsx`): one line under the macro bars that is *always there* — "No follow-ups", or "2 follow-up questions · 1 scale reading" — and opens in place when tapped. A new item changes its words, not the layout; it closes itself when it empties, so the next item arrives as a count, not an expansion. |
+| **Waiting on you, arrived on its own** | Nutrition-cleanup follow-up questions (15 s poll), unmatched kitchen-scale readings | The **follow-up tray** (`FollowUpTray.jsx`): one line under the macro bars that is *always there* — "No follow-ups", or "2 follow-up questions · 1 scale reading" — and opens a **sheet** when tapped: the questions as a card deck (`cleanup/QuestionDeck.jsx`) — ONE compact card at a time, headed by the food it is about, choices as big buttons (with the auditor's one-line reason), swipe / arrow keys / Back–Skip to move, answering moves on by itself, free text behind "Other answer…", "Leave as is" to dismiss — plus any unclaimed scale readings. Nothing expands on the page: a new item changes the line's words, not the layout. |
 | **About one entry** | A portion/number edit that failed or is invalid | **On that entry's row** (`PortionDraftAlert` in `EntryRow`). A dish cannot be collapsed while a draft is open, so a member's error cannot be hidden. Only a draft whose entry has left the day falls back to a toast. |
 
 Section load failures (`ErrorState` for the day, review queue, measurements) stay
@@ -1561,7 +1561,7 @@ what the automatic scale path composes food-log entries from; the day view is wh
 person sees and corrects them.
 
 - **Unmatched signals appear in the Today follow-up tray** — counted on its one line
-  ("1 scale reading"), listed when it is opened ("82 g on the kitchen scale at
+  ("1 scale reading"), listed in its sheet when it is tapped ("82 g on the kitchen scale at
   18:04"), each with a **Dismiss** action. Nothing in the automatic path resolves a signal
   that aged out of the 900 s composition window, and an unresolved row is never archived —
   so dismissing is also what keeps the ledger's hot file, which sits on the scale's own
