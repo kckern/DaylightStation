@@ -64,6 +64,9 @@ describe('onlyOwnChanges', () => {
     expect(onlyOwnChanges(digest({}), digest({ observations: [{ id: 'o1' }] }), own)).toBe(false);
     expect(onlyOwnChanges(digest({}), digest({ dates: ['2026-09-06', '2026-09-05'] }), own)).toBe(false);
   });
+  it('ignores a row that left the window, as classifyChange does', () => {
+    expect(onlyOwnChanges(digest({}), digest({ rows: [row('a', { calories: 80, version: 2 })] }), own)).toBe(true);
+  });
   it('is false without a previous digest', () => {
     expect(onlyOwnChanges(null, digest({}), own)).toBe(false);
   });

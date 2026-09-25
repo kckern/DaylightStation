@@ -49,4 +49,27 @@ describe('AiUsageLedger', () => {
     await expect(ledger.record({ provider: 'openai', endpoint: '/chat/completions', status: 'ok' })).resolves.toBeUndefined();
     expect(logger.warn).toHaveBeenCalledWith('ai.usage.ledger-write-failed', expect.anything());
   });
+
+  it('lists one agent\'s costs in a time range across every writer\'s month files', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'ai-ledger-'));
+    const line = row => JSON.stringify(row);
+    await fs.writeFile(path.join(dir, '2026-09.jsonl'), [
+      line({ ts: '2026-09-04T10:00:00.000Z', agentId: 'nutrition-auditor', costUsd: 0.5, status: 'ok' }),
+      line({ ts: '2026-09-04T11:00:00.000Z', agentId: 'other-agent', costUsd: 1 }),
+      '{not json',
+      line({ ts: '2026-09-05T10:00:00.000Z', agentId: 'nutrition-auditor', costUsd: 2 }),
+      line({ ts: 'garbage', agentId: 'nutrition-auditor', costUsd: 3 }),
+      line({ ts: '2026-09-04T12:00:00.000Z', agentId: 'nutrition-auditor', costUsd: null }),
+      '',
+    ].join('\n'));
+    await fs.writeFile(path.join(dir, '2026-09.docker.jsonl'), line({ ts: '2026-09-04T13:00:00.000Z', agentId: 'nutrition-auditor', costUsd: 0.25, status: 'error' }) + '\n');
+    await fs.writeFile(path.join(dir, '2026-08.jsonl'), line({ ts: '2026-08-31T23:00:00.000Z', agentId: 'nutrition-auditor', costUsd: 7 }) + '\n');
+    await fs.writeFile(path.join(dir, 'notes.txt'), 'ignore me');
+    const ledger = createAiUsageLedger({ dir });
+    const rows = await ledger.listCosts({ agentId: 'nutrition-auditor', from: '2026-09-04T00:00:00.000Z', to: '2026-09-05T00:00:00.000Z' });
+    expect(rows.sort((a, b) => a.ts.localeCompare(b.ts))).toEqual([
+      { ts: '2026-09-04T10:00:00.000Z', costUsd: 0.5 }, { ts: '2026-09-04T13:00:00.000Z', costUsd: 0.25 },
+    ]);
+    expect(await createAiUsageLedger({ dir: path.join(dir, 'missing') }).listCosts({ agentId: 'nutrition-auditor', from: '2026-09-04T00:00:00.000Z', to: '2026-09-05T00:00:00.000Z' })).toEqual([]);
+  });
 });

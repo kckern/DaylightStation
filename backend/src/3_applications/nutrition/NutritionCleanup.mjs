@@ -74,33 +74,31 @@ export class NutritionCleanup {
   /** Who changed which auditor setting, newest first. */
   settingsLog(userId) { return [...(this.store.load(userId).settingsLog || [])].reverse(); }
   /**
-   * Queue (or resume) an audit. `trigger` names why: ['manual'], ['dailySweep'],
-   * or the change kinds tick classified. Automatic requests pass the trigger
-   * filter and the daily spend cap first; manual ones only note being over cap.
+   * Queue (or resume) an audit. The run's trigger names why: ['manual'], or the
+   * change kinds since the last check (plus 'dailySweep' for a sweep).
+   * Automatic requests pass the trigger filter and the daily spend cap first;
+   * manual ones only note being over cap.
    */
-  async request(userId, { manual = false, reconcile = false, trigger } = {}) {
+  async request(userId, options = {}) {
+    const outcome = await this.#request(userId, options);
+    return outcome?.runId ? { runId: outcome.runId } : null;
+  }
+  /** request() that also says why nothing was queued: { runId } | { skipped } | null. */
+  async #request(userId, { manual = false, reconcile = false, trigger } = {}) {
     const state = this.store.load(userId);
     if (!manual && !state.settings.enabled) return null;
     const existing = Object.values(state.runs).find(run => !terminal.has(run.status));
     if (existing) { this.#launch(userId, existing.id); return { runId: existing.id }; }
+    const settings = effectiveSettings(state.settings);
+    if (!manual && this.#cappedToday(userId, state, settings)) return { skipped: 'cap' };
     this.auditor.refreshReferences?.();
     const snapshot = await this.auditor.snapshot(userId);
     if (!manual && !reconcile && state.checkedFingerprint === snapshot.fingerprint) return null;
-    const settings = effectiveSettings(state.settings);
     const digest = this.#digest(snapshot);
-    const kinds = manual ? ['manual'] : reconcile ? ['dailySweep']
-      : trigger || (digest ? [...classifyChange(state.checkedDigest, digest)] : []);
-    if (!manual && await this.#filtered(userId, snapshot, digest, kinds, settings)) return null;
-    const spend = await this.#spend(userId, settings);
-    if (!manual && spend.over) {
-      const day = cleanupDates(this.clock.now(), this.timezoneFor(userId))[0];
-      if (this.store.load(userId).lastCapDay !== day) {
-        this.store.update(userId, current => { current.lastCapDay = day; });
-        await this.#journal(userId, { at: iso(this.clock.now()), skipped: 'cap', spentUsd: spend.spentUsd, capUsd: settings.dailyCapUsd });
-      }
-      this.logger.info('nutrition.cleanup.capped', { userId, spentUsd: spend.spentUsd, capUsd: settings.dailyCapUsd });
-      return null;
-    }
+    const kinds = manual ? ['manual'] : this.#kinds(state, digest, { reconcile, trigger });
+    if (!manual && await this.#filtered(userId, snapshot, digest, kinds, settings)) return { skipped: 'filtered' };
+    const spend = manual && this.#cappedToday(userId, state, settings) ? { over: true } : await this.#spend(userId, settings);
+    if (!manual && spend.over) { await this.#capped(userId, spend, settings); return { skipped: 'cap' }; }
     // Triage (NutritionAuditTriage): shadow records a verdict beside the run;
     // gate lets a clean verdict skip the LLM audit. Manual and daily
     // reconcile runs are never gated.
@@ -108,7 +106,7 @@ export class NutritionCleanup {
     if (triage && !triage.needsAudit && !reconcile && this.triage.gating) {
       this.store.update(userId, current => { current.checkedFingerprint = snapshot.fingerprint; current.checkedDigest = digest; });
       this.logger.info('nutrition.cleanup.skipped', { userId, fingerprint: snapshot.fingerprint, reason: triage.reason, score: triage.score });
-      return null;
+      return { skipped: 'triage' };
     }
     let id = 'audit_' + sha256Text(userId + snapshot.fingerprint + this.clock.now() + state.version).slice(0, 24);
     this.store.update(userId, current => {
@@ -131,6 +129,28 @@ export class NutritionCleanup {
   }
   /** Per-concern digest of a snapshot; null without an injected hash (fingerprint-only checks). */
   #digest(snapshot) { return this.hash ? snapshotDigest(snapshot, this.hash) : null; }
+  /**
+   * What changed since the last check. Without a digest to compare (no hash, or
+   * the first check after deploy) the answer is 'unclassified', which no setting
+   * can switch off. A sweep adds 'dailySweep' to the real kinds, so switching the
+   * sweep off never absorbs a change that happened to be pending at sweep time.
+   */
+  #kinds(state, digest, { reconcile = false, trigger } = {}) {
+    const changed = trigger || (digest && state.checkedDigest ? [...classifyChange(state.checkedDigest, digest)] : ['unclassified']);
+    return reconcile ? [...new Set([...changed, 'dailySweep'])] : changed;
+  }
+  /** Over today's cap at this cap value: nothing automatic runs, and spend is not re-read, until the day or the cap changes. */
+  #cappedToday(userId, state, settings) {
+    return state.capped?.day === cleanupDates(this.clock.now(), this.timezoneFor(userId))[0] && state.capped.capUsd === settings.dailyCapUsd;
+  }
+  async #capped(userId, spend, settings) {
+    const day = cleanupDates(this.clock.now(), this.timezoneFor(userId))[0];
+    const firstToday = this.store.load(userId).capped?.day !== day;
+    this.store.update(userId, state => { state.capped = { day, capUsd: settings.dailyCapUsd, spentUsd: spend.spentUsd }; });
+    if (!firstToday) return;
+    await this.#journal(userId, { at: iso(this.clock.now()), skipped: 'cap', spentUsd: spend.spentUsd, capUsd: settings.dailyCapUsd });
+    this.logger.info('nutrition.cleanup.capped', { userId, spentUsd: spend.spentUsd, capUsd: settings.dailyCapUsd });
+  }
   /** Every kind that changed is switched off: count the snapshot as checked, note it once, run nothing. */
   async #filtered(userId, snapshot, digest, kinds, settings) {
     if (!kinds.length || kinds.some(kind => settings.triggers[kind] !== false)) return false;
@@ -142,17 +162,33 @@ export class NutritionCleanup {
     this.logger.info('nutrition.cleanup.filtered', { userId, kinds });
     return true;
   }
-  /** Today's (household day) auditor spend from the journal, against the cap. No journal or no cap: never over. */
+  /**
+   * Today's (household day) auditor spend against the cap. `spendSource` is the
+   * AI usage ledger, which prices every billed turn including failed ones; the
+   * journal (completed runs only) is the fallback. No source, no cap, or an
+   * unreadable source: never over. Never throws.
+   */
   async #spend(userId, settings) {
-    if (!this.journal || settings.dailyCapUsd == null) return { over: false, spentUsd: null };
-    const now = this.clock.now(), tz = this.timezoneFor(userId);
-    const today = cleanupDates(now, tz)[0];
-    let rows;
-    try { rows = await this.journal.list(userId, { from: iso(now - 2 * DAY_MS), to: iso(now + DAY_MS) }); }
-    catch (error) { this.logger.warn('nutrition.cleanup.journal_read_failed', { userId, error: error.message }); return { over: false, spentUsd: null }; }
-    const spentUsd = rows.filter(row => Number.isFinite(row.costUsd) && cleanupDates(Date.parse(row.at), tz)[0] === today)
-      .reduce((sum, row) => sum + row.costUsd, 0);
-    return { over: spentUsd >= settings.dailyCapUsd, spentUsd: Math.round(spentUsd * 1e6) / 1e6 };
+    const none = { over: false, spentUsd: null };
+    if (settings.dailyCapUsd == null || (!this.spendSource && !this.journal)) return none;
+    try {
+      const now = this.clock.now(), tz = this.timezoneFor(userId);
+      const today = cleanupDates(now, tz)[0];
+      // Wider than any household day; rows are then kept by their household date.
+      const range = { from: iso(now - 2 * DAY_MS), to: iso(now + DAY_MS) };
+      const rows = this.spendSource ? await this.spendSource(range)
+        : (await this.journal.list(userId, range)).map(row => ({ ts: row.at, costUsd: row.costUsd }));
+      let spent = 0;
+      for (const row of rows || []) {
+        const t = Date.parse(row?.ts);
+        if (Number.isFinite(t) && Number.isFinite(row.costUsd) && cleanupDates(t, tz)[0] === today) spent += row.costUsd;
+      }
+      const spentUsd = Math.round(spent * 1e6) / 1e6;
+      return { over: spentUsd >= settings.dailyCapUsd, spentUsd };
+    } catch (error) {
+      this.logger.warn('nutrition.cleanup.spend_read_failed', { userId, error: error.message });
+      return none;
+    }
   }
   /** The journal is a record, not a gate: a failed write is logged and the run carries on. */
   async #journal(userId, row) {
@@ -259,6 +295,9 @@ export class NutritionCleanup {
     // when the only rows that moved are the ones it repaired itself. Anything
     // else (a capture that landed mid-run) keeps the input, so it is audited next.
     let checked = { fingerprint: run.snapshot.fingerprint, digest: this.#digest(run.snapshot) };
+    // Narrow window: a person's edit to one of this run's own rows (or its new
+    // group's children) between the repair commit and this snapshot is absorbed
+    // with the repair. Edits to any other row, captures and observations are not.
     if (checked.digest) {
       try {
         this.auditor.refreshReferences?.();
@@ -346,17 +385,24 @@ export class NutritionCleanup {
     // Automatic runs keep the minimum gap; a waiting sweep or change is kept, not lost.
     const settings = effectiveSettings(state.settings);
     const waiting = state.lastAutoRunAt && this.clock.now() - state.lastAutoRunAt < settings.minGapMinutes * 60000;
+    // While capped nothing automatic runs and spend is not re-read; pending
+    // changes stay dirty and the sweep stays due until the day or the cap changes.
+    const capped = this.#cappedToday(userId, state, settings);
     const hour = Number(new Intl.DateTimeFormat('en-US', { timeZone: this.timezoneFor(userId), hour: 'numeric', hourCycle: 'h23' }).format(new Date(this.clock.now())));
     if (!this.#started.has(userId) || (hour >= 3 && state.lastSweepDay !== dates[0])) {
-      if (waiting) return;
-      this.#started.add(userId);
-      if (hour >= 3) this.store.update(userId, current => { current.lastSweepDay = dates[0]; });
-      await this.request(userId, { reconcile: true }); return;
+      if (waiting || capped) return;
+      const outcome = await this.#request(userId, { reconcile: true });
+      // Only a sweep that ran or was filtered is done; a capped one is retried.
+      if (outcome?.runId || outcome?.skipped === 'filtered') {
+        this.#started.add(userId);
+        if (hour >= 3) this.store.update(userId, current => { current.lastSweepDay = dates[0]; });
+      }
+      return;
     }
     const snapshot = await this.auditor.snapshot(userId);
     if (snapshot.fingerprint === state.checkedFingerprint) { this.#dirty.delete(userId); return; }
     const digest = this.#digest(snapshot);
-    const kinds = digest ? [...classifyChange(state.checkedDigest, digest)] : null;
+    const kinds = digest ? this.#kinds(state, digest) : null;
     if (kinds && !kinds.length) {
       // Only bookkeeping moved (versions, timestamps) or a row left the window.
       this.store.update(userId, current => { current.checkedFingerprint = snapshot.fingerprint; current.checkedDigest = digest; });
@@ -367,7 +413,7 @@ export class NutritionCleanup {
     const dirty = this.#dirty.get(userId) || { first: now, changed: now, fingerprint: snapshot.fingerprint };
     if (dirty.fingerprint !== snapshot.fingerprint) { dirty.changed = now; dirty.fingerprint = snapshot.fingerprint; }
     this.#dirty.set(userId, dirty);
-    if ((now - dirty.changed >= 60000 || now - dirty.first >= 120000) && !waiting) {
+    if ((now - dirty.changed >= 60000 || now - dirty.first >= 120000) && !waiting && !capped) {
       this.#dirty.delete(userId); await this.request(userId, kinds ? { trigger: kinds } : {});
     }
   }
