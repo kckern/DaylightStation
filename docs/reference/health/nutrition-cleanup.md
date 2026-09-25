@@ -7,8 +7,10 @@ mutation tool. `NutritionEvidenceToolFactory` can be reused by other agents.
 ## User controls
 
 Health → Settings (`/health/settings`) shows a one-line auditor status (on /
-preview only / off, last run, spend today) with an **Open auditor** button, plus
-open questions and the artwork queue. Every auditor control lives on the auditor
+preview only / off, last run, spend today) with an **Open auditor** button, the
+compact **AI usage** card (today / 7 days / month, the top three features, and
+**See all** → `/health/auditor#ai-usage`), plus open questions and the artwork
+queue. Every auditor control lives on the auditor
 page (`/health/auditor`, `modules/Health/auditor/`), top to bottom:
 
 - **Header** — state, model, last run, next eligible run, spend today (the
@@ -20,6 +22,20 @@ page (`/health/auditor`, `modules/Health/auditor/`), top to bottom:
   it noticed (questions asked and suppressed), what it changed (reason and
   before/after per repair, with Undo by the outcome's `operationId`, the repair
   id; "Undone at …" once undone), rejected/blocked outcomes, tokens and cost.
+- **AI usage** (`modules/Health/ai-usage/AiUsageCard.jsx`) — what ALL of
+  Health's AI costs, not only the auditor: today / 7 days / month; a 30-day
+  daily-total strip (the same chart as Spend; a day's readout lists its
+  features by cost); and a per-feature table in plain words (Voice logging,
+  Photo logging, Text logging, Barcode logging, Scale logging, Corrections,
+  Meal suggestions, Icon matching, Coach, Coach commentary, Nutrition auditor,
+  Auditor triage, Other) with calls, average per call, cost and a single-hue
+  length bar. A feature whose calls were all unpriced reads "cost unknown".
+  Spend from before the ledger carried attribution shows as "Before tracking:
+  $X across all apps (not attributable)" — the household total, never
+  presented as Health's. The daily strip is one series on purpose: up to
+  thirteen features exceed a categorical palette, and stacked 30-day columns
+  are a few pixels wide at phone width, so features are identified by row
+  label and compared by bar length instead of by colour.
 - **Spend** — 30 daily cost columns with the cap as a reference line, and cost
   per run by trigger and by model.
 - **Auditor settings** (`AuditorConfig.jsx`) — automatic cleanup, preview only,
@@ -317,6 +333,17 @@ not add a new public authentication mechanism.
 | `POST /run` | Explicit one-off scan using the current preview setting; 202/runId |
 | `POST /questions/:id/answer` | `expectedVersion`, `operationId`, one of `choiceId`, `text`, `dismiss` |
 | `POST /undo/:id` | Explicit Undo with `operationId`; conflict-safe and idempotent |
+
+`GET /api/v1/health/ai-usage?days=30` (1–90; 400 otherwise, repeated or
+bracketed params included) backs the AI usage card: `{ range, today, week,
+month, byFeature: [{ feature, calls, costUsd, avgUsd, unpriced }], days: [{
+date, total, byFeature }], beforeTracking: { costUsd, calls } | null }`, in
+household days, read from the AI usage ledger by `HealthAiUsageService`
+(through the `IAiUsageReader` port). Only rows attributed to `app: health`
+count; calls and averages count ok rows only (a retried call writes an error
+row too); a missing feature is `unspecified`. It reads the ledger only — the
+auditor's spend from before attribution stays on the Spend panel, which reads
+the run journal.
 
 Unavailable service returns 503; changed versions and expired questions do not
 silently rewrite food. The generic agent registry exposes a read-only audit;

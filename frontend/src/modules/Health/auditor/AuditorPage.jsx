@@ -11,6 +11,7 @@ import { RunDetail } from './RunDetail.jsx';
 import { SpendPanel } from './SpendPanel.jsx';
 import { AuditorConfig } from './AuditorConfig.jsx';
 import { SettingsLog } from './SettingsLog.jsx';
+import { AiUsageCard } from '../ai-usage/AiUsageCard.jsx';
 
 /**
  * /health/auditor: what the nutrition auditor did, why, and what it cost.
@@ -26,6 +27,7 @@ export function AuditorPage() {
   return <Stack gap="md" className="health-auditor">
     <AuditorHeader resource={resource} spend={spend} />
     <RunTimeline onOpen={open} />
+    <AiUsageCard />
     <SpendPanel spend={spend} capUsd={resource.data ? (resource.data.settings?.dailyCapUsd ?? null) : undefined} />
     <AuditorConfig resource={resource} spend={spend} />
     <SettingsLog />

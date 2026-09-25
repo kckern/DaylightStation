@@ -1251,3 +1251,14 @@ $health-aside-gap: 1.5rem;
     text { fill: var(--ds-text-high); font-size: 9px; paint-order: stroke; stroke: var(--ds-surface); stroke-width: 3px; stroke-linejoin: round; } }
   &__table { font-variant-numeric: tabular-nums; }
 }
+// Health AI usage card: totals, a one-series daily strip (shared with the
+// auditor spend chart), and per-feature cost as single-hue bars. Features are
+// named by their row label, never by colour.
+.health-ai-usage {
+  scroll-margin-top: 4rem;
+  &__totals { align-items: stretch; }
+  &__table { font-variant-numeric: tabular-nums; }
+  &__track { height: 4px; border-radius: 2px; background: var(--ds-surface-alt); overflow: hidden; margin-top: 4px; }
+  &__fill { height: 100%; border-radius: 2px; background: var(--ds-accent); }
+  &__note { color: var(--ds-text-low); }
+}
