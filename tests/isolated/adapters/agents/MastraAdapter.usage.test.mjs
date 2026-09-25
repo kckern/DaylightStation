@@ -79,4 +79,32 @@ describe('MastraAdapter usage recording', () => {
     expect(usageRecorder).toHaveBeenCalledOnce();
     expect(usageRecorder).toHaveBeenCalledWith(expect.objectContaining({ status: 'error', error: 'stream boom' }));
   });
+
+  it('records a turn once when the scope times out during evaluate', async () => {
+    const usageRecorder = vi.fn(() => ({ costUsd: 0.0025 }));
+    const evaluate = () => new Promise(resolve => setTimeout(resolve, 200));
+    const runtime = adapter({ agentClass: FakeAgent, usageRecorder, hooks: { evaluate } });
+    await expect(runtime.execute({ agentId: 'a', input: 'x', tools: [], limits: { timeoutMs: 20 } }))
+      .rejects.toMatchObject({ name: 'TimeoutError' });
+    expect(usageRecorder).toHaveBeenCalledOnce();
+  });
+
+  it('records the spent usage when the output fails its schema', async () => {
+    const usageRecorder = vi.fn();
+    const runtime = adapter({ agentClass: FakeAgent, usageRecorder });
+    await expect(runtime.execute({ agentId: 'a', input: 'x', tools: [], outputSchema: {
+      type: 'object', required: ['ok'], properties: { ok: { type: 'boolean' } },
+    } })).rejects.toThrow();
+    expect(usageRecorder).toHaveBeenCalledOnce();
+    expect(usageRecorder).toHaveBeenCalledWith(expect.objectContaining({ status: 'error',
+      usage: expect.objectContaining({ inputTokens: 1000, outputTokens: 20 }) }));
+  });
+
+  it('records a stream the consumer closes early', async () => {
+    const usageRecorder = vi.fn();
+    const runtime = adapter({ agentClass: FakeAgent, usageRecorder });
+    for await (const _chunk of runtime.streamExecute({ agentId: 's', input: 'x', tools: [] })) break;
+    expect(usageRecorder).toHaveBeenCalledOnce();
+    expect(usageRecorder).toHaveBeenCalledWith(expect.objectContaining({ status: 'aborted', error: 'stream closed early', usage: null }));
+  });
 });

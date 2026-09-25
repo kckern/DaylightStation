@@ -193,6 +193,10 @@ export class MastraAdapter extends IAgentRuntime {
     });
 
     const callCounter = { count: 0 };
+    // One ledger record per turn. Usage is captured as soon as the provider
+    // answers, so a turn that fails afterwards still reports what it spent.
+    let usage = null;
+    let usageRecorded = false;
 
     const startedAt = Date.now();
     this.#logger.info?.('agent.execute.start', {
@@ -237,6 +241,7 @@ export class MastraAdapter extends IAgentRuntime {
           schema: standardSchema(options.outputSchema), errorStrategy: 'strict',
         } } : {}),
       }));
+      usage = response?.totalUsage ?? response?.usage ?? null;
       if (response.error) throw response.error;
       if (response.tripwire) throw Object.assign(new Error('Agent input was blocked by a processor'), { code: 'AGENT_INPUT_BLOCKED' });
       const suspended = response.finishReason === 'suspended' || response.suspendPayload != null;
@@ -251,9 +256,9 @@ export class MastraAdapter extends IAgentRuntime {
       });
       transcript?.setStatus(suspended ? 'suspended' : 'ok');
 
-      const usage = response.totalUsage ?? response.usage ?? null;
       const recorded = this.#recordUsage({ agentId: name, runId: context.runId ?? null, turnId,
         model: parseModelDescriptor(model), usage, durationMs: Date.now() - startedAt, status: 'ok' });
+      usageRecorded = true;
 
       this.#logger.info?.('agent.execute.complete', {
         agentId: name,
@@ -285,8 +290,11 @@ export class MastraAdapter extends IAgentRuntime {
       transcript?.setError(error, { toolCallsBeforeError: callCounter.count });
       transcript?.setStatus(error?.name === 'AbortError' ? 'aborted' : error?.name === 'TimeoutError' ? 'timeout' : 'error');
       await this.#emitHook('onError', { agentId: name, userId, turnId, error });
-      this.#recordUsage({ agentId: name, runId: context.runId ?? null, turnId, model: parseModelDescriptor(model),
-        usage: null, durationMs: Date.now() - startedAt, status: 'error', error: error?.message });
+      if (!usageRecorded) {
+        usageRecorded = true;
+        this.#recordUsage({ agentId: name, runId: context.runId ?? null, turnId, model: parseModelDescriptor(model),
+          usage, durationMs: Date.now() - startedAt, status: 'error', error: error?.message });
+      }
 
       this.#logger.error?.('agent.execute.error', {
         agentId: name,
@@ -338,6 +346,7 @@ export class MastraAdapter extends IAgentRuntime {
     let accumulatedText = '';
     let finishReason = 'stop';
     let usage = null;
+    let usageRecorded = false;
     const toolStartTimes = new Map();
     let iterator;
 
@@ -425,6 +434,7 @@ export class MastraAdapter extends IAgentRuntime {
       await this.#emitHook('onResult', { agentId: name, userId, turnId, output: accumulatedText, finishReason, usage });
       const recorded = this.#recordUsage({ agentId: name, runId: context.runId ?? null, turnId,
         model: parseModelDescriptor(model), usage, durationMs: Date.now() - startedAt, status: 'ok' });
+      usageRecorded = true;
 
       this.#logger.info?.('agent.stream.complete', {
         agentId: name,
@@ -438,8 +448,11 @@ export class MastraAdapter extends IAgentRuntime {
       transcript?.setError(error, { toolCallsBeforeError: callCounter.count });
       transcript?.setStatus(error?.name === 'AbortError' ? 'aborted' : error?.name === 'TimeoutError' ? 'timeout' : 'error');
       await this.#emitHook('onError', { agentId: name, userId, turnId, error });
-      this.#recordUsage({ agentId: name, runId: context.runId ?? null, turnId, model: parseModelDescriptor(model),
-        usage, durationMs: Date.now() - startedAt, status: 'error', error: error?.message });
+      if (!usageRecorded) {
+        usageRecorded = true;
+        this.#recordUsage({ agentId: name, runId: context.runId ?? null, turnId, model: parseModelDescriptor(model),
+          usage, durationMs: Date.now() - startedAt, status: 'error', error: error?.message });
+      }
 
       this.#logger.error?.('agent.stream.error', {
         agentId: name,
@@ -449,6 +462,13 @@ export class MastraAdapter extends IAgentRuntime {
       });
       throw error;
     } finally {
+      // A consumer that stops iterating (break/return) skips both branches above;
+      // the turn still spent tokens, so it is recorded here as aborted.
+      if (!usageRecorded) {
+        usageRecorded = true;
+        this.#recordUsage({ agentId: name, runId: context.runId ?? null, turnId, model: parseModelDescriptor(model),
+          usage, durationMs: Date.now() - startedAt, status: 'aborted', error: 'stream closed early' });
+      }
       scope.close();
       // Do not let a stalled provider's iterator.return() hold cancellation open.
       try { Promise.resolve(iterator?.return?.()).catch(() => {}); } catch { /* scope already closed */ }
