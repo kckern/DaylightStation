@@ -3,7 +3,7 @@ import { EventBusArcadeGameSessionAnnouncer } from './EventBusArcadeGameSessionA
 
 const quiet = { info() {}, warn() {}, debug() {}, error() {} };
 
-function harness({ placementFor, sessions = null } = {}) {
+function harness({ placementFor, overlayConfigFor, sessions = null } = {}) {
   const sent = [];
   const direct = [];
   let onSubscription = null;
@@ -13,7 +13,7 @@ function harness({ placementFor, sessions = null } = {}) {
     sendToClient: (clientId, payload) => direct.push({ clientId, payload }),
   };
   const announcer = new EventBusArcadeGameSessionAnnouncer({
-    eventBus, placementFor, sessions,
+    eventBus, placementFor, overlayConfigFor, sessions,
     logger: quiet,
   });
   return {
@@ -101,6 +101,33 @@ describe('EventBusArcadeGameSessionAnnouncer', () => {
 
     expect(sent).toHaveLength(2);
     expect(sent[0].payload.placement).toBeNull();
+    expect(sent[0].payload.playedMs).toBe(61_000);
+  });
+
+  it('publishes the resolved overlay config alongside placement', async () => {
+    const OVERLAY = { anchor: 'top-left', offsetX: '2%', offsetY: '2%', scale: 0.5, fields: ['player', 'timer'] };
+    const { sent, announcer } = harness({ placementFor: () => PLACEMENT, overlayConfigFor: () => OVERLAY });
+    await announcer.started(session(GB));
+
+    expect(sent[0].payload.overlay).toEqual(OVERLAY);
+  });
+
+  it('reports no overlay config when no resolver is wired', async () => {
+    const { sent, announcer } = harness({ placementFor: () => PLACEMENT });
+    await announcer.started(session(GB));
+
+    expect(sent[0].payload.overlay).toBeNull();
+  });
+
+  it('still publishes when the overlay config lookup throws', async () => {
+    const { sent, announcer } = harness({
+      placementFor: () => PLACEMENT,
+      overlayConfigFor: () => { throw new Error('bad config'); },
+    });
+    await announcer.started(session(GB));
+
+    expect(sent).toHaveLength(2);
+    expect(sent[0].payload.overlay).toBeNull();
     expect(sent[0].payload.playedMs).toBe(61_000);
   });
 

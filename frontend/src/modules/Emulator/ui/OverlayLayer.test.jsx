@@ -54,3 +54,44 @@ describe('OverlayLayer', () => {
     expect(container.querySelector('.emu-overlay')).toBeNull();
   });
 });
+
+describe('OverlayLayer — session kind', () => {
+  const sessionOverlay = [{
+    id: 'session', kind: 'session', anchor: 'top-left', offsetX: '2%', offsetY: '2%', scale: 0.5,
+    fields: ['player', 'system_label', 'timer'],
+  }];
+  const fieldDescriptors = {
+    player: { kind: 'player', name: 'KC', avatar: '/a.png' },
+    system_label: { kind: 'text', text: 'Game Boy Color' },
+    timer: { kind: 'stat', text: '11:49', unit: '', urgency: 'warn', stale: false },
+  };
+  const resolveField = (f) => fieldDescriptors[f];
+
+  it('renders one field per listed name, in order', () => {
+    const { container } = render(<OverlayLayer overlays={sessionOverlay} resolve={() => null} resolveField={resolveField} />);
+    const el = container.querySelector('[data-overlay-id="session"]');
+    expect(el.className).toContain('emu-overlay--session');
+    const names = Array.from(el.querySelectorAll('.emu-overlay-session__field')).map((f) => f.className);
+    expect(names[0]).toContain('--player');
+    expect(names[1]).toContain('--system_label');
+    expect(names[2]).toContain('--timer');
+  });
+
+  it('carries urgency onto the field that reports it', () => {
+    const { container } = render(<OverlayLayer overlays={sessionOverlay} resolve={() => null} resolveField={resolveField} />);
+    expect(container.querySelector('.emu-overlay-session__field--timer').className).toContain('is-warn');
+  });
+
+  it('renders nothing for a session overlay with an empty fields list', () => {
+    const empty = [{ id: 'session', kind: 'session', fields: [] }];
+    const { container } = render(<OverlayLayer overlays={empty} resolve={() => null} resolveField={resolveField} />);
+    expect(container.querySelector('[data-overlay-id="session"]')).toBeNull();
+  });
+
+  it('skips one field that individually resolves empty, keeping the rest', () => {
+    const partial = (f) => (f === 'system_label' ? { empty: true, text: '' } : fieldDescriptors[f]);
+    const { container } = render(<OverlayLayer overlays={sessionOverlay} resolve={() => null} resolveField={partial} />);
+    const el = container.querySelector('[data-overlay-id="session"]');
+    expect(el.querySelectorAll('.emu-overlay-session__field').length).toBe(2);
+  });
+});

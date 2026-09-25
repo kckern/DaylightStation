@@ -4069,6 +4069,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     devicesConfig: devicesConfig.devices || {},
     gamesConfig: configService.getHouseholdAppConfig(householdId, 'games'),
     gamesCatalog: dataService.household.read('gaming/retroarch/catalog'),
+    arcadeOverlayConfig: configService.getHouseholdAppConfig(householdId, 'arcade-overlay'),
     configService,
     eventBus,
     httpClient: axios,

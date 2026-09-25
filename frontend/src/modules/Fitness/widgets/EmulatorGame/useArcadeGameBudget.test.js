@@ -45,6 +45,17 @@ describe('deriveArcadeGameBudget', () => {
     expect(at({ remainingMs: 120_000 }).urgency).toBe('warn');
     expect(at({ remainingMs: 30_000 }).urgency).toBe('crit');
   });
+
+  it('passes the systemLabel and resolved overlay config through from the message', () => {
+    const overlay = { anchor: 'top-left', offsetX: '2%', offsetY: '2%', scale: 0.5, fields: ['player', 'timer'] };
+    const r = at({ playedMs: 1000, systemLabel: 'Game Boy Color', overlay });
+    expect(r.systemLabel).toBe('Game Boy Color');
+    expect(r.overlayConfig).toEqual(overlay);
+  });
+
+  it('reports null systemLabel/overlayConfig when there is no session', () => {
+    expect(at(null)).toMatchObject({ systemLabel: null, overlayConfig: null });
+  });
 });
 
 describe('deriveArcadeGameBudget — a stale feed must not keep ticking', () => {

@@ -28,8 +28,10 @@
     display:none;align-items:center;
     gap:calc(var(--u) * 2.8);padding:calc(var(--u) * 2.2) calc(var(--u) * 4);
     overflow:hidden;
-    background:linear-gradient(180deg,rgba(14,16,22,.94),rgba(8,9,13,.98));
-    border-top:4px solid #ffd666;box-shadow:0 -10px 50px rgba(0,0,0,.8)}
+    background:rgba(8,10,15,.78);
+    border-top:4px solid transparent;
+    border-radius:calc(var(--u) * 1.2);
+    box-shadow:0 -10px 50px rgba(0,0,0,.5)}
   #banner.show{display:flex;animation:rise .5s cubic-bezier(.2,.9,.25,1.1) both}
   /* A narrow side pillar cannot take a row of avatar + name + clock. */
   #banner.stacked{flex-direction:column;align-items:center;justify-content:center;
@@ -41,16 +43,9 @@
   #banner.stacked #sub{font-size:calc(var(--u) * 1.5)}
   #banner.stacked #av{width:calc(var(--u) * 7);height:calc(var(--u) * 7)}
   #banner.placed{border-radius:calc(var(--u) * 1.2)}
-  /* Deliberately reads as a placeholder: a dashed edge and a field dump, so
-     nobody mistakes it for the finished design on a television. */
-  #banner.placeholder{border:2px dashed rgba(255,214,102,.75);border-top:2px dashed rgba(255,214,102,.75);
-    background:rgba(10,12,18,.82)}
-  #meta{display:none;font-size:calc(var(--u) * 1.1);line-height:1.35;color:#7f8a99;
-    font-family:ui-monospace,Menlo,Consolas,monospace;white-space:pre;text-align:left}
-  #banner.placeholder #meta{display:block}
   /* Shed when the zone is too small to hold everything legibly. */
   .shed{display:none !important}
-  #banner.placeholder.stacked #meta{margin-top:calc(var(--u) * .6)}
+  .hide-field{display:none !important}
   .who{min-width:0;overflow:hidden}
   @keyframes rise{from{transform:translateY(140px);opacity:0}to{transform:translateY(0);opacity:1}}
 
@@ -70,10 +65,8 @@
   #fill{height:100%;border-radius:12px;background:linear-gradient(90deg,#7ee787,#ffd666);transition:width 1s linear}
   #bar[hidden]{display:none}
 
-  body.warn #banner{border-top-color:#ff8a4c}
   body.warn #clock{color:#ffb37a;animation:pulse 1s ease-in-out infinite}
   body.warn #fill{background:linear-gradient(90deg,#ffd666,#ff8a4c)}
-  body.crit #banner{border-top-color:#ff5656}
   body.crit #clock{color:#ff6b6b;animation:pulse .6s ease-in-out infinite}
   body.crit #fill{background:linear-gradient(90deg,#ff8a4c,#ff5656)}
   @keyframes pulse{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.07);opacity:.8}}
@@ -93,10 +86,6 @@
 <body>
 <div id="film">
   <div id="toast"></div>
-  <!-- PLACEHOLDER, not the finished countdown. It exists to prove the panel
-       lands in the bezel's negative space and that every field the real design
-       will need actually arrives over the socket. Design comes later; the
-       geometry and the payload are what is being settled here. -->
   <div id="banner">
     <img id="av" alt="" hidden>
     <div class="who"><div id="name">—</div><div id="sub">—</div></div>
@@ -105,7 +94,6 @@
       <div id="clock">--:--</div><div id="label">remaining</div>
       <div class="bar" id="bar"><div id="fill" style="width:100%"></div></div>
     </div>
-    <div id="meta"></div>
   </div>
 </div>
 <script>
@@ -160,12 +148,12 @@
    * The zone boundary is hard — beyond it is the game — so something has to
    * give. Shrinking type forever gives an unreadable panel; clipping hides the
    * clock, which is the one thing that must always be visible. Dropping the
-   * field dump, then the progress bar, then the avatar, keeps the countdown
-   * legible in a zone as short as the GameCube's 93px strip.
+   * progress bar, then the avatar, keeps the countdown legible in a zone as
+   * short as the GameCube's 93px strip.
    */
   function fit() {
     if (!placement || !rectOk(placement.toast)) return;
-    var optional = [document.getElementById('meta'), barEl, avEl];
+    var optional = [barEl, avEl];
     optional.forEach(function (el) { if (el) el.classList.remove('shed'); });
 
     for (var dropped = 0; dropped <= optional.length; dropped++) {
@@ -223,6 +211,15 @@
     if (p.orientation === 'stacked') banner.classList.add('stacked');
   }
 
+  function applyFields(fields) {
+    var set = {};
+    (fields || ['player', 'system_label', 'timer']).forEach(function (f) { set[f] = true; });
+    document.getElementById('name').classList.toggle('hide-field', !set.player);
+    avEl.classList.toggle('hide-field', !set.player);
+    document.getElementById('sub').classList.toggle('hide-field', !set.system_label);
+    document.querySelector('.timer').classList.toggle('hide-field', !set.timer);
+  }
+
   var session = null;        // { playedMs, remainingMs|null, at }
   var ticker = null, toastT = null, lastMessageAt = 0;
 
@@ -257,27 +254,9 @@
   function startTicking() { if (!ticker) ticker = setInterval(render, 1000); }
   function stopTicking() { if (ticker) { clearInterval(ticker); ticker = null; } }
 
-  // Everything the real design will be built from, shown plainly so the wiring
-  // can be checked on the television instead of inferred from the logs.
-  function metaLines(m) {
-    var p = m.placement || {};
-    return [
-      'system   ' + (m.systemLabel || m.system || '—'),
-      'game     ' + (m.title || m.contentId || '—'),
-      'player   ' + (m.displayName || m.userId || '—'),
-      'pads     ' + (m.controllers == null ? '—' : m.controllers),
-      'zone     ' + (p.zone || '—') + (p.orientation ? ' / ' + p.orientation : ''),
-      'session  ' + (m.sessionId || '—'),
-    ].join('\n');
-  }
-
   function show(m) {
     document.getElementById('name').textContent = m.displayName || m.userId || 'Player';
     document.getElementById('sub').textContent = m.systemLabel || m.title || 'Arcade time';
-    document.getElementById('meta').textContent = metaLines(m);
-    // PLACEHOLDER until the panel is designed. Marked as such on screen so a
-    // provisional layout is never mistaken for a finished one.
-    banner.classList.add('placeholder');
     // A user with no portrait on file should show nothing, not an empty ring.
     if (m.userId) {
       avEl.onerror = function () { avEl.hidden = true; };
@@ -322,6 +301,7 @@
     // Placement can arrive on any message, so a film that reconnects mid-game
     // positions itself at once rather than at the next launch.
     if (m.placement !== undefined) place(m.placement);
+    if (m.overlay !== undefined) applyFields(m.overlay && m.overlay.fields);
     if (m.event === 'play.session.started') show(m);
     else if (!banner.classList.contains('show')) show(m);
     if (m.warning) toast(m.warning, 6000);
