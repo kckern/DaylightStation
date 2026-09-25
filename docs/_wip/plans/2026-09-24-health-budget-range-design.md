@@ -1,8 +1,18 @@
 # Health budget as a range — design
 
-**Status:** revision 2, 2026-09-24. Revision 1 was rejected in a stern review
-(all findings adopted below). Awaiting review; next step after approval is an
-implementation plan per phase.
+**Status:** revision 2, 2026-09-24. **Implemented and deployed** the same day,
+all four phases (merges 617907dc, 505affb5, a6437e1b). Plans:
+`2026-09-24-health-budget-range-phase1-plan.md`, `…-phase2-plan.md`; phases 3–4
+were built from this spec directly and reviewed by Fable (findings adopted in
+9dc05c7b). The reference docs (`docs/reference/health/README.md`,
+`coaching-system.md`) now describe the shipped behaviour; move this spec to
+`_archive/` once it has been lived with.
+
+**Deviation from the spec:** the legacy `calories_min/max` and
+`coaching.logging_completeness.min_calories` settings were NOT deleted. Every
+surface reads the budget first and uses them only as a fallback when the budget
+cannot be computed (no goals or no weight), which keeps the coach working on a
+fresh install. `budget`/`status` stay as aliases for the same reason.
 
 ## Why
 
