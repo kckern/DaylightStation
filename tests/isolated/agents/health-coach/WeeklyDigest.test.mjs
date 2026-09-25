@@ -15,7 +15,7 @@ describe('WeeklyDigest', () => {
     const mockTools = [
       { name: 'get_reconciliation_summary', execute: async (p) => { calls.push(`reconciliation:${p.days}`); return { avgAccuracy: 0.71, days: [] }; } },
       { name: 'get_weight_trend',           execute: async (p) => { calls.push(`weight:${p.days}`);         return { current: { lbs: 182 }, trend: { sevenDay: -0.5, fourteenDay: -1.2 } }; } },
-      { name: 'get_nutrition_history',      execute: async (p) => { calls.push('nutrition');                 return { days: [], avgCalories: 1900 }; } },
+      { name: 'get_budget_range',      execute: async (p) => { calls.push('nutrition');                 return { days: [], avgCalories: 1900 }; } },
       { name: 'get_user_goals',             execute: async (p) => { calls.push('goals');                     return { goals: { calories: 2000, protein: 150 } }; } },
     ];
     const gathered = await digest.gather({
@@ -119,7 +119,7 @@ describe('WeeklyDigest', () => {
       { name: 'get_user_goals', execute: async () => ({
         goals: { nutrition: { calories_min: 1400, calories_max: 1800, protein_min: 140 } },
       }) },
-      { name: 'get_nutrition_history', execute: async () => extras.history ?? buildHistory() },
+      { name: 'get_budget_range', execute: async () => extras.history ?? buildHistory() },
       ...(extras.findSimilarPeriod
         ? [{ name: 'find_similar_period', execute: extras.findSimilarPeriod }]
         : []),

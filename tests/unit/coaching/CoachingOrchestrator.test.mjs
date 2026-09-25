@@ -232,6 +232,50 @@ describe('CoachingOrchestrator', () => {
     });
   });
 
+  describe('the budget contract (one floor, one top, one fold)', () => {
+    const budget = (over = {}) => ({
+      food: 700, exercise: 0, net: 700, maintenance: 2291, range: { floor: 1300, top: 1791 },
+      zone: 'incomplete', complete: false, declared: null, remaining: 600, macros: { protein: 45 }, ...over,
+    });
+    const withBudget = (getBudget) => new CoachingOrchestrator({
+      commentaryService: mockCommentary, messagingGateway: mockMessaging, healthStore: mockHealthStore,
+      nutriListStore: mockNutriListStore, config: mockConfig, budgetService: { getBudget },
+      logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+    });
+
+    it('post-report goals and totals come from the budget: floor, top, counted food, zone', async () => {
+      await withBudget(vi.fn().mockResolvedValue(budget())).sendPostReport({ userId: 'user_1', conversationId: 'telegram:123' });
+      const [, text] = mockMessaging.sendMessage.mock.calls[0];
+      expect(text).toContain('<b>700 cal so far</b> · 1091 left of 1791');
+      const snapshot = mockCommentary.generate.mock.calls[0][0];
+      expect(snapshot.calories).toMatchObject({ consumed: 700, goal_min: 1300, goal_max: 1791, zone: 'incomplete', complete: false, remaining: 600 });
+      expect(snapshot.logging.min_calories).toBe(1300);
+    });
+
+    it('the morning brief judges completeness against the budget floor', async () => {
+      vi.setSystemTime(new Date('2026-09-20T15:00:00Z'));
+      mockHealthStore.loadNutritionData.mockResolvedValue({ '2026-09-19': { calories: 1250, protein: 90 } });
+      await withBudget(vi.fn().mockResolvedValue(budget())).sendMorningBrief({ userId: 'kckern', conversationId: 'telegram:1' });
+      const snapshot = mockCommentary.generate.mock.calls[0][0];
+      // 1250 is under the budget floor (1300), so it is missing data, not a light day.
+      expect(snapshot.yesterday.status).toBe('incomplete');
+      expect(snapshot.logging.min_calories).toBe(1300);
+    });
+
+    it('credits exercise in full, as the bar does, and quotes the range top', async () => {
+      await withBudget(vi.fn().mockResolvedValue(budget())).sendExerciseReaction({ userId: 'user_1', conversationId: 'telegram:123',
+        activity: { id: 5, type: 'Ride', durationMin: 45, caloriesBurned: 420 } });
+      expect(mockMessaging.sendMessage.mock.calls[0][1]).toContain('~420 extra cal earned');
+      expect(mockCommentary.generate.mock.calls[0][0].today_calories).toMatchObject({ consumed: 700, goal_max: 1791, zone: 'incomplete' });
+    });
+
+    it('falls back to the configured goals when the budget is unavailable', async () => {
+      await withBudget(vi.fn().mockRejectedValue(Object.assign(new Error('NO_WEIGHT_DATA'), { code: 'NO_WEIGHT_DATA' })))
+        .sendPostReport({ userId: 'user_1', conversationId: 'telegram:123' });
+      expect(mockMessaging.sendMessage.mock.calls[0][1]).toContain('<b>500 cal so far</b> · 1100 left of 1600');
+    });
+  });
+
   describe('weekly digest completeness', () => {
     beforeEach(() => {
       vi.useFakeTimers();

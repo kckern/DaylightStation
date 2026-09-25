@@ -3,6 +3,7 @@
 import { Assignment } from '../../framework/Assignment.mjs';
 import { OutputValidator } from '../../framework/OutputValidator.mjs';
 import { coachingMessageSchema } from '../schemas/coachingMessage.mjs';
+import { localDate, goalsWithRange, rangeOf } from './budgetContext.mjs';
 
 // F-003 / F2-C compliance CTA suppression TTL. The thresholds + CTA text
 // themselves come entirely from playbook YAML (`coaching_dimensions[*]`);
@@ -63,16 +64,20 @@ export class MorningBrief extends Assignment {
       });
     };
 
-    const yesterdayDate = new Date(Date.now() - 86400000).toISOString().split('T')[0];
+    // The user's LOCAL dates (a UTC date drifts a day in the evening).
+    const todayDate = localDate(0);
+    const yesterdayDate = localDate(-1);
 
-    const [reconciliation, weight, goals, todayNutrition, nutritionHistory, yesterdayClosed] = await Promise.all([
+    const [reconciliation, weight, goals, todayNutrition, nutritionHistory] = await Promise.all([
       call('get_reconciliation_summary', { userId, days: 7 }),
       call('get_weight_trend', { userId, days: 7 }),
       call('get_user_goals', { userId }),
-      call('get_today_nutrition', { userId }),
-      call('get_nutrition_history', { userId, days: 7 }),
-      call('is_day_closed', { userId, date: yesterdayDate }),
+      // The budget contract: totals, range, zone and COMPLETE (floor or declared).
+      call('get_day_budget', { userId, date: todayDate }),
+      call('get_budget_range', { userId, days: 7 }),
     ]);
+    const historyDays = Array.isArray(nutritionHistory?.days) ? nutritionHistory.days : [];
+    const yesterdayClosed = { closed: !!historyDays.find(d => d?.date === yesterdayDate)?.declared };
 
     logger?.info?.('gather.complete', {
       hasReconciliation: !!reconciliation,
@@ -539,9 +544,13 @@ export class MorningBrief extends Assignment {
       return count;
     };
 
-    const calorieSurplusStreak = typeof calMax === 'number'
-      ? trailingStreak(d => typeof d?.calories === 'number' && d.calories > calMax)
-      : 0;
+    // A budget day (it has a range) is over plan when NET passes its own top,
+    // exactly as the Today bar judges it; a plain history row compares food
+    // against the configured max.
+    const overPlan = (d) => (d?.range
+      ? typeof d.net === 'number' && d.net > d.range.top
+      : typeof calMax === 'number' && typeof d?.calories === 'number' && d.calories > calMax);
+    const calorieSurplusStreak = trailingStreak(overPlan);
     const proteinShortfallStreak = typeof proteinMin === 'number'
       ? trailingStreak(d => typeof d?.protein === 'number' && d.protein < proteinMin)
       : 0;
@@ -620,7 +629,7 @@ export class MorningBrief extends Assignment {
 
     sections.push(`\n## Reconciliation Summary\nNote: implied_intake and tracking_accuracy are REDACTED for days less than 14 days old. Only mature data (14+ days) includes these fields. Do NOT mention implied intake or tracking accuracy for yesterday or any recent day.\n${JSON.stringify(gathered.reconciliation || {}, null, 2)}`);
     sections.push(`\n## Weight Trend (7 days)\n${JSON.stringify(gathered.weight || {}, null, 2)}`);
-    sections.push(`\n## User Goals\n${JSON.stringify(gathered.goals || {}, null, 2)}`);
+    sections.push(`\n## User Goals\n${JSON.stringify(goalsWithRange(gathered.goals, gathered.todayNutrition), null, 2)}`);
     sections.push(`\n## Nutrition History (last 7 days — calories, protein, macros per day)\n${JSON.stringify(gathered.nutritionHistory || {}, null, 2)}`);
     sections.push(`\n## Today's Nutrition (so far)\n${JSON.stringify(gathered.todayNutrition || {}, null, 2)}`);
     sections.push(`\n## Working Memory\n${memory.serialize()}`);
@@ -702,15 +711,17 @@ export class MorningBrief extends Assignment {
     }
 
     // Detect likely incomplete logging yesterday
-    const calorieFloor = gathered.goals?.goals?.nutrition?.calories_min || 1200;
-    const yesterdayDate = new Date(Date.now() - 86400000).toISOString().split('T')[0];
+    const yesterdayDate = localDate(-1);
     const history = gathered.nutritionHistory?.days || gathered.nutritionHistory || [];
     const yesterdayEntry = Array.isArray(history)
       ? history.find(d => d.date === yesterdayDate)
       : history[yesterdayDate];
+    const { floor: calorieFloor } = rangeOf(yesterdayEntry || gathered.todayNutrition, gathered.goals);
     const yesterdayCals = yesterdayEntry?.calories ?? yesterdayEntry?.total_calories ?? null;
-    // Under calorie min = incomplete, UNLESS user explicitly marked the day as done
-    const incompleteDay = yesterdayCals !== null && yesterdayCals < calorieFloor && !gathered.yesterdayClosed;
+    // Incomplete = under the floor and not declared done/fasted. The budget
+    // decides it (`complete`); a history row without it falls back to the floor.
+    const incompleteDay = yesterdayCals !== null && !gathered.yesterdayClosed
+      && (typeof yesterdayEntry?.complete === 'boolean' ? !yesterdayEntry.complete : yesterdayCals < calorieFloor);
 
     sections.push(`\n## Instructions
 Produce a JSON object matching the coachingMessageSchema:
@@ -719,7 +730,7 @@ Produce a JSON object matching the coachingMessageSchema:
 - parse_mode: "HTML"
 ${incompleteDay ? `
 INCOMPLETE LOGGING DETECTED — OVERRIDE NORMAL COACHING:
-Yesterday's tracked calories (~${Math.round((yesterdayCals || 0) / 50) * 50}) are below the daily minimum target (${calorieFloor}), and the user did NOT mark the day as done via /done. This almost certainly means the user forgot to log one or more meals — NOT that they actually ate this little. DO NOT lecture about missed goals or undereating. Instead:
+Yesterday's tracked calories (~${Math.round((yesterdayCals || 0) / 50) * 50}) are below the logging floor (${calorieFloor}), and the user did NOT mark the day as done via /done or fasted via /fast. This almost certainly means the user forgot to log one or more meals — NOT that they actually ate this little. DO NOT lecture about missed goals or undereating. Instead:
 1. Note what WAS logged yesterday (name the specific items)
 2. Point out the total looks incomplete — "looks like dinner didn't get logged" or similar
 3. Ask the user what they had for the missing meal(s) so it can be logged
@@ -729,7 +740,7 @@ This takes priority over ALL other coaching rules below.
 Writing rules:
 - Lead with yesterday's ACTUAL tracked calories AND protein vs goals with exact deltas — use the nutrition history data, not reconciliation (which lacks protein)
 - Then zoom out: what does the 7-day trend look like? Are calories consistently over/under? Is protein chronically short? Identify the pattern, not just yesterday's snapshot
-- If yesterday exceeded the calorie ceiling, prescribe a specific compensatory target for today (e.g., "aim for ${gathered.goals?.goals?.nutrition?.calories_min || 1200} today to offset")
+- If yesterday exceeded the calorie ceiling, prescribe a specific compensatory target for today (e.g., "aim for ${calorieFloor} today to offset")
 - If there's a multi-day overshoot streak, calculate the cumulative surplus and what it takes to get back on track this week
 - If protein is short: state the gap in grams and the weekly average vs target
 - USE THE FOOD ITEMS to give specific, comparative insight across days:

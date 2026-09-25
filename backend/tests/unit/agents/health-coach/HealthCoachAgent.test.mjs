@@ -87,9 +87,9 @@ describe('HealthCoachAgent', () => {
       // get_weight_trend / get_today_nutrition are NOT asserted: no factory
       // defines them any more (they belonged to the retired health factories,
       // whose surface HealthQueryToolFactory replaced with query_health /
-      // compute / personal_constants). Three assignments still call them and
-      // silently get null — tracked separately; it is a product bug, not a
-      // test one.
+      // compute / personal_constants). The day/history nutrition reads moved
+      // to get_day_budget / get_budget_range (BudgetToolFactory, registered
+      // when a budgetService is wired — not in this fixture).
     });
 
     it('should have 24 total tools', () => {

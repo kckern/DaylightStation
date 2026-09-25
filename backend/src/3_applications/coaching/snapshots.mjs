@@ -32,7 +32,13 @@ export function buildPostReportSnapshot({ date, timeOfDay, calories, protein, it
     time_of_day: timeOfDay,
     today_status: todayStatus,
     logging: loggingContext(minCalories),
-    calories: { consumed: calories.consumed, goal_min: calories.goal_min, goal_max: calories.goal_max, pct: calories.goal_max > 0 ? Math.round((calories.consumed / calories.goal_max) * 100) : 0 },
+    calories: {
+      consumed: calories.consumed, goal_min: calories.goal_min, goal_max: calories.goal_max,
+      pct: calories.goal_max > 0 ? Math.round((calories.consumed / calories.goal_max) * 100) : 0,
+      // From the budget contract when available: the zone the Today bar shows,
+      // whether the log is trustworthy yet, and the headline's number.
+      ...(calories.zone ? { zone: calories.zone, complete: calories.complete, remaining: calories.remaining } : {}),
+    },
     protein: { consumed: protein.consumed, goal: protein.goal, pct: protein.goal > 0 ? Math.round((protein.consumed / protein.goal) * 100) : 0 },
     notable_items: notable,
     recent_pattern: recentPattern,
