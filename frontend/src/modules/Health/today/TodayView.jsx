@@ -25,11 +25,12 @@ import { MealAddRow } from './MealAddRow.jsx';
 import { useMealMoves, mealEntries } from './mealDrag.jsx';
 import { NeedsReviewSection } from './NeedsReviewSection.jsx';
 import { DayCloseRow } from './DayCloseRow.jsx';
-import { CleanupQuestions } from '../cleanup/CleanupQuestions.jsx';
-import { ObservationsSection } from './ObservationRow.jsx';
+import { FollowUpTray } from './FollowUpTray.jsx';
 import { EntryEditor } from './EntryEditor.jsx';
 import { ConfirmDialog } from './ConfirmDialog.jsx';
-import { deleteEntry, deleteConfirmBody, entryLabel } from './entryCommands.js';
+import { TodayToasts } from './TodayToasts.jsx';
+import { draftHasAlert, dayHasEntry } from './PortionDraftAlert.jsx';
+import { deleteEntry, deleteConfirmBody, entryLabel, entryId } from './entryCommands.js';
 import { TemplatePicker } from './TemplatePicker.jsx';
 import { FoodCatalogManager } from './FoodCatalogManager.jsx';
 import { localTodayISO as todayISO, currentMealBucketId, bucketLabel, BUCKETS } from './mealBuckets.js';
@@ -390,6 +391,28 @@ export function TodayView({ active = true, sidebarTarget, onSetupGoals, onCoachT
   // `day.loading` false the whole time, so it never re-triggers this.
   const coldLoading = day.loading && !day.items.length;
 
+  const undoMealChange = async () => {
+    if (undoPending.current || !mealUndo) return;
+    undoPending.current = true; setUndoBusy(true);
+    mealUndoOperation.current ??= crypto.randomUUID();
+    try { await DaylightAPI('api/v1/health/nutrition/meal-undo', { undoToken: mealUndo.token, operationId: mealUndoOperation.current }, 'POST'); setMealUndo(null); day.reload(); }
+    catch (err) { setCaptureNotice(err.message || 'Undo failed. Try again.'); }
+    finally { undoPending.current = false; setUndoBusy(false); }
+  };
+  const undoDeletedEntry = async () => {
+    if (undoPending.current || !undoDelete) return;
+    undoPending.current = true; setUndoBusy(true);
+    try {
+      await DaylightAPI('api/v1/health/nutrition/restore', { entryIds: undoDelete.entryIds }, 'POST');
+      setUndoDelete(null); day.reload();
+    } catch (err) { setCaptureNotice(err.message); }
+    finally { undoPending.current = false; setUndoBusy(false); }
+  };
+  // A portion edit's error is shown on its own row (EntryRow). The one case
+  // with no row to sit on — the entry left the day — falls back to a toast.
+  const portionControl = { ...preview.control, reloadDay: day.reload };
+  const strandedPortion = !coldLoading && draftHasAlert(preview.control.draft) && !dayHasEntry(movedDay.items, entryId(preview.control.draft.row));
+
   const history = <>
     <WeekStrip enabled={active} date={date} today={todayISO()} onDateChange={setDate} viewportEnd={viewportEnd}
       onViewportChange={value => setSearchParams(previous => { const next = new URLSearchParams(previous); next.set('week', value); return next; })} />
@@ -399,7 +422,7 @@ export function TodayView({ active = true, sidebarTarget, onSetupGoals, onCoachT
   </>;
 
   return (
-    <PortionContext.Provider value={preview.control}><div className="health-today">
+    <PortionContext.Provider value={portionControl}><div className="health-today">
       <EquationStrip budget={preview.budget} budgetError={day.budgetError} goals={preview.budget?.goals}
         macroCoverage={nutrientSummary(preview.items)} date={date} today={todayISO()}
         onDateChange={setDate} onSetupGoals={onSetupGoals} />
@@ -410,67 +433,22 @@ export function TodayView({ active = true, sidebarTarget, onSetupGoals, onCoachT
       <MacroBarRow macros={preview.budget?.macros} goals={preview.budget?.goals}
         macroCoverage={nutrientSummary(preview.items)} microCoverage={preview.budget?.microCoverage}
         showIntake={false} showMacros={false} />
+      {/* Follow-ups arrive on their own schedule (a 15 s poll, a scale), so they
+          get a fixed one-line slot rather than a banner that moves the day. */}
+      <FollowUpTray active={active} observations={unmatched} onObservationsChanged={() => observations.reload()} onChanged={day.reload} />
       {wideViewport && sidebarTarget ? createPortal(history, sidebarTarget) : null}
-      {preview.control.draft?.validationError ? <div role="alert" className="health-portion-error">
-        {preview.control.draft.validationError}<Button onClick={() => preview.control.cancel()}>Discard change</Button>
-      </div> : null}
-      {preview.control.draft?.status === 'error' ? <div className="health-portion-error" role="alert">
-        <span>{preview.control.draft.error} Intended {preview.control.draft.numericEdit ? `${preview.control.draft.numericEdit.field}: ${preview.control.draft.numericEdit.value}` : `portion: ${preview.control.draft.portion.value} ${preview.control.draft.portion.unit}`}.</span>
-        <Button onClick={() => preview.control.retry()}>{preview.control.draft.conflict ? 'Reload & apply intended change' : 'Retry same change'}</Button>
-        <Button variant="subtle" onClick={() => { preview.control.cancel(); day.reload(); }}>Discard draft &amp; reload</Button>
-      </div> : null}
-      {orphanRetry ? <div className="health-pending health-pending--inline" role="status">
-        <span>{`Your ${orphanRetry.label} didn't send.`}{orphanRetry.error ? ` ${orphanRetry.error}` : ''}</span>
-        <Button size="compact-xs" loading={orphanRetry.busy} onClick={retryOrphanedRecording}>Retry recording</Button>
-        <Button size="compact-xs" variant="subtle" disabled={orphanRetry.busy} onClick={() => setOrphanRetry(null)}>Dismiss</Button></div> : null}
-      {moves.undo ? <div className="health-pending health-pending--inline" role="status"><span>{moves.undo.label}</span>
-        <Button size="compact-xs" aria-label="Undo move" onClick={moves.undo.run}>Undo</Button>
-        <Button size="compact-xs" variant="subtle" onClick={moves.undo.dismiss}>Dismiss</Button></div> : null}
-      {moves.error ? <div className="health-pending health-pending--inline" role="alert"><span>{moves.error}</span>
-        <Button size="compact-xs" variant="subtle" onClick={moves.clearError}>Dismiss</Button></div> : null}
-      {mealUndo ? <div className="health-pending health-pending--inline" role="status"><span>{mealUndo.label}</span>
-        <Button size="compact-xs" aria-label="Undo meal change" loading={undoBusy} onClick={async()=>{
-          if(undoPending.current)return;
-          undoPending.current=true;setUndoBusy(true);
-          mealUndoOperation.current ??= crypto.randomUUID();
-          try { await DaylightAPI('api/v1/health/nutrition/meal-undo',{undoToken:mealUndo.token,operationId:mealUndoOperation.current},'POST');setMealUndo(null);day.reload(); }
-          catch(err){setCaptureNotice(err.message || 'Undo failed. Try again.');}
-          finally{undoPending.current=false;setUndoBusy(false);}
-        }}>Undo</Button><Button size="compact-xs" variant="subtle" disabled={undoBusy} onClick={()=>setMealUndo(null)}>Dismiss</Button></div> : null}
-      {undoDelete ? <div className="health-pending health-pending--inline" role="status">
-        <span>{undoDelete.label} deleted.</span>
-        <Button size="compact-xs" loading={undoBusy} onClick={async () => {
-          if (undoPending.current) return;
-          undoPending.current = true; setUndoBusy(true);
-          try {
-            await DaylightAPI('api/v1/health/nutrition/restore', { entryIds: undoDelete.entryIds }, 'POST');
-            setUndoDelete(null); day.reload();
-          } catch (err) { setCaptureNotice(err.message); }
-          finally { undoPending.current = false; setUndoBusy(false); }
-        }}>Undo</Button>
-        <Button size="compact-xs" variant="subtle" disabled={undoBusy} onClick={() => setUndoDelete(null)}>Dismiss</Button>
-      </div> : null}
+      <TodayToasts captureNotice={captureNotice} captureRetry={captureRetry} retryBusy={nutrition.busy}
+        onRetryCapture={retryVoiceCapture} onDismissCapture={() => { setCaptureNotice(null); setCaptureRetry(null); }}
+        orphanRetry={orphanRetry} onRetryOrphan={retryOrphanedRecording} onDismissOrphan={() => setOrphanRetry(null)}
+        moves={moves} mealUndo={mealUndo} onUndoMeal={undoMealChange} onDismissMealUndo={() => setMealUndo(null)}
+        undoDelete={undoDelete} onUndoDelete={undoDeletedEntry} onDismissUndoDelete={() => setUndoDelete(null)} undoBusy={undoBusy}
+        strandedPortion={strandedPortion ? portionControl : null} />
       <ConfirmDialog open={Boolean(pendingDelete)} title={pendingDelete ? `Delete ${entryLabel(pendingDelete)}?` : ''}
         body={pendingDelete ? deleteConfirmBody(pendingDelete) : ''} busy={deleteBusy} error={deleteError}
         onConfirm={confirmDelete} onCancel={() => { setPendingDelete(null); setDeleteError(null); }} />
       {day.error ? <ErrorState error={day.error} onRetry={day.reload} label="Food log" /> : null}
       {pendingReview.error ? <ErrorState error={pendingReview.error} onRetry={pendingReview.reload} label="Food review unavailable" /> : null}
       {observations.error ? <ErrorState error={observations.error} onRetry={observations.reload} label="Measurements unavailable" /> : null}
-      {captureNotice ? (
-        <div className="health-pending" role="status">
-          <p className="health-pending__line">{captureNotice}</p>
-          <div className="health-pending__actions">
-            {captureRetry ? (
-              <Button size="xs" loading={nutrition.busy} disabled={nutrition.busy}
-                onClick={retryVoiceCapture}>Try again</Button>
-            ) : null}
-            <Button size="xs" variant="subtle"
-              onClick={() => { setCaptureNotice(null); setCaptureRetry(null); }}>Dismiss</Button>
-          </div>
-        </div>
-      ) : null}
-      <CleanupQuestions active={active} onChanged={day.reload} />
-      <ObservationsSection observations={unmatched} onChanged={() => observations.reload()} />
       <LogTable clarifications={mealClarifications} onClearClarification={clearMealClarification} byBucket={preview.byBucket} date={date} sessions={preview.budget?.sessions || []}
         exerciseAvailable={Boolean(day.budget)}
         coldLoading={coldLoading} capturePendingBuckets={[...capturePending.values()].filter(pending => pending.date === date).map(pending => pending.bucket)}
