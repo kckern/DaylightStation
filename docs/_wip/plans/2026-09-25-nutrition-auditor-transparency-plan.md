@@ -1,5 +1,9 @@
 # Nutrition Auditor Transparency Implementation Plan
 
+**Status:** implemented on branch `feat/nutrition-auditor-transparency`, pending
+deploy (Tasks 1–19 and 21–25 done; Task 20 is the merge, deploy and backfill).
+Reference: `docs/reference/health/nutrition-auditor.md`.
+
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** Make every nutrition-auditor run visible (why it ran, what it read,
