@@ -521,3 +521,5 @@ The corollary bit twice in this sweep: `feat/teacher-workspace-ia` and `feature/
 | 2026-09-24 | feat/nutribot-retry-restore | c86009299e | Nutribot voice retry, restore after Undo, voice follows open flow |
 | 2026-09-24 | fix/quota-no-retry | 420612d5e | Never retry an exhausted-balance 429 (regression from 1e1b577bb) |
 | 2026-09-24 | fix/day-replay | 9f93863df | dayReplay test pins flashcards deck on its enrollment subject (drift from 01983d776) |
+| 2026-09-24 | fix/agenda-program-schedule | b60daa0b9 | Agenda honors a program's except span (mid-term sentence-ladder → card-ladder switchover) |
+| 2026-09-24 | fix/program-day-bypass-any-program | 39702748a | Day bypass ledger settles any program, not only piano |

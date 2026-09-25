@@ -48,6 +48,43 @@ export const UNKNOWABLE_STATUS = Object.freeze({
   doneToday: null, unknowable: true, reason: 'no_history', progressLabel: null, score: null,
 });
 
+/**
+ * A grown-up's day bypass, applied to ANY program.
+ *
+ * The ledger always accepted any enrolled program, but until 2026-09-24 only
+ * `PianoCourseProgramLauncher` read it, so crediting a card-ladder day filed a
+ * record that changed nothing. Reading it here, once, covers every launcher.
+ *
+ * Evidence outranks the bypass: a day the launcher already reports done keeps
+ * its own status. A broken program stays broken (a bypass must never hide a
+ * fault). An unknowable replayed day with a bypass on file is no longer
+ * unknowable: the ledger IS a record of that day. A ledger read failure is a
+ * missing convenience, not a status failure.
+ */
+async function withDayBypass({ dayBypasses, learnerId, programId, studyDay, status, logger }) {
+  if (!dayBypasses?.activeFor || !studyDay || !status || status.error === true || status.doneToday === true) {
+    return status;
+  }
+  let bypass = null;
+  try {
+    bypass = await dayBypasses.activeFor({ learnerId, programId, studyDate: studyDay });
+  } catch (err) {
+    logger.warn?.('school.program-status.bypass-read-failed', {
+      learnerId, program: programId, error: err?.message ?? String(err),
+    });
+    return status;
+  }
+  if (!bypass) return status;
+  const { unknowable: _unknowable, reason: _reason, ...rest } = status;
+  return {
+    ...rest,
+    doneToday: true,
+    excused: true,
+    bypassed: true,
+    progressLabel: [`Credited today by ${bypass.decidedBy}`, status.progressLabel].filter(Boolean).join(' · '),
+  };
+}
+
 export async function collectProgramStatuses({
   plan, learnerId, launchers = new Map(), logger = console,
   logEvent = 'school.program-status.launcher-failed',
@@ -76,6 +113,10 @@ export async function collectProgramStatuses({
   // an ENTRY ACTION genuinely absent from it still warns and still faults —
   // see the branch below.
   declaredEntryActions = undefined,
+  // The grown-up day-bypass ledger (`ManageProgramDayBypass`), or null. When a
+  // bypass is on file for this learner, program and `studyDay`, a day the
+  // launcher did not report done reads done — see `withDayBypass`.
+  dayBypasses = null,
 } = {}) {
   const programs = new Map();
   (plan?.entries ?? []).filter((entry) => entry?.program).forEach((entry) => {
@@ -152,15 +193,16 @@ export async function collectProgramStatuses({
         return;
       }
       if (day != null && launcher.replayable !== true) {
-        statuses.push({ programId, programInstance, status: { ...UNKNOWABLE_STATUS } });
-        return;
+        status = { ...UNKNOWABLE_STATUS };
+      } else {
+        status = await launcher.status({
+          userId: learnerId, programInstance, ...(day != null ? { day } : {}),
+        });
+        if (weekly && status?.error !== true) {
+          status = await withWeeklyFold({ launcher, learnerId, programInstance, studyDay, status });
+        }
       }
-      status = await launcher.status({
-        userId: learnerId, programInstance, ...(day != null ? { day } : {}),
-      });
-      if (weekly && status?.error !== true) {
-        status = await withWeeklyFold({ launcher, learnerId, programInstance, studyDay, status });
-      }
+      status = await withDayBypass({ dayBypasses, learnerId, programId, studyDay, status, logger });
     } catch (err) {
       logger.warn?.(logEvent, {
         learnerId, program: programId, programInstance, error: err?.message ?? String(err),

@@ -102,7 +102,7 @@ function historyBefore(history, untilMs) {
 export class PlanProjection {
   #curriculum; #assignments; #sessions; #attestations; #curriculumExceptions;
   #launchers; #timezone; #clock; #logger; #planErrorEvent; #launcherFailedEvent;
-  #declaredEntryActions; #householdSchedule;
+  #declaredEntryActions; #householdSchedule; #dayBypasses;
   #inflight = new Map();
 
   /**
@@ -140,12 +140,17 @@ export class PlanProjection {
     // `planDailyAgenda` over every course's schedule. Null: no house-wide
     // days off.
     householdSchedule = null,
+    // The grown-up day-bypass ledger (`ManageProgramDayBypass`'s store). A
+    // bypass on file settles that program's study day for EVERY launcher, not
+    // only piano's. Null: bypasses are not consulted here.
+    dayBypasses = null,
     logger = console,
   } = {}) {
     if (!curriculum || !assignments || !sessions) {
       throw new Error('PlanProjection requires curriculum, assignments and sessions');
     }
     this.#householdSchedule = householdSchedule;
+    this.#dayBypasses = dayBypasses;
     this.#curriculum = curriculum;
     this.#assignments = assignments;
     this.#sessions = sessions;
@@ -326,6 +331,7 @@ export class PlanProjection {
       declaredEntryActions: this.#resolveDeclaredEntryActions(),
       day,
       studyDay: day ?? studyDayForInstant(at.getTime(), { timezone: this.#timezone }),
+      dayBypasses: this.#dayBypasses,
     });
 
     // RAW history, never the overlaid one — see the class header, subtlety 1.
