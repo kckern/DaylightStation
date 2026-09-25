@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
+import { MemoryRouter, Routes, Route, useLocation } from 'react-router-dom';
 import { CleanupQuestions, cleanupPath } from './CleanupQuestions.jsx';
 import { HealthSettings } from './HealthSettings.jsx';
 import { resetApiResourceCache } from '../../../lib/hooks/useApiResource.js';
@@ -17,10 +18,12 @@ beforeEach(() => {
   api.mockImplementation(async (path, body, method) => {
     if (method) return { status: 'resolved' };
     if (path.includes('/history')) return { records: [], total: 0 };
+    if (path.includes('/spend')) return { today: 0.02, ledgerTodayUsd: 0.04, week: 0.1, month: 0.3, capUsd: 1, cappedToday: false };
     return structuredClone(state);
   });
 });
-const mount = component => render(<MantineProvider>{component}</MantineProvider>);
+const mount = component => render(<MantineProvider><MemoryRouter initialEntries={['/health/settings']}>{component}</MemoryRouter></MantineProvider>);
+function Where() { return <div data-testid="where">{useLocation().pathname}</div>; }
 describe('Health cleanup controls', () => {
   it('shows exact changes and sends versioned choices independently of Telegram', async () => {
     mount(<CleanupQuestions />);
@@ -52,5 +55,17 @@ describe('Health cleanup controls', () => {
     expect(screen.getByLabelText('Preview only — do not change food or send questions').checked).toBe(true);
     fireEvent.click(automatic);
     await waitFor(() => expect(api).toHaveBeenCalledWith(`${cleanupPath}/settings`, { expectedVersion: 1, enabled: true }, 'PATCH'));
+  });
+  it('shows a one-line auditor status and opens the auditor page', async () => {
+    state.questions = [];
+    state.runs = [{ id: 'r1', status: 'completed', createdAt: new Date().toISOString(), completedAt: new Date().toISOString() }];
+    mount(<Routes>
+      <Route path="/health/settings" element={<HealthSettings />} />
+      <Route path="/health/auditor" element={<Where />} />
+    </Routes>);
+    await screen.findByText(/Last run .* · \$0\.04 today/);
+    expect(screen.queryByText('Repair history')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Open auditor' }));
+    expect((await screen.findByTestId('where')).textContent).toBe('/health/auditor');
   });
 });

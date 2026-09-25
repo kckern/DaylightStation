@@ -20,6 +20,7 @@ import '../modules/Health/health.scss';
 const ProgressView = lazy(() => import('../modules/Health/progress/ProgressView.jsx').then(module => ({ default: module.ProgressView })));
 const MedicalView = lazy(() => import('../modules/Health/medical/MedicalView.jsx').then(module => ({ default: module.MedicalView })));
 const HealthSettings = lazy(() => import('../modules/Health/cleanup/HealthSettings.jsx').then(module => ({ default: module.HealthSettings })));
+const AuditorPage = lazy(() => import('../modules/Health/auditor/AuditorPage.jsx').then(module => ({ default: module.AuditorPage })));
 
 const Icon = ({ d }) => (
   <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
@@ -42,6 +43,8 @@ const TAB_PATH = { today: '/health', progress: '/health/progress', health: '/hea
 // "today", matching the index route's <Navigate>-free default render.
 function tabForPath(pathname) {
   if (pathname.startsWith('/health/settings')) return 'settings';
+  // The auditor is reached from Settings, so it keeps Settings' place in the chrome.
+  if (pathname.startsWith('/health/auditor')) return 'settings';
   if (pathname.startsWith('/health/progress')) return 'progress';
   if (pathname.startsWith('/health/medical')) return 'health';
   if (pathname.startsWith('/health/coach')) return 'coach';
@@ -104,6 +107,7 @@ const HealthShell = ({ userId }) => {
               <Route path="progress" element={<ProgressView />} />
               <Route path="medical" element={<MedicalView />} />
               <Route path="settings" element={<HealthSettings />} />
+              <Route path="auditor" element={<AuditorPage />} />
               {/* CoachChat only supports variant 'light'|'overlay' (see AgentChatSurface) —
                   'full' isn't a real variant. The default 'light' variant is already the
                   full-height flex-column layout (`.coach-chat { height: 100% }`), which is

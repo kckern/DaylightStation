@@ -2,6 +2,7 @@ import React from 'react';
 import { beforeEach, expect, it, vi } from 'vitest';
 import { act, render, screen } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
+import { MemoryRouter } from 'react-router-dom';
 import { HealthDisplayPreferencesProvider, useHealthDisplayPreferences } from './HealthDisplayPreferences.jsx';
 import HealthDisplaySettings from './HealthDisplaySettings.jsx';
 
@@ -59,9 +60,9 @@ it('updates mounted consumers when another tab changes the preference', () => {
 
 it('keeps both display choices available when cleanup settings fail', async () => {
   const { HealthSettings } = await import('../cleanup/HealthSettings.jsx');
-  render(<MantineProvider><HealthDisplayPreferencesProvider userId="test-user">
+  render(<MantineProvider><MemoryRouter><HealthDisplayPreferencesProvider userId="test-user">
     <HealthSettings />
-  </HealthDisplayPreferencesProvider></MantineProvider>);
+  </HealthDisplayPreferencesProvider></MemoryRouter></MantineProvider>);
   expect(screen.getByLabelText('Before food name')).toBeTruthy();
   expect(screen.getByLabelText('After food name')).toBeTruthy();
   expect(screen.getByText(/cleanup unavailable/i)).toBeTruthy();
