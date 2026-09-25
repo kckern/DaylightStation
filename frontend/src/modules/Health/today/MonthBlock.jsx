@@ -1,9 +1,9 @@
-import { barModel } from './dayBars.js';
+import { barModel, barScale } from './dayBars.js';
 
 /**
  * The week strip's month-long cousin, for the desktop sidebar: one thin bar per
- * day over the last 30 days, same encoding as the strip (height = food/budget
- * clamped at 1.25, hue = under/over, a hole renders hollow) so the two read as
+ * day over the last 30 days, same encoding as the strip (height = net/goal,
+ * hue = under goal / under break-even / past break-even, a hole renders hollow) so the two read as
  * the same picture at two zoom levels.
  *
  * Presentational on purpose. It takes `days` rather than fetching, because the
@@ -17,7 +17,8 @@ import { barModel } from './dayBars.js';
 export function MonthBlock({ days = [], loading = false, title }) {
   // Positional key fallback: a gap entry can arrive without a `date`, and two
   // undefined keys collapse into one rendered slot.
-  const models = days.map((d, i) => ({ day: d, bar: barModel(d), key: d?.date ?? `gap-${i}` }));
+  const cap = barScale(days);
+  const models = days.map((d, i) => ({ day: d, bar: barModel(d, cap), key: d?.date ?? `gap-${i}` }));
   const over = models.filter((m) => m.bar.kind === 'day' && m.bar.status === 'over').length;
   const gaps = models.filter((m) => m.bar.kind === 'gap').length;
   const known = models.length - gaps;
@@ -35,12 +36,14 @@ export function MonthBlock({ days = [], loading = false, title }) {
           : 'No budget data for the last 30 days'}>
         {models.map(({ day, bar, key }) => (
           <span key={key} className="health-monthblock__slot">
+            {bar.kind === 'day' ? <span className="health-monthblock__goalline" style={{ bottom: `${bar.goalPct}%` }} /> : null}
+            {bar.breakEvenPct != null ? <span className="health-monthblock__evenline" style={{ bottom: `${bar.breakEvenPct}%` }} /> : null}
             {bar.kind === 'gap' ? (
               <span className="health-monthblock__bar health-monthblock__bar--gap"
                 data-testid={`monthbar-gap-${day?.date ?? 'unknown'}`} />
             ) : (
               <span className="health-monthblock__bar">
-                <span className={`health-monthblock__fill health-monthblock__fill--${bar.status}${bar.offsetByExercise ? ' health-monthblock__fill--offset' : ''}`}
+                <span className={`health-monthblock__fill health-monthblock__fill--${bar.zone}`}
                   data-testid={`monthbar-fill-${day.date}`}
                   data-height-pct={bar.heightPct}
                   style={{ height: `${bar.heightPct}%` }} />

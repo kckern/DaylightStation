@@ -91,9 +91,12 @@ describe('Today layout stylesheet', () => {
     expect(rule('.health-row__triangle')).toContain('height: 1cap');
   });
 
-  it('draws the calorie budget as one bar with food, exercise, and overage segments', () => {
+  it('draws the calorie budget as one bar: net by zone, exercise band, goal and break-even marks', () => {
     expect(rule('.health-budget__track')).toContain('position: relative');
-    expect(css).toMatch(/\.health-budget__over \{\s*background: var\(--ds-danger\)/);
+    expect(css).toMatch(/\.health-budget__net \{\s*background: var\(--ds-success\)/);
+    expect(css).toMatch(/\.health-budget__over-goal \{\s*background: var\(--ds-warning\)/);
+    expect(css).toMatch(/\.health-budget__surplus-fill \{\s*background: var\(--ds-danger\)/);
+    expect(css).toMatch(/\.health-budget__mark \{/);
     expect(rule('.health-macro-meter__fill')).toContain('background: var(--health-macro-color)');
   });
 
@@ -156,8 +159,11 @@ describe('month block stylesheet', () => {
     expect(gap).toMatch(/dashed/);
   });
 
-  it('hues over-budget days with the danger token', () => {
-    expect(rule('.health-monthblock__fill--over')).toContain('var(--ds-danger)');
+  it('hues past-goal days warning and past-break-even days danger', () => {
+    expect(rule('.health-monthblock__fill--deficit')).toContain('var(--ds-warning)');
+    expect(rule('.health-monthblock__fill--surplus')).toContain('var(--ds-danger)');
+    expect(rule('.health-weekstrip__fill--deficit')).toContain('var(--ds-warning)');
+    expect(rule('.health-weekstrip__fill--surplus')).toContain('var(--ds-danger)');
   });
 
   it('gives the bar row a real height rather than collapsing to nothing', () => {
@@ -178,12 +184,8 @@ describe('week strip stylesheet', () => {
     expect(rule('.health-weekstrip__goalline')).toMatch(/bottom: 80%/);
   });
 
-  it('marks an exercise-offset day with a non-colour cue, not hue alone', () => {
-    // A day that ate past budget and still came in under is GREEN above the
-    // reference line. The capped top edge is what says the overshoot was real
-    // and something offset it — the accessible name says the same in words.
-    expect(rule('.health-weekstrip__fill--offset')).toMatch(/border-top: 2px solid var\(--ds-warning\)/);
-    expect(rule('.health-monthblock__fill--offset')).toMatch(/border-top: 2px solid var\(--ds-warning\)/);
+  it('draws break even as a dashed line, never a second solid goal', () => {
+    expect(rule('.health-weekstrip__evenline')).toMatch(/border-top: 1px dashed/);
   });
 
   it('renders a gap hollow and a computed day with a real track', () => {
