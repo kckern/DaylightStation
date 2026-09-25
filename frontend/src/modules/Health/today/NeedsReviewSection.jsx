@@ -65,7 +65,7 @@ function NeedsReviewRow({ entry, onChanged }) {
 
 /**
  * NEEDS REVIEW section — pending NutriLogs for the viewed date, from any
- * surface. Rendered above BREAKFAST when non-empty; entirely absent (not
+ * surface. Rendered below the meal log when non-empty; entirely absent (not
  * just empty) otherwise, matching `.health-pending`'s occasional-banner feel.
  */
 export function NeedsReviewSection({ pending, onChanged }) {
