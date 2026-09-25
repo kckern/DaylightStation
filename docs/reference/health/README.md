@@ -155,7 +155,7 @@ evaluated in this order:
 | `past-even` | net > maintenance | net − maintenance | "N kcal past break even" |
 | `over` | net > top | net − top | "N kcal over" |
 | `in-range` | food ≥ floor | top − net | "N kcal left" |
-| `declared` | food < floor, day closed | top − net | "Fasted" / "Logging done" |
+| `declared` | food < floor, day closed or a meal skipped | top − net | "N kcal left" (the pill shows the status) |
 | `incomplete` | food < floor, not closed | top − net | "N kcal left" (blue: the log is not trustworthy yet) |
 
 `remaining` is never negative. `over`/`past-even` win even on an under-logged day;
@@ -299,23 +299,25 @@ tells it otherwise by closing the day, from either surface:
 
 - **Day view:** `today/DayClosePill.jsx`, a small outline pill at the right of the budget
   headline (not a row under the meals). It opens a two-item menu.
-  - **Today:** reads "Close day" and offers **Done logging** and **Fasted**. It is never flagged, because an in-progress day is expected to be low.
-  - **A past day under the threshold:** the pill is tinted blue (the under-logged zone colour) and reads "Only 460 cal logged" or "Nothing logged", with the same two choices.
+  - **Today:** reads "Close day" and offers **Done logging** (fasting is per meal, below). It is never flagged, because an in-progress day is expected to be low.
+  - **A past day under the threshold (and no skipped meal):** the pill is tinted blue (the under-logged zone colour) and reads "Only 460 cal logged" or "Nothing logged", with the same choice.
   - **A closed day:** the pill reads "Logging done" / "Fasted" (green) and its menu offers **Reopen day**.
   - **A complete past day:** shows nothing, because the coach already trusts it.
   - "Today" is the server's date (`dayStatus.today`), so a phone in another timezone is never offered a day the server would refuse as future.
   - The POST response patches the cached day (`showDayStatus`), so the row shows exactly what the server stored. A `/fast` sent from Telegram overrides it on the next refetch.
 - **Nutribot chat:** `/done`, `/fast` and `/reopen`, each taking an optional `yesterday` or `YYYY-MM-DD`.
 
-**Meal fasts.** A single meal can be declared skipped: an empty meal's ⋯ menu offers
-"Mark Breakfast as skipped (fasted)" / "Undo skipped Breakfast" (`today/MealFastToggle.jsx`,
-the meal then reads "Fasted" instead of "—"), and Nutribot takes `/fast breakfast`,
-`/fast lunch yesterday` (meal and date in either order; breakfast, lunch, dinner, snacks)
-and `/reopen breakfast`. `/done` is day-only. A meal fast is **information for the coach
-only** — "this meal was intentionally empty, don't ask about it". It never closes the
-day and never changes the floor, the zone or the bar: the day is still judged by the
-floor or a day-level Done/Fasted. The budget reports it as `fastedMeals`; the coach sees
-it as `fasted_meals` and asks only about meals that are neither logged nor fasted.
+**Meal fasts (skipped meals).** Fasting is per meal. Each empty meal's heading has a small ⊘
+icon (`today/MealFastToggle.jsx`): "didn't eat anything here". Tapping it closes that meal as
+skipped (the meal reads "Skipped"); tapping again undoes it. A meal marked skipped that
+later gets food keeps its undo and says "marked skipped". Nutribot takes `/fast breakfast`,
+`/fast lunch yesterday` (meal and date in either order; breakfast, lunch, dinner, snacks) and
+`/reopen breakfast`. **A day with any skipped meal is trusted** — its total is taken as what
+was eaten, the same as "Done logging": the budget's zone is `declared` and `complete` is
+true, the coach classifies it as trusted, and reconstruction never fills it. It is still not
+a day closure: `status` stays empty, and reopening the day does not erase meal skips. The
+day-close pill offers only **Done logging** (a whole-day `/fast` from Telegram still shows
+on it as "Fasted" and can be reopened).
 
 Both surfaces write the same record, `users/{id}/day_closed.yml`
 (`{date: {status?: done|fasting, at?, meals?: {<bucketId>: {status: fasting, at}}}}`).

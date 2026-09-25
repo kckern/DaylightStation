@@ -174,13 +174,13 @@ describe('BudgetService — range contract', () => {
     expect(b).toMatchObject({ zone: 'declared', complete: true, declared: 'fasting' });
   });
 
-  it('meal fasts are reported but never close the day or move the zone', async () => {
+  it('a skipped meal makes the day complete (trusted) without closing it', async () => {
     const svc = makeService({
       nutriListStore: nutriListFake([{ date: '2026-09-02', calories: 700 }]),
       ...closures({ '2026-09-02': { meals: { morning: { status: 'fasting', at: 'x' } } } }),
     });
     const b = await svc.getBudget('kckern', '2026-09-02');
-    expect(b).toMatchObject({ zone: 'incomplete', complete: false, declared: null, fastedMeals: ['morning'] });
+    expect(b).toMatchObject({ zone: 'declared', complete: true, declared: null, fastedMeals: ['morning'] });
   });
 
   it('a failing closure read never fails the budget', async () => {
