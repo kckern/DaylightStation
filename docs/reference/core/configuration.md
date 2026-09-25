@@ -180,8 +180,13 @@ rows get theirs from the agent map in `5_composition/agentUsageRecorder.mjs`.
 Untagged rows record `null`. `origin` is the entry point the call ran under
 (`http:METHOD /path`, `job:<id>`, `telegram:<bot>`, `tick:<name>`,
 `cli:<name>`), read from `0_system/runtime/aiContext.mjs`; it is for finding
-untagged callers and is never used as attribution. `listCosts` filters by any of
-`agentId` / `app` / `feature`.
+untagged callers and is never used as attribution. It is set by
+`aiOriginMiddleware` (`0_system/http/middleware/aiOrigin.mjs`, mounted after the
+body parsers; ids in the path become `:id`, the query string is dropped), the
+system scheduler (`runInJobContext` on `SchedulerOrchestrator`) and the agent
+scheduler, `createBotWebhookHandler`, the nutrition cleanup and artwork timers,
+and the AI-calling CLIs. `listCosts` filters by any of `agentId` / `app` /
+`feature`.
 
 **Typed decisions (`decision` capability).** TypeSafe's Jev model sits behind
 `IDecisionGateway` (`3_applications/common/ports/`), not `IAIGateway`: callers

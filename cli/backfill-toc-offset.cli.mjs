@@ -26,6 +26,7 @@ import { initConfigService, configService } from '#system/config/index.mjs';
 import { hydrateProcessEnvFromConfigs } from '#system/logging/config.mjs';
 import { DataService } from '#adapters/persistence/files/DataService.mjs';
 import { OpenAIAdapter } from '#adapters/ai/OpenAIAdapter.mjs';
+import { runWithOrigin } from '#system/runtime/aiContext.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: join(__dirname, '..', '.env') });
@@ -264,7 +265,8 @@ async function main() {
   console.log(`  Not detected: ${processed - detected}`);
 }
 
-main().catch(err => {
+// AI spend from this run is stamped `cli:backfill-toc-offset` in the usage ledger.
+runWithOrigin('cli:backfill-toc-offset', main).catch(err => {
   console.error('FATAL:', err);
   process.exit(1);
 });

@@ -19,6 +19,7 @@
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { TransactionCategoryJudge } from '#apps/finance/TransactionCategoryJudge.mjs';
+import { runWithOrigin } from '#system/runtime/aiContext.mjs';
 import { EXIT_OK, EXIT_FAIL, EXIT_USAGE, EXIT_CONFIG, EXIT_BACKEND, printError } from './_output.mjs';
 
 const USAGE = 'Usage: node cli/finance-jev-replay.cli.mjs [--period YYYY-MM-DD] [--limit 200] [--floor 0.8] [--household <id>]\n'
@@ -133,9 +134,14 @@ async function loadRealRuntime() {
 }
 
 /**
+ * AI spend from the run is stamped `cli:finance-jev-replay` in the usage ledger.
  * @returns {Promise<number>} exit code
  */
-export async function main(argv, { loadRuntime = loadRealRuntime, stdout = process.stdout, stderr = process.stderr } = {}) {
+export function main(argv, deps = {}) {
+  return runWithOrigin('cli:finance-jev-replay', () => run(argv, deps));
+}
+
+async function run(argv, { loadRuntime = loadRealRuntime, stdout = process.stdout, stderr = process.stderr } = {}) {
   let options;
   try {
     options = parseArgs(argv);

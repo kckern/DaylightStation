@@ -158,6 +158,17 @@ describe('finance-jev-replay', () => {
       expect(rt.store.getTransactions).not.toHaveBeenCalled();
     });
 
+    it('runs the judging under the cli:finance-jev-replay origin', async () => {
+      const { currentOrigin } = await import('#system/runtime/aiContext.mjs');
+      const { out, ...streams } = io();
+      const seen = [];
+      const rt = runtime({ evaluate: vi.fn(async () => { seen.push(currentOrigin()); return { model: 'jev-test-1', answers: { category: { choice: 'Fuel', confidence: 0.9 } } }; }) });
+      expect(await main([], { ...streams, loadRuntime: rt.loadRuntime })).toBe(0);
+      expect(seen.length).toBeGreaterThan(0);
+      expect(new Set(seen)).toEqual(new Set(['cli:finance-jev-replay']));
+      expect(currentOrigin()).toBeNull();
+    });
+
     it('an unexpected runtime error exits 1', async () => {
       const { out, ...streams } = io();
       const loadRuntime = vi.fn(async () => { throw new Error('DAYLIGHT_BASE_PATH not set'); });
