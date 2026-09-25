@@ -263,7 +263,9 @@ Top to bottom:
   run by trigger and by model.
 - **Auditor settings**: automatic cleanup, preview only, Telegram, Run now;
   model with its observed cost per run; daily cap; minimum gap; triggers; the
-  ten permissions. Each control is its own versioned PATCH; a 409 reads
+  ten permissions. Which choices exist comes from the status's `options`
+  (the lists the server validates against); labels live in `auditorFormat.js`,
+  and a kind without one shows its key. Each control is its own versioned PATCH; a 409 reads
   "Settings changed. Reload first." and reloads.
 - **Settings changes**: the log in plain words ("Nutrient values permission: On
   → Off · Sep 25, 10:42 AM"), ten until Show all.
@@ -305,7 +307,7 @@ Under `/api/v1/health/nutrition/cleanup`:
 
 | Method/path | Contract |
 |---|---|
-| `GET /` | `{ version, settingsVersion, settings, nextEligibleAt, questions, runs }` |
+| `GET /` | `{ version, settingsVersion, settings, options, nextEligibleAt, questions, runs }`; `options` is `{ models, triggers, permissions, minGapMinutes, maxDailyCapUsd }` from `auditorPolicy`, and the settings page draws its controls from it |
 | `PATCH /settings` | `expectedSettingsVersion` plus a partial of the settings; returns the status |
 | `GET /settings/log` | `{ entries: [{ at, actor, field, from, to }] }`, newest first |
 | `GET /journal?from&to&trigger&changed=1&offset` | `{ rows, total }`, household dates, default the last seven days, 50 per page |

@@ -45,10 +45,11 @@ export const PERMISSION_DESCRIPTIONS = {
   questions: 'Ask you questions',
 };
 
-/** Triggers a person can switch off ('manual', 'unclassified', 'unknown' are journal-only). */
-export const SWITCHABLE_TRIGGERS = ['captures', 'reviews', 'stabilization', 'scaleReconcile', 'artwork', 'dayRollover', 'edits', 'dailySweep'];
+/** Label for a permission's one-line description; none for a kind this page does not know yet. */
+export const permissionDescription = kind => PERMISSION_DESCRIPTIONS[kind] || undefined;
 
-export const AUDITOR_MODELS = ['gpt-4o', 'gpt-4.1', 'gpt-4.1-mini', 'gpt-5.6-luna'];
+/** Minimum-gap choice as shown: "Off" for 0, else "N min". */
+export const gapLabel = minutes => (minutes ? `${minutes} min` : 'Off');
 
 /**
  * The server's own message from a DaylightAPI error ("HTTP 400: Bad Request -
@@ -97,7 +98,7 @@ export function runCounts(row) {
   const count = (...statuses) => outcomes.filter(outcome => statuses.includes(outcome.status)).length;
   return {
     changed: count('applied'),
-    proposed: row.backfilled && !Array.isArray(row.outcomes) ? (row.proposals || []).length : count('proposed'),
+    proposed: row.backfilled && !outcomes.length ? (row.proposals || []).length : count('proposed'),
     rejected: count('rejected', 'skipped'),
     blocked: count('blocked'),
     asked: (row.questions || []).length,

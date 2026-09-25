@@ -20,6 +20,9 @@ function initialStatus() {
     settings: { enabled: true, dryRun: false, telegram: false, model: 'gpt-4.1-mini', dailyCapUsd: 1, minGapMinutes: 15,
       triggers: Object.fromEntries(TRIGGER_KINDS.map(kind => [kind, true])),
       permissions: Object.fromEntries(PERMISSION_KINDS.map(kind => [kind, true])) },
+    // The page draws its controls from these (NutritionCleanup.status → auditorPolicy).
+    options: { models: ['gpt-4o', 'gpt-4.1', 'gpt-4.1-mini', 'gpt-5.6-luna'], triggers: TRIGGER_KINDS, permissions: PERMISSION_KINDS,
+      minGapMinutes: [0, 15, 30, 60], maxDailyCapUsd: 50 },
     runs: [{ id: 'audit_fixture', status: 'completed', dryRun: false, model: 'gpt-4.1-mini', trigger: ['captures'],
       createdAt: RUN_AT, completedAt: '2026-09-24T17:42:41.000Z', summary: 'Corrected the rice portion from the scale reading.', outcomes: [] }],
   };

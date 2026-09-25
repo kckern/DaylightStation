@@ -18,7 +18,8 @@ const spend = { data: { byModel: [{ model: 'gpt-4.1-mini', runs: 12, avgUsd: 0.0
 beforeEach(() => {
   resetApiResourceCache(); api.mockReset();
   status = { version: 7, settingsVersion: 3, settings: { enabled: false, dryRun: true, telegram: false, model: 'gpt-4.1-mini', dailyCapUsd: 1, minGapMinutes: 15,
-    triggers: all(TRIGGERS), permissions: all(PERMISSIONS) }, runs: [], questions: [], nextEligibleAt: null };
+    triggers: all(TRIGGERS), permissions: all(PERMISSIONS) }, runs: [], questions: [], nextEligibleAt: null,
+    options: { models: ['gpt-4o', 'gpt-4.1', 'gpt-4.1-mini', 'gpt-5.6-luna'], triggers: TRIGGERS, permissions: PERMISSIONS, minGapMinutes: [0, 15, 30, 60], maxDailyCapUsd: 50 } };
   api.mockImplementation(async (path, body, method) => {
     if (method) return {};
     if (path.endsWith('/settings/log')) return { entries: [] };
@@ -30,6 +31,25 @@ const mount = (res = resource()) => { render(<MantineProvider><AuditorConfig res
 const patched = body => expect(api).toHaveBeenCalledWith(`${cleanupPath}/settings`, body, 'PATCH');
 
 describe('Auditor configuration', () => {
+  it('draws its controls from the status options; a kind without a label shows its key', async () => {
+    status.options = { models: ['gpt-4.1-mini', 'gpt-9'], triggers: ['captures', 'newKind'], permissions: ['naming', 'newPermission'],
+      minGapMinutes: [0, 45], maxDailyCapUsd: 5 };
+    mount();
+    expect(screen.getByLabelText('New food captured')).toBeTruthy();
+    expect(screen.getByLabelText('newKind')).toBeTruthy();
+    expect(screen.queryByLabelText('Scale readings updated')).toBeNull();
+    expect(screen.getByRole('switch', { name: /^newPermission/ })).toBeTruthy();
+    expect(screen.queryByRole('switch', { name: /^Nutrient values/ })).toBeNull();
+    expect(screen.getByLabelText('45 min')).toBeTruthy();
+    expect(screen.queryByLabelText('60 min')).toBeNull();
+    fireEvent.click(screen.getByDisplayValue('gpt-4.1-mini · ≈ $0.012 / run'));
+    expect(await screen.findByText('gpt-9 · no runs yet')).toBeTruthy();
+    expect(screen.queryByText('gpt-4.1 · no runs yet')).toBeNull();
+    const cap = screen.getByLabelText('Daily cap');
+    fireEvent.change(cap, { target: { value: '6' } });
+    fireEvent.blur(cap);
+    expect(await screen.findByText('Daily cap must be between $0 and $5.')).toBeTruthy();
+  });
   it('uses preview defaults and sends switches with the current revision', async () => {
     const res = mount();
     const automatic = screen.getByLabelText('Automatic cleanup');

@@ -15,6 +15,7 @@ import { AgentInteractions } from '#apps/agents/framework/AgentInteractions.mjs'
 import { cleanupDates, entryKey } from '#domains/nutrition/services/cleanupPolicy.mjs';
 import { sha256Text } from '#system/utils/sha256.mjs';
 import { JsonlAuditJournalStore } from '#adapters/persistence/yaml/JsonlAuditJournalStore.mjs';
+import { AUDITOR_MODELS, TRIGGER_KINDS, PERMISSION_KINDS, MIN_GAP_CHOICES, MAX_DAILY_CAP_USD } from '#domains/nutrition/services/auditorPolicy.mjs';
 import { AgentTranscriptFileStore } from '#adapters/agents/AgentTranscriptFileStore.mjs';
 
 const roots = [];
@@ -186,6 +187,15 @@ describe('durable questions and worker', () => {
     expect(cleanup.status('alice').runs[0].status).toBe('completed');
     expect((await f.items.findByUuid('alice', 'fish000001')).version).toBe(2);
     expect((await f.items.listCleanupAudit('alice')).total).toBe(1);
+  });
+  it('status carries the settings choices from the policy, as copies', async () => {
+    const f = await fixture();
+    const cleanup = new NutritionCleanup({ ...f, runs: { register: vi.fn(), start: vi.fn() } });
+    const { options } = cleanup.status('alice');
+    expect(options).toEqual({ models: AUDITOR_MODELS, triggers: TRIGGER_KINDS, permissions: PERMISSION_KINDS,
+      minGapMinutes: MIN_GAP_CHOICES, maxDailyCapUsd: MAX_DAILY_CAP_USD });
+    options.models.push('x');
+    expect(cleanup.status('alice').options.models).toEqual(AUDITOR_MODELS);
   });
   it('gate mode skips the LLM audit on a clean triage verdict; shadow mode records it and audits anyway', async () => {
     const clean = { active: true, gating: true, assess: vi.fn(async () => ({ needsAudit: false, reason: 'clean', score: 0.05 })) };
