@@ -2,3 +2,4 @@
 
 export { IObservationStore, isObservationStore } from './IObservationStore.mjs';
 export { IArtworkQueueStore } from './IArtworkQueueStore.mjs';
+export { IAuditJournalStore } from './IAuditJournalStore.mjs';
