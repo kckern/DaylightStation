@@ -1214,3 +1214,20 @@ $health-aside-gap: 1.5rem;
 // logged food — quieter than a real entry and labelled as such (EntryRow).
 .health-row-line--reconstructed .health-row__name { color: var(--ds-text-mid); font-style: italic; }
 .health-row__estimate { color: var(--ds-text-low); font-size: 0.8em; }
+
+// Nutrition auditor (/health/auditor): run timeline rows and run detail.
+.health-auditor-run {
+  display: flex; flex-direction: column; gap: 0.25rem; width: 100%;
+  padding: 0.5rem 0.6rem; border: 1px solid var(--ds-border); border-radius: 0.5rem;
+  background: var(--ds-surface); color: var(--ds-text-high); text-align: left;
+  &__meta { color: var(--ds-text-mid); }
+  &__failed { color: var(--ds-danger); font-weight: 600; }
+  &__cost { font-variant-numeric: tabular-nums; }
+  &--skipped { background: transparent; border-style: dashed; color: var(--ds-text-low); }
+}
+.health-auditor-detail {
+  &__section { display: flex; flex-direction: column; gap: 0.4rem; }
+  &__muted { color: var(--ds-text-low); }
+  &__danger { color: var(--ds-danger); }
+  pre { max-height: 16rem; overflow: auto; background: var(--ds-surface-alt); padding: 0.4rem; border-radius: 0.35rem; font-size: 0.75rem; }
+}
