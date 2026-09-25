@@ -179,6 +179,13 @@ function blockerChainIsReachable(start, entryByUnit) {
 }
 
 const timingScope = (entry) => entry?.courseId ? `course:${entry.courseId}` : `unit:${entry?.unitId ?? ''}`;
+/** True when the schedule's own `except` spans (not its weekdays) rule the day out; `also` still wins. */
+const programExceptedOn = (day, schedule) => {
+  if (!schedule || typeof schedule !== 'object' || schedule.except == null) return false;
+  const { daysOfWeek: _weekdays, ...dated } = schedule;
+  return !scheduleVerdict(day, dated).schoolDay;
+};
+
 const byEntryPriority = (left, right) => (left.timingPriority ?? 3) - (right.timingPriority ?? 3)
   || (left.timingRank ?? 0) - (right.timingRank ?? 0);
 const focusBudget = (entry) => entry?.timingState === 'urgent'
@@ -258,7 +265,23 @@ export function planDailyAgenda({
   });
 
   const sections = order.filter((subject) => bySubject.has(subject)).map((subject, subjectPosition) => {
-    const list = bySubject.get(subject);
+    // A program enrollment whose own `except` span covers today does not exist
+    // today: it is neither offered, nor owed, nor able to fault the section.
+    // That span is how an enrollment is dated — a program retired mid-term
+    // keeps its entry (and every earlier day's credit) with `except: {from:
+    // <switchover>, to: 2099-12-31}`, and its successor is excepted up to the
+    // switchover. Reading the span only for the "no school today" excuse let a
+    // retired sentence ladder keep winning the Language slot and keep being
+    // owed, so the card ladder that replaced it never printed (2026-09-24).
+    //
+    // Only programs, and only `except`: a weekday a program does not meet is
+    // still a day it may be offered, and curriculum dates belong to the
+    // planner's timing. When EVERY entry is excepted (a vacation written into
+    // each enrollment) the section keeps them all, so the ladder below still
+    // runs and the `noSchoolToday` override excuses the day as before.
+    const all = bySubject.get(subject);
+    const live = all.filter((e) => !(e.program && programExceptedOn(today, e.schedule)));
+    const list = live.length ? live : all;
     const programs = list.filter((e) => e.program);
     const statuses = programs
       .map((entry) => programStatusFor(programStatuses, entry))
