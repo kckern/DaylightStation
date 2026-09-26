@@ -86,6 +86,9 @@ config.app-local.yml
 !scripts/audit-ui-tokens.mjs
 !scripts/audit-ui-tokens.baseline.json
 !scripts/audit-ui-tokens.test.mjs
+!scripts/audit-css-ownership.mjs
+!scripts/audit-css-ownership.baseline.json
+!scripts/audit-css-ownership.test.mjs
 !scripts/livingroom-reading-idle.sh
 *.log
 .github/copilot-instructions.md

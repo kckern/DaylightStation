@@ -241,6 +241,20 @@ for what that looks like end to end.
   standalone; each is exercised transitively through whichever entrypoint
   pulls it in via `@use`/`@import`, matching how Vite's own CSS pipeline sees
   them.
+- **A component imports every stylesheet whose classes or tokens it uses.**
+  Routes are lazy chunks (`main.jsx`), so a page gets only the CSS its own
+  module graph imports; a class that lives only in an app sheet
+  (`frontend/src/Apps/<Name>App.scss`) is unstyled wherever that app is not
+  loaded. Shared tokens live in a shared module every consumer imports (the
+  piano's are `modules/Piano/pianoTokens.scss`); global utilities such as
+  `.tabular-nums` live in `frontend/src/styles/utilities.scss`, loaded by
+  `main.jsx`. `npm run audit:css-ownership` enforces it on commit: for each app
+  sheet it lists the classes no other stylesheet defines, finds them as
+  className tokens in `.js`/`.jsx` files outside that app's entry and own module
+  folder, and compares the count per app with
+  `scripts/audit-css-ownership.baseline.json` (same only-shrink rule). It sees
+  class names only — a component that renders another module's component (and
+  so its classes) is covered by that component importing its own sheet.
 
 ## Visual verification
 
