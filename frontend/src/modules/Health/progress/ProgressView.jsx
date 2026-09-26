@@ -4,6 +4,7 @@ import Highcharts from 'highcharts';
 import { Button, NumberInput, SegmentedControl, Stack, Text } from '@mantine/core';
 import { SectionCard, StatCard, Sheet, LoadingState, ErrorState } from '@/lib/ui';
 import { useApiResource } from '../../../lib/hooks/useApiResource.js';
+import { unavailableError } from '../healthResources.js';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import { createAppLogger } from '../../../lib/ui/createAppLogger.js';
 import { localTodayISO } from '../today/mealBuckets.js';
@@ -115,8 +116,8 @@ export function ProgressView() {
           <Button variant="light" onClick={() => { setForm(goalsRes.data?.goals || emptyGoals()); setSaveError(null); setEditingGoals(true); }}>Edit goals</Button></div>
       </SectionCard>
       {weightRes.loading ? <LoadingState label="weight history" rows={5} /> : null}
-      {weightRes.error ? <ErrorState error={weightRes.error} onRetry={weightRes.reload} label="Weight history" /> : null}
-      {!weightRes.loading && !weightRes.error ? (
+      {unavailableError(weightRes) ? <ErrorState error={weightRes.error} onRetry={weightRes.reload} label="Weight history" /> : null}
+      {!weightRes.loading && !unavailableError(weightRes) ? (
         <SectionCard title="Weight">
           {chartOptions ? <HighchartsReact highcharts={Highcharts} options={chartOptions} /> : null}
           {latest ? (
@@ -148,19 +149,19 @@ export function ProgressView() {
           component, one arithmetic, one honesty rule (a hole is hollow), rather
           than a second local copy that can drift from it. */}
       <SectionCard title="Logged intake — last 14 days · current goals">
-        {adherence.error ? <ErrorState error={adherence.error} onRetry={adherence.reload} label="Logged intake" /> : adherence.loading ? <LoadingState label="adherence" rows={2} /> : (
+        {unavailableError(adherence) ? <ErrorState error={adherence.error} onRetry={adherence.reload} label="Logged intake" /> : adherence.loading ? <LoadingState label="adherence" rows={2} /> : (
           <MonthBlock days={adherence.days} loading={adherence.loading} title={null} />
         )}
       </SectionCard>
 
       <SectionCard title="Intake vs burn — last 30 days">
-        {intakeBurn.error ? <ErrorState error={intakeBurn.error} onRetry={intakeBurn.reload} label="Intake vs burn" /> : intakeBurn.loading ? <LoadingState label="intake vs burn" rows={2} /> : (
+        {unavailableError(intakeBurn) ? <ErrorState error={intakeBurn.error} onRetry={intakeBurn.reload} label="Intake vs burn" /> : intakeBurn.loading ? <LoadingState label="intake vs burn" rows={2} /> : (
           <IntakeBurnChart days={intakeBurn.days} loading={intakeBurn.loading} title={null} />
         )}
       </SectionCard>
 
       <Sheet open={editingGoals} onClose={() => { if (!saving) { setEditingGoals(false); setForm(goalsRes.data?.goals || null); } }} title="Edit goals">
-        {goalsRes.error ? <ErrorState error={goalsRes.error} onRetry={goalsRes.reload} label="Goals" /> : !form ? <LoadingState label="goals" rows={4} /> : (
+        {unavailableError(goalsRes) ? <ErrorState error={goalsRes.error} onRetry={goalsRes.reload} label="Goals" /> : !form ? <LoadingState label="goals" rows={4} /> : (
           <Stack gap="sm">
             {saveError ? <Text size="sm" c="red">{goalSaveMessage(saveError)}</Text> : null}
             <SegmentedControl aria-label="Sex for budget calculation" value={form.sex || 'male'} onChange={(v) => setForm({ ...form, sex: v })}

@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 vi.mock('../../lib/api.mjs', () => ({ DaylightAPI: vi.fn() }));
 
 import { primeApiResource, peekApiResource, resetApiResourceCache, isApiResourceFresh } from '../../lib/hooks/useApiResource.js';
-import { refreshHealthResources, showCommittedFoodRows, healthDayPath } from './healthResources.js';
+import { refreshHealthResources, showCommittedFoodRows, healthDayPath, unavailableError } from './healthResources.js';
 
 describe('refreshHealthResources', () => {
   beforeEach(() => resetApiResourceCache());
@@ -41,5 +41,15 @@ describe('showCommittedFoodRows', () => {
     showCommittedFoodRows([{ uuid: 'y', date: '2026-09-22' }, { uuid: 'n' }]);
     expect(peekApiResource(healthDayPath('2026-09-22')).items.map(row => row.uuid)).toEqual(['y']);
     expect(peekApiResource(healthDayPath('2026-09-23')).items).toEqual([]);
+  });
+});
+
+describe('unavailableError', () => {
+  const error = new Error('HTTP 502: Bad Gateway');
+  it('is the error only when there is nothing on screen to keep', () => {
+    expect(unavailableError({ data: null, error })).toBe(error);
+    expect(unavailableError({ data: { weight: 172 }, error })).toBeNull();
+    expect(unavailableError({ data: [], error })).toBeNull();
+    expect(unavailableError({ data: null, error: null })).toBeNull();
   });
 });

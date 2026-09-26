@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import { Button, Group, NumberInput, Stack, Text, TextInput, UnstyledButton } from '@mantine/core';
 import { Sheet, ErrorState, LoadingState } from '@/lib/ui';
 import { useApiResource } from '../../../lib/hooks/useApiResource.js';
+import { unavailableError } from '../healthResources.js';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import { createAppLogger } from '../../../lib/ui/createAppLogger.js';
 import { NUTRIENT_KEYS } from '@shared-contracts/health/foodQuantity.mjs';
@@ -45,7 +46,7 @@ function Manager({ onClose, onChanged }) {
       </> : <>
         <TextInput label="Find a saved food" value={query} onChange={event => setQuery(event.target.value)} data-autofocus />
         {foods.loading ? <LoadingState label="Saved foods" /> : null}
-        {foods.error ? <ErrorState error={foods.error} onRetry={foods.reload} label="Saved foods" /> : null}
+        {unavailableError(foods) ? <ErrorState error={foods.error} onRetry={foods.reload} label="Saved foods" /> : null}
         {(foods.data?.items || []).filter(food => food.type !== 'template').map(food => <UnstyledButton key={food.id} onClick={() => setDraft(structuredClone(food))}>
           <Group wrap="nowrap" gap="xs"><FoodIcon icon={food.icon} /><Text size="sm">{food.name}</Text><Text size="xs" c="dimmed">{food.grams > 0 ? `${Math.round(food.grams)} g` : 'Weight unknown'}</Text></Group>
         </UnstyledButton>)}
