@@ -106,87 +106,78 @@ describe('EquationStrip — macros', () => {
   });
 });
 
-describe('EquationStrip — the ruler', () => {
-  const ranged = { budget: 1791, maintenance: 2291, range: { floor: 1200, top: 1791 }, declared: null };
+describe('EquationStrip — the card follows the job', () => {
+  const ranged = { budget: 1791, maintenance: 2291, range: { floor: 1200, top: 1791 }, declared: null, status: 'under' };
+  const live = { date: '2026-09-25', today: '2026-09-25' };
+  const sept25 = { ...ranged, food: 1470, exercise: 311, net: 1159, zone: 'in-range', remaining: 632 };
 
-  it('draws the band, the zone-coloured food block, the hatch and the run', () => {
-    strip({ budget: { ...ranged, food: 1390, exercise: 247, net: 1143, zone: 'in-range', remaining: 648, status: 'under' } });
-    expect(screen.getByText('Goal 1,200–1,791')).toBeTruthy();
-    expect(screen.getByTestId('budget-food').className).toMatch(/food--in-range/);
-    expect(screen.getByTestId('budget-earned')).toBeTruthy();
-    expect(screen.getByTestId('budget-run')).toBeTruthy();
-    expect(screen.getByTestId('budget-ruler').getAttribute('aria-label')).toMatch(/648 left$/);
+  it('Afford: the 2026-09-25 day reads 321 free and prices the rest', () => {
+    strip({ ...live, budget: sept25 });
+    expect(screen.getByTestId('budget-headline').textContent).toMatch(/321\s*kcal free/);
+    expect(screen.getByTestId('budget-sub').textContent).toBe('then 311 workout · 500 deficit · 1,132 to break even');
+    for (const key of ['free', 'workout', 'deficit']) expect(screen.getByTestId(`budget-tier-${key}`)).toBeTruthy();
+    expect(screen.getByTestId('budget-ruler').getAttribute('aria-label'))
+      .toBe('1,470 kcal eaten; 321 free, 311 workout, 500 deficit; break even 2,602; 321 kcal free');
   });
 
-  it('the eaten label rides above every mark, its right edge on the frontier', () => {
-    strip({ budget: { ...ranged, food: 1390, exercise: 247, net: 1143, zone: 'in-range', remaining: 648, status: 'under' } });
+  it('the terms line is only what was eaten and burned', () => {
+    strip({ ...live, budget: sept25 });
+    const terms = screen.getByTestId('budget-terms').textContent;
+    expect(terms).toContain('1,470 eaten');
+    expect(terms).toContain('311 burned');
+    expect(terms).not.toMatch(/net|deficit|surplus/);
+  });
+
+  it('the goal, ceiling and break even are marked at their values', () => {
+    const { container } = strip({ ...live, budget: sept25 });
+    expect(container.querySelector('.health-budget__goal-label').textContent).toBe('Goal 1,791 + 311');
+    expect(container.querySelector('.health-budget__ceiling-line')).toBeTruthy();
+    expect(container.querySelector('.health-budget__even-label').textContent).toBe('Break even 2,602');
+  });
+
+  it('Trust: under the floor, the free number leads and the ruler is dimmed', () => {
+    const { container } = strip({ ...live, budget: { ...ranged, food: 800, exercise: 0, net: 800, zone: 'incomplete', remaining: 991 } });
+    expect(screen.getByTestId('budget-headline').textContent).toMatch(/991\s*kcal free/);
+    expect(screen.getByTestId('budget-sub').textContent).toBe('400 under the 1,200 floor · prices assume the log is complete');
+    expect(container.querySelector('.health-budget__ruler--tentative')).toBeTruthy();
+  });
+
+  it('Contain: past the plan, the headline counts down to break even and the ceiling stays marked', () => {
+    const { container } = strip({ ...live, budget: { ...sept25, food: 2300, net: 1989, zone: 'over', remaining: 198, status: 'over' } });
+    expect(screen.getByTestId('budget-headline').textContent).toMatch(/302\s*kcal to break even/);
+    expect(screen.getByTestId('budget-sub').textContent).toBe('198 over plan');
+    expect(container.querySelector('.health-budget__ceiling-line')).toBeTruthy();
+  });
+
+  it('Judge: a past day gives a verdict and names tiers as outcomes', () => {
+    const { container } = strip({ budget: sept25 }); // strip() defaults to a past date
+    expect(screen.getByTestId('budget-headline').textContent).toBe('On plan');
+    expect(screen.getByTestId('budget-ruler').getAttribute('aria-label')).toContain('321 unused, 311 banked, 500 deficit');
+    expect(container.querySelector('.health-budget__ruler--finished')).toBeTruthy();
+  });
+
+  it('while a portion is dragged, the sub-line prices it', () => {
+    strip({ ...live, baseline: sept25, budget: { ...sept25, food: 1900, net: 1589, remaining: 202 } });
+    expect(screen.getByTestId('budget-sub').textContent).toBe('this costs 321 free + 109 workout');
+  });
+
+  it('the eaten label rides above every tier, its right edge on the frontier', () => {
+    strip({ ...live, budget: sept25 });
     const label = screen.getByTestId('budget-food-label');
-    expect(label.textContent).toBe('1,390 eaten');
-    expect(label.className).toMatch(/food-label--in-range/);
-    // Outside the food block, so the band edges and the hatch cannot stack over it.
-    expect(screen.getByTestId('budget-food').textContent).toBe('');
+    expect(label.textContent).toBe('1,470 eaten');
     const food = screen.getByTestId('budget-food');
-    const frontier = parseFloat(food.style.left) + parseFloat(food.style.width);
-    expect(parseFloat(label.style.right)).toBeCloseTo(100 - frontier, 1);
+    expect(parseFloat(label.style.right)).toBeCloseTo(100 - (parseFloat(food.style.left) + parseFloat(food.style.width)), 1);
   });
 
-  it('a short food block carries its label just past the frontier', () => {
-    strip({ budget: { ...ranged, food: 558, exercise: 311, net: 247, zone: 'incomplete', remaining: 1544, status: 'under' } });
-    const label = screen.getByTestId('budget-food-label');
-    expect(label.className).toMatch(/food-label--outside/);
-    const food = screen.getByTestId('budget-food');
-    expect(parseFloat(label.style.left)).toBeCloseTo(parseFloat(food.style.left) + parseFloat(food.style.width), 1);
-  });
-
-  it('no exercise, no hatch; a declared day has no run', () => {
-    strip({ budget: { ...ranged, food: 600, exercise: 0, net: 600, zone: 'declared', declared: 'done', remaining: 1191, status: 'under' } });
-    expect(screen.queryByTestId('budget-earned')).toBeNull();
-    expect(screen.queryByTestId('budget-run')).toBeNull();
-    expect(screen.getByTestId('budget-food').className).toMatch(/food--declared/);
-  });
-
-  it('a negative net is stated with a minus, and the deficit counts it', () => {
-    strip({ budget: { ...ranged, food: 100, exercise: 400, net: -300, zone: 'incomplete', remaining: 1100, status: 'under' } });
-    expect(screen.getByTestId('budget-terms').textContent).toMatch(/−300 net/);
-    expect(screen.getByTestId('budget-terms').textContent).toMatch(/2,591 deficit/);
+  it('no exercise: no workout tier and no ceiling mark', () => {
+    const { container } = strip({ ...live, budget: { ...ranged, food: 1470, exercise: 0, net: 1470, zone: 'in-range', remaining: 321 } });
+    expect(screen.queryByTestId('budget-tier-workout')).toBeNull();
+    expect(container.querySelector('.health-budget__ceiling-line')).toBeNull();
   });
 
   it('a budget without a range keeps the legacy bar', () => {
-    strip({ budget: { budget: 1791, maintenance: 2291, food: 1000, exercise: 0, remaining: 791, status: 'under' } });
+    strip({ ...live, budget: { budget: 1791, maintenance: 2291, food: 1000, exercise: 0, remaining: 791, status: 'under' } });
     expect(screen.queryByTestId('budget-ruler')).toBeNull();
-  });
-
-  it('labels sit at their values: +N on the hatch, break even at maintenance + exercise, no zero line', () => {
-    const { container } = strip({ budget: { ...ranged, food: 558, exercise: 311, net: 247, zone: 'incomplete', remaining: 1544, status: 'under' } });
-    expect(screen.getByTestId('budget-earned').textContent).toBe('+311');
-    expect(container.querySelector('.health-budget__even-label').textContent).toBe('Break even 2,602');
-    expect(screen.getByText('Goal 1,200–1,791')).toBeTruthy();
-    expect(container.querySelector('.health-budget__zero')).toBeNull();
-    expect(screen.getByTestId('budget-ruler').getAttribute('aria-label')).toMatch(/^558 kcal eaten; goal 1,200–1,791, plus 311 burned; break even 2,602; 1,544 left$/);
-  });
-
-  it('floor = top with no exercise draws one goal line, not a band', () => {
-    const { container } = strip({ budget: { ...ranged, range: { floor: 1791, top: 1791 }, food: 900, exercise: 0, net: 900, zone: 'incomplete', remaining: 891, status: 'under' } });
-    expect(container.querySelector('.health-budget__goal-line')).toBeTruthy();
-    expect(container.querySelector('.health-budget__band')).toBeNull();
-  });
-});
-
-describe('EquationStrip — the headline names its segment', () => {
-  const ranged = { budget: 1791, maintenance: 2291, range: { floor: 1200, top: 1791 }, exercise: 0, declared: null };
-
-  it('an under-logged day still reads what is left to the ceiling', () => {
-    strip({ budget: { ...ranged, food: 700, net: 700, zone: 'incomplete', remaining: 1091, status: 'under' } });
-    expect(screen.getByTestId('budget-headline').textContent).toMatch(/1,091\s*kcal left/);
-  });
-
-  it('a declared day still reads the number to the ceiling (the pill carries the status)', () => {
-    strip({ budget: { ...ranged, food: 600, net: 600, zone: 'declared', declared: 'fasting', remaining: 1191, status: 'under' } });
-    expect(screen.getByTestId('budget-headline').textContent).toMatch(/1,191\s*kcal left/);
-  });
-
-  it('past break-even says so', () => {
-    strip({ budget: { ...ranged, food: 2400, net: 2400, zone: 'past-even', remaining: 109, status: 'over' } });
-    expect(screen.getByTestId('budget-headline').textContent).toMatch(/109\s*kcal past break even/);
+    expect(screen.queryByTestId('budget-sub')).toBeNull();
   });
 });

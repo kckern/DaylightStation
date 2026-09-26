@@ -443,7 +443,7 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
 
   return (
     <PortionContext.Provider value={portionControl}><div className="health-today">
-      <EquationStrip budget={preview.budget} budgetError={day.budgetError} goals={preview.budget?.goals}
+      <EquationStrip budget={preview.budget} baseline={day.budget} budgetError={day.budgetError} goals={preview.budget?.goals}
         macroCoverage={nutrientSummary(preview.items)} date={date} today={todayISO()}
         onDateChange={setDate} onSetupGoals={onSetupGoals}
         dayClose={!coldLoading ? <DayClosePill date={date} dayStatus={day.dayStatus} items={day.items} onChanged={day.reload} /> : null} />

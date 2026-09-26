@@ -24,6 +24,10 @@
   &__head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 0.15rem 1rem; }
   &__headline { font-size: 0.9rem; color: var(--ds-text-mid); white-space: nowrap;
     strong { font-size: 1.6rem; font-weight: 600; color: var(--ds-success); font-variant-numeric: tabular-nums; margin-right: 0.15rem; } }
+  &__lead { display: flex; flex-direction: column; min-width: 0; }
+  &__sub { font-size: 0.78rem; line-height: 1.2; color: var(--ds-text-mid); font-variant-numeric: tabular-nums; }
+  // A verdict has no number to colour; the text itself carries the zone.
+  &__headline--job-judge { font-size: 1.05rem; font-weight: 600; color: var(--ds-text-high); }
   &__terms { display: flex; flex-wrap: wrap; gap: 0 0.4rem; font-size: 0.78rem; color: var(--ds-text-mid); font-variant-numeric: tabular-nums; }
   &__sep { color: var(--ds-text-low); }
   &__exercise-term { color: var(--ds-warning); }
@@ -57,11 +61,13 @@
 }
 .health-equation--over .health-budget__headline strong { color: var(--ds-danger); }
 
-// The budget as a labelled ruler (EquationStrip.RulerScale, geometry in
-// today/budgetGeometry.js). Zone colours: incomplete = info (still working
-// toward the floor), in range / declared = success, over the top = warning,
-// past break-even = danger. Position against the band carries the meaning;
-// colour only reinforces it.
+// The budget as a labelled ruler of food eaten (EquationStrip.RulerScale,
+// geometry in today/budgetGeometry.js): the food block, then what is left as
+// price tiers (free, workout, deficit), with the goal mark at the top, a dashed
+// ceiling mark at top + exercise, and break even below. Zone colours on the
+// food block: incomplete = info (still working toward the floor), in range /
+// declared = success, over the plan = warning, past break-even = danger.
+// Position against the marks carries the meaning; colour only reinforces it.
 .health-budget {
   --health-zone-incomplete: var(--ds-info);
   --health-zone-ok: var(--ds-success);
@@ -72,37 +78,49 @@
   &__headline--in-range strong, &__headline--declared strong { color: var(--health-zone-ok); }
   &__headline--over strong { color: var(--health-zone-over); }
   &__headline--past-even strong { color: var(--health-zone-past); }
+  &__headline--job-judge.health-budget__headline--over { color: var(--health-zone-over); }
+  &__headline--job-judge.health-budget__headline--past-even { color: var(--health-zone-past); }
+  &__headline--job-judge.health-budget__headline--incomplete { color: var(--health-zone-incomplete); }
 
   &__ruler { position: relative; min-width: 0; }
   &__rail { position: relative; height: 0.95rem; }
-  &__band-label, &__even-label, &__tick-label {
+  &__goal-label, &__even-label, &__tick-label {
     position: absolute; white-space: nowrap; line-height: 1;
     font-size: 0.64rem; letter-spacing: 0.03em; color: var(--ds-text-mid); font-variant-numeric: tabular-nums;
   }
-  &__band-label { bottom: 3px; text-transform: uppercase; }
+  &__goal-label { bottom: 3px; text-transform: uppercase; transform: translateX(-50%); }
+  &__goal-label.health-budget__label--end { transform: translateX(-100%); }
   &__even-label { top: 1px; text-transform: uppercase; transform: translateX(-50%);
     b { font-weight: 600; color: var(--ds-text-high); } }
   &__label--end { transform: translateX(-100%); }
   &__even-label.health-budget__label--end { transform: translateX(-100%); }
 
   &__track--ruler { height: 18px; overflow: hidden; }
-  &__band, &__band-edges, &__earned, &__food, &__run, &__even, &__goal-line { position: absolute; top: 0; bottom: 0; }
-  // The goal range: a quiet wash behind everything, and its edges above the food
-  // so the band still reads where the frontier has passed through it.
-  &__band { background: color-mix(in srgb, var(--ds-success) 14%, transparent); }
-  &__band-edges { border-left: 2px solid var(--ds-text-high); border-right: 2px solid var(--ds-text-high); z-index: 3; opacity: 0.8; }
+  &__tier, &__food, &__even, &__goal-line, &__ceiling-line { position: absolute; top: 0; bottom: 0; }
   &__goal-line { width: 2px; margin-left: -1px; background: var(--ds-text-high); z-index: 3; }
-  // Exercise credit: hatched, not a second fill colour — it is allowance, not
-  // intake. It extends the goal band from the top to the ceiling (top +
-  // exercise), drawn above the food so eating into the credit shows through
-  // the hatch. The label is centred: the 18px track clips anything that is not.
-  &__earned {
-    z-index: 3; display: flex; align-items: center; justify-content: center; overflow: hidden;
-    outline: 1px solid color-mix(in srgb, var(--ds-success) 60%, transparent); outline-offset: -1px;
-    background: repeating-linear-gradient(135deg,
-      color-mix(in srgb, var(--ds-background) 55%, transparent) 0 3px,
-      color-mix(in srgb, var(--ds-success) 35%, transparent) 3px 6px);
+  // The ceiling (top + exercise): where "over plan" counts from. Dashed, so it
+  // reads as the goal moved by the workout rather than a second goal.
+  &__ceiling-line { width: 0; margin-left: -1px; border-left: 2px dashed var(--ds-text-high); z-index: 3; opacity: 0.8; }
+  // What is left, priced. Free is a success wash; the workout keeps the old
+  // credit hatch (allowance, not intake); the live deficit is a warning wash —
+  // eating into it costs the day's progress. Labels are centred: the 18px
+  // track clips anything that is not.
+  &__tier {
+    z-index: 1; display: flex; align-items: center; justify-content: center; overflow: hidden;
+    &--free { background: color-mix(in srgb, var(--ds-success) 18%, transparent); }
+    &--workout {
+      outline: 1px solid color-mix(in srgb, var(--ds-success) 60%, transparent); outline-offset: -1px;
+      background: repeating-linear-gradient(135deg,
+        color-mix(in srgb, var(--ds-background) 55%, transparent) 0 3px,
+        color-mix(in srgb, var(--ds-success) 35%, transparent) 3px 6px);
+    }
+    &--deficit { background: color-mix(in srgb, var(--ds-warning) 14%, transparent); }
   }
+  // An unverified log: the prices are only right if the log is complete.
+  &__ruler--tentative &__tier { opacity: 0.45; }
+  // A finished day's unspent deficit is the win, green like the legacy
+  // "N deficit" term (&__deficit) — not a warning.
+  &__ruler--finished &__tier--deficit { background: color-mix(in srgb, var(--ds-success) 14%, transparent); }
   &__food {
     z-index: 2;
     &--incomplete { background: var(--health-zone-incomplete); }
@@ -115,7 +133,7 @@
     font-variant-numeric: tabular-nums;
   }
   // "N eaten" ends at the frontier, on the top layer: a solid pill in the zone
-  // colour, so a band edge, the hatch or break-even never cuts through the text.
+  // colour, so a plan mark or break-even never cuts through the text.
   &__food-label {
     position: absolute; top: 2px; bottom: 2px; z-index: 5; display: flex; align-items: center;
     border-radius: 3px; color: var(--ds-background);
@@ -123,19 +141,11 @@
     &--in-range, &--declared { background: var(--health-zone-ok); }
     &--over { background: var(--health-zone-over); }
     &--past-even { background: var(--health-zone-past); }
-    // Past the frontier of a block too short to hold it: on the track, over the run.
+    // Past the frontier of a block too short to hold it: on the track, over the tiers.
     &--outside { margin-left: 3px; background: var(--ds-surface-alt); color: var(--ds-text-high); }
   }
-  // "+N" sits on a track-coloured pill: the dotted run passes under it.
-  &__earned &__seg-label {
-    color: var(--ds-text-high); background: var(--ds-surface-alt); border-radius: 3px; padding: 2px 0.3rem;
-  }
-  // What the headline measures: a dotted run from the frontier to its mark.
-  // Above the food, below the hatch and band edges, so their labels stay clean.
-  &__run { z-index: 2; top: 50%; bottom: auto; height: 0; border-top: 2px dotted var(--ds-text-high); opacity: 0.85; }
-  // Over / past break-even: the run lies INSIDE the food block's end, where the
-  // "eaten" label is — so it runs along the bottom edge instead of through it.
-  &__run--over, &__run--past-even { top: auto; bottom: 2px; }
+  // A tier's price sits on a track-coloured pill, readable over the hatch.
+  &__tier &__seg-label { color: var(--ds-text-high); background: var(--ds-surface-alt); border-radius: 3px; padding: 2px 0.3rem; }
   &__even { width: 2px; margin-left: -1px; background: var(--ds-text-mid); z-index: 3; }
   &__tick {
     position: absolute; top: 0; width: 1px; height: 4px; background: var(--ds-text-low);
@@ -158,6 +168,17 @@
 
 @media (max-width: 760px) {
   .health-equation { grid-template-columns: 1fr; }
+}
+// Wide enough: the headline on the left, the sub-line and the eaten · burned
+// terms stacked beside it, so the head stays one headline tall (the summary's
+// 140px budget at 800px, EquationStrip.geometry.test.js). Headline, sub and
+// terms do not fit on one row at that width.
+@media (min-width: 761px) {
+  .health-budget__head { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 0 0.75rem; }
+  .health-budget__lead { display: contents; }
+  .health-budget__headline { grid-row: span 2; }
+  .health-budget__sub, .health-budget__terms { grid-column: 2; }
+  .health-budget__head > .health-dayclose { grid-column: 3; grid-row: 1 / span 2; }
 }
 // Below the one-line width, macros share a row under the bar, label over value.
 @container (max-width: 1050px) {
