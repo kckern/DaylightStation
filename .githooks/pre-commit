@@ -15,6 +15,7 @@ node scripts/audit-direct-fs-imports.mjs
 npm run audit:layers
 node scripts/audit-layer-imports.mjs --staged
 npm run audit:ui
+npm run audit:css-ownership
 npm run audit:links
 node scripts/audit-esm-links.mjs --staged
 npm run check:parse
