@@ -95,7 +95,7 @@ const INTRO = {
   course: { id: 'program:card-ladder:korean-vocab', title: 'Test Class' },
   unit: { id: 'd', title: 'Week 1: Classroom' },
   poster: '/api/v1/school/self-service/programs/card-ladder/korean-vocab/poster.jpg',
-  today: { newCount: 4, reviewCount: 3, estimatedMinutes: 10, doneToday: false, label: '4 new words · 3 to review', line: '4 new words · 3 to review · about 10 minutes' },
+  today: { newCount: 4, reviewCount: 3, estimatedMinutes: 10, doneToday: false, label: 'up to 4 new words · 3 to review', line: 'up to 4 new words · 3 to review · about 10 minutes' },
   progress: { learned: 1, recognised: 3, total: 19 },
 };
 const introApi = (data = INTRO, ok = true) => ({ ...fakeApi(), intro: vi.fn(async () => ({ ok, status: ok ? 200 : 500, data: ok ? data : null })) });
@@ -109,7 +109,7 @@ describe('CardLadderProgram — the start screen is a launch card', () => {
     expect(api.intro).toHaveBeenCalledWith({ userId: 'test-learner', deckId: 'd', scenario: null });
     expect(screen.getByRole('img', { name: 'Test Class poster' })).toHaveAttribute('src', INTRO.poster);
     expect(screen.getByText('Week 1: Classroom')).toBeInTheDocument();
-    expect(screen.getByText('4 new words · 3 to review · about 10 minutes')).toBeInTheDocument();
+    expect(screen.getByText('up to 4 new words · 3 to review · about 10 minutes')).toBeInTheDocument();
     // Both rungs, not "0 learned" for weeks: recognised words show from the first quiz.
     const bar = screen.getByRole('progressbar', { name: '3 recognised · 1 mastered of 19' });
     expect(bar).toHaveAttribute('aria-valuenow', '1');

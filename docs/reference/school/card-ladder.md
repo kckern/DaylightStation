@@ -705,7 +705,7 @@ accident.
 ### When new words are held back (2026-09-26)
 
 `newWordsHeld(ctx)` (`engine.mjs`): the day's at-open allowance could make a
-round of new words (`atOpen.newAllowance ≥ 2`), no round today — guided or
+round of at least 2 new words (`min(atOpen.newAllowance, fresh pool) ≥ 2`, the start card's own rule), no round today — guided or
 Learn more — has met any, and the deck still has new words. It rides on
 `progress.newWordsHeld` and on the summary item. The engine's order is
 unchanged — a catch-up round still comes first, because a miss means the

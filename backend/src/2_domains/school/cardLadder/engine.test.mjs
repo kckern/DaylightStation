@@ -610,6 +610,16 @@ describe('engine — practice', () => {
       const base = doneCtx();
       expect(summaryOf({ atOpen: { ...base.dayFile.atOpen, newAllowance: 3 } }, { status: { ...base.status, words: learned } }).newWordsHeld).toBe(false);
     });
+    it('is false when only one new word is left: no round of one, and the agenda promised none', () => {
+      const base = doneCtx();
+      const learned = { ...emptyWordV3(), state: 'mastered', stage: 2, introducedDay: '2026-09-01', dueDay: '2026-10-30' };
+      const oneLeft = { gawi: learned, pul: learned }; // chaek still new
+      expect(summaryOf({ atOpen: { ...base.dayFile.atOpen, newAllowance: 3 } }, { status: { ...base.status, words: oneLeft } }).newWordsHeld).toBe(false);
+    });
+    it('is false when the allowance itself is below two, however many words are fresh', () => {
+      const base = doneCtx();
+      expect(newWordsHeld({ ...base, dayFile: { ...base.dayFile, atOpen: { ...base.dayFile.atOpen, newAllowance: 1 } } })).toBe(false);
+    });
     it('is exported for the sitting progress', () => {
       const base = doneCtx();
       expect(newWordsHeld({ ...base, dayFile: { ...base.dayFile, atOpen: { ...base.dayFile.atOpen, newAllowance: 3 } } })).toBe(true);
