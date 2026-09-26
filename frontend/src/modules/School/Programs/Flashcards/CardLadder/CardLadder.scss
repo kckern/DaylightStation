@@ -147,6 +147,26 @@
 .wl-typed--keypad .wl-cue__words { flex-direction: row; }
 
 
+// CHOICE TEXT FILLS ITS BUTTON (2026-09-26). FitText sizes to its PARENT, and
+// inside a TouchButton that parent is `.ds-touch__label`, an inline-flex item
+// that shrink-wraps its text. The fitter was measuring a box the text itself
+// had sized: "간식" reported 40×25 px and every choice sat at the 22 px floor,
+// logged as `layout.clamped`. Stretch the label over the button so the fit box
+// is the button's real space, and pin the height so a fitted size never makes
+// one button taller than its neighbours. Scoped here, not in TouchButton.scss:
+// other buttons' labels are meant to hug their text.
+.wl-choices .ds-touch--choice,
+.wl-match__column .ds-touch--choice {
+  align-items: stretch;
+  > .ds-touch__label {
+    flex: 1 1 0; min-width: 0;
+    display: flex; align-items: center; justify-content: center;
+  }
+  > .ds-touch__key { align-self: center; }
+}
+.wl-choices .ds-touch--choice { height: 88px; }
+.wl-match__column .ds-touch--choice { height: 72px; }
+
 .wl-choices {
   display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; width: min(900px, 100%);
   .is-answer { outline: 4px solid var(--ds-success); outline-offset: 2px; }

@@ -36,6 +36,21 @@ for (const scenario of ['fresh', 'due', 'round-end']) {
       const overflow = await page.evaluate(() => [...document.querySelectorAll('.wl-fit')]
         .filter((el) => el.scrollWidth > el.parentElement.getBoundingClientRect().width + 1).map((el) => el.textContent));
       expect(overflow, 'text overflowing its region').toEqual([]);
+      // Choice text FILLS its button (2026-09-26): the fit box used to be the
+      // label hugging its own text, so every choice sat at the 22 px floor.
+      // A choice at the floor now means the fit box is wrong again. And the
+      // buttons of one group stay one height, whatever size the text fits.
+      const choices = await page.evaluate(() => [...document.querySelectorAll('.wl-choices, .wl-match__column')].map((group) => {
+        const buttons = [...group.querySelectorAll('.ds-touch--choice')];
+        return {
+          heights: [...new Set(buttons.map((b) => Math.round(b.getBoundingClientRect().height)))],
+          atFloor: buttons.map((b) => b.querySelector('.wl-fit')).filter((f) => f && parseFloat(f.style.fontSize) <= 22).map((f) => f.textContent),
+        };
+      }));
+      for (const group of choices) {
+        expect(group.atFloor, 'choice text stuck at the 22px floor').toEqual([]);
+        expect(group.heights.length, `choice buttons of one group share a height (${group.heights})`).toBeLessThanOrEqual(1);
+      }
       if (await page.getByRole('heading', { name: 'All done for today' }).isVisible()) break;
       const answer = page.getByLabel('Your answer');
       if (await answer.isVisible()) { await answer.fill('가'); await answer.press('Enter'); await page.keyboard.press(' '); continue; }

@@ -901,6 +901,16 @@ break inside a word, per-role min/max — and expose it as an `.wl-fit` element
 so a Playwright spec can assert none of them overflow their box (see
 `tests/live/flow/school/card-ladder-stage.runtime.test.mjs`).
 
+A FitText's region is its **parent element**. Inside a `TouchButton` that is
+`.ds-touch__label`, which by default shrink-wraps its text, so a choice
+measured a box its own text had sized and always landed on the role's floor
+(22 px, logged `layout.clamped` with a box like 40×25). `CardLadder.scss`
+stretches the label over the whole button for the choice grid and the match
+columns, and pins those buttons' heights (88 px choices, 72 px match rows),
+so the text grows into the button and a fitted size never makes one button
+taller than its neighbours. Choices in one question still share the
+smallest fitted size (`FitGroup`), so a longer word never hints at the answer.
+
 ### The start card (launch card)
 
 The sitting does not open on mount (spec §6). The program first shows the
