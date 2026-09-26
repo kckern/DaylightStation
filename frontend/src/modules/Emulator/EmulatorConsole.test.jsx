@@ -598,3 +598,31 @@ describe('autosave', () => {
     vi.useRealTimers();
   });
 });
+
+describe('EmulatorConsole picture shader vs canvas grid', () => {
+  it('draws our canvas grid when the manifest asks for dotmatrix and no core shader', () => {
+    const { container } = renderConsole({ props: { game: { ...baseGame, shader: 'dotmatrix' } } });
+    const root = container.querySelector('.emulator-console');
+    expect(root.dataset.shader).toBe('dotmatrix');
+    expect(root.dataset.pictureShader).toBe('none');
+    expect(container.querySelector('.emulator-shader-grid')).not.toBeNull();
+    expect(container.querySelector('.emulator-shader.shader-dotmatrix')).not.toBeNull();
+  });
+
+  it('stands the canvas grid and CSS wash down when a core shader (ejs_shader) is declared', () => {
+    // The manifest keeps `shader: dotmatrix` beside ejs_shader on purpose — a
+    // frontend that does not know the preset falls back to the grid. This one
+    // does know it, so the grid must not double up with Harlequin's.
+    const game = {
+      ...baseGame,
+      shader: 'dotmatrix',
+      presentation: { ...baseGame.presentation, ejs_shader: 'gameboy-harlequin.glslp' },
+    };
+    const { container } = renderConsole({ props: { game } });
+    const root = container.querySelector('.emulator-console');
+    expect(root.dataset.shader).toBe('none');
+    expect(root.dataset.pictureShader).toBe('gameboy-harlequin.glslp');
+    expect(container.querySelector('.emulator-shader-grid')).toBeNull();
+    expect(container.querySelector('.emulator-shader.shader-none')).not.toBeNull();
+  });
+});

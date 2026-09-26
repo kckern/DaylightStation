@@ -68,9 +68,13 @@ picture uses it.
 
 The default, `integer`, takes the largest whole multiple of the framebuffer
 that fits and centres it. Any console drawing a pixel grid needs this, or the
-grid moirés. It costs up to a full step: the Game Boy Color's aperture happens
-to be exactly 6x160x144 and wastes nothing, the Advance's 1260x840 takes 5x =
-1200x800 and gives up 5%.
+grid moirés — that includes the Game Boys' Harlequin core shader, whose 2013
+GLSL computes its dot pitch from `floor(viewport / framebuffer)`. It costs up to a full step: the Game Boy Color's aperture happens
+to be exactly 6x160x144 and wastes nothing. When the art's hole falls just
+short of the next step, enlarge the hole rather than switching to `fill`: the
+Advance's current bezel shipped a 916x580 hole that only fit 3x (720x480), so
+its alpha was cut out to exactly 960x640 in the dark glass, same centre, and
+the picture now locks to 4x.
 
 `fill` takes the whole cutout. Use it where there is no grid to align to *and*
 the console's pixels were not square. The Genesis is the case: it drew 320x224

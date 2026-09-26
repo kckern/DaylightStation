@@ -35,6 +35,9 @@ export function createEmulatorEngine({ load = loadEmulatorJS, win = window, logg
   let instance = null;
   let ready = false;
   let bootPromise = null;
+  // Our own picture-shader presets, as handed to boot(). Kept so applyShader
+  // can find a preset's binary textures — see the note there.
+  let shaderTable = {};
 
   /**
    * Boot the emulator. Idempotent: a second call returns the same readiness
@@ -71,11 +74,12 @@ export function createEmulatorEngine({ load = loadEmulatorJS, win = window, logg
     }
   }
 
-  async function boot({ mount, romUrl, pathtodata, core = 'gb', controls, volume } = {}) {
+  async function boot({ mount, romUrl, pathtodata, core = 'gb', controls, volume, shaders } = {}) {
     if (bootPromise) return bootPromise;
 
-    log().info('boot.start', { core });
-    bootPromise = load({ player: mount, core, romUrl, pathtodata, controls, volume, win })
+    shaderTable = shaders || {};
+    log().info('boot.start', { core, customShaders: Object.keys(shaderTable) });
+    bootPromise = load({ player: mount, core, romUrl, pathtodata, controls, volume, shaders, win })
       .then((emu) => {
         instance = emu;
         ready = true;
@@ -128,10 +132,17 @@ export function createEmulatorEngine({ load = loadEmulatorJS, win = window, logg
    * does with the result. (Measured 2026-09-12 — a readback of the live canvas
    * returns a single colour, `0,0,0,0`, while the picture is plainly on screen.)
    *
-   * The shader name is a key into `EJS_SHADERS`, e.g. 'crt-geom.glslp'. The
-   * presets and their GLSL are embedded in the vendored bundle, so nothing is
-   * fetched. An unknown name makes EmulatorJS turn shading off rather than
-   * throw, which is the right failure: an unfiltered picture, never a black one.
+   * The shader name is a key into `EJS_SHADERS`, e.g. 'crt-geom.glslp', or one
+   * of our own presets registered through boot({ shaders }) — the Game Boys'
+   * Harlequin dot matrix. The built-ins are embedded in the vendored bundle;
+   * ours are bundled with the frontend. An unknown name makes EmulatorJS turn
+   * shading off rather than throw, which is the right failure: an unfiltered
+   * picture, never a black one.
+   *
+   * A preset's `binaries` (PNG textures) are written into the core's `/shader`
+   * directory here, as raw bytes, before `enableShader` runs. EmulatorJS's own
+   * resource path can't carry them: it atob()s a base64 value into a string and
+   * FS.writeFile UTF-8-encodes strings, corrupting every byte >= 0x80.
    *
    * @param {string|null} name
    * @returns {boolean} whether the call reached the instance
@@ -143,6 +154,22 @@ export function createEmulatorEngine({ load = loadEmulatorJS, win = window, logg
       return false;
     }
     const known = !!instance.config?.shaders?.[name];
+    const binaries = shaderTable[name]?.binaries;
+    if (binaries && Object.keys(binaries).length) {
+      const FS = instance.Module?.FS;
+      if (typeof FS?.writeFile === 'function') {
+        try { FS.mkdir?.('/shader'); } catch { /* already there */ }
+        for (const [file, bytes] of Object.entries(binaries)) {
+          try {
+            FS.writeFile(`/shader/${file}`, bytes);
+          } catch (err) {
+            log().warn('shader.binary-write-failed', { name, file, error: err?.message });
+          }
+        }
+      } else {
+        log().warn('shader.binaries-unwritable', { name, files: Object.keys(binaries) });
+      }
+    }
     try {
       instance.enableShader(name);
       log().info('shader.applied', { name, known });
