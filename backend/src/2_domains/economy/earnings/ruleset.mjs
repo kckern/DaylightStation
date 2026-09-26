@@ -11,7 +11,7 @@
  *   section-week    every obligated day that week served           School × Week, one subject
  *   day-met         each term-grid day `met`                       School × Day
  *   week-met        the week row `met`                             School × Week
- *   ring-threshold  per ring + each threshold crossed (award week) Fitness × Week (absolute)
+ *   ring-threshold  `rate` silver per N rings + each threshold crossed (award week) Fitness × Week (absolute)
  *   ring-contest    most rings in the roster at award-week close   Fitness × Week (relative)
  *
  * A rule that pays twice is two rules: there is no `bonus`.
@@ -42,7 +42,8 @@ export const DEFAULT_RULESET = Object.freeze({
     { id: 'reading-daily', label: 'Reading (each day done)', kind: 'section-day', match: { subject: 'english' }, reward: { silver: 1 } },
     { id: 'green-day', label: 'Green day', kind: 'day-met', reward: { silver: 1 } },
     { id: 'green-week', label: 'Green week', kind: 'week-met', reward: { silver: 5, gems: 1 } },
-    { id: 'rings', label: 'Rings', kind: 'ring-threshold', perRing: 1, thresholds: [{ at: 20, reward: { silver: 5 } }, { at: 40, reward: { silver: 10 } }] },
+    // Rings run large (hundreds a week), so the rate is a ratio.
+    { id: 'rings', label: 'Rings', kind: 'ring-threshold', rate: { rings: 100, silver: 1 }, thresholds: [{ at: 250, reward: { silver: 2 } }, { at: 500, reward: { silver: 3 } }, { at: 1000, reward: { silver: 5 } }] },
     { id: 'ring-contest', label: 'Most rings this week', kind: 'ring-contest', tie: 'all', reward: { silver: 5, gems: 1 } },
   ],
   users: {},
@@ -63,6 +64,14 @@ export function normalizeReward(reward, field = 'reward') {
   if (!reward || typeof reward !== 'object' || Array.isArray(reward)) fail(`${field} must be a number or {silver, gems}`, field);
   for (const key of Object.keys(reward)) if (!CURRENCIES.includes(key)) fail(`${field} has an unknown currency "${key}"`, field);
   return { silver: nonNegativeInt(reward.silver ?? 0, `${field}.silver`), gems: nonNegativeInt(reward.gems ?? 0, `${field}.gems`) };
+}
+
+/** `{rings: N, silver: M}` — M silver per whole N rings. */
+function normalizeRate(rate, field) {
+  if (rate == null) return { rings: 1, silver: 0 };
+  if (typeof rate !== 'object' || Array.isArray(rate)) fail(`${field} must be {rings, silver}`, field);
+  if (!Number.isInteger(rate.rings) || rate.rings <= 0) fail(`${field}.rings must be a positive whole number`, field);
+  return { rings: rate.rings, silver: nonNegativeInt(rate.silver ?? 0, `${field}.silver`) };
 }
 
 function normalizeThresholds(list, field) {
@@ -116,7 +125,7 @@ function normalizeRule(rule, i) {
   const effective = normalizeEffective(rule.effective, `${field}.effective`);
   if (effective) out.effective = effective;
   if (rule.kind === 'ring-threshold') {
-    out.perRing = rule.perRing == null ? 0 : nonNegativeInt(rule.perRing, `${field}.perRing`);
+    out.rate = normalizeRate(rule.rate, `${field}.rate`);
     out.thresholds = normalizeThresholds(rule.thresholds, `${field}.thresholds`);
   }
   if (rule.kind === 'ring-contest') {
@@ -146,7 +155,7 @@ function normalizeUsers(users, ruleIds) {
       if (!ruleIds.has(ruleId)) fail(`${field}.rules names an unknown rule "${ruleId}"`, `${field}.rules`);
       const o = {};
       if (override?.reward != null) o.reward = normalizeReward(override.reward, `${field}.rules.${ruleId}.reward`);
-      if (override?.perRing != null) o.perRing = nonNegativeInt(override.perRing, `${field}.rules.${ruleId}.perRing`);
+      if (override?.rate != null) o.rate = normalizeRate(override.rate, `${field}.rules.${ruleId}.rate`);
       if (override?.thresholds != null) o.thresholds = normalizeThresholds(override.thresholds, `${field}.rules.${ruleId}.thresholds`);
       if (override?.disabled != null) o.disabled = override.disabled === true;
       if (Object.keys(o).length) rules[ruleId] = o;
@@ -192,7 +201,7 @@ export function resolveRules(ruleset, learnerId) {
     return {
       ...rule,
       ...(o.reward ? { reward: o.reward } : {}),
-      ...(o.perRing != null ? { perRing: o.perRing } : {}),
+      ...(o.rate ? { rate: o.rate } : {}),
       ...(o.thresholds ? { thresholds: o.thresholds } : {}),
       multiplier,
       disabled: o.disabled === true,
@@ -204,7 +213,7 @@ export function resolveRules(ruleset, learnerId) {
 /**
  * Set (or clear, with `null`) one learner's override. Pure: returns a new,
  * validated ruleset; the caller stores it as the next revision.
- * @param {object} patch - `{multiplier?, rules?: {<ruleId>: {reward?, perRing?, thresholds?, disabled?}|null}}`
+ * @param {object} patch - `{multiplier?, rules?: {<ruleId>: {reward?, rate?, thresholds?, disabled?}|null}}`
  */
 export function withUserOverride(ruleset, learnerId, patch) {
   if (!learnerId || typeof learnerId !== 'string') fail('learnerId is required', 'learnerId');

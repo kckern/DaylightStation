@@ -64,7 +64,9 @@ function sectionWeek(rule, facts) {
   const missed = matched.filter((f) => f.state === 'obligated');
   const served = matched.filter((f) => f.state === 'served');
   if (!missed.length && served.length) return { status: 'earned', count: 1, amount: price(rule, 1), evidence, note: null };
-  if (facts.week?.open) return { status: 'pending', count: 0, amount: ZERO, evidence, note: 'The week is still going' };
+  if (facts.week?.open) {
+    return { status: 'pending', count: 0, amount: ZERO, evidence, note: missed.length ? `Still to do: ${missed.map((f) => f.day).join(', ')}` : 'The week is still going' };
+  }
   const note = missed.length ? `Not done: ${missed.map((f) => f.day).join(', ')}` : 'Not done this week';
   return { status: 'none', count: 0, amount: ZERO, evidence, note };
 }
@@ -102,7 +104,7 @@ function ringThreshold(rule, facts) {
   const crossed = rule.thresholds.filter((t) => rings >= t.at);
   const next = rule.thresholds.find((t) => rings < t.at);
   const amount = {
-    silver: Math.round((rings * rule.perRing + crossed.reduce((s, t) => s + t.reward.silver, 0)) * rule.multiplier),
+    silver: Math.round((Math.floor(rings / rule.rate.rings) * rule.rate.silver + crossed.reduce((s, t) => s + t.reward.silver, 0)) * rule.multiplier),
     gems: crossed.reduce((s, t) => s + t.reward.gems, 0),
   };
   const evidence = rule.thresholds.map((t) => ({ threshold: t.at, reached: rings >= t.at }));
@@ -168,7 +170,7 @@ export function evaluateEarnings({ ruleset, learnerId, facts, standings = null, 
     const ref = earningRef({ learnerId, ruleId: rule.id, period });
     const priced = {
       revision: ruleset.revision, reward: rule.reward, multiplier: rule.multiplier,
-      ...(rule.kind === 'ring-threshold' ? { perRing: rule.perRing, thresholds: rule.thresholds } : {}),
+      ...(rule.kind === 'ring-threshold' ? { rate: rule.rate, thresholds: rule.thresholds } : {}),
     };
     const base = { ruleId: rule.id, label: rule.label, kind: rule.kind, match: rule.match, overridden: rule.overridden, priced, ref };
     if (rule.disabled) {
