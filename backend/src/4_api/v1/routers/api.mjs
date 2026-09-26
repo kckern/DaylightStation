@@ -150,6 +150,7 @@ export function createApiRouter(config) {
     '/camera': 'camera',
     '/piano': 'piano',
     '/economy': 'economy',
+    '/earnings': 'earnings',  // Weekly earnings preview + earn rules (read-only) — see economy reference
     '/state-gates': 'stateGates',
     '/entitlements': 'entitlements',
     '/automotive': 'automotive',  // Vehicle record system — see _extensions/obd-relay

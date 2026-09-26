@@ -27,6 +27,13 @@ describe('EarnRulesService', () => {
     expect(rs.rules.map((r) => r.id)).toEqual(DEFAULT_RULESET.rules.map((r) => r.id));
   });
 
+  it('describe() gives the rules in force and the rule kinds', async () => {
+    const { service } = build();
+    const out = await service.describe();
+    expect(out.ruleset.revision).toBe(0);
+    expect(out.kinds).toContain('ring-contest');
+  });
+
   it('a per-learner override is stored as the next revision, stamped with who and when', async () => {
     const { service, store } = build();
     const next = await service.setUserOverride({ learnerId: 'little', patch: { multiplier: 2, rules: { 'korean-daily': { reward: 3 } } }, actorId: 'parent' });
