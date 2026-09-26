@@ -108,8 +108,15 @@ unknown name) still has the grid to fall back on.
 `engine.applyShader()` writes the preset into the core's filesystem through
 `enableShader`. The built-ins are embedded in the vendored `emulator.min.js`
 (`EJS_SHADERS`); ours are bundled with the frontend and registered at boot as
-`EJS_shaders` (`engineConfig.shaders` → `loadEmulatorJS`). Their PNG textures
-take a side road: EmulatorJS's resource path `atob()`s a base64 value into a
+`EJS_shaders` (`engineConfig.shaders` → `loadEmulatorJS`). Only the shader
+*text* is in the repo. Its PNG textures are bitmaps, so they live on the media
+mount under `media/emulation/_engine/` and the console manifest names them:
+`presentation.ejs_shader_textures` maps the file name the preset reads to a path
+under the engine route (`GET /api/v1/emulator/engine/<path>`). `EmulatorSession`
+fetches them before boot and attaches the bytes to the preset. If any texture
+fails to arrive, it logs `emulator.shader.textures-missing` (error) and drops the
+preset, so the picture runs unfiltered instead of sampling textures that are not
+there. The bytes then take a side road: EmulatorJS's resource path `atob()`s a base64 value into a
 string and `FS.writeFile` UTF-8-encodes strings, corrupting every byte ≥ 0x80,
 so the engine writes texture bytes itself as a `Uint8Array` right before
 `enableShader`. Preset parameter overrides (`parameters = "..."` in the
