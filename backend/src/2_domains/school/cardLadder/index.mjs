@@ -23,7 +23,7 @@ export { pickMeaningChoices, pickTermChoices, cueFor, channelFor } from './choic
 export { ESTIMATE_MS, carryCandidates, extraNewWords, newAllowance, orderNewWords, planNextRound } from './rounds.mjs';
 export { introPreview, introPlanLabel, deckProgress } from './intro.mjs';
 export {
-  openDay, currentItem, respond, addActiveTime, startPractice, learnMore, wordTransitions, excludeWordFromDay, roundHasMatch,
+  openDay, currentItem, respond, addActiveTime, startPractice, learnMore, wordTransitions, excludeWordFromDay, roundHasMatch, newWordsHeld,
 } from './engine.mjs';
 export { servedWhy, dayChanges, prereqChanges, signOffGaps } from './observe.mjs';
 export { foldPaperAttempts } from './foldPaperAttempts.mjs';

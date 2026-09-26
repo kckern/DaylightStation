@@ -31,6 +31,9 @@ export const STEP_HINTS = Object.freeze({
   practice: 'Free practice — pick anything.',
 });
 
+/** The Sort hint for a catch-up round the day's new words wait behind (`progress.newWordsHeld`). */
+export const CARRY_FIRST_HINT = 'These words first — let’s lock them in. Flip, then sort.';
+
 const ROUND_STEPS = ['learn', 'sort', 'quiz', 'match'];
 // The drill offer comes after the quiz and the Match: no round step is lit,
 // and every one of them reads done (the trail never steps backwards).

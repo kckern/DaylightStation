@@ -29,7 +29,7 @@ import { addDays } from '#domains/school/termVerdict.mjs';
 import { curriculumPosterRef } from '#apps/common/resources/publicResourceRefs.mjs';
 import {
   addActiveTime, cueFor, currentItem, deckDirOf, deckProgress, emptyWordV3, introPlanLabel, introPreview, excludeWordFromDay, foldPaperAttempts, ladderLevel, markMastered, openDay, orderNewWords,
-  quizDocumentIdFor, respond, roundHasMatch, startPractice, learnMore, typedAnswers, withTunedValues, wordAssetIds, wordTransitions,
+  quizDocumentIdFor, respond, roundHasMatch, newWordsHeld, startPractice, learnMore, typedAnswers, withTunedValues, wordAssetIds, wordTransitions,
   servedWhy, dayChanges, prereqChanges, scriptFor, ruleForTarget,
 } from '#domains/school/cardLadder/index.mjs';
 
@@ -290,6 +290,9 @@ export class CardLadderSittingService {
       // Whether any round today held its guided Match (the trail keeps the step once past it).
       matchToday: dayFile.rounds.some((r) => Boolean(r.match)),
       learnToday: this.#learnToday({ dayFile, round, status, day, pool, settings }),
+      // New words planned at open, none met yet: a catch-up round says why
+      // it comes first, and the summary says "new words next time".
+      newWordsHeld: newWordsHeld({ dayFile, status, pool: pool ?? [], settings }),
       doneToday: Boolean(dayFile.doneAt),
     };
   }
