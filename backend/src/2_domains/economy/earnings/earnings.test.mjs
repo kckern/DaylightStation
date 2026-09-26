@@ -171,6 +171,17 @@ describe('evaluateEarnings — school kinds', () => {
     expect(line(out, 'math-units')).toMatchObject({ status: 'earned', count: 2, amount: { silver: 2, gems: 0 } });
   });
 
+  it('when School evidence is unavailable, every school line is indeterminate — never "not done"', () => {
+    const rs = ruleset([
+      { id: 'korean', kind: 'section-day', match: { subject: 'language' }, reward: 2 },
+      { id: 'green-day', kind: 'day-met', reward: 1 },
+      { id: 'units', kind: 'unit', reward: 1 },
+    ]);
+    const out = evaluate(rs, {}, { unavailable: { school: true } });
+    expect(out.lines.map((l) => [l.ruleId, l.status])).toEqual([['korean', 'indeterminate'], ['green-day', 'indeterminate'], ['units', 'indeterminate']]);
+    expect(line(out, 'korean').note).toMatch(/School/);
+  });
+
   it('effective dates scope a rule; outside them it is not listed', () => {
     const rs = ruleset([{ id: 'green-day', kind: 'day-met', reward: 1, effective: { from: '2026-09-23' } }]);
     const out = evaluate(rs, { days: days([['2026-09-21', 'met'], ['2026-09-23', 'met']]) });

@@ -73,6 +73,21 @@ describe('TermVerdictService.read', () => {
     expect(out.days.find((d) => d.studyDay === '2026-09-04').state).toBe('partial');
   });
 
+  it('detail:true keeps each day\'s per-subject sections and weekly rows; the default read drops them', async () => {
+    const { service } = build({ table: { [TODAY]: { state: 'complete', sections: [
+      { subject: 'language', state: 'served', reason: null },
+      { subject: 'scripture', state: 'excused', reason: 'weekly_satisfied', weekly: [{ unitId: 'cfm', subject: 'scripture', state: 'satisfied' }] },
+    ] } } });
+    const plain = await service.read('kid');
+    expect(plain.days.at(-1).sections).toBeUndefined();
+    const detailed = await service.read('kid', { detail: true });
+    expect(detailed.days.at(-1)).toMatchObject({
+      studyDay: TODAY,
+      sections: [{ subject: 'language', state: 'served', reason: null }, { subject: 'scripture', state: 'excused', reason: 'weekly_satisfied' }],
+      weekly: [{ unitId: 'cfm', subject: 'scripture', state: 'satisfied' }],
+    });
+  });
+
   it('a fresh row (computed within freshMs) is trusted, so the board can poll', async () => {
     const cache = new MemoryCache();
     const { service, completion } = build({ cache });
