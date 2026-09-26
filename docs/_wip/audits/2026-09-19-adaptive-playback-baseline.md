@@ -33,4 +33,4 @@ is claimed satisfied from that observation.
 Before execution, reconcile source history in an isolated worktree. Before
 runtime certification, establish a reproducible image-to-source identity through
 build metadata or verified packaged-source comparison. Record device and provider
-coverage per the [implementation plan](../plans/2026-09-19-adaptive-playback-implementation.md).
+coverage per the [implementation plan](../../roadmap/2026-09-19-adaptive-playback-implementation.md).

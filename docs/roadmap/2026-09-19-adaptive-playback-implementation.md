@@ -1,5 +1,7 @@
 # Adaptive Playback Implementation Plan
 
+**Status (2026-09-25):** roadmap, kept in full. Plan A parts A0–A2 (risk learning, `selectRendition` / `decideRecovery`, source gateway with Plex/File/Remote sources) are on main via 35250324c but not wired to any route or the Player. Still to build: A3–A6, all of B, all of C.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Anyone in the household can press Play on available media and watch it reliably, without troubleshooting formats, devices, or providers.

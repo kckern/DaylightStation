@@ -1,6 +1,6 @@
 # Identity — knowing which adult, not keeping anyone out
 
-**Status:** planned, not started.
+**Status (2026-09-25):** partly shipped. A (cookie sessions), B+C (principal, PIN retired) and D (sessions in Admin) are on main (1641405a7, 5fd4c5478, 3f9b5f82a). Still to build: passkey sign-in, starting with the RP-ID / origin decision.
 **Settled in conversation 2026-09-11**, including two corrections recorded in §2
 so they are not re-derived.
 

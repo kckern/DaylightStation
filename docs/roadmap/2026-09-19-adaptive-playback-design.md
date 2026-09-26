@@ -9,7 +9,7 @@ without the household operator troubleshooting formats, devices, or providers.
 
 The user's explicit architectural constraint is that provider-specific behavior,
 including all Plex mechanics, belongs under `backend/src/1_adapters/`.
-The dependency rules in [DDD reference](../../reference/core/layers-of-abstraction/ddd-reference.md)
+The dependency rules in [DDD reference](../reference/core/layers-of-abstraction/ddd-reference.md)
 are authoritative. Content is a level-1 shared domain. It must not depend on the
 level-2 media domain or on any provider implementation.
 

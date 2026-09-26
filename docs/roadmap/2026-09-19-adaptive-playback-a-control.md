@@ -1,5 +1,7 @@
 # Adaptive Playback Control Implementation Plan
 
+**Status (2026-09-25):** A0–A2 on main (35250324c); A3–A6 not started.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Select sustainable playback paths and recover without losing position or multiplying provider resources.
