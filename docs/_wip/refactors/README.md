@@ -6,12 +6,13 @@ redrawing boundaries, extracting modules, changing how things are wired.
 ## Why this is its own folder
 
 A refactor is not a plan, an audit, or a bug, but it generates all three — and
-without a home of its own the pieces scatter. The application-module work is the
+without a home of its own the pieces scatter. The application-module work was the
 example that prompted this folder: five planning documents in `../plans/`, two
 evidence directories in `../audits/`, a roadmap in `../../roadmap/`, and a
 tooling tree under `../../../tests/`, with nothing anywhere naming the whole
 thing or saying what state it was in. Answering "is this refactor live, and
-where does it stand" meant knowing all seven locations already.
+where does it stand" meant knowing all seven locations already. (That migration
+was ditched on 2026-09-25 and its packet dropped; the roadmap page records it.)
 
 ## What goes here
 
