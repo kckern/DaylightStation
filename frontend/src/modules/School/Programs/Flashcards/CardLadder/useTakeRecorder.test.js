@@ -113,3 +113,39 @@ describe('useTakeRecorder', () => {
     expect(onTake).not.toHaveBeenCalled();
   });
 });
+
+describe('useTakeRecorder — nothing plays over a take (2026-09-25 talk-over)', () => {
+  it('start() stops the playing clip and holds the lane; stop() releases it for the take playback', async () => {
+    const made = [];
+    class FakeAudio {
+      constructor(url) { this.url = url; this.pause = vi.fn(); made.push(this); }
+      play() { return Promise.resolve(); }
+    }
+    vi.stubGlobal('Audio', FakeAudio);
+    const audio = await import('./cardLadderAudio.js');
+    audio.startClip('word.mp3', 'term', { trigger: 'auto' });
+    const { result } = renderHook(() => useTakeRecorder({ onTake: vi.fn() }));
+    await act(async () => { await result.current.start(); });
+    expect(made[0].pause).toHaveBeenCalled();
+    audio.startClip('hear-it.mp3', 'term');
+    expect(made).toHaveLength(1); // refused while recording
+    act(() => { result.current.stop(); });
+    audio.startClip('take.webm', 'take');
+    expect(made.map((a) => a.url)).toEqual(['word.mp3', 'take.webm']);
+    audio.stopAudio();
+    vi.unstubAllGlobals();
+  });
+
+  it('unmounting mid-take releases the lane', async () => {
+    const audio = await import('./cardLadderAudio.js');
+    const { result, unmount } = renderHook(() => useTakeRecorder({ onTake: vi.fn() }));
+    await act(async () => { await result.current.start(); });
+    unmount();
+    const made = [];
+    vi.stubGlobal('Audio', class { constructor(url) { made.push(url); } play() { return Promise.resolve(); } pause() {} });
+    audio.startClip('next.mp3', 'term');
+    expect(made).toEqual(['next.mp3']);
+    audio.stopAudio();
+    vi.unstubAllGlobals();
+  });
+});

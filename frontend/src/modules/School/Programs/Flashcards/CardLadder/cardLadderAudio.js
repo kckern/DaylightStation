@@ -21,11 +21,23 @@ import { currentInput } from './inputVia.js';
  * success nor a failure the spec has a name for, so it logs nothing.
  */
 let current = null;
+let held = false;
 
 /** Stop whatever the lane is playing. */
 export function stopAudio() {
   current?.stop();
   current = null;
+}
+
+/**
+ * THE MICROPHONE OWNS THE ROOM. While a take records, the lane is held: what
+ * was playing stops, and no clip may start (a Hear-it key, a late autoplay)
+ * until the take ends. Without it a word kept playing over the child's take
+ * (2026-09-25) — talk-over the take then captured.
+ */
+export function holdAudio(on) {
+  held = on === true;
+  if (held) stopAudio();
 }
 
 /**
@@ -44,7 +56,7 @@ function triggerFor(explicit) {
 export function startClip(url, kind = null, { trigger = null } = {}) {
   stopAudio();
   const how = triggerFor(trigger);
-  if (!url) return { done: Promise.resolve(null), stop: () => {}, get stopped() { return false; } };
+  if (!url || held) return { done: Promise.resolve(null), stop: () => {}, get stopped() { return false; } };
   const el = new Audio(url);
   const unbind = bindMediaToMaster(el);
   let finish;

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import useVoiceCapture from '../../SentenceLadder/rungs/useVoiceCapture.js';
 import { SILENT_LEVEL, judgeTake } from '../../shared/speechFloor.js';
+import { holdAudio } from './cardLadderAudio.js';
 
 /**
  * One card-ladder take: record, judge against the shared speech floor
@@ -47,6 +48,7 @@ export default function useTakeRecorder({ onTake } = {}) {
   const liveRef = useRef(true);
 
   const receiveTake = useCallback(({ blob, durationMs }) => {
+    holdAudio(false);
     if (!liveRef.current) return;
     const { heard, sampled } = silenceRef.current;
     const result = judgeTake({ heard, sampled: sampled === true, durationMs });
@@ -57,6 +59,7 @@ export default function useTakeRecorder({ onTake } = {}) {
   }, []);
 
   const onDenied = useCallback(() => {
+    holdAudio(false);
     setPhase('idle');
     setUnavailable(true);
   }, []);
@@ -68,11 +71,16 @@ export default function useTakeRecorder({ onTake } = {}) {
   const start = useCallback(async () => {
     setVerdict(null);
     silenceRef.current = { heard: false, sampled: false };
+    // Silence the lane BEFORE the mic opens: nothing may play over a take
+    // (`holdAudio`). Released when the take stops, fails, or is abandoned.
+    holdAudio(true);
     const started = await startCapture();
-    if (started) { setUnavailable(false); setPhase('recording'); }
+    if (started) { setUnavailable(false); setPhase('recording'); } else holdAudio(false);
   }, [startCapture]);
 
   const stop = useCallback(() => {
+    // Released at Stop, not at `onstop`: the take's own playback follows.
+    holdAudio(false);
     setPhase('saving');
     stopCapture();
   }, [stopCapture]);
@@ -91,6 +99,8 @@ export default function useTakeRecorder({ onTake } = {}) {
     liveRef.current = true;
     return () => { liveRef.current = false; cancel(); };
   }, [cancel]);
+  // Unmount only — never on a re-render, which would lift the hold mid-take.
+  useEffect(() => () => holdAudio(false), []);
 
   return {
     start, stop, phase, verdict, stream, onLevel, release, unavailable,

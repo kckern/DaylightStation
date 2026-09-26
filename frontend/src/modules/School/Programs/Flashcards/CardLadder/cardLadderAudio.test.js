@@ -32,6 +32,20 @@ describe('cardLadderAudio — one lane', () => {
     expect(audioPlayed).not.toHaveBeenCalled();
   });
 
+  it('a held lane (a take recording) stops what plays and refuses new clips until released', async () => {
+    const playing = mod.startClip('a', 'term');
+    mod.holdAudio(true);
+    expect(made[0].pause).toHaveBeenCalled();
+    await expect(playing.done).resolves.toBe(null);
+    const refused = mod.startClip('b', 'gloss');
+    expect(made).toHaveLength(1); // no Audio element was even created
+    await expect(refused.done).resolves.toBe(null);
+    mod.holdAudio(false);
+    mod.startClip('c', 'term');
+    expect(made).toHaveLength(2);
+    expect(made[1].url).toBe('c');
+  });
+
   it('a finished clip resolves "ended", logs audio.played once, and leaves the lane empty', async () => {
     const clip = mod.startClip('a', 'term');
     made[0].onended();
