@@ -230,7 +230,7 @@ export class LogFoodFromScale {
       await this.#conversationStateStore.set(conversationId, {
         conversationId,
         activeFlow: 'scale_describe',
-        flowState: { pendingLogUuid: nutriLog.id },
+        flowState: { pendingLogUuid: nutriLog.id, openedAt: new Date().toISOString() },
       });
     }
 

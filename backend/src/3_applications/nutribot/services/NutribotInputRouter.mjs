@@ -14,6 +14,13 @@ import { UPC_REJECTED } from '../usecases/LogFoodFromUPC.mjs';
  * Transforms platform-agnostic events to use case input shapes.
  */
 /** Voice retries currently being processed, by `${conversationId}:${messageId}`. */
+// How long an open text flow (a revision, a scale "describe it") owns what is
+// said next. Without a bound, a revision whose own reply failed stayed open and
+// swallowed the next meal: on 2026-09-25 a dinner voice note, 31 hours after
+// Revise was tapped on the previous day's lunch, replaced that lunch.
+export const OPEN_FLOW_TTL_MS = 30 * 60 * 1000;
+const TEXT_FLOWS = ['revision', 'scale_describe'];
+
 const voiceRetriesInFlight = new Set();
 
 // Meal words for /fast and /reopen, mapped to the day's meal buckets.
@@ -30,6 +37,8 @@ export class NutribotInputRouter extends BaseInputRouter {
   #userIdentityService;
   #aiGatewayAvailable;
   #cleanupProvider;
+  #flowTtlMs;
+  #now;
 
   /**
    * @param {import('../../3_applications/nutribot/NutribotContainer.mjs').NutribotContainer} container
@@ -44,6 +53,8 @@ export class NutribotInputRouter extends BaseInputRouter {
     this.#userResolver = options.userResolver;
     this.#aiGatewayAvailable = options.aiGatewayAvailable !== false;
     this.#cleanupProvider = options.cleanupProvider;
+    this.#flowTtlMs = options.flowTtlMs ?? OPEN_FLOW_TTL_MS;
+    this.#now = options.now ?? (() => Date.now());
   }
 
   async route(event, responseContext = null) {
@@ -259,7 +270,7 @@ export class NutribotInputRouter extends BaseInputRouter {
 
     if (conversationStateStore) {
       try {
-        const state = await conversationStateStore.get(event.conversationId);
+        const state = await this.#liveFlowState(conversationStateStore, event.conversationId);
         const pendingLogUuid = state?.flowState?.pendingLogUuid;
 
         this.logger.debug?.('nutribot.handleText.stateCheck', {
@@ -406,12 +417,32 @@ export class NutribotInputRouter extends BaseInputRouter {
   async #openTextFlow(event) {
     if (event.platform === 'web') return null;
     try {
-      const state = await this.container.getConversationStateStore?.()?.get(event.conversationId);
-      return ['revision', 'scale_describe'].includes(state?.activeFlow) && state?.flowState?.pendingLogUuid ? state.activeFlow : null;
+      const store = this.container.getConversationStateStore?.();
+      const state = store ? await this.#liveFlowState(store, event.conversationId) : null;
+      return TEXT_FLOWS.includes(state?.activeFlow) && state?.flowState?.pendingLogUuid ? state.activeFlow : null;
     } catch (e) {
       this.logger.warn?.('nutribot.handleVoice.stateCheck.error', { conversationId: event.conversationId, error: e.message });
       return null;
     }
+  }
+
+  /**
+   * The conversation's root state, with an open text flow closed once it is
+   * older than the TTL. The age comes from `flowState.openedAt`, stamped when
+   * the flow opens; a flow without one predates the stamp and is closed too.
+   * Closing writes an empty root (sessions, e.g. a pending voice retry, stay).
+   */
+  async #liveFlowState(store, conversationId) {
+    const state = await store.get(conversationId);
+    if (!TEXT_FLOWS.includes(state?.activeFlow)) return state;
+    const openedAt = Date.parse(state.flowState?.openedAt ?? '');
+    const ageMs = Number.isFinite(openedAt) ? this.#now() - openedAt : null;
+    if (ageMs !== null && ageMs <= this.#flowTtlMs) return state;
+    this.logger.info?.('nutribot.flow.expired', {
+      conversationId, flow: state.activeFlow, pendingLogUuid: state.flowState?.pendingLogUuid ?? null, ageMs,
+    });
+    await store.set(conversationId, { conversationId, activeFlow: null, flowState: {} });
+    return null;
   }
 
   /**
