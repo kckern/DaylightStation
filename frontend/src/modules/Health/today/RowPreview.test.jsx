@@ -10,7 +10,7 @@ vi.mock('../../../lib/ui/createAppLogger.js', () => {
 });
 vi.mock('../../../lib/api.mjs', () => ({ DaylightAPI: vi.fn() }));
 
-import { RowPreviewContent, RowPreviewProvider, CLOSE_DELAY_MS, CURSOR_OFFSET_PX, placeCard } from './RowPreview.jsx';
+import { RowPreviewContent, RowPreviewProvider, CLOSE_DELAY_MS, CURSOR_OFFSET_PX, placeCard, useRowPreview } from './RowPreview.jsx';
 
 import { EntryRow } from './EntryRow.jsx';
 import { PortionContext } from './usePortionDraft.js';
@@ -190,5 +190,37 @@ describe('EntryRow preview card — one card, at the cursor', () => {
     r(<EntryRow row={apple} onTap={() => {}} />);
     hover(document.querySelector('.health-row-artwork'), 50, 300);
     expect(card()).toBeNull();
+  });
+});
+
+describe('custom card content', () => {
+  afterEach(cleanup);
+  const custom = { node: <p>Workout detail</p> };
+  function Target({ toggle = false }) {
+    const preview = useRowPreview({ content: custom });
+    return <span data-testid="target" data-row-preview-toggle={toggle ? '' : undefined}
+      {...preview.targetProps} onClick={preview.onArtworkClick}>target</span>;
+  }
+
+  it('draws a row-supplied node instead of the food card', () => {
+    r(<RowPreviewProvider><Target /></RowPreviewProvider>);
+    fireEvent.pointerEnter(screen.getByTestId('target'), { clientX: 10, clientY: 200 });
+    expect(screen.getByRole('tooltip')).toHaveTextContent('Workout detail');
+    expect(document.querySelector('.health-row-preview__hero')).toBeNull();
+  });
+
+  it('a tap on a [data-row-preview-toggle] element does not close its own card first', () => {
+    const matchMedia = window.matchMedia;
+    window.matchMedia = query => ({ matches: query === '(pointer: coarse)', addEventListener() {}, removeEventListener() {} });
+    try {
+      r(<RowPreviewProvider><Target toggle /></RowPreviewProvider>);
+      const target = screen.getByTestId('target');
+      fireEvent.pointerDown(target);
+      fireEvent.click(target);
+      expect(screen.getByRole('tooltip')).toHaveTextContent('Workout detail');
+      fireEvent.pointerDown(target);
+      fireEvent.click(target);
+      expect(screen.queryByRole('tooltip')).toBeNull();
+    } finally { window.matchMedia = matchMedia; }
   });
 });
