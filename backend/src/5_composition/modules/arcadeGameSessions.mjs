@@ -19,6 +19,7 @@ import { AdbAdapter } from '#adapters/devices/AdbAdapter.mjs';
 import { RetroArchArcadeGameObservationSource } from '#adapters/gaming/RetroArchArcadeGameObservationSource.mjs';
 import { RetroArchSessionLogReader } from '#adapters/gaming/RetroArchSessionLogReader.mjs';
 import { EventBusArcadeGameSessionAnnouncer } from '#adapters/eventbus/EventBusArcadeGameSessionAnnouncer.mjs';
+import { ARCADE_SESSION_EVENTS } from '#shared-contracts/media/topics.mjs';
 import { parseBezel, choosePlacement } from '#domains/gaming/value-objects/OverlayPlacement.mjs';
 import { resolveOverlayConfig } from '#domains/gaming/value-objects/OverlaySessionFields.mjs';
 import { FleetArcadeGameSessionAnnouncer } from '#adapters/eventbus/FleetArcadeGameSessionAnnouncer.mjs';
@@ -266,7 +267,7 @@ export function createArcadeGameSessionTracking(config) {
         // a second, thinner kind of message the film has to special-case.
         const identity = identify ? await identify(session.userId) : null;
         eventBus.broadcast(`arcade-session:${session.deviceId}`, {
-          event: 'arcade.session.progress',
+          event: ARCADE_SESSION_EVENTS.PROGRESS,
           sessionId: session.id, deviceId: session.deviceId,
           playedMs: session.playedMs, userId: session.userId,
           displayName: identity?.displayName ?? null,

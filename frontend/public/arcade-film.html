@@ -102,6 +102,37 @@
   var DEVICE = q.get('device') || '';
   var STALE_MS = Number(q.get('staleMs') || 45000);
 
+  // Must match ARCADE_SESSION_EVENTS in shared/contracts/media/topics.mjs — a
+  // static page cannot import it, so arcadeFilmContract.test.mjs pins these.
+  // The legacy play.session.* names are still accepted: the 2026-09-19 rename
+  // left this page filtering on them, and no timer rendered for a week.
+  var EV_STARTED = 'arcade.session.started';
+  var EV_PROGRESS = 'arcade.session.progress';
+  var EV_ENDED = 'arcade.session.ended';
+  function eventName(m) { return String((m && m.event) || '').replace(/^play\.session\./, 'arcade.session.'); }
+
+  // Between progress messages (~10s apart) the clock extrapolates, but only
+  // while the game was last seen PLAYING, and never further than this — a
+  // paused game must not count up, and a silent backend must not be papered over.
+  var MAX_DRIFT_MS = 25000;
+  // Where the banner goes on a system the backend has no bezel for: a small
+  // corner pill, not a full-width bar across the bottom of the game.
+  var FALLBACK_RECT = [0.88, 0.03, 0.11, 0.1];
+
+  // The film has no bundle and so no logging framework: it speaks the same
+  // `topic: logging` batch the framework does, over the socket it already has.
+  var logQueue = [];
+  function log(level, event, data) {
+    logQueue.push({ ts: new Date().toISOString(), level: level, event: 'arcade.film.' + event,
+      data: data || {}, context: { source: 'frontend', app: 'arcade-film', deviceId: DEVICE } });
+    if (logQueue.length > 50) logQueue.splice(0, logQueue.length - 50);
+    flushLogs();
+  }
+  function flushLogs() {
+    if (!ws || ws.readyState !== 1 || !logQueue.length) return;
+    try { ws.send(JSON.stringify({ topic: 'logging', events: logQueue.splice(0) })); } catch (_) {}
+  }
+
   var film = document.getElementById('film');
   var banner = document.getElementById('banner');
   var toastEl = document.getElementById('toast');
@@ -186,9 +217,13 @@
    * exists to prevent.
    */
   function place(p) {
+    if (p && !rectOk(p.toast)) p = null;
+    if (!p && banner.classList.contains('show')) {
+      p = { zone: 'fallback', toast: FALLBACK_RECT, orientation: 'stacked' };
+    }
     placement = p;
     banner.classList.remove('stacked', 'placed');
-    if (!p || !rectOk(p.toast)) {
+    if (!p) {
       banner.style.cssText = '';
       baseU = 10; setU(baseU);
       return;
@@ -214,41 +249,51 @@
   function applyFields(fields) {
     var set = {};
     (fields || ['player', 'system_label', 'timer']).forEach(function (f) { set[f] = true; });
+    set.timer = true;  // the clock is the film's reason to exist; config cannot hide it
     document.getElementById('name').classList.toggle('hide-field', !set.player);
     avEl.classList.toggle('hide-field', !set.player);
     document.getElementById('sub').classList.toggle('hide-field', !set.system_label);
     document.querySelector('.timer').classList.toggle('hide-field', !set.timer);
   }
 
-  var session = null;        // { playedMs, remainingMs|null, at }
-  var ticker = null, toastT = null, lastMessageAt = 0;
+  var session = null;        // { playedMs, remainingMs|null, state, at }
+  var ticker = null, toastT = null, lastMessageAt = 0, lastClockLen = 0;
 
   function two(n) { return (n < 10 ? '0' : '') + n; }
   function hhmmss(ms) {
-    var t = Math.max(0, Math.round(ms / 1000));
-    var m = Math.floor(t / 60), s = t % 60;
-    return two(m) + ':' + two(s);
+    var t = Math.max(0, Math.floor(ms / 1000));
+    var h = Math.floor(t / 3600), m = Math.floor((t % 3600) / 60), s = t % 60;
+    return (h ? h + ':' + two(m) : two(m)) + ':' + two(s);
   }
 
   function render() {
     if (!session) return;
-    var drift = Date.now() - session.at;
+    // Only an explicit paused/unknown freezes it: a warning message carries no state.
+    var frozen = session.state === 'paused' || session.state === 'unknown';
+    var drift = frozen ? 0 : Math.min(Math.max(0, Date.now() - session.at), MAX_DRIFT_MS);
     if (session.remainingMs === null) {
-      // No budget known yet (metering not granted): show honest elapsed time
-      // rather than inventing a countdown.
-      clockEl.textContent = hhmmss(session.playedMs + drift);
-      labelEl.textContent = 'played';
+      // No budget (observe-only): honest time PLAYED, counting up only while
+      // the game is being played.
+      setClock(hhmmss(session.playedMs + drift));
+      labelEl.textContent = session.state === 'paused' ? 'paused' : 'played';
       barEl.hidden = true;
       document.body.classList.remove('warn', 'crit');
       return;
     }
     var left = Math.max(0, session.remainingMs - drift);
-    clockEl.textContent = hhmmss(left);
+    setClock(hhmmss(left));
     labelEl.textContent = left <= 0 ? "time's up" : 'remaining';
     barEl.hidden = false;
     fillEl.style.width = (session.grantedMs ? Math.max(0, (left / session.grantedMs) * 100) : 0) + '%';
     document.body.classList.toggle('crit', left <= 60000);
     document.body.classList.toggle('warn', left > 60000 && left <= 180000);
+  }
+
+  // A wider clock (09:59 -> 10:00, 59:59 -> 1:00:00) can overflow a tight zone,
+  // so the fit is re-measured whenever the text changes length.
+  function setClock(text) {
+    clockEl.textContent = text;
+    if (text.length !== lastClockLen) { lastClockLen = text.length; fit(); }
   }
 
   function startTicking() { if (!ticker) ticker = setInterval(render, 1000); }
@@ -283,39 +328,77 @@
     toastT = setTimeout(function () { toastEl.classList.remove('show'); }, ms || 5000);
   }
 
+  var shownSession = null, lastSampleAt = 0, unknownLogged = {};
+
   function handle(m) {
     if (!m || (DEVICE && m.deviceId && m.deviceId !== DEVICE)) return;
-    lastMessageAt = Date.now();
-    document.body.classList.remove('stale');
-
-    if (m.event === 'play.session.ended') { clear(); return; }
     if (m.overlay === 'toast') { toast(m.text, m.ms); return; }
-    if (m.event !== 'play.session.started' && m.event !== 'play.session.progress') return;
+    var ev = eventName(m);
+    if (ev !== EV_STARTED && ev !== EV_PROGRESS && ev !== EV_ENDED) {
+      // Heartbeats and acks are not news about the session: they must not keep
+      // a clock "fresh" that the backend has stopped feeding.
+      if (m.event && m.topic && String(m.topic).indexOf('arcade-session') === 0 && !unknownLogged[m.event]) {
+        unknownLogged[m.event] = true;
+        log('warn', 'unknown-event', { event: m.event });
+      }
+      return;
+    }
+    lastMessageAt = Date.now();
+    if (document.body.classList.contains('stale')) {
+      document.body.classList.remove('stale');
+      log('info', 'recovered', { sessionId: m.sessionId || null });
+    }
+
+    if (ev === EV_ENDED) {
+      log('info', 'ended', { sessionId: m.sessionId || null, playedMs: Number(m.playedMs || 0), reason: m.reason || null });
+      shownSession = null;
+      clear();
+      return;
+    }
 
     session = {
       playedMs: Number(m.playedMs || 0),
       grantedMs: m.grantedMs != null ? Number(m.grantedMs) : null,
       remainingMs: m.remainingMs != null ? Number(m.remainingMs) : null,
+      state: m.state || null,
       at: Date.now(),
     };
+    var wasShown = banner.classList.contains('show');
+    if (!wasShown) show(m);
     // Placement can arrive on any message, so a film that reconnects mid-game
     // positions itself at once rather than at the next launch.
-    if (m.placement !== undefined) place(m.placement);
+    if (m.placement !== undefined || !wasShown) place(m.placement || null);
     if (m.overlay !== undefined) applyFields(m.overlay && m.overlay.fields);
-    if (m.event === 'play.session.started') show(m);
-    else if (!banner.classList.contains('show')) show(m);
     if (m.warning) toast(m.warning, 6000);
+    startTicking();
+    lastClockLen = 0;
     render();
     fit();
+
+    var r = banner.getBoundingClientRect();
+    var placed = { zone: placement ? placement.zone || null : null, rect: [Math.round(r.left), Math.round(r.top), Math.round(r.width), Math.round(r.height)],
+      u: getComputedStyle(document.documentElement).getPropertyValue('--u').trim(), fits: fits(),
+      shed: [].slice.call(document.querySelectorAll('.shed')).map(function (e) { return e.id; }) };
+    if (shownSession !== m.sessionId) {
+      shownSession = m.sessionId;
+      log('info', 'shown', { sessionId: m.sessionId || null, event: m.event, replay: !!m.replay, state: session.state,
+        playedMs: session.playedMs, clock: clockEl.textContent, label: labelEl.textContent,
+        system: m.system || null, displayName: m.displayName || null, placement: placed });
+    } else if (Date.now() - lastSampleAt >= 60000) {
+      lastSampleAt = Date.now();
+      log('info', 'sample', { sessionId: m.sessionId || null, state: session.state, playedMs: session.playedMs,
+        clock: clockEl.textContent, label: labelEl.textContent, placement: placed });
+    }
   }
 
   // Losing contact must be visible. A countdown that keeps ticking on stale data
   // is a lie told confidently.
   setInterval(function () {
     if (!banner.classList.contains('show')) return;
-    if (lastMessageAt && Date.now() - lastMessageAt > STALE_MS) {
+    if (lastMessageAt && Date.now() - lastMessageAt > STALE_MS && !document.body.classList.contains('stale')) {
       document.body.classList.add('stale');
       stopTicking();
+      log('warn', 'stale', { silentMs: Date.now() - lastMessageAt, clock: clockEl.textContent, sessionId: shownSession });
     }
   }, 5000);
 
@@ -324,23 +407,30 @@
   // television. Read-only entry point — it feeds the same handler the socket does.
   window.__arcadeFilm = { handle: handle, clear: clear, toast: toast, place: place, fit: fit };
 
-  var ws, retry = 0;
+  window.addEventListener('error', function (e) { log('error', 'page-error', { error: String(e.message || e) }); });
+
   function connect() {
     try {
       ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws');
     } catch (e) { setTimeout(connect, 5000); return; }
     ws.onopen = function () {
-      retry = 0;
       var topics = DEVICE ? ['arcade-session:' + DEVICE] : [];
       ws.send(JSON.stringify({ type: 'bus_command', action: 'subscribe', topics: topics }));
+      log('info', 'subscribed', { topics: topics, reconnectAttempt: retry, screen: [screenW(), screenH()] });
+      retry = 0;
     };
-    ws.onmessage = function (e) { try { handle(JSON.parse(e.data)); } catch (_) {} };
+    ws.onmessage = function (e) {
+      try { handle(JSON.parse(e.data)); } catch (err) { log('error', 'handler-failed', { error: String(err && err.message || err) }); }
+    };
     ws.onclose = function () {
+      if (banner.classList.contains('show')) log('warn', 'disconnected', { sessionId: shownSession, retry: retry });
       retry = Math.min(retry + 1, 6);
       setTimeout(connect, 500 * Math.pow(2, retry));
     };
     ws.onerror = function () { try { ws.close(); } catch (_) {} };
   }
+  var ws, retry = 0;
+  log('info', 'loaded', { device: DEVICE, staleMs: STALE_MS });
   connect();
 })();
 </script>

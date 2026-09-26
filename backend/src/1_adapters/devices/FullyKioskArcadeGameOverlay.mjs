@@ -50,7 +50,10 @@ export class FullyKioskArcadeGameOverlay extends IArcadeGameOverlay {
     const gravity = await client.command('setStringSetting', { key: 'webOverlayGravity', value: String(this.#gravity) });
     const set = await client.command('setStringSetting', { key: 'webOverlayUrl', value: url });
     const ok = set?.ok !== false && gravity?.ok !== false;
-    this.#logger[ok ? 'info' : 'warn']?.('arcade.overlay.armed', { deviceId, ok });
+    this.#logger[ok ? 'info' : 'warn']?.('arcade.overlay.armed', {
+      deviceId, ok, url, gravity: this.#gravity,
+      error: ok ? undefined : (set?.error || gravity?.error || 'kiosk refused the setting'),
+    });
     return ok;
   }
 
@@ -59,7 +62,9 @@ export class FullyKioskArcadeGameOverlay extends IArcadeGameOverlay {
     if (!client) return false;
     const result = await client.command('setStringSetting', { key: 'webOverlayUrl', value: '' });
     const ok = result?.ok !== false;
-    this.#logger[ok ? 'info' : 'warn']?.('arcade.overlay.disarmed', { deviceId, ok });
+    this.#logger[ok ? 'info' : 'warn']?.('arcade.overlay.disarmed', {
+      deviceId, ok, error: ok ? undefined : (result?.error || 'kiosk refused the setting'),
+    });
     return ok;
   }
 
