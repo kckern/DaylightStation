@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { resolveAddressing } from './resolveAddressing.js';
 import { buildScheme } from './buildScheme.js';
 import { evaluateAddressing } from './addressingProgress.js';
-import { DEFAULT_CHORD_SCHEME, identifyChord, squareToChord } from '../../PianoChessGame/chordAddress.js';
+import { DEFAULT_CHORD_SCHEME, identifyChord, rootPitchClass, squareToChord } from '../../PianoChessGame/chordAddress.js';
 import { DEFAULT_STAFF_SCHEME, identifyStaffAddress, noteName, splitFor } from '../../PianoChessGame/staffAddress.js';
 import { configuredAddressing as checkersOverrides } from '../../PianoCheckers/checkersAddressingModel.js';
 import { configuredAddressing as connectFourOverrides, scaleRoots } from '../../PianoConnectFour/pianoConnectFourModel.js';
@@ -59,8 +59,25 @@ describe('chess: schemeForAddressing through the resolver', () => {
   });
 
   it('carries the inversion policy onto the scheme the game plays with', () => {
+    const scheme = schemeForAddressing({ addressing: { vocabulary: 'chords', inversions: 'root' } });
+    expect(scheme.inversions).toBe('root');
+  });
+
+  it('plays `named` as `root`, because the chess rim cannot print a per-square bass', () => {
+    // 2026-09-25: two wins carried a child's managed path onto rung 12 (slash
+    // chords). The rim prints a root per file and a quality per rank — nothing
+    // says which of a square's three bass notes it wants — so every chord he
+    // played came back `unrecognised_chord`, 26 times across two games.
     const scheme = schemeForAddressing({ addressing: { vocabulary: 'chords', inversions: 'named' } });
-    expect(scheme.inversions).toBe('named');
+    expect(scheme.inversions).toBe('root');
+    // Root position — the root lowest, the other tones above it — is what the
+    // rim's labels describe, and it must reach e2 whatever inversion the old
+    // `named` rule would have demanded there.
+    const e2 = squareToChord('e2', scheme);
+    const rootPc = rootPitchClass(e2.root);
+    const voicing = [48 + rootPc, ...e2.pitch_classes.filter((pc) => pc !== rootPc).map((pc) => 60 + pc)];
+    expect(identifyChord(voicing, scheme).square).toBe('e2');
+    expect(e2.symbol).not.toContain('/');
   });
 
   it('falls back rather than handing the board a scheme that failed validation', () => {

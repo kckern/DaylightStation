@@ -266,6 +266,11 @@ Two consequences worth stating:
 - **`named` triples the vocabulary a rim must print.** A triad has three inversions, a seventh has
   four. Where the rail has room for `Am7` it may not have room for `Am7/G`, and the rung should not
   be reachable on a game whose rail cannot print it.
+- **Chess cannot print it, so chess plays `named` as `root`.** Its rim labels a root per file and a
+  quality per rank; the bass `named` wants varies per *square*, so nothing on the board shows it.
+  `chessAddressingFor` downgrades the policy and says so in the resolver notes. Found 2026-09-25,
+  when the managed chord path climbed a child onto rung 12 after two wins and every chord he played
+  was refused as `unrecognised_chord`. A game that can show the bass per square may lift this.
 
 ### 3.8 Axis independence
 
