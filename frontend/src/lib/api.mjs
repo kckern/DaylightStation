@@ -55,25 +55,52 @@ export const DaylightAPI = async (path, data = {}, method = 'GET', requestOption
         options.body = JSON.stringify(data);
     }
 
-    const response = await fetch(`${baseUrl}/${path}`, options);
-    
-  //  console.log("Response status:", response.status, response.statusText);
-    
+    let response;
+    try {
+        response = await fetch(`${baseUrl}/${path}`, options);
+    } catch (err) {
+        if (err?.name === 'AbortError') throw err;
+        getLogger().warn('api.network.error', { path, error: err?.message });
+        const error = new Error(`Network error: ${err?.message || 'request failed'}`);
+        error.transient = true;
+        throw error;
+    }
+
     if (!response.ok) {
-        const errorText = await response.text();
-        getLogger().error('api.response.error', { path, status: response.status, statusText: response.statusText });
+        const errorText = await response.text().catch(() => '');
+        const transient = TRANSIENT_STATUSES.has(response.status);
+        getLogger()[transient ? 'warn' : 'error']('api.response.error', { path, status: response.status, statusText: response.statusText });
         // `status` is attached (not just embedded in the message string) so a
         // caller can distinguish e.g. a permanent 409 (retrying will never
         // help) from a transient 5xx/network failure without parsing prose.
-        const error = new Error(`HTTP ${response.status}: ${response.statusText} - ${errorText}`);
+        // The body stays in the message (callers parse its JSON after " - "),
+        // except a proxy's HTML page, which is noise on screen.
+        const detail = errorBodyDetail(errorText);
+        const error = new Error(`HTTP ${response.status}: ${response.statusText}${detail ? ` - ${detail}` : ''}`);
+        error.status = response.status;
+        error.transient = transient;
+        throw error;
+    }
+
+    if (response.status === 204) return null;
+    try {
+        return await response.json();
+    } catch {
+        getLogger().warn('api.response.unreadable', { path, status: response.status });
+        const error = new Error(`Unreadable response (HTTP ${response.status})`);
         error.status = response.status;
         throw error;
     }
-    
-    if (response.status === 204) return null;
-    const response_data = await response.json();
- //   console.log("Response data:", response_data);
-    return response_data;
+};
+
+// A proxy answering for a backend that is restarting or briefly unreachable:
+// the same request is expected to succeed shortly.
+const TRANSIENT_STATUSES = new Set([502, 503, 504]);
+const MAX_ERROR_DETAIL = 300;
+const errorBodyDetail = (text) => {
+    const body = String(text || '').trim();
+    if (!body || body.startsWith('<')) return '';
+    return body.length > MAX_ERROR_DETAIL ? `${body.slice(0, MAX_ERROR_DETAIL)}…` : body;
 };
 
 /**
