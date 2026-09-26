@@ -59,6 +59,7 @@ export class ReviseFoodLog {
           flowState: {
             pendingLogUuid: logUuid,
             originalMessageId: messageId,
+            openedAt: new Date().toISOString(),
           },
         };
         await this.#conversationStateStore.set(conversationId, state);
