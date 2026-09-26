@@ -45,7 +45,7 @@ describe('validateRuleset', () => {
   });
 
   it('sorts ring thresholds and refuses a non-positive one', () => {
-    const rs = ruleset([{ id: 'rings', kind: 'ring-threshold', perRing: 1, thresholds: [{ at: 40, reward: 10 }, { at: 20, reward: 5 }] }]);
+    const rs = ruleset([{ id: 'rings', kind: 'ring-threshold', rate: { rings: 1, silver: 1 }, thresholds: [{ at: 40, reward: 10 }, { at: 20, reward: 5 }] }]);
     expect(rs.rules[0].thresholds.map((t) => t.at)).toEqual([20, 40]);
     expect(() => ruleset([{ id: 'rings', kind: 'ring-threshold', thresholds: [{ at: 0, reward: 1 }] }])).toThrow(/threshold/);
   });
@@ -126,6 +126,8 @@ describe('evaluateEarnings — school kinds', () => {
     const rs = ruleset([{ id: 'scripture', kind: 'section-week', match: { subject: 'scripture' }, reward: 5 }]);
     const out = evaluate(rs, { week: { weekId: WEEK.from, state: 'partial', open: true }, sectionDays: sections('scripture', [['2026-09-21', 'served'], ['2026-09-22', 'obligated']]) });
     expect(line(out, 'scripture').status).toBe('pending');
+    // Saturday morning, the teacher needs to see WHICH day is missing, not just "still going".
+    expect(line(out, 'scripture').note).toMatch(/2026-09-22/);
   });
 
   it('a week where the subject was never served pays nothing', () => {
@@ -193,7 +195,7 @@ describe('evaluateEarnings — school kinds', () => {
 
 describe('evaluateEarnings — rings', () => {
   const rings = ruleset([
-    { id: 'rings', kind: 'ring-threshold', perRing: 1, thresholds: [{ at: 20, reward: 5 }, { at: 40, reward: { silver: 10, gems: 1 } }] },
+    { id: 'rings', kind: 'ring-threshold', rate: { rings: 1, silver: 1 }, thresholds: [{ at: 20, reward: 5 }, { at: 40, reward: { silver: 10, gems: 1 } }] },
     { id: 'contest', kind: 'ring-contest', tie: 'all', reward: { silver: 5, gems: 1 } },
   ]);
 
@@ -201,6 +203,16 @@ describe('evaluateEarnings — rings', () => {
     const out = evaluate(rings, { rings: 23 });
     expect(line(out, 'rings')).toMatchObject({ status: 'earned', count: 23, amount: { silver: 28, gems: 0 } });
     expect(line(out, 'rings').note).toMatch(/17 more to 40/);
+  });
+
+  it('the rate is a ratio: 1 silver per 100 rings pays whole hundreds only', () => {
+    const rs = ruleset([{ id: 'rings', kind: 'ring-threshold', rate: { rings: 100, silver: 1 }, thresholds: [] }]);
+    expect(line(evaluate(rs, { rings: 1462 }), 'rings')).toMatchObject({ status: 'earned', amount: { silver: 14, gems: 0 } });
+    expect(line(evaluate(rs, { rings: 99 }), 'rings')).toMatchObject({ status: 'none', amount: { silver: 0, gems: 0 } });
+  });
+
+  it('refuses a ratio with zero rings', () => {
+    expect(() => ruleset([{ id: 'rings', kind: 'ring-threshold', rate: { rings: 0, silver: 1 } }])).toThrow(/rate/);
   });
 
   it('rings unavailable → indeterminate', () => {

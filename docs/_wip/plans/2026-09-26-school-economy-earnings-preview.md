@@ -69,8 +69,8 @@ rules:
     reward: { silver: 5, gems: 1 }
   - id: rings
     kind: ring-threshold
-    perRing: 1                 # silver per ring
-    thresholds: [{ at: 20, reward: { silver: 5 } }]
+    rate: { rings: 100, silver: 1 }   # 1 silver per whole 100 rings (rings run to hundreds a week)
+    thresholds: [{ at: 250, reward: { silver: 2 } }]
   - id: ring-contest
     kind: ring-contest
     tie: all                   # split | all | none
@@ -90,7 +90,7 @@ Rule kinds (MECE: scope × period):
 | `section-week` | the week, when every day the section was `obligated` reads `served` (or `excused: weekly_satisfied`), with ≥1 served | School × Week, subject-scoped |
 | `day-met` | each term-grid day `met` | School × Day |
 | `week-met` | the week row `met` | School × Week (+1 ruby) |
-| `ring-threshold` | `perRing` × rings, plus each threshold crossed in the award week | Fitness × Week (a) |
+| `ring-threshold` | `rate` (silver per whole N rings), plus each threshold crossed in the award week | Fitness × Week (a) |
 | `ring-contest` | first in the roster at Saturday 12:00 (relative; leader mark before) | Fitness × Week (b) |
 
 Selectors: `match: { subject | courseId | unitId (prefix) }`, all optional, all ANDed.
@@ -98,7 +98,7 @@ Optional `effective: {from, to}` scopes a rule to dates (a term, a mid-term chan
 A rule that pays twice is two rules — no `bonus:` field.
 
 Per-learner overrides under `users.<id>`: `multiplier` (applies to silver) and per-rule
-`reward`, `perRing`, `thresholds`, `disabled`. Most-specific wins, like `resolvePolicy`.
+`reward`, `rate`, `thresholds`, `disabled`. Most-specific wins, like `resolvePolicy`.
 
 ### Evaluation (pure domain)
 
