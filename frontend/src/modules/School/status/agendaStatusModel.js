@@ -50,6 +50,8 @@ export function dayStatus({ total, done }) {
  *                 running, a sheet turned in but not yet graded, or a
  *                 non-worksheet program obligation partly complete
  *   pending     — on the plan, not begun
+ *
+ * `restDay` is `null`, or `{optionalCount}` on a day off. See `restDayOf`.
  */
 
 /**
@@ -93,6 +95,29 @@ function stateOf(session) {
  */
 const RANK = { passed: 3, 'in-progress': 2, 'needs-retry': 1, pending: 0 };
 const better = (a, b) => ((RANK[b] ?? 0) > (RANK[a] ?? 0) ? b : a);
+
+/**
+ * A REST DAY: every planned section is excused, and at least one of them
+ * because the day is not a school day (weekend, holiday, vacation).
+ *
+ * The plan loop in `summarize` drops excused sections on purpose, so optional
+ * work never becomes a required disc. The price was that a Saturday read
+ * `total: 0`, and the board said "No plan to show" to a child who had
+ * flashcards waiting (2026-09-26). The board needs to say "No school today"
+ * and, when there is optional work, how to get it: scan your card, and the
+ * agenda prints every optional lesson with a code.
+ *
+ * `optional_backlog` / `elective_only` sections beside a `not_a_school_day`
+ * one do not spoil the day. They are excused on every day. One OBLIGATED
+ * section does: that is a school day with work owed.
+ */
+function restDayOf(planned) {
+  if (!planned.length) return null;
+  if (!planned.every((section) => section.obligation?.state === 'excused')) return null;
+  const off = planned.filter((section) => section.obligation?.reason === 'not_a_school_day');
+  if (!off.length) return null;
+  return { optionalCount: off.filter((section) => section.next?.unitId).length };
+}
 
 export function summarize(sections, sessions, entries = [], readingActivity = null, fitnessActivity = null) {
   const planned = (sections ?? []).filter((section) => !section.suppressed);
@@ -243,7 +268,7 @@ export function summarize(sections, sessions, entries = [], readingActivity = nu
       unitId: `fitness:activity:${fitnessActivity.studyDay}`,
     });
   }
-  return { total, done, segments };
+  return { total, done, segments, restDay: restDayOf(planned) };
 }
 
 /**

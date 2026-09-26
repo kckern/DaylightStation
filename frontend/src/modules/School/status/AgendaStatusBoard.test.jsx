@@ -211,6 +211,7 @@ describe('AgendaStatusBoard model', () => {
         state: 'passed',
         extraCount: 7,
       }],
+      restDay: null,
     });
   });
 
@@ -701,6 +702,71 @@ describe('physical education acknowledgment', () => {
     expect(summarize([], [], [], READING_ACTIVITY, FITNESS_ACTIVITY)).toMatchObject({ total: 0, done: 0, segments: [
       { programId: 'book-log', label: 'Reading' }, { programId: 'fitness', label: 'Fitness' },
     ] });
+  });
+});
+
+describe('rest day', () => {
+  const off = (subject, next = { unitId: `${subject}.next` }) => ({
+    subject, next, obligation: { state: 'excused', reason: 'not_a_school_day' },
+  });
+
+  it('marks a day where every section is excused as not_a_school_day', () => {
+    const summary = summarize([off('math'), off('language')], []);
+    expect(summary.total).toBe(0);
+    expect(summary.segments).toEqual([]);
+    expect(summary.restDay).toEqual({ optionalCount: 2 });
+  });
+
+  it('still counts it as a rest day beside optional_backlog / elective_only sections', () => {
+    // The real 2026-09-26 shape: scripture was optional_backlog, science elective_only.
+    const summary = summarize([
+      off('math'),
+      { subject: 'scripture', next: { unitId: 'cfm.1' }, obligation: { state: 'excused', reason: 'optional_backlog' } },
+      { subject: 'science', next: { unitId: 'sci.1' }, obligation: { state: 'excused', reason: 'elective_only' } },
+    ], []);
+    expect(summary.restDay).toEqual({ optionalCount: 1 });
+  });
+
+  it('is not a rest day when any section is still obligated', () => {
+    const summary = summarize([off('math'), { subject: 'language', next: { unitId: 'fc.1' }, obligation: { state: 'obligated' } }], []);
+    expect(summary.restDay).toBeNull();
+    expect(summary.total).toBe(1);
+  });
+
+  it('is not a rest day when nothing is excused as not_a_school_day', () => {
+    const summary = summarize([
+      { subject: 'scripture', next: { unitId: 'cfm.1' }, obligation: { state: 'excused', reason: 'optional_backlog' } },
+      { subject: 'math', next: { unitId: 'm.1' }, obligation: { state: 'excused', reason: 'suppressed_by_focus' } },
+    ], []);
+    expect(summary.restDay).toBeNull();
+  });
+
+  it('is not a rest day with no sections at all (plan failed or empty)', () => {
+    expect(summarize([], []).restDay).toBeNull();
+    expect(summarize(undefined, undefined).restDay).toBeNull();
+  });
+
+  it('ignores suppressed sections when deciding', () => {
+    const summary = summarize([off('math'), { subject: 'art', suppressed: 'focus', obligation: { state: 'obligated' } }], []);
+    expect(summary.restDay).toEqual({ optionalCount: 1 });
+  });
+
+  it('reports zero optional work on a holiday with nothing offered', () => {
+    const summary = summarize([off('math', null), off('language', {})], []);
+    expect(summary.restDay).toEqual({ optionalCount: 0 });
+  });
+
+  it('keeps drawing work the child already did on a rest day', () => {
+    const summary = summarize([off('language', { unitId: 'fc.1' })],
+      [{ unitId: 'fc.1', subject: 'language', state: 'issued', outcome: null }]);
+    expect(summary.segments.map((s) => s.state)).toEqual(['in-progress']);
+    expect(summary.total).toBe(1);
+    expect(summary.restDay).toEqual({ optionalCount: 1 });
+  });
+
+  it('survives a JSON round-trip (the board caches summaries in localStorage)', () => {
+    const summary = summarize([off('math')], []);
+    expect(JSON.parse(JSON.stringify(summary)).restDay).toEqual({ optionalCount: 1 });
   });
 });
 
