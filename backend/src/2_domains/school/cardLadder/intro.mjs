@@ -28,7 +28,7 @@ export function introPreview({ status, dayFile, day, pool = [], settings }) {
   const capMs = settings.session.capMinutes * 60000;
   const activeMs = opened ? (dayFile.activeMs ?? 0) : 0;
   const leftMs = Math.max(0, capMs - activeMs);
-  if (doneToday) return { opened, doneToday, newCount: 0, reviewCount: 0, estimatedMinutes: 0, activeMs, capMs };
+  if (doneToday) return { opened, doneToday, newCount: 0, newIsEstimate: false, reviewCount: 0, estimatedMinutes: 0, activeMs, capMs };
 
   const rechecks = opened
     ? dayFile.rechecks.order.filter((id) => !dayFile.rechecks.answered[id] && !isExcluded(words[id]))
@@ -45,23 +45,30 @@ export function introPreview({ status, dayFile, day, pool = [], settings }) {
   // `planNextRound` never makes a round of fewer than 2 new words, so a lone
   // leftover word is not promised (the trail's Learn step reads this too).
   const allowed = Math.min(newAllowance({ words, day, settings }), fresh);
-  const newCount = underwayNew + (allowed >= 2 ? allowed : 0);
+  const planned = allowed >= 2 ? allowed : 0;
+  const newCount = underwayNew + planned;
+  // Words already met in a round under way are certain; words still to be
+  // planned are not. Review can miss a word and fill the working set, and a
+  // catch-up round comes first (2026-09-26: "3 new words" promised, none
+  // met). The label says "up to" for those.
+  const newIsEstimate = planned > 0;
   const reviewCount = rechecks.length + carry;
 
   const workMs = newCount * ESTIMATE_MS.newWord + carry * ESTIMATE_MS.carryWord
     + rechecks.reduce((sum, id) => sum + recheckMs(words[id]), 0);
   const estimatedMinutes = workMs > 0 ? Math.max(1, Math.ceil(Math.min(workMs, leftMs) / 60000)) : 0;
-  return { opened, doneToday, newCount, reviewCount, estimatedMinutes, activeMs, capMs };
+  return { opened, doneToday, newCount, newIsEstimate, reviewCount, estimatedMinutes, activeMs, capMs };
 }
 
 /**
- * The day in one line. The agenda's lesson title is the bare form ("4 new
- * words · 3 to review"); the start card adds the time (`withTime`).
+ * The day in one line. The agenda's lesson title is the bare form ("up to 4
+ * new words · 3 to review"); the start card adds the time (`withTime`).
+ * "up to" marks new words not yet planned (`newIsEstimate`).
  */
 export function introPlanLabel(plan, { withTime = false } = {}) {
   if (plan?.doneToday) return withTime ? 'Done for today — practice anytime' : 'Done for today';
   const parts = [];
-  if (plan?.newCount) parts.push(plural(plan.newCount, 'new word', 'new words'));
+  if (plan?.newCount) parts.push(`${plan.newIsEstimate ? 'up to ' : ''}${plural(plan.newCount, 'new word', 'new words')}`);
   if (plan?.reviewCount) parts.push(`${plan.reviewCount} to review`);
   if (!parts.length) return 'Nothing new today';
   if (withTime && plan.estimatedMinutes) parts.push(`about ${plural(plan.estimatedMinutes, 'minute', 'minutes')}`);
