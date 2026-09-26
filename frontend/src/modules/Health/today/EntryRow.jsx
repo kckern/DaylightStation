@@ -13,6 +13,12 @@ import { usePortionControl } from './usePortionDraft.js';
 import { PortionDraftAlert, portionAlertFor } from './PortionDraftAlert.jsx';
 import { useRowPreview, logRowPreviewOpen } from './RowPreview.jsx';
 import { useDraggableRow } from './mealDrag.jsx';
+
+// A food row whose art is not settled yet: the artwork queue works every such
+// row until it has a real icon (it never gives up), so the generic glyph here
+// means "on its way". Dish headers are never queued, and an icon the person
+// chose themselves is final.
+const artworkPending = row => row.kind !== 'group' && !(row.manualFields || []).includes('icon');
 import { isReconstructedRow } from '@shared-contracts/nutrition/reconstruction.mjs';
 
 const logger = createAppLogger('health').child('entry-row');
@@ -64,7 +70,7 @@ export function EntryRow({ row, densityRow = row, onTap, onConfirm, onRequestDel
     <div className={`health-row-identity health-row__identity health-row__visual health-density-${densityPlacement}`}>
       {densityPlacement === 'before' ? <DensityBadge row={densityRow} editRow={row} /> : null}
       <span className="health-row-artwork" {...preview.targetProps} onClick={preview.onArtworkClick}>{row.photoRef && brokenPhoto !== row.photoRef ? <img className="health-row__thumb"
-        src={nutritionPhotoUrl(row.photoRef, { thumb: true })} alt="" loading="lazy" onError={() => { setBrokenPhoto(row.photoRef); reportArtworkFailure('photo', row.photoRef, { uuid: entryId(row), name, icon: row.icon || null }); }} /> : <FoodIcon icon={row.icon} />}</span>
+        src={nutritionPhotoUrl(row.photoRef, { thumb: true })} alt="" loading="lazy" onError={() => { setBrokenPhoto(row.photoRef); reportArtworkFailure('photo', row.photoRef, { uuid: entryId(row), name, icon: row.icon || null }); }} /> : <FoodIcon icon={row.icon} pending={artworkPending(row)} />}</span>
       <UnstyledButton className="health-row-name" disabled={Boolean(portions?.draft)} onClick={() => { preview.close(); onTap(row); }} aria-label={`Edit ${name}`}
         {...preview.targetProps} {...preview.focusProps}>
       <span className="health-row__description"><span className="health-row__name">{name}</span>{' '}

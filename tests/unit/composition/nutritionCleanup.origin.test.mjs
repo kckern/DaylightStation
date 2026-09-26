@@ -32,13 +32,13 @@ it('stamps the cleanup tick and both artwork timers with their own origins', asy
     });
     // startup runs the cleanup tick and the weekly artwork sweep at once
     await vi.advanceTimersByTimeAsync(0);
-    // the 2-minute artwork tick
-    await vi.advanceTimersByTimeAsync(2 * 60 * 1000);
+    // the 20-second artwork tick
+    await vi.advanceTimersByTimeAsync(20 * 1000);
     cleanup.stop();
 
     expect(seen).toContainEqual(['cleanup', 'tick:nutrition-cleanup']);
     expect(seen).toContainEqual(['sweep-7', 'tick:artwork-sweep']);
-    expect(seen).toContainEqual(['sweep-1', 'tick:artwork']);
+    expect(seen).toContainEqual(['sweep-2', 'tick:artwork']);
     expect(currentOrigin()).toBeNull();
   } finally { await rm(root, { recursive: true, force: true }); }
 });

@@ -760,7 +760,12 @@ $health-aside-gap: 1.5rem;
 .health-food-art {
   display: inline-block; position: relative; flex: none; color: var(--ds-text-mid);
   > img, > svg { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+  // No icon YET: the artwork queue never abandons a food, so this row's art is
+  // on its way (the day re-reads every 15s). Breathe, so it reads as "working"
+  // and not as the settled generic fallback.
+  &[data-state='pending'] > svg { color: var(--ds-accent); animation: ds-pending-pulse calc(var(--ds-motion-base, 200ms) * 6) ease-in-out infinite alternate; }
 }
+@media (prefers-reduced-motion: reduce) { .health-food-art[data-state='pending'] > svg { animation: none; opacity: 0.6; } }
 // The row magnifier (RowPreview.jsx): a speech-bubble card beside a food row
 // (Popover with an arrow, portalled). The picture is the point — 5em square,
 // contained on a subtle surface — then the numbers the row carries.

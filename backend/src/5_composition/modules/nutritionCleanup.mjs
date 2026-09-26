@@ -95,8 +95,8 @@ export function createNutritionCleanup({ dataService, configService, userIdentit
     catch (error) { logger.warn('nutrition.cleanup.tick_failed', { error: error.message }); }
     finally { ticking = false; }
   });
-  // Artwork: sweep the last day and work due items every ~2 min, sweep the last
-  // week every ~hour. Same
+  // Artwork: sweep the last two days and work due items every 20 s, sweep the
+  // last week every ~hour. Same
   // gate, same owner and the same non-overlapping guard as the cleanup tick.
   let artworkBusy = false;
   // Each run is stamped with its own origin in the AI usage ledger
@@ -108,12 +108,16 @@ export function createNutritionCleanup({ dataService, configService, userIdentit
     catch (error) { logger.warn('artwork.queue.' + label + '_failed', { error: error.message }); }
     finally { artworkBusy = false; }
   });
-  // Each 2-minute tick first sweeps today and yesterday, so a capture that
-  // lands on `default` is queued within minutes rather than at the hourly sweep.
-  const artworkTick = artworkRun('tick', 'tick:artwork', async () => { await artwork.sweep(userId, { sinceDays: 1 }); await artwork.tick(userId); });
+  // Each tick first sweeps the last two days, so a capture that lands on
+  // `default` is drawn within ~20 s: the pick itself takes ~2 s, and the Health
+  // day re-reads every 15 s while the row shows its icon as pending. Two days,
+  // not one: the sweep window is counted in UTC, and "since yesterday" in UTC
+  // excludes the local yesterday every Pacific evening (a dinner revised onto
+  // the previous day sat on `default` for that reason, 2026-09-25).
+  const artworkTick = artworkRun('tick', 'tick:artwork', async () => { await artwork.sweep(userId, { sinceDays: 2 }); await artwork.tick(userId); });
   const artworkSweep = artworkRun('sweep', 'tick:artwork-sweep', async () => { await artwork.sweep(userId, { sinceDays: 7 }); await artwork.tick(userId); });
   const scheduler = scheduled ? new NodeApplicationScheduler() : null;
-  const stops = scheduler ? [scheduler.every(30000, tick), scheduler.every(2 * 60 * 1000, artworkTick), scheduler.every(60 * 60 * 1000, artworkSweep)] : [];
+  const stops = scheduler ? [scheduler.every(30000, tick), scheduler.every(20 * 1000, artworkTick), scheduler.every(60 * 60 * 1000, artworkSweep)] : [];
   const stop = () => { for (const halt of stops) halt(); };
   server?.once?.('close', stop);
   cleanup.stop = stop;

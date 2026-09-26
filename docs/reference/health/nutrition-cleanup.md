@@ -182,8 +182,10 @@ queue item and is worked until it is fixed. No new art is generated.
 
 - the browser: `artworkLog.reportArtworkFailure` (FoodIcon load/decode failure, a
   row photo that will not load) posts once per key per page session;
-- a sweep of today and yesterday every 2 minutes (so a capture that lands on
-  `default` is queued within minutes), and of the last 7 days hourly: rows with no working photo and an icon that is
+- a sweep of the last two days every 20 seconds (so a capture that lands on
+  `default` is drawn within ~20 s; two days because the window is counted in UTC,
+  and one UTC day misses the local yesterday every Pacific evening), and of the
+  last 7 days hourly: rows with no working photo and an icon that is
   missing, `default`, or not served by the manifest (a person's own icon choice —
   `manualFields: icon`, including an Undo of an artwork repair — is left alone);
 - the auditor, when it proposes art the manifest does not serve.
@@ -236,9 +238,17 @@ also written onto the catalog entry when it has none; a pin is never touched.
 1 minute doubling to a 24-hour ceiling. There is no attempt cap. Rows reported while
 an attempt runs keep the item open.
 
+**What the person sees meanwhile.** Because the queue never abandons a food, a
+food row on the generic glyph is always "not drawn yet". The Health day shows it
+that way: `EntryRow` passes `pending` to `FoodIcon` for every food row (not dish
+headers, not a person's own icon choice), and a pending fallback renders with
+`data-state="pending"` — the glyph in the accent colour, breathing
+(`ds-pending-pulse`, still under reduced motion), labelled "Finding an icon".
+The day re-reads every 15 s, so the drawn icon replaces it without a reload.
+
 **Schedule.** From `5_composition/modules/nutritionCleanup.mjs`, behind the same
 `scheduled` gate and head-of-household owner as the cleanup tick, with its own
-non-overlapping guard: a 1-day `sweep` + `tick` every 2 minutes (up to 20 due items), and a 7-day
+non-overlapping guard: a 2-day `sweep` + `tick` every 20 seconds (up to 20 due items), and a 7-day
 `sweep` + `tick` every hour and at startup. Each pass reads the ledger once from the
 oldest day its items need, and the catalog once.
 
