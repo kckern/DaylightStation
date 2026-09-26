@@ -148,18 +148,57 @@ describe('evaluateEarnings — school kinds', () => {
       { id: 'green-week', kind: 'week-met', reward: { silver: 5, gems: 1 } },
     ]);
     const out = evaluate(rs, {
-      days: days([['2026-09-21', 'met'], ['2026-09-22', 'met'], ['2026-09-23', 'partial'], ['2026-09-26', 'exempt']]),
+      days: days([['2026-09-21', 'met'], ['2026-09-22', 'met'], ['2026-09-23', 'met'], ['2026-09-24', 'met'], ['2026-09-25', 'met'], ['2026-09-26', 'exempt']]),
       week: { weekId: WEEK.from, state: 'met', open: false },
     });
-    expect(line(out, 'green-day')).toMatchObject({ status: 'earned', count: 2, amount: { silver: 2, gems: 0 } });
+    expect(line(out, 'green-day')).toMatchObject({ status: 'earned', count: 5, amount: { silver: 5, gems: 0 } });
     expect(line(out, 'green-week')).toMatchObject({ status: 'earned', count: 1, amount: { silver: 5, gems: 1 } });
-    expect(out.totals).toEqual({ silver: 7, gems: 1 });
+    expect(out.totals).toEqual({ silver: 10, gems: 1 });
+  });
+
+  // 2026-09-26, on real data: the term grid's WEEK ROW covers weekly-cadence
+  // work only — a learner with none reads `exempt / no_weekly_work` even when
+  // every day was green. A green week is every study day green AND the
+  // weekly row satisfied (taxonomy §5), so week-met folds the days itself.
+  it('week-met is every study day green plus a satisfied weekly row — paid Saturday, not held to Sunday', () => {
+    const rs = ruleset([{ id: 'green-week', kind: 'week-met', reward: { silver: 5, gems: 1 } }]);
+    const allGreen = days([['2026-09-21', 'met'], ['2026-09-22', 'met'], ['2026-09-23', 'met'], ['2026-09-24', 'met'], ['2026-09-25', 'met'], ['2026-09-26', 'exempt', 'not_a_school_day']]);
+    const saturday = evaluate(rs, { days: allGreen, week: { weekId: WEEK.from, state: 'exempt', reason: 'no_weekly_work', open: true } });
+    expect(line(saturday, 'green-week')).toMatchObject({ status: 'earned', amount: { silver: 5, gems: 1 } });
+    // An unfinished weekly-cadence unit still blocks it.
+    const weeklyOpen = evaluate(rs, { days: allGreen, week: { weekId: WEEK.from, state: 'partial', open: false } });
+    expect(line(weeklyOpen, 'green-week').status).toBe('none');
+  });
+
+  it('week-met: a day that was not green means no green week, and the note names it', () => {
+    const rs = ruleset([{ id: 'green-week', kind: 'week-met', reward: 5 }]);
+    const out = evaluate(rs, {
+      days: days([['2026-09-21', 'partial'], ['2026-09-22', 'met'], ['2026-09-23', 'met'], ['2026-09-24', 'partial'], ['2026-09-25', 'met'], ['2026-09-26', 'met']]),
+      week: { weekId: WEEK.from, state: 'exempt', reason: 'no_weekly_work', open: true },
+    });
+    expect(line(out, 'green-week')).toMatchObject({ status: 'none' });
+    expect(line(out, 'green-week').note).toMatch(/2026-09-21.*2026-09-24/);
+  });
+
+  it('a week cannot pay before its Friday: all-green-so-far on a Wednesday is pending', () => {
+    const rs = ruleset([
+      { id: 'green-week', kind: 'week-met', reward: 5 },
+      { id: 'scripture', kind: 'section-week', match: { subject: 'scripture' }, reward: 5 },
+    ]);
+    const out = evaluate(rs, {
+      days: days([['2026-09-21', 'met'], ['2026-09-22', 'met'], ['2026-09-23', 'met']]),
+      sectionDays: sections('scripture', [['2026-09-21', 'served'], ['2026-09-22', 'served'], ['2026-09-23', 'served']]),
+      week: { weekId: WEEK.from, state: 'exempt', reason: 'no_weekly_work', open: true },
+    });
+    expect(line(out, 'green-week').status).toBe('pending');
+    expect(line(out, 'scripture').status).toBe('pending');
   });
 
   it('week-met is pending while the week is open and indeterminate when the week is unknown', () => {
     const rs = ruleset([{ id: 'green-week', kind: 'week-met', reward: 5 }]);
-    expect(line(evaluate(rs, { week: { weekId: WEEK.from, state: 'partial', open: true } }), 'green-week').status).toBe('pending');
-    expect(line(evaluate(rs, { week: { weekId: WEEK.from, state: 'unknown', open: false } }), 'green-week').status).toBe('indeterminate');
+    expect(line(evaluate(rs, { days: days([['2026-09-21', 'met']]), week: { weekId: WEEK.from, state: 'partial', open: true } }), 'green-week').status).toBe('pending');
+    expect(line(evaluate(rs, { days: days([['2026-09-21', 'met']]), week: { weekId: WEEK.from, state: 'unknown', open: false } }), 'green-week').status).toBe('indeterminate');
+    expect(line(evaluate(rs, { days: days([['2026-09-21', 'unknown', 'pending']]), week: { weekId: WEEK.from, state: 'exempt', open: false } }), 'green-week').status).toBe('indeterminate');
     expect(line(evaluate(rs, { week: null }), 'green-week').status).toBe('indeterminate');
   });
 

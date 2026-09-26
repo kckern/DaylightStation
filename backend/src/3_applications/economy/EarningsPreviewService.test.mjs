@@ -24,7 +24,7 @@ function build({ now = '2026-09-26T17:00:00.000Z', school = null, rings = null, 
         calls.school.push({ learnerId, week });
         return {
           sectionDays: [{ day: '2026-09-21', subject: 'language', state: 'served', reason: null, timeliness: 'on-time' }],
-          days: [], week: { weekId: week.from, state: 'met', reason: null, open: false }, units: [],
+          days: [0, 1, 2, 3, 4].map((i) => ({ day: new Date(Date.parse(`${week.from}T00:00:00Z`) + i * 86_400_000).toISOString().slice(0, 10), state: 'met', reason: null, timeliness: 'on-time' })), week: { weekId: week.from, state: 'met', reason: null, open: false }, units: [],
         };
       },
     },
