@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
 import { ExerciseSection } from './ExerciseSection.jsx';
+import { RowPreviewProvider } from './RowPreview.jsx';
 import { resetApiResourceCache } from '../../../lib/hooks/useApiResource.js';
 
 const api = vi.fn();
@@ -9,44 +10,102 @@ vi.mock('../../../lib/api.mjs', () => ({
   DaylightAPI: (...args) => api(...args),
   ContentDisplayUrl: id => `/api/v1/display/${id}`,
 }));
-const workout = { id: 'activity', title: 'Circuit', homeSessionId: 'segment-1', calories: 347.4, minutes: 44.3, avgHeartrate: 121.1 };
-const linked = { sessionId: 'group-1', segments: [{ sessionId: 'segment-1', media: { primary: { grandparentId: 'plex:42', showTitle: 'Program' } } }] };
-const show = sessions => render(<MantineProvider><ExerciseSection date="2026-09-05" sessions={sessions} /></MantineProvider>);
+const workout = { id: 'activity', title: 'Circuit', homeSessionId: 'segment-1', calories: 347.4, minutes: 44.3, avgHeartrate: 121.1, startTime: '01:20 pm' };
+const linked = { sessionId: 'group-1', segments: [{ sessionId: 'segment-1', media: { primary: { grandparentId: 'plex:42', showTitle: 'Program', description: 'Build bigger arms.' } } }] };
+const withMemo = { ...linked, voiceMemos: [{ transcript: 'I put in the work.' }, { transcript: 'Sore tomorrow.' }, { transcript: '  ' }] };
+const show = sessions => render(<MantineProvider><div className="ds-root"><RowPreviewProvider>
+  <ExerciseSection date="2026-09-05" sessions={sessions} /></RowPreviewProvider></div></MantineProvider>);
+const row = () => document.querySelector('.health-exercise');
+const hover = () => fireEvent.pointerEnter(row(), { clientX: 20, clientY: 300 });
 
 beforeEach(() => { api.mockReset(); resetApiResourceCache(); });
 
-describe('exercise enrichment', () => {
-  it('matches a segment to its session, loads the program poster and retains ledger credit', async () => {
+describe('exercise row', () => {
+  it('is one link to the session: poster, title, minutes and the ledger credit', async () => {
     api.mockResolvedValue({ sessions: [linked, { sessionId: 'unrelated', calories: 1000 }] });
     show([workout]);
-    expect(await screen.findByRole('link', { name: 'View fitness session: Circuit' })).toHaveAttribute('href', '/fitness/home/session-group-1');
+    const link = await screen.findByRole('link', { name: /Circuit/ });
+    expect(link).toHaveAttribute('href', '/fitness/home/session-group-1');
+    expect(link).toBe(row());
     expect(screen.getByAltText('Program poster')).toHaveAttribute('src', '/api/v1/display/plex:42');
-    expect(document.querySelector('.health-exercise .health-row__kcal')).toHaveTextContent('+347 kcal');
-    expect(screen.getByText('44 min')).toBeTruthy();
-    expect(screen.getByText('121 bpm avg')).toBeTruthy();
+    expect(row().querySelector('.health-exercise__minutes')).toHaveTextContent('44 min');
+    expect(row().querySelector('.health-exercise__kcal')).toHaveTextContent('+347 kcal');
+    expect(screen.queryByText(/View session/)).toBeNull();
     expect(api).toHaveBeenCalledTimes(1);
-    fireEvent.error(screen.getByAltText('Program poster'));
+  });
+
+  it('keeps start time and heart rate off the row', async () => {
+    api.mockResolvedValue({ sessions: [linked] });
+    show([workout]);
+    await screen.findByRole('link');
+    expect(row()).not.toHaveTextContent('bpm');
+    expect(row()).not.toHaveTextContent('01:20 pm');
+  });
+
+  it('shows the first voice memo and hides the description when there is one', async () => {
+    api.mockResolvedValue({ sessions: [withMemo] });
+    show([workout]);
+    expect(await screen.findByText('“I put in the work.”')).toHaveClass('health-exercise__memo');
+    expect(row().querySelectorAll('.health-exercise__memo')).toHaveLength(1);
+    expect(row()).not.toHaveTextContent('Build bigger arms.');
+  });
+
+  it('falls back to the description when there is no voice memo', async () => {
+    api.mockResolvedValue({ sessions: [linked] });
+    show([workout]);
+    expect(await screen.findByText('Build bigger arms.')).toHaveClass('health-exercise__description');
+    expect(row().querySelector('.health-exercise__memo')).toBeNull();
+  });
+
+  it('hovering opens a card with everything the row leaves out', async () => {
+    api.mockResolvedValue({ sessions: [withMemo] });
+    show([workout]);
+    await screen.findByRole('link');
+    hover();
+    const card = screen.getByRole('tooltip');
+    expect(card).toHaveTextContent('Circuit');
+    expect(card).toHaveTextContent('01:20 pm');
+    expect(card).toHaveTextContent('44 min');
+    expect(card).toHaveTextContent('121 bpm avg');
+    expect(card).toHaveTextContent('+347 kcal');
+    expect(card).toHaveTextContent('“I put in the work.”');
+    expect(card).toHaveTextContent('“Sore tomorrow.”');
+    expect(card).toHaveTextContent('Build bigger arms.');
+    fireEvent.pointerLeave(row());
+    await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull());
+  });
+
+  it('on a touch screen, tapping the poster toggles the card instead of navigating', async () => {
+    const matchMedia = window.matchMedia;
+    window.matchMedia = query => ({ matches: query === '(pointer: coarse)', addEventListener() {}, removeEventListener() {} });
+    try {
+      api.mockResolvedValue({ sessions: [linked] });
+      show([workout]);
+      await screen.findByRole('link');
+      const poster = row().querySelector('.health-exercise__art');
+      fireEvent.pointerDown(poster);
+      expect(fireEvent.click(poster)).toBe(false); // default (navigation) prevented
+      expect(screen.getByRole('tooltip')).toHaveTextContent('Circuit');
+    } finally { window.matchMedia = matchMedia; }
+  });
+
+  it('drops a broken poster for the barbell and keeps the link', async () => {
+    api.mockResolvedValue({ sessions: [linked] });
+    show([workout]);
+    fireEvent.error(await screen.findByAltText('Program poster'));
     expect(screen.queryByRole('img')).toBeNull();
     expect(screen.getByRole('link')).toBeTruthy();
   });
 
-  it('shows what was said after the workout and what the episode was about', async () => {
-    api.mockResolvedValue({ sessions: [{ ...linked,
-      voiceMemos: [{ transcript: 'We did the first two races of Graffiti Cup.', durationSeconds: 12 }, { transcript: '  ' }],
-      segments: [{ sessionId: 'segment-1', media: { primary: { grandparentId: 'plex:42', showTitle: 'Program', description: 'Sonic and an all-star Sega cast race.' } } }] }] });
-    show([workout]);
-    expect(await screen.findByText('“We did the first two races of Graffiti Cup.”')).toBeTruthy();
-    expect(document.querySelectorAll('.health-exercise__memo')).toHaveLength(1);
-    expect(screen.getByText('Sonic and an all-star Sega cast race.')).toHaveClass('health-exercise__description');
-  });
-
-  it('marks a heart-rate estimate (home session not on Strava yet) as estimated', async () => {
+  it('marks a heart-rate estimate (home session not on Strava yet)', async () => {
     api.mockResolvedValue({ sessions: [{ sessionId: 'home-1' }] });
     show([{ id: 'home-home-1', source: 'home', estimated: true, homeSessionId: 'home-1', title: 'Game Cycling', calories: 179, minutes: 20.55 }]);
-    const kcal = document.querySelector('.health-exercise .health-row__kcal');
-    expect(kcal).toHaveTextContent('+~179 kcal est.');
+    const kcal = row().querySelector('.health-exercise__kcal');
+    expect(kcal).toHaveTextContent('+~179 kcal');
     expect(kcal).toHaveAttribute('title', 'Estimated from heart rate; not on Strava yet');
-    expect(await screen.findByRole('link', { name: 'View fitness session: Game Cycling' })).toHaveAttribute('href', '/fitness/home/session-home-1');
+    expect(await screen.findByRole('link', { name: /Game Cycling/ })).toHaveAttribute('href', '/fitness/home/session-home-1');
+    hover();
+    expect(screen.getByRole('tooltip')).toHaveTextContent('+~179 kcal est.');
   });
 
   it('leaves an unmatched workout readable without an invented session link', async () => {
@@ -70,5 +129,10 @@ describe('exercise enrichment', () => {
     fireEvent.click(await screen.findByRole('button', { name: /Workout details unavailable/ }));
     expect(screen.getByText('Circuit')).toBeTruthy();
     expect(await screen.findByRole('link')).toHaveAttribute('href', '/fitness/home/session-group-1');
+  });
+
+  it('puts the section subtotal in the header-right cluster, like a meal', () => {
+    show([{ title: 'Run', calories: 250 }, { title: 'Walk', calories: 61 }]);
+    expect(document.querySelector('.health-meal__header-right .health-meal__kcal')).toHaveTextContent('+311 kcal');
   });
 });
