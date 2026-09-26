@@ -12,6 +12,9 @@ export class EarnRulesService {
   #store;
   #clock;
   #logger;
+  // Read-modify-write, one at a time: two edits in flight must each build on
+  // the other, not both read revision N and both write N+1.
+  #chain = Promise.resolve();
 
   /**
    * @param {object} deps
@@ -48,8 +51,10 @@ export class EarnRulesService {
    */
   async setUserOverride({ learnerId, patch, actorId }) {
     this.#requireActor(actorId);
-    const current = await this.get();
-    return this.#commit(current, withUserOverride(current, learnerId, patch ?? {}), actorId, { learnerId });
+    return this.#serialize(async () => {
+      const current = await this.get();
+      return this.#commit(current, withUserOverride(current, learnerId, patch ?? {}), actorId, { learnerId });
+    });
   }
 
   /**
@@ -59,9 +64,17 @@ export class EarnRulesService {
    */
   async replace({ doc, actorId }) {
     this.#requireActor(actorId);
-    const current = await this.get();
-    const next = validateRuleset({ ...doc, users: doc?.users ?? current.users });
-    return this.#commit(current, next, actorId, { rules: next.rules.length });
+    return this.#serialize(async () => {
+      const current = await this.get();
+      const next = validateRuleset({ ...doc, users: doc?.users ?? current.users });
+      return this.#commit(current, next, actorId, { rules: next.rules.length });
+    });
+  }
+
+  #serialize(task) {
+    const run = this.#chain.then(task);
+    this.#chain = run.catch(() => {});
+    return run;
   }
 
   #requireActor(actorId) {

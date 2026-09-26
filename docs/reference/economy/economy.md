@@ -154,8 +154,15 @@ pays twice is two rules. Per-learner overrides live under `users.<id>`:
 
 - **School week** Monday → Sunday; **ring award week** Monday 04:00 → Saturday 12:00
   (D10). The contest line is `pending` (leader mark only) until Saturday noon.
-- Week kinds stay `pending` until the evidence reaches Friday — all-green-so-far on
-  a Wednesday is not a green week.
+- The evaluator is given `today`. Today (and later) is **open**: its unfinished work
+  is "still to do" (`pending`), never missed — today's term-grid row is live, so a
+  row dated Friday is not a Friday that is over. Week kinds settle once Friday has
+  passed (Saturday is payday, D1); all-green-so-far on a Wednesday is `pending`.
+- A day the grid has not worked out yet (`unknown`, e.g. right after a cache wipe)
+  never counts as "not done": `section-day` notes it, `section-week` and
+  `week-met` are `indeterminate` on it.
+- A week outside the school term reads "Outside the school term"; a week that has
+  not started reads "Not started yet" — never "Not on the plan this week".
 - A failed evidence source makes its lines `indeterminate` ("can't tell"), never
   `none`. Other statuses: `earned`, `none` (with a note saying why), `disabled`.
 - Every line carries `ref` = `earn:<learner>:<rule>:<period>:<timeliness>` — the

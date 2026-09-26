@@ -43,8 +43,8 @@ function WorkGrid({ work, from }) {
         <tr className="teacher-coins__day-row">
           <th scope="row">Whole day</th>
           {grid.dayRow.map((c) => (
-            <td key={c.day} data-state={c.state ?? 'empty'} aria-label={c.state ? `Day ${dayLabel(c.day)}: ${CELL_WORDS[c.state] ?? c.state}` : undefined}>
-              {c.state ? CELL_MARKS[c.state] ?? '' : ''}
+            <td key={c.day} data-state={c.state ?? 'empty'}>
+              {c.state && <><span aria-hidden="true">{CELL_MARKS[c.state] ?? ''}</span><span className="teacher-visually-hidden">{`Day ${dayLabel(c.day)}: ${CELL_WORDS[c.state] ?? c.state}`}</span></>}
             </td>
           ))}
         </tr>
@@ -52,9 +52,8 @@ function WorkGrid({ work, from }) {
           <tr key={row.subject}>
             <th scope="row">{row.subject}</th>
             {row.cells.map((c) => (
-              <td key={c.day} data-state={c.state ?? 'empty'} title={c.reason ?? undefined}
-                aria-label={c.state ? `${row.subject} ${dayLabel(c.day)}: ${CELL_WORDS[c.state] ?? c.state}` : undefined}>
-                {c.state ? CELL_MARKS[c.state] ?? '' : ''}
+              <td key={c.day} data-state={c.state ?? 'empty'} title={c.reason ?? undefined}>
+                {c.state && <><span aria-hidden="true">{CELL_MARKS[c.state] ?? ''}</span><span className="teacher-visually-hidden">{`${row.subject} ${dayLabel(c.day)}: ${CELL_WORDS[c.state] ?? c.state}`}</span></>}
               </td>
             ))}
           </tr>
@@ -94,7 +93,9 @@ function RateCell({ line, busy, onSave, onReset }) {
 export default function CoinsPanel({ learnerId, learnerName }) {
   const [week, setWeek] = useState(null);
   const preview = usePanelFetch(() => schoolApi.earningsPreview(learnerId, week), {
-    deps: [learnerId, week], panel: 'coins', notFoundAs: 'unavailable', isEmpty: () => false,
+    // A 404 here is an unknown learner (the route itself always exists), so it
+    // is an error with a retry — never "not enabled on this install".
+    deps: [learnerId, week], panel: 'coins', isEmpty: () => false,
   });
   const { run, busy, errors } = useTeacherWrite({ panel: 'coins' });
   const data = preview.data;
@@ -112,8 +113,7 @@ export default function CoinsPanel({ learnerId, learnerName }) {
   const multiplierChanged = multiplierValid && data && m !== (data.multiplier ?? 1);
 
   return (
-    <PanelFrame title="Coins this week" state={preview.state} retry={preview.retry}
-      unavailableCopy="Weekly earnings are not enabled on this install.">
+    <PanelFrame title="Coins this week" state={preview.state} retry={preview.retry}>
       {data && from && (
         <div className="teacher-coins">
           <div className="teacher-coins__week">
@@ -143,7 +143,7 @@ export default function CoinsPanel({ learnerId, learnerName }) {
                   <th scope="row">{line.label}</th>
                   <td>
                     <span className={`teacher-coins__status teacher-coins__status--${line.status}`}>{statusText(line.status)}</span>
-                    {line.status === 'earned' && line.kind !== 'ring-contest' && line.count > 1 && <span className="teacher-coins__count"> ×{line.count}</span>}
+                    {line.status === 'earned' && !['ring-contest', 'ring-threshold'].includes(line.kind) && line.count > 1 && <span className="teacher-coins__count"> ×{line.count}</span>}
                     {line.note && <span className="teacher-coins__note">{line.note}</span>}
                   </td>
                   <td>

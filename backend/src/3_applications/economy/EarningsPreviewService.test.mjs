@@ -84,6 +84,30 @@ describe('EarningsPreviewService.preview', () => {
     expect(out.lines.map((l) => [l.ruleId, l.status])).toEqual([['korean', 'indeterminate'], ['green-week', 'indeterminate'], ['contest', 'indeterminate']]);
   });
 
+  it('passes today to the evaluator: on Friday morning, Friday\'s unfinished work is pending, not lost', async () => {
+    const { service } = build({
+      now: '2026-09-25T15:00:00.000Z', // Friday 08:00 PDT
+      school: { async schoolWeek({ week }) {
+        const monThu = ['2026-09-21', '2026-09-22', '2026-09-23', '2026-09-24'];
+        return {
+          sectionDays: [], units: [],
+          days: [...monThu.map((day) => ({ day, state: 'met', reason: null })), { day: '2026-09-25', state: 'none', reason: null }],
+          week: { weekId: week.from, state: 'exempt', reason: 'no_weekly_work', open: true },
+        };
+      } },
+    });
+    const out = await service.preview({ learnerId: 'learner-a' });
+    expect(out.lines.find((l) => l.ruleId === 'green-week').status).toBe('pending');
+    expect(out.today).toBe('2026-09-25');
+  });
+
+  it('a week outside the school term reads "outside the term", not "not on the plan"', async () => {
+    const { service } = build({ school: { async schoolWeek() { return { sectionDays: [], days: [], week: null, units: [], coverage: 'outside-term' }; } } });
+    const out = await service.preview({ learnerId: 'learner-a', week: '2026-06-10' });
+    expect(out.evidence.school).toBe('outside-term');
+    expect(out.lines.find((l) => l.ruleId === 'korean')).toMatchObject({ status: 'indeterminate', note: 'Outside the school term' });
+  });
+
   it('refuses an unknown learner and a malformed week', async () => {
     const { service } = build();
     await expect(service.preview({ learnerId: 'nobody' })).rejects.toThrow(/nobody/);
@@ -92,6 +116,19 @@ describe('EarningsPreviewService.preview', () => {
 });
 
 describe('EarningsPreviewService.roster', () => {
+  it('prices the learners in parallel, not one after another', async () => {
+    let inFlight = 0;
+    let peak = 0;
+    const { service } = build({ school: { async schoolWeek({ week }) {
+      inFlight += 1; peak = Math.max(peak, inFlight);
+      await new Promise((r) => setTimeout(r, 10));
+      inFlight -= 1;
+      return { sectionDays: [], days: [], week: { weekId: week.from, state: 'exempt', open: false }, units: [] };
+    } } });
+    await service.roster({ week: '2026-09-24' });
+    expect(peak).toBe(2);
+  });
+
   it('prices every learner for the week, reading the rings standings once', async () => {
     const { service, calls } = build();
     const out = await service.roster({ week: '2026-09-24' });

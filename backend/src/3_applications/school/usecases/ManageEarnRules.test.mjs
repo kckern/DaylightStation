@@ -29,6 +29,14 @@ describe('ManageEarnRules', () => {
     expect(earnRules.replace).toHaveBeenCalledWith({ doc: { rules: [] }, actorId: 'parent' });
   });
 
+  it('refuses rates for someone not on the school roster (no typo entries piling up in the rules)', async () => {
+    const teacherGate = { assert: vi.fn() };
+    const earnRules = { setUserOverride: vi.fn(), replace: vi.fn() };
+    const useCase = new ManageEarnRules({ teacherGate, earnRules, learnerIds: async () => ['learner-a'], logger: silent });
+    await expect(useCase.setLearnerRates({ learnerId: 'lerner-a', patch: {}, actorId: 'parent' })).rejects.toThrow(/lerner-a/);
+    expect(earnRules.setUserOverride).not.toHaveBeenCalled();
+  });
+
   it('a refused gate writes nothing', async () => {
     const { earnRules, useCase } = build({ refuse: true });
     await expect(useCase.setLearnerRates({ learnerId: 'learner-a', patch: {}, actorId: 'kid', pin: null })).rejects.toThrow(/grown-up/);

@@ -14,7 +14,7 @@ function evaluate(rs, facts = {}, extra = {}) {
   return evaluateEarnings({
     ruleset: rs, learnerId: 'kid',
     facts: { sectionDays: [], days: [], week: null, units: [], rings: null, ...facts },
-    standings: null, contestClosed: false, windows: { school: WEEK, rings: RINGS_WEEK }, ...extra,
+    standings: null, contestClosed: false, windows: { school: WEEK, rings: RINGS_WEEK }, today: '2026-09-26', ...extra,
   });
 }
 const line = (out, id) => out.lines.find((l) => l.ruleId === id);
@@ -90,6 +90,11 @@ describe('withUserOverride — one learner\'s rates, returned as a new validated
     expect(cleared.users).toEqual({});
   });
 
+  it('disabled:false is not an override — the rule stays on the household rate', () => {
+    const next = withUserOverride(base, 'little', { rules: { korean: { disabled: false } } });
+    expect(next.users).toEqual({});
+  });
+
   it('refuses a bad value through the same validation', () => {
     expect(() => withUserOverride(base, 'little', { rules: { korean: { reward: -1 } } })).toThrow(/reward/);
     expect(() => withUserOverride(base, 'little', { rules: { nope: { reward: 1 } } })).toThrow(/nope/);
@@ -124,7 +129,8 @@ describe('evaluateEarnings — school kinds', () => {
 
   it('section-week is pending, not lost, while the week is still open', () => {
     const rs = ruleset([{ id: 'scripture', kind: 'section-week', match: { subject: 'scripture' }, reward: 5 }]);
-    const out = evaluate(rs, { week: { weekId: WEEK.from, state: 'partial', open: true }, sectionDays: sections('scripture', [['2026-09-21', 'served'], ['2026-09-22', 'obligated']]) });
+    // Wednesday: Friday has not passed, so Tuesday's gap reads "still to do".
+    const out = evaluate(rs, { week: { weekId: WEEK.from, state: 'partial', open: true }, sectionDays: sections('scripture', [['2026-09-21', 'served'], ['2026-09-22', 'obligated']]) }, { today: '2026-09-23' });
     expect(line(out, 'scripture').status).toBe('pending');
     // Saturday morning, the teacher needs to see WHICH day is missing, not just "still going".
     expect(line(out, 'scripture').note).toMatch(/2026-09-22/);
@@ -189,9 +195,89 @@ describe('evaluateEarnings — school kinds', () => {
       days: days([['2026-09-21', 'met'], ['2026-09-22', 'met'], ['2026-09-23', 'met']]),
       sectionDays: sections('scripture', [['2026-09-21', 'served'], ['2026-09-22', 'served'], ['2026-09-23', 'served']]),
       week: { weekId: WEEK.from, state: 'exempt', reason: 'no_weekly_work', open: true },
-    });
+    }, { today: '2026-09-23' });
     expect(line(out, 'green-week').status).toBe('pending');
     expect(line(out, 'scripture').status).toBe('pending');
+  });
+
+  // Fable review 2026-09-26: today's row is LIVE — a Friday row exists at
+  // 04:01 Friday with nothing done yet. It is still to do, not missed.
+  it('Friday morning: today\'s unfinished work is pending, not lost', () => {
+    const rs = ruleset([
+      { id: 'green-week', kind: 'week-met', reward: 5 },
+      { id: 'scripture', kind: 'section-week', match: { subject: 'scripture' }, reward: 5 },
+    ]);
+    const out = evaluate(rs, {
+      days: days([['2026-09-21', 'met'], ['2026-09-22', 'met'], ['2026-09-23', 'met'], ['2026-09-24', 'met'], ['2026-09-25', 'none']]),
+      sectionDays: sections('scripture', [['2026-09-21', 'served'], ['2026-09-22', 'served'], ['2026-09-23', 'served'], ['2026-09-24', 'served'], ['2026-09-25', 'obligated']]),
+      week: { weekId: WEEK.from, state: 'exempt', reason: 'no_weekly_work', open: true },
+    }, { today: '2026-09-25' });
+    expect(line(out, 'scripture')).toMatchObject({ status: 'pending' });
+    expect(line(out, 'scripture').note).toMatch(/today/i);
+    expect(line(out, 'green-week').status).toBe('pending');
+  });
+
+  it('Saturday morning, a learner with Saturday work: the week waits for today, and pays once it is done', () => {
+    const rs = ruleset([
+      { id: 'green-week', kind: 'week-met', reward: 5 },
+      { id: 'scripture', kind: 'section-week', match: { subject: 'scripture' }, reward: 5 },
+    ]);
+    const week = { weekId: WEEK.from, state: 'exempt', reason: 'no_weekly_work', open: true };
+    const monFri = [['2026-09-21', 'met'], ['2026-09-22', 'met'], ['2026-09-23', 'met'], ['2026-09-24', 'met'], ['2026-09-25', 'met']];
+    const scriptureMonFri = monFri.map(([d]) => [d, 'served']);
+    const morning = evaluate(rs, {
+      days: days([...monFri, ['2026-09-26', 'partial']]),
+      sectionDays: sections('scripture', [...scriptureMonFri, ['2026-09-26', 'obligated']]),
+      week,
+    });
+    expect(line(morning, 'scripture').status).toBe('pending');
+    expect(line(morning, 'green-week').status).toBe('pending');
+    const done = evaluate(rs, {
+      days: days([...monFri, ['2026-09-26', 'met']]),
+      sectionDays: sections('scripture', [...scriptureMonFri, ['2026-09-26', 'served']]),
+      week,
+    });
+    expect(line(done, 'scripture').status).toBe('earned');
+    expect(line(done, 'green-week').status).toBe('earned');
+  });
+
+  it('a day the grid has not worked out yet: section-day says so, section-week cannot pay on it', () => {
+    const rs = ruleset([
+      { id: 'korean', kind: 'section-day', match: { subject: 'language' }, reward: 2 },
+      { id: 'scripture', kind: 'section-week', match: { subject: 'scripture' }, reward: 5 },
+    ]);
+    const facts = {
+      days: days([['2026-09-21', 'met'], ['2026-09-22', 'unknown', 'pending'], ['2026-09-23', 'met'], ['2026-09-24', 'met'], ['2026-09-25', 'met']]),
+      sectionDays: [
+        ...sections('language', [['2026-09-21', 'served'], ['2026-09-23', 'served'], ['2026-09-24', 'served'], ['2026-09-25', 'served']]),
+        ...sections('scripture', [['2026-09-21', 'served'], ['2026-09-23', 'served'], ['2026-09-24', 'served'], ['2026-09-25', 'served']]),
+      ],
+      week: { weekId: WEEK.from, state: 'exempt', open: true },
+    };
+    const out = evaluate(rs, facts);
+    expect(line(out, 'korean')).toMatchObject({ status: 'earned', count: 4 });
+    expect(line(out, 'korean').note).toMatch(/not worked out/);
+    expect(line(out, 'scripture').status).toBe('indeterminate');
+  });
+
+  it('a week that has not started yet is pending, never "not on the plan"', () => {
+    const rs = ruleset([{ id: 'korean', kind: 'section-day', match: { subject: 'language' }, reward: 2 }, { id: 'green-day', kind: 'day-met', reward: 1 }]);
+    const out = evaluate(rs, {}, { today: '2026-09-18' });
+    expect(out.lines.map((l) => [l.ruleId, l.status])).toEqual([['korean', 'pending'], ['green-day', 'pending']]);
+    expect(line(out, 'korean').note).toMatch(/not started/i);
+  });
+
+  it('a week outside the school term says so instead of "not on the plan"', () => {
+    const rs = ruleset([{ id: 'korean', kind: 'section-day', match: { subject: 'language' }, reward: 2 }]);
+    const out = evaluate(rs, {}, { unavailable: { school: 'outside-term' } });
+    expect(line(out, 'korean')).toMatchObject({ status: 'indeterminate' });
+    expect(line(out, 'korean').note).toMatch(/outside the school term/i);
+  });
+
+  it('a subject week where every day was excused reads "not on the plan", like section-day', () => {
+    const rs = ruleset([{ id: 'scripture', kind: 'section-week', match: { subject: 'scripture' }, reward: 5 }]);
+    const out = evaluate(rs, { week: { weekId: WEEK.from, state: 'exempt', open: false }, sectionDays: sections('scripture', [['2026-09-21', 'excused', 'optional_backlog']]) });
+    expect(line(out, 'scripture').note).toBe('Not on the plan this week');
   });
 
   it('week-met is pending while the week is open and indeterminate when the week is unknown', () => {
@@ -252,6 +338,18 @@ describe('evaluateEarnings — rings', () => {
 
   it('refuses a ratio with zero rings', () => {
     expect(() => ruleset([{ id: 'rings', kind: 'ring-threshold', rate: { rings: 0, silver: 1 } }])).toThrow(/rate/);
+  });
+
+  it('with no ring rate and no thresholds, says so rather than "not this week"', () => {
+    const rs = ruleset([{ id: 'rings', kind: 'ring-threshold', rate: { rings: 100, silver: 0 }, thresholds: [] }]);
+    expect(line(evaluate(rs, { rings: 300 }), 'rings')).toMatchObject({ status: 'none', note: 'No ring rate set' });
+  });
+
+  it('the ring lines key their period on the school Monday, whatever the award week\'s UTC instant', () => {
+    const rs = ruleset([{ id: 'rings', kind: 'ring-threshold', rate: { rings: 1, silver: 1 } }]);
+    // East of UTC, Monday 04:00 local is Sunday in UTC.
+    const out = evaluate(rs, { rings: 3 }, { windows: { school: WEEK, rings: { from: '2026-09-20T18:00:00.000Z', to: '2026-09-26T03:00:00.000Z' } } });
+    expect(line(out, 'rings').ref).toBe('earn:kid:rings:2026-09-21:on-time');
   });
 
   it('rings unavailable → indeterminate', () => {

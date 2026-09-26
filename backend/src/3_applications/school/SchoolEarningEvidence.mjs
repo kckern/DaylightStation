@@ -42,6 +42,13 @@ export class SchoolEarningEvidence extends ISchoolEarningEvidence {
   async schoolWeek({ learnerId, week }) {
     const inWeek = (day) => typeof day === 'string' && day >= week.from && day <= week.to;
     const term = await this.#termVerdicts.read(learnerId, { detail: true });
+    // The grid reads only the term containing today. A week outside it has no
+    // verdicts at all — say so, rather than hand back an empty week that the
+    // economy would read as "not on the plan".
+    const bounds = term?.term ?? null;
+    if (!bounds || (bounds.from && week.to < bounds.from) || (bounds.to && week.from > bounds.to)) {
+      return { sectionDays: [], days: [], week: null, units: [], coverage: 'outside-term' };
+    }
     const rows = (term?.days ?? []).filter((d) => inWeek(d.studyDay));
     const days = rows.map((d) => ({ day: d.studyDay, state: d.state, reason: d.reason ?? null, timeliness: ON_TIME }));
     const sectionDays = rows.flatMap((d) => (d.sections ?? []).map((s) => ({
@@ -49,21 +56,25 @@ export class SchoolEarningEvidence extends ISchoolEarningEvidence {
     })));
     const row = (term?.weeks ?? []).find((w) => w.weekId === week.from) ?? null;
     const weekFact = row ? { weekId: row.weekId, state: row.state, reason: row.reason ?? null, open: row.open === true } : null;
-    return { sectionDays, days, week: weekFact, units: await this.#units(learnerId, inWeek) };
+    return { sectionDays, days, week: weekFact, units: await this.#units(learnerId, inWeek), coverage: 'ok' };
   }
 
   async #units(learnerId, inWeek) {
     const rows = await this.#sessions.execute({ learnerId });
     const graded = (rows ?? []).filter((s) => inWeek(s.studyDay ?? s.day) && s.unitId && (s.outcome?.result || s.state === 'graded'));
+    // One lookup per unit, in parallel — a retried unit shares its answer.
+    const infos = new Map();
+    await Promise.all([...new Set(graded.map((s) => s.unitId))].map(async (unitId) => {
+      try {
+        infos.set(unitId, this.#unitInfo ? await this.#unitInfo(unitId) : null);
+      } catch (err) {
+        infos.set(unitId, null);
+        this.#logger.warn?.('school.earning-evidence.unit-info-failed', { unitId, error: err?.message ?? String(err) });
+      }
+    }));
     const out = [];
     for (const s of graded) {
-      let info = null;
-      try {
-        // eslint-disable-next-line no-await-in-loop
-        info = this.#unitInfo ? await this.#unitInfo(s.unitId) : null;
-      } catch (err) {
-        this.#logger.warn?.('school.earning-evidence.unit-info-failed', { unitId: s.unitId, error: err?.message ?? String(err) });
-      }
+      const info = infos.get(s.unitId) ?? null;
       out.push({
         day: s.studyDay ?? s.day, unitId: s.unitId, subject: info?.subject ?? null, courseId: info?.courseId ?? null,
         result: s.outcome?.result ?? null, timeliness: ON_TIME,

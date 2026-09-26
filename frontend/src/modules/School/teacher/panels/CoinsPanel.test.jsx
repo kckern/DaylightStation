@@ -75,7 +75,8 @@ describe('CoinsPanel', () => {
     expect(within(grid).getByText('Mon 21')).toBeInTheDocument();
     expect(within(grid).getByText('Sun 27')).toBeInTheDocument();
     expect(within(grid).getByText('scripture')).toBeInTheDocument();
-    expect(within(grid).getByLabelText('scripture Tue 22: not done')).toBeInTheDocument();
+    // The words ride in hidden text (screen readers skip aria-label on a data cell).
+    expect(within(grid).getByText('scripture Tue 22: not done')).toBeInTheDocument();
     expect(within(grid).getByText(/540 rings/)).toBeInTheDocument();
   });
 
@@ -121,6 +122,32 @@ describe('CoinsPanel', () => {
     await waitFor(() => expect(schoolApi.putEarnRates).toHaveBeenCalledWith('learner-a', expect.objectContaining({
       patch: { rules: { 'korean-daily': null } },
     })));
+  });
+
+  it('an unsaved rate draft never follows the teacher to another learner', async () => {
+    const { rerender } = render(<CoinsPanel learnerId="learner-a" learnerName="Learner A" />);
+    const input = await screen.findByLabelText('Silver for Korean (each day done)');
+    fireEvent.change(input, { target: { value: '3' } });
+    expect(screen.getByRole('button', { name: 'Save rate for Korean (each day done)' })).toBeInTheDocument();
+    schoolApi.earningsPreview.mockResolvedValue(ok(preview({ learnerId: 'learner-b', learnerName: 'Learner B' })));
+    rerender(<CoinsPanel learnerId="learner-b" learnerName="Learner B" />);
+    await waitFor(() => expect(schoolApi.earningsPreview).toHaveBeenLastCalledWith('learner-b', null));
+    expect(await screen.findByLabelText('Silver for Korean (each day done)')).toHaveValue(2);
+    expect(screen.queryByRole('button', { name: 'Save rate for Korean (each day done)' })).toBeNull();
+  });
+
+  it('the rings row does not print its ring count as a multiplier', async () => {
+    render(<CoinsPanel learnerId="learner-a" learnerName="Learner A" />);
+    await screen.findByRole('table', { name: /what it earns/i });
+    expect(screen.queryByText(/×540/)).toBeNull();
+    expect(screen.getByText(/×4/)).toBeInTheDocument(); // Korean, 4 days
+  });
+
+  it('an unknown learner is a load error, not "not enabled on this install"', async () => {
+    schoolApi.earningsPreview.mockResolvedValue({ ok: false, status: 404, data: { error: 'learner not found: nobody' } });
+    render(<CoinsPanel learnerId="nobody" learnerName="nobody" />);
+    expect(await screen.findByRole('button', { name: 'Retry' })).toBeInTheDocument();
+    expect(screen.queryByText(/not enabled/i)).toBeNull();
   });
 
   it('sets the learner\'s multiplier', async () => {

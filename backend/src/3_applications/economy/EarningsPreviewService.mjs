@@ -71,12 +71,10 @@ export class EarningsPreviewService {
   async roster({ week = null } = {}) {
     const roster = await this.#roster();
     const ctx = await this.#context(week, roster);
-    const learners = [];
-    for (const learner of roster) {
-      // eslint-disable-next-line no-await-in-loop
-      learners.push(await this.#price(learner, ctx));
-    }
-    return { windows: ctx.windows, contestClosed: ctx.contestClosed, rulesRevision: ctx.ruleset.revision, learners };
+    // In parallel: each learner's evidence is an independent read, and a
+    // serial roster took seconds per learner on a cold verdict cache.
+    const learners = await Promise.all(roster.map((learner) => this.#price(learner, ctx)));
+    return { windows: ctx.windows, contestClosed: ctx.contestClosed, rulesRevision: ctx.ruleset.revision, today: ctx.today, learners };
   }
 
   async #roster() {
@@ -98,6 +96,7 @@ export class EarningsPreviewService {
       school,
       rings: { from: new Date(fromMs).toISOString(), to: new Date(toMs).toISOString() },
       fromMs, toMs, contestClosed: nowMs >= toMs,
+      today: studyDayForInstant(nowMs, { timezone: this.#timezone, boundaryHour: this.#boundaryHour }),
     };
   }
 
@@ -111,7 +110,7 @@ export class EarningsPreviewService {
       this.#logger.warn?.('economy.earnings.rings-unavailable', { error: err?.message ?? String(err) });
     }
     return {
-      ruleset, standings, contestClosed: w.contestClosed,
+      ruleset, standings, contestClosed: w.contestClosed, today: w.today,
       windows: { school: w.school, rings: w.rings },
     };
   }
@@ -126,6 +125,7 @@ export class EarningsPreviewService {
       this.#logger.warn?.('economy.earnings.school-unavailable', { learnerId: learner.id, error: err?.message ?? String(err) });
     }
     const rings = Array.isArray(ctx.standings) ? (ctx.standings.find((s) => s.learnerId === learner.id)?.rings ?? 0) : null;
+    const outsideTerm = schoolOk && school.coverage === 'outside-term';
     const result = evaluateEarnings({
       ruleset: ctx.ruleset,
       learnerId: learner.id,
@@ -133,13 +133,18 @@ export class EarningsPreviewService {
       standings: ctx.standings,
       contestClosed: ctx.contestClosed,
       windows: ctx.windows,
-      unavailable: { school: !schoolOk },
+      today: ctx.today,
+      unavailable: { school: !schoolOk ? true : (outsideTerm ? 'outside-term' : false) },
     });
     return {
       ...result,
       learnerName: learner.name,
       contestClosed: ctx.contestClosed,
-      evidence: { school: schoolOk ? 'ok' : 'unavailable', rings: Array.isArray(ctx.standings) ? 'ok' : 'unavailable' },
+      today: ctx.today,
+      evidence: {
+        school: !schoolOk ? 'unavailable' : (outsideTerm ? 'outside-term' : 'ok'),
+        rings: Array.isArray(ctx.standings) ? 'ok' : 'unavailable',
+      },
       // The week's work, as School reported it — the view draws it beside the prices.
       work: { days: school.days, sectionDays: school.sectionDays, week: school.week, units: school.units, rings },
     };
