@@ -7,7 +7,7 @@
  * services/artworkQueue.mjs). Updates are synchronous read-modify-write inside
  * the process and written atomically, the YamlAgentStateStore pattern.
  */
-import { loadYaml, saveYamlToPathAtomic } from '#system/utils/FileIO.mjs';
+import { loadYamlCached, saveYamlToPathAtomic } from '#system/utils/FileIO.mjs';
 import { IArtworkQueueStore } from '#apps/nutrition/ports/IArtworkQueueStore.mjs';
 
 export class YamlArtworkQueueStore extends IArtworkQueueStore {
@@ -25,7 +25,9 @@ export class YamlArtworkQueueStore extends IArtworkQueueStore {
   }
 
   load(userId) {
-    const raw = loadYaml(this.path(userId));
+    // Cached parse (clone per call): the artwork tick polls this every 20 s and
+    // it changes far less often. Every write here is an atomic rename.
+    const raw = loadYamlCached(this.path(userId));
     const items = raw?.items && typeof raw.items === 'object' && !Array.isArray(raw.items) ? raw.items : {};
     return { version: Number.isInteger(raw?.version) ? raw.version : 0, items };
   }

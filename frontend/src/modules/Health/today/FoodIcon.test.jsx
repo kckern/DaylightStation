@@ -54,4 +54,17 @@ describe('decoded icons across remounts', () => {
     expect(second.container.firstChild.dataset.state).toBe('ready');
     expect(second.container.querySelector('svg')).toBeNull();
   });
+
+  it('a food still waiting on the artwork queue reads as pending, not as the settled fallback', () => {
+    const { container } = render(<FoodIcon icon="default" pending />);
+    expect(container.firstChild.dataset.state).toBe('pending');
+    expect(container.firstChild.getAttribute('aria-label')).toBe('Finding an icon');
+  });
+
+  it('without pending, a missing icon stays the plain fallback', () => {
+    const { container } = render(<FoodIcon icon="default" />);
+    expect(container.firstChild.dataset.state).toBe('missing');
+    expect(container.firstChild.getAttribute('aria-label')).toBeNull();
+  });
 });
+

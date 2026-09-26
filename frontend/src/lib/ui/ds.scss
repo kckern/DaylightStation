@@ -131,6 +131,13 @@
   to { transform: translateY(0); opacity: 1; }
 }
 
+// "Still working on it": a slow opacity breath for a placeholder that will be
+// replaced (a food icon the artwork queue has not drawn yet). Opacity only.
+@keyframes ds-pending-pulse {
+  from { opacity: 0.35; }
+  to { opacity: 0.9; }
+}
+
 // A small celebratory pop (card ladder's right-answer toast): transform and
 // opacity only — cheap on the kiosk WebViews, no filter, no shadow.
 @keyframes ds-pop-in {
