@@ -625,4 +625,27 @@ describe('EmulatorConsole picture shader vs canvas grid', () => {
     expect(container.querySelector('.emulator-shader-grid')).toBeNull();
     expect(container.querySelector('.emulator-shader.shader-none')).not.toBeNull();
   });
+
+  it('applies the core shader again AFTER the first frame (a start-time apply renders black)', async () => {
+    const game = {
+      ...baseGame,
+      presentation: { ...baseGame.presentation, ejs_shader: 'gameboy-harlequin.glslp' },
+    };
+    const h = renderConsole({ props: { game } });
+    h.engine.applyShader = vi.fn(() => true);
+    h.engine.getAppliedShader = vi.fn(() => 'shaders = 5');
+    await act(async () => {});
+    expect(h.engine.confirmFirstFrame).toHaveBeenCalled();
+    const firstFrameAt = h.engine.confirmFirstFrame.mock.invocationCallOrder[0];
+    const applies = h.engine.applyShader.mock.invocationCallOrder;
+    expect(applies.some((at) => at > firstFrameAt)).toBe(true);
+    expect(h.engine.applyShader).toHaveBeenLastCalledWith('gameboy-harlequin.glslp');
+  });
+
+  it('does not touch the core shader after the first frame when none is declared', async () => {
+    const h = renderConsole();
+    h.engine.applyShader = vi.fn(() => true);
+    await act(async () => {});
+    expect(h.engine.applyShader).not.toHaveBeenCalled();
+  });
 });

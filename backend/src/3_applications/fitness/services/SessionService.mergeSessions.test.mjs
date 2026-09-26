@@ -161,8 +161,8 @@ test('fills source-only participant sub-fields when both sides share a participa
   await svc.mergeSessions('20260617131853', '20260617134452', 'test');
 
   const saved = store._db.get('20260617134452');
-  assert.equal(saved.participants.kckern.strava?.activityId, 18963555842, 'source-only participant strava preserved');
-  assert.equal(saved.participants.kckern.display_name, 'User_1', 'target sub-field retained');
+  assert.equal(saved.participants.user_1.strava?.activityId, 18963555842, 'source-only participant strava preserved');
+  assert.equal(saved.participants.user_1.display_name, 'User_1', 'target sub-field retained');
 });
 
 test('joins voice memos from both sessions, chronologically, deduped by timestamp', async () => {
