@@ -92,7 +92,7 @@ export class SelectScaleContainer {
     }
     if (this.#conversationStateStore) {
       await this.#conversationStateStore.set(conversationId, {
-        conversationId, activeFlow: 'scale_describe', flowState: { pendingLogUuid: logUuid },
+        conversationId, activeFlow: 'scale_describe', flowState: { pendingLogUuid: logUuid, openedAt: new Date().toISOString() },
       });
     }
 

@@ -68,7 +68,7 @@ describe('NutribotInputRouter scale routing', () => {
   });
 
   it('routes scale_describe text to LogScaleFoodFromText', async () => {
-    spies.stateStore.get = jest.fn().mockResolvedValue({ activeFlow: 'scale_describe', flowState: { pendingLogUuid: 'log1' } });
+    spies.stateStore.get = jest.fn().mockResolvedValue({ activeFlow: 'scale_describe', flowState: { pendingLogUuid: 'log1', openedAt: new Date().toISOString() } });
     await router.handleText(evt({ payload: { text: 'leftover lasagna' } }), {});
     expect(spies.describe).toHaveBeenCalledWith(expect.objectContaining({ logUuid: 'log1', text: 'leftover lasagna' }));
     expect(spies.logText).not.toHaveBeenCalled();
@@ -124,7 +124,7 @@ describe('NutribotInputRouter scale routing', () => {
   });
 
   it('does not send scale descriptions to AI when unavailable', async () => {
-    spies.stateStore.get = jest.fn().mockResolvedValue({ activeFlow: 'scale_describe', flowState: { pendingLogUuid: 'log1' } });
+    spies.stateStore.get = jest.fn().mockResolvedValue({ activeFlow: 'scale_describe', flowState: { pendingLogUuid: 'log1', openedAt: new Date().toISOString() } });
     router = new NutribotInputRouter(makeContainer(spies), { aiGatewayAvailable: false, logger: { debug() {}, warn() {} } });
     await expect(router.handleText(evt({ payload: { text: 'oatmeal' } }), { sendMessage: jest.fn().mockResolvedValue() }))
       .resolves.toMatchObject({ code: 'AI_UNAVAILABLE' });
