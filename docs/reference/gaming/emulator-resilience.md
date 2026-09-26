@@ -133,6 +133,17 @@ which re-applies the stored shader choice through the same
 `engine.getAppliedShader()` is the read-back — the preset's presence in the
 core's filesystem, not the fact that `enableShader` returned.
 
+**It is then applied a second time, after `confirmFirstFrame`.** When `started`
+flips, the core's video viewport is still 0×0. A preset with a viewport-scaled
+pass (Harlequin's `scale_type0 = viewport`) therefore builds a zero-size
+framebuffer, and every frame draws black (`Framebuffer is incomplete: Attachment
+has zero size` in the console). The preset file is still in `/shader`, so the
+barrier's read-back passes. The same call one frame later renders correctly
+(measured 2026-09-25). The second apply logs
+`emulator.picture-shader.post-frame-apply`. **The read-back cannot see this
+failure, so a picture-shader change is verified by looking at a screenshot**
+(see Verification).
+
 **An effect that warps the picture has to be `ejs_shader`, and cannot be built
 outside the core.** The core's canvas is created with
 `preserveDrawingBuffer: false`, so its drawing buffer is cleared the instant the
@@ -216,3 +227,14 @@ Three layers, because unit tests alone cannot see this class of bug:
 Unit tests all mock the EmulatorJS instance, so they pass whether or not the real
 integration works. Only the smoke test observes the actual contract. When changing
 anything in this document, run it.
+
+**Direct launch for testing: `/fitness/games/:system/:game`.** This opens the
+arcade and boots the game straight past the admin fingerprint gate, so a render
+can be checked from any browser or headlessly. It skips the gate only. The game
+segment matches id or title loosely: `/fitness/games/gb/SuperMarioLand` finds
+`super-mario-land`, never `-land-2`. Every use logs
+`fitness-emulator.direct-launch` at warn, and an unknown game logs
+`.direct-launch.not-found`. Add `?nokiosk` in a non-kiosk browser. Headlessly,
+launch Chromium with `--use-gl=angle --use-angle=swiftshader
+--enable-unsafe-swiftshader` so the core gets WebGL, and give it ~12 s after
+`EJS_emulator.started` before the screenshot.
