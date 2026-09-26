@@ -495,3 +495,61 @@ describe('EmulatorEngine picture shader', () => {
     expect(engine.applyShader('nope.glslp')).toBe(false);
   });
 });
+
+describe('EmulatorEngine custom shader binaries', () => {
+  function makeBinaryShaderInstance() {
+    const files = {};
+    return makeFakeInstance({
+      config: { shaders: { 'x.glslp': { shader: { type: 'text', value: 'shaders = 5' } } } },
+      enableShader: vi.fn(() => { files['/shader/shader.glslp'] = 'shaders = 5'; }),
+      Module: {
+        FS: {
+          mkdir: vi.fn(),
+          writeFile: vi.fn((path, data) => { files[path] = data; }),
+          readFile: (path) => {
+            if (!(path in files)) throw new Error('ENOENT');
+            return files[path];
+          },
+        },
+      },
+    });
+  }
+
+  it('forwards the preset table to the loader at boot', async () => {
+    const load = vi.fn(async () => makeFakeInstance());
+    const engine = createEmulatorEngine({ load, win: makeFakeWin() });
+    const shaders = { 'x.glslp': { shader: { type: 'text', value: 's' } } };
+    await engine.boot({ mount: '#m', romUrl: 'r', pathtodata: 'd/', shaders });
+    expect(load.mock.calls[0][0].shaders).toBe(shaders);
+  });
+
+  it("writes a preset's binary textures into /shader as raw bytes, before enabling it", async () => {
+    const instance = makeBinaryShaderInstance();
+    const bytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
+    const shaders = {
+      'x.glslp': { shader: { type: 'text', value: 's' }, binaries: { 'paper-bg.png': bytes } },
+    };
+    const engine = createEmulatorEngine({ load: async () => instance, win: makeFakeWin() });
+    await engine.boot({ mount: '#m', romUrl: 'r', pathtodata: 'd/', shaders });
+
+    expect(engine.applyShader('x.glslp')).toBe(true);
+    const { FS } = instance.Module;
+    expect(FS.writeFile).toHaveBeenCalledTimes(1);
+    expect(FS.writeFile).toHaveBeenCalledWith('/shader/paper-bg.png', bytes);
+    // The bytes go in as a Uint8Array, never a string — that is the whole point.
+    expect(FS.writeFile.mock.calls[0][1]).toBeInstanceOf(Uint8Array);
+    // And they are there before the core reads the preset that references them.
+    expect(FS.writeFile.mock.invocationCallOrder[0]).toBeLessThan(instance.enableShader.mock.invocationCallOrder[0]);
+    expect(engine.getAppliedShader()).toBe('shaders = 5');
+  });
+
+  it('enables a preset that has no binaries without touching the filesystem', async () => {
+    const instance = makeBinaryShaderInstance();
+    const shaders = { 'x.glslp': { shader: { type: 'text', value: 's' } } };
+    const engine = createEmulatorEngine({ load: async () => instance, win: makeFakeWin() });
+    await engine.boot({ mount: '#m', romUrl: 'r', pathtodata: 'd/', shaders });
+    expect(engine.applyShader('x.glslp')).toBe(true);
+    expect(instance.Module.FS.writeFile).not.toHaveBeenCalled();
+    expect(instance.enableShader).toHaveBeenCalledWith('x.glslp');
+  });
+});

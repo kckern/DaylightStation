@@ -297,8 +297,16 @@ export function EmulatorConsole({
   // Declared up here because the grid-drawing effect below depends on it; as a
   // `const` it is in the temporal dead zone until this line runs, and a
   // dependency array is evaluated during render.
-  const isDotmatrix = game?.shader === 'dotmatrix';
-  const hasPixelGrid = isDotmatrix || game?.shader === 'lcdgrid';
+  //
+  // A picture shader run inside the core (presentation.ejs_shader — Harlequin's
+  // dot matrix for the Game Boys) draws its own grid, background and shadows,
+  // so our canvas grid and CSS wash stand down for it or the grids double up.
+  // The manifest keeps `shader: dotmatrix` alongside it on purpose: a frontend
+  // that does not know the preset (EmulatorJS switches shading off for an
+  // unknown name) still has this grid to fall back on.
+  const cssShader = presentation?.ejs_shader ? null : game?.shader;
+  const isDotmatrix = cssShader === 'dotmatrix';
+  const hasPixelGrid = isDotmatrix || cssShader === 'lcdgrid';
   useLayoutEffect(() => {
     const root = consoleRef.current;
     if (!root) return undefined;
@@ -996,7 +1004,8 @@ export function EmulatorConsole({
       className={`emulator-console${osd ? '' : ' emulator-console--no-osd'}`}
       data-state={status.state}
       data-chrome={game?.chrome || 'none'}
-      data-shader={game?.shader || 'none'}
+      data-shader={cssShader || 'none'}
+      data-picture-shader={presentation?.ejs_shader || 'none'}
     >
       <div
         className={`emulator-chrome chrome-${game?.chrome || 'none'}`}
@@ -1019,7 +1028,7 @@ export function EmulatorConsole({
         </div>
       </div>
       <div
-        className={`emulator-shader shader-${game?.shader || 'none'} ${animClass}`.trim()}
+        className={`emulator-shader shader-${cssShader || 'none'} ${animClass}`.trim()}
         style={shaderStyle}
       >
         {hasPixelGrid && <canvas ref={gridCanvasRef} className="emulator-shader-grid" aria-hidden="true" />}
