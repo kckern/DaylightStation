@@ -232,7 +232,11 @@
     gap: 0.35em;
 
     &--player { flex-direction: row; }
-    &--timer .emu-overlay__value { font-size: 1.8rem; }
+    // The badge has no definite height, so the generic `height: 58%` would fall
+    // back to a portrait's natural size (~950px) and cover the game.
+    &--player .emu-overlay__avatar { height: 1.6em; width: 1.6em; flex: 0 0 auto; }
+    &--timer .emu-overlay__value { font-size: 1.8rem; font-variant-numeric: tabular-nums; }
+    &--timer .emu-overlay__unit { font-size: 0.8rem; letter-spacing: 0.14em; text-transform: uppercase; color: #9aa4b2; }
     &.is-warn .emu-overlay__value { color: #ffd666; }
     &.is-crit .emu-overlay__value { color: #ff6b6b; }
     &.is-stale .emu-overlay__value { color: #9aa4b2; }

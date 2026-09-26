@@ -1,6 +1,6 @@
 import { IArcadeGameSessionAnnouncer } from '#apps/gaming/ports/IArcadeGameSessionAnnouncer.mjs';
 import {
-  ARCADE_SESSION_TOPIC, ARCADE_SESSIONS_TOPIC, parseDeviceTopic,
+  ARCADE_SESSION_EVENTS, ARCADE_SESSION_TOPIC, ARCADE_SESSIONS_TOPIC, parseDeviceTopic,
 } from '#shared-contracts/media/topics.mjs';
 
 /**
@@ -21,8 +21,12 @@ import {
  * next message carries the truth, and a consumer that applies the same message
  * twice lands on the same number.
  */
+/** Steady-state publish log cadence per device (state changes log at once). */
+const PUBLISH_LOG_INTERVAL_MS = 60_000;
+
 export class EventBusArcadeGameSessionAnnouncer extends IArcadeGameSessionAnnouncer {
   #bus; #placementFor; #overlayConfigFor; #identify; #sessions; #logger;
+  #published = new Map();
 
   /**
    * @param {Object} config
@@ -52,18 +56,18 @@ export class EventBusArcadeGameSessionAnnouncer extends IArcadeGameSessionAnnoun
   }
 
   async started(session) {
-    await this.#publish('arcade.session.started', session);
+    await this.#publish(ARCADE_SESSION_EVENTS.STARTED, session);
   }
 
   async progress(session, observation) {
-    await this.#publish('arcade.session.progress', session, {
+    await this.#publish(ARCADE_SESSION_EVENTS.PROGRESS, session, {
       state: observation?.state ?? session.lastState,
       observedAt: observation?.observedAt ?? session.lastObservedAt,
     });
   }
 
   async ended(session) {
-    await this.#publish('arcade.session.ended', session, {
+    await this.#publish(ARCADE_SESSION_EVENTS.ENDED, session, {
       endedAt: session.endedAt,
       reason: session.endReason,
     });
@@ -102,7 +106,7 @@ export class EventBusArcadeGameSessionAnnouncer extends IArcadeGameSessionAnnoun
     try {
       overlay = this.#overlayConfigFor ? this.#overlayConfigFor(content?.console) : null;
     } catch (error) {
-      this.#logger.warn?.('play.overlay_config.failed', {
+      this.#logger.warn?.('arcade.overlay_config.failed', {
         sessionId: session.id, error: error.message,
       });
     }
@@ -118,7 +122,23 @@ export class EventBusArcadeGameSessionAnnouncer extends IArcadeGameSessionAnnoun
     const payload = await this.#payload(event, session, extra);
     this.#bus.broadcast(ARCADE_SESSION_TOPIC(session.deviceId), payload);
     this.#bus.broadcast(ARCADE_SESSIONS_TOPIC, payload);
-    this.#logger.debug?.(event, { sessionId: session.id, deviceId: session.deviceId, playedMs: session.playedMs });
+    // What every clock was told, at a rate the store keeps: started/ended and
+    // any change of state are logged at once; steady progress once a minute per
+    // device, so the playedMs/state timeline can be rebuilt without a line per tick.
+    const facts = {
+      event, sessionId: session.id, deviceId: session.deviceId, playedMs: session.playedMs,
+      state: payload.state ?? null, system: payload.system, placementZone: payload.placement?.zone ?? null,
+      displayName: payload.displayName ?? null,
+    };
+    const last = this.#published.get(session.deviceId);
+    const now = Date.now();
+    const due = event !== ARCADE_SESSION_EVENTS.PROGRESS || !last
+      || last.sessionId !== session.id || last.state !== facts.state || now - last.at >= PUBLISH_LOG_INTERVAL_MS;
+    if (due) {
+      this.#logger.info?.('arcade.session.published', facts);
+      this.#published.set(session.deviceId, { sessionId: session.id, state: facts.state, at: now });
+    }
+    if (event === ARCADE_SESSION_EVENTS.ENDED) this.#published.delete(session.deviceId);
   }
 
   async #payload(event, session, extra = {}) {
@@ -168,7 +188,7 @@ export class EventBusArcadeGameSessionAnnouncer extends IArcadeGameSessionAnnoun
           const key = `${topic}:${session.id}`;
           if (delivered.has(key)) continue;
           delivered.add(key);
-          const payload = await this.#payload('arcade.session.progress', session, { replay: true });
+          const payload = await this.#payload(ARCADE_SESSION_EVENTS.PROGRESS, session, { replay: true });
           this.#bus.sendToClient(clientId, {
             topic,
             timestamp: new Date().toISOString(),

@@ -1,6 +1,19 @@
 export const PLAYBACK_STATE_TOPIC = 'playback_state';
 export const ARCADE_SESSIONS_TOPIC = 'arcade-game-sessions';
 
+/**
+ * Event names on the arcade-session topics. One definition, because the
+ * 2026-09-19 vocabulary rename changed the backend's names while both clocks
+ * (fitness hook, Shield film) kept filtering on the old `play.session.*` ones —
+ * and for a week no timer rendered anywhere. `arcade-film.html` is a static page
+ * that cannot import this; `arcadeFilmContract.test.mjs` pins it to these names.
+ */
+export const ARCADE_SESSION_EVENTS = Object.freeze({
+  STARTED: 'arcade.session.started',
+  PROGRESS: 'arcade.session.progress',
+  ENDED: 'arcade.session.ended',
+});
+
 export const DEVICE_STATE_TOPIC   = (deviceId) => `device-state:${deviceId}`;
 export const ARCADE_SESSION_TOPIC = (deviceId) => `arcade-session:${deviceId}`;
 export const DEVICE_ACK_TOPIC     = (deviceId) => `device-ack:${deviceId}`;

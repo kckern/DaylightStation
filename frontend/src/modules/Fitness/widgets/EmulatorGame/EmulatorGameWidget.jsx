@@ -437,9 +437,12 @@ export default function EmulatorGameWidget({ fitnessContext, deviceId = null, on
   // box used, never recomputed inside EmulatorConsole.
   const sessionTimer = useMemo(() => (
     arcadeGameBudget.visible
-      ? { text: formatClock(arcadeGameBudget.ms), urgency: arcadeGameBudget.urgency ?? null, stale: arcadeGameBudget.stale }
+      ? {
+        text: formatClock(arcadeGameBudget.ms), urgency: arcadeGameBudget.urgency ?? null, stale: arcadeGameBudget.stale,
+        label: arcadeGameBudget.stale ? 'offline' : arcadeGameBudget.label,
+      }
       : null
-  ), [arcadeGameBudget.visible, arcadeGameBudget.ms, arcadeGameBudget.urgency, arcadeGameBudget.stale]);
+  ), [arcadeGameBudget.visible, arcadeGameBudget.ms, arcadeGameBudget.urgency, arcadeGameBudget.stale, arcadeGameBudget.label]);
 
   if (error) return <div className="fitness-emulator__error">Video games unavailable: {error}</div>;
   if (!library) return <div className="fitness-emulator__loading">Loading…</div>;

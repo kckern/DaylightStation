@@ -154,7 +154,7 @@ describe('EmulatorGameWidget arcade shell', () => {
 
     const subscription = bus.subscriptions.find((entry) => entry.topic === 'arcade-session:garage-tv');
     subscription.handler({
-      event: 'play.session.progress', state: 'playing', playedMs: 95_000, systemLabel: 'Game Boy',
+      event: 'arcade.session.progress', state: 'playing', playedMs: 95_000, systemLabel: 'Game Boy',
       overlay: { anchor: 'top-left', offsetX: '2%', offsetY: '2%', scale: 0.5, fields: ['player', 'timer'] },
     });
 
