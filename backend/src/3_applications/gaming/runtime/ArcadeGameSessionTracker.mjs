@@ -195,6 +195,10 @@ export class ArcadeGameSessionTracker {
         loadId: observation.loadId ?? null,
         contentId: observation.content?.contentId ?? null,
         channel: observation.channel ?? null,
+        // The evidence behind playing-vs-paused on a polled surface: CPU ticks
+        // since the last poll (idle threshold 2). Without it a menu billed as
+        // play cannot be told from real play after the fact.
+        cpuDelta: observation.cpuDelta ?? null,
       });
     }
     if (isUnrecordable && !previous.unrecordable) {
