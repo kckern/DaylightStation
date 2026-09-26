@@ -240,7 +240,8 @@ net and the deficit are tiers on the ruler now.
 - **Ticks** every 250 kcal, numbered at 1,000s under 600 px of track and 500s
   above; none within 12 px of a named line.
 
-Up to 760 px the head stacks: headline, sub-line, then the terms. From 761 px it is a
+While the summary (`.health-equation`, a size container) is under 761 px wide, the
+head stacks: headline, sub-line, then the terms. From 761 px it is a
 grid: the headline spans two rows on the left, the sub-line and the terms stack
 beside it, and the day-close pill takes a third column.
 
