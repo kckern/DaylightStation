@@ -738,9 +738,10 @@ Keys: on the menu the digit after My words; on the summary **2** (2 is Done
 there only when nothing is left to learn). Done stays on Space/Enter.
 
 **A press that never reaches the server says so.** A write that comes back
-`status: 0` (a network failure: the server restarting, Wi-Fi dropping) leaves
-the item on screen, so the same press can simply be repeated. It never
-resyncs, because the server never saw it. The header's hint slot shows
+`status: 0` (the network failed) or 502/503/504 (the proxy answering while the
+app restarts, which is how a redeploy looks) leaves the item on screen, so the
+same press can simply be repeated. It never resyncs, because the server never
+saw it. The header's hint slot shows
 "Could not reach school. Tap again in a moment." (`hint.shown` with
 `step: 'unreachable'` and the action). This applies to answering an item,
 Practise more, a menu practice mode, and Learn more words. Before 2026-09-25

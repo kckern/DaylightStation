@@ -439,7 +439,8 @@ describe('CardLadderProgram — dispatches every item type', () => {
     const api = fakeApi();
     api.open.mockResolvedValue(openWith({ id: 'summary', type: 'summary', quizzed: 2, doneToday: true, learnMore: 3 }));
     api.respond.mockResolvedValueOnce({ ok: false, status: 0, data: null });
-    api.learnMore = vi.fn(async () => ({ ok: false, status: 0, data: null }));
+    // A restart behind the proxy answers 502, not 0 — the real 2026-09-25 shape.
+    api.learnMore = vi.fn(async () => ({ ok: false, status: 502, data: null }));
     renderStarted(<CardLadderProgram descriptor={{ deckId: 'd', userId: 'test-learner' }} api={api} />);
     fireEvent.click(await screen.findByRole('button', { name: /practise more/i }));
     expect(await screen.findByText(/Could not reach school/)).toBeInTheDocument();

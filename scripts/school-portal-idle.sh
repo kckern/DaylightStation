@@ -48,6 +48,20 @@ PORTAL_WINDOW="${PORTAL_WINDOW:-3m}"
 #   program.mounted  a program actually opened in front of someone
 HUMAN_EVENTS='"school.selfservice.code." OR "school.selfservice.keypad." OR "school.selfservice.identity." OR "school.selfservice.action." OR "school.selfservice.preview." OR "school.selfservice.print." OR "school.selfservice.board." OR "school.selfservice.bulk." OR "school.selfservice.program.mounted"'
 
+# INSIDE A PROGRAM, the keypad goes quiet. A child working through flashcards
+# or the sentence ladder emits none of the events above; they were invisible
+# to this gate. On 2026-09-25 a redeploy landed 12 seconds into a card-ladder
+# sitting, and every press for the next minute 502'd. These fire only when a
+# child acts: answering, flipping, recording, asking for more, starting.
+#   card-ladder: item.answered, answered, card.*, say.recording, recorded,
+#                learn-more*, practice*, started, sitting.opened, result.dismissed
+#   language:    capture.start/stop/keep/retake, rung.landed,
+#                program.mounted, interpretation.checked
+# Deliberately NOT: layout.*, audio.played, tuning-wired, *.unmounted/closed
+# (a person leaving), capture.review-idle / auto-stop (fire on an idle panel).
+PROGRAM_EVENTS='"school.card-ladder.item.answered" OR "school.card-ladder.answered" OR "school.card-ladder.card." OR "school.card-ladder.say.recording" OR "school.card-ladder.recorded" OR "school.card-ladder.learn-more" OR "school.card-ladder.practice" OR "school.card-ladder.started" OR "school.card-ladder.sitting.opened" OR "school.card-ladder.result.dismissed" OR "school.language.capture.start" OR "school.language.capture.stop" OR "school.language.capture.keep" OR "school.language.capture.retake" OR "school.language.rung.landed" OR "school.language.program.mounted" OR "school.language.interpretation.checked"'
+HUMAN_EVENTS="$HUMAN_EVENTS OR $PROGRAM_EVENTS"
+
 if ! curl -s --max-time 5 -o /dev/null "$LOGS/select/logsql/query" -d 'query=_time:1s' 2>/dev/null; then
   echo "PORTAL: log store unreachable at $LOGS — cannot tell if anyone is there"
   exit 1
