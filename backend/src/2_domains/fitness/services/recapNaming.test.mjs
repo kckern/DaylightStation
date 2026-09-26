@@ -34,7 +34,7 @@ test('participantNames uses resolveName when the session name is just the slug',
 });
 
 test('buildSlug: {sessionId}_{Nm}_{users}_{video}', () => {
-  assert.equal(buildSlug(espnSession()), '20260629203200_15m_learnerFour-learnerThree_game-cycling');
+  assert.equal(buildSlug(espnSession()), '20260629203200_15m_user_2-user_3_game-cycling');
 });
 
 test('buildPlexMeta maps the full Plex episode tag set', () => {
