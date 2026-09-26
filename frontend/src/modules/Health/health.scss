@@ -703,27 +703,38 @@ $health-aside-gap: 1.5rem;
   .health-row__confirm, .health-row__delete, .health-row__unnest, .health-row__expand, .health-density-badge { min-height: 44px; }
 }
 
+// A workout is a food row's shape (ExerciseSection.jsx): poster and name in
+// tracks 1–5, minutes in the portion track, credit in the kcal track, so its
+// numbers line up with the food above. The rest lives in the hover card.
 .health-exercise {
-  display: grid; grid-template-columns: 42px minmax(0, 1fr) auto; gap: 0.75rem; align-items: start; padding-block: 0.65rem;
-  &__art { width: 42px; height: 60px; border-radius: 5px; overflow: hidden; display: grid; place-items: center; background: var(--ds-surface); color: var(--ds-text-mid);
-    img { width: 100%; height: 100%; object-fit: cover; }
-  }
-  &__title { color: var(--ds-text-high); font-size: 0.86rem; font-weight: 600; }
-  &__meta { display: flex; flex-wrap: wrap; gap: 0.2rem 0.75rem; margin-top: 0.25rem; font-size: 0.73rem; color: var(--ds-text-mid);
-    > span { display: inline-flex; align-items: center; gap: 0.2rem; white-space: nowrap; }
-  }
-  // What the person said after, and what the episode was — room the row already has.
-  &__memo { display: flex; gap: 0.3rem; margin: 0.35rem 0 0; font-size: 0.78rem; color: var(--ds-text-high); font-style: italic;
-    svg { flex: none; margin-top: 0.15rem; color: var(--ds-accent); }
-  }
-  &__description { margin: 0.3rem 0 0; font-size: 0.73rem; color: var(--ds-text-mid);
-    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
-  }
-  &__result { display: flex; flex-direction: column; align-items: flex-end; }
-  &__link { display: inline-flex; align-items: center; gap: 0.15rem; min-height: 44px; color: var(--ds-accent); font-size: 0.75rem; text-decoration: none;
-    &:hover { text-decoration: underline; }
+  display: grid; grid-template-columns: var(--health-meal-tracks); gap: 0.2rem; align-items: center;
+  min-height: 44px; padding-block: 0.25rem; border-radius: 6px; color: inherit; text-decoration: none;
+  &:is(a) { cursor: pointer;
+    @media (hover: hover) { &:hover { background: var(--ds-surface); } }
     &:focus-visible { outline: 2px solid var(--ds-accent); outline-offset: 2px; }
   }
+  // Title starts where food names start (--health-name-inset); calc() clamps
+  // a negative result to 0 on narrow tracks.
+  &__identity { grid-column: 1 / 6; display: flex; align-items: center; gap: 0.5rem; min-width: 0;
+    padding-left: calc(var(--health-name-inset, 36px) - 28px - 0.5rem); }
+  &__art { flex: none; width: 28px; height: 40px; border-radius: 4px; overflow: hidden; display: grid; place-items: center;
+    background: var(--ds-surface); color: var(--ds-text-mid);
+    img { width: 100%; height: 100%; object-fit: cover; }
+  }
+  &__text { display: flex; flex-direction: column; gap: 0.1rem; min-width: 0; }
+  &__title { color: var(--ds-text-high); font-size: 0.86rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  &__memo { font-size: 0.75rem; font-style: italic; color: var(--ds-text-mid); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    svg { vertical-align: -2px; margin-right: 0.2rem; color: var(--ds-accent); }
+  }
+  &__description { font-size: 0.72rem; color: var(--ds-text-low); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  // Left-aligned, unlike a food's portion: the credit overhangs into this
+  // track's right side (below), and a right-aligned "39 min" ran into it.
+  &__minutes { grid-column: 6; text-align: left; color: var(--ds-text-mid); font-size: 0.8rem; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  // Bigger than a food's kcal: the credit is the one number a workout row is for.
+  // justify-self: end lets "+187 kcal" overhang left into the minutes slack
+  // while its right edge stays on the food kcal column.
+  &__kcal { grid-column: 7; justify-self: end; font-size: 1rem; font-weight: 600;
+    @include bp.mobile-only { font-size: 0.92rem; } }
   &__retry { min-height: 44px; color: var(--ds-text-mid); font-size: 0.75rem; }
 }
 
@@ -774,6 +785,17 @@ $health-aside-gap: 1.5rem;
   }
   &__kcal { color: var(--ds-text-high); font-weight: 600; }
   &__density { margin: 0; font-size: 0.72rem; color: var(--ds-text-low); font-variant-numeric: tabular-nums; }
+}
+// The exercise card (ExerciseSection.jsx): a portrait poster, then every memo
+// in full and the episode blurb.
+.health-exercise-preview {
+  &__hero { height: 7em; > img { object-fit: cover; } }
+  &__memo { margin: 0; display: flex; gap: 0.3rem; font-size: 0.78rem; font-style: italic;
+    svg { flex: none; margin-top: 0.15rem; color: var(--ds-accent); }
+  }
+  &__description { margin: 0; font-size: 0.72rem; color: var(--ds-text-mid);
+    display: -webkit-box; -webkit-line-clamp: 6; -webkit-box-orient: vertical; overflow: hidden;
+  }
 }
 .health-row-artwork { cursor: zoom-in; }
 .health-review {

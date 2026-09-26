@@ -117,6 +117,17 @@ describe('Today layout stylesheet', () => {
     expect(css).not.toMatch(/transition:[^;]*filter/);
     expect(css).not.toMatch(/animation:[^;]*filter/);
   });
+
+  it('lays a workout on the meal tracks, with its credit in the kcal track', () => {
+    expect(rule('.health-exercise')).toContain('var(--health-meal-tracks)');
+    expect(rule('.health-exercise__identity')).toMatch(/grid-column: 1 ?\/ ?6/);
+    expect(rule('.health-exercise__minutes')).toMatch(/grid-column: 6/);
+    expect(rule('.health-exercise__kcal')).toMatch(/grid-column: 7/);
+    expect(rule('.health-exercise__kcal')).toMatch(/font-weight: 600/);
+    for (const line of ['.health-exercise__title', '.health-exercise__memo', '.health-exercise__description']) {
+      expect(rule(line)).toMatch(/text-overflow: ellipsis/);
+    }
+  });
 });
 
 describe('add-food suggestion panel', () => {

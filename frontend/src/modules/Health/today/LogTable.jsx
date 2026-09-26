@@ -268,21 +268,20 @@ export function LogTable({
       </div>
     );
   };
+  // Gated on `exerciseAvailable` (budget data has arrived), NOT on
+  // `sessions.length` — a zero-session day is a real, stable answer
+  // ("no workout yet today"), not an absence of data. Gating on length
+  // alone made the header pop in and out as sessions changed.
+  const showExercise = exerciseAvailable || sessions.length > 0;
   const log = (
     <div className="health-log" ref={logRef}>
       {[EARLY_COLUMN, LATE_COLUMN].map((ids, index) => (
         <div key={index} className="health-log__column">
           {ids.map(id => BUCKETS.find(b => b.id === id)).map(renderBucket)}
+          {/* Workouts sit under Snacks, a meal-width column like any food. */}
+          {index === 1 && showExercise ? <ExerciseSection date={date} sessions={sessions} /> : null}
         </div>
       ))}
-      {/* Gated on `exerciseAvailable` (budget data has arrived), NOT on
-          `sessions.length` — a zero-session day is a real, stable answer
-          ("no workout yet today"), not an absence of data. Gating on length
-          alone made the header pop in and out as sessions changed, which is
-          exactly the "chrome dissolves" problem this task exists to fix. */}
-      {exerciseAvailable || sessions.length ? (
-        <div className="health-log__wide"><ExerciseSection date={date} sessions={sessions} /></div>
-      ) : null}
       {orphans.length ? (
         <div className="health-log__wide">
           <Section label={UNGROUPED.label} rows={orphans} onRowTap={onRowTap} onConfirm={onConfirm} onRequestDelete={onRequestDelete}

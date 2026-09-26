@@ -1,6 +1,7 @@
 // The row "magnifier": ONE card for the whole page, drawn at the cursor, with
 // the hovered food's picture at a size that can be read (a UPC product photo
-// is illegible at the row's 24px) and its numbers.
+// is illegible at the row's 24px) and its numbers. A row may instead pass its
+// own `node` to draw (the exercise rows do); the card then shows that as is.
 //
 // A singleton by construction: RowPreviewProvider owns the only card, and a
 // row asks it to show that row's content. Moving onto another row swaps the
@@ -56,7 +57,7 @@ const PreviewOwnerContext = createContext(null);
 
 /** Hosts the page's one preview card. Wrap the day's log in it. */
 export function RowPreviewProvider({ children }) {
-  const [shown, setShown] = useState(null); // { owner, row, isGroup, kcal }
+  const [shown, setShown] = useState(null); // { owner, row, isGroup, kcal } or { owner, node }
   const ownerRef = useRef(null);
   const point = useRef({ x: 0, y: 0 });
   const cardRef = useRef(null);
@@ -103,7 +104,7 @@ export function RowPreviewProvider({ children }) {
   useEffect(() => {
     if (!shown) return undefined;
     const close = () => { const owner = ownerRef.current; if (owner) api.hide(owner, { now: true }); };
-    const onDown = event => { if (!event.target?.closest?.('.health-row-artwork')) close(); };
+    const onDown = event => { if (!event.target?.closest?.('.health-row-artwork, [data-row-preview-toggle]')) close(); };
     window.addEventListener('scroll', close, true);
     document.addEventListener('pointerdown', onDown, true);
     return () => {
@@ -118,7 +119,7 @@ export function RowPreviewProvider({ children }) {
   return <PreviewContext.Provider value={api}><PreviewOwnerContext.Provider value={shown?.owner ?? null}>
     {children}
     {shown && host ? createPortal(<div ref={cardRef} className="health-row-preview__card" role="tooltip" data-position="top">
-      <RowPreviewContent row={shown.row} isGroup={shown.isGroup} kcal={shown.kcal} />
+      {shown.node ?? <RowPreviewContent row={shown.row} isGroup={shown.isGroup} kcal={shown.kcal} />}
     </div>, host) : null}
   </PreviewOwnerContext.Provider></PreviewContext.Provider>;
 }

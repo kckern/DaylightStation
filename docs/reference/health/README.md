@@ -722,6 +722,17 @@ first meal (≤210px wide, ≤280px at 390×844) and first food (≤360px at 136
 and wider, ≤430px at 390×844). The first food sits below the always-shown
 Breakfast strip, so those bounds are looser than the first meal's.
 
+**Exercise** closes the late column, under Snacks, at meal width. Each workout
+is one food-shaped row on the shared meal tracks (`ExerciseSection.jsx`): a
+program poster, the title, and one truncated line holding the first voice memo
+(the episode description only when there is no memo); minutes sit in the
+portion track and the calorie credit, larger than a food's, in the kcal track.
+The credit comes from the nutrition workout ledger; the fitness sessions index
+only supplies posters, memos and the session link. Clicking the row opens the
+fitness session. Hovering it (or, on touch, tapping the poster) shows the
+page's one preview card with start time, minutes, average heart rate, the
+credit (`est.` for a heart-rate estimate), every memo and the description.
+
 ---
 
 ## Capture funnels
