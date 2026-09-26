@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { priceLadder } from './budgetTiers.mjs';
+import { priceLadder, priceOf } from './budgetTiers.mjs';
 import { zoneFor } from './budgetZone.mjs';
 
 const range = { floor: 1200, top: 1791 };
@@ -84,5 +84,30 @@ describe('priceLadder — agrees with the server zone rule', () => {
       const { zone } = zoneFor({ food, exercise: 0, maintenance: 1100, range: capped });
       expect(family[spend], `food ${food}`).toContain(zone);
     }
+  });
+});
+
+describe('priceOf — a portion split across the tiers it lands in', () => {
+  it('200 kcal on the 2026-09-25 day is all free', () => {
+    expect(priceOf(day(1470), 200)).toEqual([{ key: 'free', kcal: 200 }]);
+  });
+
+  it('430 kcal spends the free tier, then 109 of the workout', () => {
+    expect(priceOf(day(1470), 430)).toEqual([{ key: 'free', kcal: 321 }, { key: 'workout', kcal: 109 }]);
+  });
+
+  it('1,500 kcal runs through every tier into a gain', () => {
+    expect(priceOf(day(1470), 1500)).toEqual([
+      { key: 'free', kcal: 321 }, { key: 'workout', kcal: 311 }, { key: 'deficit', kcal: 500 }, { key: 'gain', kcal: 368 },
+    ]);
+  });
+
+  it('no maintenance: past the ceiling is "over", not "gain"', () => {
+    expect(priceOf(day(1470, 311, { maintenance: 0 }), 1000).at(-1)).toEqual({ key: 'over', kcal: 368 });
+  });
+
+  it('nothing added costs nothing', () => {
+    expect(priceOf(day(1470), 0)).toEqual([]);
+    expect(priceOf(day(1470), -200)).toEqual([]);
   });
 });
