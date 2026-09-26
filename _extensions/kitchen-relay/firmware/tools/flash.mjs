@@ -12,7 +12,7 @@
 // `ota.password` from scales.yml. The password goes through the environment
 // (PLATFORMIO_UPLOAD_FLAGS), never onto a command line or into shell history.
 // =============================================================================
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -70,8 +70,17 @@ run('node', ['tools/gen-config.mjs', src, ...(scaleId ? [scaleId] : [])]);
 // this one. Nothing here needs ESP-IDF 5 any more: NimBLE 1.4.x wants Arduino
 // core 2.x, which is what espressif32@6.5.0 pins.
 if (ota) {
-  run('pio', ['run', '-e', 'm5-atom-ota', '-t', 'upload', '--upload-port', port],
-    { env: { ...process.env, PLATFORMIO_UPLOAD_FLAGS: `--auth=${otaPassword}` } });
+  // PlatformIO runs espota with --debug, which prints its full options dict --
+  // password included -- to stdout. Pipe the output and redact it, so the
+  // password reaches neither the terminal nor any transcript of it.
+  console.log(`\n$ pio run -e m5-atom-ota -t upload --upload-port ${port}  (auth via env, redacted)`);
+  const child = spawn('pio', ['run', '-e', 'm5-atom-ota', '-t', 'upload', '--upload-port', port], {
+    cwd: firmwareDir, env: { ...process.env, PLATFORMIO_UPLOAD_FLAGS: `--auth=${otaPassword}` } });
+  const redact = (chunk) => chunk.toString().split(otaPassword).join('<redacted>');
+  child.stdout.on('data', (d) => process.stdout.write(redact(d)));
+  child.stderr.on('data', (d) => process.stderr.write(redact(d)));
+  const code = await new Promise((resolve) => child.on('close', resolve));
+  if (code !== 0) { console.error(`[flash] OTA upload failed (exit ${code})`); process.exit(code || 1); }
 } else {
   run('pio', ['run', '-e', 'm5-atom', '-t', 'upload', '--upload-port', port]);
 }
