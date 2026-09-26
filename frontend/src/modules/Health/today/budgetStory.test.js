@@ -18,6 +18,10 @@ describe('isFinishedDay', () => {
 });
 
 describe('budgetStory — live day', () => {
+  it('a zero goal (no free tier at all) reads 0 free instead of throwing', () => {
+    expect(budgetStory({ food: 0, exercise: 0, maintenance: 0, range: { floor: 0, top: 0 }, zone: 'in-range', declared: null }, live).value).toBe(0);
+  });
+
   it('Afford, free tier: the 2026-09-25 day reads 321 free, then the other prices and the total', () => {
     expect(say(budgetStory(day(1470), live))).toEqual({
       job: 'afford', value: 321, text: 'free', sub: 'then 311 workout · 500 deficit · 1,132 to break even',

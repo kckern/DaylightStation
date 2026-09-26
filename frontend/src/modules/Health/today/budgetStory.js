@@ -61,7 +61,7 @@ function live({ lines: L, spend, over, gain, tiers }) {
     return { value: workout.left, text: 'of workout left', sub: join([`used ${n(workout.used)} of ${n(workout.to - workout.from)}`, deficitPrice, toEven]) };
   }
   const rest = join([workout && `${n(workout.left)} workout`, deficitPrice, toEven]);
-  return { value: tier('free').left, text: 'free', sub: rest && `then ${rest}` };
+  return { value: tier('free')?.left ?? 0, text: 'free', sub: rest && `then ${rest}` };
 }
 
 /**

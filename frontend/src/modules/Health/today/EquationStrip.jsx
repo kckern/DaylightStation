@@ -7,7 +7,7 @@ import { createAppLogger } from '../../../lib/ui/createAppLogger.js';
 
 const logger = createAppLogger('health').child('budget-card');
 
-const n = (v) => Math.round(Number(v || 0)).toLocaleString();
+const n = (v) => Math.round(Number(v || 0)).toLocaleString('en-US');
 const pct = (part, whole) => (whole > 0 ? `${(Math.max(0, part) / whole) * 100}%` : '0%');
 
 // Macro goals live on goals as `macroGoals: { proteinG, carbsG, fatG }`.
