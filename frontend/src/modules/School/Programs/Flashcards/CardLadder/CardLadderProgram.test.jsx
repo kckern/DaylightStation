@@ -433,6 +433,26 @@ describe('CardLadderProgram — dispatches every item type', () => {
     expect(api.respond).toHaveBeenCalledWith('s', { userId: 'test-learner', itemId: 'summary', response: { done: true } });
   });
 
+  it('an unreachable server says so on Practise more and Learn more words, and the next tap retries', async () => {
+    // 2026-09-25: both buttons were tapped through a container restart. Status
+    // 0 used to return silently, so the child saw dead buttons and gave up.
+    const api = fakeApi();
+    api.open.mockResolvedValue(openWith({ id: 'summary', type: 'summary', quizzed: 2, doneToday: true, learnMore: 3 }));
+    api.respond.mockResolvedValueOnce({ ok: false, status: 0, data: null });
+    api.learnMore = vi.fn(async () => ({ ok: false, status: 0, data: null }));
+    renderStarted(<CardLadderProgram descriptor={{ deckId: 'd', userId: 'test-learner' }} api={api} />);
+    fireEvent.click(await screen.findByRole('button', { name: /practise more/i }));
+    expect(await screen.findByText(/Could not reach school/)).toBeInTheDocument();
+    expect(api.get).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: /learn more words/i }));
+    await waitFor(() => expect(api.learnMore).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText(/Could not reach school/)).toBeInTheDocument();
+    // Still on the summary, so the next tap is a real retry.
+    api.respond.mockResolvedValue({ ok: true, status: 200, data: { result: { ok: true }, item: { id: 'menu', type: 'menu', modes: ['match'], quizzed: 2 }, progress } });
+    fireEvent.click(screen.getByRole('button', { name: /practise more/i }));
+    expect(await screen.findByRole('region', { name: 'Practice' })).toBeInTheDocument();
+  });
+
   it('a menu choice starts practice and shows its first item; a practice item offers Menu → {menu:true}', async () => {
     const api = fakeApi();
     const listen = { id: 'p1:0', type: 'listen', source: 'practice', words: [{ wordId: 'gawi', term: '가위', audio: 'a' }] };

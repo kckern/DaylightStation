@@ -267,6 +267,14 @@ export default function CardLadderProgram({ descriptor, api: injected = null, re
     cardLadderLog.hintShown({ step });
   }, [trail.current]); // eslint-disable-line react-hooks/exhaustive-deps
   const dismissHint = useCallback(() => setHint((h) => (h && !h.leaving ? { ...h, leaving: true } : h)), []);
+  // A write that never reached the server (status 0) leaves the item on screen
+  // and the press safe to repeat — but it used to say NOTHING, so a child
+  // tapping "Learn more words" through a restart saw a dead button and gave up
+  // (2026-09-25). The step hint's slot says so instead; the next tap retries.
+  const unreachable = useCallback((action) => {
+    cardLadderLog.hintShown({ step: 'unreachable', action });
+    setHint({ step: 'unreachable', text: 'Could not reach school. Tap again in a moment.', leaving: false });
+  }, []);
   useEffect(() => {
     if (!hint) return undefined;
     if (hint.leaving) {
@@ -308,7 +316,8 @@ export default function CardLadderProgram({ descriptor, api: injected = null, re
     if (!ok) {
       if (status === 404) { cardLadderLog.sessionReopened({ userId, deckId, test, from: 'respond' }); await open(); return; }
       cardLadderLog.writeFailed({ userId, itemId: item.id, status, test });
-      if (status !== 0) await resync();
+      if (status === 0) { unreachable('respond'); return; }
+      await resync();
       return;
     }
     cardLadderLog.itemAnswered({
@@ -343,7 +352,7 @@ export default function CardLadderProgram({ descriptor, api: injected = null, re
     }
     setResult(null); setPendingItem(null);
     if (data?.item) setItem(data.item);
-  }, [api, session, item, userId, deckId, test, open, resync, dismissHint]);
+  }, [api, session, item, userId, deckId, test, open, resync, dismissHint, unreachable]);
 
   const next = useCallback(() => {
     if (!pendingItem) return;
@@ -391,8 +400,9 @@ export default function CardLadderProgram({ descriptor, api: injected = null, re
     if (ok && data?.item) { show(data.item, data.progress ?? null); return; }
     cardLadderLog.practiceFailed({ userId, sittingId: session?.id ?? null, status, error: data?.error ?? null, test });
     if (status === 404) { cardLadderLog.sessionReopened({ userId, deckId, test, from: 'practice' }); await open(); return; }
-    if (status !== 0) await resync();
-  }, [show, userId, deckId, session, test, open, resync]);
+    if (status === 0) { unreachable('practice'); return; }
+    await resync();
+  }, [show, userId, deckId, session, test, open, resync, unreachable]);
 
   /** Learn more words (ruling 2026-09-23): one more guided round, from the menu or the summary. */
   const learnMore = useCallback(async (from) => {
@@ -407,8 +417,9 @@ export default function CardLadderProgram({ descriptor, api: injected = null, re
     if (ok && data?.item) { show(data.item, data.progress ?? null); return; }
     cardLadderLog.learnMoreFailed({ userId, sittingId: session.id, status, error: data?.error ?? null, test });
     if (status === 404) { cardLadderLog.sessionReopened({ userId, deckId, test, from: 'learn-more' }); await open(); return; }
-    if (status !== 0) await resync();
-  }, [api, session, item, userId, deckId, test, show, open, resync]);
+    if (status === 0) { unreachable('learn-more'); return; }
+    await resync();
+  }, [api, session, item, userId, deckId, test, show, open, resync, unreachable]);
 
   /** Any practice item can end the run early: back to the menu. */
   const inPractice = item?.source === 'practice';

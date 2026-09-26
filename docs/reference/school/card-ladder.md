@@ -729,6 +729,16 @@ excluded — `item.learnMore` is how many the next round would introduce
 Keys: on the menu the digit after My words; on the summary **2** (2 is Done
 there only when nothing is left to learn). Done stays on Space/Enter.
 
+**A press that never reaches the server says so.** A write that comes back
+`status: 0` (a network failure: the server restarting, Wi-Fi dropping) leaves
+the item on screen, so the same press can simply be repeated. It never
+resyncs, because the server never saw it. The header's hint slot shows
+"Could not reach school. Tap again in a moment." (`hint.shown` with
+`step: 'unreachable'` and the action). This applies to answering an item,
+Practise more, a menu practice mode, and Learn more words. Before 2026-09-25
+those paths returned silently, and a child tapping through a redeploy saw
+dead buttons.
+
 ### My words
 
 Read-only from the practice menu ("My words", `items/WordsItem.jsx`) or as
