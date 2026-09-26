@@ -40,12 +40,23 @@ export function chessAddressingFor(addressing, fallback = DEFAULT_CHORD_SCHEME, 
   // default. Chess ships `chords`; the house floor is `staff`.
   const game = { vocabulary: isStaffScheme(fallback) ? 'staff' : 'chords', ...stated };
 
-  const resolved = resolveAddressing({
+  const layered = resolveAddressing({
     game,
     user: managed,
     ladder: stated?.addressing?.ladder ?? null,
     axisSize: 8,
   });
+
+  // `named` asks for a specific bass per SQUARE (Cm/G), but this rim prints a
+  // root per file and a quality per rank — nothing on the board says which bass
+  // a square wants. On 2026-09-25 two wins carried a child's managed path onto
+  // the slash-chord rung and every chord he played came back
+  // `unrecognised_chord`: the rule was enforced and invisible. The grid-
+  // addressing doc says such a rung must not be reachable on a rail that cannot
+  // print it, so chess plays it as `root` — the strictest rule it CAN show.
+  const resolved = layered.inversions === 'named'
+    ? { ...layered, inversions: 'root', notes: [...layered.notes, 'inversions "named" played as "root": the chess rim cannot print a per-square bass'] }
+    : layered;
 
   // The cadence is the RESOLVED one — config and ladder rung, through the same
   // layering as everything else — never read raw off the config, where a sparse
