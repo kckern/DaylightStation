@@ -311,8 +311,9 @@ describe('evaluateEarnings — per-learner pricing and refs', () => {
     expect(out.rulesRevision).toBe(4);
   });
 
-  it('echoes both windows and the currency', () => {
+  it('echoes both windows, the currency, and the learner\'s multiplier (an editor shows it)', () => {
     const out = evaluate(rs, {});
-    expect(out).toMatchObject({ learnerId: 'kid', currency: 'silver', windows: { school: WEEK, rings: RINGS_WEEK } });
+    expect(out).toMatchObject({ learnerId: 'kid', currency: 'silver', multiplier: 1.5, windows: { school: WEEK, rings: RINGS_WEEK } });
+    expect(evaluateEarnings({ ruleset: rs, learnerId: 'other', facts: {}, windows: { school: WEEK, rings: RINGS_WEEK } }).multiplier).toBe(1);
   });
 });
