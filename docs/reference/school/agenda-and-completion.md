@@ -202,6 +202,31 @@ board needs no new subscription for it — closing a session prompts the
 `fitness.weekly-rings` State Gate producer, and the board re-reads the rings
 and that learner's card on that gate's events.
 
+## A day off on the status board
+
+When every planned section is excused and at least one because the day is
+`not_a_school_day` (weekend, holiday, vacation), `summarize` returns
+`restDay: {optionalCount}` and the card says **No school today** instead of
+"No plan to show". When `optionalCount > 0` it adds **Scan your card for
+extra work**: a card scan prints the agenda, and a rest-day agenda still
+carries every optional lesson with its code (the obligation is excused, not
+forbidden).
+
+- Excused work is still never a disc and never counts toward the meter.
+  Work a child actually does on a day off appears as usual (sessions,
+  served work, reading, fitness), and the rest-day copy sits under any
+  supplemental pins while `total` is 0.
+- One obligated section makes it a school day: no rest-day copy.
+  `optional_backlog` / `elective_only` sections beside a `not_a_school_day`
+  one don't spoil it.
+- A pinned past day (`day` prop) says **No school** with no hint, since a scan
+  prints today's agenda.
+- A failed plan read keeps "No plan to show": the board can't tell a day
+  off from missing data.
+
+Added 2026-09-26, after a child at the Portal on a Saturday read "No plan to
+show" as "nothing to do" while flashcards were waiting.
+
 ## How the status board loads and refreshes
 
 The board paints from a localStorage snapshot of the last board it showed
