@@ -219,13 +219,13 @@ describe('LogTable', () => {
       expect(document.querySelector('.health-log__empty-meals')).toBeNull();
     });
 
-    it('Breakfast joins the early column above Lunch, Snacks the late column below Dinner', () => {
+    it('Breakfast joins the early column above Lunch; Snacks and then Exercise close the late column', () => {
       const day = new Map([['morning', [{ uuid: 'b', name: 'Oats', mealTime: 'morning', calories: 150 }]],
         ['night', [{ uuid: 's', name: 'Tea', mealTime: 'night', calories: 0 }]]]);
-      render(<LogTable byBucket={day} sessions={[]} renderAddRow={addRow} onRowTap={() => {}} />, { wrapper });
+      render(<LogTable byBucket={day} sessions={[]} exerciseAvailable renderAddRow={addRow} onRowTap={() => {}} />, { wrapper });
       const [early, late] = document.querySelectorAll('.health-log__column');
       expect([...early.querySelectorAll('h4')].map(h => h.textContent)).toEqual(['Breakfast', 'Lunch']);
-      expect([...late.querySelectorAll('h4')].map(h => h.textContent)).toEqual(['Dinner', 'Snacks']);
+      expect([...late.querySelectorAll('h4')].map(h => h.textContent)).toEqual(['Dinner', 'Snacks', 'Exercise']);
     });
 
 
