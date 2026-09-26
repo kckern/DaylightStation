@@ -31,9 +31,12 @@ const LOADER_SCRIPT_ID = 'ejs-loader';
  * @param {Function} [args.onGameStart] - lifecycle callback wired to EJS_onGameStart.
  * @param {object} [args.controls] - EJS_defaultControls object (player->index->{value,value2}).
  * @param {number} [args.volume] - initial volume 0..1. MUST be the user's persisted level; EJS re-asserts this value during its own start chain.
+ * @param {object} [args.shaders] - our own picture-shader presets, keyed by name, merged over EmulatorJS's
+ *   built-ins as EJS_shaders. Each entry is `{ shader, resources, binaries }`; only `shader` and
+ *   `resources` reach EmulatorJS — see below.
  * @returns {object} key/value map of EJS_* globals.
  */
-export function buildEjsGlobals({ player, core = 'gb', romUrl, pathtodata, onReady, onGameStart, controls, volume } = {}) {
+export function buildEjsGlobals({ player, core = 'gb', romUrl, pathtodata, onReady, onGameStart, controls, volume, shaders } = {}) {
   if (!player) throw new Error('buildEjsGlobals: player (mount selector/element) is required');
   if (!romUrl) throw new Error('buildEjsGlobals: romUrl is required');
   if (!pathtodata) throw new Error('buildEjsGlobals: pathtodata is required');
@@ -75,6 +78,17 @@ export function buildEjsGlobals({ player, core = 'gb', romUrl, pathtodata, onRea
   if (onReady) globals.EJS_ready = onReady;
   if (onGameStart) globals.EJS_onGameStart = onGameStart;
   if (controls) globals.EJS_defaultControls = controls;
+  if (shaders && Object.keys(shaders).length) {
+    // EmulatorJS's `enableShader` writes each resource into the core's
+    // filesystem with FS.writeFile(path, string) — a base64 resource is atob()'d
+    // to a string and UTF-8-encoded on write, which corrupts every byte >= 0x80
+    // of a PNG. So texture bytes travel separately as `binaries`, and the engine
+    // writes them itself as a Uint8Array right before enabling the preset.
+    globals.EJS_shaders = Object.fromEntries(Object.entries(shaders).map(([name, entry]) => [
+      name,
+      { shader: entry.shader, ...(entry.resources ? { resources: entry.resources } : {}) },
+    ]));
+  }
   return globals;
 }
 
@@ -150,7 +164,7 @@ export function forceNearestFiltering(win = window) {
  * @param {object} [args.controls] - EJS_defaultControls (keyboard+gamepad mapping).
  * @returns {Promise<object>} resolves with win.EJS_emulator
  */
-export function loadEmulatorJS({ player, core = 'gb', romUrl, pathtodata, win = window, timeoutMs = DEFAULT_TIMEOUT_MS, controls, volume } = {}) {
+export function loadEmulatorJS({ player, core = 'gb', romUrl, pathtodata, win = window, timeoutMs = DEFAULT_TIMEOUT_MS, controls, volume, shaders } = {}) {
   const requestedKey = loadKey(core, romUrl);
   if (_loadPromise) {
     if (_loadedKey === requestedKey) {
@@ -199,7 +213,7 @@ export function loadEmulatorJS({ player, core = 'gb', romUrl, pathtodata, win = 
 
     let globals;
     try {
-      globals = buildEjsGlobals({ player, core, romUrl, pathtodata, onGameStart: handleGameStart, controls, volume });
+      globals = buildEjsGlobals({ player, core, romUrl, pathtodata, onGameStart: handleGameStart, controls, volume, shaders });
     } catch (err) {
       fail(err);
       return;

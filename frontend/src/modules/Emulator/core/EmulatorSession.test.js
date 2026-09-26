@@ -422,3 +422,21 @@ describe('runActions (hotspot do: blocks reuse the binding handler map)', () => 
     expect(() => session.runActions({})).not.toThrow();
   });
 });
+
+describe('createEmulatorSession.start custom shaders', () => {
+  it('hands engineConfig.shaders to the engine so the loader can register them', async () => {
+    const engine = makeEngine();
+    const shaders = { 'x.glslp': { shader: { type: 'text', value: 's' } } };
+    const s = createEmulatorSession({
+      engine,
+      mixer: makeMixer(),
+      governanceGate: makeGate(),
+      game: GAME,
+      engineConfig: { pathtodata: '/x', shaders },
+      scheduler: makeScheduler(),
+      deps: { createWramCalibrator: () => ({ calibrate: async () => null }) },
+    });
+    await s.start({ mount: {} });
+    expect(engine.boot).toHaveBeenCalledWith(expect.objectContaining({ shaders }));
+  });
+});

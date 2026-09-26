@@ -163,3 +163,29 @@ describe('loadEmulatorJS', () => {
     vi.useRealTimers();
   });
 });
+
+describe('buildEjsGlobals custom shaders', () => {
+  it('passes presets through as EJS_shaders with only the parts EmulatorJS understands', () => {
+    // `binaries` is ours: PNG textures the engine writes into the core's
+    // filesystem itself, as raw bytes. EmulatorJS must never see them — its own
+    // resource path atob()s a base64 value into a string and UTF-8-encodes it on
+    // write, corrupting every byte >= 0x80.
+    const shaders = {
+      'x.glslp': {
+        shader: { type: 'text', value: 'shaders = 1' },
+        resources: [{ name: 'a.glsl', type: 'text', value: 'v' }],
+        binaries: { 'bg.png': new Uint8Array([1, 2, 3]) },
+      },
+    };
+    const g = buildEjsGlobals({ player: '#m', romUrl: 'r', pathtodata: 'd/', shaders });
+    expect(g.EJS_shaders).toEqual({
+      'x.glslp': { shader: shaders['x.glslp'].shader, resources: shaders['x.glslp'].resources },
+    });
+    expect('binaries' in g.EJS_shaders['x.glslp']).toBe(false);
+  });
+
+  it('omits EJS_shaders when no presets are provided', () => {
+    const g = buildEjsGlobals({ player: '#m', romUrl: 'r', pathtodata: 'd/' });
+    expect('EJS_shaders' in g).toBe(false);
+  });
+});
