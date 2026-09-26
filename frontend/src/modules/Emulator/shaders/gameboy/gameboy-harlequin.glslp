@@ -1,0 +1,48 @@
+# Harlequin's Game Boy dot matrix — palette (DMG) mode.
+# Five passes; see README.md for origin, licence and local patches. Paths are
+# flat because EmulatorJS writes every resource straight into /shader/.
+
+shaders = 5
+
+shader0 = gb-pass0.glsl
+filter_linear0 = false
+scale_type0 = viewport
+scale0 = 1.0
+alias0 = "PASS0"
+
+shader1 = gb-pass1.glsl
+filter_linear1 = false
+scale_type1 = source
+scale1 = 1.0
+alias1 = "GameBoyDotMatrixAlphaBlend"
+
+shader2 = gb-pass2.glsl
+filter_linear2 = false
+scale_type2 = source
+scale2 = 1.0
+alias2 = "PASS2"
+
+shader3 = gb-pass3.glsl
+filter_linear3 = false
+scale_type3 = source
+scale3 = 1.0
+alias3 = "PASS3"
+
+shader4 = gb-pass4.glsl
+filter_linear4 = false
+scale_type4 = source
+scale4 = 1.0
+alias4 = "PASS4"
+
+textures = COLOR_PALETTE;BACKGROUND
+COLOR_PALETTE = gbp-palette.png
+COLOR_PALETTE_linear = false
+BACKGROUND = paper-bg.png
+BACKGROUND_linear = true
+
+# baseline_alpha 0: a blank pixel draws nothing, so empty screen is plain paper
+# with no grid over it (upstream's 0.10 puts a faint grid on every cell).
+# screen_light 1.15: the paper a touch brighter than upstream.
+parameters = "baseline_alpha;screen_light"
+baseline_alpha = "0.0"
+screen_light = "1.15"

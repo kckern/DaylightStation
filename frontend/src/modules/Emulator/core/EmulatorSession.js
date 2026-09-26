@@ -111,6 +111,10 @@ export function createEmulatorSession({
       // Hand EJS the user's persisted volume so the value it re-asserts during
       // its own start chain is already correct (see loadEmulatorJS EJS_volume).
       volume: engineConfig.volume,
+      // Our own picture-shader presets (the Game Boys' Harlequin dot matrix),
+      // registered with EmulatorJS at boot so presentation.ejs_shader can name
+      // them at the settle barrier.
+      shaders: engineConfig.shaders,
     });
 
     // Calibrate WRAM via a harmless cheat ping — but ONLY for a game that

@@ -88,13 +88,36 @@ grid on a canvas at integer device-pixel positions:
 Both keep the integer screen-box lock, since a grid only lands correctly when
 each game pixel is a whole number of device pixels.
 
-`ejs_shader` is one of **EmulatorJS's own** presets, run by the core inside its
-GL pipeline. The Genesis declares `crt-geom.glslp` for it: real curvature,
-scanlines, an aperture mask and phosphor bloom. `engine.applyShader()` writes
-the preset into the core's filesystem through `enableShader`; the presets and
-their GLSL are embedded in the vendored `emulator.min.js` (`EJS_SHADERS`), so
-nothing is fetched. An unknown name makes EmulatorJS switch shading off rather
-than throw — a typo costs the effect, never the game.
+`ejs_shader` is a preset run by the core inside its GL pipeline — either one of
+**EmulatorJS's own** or one of **ours**. The Genesis declares `crt-geom.glslp`,
+a built-in: real curvature, scanlines, an aperture mask and phosphor bloom. The
+Game Boy and Game Boy Color declare `gameboy-harlequin.glslp` and
+`gameboy-harlequin-color.glslp`, ours: Harlequin's five-pass dot matrix, the
+same shader the Shield runs through RetroArch. Each dark pixel becomes a dot on
+a paper background with a light gap around it, a drop shadow beneath it and a
+short response-time trail; blank pixels draw nothing, so empty screen is plain
+paper. Our canvas grid cannot do any of that, because it never sees the game
+pixels — only a shader inside the core can. The files, their GPL-3.0 origin and
+the local patches are in `frontend/src/modules/Emulator/shaders/gameboy/README.md`.
+
+A manifest that declares `ejs_shader` keeps its `shader` too: the console
+stands the canvas grid and CSS wash down when a core shader is declared, and a
+frontend that does not know the preset (EmulatorJS switches shading off for an
+unknown name) still has the grid to fall back on.
+
+`engine.applyShader()` writes the preset into the core's filesystem through
+`enableShader`. The built-ins are embedded in the vendored `emulator.min.js`
+(`EJS_SHADERS`); ours are bundled with the frontend and registered at boot as
+`EJS_shaders` (`engineConfig.shaders` → `loadEmulatorJS`). Their PNG textures
+take a side road: EmulatorJS's resource path `atob()`s a base64 value into a
+string and `FS.writeFile` UTF-8-encodes strings, corrupting every byte ≥ 0x80,
+so the engine writes texture bytes itself as a `Uint8Array` right before
+`enableShader`. Preset parameter overrides (`parameters = "..."` in the
+`.glslp`) work in the web core — with one trap, verified 2026-09-25: a
+parameter whose `#pragma parameter` appears in more than one pass keeps its
+pragma default and drops the override. Declare it in one pass; the uniform is
+still set on every pass by name. An unknown name makes EmulatorJS switch
+shading off rather than throw — a typo costs the effect, never the game.
 
 It is applied **at the settle barrier**, as one of the verified settings above,
 for the same reason the volume is: EJS's start chain runs `loadSettings()`,
