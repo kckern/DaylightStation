@@ -1,187 +1,126 @@
 import { describe, it, expect } from 'vitest';
 import { budgetGeometry } from './budgetGeometry.js';
 
-// food 1390 − exercise 247 = net 1143; ceiling = 1791 + 247 = 2038; even = 2291 + 247 = 2538.
+// The 2026-09-25 day: ceiling 1791 + 311 = 2102, break even 2291 + 311 = 2602.
 const day = (over = {}) => ({
-  food: 1390, exercise: 247, net: 1143, maintenance: 2291, range: { floor: 1200, top: 1791 },
-  zone: 'in-range', remaining: 648, declared: null, ...over,
+  food: 1470, exercise: 311, net: 1159, maintenance: 2291, range: { floor: 1200, top: 1791 },
+  zone: 'in-range', remaining: 632, declared: null, ...over,
 });
 const close = (a, b) => expect(a).toBeCloseTo(b, 1);
-// A segment's length back in kcal, so a run can be checked against `remaining`.
-const kcal = (g, seg) => (seg.widthPct / 100) * g.right;
+const tier = (g, key) => g.tiers.find(t => t.key === key);
 
 describe('budgetGeometry — the ruler is food, from 0', () => {
-  it('starts at 0 even on an exercise day, with 12% headroom past the furthest mark', () => {
-    const g = budgetGeometry(day(), { widthPx: 360 });
-    close(g.pct(0), 0);
-    close(g.right, 2538 * 1.12);
+  it('12% headroom past the furthest line', () => {
+    close(budgetGeometry(day(), { widthPx: 360 }).right, 2602 * 1.12);
   });
 
-  it('with no exercise there is no hatch, and the ceiling is the top', () => {
-    const g = budgetGeometry(day({ exercise: 0, net: 1390, remaining: 401 }), { widthPx: 360 });
-    expect(g.earned).toBeNull();
-    expect(g.ceiling).toBe(1791);
-    close(g.right, 2291 * 1.12);
-  });
-});
-
-describe('budgetGeometry — segments sit at the values they name', () => {
   it('food runs 0 → food eaten', () => {
     const g = budgetGeometry(day(), { widthPx: 360 });
     close(g.food.fromPct, 0);
-    close(g.food.fromPct + g.food.widthPct, g.pct(1390));
-    expect(g.food.value).toBe(1390);
-    expect(g.zone).toBe('in-range');
+    close(g.food.fromPct + g.food.widthPct, g.pct(1470));
   });
 
-  it('the exercise hatch runs top → top + exercise', () => {
+  it('the goal mark sits at the top and names the workout it grows by', () => {
     const g = budgetGeometry(day(), { widthPx: 360 });
-    close(g.earned.fromPct, g.pct(1791));
-    close(g.earned.fromPct + g.earned.widthPct, g.pct(2038));
-    expect(g.earned.value).toBe(247);
-    expect(g.ceiling).toBe(2038);
+    close(g.goal.pct, g.pct(1791));
+    expect(g.goal.label).toBe('Goal 1,791 + 311');
+    expect(budgetGeometry(day({ exercise: 0 }), { widthPx: 360 }).goal.label).toBe('Goal 1,791');
   });
 
-  it('negative net: nothing goes below 0 and no width is negative', () => {
-    const g = budgetGeometry(day({ food: 100, exercise: 400, net: -300, zone: 'incomplete', remaining: 2091 }), { widthPx: 360 });
-    close(g.food.fromPct, 0);
-    expect(g.food.widthPct).toBeGreaterThan(0);
-    expect(g.earned.widthPct).toBeGreaterThan(0);
-    expect(g.run.widthPct).toBeGreaterThan(0);
-    close(kcal(g, g.run), 2091);
+  it('the ceiling is marked on exercise days, even once the workout tier is spent', () => {
+    const g = budgetGeometry(day({ food: 2300, zone: 'over' }), { widthPx: 360 });
+    expect(g.ceiling.value).toBe(2102);
+    close(g.ceiling.pct, g.pct(2102));
+    expect(budgetGeometry(day({ exercise: 0 }), { widthPx: 360 }).ceiling).toBeNull();
   });
-});
 
-describe('budgetGeometry — band and marks', () => {
-  it('the band runs from the floor to the ceiling, labelled with the configured goal', () => {
+  it('a ceiling capped at break even labels the workout room, not the raw exercise', () => {
+    // top 1200, exercise 300, maintenance 1100 → break even 1400, workout room 200.
+    const g = budgetGeometry(day({ exercise: 300, maintenance: 1100, range: { floor: 1200, top: 1200 }, food: 900 }), { widthPx: 360 });
+    expect(g.goal.label).toBe('Goal 1,200 + 200');
+  });
+
+  it('a plan capped at break even says so on the goal mark', () => {
+    const g = budgetGeometry(day({ exercise: 0, maintenance: 1100, range: { floor: 1200, top: 1200 }, food: 900 }), { widthPx: 360 });
+    expect(g.goal.label).toBe('Goal · break even 1,100');
+  });
+
+  it('break even at maintenance + exercise; none without maintenance', () => {
     const g = budgetGeometry(day(), { widthPx: 360 });
-    close(g.band.fromPct, g.pct(1200));
-    close(g.band.toPct, g.pct(2038));
-    expect(g.band.label).toBe('Goal 1,200–1,791');
-  });
-
-  it('floor = top with no exercise: a band with no width, labelled with one number', () => {
-    const g = budgetGeometry(day({ exercise: 0, net: 1000, food: 1000, range: { floor: 1200, top: 1200 }, zone: 'incomplete', remaining: 200 }), { widthPx: 360 });
-    close(g.band.fromPct, g.band.toPct);
-    close(g.band.toPct, g.pct(1200));
-    expect(g.band.label).toBe('Goal 1,200');
-  });
-
-  it('floor = top with exercise: the band is the hatch, top → ceiling', () => {
-    const g = budgetGeometry(day({ range: { floor: 1200, top: 1200 } }), { widthPx: 360 });
-    close(g.band.fromPct, g.pct(1200));
-    close(g.band.toPct, g.pct(1447));
-    expect(g.band.label).toBe('Goal 1,200');
-  });
-
-  it('break-even sits at maintenance + exercise and is labelled with that value', () => {
-    const g = budgetGeometry(day(), { widthPx: 360 });
-    expect(g.even.value).toBe(2538);
-    close(g.even.pct, g.pct(2538));
-  });
-
-  it('break-even keeps only its number when it crowds the ceiling', () => {
-    expect(budgetGeometry(day(), { widthPx: 360 }).even.wordless).toBe(false);
-    // even 1850 + 247 = 2097, 59 kcal from the 2038 ceiling ≈ 9 px.
-    expect(budgetGeometry(day({ maintenance: 1850 }), { widthPx: 360 }).even.wordless).toBe(true);
-  });
-
-  it('no maintenance, no break-even mark', () => {
+    expect(g.even.value).toBe(2602);
+    close(g.even.pct, g.pct(2602));
     expect(budgetGeometry(day({ maintenance: 0 }), { widthPx: 360 }).even).toBeNull();
   });
 });
 
-describe('budgetGeometry — ticks', () => {
-  it('every 250, numbered at 1,000s on a phone, none within 12px of a named mark', () => {
+describe('budgetGeometry — tiers are what is left, from the frontier on', () => {
+  it('the 2026-09-25 day: free 1470→1791, workout 1791→2102, deficit 2102→2602', () => {
+    const g = budgetGeometry(day(), { widthPx: 1700 });
+    expect(g.tiers.map(t => t.key)).toEqual(['free', 'workout', 'deficit']);
+    close(tier(g, 'free').fromPct, g.pct(1470));
+    close(tier(g, 'free').fromPct + tier(g, 'free').widthPct, g.pct(1791));
+    close(tier(g, 'workout').fromPct + tier(g, 'workout').widthPct, g.pct(2102));
+    close(tier(g, 'deficit').fromPct + tier(g, 'deficit').widthPct, g.pct(2602));
+    expect(g.tiers.map(t => t.label)).toEqual(['321 free', '311 workout', '500 deficit']);
+    expect(g.tiers.map(t => t.shown)).toEqual(['321 free', '311 workout', '500 deficit']);
+  });
+
+  it('a spent tier is not drawn; a part-spent one starts at the frontier', () => {
+    const g = budgetGeometry(day({ food: 1900 }), { widthPx: 1700 });
+    expect(g.tiers.map(t => t.key)).toEqual(['workout', 'deficit']);
+    close(tier(g, 'workout').fromPct, g.pct(1900));
+    expect(tier(g, 'workout').label).toBe('202 workout');
+  });
+
+  it('a finished day names tiers as outcomes', () => {
+    const g = budgetGeometry(day(), { widthPx: 1700, finished: true });
+    expect(g.tiers.map(t => t.label)).toEqual(['321 unused', '311 banked', '500 deficit']);
+  });
+
+  it('past break even: no tiers', () => {
+    expect(budgetGeometry(day({ food: 2800, zone: 'past-even' }), { widthPx: 360 }).tiers).toEqual([]);
+  });
+
+  it('on a phone, a tier too narrow for its words shows its number', () => {
+    // 360px: free 321 kcal ≈ 39.7px, workout ≈ 38.4px, deficit ≈ 61.8px — all under 64, all over 30.
     const g = budgetGeometry(day(), { widthPx: 360 });
-    const values = g.ticks.map(t => t.value);
-    expect(values).toContain(250);
+    expect(g.tiers.map(t => t.shown)).toEqual(['321', '311', '500']);
+  });
+
+  it('a tier too narrow even for its number shows nothing', () => {
+    const g = budgetGeometry(day({ food: 1770 }), { widthPx: 360 }); // 21 kcal of free ≈ 2.6px
+    expect(tier(g, 'free').shown).toBeNull();
+  });
+});
+
+describe('budgetGeometry — ticks', () => {
+  it('every 250, numbered at 1,000s on a phone, none within 12px of a named line', () => {
+    // 360px, right = 2914.24: 1,750 is 5.1px from the top (dropped); 2,000 and 2,500
+    // are 12.6px from the ceiling and break even (kept).
+    const values = budgetGeometry(day(), { widthPx: 360 }).ticks.map(t => t.value);
     expect(values).toContain(1000);
-    // 1,250 crowds the floor (1,200); 1,750 the top (1,791); 2,000 the ceiling (2,038); 2,500 break-even (2,538).
-    expect(values).not.toContain(1250);
     expect(values).not.toContain(1750);
-    expect(values).not.toContain(2000);
-    expect(values).not.toContain(2500);
-    expect(g.ticks.find(t => t.value === 1000).label).toBe('1,000');
-    expect(g.ticks.find(t => t.value === 500).label).toBeNull();
+    expect(values).toContain(2000);
+    expect(values).toContain(2500);
   });
 
-  it('numbered at 500s from 600px', () => {
-    const g = budgetGeometry(day(), { widthPx: 640 });
-    expect(g.ticks.find(t => t.value === 500).label).toBe('500');
-  });
-
-  it('never ticks 0 or anything below it', () => {
+  it('never ticks 0', () => {
     expect(budgetGeometry(day(), { widthPx: 360 }).ticks.some(t => t.value <= 0)).toBe(false);
   });
 });
 
-describe('budgetGeometry — labels fit or drop', () => {
-  it('food is labelled inside at ≥70px, the hatch at ≥36px', () => {
+describe('budgetGeometry — the eaten label fits or moves out', () => {
+  it('inside at ≥70px', () => {
     const g = budgetGeometry(day(), { widthPx: 360 });
-    expect(g.food.labelled).toBe(true);
-    expect(g.food.outside).toBe(false);
-    expect(g.earned.labelled).toBe(false); // 247 kcal ≈ 31px
+    expect(g.food).toMatchObject({ labelled: true, outside: false, value: 1470 });
   });
 
-  it('a food block too short for its label carries it just past the frontier', () => {
-    const g = budgetGeometry(day({ exercise: 0, food: 400, net: 400, zone: 'incomplete', remaining: 800 }), { widthPx: 280 });
-    expect(g.food.labelled).toBe(true);
-    expect(g.food.outside).toBe(true); // 400 kcal ≈ 44px
+  it('a short block carries it just past the frontier', () => {
+    const g = budgetGeometry(day({ exercise: 0, food: 400, zone: 'incomplete' }), { widthPx: 280 });
+    expect(g.food.outside).toBe(true);
   });
 
   it('nothing eaten, no label', () => {
-    expect(budgetGeometry(day({ food: 0, net: -247, zone: 'incomplete', remaining: 2038 }), { widthPx: 360 }).food.labelled).toBe(false);
-  });
-
-  it('the hatch drops its "+N" where the eaten label would cover it', () => {
-    const base = { exercise: 311, maintenance: 2291, zone: 'in-range' };
-    // 360px: hatch 1791→2102 ≈ 221–260px, its label ≈ 222–258px.
-    const clear = budgetGeometry(day({ ...base, food: 558, net: 247, zone: 'incomplete', remaining: 1544 }), { widthPx: 360 });
-    expect(clear.food.outside).toBe(true); // label ≈ 69–139px
-    expect(clear.earned.labelled).toBe(true);
-    const inside = budgetGeometry(day({ ...base, food: 1950, net: 1639, remaining: 152 }), { widthPx: 360 });
-    expect(inside.earned.labelled).toBe(false); // eaten label ≈ 171–241px
-  });
-});
-
-describe('budgetGeometry — the run is the headline number, drawn', () => {
-  const run = (over) => budgetGeometry(day(over), { widthPx: 360 });
-
-  it('in range: food → ceiling, as long as remaining', () => {
-    const g = run({});
-    close(g.run.fromPct, g.pct(1390));
-    close(g.run.fromPct + g.run.widthPct, g.pct(2038));
-    close(kcal(g, g.run), 648);
-    expect(g.run.value).toBe(648);
-  });
-
-  it('incomplete: food → ceiling, like in range', () => {
-    const g = run({ food: 700, net: 453, zone: 'incomplete', remaining: 1338 });
-    close(g.run.fromPct + g.run.widthPct, g.pct(2038));
-    close(kcal(g, g.run), 1338);
-  });
-
-  it('over: ceiling → food; past break-even: break-even → food', () => {
-    const over = run({ food: 2147, net: 1900, zone: 'over', remaining: 109 });
-    close(over.run.fromPct, over.pct(2038));
-    close(kcal(over, over.run), 109);
-    const past = run({ food: 2647, net: 2400, zone: 'past-even', remaining: 109 });
-    close(past.run.fromPct, past.pct(2538));
-    close(kcal(past, past.run), 109);
-  });
-
-  it('declared: no run', () => {
-    expect(run({ food: 600, net: 353, zone: 'declared', declared: 'fasting' }).run).toBeNull();
-  });
-
-  it('the 2026-09-25 screenshot day: 558 eaten, 311 burned reads 1,544 left and a 2,602 break-even', () => {
-    const g = budgetGeometry({ food: 558, exercise: 311, net: 247, maintenance: 2291, range: { floor: 1200, top: 1791 },
-      zone: 'incomplete', remaining: 1544, declared: null }, { widthPx: 1888 });
-    close(g.food.fromPct + g.food.widthPct, g.pct(558));
-    close(g.band.fromPct, g.pct(1200));
-    expect(g.ceiling).toBe(2102);
-    close(kcal(g, g.run), 1544);
-    expect(g.even.value).toBe(2602);
+    expect(budgetGeometry(day({ food: 0, zone: 'incomplete' }), { widthPx: 360 }).food.labelled).toBe(false);
   });
 });

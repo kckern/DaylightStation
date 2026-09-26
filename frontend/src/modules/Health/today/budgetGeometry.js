@@ -2,57 +2,42 @@
 // The Today budget bar as a labelled ruler — pure geometry, so the numbers the
 // bar paints can be pinned in a test (jsdom cannot measure a rendered bar).
 //
-// The ruler is FOOD eaten, from 0. Every block and label sits at the value it
-// names: the food block runs 0 → food, the goal band starts at the floor (which
-// already measures food). The server compares the top and break-even against
-// NET; on a food scale that is the same comparison with exercise added to both
-// sides, so exercise RAISES the ceiling (top + exercise) and break-even
-// (maintenance + exercise). A hatched block from top to the ceiling shows the
-// credit exercise earned. The server's zones and `remaining` carry over
-// unchanged: the dotted run's length in kcal is the headline number.
+// The ruler is FOOD eaten, from 0. The food block runs 0 → food; what is left
+// is drawn ahead of it as the price tiers from budgetTiers.mjs (free, workout,
+// deficit), each starting at the frontier or its own start, whichever is
+// later, so a spent tier disappears and a part-spent one shrinks. Two plan
+// marks stay put: the goal at the top, and on exercise days the ceiling
+// (top + exercise) that "over plan" counts from. Break even sits below.
+
+import { priceLadder } from '@shared-contracts/health/budgetTiers.mjs';
 
 export const TICK_STEP = 250;
 const HEADROOM = 1.12;
 const TICK_CLEARANCE_PX = 12;
-const EVEN_CROWD_PX = 40;
 const FOOD_LABEL_PX = 70;
-const EARNED_LABEL_PX = 36;
+const TIER_WORDS_PX = 64;
+const TIER_NUMBER_PX = 30;
 const WIDE_PX = 600;
 
-const num = (v) => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
+const LIVE_WORDS = { free: 'free', workout: 'workout', deficit: 'deficit' };
+const FINISHED_WORDS = { free: 'unused', workout: 'banked', deficit: 'deficit' };
+
 export const fmt = (v) => Math.round(v).toLocaleString('en-US');
 
 /**
- * @param {object} budget - a day from the budget contract (range, zone, food, exercise, maintenance, remaining)
- * @param {{ widthPx?: number }} [opts] - the track's rendered width, for label fit and tick density
+ * @param {object} budget - a day from the budget contract (range, zone, food, exercise, maintenance)
+ * @param {{ widthPx?: number, finished?: boolean }} [opts] - track width for label fit; finished names tiers as outcomes
  */
-export function budgetGeometry(budget, { widthPx = 360 } = {}) {
-  const food = Math.max(0, num(budget.food));
-  const exercise = Math.max(0, num(budget.exercise));
-  const floor = num(budget.range?.floor);
-  const top = num(budget.range?.top);
-  const maintenance = num(budget.maintenance);
-  const zone = budget.zone;
+export function budgetGeometry(budget, { widthPx = 360, finished = false } = {}) {
+  const { lines, tiers: ladder } = priceLadder(budget);
+  const { food, exercise, top, ceiling, even, capped } = lines;
 
-  const ceiling = top + exercise;
-  const even = maintenance > 0 ? maintenance + exercise : 0;
-
-  const right = Math.max(even, food, ceiling, floor, 1) * HEADROOM;
+  const right = Math.max(even ?? 0, food, ceiling, 1) * HEADROOM;
   const pxPerKcal = widthPx / right;
   const pct = (v) => (Math.min(Math.max(v, 0), right) / right) * 100;
   const segment = (from, to) => ({ fromPct: pct(Math.min(from, to)), widthPct: Math.abs(pct(to) - pct(from)) });
 
-  // The server guarantees top ≥ floor; floor = top means one goal number.
-  const single = floor >= top;
-  const band = {
-    fromPct: pct(single ? top : floor),
-    toPct: pct(ceiling),
-    label: single ? `Goal ${fmt(top)}` : `Goal ${fmt(floor)}–${fmt(top)}`,
-  };
-
-  const evenMark = even > 0 ? { pct: pct(even), value: even, wordless: Math.abs(even - ceiling) * pxPerKcal < EVEN_CROWD_PX } : null;
-
-  const named = [...(single ? [] : [floor]), top, ...(exercise > 0 ? [ceiling] : []), ...(even > 0 ? [even] : [])];
+  const named = [top, ...(exercise > 0 ? [ceiling] : []), ...(even != null ? [even] : [])];
   const labelEvery = widthPx >= WIDE_PX ? 500 : 1000;
   const ticks = [];
   for (let v = TICK_STEP; v < right; v += TICK_STEP) {
@@ -67,24 +52,31 @@ export function budgetGeometry(budget, { widthPx = 360 } = {}) {
   const foodSeg = { ...segment(0, food), value: food, labelled: food > 0, outside };
   const foodLabel = outside ? [foodPx, foodPx + FOOD_LABEL_PX] : [foodPx - FOOD_LABEL_PX, foodPx];
 
-  // "+N" is centred on the hatch and drops where the eaten label (drawn above
-  // it) would cover it.
-  const hatchMidPx = ((top + ceiling) / 2) * pxPerKcal;
-  const hatchLabel = [hatchMidPx - EARNED_LABEL_PX / 2, hatchMidPx + EARNED_LABEL_PX / 2];
-  const underFoodLabel = foodSeg.labelled && hatchLabel[0] < foodLabel[1] && foodLabel[0] < hatchLabel[1];
-  const earned = exercise > 0
-    ? { ...segment(top, ceiling), value: exercise, labelled: exercise * pxPerKcal >= EARNED_LABEL_PX && !underFoodLabel }
-    : null;
+  // A tier shows "321 free" where it fits, "321" where only the number fits,
+  // and nothing below that or where the eaten label (drawn above) covers it.
+  const words = finished ? FINISHED_WORDS : LIVE_WORDS;
+  const tiers = ladder.filter(t => t.left > 0).map((t) => {
+    const from = Math.max(t.from, food);
+    const widthOfTier = (t.to - from) * pxPerKcal;
+    const midPx = ((from + t.to) / 2) * pxPerKcal;
+    const label = `${fmt(t.left)} ${words[t.key]}`;
+    const fits = (px) => widthOfTier >= px
+      && !(foodSeg.labelled && midPx - px / 2 < foodLabel[1] && foodLabel[0] < midPx + px / 2);
+    const shown = fits(TIER_WORDS_PX) ? label : fits(TIER_NUMBER_PX) ? fmt(t.left) : null;
+    return { ...segment(from, t.to), key: t.key, left: t.left, label, shown };
+  });
 
-  const runEnds = {
-    incomplete: [food, ceiling],
-    'in-range': [food, ceiling],
-    over: [ceiling, food],
-    'past-even': [even, food],
-  }[zone];
-  const run = runEnds ? { ...segment(runEnds[0], runEnds[1]), value: Math.round(num(budget.remaining)) } : null;
+  // The workout's room, not the raw exercise: break even can cap the ceiling.
+  const goalLabel = capped ? `Goal · break even ${fmt(top)}`
+    : ceiling > top ? `Goal ${fmt(top)} + ${fmt(ceiling - top)}` : `Goal ${fmt(top)}`;
 
-  return { right, pct, ticks, band, ceiling, even: evenMark, earned, food: foodSeg, run, zone };
+  return {
+    right, pct, ticks, tiers, zone: budget.zone,
+    goal: { pct: pct(top), value: top, label: goalLabel },
+    ceiling: exercise > 0 && ceiling > top ? { pct: pct(ceiling), value: ceiling } : null,
+    even: even != null ? { pct: pct(even), value: even } : null,
+    food: foodSeg,
+  };
 }
 
 export default budgetGeometry;

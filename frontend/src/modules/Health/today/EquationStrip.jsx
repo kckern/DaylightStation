@@ -1,8 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { Button } from '@mantine/core';
 import { DateStepper } from '@/lib/ui';
-import { headlineFor } from '@shared-contracts/health/budgetZone.mjs';
 import { budgetGeometry } from './budgetGeometry.js';
+import { budgetStory } from './budgetStory.js';
+import { createAppLogger } from '../../../lib/ui/createAppLogger.js';
+
+const logger = createAppLogger('health').child('budget-card');
 
 const n = (v) => Math.round(Number(v || 0)).toLocaleString();
 const pct = (part, whole) => (whole > 0 ? `${(Math.max(0, part) / whole) * 100}%` : '0%');
@@ -15,26 +18,33 @@ const MACROS = [
 ];
 
 /**
- * The day's calories as one bar on a fixed scale, with two marks that never
- * move with the day: the Goal (the budget — break-even less the planned
- * deficit) and Break even (the estimated burn, `maintenance`). The fill is NET
- * calories (eaten − burned): green up to the goal, amber between goal and
- * break-even, red past break-even. Exercise is a light band from net up to what
- * was eaten, so both numbers read off the same scale.
- * Nothing here is shown as a negative: "eaten", "burned", "left", "over".
+ * The day's calories. A budget with a range and zone is told as the job at
+ * hand (budgetStory.js) over a ruler of what is left, priced by tier
+ * (RulerScale). A budget from an older server keeps the two-mark bar of NET
+ * calories: green to the goal, amber to break even, red past it, with the
+ * terms line stating net and the deficit.
+ * Nothing here is shown as a negative except the legacy net term.
  */
 // Room past the furthest mark, so the break-even label and a small surplus fit.
 const HEADROOM = 1.12;
-function BudgetBar({ budget, dayClose = null }) {
+function BudgetBar({ budget, baseline = null, date = null, today = null, dayClose = null }) {
   const goal = Number(budget.budget) || 0;
   const breakEven = Number(budget.maintenance) || 0;
   const exercise = Math.max(0, Number(budget.exercise) || 0);
   const food = Math.max(0, Number(budget.food) || 0);
-  // The legacy bar paints from 0; the terms line states the real net, which a
+  // The legacy bar paints from 0; its terms line states the real net, which a
   // big workout can take below zero.
   const net = Math.max(0, food - exercise);
   const realNet = food - exercise;
   const over = budget.status === 'over';
+  const story = budget.range && budget.zone ? budgetStory(budget, { date, today, baseline }) : null;
+  const job = story?.job ?? null;
+  useEffect(() => {
+    if (job) logger.debug('budget-card.job', { job, date, spend: story.ladder.spend, finished: story.finished });
+    // Once per job change, not per render or per drag frame.
+  }, [job, date]); // eslint-disable-line react-hooks/exhaustive-deps
+  const headline = story || { value: Math.abs(budget.remaining), text: over ? 'over goal' : 'left', sub: null };
+  const spoken = headline.value == null ? headline.text : `${n(headline.value)} kcal ${headline.text}`;
   const scale = Math.max(goal, breakEven, food) * HEADROOM;
   const band = (from, to) => ({ left: pct(from, scale), width: pct(Math.max(0, to - from), scale) });
   // A mark's label hangs off the side of its line with more room.
@@ -42,31 +52,32 @@ function BudgetBar({ budget, dayClose = null }) {
     style={{ left: pct(value, scale) }}><span className="health-budget__mark-label">{label} <b>{n(value)}</b></span></span>;
   const sameMark = breakEven > 0 && Math.round(breakEven) === Math.round(goal);
   const balance = breakEven > 0 ? breakEven - realNet : null;
-  // The headline names the segment its number measures (the shared zone rule).
-  // A legacy budget without a zone keeps the old two-way wording.
-  const headline = budget.zone
-    ? headlineFor(budget)
-    : { value: Math.abs(budget.remaining), text: over ? 'over goal' : 'left' };
-  const spoken = headline.value == null ? headline.text : `${n(headline.value)} ${headline.text}`;
+  const headlineClass = ['health-budget__headline',
+    budget.zone && `health-budget__headline--${budget.zone}`,
+    job && `health-budget__headline--job-${job}`].filter(Boolean).join(' ');
   return (
     <div className="health-budget">
       <div className="health-budget__head">
-        <span className={`health-budget__headline${budget.zone ? ` health-budget__headline--${budget.zone}` : ''}`} data-testid="budget-headline">
-          {headline.value == null ? headline.text : <><strong>{n(headline.value)}</strong> kcal {headline.text}</>}
+        <span className="health-budget__lead">
+          <span className={headlineClass} data-testid="budget-headline">
+            {headline.value == null ? headline.text : <><strong>{n(headline.value)}</strong> kcal {headline.text}</>}
+          </span>
+          {story?.sub ? <span className="health-budget__sub" data-testid="budget-sub">{story.sub}</span> : null}
         </span>
         <span className="health-budget__terms" data-testid="budget-terms">
           <span>{n(food)} eaten</span>
           {exercise > 0 ? <><span className="health-budget__sep" aria-hidden="true">·</span>
-            <span className="health-budget__exercise-term">{n(exercise)} burned</span>
-            <span className="health-budget__sep" aria-hidden="true">·</span>
+            <span className="health-budget__exercise-term">{n(exercise)} burned</span></> : null}
+          {/* Net and the deficit are the ruler's tiers now; only the legacy bar states them. */}
+          {!story && exercise > 0 ? <><span className="health-budget__sep" aria-hidden="true">·</span>
             <span>{realNet < 0 ? `−${n(-realNet)}` : n(realNet)} net</span></> : null}
-          {balance != null ? <><span className="health-budget__sep" aria-hidden="true">·</span>
+          {!story && balance != null ? <><span className="health-budget__sep" aria-hidden="true">·</span>
             <span className={balance >= 0 ? 'health-budget__deficit' : 'health-budget__surplus'}>{balance >= 0 ? `${n(balance)} deficit` : `${n(-balance)} surplus`}</span></> : null}
           {budget.stale ? <span className="health-equation__stale" title="Latest weigh-in is over a week old">stale wt</span> : null}
         </span>
         {dayClose}
       </div>
-      {budget.range && budget.zone ? <RulerScale budget={budget} spoken={spoken} /> : (
+      {story ? <RulerScale budget={budget} spoken={spoken} finished={story.finished} tentative={story.tentative} /> : (
       <div className="health-budget__scale">
         <div className="health-budget__track" role="img"
           aria-label={`${n(net)} net kcal of ${n(goal)} goal${breakEven ? `, break even ${n(breakEven)}` : ''}, ${spoken}`}>
@@ -104,34 +115,34 @@ const at = (p) => `${p.toFixed(2)}%`;
 const endAnchored = (p) => (p > 50 ? ' health-budget__label--end' : '');
 
 /**
- * The budget as a labelled ruler of FOOD eaten (budgetGeometry.js): the goal
- * band from the floor to the ceiling (top + exercise), a hatched exercise
- * credit from top to the ceiling, break-even, ticks, and the food block from 0
- * whose right edge is the one frontier, coloured by zone. A dotted run carries
- * the headline's number to the mark it measures against.
+ * The budget as a labelled ruler of FOOD eaten (budgetGeometry.js): the food
+ * block from 0, whose right edge is the frontier, coloured by zone; ahead of it
+ * the price tiers of what is left (free, workout, deficit); the goal mark at
+ * the top, a ceiling mark at top + exercise, and break even below. Tentative
+ * (an unverified log) dims the tiers; finished recolours the deficit as won.
  */
-function RulerScale({ budget, spoken }) {
+function RulerScale({ budget, spoken, finished, tentative }) {
   const ref = useRef(null);
-  const g = budgetGeometry(budget, { widthPx: useWidth(ref) });
-  const { band, even, earned, food, run, zone } = g;
-  const hasWidth = band.toPct > band.fromPct;
+  const g = budgetGeometry(budget, { widthPx: useWidth(ref), finished });
+  const { goal, ceiling, even, food, tiers, zone } = g;
+  const priced = tiers.map(t => t.label).join(', ') || 'nothing left on plan';
+  const rulerClass = ['health-budget__ruler', tentative && 'health-budget__ruler--tentative', finished && 'health-budget__ruler--finished']
+    .filter(Boolean).join(' ');
   return (
-    <div className="health-budget__ruler" ref={ref}>
+    <div className={rulerClass} ref={ref}>
       <div className="health-budget__rail health-budget__rail--above">
-        <span className={`health-budget__band-label${endAnchored(band.fromPct)}`} style={{ left: at(band.fromPct) }}>{band.label}</span>
+        <span className={`health-budget__goal-label${endAnchored(goal.pct)}`} style={{ left: at(goal.pct) }}>{goal.label}</span>
       </div>
       <div className="health-budget__track health-budget__track--ruler" role="img" data-testid="budget-ruler"
-        aria-label={`${n(food.value)} kcal eaten; ${band.label.toLowerCase()}${earned ? `, plus ${n(earned.value)} burned` : ''}${even ? `; break even ${n(even.value)}` : ''}; ${spoken}`}>
-        {hasWidth ? <span className="health-budget__band" style={{ left: at(band.fromPct), width: at(band.toPct - band.fromPct) }} /> : null}
+        aria-label={`${n(food.value)} kcal eaten; ${priced}${even ? `; break even ${n(even.value)}` : ''}; ${spoken}`}>
         <span className={`health-budget__food health-budget__food--${zone}`} data-testid="budget-food" style={{ left: at(food.fromPct), width: at(food.widthPct) }} />
-        {earned ? <span className="health-budget__earned" data-testid="budget-earned" style={{ left: at(earned.fromPct), width: at(earned.widthPct) }}>
-          {earned.labelled ? <span className="health-budget__seg-label">+{n(earned.value)}</span> : null}</span> : null}
-        {run ? <span className={`health-budget__run health-budget__run--${zone}`} data-testid="budget-run" style={{ left: at(run.fromPct), width: at(run.widthPct) }} /> : null}
-        {hasWidth
-          ? <span className="health-budget__band-edges" style={{ left: at(band.fromPct), width: at(band.toPct - band.fromPct) }} />
-          : <span className="health-budget__goal-line" style={{ left: at(band.toPct) }} />}
-        {/* Its own top layer, not a child of the food block: the band edges, the
-            hatch and break-even all stack above the food and would cut through it. */}
+        {tiers.map(t => <span key={t.key} className={`health-budget__tier health-budget__tier--${t.key}`} data-testid={`budget-tier-${t.key}`}
+          style={{ left: at(t.fromPct), width: at(t.widthPct) }}>
+          {t.shown ? <span className="health-budget__seg-label">{t.shown}</span> : null}</span>)}
+        <span className="health-budget__goal-line" style={{ left: at(goal.pct) }} />
+        {ceiling ? <span className="health-budget__ceiling-line" style={{ left: at(ceiling.pct) }} /> : null}
+        {/* Its own top layer, not a child of the food block: the plan marks and
+            break even stack above the food and would cut through it. */}
         {food.labelled ? <span className={`health-budget__food-label health-budget__food-label--${food.outside ? 'outside' : zone}`} data-testid="budget-food-label"
           style={food.outside ? { left: at(food.fromPct + food.widthPct) } : { right: at(100 - (food.fromPct + food.widthPct)) }}>{n(food.value)} eaten</span> : null}
         {even ? <span className="health-budget__even" style={{ left: at(even.pct) }} /> : null}
@@ -141,8 +152,7 @@ function RulerScale({ budget, spoken }) {
           {t.label ? <span className="health-budget__tick-label">{t.label}</span> : null}</span>)}
       </div>
       {even ? <div className="health-budget__rail health-budget__rail--below">
-        <span className={`health-budget__even-label${endAnchored(even.pct)}`} style={{ left: at(even.pct) }}>
-          {even.wordless ? null : 'Break even '}<b>{n(even.value)}</b></span>
+        <span className={`health-budget__even-label${endAnchored(even.pct)}`} style={{ left: at(even.pct) }}>Break even <b>{n(even.value)}</b></span>
       </div> : null}
     </div>
   );
@@ -166,7 +176,7 @@ function MacroMeter({ label, tone, value, partial, target }) {
 }
 
 /** Today's summary: the calorie budget as a bar, macros beside it. */
-export function EquationStrip({ budget, budgetError, macroCoverage, goals, date, today, onDateChange, onSetupGoals, dayClose = null }) {
+export function EquationStrip({ budget, baseline = null, budgetError, macroCoverage, goals, date, today, onDateChange, onSetupGoals, dayClose = null }) {
   const macroGoals = goals?.macroGoals || budget?.goals?.macroGoals || {};
   return (
     // A zoned budget colours its own headline; the legacy "over" tint is only
@@ -175,7 +185,7 @@ export function EquationStrip({ budget, budgetError, macroCoverage, goals, date,
       <DateStepper date={date} onChange={onDateChange} max={today} />
       {budget ? (
         <div className="health-equation__math" aria-label="Daily nutrition summary">
-          <BudgetBar budget={budget} dayClose={dayClose} />
+          <BudgetBar budget={budget} baseline={baseline} date={date} today={today} dayClose={dayClose} />
           <div className="health-equation__macros">
             {MACROS.map(m => {
               const coverage = macroCoverage?.[m.key];
