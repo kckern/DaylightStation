@@ -33,13 +33,15 @@ function judge({ lines: L, spend, over, gain, tiers }, budget) {
   if (budget.zone === 'incomplete') {
     return { value: null, text: 'Incomplete log', sub: `${n(L.food)} logged, under the ${n(L.floor)} floor · no verdict` };
   }
-  if (spend === 'gain') return { value: null, text: `Surplus of ${n(gain)}`, sub: `missed plan by ${n(over)}` };
+  if (spend === 'gain') return { value: null, text: `Surplus of ${n(gain)}`, sub: over > gain ? `missed plan by ${n(over)}` : null };
   if (spend === 'over') return { value: null, text: `Missed plan by ${n(over)}`, sub: ended };
   if (budget.declared === 'fasting') return { value: null, text: 'Fasted', sub: ended };
+  // Capped at break even, the workout tier can be narrower than the burn, or absent.
   const workout = tiers.find(t => t.key === 'workout');
-  const spent = spend === 'workout'
-    ? `ate back ${n(workout.used)} of ${n(L.exercise)} workout`
-    : L.exercise > 0 ? `workout banked (${n(L.exercise)})` : null;
+  const room = workout ? workout.to - workout.from : 0;
+  const spent = !workout ? null
+    : spend === 'workout' ? `ate back ${n(workout.used)} of ${n(room)} workout`
+      : `workout banked (${n(room)})`;
   return { value: null, text: 'On plan', sub: join([spent, ended]) };
 }
 
@@ -49,14 +51,14 @@ function live({ lines: L, spend, over, gain, tiers }) {
   const workout = tier('workout');
   const toEven = L.even == null ? null : `${n(L.even - L.food)} to break even`;
   const deficitPrice = deficit ? `${n(deficit.left)} deficit` : null;
-  if (spend === 'gain') return { value: gain, text: 'past break even', sub: `${n(over)} over plan` };
+  if (spend === 'gain') return { value: gain, text: 'past break even', sub: over > gain ? `${n(over)} over plan` : null };
   if (spend === 'over') {
     return deficit
       ? { value: deficit.left, text: 'to break even', sub: `${n(over)} over plan` }
       : { value: over, text: 'over plan', sub: null };
   }
   if (spend === 'workout') {
-    return { value: workout.left, text: 'of workout left', sub: join([`used ${n(workout.used)} of ${n(L.exercise)}`, deficitPrice, toEven]) };
+    return { value: workout.left, text: 'of workout left', sub: join([`used ${n(workout.used)} of ${n(workout.to - workout.from)}`, deficitPrice, toEven]) };
   }
   const rest = join([workout && `${n(workout.left)} workout`, deficitPrice, toEven]);
   return { value: tier('free').left, text: 'free', sub: rest && `then ${rest}` };
@@ -81,7 +83,7 @@ export function budgetStory(budget, { date = null, today = null, baseline = null
     const { lines: L, tiers } = ladder;
     job = 'trust';
     told = { value: tiers.find(t => t.key === 'free')?.left ?? 0, text: 'free',
-      sub: `${n(L.floor - L.food)} under the ${n(L.floor)} floor · prices assume the log is complete` };
+      sub: `${n(Math.max(0, L.floor - L.food))} under the ${n(L.floor)} floor · prices assume the log is complete` };
   } else {
     job = ladder.spend === 'over' || ladder.spend === 'gain' ? 'contain' : 'afford';
     told = live(ladder);

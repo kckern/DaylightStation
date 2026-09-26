@@ -107,6 +107,45 @@ describe('budgetStory — finished day (Judge)', () => {
   });
 });
 
+describe('budgetStory — a plan capped at break even', () => {
+  // floor 1200 over maintenance 1100 + 300 burned: break even 1400, so the
+  // workout tier is 1200 → 1400, room for 200 of the 300 burned.
+  const cappedCeiling = (food, over = {}) => ({ food, exercise: 300, maintenance: 1100, range: { floor: 1200, top: 1200 }, zone: 'in-range', declared: null, ...over });
+  // floor 1500: the top itself is capped at 1400, so there is no workout tier.
+  const cappedTop = (food, over = {}) => ({ ...cappedCeiling(food, over), range: { floor: 1500, top: 1500 } });
+  const noExercise = (food, over = {}) => ({ ...cappedCeiling(food, over), exercise: 0 });
+
+  it('judge: the workout banked is the room the plan had for it, not the full burn', () => {
+    expect(budgetStory(cappedCeiling(1000, { zone: 'declared', declared: 'done' }), past).sub)
+      .toBe('workout banked (200) · ended 400 under break even');
+  });
+
+  it('judge: eating back the workout is counted against its room', () => {
+    expect(budgetStory(cappedCeiling(1300), past).sub).toBe('ate back 100 of 200 workout · ended 100 under break even');
+  });
+
+  it('live: the workout used is counted against its room', () => {
+    expect(say(budgetStory(cappedCeiling(1300), live))).toEqual({
+      job: 'afford', value: 100, text: 'of workout left', sub: 'used 100 of 200 · 100 to break even',
+    });
+  });
+
+  it('judge: no workout tier, no workout mentioned', () => {
+    expect(say(budgetStory(cappedTop(1300), past))).toEqual({
+      job: 'judge', value: null, text: 'On plan', sub: 'ended 100 under break even',
+    });
+  });
+
+  it('fully capped (over plan is the gain): the number is not repeated', () => {
+    expect(say(budgetStory(noExercise(1300, { zone: 'past-even' }), live))).toEqual({
+      job: 'contain', value: 200, text: 'past break even', sub: null,
+    });
+    expect(say(budgetStory(noExercise(1300, { zone: 'past-even' }), past))).toEqual({
+      job: 'judge', value: null, text: 'Surplus of 200', sub: null,
+    });
+  });
+});
+
 describe('budgetStory — pricing a portion while it is dragged', () => {
   it('the sub-line becomes what the change costs, in the bar\'s nouns', () => {
     expect(budgetStory(day(1900), { ...live, baseline: day(1470) }).sub).toBe('this costs 321 free + 109 workout');
