@@ -60,12 +60,13 @@ function ExerciseRow({ workout, linked }) {
     preview.onArtworkClick(event);
   };
   const Row = href ? 'a' : 'div';
-  const linkProps = href ? { href, ...preview.focusProps,
-    onClick: () => logger.info('session_open', { sessionId: linked.sessionId }) } : {};
-  return <Row className="health-exercise" {...linkProps} {...preview.targetProps}>
+  // Unlinked (a Strava-only workout, or the index not loaded) still takes
+  // keyboard focus: time and heart rate live only in the card.
+  const rowProps = href ? { href, onClick: () => logger.info('session_open', { sessionId: linked.sessionId }) } : { tabIndex: 0 };
+  return <Row className="health-exercise" {...rowProps} {...preview.focusProps} {...preview.targetProps}>
     <span className="health-exercise__identity">
       <span className="health-exercise__art" data-row-preview-toggle="" onClick={onPosterClick}>
-        {poster ? <img src={poster} alt={media.showTitle ? `${media.showTitle} poster` : 'Workout program poster'} loading="lazy"
+        {poster ? <img src={poster} alt="" loading="lazy"
           onError={() => { setBrokenPoster(poster); logger.debug('poster_unavailable', { sessionId: linked.sessionId }); }} />
           : <IconBarbell size={18} aria-hidden="true" />}
       </span>
@@ -84,9 +85,11 @@ function ExerciseRow({ workout, linked }) {
 export function ExerciseSection({ date, sessions }) {
   // One lightweight day index supplies verified links and program artwork.
   // Nutrition's workout ledger remains the authority for calorie credit.
-  const needsLinks = date && sessions.some(workout => workout.homeSessionId);
-  const details = useApiResource(needsLinks ? `api/v1/fitness/sessions?date=${encodeURIComponent(date)}` : null,
-    { swr: true, label: 'Workout details', logger });
+  // Asked again when a new home session reaches the ledger (a workout that
+  // ended after the page loaded), not on every budget poll.
+  const linkIds = sessions.map(workout => workout.homeSessionId).filter(Boolean).join(',');
+  const details = useApiResource(date && linkIds ? `api/v1/fitness/sessions?date=${encodeURIComponent(date)}` : null,
+    { swr: true, deps: [linkIds], label: 'Workout details', logger });
   const homeSessions = details.data?.sessions || [];
   return <section className="health-meal health-meal--exercise">
     <header className="health-meal__header">

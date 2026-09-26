@@ -27,7 +27,9 @@ describe('exercise row', () => {
     const link = await screen.findByRole('link', { name: /Circuit/ });
     expect(link).toHaveAttribute('href', '/fitness/home/session-group-1');
     expect(link).toBe(row());
-    expect(screen.getByAltText('Program poster')).toHaveAttribute('src', '/api/v1/display/plex:42');
+    // Decorative inside the link: the title beside it already names the row.
+    expect(row().querySelector('.health-exercise__art img')).toHaveAttribute('src', '/api/v1/display/plex:42');
+    expect(row().querySelector('.health-exercise__art img')).toHaveAttribute('alt', '');
     expect(row().querySelector('.health-exercise__minutes')).toHaveTextContent('44 min');
     expect(row().querySelector('.health-exercise__kcal')).toHaveTextContent('+347 kcal');
     expect(screen.queryByText(/View session/)).toBeNull();
@@ -92,8 +94,10 @@ describe('exercise row', () => {
   it('drops a broken poster for the barbell and keeps the link', async () => {
     api.mockResolvedValue({ sessions: [linked] });
     show([workout]);
-    fireEvent.error(await screen.findByAltText('Program poster'));
-    expect(screen.queryByRole('img')).toBeNull();
+    await screen.findByRole('link');
+    fireEvent.error(row().querySelector('.health-exercise__art img'));
+    expect(row().querySelector('.health-exercise__art img')).toBeNull();
+    expect(row().querySelector('.health-exercise__art svg')).toBeTruthy();
     expect(screen.getByRole('link')).toBeTruthy();
   });
 
@@ -134,5 +138,27 @@ describe('exercise row', () => {
   it('puts the section subtotal in the header-right cluster, like a meal', () => {
     show([{ title: 'Run', calories: 250 }, { title: 'Walk', calories: 61 }]);
     expect(document.querySelector('.health-meal__header-right .health-meal__kcal')).toHaveTextContent('+311 kcal');
+  });
+
+  it('an unlinked workout still takes keyboard focus for its card', async () => {
+    api.mockResolvedValue({ sessions: [{ sessionId: 'unrelated' }] });
+    show([workout]);
+    await waitFor(() => expect(api).toHaveBeenCalledTimes(1));
+    expect(row().tagName).toBe('DIV');
+    expect(row()).toHaveAttribute('tabindex', '0');
+  });
+
+  it('asks the fitness index again when a new home session reaches the ledger, not on every poll', async () => {
+    api.mockResolvedValue({ sessions: [linked] });
+    const { rerender } = show([workout]);
+    await screen.findByRole('link');
+    const again = sessions => rerender(<MantineProvider><div className="ds-root"><RowPreviewProvider>
+      <ExerciseSection date="2026-09-05" sessions={sessions} /></RowPreviewProvider></div></MantineProvider>);
+    again([{ ...workout }]); // the budget poll: same workouts, new objects
+    expect(api).toHaveBeenCalledTimes(1);
+    api.mockResolvedValue({ sessions: [linked, { sessionId: 'later', voiceMemos: [{ transcript: 'Done.' }] }] });
+    again([workout, { id: 'late', title: 'Evening ride', homeSessionId: 'later', calories: 90 }]);
+    expect(await screen.findByRole('link', { name: /Evening ride/ })).toHaveAttribute('href', '/fitness/home/session-later');
+    expect(api).toHaveBeenCalledTimes(2);
   });
 });
