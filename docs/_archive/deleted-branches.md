@@ -535,3 +535,5 @@ The corollary bit twice in this sweep: `feat/teacher-workspace-ia` and `feature/
 | 2026-09-25 | feat/jev-content-filter-cues | f21b39b03 | Jev review queue for subtitle word-list cues (merged) |
 | 2026-09-25 | feat/arcade-session-overlay | b5b6b1408 | Unified arcade session overlay (merged, resolved onto ArcadeGameSession rename) |
 | 2026-09-25 | feature/health-budget-food-axis | ce2a67941 | Health budget ruler on a food axis (merged) |
+| 2026-09-25 | feature/health-exercise-rows | 804f90daf | Health Today: compact half-width exercise rows, hover card |
+| 2026-09-25 | fix/health-refresh-resilience | 33d63be53 | Health refresh survives 502s: transient retry, no error-panel stack |
