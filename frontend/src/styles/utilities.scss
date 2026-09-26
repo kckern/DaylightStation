@@ -1,0 +1,5 @@
+// Global utility classes, loaded on every route by main.jsx. Routes are lazy
+// chunks, so a utility defined in one app's stylesheet exists only while that
+// app is loaded; shared utilities live here instead.
+
+.tabular-nums { font-variant-numeric: tabular-nums; } // utility (position readout, size preview)

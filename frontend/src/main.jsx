@@ -3,6 +3,9 @@ import ReactDOM from 'react-dom/client';
 import { BrowserRouter, Routes, Route, useParams, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { MantineProvider } from '@mantine/core';
 import '@mantine/core/styles.css';
+// Shared utility classes (.tabular-nums …) — every route needs them, so they
+// load here rather than from any one app's stylesheet.
+import './styles/utilities.scss';
 import { installRootTokens } from './lib/theme/installRootTokens.js';
 import { createAppTheme } from './lib/theme/createAppTheme.js';
 import { OfficeRedirect, TVRedirect, SchoolDeepLinkRedirect, TeacherNextRedirect } from './routeRedirects.jsx';

@@ -24,6 +24,9 @@ import {
   clefRightEdge,
 } from './staffGlyphs.jsx';
 import './SvgSequenceStaff.scss';
+// The action-staff__* classes this renderer emits are styled there; import it
+// here so every screen that draws notation gets them, whatever else it loads.
+import '../../Piano/components/ActionStaff.scss';
 
 /**
  * SvgSequenceStaff — the house engraver, extended from "a chord" to "an ordered

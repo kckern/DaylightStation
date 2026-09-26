@@ -27,6 +27,7 @@ import { usePianoHeroGame } from './usePianoHeroGame.js';
 import { usePianoRunSession } from '../game-platform/runtime/usePianoRunSession.js';
 import { noteSelectionEnabled } from './noteSelectionEnabled.js';
 import './PianoHeroGame.scss';
+import '../components/PianoCourseTabs.scss';
 
 const NOTATION_RE = /\.(musicxml|mxl)$/i;
 

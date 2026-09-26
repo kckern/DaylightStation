@@ -1,6 +1,8 @@
 import { PianoKeyboard } from '../../components/PianoKeyboard.jsx';
 import { projectHostPhase } from './gameLifecycle.js';
 import { usePianoFullscreen } from '../../PianoKiosk/PianoFullscreenContext.jsx';
+// Piano tokens: games mount outside Apps/PianoApp.jsx (e.g. the office screen).
+import '../../pianoTokens.scss';
 import './PianoGameHost.scss';
 
 /**

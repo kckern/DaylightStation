@@ -471,8 +471,9 @@ async function buildBundle() {
 /**
  * Compile the collected sheets, in cascade order.
  *
- * `PianoApp.scss` first — it declares the `--piano-*` tokens every other sheet
- * reads and owns `.piano-app` / `.piano-game-fullscreen`. `GameGate.scss` last,
+ * `pianoTokens.scss` then `PianoApp.scss` first — the tokens module declares the
+ * `--piano-*` tokens every other sheet reads (it moved out of the shell sheet),
+ * and the shell owns `.piano-app` / `.piano-game-fullscreen`. `GameGate.scss` last,
  * because that is where it sits in the real bundle and its lateness is a known
  * hazard the gate's own sheet is scoped against. Everything between is the
  * graph's own order.
@@ -483,6 +484,7 @@ async function buildBundle() {
 async function compileSheet(sheets) {
   const sass = await import('sass-embedded');
   const ordered = [
+    path.join(FRONTEND, 'src/modules/Piano/pianoTokens.scss'),
     path.join(FRONTEND, 'src/Apps/PianoApp.scss'),
     ...sheets,
     path.join(HERE, '../Games/GameGate.scss'),

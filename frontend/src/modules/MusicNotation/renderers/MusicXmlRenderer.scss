@@ -1,0 +1,126 @@
+// MusicXmlRenderer — renderer shell, busy/progress overlays and the engraved-
+// notehead state classes NoteHighlightLayer toggles. Moved verbatim from
+// Apps/PianoApp.scss so the renderer is styled on every screen that mounts it.
+
+.musicxml-renderer { position: relative; margin: 0 auto; }
+.musicxml-renderer__svg svg { display: block; }
+.musicxml-renderer--placeholder { color: #6a6256; padding: 2rem; text-align: center; }
+.musicxml-renderer__busy {
+  position: absolute; inset: 0; z-index: 6; min-height: 16rem;
+  display: flex; align-items: center; justify-content: center;
+  color: #6a6256; font-weight: 600; background: rgba(252, 250, 244, 0.7);
+}
+
+// Task 11: determinate geometry-extraction progress — a thin bar pinned to the
+// top of the renderer. Width driven by the inline --p fraction (0..1); the
+// painted sheet stays fully visible beneath it.
+.musicxml-renderer__progress {
+  position: absolute; top: 0; left: 0; z-index: 7;
+  height: 3px; width: calc(var(--p, 0) * 100%);
+  background: var(--piano-accent, #2ec46f);
+  box-shadow: 0 0 6px rgba(46, 196, 111, 0.6);
+  border-radius: 0 2px 2px 0;
+  transition: width 120ms linear; pointer-events: none;
+}
+
+// Active-note light-up: recolour the ENGRAVED notehead itself — NO overlay
+// rectangle. NoteHighlightLayer toggles these classes on OSMD's per-note <g>
+// and sets --nh-color to a fixed near-black ink (wave-2 A, ScorePlayer's
+// NOTE_INK) for "current" noteheads. A stylesheet `fill` beats vexflow's
+// black `fill` presentation attribute, so the real note glyph changes colour.
+.musicxml-renderer__svg {
+  .piano-note-lit {
+    path, rect, ellipse, text { fill: var(--nh-color, #23262b); }
+  }
+  // Struck correctly — always a warm dark brown, regardless of --nh-color
+  // (which is the near-black lit ink, not a "you got it" signal). Deliberately
+  // NOT the kiosk's accent green: on a white score page an affirming colour that
+  // reads as ink keeps the page looking engraved rather than lit up like a game.
+  // Fixed literal, not threaded through NoteHighlightLayer's accent prop: the
+  // hit colour must stay the same in every mode, not follow the lit ink or the
+  // mode accent. Declared after .piano-note-lit so its fill wins the cascade
+  // (same specificity, later source order) on notes carrying both classes.
+  .piano-note-hit {
+    --nh-hit-color: #6b4423;
+    path, rect, ellipse, text { fill: var(--nh-hit-color); }
+    filter: drop-shadow(0 0 2.5px var(--nh-hit-color));
+  }
+  // Expected at this step but not yet struck (Learn's all-notes rule). FILLED
+  // and pulsing, never outlined: a hollow notehead means a half or whole note,
+  // so outlining a quarter note states the wrong duration — a notation error
+  // whatever it is signalling. The PULSE carries "you still owe me this one"
+  // instead, and its ceiling stays below full strength so a pending note is
+  // never mistaken for one already struck.
+  .piano-note-pending {
+    // The pulse travels black ink → brown → black ink. Brown is a lower-contrast
+    // mark on a white page than black, so the hue alone would read as the
+    // notehead fading toward transparent — the opposite of "play this one now".
+    // The peak therefore gains INK MASS: the glyph puts on a hair of brown
+    // stroke, so it thickens rather than thins.
+    //
+    // That replaces an animated drop-shadow halo, which said the same thing far
+    // more expensively. Filters animate on the PAINT path, never the compositor,
+    // so a breathing halo re-rasterised a blur every single frame — the same
+    // defect that pinned the scale-drill surface to a flat 37fps on the
+    // kiosk tablet with zero JS on the main thread. Stroke-width is an ordinary
+    // paint over a glyph-sized region: no convolution, no expanded filter box.
+    path, rect, ellipse, text {
+      fill: var(--nh-color, #23262b);
+      animation: piano-note-pending-pulse 1.1s ease-in-out infinite;
+    }
+    // `text` is deliberately absent here: outlining a glyph reads as a heavier
+    // typeface, not as a brighter note.
+    path, rect, ellipse { stroke: #6b4423; stroke-width: 0; }
+  }
+  // The note that was OWED when something else was played (the gate's score
+  // passage). It marks the note the child still has to find, not the one they
+  // played — a wrong key is very often not written on the page at all, so there
+  // is no notehead to mark for it. Same thing the ABC exercise stage says with
+  // `exercise-note-wrong`, in the vocabulary of an engraved score. Declared
+  // after `.piano-note-lit` so it wins on the cursor note, which carries both.
+  .piano-note-wrong {
+    --nh-wrong-color: #c0392b;
+    path, rect, ellipse, text { fill: var(--nh-wrong-color); animation: none; }
+  }
+  // Held right now, and written here: the PRINTED note turns green. Declared last
+  // so it wins over lit/hit/pending on a note carrying several of these classes —
+  // "you are playing this correctly, right now" is the most immediate thing the
+  // page can say about a notehead, so it outranks the rest.
+  .piano-note-match {
+    path, rect, ellipse, text { fill: var(--piano-accent, #2ec46f) !important; animation: none !important; }
+    // Belt and braces at the group level too, not just on the fill pulse: a
+    // running animation outranks a plain declaration, so this guarantees
+    // nothing keeps breathing underneath the green "you got it".
+    animation: none !important;
+    filter: drop-shadow(0 0 2.5px var(--piano-accent, #2ec46f));
+  }
+}
+
+// The pending pulse travels between the engraved ink and the HIT colour, at full
+// strength — it previews the reward rather than fading toward absence. It never
+// touches opacity: pulsing toward transparent collided head-on with the ghost
+// mark, so the page said "play this next" and "this is not the note" in the same
+// faint grey. Both ends are solid ink; the hue and the ink mass move together,
+// so the brown end lands heavier than the black one instead of lighter.
+//
+// Strictly no `filter` here. An animated drop-shadow re-rasterises a blur on
+// every frame; the stroke does the same "gaining energy" job as a plain paint.
+@keyframes piano-note-pending-pulse {
+  0%, 100% { fill: var(--nh-color, #23262b); stroke-width: 0; }
+  50%      { fill: #6b4423; stroke-width: 1.1px; }
+}
+
+// Deselected staff (wave-3 A) — dimmed NATIVELY: fade OSMD's own per-staff
+// group instead of covering the staff with a rectangle. Every mark on the
+// staff (lines, clef, noteheads, stems, beams, flags, ledgers, modifiers) is a
+// child of this group, so nothing escapes the way stems and beams escaped a
+// band-shaped mask, and there are no straight edges cutting across curved ink.
+//
+// Group opacity composites the group ONCE rather than per element, so
+// overlapping strokes do not darken each other: the staff reads as genuinely
+// lighter ink, not as a translucent film laid over it.
+//
+// No z-index, deliberately. The engraving itself is dimmed, so the cursor,
+// wet ink and note chips are unaffected — they no longer need to be stacked
+// above a mask to avoid being muted by it.
+.musicxml-renderer__svg g.staffline.is-dimmed { opacity: 0.32; }

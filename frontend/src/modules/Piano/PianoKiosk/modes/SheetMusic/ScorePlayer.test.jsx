@@ -489,7 +489,7 @@ describe('ScorePlayer — note-highlight ink (wave-2 A)', () => {
     // LIT's --nh-color), so this locks in the JS-level contract the CSS fix relies
     // on: NoteHighlightLayer still stamps the SAME near-black --nh-color on every
     // lit note (struck or not) — the class split (lit vs. lit+hit) is what the
-    // stylesheet keys off to give HIT its own colour. See the PianoApp.scss source
+    // stylesheet keys off to give HIT its own colour. See the MusicXmlRenderer.scss source
     // assertion below for the actual colour override.
     expect(hitEl.classList.contains('piano-note-lit')).toBe(true);
     expect(hitEl.classList.contains('piano-note-hit')).toBe(true);
@@ -499,10 +499,10 @@ describe('ScorePlayer — note-highlight ink (wave-2 A)', () => {
     expect(litOnlyEl.style.getPropertyValue('--nh-color')).toBe('#23262b');
   });
 
-  it('PianoApp.scss gives .piano-note-hit its own fixed dark brown, never the shared --nh-color ink (wave-2 A)', () => {
+  it('MusicXmlRenderer.scss gives .piano-note-hit its own fixed dark brown, never the shared --nh-color ink (wave-2 A)', () => {
     // jsdom doesn't compute styles from the stylesheet, so assert the source
     // directly (same pattern as TransportButton.test.jsx's SCSS floor check).
-    const scss = readFileSync(resolve('frontend/src/Apps/PianoApp.scss'), 'utf8');
+    const scss = readFileSync(resolve('frontend/src/modules/MusicNotation/renderers/MusicXmlRenderer.scss'), 'utf8');
     // .piano-note-hit nests one level (its `path, rect, ...` sub-rule), so match
     // through that inner brace pair too, not just up to the first `}`.
     const hitBlock = scss.match(/\.piano-note-hit\s*\{(?:[^{}]|\{[^{}]*\})*\}/s)?.[0];
@@ -512,8 +512,8 @@ describe('ScorePlayer — note-highlight ink (wave-2 A)', () => {
     expect(hitBlock).not.toMatch(/var\(--nh-color/); // never inherits the near-black lit ink
   });
 
-  it('PianoApp.scss never draws a pending notehead hollow — that reads as a half note', () => {
-    const scss = readFileSync(resolve('frontend/src/Apps/PianoApp.scss'), 'utf8');
+  it('MusicXmlRenderer.scss never draws a pending notehead hollow — that reads as a half note', () => {
+    const scss = readFileSync(resolve('frontend/src/modules/MusicNotation/renderers/MusicXmlRenderer.scss'), 'utf8');
     const block = scss.match(/\.piano-note-pending\s*\{(?:[^{}]|\{[^{}]*\})*\}/s)?.[0];
     expect(block).toBeTruthy();
     // A hollow head means a half or whole note. An outlined quarter note is a
@@ -528,7 +528,7 @@ describe('ScorePlayer — note-highlight ink (wave-2 A)', () => {
   });
 
   it('the pending pulse breathes ink→brown and gains mass, never toward transparency', () => {
-    const scss = readFileSync(resolve('frontend/src/Apps/PianoApp.scss'), 'utf8');
+    const scss = readFileSync(resolve('frontend/src/modules/MusicNotation/renderers/MusicXmlRenderer.scss'), 'utf8');
     const frames = scss.match(/@keyframes piano-note-pending-pulse\s*\{(?:[^{}]|\{[^{}]*\})*\}/s)?.[0];
     // Fading a notehead out says "this one is not it" (the ghost mark's job), the
     // exact opposite of "play this now". Both ends must be solid ink.
@@ -3660,12 +3660,13 @@ describe('ScorePlayer — staff dim (Task 8)', () => {
     expect(document.querySelectorAll('.piano-score-staff-dim')).toHaveLength(0);
   });
 
-  it('PianoApp.scss fades the staff group and keeps no mask rule', () => {
+  it('MusicXmlRenderer.scss fades the staff group and keeps no mask rule', () => {
     // jsdom computes no stylesheet, so assert the source (same pattern as the
     // .piano-note-hit colour check above).
-    const scss = readFileSync(resolve('frontend/src/Apps/PianoApp.scss'), 'utf8');
+    const scss = readFileSync(resolve('frontend/src/modules/MusicNotation/renderers/MusicXmlRenderer.scss'), 'utf8');
     expect(scss).toMatch(/g\.staffline\.is-dimmed\s*\{[^}]*opacity/);
     expect(scss).not.toContain('.piano-score-staff-dim');
+    expect(readFileSync(resolve('frontend/src/Apps/PianoApp.scss'), 'utf8')).not.toContain('.piano-score-staff-dim');
   });
 });
 
