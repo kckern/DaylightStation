@@ -18,6 +18,7 @@ import UnlockPrompt from '../../player/overlays/UnlockPrompt.jsx';
 import { fullscreenClass } from './emulatorGameWidgetLayout.js';
 import { wsService } from '../../../../services/WebSocketService.js';
 import { formatClock, useArcadeGameBudget } from './useArcadeGameBudget.js';
+import { findDirectLaunchGame } from './directLaunch.js';
 
 const ENGINE_PATH = '/api/v1/emulator/engine/';
 const DEFAULT_AUTOSAVE_SECONDS = 15;
@@ -307,6 +308,24 @@ export default function EmulatorGameWidget({ fitnessContext, deviceId = null, on
       }
     });
   }, [arcadeUnlocked, adminGate, registerAdmin, launchFresh, logger]);
+
+  // Deep link /fitness/games/:system/:game — a testing door. It launches the
+  // game once, straight past the admin gate, and says so at warn on every use:
+  // a bypass that is not in the log is how the arcade stayed open for a day.
+  const directLaunch = config?.directLaunch || null;
+  const directLaunchDoneRef = useRef(false);
+  useEffect(() => {
+    if (!library || !directLaunch || directLaunchDoneRef.current) return;
+    directLaunchDoneRef.current = true;
+    if (!directLaunch.game) return; // /fitness/games/:system alone just opens the arcade
+    const game = findDirectLaunchGame(library.games, directLaunch);
+    if (!game) {
+      logger.error('fitness-emulator.direct-launch.not-found', { system: directLaunch.system, game: directLaunch.game });
+      return;
+    }
+    logger.warn('fitness-emulator.direct-launch', { game: game.id, system: game.system, bypassed: ['admin-gate'] });
+    launchFresh(game);
+  }, [library, directLaunch, launchFresh, logger]);
 
   const cancelGate = useCallback(() => {
     setView(launch ? 'playing' : 'arcade');
