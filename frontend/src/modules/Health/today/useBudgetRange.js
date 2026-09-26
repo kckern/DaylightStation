@@ -33,7 +33,7 @@ export function useBudgetRange(from, to, { enabled = true } = {}) {
   const res = useApiResource(path, { label: 'budget-range', logger, swr: true, enabled });
   const days = useMemo(() => res.data?.days || [], [res.data]);
   const byDate = useMemo(() => new Map(days.map((d) => [d.date, d])), [days]);
-  return { days, byDate, loading: res.loading, error: res.error, reload: res.reload };
+  return { days, byDate, data: res.data, loading: res.loading, error: res.error, reload: res.reload };
 }
 
 export default useBudgetRange;

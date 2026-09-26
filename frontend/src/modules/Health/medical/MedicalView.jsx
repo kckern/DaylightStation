@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Autocomplete, Button, Group, NumberInput, Stack, Text, TextInput } from '@mantine/core';
 import { SectionCard, StatCard, Sheet, LoadingState, ErrorState, EmptyState } from '@/lib/ui';
 import { useApiResource } from '../../../lib/hooks/useApiResource.js';
+import { unavailableError } from '../healthResources.js';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import { createAppLogger } from '../../../lib/ui/createAppLogger.js';
 import { localTodayISO } from '../today/mealBuckets.js';
@@ -71,14 +72,14 @@ export function MedicalView() {
       </Group> : null}
 
       {med.loading ? <LoadingState label="medical readings" rows={4} /> : null}
-      {med.error ? <ErrorState error={med.error} onRetry={med.reload} label="Medical readings" /> : null}
+      {unavailableError(med) ? <ErrorState error={med.error} onRetry={med.reload} label="Medical readings" /> : null}
       {!open && error ? <ErrorState error={error} onRetry={() => { setError(null); med.reload(); }} label="Reading could not be deleted" /> : null}
-      {!med.loading && !med.error && !metrics.length ? (
+      {!med.loading && !unavailableError(med) && !metrics.length ? (
         <EmptyState title="No medical readings yet"
           hint="Add a blood pressure, glucose, or lab reading to start tracking."
           action={{ label: 'Add reading', onClick: openAdd }} />
       ) : null}
-      {!med.loading && !med.error ? metrics.map((group) => (
+      {!med.loading && !unavailableError(med) ? metrics.map((group) => (
         <SectionCard key={group.metric} title={labelFor(group.metric)} className="health-medical__group">
           <StatCard label="Latest" value={formatValue(group.latest)} unit={group.unit} />
           <Stack gap={4} mt="sm">

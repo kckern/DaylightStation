@@ -4,6 +4,7 @@ import { Sheet, ErrorState } from '@/lib/ui';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import { createAppLogger } from '../../../lib/ui/createAppLogger.js';
 import { useApiResource } from '../../../lib/hooks/useApiResource.js';
+import { unavailableError } from '../healthResources.js';
 import { foodGrams, foodPortion, NUTRIENT_KEYS, scaleFoodPortion } from '@shared-contracts/health/foodQuantity.mjs';
 import { formatNutrients, nutrientSummary } from '@shared-contracts/nutrition/countedRows.mjs';
 import { updateEntry, entryError } from './entryCommands.js';
@@ -147,9 +148,9 @@ function Editor({ row, onClose, onChanged, onRequestDelete, onCoach, observation
             })} />) : null}
         </Stack>
       </details>
-      {catalog.error ? <ErrorState error={catalog.error} onRetry={catalog.reload} label="Saved food" /> : null}
+      {unavailableError(catalog) ? <ErrorState error={catalog.error} onRetry={catalog.reload} label="Saved food" /> : null}
       <Group justify="space-between" gap="xs">
-        {!isGroup ? <Button size="compact-xs" variant="subtle" disabled={busy || catalog.loading || Boolean(catalog.error)} aria-label="favorite" aria-pressed={favorite}
+        {!isGroup ? <Button size="compact-xs" variant="subtle" disabled={busy || catalog.loading || Boolean(unavailableError(catalog))} aria-label="favorite" aria-pressed={favorite}
           onClick={() => run(async () => {
             await DaylightAPI('api/v1/health/nutrition/catalog/favorite', { ...(row.foodId ? { id: row.foodId } : { name: nameOf(row) }), favorite: !favorite }, 'PUT');
             setFavorite(value => !value);

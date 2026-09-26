@@ -222,6 +222,28 @@ function sharedRequest(path, { join = true } = {}) {
   return request;
 }
 
+// ---- Transient retry -----------------------------------------------------------
+// A proxy's 502/503/504 or a dropped connection (api.mjs marks these
+// `transient`) is almost always the backend restarting: the same GET asked
+// again seconds later succeeds. A reader asks again on this schedule before
+// it reports anything, and stops as soon as it is no longer current.
+export const TRANSIENT_RETRY_DELAYS_MS = [1000, 3000];
+
+function requestWithRetry(path, { join, isCurrent, onRetry }) {
+  const attempt = (index, joinThis) => sharedRequest(path, { join: joinThis }).catch(err => {
+    const delay = TRANSIENT_RETRY_DELAYS_MS[index];
+    if (!err?.transient || delay === undefined || !isCurrent()) throw err;
+    onRetry(err, index + 1);
+    return new Promise((resolve, reject) => {
+      setTimeout(() => {
+        if (!isCurrent()) { reject(err); return; }
+        attempt(index + 1, false).then(resolve, reject);
+      }, delay);
+    });
+  });
+  return attempt(0, join);
+}
+
 // Claims the next generation number for `path` — call this once per issued
 // request, at issue time, and keep the returned number to check against
 // `isNewestGeneration` when that request resolves.
@@ -424,7 +446,8 @@ export function useApiResource(path, { deps = [], enabled = true, label, logger 
     const forced = fetchedNonce.current !== nonce;
     fetchedNonce.current = nonce;
     const startedAt = performance.now();
-    sharedRequest(path, { join: !forced })
+    requestWithRetry(path, { join: !forced, isCurrent: () => live,
+      onRetry: (err, attempt) => logger.debug('api.retry', { resource: label || path, attempt, status: err?.status ?? null }) })
       .then((result) => {
         // Two independent guards here, doing different jobs:
         //   - `live` is THIS effect run's own liveness — false on unmount or
