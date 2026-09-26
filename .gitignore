@@ -190,8 +190,6 @@ docs/_moveme/
 !scripts/migrate-household-config.mjs
 *.png
 !tests/isolated/rendering/school/golden/snapshots/answer-sheet-*.png
-# Shader textures are source, imported by the build — ignoring them breaks it.
-!frontend/src/modules/Emulator/shaders/**/*.png
 
 # TI-86 install images are BUILD OUTPUT, regenerable by tools/build-*-install.mjs.
 # 31MB of binaries, and the .86s payloads carry learner identities baked in at

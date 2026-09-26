@@ -15,6 +15,7 @@ import getLogger from '@/lib/logging/Logger.js';
 import { createWramCalibrator as realCreateWramCalibrator } from './WramCalibrator.js';
 import { createStateMap as realCreateStateMap } from './StateMap.js';
 import { createBindingMatcher as realCreateBindingMatcher } from './BindingMatcher.js';
+import { loadShaderTextures, withShaderTextures, withoutShader } from '../shaders/customShaders.js';
 
 let _log;
 const log = () => (_log ??= getLogger().child({ component: 'emulator-session' }));
@@ -54,6 +55,7 @@ export function createEmulatorSession({
     createStateMap = realCreateStateMap,
     createBindingMatcher = realCreateBindingMatcher,
     resolveMediaUrl = (p) => p,
+    fetchBytes = (url) => globalThis.fetch(url),
   } = deps;
 
   const childLog = logger || log();
@@ -98,9 +100,37 @@ export function createEmulatorSession({
     }
   }
 
+  // --- Picture-shader textures ------------------------------------------------
+  // A preset's bitmaps live on the media mount; the manifest names them in
+  // `presentation.ejs_shader_textures` ({ fileNameThePresetReads: engine path }).
+  // Fetch them before boot and attach them to the preset. If any is missing,
+  // drop the preset: EmulatorJS then shows the picture unfiltered.
+  async function resolveShaderTable() {
+    const table = engineConfig.shaders;
+    const name = game.presentation?.ejs_shader;
+    const textures = game.presentation?.ejs_shader_textures;
+    if (!table?.[name] || !textures || !Object.keys(textures).length) return table;
+    const { bytes, missing } = await loadShaderTextures(textures, {
+      base: engineConfig.pathtodata || '',
+      fetchImpl: fetchBytes,
+    });
+    if (missing.length) {
+      childLog.error('emulator.shader.textures-missing', { game: game.id, shader: name, missing });
+      return withoutShader(table, name);
+    }
+    childLog.info('emulator.shader.textures-loaded', {
+      game: game.id,
+      shader: name,
+      files: Object.fromEntries(Object.entries(bytes).map(([f, b]) => [f, b.byteLength])),
+    });
+    return withShaderTextures(table, name, bytes);
+  }
+
   // --- Lifecycle ------------------------------------------------------------
   async function start({ mount } = {}) {
     childLog.info('emulator.session.start', { game: game.id, system });
+
+    const shaders = await resolveShaderTable();
 
     await engine.boot({
       mount,
@@ -114,7 +144,7 @@ export function createEmulatorSession({
       // Our own picture-shader presets (the Game Boys' Harlequin dot matrix),
       // registered with EmulatorJS at boot so presentation.ejs_shader can name
       // them at the settle barrier.
-      shaders: engineConfig.shaders,
+      shaders,
     });
 
     // Calibrate WRAM via a harmless cheat ping — but ONLY for a game that
