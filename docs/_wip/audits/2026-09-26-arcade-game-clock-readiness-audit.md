@@ -58,7 +58,7 @@ for a week.
     `.cfg` plus every piece image.
   - Composited each bezel at 1920×1080 exactly as the `.cfg` lays it out.
   - Rendered the real `arcade-film.html` on top in headless Chromium, once per
-    zone of every system, with a short and a long name at 5:07 and 1:44:59.
+    zone of every system, with a short and a long name at 5:07 and 1:44:59 — first at 1920×1080, then again at the Shield's real 960×540 CSS px @2x (see the live check below).
   - Measured the banner's rect after the rise animation settles, against the
     system's game-screen rect.
 - **Contract test.** A jsdom test (`arcadeFilmContract.test.js`) drives the film
@@ -139,6 +139,42 @@ right, 203×81 px; GB bottom, 462×77 px) the name and "played" label drop to
 name is small but the clock is clear.
 
 ---
+
+### Live check on the Shield (same evening, over a running game)
+
+Deployed `7db66d8f9` mid-game under an owner override. Pokémon Crystal was
+running in RetroArch.
+
+- **The game was undisturbed.** RetroArch stayed in the foreground throughout.
+- **The meter resumed the same session.** It logged `arcade.session.resumed` at
+  466 s; the ~77 s outage stayed inside the 60 s liveness window measured from
+  the last observation.
+- **The overlay was refreshed without restarting anything.** Pointing Fully's
+  `webOverlayUrl` at a cache-busted URL reloads only the non-focusable overlay
+  window.
+
+The first live render found what the 1920×1080 renders could not: **the
+Shield's WebView lays the film out at 960×540 CSS px (DPR 2)**. At that size
+the 4.5 px text floor, tuned at 1920 wide, was too big for the GB bottom zone
+(231×39 CSS px):
+
+- the name was clipped at the top
+- "GAME BOY COLOR" wrapped
+- "PLAYED" was cut off at the bottom
+- the film logged `fits: false`, with `av` and `bar` shed
+
+Fixed in `b219691f5`:
+
+- the floor scales with page width
+- the system label stays on one line and is shed after the bar and portrait
+- the logged rect is the resting layout box, not a read taken mid-animation
+
+All 46 zones were re-rendered at 960×540 @2x: all fit, none overlap the game.
+The fixed file was swapped into the running container's `dist/` (identical to
+the committed file) and the overlay re-pointed.
+
+Live result: `16:23 PLAYED`, fitting cleanly, with `arcade.film.shown` reporting
+`fits: true, shed: []`.
 
 ## 5. Prior audit (2026-09-12) — status
 
