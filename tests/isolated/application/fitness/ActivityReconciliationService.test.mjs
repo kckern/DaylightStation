@@ -324,6 +324,137 @@ describe('ActivityReconciliationService — Pass 1: title/description correction
   });
 });
 
+describe('ActivityReconciliationService — Pass 2: notes pull never echoes our description', () => {
+  let stravaClient;
+  let service;
+
+  const MEMO = '🎙️ "We finished the horror cup together."';
+  const MEDIA = '🖥️ Game Cycling — Sonic & Sega All Stars Racing';
+  const CLEAN = `${MEMO}\n\n${MEDIA}`;
+  // What Strava held for 20328730789 after one round trip (2026-09-25).
+  const DOUBLED = `${MEMO}\n\n📝 "${CLEAN}"\n\n${MEDIA}`;
+
+  const session = (extra = {}) => ({
+    sessionId: '20260925140616',
+    session: { start: '2026-09-25 14:06:16', duration_seconds: 1140 },
+    participants: { kckern: { strava: { activityId: 20328730789 } } },
+    timeline: {
+      events: [
+        { type: 'voice_memo', timestamp: 1, data: { transcript: 'We finished the horror cup together.' } },
+        { type: 'media', timestamp: 2, data: { grandparentTitle: 'Game Cycling', title: 'Sonic & Sega All Stars Racing', contentType: 'episode' } },
+      ],
+    },
+    summary: { media: [] },
+    ...extra,
+  });
+  const saved = () => saveYaml.mock.calls.map(c => c[1]).at(-1);
+
+  beforeEach(() => {
+    vi.resetAllMocks();
+    let firstDate = null;
+    dirExists.mockImplementation((p) => {
+      const date = p?.match(/(\d{4}-\d{2}-\d{2})/)?.[1];
+      if (!firstDate && date) firstDate = date;
+      return date === firstDate;
+    });
+    listYamlFiles.mockReturnValue(['20260925140616']);
+    stravaClient = { getActivity: vi.fn(), updateActivity: vi.fn().mockResolvedValue({}) };
+    logger = { info: vi.fn(), warn: vi.fn() };
+    service = new ActivityReconciliationService({
+      activityGateway: stravaClient,
+      lookbackDays: 10,
+      selectionConfig: {},
+      timezone: 'America/Los_Angeles',
+      historyRepository: historyRepository(),
+      logger,
+    });
+  });
+  let logger;
+  const summary = () => logger.info.mock.calls.find(([e]) => e === 'strava.reconciliation.complete')?.[1];
+
+  test('counts a dropped echo separately from a pulled note', async () => {
+    loadYamlSafe.mockReturnValue(session({
+      strava_notes: { text: CLEAN, source: 'strava_description' },
+      strava: { pushed: { name: 'Game Cycling—Sonic & Sega All Stars Racing', description: DOUBLED } },
+    }));
+    stravaClient.getActivity.mockResolvedValue({ id: 20328730789, name: 'Game Cycling—Sonic & Sega All Stars Racing', description: DOUBLED });
+
+    await service.reconcile();
+
+    expect(summary()).toMatchObject({ notesPulled: 0, echoesDropped: 1 });
+  });
+
+  test('leaves a notes object without text alone', async () => {
+    loadYamlSafe.mockReturnValue(session({
+      strava_notes: { source: 'strava_description' },
+      strava: { pushed: { name: 'Game Cycling—Sonic & Sega All Stars Racing', description: CLEAN } },
+    }));
+    stravaClient.getActivity.mockResolvedValue({ id: 20328730789, name: 'Game Cycling—Sonic & Sega All Stars Racing', description: CLEAN });
+
+    await service.reconcile();
+
+    expect(saved().strava_notes).toEqual({ source: 'strava_description' });
+  });
+
+  test('recovers a typed note from a 📝 block when the session lost its copy', async () => {
+    const withNote = `${MEMO}\n\n📝 "Legs toast."\n\n${MEDIA}`;
+    loadYamlSafe.mockReturnValue(session({ strava: { pushed: { name: 'Game Cycling—Sonic & Sega All Stars Racing', description: withNote } } }));
+    stravaClient.getActivity.mockResolvedValue({ id: 20328730789, name: 'Game Cycling—Sonic & Sega All Stars Racing', description: withNote });
+
+    await service.reconcile();
+
+    expect(saved().strava_notes.text).toBe('Legs toast.');
+    // Strava already holds exactly what we would build, so nothing is pushed.
+    expect(stravaClient.updateActivity).not.toHaveBeenCalled();
+  });
+
+  test('does not pull our own description back as strava_notes', async () => {
+    loadYamlSafe.mockReturnValue(session({ strava: { pushed: { name: 'Game Cycling—Sonic & Sega All Stars Racing', description: CLEAN } } }));
+    stravaClient.getActivity.mockResolvedValue({ id: 20328730789, name: 'Game Cycling—Sonic & Sega All Stars Racing', description: CLEAN });
+
+    await service.reconcile();
+
+    expect(stravaClient.updateActivity).not.toHaveBeenCalled();
+    expect(saved().strava_notes).toBeUndefined();
+  });
+
+  test('heals an already-doubled activity: pushes the clean description and drops the echo', async () => {
+    loadYamlSafe.mockReturnValue(session({
+      strava_notes: { text: CLEAN, source: 'strava_description' },
+      strava: { pushed: { name: 'Game Cycling—Sonic & Sega All Stars Racing', description: DOUBLED } },
+    }));
+    stravaClient.getActivity.mockResolvedValue({ id: 20328730789, name: 'Game Cycling—Sonic & Sega All Stars Racing', description: DOUBLED });
+
+    await service.reconcile();
+
+    expect(stravaClient.updateActivity).toHaveBeenCalledTimes(1);
+    expect(stravaClient.updateActivity.mock.calls[0][1].description).toBe(CLEAN);
+    expect(saved().strava_notes).toBeUndefined();
+    expect(saved().strava.pushed.description).toBe(CLEAN);
+  });
+
+  test('pulls only the text a person appended on Strava', async () => {
+    loadYamlSafe.mockReturnValue(session({ strava: { pushed: { name: 'Game Cycling—Sonic & Sega All Stars Racing', description: CLEAN } } }));
+    stravaClient.getActivity.mockResolvedValue({ id: 20328730789, name: 'Game Cycling—Sonic & Sega All Stars Racing', description: `${CLEAN}\n\nLegs were toast.` });
+
+    await service.reconcile();
+
+    expect(saved().strava_notes.text).toBe('Legs were toast.');
+  });
+
+  test('keeps notes a person typed even when Strava now holds our description', async () => {
+    loadYamlSafe.mockReturnValue(session({
+      strava_notes: { text: 'Forgot to stop the watch.', source: 'strava_description' },
+      strava: { pushed: { name: 'Game Cycling—Sonic & Sega All Stars Racing', description: `${CLEAN}` } },
+    }));
+    stravaClient.getActivity.mockResolvedValue({ id: 20328730789, name: 'Game Cycling—Sonic & Sega All Stars Racing', description: CLEAN });
+
+    await service.reconcile();
+
+    expect(saved().strava_notes.text).toBe('Forgot to stop the watch.');
+  });
+});
+
 describe('ActivityReconciliationService — title sync (Strava → session)', () => {
   let stravaClient;
   let service;

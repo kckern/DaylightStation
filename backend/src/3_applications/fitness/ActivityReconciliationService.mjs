@@ -14,7 +14,7 @@
  */
 
 import moment from 'moment-timezone';
-import { buildActivityDescription } from '#domains/fitness/services/buildActivityDescription.mjs';
+import { buildActivityDescription, extractUserNotes } from '#domains/fitness/services/buildActivityDescription.mjs';
 import { absorbOverlappingSlivers } from './sliverAbsorption.mjs';
 import { buildStravaSessionTimeline, applyStravaTimeline } from '#domains/fitness/services/StravaSessionBuilder.mjs';
 import { checkSessionIntegrity } from '#domains/fitness/services/sessionIntegrity.mjs';
@@ -86,6 +86,7 @@ export class ActivityReconciliationService {
     let sessionsProcessed = 0;
     let enriched = 0;
     let notesPulled = 0;
+    let echoesDropped = 0;
     let titlesSynced = 0;
     let sessionErrors = 0;
     let lastError = null;
@@ -119,13 +120,19 @@ export class ActivityReconciliationService {
           const activity = await this.#activityGateway.getActivity(activityId);
           if (!activity) continue;
 
+          // Pass 2 runs before pass 1: Strava → Session (pull notes). The
+          // push then builds from notes that are already settled — an echo
+          // dropped, a typed note recovered from a 📝 block — instead of
+          // overwriting Strava with a description that lacks them.
+          const notes = this.#pass2StravaToSession(session, activity);
+          if (notes.pulled) notesPulled++;
+          if (notes.dropped) echoesDropped++;
+          const didPull = notes.pulled || notes.dropped;
+
           // Pass 1: Session → Strava (re-enrichment)
           const didEnrich = await this.#pass1SessionToStrava(session, activity, selectionConfig);
           if (didEnrich) enriched++;
 
-          // Pass 2: Strava → Session (pull notes)
-          const didPull = this.#pass2StravaToSession(session, activity);
-          if (didPull) notesPulled++;
           const didRetitle = this.#syncTitle(session, activity, didEnrich);
           if (didRetitle) titlesSynced++;
 
@@ -191,6 +198,7 @@ export class ActivityReconciliationService {
       sessionsProcessed,
       enriched,
       notesPulled,
+      echoesDropped,
       titlesSynced,
       timelinesRebuilt,
       sessionErrors,
@@ -276,27 +284,51 @@ export class ActivityReconciliationService {
 
   /**
    * Pass 2: Pull manually-entered Strava descriptions back into session YAML.
-   * @returns {boolean} Whether strava_notes was written
+   *
+   * Only text a person typed is pulled — every block we generated is stripped
+   * by extractUserNotes. Pulling our own description back made the next push
+   * nest it inside a 📝 block, duplicating the voice memo and media list.
+   *
+   * @returns {{pulled: boolean, dropped: boolean}} Whether typed notes were
+   *   pulled, and whether stored notes were dropped as an echo
    */
   #pass2StravaToSession(session, activity) {
-    // Never overwrite existing strava_notes
-    if (session.strava_notes) return false;
+    const sessionId = session.sessionId || session.session?.id;
+    const result = { pulled: false, dropped: false };
 
-    const desc = activity.description?.trim();
-    if (!desc) return false;
+    // Never overwrite notes a person typed. Notes that are only an echo of
+    // our own description are not notes: drop them so they stop feeding the
+    // description and stop blocking a real pull. A notes object without text
+    // is an unknown shape and is left alone.
+    if (session.strava_notes) {
+      const stored = session.strava_notes.text;
+      if (typeof stored !== 'string' || extractUserNotes(stored)) return result;
+      delete session.strava_notes;
+      result.dropped = true;
+      this.#logger.info?.('strava.reconciliation.echo_notes_dropped', {
+        activityId: activity.id,
+        sessionId,
+        textLength: stored.length,
+        preview: stored.slice(0, 120),
+      });
+    }
+
+    const text = extractUserNotes(activity.description);
+    if (!text) return result;
 
     session.strava_notes = {
-      text: desc,
+      text,
       pulled_at: new Date().toISOString(),
       source: 'strava_description',
     };
 
     this.#logger.info?.('strava.reconciliation.notes_pulled', {
       activityId: activity.id,
-      sessionId: session.sessionId || session.session?.id,
-      textLength: desc.length,
+      sessionId,
+      textLength: text.length,
     });
-    return true;
+    result.pulled = true;
+    return result;
   }
 
   /**

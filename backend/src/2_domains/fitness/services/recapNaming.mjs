@@ -10,6 +10,8 @@
  * ffmpeg encoder (tag args), and the backfill tool.
  */
 
+import { extractUserNotes } from './buildActivityDescription.mjs';
+
 const SHOW_NAME = 'Family Fitness';
 const GENRE = 'Fitness';
 
@@ -83,14 +85,15 @@ export function buildSlug(data) {
   return parts.filter(Boolean).join('_');
 }
 
-/** Description: the Strava notes (which already bundle the voice memo + media list),
- *  else the raw voice-memo transcripts. */
+/** Description: the voice-memo transcripts, then any notes a person typed on
+ *  Strava. strava_notes can hold an echo of our own generated description, so
+ *  it is filtered to the typed text only. */
 export function recapDescription(data) {
-  const notes = data?.strava_notes?.text;
-  if (typeof notes === 'string' && notes.trim()) return notes.trim();
   const memos = (data?.summary?.voiceMemos || data?.voiceMemos || [])
-    .map(m => (m?.transcript || '').trim()).filter(Boolean);
-  return memos.length ? memos.map(t => `🎙️ "${t}"`).join('\n\n') : '';
+    .map(m => (m?.transcript || '').trim()).filter(Boolean)
+    .map(t => `🎙️ "${t}"`);
+  const notes = extractUserNotes(data?.strava_notes?.text);
+  return [...memos, ...(notes ? [`📝 "${notes}"`] : [])].join('\n\n');
 }
 
 // Strip characters that break filenames; keep spaces, commas, hyphens, parens.

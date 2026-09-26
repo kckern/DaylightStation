@@ -186,10 +186,42 @@ A rename on Strava arrives as an `activity/update` webhook carrying `updates.tit
 
 `ActivityReconciliationService` also runs an hourly sweep (`fitness:strava-reconcile`) plus one after each webhook, over a 10-day lookback. It refreshes Strava auth before each sweep (`ensureAccess`). Before that fix, the scheduled sweep only worked in the ~6 hours after a webhook happened to refresh the token: it logged "No access token available" until then and 401s after. The sweep keeps two things current in the session:
 
-- `strava_notes` — the Strava description, pulled once, never overwritten.
+- `strava_notes` — text a person typed into the Strava description. It is pulled once and never overwritten. Only the typed text is kept (see below).
 - `strava.name` — the Strava title. It is set when the session is created (often the auto-name "Morning Run") and refreshed whenever the title on Strava changes. Only a name the session already has is refreshed; home sessions carry a `strava` block without a name and are left alone. Emits `strava.reconciliation.title_synced`.
 
 The harvester also lets fresh list fields (title, description) win over the archived copy, so `lifelog/strava.yml` picks up renames too.
+
+**`strava_notes` never holds our own description.** Every description we push is a set of blocks separated by blank lines:
+
+- `🎙️ "…"` holds a voice memo.
+- `📝 "…"` holds typed notes.
+- `🖥️ …` names an episode.
+- `🎵 …` names a track.
+
+A quoted block runs until its closing quote, so a memo or note can contain paragraphs. `extractUserNotes` (in `buildActivityDescription.mjs`) works block by block:
+
+- Memo and media blocks are removed.
+- A 📝 block is unwrapped, not removed. It can be the only surviving copy of a typed note, for example after a merge or `drop-participant`. An echo of our own description unwraps to nothing.
+- Everything else is kept as typed text.
+
+One trade-off is deliberate: typed text that starts with `🎵 ` or `🖥️ ` looks the same as a media line, so it is dropped.
+
+The function is applied in three places:
+
+- The pull, so only typed text is stored.
+- The description builder, so old polluted notes are ignored.
+- `recapDescription`, which builds the recap video's memo plus typed notes.
+
+Within one sweep, notes are pulled (pass 2) **before** the push (pass 1). The push is then built from notes that are already settled. When stored notes turn out to be only an echo, the sweep drops them. It logs `strava.reconciliation.echo_notes_dropped` with a text preview, and reports `echoesDropped` in `strava.reconciliation.complete`.
+
+Until 2026-09-25 the pull stored the whole description, including the one we had just pushed. The next push then put that text inside a 📝 block, so the voice memo and media list appeared twice on Strava. A 90-day audit found 91 echoed notes and 38 doubled activities. Only 3 notes had actually been typed on Strava.
+
+The sweep repairs its own 10-day window. `fitness strava repair-notes` repairs further back, and is a dry run by default. It does two things:
+
+- It drops echoed notes.
+- It fetches an activity only when we recorded pushing a doubled description, or when the notes were an echo and nothing records what we pushed. It rewrites the description only when the text on Strava is still ours: equal to `strava.pushed.description`, or made only of our own blocks.
+
+Titles are never touched. A session is saved only if its Strava step succeeds, so a failed call changes nothing and the next run picks the session up again. A 429 waits 15 minutes and retries once. `--show` prints the dropped notes, and each Strava description before and after.
 
 ### Integrity checks and repair
 
