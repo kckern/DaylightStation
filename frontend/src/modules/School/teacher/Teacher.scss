@@ -2625,3 +2625,88 @@
     button { min-height: 32px; }
   }
 }
+
+// CoinsPanel / CoinsRosterPanel — the weekly earnings preview (economy).
+// Same observation-table palette as .teacher-card-ladder: a record read over
+// the week, with small inline controls for this learner's rates.
+.teacher-coins {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+
+  &__week {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 700;
+    color: #3d3326;
+
+    button {
+      min-width: 32px; min-height: 32px;
+      border: 1px solid #d4c6af; border-radius: 8px;
+      background: #fffdf8; color: #3d3326; cursor: pointer; font-weight: 700;
+    }
+  }
+
+  &__today { padding: 0 10px; font-size: 12px; }
+
+  &__summary { display: flex; flex-direction: column; gap: 4px; }
+  &__total {
+    margin: 0; color: #30291f; font-size: 15px;
+    strong { font-size: 32px; margin-right: 6px; color: #6e4b20; }
+  }
+  &__pending { margin: 0; color: #6f5419; font-weight: 650; }
+  &__fine { margin: 0; color: #8a7c5c; font-size: 12px; }
+
+  &__grid, &__lines {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+
+    th, td { text-align: left; vertical-align: middle; padding: 7px 9px; border-bottom: 1px solid #ece5d6; }
+    thead th { color: #8a7c5c; font-size: 11px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; white-space: nowrap; }
+    tbody th { color: #2b2620; font-weight: 650; text-transform: capitalize; }
+  }
+
+  &__grid {
+    td { text-align: center; font-weight: 800; color: #b3a78f; }
+    td[data-state='served'], td[data-state='met'] { color: #396034; background: #eef5ea; }
+    td[data-state='obligated'], td[data-state='none'] { color: #813927; background: #fbece7; }
+    td[data-state='partial'] { color: #6f5419; background: #fbf3dc; }
+    td[data-state='faulted'], td[data-state='unknown'] { color: #5b4f8a; background: #efecf7; }
+    tfoot td { text-align: left; font-weight: 600; color: #5f584c; }
+  }
+
+  &__day-row th, &__day-row td { border-bottom-width: 2px; }
+
+  &__status {
+    display: inline-flex; border-radius: 999px; padding: 2px 8px;
+    font-size: 11px; font-weight: 800; background: #eee7d9; color: #5f5648;
+    &--earned { background: #e2efdc; color: #396034; }
+    &--pending { background: #faedc8; color: #6f5419; }
+    &--indeterminate { background: #efecf7; color: #5b4f8a; }
+    &--disabled { background: transparent; color: #a89d87; }
+  }
+  &__count { color: #5f584c; font-weight: 700; }
+  &__note { display: block; margin-top: 3px; color: #756d5f; font-size: 12px; }
+  &__amount { font-weight: 800; color: #30291f; white-space: nowrap; }
+
+  &__rate, &__multiplier {
+    display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+
+    input {
+      width: 64px; min-height: 30px; padding: 3px 6px;
+      border: 1px solid #d4c6af; border-radius: 6px; background: #fffdf8; color: #30291f; font: inherit;
+    }
+    button {
+      border: 0; border-radius: 8px; padding: 6px 10px; cursor: pointer; font-weight: 650;
+      background: #3d3326; color: #fdfbf6;
+      &:disabled { opacity: .55; cursor: progress; }
+    }
+  }
+  &__reset { background: transparent !important; color: #756d5f !important; text-decoration: underline; }
+  &__unit { color: #8a7c5c; font-size: 12px; }
+  &__multiplier label { font-weight: 700; color: #3d3326; }
+
+  tr[data-status='none'] th, tr[data-status='disabled'] th { color: #8a7c5c; }
+}

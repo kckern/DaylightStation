@@ -11,8 +11,8 @@
  */
 export const TEACHER_BASE = '/school/teacher';
 
-export const SECTIONS = ['dashboard', 'queue', 'curriculum', 'operations'];
-export const LEARNER_SECTIONS = ['day', 'courses', 'history', 'reading', 'words', 'reports', 'operations'];
+export const SECTIONS = ['dashboard', 'queue', 'curriculum', 'coins', 'operations'];
+export const LEARNER_SECTIONS = ['day', 'courses', 'history', 'reading', 'words', 'coins', 'reports', 'operations'];
 
 const decode = (value) => {
   try { return decodeURIComponent(value); } catch { return value; }
@@ -65,7 +65,7 @@ export function parseTeacherPath(pathname) {
     return { kind: 'session', section: 'history', learnerId: null, courseId: null, sessionId: segments[1], base };
   }
 
-  if (['dashboard', 'queue', 'operations'].includes(segments[0]) && segments.length === 1) {
+  if (['dashboard', 'queue', 'coins', 'operations'].includes(segments[0]) && segments.length === 1) {
     return { kind: 'section', section: segments[0], learnerId: null, courseId: null, lessonId: null, sessionId: null, base };
   }
   if (segments[0] === 'curriculum' && segments.length <= 2) {

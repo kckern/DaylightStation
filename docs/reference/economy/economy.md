@@ -120,6 +120,77 @@ balance, existing session), `EntityNotFoundError` → 404 (unknown user).
   ("Out of coins — earn more!"). Off by default — enabled per-widget via
   `config.economy.enabled`.
 
+## Weekly earnings preview (school → economy)
+
+**Status:** preview only (2026-09-26). It prices a week of evidence in
+**silver** (the weekly currency of the taxonomy,
+`docs/_wip/plans/2026-09-14-household-economy-taxonomy.md`) and writes nothing to
+any ledger. Design: `docs/_wip/plans/2026-09-26-school-economy-earnings-preview.md`.
+
+### Earn rules
+
+`<household>/economy/earn-rules.yml` (read fresh per request, so a rate edit takes
+effect at once; missing = the built-in defaults at revision 0; corrupt = an error,
+never a silent fallback). Every write archives the replaced revision under
+`economy/earn-rules.history/NNNN.yml` and stamps `revision`, `revisedAt`,
+`revisedBy`.
+
+| kind | pays for |
+|---|---|
+| `unit` | each graded work session matching `match: {subject, courseId, unitId (prefix)}` |
+| `section-day` | each day the subject was served ("Korean pays every day it's done") |
+| `section-week` | the week, once every day the subject was obligated reads served (or `excused: weekly_satisfied`) |
+| `day-met` | each green day (term grid `met`) |
+| `week-met` | a green week: every study day green AND the weekly row satisfied |
+| `ring-threshold` | `rate: {rings, silver}` (silver per whole N rings) plus each threshold crossed |
+| `ring-contest` | most rings in the roster at award-week close; `tie: all\|split\|none` |
+
+Rewards are a currency map (`{silver, gems}`; a bare number is silver). A rule that
+pays twice is two rules. Per-learner overrides live under `users.<id>`:
+`multiplier` (scales silver, not gems) and per-rule `reward` / `rate` /
+`thresholds` / `disabled`. Optional `effective: {from, to}` scopes a rule to dates.
+
+### Windows and statuses
+
+- **School week** Monday → Sunday; **ring award week** Monday 04:00 → Saturday 12:00
+  (D10). The contest line is `pending` (leader mark only) until Saturday noon.
+- Week kinds stay `pending` until the evidence reaches Friday — all-green-so-far on
+  a Wednesday is not a green week.
+- A failed evidence source makes its lines `indeterminate` ("can't tell"), never
+  `none`. Other statuses: `earned`, `none` (with a note saying why), `disabled`.
+- Every line carries `ref` = `earn:<learner>:<rule>:<period>:<timeliness>` — the
+  future payout's idempotency key. The rules revision is recorded on the line
+  (`priced`), never in the ref, so a rate edit cannot pay a week twice.
+
+### API
+
+| Method / Path | Returns |
+|---|---|
+| GET `/api/v1/earnings/preview?week=` | the roster's week: `{windows, contestClosed, rulesRevision, learners[]}` |
+| GET `/api/v1/earnings/preview/:learnerId?week=` | one learner: `{totals, pending, lines[], work, evidence, multiplier, rulesRevision}` |
+| GET `/api/v1/earnings/rules` | `{ruleset, kinds}` |
+| PUT `/api/v1/school/teacher/economy/earn-rates/:learnerId` | `{actorId, pin, patch}` → the new ruleset (TeacherGate) |
+| PUT `/api/v1/school/teacher/economy/earn-rules` | `{actorId, pin, doc}` → the new ruleset (TeacherGate) |
+
+`week` is any study day in the wanted week (default: today's). The read routes
+are reusable by any surface; writes live with each surface's own gate (the
+teacher capability cookie is scoped to `/api/v1/school`).
+
+### Code
+
+- `2_domains/economy/earnings/` — `validateRuleset`, `resolveRules`,
+  `withUserOverride`, `evaluateEarnings` (pure).
+- `3_applications/economy/EarningsPreviewService.mjs` (windows, contest close,
+  per-source failure handling), `EarnRulesService.mjs` (revisions), ports
+  `IEarnRulesStore`, `IEarningEvidenceSource`.
+- Evidence: `3_applications/school/SchoolEarningEvidence.mjs` (term verdicts
+  read with `detail: true` for per-subject rows; graded sessions + curriculum
+  subject/course) and `fitnessRingsProvider.standings` (rings by session start
+  instant).
+- `1_adapters/persistence/yaml/YamlEarnRulesStore.mjs`,
+  `4_api/v1/routers/earnings.mjs`, `3_applications/school/usecases/ManageEarnRules.mjs`.
+- Teacher console: the **Coins** tab (`CoinsPanel`) and section (`CoinsRosterPanel`).
+
 ## Backend architecture (DDD)
 
 - `2_domains/economy/` — `Transaction` (factory + `foldBalance`), `policy`
@@ -239,6 +310,6 @@ the price of ordinary responsibility.
 
 ## Not yet built (later phases)
 
-TV/screen-framework metered spend, cash-out + parent-mobile approval, PIN/NFC/
-biometric auth, ring awards, parent dashboard, deposit admin UI
+Weekly earnings PAYOUT (the preview above prices; nothing mints yet), week close + silver→gold conversion, tickets and the play clock, TV/screen-framework metered spend, cash-out + parent-mobile approval, PIN/NFC/
+biometric auth, parent dashboard, deposit admin UI
 (Phase 1 deposits are API-only).
