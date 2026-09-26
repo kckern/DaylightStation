@@ -74,12 +74,19 @@ export default findContinuationEntry;
  * @param {object} args
  * @param {string} args.subject
  * @param {(entry: object) => object|null} args.statusOf
+ * @param {string|null} [args.unitId] the section's `reopenUnitId` — the one
+ *   entry `planDailyAgenda` chose from the programs LIVE today. When given,
+ *   only that entry qualifies (null: none does). Scanning every plan entry
+ *   instead found a program retired by its schedule's `except` span before the
+ *   one that replaced it, and opened the wrong program (2026-09-25).
  * @returns {{entry: object, status: object}|null}
  */
-export function findReopenableProgramEntry(plan, { subject, statusOf } = {}) {
+export function findReopenableProgramEntry(plan, { subject, statusOf, unitId } = {}) {
   if (typeof statusOf !== 'function') return null;
+  if (unitId === null) return null;
   for (const entry of plan?.entries ?? []) {
     if (!entry?.program || entry.subject !== subject) continue;
+    if (unitId !== undefined && entry.unitId !== unitId) continue;
     const status = statusOf(entry);
     // An errored launcher is NOT reopened: `unavailable` is the honest card,
     // and offering a button that cannot open is the dead end this avoids.

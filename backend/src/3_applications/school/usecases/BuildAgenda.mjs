@@ -41,6 +41,7 @@ import { curriculumPosterRef } from '#apps/common/resources/publicResourceRefs.m
 import { lessonProgressRowsFromPlan } from '#domains/school/lessonProgress.mjs';
 import { BOOK_LOG_PROGRAM_ID, DEFAULT_BOOK_LOG_SUBJECT } from '#domains/school/bookLog.mjs';
 import { programStatusFor } from '#domains/school/agenda.mjs';
+import { projectProgramEntry } from '../assignedProgramPlan.mjs';
 import { DEFAULT_ACCESS_CODE_MAX_USES } from '#domains/school/sessions/accessCode.mjs';
 
 const DEFAULT_SUBJECT_TOKEN_TTL_HOURS = 168;
@@ -331,9 +332,32 @@ export class BuildAgenda {
     // SUBJECT — it no longer decides who may reach the shelf.
     const [readingSubject = DEFAULT_BOOK_LOG_SUBJECT] = readingSubjects;
 
+    // Served subjects whose program stays open for extra rounds (see below).
+    const reopenOffers = [];
+
     for (const section of sectionsWithProgress) {
       const entry = section.next;
-      if (!entry) continue; // served today, locked-with-no-offer, or unavailable
+      if (!entry) {
+        // DONE IS NOT CLOSED. A served subject used to vanish from the paper
+        // into the "Done today" tally with no code at all — so on 2026-09-25
+        // a learner who had finished their flashcards that morning and wanted another
+        // round that evening, printed a sheet that offered them no way back in.
+        // The requirement stays met (credit is untouched); a program that
+        // declares itself `reopenable` just keeps a card and a code. The reading
+        // shelf is excluded here only because it gets its own card below.
+        const reopenEntry = section.servedToday && section.reopenUnitId
+          ? plan?.entries?.find((candidate) => candidate?.unitId === section.reopenUnitId) ?? null
+          : null;
+        if (reopenEntry?.program && reopenEntry.program !== BOOK_LOG_PROGRAM_ID) {
+          // eslint-disable-next-line no-await-in-loop
+          const offer = await this.#mintReopenOffer({
+            section, entry: reopenEntry, programStatuses, learnerId, nowIso, expiresAt,
+            liveCodes, mintedCodes, mintedTokens,
+          });
+          if (offer) reopenOffers.push(offer);
+        }
+        continue; // served today, locked-with-no-offer, or unavailable
+      }
 
       // eslint-disable-next-line no-await-in-loop
       const { sessionId, suffix, created, moveKind } = await this.#offerFor({
@@ -737,6 +761,10 @@ export class BuildAgenda {
       document: agendaDocument({
         learnerId, learnerName, generatedAt: nowIso, timeZone: this.#timezone,
         sections: sectionsForDocument, tokensBySubject, accessCodesByToken,
+        reopenCards: reopenOffers.map((offer) => ({
+          ...offer.card,
+          taxonomy: offerPresentation({ subject: offer.subject, next: offer.entry })?.taxonomy ?? null,
+        })),
         bulkToken, bulkAccessCode,
         readingToken, readingAccessCode, readingFeature, readingSubject,
         notes,
@@ -862,6 +890,68 @@ export class BuildAgenda {
    *
    * @returns {Promise<{sessionId: string|null, suffix: string, created: boolean, moveKind: string|null}>}
    */
+  /**
+   * A card and a code for a SERVED subject's reopenable program — extra
+   * rounds after the day's requirement is met. The token names the subject
+   * and the program; the resolvers see the subject served and reopen it to
+   * the section's own `reopenUnitId`, so the code can never open a lesson.
+   * Returns null when there is nothing honest to print (errored launcher).
+   */
+  async #mintReopenOffer({
+    section, entry, programStatuses, learnerId, nowIso, expiresAt,
+    liveCodes, mintedCodes, mintedTokens,
+  }) {
+    const status = programStatusFor(programStatuses, entry);
+    if (!status || status.error === true || status.reopenable !== true) return null;
+    const projected = projectProgramEntry(entry, status);
+    const actionLabel = this.#launchers?.get?.(entry.program)?.locationHint ?? 'go do this';
+    let token;
+    let accessCode = null;
+    if (this.#previewOnly) {
+      token = PREVIEW_TOKEN;
+      accessCode = this.#selfService ? PREVIEW_ACCESS_CODE : null;
+    } else {
+      accessCode = this.#selfService
+        ? mintAccessCode({ rng: this.#rng, taken: (code) => liveCodes.has(code) || mintedCodes.has(code) })
+        : null;
+      if (accessCode) mintedCodes.add(accessCode);
+      const record = mintToken({
+        tokenClass: 'subject_next',
+        subject: { learnerId, subject: section.subject, program: entry.program },
+        at: nowIso,
+        rng: this.#rng,
+        expiresAt,
+        ...(accessCode ? {
+          accessCode,
+          accessCodeExpiresAt: this.#accessCodeExpiryFor(nowIso, expiresAt),
+          maxUses: this.#accessCodeMaxUses,
+        } : {}),
+      });
+      await this.#tokens.put(record);
+      token = record.token;
+      if (record.accessCode) mintedTokens.push(record.token);
+      this.#logger.info?.('school.agenda.reopen-code.minted', {
+        learnerId, subject: section.subject, program: entry.program, unitId: entry.unitId,
+      });
+    }
+    return {
+      subject: section.subject,
+      entry: projected,
+      token,
+      card: {
+        subject: section.subject,
+        token,
+        accessCode,
+        title: projected.title ?? entry.title ?? section.subject,
+        unit: projected.programContext?.unit?.title ?? null,
+        progress: Array.isArray(projected.programProgress) && projected.programProgress.length
+          ? projected.programProgress
+          : (section.progressRows ?? []),
+        actionLabel,
+      },
+    };
+  }
+
   async #offerFor({ entry, unitsById, learnerId, nowIso, activeExceptions }) {
     if (entry.program) {
       const launcher = this.#launchers.get(entry.program);

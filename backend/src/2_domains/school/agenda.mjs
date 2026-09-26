@@ -490,10 +490,28 @@ export function planDailyAgenda({
       obligation = { state: 'excused', reason: householdOff ? 'household_calendar' : 'not_a_school_day' };
     }
 
+    // WHERE A SERVED SUBJECT STILL OPENS. A program that is a place rather
+    // than a task (the reading shelf, a flashcard deck) declares `reopenable`:
+    // today's requirement is met, but extra rounds are always allowed. Chosen
+    // HERE, from `list` — the entries the section actually runs on today — so
+    // a program retired by its schedule's `except` span can never be the one
+    // reopened. Scanning `plan.entries` instead sent a learner's re-typed flashcard
+    // code to the sentence ladder they had been moved off (2026-09-25). The
+    // program the child actually finished today wins; otherwise the first.
+    const reopenable = servedToday
+      ? programs.filter((entry) => {
+        const status = programStatusFor(programStatuses, entry);
+        return status && status.error !== true && status.reopenable === true;
+      })
+      : [];
+    const reopenEntry = reopenable.find((entry) => programStatusFor(programStatuses, entry)?.doneToday === true)
+      ?? reopenable[0] ?? null;
+
     return {
       subject,
       servedToday,
       next,
+      reopenUnitId: reopenEntry?.unitId ?? null,
       // Is the thing being OFFERED a lesson from a day that has already passed?
       // The schedule deliberately keeps moving when a day is missed rather than
       // waiting, so catching up is normal and expected — but on paper a backlog

@@ -820,6 +820,7 @@ export class ResolveAccessCode {
     if (section.servedToday && !continueToday) {
       const reopen = findReopenableProgramEntry(plan, {
         subject, statusOf: (candidate) => programStatusFor(programStatuses, candidate),
+        ...('reopenUnitId' in section ? { unitId: section.reopenUnitId } : {}),
       });
       if (!reopen) return withProjection({ kind: 'served', subjectLabel: subject });
       return withProjection({
