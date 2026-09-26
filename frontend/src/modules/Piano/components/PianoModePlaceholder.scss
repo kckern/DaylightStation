@@ -1,0 +1,7 @@
+// Mode placeholder text ("Loading…", "Preparing Chess…") — used by the kiosk
+// modes and by PianoVisualizer on the office screen. Moved from the `.piano-mode`
+// block in Apps/PianoApp.scss (was its nested `&__placeholder`).
+
+.piano-mode {
+  &__placeholder { color: var(--piano-muted); font-style: italic; }
+}

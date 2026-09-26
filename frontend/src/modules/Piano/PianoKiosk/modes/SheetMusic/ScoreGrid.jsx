@@ -6,6 +6,7 @@ import { SkeletonPoster } from '../../Skeleton.jsx';
 import { prefetchOsmd } from '../../../../MusicNotation/renderers/osmdRender.js';
 import { prettyTitle } from './scoreTitle.js';
 import ScorePlate from './ScorePlate.jsx';
+import '../../../components/PianoCourseTabs.scss';
 
 // Last-selected tab (by label), so a walk-up user lands where they left off.
 // Same guarded-localStorage discipline as scoreSettings.js.

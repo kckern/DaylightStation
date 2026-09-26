@@ -214,7 +214,7 @@ describe('LiveInputLayer styling', () => {
   const liveBlock = () => {
     const s = readFileSync(fileURLToPath(new URL('../../../../../Apps/PianoApp.scss', import.meta.url)), 'utf8');
     const start = s.indexOf('.piano-live-input {');
-    const end = s.indexOf('// Active-note light-up');
+    const end = s.indexOf('// ── Task 14: Polish per-measure grade wash');
     expect(start).toBeGreaterThan(-1);
     expect(end).toBeGreaterThan(start);
     return s.slice(start, end);

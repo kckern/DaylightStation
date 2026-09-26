@@ -1,0 +1,59 @@
+// Piano design tokens — shared by every piano surface (the /piano kiosk shell,
+// the office-screen PianoVisualizer, every piano game). Lives in its own module
+// so a surface that mounts without Apps/PianoApp.jsx still gets them.
+// Moved verbatim from Apps/PianoApp.scss.
+//
+// Theme model: light is the unconditional default (no param, no prefers-color-scheme).
+// Browse chrome (menu, top bar, grids, lists, studio, transport) renders LIGHT.
+// Immersive *media stages* (video letterbox, fullscreen games, now-playing music,
+// the note-waterfall viz) stay DARK on purpose — a white video letterbox is a
+// defect, and idle now-playing dims to an ambient level so it doesn't glow in a
+// dark room. Every color below is a token so a future dark theme is an explicit
+// opt-in, never the default.
+
+:root {
+  // --- dark / charcoal theme (the app's identity — charcoal surfaces, light text) ---
+  --piano-bg: #16161b;          // charcoal page background
+  --piano-fg: #f1f1f4;          // primary light text
+  --piano-surface: #1f1f26;     // cards / tiles / bars
+  --piano-surface-2: #2a2a33;   // nested / hover / pressed
+  --piano-border: #34343f;      // hairlines
+  --piano-muted: #9a9aa6;       // secondary text (light muted on charcoal — AA)
+  --piano-accent: #2ec46f;      // accent fill (buttons, progress)
+  --piano-accent-ink: #07210f;  // text/icon on an accent fill
+  --piano-accent-text: #5fe39a; // accent used AS text on a charcoal surface (AA)
+  --piano-danger: #e05a4f;      // record / delete / disconnected
+  --piano-warn: #e0a83a;        // loop-arming / mark A
+  --piano-warn-2: #e8743a;      // mark B
+
+  // --- type scale ---
+  --t-cap: 0.85rem;
+  --t-body: 1rem;
+  --t-h: 1.25rem;
+  --t-title: 1.6rem;
+  --t-display: 2.2rem;
+
+  // --- radius scale ---
+  --r-sm: 8px;    // thumbnails, small chips, score pages
+  --r-md: 12px;   // cards, tiles, bars, buttons
+  --r-lg: 16px;   // hero tiles, album art
+  --r-pill: 999px;
+
+  // --- spacing scale (4px ramp; the missing sibling of the type/radius scales) ---
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 24px;
+  --sp-6: 32px;
+  --sp-7: 48px;
+
+  // --- media stages (dark, theme-independent) ---
+  --piano-stage: #000000;       // video letterbox / game canvas
+  --piano-stage-2: #0b0b0f;     // now-playing music backdrop
+  --piano-stage-panel: #14141b; // panels inside a media stage (queue)
+  --piano-stage-fg: #f2f2f2;    // text on a media stage
+  --piano-stage-muted: #bbbbbb; // secondary text on a media stage
+  --piano-stage-border: #2c2c38;
+  --piano-viz-bg: #07070a;      // note-waterfall canvas
+}

@@ -59,6 +59,9 @@ import { useWhoPromptAutoClose } from '../modules/Piano/PianoKiosk/useWhoPromptA
 import { useAutoMidiHistory } from '../modules/Piano/PianoKiosk/useAutoMidiHistory.js';
 import ProfilePicker from '../lib/identity/ProfilePicker.jsx';
 import { ShutdownBlackout, useShutdownLock } from '../hooks/useShutdownLock.js';
+// Shared piano tokens first, so the shell's own sheet cascades over them.
+import '../modules/Piano/pianoTokens.scss';
+import '../modules/Piano/components/PianoModePlaceholder.scss';
 import './PianoApp.scss';
 
 /**

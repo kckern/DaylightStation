@@ -17,6 +17,9 @@ import {
   clefRightEdge,
   ClefGlyph,
 } from './staffGlyphs.jsx';
+// The action-staff__* classes this renderer emits are styled there; import it
+// here so every screen that draws notation gets them, whatever else it loads.
+import '../../Piano/components/ActionStaff.scss';
 
 // The accidental box and the drawn sharp/flat shapes now live in
 // ./staffGlyphs.jsx so the sequence staff engraves them identically. Re-exported

@@ -6,6 +6,9 @@
 // the CSS media query flattens it). All composed helpers are aria-hidden — a
 // decorative placeholder, not content.
 
+import '../pianoTokens.scss';
+import './Skeleton.scss';
+
 export function Skeleton({ className = '', animate = true, style }) {
   const cls = `piano-skeleton${animate ? ' is-shimmer' : ''}${className ? ` ${className}` : ''}`;
   return <div className={cls} style={style} aria-hidden="true" />;

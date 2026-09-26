@@ -1,4 +1,6 @@
 import { CurrentChordStaff } from './CurrentChordStaff.jsx';
+import '../pianoTokens.scss';
+import './StudioTopPane.scss';
 
 /**
  * StudioTopPane — the fixed-height white-paper card at the top of the Studio

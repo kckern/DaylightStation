@@ -6,6 +6,7 @@ import PianoEmpty from '../../PianoEmpty.jsx';
 import { SkeletonPoster } from '../../Skeleton.jsx';
 import CourseTile from './CourseTile.jsx';
 import { tileScaleFor } from './tileScale.js';
+import '../../../components/PianoCourseTabs.scss';
 
 const ratingKeyOf = (c) => (c ? String(c).replace(/^plex:/, '') : null);
 const idOf = (raw) => String(raw || '').replace(/^plex:/, '');

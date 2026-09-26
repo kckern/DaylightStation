@@ -1,0 +1,27 @@
+// Collection tabs (.piano-course-tabs / .piano-course-tab) — rendered by the
+// kiosk grids (CourseGrid, ScoreGrid) and by PianoHeroGame, which also mounts
+// outside the kiosk. Moved verbatim from Apps/PianoApp.scss; every renderer
+// imports this sheet. The kiosk keeps one `:focus-visible` line in PianoApp.scss
+// so it still beats the kiosk's focus-ring reset.
+
+/* Course collection tabs (one per configured Plex collection), pinned at top. */
+.piano-course-tabs {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 0.25rem;
+  margin: 0 0 0.75rem;
+  border-bottom: 1px solid var(--piano-border);
+}
+.piano-course-tab {
+  background: none;
+  border: none;
+  color: var(--piano-muted);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+  padding: 0.5rem 1rem;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  &.is-active { color: var(--piano-fg); border-bottom-color: var(--piano-accent); }
+  &:focus-visible { outline: 3px solid var(--piano-accent); outline-offset: -3px; }
+}

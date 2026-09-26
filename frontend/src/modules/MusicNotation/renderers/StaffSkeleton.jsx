@@ -1,3 +1,8 @@
+// The shimmer (.piano-skeleton.is-shimmer) and the tokens it paints with.
+import '../../Piano/pianoTokens.scss';
+import '../../Piano/PianoKiosk/Skeleton.scss';
+import './StaffSkeleton.scss';
+
 /**
  * StaffSkeleton — engrave-phase placeholder for the sheet-music renderer.
  *

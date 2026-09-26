@@ -5,6 +5,9 @@ import { NoteWaterfall } from './components/NoteWaterfall';
 import { TheoryPanel } from './components/TheoryPanel';
 import { useMidiSubscription } from './useMidiSubscription';
 import { resolveBoardRange } from './noteUtils.js';
+// Piano tokens: the office screen mounts this without Apps/PianoApp.jsx.
+import './pianoTokens.scss';
+import './components/PianoModePlaceholder.scss';
 import './PianoVisualizer.scss';
 import { getGameEntry, getGameIds } from './gameRegistry.js';
 import { buildLauncherSlots } from './game-platform/launcher/launcherNotes.js';

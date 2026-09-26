@@ -38,6 +38,11 @@
     width: 100%;
     flex: 1;
     min-height: 0;
+    // ActionStaff.scss (now imported by SvgSequenceStaff.jsx, and loaded in the
+    // kiosk bundle anyway) pulls its chord staff up with `margin-top: -1rem`.
+    // This card sizes its staff to the row it is given; the pull would push
+    // the ink out of that row, so it is cancelled here explicitly.
+    margin-top: 0;
   }
 
   .action-staff__lines-svg {

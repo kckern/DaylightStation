@@ -2,6 +2,7 @@ import { useRef, useEffect, useState } from 'react';
 import getLogger from '../../../lib/logging/Logger.js';
 import { osmdEngrave, osmdRepaint, extractLayoutSliced, scheduleYield } from './osmdRender.js';
 import StaffSkeleton from './StaffSkeleton.jsx';
+import './MusicXmlRenderer.scss';
 
 let _logger;
 function logger() {
