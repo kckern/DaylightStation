@@ -60,7 +60,11 @@ HUMAN_EVENTS='"school.selfservice.code." OR "school.selfservice.keypad." OR "sch
 # Deliberately NOT: layout.*, audio.played, tuning-wired, *.unmounted/closed
 # (a person leaving), capture.review-idle / auto-stop (fire on an idle panel).
 PROGRAM_EVENTS='"school.card-ladder.item.answered" OR "school.card-ladder.answered" OR "school.card-ladder.card." OR "school.card-ladder.say.recording" OR "school.card-ladder.recorded" OR "school.card-ladder.learn-more" OR "school.card-ladder.practice" OR "school.card-ladder.started" OR "school.card-ladder.sitting.opened" OR "school.card-ladder.result.dismissed" OR "school.language.capture.start" OR "school.language.capture.stop" OR "school.language.capture.keep" OR "school.language.capture.retake" OR "school.language.rung.landed" OR "school.language.program.mounted" OR "school.language.interpretation.checked"'
-HUMAN_EVENTS="$HUMAN_EVENTS OR $PROGRAM_EVENTS"
+# TEST MODE IS NOT A CHILD (2026-09-26). The card ladder's `/test` door saves
+# nothing, and its headless stage spec answers hundreds of items a minute — a
+# post-deploy render check then held the gate shut for 3 minutes on its own
+# traffic. A test sitting's events carry `data.mode: test`; live ones `live`.
+HUMAN_EVENTS="$HUMAN_EVENTS OR (($PROGRAM_EVENTS) AND NOT \"data.mode\":test)"
 
 if ! curl -s --max-time 5 -o /dev/null "$LOGS/select/logsql/query" -d 'query=_time:1s' 2>/dev/null; then
   echo "PORTAL: log store unreachable at $LOGS — cannot tell if anyone is there"
