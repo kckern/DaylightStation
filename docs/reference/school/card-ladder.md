@@ -316,6 +316,14 @@ Two ways into a drill:
 
 ## Speaking (never graded)
 
+**Nothing plays over a take.** Recording holds the one audio lane
+(`holdAudio` in `cardLadderAudio.js`, driven by `useTakeRecorder`). Starting
+a take stops whatever clip is playing, and no clip may start while the mic is
+open: not an autoplay, and not Tab / Hear it. The hold lifts at Stop, so the
+take's own playback, and the native word after it, still play. It also lifts
+if the mic is refused, the capture fails to start, or the item unmounts.
+Before 2026-09-25 an autoplayed word kept talking over the child's take.
+
 Say-after (drill, round intro, and the practice menu's Say mode),
 read-aloud and say-from-cue (spec §3 1.2 / 1.3 / 3.4) are never graded and
 never a gate: Skip/Next is available from the moment the item is on
