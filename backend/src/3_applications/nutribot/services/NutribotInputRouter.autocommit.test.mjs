@@ -160,7 +160,7 @@ const textEvent = {
 describe('NutribotInputRouter auto-commit seam', () => {
   it('never turns a failed revision into a new food capture', async () => {
     const revisionUseCase = { execute: vi.fn(async () => { throw new Error('Entry changed elsewhere'); }) };
-    const h = makeHarness({ revisionUseCase, conversationState: { activeFlow: 'revision', flowState: { pendingLogUuid: 'existing' } } });
+    const h = makeHarness({ revisionUseCase, conversationState: { activeFlow: 'revision', flowState: { pendingLogUuid: 'existing', openedAt: new Date().toISOString() } } });
     await expect(h.router.handleText(textEvent, makeResponseContext())).rejects.toThrow('Entry changed elsewhere');
     expect(h.logFoodFromText.execute).not.toHaveBeenCalled();
     expect(h.nutriListStore.saveMany).not.toHaveBeenCalled();
@@ -251,7 +251,7 @@ describe('NutribotInputRouter auto-commit seam', () => {
     const acceptSpy = vi.spyOn(acceptFoodLog, 'execute');
     const container = {
       getConversationStateStore: () => ({
-        get: async () => ({ activeFlow: 'scale_describe', flowState: { pendingLogUuid: 'seed-log' } }),
+        get: async () => ({ activeFlow: 'scale_describe', flowState: { pendingLogUuid: 'seed-log', openedAt: new Date().toISOString() } }),
         clear: async () => {},
       }),
       getFoodLogStore: () => foodLogStore,

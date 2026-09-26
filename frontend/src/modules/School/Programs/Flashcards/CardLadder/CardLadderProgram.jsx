@@ -64,6 +64,16 @@ async function detectMicrophoneCapability() {
 const HINT_MS = 6000;
 const HINT_FADE_MS = 250;
 
+/**
+ * The write never reached the app: no answer at all (0), or the proxy
+ * answering for an app that is restarting (502/503/504). A redeploy shows up
+ * as 502, not 0 — on 2026-09-25 all ninety failed card-ladder calls were 502s.
+ * A resync is pointless (it 502s too); the item stays and the child retries.
+ */
+function serverUnreachable(status) {
+  return status === 0 || status === 502 || status === 503 || status === 504;
+}
+
 function remainingLabel(progress) {
   const round = progress?.phase === 'round' ? progress.round : null;
   if (!round) return null;
@@ -316,7 +326,7 @@ export default function CardLadderProgram({ descriptor, api: injected = null, re
     if (!ok) {
       if (status === 404) { cardLadderLog.sessionReopened({ userId, deckId, test, from: 'respond' }); await open(); return; }
       cardLadderLog.writeFailed({ userId, itemId: item.id, status, test });
-      if (status === 0) { unreachable('respond'); return; }
+      if (serverUnreachable(status)) { unreachable('respond'); return; }
       await resync();
       return;
     }
@@ -400,7 +410,7 @@ export default function CardLadderProgram({ descriptor, api: injected = null, re
     if (ok && data?.item) { show(data.item, data.progress ?? null); return; }
     cardLadderLog.practiceFailed({ userId, sittingId: session?.id ?? null, status, error: data?.error ?? null, test });
     if (status === 404) { cardLadderLog.sessionReopened({ userId, deckId, test, from: 'practice' }); await open(); return; }
-    if (status === 0) { unreachable('practice'); return; }
+    if (serverUnreachable(status)) { unreachable('practice'); return; }
     await resync();
   }, [show, userId, deckId, session, test, open, resync, unreachable]);
 
@@ -417,7 +427,7 @@ export default function CardLadderProgram({ descriptor, api: injected = null, re
     if (ok && data?.item) { show(data.item, data.progress ?? null); return; }
     cardLadderLog.learnMoreFailed({ userId, sittingId: session.id, status, error: data?.error ?? null, test });
     if (status === 404) { cardLadderLog.sessionReopened({ userId, deckId, test, from: 'learn-more' }); await open(); return; }
-    if (status === 0) { unreachable('learn-more'); return; }
+    if (serverUnreachable(status)) { unreachable('learn-more'); return; }
     await resync();
   }, [api, session, item, userId, deckId, test, show, open, resync, unreachable]);
 

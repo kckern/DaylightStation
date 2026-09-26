@@ -272,6 +272,18 @@ describe('EntryRow', () => {
       expect(dot()).toBeTruthy();
     });
 
+    // The artwork queue works every food row until it has a real icon, so the
+    // generic glyph on one is "on its way" — shown as pending, never as final.
+    it('a food row with no icon yet shows the icon as pending', () => {
+      r(<EntryRow row={{ ...baseRow, icon: 'default' }} onTap={() => {}} onConfirm={() => {}} />);
+      expect(document.querySelector('.health-food-art').dataset.state).toBe('pending');
+    });
+
+    it('an icon the person chose themselves is final, not pending', () => {
+      r(<EntryRow row={{ ...baseRow, icon: 'default', manualFields: ['icon'] }} onTap={() => {}} onConfirm={() => {}} />);
+      expect(document.querySelector('.health-food-art').dataset.state).toBe('missing');
+    });
+
     it('a failed icon load falls back to a food glyph rather than a broken-image glyph', () => {
       r(<EntryRow row={{ ...baseRow, icon: 'fried-eggs' }} onTap={() => {}} onConfirm={() => {}} />);
       expect(dot()).toBeTruthy(); // Placeholder remains until decode completes.

@@ -22,7 +22,7 @@ function stateStore(root = null) {
   };
 }
 
-function harness({ state, voiceResults }) {
+function harness({ state, voiceResults, now }) {
   const store = stateStore(state);
   const logFoodFromVoice = { execute: vi.fn(async (input) => {
     const next = voiceResults.shift();
@@ -41,24 +41,26 @@ function harness({ state, voiceResults }) {
     getFoodLogStore: () => ({ findByUuid: async () => ({ meal: { date: '2026-09-24' } }) }),
     getMealCoachingTrigger: () => null,
   };
-  const router = new NutribotInputRouter(container, { logger: silent });
+  const router = new NutribotInputRouter(container, { logger: silent, ...(now ? { now } : {}) });
   const rc = { sendMessage: vi.fn(async () => ({ messageId: 'm' })), updateMessage: vi.fn(async () => {}), deleteMessage: vi.fn(async () => {}) };
   return { router, rc, store, logFoodFromVoice, revision, logFoodFromText, restore };
 }
 
-const REVISING = { activeFlow: 'revision', flowState: { pendingLogUuid: 'ydezh98OKs' } };
+const OPENED = '2026-09-24T19:14:42.000Z';
+const REVISING = { activeFlow: 'revision', flowState: { pendingLogUuid: 'ydezh98OKs', openedAt: OPENED } };
+const minutesAfterOpen = (m) => () => Date.parse(OPENED) + m * 60 * 1000;
 const voice = { type: 'voice', platform: 'telegram', conversationId: 'telegram:b1_c2', userId: 'kckern', messageId: '11720', payload: { fileId: 'AwACAgEAAxkBAAIt' } };
 
 describe('Nutribot resilience', () => {
   it('a voice note during a revision revises that log instead of logging a new meal', async () => {
-    const h = harness({ state: REVISING, voiceResults: [{ transcript: 'the rice bowl was only half' }] });
+    const h = harness({ now: minutesAfterOpen(2), state: REVISING, voiceResults: [{ transcript: 'the rice bowl was only half' }] });
     await h.router.handleVoice(voice, h.rc);
     expect(h.revision.execute).toHaveBeenCalledWith(expect.objectContaining({ logUuid: 'ydezh98OKs', text: 'the rice bowl was only half' }));
     expect(h.logFoodFromText.execute).not.toHaveBeenCalled();
   });
 
   it('a failed transcription offers Retry; the retry re-runs the same file into the still-open revision', async () => {
-    const h = harness({ state: REVISING, voiceResults: [
+    const h = harness({ now: minutesAfterOpen(2), state: REVISING, voiceResults: [
       { success: false, code: 'TRANSCRIBE_FAILED', retryMessageId: '11721' },
       { transcript: 'the rice bowl was only half' },
     ] });
@@ -88,7 +90,7 @@ describe('Nutribot resilience', () => {
   });
 
   it('a double tap on Retry transcribes once', async () => {
-    const h = harness({ state: REVISING, voiceResults: [
+    const h = harness({ now: minutesAfterOpen(2), state: REVISING, voiceResults: [
       { success: false, code: 'TRANSCRIBE_FAILED', retryMessageId: '11721' },
       { transcript: 'half the rice' }, { transcript: 'half the rice' },
     ] });
@@ -106,5 +108,28 @@ describe('Nutribot resilience', () => {
     expect(out.code).toBe('RESTORE_FAILED');
     expect(h.rc.sendMessage.mock.calls.at(-1)[0]).toMatch(/couldn't restore/);
   });
-});
 
+  // 2026-09-25: Revise was tapped on a lunch, that revision's voice reply
+  // failed, and the flow never closed. 31 hours later a dinner voice note
+  // landed in it and replaced the lunch.
+  it('a revision left open past its TTL no longer captures what is said next', async () => {
+    const h = harness({ now: minutesAfterOpen(31 * 60), state: REVISING, voiceResults: [{ transcript: 'for dinner I had mac and cheese' }] });
+    await h.router.handleVoice(voice, h.rc);
+    expect(h.revision.execute).not.toHaveBeenCalled();
+    expect(await h.store.get('c')).toEqual(expect.objectContaining({ activeFlow: null }));
+  });
+
+  it('a typed message after the TTL logs a new meal too', async () => {
+    const h = harness({ now: minutesAfterOpen(31), state: REVISING, voiceResults: [] });
+    await h.router.handleText({ ...voice, type: 'text', payload: { text: 'for dinner I had mac and cheese' } }, h.rc);
+    expect(h.revision.execute).not.toHaveBeenCalled();
+    expect(h.logFoodFromText.execute).toHaveBeenCalled();
+  });
+
+  it('a revision opened before flows were stamped is treated as expired', async () => {
+    const legacy = { activeFlow: 'revision', flowState: { pendingLogUuid: 'ydezh98OKs' } };
+    const h = harness({ state: legacy, voiceResults: [] });
+    await h.router.handleText({ ...voice, type: 'text', payload: { text: 'a banana' } }, h.rc);
+    expect(h.revision.execute).not.toHaveBeenCalled();
+  });
+});
