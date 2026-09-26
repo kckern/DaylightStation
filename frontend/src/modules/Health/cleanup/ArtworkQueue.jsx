@@ -1,6 +1,7 @@
 import { Stack, Text, Table } from '@mantine/core';
 import { SectionCard, LoadingState, ErrorState } from '../../../lib/ui';
 import { useApiResource } from '../../../lib/hooks/useApiResource.js';
+import { unavailableError } from '../healthResources.js';
 
 export const artworkQueuePath = 'api/v1/health/nutrition/artwork-queue';
 
@@ -21,7 +22,7 @@ export function ArtworkQueue() {
   const resolved = Array.isArray(queue.data?.recentlyResolved) ? queue.data.recentlyResolved.slice(0, 5) : [];
   return <SectionCard title="Artwork queue"><Stack gap="sm">
     <Text size="sm">Food whose icon or photo could not be shown. Each one gets the nearest existing icon, or its product photo, and is retried until it is fixed.</Text>
-    {queue.error ? <ErrorState error={queue.error} onRetry={queue.reload} label="Artwork queue" /> : null}
+    {unavailableError(queue) ? <ErrorState error={queue.error} onRetry={queue.reload} label="Artwork queue" /> : null}
     {!queue.data && queue.loading ? <LoadingState label="Artwork queue" /> : null}
     {queue.data && !open.length ? <Text size="sm" c="dimmed">Nothing waiting — every food has artwork.</Text> : null}
     {open.length ? <Table.ScrollContainer minWidth={480}><Table>

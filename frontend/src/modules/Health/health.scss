@@ -515,6 +515,9 @@ $health-aside-gap: 1.5rem;
 // (the "mobile: always visible; desktop: same, unobtrusive" interface
 // note) — no breakpoint-specific rule needed.
 .health-capture-error { color: var(--ds-danger); font-size: 0.75rem; max-width: 14rem; }
+// A refresh that did not land while the day stays on screen (TodayView): one
+// muted line, never a panel over the food.
+.health-refresh-failed { display: block; margin: 0 auto 0.25rem; color: var(--ds-text-mid); font-weight: 400; }
 .health-edit__advanced summary { cursor: pointer; color: var(--ds-text-mid); font-size: 0.8rem; padding: 0.5rem 0; }
 
 .health-barcode {
