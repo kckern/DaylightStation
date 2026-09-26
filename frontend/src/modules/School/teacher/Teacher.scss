@@ -2665,8 +2665,15 @@
 
     th, td { text-align: left; vertical-align: middle; padding: 7px 9px; border-bottom: 1px solid #ece5d6; }
     thead th { color: #8a7c5c; font-size: 11px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; white-space: nowrap; }
-    tbody th { color: #2b2620; font-weight: 650; text-transform: capitalize; }
+    tbody th { color: #2b2620; font-weight: 650; }
+    td button {
+      border: 0; border-radius: 8px; padding: 6px 10px; cursor: pointer; font-weight: 650;
+      background: #3d3326; color: #fdfbf6;
+    }
   }
+
+  // Subject ids ("scripture") read as names in the grid; rule labels keep their own case.
+  &__grid tbody th { text-transform: capitalize; }
 
   &__grid {
     td { text-align: center; font-weight: 800; color: #b3a78f; }
