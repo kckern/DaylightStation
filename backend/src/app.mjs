@@ -4963,6 +4963,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     manageEarnRules: new ManageEarnRules({
       teacherGate: schoolTeacherGate,
       earnRules: economyApi.earnRulesService,
+      learnerIds: async () => (await schoolLearnerDirectory.listLearners()).map((l) => l.id ?? l.learnerId).filter(Boolean),
       logger: rootLogger.child({ module: 'school-earn-rules' }),
     }),
     teacherCapabilitySessions,

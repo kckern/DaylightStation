@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { SchoolEarningEvidence } from './SchoolEarningEvidence.mjs';
 
 const WEEK = { from: '2026-09-21', to: '2026-09-27' };
@@ -59,9 +59,32 @@ describe('SchoolEarningEvidence.schoolWeek', () => {
     expect(out.units).toEqual([{ day: '2026-09-21', unitId: 'em23-03-01', subject: 'math', courseId: 'elementary-math-2-3', result: 'passed', timeliness: 'on-time' }]);
   });
 
-  it('a week outside every term reads empty with no week verdict', async () => {
+  it('a week outside every term says so — "outside the term", not an empty week', async () => {
     const evidence = new SchoolEarningEvidence({ termVerdicts: termVerdicts({ term: null, days: [], weeks: [] }), sessions: sessions([]), logger: silent });
-    expect(await evidence.schoolWeek({ learnerId: 'learner-a', week: WEEK })).toEqual({ sectionDays: [], days: [], week: null, units: [] });
+    expect(await evidence.schoolWeek({ learnerId: 'learner-a', week: WEEK })).toEqual({ sectionDays: [], days: [], week: null, units: [], coverage: 'outside-term' });
+  });
+
+  it('a week before the current term started is outside it too (the grid only reads the term containing today)', async () => {
+    const term = { ...TERM, term: { termId: 'fall', from: '2026-09-01', to: '2026-12-18' } };
+    const evidence = new SchoolEarningEvidence({ termVerdicts: termVerdicts(term), sessions: sessions([]), logger: silent });
+    const out = await evidence.schoolWeek({ learnerId: 'learner-a', week: { from: '2026-08-24', to: '2026-08-30' } });
+    expect(out.coverage).toBe('outside-term');
+    const inside = await evidence.schoolWeek({ learnerId: 'learner-a', week: WEEK });
+    expect(inside.coverage).toBe('ok');
+  });
+
+  it('looks each unit up once per week, however many sessions share it', async () => {
+    const unitInfo = vi.fn(async () => ({ subject: 'math', courseId: 'c' }));
+    const evidence = new SchoolEarningEvidence({
+      termVerdicts: termVerdicts(TERM),
+      sessions: sessions([
+        { unitId: 'u-1', studyDay: '2026-09-21', state: 'graded', outcome: { result: 'passed' } },
+        { unitId: 'u-1', studyDay: '2026-09-22', state: 'graded', outcome: { result: 'needs_remediation' } },
+      ]),
+      unitInfo, logger: silent,
+    });
+    await evidence.schoolWeek({ learnerId: 'learner-a', week: WEEK });
+    expect(unitInfo).toHaveBeenCalledTimes(1);
   });
 
   it('a unit lookup that fails leaves subject and course null rather than failing the week', async () => {

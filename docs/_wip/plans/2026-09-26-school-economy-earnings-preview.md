@@ -138,8 +138,8 @@ Every write stores the previous document under
 3_applications/school/SchoolEarningEvidence.mjs     port impl over TermVerdictService + sessions
 3_applications/measures/fitnessRingsProvider.mjs    + awardWeek(learnerIds, window)
 1_adapters/persistence/yaml/YamlEarnRulesStore.mjs
-4_api/v1/routers/economy.mjs       GET /earnings/preview[?week], /earnings/preview/:learnerId, /earnings/rules
-4_api/v1/routers/school.mjs        PUT /teacher/economy/rules/users/:learnerId (TeacherGate via use case)
+4_api/v1/routers/earnings.mjs      GET /api/v1/earnings/preview[?week], /preview/:learnerId, /rules (read-only)
+4_api/v1/routers/school.mjs        PUT /teacher/economy/earn-rates/:learnerId, /earn-rules (ManageEarnRules → TeacherGate)
 5_composition                      wires ports, stores, gate
 ```
 

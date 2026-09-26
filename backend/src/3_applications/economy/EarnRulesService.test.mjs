@@ -44,6 +44,23 @@ describe('EarnRulesService', () => {
     expect(store.archived).toEqual([]);
   });
 
+  it('two edits in flight at once both land — the second builds on the first, never overwrites it', async () => {
+    const { service, store } = build();
+    await Promise.all([
+      service.setUserOverride({ learnerId: 'a', patch: { multiplier: 2 }, actorId: 'parent' }),
+      service.setUserOverride({ learnerId: 'b', patch: { multiplier: 3 }, actorId: 'parent' }),
+    ]);
+    expect(store.doc.revision).toBe(2);
+    expect(store.doc.users).toEqual({ a: { multiplier: 2 }, b: { multiplier: 3 } });
+  });
+
+  it('a failed edit does not wedge the ones after it', async () => {
+    const { service, store } = build();
+    await expect(service.setUserOverride({ learnerId: 'a', patch: { rules: { nope: {} } }, actorId: 'parent' })).rejects.toThrow();
+    await service.setUserOverride({ learnerId: 'a', patch: { multiplier: 2 }, actorId: 'parent' });
+    expect(store.doc.revision).toBe(1);
+  });
+
   it('every later write archives the revision it replaces', async () => {
     const { service, store } = build();
     await service.setUserOverride({ learnerId: 'little', patch: { multiplier: 2 }, actorId: 'parent' });

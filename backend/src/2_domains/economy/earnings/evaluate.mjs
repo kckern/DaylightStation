@@ -52,11 +52,19 @@ function sectionDay(rule, facts, ctx) {
   const matched = facts.sectionDays.filter((f) => f.subject === rule.match.subject && inEffect(rule.effective, f.day)).sort(byDay);
   const served = matched.filter((f) => f.state === 'served');
   const faulted = matched.filter((f) => f.state === 'faulted');
+  // A day the grid has not worked out yet has no section rows at all, so it
+  // is read off the day facts — never silently counted as "not done".
+  const unknown = ctx.unknownDays(rule);
   const amount = price(rule, served.length);
   const evidence = matched.map((f) => ({ day: f.day, state: f.state, reason: f.reason ?? null, ref: ctx.ref(f.day) }));
-  if (served.length) return { status: 'earned', count: served.length, amount, evidence, note: faulted.length ? `${faulted.length} day(s) could not be checked` : null };
-  if (faulted.length) return { status: 'indeterminate', count: 0, amount: ZERO, evidence, note: 'Could not check this subject' };
-  return { status: 'none', count: 0, amount: ZERO, evidence, note: matched.length ? 'Not done this week' : 'Not on the plan this week' };
+  if (served.length) {
+    const notes = [];
+    if (faulted.length) notes.push(`${faulted.length} day(s) could not be checked`);
+    if (unknown.length) notes.push(`${unknown.length} day(s) not worked out yet`);
+    return { status: 'earned', count: served.length, amount, evidence, note: notes.join('; ') || null };
+  }
+  if (faulted.length || unknown.length) return { status: 'indeterminate', count: 0, amount: ZERO, evidence, note: 'Could not check this subject' };
+  return { status: 'none', count: 0, amount: ZERO, evidence, note: matched.some((f) => f.state !== 'excused') ? 'Not done this week' : 'Not on the plan this week' };
 }
 
 function sectionWeek(rule, facts, ctx) {
@@ -64,13 +72,19 @@ function sectionWeek(rule, facts, ctx) {
   const evidence = matched.map((f) => ({ day: f.day, state: f.state, reason: f.reason ?? null }));
   if (matched.some((f) => f.state === 'faulted')) return { status: 'indeterminate', count: 0, amount: ZERO, evidence, note: 'A day could not be checked' };
   const missed = matched.filter((f) => f.state === 'obligated');
+  // Today (and later) is still open: its obligations are "still to do", not missed.
+  const missedClosed = missed.filter((f) => !ctx.isOpen(f.day));
+  const missedOpen = missed.filter((f) => ctx.isOpen(f.day));
   const served = matched.filter((f) => f.state === 'served');
   if (!ctx.weekdaysCovered) {
-    return { status: 'pending', count: 0, amount: ZERO, evidence, note: missed.length ? `Still to do: ${missed.map((f) => f.day).join(', ')}` : 'The week is still going' };
+    const todo = missed.map((f) => (ctx.isOpen(f.day) ? 'today' : f.day));
+    return { status: 'pending', count: 0, amount: ZERO, evidence, note: missed.length ? `Still to do: ${todo.join(', ')}` : 'The week is still going' };
   }
-  if (!missed.length && served.length) return { status: 'earned', count: 1, amount: price(rule, 1), evidence, note: null };
-  const note = missed.length ? `Not done: ${missed.map((f) => f.day).join(', ')}` : 'Not done this week';
-  return { status: 'none', count: 0, amount: ZERO, evidence, note };
+  if (missedClosed.length) return { status: 'none', count: 0, amount: ZERO, evidence, note: `Not done: ${missedClosed.map((f) => f.day).join(', ')}` };
+  if (ctx.unknownDays(rule).length) return { status: 'indeterminate', count: 0, amount: ZERO, evidence, note: 'A day is not worked out yet' };
+  if (missedOpen.length) return { status: 'pending', count: 0, amount: ZERO, evidence, note: 'Still to do today' };
+  if (served.length) return { status: 'earned', count: 1, amount: price(rule, 1), evidence, note: null };
+  return { status: 'none', count: 0, amount: ZERO, evidence, note: matched.length && matched.every((f) => f.state === 'excused') ? 'Not on the plan this week' : (matched.length ? 'Not done this week' : 'Not on the plan this week') };
 }
 
 function dayMet(rule, facts, ctx) {
@@ -103,7 +117,9 @@ function weekMet(rule, facts, ctx) {
   }
   if (!ctx.weekdaysCovered) return { status: 'pending', count: 0, amount: ZERO, evidence, note: 'The week is still going' };
   const notGreen = schoolDays.filter((d) => d.state !== 'met');
-  if (notGreen.length) return { status: 'none', count: 0, amount: ZERO, evidence, note: `Not green: ${notGreen.map((d) => d.day).join(', ')}` };
+  const closedNotGreen = notGreen.filter((d) => !ctx.isOpen(d.day));
+  if (closedNotGreen.length) return { status: 'none', count: 0, amount: ZERO, evidence, note: `Not green: ${closedNotGreen.map((d) => d.day).join(', ')}` };
+  if (notGreen.length) return { status: 'pending', count: 0, amount: ZERO, evidence, note: 'Still to finish today' };
   if (!schoolDays.length) return { status: 'none', count: 0, amount: ZERO, evidence, note: 'No school days this week' };
   if (!['met', 'exempt'].includes(week.state)) {
     return week.open
@@ -130,7 +146,9 @@ function ringThreshold(rule, facts) {
     gems: crossed.reduce((s, t) => s + t.reward.gems, 0),
   };
   const evidence = rule.thresholds.map((t) => ({ threshold: t.at, reached: rings >= t.at }));
-  const note = next ? `${next.at - rings} more to ${next.at}` : (rule.thresholds.length ? 'Every threshold reached' : null);
+  const unpriced = rule.rate.silver === 0 && !rule.thresholds.length;
+  const note = unpriced ? 'No ring rate set'
+    : next ? `${next.at - rings} more to ${next.at}` : (rule.thresholds.length ? 'Every threshold reached' : null);
   return { status: paid(amount) ? 'earned' : 'none', count: rings, amount, evidence, note };
 }
 
@@ -175,26 +193,34 @@ function windowDates(window) {
  * @param {Array<{learnerId: string, rings: number}>|null} args.standings - the roster's award-week rings (contest)
  * @param {boolean} args.contestClosed - the award week has closed
  * @param {{school: {from, to}, rings: {from, to}}} args.windows
- * @param {{school?: boolean}} [args.unavailable] - a whole evidence source failed:
- *   its lines are indeterminate, never read as "not done". (Rings signal the
- *   same with `rings: null` / `standings: null`.)
+ * @param {{school?: boolean|'outside-term'}} [args.unavailable] - a whole evidence source
+ *   failed (or the week lies outside the school term): its lines are
+ *   indeterminate, never read as "not done". (Rings signal the same with
+ *   `rings: null` / `standings: null`.)
+ * @param {string|null} [args.today] - the current study day. Today and later
+ *   are OPEN: their unfinished work is "still to do", never missed. A week
+ *   settles once its Friday has passed (Saturday is payday, D1).
  */
-export function evaluateEarnings({ ruleset, learnerId, facts, standings = null, contestClosed = false, windows, unavailable = {} }) {
+export function evaluateEarnings({ ruleset, learnerId, facts, standings = null, contestClosed = false, windows, unavailable = {}, today = null }) {
   const f = { sectionDays: [], days: [], week: null, units: [], rings: null, ...(facts ?? {}) };
   const schoolDates = windowDates(windows?.school);
-  // A week's verdict can only be final once its evidence reaches Friday (or
-  // the week has closed): all-green-so-far on a Wednesday is still pending.
+  const isOpen = (day) => today != null && day >= today;
+  // A week's verdict is final only once its Friday has passed (or the week
+  // has closed). A row DATED Friday is not a Friday that is over: today's row
+  // is live, and all-green-so-far on a Wednesday is still pending.
   const weekId = f.week?.weekId ?? schoolDates?.from ?? null;
   const friday = weekId ? addDays(weekId, 4) : null;
-  const weekdaysCovered = f.week?.open === false
-    || (friday != null && [...f.days, ...f.sectionDays].some((d) => d.day >= friday));
-  const ringDates = windowDates(windows?.rings);
+  const weekdaysCovered = f.week?.open === false || (today != null && friday != null && friday < today);
+  const notStarted = today != null && schoolDates != null && schoolDates.from > today;
+  const unknownDays = (rule) => f.days.filter((d) => d.state === 'unknown' && inEffect(rule.effective, d.day));
   const lines = [];
   for (const rule of resolveRules(ruleset, learnerId)) {
     const school = SCHOOL_KINDS.has(rule.kind);
-    const dates = school ? schoolDates : ringDates;
-    if (!overlaps(rule.effective, dates)) continue;
-    const period = dates?.from ?? 'unknown';
+    // Every line — school or rings — is keyed and scoped by the school week's
+    // Monday. The ring award week's start is a UTC instant; east of UTC its
+    // date would be the Sunday before.
+    if (!overlaps(rule.effective, schoolDates)) continue;
+    const period = schoolDates?.from ?? 'unknown';
     const ref = earningRef({ learnerId, ruleId: rule.id, period });
     const priced = {
       revision: ruleset.revision, reward: rule.reward, multiplier: rule.multiplier,
@@ -206,11 +232,16 @@ export function evaluateEarnings({ ruleset, learnerId, facts, standings = null, 
       continue;
     }
     if (school && unavailable.school) {
-      lines.push({ ...base, status: 'indeterminate', count: 0, amount: ZERO, evidence: [], note: 'School evidence unavailable' });
+      const note = unavailable.school === 'outside-term' ? 'Outside the school term' : 'School evidence unavailable';
+      lines.push({ ...base, status: 'indeterminate', count: 0, amount: ZERO, evidence: [], note });
+      continue;
+    }
+    if (school && notStarted) {
+      lines.push({ ...base, status: 'pending', count: 0, amount: ZERO, evidence: [], note: 'Not started yet' });
       continue;
     }
     const ctx = {
-      learnerId, standings, contestClosed, weekdaysCovered,
+      learnerId, standings, contestClosed, weekdaysCovered, isOpen, unknownDays,
       ref: (occurrence) => earningRef({ learnerId, ruleId: rule.id, period: occurrence }),
     };
     lines.push({ ...base, ...EVALUATORS[rule.kind](rule, f, ctx) });

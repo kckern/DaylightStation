@@ -157,11 +157,13 @@ function normalizeUsers(users, ruleIds) {
       if (override?.reward != null) o.reward = normalizeReward(override.reward, `${field}.rules.${ruleId}.reward`);
       if (override?.rate != null) o.rate = normalizeRate(override.rate, `${field}.rules.${ruleId}.rate`);
       if (override?.thresholds != null) o.thresholds = normalizeThresholds(override.thresholds, `${field}.rules.${ruleId}.thresholds`);
-      if (override?.disabled != null) o.disabled = override.disabled === true;
+      // Only `true` is an override; `disabled: false` IS the household rule.
+      if (override?.disabled === true) o.disabled = true;
       if (Object.keys(o).length) rules[ruleId] = o;
     }
     if (Object.keys(rules).length) user.rules = rules;
-    out[learnerId] = user;
+    // A learner with nothing left to override is not kept as an empty entry.
+    if (Object.keys(user).length) out[learnerId] = user;
   }
   return out;
 }
