@@ -45,8 +45,10 @@ export function buildActivityDescription(session, currentActivity = {}, warmupCo
     .filter(e => e?.type === 'voice_memo' && e?.data?.transcript)
     .map(e => e.data);
 
-  // Extract strava_notes (manually entered on Strava, pulled back)
-  const stravaNotes = session?.strava_notes?.text || null;
+  // Extract strava_notes (manually entered on Strava, pulled back). Filtered
+  // through extractUserNotes so a session whose notes hold our own echoed
+  // description never re-embeds it.
+  const stravaNotes = extractUserNotes(session?.strava_notes?.text);
 
   // Nothing to enrich
   if (!primaryData && voiceMemos.length === 0 && musicTracks.length === 0 && !stravaNotes) {
@@ -142,6 +144,67 @@ export function buildActivityDescription(session, currentActivity = {}, warmupCo
   }
 
   return { name, description };
+}
+
+// The exact openings of the blocks this module writes. Quoted blocks
+// (🎙️ memo, 📝 notes) wrap free text that may itself contain blank lines;
+// media blocks (🖥️ episode, 🎵 track) are a marker, a space, then a label.
+const QUOTED_BLOCK = /^(🎙️?|📝) "/;
+const MEDIA_BLOCK = /^(🖥️?|🎵) \S/;
+const NOTES_BLOCK = /^📝 "([\s\S]*)"$/;
+
+/**
+ * Split a description into the blocks it was built from. Blocks are separated
+ * by blank lines, but a quoted block runs until its closing quote — a memo or
+ * a typed note can have paragraphs of its own.
+ */
+function _splitBlocks(text) {
+  const blocks = [];
+  for (const chunk of text.split(/\n\s*\n/).map(c => c.trim()).filter(Boolean)) {
+    const open = blocks.at(-1);
+    if (open && QUOTED_BLOCK.test(open) && !open.endsWith('"')) {
+      blocks[blocks.length - 1] = `${open}\n\n${chunk}`;
+    } else {
+      blocks.push(chunk);
+    }
+  }
+  return blocks;
+}
+
+/**
+ * Recover the text a person typed on the provider from an activity
+ * description, discarding every block we generated ourselves.
+ *
+ * 🎙️ and media blocks are ours and are dropped. A 📝 block is unwrapped, not
+ * dropped: it holds notes we pulled earlier, and when the session has since
+ * lost its copy (a merge, a dropped participant) the block on the provider is
+ * the only one left. An echo of our own description unwraps to nothing, since
+ * its inside is only our blocks. Anything else is what a person wrote, whether
+ * they replaced our description or appended to it.
+ *
+ * Trade-off, deliberate: typed text that itself begins "🎵 " or "🖥️ " is
+ * indistinguishable from a media line and is dropped.
+ *
+ * Without this, reconciliation pulled our own description back as notes and
+ * the next push nested it inside a 📝 block (2026-09-25: 91 echoed notes and
+ * 38 doubled activities in the prior 90 days; 3 genuine notes).
+ *
+ * @param {string|null|undefined} description
+ * @returns {string|null} The typed text, or null when there is none
+ */
+export function extractUserNotes(description) {
+  if (typeof description !== 'string') return null;
+  const typed = [];
+  for (const block of _splitBlocks(description)) {
+    const wrapped = block.match(NOTES_BLOCK);
+    if (wrapped) {
+      const inner = extractUserNotes(wrapped[1]);
+      if (inner) typed.push(inner);
+    } else if (!QUOTED_BLOCK.test(block) && !MEDIA_BLOCK.test(block)) {
+      typed.push(block);
+    }
+  }
+  return typed.length ? typed.join('\n\n') : null;
 }
 
 /**

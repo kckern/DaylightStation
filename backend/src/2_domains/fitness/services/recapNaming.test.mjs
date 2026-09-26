@@ -11,8 +11,10 @@ function espnSession() {
       media: [
         { showTitle: 'ESPN', mediaType: 'video', primary: null },
         { showTitle: 'Game Cycling', mediaType: 'video', primary: true }
-      ]
+      ],
+      voiceMemos: [{ transcript: 'We finished the Donkey Kong Cup.' }]
     },
+    // An echo of our own Strava description, as reconciliation used to pull it.
     strava_notes: { text: '🎙️ "We finished the Donkey Kong Cup."\n\n🖥️ Game Cycling' }
   };
 }
@@ -69,6 +71,15 @@ test('buildPlexMeta sets creation_time to the session start instant', () => {
   const m = buildPlexMeta({ sessionId: '20260619163712', session: { start: '2026-06-19 16:37:12' }, timezone: 'America/Los_Angeles',
     summary: { media: [{ showTitle: 'X', primary: true }] } });
   assert.equal(m.tags.creation_time, '2026-06-19T23:37:12Z');
+});
+
+test('recapDescription ignores strava_notes that only echo our own description', () => {
+  assert.equal(recapDescription(espnSession()), '🎙️ "We finished the Donkey Kong Cup."');
+});
+
+test('recapDescription appends notes a person typed on Strava', () => {
+  const data = { summary: { voiceMemos: [{ transcript: 'Great ride' }] }, strava_notes: { text: 'Legs were toast.' } };
+  assert.equal(recapDescription(data), '🎙️ "Great ride"\n\n📝 "Legs were toast."');
 });
 
 test('recapDescription falls back to voice-memo transcripts when no strava notes', () => {
