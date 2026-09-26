@@ -55,7 +55,8 @@
   @keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}}
   #name{font-size:calc(var(--u) * 4.6);font-weight:700;line-height:1;
     white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  #sub{font-size:calc(var(--u) * 2);color:#ffd666;margin-top:calc(var(--u) * .8);letter-spacing:.16em;text-transform:uppercase}
+  #sub{font-size:calc(var(--u) * 2);color:#ffd666;margin-top:calc(var(--u) * .8);letter-spacing:.16em;text-transform:uppercase;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .spacer{flex:1 1 auto}
   .timer{text-align:right;min-width:calc(var(--u) * 22)}
   #clock{font-variant-numeric:tabular-nums;font-size:calc(var(--u) * 8);font-weight:800;line-height:.9;
@@ -170,7 +171,11 @@
       && banner.scrollWidth <= banner.clientWidth + 1;
   }
 
-  var MIN_U = 4.5;
+  // The floor is in CSS pixels, so it has to follow the page's own width: the
+  // Shield's WebView lays the film out at 960x540 (device pixel ratio 2), and a
+  // floor tuned at 1920 wide left the text too big for its zone — clipped name,
+  // wrapped system label, clipped "played" (seen live 2026-09-26).
+  function minU() { return 4.5 * Math.min(1, screenW() / 1920); }
 
   /**
    * Shrink the layout unit until the panel's contents fit the rect, and if they
@@ -184,7 +189,10 @@
    */
   function fit() {
     if (!placement || !rectOk(placement.toast)) return;
-    var optional = [barEl, avEl];
+    var MIN_U = minU();
+    // Shed in order of least use to a player: the bar, the portrait, then the
+    // system name. The clock and the player's name always stay.
+    var optional = [barEl, avEl, document.getElementById('sub')];
     optional.forEach(function (el) { if (el) el.classList.remove('shed'); });
 
     for (var dropped = 0; dropped <= optional.length; dropped++) {
@@ -375,8 +383,10 @@
     render();
     fit();
 
-    var r = banner.getBoundingClientRect();
-    var placed = { zone: placement ? placement.zone || null : null, rect: [Math.round(r.left), Math.round(r.top), Math.round(r.width), Math.round(r.height)],
+    // Layout box, not getBoundingClientRect: the rise animation moves the banner
+    // 140px for half a second, and a rect read during it is not where it rests.
+    var placed = { zone: placement ? placement.zone || null : null,
+      rect: [banner.offsetLeft, banner.offsetTop, banner.offsetWidth, banner.offsetHeight],
       u: getComputedStyle(document.documentElement).getPropertyValue('--u').trim(), fits: fits(),
       shed: [].slice.call(document.querySelectorAll('.shed')).map(function (e) { return e.id; }) };
     if (shownSession !== m.sessionId) {
