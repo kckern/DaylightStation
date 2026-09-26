@@ -46,3 +46,22 @@ export function priceLadder(budget) {
     gain: L.even == null ? 0 : Math.round(Math.max(0, L.food - L.even)),
   };
 }
+
+/**
+ * What `delta` more kcal would cost, split across the tiers it lands in, in
+ * order. Past the last tier it is a `gain` (or `over`, when break even is
+ * unknown). A zero or negative delta costs nothing.
+ */
+export function priceOf(budget, delta) {
+  const { lines: L, tiers } = priceLadder(budget);
+  const start = L.food;
+  const end = start + num(delta);
+  if (end <= start) return [];
+  const spans = [
+    ...tiers.map(({ key, from, to }) => ({ key, from, to })),
+    { key: L.even == null ? 'over' : 'gain', from: L.even ?? L.ceiling, to: Infinity },
+  ];
+  return spans
+    .map(({ key, from, to }) => ({ key, kcal: Math.round(Math.max(0, Math.min(end, to) - Math.max(start, from))) }))
+    .filter(p => p.kcal > 0);
+}
