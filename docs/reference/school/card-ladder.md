@@ -702,6 +702,24 @@ and returns to the menu — disabled while a typing item's field has focus,
 so a Korean-layout keystroke (ㅡ, physically `M`) can't end the run by
 accident.
 
+### When new words are held back (2026-09-26)
+
+`newWordsHeld(ctx)` (`engine.mjs`): the day's at-open allowance could make a
+round of new words (`atOpen.newAllowance ≥ 2`), no round today — guided or
+Learn more — has met any, and the deck still has new words. It rides on
+`progress.newWordsHeld` and on the summary item. The engine's order is
+unchanged — a catch-up round still comes first, because a miss means the
+child is shaky on words already met — but the child is told:
+
+- a **catch-up round's Sort hint** reads "These words first — let's lock
+  them in. Flip, then sort." (`CARRY_FIRST_HINT`, only when
+  `round.kind === 'carry'` and `newWordsHeld`);
+- the **Done summary** adds "New words next time — or tap Learn more
+  words." ("New words next time." when Learn more is not on offer).
+
+Added after a child read "3 new words" on the agenda, missed two rechecks,
+and got a catch-up round with no new words and no word about why.
+
 ### Learn more words (ruling 2026-09-23)
 
 > **2026-09-23 owner: never block extra learning; credit stays capped at the daily goal.**
@@ -920,8 +938,11 @@ The sitting does not open on mount (spec §6). The program first shows the
   missing or failing to load draws a calm blank placeholder, never a substitute;
 - the **course** = the lexicon's `program.title` (the class, "UBKS 비둘기");
 - the **unit** = the deck's `title` ("Week 1: Classroom");
-- **today**: "4 new words · 3 to review · about 10 minutes", or "Done for
-  today — practice anytime";
+- **today**: "up to 4 new words · 3 to review · about 10 minutes", or "Done
+  for today — practice anytime". New words not yet planned read **up to**
+  (`newIsEstimate`): Review can miss words and fill the working set, and then
+  a catch-up round comes first — the day may end with fewer or none. Words
+  already met in a round under way are certain and drop the "up to";
 - **the deck's two rungs**: a two-segment bar (mastered solid, recognised
   lighter) and "3 recognised · 1 mastered of 19" — mastered is the typed
   sign-off, which takes weeks, so a mastered-only count would read 0 long
@@ -943,7 +964,7 @@ works. The test banner shows on the start card too.
 **The agenda tile carries the same card.** `CardLadderSittingService.dayStatus`
 (today only — a replayed past day gets none) returns `context: {course: {id:
 'program:card-ladder:<package>', title}, unit: {id: deckId, title}, lesson:
-{id, title: '4 new words · 3 to review'}}`, `description: 'About 10 minutes'`
+{id, title: 'up to 4 new words · 3 to review'}}`, `description: 'About 10 minutes'`
 and `progress: [{scope: 'unit', label: '3 recognised · 1 mastered', completed:
 mastered, inProgress: recognised, total}]` — the launch card's progress row
 draws `inProgress` as the second (underway) segment;
@@ -996,7 +1017,8 @@ Meet each new word.                               ← once per step
   is dim with "after today's words" until the goal is met
   (`progress.doneToday`), and lit while practising (a practice run or the
   menu). Everything is derived from `#progress()` — `phase`, `round`,
-  `rechecksLeft/Total`, `roundsDone`, `learnToday`, `matchToday`, `doneToday` — plus the
+  `rechecksLeft/Total`, `roundsDone`, `learnToday`, `matchToday`, `doneToday`,
+  `newWordsHeld` — plus the
   item's `type`/`source` for practice and match; never from item types alone.
   Mapping: rechecks → Review; intro flashcard/copy → Learn; stream sort →
   Sort; quiz (2.2 / 3.1) → Quiz; guided match → Match; the drill offer

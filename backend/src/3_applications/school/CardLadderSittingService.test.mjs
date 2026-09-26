@@ -348,10 +348,12 @@ describe('CardLadderSittingService', () => {
       const { service } = make({ store, decks });
       const opened = await service.open({ userId: 'test-learner', deckId: DECK });
       expect(opened.progress).toMatchObject({ phase: 'rechecks', rechecksLeft: 1, learnToday: true, doneToday: false });
+      // New words planned, none met yet: held (the catch-up hint and summary read it).
+      expect(opened.progress.newWordsHeld).toBe(true);
       const { item } = opened;
       const right = item.task === '2.2' ? 'Scissors' : '가위';
       const next = await service.respond({ userId: 'test-learner', sittingId: opened.sittingId, itemId: item.id, response: { choice: right } });
-      expect(next.progress).toMatchObject({ phase: 'round', learnToday: true, round: { phase: 'intro', hasMatch: true } });
+      expect(next.progress).toMatchObject({ phase: 'round', learnToday: true, newWordsHeld: false, round: { phase: 'intro', hasMatch: true } });
     } finally {
       lexicon.entries.delete('chaek');
     }

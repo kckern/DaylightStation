@@ -198,6 +198,24 @@ describe('CardLadderProgram — the sitting header', () => {
     expect(entered).toHaveBeenCalledWith({ step: 'sort', round: 1 });
   });
 
+  // 2026-09-26: a child was promised new words and got a catch-up round with
+  // none and no word about why. The catch-up round's Sort hint says so.
+  it('a catch-up round held ahead of new words says so in its Sort hint', async () => {
+    const api = fakeApi();
+    const carry = { ...trailProgress('stream', { learnToday: false, newWordsHeld: true }), round: { ...trailProgress('stream').round, kind: 'carry' } };
+    api.open.mockResolvedValue({ ...openWith(stream), data: { ...openWith(stream).data, progress: carry } });
+    renderStarted(<CardLadderProgram descriptor={{ deckId: 'd', userId: 'test-learner' }} api={api} />);
+    expect(await screen.findByText('These words first — let’s lock them in. Flip, then sort.')).toBeInTheDocument();
+  });
+
+  it('a catch-up round with no new words waiting keeps the plain Sort hint', async () => {
+    const api = fakeApi();
+    const carry = { ...trailProgress('stream', { learnToday: false, newWordsHeld: false }), round: { ...trailProgress('stream').round, kind: 'carry' } };
+    api.open.mockResolvedValue({ ...openWith(stream), data: { ...openWith(stream).data, progress: carry } });
+    renderStarted(<CardLadderProgram descriptor={{ deckId: 'd', userId: 'test-learner' }} api={api} />);
+    expect(await screen.findByText('Flip, then sort: Not yet, Familiar, or Got it.')).toBeInTheDocument();
+  });
+
   it('a hint also goes by itself after a few seconds', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     try {

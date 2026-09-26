@@ -22,7 +22,7 @@ import { useCardLadderKeys } from './useCardLadderKeys.js';
 import { currentInput, noteInput, noteKeyEvent } from './inputVia.js';
 import CardLadderStartCard from './CardLadderStartCard.jsx';
 import CardLadderHeader from './CardLadderHeader.jsx';
-import { STEP_HINTS, stepTrail } from './stepTrail.js';
+import { CARRY_FIRST_HINT, STEP_HINTS, stepTrail } from './stepTrail.js';
 import './CardLadder.scss';
 
 /** Items whose answer the server grades: the verdict stays on screen until Next. */
@@ -273,7 +273,10 @@ export default function CardLadderProgram({ descriptor, api: injected = null, re
     cardLadderLog.stepEntered({ step, round: progress?.round?.index ?? null });
     if (hintsSeenRef.current.has(step)) { setHint(null); return; }
     hintsSeenRef.current.add(step);
-    setHint({ step, text: STEP_HINTS[step], leaving: false });
+    // A catch-up round held ahead of the day's new words says why it comes
+    // first (2026-09-26: new words promised, a round with none, no word why).
+    const heldCarry = step === 'sort' && progress?.round?.kind === 'carry' && progress?.newWordsHeld === true;
+    setHint({ step, text: heldCarry ? CARRY_FIRST_HINT : STEP_HINTS[step], leaving: false });
     cardLadderLog.hintShown({ step });
   }, [trail.current]); // eslint-disable-line react-hooks/exhaustive-deps
   const dismissHint = useCallback(() => setHint((h) => (h && !h.leaving ? { ...h, leaving: true } : h)), []);
