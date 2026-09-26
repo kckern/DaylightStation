@@ -11,6 +11,14 @@ const logger = () => (_logger ??= createAppLogger('health').child('health-resour
 const DASHBOARD_PATH = 'api/v1/health/dashboard';
 const isHealthResource = path => path.startsWith('api/v1/health/') || path === 'api/v1/lifelog/weight';
 
+/**
+ * The error a reader should show in place of its content: only when there is
+ * no content. A refresh that fails while data is on screen (the 15 s poll
+ * during a backend restart) keeps that data; useApiResource still reports the
+ * error, so a view can add its own quiet cue.
+ */
+export const unavailableError = resource => (resource?.data == null ? resource?.error ?? null : null);
+
 export const refreshHealthResources = () => invalidateApiResources(path =>
   isHealthResource(path) && path !== DASHBOARD_PATH);
 

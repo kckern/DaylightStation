@@ -717,3 +717,40 @@ describe('TodayView — a barcode the person must hear about', () => {
   });
 });
 
+
+// The 15 s poll during a backend restart: every Health resource fails at once.
+describe('TodayView — a failed refresh never buries the day', () => {
+  beforeEach(() => { apiMock.mockReset(); resetApiResourceCache(); });
+  const serverError = () => Object.assign(new Error('HTTP 500: Internal Server Error'), { status: 500, transient: false });
+  const failingDay = (failing) => async (path) => {
+    if (failing() && /health\/day\?|nutrition\/pending|nutrition\/observations/.test(path)) throw serverError();
+    if (path.includes('health/day?')) return { items: NUTRILIST_WITH_ROW.data, budget: BUDGET };
+    return baseApi()(path);
+  };
+
+  it('keeps the loaded day and shows one quiet retry line instead of error panels', async () => {
+    let failing = false;
+    apiMock.mockImplementation(failingDay(() => failing));
+    r(<TodayView onSetupGoals={() => {}} onCoachTap={() => {}} />);
+    await waitFor(() => expect(screen.getByText('Bagel')).toBeTruthy());
+
+    failing = true;
+    act(() => { window.dispatchEvent(new Event('focus')); });
+    const retry = await screen.findByRole('button', { name: /Couldn't refresh/ });
+    expect(screen.getByText('Bagel')).toBeTruthy();
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.getAllByRole('button', { name: /Couldn't refresh/ })).toHaveLength(1);
+
+    failing = false;
+    fireEvent.click(retry);
+    await waitFor(() => expect(screen.queryByRole('button', { name: /Couldn't refresh/ })).toBeNull());
+    expect(screen.getByText('Bagel')).toBeTruthy();
+  });
+
+  it('with nothing loaded, one outage is one panel, not one per resource', async () => {
+    apiMock.mockImplementation(failingDay(() => true));
+    r(<TodayView onSetupGoals={() => {}} onCoachTap={() => {}} />);
+    await waitFor(() => expect(screen.getByText('Food log failed to load')).toBeTruthy());
+    expect(screen.getAllByRole('alert')).toHaveLength(1);
+  });
+});

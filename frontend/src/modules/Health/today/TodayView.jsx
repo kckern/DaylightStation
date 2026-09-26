@@ -160,6 +160,18 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
   const observations = useApiResource(observationsPath(date),
     { deps: [date], enabled: active, label: 'observations', logger, swr: true });
   const observationRows = useMemo(() => observations.data?.observations || [], [observations.data]);
+  // What is on screen stayed; the latest refresh of it did not land.
+  const staleResources = [['day', day.loaded, day.error], ['pending-review', pendingReview.data, pendingReview.error],
+    ['observations', observations.data, observations.error]].filter(([, shown, error]) => shown && error).map(([name]) => name);
+  const refreshFailed = staleResources.length > 0;
+  const wasStale = useRef(false);
+  useEffect(() => {
+    if (refreshFailed === wasStale.current) return;
+    wasStale.current = refreshFailed;
+    if (refreshFailed) logger.warn('refresh.failed', { date, resources: staleResources });
+    else logger.info('refresh.recovered', { date });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshFailed]);
   // Signals nobody has attached to anything — rendered at the top of the day
   // with a Dismiss affordance. Dismissing is the ONLY thing that resolves a
   // row which aged out of the scale's 900 s composition window.
@@ -456,9 +468,15 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
       <ConfirmDialog open={Boolean(pendingDelete)} title={pendingDelete ? `Delete ${entryLabel(pendingDelete)}?` : ''}
         body={pendingDelete ? deleteConfirmBody(pendingDelete) : ''} busy={deleteBusy} error={deleteError}
         onConfirm={confirmDelete} onCancel={() => { setPendingDelete(null); setDeleteError(null); }} />
-      {day.error ? <ErrorState error={day.error} onRetry={day.reload} label="Food log" /> : null}
-      {pendingReview.error ? <ErrorState error={pendingReview.error} onRetry={pendingReview.reload} label="Food review unavailable" /> : null}
-      {observations.error ? <ErrorState error={observations.error} onRetry={observations.reload} label="Measurements unavailable" /> : null}
+      {/* A refresh that fails (the 15 s poll while the backend restarts) keeps
+          what is on screen and says so in one line. A panel only when there
+          is nothing to show, and one per outage: when the day itself failed,
+          the review and measurement failures are the same outage. */}
+      {day.error && !day.loaded ? <ErrorState error={day.error} onRetry={day.reload} label="Food log" /> : null}
+      {!day.error && pendingReview.error && !pendingReview.data ? <ErrorState error={pendingReview.error} onRetry={pendingReview.reload} label="Food review unavailable" /> : null}
+      {!day.error && observations.error && !observations.data ? <ErrorState error={observations.error} onRetry={observations.reload} label="Measurements unavailable" /> : null}
+      {refreshFailed ? <Button variant="subtle" size="compact-xs" color="gray" className="health-refresh-failed" onClick={day.reload}>
+        Couldn't refresh · Retry</Button> : null}
       <LogTable clarifications={mealClarifications} onClearClarification={clearMealClarification} byBucket={preview.byBucket} date={date} sessions={preview.budget?.sessions || []}
         exerciseAvailable={Boolean(day.budget)}
         fastedMeals={day.dayStatus?.fastedMeals || []} onMealFastChanged={day.reload}

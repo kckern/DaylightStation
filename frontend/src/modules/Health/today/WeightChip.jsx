@@ -1,5 +1,6 @@
 import { lazy, Suspense, useMemo } from 'react';
 import { useApiResource } from '../../../lib/hooks/useApiResource.js';
+import { unavailableError } from '../healthResources.js';
 import { createAppLogger } from '../../../lib/ui/createAppLogger.js';
 import { buildWeightSeries, normalizeWeightEntries, fmtLbs, fmtDelta, TREND_ARROWS } from './weightSeries.js';
 import { ErrorState, StatCard, Skeleton } from '@/lib/ui';
@@ -25,7 +26,7 @@ export function WeightChip({ asOf }) {
   const { latestLbs, deltaLbs, direction, entries, latest, trendDays } = series;
   // The chart plots the full normalized history (it windows itself to 12 weeks, up to asOf).
   const chartEntries = useMemo(() => normalizeWeightEntries(res.data).filter(e => !asOf || e.date <= asOf), [res.data, asOf]);
-  if (res.error) return <ErrorState error={res.error} onRetry={res.reload} label="Weight unavailable" />;
+  if (unavailableError(res)) return <ErrorState error={res.error} onRetry={res.reload} label="Weight unavailable" />;
 
   const deltaText = fmtDelta(deltaLbs);
   const label = latestLbs == null

@@ -3,7 +3,7 @@ import { Button, Group, Stack, Text } from '@mantine/core';
 import { SectionCard, Sheet, LoadingState, ErrorState } from '../../../lib/ui';
 import { useApiResource } from '../../../lib/hooks/useApiResource.js';
 import { DaylightAPI } from '../../../lib/api.mjs';
-import { refreshHealthResources } from '../healthResources.js';
+import { refreshHealthResources, unavailableError } from '../healthResources.js';
 import { cleanupPath, RepairPreview } from '../cleanup/CleanupQuestions.jsx';
 import { RepairChanges } from '../cleanup/RepairChanges.jsx';
 
@@ -42,7 +42,7 @@ export function CleanupHistory({ resource }) {
     </Stack></SectionCard>
     <SectionCard title="Repair history"><Stack gap="sm">
       <details><summary>View repairs ({history.data?.total ?? '—'})</summary>
-      {history.error ? <ErrorState error={history.error} onRetry={history.reload} /> : null}
+      {unavailableError(history) ? <ErrorState error={history.error} onRetry={history.reload} /> : null}
       {!history.data && history.loading ? <LoadingState label="Repair history" /> : null}
       {history.data?.records.map(record => <Group key={record.id} justify="space-between"><Text size="sm">{new Date(record.at).toLocaleString()} · {record.reason}</Text><Button size="xs" variant="subtle" onClick={() => setSelected(record)}>Details</Button></Group>)}
       {history.data?.total === 0 ? <Text size="sm" c="dimmed">No repairs have been made.</Text> : null}
