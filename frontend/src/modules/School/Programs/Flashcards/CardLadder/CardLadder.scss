@@ -231,6 +231,7 @@
 .wl-say__notice { margin: 0; font-size: 1.25rem; text-align: center; color: var(--ds-warning); }
 .wl-summary h2 { margin: 0; font-size: 2.5rem; }
 .wl-summary p { margin: 0; font-size: 1.5rem; color: var(--ds-text-mid); }
+.wl-summary .wl-summary__held { color: var(--ds-accent); font-weight: 600; }
 
 // --- Start screen: the launch card -----------------------------------------
 // Poster (2:3) left, copy right, centred in the stage. Sized from the stage's

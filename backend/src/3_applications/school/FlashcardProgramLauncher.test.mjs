@@ -89,7 +89,7 @@ describe('FlashcardProgramLauncher — card ladder', () => {
       context: {
         course: { id: 'program:card-ladder:korean-vocab', title: 'Test Class' },
         unit: { id: DECK, title: 'Week 1: Classroom' },
-        lesson: { id: `${DECK}:2026-09-23`, title: '4 new words · 3 to review' },
+        lesson: { id: `${DECK}:2026-09-23`, title: 'up to 4 new words · 3 to review' },
       },
       description: 'About 10 minutes',
       progress: [{ scope: 'unit', label: 'Words learned', completed: 0, total: 19 }],
@@ -100,7 +100,7 @@ describe('FlashcardProgramLauncher — card ladder', () => {
     const entry = { program: 'flashcards', programInstance: DECK, subject: 'language', unitId: `flashcards:${DECK}`, title: 'Flashcards' };
     const projected = projectProgramEntry(entry, status);
     expect(projected).toMatchObject({
-      title: '4 new words · 3 to review', courseId: 'program:card-ladder:korean-vocab', module: DECK,
+      title: 'up to 4 new words · 3 to review', courseId: 'program:card-ladder:korean-vocab', module: DECK,
       description: 'About 10 minutes', programProgress: card.progress,
     });
   });
