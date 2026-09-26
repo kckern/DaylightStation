@@ -641,6 +641,12 @@ describe('budgetGeometry — the ruler is food, from 0', () => {
     expect(budgetGeometry(day({ exercise: 0 }), { widthPx: 360 }).ceiling).toBeNull();
   });
 
+  it('a ceiling capped at break even labels the workout room, not the raw exercise', () => {
+    // top 1200, exercise 300, maintenance 1100 → break even 1400, workout room 200.
+    const g = budgetGeometry(day({ exercise: 300, maintenance: 1100, range: { floor: 1200, top: 1200 }, food: 900 }), { widthPx: 360 });
+    expect(g.goal.label).toBe('Goal 1,200 + 200');
+  });
+
   it('a plan capped at break even says so on the goal mark', () => {
     const g = budgetGeometry(day({ exercise: 0, maintenance: 1100, range: { floor: 1200, top: 1200 }, food: 900 }), { widthPx: 360 });
     expect(g.goal.label).toBe('Goal · break even 1,100');
@@ -803,8 +809,9 @@ export function budgetGeometry(budget, { widthPx = 360, finished = false } = {})
     return { ...segment(from, t.to), key: t.key, left: t.left, label, shown };
   });
 
+  // The workout's room, not the raw exercise: break even can cap the ceiling.
   const goalLabel = capped ? `Goal · break even ${fmt(top)}`
-    : exercise > 0 ? `Goal ${fmt(top)} + ${fmt(exercise)}` : `Goal ${fmt(top)}`;
+    : ceiling > top ? `Goal ${fmt(top)} + ${fmt(ceiling - top)}` : `Goal ${fmt(top)}`;
 
   return {
     right, pct, ticks, tiers, zone: budget.zone,
