@@ -723,7 +723,7 @@ tabling note below. Where it departed from the text above:
 ### Tasks 10 and 11 — TABLED
 
 Word glosses and word lookup were carved out into
-`2026-09-11-sentence-ladder-word-glosses.md` and are NOT part of this plan. They are the
+a separate glosses plan (dropped 2026-09-25) and are NOT part of this plan. They are the
 only tasks here that need a model at runtime, and Task 11 is only the UI for Task 10's
 data, so they move together.
 
@@ -937,8 +937,8 @@ queue was already built from.
 
 ## Closing note — what this plan shipped (2026-09-11)
 
-All fourteen tasks are built except Tasks 10 and 11, which were carved out to
-`docs/_wip/plans/2026-09-11-sentence-ladder-word-glosses.md` — the hint half of Task 9
+All fourteen tasks are built except Tasks 10 and 11, which were carved out to a
+separate glosses plan (dropped 2026-09-25) — the hint half of Task 9
 depends on glosses that do not exist yet, and inventing them inside a typing plan would
 have meant a corpus change riding on a UI change.
 
