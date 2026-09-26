@@ -464,8 +464,8 @@ because reading the answer, hiding it, and typing it back in is precisely the
 record this split exists to protect.
 
 **The partial half is not built, and that is deliberate.** The hint for
-interpretation is one word's meaning — a gloss — and glosses are tabled into
-`docs/_wip/plans/2026-09-11-sentence-ladder-word-glosses.md`. Until they exist
+interpretation is one word's meaning — a gloss — and glosses are tabled (their
+plan was dropped on 2026-09-25; no gloss data exists). Until they exist
 there is no Hint control on this rung, not even a disabled one: a button with
 nothing to say is a dead button, and a child who presses a dead button decides
 the screen is broken. When glosses land, Hint joins Reveal — it does not

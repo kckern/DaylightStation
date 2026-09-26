@@ -118,8 +118,8 @@ const PEEK_KEY = 'F1';
  * when they pressed a button 4,143 times.
  *
  * THE HINT HALF IS NOT BUILT, ON PURPOSE. The partial help for this rung is
- * one word's meaning — a gloss — and glosses are tabled into their own plan
- * (`2026-09-11-sentence-ladder-word-glosses.md`). A Hint button with no gloss
+ * one word's meaning — a gloss — and glosses are tabled (their plan was
+ * dropped on 2026-09-25; no gloss data exists). A Hint button with no gloss
  * behind it is a dead control, and a child who presses a dead button concludes
  * the screen is broken and stops trusting the rest of it. So: no Hint, not
  * even disabled, until there is something for it to say.
