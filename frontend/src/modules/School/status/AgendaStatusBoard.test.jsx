@@ -724,6 +724,15 @@ describe('rest day', () => {
       { subject: 'scripture', next: { unitId: 'cfm.1' }, obligation: { state: 'excused', reason: 'optional_backlog' } },
       { subject: 'science', next: { unitId: 'sci.1' }, obligation: { state: 'excused', reason: 'elective_only' } },
     ], []);
+    // Every offered lesson counts toward the hint: the scan prints them all.
+    expect(summary.restDay).toEqual({ optionalCount: 3 });
+  });
+
+  it('keeps the hint on a holiday whose only offer is an optional_backlog lesson', () => {
+    const summary = summarize([
+      off('math', null),
+      { subject: 'scripture', next: { unitId: 'cfm.1' }, obligation: { state: 'excused', reason: 'optional_backlog' } },
+    ], []);
     expect(summary.restDay).toEqual({ optionalCount: 1 });
   });
 

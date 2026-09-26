@@ -36,19 +36,33 @@ for (const scenario of ['fresh', 'due', 'round-end']) {
       const overflow = await page.evaluate(() => [...document.querySelectorAll('.wl-fit')]
         .filter((el) => el.scrollWidth > el.parentElement.getBoundingClientRect().width + 1).map((el) => el.textContent));
       expect(overflow, 'text overflowing its region').toEqual([]);
-      // Choice text FILLS its button (2026-09-26): the fit box used to be the
-      // label hugging its own text, so every choice sat at the 22 px floor.
-      // A choice at the floor now means the fit box is wrong again. And the
-      // buttons of one group stay one height, whatever size the text fits.
+      // Choice text FILLS its button (2026-09-26). FitText fits to its parent,
+      // the button's label, which used to hug its own text — so the fit box
+      // was the text's size and every choice sat at the 22 px floor. Assert
+      // the fit box itself (content-independent: a long gloss may rightly
+      // fit small), that nothing spills out of it (a picture face, a clamped
+      // two-line gloss), and that one group's buttons share one height.
       const choices = await page.evaluate(() => [...document.querySelectorAll('.wl-choices, .wl-match__column')].map((group) => {
         const buttons = [...group.querySelectorAll('.ds-touch--choice')];
-        return {
-          heights: [...new Set(buttons.map((b) => Math.round(b.getBoundingClientRect().height)))],
-          atFloor: buttons.map((b) => b.querySelector('.wl-fit')).filter((f) => f && parseFloat(f.style.fontSize) <= 22).map((f) => f.textContent),
-        };
+        const shrunk = [];
+        const spilled = [];
+        for (const b of buttons) {
+          const label = b.querySelector('.ds-touch__label');
+          if (!label) continue;
+          const lr = label.getBoundingClientRect();
+          const br = b.getBoundingClientRect();
+          // 24px vertical padding + 4px border leave the label the rest.
+          if (lr.height < br.height - 32 || lr.width < br.width * 0.6) shrunk.push(`${b.textContent.trim()} ${Math.round(lr.width)}x${Math.round(lr.height)} in ${Math.round(br.width)}x${Math.round(br.height)}`);
+          for (const child of label.children) {
+            const cr = child.getBoundingClientRect();
+            if (cr.top < lr.top - 1 || cr.bottom > lr.bottom + 1) spilled.push(b.textContent.trim() || child.tagName);
+          }
+        }
+        return { heights: [...new Set(buttons.map((b) => Math.round(b.getBoundingClientRect().height)))], shrunk, spilled };
       }));
       for (const group of choices) {
-        expect(group.atFloor, 'choice text stuck at the 22px floor').toEqual([]);
+        expect(group.shrunk, 'choice label does not fill its button').toEqual([]);
+        expect(group.spilled, 'content spilling out of a choice label').toEqual([]);
         expect(group.heights.length, `choice buttons of one group share a height (${group.heights})`).toBeLessThanOrEqual(1);
       }
       if (await page.getByRole('heading', { name: 'All done for today' }).isVisible()) break;

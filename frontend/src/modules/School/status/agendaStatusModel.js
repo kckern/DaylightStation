@@ -116,7 +116,10 @@ function restDayOf(planned) {
   if (!planned.every((section) => section.obligation?.state === 'excused')) return null;
   const off = planned.filter((section) => section.obligation?.reason === 'not_a_school_day');
   if (!off.length) return null;
-  return { optionalCount: off.filter((section) => section.next?.unitId).length };
+  // Every offered lesson counts, not only the not-a-school-day ones: a scan
+  // prints the backlog and elective lessons too, so a holiday whose only
+  // offer is scripture still earns the hint.
+  return { optionalCount: planned.filter((section) => section.next?.unitId).length };
 }
 
 export function summarize(sections, sessions, entries = [], readingActivity = null, fitnessActivity = null) {

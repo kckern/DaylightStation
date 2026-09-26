@@ -165,7 +165,12 @@
   > .ds-touch__key { align-self: center; }
 }
 .wl-choices .ds-touch--choice { height: 88px; }
-.wl-match__column .ds-touch--choice { height: 72px; }
+.wl-match__column .ds-touch--choice {
+  height: 72px;
+  // The pinned row leaves the label 44px (72 − 24 padding − 4 border); the
+  // generic 56px picture cap would spill into the padding.
+  .wl-match__picture { max-height: 100%; }
+}
 
 .wl-choices {
   display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; width: min(900px, 100%);
