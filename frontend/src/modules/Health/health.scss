@@ -727,11 +727,14 @@ $health-aside-gap: 1.5rem;
     svg { vertical-align: -2px; margin-right: 0.2rem; color: var(--ds-accent); }
   }
   &__description { font-size: 0.72rem; color: var(--ds-text-low); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  &__minutes { grid-column: 6; text-align: right; color: var(--ds-text-mid); font-size: 0.8rem; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  // Left-aligned, unlike a food's portion: the credit overhangs into this
+  // track's right side (below), and a right-aligned "39 min" ran into it.
+  &__minutes { grid-column: 6; text-align: left; color: var(--ds-text-mid); font-size: 0.8rem; white-space: nowrap; font-variant-numeric: tabular-nums; }
   // Bigger than a food's kcal: the credit is the one number a workout row is for.
   // justify-self: end lets "+187 kcal" overhang left into the minutes slack
   // while its right edge stays on the food kcal column.
-  &__kcal { grid-column: 7; justify-self: end; font-size: 1rem; font-weight: 600; }
+  &__kcal { grid-column: 7; justify-self: end; font-size: 1rem; font-weight: 600;
+    @include bp.mobile-only { font-size: 0.92rem; } }
   &__retry { min-height: 44px; color: var(--ds-text-mid); font-size: 0.75rem; }
 }
 
