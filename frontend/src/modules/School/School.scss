@@ -3311,6 +3311,13 @@
     &.is-done { background: var(--school-board-done); }
   }
   &__status--none { text-transform: none; letter-spacing: normal; font-weight: 600; opacity: 0.5; }
+  // A DAY OFF reads as an answer, not a gap, so it is not dimmed like
+  // "No plan to show". The hint sits under it, smaller, for a child who wants more.
+  &__status--rest {
+    display: flex; flex-direction: column; align-items: center; gap: 0.2em;
+    text-transform: none; letter-spacing: normal; font-weight: 600;
+  }
+  &__status-hint { font-weight: 500; font-size: 0.85em; opacity: 0.7; }
 
   // (The "DONE" chip that used to replace the count at 100% is gone. A
   // finished row already turns green end to end — nameplate, card and every

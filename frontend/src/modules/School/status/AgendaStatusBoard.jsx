@@ -318,6 +318,17 @@ function DayMeter({ summary }) {
   );
 }
 
+/** "No school today" (+ how to get optional work). See `restDayOf` in the model. */
+function RestDayStatus({ restDay, pinned }) {
+  const hint = !pinned && restDay.optionalCount > 0;
+  return (
+    <span className="school-status-board__status school-status-board__status--rest">
+      {pinned ? 'No school' : 'No school today'}
+      {hint && <span className="school-status-board__status-hint">Scan your card for extra work</span>}
+    </span>
+  );
+}
+
 /**
  * @param {object} props
  * @param {Array<{id: string, name: string}>} props.kids
@@ -672,6 +683,14 @@ export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null
                   the day is finished. */}
               {loading ? null : summary && summary.total > 0 ? (
                 <DayMeter summary={summary} />
+              ) : summary?.restDay ? (
+                // A DAY OFF IS NOT AN EMPTY PLAN (2026-09-26). Every section
+                // is excused as not a school day, and the optional work is
+                // still on the agenda a card scan prints. "No plan to show"
+                // told a child with flashcards waiting that there was
+                // nothing to do. A pinned past day gets no hint: a scan
+                // prints TODAY's agenda, not that day's.
+                <RestDayStatus restDay={summary.restDay} pinned={Boolean(day)} />
               ) : (
                 <span className="school-status-board__status school-status-board__status--none">No plan to show</span>
               )}
