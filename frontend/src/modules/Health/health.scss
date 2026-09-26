@@ -101,26 +101,29 @@
   // The ceiling (top + exercise): where "over plan" counts from. Dashed, so it
   // reads as the goal moved by the workout rather than a second goal.
   &__ceiling-line { width: 0; margin-left: -1px; border-left: 2px dashed var(--ds-text-high); z-index: 3; opacity: 0.8; }
+  // Stacking: tiers 1, food 2, goal / ceiling / even lines 3, food label 5.
   // What is left, priced. Free is a success wash; the workout keeps the old
   // credit hatch (allowance, not intake); the live deficit is a warning wash —
   // eating into it costs the day's progress. Labels are centred: the 18px
   // track clips anything that is not.
   &__tier {
     z-index: 1; display: flex; align-items: center; justify-content: center; overflow: hidden;
-    &--free { background: color-mix(in srgb, var(--ds-success) 18%, transparent); }
+    &--free { background: color-mix(in srgb, var(--ds-success) 30%, transparent); }
     &--workout {
       outline: 1px solid color-mix(in srgb, var(--ds-success) 60%, transparent); outline-offset: -1px;
       background: repeating-linear-gradient(135deg,
         color-mix(in srgb, var(--ds-background) 55%, transparent) 0 3px,
         color-mix(in srgb, var(--ds-success) 35%, transparent) 3px 6px);
     }
-    &--deficit { background: color-mix(in srgb, var(--ds-warning) 14%, transparent); }
+    &--deficit { background: color-mix(in srgb, var(--ds-warning) 24%, transparent); }
   }
-  // An unverified log: the prices are only right if the log is complete.
-  &__ruler--tentative &__tier { opacity: 0.45; }
+  // An unverified log: the prices are only right if the log is complete. Only
+  // the wash goes (the shorthand clears the workout hatch too); the price
+  // labels stay full strength.
+  &__ruler--tentative &__tier { background: transparent; outline: 1px dashed var(--ds-border); outline-offset: -1px; }
   // A finished day's unspent deficit is the win, green like the legacy
   // "N deficit" term (&__deficit) — not a warning.
-  &__ruler--finished &__tier--deficit { background: color-mix(in srgb, var(--ds-success) 14%, transparent); }
+  &__ruler--finished &__tier--deficit { background: color-mix(in srgb, var(--ds-success) 24%, transparent); }
   &__food {
     z-index: 2;
     &--incomplete { background: var(--health-zone-incomplete); }
@@ -169,11 +172,12 @@
 @media (max-width: 760px) {
   .health-equation { grid-template-columns: 1fr; }
 }
-// Wide enough: the headline on the left, the sub-line and the eaten · burned
-// terms stacked beside it, so the head stays one headline tall (the summary's
-// 140px budget at 800px, EquationStrip.geometry.test.js). Headline, sub and
-// terms do not fit on one row at that width.
-@media (min-width: 761px) {
+// A wide summary (.health-equation is the container): the headline on the
+// left, the sub-line and the eaten · burned terms stacked beside it, so the
+// head stays one headline tall. Headline, sub and terms do not fit on one row
+// at 800px; stacked they add a row, and the height guards in
+// EquationStrip.geometry.test.js would catch it.
+@container (min-width: 761px) {
   .health-budget__head { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 0 0.75rem; }
   .health-budget__lead { display: contents; }
   .health-budget__headline { grid-row: span 2; }
