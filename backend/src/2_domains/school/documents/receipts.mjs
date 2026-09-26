@@ -600,6 +600,7 @@ function appendNoteLines(blocks, noteLines) {
 export function agendaDocument({
   learnerId, learnerName = null, generatedAt = null, timeZone = 'UTC',
   sections = [], tokensBySubject = {}, accessCodesByToken = {},
+  reopenCards = [],
   bulkToken = null, bulkAccessCode = null,
   readingToken = null, readingAccessCode = null,
   readingFeature = null, readingSubject = DEFAULT_BOOK_LOG_SUBJECT,
@@ -816,6 +817,29 @@ export function agendaDocument({
   // this document entirely (`BuildAgenda`), and deliberately so: that mint runs
   // even for a subject already served today, which is exactly when a child
   // wants to log the book they just finished.
+  // DONE, AND STILL OPEN. A served subject whose program allows extra rounds
+  // (a flashcard deck) keeps a card and a code, railed "Done" like the reading
+  // shelf's met obligation. Pushed AFTER `curriculumBlocks` for the same reason
+  // as the reading card: going again is an invitation, not owed work, so it
+  // must not turn "All done today" into "Done today". Without it a finished
+  // subject left the child a tally line and no way back in (2026-09-25).
+  for (const card of Array.isArray(reopenCards) ? reopenCards : []) {
+    if (!card || !isNonEmptyString(card.token)) continue;
+    blocks.push(...lessonAction({
+      token: card.token,
+      eyebrow: null,
+      rail: 'Done',
+      unit: card.taxonomy?.unit ?? card.unit ?? null,
+      title: card.title,
+      description: 'Done for today. Want another round? You can go again.',
+      icon: card.subject,
+      meta: isNonEmptyString(card.actionLabel) ? card.actionLabel.toUpperCase() : null,
+      progress: card.progress,
+      taxonomy: card.taxonomy ?? null,
+      accessCode: card.accessCode ?? undefined,
+    }));
+  }
+
   if (!shelfPrintedAsSection
     && isNonEmptyString(readingToken)
     && typeof readingAccessCode === 'string' && PANEL_CODE.test(readingAccessCode)) {

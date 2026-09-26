@@ -135,6 +135,7 @@ export class ResolveSubjectNext {
     if (section.servedToday && !continueToday) {
       const reopen = findReopenableProgramEntry(plan, {
         subject, statusOf: (entry) => programStatusFor(programStatuses, entry),
+        ...('reopenUnitId' in section ? { unitId: section.reopenUnitId } : {}),
       });
       if (!reopen) return { kind: 'served', subjectLabel: subject };
       return {

@@ -275,7 +275,10 @@ learner on, and neither can be held by work they cannot or will not finish.
   subject's code normally answers "You already did this today." with only a
   way out. `todayStatus` therefore also reports `reopenable: true` (false only
   when every sentence is retired), and `findReopenableProgramEntry` opens the
-  ladder, where *Start the next day* is waiting.
+  ladder, where *Start the next day* is waiting — scoped to the section's
+  `reopenUnitId`, so a ladder retired by its schedule's `except` span is never
+  reopened in place of the program that replaced it. The printed agenda keeps
+  a **Done**-railed card with a code for it (see card-ladder.md).
 - **Neither path re-announces the day.** Only the attempt that finishes a day
   publishes `day-complete`. A read or a roll that restated it closed the day
   again, and each close printed another receipt.

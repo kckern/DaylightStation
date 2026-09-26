@@ -923,6 +923,23 @@ them into the tile. The `program:<id>:<instance>` course id is what resolves
 the poster (the instance is the word package, as the sentence ladder's is its
 corpus).
 
+**A finished day keeps a card and a code (extra rounds).** Once `doneAt` is
+set the `language` subject is served and joins the agenda's *Done today*
+tally — but the day's requirement being met never closes the deck.
+`FlashcardProgramLauncher` reports `reopenable: true`, `planDailyAgenda`
+records the section's `reopenUnitId` (chosen from the programs live today, so
+an enrollment retired by its schedule's `except` span is never picked, and
+the program finished today wins), and `BuildAgenda` mints a `subject_next`
+code naming the program and prints a **Done**-railed card for it. The card is
+pushed after the curriculum verdict, so a day with nothing owed still reads
+*All done today*. Typing the code — or the morning's code, still live until
+the rollover — resolves through the same `reopenUnitId`
+(`findReopenableProgramEntry`), so it opens the deck, never a retired
+sentence ladder. Logged as `school.agenda.reopen-code.minted`. The reading
+shelf is the one reopenable program excluded: it has its own standalone card.
+Before 2026-09-25 a served subject printed no code at all, and the plan-order
+scan sent a re-typed code to the ladder a learner had been moved off.
+
 ### The sitting header
 
 ```
