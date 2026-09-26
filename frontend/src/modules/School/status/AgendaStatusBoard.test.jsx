@@ -1103,3 +1103,71 @@ describe('AgendaStatusBoard — cached, in-place refresh', () => {
     expect(screen.getAllByLabelText('0 of 1 done')).toHaveLength(2);
   });
 });
+
+describe('rest day on the board', () => {
+  const kids = [{ id: 'learner1', name: 'Learner One' }];
+  const off = (subject, next = { unitId: `${subject}.next` }) => ({
+    subject, next, obligation: { state: 'excused', reason: 'not_a_school_day' },
+  });
+  const digest = (extra = {}) => ({ ok: true, data: { studyDay: '2026-09-26', learners: [{ learnerId: 'learner1', sessions: [], ...extra }] } });
+  beforeEach(() => {
+    vi.clearAllMocks(); wsHandlers.length = 0;
+    schoolApi.stateGates.mockResolvedValue({ ok: false });
+    schoolApi.teacherDay.mockResolvedValue(digest());
+  });
+
+  it('says No school today and how to get extra work, never No plan to show', async () => {
+    schoolApi.agendaPreview.mockResolvedValue({ ok: true, data: { sections: [off('math'), off('language')], entries: [] } });
+    render(<AgendaStatusBoard kids={kids} />);
+    expect(await screen.findByText('No school today')).toBeInTheDocument();
+    expect(screen.getByText('Scan your card for extra work')).toBeInTheDocument();
+    expect(screen.queryByText('No plan to show')).toBeNull();
+    expect(document.querySelector('.school-status-board__pill')).toBeNull();
+  });
+
+  it('drops the hint on a holiday with nothing offered', async () => {
+    schoolApi.agendaPreview.mockResolvedValue({ ok: true, data: { sections: [off('math', null)], entries: [] } });
+    render(<AgendaStatusBoard kids={kids} />);
+    expect(await screen.findByText('No school today')).toBeInTheDocument();
+    expect(screen.queryByText('Scan your card for extra work')).toBeNull();
+  });
+
+  it('on a pinned past day says No school, with no scan hint', async () => {
+    schoolApi.agendaPreview.mockResolvedValue({ ok: true, data: { sections: [off('math')], entries: [] } });
+    render(<AgendaStatusBoard kids={kids} day="2026-09-19" />);
+    expect(await screen.findByText('No school')).toBeInTheDocument();
+    expect(screen.queryByText('No school today')).toBeNull();
+    expect(screen.queryByText('Scan your card for extra work')).toBeNull();
+  });
+
+  it('never claims a day off when the plan read fails', async () => {
+    schoolApi.agendaPreview.mockRejectedValue(new Error('offline'));
+    schoolApi.teacherDay.mockResolvedValue(digest({
+      readingActivity: { status: 'ok', studyDay: '2026-09-26', hasActivity: false },
+    }));
+    render(<AgendaStatusBoard kids={kids} />);
+    // Plan-less and activity-less: the card settles to null and the board
+    // steps off the panel entirely, so assert the rest-day copy never appears.
+    await waitFor(() => expect(schoolApi.agendaPreview).toHaveBeenCalled());
+    expect(screen.queryByText('No school today')).toBeNull();
+  });
+
+  it('shows the rest-day copy under supplemental pins (reading done on a Saturday)', async () => {
+    schoolApi.agendaPreview.mockResolvedValue({ ok: true, data: { sections: [off('math')], entries: [] } });
+    schoolApi.teacherDay.mockResolvedValue(digest({
+      readingActivity: { status: 'ok', studyDay: '2026-09-26', hasActivity: true, bookCount: 1, finishedCount: 0, progressCount: 1 },
+    }));
+    render(<AgendaStatusBoard kids={kids} />);
+    expect(await screen.findByRole('img', { name: /Reading: done/ })).toBeInTheDocument();
+    expect(screen.getByText('No school today')).toBeInTheDocument();
+    expect(screen.queryByText('No plan to show')).toBeNull();
+  });
+
+  it('draws the meter, not the rest copy, once a Saturday lesson is under way', async () => {
+    schoolApi.agendaPreview.mockResolvedValue({ ok: true, data: { sections: [off('language', { unitId: 'fc.1' })], entries: [] } });
+    schoolApi.teacherDay.mockResolvedValue(digest({ sessions: [{ unitId: 'fc.1', subject: 'language', state: 'issued', outcome: null }] }));
+    render(<AgendaStatusBoard kids={kids} />);
+    expect(await screen.findByRole('progressbar')).toBeInTheDocument();
+    expect(screen.queryByText('No school today')).toBeNull();
+  });
+});
