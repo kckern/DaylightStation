@@ -7,7 +7,7 @@
  * is fixed in the next task.
  */
 
-import { buildActivityDescription as buildStravaDescription } from '../../../../backend/src/2_domains/fitness/services/buildActivityDescription.mjs';
+import { buildActivityDescription as buildStravaDescription, extractUserNotes } from '../../../../backend/src/2_domains/fitness/services/buildActivityDescription.mjs';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // CONSTANTS
@@ -914,5 +914,90 @@ describe('buildStravaDescription — new description format', () => {
     expect(result.description).toContain('\uD83C\uDFB5 Radiohead \u2014 Creep');
     expect(result.description).toContain('\uD83C\uDFB5 Nirvana \u2014 Smells Like Teen Spirit');
     expect(result.description).not.toContain('Playlist');
+  });
+});
+
+// \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
+// STRAVA NOTES \u2014 never echo our own generated description back
+// \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
+
+// The shape Strava held for activity 20328730789 (2026-09-25) after one round
+// trip: our description was pulled back as strava_notes, then re-pushed inside
+// a \uD83D\uDCDD wrapper.
+const GENERATED = '\uD83C\uDF99\uFE0F "We finished the horror cup together."\n\n\uD83D\uDDA5\uFE0F Game Cycling \u2014 Sonic & Sega All Stars Racing\nSonic and an all-star Sega cast race.';
+const ECHOED = `\uD83C\uDF99\uFE0F "We finished the horror cup together."\n\n\uD83D\uDCDD "${GENERATED}"\n\n\uD83D\uDDA5\uFE0F Game Cycling \u2014 Sonic & Sega All Stars Racing\nSonic and an all-star Sega cast race.`;
+
+describe('extractUserNotes', () => {
+  test('returns null for a description we generated', () => {
+    expect(extractUserNotes(GENERATED)).toBeNull();
+  });
+
+  test('returns null for an already-echoed description', () => {
+    expect(extractUserNotes(ECHOED)).toBeNull();
+  });
+
+  test('returns null for music-only and bare-media blocks', () => {
+    expect(extractUserNotes('\uD83D\uDDA5\uFE0F Game Cycling\n\n\uD83C\uDFB5 Bon Jovi \u2014 Livin\' On a Prayer\n\uD83C\uDFB5 Now! \u2014 Centuries')).toBeNull();
+  });
+
+  test('keeps text typed on Strava verbatim', () => {
+    expect(extractUserNotes('Forgot to turn off the run and it caught some of the ride home'))
+      .toBe('Forgot to turn off the run and it caught some of the ride home');
+  });
+
+  test('keeps only the typed text when a person appended to our description', () => {
+    expect(extractUserNotes(`${GENERATED}\n\nLegs were toast after this one.`))
+      .toBe('Legs were toast after this one.');
+  });
+
+  test('a memo with paragraphs is one block, not a memo plus typed text', () => {
+    expect(extractUserNotes('🎙️ "First thought.\n\nSecond thought."\n\n🖥️ Show — Ep')).toBeNull();
+  });
+
+  test('unwraps a 📝 block: typed notes survive, paragraphs intact', () => {
+    expect(extractUserNotes('🎙️ "Hi"\n\n📝 "Para one.\n\nPara two."\n\n🖥️ Show — Ep'))
+      .toBe('Para one.\n\nPara two.');
+  });
+
+  test('keeps typed text that merely starts with a memo emoji', () => {
+    expect(extractUserNotes('🎙️ felt great today')).toBe('🎙️ felt great today');
+  });
+
+  test('trade-off: typed text starting "🎵 " reads as a track line and is dropped', () => {
+    expect(extractUserNotes('🎵 great playlist today')).toBeNull();
+  });
+
+  test('handles CRLF line endings', () => {
+    expect(extractUserNotes('🖥️ Show — Ep\r\n\r\nLegs toast.')).toBe('Legs toast.');
+  });
+
+  test('returns null for empty / non-string input', () => {
+    expect(extractUserNotes('')).toBeNull();
+    expect(extractUserNotes('   ')).toBeNull();
+    expect(extractUserNotes(null)).toBeNull();
+    expect(extractUserNotes(undefined)).toBeNull();
+  });
+});
+
+describe('buildStravaDescription \u2014 polluted strava_notes', () => {
+  const memoSession = (notes) => ({
+    ...createSession({
+      events: [
+        { type: 'voice_memo', timestamp: 1, data: { transcript: 'We finished the horror cup together.' } },
+        { type: 'media', timestamp: 2, data: { grandparentTitle: 'Game Cycling', title: 'Sonic & Sega All Stars Racing', description: 'Sonic and an all-star Sega cast race.' } },
+      ],
+    }),
+    strava_notes: { text: notes },
+  });
+
+  test('does not re-embed our own description held in strava_notes', () => {
+    const result = buildStravaDescription(memoSession(GENERATED));
+    expect(result.description).toBe(GENERATED);
+    expect(result.description).not.toContain('\uD83D\uDCDD');
+  });
+
+  test('still includes notes a person typed on Strava', () => {
+    const result = buildStravaDescription(memoSession('Legs were toast.'));
+    expect(result.description).toContain('\uD83D\uDCDD "Legs were toast."');
   });
 });

@@ -813,6 +813,17 @@ export function EmulatorConsole({
           setError({ kind: 'no-frames', message: 'The game booted but never appeared.' });
           return;
         }
+        // Apply the picture shader AGAIN now that a frame has been presented.
+        // At the settle barrier (the instant `started` flips) the core's video
+        // viewport is still 0x0, so a preset with a viewport-scaled pass —
+        // Harlequin's pass0 — builds a zero-size framebuffer and every frame is
+        // black ("Framebuffer is incomplete: Attachment has zero size"), while
+        // the preset file sits in /shader and the barrier's read-back passes.
+        // Measured 2026-09-25: the same call one frame later renders correctly.
+        if (presentation?.ejs_shader) {
+          const reapplied = engine.applyShader?.(presentation.ejs_shader);
+          logger.info('emulator.picture-shader.post-frame-apply', { shader: presentation.ejs_shader, ok: !!reapplied });
+        }
         setPlayReady(true);
 
         // Inject the user's resume blob (battery .srm or save-state) after boot.
