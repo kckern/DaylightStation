@@ -85,6 +85,15 @@ describe('priceLadder — agrees with the server zone rule', () => {
       expect(family[spend], `food ${food}`).toContain(zone);
     }
   });
+
+  it('the capped case with exercise (ceiling capped, top not) agrees too', () => {
+    const capped = { floor: 1200, top: 1200 };
+    for (let food = 0; food <= 2000; food += 1) {
+      const { spend } = priceLadder({ food, exercise: 300, maintenance: 1100, range: capped });
+      const { zone } = zoneFor({ food, exercise: 300, maintenance: 1100, range: capped });
+      expect(family[spend], `food ${food}`).toContain(zone);
+    }
+  });
 });
 
 describe('priceOf — a portion split across the tiers it lands in', () => {
@@ -109,5 +118,21 @@ describe('priceOf — a portion split across the tiers it lands in', () => {
   it('nothing added costs nothing', () => {
     expect(priceOf(day(1470), 0)).toEqual([]);
     expect(priceOf(day(1470), -200)).toEqual([]);
+  });
+
+  it('a delta that is not a number costs nothing', () => {
+    expect(priceOf(day(1470), NaN)).toEqual([]);
+    expect(priceOf(day(1470), undefined)).toEqual([]);
+  });
+
+  it('starting past the ceiling: the rest of the deficit, then a gain', () => {
+    expect(priceOf(day(2300), 400)).toEqual([{ key: 'deficit', kcal: 302 }, { key: 'gain', kcal: 98 }]);
+  });
+
+  it('fractional food: the parts sum exactly to the rounded change', () => {
+    for (const [food, delta] of [[2695.3, 1365.2], [1000.5, 1600.5], [1470.4, 430.4], [2101.5, 500.6], [1790.6, 311.8]]) {
+      const sum = priceOf(day(food), delta).reduce((a, p) => a + p.kcal, 0);
+      expect(sum, `food ${food} + ${delta}`).toBe(Math.round(food + delta) - Math.round(food));
+    }
   });
 });

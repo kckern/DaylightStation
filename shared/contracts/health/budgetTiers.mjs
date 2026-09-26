@@ -6,12 +6,19 @@
 //   deficit  ceiling → break even    costs the day's progress
 //   (beyond break even the day is a gain)
 //
+// Every line is capped at break even, and zero-width tiers are dropped, so
+// `tiers[0]` is not necessarily 'free' (with no range there is no free tier).
+//
 // Derived from the same fields zoneFor reads, and agreeing with it
 // (budgetTiers.test.mjs sweeps both). The zone contract is unchanged: the coach,
 // nutribot and the week strip keep reading zones; the Today card reads tiers.
 
 const num = (v) => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
 
+/**
+ * @returns {{ food: number, exercise: number, floor: number, top: number, ceiling: number,
+ *   even: number|null, capped: boolean }}
+ */
 export function budgetLines({ food, exercise, maintenance, range }) {
   const ex = Math.max(0, num(exercise));
   const even = num(maintenance) > 0 ? num(maintenance) + ex : null;
@@ -19,12 +26,18 @@ export function budgetLines({ food, exercise, maintenance, range }) {
   // break even first, so no tier may run past it.
   const cap = (v) => (even == null ? v : Math.min(v, even));
   const top = num(range?.top);
+  // Negative food reads as nothing eaten.
   return {
     food: Math.max(0, num(food)), exercise: ex, floor: num(range?.floor),
     top: cap(top), ceiling: cap(top + ex), even, capped: cap(top) < top,
   };
 }
 
+/**
+ * @returns {{ lines: ReturnType<typeof budgetLines>,
+ *   tiers: Array<{ key: 'free'|'workout'|'deficit', from: number, to: number, used: number, left: number }>,
+ *   spend: 'free'|'workout'|'over'|'gain', over: number, gain: number }}
+ */
 export function priceLadder(budget) {
   const L = budgetLines(budget);
   const bounds = [
@@ -61,7 +74,9 @@ export function priceOf(budget, delta) {
     ...tiers.map(({ key, from, to }) => ({ key, from, to })),
     { key: L.even == null ? 'over' : 'gain', from: L.even ?? L.ceiling, to: Infinity },
   ];
+  // Round the boundaries, not each share, so the parts sum exactly to the
+  // rounded change (Math.round(Infinity) stays Infinity; min clips it).
   return spans
-    .map(({ key, from, to }) => ({ key, kcal: Math.round(Math.max(0, Math.min(end, to) - Math.max(start, from))) }))
+    .map(({ key, from, to }) => ({ key, kcal: Math.max(0, Math.round(Math.min(end, to)) - Math.round(Math.max(start, from))) }))
     .filter(p => p.kcal > 0);
 }
