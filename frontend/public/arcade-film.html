@@ -78,6 +78,25 @@
   body.stale #clock{color:#9aa4b2;animation:none}
   body.stale #label::after{content:" — no contact";color:#ff8a4c}
 
+  /* ETCHED: the bezel asked for its clock to be printed on the art itself — no
+     panel, no border, no shadow, no rising animation; the bezel's own ink colour
+     with a faint highlight beneath, the way moulded-plastic printing catches
+     light. The zone was measured as flat art, which is what makes a box
+     unnecessary. */
+  #banner.etched{background:transparent;border:none;border-radius:0;box-shadow:none;padding:0;
+    color:var(--ink,#30334a);gap:calc(var(--u) * .6)}
+  #banner.etched.show{animation:etch-in .8s ease-out both}
+  @keyframes etch-in{from{opacity:0}to{opacity:1}}
+  #banner.etched.stacked{border-left:none;align-items:flex-start;text-align:left}
+  #banner.etched.stacked .timer{text-align:left}
+  #banner.etched #av, #banner.etched #bar{display:none !important}
+  #banner.etched #name{font-weight:700;letter-spacing:.04em;text-shadow:0 1px 0 rgba(255,255,255,.55)}
+  #banner.etched #sub, #banner.etched #label{color:var(--ink-muted,var(--ink,#30334a));opacity:.85;
+    text-shadow:0 1px 0 rgba(255,255,255,.45)}
+  #banner.etched #clock{color:var(--ink,#30334a);text-shadow:0 1px 0 rgba(255,255,255,.6);animation:none}
+  body.stale #banner.etched{filter:none;opacity:.45}
+  body.crit #banner.etched #clock{color:#b3261e}
+
   #toast{position:absolute;top:40px;left:50%;transform:translateX(-50%);display:none;
     padding:20px 44px;border-radius:999px;font-size:38px;font-weight:600;
     background:rgba(10,12,18,.94);border:3px solid #ffd666;box-shadow:0 10px 40px rgba(0,0,0,.7)}
@@ -230,7 +249,10 @@
       p = { zone: 'fallback', toast: FALLBACK_RECT, orientation: 'stacked' };
     }
     placement = p;
-    banner.classList.remove('stacked', 'placed');
+    banner.classList.remove('stacked', 'placed', 'etched');
+    var etched = !!(p && p.style === 'etched' && p.ink);
+    document.documentElement.style.setProperty('--ink', etched ? p.ink : '');
+    document.documentElement.style.setProperty('--ink-muted', etched && p.inkMuted ? p.inkMuted : '');
     if (!p) {
       banner.style.cssText = '';
       baseU = 10; setU(baseU);
@@ -252,6 +274,7 @@
     setU(baseU);
     banner.classList.add('placed');
     if (p.orientation === 'stacked') banner.classList.add('stacked');
+    if (etched) banner.classList.add('etched');
   }
 
   function applyFields(fields) {
@@ -385,7 +408,7 @@
 
     // Layout box, not getBoundingClientRect: the rise animation moves the banner
     // 140px for half a second, and a rect read during it is not where it rests.
-    var placed = { zone: placement ? placement.zone || null : null,
+    var placed = { zone: placement ? placement.zone || null : null, style: placement && placement.style || 'panel',
       rect: [banner.offsetLeft, banner.offsetTop, banner.offsetWidth, banner.offsetHeight],
       u: getComputedStyle(document.documentElement).getPropertyValue('--u').trim(), fits: fits(),
       shed: [].slice.call(document.querySelectorAll('.shed')).map(function (e) { return e.id; }) };
