@@ -175,6 +175,27 @@ describe('EquationStrip — the card follows the job', () => {
     expect(container.querySelector('.health-budget__ceiling-line')).toBeNull();
   });
 
+  it('a plan capped at break even: no ceiling mark, and the goal says so', () => {
+    const { container } = strip({ ...live, budget: { ...ranged, range: { floor: 1200, top: 1200 }, maintenance: 1100, food: 900, exercise: 0, net: 900, zone: 'incomplete', remaining: 300 } });
+    expect(container.querySelector('.health-budget__ceiling-line')).toBeNull();
+    expect(container.querySelector('.health-budget__goal-label').textContent).toBe('Goal · break even 1,100');
+  });
+
+  it('a story with no sub-line renders no sub element', () => {
+    // No maintenance, so no break even: over plan is the whole story.
+    strip({ ...live, budget: { ...sept25, maintenance: 0, food: 2300, net: 1989, zone: 'over', remaining: 0, status: 'over' } });
+    expect(screen.getByTestId('budget-headline').textContent).toMatch(/198\s*kcal over plan/);
+    expect(screen.queryByTestId('budget-sub')).toBeNull();
+  });
+
+  it('a missed-plan verdict carries the judge and over classes', () => {
+    strip({ budget: { ...sept25, food: 2300, net: 1989, zone: 'over', remaining: 198, status: 'over' } });
+    const headline = screen.getByTestId('budget-headline');
+    expect(headline.textContent).toBe('Missed plan by 198');
+    expect(headline.classList.contains('health-budget__headline--job-judge')).toBe(true);
+    expect(headline.classList.contains('health-budget__headline--over')).toBe(true);
+  });
+
   it('a budget without a range keeps the legacy bar', () => {
     strip({ ...live, budget: { budget: 1791, maintenance: 2291, food: 1000, exercise: 0, remaining: 791, status: 'under' } });
     expect(screen.queryByTestId('budget-ruler')).toBeNull();
