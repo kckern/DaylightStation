@@ -151,8 +151,11 @@ function windowDates(window) {
  * @param {Array<{learnerId: string, rings: number}>|null} args.standings - the roster's award-week rings (contest)
  * @param {boolean} args.contestClosed - the award week has closed
  * @param {{school: {from, to}, rings: {from, to}}} args.windows
+ * @param {{school?: boolean}} [args.unavailable] - a whole evidence source failed:
+ *   its lines are indeterminate, never read as "not done". (Rings signal the
+ *   same with `rings: null` / `standings: null`.)
  */
-export function evaluateEarnings({ ruleset, learnerId, facts, standings = null, contestClosed = false, windows }) {
+export function evaluateEarnings({ ruleset, learnerId, facts, standings = null, contestClosed = false, windows, unavailable = {} }) {
   const f = { sectionDays: [], days: [], week: null, units: [], rings: null, ...(facts ?? {}) };
   const schoolDates = windowDates(windows?.school);
   const ringDates = windowDates(windows?.rings);
@@ -170,6 +173,10 @@ export function evaluateEarnings({ ruleset, learnerId, facts, standings = null, 
     const base = { ruleId: rule.id, label: rule.label, kind: rule.kind, match: rule.match, overridden: rule.overridden, priced, ref };
     if (rule.disabled) {
       lines.push({ ...base, status: 'disabled', count: 0, amount: ZERO, evidence: [], note: 'Off for this learner' });
+      continue;
+    }
+    if (school && unavailable.school) {
+      lines.push({ ...base, status: 'indeterminate', count: 0, amount: ZERO, evidence: [], note: 'School evidence unavailable' });
       continue;
     }
     const ctx = {
