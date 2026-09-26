@@ -72,6 +72,9 @@ export function createSchoolRouter({
   teacherAgendaDispatch = null,
   launchPreviewTokens = null,
   manageCurriculumException = null,
+  // Economy earn rules, changed from the teacher console (ManageEarnRules):
+  // the rules are the economy's; this surface only gates who may edit them.
+  manageEarnRules = null,
   teacherCapabilitySessions = null,
   teacherGate = null,
   openRemediation = null,
@@ -1078,6 +1081,19 @@ export function createSchoolRouter({
     if (!cards) throw new EntityNotFoundError('learner answer sheets', 'not configured');
     res.set('Cache-Control', 'no-store').json({ schema: 'school.answer-sheets/v1',
       learnerId: req.params.learnerId, cards });
+  }));
+  // What school work pays (economy earn rules). Reads are the economy's own
+  // /api/v1/earnings; writes live HERE so the teacher capability cookie
+  // (scoped to /api/v1/school) reaches the gate like every teacher write.
+  router.put('/teacher/economy/earn-rates/:learnerId', wrap(async (req, res) => {
+    if (!manageEarnRules) throw new EntityNotFoundError('earn rules', 'not configured');
+    const { actorId = null, pin = null, patch = {} } = req.body || {};
+    res.json(await manageEarnRules.setLearnerRates({ learnerId: req.params.learnerId, patch, actorId, pin }));
+  }));
+  router.put('/teacher/economy/earn-rules', wrap(async (req, res) => {
+    if (!manageEarnRules) throw new EntityNotFoundError('earn rules', 'not configured');
+    const { actorId = null, pin = null, doc = null } = req.body || {};
+    res.json(await manageEarnRules.setHouseholdRules({ doc, actorId, pin }));
   }));
   router.post('/teacher/curriculum-exceptions', wrap(async (req, res) => {
     if (!manageCurriculumException) throw new EntityNotFoundError('curriculum exceptions', 'not configured');

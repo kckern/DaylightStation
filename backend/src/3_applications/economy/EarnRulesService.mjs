@@ -5,7 +5,7 @@
  * explained later. Authorization is the caller's job — each surface (teacher
  * console, admin, CLI) gates its own route and passes the verified actor.
  */
-import { DEFAULT_RULESET, validateRuleset, withUserOverride } from '#domains/economy/earnings/index.mjs';
+import { DEFAULT_RULESET, RULE_KINDS, validateRuleset, withUserOverride } from '#domains/economy/earnings/index.mjs';
 import { ValidationError } from '#domains/core/errors/index.mjs';
 
 export class EarnRulesService {
@@ -31,6 +31,11 @@ export class EarnRulesService {
   async get() {
     const doc = await this.#store.read();
     return validateRuleset(doc ?? DEFAULT_RULESET);
+  }
+
+  /** The rules in force plus the vocabulary an editor needs (the rule kinds). */
+  async describe() {
+    return { ruleset: await this.get(), kinds: [...RULE_KINDS] };
   }
 
   async history() {
