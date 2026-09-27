@@ -111,6 +111,28 @@ describe('clockState', () => {
     expect(state.w.flagged).toBe(false);
   });
 
+  // 2026-09-27: a game resumed from a screen's storage a month after its last
+  // move showed 739 hours on the side to move.
+  it('does not count the time a resumed game spent closed', () => {
+    const DAY = 24 * 3600 * 1000;
+    const old = [move('w', 1000), move('b', 3000)];
+    const reopened = 30 * DAY;
+    const state = clockState({ history: old, startedAt: reopened, now: reopened + 5000, turn: 'w', timing: { mode: 'up' } });
+    // White's first move predates this board opening and clamps to 0 (the
+    // clock-skew rule); what matters is that the month away counts for nothing.
+    expect(state.w.elapsedMs).toBe(5000);
+    expect(state.b.elapsedMs).toBe(2000);
+  });
+
+  it('measures the first move after a resume from the resume, not from the old last move', () => {
+    const DAY = 24 * 3600 * 1000;
+    const reopened = 30 * DAY;
+    const durations = moveDurations([move('w', 1000), move('b', 3000), move('w', reopened + 7000)], 0);
+    expect(durations).toEqual([1000, 2000, reopened + 7000 - 3000]);
+    const resumed = moveDurations([move('w', 1000), move('b', 3000), move('w', reopened + 7000)], reopened);
+    expect(resumed[2]).toBe(7000);
+  });
+
   it('runs the clock before the first move has been played', () => {
     const state = clockState({ history: [], startedAt: 0, now: 4000, turn: 'w', timing: { mode: 'up' } });
     expect(state.w.elapsedMs).toBe(4000);

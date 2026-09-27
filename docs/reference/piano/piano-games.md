@@ -708,6 +708,24 @@ Chess played by chords: every square is a chord (file = root, rank = quality), a
 is the two chords that perform it, played in order. Nothing is pointer-driven — the
 instrument is the controller.
 
+### An unfinished game belongs to one screen
+
+The live match is a checkpointed session in **that browser's** localStorage, indexed by
+`gaming:piano-chess:active:<user>` — not on the server. A reload hands the board back;
+another screen never sees it. A game left on the office display and a game left on the
+tablet are two different games, and choosing chess on either resumes that screen's own.
+
+**Resume window: 6 hours since the last move** (`RESUME_MAX_IDLE_MS` in
+`useChessAuthority.js`). Past it the session is discarded and a fresh board starts,
+logged as `chess.resume.stale-discarded {userId, idleMs, plies}`. Before 2026-09-27 there
+was no window: a month-old office game came back to a child who had just left a
+different one on the tablet.
+
+**The clock counts only open-board time.** It is derived from move timestamps
+(`chessClock.js`), and a resumed game's gap is measured from when the board reopened,
+not from the last move before it — otherwise the side to move carries every hour the
+game sat closed (739 on 2026-09-27).
+
 ### Opponent: server engine with a local fallback
 
 The opponent is served by the backend — a Stockfish WASM engine behind
