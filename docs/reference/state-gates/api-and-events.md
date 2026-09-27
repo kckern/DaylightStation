@@ -153,6 +153,16 @@ Returns declared entitlement definitions plus current binary decisions:
 }
 ```
 
+**Past periods stay in the result, as denials.** An interval entitlement such as
+`piano.games` on `school-day:YYYY-MM-DD` keeps one item per past day. School's claim for a
+day expires at that day's end, so at the boundary every past day re-evaluates to
+`decision: "denied"`, `basisState: "indeterminate"`, `degraded: true`,
+`reasons: [{code: "CLAIM_STALE"}]` — **including days the child earned**. That is not a
+record of what the day decided. A consumer asking "may this subject act now" must pick the
+active period (`period.startsAt <= now < period.endsAt`), as `useSchoolGameAccess` does. To
+audit a past day see
+[integration-and-operations.md](./integration-and-operations.md#auditing-a-past-day).
+
 ### `GET /api/v1/entitlements/:capabilityId`
 
 Returns one definition and matching decision, or `decision: null` if declared but not
@@ -248,6 +258,10 @@ and dry-evaluation failures—not only failures reached after YAML decoding.
 
 Returns current active and retracted assertions, including administrative provenance.
 This data is intentionally absent from subscriber gate, entitlement, and event payloads.
+It is also the only API that shows **what satisfied a gate**: the School producer's
+assertion carries `evidenceRef: school-completion:<state>`, which is how a granted day that
+was `complete` is told apart from one that was `no_work_today`. It keeps the last answer
+per subject and period, not the timeline, and takes no filters.
 
 ## Replay
 

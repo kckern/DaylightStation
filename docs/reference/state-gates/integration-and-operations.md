@@ -285,6 +285,35 @@ Logs may include household IDs, stable entity IDs, revisions, error codes, and c
 They must not contain credentials or unnecessarily copy administrative claim values,
 actor provenance, or evidence.
 
+## Auditing a past day
+
+"Was this child allowed games on the 22nd, and why?" has no single answer in State Gates,
+because the projection keeps only the present:
+
+- **The entitlement query lies about the past, by design.** Every finished period
+  re-evaluates to `denied` / `indeterminate` / `CLAIM_STALE` at its boundary, earned or not
+  (see [api-and-events.md](./api-and-events.md#get-apiv1entitlements)). The nightly flip
+  also lands in the journal as a granted→denied transition for every learner — it is expiry,
+  not revocation.
+- **The School producer will not republish a finished day**, so a past period cannot be
+  corrected after the fact; nothing prunes it either, so `current.yml` grows by one entry
+  per learner per day.
+- **The journal** (`GET /api/v1/state-gates/transitions`) covers at most 7 days / 500
+  entries.
+
+Reconstruct a day from the consumers instead, in this order:
+
+| Question | Source |
+|---|---|
+| What did the piano surfaces believe, and when did it change? | Log store: `"piano.school-access.verdict"` — edge-triggered per surface on `(learnerId, state, unlocked)`, 7-day retention. `context.app:piano-kiosk` is the tablet, `context.app:piano` the office display. |
+| Who was selected, and what launched? | `piano.user.select` (tablet), `launcher.user-selected` / `launcher.game-selected` / `launcher.game-exited` (office), `game.mount` / `game.unmount` (tablet), `gate.presented` / `gate.passed` (both). |
+| What work was done that day? | `school.outcome.recorded`, `school.print.scan-session-graded`, `school.piano-ceremony.satisfied` in the log store; the term grid (`GET /api/v1/school/lifecycle/learners/:id/term`) for older days. |
+| What satisfied the gate? | `GET /api/v1/admin/state-gates/assertions` — `evidenceRef: school-completion:<state>`, last answer only. |
+| Who actually played? | `data/household/gaming/log/{game}/{date}/` — one archive per match with `user_id`. |
+
+A match whose `user_id` had no `unlocked=true` verdict on that surface before its
+`gate.presented`, or whose player is in `gameAccess.disabledFor`, is a bypass.
+
 ## Migration checklist
 
 ### Producer

@@ -121,6 +121,14 @@ export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
   const schoolGameAccess = useSchoolGameAccess(currentUser ?? null, {
     schoolLearner: (users || []).find((u) => u.id === currentUser)?.schoolLearner,
   });
+  // The one answer to "may a game run for this player right now". `gamesOff`
+  // used to reach only the panel copy, so the launcher kept taking game keys
+  // behind "Games are off" and a running game was never ended by it: on
+  // 2026-09-27 a player games are disabled for was bounced once (by the
+  // school verdict's momentary `loading` on the switch), re-picked himself,
+  // and played chess — the school verdict was `complete`, and nothing else
+  // was asked. The tablet's Games mode has always checked both.
+  const gamesAllowed = !gamesOff && schoolGameAccess.unlocked;
 
   // The roster, laid out as the same row of keys the games use. It was a
   // tap-only modal — dark-on-dark and unselectable on a screen with no touch,
@@ -183,7 +191,7 @@ export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
   const { isOpen: launcherOpen, activeGameId, isHolding, dismiss, exitGame, timeoutMs, launchNonce } =
     useNoteLauncher({
       activeNotes, slots, initialGame, onRequestUser: openPicker,
-      selectionPaused: rosterNeeded || !schoolGameAccess.unlocked,
+      selectionPaused: rosterNeeded || !gamesAllowed,
       options: launcherOptions,
     });
 
@@ -245,14 +253,14 @@ export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
     requestRematch: requestOfficeRematch,
     registerCompletion: () => null,
   }), [gameGateEnabled, requestOfficeRematch]);
-  const isFullscreenGame = schoolGameAccess.unlocked && activeGameEntry?.layout === 'replace';
+  const isFullscreenGame = gamesAllowed && activeGameEntry?.layout === 'replace';
 
   // A deep link, a note struck just before a status refresh, or a player
   // switch must not leave a game alive behind the lock. Rendering is gated in
   // the same commit; this effect also clears the launcher's internal game id.
   useEffect(() => {
-    if (activeGameId && !schoolGameAccess.unlocked) exitGame('school-locked');
-  }, [activeGameId, schoolGameAccess.unlocked, exitGame]);
+    if (activeGameId && !gamesAllowed) exitGame(gamesOff ? 'games-off' : 'school-locked');
+  }, [activeGameId, gamesAllowed, gamesOff, exitGame]);
 
   // More released games than launcher keys: the extras are silently unreachable,
   // so say so rather than letting the row read as "everything is here".
@@ -264,7 +272,7 @@ export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
   // The school lock reads itself out and then goes. It is a verdict, not a
   // prompt: there is nothing to answer, and leaving it on screen turns a locked
   // afternoon into a piano that looks broken.
-  const schoolLocked = launcherOpen && !rosterVisible && !schoolGameAccess.unlocked;
+  const schoolLocked = launcherOpen && !rosterVisible && !gamesAllowed;
   useEffect(() => {
     if (!schoolLocked) return undefined;
     const timer = setTimeout(() => dismiss('school-locked-timeout'), SCHOOL_LOCK_DISMISS_MS);
@@ -490,7 +498,7 @@ export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
 
       {confirming && <PlayerConfirm userId={confirming.id} name={confirming.name} />}
 
-      {isFullscreenGame && activeGameEntry?.LazyComponent && schoolGameAccess.unlocked && (
+      {isFullscreenGame && activeGameEntry?.LazyComponent && gamesAllowed && (
         <div className="tetris-fullscreen">
           {/* This screen has no breadcrumb rail and no user chip, so a game
               opened into a board that named neither itself nor its player. */}
