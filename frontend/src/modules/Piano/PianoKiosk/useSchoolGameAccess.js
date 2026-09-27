@@ -74,11 +74,11 @@ export default function useSchoolGameAccess(learnerId, { schoolLearner } = {}) {
     try {
       getLogger().child({ component: 'piano-school-access' }).info?.(
         'piano.school-access.verdict',
-        // `state` is the field that explains the verdict: `no_work_today`
-        // unlocks games exactly as `complete` does, `not_gated` says the gate
-        // does not cover this person at all, and telling those apart is the
-        // difference between "they finished", "the gate cannot see their work"
-        // and "there was never a day to finish".
+        // `state` is the field that explains the verdict, with one limit: it
+        // is derived from the entitlement, so every `granted` reads `complete`
+        // — School's `no_work_today` never reaches this line (ask School's
+        // `/school/lifecycle/learners/:id/completion` for that). `not_gated`
+        // says the gate does not cover this person at all.
         { learnerId, state, unlocked, basisState },
       );
     } catch { /* never let observability close a gate */ }
