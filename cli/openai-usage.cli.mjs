@@ -5,9 +5,12 @@
  * ledger says we spent, so a hole in the bucket shows up as a number.
  *
  * Two sources, deliberately kept apart:
- *   - The OpenAI org API (`/v1/organization/*`): costs and token usage per
- *     project, API key, model and day. Needs an ADMIN key (`sk-admin-…`), and an
- *     admin key only sees its own org. A project key cannot read any of this.
+ *   - The OpenAI org API (`/v1/organization/*`): costs, usage (every report —
+ *     completions, images, audio, embeddings, moderations), projects/keys and
+ *     the audit log. Needs an ADMIN key (`sk-admin-…`); OpenAI serves these to
+ *     no other key type, and an admin key only sees its own org.
+ *   - The project's stored request logs (`logs`, the dashboard's Logs page):
+ *     read with a PROJECT key (the app key), which only sees its own project.
  *   - Our ledger: `<dataDir>/system/history/ai-usage/YYYY-MM.<env>.jsonl`, one
  *     row per call the app made (see AiUsageLedger). It knows nothing about
  *     other apps sharing the account.
@@ -22,8 +25,11 @@
  * Commands:
  *   whoami                 Org + project behind the app key and the admin key
  *   projects               Projects in the admin key's org, with their API keys
+ *                          and each key's owner (user or service account)
  *   costs                  Billed dollars (org API), grouped by --by
- *   usage                  Requests and tokens (org API), grouped by --by
+ *   usage                  Requests, tokens, images, audio (org API), grouped by --by
+ *   audit                  Org audit log: keys created/revoked, logins, invites…
+ *   logs                   Stored requests in the app key's project (dashboard Logs)
  *   ledger                 Our own ledger, grouped by --by
  *   reconcile              Per day: billed dollars vs ledger dollars
  *
@@ -31,12 +37,19 @@
  *   --since YYYY-MM-DD     Start date (default: first of the current month)
  *   --until YYYY-MM-DD     End date, exclusive (default: now)
  *   --by <keys>            Comma list. costs: project,line_item,key,day
- *                          usage: project,model,key,day
+ *                          usage: kind,project,model,key,day
  *                          ledger: any row field — model,endpoint,status,day,
  *                          app,feature,origin,agentId,writer
  *   --untagged             ledger: only rows no app claimed (app null),
  *                          grouped by origin — where the untagged spend came from
  *   --project <id>         Limit org reports / reconcile to one project
+ *   --kind <list>          usage: completions,images,embeddings,moderations,
+ *                          audio_speeches,audio_transcriptions (default: all)
+ *   --type <list>          audit: event types, e.g. api_key.created,api_key.deleted
+ *   --model <name>         logs: only this model
+ *   --limit <n>            audit/logs: rows to fetch (default 50)
+ *   --messages             logs: also fetch each request's input messages
+ *   --key-file <path>      logs: read with this project key instead of the app key
  *   --json                 Raw JSON output
  *
  * Keys (never pass a key value on the command line):
@@ -51,6 +64,9 @@
  *   node cli/openai-usage.cli.mjs whoami
  *   node cli/openai-usage.cli.mjs costs --since 2026-09-01 --by project,line_item
  *   node cli/openai-usage.cli.mjs usage --by day,key,model
+ *   node cli/openai-usage.cli.mjs usage --kind images --by day,key,model
+ *   node cli/openai-usage.cli.mjs audit --since 2026-09-01 --type api_key.created,api_key.deleted
+ *   node cli/openai-usage.cli.mjs logs --since 2026-09-26 --messages
  *   node cli/openai-usage.cli.mjs reconcile --since 2026-09-01
  *   node cli/openai-usage.cli.mjs ledger --by app,feature
  *   node cli/openai-usage.cli.mjs ledger --untagged
@@ -73,7 +89,7 @@ const DAY_S = 86400;
 export function parseArgs(argv) {
   const flags = { json: false };
   const positional = [];
-  const withValue = new Set(['since', 'until', 'by', 'project', 'admin-key-file']);
+  const withValue = new Set(['since', 'until', 'by', 'project', 'admin-key-file', 'kind', 'type', 'model', 'limit', 'key-file']);
   for (let i = 0; i < argv.length; i++) {
     const tok = argv[i];
     if (!tok.startsWith('--')) { positional.push(tok); continue; }
@@ -116,6 +132,57 @@ const dayOf = (unix) => new Date(unix * 1000).toISOString().slice(0, 10);
 /** Flatten org API buckets to rows carrying their bucket day. */
 export function flattenBuckets(pages) {
   return pages.flatMap(bucket => (bucket.results || []).map(r => ({ ...r, day: dayOf(bucket.start_time) })));
+}
+
+/**
+ * The org usage reports, one endpoint each. A report's results carry
+ * different measures (tokens, images, characters, seconds); `usageMeasures`
+ * puts them in one row shape so a single table can hold every kind.
+ */
+export const USAGE_KINDS = Object.freeze(['completions', 'images', 'embeddings', 'moderations', 'audio_speeches', 'audio_transcriptions']);
+
+export function usageMeasures(kind, r) {
+  return {
+    kind,
+    requests: Number(r.num_model_requests) || 0,
+    input: Number(r.input_tokens) || 0,
+    cached: Number(r.input_cached_tokens) || 0,
+    output: Number(r.output_tokens) || 0,
+    images: Number(r.images) || 0,
+    characters: Number(r.characters) || 0,
+    seconds: Number(r.seconds) || 0,
+  };
+}
+
+export function parseKinds(value) {
+  if (!value || value === 'all') return [...USAGE_KINDS];
+  const list = value.split(',').map(s => s.trim()).filter(Boolean);
+  for (const k of list) if (!USAGE_KINDS.includes(k)) throw new Error(`--kind ${k} unknown (use: ${USAGE_KINDS.join(',')})`);
+  return list;
+}
+
+/** One audit-log event as a table row: when, what, who, on what. */
+export function auditRow(e) {
+  const actor = e.actor?.type === 'session'
+    ? (e.actor.session?.user?.email || e.actor.session?.user?.id || 'session')
+    : e.actor?.type === 'api_key'
+      ? `key ${e.actor.api_key?.id || '?'}${e.actor.api_key?.type ? ` (${e.actor.api_key.type})` : ''}`
+      : (e.actor?.type || '-');
+  const detail = e[e.type] || {};
+  const target = detail.id || detail.object_id || '-';
+  const ip = e.actor?.session?.ip_address || '-';
+  return { at: new Date(e.effective_at * 1000).toISOString().replace('T', ' ').slice(0, 19), type: e.type, actor, target, project: e.project?.name || e.project?.id || '-', ip };
+}
+
+/** One stored chat completion as a table row. */
+export function logRow(c, inputText = null) {
+  const out = c.choices?.[0]?.message?.content;
+  const clip = (t) => (t == null ? '-' : String(t).replace(/\s+/g, ' ').slice(0, 60));
+  return {
+    at: new Date(c.created * 1000).toISOString().replace('T', ' ').slice(0, 19),
+    model: c.model, in: c.usage?.prompt_tokens ?? 0, out: c.usage?.completion_tokens ?? 0,
+    input: clip(inputText), output: clip(out), id: c.id,
+  };
 }
 
 /** Read ledger rows in [since, until) from every monthly file, every writer. */
@@ -303,7 +370,8 @@ async function namesFor(key) {
 // ============================================================================
 
 const COST_KEYS = { project: 'project_id', line_item: 'line_item', key: 'api_key_id' };
-const USAGE_KEYS = { project: 'project_id', model: 'model', key: 'api_key_id' };
+// `kind` is ours (which report a row came from), never sent as a group_by.
+const USAGE_KEYS = { kind: 'kind', project: 'project_id', model: 'model', key: 'api_key_id' };
 
 function pickGroups(by, allowed, fallback) {
   const list = (by || fallback).split(',').map(s => s.trim()).filter(Boolean);
@@ -351,20 +419,21 @@ export async function runCli(argv, out = console.log) {
       const rows = Object.values(names.keys).map(k => ({
         project: k.project.name, project_id: k.project.id, key: k.name, key_id: k.id,
         tail: `…${k.redacted_value?.slice(-4) ?? ''}`,
+        owner: k.owner?.type === 'service_account' ? `service:${k.owner.service_account?.name ?? k.owner.service_account?.id ?? '?'}`
+          : k.owner?.user?.email || k.owner?.user?.name || k.owner?.type || '-',
         created: dayOf(k.created_at), last_used: k.last_used_at ? dayOf(k.last_used_at) : 'never',
       }));
       for (const p of names.projects) if (!rows.some(r => r.project_id === p.id)) rows.push({ project: p.name, project_id: p.id, key: '(no keys)' });
-      return emit(rows, ['project', 'project_id', 'key', 'key_id', 'tail', 'created', 'last_used']);
+      return emit(rows, ['project', 'project_id', 'key', 'key_id', 'tail', 'owner', 'created', 'last_used']);
     }
 
     case 'costs': {
       const key = adminKey(flags);
       const list = pickGroups(flags.by, COST_KEYS, 'project,line_item');
-      // The costs endpoint groups by at most project_id + line_item; key-level
-      // cost is not offered, so --by key reads usage instead.
-      if (list.includes('key')) throw new Error('costs cannot group by key; use `usage --by key`');
+      // Key-level grouping is passed through: if OpenAI's costs report refuses
+      // api_key_id, its error says so, and `usage --by key` has the key split.
       const rows = await orgReport('costs', key, { since, until, project: flags.project, groupBy: list.filter(k => k !== 'day').map(k => COST_KEYS[k]) });
-      const names = list.includes('project') ? await namesFor(key) : null;
+      const names = list.some(k => k === 'project' || k === 'key') ? await namesFor(key) : null;
       const grouped = groupRows(rows, labelFns(list, COST_KEYS, names), { usd: r => r.amount?.value })
         .filter(r => r.usd > 0.00005).sort((a, b) => list[0] === 'day' ? a.day.localeCompare(b.day) : b.usd - a.usd);
       const total = grouped.reduce((s, r) => s + r.usd, 0);
@@ -373,13 +442,75 @@ export async function runCli(argv, out = console.log) {
 
     case 'usage': {
       const key = adminKey(flags);
-      const list = pickGroups(flags.by, USAGE_KEYS, 'project,model');
-      const rows = await orgReport('usage/completions', key, { since, until, project: flags.project, groupBy: list.filter(k => k !== 'day').map(k => USAGE_KEYS[k]) });
+      // Every report, not just completions: image generation, speech and
+      // transcription spend lands in reports of their own, and reading only
+      // completions is how an image bill goes unseen.
+      const list = pickGroups(flags.by, USAGE_KEYS, 'kind,project,model');
+      const groupBy = list.filter(k => k !== 'day' && k !== 'kind').map(k => USAGE_KEYS[k]);
+      const rows = [];
+      for (const kind of parseKinds(flags.kind)) {
+        const got = await orgReport(`usage/${kind}`, key, { since, until, project: flags.project, groupBy });
+        rows.push(...got.map(r => ({ ...r, ...usageMeasures(kind, r) })));
+      }
       const names = list.some(k => k === 'project' || k === 'key') ? await namesFor(key) : null;
-      const grouped = groupRows(rows, labelFns(list, USAGE_KEYS, names), {
-        requests: r => r.num_model_requests, input: r => r.input_tokens, cached: r => r.input_cached_tokens, output: r => r.output_tokens,
-      }).filter(r => r.requests > 0).sort((a, b) => list[0] === 'day' ? a.day.localeCompare(b.day) : b.input + b.output - a.input - a.output);
-      return emit(grouped, [...list, 'requests', 'input', 'cached', 'output']);
+      const measures = ['requests', 'input', 'cached', 'output', 'images', 'characters', 'seconds'];
+      const grouped = groupRows(rows, labelFns(list, USAGE_KEYS, names), Object.fromEntries(measures.map(m => [m, r => r[m]])))
+        .filter(r => r.requests > 0).sort((a, b) => list[0] === 'day' ? a.day.localeCompare(b.day) : b.requests - a.requests);
+      const shown = measures.filter(m => m === 'requests' || grouped.some(r => r[m] > 0));
+      return emit(grouped, [...list, ...shown]);
+    }
+
+    case 'audit': {
+      const key = adminKey(flags);
+      const limit = Number(flags.limit) || 50;
+      const params = new URLSearchParams({ limit: String(Math.min(limit, 100)) });
+      params.set('effective_at[gte]', String(toUnix(since)));
+      if (until) params.set('effective_at[lt]', String(toUnix(until)));
+      for (const t of (flags.type || '').split(',').map(s => s.trim()).filter(Boolean)) params.append('event_types[]', t);
+      if (flags.project) params.append('project_ids[]', flags.project);
+      const events = [];
+      let after = null;
+      do {
+        if (after) params.set('after', after);
+        const { body } = await getJson(`${API}/organization/audit_logs?${params}`, key);
+        events.push(...(body.data || []));
+        after = body.has_more && events.length < limit ? body.last_id : null;
+      } while (after);
+      if (flags.json) return out(JSON.stringify(events.slice(0, limit), null, 2));
+      return emit(events.slice(0, limit).map(auditRow), ['at', 'type', 'actor', 'target', 'project', 'ip']);
+    }
+
+    case 'logs': {
+      // Stored completions are a PROJECT resource: an admin key cannot list
+      // them, and a project key sees only its own project.
+      const key = flags['key-file'] ? readFileSync(flags['key-file'], 'utf8').trim() : appKey();
+      const limit = Number(flags.limit) || 50;
+      const lo = toUnix(since);
+      const hi = until ? toUnix(until) : Infinity;
+      const params = new URLSearchParams({ limit: String(Math.min(limit, 100)), order: 'desc' });
+      if (flags.model) params.set('model', flags.model);
+      const items = [];
+      let after = null;
+      do {
+        if (after) params.set('after', after);
+        const { body } = await getJson(`${API}/chat/completions?${params}`, key);
+        const page = body.data || [];
+        items.push(...page.filter(c => c.created >= lo && c.created < hi));
+        const oldest = page.at(-1)?.created;
+        after = body.has_more && items.length < limit && oldest >= lo ? body.last_id : null;
+      } while (after);
+      const picked = items.slice(0, limit);
+      const inputs = {};
+      if (flags.messages) {
+        for (const c of picked) {
+          const { body } = await getJson(`${API}/chat/completions/${c.id}/messages?limit=20`, key);
+          const user = (body.data || []).filter(m => m.role === 'user').at(-1);
+          inputs[c.id] = typeof user?.content === 'string' ? user.content : JSON.stringify(user?.content ?? null);
+        }
+      }
+      if (flags.json) return out(JSON.stringify(picked.map(c => ({ ...c, input: inputs[c.id] })), null, 2));
+      return emit(picked.map(c => logRow(c, inputs[c.id] ?? null)), ['at', 'model', 'in', 'out', 'input', 'output', 'id'],
+        `\n${picked.length} stored request(s) in the app key's project. Only requests OpenAI stored appear here (store: true, or project logging on).`);
     }
 
     case 'ledger': {

@@ -2,7 +2,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { promises as fs } from 'node:fs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { groupRows, readLedger, reconcileByDay, summarizeLedger, runCli } from './openai-usage.cli.mjs';
+import { groupRows, readLedger, reconcileByDay, summarizeLedger, runCli, usageMeasures, parseKinds, auditRow, logRow, USAGE_KINDS } from './openai-usage.cli.mjs';
 
 const roots = [];
 
@@ -130,6 +130,51 @@ describe('openai-usage CLI', () => {
       expect(lines.join('\n')).toContain('photo-log');
       expect(lines.join('\n')).toContain('Ledger total');
       vi.unstubAllEnvs();
+    });
+  });
+  describe('org reports beyond completions', () => {
+    it('puts every usage report in one row shape', () => {
+      expect(usageMeasures('images', { num_model_requests: 3, images: 12 })).toEqual({ kind: 'images', requests: 3, input: 0, cached: 0, output: 0, images: 12, characters: 0, seconds: 0 });
+      expect(usageMeasures('audio_transcriptions', { num_model_requests: 2, seconds: 90 }).seconds).toBe(90);
+      expect(usageMeasures('completions', { num_model_requests: 1, input_tokens: 10, input_cached_tokens: 4, output_tokens: 5 })).toMatchObject({ input: 10, cached: 4, output: 5 });
+    });
+
+    it('reads every usage report by default, images included', () => {
+      expect(parseKinds()).toEqual([...USAGE_KINDS]);
+      expect(parseKinds('all')).toContain('images');
+      expect(parseKinds('images,completions')).toEqual(['images', 'completions']);
+      expect(() => parseKinds('dalle')).toThrow(/--kind dalle unknown/);
+    });
+
+    it('usage reads the images report and shows image counts', async () => {
+      const root = await fs.mkdtemp(path.join(os.tmpdir(), 'openai-usage-'));
+      roots.push(root);
+      await fs.mkdir(path.join(root, 'data/system/auth'), { recursive: true });
+      await fs.writeFile(path.join(root, 'data/system/auth/openai.yml'), 'api_key: sk-proj-test\nadmin_key: sk-admin-test\n');
+      vi.stubEnv('DAYLIGHT_BASE_PATH', root);
+      const seen = [];
+      vi.stubGlobal('fetch', vi.fn(async (url) => {
+        seen.push(String(url));
+        const kind = String(url).match(/usage\/(\w+)/)?.[1];
+        const results = kind === 'images' ? [{ model: 'gpt-image-2', num_model_requests: 40, images: 40 }] : [];
+        return { ok: true, headers: new Headers(), json: async () => ({ data: [{ start_time: 1790467200, results }], has_more: false }) };
+      }));
+      const lines = [];
+      await runCli(['usage', '--since', '2026-09-27', '--by', 'kind,model'], (l) => lines.push(l));
+      vi.unstubAllGlobals(); vi.unstubAllEnvs();
+      expect(seen.some(u => u.includes('/organization/usage/images'))).toBe(true);
+      expect(seen.every(u => !u.includes('sk-'))).toBe(true);
+      expect(lines.join('\n')).toMatch(/images\s+gpt-image-2\s+40\s+40/);
+    });
+
+    it('renders an audit event with who did it and from where', () => {
+      const row = auditRow({ effective_at: 1790467200, type: 'api_key.created', actor: { type: 'session', session: { user: { email: 'owner@example.com' }, ip_address: '203.0.113.9' } }, 'api_key.created': { id: 'key_abc' }, project: { name: 'Default project' } });
+      expect(row).toEqual({ at: '2026-09-27 00:00:00', type: 'api_key.created', actor: 'owner@example.com', target: 'key_abc', project: 'Default project', ip: '203.0.113.9' });
+    });
+
+    it('renders a stored completion with clipped input and output', () => {
+      const row = logRow({ id: 'chatcmpl-1', created: 1790467200, model: 'gpt-5.5-pro', usage: { prompt_tokens: 8, completion_tokens: 2 }, choices: [{ message: { content: 'pong' } }] }, 'ping\n  ping');
+      expect(row).toEqual({ at: '2026-09-27 00:00:00', model: 'gpt-5.5-pro', in: 8, out: 2, input: 'ping ping', output: 'pong', id: 'chatcmpl-1' });
     });
   });
 });
