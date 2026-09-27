@@ -182,6 +182,15 @@ The AI-calling CLIs (`backfill-toc-offset`, `journalist-debrief-preview`,
 `node cli/openai-usage.cli.mjs ledger --by app,feature` splits spend by owner;
 `ledger --untagged` lists the rows no app claimed, grouped by origin — the
 place to look for a consumer that escaped scoping.
+The provider side of the same CLI reads OpenAI's own records: `costs`
+(billed dollars), `usage` (EVERY usage report — completions, images, audio,
+embeddings, moderations; `--kind images` for one), `audit` (key created or
+revoked, logins, with actor and IP) and `projects` (keys with their owner).
+These need an admin key (`admin_key:` in `system/auth/openai.yml`); OpenAI
+serves them to no other key type. `logs` lists the project's stored requests
+(the dashboard's Logs page) and reads with the project key. Our ledger cannot
+see spend that never went through the app: a leaked key's calls show up only
+in `usage`/`costs`, as a gap in `reconcile`.
 
 Each row also carries **`app`**, **`feature`** and **`origin`**. `app`/`feature`
 are the attribution: one shared adapter serves every app, so consumers get a
