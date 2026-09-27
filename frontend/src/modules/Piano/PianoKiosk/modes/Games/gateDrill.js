@@ -124,11 +124,17 @@ export function rungDrillProgram(spec, levelId = null, pickIndex = 0) {
    * now agree about what "a different one next time" means.
    */
   const offset = Math.abs(Math.trunc(Number(pickIndex)) || 0);
+  // A rung with more roots than sets advances a WHOLE SET'S WORTH per gate, so
+  // consecutive gates deal fresh keys; at one root per step, seven roots and
+  // three sets meant back-to-back gates shared two keys of three (2026-09-27).
+  // A rung with no more roots than sets keeps the one-root step — it deals every
+  // root every gate anyway, and only its starting key can vary.
+  const rootStep = roots.length > sets ? sets : 1;
   return {
     id: `rung:${levelId ?? 'level'}`,
     ordered: true,
     steps: Array.from({ length: sets }, (_, index) => {
-      const root = roots[(index + offset) % roots.length];
+      const root = roots[(index + offset * rootStep) % roots.length];
       // A rung that names hands advances the HAND across its sets as well as
       // the key, which is what `scale-drill-3x3` has always done: one set per
       // hand, so three sets are never three takes of the same ask. A rung that
