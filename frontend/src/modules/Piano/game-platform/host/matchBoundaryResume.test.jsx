@@ -32,7 +32,7 @@ import { checkersDefinition, checkersRuleModule } from '@shared-gaming/rulesets/
 import { createCheckpointedLocalAuthority } from '../../../Gaming/platform/authority/createCheckpointedLocalAuthority.js';
 import { useConnectFourAuthority } from '../../PianoConnectFour/useConnectFourAuthority.js';
 import { useCheckersAuthority } from '../../PianoCheckers/useCheckersAuthority.js';
-import { useChessAuthority } from '../../PianoChessGame/useChessAuthority.js';
+import { useChessAuthority, RESUME_MAX_IDLE_MS } from '../../PianoChessGame/useChessAuthority.js';
 
 const USER = 'test-user';
 const ACTOR = 'piano-player';
@@ -124,5 +124,33 @@ describe('a gated rematch never resumes the finished game', () => {
 
     expect(second.result.current.session.header.status).toBe('active');
     expect(second.result.current.session.state.history).toEqual([]);
+  });
+  it('chess: an unfinished game resumes after a short break', async () => {
+    const first = renderHook(() => useChessAuthority({ userId: USER, seed: 1 }));
+    await waitFor(() => expect(first.result.current.ready).toBe(true));
+    await act(async () => { await first.result.current.move(FOOLS_MATE[0]); });
+    first.unmount();
+
+    const second = renderHook(() => useChessAuthority({ userId: USER, seed: 1 }));
+    await waitFor(() => expect(second.result.current.ready).toBe(true));
+    expect(second.result.current.session.state.history).toHaveLength(1);
+  });
+
+  // 2026-09-27: a month-old game came back on the office display.
+  it('chess: an unfinished game idle past the resume window starts fresh', async () => {
+    const first = renderHook(() => useChessAuthority({ userId: USER, seed: 1 }));
+    await waitFor(() => expect(first.result.current.ready).toBe(true));
+    await act(async () => { await first.result.current.move(FOOLS_MATE[0]); });
+    first.unmount();
+
+    const realNow = Date.now;
+    Date.now = () => realNow() + RESUME_MAX_IDLE_MS + 60000;
+    try {
+      const second = renderHook(() => useChessAuthority({ userId: USER, seed: 1 }));
+      await waitFor(() => expect(second.result.current.ready).toBe(true));
+      expect(second.result.current.session.state.history).toEqual([]);
+    } finally {
+      Date.now = realNow;
+    }
   });
 });

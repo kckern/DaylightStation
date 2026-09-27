@@ -1,8 +1,34 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { chessRuleModule } from '@shared-gaming/rulesets/chess/ruleModule.mjs';
 import { createCheckpointedLocalAuthority, isResumableSession } from '../../Gaming/platform/authority/createCheckpointedLocalAuthority.js';
+import getLogger from '../../../lib/logging/Logger.js';
 
 const ACTOR = 'piano-player';
+
+/**
+ * How long an unfinished game stays resumable after its last move.
+ *
+ * The saved session is a reload's safety net — the tablet reloads itself many
+ * times a day — not a save slot. It lives in ONE screen's localStorage, so a
+ * game left on the office display waits there, invisible from the tablet,
+ * until the same player next opens chess on that screen. On 2026-09-27 that
+ * was a month: a child who had just left a game on the tablet was handed a
+ * different, 30-day-old board, already filed as abandoned, with 739 hours on
+ * the clock. Six hours covers an afternoon away; it does not cover tomorrow.
+ */
+export const RESUME_MAX_IDLE_MS = 6 * 60 * 60 * 1000;
+
+let cachedLogger;
+function logger() {
+  if (!cachedLogger) cachedLogger = getLogger().child({ component: 'chess-authority' });
+  return cachedLogger;
+}
+
+/** Ms since the last move landed, or null for a board nobody has moved on. */
+export function sessionIdleMs(session, now = Date.now()) {
+  const last = Number(session?.state?.history?.at?.(-1)?.logical_time);
+  return Number.isFinite(last) ? Math.max(0, now - last) : null;
+}
 
 export function useChessAuthority({ userId = 'household', initialFen, seed } = {}) {
   const authorityRef = useRef(null);
@@ -27,7 +53,14 @@ export function useChessAuthority({ userId = 'household', initialFen, seed } = {
     if (prior) {
       try {
         const priorSession = await authority.resume(prior, { participant_id: ACTOR });
-        if (isResumableSession(priorSession)) resumed = priorSession;
+        const idleMs = sessionIdleMs(priorSession);
+        if (idleMs != null && idleMs > RESUME_MAX_IDLE_MS) {
+          logger().info('chess.resume.stale-discarded', {
+            userId, idleMs, plies: priorSession?.state?.history?.length ?? null,
+          });
+        } else if (isResumableSession(priorSession)) {
+          resumed = priorSession;
+        }
       } catch { /* unreadable — start fresh */ }
       if (!resumed) localStorage.removeItem(indexKey);
     }
