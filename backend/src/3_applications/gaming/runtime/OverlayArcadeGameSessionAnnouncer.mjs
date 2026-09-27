@@ -33,6 +33,7 @@ export class OverlayArcadeGameSessionAnnouncer extends IArcadeGameSessionAnnounc
   }
 
   async started(session) {
+    this.#logger.info?.('arcade.overlay.arming', { deviceId: session.deviceId, sessionId: session.id });
     await this.#overlay.arm(session.deviceId, this.#buildUrl(session.deviceId));
   }
 
@@ -40,6 +41,7 @@ export class OverlayArcadeGameSessionAnnouncer extends IArcadeGameSessionAnnounc
   async progress() {}
 
   async ended(session) {
+    this.#logger.info?.('arcade.overlay.disarming', { deviceId: session.deviceId, sessionId: session.id });
     await this.#overlay.disarm(session.deviceId);
   }
 

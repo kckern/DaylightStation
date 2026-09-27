@@ -21,7 +21,7 @@
 import { test, expect } from '@playwright/test';
 import { FRONTEND_URL } from '#fixtures/runtime/urls.mjs';
 
-const PAPER_BG_BYTES = 243109; // frontend/src/modules/Emulator/shaders/gameboy/paper-bg.png
+const PAPER_BG_BYTES = 243109; // media/emulation/_engine/shaders/gameboy/paper-bg.png (named by the manifest)
 const CASES = [
   { title: 'Super Mario Land', preset: 'gameboy-harlequin.glslp' },
   { title: 'Pokémon Yellow', preset: 'gameboy-harlequin-color.glslp' },

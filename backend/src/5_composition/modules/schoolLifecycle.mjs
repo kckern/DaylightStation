@@ -1597,6 +1597,8 @@ export async function createSchoolLifecycle({
     // optional-chained-on-shutdown convention as `donowSchoolBridge` above.
     getLearnerDayCompletion,
     termVerdicts,
+    // A learner's work sessions (the earnings preview's per-unit evidence).
+    listLearnerSessions,
     // The house's own days off, validated once above and shared. Every surface
     // that asks "was anyone asked to work that day?" answers from THIS value —
     // the agenda, the term grid, and now the reading wall — so a vacation

@@ -47,8 +47,12 @@ only with the first confirmed playing observation.
 ## What is published
 
 Sessions are announced on both `arcade-session:<deviceId>` and the house-wide
-`arcade-game-sessions` topic as `play.session.started`, `play.session.progress` and
-`play.session.ended`. Both topics replay the current open session(s) when a
+`arcade-game-sessions` topic as `arcade.session.started`, `arcade.session.progress` and
+`arcade.session.ended` — one definition, `ARCADE_SESSION_EVENTS` in
+`shared/contracts/media/topics.mjs`. Both clocks still accept the pre-rename
+`play.session.*` names, and each logs an `unknown-event` warning for anything
+else on its topic: the 2026-09-19 rename left both clocks filtering on the old
+names, and for a week no timer rendered anywhere. Both topics replay the current open session(s) when a
 client subscribes, so a page mounting during a pause does not wait for another
 heartbeat to learn what is open.
 
@@ -110,7 +114,7 @@ does it publish `unknown` from channel `none`.
 An open session also has its own house-wide liveness owner. If any surface stops
 reporting beyond the configured tolerance (60 seconds at the normal ten-second
 poll), the durable record is settled as `lost` with only witnessed time and the
-normal `play.session.ended` event is emitted. This covers browser tabs and other
+normal `arcade.session.ended` event is emitted. This covers browser tabs and other
 push reporters as well as configured console pollers. At startup, reconciliation
 discovers every persisted device id, so a browser-only session cannot survive a
 backend restart indefinitely merely because it is absent from the ADB polling
@@ -201,7 +205,24 @@ compositing over every frame. Arming on confirmed play also means a launch that
 never produces a game puts nothing on screen.
 
 It cannot take focus or absorb input, so it sits over a running game without
-pausing it. It renders nothing when it has nothing to say, and if it loses
+pausing it.
+
+With no budget (observe-only) it counts **up**: time played, labelled
+`played`. Between the ~10-second progress messages it extrapolates only while
+the last message said the game was playing, and never more than 25 seconds past
+it; a `paused` or `unknown` message freezes the number (labelled `paused` when
+paused). Only session messages count as contact — the socket's own heartbeats
+do not — so a backend that stops publishing turns the film grey after 45
+seconds, and the next message restarts the clock. The timer field is always
+shown, whatever the overlay config lists. A system with no bezel placement gets
+a small pill in the top-right corner rather than a full-width bar across the
+bottom of the game. Past an hour the clock reads `h:mm:ss`.
+
+The film has no bundle, so it ships its own logs over its socket as
+`arcade.film.*` (`context.app: arcade-film`): `loaded`, `subscribed`, `shown`
+(clock, label, state, zone, rect, fit, shed), a `sample` once a minute,
+`stale` / `recovered`, `disconnected`, `ended`, and `unknown-event` /
+`handler-failed` / `page-error`. It renders nothing when it has nothing to say, and if it loses
 contact it visibly degrades instead of continuing to tick: a frozen clock that
 still looks authoritative would tell a child they have time they may not.
 
@@ -209,7 +230,10 @@ Startup clears any overlay on a device with no open session, so a process that
 died mid-session cannot leave a countdown on the family television.
 
 The browser emulator subscribes to its own `arcade-session:<deviceId>` feed and
-draws the same server-authoritative clock directly in its React tree. It never
+draws the same server-authoritative clock directly in its React tree. It follows the
+same count-up and freeze rules, labels the number `played` / `paused` /
+`offline`, and logs `arcade.clock.*` (`subscribed`, `first-message`, `stale`,
+`fresh`, `ended`, `unknown-event`). It never
 uses the Android device overlay. Paused messages freeze that clock, and a stale
 feed is labelled offline rather than continuing to extrapolate.
 
@@ -225,6 +249,13 @@ The HTTP surface is available under `/api/v1/arcade-game-sessions`:
 | `GET /usage?since=<ISO>&until=<ISO>` | Played-time rollups across devices |
 | `GET /health` | Tracker state, failures, degraded/unrecordable status, blocked devices, and open-session monitor health |
 | `GET /placement[?system=<id>]` | Validated countdown geometry |
+
+What each clock was told is in the log store as `arcade.session.published`
+(sessionId, playedMs, state, system, placement zone, display name): every
+started/ended and every change of state at once, steady progress once a minute
+per device. The overlay logs `arcade.overlay.arming` / `armed` (with the URL) /
+`disarming` / `disarmed`. The deploy gate blocks while `GET /open` lists any
+session, on either surface.
 
 For live consumers, subscribe to `arcade-game-sessions` for the house or
 `arcade-session:<deviceId>` for one surface. Every progress message is

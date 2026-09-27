@@ -17,6 +17,9 @@ export default function SummaryItem({ item, onRespond = () => {}, onLearnMore = 
     <section className="wl-item wl-summary" aria-label="Done">
       <h2>All done for today</h2>
       <p>{item.quizzed} {item.quizzed === 1 ? 'word' : 'words'} quizzed</p>
+      {/* New words were planned and none came (a catch-up day). Say so, and
+          point at the one button that gets them now (2026-09-26). */}
+      {item.newWordsHeld && <p className="wl-summary__held">{canLearnMore ? 'New words next time — or tap Learn more words.' : 'New words next time.'}</p>}
       <div className="wl-controls">
         <TouchButton variant="secondary" keyHint="1" disabled={busy} onClick={more}>Practise more</TouchButton>
         {canLearnMore && <TouchButton variant="secondary" keyHint="2" disabled={busy} onClick={learnMore}>Learn more words</TouchButton>}

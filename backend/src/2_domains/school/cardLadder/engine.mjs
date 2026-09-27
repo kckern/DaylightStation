@@ -383,7 +383,7 @@ export function currentItem(ctx) {
   if (drill) return drillItem(ctx, drill);
   const round = openRound(ctx);
   if (round) return itemForRound(ctx, round);
-  if (!ctx.dayFile.doneAt || !ctx.dayFile.summarySeen) return { id: 'summary', type: 'summary', quizzed: quizzedCount(ctx.dayFile), doneToday: true, learnMore: extraFor(ctx).length };
+  if (!ctx.dayFile.doneAt || !ctx.dayFile.summarySeen) return { id: 'summary', type: 'summary', quizzed: quizzedCount(ctx.dayFile), doneToday: true, learnMore: extraFor(ctx).length, newWordsHeld: newWordsHeld(ctx) };
   const run = openPractice(ctx);
   if (run) return practiceItem(ctx, run);
   return menuItem(ctx);
@@ -414,6 +414,28 @@ function menuItem(ctx) {
   const writeHelp = [true, false].filter((help) => runs({ mode: 'write', help }));
   const modes = PRACTICE_MODES.filter((mode) => (mode === 'say' ? sayHelp.length > 0 : runs({ mode })));
   return { id: 'menu', type: 'menu', modes, sayHelp, writeHelp, quizzed: quizzedCount(ctx.dayFile), learnMore: extraFor(ctx).length };
+}
+
+/**
+ * The day planned new words (its at-open allowance and the fresh pool could
+ * make a round of at least 2 — the start card's own rule) and none has been
+ * met in any round yet. Review
+ * misses fill the working set and a catch-up round comes first, so the day
+ * can end without the new words the agenda named (2026-09-26). The summary
+ * says "new words next time" and the catch-up round says why. Pure.
+ */
+export function newWordsHeld(ctx) {
+  const dayFile = ctx?.dayFile;
+  if (!dayFile || !ctx.status || (dayFile.atOpen?.newAllowance ?? 0) < 2) return false;
+  if ((dayFile.rounds ?? []).some((round) => round.newWords?.length > 0)) return false;
+  // Mirror the preview's promise (`introPreview`): new words are promised only
+  // when the allowance AND the fresh pool both reach 2, since `planNextRound`
+  // never makes a round of one. One word left was never promised, so it is
+  // never "held" either.
+  const words = ctx.status.words ?? {};
+  const rounded = roundedToday({ rounds: dayFile.rounds ?? [] });
+  const fresh = (ctx.pool ?? []).filter((id) => (words[id]?.state ?? 'new') === 'new' && !rounded.has(id) && !isExcluded(words[id])).length;
+  return Math.min(dayFile.atOpen.newAllowance, fresh) >= 2;
 }
 
 // The words one more Learn more round would introduce (none left: []).

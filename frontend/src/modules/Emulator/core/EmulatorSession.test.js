@@ -439,4 +439,43 @@ describe('createEmulatorSession.start custom shaders', () => {
     await s.start({ mount: {} });
     expect(engine.boot).toHaveBeenCalledWith(expect.objectContaining({ shaders }));
   });
+
+  const SHADERS = Object.freeze({
+    'dm.glslp': Object.freeze({ shader: { type: 'text', value: 's' }, resources: [], binaries: {} }),
+  });
+  const gameWithTextures = {
+    ...GAME,
+    presentation: { ejs_shader: 'dm.glslp', ejs_shader_textures: { 'bg.png': 'shaders/dm/bg.png' } },
+  };
+  const startWith = async (fetchBytes, logger) => {
+    const engine = makeEngine();
+    const s = createEmulatorSession({
+      engine,
+      mixer: makeMixer(),
+      governanceGate: makeGate(),
+      game: gameWithTextures,
+      engineConfig: { pathtodata: '/engine/', shaders: SHADERS },
+      scheduler: makeScheduler(),
+      logger,
+      deps: { createWramCalibrator: () => ({ calibrate: async () => null }), fetchBytes },
+    });
+    await s.start({ mount: {} });
+    return engine.boot.mock.calls[0][0].shaders;
+  };
+  const quietLogger = () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() });
+
+  it('fetches the textures the manifest names and hands their bytes to the engine', async () => {
+    const fetchBytes = vi.fn(async () => ({ ok: true, arrayBuffer: async () => new Uint8Array([0x89, 0x50]).buffer }));
+    const shaders = await startWith(fetchBytes, quietLogger());
+    expect(fetchBytes).toHaveBeenCalledWith('/engine/shaders/dm/bg.png');
+    expect(Array.from(shaders['dm.glslp'].binaries['bg.png'])).toEqual([0x89, 0x50]);
+    expect(SHADERS['dm.glslp'].binaries).toEqual({});
+  });
+
+  it('drops the preset and logs an error when a texture does not arrive', async () => {
+    const logger = quietLogger();
+    const shaders = await startWith(vi.fn(async () => ({ ok: false, status: 404 })), logger);
+    expect(shaders['dm.glslp']).toBeUndefined();
+    expect(logger.error).toHaveBeenCalledWith('emulator.shader.textures-missing', expect.objectContaining({ shader: 'dm.glslp' }));
+  });
 });

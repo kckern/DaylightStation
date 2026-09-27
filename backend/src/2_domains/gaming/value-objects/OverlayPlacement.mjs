@@ -25,6 +25,8 @@ import { ValidationError } from '#domains/core/errors/index.mjs';
  */
 
 const EPSILON = 1e-6;
+const TIMER_STYLES = new Set(['panel', 'etched']);
+const INK = /^#[0-9a-fA-F]{6}$/;
 
 function requireRect(value, field) {
   if (!Array.isArray(value) || value.length !== 4) {
@@ -101,7 +103,50 @@ export function parseBezel(raw, { system = 'bezel' } = {}) {
       orientation: zone?.orientation === 'stacked' ? 'stacked' : 'wide',
     }));
   }
-  return Object.freeze({ source: raw.source ?? null, screen, zones: Object.freeze(zones) });
+  return Object.freeze({
+    source: raw.source ?? null, screen, zones: Object.freeze(zones), timer: parseTimer(raw.timer, zones, system),
+  });
+}
+
+/**
+ * How this bezel wants its play clock drawn — `timer: { zone, style, ink }`.
+ *
+ * Each bezel decides for itself: which of its measured zones reads as part of
+ * the device (the Game Boy's blank shell beside the power switch, not the strip
+ * under its screen), and whether the clock is a floating `panel` or `etched` —
+ * ink printed straight onto the art, coloured like the bezel's own lettering.
+ * The same keys are meant for the browser arcade's manifest, whose artwork (and
+ * so geometry) differs but whose vocabulary need not.
+ */
+function parseTimer(raw, zones, system) {
+  if (!raw) return null;
+  const where = `${system}.timer`;
+  if (raw.zone != null && !zones.some((z) => z.name === raw.zone)) {
+    throw new ValidationError(`${where}.zone names no zone (${raw.zone})`, {
+      code: 'TIMER_ZONE_UNKNOWN', field: where, value: raw.zone,
+    });
+  }
+  const style = raw.style ?? 'panel';
+  if (!TIMER_STYLES.has(style)) {
+    throw new ValidationError(`${where}.style must be panel or etched`, {
+      code: 'TIMER_STYLE_INVALID', field: where, value: style,
+    });
+  }
+  for (const key of ['ink', 'ink_muted']) {
+    if (raw[key] != null && !INK.test(String(raw[key]))) {
+      throw new ValidationError(`${where}.${key} must be a #rrggbb colour`, {
+        code: 'TIMER_INK_INVALID', field: `${where}.${key}`, value: raw[key],
+      });
+    }
+  }
+  if (style === 'etched' && raw.ink == null) {
+    throw new ValidationError(`${where}: an etched timer needs an ink colour`, {
+      code: 'TIMER_INK_REQUIRED', field: where,
+    });
+  }
+  return Object.freeze({
+    zone: raw.zone ?? null, style, ink: raw.ink ?? null, inkMuted: raw.ink_muted ?? null,
+  });
 }
 
 /**
@@ -117,13 +162,17 @@ export function parseBezel(raw, { system = 'bezel' } = {}) {
  */
 export function choosePlacement(bezel, { prefer = null } = {}) {
   if (!bezel?.zones?.length) return null;
-  const chosen = (prefer && bezel.zones.find((z) => z.name === prefer)) || bezel.zones[0];
+  const want = prefer ?? bezel.timer?.zone ?? null;
+  const chosen = (want && bezel.zones.find((z) => z.name === want)) || bezel.zones[0];
   return Object.freeze({
     zone: chosen.name,
     box: chosen.box,
     toast: chosen.toast,
     orientation: chosen.orientation,
     screen: bezel.screen,
+    style: bezel.timer?.style ?? 'panel',
+    ink: bezel.timer?.ink ?? null,
+    inkMuted: bezel.timer?.inkMuted ?? null,
   });
 }
 

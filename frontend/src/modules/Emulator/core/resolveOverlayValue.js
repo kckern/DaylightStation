@@ -65,7 +65,9 @@ export function formatOverlayValue(format, value) {
     const text = (value && typeof value === 'object') ? String(value.text ?? '--:--') : String(value);
     const urgency = (value && typeof value === 'object') ? (value.urgency ?? null) : null;
     const stale = !!(value && typeof value === 'object' && value.stale);
-    return { kind: 'stat', text, unit: '', urgency, stale };
+    // "played" / "paused" / "remaining" — a bare number is not a clock a child can read.
+    const unit = (value && typeof value === 'object' && value.label) ? String(value.label) : '';
+    return { kind: 'stat', text, unit, urgency, stale };
   }
   if (Object.prototype.hasOwnProperty.call(STAT_UNITS, format)) {
     // Numeric stats round; a non-numeric value (e.g. the coin placeholder "—")

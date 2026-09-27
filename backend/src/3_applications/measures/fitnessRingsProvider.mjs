@@ -47,6 +47,32 @@ export function createFitnessRingsProvider({ sessions, timezone = 'UTC' }) {
       }
       return sum;
     },
+
+    /**
+     * Every asked learner's rings from sessions STARTED in `[fromMs, toMs)` —
+     * the economy's ring award week (Mon 04:00 → Sat 12:00, taxonomy D10),
+     * which is an instant window, not whole study days. One listing for the
+     * whole roster; a learner with no session reads 0.
+     * @returns {Promise<Array<{learnerId: string, rings: number}>>}
+     */
+    async standings({ learnerIds = [], fromMs, toMs }) {
+      // List the study days the window touches, one day early for margin,
+      // then keep only sessions whose start falls inside the instant window.
+      const firstDay = studyDayFor(new Date(fromMs), { timezone });
+      const from = new Date(Date.parse(`${firstDay}T00:00:00Z`) - 86_400_000).toISOString().slice(0, 10);
+      const to = studyDayFor(new Date(toMs - 1), { timezone });
+      const all = await sessions.listSessions({ from, to });
+      const totals = new Map(learnerIds.map((id) => [id, 0]));
+      for (const session of all ?? []) {
+        const start = typeof session.startTime === 'number' ? session.startTime : Date.parse(session.startTime ?? '');
+        if (!Number.isFinite(start) || start < fromMs || start >= toMs) continue;
+        for (const id of learnerIds) {
+          const rings = session.participants?.[id]?.rings;
+          if (Number.isFinite(rings)) totals.set(id, totals.get(id) + rings);
+        }
+      }
+      return learnerIds.map((learnerId) => ({ learnerId, rings: totals.get(learnerId) }));
+    },
   };
 }
 

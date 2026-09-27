@@ -9,6 +9,7 @@
  *   /fitness/show/:id            → show view
  *   /fitness/play/:id            → play view
  *   /fitness/module/:id          → module view
+ *   /fitness/games/:system/:game → arcade, launching that game past the admin gate (testing)
  *   /fitness/users               → users view
  *
  * Query parameters:

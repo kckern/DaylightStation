@@ -537,3 +537,6 @@ The corollary bit twice in this sweep: `feat/teacher-workspace-ia` and `feature/
 | 2026-09-25 | feature/health-budget-food-axis | ce2a67941 | Health budget ruler on a food axis (merged) |
 | 2026-09-25 | feature/health-exercise-rows | 804f90daf | Health Today: compact half-width exercise rows, hover card |
 | 2026-09-25 | fix/health-refresh-resilience | 33d63be53 | Health refresh survives 502s: transient retry, no error-panel stack |
+| 2026-09-26 | fix/status-board-rest-day | aad08cdaa | Status board 'No school today' on rest days; card-ladder choice text fills buttons; gate ignores test-mode sittings (merged) |
+| 2026-09-26 | worktree-card-ladder-new-words-promise | 0c32412f8 | Card ladder 'up to N new words', catch-up hint, summary 'New words next time' (merged) |
+| 2026-09-26 | feature/school-economy-earnings | 6d38a04f4 | Weekly earnings preview (silver): earn rules, /api/v1/earnings, teacher Coins tab + roster (merged) |
