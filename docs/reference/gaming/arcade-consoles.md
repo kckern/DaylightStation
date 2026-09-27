@@ -118,6 +118,39 @@ reuse for `presentation.overlays`. Check them against `presentation.hotspots`
 before using them: the Genesis bottom band's toast rect overlaps the wordmark
 that carries the exit hotspot, so the coins slot is trimmed to sit beside it.
 
+### Where the play clock goes: `bezel.timer`
+
+By default the Shield's timer film takes a bezel's first zone. A bezel can say
+where and how its clock is drawn instead:
+
+```yaml
+bezel:
+  timer:
+    zone: shell-top-left   # a name from zones[] — chosen by eye, not by order
+    style: etched          # etched: ink printed on the art | panel: the dark box
+    ink: '#30334a'         # required for etched: the bezel's own print colour
+    ink_muted: '#5b5f7a'   # optional: system label and "played"
+  zones:
+    - name: shell-top-left
+      ...
+```
+
+`etched` draws no panel, border or shadow — just the text in `ink`, with a faint
+highlight beneath, so it reads as lettering on the plastic. It needs a zone that
+really is flat (measure the variance) and an ink sampled from the art's own
+printing; the Game Boy's comes from its "Nintendo GAME BOY" logo. A `timer`
+naming an unmeasured zone, an unknown style, a malformed ink, or an etched style
+with no ink fails validation and the system is dropped with
+`arcade.bezel.invalid`. Only `gb`/`gbc` are etched so far; the rest use `panel`.
+
+Check a change by rendering the film on the composited border at **960×540 CSS
+px, device pixel ratio 2** — that is the layout the Shield's WebView gives the
+film, and text that fits at 1920×1080 does not necessarily fit there.
+
+The browser arcade's manifest should use the same keys (`presentation.timer`)
+when its badge gets the same treatment; its geometry differs, because its
+`bezel.png` is different art.
+
 Where an overlay `.cfg` declares button positions, convert those rather than
 hunting for engravings in the art — they are the authored coordinates of the
 D-pad and face buttons, and they land on the artwork by construction.

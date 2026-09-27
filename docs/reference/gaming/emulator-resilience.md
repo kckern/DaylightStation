@@ -108,8 +108,15 @@ unknown name) still has the grid to fall back on.
 `engine.applyShader()` writes the preset into the core's filesystem through
 `enableShader`. The built-ins are embedded in the vendored `emulator.min.js`
 (`EJS_SHADERS`); ours are bundled with the frontend and registered at boot as
-`EJS_shaders` (`engineConfig.shaders` → `loadEmulatorJS`). Their PNG textures
-take a side road: EmulatorJS's resource path `atob()`s a base64 value into a
+`EJS_shaders` (`engineConfig.shaders` → `loadEmulatorJS`). Only the shader
+*text* is in the repo. Its PNG textures are bitmaps, so they live on the media
+mount under `media/emulation/_engine/` and the console manifest names them:
+`presentation.ejs_shader_textures` maps the file name the preset reads to a path
+under the engine route (`GET /api/v1/emulator/engine/<path>`). `EmulatorSession`
+fetches them before boot and attaches the bytes to the preset. If any texture
+fails to arrive, it logs `emulator.shader.textures-missing` (error) and drops the
+preset, so the picture runs unfiltered instead of sampling textures that are not
+there. The bytes then take a side road: EmulatorJS's resource path `atob()`s a base64 value into a
 string and `FS.writeFile` UTF-8-encodes strings, corrupting every byte ≥ 0x80,
 so the engine writes texture bytes itself as a `Uint8Array` right before
 `enableShader`. Preset parameter overrides (`parameters = "..."` in the
@@ -125,6 +132,17 @@ which re-applies the stored shader choice through the same
 `handleSpecialOptions('shader', …)` path and would overwrite an early call.
 `engine.getAppliedShader()` is the read-back — the preset's presence in the
 core's filesystem, not the fact that `enableShader` returned.
+
+**It is then applied a second time, after `confirmFirstFrame`.** When `started`
+flips, the core's video viewport is still 0×0. A preset with a viewport-scaled
+pass (Harlequin's `scale_type0 = viewport`) therefore builds a zero-size
+framebuffer, and every frame draws black (`Framebuffer is incomplete: Attachment
+has zero size` in the console). The preset file is still in `/shader`, so the
+barrier's read-back passes. The same call one frame later renders correctly
+(measured 2026-09-25). The second apply logs
+`emulator.picture-shader.post-frame-apply`. **The read-back cannot see this
+failure, so a picture-shader change is verified by looking at a screenshot**
+(see Verification).
 
 **An effect that warps the picture has to be `ejs_shader`, and cannot be built
 outside the core.** The core's canvas is created with
@@ -209,3 +227,14 @@ Three layers, because unit tests alone cannot see this class of bug:
 Unit tests all mock the EmulatorJS instance, so they pass whether or not the real
 integration works. Only the smoke test observes the actual contract. When changing
 anything in this document, run it.
+
+**Direct launch for testing: `/fitness/games/:system/:game`.** This opens the
+arcade and boots the game straight past the admin fingerprint gate, so a render
+can be checked from any browser or headlessly. It skips the gate only. The game
+segment matches id or title loosely: `/fitness/games/gb/SuperMarioLand` finds
+`super-mario-land`, never `-land-2`. Every use logs
+`fitness-emulator.direct-launch` at warn, and an unknown game logs
+`.direct-launch.not-found`. Add `?nokiosk` in a non-kiosk browser. Headlessly,
+launch Chromium with `--use-gl=angle --use-angle=swiftshader
+--enable-unsafe-swiftshader` so the core gets WebGL, and give it ~12 s after
+`EJS_emulator.started` before the screenshot.

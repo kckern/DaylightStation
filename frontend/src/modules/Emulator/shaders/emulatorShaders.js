@@ -1,8 +1,9 @@
 // emulatorShaders.js — the picture-shader presets the arcade registers with
 // EmulatorJS at boot. A manifest names one in `presentation.ejs_shader`.
 //
-// Asset imports live here, and only here: `?raw` for shader text, `?inline`
-// for the textures (a data: URI, decoded to bytes by buildShaderEntry).
+// Shader text is source, imported here with `?raw`. The textures are bitmaps:
+// they live on the media mount, the console manifest names them
+// (`presentation.ejs_shader_textures`), and EmulatorSession fetches them at boot.
 
 import { buildShaderEntry } from './customShaders.js';
 import presetMono from './gameboy/gameboy-harlequin.glslp?raw';
@@ -12,8 +13,6 @@ import pass1 from './gameboy/gb-pass1.glsl?raw';
 import pass2 from './gameboy/gb-pass2.glsl?raw';
 import pass3 from './gameboy/gb-pass3.glsl?raw';
 import pass4 from './gameboy/gb-pass4.glsl?raw';
-import paperBg from './gameboy/paper-bg.png?inline';
-import gbpPalette from './gameboy/gbp-palette.png?inline';
 
 /** Harlequin dot matrix, palette mode — the Game Boy. */
 export const GAMEBOY_HARLEQUIN = 'gameboy-harlequin.glslp';
@@ -27,12 +26,8 @@ const GAMEBOY_PASSES = [
   ['gb-pass3.glsl', pass3],
   ['gb-pass4.glsl', pass4],
 ];
-const GAMEBOY_TEXTURES = [
-  ['paper-bg.png', paperBg],
-  ['gbp-palette.png', gbpPalette],
-];
 
 export const EMULATOR_SHADERS = Object.freeze({
-  [GAMEBOY_HARLEQUIN]: buildShaderEntry({ preset: presetMono, passes: GAMEBOY_PASSES, textures: GAMEBOY_TEXTURES }),
-  [GAMEBOY_HARLEQUIN_COLOR]: buildShaderEntry({ preset: presetColor, passes: GAMEBOY_PASSES, textures: GAMEBOY_TEXTURES }),
+  [GAMEBOY_HARLEQUIN]: buildShaderEntry({ preset: presetMono, passes: GAMEBOY_PASSES }),
+  [GAMEBOY_HARLEQUIN_COLOR]: buildShaderEntry({ preset: presetColor, passes: GAMEBOY_PASSES }),
 });

@@ -11,6 +11,7 @@ import FitnessPlayer from '../modules/Fitness/player/FitnessPlayer.jsx';
 import HRSimTrigger from '../modules/Fitness/nav/HRSimTrigger.jsx';
 import FitnessModuleContainer from '../modules/Fitness/player/FitnessModuleContainer.jsx';
 import { getModuleManifest } from '../modules/Fitness/index.js';
+import { parseDirectLaunch } from '../modules/Fitness/widgets/EmulatorGame/directLaunch.js';
 import { VolumeProvider } from '../modules/Fitness/nav/VolumeProvider.jsx';
 import { FitnessProvider } from '../context/FitnessContext.jsx';
 import getLogger, { configure as configureLogger } from '../lib/logging/Logger.js';
@@ -1409,6 +1410,11 @@ const FitnessApp = () => {
       setCurrentView('show');
     } else if (view === 'module' && id) {
       setActiveModule({ id });
+      setCurrentView('module');
+    } else if (view === 'games' && id) {
+      // /fitness/games/:system/:game — testing deep link into the arcade; the
+      // emulator widget launches the game past its admin gate (and logs it).
+      setActiveModule({ id: 'emulator', config: { directLaunch: parseDirectLaunch(id) } });
       setCurrentView('module');
     } else if (view === 'play' && id) {
       handlePlayFromUrl(id, { nogovern });

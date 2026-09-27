@@ -17,6 +17,13 @@ describe('teacher workspace URL model', () => {
     });
   });
 
+  it('parses the Coins tab for a learner and the Coins roster section', () => {
+    expect(parseTeacherPath('/school/teacher/students/user_4/coins')).toMatchObject({ kind: 'learner', section: 'coins', learnerId: 'user_4' });
+    expect(teacherLearnerPath('user_4', 'coins')).toBe('/school/teacher/students/user_4/coins');
+    expect(parseTeacherPath('/school/teacher/coins')).toMatchObject({ kind: 'section', section: 'coins' });
+    expect(parseTeacherPath('/school/teacher/coins/extra').kind).toBe('not-found');
+  });
+
   it('rejects removed rollout and legacy aliases', () => {
     expect(parseTeacherPath('/school/teacher-next/queue')).toMatchObject({ kind: 'not-found' });
     expect(parseTeacherPath('/school/teacher/records/user_4')).toMatchObject({ kind: 'not-found' });

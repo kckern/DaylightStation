@@ -11,9 +11,16 @@ see `docs/reference/gaming/emulator-resilience.md`, "Picture shaders".
 
 ## Origin and licence
 
-`gb-pass0.glsl` … `gb-pass4.glsl`, `paper-bg.png` and `gbp-palette.png` come
-from [libretro/glsl-shaders](https://github.com/libretro/glsl-shaders)
+`gb-pass0.glsl` … `gb-pass4.glsl` (here) and the textures `paper-bg.png` and
+`gbp-palette.png` (unmodified, from `resources/sample-bgs/` and
+`resources/sample-palettes/`) come from
+[libretro/glsl-shaders](https://github.com/libretro/glsl-shaders)
 `handheld/shaders/gameboy/` — Harlequin's 2013 "Game Boy" shader, GPL-3.0.
+
+The textures are bitmaps, so they are **not** in this repo. They live on the
+media mount at `media/emulation/_engine/shaders/gameboy/`, and each console
+manifest names them in `presentation.ejs_shader_textures`. `EmulatorSession`
+fetches them at boot.
 The files keep their licence headers; the GPL applies to them, not to the rest
 of this MIT repository. The Shield TV in this household runs the same shader's
 slang v1.1 (Matt Akins, 2025) through RetroArch; this is the web port of its look.

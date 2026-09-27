@@ -359,6 +359,8 @@ course; `planDailyAgenda` consults it at exactly one place, where it decides
   optional work on a Saturday is fine. A presenter therefore has a lesson to
   render on a day that is off, and must read the obligation reason rather than
   the presence of `next` to decide whether to say "no school today".
+  The Portal status board does exactly this: see
+  [A day off on the status board](./agenda-and-completion.md#a-day-off-on-the-status-board).
 - A focus day cannot displace a section that is not in session: there is
   nothing to hold back, and the extra block stays available for a subject that
   was open.

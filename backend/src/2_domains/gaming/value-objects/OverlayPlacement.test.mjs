@@ -110,3 +110,34 @@ describe('choosePlacement', () => {
     }
   });
 });
+
+describe('bezel timer (where and how each bezel draws its clock)', () => {
+  const withTimer = (timer) => ({ ...GB, timer });
+
+  it('uses the zone the bezel names, not simply the first', () => {
+    const p = choosePlacement(parseBezel(withTimer({ zone: 'left', style: 'etched', ink: '#30334a' }), { system: 'gb' }));
+    expect(p).toMatchObject({ zone: 'left', style: 'etched', ink: '#30334a' });
+  });
+
+  it('lets an explicit caller preference win over the bezel', () => {
+    const bezel = parseBezel(withTimer({ zone: 'left', style: 'etched', ink: '#30334a' }), { system: 'gb' });
+    expect(choosePlacement(bezel, { prefer: 'bottom' }).zone).toBe('bottom');
+  });
+
+  it('defaults to the panel style with no ink when a bezel says nothing', () => {
+    expect(choosePlacement(parseBezel(GB, { system: 'gb' }))).toMatchObject({ style: 'panel', ink: null });
+  });
+
+  it('refuses a timer zone the bezel does not measure', () => {
+    expect(() => parseBezel(withTimer({ zone: 'top' }), { system: 'gb' })).toThrow(/names no zone/);
+  });
+
+  it('refuses an etched timer with no ink, since there is no panel to read it against', () => {
+    expect(() => parseBezel(withTimer({ zone: 'left', style: 'etched' }), { system: 'gb' })).toThrow(/needs an ink/);
+  });
+
+  it('refuses an unknown style or a malformed ink', () => {
+    expect(() => parseBezel(withTimer({ style: 'neon', ink: '#000000' }), { system: 'gb' })).toThrow(/panel or etched/);
+    expect(() => parseBezel(withTimer({ style: 'etched', ink: 'navy' }), { system: 'gb' })).toThrow(/#rrggbb/);
+  });
+});
