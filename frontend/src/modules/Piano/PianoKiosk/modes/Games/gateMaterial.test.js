@@ -17,7 +17,7 @@ vi.mock('../../../../../lib/api.mjs', async (importOriginal) => ({
 }));
 
 const {
-  resolveGateMaterial, resolveSpec, materialOrder, keysInstance, isConfigOnlyDecline,
+  resolveGateMaterial, resolveSpec, materialOrder, keysInstance, isConfigOnlyDecline, rootsOf,
 } = await import('./gateMaterial.js');
 
 const FOUR_BARS = '<?xml version="1.0"?><score-partwise><part id="P1"/></score-partwise>';
@@ -517,5 +517,18 @@ describe('keysInstance — sets repeat a whole shape, so an arpeggio is a 3x3 to
     for (const sets of [0, -1, 'lots', null, undefined]) {
       expect(keysInstance({ kind: 'keys', notes: 3, arrangement: 'sequence', reps: 3, sets }, 0)).toEqual(plain);
     }
+  });
+});
+
+describe('rootsOf — only roots the scales bank can address', () => {
+  // 2026-09-27: flat spellings resolve to nothing in `scales/modes`, and an
+  // unresolvable ask fails open — a free match.
+  it('keeps sharp spellings and drops flats the bank does not publish', () => {
+    expect(rootsOf({ roots: ['A', 'Eb', 'E', 'F#', 'Bb'] })).toEqual(['A', 'E', 'F#']);
+  });
+
+  it('never builds a scale id for a root the bank lacks', () => {
+    const roots = rootsOf({ roots: ['Db', 'Ab'] });
+    expect(roots).toEqual([]);
   });
 });

@@ -361,6 +361,23 @@ in the same order forever: a child on `roots: ['A','E']` met A, E, A at every ga
 ever played, and said so. The rung program now takes the same rotation counter, so set one
 starts on a different root each gate and the sets walk on from there.
 
+**A rung with more roots than sets steps a whole set per gate.** With seven roots and
+three sets, a one-root step meant back-to-back gates shared two of their three keys; the
+drill now advances `sets` roots per gate when it has more roots than sets, so consecutive
+gates deal fresh keys and every root is reached within a few gates. A rung with no more
+roots than sets keeps the one-root step — it plays every root every gate regardless.
+
+**Roots and hands rotate on the same counter, so their counts matter.** Three roots with
+three hands pins each key to one hand forever (A was always right hand). Give a handed
+rung a root count that shares no factor with its hand count — seven roots over
+`[R, L, RL]` walks every key through every hand.
+
+**Roots are sharp spellings only.** `scales/modes` expands `root: values: all` to
+`C C# D D# E F F# G G# A A# B`. A flat name (`Eb`, `Bb`) addresses nothing, and an ask
+that resolves to nothing is an outage, which fails **open** — a free match. `rootsOf`
+drops an unknown root and logs `gate.config.unknown-root`; check for it after any
+repertoire edit.
+
 **"Try again" holds the material.** It is a second go at the same thing, so a retry
 reuses the attempt already on screen rather than re-picking — otherwise a child who
 missed G major and pressed the button promising another go would be handed D major. The
