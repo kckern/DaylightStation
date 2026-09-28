@@ -12,7 +12,9 @@ import getLogger from '@/lib/logging/Logger.js';
  * Separation of concerns: the Player modules know nothing about emergencies. They
  * expose a generic "external pause" interface via FitnessContext.videoPlayerPaused —
  * FitnessPlayer pauses/resumes the video on it, and FitnessMusicPlayer pauses/resumes
- * the in-workout music on it (shouldPause = videoPlayerPaused || voiceMemoOpen). This
+ * the in-workout music on it (musicVideoSync.js). The music deliberately plays through
+ * a video that is merely loading or recovering, so this controller also sets
+ * `emergencyPlaybackHold`, which silences the music unconditionally. This
  * controller is the only emergency-aware piece; it drives that generic flag, mirroring
  * MenuMusicController which ducks the ambient menu bed on the same phase.
  *
@@ -21,7 +23,7 @@ import getLogger from '@/lib/logging/Logger.js';
  */
 const EmergencyPlaybackController = () => {
   const { phase: emergencyPhase } = useIdentity();
-  const { setVideoPlayerPaused } = useFitness() || {};
+  const { setVideoPlayerPaused, setEmergencyPlaybackHold } = useFitness() || {};
   const emergencyActive = Boolean(emergencyPhase && emergencyPhase !== 'normal');
 
   const logger = useMemo(
@@ -39,14 +41,16 @@ const EmergencyPlaybackController = () => {
       if (!pausedByUsRef.current) {
         pausedByUsRef.current = true;
         setVideoPlayerPaused(true);
+        setEmergencyPlaybackHold?.(true);
         logger.info('emergency.playback_paused', { phase: emergencyPhase });
       }
     } else if (pausedByUsRef.current) {
       pausedByUsRef.current = false;
       setVideoPlayerPaused(false);
+      setEmergencyPlaybackHold?.(false);
       logger.info('emergency.playback_resumed', { phase: emergencyPhase });
     }
-  }, [emergencyActive, emergencyPhase, setVideoPlayerPaused, logger]);
+  }, [emergencyActive, emergencyPhase, setVideoPlayerPaused, setEmergencyPlaybackHold, logger]);
 
   return null;
 };

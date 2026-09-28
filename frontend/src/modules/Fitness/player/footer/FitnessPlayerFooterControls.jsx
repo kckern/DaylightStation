@@ -1,5 +1,7 @@
 import { useRef, useCallback } from 'react';
 import PropTypes from 'prop-types';
+import getLogger from '@/lib/logging/Logger.js';
+import { decideFooterPlayPause } from './footerPlayPause.js';
 import './FitnessPlayerFooterControls.scss';
 
 export default function FitnessPlayerFooterControls({
@@ -23,8 +25,27 @@ export default function FitnessPlayerFooterControls({
   const playPause = () => {
     if (playIsGoverned) return;
     const api = playerRef?.current; if (!api) return;
-    if (typeof api.toggle === 'function') { api.toggle(); return; }
-    const media = api.getMediaElement?.(); if (media) { media.paused ? api.play?.() : api.pause?.(); }
+    const media = api.getMediaElement?.() || null;
+    // A video that is loading or reloading has already been told to play, so its
+    // element reads un-paused while showing nothing. Toggling there PAUSED the
+    // loader: five presses at 06:36 on 2026-09-28, five pauses, no picture.
+    // A press on a video with no frame to show means "play".
+    const action = decideFooterPlayPause({
+      elPaused: media ? media.paused : null,
+      readyState: media ? media.readyState : null,
+      hasToggle: typeof api.toggle === 'function',
+    });
+    getLogger().info('fitness.control.press', {
+      control: 'video-play-pause',
+      action,
+      shownPaused: Boolean(isPaused),
+      elPaused: media ? media.paused : null,
+      readyState: media ? media.readyState ?? null : null,
+      currentTime: Number.isFinite(media?.currentTime) ? Math.round(media.currentTime) : null,
+    });
+    if (action === 'play') api.play?.();
+    else if (action === 'pause') api.pause?.();
+    else if (action === 'toggle') api.toggle();
   };
 
   const showNav = (hasPrev || hasNext);

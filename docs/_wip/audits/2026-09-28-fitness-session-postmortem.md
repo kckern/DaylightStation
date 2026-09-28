@@ -195,6 +195,20 @@ That work addresses 2a and part of 2c. It does **not** address the network fault
 7. **Don't let a harvester stall the event loop.** The Strava `homeMatch` step (06:05, 22 s) should yield, or run off the main loop.
 8. **Alert on WebSocket stale kills.** The server already logs `eventbus.client_stale`. A daily count jumping from ~15 to 54 was a two-day warning of today that nobody saw.
 
+## Status after the same-day fix session
+
+| # | Item | Status |
+|---|---|---|
+| 1 | Garage ↔ prod host packet loss | **Open, physical.** Re-measured at 07:10: 48% loss to the garage, 0% to the living-room Shield. Needs the cable and switch port swapped. |
+| 2 | Music silenced by a struggling video | **Fixed.** `FitnessContext.videoLoading` is set by `FitnessPlayer` from the resilience status (`startup`/`recovering`/`stalling`/`exhausted`). `musicVideoSync.js` pauses the music only for a real pause, a voice memo, or the new `emergencyPlaybackHold` (set by `EmergencyPlaybackController`, so an emergency still silences music mid-load). Governance still reads the unchanged `videoPlayerPaused`. |
+| 3 | Footer play/pause pauses a loading video | **Fixed in the consumer.** `footer/footerPlayPause.js`: a press on an un-paused element with no frame (readyState < 2) means play. The shared `toggle()` and the `isPaused: !seconds ? false` icon rule in `useCommonMediaController.js` are unchanged, so the icon still reads Pause at t=0. The press no longer does the wrong thing. |
+| 4 | Music toggle guesses its state | **Fixed.** `isPlaying` now follows the element after the press, and a press releases the video-coupling hold. |
+| 5 | Presses not logged | **Fixed.** `fitness.control.press {control: video-play-pause \| music-play-pause, …}` at info level, with the element state at the moment of the press. |
+| 6 | Abandoned streams not cancelled upstream | **Fixed.** `ProxyService` destroys the upstream request when the client closes, and never retries for a gone client. Regression test in `ProxyService.unreadableMedia.test.mjs`, verified to fail without the fix. |
+| — | NAS refusals | **Mitigated.** Proxy retry → 503, Player wait state, and the backend repair ladder. See `docs/reference/player/media-source-healing.md`. |
+| 7 | Strava harvester stalls the event loop | Open. Not part of the media work. |
+| 8 | No alert on WebSocket stale kills | Open. Not part of the media work. |
+
 ## Queries used
 
 ```bash

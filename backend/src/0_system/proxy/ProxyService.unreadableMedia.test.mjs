@@ -90,3 +90,42 @@ describe('ProxyService — Plex media file refusals', () => {
     expect(hits).toHaveLength(1);
   });
 });
+
+describe('ProxyService — an abandoned stream is cancelled upstream', () => {
+  let upstream;
+  let proxyApp;
+
+  afterEach(async () => {
+    await close(proxyApp);
+    await close(upstream);
+  });
+
+  it('closes the upstream connection when the client disconnects mid-body', async () => {
+    let upstreamClosed = null;
+    let timer;
+    upstream = await listen(http.createServer((req, res) => {
+      res.writeHead(206, { 'content-type': 'video/mp4' });
+      // A long body that trickles: the client will leave long before it ends.
+      timer = setInterval(() => res.write(Buffer.alloc(1024)), 5);
+      req.socket.on('close', () => { upstreamClosed = Date.now(); clearInterval(timer); });
+    }));
+    const service = new ProxyService({ logger: { debug() {}, warn() {}, error() {}, info() {} } });
+    service.register(new FastPlexProxyAdapter({ host: `http://127.0.0.1:${upstream.address().port}`, token: 't' }));
+    const app = express();
+    app.use('/api/v1/proxy/plex', service.createMiddleware('plex'));
+    proxyApp = await listen(http.createServer(app));
+
+    const leftAt = await new Promise((resolve, reject) => {
+      const req = http.get({ host: '127.0.0.1', port: proxyApp.address().port, path: `/api/v1/proxy/plex${PART}` }, (res) => {
+        res.once('data', () => { req.destroy(); resolve(Date.now()); });
+      });
+      req.on('error', () => {});
+      setTimeout(() => reject(new Error('no data')), 2000);
+    });
+
+    await new Promise((r) => setTimeout(r, 300));
+    clearInterval(timer);
+    expect(upstreamClosed).not.toBeNull();
+    expect(upstreamClosed - leftAt).toBeLessThan(300);
+  });
+});
