@@ -53,8 +53,9 @@ export function isProxyAdapter(obj) {
  *   Return retry configuration for this service.
  *   Default: { maxRetries: 3, delayMs: 500 }
  *
- * shouldRetry(statusCode: number, attempt: number): boolean
- *   Determine if request should be retried for given status.
+ * shouldRetry(statusCode: number, attempt: number, path: string): boolean
+ *   Determine if request should be retried for given status. `path` is the
+ *   upstream path, for adapters whose retry policy depends on what was asked for.
  *   Default: retry on 5xx errors and 429
  *
  * getTimeout(): number
@@ -71,6 +72,12 @@ export function isProxyAdapter(obj) {
  *   that advertise an asset at one path and serve it at another. Retried once,
  *   with auth re-applied; a fallback never gets its own fallback. Return null
  *   (the default) to let the error stand.
+ *
+ * getErrorReplacement(path: string, statusCode: number): { status, headers?, body } | null
+ *   On a 4xx/5xx (after retries and any fallback), answer with this status and
+ *   JSON body instead of piping the upstream error through — for upstreams whose
+ *   status misleads the client (Plex's 404 for a file it cannot READ becomes
+ *   503 source-unreadable). Return null (the default) to pass the error through.
  */
 
 export const IProxyAdapter = {
@@ -86,7 +93,8 @@ export const IProxyAdapter = {
   getRetryConfig() { return { maxRetries: 3, delayMs: 500 }; },
   shouldRetry(statusCode, attempt) { return statusCode >= 500 || statusCode === 429; },
   getTimeout() { return 30000; },
-  getFallbackPath(path, statusCode) { return null; }
+  getFallbackPath(path, statusCode) { return null; },
+  getErrorReplacement(path, statusCode) { return null; }
 };
 
 export default { IProxyAdapter, isProxyAdapter };

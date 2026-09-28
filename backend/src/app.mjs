@@ -1648,6 +1648,34 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'media-api' }),
   });
 
+  // Media source healing — when Plex refuses a file (the NAS zeroing modes,
+  // 2026-09-28), the Player asks here, waits, and resumes. media.yml `sourceHeal`
+  // holds the host SSH target and the Plex→host path map.
+  // See docs/reference/player/media-source-healing.md.
+  {
+    const { createMediaSourceRouter } = await import('./4_api/v1/routers/mediaSource.mjs');
+    const { MediaSourceHealer } = await import('./3_applications/media/MediaSourceHealer.mjs');
+    const { PlexSourceProbe } = await import('./1_adapters/content/media/plex/PlexSourceProbe.mjs');
+    const { SshMediaHostHealer } = await import('./1_adapters/media/SshMediaHostHealer.mjs');
+    const plexClient = contentRegistry?.get?.('plex')?.client ?? null;
+    const sourceHealConfig = configService.getAppConfig('media')?.sourceHeal || {};
+    const healLogger = rootLogger.child({ module: 'media-source-heal' });
+    const hostHealer = new SshMediaHostHealer(sourceHealConfig.host || {}, { logger: healLogger });
+    const mediaSourceHealer = plexClient
+      ? new MediaSourceHealer({
+        sourceProbe: new PlexSourceProbe({ client: plexClient }),
+        hostHealer: hostHealer.isConfigured() ? hostHealer : null,
+        notifier: notificationStack?.notificationService ?? null,
+        logger: healLogger,
+        config: sourceHealConfig.timing || {},
+      })
+      : null;
+    healLogger.info('media.source.heal.configured', {
+      plex: Boolean(plexClient), hostHealer: hostHealer.isConfigured(),
+    });
+    v1Routers['media-source'] = createMediaSourceRouter({ mediaSourceHealer, logger: healLogger });
+  }
+
   // Livestream engine — concrete adapters composed here, injected as factories
   const { ChannelManager } = await import('./3_applications/livestream/ChannelManager.mjs');
   const { FFmpegStreamAdapter } = await import('./1_adapters/livestream/FFmpegStreamAdapter.mjs');

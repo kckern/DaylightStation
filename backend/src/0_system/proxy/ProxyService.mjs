@@ -147,7 +147,7 @@ export class ProxyService {
         const statusCode = proxyRes.statusCode;
 
         // Check if should retry
-        const shouldRetry = adapter.shouldRetry?.(statusCode, attempt) ??
+        const shouldRetry = adapter.shouldRetry?.(statusCode, attempt, path) ??
           (statusCode >= 500 || statusCode === 429);
 
         if (shouldRetry && attempt < retryConfig.maxRetries) {
@@ -200,6 +200,31 @@ export class ProxyService {
             });
             this.#proxyWithRetry(adapter, req, res, retryConfig, timeout, 0, fallbackPath)
               .then(resolve);
+            return;
+          }
+        }
+
+        // An adapter can say an upstream error means something other than what
+        // its status says — Plex answers 404 for a media file it exists-but-
+        // cannot-read (the NAS zeroed its mode), and a 404 tells the player
+        // "gone for good". See PlexProxyAdapter.getErrorReplacement.
+        if (statusCode >= 400 && !res.headersSent) {
+          const replacement = adapter.getErrorReplacement?.(path, statusCode);
+          if (replacement) {
+            proxyRes.resume(); // discard upstream error body
+            this.#logger.warn?.('proxy.error-replaced', {
+              service: serviceName,
+              statusCode,
+              replacedWith: replacement.status,
+              reason: replacement.body?.reason ?? null,
+              attempt,
+            });
+            res.writeHead(replacement.status, {
+              'content-type': 'application/json',
+              ...(replacement.headers || {}),
+            });
+            res.end(JSON.stringify(replacement.body ?? {}));
+            resolve();
             return;
           }
         }

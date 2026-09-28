@@ -56,7 +56,12 @@ const DEFAULT_SIGNALS = Object.freeze({
   // element someone already paused is not — remounting that one would restart
   // a deliberately-paused track by itself (`<audio src autoPlay>`). Latches and
   // clears with `errorCode`.
-  errorWhilePlaying: false
+  errorWhilePlaying: false,
+  // MediaError.message alongside the code — for an HTTP failure on a direct-play
+  // src Chromium leads it with the upstream status ("404: Not Found"), which is
+  // what tells a REFUSED source from a decode error (see sourceAvailability.js).
+  // Latches and clears with `errorCode`.
+  errorMessage: null
 });
 
 /**
@@ -458,7 +463,8 @@ export function usePlaybackHealth({
         // through a rung-0 recovery, which hard-resets this element in place and
         // therefore never re-seeds. See plan decision 4a.
         errorCode: null,
-        errorWhilePlaying: false
+        errorWhilePlaying: false,
+        errorMessage: null
       });
       pausedAtMs = null;
       recordProgress('event', { details: 'playing', seconds: sampledSeconds });
@@ -490,6 +496,7 @@ export function usePlaybackHealth({
       safeUpdate({
         errorCode: code,
         errorWhilePlaying,
+        errorMessage: mediaEl.error?.message ?? null,
         playing: false,
         paused: mediaEl.paused === true
       });
@@ -540,6 +547,7 @@ export function usePlaybackHealth({
       // error stopped playback": we did not observe this element playing, so we
       // cannot claim it was interrupted.
       errorWhilePlaying: false,
+      errorMessage: mediaEl.error?.message ?? null,
       ...readReadyNetworkState()
     });
     updateBufferRunway();
