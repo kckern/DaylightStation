@@ -1557,7 +1557,7 @@ Mifflin-St Jeor:
 
 ```
 BMR  = 10·kg + 6.25·cm − 5·age + (male: +5 | female: −161)
-TDEE = BMR × activityBaseline
+TDEE = maintenanceKcal ?? (BMR × activityBaseline)
 budget = round(TDEE − weeklyRateLbs × 3500 / 7)
 budget = max(budget, round(budgetFloor))
 ```
@@ -1573,10 +1573,11 @@ A goals document (`apps/health/goals.yml`, `GET`/`PUT /api/v1/health/goals`) hol
 | `sex` | BMR offset |
 | `heightIn` | BMR |
 | `birthYear` | `ageYears` (computed at request time from the current year, not stored) |
-| `activityBaseline` | TDEE multiplier |
+| `activityBaseline` | TDEE multiplier (ignored while `maintenanceKcal` is set) |
+| `maintenanceKcal` | optional fixed break-even — replaces `BMR × activityBaseline` outright, for when the formula disagrees with what the scale does. Absent = formula. Edited as "Break even" on the Progress goals sheet |
 | `weeklyRateLbs` | the deficit subtracted from TDEE |
 | `budgetFloor` | the hard minimum |
-| `targetWeightLbs` | **display only** — the Progress weight chart's goal line; `BudgetService` never reads it |
+| `targetWeightLbs` | the Progress weight chart's goal line; also zeroes the deficit once reached, and with `targetDate` solves the deficit (`solveDailyDeficit`) |
 | `macroGoals` | **display only** — `{ proteinG, carbsG, fatG }`, grams, each a number or `null`. `null` is a *cleared* target, not a zero one: a macro with no target draws no bar. Optional; a document without the key is valid and is never backfilled |
 | `watchMicros` | **display only** — a list of `{ key, limit, direction }`, where `key` is one of `fiber`/`sugar`/`sodium`/`cholesterol`, `limit` is a positive number in that micro's stored unit (g for fiber and sugar, mg for sodium and cholesterol), and `direction` is `'ceiling'` (stay under) or `'floor'` (reach). One entry per key. Optional, on the same absent-stays-absent terms |
 
