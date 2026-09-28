@@ -143,26 +143,29 @@ container mounts it. The backend SSHes to the host with a key that
 
 ## Configuration
 
-`data/system/config/media.yml` holds the `sourceHeal` section:
+`data/system/config/media-source-heal.yml` (read with
+`configService.getAppConfig('media-source-heal')`). It is **not** in
+`media.yml`: that file is on the loader's infrastructure list and
+`getAppConfig('media')` returns nothing. The first deploy put the section there
+and booted with `hostHealer: false`.
 
 ```yaml
-sourceHeal:
-  host:
-    host: <docker bridge gateway>
-    user: <host user that owns the forced-command key>
-    privateKey: data/system/ssh/media-heal_ed25519
-    knownHostsPath: data/system/ssh/known_hosts
-    pathMap:                       # Plex container path -> host path
-      - from: /data/media/video/fitness
-        to: <media root>/Fitness
-  timing:
-    hostHealCooldownMs: 20000
-    alertAfterMs: 120000
+host:
+  host: <docker bridge gateway>
+  user: <host user that owns the forced-command key>
+  privateKey: data/system/ssh/media-heal_ed25519
+  knownHostsPath: data/system/ssh/known_hosts
+  pathMap:                       # Plex container path -> host path
+    - from: /data/media/video/fitness
+      to: <media root>/Fitness
+timing:
+  hostHealCooldownMs: 20000
+  alertAfterMs: 120000
 ```
 
 Take `pathMap` from `docker inspect plex` mounts, and update it when those
 mounts change. An unmapped path makes the host rung return `unmapped-path`, and
-the ladder carries on without it. With no `sourceHeal.host` the host rung is
+the ladder carries on without it. With no `host` section the host rung is
 skipped entirely: Plex re-checks and the push still happen, and the Player still
 waits. The boot log line `media.source.heal.configured {plex, hostHealer}` says
 which rungs are live.

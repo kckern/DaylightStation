@@ -1649,8 +1649,9 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   });
 
   // Media source healing — when Plex refuses a file (the NAS zeroing modes,
-  // 2026-09-28), the Player asks here, waits, and resumes. media.yml `sourceHeal`
-  // holds the host SSH target and the Plex→host path map.
+  // 2026-09-28), the Player asks here, waits, and resumes. system config
+  // media-source-heal.yml holds the host SSH target and the Plex→host path map
+  // (not media.yml: that one is infrastructure and getAppConfig never serves it).
   // See docs/reference/player/media-source-healing.md.
   {
     const { createMediaSourceRouter } = await import('./4_api/v1/routers/mediaSource.mjs');
@@ -1658,7 +1659,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     const { PlexSourceProbe } = await import('./1_adapters/content/media/plex/PlexSourceProbe.mjs');
     const { SshMediaHostHealer } = await import('./1_adapters/media/SshMediaHostHealer.mjs');
     const plexClient = contentRegistry?.get?.('plex')?.client ?? null;
-    const sourceHealConfig = configService.getAppConfig('media')?.sourceHeal || {};
+    const sourceHealConfig = configService.getAppConfig('media-source-heal') || {};
     const healLogger = rootLogger.child({ module: 'media-source-heal' });
     const hostHealer = new SshMediaHostHealer(sourceHealConfig.host || {}, { logger: healLogger });
     const mediaSourceHealer = plexClient
