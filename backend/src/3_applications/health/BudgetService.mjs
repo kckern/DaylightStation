@@ -58,7 +58,7 @@ function assertGoalsShape(goals) {
     if (typeof goals[key] !== 'number' || !Number.isFinite(goals[key]) || goals[key] <= 0) goalsInvalid(`${key} must be a positive number`);
   }
   if (!Number.isInteger(goals.birthYear) || goals.birthYear < 1900 || goals.birthYear > new Date().getFullYear()) goalsInvalid('birthYear must be a valid year');
-  for (const key of ['targetWeightLbs', 'activityBaseline', 'budgetFloor', 'targetBodyFatPct', 'maxWeeklyRateLbs']) {
+  for (const key of ['targetWeightLbs', 'activityBaseline', 'maintenanceKcal', 'budgetFloor', 'targetBodyFatPct', 'maxWeeklyRateLbs']) {
     if (goals[key] !== undefined && (typeof goals[key] !== 'number' || !Number.isFinite(goals[key]) || goals[key] <= 0)) goalsInvalid(`${key} must be positive`);
   }
   // Losing only: a zero or negative rate would turn the "deficit" into a surplus.
@@ -251,6 +251,8 @@ export class BudgetService {
       ageYears,
       sex: goals.sex,
       activityBaseline: Number(goals.activityBaseline ?? 1.35),
+      // A set break-even overrides BMR x activity baseline.
+      maintenanceKcal: goals.maintenanceKcal == null ? null : Number(goals.maintenanceKcal),
       budgetFloor: floor,
       deficit,
     });
