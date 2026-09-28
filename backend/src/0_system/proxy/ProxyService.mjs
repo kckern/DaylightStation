@@ -105,6 +105,10 @@ export class ProxyService {
    */
   async #proxyWithRetry(adapter, req, res, retryConfig, timeout, attempt, pathOverride = null) {
     const serviceName = adapter.getServiceName();
+    // The client already hung up (a <video> that moved on, a remount that
+    // swapped its src): nothing to fetch for, and a retry would only open
+    // another upstream stream nobody reads.
+    if (res.destroyed || res.writableEnded) return;
     const baseUrl = adapter.getBaseUrl();
     const path = pathOverride ?? (adapter.transformPath?.(req.url) || req.url);
 
@@ -143,8 +147,24 @@ export class ProxyService {
     };
 
     return new Promise((resolve) => {
+      // When the client disconnects, abort the upstream request too. Without
+      // this an abandoned media stream kept pulling from Plex until the 60s
+      // timeout — on 2026-09-28 the Player's remounts left ~2.9 GB of such
+      // orphaned transfers competing with the stream actually being watched.
+      let clientClosed = false;
+      const onClientClose = () => {
+        if (res.writableFinished) return;
+        clientClosed = true;
+        this.#logger.debug?.('proxy.client-closed', { service: serviceName, attempt });
+        proxyReq.destroy();
+        resolve();
+      };
+      res.once('close', onClientClose);
+
       const proxyReq = protocol.request(options, (proxyRes) => {
         const statusCode = proxyRes.statusCode;
+        // Stop watching the client once the upstream body is fully delivered.
+        proxyRes.once('end', () => res.removeListener('close', onClientClose));
 
         // Check if should retry
         const shouldRetry = adapter.shouldRetry?.(statusCode, attempt, path) ??
@@ -160,6 +180,7 @@ export class ProxyService {
 
           // Consume response to free up connection
           proxyRes.resume();
+          res.removeListener('close', onClientClose);
 
           setTimeout(() => {
             this.#proxyWithRetry(adapter, req, res, retryConfig, timeout, attempt + 1)
@@ -261,6 +282,7 @@ export class ProxyService {
       const isImageProxy = typeof adapter.getErrorFallback === 'function';
 
       proxyReq.on('error', (err) => {
+        if (clientClosed) return; // our own abort after the client left
         this.#logger.error?.('proxy.error', {
           service: serviceName,
           error: err.message,

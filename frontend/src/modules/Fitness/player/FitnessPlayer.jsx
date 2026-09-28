@@ -140,6 +140,9 @@ const formatTime = (seconds) => {
 
 const DEFAULT_SIDEBAR = 250;
 
+// Resilience statuses in which the video is not playing but nobody paused it.
+const VIDEO_LOADING_STATUSES = new Set(['startup', 'recovering', 'stalling', 'exhausted']);
+
 const FITNESS_MAX_VIDEO_BITRATE = null;
 
 const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false, onSessionEndRedirect = null, onSchoolAttemptClosed = null }) => {
@@ -183,6 +186,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
     sidebarSizeMode,
     videoPlayerPaused,
     setVideoPlayerPaused,
+    setVideoLoading,
     setGovernanceMedia,
     governanceState,
     plexConfig,
@@ -519,6 +523,18 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
     // metadata update.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resilienceState?.stalled, resilienceState?.status, currentItem, emitAppEvent]);
+
+  // Tell the music player when the video is struggling rather than paused, so
+  // a loading, recovering or source-unavailable video does not silence the
+  // workout music (2026-09-28: the music went down with every video failure).
+  // `paused` is deliberately excluded — a real pause still pauses the music.
+  const videoLoading = VIDEO_LOADING_STATUSES.has(resilienceState?.status);
+  useEffect(() => {
+    if (typeof setVideoLoading !== 'function') return undefined;
+    setVideoLoading(videoLoading);
+    return undefined;
+  }, [videoLoading, setVideoLoading]);
+  useEffect(() => () => { setVideoLoading?.(false); }, [setVideoLoading]);
 
   // Clear any pending debounce timer on unmount.
   useEffect(() => () => {

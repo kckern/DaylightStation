@@ -172,10 +172,14 @@ which rungs are live.
 1. Copy `scripts/media-source-heal.sh` to `~/bin/` for the host user. Re-copy it
    after changing it: the forced command runs the installed copy, not the repo.
 2. Generate an ed25519 key. Put the private half at the data-volume path above
-   (mode 600).
+   (mode 600), with the `ssh/` folder and both files **owned by the container's
+   `node` user (uid 1000)**. The backend runs as `node`, not root; a root-owned key
+   (what `docker exec … cat >` leaves) is unreadable to it, and the host rung
+   fails with `ssh-failed`.
 3. Append the public half to that user's `~/.ssh/authorized_keys`:
    `restrict,from="172.16.0.0/12",command="/home/<user>/bin/media-source-heal.sh" ssh-ed25519 AAAA… daylight-media-heal`
-4. Verify from inside the app container: `ssh -i <key> <user>@<gateway> <base64 path>`
+4. Verify as the backend's user:
+   `docker exec daylight-station su node -s /bin/sh -c 'cd /usr/src/app && ssh -i <key> -o UserKnownHostsFile=<known_hosts> <user>@<gateway> <base64 path>'`
    prints one JSON line, and any other command prints `{"ok":false,…}`.
 
 ## Observability
