@@ -13,6 +13,8 @@ import { stallJoltPlan, STALL_JOLT_GRACE_MS, STALL_JOLT_STEP_MS } from '../lib/s
 import { getRecoveryLedger, RECOVERY_MAX_ATTEMPTS } from '../lib/recoveryLedger.js';
 import { evaluatePlayheadProgress } from '../lib/playheadProgress.js';
 import { isNearEnd } from '../lib/nearEnd.js';
+import { useSourceAvailability } from './useSourceAvailability.js';
+import { sourceNoticeText } from '../lib/sourceAvailability.js';
 
 export { DEFAULT_MEDIA_RESILIENCE_CONFIG, MediaResilienceConfigContext, mergeMediaResilienceConfig } from './useResilienceConfig.js';
 export { RESILIENCE_STATUS } from './useResilienceState.js';
@@ -193,6 +195,26 @@ export function useMediaResilience({
   // durable fix is real pause provenance plumbed from the controller, tracked as
   // a follow-up; until it lands, this branch deserves worry.
   const hasMediaError = playbackHealth.hasMediaError === true;
+
+  // A REFUSED source (the server will not read the file — 2026-09-28, the NAS
+  // zeroing modes) is waited out, not recovered from: while `isUnavailable`,
+  // no recovery attempt runs and nothing is spent from the ledger. The hook
+  // polls the backend, which also tries to repair the file; `onSettled` below
+  // (wired after triggerRecovery exists) turns its answer into one reload.
+  // See lib/sourceAvailability.js and docs/reference/player/media-source-healing.md.
+  const sourceSettledRef = useRef(null);
+  const sourceAvailability = useSourceAvailability({
+    contentId: meta?.contentId || null,
+    plexId,
+    errorCode: playbackHealth.elementSignals?.errorCode ?? null,
+    errorMessage: playbackHealth.elementSignals?.errorMessage ?? null,
+    mediaType: mediaTypeHint || meta?.mediaType || null,
+    disabled,
+    onSettled: (decision) => sourceSettledRef.current?.(decision),
+  });
+  const sourceUnavailable = sourceAvailability.isUnavailable;
+  const sourceUnavailableRef = useRef(false);
+  sourceUnavailableRef.current = sourceUnavailable;
   const mediaErrorStoppedPlayback = playbackHealth.mediaErrorStoppedPlayback === true;
 
   const { targetTimeSeconds, consumeTargetTimeSeconds } = usePlaybackSession({
@@ -213,12 +235,12 @@ export function useMediaResilience({
   useEffect(() => {
     if (isSeeking) {
       setUserIntent(USER_INTENT.seeking);
-    } else if (isPaused && pauseIntent !== 'system' && !mediaErrorStoppedPlayback) {
+    } else if (isPaused && pauseIntent !== 'system' && !mediaErrorStoppedPlayback && !sourceUnavailable) {
       setUserIntent(USER_INTENT.paused);
     } else {
       setUserIntent(USER_INTENT.playing);
     }
-  }, [isPaused, isSeeking, pauseIntent, mediaErrorStoppedPlayback]);
+  }, [isPaused, isSeeking, pauseIntent, mediaErrorStoppedPlayback, sourceUnavailable]);
 
   // Stable boolean for dep array — avoids re-runs from meta object reference changes
   const hasMediaMeta = shouldArmStartupDeadline({ meta, disabled });
@@ -261,6 +283,12 @@ export function useMediaResilience({
   //   refreshUrl      — override the reason-derived URL-refresh decision.
   //   forceRemount    — escalate to a full React remount in onReload.
   const triggerRecovery = useCallback((reason, options = {}) => {
+    // Reloading cannot fix a file the server refuses to read; the source wait
+    // owns this item until it settles.
+    if (sourceUnavailableRef.current && options.sourceRestored !== true) {
+      playbackLog('resilience-recovery-deferred', { reason, cause: 'source-unavailable', ...waitKeyFields }, { level: 'debug' });
+      return;
+    }
     const bypassCooldown = options.bypassCooldown === true;
     const refreshUrl = typeof options.refreshUrl === 'boolean'
       ? options.refreshUrl
@@ -365,6 +393,45 @@ export function useMediaResilience({
     }
   }, [actions, consumeTargetTimeSeconds, waitKeyFields, meta, onReload, playbackSessionKey, waitKey, targetTimeSeconds, playbackHealth.lastProgressSeconds, seconds, initialStart]);
 
+  // How a settled source wait becomes (at most) one reload. Assigned every
+  // render so it always closes over the current triggerRecovery.
+  //   resume  — the file is readable again after a wait: a fresh ledger (the
+  //             wait was not the player's failure) and one remount at the saved
+  //             position, even from `exhausted`.
+  //   retry   — the refusal cleared before we ever waited: reload now instead
+  //             of sitting until the startup deadline.
+  //   gave-up — SOURCE_UNAVAILABLE_MAX_MS passed: the ordinary Tap to Retry.
+  sourceSettledRef.current = (decision) => {
+    if (decision === 'resume') {
+      getRecoveryLedger().userReset(playbackSessionKey);
+      exhaustedNotifiedRef.current = false;
+      triggerRecovery('source-restored', { sourceRestored: true, refreshUrl: true, forceRemount: true, bypassCooldown: true });
+    } else if (decision === 'retry') {
+      triggerRecovery('source-refusal-cleared', { refreshUrl: true });
+    } else if (decision === 'gave-up') {
+      actions.setStatus(STATUS.exhausted);
+      if (!exhaustedNotifiedRef.current) {
+        exhaustedNotifiedRef.current = true;
+        onExhausted?.({ reason: 'source-unavailable-gave-up', waitKey });
+      }
+    }
+  };
+
+  // One tick a second while waiting, for the elapsed time on the overlay.
+  const [sourceNowMs, setSourceNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    if (!sourceUnavailable) return undefined;
+    setSourceNowMs(Date.now());
+    const id = setInterval(() => setSourceNowMs(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [sourceUnavailable]);
+  const sourceNotice = sourceUnavailable
+    ? sourceNoticeText({
+      mediaType: mediaTypeHint || meta?.mediaType,
+      unavailableMs: sourceNowMs - (sourceAvailability.unavailableSince ?? sourceNowMs),
+    })
+    : null;
+
   useEffect(() => {
     // Self-contained formats (titlecard, etc.) have no media element —
     // skip resilience monitoring to avoid false startup-deadline-exceeded remounts.
@@ -372,6 +439,16 @@ export function useMediaResilience({
       if (status !== STATUS.playing) actions.setStatus(STATUS.playing);
       clearTimeout(startupDeadlineRef.current);
       startupDeadlineRef.current = null;
+      return;
+    }
+
+    // Waiting on a refused source: hold in `recovering` (so the overlay shows
+    // and a stale progressToken cannot flip us back to `playing`) with no
+    // deadline armed — the source poll decides when to reload.
+    if (sourceUnavailable) {
+      clearTimeout(startupDeadlineRef.current);
+      startupDeadlineRef.current = null;
+      if (status !== STATUS.recovering) actions.setStatus(STATUS.recovering);
       return;
     }
 
@@ -418,12 +495,22 @@ export function useMediaResilience({
     if (status === STATUS.startup || status === STATUS.recovering) {
       if (!startupDeadlineRef.current && hasMediaMeta) {
         startupDeadlineRef.current = setTimeout(() => {
-          triggerRecovery('startup-deadline-exceeded');
           startupDeadlineRef.current = null;
+          // A startup that never produced a frame may be a refused Plex file
+          // whose error the element never surfaced. Ask first; only an answer
+          // that says nothing about the source falls through to the ladder
+          // (`wait` holds, `retry`/`resume` reload via onSettled).
+          if (sourceAvailability.healable) {
+            sourceAvailability.checkNow('startup-deadline').then((decision) => {
+              if (decision === 'normal') triggerRecovery('startup-deadline-exceeded');
+            });
+            return;
+          }
+          triggerRecovery('startup-deadline-exceeded');
         }, hardRecoverLoadingGraceMs);
       }
     }
-  }, [status, playbackHealth.progressToken, playbackHealth.lastProgressSeconds, userIntent, actions, triggerRecovery, hardRecoverLoadingGraceMs, playbackSessionKey, disabled, hasMediaMeta, recoveryNonce]);
+  }, [status, playbackHealth.progressToken, playbackHealth.lastProgressSeconds, userIntent, actions, triggerRecovery, hardRecoverLoadingGraceMs, playbackSessionKey, disabled, hasMediaMeta, recoveryNonce, sourceUnavailable, sourceAvailability.healable, sourceAvailability.checkNow]);
 
   // Clean up timers on unmount or waitKey change
   useEffect(() => {
@@ -700,6 +787,11 @@ export function useMediaResilience({
 
     const fireRung = () => {
       const L = joltLatestRef.current || {};
+      // A refused source cannot be jolted back; hold the rung until it settles.
+      if (sourceUnavailableRef.current) {
+        joltTimerRef.current = setTimeout(fireRung, STALL_JOLT_STEP_MS);
+        return;
+      }
       const ledger = getRecoveryLedger();
       const declareExhausted = (attempts) => {
         playbackLog('resilience-stall-jolt-exhausted', {
@@ -798,7 +890,7 @@ export function useMediaResilience({
   // If the seek stalls beyond the grace period, buffering/stall triggers show the overlay.
   // Note: isLoopTransition still handles loop restart case
   const isExhausted = status === STATUS.exhausted;
-  const shouldShowOverlay = !isLoopTransition && !seekGraceActive && (isExhausted || isStalled || isRecovering || (isStartup && !hasEverPlayedRef.current) || isBuffering || isUserPaused);
+  const shouldShowOverlay = !isLoopTransition && !seekGraceActive && (isExhausted || isStalled || isRecovering || (isStartup && !hasEverPlayedRef.current) || isBuffering || isUserPaused || sourceUnavailable);
 
   const overlayProps = useMemo(() => ({
     status: effectiveSeeking ? 'seeking' : status,
@@ -821,9 +913,14 @@ export function useMediaResilience({
     togglePauseOverlay: () => setShowPauseOverlay(p => !p),
     isSeeking: effectiveSeeking,
     ...waitKeyFields,
-    onRequestHardReset: () => triggerRecovery('manual-reset'),
+    // While a refused source is being waited out, a tap asks again right away
+    // rather than reloading a file the server still will not read.
+    onRequestHardReset: () => (sourceUnavailable
+      ? sourceAvailability.checkNow('user-tap')
+      : triggerRecovery('manual-reset')),
     onRetryFromExhausted: retryFromExhausted,
     isExhausted,
+    sourceNotice,
     playerPositionDisplay: formatTime(Math.max(0, seconds)),
     intentPositionDisplay: (Number.isFinite(targetTimeSeconds) ? formatTime(Math.max(0, targetTimeSeconds)) : null)
       || (effectiveSeeking ? stickyIntentDisplayRef.current : null),
@@ -872,6 +969,9 @@ export function useMediaResilience({
     triggerRecovery,
     retryFromExhausted,
     isExhausted,
+    sourceNotice,
+    sourceUnavailable,
+    sourceAvailability.checkNow,
     targetTimeSeconds,
     playerPositionUpdatedAt,
     intentPositionUpdatedAt

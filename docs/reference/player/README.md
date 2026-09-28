@@ -149,6 +149,7 @@ cap-bounded). No actuator retries outside the ledger's accounting.
 | **Controller stall detection + nudge** | Soft/hard stall timers on the media element | Detection lives in `useCommonMediaController`; its only in-place actuator is a ledger-gated **nudge** (±1ms seek to kick the buffer). If the nudge is denied or fails, escalation belongs to the resilience jolt ladder — the controller has no ladder of its own |
 | **Duration-lost softReinit** | Stalled with `duration` gone (dead pipeline) | Ledger-gated soft reinit of the dash element (cooldown-bypassed, cap-bounded) |
 | **Fatal media error** | `MediaError` code 2 (`NETWORK`) or 3 (`DECODE`) mid-playback — a dead pipeline, which fires no `waiting`/`stalled` at all and can still report a full buffer | `usePlaybackHealth` exposes `hasMediaError`, which is a fourth cause in the jolt ladder's `isStuck`, so the ladder arms on a dead stream and not only a starved one. Mechanism, the pause-classification guard, and the three gaps it leaves: `README.media-resilience.md` |
+| **Refused source** | The media server will not read the file: Plex 404 on a direct-play part (NAS zeroed its mode), or the proxy's 503 `source-unreadable` | The recovery ladder stands down, and `useSourceAvailability` waits on `POST /api/v1/media-source/check`, which runs the repair ladder. The Player remounts once when the file is readable. See `media-source-healing.md` |
 | **Resilience jolt ladder** | Unrecovered stall past the grace deadline | Rung 1: `hardReset({ refreshUrl })` in place → rung 2: full renderer remount. Each rung asks the ledger; a cooldown denial reschedules the rung at `waitMs` |
 | **Stall exhaustion** | Session cap reached | Enters `exhausted`, renders the retry button; `retryFromExhausted` resets the ledger and restarts |
 | **User forceReload** | Operator reload request | Records a ledger attempt like everything else — reload-hammering lands on the exhausted overlay (which still offers retry) instead of looping raw reloads |
@@ -279,6 +280,7 @@ the encoding-resilience doc.
 
 - `docs/reference/player/playback-encoding-resilience.md` — Plex transcode decision pipeline, native-60fps direct-stream fix, MSE codec constraints
 - `docs/reference/player/hardware-decoding.md` — GPU decode/encode offload, the AMD Cezanne AV1-decode boundary, and a benchmark plan for SW vs HW transcode
+- `docs/reference/player/media-source-healing.md` — refused media files: proxy 404→503, the Player's wait state, the backend repair ladder (Plex checkFiles, host chmod over a restricted SSH key, push alert)
 - `docs/reference/player/lessons-and-gotchas.md` — recurring failure modes, breakthroughs, and traps mined from audits/bugs/plans + git history (read before changing Player code)
 - `docs/reference/media/dash-video-resilience.md` — stall/seek troubleshooting runbook (warmup, recovery seek, stale sessions)
 - `docs/reference/content/content-playback.md` — content resolution → playable → stream URL

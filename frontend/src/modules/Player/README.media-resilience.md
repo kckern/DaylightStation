@@ -359,6 +359,18 @@ scope here.
 
 ---
 
+## Refused Source — wait, don't recover
+
+A file the media server refuses to read (Plex 404 from a NAS permission burst,
+or the proxy's 503 `source-unreadable`) is **waited out**, not recovered from:
+reloading can't fix it. `useSourceAvailability` asks
+`POST api/v1/media-source/check`. While the answer is `unreadable`,
+`triggerRecovery` defers, jolt rungs are held, status stays `recovering`, and the
+overlay shows `Video file unavailable — retrying · m:ss`. When the answer comes
+back `readable`, the Player resets the ledger and runs one `source-restored`
+remount at the saved position. Full design:
+[`docs/reference/player/media-source-healing.md`](../../../../docs/reference/player/media-source-healing.md).
+
 ## Invariants — do not break these
 
 A 2026-07-10 production soak found three defects in the merged resilience refactor,

@@ -65,6 +65,7 @@ config.app-local.yml
 !scripts/camera-archive/
 !scripts/port-manager.mjs
 !scripts/dev-server.sh
+!scripts/media-source-heal.sh
 !scripts/test-env.sh
 !scripts/update-test-imports.mjs
 !scripts/migrate-lists-to-watchlists.mjs
