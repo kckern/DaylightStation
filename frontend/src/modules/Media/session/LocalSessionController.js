@@ -176,12 +176,12 @@ export function createLocalSessionController({
     //
     // Player-driven dispatches (`__playerDriven`: PLAYER_STATE,
     // PLAYER_OBSERVATION, progress UPDATE_POSITION) neither read nor clear
-    // the ambient `pendingOrigin`. It can legitimately stay staged across an
-    // await — applyWithOrigin clears it only when a routine async item
-    // action resolves — and a progress tick or a remote pause landing in
-    // that window is not that command's outcome: stamping it would change
-    // provenance even if the command later fails, and consuming it would
-    // rob the command's own synchronous tail of its origin. Flagged per
+    // the ambient `pendingOrigin`. A player event is never a command's
+    // outcome: stamping it with whatever happens to be staged (e.g. a
+    // player callback fired synchronously inside a command's mutate(),
+    // before applyWithOrigin clears) would change provenance for something
+    // no one commanded, and consuming it would rob the command's own
+    // synchronous tail of its origin. Flagged per
     // dispatch rather than by action type, because the same types are also
     // dispatched from command paths (pause's durable position flush,
     // skipNext's end-of-queue PLAYER_STATE) that must keep stamping.
