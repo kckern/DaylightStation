@@ -55,6 +55,25 @@ describe('LocalSessionController — bootstrap', () => {
     c.config.setVolume(44);
     expect(sub).toHaveBeenCalledTimes(1);
   });
+
+  it('publishes a monotonic canonical revision across local mutations', () => {
+    const c = makeController();
+    const initial = c.getSnapshot().meta.revision;
+    c.config.setVolume(77);
+    expect(c.getSnapshot().meta.revision).toBe(initial + 1);
+    c.queue.add({ contentId: 'plex:1' });
+    expect(c.getSnapshot().meta.revision).toBe(initial + 2);
+  });
+
+  it('replaces routine provenance when a later human action changes state', () => {
+    const c = makeController();
+    c.setOrigin({ kind: 'routine', name: 'Breakfast', triggerId: 'daily-0700' });
+    c.queue.add({ contentId: 'plex:1' });
+    expect(c.getSnapshot().meta.origin).toEqual({ kind: 'routine', name: 'Breakfast', triggerId: 'daily-0700' });
+
+    c.config.setVolume(77);
+    expect(c.getSnapshot().meta.origin).toEqual({ kind: 'device', id: 'browser:c1' });
+  });
 });
 
 describe('LocalSessionController — transport', () => {

@@ -34,9 +34,14 @@ describe('Media P0 gate manifest', () => {
       expect.objectContaining({ story: 'FIND.5a', criteria: ['FIND.5a/AC3'] }),
       expect.objectContaining({ story: 'FIND.5a', criteria: ['FIND.5a/AC4'] }),
       expect.objectContaining({ story: 'FIND.6a', criteria: ['FIND.6a/AC1', 'FIND.6a/AC2', 'FIND.6a/AC3'] }),
+      expect.objectContaining({ story: 'HOUSE.2a', criteria: ['HOUSE.2a/AC3'] }),
+      expect.objectContaining({ story: 'HOUSE.3a', criteria: ['HOUSE.3a/AC1', 'HOUSE.3a/AC3'] }),
+      expect.objectContaining({ story: 'HOUSE.4a', criteria: ['HOUSE.4a/AC2', 'HOUSE.4a/AC4'] }),
+      expect.objectContaining({ story: 'AUTO.3a', criteria: ['AUTO.3a/AC1'] }),
+      expect.objectContaining({ story: 'AUTO.3a', criteria: ['AUTO.3a/AC2'] }),
     ]));
-    expect(P0_EXTENSION_ENTRIES).toHaveLength(11);
-    expect(validateP0Manifest([...BASE, ...P0_EXTENSION_ENTRIES])).toEqual({ stories: 21, criteria: 47 });
+    expect(P0_EXTENSION_ENTRIES).toHaveLength(16);
+    expect(validateP0Manifest([...BASE, ...P0_EXTENSION_ENTRIES])).toEqual({ stories: 25, criteria: 54 });
   });
 
   it('rejects skipped, duplicated, weakened, or unjourneyed criteria', () => {

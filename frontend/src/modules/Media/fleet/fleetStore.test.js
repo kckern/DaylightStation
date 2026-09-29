@@ -62,6 +62,24 @@ describe('fleetStore', () => {
     expect(store.getEntry('tv').isStale).toBe(false);
   });
 
+  it('keeps a disconnected browser certain for two minutes before marking it stale', () => {
+    vi.setSystemTime(new Date('2026-09-22T12:00:00.000Z'));
+    const store = createFleetStore();
+    store.receive({
+      deviceId: 'browser:stable',
+      snapshot: snap('idle'),
+      identity: { clientId: 'stable', deviceId: 'browser:stable', name: 'Kitchen tablet' },
+      connected: false,
+      lastHeardAt: '2026-09-22T12:00:00.000Z',
+      staleAfterMs: 120_000,
+    });
+
+    vi.advanceTimersByTime(119_999);
+    expect(store.getEntry('browser:stable')).toMatchObject({ isStale: false, connected: false });
+    vi.advanceTimersByTime(2);
+    expect(store.getEntry('browser:stable').isStale).toBe(true);
+  });
+
   it('markAllStale flags every entry', () => {
     const store = createFleetStore();
     store.receive({ deviceId: 'a', snapshot: snap('playing') });

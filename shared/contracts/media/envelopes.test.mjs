@@ -7,6 +7,7 @@ import {
   buildDeviceStateBroadcast,
   validateDeviceStateBroadcast,
   buildPlaybackStateBroadcast,
+  validatePlaybackStateBroadcast,
 } from './envelopes.mjs';
 import { createIdleSessionSnapshot } from './shapes.mjs';
 
@@ -634,5 +635,24 @@ describe('buildPlaybackStateBroadcast', () => {
       currentItem: null, position: 0, duration: 0,
       config: { shuffle: false, repeat: 'off', shader: null, volume: 50 },
     })).toThrow(TypeError);
+  });
+
+  it('round-trips canonical browser identity, queue, revision and origin', () => {
+    const b = buildPlaybackStateBroadcast({
+      identity: { clientId: 'c1', deviceId: 'browser:c1', name: 'Kitchen', room: 'Kitchen', connectedAt: '2026-09-22T12:00:00.000Z' },
+      clientId: 'c1', deviceId: 'browser:c1', ownerId: 'c1', revision: 3,
+      origin: { kind: 'routine', name: 'Morning', triggerId: 'morning-1' },
+      sessionId: 's1', state: 'idle', currentItem: null, position: 0, duration: 0,
+      queue: { items: [], currentIndex: -1, upNextCount: 0 },
+      config: { shuffle: false, repeat: 'off', shader: null, volume: 50 },
+      connected: true, lastHeardAt: '2026-09-22T12:00:01.000Z',
+    });
+    expect(validatePlaybackStateBroadcast(b)).toEqual({ valid: true, errors: [] });
+    expect(b).toMatchObject({
+      deviceId: 'browser:c1', ownerId: 'c1', revision: 3,
+      origin: { kind: 'routine', name: 'Morning', triggerId: 'morning-1' },
+      queue: { items: [], currentIndex: -1, upNextCount: 0 },
+      connected: true, lastHeardAt: '2026-09-22T12:00:01.000Z',
+    });
   });
 });

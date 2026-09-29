@@ -19,6 +19,7 @@ test('HOUSE.2b: two browser devices agree on the local player title and state', 
     expect(senderId).toBeTruthy();
     const senderCard = `fleet-card-browser:${senderId}`;
 
+    await observer.clock.install({ time: new Date() });
     await observer.goto('/media', { waitUntil: 'domcontentloaded' });
     await input.fill('arrival');
     await sender.getByTestId('combobox-option-plex:55854').click();
@@ -39,13 +40,20 @@ test('HOUSE.2b: two browser devices agree on the local player title and state', 
     await expect(observer.getByTestId(senderCard)).toContainText('Arrival');
     await expect(observer.getByTestId(`fleet-state-browser:${senderId}`)).toHaveText('Playing');
 
-    await sender.getByTestId('mini-player-open-nowplaying').click();
-    await sender.getByTestId('np-toggle').click();
+    await observer.getByTestId(`fleet-pause-browser:${senderId}`).click();
     await expect.poll(() => native.evaluate(video => video.paused), { timeout: 15000 }).toBe(true);
-    await sender.getByTestId('app-nav-fleet').click();
     await expect(sender.getByTestId(`fleet-state-browser:${senderId}`)).toHaveText('Paused');
     await expect(observer.getByTestId(`fleet-state-browser:${senderId}`)).toHaveText('Paused', { timeout: 30000 });
     await expect(observer.getByTestId(senderCard)).toContainText('Arrival');
+
+    await sender.close();
+    await expect(observer.getByTestId(`fleet-state-browser:${senderId}`)).toHaveText(/Idle|Stopped/, { timeout: 30000 });
+    await expect(observer.getByTestId(senderCard)).not.toContainText('Out of date');
+    await observer.clock.fastForward(120_001);
+    await expect(observer.getByTestId(senderCard)).toContainText('Out of date');
+    await expect(observer.getByTestId(`fleet-state-browser:${senderId}`)).toHaveText('Uncertain');
+    await expect(observer.getByTestId(senderCard)).toContainText('Last heard');
+    await expect(observer.getByTestId(`fleet-uncertain-browser:${senderId}`)).toContainText('may not be confirmed');
   } finally {
     await Promise.all([senderContext.close(), observerContext.close()]);
   }

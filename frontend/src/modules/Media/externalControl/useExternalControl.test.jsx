@@ -22,6 +22,7 @@ function makeController() {
     queue: { playNow: vi.fn(), playNext: vi.fn(), addUpNext: vi.fn(), add: vi.fn(), remove: vi.fn(), reorder: vi.fn(), jump: vi.fn(), clear: vi.fn() },
     config: { setShuffle: vi.fn(), setRepeat: vi.fn(), setShader: vi.fn(), setVolume: vi.fn() },
     lifecycle: { reset: vi.fn(), adoptSnapshot: vi.fn() },
+    setOrigin: vi.fn(),
   };
 }
 
@@ -29,6 +30,7 @@ let capturedFilter = null;
 let capturedCallback = null;
 let controller;
 beforeEach(() => {
+  sessionStorage.clear();
   controller = makeController();
   subscribeFn.mockReset().mockImplementation((filter, cb) => {
     capturedFilter = filter;
@@ -103,5 +105,59 @@ describe('useExternalControl', () => {
       capturedCallback({ topic: 'client-control:live-1', command: 'transport', params: { action: 'play' } });
     });
     expect(sendFn).not.toHaveBeenCalled();
+  });
+
+  it('suppresses a repeated routine trigger for 10s but never suppresses a later human command', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-22T12:00:00.000Z'));
+    const { unmount } = renderHook(() => useExternalControl(controller));
+    const routine = commandId => ({
+      topic: 'client-control:live-1', replyToControlClientId: 'caller-live', commandId,
+      command: 'queue', params: { op: 'play-now', contentId: 'plex:1' },
+      origin: { kind: 'routine', name: 'Breakfast', triggerId: 'daily-0700' },
+    });
+    act(() => {
+      capturedCallback(routine('routine-1'));
+      capturedCallback(routine('routine-2'));
+      capturedCallback({ ...routine('human-1'), origin: { kind: 'device', id: 'browser:caller' } });
+    });
+    expect(controller.queue.playNow).toHaveBeenCalledTimes(2);
+    expect(sendFn).toHaveBeenCalledTimes(3);
+    unmount();
+    vi.useRealTimers();
+  });
+
+  it('does not poison routine retries when the first application is rejected', () => {
+    controller.transport.play = undefined;
+    renderHook(() => useExternalControl(controller));
+    const command = commandId => ({
+      topic: 'client-control:live-1', replyToControlClientId: 'caller-live', commandId,
+      command: 'transport', params: { action: 'play' },
+      origin: { kind: 'routine', name: 'Breakfast', triggerId: 'daily-failure' },
+    });
+    act(() => capturedCallback(command('failed-1')));
+    controller.transport.play = vi.fn();
+    act(() => capturedCallback(command('retry-2')));
+    expect(controller.transport.play).toHaveBeenCalledOnce();
+    expect(sendFn).toHaveBeenLastCalledWith(expect.objectContaining({ commandId: 'retry-2', ok: true }));
+  });
+
+  it('retains the successful routine dedupe window across a browser-app remount', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-22T12:00:00.000Z'));
+    const command = commandId => ({
+      topic: 'client-control:live-1', commandId, command: 'queue',
+      params: { op: 'play-now', contentId: 'plex:reload' },
+      origin: { kind: 'routine', name: 'Breakfast', triggerId: 'reload-trigger' },
+    });
+    const first = renderHook(() => useExternalControl(controller));
+    act(() => capturedCallback(command('before-reload')));
+    first.unmount();
+    renderHook(() => useExternalControl(controller));
+    act(() => capturedCallback(command('after-reload')));
+
+    expect(controller.queue.playNow).toHaveBeenCalledOnce();
+    expect(sendFn).toHaveBeenCalledTimes(2);
+    vi.useRealTimers();
   });
 });

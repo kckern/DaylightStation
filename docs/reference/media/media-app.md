@@ -35,6 +35,27 @@ does not confirm playback: progress still requires authoritative owner state.
 The ordinary-input queue journey covers the minimum Undo path; exact-build runtime
 verification remains required before claiming acceptance.
 
+## Browser identity and house presence
+
+Each browser is a first-class named screen with one persisted identity:
+`{ clientId, deviceId: "browser:<clientId>", name, room?, connectedAt }`.
+Reloading preserves that identity and its `client-control:<clientId>` route;
+renaming changes only its human label and optional room. The Settings menu owns
+that rename surface and resolves a name collision with a stable identity suffix.
+
+The local session has one authoritative house-state path: it publishes canonical
+`playback_state` envelopes, the EventBus validates the registered owner and relays
+them, and Fleet consumes that relay. Fleet does not synthesize a competing local
+row. Canonical rows retain owner, revision, origin, queue and last-heard data.
+Closing a browser emits a stopped/disconnected state; silence is shown as
+uncertain after two minutes, with last-heard and unconfirmed-control copy.
+
+Another browser is controlled through its stable registered route. Fleet Pause
+and Stop use that route and await the receiver ACK without issuing a hardware
+Device API write. Routine commands carry their origin, and the same routine
+trigger/target is deduplicated for ten seconds while a later human-origin command
+always runs.
+
 ## What This App Is
 
 The Media App is the household's **universal content front door and universal
@@ -79,8 +100,6 @@ this app with zero app changes.
 - **Running on the TVs themselves.** Kiosks and TVs run a separate
   screen-framework player app. This app dispatches to them and observes them;
   it is never installed on them.
-- **Peer-browser awareness.** Other browsers running this app are invisible.
-  Only configured devices appear as remote targets.
 - **Accounts, profiles, personalization.** No login, no watchlists, no
   recommendation engine. (A per-browser display name exists purely so external
   observers can label this client.)
@@ -245,8 +264,7 @@ and a **canvas** that shows exactly one view at a time:
   that this browser sent or is steering suspends that lease; stale or unknown
   receiver state does not. Restoration resolves expiry before first layout so
   an expired screen never flashes as the active destination,
-- the **settings menu** — session reset (confirmed). The per-browser display
-  name is read from storage but has no UI to set it.
+- the **settings menu** — device name/room editing and session reset (confirmed).
 
 Below the canvas, at every width, the shell stacks:
 
@@ -349,7 +367,7 @@ is decoration, never a tap target.
 | **Browse** | Hierarchical catalog listing with artwork or a recognisable placeholder, kind labels, natural part ordering, and a breadcrumb containing every parent. Long collections page automatically as the end approaches; there is no separate load-more hunt. Each history entry owns `{ path, scrollTop, focusedId }`, captured before drilling into a container or opening Detail through either Details or More → Open detail, so Back restores the exact prior collection viewport and triggering row focus. A specific container adds Play / Shuffle / Add at the top and names the current destination. | Nav; container rows; container taps in search. |
 | **Detail** | One item: artwork, description, full action row (Play Now / Play Next / Play First / Add / Cast). | Browse rows; search results. |
 | **Now Playing** | Full local transport: seek bar, prev/play-pause/next/stop, volume, the queue panel, and the hand-off picker. Hosts the visual output of the player. | Mini player; Escape/Back returns. |
-| **Fleet** | All devices, live state cards. Each card offers **Remote** (Peek), **Play…** (inline search that plays straight to that device), and **Play here** (Take Over) when a session is active. | Nav; fleet indicator. |
+| **Fleet** | Configured devices and named browser screens, live and sorted with playing first. Each card offers **Remote**, **Play…**, inline **Pause**/**Stop** while active, and a truthful unavailable **Move here** until safe native adoption exists. Silent browser rows become uncertain after two minutes. | Nav; fleet indicator. |
 | **Peek** | Remote control for one device: transport, seek, volume, and the same queue panel bound to the remote session. Optimistic — controls reflect the predicted state instantly and lock until the device confirms. | Fleet cards. |
 
 The queue panel is **one component used twice**: bound to the local session in
@@ -502,7 +520,7 @@ narrow interface):
 
 | Subsystem | Responsibility |
 |---|---|
-| **Client identity** | Stable per-browser `clientId` + display name, so logs, broadcasts, and external control can address this browser. |
+| **Client identity** | Persisted per-browser `{clientId, deviceId, name, room?, connectedAt}`; the stable ID owns logs, canonical broadcasts, rename-safe routines and external control. |
 | **Local session** | The playback engine: queue state machine, transport, config, persistence to `localStorage`, stall detection, auto-advance, position heartbeat. |
 | **Fleet observation** | Device roster + live per-device session snapshots over WebSocket, with staleness and offline synthesis. |
 | **Peek control** | Command issuance to one remote session (transport/queue/config) with ack correlation and optimistic overlay. |

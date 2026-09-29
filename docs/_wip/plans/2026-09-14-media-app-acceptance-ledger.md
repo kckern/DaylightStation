@@ -692,7 +692,7 @@ As a **House Watch**, I want to see what every screen is doing, all together, so
 |---|---|---|---|
 | HOUSE.2a/AC1 | Each screen shows its name, room, whether it is playing, paused, idle, or off, and, when playing, picture, title, and progress. | Unverified | — |
 | HOUSE.2a/AC2 | From any screen in the overview I can open its controls (`STEER.1b`), move its playback here (`PLACE.7`), or play something on it (`PLACE.3`). | Unverified | — |
-| HOUSE.2a/AC3 | Screens that are playing appear before idle and off ones. | Unverified | — |
+| HOUSE.2a/AC3 | Screens that are playing appear before idle and off ones. | Accepted | `TASK-6-EXACT-RUNTIME`: two isolated browser identities shared canonical Fleet state; the browser playing real Arrival appeared first, ahead of the caller's idle row. Exact source `2259c69a7`, artifact `/tmp/daylight-media-preview-xPwXp5`; full P0 evidence `/tmp/daylight-task6-p0-evidence-7hWG4m/21-media-app-browser-control.runtime.test.mjs-stable_browser_identities_route_a_queue_command_through_the_actual_receiver_and_return_its_ack.json`. |
 | HOUSE.2a/AC4 | Each row has **Pause**, **Stop**, and **Move here** directly on it (R22). | Unverified | — |
 | HOUSE.2a/AC5 | A row shows that screen's current start progress or last failure to everyone, not only to the device that sent it (R36). | Unverified | — |
 | HOUSE.2a/AC6 | The overview offers **Pause all** and **Stop all** (`STEER.11`). | Unverified | — |
@@ -712,9 +712,9 @@ As a **House Watch**, I want to know when information might be out of date, so t
 
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
-| HOUSE.3a/AC1 | A screen that hasn't reported in the last 2 minutes (default) is marked with when it was last heard from. | Unverified | — |
+| HOUSE.3a/AC1 | A screen that hasn't reported in the last 2 minutes (default) is marked with when it was last heard from. | Accepted | `TASK-6-EXACT-RUNTIME`: after the sender browser closed, the observer retained the stopped row, advanced its browser clock 120,001 ms, and saw **Uncertain**, **Out of date**, and **Last heard**. Exact source `2259c69a7`; full P0 journey 22/22 passed. |
 | HOUSE.3a/AC2 | If this device loses touch with the house, the whole overview says so, and recovers on its own. | Unverified | — |
-| HOUSE.3a/AC3 | Controls on an uncertain screen say that the result may not be confirmed. | Unverified | — |
+| HOUSE.3a/AC3 | Controls on an uncertain screen say that the result may not be confirmed. | Accepted | The same exact two-browser close/liveness journey asserted the uncertain row's visible “control results may not be confirmed” copy after the two-minute boundary. Evidence `/tmp/daylight-task6-p0-evidence-7hWG4m/22-media-app-house-browser-session.runtime.test.mjs-two_browser_devices_agree_on_the_local_player_title_and_state.json`. |
 
 ### HOUSE.4a
 
@@ -723,9 +723,9 @@ As a **Routine Setter**, I want every screen, including browsers, to have a huma
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
 | HOUSE.4a/AC1 | Every screen is listed under a name like "Kitchen tablet" or "Dad's laptop", never a code. | Unverified | — |
-| HOUSE.4a/AC2 | Anyone can name or rename a device from within the app; TVs and kiosks come already named (Q10). | Unverified | — |
+| HOUSE.4a/AC2 | Anyone can name or rename a device from within the app; TVs and kiosks come already named (Q10). | Accepted | `TASK-6-EXACT-RUNTIME`: ordinary Settings UI renamed the target browser **Kitchen tablet**, assigned room **Kitchen**, and the other browser's Fleet row showed both values. Existing configured-device rows remained named. Exact source `2259c69a7`, artifact `/tmp/daylight-media-preview-xPwXp5`. |
 | HOUSE.4a/AC3 | Names are unique. After a rename, the house view shows "Poo (was Kitchen tablet)" for a week (default), and renaming a screen a routine uses says so first (R31). | Unverified | — |
-| HOUSE.4a/AC4 | The name stays the same across reloads and appears everywhere the screen is mentioned. | Unverified | — |
+| HOUSE.4a/AC4 | The name stays the same across reloads and appears everywhere the screen is mentioned. | Accepted | The exact compiled-artifact journey reloaded the renamed browser, asserted the same persisted `clientId`, derived `deviceId`, name and room, then routed control to that stable identity and observed **Kitchen tablet** in the caller's Fleet. Evidence `/tmp/daylight-task6-p0-evidence-7hWG4m/21-media-app-browser-control.runtime.test.mjs-stable_browser_identities_route_a_queue_command_through_the_actual_receiver_and_return_its_ack.json`. |
 
 ### HOUSE.5a
 
@@ -937,8 +937,8 @@ As a **House Watch**, I want every screen, including browsers, to report what it
 
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
-| AUTO.3a/AC1 | Anything playing on any device in the app appears in the overview and on other household displays. | Unverified | — |
-| AUTO.3a/AC2 | When a device stops or is closed, it shows as stopped soon after, not as still playing. | Unverified | — |
+| AUTO.3a/AC1 | Anything playing on any device in the app appears in the overview and on other household displays. | Accepted | `TASK-6-EXACT-RUNTIME`: a stable-ID command started real native Arrival playback on one browser; its title, art, progress and Playing state appeared in the other browser's canonical Fleet. The independent two-browser journey also agreed on title and state before and after remote Pause. Exact source `2259c69a7`; full P0 25 stories / 54 criteria. |
+| AUTO.3a/AC2 | When a device stops or is closed, it shows as stopped soon after, not as still playing. | Accepted | The exact two-browser journey closed the sender context and the observer changed promptly from Paused to Idle/Stopped, without first calling it stale; only after 120,001 ms did it become Uncertain. Evidence `/tmp/daylight-task6-p0-evidence-7hWG4m/22-media-app-house-browser-session.runtime.test.mjs-two_browser_devices_agree_on_the_local_player_title_and_state.json`. |
 | AUTO.3a/AC3 | A person using the app on a device can see that it is visible to the house. | Unverified | — |
 
 ### AUTO.4a

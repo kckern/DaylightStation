@@ -94,6 +94,9 @@ export function reduce(snapshot, action) {
         config: { ...snapshot.config, ...action.patch },
       });
 
+    case 'SET_ORIGIN':
+      return touch(snapshot, { meta: { origin: action.origin ?? null } });
+
     case 'REPLACE_QUEUE':
       return touch(snapshot, { queue: action.queue });
 

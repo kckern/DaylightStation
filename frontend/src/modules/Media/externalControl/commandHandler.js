@@ -26,38 +26,54 @@ export function applyCommandEnvelope(controller, envelope) {
     const { action, value } = params;
     const fn = controller.transport?.[action];
     if (typeof fn !== 'function') return { ok: false, reason: `unknown-transport-action:${action}` };
+    if (envelope.origin) controller.setOrigin?.(envelope.origin);
     fn(value);
     return { ok: true };
   }
   if (command === 'queue') {
-    if (params.op === 'item-action') return controller.execute?.(params) ?? { ok: false, reason: 'Item actions are unavailable', code: 'ITEM_ACTION_UNSUPPORTED' };
-    if (params.op === 'undo') return controller.undo?.(params.operationId) ?? { ok: false, reason: 'Undo is unavailable', code: 'ITEM_ACTION_UNSUPPORTED' };
+    if (params.op === 'item-action') {
+      if (envelope.origin) controller.setOrigin?.(envelope.origin);
+      return controller.execute?.(params) ?? { ok: false, reason: 'Item actions are unavailable', code: 'ITEM_ACTION_UNSUPPORTED' };
+    }
+    if (params.op === 'undo') {
+      if (envelope.origin) controller.setOrigin?.(envelope.origin);
+      return controller.undo?.(params.operationId) ?? { ok: false, reason: 'Undo is unavailable', code: 'ITEM_ACTION_UNSUPPORTED' };
+    }
     const { op, contentId, queueItemId, clearRest, from, to, items } = params;
     const q = controller.queue;
-    if (op === 'play-now') q.playNow({ contentId }, { clearRest });
-    else if (op === 'play-next') q.playNext({ contentId });
-    else if (op === 'add-up-next') q.addUpNext({ contentId });
-    else if (op === 'add') q.add({ contentId });
-    else if (op === 'remove') q.remove(queueItemId);
-    else if (op === 'jump') q.jump(queueItemId);
-    else if (op === 'clear') q.clear();
-    else if (op === 'reorder') q.reorder(items ? { items } : { from, to });
-    else return { ok: false, reason: `unknown-queue-op:${op}` };
+    const handlers = {
+      'play-now': () => q.playNow({ contentId }, { clearRest }),
+      'play-next': () => q.playNext({ contentId }),
+      'add-up-next': () => q.addUpNext({ contentId }),
+      add: () => q.add({ contentId }),
+      remove: () => q.remove(queueItemId),
+      jump: () => q.jump(queueItemId),
+      clear: () => q.clear(),
+      reorder: () => q.reorder(items ? { items } : { from, to }),
+    };
+    if (!handlers[op]) return { ok: false, reason: `unknown-queue-op:${op}` };
+    if (envelope.origin) controller.setOrigin?.(envelope.origin);
+    handlers[op]();
     return { ok: true };
   }
   if (command === 'config') {
     const { setting, value } = params;
     const c = controller.config;
-    if (setting === 'shuffle') c.setShuffle(value);
-    else if (setting === 'repeat') c.setRepeat(value);
-    else if (setting === 'shader') c.setShader(value);
-    else if (setting === 'volume') c.setVolume(value);
-    else return { ok: false, reason: `unknown-config-setting:${setting}` };
+    const handlers = {
+      shuffle: () => c.setShuffle(value),
+      repeat: () => c.setRepeat(value),
+      shader: () => c.setShader(value),
+      volume: () => c.setVolume(value),
+    };
+    if (!handlers[setting]) return { ok: false, reason: `unknown-config-setting:${setting}` };
+    if (envelope.origin) controller.setOrigin?.(envelope.origin);
+    handlers[setting]();
     return { ok: true };
   }
   if (command === 'adopt-snapshot') {
     const { snapshot, autoplay = true } = params;
     if (!snapshot) return { ok: false, reason: 'missing-snapshot' };
+    if (envelope.origin) controller.setOrigin?.(envelope.origin);
     controller.lifecycle.adoptSnapshot(snapshot, { autoplay });
     return { ok: true };
   }

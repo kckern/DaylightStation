@@ -1,9 +1,9 @@
 // frontend/src/modules/Media/identity/ClientIdentityProvider.jsx
 // Stable per-browser identity: clientId (UUID, persisted) + display name.
 // Logs, broadcasts, and external control address this browser by these.
-import React, { createContext, useMemo } from 'react';
-import { STORAGE_KEYS } from '../constants.js';
+import React, { createContext, useCallback, useMemo, useState } from 'react';
 import { useControlRegistration } from '../externalControl/useControlRegistration.js';
+import { createBrowserIdentity, renameBrowserIdentity } from './browserIdentity.js';
 
 export const ClientIdentityContext = createContext(null);
 
@@ -19,24 +19,18 @@ function uuidV4() {
 }
 
 export function ClientIdentityProvider({ children }) {
-  const identity = useMemo(() => {
-    let clientId = localStorage.getItem(STORAGE_KEYS.CLIENT_ID);
-    if (!clientId) {
-      clientId = uuidV4();
-      try { localStorage.setItem(STORAGE_KEYS.CLIENT_ID, clientId); } catch { /* ignore */ }
-    }
-    const stored = localStorage.getItem(STORAGE_KEYS.DISPLAY_NAME);
-    const displayName = stored || `Client ${clientId.slice(0, 8)}`;
-    // This is intentionally never persisted: it names the current provider
-    // lifetime on the tab-global socket, while clientId remains the profile
-    // identity shared by same-profile tabs.
-    return { clientId, displayName, controlClientId: uuidV4() };
+  const [identity, setIdentity] = useState(() => createBrowserIdentity({ randomUuid: uuidV4 }));
+  const registration = useControlRegistration(identity.clientId);
+  const rename = useCallback((input) => {
+    setIdentity(current => renameBrowserIdentity(current, { ...input, storage: localStorage }));
   }, []);
-  const registration = useControlRegistration(identity.controlClientId);
   const value = useMemo(() => ({
     ...identity,
+    displayName: identity.name,
+    controlClientId: identity.clientId,
     controlReady: registration.ready,
-  }), [identity, registration.ready]);
+    rename,
+  }), [identity, registration.ready, rename]);
 
   return (
     <ClientIdentityContext.Provider value={value}>
