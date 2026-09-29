@@ -64,6 +64,13 @@ export function FleetProvider({ children }) {
         snapshot: msg.snapshot ?? null,
         reason: msg.reason ?? 'change',
         ts: msg.ts,
+        // Aligned to the same two-minute uncertainty window mergeCanonicalFleetState
+        // applies (browserLiveness.js): without this, the store's own default
+        // staleness timer (15s, DEVICE_STALE_AFTER_MS) never lines up with the
+        // window the merge honours, and nothing re-renders this row again once
+        // its last device-state broadcast stops arriving — the merge would be
+        // computing the right value on a stale render that never happens.
+        staleAfterMs: TIMING.BROWSER_UNCERTAIN_AFTER_MS,
       });
     });
   }, [store]);
