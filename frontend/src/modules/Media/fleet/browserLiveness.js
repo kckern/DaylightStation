@@ -17,7 +17,10 @@ const ORDER = new Map([
 
 export function browserDisplayState({ connected, lastHeardMs = Infinity, state = 'unknown' } = {}) {
   if (connected === true) return state === 'stopped' ? 'idle' : state;
-  if (lastHeardMs > BROWSER_UNCERTAIN_AFTER_MS) return 'uncertain';
+  // `>=` (not `>`): matches mergeCanonicalFleetState's own boundary
+  // comparison — a re-render firing exactly at the two-minute mark must
+  // flip this too, not wait for a strictly-later tick.
+  if (lastHeardMs >= BROWSER_UNCERTAIN_AFTER_MS) return 'uncertain';
   return ['playing', 'paused', 'buffering', 'stalled', 'loading'].includes(state)
     ? 'idle'
     : (state === 'stopped' ? 'idle' : state);
