@@ -9,7 +9,7 @@ import { createFleetStore } from './fleetStore.js';
 import mediaLog from '../logging/mediaLog.js';
 import { useClientIdentity } from '../identity/useClientIdentity.js';
 import { TIMING } from '../constants.js';
-import { browserDisplayState, sortFleetDevices } from './browserLiveness.js';
+import { browserDisplayState, mergeCanonicalFleetState, sortFleetDevices } from './browserLiveness.js';
 
 export const FleetContext = createContext(null);
 
@@ -90,6 +90,7 @@ export function FleetProvider({ children }) {
   }, [refresh]);
 
   const fleetDevices = useMemo(() => {
+    const configured = mergeCanonicalFleetState(devices, browserEntries);
     const browsers = [...browserEntries.entries()]
       .filter(([id]) => id.startsWith('browser:'))
       .map(([id, entry]) => ({
@@ -107,7 +108,7 @@ export function FleetProvider({ children }) {
         connected: entry.connected,
         lastHeardAt: entry.lastSeenAt,
       }));
-    return sortFleetDevices([...devices, ...browsers.filter(browser => !devices.some(device => device.id === browser.id))]);
+    return sortFleetDevices([...configured, ...browsers.filter(browser => !configured.some(device => device.id === browser.id))]);
   }, [devices, browserEntries, clientId, displayName]);
 
   const value = useMemo(

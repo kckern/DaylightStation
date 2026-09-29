@@ -127,6 +127,32 @@ describe('useExternalControl', () => {
     vi.useRealTimers();
   });
 
+  it('acks a duplicate routine with its own commandId and caches that duplicate for later retries', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-22T12:00:00.000Z'));
+    const { unmount } = renderHook(() => useExternalControl(controller));
+    const routine = commandId => ({
+      topic: 'client-control:live-1', replyToControlClientId: 'caller-live', commandId,
+      command: 'queue', params: { op: 'play-now', contentId: 'plex:1' },
+      origin: { kind: 'routine', name: 'Breakfast', triggerId: 'daily-idempotent' },
+    });
+
+    act(() => {
+      capturedCallback(routine('routine-original'));
+      capturedCallback(routine('routine-duplicate'));
+    });
+    vi.advanceTimersByTime(10_001);
+    act(() => capturedCallback(routine('routine-duplicate')));
+
+    expect(controller.queue.playNow).toHaveBeenCalledOnce();
+    expect(sendFn.mock.calls.map(([message]) => message.commandId)).toEqual([
+      'routine-original', 'routine-duplicate', 'routine-duplicate',
+    ]);
+    expect(sendFn.mock.calls.every(([message]) => message.ok === true)).toBe(true);
+    unmount();
+    vi.useRealTimers();
+  });
+
   it('does not poison routine retries when the first application is rejected', () => {
     controller.transport.play = undefined;
     renderHook(() => useExternalControl(controller));

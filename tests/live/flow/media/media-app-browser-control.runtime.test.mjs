@@ -1,9 +1,7 @@
 import http from 'node:http';
 import { test, expect } from '@playwright/test';
 import { WebSocketEventBus } from '../../../../backend/src/1_adapters/eventbus/WebSocketEventBus.mjs';
-import { EventBusClientIngressAdapter } from '../../../../backend/src/1_adapters/eventbus/EventBusClientIngressAdapter.mjs';
-import { EventBusPlaybackStateRelay } from '../../../../backend/src/1_adapters/eventbus/EventBusMediaClientIngress.mjs';
-import { ClientIngressService } from '../../../../backend/src/3_applications/eventbus/ClientIngressService.mjs';
+import { registerClientIngress } from '../../../../backend/src/5_composition/modules/clientIngress.mjs';
 
 // Foundation integration, not whole-story acceptance: real browser providers,
 // receiver hook/controller, branch WebSocket bus and ingress, and caller
@@ -19,9 +17,7 @@ test.beforeAll(async () => {
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   bus = new WebSocketEventBus({ logger: { info() {}, warn() {}, error() {}, debug() {} } });
   await bus.start(server);
-  const publications = new EventBusClientIngressAdapter({ eventBus: bus });
-  publications.attach(new ClientIngressService({ publications }));
-  new EventBusPlaybackStateRelay({ eventBus: bus, logger: { info() {}, warn() {}, error() {}, debug() {} } }).attach();
+  registerClientIngress({ eventBus: bus, logger: { info() {}, warn() {}, error() {}, debug() {} } });
   socketUrl = `ws://127.0.0.1:${server.address().port}/ws`;
 });
 
@@ -164,6 +160,37 @@ test('[HOUSE.4a] stable browser identities route a queue command through the act
   await expect(targetCard).toContainText('Arrival', { timeout: 30000 });
   await expect(targetCard.locator('img')).toBeVisible();
   await expect(targetCard.getByRole('progressbar')).toBeVisible();
+
+  // HOUSE.2a/AC3: configured physical rows and browser rows share the same
+  // canonical live-state ordering, rather than configured rows sorting from
+  // static config alone.
+  const physicalId = 'acceptance-media';
+  const physicalCard = caller.getByTestId(`fleet-card-${physicalId}`);
+  bus.broadcast(`device-state:${physicalId}`, {
+    deviceId: physicalId,
+    snapshot: { state: 'paused', currentItem: { contentId: 'plex:physical', title: 'Physical receiver item' } },
+    reason: 'change', ts: new Date().toISOString(),
+  });
+  await expect(caller.getByTestId(`fleet-state-${physicalId}`)).toHaveText('Paused');
+  const callerDeviceId = `browser:${await profileId(caller)}`;
+  const orderedCardIds = () => caller.locator('[data-testid^="fleet-card-"]').evaluateAll(nodes => nodes.map(node => node.dataset.testid));
+  await expect.poll(async () => {
+    const ids = await orderedCardIds();
+    return ids.indexOf(`fleet-card-browser:${targetStableId}`) < ids.indexOf(`fleet-card-${physicalId}`)
+      && ids.indexOf(`fleet-card-${physicalId}`) < ids.indexOf(`fleet-card-${callerDeviceId}`);
+  }).toBe(true);
+  await expect(caller.getByTestId(`fleet-state-${callerDeviceId}`)).toHaveText('Idle');
+
+  bus.broadcast(`device-state:${physicalId}`, {
+    deviceId: physicalId,
+    snapshot: { state: 'paused', currentItem: { contentId: 'plex:physical', title: 'Physical receiver item' } },
+    reason: 'offline', ts: new Date().toISOString(),
+  });
+  await expect(caller.getByTestId(`fleet-state-${physicalId}`)).toContainText('Off');
+  await expect.poll(async () => {
+    const ids = await orderedCardIds();
+    return ids.indexOf(`fleet-card-${callerDeviceId}`) < ids.indexOf(`fleet-card-${physicalId}`);
+  }).toBe(true);
   await expect(caller.locator('[data-testid^="fleet-card-"]').first()).toHaveAttribute('data-testid', `fleet-card-browser:${targetStableId}`);
   expect(received.get(caller).filter(message => message.topic === `client-control:${identity(target)}`)).toEqual([]);
   expect(hardwareWrites).toEqual([]);

@@ -498,6 +498,7 @@ export function createLocalSessionController({
     // The origin is attached atomically to the next real state transition.
     // A rejected command therefore cannot change provenance on its own.
     setOrigin: (origin) => { pendingOrigin = origin ?? null; },
+    clearOrigin: () => { pendingOrigin = null; },
     position: { get: position.get, subscribe: position.subscribe },
 
     transport: {

@@ -4,6 +4,25 @@
 // not hand-rolled field checks.
 import { validateCommandEnvelope } from '@shared-contracts/media/envelopes.mjs';
 
+function applyWithOrigin(controller, origin, mutate) {
+  if (origin) controller.setOrigin?.(origin);
+  const clear = () => controller.clearOrigin?.();
+  try {
+    const result = mutate();
+    if (result?.then) {
+      return result.then(
+        value => { clear(); return value; },
+        error => { clear(); throw error; },
+      );
+    }
+    clear();
+    return result;
+  } catch (error) {
+    clear();
+    throw error;
+  }
+}
+
 /**
  * @returns {{ok: true} | {ok: false, reason: string}}
  */
@@ -26,18 +45,17 @@ export function applyCommandEnvelope(controller, envelope) {
     const { action, value } = params;
     const fn = controller.transport?.[action];
     if (typeof fn !== 'function') return { ok: false, reason: `unknown-transport-action:${action}` };
-    if (envelope.origin) controller.setOrigin?.(envelope.origin);
-    fn(value);
+    applyWithOrigin(controller, envelope.origin, () => fn(value));
     return { ok: true };
   }
   if (command === 'queue') {
     if (params.op === 'item-action') {
-      if (envelope.origin) controller.setOrigin?.(envelope.origin);
-      return controller.execute?.(params) ?? { ok: false, reason: 'Item actions are unavailable', code: 'ITEM_ACTION_UNSUPPORTED' };
+      if (typeof controller.execute !== 'function') return { ok: false, reason: 'Item actions are unavailable', code: 'ITEM_ACTION_UNSUPPORTED' };
+      return applyWithOrigin(controller, envelope.origin, () => controller.execute(params));
     }
     if (params.op === 'undo') {
-      if (envelope.origin) controller.setOrigin?.(envelope.origin);
-      return controller.undo?.(params.operationId) ?? { ok: false, reason: 'Undo is unavailable', code: 'ITEM_ACTION_UNSUPPORTED' };
+      if (typeof controller.undo !== 'function') return { ok: false, reason: 'Undo is unavailable', code: 'ITEM_ACTION_UNSUPPORTED' };
+      return applyWithOrigin(controller, envelope.origin, () => controller.undo(params.operationId));
     }
     const { op, contentId, queueItemId, clearRest, from, to, items } = params;
     const q = controller.queue;
@@ -52,8 +70,7 @@ export function applyCommandEnvelope(controller, envelope) {
       reorder: () => q.reorder(items ? { items } : { from, to }),
     };
     if (!handlers[op]) return { ok: false, reason: `unknown-queue-op:${op}` };
-    if (envelope.origin) controller.setOrigin?.(envelope.origin);
-    handlers[op]();
+    applyWithOrigin(controller, envelope.origin, handlers[op]);
     return { ok: true };
   }
   if (command === 'config') {
@@ -66,15 +83,13 @@ export function applyCommandEnvelope(controller, envelope) {
       volume: () => c.setVolume(value),
     };
     if (!handlers[setting]) return { ok: false, reason: `unknown-config-setting:${setting}` };
-    if (envelope.origin) controller.setOrigin?.(envelope.origin);
-    handlers[setting]();
+    applyWithOrigin(controller, envelope.origin, handlers[setting]);
     return { ok: true };
   }
   if (command === 'adopt-snapshot') {
     const { snapshot, autoplay = true } = params;
     if (!snapshot) return { ok: false, reason: 'missing-snapshot' };
-    if (envelope.origin) controller.setOrigin?.(envelope.origin);
-    controller.lifecycle.adoptSnapshot(snapshot, { autoplay });
+    applyWithOrigin(controller, envelope.origin, () => controller.lifecycle.adoptSnapshot(snapshot, { autoplay }));
     return { ok: true };
   }
   return { ok: false, reason: `unhandled-command:${command}` };
