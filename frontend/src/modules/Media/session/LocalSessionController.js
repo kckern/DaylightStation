@@ -82,7 +82,27 @@ export function createLocalSessionController({
     now: nowFn(),
   });
   let canonicalRevision = Number.isInteger(restored.meta?.revision) ? restored.meta.revision : 0;
+  // `pendingOrigin` is the ambient "origin for the next SYNCHRONOUS transition"
+  // — correct only when staging and consuming happen back-to-back in the same
+  // synchronous call. It is NOT reliable across an `await`/microtask boundary,
+  // because a second, unrelated command can run (and stage its own origin, or
+  // clear this one) before the first command's deferred transition arrives.
+  // Two mechanisms below capture an operation's origin explicitly, at the
+  // moment that operation begins, so its eventual transition is stamped
+  // correctly regardless of what else runs in the meantime:
+  //   - `operationOrigins`: item-actions and undos are already keyed by an
+  //     `operationId` from the command envelope, so their origin is captured
+  //     into this map at call time and consumed (by id) whenever their
+  //     (possibly async) mutation actually lands.
+  //   - `expectedPlaybackOrigin`: transport actions (play/pause/seek) whose
+  //     real effect is a LATER, player-driven PLAYER_STATE/PLAYER_OBSERVATION
+  //     dispatch — not anything this call dispatches itself — arm this
+  //     single-shot ticket instead. It is consumed by the next matching
+  //     player-driven transition within a bounded window.
   let pendingOrigin = null;
+  const operationOrigins = new Map();
+  let expectedPlaybackOrigin = null; // { origin, expiresAt } | null
+  const EXPECTED_PLAYBACK_ORIGIN_WINDOW_MS = 10_000;
   const initial = {
     ...restored,
     meta: { ...restored.meta, revision: canonicalRevision },
@@ -118,10 +138,14 @@ export function createLocalSessionController({
   // are deliberately absent so an enrichment cannot invalidate a move guard.
   store.onTransition((prev, next, action) => {
     canonicalRevision += 1;
+    // An explicit per-operation stamp (see above) always wins over the
+    // ambient value — it is how a deferred transition survives another
+    // command running in between.
+    const stampOrigin = action?.__opOrigin ?? pendingOrigin;
     next.meta = {
       ...next.meta,
       revision: canonicalRevision,
-      ...(pendingOrigin ? { origin: pendingOrigin } : {}),
+      ...(stampOrigin ? { origin: stampOrigin } : {}),
     };
     pendingOrigin = null;
     if (['STOP', 'RESET'].includes(action?.type)) stopRevision += 1;
@@ -141,8 +165,26 @@ export function createLocalSessionController({
   };
 
   const snap = () => store.getSnapshot();
+  const defaultOrigin = () => ({ kind: 'device', id: `browser:${clientId}` });
   const beginAction = () => {
-    if (!pendingOrigin) pendingOrigin = { kind: 'device', id: `browser:${clientId}` };
+    if (!pendingOrigin) pendingOrigin = defaultOrigin();
+  };
+  // Arm the single-shot ticket a later player-driven transition consumes.
+  // Only called by transport actions whose effect is NOT a synchronous
+  // dispatch of their own (play-when-already-loaded, pause, seek) — the
+  // command's mutate() returns before the player ever reports back, so by
+  // the time `onPlayerStateChange`/`onPlayerObservation` fires, `pendingOrigin`
+  // has already been cleared (by commandHandler's `applyWithOrigin`, or by an
+  // unrelated command that ran in between).
+  const armExpectedPlaybackOrigin = (origin) => {
+    if (!origin) return;
+    expectedPlaybackOrigin = { origin, expiresAt: Date.now() + EXPECTED_PLAYBACK_ORIGIN_WINDOW_MS };
+  };
+  const consumeExpectedPlaybackOrigin = () => {
+    if (!expectedPlaybackOrigin) return undefined;
+    const { origin, expiresAt } = expectedPlaybackOrigin;
+    expectedPlaybackOrigin = null;
+    return Date.now() <= expiresAt ? origin : undefined;
   };
 
   const currentIdentity = (snapshot = snap()) => {
@@ -335,10 +377,14 @@ export function createLocalSessionController({
     position.set(seconds);
   };
 
-  const loadCurrent = (snapshot) => {
+  // `opOrigin`, when passed, explicitly stamps the LOAD_ITEM dispatch instead
+  // of relying on ambient `pendingOrigin` — needed by callers whose own
+  // mutation may land asynchronously (enqueue's container expansion), where
+  // ambient `pendingOrigin` can no longer be trusted by the time this runs.
+  const loadCurrent = (snapshot, opOrigin) => {
     const current = snapshot.queue.items[snapshot.queue.currentIndex];
     if (current) {
-      store.dispatch({ type: 'LOAD_ITEM', item: itemFromQueueEntry(current) });
+      store.dispatch({ type: 'LOAD_ITEM', item: itemFromQueueEntry(current), __opOrigin: opOrigin });
       position.set(0);
     }
   };
@@ -354,7 +400,7 @@ export function createLocalSessionController({
 
   // Move the current cursor to `entry` by IDENTITY (jump recomputes the
   // index), demoting the spent current's upNext priority on the way past.
-  const moveCurrentTo = (entry, { consumeExecutionOrder = false, preserveExecutionOrder = false } = {}) => {
+  const moveCurrentTo = (entry, { consumeExecutionOrder = false, preserveExecutionOrder = false } = {}, opOrigin) => {
     const initial = snap();
     let working = initial;
     const oldCurrent = working.queue.items[working.queue.currentIndex];
@@ -362,13 +408,13 @@ export function createLocalSessionController({
       working = qOps.demote(working, oldCurrent.queueItemId);
     }
     if (preserveExecutionOrder) {
-      if (working !== initial) store.replace(working);
+      if (working !== initial) store.replace(working, { type: 'REPLACE_SNAPSHOT', __opOrigin: opOrigin });
     } else {
       store.replace(consumeExecutionOrder
         ? qOps.consumeExecutionVisit(working, entry.queueItemId)
-        : qOps.jump(working, entry.queueItemId));
+        : qOps.jump(working, entry.queueItemId), { type: 'REPLACE_SNAPSHOT', __opOrigin: opOrigin });
     }
-    store.dispatch({ type: 'LOAD_ITEM', item: itemFromQueueEntry(entry) });
+    store.dispatch({ type: 'LOAD_ITEM', item: itemFromQueueEntry(entry), __opOrigin: opOrigin });
     position.set(0);
   };
 
@@ -433,30 +479,34 @@ export function createLocalSessionController({
   // Each applier takes a BATCH of queue inputs (a single item is a batch of
   // one) so container expansion and the plain single-item path share the
   // exact same store mutations.
+  // `opOrigin` is threaded explicitly (not read from ambient `pendingOrigin`)
+  // because the container-expansion path below can land these appliers well
+  // after this operation's synchronous call returned — by then another
+  // command may have staged, or cleared, the ambient value.
   const enqueueAppliers = {
-    playNow: (inputs, opts, context) => {
+    playNow: (inputs, opts, context, opOrigin) => {
       const next = qOps.playNowMany(snap(), inputs, opts);
       logQueueMutation('playNow', next, context);
-      store.replace(next);
-      loadCurrent(next);
+      store.replace(next, { type: 'REPLACE_SNAPSHOT', __opOrigin: opOrigin });
+      loadCurrent(next, opOrigin);
     },
-    playNext: (inputs, _opts, context) => {
+    playNext: (inputs, _opts, context, opOrigin) => {
       const wasEmpty = snap().queue.items.length === 0;
       const next = qOps.playNextMany(snap(), inputs);
       logQueueMutation('playNext', next, context);
-      store.replace(next);
+      store.replace(next, { type: 'REPLACE_SNAPSHOT', __opOrigin: opOrigin });
       // Play Next into an empty queue starts it (parity with add).
-      if (wasEmpty && next.queue.items.length > 0) moveCurrentTo(next.queue.items[0]);
+      if (wasEmpty && next.queue.items.length > 0) moveCurrentTo(next.queue.items[0], undefined, opOrigin);
     },
-    addUpNext: (inputs, _opts, context) => {
+    addUpNext: (inputs, _opts, context, opOrigin) => {
       const next = qOps.addUpNextMany(snap(), inputs);
       logQueueMutation('addUpNext', next, context);
-      store.replace(next);
+      store.replace(next, { type: 'REPLACE_SNAPSHOT', __opOrigin: opOrigin });
     },
-    add: (inputs, _opts, context) => {
+    add: (inputs, _opts, context, opOrigin) => {
       const next = qOps.addMany(snap(), inputs);
       logQueueMutation('add', next, context);
-      store.replace(next);
+      store.replace(next, { type: 'REPLACE_SNAPSHOT', __opOrigin: opOrigin });
       return qOps.addResultFromSnapshot(capture().snapshot);
     },
   };
@@ -467,12 +517,19 @@ export function createLocalSessionController({
   // Non-container inputs take the applier synchronously — exact previous
   // behavior. Expansion failure or zero children degrades to the single-item
   // path: the tap always enqueues SOMETHING.
+  //
+  // `opOrigin` is captured HERE, synchronously, at the moment this specific
+  // command begins — not re-read later — so a human command that runs while
+  // this one's container expansion is still in flight can neither steal this
+  // origin nor have its own overwritten by it (see commandHandler.js's
+  // unconditional `setOrigin` per command for the other half of that fix).
   const enqueue = (op, input, opts) => {
     beginAction();
+    const opOrigin = pendingOrigin;
     const apply = enqueueAppliers[op];
     const context = { contentId: input?.contentId };
     if (!isContainerInput(input)) {
-      return apply([input], opts, context);
+      return apply([input], opts, context, opOrigin);
     }
     return expandContainerInput(input, { fetchImpl })
       .then((children) => {
@@ -481,11 +538,11 @@ export function createLocalSessionController({
             ...context,
             expandedFrom: input.contentId,
             expandedCount: children.length,
-          });
+          }, opOrigin);
         }
-        return apply([input], opts, context);
+        return apply([input], opts, context, opOrigin);
       })
-      .catch(() => apply([input], opts, context));
+      .catch(() => apply([input], opts, context, opOrigin));
   };
 
   const controller = {
@@ -504,22 +561,37 @@ export function createLocalSessionController({
     transport: {
       play: () => {
         beginAction();
+        // Captured before anything below can dispatch (and so clear
+        // `pendingOrigin`) — see EXPECTED_PLAYBACK_ORIGIN_WINDOW_MS above.
+        const opOrigin = pendingOrigin;
         mediaLog.transportCommand({ action: 'play', target: 'local' });
-        // Playing from a stopped/ready session starts the queue head.
+        // Playing from a stopped/ready session starts the queue head — this
+        // branch DOES dispatch synchronously (LOAD_ITEM, via moveCurrentTo),
+        // correctly reading ambient `pendingOrigin` (still `opOrigin` here).
+        // Either way, the FOLLOWING 'playing' transition (this item actually
+        // starting) still arrives later from the player, never from
+        // anything dispatched in this call — so the ticket is armed
+        // regardless of which branch ran, and `player.play()` always runs,
+        // exactly as before this fix.
         if (!snap().currentItem) {
           const first = snap().queue.items[0];
           if (!first) return;
           moveCurrentTo(first);
         }
+        armExpectedPlaybackOrigin(opOrigin);
         player.play();
       },
       pause: () => {
         beginAction();
+        const opOrigin = pendingOrigin;
         mediaLog.transportCommand({ action: 'pause', target: 'local' });
         // Flush the hot-tier position durably — pausing is the moment the
         // user expects "their place" to be saved.
         const here = position.get().seconds;
         if (Number.isFinite(here) && here > 0) setDurablePosition(here);
+        // As with play(): the 'paused' transition arrives later from the
+        // player, not from anything dispatched in this call.
+        armExpectedPlaybackOrigin(opOrigin);
         player.pause();
       },
       stop: () => {
@@ -534,7 +606,11 @@ export function createLocalSessionController({
       },
       seekAbs: (seconds) => {
         beginAction();
+        const opOrigin = pendingOrigin;
         mediaLog.transportCommand({ action: 'seekAbs', value: seconds, target: 'local' });
+        // A seek dispatches nothing synchronously either — the player
+        // reports the new position/state asynchronously.
+        armExpectedPlaybackOrigin(opOrigin);
         player.seek(seconds);
       },
       seekRel: (delta) => {
@@ -707,11 +783,14 @@ export function createLocalSessionController({
         contentId,
         itemPatch: observedItemPatch(observation),
         playerState,
+        // Consumes a ticket armed by transport.play/pause/seekAbs, if one is
+        // still live — the deferred half of that command's provenance.
+        __opOrigin: consumeExpectedPlaybackOrigin(),
       });
     },
     onPlayerStateChange: (state, contentId = null) => {
       if (contentId != null && snap().currentItem?.contentId !== contentId) return;
-      store.dispatch({ type: 'PLAYER_STATE', playerState: state });
+      store.dispatch({ type: 'PLAYER_STATE', playerState: state, __opOrigin: consumeExpectedPlaybackOrigin() });
     },
     onPlayerEnded: (contentId = null) => {
       if (contentId != null && snap().currentItem?.contentId !== contentId) return;
@@ -762,23 +841,46 @@ export function createLocalSessionController({
     },
     revision: () => ({ ownerInstanceId, queueRevision, stopRevision }),
     fetchImpl,
-    apply: (snapshot, { playbackChanged, restore } = {}) => {
+    // `operationId` (already threaded by itemActionOwner.js — the forward
+    // path passes it directly; the undo/restore path passes it via
+    // `record.operationId`) looks up this specific operation's captured
+    // origin (see the execute/undo wrappers below) rather than trusting
+    // ambient `pendingOrigin`, which item-action fetches can outlive.
+    apply: (snapshot, { playbackChanged, restore, operationId } = {}) => {
+      const opOrigin = operationId != null ? operationOrigins.get(operationId) : undefined;
+      if (operationId != null) operationOrigins.delete(operationId);
       if (restore) {
         // This is this owner's detached capture, including unresolved format
         // metadata; the stricter network-handoff validator is not applicable.
         const autoplay = snapshot.state !== 'paused';
-        store.dispatch({ type: 'ADOPT_SNAPSHOT', snapshot, autoplay });
+        store.dispatch({ type: 'ADOPT_SNAPSHOT', snapshot, autoplay, __opOrigin: opOrigin });
         position.set(snapshot.position);
         return { ok: true };
       }
-      store.replace(snapshot);
+      store.replace(snapshot, { type: 'REPLACE_SNAPSHOT', __opOrigin: opOrigin });
       if (playbackChanged) {
-        if (snapshot.queue.currentIndex >= 0) loadCurrent(snapshot);
-        else { player.pause(); store.dispatch({ type: 'STOP' }); position.set(0); }
+        if (snapshot.queue.currentIndex >= 0) loadCurrent(snapshot, opOrigin);
+        else { player.pause(); store.dispatch({ type: 'STOP', __opOrigin: opOrigin }); position.set(0); }
       }
       return { ok: true };
     },
   }));
+  // Capture this specific execute()/undo() invocation's origin, keyed by
+  // operationId, at the moment it is CALLED — synchronously, before any
+  // async work (container expansion, the fetch behind a container item-action)
+  // has a chance to let an unrelated command change or clear ambient
+  // `pendingOrigin` first. `apply` above looks the value back up by the same
+  // key whenever this operation's mutation actually lands.
+  const rawExecute = controller.execute;
+  const rawUndo = controller.undo;
+  controller.execute = (command) => {
+    if (command?.operationId != null) operationOrigins.set(command.operationId, pendingOrigin ?? defaultOrigin());
+    return rawExecute(command);
+  };
+  controller.undo = (operationId) => {
+    if (operationId != null) operationOrigins.set(operationId, pendingOrigin ?? defaultOrigin());
+    return rawUndo(operationId);
+  };
   return controller;
 }
 

@@ -11,7 +11,7 @@ export function createItemActionOwner({ targetId, capture, revision, apply, getP
       snapshot.position = current.position;
       snapshot.state = current.state;
     }
-    return apply(snapshot, { restore: restorePlaybackSnapshot, playbackChanged: record.playbackChanged });
+    return apply(snapshot, { restore: restorePlaybackSnapshot, playbackChanged: record.playbackChanged, operationId: record.operationId });
   }, now });
   const operations = new Map();
   let pendingQueueIntent = null;
