@@ -125,4 +125,27 @@ describe('local owner undo integration', () => {
     expect(c.getSnapshot().currentItem.contentId).toBe('live');
     expect(c.getSnapshot().position).toBe(0);
   });
+
+  it('preserves the CURRENT volume and shader across an undo, not the tap-time values', async () => {
+    // A playNow's undo restores record.priorSnapshot (captured before the
+    // tap) wholesale — including config.volume/shader — so without this fix
+    // an undo after a human volume/shader change silently reverts it.
+    // itemActionFingerprint deliberately excludes volume/shader from the
+    // supersede guard for the same underlying reason (they change neither
+    // the queue's contents nor its order), so this is the undo-restore-path
+    // counterpart to that fix.
+    const c = createLocalSessionController({ clientId: 'local' });
+    expect(c.getSnapshot().config.volume).toBe(50);
+    expect(c.getSnapshot().config.shader).toBe(null);
+
+    await c.execute({ kind: 'playNow', item: { contentId: 'one', format: 'video' }, operationId: 'play-one' });
+    c.config.setVolume(55);
+    c.config.setShader('warm');
+
+    const result = await c.undo('play-one');
+    expect(result).toMatchObject({ ok: true, status: 'undone' });
+    expect(c.getSnapshot().queue.items).toHaveLength(0);
+    expect(c.getSnapshot().config.volume).toBe(55);
+    expect(c.getSnapshot().config.shader).toBe('warm');
+  });
 });
