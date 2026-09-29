@@ -186,4 +186,31 @@ describe('useExternalControl', () => {
     expect(sendFn).toHaveBeenCalledTimes(2);
     vi.useRealTimers();
   });
+
+  it('replays an identical commandId without re-executing, even for human origin', () => {
+    renderHook(() => useExternalControl(controller));
+    const msg = { topic: 'client-control:live-1', replyToControlClientId: 'caller-live', commandId: 'h-1',
+      command: 'transport', params: { action: 'pause' }, origin: { kind: 'device', id: 'browser:x' } };
+    act(() => { capturedCallback(msg); capturedCallback(msg); });
+    expect(controller.transport.pause).toHaveBeenCalledOnce();
+    expect(sendFn.mock.calls.map(([m]) => [m.commandId, m.ok])).toEqual([['h-1', true], ['h-1', true]]);
+  });
+
+  it('evicts the oldest cached result past 256 commands', () => {
+    renderHook(() => useExternalControl(controller));
+    const msg = id => ({ topic: 'client-control:live-1', replyToControlClientId: 'c', commandId: id,
+      command: 'transport', params: { action: 'pause' } });
+    act(() => { for (let i = 0; i <= 256; i += 1) capturedCallback(msg(`c-${i}`)); });
+    act(() => capturedCallback(msg('c-0')));
+    expect(controller.transport.pause).toHaveBeenCalledTimes(258);
+  });
+
+  it('acks a rejected command replay with the same failure, not success', () => {
+    controller.transport.pause.mockImplementation(() => { throw new Error('no-media'); });
+    renderHook(() => useExternalControl(controller));
+    const msg = { topic: 'client-control:live-1', replyToControlClientId: 'c', commandId: 'r-1',
+      command: 'transport', params: { action: 'pause' } };
+    act(() => { capturedCallback(msg); capturedCallback(msg); });
+    expect(sendFn.mock.calls.map(([m]) => m.ok)).toEqual([false, false]);
+  });
 });
