@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { revealBrowseRow } from '../../../_lib/mediaBrowseScroll.mjs';
 
 // FIND.1b's result-row More → Play Now journey already proves Search locally
 // at phone, tablet, and laptop widths. This file covers the other finite
@@ -15,7 +16,7 @@ const entries = [
     await page.getByTestId(nav('browse')).click();
     await page.getByTestId('browse-open-plex:').click();
     await page.getByTestId('browse-open-plex:library/sections/6/all').click();
-    const content = page.getByTestId('browse-row-plex:55854');
+    const content = await revealBrowseRow(page, 'browse-row-plex:55854');
     await expect(content).toBeVisible({ timeout: 30000 });
     return { content, action: page.getByTestId('result-play-now-plex:55854') };
   }],
@@ -23,6 +24,7 @@ const entries = [
     await page.getByTestId(nav('browse')).click();
     await page.getByTestId('browse-open-plex:').click();
     await page.getByTestId('browse-open-plex:library/sections/6/all').click();
+    await revealBrowseRow(page, 'browse-row-plex:55854');
     await page.getByTestId('browse-detail-plex:55854').click();
     const content = page.getByTestId('detail-view');
     await expect(content).toBeVisible({ timeout: 30000 });

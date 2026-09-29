@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { revealBrowseRow } from '../../../_lib/mediaBrowseScroll.mjs';
 
 test.use({ viewport: { width: 1440, height: 900 }, trace: 'retain-on-failure' });
 
@@ -73,13 +74,14 @@ async function openPlayNowEntry(sender, entry) {
     await sender.getByTestId('browse-open-plex:').click();
     await expect(sender.getByTestId('browse-view')).toBeVisible();
     await sender.getByTestId('browse-open-plex:library/sections/6/all').click();
-    await expect(sender.getByTestId('browse-row-plex:55854')).toBeVisible({ timeout: 30000 });
+    await expect(await revealBrowseRow(sender, 'browse-row-plex:55854')).toBeVisible({ timeout: 30000 });
     await sender.getByTestId('result-play-now-plex:55854').click();
   } else if (entry === 'Detail') {
     await sender.getByTestId('app-nav-browse').click();
     await expect(sender.getByTestId('browse-view')).toBeVisible();
     await sender.getByTestId('browse-open-plex:').click();
     await sender.getByTestId('browse-open-plex:library/sections/6/all').click();
+    await revealBrowseRow(sender, 'browse-row-plex:55854');
     await sender.getByTestId('browse-detail-plex:55854').click();
     await expect(sender.getByTestId('detail-view')).toBeVisible({ timeout: 30000 });
     await sender.getByTestId('detail-play-now').click();

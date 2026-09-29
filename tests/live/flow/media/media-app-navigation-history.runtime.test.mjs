@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { revealBrowseRow } from '../../../_lib/mediaBrowseScroll.mjs';
 
 test.setTimeout(120000);
 
@@ -17,6 +18,7 @@ async function openDetail(page, surface) {
   await expect(page.getByTestId('browse-view')).toBeVisible();
   await page.getByTestId('browse-open-plex:').click();
   await page.getByTestId('browse-open-plex:library/sections/6/all').click();
+  await revealBrowseRow(page, 'browse-row-plex:55854');
   await page.getByTestId('browse-detail-plex:55854').click();
   await expect(page.getByTestId('detail-view')).toBeVisible({ timeout: 30000 });
 }
