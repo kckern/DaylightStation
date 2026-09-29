@@ -25,6 +25,12 @@ vi.mock('../cast/CastTargetChip.jsx', () => ({
 vi.mock('../controller/useSessionController.js', () => ({
   useSessionController: () => ({ lifecycle: { reset: lifecycleReset } }),
 }));
+vi.mock('../identity/useClientIdentity.js', () => ({
+  useClientIdentity: () => ({ name: 'Browser test', deviceId: 'browser:test', rename: vi.fn() }),
+}));
+vi.mock('../fleet/useFleetContext.js', () => ({
+  useFleetContext: () => ({ devices: [] }),
+}));
 
 import { Dock } from './Dock.jsx';
 

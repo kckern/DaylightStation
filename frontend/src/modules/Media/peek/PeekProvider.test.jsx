@@ -8,6 +8,7 @@ import { usePeek } from './usePeek.js';
 let steeringCallback = null;
 let deviceAckCallback = null;
 let remoteOptions = null;
+let browserOptions = null;
 
 vi.mock('../net/ws.js', () => ({
   subscribeTopicKind: vi.fn((_kind, callback) => { deviceAckCallback = callback; return () => {}; }),
@@ -19,6 +20,16 @@ vi.mock('./RemoteSessionController.js', () => ({
     return { destroy: vi.fn() };
   }),
 }));
+vi.mock('./BrowserSessionController.js', () => ({
+  createBrowserSessionController: vi.fn((options) => {
+    browserOptions = options;
+    return { kind: 'remote-browser', destroy: vi.fn() };
+  }),
+}));
+vi.mock('../externalControl/clientControlCorrelator.js', () => ({
+  createClientControlCorrelator: vi.fn(() => ({ send: vi.fn(), dispose: vi.fn() })),
+}));
+vi.mock('../../../services/WebSocketService.js', () => ({ wsService: {} }));
 
 function Probe() {
   const { getController, getSteeringActivity } = usePeek();
@@ -26,6 +37,7 @@ function Probe() {
   return (
     <>
       <button type="button" onClick={() => getController('office')}>open remote</button>
+      <button type="button" onClick={() => getController('browser:wall-tablet')}>open browser remote</button>
       <output data-testid="steering-activity">{activity ? `${activity.playback.sessionId}:${activity.playback.contentId}` : 'none'}</output>
     </>
   );
@@ -46,6 +58,15 @@ function DispatchProvenanceProbe({ receipt = {
 }
 
 describe('PeekProvider steering activity bridge', () => {
+  it('selects the browser controller and stable route for browser rows', () => {
+    const store = { getEntry: vi.fn(), subscribeDevice: vi.fn(() => vi.fn()) };
+    const fleet = { store, identity: { clientId: 'caller', deviceId: 'browser:caller' } };
+    render(<FleetContext.Provider value={fleet}><PeekProvider><Probe /></PeekProvider></FleetContext.Provider>);
+    fireEvent.click(screen.getByRole('button', { name: 'open browser remote' }));
+    expect(browserOptions).toMatchObject({
+      deviceId: 'browser:wall-tablet', callerDeviceId: 'browser:caller', fleetStore: store,
+    });
+  });
   it.each([
     ['stopped receiver', { snapshot: { sessionId: 's-1', state: 'idle', currentItem: { contentId: 'plex:1' }, meta: { ownerId: 'office' } } }],
     ['stale receiver', { isStale: true, snapshot: { sessionId: 's-1', state: 'playing', currentItem: { contentId: 'plex:1' }, meta: { ownerId: 'office' } } }],

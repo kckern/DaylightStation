@@ -11,6 +11,7 @@ import { useDevice } from '../fleet/useDevice.js';
 import { FleetPlayPicker } from '../fleet/FleetPlayPicker.jsx';
 import { deviceName, deviceIcon, deviceLocation } from '../fleet/deviceDisplay.js';
 import { useNav } from './NavProvider.jsx';
+import { usePeek } from '../peek/usePeek.js';
 import { stateColor } from '../theme/mediaTheme.js';
 import { deviceStateLabel } from './stateCopy.js';
 import Skeleton from '@/lib/ui/Skeleton.jsx';
@@ -26,16 +27,23 @@ function fmt(s) {
 function FleetCard({ deviceId }) {
   const { device, entry } = useDevice(deviceId);
   const { push } = useNav();
+  const { getController } = usePeek();
   // Inline "play something on this device" panel (FleetPlayPicker).
   const [playOpen, setPlayOpen] = useState(false);
   const closePlay = useCallback(() => setPlayOpen(false), []);
   const offline = !!entry?.offline;
   const snap = entry?.snapshot;
-  const devState = snap?.state ?? 'unknown';
+  const devState = device?.type === 'browser'
+    ? (device.state ?? snap?.state ?? 'unknown')
+    : (snap?.state ?? 'unknown');
   const item = snap?.currentItem;
   const duration = item?.duration ?? 0;
   const isActive = !offline && ACTIVE_STATES.has(devState);
   const location = deviceLocation(device);
+  const sendTransport = (action) => {
+    const result = getController(deviceId)?.transport?.[action]?.();
+    result?.catch?.(() => {});
+  };
 
   return (
     <li data-testid={`fleet-card-${deviceId}`} className="fleet-card">
@@ -58,6 +66,11 @@ function FleetCard({ deviceId }) {
         </span>
         {entry?.isStale && <Badge size="xs" color="yellow" variant="light" className="fleet-card-stale">Out of date</Badge>}
       </div>
+      {entry?.isStale && (
+        <Text data-testid={`fleet-uncertain-${deviceId}`} size="xs" c="yellow">
+          Last heard {entry.lastSeenAt ? new Date(entry.lastSeenAt).toLocaleString() : 'at an unknown time'}; control results may not be confirmed.
+        </Text>
+      )}
       <div className="fleet-card-item">
         {item ? (
           <>
@@ -107,6 +120,12 @@ function FleetCard({ deviceId }) {
         </Button>
         {isActive && (
           <>
+            <Button data-testid={`fleet-pause-${deviceId}`} size="compact-sm" variant="default" onClick={() => sendTransport('pause')}>
+              Pause
+            </Button>
+            <Button data-testid={`fleet-stop-${deviceId}`} size="compact-sm" variant="default" onClick={() => sendTransport('stop')}>
+              Stop
+            </Button>
             <Button
               data-testid={`fleet-takeover-${deviceId}`}
               size="compact-sm"
@@ -114,7 +133,7 @@ function FleetCard({ deviceId }) {
               disabled
               title="Move playback is not available yet."
             >
-              Play here
+              Move here
             </Button>
             <Text data-testid={`fleet-takeover-unavailable-${deviceId}`} size="xs" c="dimmed">
               Move playback is not available yet.
@@ -128,7 +147,7 @@ function FleetCard({ deviceId }) {
 }
 
 export function FleetView() {
-  const { devices, loading, error } = useFleetContext();
+  const { devices, loading, error, connected } = useFleetContext();
 
   if (loading) {
     return (
@@ -155,6 +174,11 @@ export function FleetView() {
   return (
     <div data-testid="fleet-view" className="fleet-view">
       <Title order={1} mb="md">Devices</Title>
+      {connected === false && (
+        <Alert data-testid="fleet-connection-warning" color="yellow" variant="light" icon={<IconAlertCircle size={18} />}>
+          This device has lost touch with the house. Information may be out of date; it will reconnect automatically.
+        </Alert>
+      )}
       <ul className="fleet-cards">
         {devices.map((d) => <FleetCard key={d.id} deviceId={d.id} />)}
       </ul>

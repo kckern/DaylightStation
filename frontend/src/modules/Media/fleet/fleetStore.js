@@ -25,16 +25,18 @@ export function createFleetStore({ timing = TIMING, setTimeoutFn = setTimeout, c
     notify(deviceId);
   }
 
-  function armStaleTimer(deviceId) {
+  function armStaleTimer(deviceId, staleAfterMs = timing.DEVICE_STALE_AFTER_MS, lastSeenAt = null) {
     const existing = staleTimers.get(deviceId);
     if (existing) clearTimeoutFn(existing);
+    const elapsed = lastSeenAt ? Math.max(0, Date.now() - new Date(lastSeenAt).getTime()) : 0;
+    const delay = Math.max(0, staleAfterMs - elapsed);
     staleTimers.set(deviceId, setTimeoutFn(() => {
       staleTimers.delete(deviceId);
       const entry = byDevice.get(deviceId);
       if (!entry || entry.isStale || entry.offline) return;
       mediaLog.wsStale({ topic: `device-state:${deviceId}`, deviceId });
       setEntry(deviceId, { ...entry, isStale: true });
-    }, timing.DEVICE_STALE_AFTER_MS));
+    }, delay));
   }
 
   return {
@@ -53,14 +55,17 @@ export function createFleetStore({ timing = TIMING, setTimeoutFn = setTimeout, c
     },
 
     /** Ingest a DeviceStateBroadcast (§9.7). */
-    receive({ deviceId, snapshot, reason, ts }) {
+    receive({ deviceId, snapshot, reason, ts, identity, connected, lastHeardAt, staleAfterMs }) {
       if (typeof deviceId !== 'string' || deviceId.length === 0) return;
       const prev = byDevice.get(deviceId) ?? {};
       const offline = reason === 'offline';
+      const heardAt = lastHeardAt ?? ts ?? new Date().toISOString();
       setEntry(deviceId, {
         snapshot: snapshot ?? prev.snapshot ?? null,
+        identity: identity ?? prev.identity ?? null,
+        connected: connected ?? prev.connected ?? !offline,
         reason: reason ?? 'change',
-        lastSeenAt: ts ?? new Date().toISOString(),
+        lastSeenAt: heardAt,
         isStale: false,
         offline,
       });
@@ -68,14 +73,14 @@ export function createFleetStore({ timing = TIMING, setTimeoutFn = setTimeout, c
         const t = staleTimers.get(deviceId);
         if (t) { clearTimeoutFn(t); staleTimers.delete(deviceId); }
       } else {
-        armStaleTimer(deviceId);
+        armStaleTimer(deviceId, staleAfterMs, heardAt);
       }
     },
 
     /** WS drop: every device's view is now stale until updates resume. */
-    markAllStale() {
+    markAllStale({ exclude } = {}) {
       byDevice = new Map(
-        [...byDevice.entries()].map(([id, e]) => [id, { ...e, isStale: true }])
+        [...byDevice.entries()].map(([id, e]) => [id, exclude?.(id, e) ? e : { ...e, isStale: true }])
       );
       for (const [deviceId] of byDevice) notify(deviceId);
       if (byDevice.size === 0) for (const fn of allSubs) fn(byDevice);

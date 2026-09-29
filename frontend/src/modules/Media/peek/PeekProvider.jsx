@@ -6,7 +6,10 @@ import React, { useContext, useEffect, useMemo, useRef, useCallback, useState } 
 import { PeekContext } from './PeekContext.js';
 import { createAckRouter } from './ackRouter.js';
 import { createRemoteSessionController } from './RemoteSessionController.js';
+import { createBrowserSessionController } from './BrowserSessionController.js';
+import { createClientControlCorrelator } from '../externalControl/clientControlCorrelator.js';
 import { subscribeTopicKind } from '../net/ws.js';
+import { wsService } from '../../../services/WebSocketService.js';
 import { FleetContext } from '../fleet/FleetProvider.jsx';
 import mediaLog from '../logging/mediaLog.js';
 
@@ -14,6 +17,13 @@ export function PeekProvider({ children }) {
   const fleet = useContext(FleetContext);
   if (!fleet) throw new Error('PeekProvider must be inside FleetProvider');
   const { store: fleetStore } = fleet;
+  const correlatorRef = useRef(null);
+  if (!correlatorRef.current && fleet.identity?.clientId) {
+    correlatorRef.current = createClientControlCorrelator({
+      controlClientId: fleet.identity.clientId,
+      service: wsService,
+    });
+  }
 
   const ackRouterRef = useRef(null);
   if (!ackRouterRef.current) ackRouterRef.current = createAckRouter();
@@ -59,19 +69,26 @@ export function PeekProvider({ children }) {
   useEffect(() => () => {
     for (const ctl of controllersRef.current.values()) ctl.destroy?.();
     controllersRef.current.clear();
+    correlatorRef.current?.dispose?.();
+    correlatorRef.current = null;
   }, []);
 
   const getController = useCallback((deviceId) => {
     if (typeof deviceId !== 'string' || !deviceId) return null;
     let ctl = controllersRef.current.get(deviceId);
     if (!ctl) {
-      ctl = createRemoteSessionController({
-        deviceId, fleetStore, ackRouter, onSteeringActivity: recordSteeringActivity,
-      });
+      ctl = deviceId.startsWith('browser:')
+        ? createBrowserSessionController({
+          deviceId, callerDeviceId: fleet.identity?.deviceId,
+          fleetStore, correlator: correlatorRef.current,
+        })
+        : createRemoteSessionController({
+          deviceId, fleetStore, ackRouter, onSteeringActivity: recordSteeringActivity,
+        });
       controllersRef.current.set(deviceId, ctl);
     }
     return ctl;
-  }, [fleetStore, ackRouter, recordSteeringActivity]);
+  }, [fleetStore, ackRouter, recordSteeringActivity, fleet.identity?.deviceId]);
 
   const enterPeek = useCallback((deviceId) => {
     mediaLog.peekEntered({ deviceId });
