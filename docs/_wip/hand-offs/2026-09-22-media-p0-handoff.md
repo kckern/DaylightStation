@@ -6,6 +6,36 @@ Deliver useful value immediately by deploying the last independently reviewed Me
 
 This document is the recovery source of truth for the next agent. Do not infer completion from earlier chat claims or from a green test run against a fixture. Start from the repository state and evidence named below.
 
+## Salvage status (2026-09-29) — read this first
+
+The owner re-scoped the remainder: **salvage Task 6, then close P0; Tasks 7–8 deferred.**
+Spec `docs/superpowers/specs/2026-09-28-media-task6-salvage-design.md`, plan
+`docs/superpowers/plans/2026-09-28-media-task6-salvage.md`, ledger
+`.superpowers/sdd/2026-09-28-media-task6-salvage/progress.md` (git-ignored; every ruling is there).
+
+- **Branch `media/task6-salvage` at `a89770c2c`** (worktree `.worktrees/media-task6-salvage`) = main `c79e63900` + Task 6 + repairs. **Not merged, not deployed.**
+- The final independent (Fable) whole-branch review cleared all four blockers once its fix wave landed:
+  1. `app.mjs` now composes `registerClientIngress`, with a parity test for every household message kind.
+  2. Configured devices use live state, the 2-minute uncertainty rule and receipt-time staleness.
+  3. Provenance is "who last commanded this screen": commands stamp it, player events never do.
+  4. A duplicate commandId gets its ACK under its own id, and the backend twin was fixed the same way.
+
+  A regression the fix wave introduced (a replayed snapshot reading as fresh) is fixed in `a89770c2c`.
+- Broad Vitest is green apart from failures that `main` has too: `DismissStackProvider.browser`, `piano-games/OpponentDialogueService`, and `node:test` files that report "No test suite found" when Vitest sweeps them in.
+- **The certification blocker is fixed on `main` (2026-09-29).** It was not a Player regression. The mini player's video tile had always been 0 px tall (`.media-player-host` had no size in the dock), and FIND.1b only ever passed by catching the video in its 1×1 parked host while loading. Fix `0fb843b81`.
+  - Fixing it exposed PLAY.1b and RELY.9a/10a failures from unpaged Browse. `/list` ignored `take`/`skip`, and each page fetched the whole Plex library.
+    - `07fb39350`: the router pages.
+    - `4fae30331` + `0b5acdba4`: Plex pages at the source, and the container title comes from the header. A Movies page takes ~0.3 s, down from 8–25 s.
+    - `4f1676b90`: the journeys scroll to a row past page one.
+    - `e676fe4c3`: Back restores the loaded row count.
+  - Evidence: FIND.1b and FIND.2a pass on `main`, and the 19 browse journeys (PLAY.1b, play-now entrypoints, RELY.9a/10a/10a-search) pass at `4396940ec` in production. The full P0 gate has not been run end to end on `main` since.
+- **Next steps:**
+  1. ~~Fix the local-video visibility regression on `main`.~~ Done, see above.
+  2. Merge `main` into `media/task6-salvage` (it now includes the paging changes the Task 6 journeys rely on).
+  3. Run `npm run test:media-p0` on the exact SHA; the bar is 25 stories / 54 criteria.
+  4. Merge, deploy through the gate, then do the close-out: records, marking Tasks 7–8 deferred, and pruning the `/tmp/daylight-media-*` worktrees, archive-tagging any that aren't merged.
+- Budget: about 2.8M of the owner's 3M ceiling was spent in this salvage. The ceiling applied to this session only.
+
 ## Executive status
 
 | Item | State | Authority |

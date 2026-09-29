@@ -442,10 +442,16 @@ export class PlexAdapter {
         return this._toPlayableItem(item, { showLabels });
       }
 
-      // Otherwise treat as container path
-      const data = await this.client.getContainer(`/${localId}`);
+      // Otherwise treat as container path. Ask for the header only (a zero-size
+      // window): title and totalSize arrive in ~0.1 s, where the whole
+      // container — every title in a library section — took seconds.
+      const separator = localId.includes('?') ? '&' : '?';
+      const data = await this.client.getContainer(
+        `/${localId}${separator}X-Plex-Container-Start=0&X-Plex-Container-Size=0`,
+      );
       const container = data.MediaContainer;
       if (!container) return null;
+      const reportedTotal = Number(container.totalSize);
 
       return new ListableItem({
         id: `plex:${localId}`,
@@ -453,7 +459,7 @@ export class PlexAdapter {
         localId,
         title: container.title1 || container.title || localId,
         itemType: 'container',
-        childCount: container.size || 0,
+        childCount: container.totalSize != null && Number.isInteger(reportedTotal) ? reportedTotal : (container.size || 0),
         thumbnail: container.thumb ? `${this.proxyPath}${container.thumb}` : null,
         metadata: {
           category: ContentCategory.CONTAINER
@@ -548,16 +554,7 @@ export class PlexAdapter {
         items = this._filterPlaylistsByLibraryName(items, libraryNameFilter);
       }
 
-      // For playable item types (episodes, tracks, movies), use full conversion
-      // to include duration, episode number, and other playback-relevant metadata
-      const playableTypes = ['episode', 'track', 'movie', 'clip'];
-
-      return items.map(item => {
-        if (playableTypes.includes(item.type)) {
-          return this._toPlayableItem(item);
-        }
-        return this._toListableItem(item);
-      });
+      return this._toContainerItems(items);
     } catch (err) {
       this.logger.error?.('plex.getList.exception', {
         error: err.message,
@@ -565,6 +562,52 @@ export class PlexAdapter {
       });
       return [];
     }
+  }
+
+  /**
+   * One window of a path-style container (e.g. library/sections/6/all), using
+   * Plex's own paging. A whole 2810-title section costs Plex ~7 s and 6.8 MB;
+   * one 50-title page ~0.1 s, with the true count in `totalSize`.
+   *
+   * Only path-style ids page. Numeric ids (shows, seasons, playlists,
+   * collections), the section root, aliases and the playlists root return null
+   * so the caller falls back to getList and keeps whole-container semantics —
+   * the list router wraps playlists/seasons from the whole container.
+   * @param {string} input - Container id (plex: prefix optional)
+   * @param {{ skip: number, take: number }} page
+   * @returns {Promise<{ items: ListableItem[], total: number }|null>}
+   */
+  async getListPage(input, { skip, take }) {
+    const localId = typeof input === 'string' ? input.replace(/^plex:/, '') : '';
+    const isPathContainer = localId.includes('/') && !/^\d+$/.test(localId) && !localId.startsWith('playlists');
+    if (!isPathContainer || !Number.isInteger(skip) || !Number.isInteger(take) || skip < 0 || take < 1) return null;
+    try {
+      const separator = localId.includes('?') ? '&' : '?';
+      const data = await this.client.getContainer(
+        `/${localId}${separator}X-Plex-Container-Start=${skip}&X-Plex-Container-Size=${take}`,
+      );
+      const container = data?.MediaContainer;
+      if (!container) return null;
+      const items = this._toContainerItems(container.Metadata || container.Directory || []);
+      const reported = Number(container.totalSize);
+      const total = container.totalSize != null && Number.isInteger(reported) ? reported : skip + items.length;
+      return { items, total };
+    } catch (err) {
+      this.logger.warn?.('plex.getListPage.failed', { error: err.message, code: err.code ?? null });
+      return null;
+    }
+  }
+
+  /**
+   * Playable types (episodes, tracks, movies, clips) get the full conversion —
+   * duration, episode number and other playback metadata; the rest are listable.
+   * @private
+   */
+  _toContainerItems(items) {
+    const playableTypes = ['episode', 'track', 'movie', 'clip'];
+    return items.map(item => (playableTypes.includes(item.type)
+      ? this._toPlayableItem(item)
+      : this._toListableItem(item)));
   }
 
   /**

@@ -14,7 +14,13 @@ export class ListBrowseService {
     return this.contentCatalog.sourceNames();
   }
 
-  async browse({ source, localId, modifiers }) {
+  /**
+   * @param {{ skip: number, take: number }|null} [args.page] - When set and nothing
+   *   needs the whole container (no shuffle / recent_on_top / playable /
+   *   launchable), the source is asked for just that window. A `paged` result
+   *   carries the source's `total`; otherwise the caller slices `items` itself.
+   */
+  async browse({ source, localId, modifiers, page = null }) {
     const resolved = this.contentIdResolver.resolve(`${source}:${localId}`);
     const resolvedLocalId = resolved?.localId ?? localId;
     const resolvedSource = resolved?.source ?? source;
@@ -49,7 +55,17 @@ export class ListBrowseService {
     const resolvedViaPrefix = resolvedSource !== source;
     const compoundId = resolvedViaPrefix ? resolvedLocalId : `${source}:${resolvedLocalId}`;
     let items;
-    if (modifiers.launchable) {
+    let pagedTotal = null;
+    const pageAtSource = page && !modifiers.shuffle && !modifiers.recent_on_top
+      && !modifiers.launchable && !modifiers.playable
+      && typeof this.contentCatalog.getListPage === 'function';
+    const sourcePage = pageAtSource
+      ? await this.contentCatalog.getListPage(resolved, compoundId, page)
+      : null;
+    if (sourcePage) {
+      items = sourcePage.items;
+      pagedTotal = sourcePage.total;
+    } else if (modifiers.launchable) {
       items = await this.contentCatalog.resolveLaunchables(resolved, compoundId);
       if (items === null) return { kind: 'unsupported_launchable' };
     } else if (modifiers.playable) {
@@ -82,7 +98,10 @@ export class ListBrowseService {
 
     const containerInfo = await this.contentCatalog.getItem(resolved, compoundId);
     const info = await this.contentCatalog.getContainerInfo(resolved, compoundId);
-    return { kind: 'found', items, containerInfo, info, compoundId };
+    return {
+      kind: 'found', items, containerInfo, info, compoundId,
+      ...(pagedTotal !== null ? { paged: true, total: pagedTotal } : {}),
+    };
   }
 }
 

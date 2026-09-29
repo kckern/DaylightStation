@@ -82,7 +82,7 @@ describe('Browse Detail browser history', () => {
     expect(screen.getByTestId('scroll-host').scrollTop).toBe(137);
     expect(screen.getByTestId('browse-open-plex:')).toHaveFocus();
     expect(window.history.state.mediaNavStack.at(-1).params).toEqual({
-      path: '', scrollTop: 137, focusedId: 'plex:',
+      path: '', scrollTop: 137, focusedId: 'plex:', loadedCount: 1,
     });
 
     act(() => window.history.back());
@@ -90,6 +90,41 @@ describe('Browse Detail browser history', () => {
     await screen.findByTestId('home-route');
     expect(location.search).toBe('');
     expect(window.history.state.mediaNavStack).toEqual([{ view: 'home', params: {} }]);
+  });
+
+  // Browse arrives 50 rows at a time. A person who scrolled to row 100, opened
+  // Detail and pressed Back must land on that row again — not on page one with
+  // the restore waiting forever for a row that was never re-fetched.
+  it('Back restores a focused row that was past the first page', async () => {
+    const rows = Array.from({ length: 120 }, (_, i) => (
+      { id: `plex:m${i}`, title: `Movie ${String(i).padStart(3, '0')}`, type: 'movie', itemType: 'item' }
+    ));
+    DaylightAPI.mockImplementation(async (url) => {
+      const q = new URLSearchParams(url.split('?')[1]);
+      const skip = Number(q.get('skip') ?? 0);
+      const take = Number(q.get('take'));
+      return { items: rows.slice(skip, skip + take), total: rows.length };
+    });
+    window.history.replaceState({ mediaNavStack: [{
+      view: 'browse',
+      params: { path: 'plex/movies', label: 'Movies', scrollTop: 137, focusedId: 'plex:m100', loadedCount: 150 },
+    }] }, '', '/media?view=browse&path=plex%2Fmovies');
+
+    render(<MantineProvider><CastTargetProvider><NavProvider>
+      <NavigationSurface />
+    </NavProvider></CastTargetProvider></MantineProvider>);
+
+    await screen.findByTestId('browse-row-plex:m100');
+    expect(DaylightAPI).toHaveBeenCalledWith('api/v1/list/plex/movies?take=150');
+    await waitFor(() => {
+      expect(screen.getByTestId('scroll-host').scrollTop).toBe(137);
+      expect(screen.getByTestId('result-play-now-plex:m100')).toHaveFocus();
+    });
+
+    fireEvent.click(screen.getByTestId('browse-detail-plex:m100'));
+    expect(window.history.state.mediaNavStack.at(-2).params).toMatchObject({
+      path: 'plex/movies', focusedId: 'plex:m100', loadedCount: 120,
+    });
   });
 
   // Omitting currentPatch from either Detail entrypoint must lose the live

@@ -90,6 +90,28 @@ describe('ContentCombobox (hook wiring)', () => {
     expect(currentHook.openWithSiblings).toHaveBeenCalledTimes(1);
   });
 
+  // The dropdown is portaled to <body>, so a consumer cannot style it through
+  // its own wrapper. dropdownClassName is the hook for that (Media's dock sets a
+  // minimum width so row titles and actions fit beside a narrow input).
+  it.each([
+    ['no consumer class by default', undefined, false],
+    ['a consumer class on the portaled dropdown', 'media-search-dropdown', true],
+  ])('dropdownClassName: %s', async (_label, dropdownClassName, expected) => {
+    currentHook = makeHook({
+      state: {
+        ...initialState(''), mode: Modes.SEARCH, search: 'hy',
+        results: [{ id: 'hymn:1', title: 'Hymn 1', source: 'hymn' }],
+      },
+    });
+    renderCombobox(dropdownClassName ? { dropdownClassName } : {});
+    fireEvent.focus(screen.getByRole('textbox'));
+    fireEvent.click(screen.getByRole('textbox'));
+    await screen.findByText('Hymn 1');
+    const dropdown = document.querySelector('.content-combobox-dropdown');
+    expect(dropdown).not.toBeNull();
+    expect(dropdown.classList.contains('media-search-dropdown')).toBe(expected);
+  });
+
   it('typing routes through handleInput', () => {
     currentHook = makeHook({
       state: { ...initialState(''), mode: Modes.SEARCH, search: '' },

@@ -405,6 +405,9 @@ export function useMediaResilience({
     if (decision === 'resume') {
       getRecoveryLedger().userReset(playbackSessionKey);
       exhaustedNotifiedRef.current = false;
+      // A wait may have begun at the END of the jolt ladder (checked before
+      // skipping). The restored file gets a fresh ladder, not an instant skip.
+      joltStepRef.current = 0;
       triggerRecovery('source-restored', { sourceRestored: true, refreshUrl: true, forceRemount: true, bypassCooldown: true });
     } else if (decision === 'retry') {
       triggerRecovery('source-refusal-cleared', { refreshUrl: true });
@@ -755,6 +758,8 @@ export function useMediaResilience({
   joltLatestRef.current = {
     getMediaEl, targetTimeSeconds, seconds, meta, waitKey, waitKeyFields,
     onReload, onExhausted, actions, statusRef, playbackSessionKey,
+    sourceHealable: sourceAvailability.healable,
+    checkSource: sourceAvailability.checkNow,
   };
 
   // Jolt ladder: while stuck, escalate refresh-url → remount, each re-seeking to
@@ -805,10 +810,38 @@ export function useMediaResilience({
         joltTimerRef.current = null;
       };
 
+      // Before giving up (which, in a queue, SKIPS the item): a Plex file the
+      // server is refusing is waited out, not skipped. 2026-09-29: both rungs
+      // failed on a Bluey part Plex refused mid library scan, and the episode
+      // was skipped at 90% — the file was readable again a minute later.
+      // The token guards the async gap: if playback recovers (isStuck falls and
+      // the cleanup clears joltTimerRef) while we ask, nothing is declared.
+      const exhaustUnlessRefused = (attempts) => {
+        if (!L.sourceHealable || typeof L.checkSource !== 'function') {
+          declareExhausted(attempts);
+          return;
+        }
+        const token = { checkingBeforeExhaust: true };
+        joltTimerRef.current = token;
+        L.checkSource('before-exhausted-skip', { suspected: true }).then((decision) => {
+          if (joltTimerRef.current !== token) return;
+          if (decision === 'wait') {
+            playbackLog('exhausted-skip-deferred', {
+              ...L.waitKeyFields, rung: joltStepRef.current, attempt: attempts,
+            }, { level: 'warn' });
+            // The wait holds every rung (sourceUnavailableRef) and its `resume`
+            // resets the ladder; keep a timer so the ladder re-evaluates after.
+            joltTimerRef.current = setTimeout(fireRung, STALL_JOLT_STEP_MS);
+            return;
+          }
+          declareExhausted(attempts);
+        });
+      };
+
       const plan = stallJoltPlan(joltStepRef.current);
       if (!plan) {
         // Ladder ran out of rungs.
-        declareExhausted(ledger.snapshot(L.playbackSessionKey)?.count ?? joltStepRef.current);
+        exhaustUnlessRefused(ledger.snapshot(L.playbackSessionKey)?.count ?? joltStepRef.current);
         return;
       }
       // Ledger gates the rung: hard cap on total recoveries this session
@@ -833,7 +866,7 @@ export function useMediaResilience({
         }
         if (gate.deniedBy === 'session-cap') {
           // Total recovery budget spent.
-          declareExhausted(gate.attempt);
+          exhaustUnlessRefused(gate.attempt);
           return;
         }
         // Any other denial (e.g. a future mount-budget on this actor) must not

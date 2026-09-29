@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   decideSourceCheck,
   isSourceRefusal,
+  isSuspectedRefusal,
   sourceNoticeText,
   sourcePollDelayMs,
   toHealableContentId,
@@ -24,6 +25,24 @@ describe('isSourceRefusal', () => {
     expect(isSourceRefusal({ errorCode: 4, errorMessage: 'MEDIA_ELEMENT_ERROR: Format error' })).toBe(false);
     expect(isSourceRefusal({ errorCode: 2, errorMessage: 'PIPELINE_ERROR_READ' })).toBe(false);
     expect(isSourceRefusal({})).toBe(false);
+  });
+});
+
+// 2026-09-29: Plex refused a Bluey part mid-episode. Chromium reported it as
+// "Format error" (after a URL refresh) and "PipelineStatus::PIPELINE_ERROR_READ"
+// (after a remount) — no status prefix — so it never read as a refusal and the
+// stall ladder skipped the episode at 90%.
+describe('isSuspectedRefusal', () => {
+  it('suspects the mid-playback errors that carry no HTTP status', () => {
+    expect(isSuspectedRefusal({ errorCode: 4, errorMessage: 'MEDIA_ELEMENT_ERROR: Format error' })).toBe(true);
+    expect(isSuspectedRefusal({ errorCode: 2, errorMessage: 'PipelineStatus::PIPELINE_ERROR_READ: FFmpegDemuxer: data source error' })).toBe(true);
+    expect(isSuspectedRefusal({ errorCode: 4, errorMessage: null })).toBe(true);
+  });
+
+  it('is not a suspicion when the refusal is already definite, or the code cannot be one', () => {
+    expect(isSuspectedRefusal({ errorCode: 4, errorMessage: '404: Not Found' })).toBe(false);
+    expect(isSuspectedRefusal({ errorCode: 3, errorMessage: 'PIPELINE_ERROR_DECODE' })).toBe(false);
+    expect(isSuspectedRefusal({ errorCode: null, errorMessage: 'Format error' })).toBe(false);
   });
 });
 
@@ -52,6 +71,14 @@ describe('decideSourceCheck', () => {
   it('resumes after a wait, retries after a transient refusal', () => {
     expect(decideSourceCheck({ state: 'readable', waiting: true })).toBe('resume');
     expect(decideSourceCheck({ state: 'readable', waiting: false })).toBe('retry');
+  });
+
+  it('a merely suspected refusal that turns out readable goes back to the ladder, not to an extra reload', () => {
+    // A readable file with a failing stream is a stall, not a refusal; reloading
+    // outside the ladder on every such error would loop past its budget.
+    expect(decideSourceCheck({ state: 'readable', waiting: false, suspected: true })).toBe('normal');
+    expect(decideSourceCheck({ state: 'unreadable', waiting: false, suspected: true })).toBe('wait');
+    expect(decideSourceCheck({ state: 'readable', waiting: true, suspected: true })).toBe('resume');
   });
 
   it('hands a missing file back to the normal ladder even mid-wait', () => {
