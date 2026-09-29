@@ -61,6 +61,59 @@ describe('list router paging', () => {
     expect(res.body.total).toBe(120);
   });
 
+  describe('when the source can page', () => {
+    let adapter;
+    let pagedApp;
+    beforeEach(() => {
+      adapter = {
+        getList: vi.fn().mockResolvedValue(leaves),
+        getListPage: vi.fn(async (_id, { skip, take }) => ({ items: leaves.slice(skip, skip + take), total: leaves.length })),
+        getItem: vi.fn().mockResolvedValue({ id: 'plex:library/sections/6/all', title: 'Movies' }),
+        getContainerInfo: vi.fn().mockResolvedValue({ key: 'library/sections/6/all', title: 'Movies', type: 'section' }),
+      };
+      const contentIdResolver = {
+        resolve: vi.fn().mockReturnValue({ adapter, localId: 'library/sections/6/all', source: 'plex' }),
+      };
+      const router = createListRouter({
+        listBrowse: new ListBrowseService({
+          contentCatalog: new RegistryContentCatalogGateway({ registry: { get: () => adapter } }), contentIdResolver,
+        }),
+        logger: { info: vi.fn(), warn: vi.fn() },
+      });
+      pagedApp = express();
+      pagedApp.use('/api/v1/list', router);
+    });
+
+    test('asks the source for the window instead of fetching the whole container', async () => {
+      const res = await request(pagedApp).get('/api/v1/list/plex/library/sections/6/all?take=50&skip=50');
+      expect(adapter.getListPage).toHaveBeenCalledWith('plex:library/sections/6/all', { skip: 50, take: 50 });
+      expect(adapter.getList).not.toHaveBeenCalled();
+      expect(res.body.items.map(i => i.id)).toEqual(leaves.slice(50, 100).map(i => i.id));
+      expect(res.body.total).toBe(120);
+    });
+
+    test('a reordering modifier still reads the whole container, then slices', async () => {
+      const res = await request(pagedApp).get('/api/v1/list/plex/library/sections/6/all/recent_on_top?take=50');
+      expect(adapter.getListPage).not.toHaveBeenCalled();
+      expect(adapter.getList).toHaveBeenCalled();
+      expect(res.body.items).toHaveLength(50);
+      expect(res.body.total).toBe(120);
+    });
+
+    test('a source that declines to page (null) falls back to the whole list, sliced', async () => {
+      adapter.getListPage.mockResolvedValue(null);
+      const res = await request(pagedApp).get('/api/v1/list/plex/library/sections/6/all?take=50&skip=100');
+      expect(adapter.getList).toHaveBeenCalled();
+      expect(res.body.items.map(i => i.id)).toEqual(leaves.slice(100).map(i => i.id));
+      expect(res.body.total).toBe(120);
+    });
+
+    test('without take the source is never asked to page', async () => {
+      await request(pagedApp).get('/api/v1/list/plex/library/sections/6/all');
+      expect(adapter.getListPage).not.toHaveBeenCalled();
+    });
+  });
+
   test('an invalid take or skip is ignored rather than truncating the list', async () => {
     for (const q of ['take=0', 'take=-5', 'take=abc', 'take=50&skip=-1', 'take=50&skip=x']) {
       const res = await request(app).get(`/api/v1/list/plex/library/sections/6/all?${q}`);
