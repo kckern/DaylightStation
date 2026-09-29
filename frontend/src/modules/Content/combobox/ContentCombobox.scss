@@ -14,6 +14,27 @@
 // the highlight `color: white` rules still override where intended.
 .content-combobox-dropdown {
   color: var(--ds-text-primary, #E8EAF0);
+
+  // ── Rows shrink to the dropdown, not to the widest row ──
+  // Mantine 7's ScrollArea wraps the options in an inline `display: table;
+  // min-width: 100%`, and a table is as wide as its WIDEST row: one long
+  // subtitle ("…Original Motion Picture Soundtrack") made every row wider
+  // than the dropdown, so no title could truncate and each row's badge and ⋮
+  // sat past the right edge (opening ⋮ then scrolled the list sideways,
+  // hiding every title). As a block, rows take the dropdown's width.
+  .mantine-ScrollArea-viewport > div {
+    display: block !important;
+  }
+
+  // The flex wrapper around the ScrollArea keeps `min-width: auto`, whose
+  // min-content counts each title's FULL nowrap text even though the title
+  // truncates — on its own enough to hold every row at the longest title.
+  :has(> .mantine-ScrollArea-root),
+  .mantine-ScrollArea-root,
+  .mantine-ScrollArea-viewport {
+    min-width: 0;
+    max-width: 100%;
+  }
 }
 
 // ── Stream status line (spec D3) ──
