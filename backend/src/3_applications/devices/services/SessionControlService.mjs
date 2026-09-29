@@ -151,7 +151,7 @@ export class SessionControlService extends ISessionControl {
       };
     }
 
-    return this.#routineDedupe.run({
+    const result = await this.#routineDedupe.run({
       triggerId: envelope.origin?.triggerId,
       targetId: targetDevice,
       kind: envelope.command,
@@ -165,6 +165,17 @@ export class SessionControlService extends ISessionControl {
       this.#recordIdempotency(commandId, envelope, ackResult);
       return ackResult;
     });
+    // A suppressed routine duplicate shares the ORIGINAL command's outcome,
+    // but it is answered under its own commandId (the caller correlates on
+    // it) and recorded under that id too, so its own retry replays and a
+    // conflicting reuse of the id is refused like any other.
+    if (result?.deduplicated === true) {
+      const own = { ...result, commandId };
+      this.#recordIdempotency(commandId, envelope, own);
+      this.#logger.info?.('session-control.routine_deduplicated', { commandId, targetDevice, triggerId: envelope.origin?.triggerId ?? null });
+      return own;
+    }
+    return result;
   }
 
   /**
