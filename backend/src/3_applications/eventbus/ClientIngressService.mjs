@@ -110,8 +110,8 @@ export class ClientIngressService {
       return;
     }
     if (message.source === 'playback-logger' || message.topic === 'logging') {
-      const metadata = this.publications.clientMetadata(clientId);
-      this.frontendLogIngestion?.ingest(message, metadata, {
+      const { ip, userAgent } = this.publications.clientMetadata(clientId) ?? {};
+      this.frontendLogIngestion?.ingest(message, { ip, userAgent }, {
         onEvent: (normalized) => this.getFitnessPresence()?.observe(normalized),
       });
     }
