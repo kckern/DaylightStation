@@ -25,11 +25,14 @@ export function createFleetStore({ timing = TIMING, setTimeoutFn = setTimeout, c
     notify(deviceId);
   }
 
-  function armStaleTimer(deviceId, staleAfterMs = timing.DEVICE_STALE_AFTER_MS, lastSeenAt = null) {
+  // Armed from RECEIPT time (now): staleness is how long WE have gone
+  // without hearing from the device. The sender's own `ts`/`lastHeardAt` is
+  // on its clock — a kiosk even 15s behind would otherwise be marked stale
+  // on every heartbeat.
+  function armStaleTimer(deviceId, staleAfterMs = timing.DEVICE_STALE_AFTER_MS) {
     const existing = staleTimers.get(deviceId);
     if (existing) clearTimeoutFn(existing);
-    const elapsed = lastSeenAt ? Math.max(0, Date.now() - new Date(lastSeenAt).getTime()) : 0;
-    const delay = Math.max(0, staleAfterMs - elapsed);
+    const delay = Math.max(0, staleAfterMs);
     staleTimers.set(deviceId, setTimeoutFn(() => {
       staleTimers.delete(deviceId);
       const entry = byDevice.get(deviceId);
@@ -59,13 +62,18 @@ export function createFleetStore({ timing = TIMING, setTimeoutFn = setTimeout, c
       if (typeof deviceId !== 'string' || deviceId.length === 0) return;
       const prev = byDevice.get(deviceId) ?? {};
       const offline = reason === 'offline';
-      const heardAt = lastHeardAt ?? ts ?? new Date().toISOString();
+      // `receivedAt` is this observer's clock; every elapsed-silence
+      // computation (stale timer, two-minute uncertainty) uses it.
+      // `lastSeenAt` stays the sender's own timestamp, for display.
+      const receivedAt = new Date().toISOString();
+      const heardAt = lastHeardAt ?? ts ?? receivedAt;
       setEntry(deviceId, {
         snapshot: snapshot ?? prev.snapshot ?? null,
         identity: identity ?? prev.identity ?? null,
         connected: connected ?? prev.connected ?? !offline,
         reason: reason ?? 'change',
         lastSeenAt: heardAt,
+        receivedAt,
         isStale: false,
         offline,
       });
@@ -73,7 +81,7 @@ export function createFleetStore({ timing = TIMING, setTimeoutFn = setTimeout, c
         const t = staleTimers.get(deviceId);
         if (t) { clearTimeoutFn(t); staleTimers.delete(deviceId); }
       } else {
-        armStaleTimer(deviceId, staleAfterMs, heardAt);
+        armStaleTimer(deviceId, staleAfterMs);
       }
     },
 

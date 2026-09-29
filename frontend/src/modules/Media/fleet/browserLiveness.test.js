@@ -8,7 +8,7 @@ describe('browser fleet liveness', () => {
   });
 
   it('keeps connected idle browsers idle and sorts playing rows before idle and uncertain rows', () => {
-    expect(browserDisplayState({ connected: true, lastHeardMs: 900_000, state: 'idle' })).toBe('idle');
+    expect(browserDisplayState({ connected: true, lastHeardMs: 90_000, state: 'idle' })).toBe('idle');
     expect(sortFleetDevices([
       { id: 'uncertain', displayState: 'uncertain' },
       { id: 'idle', displayState: 'idle' },
@@ -81,5 +81,21 @@ describe('browser fleet liveness', () => {
       expect(order.indexOf(liveDeviceId)).toBeLessThan(order.indexOf('unknown-device'));
     }
     expect(order.indexOf('off-device')).toBeLessThan(order.indexOf('unknown-device'));
+  });
+
+  it('measures configured-device silence from receipt time, not a skewed sender clock', () => {
+    const receivedAt = '2026-01-01T00:05:00.000Z';
+    // The kiosk's clock is five minutes behind: its own `ts` alone would
+    // already read as long past the two-minute window.
+    const entries = new Map([['tv', { snapshot: { state: 'playing' }, offline: false, lastSeenAt: '2026-01-01T00:00:00.000Z', receivedAt }]]);
+    expect(mergeCanonicalFleetState([{ id: 'tv' }], entries, { now: () => Date.parse(receivedAt) + 1_000 })[0].state).toBe('playing');
+    expect(mergeCanonicalFleetState([{ id: 'tv' }], entries, { now: () => Date.parse(receivedAt) + 120_000 })[0].state).toBe('uncertain');
+  });
+
+  it('treats two minutes of silence as uncertain even when the browser was last reported connected', () => {
+    // A missed disconnect (observer WS down, server restart) must not leave
+    // a browser reading Playing forever.
+    expect(browserDisplayState({ connected: true, lastHeardMs: 119_999, state: 'playing' })).toBe('playing');
+    expect(browserDisplayState({ connected: true, lastHeardMs: 120_000, state: 'playing' })).toBe('uncertain');
   });
 });

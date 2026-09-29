@@ -33,9 +33,11 @@ function FleetCard({ deviceId }) {
   const closePlay = useCallback(() => setPlayOpen(false), []);
   const offline = !!entry?.offline;
   const snap = entry?.snapshot;
-  const devState = device?.type === 'browser'
-    ? (device.state ?? snap?.state ?? 'unknown')
-    : (snap?.state ?? 'unknown');
+  // The merged fleet row's state (browser liveness, or the two-minute
+  // uncertainty mergeCanonicalFleetState applies to physical screens) is
+  // what the list sorts by — the card must read the same, not the raw
+  // snapshot. The offline label still wins below.
+  const devState = device?.state ?? snap?.state ?? 'unknown';
   const item = snap?.currentItem;
   const duration = item?.duration ?? 0;
   const isActive = !offline && ACTIVE_STATES.has(devState);
