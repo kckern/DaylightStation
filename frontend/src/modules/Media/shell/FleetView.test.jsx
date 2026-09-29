@@ -142,4 +142,21 @@ describe('FleetView Play… affordance', () => {
     expect(screen.getByTestId('fleet-uncertain-browser:wall')).toHaveTextContent('may not be confirmed');
     expect(screen.getByTestId('fleet-card-browser:wall')).toHaveTextContent('Last heard');
   });
+
+  it('labels a physical screen by its merged fleet state, so a silent TV reads Uncertain, not Playing', () => {
+    // mergeCanonicalFleetState turns two minutes of silence into
+    // `device.state: 'uncertain'` (and sorts it there); the card must read
+    // the same merged state rather than re-deriving it from the raw snapshot.
+    fleet.devices = [{ id: 'livingroom-tv', name: 'Living Room TV', type: 'shield-tv', state: 'uncertain' }];
+    fleet.entries = { 'livingroom-tv': { snapshot: { state: 'playing', currentItem: { title: 'Bluey' } } } };
+    renderFleet();
+    expect(screen.getByTestId('fleet-state-livingroom-tv')).toHaveTextContent('Uncertain');
+  });
+
+  it('still labels an offline physical screen Offline over its merged state', () => {
+    fleet.devices = [{ id: 'livingroom-tv', name: 'Living Room TV', type: 'shield-tv', state: 'off' }];
+    fleet.entries = { 'livingroom-tv': { offline: true, snapshot: { state: 'playing' } } };
+    renderFleet();
+    expect(screen.getByTestId('fleet-state-livingroom-tv')).not.toHaveTextContent('Playing');
+  });
 });

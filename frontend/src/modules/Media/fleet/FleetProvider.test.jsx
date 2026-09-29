@@ -138,4 +138,26 @@ describe('FleetProvider configured-device liveness re-render', () => {
     unmount();
     vi.useRealTimers();
   });
+
+  it('schedules the two-minute boundary from receipt time when the screen clock is behind', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-22T12:00:00.000Z'));
+    const { unmount } = render(<FleetProvider><Probe /></FleetProvider>);
+    const feed = [...deviceStateSubscribers].reverse().find(({ kind }) => kind === 'device-state');
+    act(() => {
+      // Sender clock three minutes behind the observer.
+      feed.callback({ deviceId: 'tv-1', snapshot: { state: 'playing' }, reason: 'change', ts: '2026-09-22T11:57:00.000Z' });
+    });
+    let result = JSON.parse(screen.getByRole('status').textContent);
+    expect(result.devices.find(({ id }) => id === 'tv-1')).toMatchObject({ state: 'playing' });
+
+    act(() => { vi.advanceTimersByTime(119_999); });
+    result = JSON.parse(screen.getByRole('status').textContent);
+    expect(result.devices.find(({ id }) => id === 'tv-1')).toMatchObject({ state: 'playing' });
+
+    act(() => { vi.advanceTimersByTime(2); });
+    result = JSON.parse(screen.getByRole('status').textContent);
+    expect(result.devices.find(({ id }) => id === 'tv-1')).toMatchObject({ state: 'uncertain' });
+    unmount();
+  });
 });

@@ -101,4 +101,21 @@ describe('fleetStore', () => {
     store.receive({ snapshot: snap('playing') });
     expect(store.getAll().size).toBe(0);
   });
+
+  it('arms the stale timer from receipt time, not from a skewed sender clock', () => {
+    // A kiosk whose clock runs 20s behind stamps every heartbeat `ts` 20s in
+    // the past. Staleness is about how long WE have gone without hearing
+    // from it, so each heartbeat must buy a full 15s from its arrival.
+    vi.setSystemTime(new Date('2026-09-22T12:00:00.000Z'));
+    const store = createFleetStore();
+    store.receive({ deviceId: 'tv', snapshot: snap('playing'), ts: '2026-09-22T11:59:40.000Z' });
+    vi.advanceTimersByTime(1);
+    expect(store.getEntry('tv').isStale).toBe(false);
+    expect(store.getEntry('tv').lastSeenAt).toBe('2026-09-22T11:59:40.000Z');
+    expect(store.getEntry('tv').receivedAt).toBe('2026-09-22T12:00:00.000Z');
+    vi.advanceTimersByTime(14_998);
+    expect(store.getEntry('tv').isStale).toBe(false);
+    vi.advanceTimersByTime(2);
+    expect(store.getEntry('tv').isStale).toBe(true);
+  });
 });

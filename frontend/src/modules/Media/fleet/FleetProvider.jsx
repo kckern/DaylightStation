@@ -9,7 +9,7 @@ import { createFleetStore } from './fleetStore.js';
 import mediaLog from '../logging/mediaLog.js';
 import { useClientIdentity } from '../identity/useClientIdentity.js';
 import { TIMING } from '../constants.js';
-import { browserDisplayState, mergeCanonicalFleetState, sortFleetDevices } from './browserLiveness.js';
+import { browserDisplayState, mergeCanonicalFleetState, silenceMs, sortFleetDevices } from './browserLiveness.js';
 
 export const FleetContext = createContext(null);
 
@@ -84,7 +84,7 @@ export function FleetProvider({ children }) {
   // whichever state was last rendered, forever. Schedule a re-render for the
   // EARLIEST upcoming two-minute-uncertainty boundary across all live
   // entries (browser and physical alike; markAllStale on a WS drop doesn't
-  // touch `lastSeenAt`, so this boundary is unaffected by whether the store
+  // touch `receivedAt`, so this boundary is unaffected by whether the store
   // itself is currently marking things stale for the unrelated 15s purpose
   // above), and reschedule for the next one each time it fires.
   const [uncertaintyTick, forceUncertaintyTick] = useReducer((n) => n + 1, 0);
@@ -94,8 +94,10 @@ export function FleetProvider({ children }) {
       const now = Date.now();
       let earliestBoundary = Infinity;
       for (const [, entry] of browserEntries) {
-        if (!entry || entry.offline === true || entry.lastSeenAt == null) continue;
-        const boundary = new Date(entry.lastSeenAt).getTime() + TIMING.BROWSER_UNCERTAIN_AFTER_MS;
+        const heard = entry?.receivedAt ?? entry?.lastSeenAt;
+        if (!entry || entry.offline === true || heard == null) continue;
+        // Receipt time, not the sender's (possibly skewed) timestamp.
+        const boundary = new Date(heard).getTime() + TIMING.BROWSER_UNCERTAIN_AFTER_MS;
         if (boundary > now && boundary < earliestBoundary) earliestBoundary = boundary;
       }
       if (earliestBoundary === Infinity) return;
@@ -146,7 +148,7 @@ export function FleetProvider({ children }) {
         isLocal: id === browserDeviceId(clientId),
         state: browserDisplayState({
           connected: entry.connected,
-          lastHeardMs: Math.max(0, Date.now() - new Date(entry.lastSeenAt).getTime()),
+          lastHeardMs: silenceMs(entry),
           state: entry.snapshot?.state,
         }),
         isStale: entry.isStale,
