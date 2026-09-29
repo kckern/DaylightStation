@@ -53,6 +53,7 @@ export function buildClientAck(controlClientId, message, extra) {
 export function useExternalControl(controller) {
   const { controlClientId, controlReady } = useClientIdentity();
   const routineTriggers = useRef(new Map());
+  const commandResults = useRef(new Map());
 
   useEffect(() => {
     if (!controlClientId || !controlReady || !controller) return undefined;
@@ -73,6 +74,27 @@ export function useExternalControl(controller) {
           ack({ ok: false, error: result.reason, code: result.code, handoff: result.handoff });
         }
       };
+      const replay = (entry, options = { persist: false }) => {
+        if (entry.value) complete(entry.value, options);
+        else entry.result.then(result => complete(result, options));
+      };
+      const remember = (result, options = {}, beforeComplete = null) => {
+        const entry = {
+          value: result?.then ? null : result,
+          result: Promise.resolve(result).catch(error => ({ ok: false, reason: error?.message ?? String(error) })),
+        };
+        commandResults.current.set(commandId, entry);
+        if (commandResults.current.size > 256) commandResults.current.delete(commandResults.current.keys().next().value);
+        beforeComplete?.(entry);
+        if (entry.value) complete(entry.value, options);
+        else entry.result.then(value => { entry.value = value; complete(value, options); });
+        return entry;
+      };
+      const priorCommand = commandResults.current.get(commandId);
+      if (priorCommand) {
+        replay(priorCommand);
+        return;
+      }
       if (msg.origin?.kind === 'routine') {
         const trigger = msg.origin.triggerId ?? hash(stable({
           content: msg.params,
@@ -83,12 +105,11 @@ export function useExternalControl(controller) {
         const now = Date.now();
         const prior = routineTriggers.current.get(routineKey);
         if (prior != null && now - prior.seenAt <= 10_000) {
-          if (prior.value) complete(prior.value, { persist: false });
-          else prior.result.then(result => complete(result, { persist: false })).catch(error => ack({ ok: false, error: error.message }));
+          remember(prior.value ?? prior.result, { persist: false });
           return;
         }
         if (readPersistedTriggers(now)[routineKey] != null) {
-          complete({ ok: true }, { persist: false });
+          remember({ ok: true }, { persist: false });
           return;
         }
         for (const [candidate, entry] of routineTriggers.current) {
@@ -97,19 +118,12 @@ export function useExternalControl(controller) {
       }
       try {
         const result = applyCommandEnvelope(controller, msg);
-        const resultPromise = Promise.resolve(result);
-        if (routineKey) routineTriggers.current.set(routineKey, {
-          seenAt: Date.now(), result: resultPromise, value: result?.then ? null : result,
+        remember(result, {}, entry => {
+          if (routineKey) routineTriggers.current.set(routineKey, { seenAt: Date.now(), ...entry });
         });
-        if (result?.then) resultPromise.then(complete).catch((err) => {
-          if (routineKey) routineTriggers.current.delete(routineKey);
-          ack({ ok: false, error: err.message });
-        });
-        else complete(result);
       } catch (err) {
         if (routineKey) routineTriggers.current.delete(routineKey);
-        mediaLog.externalControlRejected({ commandId, reason: err?.message });
-        ack({ ok: false, error: err?.message });
+        remember({ ok: false, reason: err?.message });
       }
     });
   }, [controlClientId, controlReady, controller]);

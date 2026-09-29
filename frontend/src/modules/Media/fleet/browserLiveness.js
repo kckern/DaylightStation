@@ -14,6 +14,17 @@ export function browserDisplayState({ connected, lastHeardMs = Infinity, state =
     : (state === 'stopped' ? 'idle' : state);
 }
 
+/** Merge the authoritative live snapshot into every configured fleet row. */
+export function mergeCanonicalFleetState(devices, entries) {
+  return devices.map(device => {
+    const entry = entries.get(device.id);
+    const state = entry?.offline === true
+      ? 'off'
+      : (entry?.snapshot?.state ?? device.state ?? 'unknown');
+    return { ...device, state, displayState: state };
+  });
+}
+
 export function sortFleetDevices(devices) {
   return [...devices].sort((left, right) => {
     const rank = (ORDER.get(left.displayState ?? left.state) ?? 99) - (ORDER.get(right.displayState ?? right.state) ?? 99);

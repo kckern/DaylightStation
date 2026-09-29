@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createIdleSessionSnapshot } from '@shared-contracts/media/shapes.mjs';
 import { applyCommandEnvelope } from './commandHandler.js';
+import { createLocalSessionController } from '../session/LocalSessionController.js';
 
 function makeController() {
   return {
@@ -9,6 +10,7 @@ function makeController() {
     config: { setShuffle: vi.fn(), setRepeat: vi.fn(), setShader: vi.fn(), setVolume: vi.fn() },
     lifecycle: { reset: vi.fn(), adoptSnapshot: vi.fn() },
     setOrigin: vi.fn(),
+    clearOrigin: vi.fn(),
   };
 }
 
@@ -88,5 +90,29 @@ describe('applyCommandEnvelope', () => {
     const result = applyCommandEnvelope(c, { ...env('queue', { op: 'not-an-operation' }), origin });
     expect(result.ok).toBe(false);
     expect(c.setOrigin).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['rejected item action', { op: 'item-action', operationId: 'expired-action', kind: 'playNow', item: { contentId: 'plex:1' }, tappedAt: 1 }, 'execute'],
+    ['expired undo', { op: 'undo', operationId: 'expired-undo' }, 'undo'],
+  ])('clears staged routine provenance after an async %s before the next human action', async (_label, params, method) => {
+    const controller = createLocalSessionController({ clientId: 'origin-owner' });
+    controller[method] = vi.fn(async () => ({ ok: false, reason: 'expired' }));
+    const origin = { kind: 'routine', name: 'Breakfast', triggerId: 'daily-0700' };
+
+    await expect(applyCommandEnvelope(controller, { ...env('queue', params), origin })).resolves.toMatchObject({ ok: false });
+    controller.config.setVolume(42);
+
+    expect(controller.getSnapshot().meta.origin).toEqual({ kind: 'device', id: 'browser:origin-owner' });
+  });
+
+  it('clears staged routine provenance after a no-op transport before the next human action', () => {
+    const controller = createLocalSessionController({ clientId: 'origin-owner' });
+    const origin = { kind: 'routine', name: 'Breakfast', triggerId: 'daily-0700' };
+
+    expect(applyCommandEnvelope(controller, { ...env('transport', { action: 'play' }), origin })).toEqual({ ok: true });
+    controller.config.setVolume(42);
+
+    expect(controller.getSnapshot().meta.origin).toEqual({ kind: 'device', id: 'browser:origin-owner' });
   });
 });
