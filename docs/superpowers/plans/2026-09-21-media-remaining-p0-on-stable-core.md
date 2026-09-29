@@ -1,5 +1,11 @@
 # Media Remaining P0 on Stable Core Implementation Plan
 
+> **Status (2026-09-29): closed.** Tasks 1–6 are in production (Task 6 at `757102abb`, repaired under
+> `docs/superpowers/plans/2026-09-28-media-task6-salvage.md`). Tasks 7–8 are **deferred, not scheduled**:
+> their briefs stay in `.superpowers/sdd/2026-09-21-media-remaining-p0-on-stable-core/` (task-7-brief.md;
+> Task 8 is the section below). Nothing in them is claimed as done.
+
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Complete and end-to-end accept every remaining P0 criterion while preserving the deployed 11-story stable core after every independently deployable batch.
