@@ -87,22 +87,28 @@ export function createLocalSessionController({
   // synchronous call. It is NOT reliable across an `await`/microtask boundary,
   // because a second, unrelated command can run (and stage its own origin, or
   // clear this one) before the first command's deferred transition arrives.
-  // Two mechanisms below capture an operation's origin explicitly, at the
-  // moment that operation begins, so its eventual transition is stamped
-  // correctly regardless of what else runs in the meantime:
-  //   - `operationOrigins`: item-actions and undos are already keyed by an
-  //     `operationId` from the command envelope, so their origin is captured
-  //     into this map at call time and consumed (by id) whenever their
-  //     (possibly async) mutation actually lands.
-  //   - `expectedPlaybackOrigin`: transport actions (play/pause/seek) whose
-  //     real effect is a LATER, player-driven PLAYER_STATE/PLAYER_OBSERVATION
-  //     dispatch — not anything this call dispatches itself — arm this
-  //     single-shot ticket instead. It is consumed by the next matching
-  //     player-driven transition within a bounded window.
+  // `operationOrigins` captures an async operation's origin explicitly, at
+  // the moment it begins (item-actions/undos are already keyed by an
+  // `operationId` from the command envelope), so its eventual transition is
+  // stamped correctly regardless of what else runs in the meantime.
+  //
+  // Transport actions (play/pause/seek) are NOT async in this sense — their
+  // provenance question is simply "who last commanded this screen," answered
+  // SYNCHRONOUSLY at command time (see transport.play/pause/seekAbs below),
+  // not by waiting for the player to report back. An earlier design armed a
+  // single-shot "expected transition" ticket consumed by the next matching
+  // player-driven dispatch; it was removed (three real failure modes: a
+  // no-op PLAYER_OBSERVATION — timeupdate/durationchange with no actual
+  // state change — still burned the ticket before the real event, since the
+  // action object (and the ticket-consuming call baked into it) is built
+  // before the reducer ever decides the dispatch is a no-op; seekAbs armed a
+  // ticket nothing was ever guaranteed to consume; and the ticket survived
+  // across LOAD_ITEM/skip, so the NEXT item's first 'playing' could still be
+  // wrongly stamped with a stale origin). Player-driven dispatches
+  // (PLAYER_STATE/PLAYER_OBSERVATION) now never touch meta.origin at all —
+  // provenance is sticky until the next actual command, by design.
   let pendingOrigin = null;
   const operationOrigins = new Map();
-  let expectedPlaybackOrigin = null; // { origin, expiresAt } | null
-  const EXPECTED_PLAYBACK_ORIGIN_WINDOW_MS = 10_000;
   const initial = {
     ...restored,
     meta: { ...restored.meta, revision: canonicalRevision },
@@ -196,36 +202,16 @@ export function createLocalSessionController({
   const beginAction = () => {
     if (!pendingOrigin) pendingOrigin = defaultOrigin();
   };
-  // Arm the single-shot ticket a later player-driven transition consumes.
-  // Only called by transport actions whose effect is NOT a synchronous
-  // dispatch of their own (play-when-already-loaded, pause, seek) — the
-  // command's mutate() returns before the player ever reports back, so by
-  // the time `onPlayerStateChange`/`onPlayerObservation` fires, `pendingOrigin`
-  // has already been cleared (by commandHandler's `applyWithOrigin`, or by an
-  // unrelated command that ran in between).
-  //
-  // `outcome` ('playing' | 'paused') is the SPECIFIC transition this ticket
-  // is waiting for. Without it, ANY player callback — including a no-op
-  // timeupdate/durationchange PLAYER_OBSERVATION that changes nothing and
-  // never actually commits a transition (sessionReducer.js's `if
-  // (!itemChanged && !stateChanged) return snapshot;`) — would burn the
-  // ticket before the real event arrives; and a no-op command (pause while
-  // already paused) would leave a stale ticket armed for the whole window,
-  // ready to wrongly claim an unrelated human action (e.g. someone pressing
-  // play on the TV's own remote) that happens to produce a matching state.
-  const armExpectedPlaybackOrigin = (origin, outcome) => {
-    if (!origin) return;
-    expectedPlaybackOrigin = { origin, outcome, expiresAt: Date.now() + EXPECTED_PLAYBACK_ORIGIN_WINDOW_MS };
-  };
-  const clearExpectedPlaybackOrigin = () => { expectedPlaybackOrigin = null; };
-  // Only consumes (and only clears) the ticket when `outcome` matches what
-  // was armed — a mismatched or no-op call leaves it alone for the real
-  // event still to come.
-  const consumeExpectedPlaybackOrigin = (outcome) => {
-    if (!expectedPlaybackOrigin || expectedPlaybackOrigin.outcome !== outcome) return undefined;
-    const { origin, expiresAt } = expectedPlaybackOrigin;
-    expectedPlaybackOrigin = null;
-    return Date.now() <= expiresAt ? origin : undefined;
+  // "Who last commanded this screen" — dispatched synchronously by transport
+  // actions whose own effect otherwise produces no transition of its own
+  // (see transport.play/pause/seekAbs below), so provenance is stamped at
+  // command time rather than waiting for a player event that may never
+  // arrive, may arrive out of order, or may arrive for the WRONG reason
+  // (see the removed-ticket note above). `SET_ORIGIN`'s reducer case is
+  // meta-only (sessionReducer.js) and always commits, so this never
+  // silently no-ops.
+  const stampOrigin = (origin) => {
+    store.dispatch({ type: 'SET_ORIGIN', origin, __opOrigin: origin });
   };
 
   const currentIdentity = (snapshot = snap()) => {
@@ -602,28 +588,23 @@ export function createLocalSessionController({
     transport: {
       play: () => {
         beginAction();
-        // Captured before anything below can dispatch (and so clear
-        // `pendingOrigin`) — see EXPECTED_PLAYBACK_ORIGIN_WINDOW_MS above.
         const opOrigin = pendingOrigin;
         mediaLog.transportCommand({ action: 'play', target: 'local' });
         // Playing from a stopped/ready session starts the queue head — this
-        // branch DOES dispatch synchronously (LOAD_ITEM, via moveCurrentTo),
-        // correctly reading ambient `pendingOrigin` (still `opOrigin` here).
-        // Either way, the FOLLOWING 'playing' transition (this item actually
-        // starting) still arrives later from the player, never from
-        // anything dispatched in this call — so the ticket is armed
-        // regardless of which branch ran, and `player.play()` always runs,
-        // exactly as before this fix.
+        // branch dispatches LOAD_ITEM synchronously (via moveCurrentTo),
+        // which already stamps `opOrigin` via the ambient mechanism above
+        // (still unconsumed at this point). Otherwise, stamp explicitly:
+        // "who last commanded this screen," synchronously, at command time
+        // — not waiting for (or relying on) any later confirmation from the
+        // player, which may never arrive, may arrive for an unrelated
+        // reason, or may arrive after another command has already run.
         if (!snap().currentItem) {
           const first = snap().queue.items[0];
-          if (!first) { clearExpectedPlaybackOrigin(); return; }
+          if (!first) return;
           moveCurrentTo(first);
+        } else {
+          stampOrigin(opOrigin);
         }
-        // Already playing: this call changes nothing, so no 'playing'
-        // transition is coming — arming a ticket here would just sit ready
-        // to wrongly claim some LATER, unrelated player event.
-        if (snap().state === 'playing') clearExpectedPlaybackOrigin();
-        else armExpectedPlaybackOrigin(opOrigin, 'playing');
         player.play();
       },
       pause: () => {
@@ -634,13 +615,7 @@ export function createLocalSessionController({
         // user expects "their place" to be saved.
         const here = position.get().seconds;
         if (Number.isFinite(here) && here > 0) setDurablePosition(here);
-        // As with play(): the 'paused' transition arrives later from the
-        // player, not from anything dispatched in this call — UNLESS this
-        // is a no-op (already paused), in which case nothing is coming at
-        // all, and any previously-armed ticket must not be left standing
-        // either.
-        if (snap().state === 'paused') clearExpectedPlaybackOrigin();
-        else armExpectedPlaybackOrigin(opOrigin, 'paused');
+        stampOrigin(opOrigin);
         player.pause();
       },
       stop: () => {
@@ -657,13 +632,9 @@ export function createLocalSessionController({
         beginAction();
         const opOrigin = pendingOrigin;
         mediaLog.transportCommand({ action: 'seekAbs', value: seconds, target: 'local' });
-        // A seek dispatches nothing synchronously either — the player
-        // reports the new position/state asynchronously. A seek doesn't
-        // change play/pause state itself; it re-confirms whatever state the
-        // session was already in, so the ticket targets THAT outcome (a
-        // seek while paused is confirmed by the next 'paused' event, one
-        // while playing by the next 'playing' event).
-        armExpectedPlaybackOrigin(opOrigin, snap().state === 'paused' ? 'paused' : 'playing');
+        // A seek dispatches nothing synchronously either — stamp
+        // provenance directly, same as play/pause above.
+        stampOrigin(opOrigin);
         player.seek(seconds);
       },
       seekRel: (delta) => {
@@ -831,26 +802,20 @@ export function createLocalSessionController({
           // A decoder can be unpaused while buffering or not yet rendered.
           // Only the actual native `playing` event may establish playing.
           : (observation.playing === true ? 'playing' : undefined));
+      // Player-driven dispatches never touch meta.origin — provenance is
+      // "who last commanded this screen," and stays sticky (unchanged) until
+      // the next actual command, whether that lands sooner or later than
+      // this observation.
       store.dispatch({
         type: 'PLAYER_OBSERVATION',
         contentId,
         itemPatch: observedItemPatch(observation),
         playerState,
-        // Consumes a ticket armed by transport.play/pause/seekAbs — but ONLY
-        // when THIS observation's own playerState matches what the ticket is
-        // waiting for. A plain timeupdate/durationchange tick (no paused/
-        // playing signal at all, `playerState` undefined here) never
-        // qualifies, so it can't burn the ticket before the real event
-        // arrives — `consumeExpectedPlaybackOrigin` itself also declines a
-        // non-matching outcome, but skipping the call entirely for
-        // `playerState == null` avoids even attempting a comparison against
-        // `undefined`.
-        __opOrigin: playerState != null ? consumeExpectedPlaybackOrigin(playerState) : undefined,
       });
     },
     onPlayerStateChange: (state, contentId = null) => {
       if (contentId != null && snap().currentItem?.contentId !== contentId) return;
-      store.dispatch({ type: 'PLAYER_STATE', playerState: state, __opOrigin: consumeExpectedPlaybackOrigin(state) });
+      store.dispatch({ type: 'PLAYER_STATE', playerState: state });
     },
     onPlayerEnded: (contentId = null) => {
       if (contentId != null && snap().currentItem?.contentId !== contentId) return;

@@ -6,11 +6,19 @@ import { expandContainerInput, isContainerInput } from '../session/containerExpa
 export function createItemActionOwner({ targetId, capture, revision, apply, getPendingCommit, fetchImpl, now = Date.now }) {
   const ledger = createUndoLedger({ targetId, capture, revision, restore: (snapshot, record) => {
     const restorePlaybackSnapshot = record.restorePlaybackSnapshot ?? record.playbackChanged;
+    const current = capture();
     if (!restorePlaybackSnapshot) {
-      const current = capture();
       snapshot.position = current.position;
       snapshot.state = current.state;
     }
+    // Volume/shader are device-level settings, not part of what a playback
+    // undo should ever revert (itemActionFingerprint deliberately excludes
+    // them from the supersede guard for the same reason — they change
+    // neither the queue's contents nor its order). Without this, undoing a
+    // "Play now" restores record.priorSnapshot WHOLESALE, silently reverting
+    // any volume/shader change a person made in between the tap and the
+    // undo — preserved here the same way position/state already are above.
+    snapshot.config = { ...snapshot.config, volume: current.config?.volume, shader: current.config?.shader };
     return apply(snapshot, { restore: restorePlaybackSnapshot, playbackChanged: record.playbackChanged, operationId: record.operationId });
   }, now });
   const operations = new Map();

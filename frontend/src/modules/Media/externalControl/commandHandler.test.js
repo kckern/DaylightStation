@@ -134,66 +134,19 @@ describe('applyCommandEnvelope', () => {
     expect(controller.getSnapshot().meta.origin).toEqual(origin);
   });
 
-  it('stamps a routine transport.play with the routine origin once the player reports playing, not when the call returns', () => {
-    // A session with an item already loaded (resume from paused): play()
-    // dispatches nothing itself — the real 'playing' transition arrives
-    // later, from the player (onPlayerStateChange), well after this
-    // synchronous call — and commandHandler's own applyWithOrigin — has
-    // already returned and cleared the staged origin.
-    const controller = createLocalSessionController({ clientId: 'origin-owner' });
-    controller.setPlayerHandle({ play: vi.fn(), pause: vi.fn(), seek: vi.fn() });
-    controller.queue.add({ contentId: 'plex:1', format: 'video' });
-    controller.transport.play();
-    controller.onPlayerStateChange('playing');
-    controller.transport.pause();
-    controller.onPlayerStateChange('paused'); // the player reports the pause too, same as production
-    expect(controller.getSnapshot().state).toBe('paused');
-
-    const origin = { kind: 'routine', name: 'Breakfast', triggerId: 'daily-0700' };
-    expect(applyCommandEnvelope(controller, { ...env('transport', { action: 'play' }), origin })).toEqual({ ok: true });
-    // Nothing has changed yet — resuming dispatched nothing synchronously.
-    expect(controller.getSnapshot().state).toBe('paused');
-
-    controller.onPlayerStateChange('playing'); // the player reports back later
-    expect(controller.getSnapshot().state).toBe('playing');
-    expect(controller.getSnapshot().meta.origin).toEqual(origin);
-  });
-
-  it('keeps a routine transport.play origin across an intervening no-op observation before the real playing event', () => {
-    // Round 1 armed the expected-playback ticket but consumed it on ANY
-    // player callback, including a plain timeupdate-style observation that
-    // changes nothing (sessionReducer's PLAYER_OBSERVATION returns the same
-    // snapshot when neither the item nor the mapped state actually
-    // changed) — burning the ticket before the real 'playing' event arrived.
-    const controller = createLocalSessionController({ clientId: 'origin-owner' });
-    controller.setPlayerHandle({ play: vi.fn(), pause: vi.fn(), seek: vi.fn() });
-    controller.queue.add({ contentId: 'plex:1', format: 'video' });
-    controller.transport.play();
-    controller.onPlayerStateChange('playing');
-    controller.transport.pause();
-    controller.onPlayerStateChange('paused');
-    expect(controller.getSnapshot().state).toBe('paused');
-
-    const origin = { kind: 'routine', name: 'Breakfast', triggerId: 'daily-0700' };
-    expect(applyCommandEnvelope(controller, { ...env('transport', { action: 'play' }), origin })).toEqual({ ok: true });
-
-    // A no-op observation — no `playing`/`paused` signal at all — arrives
-    // before the real playing event. It must not consume the ticket.
-    controller.onPlayerObservation('plex:1', { paused: false });
-    expect(controller.getSnapshot().state).toBe('paused'); // unchanged: this really was a no-op
-
-    controller.onPlayerStateChange('playing');
-    expect(controller.getSnapshot().state).toBe('playing');
-    expect(controller.getSnapshot().meta.origin).toEqual(origin);
-  });
-
-  it('does not let a routine no-op pause leave a ticket that steals a later human playing event', () => {
-    // A routine command pauses an ALREADY-paused session — a no-op, nothing
-    // will ever change from it. Round 1 armed a ticket for it anyway, which
-    // then sat live for the whole 10s window, ready to wrongly claim an
-    // unrelated LATER human event (someone using the TV's own remote —
-    // PlayerBridge reports that exactly like any other player-driven
-    // transition, via the same onPlayerStateChange call).
+  it('stamps a routine transport.play with the routine origin synchronously — no player event needed — and player events never restamp it', () => {
+    // Round 1/2 tried an "expected transition" ticket consumed by the next
+    // matching player event. Three real failure modes killed that design:
+    // seekAbs armed a ticket nothing was ever guaranteed to consume; a
+    // no-op PLAYER_OBSERVATION (timeupdate with no actual state change)
+    // still burned the ticket, since the action object — and the
+    // ticket-consuming call baked into it — is built before the reducer
+    // ever decides the dispatch is a no-op; and the ticket survived across
+    // LOAD_ITEM/skip, so the NEXT item's first 'playing' could still be
+    // wrongly stamped with a stale origin. The replacement: provenance is
+    // "who last commanded this screen," stamped SYNCHRONOUSLY at command
+    // time. Player-driven dispatches never touch meta.origin at all — it
+    // stays sticky until the next actual command.
     const controller = createLocalSessionController({ clientId: 'origin-owner' });
     controller.setPlayerHandle({ play: vi.fn(), pause: vi.fn(), seek: vi.fn() });
     controller.queue.add({ contentId: 'plex:1', format: 'video' });
@@ -204,15 +157,58 @@ describe('applyCommandEnvelope', () => {
     expect(controller.getSnapshot().state).toBe('paused');
 
     const routineOrigin = { kind: 'routine', name: 'Breakfast', triggerId: 'daily-0700' };
-    expect(applyCommandEnvelope(controller, { ...env('transport', { action: 'pause' }), origin: routineOrigin })).toEqual({ ok: true });
+    expect(applyCommandEnvelope(controller, { ...env('transport', { action: 'play' }), origin: routineOrigin })).toEqual({ ok: true });
+    // Stamped immediately — no player event needed, and playback state
+    // itself hasn't even changed yet (resuming dispatches nothing on its
+    // own beyond the origin stamp).
+    expect(controller.getSnapshot().state).toBe('paused');
+    expect(controller.getSnapshot().meta.origin).toEqual(routineOrigin);
 
-    controller.onPlayerStateChange('playing'); // a human, not this routine command
+    // A human on the TV's own native remote presses play, then pause —
+    // PlayerBridge reports both exactly like any other player-driven
+    // transition, via onPlayerStateChange. Neither restamps: this is the
+    // pre-existing sticky-origin semantics, asserted explicitly.
+    controller.onPlayerStateChange('playing');
     expect(controller.getSnapshot().state).toBe('playing');
-    // Not the routine origin — and not silently unstamped either: the
-    // no-op pause's own (synchronous, ambient-pendingOrigin) ATTEMPT to
-    // stage routine already got cleared when that command settled, so this
-    // human-driven transition falls back to the ordinary local-device
-    // default, exactly as an un-commanded player event always has.
+    expect(controller.getSnapshot().meta.origin).toEqual(routineOrigin);
+    controller.onPlayerStateChange('paused');
+    expect(controller.getSnapshot().state).toBe('paused');
+    expect(controller.getSnapshot().meta.origin).toEqual(routineOrigin);
+
+    // Only an actual human COMMAND restamps.
+    expect(applyCommandEnvelope(controller, env('transport', { action: 'pause' }))).toEqual({ ok: true });
+    expect(controller.getSnapshot().meta.origin).toEqual({ kind: 'device', id: 'browser:origin-owner' });
+  });
+
+  it('stamps a routine seekAbs synchronously, and a later human play restamps human', () => {
+    const controller = createLocalSessionController({ clientId: 'origin-owner' });
+    controller.setPlayerHandle({ play: vi.fn(), pause: vi.fn(), seek: vi.fn() });
+    controller.queue.add({ contentId: 'plex:1', format: 'video' });
+    controller.transport.play();
+    controller.onPlayerStateChange('playing');
+
+    const routineOrigin = { kind: 'routine', name: 'Breakfast', triggerId: 'daily-0700' };
+    expect(applyCommandEnvelope(controller, { ...env('transport', { action: 'seekAbs', value: 30 }), origin: routineOrigin })).toEqual({ ok: true });
+    expect(controller.getSnapshot().meta.origin).toEqual(routineOrigin);
+
+    expect(applyCommandEnvelope(controller, env('transport', { action: 'play' }))).toEqual({ ok: true });
+    expect(controller.getSnapshot().meta.origin).toEqual({ kind: 'device', id: 'browser:origin-owner' });
+  });
+
+  it('stamps skipNext to the next item human even right after a routine play, never routine', () => {
+    const controller = createLocalSessionController({ clientId: 'origin-owner' });
+    controller.setPlayerHandle({ play: vi.fn(), pause: vi.fn(), seek: vi.fn() });
+    controller.queue.add({ contentId: 'plex:1', format: 'video' });
+    controller.queue.add({ contentId: 'plex:2', format: 'video' });
+    controller.transport.play();
+    controller.onPlayerStateChange('playing');
+
+    const routineOrigin = { kind: 'routine', name: 'Breakfast', triggerId: 'daily-0700' };
+    expect(applyCommandEnvelope(controller, { ...env('transport', { action: 'play' }), origin: routineOrigin })).toEqual({ ok: true });
+    expect(controller.getSnapshot().meta.origin).toEqual(routineOrigin);
+
+    expect(applyCommandEnvelope(controller, env('transport', { action: 'skipNext' }))).toEqual({ ok: true });
+    expect(controller.getSnapshot().currentItem.contentId).toBe('plex:2');
     expect(controller.getSnapshot().meta.origin).toEqual({ kind: 'device', id: 'browser:origin-owner' });
   });
 
