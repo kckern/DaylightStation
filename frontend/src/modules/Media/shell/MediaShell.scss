@@ -561,6 +561,17 @@ $amber-ink: #1a1300;
 // dropdown on screen; the phone uses the full-screen SearchMode instead.
 .media-search-dropdown {
   min-width: min(520px, calc(100vw - 32px));
+
+  // Width alone is not enough. Mantine 7's ScrollArea wraps the options in an
+  // inline `display: table; min-width: 100%`, and a table is as wide as its
+  // WIDEST row — one long subtitle ("…Original Motion Picture Soundtrack")
+  // made every row 641px in a 520px dropdown, so no title could shrink and
+  // every ⋮ sat past the edge. As a block, rows take the dropdown's width and
+  // their titles truncate. Scoped to Media's dropdown; other ContentCombobox
+  // consumers keep Mantine's default.
+  .mantine-ScrollArea-viewport > div {
+    display: block !important;
+  }
 }
 
 // Portrait/mobile note (spec D1-D2, Task 13): the old fix-in-place here was
