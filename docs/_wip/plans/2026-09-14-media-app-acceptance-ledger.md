@@ -1,5 +1,15 @@
 # Media redesign — acceptance ledger
 
+P0 close-out (2026-09-29): the P0 manifest — 25 stories / 54 criteria in 22 grouped
+journeys (stable core + `P0_EXTENSION_ENTRIES`, counted by `validateP0Manifest`) — has passing
+evidence on the exact production commit `757102abb`, certified **piecewise** because Plex was
+rescanning all day and stream-heavy journeys flaked on `main` too:
+journeys 1–14 in one gate run (`/tmp/daylight-media-p0-evidence/757102ab…/task6-final-c2/`),
+15 (RELY.4a Undo) standalone (it also fails intermittently on `main` under the same load),
+16–22 in `…/piecewise/`. Tasks 7–8 of the remaining-P0 plan are deferred; their stories keep
+the verdicts below. The per-row verdicts below predate Task 6 and are not individually updated.
+
+
 Task 3 implementation note (2026-09-21): common item-action/owner/Undo contracts,
 one-shot dispatch, warm/cold envelope delivery, and cancellation have focused
 unit/contract evidence. `media-app-queue-journey.runtime.test.mjs` now contains

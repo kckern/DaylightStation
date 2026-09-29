@@ -1,5 +1,11 @@
 # Media P0 Recovery Handoff — 2026-09-22
 
+> **CLOSED 2026-09-29.** Every pending item below is done: Task 6 was salvaged, certified
+> (piecewise; see the acceptance ledger) and deployed as `757102abb`; Tasks 7–8 are deferred,
+> not scheduled; the records (refactor page, plan, ledger, SDD progress, `docs/reference/media/media-app.md`)
+> are updated; the old media branches and /tmp worktrees were removed and archived as
+> `archive/media/*-2026-09-29` tags. Kept for history.
+
 ## Mission
 
 Deliver useful value immediately by deploying the last independently reviewed Media P0 checkpoint, then finish Tasks 6–8 in bounded, evidence-backed batches without exceeding a user-approved token budget.

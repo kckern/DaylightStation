@@ -1,6 +1,6 @@
 # Media App redesign — separation of concerns in the `/media` UX
 
-**Status:** Stable-core release candidate is isolated on `release/media-stable-core` at product/test source `bf9edf3d2`. Production is unchanged. 11/82 stories and 32 acceptance criteria are accepted on the candidate; 71 stories remain in the active redesign objective. The dirty implementation worktree remains separate and is not part of this candidate.
+**Status:** P0 closed 2026-09-29. The remaining-P0 plan's Tasks 1–6 are in production (Task 6 at `757102abb`); Tasks 7–8 are deferred, not scheduled. The P0 manifest's 22 grouped journeys (25 stories / 54 criteria) have passing evidence on that exact commit, certified piecewise; see the acceptance ledger. P1/P2 are not started.
 
 **Started:** 2026-09-14 · **Planning baseline:** `b2ff8a460` (the code the baseline audit describes)
 **Authorised by:** the owner, 2026-09-14. They accepted the requirements and their P0/P1/P2 phasing, chose to evolve the app in place, and gave the implementer authority to commit to `main` and deploy only when the deploy gate is clear.
@@ -24,12 +24,12 @@ The requirements define the target behavior. Each story must be built and verifi
 
 | | |
 |---|---|
-| Application code changed | D1–D4 reviewed; real duration/progress, focused hosting, playback identity, pause and seek-completion repairs in the isolated worktree |
-| Runtime behaviour changed | Development browser only; production unchanged |
+| Application code changed | Remaining-P0 Tasks 1–6 shipped: aim/transport, item actions + Undo, unified search/browse, safe moves, house identity/liveness/routine safety (Task 6, salvaged 2026-09-28/29). Browse pages at the source; Back restores scrolled rows |
+| Runtime behaviour changed | Production since 2026-09-22 (Tasks 1–5) and 2026-09-29 (Task 6, `757102abb`) |
 | Design | Complete: audit → ideal model → adversarial review → owner triage → requirements → handoff |
 | Owner decisions | All recorded (Q1–Q11; 47 of 50 review proposals accepted) |
-| Reference docs | Factual drift in `docs/reference/media/media-app.md` corrected; not yet rewritten for the redesign |
-| Implementation | `feat/media-redesign`; 82 stories / 288 acceptance criteria tracked; browser failures preserved for playback, queue menu, search retention and idle aim; see acceptance ledger for current verdicts |
+| Reference docs | `docs/reference/media/media-app.md` describes the shipped fleet, browser control and Browse paging/Back behaviour |
+| Implementation | Merged to `main`; the working branches were deleted and archived as `archive/media/*-2026-09-29` tags (see `docs/_archive/deleted-branches.md`). Tasks 7–8 (outcomes/retry/paused restore; accessibility + final certification) are deferred with their briefs |
 
 ## Where everything lives
 
@@ -44,6 +44,9 @@ The requirements define the target behavior. Each story must be built and verifi
 | [Implementation handoff](../plans/2026-09-14-media-app-redesign-handoff.md) | 310 | **How to build it.** A reuse map, capability gaps, 10 ordered P0 steps, P1/P2 work items, invariants, verification, the deploy procedure and the doc endstate. |
 | [Story implementation map](../plans/2026-09-14-media-app-story-implementation-map.md) | — | Each story mapped to JSX/controller/API ownership. |
 | Execution plan (`2026-09-14-media-app-execution.md`) | — | Dropped 2026-09-25 after the stable core shipped: 11 of 82 stories accepted; the remaining slices are not scheduled. |
+| [Remaining-P0 plan](../../superpowers/plans/2026-09-21-media-remaining-p0-on-stable-core.md) | — | Tasks 1–6 delivered; Tasks 7–8 deferred, not scheduled (briefs in the plan's SDD workspace). |
+| [Task 6 salvage spec](../../superpowers/specs/2026-09-28-media-task6-salvage-design.md) / [plan](../../superpowers/plans/2026-09-28-media-task6-salvage.md) | — | How the rejected Task 6 was repaired, reviewed and certified. |
+| [Media P0 hand-off](../../_archive/hand-offs/2026-09-22-media-p0-handoff.md) | — | Archived at P0 close-out. |
 | [Acceptance ledger](../plans/2026-09-14-media-app-acceptance-ledger.md) | — | Every criterion and its evidence; passing unit counts are not story acceptance. |
 | [Stable-core release design](../plans/2026-09-20-media-stable-core-release-design.md) | — | Approved release boundary and verification gates for the accepted core. |
 | [Stable-core release plan](../../superpowers/plans/2026-09-20-media-stable-core-release.md) | — | Task-by-task isolation, gate, verification, and activity-check sequence. |
