@@ -6,6 +6,33 @@ Deliver useful value immediately by deploying the last independently reviewed Me
 
 This document is the recovery source of truth for the next agent. Do not infer completion from earlier chat claims or from a green test run against a fixture. Start from the repository state and evidence named below.
 
+## Salvage status (2026-09-29) — read this first
+
+The owner re-scoped the remainder: **salvage Task 6, then close P0; Tasks 7–8 deferred.**
+Spec `docs/superpowers/specs/2026-09-28-media-task6-salvage-design.md`, plan
+`docs/superpowers/plans/2026-09-28-media-task6-salvage.md`, ledger
+`.superpowers/sdd/2026-09-28-media-task6-salvage/progress.md` (git-ignored; every ruling is there).
+
+- **Branch `media/task6-salvage` at `a89770c2c`** (worktree `.worktrees/media-task6-salvage`) = main `c79e63900` + Task 6 + repairs. **Not merged, not deployed.**
+- The final independent (Fable) whole-branch review cleared all four blockers once its fix wave landed:
+  1. `app.mjs` now composes `registerClientIngress`, with a parity test for every household message kind.
+  2. Configured devices use live state, the 2-minute uncertainty rule and receipt-time staleness.
+  3. Provenance is "who last commanded this screen": commands stamp it, player events never do.
+  4. A duplicate commandId gets its ACK under its own id, and the backend twin was fixed the same way.
+
+  A regression the fix wave introduced (a replayed snapshot reading as fresh) is fixed in `a89770c2c`.
+- Broad Vitest is green apart from failures that `main` has too: `DismissStackProvider.browser`, `piano-games/OpponentDialogueService`, and `node:test` files that report "No test suite found" when Vitest sweeps them in.
+- **Certification is blocked by a defect on `main` itself, not this branch.** On the exact-SHA preview server, `.video-player video` never becomes visible after a local Play (the mini player shows playback running).
+  - It fails the P0 gate's first invocation (FIND.1b) identically on the branch **and on its base `c79e63900`**. The evidence is under `/tmp/daylight-media-p0-evidence/{a89770c2c…,b3aa29ffd…,c79e63900…}/`.
+  - The same setup step fails HOUSE.4a and HOUSE.2b, so Task 6's browser-control journeys cannot reach their own assertions. The fleet journeys (2/2) pass.
+  - Unverified suspects: the Player changes on main since the last green gate (`0647ae90c`): `4ac551a98` (wait out a media file Plex refuses), `09b849716` (play means play while loading), `bc39a344d`, `772bea4ba`.
+- **Next steps:**
+  1. Fix the local-video visibility regression on `main` (debug FIND.1b against a `main` preview build).
+  2. Merge `main` into `media/task6-salvage`.
+  3. Run `npm run test:media-p0` on the exact SHA; the bar is 25 stories / 54 criteria.
+  4. Merge, deploy through the gate, then do the close-out: records, marking Tasks 7–8 deferred, and pruning the `/tmp/daylight-media-*` worktrees, archive-tagging any that aren't merged.
+- Budget: about 2.8M of the owner's 3M ceiling was spent in this salvage. The ceiling applied to this session only.
+
 ## Executive status
 
 | Item | State | Authority |
