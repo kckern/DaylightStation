@@ -159,6 +159,63 @@ describe('applyCommandEnvelope', () => {
     expect(controller.getSnapshot().meta.origin).toEqual(origin);
   });
 
+  it('keeps a routine transport.play origin across an intervening no-op observation before the real playing event', () => {
+    // Round 1 armed the expected-playback ticket but consumed it on ANY
+    // player callback, including a plain timeupdate-style observation that
+    // changes nothing (sessionReducer's PLAYER_OBSERVATION returns the same
+    // snapshot when neither the item nor the mapped state actually
+    // changed) — burning the ticket before the real 'playing' event arrived.
+    const controller = createLocalSessionController({ clientId: 'origin-owner' });
+    controller.setPlayerHandle({ play: vi.fn(), pause: vi.fn(), seek: vi.fn() });
+    controller.queue.add({ contentId: 'plex:1', format: 'video' });
+    controller.transport.play();
+    controller.onPlayerStateChange('playing');
+    controller.transport.pause();
+    controller.onPlayerStateChange('paused');
+    expect(controller.getSnapshot().state).toBe('paused');
+
+    const origin = { kind: 'routine', name: 'Breakfast', triggerId: 'daily-0700' };
+    expect(applyCommandEnvelope(controller, { ...env('transport', { action: 'play' }), origin })).toEqual({ ok: true });
+
+    // A no-op observation — no `playing`/`paused` signal at all — arrives
+    // before the real playing event. It must not consume the ticket.
+    controller.onPlayerObservation('plex:1', { paused: false });
+    expect(controller.getSnapshot().state).toBe('paused'); // unchanged: this really was a no-op
+
+    controller.onPlayerStateChange('playing');
+    expect(controller.getSnapshot().state).toBe('playing');
+    expect(controller.getSnapshot().meta.origin).toEqual(origin);
+  });
+
+  it('does not let a routine no-op pause leave a ticket that steals a later human playing event', () => {
+    // A routine command pauses an ALREADY-paused session — a no-op, nothing
+    // will ever change from it. Round 1 armed a ticket for it anyway, which
+    // then sat live for the whole 10s window, ready to wrongly claim an
+    // unrelated LATER human event (someone using the TV's own remote —
+    // PlayerBridge reports that exactly like any other player-driven
+    // transition, via the same onPlayerStateChange call).
+    const controller = createLocalSessionController({ clientId: 'origin-owner' });
+    controller.setPlayerHandle({ play: vi.fn(), pause: vi.fn(), seek: vi.fn() });
+    controller.queue.add({ contentId: 'plex:1', format: 'video' });
+    controller.transport.play();
+    controller.onPlayerStateChange('playing');
+    controller.transport.pause();
+    controller.onPlayerStateChange('paused');
+    expect(controller.getSnapshot().state).toBe('paused');
+
+    const routineOrigin = { kind: 'routine', name: 'Breakfast', triggerId: 'daily-0700' };
+    expect(applyCommandEnvelope(controller, { ...env('transport', { action: 'pause' }), origin: routineOrigin })).toEqual({ ok: true });
+
+    controller.onPlayerStateChange('playing'); // a human, not this routine command
+    expect(controller.getSnapshot().state).toBe('playing');
+    // Not the routine origin — and not silently unstamped either: the
+    // no-op pause's own (synchronous, ambient-pendingOrigin) ATTEMPT to
+    // stage routine already got cleared when that command settled, so this
+    // human-driven transition falls back to the ordinary local-device
+    // default, exactly as an un-commanded player event always has.
+    expect(controller.getSnapshot().meta.origin).toEqual({ kind: 'device', id: 'browser:origin-owner' });
+  });
+
   it('stamps an interleaved human config change human and a still-pending routine item action routine, not each other', async () => {
     // A CONTAINER item action genuinely goes async inside execute() itself
     // (container expansion, ~470-489) — this is the real shape of the
@@ -166,16 +223,18 @@ describe('applyCommandEnvelope', () => {
     // origin must be captured at the moment execute() is CALLED, not
     // whenever its internal fetch happens to resolve.
     //
-    // The interleaved human action here is another item action (a `remove`)
-    // rather than a config change: item actions carry their own, PRE-EXISTING
-    // revision-supersede guard (LocalSessionController's ledger — any config
-    // OR queue change bumps `queueRevision`), which would legitimately
-    // cancel a still-pending playNow regardless of origin plumbing. That
-    // guard is correct and untouched by this fix; a `remove` targeting an
-    // unrelated, already-queued item exercises the origin fix without
-    // tripping it, since the pending playNow's own prior-revision snapshot
-    // was captured against the queue as it stood after that seed item was
-    // added, before either command below runs.
+    // The interleaved human action is a volume change. Round 1 of this fix
+    // found that ANY config change (including volume/shader, which change
+    // neither the queue's contents nor its order) tripped
+    // LocalSessionController's item-action ledger supersede guard
+    // (queueFingerprint included the whole `config` object), legitimately
+    // but overbroadly cancelling a still-expanding "Play now" underneath the
+    // person who tapped it. Round 2 narrows the guard's OWN fingerprint
+    // (itemActionFingerprint — a private cousin of queueFingerprint, NOT the
+    // shared queueRevision used for cross-controller identity) to
+    // shuffle/repeat, which genuinely change what plays. So this now
+    // exercises BOTH fixes at once: the origin survives the interleave, AND
+    // the item action is no longer wrongly superseded by it.
     let resolveFetch;
     const fetchImpl = () => new Promise((resolve) => { resolveFetch = resolve; });
     const controller = createLocalSessionController({ clientId: 'origin-owner', fetchImpl });
@@ -195,12 +254,8 @@ describe('applyCommandEnvelope', () => {
 
     resolveFetch({ ok: true, json: async () => ({ items: [{ id: 'plex:track-1', play: { contentId: 'plex:track-1' }, title: 'Track 1' }] }) });
     const result = await pending;
-    // The interleaved config change bumped queueRevision, so
-    // LocalSessionController's own (pre-existing, unrelated to this fix)
-    // ledger guard correctly supersedes the now-stale playNow — proving that
-    // guard's origin-independence is itself part of the fix: it must reject
-    // on staleness, never on provenance.
-    expect(result).toMatchObject({ ok: false, code: 'ITEM_ACTION_CANCELLED' });
+    expect(result.ok).toBe(true);
+    expect(controller.getSnapshot().meta.origin).toEqual(routineOrigin);
   });
 
   it('stamps a still-pending routine enqueue (the legacy queue.playNow path) routine even after an interleaved human config change', async () => {
@@ -228,5 +283,28 @@ describe('applyCommandEnvelope', () => {
     resolveFetch({ ok: true, json: async () => ({ items: [{ id: 'plex:track-1', play: { contentId: 'plex:track-1' }, title: 'Track 1' }] }) });
     await pending;
     expect(controller.getSnapshot().meta.origin).toEqual(routineOrigin);
+  });
+
+  it('still supersedes a pending item action when shuffle changes underneath it, unlike volume/shader', async () => {
+    // Proves the item-action ledger's narrower fingerprint (itemActionFingerprint)
+    // wasn't gutted: it excludes ONLY volume/shader, which change neither the
+    // queue's contents nor its order — shuffle genuinely changes what plays
+    // next, so it must still supersede a stale pending "Play now".
+    let resolveFetch;
+    const fetchImpl = () => new Promise((resolve) => { resolveFetch = resolve; });
+    const controller = createLocalSessionController({ clientId: 'origin-owner', fetchImpl });
+    const routineOrigin = { kind: 'routine', name: 'Breakfast', triggerId: 'daily-0700' };
+
+    const pending = applyCommandEnvelope(controller, { ...env('queue', {
+      op: 'item-action', operationId: 'shuffle-interleave-1', kind: 'playNow',
+      item: { contentId: 'plex:album-1', itemType: 'container', childCount: 2 },
+      tappedAt: Date.now(),
+    }), origin: routineOrigin });
+
+    expect(applyCommandEnvelope(controller, env('config', { setting: 'shuffle', value: true }))).toEqual({ ok: true });
+
+    resolveFetch({ ok: true, json: async () => ({ items: [{ id: 'plex:track-1', play: { contentId: 'plex:track-1' }, title: 'Track 1' }] }) });
+    const result = await pending;
+    expect(result).toMatchObject({ ok: false, code: 'ITEM_ACTION_CANCELLED' });
   });
 });
