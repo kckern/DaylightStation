@@ -116,7 +116,7 @@ describe('applyCommandEnvelope', () => {
     expect(controller.getSnapshot().meta.origin).toEqual({ kind: 'device', id: 'browser:origin-owner' });
   });
 
-  it('stamps a successful synchronous routine transport with the routine origin', () => {
+  it('stamps a successful synchronous routine config change with the routine origin', () => {
     const controller = createLocalSessionController({ clientId: 'origin-owner' });
     const origin = { kind: 'routine', name: 'Breakfast', triggerId: 'daily-0700' };
     expect(applyCommandEnvelope(controller, { ...env('config', { setting: 'volume', value: 30 }), origin }).ok).toBe(true);
@@ -132,5 +132,101 @@ describe('applyCommandEnvelope', () => {
       op: 'item-action', operationId: 'ok-1', kind: 'playNow', item: { contentId: 'plex:1' }, tappedAt: Date.now(),
     }), origin });
     expect(controller.getSnapshot().meta.origin).toEqual(origin);
+  });
+
+  it('stamps a routine transport.play with the routine origin once the player reports playing, not when the call returns', () => {
+    // A session with an item already loaded (resume from paused): play()
+    // dispatches nothing itself — the real 'playing' transition arrives
+    // later, from the player (onPlayerStateChange), well after this
+    // synchronous call — and commandHandler's own applyWithOrigin — has
+    // already returned and cleared the staged origin.
+    const controller = createLocalSessionController({ clientId: 'origin-owner' });
+    controller.setPlayerHandle({ play: vi.fn(), pause: vi.fn(), seek: vi.fn() });
+    controller.queue.add({ contentId: 'plex:1', format: 'video' });
+    controller.transport.play();
+    controller.onPlayerStateChange('playing');
+    controller.transport.pause();
+    controller.onPlayerStateChange('paused'); // the player reports the pause too, same as production
+    expect(controller.getSnapshot().state).toBe('paused');
+
+    const origin = { kind: 'routine', name: 'Breakfast', triggerId: 'daily-0700' };
+    expect(applyCommandEnvelope(controller, { ...env('transport', { action: 'play' }), origin })).toEqual({ ok: true });
+    // Nothing has changed yet — resuming dispatched nothing synchronously.
+    expect(controller.getSnapshot().state).toBe('paused');
+
+    controller.onPlayerStateChange('playing'); // the player reports back later
+    expect(controller.getSnapshot().state).toBe('playing');
+    expect(controller.getSnapshot().meta.origin).toEqual(origin);
+  });
+
+  it('stamps an interleaved human config change human and a still-pending routine item action routine, not each other', async () => {
+    // A CONTAINER item action genuinely goes async inside execute() itself
+    // (container expansion, ~470-489) — this is the real shape of the
+    // overlap, not an artificial wrapper around `controller.execute`: the
+    // origin must be captured at the moment execute() is CALLED, not
+    // whenever its internal fetch happens to resolve.
+    //
+    // The interleaved human action here is another item action (a `remove`)
+    // rather than a config change: item actions carry their own, PRE-EXISTING
+    // revision-supersede guard (LocalSessionController's ledger — any config
+    // OR queue change bumps `queueRevision`), which would legitimately
+    // cancel a still-pending playNow regardless of origin plumbing. That
+    // guard is correct and untouched by this fix; a `remove` targeting an
+    // unrelated, already-queued item exercises the origin fix without
+    // tripping it, since the pending playNow's own prior-revision snapshot
+    // was captured against the queue as it stood after that seed item was
+    // added, before either command below runs.
+    let resolveFetch;
+    const fetchImpl = () => new Promise((resolve) => { resolveFetch = resolve; });
+    const controller = createLocalSessionController({ clientId: 'origin-owner', fetchImpl });
+    const routineOrigin = { kind: 'routine', name: 'Breakfast', triggerId: 'daily-0700' };
+
+    const pending = applyCommandEnvelope(controller, { ...env('queue', {
+      op: 'item-action', operationId: 'interleave-1', kind: 'playNow',
+      item: { contentId: 'plex:album-1', itemType: 'container', childCount: 2 },
+      tappedAt: Date.now(),
+    }), origin: routineOrigin });
+
+    // The routine item action's container fetch is still in flight — no
+    // response has arrived — when a human config change lands on the SAME
+    // controller.
+    expect(applyCommandEnvelope(controller, env('config', { setting: 'volume', value: 55 }))).toEqual({ ok: true });
+    expect(controller.getSnapshot().meta.origin).toEqual({ kind: 'device', id: 'browser:origin-owner' });
+
+    resolveFetch({ ok: true, json: async () => ({ items: [{ id: 'plex:track-1', play: { contentId: 'plex:track-1' }, title: 'Track 1' }] }) });
+    const result = await pending;
+    // The interleaved config change bumped queueRevision, so
+    // LocalSessionController's own (pre-existing, unrelated to this fix)
+    // ledger guard correctly supersedes the now-stale playNow — proving that
+    // guard's origin-independence is itself part of the fix: it must reject
+    // on staleness, never on provenance.
+    expect(result).toMatchObject({ ok: false, code: 'ITEM_ACTION_CANCELLED' });
+  });
+
+  it('stamps a still-pending routine enqueue (the legacy queue.playNow path) routine even after an interleaved human config change', async () => {
+    // enqueue()'s container-expansion path (~470-489) is the OTHER place an
+    // operation's own mutation can land well after another command has
+    // interleaved — and unlike item actions, it has no revision-supersede
+    // guard at all, so it must protect its own origin end to end.
+    // commandHandler's wire protocol only forwards `contentId` for a plain
+    // `play-now` queue op (no container markers survive the envelope), so a
+    // container tap is driven directly at the controller here, exactly as
+    // `applyWithOrigin` would stage it.
+    let resolveFetch;
+    const fetchImpl = () => new Promise((resolve) => { resolveFetch = resolve; });
+    const controller = createLocalSessionController({ clientId: 'origin-owner', fetchImpl });
+    const routineOrigin = { kind: 'routine', name: 'Breakfast', triggerId: 'daily-0700' };
+
+    controller.setOrigin(routineOrigin);
+    const pending = controller.queue.playNow({ contentId: 'plex:album-1', itemType: 'container', childCount: 2 });
+
+    // The routine enqueue's container fetch is still in flight when a human
+    // config change lands on the SAME controller.
+    expect(applyCommandEnvelope(controller, env('config', { setting: 'volume', value: 55 }))).toEqual({ ok: true });
+    expect(controller.getSnapshot().meta.origin).toEqual({ kind: 'device', id: 'browser:origin-owner' });
+
+    resolveFetch({ ok: true, json: async () => ({ items: [{ id: 'plex:track-1', play: { contentId: 'plex:track-1' }, title: 'Track 1' }] }) });
+    await pending;
+    expect(controller.getSnapshot().meta.origin).toEqual(routineOrigin);
   });
 });
