@@ -6,26 +6,23 @@ import { validateCommandEnvelope } from '@shared-contracts/media/envelopes.mjs';
 
 function applyWithOrigin(controller, origin, mutate) {
   // Always (re)stage — even to null for a plain human command — not just
-  // `if (origin)`. Without this, a human command arriving while an EARLIER
-  // routine command's async work is still in flight (its own clearOrigin
-  // hasn't run yet) would leave the routine origin ambiently staged, and the
+  // `if (origin)`. Without this, a human command arriving right after an
+  // EARLIER routine command would inherit its origin, since the
   // controller's own default-origin fallback only fires when nothing is
-  // already staged — so the human command would get stamped routine.
+  // already staged.
+  //
+  // Clear SYNCHRONOUSLY as soon as mutate() returns, promise or not. Every
+  // async path captures its origin at call time (execute/undo →
+  // operationOrigins; enqueue → opOrigin; transport/config stamp
+  // synchronously), so nothing needs the ambient value afterwards — and
+  // leaving it staged until an async container expansion settles would
+  // stamp a human's direct action on this browser's own UI (mini player,
+  // Now Playing) with the routine origin in the meantime.
   controller.setOrigin?.(origin ?? null);
-  const clear = () => controller.clearOrigin?.();
   try {
-    const result = mutate();
-    if (result?.then) {
-      return result.then(
-        value => { clear(); return value; },
-        error => { clear(); throw error; },
-      );
-    }
-    clear();
-    return result;
-  } catch (error) {
-    clear();
-    throw error;
+    return mutate();
+  } finally {
+    controller.clearOrigin?.();
   }
 }
 

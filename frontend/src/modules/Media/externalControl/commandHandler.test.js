@@ -127,7 +127,11 @@ describe('applyCommandEnvelope', () => {
     const controller = createLocalSessionController({ clientId: 'origin-owner' });
     const origin = { kind: 'routine', name: 'Breakfast', triggerId: 'daily-0700' };
     const realExecute = controller.execute;
-    controller.execute = vi.fn(async (p) => { await Promise.resolve(); return realExecute(p); });
+    // realExecute is the controller's own origin-capturing wrapper; call it
+    // synchronously (an async fn runs to its first await) exactly as
+    // commandHandler does, so the capture happens before applyWithOrigin
+    // clears the staged origin — the production shape.
+    controller.execute = vi.fn(async (p) => realExecute(p));
     await applyCommandEnvelope(controller, { ...env('queue', {
       op: 'item-action', operationId: 'ok-1', kind: 'playNow', item: { contentId: 'plex:1' }, tappedAt: Date.now(),
     }), origin });
@@ -256,10 +260,11 @@ describe('applyCommandEnvelope', () => {
 
   // Player-driven dispatches (PLAYER_STATE, PLAYER_OBSERVATION, and the
   // UPDATE_POSITION from durable progress) must never read or clear the
-  // ambient staged origin. While a routine container item action is still
-  // expanding, applyWithOrigin keeps its origin staged until resolution — a
-  // progress tick or a human remote pause in that window must not be stamped
-  // routine, and must not consume it.
+  // ambient staged origin. applyWithOrigin clears the staged origin as soon
+  // as mutate() returns (the async operation has already captured its own
+  // origin), so a progress tick or a human remote pause while a routine
+  // container item action is still expanding must leave meta.origin alone —
+  // and the action's own outcome is still stamped routine.
   const primedPlayingController = (fetchImpl) => {
     const controller = createLocalSessionController({ clientId: 'origin-owner', fetchImpl });
     controller.setPlayerHandle({ play: vi.fn(), pause: vi.fn(), seek: vi.fn() });
@@ -322,12 +327,12 @@ describe('applyCommandEnvelope', () => {
   // Auto-advance (onPlayerEnded / onPlayerError / onPlayerStalled) is
   // player-driven too: every dispatch it makes — the 'ended' PLAYER_STATE at
   // queue end, ITEM_ERROR, and moveCurrentTo's REPLACE_SNAPSHOT/LOAD_ITEM —
-  // must neither be stamped with nor consume a routine command's staged
-  // origin. The pending routine action is an `add` (not playNow) so the
-  // advance itself doesn't legitimately supersede it; the staged origin is
-  // probed afterwards with a direct (un-enveloped) volume change, whose
-  // beginAction() only falls back to the device default when NOTHING is
-  // staged — so it reads routine iff the player event left it in place.
+  // must never be stamped routine while a routine command is still pending.
+  // The pending routine action is an `add` (not playNow) so the advance
+  // itself doesn't legitimately supersede it. A direct (un-enveloped) action
+  // on this browser's own UI afterwards must be stamped as the device: the
+  // routine origin is NOT left staged ambiently once its command returned —
+  // its async outcome carries its own captured origin.
   const routine = { kind: 'routine', name: 'Breakfast', triggerId: 'daily-0700' };
   const device = { kind: 'device', id: 'browser:origin-owner' };
   const albumFetch = () => {
@@ -350,15 +355,15 @@ describe('applyCommandEnvelope', () => {
     item: { contentId: 'plex:album-1', itemType: 'container', childCount: 2 },
     tappedAt: Date.now(),
   }), origin: routine });
-  const expectRoutineStillStaged = (controller) => {
+  const expectDirectActionStampsDevice = (controller) => {
     controller.config.setVolume(40);
-    expect(controller.getSnapshot().meta.origin).toEqual(routine);
+    expect(controller.getSnapshot().meta.origin).toEqual(device);
   };
 
   it.each([
     ['onPlayerEnded', (controller) => controller.onPlayerEnded('plex:1')],
     ['onPlayerError', (controller) => controller.onPlayerError({ message: 'decode failed', code: 'E_DECODE' })],
-  ])('%s auto-advancing during a pending routine item action neither stamps nor consumes its staged origin', async (_name, fire) => {
+  ])('%s auto-advancing during a pending routine item action never stamps the routine origin', async (_name, fire) => {
     const { fetchImpl, resolve } = albumFetch();
     const controller = playingQueue(fetchImpl, ['plex:1', 'plex:2']);
     const pending = pendingRoutineAdd(controller, `advance-${_name}`);
@@ -366,7 +371,7 @@ describe('applyCommandEnvelope', () => {
     fire(controller);
     expect(controller.getSnapshot().currentItem.contentId).toBe('plex:2');
     expect(controller.getSnapshot().meta.origin).toEqual(device);
-    expectRoutineStillStaged(controller);
+    expectDirectActionStampsDevice(controller);
 
     resolve();
     const result = await pending;
@@ -374,7 +379,7 @@ describe('applyCommandEnvelope', () => {
     expect(controller.getSnapshot().meta.origin).toEqual(routine);
   });
 
-  it('onPlayerEnded at queue end during a pending routine item action neither stamps nor consumes its staged origin', async () => {
+  it('onPlayerEnded at queue end during a pending routine item action never stamps the routine origin', async () => {
     const { fetchImpl, resolve } = albumFetch();
     const controller = playingQueue(fetchImpl, ['plex:1']);
     const pending = pendingRoutineAdd(controller, 'advance-queue-end');
@@ -382,11 +387,47 @@ describe('applyCommandEnvelope', () => {
     controller.onPlayerEnded('plex:1');
     expect(controller.getSnapshot().state).toBe('ended');
     expect(controller.getSnapshot().meta.origin).toEqual(device);
-    expectRoutineStillStaged(controller);
+    expectDirectActionStampsDevice(controller);
 
     resolve();
     const result = await pending;
     expect(result.ok).toBe(true);
+    expect(controller.getSnapshot().meta.origin).toEqual(routine);
+  });
+
+  // A human acting directly on the target browser's own UI (mini player /
+  // Now Playing → controller calls with no envelope) while a routine
+  // container operation is still in flight is the device, never the routine
+  // — otherwise the routine label is broadcast house-wide for a human action.
+  it('stamps a direct setVolume the device while a routine container item action is pending, and the action still stamps routine', async () => {
+    const { fetchImpl, resolve } = albumFetch();
+    const controller = playingQueue(fetchImpl, ['plex:1']);
+    const pending = pendingRoutineAdd(controller, 'direct-volume');
+
+    controller.config.setVolume(42);
+    expect(controller.getSnapshot().config.volume).toBe(42);
+    expect(controller.getSnapshot().meta.origin).toEqual(device);
+
+    resolve();
+    expect((await pending).ok).toBe(true);
+    expect(controller.getSnapshot().meta.origin).toEqual(routine);
+  });
+
+  it('stamps a direct transport.pause the device while a routine container playNow is pending, and the playNow still stamps routine', async () => {
+    const { fetchImpl, resolve } = albumFetch();
+    const controller = playingQueue(fetchImpl, ['plex:1']);
+    const pending = applyCommandEnvelope(controller, { ...env('queue', {
+      op: 'item-action', operationId: 'direct-pause', kind: 'playNow',
+      item: { contentId: 'plex:album-1', itemType: 'container', childCount: 2 },
+      tappedAt: Date.now(),
+    }), origin: routine });
+
+    controller.transport.pause();
+    expect(controller.getSnapshot().meta.origin).toEqual(device);
+
+    resolve();
+    expect((await pending).ok).toBe(true);
+    expect(controller.getSnapshot().currentItem.contentId).toBe('plex:track-1');
     expect(controller.getSnapshot().meta.origin).toEqual(routine);
   });
 
@@ -410,8 +451,9 @@ describe('applyCommandEnvelope', () => {
     // guard at all, so it must protect its own origin end to end.
     // commandHandler's wire protocol only forwards `contentId` for a plain
     // `play-now` queue op (no container markers survive the envelope), so a
-    // container tap is driven directly at the controller here, exactly as
-    // `applyWithOrigin` would stage it.
+    // container tap is driven directly at the controller here, staged the
+    // way `applyWithOrigin` stages it (which then clears right after the
+    // call returns — enqueue has already captured its own origin).
     let resolveFetch;
     const fetchImpl = () => new Promise((resolve) => { resolveFetch = resolve; });
     const controller = createLocalSessionController({ clientId: 'origin-owner', fetchImpl });
@@ -419,6 +461,7 @@ describe('applyCommandEnvelope', () => {
 
     controller.setOrigin(routineOrigin);
     const pending = controller.queue.playNow({ contentId: 'plex:album-1', itemType: 'container', childCount: 2 });
+    controller.clearOrigin();
 
     // The routine enqueue's container fetch is still in flight when a human
     // config change lands on the SAME controller.
