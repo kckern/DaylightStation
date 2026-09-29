@@ -572,6 +572,18 @@ $amber-ink: #1a1300;
   .mantine-ScrollArea-viewport > div {
     display: block !important;
   }
+
+  // ...and the flex wrapper around the ScrollArea has `min-width: auto`, i.e.
+  // "never narrower than my min-content" — which counts each title's FULL
+  // nowrap text even though the title itself truncates. That alone held every
+  // row at the longest title's width. Let the scroll area take the dropdown's
+  // width instead.
+  :has(> .mantine-ScrollArea-root),
+  .mantine-ScrollArea-root,
+  .mantine-ScrollArea-viewport {
+    min-width: 0;
+    max-width: 100%;
+  }
 }
 
 // Portrait/mobile note (spec D1-D2, Task 13): the old fix-in-place here was
