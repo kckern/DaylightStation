@@ -1,6 +1,6 @@
 // The browser's one authoritative house-state publication path. LocalSessionProvider
 // mounts this hook once; Fleet consumes only the relayed playback_state projection.
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { buildPlaybackStateBroadcast } from '@shared-contracts/media/envelopes.mjs';
 import { TIMING } from '../constants.js';
 
@@ -47,36 +47,79 @@ function buildMessage({ identity, snapshot, reason, connected = true }) {
   });
 }
 
-export function usePlaybackStateBroadcast({ send, identity: providedIdentity, clientId, displayName, snapshot }) {
-  const identity = providedIdentity ?? legacyIdentity({ clientId, displayName });
-  const latestRef = useRef({ snapshot, send, identity });
-  latestRef.current = { snapshot, send, identity };
+// Only the identity contract's fields go on the wire (validatePlaybackStateBroadcast:
+// clientId, deviceId, name, connectedAt, optional room) — never the whole
+// identity context, which also carries UI state and a rename callback.
+function wireIdentity(identity) {
+  if (!identity) return identity;
+  const { clientId, deviceId, name, room, connectedAt } = identity;
+  return { clientId, deviceId, name, ...(room !== undefined ? { room } : {}), connectedAt };
+}
+
+// Heartbeat cadence: the playing cadence while the session is actively
+// moving (position/state a Fleet row shows live), the browser cadence
+// otherwise — an open idle tab only needs to prove it is still there, well
+// inside the two-minute uncertainty window.
+const ACTIVE_STATES = new Set(['playing', 'buffering', 'stalled', 'loading']);
+const heartbeatDelay = (snapshot) => (ACTIVE_STATES.has(snapshot?.state)
+  ? TIMING.PLAYBACK_HEARTBEAT_MS
+  : TIMING.BROWSER_HEARTBEAT_MS);
+
+/**
+ * `ready` gates every frame on the control registration (identify) having
+ * completed for this connection: the relay drops a frame whose identity is
+ * not yet registered, with a WARN. When it flips true, the current state is
+ * published at once.
+ */
+export function usePlaybackStateBroadcast({ send, identity: providedIdentity, clientId, displayName, snapshot, ready = true }) {
+  const rawIdentity = providedIdentity ?? legacyIdentity({ clientId, displayName });
+  const { clientId: idClient, deviceId: idDevice, name: idName, room: idRoom, connectedAt: idConnectedAt } = rawIdentity ?? {};
+  const identity = useMemo(
+    () => wireIdentity(rawIdentity),
+    // Keyed on the projected fields only, so an unrelated identity-context
+    // change (e.g. controlReady) doesn't count as a state change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [idClient, idDevice, idName, idRoom, idConnectedAt],
+  );
+  const latestRef = useRef({ snapshot, send, identity, ready });
+  latestRef.current = { snapshot, send, identity, ready };
   const publishedRef = useRef(false);
+  const heartbeatRef = useRef(null);
+
+  const scheduleHeartbeat = useCallback(() => {
+    clearTimeout(heartbeatRef.current);
+    heartbeatRef.current = null;
+    const latest = latestRef.current;
+    if (!latest.ready || !latest.snapshot || !latest.identity?.clientId) return;
+    heartbeatRef.current = setTimeout(() => {
+      const current = latestRef.current;
+      if (!current.ready || !current.snapshot || !current.identity?.clientId) return;
+      current.send(buildMessage({ ...current, reason: 'heartbeat' }));
+      scheduleHeartbeat();
+    }, heartbeatDelay(latest.snapshot));
+  }, []);
 
   useEffect(() => {
-    if (!snapshot || !identity?.clientId) return;
+    if (!ready || !snapshot || !identity?.clientId) {
+      clearTimeout(heartbeatRef.current);
+      heartbeatRef.current = null;
+      return;
+    }
     send(buildMessage({
       identity,
       snapshot,
       reason: publishedRef.current ? 'change' : 'initial',
     }));
     publishedRef.current = true;
-  }, [send, identity, snapshot]);
+    scheduleHeartbeat();
+  }, [send, identity, snapshot, ready, scheduleHeartbeat]);
 
-  useEffect(() => {
-    if (!identity?.clientId) return undefined;
-    const id = setInterval(() => {
-      const latest = latestRef.current;
-      if (!latest.snapshot) return;
-      latest.send(buildMessage({ ...latest, reason: 'heartbeat' }));
-    }, TIMING.PLAYBACK_HEARTBEAT_MS);
-    return () => clearInterval(id);
-  }, [identity?.clientId]);
+  useEffect(() => () => clearTimeout(heartbeatRef.current), []);
 
   useEffect(() => {
     const publishClosed = () => {
       const latest = latestRef.current;
-      if (!latest.identity?.clientId) return;
+      if (!latest.identity?.clientId || !latest.ready) return;
       latest.send(buildMessage({
         ...latest,
         snapshot: { ...latest.snapshot, state: 'stopped', currentItem: null, position: 0 },
