@@ -52,6 +52,16 @@ describe('PlexAdapter.getListPage', () => {
     expect(calls).toEqual([]);
   });
 
+  it('getItem on a path container asks only for the header, not every title', async () => {
+    // Every /list request also calls getItem for the container title. Fetching
+    // the whole 2810-title section for that cost the same 7 s paging saved.
+    const { a, calls } = adapterRecording({ size: 0, totalSize: 2791, title1: 'Movies', Metadata: [] });
+    const item = await a.getItem('plex:library/sections/6/all');
+    expect(calls).toEqual(['/library/sections/6/all?X-Plex-Container-Start=0&X-Plex-Container-Size=0']);
+    expect(item.title).toBe('Movies');
+    expect(item.childCount).toBe(2791);
+  });
+
   it('returns null when Plex fails, so the caller can fall back', async () => {
     const a = new PlexAdapter({ host: 'http://x', token: 't' }, { httpClient: { get: async () => ({}) } });
     a.client = { getContainer: async () => { throw new Error('boom'); } };

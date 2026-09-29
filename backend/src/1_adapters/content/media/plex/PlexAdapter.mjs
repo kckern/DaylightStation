@@ -442,10 +442,16 @@ export class PlexAdapter {
         return this._toPlayableItem(item, { showLabels });
       }
 
-      // Otherwise treat as container path
-      const data = await this.client.getContainer(`/${localId}`);
+      // Otherwise treat as container path. Ask for the header only (a zero-size
+      // window): title and totalSize arrive in ~0.1 s, where the whole
+      // container — every title in a library section — took seconds.
+      const separator = localId.includes('?') ? '&' : '?';
+      const data = await this.client.getContainer(
+        `/${localId}${separator}X-Plex-Container-Start=0&X-Plex-Container-Size=0`,
+      );
       const container = data.MediaContainer;
       if (!container) return null;
+      const reportedTotal = Number(container.totalSize);
 
       return new ListableItem({
         id: `plex:${localId}`,
@@ -453,7 +459,7 @@ export class PlexAdapter {
         localId,
         title: container.title1 || container.title || localId,
         itemType: 'container',
-        childCount: container.size || 0,
+        childCount: container.totalSize != null && Number.isInteger(reportedTotal) ? reportedTotal : (container.size || 0),
         thumbnail: container.thumb ? `${this.proxyPath}${container.thumb}` : null,
         metadata: {
           category: ContentCategory.CONTAINER
