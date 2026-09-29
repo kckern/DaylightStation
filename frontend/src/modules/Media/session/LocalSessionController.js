@@ -112,6 +112,7 @@ export function createLocalSessionController({
   position.set(initial.position ?? 0);
   let playbackRevision = 0;
   let queueRevision = 0;
+  let itemActionGuardRevision = 0;
   let stopRevision = 0;
   let observedNativeNode = null;
   let nativeBinding = null;
@@ -134,6 +135,29 @@ export function createLocalSessionController({
     config: snapshot.config,
   });
 
+  // A DELIBERATELY NARROWER cousin of queueFingerprint, used ONLY to feed
+  // the item-action ledger's own supersede guard (via the `revision`
+  // callback passed to createItemActionOwner below) — NOT `queueRevision`
+  // itself, which is a first-class field of the cross-controller ownership
+  // identity (shared/contracts/media/playback-owner.mjs's
+  // samePlaybackOwnerIdentity/IDENTITY_FIELDS) used for handoff/portability
+  // comparisons well beyond this guard. Widening queueFingerprint's
+  // sensitivity would have changed THAT meaning too, which is out of scope
+  // here. `config.volume`/`config.shader` change neither what the queue
+  // contains nor its order, so they should not cancel a still-expanding
+  // "Play now" underneath the person who tapped it; `shuffle`/`repeat`
+  // genuinely change what plays next, so they still count.
+  const itemActionFingerprint = (snapshot) => JSON.stringify({
+    items: snapshot.queue?.items?.map((item) => ({
+      queueItemId: item.queueItemId,
+      contentId: item.contentId,
+      priority: item.priority,
+    })) ?? [],
+    currentIndex: snapshot.queue?.currentIndex ?? -1,
+    executionOrder: snapshot.queue?.executionOrder ?? null,
+    config: { shuffle: snapshot.config?.shuffle, repeat: snapshot.config?.repeat },
+  });
+
   // Revisions change at the owner action boundary. Metadata/position updates
   // are deliberately absent so an enrichment cannot invalidate a move guard.
   store.onTransition((prev, next, action) => {
@@ -151,6 +175,9 @@ export function createLocalSessionController({
     if (['STOP', 'RESET'].includes(action?.type)) stopRevision += 1;
     if (action?.type === 'ADOPT_SNAPSHOT' || queueFingerprint(prev) !== queueFingerprint(next)) {
       queueRevision += 1;
+    }
+    if (action?.type === 'ADOPT_SNAPSHOT' || itemActionFingerprint(prev) !== itemActionFingerprint(next)) {
+      itemActionGuardRevision += 1;
     }
     if (['LOAD_ITEM', 'ADOPT_SNAPSHOT', 'STOP', 'RESET'].includes(action?.type)) {
       playbackRevision += 1;
@@ -176,12 +203,26 @@ export function createLocalSessionController({
   // the time `onPlayerStateChange`/`onPlayerObservation` fires, `pendingOrigin`
   // has already been cleared (by commandHandler's `applyWithOrigin`, or by an
   // unrelated command that ran in between).
-  const armExpectedPlaybackOrigin = (origin) => {
+  //
+  // `outcome` ('playing' | 'paused') is the SPECIFIC transition this ticket
+  // is waiting for. Without it, ANY player callback — including a no-op
+  // timeupdate/durationchange PLAYER_OBSERVATION that changes nothing and
+  // never actually commits a transition (sessionReducer.js's `if
+  // (!itemChanged && !stateChanged) return snapshot;`) — would burn the
+  // ticket before the real event arrives; and a no-op command (pause while
+  // already paused) would leave a stale ticket armed for the whole window,
+  // ready to wrongly claim an unrelated human action (e.g. someone pressing
+  // play on the TV's own remote) that happens to produce a matching state.
+  const armExpectedPlaybackOrigin = (origin, outcome) => {
     if (!origin) return;
-    expectedPlaybackOrigin = { origin, expiresAt: Date.now() + EXPECTED_PLAYBACK_ORIGIN_WINDOW_MS };
+    expectedPlaybackOrigin = { origin, outcome, expiresAt: Date.now() + EXPECTED_PLAYBACK_ORIGIN_WINDOW_MS };
   };
-  const consumeExpectedPlaybackOrigin = () => {
-    if (!expectedPlaybackOrigin) return undefined;
+  const clearExpectedPlaybackOrigin = () => { expectedPlaybackOrigin = null; };
+  // Only consumes (and only clears) the ticket when `outcome` matches what
+  // was armed — a mismatched or no-op call leaves it alone for the real
+  // event still to come.
+  const consumeExpectedPlaybackOrigin = (outcome) => {
+    if (!expectedPlaybackOrigin || expectedPlaybackOrigin.outcome !== outcome) return undefined;
     const { origin, expiresAt } = expectedPlaybackOrigin;
     expectedPlaybackOrigin = null;
     return Date.now() <= expiresAt ? origin : undefined;
@@ -575,10 +616,14 @@ export function createLocalSessionController({
         // exactly as before this fix.
         if (!snap().currentItem) {
           const first = snap().queue.items[0];
-          if (!first) return;
+          if (!first) { clearExpectedPlaybackOrigin(); return; }
           moveCurrentTo(first);
         }
-        armExpectedPlaybackOrigin(opOrigin);
+        // Already playing: this call changes nothing, so no 'playing'
+        // transition is coming — arming a ticket here would just sit ready
+        // to wrongly claim some LATER, unrelated player event.
+        if (snap().state === 'playing') clearExpectedPlaybackOrigin();
+        else armExpectedPlaybackOrigin(opOrigin, 'playing');
         player.play();
       },
       pause: () => {
@@ -590,8 +635,12 @@ export function createLocalSessionController({
         const here = position.get().seconds;
         if (Number.isFinite(here) && here > 0) setDurablePosition(here);
         // As with play(): the 'paused' transition arrives later from the
-        // player, not from anything dispatched in this call.
-        armExpectedPlaybackOrigin(opOrigin);
+        // player, not from anything dispatched in this call — UNLESS this
+        // is a no-op (already paused), in which case nothing is coming at
+        // all, and any previously-armed ticket must not be left standing
+        // either.
+        if (snap().state === 'paused') clearExpectedPlaybackOrigin();
+        else armExpectedPlaybackOrigin(opOrigin, 'paused');
         player.pause();
       },
       stop: () => {
@@ -609,8 +658,12 @@ export function createLocalSessionController({
         const opOrigin = pendingOrigin;
         mediaLog.transportCommand({ action: 'seekAbs', value: seconds, target: 'local' });
         // A seek dispatches nothing synchronously either — the player
-        // reports the new position/state asynchronously.
-        armExpectedPlaybackOrigin(opOrigin);
+        // reports the new position/state asynchronously. A seek doesn't
+        // change play/pause state itself; it re-confirms whatever state the
+        // session was already in, so the ticket targets THAT outcome (a
+        // seek while paused is confirmed by the next 'paused' event, one
+        // while playing by the next 'playing' event).
+        armExpectedPlaybackOrigin(opOrigin, snap().state === 'paused' ? 'paused' : 'playing');
         player.seek(seconds);
       },
       seekRel: (delta) => {
@@ -783,14 +836,21 @@ export function createLocalSessionController({
         contentId,
         itemPatch: observedItemPatch(observation),
         playerState,
-        // Consumes a ticket armed by transport.play/pause/seekAbs, if one is
-        // still live — the deferred half of that command's provenance.
-        __opOrigin: consumeExpectedPlaybackOrigin(),
+        // Consumes a ticket armed by transport.play/pause/seekAbs — but ONLY
+        // when THIS observation's own playerState matches what the ticket is
+        // waiting for. A plain timeupdate/durationchange tick (no paused/
+        // playing signal at all, `playerState` undefined here) never
+        // qualifies, so it can't burn the ticket before the real event
+        // arrives — `consumeExpectedPlaybackOrigin` itself also declines a
+        // non-matching outcome, but skipping the call entirely for
+        // `playerState == null` avoids even attempting a comparison against
+        // `undefined`.
+        __opOrigin: playerState != null ? consumeExpectedPlaybackOrigin(playerState) : undefined,
       });
     },
     onPlayerStateChange: (state, contentId = null) => {
       if (contentId != null && snap().currentItem?.contentId !== contentId) return;
-      store.dispatch({ type: 'PLAYER_STATE', playerState: state, __opOrigin: consumeExpectedPlaybackOrigin() });
+      store.dispatch({ type: 'PLAYER_STATE', playerState: state, __opOrigin: consumeExpectedPlaybackOrigin(state) });
     },
     onPlayerEnded: (contentId = null) => {
       if (contentId != null && snap().currentItem?.contentId !== contentId) return;
@@ -839,7 +899,12 @@ export function createLocalSessionController({
       const nativePosition = capture().snapshot.position;
       return { ...structuredClone(snap()), position: nativePosition };
     },
-    revision: () => ({ ownerInstanceId, queueRevision, stopRevision }),
+    // Uses `itemActionGuardRevision` (from `itemActionFingerprint`), not the
+    // shared `queueRevision` — see that fingerprint's comment above. The
+    // ledger only ever compares this object opaquely (JSON.stringify), so
+    // the field is still named `queueRevision` here purely to keep that
+    // comparison shape stable; it does not feed cross-controller identity.
+    revision: () => ({ ownerInstanceId, queueRevision: itemActionGuardRevision, stopRevision }),
     fetchImpl,
     // `operationId` (already threaded by itemActionOwner.js — the forward
     // path passes it directly; the undo/restore path passes it via
