@@ -15,6 +15,7 @@ vi.mock('../identity/useClientIdentity.js', () => ({
 
 import { createIdleSessionSnapshot } from '@shared-contracts/media/shapes.mjs';
 import { useExternalControl } from './useExternalControl.js';
+import mediaLog from '../logging/mediaLog.js';
 
 function makeController() {
   return {
@@ -212,5 +213,16 @@ describe('useExternalControl', () => {
       command: 'transport', params: { action: 'pause' } };
     act(() => { capturedCallback(msg); capturedCallback(msg); });
     expect(sendFn.mock.calls.map(([m]) => m.ok)).toEqual([false, false]);
+  });
+
+  it('logs externalControlRejected with the commandId and reason on a thrown command', () => {
+    const rejectedSpy = vi.spyOn(mediaLog, 'externalControlRejected');
+    controller.transport.pause.mockImplementation(() => { throw new Error('no-media'); });
+    renderHook(() => useExternalControl(controller));
+    const msg = { topic: 'client-control:live-1', replyToControlClientId: 'c', commandId: 'thrown-1',
+      command: 'transport', params: { action: 'pause' } };
+    act(() => capturedCallback(msg));
+    expect(rejectedSpy).toHaveBeenCalledWith({ commandId: 'thrown-1', reason: 'no-media' });
+    rejectedSpy.mockRestore();
   });
 });
