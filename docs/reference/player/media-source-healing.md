@@ -69,7 +69,7 @@ check endpoint's job, and it answers `missing`.
 |---|---|
 | Rules: rating-key parsing, part classification, push text | `backend/src/2_domains/media/sourceHealth.mjs` |
 | Repair ladder, per-file episodes, alert | `backend/src/3_applications/media/MediaSourceHealer.mjs` |
-| Plex `checkFiles=1` probe | `backend/src/1_adapters/content/media/plex/PlexSourceProbe.mjs` |
+| Plex `checkFiles=1` probe, then a one-byte request of the part itself: `checkFiles` only stats the file, and Plex can say `accessible` while serving the part 404 (mid scan). A 403 or 404 on the part is `unreadable` with `reason: part-refused`; an error on that request never escalates. | `backend/src/1_adapters/content/media/plex/PlexSourceProbe.mjs`, `PlexClient.partStatus` |
 | Host SSH heal | `backend/src/1_adapters/media/SshMediaHostHealer.mjs` |
 | Router | `backend/src/4_api/v1/routers/mediaSource.mjs` |
 | Host script (forced command) | `scripts/media-source-heal.sh` |
@@ -121,6 +121,22 @@ container mounts it. The backend SSHes to the host with a key that
   this.
 - The startup deadline, for Plex items: the Player checks first, and only an
   answer that says nothing about the file (`normal`) runs the ladder.
+- A **suspected** refusal: a code 2 or 4 error with no status in the message.
+  Mid-playback, Chromium reports a refused part as `MEDIA_ELEMENT_ERROR: Format
+  error` (after a URL refresh) or `PIPELINE_ERROR_READ` (after a remount), so
+  the rule above never matched it. The Player asks once. `unreadable` starts the
+  wait. `readable` returns `normal`, never the extra `retry` reload, because a
+  readable file with a failing stream belongs to the stall ladder.
+- **Before the stall ladder gives up.** On a queue, exhaustion skips the item,
+  so for Plex items the jolt ladder asks first. `wait` holds instead of
+  skipping (`exhausted-skip-deferred`); anything else is exhausted as before.
+  When that wait ends with `resume`, the ladder restarts from rung zero, so the
+  restored file gets a fresh ladder rather than an instant skip.
+
+2026-09-29: Plex refused a Bluey part at 6:17 of 7:00 while its library scan
+ran. The stall ladder ran both rungs and skipped the episode; the file was
+readable again a minute later. Both of the last two triggers, together with
+the part probe below, exist for that case.
 
 **While waiting**
 
@@ -193,6 +209,8 @@ which rungs are live.
 | `media.source.heal.opened` / `.step` / `.resolved` / `.abandoned` / `.alerted` | backend | the ladder, per file; `resolved.resolvedBy` says which rung fixed it (`plex-check`, `plex-recheck`, `host-chmod`) |
 | `playback.source-unavailable-entered` / `-poll` / `-resolved` / `-gave-up` | frontend | the Player's wait |
 | `playback.source-refusal-cleared` | frontend | refusal gone by the first check |
+| `playback.source-refusal-suspected` | frontend | an unlabelled code 2/4 error was checked; `decision` says what followed |
+| `playback.exhausted-skip-deferred` | frontend | the stall ladder ran out on a refused file and waited instead of skipping |
 | `playback.resilience-recovery-deferred` | frontend (debug) | a recovery held back during a wait |
 
 To find out which rung actually fixes these incidents:

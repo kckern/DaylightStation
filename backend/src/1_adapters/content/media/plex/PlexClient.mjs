@@ -153,6 +153,23 @@ export class PlexClient {
   }
 
   /**
+   * HTTP status Plex answers for the first byte of a media part — whether it
+   * will actually SERVE the file, which checkFiles (a stat) cannot tell.
+   * @param {string} partKey - e.g. /library/parts/494586/1599193403/file.mp4
+   * @returns {Promise<number>}
+   */
+  async partStatus(partKey, { timeout = 10_000 } = {}) {
+    const separator = partKey.includes('?') ? '&' : '?';
+    const url = `${this.#host}${partKey}${this.#token ? `${separator}X-Plex-Token=${this.#token}` : ''}`;
+    const response = await this.#httpClient.requestRaw('GET', url, {
+      headers: { Range: 'bytes=0-0', ...(this.#token ? { 'X-Plex-Token': this.#token } : {}) },
+      timeout,
+      responseType: 'buffer',
+    });
+    return response.status;
+  }
+
+  /**
    * Get all library sections
    * @returns {Promise<Object>}
    */

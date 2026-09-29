@@ -29,12 +29,32 @@ export class PlexSourceProbe {
     if (!item) return { state: SOURCE_STATE.unknown, path: null, title: null, showTitle: null };
     const parts = (item.Media || []).flatMap((media) => media?.Part || []);
     const { state, part } = classifyPlexParts(parts);
-    return {
+    const answer = {
       state,
       path: part?.file ?? null,
       title: item.title ?? null,
       showTitle: item.grandparentTitle ?? item.parentTitle ?? null,
     };
+    if (state !== SOURCE_STATE.readable) return answer;
+
+    // checkFiles is Plex STATTING the file. On 2026-09-29 it said accessible
+    // while every direct play of the part answered 404 (mid library scan), and
+    // the Player skipped the episode. Ask for one byte of the part itself.
+    const partStatus = await this.#partStatus(part?.key);
+    if (partStatus === 403 || partStatus === 404) {
+      return { ...answer, state: SOURCE_STATE.unreadable, reason: 'part-refused', partStatus };
+    }
+    return answer;
+  }
+
+  /** HTTP status for one byte of the part, or null when it cannot be asked. */
+  async #partStatus(partKey) {
+    if (!partKey || typeof this.#client.partStatus !== 'function') return null;
+    try {
+      return await this.#client.partStatus(partKey);
+    } catch {
+      return null; // a failed extra request never escalates on its own
+    }
   }
 }
 
