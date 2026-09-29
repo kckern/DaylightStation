@@ -38,4 +38,22 @@ describe('browser fleet liveness', () => {
       ['physical-off', 'off'],
     ]);
   });
+
+  it('keeps configured state for a device with no live entry and never ranks it above live ones', () => {
+    const merged = mergeCanonicalFleetState([{ id: 'quiet', state: 'idle' }, { id: 'tv' }],
+      new Map([['tv', { snapshot: { state: 'playing' }, offline: false }]]));
+    expect(merged.find(d => d.id === 'quiet')).toMatchObject({ state: 'idle', displayState: 'idle' });
+    expect(sortFleetDevices(merged).map(d => d.id)).toEqual(['tv', 'quiet']);
+  });
+
+  it('shows an offline device as off even if its last snapshot said playing', () => {
+    const [row] = mergeCanonicalFleetState([{ id: 'tv' }], new Map([['tv', { snapshot: { state: 'playing' }, offline: true }]]));
+    expect(row).toMatchObject({ state: 'off', displayState: 'off' });
+  });
+
+  it('does not mutate the configured device objects', () => {
+    const devices = [{ id: 'tv', state: 'idle' }];
+    mergeCanonicalFleetState(devices, new Map([['tv', { snapshot: { state: 'playing' } }]]));
+    expect(devices[0]).toEqual({ id: 'tv', state: 'idle' });
+  });
 });
