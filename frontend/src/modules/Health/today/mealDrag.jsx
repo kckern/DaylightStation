@@ -21,6 +21,8 @@ import { FoodIcon } from './FoodIcon.jsx';
 import { entryError, entryId, entryLabel, updateEntry } from './entryCommands.js';
 import { bucketLabel } from './mealBuckets.js';
 import { groupRows } from './groupRows.js';
+import { dayDropId, dayFromDropId, dayLabel } from './moveDays.js';
+import { localTodayISO } from './mealBuckets.js';
 
 const logger = createAppLogger('health').child('meal-drag');
 
@@ -58,9 +60,10 @@ const MealDragContext = createContext(null);
 
 /**
  * Wraps the day's meals. `onMove(row, toBucket, fromBucket)` is called once,
- * on a drop into a different meal.
+ * on a drop into a different meal; `onMoveToDay(rows, isoDate, fromBucket)` on
+ * a drop onto a day in the day dock (MoveDayControl.jsx).
  */
-export function MealDragProvider({ onMove, onMoveMeal, children }) {
+export function MealDragProvider({ onMove, onMoveMeal, onMoveToDay, children }) {
   const sensors = useSensors(
     useSensor(RowPointerSensor, { activationConstraint: { distance: MOUSE_DRAG_DISTANCE_PX } }),
     useSensor(RowTouchSensor, { activationConstraint: { delay: TOUCH_HOLD_MS, tolerance: 8 } }),
@@ -76,10 +79,12 @@ export function MealDragProvider({ onMove, onMoveMeal, children }) {
     setActive(null);
     const to = over?.id ?? null;
     if (!to || to === bucket || (!row && !meal)) { logger.debug('drag.cancel', { from: bucket, over: to }); return; }
+    const toDay = dayFromDropId(to);
+    if (toDay) { onMoveToDay?.(meal ? rows : [row], toDay, bucket); return; }
     if (meal) onMoveMeal?.(rows, to, bucket);
     else onMove?.(row, to, bucket);
   };
-  const value = useMemo(() => ({ enabled: true, activeBucket: active?.bucket ?? null }), [active?.bucket]);
+  const value = useMemo(() => ({ enabled: true, activeBucket: active?.bucket ?? null, dragging: active != null }), [active]);
   return <MealDragContext.Provider value={value}>
     <DndContext sensors={sensors} collisionDetection={pointerWithin} onDragStart={onDragStart}
       onDragEnd={onDragEnd} onDragCancel={() => setActive(null)} autoScroll={{ threshold: { x: 0, y: 0.15 } }}>
@@ -119,6 +124,16 @@ export function useDraggableMeal(bucket, rows) {
   return { ref: setNodeRef, handlers: off ? {} : listeners, dragging: isDragging, draggable: !off };
 }
 
+/** True from the moment a food or meal is picked up until it is dropped. */
+export const useMealDragActive = () => Boolean(useContext(MealDragContext)?.dragging);
+
+/** Day side: a day chip a food or meal is dropped on. */
+export function useDayDropTarget(iso) {
+  const context = useContext(MealDragContext);
+  const { setNodeRef, isOver } = useDroppable({ id: dayDropId(iso), disabled: !context?.enabled });
+  return { ref: setNodeRef, over: isOver };
+}
+
 /** Meal side: the section a row is dropped on. */
 export function useMealDropTarget(bucket) {
   const context = useContext(MealDragContext);
@@ -151,7 +166,8 @@ function applyMoves(items, moves) {
 export function useMealMoves(day) {
   const [moves, setMoves] = useState(() => new Map()); // id -> { to }
   const [recent, setRecent] = useState(() => new Set());
-  const [undo, setUndo] = useState(null); // { rows, from, to }
+  const [undo, setUndo] = useState(null); // { rows, from, to } | { rows, day: { from, to } }
+  const [gone, setGone] = useState(() => new Set()); // ids sent to another day, hidden until the day reloads
   const [error, setError] = useState(null);
   const timers = useRef(new Set());
   useEffect(() => () => timers.current.forEach(clearTimeout), []);
@@ -164,7 +180,19 @@ export function useMealMoves(day) {
     setMoves(previous => { const next = new Map(previous); settled.forEach(([id]) => next.delete(id)); return next; });
   }, [day.items, moves]);
 
-  const items = useMemo(() => applyMoves(day.items, moves), [day.items, moves]);
+  // Retire a hidden row once the read model no longer carries it.
+  useEffect(() => {
+    if (!gone.size) return;
+    const present = new Set(day.items.map(row => String(entryId(row))));
+    const settled = [...gone].filter(id => !present.has(id));
+    if (!settled.length) return;
+    setGone(previous => { const next = new Set(previous); settled.forEach(id => next.delete(id)); return next; });
+  }, [day.items, gone]);
+
+  const items = useMemo(() => {
+    const moved = applyMoves(day.items, moves);
+    return gone.size ? moved.filter(row => !gone.has(String(entryId(row))) && !(row.parentId != null && gone.has(String(row.parentId)))) : moved;
+  }, [day.items, moves, gone]);
 
   const highlight = id => {
     setRecent(previous => new Set(previous).add(id));
@@ -206,15 +234,59 @@ export function useMealMoves(day) {
     }
   }, [day]);
 
+  // Moves rows to another DAY, same meal. The rows leave the viewed day at
+  // once and the PUTs follow one by one; a failure brings back the rows it did
+  // not reach. Undo sends the reached rows home.
+  const sendToDay = useCallback(async (rows, toDate, fromDate, { isUndo = false } = {}) => {
+    const ids = rows.map(row => String(entryId(row)));
+    setError(null);
+    setGone(previous => new Set([...previous, ...ids]));
+    const moved = [];
+    try {
+      for (const row of rows) {
+        const id = String(entryId(row));
+        const result = await updateEntry(row, { date: toDate }, crypto.randomUUID());
+        const versions = result?.versions || {};
+        moved.push({ ...row, date: toDate, version: versions[id] ?? row.version,
+          children: row.children?.map(child => ({ ...child, date: toDate, version: versions[String(entryId(child))] ?? child.version })) });
+      }
+      logger.info(isUndo ? 'entry.move-day.undo' : 'entry.move-day', { count: rows.length, from: fromDate, to: toDate });
+      setUndo(isUndo ? null : { rows: moved, day: { from: fromDate, to: toDate } });
+    } catch (err) {
+      const reached = new Set(moved.map(row => String(entryId(row))));
+      setGone(previous => { const next = new Set(previous); ids.filter(id => !reached.has(id)).forEach(id => next.delete(id)); return next; });
+      const what = rows.length === 1 ? entryLabel(rows[0]) : `${rows.length - moved.length} of ${rows.length} foods`;
+      setError(`Couldn't move ${what} to ${dayLabel(toDate, localTodayISO())}: ${entryError(err)}`);
+      logger.warn('entry.move-day.failed', { count: rows.length, moved: moved.length, from: fromDate, to: toDate, error: err.message });
+      setUndo(moved.length && !isUndo ? { rows: moved, day: { from: fromDate, to: toDate } } : null);
+    } finally {
+      day.reload?.();
+    }
+  }, [day]);
+
+  const undoLabel = () => {
+    if (!undo) return null;
+    if (undo.day) {
+      const what = undo.rows.length === 1 ? entryLabel(undo.rows[0]) : `${undo.rows.length} foods`;
+      return `Moved ${what} to ${dayLabel(undo.day.to, localTodayISO())}`;
+    }
+    return undo.rows.length === 1 ? `Moved ${entryLabel(undo.rows[0])} to ${bucketLabel(undo.to)}`
+      : `Moved ${undo.rows.length} foods from ${bucketLabel(undo.from)} to ${bucketLabel(undo.to)}`;
+  };
+
   return {
     items,
     recentIds: recent,
+    moveToDay: (rows, toDate, fromBucket) => {
+      const from = rows[0]?.date;
+      return rows.length && from && from !== toDate ? sendToDay(rows, toDate, from) : undefined;
+    },
     move: (row, to, from) => send([row], to, from),
     moveMeal: (rows, to, from) => (rows.length ? send(rows, to, from) : undefined),
     undo: undo ? {
-      label: undo.rows.length === 1 ? `Moved ${entryLabel(undo.rows[0])} to ${bucketLabel(undo.to)}`
-        : `Moved ${undo.rows.length} foods from ${bucketLabel(undo.from)} to ${bucketLabel(undo.to)}`,
-      run: () => send(undo.rows, undo.from, undo.to, { isUndo: true }),
+      label: undoLabel(),
+      run: () => (undo.day ? sendToDay(undo.rows, undo.day.from, undo.day.to, { isUndo: true })
+        : send(undo.rows, undo.from, undo.to, { isUndo: true })),
       dismiss: () => setUndo(null),
     } : null,
     error,
