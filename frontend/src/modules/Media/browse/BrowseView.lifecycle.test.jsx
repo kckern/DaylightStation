@@ -148,7 +148,7 @@ describe('BrowseView lifecycle', () => {
     expect(push).toHaveBeenCalledWith(
       'browse',
       expect.objectContaining({ path: 'plex/s3', label: 'Season 3' }),
-      expect.objectContaining({ currentPatch: { path: 'plex/season-2', scrollTop: 137, focusedId: 'plex:s3' } }),
+      expect.objectContaining({ currentPatch: { path: 'plex/season-2', scrollTop: 137, focusedId: 'plex:s3', loadedCount: 1 } }),
     );
 
     unmount();

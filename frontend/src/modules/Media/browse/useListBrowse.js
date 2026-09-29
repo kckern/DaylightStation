@@ -10,7 +10,17 @@ function buildPath(path, { modifiers = {} }) {
   return `api/v1/list/${segs.join('/')}`;
 }
 
-export function useListBrowse(path, { modifiers = {}, take = 50 } = {}) {
+// A Back restore re-fetches every row the person had scrolled through in one
+// request; beyond this it would be a rare, heavy request for little gain.
+const MAX_INITIAL_TAKE = 1000;
+
+/**
+ * @param {number} [options.initialTake] - Rows to fetch in the FIRST request
+ *   (never fewer than `take`). Returning to a list passes how many rows were
+ *   loaded when the person left, so the row they came back to exists again.
+ */
+export function useListBrowse(path, { modifiers = {}, take = 50, initialTake = 0 } = {}) {
+  const firstTake = Math.min(Math.max(take, Number(initialTake) || 0), Math.max(take, MAX_INITIAL_TAKE));
   const [items, setItems] = useState([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -38,7 +48,7 @@ export function useListBrowse(path, { modifiers = {}, take = 50 } = {}) {
     setError(null);
 
     let cancelled = false;
-    DaylightAPI(`${base}?take=${take}`)
+    DaylightAPI(`${base}?take=${firstTake}`)
       .then((res) => {
         if (cancelled || generationRef.current !== generation) return;
         const nextItems = Array.isArray(res?.items) ? res.items : [];
@@ -57,7 +67,7 @@ export function useListBrowse(path, { modifiers = {}, take = 50 } = {}) {
       });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [path, take, modifiers.playable, modifiers.shuffle, modifiers.recent_on_top]);
+  }, [path, take, firstTake, modifiers.playable, modifiers.shuffle, modifiers.recent_on_top]);
 
   const loadMore = useCallback(async () => {
     const generation = generationRef.current;
