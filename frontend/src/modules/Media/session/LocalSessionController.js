@@ -442,7 +442,11 @@ export function createLocalSessionController({
 
   // Move the current cursor to `entry` by IDENTITY (jump recomputes the
   // index), demoting the spent current's upNext priority on the way past.
-  const moveCurrentTo = (entry, { consumeExecutionOrder = false, preserveExecutionOrder = false } = {}, opOrigin) => {
+  // `playerDriven` marks every dispatch as player-originated (auto-advance
+  // after ended/error/stall) so none of them reads or clears a command's
+  // staged `pendingOrigin` — see onTransition.
+  const moveCurrentTo = (entry, { consumeExecutionOrder = false, preserveExecutionOrder = false, playerDriven = false } = {}, opOrigin) => {
+    const tag = { __opOrigin: opOrigin, ...(playerDriven ? { __playerDriven: true } : {}) };
     const initial = snap();
     let working = initial;
     const oldCurrent = working.queue.items[working.queue.currentIndex];
@@ -450,17 +454,21 @@ export function createLocalSessionController({
       working = qOps.demote(working, oldCurrent.queueItemId);
     }
     if (preserveExecutionOrder) {
-      if (working !== initial) store.replace(working, { type: 'REPLACE_SNAPSHOT', __opOrigin: opOrigin });
+      if (working !== initial) store.replace(working, { type: 'REPLACE_SNAPSHOT', ...tag });
     } else {
       store.replace(consumeExecutionOrder
         ? qOps.consumeExecutionVisit(working, entry.queueItemId)
-        : qOps.jump(working, entry.queueItemId), { type: 'REPLACE_SNAPSHOT', __opOrigin: opOrigin });
+        : qOps.jump(working, entry.queueItemId), { type: 'REPLACE_SNAPSHOT', ...tag });
     }
-    store.dispatch({ type: 'LOAD_ITEM', item: itemFromQueueEntry(entry), __opOrigin: opOrigin });
+    store.dispatch({ type: 'LOAD_ITEM', item: itemFromQueueEntry(entry), ...tag });
     position.set(0);
   };
 
-  const advance = (reason) => {
+  // Shared by the player (ended/error/stall → `{ playerDriven: true }`) and
+  // by the skipNext command (→ its captured `opOrigin`). The distinction is
+  // made explicit here, at the call site, rather than inferred from whatever
+  // happens to be staged ambiently when the player fires.
+  const advance = (reason, { playerDriven = false, opOrigin } = {}) => {
     const next = pickNextQueueItem(snap(), { reason });
     mediaLog.playbackAdvanced({
       sessionId: snap().sessionId,
@@ -468,14 +476,20 @@ export function createLocalSessionController({
       nextContentId: next?.contentId ?? null,
     });
     if (!next) {
-      store.dispatch({ type: 'PLAYER_STATE', playerState: 'ended' });
+      store.dispatch({
+        type: 'PLAYER_STATE',
+        playerState: 'ended',
+        __opOrigin: opOrigin,
+        ...(playerDriven ? { __playerDriven: true } : {}),
+      });
       return;
     }
     const repeatsCurrent = snap().config.repeat === 'one' && reason !== 'skip-next';
     moveCurrentTo(next, {
       consumeExecutionOrder: !repeatsCurrent,
       preserveExecutionOrder: repeatsCurrent,
-    });
+      playerDriven,
+    }, opOrigin);
   };
 
   const advanceBack = () => {
@@ -663,8 +677,9 @@ export function createLocalSessionController({
       },
       skipNext: () => {
         beginAction();
+        const opOrigin = pendingOrigin;
         mediaLog.transportCommand({ action: 'skipNext', target: 'local' });
-        advance('skip-next');
+        advance('skip-next', { opOrigin });
       },
       skipPrev: () => {
         beginAction();
@@ -835,7 +850,7 @@ export function createLocalSessionController({
     },
     onPlayerEnded: (contentId = null) => {
       if (contentId != null && snap().currentItem?.contentId !== contentId) return;
-      advance('item-ended');
+      advance('item-ended', { playerDriven: true });
     },
     onPlayerError: ({ message, code } = {}) => {
       mediaLog.playbackError({
@@ -844,8 +859,8 @@ export function createLocalSessionController({
         error: message ?? 'unknown',
         code: code ?? null,
       });
-      store.dispatch({ type: 'ITEM_ERROR', error: message ?? 'unknown', code: code ?? null });
-      advance('item-error');
+      store.dispatch({ type: 'ITEM_ERROR', error: message ?? 'unknown', code: code ?? null, __playerDriven: true });
+      advance('item-error', { playerDriven: true });
     },
     onPlayerStalled: ({ stalledMs } = {}) => {
       const current = snap().currentItem;
@@ -856,7 +871,7 @@ export function createLocalSessionController({
         stalledMs: Number.isFinite(stalledMs) ? stalledMs : null,
       });
       store.dispatch({ type: 'PLAYER_STATE', playerState: 'stalled', __playerDriven: true });
-      advance('stall-auto-advance');
+      advance('stall-auto-advance', { playerDriven: true });
     },
     /** Durable (≥5s cadence) position write. */
     onPlayerProgress: (seconds, contentId = null) => {

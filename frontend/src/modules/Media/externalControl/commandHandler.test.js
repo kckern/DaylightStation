@@ -319,6 +319,90 @@ describe('applyCommandEnvelope', () => {
     expect(controller.getSnapshot().meta.origin).toEqual(before);
   });
 
+  // Auto-advance (onPlayerEnded / onPlayerError / onPlayerStalled) is
+  // player-driven too: every dispatch it makes — the 'ended' PLAYER_STATE at
+  // queue end, ITEM_ERROR, and moveCurrentTo's REPLACE_SNAPSHOT/LOAD_ITEM —
+  // must neither be stamped with nor consume a routine command's staged
+  // origin. The pending routine action is an `add` (not playNow) so the
+  // advance itself doesn't legitimately supersede it; the staged origin is
+  // probed afterwards with a direct (un-enveloped) volume change, whose
+  // beginAction() only falls back to the device default when NOTHING is
+  // staged — so it reads routine iff the player event left it in place.
+  const routine = { kind: 'routine', name: 'Breakfast', triggerId: 'daily-0700' };
+  const device = { kind: 'device', id: 'browser:origin-owner' };
+  const albumFetch = () => {
+    let resolveFetch;
+    const fetchImpl = () => new Promise((resolve) => { resolveFetch = resolve; });
+    return { fetchImpl, resolve: () => resolveFetch({ ok: true, json: async () => ({ items: [{ id: 'plex:track-1', play: { contentId: 'plex:track-1' }, title: 'Track 1' }] }) }) };
+  };
+  const playingQueue = (fetchImpl, contentIds) => {
+    const controller = createLocalSessionController({ clientId: 'origin-owner', fetchImpl });
+    controller.setPlayerHandle({ play: vi.fn(), pause: vi.fn(), seek: vi.fn() });
+    for (const contentId of contentIds) controller.queue.add({ contentId, format: 'video' });
+    controller.transport.play();
+    controller.onPlayerStateChange('playing');
+    expect(controller.getSnapshot().currentItem.contentId).toBe(contentIds[0]);
+    expect(controller.getSnapshot().meta.origin).toEqual(device);
+    return controller;
+  };
+  const pendingRoutineAdd = (controller, operationId) => applyCommandEnvelope(controller, { ...env('queue', {
+    op: 'item-action', operationId, kind: 'add',
+    item: { contentId: 'plex:album-1', itemType: 'container', childCount: 2 },
+    tappedAt: Date.now(),
+  }), origin: routine });
+  const expectRoutineStillStaged = (controller) => {
+    controller.config.setVolume(40);
+    expect(controller.getSnapshot().meta.origin).toEqual(routine);
+  };
+
+  it.each([
+    ['onPlayerEnded', (controller) => controller.onPlayerEnded('plex:1')],
+    ['onPlayerError', (controller) => controller.onPlayerError({ message: 'decode failed', code: 'E_DECODE' })],
+  ])('%s auto-advancing during a pending routine item action neither stamps nor consumes its staged origin', async (_name, fire) => {
+    const { fetchImpl, resolve } = albumFetch();
+    const controller = playingQueue(fetchImpl, ['plex:1', 'plex:2']);
+    const pending = pendingRoutineAdd(controller, `advance-${_name}`);
+
+    fire(controller);
+    expect(controller.getSnapshot().currentItem.contentId).toBe('plex:2');
+    expect(controller.getSnapshot().meta.origin).toEqual(device);
+    expectRoutineStillStaged(controller);
+
+    resolve();
+    const result = await pending;
+    expect(result.ok).toBe(true);
+    expect(controller.getSnapshot().meta.origin).toEqual(routine);
+  });
+
+  it('onPlayerEnded at queue end during a pending routine item action neither stamps nor consumes its staged origin', async () => {
+    const { fetchImpl, resolve } = albumFetch();
+    const controller = playingQueue(fetchImpl, ['plex:1']);
+    const pending = pendingRoutineAdd(controller, 'advance-queue-end');
+
+    controller.onPlayerEnded('plex:1');
+    expect(controller.getSnapshot().state).toBe('ended');
+    expect(controller.getSnapshot().meta.origin).toEqual(device);
+    expectRoutineStillStaged(controller);
+
+    resolve();
+    const result = await pending;
+    expect(result.ok).toBe(true);
+    expect(controller.getSnapshot().meta.origin).toEqual(routine);
+  });
+
+  it.each([
+    ['to the next item', ['plex:1', 'plex:2'], (snapshot) => expect(snapshot.currentItem.contentId).toBe('plex:2')],
+    ['at queue end', ['plex:1'], (snapshot) => expect(snapshot.state).toBe('ended')],
+  ])('a human skipNext %s stamps the human device origin, even over a routine-stamped screen', (_name, contentIds, check) => {
+    const controller = playingQueue(undefined, contentIds);
+    expect(applyCommandEnvelope(controller, { ...env('transport', { action: 'pause' }), origin: routine })).toEqual({ ok: true });
+    expect(controller.getSnapshot().meta.origin).toEqual(routine);
+
+    expect(applyCommandEnvelope(controller, env('transport', { action: 'skipNext' }))).toEqual({ ok: true });
+    check(controller.getSnapshot());
+    expect(controller.getSnapshot().meta.origin).toEqual(device);
+  });
+
   it('stamps a still-pending routine enqueue (the legacy queue.playNow path) routine even after an interleaved human config change', async () => {
     // enqueue()'s container-expansion path (~470-489) is the OTHER place an
     // operation's own mutation can land well after another command has
