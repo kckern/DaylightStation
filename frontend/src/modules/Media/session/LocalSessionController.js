@@ -105,8 +105,10 @@ export function createLocalSessionController({
   // ticket nothing was ever guaranteed to consume; and the ticket survived
   // across LOAD_ITEM/skip, so the NEXT item's first 'playing' could still be
   // wrongly stamped with a stale origin). Player-driven dispatches
-  // (PLAYER_STATE/PLAYER_OBSERVATION) now never touch meta.origin at all —
-  // provenance is sticky until the next actual command, by design.
+  // (PLAYER_STATE/PLAYER_OBSERVATION/progress UPDATE_POSITION, flagged
+  // `__playerDriven`) now never touch meta.origin at all — nor read or clear
+  // a staged `pendingOrigin` — so provenance is sticky until the next actual
+  // command, by design.
   let pendingOrigin = null;
   const operationOrigins = new Map();
   const initial = {
@@ -171,13 +173,26 @@ export function createLocalSessionController({
     // An explicit per-operation stamp (see above) always wins over the
     // ambient value — it is how a deferred transition survives another
     // command running in between.
-    const stampOrigin = action?.__opOrigin ?? pendingOrigin;
+    //
+    // Player-driven dispatches (`__playerDriven`: PLAYER_STATE,
+    // PLAYER_OBSERVATION, progress UPDATE_POSITION) neither read nor clear
+    // the ambient `pendingOrigin`. It can legitimately stay staged across an
+    // await — applyWithOrigin clears it only when a routine async item
+    // action resolves — and a progress tick or a remote pause landing in
+    // that window is not that command's outcome: stamping it would change
+    // provenance even if the command later fails, and consuming it would
+    // rob the command's own synchronous tail of its origin. Flagged per
+    // dispatch rather than by action type, because the same types are also
+    // dispatched from command paths (pause's durable position flush,
+    // skipNext's end-of-queue PLAYER_STATE) that must keep stamping.
+    const playerDriven = action?.__playerDriven === true;
+    const stampOrigin = action?.__opOrigin ?? (playerDriven ? null : pendingOrigin);
     next.meta = {
       ...next.meta,
       revision: canonicalRevision,
       ...(stampOrigin ? { origin: stampOrigin } : {}),
     };
-    pendingOrigin = null;
+    if (!playerDriven) pendingOrigin = null;
     if (['STOP', 'RESET'].includes(action?.type)) stopRevision += 1;
     if (action?.type === 'ADOPT_SNAPSHOT' || queueFingerprint(prev) !== queueFingerprint(next)) {
       queueRevision += 1;
@@ -399,8 +414,8 @@ export function createLocalSessionController({
   };
 
   // Durable position writes flow down into the hot tier (never the reverse).
-  const setDurablePosition = (seconds) => {
-    store.dispatch({ type: 'UPDATE_POSITION', position: seconds });
+  const setDurablePosition = (seconds, { playerDriven = false } = {}) => {
+    store.dispatch({ type: 'UPDATE_POSITION', position: seconds, ...(playerDriven ? { __playerDriven: true } : {}) });
     position.set(seconds);
   };
 
@@ -811,11 +826,12 @@ export function createLocalSessionController({
         contentId,
         itemPatch: observedItemPatch(observation),
         playerState,
+        __playerDriven: true,
       });
     },
     onPlayerStateChange: (state, contentId = null) => {
       if (contentId != null && snap().currentItem?.contentId !== contentId) return;
-      store.dispatch({ type: 'PLAYER_STATE', playerState: state });
+      store.dispatch({ type: 'PLAYER_STATE', playerState: state, __playerDriven: true });
     },
     onPlayerEnded: (contentId = null) => {
       if (contentId != null && snap().currentItem?.contentId !== contentId) return;
@@ -839,13 +855,13 @@ export function createLocalSessionController({
         contentId: current.contentId,
         stalledMs: Number.isFinite(stalledMs) ? stalledMs : null,
       });
-      store.dispatch({ type: 'PLAYER_STATE', playerState: 'stalled' });
+      store.dispatch({ type: 'PLAYER_STATE', playerState: 'stalled', __playerDriven: true });
       advance('stall-auto-advance');
     },
     /** Durable (≥5s cadence) position write. */
     onPlayerProgress: (seconds, contentId = null) => {
       if (contentId != null && snap().currentItem?.contentId !== contentId) return;
-      if (typeof seconds === 'number' && Number.isFinite(seconds)) setDurablePosition(seconds);
+      if (typeof seconds === 'number' && Number.isFinite(seconds)) setDurablePosition(seconds, { playerDriven: true });
     },
     /** Hot-tier tick — feeds ONLY the position channel; snapshot subscribers
      *  do not re-render. */

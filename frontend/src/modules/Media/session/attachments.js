@@ -105,7 +105,7 @@ export function attachSlowStartWatchdog(store, {
         phase: 'startup',
         waitedMs,
       });
-      store.dispatch({ type: 'PLAYER_STATE', playerState: 'stalled' });
+      store.dispatch({ type: 'PLAYER_STATE', playerState: 'stalled', __playerDriven: true });
     }, timing.STARTUP_SLOW_MS);
   });
 

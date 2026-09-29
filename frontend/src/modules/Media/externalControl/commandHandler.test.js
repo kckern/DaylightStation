@@ -254,6 +254,71 @@ describe('applyCommandEnvelope', () => {
     expect(controller.getSnapshot().meta.origin).toEqual(routineOrigin);
   });
 
+  // Player-driven dispatches (PLAYER_STATE, PLAYER_OBSERVATION, and the
+  // UPDATE_POSITION from durable progress) must never read or clear the
+  // ambient staged origin. While a routine container item action is still
+  // expanding, applyWithOrigin keeps its origin staged until resolution — a
+  // progress tick or a human remote pause in that window must not be stamped
+  // routine, and must not consume it.
+  const primedPlayingController = (fetchImpl) => {
+    const controller = createLocalSessionController({ clientId: 'origin-owner', fetchImpl });
+    controller.setPlayerHandle({ play: vi.fn(), pause: vi.fn(), seek: vi.fn() });
+    controller.queue.add({ contentId: 'plex:1', format: 'video' });
+    controller.transport.play();
+    controller.onPlayerStateChange('playing');
+    expect(controller.getSnapshot().state).toBe('playing');
+    expect(controller.getSnapshot().meta.origin).toEqual({ kind: 'device', id: 'browser:origin-owner' });
+    return controller;
+  };
+  const containerItemAction = (operationId) => env('queue', {
+    op: 'item-action', operationId, kind: 'playNow',
+    item: { contentId: 'plex:album-1', itemType: 'container', childCount: 2 },
+    tappedAt: Date.now(),
+  });
+
+  it('never stamps a player event with a still-pending routine item action\'s staged origin, and the action still stamps routine on resolution', async () => {
+    let resolveFetch;
+    const fetchImpl = () => new Promise((resolve) => { resolveFetch = resolve; });
+    const controller = primedPlayingController(fetchImpl);
+    const before = controller.getSnapshot().meta.origin;
+    const routineOrigin = { kind: 'routine', name: 'Breakfast', triggerId: 'daily-0700' };
+
+    const pending = applyCommandEnvelope(controller, { ...containerItemAction('player-window-1'), origin: routineOrigin });
+
+    controller.onPlayerStateChange('paused');
+    expect(controller.getSnapshot().state).toBe('paused');
+    expect(controller.getSnapshot().meta.origin).toEqual(before);
+    controller.onPlayerProgress(12);
+    expect(controller.getSnapshot().position).toBe(12);
+    expect(controller.getSnapshot().meta.origin).toEqual(before);
+    controller.onPlayerObservation('plex:1', { paused: false, playing: true });
+    expect(controller.getSnapshot().meta.origin).toEqual(before);
+
+    resolveFetch({ ok: true, json: async () => ({ items: [{ id: 'plex:track-1', play: { contentId: 'plex:track-1' }, title: 'Track 1' }] }) });
+    const result = await pending;
+    expect(result.ok).toBe(true);
+    expect(controller.getSnapshot().meta.origin).toEqual(routineOrigin);
+  });
+
+  it('leaves provenance unchanged when a routine item action fails after a player event landed in its window', async () => {
+    let rejectFetch;
+    const fetchImpl = () => new Promise((_resolve, reject) => { rejectFetch = reject; });
+    const controller = primedPlayingController(fetchImpl);
+    const before = controller.getSnapshot().meta.origin;
+    const routineOrigin = { kind: 'routine', name: 'Breakfast', triggerId: 'daily-0700' };
+
+    const pending = applyCommandEnvelope(controller, { ...containerItemAction('player-window-2'), origin: routineOrigin });
+
+    controller.onPlayerStateChange('paused');
+    controller.onPlayerProgress(9);
+    expect(controller.getSnapshot().meta.origin).toEqual(before);
+
+    rejectFetch(new Error('network down'));
+    const outcome = await pending.then((value) => ({ value }), (error) => ({ error }));
+    expect(outcome.value?.ok === true).toBe(false);
+    expect(controller.getSnapshot().meta.origin).toEqual(before);
+  });
+
   it('stamps a still-pending routine enqueue (the legacy queue.playNow path) routine even after an interleaved human config change', async () => {
     // enqueue()'s container-expansion path (~470-489) is the OTHER place an
     // operation's own mutation can land well after another command has
