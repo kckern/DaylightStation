@@ -173,6 +173,12 @@ export class RegistryContentCatalogGateway extends IContentCatalogGateway {
     return source.getList(contentRef ?? resolution.localId);
   }
 
+  async getListPage(resolution, contentRef = null, page) {
+    const source = this.#source(resolution);
+    if (typeof source?.getListPage !== 'function') return null;
+    return source.getListPage(contentRef ?? resolution.localId, page);
+  }
+
   async resolvePlayables(resolution, contentRef = null) {
     const source = this.#source(resolution);
     if (typeof source?.resolvePlayables !== 'function') return null;

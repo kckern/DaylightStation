@@ -45,6 +45,23 @@ describe('useListBrowse', () => {
     expect(result.current.items).toEqual([{ id: '1' }, { id: '2' }]);
   });
 
+  it('returning with a larger initialTake restores that many rows in one request, then pages by take', async () => {
+    apiMock
+      .mockResolvedValueOnce({ items: Array.from({ length: 150 }, (_, i) => ({ id: `r${i}` })), total: 400 })
+      .mockResolvedValueOnce({ items: [{ id: 'r150' }], total: 400 });
+    const { result } = renderHook(() => useListBrowse('x', { take: 50, initialTake: 150 }));
+    await waitFor(() => expect(result.current.items).toHaveLength(150));
+    expect(apiMock).toHaveBeenCalledWith('api/v1/list/x?take=150');
+    await act(async () => { await result.current.loadMore(); });
+    expect(apiMock).toHaveBeenLastCalledWith('api/v1/list/x?take=50&skip=150');
+  });
+
+  it('an initialTake smaller than take never shrinks the first page', async () => {
+    apiMock.mockResolvedValueOnce({ items: [], total: 0 });
+    renderHook(() => useListBrowse('x', { take: 50, initialTake: 10 }));
+    await waitFor(() => expect(apiMock).toHaveBeenCalledWith('api/v1/list/x?take=50'));
+  });
+
   it('captures error and sets loading=false', async () => {
     apiMock.mockRejectedValueOnce(new Error('boom'));
     const { result } = renderHook(() => useListBrowse('x'));

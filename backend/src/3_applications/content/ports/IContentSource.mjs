@@ -4,6 +4,11 @@ export class IContentSource {
   get prefixes() { throw new Error('IContentSource.prefixes not implemented'); }
   async getItem(_id) { throw new Error('IContentSource.getItem not implemented'); }
   async getList(_id) { throw new Error('IContentSource.getList not implemented'); }
+  /**
+   * Optional: `{ items, total }` for one `{ skip, take }` window of a
+   * container, or null when this container cannot be paged at the source.
+   */
+  async getListPage(_id, _page) { return null; }
   async resolvePlayables(_id) { throw new Error('IContentSource.resolvePlayables not implemented'); }
   async resolveSiblings(_compoundId) { throw new Error('IContentSource.resolveSiblings not implemented'); }
 }

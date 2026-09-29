@@ -139,11 +139,17 @@ describe('useMediaResilience — refused source', () => {
     expect(checkCalls()).toHaveLength(1);
   });
 
-  it('does not start a wait for a decode error', async () => {
+  it('asks once about an unlabelled media error, but starts no wait when the file is readable', async () => {
+    api.DaylightAPI.mockResolvedValue(answer('readable'));
     const el = makeFakeEl({ paused: true });
-    renderHook(() => useMediaResilience(baseArgs(el)));
+    const args = baseArgs(el);
+    const { result } = renderHook(() => useMediaResilience(args));
     await refuse(el, 'MEDIA_ELEMENT_ERROR: Format error');
-    expect(checkCalls()).toHaveLength(0);
+    expect(checkCalls()).toHaveLength(1);
+    expect(result.current.overlayProps.sourceNotice).toBeNull();
+    // A readable file with a failing stream belongs to the stall ladder: no
+    // extra 'source-refusal-cleared' reload outside its budget.
+    expect(args.onReload.mock.calls.map(([c]) => c.reason)).not.toContain('source-refusal-cleared');
   });
 
   it('asks before recovering when the startup deadline fires, and holds on unreadable', async () => {
@@ -172,6 +178,76 @@ describe('useMediaResilience — refused source', () => {
     expect(args.onExhausted).toHaveBeenCalledWith(expect.objectContaining({ reason: 'source-unavailable-gave-up' }));
     expect(result.current.overlayProps.isExhausted).toBe(true);
     expect(result.current.overlayProps.sourceNotice).toBeNull();
+  });
+
+  // 2026-09-29: Plex refused a Bluey part at 6:17 of 7:00, mid library scan.
+  // Chromium said "Format error" / "PIPELINE_ERROR_READ" — no status — so the
+  // stall ladder ran both rungs and SKIPPED the episode. The file was fine a
+  // minute later; the right answer was to wait and resume at 6:17.
+  describe('mid-playback refusal without an HTTP status in the error', () => {
+    const playing = (el) => { el.paused = false; el.currentTime = 376.9; el.duration = 419.8; };
+    const dieMidEpisode = async (el, message) => {
+      await act(async () => { el._fire('playing'); });
+      await advance(1000);
+      await act(async () => {
+        el.error = { code: message.includes('PIPELINE') ? 2 : 4, message };
+        el.paused = true;
+        el._fire('error');
+      });
+      await flush();
+    };
+
+    it('waits (no rungs, no skip) when the check says the file is refused, then resumes at the position', async () => {
+      api.DaylightAPI.mockResolvedValue(answer('unreadable'));
+      const el = makeFakeEl();
+      playing(el);
+      const args = baseArgs(el, { seconds: 376.9 });
+      const { result } = renderHook(() => useMediaResilience(args));
+
+      await dieMidEpisode(el, 'MEDIA_ELEMENT_ERROR: Format error');
+      expect(result.current.overlayProps.sourceNotice).not.toBeNull();
+
+      await advance(60_000); // far past the jolt grace and both rungs
+      expect(args.onReload).not.toHaveBeenCalled();
+      expect(args.onExhausted).not.toHaveBeenCalled();
+
+      api.DaylightAPI.mockResolvedValue(answer('readable'));
+      await advance(15_000);
+      expect(args.onReload).toHaveBeenCalledTimes(1);
+      expect(args.onReload.mock.calls[0][0]).toMatchObject({ reason: 'source-restored', forceRemount: true });
+      expect(args.onExhausted).not.toHaveBeenCalled();
+    });
+
+    it('checks before skipping when the ladder runs out, and waits instead if the file is refused', async () => {
+      // The error itself looked like a readable file's failure; only by the time
+      // the ladder is spent has Plex started refusing.
+      api.DaylightAPI.mockResolvedValueOnce(answer('readable'));
+      api.DaylightAPI.mockResolvedValue(answer('unreadable'));
+      const el = makeFakeEl();
+      playing(el);
+      const args = baseArgs(el, { seconds: 376.9 });
+      const { result } = renderHook(() => useMediaResilience(args));
+
+      await dieMidEpisode(el, 'PipelineStatus::PIPELINE_ERROR_READ');
+      await advance(90_000);
+
+      expect(args.onReload).toHaveBeenCalled();      // the rungs did run
+      expect(args.onExhausted).not.toHaveBeenCalled(); // ...but it did not skip
+      expect(result.current.overlayProps.sourceNotice).not.toBeNull();
+    });
+
+    it('still skips when the ladder runs out and the file is readable (a broken stream, not a refusal)', async () => {
+      api.DaylightAPI.mockResolvedValue(answer('readable'));
+      const el = makeFakeEl();
+      playing(el);
+      const args = baseArgs(el, { seconds: 376.9 });
+      renderHook(() => useMediaResilience(args));
+
+      await dieMidEpisode(el, 'PipelineStatus::PIPELINE_ERROR_READ');
+      await advance(90_000);
+
+      expect(args.onExhausted).toHaveBeenCalledWith(expect.objectContaining({ reason: 'stall-jolt-exhausted' }));
+    });
   });
 
   it('keeps waiting when the check itself fails mid-outage (backend restarting)', async () => {
