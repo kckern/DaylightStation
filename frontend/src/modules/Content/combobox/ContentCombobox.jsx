@@ -33,6 +33,9 @@ import { StreamStatusLine } from './StreamStatusLine.jsx';
 import { ResultRowActions } from './ResultRow.jsx';
 import './ContentCombobox.scss';
 
+/** Result-subtitle labels that are not just the capitalised raw type. */
+const TYPE_LABEL_OVERRIDES = Object.freeze({ show: 'TV Show', series: 'TV Show' });
+
 const TYPE_ICONS = {
   show: IconVideo,
   movie: IconVideo,
@@ -530,7 +533,10 @@ export function ContentCombobox({
 
     // Subtitle: type label with optional index, then parent.
     // NOTE: parent-subtitle click navigation deliberately dropped (§3.1-8).
-    const typeLabel = type ? type.charAt(0).toUpperCase() + type.slice(1) : null;
+    // Plex's raw `show`/`series` reads as "Show" capitalised; say "TV Show",
+    // matching Media's phone search (resultPresentation TYPE_LABELS).
+    const typeLabel = TYPE_LABEL_OVERRIDES[type]
+      ?? (type ? type.charAt(0).toUpperCase() + type.slice(1) : null);
     const indexedLabel = typeLabel && itemIndex != null ? `${typeLabel} ${itemIndex}` : typeLabel;
     const parts = [indexedLabel, parentTitle].filter(Boolean);
     const subtitleText = parts.length > 0 ? parts.join(' • ') : localId;

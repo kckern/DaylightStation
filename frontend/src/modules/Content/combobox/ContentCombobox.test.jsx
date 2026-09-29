@@ -112,6 +112,27 @@ describe('ContentCombobox (hook wiring)', () => {
     expect(dropdown.classList.contains('media-search-dropdown')).toBe(expected);
   });
 
+  // The phone's Media search says "TV Show" (resultPresentation TYPE_LABELS);
+  // the dock's dropdown used to capitalise the raw type to "Show". Plex's
+  // 2026-09-29 scan added "Frozen Planet" (a show) to the Frozen results and
+  // FIND.2a's dock journey caught the two surfaces disagreeing.
+  it.each([
+    ['show', 'TV Show'], ['series', 'TV Show'], ['movie', 'Movie'], ['episode', 'Episode'],
+  ])('labels a %s result "%s" in its subtitle', async (type, label) => {
+    currentHook = makeHook({
+      state: {
+        ...initialState(''), mode: Modes.SEARCH, search: 'fr',
+        results: [{ id: 'plex:1', title: 'Frozen Planet', source: 'plex', type }],
+      },
+    });
+    renderCombobox();
+    fireEvent.focus(screen.getByRole('textbox'));
+    fireEvent.click(screen.getByRole('textbox'));
+    const option = await screen.findByTestId('combobox-option-plex:1');
+    expect(option.textContent).toContain(label);
+    if (label === 'TV Show') expect(option.textContent).not.toMatch(/(^|[^V] )Show/);
+  });
+
   it('typing routes through handleInput', () => {
     currentHook = makeHook({
       state: { ...initialState(''), mode: Modes.SEARCH, search: '' },
